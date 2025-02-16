@@ -18,6 +18,12 @@ fn stabilize(controller: &dyn Receiver, vehicle: &dyn Vehicle, flight_controller
 
         // Command actuators 
         actuators.command_actuators(&control_outputs);
+
+        // Send telemetry
+
+        // hit the loop rate
+
+        // flight mode
     }
 }
 
