@@ -1,10 +1,10 @@
-pub trait RadioControl {
+pub trait Receiver {
     fn get_controls(&self) -> Controls;
 }
 
 pub struct SpectrumRadioControl {}
 
-impl RadioControl for SpectrumRadioControl {
+impl Receiver for SpectrumRadioControl {
     fn get_controls(&self) -> Controls {
         Controls {}
     }
