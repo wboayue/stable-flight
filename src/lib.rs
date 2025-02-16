@@ -1,10 +1,6 @@
-pub struct Configuration {
-    target_frequency: f64, // 200 Hz
-    receiver: Box<dyn Receiver>,
-    vehicle: Box<dyn Vehicle>,
-    controller: Box<dyn Controller>,
-    actuators: Box<dyn Actuators>,
-}
+mod stabilizer;
+
+pub use stabilizer::{FlightStabilizer, StabilizerConfiguration};
 
 pub trait Receiver {
     fn get_controls(&self) -> ControlInput;
@@ -32,7 +28,7 @@ pub trait Vehicle {
     fn get_state(&self) -> VehicleState;
 }
 
-pub struct RealFlightVehicle {} 
+pub struct RealFlightVehicle {}
 
 impl Vehicle for RealFlightVehicle {
     fn get_state(&self) -> VehicleState {
@@ -42,7 +38,11 @@ impl Vehicle for RealFlightVehicle {
 
 pub trait Controller {
     fn compute_desired_state(&self, controls: &ControlInput, state: &VehicleState) -> VehicleState;
-    fn compute_control_outputs(&self, desired_state: &VehicleState, state: &VehicleState) -> ControlOutput;
+    fn compute_control_outputs(
+        &self,
+        desired_state: &VehicleState,
+        state: &VehicleState,
+    ) -> ControlOutput;
 }
 
 pub struct RateController {}
@@ -52,7 +52,11 @@ impl Controller for RateController {
         VehicleState {}
     }
 
-    fn compute_control_outputs(&self, desired_state: &VehicleState, state: &VehicleState) -> ControlOutput {
+    fn compute_control_outputs(
+        &self,
+        desired_state: &VehicleState,
+        state: &VehicleState,
+    ) -> ControlOutput {
         ControlOutput {}
     }
 }
@@ -69,5 +73,4 @@ impl Actuators for RealFlightActuators {
     fn command_actuators(&self, controls: &ControlOutput) {
         println!("Commanding actuators: {:?}", controls);
     }
-    
 }
