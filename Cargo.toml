@@ -1,0 +1,7 @@
+[package]
+name = "stable-flight-sitl"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+realflight-bridge = "0.1.2"
