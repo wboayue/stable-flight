@@ -1,10 +1,11 @@
+use stable_flight_sitl::receivers::SpectrumReceiver;
 use stable_flight_sitl::{
-    FlightStabilizer, RateController, RealFlightActuators, RealFlightVehicle, SpectrumRadioControl,
+    FlightStabilizer, RateController, RealFlightActuators, RealFlightVehicle,
     StabilizerConfiguration,
 };
 
 fn main() {
-    let receiver = &SpectrumRadioControl {};
+    let receiver = &SpectrumReceiver::new();
     let vehicle = &RealFlightVehicle {};
     let flight_controller = &RateController {};
     let actuators = &RealFlightActuators {};

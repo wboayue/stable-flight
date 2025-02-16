@@ -1,17 +1,10 @@
+pub mod receivers;
 mod stabilizer;
 
 pub use stabilizer::{FlightStabilizer, StabilizerConfiguration};
 
 pub trait Receiver {
     fn get_controls(&self) -> ControlInput;
-}
-
-pub struct SpectrumRadioControl {}
-
-impl Receiver for SpectrumRadioControl {
-    fn get_controls(&self) -> ControlInput {
-        ControlInput {}
-    }
 }
 
 #[derive(Debug)]

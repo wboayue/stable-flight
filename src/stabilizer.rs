@@ -35,7 +35,7 @@ impl FlightStabilizer<'_> {
 
             // Get control inputs
             let controls = self.configuration.receiver.get_controls();
-            println!("{:?} Controls: {:?}", start, controls);
+            // println!("{:?} Controls: {:?}", start, controls);
 
             // Get vehicle state
             let state = self.configuration.vehicle.get_state();
