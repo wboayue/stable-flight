@@ -1,21 +1,17 @@
+use stable_flight_sitl::realflight::RealFlightVehicle;
 use stable_flight_sitl::sticks::SpectrumStick;
-use stable_flight_sitl::{
-    FlightStabilizer, RateController, RealFlightActuators, RealFlightVehicle,
-    StabilizerConfiguration,
-};
+use stable_flight_sitl::{FlightStabilizer, RateController, StabilizerConfiguration};
 
 fn main() {
-    let receiver = &SpectrumStick::new();
-    let vehicle = &RealFlightVehicle {};
-    let flight_controller = &RateController {};
-    let actuators = &RealFlightActuators {};
+    let stick = &SpectrumStick::new();
+    let vehicle = &RealFlightVehicle::new();
+    let controller = &RateController {};
 
     let configuration = StabilizerConfiguration {
         target_frequency: 2.0,
-        receiver,
+        stick,
         vehicle,
-        controller: flight_controller,
-        actuators,
+        controller,
     };
 
     let stabilizer = FlightStabilizer::new(configuration);
