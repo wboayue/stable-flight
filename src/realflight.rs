@@ -29,13 +29,12 @@ impl Vehicle for RealFlightVehicle {
 impl RealFlightVehicle {
     pub fn new() -> RealFlightVehicle {
         let configuration = Configuration {
-            simulator_url: "192.168.4.117:18083".to_string(),
+            simulator_host: "192.168.4.117:18083".to_string(),
             ..Default::default()
         };
-        let simulator_url = configuration.simulator_url.clone();
-        let bridge = RealFlightBridge::new(configuration).expect(&format!(
+        let bridge = RealFlightBridge::new(&configuration).expect(&format!(
             "Failed to connect to RealFlight at {}",
-            simulator_url
+            configuration.simulator_host
         ));
 
         if let Err(e) = bridge.reset_aircraft() {
