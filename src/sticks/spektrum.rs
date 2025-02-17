@@ -2,90 +2,94 @@
 //! Receives control inputs from Spektrum radio attached to computer
 //! via USB dongle
 
-use std::cell::{Ref, RefCell};
+use std::cell::RefCell;
 
-use gilrs::{Axis, Button, Event, EventType, GamepadId, Gilrs};
-use log::debug;
+use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
 
 use crate::{ControlInput, Receiver};
 
-pub struct SpectrumReceiver {
+pub struct SpectrumStick {
     gilrs: RefCell<Gilrs>,
     active_gamepad: RefCell<Option<GamepadId>>,
+    // control channels
+    channels: RefCell<[f64; 6]>,
 }
 
-impl SpectrumReceiver {
-    pub fn new() -> SpectrumReceiver {
-        SpectrumReceiver {
+impl SpectrumStick {
+    pub fn new() -> SpectrumStick {
+        SpectrumStick {
             gilrs: RefCell::new(Gilrs::new().expect("Failed to initialize Gilrs")),
             active_gamepad: RefCell::new(None),
+            channels: RefCell::new([0.0; 6]),
         }
     }
 }
 
-impl Receiver for SpectrumReceiver {
+impl Default for SpectrumStick {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Receiver for SpectrumStick {
     fn get_controls(&self) -> ControlInput {
-        while let Some(Event {
-            id, event, time, ..
-        }) = self.gilrs.borrow_mut().next_event()
-        {
-            match event {
-                EventType::AxisChanged(Axis::LeftStickY, val, _) => {
-                    println!("Throttle (3): {:?}", val);
-                }
-                EventType::AxisChanged(Axis::LeftStickX, val, _) => {
-                    println!("Yaw (4): {:?}", val);
-                }
-                EventType::AxisChanged(Axis::RightStickX, val, _) => {
-                    println!("Pitch (2): {:?}", val);
-                }
-                EventType::ButtonChanged(Button::RightTrigger2, val, _) => {
-                    println!("Roll (1): {:?}", val);
-                }
-                EventType::AxisChanged(Axis::RightStickY, val, _) => {
-                    println!("Aux (1): {:?}", val);
-                }
-                EventType::ButtonChanged(Button::LeftTrigger2, val, _) => {
-                    println!("Aux (2): {:?}", val);
-                }
-                e => {
-                    debug!("{:?}", e)
-                }
-            }
+        let mut gilrs = self.gilrs.borrow_mut();
+
+        while let Some(Event { id, .. }) = gilrs.next_event() {
             self.active_gamepad.replace(Some(id));
         }
 
+        let mut channels = self.channels.borrow_mut();
+
         if let Some(id) = *self.active_gamepad.borrow() {
-            let gilrs = self.gilrs.borrow();
             let gamepad = gilrs.gamepad(id);
 
             if let Some(data) = gamepad.button_data(Button::RightTrigger2) {
-                println!("channel 1: {:?}", data.value());
+                channels[0] = scale_value(data.value() as f64, 0.1, 0.9);
             }
 
             if let Some(data) = gamepad.axis_data(Axis::RightStickX) {
-                println!("channel 2: {:?}", data.value());
+                channels[1] = scale_value(data.value() as f64, -0.7, 0.7);
             }
 
             if let Some(data) = gamepad.axis_data(Axis::LeftStickY) {
-                println!("channel 3: {:?}", data.value());
+                channels[2] = 1.0 - scale_value(data.value() as f64, -0.65, 0.65);
             }
 
             if let Some(data) = gamepad.axis_data(Axis::LeftStickX) {
-                println!("channel 4: {:?}", data.value());
+                channels[3] = 1.0 - scale_value(data.value() as f64, -0.65, 0.65);
             }
 
             if let Some(data) = gamepad.axis_data(Axis::RightStickY) {
-                println!("channel 5: {:?}", data.value());
+                channels[4] = if data.value() < 0.0 { 0.0 } else { 1.0 };
             }
 
             if let Some(data) = gamepad.button_data(Button::LeftTrigger2) {
-                println!("channel 6: {:?}", data.value());
+                let value = data.value();
+                channels[5] = if value < 0.4 {
+                    1.0
+                } else if value > 0.6 {
+                    0.0
+                } else {
+                    0.5
+                };
             }
         }
 
-        self.gilrs.borrow_mut().inc();
+        gilrs.inc();
 
-        ControlInput {}
+        let mut scaled_output = [0.0; 12];
+
+        for i in 0..6 {
+            scaled_output[i] = channels[i];
+        }
+
+        ControlInput {
+            channels: scaled_output,
+        }
     }
+}
+
+fn scale_value(value: f64, min: f64, max: f64) -> f64 {
+    (value - min) / (max - min)
 }

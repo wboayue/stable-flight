@@ -1,3 +1,3 @@
 mod spektrum;
 
-pub use spektrum::SpectrumReceiver;
+pub use spektrum::SpectrumStick;

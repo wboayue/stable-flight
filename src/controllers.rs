@@ -16,9 +16,7 @@ pub struct FlightStabilizer<'a> {
 
 impl FlightStabilizer<'_> {
     pub fn new(configuration: StabilizerConfiguration) -> FlightStabilizer {
-        FlightStabilizer {
-            configuration: configuration,
-        }
+        FlightStabilizer { configuration }
     }
 
     pub fn stabilize(&self) {
@@ -35,7 +33,7 @@ impl FlightStabilizer<'_> {
 
             // Get control inputs
             let controls = self.configuration.receiver.get_controls();
-            // println!("{:?} Controls: {:?}", start, controls);
+            println!("{:?} Controls: {:?}", start.elapsed(), controls);
 
             // Get vehicle state
             let state = self.configuration.vehicle.get_state();
