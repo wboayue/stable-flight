@@ -1,7 +1,7 @@
-pub mod receivers;
-mod stabilizer;
+mod controllers;
+pub mod sticks;
 
-pub use stabilizer::{FlightStabilizer, StabilizerConfiguration};
+pub use controllers::{FlightStabilizer, StabilizerConfiguration};
 
 pub trait Receiver {
     fn get_controls(&self) -> ControlInput;

@@ -1,4 +1,4 @@
-use stable_flight_sitl::receivers::SpectrumReceiver;
+use stable_flight_sitl::sticks::SpectrumReceiver;
 use stable_flight_sitl::{
     FlightStabilizer, RateController, RealFlightActuators, RealFlightVehicle,
     StabilizerConfiguration,

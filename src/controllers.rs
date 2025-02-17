@@ -1,4 +1,4 @@
-use std::thread;
+use std::{thread, time::Duration};
 
 use crate::{Actuators, Controller, Receiver, Vehicle};
 
@@ -27,11 +27,11 @@ impl FlightStabilizer<'_> {
             self.configuration.target_frequency
         );
 
+        let dt = Duration::from_secs_f64(1.0 / self.configuration.target_frequency);
+
         loop {
             let start = std::time::Instant::now();
-            let target_duration =
-                std::time::Duration::from_secs_f64(1.0 / self.configuration.target_frequency);
-            let end = start + target_duration;
+            let end = start + dt;
 
             // Get control inputs
             let controls = self.configuration.receiver.get_controls();
