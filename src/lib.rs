@@ -14,7 +14,7 @@ pub trait Stick {
 
 #[derive(Debug)]
 pub struct StickInput {
-    pub channels: [f64; 12],
+    pub channels: [f32; 12],
 }
 
 #[derive(Debug)]

@@ -12,7 +12,7 @@ pub struct SpectrumStick {
     gilrs: RefCell<Gilrs>,
     active_gamepad: RefCell<Option<GamepadId>>,
     // control channels
-    channels: RefCell<[f64; 6]>,
+    channels: RefCell<[f32; 6]>,
 }
 
 impl SpectrumStick {
@@ -45,19 +45,19 @@ impl Stick for SpectrumStick {
             let gamepad = gilrs.gamepad(id);
 
             if let Some(data) = gamepad.button_data(Button::RightTrigger2) {
-                channels[0] = scale_value(data.value() as f64, 0.1, 0.9);
+                channels[0] = scale_value(data.value(), 0.1, 0.9);
             }
 
             if let Some(data) = gamepad.axis_data(Axis::RightStickX) {
-                channels[1] = scale_value(data.value() as f64, -0.7, 0.7);
+                channels[1] = scale_value(data.value(), -0.7, 0.7);
             }
 
             if let Some(data) = gamepad.axis_data(Axis::LeftStickY) {
-                channels[2] = 1.0 - scale_value(data.value() as f64, -0.65, 0.65);
+                channels[2] = 1.0 - scale_value(data.value(), -0.65, 0.65);
             }
 
             if let Some(data) = gamepad.axis_data(Axis::LeftStickX) {
-                channels[3] = 1.0 - scale_value(data.value() as f64, -0.65, 0.65);
+                channels[3] = 1.0 - scale_value(data.value(), -0.65, 0.65);
             }
 
             if let Some(data) = gamepad.axis_data(Axis::RightStickY) {
@@ -90,6 +90,6 @@ impl Stick for SpectrumStick {
     }
 }
 
-fn scale_value(value: f64, min: f64, max: f64) -> f64 {
+fn scale_value(value: f32, min: f32, max: f32) -> f32 {
     (value - min) / (max - min)
 }
