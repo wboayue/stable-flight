@@ -1,7 +1,6 @@
 use stable_flight_sitl::sticks::SpectrumStick;
 use stable_flight_sitl::{
-    FlightStabilizer, RateController, RealFlightVehicle,
-    StabilizerConfiguration,
+    FlightStabilizer, RateController, RealFlightVehicle, StabilizerConfiguration,
 };
 
 fn main() {

@@ -1,10 +1,10 @@
-mod stabilizer;
-pub mod sticks;
 mod controllers;
 mod realflight;
+mod stabilizer;
+pub mod sticks;
 
+pub use controllers::{AngleController, RateController};
 pub use stabilizer::{FlightStabilizer, StabilizerConfiguration};
-pub use controllers::{RateController, AngleController};
 
 pub trait Stick {
     fn get_controls(&self) -> StickInput;

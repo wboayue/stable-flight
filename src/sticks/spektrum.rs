@@ -6,7 +6,7 @@ use std::cell::RefCell;
 
 use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
 
-use crate::{StickInput, Stick};
+use crate::{Stick, StickInput};
 
 pub struct SpectrumStick {
     gilrs: RefCell<Gilrs>,

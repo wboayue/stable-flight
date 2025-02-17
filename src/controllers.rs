@@ -3,11 +3,7 @@ use super::{ControlOutput, Controller, StickInput, VehicleState};
 pub struct RateController {}
 
 impl Controller for RateController {
-    fn compute_desired_state(
-        &self,
-        _controls: &StickInput,
-        _state: &VehicleState,
-    ) -> VehicleState {
+    fn compute_desired_state(&self, _controls: &StickInput, _state: &VehicleState) -> VehicleState {
         VehicleState {}
     }
 
