@@ -35,7 +35,7 @@ impl FlightStabilizer<'_> {
             println!("{:?} Controls: {:?}", start.elapsed(), stick);
 
             // Get vehicle state
-            let state = self.configuration.vehicle.get_state();
+            let state = self.configuration.vehicle.get_state(dt);
 
             // Compute desired state with inputs
             let desired_state = self
@@ -52,7 +52,7 @@ impl FlightStabilizer<'_> {
             // Command actuators
             self.configuration
                 .vehicle
-                .command_actuators(&control_outputs);
+                .command_actuators(dt, &stick, &control_outputs);
 
             // Send telemetry
 

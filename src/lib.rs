@@ -1,7 +1,9 @@
 mod controllers;
-mod realflight;
+pub mod realflight;
 mod stabilizer;
 pub mod sticks;
+
+use std::time::Duration;
 
 pub use controllers::{AngleController, RateController};
 pub use stabilizer::{FlightStabilizer, StabilizerConfiguration};
@@ -23,20 +25,8 @@ pub struct VehicleState {
 }
 
 pub trait Vehicle {
-    fn get_state(&self) -> VehicleState;
-    fn command_actuators(&self, controls: &ControlOutput);
-}
-
-pub struct RealFlightVehicle {}
-
-impl Vehicle for RealFlightVehicle {
-    fn get_state(&self) -> VehicleState {
-        VehicleState {}
-    }
-
-    fn command_actuators(&self, controls: &ControlOutput) {
-        println!("Commanding actuators: {:?}", controls);
-    }
+    fn get_state(&self, dt: Duration) -> VehicleState;
+    fn command_actuators(&self, dt: Duration, stick: &StickInput, controls: &ControlOutput);
 }
 
 pub trait Controller {
