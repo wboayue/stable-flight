@@ -1,14 +1,19 @@
 mod controllers;
+pub mod realflight;
+mod stabilizer;
 pub mod sticks;
 
-pub use controllers::{FlightStabilizer, StabilizerConfiguration};
+use std::time::Duration;
 
-pub trait Receiver {
-    fn get_controls(&self) -> ControlInput;
+pub use controllers::{AngleController, RateController};
+pub use stabilizer::{FlightStabilizer, StabilizerConfiguration};
+
+pub trait Stick {
+    fn get_controls(&self) -> StickInput;
 }
 
 #[derive(Debug)]
-pub struct ControlInput {
+pub struct StickInput {
     pub channels: [f64; 12],
 }
 
@@ -20,56 +25,15 @@ pub struct VehicleState {
 }
 
 pub trait Vehicle {
-    fn get_state(&self) -> VehicleState;
-}
-
-pub struct RealFlightVehicle {}
-
-impl Vehicle for RealFlightVehicle {
-    fn get_state(&self) -> VehicleState {
-        VehicleState {}
-    }
+    fn get_state(&self, dt: Duration) -> VehicleState;
+    fn command_actuators(&self, dt: Duration, stick: &StickInput, controls: &ControlOutput);
 }
 
 pub trait Controller {
-    fn compute_desired_state(&self, controls: &ControlInput, state: &VehicleState) -> VehicleState;
+    fn compute_desired_state(&self, controls: &StickInput, state: &VehicleState) -> VehicleState;
     fn compute_control_outputs(
         &self,
         desired_state: &VehicleState,
         state: &VehicleState,
     ) -> ControlOutput;
-}
-
-pub struct RateController {}
-
-impl Controller for RateController {
-    fn compute_desired_state(
-        &self,
-        _controls: &ControlInput,
-        _state: &VehicleState,
-    ) -> VehicleState {
-        VehicleState {}
-    }
-
-    fn compute_control_outputs(
-        &self,
-        _desired_state: &VehicleState,
-        _state: &VehicleState,
-    ) -> ControlOutput {
-        ControlOutput {}
-    }
-}
-
-pub struct AngleController {}
-
-pub trait Actuators {
-    fn command_actuators(&self, controls: &ControlOutput);
-}
-
-pub struct RealFlightActuators {}
-
-impl Actuators for RealFlightActuators {
-    fn command_actuators(&self, controls: &ControlOutput) {
-        println!("Commanding actuators: {:?}", controls);
-    }
 }
