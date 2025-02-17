@@ -1,13 +1,12 @@
 use std::{thread, time::Duration};
 
-use crate::{Actuators, Controller, Receiver, Vehicle};
+use crate::{Controller, Receiver, Vehicle};
 
 pub struct StabilizerConfiguration<'a> {
     pub target_frequency: f64, // 200 Hz
     pub receiver: &'a dyn Receiver,
     pub vehicle: &'a dyn Vehicle,
     pub controller: &'a dyn Controller,
-    pub actuators: &'a dyn Actuators,
 }
 
 pub struct FlightStabilizer<'a> {
@@ -52,7 +51,7 @@ impl FlightStabilizer<'_> {
 
             // Command actuators
             self.configuration
-                .actuators
+                .vehicle
                 .command_actuators(&control_outputs);
 
             // Send telemetry

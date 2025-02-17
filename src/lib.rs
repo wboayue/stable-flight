@@ -21,6 +21,7 @@ pub struct VehicleState {
 
 pub trait Vehicle {
     fn get_state(&self) -> VehicleState;
+    fn command_actuators(&self, controls: &ControlOutput);
 }
 
 pub struct RealFlightVehicle {}
@@ -28,6 +29,10 @@ pub struct RealFlightVehicle {}
 impl Vehicle for RealFlightVehicle {
     fn get_state(&self) -> VehicleState {
         VehicleState {}
+    }
+
+    fn command_actuators(&self, controls: &ControlOutput) {
+        println!("Commanding actuators: {:?}", controls);
     }
 }
 
@@ -61,15 +66,3 @@ impl Controller for RateController {
 }
 
 pub struct AngleController {}
-
-pub trait Actuators {
-    fn command_actuators(&self, controls: &ControlOutput);
-}
-
-pub struct RealFlightActuators {}
-
-impl Actuators for RealFlightActuators {
-    fn command_actuators(&self, controls: &ControlOutput) {
-        println!("Commanding actuators: {:?}", controls);
-    }
-}
