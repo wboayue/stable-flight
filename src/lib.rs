@@ -1,14 +1,17 @@
-mod controllers;
+mod stabilizer;
 pub mod sticks;
+mod controllers;
+mod realflight;
 
-pub use controllers::{FlightStabilizer, StabilizerConfiguration};
+pub use stabilizer::{FlightStabilizer, StabilizerConfiguration};
+pub use controllers::{RateController, AngleController};
 
-pub trait Receiver {
-    fn get_controls(&self) -> ControlInput;
+pub trait Stick {
+    fn get_controls(&self) -> StickInput;
 }
 
 #[derive(Debug)]
-pub struct ControlInput {
+pub struct StickInput {
     pub channels: [f64; 12],
 }
 
@@ -37,32 +40,10 @@ impl Vehicle for RealFlightVehicle {
 }
 
 pub trait Controller {
-    fn compute_desired_state(&self, controls: &ControlInput, state: &VehicleState) -> VehicleState;
+    fn compute_desired_state(&self, controls: &StickInput, state: &VehicleState) -> VehicleState;
     fn compute_control_outputs(
         &self,
         desired_state: &VehicleState,
         state: &VehicleState,
     ) -> ControlOutput;
 }
-
-pub struct RateController {}
-
-impl Controller for RateController {
-    fn compute_desired_state(
-        &self,
-        _controls: &ControlInput,
-        _state: &VehicleState,
-    ) -> VehicleState {
-        VehicleState {}
-    }
-
-    fn compute_control_outputs(
-        &self,
-        _desired_state: &VehicleState,
-        _state: &VehicleState,
-    ) -> ControlOutput {
-        ControlOutput {}
-    }
-}
-
-pub struct AngleController {}

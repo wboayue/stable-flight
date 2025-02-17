@@ -6,7 +6,7 @@ use std::cell::RefCell;
 
 use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
 
-use crate::{ControlInput, Receiver};
+use crate::{StickInput, Stick};
 
 pub struct SpectrumStick {
     gilrs: RefCell<Gilrs>,
@@ -31,8 +31,8 @@ impl Default for SpectrumStick {
     }
 }
 
-impl Receiver for SpectrumStick {
-    fn get_controls(&self) -> ControlInput {
+impl Stick for SpectrumStick {
+    fn get_controls(&self) -> StickInput {
         let mut gilrs = self.gilrs.borrow_mut();
 
         while let Some(Event { id, .. }) = gilrs.next_event() {
@@ -84,7 +84,7 @@ impl Receiver for SpectrumStick {
             scaled_output[i] = channels[i];
         }
 
-        ControlInput {
+        StickInput {
             channels: scaled_output,
         }
     }

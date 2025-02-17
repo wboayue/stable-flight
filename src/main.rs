@@ -5,15 +5,15 @@ use stable_flight_sitl::{
 };
 
 fn main() {
-    let receiver = &SpectrumStick::new();
+    let stick = &SpectrumStick::new();
     let vehicle = &RealFlightVehicle {};
-    let flight_controller = &RateController {};
+    let controller = &RateController {};
 
     let configuration = StabilizerConfiguration {
         target_frequency: 2.0,
-        receiver,
+        stick,
         vehicle,
-        controller: flight_controller,
+        controller,
     };
 
     let stabilizer = FlightStabilizer::new(configuration);
