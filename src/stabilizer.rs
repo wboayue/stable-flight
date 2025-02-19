@@ -1,12 +1,13 @@
 use std::{thread, time::Duration};
 
-use crate::{Controller, Stick, Vehicle};
+use crate::{Controller, Stick, TelemetryPublisher, Vehicle};
 
 pub struct StabilizerConfiguration<'a> {
     pub target_frequency: f64, // 200 Hz
     pub stick: &'a dyn Stick,
     pub vehicle: &'a dyn Vehicle,
     pub controller: &'a dyn Controller,
+    pub telemetry: &'a dyn TelemetryPublisher,
 }
 
 pub struct FlightStabilizer<'a> {
@@ -18,7 +19,7 @@ impl FlightStabilizer<'_> {
         FlightStabilizer { configuration }
     }
 
-    pub fn stabilize(&self) {
+    pub fn run(&self) {
         println!(
             "Starting stabilization with target frequency: {} Hz",
             self.configuration.target_frequency
@@ -49,6 +50,9 @@ impl FlightStabilizer<'_> {
                 .controller
                 .compute_control_outputs(&desired_state, &state);
 
+            // mix control outputs
+            // self.configuration.vehicle.mix_control_outputs(&control_outputs);
+
             // Command actuators
             self.configuration
                 .vehicle
@@ -56,9 +60,7 @@ impl FlightStabilizer<'_> {
 
             // Send telemetry
 
-            // hit the loop rate
 
-            // flight mode
 
             thread::sleep(end - std::time::Instant::now());
         }
