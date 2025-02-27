@@ -10,7 +10,7 @@ pub struct RealFlightVehicle {
 
 impl Vehicle for RealFlightVehicle {
     fn get_state(&self, dt: Duration) -> VehicleState {
-        VehicleState {}
+        VehicleState::default()
     }
 
     fn command_actuators(&self, dt: Duration, stick: &StickInput, controls: &ControlOutput) {

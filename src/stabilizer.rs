@@ -48,7 +48,7 @@ impl FlightStabilizer<'_> {
             let control_outputs = self
                 .configuration
                 .controller
-                .compute_control_outputs(&desired_state, &state);
+                .control(&desired_state, &state);
 
             // mix control outputs
             // self.configuration.vehicle.mix_control_outputs(&control_outputs);
@@ -59,8 +59,7 @@ impl FlightStabilizer<'_> {
                 .command_actuators(dt, &stick, &control_outputs);
 
             // Send telemetry
-
-
+            self.configuration.telemetry.send_telemetry(&state);
 
             thread::sleep(end - std::time::Instant::now());
         }

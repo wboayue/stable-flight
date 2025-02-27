@@ -1,12 +1,14 @@
-mod controllers;
+pub mod controllers;
 pub mod realflight;
 mod stabilizer;
 pub mod sticks;
 pub mod mixers;
+pub mod math;
 
 use std::time::Duration;
 
 pub use controllers::{AngleController, RateController};
+use math::Vec3;
 pub use stabilizer::{FlightStabilizer, StabilizerConfiguration};
 
 pub trait Stick {
@@ -23,8 +25,24 @@ pub struct ControlOutput {}
 
 #[derive(Debug)]
 pub struct VehicleState {
-    // roll, pitch, yaw, roll_rate, pitch_rate, yaw_rate, altitude, airspeed, heading, position
+    pub position: Vec3,
+    pub velocity: Vec3,
+    pub orientation: Vec3,
+    pub angular_velocity: Vec3,
     // flight mode
+    // heading
+    // gps
+}
+
+impl Default for VehicleState {
+    fn default() -> Self {
+        VehicleState {
+            position: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+            velocity: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+            orientation: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+            angular_velocity: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+        }
+    }
 }
 
 pub trait Vehicle {
@@ -34,7 +52,7 @@ pub trait Vehicle {
 
 pub trait Controller {
     fn compute_desired_state(&self, controls: &StickInput, state: &VehicleState) -> VehicleState;
-    fn compute_control_outputs(
+    fn control(
         &self,
         desired_state: &VehicleState,
         state: &VehicleState,
