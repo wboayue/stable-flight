@@ -1,6 +1,5 @@
 use stable_flight_sitl::commanders::script::ScriptCommander;
 use stable_flight_sitl::realflight::RealFlightVehicle;
-use stable_flight_sitl::sticks::SpectrumStick;
 use stable_flight_sitl::{FlightStabilizer, RateController, ConsoleTelemetryPublisher, StabilizerConfiguration};
 
 fn main() {

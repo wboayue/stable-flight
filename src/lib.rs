@@ -50,6 +50,7 @@ impl Default for VehicleState {
 pub trait Vehicle {
     fn get_state(&self, dt: Duration) -> VehicleState;
     fn command_actuators(&self, dt: Duration, stick: &Command, controls: &ControlOutput);
+    // fn mix_control_outputs(&self, controls: &ControlOutput);
 }
 
 pub trait Controller {
