@@ -12,11 +12,7 @@ impl Controller for RateController {
         VehicleState::default()
     }
 
-    fn control(
-        &self,
-        _desired_state: &VehicleState,
-        _state: &VehicleState,
-    ) -> ControlOutput {
+    fn control(&self, _desired_state: &VehicleState, _state: &VehicleState) -> ControlOutput {
         ControlOutput {}
     }
 }

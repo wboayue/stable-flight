@@ -11,7 +11,7 @@
 //! - **[Commander]**: A trait for generating flight control commands based on elapsed time.
 //! - **[Command]**: An enumeration that encapsulates different command types (manual and waypoint).
 //! - **[ManualCommand]**: A structure representing direct control inputs such as throttle, roll, pitch, and yaw.
-//! - **[WaypointCommand]**: A structure representing navigational commands including target position, 
+//! - **[WaypointCommand]**: A structure representing navigational commands including target position,
 //!   optional velocity, altitude, cruise speed, and an optional roll angle for coordinated maneuvers.
 //!
 //! ## Detailed Description
@@ -113,7 +113,6 @@ pub mod script;
 /// * Formation controllers that maintain relative positioning
 /// ```
 pub trait Commander {
-
     /// Produces the next command to be executed by the flight control system.
     ///
     /// # Parameters
@@ -197,13 +196,13 @@ pub enum Command {
 pub struct ManualCommand {
     /// Controls the engine power output, ranging from 0.0 (idle) to 1.0 (maximum).
     pub throttle: f32,
-    
+
     /// Controls the aircraft's roll/bank angle, ranging from -1.0 (left) to 1.0 (right).
     pub roll: f32,
-    
+
     /// Controls the aircraft's pitch angle, ranging from -1.0 (down) to 1.0 (up).
     pub pitch: f32,
-    
+
     /// Controls the aircraft's yaw rotation, ranging from -1.0 (left) to 1.0 (right).
     pub yaw: f32,
 }
@@ -217,17 +216,17 @@ pub struct ManualCommand {
 pub struct WaypointCommand {
     /// The target position in 2D space (X,Y coordinates).
     pub position: Vec2,
-    
+
     /// Optional desired velocity vector at the waypoint.
     ///
     /// When provided, the aircraft will attempt to arrive at the position
     /// with this velocity. This is useful for creating smooth paths through
     /// multiple waypoints.
     pub velocity: Option<Vec2>,
-    
+
     /// Target altitude in meters.
     pub altitude: f32,
-    
+
     /// Desired cruise speed (in meters per second) while traveling to the waypoint.
     pub cruise_speed: f32,
 
@@ -236,5 +235,5 @@ pub struct WaypointCommand {
     /// When provided, the aircraft will attempt to maintain this roll angle
     /// while approaching the waypoint. This is useful for creating coordinated
     /// turns or acrobatic maneuvers.
-    pub roll: Option<f32>,    
+    pub roll: Option<f32>,
 }

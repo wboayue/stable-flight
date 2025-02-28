@@ -1,10 +1,10 @@
+pub mod commanders;
 pub mod controllers;
+pub mod math;
+pub mod mixers;
 pub mod realflight;
 mod stabilizer;
 pub mod sticks;
-pub mod mixers;
-pub mod math;
-pub mod commanders;
 
 use std::time::Duration;
 
@@ -39,27 +39,39 @@ pub struct VehicleState {
 impl Default for VehicleState {
     fn default() -> Self {
         VehicleState {
-            position: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-            velocity: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-            orientation: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
-            angular_velocity: Vec3 { x: 0.0, y: 0.0, z: 0.0 },
+            position: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            velocity: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            orientation: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
+            angular_velocity: Vec3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            },
         }
     }
 }
 
 pub trait Vehicle {
-    fn get_state(&self, dt: Duration) -> VehicleState;
+    fn estimate_state(&self, dt: Duration) -> VehicleState;
     fn command_actuators(&self, dt: Duration, stick: &Command, controls: &ControlOutput);
     // fn mix_control_outputs(&self, controls: &ControlOutput);
 }
 
 pub trait Controller {
     fn compute_desired_state(&self, controls: &Command, state: &VehicleState) -> VehicleState;
-    fn control(
-        &self,
-        desired_state: &VehicleState,
-        state: &VehicleState,
-    ) -> ControlOutput;
+    fn control(&self, desired_state: &VehicleState, state: &VehicleState) -> ControlOutput;
 }
 
 pub trait TelemetryPublisher {

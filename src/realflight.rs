@@ -9,7 +9,7 @@ pub struct RealFlightVehicle {
 }
 
 impl Vehicle for RealFlightVehicle {
-    fn get_state(&self, dt: Duration) -> VehicleState {
+    fn estimate_state(&self, dt: Duration) -> VehicleState {
         VehicleState::default()
     }
 
