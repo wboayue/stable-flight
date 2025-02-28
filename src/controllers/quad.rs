@@ -35,6 +35,8 @@
 //! - Full Control Stack: Automatic position and altitude holding
 //! - Selective Enabling: Can enable altitude control while keeping manual lateral control
 
+use crate::commanders::Command;
+
 use super::{ControlOutput, Controller, StickInput, VehicleState};
 
 pub struct Gains {
@@ -57,7 +59,7 @@ pub struct QuadController {}
 
 impl Controller for QuadController {
     
-    fn compute_desired_state(&self, _controls: &StickInput, _state: &VehicleState) -> VehicleState {
+    fn compute_desired_state(&self, _controls: &Command, _state: &VehicleState) -> VehicleState {
         VehicleState::default()
     }
 

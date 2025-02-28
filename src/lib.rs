@@ -8,6 +8,7 @@ pub mod commanders;
 
 use std::time::Duration;
 
+use commanders::{Command, Commander};
 pub use controllers::{AngleController, RateController};
 use math::Vec3;
 pub use stabilizer::{FlightStabilizer, StabilizerConfiguration};
@@ -48,11 +49,11 @@ impl Default for VehicleState {
 
 pub trait Vehicle {
     fn get_state(&self, dt: Duration) -> VehicleState;
-    fn command_actuators(&self, dt: Duration, stick: &StickInput, controls: &ControlOutput);
+    fn command_actuators(&self, dt: Duration, stick: &Command, controls: &ControlOutput);
 }
 
 pub trait Controller {
-    fn compute_desired_state(&self, controls: &StickInput, state: &VehicleState) -> VehicleState;
+    fn compute_desired_state(&self, controls: &Command, state: &VehicleState) -> VehicleState;
     fn control(
         &self,
         desired_state: &VehicleState,

@@ -1,10 +1,10 @@
 use std::{thread, time::Duration};
 
-use crate::{Controller, Stick, TelemetryPublisher, Vehicle};
+use crate::{commanders::Commander, Controller, TelemetryPublisher, Vehicle};
 
 pub struct StabilizerConfiguration<'a> {
     pub target_frequency: f64, // 200 Hz
-    pub stick: &'a dyn Stick,
+    pub commander: &'a dyn Commander,
     pub vehicle: &'a dyn Vehicle,
     pub controller: &'a dyn Controller,
     pub telemetry: &'a dyn TelemetryPublisher,
@@ -17,6 +17,10 @@ pub struct FlightStabilizer<'a> {
 impl FlightStabilizer<'_> {
     pub fn new(configuration: StabilizerConfiguration) -> FlightStabilizer {
         FlightStabilizer { configuration }
+    }
+
+    pub fn commander(&self) -> &dyn Commander {
+        self.configuration.commander
     }
 
     pub fn run(&self) {
@@ -32,8 +36,8 @@ impl FlightStabilizer<'_> {
             let end = start + dt;
 
             // Get control inputs
-            let stick = self.configuration.stick.get_controls();
-            println!("{:?} Controls: {:?}", start.elapsed(), stick);
+            let command = self.configuration.commander.next(dt);
+            println!("{:?} Controls: {:?}", start.elapsed(), command);
 
             // Get vehicle state
             let state = self.configuration.vehicle.get_state(dt);
@@ -42,7 +46,7 @@ impl FlightStabilizer<'_> {
             let desired_state = self
                 .configuration
                 .controller
-                .compute_desired_state(&stick, &state);
+                .compute_desired_state(&command, &state);
 
             // Compute control outputs (angles, rates, etc.)
             let control_outputs = self
@@ -56,7 +60,7 @@ impl FlightStabilizer<'_> {
             // Command actuators
             self.configuration
                 .vehicle
-                .command_actuators(dt, &stick, &control_outputs);
+                .command_actuators(dt, &command, &control_outputs);
 
             // Send telemetry
             self.configuration.telemetry.send_telemetry(&state);

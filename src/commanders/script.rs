@@ -8,13 +8,13 @@ pub struct ScriptCommander {
 }
 
 impl ScriptCommander {
-    pub fn new(script: String) -> Self {
-        ScriptCommander { path: script }
+    pub fn new(script: &str) -> Self {
+        ScriptCommander { path: script.to_string() }
     }
 }
 
 impl Commander for ScriptCommander {
-    fn next(&mut self, dt: std::time::Duration) -> super::Command {
+    fn next(&self, dt: std::time::Duration) -> super::Command {
         Command::Waypoint(WaypointCommand { 
             position: Vec2{ x: 0.0, y: 0.0 }, 
             velocity: None, 

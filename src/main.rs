@@ -1,16 +1,17 @@
+use stable_flight_sitl::commanders::script::ScriptCommander;
 use stable_flight_sitl::realflight::RealFlightVehicle;
 use stable_flight_sitl::sticks::SpectrumStick;
 use stable_flight_sitl::{FlightStabilizer, RateController, ConsoleTelemetryPublisher, StabilizerConfiguration};
 
 fn main() {
-    let stick = &SpectrumStick::new();
+    let commander = &ScriptCommander::new("foo");
     let vehicle = &RealFlightVehicle::new();
     let controller = &RateController {};
     let telemetry = &ConsoleTelemetryPublisher {};
 
     let configuration = StabilizerConfiguration {
         target_frequency: 2.0,
-        stick,
+        commander,
         vehicle,
         controller,
         telemetry

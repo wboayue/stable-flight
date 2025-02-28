@@ -127,7 +127,7 @@ pub trait Commander {
     /// A `Command` instance that can be either:
     /// * `Command::Manual` - Direct control inputs for manual flight
     /// * `Command::Waypoint` - Position and parameters for autonomous navigation
-    fn next(&mut self, dt: Duration) -> Command;
+    fn next(&self, dt: Duration) -> Command;
 }
 
 /// Represents a flight control command to be executed by the flight system.
@@ -167,6 +167,7 @@ pub trait Commander {
 ///     cruise_speed: 25.0,                    // Desired speed during transit
 /// });
 /// ```
+#[derive(Debug)]
 pub enum Command {
     /// Direct manual control inputs for the aircraft.
     ///
@@ -192,6 +193,7 @@ pub enum Command {
 /// * `roll`: -1.0 (left bank) to 1.0 (right bank)
 /// * `pitch`: -1.0 (nose down) to 1.0 (nose up)
 /// * `yaw`: -1.0 (left turn) to 1.0 (right turn)
+#[derive(Debug)]
 pub struct ManualCommand {
     /// Controls the engine power output, ranging from 0.0 (idle) to 1.0 (maximum).
     pub throttle: f32,
@@ -211,6 +213,7 @@ pub struct ManualCommand {
 /// A waypoint command instructs the aircraft to navigate to a specific position
 /// at a given altitude, optionally with a specified velocity to be achieved at
 /// the target position.
+#[derive(Debug)]
 pub struct WaypointCommand {
     /// The target position in 2D space (X,Y coordinates).
     pub position: Vec2,
