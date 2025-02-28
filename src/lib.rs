@@ -4,6 +4,7 @@ mod stabilizer;
 pub mod sticks;
 pub mod mixers;
 pub mod math;
+pub mod commanders;
 
 use std::time::Duration;
 
