@@ -41,32 +41,26 @@
 //! the loop calculates the remaining time until the next cycle and sleeps accordingly.
 use std::{thread, time::Duration};
 
-use crate::{commanders::Commander, Controller, TelemetryPublisher, Vehicle};
+use crate::{commanders::Commander, Controller, Mixer, TelemetryPublisher, Vehicle};
 
-pub struct StabilizerConfiguration<T: Commander, U: Vehicle, V: Controller, W: TelemetryPublisher> {
-    pub target_frequency: f64, // 200 Hz
-    pub commander: T,
-    pub vehicle: U,
-    pub controller: V,
-    pub telemetry: W,
-}
-
-pub struct FlightStabilizer<T: Commander, U: Vehicle, V: Controller, W: TelemetryPublisher> {
+pub struct FlightStabilizer<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher> {
     target_frequency: f64, // 200 Hz
     commander: T,
     vehicle: U,
     controller: V,
-    telemetry: W,
+    mixer: W,
+    telemetry: X,
 }
 
-impl<T: Commander, U: Vehicle, V: Controller, W: TelemetryPublisher> FlightStabilizer<T, U, V, W> {
-    pub fn new(configuration: StabilizerConfiguration<T, U, V, W>) -> FlightStabilizer<T, U, V, W> {
+impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher> FlightStabilizer<T, U, V, W, X> {
+    pub fn new(target_frequency: f64, commander: T, vehicle: U, controller: V, mixer: W, telemetry: X) -> FlightStabilizer<T, U, V, W, X> {
         FlightStabilizer {
-            target_frequency: configuration.target_frequency,
-            commander: configuration.commander,
-            vehicle: configuration.vehicle,
-            controller: configuration.controller,
-            telemetry: configuration.telemetry,
+            target_frequency,
+            commander,
+            vehicle,
+            controller,
+            mixer,
+            telemetry,
         }
     }
 
@@ -89,18 +83,15 @@ impl<T: Commander, U: Vehicle, V: Controller, W: TelemetryPublisher> FlightStabi
             // Get vehicle state
             let state = self.vehicle.estimate_state(dt);
 
-            // Compute desired state with inputs
-            let desired_state = self.controller.compute_desired_state(&command, &state);
-
             // Compute control outputs (angles, rates, etc.)
-            let control_outputs = self.controller.control(&desired_state, &state);
+            // pass command and state to controller
+            let control_outputs = self.controller.control(&command, &state);
 
             // mix control outputs
-            // self.configuration.vehicle.mix_control_outputs(&control_outputs);
+            let actuator_command = self.mixer.mix_control_outputs(&control_outputs);
 
             // Command actuators
-            self.vehicle
-                .command_actuators(dt, &command, &control_outputs);
+            self.vehicle.command_actuators(actuator_command);
 
             // Send telemetry
             self.telemetry.send_telemetry(&state);

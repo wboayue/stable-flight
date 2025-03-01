@@ -3,15 +3,15 @@ pub mod controllers;
 pub mod math;
 pub mod mixers;
 pub mod realflight;
-mod stabilizer;
+pub mod stabilizer;
 pub mod sticks;
 
 use std::time::Duration;
 
-use commanders::{Command, Commander};
+use commanders::{Command};
 pub use controllers::{AngleController, RateController};
 use math::Vec3;
-pub use stabilizer::{FlightStabilizer, StabilizerConfiguration};
+pub use stabilizer::{FlightStabilizer};
 
 pub trait Stick {
     fn get_controls(&self) -> StickInput;
@@ -65,13 +65,11 @@ impl Default for VehicleState {
 
 pub trait Vehicle {
     fn estimate_state(&self, dt: Duration) -> VehicleState;
-    fn command_actuators(&self, dt: Duration, stick: &Command, controls: &ControlOutput);
-    // fn mix_control_outputs(&self, controls: &ControlOutput);
+    fn command_actuators(&self, actuator_command: ActuatorCommand);
 }
 
 pub trait Controller {
-    fn compute_desired_state(&self, controls: &Command, state: &VehicleState) -> VehicleState;
-    fn control(&self, desired_state: &VehicleState, state: &VehicleState) -> ControlOutput;
+    fn control(&self, command: &Command, state: &VehicleState) -> ControlOutput;
 }
 
 pub trait TelemetryPublisher {
@@ -88,6 +86,10 @@ impl TelemetryPublisher for ConsoleTelemetryPublisher {
     }
 }
 
+pub struct ActuatorCommand {
+    pub channels: [f32; 6],
+}
+
 pub trait Mixer {
-    fn mix_control_outputs(&self, controls: &ControlOutput);
+    fn mix_control_outputs(&self, controls: &ControlOutput) -> ActuatorCommand;
 }
