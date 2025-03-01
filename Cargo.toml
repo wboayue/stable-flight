@@ -2,6 +2,8 @@
 name = "stable-flight-sitl"
 version = "0.1.0"
 edition = "2021"
+keywords = ["realflight", "flight-simulator", "robotics", "control-systems"]
+categories = ["aerospace::simulation", "aerospace::drones"]
 
 [dependencies]
 realflight-bridge = "0.2.0"

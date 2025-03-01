@@ -2,22 +2,22 @@ use std::time::Duration;
 
 use realflight_bridge::{Configuration, ControlInputs, RealFlightBridge};
 
-use crate::{ControlOutput, StickInput, Vehicle, VehicleState};
+use crate::{commanders::Command, ControlOutput, StickInput, Vehicle, VehicleState};
 
 pub struct RealFlightVehicle {
     bridge: RealFlightBridge,
 }
 
 impl Vehicle for RealFlightVehicle {
-    fn get_state(&self, dt: Duration) -> VehicleState {
-        VehicleState {}
+    fn estimate_state(&self, dt: Duration) -> VehicleState {
+        VehicleState::default()
     }
 
-    fn command_actuators(&self, dt: Duration, stick: &StickInput, controls: &ControlOutput) {
+    fn command_actuators(&self, dt: Duration, stick: &Command, controls: &ControlOutput) {
         let mut input = ControlInputs::default();
-        for (i, channel) in stick.channels.iter().enumerate() {
-            input.channels[i] = *channel;
-        }
+        // for (i, channel) in stick.channels.iter().enumerate() {
+        //     input.channels[i] = *channel;
+        // }
 
         println!("Commanding actuators: {:?}", input);
 
