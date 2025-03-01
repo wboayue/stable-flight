@@ -78,7 +78,7 @@ impl Stick for SpectrumStick {
 
         gilrs.inc();
 
-        let mut scaled_output = [0.0; 12];
+        let mut scaled_output = [0.0; 6];
 
         for i in 0..6 {
             scaled_output[i] = channels[i];
