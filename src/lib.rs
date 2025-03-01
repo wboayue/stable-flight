@@ -65,7 +65,7 @@ impl Default for VehicleState {
 
 pub trait Vehicle {
     fn estimate_state(&self, dt: Duration) -> VehicleState;
-    fn command_actuators(&self, actuator_command: ActuatorCommand);
+    fn actuate(&self, actuator_command: ActuatorCommand);
 }
 
 pub trait Controller {

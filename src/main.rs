@@ -4,7 +4,7 @@ use stable_flight_sitl::realflight::RealFlightVehicle;
 use stable_flight_sitl::{ConsoleTelemetryPublisher, FlightStabilizer, RateController};
 
 fn main() {
-    let commander = ScriptCommander::new("foo");
+    let commander = ScriptCommander::new("figure_eight.csv");
     let vehicle = RealFlightVehicle::new();
     let controller = RateController {};
     let mixer = QuadCopterMixer {};

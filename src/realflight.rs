@@ -13,7 +13,7 @@ impl Vehicle for RealFlightVehicle {
         VehicleState::default()
     }
 
-    fn command_actuators(&self, command: ActuatorCommand) {
+    fn actuate(&self, command: ActuatorCommand) {
         let mut input = ControlInputs::default();
         // for (i, channel) in stick.channels.iter().enumerate() {
         //     input.channels[i] = *channel;

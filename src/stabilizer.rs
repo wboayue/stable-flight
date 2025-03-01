@@ -40,6 +40,9 @@
 //! The duration `dt` is computed as the reciprocal of this frequency. After performing all operations,
 //! the loop calculates the remaining time until the next cycle and sleeps accordingly.
 use std::{thread, time::Duration};
+use signal_hook::{iterator::Signals, consts::SIGINT};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::{commanders::Commander, Controller, Mixer, TelemetryPublisher, Vehicle};
 
@@ -56,6 +59,7 @@ pub struct FlightStabilizer<
     controller: V,
     mixer: W,
     telemetry: X,
+    running: Arc<AtomicBool>,
 }
 
 impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
@@ -69,6 +73,19 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
         mixer: W,
         telemetry: X,
     ) -> FlightStabilizer<T, U, V, W, X> {
+        let running = Arc::new(AtomicBool::new(true));
+        
+        // Set up signal handling in a separate thread
+        let r = running.clone();
+        std::thread::spawn(move || {
+            let mut signals = Signals::new(&[SIGINT]).unwrap();
+            for _ in signals.forever() {
+                println!("Received shutdown signal, initiating graceful shutdown...");
+                r.store(false, Ordering::SeqCst);
+                break;
+            }
+        });
+
         FlightStabilizer {
             target_frequency,
             commander,
@@ -76,6 +93,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             controller,
             mixer,
             telemetry,
+            running,
         }
     }
 
@@ -87,7 +105,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
 
         let dt = Duration::from_secs_f64(1.0 / self.target_frequency);
 
-        loop {
+        while self.running.load(Ordering::SeqCst) {
             let start = std::time::Instant::now();
             let end = start + dt;
 
@@ -106,12 +124,16 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             let actuator_command = self.mixer.mix_control_outputs(&control_outputs);
 
             // Command actuators
-            self.vehicle.command_actuators(actuator_command);
+            self.vehicle.actuate(actuator_command);
 
             // Send telemetry
             self.telemetry.send_telemetry(&state);
 
-            thread::sleep(end - std::time::Instant::now());
+            if start.elapsed() < dt {
+                thread::sleep(dt - start.elapsed());
+            } else {
+                println!("Stabilization loop took too long: {:?}", start.elapsed());
+            }
         }
     }
 }
