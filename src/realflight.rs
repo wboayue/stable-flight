@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use realflight_bridge::{Configuration, ControlInputs, RealFlightBridge};
 
-use crate::{commanders::Command, ActuatorCommand, ControlOutput, StickInput, Vehicle, VehicleState};
+use crate::{ActuatorCommand, Vehicle, VehicleState};
 
 pub struct RealFlightVehicle {
     bridge: RealFlightBridge,

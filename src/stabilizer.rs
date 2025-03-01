@@ -43,7 +43,13 @@ use std::{thread, time::Duration};
 
 use crate::{commanders::Commander, Controller, Mixer, TelemetryPublisher, Vehicle};
 
-pub struct FlightStabilizer<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher> {
+pub struct FlightStabilizer<
+    T: Commander,
+    U: Vehicle,
+    V: Controller,
+    W: Mixer,
+    X: TelemetryPublisher,
+> {
     target_frequency: f64, // 200 Hz
     commander: T,
     vehicle: U,
@@ -52,8 +58,17 @@ pub struct FlightStabilizer<T: Commander, U: Vehicle, V: Controller, W: Mixer, X
     telemetry: X,
 }
 
-impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher> FlightStabilizer<T, U, V, W, X> {
-    pub fn new(target_frequency: f64, commander: T, vehicle: U, controller: V, mixer: W, telemetry: X) -> FlightStabilizer<T, U, V, W, X> {
+impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
+    FlightStabilizer<T, U, V, W, X>
+{
+    pub fn new(
+        target_frequency: f64,
+        commander: T,
+        vehicle: U,
+        controller: V,
+        mixer: W,
+        telemetry: X,
+    ) -> FlightStabilizer<T, U, V, W, X> {
         FlightStabilizer {
             target_frequency,
             commander,

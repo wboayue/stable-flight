@@ -8,10 +8,10 @@ pub mod sticks;
 
 use std::time::Duration;
 
-use commanders::{Command};
+use commanders::Command;
 pub use controllers::{AngleController, RateController};
 use math::Vec3;
-pub use stabilizer::{FlightStabilizer};
+pub use stabilizer::FlightStabilizer;
 
 pub trait Stick {
     fn get_controls(&self) -> StickInput;
