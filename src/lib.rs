@@ -90,5 +90,5 @@ pub struct ActuatorCommand {
 }
 
 pub trait Mixer {
-    fn mix_control_outputs(&self, controls: &ControlOutput) -> ActuatorCommand;
+    fn mix(&self, controls: &ControlOutput) -> ActuatorCommand;
 }

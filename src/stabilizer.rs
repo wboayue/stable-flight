@@ -121,7 +121,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             let control_outputs = self.controller.control(&command, &state);
 
             // mix control outputs
-            let actuator_command = self.mixer.mix_control_outputs(&control_outputs);
+            let actuator_command = self.mixer.mix(&control_outputs);
 
             // Command actuators
             self.vehicle.actuate(actuator_command);

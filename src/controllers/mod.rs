@@ -1,4 +1,4 @@
-use super::{ControlOutput, Controller, StickInput, VehicleState};
+use super::{ControlOutput, Controller, VehicleState};
 
 pub mod basic;
 pub mod vtol;

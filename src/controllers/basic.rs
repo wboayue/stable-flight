@@ -37,7 +37,7 @@
 
 use crate::commanders::Command;
 
-use super::{ControlOutput, Controller, StickInput, VehicleState};
+use super::{ControlOutput, Controller, VehicleState};
 
 pub struct Gains {
     pub p: f32,
