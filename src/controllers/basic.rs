@@ -55,15 +55,15 @@ pub struct QuadConfig {
     yaw_gains: Gains,
 }
 
-pub struct QuadController {}
+pub struct BasicController {}
 
-impl Controller for QuadController {
+impl Controller for BasicController {
     fn control(&self, _desired_state: &Command, _state: &VehicleState) -> ControlOutput {
         ControlOutput {}
     }
 }
 
-impl QuadController {
+impl BasicController {
     /// Controls the angular velocity (body rates) of the quadcopter.
     ///
     /// This is the innermost control loop that directly affects motor commands.

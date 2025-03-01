@@ -39,10 +39,10 @@
 //! The loop is designed to run at a fixed rate determined by `target_frequency` (e.g., 200 Hz).
 //! The duration `dt` is computed as the reciprocal of this frequency. After performing all operations,
 //! the loop calculates the remaining time until the next cycle and sleeps accordingly.
-use std::{thread, time::Duration};
-use signal_hook::{iterator::Signals, consts::SIGINT};
+use signal_hook::{consts::SIGINT, iterator::Signals};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::{thread, time::Duration};
 
 use crate::{commanders::Commander, Controller, Mixer, TelemetryPublisher, Vehicle};
 
@@ -74,7 +74,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
         telemetry: X,
     ) -> FlightStabilizer<T, U, V, W, X> {
         let running = Arc::new(AtomicBool::new(true));
-        
+
         // Set up signal handling in a separate thread
         let r = running.clone();
         std::thread::spawn(move || {
