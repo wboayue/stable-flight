@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use realflight_bridge::{Configuration, ControlInputs, RealFlightBridge};
+use log::{error, info, warn};
+use realflight_bridge::{Configuration, ControlInputs, RealFlightBridge, SimulatorState};
 
 use crate::{ActuatorCommand, Vehicle, VehicleState};
 
@@ -46,11 +47,52 @@ impl Vehicle for RealFlightVehicle {
     }
 
     fn actuate(&self, command: ActuatorCommand) {
+        info!("Actuating RealFlight with command: {:?}", command);
+
+        let input = self.map_channels(command);
+
+        info!("Actuating RealFlight with channels: {:?}", input);
+
+        match self.bridge.exchange_data(&input) {
+            Ok(state) => self.update_estimate(state),
+            Err(e) => error!("Failed to exchange data with RealFlight: {}", e),
+        }
+    }
+}
+
+impl RealFlightVehicle {
+    pub fn new(configuration: RealFlightConfiguration) -> RealFlightVehicle {
+        let bridge_configuration = Configuration {
+            simulator_host: configuration.host,
+            connect_timeout: Duration::from_secs(1),
+            ..Default::default()
+        };
+        let bridge = RealFlightBridge::new(&bridge_configuration).expect(&format!(
+            "Failed to connect to RealFlight at {}",
+            bridge_configuration.simulator_host
+        ));
+
+        if let Err(e) = bridge.disable_rc() {
+            warn!("Failed to disable RC: {}", e);
+        }
+
+        if let Err(e) = bridge.reset_aircraft() {
+            warn!("Failed to reset aircraft: {}", e);
+        }
+
+        RealFlightVehicle {
+            bridge,
+            estimated_state: VehicleState::default(),
+            mapping: configuration.mapping,
+        }
+    }
+
+    fn map_channels(&self, command: ActuatorCommand) -> ControlInputs {
         let mut input = ControlInputs::default();
 
         for (i, val) in self.mapping.motors.iter().enumerate() {
             if let Some(value) = val {
-                input.channels[i] = command.motors[*value];
+                input.channels[*value] = command.motors[i];
             }
         }
 
@@ -78,36 +120,15 @@ impl Vehicle for RealFlightVehicle {
             input.channels[i] = command.elevon_right;
         }
 
-        if let Err(e) = self.bridge.exchange_data(&input) {
-            println!("Failed to exchange data: {}", e);
+        for i in 0..12 {
+            input.channels[i] = 0.5;
         }
+        input
     }
-}
 
-impl RealFlightVehicle {
-    pub fn new(configuration: RealFlightConfiguration) -> RealFlightVehicle {
-        let configuration = Configuration {
-            simulator_host: "192.168.4.117:18083".to_string(),
-            ..Default::default()
-        };
-        let bridge = RealFlightBridge::new(&configuration).expect(&format!(
-            "Failed to connect to RealFlight at {}",
-            configuration.simulator_host
-        ));
-
-        if let Err(e) = bridge.reset_aircraft() {
-            eprintln!("Failed to reset aircraft: {}", e);
-        }
-
-        if let Err(e) = bridge.disable_rc() {
-            eprintln!("Failed to disable RC: {}", e);
-        }
-
-        RealFlightVehicle {
-            bridge,
-            estimated_state: VehicleState::default(),
-            mapping: ActuatorMapping::default(),
-        }
+    fn update_estimate(&self, state: SimulatorState) {
+        info!("Received state: {:?}", state);
+        // self.estimated_state = state;
     }
 }
 

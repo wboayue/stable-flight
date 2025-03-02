@@ -5,41 +5,42 @@
 use std::cell::RefCell;
 
 use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
+use signal_hook::low_level::channel;
 
+use super::{Command, Commander, ManualCommand};
 use crate::{Stick, StickInput};
 
-pub struct SpectrumStick {
+pub struct SpectrumCommander {
     gilrs: RefCell<Gilrs>,
     active_gamepad: RefCell<Option<GamepadId>>,
     // control channels
     channels: RefCell<[f32; 6]>,
 }
 
-impl SpectrumStick {
-    pub fn new() -> SpectrumStick {
-        SpectrumStick {
+impl SpectrumCommander {
+    pub fn new() -> SpectrumCommander {
+        SpectrumCommander {
             gilrs: RefCell::new(Gilrs::new().expect("Failed to initialize Gilrs")),
             active_gamepad: RefCell::new(None),
             channels: RefCell::new([0.0; 6]),
         }
     }
-}
 
-impl Default for SpectrumStick {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Stick for SpectrumStick {
-    fn get_controls(&self) -> StickInput {
+    /// Read control channels from Spektrum radio
+    /// 0: throttle (right trigger)
+    /// 1: roll (right stick x)
+    /// 2: pitch (left stick y)
+    /// 3: yaw (left stick x)
+    /// 4: arm (right stick y)
+    /// 5: mode (left trigger)  
+    pub fn read_channels(&self) -> [f32; 6] {
         let mut gilrs = self.gilrs.borrow_mut();
 
         while let Some(Event { id, .. }) = gilrs.next_event() {
             self.active_gamepad.replace(Some(id));
         }
 
-        let mut channels = self.channels.borrow_mut();
+        let mut channels = [0.0; 6];
 
         if let Some(id) = *self.active_gamepad.borrow() {
             let gamepad = gilrs.gamepad(id);
@@ -78,15 +79,45 @@ impl Stick for SpectrumStick {
 
         gilrs.inc();
 
-        let mut scaled_output = [0.0; 6];
+        channels
+    }
+}
 
-        for i in 0..6 {
-            scaled_output[i] = channels[i];
-        }
+impl Default for SpectrumCommander {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-        StickInput {
-            channels: scaled_output,
-        }
+impl Stick for SpectrumCommander {
+    fn get_controls(&self) -> StickInput {
+        let channels = self.read_channels();
+
+        StickInput { channels }
+    }
+}
+
+impl Commander for SpectrumCommander {
+    fn next(&self, _dt: std::time::Duration) -> Command {
+        let channels = self.read_channels();
+
+        let mode = if channels[5] < 0.45 {
+            0
+        } else if channels[5] < 0.55 {
+            1
+        } else {
+            2
+        };
+
+        Command::Manual(ManualCommand {
+            throttle: channels[0],
+            roll: channels[1],
+            pitch: channels[2],
+            yaw: channels[3],
+            arm: channels[4] > 0.5,
+            mode,
+            ..Default::default()
+        })
     }
 }
 

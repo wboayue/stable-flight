@@ -39,10 +39,13 @@
 //! The loop is designed to run at a fixed rate determined by `target_frequency` (e.g., 200 Hz).
 //! The duration `dt` is computed as the reciprocal of this frequency. After performing all operations,
 //! the loop calculates the remaining time until the next cycle and sleeps accordingly.
+
 use signal_hook::{consts::SIGINT, iterator::Signals};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{thread, time::Duration};
+
+use log::info;
 
 use crate::{commanders::Commander, Controller, Mixer, TelemetryPublisher, Vehicle};
 
@@ -80,7 +83,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
         std::thread::spawn(move || {
             let mut signals = Signals::new(&[SIGINT]).unwrap();
             for _ in signals.forever() {
-                println!("Received shutdown signal, initiating graceful shutdown...");
+                info!("Received shutdown signal, initiating graceful shutdown...");
                 r.store(false, Ordering::SeqCst);
                 break;
             }
@@ -98,20 +101,19 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
     }
 
     pub fn run(&self) {
-        println!(
-            "Starting stabilization with target frequency: {} Hz",
-            self.target_frequency
-        );
-
         let dt = Duration::from_secs_f64(1.0 / self.target_frequency);
+
+        info!(
+            "Starting stabilization with target frequency: {} Hz. Delta {:?}",
+            self.target_frequency, dt
+        );
 
         while self.running.load(Ordering::SeqCst) {
             let start = std::time::Instant::now();
-            let end = start + dt;
 
             // Get control inputs
             let command = self.commander.next(dt);
-            println!("{:?} Controls: {:?}", start.elapsed(), command);
+            info!("controls: {:?}", command);
 
             // Get vehicle state
             let state = self.vehicle.estimate_state(dt);
@@ -132,7 +134,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             if start.elapsed() < dt {
                 thread::sleep(dt - start.elapsed());
             } else {
-                println!("Stabilization loop took too long: {:?}", start.elapsed());
+                info!("Stabilization loop took too long: {:?}", start.elapsed());
             }
         }
     }

@@ -3,12 +3,12 @@ pub mod controllers;
 pub mod math;
 pub mod mixers;
 pub mod stabilizer;
-pub mod sticks;
 pub mod vehicles;
 
 use std::time::Duration;
 
 use commanders::Command;
+use log::info;
 use math::Vec3;
 pub use stabilizer::FlightStabilizer;
 
@@ -81,10 +81,11 @@ pub struct ConsoleTelemetryPublisher {
 
 impl TelemetryPublisher for ConsoleTelemetryPublisher {
     fn send_telemetry(&self, telemetry: &VehicleState) {
-        println!("Sending telemetry: {:?}", telemetry);
+        info!("Sending telemetry: {:?}", telemetry);
     }
 }
 
+#[derive(Debug)]
 pub struct ActuatorCommand {
     pub motors: [f32; 8],
     pub rudder: f32,
@@ -98,7 +99,7 @@ pub struct ActuatorCommand {
 impl Default for ActuatorCommand {
     fn default() -> Self {
         ActuatorCommand {
-            motors: [0.0; 8],
+            motors: [0.5; 8],
             rudder: 0.0,
             elevator: 0.0,
             aileron: 0.0,

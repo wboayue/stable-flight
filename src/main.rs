@@ -1,11 +1,17 @@
+use env_logger::Builder;
+use log::{debug, error, info, warn};
+
 use stable_flight_sitl::commanders::script::ScriptCommander;
 use stable_flight_sitl::controllers::basic::BasicController;
 use stable_flight_sitl::mixers::QuadCopterMixer;
 use stable_flight_sitl::vehicles::realflight::{ActuatorMapping, RealFlightConfiguration};
-use stable_flight_sitl::vehicles::RealFlightVehicle;
+use stable_flight_sitl::vehicles::{NullVehicle, RealFlightVehicle};
 use stable_flight_sitl::{ConsoleTelemetryPublisher, FlightStabilizer};
 
 fn main() {
+    // Initialize logger
+    Builder::from_default_env().format_timestamp_millis().init();
+
     // Initializes a ScriptCommander to replay a pre-recorded flight trajectory
     // The "figure_eight.csv" file contains waypoints that define a figure-eight pattern
     //
@@ -25,6 +31,8 @@ fn main() {
             ..Default::default()
         },
     });
+
+    //    let vehicle = NullVehicle {};
 
     let controller = BasicController {};
 

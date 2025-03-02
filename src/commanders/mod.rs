@@ -99,6 +99,7 @@ use std::time::Duration;
 use crate::math::Vec2;
 
 pub mod script;
+pub mod spektrum;
 
 /// Represents an entity that produces flight control commands.
 ///
@@ -205,6 +206,42 @@ pub struct ManualCommand {
 
     /// Controls the aircraft's yaw rotation, ranging from -1.0 (left) to 1.0 (right).
     pub yaw: f32,
+
+    /// Controls the arming state of the aircraft (0.0 for disarmed, 1.0 for armed).
+    /// This can be used to enable/disable the motors or other safety features.
+    pub arm: bool,
+
+    /// Controls the aircraft's flight mode, ranging from 0 to 2.
+    pub mode: u8,
+
+    /// Controls the aircraft's auxiliary channel 0, ranging from -1.0 to 1.0.
+    pub aux0: f32,
+
+    /// Controls the aircraft's auxiliary channel 1, ranging from -1.0 to 1.0.
+    pub aux1: f32,
+
+    /// Controls the aircraft's auxiliary channel 2, ranging from -1.0 to 1.0.
+    pub aux2: f32,
+
+    /// Controls the aircraft's auxiliary channel 3, ranging from -1.0 to 1.0.
+    pub aux3: f32,
+}
+
+impl Default for ManualCommand {
+    fn default() -> Self {
+        ManualCommand {
+            throttle: 0.0,
+            roll: 0.0,
+            pitch: 0.0,
+            yaw: 0.0,
+            arm: false,
+            mode: 0,
+            aux0: 0.0,
+            aux1: 0.0,
+            aux2: 0.0,
+            aux3: 0.0,
+        }
+    }
 }
 
 /// Represents a navigational waypoint for autonomous flight.
