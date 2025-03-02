@@ -2,9 +2,9 @@ pub mod commanders;
 pub mod controllers;
 pub mod math;
 pub mod mixers;
-pub mod realflight;
 pub mod stabilizer;
 pub mod sticks;
+pub mod vehicles;
 
 use std::time::Duration;
 
@@ -24,7 +24,7 @@ pub struct StickInput {
 #[derive(Debug)]
 pub struct ControlOutput {}
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VehicleState {
     pub position: Vec3,
     pub velocity: Vec3,
@@ -86,7 +86,27 @@ impl TelemetryPublisher for ConsoleTelemetryPublisher {
 }
 
 pub struct ActuatorCommand {
-    pub channels: [f32; 6],
+    pub motors: [f32; 8],
+    pub rudder: f32,
+    pub elevator: f32,
+    pub aileron: f32,
+    pub throttle: f32,
+    pub elevon_left: f32,
+    pub elevon_right: f32,
+}
+
+impl Default for ActuatorCommand {
+    fn default() -> Self {
+        ActuatorCommand {
+            motors: [0.0; 8],
+            rudder: 0.0,
+            elevator: 0.0,
+            aileron: 0.0,
+            throttle: 0.0,
+            elevon_left: 0.0,
+            elevon_right: 0.0,
+        }
+    }
 }
 
 pub trait Mixer {
