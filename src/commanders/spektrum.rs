@@ -5,7 +5,6 @@
 use std::cell::RefCell;
 
 use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
-use signal_hook::low_level::channel;
 
 use super::{Command, Commander, ManualCommand};
 use crate::{Stick, StickInput};

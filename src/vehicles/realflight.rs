@@ -6,6 +6,7 @@ use realflight_bridge::{Configuration, ControlInputs, RealFlightBridge, Simulato
 use crate::{ActuatorCommand, Vehicle, VehicleState};
 
 /// Mapping of actuator commands to RealFlight channels
+#[derive(Default)]
 pub struct ActuatorMapping {
     pub motors: [Option<usize>; 8],
     pub rudder: Option<usize>,
@@ -14,20 +15,6 @@ pub struct ActuatorMapping {
     pub throttle: Option<usize>,
     pub elevon_left: Option<usize>,
     pub elevon_right: Option<usize>,
-}
-
-impl Default for ActuatorMapping {
-    fn default() -> Self {
-        ActuatorMapping {
-            motors: [None, None, None, None, None, None, None, None],
-            rudder: None,
-            elevator: None,
-            aileron: None,
-            throttle: None,
-            elevon_left: None,
-            elevon_right: None,
-        }
-    }
 }
 
 pub struct RealFlightConfiguration {
@@ -67,10 +54,12 @@ impl RealFlightVehicle {
             connect_timeout: Duration::from_secs(1),
             ..Default::default()
         };
-        let bridge = RealFlightBridge::new(&bridge_configuration).expect(&format!(
-            "Failed to connect to RealFlight at {}",
-            bridge_configuration.simulator_host
-        ));
+        let bridge = RealFlightBridge::new(&bridge_configuration).unwrap_or_else(|_| {
+            panic!(
+                "Failed to connect to RealFlight at {}",
+                bridge_configuration.simulator_host
+            )
+        });
 
         if let Err(e) = bridge.disable_rc() {
             warn!("Failed to disable RC: {}", e);

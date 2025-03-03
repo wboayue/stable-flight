@@ -81,7 +81,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
         // Set up signal handling in a separate thread
         let r = running.clone();
         std::thread::spawn(move || {
-            let mut signals = Signals::new(&[SIGINT]).unwrap();
+            let mut signals = Signals::new([SIGINT]).unwrap();
             for _ in signals.forever() {
                 info!("Received shutdown signal, initiating graceful shutdown...");
                 r.store(false, Ordering::SeqCst);
