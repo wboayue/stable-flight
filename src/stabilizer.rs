@@ -100,7 +100,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
         }
     }
 
-    pub fn run(&self) {
+    pub fn run(&mut self) {
         let dt = Duration::from_secs_f64(1.0 / self.target_frequency);
 
         info!(
@@ -129,7 +129,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             self.vehicle.actuate(actuator_command);
 
             // Send telemetry
-            self.telemetry.send_telemetry(&state);
+            self.telemetry.send_telemetry(dt, &state);
 
             if start.elapsed() < dt {
                 thread::sleep(dt - start.elapsed());

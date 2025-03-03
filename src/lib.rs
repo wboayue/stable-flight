@@ -4,6 +4,7 @@ pub mod math;
 pub mod mixers;
 pub mod stabilizer;
 pub mod vehicles;
+pub mod telemetry;
 
 use std::time::Duration;
 
@@ -72,7 +73,7 @@ pub trait Controller {
 }
 
 pub trait TelemetryPublisher {
-    fn send_telemetry(&self, telemetry: &VehicleState);
+    fn send_telemetry(&mut self, dt: Duration, telemetry: &VehicleState);
 }
 
 pub struct ConsoleTelemetryPublisher {
@@ -80,7 +81,7 @@ pub struct ConsoleTelemetryPublisher {
 }
 
 impl TelemetryPublisher for ConsoleTelemetryPublisher {
-    fn send_telemetry(&self, telemetry: &VehicleState) {
+    fn send_telemetry(&mut self, dt: Duration, telemetry: &VehicleState) {
         info!("Sending telemetry: {:?}", telemetry);
     }
 }

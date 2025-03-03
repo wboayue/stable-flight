@@ -75,7 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             type_mask: PositionTargetTypemask::POSITION_TARGET_TYPEMASK_X_IGNORE
                       | PositionTargetTypemask::POSITION_TARGET_TYPEMASK_Y_IGNORE 
                       | PositionTargetTypemask::POSITION_TARGET_TYPEMASK_Z_IGNORE,
-            x: 15.0,    // Desired North position
+            x: x + 5.0,    // Desired North position
             y: 7.0,     // Desired East position
             z: -1.5,    // Desired Down position
             vx: 0.0,
