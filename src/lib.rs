@@ -3,8 +3,8 @@ pub mod controllers;
 pub mod math;
 pub mod mixers;
 pub mod stabilizer;
-pub mod vehicles;
 pub mod telemetry;
+pub mod vehicles;
 
 use std::time::Duration;
 

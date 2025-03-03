@@ -33,14 +33,14 @@ fn main() {
     //     },
     // });
 
-       let vehicle = NullVehicle {};
+    let vehicle = NullVehicle {};
 
     let controller = BasicController {};
 
     let mixer = QuadCopterMixer {};
 
     let telemetry_configuration = MavlinkConfiguration {};
-    
+
     let telemetry = MavlinkPublisher::new(telemetry_configuration);
 
     let target_frequency = 2.0;

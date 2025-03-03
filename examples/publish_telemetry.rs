@@ -5,9 +5,8 @@ use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublis
 use stable_flight_sitl::{TelemetryPublisher, VehicleState}; // Import common MAVLink messages
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-
     let telemetry_configuration = MavlinkConfiguration {};
-    
+
     let mut publisher = MavlinkPublisher::new(telemetry_configuration);
 
     // Simulated flight loop

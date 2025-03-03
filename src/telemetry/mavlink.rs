@@ -28,11 +28,12 @@ pub struct MavlinkPublisher {
 impl MavlinkPublisher {
     pub fn new(config: MavlinkConfiguration) -> Self {
         // Establish MAVLink connection (UDP example)
-        let mut connection = mavlink::connect("udpout:127.0.0.1:14550").expect("Failed to connect to MAVLink");
-    
+        let mut connection =
+            mavlink::connect("udpout:127.0.0.1:14550").expect("Failed to connect to MAVLink");
+
         // Set protocol version
         connection.set_protocol_version(MavlinkVersion::V2);
-    
+
         MavlinkPublisher {
             config,
             connection,
@@ -42,7 +43,7 @@ impl MavlinkPublisher {
             heartbeat_bucket: Duration::from_secs(0),
             global_position_interval: Duration::from_secs(1),
             global_position_bucket: Duration::from_secs(0),
-            local_position_interval: Duration::from_secs_f32(1.0/5.0),
+            local_position_interval: Duration::from_secs_f32(1.0 / 5.0),
             local_position_bucket: Duration::from_secs(0),
             attitude_interval: Duration::from_secs(1),
             attitude_bucket: Duration::from_secs(0),
@@ -58,7 +59,9 @@ impl MavlinkPublisher {
 
         self.sequence = self.sequence.wrapping_add(1);
 
-        self.connection.send(&header, message).expect("Failed to send message");
+        self.connection
+            .send(&header, message)
+            .expect("Failed to send message");
     }
 
     pub fn send_heartbeat(&mut self) {
@@ -81,12 +84,12 @@ impl MavlinkPublisher {
     pub fn send_local_position(&mut self, estimated_state: &VehicleState) {
         let local_position_msg = LOCAL_POSITION_NED_DATA {
             time_boot_ms: self.time_boot_ms(),
-            x: estimated_state.position.x,    // North position (meters)
-            y: estimated_state.position.y,     // East position (meters)
-            z: estimated_state.position.z,    // Down position (meters)
-            vx: estimated_state.velocity.x,    // North velocity (m/s)
-            vy: estimated_state.velocity.y,    // East velocity (m/s)
-            vz: estimated_state.velocity.z,   // Down velocity (m/s)
+            x: estimated_state.position.x,  // North position (meters)
+            y: estimated_state.position.y,  // East position (meters)
+            z: estimated_state.position.z,  // Down position (meters)
+            vx: estimated_state.velocity.x, // North velocity (m/s)
+            vy: estimated_state.velocity.y, // East velocity (m/s)
+            vz: estimated_state.velocity.z, // Down velocity (m/s)
         };
 
         self.send_message(&MavMessage::LOCAL_POSITION_NED(local_position_msg));
@@ -96,14 +99,14 @@ impl MavlinkPublisher {
         // Send GPS position at 5 Hz (every 200ms)
         let gps_msg = GLOBAL_POSITION_INT_DATA {
             time_boot_ms: self.time_boot_ms(),
-            lat: 371234567,    // 37.1234567° N
-            lon: -1221234567,  // 122.1234567° W
-            alt: 100000,       // 100m above sea level (mm)
+            lat: 371234567,      // 37.1234567° N
+            lon: -1221234567,    // 122.1234567° W
+            alt: 100000,         // 100m above sea level (mm)
             relative_alt: 50000, // 50m above home (mm)
-            vx: 100,          // 1 m/s north (cm/s)
-            vy: 50,           // 0.5 m/s east (cm/s)
-            vz: 10,           // 0.1 m/s down (cm/s)
-            hdg: 9000,        // 90° heading (degrees * 100)
+            vx: 100,             // 1 m/s north (cm/s)
+            vy: 50,              // 0.5 m/s east (cm/s)
+            vz: 10,              // 0.1 m/s down (cm/s)
+            hdg: 9000,           // 90° heading (degrees * 100)
         };
         self.send_message(&MavMessage::GLOBAL_POSITION_INT(gps_msg));
     }
@@ -121,7 +124,6 @@ impl MavlinkPublisher {
 
         self.send_message(&MavMessage::ATTITUDE(attitude_msg));
     }
-
 }
 
 impl TelemetryPublisher for MavlinkPublisher {
