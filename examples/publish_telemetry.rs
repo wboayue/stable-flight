@@ -23,6 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let heartbeat_interval = 1000; // 1 Hz
 
     let mut x = 10.5;
+    let mut z = -2.1;
 
     loop {
         // Update sequence number
@@ -47,12 +48,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         
         x += 0.1;
+        z -= 0.1;
+
         // 1. Publish Estimated Position and Velocity (LOCAL_POSITION_NED)
         let local_position_msg = LOCAL_POSITION_NED_DATA {
             time_boot_ms: get_time_ms(),
             x,    // North position (meters)
             y: 5.2,     // East position (meters)
-            z: -2.1,    // Down position (meters)
+            z,    // Down position (meters)
             vx: 1.0,    // North velocity (m/s)
             vy: 0.5,    // East velocity (m/s)
             vz: -0.1,   // Down velocity (m/s)
@@ -106,6 +109,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ..header
         }, &mavlink::common::MavMessage::ATTITUDE(attitude_msg))?;
 
+        // Send GPS position at 5 Hz (every 200ms)
+        let gps_msg = GLOBAL_POSITION_INT_DATA {
+            time_boot_ms: current_time,
+            lat: 371234567,    // 37.1234567° N
+            lon: -1221234567,  // 122.1234567° W
+            alt: 100000,       // 100m above sea level (mm)
+            relative_alt: 50000, // 50m above home (mm)
+            vx: 100,          // 1 m/s north (cm/s)
+            vy: 50,           // 0.5 m/s east (cm/s)
+            vz: 10,           // 0.1 m/s down (cm/s)
+            hdg: 9000,        // 90° heading (degrees * 100)
+        };
+        connection.send(
+            &MavHeader { sequence, ..header },
+            &MavMessage::GLOBAL_POSITION_INT(gps_msg),
+        )?;        
         // Sleep for 100ms (10Hz update rate)
         thread::sleep(Duration::from_millis(100));
     }
