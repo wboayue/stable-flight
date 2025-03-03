@@ -1,132 +1,27 @@
-use mavlink::{MavlinkVersion, MavHeader, MavConnection};
-use mavlink::common::*; // Import common MAVLink messages
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
+use stable_flight_sitl::{TelemetryPublisher, VehicleState}; // Import common MAVLink messages
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Establish MAVLink connection (UDP example)
-    let mut connection = mavlink::connect("udpout:127.0.0.1:14550")?;
+
+    let telemetry_configuration = MavlinkConfiguration {};
     
-    // Set protocol version
-    connection.set_protocol_version(MavlinkVersion::V2);
-    
-    // System and component IDs
-    let header = MavHeader {
-        system_id: 1,    // Your system ID
-        component_id: 1, // Your component ID
-        sequence: 0,
-    };
+    let mut publisher = MavlinkPublisher::new(telemetry_configuration);
 
     // Simulated flight loop
-    let mut sequence = 0;
-    let mut last_heartbeat = 0;
-    let heartbeat_interval = 1000; // 1 Hz
 
-    let mut x = 10.5;
-    let mut z = -2.1;
+    let dt = Duration::from_millis(100); // 10Hz update rate
 
     loop {
-        // Update sequence number
-        sequence = (sequence + 1) % 255;
+        let start = Instant::now();
 
-        let current_time = get_time_ms();
+        let state = VehicleState::default(); // Simulated vehicle state
+        publisher.send_telemetry(dt, &state);
 
-        // Send heartbeat at 1 Hz
-        if current_time - last_heartbeat >= heartbeat_interval {
-            let heartbeat = HEARTBEAT_DATA {
-                custom_mode: 0,
-                mavtype: MavType::MAV_TYPE_QUADROTOR,
-                autopilot: MavAutopilot::MAV_AUTOPILOT_GENERIC,
-                base_mode: MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-                system_status: MavState::MAV_STATE_ACTIVE,
-                mavlink_version: 3,
-            };
-
-            connection.send(&header, &MavMessage::HEARTBEAT(heartbeat))?;
-
-            last_heartbeat = current_time;
-        }
-        
-        x += 0.1;
-        z -= 0.1;
-
-        // 1. Publish Estimated Position and Velocity (LOCAL_POSITION_NED)
-        let local_position_msg = LOCAL_POSITION_NED_DATA {
-            time_boot_ms: get_time_ms(),
-            x,    // North position (meters)
-            y: 5.2,     // East position (meters)
-            z,    // Down position (meters)
-            vx: 1.0,    // North velocity (m/s)
-            vy: 0.5,    // East velocity (m/s)
-            vz: -0.1,   // Down velocity (m/s)
-        };
-        
-        connection.send(&MavHeader {
-            sequence,
-            ..header
-        }, &mavlink::common::MavMessage::LOCAL_POSITION_NED(local_position_msg))?;
-
-        // 2. Publish Desired Position (SET_POSITION_TARGET_LOCAL_NED)
-        let set_position_msg = SET_POSITION_TARGET_LOCAL_NED_DATA {
-            time_boot_ms: get_time_ms(),
-            target_system: 1,
-            target_component: 1,
-            coordinate_frame: MavFrame::MAV_FRAME_LOCAL_NED,
-            type_mask: PositionTargetTypemask::POSITION_TARGET_TYPEMASK_X_IGNORE
-                      | PositionTargetTypemask::POSITION_TARGET_TYPEMASK_Y_IGNORE 
-                      | PositionTargetTypemask::POSITION_TARGET_TYPEMASK_Z_IGNORE,
-            x: x + 5.0,    // Desired North position
-            y: 7.0,     // Desired East position
-            z: -1.5,    // Desired Down position
-            vx: 0.0,
-            vy: 0.0,
-            vz: 0.0,
-            afx: 0.0,
-            afy: 0.0,
-            afz: 0.0,
-            yaw: 0.0,
-            yaw_rate: 0.0,
-        };
-        
-        connection.send(&MavHeader {
-            sequence,
-            ..header
-        }, &mavlink::common::MavMessage::SET_POSITION_TARGET_LOCAL_NED(set_position_msg))?;
-
-        // 3. Publish Attitude (ATTITUDE)
-        let attitude_msg = ATTITUDE_DATA {
-            time_boot_ms: get_time_ms(),
-            roll: 0.1,      // Roll angle (radians)
-            pitch: 0.05,    // Pitch angle (radians)
-            yaw: 0.2,       // Yaw angle (radians)
-            rollspeed: 0.01, // Roll angular speed (rad/s)
-            pitchspeed: 0.005, // Pitch angular speed (rad/s)
-            yawspeed: 0.02,   // Yaw angular speed (rad/s)
-        };
-        
-        connection.send(&MavHeader {
-            sequence,
-            ..header
-        }, &mavlink::common::MavMessage::ATTITUDE(attitude_msg))?;
-
-        // Send GPS position at 5 Hz (every 200ms)
-        let gps_msg = GLOBAL_POSITION_INT_DATA {
-            time_boot_ms: current_time,
-            lat: 371234567,    // 37.1234567° N
-            lon: -1221234567,  // 122.1234567° W
-            alt: 100000,       // 100m above sea level (mm)
-            relative_alt: 50000, // 50m above home (mm)
-            vx: 100,          // 1 m/s north (cm/s)
-            vy: 50,           // 0.5 m/s east (cm/s)
-            vz: 10,           // 0.1 m/s down (cm/s)
-            hdg: 9000,        // 90° heading (degrees * 100)
-        };
-        connection.send(
-            &MavHeader { sequence, ..header },
-            &MavMessage::GLOBAL_POSITION_INT(gps_msg),
-        )?;        
         // Sleep for 100ms (10Hz update rate)
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(dt - start.elapsed());
     }
 }
 
