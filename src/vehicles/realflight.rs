@@ -1,9 +1,9 @@
 use std::time::Duration;
 
 use log::{error, info, warn};
-use realflight_bridge::{Configuration, ControlInputs, RealFlightBridge, SimulatorState};
+use realflight_bridge::{ControlInputs, RealFlightRemoteBridge, SimulatorState};
 
-use crate::{ActuatorCommand, Vehicle, VehicleState};
+use crate::{math::Vec3, ActuatorCommand, Vehicle, VehicleState};
 
 /// Mapping of actuator commands to RealFlight channels
 #[derive(Default)]
@@ -23,7 +23,7 @@ pub struct RealFlightConfiguration {
 }
 
 pub struct RealFlightVehicle {
-    bridge: RealFlightBridge,
+    bridge: RealFlightRemoteBridge,
     estimated_state: VehicleState,
     mapping: ActuatorMapping,
 }
@@ -33,7 +33,7 @@ impl Vehicle for RealFlightVehicle {
         self.estimated_state.clone()
     }
 
-    fn actuate(&self, command: ActuatorCommand) {
+    fn actuate(&mut self, command: ActuatorCommand) {
         info!("Actuating RealFlight with command: {:?}", command);
 
         let input = self.map_channels(command);
@@ -49,16 +49,8 @@ impl Vehicle for RealFlightVehicle {
 
 impl RealFlightVehicle {
     pub fn new(configuration: RealFlightConfiguration) -> RealFlightVehicle {
-        let bridge_configuration = Configuration {
-            simulator_host: configuration.host,
-            connect_timeout: Duration::from_secs(1),
-            ..Default::default()
-        };
-        let bridge = RealFlightBridge::new(&bridge_configuration).unwrap_or_else(|_| {
-            panic!(
-                "Failed to connect to RealFlight at {}",
-                bridge_configuration.simulator_host
-            )
+        let mut bridge = RealFlightRemoteBridge::new(&configuration.host).unwrap_or_else(|_| {
+            panic!("Failed to connect to RealFlight at {}", configuration.host)
         });
 
         if let Err(e) = bridge.disable_rc() {
@@ -110,14 +102,31 @@ impl RealFlightVehicle {
         }
 
         for i in 0..12 {
-            input.channels[i] = 0.5;
+            input.channels[i] = 0.8;
         }
         input
     }
 
-    fn update_estimate(&self, state: SimulatorState) {
+    fn update_estimate(&mut self, state: SimulatorState) {
         info!("Received state: {:?}", state);
-        // self.estimated_state = state;
+
+        self.estimated_state.position = Vec3 {
+            x: state.aircraft_position_x,
+            y: state.aircraft_position_y,
+            z: state.altitude_asl,
+        };
+
+        self.estimated_state.velocity = Vec3 {
+            x: state.velocity_world_u,
+            y: state.velocity_world_v,
+            z: state.velocity_world_w,
+        };
+
+        self.estimated_state.acceleration = Vec3 {
+            x: state.acceleration_world_ax,
+            y: state.acceleration_world_ay,
+            z: state.acceleration_world_az,
+        };
     }
 }
 

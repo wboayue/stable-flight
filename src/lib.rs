@@ -8,10 +8,15 @@ pub mod vehicles;
 
 use std::time::Duration;
 
-use commanders::Command;
 use log::info;
+use uom::si::angular_velocity::degree_per_second;
+use uom::si::f32::*;
+use uom::si::length::meter;
+
+use commanders::Command;
 use math::Vec3;
 pub use stabilizer::FlightStabilizer;
+use uom::si::velocity::meter_per_second;
 
 pub trait Stick {
     fn get_controls(&self) -> StickInput;
@@ -27,10 +32,11 @@ pub struct ControlOutput {}
 
 #[derive(Debug, Clone)]
 pub struct VehicleState {
-    pub position: Vec3,
-    pub velocity: Vec3,
-    pub orientation: Vec3,
-    pub angular_velocity: Vec3,
+    pub position: Vec3<Length>,
+    pub velocity: Vec3<Velocity>,
+    pub acceleration: Vec3<Acceleration>,
+    pub orientation: Vec3<f32>,
+    pub angular_velocity: Vec3<AngularVelocity>,
     // flight mode
     // heading
     // gps
@@ -39,33 +45,18 @@ pub struct VehicleState {
 impl Default for VehicleState {
     fn default() -> Self {
         VehicleState {
-            position: Vec3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            velocity: Vec3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            orientation: Vec3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
-            angular_velocity: Vec3 {
-                x: 0.0,
-                y: 0.0,
-                z: 0.0,
-            },
+            position: Vec3::default(),
+            velocity: Vec3::default(),
+            orientation: Vec3::default(),
+            acceleration: Vec3::default(),
+            angular_velocity: Vec3::default(),
         }
     }
 }
 
 pub trait Vehicle {
     fn estimate_state(&self, dt: Duration) -> VehicleState;
-    fn actuate(&self, actuator_command: ActuatorCommand);
+    fn actuate(&mut self, actuator_command: ActuatorCommand);
 }
 
 pub trait Controller {

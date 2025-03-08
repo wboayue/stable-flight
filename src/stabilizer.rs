@@ -43,6 +43,7 @@
 use signal_hook::{consts::SIGINT, iterator::Signals};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use std::{thread, time::Duration};
 
 use log::info;
@@ -101,22 +102,27 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
     }
 
     pub fn run(&mut self) {
-        let dt = Duration::from_secs_f64(1.0 / self.target_frequency);
+        let target_duration = Duration::from_secs_f64(1.0 / self.target_frequency);
 
-        info!(
+        println!(
             "Starting stabilization with target frequency: {} Hz. Delta {:?}",
-            self.target_frequency, dt
+            self.target_frequency, target_duration
         );
 
-        while self.running.load(Ordering::SeqCst) {
-            let start = std::time::Instant::now();
+        // Start time for the loop
+        let mut next_time = Instant::now();
 
+        // Optional: For tracking actual frequency
+        let mut iteration_count = 0;
+        let start_time = Instant::now();
+
+        while self.running.load(Ordering::SeqCst) {
             // Get control inputs
-            let command = self.commander.next(dt);
+            let command = self.commander.next(target_duration);
             info!("controls: {:?}", command);
 
             // Get vehicle state
-            let state = self.vehicle.estimate_state(dt);
+            let state = self.vehicle.estimate_state(target_duration);
 
             // Compute control outputs (angles, rates, etc.)
             // pass command and state to controller
@@ -129,12 +135,28 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             self.vehicle.actuate(actuator_command);
 
             // Send telemetry
-            self.telemetry.send_telemetry(dt, &state);
+            self.telemetry.send_telemetry(target_duration, &state);
 
-            if start.elapsed() < dt {
-                thread::sleep(dt - start.elapsed());
-            } else {
-                info!("Stabilization loop took too long: {:?}", start.elapsed());
+            // Increment iteration counter
+            iteration_count += 1;
+
+            // Calculate when the next iteration should start
+            next_time += target_duration;
+
+            // Calculate how much time we need to sleep to hit the target
+            let sleep_time = next_time
+                .checked_duration_since(Instant::now())
+                .unwrap_or(Duration::ZERO);
+
+            // Sleep to maintain the target frequency
+            thread::sleep(sleep_time);
+
+            // Optional: Print actual frequency every 200 iterations
+            if iteration_count % 200 == 0 {
+                let elapsed = start_time.elapsed().as_secs_f64();
+                let actual_freq = iteration_count as f64 / elapsed;
+                println!("Actual frequency: {:.2} Hz", actual_freq);
+                println!("State: {:?}", state);
             }
         }
     }

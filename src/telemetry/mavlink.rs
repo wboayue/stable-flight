@@ -84,12 +84,12 @@ impl MavlinkPublisher {
     pub fn send_local_position(&mut self, estimated_state: &VehicleState) {
         let local_position_msg = LOCAL_POSITION_NED_DATA {
             time_boot_ms: self.time_boot_ms(),
-            x: estimated_state.position.x,  // North position (meters)
-            y: estimated_state.position.y,  // East position (meters)
-            z: estimated_state.position.z,  // Down position (meters)
-            vx: estimated_state.velocity.x, // North velocity (m/s)
-            vy: estimated_state.velocity.y, // East velocity (m/s)
-            vz: estimated_state.velocity.z, // Down velocity (m/s)
+            x: estimated_state.position.x.value, // North position (meters)
+            y: estimated_state.position.y.value, // East position (meters)
+            z: estimated_state.position.z.value, // Down position (meters)
+            vx: estimated_state.velocity.x.value, // North velocity (m/s)
+            vy: estimated_state.velocity.y.value, // East velocity (m/s)
+            vz: estimated_state.velocity.z.value, // Down velocity (m/s)
         };
 
         self.send_message(&MavMessage::LOCAL_POSITION_NED(local_position_msg));
@@ -117,9 +117,9 @@ impl MavlinkPublisher {
             roll: telemetry.orientation.x,
             pitch: telemetry.orientation.y,
             yaw: telemetry.orientation.z,
-            rollspeed: telemetry.angular_velocity.x,
-            pitchspeed: telemetry.angular_velocity.y,
-            yawspeed: telemetry.angular_velocity.z,
+            rollspeed: telemetry.angular_velocity.x.value,
+            pitchspeed: telemetry.angular_velocity.y.value,
+            yawspeed: telemetry.angular_velocity.z.value,
         };
 
         self.send_message(&MavMessage::ATTITUDE(attitude_msg));

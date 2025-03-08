@@ -25,15 +25,15 @@ fn main() {
     // This mapping connects to a QuadCopterX model in RealFlight.
     // Motors are mapped to the first 4 channels (0-3) matching the RealFlight QuadCopterX model
     // Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX
-    // let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-    //     host: "192.168.4.117:18083".to_string(),
-    //     mapping: ActuatorMapping {
-    //         motors: [Some(0), Some(1), Some(2), Some(3), None, None, None, None],
-    //         ..Default::default()
-    //     },
-    // });
+    let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+        host: "10.211.55.3:8080".to_string(),
+        mapping: ActuatorMapping {
+            motors: [Some(0), Some(1), Some(2), Some(3), None, None, None, None],
+            ..Default::default()
+        },
+    });
 
-    let vehicle = NullVehicle {};
+    // let vehicle = NullVehicle {};
 
     let controller = BasicController {};
 
@@ -43,7 +43,7 @@ fn main() {
 
     let telemetry = MavlinkPublisher::new(telemetry_configuration);
 
-    let target_frequency = 2.0;
+    let target_frequency = 300.0;
 
     let mut stabilizer = FlightStabilizer::new(
         target_frequency,
