@@ -130,7 +130,7 @@ impl BasicController {
         let cmd = self.rate_controller(dt, desired_rates, current_rates);
 
         ControlOutput {
-            thrust: rate_command.throttle,
+            thrust: rate_command.throttle, // fit to curve
             moment: cmd,
         }
     }
@@ -243,27 +243,27 @@ impl BasicController {
     ) -> f32 {
         const GRAVITY: f32 = 9.81;
         const MAX_ACCEL: f32 = 20.0;
-    
+
         assert!(dt.as_secs_f32() > 0.0, "Time step must be positive");
-    
+
         let r = attitude.rotation_matrix_i_wrt_b();
         let gains = &self.config.altitude_gains;
-//        let thrust_curve_exponent = self.config.thrust_curve_exponent; // e.g., 2.0 for quadratic
+        //        let thrust_curve_exponent = self.config.thrust_curve_exponent; // e.g., 2.0 for quadratic
         let thrust_curve_exponent = 2.0; // e.g., 2.0 for quadratic
-    
+
         let altitude_error = altitude_cmd - altitude;
         self.integrated_altitude_error += altitude_error * dt.as_secs_f32();
         self.integrated_altitude_error = self.integrated_altitude_error.clamp(-100.0, 100.0);
-    
+
         let proportional_term = gains.p * altitude_error;
         let derivative_term = gains.d * (velocity_cmd - velocity);
         let integral_term = gains.i * self.integrated_altitude_error;
         let mut acceleration_cmd = proportional_term + derivative_term + integral_term;
-    
+
         let body_z_alignment = r[[2, 2]].max(0.01);
         acceleration_cmd = (acceleration_cmd - GRAVITY) / body_z_alignment;
         acceleration_cmd = acceleration_cmd.clamp(-MAX_ACCEL, MAX_ACCEL);
-    
+
         // Map acceleration_cmd such that:
         // - acceleration_cmd = -GRAVITY (free fall) -> linear_thrust = 0
         // - acceleration_cmd = 0 (hover) -> linear_thrust = 0.5
