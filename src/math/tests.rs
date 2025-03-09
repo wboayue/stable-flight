@@ -1,6 +1,4 @@
-use super::Mat3x3;
-
-mod vec3_tests {
+mod vec3 {
     use super::super::{vec3, Vec3};
 
     #[test]
@@ -123,15 +121,19 @@ mod vec3_tests {
     }
 }
 
-#[test]
-fn test_mat_3x3_identity() {
-    let m = Mat3x3::identity();
-    assert_eq!(m.data, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
-}
+mod mat3x3 {
+    use super::super::Mat3x3;
 
-#[test]
-fn test_mat_3x3_new() {
-    // row-major order
-    let m = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
-    assert_eq!(m.data, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+    #[test]
+    fn test_identity() {
+        let m = Mat3x3::identity();
+        assert_eq!(m.data, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn test_new() {
+        // row-major order
+        let m = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+        assert_eq!(m.data, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+    }
 }

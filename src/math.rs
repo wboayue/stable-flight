@@ -95,7 +95,7 @@ pub struct Vec2<T: Default> {
 
 // Helper function to create Vec3 instances easily
 pub fn vec2<T: Default>(x: T, y: T) -> Vec2<T> {
-    Vec2 { x, y}
+    Vec2 { x, y }
 }
 
 pub struct Quaternion {
