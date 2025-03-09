@@ -210,6 +210,10 @@ pub struct ManualCommand {
     /// Controls the aircraft's yaw rotation, ranging from -1.0 (left) to 1.0 (right).
     pub yaw: f32,
 
+    pub roll_rate: f32,
+    pub pitch_rate: f32,
+    pub yaw_rate: f32,
+
     /// Controls the arming state of the aircraft (0.0 for disarmed, 1.0 for armed).
     /// This can be used to enable/disable the motors or other safety features.
     pub arm: bool,
@@ -237,6 +241,9 @@ impl Default for ManualCommand {
             roll: 0.0,
             pitch: 0.0,
             yaw: 0.0,
+            roll_rate: 0.0,
+            pitch_rate: 0.0,
+            yaw_rate: 0.0,
             arm: false,
             mode: 0,
             aux0: 0.0,

@@ -24,7 +24,7 @@ pub struct StickInput {
     pub channels: [f32; 6],
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct ControlOutput {
     pub thrust: f32,
     pub moment: Vec3<AngularVelocity>,

@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Index, Mul, Neg, Sub};
 #[cfg(test)]
 mod tests;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec3<T> {
     pub x: T,
     pub y: T,
@@ -87,7 +87,7 @@ impl<T: Default> Default for Vec3<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Vec2<T: Default> {
     pub x: T,
     pub y: T,
