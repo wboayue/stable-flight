@@ -101,6 +101,8 @@ use crate::math::Vec2;
 
 pub mod script;
 pub mod spektrum;
+#[cfg(test)]
+mod tests;
 
 /// Represents an entity that produces flight control commands.
 ///
