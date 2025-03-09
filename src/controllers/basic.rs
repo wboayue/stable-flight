@@ -42,7 +42,7 @@ use uom::si::velocity;
 
 use crate::{
     commanders::Command,
-    math::{Quaternion, Vec3},
+    math::{vec2, Quaternion, Vec2, Vec3},
 };
 
 use super::{ControlOutput, Controller, VehicleState};
@@ -57,7 +57,7 @@ pub struct Gains {
 }
 
 #[derive(Default)]
-pub struct QuadConfig {
+pub struct BasicControllerConfig {
     rate_gains: Gains,
     rate_ff: [f32; 3],
     angle_gains: Gains,
@@ -69,10 +69,14 @@ pub struct QuadConfig {
 
 #[derive(Default)]
 pub struct BasicController {
-    config: QuadConfig,
+    config: BasicControllerConfig,
     previous_rate_error: Vec3<f32>,
     integrated_rate_error: Vec3<f32>,
     integrated_altitude_error: f32,
+    previous_yaw_error: f32,
+    integrated_yaw_error: f32,
+    previous_pos_error: Vec2<f32>,
+    integrated_pos_error: Vec2<f32>,
 }
 
 impl Controller for BasicController {
@@ -199,7 +203,10 @@ impl BasicController {
         // Convert acceleration to force (F = m*a)
         // Negative sign because in NED, an upward force (negative Z direction)
         // is needed to counteract gravity and achieve a downward acceleration reduction
-        -acceleration_cmd
+        -acceleration_cmd;
+
+        let max_thrust = 40.0;
+        acceleration_cmd.clamp(-max_thrust, max_thrust)
     }
 
     /// Controls the lateral (X-Y) position of the quadcopter.
@@ -221,8 +228,24 @@ impl BasicController {
     /// # Returns
     ///
     /// * `Vector2` - Desired [roll, pitch] angles in radians
-    pub fn lateral_controller() {
-        println!("Lateral controller");
+    pub fn lateral_controller(
+        &mut self,
+        dt: Duration,
+        desired_position: Vec2<f32>,
+        current_position: Vec2<f32>,
+        current_velocity: Vec2<f32>,
+    ) -> Vec2<f32> {
+        let gains = &self.config.lateral_gains;
+        let error = desired_position - current_position;
+        let error_derivative = (error - self.previous_pos_error) / dt.as_secs_f32();
+        self.integrated_pos_error = self.integrated_pos_error + dt.as_secs_f32() * error;
+        let accel_cmd =
+            gains.p * error + gains.i * self.integrated_pos_error + gains.d * (-current_velocity);
+        self.previous_pos_error = error;
+        // Convert acceleration to roll/pitch angles (simplified)
+        let roll_cmd = accel_cmd.y / G;
+        let pitch_cmd = -accel_cmd.x / G;
+        vec2(roll_cmd, pitch_cmd)
     }
 
     /// Controls the yaw (heading) of the quadcopter.
@@ -240,7 +263,18 @@ impl BasicController {
     /// # Returns
     ///
     /// * `f32` - Desired yaw rate (r) in rad/s
-    pub fn yaw_controller() {
-        println!("Yaw controller");
+    pub fn yaw_controller(&mut self, dt: Duration, desired_yaw: f32, current_yaw: f32) -> f32 {
+        let gains = &self.config.yaw_gains;
+        let error = angle_diff(desired_yaw, current_yaw); // Use a helper to handle angle wrapping
+        let error_derivative = (error - self.previous_yaw_error) / dt.as_secs_f32();
+        self.integrated_yaw_error = self.integrated_yaw_error + dt.as_secs_f32() * error;
+        let yaw_rate =
+            gains.p * error + gains.i * self.integrated_yaw_error + gains.d * error_derivative;
+        self.previous_yaw_error = error;
+        yaw_rate
     }
+}
+
+fn angle_diff(desired_yaw: f32, current_yaw: f32) -> f32 {
+    0.0
 }
