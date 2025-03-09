@@ -208,7 +208,7 @@ fn test_yaw_controller_angle_wrapping() {
 fn test_manual_control() {
     let mut controller = setup_controller();
     let dt = Duration::from_millis(10);
-    let manual_command = ManualCommand {
+    let manual_command = RateCommand {
         roll_rate: 0.0,
         pitch_rate: 0.0,
         yaw_rate: 0.0,
@@ -217,7 +217,7 @@ fn test_manual_control() {
     };
     let state = VehicleState::default();
 
-    let output = controller.manual_control(dt, &manual_command, &state);
+    let output = controller.rate_control(dt, &manual_command, &state);
     assert_eq!(
         output,
         ControlOutput::default(),

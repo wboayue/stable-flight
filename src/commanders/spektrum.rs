@@ -108,7 +108,7 @@ impl Commander for SpectrumCommander {
             2
         };
 
-        Command::Manual(ManualCommand {
+        Command::Attitude(ManualCommand {
             throttle: channels[0],
             roll: channels[1],
             pitch: channels[2],

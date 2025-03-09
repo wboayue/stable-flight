@@ -64,7 +64,7 @@
 //! ```rust
 //! use stable_flight_sitl::commanders::{Command, ManualCommand};
 //!
-//! let manual_cmd = Command::Manual(ManualCommand {
+//! let manual_cmd = Command::Attitude(ManualCommand {
 //!     throttle: 0.75,  // 75% power
 //!     roll: 0.1,       // Slight right bank
 //!     pitch: -0.05,    // Slight nose down
@@ -150,7 +150,7 @@ pub trait Commander {
 /// ```
 /// use stable_flight_sitl::commanders::{Command, ManualCommand};
 ///
-/// let manual_cmd = Command::Manual(ManualCommand {
+/// let manual_cmd = Command::Attitude(ManualCommand {
 ///     throttle: 0.75,  // 75% throttle
 ///     roll: 0.1,       // Slight right bank
 ///     pitch: -0.05,    // Slight nose down
@@ -178,7 +178,13 @@ pub enum Command {
     ///
     /// These values typically range from -1.0 to 1.0 (or 0.0 to 1.0 for throttle)
     /// and directly influence the control surfaces and power systems of the aircraft.
-    Manual(ManualCommand),
+    Attitude(ManualCommand),
+
+    /// Direct manual control inputs for the aircraft rotational rate.
+    ///
+    /// These values typically range from -1.0 to 1.0 (or 0.0 to 1.0 for throttle)
+    /// and directly influence the rotational rate of the aircraft.
+    Rate(RateCommand),
 
     /// Autonomous navigation command specifying a destination point.
     ///
@@ -212,10 +218,6 @@ pub struct ManualCommand {
     /// Controls the aircraft's yaw rotation, ranging from -1.0 (left) to 1.0 (right).
     pub yaw: f32,
 
-    pub roll_rate: f32,
-    pub pitch_rate: f32,
-    pub yaw_rate: f32,
-
     /// Controls the arming state of the aircraft (0.0 for disarmed, 1.0 for armed).
     /// This can be used to enable/disable the motors or other safety features.
     pub arm: bool,
@@ -223,17 +225,6 @@ pub struct ManualCommand {
     /// Controls the aircraft's flight mode, ranging from 0 to 2.
     pub mode: u8,
 
-    /// Controls the aircraft's auxiliary channel 0, ranging from -1.0 to 1.0.
-    pub aux0: f32,
-
-    /// Controls the aircraft's auxiliary channel 1, ranging from -1.0 to 1.0.
-    pub aux1: f32,
-
-    /// Controls the aircraft's auxiliary channel 2, ranging from -1.0 to 1.0.
-    pub aux2: f32,
-
-    /// Controls the aircraft's auxiliary channel 3, ranging from -1.0 to 1.0.
-    pub aux3: f32,
 }
 
 impl Default for ManualCommand {
@@ -243,15 +234,47 @@ impl Default for ManualCommand {
             roll: 0.0,
             pitch: 0.0,
             yaw: 0.0,
+            arm: false,
+            mode: 0,
+        }
+    }
+}
+
+/// Represents direct manual control inputs of rotational rate of aircraft.
+///
+/// These values typically correspond to pilot inputs from control devices
+/// like joysticks, yokes, or keyboard/mouse combinations.
+#[derive(Debug)]
+pub struct RateCommand {
+    /// Controls the engine power output, ranging from 0.0 (idle) to 1.0 (maximum).
+    pub throttle: f32,
+
+    /// Controls the aircraft's roll/bank angle, ranging from -1.0 (left) to 1.0 (right).
+    pub roll_rate: f32,
+
+    /// Controls the aircraft's pitch angle, ranging from -1.0 (down) to 1.0 (up).
+    pub pitch_rate: f32,
+
+    /// Controls the aircraft's yaw rotation, ranging from -1.0 (left) to 1.0 (right).
+    pub yaw_rate: f32,
+
+    /// Controls the arming state of the aircraft (0.0 for disarmed, 1.0 for armed).
+    /// This can be used to enable/disable the motors or other safety features.
+    pub arm: bool,
+
+    /// Controls the aircraft's flight mode, ranging from 0 to 2.
+    pub mode: u8,
+}
+
+impl Default for RateCommand {
+    fn default() -> Self {
+        RateCommand {
+            throttle: 0.0,
             roll_rate: 0.0,
             pitch_rate: 0.0,
             yaw_rate: 0.0,
             arm: false,
             mode: 0,
-            aux0: 0.0,
-            aux1: 0.0,
-            aux2: 0.0,
-            aux3: 0.0,
         }
     }
 }

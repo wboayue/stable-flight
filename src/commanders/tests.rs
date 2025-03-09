@@ -1,4 +1,3 @@
-
 use super::*;
 use std::time::Duration;
 
@@ -19,18 +18,13 @@ impl Commander for MockCommander {
         let secs = dt.as_secs();
         if secs % 2 == 0 {
             // Manual command
-            Command::Manual(ManualCommand {
+            Command::Attitude(ManualCommand {
                 throttle: 0.5,
                 roll: 0.2,
                 pitch: -0.1,
                 yaw: 0.0,
                 arm: true,
                 mode: 1,
-                aux0: 0.0,
-                aux1: 0.0,
-                aux2: 0.0,
-                aux3: 0.0,
-                ..Default::default()
             })
         } else {
             // Waypoint command
@@ -71,26 +65,6 @@ fn assert_manual_command_valid(cmd: &ManualCommand) {
         cmd.yaw
     );
     assert!(cmd.mode <= 2, "Mode out of range: {}", cmd.mode);
-    assert!(
-        cmd.aux0 >= -1.0 && cmd.aux0 <= 1.0,
-        "Aux0 out of range: {}",
-        cmd.aux0
-    );
-    assert!(
-        cmd.aux1 >= -1.0 && cmd.aux1 <= 1.0,
-        "Aux1 out of range: {}",
-        cmd.aux1
-    );
-    assert!(
-        cmd.aux2 >= -1.0 && cmd.aux2 <= 1.0,
-        "Aux2 out of range: {}",
-        cmd.aux2
-    );
-    assert!(
-        cmd.aux3 >= -1.0 && cmd.aux3 <= 1.0,
-        "Aux3 out of range: {}",
-        cmd.aux3
-    );
 }
 
 // Helper function to check if a WaypointCommand is within reasonable bounds
@@ -121,17 +95,13 @@ fn test_manual_command_generation() {
     let command = commander.next(dt);
 
     match command {
-        Command::Manual(manual_cmd) => {
+        Command::Attitude(manual_cmd) => {
             assert_eq!(manual_cmd.throttle, 0.5);
             assert_eq!(manual_cmd.roll, 0.2);
             assert_eq!(manual_cmd.pitch, -0.1);
             assert_eq!(manual_cmd.yaw, 0.0);
             assert_eq!(manual_cmd.arm, true);
             assert_eq!(manual_cmd.mode, 1);
-            assert_eq!(manual_cmd.aux0, 0.0);
-            assert_eq!(manual_cmd.aux1, 0.0);
-            assert_eq!(manual_cmd.aux2, 0.0);
-            assert_eq!(manual_cmd.aux3, 0.0);
             assert_manual_command_valid(&manual_cmd);
         }
         _ => panic!("Expected a ManualCommand"),
@@ -168,11 +138,6 @@ fn test_manual_command_boundary_values() {
         yaw: -1.0,     // Max left yaw
         arm: true,
         mode: 2,    // Max mode
-        aux0: 1.0,  // Max aux0
-        aux1: -1.0, // Min aux1
-        aux2: 0.0,  // Middle aux2
-        aux3: 0.0,  // Middle aux3
-        ..Default::default()
     };
 
     assert_manual_command_valid(&manual_cmd);
@@ -204,9 +169,9 @@ fn test_command_alternation() {
     let cmd2 = commander.next(dt2);
     let cmd3 = commander.next(dt3);
 
-    assert!(matches!(cmd1, Command::Manual(_)));
+    assert!(matches!(cmd1, Command::Rate(_)));
     assert!(matches!(cmd2, Command::Waypoint(_)));
-    assert!(matches!(cmd3, Command::Manual(_)));
+    assert!(matches!(cmd3, Command::Rate(_)));
 }
 
 #[test]
@@ -218,10 +183,6 @@ fn test_manual_command_default() {
     assert_eq!(default_cmd.yaw, 0.0);
     assert_eq!(default_cmd.arm, false);
     assert_eq!(default_cmd.mode, 0);
-    assert_eq!(default_cmd.aux0, 0.0);
-    assert_eq!(default_cmd.aux1, 0.0);
-    assert_eq!(default_cmd.aux2, 0.0);
-    assert_eq!(default_cmd.aux3, 0.0);
     assert_manual_command_valid(&default_cmd);
 }
 

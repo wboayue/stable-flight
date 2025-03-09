@@ -39,7 +39,7 @@ use std::f32::consts::PI;
 use std::time::Duration;
 
 use crate::{
-    commanders::{Command, ManualCommand, WaypointCommand},
+    commanders::{Command, ManualCommand, RateCommand, WaypointCommand},
     math::{vec2, Quaternion, Vec2, Vec3},
 };
 
@@ -84,23 +84,35 @@ impl Controller for BasicController {
     fn control(
         &mut self,
         dt: Duration,
-        desired_state: &Command,
-        state: &VehicleState,
+        command: &Command,
+        current_state: &VehicleState,
     ) -> ControlOutput {
-        match desired_state {
-            Command::Manual(manual_command) => self.manual_control(dt, manual_command, state),
+        match command {
+            Command::Attitude(attitude_command) => {
+                self.attitude_control(dt, attitude_command, current_state)
+            }
+            Command::Rate(rate_command) => self.rate_control(dt, rate_command, current_state),
             Command::Waypoint(waypoint_command) => {
-                self.waypoint_control(dt, waypoint_command, state)
+                self.waypoint_control(dt, waypoint_command, current_state)
             }
         }
     }
 }
 
 impl BasicController {
-    fn manual_control(
+    fn attitude_control(
         &mut self,
         dt: Duration,
         desired_state: &ManualCommand,
+        state: &VehicleState,
+    ) -> ControlOutput {
+        ControlOutput::default()
+    }
+
+    fn rate_control(
+        &mut self,
+        dt: Duration,
+        desired_state: &RateCommand,
         state: &VehicleState,
     ) -> ControlOutput {
         ControlOutput::default()
