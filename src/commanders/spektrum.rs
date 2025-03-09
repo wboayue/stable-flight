@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
 
 use super::{AttitudeCommand, Command, Commander};
-use crate::{Stick, StickInput};
+use crate::{Stick, StickInput, VehicleState};
 
 pub struct SpectrumCommander {
     gilrs: RefCell<Gilrs>,
@@ -97,7 +97,7 @@ impl Stick for SpectrumCommander {
 }
 
 impl Commander for SpectrumCommander {
-    fn next(&self, _dt: std::time::Duration) -> Command {
+    fn next(&self, _dt: std::time::Duration, _current_state: &VehicleState) -> Command {
         let channels = self.read_channels();
 
         let mode = if channels[5] < 0.45 {

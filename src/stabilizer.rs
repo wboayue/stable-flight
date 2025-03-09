@@ -48,6 +48,7 @@ use std::{thread, time::Duration};
 
 use log::info;
 
+use crate::VehicleState;
 use crate::{commanders::Commander, Controller, Mixer, TelemetryPublisher, Vehicle};
 
 pub struct FlightStabilizer<
@@ -115,14 +116,15 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
         // Optional: For tracking actual frequency
         let mut iteration_count = 0;
         let start_time = Instant::now();
+        let mut state = self.vehicle.estimate_state(target_duration);
 
         while self.running.load(Ordering::SeqCst) {
             // Get control inputs
-            let command = self.commander.next(target_duration);
+            let command = self.commander.next(target_duration, &state);
             info!("controls: {:?}", command);
 
             // Get vehicle state
-            let state = self.vehicle.estimate_state(target_duration);
+            state = self.vehicle.estimate_state(target_duration);
 
             // Compute control outputs (angles, rates, etc.)
             // pass command and state to controller

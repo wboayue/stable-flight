@@ -13,7 +13,7 @@ impl MockCommander {
 }
 
 impl Commander for MockCommander {
-    fn next(&self, dt: Duration) -> Command {
+    fn next(&self, dt: Duration, _current_state: &VehicleState) -> Command {
         // Alternate between Manual and Waypoint commands based on toggle
         let secs = dt.as_secs();
         if secs % 2 == 0 {
@@ -92,7 +92,9 @@ fn assert_waypoint_command_valid(cmd: &WaypointCommand) {
 fn test_manual_command_generation() {
     let commander = MockCommander::new();
     let dt = Duration::from_secs(0); // Should produce a ManualCommand
-    let command = commander.next(dt);
+    let current_state = VehicleState::default();
+
+    let command = commander.next(dt, &current_state);
 
     match command {
         Command::Attitude(manual_cmd) => {
@@ -112,7 +114,9 @@ fn test_manual_command_generation() {
 fn test_waypoint_command_generation() {
     let commander = MockCommander::new();
     let dt = Duration::from_secs(1); // Should produce a WaypointCommand
-    let command = commander.next(dt);
+    let current_state = VehicleState::default();
+
+    let command = commander.next(dt, &current_state);
 
     match command {
         Command::Waypoint(waypoint_cmd) => {
@@ -165,9 +169,11 @@ fn test_command_alternation() {
     let dt2 = Duration::from_secs(1); // Should produce WaypointCommand
     let dt3 = Duration::from_secs(2); // Should produce ManualCommand again
 
-    let cmd1 = commander.next(dt1);
-    let cmd2 = commander.next(dt2);
-    let cmd3 = commander.next(dt3);
+    let current_state = VehicleState::default();
+
+    let cmd1 = commander.next(dt1, &current_state);
+    let cmd2 = commander.next(dt2, &current_state);
+    let cmd3 = commander.next(dt3, &current_state);
 
     assert!(matches!(cmd1, Command::Attitude(_)));
     assert!(matches!(cmd2, Command::Waypoint(_)));
