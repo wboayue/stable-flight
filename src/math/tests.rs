@@ -310,7 +310,7 @@ mod quaternion {
     fn test_to_euler() {
         // Test Euler angle extraction for a 90-degree yaw
         let q = Quaternion::from_euler(0.0, 0.0, PI / 2.0);
-        let euler = q.to_euler(); // (roll, pitch, yaw)
+        let euler = q.to_euler_rpy(); // (roll, pitch, yaw)
         assert_float_eq(euler.x, 0.0, 1e-6); // roll
         assert_float_eq(euler.y, 0.0, 1e-6); // pitch
         assert_float_eq(euler.z, PI / 2.0, 1e-6); // yaw
