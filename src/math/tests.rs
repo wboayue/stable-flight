@@ -123,17 +123,110 @@ mod vec3 {
 
 mod mat3x3 {
     use super::super::Mat3x3;
+    use std::f32::EPSILON;
 
-    #[test]
-    fn test_identity() {
-        let m = Mat3x3::identity();
-        assert_eq!(m.data, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
+    // Helper function to compare floating-point numbers with an epsilon
+    fn assert_float_eq(a: f32, b: f32, epsilon: f32) {
+        assert!(
+            (a - b).abs() <= epsilon,
+            "Expected {} to be approximately equal to {}, but difference is greater than epsilon {}",
+            a, b, epsilon
+        );
     }
 
     #[test]
     fn test_new() {
-        // row-major order
-        let m = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
-        assert_eq!(m.data, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+        let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        let mat = Mat3x3::new(data);
+        assert_eq!(mat.data, data);
+    }
+
+    #[test]
+    fn test_zeros() {
+        let mat = Mat3x3::zeros();
+        let expected = [0.0; 9];
+        assert_eq!(mat.data, expected);
+    }
+
+    #[test]
+    fn test_identity() {
+        let mat = Mat3x3::identity();
+        let expected = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        assert_eq!(mat.data, expected);
+    }
+
+    #[test]
+    fn test_index() {
+        let mat = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+        assert_eq!(mat[[0, 0]], 1.0);
+        assert_eq!(mat[[0, 1]], 2.0);
+        assert_eq!(mat[[0, 2]], 3.0);
+        assert_eq!(mat[[1, 0]], 4.0);
+        assert_eq!(mat[[1, 1]], 5.0);
+        assert_eq!(mat[[1, 2]], 6.0);
+        assert_eq!(mat[[2, 0]], 7.0);
+        assert_eq!(mat[[2, 1]], 8.0);
+        assert_eq!(mat[[2, 2]], 9.0);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_index_out_of_bounds() {
+        let mat = Mat3x3::new([0.0; 9]);
+        let _ = mat[[3, 0]]; // Should panic
+    }
+
+    #[test]
+    fn test_transpose() {
+        let mat = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+        let transposed = mat.transpose();
+        let expected = [1.0, 4.0, 7.0, 2.0, 5.0, 8.0, 3.0, 6.0, 9.0];
+        assert_eq!(transposed.data, expected);
+
+        // Test that transposing twice gives the original matrix
+        let double_transposed = transposed.transpose();
+        assert_eq!(double_transposed.data, mat.data);
+    }
+
+    #[test]
+    fn test_determinant() {
+        // Test with identity matrix (determinant should be 1.0)
+        let mat = Mat3x3::identity();
+        assert_float_eq(mat.determinant(), 1.0, EPSILON);
+
+        // Test with a known matrix
+        // Matrix: [1, 2, 3]
+        //         [4, 5, 6]
+        //         [7, 8, 9]
+        // Determinant = 1*(5*9 - 6*8) - 2*(4*9 - 6*7) + 3*(4*8 - 5*7) = 0
+        let mat = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+        assert_float_eq(mat.determinant(), 0.0, EPSILON);
+
+        // Test with another matrix
+        // Matrix: [2, 0, 0]
+        //         [0, 3, 0]
+        //         [0, 0, 4]
+        // Determinant = 2*(3*4 - 0*0) - 0*(0*4 - 0*0) + 0*(0*0 - 3*0) = 24
+        let mat = Mat3x3::new([2.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 4.0]);
+        assert_float_eq(mat.determinant(), 24.0, EPSILON);
+    }
+
+    #[test]
+    fn test_trace() {
+        // Test with identity matrix (trace should be 3.0)
+        let mat = Mat3x3::identity();
+        assert_float_eq(mat.trace(), 3.0, EPSILON);
+
+        // Test with a known matrix
+        // Matrix: [1, 2, 3]
+        //         [4, 5, 6]
+        //         [7, 8, 9]
+        // Trace = 1 + 5 + 9 = 15
+        let mat = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+        assert_float_eq(mat.trace(), 15.0, EPSILON);
+
+        // Test with zeros (trace should be 0.0)
+        let mat = Mat3x3::zeros();
+        assert_float_eq(mat.trace(), 0.0, EPSILON);
     }
 }
