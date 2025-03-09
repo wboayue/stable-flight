@@ -159,9 +159,9 @@ mod tests;
 ///
 /// Implementing a simple `Commander` that always returns a constant `Attitude` command:
 /// ```
-/// use stable_flight_sitl::commanders::{Commander, Command, AttitudeCommand};
 /// use std::time::Duration;
-/// use stable_flight_sitl::state::VehicleState;
+/// use stable_flight_sitl::VehicleState;
+/// use stable_flight_sitl::commanders::{Commander, Command, AttitudeCommand};
 ///
 /// struct ConstantAttitudeCommander;
 ///

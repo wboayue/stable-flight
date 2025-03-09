@@ -27,10 +27,10 @@ pub struct StickInput {
 #[derive(Debug, Default, PartialEq)]
 pub struct ControlOutput {
     pub thrust: f32,
-    pub moment: Vec3<AngularVelocity>,
+    pub moment: Vec3<f32>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct VehicleState {
     pub position: Vec3<Length>,
     pub velocity: Vec3<Velocity>,
@@ -40,18 +40,6 @@ pub struct VehicleState {
     // flight mode
     // heading
     // gps
-}
-
-impl Default for VehicleState {
-    fn default() -> Self {
-        VehicleState {
-            position: Vec3::default(),
-            velocity: Vec3::default(),
-            orientation: Vec3::default(),
-            acceleration: Vec3::default(),
-            angular_velocity: Vec3::default(),
-        }
-    }
 }
 
 pub trait Vehicle {

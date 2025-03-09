@@ -115,7 +115,6 @@ impl Commander for SpectrumCommander {
             yaw: channels[3],
             arm: channels[4] > 0.5,
             mode,
-            ..Default::default()
         })
     }
 }

@@ -40,7 +40,7 @@ use std::time::Duration;
 
 use crate::{
     commanders::{AttitudeCommand, Command, RateCommand, WaypointCommand},
-    math::{vec2, Quaternion, Vec2, Vec3},
+    math::{vec2, vec3, Quaternion, Vec2, Vec3},
 };
 
 use super::{ControlOutput, Controller, VehicleState};
@@ -112,10 +112,27 @@ impl BasicController {
     fn rate_control(
         &mut self,
         dt: Duration,
-        desired_state: &RateCommand,
-        state: &VehicleState,
+        rate_command: &RateCommand,
+        current_state: &VehicleState,
     ) -> ControlOutput {
-        ControlOutput::default()
+        let desired_rates = vec3(
+            rate_command.roll_rate,
+            rate_command.pitch_rate,
+            rate_command.yaw_rate,
+        );
+
+        let current_rates = vec3(
+            current_state.angular_velocity.x.value,
+            current_state.angular_velocity.y.value,
+            current_state.angular_velocity.z.value,
+        );
+
+        let cmd = self.rate_controller(dt, desired_rates, current_rates);
+
+        ControlOutput {
+            thrust: rate_command.throttle,
+            moment: cmd,
+        }
     }
 
     fn waypoint_control(
@@ -194,22 +211,27 @@ impl BasicController {
         rates
     }
 
-    /// Controls the altitude of the quadcopter.
+    /// Controls the altitude of a vehicle by computing a relative thrust command.
     ///
     /// This outer loop maintains the desired altitude by calculating an appropriate
-    /// thrust command. It can operate in position, velocity, or acceleration control modes.
-    /// Enables altitude hold.
+    /// thrust command, normalized between 0 and 1, where:
+    /// - 0.0: No thrust (vehicle falls).
+    /// - 0.5: Nominal hover thrust (approximately balances gravity).
+    /// - 1.0: Maximum thrust (maximum upward acceleration).
+    /// It can operate in position, velocity, or acceleration control modes and enables altitude hold.
     ///
     /// # Arguments
     ///
-    /// * `desired_altitude` - Desired altitude in meters
-    /// * `current_altitude` - Current measured altitude in meters
-    /// * `current_velocity` - Current vertical velocity in m/s
-    /// * `dt` - Time step in seconds
+    /// * `altitude_cmd` - Desired altitude in meters
+    /// * `velocity_cmd` - Desired vertical velocity in m/s
+    /// * `altitude` - Current measured altitude in meters
+    /// * `velocity` - Current vertical velocity in m/s
+    /// * `attitude` - Current attitude as a Quaternion
+    /// * `dt` - Time step as a Duration
     ///
     /// # Returns
     ///
-    /// * `f32` - Collective thrust command in Newtons
+    /// * `f32` - Relative thrust command (0.0 to 1.0)
     pub fn altitude_controller(
         &mut self,
         altitude_cmd: f32,
@@ -219,47 +241,47 @@ impl BasicController {
         attitude: Quaternion,
         dt: Duration,
     ) -> f32 {
-        let R = attitude.rotation_matrix_i_wrt_b();
-        let thrust = 0.0;
+        const GRAVITY: f32 = 9.81;
+        const MAX_ACCEL: f32 = 20.0;
+    
+        assert!(dt.as_secs_f32() > 0.0, "Time step must be positive");
+    
+        let r = attitude.rotation_matrix_i_wrt_b();
         let gains = &self.config.altitude_gains;
-
-        // Calculate position error (desired - actual)
-        // In NED frame, positive Z is downward, so posZCmd > posZ means we're too high
+//        let thrust_curve_exponent = self.config.thrust_curve_exponent; // e.g., 2.0 for quadratic
+        let thrust_curve_exponent = 2.0; // e.g., 2.0 for quadratic
+    
         let altitude_error = altitude_cmd - altitude;
-
-        // Update the integrated error term for the PID controller
-        // This accumulates position error over time to eliminate steady-state errors
         self.integrated_altitude_error += altitude_error * dt.as_secs_f32();
-
-        // Implement a PID controller for altitude
-        let proportional_term = gains.p * altitude_error; // P term: proportional to position error
-        let derivative_term = gains.d * (velocity_cmd - velocity); // D term: helps with damping
-        let integral_term = gains.i * self.integrated_altitude_error; // I term: eliminates steady-state error
-
-        // Combine all terms to get the desired acceleration
+        self.integrated_altitude_error = self.integrated_altitude_error.clamp(-100.0, 100.0);
+    
+        let proportional_term = gains.p * altitude_error;
+        let derivative_term = gains.d * (velocity_cmd - velocity);
+        let integral_term = gains.i * self.integrated_altitude_error;
         let mut acceleration_cmd = proportional_term + derivative_term + integral_term;
+    
+        let body_z_alignment = r[[2, 2]].max(0.01);
+        acceleration_cmd = (acceleration_cmd - GRAVITY) / body_z_alignment;
+        acceleration_cmd = acceleration_cmd.clamp(-MAX_ACCEL, MAX_ACCEL);
+    
+        // Map acceleration_cmd such that:
+        // - acceleration_cmd = -GRAVITY (free fall) -> linear_thrust = 0
+        // - acceleration_cmd = 0 (hover) -> linear_thrust = 0.5
+        // - acceleration_cmd = MAX_ACCEL (max upward) -> linear_thrust = 1
+        let accel_range_lower = GRAVITY; // From -GRAVITY to 0
+        let accel_range_upper = MAX_ACCEL; // From 0 to MAX_ACCEL
+        let linear_thrust = if acceleration_cmd < 0.0 {
+            // Map [-GRAVITY, 0] to [0, 0.5]
+            0.5 * (acceleration_cmd + GRAVITY) / GRAVITY
+        } else {
+            // Map [0, MAX_ACCEL] to [0.5, 1]
+            0.5 + 0.5 * acceleration_cmd / MAX_ACCEL
+        };
+        let linear_thrust = linear_thrust.clamp(0.0, 1.0);
 
-        // Adjust for gravity and drone tilt
-        // bodyZAlignment represents how much of the thrust vector is aligned with the Z axis
-        // When the drone is perfectly level, bodyZAlignment = 1
-        // When tilted, bodyZAlignment < 1, so we need more thrust to achieve the same vertical acceleration
-        let body_z_alignment = R[[2, 2]]; // R(2,2) is the z-component of the body's z-axis in inertial frame
-
-        // We subtract gravity because in NED, gravity acts in the positive Z direction
-        // Then divide by the alignment factor to compensate for tilt
-        acceleration_cmd = (acceleration_cmd - G) / body_z_alignment;
-
-        // Constrain the commanded acceleration to respect maximum ascent/descent rates
-        // Note: In NED, negative acceleration is upward (ascent), positive is downward (descent)
-        //   accelZCmd = CONSTRAIN(accelZCmd, -maxAscentRate / dt, maxDescentRate / dt);
-
-        // Convert acceleration to force (F = m*a)
-        // Negative sign because in NED, an upward force (negative Z direction)
-        // is needed to counteract gravity and achieve a downward acceleration reduction
-        -acceleration_cmd;
-
-        let max_thrust = 40.0;
-        acceleration_cmd.clamp(-max_thrust, max_thrust)
+        // Apply nonlinear thrust curve with tunable exponent
+        let nonlinear_thrust = linear_thrust.powf(thrust_curve_exponent);
+        nonlinear_thrust.clamp(0.0, 1.0)
     }
 
     /// Controls the lateral (X-Y) position of the quadcopter.
@@ -320,7 +342,7 @@ impl BasicController {
         let gains = &self.config.yaw_gains;
         let error = angle_diff(desired_yaw, current_yaw); // Use a helper to handle angle wrapping
         let error_derivative = (error - self.previous_yaw_error) / dt.as_secs_f32();
-        self.integrated_yaw_error = self.integrated_yaw_error + dt.as_secs_f32() * error;
+        self.integrated_yaw_error += dt.as_secs_f32() * error;
         let yaw_rate =
             gains.p * error + gains.i * self.integrated_yaw_error + gains.d * error_derivative;
         self.previous_yaw_error = error;
