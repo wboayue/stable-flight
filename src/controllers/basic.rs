@@ -36,6 +36,7 @@
 //! - Selective Enabling: Can enable altitude control while keeping manual lateral control
 
 use core::error;
+use std::f32::consts::PI;
 use std::time::Duration;
 
 use uom::si::velocity;
@@ -275,6 +276,18 @@ impl BasicController {
     }
 }
 
+// Normalize the yaw error to the range [-π, π]
+// This handles the circular nature of angles, ensuring we always rotate the shortest direction
+// For example, if yawCmd = 350° and yaw = 10°, the error should be -20° (not 340°)
+//
+// How the normalization works:
+// 1. Add π to shift the range to [-π, π] → [0, 2π]
+// 2. Use fmodf to wrap to [0, 2π] range
+// 3. Subtract π to shift back to [-π, π] range
 fn angle_diff(desired_yaw: f32, current_yaw: f32) -> f32 {
-    0.0
+    let mut yaw_error = desired_yaw - current_yaw;
+    yaw_error += PI;
+    yaw_error = yaw_error.rem_euclid(2.0 * PI);
+    yaw_error -= PI;
+    yaw_error
 }
