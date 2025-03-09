@@ -62,25 +62,26 @@
 //! Creating and using a manual command:
 //!
 //! ```rust
-//! use flight_control::{Command, ManualCommand};
+//! use stable_flight_sitl::commanders::{Command, ManualCommand};
 //!
 //! let manual_cmd = Command::Manual(ManualCommand {
 //!     throttle: 0.75,  // 75% power
 //!     roll: 0.1,       // Slight right bank
 //!     pitch: -0.05,    // Slight nose down
 //!     yaw: 0.0,        // No yaw input
+//!     ..Default::default()
 //! });
 //! ```
 //!
 //! Creating and using a waypoint command:
 //!
 //! ```rust
-//! use flight_control::{Command, WaypointCommand};
-//! use flight_control::math::Vec2;
+//! use stable_flight_sitl::commanders::{Command, WaypointCommand};
+//! use stable_flight_sitl::math::{Vec2, vec2};
 //!
 //! let waypoint_cmd = Command::Waypoint(WaypointCommand {
-//!     position: Vec2::new(1000.0, 2000.0),  // Target position
-//!     velocity: Some(Vec2::new(15.0, 0.0)),  // Optional target velocity
+//!     position: vec2(1000.0, 2000.0),  // Target position
+//!     velocity: Some(vec2(15.0, 0.0)),  // Optional target velocity
 //!     altitude: 500.0,                       // Target altitude in meters
 //!     cruise_speed: 25.0,                    // Desired speed in m/s
 //!     roll: Some(0.05),                      // Optional roll angle in radians
@@ -145,26 +146,28 @@ pub trait Commander {
 ///
 /// Creating a manual command:
 /// ```
-/// use flight_control::{Command, ManualCommand};
+/// use stable_flight_sitl::commanders::{Command, ManualCommand};
 ///
 /// let manual_cmd = Command::Manual(ManualCommand {
 ///     throttle: 0.75,  // 75% throttle
 ///     roll: 0.1,       // Slight right bank
 ///     pitch: -0.05,    // Slight nose down
 ///     yaw: 0.0,        // No yaw input
+///     ..Default::default()
 /// });
 /// ```
 ///
 /// Creating a waypoint command:
 /// ```
-/// use flight_control::{Command, WaypointCommand};
-/// use flight_control::math::Vec2;
+/// use stable_flight_sitl::commanders::{Command, WaypointCommand};
+/// use stable_flight_sitl::math::{Vec2, vec2};
 ///
 /// let waypoint_cmd = Command::Waypoint(WaypointCommand {
-///     position: Vec2::new(1000.0, 2000.0),  // Target position in world coordinates
-///     velocity: Some(Vec2::new(15.0, 0.0)),  // Optional desired velocity at target
+///     position: vec2(1000.0, 2000.0),  // Target position in world coordinates
+///     velocity: Some(vec2(15.0, 0.0)),  // Optional desired velocity at target
 ///     altitude: 500.0,                       // Target altitude in meters
 ///     cruise_speed: 25.0,                    // Desired speed during transit
+///     roll: Some(0.05),                      // Optional roll angle in radians
 /// });
 /// ```
 #[derive(Debug)]
@@ -249,17 +252,17 @@ impl Default for ManualCommand {
 /// A waypoint command instructs the aircraft to navigate to a specific position
 /// at a given altitude, optionally with a specified velocity to be achieved at
 /// the target position.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct WaypointCommand {
     /// The target position in 2D space (X,Y coordinates).
-    pub position: Vec2,
+    pub position: Vec2<f32>,
 
     /// Optional desired velocity vector at the waypoint.
     ///
     /// When provided, the aircraft will attempt to arrive at the position
     /// with this velocity. This is useful for creating smooth paths through
     /// multiple waypoints.
-    pub velocity: Option<Vec2>,
+    pub velocity: Option<Vec2<f32>>,
 
     /// Target altitude in meters.
     pub altitude: f32,

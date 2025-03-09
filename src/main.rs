@@ -35,7 +35,7 @@ fn main() {
 
     // let vehicle = NullVehicle {};
 
-    let controller = BasicController {};
+    let controller = BasicController::default();
 
     let mixer = QuadCopterMixer {};
 

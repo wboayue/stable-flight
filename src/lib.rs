@@ -27,8 +27,11 @@ pub struct StickInput {
     pub channels: [f32; 6],
 }
 
-#[derive(Debug)]
-pub struct ControlOutput {}
+#[derive(Debug, Default)]
+pub struct ControlOutput {
+    pub thrust: f32,
+    pub moment: Vec3<AngularVelocity>,
+}
 
 #[derive(Debug, Clone)]
 pub struct VehicleState {

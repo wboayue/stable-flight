@@ -35,16 +35,28 @@
 //! - Full Control Stack: Automatic position and altitude holding
 //! - Selective Enabling: Can enable altitude control while keeping manual lateral control
 
-use crate::commanders::Command;
+use core::error;
+use std::time::Duration;
+
+use uom::si::velocity;
+
+use crate::{
+    commanders::Command,
+    math::{Quaternion, Vec3},
+};
 
 use super::{ControlOutput, Controller, VehicleState};
 
+const G: f32 = 9.81; // acceleration due to gravity (m/s²)
+
+#[derive(Default)]
 pub struct Gains {
     pub p: f32,
     pub i: f32,
     pub d: f32,
 }
 
+#[derive(Default)]
 pub struct QuadConfig {
     rate_gains: Gains,
     rate_ff: [f32; 3],
@@ -55,11 +67,17 @@ pub struct QuadConfig {
     yaw_gains: Gains,
 }
 
-pub struct BasicController {}
+#[derive(Default)]
+pub struct BasicController {
+    config: QuadConfig,
+    previous_rate_error: Vec3<f32>,
+    integrated_rate_error: Vec3<f32>,
+    integrated_altitude_error: f32,
+}
 
 impl Controller for BasicController {
     fn control(&self, _desired_state: &Command, _state: &VehicleState) -> ControlOutput {
-        ControlOutput {}
+        ControlOutput::default()
     }
 }
 
@@ -79,8 +97,25 @@ impl BasicController {
     /// # Returns
     ///
     /// * `Vector3` - Moment commands [roll_moment, pitch_moment, yaw_moment] in N·m
-    pub fn body_rate_controller() {
-        println!("Rate controller");
+    pub fn rate_controller(
+        &mut self,
+        dt: Duration,
+        desired_rates: Vec3<f32>,
+        current_rates: Vec3<f32>,
+    ) -> Vec3<f32> {
+        let gains = &self.config.rate_gains;
+
+        let error = desired_rates - current_rates;
+        let error_derivative = (error - self.previous_rate_error) / dt.as_secs_f32();
+
+        self.integrated_rate_error = self.integrated_rate_error + dt.as_secs_f32() * error;
+
+        let moment =
+            gains.p * error + gains.i * self.integrated_rate_error + gains.d * error_derivative;
+
+        self.previous_rate_error = error;
+
+        moment
     }
 
     /// Controls the roll and pitch angles of the quadcopter.
@@ -118,8 +153,53 @@ impl BasicController {
     /// # Returns
     ///
     /// * `f32` - Collective thrust command in Newtons
-    pub fn altitude_controller() {
-        println!("Altitude controller");
+    pub fn altitude_controller(
+        &mut self,
+        altitude_cmd: f32,
+        velocity_cmd: f32,
+        altitude: f32,
+        velocity: f32,
+        attitude: Quaternion,
+        dt: Duration,
+    ) -> f32 {
+        let R = attitude.rotation_matrix_i_wrt_b();
+        let thrust = 0.0;
+        let gains = &self.config.altitude_gains;
+
+        // Calculate position error (desired - actual)
+        // In NED frame, positive Z is downward, so posZCmd > posZ means we're too high
+        let altitude_error = altitude_cmd - altitude;
+
+        // Update the integrated error term for the PID controller
+        // This accumulates position error over time to eliminate steady-state errors
+        self.integrated_altitude_error += altitude_error * dt.as_secs_f32();
+
+        // Implement a PID controller for altitude
+        let proportional_term = gains.p * altitude_error; // P term: proportional to position error
+        let derivative_term = gains.d * (velocity_cmd - velocity); // D term: helps with damping
+        let integral_term = gains.i * self.integrated_altitude_error; // I term: eliminates steady-state error
+
+        // Combine all terms to get the desired acceleration
+        let mut acceleration_cmd = proportional_term + derivative_term + integral_term;
+
+        // Adjust for gravity and drone tilt
+        // bodyZAlignment represents how much of the thrust vector is aligned with the Z axis
+        // When the drone is perfectly level, bodyZAlignment = 1
+        // When tilted, bodyZAlignment < 1, so we need more thrust to achieve the same vertical acceleration
+        let body_z_alignment = R[[2, 2]]; // R(2,2) is the z-component of the body's z-axis in inertial frame
+
+        // We subtract gravity because in NED, gravity acts in the positive Z direction
+        // Then divide by the alignment factor to compensate for tilt
+        acceleration_cmd = (acceleration_cmd - G) / body_z_alignment;
+
+        // Constrain the commanded acceleration to respect maximum ascent/descent rates
+        // Note: In NED, negative acceleration is upward (ascent), positive is downward (descent)
+        //   accelZCmd = CONSTRAIN(accelZCmd, -maxAscentRate / dt, maxDescentRate / dt);
+
+        // Convert acceleration to force (F = m*a)
+        // Negative sign because in NED, an upward force (negative Z direction)
+        // is needed to counteract gravity and achieve a downward acceleration reduction
+        -acceleration_cmd
     }
 
     /// Controls the lateral (X-Y) position of the quadcopter.
