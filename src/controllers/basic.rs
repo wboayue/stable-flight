@@ -35,18 +35,18 @@
 //! - Full Control Stack: Automatic position and altitude holding
 //! - Selective Enabling: Can enable altitude control while keeping manual lateral control
 
-use core::error;
 use std::f32::consts::PI;
 use std::time::Duration;
 
-use uom::si::velocity;
-
 use crate::{
-    commanders::Command,
+    commanders::{Command, ManualCommand, WaypointCommand},
     math::{vec2, Quaternion, Vec2, Vec3},
 };
 
 use super::{ControlOutput, Controller, VehicleState};
+
+#[cfg(test)]
+mod tests;
 
 const G: f32 = 9.81; // acceleration due to gravity (m/s²)
 
@@ -59,13 +59,11 @@ pub struct Gains {
 
 #[derive(Default)]
 pub struct BasicControllerConfig {
-    rate_gains: Gains,
-    rate_ff: [f32; 3],
-    angle_gains: Gains,
-    angle_ff: [f32; 2],
-    altitude_gains: Gains,
-    lateral_gains: Gains,
-    yaw_gains: Gains,
+    pub rate_gains: Gains,
+    pub angle_gains: Gains,
+    pub altitude_gains: Gains,
+    pub lateral_gains: Gains,
+    pub yaw_gains: Gains,
 }
 
 #[derive(Default)]
@@ -78,15 +76,45 @@ pub struct BasicController {
     integrated_yaw_error: f32,
     previous_pos_error: Vec2<f32>,
     integrated_pos_error: Vec2<f32>,
+    previous_angle_error: Vec2<f32>,
+    integrated_angle_error: Vec2<f32>,
 }
 
 impl Controller for BasicController {
-    fn control(&self, _desired_state: &Command, _state: &VehicleState) -> ControlOutput {
-        ControlOutput::default()
+    fn control(
+        &mut self,
+        dt: Duration,
+        desired_state: &Command,
+        state: &VehicleState,
+    ) -> ControlOutput {
+        match desired_state {
+            Command::Manual(manual_command) => self.manual_control(dt, manual_command, state),
+            Command::Waypoint(waypoint_command) => {
+                self.waypoint_control(dt, waypoint_command, state)
+            }
+        }
     }
 }
 
 impl BasicController {
+    fn manual_control(
+        &mut self,
+        dt: Duration,
+        desired_state: &ManualCommand,
+        state: &VehicleState,
+    ) -> ControlOutput {
+        ControlOutput::default()
+    }
+
+    fn waypoint_control(
+        &mut self,
+        dt: Duration,
+        desired_state: &WaypointCommand,
+        state: &VehicleState,
+    ) -> ControlOutput {
+        ControlOutput::default()
+    }
+
     /// Controls the angular velocity (body rates) of the quadcopter.
     ///
     /// This is the innermost control loop that directly affects motor commands.
@@ -138,8 +166,20 @@ impl BasicController {
     /// # Returns
     ///
     /// * `Vector2` - Desired angular rates [p_command, q_command] in rad/s
-    pub fn roll_pitch_controller() {
-        println!("Angle controller");
+    pub fn roll_pitch_controller(
+        &mut self,
+        dt: Duration,
+        desired_angles: Vec2<f32>,
+        current_angles: Vec2<f32>,
+    ) -> Vec2<f32> {
+        let gains = &self.config.angle_gains;
+        let error = desired_angles - current_angles;
+        let error_derivative = (error - self.previous_angle_error) / dt.as_secs_f32();
+        self.integrated_angle_error = self.integrated_angle_error + dt.as_secs_f32() * error;
+        let rates =
+            gains.p * error + gains.i * self.integrated_angle_error + gains.d * error_derivative;
+        self.previous_angle_error = error;
+        rates
     }
 
     /// Controls the altitude of the quadcopter.

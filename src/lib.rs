@@ -9,14 +9,11 @@ pub mod vehicles;
 use std::time::Duration;
 
 use log::info;
-use uom::si::angular_velocity::degree_per_second;
 use uom::si::f32::*;
-use uom::si::length::meter;
 
 use commanders::Command;
 use math::Vec3;
 pub use stabilizer::FlightStabilizer;
-use uom::si::velocity::meter_per_second;
 
 pub trait Stick {
     fn get_controls(&self) -> StickInput;
@@ -63,7 +60,7 @@ pub trait Vehicle {
 }
 
 pub trait Controller {
-    fn control(&self, command: &Command, state: &VehicleState) -> ControlOutput;
+    fn control(&mut self, dt: Duration, command: &Command, state: &VehicleState) -> ControlOutput;
 }
 
 pub trait TelemetryPublisher {

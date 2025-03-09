@@ -126,7 +126,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
 
             // Compute control outputs (angles, rates, etc.)
             // pass command and state to controller
-            let control_outputs = self.controller.control(&command, &state);
+            let control_outputs = self.controller.control(target_duration, &command, &state);
 
             // mix control outputs
             let actuator_command = self.mixer.mix(&control_outputs);
