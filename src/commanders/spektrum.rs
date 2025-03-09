@@ -6,7 +6,7 @@ use std::cell::RefCell;
 
 use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
 
-use super::{Command, Commander, ManualCommand};
+use super::{AttitudeCommand, Command, Commander};
 use crate::{Stick, StickInput};
 
 pub struct SpectrumCommander {
@@ -108,7 +108,7 @@ impl Commander for SpectrumCommander {
             2
         };
 
-        Command::Attitude(ManualCommand {
+        Command::Attitude(AttitudeCommand {
             throttle: channels[0],
             roll: channels[1],
             pitch: channels[2],

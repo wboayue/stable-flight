@@ -62,9 +62,9 @@
 //! Creating and using a manual command:
 //!
 //! ```rust
-//! use stable_flight_sitl::commanders::{Command, ManualCommand};
+//! use stable_flight_sitl::commanders::{Command, AttitudeCommand};
 //!
-//! let manual_cmd = Command::Attitude(ManualCommand {
+//! let manual_cmd = Command::Attitude(AttitudeCommand {
 //!     throttle: 0.75,  // 75% power
 //!     roll: 0.1,       // Slight right bank
 //!     pitch: -0.05,    // Slight nose down
@@ -148,9 +148,9 @@ pub trait Commander {
 ///
 /// Creating a manual command:
 /// ```
-/// use stable_flight_sitl::commanders::{Command, ManualCommand};
+/// use stable_flight_sitl::commanders::{Command, AttitudeCommand};
 ///
-/// let manual_cmd = Command::Attitude(ManualCommand {
+/// let manual_cmd = Command::Attitude(AttitudeCommand {
 ///     throttle: 0.75,  // 75% throttle
 ///     roll: 0.1,       // Slight right bank
 ///     pitch: -0.05,    // Slight nose down
@@ -178,7 +178,7 @@ pub enum Command {
     ///
     /// These values typically range from -1.0 to 1.0 (or 0.0 to 1.0 for throttle)
     /// and directly influence the control surfaces and power systems of the aircraft.
-    Attitude(ManualCommand),
+    Attitude(AttitudeCommand),
 
     /// Direct manual control inputs for the aircraft rotational rate.
     ///
@@ -205,7 +205,7 @@ pub enum Command {
 /// * `pitch`: -1.0 (nose down) to 1.0 (nose up)
 /// * `yaw`: -1.0 (left turn) to 1.0 (right turn)
 #[derive(Debug)]
-pub struct ManualCommand {
+pub struct AttitudeCommand {
     /// Controls the engine power output, ranging from 0.0 (idle) to 1.0 (maximum).
     pub throttle: f32,
 
@@ -224,12 +224,11 @@ pub struct ManualCommand {
 
     /// Controls the aircraft's flight mode, ranging from 0 to 2.
     pub mode: u8,
-
 }
 
-impl Default for ManualCommand {
+impl Default for AttitudeCommand {
     fn default() -> Self {
-        ManualCommand {
+        AttitudeCommand {
             throttle: 0.0,
             roll: 0.0,
             pitch: 0.0,

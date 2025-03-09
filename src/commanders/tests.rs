@@ -18,7 +18,7 @@ impl Commander for MockCommander {
         let secs = dt.as_secs();
         if secs % 2 == 0 {
             // Manual command
-            Command::Attitude(ManualCommand {
+            Command::Attitude(AttitudeCommand {
                 throttle: 0.5,
                 roll: 0.2,
                 pitch: -0.1,
@@ -43,7 +43,7 @@ impl Commander for MockCommander {
 }
 
 // Helper function to check if a ManualCommand is within valid ranges
-fn assert_manual_command_valid(cmd: &ManualCommand) {
+fn assert_manual_command_valid(cmd: &AttitudeCommand) {
     assert!(
         cmd.throttle >= 0.0 && cmd.throttle <= 1.0,
         "Throttle out of range: {}",
@@ -131,13 +131,13 @@ fn test_waypoint_command_generation() {
 
 #[test]
 fn test_manual_command_boundary_values() {
-    let manual_cmd = ManualCommand {
+    let manual_cmd = AttitudeCommand {
         throttle: 1.0, // Max throttle
         roll: -1.0,    // Max left roll
         pitch: 1.0,    // Max nose up
         yaw: -1.0,     // Max left yaw
         arm: true,
-        mode: 2,    // Max mode
+        mode: 2, // Max mode
     };
 
     assert_manual_command_valid(&manual_cmd);
@@ -169,14 +169,14 @@ fn test_command_alternation() {
     let cmd2 = commander.next(dt2);
     let cmd3 = commander.next(dt3);
 
-    assert!(matches!(cmd1, Command::Rate(_)));
+    assert!(matches!(cmd1, Command::Attitude(_)));
     assert!(matches!(cmd2, Command::Waypoint(_)));
-    assert!(matches!(cmd3, Command::Rate(_)));
+    assert!(matches!(cmd3, Command::Attitude(_)));
 }
 
 #[test]
 fn test_manual_command_default() {
-    let default_cmd = ManualCommand::default();
+    let default_cmd = AttitudeCommand::default();
     assert_eq!(default_cmd.throttle, 0.0);
     assert_eq!(default_cmd.roll, 0.0);
     assert_eq!(default_cmd.pitch, 0.0);

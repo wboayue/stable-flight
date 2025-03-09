@@ -39,7 +39,7 @@ use std::f32::consts::PI;
 use std::time::Duration;
 
 use crate::{
-    commanders::{Command, ManualCommand, RateCommand, WaypointCommand},
+    commanders::{AttitudeCommand, Command, RateCommand, WaypointCommand},
     math::{vec2, Quaternion, Vec2, Vec3},
 };
 
@@ -103,7 +103,7 @@ impl BasicController {
     fn attitude_control(
         &mut self,
         dt: Duration,
-        desired_state: &ManualCommand,
+        desired_state: &AttitudeCommand,
         state: &VehicleState,
     ) -> ControlOutput {
         ControlOutput::default()
