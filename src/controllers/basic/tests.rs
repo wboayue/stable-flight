@@ -31,6 +31,7 @@ fn setup_controller() -> BasicController {
             i: 0.12,
             d: 0.06,
         },
+        thrust_curve_exponent: 2.0,
     };
     BasicController {
         config,
@@ -56,7 +57,7 @@ fn test_rate_controller_zero_error() {
     let desired_rates = vec3(0.0, 0.0, 0.0);
     let current_rates = vec3(0.0, 0.0, 0.0);
 
-    let output = controller.rate_controller(dt, desired_rates, current_rates);
+    let output = controller.control_rates(dt, desired_rates, current_rates);
     assert_eq!(
         output,
         vec3(0.0, 0.0, 0.0),
@@ -71,7 +72,7 @@ fn test_rate_controller_positive_error() {
     let desired_rates = vec3(1.0, 1.0, 1.0);
     let current_rates = vec3(0.0, 0.0, 0.0);
 
-    let output = controller.rate_controller(dt, desired_rates, current_rates);
+    let output = controller.control_rates(dt, desired_rates, current_rates);
     assert!(output.x > 0.0, "Roll moment should be positive");
     assert!(output.y > 0.0, "Pitch moment should be positive");
     assert!(output.z > 0.0, "Yaw moment should be positive");
@@ -84,7 +85,7 @@ fn test_roll_pitch_controller_zero_error() {
     let desired_angles = vec2(0.0, 0.0);
     let current_angles = vec2(0.0, 0.0);
 
-    let output = controller.roll_pitch_controller(dt, desired_angles, current_angles);
+    let output = controller.control_roll_pitch(dt, desired_angles, current_angles);
     assert_eq!(
         output,
         vec2(0.0, 0.0),
@@ -99,7 +100,7 @@ fn test_roll_pitch_controller_positive_error() {
     let desired_angles = vec2(0.1, 0.1); // Small desired roll/pitch
     let current_angles = vec2(0.0, 0.0);
 
-    let output = controller.roll_pitch_controller(dt, desired_angles, current_angles);
+    let output = controller.control_roll_pitch(dt, desired_angles, current_angles);
     assert!(output.x > 0.0, "Roll rate should be positive");
     assert!(output.y > 0.0, "Pitch rate should be positive");
 }
@@ -113,13 +114,13 @@ fn test_altitude_controller_zero_error() {
     let current_velocity = 0.0;
     let attitude = identity_quaternion();
 
-    let output = controller.altitude_controller(
+    let output = controller.control_altitude(
+        dt,
         desired_altitude,
         0.0,
         current_altitude,
         current_velocity,
         attitude,
-        dt,
     );
 
     // With zero error (altitude and velocity), PID terms should be 0
@@ -151,13 +152,13 @@ fn test_altitude_controller_positive_error() {
     let current_velocity = 0.0;
     let attitude = identity_quaternion();
 
-    let output = controller.altitude_controller(
+    let output = controller.control_altitude(
+        dt,
         desired_altitude,
         0.0,
         current_altitude,
         current_velocity,
         attitude,
-        dt,
     );
 
     //   assert!(output > 0.5, "Thrust should be greater to ascend {}", output);
@@ -201,7 +202,7 @@ fn test_yaw_controller_zero_error() {
     let desired_yaw = 0.0;
     let current_yaw = 0.0;
 
-    let output = controller.yaw_controller(dt, desired_yaw, current_yaw);
+    let output = controller.control_yaw(dt, desired_yaw, current_yaw);
     assert_eq!(output, 0.0, "Yaw rate should be zero when error is zero");
 }
 
@@ -212,7 +213,7 @@ fn test_yaw_controller_angle_wrapping() {
     let desired_yaw = PI + 0.1;
     let current_yaw = -PI + 0.1;
 
-    let output = controller.yaw_controller(dt, desired_yaw, current_yaw);
+    let output = controller.control_yaw(dt, desired_yaw, current_yaw);
     assert!(
         output < 0.0,
         "Yaw rate should be negative for shortest path"
@@ -232,7 +233,7 @@ fn test_manual_control() {
     };
     let state = VehicleState::default();
 
-    let output = controller.rate_control(dt, &manual_command, &state);
+    let output = controller.process_rate_command(dt, &manual_command, &state);
     assert_eq!(
         output,
         ControlOutput::default(),
@@ -250,7 +251,7 @@ fn test_waypoint_control() {
     };
     let state = VehicleState::default();
 
-    let output = controller.waypoint_control(dt, &waypoint_command, &state);
+    let output = controller.process_waypoint_command(dt, &waypoint_command, &state);
     assert_eq!(
         output,
         ControlOutput::default(),

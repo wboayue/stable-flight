@@ -1,7 +1,4 @@
-use std::{
-    ops::{Add, Div, Index, Mul, Neg, Sub},
-    vec,
-};
+use std::ops::{Add, Div, Index, Mul, Neg, Sub};
 
 #[cfg(test)]
 mod tests;
@@ -11,6 +8,16 @@ pub struct Vec3<T> {
     pub x: T,
     pub y: T,
     pub z: T,
+}
+
+impl Vec3<f32> {
+    pub fn clamp(&self, min: f32, max: f32) -> Vec3<f32> {
+        Vec3 {
+            x: self.x.clamp(min, max),
+            y: self.y.clamp(min, max),
+            z: self.z.clamp(min, max),
+        }
+    }
 }
 
 // Helper function to create Vec3 instances easily
@@ -106,10 +113,19 @@ impl<T: Default> Default for Vec3<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Vec2<T: Default> {
     pub x: T,
     pub y: T,
+}
+
+impl Vec2<f32> {
+    pub fn clamp(&self, min: f32, max: f32) -> Vec2<f32> {
+        Vec2 {
+            x: self.x.clamp(min, max),
+            y: self.y.clamp(min, max),
+        }
+    }
 }
 
 // Helper function to create Vec3 instances easily
@@ -209,8 +225,10 @@ impl<T: Neg<Output = T> + Default> Neg for Vec2<T> {
 ///
 /// # Examples
 /// ```
-/// use quaternion::Quaternion;
+/// use stable_flight_sitl::math::Quaternion;
+///
 /// let q = Quaternion::new(1.0, 0.0, 0.0, 0.0); // Identity quaternion
+///
 /// assert_eq!(q.w, 1.0);
 /// assert_eq!(q.x, 0.0);
 /// assert_eq!(q.y, 0.0);
@@ -234,7 +252,7 @@ impl Quaternion {
     /// * `z` - The `k` component (third vector part).
     ///
     /// # Returns
-    /// A new `Quaternion` instance with the specified components.    
+    /// A new `Quaternion` instance with the specified components.
     pub fn new(w: f32, x: f32, y: f32, z: f32) -> Self {
         Self { w, x, y, z }
     }
@@ -248,13 +266,15 @@ impl Quaternion {
     ///
     /// # Examples
     /// ```
-    /// use quaternion::Quaternion;
+    /// use stable_flight_sitl::math::Quaternion;
+    ///
     /// let q = Quaternion::identity();
+    ///
     /// assert_eq!(q.w, 1.0);
     /// assert_eq!(q.x, 0.0);
     /// assert_eq!(q.y, 0.0);
     /// assert_eq!(q.z, 0.0);
-    /// ```    
+    /// ```
     pub fn identity() -> Self {
         Self {
             w: 1.0,
@@ -283,11 +303,13 @@ impl Quaternion {
     ///
     /// # Examples
     /// ```
-    /// use quaternion::Quaternion;
+    /// use stable_flight_sitl::math::Quaternion;
     /// use std::f32::consts::PI;
+    ///
     /// let q = Quaternion::from_euler(0.0, 0.0, PI / 2.0); // 90-degree yaw
+    ///
     /// let expected = Quaternion::new((PI / 4.0).cos(), 0.0, 0.0, (PI / 4.0).sin());
-    /// ```    
+    /// ```
     pub fn from_euler(yaw: f32, pitch: f32, roll: f32) -> Self {
         let roll = roll / 2.0;
         let pitch = pitch / 2.0;
@@ -319,8 +341,9 @@ impl Quaternion {
     ///
     /// # Examples
     /// ```
-    /// use quaternion::{Quaternion, Mat3x3};
+    /// use stable_flight_sitl::math::{Quaternion, Mat3x3};
     /// use std::f32::consts::PI;
+    ///
     /// let cos_90 = (PI / 2.0).cos();
     /// let sin_90 = (PI / 2.0).sin();
     /// let mat = Mat3x3::new([
@@ -329,8 +352,9 @@ impl Quaternion {
     ///     0.0,    0.0,     1.0,
     /// ]);
     /// let q = Quaternion::from_rotation_matrix(mat);
+    ///
     /// let expected = Quaternion::new((PI / 4.0).cos(), 0.0, 0.0, (PI / 4.0).sin());
-    /// ```    
+    /// ```
     pub fn from_rotation_matrix(rotation_matrix: Mat3x3) -> Self {
         let r = rotation_matrix.data;
 
@@ -402,9 +426,11 @@ impl Quaternion {
     ///
     /// # Examples
     /// ```
-    /// use quaternion::Quaternion;
+    /// use stable_flight_sitl::math::Quaternion;
+    ///
     /// let q = Quaternion::new(1.0, 2.0, 3.0, 4.0);
     /// let conj = q.conjugate();
+    ///
     /// assert_eq!(conj.w, 1.0);
     /// assert_eq!(conj.x, -2.0);
     /// assert_eq!(conj.y, -3.0);
@@ -430,10 +456,12 @@ impl Quaternion {
     ///
     /// # Examples
     /// ```
-    /// use quaternion::Quaternion;
+    /// use stable_flight_sitl::math::Quaternion;
     /// use std::f32::consts::PI;
+    ///
     /// let q = Quaternion::from_euler(0.0, 0.0, PI / 2.0); // Unit quaternion
     /// let inv = q.inverse();
+    ///
     /// let expected = q.conjugate();
     /// assert_eq!(inv.w, expected.w);
     /// assert_eq!(inv.x, expected.x);
@@ -470,7 +498,7 @@ impl Quaternion {
     /// \( v_B = R v_I \). This is the transpose of `rotation_matrix_i_wrt_b`.
     ///
     /// # Returns
-    /// A `Mat3x3` representing the rotation from body to inertial frame.    
+    /// A `Mat3x3` representing the rotation from body to inertial frame.
     pub fn rotation_matrix_b_wrt_i(&self) -> Mat3x3 {
         self.rotation_matrix_i_wrt_b().transpose()
     }
@@ -491,7 +519,7 @@ impl Quaternion {
     /// Assumes the quaternion represents a rotation in the ZYX Euler angle convention.
     ///
     /// # Returns
-    /// The pitch angle in radians.    
+    /// The pitch angle in radians.
     pub fn pitch(&self) -> f32 {
         (-2.0 * (self.x * self.z - self.w * self.y)).asin()
     }
@@ -526,7 +554,7 @@ impl Quaternion {
     /// Converts the quaternion to Euler angles in yaw-pitch-roll order.
     ///
     /// # Returns
-    /// A `Vec3<f32>` containing `(yaw, pitch, roll)` in radians.    
+    /// A `Vec3<f32>` containing `(yaw, pitch, roll)` in radians.
     pub fn to_euler(&self) -> Vec3<f32> {
         vec3(self.yaw(), self.pitch(), self.roll())
     }
@@ -534,7 +562,7 @@ impl Quaternion {
     /// Converts the quaternion to Euler angles in roll-pitch-yaw order.
     ///
     /// # Returns
-    /// A `Vec3<f32>` containing `(roll, pitch, yaw)` in radians.    
+    /// A `Vec3<f32>` containing `(roll, pitch, yaw)` in radians.
     pub fn to_euler_rpy(&self) -> Vec3<f32> {
         vec3(self.roll(), self.pitch(), self.yaw())
     }
@@ -560,18 +588,18 @@ impl Mul<Quaternion> for Quaternion {
     ///
     /// # Examples
     /// ```
-    /// use quaternion::Quaternion;
+    /// use stable_flight_sitl::math::Quaternion;
+    ///
     /// let q1 = Quaternion::new(0.0, 1.0, 0.0, 0.0); // i
     /// let q2 = Quaternion::new(0.0, 0.0, 1.0, 0.0); // j
     /// let result = q1 * q2;
+    ///
     /// assert_eq!(result.w, 0.0);
     /// assert_eq!(result.x, 0.0);
     /// assert_eq!(result.y, 0.0);
     /// assert_eq!(result.z, 1.0); // i * j = k
-    /// ```    
+    /// ```
     fn mul(self, p: Quaternion) -> Quaternion {
-        let q = self;
-
         let q = self;
 
         let c0 = q.w * p.w - q.x * p.x - q.y * p.y - q.z * p.z; // w = w1w2 - x1x2 - y1y2 - z1z2
@@ -592,7 +620,7 @@ impl Default for Quaternion {
     /// Provides the default value for a `Quaternion`, which is the identity quaternion.
     ///
     /// # Returns
-    /// The identity quaternion `(1, 0, 0, 0)`.    
+    /// The identity quaternion `(1, 0, 0, 0)`.
     fn default() -> Self {
         Quaternion {
             w: 1.0,
@@ -611,10 +639,10 @@ impl ToString for Quaternion {
     ///
     /// # Examples
     /// ```
-    /// use quaternion::Quaternion;
+    /// use stable_flight_sitl::math::Quaternion;
     /// let q = Quaternion::new(1.0, 2.0, 3.0, 4.0);
     /// assert_eq!(q.to_string(), "1.000 2.000 3.000 4.000");
-    /// ```    
+    /// ```
     fn to_string(&self) -> String {
         format!("{:.3} {:.3} {:.3} {:.3}", self.w, self.x, self.y, self.z)
     }
@@ -630,7 +658,7 @@ impl ToString for Quaternion {
 /// # Examples
 ///
 /// ```
-/// use your_crate_name::Mat3x3; // Replace `your_crate_name` with the actual crate name
+/// use stable_flight_sitl::math::Mat3x3;
 ///
 /// // Create an identity matrix
 /// let identity = Mat3x3::identity();
@@ -640,8 +668,9 @@ impl ToString for Quaternion {
 /// let matrix = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
 /// assert_eq!(matrix[[1, 2]], 6.0); // Access element at row 1, column 2
 /// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Mat3x3 {
-    data: [f32; 9],
+    pub data: [f32; 9],
 }
 
 impl Mat3x3 {
@@ -656,6 +685,7 @@ impl Mat3x3 {
     /// # Examples
     ///
     /// ```
+    /// use stable_flight_sitl::math::Mat3x3;
     /// let matrix = Mat3x3::new([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
     /// assert_eq!(matrix.data, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
     /// ```
@@ -668,6 +698,7 @@ impl Mat3x3 {
     /// # Examples
     ///
     /// ```
+    /// use stable_flight_sitl::math::Mat3x3;
     /// let zero = Mat3x3::zeros();
     /// assert_eq!(zero.data, [0.0; 9]);
     /// ```
@@ -690,6 +721,7 @@ impl Mat3x3 {
     /// # Examples
     ///
     /// ```
+    /// use stable_flight_sitl::math::Mat3x3;
     /// let identity = Mat3x3::identity();
     /// assert_eq!(identity.data, [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
     /// ```
@@ -699,12 +731,65 @@ impl Mat3x3 {
         }
     }
 
+    /// Creates a skew-symmetric matrix from a 3D vector.
+    ///
+    /// A skew-symmetric matrix `S` has the property that `S^T = -S`. For a 3D vector
+    /// `v = [x, y, z]`, the corresponding skew-symmetric matrix is:
+    ///
+    /// ```text
+    /// [  0  -z   y ]
+    /// [  z   0  -x ]
+    /// [ -y   x   0 ]
+    /// ```
+    ///
+    /// This matrix is useful in various applications:
+    ///
+    /// - Computing cross products: For vectors `a` and `b`, the cross product `a × b`
+    ///   can be computed as `skew_symmetric(a) * b`
+    /// - Representing infinitesimal rotations in SO(3)
+    /// - Converting between quaternions and rotation matrices
+    ///
+    /// # Arguments
+    ///
+    /// * `q` - A 3D vector whose components will be used to construct the skew-symmetric matrix
+    ///
+    /// # Returns
+    ///
+    /// A 3×3 skew-symmetric matrix corresponding to the input vector
     pub fn skew_symmetric(q: Vec3<f32>) -> Mat3x3 {
         Self {
             data: [0.0, -q.z, q.y, q.z, 0.0, -q.x, -q.y, q.x, 0.0],
         }
     }
 
+    /// Creates a matrix representing the outer product of two 3D vectors.
+    ///
+    /// The outer product of vectors `a` and `b` is the matrix `M = a ⊗ b` where
+    /// each element `M[i,j] = a[i] * b[j]`. For 3D vectors, this produces a 3×3 matrix.
+    ///
+    /// The resulting matrix has the following structure:
+    /// ```text
+    /// [ a.x*b.x  a.x*b.y  a.x*b.z ]
+    /// [ a.y*b.x  a.y*b.y  a.y*b.z ]
+    /// [ a.z*b.x  a.z*b.y  a.z*b.z ]
+    /// ```
+    ///
+    /// # Applications
+    ///
+    /// The outer product has various applications in physics, computer graphics, and numerical methods:
+    /// - Constructing projection matrices
+    /// - Forming part of tensor products
+    /// - Computing dyadic products in physics
+    /// - Creating rotation matrices from quaternions
+    ///
+    /// # Arguments
+    ///
+    /// * `a` - First 3D vector
+    /// * `b` - Second 3D vector
+    ///
+    /// # Returns
+    ///
+    /// A 3×3 matrix representing the outer product of the input vectors
     pub fn outer_product(a: Vec3<f32>, b: Vec3<f32>) -> Mat3x3 {
         let mut data = [0.0; 9];
 
@@ -731,6 +816,7 @@ impl Mat3x3 {
     /// # Examples
     ///
     /// ```
+    /// use stable_flight_sitl::math::Mat3x3;
     /// let matrix = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
     /// let transposed = matrix.transpose();
     /// assert_eq!(transposed.data, [1.0, 4.0, 7.0, 2.0, 5.0, 8.0, 3.0, 6.0, 9.0]);
@@ -772,6 +858,7 @@ impl Mat3x3 {
     /// # Examples
     ///
     /// ```
+    /// use stable_flight_sitl::math::Mat3x3;
     /// let matrix = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
     /// let det = matrix.determinant();
     /// assert_eq!(det, 0.0); // 1*(5*9 - 6*8) - 4*(2*9 - 3*8) + 7*(2*6 - 3*5) = 0
@@ -791,6 +878,7 @@ impl Mat3x3 {
     /// # Examples
     ///
     /// ```
+    /// use stable_flight_sitl::math::Mat3x3;
     /// let matrix = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
     /// let trace = matrix.trace();
     /// assert_eq!(trace, 15.0); // 1 + 5 + 9 = 15
@@ -809,6 +897,7 @@ impl Mat3x3 {
 /// # Examples
 ///
 /// ```
+/// use stable_flight_sitl::math::Mat3x3;
 /// let matrix = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
 /// assert_eq!(matrix[[0, 1]], 2.0); // Element at row 0, column 1
 /// assert_eq!(matrix[[2, 2]], 9.0); // Element at row 2, column 2
@@ -838,8 +927,8 @@ impl Add<Mat3x3> for Mat3x3 {
 
     fn add(self, rhs: Mat3x3) -> Mat3x3 {
         let mut data = [0.0; 9];
-        for i in 0..9 {
-            data[i] = self.data[i] + rhs.data[i];
+        for (i, item) in data.iter_mut().enumerate() {
+            *item = self.data[i] + rhs.data[i];
         }
         Mat3x3 { data }
     }

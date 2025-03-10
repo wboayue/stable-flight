@@ -12,7 +12,7 @@ use log::info;
 use uom::si::f32::*;
 
 use commanders::Command;
-use math::Vec3;
+use math::{Quaternion, Vec3};
 pub use stabilizer::FlightStabilizer;
 
 pub trait Stick {
@@ -27,7 +27,7 @@ pub struct StickInput {
 #[derive(Debug, Default, PartialEq)]
 pub struct ControlOutput {
     pub thrust: f32,
-    pub moment: Vec3<f32>,
+    pub moments: Vec3<f32>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -35,7 +35,7 @@ pub struct VehicleState {
     pub position: Vec3<Length>,
     pub velocity: Vec3<Velocity>,
     pub acceleration: Vec3<Acceleration>,
-    pub orientation: Vec3<f32>,
+    pub attitude: Quaternion,
     pub angular_velocity: Vec3<AngularVelocity>,
     // flight mode
     // heading
