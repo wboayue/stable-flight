@@ -15,7 +15,7 @@ impl Vec3<f32> {
         Vec3 {
             x: self.x.clamp(min, max),
             y: self.y.clamp(min, max),
-            z: self.y.clamp(min, max),
+            z: self.z.clamp(min, max),
         }
     }
 }
@@ -252,7 +252,7 @@ impl Quaternion {
     /// * `z` - The `k` component (third vector part).
     ///
     /// # Returns
-    /// A new `Quaternion` instance with the specified components.    
+    /// A new `Quaternion` instance with the specified components.
     pub fn new(w: f32, x: f32, y: f32, z: f32) -> Self {
         Self { w, x, y, z }
     }
@@ -274,7 +274,7 @@ impl Quaternion {
     /// assert_eq!(q.x, 0.0);
     /// assert_eq!(q.y, 0.0);
     /// assert_eq!(q.z, 0.0);
-    /// ```    
+    /// ```
     pub fn identity() -> Self {
         Self {
             w: 1.0,
@@ -309,7 +309,7 @@ impl Quaternion {
     /// let q = Quaternion::from_euler(0.0, 0.0, PI / 2.0); // 90-degree yaw
     ///
     /// let expected = Quaternion::new((PI / 4.0).cos(), 0.0, 0.0, (PI / 4.0).sin());
-    /// ```    
+    /// ```
     pub fn from_euler(yaw: f32, pitch: f32, roll: f32) -> Self {
         let roll = roll / 2.0;
         let pitch = pitch / 2.0;
@@ -354,7 +354,7 @@ impl Quaternion {
     /// let q = Quaternion::from_rotation_matrix(mat);
     ///
     /// let expected = Quaternion::new((PI / 4.0).cos(), 0.0, 0.0, (PI / 4.0).sin());
-    /// ```    
+    /// ```
     pub fn from_rotation_matrix(rotation_matrix: Mat3x3) -> Self {
         let r = rotation_matrix.data;
 
@@ -498,7 +498,7 @@ impl Quaternion {
     /// \( v_B = R v_I \). This is the transpose of `rotation_matrix_i_wrt_b`.
     ///
     /// # Returns
-    /// A `Mat3x3` representing the rotation from body to inertial frame.    
+    /// A `Mat3x3` representing the rotation from body to inertial frame.
     pub fn rotation_matrix_b_wrt_i(&self) -> Mat3x3 {
         self.rotation_matrix_i_wrt_b().transpose()
     }
@@ -519,7 +519,7 @@ impl Quaternion {
     /// Assumes the quaternion represents a rotation in the ZYX Euler angle convention.
     ///
     /// # Returns
-    /// The pitch angle in radians.    
+    /// The pitch angle in radians.
     pub fn pitch(&self) -> f32 {
         (-2.0 * (self.x * self.z - self.w * self.y)).asin()
     }
@@ -554,7 +554,7 @@ impl Quaternion {
     /// Converts the quaternion to Euler angles in yaw-pitch-roll order.
     ///
     /// # Returns
-    /// A `Vec3<f32>` containing `(yaw, pitch, roll)` in radians.    
+    /// A `Vec3<f32>` containing `(yaw, pitch, roll)` in radians.
     pub fn to_euler(&self) -> Vec3<f32> {
         vec3(self.yaw(), self.pitch(), self.roll())
     }
@@ -562,7 +562,7 @@ impl Quaternion {
     /// Converts the quaternion to Euler angles in roll-pitch-yaw order.
     ///
     /// # Returns
-    /// A `Vec3<f32>` containing `(roll, pitch, yaw)` in radians.    
+    /// A `Vec3<f32>` containing `(roll, pitch, yaw)` in radians.
     pub fn to_euler_rpy(&self) -> Vec3<f32> {
         vec3(self.roll(), self.pitch(), self.yaw())
     }
@@ -598,7 +598,7 @@ impl Mul<Quaternion> for Quaternion {
     /// assert_eq!(result.x, 0.0);
     /// assert_eq!(result.y, 0.0);
     /// assert_eq!(result.z, 1.0); // i * j = k
-    /// ```    
+    /// ```
     fn mul(self, p: Quaternion) -> Quaternion {
         let q = self;
 
@@ -620,7 +620,7 @@ impl Default for Quaternion {
     /// Provides the default value for a `Quaternion`, which is the identity quaternion.
     ///
     /// # Returns
-    /// The identity quaternion `(1, 0, 0, 0)`.    
+    /// The identity quaternion `(1, 0, 0, 0)`.
     fn default() -> Self {
         Quaternion {
             w: 1.0,
@@ -642,7 +642,7 @@ impl ToString for Quaternion {
     /// use stable_flight_sitl::math::Quaternion;
     /// let q = Quaternion::new(1.0, 2.0, 3.0, 4.0);
     /// assert_eq!(q.to_string(), "1.000 2.000 3.000 4.000");
-    /// ```    
+    /// ```
     fn to_string(&self) -> String {
         format!("{:.3} {:.3} {:.3} {:.3}", self.w, self.x, self.y, self.z)
     }
@@ -668,6 +668,7 @@ impl ToString for Quaternion {
 /// let matrix = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
 /// assert_eq!(matrix[[1, 2]], 6.0); // Access element at row 1, column 2
 /// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Mat3x3 {
     pub data: [f32; 9],
 }
@@ -788,7 +789,7 @@ impl Mat3x3 {
     ///
     /// # Returns
     ///
-    /// A 3×3 matrix representing the outer product of the input vectors   
+    /// A 3×3 matrix representing the outer product of the input vectors
     pub fn outer_product(a: Vec3<f32>, b: Vec3<f32>) -> Mat3x3 {
         let mut data = [0.0; 9];
 
