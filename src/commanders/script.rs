@@ -1,4 +1,4 @@
-use crate::math::Vec2;
+use crate::{math::Vec2, VehicleState};
 
 use super::{Command, Commander, WaypointCommand};
 
@@ -16,7 +16,7 @@ impl ScriptCommander {
 }
 
 impl Commander for ScriptCommander {
-    fn next(&self, dt: std::time::Duration) -> super::Command {
+    fn next(&self, dt: std::time::Duration, _current_state: &VehicleState) -> super::Command {
         Command::Waypoint(WaypointCommand {
             position: Vec2 { x: 0.0, y: 0.0 },
             velocity: None,
