@@ -114,9 +114,9 @@ impl MavlinkPublisher {
     pub fn send_attitude(&mut self, telemetry: &VehicleState) {
         let attitude_msg = ATTITUDE_DATA {
             time_boot_ms: self.time_boot_ms(),
-            roll: telemetry.orientation.x,
-            pitch: telemetry.orientation.y,
-            yaw: telemetry.orientation.z,
+            roll: telemetry.attitude.x,
+            pitch: telemetry.attitude.y,
+            yaw: telemetry.attitude.z,
             rollspeed: telemetry.angular_velocity.x.value,
             pitchspeed: telemetry.angular_velocity.y.value,
             yawspeed: telemetry.angular_velocity.z.value,

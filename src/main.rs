@@ -7,7 +7,7 @@ use stable_flight_sitl::mixers::QuadCopterMixer;
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 use stable_flight_sitl::vehicles::realflight::{ActuatorMapping, RealFlightConfiguration};
 use stable_flight_sitl::vehicles::{NullVehicle, RealFlightVehicle};
-use stable_flight_sitl::{ConsoleTelemetryPublisher, FlightStabilizer};
+use stable_flight_sitl::FlightStabilizer;
 
 fn main() {
     // Initialize logger
