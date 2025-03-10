@@ -96,7 +96,7 @@ impl Controller for BasicController {
     ///
     /// * `dt` - Time step since the last update (must be positive).
     /// * `command` - The desired control command (`RateCommand`, `AttitudeCommand`, or `WaypointCommand`).
-    /// * `current_state` - The current state of the vehicle (attitude, angular rates, position, etc.).
+    /// * `estimated_state` - The current state of the vehicle (attitude, angular rates, position, etc.).
     ///
     /// # Returns
     ///
@@ -105,19 +105,19 @@ impl Controller for BasicController {
         &mut self,
         dt: Duration,
         command: &Command,
-        current_state: &VehicleState,
+        estimated_state: &VehicleState,
     ) -> ControlOutput {
         assert!(dt.as_secs_f32() > 0.0, "Time step must be positive");
 
         match command {
             Command::Attitude(attitude_command) => {
-                self.process_attitude_command(dt, attitude_command, current_state)
+                self.process_attitude_command(dt, attitude_command, estimated_state)
             }
             Command::Rate(rate_command) => {
-                self.process_rate_command(dt, rate_command, current_state)
+                self.process_rate_command(dt, rate_command, estimated_state)
             }
             Command::Waypoint(waypoint_command) => {
-                self.process_waypoint_command(dt, waypoint_command, current_state)
+                self.process_waypoint_command(dt, waypoint_command, estimated_state)
             }
         }
     }
@@ -133,7 +133,7 @@ impl BasicController {
     ///
     /// * `dt` - Time step since the last update (must be positive).
     /// * `attitude_command` - The desired roll, pitch, yaw angles (in radians) and throttle (0.0 to 1.0).
-    /// * `current_state` - The current state of the vehicle (attitude, angular rates, etc.).
+    /// * `estimated_state` - The current state of the vehicle (attitude, angular rates, etc.).
     ///
     /// # Returns
     ///
@@ -142,24 +142,24 @@ impl BasicController {
         &mut self,
         dt: Duration,
         attitude_command: &AttitudeCommand,
-        current_state: &VehicleState,
+        estimated_state: &VehicleState,
     ) -> ControlOutput {
         let desired_angles = vec2(attitude_command.roll, attitude_command.pitch);
         let current_angles = vec2(
-            current_state.attitude.roll(),
-            current_state.attitude.pitch(),
+            estimated_state.attitude.roll(),
+            estimated_state.attitude.pitch(),
         );
 
         let desired_rp_rates = self.control_roll_pitch(dt, desired_angles, current_angles);
         let desired_yaw_rate =
-            self.control_yaw(dt, attitude_command.yaw, current_state.attitude.yaw());
+            self.control_yaw(dt, attitude_command.yaw, estimated_state.attitude.yaw());
 
         let desired_rates = vec3(desired_rp_rates.x, desired_rp_rates.y, desired_yaw_rate);
 
         let current_rates = vec3(
-            current_state.angular_velocity.x.value,
-            current_state.angular_velocity.y.value,
-            current_state.angular_velocity.z.value,
+            estimated_state.angular_velocity.x.value,
+            estimated_state.angular_velocity.y.value,
+            estimated_state.angular_velocity.z.value,
         );
 
         let moments = self.control_rates(dt, desired_rates, current_rates);
@@ -178,7 +178,7 @@ impl BasicController {
     ///
     /// * `dt` - Time step since the last update (must be positive).
     /// * `rate_command` - The desired roll, pitch, yaw rates (in rad/s) and throttle (0.0 to 1.0).
-    /// * `current_state` - The current state of the vehicle (angular rates, etc.).
+    /// * `estimated_state` - The current state of the vehicle (angular rates, etc.).
     ///
     /// # Returns
     ///
@@ -187,7 +187,7 @@ impl BasicController {
         &mut self,
         dt: Duration,
         rate_command: &RateCommand,
-        current_state: &VehicleState,
+        estimated_state: &VehicleState,
     ) -> ControlOutput {
         let desired_rates = vec3(
             rate_command.roll_rate,
@@ -196,9 +196,9 @@ impl BasicController {
         );
 
         let current_rates = vec3(
-            current_state.angular_velocity.x.value,
-            current_state.angular_velocity.y.value,
-            current_state.angular_velocity.z.value,
+            estimated_state.angular_velocity.x.value,
+            estimated_state.angular_velocity.y.value,
+            estimated_state.angular_velocity.z.value,
         );
 
         let moments = self.control_rates(dt, desired_rates, current_rates);
@@ -218,7 +218,7 @@ impl BasicController {
     ///
     /// * `dt` - Time step since the last update (must be positive).
     /// * `waypoint_command` - The desired position (x, y in meters) and altitude (in meters).
-    /// * `current_state` - The current state of the vehicle (position, velocity, attitude, etc.).
+    /// * `estimated_state` - The current state of the vehicle (position, velocity, attitude, etc.).
     ///
     /// # Returns
     ///
@@ -227,12 +227,12 @@ impl BasicController {
         &mut self,
         dt: Duration,
         waypoint_command: &WaypointCommand,
-        current_state: &VehicleState,
+        estimated_state: &VehicleState,
     ) -> ControlOutput {
         let desired_position = vec2(waypoint_command.position.x, waypoint_command.position.y);
         let current_position = vec2(
-            current_state.position.x.value,
-            current_state.position.y.value,
+            estimated_state.position.x.value,
+            estimated_state.position.y.value,
         );
 
         let desired_angles = self.lateral_controller(
@@ -240,39 +240,39 @@ impl BasicController {
             desired_position,
             current_position,
             vec2(
-                current_state.velocity.x.value,
-                current_state.velocity.y.value,
+                estimated_state.velocity.x.value,
+                estimated_state.velocity.y.value,
             ),
         );
 
         let current_angles = vec2(
-            current_state.attitude.roll(),
-            current_state.attitude.pitch(),
+            estimated_state.attitude.roll(),
+            estimated_state.attitude.pitch(),
         );
 
         let desired_rp_rates = self.control_roll_pitch(dt, desired_angles, current_angles);
-        let desired_yaw_rate = self.control_yaw(dt, 0.0, current_state.attitude.yaw());
+        let desired_yaw_rate = self.control_yaw(dt, 0.0, estimated_state.attitude.yaw());
 
         let desired_rates = vec3(desired_rp_rates.x, desired_rp_rates.y, desired_yaw_rate);
 
         let current_rates = vec3(
-            current_state.angular_velocity.x.value,
-            current_state.angular_velocity.y.value,
-            current_state.angular_velocity.z.value,
+            estimated_state.angular_velocity.x.value,
+            estimated_state.angular_velocity.y.value,
+            estimated_state.angular_velocity.z.value,
         );
 
         let moments = self.control_rates(dt, desired_rates, current_rates);
 
         let desired_altitude = waypoint_command.altitude;
-        let current_altitude = current_state.position.z.value;
+        let current_altitude = estimated_state.position.z.value;
 
         let linear_thrust = self.control_altitude(
+            dt,
             desired_altitude,
             0.0,
             current_altitude,
-            current_state.velocity.z.value,
-            current_state.attitude,
-            dt,
+            estimated_state.velocity.z.value,
+            estimated_state.attitude,
         );
 
         ControlOutput {
@@ -290,7 +290,7 @@ impl BasicController {
     ///
     /// * `dt` - Time step since the last update (must be positive).
     /// * `desired_rates` - Desired angular rates (roll, pitch, yaw) in rad/s.
-    /// * `current_rates` - Current measured angular rates (roll, pitch, yaw) in rad/s.
+    /// * `estimated_rates` - Current measured angular rates (roll, pitch, yaw) in rad/s.
     ///
     /// # Returns
     ///
@@ -299,11 +299,11 @@ impl BasicController {
         &mut self,
         dt: Duration,
         desired_rates: Vec3<f32>,
-        current_rates: Vec3<f32>,
+        estimated_rates: Vec3<f32>,
     ) -> Vec3<f32> {
         let gains = &self.config.rate_gains;
 
-        let error = desired_rates - current_rates;
+        let error = desired_rates - estimated_rates;
         let error_derivative = (error - self.previous_rate_error) / dt.as_secs_f32();
 
         self.integrated_rate_error = self.integrated_rate_error + dt.as_secs_f32() * error;
@@ -334,11 +334,11 @@ impl BasicController {
         &mut self,
         dt: Duration,
         desired_angles: Vec2<f32>,
-        current_angles: Vec2<f32>,
+        estimated_angles: Vec2<f32>,
     ) -> Vec2<f32> {
         let gains = &self.config.angle_gains;
 
-        let error = desired_angles - current_angles;
+        let error = desired_angles - estimated_angles;
         let error_derivative = (error - self.previous_angle_error) / dt.as_secs_f32();
 
         self.integrated_angle_error = self.integrated_angle_error + dt.as_secs_f32() * error;
@@ -361,37 +361,37 @@ impl BasicController {
     ///
     /// # Arguments
     ///
-    /// * `altitude_cmd` - Desired altitude in meters.
-    /// * `velocity_cmd` - Desired vertical velocity in m/s (currently unused, set to 0.0).
-    /// * `altitude` - Current measured altitude in meters.
-    /// * `velocity` - Current vertical velocity in m/s.
-    /// * `attitude` - Current attitude as a quaternion.
     /// * `dt` - Time step since the last update (must be positive).
+    /// * `desired_altitude` - Desired altitude in meters.
+    /// * `desired_velocity` - Desired vertical velocity in m/s (currently unused, set to 0.0).
+    /// * `estimated_altitude` - Current measured altitude in meters.
+    /// * `estimated_velocity` - Current vertical velocity in m/s.
+    /// * `estimated_attitude` - Current attitude as a quaternion.
     ///
     /// # Returns
     ///
     /// A normalized thrust command (0.0 to 1.0).
     fn control_altitude(
         &mut self,
-        altitude_cmd: f32,
-        velocity_cmd: f32,
-        altitude: f32,
-        velocity: f32,
-        attitude: Quaternion,
         dt: Duration,
+        desired_altitude: f32,
+        desired_velocity: f32,
+        estimated_altitude: f32,
+        estimated_velocity: f32,
+        estimated_attitude: Quaternion,
     ) -> f32 {
         const GRAVITY: f32 = 9.81;
         const MAX_ACCEL: f32 = 20.0;
 
-        let r = attitude.rotation_matrix_i_wrt_b();
+        let r = estimated_attitude.rotation_matrix_i_wrt_b();
         let gains = &self.config.altitude_gains;
 
-        let altitude_error = altitude_cmd - altitude;
+        let altitude_error = desired_altitude - estimated_altitude;
         self.integrated_altitude_error += altitude_error * dt.as_secs_f32();
         self.integrated_altitude_error = self.integrated_altitude_error.clamp(-100.0, 100.0);
 
         let proportional_term = gains.p * altitude_error;
-        let derivative_term = gains.d * (velocity_cmd - velocity);
+        let derivative_term = gains.d * (desired_velocity - estimated_velocity);
         let integral_term = gains.i * self.integrated_altitude_error;
         let mut acceleration_cmd = proportional_term + derivative_term + integral_term;
 
@@ -424,8 +424,8 @@ impl BasicController {
     ///
     /// * `dt` - Time step since the last update (must be positive).
     /// * `desired_position` - Target position (x, y) in meters.
-    /// * `current_position` - Current position (x, y) in meters.
-    /// * `current_velocity` - Current velocity (vx, vy) in m/s.
+    /// * `estimated_position` - Current position (x, y) in meters.
+    /// * `estimated_velocity` - Current velocity (vx, vy) in m/s.
     ///
     /// # Returns
     ///
@@ -434,17 +434,17 @@ impl BasicController {
         &mut self,
         dt: Duration,
         desired_position: Vec2<f32>,
-        current_position: Vec2<f32>,
-        current_velocity: Vec2<f32>,
+        estimated_position: Vec2<f32>,
+        estimated_velocity: Vec2<f32>,
     ) -> Vec2<f32> {
         let gains = &self.config.lateral_gains;
 
-        let error = desired_position - current_position;
+        let error = desired_position - estimated_position;
         let error_derivative = (error - self.previous_pos_error) / dt.as_secs_f32();
 
         self.integrated_pos_error = self.integrated_pos_error + dt.as_secs_f32() * error;
         let accel_cmd =
-            gains.p * error + gains.i * self.integrated_pos_error + gains.d * (-current_velocity);
+            gains.p * error + gains.i * self.integrated_pos_error + gains.d * (-estimated_velocity);
 
         self.previous_pos_error = error;
 
@@ -463,15 +463,15 @@ impl BasicController {
     ///
     /// * `dt` - Time step since the last update (must be positive).
     /// * `desired_yaw` - Target yaw angle in radians.
-    /// * `current_yaw` - Current measured yaw angle in radians.
+    /// * `estimated_yaw` - Current measured yaw angle in radians.
     ///
     /// # Returns
     ///
     /// Desired yaw rate in rad/s.
-    fn control_yaw(&mut self, dt: Duration, desired_yaw: f32, current_yaw: f32) -> f32 {
+    fn control_yaw(&mut self, dt: Duration, desired_yaw: f32, estimated_yaw: f32) -> f32 {
         let gains = &self.config.yaw_gains;
 
-        let error = angle_diff(desired_yaw, current_yaw); // Use a helper to handle angle wrapping
+        let error = angle_diff(desired_yaw, estimated_yaw); // Use a helper to handle angle wrapping
         let error_derivative = (error - self.previous_yaw_error) / dt.as_secs_f32();
 
         self.integrated_yaw_error += dt.as_secs_f32() * error;
@@ -524,4 +524,13 @@ fn angle_diff(desired_yaw: f32, current_yaw: f32) -> f32 {
     yaw_error = yaw_error.rem_euclid(2.0 * PI);
     yaw_error -= PI;
     yaw_error
+}
+
+// alpha 0.1 is a good starting point for most applications
+fn low_pass_filter_vec3(prev: Vec3<f32>, new: Vec3<f32>, alpha: f32) -> Vec3<f32> {
+    vec3(
+        alpha * new.x + (1.0 - alpha) * prev.x,
+        alpha * new.y + (1.0 - alpha) * prev.y,
+        alpha * new.z + (1.0 - alpha) * prev.z,
+    )
 }

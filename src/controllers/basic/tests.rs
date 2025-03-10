@@ -115,12 +115,12 @@ fn test_altitude_controller_zero_error() {
     let attitude = identity_quaternion();
 
     let output = controller.control_altitude(
+        dt,
         desired_altitude,
         0.0,
         current_altitude,
         current_velocity,
         attitude,
-        dt,
     );
 
     // With zero error (altitude and velocity), PID terms should be 0
@@ -153,12 +153,12 @@ fn test_altitude_controller_positive_error() {
     let attitude = identity_quaternion();
 
     let output = controller.control_altitude(
+        dt,
         desired_altitude,
         0.0,
         current_altitude,
         current_velocity,
         attitude,
-        dt,
     );
 
     //   assert!(output > 0.5, "Thrust should be greater to ascend {}", output);
