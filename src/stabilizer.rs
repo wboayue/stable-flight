@@ -48,7 +48,6 @@ use std::{thread, time::Duration};
 
 use log::info;
 
-use crate::VehicleState;
 use crate::{commanders::Commander, Controller, Mixer, TelemetryPublisher, Vehicle};
 
 pub struct FlightStabilizer<

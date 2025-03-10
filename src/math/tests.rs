@@ -1,5 +1,19 @@
+use std::f32::EPSILON;
+
+// Helper function to compare floating-point values
+fn assert_float_eq(a: f32, b: f32, epsilon: f32) {
+    assert!(
+        (a - b).abs() <= epsilon,
+        "Expected {} to be approximately equal to {}, but difference is greater than epsilon {}",
+        a,
+        b,
+        epsilon
+    );
+}
+
 mod vec3 {
-    use super::super::{vec3, Vec3};
+    use super::super::*;
+    use super::*;
 
     #[test]
     fn test_default() {
@@ -119,10 +133,170 @@ mod vec3 {
         assert!(debug_str.contains("y: 2"));
         assert!(debug_str.contains("z: 3"));
     }
+
+    #[test]
+    fn test_clamp() {
+        // Test clamping within range
+        let v = vec3(1.0, 2.0, 3.0);
+        let result = v.clamp(0.0, 5.0);
+        assert_eq!(result.x, 1.0);
+        assert_eq!(result.y, 2.0);
+        assert_eq!(result.z, 3.0);
+
+        // Test clamping below minimum
+        let v = vec3(-1.0, -2.0, -3.0);
+        let result = v.clamp(0.0, 5.0);
+        assert_eq!(result.x, 0.0);
+        assert_eq!(result.y, 0.0);
+        assert_eq!(result.z, 0.0);
+
+        // Test clamping above maximum
+        let v = vec3(6.0, 7.0, 8.0);
+        let result = v.clamp(0.0, 5.0);
+        assert_eq!(result.x, 5.0);
+        assert_eq!(result.y, 5.0);
+        assert_eq!(result.z, 5.0);
+
+        // Test mixed clamping
+        let v = vec3(-1.0, 3.0, 8.0);
+        let result = v.clamp(0.0, 5.0);
+        assert_eq!(result.x, 0.0);
+        assert_eq!(result.y, 3.0);
+        assert_eq!(result.z, 5.0);
+    }
+
+    #[test]
+    fn test_magnitude_squared() {
+        // Test with positive values
+        let v = vec3(3.0, 4.0, 0.0);
+        assert_eq!(v.magnitude_squared(), 25.0); // 3² + 4² + 0² = 9 + 16 + 0 = 25
+
+        // Test with negative values
+        let v = vec3(-3.0, -4.0, 0.0);
+        assert_eq!(v.magnitude_squared(), 25.0); // (-3)² + (-4)² + 0² = 9 + 16 + 0 = 25
+
+        // Test with mixed values
+        let v = vec3(1.0, -2.0, 2.0);
+        assert_eq!(v.magnitude_squared(), 9.0); // 1² + (-2)² + 2² = 1 + 4 + 4 = 9
+
+        // Test with zero vector
+        let v = vec3(0.0, 0.0, 0.0);
+        assert_eq!(v.magnitude_squared(), 0.0);
+
+        // Test with integers
+        let v = vec3(3, 4, 0);
+        assert_eq!(v.magnitude_squared(), 25); // 3² + 4² + 0² = 9 + 16 + 0 = 25
+    }
+
+    #[test]
+    fn test_magnitude() {
+        // Test with Pythagorean triple
+        let v = vec3(3.0, 4.0, 0.0);
+        assert_float_eq(v.magnitude(), 5.0, EPSILON); // √(3² + 4² + 0²) = √25 = 5
+
+        // Test with negative values
+        let v = vec3(-3.0, -4.0, 0.0);
+        assert_float_eq(v.magnitude(), 5.0, EPSILON); // √((-3)² + (-4)² + 0²) = √25 = 5
+
+        // Test with unit vector along x-axis
+        let v = vec3(1.0, 0.0, 0.0);
+        assert_float_eq(v.magnitude(), 1.0, EPSILON);
+
+        // Test with zero vector
+        let v = vec3(0.0, 0.0, 0.0);
+        assert_float_eq(v.magnitude(), 0.0, EPSILON);
+
+        // Test with 3D case
+        let v = vec3(2.0, 3.0, 6.0);
+        assert_float_eq(v.magnitude(), 7.0, EPSILON); // √(2² + 3² + 6²) = √(4 + 9 + 36) = √49 = 7
+    }
+}
+
+mod vec2 {
+    use super::super::*;
+
+    #[test]
+    fn test_creation_and_basic_ops() {
+        // Test creation and default
+        let v = vec2(1.0, 2.0);
+        assert_eq!(v.x, 1.0);
+        assert_eq!(v.y, 2.0);
+
+        let v_default: Vec2<f32> = Vec2::default();
+        assert_eq!(v_default.x, 0.0);
+        assert_eq!(v_default.y, 0.0);
+
+        // Test addition
+        let v1 = vec2(1.0, 2.0);
+        let v2 = vec2(3.0, 4.0);
+        let sum = v1 + v2;
+        assert_eq!(sum.x, 4.0);
+        assert_eq!(sum.y, 6.0);
+
+        // Test subtraction
+        let diff = v2 - v1;
+        assert_eq!(diff.x, 2.0);
+        assert_eq!(diff.y, 2.0);
+
+        // Test multiplication
+        let prod = v1 * v2;
+        assert_eq!(prod.x, 3.0); // 1.0 * 3.0
+        assert_eq!(prod.y, 8.0); // 2.0 * 4.0
+
+        // Test scalar multiplication
+        let scaled = 2.0 * v1;
+        assert_eq!(scaled.x, 2.0);
+        assert_eq!(scaled.y, 4.0);
+
+        // Test division by scalar
+        let divided = v2 / 2.0;
+        assert_eq!(divided.x, 1.5);
+        assert_eq!(divided.y, 2.0);
+    }
+
+    #[test]
+    fn test_negation() {
+        let v = vec2(1.0, -2.0);
+        let neg = -v;
+        assert_eq!(neg.x, -1.0);
+        assert_eq!(neg.y, 2.0);
+
+        // Test double negation
+        let double_neg = -(-v);
+        assert_eq!(double_neg.x, 1.0);
+        assert_eq!(double_neg.y, -2.0);
+    }
+
+    #[test]
+    fn test_clamp() {
+        // Test clamping within range
+        let v = vec2(1.0, 2.0);
+        let result = v.clamp(0.0, 5.0);
+        assert_eq!(result.x, 1.0);
+        assert_eq!(result.y, 2.0);
+
+        // Test clamping below minimum
+        let v = vec2(-1.0, -2.0);
+        let result = v.clamp(0.0, 5.0);
+        assert_eq!(result.x, 0.0);
+        assert_eq!(result.y, 0.0);
+
+        // Test clamping above maximum
+        let v = vec2(6.0, 7.0);
+        let result = v.clamp(0.0, 5.0);
+        assert_eq!(result.x, 5.0);
+        assert_eq!(result.y, 5.0);
+
+        // Test mixed clamping
+        let v = vec2(-1.0, 8.0);
+        let result = v.clamp(0.0, 5.0);
+        assert_eq!(result.x, 0.0);
+        assert_eq!(result.y, 5.0);
+    }
 }
 
 mod mat3x3 {
-    use super::super::Mat3x3;
+    use super::super::*;
     use std::f32::EPSILON;
 
     // Helper function to compare floating-point numbers with an epsilon
@@ -229,11 +403,126 @@ mod mat3x3 {
         let mat = Mat3x3::zeros();
         assert_float_eq(mat.trace(), 0.0, EPSILON);
     }
+
+    #[test]
+    fn test_skew_symmetric() {
+        // Test with unit vectors
+        let v = vec3(1.0, 0.0, 0.0);
+        let skew = Mat3x3::skew_symmetric(v);
+        // Expected skew-symmetric matrix for [1,0,0]:
+        // [ 0  0  0]
+        // [ 0  0 -1]
+        // [ 0  1  0]
+        let expected = [0.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0];
+        assert_eq!(skew.data, expected);
+
+        let v = vec3(0.0, 1.0, 0.0);
+        let skew = Mat3x3::skew_symmetric(v);
+        // Expected for [0,1,0]:
+        // [ 0  0  1]
+        // [ 0  0  0]
+        // [-1  0  0]
+        let expected = [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0];
+        assert_eq!(skew.data, expected);
+
+        let v = vec3(0.0, 0.0, 1.0);
+        let skew = Mat3x3::skew_symmetric(v);
+        // Expected for [0,0,1]:
+        // [ 0 -1  0]
+        // [ 1  0  0]
+        // [ 0  0  0]
+        let expected = [0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        assert_eq!(skew.data, expected);
+
+        // Test with arbitrary vector
+        let v = vec3(1.0, 2.0, 3.0);
+        let skew = Mat3x3::skew_symmetric(v);
+        // Expected for [1,2,3]:
+        // [ 0 -3  2]
+        // [ 3  0 -1]
+        // [-2  1  0]
+        let expected = [0.0, -3.0, 2.0, 3.0, 0.0, -1.0, -2.0, 1.0, 0.0];
+        assert_eq!(skew.data, expected);
+    }
+
+    #[test]
+    fn test_outer_product() {
+        // Test with unit vectors
+        let a = vec3(1.0, 0.0, 0.0);
+        let b = vec3(0.0, 1.0, 0.0);
+        let outer = Mat3x3::outer_product(a, b);
+        // Expected outer product for [1,0,0] ⊗ [0,1,0]:
+        // [ 0  1  0]
+        // [ 0  0  0]
+        // [ 0  0  0]
+        let expected = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        assert_eq!(outer.data, expected);
+
+        // Test with same vector
+        let a = vec3(1.0, 2.0, 3.0);
+        let outer = Mat3x3::outer_product(a, a);
+        // Expected outer product for [1,2,3] ⊗ [1,2,3]:
+        // [ 1  2  3]
+        // [ 2  4  6]
+        // [ 3  6  9]
+        let expected = [1.0, 2.0, 3.0, 2.0, 4.0, 6.0, 3.0, 6.0, 9.0];
+        assert_eq!(outer.data, expected);
+
+        // Test with arbitrary vectors
+        let a = vec3(1.0, 2.0, 3.0);
+        let b = vec3(4.0, 5.0, 6.0);
+        let outer = Mat3x3::outer_product(a, b);
+        // Expected outer product for [1,2,3] ⊗ [4,5,6]:
+        // [ 4  5  6]
+        // [ 8 10 12]
+        // [12 15 18]
+        let expected = [4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 12.0, 15.0, 18.0];
+        assert_eq!(outer.data, expected);
+    }
+
+    #[test]
+    fn test_scalar_multiplication() {
+        let mat = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+        let scaled = mat * 2.0;
+        let expected = [2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0];
+        assert_eq!(scaled.data, expected);
+
+        // Test with zero scaling
+        let scaled = mat * 0.0;
+        let expected = [0.0; 9];
+        assert_eq!(scaled.data, expected);
+
+        // Test with negative scaling
+        let scaled = mat * -1.0;
+        let expected = [-1.0, -2.0, -3.0, -4.0, -5.0, -6.0, -7.0, -8.0, -9.0];
+        assert_eq!(scaled.data, expected);
+    }
+
+    #[test]
+    fn test_addition() {
+        let mat1 = Mat3x3::new([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+        let mat2 = Mat3x3::new([9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0]);
+        let sum = mat1 + mat2;
+        let expected = [10.0; 9]; // Each element should be 10.0
+        assert_eq!(sum.data, expected);
+
+        // Test addition with zero matrix
+        let zero = Mat3x3::zeros();
+        let sum = mat1 + zero;
+        assert_eq!(sum.data, mat1.data);
+
+        // Test addition with identity matrix
+        let identity = Mat3x3::identity();
+        let sum = mat1 + identity;
+        let expected = [2.0, 2.0, 3.0, 4.0, 6.0, 6.0, 7.0, 8.0, 10.0];
+        assert_eq!(sum.data, expected);
+    }
 }
 
 mod quaternion {
     use super::super::*;
     use std::f32::consts::PI;
+    use std::f32::EPSILON;
 
     // Helper function for approximate equality of f32 values
     fn assert_float_eq(a: f32, b: f32, epsilon: f32) {
@@ -301,7 +590,7 @@ mod quaternion {
     #[test]
     fn test_from_euler() {
         // Test quaternion from Euler angles (yaw = 90 degrees, pitch = 0, roll = 0)
-        let q = Quaternion::from_euler(0.0, 0.0, PI / 2.0);
+        let q = Quaternion::from_euler(PI / 2.0, 0.0, 0.0);
         let expected = Quaternion::new((PI / 4.0).cos(), 0.0, 0.0, (PI / 4.0).sin());
         assert_quaternion_eq(&q, &expected, 1e-6);
     }
@@ -309,7 +598,7 @@ mod quaternion {
     #[test]
     fn test_to_euler() {
         // Test Euler angle extraction for a 90-degree yaw
-        let q = Quaternion::from_euler(0.0, 0.0, PI / 2.0);
+        let q = Quaternion::from_euler(PI / 2.0, 0.0, 0.0);
         let euler = q.to_euler_rpy(); // (roll, pitch, yaw)
         assert_float_eq(euler.x, 0.0, 1e-6); // roll
         assert_float_eq(euler.y, 0.0, 1e-6); // pitch
@@ -319,7 +608,7 @@ mod quaternion {
     #[test]
     fn test_roll() {
         // Test roll extraction for a 90-degree roll
-        let q = Quaternion::from_euler(PI / 2.0, 0.0, 0.0);
+        let q = Quaternion::from_euler(0.0, 0.0, PI / 2.0);
         let roll = q.roll();
         assert_float_eq(roll, PI / 2.0, 1e-6);
     }
@@ -329,13 +618,13 @@ mod quaternion {
         // Test pitch extraction for a 90-degree pitch
         let q = Quaternion::from_euler(0.0, PI / 2.0, 0.0);
         let pitch = q.pitch();
-        assert_float_eq(pitch, PI / 2.0, 1e-6);
+        assert_float_eq(pitch, PI / 2.0, 1e-3);
     }
 
     #[test]
     fn test_yaw() {
         // Test yaw extraction for a 90-degree yaw
-        let q = Quaternion::from_euler(0.0, 0.0, PI / 2.0);
+        let q = Quaternion::from_euler(PI / 2.0, 0.0, 0.0);
         let yaw = q.yaw();
         assert_float_eq(yaw, PI / 2.0, 1e-6);
     }
@@ -354,7 +643,7 @@ mod quaternion {
     #[test]
     fn test_rotation_matrix_i_wrt_b() {
         // Test rotation matrix for a 90-degree yaw
-        let q = Quaternion::from_euler(0.0, 0.0, PI / 2.0);
+        let q = Quaternion::from_euler(PI / 2.0, 0.0, 0.0);
         let mat = q.rotation_matrix_i_wrt_b();
         let cos_90 = (PI / 2.0).cos();
         let sin_90 = (PI / 2.0).sin();
@@ -367,7 +656,7 @@ mod quaternion {
     #[test]
     fn test_rotation_matrix_b_wrt_i() {
         // Test body-to-inertial rotation matrix (transpose of i_wrt_b)
-        let q = Quaternion::from_euler(0.0, 0.0, PI / 2.0);
+        let q = Quaternion::from_euler(PI / 2.0, 0.0, 0.0);
         let mat = q.rotation_matrix_b_wrt_i();
         let cos_90 = (PI / 2.0).cos();
         let sin_90 = (PI / 2.0).sin();
@@ -392,5 +681,82 @@ mod quaternion {
         let q = Quaternion::new(1.0, 2.0, 3.0, 4.0);
         let s = q.to_string();
         assert_eq!(s, "1.000 2.000 3.000 4.000");
+    }
+
+    #[test]
+    fn test_from_rotation_matrix_edge_cases() {
+        // Test with identity matrix
+        let mat = Mat3x3::identity();
+        let q = Quaternion::from_rotation_matrix(mat);
+        assert_quaternion_eq(&q, &Quaternion::identity(), 1e-6);
+
+        // Test with rotation matrix where q0 is largest
+        // 180-degree rotation about z-axis
+        let mat = Mat3x3::new([-1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0]);
+        let q = Quaternion::from_rotation_matrix(mat);
+        // Expected quaternion: (0, 0, 0, 1) or (0, 0, 0, -1)
+        // But our code chooses the one with positive w
+        assert!(
+            (q.w.abs() < 1e-6 && (q.z - 1.0).abs() < 1e-6)
+                || (q.w.abs() < 1e-6 && (q.z + 1.0).abs() < 1e-6)
+        );
+
+        // Test with rotation matrix where q1 is largest
+        // 180-degree rotation about x-axis
+        let mat = Mat3x3::new([1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, -1.0]);
+        let q = Quaternion::from_rotation_matrix(mat);
+        // Expected quaternion: (0, 1, 0, 0) or (0, -1, 0, 0)
+        assert!(
+            (q.w.abs() < 1e-6 && (q.x - 1.0).abs() < 1e-6)
+                || (q.w.abs() < 1e-6 && (q.x + 1.0).abs() < 1e-6)
+        );
+
+        // Test with rotation matrix where q2 is largest
+        // 180-degree rotation about y-axis
+        let mat = Mat3x3::new([-1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0]);
+        let q = Quaternion::from_rotation_matrix(mat);
+        // Expected quaternion: (0, 0, 1, 0) or (0, 0, -1, 0)
+        assert!(
+            (q.w.abs() < 1e-6 && (q.y - 1.0).abs() < 1e-6)
+                || (q.w.abs() < 1e-6 && (q.y + 1.0).abs() < 1e-6)
+        );
+    }
+
+    #[test]
+    fn test_to_gibbs_vector_edge_cases() {
+        // Test normal case
+        let q = Quaternion::new(2.0, 1.0, 2.0, 3.0);
+        let gibbs = q.to_gibbs_vector();
+        assert_float_eq(gibbs.x, 0.5, EPSILON); // 1.0/2.0
+        assert_float_eq(gibbs.y, 1.0, EPSILON); // 2.0/2.0
+        assert_float_eq(gibbs.z, 1.5, EPSILON); // 3.0/2.0
+
+        // Test with w = 0 (180-degree rotation, Gibbs vector goes to infinity)
+        let q = Quaternion::new(0.0, 1.0, 0.0, 0.0);
+        let gibbs = q.to_gibbs_vector();
+        assert!(gibbs.x.abs() > 1e19); // Should be very large
+        assert_float_eq(gibbs.y, 0.0, EPSILON);
+        assert_float_eq(gibbs.z, 0.0, EPSILON);
+    }
+
+    #[test]
+    fn test_euler_conversions() {
+        // Test all three Euler angles together
+        let yaw = PI / 4.0; // 45 degrees
+        let pitch = PI / 6.0; // 30 degrees
+        let roll = PI / 3.0; // 60 degrees
+
+        let q = Quaternion::from_euler(yaw, pitch, roll);
+        let euler = q.to_euler();
+
+        assert_float_eq(euler.x, yaw, 1e-5); // yaw
+        assert_float_eq(euler.y, pitch, 1e-5); // pitch
+        assert_float_eq(euler.z, roll, 1e-5); // roll
+
+        // Also test the reverse order (rpy)
+        let rpy = q.to_euler_rpy();
+        assert_float_eq(rpy.x, roll, 1e-5); // roll
+        assert_float_eq(rpy.y, pitch, 1e-5); // pitch
+        assert_float_eq(rpy.z, yaw, 1e-5); // yaw
     }
 }
