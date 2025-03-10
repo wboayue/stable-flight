@@ -307,6 +307,7 @@ impl BasicController {
         let error_derivative = (error - self.previous_rate_error) / dt.as_secs_f32();
 
         self.integrated_rate_error = self.integrated_rate_error + dt.as_secs_f32() * error;
+        self.integrated_rate_error = self.integrated_rate_error.clamp(-100.0, 100.0);
 
         let moment =
             gains.p * error + gains.i * self.integrated_rate_error + gains.d * error_derivative;
@@ -341,6 +342,7 @@ impl BasicController {
         let error_derivative = (error - self.previous_angle_error) / dt.as_secs_f32();
 
         self.integrated_angle_error = self.integrated_angle_error + dt.as_secs_f32() * error;
+        self.integrated_angle_error = self.integrated_angle_error.clamp(-100.0, 100.0);
 
         let rates =
             gains.p * error + gains.i * self.integrated_angle_error + gains.d * error_derivative;
@@ -436,15 +438,20 @@ impl BasicController {
         current_velocity: Vec2<f32>,
     ) -> Vec2<f32> {
         let gains = &self.config.lateral_gains;
+
         let error = desired_position - current_position;
         let error_derivative = (error - self.previous_pos_error) / dt.as_secs_f32();
+
         self.integrated_pos_error = self.integrated_pos_error + dt.as_secs_f32() * error;
         let accel_cmd =
             gains.p * error + gains.i * self.integrated_pos_error + gains.d * (-current_velocity);
+
         self.previous_pos_error = error;
+
         // Convert acceleration to roll/pitch angles (simplified)
         let roll_cmd = accel_cmd.y / G;
         let pitch_cmd = -accel_cmd.x / G;
+
         vec2(roll_cmd, pitch_cmd)
     }
 
@@ -468,6 +475,7 @@ impl BasicController {
         let error_derivative = (error - self.previous_yaw_error) / dt.as_secs_f32();
 
         self.integrated_yaw_error += dt.as_secs_f32() * error;
+        self.integrated_yaw_error = self.integrated_yaw_error.clamp(-100.0, 100.0);
 
         let yaw_rate =
             gains.p * error + gains.i * self.integrated_yaw_error + gains.d * error_derivative;

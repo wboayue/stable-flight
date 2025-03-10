@@ -10,6 +10,16 @@ pub struct Vec3<T> {
     pub z: T,
 }
 
+impl Vec3<f32> {
+    pub fn clamp(&self, min: f32, max: f32) -> Vec3<f32> {
+        Vec3 {
+            x: self.x.clamp(min, max),
+            y: self.y.clamp(min, max),
+            z: self.y.clamp(min, max),
+        }
+    }
+}
+
 // Helper function to create Vec3 instances easily
 pub fn vec3<T>(x: T, y: T, z: T) -> Vec3<T> {
     Vec3 { x, y, z }
@@ -103,10 +113,19 @@ impl<T: Default> Default for Vec3<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Vec2<T: Default> {
     pub x: T,
     pub y: T,
+}
+
+impl Vec2<f32> {
+    pub fn clamp(&self, min: f32, max: f32) -> Vec2<f32> {
+        Vec2 {
+            x: self.x.clamp(min, max),
+            y: self.y.clamp(min, max),
+        }
+    }
 }
 
 // Helper function to create Vec3 instances easily
