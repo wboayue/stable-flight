@@ -30,6 +30,12 @@ pub struct ControlOutput {
     pub moments: Vec3<f32>,
 }
 
+impl ControlOutput {
+    pub fn new(thrust: f32, moments: Vec3<f32>) -> ControlOutput {
+        ControlOutput { thrust, moments }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct VehicleState {
     pub position: Vec3<Length>,
