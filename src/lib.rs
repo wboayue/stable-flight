@@ -79,7 +79,7 @@ pub struct ActuatorCommand {
 impl Default for ActuatorCommand {
     fn default() -> Self {
         ActuatorCommand {
-            motors: [0.5; 8],
+            motors: [0.0; 8],
             rudder: 0.0,
             elevator: 0.0,
             aileron: 0.0,
@@ -90,6 +90,4 @@ impl Default for ActuatorCommand {
     }
 }
 
-pub trait Mixer {
-    fn mix(&self, controls: &ControlOutput) -> ActuatorCommand;
-}
+pub use mixers::Mixer;
