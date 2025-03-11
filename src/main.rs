@@ -37,7 +37,7 @@ fn main() {
 
     let controller = BasicController::default();
 
-    let mixer = QuadCopterMixer {};
+    let mixer = QuadCopterMixer::default();
 
     let telemetry_configuration = MavlinkConfiguration {};
 

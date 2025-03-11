@@ -1,111 +1,150 @@
-use crate::{ActuatorCommand, ControlOutput};
+//! # QuadCopter Mixer Module
+//!
+//! This module provides a `QuadCopterMixer` that implements the `Mixer` trait to convert
+//! control outputs (collective thrust and moments) into individual motor commands for a
+//! quadcopter in a standard X configuration.
+//!
+//! The mixer assumes that the throttle input is in the range `[0, 1]` and that the moments
+//! (roll, pitch, yaw) are in the range `[-1, 1]`. It uses configurable scaling factors to
+//! adjust the influence of each moment on the motor commands.
+//!
+//! ## Motor Configuration (Standard X)
+//!
+//! - **Motor 0 (Front Left):** CCW rotation, contributes `+roll`, `+pitch`, `-yaw`
+//! - **Motor 1 (Front Right):** CW rotation, contributes `-roll`, `+pitch`, `+yaw`
+//! - **Motor 2 (Rear Left):** CW rotation, contributes `+roll`, `-pitch`, `+yaw`
+//! - **Motor 3 (Rear Right):** CCW rotation, contributes `-roll`, `-pitch`, `-yaw`
+//!
+//! ## Scaling Factors
+//!
+//! The following constants are defined for default scaling:
+//!
+//! - `NUM_MOTORS`: The number of motors, used to evenly distribute the collective thrust.
+//! - `DEFAULT_ROLL_PITCH_SCALING`: Scaling factor for roll and pitch moments.
+//! - `DEFAULT_YAW_SCALING`: Scaling factor for the yaw moment.
 
 use super::Mixer;
+use crate::{ActuatorCommand, ControlOutput};
 
 #[cfg(test)]
 mod tests;
 
-pub struct QuadCopterMixer {}
+const NUM_MOTORS: f32 = 4.0;
+const DEFAULT_ROLL_PITCH_SCALING: f32 = 4.0;
+const DEFAULT_YAW_SCALING: f32 = 8.0;
+
+/// Mixer for a quadcopter in a standard X configuration.
+///
+/// This mixer converts control outputs (thrust and moments) into individual motor commands.
+/// The roll, pitch, and yaw contributions are scaled using configurable factors.
+pub struct QuadCopterMixer {
+    /// Scaling factor for roll and pitch moments.
+    roll_pitch_scaling: f32,
+    /// Scaling factor for the yaw moment.
+    yaw_scaling: f32,
+}
+
+impl Default for QuadCopterMixer {
+    /// Creates a new `QuadCopterMixer` with default scaling factors.
+    fn default() -> Self {
+        QuadCopterMixer {
+            roll_pitch_scaling: DEFAULT_ROLL_PITCH_SCALING,
+            yaw_scaling: DEFAULT_YAW_SCALING,
+        }
+    }
+}
 
 impl Mixer for QuadCopterMixer {
-    // Mix control outputs to individual motor commands
-    // Assumes throttle in range [0, 1] and moments in range [-1, 1]
+    /// Mixes control outputs into individual motor commands.
+    ///
+    /// # Parameters
+    ///
+    /// - `command`: A reference to a `ControlOutput` containing the desired collective thrust
+    ///   (in the range [0, 1]) and moments (roll, pitch, yaw in the range [-1, 1]).
+    ///
+    /// # Returns
+    ///
+    /// An `ActuatorCommand` with motor outputs in the range [0, 100], representing the percentage
+    /// of maximum thrust for each motor.
+    ///
+    /// # Details
+    ///
+    /// The mixer performs the following steps:
+    ///
+    /// 1. **Compute Moment Contributions:**  
+    ///    - Roll: `command.moments.x / roll_pitch_scaling`  
+    ///    - Pitch: `command.moments.y / roll_pitch_scaling`  
+    ///    - Yaw: `command.moments.z / yaw_scaling`
+    ///
+    /// 2. **Compute Baseline Thrust:**  
+    ///    The total thrust is evenly distributed among all motors:  
+    ///    `baseline = command.thrust / NUM_MOTORS`
+    ///
+    /// 3. **Combine Contributions for Each Motor:**  
+    ///    The motor outputs are adjusted by adding or subtracting the computed roll, pitch, and yaw
+    ///    contributions according to the motor configuration:
+    ///
+    ///    - Motor 0 (Front Left): `baseline - yaw + pitch + roll`
+    ///    - Motor 1 (Front Right): `baseline + yaw + pitch - roll`
+    ///    - Motor 2 (Rear Left): `baseline + yaw - pitch + roll`
+    ///    - Motor 3 (Rear Right): `baseline - yaw - pitch - roll`
+    ///
+    /// 4. **Clamp and Scale:**  
+    ///    Each raw motor command is clamped to the range [0, 1] and then scaled to a percentage
+    ///    by multiplying by 100.
     fn mix(&self, command: &ControlOutput) -> ActuatorCommand {
-        // Calculate thrust offsets required to achieve desired moments around each axis
-        // Each motor contributes to roll, pitch and yaw based on its position and rotation direction
+        assert!(
+            command.thrust >= 0.0 && command.thrust <= 1.0,
+            "Thrust ({}) must be in the range [0, 1]",
+            command.thrust
+        );
+        assert!(
+            command.moments.x >= -1.0 && command.moments.x <= 1.0,
+            "Roll moment ({}) must be in the range [-1, 1]",
+            command.moments.x
+        );
+        assert!(
+            command.moments.y >= -1.0 && command.moments.y <= 1.0,
+            "Pitch moment ({}) must be in the range [-1, 1]",
+            command.moments.y
+        );
+        assert!(
+            command.moments.z >= -1.0 && command.moments.z <= 1.0,
+            "Yaw moment ({}) must be in the range [-1, 1]",
+            command.moments.z
+        );
 
-        // Roll contribution (X-axis moment) - moment in range [-1, 1]
-        let roll = command.moments.x / 4.0;
+        // Compute scaled moment contributions
+        let roll = command.moments.x / self.roll_pitch_scaling;
+        let pitch = command.moments.y / self.roll_pitch_scaling;
+        let yaw = command.moments.z / self.yaw_scaling;
 
-        // Pitch contribution (Y-axis moment) - moment in range [-1, 1]
-        let pitch = command.moments.y / 4.0;
+        // Compute baseline thrust per motor (even distribution)
+        let baseline = command.thrust / NUM_MOTORS;
 
-        // Yaw contribution (Z-axis moment) - moment in range [-1, 1]
-        let yaw = command.moments.z / 8.0;
+        // Compute raw motor outputs based on standard X configuration:
+        // Motor 0: Front Left  - CCW rotation -> +roll, +pitch, -yaw
+        // Motor 1: Front Right - CW rotation  -> -roll, +pitch, +yaw
+        // Motor 2: Rear Left   - CW rotation  -> +roll, -pitch, +yaw
+        // Motor 3: Rear Right  - CCW rotation -> -roll, -pitch, -yaw
+        let mut raw_outputs = [
+            baseline - yaw + pitch + roll, // Motor 0: Front Left
+            baseline + yaw + pitch - roll, // Motor 1: Front Right
+            baseline + yaw - pitch + roll, // Motor 2: Rear Left
+            baseline - yaw - pitch - roll, // Motor 3: Rear Right
+        ];
 
-        // Calculate the baseline thrust per motor (equal distribution of collective thrust)
-        // Thrust in range [0, 1]
-        let baseline = command.thrust / 4.0;
-
-        // Motor configurations in a standard X configuration:
-        // Motor 0: Front Left  - CCW rotation - contributes +roll, +pitch, -yaw
-        // Motor 1: Front Right - CW rotation  - contributes -roll, +pitch, +yaw
-        // Motor 2: Rear Left   - CW rotation  - contributes +roll, -pitch, +yaw
-        // Motor 3: Rear Right  - CCW rotation - contributes -roll, -pitch, -yaw
-
-        let mut output = ActuatorCommand::default();
-
-        // Step 1: Compute raw motor outputs
-        let mut raw_outputs = [0.0; 8];
-        raw_outputs[0] = baseline - yaw + pitch + roll; // front left
-        raw_outputs[1] = baseline + yaw + pitch - roll; // front right
-        raw_outputs[2] = baseline + yaw - pitch + roll; // rear left
-        raw_outputs[3] = baseline - yaw - pitch - roll; // rear right
-
-        // Step 2: Find the min and max of raw outputs to determine scaling
-        let min_raw = raw_outputs.iter().fold(f32::INFINITY, |a, &b| a.min(b));
-        let max_raw = raw_outputs.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-
-        // Step 3: Compute scaling factor to fit outputs within [0, 1]
-        let mut scale = 1.0;
-        let desired_min = 0.0;
-        let desired_max = 1.0;
-
-        if min_raw < desired_min || max_raw > desired_max {
-            // Compute the range of raw outputs
-            let raw_range = max_raw - min_raw;
-
-            // Compute scaling factors needed to fit within [0, 1]
-            let scale_to_max = if max_raw > desired_max {
-                (desired_max - desired_min) / (max_raw - min_raw)
-            } else {
-                f32::INFINITY
-            };
-            let scale_to_min = if min_raw < desired_min {
-                (desired_max - desired_min) / (max_raw - min_raw)
-            } else {
-                f32::INFINITY
-            };
-
-            // Take the smaller scaling factor (most restrictive)
-            scale = scale_to_max.min(scale_to_min);
-
-            // If raw_range is 0 (all outputs are equal), avoid division by zero
-            if raw_range == 0.0 {
-                scale = 1.0;
-            }
-
-            // Step 4: Apply scaling and shift to fit within [0, 1]
-            for raw in raw_outputs.clone().iter_mut() {
-                // Scale the outputs around their mean to fit within [0, 1]
-                // First, normalize around the mean of raw outputs
-                let mean_raw = (max_raw + min_raw) / 2.0;
-                *raw = (*raw - mean_raw) * scale + mean_raw;
-
-                // Shift to ensure the range fits exactly in [0, 1]
-                let scaled_min = raw_outputs.iter().fold(f32::INFINITY, |a, &b| a.min(b));
-                *raw -= scaled_min; // Shift so minimum is 0
-
-                // Final adjustment to ensure max fits (if necessary)
-                let scaled_max = raw_outputs.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-                if scaled_max > 0.0 {
-                    *raw *= desired_max / scaled_max; // Scale down to fit max at 1.0
-                }
-            }
+        // Clamp each output to [0, 1] and scale to a percentage (0 to 100)
+        for output in raw_outputs.iter_mut() {
+            *output = output.clamp(0.0, 1.0) * 100.0;
         }
 
-        // Step 5: Assign scaled outputs to ActuatorCommand and scale to [0, 100]
-        for (i, motor) in output.motors.iter_mut().enumerate() {
-            *motor = raw_outputs[i] * 100.0;
-            // Ensure rounding doesn't push us slightly out of bounds
-            if *motor < 0.0 {
-                *motor = 0.0;
-            }
-            if *motor > 100.0 {
-                *motor = 100.0;
-            }
+        // Assemble the actuator command with the computed motor outputs
+        let mut actuator_command = ActuatorCommand::default();
+        for (i, motor_output) in raw_outputs.iter().enumerate() {
+            actuator_command.motors[i] = *motor_output;
         }
 
-        output
+        actuator_command
     }
 }
