@@ -168,7 +168,7 @@ mod tests;
 /// struct ConstantAttitudeCommander;
 ///
 /// impl Commander for ConstantAttitudeCommander {
-///     fn next(&self, dt: Duration, current_state: &VehicleState) -> Command {
+///     fn next(&mut self, dt: Duration, current_state: &VehicleState) -> Command {
 ///         Command::Attitude(AttitudeCommand {
 ///             throttle: 0.5,  // 50% throttle
 ///             roll: 0.0,      // No roll
