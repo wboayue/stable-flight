@@ -1,6 +1,7 @@
 use env_logger::Builder;
 use log::{debug, error, info, warn};
 
+use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 use stable_flight_sitl::commanders::script::ScriptCommander;
 use stable_flight_sitl::controllers::basic::BasicController;
 use stable_flight_sitl::mixers::QuadCopterMixer;
@@ -19,7 +20,8 @@ fn main() {
     // The Commander trait's polymorphic design allows easy swapping of command sources:
     // - ScriptCommander: Replays pre-recorded CSV waypoint sequences (used here)
     // - SpektrumCommander: Maps physical controller inputs from Spektrum receiver
-    let commander = ScriptCommander::new("figure_eight.csv");
+    // let commander = ScriptCommander::new("figure_eight.csv");
+    let commander = Extreme3DCommander::new();
 
     // Configure RealFlight vehicle with network connection and actuator mapping.
     // This mapping connects to a QuadCopterX model in RealFlight.
