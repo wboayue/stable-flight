@@ -13,7 +13,7 @@ impl MockCommander {
 }
 
 impl Commander for MockCommander {
-    fn next(&self, dt: Duration, _current_state: &VehicleState) -> Command {
+    fn next(&mut self, dt: Duration, _current_state: &VehicleState) -> Command {
         // Alternate between Manual and Waypoint commands based on toggle
         let secs = dt.as_secs();
         if secs % 2 == 0 {
@@ -90,7 +90,7 @@ fn assert_waypoint_command_valid(cmd: &WaypointCommand) {
 
 #[test]
 fn test_manual_command_generation() {
-    let commander = MockCommander::new();
+    let mut commander = MockCommander::new();
     let dt = Duration::from_secs(0); // Should produce a ManualCommand
     let current_state = VehicleState::default();
 
@@ -112,7 +112,7 @@ fn test_manual_command_generation() {
 
 #[test]
 fn test_waypoint_command_generation() {
-    let commander = MockCommander::new();
+    let mut commander = MockCommander::new();
     let dt = Duration::from_secs(1); // Should produce a WaypointCommand
     let current_state = VehicleState::default();
 
@@ -162,7 +162,7 @@ fn test_waypoint_command_optional_fields() {
 
 #[test]
 fn test_command_alternation() {
-    let commander = MockCommander::new();
+    let mut commander = MockCommander::new();
 
     // Test multiple calls with different dt to ensure alternation
     let dt1 = Duration::from_secs(0); // Should produce ManualCommand
