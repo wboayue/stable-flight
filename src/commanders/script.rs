@@ -16,7 +16,7 @@ impl ScriptCommander {
 }
 
 impl Commander for ScriptCommander {
-    fn next(&self, dt: std::time::Duration, _current_state: &VehicleState) -> super::Command {
+    fn next(&mut self, dt: std::time::Duration, _current_state: &VehicleState) -> super::Command {
         Command::Waypoint(WaypointCommand {
             position: Vec2 { x: 0.0, y: 0.0 },
             velocity: None,

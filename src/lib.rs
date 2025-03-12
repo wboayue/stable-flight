@@ -15,15 +15,6 @@ use commanders::Command;
 use math::{Quaternion, Vec3};
 pub use stabilizer::FlightStabilizer;
 
-pub trait Stick {
-    fn get_controls(&self) -> StickInput;
-}
-
-#[derive(Debug)]
-pub struct StickInput {
-    pub channels: [f32; 6],
-}
-
 #[derive(Debug, Default, PartialEq)]
 pub struct ControlOutput {
     pub thrust: f32,
@@ -66,7 +57,7 @@ pub struct ConsoleTelemetryPublisher {
 }
 
 impl TelemetryPublisher for ConsoleTelemetryPublisher {
-    fn send_telemetry(&mut self, dt: Duration, telemetry: &VehicleState) {
+    fn send_telemetry(&mut self, _dt: Duration, telemetry: &VehicleState) {
         info!("Sending telemetry: {:?}", telemetry);
     }
 }
