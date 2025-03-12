@@ -137,8 +137,10 @@ use std::time::Duration;
 
 use crate::{math::Vec2, VehicleState};
 
+pub mod extreme_3d;
 pub mod script;
 pub mod spektrum;
+
 #[cfg(test)]
 mod tests;
 
@@ -166,7 +168,7 @@ mod tests;
 /// struct ConstantAttitudeCommander;
 ///
 /// impl Commander for ConstantAttitudeCommander {
-///     fn next(&self, dt: Duration, current_state: &VehicleState) -> Command {
+///     fn next(&mut self, dt: Duration, current_state: &VehicleState) -> Command {
 ///         Command::Attitude(AttitudeCommand {
 ///             throttle: 0.5,  // 50% throttle
 ///             roll: 0.0,      // No roll
@@ -196,7 +198,7 @@ pub trait Commander {
     /// - `Command::Attitude`: Direct manual control inputs for the aircraft's attitude (orientation).
     /// - `Command::Rate`: Direct manual control inputs for the aircraft's rotational rates.
     /// - `Command::Waypoint`: High-level navigational instructions for autonomous flight to a specific position.
-    fn next(&self, dt: Duration, current_state: &VehicleState) -> Command;
+    fn next(&mut self, dt: Duration, current_state: &VehicleState) -> Command;
 }
 
 /// Represents a flight control command to be executed by the flight system.

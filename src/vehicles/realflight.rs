@@ -3,42 +3,60 @@ use std::time::Duration;
 use log::{error, info, warn};
 use realflight_bridge::{ControlInputs, RealFlightRemoteBridge, SimulatorState};
 
-use crate::{math::Vec3, ActuatorCommand, Vehicle, VehicleState};
+use crate::{
+    math::{Quaternion, Vec3},
+    ActuatorCommand, Vehicle, VehicleState,
+};
 
 /// Mapping of actuator commands to RealFlight channels
 #[derive(Default)]
 pub struct ActuatorMapping {
+    /// Mapping for up to 8 motor channels.
     pub motors: [Option<usize>; 8],
+    /// Optional channel for the rudder.
     pub rudder: Option<usize>,
+    /// Optional channel for the elevator.
     pub elevator: Option<usize>,
+    /// Optional channel for the aileron.
     pub aileron: Option<usize>,
+    /// Optional channel for the throttle.
     pub throttle: Option<usize>,
+    /// Optional channel for the left elevon.
     pub elevon_left: Option<usize>,
+    /// Optional channel for the right elevon.
     pub elevon_right: Option<usize>,
 }
 
+/// Configuration for connecting to a RealFlight simulation environment.
 pub struct RealFlightConfiguration {
+    /// The host address (and port) of the RealFlight simulator.
     pub host: String,
+    /// Actuator channel mapping configuration.
     pub mapping: ActuatorMapping,
 }
 
+/// A vehicle implementation for the RealFlight simulation environment.
+///
+/// `RealFlightVehicle` communicates with the RealFlight simulator through a `RealFlightBridge`
+/// to send actuator commands and receive state updates.
 pub struct RealFlightVehicle {
+    /// The communication bridge to the RealFlight simulator.
     bridge: RealFlightRemoteBridge,
+    /// The current estimated state of the vehicle.
     estimated_state: VehicleState,
+    /// Configuration mapping for actuator channels.
     mapping: ActuatorMapping,
 }
 
 impl Vehicle for RealFlightVehicle {
+    /// Returns the current estimated state of the vehicle.
     fn estimate_state(&self, _dt: Duration) -> VehicleState {
         self.estimated_state.clone()
     }
 
+    /// Sends actuator commands to the RealFlight simulator and receives state update.
     fn actuate(&mut self, command: ActuatorCommand) {
-        info!("Actuating RealFlight with command: {:?}", command);
-
         let input = self.map_channels(command);
-
-        info!("Actuating RealFlight with channels: {:?}", input);
 
         match self.bridge.exchange_data(&input) {
             Ok(state) => self.update_estimate(state),
@@ -48,6 +66,13 @@ impl Vehicle for RealFlightVehicle {
 }
 
 impl RealFlightVehicle {
+    /// Constructs a new `RealFlightVehicle` using the given configuration.
+    ///
+    /// This function initializes the vehicle by disabling RC mode and resetting the aircraft.
+    ///
+    /// # Arguments
+    ///
+    /// * `configuration` - The connection and mapping configuration parameters.
     pub fn new(configuration: RealFlightConfiguration) -> RealFlightVehicle {
         let mut bridge = RealFlightRemoteBridge::new(&configuration.host).unwrap_or_else(|_| {
             panic!("Failed to connect to RealFlight at {}", configuration.host)
@@ -68,6 +93,17 @@ impl RealFlightVehicle {
         }
     }
 
+    /// Maps the provided actuator command to the corresponding RealFlight control channels.
+    ///
+    /// This function uses the `ActuatorMapping` to populate the `ControlInputs` structure.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - The actuator command containing desired values.
+    ///
+    /// # Returns
+    ///
+    /// A `ControlInputs` structure with channels set according to the mapping.
     fn map_channels(&self, command: ActuatorCommand) -> ControlInputs {
         let mut input = ControlInputs::default();
 
@@ -101,15 +137,15 @@ impl RealFlightVehicle {
             input.channels[i] = command.elevon_right;
         }
 
-        for i in 0..12 {
-            input.channels[i] = 0.8;
-        }
         input
     }
 
+    /// Updates the internal state estimate based on data received from the simulator.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - The simulator state data received from the RealFlight bridge.
     fn update_estimate(&mut self, state: SimulatorState) {
-        info!("Received state: {:?}", state);
-
         self.estimated_state.position = Vec3 {
             x: state.aircraft_position_x,
             y: state.aircraft_position_y,
@@ -127,11 +163,27 @@ impl RealFlightVehicle {
             y: state.acceleration_world_ay,
             z: state.acceleration_world_az,
         };
+
+        self.estimated_state.attitude = Quaternion {
+            w: state.orientation_quaternion_w,
+            x: state.orientation_quaternion_x,
+            y: state.orientation_quaternion_y,
+            z: state.orientation_quaternion_z,
+        };
+
+        self.estimated_state.angular_velocity = Vec3 {
+            x: state.roll_rate,
+            y: state.pitch_rate,
+            z: state.yaw_rate,
+        };
     }
 }
 
 impl Drop for RealFlightVehicle {
+    /// Cleans up the RealFlight vehicle by re-enabling RC mode.
     fn drop(&mut self) {
-        self.bridge.enable_rc().unwrap();
+        if let Err(e) = self.bridge.enable_rc() {
+            warn!("Failed to enable RC: {}", e);
+        }
     }
 }

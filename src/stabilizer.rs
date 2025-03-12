@@ -102,7 +102,12 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
     }
 
     pub fn run(&mut self) {
-        let target_duration = Duration::from_secs_f64(1.0 / self.target_frequency);
+        let target_duration = 1.0 / self.target_frequency;
+        assert!(
+            target_duration.is_finite(),
+            "The value is not a finite number."
+        );
+        let target_duration = Duration::from_secs_f64(target_duration);
 
         println!(
             "Starting stabilization with target frequency: {} Hz. Delta {:?}",
@@ -120,7 +125,6 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
         while self.running.load(Ordering::SeqCst) {
             // Get control inputs
             let command = self.commander.next(target_duration, &state);
-            info!("controls: {:?}", command);
 
             // Get vehicle state
             state = self.vehicle.estimate_state(target_duration);

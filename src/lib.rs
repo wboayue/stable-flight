@@ -15,19 +15,16 @@ use commanders::Command;
 use math::{Quaternion, Vec3};
 pub use stabilizer::FlightStabilizer;
 
-pub trait Stick {
-    fn get_controls(&self) -> StickInput;
-}
-
-#[derive(Debug)]
-pub struct StickInput {
-    pub channels: [f32; 6],
-}
-
 #[derive(Debug, Default, PartialEq)]
 pub struct ControlOutput {
     pub thrust: f32,
     pub moments: Vec3<f32>,
+}
+
+impl ControlOutput {
+    pub fn new(thrust: f32, moments: Vec3<f32>) -> ControlOutput {
+        ControlOutput { thrust, moments }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -60,7 +57,7 @@ pub struct ConsoleTelemetryPublisher {
 }
 
 impl TelemetryPublisher for ConsoleTelemetryPublisher {
-    fn send_telemetry(&mut self, dt: Duration, telemetry: &VehicleState) {
+    fn send_telemetry(&mut self, _dt: Duration, telemetry: &VehicleState) {
         info!("Sending telemetry: {:?}", telemetry);
     }
 }
@@ -79,7 +76,7 @@ pub struct ActuatorCommand {
 impl Default for ActuatorCommand {
     fn default() -> Self {
         ActuatorCommand {
-            motors: [0.5; 8],
+            motors: [0.0; 8],
             rudder: 0.0,
             elevator: 0.0,
             aileron: 0.0,
@@ -90,6 +87,4 @@ impl Default for ActuatorCommand {
     }
 }
 
-pub trait Mixer {
-    fn mix(&self, controls: &ControlOutput) -> ActuatorCommand;
-}
+pub use mixers::Mixer;
