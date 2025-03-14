@@ -18,6 +18,19 @@ impl Vec3<f32> {
             z: self.z.clamp(min, max),
         }
     }
+    pub fn dot(&self, rhs: Vec3<f32>) -> f32 {
+        self.x * rhs.x + self.y * rhs.y + self.z * rhs.z
+    }
+    pub fn cross(&self, rhs: Vec3<f32>) -> Vec3<f32> {
+        vec3(
+            self.y * rhs.z - self.z * rhs.y,
+            self.z * rhs.x - self.x * rhs.z,
+            self.x * rhs.y - self.y * rhs.x,
+        )
+    }
+    pub fn is_finite(&self) -> bool {
+        self.x.is_finite() && self.y.is_finite() && self.z.is_finite()
+    }
 }
 
 // Helper function to create Vec3 instances easily
@@ -70,6 +83,19 @@ impl Mul<Vec3<f32>> for f32 {
             x: self * rhs.x,
             y: self * rhs.y,
             z: self * rhs.z,
+        }
+    }
+}
+
+// vec3 * x
+impl Mul<f32> for Vec3<f32> {
+    type Output = Vec3<f32>;
+
+    fn mul(self, rhs: f32) -> Vec3<f32> {
+        Vec3 {
+            x: self.x * rhs,
+            y: self.y * rhs,
+            z: self.z * rhs,
         }
     }
 }

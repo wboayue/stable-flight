@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Simulated flight loop
 
     let dt = Duration::from_millis(100); // 10Hz update rate
-    let command = Command::Attitude(AttitudeCommand{
+    let command = Command::Attitude(AttitudeCommand {
         throttle: 0.5,
         roll: 0.0,
         pitch: 0.0,
