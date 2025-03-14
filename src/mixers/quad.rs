@@ -114,6 +114,8 @@ impl Mixer for QuadCopterMixer {
             command.moments.z
         );
 
+        println!("command: {:?}", command);
+
         // Compute scaled moment contributions
         let roll = command.moments.x / self.roll_pitch_scaling;
         let pitch = command.moments.y / self.roll_pitch_scaling;
@@ -121,6 +123,10 @@ impl Mixer for QuadCopterMixer {
 
         // Compute baseline thrust per motor (even distribution)
         let baseline = command.thrust / NUM_MOTORS;
+
+        if baseline <= 0.0 {
+            return ActuatorCommand::default();
+        }
 
         // Compute raw motor outputs based on standard X configuration:
         // Motor 0: Front Left  - CCW rotation -> +roll, +pitch, -yaw

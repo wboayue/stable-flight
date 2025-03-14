@@ -140,7 +140,8 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             self.vehicle.actuate(actuator_command);
 
             // Send telemetry
-            self.telemetry.send_telemetry(target_duration, &state);
+            self.telemetry
+                .send_telemetry(target_duration, &command, &state);
 
             // Increment iteration counter
             iteration_count += 1;
@@ -161,7 +162,6 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
                 let elapsed = start_time.elapsed().as_secs_f64();
                 let actual_freq = iteration_count as f64 / elapsed;
                 println!("Actual frequency: {:.2} Hz", actual_freq);
-                println!("State: {:?}", state);
             }
         }
     }

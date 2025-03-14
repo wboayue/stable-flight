@@ -87,6 +87,19 @@ impl<T: Div<Output = T> + Copy> Div<T> for Vec3<T> {
     }
 }
 
+// vec3 / vec3
+impl<T: Div<Output = T> + Copy> Div<Vec3<T>> for Vec3<T> {
+    type Output = Vec3<T>;
+
+    fn div(self, rhs: Vec3<T>) -> Vec3<T> {
+        Vec3 {
+            x: self.x / rhs.x,
+            y: self.y / rhs.y,
+            z: self.z / rhs.z,
+        }
+    }
+}
+
 impl<T> Vec3<T> {
     pub fn magnitude_squared(&self) -> T
     where

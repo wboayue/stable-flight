@@ -49,7 +49,7 @@ pub trait Controller {
 }
 
 pub trait TelemetryPublisher {
-    fn send_telemetry(&mut self, dt: Duration, telemetry: &VehicleState);
+    fn send_telemetry(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState);
 }
 
 pub struct ConsoleTelemetryPublisher {
@@ -57,7 +57,7 @@ pub struct ConsoleTelemetryPublisher {
 }
 
 impl TelemetryPublisher for ConsoleTelemetryPublisher {
-    fn send_telemetry(&mut self, _dt: Duration, telemetry: &VehicleState) {
+    fn send_telemetry(&mut self, _dt: Duration, _command: &Command, telemetry: &VehicleState) {
         info!("Sending telemetry: {:?}", telemetry);
     }
 }

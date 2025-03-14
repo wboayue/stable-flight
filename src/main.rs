@@ -45,7 +45,7 @@ fn main() {
 
     let telemetry = MavlinkPublisher::new(telemetry_configuration);
 
-    let target_frequency = 300.0;
+    let target_frequency = 250.0;
 
     let mut stabilizer = FlightStabilizer::new(
         target_frequency,

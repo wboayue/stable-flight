@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use gilrs::{Axis, Button, Event, EventType, GamepadId, Gilrs};
 
-use super::{AttitudeCommand, Command, Commander};
+use super::{AttitudeCommand, Command, Commander, RateCommand};
 use crate::VehicleState;
 
 const THROTTLE_CODE: u32 = 65590;
@@ -33,7 +33,7 @@ impl Extreme3DCommander {
     /// 4: arm (right stick y)
     /// 5: mode (left trigger)  
     pub fn read_channels(&mut self) -> [f32; 6] {
-        while let Some(Event{id, event, ..}) = self.gilrs.next_event() {
+        while let Some(Event { id, event, .. }) = self.gilrs.next_event() {
             self.active_gamepad = Some(id);
 
             match event {
@@ -104,11 +104,19 @@ impl Commander for Extreme3DCommander {
             2
         };
 
-        Command::Attitude(AttitudeCommand {
+        // Command::Attitude(AttitudeCommand {
+        //     throttle: channels[0],
+        //     roll: channels[1],
+        //     pitch: channels[2],
+        //     yaw: channels[3],
+        //     arm: channels[4] > 0.5,
+        //     mode,
+        // })
+        Command::Rate(RateCommand {
             throttle: channels[0],
-            roll: channels[1],
-            pitch: channels[2],
-            yaw: channels[3],
+            roll_rate: channels[1],
+            pitch_rate: channels[2],
+            yaw_rate: channels[3],
             arm: channels[4] > 0.5,
             mode,
         })
