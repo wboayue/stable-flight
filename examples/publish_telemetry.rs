@@ -1,6 +1,7 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
+use stable_flight_sitl::commanders::{AttitudeCommand, Command};
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 use stable_flight_sitl::{TelemetryPublisher, VehicleState}; // Import common MAVLink messages
 
@@ -12,12 +13,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Simulated flight loop
 
     let dt = Duration::from_millis(100); // 10Hz update rate
+    let command = Command::Attitude(AttitudeCommand{
+        throttle: 0.5,
+        roll: 0.0,
+        pitch: 0.0,
+        yaw: 0.0,
+        arm: true,
+        mode: 0, // Placeholder for mode, replace with actual mode logic
+    }); // Placeholder for command, replace with actual command logic
 
     loop {
         let start = Instant::now();
 
         let state = VehicleState::default(); // Simulated vehicle state
-        publisher.send_telemetry(dt, &state);
+        publisher.send_telemetry(dt, &command, &state);
 
         // Sleep for 100ms (10Hz update rate)
         thread::sleep(dt - start.elapsed());
@@ -32,26 +41,3 @@ fn get_time_ms() -> u32 {
         .unwrap()
         .as_millis() as u32
 }
-
-// fn send_heartbeat<T : mavlink::Message>(
-//     conn: &mut Box<dyn MavConnection<T>>,
-//     header: MavHeader
-// ) -> Result<(), Box<dyn std::error::Error>> {
-//     let heartbeat = HEARTBEAT_DATA {
-//         custom_mode: 0,
-//         mavtype: MavType::MAV_TYPE_QUADROTOR,
-//         autopilot: MavAutopilot::MAV_AUTOPILOT_PX4,
-//         base_mode: MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
-//         system_status: MavState::MAV_STATE_ACTIVE,
-//         mavlink_version: 3,
-//     };
-//     conn.send(&header, &MavMessage::HEARTBEAT(heartbeat))?;
-//     Ok(())
-// }
-
-// Add these dependencies to your Cargo.toml:
-// [dependencies]
-// mavlink = "0.9"
-// Add this if you get build errors:
-// [build-dependencies]
-// mavlink = "0.9"
