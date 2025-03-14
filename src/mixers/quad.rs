@@ -114,7 +114,7 @@ impl Mixer for QuadCopterMixer {
             command.moments.z
         );
 
-        println!("command: {:?}", command);
+//        println!("command: {:?}", command);
 
         // Compute scaled moment contributions
         let roll = command.moments.x / self.roll_pitch_scaling;
