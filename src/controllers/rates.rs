@@ -36,15 +36,20 @@ impl Default for RatesController {
     fn default() -> Self {
         Self {
             gains: Gains {
-                p: 2.0,
-                i: 0.0,
-                d: 0.0,
+                p: 1000.0,
+                i: 50.0,
+                d: 10.0,
             },
             max_angular_rates: Vec3 {
-                x: 3.0, // max roll rate in rad/s (~172 deg/s)
-                y: 3.0, // max pitch rate in rad/s (~172 deg/s)
-                z: 1.5, // max yaw rate in rad/s (~86 deg/s)
+                x: 172.0, // max roll rate in deg/s)
+                y: 172.0, // max pitch rate in deg/s)
+                z: 86.0,  // max yaw rate in deg/s)
             },
+            // max_angular_rates: Vec3 {
+            //     x: 3.0, // max roll rate in rad/s (~172 deg/s)
+            //     y: 3.0, // max pitch rate in rad/s (~172 deg/s)
+            //     z: 1.5, // max yaw rate in rad/s (~86 deg/s)
+            // },
             integral_term: Vec3::default(),
             max_integral: 100.0,
             last_error: Vec3::default(),
@@ -109,32 +114,49 @@ impl RatesController {
         let desired_rates = desired_rates.clamp(-1.0, 1.0);
         let scaled_desired_rates = desired_rates * self.max_angular_rates;
 
+        // println!(
+        //     "{:?},{:?},{:?},{:?},{:?},{:?}",
+        //     scaled_desired_rates.x,
+        //     estimated_rates.x,
+        //     scaled_desired_rates.y,
+        //     estimated_rates.y,
+        //     scaled_desired_rates.z,
+        //     estimated_rates.z
+        // );
+
+        println!(
+            "{:?},{:?},{:?},{:?}",
+            0.0,
+            estimated_rates.x,
+            estimated_rates.y,
+            estimated_rates.z
+        );
+
         let error = scaled_desired_rates - estimated_rates;
 
         let error_derivative = (error - self.last_error) / dt;
+        self.last_error = error;
 
         self.integral_term = self.integral_term + dt * error;
         self.integral_term = self
             .integral_term
             .clamp(-self.max_integral, self.max_integral);
 
-        self.last_error = error;
-
         let moment = self.gains.p * error
-            + self.gains.i * self.integral_term
-            + self.gains.d * error_derivative;
+            + self.gains.d * error_derivative
+            + self.gains.i * self.integral_term;
 
         let moment_magnitude = moment.magnitude();
         let max_moment_magnitude = self.max_moment(dt).magnitude();
 
         let scaled_moment = if moment_magnitude > 0.0 && max_moment_magnitude > 0.0 {
-            let scale = (moment_magnitude / max_moment_magnitude).clamp(0.0, 1.0);
+            let scale = (moment_magnitude / max_moment_magnitude).clamp(-1.0, 1.0);
             moment * (scale / moment_magnitude)
         } else {
             moment // Zero vector or zero max_moment_magnitude
         };
 
-        scaled_moment
+        (scaled_moment * 1000.0).clamp(-1.0, 1.0) // Scale to physical units (e.g., N·m)
     }
 
     /// Calculates maximum moments (roll, pitch, yaw) based on gains and maximum angular rates.

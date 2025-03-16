@@ -41,7 +41,7 @@ pub struct VehicleState {
 
 pub trait Vehicle {
     fn estimate_state(&self, dt: Duration) -> VehicleState;
-    fn actuate(&mut self, actuator_command: ActuatorCommand);
+    fn actuate(&mut self, actuator_command: &ActuatorCommand);
 }
 
 pub trait Controller {

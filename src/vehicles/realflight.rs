@@ -55,7 +55,7 @@ impl Vehicle for RealFlightVehicle {
     }
 
     /// Sends actuator commands to the RealFlight simulator and receives state update.
-    fn actuate(&mut self, command: ActuatorCommand) {
+    fn actuate(&mut self, command: &ActuatorCommand) {
         let input = self.map_channels(command);
 
         match self.bridge.exchange_data(&input) {
@@ -104,7 +104,7 @@ impl RealFlightVehicle {
     /// # Returns
     ///
     /// A `ControlInputs` structure with channels set according to the mapping.
-    fn map_channels(&self, command: ActuatorCommand) -> ControlInputs {
+    fn map_channels(&self, command: &ActuatorCommand) -> ControlInputs {
         let mut input = ControlInputs::default();
 
         for (i, val) in self.mapping.motors.iter().enumerate() {

@@ -29,9 +29,11 @@ use crate::{ActuatorCommand, ControlOutput};
 #[cfg(test)]
 mod tests;
 
-const NUM_MOTORS: f32 = 4.0;
-const DEFAULT_ROLL_PITCH_SCALING: f32 = 4.0;
-const DEFAULT_YAW_SCALING: f32 = 8.0;
+const THRUST_FACTOR: f32 = 0.9; // Thrust factor for baseline thrust calculation
+const CONTROL_FACTOR: f32 = 1.0 - THRUST_FACTOR; // Control factor for moment contributions
+
+const DEFAULT_ROLL_PITCH_SCALING: f32 = CONTROL_FACTOR;
+const DEFAULT_YAW_SCALING: f32 = DEFAULT_ROLL_PITCH_SCALING * 4.0;
 
 /// Mixer for a quadcopter in a standard X configuration.
 ///
@@ -114,15 +116,15 @@ impl Mixer for QuadCopterMixer {
             command.moments.z
         );
 
-        //        println!("command: {:?}", command);
+        // println!("command: {:?}", command);
 
         // Compute scaled moment contributions
-        let roll = command.moments.x / self.roll_pitch_scaling;
-        let pitch = command.moments.y / self.roll_pitch_scaling;
-        let yaw = command.moments.z / self.yaw_scaling;
+        let mut roll = command.moments.x * self.roll_pitch_scaling;
+        let mut pitch = command.moments.y * self.roll_pitch_scaling; // pitch is scaled more aggressively
+        let mut yaw = command.moments.z * self.yaw_scaling;
 
         // Compute baseline thrust per motor (even distribution)
-        let baseline = command.thrust / NUM_MOTORS;
+        let baseline = command.thrust * THRUST_FACTOR;
 
         if baseline <= 0.0 {
             return ActuatorCommand::default();
@@ -134,22 +136,32 @@ impl Mixer for QuadCopterMixer {
         // Motor 2: Rear Left   - CW rotation  -> +roll, -pitch, +yaw
         // Motor 3: Rear Right  - CCW rotation -> -roll, -pitch, -yaw
         let mut raw_outputs = [
-            baseline - yaw + pitch + roll, // Motor 0: Front Left
-            baseline + yaw + pitch - roll, // Motor 1: Front Right
-            baseline + yaw - pitch + roll, // Motor 2: Rear Left
-            baseline - yaw - pitch - roll, // Motor 3: Rear Right
+            baseline + yaw + pitch + roll, // Motor 0: Front Left
+            baseline - yaw + pitch - roll, // Motor 1: Front Right
+            baseline - yaw - pitch + roll, // Motor 2: Rear Left
+            baseline + yaw - pitch - roll, // Motor 3: Rear Right
+
+                                           // baseline - yaw + pitch + roll, // Motor 0: Front Left
+                                           // baseline + yaw + pitch - roll, // Motor 1: Front Right
+                                           // baseline + yaw - pitch + roll, // Motor 2: Rear Left
+                                           // baseline - yaw - pitch - roll, // Motor 3: Rear Right
         ];
 
         // Clamp each output to [0, 1] and scale to a percentage (0 to 100)
         for output in raw_outputs.iter_mut() {
-            *output = output.clamp(0.0, 1.0) * 100.0;
+            *output = output.clamp(0.0, 1.0);
         }
 
         // Assemble the actuator command with the computed motor outputs
         let mut actuator_command = ActuatorCommand::default();
-        for (i, motor_output) in raw_outputs.iter().enumerate() {
-            actuator_command.motors[i] = *motor_output;
-        }
+
+        // assign for quad X
+        actuator_command.motors[0] = raw_outputs[0];
+        actuator_command.motors[1] = raw_outputs[1];
+        actuator_command.motors[2] = raw_outputs[2];
+        actuator_command.motors[3] = raw_outputs[3];
+
+        //    println!("actuator_command: {:?}", actuator_command);
 
         actuator_command
     }
