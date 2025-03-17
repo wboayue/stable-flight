@@ -37,11 +37,9 @@
 
 use std::f32::consts::PI;
 use std::time::Duration;
+use robomath::{vec2, vec3, Quaternion, Vec2, Vec3};
 
-use crate::{
-    commanders::{AttitudeCommand, Command, RateCommand, WaypointCommand},
-    math::{vec2, vec3, Quaternion, Vec2, Vec3},
-};
+use crate::commanders::{AttitudeCommand, Command, RateCommand, WaypointCommand};
 
 use super::{rates::RatesController, ControlOutput, Controller, VehicleState};
 
@@ -234,9 +232,9 @@ impl BasicController {
         let desired_rates = vec3(desired_rp_rates.x, desired_rp_rates.y, desired_yaw_rate);
 
         let current_rates = vec3(
-            estimated_state.angular_velocity.x.value,
-            estimated_state.angular_velocity.y.value,
-            estimated_state.angular_velocity.z.value,
+            estimated_state.angular_velocity.x,
+            estimated_state.angular_velocity.y,
+            estimated_state.angular_velocity.z,
         );
 
         let moments = self
@@ -275,9 +273,9 @@ impl BasicController {
         );
 
         let current_rates = vec3(
-            estimated_state.angular_velocity.x.value,
-            estimated_state.angular_velocity.y.value,
-            estimated_state.angular_velocity.z.value,
+            estimated_state.angular_velocity.x,
+            estimated_state.angular_velocity.y,
+            estimated_state.angular_velocity.z,
         );
 
         let moments = self
@@ -337,9 +335,9 @@ impl BasicController {
         let desired_rates = vec3(desired_rp_rates.x, desired_rp_rates.y, desired_yaw_rate);
 
         let current_rates = vec3(
-            estimated_state.angular_velocity.x.value,
-            estimated_state.angular_velocity.y.value,
-            estimated_state.angular_velocity.z.value,
+            estimated_state.angular_velocity.x,
+            estimated_state.angular_velocity.y,
+            estimated_state.angular_velocity.z,
         );
 
         let moments = self

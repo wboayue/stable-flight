@@ -117,9 +117,9 @@ impl MavlinkPublisher {
             roll: telemetry.attitude.x,
             pitch: telemetry.attitude.y,
             yaw: telemetry.attitude.z,
-            rollspeed: telemetry.angular_velocity.x.value,
-            pitchspeed: telemetry.angular_velocity.y.value,
-            yawspeed: telemetry.angular_velocity.z.value,
+            rollspeed: telemetry.angular_velocity.x,
+            pitchspeed: telemetry.angular_velocity.y,
+            yawspeed: telemetry.angular_velocity.z,
         };
 
         self.send_message(&MavMessage::ATTITUDE(attitude_msg));

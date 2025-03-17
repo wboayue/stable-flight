@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::math::{vec3, Vec3};
+use robomath::{vec3, Vec3};
 
 use super::basic::Gains;
 
@@ -36,22 +36,22 @@ impl Default for RatesController {
     fn default() -> Self {
         Self {
             gains: Gains {
-                p: 1000.0,
-                i: 50.0,
-                d: 10.0,
-            },
-            max_angular_rates: Vec3 {
-                x: 172.0, // max roll rate in deg/s)
-                y: 172.0, // max pitch rate in deg/s)
-                z: 86.0,  // max yaw rate in deg/s)
+                p: 7.0,
+                i: 0.05,
+                d: 0.01,
             },
             // max_angular_rates: Vec3 {
-            //     x: 3.0, // max roll rate in rad/s (~172 deg/s)
-            //     y: 3.0, // max pitch rate in rad/s (~172 deg/s)
-            //     z: 1.5, // max yaw rate in rad/s (~86 deg/s)
+            //     x: 172.0, // max roll rate in deg/s)
+            //     y: 172.0, // max pitch rate in deg/s)
+            //     z: 86.0,  // max yaw rate in deg/s)
             // },
+            max_angular_rates: Vec3 {
+                x: 3.0, // max roll rate in rad/s (~172 deg/s)
+                y: 3.0, // max pitch rate in rad/s (~172 deg/s)
+                z: 1.5, // max yaw rate in rad/s (~86 deg/s)
+            },
             integral_term: Vec3::default(),
-            max_integral: 100.0,
+            max_integral: 500.0,
             last_error: Vec3::default(),
         }
     }

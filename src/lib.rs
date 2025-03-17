@@ -1,6 +1,5 @@
 pub mod commanders;
 pub mod controllers;
-pub mod math;
 pub mod mixers;
 pub mod stabilizer;
 pub mod telemetry;
@@ -12,7 +11,7 @@ use log::info;
 use uom::si::f32::*;
 
 use commanders::Command;
-use math::{Quaternion, Vec3};
+use robomath::{Quaternion, Vec3};
 pub use stabilizer::FlightStabilizer;
 
 #[derive(Debug, Default, PartialEq)]
@@ -33,7 +32,7 @@ pub struct VehicleState {
     pub velocity: Vec3<Velocity>,
     pub acceleration: Vec3<Acceleration>,
     pub attitude: Quaternion,
-    pub angular_velocity: Vec3<AngularVelocity>,
+    pub angular_velocity: Vec3<f32>,
     // flight mode
     // heading
     // gps

@@ -135,7 +135,9 @@
 
 use std::time::Duration;
 
-use crate::{math::Vec2, VehicleState};
+use robomath::Vec2;
+
+use crate::VehicleState;
 
 pub mod extreme_3d;
 pub mod script;

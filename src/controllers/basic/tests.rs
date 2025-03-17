@@ -1,4 +1,4 @@
-use crate::math::vec3;
+use robomath::vec3;
 
 use super::*;
 use std::time::Duration;
