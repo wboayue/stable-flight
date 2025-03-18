@@ -24,7 +24,7 @@ fn test_hover_no_moments() {
     let input = ControlOutput::new(1.0, vec3(0.0, 0.0, 0.0));
     let output = mixer.mix(&input);
 
-    let expected = 25.0;
+    let expected = 0.9;
     for i in 0..4 {
         assert!(
             approx_eq(output.motors[i], expected),
@@ -53,8 +53,8 @@ fn test_pure_roll() {
     let output = mixer.mix(&input);
 
     assert!(
-        approx_eq(output.motors[0], 25.0),
-        "Motor 0 expected 25.0 but got {}",
+        approx_eq(output.motors[0], 0.1),
+        "Motor 0 expected 0.1 but got {}",
         output.motors[0]
     ); // Front Left
     assert!(
@@ -63,8 +63,8 @@ fn test_pure_roll() {
         output.motors[1]
     ); // Front Right
     assert!(
-        approx_eq(output.motors[2], 25.0),
-        "Motor 2 expected 25.0 but got {}",
+        approx_eq(output.motors[2], 0.1),
+        "Motor 2 expected 0.1 but got {}",
         output.motors[2]
     ); // Rear Left
     assert!(
@@ -91,13 +91,13 @@ fn test_pure_pitch() {
     let output = mixer.mix(&input);
 
     assert!(
-        approx_eq(output.motors[0], 25.0),
-        "Motor 0 expected 25.0 but got {}",
+        approx_eq(output.motors[0], 0.1),
+        "Motor 0 expected 0.1 but got {}",
         output.motors[0]
     ); // Front Left
     assert!(
-        approx_eq(output.motors[1], 25.0),
-        "Motor 1 expected 25.0 but got {}",
+        approx_eq(output.motors[1], 0.1),
+        "Motor 1 expected 0.1 but got {}",
         output.motors[1]
     ); // Front Right
     assert!(
@@ -129,22 +129,22 @@ fn test_pure_yaw() {
     let output = mixer.mix(&input);
 
     assert!(
-        approx_eq(output.motors[0], 0.0),
+        approx_eq(output.motors[0], 0.25),
         "Motor 0 expected 0.0 but got {}",
         output.motors[0]
     ); // Front Left (CCW)
     assert!(
-        approx_eq(output.motors[1], 12.5),
+        approx_eq(output.motors[1], 0.0),
         "Motor 1 expected 12.5 but got {}",
         output.motors[1]
     ); // Front Right (CW)
     assert!(
-        approx_eq(output.motors[2], 12.5),
+        approx_eq(output.motors[2], 0.0),
         "Motor 2 expected 12.5 but got {}",
         output.motors[2]
     ); // Rear Left (CW)
     assert!(
-        approx_eq(output.motors[3], 0.0),
+        approx_eq(output.motors[3], 0.25),
         "Motor 3 expected 0.0 but got {}",
         output.motors[3]
     ); // Rear Right (CCW)
@@ -170,23 +170,23 @@ fn test_max_inputs() {
     let output = mixer.mix(&input);
 
     assert!(
-        approx_eq(output.motors[0], 62.5),
-        "Motor 0 expected 62.5 but got {}",
+        approx_eq(output.motors[0], 1.0),
+        "Motor 0 expected 1.0 but got {}",
         output.motors[0]
     ); // Front Left
     assert!(
-        approx_eq(output.motors[1], 37.5),
-        "Motor 1 expected 37.5 but got {}",
+        approx_eq(output.motors[1], 0.65),
+        "Motor 1 expected 0.65 but got {}",
         output.motors[1]
     ); // Front Right
     assert!(
-        approx_eq(output.motors[2], 37.5),
-        "Motor 2 expected 37.5 but got {}",
+        approx_eq(output.motors[2], 0.65),
+        "Motor 2 expected 0.65 but got {}",
         output.motors[2]
     ); // Rear Left
     assert!(
-        approx_eq(output.motors[3], 0.0),
-        "Motor 3 expected 0.0 but got {}",
+        approx_eq(output.motors[3], 0.95),
+        "Motor 3 expected 0.95 but got {}",
         output.motors[3]
     ); // Rear Right
 }
@@ -235,18 +235,18 @@ fn test_negative_outputs() {
         output.motors[0]
     ); // Front Left
     assert!(
-        approx_eq(output.motors[1], 0.0),
-        "Motor 1 expected 0.0 but got {}",
+        approx_eq(output.motors[1], 0.25),
+        "Motor 1 expected 0.25 but got {}",
         output.motors[1]
     ); // Front Right
     assert!(
-        approx_eq(output.motors[2], 0.0),
-        "Motor 2 expected 0.0 but got {}",
+        approx_eq(output.motors[2], 0.25),
+        "Motor 2 expected 0.25 but got {}",
         output.motors[2]
     ); // Rear Left
     assert!(
-        approx_eq(output.motors[3], 62.5),
-        "Motor 3 expected 62.5 but got {}",
+        approx_eq(output.motors[3], 0.0),
+        "Motor 3 expected 0.0 but got {}",
         output.motors[3]
     ); // Rear Right
 }

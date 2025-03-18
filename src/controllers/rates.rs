@@ -37,7 +37,7 @@ impl Default for RatesController {
         Self {
             gains: Gains {
                 p: 7.0,
-                i: 0.05,
+                i: 0.00,
                 d: 0.01,
             },
             // max_angular_rates: Vec3 {
@@ -125,11 +125,12 @@ impl RatesController {
         // );
 
         println!(
-            "{:?},{:?},{:?},{:?}",
+            "{:?},{:?},{:?},{:?},{:?}",
             0.0,
             estimated_rates.x,
             estimated_rates.y,
-            estimated_rates.z
+            estimated_rates.z,
+            scaled_desired_rates.z,
         );
 
         let error = scaled_desired_rates - estimated_rates;

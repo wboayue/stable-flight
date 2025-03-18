@@ -33,7 +33,7 @@ const THRUST_FACTOR: f32 = 0.9; // Thrust factor for baseline thrust calculation
 const CONTROL_FACTOR: f32 = 1.0 - THRUST_FACTOR; // Control factor for moment contributions
 
 const DEFAULT_ROLL_PITCH_SCALING: f32 = CONTROL_FACTOR;
-const DEFAULT_YAW_SCALING: f32 = DEFAULT_ROLL_PITCH_SCALING * 1.0; // Yaw is scaled more aggressively
+const DEFAULT_YAW_SCALING: f32 = DEFAULT_ROLL_PITCH_SCALING * 2.5; // Yaw is scaled more aggressively
 
 /// Mixer for a quadcopter in a standard X configuration.
 ///
@@ -126,15 +126,15 @@ impl Mixer for QuadCopterMixer {
         // Compute baseline thrust per motor (even distribution)
         let baseline = command.thrust * THRUST_FACTOR;
 
-        if baseline <= 0.0 {
-            return ActuatorCommand::default();
-        }
+        // if baseline <= 0.0 {
+        //     return ActuatorCommand::default();
+        // }
         
         // Compute raw motor outputs based on standard X configuration:
-        // Motor 0: Front Left  - CCW rotation -> +roll, +pitch, -yaw
-        // Motor 1: Front Right - CW rotation  -> -roll, +pitch, +yaw
-        // Motor 2: Rear Left   - CW rotation  -> +roll, -pitch, +yaw
-        // Motor 3: Rear Right  - CCW rotation -> -roll, -pitch, -yaw
+        // Motor 0: Front Left  - CW rotation -> +roll, +pitch, -yaw
+        // Motor 1: Front Right - CCW rotation  -> -roll, +pitch, +yaw
+        // Motor 2: Rear Left   - CCW rotation  -> +roll, -pitch, +yaw
+        // Motor 3: Rear Right  - CW rotation -> -roll, -pitch, -yaw
         let mut raw_outputs = [
             baseline + yaw + pitch + roll, // Motor 0: Front Left
             baseline - yaw + pitch - roll, // Motor 1: Front Right

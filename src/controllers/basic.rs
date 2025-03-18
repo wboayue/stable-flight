@@ -527,8 +527,8 @@ impl BasicController {
     fn control_yaw(&mut self, dt: Duration, desired_yaw: f32, estimated_yaw: f32) -> f32 {
         assert!(dt.as_secs_f32() > 0.0, "Time step must be positive");
         assert!(
-            desired_yaw >= -1.0 && desired_yaw <= 1.0,
-            "Desired yaw rate ({}) must be in the range [-1, 1]",
+            desired_yaw >= -2.0/PI && desired_yaw <= 2.0*PI,
+            "Desired yaw rate ({}) must be in the range [-2PI, 2PI]",
             desired_yaw
         );
 

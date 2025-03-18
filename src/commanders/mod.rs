@@ -113,8 +113,8 @@
 //! Creating and using a waypoint command:
 //!
 //! ```rust
+//! use robomath::{Vec2, vec2};
 //! use stable_flight_sitl::commanders::{Command, WaypointCommand};
-//! use stable_flight_sitl::math::{Vec2, vec2};
 //!
 //! let waypoint_cmd = Command::Waypoint(WaypointCommand {
 //!     position: vec2(1000.0, 2000.0),  // Target position
@@ -248,8 +248,8 @@ pub trait Commander {
 ///
 /// Creating a waypoint command:
 /// ```
+/// use robomath::{Vec2, vec2};
 /// use stable_flight_sitl::commanders::{Command, WaypointCommand};
-/// use stable_flight_sitl::math::{Vec2, vec2};
 ///
 /// let waypoint_cmd = Command::Waypoint(WaypointCommand {
 ///     position: vec2(1000.0, 2000.0),  // Target position in world coordinates
@@ -486,8 +486,8 @@ impl Default for RateCommand {
 ///
 /// Creating a `WaypointCommand` to navigate to a position with a specific altitude and speed:
 /// ```
+/// use robomath::{Vec2, vec2};
 /// use stable_flight_sitl::commanders::WaypointCommand;
-/// use stable_flight_sitl::math::{Vec2, vec2};
 ///
 /// let cmd = WaypointCommand {
 ///     position: vec2(1000.0, 2000.0),  // Target position (X=1000m, Y=2000m)

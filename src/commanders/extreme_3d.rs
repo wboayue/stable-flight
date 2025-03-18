@@ -47,7 +47,7 @@ impl Extreme3DCommander {
         }
 
         // FIXME: This is a hack to ensure throttle is always set to 1.0
-//        self.channels[0] = 0.81;
+        self.channels[0] = 0.81;
 
         if let Some(id) = self.active_gamepad {
             let gamepad = self.gilrs.gamepad(id);
@@ -119,7 +119,7 @@ impl Commander for Extreme3DCommander {
             throttle: channels[0],
             roll_rate: apply_dead_zone(channels[1], 0.1),
             pitch_rate: apply_dead_zone(channels[2], 0.1),
-            yaw_rate: -apply_dead_zone(channels[3], 0.1),
+            yaw_rate: -apply_dead_zone(channels[3], 0.15),
             arm: channels[4] > 0.5,
             mode,
         })
