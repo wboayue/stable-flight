@@ -47,7 +47,7 @@ impl Extreme3DCommander {
         }
 
         // FIXME: This is a hack to ensure throttle is always set to 1.0
-        self.channels[0] = 0.81;
+        // self.channels[0] = 0.81;
 
         if let Some(id) = self.active_gamepad {
             let gamepad = self.gilrs.gamepad(id);
