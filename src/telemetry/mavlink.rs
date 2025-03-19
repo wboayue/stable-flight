@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use mavlink::{common::*, MavHeader, MavlinkVersion};
 
-use crate::{TelemetryPublisher, VehicleState};
+use crate::{commanders::Command, TelemetryPublisher, VehicleState};
 
 pub struct MavlinkConfiguration {
     // connection: String,
@@ -39,11 +39,11 @@ impl MavlinkPublisher {
             connection,
             sequence: 0,
             start_time: Instant::now(),
-            heartbeat_interval: Duration::from_secs(1),
+            heartbeat_interval: Duration::from_secs_f32(1.0 / 10.0),
             heartbeat_bucket: Duration::from_secs(0),
-            global_position_interval: Duration::from_secs(1),
+            global_position_interval: Duration::from_secs_f32(1.0 / 10.0),
             global_position_bucket: Duration::from_secs(0),
-            local_position_interval: Duration::from_secs_f32(1.0 / 5.0),
+            local_position_interval: Duration::from_secs_f32(1.0 / 10.0),
             local_position_bucket: Duration::from_secs(0),
             attitude_interval: Duration::from_secs(1),
             attitude_bucket: Duration::from_secs(0),
@@ -117,17 +117,39 @@ impl MavlinkPublisher {
             roll: telemetry.attitude.x,
             pitch: telemetry.attitude.y,
             yaw: telemetry.attitude.z,
-            rollspeed: telemetry.angular_velocity.x.value,
-            pitchspeed: telemetry.angular_velocity.y.value,
-            yawspeed: telemetry.angular_velocity.z.value,
+            rollspeed: telemetry.angular_velocity.x,
+            pitchspeed: telemetry.angular_velocity.y,
+            yawspeed: telemetry.angular_velocity.z,
         };
 
         self.send_message(&MavMessage::ATTITUDE(attitude_msg));
     }
+    /// Send VFR_HUD message with telemetry data.
+    pub fn send_vfr_hud(&mut self, command: &Command, telemetry: &VehicleState) {
+        let throttle = match command {
+            Command::Attitude(attitude_command) => attitude_command.throttle as u16 * 100,
+            Command::Rate(rate_command) => rate_command.throttle as u16 * 100,
+            Command::Waypoint(waypoint_command) => {
+                println!("Waypoint command received: {:?}", waypoint_command);
+                0
+            }
+        };
+
+        let vfr_hud_msg = VFR_HUD_DATA {
+            airspeed: telemetry.velocity.x.value,
+            groundspeed: telemetry.velocity.y.value,
+            heading: telemetry.attitude.z as i16,
+            throttle, // Placeholder for throttle
+            climb: telemetry.velocity.z.value,
+            alt: telemetry.position.z.value, // Altitude (meters)
+        };
+
+        self.send_message(&MavMessage::VFR_HUD(vfr_hud_msg));
+    }
 }
 
 impl TelemetryPublisher for MavlinkPublisher {
-    fn send_telemetry(&mut self, dt: Duration, telemetry: &VehicleState) {
+    fn send_telemetry(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState) {
         self.heartbeat_bucket += dt;
         self.global_position_bucket += dt;
         self.local_position_bucket += dt;
@@ -142,6 +164,7 @@ impl TelemetryPublisher for MavlinkPublisher {
         if self.global_position_bucket >= self.global_position_interval {
             self.global_position_bucket = Duration::from_secs(0);
             self.send_global_position(telemetry);
+            self.send_vfr_hud(command, telemetry);
         }
 
         if self.local_position_bucket >= self.local_position_interval {

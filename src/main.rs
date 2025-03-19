@@ -30,10 +30,12 @@ fn main() {
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         host: "10.211.55.3:8080".to_string(),
         mapping: ActuatorMapping {
-            motors: [Some(0), Some(1), Some(2), Some(3), None, None, None, None],
+            motors: [Some(2), Some(0), Some(1), Some(3), None, None, None, None],
             ..Default::default()
         },
     });
+
+    println!("desired_yaw,estimated_yaw");
 
     // let vehicle = NullVehicle {};
 
@@ -45,7 +47,7 @@ fn main() {
 
     let telemetry = MavlinkPublisher::new(telemetry_configuration);
 
-    let target_frequency = 300.0;
+    let target_frequency = 250.0;
 
     let mut stabilizer = FlightStabilizer::new(
         target_frequency,

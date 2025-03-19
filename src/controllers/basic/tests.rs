@@ -1,4 +1,4 @@
-use crate::math::vec3;
+use robomath::vec3;
 
 use super::*;
 use std::time::Duration;
@@ -57,7 +57,11 @@ fn test_rate_controller_zero_error() {
     let desired_rates = vec3(0.0, 0.0, 0.0);
     let current_rates = vec3(0.0, 0.0, 0.0);
 
-    let output = controller.control_rates(dt, desired_rates, current_rates);
+    let output = controller
+        .rates_controller
+        .control(dt, desired_rates, current_rates);
+
+    // With zero error (desired and current rates are the same), PID terms should be 0
     assert_eq!(
         output,
         vec3(0.0, 0.0, 0.0),
@@ -72,7 +76,11 @@ fn test_rate_controller_positive_error() {
     let desired_rates = vec3(1.0, 1.0, 1.0);
     let current_rates = vec3(0.0, 0.0, 0.0);
 
-    let output = controller.control_rates(dt, desired_rates, current_rates);
+    let output = controller
+        .rates_controller
+        .control(dt, desired_rates, current_rates);
+
+    // Check that the output is positive for all axes when there is a positive error
     assert!(output.x > 0.0, "Roll moment should be positive");
     assert!(output.y > 0.0, "Pitch moment should be positive");
     assert!(output.z > 0.0, "Yaw moment should be positive");

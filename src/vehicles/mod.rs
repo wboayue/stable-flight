@@ -13,5 +13,5 @@ impl Vehicle for NullVehicle {
         VehicleState::default()
     }
 
-    fn actuate(&mut self, _command: ActuatorCommand) {}
+    fn actuate(&mut self, _command: &ActuatorCommand) {}
 }
