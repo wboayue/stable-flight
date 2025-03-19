@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use log::{error, info, warn};
-use realflight_bridge::{ControlInputs, RealFlightRemoteBridge, SimulatorState};
+use realflight_bridge::{ControlInputs, RealFlightBridge, RealFlightRemoteBridge, SimulatorState};
 use robomath::{Quaternion, Vec3, to_radians};
 
 use crate::{
