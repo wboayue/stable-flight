@@ -109,10 +109,10 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
         );
         let target_duration = Duration::from_secs_f64(target_duration);
 
-        println!(
-            "Starting stabilization with target frequency: {} Hz. Delta {:?}",
-            self.target_frequency, target_duration
-        );
+        // println!(
+        //     "Starting stabilization with target frequency: {} Hz. Delta {:?}",
+        //     self.target_frequency, target_duration
+        // );
 
         // Start time for the loop
         let mut next_time = Instant::now();
@@ -137,10 +137,11 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             let actuator_command = self.mixer.mix(&control_outputs);
 
             // Command actuators
-            self.vehicle.actuate(actuator_command);
+            self.vehicle.actuate(&actuator_command);
 
             // Send telemetry
-            self.telemetry.send_telemetry(target_duration, &state);
+            self.telemetry
+                .send_telemetry(target_duration, &command, &state);
 
             // Increment iteration counter
             iteration_count += 1;
@@ -155,14 +156,6 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
 
             // Sleep to maintain the target frequency
             thread::sleep(sleep_time);
-
-            // Optional: Print actual frequency every 200 iterations
-            if iteration_count % 200 == 0 {
-                let elapsed = start_time.elapsed().as_secs_f64();
-                let actual_freq = iteration_count as f64 / elapsed;
-                println!("Actual frequency: {:.2} Hz", actual_freq);
-                println!("State: {:?}", state);
-            }
         }
     }
 }

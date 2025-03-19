@@ -2,9 +2,9 @@ use std::time::Duration;
 
 use log::{error, info, warn};
 use realflight_bridge::{ControlInputs, RealFlightRemoteBridge, SimulatorState};
+use robomath::{Quaternion, Vec3, to_radians};
 
 use crate::{
-    math::{Quaternion, Vec3},
     ActuatorCommand, Vehicle, VehicleState,
 };
 
@@ -55,7 +55,7 @@ impl Vehicle for RealFlightVehicle {
     }
 
     /// Sends actuator commands to the RealFlight simulator and receives state update.
-    fn actuate(&mut self, command: ActuatorCommand) {
+    fn actuate(&mut self, command: &ActuatorCommand) {
         let input = self.map_channels(command);
 
         match self.bridge.exchange_data(&input) {
@@ -104,7 +104,7 @@ impl RealFlightVehicle {
     /// # Returns
     ///
     /// A `ControlInputs` structure with channels set according to the mapping.
-    fn map_channels(&self, command: ActuatorCommand) -> ControlInputs {
+    fn map_channels(&self, command: &ActuatorCommand) -> ControlInputs {
         let mut input = ControlInputs::default();
 
         for (i, val) in self.mapping.motors.iter().enumerate() {
@@ -172,9 +172,9 @@ impl RealFlightVehicle {
         };
 
         self.estimated_state.angular_velocity = Vec3 {
-            x: state.roll_rate,
-            y: state.pitch_rate,
-            z: state.yaw_rate,
+            x: to_radians(state.roll_rate.value),
+            y: to_radians(state.pitch_rate.value),
+            z: to_radians(state.yaw_rate.value),
         };
     }
 }

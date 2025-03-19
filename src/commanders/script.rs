@@ -1,4 +1,6 @@
-use crate::{math::Vec2, VehicleState};
+use robomath::Vec2;
+
+use crate::VehicleState;
 
 use super::{Command, Commander, WaypointCommand};
 

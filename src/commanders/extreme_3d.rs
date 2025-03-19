@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use gilrs::{Axis, Button, Event, EventType, GamepadId, Gilrs};
 
-use super::{AttitudeCommand, Command, Commander};
+use super::{AttitudeCommand, Command, Commander, RateCommand};
 use crate::VehicleState;
 
 const THROTTLE_CODE: u32 = 65590;
@@ -33,7 +33,7 @@ impl Extreme3DCommander {
     /// 4: arm (right stick y)
     /// 5: mode (left trigger)  
     pub fn read_channels(&mut self) -> [f32; 6] {
-        while let Some(Event{id, event, ..}) = self.gilrs.next_event() {
+        while let Some(Event { id, event, .. }) = self.gilrs.next_event() {
             self.active_gamepad = Some(id);
 
             match event {
@@ -45,6 +45,9 @@ impl Extreme3DCommander {
                 _ => {}
             }
         }
+
+        // FIXME: This is a hack to ensure throttle is always set to 1.0
+        // self.channels[0] = 0.81;
 
         if let Some(id) = self.active_gamepad {
             let gamepad = self.gilrs.gamepad(id);
@@ -104,11 +107,19 @@ impl Commander for Extreme3DCommander {
             2
         };
 
-        Command::Attitude(AttitudeCommand {
+        // Command::Attitude(AttitudeCommand {
+        //     throttle: channels[0],
+        //     roll: channels[1],
+        //     pitch: channels[2],
+        //     yaw: channels[3],
+        //     arm: channels[4] > 0.5,
+        //     mode,
+        // })
+        Command::Rate(RateCommand {
             throttle: channels[0],
-            roll: channels[1],
-            pitch: channels[2],
-            yaw: channels[3],
+            roll_rate: apply_dead_zone(channels[1], 0.1),
+            pitch_rate: apply_dead_zone(channels[2], 0.1),
+            yaw_rate: -apply_dead_zone(channels[3], 0.15),
             arm: channels[4] > 0.5,
             mode,
         })
@@ -117,4 +128,12 @@ impl Commander for Extreme3DCommander {
 
 fn scale_value(value: f32, min: f32, max: f32) -> f32 {
     (value - min) / (max - min)
+}
+
+fn apply_dead_zone(value: f32, dead_zone: f32) -> f32 {
+    if value.abs() < dead_zone {
+        0.0
+    } else {
+        value
+    }
 }

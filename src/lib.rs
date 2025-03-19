@@ -1,6 +1,5 @@
 pub mod commanders;
 pub mod controllers;
-pub mod math;
 pub mod mixers;
 pub mod stabilizer;
 pub mod telemetry;
@@ -12,7 +11,7 @@ use log::info;
 use uom::si::f32::*;
 
 use commanders::Command;
-use math::{Quaternion, Vec3};
+use robomath::{Quaternion, Vec3};
 pub use stabilizer::FlightStabilizer;
 
 #[derive(Debug, Default, PartialEq)]
@@ -33,7 +32,7 @@ pub struct VehicleState {
     pub velocity: Vec3<Velocity>,
     pub acceleration: Vec3<Acceleration>,
     pub attitude: Quaternion,
-    pub angular_velocity: Vec3<AngularVelocity>,
+    pub angular_velocity: Vec3<f32>,
     // flight mode
     // heading
     // gps
@@ -41,7 +40,7 @@ pub struct VehicleState {
 
 pub trait Vehicle {
     fn estimate_state(&self, dt: Duration) -> VehicleState;
-    fn actuate(&mut self, actuator_command: ActuatorCommand);
+    fn actuate(&mut self, actuator_command: &ActuatorCommand);
 }
 
 pub trait Controller {
@@ -49,7 +48,7 @@ pub trait Controller {
 }
 
 pub trait TelemetryPublisher {
-    fn send_telemetry(&mut self, dt: Duration, telemetry: &VehicleState);
+    fn send_telemetry(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState);
 }
 
 pub struct ConsoleTelemetryPublisher {
@@ -57,7 +56,7 @@ pub struct ConsoleTelemetryPublisher {
 }
 
 impl TelemetryPublisher for ConsoleTelemetryPublisher {
-    fn send_telemetry(&mut self, _dt: Duration, telemetry: &VehicleState) {
+    fn send_telemetry(&mut self, _dt: Duration, _command: &Command, telemetry: &VehicleState) {
         info!("Sending telemetry: {:?}", telemetry);
     }
 }
