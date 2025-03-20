@@ -49,7 +49,7 @@ mod tests;
 const G: f32 = 9.81; // acceleration due to gravity (m/s²)
 
 /// PID gains for a single control loop.
-#[derive(Default, Clone, Copy, Debug)]
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
 pub struct Gains {
     pub p: f32,
     pub i: f32,
