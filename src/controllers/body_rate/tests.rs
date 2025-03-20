@@ -38,8 +38,14 @@ fn test_nominal_non_zero_error() {
     let result = controller.control(dt, desired_rates, estimated_rates);
 
     // Assert
-    assert!(result.x > 0.0 && result.y > 0.0 && result.z > 0.0, "Moments should be positive due to proportional term");
-    assert!(result.x <= 1.0 && result.y <= 1.0 && result.z <= 1.0, "Moments should be clamped to 1.0");
+    assert!(
+        result.x > 0.0 && result.y > 0.0 && result.z > 0.0,
+        "Moments should be positive due to proportional term"
+    );
+    assert!(
+        result.x <= 1.0 && result.y <= 1.0 && result.z <= 1.0,
+        "Moments should be clamped to 1.0"
+    );
 }
 
 // Test 3: Boundary case - max desired rates
@@ -55,8 +61,14 @@ fn test_max_desired_rates() {
     let result = controller.control(dt, desired_rates, estimated_rates);
 
     // Assert
-    assert!(result.x > 0.0 && result.y > 0.0 && result.z > 0.0, "Moments should be positive");
-    assert!(result.x <= 1.0 && result.y <= 1.0 && result.z <= 1.0, "Moments should be clamped to 1.0");
+    assert!(
+        result.x > 0.0 && result.y > 0.0 && result.z > 0.0,
+        "Moments should be positive"
+    );
+    assert!(
+        result.x <= 1.0 && result.y <= 1.0 && result.z <= 1.0,
+        "Moments should be clamped to 1.0"
+    );
 }
 
 // Test 4: Boundary case - min desired rates
@@ -72,8 +84,14 @@ fn test_min_desired_rates() {
     let result = controller.control(dt, desired_rates, estimated_rates);
 
     // Assert
-    assert!(result.x < 0.0 && result.y < 0.0 && result.z < 0.0, "Moments should be negative");
-    assert!(result.x >= -1.0 && result.y >= -1.0 && result.z >= -1.0, "Moments should be clamped to -1.0");
+    assert!(
+        result.x < 0.0 && result.y < 0.0 && result.z < 0.0,
+        "Moments should be negative"
+    );
+    assert!(
+        result.x >= -1.0 && result.y >= -1.0 && result.z >= -1.0,
+        "Moments should be clamped to -1.0"
+    );
 }
 
 // Test 5: Edge case - very small dt
@@ -89,8 +107,14 @@ fn test_small_dt() {
     let result = controller.control(dt, desired_rates, estimated_rates);
 
     // Assert
-    assert!(result.x > 0.0 && result.y > 0.0 && result.z > 0.0, "Moments should be positive");
-    assert!(result.x <= 1.0 && result.y <= 1.0 && result.z <= 1.0, "Moments should be clamped to 1.0");
+    assert!(
+        result.x > 0.0 && result.y > 0.0 && result.z > 0.0,
+        "Moments should be positive"
+    );
+    assert!(
+        result.x <= 1.0 && result.y <= 1.0 && result.z <= 1.0,
+        "Moments should be clamped to 1.0"
+    );
 }
 
 // Test 6: State persistence - integral term accumulation
@@ -132,9 +156,18 @@ fn test_reset() {
 
     // Assert
     let expected = controller.gains.p * (desired_rates * controller.max_angular_rates);
-    assert!(approx_eq(result.x, expected.x.clamp(-1.0, 1.0), 0.1), "Roll moment should match proportional term");
-    assert!(approx_eq(result.y, expected.y.clamp(-1.0, 1.0), 0.1), "Pitch moment should match proportional term");
-    assert!(approx_eq(result.z, expected.z.clamp(-1.0, 1.0), 0.1), "Yaw moment should match proportional term");
+    assert!(
+        approx_eq(result.x, expected.x.clamp(-1.0, 1.0), 0.1),
+        "Roll moment should match proportional term"
+    );
+    assert!(
+        approx_eq(result.y, expected.y.clamp(-1.0, 1.0), 0.1),
+        "Pitch moment should match proportional term"
+    );
+    assert!(
+        approx_eq(result.z, expected.z.clamp(-1.0, 1.0), 0.1),
+        "Yaw moment should match proportional term"
+    );
 }
 
 // Test 8: Panic case - zero dt

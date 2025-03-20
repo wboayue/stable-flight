@@ -51,7 +51,7 @@ impl Default for BodyRateController {
             max_angular_rates: Vec3 {
                 x: 3.0, // max roll rate in rad/s (~172 deg/s)
                 y: 3.0, // max pitch rate in rad/s (~172 deg/s)
-                z: 1.5, // max yaw rate in rad/s (~86 deg/s)
+                z: 3.0, // max yaw rate in rad/s (~86 deg/s)
             },
             integral_term: Vec3::default(),
             max_integral: 500.0,

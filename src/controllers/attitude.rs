@@ -1,92 +1,99 @@
-use std::time::Duration;
-
-use robomath::Vec2;
-
 use super::basic::Gains;
+use robomath::{vec2, Vec2};
+use std::{f32::consts::FRAC_PI_4, time::Duration};
+
+#[cfg(test)]
+mod tests;
 
 /// Configures the attitude controller for a vehicle.
-/// This includes the maximum roll and pitch angles that the vehicle can achieve.
-/// The yaw angle is managed by the yaw controller.
+/// Defines PID gains, maximum angles, and maximum angular rates for roll and pitch control.
+/// Yaw is typically handled separately by a dedicated yaw controller.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AttitudeConfiguration {
-    /// PID gains for controlling roll and pitch.
+    /// PID gains for roll and pitch control (Kp, Ki, Kd).
     pub gains: Gains,
 
-    /// Maximum roll angle in radians.
-    /// This limits how far the vehicle can tilt to the side.
-    pub max_roll: f32,
+    /// Maximum angles in radians for roll (x) and pitch (y) (e.g., π/4 = 45°).
+    /// Limits the vehicle's tilt in each axis.
+    pub max_angles: Vec2<f32>,
 
-    /// Maximum pitch angle in radians.
-    /// This limits how far the vehicle can tilt forward or backward.
-    pub max_pitch: f32,
-
-    /// Maximum integral term for the PID controller.
-    /// This prevents excessive accumulation of the integral term, which can lead to instability.
+    /// Maximum absolute value of the integral term.
+    /// Prevents integral windup by limiting error accumulation.
     pub max_integral: f32,
+
+    /// Maximum angular rates in radians/second for roll (x) and pitch (y).
+    /// Limits the output rates sent to the rate controller.
+    pub max_rate: Vec2<f32>,
 }
 
 impl Default for AttitudeConfiguration {
-    /// Creates a default configuration for the attitude controller.
+    /// Provides a default configuration with reasonable starting values.
+    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and max_rate (2 rad/s) may need tuning
+    /// for specific vehicles.
     fn default() -> Self {
         Self {
             gains: Gains {
-                p: 7.0,
-                i: 0.0,
-                d: 0.01,
+                p: 7.0,  // Proportional gain
+                i: 0.0,  // Integral gain (disabled by default)
+                d: 0.01, // Derivative gain
             },
-            max_roll: std::f32::consts::FRAC_PI_4, // 45 degrees
-            max_pitch: std::f32::consts::FRAC_PI_4, // 45 degrees
-            max_integral: 100.0,
+            max_angles: vec2(FRAC_PI_4, FRAC_PI_4), // 45° for roll and pitch
+            max_integral: 100.0,                    // Arbitrary limit
+            max_rate: vec2(2.0, 2.0),               // 2 rad/s (~114°/s) for roll and pitch
         }
     }
 }
 
 pub struct AttitudeController {
-    /// PID gains for controlling the roll and pitch.
     gains: Gains,
-
-    /// Integrated error term for the PID controller.
-    integral_term: Vec2<f32>,
-
-    /// Maximum integral term for the PID controller.
+    integral_term: Vec2<f32>, // Accumulated error (roll, pitch)
     max_integral: f32,
-
-    /// Last error value for computing the derivative term.
-    last_error: Vec2<f32>,
-
-    /// Maximum roll and pitch in radians.
-    max_roll_pitch: Vec2<f32>,
+    last_error: Vec2<f32>, // Previous error for derivative calculation
+    max_angles: Vec2<f32>, // Max angles in radians (roll, pitch)
+    max_rate: Vec2<f32>,   // Max angular rates in rad/s (roll, pitch)
 }
 
 impl AttitudeController {
-
-    /// Creates a new `AttitudeController` with default configuration.
+    /// Initializes a new attitude controller with the given configuration.
     pub fn new(configuration: AttitudeConfiguration) -> Self {
+        assert!(
+            configuration.max_angles.x >= 0.0 && configuration.max_angles.y >= 0.0,
+            "Maximum angles must be non-negative"
+        );
+        assert!(
+            configuration.max_rate.x >= 0.0 && configuration.max_rate.y >= 0.0,
+            "Maximum rates must be non-negative"
+        );
         Self {
             gains: configuration.gains,
             integral_term: Vec2::default(),
             max_integral: configuration.max_integral,
             last_error: Vec2::default(),
-            max_roll_pitch: Vec2 {
-                x: configuration.max_roll,
-                y: configuration.max_pitch,
-            },
+            max_angles: configuration.max_angles,
+            max_rate: configuration.max_rate,
         }
     }
 
-    /// Controls the roll and pitch angles of the vehicle using a PID controller.
+    /// Computes desired angular rates to achieve target roll and pitch angles.
     ///
-    /// This middle control loop converts desired roll and pitch angles into desired angular rates for the rate controller.
+    /// Uses a PID controller to convert angle errors into angular rates (rad/s)
+    /// for the rate control loop. Input angles are scaled from [-1,1] to
+    /// [-max_angles.x, max_angles.x] for roll and [-max_angles.y, max_angles.y] for pitch.
+    /// Output rates are clamped to [-max_rate.x, max_rate.x] for roll and
+    /// [-max_rate.y, max_rate.y] for pitch.
     ///
     /// # Arguments
-    ///
-    /// * `dt` - Time step since the last update (must be positive).
-    /// * `desired_angles` - Scaled roll/pitch angles in range [-1, 1]. indicating min/max configured roll/pitch
-    /// * `current_angles` - Current roll and pitch angles in radians.
+    /// * `dt` - Time step since last update (seconds, must be positive)
+    /// * `desired_angles` - Target roll/pitch as normalized values in [-1,1]
+    /// * `estimated_angles` - Current roll/pitch angles in radians
     ///
     /// # Returns
+    /// Desired angular rates (roll rate, pitch rate) in radians/second,
+    /// clamped to configured max_rate limits
     ///
-    /// Desired angular rates (roll rate, pitch rate) in rad/s.
+    /// # Panics
+    /// * If `dt` is not positive
+    /// * If `desired_angles` components are not in [-1,1]
     fn control(
         &mut self,
         dt: Duration,
@@ -96,31 +103,38 @@ impl AttitudeController {
         assert!(dt.as_secs_f32() > 0.0, "Time step must be positive");
         assert!(
             desired_angles.x >= -1.0 && desired_angles.x <= 1.0,
-            "Desired roll angle ({}) must be in the range [-1, 1]",
+            "Desired roll angle ({}) must be in [-1, 1]",
             desired_angles.x
         );
         assert!(
             desired_angles.y >= -1.0 && desired_angles.y <= 1.0,
-            "Desired pitch angle ({}) must be in the range [-1, 1]",
+            "Desired pitch angle ({}) must be in [-1, 1]",
             desired_angles.y
         );
 
-        let desired_angles = desired_angles * self.max_roll_pitch; // Scale to radians
+        // Scale normalized inputs to actual angle setpoints in radians
+        let desired_angles = desired_angles * self.max_angles;
 
+        // Calculate error (setpoint - actual)
         let error = desired_angles - estimated_angles;
+
+        // Derivative term: rate of change of error
         let error_derivative = (error - self.last_error) / dt.as_secs_f32();
 
-        self.integral_term = self.integral_term + dt.as_secs_f32() * error;
-        self.integral_term = self.integral_term.clamp(-self.max_integral, self.max_integral);
+        // Integral term with anti-windup
+        self.integral_term = (self.integral_term + dt.as_secs_f32() * error)
+            .clamp(-self.max_integral, self.max_integral);
 
+        // PID calculation: Kp×error + Ki×∫error + Kd×d(error)/dt
         let Gains { p, i, d } = self.gains;
-        let rates =
-            p * error + i * self.integral_term + d * error_derivative;
+        let rates = p * error + i * self.integral_term + d * error_derivative;
 
         self.last_error = error;
 
-        rates.clamp(-1.0, 1.0)
+        // Scale output to configured maximum rates
+        vec2(
+            rates.x.clamp(-self.max_rate.x, self.max_rate.x),
+            rates.y.clamp(-self.max_rate.y, self.max_rate.y),
+        )
     }
-
 }
-
