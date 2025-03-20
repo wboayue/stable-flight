@@ -26,7 +26,7 @@ impl ControlOutput {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct VehicleState {
     pub position: Vec3<Length>,
     pub velocity: Vec3<Velocity>,

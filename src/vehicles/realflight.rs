@@ -1,60 +1,140 @@
 use std::time::Duration;
 
-use log::{error, info, warn};
-use realflight_bridge::{ControlInputs, RealFlightBridge, RealFlightRemoteBridge, SimulatorState};
-use robomath::{Quaternion, Vec3, to_radians};
+use log::{error, warn};
+use realflight_bridge::{ControlInputs, RealFlightBridge, SimulatorState};
+use robomath::{to_radians, Quaternion, Vec3};
 
-use crate::{
-    ActuatorCommand, Vehicle, VehicleState,
-};
+use crate::{ActuatorCommand, Vehicle, VehicleState};
 
-/// Mapping of actuator commands to RealFlight channels
+#[cfg(test)]
+mod tests;
+
+/// Defines the mapping between vehicle actuator commands and RealFlight simulator channels.
+///
+/// This structure allows flexible configuration of how actuator commands (motors, control surfaces)
+/// are assigned to RealFlight's channel system (typically 8-16 channels).
+///
+/// # Examples
+///
+/// ```no_run
+/// use stable_flight_sitl::vehicles::realflight::ActuatorMapping;
+///
+/// let mut mapping = ActuatorMapping::default();
+/// mapping.motors[0] = Some(0);  // Motor 1 to channel 0
+/// mapping.rudder = Some(1);     // Rudder to channel 1
+/// mapping.throttle = Some(2);   // Throttle to channel 2
+/// ```
 #[derive(Default)]
 pub struct ActuatorMapping {
-    /// Mapping for up to 8 motor channels.
+    /// Array of optional channel assignments for up to 8 motors.
+    /// Index represents motor number, value represents channel number (0-15).
     pub motors: [Option<usize>; 8],
-    /// Optional channel for the rudder.
+    /// Optional channel number for rudder control.
     pub rudder: Option<usize>,
-    /// Optional channel for the elevator.
+    /// Optional channel number for elevator control.
     pub elevator: Option<usize>,
-    /// Optional channel for the aileron.
+    /// Optional channel number for aileron control.
     pub aileron: Option<usize>,
-    /// Optional channel for the throttle.
+    /// Optional channel number for throttle control.
     pub throttle: Option<usize>,
-    /// Optional channel for the left elevon.
+    /// Optional channel number for left elevon control.
     pub elevon_left: Option<usize>,
-    /// Optional channel for the right elevon.
+    /// Optional channel number for right elevon control.
     pub elevon_right: Option<usize>,
 }
 
-/// Configuration for connecting to a RealFlight simulation environment.
-pub struct RealFlightConfiguration {
-    /// The host address (and port) of the RealFlight simulator.
-    pub host: String,
-    /// Actuator channel mapping configuration.
+/// Configuration parameters for connecting to a RealFlight simulation environment.
+///
+/// This structure combines the communication bridge with channel mapping configuration.
+///
+/// # Type Parameters
+///
+/// * `T` - The type implementing `RealFlightBridge` for simulator communication.
+///
+/// # Examples
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use realflight_bridge::{RealFlightBridge, RealFlightLocalBridge};
+/// use stable_flight_sitl::vehicles::realflight::{RealFlightConfiguration, RealFlightVehicle, ActuatorMapping};
+/// use stable_flight_sitl::{ActuatorCommand, Vehicle};
+///
+/// let bridge = RealFlightLocalBridge::new().expect("Failed to create bridge");  
+/// let config = RealFlightConfiguration {
+///     mapping: ActuatorMapping::default(),
+///     bridge,
+/// };
+/// ```
+pub struct RealFlightConfiguration<T>
+where
+    T: RealFlightBridge,
+{
+    /// Configuration mapping actuator commands to simulator channels.
     pub mapping: ActuatorMapping,
+    /// The bridge implementation for RealFlight communication.
+    pub bridge: T,
 }
 
-/// A vehicle implementation for the RealFlight simulation environment.
+/// A vehicle implementation interfacing with the RealFlight flight simulator.
 ///
-/// `RealFlightVehicle` communicates with the RealFlight simulator through a `RealFlightBridge`
-/// to send actuator commands and receive state updates.
-pub struct RealFlightVehicle {
+/// This struct provides a bridge between generic vehicle control commands and the
+/// RealFlight simulation environment, handling both actuator commands and state updates.
+///
+/// # Type Parameters
+///
+/// * `T` - The type implementing `RealFlightBridge` for simulator communication.
+///
+/// # Examples
+///
+/// ```no_run
+/// use realflight_bridge::{RealFlightBridge, RealFlightLocalBridge};
+/// use stable_flight_sitl::vehicles::realflight::{RealFlightConfiguration, RealFlightVehicle, ActuatorMapping};
+/// use stable_flight_sitl::{ActuatorCommand, Vehicle};
+/// use std::time::Duration;
+///
+/// let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+///     mapping: ActuatorMapping::default(),
+///     bridge: RealFlightLocalBridge::new().expect("Failed to create bridge"),
+/// });
+///
+/// let command = ActuatorCommand::default();
+/// vehicle.actuate(&command);
+/// let state = vehicle.estimate_state(Duration::from_secs(1));
+/// ```
+pub struct RealFlightVehicle<T>
+where
+    T: RealFlightBridge,
+{
     /// The communication bridge to the RealFlight simulator.
-    bridge: RealFlightRemoteBridge,
-    /// The current estimated state of the vehicle.
+    bridge: T,
+    /// Current estimated state of the vehicle based on simulator feedback.
     estimated_state: VehicleState,
-    /// Configuration mapping for actuator channels.
+    /// Configuration mapping actuator commands to simulator channels.
     mapping: ActuatorMapping,
 }
 
-impl Vehicle for RealFlightVehicle {
-    /// Returns the current estimated state of the vehicle.
+impl<T> Vehicle for RealFlightVehicle<T>
+where
+    T: RealFlightBridge,
+{
+    /// Retrieves the current estimated state of the vehicle.
+    ///
+    /// # Arguments
+    ///
+    /// * `_dt` - Controller tick duration (currently unused as state comes from simulator).
+    ///
+    /// # Returns
+    ///
+    /// A `VehicleState` containing current position, velocity, attitude, etc.
     fn estimate_state(&self, _dt: Duration) -> VehicleState {
         self.estimated_state.clone()
     }
 
-    /// Sends actuator commands to the RealFlight simulator and receives state update.
+    /// Applies actuator commands and updates vehicle state from simulator feedback.
+    ///
+    /// # Arguments
+    ///
+    /// * `command` - The actuator commands to send to the simulator.
     fn actuate(&mut self, command: &ActuatorCommand) {
         let input = self.map_channels(command);
 
@@ -65,45 +145,50 @@ impl Vehicle for RealFlightVehicle {
     }
 }
 
-impl RealFlightVehicle {
-    /// Constructs a new `RealFlightVehicle` using the given configuration.
+impl<T> RealFlightVehicle<T>
+where
+    T: RealFlightBridge,
+{
+    /// Creates a new RealFlight vehicle instance with the given configuration.
     ///
-    /// This function initializes the vehicle by disabling RC mode and resetting the aircraft.
+    /// Initializes the simulator connection by disabling RC mode and resetting the aircraft.
     ///
     /// # Arguments
     ///
-    /// * `configuration` - The connection and mapping configuration parameters.
-    pub fn new(configuration: RealFlightConfiguration) -> RealFlightVehicle {
-        let mut bridge = RealFlightRemoteBridge::new(&configuration.host).unwrap_or_else(|_| {
-            panic!("Failed to connect to RealFlight at {}", configuration.host)
-        });
-
-        if let Err(e) = bridge.disable_rc() {
+    /// * `configuration` - Configuration containing bridge and channel mapping.
+    ///
+    /// # Returns
+    ///
+    /// A new `RealFlightVehicle` instance ready for simulation.
+    ///
+    /// # Notes
+    ///
+    /// Warnings are logged if RC disable or aircraft reset operations fail.
+    pub fn new(configuration: RealFlightConfiguration<T>) -> RealFlightVehicle<T> {
+        if let Err(e) = configuration.bridge.disable_rc() {
             warn!("Failed to disable RC: {}", e);
         }
 
-        if let Err(e) = bridge.reset_aircraft() {
+        if let Err(e) = configuration.bridge.reset_aircraft() {
             warn!("Failed to reset aircraft: {}", e);
         }
 
         RealFlightVehicle {
-            bridge,
+            bridge: configuration.bridge,
             estimated_state: VehicleState::default(),
             mapping: configuration.mapping,
         }
     }
 
-    /// Maps the provided actuator command to the corresponding RealFlight control channels.
-    ///
-    /// This function uses the `ActuatorMapping` to populate the `ControlInputs` structure.
+    /// Converts actuator commands to RealFlight control inputs based on channel mapping.
     ///
     /// # Arguments
     ///
-    /// * `command` - The actuator command containing desired values.
+    /// * `command` - The actuator command containing control surface and motor values.
     ///
     /// # Returns
     ///
-    /// A `ControlInputs` structure with channels set according to the mapping.
+    /// A [ControlInputs] structure with channel values set according to the mapping.
     fn map_channels(&self, command: &ActuatorCommand) -> ControlInputs {
         let mut input = ControlInputs::default();
 
@@ -140,11 +225,15 @@ impl RealFlightVehicle {
         input
     }
 
-    /// Updates the internal state estimate based on data received from the simulator.
+    /// Updates the vehicle's estimated state based on simulator feedback.
     ///
     /// # Arguments
     ///
-    /// * `state` - The simulator state data received from the RealFlight bridge.
+    /// * `state` - The simulator state containing position, velocity, and orientation data.
+    ///
+    /// # Notes
+    ///
+    /// Converts simulator units (degrees) to SI units (radians) where appropriate.
     fn update_estimate(&mut self, state: SimulatorState) {
         self.estimated_state.position = Vec3 {
             x: state.aircraft_position_x,
@@ -179,8 +268,15 @@ impl RealFlightVehicle {
     }
 }
 
-impl Drop for RealFlightVehicle {
-    /// Cleans up the RealFlight vehicle by re-enabling RC mode.
+impl<T> Drop for RealFlightVehicle<T>
+where
+    T: RealFlightBridge,
+{
+    /// Cleans up by re-enabling RC mode when the vehicle is dropped.
+    ///
+    /// # Notes
+    ///
+    /// Logs a warning if RC mode cannot be re-enabled.
     fn drop(&mut self) {
         if let Err(e) = self.bridge.enable_rc() {
             warn!("Failed to enable RC: {}", e);
