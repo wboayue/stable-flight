@@ -1,16 +1,17 @@
 use std::error::Error;
 use std::time::{Duration, Instant};
 
+use realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl::mixers::{Mixer as _, QuadCopterMixer};
 use stable_flight_sitl::vehicles::realflight::{ActuatorMapping, RealFlightConfiguration};
 use stable_flight_sitl::vehicles::RealFlightVehicle;
-use stable_flight_sitl::{ActuatorCommand, ControlOutput, Vehicle as _};
+use stable_flight_sitl::{ControlOutput, Vehicle as _};
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-        host: "10.211.55.3:8080".to_string(),
+        bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
         mapping: ActuatorMapping {
             //            motors: [Some(0), Some(1), Some(2), Some(3), None, None, None, None],
             //            motors: [Some(3), Some(1), Some(2), Some(0), None, None, None, None],

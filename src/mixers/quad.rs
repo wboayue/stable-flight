@@ -129,7 +129,7 @@ impl Mixer for QuadCopterMixer {
         // if baseline <= 0.0 {
         //     return ActuatorCommand::default();
         // }
-        
+
         // Compute raw motor outputs based on standard X configuration:
         // Motor 0: Front Left  - CW rotation -> +roll, +pitch, -yaw
         // Motor 1: Front Right - CCW rotation  -> -roll, +pitch, +yaw

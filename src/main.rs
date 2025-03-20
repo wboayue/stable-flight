@@ -1,6 +1,7 @@
 use env_logger::Builder;
 use log::{debug, error, info, warn};
 
+use realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 use stable_flight_sitl::commanders::script::ScriptCommander;
 use stable_flight_sitl::controllers::basic::BasicController;
@@ -28,7 +29,7 @@ fn main() {
     // Motors are mapped to the first 4 channels (0-3) matching the RealFlight QuadCopterX model
     // Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-        host: "10.211.55.3:8080".to_string(),
+        bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
         mapping: ActuatorMapping {
             motors: [Some(2), Some(0), Some(1), Some(3), None, None, None, None],
             ..Default::default()

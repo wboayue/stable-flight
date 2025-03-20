@@ -126,11 +126,7 @@ impl RatesController {
 
         println!(
             "{:?},{:?},{:?},{:?},{:?}",
-            0.0,
-            estimated_rates.x,
-            estimated_rates.y,
-            estimated_rates.z,
-            scaled_desired_rates.z,
+            0.0, estimated_rates.x, estimated_rates.y, estimated_rates.z, scaled_desired_rates.z,
         );
 
         let error = scaled_desired_rates - estimated_rates;
