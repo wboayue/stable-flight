@@ -41,7 +41,7 @@ use std::time::Duration;
 
 use crate::commanders::{AttitudeCommand, Command, RateCommand, WaypointCommand};
 
-use super::{rates::RatesController, ControlOutput, Controller, VehicleState};
+use super::{body_rate::BodyRateController, ControlOutput, Controller, VehicleState};
 
 #[cfg(test)]
 mod tests;
@@ -76,7 +76,7 @@ pub struct BasicControllerConfig {
 pub struct BasicController {
     config: BasicControllerConfig,
 
-    rates_controller: RatesController,
+    rates_controller: BodyRateController,
 
     integrated_altitude_error: f32,
     previous_yaw_error: f32,
@@ -130,7 +130,7 @@ impl BasicController {
     pub fn new(config: &BasicControllerConfig) -> Self {
         BasicController {
             config: config.clone(),
-            rates_controller: RatesController {
+            rates_controller: BodyRateController {
                 ..Default::default()
             },
             integrated_altitude_error: 0.0,

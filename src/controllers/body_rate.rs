@@ -4,6 +4,9 @@ use robomath::{vec3, Vec3};
 
 use super::basic::Gains;
 
+#[cfg(test)]
+mod tests;
+
 /// A PID-based controller for managing angular rates (roll, pitch, yaw) of a vehicle.
 ///
 /// This controller uses a PID algorithm to compute corrective moments based on desired and estimated
@@ -14,7 +17,7 @@ use super::basic::Gains;
 /// - Desired and estimated rates are expected in rad/s.
 /// - Maximum rates (`max_angular_rates`) are in rad/s.
 /// - Output moments are normalized to the range `[-1, 1]`, intended to be scaled to physical units (e.g., N·m) downstream.
-pub struct RatesController {
+pub struct BodyRateController {
     /// PID gains for controlling the angular rates (roll, pitch, yaw).
     pub gains: Gains,
 
@@ -31,7 +34,7 @@ pub struct RatesController {
     pub max_angular_rates: Vec3<f32>,
 }
 
-impl Default for RatesController {
+impl Default for BodyRateController {
     /// Creates a new `RatesController` with default PID gains and maximum angular rates.
     fn default() -> Self {
         Self {
@@ -57,7 +60,7 @@ impl Default for RatesController {
     }
 }
 
-impl RatesController {
+impl BodyRateController {
     /// Controls the angular velocity (body rates) of the vehicle using a PID controller.
     ///
     /// This method takes normalized desired rates (e.g., from a joystick), scales them to rad/s using
