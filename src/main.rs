@@ -4,7 +4,7 @@ use log::{debug, error, info, warn};
 use realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 use stable_flight_sitl::commanders::script::ScriptCommander;
-use stable_flight_sitl::controllers::basic::BasicController;
+use stable_flight_sitl::controllers::basic::{BasicController, BasicControllerConfig};
 use stable_flight_sitl::mixers::QuadCopterMixer;
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 use stable_flight_sitl::vehicles::realflight::{ActuatorMapping, RealFlightConfiguration};
@@ -40,7 +40,8 @@ fn main() {
 
     // let vehicle = NullVehicle {};
 
-    let controller = BasicController::default();
+    let controller_config = BasicControllerConfig::default();
+    let controller = BasicController::new(controller_config);
 
     let mixer = QuadCopterMixer::default();
 

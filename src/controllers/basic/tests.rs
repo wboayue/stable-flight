@@ -32,11 +32,9 @@ fn setup_controller() -> BasicController {
             d: 0.06,
         },
         thrust_curve_exponent: 2.0,
+        max_rates: vec3(1.0, 1.0, 1.0), // Max roll, pitch, yaw rates
     };
-    BasicController {
-        config,
-        ..Default::default()
-    }
+    BasicController::new(config)
 }
 
 // Helper function to create a quaternion representing identity (no rotation)

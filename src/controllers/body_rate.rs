@@ -43,18 +43,13 @@ impl Default for BodyRateController {
                 i: 0.00,
                 d: 0.01,
             },
-            // max_angular_rates: Vec3 {
-            //     x: 172.0, // max roll rate in deg/s)
-            //     y: 172.0, // max pitch rate in deg/s)
-            //     z: 86.0,  // max yaw rate in deg/s)
-            // },
             max_angular_rates: Vec3 {
                 x: 3.0, // max roll rate in rad/s (~172 deg/s)
                 y: 3.0, // max pitch rate in rad/s (~172 deg/s)
                 z: 3.0, // max yaw rate in rad/s (~86 deg/s)
             },
             integral_term: Vec3::default(),
-            max_integral: 500.0,
+            max_integral: 100.0,
             last_error: Vec3::default(),
         }
     }
@@ -98,24 +93,9 @@ impl BodyRateController {
             "Time step (dt) must be positive and finite"
         );
         assert!(
-            self.max_angular_rates.x != 0.0 && self.max_angular_rates.x.is_finite(),
-            "max_angular_rates.x must be non-zero and finite"
-        );
-        assert!(
-            self.max_angular_rates.y != 0.0 && self.max_angular_rates.y.is_finite(),
-            "max_angular_rates.y must be non-zero and finite"
-        );
-        assert!(
-            self.max_angular_rates.z != 0.0 && self.max_angular_rates.z.is_finite(),
-            "max_angular_rates.z must be non-zero and finite"
-        );
-        assert!(
             desired_rates.is_finite() && estimated_rates.is_finite(),
             "Desired and estimated rates must be finite"
         );
-
-        let desired_rates = desired_rates.clamp(-1.0, 1.0);
-        let scaled_desired_rates = desired_rates * self.max_angular_rates;
 
         // println!(
         //     "{:?},{:?},{:?},{:?},{:?},{:?}",
@@ -129,10 +109,10 @@ impl BodyRateController {
 
         println!(
             "{:?},{:?},{:?},{:?},{:?}",
-            0.0, estimated_rates.x, estimated_rates.y, estimated_rates.z, scaled_desired_rates.z,
+            0.0, estimated_rates.x, estimated_rates.y, estimated_rates.z, desired_rates.z,
         );
 
-        let error = scaled_desired_rates - estimated_rates;
+        let error = desired_rates - estimated_rates;
 
         let error_derivative = (error - self.last_error) / dt;
         self.last_error = error;

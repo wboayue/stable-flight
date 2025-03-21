@@ -65,26 +65,9 @@ pub struct BasicControllerConfig {
     pub lateral_gains: Gains,
     pub yaw_gains: Gains,
     pub thrust_curve_exponent: f32,
-}
 
-/// A basic flight controller for vehicles like quadcopters, implementing a cascaded control system.
-///
-/// This controller supports rate, attitude, and position control loops, with configurable gains
-/// for each loop. It processes commands (`RateCommand`, `AttitudeCommand`, `WaypointCommand`)
-/// and generates motor control outputs (`ControlOutput`).
-#[derive(Default)]
-pub struct BasicController {
-    config: BasicControllerConfig,
-
-    rates_controller: BodyRateController,
-
-    integrated_altitude_error: f32,
-    previous_yaw_error: f32,
-    integrated_yaw_error: f32,
-    previous_pos_error: Vec2<f32>,
-    integrated_pos_error: Vec2<f32>,
-    previous_angle_error: Vec2<f32>,
-    integrated_angle_error: Vec2<f32>,
+    /// Maximum angular rates (roll, pitch, yaw) in rad/s.
+    pub max_rates: Vec3<f32>,
 }
 
 impl Default for BasicControllerConfig {
@@ -117,8 +100,35 @@ impl Default for BasicControllerConfig {
                 d: 0.06,
             },
             thrust_curve_exponent: 2.0,
+            max_rates: Vec3 {
+                x: 3.0, // max roll rate in rad/s (~172 deg/s)
+                y: 3.0, // max pitch rate in rad/s (~172 deg/s)
+                z: 3.0, // max yaw rate in rad/s (~86 deg/s)
+            },
         }
     }
+}
+
+/// A basic flight controller for vehicles like quadcopters, implementing a cascaded control system.
+///
+/// This controller supports rate, attitude, and position control loops, with configurable gains
+/// for each loop. It processes commands (`RateCommand`, `AttitudeCommand`, `WaypointCommand`)
+/// and generates motor control outputs (`ControlOutput`).
+pub struct BasicController {
+    config: BasicControllerConfig,
+
+    rates_controller: BodyRateController,
+
+    integrated_altitude_error: f32,
+    previous_yaw_error: f32,
+    integrated_yaw_error: f32,
+    previous_pos_error: Vec2<f32>,
+    integrated_pos_error: Vec2<f32>,
+    previous_angle_error: Vec2<f32>,
+    integrated_angle_error: Vec2<f32>,
+
+    /// Maximum angular rates (roll, pitch, yaw) in rad/s.
+    pub max_rates: Vec3<f32>,    
 }
 
 impl BasicController {
@@ -127,7 +137,7 @@ impl BasicController {
     /// # Arguments
     ///
     /// * `config` - Configuration for the controller, including PID gains and thrust curve exponent.
-    pub fn new(config: &BasicControllerConfig) -> Self {
+    pub fn new(config: BasicControllerConfig) -> Self {
         BasicController {
             config: config.clone(),
             rates_controller: BodyRateController {
@@ -140,6 +150,7 @@ impl BasicController {
             integrated_pos_error: vec2(0.0, 0.0),
             previous_angle_error: vec2(0.0, 0.0),
             integrated_angle_error: vec2(0.0, 0.0),
+            max_rates: vec3(3.0, 3.0, 3.0), // default max rates
         }
     }
 }
@@ -271,6 +282,8 @@ impl BasicController {
             rate_command.pitch_rate,
             rate_command.yaw_rate,
         );
+
+        let desired_rates = desired_rates.clamp(-1.0, 1.0) * self.max_rates;
 
         let current_rates = vec3(
             estimated_state.angular_velocity.x,

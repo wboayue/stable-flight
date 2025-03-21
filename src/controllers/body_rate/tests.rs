@@ -218,23 +218,6 @@ fn test_nan_estimated_rates() {
     // Assert (implicitly handled by should_panic)
 }
 
-// Test 11: Panic case - zero max_angular_rates
-#[test]
-#[should_panic(expected = "max_angular_rates.x must be non-zero and finite")]
-fn test_zero_max_angular_rates() {
-    // Assemble
-    let mut controller = setup_controller();
-    controller.max_angular_rates.x = 0.0; // Invalid max rate
-    let dt = Duration::from_secs_f32(0.1);
-    let desired_rates = vec3(0.0, 0.0, 0.0);
-    let estimated_rates = vec3(0.0, 0.0, 0.0);
-
-    // Activate
-    controller.control(dt, desired_rates, estimated_rates);
-
-    // Assert (implicitly handled by should_panic)
-}
-
 // Helper function for approximate equality
 fn approx_eq(a: f32, b: f32, epsilon: f32) -> bool {
     (a - b).abs() < epsilon
