@@ -35,13 +35,13 @@
 //! - **Full Control Stack**: Automatic position and altitude holding
 //! - **Selective Enabling**: Can enable altitude control while keeping manual lateral control
 
-use robomath::{vec2, vec3, Quaternion, Vec2, Vec3};
+use robomath::{to_radians, vec2, vec3, Quaternion, Vec2, Vec3};
 use std::f32::consts::PI;
 use std::time::Duration;
 
 use crate::commanders::{AttitudeCommand, Command, RateCommand, WaypointCommand};
 
-use super::{body_rate::BodyRateController, ControlOutput, Controller, VehicleState};
+use super::{attitude::{AttitudeConfiguration, AttitudeController}, body_rate::BodyRateController, ControlOutput, Controller, VehicleState};
 
 #[cfg(test)]
 mod tests;
@@ -117,6 +117,7 @@ impl Default for BasicControllerConfig {
 pub struct BasicController {
     config: BasicControllerConfig,
 
+    attitude_controller: AttitudeController,
     rates_controller: BodyRateController,
 
     integrated_altitude_error: f32,
@@ -140,9 +141,12 @@ impl BasicController {
     pub fn new(config: BasicControllerConfig) -> Self {
         BasicController {
             config: config.clone(),
+
             rates_controller: BodyRateController {
                 ..Default::default()
             },
+            attitude_controller: AttitudeController::new(&AttitudeConfiguration::default()),
+
             integrated_altitude_error: 0.0,
             previous_yaw_error: 0.0,
             integrated_yaw_error: 0.0,
@@ -232,11 +236,23 @@ impl BasicController {
         );
         let desired_angles = vec2(attitude_command.roll, attitude_command.pitch);
         let current_angles = vec2(
-            estimated_state.attitude.roll(),
-            estimated_state.attitude.pitch(),
+            estimated_state.roll,
+            estimated_state.pitch,
         );
 
-        let desired_rp_rates = self.control_roll_pitch(dt, desired_angles, current_angles);
+        println!(
+            "desired angles: {:?}, current angles: {:?}",
+            desired_angles, current_angles
+        );
+
+        let desired_rates_rp = self.attitude_controller.control(
+            dt,
+            desired_angles,
+            current_angles,
+        );
+
+//        println!("setpoint: {:?}", desired_rates_rp);
+
         let desired_yaw_rate =
             self.control_yaw(dt, attitude_command.yaw, estimated_state.attitude.yaw());
 
@@ -246,7 +262,20 @@ impl BasicController {
             attitude_command.yaw,
         );
 
-        let desired_rates = desired_rates.clamp(-1.0, 1.0) * self.max_rates;
+        let mut desired_rates = desired_rates.clamp(-1.0, 1.0) * self.max_rates;
+
+        desired_rates.x = desired_rates_rp.x;
+        desired_rates.y = desired_rates_rp.y;
+        desired_rates.z = 0.0;
+
+        // desired_rates.x = 0.0;
+        // desired_rates.y = 0.0;
+        desired_rates.z = 0.0;
+
+        // println!(
+        //     "desired rates: {:?}, current rates: {:?}",
+        //     desired_rates, estimated_state.angular_velocity
+        // );
 
         let current_rates = vec3(
             estimated_state.angular_velocity.x,

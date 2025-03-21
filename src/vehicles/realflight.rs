@@ -265,6 +265,10 @@ where
             y: to_radians(state.pitch_rate.value),
             z: to_radians(state.yaw_rate.value),
         };
+
+        self.estimated_state.roll = to_radians(state.roll.value);
+        self.estimated_state.pitch = to_radians(state.inclination.value);
+
     }
 }
 

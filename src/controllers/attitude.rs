@@ -33,9 +33,9 @@ impl Default for AttitudeConfiguration {
     fn default() -> Self {
         Self {
             gains: Gains {
-                p: 7.0,  // Proportional gain
-                i: 0.0,  // Integral gain (disabled by default)
-                d: 0.01, // Derivative gain
+                p: 3.0,  // Proportional gain
+                i: 0.001,  // Integral gain (disabled by default)
+                d: 1.0, // Derivative gain
             },
             max_angles: vec2(FRAC_PI_4, FRAC_PI_4), // 45° for roll and pitch
             max_integral: 100.0,                    // Arbitrary limit
@@ -55,7 +55,7 @@ pub struct AttitudeController {
 
 impl AttitudeController {
     /// Initializes a new attitude controller with the given configuration.
-    pub fn new(configuration: AttitudeConfiguration) -> Self {
+    pub fn new(configuration: &AttitudeConfiguration) -> Self {
         assert!(
             configuration.max_angles.x >= 0.0 && configuration.max_angles.y >= 0.0,
             "Maximum angles must be non-negative"
@@ -94,7 +94,7 @@ impl AttitudeController {
     /// # Panics
     /// * If `dt` is not positive
     /// * If `desired_angles` components are not in [-1,1]
-    fn control(
+    pub fn control(
         &mut self,
         dt: Duration,
         desired_angles: Vec2<f32>,

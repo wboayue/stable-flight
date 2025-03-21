@@ -33,6 +33,8 @@ pub struct VehicleState {
     pub acceleration: Vec3<Acceleration>,
     pub attitude: Quaternion,
     pub angular_velocity: Vec3<f32>,
+    pub roll: f32,
+    pub pitch: f32,
     // flight mode
     // heading
     // gps
