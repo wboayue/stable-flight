@@ -107,22 +107,22 @@ impl Commander for Extreme3DCommander {
             2
         };
 
-        // Command::Attitude(AttitudeCommand {
-        //     throttle: channels[0],
-        //     roll: channels[1],
-        //     pitch: channels[2],
-        //     yaw: channels[3],
-        //     arm: channels[4] > 0.5,
-        //     mode,
-        // })
-        Command::Rate(RateCommand {
+        Command::Attitude(AttitudeCommand {
             throttle: channels[0],
-            roll_rate: apply_dead_zone(channels[1], 0.1),
-            pitch_rate: apply_dead_zone(channels[2], 0.1),
-            yaw_rate: -apply_dead_zone(channels[3], 0.15),
+            roll: apply_dead_zone(channels[1], 0.1),
+            pitch: apply_dead_zone(channels[2], 0.1),
+            yaw: apply_dead_zone(channels[3], 0.15),
             arm: channels[4] > 0.5,
             mode,
         })
+        // Command::Rate(RateCommand {
+        //     throttle: channels[0],
+        //     roll_rate: apply_dead_zone(channels[1], 0.1),
+        //     pitch_rate: apply_dead_zone(channels[2], 0.1),
+        //     yaw_rate: -apply_dead_zone(channels[3], 0.15),
+        //     arm: channels[4] > 0.5,
+        //     mode,
+        // })
     }
 }
 

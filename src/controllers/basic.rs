@@ -240,8 +240,14 @@ impl BasicController {
         let desired_yaw_rate =
             self.control_yaw(dt, attitude_command.yaw, estimated_state.attitude.yaw());
 
-        let desired_rates = vec3(desired_rp_rates.x, desired_rp_rates.y, desired_yaw_rate);
+        let desired_rates = vec3(
+            attitude_command.roll,
+            attitude_command.pitch,
+            attitude_command.yaw,
+        );
 
+        let desired_rates = desired_rates.clamp(-1.0, 1.0) * self.max_rates;
+    
         let current_rates = vec3(
             estimated_state.angular_velocity.x,
             estimated_state.angular_velocity.y,
