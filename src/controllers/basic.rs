@@ -95,8 +95,8 @@ impl Default for BasicControllerConfig {
                 d: 0.075,
             },
             yaw_gains: Gains {
-                p: 1.2,
-                i: 0.12,
+                p: 2.5,
+                i: 0.0,
                 d: 0.06,
             },
             thrust_curve_exponent: 2.0,
