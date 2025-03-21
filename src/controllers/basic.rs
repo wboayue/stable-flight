@@ -128,7 +128,7 @@ pub struct BasicController {
     integrated_angle_error: Vec2<f32>,
 
     /// Maximum angular rates (roll, pitch, yaw) in rad/s.
-    pub max_rates: Vec3<f32>,    
+    pub max_rates: Vec3<f32>,
 }
 
 impl BasicController {
@@ -247,7 +247,7 @@ impl BasicController {
         );
 
         let desired_rates = desired_rates.clamp(-1.0, 1.0) * self.max_rates;
-    
+
         let current_rates = vec3(
             estimated_state.angular_velocity.x,
             estimated_state.angular_velocity.y,
