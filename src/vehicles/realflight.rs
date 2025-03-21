@@ -268,6 +268,7 @@ where
 
         self.estimated_state.roll = to_radians(state.roll.value);
         self.estimated_state.pitch = to_radians(state.inclination.value);
+        self.estimated_state.heading = to_radians(state.azimuth.value);
 
     }
 }

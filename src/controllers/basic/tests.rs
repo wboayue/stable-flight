@@ -85,33 +85,6 @@ fn test_rate_controller_positive_error() {
 }
 
 #[test]
-fn test_roll_pitch_controller_zero_error() {
-    let mut controller = setup_controller();
-    let dt = Duration::from_millis(10);
-    let desired_angles = vec2(0.0, 0.0);
-    let current_angles = vec2(0.0, 0.0);
-
-    let output = controller.control_roll_pitch(dt, desired_angles, current_angles);
-    assert_eq!(
-        output,
-        vec2(0.0, 0.0),
-        "Output should be zero when error is zero"
-    );
-}
-
-#[test]
-fn test_roll_pitch_controller_positive_error() {
-    let mut controller = setup_controller();
-    let dt = Duration::from_millis(10);
-    let desired_angles = vec2(0.1, 0.1); // Small desired roll/pitch
-    let current_angles = vec2(0.0, 0.0);
-
-    let output = controller.control_roll_pitch(dt, desired_angles, current_angles);
-    assert!(output.x > 0.0, "Roll rate should be positive");
-    assert!(output.y > 0.0, "Pitch rate should be positive");
-}
-
-#[test]
 fn test_altitude_controller_zero_error() {
     let mut controller = setup_controller();
     let dt = Duration::from_millis(10);

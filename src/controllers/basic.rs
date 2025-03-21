@@ -245,42 +245,25 @@ impl BasicController {
             desired_angles, current_angles
         );
 
-        let desired_rates_rp = self.attitude_controller.control(
+        let desired_rates = self.attitude_controller.control(
             dt,
             desired_angles,
             current_angles,
         );
 
-//        println!("setpoint: {:?}", desired_rates_rp);
-
         let desired_yaw_rate =
-            self.control_yaw(dt, attitude_command.yaw, estimated_state.attitude.yaw());
-
-        let desired_rates = vec3(
-            attitude_command.roll,
-            attitude_command.pitch,
-            attitude_command.yaw,
-        );
-
-        let mut desired_rates = desired_rates.clamp(-1.0, 1.0) * self.max_rates;
-
-        desired_rates.x = desired_rates_rp.x;
-        desired_rates.y = desired_rates_rp.y;
-        desired_rates.z = 0.0;
-
-        // desired_rates.x = 0.0;
-        // desired_rates.y = 0.0;
-        desired_rates.z = 0.0;
-
-        // println!(
-        //     "desired rates: {:?}, current rates: {:?}",
-        //     desired_rates, estimated_state.angular_velocity
-        // );
+            self.control_yaw(dt, 0.0, estimated_state.heading);
 
         let current_rates = vec3(
             estimated_state.angular_velocity.x,
             estimated_state.angular_velocity.y,
             estimated_state.angular_velocity.z,
+        );
+
+        let desired_rates = vec3(
+            desired_rates.x,
+            desired_rates.y,
+            desired_yaw_rate,
         );
 
         let moments = self
@@ -377,7 +360,7 @@ impl BasicController {
             estimated_state.attitude.pitch(),
         );
 
-        let desired_rp_rates = self.control_roll_pitch(dt, desired_angles, current_angles);
+        let desired_rp_rates = self.attitude_controller.control(dt, desired_angles, current_angles);
         let desired_yaw_rate = self.control_yaw(dt, 0.0, estimated_state.attitude.yaw());
 
         let desired_rates = vec3(desired_rp_rates.x, desired_rp_rates.y, desired_yaw_rate);
@@ -408,52 +391,6 @@ impl BasicController {
             thrust: self.fit_to_thrust_curve(linear_thrust),
             moments,
         }
-    }
-
-    /// Controls the roll and pitch angles of the vehicle using a PID controller.
-    ///
-    /// This middle control loop converts desired roll and pitch angles into desired angular rates for the rate controller.
-    ///
-    /// # Arguments
-    ///
-    /// * `dt` - Time step since the last update (must be positive).
-    /// * `desired_angles` - Desired roll and pitch angles in radians.
-    /// * `current_angles` - Current roll and pitch angles in radians.
-    ///
-    /// # Returns
-    ///
-    /// Desired angular rates (roll rate, pitch rate) in rad/s.
-    fn control_roll_pitch(
-        &mut self,
-        dt: Duration,
-        desired_angles: Vec2<f32>,
-        estimated_angles: Vec2<f32>,
-    ) -> Vec2<f32> {
-        assert!(dt.as_secs_f32() > 0.0, "Time step must be positive");
-        assert!(
-            desired_angles.x >= -1.0 && desired_angles.x <= 1.0,
-            "Desired roll angle ({}) must be in the range [-1, 1]",
-            desired_angles.x
-        );
-        assert!(
-            desired_angles.y >= -1.0 && desired_angles.y <= 1.0,
-            "Desired pitch angle ({}) must be in the range [-1, 1]",
-            desired_angles.y
-        );
-        let gains = &self.config.angle_gains;
-
-        let error = desired_angles - estimated_angles;
-        let error_derivative = (error - self.previous_angle_error) / dt.as_secs_f32();
-
-        self.integrated_angle_error = self.integrated_angle_error + dt.as_secs_f32() * error;
-        self.integrated_angle_error = self.integrated_angle_error.clamp(-100.0, 100.0);
-
-        let rates =
-            gains.p * error + gains.i * self.integrated_angle_error + gains.d * error_derivative;
-
-        self.previous_angle_error = error;
-
-        rates.clamp(-1.0, 1.0)
     }
 
     /// Controls the altitude of the vehicle by computing a normalized thrust command using a PID controller.
@@ -582,11 +519,6 @@ impl BasicController {
 
         let gains = &self.config.yaw_gains;
 
-        const max_yaw: f32 = 1.5; // max yaw rate in rad/s ~86 deg/s
-        let mut estimated_yaw = estimated_yaw / max_yaw;
-        estimated_yaw = estimated_yaw.clamp(-1.0, 1.0);
-
-        // maybe use angles here
         let error = angle_diff(desired_yaw, estimated_yaw); // Use a helper to handle angle wrapping
         let error_derivative = (error - self.previous_yaw_error) / dt.as_secs_f32();
 
@@ -598,7 +530,7 @@ impl BasicController {
 
         self.previous_yaw_error = error;
 
-        yaw_rate.clamp(-1.0, 1.0)
+        yaw_rate
     }
 
     /// Applies a nonlinear thrust curve to a linear thrust command.
