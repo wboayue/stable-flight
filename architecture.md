@@ -14,9 +14,18 @@ The flight stabilization loop runs at a configuration frequency and does the fol
 sequenceDiagram
     participant FlightStabilizer
     participant Commander
+    participant Vehicle
+    participant Controller
+    participant Mixer
+    participant TelemetryPublisher
 
-    loop Every minute
-        FlightStabilizer->>Commander: next()
-        Commander-->>FlightStabilizer: Command
-    end
+    FlightStabilizer->>Commander: next()
+    Commander-->>FlightStabilizer: Command
+    FlightStabilizer->>Vehicle: estimate_state()
+    Vehicle-->>FlightStabilizer: VehicleState
+    FlightStabilizer->>Controller: control(Command, VehicleState)
+    Controller-->>FlightStabilizer: ControlOutputs
+    FlightStabilizer->>Mixer: mix(ControlOutputs)
+    Mixer-->>FlightStabilizer: ActuatorCommand
+    FlightStabilizer->>TelemetryPublisher: send_telemetry(Command, VehicleState)
 ```
