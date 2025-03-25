@@ -10,3 +10,13 @@ The heart of the stabilizer FlightStabilizer component. The FlightStabilizer dep
 
 The flight stabilization loop runs at a configuration frequency and does the following continuously.
 
+```mermaid
+sequenceDiagram
+    participant FlightStabilizer
+    participant Commander
+
+    loop Every minute
+        FlightStabilizer->>Commander: next()
+        Commander-->>FlightStabilizer: Command
+    end
+```
