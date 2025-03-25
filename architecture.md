@@ -64,3 +64,48 @@ The stabilizer implements careful timing control:
 * Operates at a fixed frequency (e.g., 250 Hz)
 * Calculates and applies sleep durations to maintain consistent timing
 * Passes delta time values to components for time-dependent calculations
+
+## Configuration Example
+
+```rust
+The following example demonstrates how the components can be configured for a quadcopter in the RealFlight simulator:
+
+// Target loop frequency of 250 Hz
+let target_frequency = 250.0;
+
+// Configure joystick commander
+let commander = Extreme3DCommander::new();
+
+// Configure RealFlight simulator interface
+let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+    bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
+    mapping: ActuatorMapping {
+        motors: [Some(2), Some(0), Some(1), Some(3), None, None, None, None],
+        ..Default::default()
+    },
+});
+
+// Basic PID controller
+let controller = BasicController::default();
+
+// Mixer for quadcopter configuration
+let mixer = QuadCopterMixer::default();
+
+// Telemetry via MAVLink protocol
+let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
+
+// Assemble the flight stabilizer with all components
+let mut stabilizer = FlightStabilizer::new(
+    target_frequency,
+    commander,
+    vehicle,
+    controller,
+    mixer,
+    telemetry,
+);
+
+// Start the control loop
+stabilizer.run();
+```
+
+This architecture's modularity allows for easy testing with different components while maintaining the same core stabilization loop, making it ideal for iterative flight control system development.
