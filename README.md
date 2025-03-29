@@ -6,6 +6,8 @@ I decided to use simulation because my previous experience building drones taugh
 
 Currently, my flight controller supports software-in-the-loop simulation with the RealFlight simulator. It is designed to be easily extended to support other flight simulators as well. I chose RealFlight for its realistic physics model, its API for external drone control, its wide selection of RC aircraft, and its ability to define custom models. Although RealFlight is only available on Windows, I have successfully run it on my Mac using Parallels.
 
-Sample models
+Controller logic was initially developed using the following models
+* [QuadcopterX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX)
+* [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation)
 
-* [SITL_Models/RealFlight/Released_Models at master · ArduPilot/SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models)
+Ardupilot also maintains a [collection of models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models).
