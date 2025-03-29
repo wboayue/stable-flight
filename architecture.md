@@ -67,9 +67,9 @@ The stabilizer implements careful timing control:
 
 ## Configuration Example
 
-```rust
 The following example demonstrates how the components can be configured for a quadcopter in the RealFlight simulator:
 
+```rust
 // Target loop frequency of 250 Hz
 let target_frequency = 250.0;
 
