@@ -1,5 +1,7 @@
 ## Architecture
 
+This document expands upon the high-level introduction provided in the [project README](https://github.com/wboayue/stable-flight-sitl/blob/main/README.md).
+
 The heart of the system is the `FlightStabilizer` component. The `FlightStabilizer` depends on several traits that together form a flexible and modular flight control architecture.
 
 ## Core Components
