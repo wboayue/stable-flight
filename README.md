@@ -31,6 +31,35 @@ After installing RealFlight, you will need to enable **RealFlight Link**. You ca
 
 ## Getting Started
 
+Out of the box, the flight stabilizer is configured to control a quadcopter via the Spektrum controller or scripted commands.
+
+You can run the stabilizer locally alongside the simulator or remotely using a local proxy.
+
+To run with a Spektrum controller, use the following command:
+
+```bash
+stable-flight-sitl --commander spectrum
+```
+
+To run a scripted sequence, use this command:
+
+```bash
+stable-flight-sitl --script spectrum
+```
+
+These commands provide a quick starting point, but the real strength of the system lies in its extensibility. The flight stabilizer is configured in `main.rs`, or you can create your own binary for customized setups.
+
+Let's dive into configuring a `FlightStabilizer`. The stabilizer depends on the following components: a **Commander**, **Vehicle**, **Controller**, **Mixer**, and **TelemetryPublisher**.
+
+Commanders generate Rate, Attitude, or Position control commands that are processed by the controller. Commands may come from input devices, scripts, or external systems. Currently, commanders are available to support scripting, Spektrum controllers, and Extreme3D joysticks. You can support new input devices by implementing the Commander trait.
+
+The following example demonstrates creating a commander for the Extreme3D joystick:
+
+```rust
+// Configure joystick commander
+let commander = Extreme3DCommander::new();
+```
+
 ## Conclusion
 
 This project provides a solid foundation, but there is still work ahead to make it fly on real hardware. Specifically, the appropriate architecture needs to be selected for running the flight stabilizer on an embedded device. The [RTIC](https://rtic.rs/2/book/en/) and [Embassy](https://embassy.dev/) frameworks have been explored and both look promising. Additionally, until now, state data has come directly from the simulator. On real hardware, noisy sensor data needs to be  read and filtered to generate reliable state estimates. I'm excited to tackle these next steps and get a drone airborne with stable flight.
