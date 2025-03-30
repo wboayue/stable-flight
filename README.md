@@ -51,13 +51,110 @@ These commands provide a quick starting point, but the real strength of the syst
 
 Let's dive into configuring a `FlightStabilizer`. The stabilizer depends on the following components: a **Commander**, **Vehicle**, **Controller**, **Mixer**, and **TelemetryPublisher**.
 
-Commanders generate Rate, Attitude, or Position control commands that are processed by the controller. Commands may come from input devices, scripts, or external systems. Currently, commanders are available to support scripting, Spektrum controllers, and Extreme3D joysticks. You can support new input devices by implementing the Commander trait.
+### Commander
+
+Commanders generate Rate, Attitude, or Position control commands processed by the controller. Commands may come from input devices, scripts, or external systems. Currently, commanders are available to support scripting, Spektrum controllers, and Extreme3D joysticks. You can support new input devices by implementing the Commander trait.
 
 The following example demonstrates creating a commander for the Extreme3D joystick:
 
 ```rust
 // Configure joystick commander
 let commander = Extreme3DCommander::new();
+```
+
+The SpektrumCommander currently doesn't expose configuration options.
+
+### Vehicle
+
+Vehicles are responsible for retrieving state estimates from the vehicle and actuating its motors and control surfaces. There is currently one vehicle implementation for the RealFlight simulator. To support another simulator, you would implement the Vehicle trait and interface it with the new simulator.
+
+The following example demonstrates configuring the RealFlight vehicle:
+
+```rust
+let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+    bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
+    mapping: ActuatorMapping {
+        motors: [Some(2), Some(0), Some(1), Some(3), None, None, None, None],
+        ..Default::default()
+    },
+});
+```
+
+The RealFlightVehicle is configured with a `RealFlightLocalBridge` or `RealFlightRemoteBridge`, depending on whether the flight stabilizer is running on the same host as the simulator. The `ActuatorMapping` maps logical motors and control surfaces to specific channels for the RealFlight vehicle model.
+
+### Controller
+
+Controllers calculate the difference between the vehicle's current state and the desired state, generating ActuatorCommand outputs to move the vehicle toward the desired state. This component contains the core flight stabilization logic. There are currently two controller implementations: one for airframes that don't change modes, and another for airframes like VTOLs that transition between flight modes. This is where you would start if you want to implement custom flight control logic.
+
+The following example demonstrates configuring the basic controller with PID gains:
+
+```rust
+let controller = BasicController::new(&BasicControllerConfig {
+    rate_gains: Gains {
+        p: 1.0,
+        i: 0.0,
+        d: 0.0,
+    },
+    angle_gains: Gains {
+        p: 2.0,
+        i: 0.2,
+        d: 0.1,
+    },
+    altitude_gains: Gains {
+        p: 3.0,
+        i: 0.3,
+        d: 0.15,
+    },
+    lateral_gains: Gains {
+        p: 1.5,
+        i: 0.15,
+        d: 0.075,
+    },
+    yaw_gains: Gains {
+        p: 1.2,
+        i: 0.12,
+        d: 0.06,
+    },
+    thrust_curve_exponent: 2.0,
+});
+```
+
+This configuration sets gains for individual PID controllers.
+
+### Mixer
+
+Mixers convert control outputs into motor commands and control surface movements:
+
+```rust
+let mixer = QuadCopterMixer::default();
+```
+
+### TelemetryPublisher
+
+TelemetryPublishers publish the system state to external systems. There is a publisher implemented for MAVLink messages:
+
+```rust
+// Telemetry via MAVLink protocol
+let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
+```
+
+### Running the Stabilizer
+
+With dependencies created and configured, you can create and run a flight stabilizer:
+
+```rust
+// Assemble the flight stabilizer with all components
+let mut stabilizer = FlightStabilizer::new(
+    target_frequency,
+    commander,
+    vehicle,
+    controller,
+    mixer,
+    telemetry,
+);
+
+// Start the control loop
+stabilizer.run();
 ```
 
 ## Conclusion
