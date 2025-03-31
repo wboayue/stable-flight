@@ -35,13 +35,13 @@
 //! - **Full Control Stack**: Automatic position and altitude holding
 //! - **Selective Enabling**: Can enable altitude control while keeping manual lateral control
 
-use robomath::{vec2, vec3, Quaternion, Vec2, Vec3};
+use robomath::{to_radians, vec2, vec3, Quaternion, Vec2, Vec3};
 use std::f32::consts::PI;
 use std::time::Duration;
 
 use crate::commanders::{AttitudeCommand, Command, RateCommand, WaypointCommand};
 
-use super::{rates::RatesController, ControlOutput, Controller, VehicleState};
+use super::{attitude::{AttitudeConfiguration, AttitudeController}, body_rate::BodyRateController, ControlOutput, Controller, VehicleState};
 
 #[cfg(test)]
 mod tests;
@@ -49,7 +49,7 @@ mod tests;
 const G: f32 = 9.81; // acceleration due to gravity (m/s²)
 
 /// PID gains for a single control loop.
-#[derive(Default, Clone, Copy, Debug)]
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
 pub struct Gains {
     pub p: f32,
     pub i: f32,
@@ -65,26 +65,9 @@ pub struct BasicControllerConfig {
     pub lateral_gains: Gains,
     pub yaw_gains: Gains,
     pub thrust_curve_exponent: f32,
-}
 
-/// A basic flight controller for vehicles like quadcopters, implementing a cascaded control system.
-///
-/// This controller supports rate, attitude, and position control loops, with configurable gains
-/// for each loop. It processes commands (`RateCommand`, `AttitudeCommand`, `WaypointCommand`)
-/// and generates motor control outputs (`ControlOutput`).
-#[derive(Default)]
-pub struct BasicController {
-    config: BasicControllerConfig,
-
-    rates_controller: RatesController,
-
-    integrated_altitude_error: f32,
-    previous_yaw_error: f32,
-    integrated_yaw_error: f32,
-    previous_pos_error: Vec2<f32>,
-    integrated_pos_error: Vec2<f32>,
-    previous_angle_error: Vec2<f32>,
-    integrated_angle_error: Vec2<f32>,
+    /// Maximum angular rates (roll, pitch, yaw) in rad/s.
+    pub max_rates: Vec3<f32>,
 }
 
 impl Default for BasicControllerConfig {
@@ -112,13 +95,41 @@ impl Default for BasicControllerConfig {
                 d: 0.075,
             },
             yaw_gains: Gains {
-                p: 1.2,
-                i: 0.12,
+                p: 2.5,
+                i: 0.0,
                 d: 0.06,
             },
             thrust_curve_exponent: 2.0,
+            max_rates: Vec3 {
+                x: 3.0, // max roll rate in rad/s (~172 deg/s)
+                y: 3.0, // max pitch rate in rad/s (~172 deg/s)
+                z: 3.0, // max yaw rate in rad/s (~86 deg/s)
+            },
         }
     }
+}
+
+/// A basic flight controller for vehicles like quadcopters, implementing a cascaded control system.
+///
+/// This controller supports rate, attitude, and position control loops, with configurable gains
+/// for each loop. It processes commands (`RateCommand`, `AttitudeCommand`, `WaypointCommand`)
+/// and generates motor control outputs (`ControlOutput`).
+pub struct BasicController {
+    config: BasicControllerConfig,
+
+    attitude_controller: AttitudeController,
+    rates_controller: BodyRateController,
+
+    integrated_altitude_error: f32,
+    previous_yaw_error: f32,
+    integrated_yaw_error: f32,
+    previous_pos_error: Vec2<f32>,
+    integrated_pos_error: Vec2<f32>,
+    previous_angle_error: Vec2<f32>,
+    integrated_angle_error: Vec2<f32>,
+
+    /// Maximum angular rates (roll, pitch, yaw) in rad/s.
+    pub max_rates: Vec3<f32>,
 }
 
 impl BasicController {
@@ -127,12 +138,15 @@ impl BasicController {
     /// # Arguments
     ///
     /// * `config` - Configuration for the controller, including PID gains and thrust curve exponent.
-    pub fn new(config: &BasicControllerConfig) -> Self {
+    pub fn new(config: BasicControllerConfig) -> Self {
         BasicController {
             config: config.clone(),
-            rates_controller: RatesController {
+
+            rates_controller: BodyRateController {
                 ..Default::default()
             },
+            attitude_controller: AttitudeController::new(&AttitudeConfiguration::default()),
+
             integrated_altitude_error: 0.0,
             previous_yaw_error: 0.0,
             integrated_yaw_error: 0.0,
@@ -140,6 +154,7 @@ impl BasicController {
             integrated_pos_error: vec2(0.0, 0.0),
             previous_angle_error: vec2(0.0, 0.0),
             integrated_angle_error: vec2(0.0, 0.0),
+            max_rates: vec3(3.0, 3.0, 3.0), // default max rates
         }
     }
 }
@@ -221,20 +236,34 @@ impl BasicController {
         );
         let desired_angles = vec2(attitude_command.roll, attitude_command.pitch);
         let current_angles = vec2(
-            estimated_state.attitude.roll(),
-            estimated_state.attitude.pitch(),
+            estimated_state.roll,
+            estimated_state.pitch,
         );
 
-        let desired_rp_rates = self.control_roll_pitch(dt, desired_angles, current_angles);
-        let desired_yaw_rate =
-            self.control_yaw(dt, attitude_command.yaw, estimated_state.attitude.yaw());
+        println!(
+            "desired angles: {:?}, current angles: {:?}",
+            desired_angles, current_angles
+        );
 
-        let desired_rates = vec3(desired_rp_rates.x, desired_rp_rates.y, desired_yaw_rate);
+        let desired_rates = self.attitude_controller.control(
+            dt,
+            desired_angles,
+            current_angles,
+        );
+
+        let desired_yaw_rate =
+            self.control_yaw(dt, 0.0, estimated_state.heading);
 
         let current_rates = vec3(
             estimated_state.angular_velocity.x,
             estimated_state.angular_velocity.y,
             estimated_state.angular_velocity.z,
+        );
+
+        let desired_rates = vec3(
+            desired_rates.x,
+            desired_rates.y,
+            desired_yaw_rate,
         );
 
         let moments = self
@@ -271,6 +300,8 @@ impl BasicController {
             rate_command.pitch_rate,
             rate_command.yaw_rate,
         );
+
+        let desired_rates = desired_rates.clamp(-1.0, 1.0) * self.max_rates;
 
         let current_rates = vec3(
             estimated_state.angular_velocity.x,
@@ -329,7 +360,7 @@ impl BasicController {
             estimated_state.attitude.pitch(),
         );
 
-        let desired_rp_rates = self.control_roll_pitch(dt, desired_angles, current_angles);
+        let desired_rp_rates = self.attitude_controller.control(dt, desired_angles, current_angles);
         let desired_yaw_rate = self.control_yaw(dt, 0.0, estimated_state.attitude.yaw());
 
         let desired_rates = vec3(desired_rp_rates.x, desired_rp_rates.y, desired_yaw_rate);
@@ -360,52 +391,6 @@ impl BasicController {
             thrust: self.fit_to_thrust_curve(linear_thrust),
             moments,
         }
-    }
-
-    /// Controls the roll and pitch angles of the vehicle using a PID controller.
-    ///
-    /// This middle control loop converts desired roll and pitch angles into desired angular rates for the rate controller.
-    ///
-    /// # Arguments
-    ///
-    /// * `dt` - Time step since the last update (must be positive).
-    /// * `desired_angles` - Desired roll and pitch angles in radians.
-    /// * `current_angles` - Current roll and pitch angles in radians.
-    ///
-    /// # Returns
-    ///
-    /// Desired angular rates (roll rate, pitch rate) in rad/s.
-    fn control_roll_pitch(
-        &mut self,
-        dt: Duration,
-        desired_angles: Vec2<f32>,
-        estimated_angles: Vec2<f32>,
-    ) -> Vec2<f32> {
-        assert!(dt.as_secs_f32() > 0.0, "Time step must be positive");
-        assert!(
-            desired_angles.x >= -1.0 && desired_angles.x <= 1.0,
-            "Desired roll angle ({}) must be in the range [-1, 1]",
-            desired_angles.x
-        );
-        assert!(
-            desired_angles.y >= -1.0 && desired_angles.y <= 1.0,
-            "Desired pitch angle ({}) must be in the range [-1, 1]",
-            desired_angles.y
-        );
-        let gains = &self.config.angle_gains;
-
-        let error = desired_angles - estimated_angles;
-        let error_derivative = (error - self.previous_angle_error) / dt.as_secs_f32();
-
-        self.integrated_angle_error = self.integrated_angle_error + dt.as_secs_f32() * error;
-        self.integrated_angle_error = self.integrated_angle_error.clamp(-100.0, 100.0);
-
-        let rates =
-            gains.p * error + gains.i * self.integrated_angle_error + gains.d * error_derivative;
-
-        self.previous_angle_error = error;
-
-        rates.clamp(-1.0, 1.0)
     }
 
     /// Controls the altitude of the vehicle by computing a normalized thrust command using a PID controller.
@@ -534,11 +519,6 @@ impl BasicController {
 
         let gains = &self.config.yaw_gains;
 
-        const max_yaw: f32 = 1.5; // max yaw rate in rad/s ~86 deg/s
-        let mut estimated_yaw = estimated_yaw / max_yaw;
-        estimated_yaw = estimated_yaw.clamp(-1.0, 1.0);
-
-        // maybe use angles here
         let error = angle_diff(desired_yaw, estimated_yaw); // Use a helper to handle angle wrapping
         let error_derivative = (error - self.previous_yaw_error) / dt.as_secs_f32();
 
@@ -550,7 +530,7 @@ impl BasicController {
 
         self.previous_yaw_error = error;
 
-        yaw_rate.clamp(-1.0, 1.0)
+        yaw_rate
     }
 
     /// Applies a nonlinear thrust curve to a linear thrust command.

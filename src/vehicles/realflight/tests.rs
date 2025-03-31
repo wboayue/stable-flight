@@ -1,4 +1,3 @@
-
 use super::*;
 use realflight_bridge::{ControlInputs, RealFlightBridge, SimulatorState};
 use robomath::{Quaternion, Vec3};
