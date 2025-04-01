@@ -9,7 +9,7 @@ use stable_flight_sitl::mixers::QuadCopterMixer;
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 use stable_flight_sitl::vehicles::realflight::{ActuatorMapping, RealFlightConfiguration};
 use stable_flight_sitl::vehicles::{NullVehicle, RealFlightVehicle};
-use stable_flight_sitl::FlightStabilizer;
+use stable_flight_sitl::FlightOrchestrator;
 
 fn main() {
     // Initialize logger
@@ -49,16 +49,8 @@ fn main() {
 
     let telemetry = MavlinkPublisher::new(telemetry_configuration);
 
-    let target_frequency = 250.0;
+    let mut stabilizer = FlightOrchestrator::new(commander, vehicle, controller, mixer, telemetry);
 
-    let mut stabilizer = FlightStabilizer::new(
-        target_frequency,
-        commander,
-        vehicle,
-        controller,
-        mixer,
-        telemetry,
-    );
-
-    stabilizer.run();
+    let target_frequency = 250.0; // Hz
+    stabilizer.run(target_frequency);
 }

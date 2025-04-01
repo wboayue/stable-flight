@@ -1,7 +1,7 @@
 pub mod commanders;
 pub mod controllers;
 pub mod mixers;
-pub mod stabilizer;
+pub mod orchestrator;
 pub mod telemetry;
 pub mod vehicles;
 
@@ -11,8 +11,8 @@ use log::info;
 use uom::si::f32::*;
 
 use commanders::Command;
+pub use orchestrator::FlightOrchestrator;
 use robomath::{Quaternion, Vec3};
-pub use stabilizer::FlightStabilizer;
 
 #[derive(Debug, Default, PartialEq)]
 pub struct ControlOutput {

@@ -33,9 +33,9 @@ impl Default for AttitudeConfiguration {
     fn default() -> Self {
         Self {
             gains: Gains {
-                p: 3.0,  // Proportional gain
-                i: 0.001,  // Integral gain (disabled by default)
-                d: 1.0, // Derivative gain
+                p: 3.0,   // Proportional gain
+                i: 0.001, // Integral gain (disabled by default)
+                d: 1.0,   // Derivative gain
             },
             max_angles: vec2(FRAC_PI_4, FRAC_PI_4), // 45° for roll and pitch
             max_integral: 100.0,                    // Arbitrary limit

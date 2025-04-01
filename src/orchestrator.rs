@@ -1,30 +1,8 @@
-//! # Flight Stabilizer Module
+//! Coordinates the activities between components of the flight control system.
 //!
-//! This module implements the core stabilization loop for a flight control system.
-//! It is responsible for maintaining the desired state of the aircraft by coordinating
-//! command generation, state feedback, control computations, and telemetry transmission.
+//! Components:
 //!
-//! ## Overview
-//!
-//! The Flight Stabilizer continuously executes a control loop at a specified target frequency.
-//! During each loop iteration, it:
-//!
-//! - Retrieves the next flight control command from a `Commander`.
-//! - Acquires the current state of the vehicle via a `Vehicle` interface.
-//! - Computes the desired state and control outputs using a `Controller`.
-//! - Commands the vehicle's actuators with the calculated outputs.
-//! - Sends telemetry data through a `TelemetryPublisher`.
-//!
-//! This design leverages dependency injection to decouple the stabilizer from specific
-//! implementations of command generation, vehicle state management, control logic, and telemetry.
-//!
-//! ## Components
-//!
-//! - **StabilizerConfiguration**: A configuration struct that aggregates the following:
-//!   - `target_frequency`: The desired update rate (in Hz) for the control loop.
-//!   - References to objects implementing the `Commander`, `Vehicle`, `Controller`, and `TelemetryPublisher` traits.
-//!
-//! - **FlightStabilizer**: The main struct that encapsulates the stabilization loop.
+//! - **[FlightStabilizer]**: The main struct that encapsulates the stabilization loop.
 //!   It uses the configuration to execute the following steps repeatedly:
 //!   1. Calculate the loop time slice (`dt`) based on the target frequency.
 //!   2. Obtain control inputs from the `Commander`.
@@ -34,11 +12,6 @@
 //!   6. Publish telemetry data.
 //!   7. Sleep for the remainder of the loop duration to maintain a consistent update rate.
 //!
-//! ## Timing and Loop Considerations
-//!
-//! The loop is designed to run at a fixed rate determined by `target_frequency` (e.g., 200 Hz).
-//! The duration `dt` is computed as the reciprocal of this frequency. After performing all operations,
-//! the loop calculates the remaining time until the next cycle and sleeps accordingly.
 
 use signal_hook::{consts::SIGINT, iterator::Signals};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -50,14 +23,31 @@ use log::info;
 
 use crate::{commanders::Commander, Controller, Mixer, TelemetryPublisher, Vehicle};
 
-pub struct FlightStabilizer<
+// This module implements the core stabilization loop for a flight control system.
+// It is responsible for maintaining the desired state of the aircraft by coordinating
+// command generation, state feedback, control computations, and telemetry transmission.
+//
+
+/// ## Overview
+///
+/// The Flight Stabilizer continuously executes a control loop at a specified target frequency.
+/// During each loop iteration, it:
+///
+/// - Retrieves the next flight control command from a `Commander`.
+/// - Acquires the current state of the vehicle via a `Vehicle` interface.
+/// - Computes the desired state and control outputs using a `Controller`.
+/// - Commands the vehicle's actuators with the calculated outputs.
+/// - Sends telemetry data through a `TelemetryPublisher`.
+///
+/// This design leverages dependency injection to decouple the stabilizer from specific
+/// implementations of command generation, vehicle state management, control logic, and telemetry.
+pub struct FlightOrchestrator<
     T: Commander,
     U: Vehicle,
     V: Controller,
     W: Mixer,
     X: TelemetryPublisher,
 > {
-    target_frequency: f64, // 200 Hz
     commander: T,
     vehicle: U,
     controller: V,
@@ -67,16 +57,16 @@ pub struct FlightStabilizer<
 }
 
 impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
-    FlightStabilizer<T, U, V, W, X>
+    FlightOrchestrator<T, U, V, W, X>
 {
+    /// Creates and configures a new [FlightOrchestrator].
     pub fn new(
-        target_frequency: f64,
         commander: T,
         vehicle: U,
         controller: V,
         mixer: W,
         telemetry: X,
-    ) -> FlightStabilizer<T, U, V, W, X> {
+    ) -> FlightOrchestrator<T, U, V, W, X> {
         let running = Arc::new(AtomicBool::new(true));
 
         // Set up signal handling in a separate thread
@@ -90,8 +80,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             }
         });
 
-        FlightStabilizer {
-            target_frequency,
+        FlightOrchestrator {
             commander,
             vehicle,
             controller,
@@ -101,8 +90,13 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
         }
     }
 
-    pub fn run(&mut self) {
-        let target_duration = 1.0 / self.target_frequency;
+    /// ## Timing and Loop Considerations
+    ///
+    /// The loop is designed to run at a fixed rate determined by `target_frequency` (e.g., 200 Hz).
+    /// The duration `dt` is computed as the reciprocal of this frequency. After performing all operations,
+    // the loop calculates the remaining time until the next cycle and sleeps accordingly.
+    pub fn run(&mut self, target_frequency: f64) {
+        let target_duration = 1.0 / target_frequency;
         assert!(
             target_duration.is_finite(),
             "The value is not a finite number."
