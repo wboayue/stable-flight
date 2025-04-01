@@ -41,7 +41,11 @@ use std::time::Duration;
 
 use crate::commanders::{AttitudeCommand, Command, RateCommand, WaypointCommand};
 
-use super::{attitude::{AttitudeConfiguration, AttitudeController}, body_rate::BodyRateController, ControlOutput, Controller, VehicleState};
+use super::{
+    attitude::{AttitudeConfiguration, AttitudeController},
+    body_rate::BodyRateController,
+    ControlOutput, Controller, VehicleState,
+};
 
 #[cfg(test)]
 mod tests;
@@ -235,24 +239,18 @@ impl BasicController {
             attitude_command.yaw
         );
         let desired_angles = vec2(attitude_command.roll, attitude_command.pitch);
-        let current_angles = vec2(
-            estimated_state.roll,
-            estimated_state.pitch,
-        );
+        let current_angles = vec2(estimated_state.roll, estimated_state.pitch);
 
         println!(
             "desired angles: {:?}, current angles: {:?}",
             desired_angles, current_angles
         );
 
-        let desired_rates = self.attitude_controller.control(
-            dt,
-            desired_angles,
-            current_angles,
-        );
+        let desired_rates = self
+            .attitude_controller
+            .control(dt, desired_angles, current_angles);
 
-        let desired_yaw_rate =
-            self.control_yaw(dt, 0.0, estimated_state.heading);
+        let desired_yaw_rate = self.control_yaw(dt, 0.0, estimated_state.heading);
 
         let current_rates = vec3(
             estimated_state.angular_velocity.x,
@@ -260,11 +258,7 @@ impl BasicController {
             estimated_state.angular_velocity.z,
         );
 
-        let desired_rates = vec3(
-            desired_rates.x,
-            desired_rates.y,
-            desired_yaw_rate,
-        );
+        let desired_rates = vec3(desired_rates.x, desired_rates.y, desired_yaw_rate);
 
         let moments = self
             .rates_controller
@@ -360,7 +354,9 @@ impl BasicController {
             estimated_state.attitude.pitch(),
         );
 
-        let desired_rp_rates = self.attitude_controller.control(dt, desired_angles, current_angles);
+        let desired_rp_rates = self
+            .attitude_controller
+            .control(dt, desired_angles, current_angles);
         let desired_yaw_rate = self.control_yaw(dt, 0.0, estimated_state.attitude.yaw());
 
         let desired_rates = vec3(desired_rp_rates.x, desired_rp_rates.y, desired_yaw_rate);
