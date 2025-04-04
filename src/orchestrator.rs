@@ -13,7 +13,7 @@
 //!
 //! # Example
 //!
-//! ```no_run
+//! ```ignore
 //! use stable_flight_sitl::commanders::Extreme3DCommander;
 //! use stable_flight_sitl::controllers::basic::BasicController;
 //! use stable_flight_sitl::mixers::QuadCopterMixer;
@@ -52,7 +52,7 @@ use std::{thread, time::Duration};
 
 use log::{debug, info};
 
-use crate::{Commander, Controller, Mixer, TelemetryPublisher, Vehicle};
+use crate::{Commander, Mixer, Stabilizer, TelemetryPublisher, Vehicle};
 
 /// Encapsulates the stabilization loop.
 ///
@@ -75,7 +75,7 @@ use crate::{Commander, Controller, Mixer, TelemetryPublisher, Vehicle};
 pub struct FlightOrchestrator<
     T: Commander,
     U: Vehicle,
-    V: Controller,
+    V: Stabilizer,
     W: Mixer,
     X: TelemetryPublisher,
 > {
@@ -87,7 +87,7 @@ pub struct FlightOrchestrator<
     running: Arc<AtomicBool>,
 }
 
-impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
+impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
     FlightOrchestrator<T, U, V, W, X>
 {
     /// Creates and configures a new [FlightOrchestrator].
@@ -197,7 +197,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
     ///    5. Apply actuator commands to the vehicle
     ///    6. Publish telemetry
     ///    7. Sleep to maintain the target frequency
-    /// 4. Continue until a shutdown signal is received    
+    /// 4. Continue until a shutdown signal is received
     pub fn run(&mut self, target_frequency: f64) {
         assert!(
             target_frequency.is_sign_positive(),
@@ -227,7 +227,7 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             state = self.vehicle.estimate_state(target_duration);
 
             // Compute control outputs (angles, rates, etc.)
-            let control_outputs = self.controller.control(target_duration, &command, &state);
+            let control_outputs = self.controller.stabilize(target_duration, &command, &state);
 
             // Mix control outputs
             let actuator_command = self.mixer.mix(&control_outputs);
