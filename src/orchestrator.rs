@@ -37,7 +37,14 @@
 //! orchestrator.run(250.0);
 //! ```
 
+// Unix-specific imports
+#[cfg(unix)]
 use signal_hook::{consts::SIGINT, iterator::Signals};
+
+// Windows-specific imports
+#[cfg(windows)]
+use windows_sys::Win32::System::Console::{SetConsoleCtrlHandler, CTRL_BREAK_EVENT, CTRL_C_EVENT};
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
@@ -110,17 +117,47 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
         telemetry: X,
     ) -> FlightOrchestrator<T, U, V, W, X> {
         let running = Arc::new(AtomicBool::new(true));
+        let running_clone = running.clone();
 
-        // Set up signal handling in a separate thread
-        let r = running.clone();
-        std::thread::spawn(move || {
-            let mut signals = Signals::new([SIGINT]).unwrap();
-            for _ in signals.forever() {
-                info!("Received shutdown signal, initiating graceful shutdown...");
-                r.store(false, Ordering::SeqCst);
-                break;
+        // Platform-specific signal handling
+        #[cfg(unix)]
+        {
+            thread::spawn(move || {
+                let mut signals =
+                    Signals::new([SIGINT]).expect("Failed to initialize signal handler");
+                for _ in signals.forever() {
+                    info!("Received SIGINT, initiating graceful shutdown...");
+                    running_clone.store(false, Ordering::SeqCst);
+                    break;
+                }
+            });
+        }
+
+        #[cfg(windows)]
+        {
+            unsafe {
+                // Define a handler function for Windows console events
+                extern "system" fn handler(event: u32) -> i32 {
+                    if event == CTRL_C_EVENT || event == CTRL_BREAK_EVENT {
+                        let running = unsafe { &*RUNNING.as_ptr() };
+                        info!("Received Ctrl+C or Ctrl+Break, initiating graceful shutdown...");
+                        running.store(false, Ordering::SeqCst);
+                        return 1; // Handled
+                    }
+                    0 // Not handled
+                }
+
+                // Static variable to pass `running` to the handler
+                static mut RUNNING: *const AtomicBool = std::ptr::null();
+                RUNNING = running_clone.as_ref() as *const _;
+
+                // Register the handler
+                let success = SetConsoleCtrlHandler(Some(handler), 1);
+                if success == 0 {
+                    panic!("Failed to set Windows console control handler");
+                }
             }
-        });
+        }
 
         FlightOrchestrator {
             commander,
