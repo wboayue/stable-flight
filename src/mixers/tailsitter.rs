@@ -2,7 +2,7 @@ use log::info;
 
 use crate::{ActuatorCommand, ControlOutput};
 
-use super::Mixer;
+use crate::Mixer;
 
 pub struct TailSitterMixer {}
 

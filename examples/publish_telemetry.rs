@@ -1,8 +1,8 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use stable_flight_sitl::commanders::{AttitudeCommand, Command};
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
+use stable_flight_sitl::{AttitudeCommand, Command};
 use stable_flight_sitl::{TelemetryPublisher, VehicleState}; // Import common MAVLink messages
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

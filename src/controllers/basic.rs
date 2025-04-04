@@ -39,7 +39,7 @@ use robomath::{to_radians, vec2, vec3, Quaternion, Vec2, Vec3};
 use std::f32::consts::PI;
 use std::time::Duration;
 
-use crate::commanders::{AttitudeCommand, Command, RateCommand, WaypointCommand};
+use crate::{AttitudeCommand, Command, RateCommand, WaypointCommand};
 
 use super::{
     attitude::{AttitudeConfiguration, AttitudeController},
