@@ -50,7 +50,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use std::{thread, time::Duration};
 
-use log::info;
+use log::{debug, info};
 
 use crate::{Commander, Controller, Mixer, TelemetryPublisher, Vehicle};
 
@@ -248,6 +248,14 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             let sleep_time = next_time
                 .checked_duration_since(Instant::now())
                 .unwrap_or(Duration::ZERO);
+
+            if iteration_count % 100 == 0 {
+                debug!(
+                    "Iteration {}: frequency {:.2} Hz",
+                    iteration_count,
+                    iteration_count as f64 / start_time.elapsed().as_secs_f64()
+                );
+            }
 
             // Sleep to maintain the target frequency
             thread::sleep(sleep_time);
