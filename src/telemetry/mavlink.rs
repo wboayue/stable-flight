@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use mavlink::{common::*, MavHeader, MavlinkVersion};
 
-use crate::{commanders::Command, TelemetryPublisher, VehicleState};
+use crate::{Command, TelemetryPublisher, VehicleState};
 
 pub struct MavlinkConfiguration {
     // connection: String,

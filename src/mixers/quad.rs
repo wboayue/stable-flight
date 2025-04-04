@@ -23,8 +23,7 @@
 //! - `DEFAULT_ROLL_PITCH_SCALING`: Scaling factor for roll and pitch moments.
 //! - `DEFAULT_YAW_SCALING`: Scaling factor for the yaw moment.
 
-use super::Mixer;
-use crate::{ActuatorCommand, ControlOutput};
+use crate::{ActuatorCommand, ControlOutput, Mixer};
 
 #[cfg(test)]
 mod tests;

@@ -2,10 +2,10 @@ use std::error::Error;
 use std::time::{Duration, Instant};
 
 use realflight_bridge::RealFlightRemoteBridge;
-use stable_flight_sitl::mixers::{Mixer as _, QuadCopterMixer};
+use stable_flight_sitl::mixers::QuadCopterMixer;
 use stable_flight_sitl::vehicles::realflight::{ActuatorMapping, RealFlightConfiguration};
 use stable_flight_sitl::vehicles::RealFlightVehicle;
-use stable_flight_sitl::{ControlOutput, Vehicle as _};
+use stable_flight_sitl::{ControlOutput, Mixer as _, Vehicle as _};
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();

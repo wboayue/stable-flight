@@ -4,7 +4,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
-use stable_flight_sitl::commanders::Commander;
+use stable_flight_sitl::Commander;
 use stable_flight_sitl::VehicleState;
 
 pub fn main() {

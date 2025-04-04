@@ -7,8 +7,7 @@ use byteorder::{BigEndian, WriteBytesExt};
 use mavlink::common::*;
 use mavlink::{MavHeader, MavlinkVersion};
 
-use crate::commanders::Command;
-use crate::{TelemetryPublisher, VehicleState};
+use crate::{Command, TelemetryPublisher, VehicleState};
 
 pub struct FileLogger {
     file: File,

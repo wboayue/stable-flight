@@ -4,8 +4,7 @@ use std::time::Duration;
 
 use gilrs::{Axis, Button, Event, EventType, GamepadId, Gilrs};
 
-use super::{AttitudeCommand, Command, Commander, RateCommand};
-use crate::VehicleState;
+use crate::{AttitudeCommand, Command, Commander, RateCommand, VehicleState};
 
 const THROTTLE_CODE: u32 = 65590;
 

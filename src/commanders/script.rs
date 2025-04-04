@@ -1,8 +1,6 @@
 use robomath::Vec2;
 
-use crate::VehicleState;
-
-use super::{Command, Commander, WaypointCommand};
+use crate::{Command, Commander, VehicleState, WaypointCommand};
 
 #[derive(Clone)]
 pub struct ScriptCommander {
@@ -18,7 +16,7 @@ impl ScriptCommander {
 }
 
 impl Commander for ScriptCommander {
-    fn next(&mut self, dt: std::time::Duration, _current_state: &VehicleState) -> super::Command {
+    fn next(&mut self, dt: std::time::Duration, _current_state: &VehicleState) -> Command {
         Command::Waypoint(WaypointCommand {
             position: Vec2 { x: 0.0, y: 0.0 },
             velocity: None,
