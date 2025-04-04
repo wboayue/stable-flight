@@ -3,6 +3,39 @@
 //! This module implements the core stabilization loop for the flight control system.
 //! It is responsible for maintaining the desired state of the aircraft by coordinating
 //! command generation, state feedback, control computations, and telemetry transmission.
+//!
+//! # Design Pattern
+//!
+//! The orchestrator follows a dependency injection pattern, allowing for flexible
+//! configuration and easy testing. Each component ([Commander], [Vehicle], [Controller],
+//! [Mixer], and [TelemetryPublisher]) can be independently replaced with different
+//! implementations to adapt to various scenarios.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use stable_flight_sitl::commanders::Extreme3DCommander;
+//! use stable_flight_sitl::controllers::basic::BasicController;
+//! use stable_flight_sitl::mixers::QuadCopterMixer;
+//! use stable_flight_sitl::vehicles::RealFlightVehicle;
+//! use stable_flight_sitl::telemetry::mavlink::MavlinkPublisher;
+//! use stable_flight_sitl::FlightOrchestrator;
+//!
+//! // Create components with appropriate configurations
+//! let commander = Extreme3DCommander::new();
+//! let vehicle = RealFlightVehicle::new(/* configuration */);
+//! let controller = BasicController::new(/* configuration */);
+//! let mixer = QuadCopterMixer::default();
+//! let telemetry = MavlinkPublisher::new(/* configuration */);
+//!
+//! // Create and run the orchestrator
+//! let mut orchestrator = FlightOrchestrator::new(
+//!     commander, vehicle, controller, mixer, telemetry
+//! );
+//!
+//! // Run at 250 Hz
+//! orchestrator.run(250.0);
+//! ```
 
 use signal_hook::{consts::SIGINT, iterator::Signals};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,8 +63,8 @@ use crate::{Commander, Controller, Mixer, TelemetryPublisher, Vehicle};
 /// - Actuates the [Vehicle] with output from the Mixer.
 /// - Publishes telemetry data via a [TelemetryPublisher].
 ///
-/// This design leverages dependency injection to decouple the orchestrator from specific
-/// implementations of command generation, vehicle state management, control logic, and telemetry.
+/// The orchestrator also handles system signals like SIGINT (Ctrl+C) to provide
+/// a graceful shutdown mechanism.
 pub struct FlightOrchestrator<
     T: Commander,
     U: Vehicle,
@@ -51,6 +84,24 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
     FlightOrchestrator<T, U, V, W, X>
 {
     /// Creates and configures a new [FlightOrchestrator].
+    ///
+    /// # Parameters
+    ///
+    /// * `commander` - Component that generates flight control commands
+    /// * `vehicle` - Represents the physical aircraft and provides state estimation
+    /// * `controller` - Computes control outputs based on commands and current state
+    /// * `mixer` - Converts abstract control outputs to concrete actuator commands
+    /// * `telemetry` - Handles transmission of telemetry data
+    ///
+    /// # Returns
+    ///
+    /// A new [FlightOrchestrator] instance configured with the provided components.
+    ///
+    /// # Signal Handling
+    ///
+    /// Sets up a signal handler for SIGINT (Ctrl+C) to enable graceful shutdown.
+    /// When a SIGINT is received, the `running` flag is set to false, which will
+    /// cause the control loop to exit after the current iteration.
     pub fn new(
         commander: T,
         vehicle: U,
@@ -85,7 +136,31 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
     ///
     /// The loop is designed to run at a fixed rate determined by `target_frequency` (e.g., 200 Hz).
     /// The duration `dt` is computed as the reciprocal of this frequency. After performing all operations,
-    // the loop calculates the remaining time until the next cycle and sleeps accordingly.
+    /// the loop calculates the remaining time until the next cycle and sleeps accordingly.
+    ///
+    /// # Parameters
+    ///
+    /// * `target_frequency` - The desired frequency in Hz at which the control loop should run
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if:
+    /// - The target frequency is not positive (must be > 0)
+    /// - The calculated duration is not finite
+    ///
+    /// # Process Flow
+    ///
+    /// 1. Calculate the target duration from the frequency
+    /// 2. Initialize timing variables
+    /// 3. Begin the main control loop:
+    ///    1. Get the next command from the commander
+    ///    2. Get the current vehicle state
+    ///    3. Compute control outputs using the controller
+    ///    4. Mix control outputs to actuator commands
+    ///    5. Apply actuator commands to the vehicle
+    ///    6. Publish telemetry
+    ///    7. Sleep to maintain the target frequency
+    /// 4. Continue until a shutdown signal is received    
     pub fn run(&mut self, target_frequency: f64) {
         assert!(
             target_frequency.is_sign_positive(),
@@ -98,11 +173,6 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             "The value is not a finite number."
         );
         let target_duration = Duration::from_secs_f64(target_duration);
-
-        // println!(
-        //     "Starting stabilization with target frequency: {} Hz. Delta {:?}",
-        //     self.target_frequency, target_duration
-        // );
 
         // Start time for the loop
         let mut next_time = Instant::now();
@@ -120,10 +190,9 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             state = self.vehicle.estimate_state(target_duration);
 
             // Compute control outputs (angles, rates, etc.)
-            // pass command and state to controller
             let control_outputs = self.controller.control(target_duration, &command, &state);
 
-            // mix control outputs
+            // Mix control outputs
             let actuator_command = self.mixer.mix(&control_outputs);
 
             // Command actuators
@@ -133,7 +202,6 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
             self.telemetry
                 .send_telemetry(target_duration, &command, &state);
 
-            // Increment iteration counter
             iteration_count += 1;
 
             // Calculate when the next iteration should start
@@ -146,6 +214,19 @@ impl<T: Commander, U: Vehicle, V: Controller, W: Mixer, X: TelemetryPublisher>
 
             // Sleep to maintain the target frequency
             thread::sleep(sleep_time);
+        }
+
+        // At this point we've exited the loop due to running being set to false
+        info!("Flight orchestrator shutting down gracefully");
+
+        // Calculate actual frequency achieved (optional metrics)
+        let elapsed = start_time.elapsed();
+        if iteration_count > 0 && !elapsed.is_zero() {
+            let actual_frequency = iteration_count as f64 / elapsed.as_secs_f64();
+            info!(
+                "Control loop ran for {} iterations at an average frequency of {:.2} Hz",
+                iteration_count, actual_frequency
+            );
         }
     }
 }
