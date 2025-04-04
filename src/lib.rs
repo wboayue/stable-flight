@@ -1,7 +1,7 @@
 pub mod commanders;
-pub mod controllers;
 pub mod mixers;
 pub mod orchestrator;
+pub mod stabilizers;
 pub mod telemetry;
 pub mod vehicles;
 
@@ -450,8 +450,9 @@ pub trait Vehicle {
     fn actuate(&mut self, actuator_command: &ActuatorCommand);
 }
 
-pub trait Controller {
-    fn control(&mut self, dt: Duration, command: &Command, state: &VehicleState) -> ControlOutput;
+pub trait Stabilizer {
+    fn stabilize(&mut self, dt: Duration, command: &Command, state: &VehicleState)
+        -> ControlOutput;
 }
 
 pub trait TelemetryPublisher {

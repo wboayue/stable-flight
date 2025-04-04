@@ -44,7 +44,7 @@ use crate::{AttitudeCommand, Command, RateCommand, WaypointCommand};
 use super::{
     attitude::{AttitudeConfiguration, AttitudeController},
     body_rate::BodyRateController,
-    ControlOutput, Controller, VehicleState,
+    ControlOutput, Stabilizer, VehicleState,
 };
 
 #[cfg(test)]
@@ -162,7 +162,7 @@ impl BasicController {
         }
     }
 }
-impl Controller for BasicController {
+impl Stabilizer for BasicController {
     /// Processes a control command and generates motor control outputs based on the current vehicle state.
     ///
     /// # Arguments
@@ -173,8 +173,8 @@ impl Controller for BasicController {
     ///
     /// # Returns
     ///
-    /// A [ControlOutput] containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.    
-    fn control(
+    /// A [ControlOutput] containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.
+    fn stabilize(
         &mut self,
         dt: Duration,
         command: &Command,
@@ -210,7 +210,7 @@ impl BasicController {
     ///
     /// # Returns
     ///
-    /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.    
+    /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.
     fn process_attitude_command(
         &mut self,
         dt: Duration,
@@ -282,7 +282,7 @@ impl BasicController {
     ///
     /// # Returns
     ///
-    /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.    
+    /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.
     fn process_rate_command(
         &mut self,
         dt: Duration,
@@ -326,7 +326,7 @@ impl BasicController {
     ///
     /// # Returns
     ///
-    /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.    
+    /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.
     fn process_waypoint_command(
         &mut self,
         dt: Duration,
@@ -540,7 +540,7 @@ impl BasicController {
     ///
     /// # Returns
     ///
-    /// Nonlinear thrust command (0.0 to 1.0).    
+    /// Nonlinear thrust command (0.0 to 1.0).
     fn fit_to_thrust_curve(&self, linear_thrust: f32) -> f32 {
         let thrust_curve_exponent = self.config.thrust_curve_exponent;
         // Apply nonlinear thrust curve with tunable exponent
