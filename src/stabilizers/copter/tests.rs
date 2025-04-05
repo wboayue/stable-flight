@@ -4,8 +4,8 @@ use super::*;
 use std::time::Duration;
 
 // Helper function to create a BasicController with default gains
-fn setup_controller() -> BasicController {
-    let config = BasicControllerConfig {
+fn setup_controller() -> CopterStabilizer {
+    let config = CopterStabilizerConfig {
         rate_gains: Gains {
             p: 1.0,
             i: 0.1,
@@ -34,7 +34,7 @@ fn setup_controller() -> BasicController {
         thrust_curve_exponent: 2.0,
         max_rates: vec3(1.0, 1.0, 1.0), // Max roll, pitch, yaw rates
     };
-    BasicController::new(config)
+    CopterStabilizer::new(config)
 }
 
 // Helper function to create a quaternion representing identity (no rotation)

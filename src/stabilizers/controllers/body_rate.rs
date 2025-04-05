@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use robomath::{vec3, Vec3};
 
-use super::basic::Gains;
+use super::super::Gains;
 
 #[cfg(test)]
 mod tests;

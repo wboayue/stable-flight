@@ -1,7 +1,12 @@
-use super::{ControlOutput, Stabilizer, VehicleState};
-
-pub mod basic;
+pub mod copter;
 pub mod vtol;
 
-pub mod attitude;
-pub mod body_rate;
+pub mod controllers;
+
+/// PID gains for a single control loop.
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
+pub struct Gains {
+    pub p: f32,
+    pub i: f32,
+    pub d: f32,
+}
