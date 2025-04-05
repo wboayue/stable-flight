@@ -39,30 +39,22 @@ use robomath::{to_radians, vec2, vec3, Quaternion, Vec2, Vec3};
 use std::f32::consts::PI;
 use std::time::Duration;
 
-use crate::{AttitudeCommand, Command, RateCommand, WaypointCommand};
-
-use super::{
-    attitude::{AttitudeConfiguration, AttitudeController},
-    body_rate::BodyRateController,
-    ControlOutput, Stabilizer, VehicleState,
+use crate::{
+    AttitudeCommand, Command, ControlOutput, RateCommand, Stabilizer, VehicleState, WaypointCommand,
 };
+
+use super::controllers::{AttitudeConfiguration, AttitudeController, BodyRateController};
+
+use super::Gains;
 
 #[cfg(test)]
 mod tests;
 
 const G: f32 = 9.81; // acceleration due to gravity (m/s²)
 
-/// PID gains for a single control loop.
-#[derive(Default, Clone, Copy, Debug, PartialEq)]
-pub struct Gains {
-    pub p: f32,
-    pub i: f32,
-    pub d: f32,
-}
-
 /// Configuration for the [BasicController], including gains for all control loops and thrust mapping.
 #[derive(Clone, Copy)]
-pub struct BasicControllerConfig {
+pub struct CopterStabilizerConfig {
     pub rate_gains: Gains,
     pub angle_gains: Gains,
     pub altitude_gains: Gains,
@@ -74,10 +66,10 @@ pub struct BasicControllerConfig {
     pub max_rates: Vec3<f32>,
 }
 
-impl Default for BasicControllerConfig {
+impl Default for CopterStabilizerConfig {
     /// Creates a new `BasicControllerConfig` with default PID gains and thrust curve exponent.
     fn default() -> Self {
-        BasicControllerConfig {
+        CopterStabilizerConfig {
             rate_gains: Gains {
                 p: 1.0,
                 i: 0.0,
@@ -118,8 +110,8 @@ impl Default for BasicControllerConfig {
 /// This controller supports rate, attitude, and position control loops, with configurable gains
 /// for each loop. It processes commands (`RateCommand`, `AttitudeCommand`, `WaypointCommand`)
 /// and generates motor control outputs (`ControlOutput`).
-pub struct BasicController {
-    config: BasicControllerConfig,
+pub struct CopterStabilizer {
+    config: CopterStabilizerConfig,
 
     attitude_controller: AttitudeController,
     rates_controller: BodyRateController,
@@ -136,14 +128,14 @@ pub struct BasicController {
     pub max_rates: Vec3<f32>,
 }
 
-impl BasicController {
+impl CopterStabilizer {
     /// Creates a new `BasicController` with the specified configuration.
     ///
     /// # Arguments
     ///
     /// * `config` - Configuration for the controller, including PID gains and thrust curve exponent.
-    pub fn new(config: BasicControllerConfig) -> Self {
-        BasicController {
+    pub fn new(config: CopterStabilizerConfig) -> Self {
+        CopterStabilizer {
             config: config.clone(),
 
             rates_controller: BodyRateController {
@@ -162,7 +154,7 @@ impl BasicController {
         }
     }
 }
-impl Stabilizer for BasicController {
+impl Stabilizer for CopterStabilizer {
     /// Processes a control command and generates motor control outputs based on the current vehicle state.
     ///
     /// # Arguments
@@ -196,7 +188,7 @@ impl Stabilizer for BasicController {
     }
 }
 
-impl BasicController {
+impl CopterStabilizer {
     /// Processes an `AttitudeCommand` to control the vehicle's orientation.
     ///
     /// This method converts desired roll, pitch, and yaw angles into angular rates using the attitude controller,
