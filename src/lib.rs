@@ -8,7 +8,7 @@
 //!
 //! This library implements a Rust-powered flight controller in simulation.
 //! Simulation allows safe refining of the flight control logic before real-world deployment.
-//! The fight controller is designed to be easily extendable, robust, and approachable leveraging [Rust's advantages](https://wboayue.com/posts/flight-controller-why-rust/) in systems programming.
+//! The flight controller is designed to be easily extendable, robust, and approachable leveraging [Rust's advantages](https://wboayue.com/posts/flight-controller-why-rust/) in systems programming.
 //! See the following document for an [architecture overview](https://github.com/wboayue/stable-flight-sitl/blob/main/architecture.md).
 //!
 //! Checkout [README](https://github.com/wboayue/stable-flight-sitl/blob/main/README.md) to get started.

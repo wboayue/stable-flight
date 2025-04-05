@@ -52,7 +52,7 @@ mod tests;
 
 const G: f32 = 9.81; // acceleration due to gravity (m/s²)
 
-/// Configuration for the [BasicController], including gains for all control loops and thrust mapping.
+/// Configuration for the [CopterStabilizer], including gains for all control loops and thrust mapping.
 #[derive(Clone, Copy)]
 pub struct CopterStabilizerConfig {
     pub rate_gains: Gains,
