@@ -43,6 +43,7 @@ use crate::{
     AttitudeCommand, Command, ControlOutput, RateCommand, Stabilizer, VehicleState, WaypointCommand,
 };
 
+use super::controllers::yaw::{YawController, YawControllerConfig};
 use super::controllers::{AttitudeConfiguration, AttitudeController, BodyRateController};
 
 use super::Gains;
@@ -115,14 +116,12 @@ pub struct CopterStabilizer {
 
     attitude_controller: AttitudeController,
     rates_controller: BodyRateController,
+    yaw_controller: YawController,
 
     integrated_altitude_error: f32,
-    previous_yaw_error: f32,
-    integrated_yaw_error: f32,
+
     previous_pos_error: Vec2<f32>,
     integrated_pos_error: Vec2<f32>,
-    previous_angle_error: Vec2<f32>,
-    integrated_angle_error: Vec2<f32>,
 
     /// Maximum angular rates (roll, pitch, yaw) in rad/s.
     pub max_rates: Vec3<f32>,
@@ -141,15 +140,18 @@ impl CopterStabilizer {
             rates_controller: BodyRateController {
                 ..Default::default()
             },
+
             attitude_controller: AttitudeController::new(&AttitudeConfiguration::default()),
 
+            yaw_controller: YawController::with_config(&YawControllerConfig {
+                gains: config.yaw_gains,
+                max_integral: 100.0,
+                max_rate: config.max_rates.z,
+            }),
+
             integrated_altitude_error: 0.0,
-            previous_yaw_error: 0.0,
-            integrated_yaw_error: 0.0,
             previous_pos_error: vec2(0.0, 0.0),
             integrated_pos_error: vec2(0.0, 0.0),
-            previous_angle_error: vec2(0.0, 0.0),
-            integrated_angle_error: vec2(0.0, 0.0),
             max_rates: vec3(3.0, 3.0, 3.0), // default max rates
         }
     }
@@ -242,7 +244,9 @@ impl CopterStabilizer {
             .attitude_controller
             .control(dt, desired_angles, current_angles);
 
-        let desired_yaw_rate = self.control_yaw(dt, 0.0, estimated_state.heading);
+        let desired_yaw_rate = self
+            .yaw_controller
+            .control(dt, 0.0, estimated_state.heading);
 
         let current_rates = vec3(
             estimated_state.angular_velocity.x,
@@ -349,7 +353,9 @@ impl CopterStabilizer {
         let desired_rp_rates = self
             .attitude_controller
             .control(dt, desired_angles, current_angles);
-        let desired_yaw_rate = self.control_yaw(dt, 0.0, estimated_state.attitude.yaw());
+        let desired_yaw_rate = self
+            .yaw_controller
+            .control(dt, 0.0, estimated_state.attitude.yaw());
 
         let desired_rates = vec3(desired_rp_rates.x, desired_rp_rates.y, desired_yaw_rate);
 
@@ -484,43 +490,6 @@ impl CopterStabilizer {
         vec2(roll_cmd, pitch_cmd)
     }
 
-    /// Controls the yaw (heading) of the vehicle using a PID controller.
-    ///
-    /// This controller maintains the desired heading by calculating a yaw rate command.
-    ///
-    /// # Arguments
-    ///
-    /// * `dt` - Time step since the last update (must be positive).
-    /// * `desired_yaw` - Target yaw angle in radians.
-    /// * `estimated_yaw` - Current measured yaw angle in radians.
-    ///
-    /// # Returns
-    ///
-    /// Desired yaw rate in rad/s.
-    fn control_yaw(&mut self, dt: Duration, desired_yaw: f32, estimated_yaw: f32) -> f32 {
-        assert!(dt.as_secs_f32() > 0.0, "Time step must be positive");
-        assert!(
-            desired_yaw >= -2.0 / PI && desired_yaw <= 2.0 * PI,
-            "Desired yaw rate ({}) must be in the range [-2PI, 2PI]",
-            desired_yaw
-        );
-
-        let gains = &self.config.yaw_gains;
-
-        let error = angle_diff(desired_yaw, estimated_yaw); // Use a helper to handle angle wrapping
-        let error_derivative = (error - self.previous_yaw_error) / dt.as_secs_f32();
-
-        self.integrated_yaw_error += dt.as_secs_f32() * error;
-        self.integrated_yaw_error = self.integrated_yaw_error.clamp(-100.0, 100.0);
-
-        let yaw_rate =
-            gains.p * error + gains.i * self.integrated_yaw_error + gains.d * error_derivative;
-
-        self.previous_yaw_error = error;
-
-        yaw_rate
-    }
-
     /// Applies a nonlinear thrust curve to a linear thrust command.
     ///
     /// Maps a linear thrust value (0.0 to 1.0) to a nonlinear output using the configured thrust curve exponent.
@@ -539,34 +508,4 @@ impl CopterStabilizer {
         let nonlinear_thrust = linear_thrust.powf(thrust_curve_exponent);
         nonlinear_thrust.clamp(0.0, 1.0)
     }
-}
-
-/// Normalizes the yaw error to the range [-π, π] to handle angle wrapping.
-///
-/// This ensures the shortest rotation path is chosen (e.g., if desired yaw is 350° and current yaw is 10°,
-/// the error is -20°, not 340°).
-///
-/// # Arguments
-///
-/// * `desired_yaw` - Desired yaw angle in radians.
-/// * `current_yaw` - Current yaw angle in radians.
-///
-/// # Returns
-///
-/// The normalized yaw error in radians, in the range [-π, π].
-fn angle_diff(desired_yaw: f32, current_yaw: f32) -> f32 {
-    let mut yaw_error = desired_yaw - current_yaw;
-    yaw_error += PI;
-    yaw_error = yaw_error.rem_euclid(2.0 * PI);
-    yaw_error -= PI;
-    yaw_error
-}
-
-// alpha 0.1 is a good starting point for most applications
-fn low_pass_filter_vec3(prev: Vec3<f32>, new: Vec3<f32>, alpha: f32) -> Vec3<f32> {
-    vec3(
-        alpha * new.x + (1.0 - alpha) * prev.x,
-        alpha * new.y + (1.0 - alpha) * prev.y,
-        alpha * new.z + (1.0 - alpha) * prev.z,
-    )
 }
