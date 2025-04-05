@@ -1,7 +1,17 @@
-/// Stable Flight SITL (Software In The Loop) library for flight control systems.
-///
-/// This library provides a framework for implementing and testing flight control
-/// systems in a simulated environment before deploying to real hardware.
+//! [![github]](https://github.com/wboayue/stable-flight-sitl)&ensp;[![crates-io]](https://crates.io/crates/stable-flight-sitl)&ensp;[![license]](https://opensource.org/licenses/MIT)
+//!
+//! [github]: https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github
+//! [crates-io]: https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust
+//! [license]: https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge&labelColor=555555
+//!
+//! <br>
+//!
+//! This library implements a Rust-powered flight controller in simulation.
+//! Simulation allows safe refining of the flight control logic before real-world deployment.
+//! The fight controller is designed to be easily extendable, robust, and approachable leveraging [Rust's advantages](https://wboayue.com/posts/flight-controller-why-rust/) in systems programming.
+//! See the following document for an [architecture overview](https://github.com/wboayue/stable-flight-sitl/blob/main/architecture.md).
+//!
+//! Checkout [README](https://github.com/wboayue/stable-flight-sitl/blob/main/README.md) to get started.
 
 pub mod commanders;
 pub mod mixers;
@@ -14,21 +24,21 @@ use std::time::Duration;
 
 use uom::si::f32::*;
 
+#[doc(inline)]
 pub use orchestrator::FlightOrchestrator;
+
 use robomath::{Quaternion, Vec2, Vec3};
 
 // Commanders
 
 /// Represents an entity that produces flight control commands.
 ///
-/// The `Commander` trait is responsible for generating the next command to be executed
-/// by a flight control system. It takes into account the elapsed time since the last
-/// command (`dt`) and the current state of the vehicle (`current_state`) to produce
-/// commands that can be time-dependent or state-dependent.
+/// The `Commander` trait is responsible for producing the next flight control command given the elapsed time (dt) and the current vehicle state (current_state).
+/// This allows for time-dependent and state-dependent command generation, such as ramping values, coordinating timed sequences, or adjusting commands based on the aircraft’s position or velocity.
 ///
 /// Implementors of this trait may include:
-/// - **User input handlers**: Translate joystick/keyboard inputs into manual commands (e.g., `Command::Attitude` or `Command::Rate`).
-/// - **Navigation systems**: Generate waypoint commands (e.g., `Command::Waypoint`) for autonomous flight to specific locations.
+/// - **User input handlers**: Translate joystick/keyboard inputs into manual commands (e.g., [Command::Attitude] or [Command::Rate]).
+/// - **Navigation systems**: Generate waypoint commands (e.g., [Command::Waypoint]) for autonomous flight to specific locations.
 /// - **Mission controllers**: Produce commands based on predefined flight plans or mission objectives.
 /// - **Formation controllers**: Maintain relative positioning between multiple aircraft in a formation.
 ///
@@ -509,7 +519,6 @@ pub struct VehicleState {
     /// Current heading (yaw) angle in radians.
     /// Typically 0 represents North, with positive values rotating clockwise.
     pub heading: f32,
-
     // Note: Additional fields for flight mode, GPS data, etc. may be added in the future.
 }
 
@@ -595,7 +604,6 @@ pub trait Actuator {
 /// - **Model predictive controllers**: Advanced control with future prediction
 /// - **Cascaded control systems**: Hierarchical controllers for different aspects of flight
 pub trait Stabilizer {
-
     /// Generates control outputs based on the current command and vehicle state.
     ///
     /// # Parameters
@@ -720,7 +728,6 @@ impl Default for ActuatorCommand {
 /// - **Hexacopter mixers**: Map controls to six motors
 /// - **Fixed-wing mixers**: Map controls to throttle, ailerons, elevator, and rudder
 pub trait Mixer {
-
     /// Transforms abstract control outputs into specific actuator commands.
     ///
     /// This method is the core functionality of the `Mixer` trait, providing the critical

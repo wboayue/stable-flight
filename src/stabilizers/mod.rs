@@ -1,3 +1,5 @@
+//! Control algorithms that maintain desired flight dynamics by processing commands and vehicle state feedback.
+
 pub mod copter;
 pub mod vtol;
 
