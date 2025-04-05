@@ -7,7 +7,7 @@
 //! # Design Pattern
 //!
 //! The orchestrator follows a dependency injection pattern, allowing for flexible
-//! configuration and easy testing. Each component ([Commander], [Vehicle], [Controller],
+//! configuration and easy testing. Each component ([Commander], [Vehicle], [Stabilizer],
 //! [Mixer], and [TelemetryPublisher]) can be independently replaced with different
 //! implementations to adapt to various scenarios.
 //!
@@ -65,7 +65,7 @@ use crate::{Commander, Mixer, Stabilizer, TelemetryPublisher, Vehicle};
 ///
 /// - Retrieves the next flight control command from a [Commander].
 /// - Acquires the current state of the vehicle via a [Vehicle] interface.
-/// - Computes control outputs for desired state using a [Controller].
+/// - Computes control outputs for desired state using a [Stabilizer].
 /// - Mixes the control outputs into actuator commands using a [Mixer].
 /// - Actuates the [Vehicle] with output from the Mixer.
 /// - Publishes telemetry data via a [TelemetryPublisher].
