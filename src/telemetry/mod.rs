@@ -1,3 +1,4 @@
+//! Includes components for transmitting flight data to external systems for logging, monitoring, and visualization.
 use std::time::Duration;
 
 use log::info;

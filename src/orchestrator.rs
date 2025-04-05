@@ -1,4 +1,4 @@
-//! Coordinates the activities between components of the flight control system.
+//! Coordinates communication and execution flow between all system components.
 //!
 //! This module implements the core stabilization loop for the flight control system.
 //! It is responsible for maintaining the desired state of the aircraft by coordinating
