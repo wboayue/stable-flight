@@ -1,3 +1,8 @@
+/// Stable Flight SITL (Software In The Loop) library for flight control systems.
+///
+/// This library provides a framework for implementing and testing flight control
+/// systems in a simulated environment before deploying to real hardware.
+
 pub mod commanders;
 pub mod mixers;
 pub mod orchestrator;
@@ -7,7 +12,6 @@ pub mod vehicles;
 
 use std::time::Duration;
 
-use log::info;
 use uom::si::f32::*;
 
 pub use orchestrator::FlightOrchestrator;
@@ -418,63 +422,273 @@ pub struct WaypointCommand {
     pub roll: Option<f32>,
 }
 
+/// Represents the high-level control outputs from the stabilization system.
+///
+/// This struct encapsulates the desired thrust and moments to be applied to the
+/// vehicle, which are later translated to specific actuator commands by a `Mixer`.
+///
+/// # Examples
+///
+/// Creating a control output for a simple hover command:
+/// ```
+/// use stable_flight_sitl::ControlOutput;
+/// use robomath::{Vec3, vec3};
+///
+/// let output = ControlOutput::new(
+///     0.5, // 50% thrust
+///     vec3(0.0, 0.0, 0.0) // No roll, pitch, or yaw moments
+/// );
+/// ```
 #[derive(Debug, Default, PartialEq)]
 pub struct ControlOutput {
+    /// Normalized thrust value, typically ranging from 0.0 (no thrust) to 1.0 (maximum thrust).
     pub thrust: f32,
+
+    /// Control moments in roll (x), pitch (y), and yaw (z) axes.
+    /// Values are typically normalized between -1.0 and 1.0, where the magnitude
+    /// represents the proportion of maximum control authority in each axis.
     pub moments: Vec3<f32>,
 }
 
 impl ControlOutput {
+    /// Creates a new `ControlOutput` with the specified thrust and control moments.
+    ///
+    /// # Parameters
+    ///
+    /// - `thrust`: Normalized thrust value, typically between 0.0 and 1.0.
+    /// - `moments`: Control moments as a 3D vector (roll, pitch, yaw).
+    ///
+    /// # Returns
+    ///
+    /// A new `ControlOutput` instance with the specified parameters.
     pub fn new(thrust: f32, moments: Vec3<f32>) -> ControlOutput {
         ControlOutput { thrust, moments }
     }
 }
 
+/// Represents the physical state of a vehicle in 3D space.
+///
+/// This struct encapsulates all the key state information needed for flight control,
+/// including position, velocity, acceleration, attitude, and angular velocity.
+/// It uses strongly-typed physical units (from the `uom` crate) for position, velocity,
+/// and acceleration to ensure dimensional consistency in calculations.
+///
+/// # Examples
+///
+/// Creating a default vehicle state:
+/// ```
+/// use stable_flight_sitl::VehicleState;
+///
+/// let state = VehicleState::default();
+/// ```
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct VehicleState {
+    /// 3D position vector with physical length units.
     pub position: Vec3<Length>,
+
+    /// 3D velocity vector with physical velocity units.
     pub velocity: Vec3<Velocity>,
+
+    /// 3D acceleration vector with physical acceleration units.
     pub acceleration: Vec3<Acceleration>,
+
+    /// Orientation quaternion representing the vehicle's attitude.
+    /// The quaternion represents the rotation from world frame to body frame.
     pub attitude: Quaternion,
+
+    /// Angular velocity vector in roll (x), pitch (y), and yaw (z) axes.
+    /// Typically measured in radians per second.
     pub angular_velocity: Vec3<f32>,
+
+    /// Current roll angle in radians.
     pub roll: f32,
+
+    /// Current pitch angle in radians.
     pub pitch: f32,
+
+    /// Current heading (yaw) angle in radians.
+    /// Typically 0 represents North, with positive values rotating clockwise.
     pub heading: f32,
-    // flight mode
-    // heading
-    // gps
+
+    // Note: Additional fields for flight mode, GPS data, etc. may be added in the future.
 }
 
+/// Represents a physical vehicle that can be controlled by the flight system.
+///
+/// The `Vehicle` trait defines the interface for interacting with a physical aircraft,
+/// whether it's a real vehicle or a simulated one. It handles two primary responsibilities:
+/// - Estimating the current state of the vehicle based on sensor data
+/// - Actuating the vehicle's control surfaces and motors based on control commands
+///
+/// Implementors of this trait may include:
+/// - **Simulation vehicles**: Interface with flight simulators like X-Plane, RealFlight, or custom physics engines
+/// - **Hardware interfaces**: Connect to real drones, fixed-wing aircraft, or other flying vehicles
+/// - **Test vehicles**: Provide predictable responses for testing control algorithms without a full simulation
 pub trait Vehicle {
+    /// Estimates the current vehicle state based on sensor inputs and time elapsed.
+    ///
+    /// # Parameters
+    /// - `dt`: Time elapsed since the last state estimation.
+    ///
+    /// # Returns
+    /// A `VehicleState` representing the current estimated state of the vehicle.
     fn estimate_state(&self, dt: Duration) -> VehicleState;
+
+    /// Sends actuation commands to the vehicle's control surfaces and/or motors.
+    ///
+    /// # Parameters
+    /// - `actuator_command`: The command values to send to the vehicle's actuators.
     fn actuate(&mut self, actuator_command: &ActuatorCommand);
 }
 
+/// Component responsible for estimating the vehicle's physical state.
+///
+/// The `StateEstimator` trait defines the interface for components that analyze
+/// sensor data and other inputs to estimate the current state of the vehicle,
+/// including position, velocity, attitude, and other relevant parameters.
+///
+/// Implementors of this trait may include:
+/// - **Sensor fusion algorithms**: Combine data from multiple sensors (IMU, GPS, etc.)
+/// - **Kalman filters**: Estimate state with statistical techniques
+/// - **Simulation interfaces**: Get state directly from physics engines
 pub trait StateEstimator {
+    /// Estimates the current vehicle state based on sensor inputs and time elapsed.
+    ///
+    /// # Parameters
+    /// - `dt`: Time elapsed since the last state estimation.
+    ///
+    /// # Returns
+    /// A `VehicleState` representing the current estimated state of the vehicle.
     fn estimate_state(&self, dt: Duration) -> VehicleState;
 }
 
+/// Component responsible for controlling the vehicle's actuators.
+///
+/// The `Actuator` trait defines the interface for components that translate
+/// actuator commands into actual physical actions, such as moving control surfaces
+/// or adjusting motor speeds.
+///
+/// Implementors of this trait may include:
+/// - **Motor controllers**: Control electric motors for thrust
+/// - **Servo drivers**: Position control surfaces like elevators and ailerons
+/// - **Simulation interfaces**: Send control commands to physics engines
 pub trait Actuator {
+    /// Actuates the vehicle's control surfaces and/or motors based on the command.
+    ///
+    /// # Parameters
+    ///
+    /// - `actuator_command`: The command values to apply to the actuators.
     fn actuate(&mut self, actuator_command: &ActuatorCommand);
 }
 
+/// Component responsible for flight control and stabilization.
+///
+/// The `Stabilizer` trait defines the interface for components that implement
+/// control algorithms to maintain desired flight dynamics based on commands and
+/// current vehicle state. These algorithms typically include PID controllers or
+/// more advanced control systems to translate high-level commands into specific
+/// control outputs.
+///
+/// Implementors of this trait may include:
+/// - **PID controllers**: Simple feedback control for attitude stability
+/// - **LQR controllers**: Optimal control for complex flight dynamics
+/// - **Model predictive controllers**: Advanced control with future prediction
+/// - **Cascaded control systems**: Hierarchical controllers for different aspects of flight
 pub trait Stabilizer {
+
+    /// Generates control outputs based on the current command and vehicle state.
+    ///
+    /// # Parameters
+    ///
+    /// - `dt`: Time elapsed since the last control step.
+    /// - `command`: The current command to be executed.
+    /// - `state`: The current estimated state of the vehicle.
+    ///
+    /// # Returns
+    ///
+    /// A `ControlOutput` containing the desired thrust and control moments.
     fn stabilize(&mut self, dt: Duration, command: &Command, state: &VehicleState)
         -> ControlOutput;
 }
 
+/// Component responsible for publishing telemetry data from the flight system.
+///
+/// The `TelemetryPublisher` trait defines the interface for components that send
+/// flight data to external systems for logging, monitoring, or visualization.
+/// This can include sending data to ground control stations, logging systems,
+/// or other monitoring tools.
+///
+/// Implementors of this trait may include:
+/// - **Mavlink publishers**: Send telemetry via the MAVLink protocol
+/// - **Data loggers**: Record flight data for later analysis
+/// - **Visualization interfaces**: Send data to real-time flight displays
 pub trait TelemetryPublisher {
+    /// Sends telemetry data to external systems.
+    ///
+    /// # Parameters
+    ///
+    /// - `dt`: Time elapsed since the last telemetry update.
+    /// - `command`: The current command being executed.
+    /// - `telemetry`: The current vehicle state to be published.
     fn send_telemetry(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState);
 }
 
+/// Represents commands sent to the vehicle's actuators.
+///
+/// This struct encapsulates all possible actuation commands for various vehicle types,
+/// including multirotor motors, fixed-wing control surfaces, and hybrid configurations.
+/// Not all fields will be used for every vehicle type; the specific mapping is determined
+/// by the `Mixer` implementation.
+///
+/// # Examples
+///
+/// Creating actuator commands for a quadcopter:
+/// ```
+/// use stable_flight_sitl::ActuatorCommand;
+///
+/// let mut cmd = ActuatorCommand::default();
+/// cmd.motors = [0.5, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0]; // Four motors at 50% power
+/// ```
+///
+/// Creating actuator commands for a fixed-wing aircraft:
+/// ```
+/// use stable_flight_sitl::ActuatorCommand;
+///
+/// let mut cmd = ActuatorCommand::default();
+/// cmd.throttle = 0.7;    // 70% throttle
+/// cmd.elevator = 0.1;    // Slight up elevator
+/// cmd.aileron = -0.05;   // Slight left roll
+/// cmd.rudder = 0.0;      // No rudder
+/// ```
 #[derive(Debug)]
 pub struct ActuatorCommand {
+    /// Motor output values, ranging from 0.0 (off) to 1.0 (full power).
+    /// For multirotors, the specific mapping of array indices to physical motors
+    /// depends on the vehicle configuration and mixer.
     pub motors: [f32; 8],
+
+    /// Rudder control value, ranging from -1.0 (full left) to 1.0 (full right).
+    /// Used primarily for fixed-wing aircraft.
     pub rudder: f32,
+
+    /// Elevator control value, ranging from -1.0 (full down) to 1.0 (full up).
+    /// Used primarily for fixed-wing aircraft.
     pub elevator: f32,
+
+    /// Aileron control value, ranging from -1.0 (roll left) to 1.0 (roll right).
+    /// Used primarily for fixed-wing aircraft.
     pub aileron: f32,
+
+    /// Throttle control value, ranging from 0.0 (idle) to 1.0 (full power).
+    /// Used primarily for fixed-wing aircraft with a single motor/engine.
     pub throttle: f32,
+
+    /// Left elevon control value, ranging from -1.0 to 1.0.
+    /// Used for flying wing or delta wing configurations.
     pub elevon_left: f32,
+
+    /// Right elevon control value, ranging from -1.0 to 1.0.
+    /// Used for flying wing or delta wing configurations.
     pub elevon_right: f32,
 }
 
@@ -494,6 +708,59 @@ impl Default for ActuatorCommand {
 
 // == Mixers ==
 
+/// Component responsible for converting control outputs to actuator commands.
+///
+/// The `Mixer` trait defines the interface for components that translate
+/// generalized control outputs (thrust and moments) into specific actuator
+/// commands appropriate for the vehicle configuration. It maps abstract control
+/// concepts to physical actuator movements.
+///
+/// Implementors of this trait may include:
+/// - **Quadcopter mixers**: Map controls to four motors in different configurations (X, +)
+/// - **Hexacopter mixers**: Map controls to six motors
+/// - **Fixed-wing mixers**: Map controls to throttle, ailerons, elevator, and rudder
 pub trait Mixer {
+
+    /// Transforms abstract control outputs into specific actuator commands.
+    ///
+    /// This method is the core functionality of the `Mixer` trait, providing the critical
+    /// translation layer between the stabilization system's desired control effects and
+    /// the actual physical actuator settings needed to achieve those effects.
+    ///
+    /// # Parameters
+    ///
+    /// * `controls` - Reference to a [`ControlOutput`] struct containing normalized thrust
+    ///   and moment values that represent the desired control effect.
+    ///
+    /// # Returns
+    ///
+    /// An [`ActuatorCommand`] containing specific actuator settings appropriate for the
+    /// vehicle's physical configuration. Depending on the vehicle type, different fields
+    /// in the returned struct will be populated:
+    ///
+    /// * For multicopters: Primarily the `motors` array
+    /// * For fixed-wing: `throttle`, `aileron`, `elevator`, and `rudder`
+    /// * For hybrid vehicles: Combination of the above
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight_sitl::{ControlOutput, Mixer};
+    /// use stable_flight_sitl::mixers::QuadCopterMixer;
+    /// use robomath::{Vec3, vec3};
+    ///
+    /// let mixer = QuadCopterMixer::default();
+    ///
+    /// // Create control output with 70% thrust and slight roll right
+    /// let control_output = ControlOutput::new(
+    ///     0.7,                    // 70% thrust
+    ///     vec3(0.1, 0.0, 0.0)     // slight roll right, no pitch, no yaw
+    /// );
+    ///
+    /// // Convert abstract controls into specific motor commands
+    /// let actuator_command = mixer.mix(&control_output);
+    ///
+    /// // Now actuator_command contains specific motor values for a quadcopter
+    /// ```
     fn mix(&self, controls: &ControlOutput) -> ActuatorCommand;
 }
