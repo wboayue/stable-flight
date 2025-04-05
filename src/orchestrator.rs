@@ -54,6 +54,9 @@ use log::{debug, info};
 
 use crate::{Commander, Mixer, Stabilizer, TelemetryPublisher, Vehicle};
 
+#[cfg(test)]
+mod tests;
+
 /// Encapsulates the stabilization loop.
 ///
 /// The FlightOrchestrator coordinates components of the flight control system,
