@@ -203,15 +203,11 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
     /// 4. Continue until a shutdown signal is received
     pub fn run(&mut self, target_frequency: f64) {
         assert!(
-            target_frequency.is_sign_positive(),
+            target_frequency > 0.0,
             "The target frequency must be positive."
         );
 
         let target_duration = 1.0 / target_frequency;
-        assert!(
-            target_duration.is_finite(),
-            "The value is not a finite number."
-        );
         let target_duration = Duration::from_secs_f64(target_duration);
 
         // Start time for the loop
