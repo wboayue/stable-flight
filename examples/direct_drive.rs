@@ -3,8 +3,8 @@ use std::time::{Duration, Instant};
 
 use realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl::mixers::QuadCopterMixer;
-use stable_flight_sitl::vehicles::realflight::{ActuatorMapping, RealFlightConfiguration};
-use stable_flight_sitl::vehicles::RealFlightVehicle;
+use stable_flight_sitl::simulators::realflight::{ActuatorMapping, RealFlightConfiguration};
+use stable_flight_sitl::simulators::RealFlightVehicle;
 use stable_flight_sitl::{ControlOutput, Mixer as _, Vehicle as _};
 
 fn main() -> Result<(), Box<dyn Error>> {
