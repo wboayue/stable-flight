@@ -16,9 +16,9 @@
 pub mod commanders;
 pub mod mixers;
 pub mod orchestrator;
+pub mod simulators;
 pub mod stabilizers;
 pub mod telemetry;
-pub mod vehicles;
 
 use std::time::Duration;
 

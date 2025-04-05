@@ -5,10 +5,10 @@ use realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 use stable_flight_sitl::commanders::script::ScriptCommander;
 use stable_flight_sitl::mixers::QuadCopterMixer;
+use stable_flight_sitl::simulators::realflight::{ActuatorMapping, RealFlightConfiguration};
+use stable_flight_sitl::simulators::{NullVehicle, RealFlightVehicle};
 use stable_flight_sitl::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
-use stable_flight_sitl::vehicles::realflight::{ActuatorMapping, RealFlightConfiguration};
-use stable_flight_sitl::vehicles::{NullVehicle, RealFlightVehicle};
 use stable_flight_sitl::FlightOrchestrator;
 
 fn main() {
