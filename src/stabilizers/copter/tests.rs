@@ -181,7 +181,9 @@ fn test_yaw_controller_zero_error() {
     let desired_yaw = 0.0;
     let current_yaw = 0.0;
 
-    let output = controller.control_yaw(dt, desired_yaw, current_yaw);
+    let output = controller
+        .yaw_controller
+        .control(dt, desired_yaw, current_yaw);
     assert_eq!(output, 0.0, "Yaw rate should be zero when error is zero");
 }
 
@@ -192,7 +194,9 @@ fn test_yaw_controller_angle_wrapping() {
     let desired_yaw = PI + 0.1;
     let current_yaw = -PI + 0.1;
 
-    let output = controller.control_yaw(dt, desired_yaw, current_yaw);
+    let output = controller
+        .yaw_controller
+        .control(dt, desired_yaw, current_yaw);
     assert!(
         output < 0.0,
         "Yaw rate should be negative for shortest path"

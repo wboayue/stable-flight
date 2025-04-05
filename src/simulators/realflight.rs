@@ -17,7 +17,7 @@ mod tests;
 /// # Examples
 ///
 /// ```no_run
-/// use stable_flight_sitl::vehicles::realflight::ActuatorMapping;
+/// use stable_flight_sitl::simulators::realflight::ActuatorMapping;
 ///
 /// let mut mapping = ActuatorMapping::default();
 /// mapping.motors[0] = Some(0);  // Motor 1 to channel 0
@@ -56,10 +56,10 @@ pub struct ActuatorMapping {
 /// ```no_run
 /// use std::time::Duration;
 /// use realflight_bridge::{RealFlightBridge, RealFlightLocalBridge};
-/// use stable_flight_sitl::vehicles::realflight::{RealFlightConfiguration, RealFlightVehicle, ActuatorMapping};
+/// use stable_flight_sitl::simulators::realflight::{RealFlightConfiguration, RealFlightVehicle, ActuatorMapping};
 /// use stable_flight_sitl::{ActuatorCommand, Vehicle};
 ///
-/// let bridge = RealFlightLocalBridge::new().expect("Failed to create bridge");  
+/// let bridge = RealFlightLocalBridge::new().expect("Failed to create bridge");
 /// let config = RealFlightConfiguration {
 ///     mapping: ActuatorMapping::default(),
 ///     bridge,
@@ -88,7 +88,7 @@ where
 ///
 /// ```no_run
 /// use realflight_bridge::{RealFlightBridge, RealFlightLocalBridge};
-/// use stable_flight_sitl::vehicles::realflight::{RealFlightConfiguration, RealFlightVehicle, ActuatorMapping};
+/// use stable_flight_sitl::simulators::realflight::{RealFlightConfiguration, RealFlightVehicle, ActuatorMapping};
 /// use stable_flight_sitl::{ActuatorCommand, Vehicle};
 /// use std::time::Duration;
 ///
