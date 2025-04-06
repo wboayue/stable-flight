@@ -1,12 +1,15 @@
-use std::{f32::consts::PI, time::Duration};
+use std::time::Duration;
+
+use approx::{assert_relative_eq, relative_eq};
+
+use crate::stabilizers::Gains;
 
 use super::*;
-use crate::stabilizers::Gains;
-//   use float_cmp::approx_eq;
+
+const EPSILON: f32 = 1e-5;
 
 // Helper function to compare floating-point values with a tolerance
 fn assert_float_eq(a: f32, b: f32, message: &str) {
-    const EPSILON: f32 = 1e-5;
     assert!(
         (a - b).abs() < EPSILON,
         "{}: expected {}, got {}",
@@ -223,13 +226,13 @@ fn test_angle_wrapping() {
     let dt = Duration::from_millis(10);
 
     // Test case: desired = 175°, current = -175°
-    // Shortest path is +10° (not +350°)
+    // Shortest path is -10° (not +350°)
     let desired_yaw = 175.0 * PI / 180.0;
     let estimated_yaw = -175.0 * PI / 180.0;
 
     let rate = controller.control(dt, desired_yaw, estimated_yaw);
-    let expected_rate = 10.0 * PI / 180.0; // 10 degrees converted to radians
-    assert_float_eq(rate, expected_rate, "Angle wrapping across ±π boundary");
+    let expected_rate = -10.0 * PI / 180.0; // 10 degrees converted to radians
+    assert_relative_eq!(rate, expected_rate, epsilon = EPSILON); // Angle wrapping across ±π boundary
 
     // Test case: desired = -175°, current = 175°
     // Shortest path is -10° (not -350°)
@@ -237,8 +240,8 @@ fn test_angle_wrapping() {
     let estimated_yaw = 175.0 * PI / 180.0;
 
     let rate = controller.control(dt, desired_yaw, estimated_yaw);
-    let expected_rate = -10.0 * PI / 180.0; // -10 degrees converted to radians
-    assert_float_eq(rate, expected_rate, "Angle wrapping across ±π boundary");
+    let expected_rate = 10.0 * PI / 180.0; // -10 degrees converted to radians
+    assert_relative_eq!(rate, expected_rate, epsilon = EPSILON); // Angle wrapping across ±π boundary
 }
 
 #[test]
@@ -334,16 +337,7 @@ fn test_max_rate_limiting() {
     // Should be limited to 2.0 rad/s
     let rate = controller.control(dt, 0.5, 0.0);
 
-    // Note: max_rate limiting isn't actually implemented in the provided code!
-    // This test assumes that rate limiting should be added to the implementation
-    // If implemented, it would look like:
-    // let rate = rate.clamp(-self.config.max_rate, self.config.max_rate);
-
-    // For now, test the current implementation
-    assert_float_eq(rate, 5.0, "Current implementation without rate limiting");
-
-    // When max_rate limiting is implemented, use this test instead:
-    // assert_float_eq(rate, 2.0, "Rate limiting to max_rate");
+    assert_float_eq(rate, 2.0, "Rate limiting to max_rate");
 }
 
 #[test]
