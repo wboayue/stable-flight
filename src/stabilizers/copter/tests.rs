@@ -145,14 +145,18 @@ fn test_altitude_controller_positive_error() {
 
 #[test]
 fn test_lateral_controller_zero_error() {
-    let mut controller = setup_controller();
+    let mut stabilizer = setup_controller();
     let dt = Duration::from_millis(10);
     let desired_position = vec2(0.0, 0.0);
     let current_position = vec2(0.0, 0.0);
     let current_velocity = vec2(0.0, 0.0);
 
-    let output =
-        controller.lateral_controller(dt, desired_position, current_position, current_velocity);
+    let output = stabilizer.lateral_controller.control(
+        dt,
+        desired_position,
+        current_position,
+        current_velocity,
+    );
     assert_eq!(
         output,
         vec2(0.0, 0.0),
@@ -162,14 +166,18 @@ fn test_lateral_controller_zero_error() {
 
 #[test]
 fn test_lateral_controller_positive_error() {
-    let mut controller = setup_controller();
+    let mut stabilizer = setup_controller();
     let dt = Duration::from_millis(10);
     let desired_position = vec2(1.0, 1.0);
     let current_position = vec2(0.0, 0.0);
     let current_velocity = vec2(0.0, 0.0);
 
-    let output =
-        controller.lateral_controller(dt, desired_position, current_position, current_velocity);
+    let output = stabilizer.lateral_controller.control(
+        dt,
+        desired_position,
+        current_position,
+        current_velocity,
+    );
     assert!(output.x > 0.0, "Roll should tilt to correct y-position");
     assert!(output.y < 0.0, "Pitch should tilt to correct x-position");
 }
