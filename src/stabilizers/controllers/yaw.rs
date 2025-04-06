@@ -49,7 +49,7 @@ impl Default for YawControllerConfig {
 /// * Applies filtered PID control to generate appropriate yaw rate commands
 /// * Incorporates anti-windup protection and output limiting
 pub struct YawController {
-    config: YawControllerConfig,
+    pub config: YawControllerConfig,
 
     previous_error: Option<f32>,
     integrated_error: f32,
