@@ -42,6 +42,7 @@ use crate::{
     AttitudeCommand, Command, ControlOutput, RateCommand, Stabilizer, VehicleState, WaypointCommand,
 };
 
+use super::controllers::lateral::{LateralController, LateralControllerConfig};
 use super::controllers::{
     AltitudeController, AltitudeControllerConfig, AttitudeConfiguration, AttitudeController,
     BodyRateController, YawController, YawControllerConfig,
@@ -117,9 +118,7 @@ pub struct CopterStabilizer {
     attitude_controller: AttitudeController,
     rates_controller: BodyRateController,
     yaw_controller: YawController,
-
-    previous_pos_error: Vec2<f32>,
-    integrated_pos_error: Vec2<f32>,
+    lateral_controller: LateralController,
 
     // Maximum angular rates (roll, pitch, yaw) in rad/s.
     pub max_rates: Vec3<f32>,
@@ -153,9 +152,12 @@ impl CopterStabilizer {
                 //                max_rate: config.max_rates.z,
             }),
 
-            // integrated_altitude_error: 0.0,
-            previous_pos_error: vec2(0.0, 0.0),
-            integrated_pos_error: vec2(0.0, 0.0),
+            lateral_controller: LateralController::with_config(&LateralControllerConfig {
+                gains: config.lateral_gains,
+                max_integral: 100.0,
+                max_rate: vec2(2.0, 2.0), // 2 rad/s (~114°/s) for roll and pitch
+            }),
+
             max_rates: vec3(3.0, 3.0, 3.0), // default max rates
         }
     }
@@ -339,7 +341,7 @@ impl CopterStabilizer {
             estimated_state.position.y.value,
         );
 
-        let desired_angles = self.lateral_controller(
+        let desired_angles = self.lateral_controller.control(
             dt,
             desired_position,
             current_position,
@@ -389,45 +391,6 @@ impl CopterStabilizer {
             thrust: self.fit_to_thrust_curve(linear_thrust),
             moments,
         }
-    }
-
-    /// Controls the lateral (X-Y) position of the vehicle using a PID controller.
-    ///
-    /// This outer loop maintains the desired horizontal position by calculating desired roll and pitch angles.
-    ///
-    /// # Arguments
-    ///
-    /// * `dt` - Time step since the last update (must be positive).
-    /// * `desired_position` - Target position (x, y) in meters.
-    /// * `estimated_position` - Current position (x, y) in meters.
-    /// * `estimated_velocity` - Current velocity (vx, vy) in m/s.
-    ///
-    /// # Returns
-    ///
-    /// Desired roll and pitch angles in radians.
-    fn lateral_controller(
-        &mut self,
-        dt: Duration,
-        desired_position: Vec2<f32>,
-        estimated_position: Vec2<f32>,
-        estimated_velocity: Vec2<f32>,
-    ) -> Vec2<f32> {
-        let gains = &self.config.lateral_gains;
-
-        let error = desired_position - estimated_position;
-        let error_derivative = (error - self.previous_pos_error) / dt.as_secs_f32();
-
-        self.integrated_pos_error = self.integrated_pos_error + dt.as_secs_f32() * error;
-        let accel_cmd =
-            gains.p * error + gains.i * self.integrated_pos_error + gains.d * (-estimated_velocity);
-
-        self.previous_pos_error = error;
-
-        // Convert acceleration to roll/pitch angles (simplified)
-        let roll_cmd = accel_cmd.y / G;
-        let pitch_cmd = -accel_cmd.x / G;
-
-        vec2(roll_cmd, pitch_cmd)
     }
 
     /// Applies a nonlinear thrust curve to a linear thrust command.

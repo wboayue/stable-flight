@@ -1,6 +1,8 @@
-use super::super::Gains;
-use robomath::{vec2, Vec2};
 use std::{f32::consts::FRAC_PI_4, time::Duration};
+
+use robomath::{vec2, Vec2};
+
+use super::super::Gains;
 
 #[cfg(test)]
 mod tests;

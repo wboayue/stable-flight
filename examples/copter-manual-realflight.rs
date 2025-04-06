@@ -1,33 +1,36 @@
+//! Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX
+//!
+//! This example demonstrates how to control a quadcopter in RealFlight using the Stable Flight library.
+//! It uses the `Extreme3DCommander` to control the vehicle and the `RealFlightVehicle` to interface with RealFlight.
+//! The vehicle is configured to use a `QuadCopterMixer` and a `CopterStabilizer` for flight control.
+//! The `MavlinkPublisher` is used for telemetry.
+//!
+//! The example runs a flight orchestrator that continuously updates the vehicle state and applies control commands.
+//!
+//! The target frequency for the control loop is set to 250 Hz.
+
 use env_logger::Builder;
-use log::{debug, error, info, warn};
 
 use realflight_bridge::RealFlightRemoteBridge;
+
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
-use stable_flight_sitl::commanders::script::ScriptCommander;
 use stable_flight_sitl::mixers::QuadCopterMixer;
 use stable_flight_sitl::simulators::realflight::{ActuatorMapping, RealFlightConfiguration};
-use stable_flight_sitl::simulators::{NullVehicle, RealFlightVehicle};
+use stable_flight_sitl::simulators::RealFlightVehicle;
 use stable_flight_sitl::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
-use stable_flight_sitl::FlightOrchestrator;
+use stable_flight_sitl::*;
 
 fn main() {
     // Initialize logger
     Builder::from_default_env().format_timestamp_millis().init();
 
-    // Initializes a ScriptCommander to replay a pre-recorded flight trajectory
-    // The "figure_eight.csv" file contains waypoints that define a figure-eight pattern
-    //
-    // The Commander trait's polymorphic design allows easy swapping of command sources:
-    // - ScriptCommander: Replays pre-recorded CSV waypoint sequences (used here)
-    // - SpektrumCommander: Maps physical controller inputs from Spektrum receiver
-    // let commander = ScriptCommander::new("figure_eight.csv");
+    // Initializes joystick commander to control the vehicle
     let commander = Extreme3DCommander::new();
 
     // Configure RealFlight vehicle with network connection and actuator mapping.
     // This mapping connects to a QuadCopterX model in RealFlight.
     // Motors are mapped to the first 4 channels (0-3) matching the RealFlight QuadCopterX model
-    // Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
         mapping: ActuatorMapping {
@@ -36,21 +39,17 @@ fn main() {
         },
     });
 
-    println!("desired_yaw,estimated_yaw");
-
-    // let vehicle = NullVehicle {};
-
-    let controller_config = CopterStabilizerConfig::default();
-    let controller = CopterStabilizer::new(controller_config);
+    let stabilizer_config = CopterStabilizerConfig::default();
+    let stabilizer = CopterStabilizer::new(stabilizer_config);
 
     let mixer = QuadCopterMixer::default();
 
     let telemetry_configuration = MavlinkConfiguration {};
-
     let telemetry = MavlinkPublisher::new(telemetry_configuration);
 
-    let mut stabilizer = FlightOrchestrator::new(commander, vehicle, controller, mixer, telemetry);
+    let mut orchestrator =
+        FlightOrchestrator::new(commander, vehicle, stabilizer, mixer, telemetry);
 
     let target_frequency = 250.0; // Hz
-    stabilizer.run(target_frequency);
+    orchestrator.run(target_frequency);
 }
