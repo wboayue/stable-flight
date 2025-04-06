@@ -12,6 +12,9 @@
 //! See the following document for an [architecture overview](https://github.com/wboayue/stable-flight-sitl/blob/main/architecture.md).
 //!
 //! Checkout [README](https://github.com/wboayue/stable-flight-sitl/blob/main/README.md) to get started.
+//!
+//! [![Watch the demo](https://img.youtube.com/vi/KsTX3pH_htg/0.jpg)](https://youtu.be/KsTX3pH_htg)
+//!
 
 pub mod commanders;
 pub mod mixers;

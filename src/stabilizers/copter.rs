@@ -42,6 +42,7 @@ use crate::{
     AttitudeCommand, Command, ControlOutput, RateCommand, Stabilizer, VehicleState, WaypointCommand,
 };
 
+use super::controllers::body_rate::BodyRateControllerConfig;
 use super::controllers::lateral::{LateralController, LateralControllerConfig};
 use super::controllers::{
     AltitudeController, AltitudeControllerConfig, AttitudeConfiguration, AttitudeController,
@@ -139,9 +140,11 @@ impl CopterStabilizer {
                 ..Default::default()
             }),
 
-            rates_controller: BodyRateController {
+            rates_controller: BodyRateController::with_config(&BodyRateControllerConfig {
+                gains: config.rate_gains,
+                max_integral: 100.0,
                 ..Default::default()
-            },
+            }),
 
             attitude_controller: AttitudeController::new(&AttitudeConfiguration::default()),
 
