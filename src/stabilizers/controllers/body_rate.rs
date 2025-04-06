@@ -7,6 +7,41 @@ use super::super::Gains;
 #[cfg(test)]
 mod tests;
 
+/// Configures the [BodyRateController] with PID gains and operational limits.
+///
+/// This structure defines the control parameters that determine how the
+/// [BodyRateController] responds to body rate errors, including responsiveness, stability, and maximum rates.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BodyRateControllerConfig {
+    /// PID gains for controlling the angular rates (roll, pitch, yaw).
+    pub gains: Gains,
+
+    /// Maximum absolute value of the integral term.
+    /// Prevents integral windup by limiting error accumulation.
+    pub max_integral: f32,
+
+    /// Maximum angular rates in radians/second for roll (x), pitch (y), and yaw (z).
+    pub max_angular_rates: Vec3<f32>,
+}
+
+impl Default for BodyRateControllerConfig {
+    fn default() -> Self {
+        Self {
+            gains: Gains {
+                p: 7.0,
+                i: 0.00,
+                d: 0.01,
+            },
+            max_integral: 100.0,                    // Arbitrary limit
+            max_angular_rates: vec3(3.0, 3.0, 3.0), // Max roll, pitch, yaw rates in rad/s
+        }
+    }
+}
+
+// x: 3.0, // max roll rate in rad/s (~172 deg/s)
+// y: 3.0, // max pitch rate in rad/s (~172 deg/s)
+// z: 3.0, // max yaw rate in rad/s (~86 deg/s)
+
 /// A PID-based controller for managing angular rates (roll, pitch, yaw) of a vehicle.
 ///
 /// This controller uses a PID algorithm to compute corrective moments based on desired and estimated
@@ -34,28 +69,29 @@ pub struct BodyRateController {
     pub max_angular_rates: Vec3<f32>,
 }
 
-impl Default for BodyRateController {
-    /// Creates a new `RatesController` with default PID gains and maximum angular rates.
-    fn default() -> Self {
+impl BodyRateController {
+    pub fn new() -> Self {
+        BodyRateController::with_config(&BodyRateControllerConfig::default())
+    }
+
+    pub fn with_config(config: &BodyRateControllerConfig) -> Self {
+        assert!(
+            config.max_angular_rates.is_finite(),
+            "Maximum angular rates must be finite"
+        );
+        assert!(
+            config.max_integral.is_finite(),
+            "Maximum integral term must be finite"
+        );
         Self {
-            gains: Gains {
-                p: 7.0,
-                i: 0.00,
-                d: 0.01,
-            },
-            max_angular_rates: Vec3 {
-                x: 3.0, // max roll rate in rad/s (~172 deg/s)
-                y: 3.0, // max pitch rate in rad/s (~172 deg/s)
-                z: 3.0, // max yaw rate in rad/s (~86 deg/s)
-            },
+            gains: config.gains,
+            max_angular_rates: config.max_angular_rates,
+            max_integral: config.max_integral,
             integral_term: Vec3::default(),
-            max_integral: 100.0,
             last_error: Vec3::default(),
         }
     }
-}
 
-impl BodyRateController {
     /// Controls the angular velocity (body rates) of the vehicle using a PID controller.
     ///
     /// This method takes normalized desired rates (e.g., from a joystick), scales them to rad/s using

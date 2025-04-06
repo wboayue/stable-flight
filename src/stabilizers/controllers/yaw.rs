@@ -166,6 +166,12 @@ impl YawController {
 
         yaw_rate.clamp(-self.config.max_rate, self.config.max_rate)
     }
+
+    /// Resets the controller state (integral and last error terms) to zero.
+    pub fn reset(&mut self) {
+        self.integrated_error = 0.0;
+        self.previous_error = None;
+    }
 }
 
 /// Normalizes the yaw error to the range [-π, π] to handle angle wrapping.

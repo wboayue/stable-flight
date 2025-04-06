@@ -6,7 +6,7 @@ use super::*;
 
 // Helper function to create a default controller
 fn setup_controller() -> BodyRateController {
-    BodyRateController::default()
+    BodyRateController::new()
 }
 
 // Test 1: Nominal case with zero error
