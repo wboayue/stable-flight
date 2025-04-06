@@ -35,17 +35,17 @@
 //! - **Full Control Stack**: Automatic position and altitude holding
 //! - **Selective Enabling**: Can enable altitude control while keeping manual lateral control
 
-use robomath::{to_radians, vec2, vec3, Quaternion, Vec2, Vec3};
-use std::f32::consts::PI;
+use robomath::{vec2, vec3, Vec2, Vec3};
 use std::time::Duration;
 
 use crate::{
     AttitudeCommand, Command, ControlOutput, RateCommand, Stabilizer, VehicleState, WaypointCommand,
 };
 
-use super::controllers::yaw::{YawController, YawControllerConfig};
-use super::controllers::{AttitudeConfiguration, AttitudeController, BodyRateController};
-
+use super::controllers::{
+    AltitudeController, AltitudeControllerConfig, AttitudeConfiguration, AttitudeController,
+    BodyRateController, YawController, YawControllerConfig,
+};
 use super::Gains;
 
 #[cfg(test)]
@@ -62,9 +62,8 @@ pub struct CopterStabilizerConfig {
     pub lateral_gains: Gains,
     pub yaw_gains: Gains,
     pub thrust_curve_exponent: f32,
-
-    /// Maximum angular rates (roll, pitch, yaw) in rad/s.
-    pub max_rates: Vec3<f32>,
+    // Maximum angular rates (roll, pitch, yaw) in rad/s.
+    //    pub max_rates: Vec3<f32>,
 }
 
 impl Default for CopterStabilizerConfig {
@@ -97,11 +96,11 @@ impl Default for CopterStabilizerConfig {
                 d: 0.06,
             },
             thrust_curve_exponent: 2.0,
-            max_rates: Vec3 {
-                x: 3.0, // max roll rate in rad/s (~172 deg/s)
-                y: 3.0, // max pitch rate in rad/s (~172 deg/s)
-                z: 3.0, // max yaw rate in rad/s (~86 deg/s)
-            },
+            // max_rates: Vec3 {
+            //     x: 3.0, // max roll rate in rad/s (~172 deg/s)
+            //     y: 3.0, // max pitch rate in rad/s (~172 deg/s)
+            //     z: 3.0, // max yaw rate in rad/s (~86 deg/s)
+            // },
         }
     }
 }
@@ -114,16 +113,15 @@ impl Default for CopterStabilizerConfig {
 pub struct CopterStabilizer {
     config: CopterStabilizerConfig,
 
+    altitude_controller: AltitudeController,
     attitude_controller: AttitudeController,
     rates_controller: BodyRateController,
     yaw_controller: YawController,
 
-    integrated_altitude_error: f32,
-
     previous_pos_error: Vec2<f32>,
     integrated_pos_error: Vec2<f32>,
 
-    /// Maximum angular rates (roll, pitch, yaw) in rad/s.
+    // Maximum angular rates (roll, pitch, yaw) in rad/s.
     pub max_rates: Vec3<f32>,
 }
 
@@ -137,6 +135,11 @@ impl CopterStabilizer {
         CopterStabilizer {
             config: config.clone(),
 
+            altitude_controller: AltitudeController::with_config(&AltitudeControllerConfig {
+                gains: config.altitude_gains,
+                ..Default::default()
+            }),
+
             rates_controller: BodyRateController {
                 ..Default::default()
             },
@@ -146,10 +149,11 @@ impl CopterStabilizer {
             yaw_controller: YawController::with_config(&YawControllerConfig {
                 gains: config.yaw_gains,
                 max_integral: 100.0,
-                max_rate: config.max_rates.z,
+                max_rate: 2.0,
+                //                max_rate: config.max_rates.z,
             }),
 
-            integrated_altitude_error: 0.0,
+            // integrated_altitude_error: 0.0,
             previous_pos_error: vec2(0.0, 0.0),
             integrated_pos_error: vec2(0.0, 0.0),
             max_rates: vec3(3.0, 3.0, 3.0), // default max rates
@@ -372,7 +376,7 @@ impl CopterStabilizer {
         let desired_altitude = waypoint_command.altitude;
         let current_altitude = estimated_state.position.z.value;
 
-        let linear_thrust = self.control_altitude(
+        let linear_thrust = self.altitude_controller.control(
             dt,
             desired_altitude,
             0.0,
@@ -385,70 +389,6 @@ impl CopterStabilizer {
             thrust: self.fit_to_thrust_curve(linear_thrust),
             moments,
         }
-    }
-
-    /// Controls the altitude of the vehicle by computing a normalized thrust command using a PID controller.
-    ///
-    /// This outer loop maintains the desired altitude by calculating a thrust command (0.0 to 1.0), where:
-    /// - 0.0: No thrust (vehicle falls).
-    /// - 0.5: Nominal hover thrust (approximately balances gravity).
-    /// - 1.0: Maximum thrust (maximum upward acceleration).
-    ///
-    /// # Arguments
-    ///
-    /// * `dt` - Time step since the last update (must be positive).
-    /// * `desired_altitude` - Desired altitude in meters.
-    /// * `desired_velocity` - Desired vertical velocity in m/s (currently unused, set to 0.0).
-    /// * `estimated_altitude` - Current measured altitude in meters.
-    /// * `estimated_velocity` - Current vertical velocity in m/s.
-    /// * `estimated_attitude` - Current attitude as a quaternion.
-    ///
-    /// # Returns
-    ///
-    /// A normalized thrust command (0.0 to 1.0).
-    fn control_altitude(
-        &mut self,
-        dt: Duration,
-        desired_altitude: f32,
-        desired_velocity: f32,
-        estimated_altitude: f32,
-        estimated_velocity: f32,
-        estimated_attitude: Quaternion,
-    ) -> f32 {
-        const GRAVITY: f32 = 9.81;
-        const MAX_ACCEL: f32 = 20.0;
-
-        let r = estimated_attitude.rotation_matrix_i_wrt_b();
-        let gains = &self.config.altitude_gains;
-
-        let altitude_error = desired_altitude - estimated_altitude;
-        self.integrated_altitude_error += altitude_error * dt.as_secs_f32();
-        self.integrated_altitude_error = self.integrated_altitude_error.clamp(-100.0, 100.0);
-
-        let proportional_term = gains.p * altitude_error;
-        let derivative_term = gains.d * (desired_velocity - estimated_velocity);
-        let integral_term = gains.i * self.integrated_altitude_error;
-        let mut acceleration_cmd = proportional_term + derivative_term + integral_term;
-
-        let body_z_alignment = r[[2, 2]].max(0.01);
-        acceleration_cmd = (acceleration_cmd - GRAVITY) / body_z_alignment;
-        acceleration_cmd = acceleration_cmd.clamp(-MAX_ACCEL, MAX_ACCEL);
-
-        // Map acceleration_cmd such that:
-        // - acceleration_cmd = -GRAVITY (free fall) -> linear_thrust = 0
-        // - acceleration_cmd = 0 (hover) -> linear_thrust = 0.5
-        // - acceleration_cmd = MAX_ACCEL (max upward) -> linear_thrust = 1
-        let accel_range_lower = GRAVITY; // From -GRAVITY to 0
-        let accel_range_upper = MAX_ACCEL; // From 0 to MAX_ACCEL
-        let linear_thrust = if acceleration_cmd < 0.0 {
-            // Map [-GRAVITY, 0] to [0, 0.5]
-            0.5 * (acceleration_cmd + GRAVITY) / GRAVITY
-        } else {
-            // Map [0, MAX_ACCEL] to [0.5, 1]
-            0.5 + 0.5 * acceleration_cmd / MAX_ACCEL
-        };
-
-        linear_thrust.clamp(0.0, 1.0)
     }
 
     /// Controls the lateral (X-Y) position of the vehicle using a PID controller.
