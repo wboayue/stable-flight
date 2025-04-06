@@ -1,7 +1,7 @@
-use robomath::vec3;
+use robomath::{vec3, Quaternion};
 
 use super::*;
-use std::time::Duration;
+use std::{f32::consts::PI, time::Duration};
 
 // Helper function to create a BasicController with default gains
 fn setup_controller() -> CopterStabilizer {
@@ -32,7 +32,7 @@ fn setup_controller() -> CopterStabilizer {
             d: 0.06,
         },
         thrust_curve_exponent: 2.0,
-        max_rates: vec3(1.0, 1.0, 1.0), // Max roll, pitch, yaw rates
+        //        max_rates: vec3(1.0, 1.0, 1.0), // Max roll, pitch, yaw rates
     };
     CopterStabilizer::new(config)
 }
@@ -93,7 +93,7 @@ fn test_altitude_controller_zero_error() {
     let current_velocity = 0.0;
     let attitude = identity_quaternion();
 
-    let output = controller.control_altitude(
+    let output = controller.altitude_controller.control(
         dt,
         desired_altitude,
         0.0,
@@ -131,7 +131,7 @@ fn test_altitude_controller_positive_error() {
     let current_velocity = 0.0;
     let attitude = identity_quaternion();
 
-    let output = controller.control_altitude(
+    let output = controller.altitude_controller.control(
         dt,
         desired_altitude,
         0.0,

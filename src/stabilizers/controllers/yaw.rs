@@ -26,7 +26,7 @@ impl Default for YawControllerConfig {
         Self {
             gains: Default::default(),
             max_integral: 100.0, // Arbitrary limit
-            max_rate: 2.0,    // 2 rad/s (~114°/s) for yaw
+            max_rate: 2.0,       // 2 rad/s (~114°/s) for yaw
         }
     }
 }
