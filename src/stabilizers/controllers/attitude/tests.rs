@@ -4,16 +4,16 @@ use super::*;
 
 // Helper function to create a default controller for tests
 fn default_controller() -> AttitudeController {
-    AttitudeController::new(&AttitudeConfiguration::default())
+    AttitudeController::default()
 }
 
 #[test]
 fn test_new_with_default_config() {
     // Assemble
-    let config = AttitudeConfiguration::default();
+    let config = AttitudeControllerConfig::default();
 
     // Activate
-    let controller = AttitudeController::new(&config);
+    let controller = AttitudeController::with_config(&config);
 
     // Assert
     assert_eq!(controller.gains.p, 3.0);
@@ -30,13 +30,13 @@ fn test_new_with_default_config() {
 #[should_panic(expected = "Maximum angles must be non-negative")]
 fn test_new_panics_on_negative_max_angles() {
     // Assemble
-    let config = AttitudeConfiguration {
+    let config = AttitudeControllerConfig {
         max_angles: vec2(-1.0, FRAC_PI_4),
-        ..AttitudeConfiguration::default()
+        ..AttitudeControllerConfig::default()
     };
 
     // Activate
-    let _controller = AttitudeController::new(&config);
+    let _controller = AttitudeController::with_config(&config);
 
     // Assert (panic expected, no assertions needed)
 }
@@ -45,13 +45,13 @@ fn test_new_panics_on_negative_max_angles() {
 #[should_panic(expected = "Maximum rates must be non-negative")]
 fn test_new_panics_on_negative_max_rate() {
     // Assemble
-    let config = AttitudeConfiguration {
+    let config = AttitudeControllerConfig {
         max_rate: vec2(2.0, -2.0),
-        ..AttitudeConfiguration::default()
+        ..AttitudeControllerConfig::default()
     };
 
     // Activate
-    let _controller = AttitudeController::new(&config);
+    let _controller = AttitudeController::with_config(&config);
 
     // Assert (panic expected, no assertions needed)
 }
@@ -102,14 +102,14 @@ fn test_control_proportional_response() {
 #[test]
 fn test_control_rate_clamping() {
     // Assemble
-    let mut controller = AttitudeController::new(&AttitudeConfiguration {
+    let mut controller = AttitudeController::with_config(&AttitudeControllerConfig {
         gains: Gains {
             p: 100.0,
             i: 0.0,
             d: 0.0,
         }, // High P gain to exceed max_rate
         max_rate: vec2(2.0, 2.0),
-        ..AttitudeConfiguration::default()
+        ..AttitudeControllerConfig::default()
     });
     let dt = Duration::from_secs_f32(0.1);
     let desired_angles = vec2(1.0, 1.0); // Max roll and pitch
@@ -125,13 +125,13 @@ fn test_control_rate_clamping() {
 #[test]
 fn test_control_integral_buildup() {
     // Assemble
-    let mut controller = AttitudeController::new(&AttitudeConfiguration {
+    let mut controller = AttitudeController::with_config(&AttitudeControllerConfig {
         gains: Gains {
             p: 1.0,
             i: 1.0,
             d: 0.0,
         }, // Enable integral term
-        ..AttitudeConfiguration::default()
+        ..AttitudeControllerConfig::default()
     });
     let dt = Duration::from_secs_f32(0.1);
     let desired_angles = vec2(0.5, 0.5);
@@ -153,14 +153,14 @@ fn test_control_integral_buildup() {
 #[test]
 fn test_control_integral_clamping() {
     // Assemble
-    let mut controller = AttitudeController::new(&AttitudeConfiguration {
+    let mut controller = AttitudeController::with_config(&AttitudeControllerConfig {
         gains: Gains {
             p: 0.0,
             i: 8000.0,
             d: 0.0,
         }, // High I to hit max_integral
         max_integral: 1.0, // Low limit for testing
-        ..AttitudeConfiguration::default()
+        ..AttitudeControllerConfig::default()
     });
     let dt = Duration::from_secs_f32(2.0); // Large dt to quickly reach max_integral
     let desired_angles = vec2(1.0, 1.0);
@@ -177,13 +177,13 @@ fn test_control_integral_clamping() {
 #[test]
 fn test_control_derivative_response() {
     // Assemble
-    let mut controller = AttitudeController::new(&AttitudeConfiguration {
+    let mut controller = AttitudeController::with_config(&AttitudeControllerConfig {
         gains: Gains {
             p: 0.0,
             i: 0.0,
             d: 0.5,
         }, // Only D term
-        ..AttitudeConfiguration::default()
+        ..AttitudeControllerConfig::default()
     });
     let dt = Duration::from_secs_f32(0.1);
     let desired_angles = vec2(1.0, 1.0);

@@ -52,6 +52,7 @@ impl Default for BodyRateControllerConfig {
 /// - Desired and estimated rates are expected in rad/s.
 /// - Maximum rates (`max_angular_rates`) are in rad/s.
 /// - Output moments are normalized to the range `[-1, 1]`, intended to be scaled to physical units (e.g., N·m) downstream.
+#[derive(Clone, Debug, PartialEq)]
 pub struct BodyRateController {
     /// PID gains for controlling the angular rates (roll, pitch, yaw).
     pub gains: Gains,
@@ -69,9 +70,15 @@ pub struct BodyRateController {
     pub max_angular_rates: Vec3<f32>,
 }
 
+impl Default for BodyRateController {
+    fn default() -> Self {
+        BodyRateController::with_config(&BodyRateControllerConfig::default())
+    }
+}
+
 impl BodyRateController {
     pub fn new() -> Self {
-        BodyRateController::with_config(&BodyRateControllerConfig::default())
+        BodyRateController::default()
     }
 
     pub fn with_config(config: &BodyRateControllerConfig) -> Self {

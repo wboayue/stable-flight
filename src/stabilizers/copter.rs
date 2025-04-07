@@ -45,7 +45,7 @@ use crate::{
 use super::controllers::body_rate::BodyRateControllerConfig;
 use super::controllers::lateral::{LateralController, LateralControllerConfig};
 use super::controllers::{
-    AltitudeController, AltitudeControllerConfig, AttitudeConfiguration, AttitudeController,
+    AltitudeController, AltitudeControllerConfig, AttitudeController, AttitudeControllerConfig,
     BodyRateController, YawController, YawControllerConfig,
 };
 use super::Gains;
@@ -56,9 +56,9 @@ mod tests;
 const G: f32 = 9.81; // acceleration due to gravity (m/s²)
 
 /// Configuration for the [CopterStabilizer], including gains for all control loops and thrust mapping.
-#[derive(Clone, Copy)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CopterStabilizerConfig {
-    pub rate_gains: Gains,
+    pub rates_controller: BodyRateController,
     pub angle_gains: Gains,
     pub altitude_gains: Gains,
     pub lateral_gains: Gains,
@@ -69,14 +69,10 @@ pub struct CopterStabilizerConfig {
 }
 
 impl Default for CopterStabilizerConfig {
-    /// Creates a new `BasicControllerConfig` with default PID gains and thrust curve exponent.
+    /// Creates a new `CopterStabilizerConfig` with default PID gains and thrust curve exponent.
     fn default() -> Self {
         CopterStabilizerConfig {
-            rate_gains: Gains {
-                p: 1.0,
-                i: 0.0,
-                d: 0.0,
-            },
+            rates_controller: BodyRateController::default(),
             angle_gains: Gains {
                 p: 2.0,
                 i: 0.2,
@@ -113,20 +109,20 @@ impl Default for CopterStabilizerConfig {
 /// for each loop. It processes commands (`RateCommand`, `AttitudeCommand`, `WaypointCommand`)
 /// and generates motor control outputs (`ControlOutput`).
 pub struct CopterStabilizer {
-    config: CopterStabilizerConfig,
+    pub config: CopterStabilizerConfig,
 
-    altitude_controller: AltitudeController,
-    attitude_controller: AttitudeController,
-    rates_controller: BodyRateController,
-    yaw_controller: YawController,
-    lateral_controller: LateralController,
+    pub altitude_controller: AltitudeController,
+    pub attitude_controller: AttitudeController,
+    pub rates_controller: BodyRateController,
+    pub yaw_controller: YawController,
+    pub lateral_controller: LateralController,
 
     // Maximum angular rates (roll, pitch, yaw) in rad/s.
     pub max_rates: Vec3<f32>,
 }
 
 impl CopterStabilizer {
-    /// Creates a new `BasicController` with the specified configuration.
+    /// Creates a new [CopterStabilizer] with the specified configuration.
     ///
     /// # Arguments
     ///
@@ -140,13 +136,11 @@ impl CopterStabilizer {
                 ..Default::default()
             }),
 
-            rates_controller: BodyRateController::with_config(&BodyRateControllerConfig {
-                gains: config.rate_gains,
-                max_integral: 100.0,
-                ..Default::default()
-            }),
+            rates_controller: config.rates_controller,
 
-            attitude_controller: AttitudeController::new(&AttitudeConfiguration::default()),
+            attitude_controller: AttitudeController::with_config(
+                &AttitudeControllerConfig::default(),
+            ),
 
             yaw_controller: YawController::with_config(&YawControllerConfig {
                 gains: config.yaw_gains,

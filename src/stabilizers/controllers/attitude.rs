@@ -11,7 +11,7 @@ mod tests;
 /// Defines PID gains, maximum angles, and maximum angular rates for roll and pitch control.
 /// Yaw is typically handled separately by a dedicated yaw controller.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct AttitudeConfiguration {
+pub struct AttitudeControllerConfig {
     /// PID gains for roll and pitch control (Kp, Ki, Kd).
     pub gains: Gains,
 
@@ -28,7 +28,7 @@ pub struct AttitudeConfiguration {
     pub max_rate: Vec2<f32>,
 }
 
-impl Default for AttitudeConfiguration {
+impl Default for AttitudeControllerConfig {
     /// Provides a default configuration with reasonable starting values.
     /// Note: PID gains (P=7.0, I=0.0, D=0.01) and max_rate (2 rad/s) may need tuning
     /// for specific vehicles.
@@ -55,24 +55,38 @@ pub struct AttitudeController {
     max_rate: Vec2<f32>,   // Max angular rates in rad/s (roll, pitch)
 }
 
+impl Default for AttitudeController {
+    /// Provides a default attitude controller with default configuration.
+    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and max_rate (2 rad/s) may need tuning
+    /// for specific vehicles.
+    fn default() -> Self {
+        Self::with_config(&AttitudeControllerConfig::default())
+    }
+}
+
 impl AttitudeController {
     /// Initializes a new attitude controller with the given configuration.
-    pub fn new(configuration: &AttitudeConfiguration) -> Self {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Initializes a new attitude controller with the given configuration.
+    pub fn with_config(config: &AttitudeControllerConfig) -> Self {
         assert!(
-            configuration.max_angles.x >= 0.0 && configuration.max_angles.y >= 0.0,
+            config.max_angles.x >= 0.0 && config.max_angles.y >= 0.0,
             "Maximum angles must be non-negative"
         );
         assert!(
-            configuration.max_rate.x >= 0.0 && configuration.max_rate.y >= 0.0,
+            config.max_rate.x >= 0.0 && config.max_rate.y >= 0.0,
             "Maximum rates must be non-negative"
         );
         Self {
-            gains: configuration.gains,
+            gains: config.gains,
             integral_term: Vec2::default(),
-            max_integral: configuration.max_integral,
+            max_integral: config.max_integral,
             last_error: Vec2::default(),
-            max_angles: configuration.max_angles,
-            max_rate: configuration.max_rate,
+            max_angles: config.max_angles,
+            max_rate: config.max_rate,
         }
     }
 
