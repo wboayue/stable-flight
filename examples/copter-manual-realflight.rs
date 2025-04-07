@@ -67,6 +67,7 @@ fn main() {
 
     let stabilizer_config = CopterStabilizerConfig {
         rates_controller,
+        attitude_controller,
         ..Default::default()
     };
     let stabilizer = CopterStabilizer::new(stabilizer_config);

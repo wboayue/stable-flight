@@ -46,6 +46,7 @@ impl Default for AttitudeControllerConfig {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub struct AttitudeController {
     gains: Gains,
     integral_term: Vec2<f32>, // Accumulated error (roll, pitch)
