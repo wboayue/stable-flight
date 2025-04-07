@@ -15,13 +15,20 @@ fn setup_controller() -> CopterStabilizer {
         max_angular_rates: vec3(3.0, 3.0, 3.0), // Max roll, pitch, yaw rates in rad/s
     });
 
-    let config = CopterStabilizerConfig {
-        rates_controller,
-        angle_gains: Gains {
+    let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
+        gains: Gains {
             p: 2.0,
             i: 0.2,
             d: 0.1,
         },
+        max_integral: 100.0,
+        max_angles: vec2(PI / 4.0, PI / 4.0), // 45° for roll and pitch
+        max_rate: vec2(3.0, 3.0),             // Max roll, pitch, yaw rates in rad/s
+    });
+
+    let config = CopterStabilizerConfig {
+        rates_controller,
+        attitude_controller,
         altitude_gains: Gains {
             p: 3.0,
             i: 0.3,

@@ -35,19 +35,14 @@
 //! - **Full Control Stack**: Automatic position and altitude holding
 //! - **Selective Enabling**: Can enable altitude control while keeping manual lateral control
 
-use robomath::{vec2, vec3, Vec2, Vec3};
+use robomath::{vec2, vec3, Vec3};
 use std::time::Duration;
 
 use crate::{
     AttitudeCommand, Command, ControlOutput, RateCommand, Stabilizer, VehicleState, WaypointCommand,
 };
 
-use super::controllers::body_rate::BodyRateControllerConfig;
-use super::controllers::lateral::{LateralController, LateralControllerConfig};
-use super::controllers::{
-    AltitudeController, AltitudeControllerConfig, AttitudeController, AttitudeControllerConfig,
-    BodyRateController, YawController, YawControllerConfig,
-};
+use super::controllers::*;
 use super::Gains;
 
 #[cfg(test)]
@@ -59,10 +54,12 @@ const G: f32 = 9.81; // acceleration due to gravity (m/s²)
 #[derive(Clone, Debug, PartialEq)]
 pub struct CopterStabilizerConfig {
     pub rates_controller: BodyRateController,
-    pub angle_gains: Gains,
+    pub attitude_controller: AttitudeController,
+
     pub altitude_gains: Gains,
     pub lateral_gains: Gains,
     pub yaw_gains: Gains,
+
     pub thrust_curve_exponent: f32,
     // Maximum angular rates (roll, pitch, yaw) in rad/s.
     //    pub max_rates: Vec3<f32>,
@@ -73,11 +70,7 @@ impl Default for CopterStabilizerConfig {
     fn default() -> Self {
         CopterStabilizerConfig {
             rates_controller: BodyRateController::default(),
-            angle_gains: Gains {
-                p: 2.0,
-                i: 0.2,
-                d: 0.1,
-            },
+            attitude_controller: AttitudeController::default(),
             altitude_gains: Gains {
                 p: 3.0,
                 i: 0.3,
@@ -137,10 +130,7 @@ impl CopterStabilizer {
             }),
 
             rates_controller: config.rates_controller,
-
-            attitude_controller: AttitudeController::with_config(
-                &AttitudeControllerConfig::default(),
-            ),
+            attitude_controller: config.attitude_controller,
 
             yaw_controller: YawController::with_config(&YawControllerConfig {
                 gains: config.yaw_gains,
