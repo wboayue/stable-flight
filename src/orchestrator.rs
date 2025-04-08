@@ -84,7 +84,7 @@ pub struct FlightOrchestrator<
 > {
     commander: T,
     vehicle: U,
-    controller: V,
+    stabilizer: V,
     mixer: W,
     telemetry: X,
     running: Arc<AtomicBool>,
@@ -115,7 +115,7 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
     pub fn new(
         commander: T,
         vehicle: U,
-        controller: V,
+        stabilizer: V,
         mixer: W,
         telemetry: X,
     ) -> FlightOrchestrator<T, U, V, W, X> {
@@ -165,7 +165,7 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
         FlightOrchestrator {
             commander,
             vehicle,
-            controller,
+            stabilizer,
             mixer,
             telemetry,
             running,
@@ -216,7 +216,10 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
         // Optional: For tracking actual frequency
         let mut iteration_count = 0;
         let start_time = Instant::now();
-        let mut state = self.vehicle.estimate_state(target_duration);
+
+        let mut state = self.vehicle.estimate_state(Duration::ZERO);
+
+        self.stabilizer.set_initial_state(&state);
 
         while self.running.load(Ordering::SeqCst) {
             // Get control inputs
@@ -226,7 +229,7 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
             state = self.vehicle.estimate_state(target_duration);
 
             // Compute control outputs (angles, rates, etc.)
-            let control_outputs = self.controller.stabilize(target_duration, &command, &state);
+            let control_outputs = self.stabilizer.stabilize(target_duration, &command, &state);
 
             // Mix control outputs
             let actuator_command = self.mixer.mix(&control_outputs);

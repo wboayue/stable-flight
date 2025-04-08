@@ -14,7 +14,7 @@ impl Commander for MockCommander {
 
 struct MockVehicle;
 impl Vehicle for MockVehicle {
-    fn estimate_state(&self, _: Duration) -> VehicleState {
+    fn estimate_state(&mut self, _: Duration) -> VehicleState {
         VehicleState::default()
     }
     fn actuate(&mut self, _: &ActuatorCommand) {}
@@ -25,6 +25,8 @@ impl Stabilizer for MockStabilizer {
     fn stabilize(&mut self, _: Duration, _: &Command, _: &VehicleState) -> ControlOutput {
         ControlOutput::default()
     }
+
+    fn set_initial_state(&mut self, state: &VehicleState) {}
 }
 
 struct MockMixer;
@@ -74,7 +76,7 @@ fn test_flight_orchestrator_shutdown_signal() {
     let mut orchestrator = FlightOrchestrator {
         commander: MockCommander,
         vehicle: MockVehicle,
-        controller: MockStabilizer,
+        stabilizer: MockStabilizer,
         mixer: MockMixer,
         telemetry: MockTelemetry,
         running: running_clone,
@@ -97,7 +99,7 @@ fn test_flight_orchestrator_single_iteration() {
     let mut orchestrator = FlightOrchestrator {
         commander: MockCommander,
         vehicle: MockVehicle,
-        controller: MockStabilizer,
+        stabilizer: MockStabilizer,
         mixer: MockMixer,
         telemetry: MockTelemetry,
         running: running,
@@ -123,7 +125,7 @@ fn test_flight_orchestrator_high_frequency() {
     let mut orchestrator = FlightOrchestrator {
         commander: MockCommander,
         vehicle: MockVehicle,
-        controller: MockStabilizer,
+        stabilizer: MockStabilizer,
         mixer: MockMixer,
         telemetry: MockTelemetry,
         running,

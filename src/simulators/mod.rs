@@ -11,7 +11,7 @@ use crate::{ActuatorCommand, Vehicle, VehicleState};
 pub struct NullVehicle {}
 
 impl Vehicle for NullVehicle {
-    fn estimate_state(&self, _dt: Duration) -> VehicleState {
+    fn estimate_state(&mut self, _dt: Duration) -> VehicleState {
         VehicleState::default()
     }
 

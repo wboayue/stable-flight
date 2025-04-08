@@ -112,6 +112,8 @@ pub struct CopterStabilizer {
 
     // Maximum angular rates (roll, pitch, yaw) in rad/s.
     pub max_rates: Vec3<f32>,
+
+    heading: f32,
 }
 
 impl CopterStabilizer {
@@ -146,6 +148,7 @@ impl CopterStabilizer {
             }),
 
             max_rates: vec3(3.0, 3.0, 3.0), // default max rates
+            heading: 0.0,
         }
     }
 }
@@ -180,6 +183,18 @@ impl Stabilizer for CopterStabilizer {
                 self.process_waypoint_command(dt, waypoint_command, estimated_state)
             }
         }
+    }
+
+    /// Set the initial state of the stabilizer
+    /// This can be used to initialize internal parameters or state variables
+    fn set_initial_state(&mut self, state: &VehicleState) {
+        self.heading = state.heading;
+
+        // self.rates_controller.set_initial_state(state);
+        // self.attitude_controller.set_initial_state(state);
+        // self.altitude_controller.set_initial_state(state);
+        // self.lateral_controller.set_initial_state(state);
+        // self.yaw_controller.set_initial_state(state);
     }
 }
 
@@ -228,18 +243,15 @@ impl CopterStabilizer {
         let desired_angles = vec2(attitude_command.roll, attitude_command.pitch);
         let current_angles = vec2(estimated_state.roll, estimated_state.pitch);
 
-        println!(
-            "desired angles: {:?}, current angles: {:?}",
-            desired_angles, current_angles
-        );
-
         let desired_rates = self
             .attitude_controller
             .control(dt, desired_angles, current_angles);
 
-        let desired_yaw_rate = self
-            .yaw_controller
-            .control(dt, 0.0, estimated_state.heading);
+        self.heading += attitude_command.yaw * 0.0001;
+
+        let desired_yaw_rate =
+            self.yaw_controller
+                .control(dt, self.heading, estimated_state.heading);
 
         let current_rates = vec3(
             estimated_state.angular_velocity.x,
