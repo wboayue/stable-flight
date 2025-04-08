@@ -45,7 +45,7 @@ impl MavlinkPublisher {
             global_position_bucket: Duration::from_secs(0),
             local_position_interval: Duration::from_secs_f32(1.0 / 10.0),
             local_position_bucket: Duration::from_secs(0),
-            attitude_interval: Duration::from_secs(1),
+            attitude_interval: Duration::from_secs_f32(1.0 / 10.0),
             attitude_bucket: Duration::from_secs(0),
         }
     }
