@@ -126,7 +126,15 @@ where
     /// # Returns
     ///
     /// A `VehicleState` containing current position, velocity, attitude, etc.
-    fn estimate_state(&self, _dt: Duration) -> VehicleState {
+    fn estimate_state(&mut self, dt: Duration) -> VehicleState {
+        if dt.is_zero() {
+            // initialize state if dt is zero
+            let input = ControlInputs::default();
+            if let Ok(state) = self.bridge.exchange_data(&input) {
+                self.update_estimate(state);
+            }
+        }
+
         self.estimated_state.clone()
     }
 

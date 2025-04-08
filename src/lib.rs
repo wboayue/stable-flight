@@ -544,7 +544,7 @@ pub trait Vehicle {
     ///
     /// # Returns
     /// A `VehicleState` representing the current estimated state of the vehicle.
-    fn estimate_state(&self, dt: Duration) -> VehicleState;
+    fn estimate_state(&mut self, dt: Duration) -> VehicleState;
 
     /// Sends actuation commands to the vehicle's control surfaces and/or motors.
     ///
@@ -620,6 +620,10 @@ pub trait Stabilizer {
     /// A `ControlOutput` containing the desired thrust and control moments.
     fn stabilize(&mut self, dt: Duration, command: &Command, state: &VehicleState)
         -> ControlOutput;
+
+    /// Set the initial state of the stabilizer
+    /// This can be used to initialize internal parameters or state variables
+    fn set_initial_state(&mut self, state: &VehicleState);
 }
 
 /// Component responsible for publishing telemetry data from the flight system.

@@ -56,8 +56,8 @@ fn main() {
 
     let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
         gains: Gains {
-            p: 2.0,
-            i: 0.2,
+            p: 3.0,
+            i: 0.0,
             d: 0.1,
         },
         max_integral: 100.0,
