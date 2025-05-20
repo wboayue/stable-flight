@@ -4,9 +4,6 @@ use robomath::{vec2, Vec2};
 
 use crate::stabilizers::Gains;
 
-#[cfg(test)]
-mod tests;
-
 const G: f32 = 9.81; // Gravitational acceleration in m/s²
 
 #[derive(Clone, Debug, PartialEq)]
@@ -104,3 +101,6 @@ impl LateralController {
         vec2(roll_cmd, pitch_cmd)
     }
 }
+
+#[cfg(test)]
+mod tests {}
