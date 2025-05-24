@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use robomath::Quaternion;
 
 use crate::stabilizers::Gains;
@@ -70,7 +68,7 @@ impl AltitudeController {
     /// A normalized thrust command (0.0 to 1.0).
     pub fn control(
         &mut self,
-        dt: Duration,
+        dt: f32,
         desired_altitude: f32,
         desired_velocity: f32,
         estimated_altitude: f32,
@@ -84,7 +82,7 @@ impl AltitudeController {
         let gains = &self.config.gains;
 
         let altitude_error = desired_altitude - estimated_altitude;
-        self.integrated_error += altitude_error * dt.as_secs_f32();
+        self.integrated_error += altitude_error * dt;
         self.integrated_error = self.integrated_error.clamp(-100.0, 100.0);
 
         let proportional_term = gains.p * altitude_error;

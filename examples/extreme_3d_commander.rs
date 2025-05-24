@@ -18,7 +18,7 @@ pub fn main() {
     for _ in 0..100 {
         next_time += dt;
 
-        let command = commander.next(dt, &vehicle_state);
+        let command = commander.next(dt.as_secs_f32(), &vehicle_state);
         println!("{:?}", command);
 
         // Calculate how much time we need to sleep to hit the target

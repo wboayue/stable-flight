@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, time::Duration};
+use std::f32::consts::PI;
 
 use crate::stabilizers::Gains;
 
@@ -121,19 +121,18 @@ impl YawController {
     /// # Examples
     ///
     /// ```
-    /// use std::{f32::consts::PI, time::Duration};
+    /// use std::f32::consts::PI;
     /// use stable_flight_sitl::stabilizers::controllers::{YawController, YawControllerConfig};
     ///
     /// let mut controller = YawController::new();
-    /// let dt = Duration::from_millis(20);
+    /// let dt = 0.02;
     /// let desired_yaw = PI / 4.0;  // 45 degrees
     /// let current_yaw = 0.0;       // 0 degrees
     ///
     /// let yaw_rate = controller.control(dt, desired_yaw, current_yaw);
     /// // Returns a rate command to turn toward the desired heading
     /// ```
-    pub fn control(&mut self, dt: Duration, desired_yaw: f32, estimated_yaw: f32) -> f32 {
-        let dt = dt.as_secs_f32();
+    pub fn control(&mut self, dt: f32, desired_yaw: f32, estimated_yaw: f32) -> f32 {
         assert!(dt.is_finite(), "Time step must be finite");
         assert!(dt > 0.0, "Time step must be positive");
         assert!(
@@ -195,7 +194,6 @@ fn angle_diff(desired_yaw: f32, current_yaw: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
 
     use approx::assert_relative_eq;
 
@@ -306,7 +304,7 @@ mod tests {
         let mut controller = create_p_only_controller(2.0, 5.0);
 
         // Simple case: 0.5 rad error should result in rate = 2.0 * 0.5 = 1.0 rad/s
-        let dt = Duration::from_millis(10);
+        let dt = 0.01;
         let desired_yaw = 0.5;
         let estimated_yaw = 0.0;
 
@@ -331,7 +329,7 @@ mod tests {
         let mut controller = create_i_only_controller(1.0, 10.0, 5.0);
 
         // Apply constant error for several iterations
-        let dt = Duration::from_secs(1); // 1 second for easy calculation
+        let dt = 1.0; // 1 second for easy calculation
         let desired_yaw = 0.5;
         let estimated_yaw = 0.0;
 
@@ -362,7 +360,7 @@ mod tests {
         // Test that the derivative term works correctly
         let mut controller = create_d_only_controller(2.0, 5.0);
 
-        let dt = Duration::from_secs(1); // 1 second for easy calculation
+        let dt = 1.0; // 1 second for easy calculation
 
         // First call - establishes baseline error
         let rate = controller.control(dt, 0.5, 0.0);
@@ -403,7 +401,7 @@ mod tests {
 
         let mut controller = YawController::with_config(&config);
 
-        let dt = Duration::from_secs(1);
+        let dt = 1.0;
 
         // First call:
         // - P term = 1.0 * 0.5 = 0.5
@@ -444,7 +442,7 @@ mod tests {
         };
 
         let mut controller = YawController::with_config(&config);
-        let dt = Duration::from_secs(1);
+        let dt = 1.0;
 
         // Accumulate some error
         controller.control(dt, 0.5, 0.0); // First call
@@ -487,11 +485,11 @@ mod tests {
         let mut controller = YawController::with_config(&config);
 
         // Control with a 1-second time step
-        let rate_1s = controller.control(Duration::from_secs(1), 0.5, 0.0);
+        let rate_1s = controller.control(1.0, 0.5, 0.0);
         assert_relative_eq!(rate_1s, 0.5, epsilon = EPSILON, max_relative = 1e-3);
 
         // Next control with a 0.5-second time step should accumulate half as much
-        let rate_05s = controller.control(Duration::from_millis(500), 0.5, 0.0);
+        let rate_05s = controller.control(0.5, 0.5, 0.0);
         assert_relative_eq!(
             rate_05s,
             0.5 + 0.25, // Previous 0.5 plus new 0.5*0.5
@@ -500,7 +498,7 @@ mod tests {
         );
 
         // Next control with a 0.25-second time step
-        let rate_025s = controller.control(Duration::from_millis(250), 0.5, 0.0);
+        let rate_025s = controller.control(0.25, 0.5, 0.0);
         assert_relative_eq!(
             rate_025s,
             0.5 + 0.25 + 0.125, // Plus new 0.5*0.25
@@ -525,7 +523,7 @@ mod tests {
         let mut controller = YawController::with_config(&config);
 
         // Use a very small time step
-        let dt = Duration::from_micros(1); // 1 microsecond
+        let dt = 0.000001; // 1 microsecond
         let error = 0.5;
         let rate = controller.control(dt, error, 0.0);
 
@@ -556,7 +554,7 @@ mod tests {
         // Test angle wrapping when crossing the ±π boundary
         let mut controller = create_p_only_controller(1.0, 5.0);
 
-        let dt = Duration::from_millis(10);
+        let dt = 0.01;
 
         // Test case: desired = 175°, current = -175°
         // Shortest path is -10° (not +350°)
@@ -631,7 +629,7 @@ mod tests {
     #[test]
     fn test_valid_inputs() {
         let mut controller = YawController::new();
-        let dt = Duration::from_millis(10);
+        let dt = 0.01;
 
         // Valid inputs should not panic
         let _ = controller.control(dt, 0.0, 0.0);
@@ -643,7 +641,7 @@ mod tests {
     #[should_panic(expected = "Time step must be positive")]
     fn test_zero_time_step() {
         let mut controller = YawController::new();
-        let dt = Duration::from_millis(0);
+        let dt = 0.0;
         let _ = controller.control(dt, 0.0, 0.0);
     }
 
@@ -651,7 +649,7 @@ mod tests {
     #[should_panic(expected = "must be in the range")]
     fn test_invalid_yaw_range() {
         let mut controller = YawController::new();
-        let dt = Duration::from_millis(10);
+        let dt = 0.01;
         let _ = controller.control(dt, 3.0 * PI, 0.0);
     }
 
@@ -661,7 +659,7 @@ mod tests {
         // Test that output is clamped to max_rate
         let mut controller = create_p_only_controller(10.0, 2.0);
 
-        let dt = Duration::from_millis(10);
+        let dt = 0.01;
 
         // Error of 0.5 rad with P=10 would give 5.0 rad/s
         // Should be limited to 2.0 rad/s
@@ -690,7 +688,7 @@ mod tests {
 
         let mut controller = YawController::with_config(&config);
 
-        let dt = Duration::from_millis(100); // 0.1 seconds
+        let dt = 0.1; // 0.1 seconds
 
         // Simulate a 90-degree turn
         let desired_yaw = 90.0 * PI / 180.0;
@@ -703,7 +701,7 @@ mod tests {
             rates.push(rate);
 
             // Simple integration to update current yaw for next iteration
-            current_yaw += rate * dt.as_secs_f32();
+            current_yaw += rate * dt;
 
             // Normalize to [-PI, PI] for realism
             if current_yaw > PI {

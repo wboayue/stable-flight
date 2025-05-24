@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use robomath::Vec2;
 
 use crate::{AttitudeCommand, Command, Commander, VehicleState, WaypointCommand};
@@ -16,9 +14,9 @@ impl MockCommander {
 }
 
 impl Commander for MockCommander {
-    fn next(&mut self, dt: Duration, _current_state: &VehicleState) -> Command {
+    fn next(&mut self, dt: f32, _current_state: &VehicleState) -> Command {
         // Alternate between Manual and Waypoint commands based on toggle
-        let secs = dt.as_secs();
+        let secs = dt as u64;
         if secs % 2 == 0 {
             // Manual command
             Command::Attitude(AttitudeCommand {
@@ -94,7 +92,7 @@ fn assert_waypoint_command_valid(cmd: &WaypointCommand) {
 #[test]
 fn test_manual_command_generation() {
     let mut commander = MockCommander::new();
-    let dt = Duration::from_secs(0); // Should produce a ManualCommand
+    let dt = 0.0; // Should produce a ManualCommand
     let current_state = VehicleState::default();
 
     let command = commander.next(dt, &current_state);
@@ -116,7 +114,7 @@ fn test_manual_command_generation() {
 #[test]
 fn test_waypoint_command_generation() {
     let mut commander = MockCommander::new();
-    let dt = Duration::from_secs(1); // Should produce a WaypointCommand
+    let dt = 1.0; // Should produce a WaypointCommand
     let current_state = VehicleState::default();
 
     let command = commander.next(dt, &current_state);
@@ -168,9 +166,9 @@ fn test_command_alternation() {
     let mut commander = MockCommander::new();
 
     // Test multiple calls with different dt to ensure alternation
-    let dt1 = Duration::from_secs(0); // Should produce ManualCommand
-    let dt2 = Duration::from_secs(1); // Should produce WaypointCommand
-    let dt3 = Duration::from_secs(2); // Should produce ManualCommand again
+    let dt1 = 0.0; // Should produce ManualCommand
+    let dt2 = 1.0; // Should produce WaypointCommand
+    let dt3 = 2.0; // Should produce ManualCommand again
 
     let current_state = VehicleState::default();
 

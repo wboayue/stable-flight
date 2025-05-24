@@ -7,7 +7,7 @@ use crate::*;
 // Mock implementations for dependencies
 struct MockCommander;
 impl Commander for MockCommander {
-    fn next(&mut self, _: Duration, _: &VehicleState) -> Command {
+    fn next(&mut self, _: f32, _: &VehicleState) -> Command {
         Command::Attitude(AttitudeCommand::default())
     }
 }
@@ -22,7 +22,7 @@ impl Vehicle for MockVehicle {
 
 struct MockStabilizer;
 impl Stabilizer for MockStabilizer {
-    fn stabilize(&mut self, _: Duration, _: &Command, _: &VehicleState) -> ControlOutput {
+    fn stabilize(&mut self, _: f32, _: &Command, _: &VehicleState) -> ControlOutput {
         ControlOutput::default()
     }
 

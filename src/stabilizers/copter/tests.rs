@@ -1,7 +1,7 @@
 use robomath::{vec3, Quaternion};
 
 use super::*;
-use std::{f32::consts::PI, time::Duration};
+use std::f32::consts::PI;
 
 // Helper function to create a BasicController with default gains
 fn setup_controller() -> CopterStabilizer {
@@ -64,7 +64,7 @@ fn identity_quaternion() -> Quaternion {
 #[test]
 fn test_rate_controller_zero_error() {
     let mut controller = setup_controller();
-    let dt = Duration::from_millis(10);
+    let dt = 0.01;
     let desired_rates = vec3(0.0, 0.0, 0.0);
     let current_rates = vec3(0.0, 0.0, 0.0);
 
@@ -83,7 +83,7 @@ fn test_rate_controller_zero_error() {
 #[test]
 fn test_rate_controller_positive_error() {
     let mut controller = setup_controller();
-    let dt = Duration::from_millis(10);
+    let dt = 0.01;
     let desired_rates = vec3(1.0, 1.0, 1.0);
     let current_rates = vec3(0.0, 0.0, 0.0);
 
@@ -100,7 +100,7 @@ fn test_rate_controller_positive_error() {
 #[test]
 fn test_altitude_controller_zero_error() {
     let mut controller = setup_controller();
-    let dt = Duration::from_millis(10);
+    let dt = 0.01;
     let desired_altitude = 10.0;
     let current_altitude = 10.0;
     let current_velocity = 0.0;
@@ -138,7 +138,7 @@ fn test_altitude_controller_zero_error() {
 #[test]
 fn test_altitude_controller_positive_error() {
     let mut controller = setup_controller();
-    let dt = Duration::from_millis(10);
+    let dt = 0.01;
     let desired_altitude = 11.0;
     let current_altitude = 10.0;
     let current_velocity = 0.0;
@@ -159,7 +159,7 @@ fn test_altitude_controller_positive_error() {
 #[test]
 fn test_lateral_controller_zero_error() {
     let mut stabilizer = setup_controller();
-    let dt = Duration::from_millis(10);
+    let dt = 0.01;
     let desired_position = vec2(0.0, 0.0);
     let current_position = vec2(0.0, 0.0);
     let current_velocity = vec2(0.0, 0.0);
@@ -180,7 +180,7 @@ fn test_lateral_controller_zero_error() {
 #[test]
 fn test_lateral_controller_positive_error() {
     let mut stabilizer = setup_controller();
-    let dt = Duration::from_millis(10);
+    let dt = 0.01;
     let desired_position = vec2(1.0, 1.0);
     let current_position = vec2(0.0, 0.0);
     let current_velocity = vec2(0.0, 0.0);
@@ -198,7 +198,7 @@ fn test_lateral_controller_positive_error() {
 #[test]
 fn test_yaw_controller_zero_error() {
     let mut controller = setup_controller();
-    let dt = Duration::from_millis(10);
+    let dt = 0.01;
     let desired_yaw = 0.0;
     let current_yaw = 0.0;
 
@@ -211,7 +211,7 @@ fn test_yaw_controller_zero_error() {
 #[test]
 fn test_yaw_controller_angle_wrapping() {
     let mut controller = setup_controller();
-    let dt = Duration::from_millis(10);
+    let dt = 0.01;
     let desired_yaw = PI + 0.1;
     let current_yaw = -PI + 0.1;
 
@@ -227,7 +227,7 @@ fn test_yaw_controller_angle_wrapping() {
 #[test]
 fn test_manual_control() {
     let mut controller = setup_controller();
-    let dt = Duration::from_millis(10);
+    let dt = 0.01;
     let manual_command = RateCommand {
         roll_rate: 0.0,
         pitch_rate: 0.0,
@@ -248,7 +248,7 @@ fn test_manual_control() {
 #[test]
 fn test_waypoint_control() {
     let mut controller = setup_controller();
-    let dt = Duration::from_millis(10);
+    let dt = 0.01;
     let waypoint_command = WaypointCommand {
         position: vec2(0.0, 0.0),
         ..Default::default()
