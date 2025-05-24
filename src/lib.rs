@@ -24,7 +24,6 @@ pub mod stabilizers;
 pub mod telemetry;
 
 use std::time::Duration;
-
 use uom::si::f32::*;
 
 #[doc(inline)]
@@ -49,14 +48,13 @@ use robomath::{Quaternion, Vec2, Vec3};
 ///
 /// Implementing a simple `Commander` that always returns a constant `Attitude` command:
 /// ```
-/// use std::time::Duration;
 /// use stable_flight_sitl::VehicleState;
 /// use stable_flight_sitl::{Commander, Command, AttitudeCommand};
 ///
 /// struct ConstantAttitudeCommander;
 ///
 /// impl Commander for ConstantAttitudeCommander {
-///     fn next(&mut self, dt: Duration, current_state: &VehicleState) -> Command {
+///     fn next(&mut self, dt: f32, current_state: &VehicleState) -> Command {
 ///         Command::Attitude(AttitudeCommand {
 ///             throttle: 0.5,  // 50% throttle
 ///             roll: 0.0,      // No roll
@@ -73,7 +71,7 @@ pub trait Commander {
     ///
     /// # Parameters
     ///
-    /// - `dt`: The time elapsed since the last command was generated, as a `Duration`.
+    /// - `dt`: The time elapsed since the last command was generated in seconds.
     ///   This allows for time-dependent command generation, such as ramping up values
     ///   gradually or handling timed sequences.
     /// - `current_state`: The current state of the vehicle, as a `VehicleState`.
@@ -86,7 +84,7 @@ pub trait Commander {
     /// - `Command::Attitude`: Direct manual control inputs for the aircraft's attitude (orientation).
     /// - `Command::Rate`: Direct manual control inputs for the aircraft's rotational rates.
     /// - `Command::Waypoint`: High-level navigational instructions for autonomous flight to a specific position.
-    fn next(&mut self, dt: Duration, current_state: &VehicleState) -> Command;
+    fn next(&mut self, dt: f32, current_state: &VehicleState) -> Command;
 }
 
 /// Represents a flight control command to be executed by the flight system.
@@ -611,14 +609,14 @@ pub trait Stabilizer {
     ///
     /// # Parameters
     ///
-    /// - `dt`: Time elapsed since the last control step.
+    /// - `dt`: Time elapsed since the last control step in seconds.
     /// - `command`: The current command to be executed.
     /// - `state`: The current estimated state of the vehicle.
     ///
     /// # Returns
     ///
     /// A `ControlOutput` containing the desired thrust and control moments.
-    fn stabilize(&mut self, dt: Duration, command: &Command, state: &VehicleState)
+    fn stabilize(&mut self, dt: f32, command: &Command, state: &VehicleState)
         -> ControlOutput;
 
     /// Set the initial state of the stabilizer

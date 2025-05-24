@@ -36,7 +36,6 @@
 //! - **Selective Enabling**: Can enable altitude control while keeping manual lateral control
 
 use robomath::{vec2, vec3, Vec3};
-use std::time::Duration;
 
 use crate::{
     AttitudeCommand, Command, ControlOutput, RateCommand, Stabilizer, VehicleState, WaypointCommand,
@@ -157,7 +156,7 @@ impl Stabilizer for CopterStabilizer {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Time step since the last update (must be positive).
+    /// * `dt` - Time step since the last update in seconds (must be positive).
     /// * `command` - The desired control command (`RateCommand`, `AttitudeCommand`, or `WaypointCommand`).
     /// * `estimated_state` - The current state of the vehicle (attitude, angular rates, position, etc.).
     ///
@@ -166,11 +165,11 @@ impl Stabilizer for CopterStabilizer {
     /// A [ControlOutput] containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.
     fn stabilize(
         &mut self,
-        dt: Duration,
+        dt: f32,
         command: &Command,
         estimated_state: &VehicleState,
     ) -> ControlOutput {
-        assert!(dt.as_secs_f32() > 0.0, "Time step must be positive");
+        assert!(dt > 0.0, "Time step must be positive");
 
         match command {
             Command::Attitude(attitude_command) => {
@@ -206,7 +205,7 @@ impl CopterStabilizer {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Time step since the last update (must be positive).
+    /// * `dt` - Time step since the last update in seconds (must be positive).
     /// * `attitude_command` - The desired roll, pitch, yaw angles (in radians) and throttle (0.0 to 1.0).
     /// * `estimated_state` - The current state of the vehicle (attitude, angular rates, etc.).
     ///
@@ -215,11 +214,11 @@ impl CopterStabilizer {
     /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.
     fn process_attitude_command(
         &mut self,
-        dt: Duration,
+        dt: f32,
         attitude_command: &AttitudeCommand,
         estimated_state: &VehicleState,
     ) -> ControlOutput {
-        assert!(dt.as_secs_f32() > 0.0, "Time step must be positive");
+        assert!(dt > 0.0, "Time step must be positive");
         assert!(
             attitude_command.throttle >= 0.0 && attitude_command.throttle <= 1.0,
             "Throttle ({}) must be in the range [0, 1]",
@@ -277,7 +276,7 @@ impl CopterStabilizer {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Time step since the last update (must be positive).
+    /// * `dt` - Time step since the last update in seconds (must be positive).
     /// * `rate_command` - The desired roll, pitch, yaw rates (in rad/s) and throttle (0.0 to 1.0).
     /// * `estimated_state` - The current state of the vehicle (angular rates, etc.).
     ///
@@ -286,7 +285,7 @@ impl CopterStabilizer {
     /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.
     fn process_rate_command(
         &mut self,
-        dt: Duration,
+        dt: f32,
         rate_command: &RateCommand,
         estimated_state: &VehicleState,
     ) -> ControlOutput {
@@ -321,7 +320,7 @@ impl CopterStabilizer {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Time step since the last update (must be positive).
+    /// * `dt` - Time step since the last update in seconds (must be positive).
     /// * `waypoint_command` - The desired position (x, y in meters) and altitude (in meters).
     /// * `estimated_state` - The current state of the vehicle (position, velocity, attitude, etc.).
     ///
@@ -330,7 +329,7 @@ impl CopterStabilizer {
     /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.
     fn process_waypoint_command(
         &mut self,
-        dt: Duration,
+        dt: f32,
         waypoint_command: &WaypointCommand,
         estimated_state: &VehicleState,
     ) -> ControlOutput {
