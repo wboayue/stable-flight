@@ -1,7 +1,5 @@
 //! Logitic Extreme 3D Pro Joystick
 
-use std::time::Duration;
-
 use gilrs::{Axis, Button, Event, EventType, GamepadId, Gilrs};
 
 use crate::{AttitudeCommand, Command, Commander, RateCommand, VehicleState};
@@ -95,7 +93,7 @@ impl Default for Extreme3DCommander {
 }
 
 impl Commander for Extreme3DCommander {
-    fn next(&mut self, _dt: Duration, _current_state: &VehicleState) -> Command {
+    fn next(&mut self, _dt: f32, _current_state: &VehicleState) -> Command {
         let channels = self.read_channels();
 
         let mode = if channels[5] < 0.45 {

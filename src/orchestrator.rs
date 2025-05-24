@@ -207,8 +207,7 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
             "The target frequency must be positive."
         );
 
-        let target_duration = 1.0 / target_frequency;
-        let target_duration = Duration::from_secs_f64(target_duration);
+        let target_dt = 1.0 / target_frequency as f32;
 
         // Start time for the loop
         let mut next_time = Instant::now();
@@ -223,13 +222,13 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
 
         while self.running.load(Ordering::SeqCst) {
             // Get control inputs
-            let command = self.commander.next(target_duration, &state);
+            let command = self.commander.next(target_dt, &state);
 
             // Get vehicle state
-            state = self.vehicle.estimate_state(target_duration);
+            state = self.vehicle.estimate_state(Duration::from_secs_f32(target_dt));
 
             // Compute control outputs (angles, rates, etc.)
-            let control_outputs = self.stabilizer.stabilize(target_duration, &command, &state);
+            let control_outputs = self.stabilizer.stabilize(target_dt, &command, &state);
 
             // Mix control outputs
             let actuator_command = self.mixer.mix(&control_outputs);
@@ -239,12 +238,12 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
 
             // Send telemetry
             self.telemetry
-                .send_telemetry(target_duration, &command, &state);
+                .send_telemetry(Duration::from_secs_f32(target_dt), &command, &state);
 
             iteration_count += 1;
 
             // Calculate when the next iteration should start
-            next_time += target_duration;
+            next_time += Duration::from_secs_f32(target_dt);
 
             // Calculate how much time we need to sleep to hit the target
             let sleep_time = next_time

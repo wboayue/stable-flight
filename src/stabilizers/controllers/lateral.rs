@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use robomath::{vec2, Vec2};
 
 use crate::stabilizers::Gains;
@@ -78,7 +76,7 @@ impl LateralController {
     /// Desired roll and pitch angles in radians.
     pub fn control(
         &mut self,
-        dt: Duration,
+        dt: f32,
         desired_position: Vec2<f32>,
         estimated_position: Vec2<f32>,
         estimated_velocity: Vec2<f32>,
@@ -86,9 +84,9 @@ impl LateralController {
         let gains = &self.config.gains;
 
         let error = desired_position - estimated_position;
-        let error_derivative = (error - self.previous_error) / dt.as_secs_f32();
+        let error_derivative = (error - self.previous_error) / dt;
 
-        self.integrated_error = self.integrated_error + dt.as_secs_f32() * error;
+        self.integrated_error = self.integrated_error + dt * error;
         let accel_cmd =
             gains.p * error + gains.i * self.integrated_error + gains.d * (-estimated_velocity);
 

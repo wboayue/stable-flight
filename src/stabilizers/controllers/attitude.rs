@@ -1,4 +1,4 @@
-use std::{f32::consts::FRAC_PI_4, time::Duration};
+use std::f32::consts::FRAC_PI_4;
 
 use robomath::{vec2, Vec2};
 
@@ -97,7 +97,7 @@ impl AttitudeController {
     /// [-max_rate.y, max_rate.y] for pitch.
     ///
     /// # Arguments
-    /// * `dt` - Time step since last update (seconds, must be positive)
+    /// * `dt` - Time step since last update in seconds (must be positive)
     /// * `desired_angles` - Target roll/pitch as normalized values in [-1,1]
     /// * `estimated_angles` - Current roll/pitch angles in radians
     ///
@@ -110,11 +110,11 @@ impl AttitudeController {
     /// * If `desired_angles` components are not in [-1,1]
     pub fn control(
         &mut self,
-        dt: Duration,
+        dt: f32,
         desired_angles: Vec2<f32>,
         estimated_angles: Vec2<f32>,
     ) -> Vec2<f32> {
-        assert!(dt.as_secs_f32() > 0.0, "Time step must be positive");
+        assert!(dt > 0.0, "Time step must be positive");
         assert!(
             desired_angles.x >= -1.0 && desired_angles.x <= 1.0,
             "Desired roll angle ({}) must be in [-1, 1]",
@@ -133,10 +133,10 @@ impl AttitudeController {
         let error = desired_angles - estimated_angles;
 
         // Derivative term: rate of change of error
-        let error_derivative = (error - self.last_error) / dt.as_secs_f32();
+        let error_derivative = (error - self.last_error) / dt;
 
         // Integral term with anti-windup
-        self.integral_term = (self.integral_term + dt.as_secs_f32() * error)
+        self.integral_term = (self.integral_term + dt * error)
             .clamp(-self.max_integral, self.max_integral);
 
         // PID calculation: Kp×error + Ki×∫error + Kd×d(error)/dt
@@ -155,8 +155,6 @@ impl AttitudeController {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
 
     // Helper function to create a default controller for tests
@@ -217,7 +215,7 @@ mod tests {
     fn test_control_zero_error() {
         // Assemble
         let mut controller = default_controller();
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_angles = vec2(0.0, 0.0); // No tilt requested
         let estimated_angles = vec2(0.0, 0.0); // Already at target
 
@@ -239,7 +237,7 @@ mod tests {
             i: 0.0,
             d: 0.0,
         }; // No integral or derivative initially
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_angles = vec2(1.0, -1.0); // Max roll right, max pitch down
         let estimated_angles = vec2(0.0, 0.0); // Starting at zero
 
@@ -253,7 +251,7 @@ mod tests {
         assert!((rates.x - expected_rates.x).abs() < 1e-6);
         assert!((rates.y - expected_rates.y).abs() < 1e-6);
         assert_eq!(controller.last_error, expected_error);
-        assert_eq!(controller.integral_term, dt.as_secs_f32() * expected_error);
+        assert_eq!(controller.integral_term, dt * expected_error);
         // Small integral buildup
     }
 
@@ -269,7 +267,7 @@ mod tests {
             max_rate: vec2(2.0, 2.0),
             ..AttitudeControllerConfig::default()
         });
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_angles = vec2(1.0, 1.0); // Max roll and pitch
         let estimated_angles = vec2(0.0, 0.0);
 
@@ -291,7 +289,7 @@ mod tests {
             }, // Enable integral term
             ..AttitudeControllerConfig::default()
         });
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_angles = vec2(0.5, 0.5);
         let estimated_angles = vec2(0.0, 0.0);
 
@@ -301,7 +299,7 @@ mod tests {
 
         // Assert
         let error = vec2(0.5 * FRAC_PI_4, 0.5 * FRAC_PI_4);
-        let expected_integral = dt.as_secs_f32() * 2.0 * error; // Two steps
+        let expected_integral = dt * 2.0 * error; // Two steps
         assert_eq!(controller.integral_term, expected_integral);
         let expected_rates = 1.0 * error + 1.0 * expected_integral; // P + I terms
         assert!((rates2.x - expected_rates.x).abs() < 1e-6);
@@ -320,7 +318,7 @@ mod tests {
             max_integral: 1.0, // Low limit for testing
             ..AttitudeControllerConfig::default()
         });
-        let dt = Duration::from_secs_f32(2.0); // Large dt to quickly reach max_integral
+        let dt = 2.0; // Large dt to quickly reach max_integral
         let desired_angles = vec2(1.0, 1.0);
         let estimated_angles = vec2(0.0, 0.0);
 
@@ -343,7 +341,7 @@ mod tests {
             }, // Only D term
             ..AttitudeControllerConfig::default()
         });
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_angles = vec2(1.0, 1.0);
         let estimated_angles1 = vec2(0.0, 0.0);
         let estimated_angles2 = vec2(0.5 * FRAC_PI_4, 0.5 * FRAC_PI_4);
@@ -355,7 +353,7 @@ mod tests {
         // Assert
         let error1 = vec2(FRAC_PI_4, FRAC_PI_4);
         let error2 = error1 - estimated_angles2;
-        let derivative = (error2 - error1) / dt.as_secs_f32();
+        let derivative = (error2 - error1) / dt;
         let expected_rates = controller.gains.d * derivative; // D gain = 1.0
         assert!((rates2.x - expected_rates.x).abs() < 1e-6);
         assert!((rates2.y - expected_rates.y).abs() < 1e-6);
@@ -366,7 +364,7 @@ mod tests {
     fn test_control_panics_on_zero_dt() {
         // Assemble
         let mut controller = default_controller();
-        let dt = Duration::from_secs_f32(0.0);
+        let dt = 0.0;
         let desired_angles = vec2(0.0, 0.0);
         let estimated_angles = vec2(0.0, 0.0);
 
@@ -381,7 +379,7 @@ mod tests {
     fn test_control_panics_on_invalid_desired_angles() {
         // Assemble
         let mut controller = default_controller();
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_angles = vec2(2.0, 0.0); // Out of range
         let estimated_angles = vec2(0.0, 0.0);
 

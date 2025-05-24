@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use robomath::{vec3, Vec3};
 
 use super::super::Gains;
@@ -104,7 +102,7 @@ impl BodyRateController {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Time step since the last update (must be positive and finite).
+    /// * `dt` - Time step since the last update in seconds (must be positive and finite).
     /// * `desired_rates` - Desired angular rates (roll, pitch, yaw) as normalized values in `[-1, 1]`.
     /// * `estimated_rates` - Current measured angular rates (roll, pitch, yaw) in rad/s.
     ///
@@ -121,11 +119,10 @@ impl BodyRateController {
     /// - Any component of `desired_rates` or `estimated_rates` is non-finite.
     pub fn control(
         &mut self,
-        dt: Duration,
+        dt: f32,
         desired_rates: Vec3<f32>,
         estimated_rates: Vec3<f32>,
     ) -> Vec3<f32> {
-        let dt = dt.as_secs_f32();
 
         // Input validation
         assert!(
@@ -193,8 +190,6 @@ impl BodyRateController {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use approx::{assert_abs_diff_eq, assert_relative_eq};
     use robomath::vec3;
 
@@ -226,7 +221,7 @@ mod tests {
     fn test_nominal_zero_error() {
         // Assemble
         let mut controller = setup_controller();
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_rates = vec3(0.0, 0.0, 0.0); // No desired movement
         let estimated_rates = vec3(0.0, 0.0, 0.0); // No actual movement
 
@@ -244,7 +239,7 @@ mod tests {
     fn test_nominal_non_zero_error() {
         // Assemble
         let mut controller = setup_controller();
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_rates = vec3(0.5, 0.5, 0.5); // Half max rates
         let estimated_rates = vec3(0.0, 0.0, 0.0); // No actual movement
 
@@ -279,7 +274,7 @@ mod tests {
     fn test_max_desired_rates() {
         // Assemble
         let mut controller = setup_controller();
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_rates = vec3(1.0, 1.0, 1.0); // Max desired rates (normalized)
         let estimated_rates = vec3(0.0, 0.0, 0.0); // No actual movement
 
@@ -303,7 +298,7 @@ mod tests {
     fn test_min_desired_rates() {
         // Assemble
         let mut controller = setup_controller();
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_rates = vec3(-1.0, -1.0, -1.0); // Min desired rates (normalized)
         let estimated_rates = vec3(0.0, 0.0, 0.0); // No actual movement
 
@@ -327,7 +322,7 @@ mod tests {
     fn test_small_dt() {
         // Assemble
         let mut controller = setup_controller();
-        let dt = Duration::from_secs_f32(0.0001); // Very small time step
+        let dt = 0.0001; // Very small time step
         let desired_rates = vec3(0.5, 0.5, 0.5); // Half max rates
         let estimated_rates = vec3(0.0, 0.0, 0.0); // No actual movement
 
@@ -347,7 +342,7 @@ mod tests {
 
         // With default config (I=0), the small dt should not significantly affect output
         // compared to a controller with normal dt for proportional term
-        let normal_dt = Duration::from_secs_f32(0.1);
+        let normal_dt = 0.1;
         let mut normal_controller = setup_controller();
         let normal_result = normal_controller.control(normal_dt, desired_rates, estimated_rates);
 
@@ -363,7 +358,7 @@ mod tests {
         // Assemble
         let mut controller = setup_controller();
         controller.gains.i = 0.1; // Enable integral term
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_rates = vec3(0.5, 0.5, 0.5); // Half max rates
         let estimated_rates = vec3(0.0, 0.0, 0.0); // No actual movement
 
@@ -390,7 +385,7 @@ mod tests {
         );
 
         // Calculate expected increase based on error and dt
-        let expected_increase = dt.as_secs_f32() * desired_rates;
+        let expected_increase = dt * desired_rates;
         assert_relative_eq!(
             result2.x - result1.x,
             expected_increase.x,
@@ -405,7 +400,7 @@ mod tests {
         let mut controller = setup_controller();
         controller.gains.i = 1.0; // High integral gain
         controller.max_integral = 0.1; // Low integral limit
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_rates = vec3(1.0, 1.0, 1.0); // Max rates to quickly saturate integral
         let estimated_rates = vec3(0.0, 0.0, 0.0); // No actual movement
 
@@ -444,7 +439,7 @@ mod tests {
         controller.gains.p = 0.0; // Disable proportional term
         controller.gains.i = 0.0; // Disable integral term
         controller.gains.d = 0.5; // Emphasize derivative term
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
 
         // First control call establishes initial error
         let desired_rates = vec3(0.5, 0.5, 0.5);
@@ -468,7 +463,7 @@ mod tests {
         // Calculate expected derivative value
         let error_change =
             (desired_rates - new_estimated_rates) - (desired_rates - estimated_rates);
-        let expected_deriv = controller.gains.d * error_change / dt.as_secs_f32();
+        let expected_deriv = controller.gains.d * error_change / dt;
 
         // Allow for some difference due to internal scaling and clamping
         assert_relative_eq!(
@@ -484,7 +479,7 @@ mod tests {
         // Assemble
         let mut controller = setup_controller();
         controller.gains.i = 0.1; // Enable integral term
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_rates = vec3(0.5, 0.5, 0.5);
         let estimated_rates = vec3(0.0, 0.0, 0.0);
 
@@ -583,7 +578,7 @@ mod tests {
     fn test_zero_dt() {
         // Assemble
         let mut controller = setup_controller();
-        let dt = Duration::from_secs_f32(0.0);
+        let dt = 0.0;
         let desired_rates = vec3(0.0, 0.0, 0.0);
         let estimated_rates = vec3(0.0, 0.0, 0.0);
 
@@ -599,7 +594,7 @@ mod tests {
     fn test_infinite_desired_rates() {
         // Assemble
         let mut controller = setup_controller();
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_rates = vec3(f32::INFINITY, 0.0, 0.0);
         let estimated_rates = vec3(0.0, 0.0, 0.0);
 
@@ -615,7 +610,7 @@ mod tests {
     fn test_nan_estimated_rates() {
         // Assemble
         let mut controller = setup_controller();
-        let dt = Duration::from_secs_f32(0.1);
+        let dt = 0.1;
         let desired_rates = vec3(0.0, 0.0, 0.0);
         let estimated_rates = vec3(f32::NAN, 0.0, 0.0);
 
@@ -674,7 +669,6 @@ mod table_driven_tests {
     use approx::{assert_abs_diff_eq, assert_relative_eq};
     use assert2::assert;
     use robomath::{vec3, Vec3};
-    use std::time::Duration;
     use uom::num_traits::Signed;
 
     fn safe_sign_num(value: f32) -> f32 {
@@ -754,8 +748,7 @@ mod table_driven_tests {
             // Create a fresh controller for each test case for consistency
             let mut controller = BodyRateController::new();
 
-            // Convert dt to Duration
-            let dt = Duration::from_secs_f32(*dt);
+            let dt = *dt;
 
             // Run the controller
             let result = controller.control(dt, *desired_rates, *estimated_rates);
@@ -774,7 +767,7 @@ mod table_driven_tests {
              Expected sign: {:.6}, Actual sign: {:.6}\n\
              Controller output: {:?}",
                 i,
-                dt.as_secs_f32(),
+                dt,
                 desired_rates,
                 estimated_rates,
                 expected_sign.x,
@@ -789,7 +782,7 @@ mod table_driven_tests {
              Expected sign: {:.6}, Actual sign: {:.6}\n\
              Controller output: {:?}",
                 i,
-                dt.as_secs_f32(),
+                dt,
                 desired_rates,
                 estimated_rates,
                 expected_sign.y,
@@ -804,7 +797,7 @@ mod table_driven_tests {
              Expected sign: {:.6}, Actual sign: {:.6}\n\
              Controller output: {:?}",
                 i,
-                dt.as_secs_f32(),
+                dt,
                 desired_rates,
                 estimated_rates,
                 expected_sign.z,
@@ -1114,7 +1107,7 @@ mod table_driven_tests {
 
             // Create uniform error in all axes
             let error = vec3(*error_value, *error_value, *error_value);
-            let dt = Duration::from_secs_f32(*dt);
+            let dt = *dt;
             let estimated_rates = vec3(0.0, 0.0, 0.0);
 
             // Run the controller for specified number of iterations
@@ -1147,7 +1140,7 @@ mod table_driven_tests {
         // Test zero dt case
         {
             let mut controller = BodyRateController::new();
-            let dt = Duration::from_secs_f32(0.0);
+            let dt = 0.0;
             let desired_rates = vec3(0.0, 0.0, 0.0);
             let estimated_rates = vec3(0.0, 0.0, 0.0);
 
@@ -1168,7 +1161,7 @@ mod table_driven_tests {
         // Test infinite desired rates case
         {
             let mut controller = BodyRateController::new();
-            let dt = Duration::from_secs_f32(0.1);
+            let dt = 0.1;
             let desired_rates = vec3(f32::INFINITY, 0.0, 0.0);
             let estimated_rates = vec3(0.0, 0.0, 0.0);
 
@@ -1189,7 +1182,7 @@ mod table_driven_tests {
         // Test NaN estimated rates case
         {
             let mut controller = BodyRateController::new();
-            let dt = Duration::from_secs_f32(0.1);
+            let dt = 0.1;
             let desired_rates = vec3(0.0, 0.0, 0.0);
             let estimated_rates = vec3(0.0, f32::NAN, 0.0);
 
@@ -1207,36 +1200,6 @@ mod table_driven_tests {
             }
         }
 
-        // Test cases that fail at Duration creation time
-        // Negative dt
-        {
-            let result = std::panic::catch_unwind(|| {
-                let _ = Duration::from_secs_f32(-0.1);
-            });
-            assert!(
-                result.is_err(),
-                "Duration::from_secs_f32(-0.1) should panic"
-            );
-        }
-
-        // Infinite dt
-        {
-            let result = std::panic::catch_unwind(|| {
-                let _ = Duration::from_secs_f32(f32::INFINITY);
-            });
-            assert!(
-                result.is_err(),
-                "Duration::from_secs_f32(INFINITY) should panic"
-            );
-        }
-
-        // NaN dt
-        {
-            let result = std::panic::catch_unwind(|| {
-                let _ = Duration::from_secs_f32(f32::NAN);
-            });
-            assert!(result.is_err(), "Duration::from_secs_f32(NaN) should panic");
-        }
     }
 
     /// Table-driven test for reset behavior
