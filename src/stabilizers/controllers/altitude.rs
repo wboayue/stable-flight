@@ -4,9 +4,6 @@ use robomath::Quaternion;
 
 use crate::stabilizers::Gains;
 
-#[cfg(test)]
-mod tests;
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct AltitudeControllerConfig {
     pub gains: Gains,
@@ -116,3 +113,6 @@ impl AltitudeController {
         linear_thrust.clamp(0.0, 1.0)
     }
 }
+
+#[cfg(test)]
+mod tests {}

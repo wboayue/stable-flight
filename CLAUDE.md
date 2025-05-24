@@ -53,7 +53,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Ensure test isolation: no shared state, proper cleanup.
 - Provide debugging support with custom error messages.
 - Use test helpers for common setup (e.g., mock `Vehicle` implementations).
-- Use `#[test]`, `approx` crate for floating-point comparisons, and meaningful assertions.
+- Use `#[test]`, `assert2` crate for meaningful assertions.
 
 ### 7. Documentation
 - Provide Rustdoc with summaries, parameter details, return types, and examples.
