@@ -24,3 +24,4 @@ windows-sys = { version = "0.59", features = ["Win32_System_Console"] }  # For W
 
 [dev-dependencies]
 approx = "0.5.1"
+assert2 = "0.3.15"
