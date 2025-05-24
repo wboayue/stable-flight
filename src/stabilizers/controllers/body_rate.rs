@@ -137,21 +137,6 @@ impl BodyRateController {
             "Desired and estimated rates must be finite"
         );
 
-        // println!(
-        //     "{:?},{:?},{:?},{:?},{:?},{:?}",
-        //     scaled_desired_rates.x,
-        //     estimated_rates.x,
-        //     scaled_desired_rates.y,
-        //     estimated_rates.y,
-        //     scaled_desired_rates.z,
-        //     estimated_rates.z
-        // );
-
-        println!(
-            "{:?},{:?},{:?},{:?},{:?}",
-            0.0, estimated_rates.x, estimated_rates.y, estimated_rates.z, desired_rates.z,
-        );
-
         let error = desired_rates - estimated_rates;
 
         let error_derivative = (error - self.last_error) / dt;
@@ -1159,96 +1144,98 @@ mod table_driven_tests {
     /// Tests various invalid inputs to ensure the controller behaves as expected.
     #[test]
     fn test_input_validation_table() {
-        // Define test cases for inputs that should cause panics
-        struct InvalidTestCase {
-            dt: f32,
-            desired_rates: Vec3<f32>,
-            estimated_rates: Vec3<f32>,
-            expected_panic_substring: &'static str,
-        }
-
-        let invalid_test_cases = vec![
-            // Zero dt
-            InvalidTestCase {
-                dt: 0.0,
-                desired_rates: vec3(0.0, 0.0, 0.0),
-                estimated_rates: vec3(0.0, 0.0, 0.0),
-                expected_panic_substring: "Time step (dt) must be positive and finite",
-            },
-            // Negative dt
-            InvalidTestCase {
-                dt: -0.1,
-                desired_rates: vec3(0.0, 0.0, 0.0),
-                estimated_rates: vec3(0.0, 0.0, 0.0),
-                expected_panic_substring: "Time step (dt) must be positive and finite",
-            },
-            // Infinite dt
-            InvalidTestCase {
-                dt: f32::INFINITY,
-                desired_rates: vec3(0.0, 0.0, 0.0),
-                estimated_rates: vec3(0.0, 0.0, 0.0),
-                expected_panic_substring: "Time step (dt) must be positive and finite",
-            },
-            // NaN dt
-            InvalidTestCase {
-                dt: f32::NAN,
-                desired_rates: vec3(0.0, 0.0, 0.0),
-                estimated_rates: vec3(0.0, 0.0, 0.0),
-                expected_panic_substring: "Time step (dt) must be positive and finite",
-            },
-            // Infinite desired rate
-            InvalidTestCase {
-                dt: 0.1,
-                desired_rates: vec3(f32::INFINITY, 0.0, 0.0),
-                estimated_rates: vec3(0.0, 0.0, 0.0),
-                expected_panic_substring: "Desired and estimated rates must be finite",
-            },
-            // NaN estimated rate
-            InvalidTestCase {
-                dt: 0.1,
-                desired_rates: vec3(0.0, 0.0, 0.0),
-                estimated_rates: vec3(0.0, f32::NAN, 0.0),
-                expected_panic_substring: "Desired and estimated rates must be finite",
-            },
-        ];
-
-        // Test each invalid case
-        for case in invalid_test_cases {
+        // Test zero dt case
+        {
             let mut controller = BodyRateController::new();
-            let dt = Duration::from_secs_f32(case.dt);
+            let dt = Duration::from_secs_f32(0.0);
+            let desired_rates = vec3(0.0, 0.0, 0.0);
+            let estimated_rates = vec3(0.0, 0.0, 0.0);
 
-            // Use std::panic::catch_unwind to test for panics
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                controller.control(dt, case.desired_rates, case.estimated_rates);
+                controller.control(dt, desired_rates, estimated_rates);
             }));
 
-            // Verify that a panic occurred
-            assert!(
-                result.is_err(),
-                "Expected panic did not occur for dt={}, desired_rates={:?}, estimated_rates={:?}",
-                case.dt,
-                case.desired_rates,
-                case.estimated_rates
-            );
-
-            // If we want to verify the panic message contains expected substring
+            assert!(result.is_err(), "Expected panic for zero dt");
             if let Err(panic_value) = result {
                 if let Some(panic_message) = panic_value.downcast_ref::<String>() {
-                    assert!(
-                        panic_message.contains(case.expected_panic_substring),
-                        "Panic message '{}' does not contain expected substring '{}' for dt={}, desired_rates={:?}, estimated_rates={:?}",
-                        panic_message, case.expected_panic_substring, case.dt, case.desired_rates, case.estimated_rates
-                    );
+                    assert!(panic_message.contains("Time step (dt) must be positive and finite"));
                 } else if let Some(panic_message) = panic_value.downcast_ref::<&str>() {
-                    assert!(
-                        panic_message.contains(case.expected_panic_substring),
-                        "Panic message '{}' does not contain expected substring '{}' for dt={}, desired_rates={:?}, estimated_rates={:?}",
-                        panic_message, case.expected_panic_substring, case.dt, case.desired_rates, case.estimated_rates
-                    );
-                } else {
-                    panic!("Unexpected panic value type");
+                    assert!(panic_message.contains("Time step (dt) must be positive and finite"));
                 }
             }
+        }
+
+        // Test infinite desired rates case
+        {
+            let mut controller = BodyRateController::new();
+            let dt = Duration::from_secs_f32(0.1);
+            let desired_rates = vec3(f32::INFINITY, 0.0, 0.0);
+            let estimated_rates = vec3(0.0, 0.0, 0.0);
+
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                controller.control(dt, desired_rates, estimated_rates);
+            }));
+
+            assert!(result.is_err(), "Expected panic for infinite desired rates");
+            if let Err(panic_value) = result {
+                if let Some(panic_message) = panic_value.downcast_ref::<String>() {
+                    assert!(panic_message.contains("Desired and estimated rates must be finite"));
+                } else if let Some(panic_message) = panic_value.downcast_ref::<&str>() {
+                    assert!(panic_message.contains("Desired and estimated rates must be finite"));
+                }
+            }
+        }
+
+        // Test NaN estimated rates case
+        {
+            let mut controller = BodyRateController::new();
+            let dt = Duration::from_secs_f32(0.1);
+            let desired_rates = vec3(0.0, 0.0, 0.0);
+            let estimated_rates = vec3(0.0, f32::NAN, 0.0);
+
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                controller.control(dt, desired_rates, estimated_rates);
+            }));
+
+            assert!(result.is_err(), "Expected panic for NaN estimated rates");
+            if let Err(panic_value) = result {
+                if let Some(panic_message) = panic_value.downcast_ref::<String>() {
+                    assert!(panic_message.contains("Desired and estimated rates must be finite"));
+                } else if let Some(panic_message) = panic_value.downcast_ref::<&str>() {
+                    assert!(panic_message.contains("Desired and estimated rates must be finite"));
+                }
+            }
+        }
+
+        // Test cases that fail at Duration creation time
+        // Negative dt
+        {
+            let result = std::panic::catch_unwind(|| {
+                let _ = Duration::from_secs_f32(-0.1);
+            });
+            assert!(
+                result.is_err(),
+                "Duration::from_secs_f32(-0.1) should panic"
+            );
+        }
+
+        // Infinite dt
+        {
+            let result = std::panic::catch_unwind(|| {
+                let _ = Duration::from_secs_f32(f32::INFINITY);
+            });
+            assert!(
+                result.is_err(),
+                "Duration::from_secs_f32(INFINITY) should panic"
+            );
+        }
+
+        // NaN dt
+        {
+            let result = std::panic::catch_unwind(|| {
+                let _ = Duration::from_secs_f32(f32::NAN);
+            });
+            assert!(result.is_err(), "Duration::from_secs_f32(NaN) should panic");
         }
     }
 
