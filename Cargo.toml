@@ -20,7 +20,7 @@ robomath = "0.1.0"
 
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_System_Console"] }  # For Windows-specific APIs
+windows-sys = { version = "0.60", features = ["Win32_System_Console"] }  # For Windows-specific APIs
 
 [dev-dependencies]
 approx = "0.5.1"
