@@ -13,10 +13,10 @@ log = "0.4.25"
 signal-hook = "0.3.17"
 rand = "0.9"
 mavlink = "0.13.1"
-uom = "0.36.0"
-approx = "0.5.1"
+uom = "0.37.0"
 byteorder = "1.5.0"
 robomath = "0.1.0"
+thiserror = "2.0"
 
 
 [target.'cfg(windows)'.dependencies]

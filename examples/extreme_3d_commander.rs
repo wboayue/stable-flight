@@ -3,12 +3,13 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
+use stable_flight_sitl::commanders::extreme_3d::{Extreme3DCommander, Mode};
 use stable_flight_sitl::Commander;
 use stable_flight_sitl::VehicleState;
 
 pub fn main() {
-    let mut commander = Extreme3DCommander::new();
+    let mut commander = Extreme3DCommander::new(Mode::Rate)
+        .expect("Failed to initialize Extreme3D joystick");
 
     let mut next_time = Instant::now();
     let dt = Duration::from_secs_f32(1.0 / 2.0);
