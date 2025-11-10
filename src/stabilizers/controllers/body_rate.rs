@@ -123,7 +123,6 @@ impl BodyRateController {
         desired_rates: Vec3<f32>,
         estimated_rates: Vec3<f32>,
     ) -> Vec3<f32> {
-
         // Input validation
         assert!(
             dt > 0.0 && dt.is_finite(),
@@ -1199,7 +1198,6 @@ mod table_driven_tests {
                 }
             }
         }
-
     }
 
     /// Table-driven test for reset behavior
