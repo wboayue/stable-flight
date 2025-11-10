@@ -22,7 +22,7 @@
 //! use stable_flight_sitl::FlightOrchestrator;
 //!
 //! // Create components with appropriate configurations
-//! let commander = Extreme3DCommander::new();
+//! let commander = Extreme3DCommander::default();
 //! let vehicle = RealFlightVehicle::new(/* configuration */);
 //! let controller = BasicController::new(/* configuration */);
 //! let mixer = QuadCopterMixer::default();
@@ -225,7 +225,9 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
             let command = self.commander.next(target_dt, &state);
 
             // Get vehicle state
-            state = self.vehicle.estimate_state(Duration::from_secs_f32(target_dt));
+            state = self
+                .vehicle
+                .estimate_state(Duration::from_secs_f32(target_dt));
 
             // Compute control outputs (angles, rates, etc.)
             let control_outputs = self.stabilizer.stabilize(target_dt, &command, &state);
