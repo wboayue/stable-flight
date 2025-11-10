@@ -21,7 +21,7 @@ fn main() {
     // - ScriptCommander: Replays pre-recorded CSV waypoint sequences (used here)
     // - SpektrumCommander: Maps physical controller inputs from Spektrum receiver
     // let commander = ScriptCommander::new("figure_eight.csv");
-    let commander = Extreme3DCommander::new();
+    let commander = Extreme3DCommander::default();
 
     // Configure RealFlight vehicle with network connection and actuator mapping.
     // This mapping connects to a QuadCopterX model in RealFlight.
