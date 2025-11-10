@@ -59,8 +59,11 @@ The following example demonstrates creating a commander for the Extreme3D joysti
 
 ```rust
 // Configure joystick commander
-let commander = Extreme3DCommander::new();
+let commander = Extreme3DCommander::new(Mode::Attitude)
+    .expect("Failed to initialize Extreme3D commander");
 ```
+
+Pick the commander `Mode` (`Attitude`, `Rate`, etc.) that matches the control inputs you want to emit.
 
 The SpektrumCommander currently doesn't expose configuration options.
 
