@@ -76,7 +76,8 @@ The following example demonstrates how the components can be configured for a qu
 let target_frequency = 250.0;
 
 // Configure joystick commander
-let commander = Extreme3DCommander::new();
+let commander = Extreme3DCommander::new(Mode::Attitude)
+    .expect("Failed to create Extreme3D commander");
 
 // Configure RealFlight simulator interface
 let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
