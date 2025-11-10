@@ -245,7 +245,8 @@ impl Extreme3DCommander {
                 EventType::AxisChanged(_, value, code) => {
                     if code.into_u32() == THROTTLE_CODE {
                         // Throttle is inverted (1.0 at bottom, 0.0 at top) and scaled
-                        self.channels[0] = 1.0 - scale_value(value, THROTTLE_MIN, THROTTLE_MAX).clamp(0.0, 1.0);
+                        self.channels[0] =
+                            1.0 - scale_value(value, THROTTLE_MIN, THROTTLE_MAX).clamp(0.0, 1.0);
                     }
                 }
                 EventType::ButtonChanged(Button::North, 1.0, _) => {
