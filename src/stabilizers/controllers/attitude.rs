@@ -136,8 +136,8 @@ impl AttitudeController {
         let error_derivative = (error - self.last_error) / dt;
 
         // Integral term with anti-windup
-        self.integral_term = (self.integral_term + dt * error)
-            .clamp(-self.max_integral, self.max_integral);
+        self.integral_term =
+            (self.integral_term + dt * error).clamp(-self.max_integral, self.max_integral);
 
         // PID calculation: Kp×error + Ki×∫error + Kd×d(error)/dt
         let Gains { p, i, d } = self.gains;

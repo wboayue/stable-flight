@@ -616,8 +616,7 @@ pub trait Stabilizer {
     /// # Returns
     ///
     /// A `ControlOutput` containing the desired thrust and control moments.
-    fn stabilize(&mut self, dt: f32, command: &Command, state: &VehicleState)
-        -> ControlOutput;
+    fn stabilize(&mut self, dt: f32, command: &Command, state: &VehicleState) -> ControlOutput;
 
     /// Set the initial state of the stabilizer
     /// This can be used to initialize internal parameters or state variables

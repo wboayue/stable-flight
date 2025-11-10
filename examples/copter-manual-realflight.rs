@@ -31,7 +31,7 @@ fn main() {
     Builder::from_default_env().format_timestamp_millis().init();
 
     // Initializes joystick commander to control the vehicle
-    let commander = Extreme3DCommander::new();
+    let commander = Extreme3DCommander::default();
 
     // Configure RealFlight vehicle with network connection and actuator mapping.
     // This mapping connects to a QuadCopterX model in RealFlight.
