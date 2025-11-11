@@ -23,7 +23,7 @@ impl FileLogger {
     pub fn new() -> FileLogger {
         let file = OpenOptions::new()
             .create(true)
-            .write(true) 
+            .write(true)
             .truncate(true)
             .open("generated_telemetry.tlog")
             .expect("Failed to open telemetry log file");
