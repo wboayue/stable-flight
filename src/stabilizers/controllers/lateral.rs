@@ -43,6 +43,12 @@ pub struct LateralController {
     max_rate: Vec2<f32>,       // Max angular rates in rad/s (roll, pitch)
 }
 
+impl Default for LateralController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LateralController {
     pub fn new() -> Self {
         LateralController::with_config(&LateralControllerConfig::default())

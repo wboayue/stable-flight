@@ -34,6 +34,12 @@ pub struct AltitudeController {
     integrated_error: f32,
 }
 
+impl Default for AltitudeController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AltitudeController {
     pub fn new() -> Self {
         AltitudeController::with_config(&AltitudeControllerConfig::default())

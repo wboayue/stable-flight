@@ -52,6 +52,12 @@ pub struct YawController {
     integrated_error: f32,
 }
 
+impl Default for YawController {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl YawController {
     /// Creates a new yaw controller with default configuration.
     ///
@@ -136,7 +142,7 @@ impl YawController {
         assert!(dt.is_finite(), "Time step must be finite");
         assert!(dt > 0.0, "Time step must be positive");
         assert!(
-            desired_yaw >= -2.0 * PI && desired_yaw <= 2.0 * PI,
+            (-2.0 * PI..=2.0 * PI).contains(&desired_yaw),
             "Desired yaw rate ({}) must be in the range [-2PI, 2PI]",
             desired_yaw
         );

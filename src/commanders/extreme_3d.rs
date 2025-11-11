@@ -284,19 +284,19 @@ impl Extreme3DCommander {
             let gamepad = self.gilrs.gamepad(id);
 
             // roll
-            gamepad.axis_data(Axis::LeftStickX).map(|data| {
+            if let Some(data) = gamepad.axis_data(Axis::LeftStickX) {
                 self.channels[1] = data.value();
-            });
+            }
 
             // pitch
-            gamepad.axis_data(Axis::LeftStickY).map(|data| {
+            if let Some(data) = gamepad.axis_data(Axis::LeftStickY) {
                 self.channels[2] = -data.value();
-            });
+            }
 
             // yaw
-            gamepad.axis_data(Axis::RightStickY).map(|data| {
+            if let Some(data) = gamepad.axis_data(Axis::RightStickY) {
                 self.channels[3] = -data.value();
-            });
+            }
         }
 
         // Advance the Gilrs internal counter to process next frame of events
@@ -587,6 +587,7 @@ mod tests {
 
     /// Tests that dead zone constants are within valid ranges.
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn test_dead_zone_constants() {
         assert!(ROLL_PITCH_DEAD_ZONE > 0.0 && ROLL_PITCH_DEAD_ZONE < 1.0);
         assert!(YAW_DEAD_ZONE > 0.0 && YAW_DEAD_ZONE < 1.0);
@@ -598,6 +599,7 @@ mod tests {
 
     /// Tests that throttle constants are valid.
     #[test]
+    #[allow(clippy::assertions_on_constants)]
     fn test_throttle_constants() {
         assert!(THROTTLE_MIN > -1.0 && THROTTLE_MIN < 0.0);
         assert!(THROTTLE_MAX > 0.0 && THROTTLE_MAX < 1.0);
