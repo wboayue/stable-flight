@@ -422,6 +422,18 @@ fn scale_value(value: f32, min: f32, max: f32) -> f32 {
 /// implementations by rescaling the output. The control input now transitions
 /// smoothly from 0.0 at the dead zone boundary to full deflection at maximum input.
 fn apply_dead_zone(value: f32, dead_zone: f32) -> f32 {
+    // Validate that dead_zone is in valid range (0.0, 1.0)
+    debug_assert!(
+        dead_zone > 0.0 && dead_zone < 1.0,
+        "Dead zone must be in range (0.0, 1.0), got {}",
+        dead_zone
+    );
+    debug_assert!(
+        value.is_finite(),
+        "Input value must be finite, got {}",
+        value
+    );
+
     if value.abs() < dead_zone {
         0.0
     } else {
@@ -604,5 +616,66 @@ mod tests {
         assert!(THROTTLE_MIN > -1.0 && THROTTLE_MIN < 0.0);
         assert!(THROTTLE_MAX > 0.0 && THROTTLE_MAX < 1.0);
         assert!(THROTTLE_MAX > THROTTLE_MIN);
+    }
+
+    /// Table-driven test for apply_dead_zone input validation in debug mode.
+    /// Tests that invalid inputs trigger debug assertions.
+    #[test]
+    #[cfg(debug_assertions)]
+    fn test_apply_dead_zone_validation() {
+        use std::panic;
+
+        let test_cases = vec![
+            // (value, dead_zone, description)
+            (0.5, 1.0, "dead_zone = 1.0 should panic"),
+            (0.5, 1.5, "dead_zone > 1.0 should panic"),
+            (0.5, -0.1, "negative dead_zone should panic"),
+            (0.5, 0.0, "zero dead_zone should panic"),
+            (f32::INFINITY, 0.1, "infinite value should panic"),
+            (f32::NEG_INFINITY, 0.1, "negative infinite value should panic"),
+            (f32::NAN, 0.1, "NaN value should panic"),
+        ];
+
+        for (value, dead_zone, description) in test_cases {
+            let result = panic::catch_unwind(|| {
+                apply_dead_zone(value, dead_zone);
+            });
+
+            assert!(
+                result.is_err(),
+                "Expected panic for case: {} (value={}, dead_zone={})",
+                description,
+                value,
+                dead_zone
+            );
+        }
+    }
+
+    /// Tests that apply_dead_zone accepts valid inputs without panicking.
+    #[test]
+    fn test_apply_dead_zone_valid_inputs() {
+        let test_cases = vec![
+            // (value, dead_zone, description)
+            (0.5, 0.1, "normal input"),
+            (0.0, 0.1, "zero value"),
+            (-0.5, 0.1, "negative value"),
+            (1.0, 0.1, "maximum value"),
+            (-1.0, 0.1, "minimum value"),
+            (0.5, 0.01, "small dead_zone"),
+            (0.5, 0.99, "large dead_zone"),
+        ];
+
+        for (value, dead_zone, description) in test_cases {
+            // Should not panic
+            let _ = apply_dead_zone(value, dead_zone);
+            // If we get here, the test passed for this case
+            assert!(
+                true,
+                "Successfully handled case: {} (value={}, dead_zone={})",
+                description,
+                value,
+                dead_zone
+            );
+        }
     }
 }
