@@ -35,12 +35,12 @@
 //!
 //! Basic usage with attitude control:
 //! ```no_run
-//! use stable_flight_sitl::commanders::extreme_3d::{Extreme3DCommander, Mode};
+//! use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 //! use stable_flight_sitl::{Commander, VehicleState};
 //!
 //! # fn main() -> Result<(), stable_flight_sitl::commanders::CommanderError> {
 //! // Create commander in attitude mode
-//! let mut commander = Extreme3DCommander::new(Mode::Attitude)?;
+//! let mut commander = Extreme3DCommander::new()?;
 //!
 //! // Generate commands in a control loop
 //! let state = VehicleState::default();
@@ -49,13 +49,22 @@
 //! # }
 //! ```
 //!
-//! Using rate control mode for acrobatic flight:
+//! Mode selection is done at runtime using the D-pad buttons:
+//! - D-Pad Up: Switch to Rate mode (Mode 1) for acrobatic flight
+//! - D-Pad Left/Right: Switch to Attitude mode (Mode 0 or 2) for stable flight
+//!
 //! ```no_run
-//! use stable_flight_sitl::commanders::extreme_3d::{Extreme3DCommander, Mode};
+//! use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
+//! use stable_flight_sitl::{Commander, VehicleState};
 //!
 //! # fn main() -> Result<(), stable_flight_sitl::commanders::CommanderError> {
-//! let mut commander = Extreme3DCommander::new(Mode::Rate)?;
-//! // Commander will now generate rate commands instead of attitude commands
+//! let mut commander = Extreme3DCommander::new()?;
+//! let state = VehicleState::default();
+//!
+//! // Press D-Pad Up on the joystick to switch to Rate mode
+//! // The commander will automatically switch modes based on D-pad input
+//! let command = commander.next(0.004, &state);
+//! // Command type (Attitude or Rate) depends on current D-pad selection
 //! # Ok(())
 //! # }
 //! ```
@@ -127,44 +136,12 @@ pub enum Mode {
 /// it into flight control commands. It supports both attitude and rate control
 /// modes, and applies dead zones to reduce stick drift and improve control precision.
 ///
-/// # Control Channels
-///
-/// Internally maintains 6 control channels:
-/// - `channels[0]`: Throttle (0.0 to 1.0)
-/// - `channels[1]`: Roll (-1.0 to 1.0)
-/// - `channels[2]`: Pitch (-1.0 to 1.0)
-/// - `channels[3]`: Yaw (-1.0 to 1.0)
-/// - `channels[4]`: Arm state (0.0 = disarmed, 1.0 = armed)
-/// - `channels[5]`: Flight mode (0.0, 1.0, or 2.0)
+/// See the module-level documentation for hardware mapping, control modes, and usage examples.
 ///
 /// # Thread Safety
 ///
 /// This struct is not thread-safe and should only be used from a single thread.
 /// The Gilrs event loop internally manages joystick state.
-///
-/// # Examples
-///
-/// ```no_run
-/// use stable_flight_sitl::commanders::extreme_3d::{Extreme3DCommander, Mode};
-/// use stable_flight_sitl::{Commander, VehicleState};
-///
-/// # fn main() -> Result<(), stable_flight_sitl::commanders::CommanderError> {
-/// let mut commander = Extreme3DCommander::new(Mode::Attitude)?;
-///
-/// // In your control loop (e.g., at 250 Hz)
-/// let state = VehicleState::default();
-/// let dt = 0.004; // 4ms between updates
-/// let command = commander.next(dt, &state);
-///
-/// match command {
-///     stable_flight_sitl::Command::Attitude(cmd) => {
-///         println!("Throttle: {}, Roll: {}", cmd.throttle, cmd.roll);
-///     }
-///     _ => {}
-/// }
-/// # Ok(())
-/// # }
-/// ```
 pub struct Extreme3DCommander {
     /// Gilrs instance for reading joystick input
     gilrs: Gilrs,
@@ -183,9 +160,8 @@ pub struct Extreme3DCommander {
 impl Extreme3DCommander {
     /// Creates a new Extreme3DCommander instance.
     ///
-    /// # Parameters
-    ///
-    /// - `mode`: The control mode to use (Attitude or Rate)
+    /// The commander starts in Attitude mode by default. Use the D-pad buttons
+    /// during operation to switch between Attitude and Rate modes.
     ///
     /// # Returns
     ///
@@ -202,13 +178,8 @@ impl Extreme3DCommander {
     ///
     /// # Examples
     ///
-    /// ```no_run
-    /// use stable_flight_sitl::commanders::{Extreme3DCommander, extreme_3d::Mode};
-    ///
-    /// let commander = Extreme3DCommander::new(Mode::Attitude)?;
-    /// # Ok::<(), stable_flight_sitl::commanders::CommanderError>(())
-    /// ```
-    pub fn new(mode: Mode) -> Result<Self, CommanderError> {
+    /// See module-level documentation for usage examples.
+    pub fn new() -> Result<Self, CommanderError> {
         let gilrs = Gilrs::new().map_err(|e| {
             CommanderError::InitializationFailed(format!("Gilrs initialization failed: {}", e))
         })?;
@@ -217,7 +188,7 @@ impl Extreme3DCommander {
             gilrs,
             active_gamepad: None,
             channels: [0.0; 6],
-            mode,
+            mode: Mode::Attitude,
         })
     }
 
@@ -255,26 +226,21 @@ impl Extreme3DCommander {
                     }
                 }
                 EventType::ButtonChanged(Button::North, 1.0, _) => {
-                    // arm
                     self.channels[4] = 1.0;
                 }
                 EventType::ButtonChanged(Button::Unknown, 1.0, code) => {
-                    // disarm
                     if code.into_u32() == DISARM_BUTTON_CODE {
                         self.channels[4] = 0.0;
                     }
                 }
                 EventType::ButtonChanged(Button::DPadLeft, 1.0, _) => {
-                    // mode 0
-                    self.channels[5] = 0.0;
+                    self.channels[5] = 0.0; // Attitude mode
                 }
                 EventType::ButtonChanged(Button::DPadUp, 1.0, _) => {
-                    // mode 1
-                    self.channels[5] = 1.0;
+                    self.channels[5] = 1.0; // Rate mode
                 }
                 EventType::ButtonChanged(Button::DPadRight, 1.0, _) => {
-                    // mode 2
-                    self.channels[5] = 2.0;
+                    self.channels[5] = 2.0; // Attitude mode
                 }
                 _ => {}
             }
@@ -283,17 +249,15 @@ impl Extreme3DCommander {
         if let Some(id) = self.active_gamepad {
             let gamepad = self.gilrs.gamepad(id);
 
-            // roll
             if let Some(data) = gamepad.axis_data(Axis::LeftStickX) {
                 self.channels[1] = data.value();
             }
 
-            // pitch
+            // Pitch and yaw are negated to match flight control conventions
             if let Some(data) = gamepad.axis_data(Axis::LeftStickY) {
                 self.channels[2] = -data.value();
             }
 
-            // yaw
             if let Some(data) = gamepad.axis_data(Axis::RightStickY) {
                 self.channels[3] = -data.value();
             }
@@ -314,16 +278,28 @@ impl Default for Extreme3DCommander {
     /// Panics if joystick initialization fails. For fallible initialization,
     /// use `Extreme3DCommander::new()` instead.
     fn default() -> Self {
-        Self::new(Mode::Attitude)
-            .expect("Failed to initialize Extreme3DCommander with default settings")
+        Self::new().expect("Failed to initialize Extreme3DCommander with default settings")
     }
 }
 
 impl Commander for Extreme3DCommander {
+    /// Generates the next control command based on current joystick input.
+    ///
+    /// This method reads all pending joystick events, updates internal state,
+    /// and returns either an `AttitudeCommand` or `RateCommand` depending on
+    /// the current mode selected via D-pad buttons:
+    /// - Mode 0 or 2 (D-Pad Left/Right): Returns `Command::Attitude`
+    /// - Mode 1 (D-Pad Up): Returns `Command::Rate`
+    ///
+    /// Dead zones are automatically applied to roll, pitch, and yaw inputs.
     fn next(&mut self, _dt: f32, _current_state: &VehicleState) -> Command {
         let channels = self.read_channels();
 
         let mode = channels[5] as u8;
+        match mode {
+            1 => self.mode = Mode::Rate,
+            _ => self.mode = Mode::Attitude,
+        }
 
         match &self.mode {
             Mode::Attitude => Command::Attitude(AttitudeCommand {
@@ -632,7 +608,11 @@ mod tests {
             (0.5, -0.1, "negative dead_zone should panic"),
             (0.5, 0.0, "zero dead_zone should panic"),
             (f32::INFINITY, 0.1, "infinite value should panic"),
-            (f32::NEG_INFINITY, 0.1, "negative infinite value should panic"),
+            (
+                f32::NEG_INFINITY,
+                0.1,
+                "negative infinite value should panic",
+            ),
             (f32::NAN, 0.1, "NaN value should panic"),
         ];
 
@@ -666,15 +646,11 @@ mod tests {
         ];
 
         for (value, dead_zone, description) in test_cases {
-            // Should not panic
             let _ = apply_dead_zone(value, dead_zone);
-            // If we get here, the test passed for this case
             assert!(
                 true,
                 "Successfully handled case: {} (value={}, dead_zone={})",
-                description,
-                value,
-                dead_zone
+                description, value, dead_zone
             );
         }
     }
