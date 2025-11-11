@@ -22,9 +22,14 @@
 //!
 //! # Dead Zones
 //!
-//! To reduce noise and improve control precision, dead zones are applied:
+//! To reduce noise and improve control precision, scaled dead zones are applied:
 //! - Roll/Pitch: 10% (±0.1)
 //! - Yaw: 15% (±0.15) - larger due to twist axis sensitivity
+//!
+//! The dead zone implementation uses smooth scaling to eliminate discontinuities.
+//! Inputs below the dead zone threshold are zeroed, while inputs above are rescaled
+//! so that the dead zone boundary maps to 0.0 and full deflection maps to ±1.0.
+//! This provides smooth, gap-free control transitions.
 //!
 //! # Examples
 //!
@@ -367,20 +372,26 @@ fn scale_value(value: f32, min: f32, max: f32) -> f32 {
     (value - min) / (max - min)
 }
 
-/// Applies a dead zone to a control input value.
+/// Applies a scaled dead zone to a control input value.
 ///
 /// Values with absolute magnitude less than the dead zone threshold are
-/// zeroed out to prevent stick drift and improve control precision.
+/// zeroed out to prevent stick drift. Values outside the dead zone are
+/// rescaled to smoothly remap the range [dead_zone, 1.0] to [0.0, 1.0],
+/// eliminating discontinuities at the dead zone boundary.
 ///
 /// # Parameters
 ///
 /// - `value`: The input value (typically -1.0 to 1.0)
-/// - `dead_zone`: The dead zone threshold (positive value)
+/// - `dead_zone`: The dead zone threshold (positive value, must be < 1.0)
 ///
 /// # Returns
 ///
 /// - `0.0` if `|value| < dead_zone`
-/// - `value` otherwise
+/// - A scaled value in the range [-1.0, 1.0] otherwise, where:
+///   - `dead_zone` maps to `0.0`
+///   - `1.0` maps to `1.0`
+///   - `-dead_zone` maps to `0.0`
+///   - `-1.0` maps to `-1.0`
 ///
 /// # Examples
 ///
@@ -389,25 +400,207 @@ fn scale_value(value: f32, min: f32, max: f32) -> f32 {
 /// #     if value.abs() < dead_zone {
 /// #         0.0
 /// #     } else {
-/// #         value
+/// #         let sign = value.signum();
+/// #         let scaled = (value.abs() - dead_zone) / (1.0 - dead_zone);
+/// #         sign * scaled
 /// #     }
 /// # }
-/// assert_eq!(apply_dead_zone(0.05, 0.1), 0.0);  // Inside dead zone
-/// assert_eq!(apply_dead_zone(-0.05, 0.1), 0.0); // Inside dead zone
-/// assert_eq!(apply_dead_zone(0.5, 0.1), 0.5);   // Outside dead zone
-/// assert_eq!(apply_dead_zone(-0.5, 0.1), -0.5); // Outside dead zone
+/// assert_eq!(apply_dead_zone(0.05, 0.1), 0.0);   // Inside dead zone
+/// assert_eq!(apply_dead_zone(-0.05, 0.1), 0.0);  // Inside dead zone
+/// assert_eq!(apply_dead_zone(0.1, 0.1), 0.0);    // At dead zone boundary
+/// assert_eq!(apply_dead_zone(1.0, 0.1), 1.0);    // At maximum
+/// assert_eq!(apply_dead_zone(-1.0, 0.1), -1.0);  // At minimum
+///
+/// // Midpoint between dead zone and max scales to ~0.5
+/// let mid = apply_dead_zone(0.55, 0.1);
+/// assert!((mid - 0.5).abs() < 0.01);
 /// ```
 ///
 /// # Note
 ///
-/// This implementation does not rescale the output. Values outside the dead zone
-/// are passed through unchanged, meaning there's a discontinuity at the dead zone
-/// boundary. For smoother control, consider using a scaled dead zone that
-/// remaps the range [dead_zone, 1.0] to [0.0, 1.0].
+/// This implementation eliminates the discontinuity present in simple dead zone
+/// implementations by rescaling the output. The control input now transitions
+/// smoothly from 0.0 at the dead zone boundary to full deflection at maximum input.
 fn apply_dead_zone(value: f32, dead_zone: f32) -> f32 {
     if value.abs() < dead_zone {
         0.0
     } else {
-        value
+        // Preserve the sign of the input
+        let sign = value.signum();
+        // Scale the range [dead_zone, 1.0] to [0.0, 1.0]
+        let scaled = (value.abs() - dead_zone) / (1.0 - dead_zone);
+        sign * scaled
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Tests that the scaled dead zone function correctly handles inputs within the dead zone.
+    #[test]
+    fn test_apply_dead_zone_inside_dead_zone() {
+        let dead_zone = 0.1;
+
+        // Values inside dead zone should return 0.0
+        assert_eq!(apply_dead_zone(0.0, dead_zone), 0.0);
+        assert_eq!(apply_dead_zone(0.05, dead_zone), 0.0);
+        assert_eq!(apply_dead_zone(-0.05, dead_zone), 0.0);
+        assert_eq!(apply_dead_zone(0.09, dead_zone), 0.0);
+        assert_eq!(apply_dead_zone(-0.09, dead_zone), 0.0);
+    }
+
+    /// Tests that the scaled dead zone function correctly handles the dead zone boundary.
+    #[test]
+    fn test_apply_dead_zone_at_boundary() {
+        let dead_zone = 0.1;
+
+        // At the exact dead zone boundary, should return 0.0
+        assert_eq!(apply_dead_zone(0.1, dead_zone), 0.0);
+        assert_eq!(apply_dead_zone(-0.1, dead_zone), 0.0);
+    }
+
+    /// Tests that the scaled dead zone function correctly scales values outside the dead zone.
+    #[test]
+    fn test_apply_dead_zone_outside_dead_zone() {
+        let dead_zone = 0.1;
+
+        // Maximum values should map to ±1.0
+        assert_eq!(apply_dead_zone(1.0, dead_zone), 1.0);
+        assert_eq!(apply_dead_zone(-1.0, dead_zone), -1.0);
+
+        // Just outside dead zone should be close to 0.0 (smooth transition)
+        let just_outside = apply_dead_zone(0.11, dead_zone);
+        assert!(just_outside > 0.0 && just_outside < 0.02);
+
+        let just_outside_neg = apply_dead_zone(-0.11, dead_zone);
+        assert!(just_outside_neg < 0.0 && just_outside_neg > -0.02);
+    }
+
+    /// Tests that the scaled dead zone function provides smooth scaling (no discontinuity).
+    #[test]
+    fn test_apply_dead_zone_smooth_scaling() {
+        let dead_zone = 0.1;
+
+        // Midpoint between dead zone and max should scale to approximately 0.5
+        let midpoint = (dead_zone + 1.0) / 2.0; // 0.55
+        let result = apply_dead_zone(midpoint, dead_zone);
+        assert!((result - 0.5).abs() < 0.01, "Expected ~0.5, got {}", result);
+
+        // 75% point should scale to approximately 0.75
+        let three_quarter = dead_zone + 0.75 * (1.0 - dead_zone); // 0.775
+        let result = apply_dead_zone(three_quarter, dead_zone);
+        assert!(
+            (result - 0.75).abs() < 0.01,
+            "Expected ~0.75, got {}",
+            result
+        );
+
+        // Negative values should mirror positive values
+        let result_neg = apply_dead_zone(-midpoint, dead_zone);
+        assert!(
+            (result_neg + 0.5).abs() < 0.01,
+            "Expected ~-0.5, got {}",
+            result_neg
+        );
+    }
+
+    /// Tests that the scaled dead zone function maintains symmetry for positive and negative inputs.
+    #[test]
+    fn test_apply_dead_zone_symmetry() {
+        let dead_zone = 0.1;
+
+        // Test multiple points to ensure symmetry
+        let test_values = vec![0.0, 0.2, 0.5, 0.8, 1.0];
+
+        for value in test_values {
+            let pos_result = apply_dead_zone(value, dead_zone);
+            let neg_result = apply_dead_zone(-value, dead_zone);
+
+            assert!(
+                (pos_result + neg_result).abs() < 1e-6,
+                "Asymmetry detected: f({}) = {}, f({}) = {}",
+                value,
+                pos_result,
+                -value,
+                neg_result
+            );
+        }
+    }
+
+    /// Table-driven test for scaled dead zone with various dead zone thresholds.
+    #[test]
+    fn test_apply_dead_zone_table_driven() {
+        let test_cases = vec![
+            // (input, dead_zone, expected_output)
+            (0.0, 0.1, 0.0),
+            (0.05, 0.1, 0.0),
+            (0.1, 0.1, 0.0),
+            (0.55, 0.1, 0.5),
+            (1.0, 0.1, 1.0),
+            (-0.55, 0.1, -0.5),
+            (-1.0, 0.1, -1.0),
+            // Different dead zone (15% for yaw)
+            (0.0, 0.15, 0.0),
+            (0.15, 0.15, 0.0),
+            (0.575, 0.15, 0.5),
+            (1.0, 0.15, 1.0),
+            // Larger dead zone
+            (0.0, 0.3, 0.0),
+            (0.3, 0.3, 0.0),
+            (0.65, 0.3, 0.5),
+            (1.0, 0.3, 1.0),
+        ];
+
+        for (input, dead_zone, expected) in test_cases {
+            let result = apply_dead_zone(input, dead_zone);
+            assert!(
+                (result - expected).abs() < 0.01,
+                "apply_dead_zone({}, {}) expected {}, got {}",
+                input,
+                dead_zone,
+                expected,
+                result
+            );
+        }
+    }
+
+    /// Tests the scale_value helper function.
+    #[test]
+    fn test_scale_value() {
+        // Test scaling from [-1, 1] to [0, 1]
+        assert_eq!(scale_value(-1.0, -1.0, 1.0), 0.0);
+        assert_eq!(scale_value(0.0, -1.0, 1.0), 0.5);
+        assert_eq!(scale_value(1.0, -1.0, 1.0), 1.0);
+
+        // Test scaling from [THROTTLE_MIN, THROTTLE_MAX] to [0, 1]
+        let scaled_min = scale_value(THROTTLE_MIN, THROTTLE_MIN, THROTTLE_MAX);
+        let scaled_max = scale_value(THROTTLE_MAX, THROTTLE_MIN, THROTTLE_MAX);
+        assert!((scaled_min - 0.0).abs() < 1e-6);
+        assert!((scaled_max - 1.0).abs() < 1e-6);
+
+        // Test scaling from arbitrary range
+        assert_eq!(scale_value(5.0, 0.0, 10.0), 0.5);
+        assert_eq!(scale_value(0.0, 0.0, 10.0), 0.0);
+        assert_eq!(scale_value(10.0, 0.0, 10.0), 1.0);
+    }
+
+    /// Tests that dead zone constants are within valid ranges.
+    #[test]
+    fn test_dead_zone_constants() {
+        assert!(ROLL_PITCH_DEAD_ZONE > 0.0 && ROLL_PITCH_DEAD_ZONE < 1.0);
+        assert!(YAW_DEAD_ZONE > 0.0 && YAW_DEAD_ZONE < 1.0);
+        assert!(
+            YAW_DEAD_ZONE > ROLL_PITCH_DEAD_ZONE,
+            "Yaw dead zone should be larger"
+        );
+    }
+
+    /// Tests that throttle constants are valid.
+    #[test]
+    fn test_throttle_constants() {
+        assert!(THROTTLE_MIN > -1.0 && THROTTLE_MIN < 0.0);
+        assert!(THROTTLE_MAX > 0.0 && THROTTLE_MAX < 1.0);
+        assert!(THROTTLE_MAX > THROTTLE_MIN);
     }
 }
