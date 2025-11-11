@@ -128,10 +128,9 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
             thread::spawn(move || {
                 let mut signals =
                     Signals::new([SIGINT]).expect("Failed to initialize signal handler");
-                for _ in signals.forever() {
+                if signals.forever().next().is_some() {
                     info!("Received SIGINT, initiating graceful shutdown...");
                     running_clone.store(false, Ordering::SeqCst);
-                    break;
                 }
             });
         }

@@ -118,9 +118,9 @@ impl Mixer for QuadCopterMixer {
         // println!("command: {:?}", command);
 
         // Compute scaled moment contributions
-        let mut roll = command.moments.x * self.roll_pitch_scaling;
-        let mut pitch = command.moments.y * self.roll_pitch_scaling; // pitch is scaled more aggressively
-        let mut yaw = command.moments.z * self.yaw_scaling;
+        let roll = command.moments.x * self.roll_pitch_scaling;
+        let pitch = command.moments.y * self.roll_pitch_scaling; // pitch is scaled more aggressively
+        let yaw = command.moments.z * self.yaw_scaling;
 
         // Compute baseline thrust per motor (even distribution)
         let baseline = command.thrust * THRUST_FACTOR;

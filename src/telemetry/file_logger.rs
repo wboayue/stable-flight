@@ -13,11 +13,18 @@ pub struct FileLogger {
     file: File,
 }
 
+impl Default for FileLogger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FileLogger {
     pub fn new() -> FileLogger {
         let file = OpenOptions::new()
             .create(true)
-            .write(true) // Overwrite mode for simplicity
+            .write(true) 
+            .truncate(true)
             .open("generated_telemetry.tlog")
             .expect("Failed to open telemetry log file");
 
