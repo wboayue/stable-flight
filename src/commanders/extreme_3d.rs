@@ -158,10 +158,11 @@ pub struct Extreme3DCommander {
 }
 
 impl Extreme3DCommander {
-    /// Creates a new Extreme3DCommander instance.
+    /// Creates a new Extreme3DCommander instance in Attitude mode.
     ///
-    /// The commander starts in Attitude mode by default. Use the D-pad buttons
-    /// during operation to switch between Attitude and Rate modes.
+    /// The commander starts in Attitude mode by default. Use `with_mode()` to
+    /// specify a different initial mode, or use D-pad buttons during operation
+    /// to switch modes.
     ///
     /// # Returns
     ///
@@ -180,16 +181,64 @@ impl Extreme3DCommander {
     ///
     /// See module-level documentation for usage examples.
     pub fn new() -> Result<Self, CommanderError> {
+        Self::with_mode(Mode::Attitude)
+    }
+
+    /// Creates a new Extreme3DCommander with the specified initial mode.
+    ///
+    /// Use this constructor when you need to start in Rate mode for headless
+    /// or non-interactive use cases where D-pad input is unavailable.
+    ///
+    /// # Parameters
+    ///
+    /// - `mode`: The initial control mode (Attitude or Rate)
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(Extreme3DCommander)` if the joystick is successfully initialized,
+    /// or `Err(CommanderError)` if initialization fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns `CommanderError::InitializationFailed` if the Gilrs library cannot
+    /// be initialized.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use stable_flight_sitl::commanders::extreme_3d::{Extreme3DCommander, Mode};
+    ///
+    /// // Start in Rate mode for acrobatic flight
+    /// let commander = Extreme3DCommander::with_mode(Mode::Rate)?;
+    /// # Ok::<(), stable_flight_sitl::commanders::CommanderError>(())
+    /// ```
+    pub fn with_mode(mode: Mode) -> Result<Self, CommanderError> {
         let gilrs = Gilrs::new().map_err(|e| {
             CommanderError::InitializationFailed(format!("Gilrs initialization failed: {}", e))
         })?;
 
+        // Initialize channels[5] to match the chosen mode so next() preserves it
+        let mut channels = [0.0; 6];
+        channels[5] = match mode {
+            Mode::Attitude => 0.0,
+            Mode::Rate => 1.0,
+        };
+
         Ok(Self {
             gilrs,
             active_gamepad: None,
-            channels: [0.0; 6],
-            mode: Mode::Attitude,
+            channels,
+            mode,
         })
+    }
+
+    /// Returns the current control mode.
+    ///
+    /// # Returns
+    ///
+    /// The current `Mode` (Attitude or Rate).
+    pub fn mode(&self) -> Mode {
+        self.mode
     }
 
     /// Reads and updates control channels from the Extreme 3D joystick.

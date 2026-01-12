@@ -26,3 +26,5 @@ Cargo.lock
 **/.DS_Store
 
 tarpaulin-report.html
+
+/tasks
