@@ -130,6 +130,25 @@ pub enum Mode {
     Rate,
 }
 
+impl Mode {
+    /// Converts mode to channel value for storage in channels[5].
+    fn to_channel_value(self) -> f32 {
+        match self {
+            Self::Attitude => 0.0,
+            Self::Rate => 1.0,
+        }
+    }
+
+    /// Converts channel value to Mode.
+    /// D-pad maps: Left=0, Up=1, Right=2. Only Up (1) is Rate mode.
+    fn from_channel_value(value: u8) -> Self {
+        match value {
+            1 => Self::Rate,
+            _ => Self::Attitude,
+        }
+    }
+}
+
 /// Commander implementation for the Logitech Extreme 3D Pro joystick.
 ///
 /// This commander reads input from the Extreme 3D Pro joystick and converts
@@ -219,10 +238,7 @@ impl Extreme3DCommander {
 
         // Initialize channels[5] to match the chosen mode so next() preserves it
         let mut channels = [0.0; 6];
-        channels[5] = match mode {
-            Mode::Attitude => 0.0,
-            Mode::Rate => 1.0,
-        };
+        channels[5] = mode.to_channel_value();
 
         Ok(Self {
             gilrs,
@@ -345,10 +361,7 @@ impl Commander for Extreme3DCommander {
         let channels = self.read_channels();
 
         let mode = channels[5] as u8;
-        match mode {
-            1 => self.mode = Mode::Rate,
-            _ => self.mode = Mode::Attitude,
-        }
+        self.mode = Mode::from_channel_value(mode);
 
         match &self.mode {
             Mode::Attitude => Command::Attitude(AttitudeCommand {
