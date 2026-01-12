@@ -100,6 +100,10 @@ const THROTTLE_MIN: f32 = -0.99;
 /// stopping at approximately 0.99. This constant is used for accurate scaling.
 const THROTTLE_MAX: f32 = 0.99;
 
+/// Threshold for arm channel to be considered armed.
+/// Values above this threshold indicate the vehicle should be armed.
+const ARM_THRESHOLD: f32 = 0.5;
+
 /// Control mode for the Extreme 3D commander.
 ///
 /// Determines whether joystick inputs are interpreted as attitude
@@ -130,6 +134,31 @@ pub enum Mode {
     Rate,
 }
 
+impl Mode {
+    /// Converts mode to channel value for storage in channels[5].
+    fn to_channel_value(self) -> f32 {
+        match self {
+            Self::Attitude => 0.0,
+            Self::Rate => 1.0,
+        }
+    }
+
+    /// Converts channel value to Mode.
+    ///
+    /// D-pad maps: Left=0 (Attitude), Up=1 (Rate), Right=2 (Attitude).
+    ///
+    /// # Preconditions
+    ///
+    /// `value` must be one of: 0.0, 1.0, or 2.0 (as set by D-pad handlers).
+    fn from_channel_value(value: f32) -> Self {
+        if (value - 1.0).abs() < f32::EPSILON {
+            Self::Rate
+        } else {
+            Self::Attitude
+        }
+    }
+}
+
 /// Commander implementation for the Logitech Extreme 3D Pro joystick.
 ///
 /// This commander reads input from the Extreme 3D Pro joystick and converts
@@ -158,10 +187,11 @@ pub struct Extreme3DCommander {
 }
 
 impl Extreme3DCommander {
-    /// Creates a new Extreme3DCommander instance.
+    /// Creates a new Extreme3DCommander instance in Attitude mode.
     ///
-    /// The commander starts in Attitude mode by default. Use the D-pad buttons
-    /// during operation to switch between Attitude and Rate modes.
+    /// The commander starts in Attitude mode by default. Use `with_mode()` to
+    /// specify a different initial mode, or use D-pad buttons during operation
+    /// to switch modes.
     ///
     /// # Returns
     ///
@@ -180,15 +210,51 @@ impl Extreme3DCommander {
     ///
     /// See module-level documentation for usage examples.
     pub fn new() -> Result<Self, CommanderError> {
+        Self::with_mode(Mode::Attitude)
+    }
+
+    /// Creates a new Extreme3DCommander with the specified initial mode.
+    ///
+    /// Use this constructor when you need to start in Rate mode for headless
+    /// or non-interactive use cases where D-pad input is unavailable.
+    ///
+    /// # Parameters
+    ///
+    /// - `mode`: The initial control mode (Attitude or Rate)
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(Extreme3DCommander)` if the joystick is successfully initialized,
+    /// or `Err(CommanderError)` if initialization fails.
+    ///
+    /// # Errors
+    ///
+    /// Returns `CommanderError::InitializationFailed` if the Gilrs library cannot
+    /// be initialized.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use stable_flight_sitl::commanders::extreme_3d::{Extreme3DCommander, Mode};
+    ///
+    /// // Start in Rate mode for acrobatic flight
+    /// let commander = Extreme3DCommander::with_mode(Mode::Rate)?;
+    /// # Ok::<(), stable_flight_sitl::commanders::CommanderError>(())
+    /// ```
+    pub fn with_mode(mode: Mode) -> Result<Self, CommanderError> {
         let gilrs = Gilrs::new().map_err(|e| {
             CommanderError::InitializationFailed(format!("Gilrs initialization failed: {}", e))
         })?;
 
+        // Initialize channels[5] to match the chosen mode so next() preserves it
+        let mut channels = [0.0; 6];
+        channels[5] = mode.to_channel_value();
+
         Ok(Self {
             gilrs,
             active_gamepad: None,
-            channels: [0.0; 6],
-            mode: Mode::Attitude,
+            channels,
+            mode,
         })
     }
 
@@ -234,13 +300,14 @@ impl Extreme3DCommander {
                     }
                 }
                 EventType::ButtonChanged(Button::DPadLeft, 1.0, _) => {
-                    self.channels[5] = 0.0; // Attitude mode
+                    self.channels[5] = Mode::Attitude.to_channel_value();
                 }
                 EventType::ButtonChanged(Button::DPadUp, 1.0, _) => {
-                    self.channels[5] = 1.0; // Rate mode
+                    self.channels[5] = Mode::Rate.to_channel_value();
                 }
                 EventType::ButtonChanged(Button::DPadRight, 1.0, _) => {
-                    self.channels[5] = 2.0; // Attitude mode
+                    // D-pad Right also selects Attitude mode (value 2.0 preserved for telemetry)
+                    self.channels[5] = 2.0;
                 }
                 _ => {}
             }
@@ -295,11 +362,14 @@ impl Commander for Extreme3DCommander {
     fn next(&mut self, _dt: f32, _current_state: &VehicleState) -> Command {
         let channels = self.read_channels();
 
+        self.mode = Mode::from_channel_value(channels[5]);
         let mode = channels[5] as u8;
         match mode {
             1 => self.mode = Mode::Rate,
             _ => self.mode = Mode::Attitude,
         }
+
+        let arm = channels[4] > ARM_THRESHOLD;
 
         match &self.mode {
             Mode::Attitude => Command::Attitude(AttitudeCommand {
@@ -307,7 +377,7 @@ impl Commander for Extreme3DCommander {
                 roll: apply_dead_zone(channels[1], ROLL_PITCH_DEAD_ZONE),
                 pitch: apply_dead_zone(channels[2], ROLL_PITCH_DEAD_ZONE),
                 yaw: apply_dead_zone(channels[3], YAW_DEAD_ZONE),
-                arm: channels[4] > 0.5,
+                arm,
                 mode,
             }),
             Mode::Rate => Command::Rate(RateCommand {
@@ -315,7 +385,7 @@ impl Commander for Extreme3DCommander {
                 roll_rate: apply_dead_zone(channels[1], ROLL_PITCH_DEAD_ZONE),
                 pitch_rate: apply_dead_zone(channels[2], ROLL_PITCH_DEAD_ZONE),
                 yaw_rate: apply_dead_zone(channels[3], YAW_DEAD_ZONE),
-                arm: channels[4] > 0.5,
+                arm,
                 mode,
             }),
         }
@@ -653,5 +723,44 @@ mod tests {
                 description, value, dead_zone
             );
         }
+    }
+
+    /// Tests Mode::to_channel_value returns correct values.
+    #[test]
+    fn test_mode_to_channel_value() {
+        assert_eq!(Mode::Attitude.to_channel_value(), 0.0);
+        assert_eq!(Mode::Rate.to_channel_value(), 1.0);
+    }
+
+    /// Tests Mode::from_channel_value for D-pad positions.
+    #[test]
+    fn test_mode_from_channel_value_dpad_positions() {
+        // D-pad Left (0.0) -> Attitude
+        assert!(matches!(Mode::from_channel_value(0.0), Mode::Attitude));
+        // D-pad Up (1.0) -> Rate
+        assert!(matches!(Mode::from_channel_value(1.0), Mode::Rate));
+        // D-pad Right (2.0) -> Attitude
+        assert!(matches!(Mode::from_channel_value(2.0), Mode::Attitude));
+    }
+
+    /// Tests Mode::from_channel_value defaults to Attitude for unexpected values.
+    #[test]
+    fn test_mode_from_channel_value_defaults_to_attitude() {
+        for value in [3.0, 10.0, 100.0, 255.0] {
+            assert!(
+                matches!(Mode::from_channel_value(value), Mode::Attitude),
+                "Expected Attitude for value {}", value
+            );
+        }
+    }
+
+    /// Tests round-trip conversion preserves mode.
+    #[test]
+    fn test_mode_conversion_round_trip() {
+        let attitude_value = Mode::Attitude.to_channel_value();
+        assert!(matches!(Mode::from_channel_value(attitude_value), Mode::Attitude));
+
+        let rate_value = Mode::Rate.to_channel_value();
+        assert!(matches!(Mode::from_channel_value(rate_value), Mode::Rate));
     }
 }
