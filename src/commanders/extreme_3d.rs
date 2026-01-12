@@ -100,6 +100,10 @@ const THROTTLE_MIN: f32 = -0.99;
 /// stopping at approximately 0.99. This constant is used for accurate scaling.
 const THROTTLE_MAX: f32 = 0.99;
 
+/// Threshold for arm channel to be considered armed.
+/// Values above this threshold indicate the vehicle should be armed.
+const ARM_THRESHOLD: f32 = 0.5;
+
 /// Control mode for the Extreme 3D commander.
 ///
 /// Determines whether joystick inputs are interpreted as attitude
@@ -363,13 +367,15 @@ impl Commander for Extreme3DCommander {
         let mode = channels[5] as u8;
         self.mode = Mode::from_channel_value(mode);
 
+        let arm = channels[4] > ARM_THRESHOLD;
+
         match &self.mode {
             Mode::Attitude => Command::Attitude(AttitudeCommand {
                 throttle: channels[0],
                 roll: apply_dead_zone(channels[1], ROLL_PITCH_DEAD_ZONE),
                 pitch: apply_dead_zone(channels[2], ROLL_PITCH_DEAD_ZONE),
                 yaw: apply_dead_zone(channels[3], YAW_DEAD_ZONE),
-                arm: channels[4] > 0.5,
+                arm,
                 mode,
             }),
             Mode::Rate => Command::Rate(RateCommand {
@@ -377,7 +383,7 @@ impl Commander for Extreme3DCommander {
                 roll_rate: apply_dead_zone(channels[1], ROLL_PITCH_DEAD_ZONE),
                 pitch_rate: apply_dead_zone(channels[2], ROLL_PITCH_DEAD_ZONE),
                 yaw_rate: apply_dead_zone(channels[3], YAW_DEAD_ZONE),
-                arm: channels[4] > 0.5,
+                arm,
                 mode,
             }),
         }
