@@ -722,4 +722,43 @@ mod tests {
             );
         }
     }
+
+    /// Tests Mode::to_channel_value returns correct values.
+    #[test]
+    fn test_mode_to_channel_value() {
+        assert_eq!(Mode::Attitude.to_channel_value(), 0.0);
+        assert_eq!(Mode::Rate.to_channel_value(), 1.0);
+    }
+
+    /// Tests Mode::from_channel_value for D-pad positions.
+    #[test]
+    fn test_mode_from_channel_value_dpad_positions() {
+        // D-pad Left (0) -> Attitude
+        assert!(matches!(Mode::from_channel_value(0), Mode::Attitude));
+        // D-pad Up (1) -> Rate
+        assert!(matches!(Mode::from_channel_value(1), Mode::Rate));
+        // D-pad Right (2) -> Attitude
+        assert!(matches!(Mode::from_channel_value(2), Mode::Attitude));
+    }
+
+    /// Tests Mode::from_channel_value defaults to Attitude for unexpected values.
+    #[test]
+    fn test_mode_from_channel_value_defaults_to_attitude() {
+        for value in [3, 10, 100, 255] {
+            assert!(
+                matches!(Mode::from_channel_value(value), Mode::Attitude),
+                "Expected Attitude for value {}", value
+            );
+        }
+    }
+
+    /// Tests round-trip conversion preserves mode.
+    #[test]
+    fn test_mode_conversion_round_trip() {
+        let attitude_value = Mode::Attitude.to_channel_value() as u8;
+        assert!(matches!(Mode::from_channel_value(attitude_value), Mode::Attitude));
+
+        let rate_value = Mode::Rate.to_channel_value() as u8;
+        assert!(matches!(Mode::from_channel_value(rate_value), Mode::Rate));
+    }
 }
