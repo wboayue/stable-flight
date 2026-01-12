@@ -364,6 +364,10 @@ impl Commander for Extreme3DCommander {
 
         self.mode = Mode::from_channel_value(channels[5]);
         let mode = channels[5] as u8;
+        match mode {
+            1 => self.mode = Mode::Rate,
+            _ => self.mode = Mode::Attitude,
+        }
 
         let arm = channels[4] > ARM_THRESHOLD;
 

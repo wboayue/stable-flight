@@ -6,11 +6,11 @@ keywords = ["realflight", "flight-simulator", "robotics", "control-systems"]
 categories = ["aerospace::simulation", "aerospace::drones"]
 
 [dependencies]
-realflight-bridge = "0.4.1"
+realflight-bridge = "0.5.0"
 gilrs = "0.11.0"
 env_logger = "0.11.6"
 log = "0.4.25"
-signal-hook = "0.3.17"
+signal-hook = "0.4.1"
 rand = "0.9"
 mavlink = "0.16.1"
 uom = "0.37.0"
