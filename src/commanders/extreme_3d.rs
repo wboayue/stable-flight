@@ -144,9 +144,9 @@ impl Mode {
     }
 
     /// Converts channel value to Mode.
-    /// D-pad maps: Left=0, Up=1, Right=2. Only Up (1) is Rate mode.
-    fn from_channel_value(value: u8) -> Self {
-        match value {
+    /// D-pad maps: Left=0 (Attitude), Up=1 (Rate), Right=2 (Attitude).
+    fn from_channel_value(value: f32) -> Self {
+        match value as u8 {
             1 => Self::Rate,
             _ => Self::Attitude,
         }
@@ -303,13 +303,14 @@ impl Extreme3DCommander {
                     }
                 }
                 EventType::ButtonChanged(Button::DPadLeft, 1.0, _) => {
-                    self.channels[5] = 0.0; // Attitude mode
+                    self.channels[5] = Mode::Attitude.to_channel_value();
                 }
                 EventType::ButtonChanged(Button::DPadUp, 1.0, _) => {
-                    self.channels[5] = 1.0; // Rate mode
+                    self.channels[5] = Mode::Rate.to_channel_value();
                 }
                 EventType::ButtonChanged(Button::DPadRight, 1.0, _) => {
-                    self.channels[5] = 2.0; // Attitude mode
+                    // D-pad Right also selects Attitude mode (value 2.0 preserved for telemetry)
+                    self.channels[5] = 2.0;
                 }
                 _ => {}
             }
@@ -364,8 +365,8 @@ impl Commander for Extreme3DCommander {
     fn next(&mut self, _dt: f32, _current_state: &VehicleState) -> Command {
         let channels = self.read_channels();
 
+        self.mode = Mode::from_channel_value(channels[5]);
         let mode = channels[5] as u8;
-        self.mode = Mode::from_channel_value(mode);
 
         let arm = channels[4] > ARM_THRESHOLD;
 
@@ -733,18 +734,18 @@ mod tests {
     /// Tests Mode::from_channel_value for D-pad positions.
     #[test]
     fn test_mode_from_channel_value_dpad_positions() {
-        // D-pad Left (0) -> Attitude
-        assert!(matches!(Mode::from_channel_value(0), Mode::Attitude));
-        // D-pad Up (1) -> Rate
-        assert!(matches!(Mode::from_channel_value(1), Mode::Rate));
-        // D-pad Right (2) -> Attitude
-        assert!(matches!(Mode::from_channel_value(2), Mode::Attitude));
+        // D-pad Left (0.0) -> Attitude
+        assert!(matches!(Mode::from_channel_value(0.0), Mode::Attitude));
+        // D-pad Up (1.0) -> Rate
+        assert!(matches!(Mode::from_channel_value(1.0), Mode::Rate));
+        // D-pad Right (2.0) -> Attitude
+        assert!(matches!(Mode::from_channel_value(2.0), Mode::Attitude));
     }
 
     /// Tests Mode::from_channel_value defaults to Attitude for unexpected values.
     #[test]
     fn test_mode_from_channel_value_defaults_to_attitude() {
-        for value in [3, 10, 100, 255] {
+        for value in [3.0, 10.0, 100.0, 255.0] {
             assert!(
                 matches!(Mode::from_channel_value(value), Mode::Attitude),
                 "Expected Attitude for value {}", value
@@ -755,10 +756,10 @@ mod tests {
     /// Tests round-trip conversion preserves mode.
     #[test]
     fn test_mode_conversion_round_trip() {
-        let attitude_value = Mode::Attitude.to_channel_value() as u8;
+        let attitude_value = Mode::Attitude.to_channel_value();
         assert!(matches!(Mode::from_channel_value(attitude_value), Mode::Attitude));
 
-        let rate_value = Mode::Rate.to_channel_value() as u8;
+        let rate_value = Mode::Rate.to_channel_value();
         assert!(matches!(Mode::from_channel_value(rate_value), Mode::Rate));
     }
 }
