@@ -58,12 +58,16 @@ Commanders generate Rate, Attitude, or Position control commands processed by th
 The following example demonstrates creating a commander for the Extreme3D joystick:
 
 ```rust
-// Configure joystick commander
-let commander = Extreme3DCommander::new(Mode::Attitude)
+// Default: Attitude mode
+let commander = Extreme3DCommander::new()
+    .expect("Failed to initialize Extreme3D commander");
+
+// Or specify mode explicitly for Rate mode
+let commander = Extreme3DCommander::with_mode(Mode::Rate)
     .expect("Failed to initialize Extreme3D commander");
 ```
 
-Pick the commander `Mode` (`Attitude`, `Rate`, etc.) that matches the control inputs you want to emit.
+Use `new()` for Attitude mode (default) or `with_mode()` to start in Rate mode. Mode can also be switched at runtime via D-pad buttons.
 
 The SpektrumCommander currently doesn't expose configuration options.
 
