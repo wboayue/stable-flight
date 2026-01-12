@@ -144,11 +144,17 @@ impl Mode {
     }
 
     /// Converts channel value to Mode.
+    ///
     /// D-pad maps: Left=0 (Attitude), Up=1 (Rate), Right=2 (Attitude).
+    ///
+    /// # Preconditions
+    ///
+    /// `value` must be one of: 0.0, 1.0, or 2.0 (as set by D-pad handlers).
     fn from_channel_value(value: f32) -> Self {
-        match value as u8 {
-            1 => Self::Rate,
-            _ => Self::Attitude,
+        if (value - 1.0).abs() < f32::EPSILON {
+            Self::Rate
+        } else {
+            Self::Attitude
         }
     }
 }
@@ -250,15 +256,6 @@ impl Extreme3DCommander {
             channels,
             mode,
         })
-    }
-
-    /// Returns the current control mode.
-    ///
-    /// # Returns
-    ///
-    /// The current `Mode` (Attitude or Rate).
-    pub fn mode(&self) -> Mode {
-        self.mode
     }
 
     /// Reads and updates control channels from the Extreme 3D joystick.
