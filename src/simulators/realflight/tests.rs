@@ -1,11 +1,11 @@
 use super::*;
-use realflight_bridge::{ControlInputs, RealFlightBridge, SimulatorState};
-use robomath::{Quaternion, Vec3};
-use std::{cell::RefCell, error::Error, time::Duration};
+use realflight_bridge::{BridgeError, ControlInputs, RealFlightBridge, SimulatorState};
+use robomath::Vec3;
+use std::{cell::RefCell, time::Duration};
 use uom::si::{
     acceleration::meter_per_second_squared,
     angular_velocity,
-    f32::{Acceleration, AngularAcceleration, AngularVelocity, Length, Velocity},
+    f32::{Acceleration, AngularVelocity, Length, Velocity},
     length::meter,
     velocity::meter_per_second,
 };
@@ -26,15 +26,14 @@ impl MockRealFlightBridge {
 }
 
 impl RealFlightBridge for MockRealFlightBridge {
-    fn exchange_data(&self, input: &ControlInputs) -> Result<SimulatorState, Box<dyn Error>> {
+    fn exchange_data(&self, input: &ControlInputs) -> Result<SimulatorState, BridgeError> {
         let mut last_input = self.last_input.borrow_mut();
         last_input.replace(input.clone());
 
         if self.should_fail {
-            Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Simulated bridge failure",
-            )))
+            Err(BridgeError::Initialization(
+                "Simulated bridge failure".to_string(),
+            ))
         } else {
             Ok(SimulatorState {
                 aircraft_position_x: Length::new::<meter>(1.0),
@@ -58,34 +57,25 @@ impl RealFlightBridge for MockRealFlightBridge {
         }
     }
 
-    fn disable_rc(&self) -> Result<(), Box<dyn Error>> {
+    fn disable_rc(&self) -> Result<(), BridgeError> {
         if self.should_fail {
-            Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "RC disable failed",
-            )))
+            Err(BridgeError::Initialization("RC disable failed".to_string()))
         } else {
             Ok(())
         }
     }
 
-    fn enable_rc(&self) -> Result<(), Box<dyn Error>> {
+    fn enable_rc(&self) -> Result<(), BridgeError> {
         if self.should_fail {
-            Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "RC enable failed",
-            )))
+            Err(BridgeError::Initialization("RC enable failed".to_string()))
         } else {
             Ok(())
         }
     }
 
-    fn reset_aircraft(&self) -> Result<(), Box<dyn Error>> {
+    fn reset_aircraft(&self) -> Result<(), BridgeError> {
         if self.should_fail {
-            Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Reset failed",
-            )))
+            Err(BridgeError::Initialization("Reset failed".to_string()))
         } else {
             Ok(())
         }
