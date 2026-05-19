@@ -90,6 +90,7 @@ self.telemetry.send_telemetry(Duration::from_secs_f32(dt), &command, &state);
 - snake_case files/modules, PascalCase types, SCREAMING_SNAKE_CASE constants. Pull magic numbers into named constants when they appear more than once or carry units.
 - Prefer early returns and small helpers; keep flight-math functions readable, not arbitrarily short. If a PID step is clearest as one 30-line function, leave it.
 - Use `Result<T, E>` with `thiserror` enums for new fallible APIs. Avoid panics in library code outside of clearly documented preconditions (e.g. `run`'s frequency assert).
+- **No `.unwrap()` or `.expect()` in `src/`.** They turn recoverable errors into panics that crash the flight loop. Propagate with `?`, return a typed error, or — only when a value is provably non-`None` from local context — use `unwrap_or_else(|| unreachable!("..."))` with a comment explaining the invariant. `.expect()` is fine in `examples/` and `tests/` where a crash is the acceptable failure mode.
 - Express physical quantities with `uom` and vector math with `robomath`. Don't reinvent.
 - Logging via `log` + `env_logger`. Reserve `info!` for lifecycle events; use `debug!` inside the loop.
 - Use `&` and slices to avoid allocations in the hot loop. No `Box`/`Vec` per tick.
@@ -146,6 +147,7 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 - [ ] Builds clean (`cargo build`) and tests pass (`cargo test`).
 - [ ] `cargo fmt --all` and `cargo clippy --all-targets` clean.
 - [ ] New fallible APIs return `Result` with `thiserror` types; no new panics in library code.
+- [ ] No `.unwrap()` or `.expect()` introduced under `src/` (examples/tests OK).
 - [ ] New PID/quaternion/transform logic is unit-tested with table cases.
 - [ ] Public API has Rustdoc with at least one example.
 - [ ] Hot-path code allocates nothing per tick.
