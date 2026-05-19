@@ -31,25 +31,23 @@ After installing RealFlight, you will need to enable **RealFlight Link**. You ca
 
 ## Getting Started
 
-Out of the box, the flight stabilizer is configured to control a quadcopter via the Spektrum controller or scripted commands.
-
-You can run the stabilizer locally alongside the simulator or remotely using a local proxy.
-
-To run with a Spektrum controller, use the following command:
+Stable Flight SITL is a library crate; runnable entrypoints live in `examples/`. Pick one that matches the input you want:
 
 ```bash
-stable-flight-sitl --commander spectrum
+# Joystick (Logitech Extreme 3D) controlling a quadcopter in RealFlight
+cargo run --example copter-manual-realflight
+
+# Scripted commands driving a quadcopter in RealFlight
+cargo run --example copter-auto-realflight
+
+# Joystick smoke test (no simulator required)
+cargo run --example extreme_3d_commander
+
+# MAVLink telemetry demo
+cargo run --example publish_telemetry
 ```
 
-To run a scripted sequence, use this command:
-
-```bash
-stable-flight-sitl --script spectrum
-```
-
-These commands provide a quick starting point, but the real strength of the system lies in its extensibility. The flight stabilizer is configured in `main.rs`, or you can create your own binary for customized setups.
-
-Let's dive into configuring a `FlightStabilizer`. The stabilizer depends on the following components: a **Commander**, **Vehicle**, **Controller**, **Mixer**, and **TelemetryPublisher**.
+Each example wires the same five-component pipeline and is a copy-paste starting point for your own setup. Let's walk through the components a `FlightOrchestrator` needs: a **Commander**, **Vehicle**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**.
 
 ### Commander
 
@@ -89,44 +87,38 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 
 The RealFlightVehicle is configured with a `RealFlightLocalBridge` or `RealFlightRemoteBridge`, depending on whether the flight stabilizer is running on the same host as the simulator. The `ActuatorMapping` maps logical motors and control surfaces to specific channels for the RealFlight vehicle model.
 
-### Controller
+### Stabilizer
 
-Controllers calculate the difference between the vehicle's current state and the desired state, generating ActuatorCommand outputs to move the vehicle toward the desired state. This component contains the core flight stabilization logic. There are currently two controller implementations: one for airframes that don't change modes, and another for airframes like VTOLs that transition between flight modes. This is where you would start if you want to implement custom flight control logic.
+Stabilizers calculate the difference between the vehicle's current state and the desired state, generating `ControlOutput`s that the mixer then translates into actuator commands. This component contains the core flight stabilization logic. `CopterStabilizer` targets multirotors; a VTOL stabilizer lives in `stabilizers::vtol` for airframes that transition between flight modes. This is where you would start if you want to implement custom flight control logic.
 
-The following example demonstrates configuring the basic controller with PID gains:
+The simplest setup uses default gains:
 
 ```rust
-let controller = BasicController::new(&BasicControllerConfig {
-    rate_gains: Gains {
-        p: 1.0,
-        i: 0.0,
-        d: 0.0,
-    },
-    angle_gains: Gains {
-        p: 2.0,
-        i: 0.2,
-        d: 0.1,
-    },
-    altitude_gains: Gains {
-        p: 3.0,
-        i: 0.3,
-        d: 0.15,
-    },
-    lateral_gains: Gains {
-        p: 1.5,
-        i: 0.15,
-        d: 0.075,
-    },
-    yaw_gains: Gains {
-        p: 1.2,
-        i: 0.12,
-        d: 0.06,
-    },
-    thrust_curve_exponent: 2.0,
-});
+let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
 ```
 
-This configuration sets gains for individual PID controllers.
+For tuned gains, build the inner PID controllers explicitly (see `examples/copter-manual-realflight.rs` for a full example):
+
+```rust
+let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
+    gains: Gains { p: 7.0, i: 0.0, d: 0.01 },
+    max_integral: 100.0,
+    max_angular_rates: vec3(3.0, 3.0, 3.0),
+});
+
+let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
+    gains: Gains { p: 3.0, i: 0.0, d: 0.1 },
+    max_integral: 100.0,
+    max_angles: vec2(PI / 4.0, PI / 4.0),
+    max_rate: vec2(3.0, 3.0),
+});
+
+let stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
+    rates_controller,
+    attitude_controller,
+    ..Default::default()
+});
+```
 
 ### Mixer
 
@@ -145,24 +137,24 @@ TelemetryPublishers publish the system state to external systems. There is a pub
 let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
 ```
 
-### Running the Stabilizer
+### Running the Orchestrator
 
-With dependencies created and configured, you can create and run a flight stabilizer:
+With all components configured, assemble and run the `FlightOrchestrator`:
 
 ```rust
-// Assemble the flight stabilizer with all components
-let mut stabilizer = FlightStabilizer::new(
-    target_frequency,
+let mut orchestrator = FlightOrchestrator::new(
     commander,
     vehicle,
-    controller,
+    stabilizer,
     mixer,
     telemetry,
 );
 
-// Start the control loop
-stabilizer.run();
+let target_frequency = 250.0; // Hz
+orchestrator.run(target_frequency);
 ```
+
+The orchestrator runs the control loop at the given frequency until it receives SIGINT (Unix) or Ctrl-C (Windows), then shuts down cleanly.
 
 ## Conclusion
 
