@@ -131,7 +131,7 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 - Small, imperative commit subjects mirroring existing history (e.g. `Use f32 instead of Duration... (#18)`). Reference issues/PRs with `(#id)`.
 - Include simulator context for flight-behaviour changes (model, mode, what you flew).
 - PRs need a summary of the scenario tested, reproduction/validation steps (commands, configs), and screenshots or telemetry snippets when visual feedback changes.
-- Update `architecture.md` (or other docs) when control flow or module boundaries shift.
+- **Keep `README.md`, `CLAUDE.md`, and `architecture.md` in sync with the code.** Renamed trait, changed a method signature, added/removed a component, retired a CLI/example, swapped a default — update all three in the same PR. Stale docs mislead both humans and AI; treat them as part of the change, not a follow-up.
 
 ## Workflow
 
@@ -139,7 +139,7 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 2. Wire new components through the orchestrator the way `examples/copter-manual-realflight.rs` does — that's the canonical reference.
 3. Add tests alongside the code; cover the boundary/error case, not just the happy path.
 4. `cargo fmt && cargo clippy --all-targets && cargo test` before sending a PR.
-5. If you touch control flow or module boundaries, update `architecture.md`.
+5. If you change trait surface, module layout, or runnable examples, update `README.md`, `CLAUDE.md`, and `architecture.md` in the same PR.
 
 ## Pre-PR checklist
 
@@ -150,3 +150,4 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 - [ ] Public API has Rustdoc with at least one example.
 - [ ] Hot-path code allocates nothing per tick.
 - [ ] Coverage refreshed if control-loop logic changed.
+- [ ] `README.md`, `CLAUDE.md`, and `architecture.md` reflect any trait, module, or example changes.
