@@ -16,7 +16,8 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight SITL
 cargo build                                     # or: just build
 cargo test                                      # or: just test
 cargo run --example copter-manual-realflight    # joystick + RealFlight
-cargo run --example copter-auto-realflight      # scripted + RealFlight
+cargo run --example copter-auto-realflight      # scripted figure-eight + RealFlight
+cargo run --example generate_figure_eight       # (re)write flights/figure_eight.csv
 cargo run --example extreme_3d_commander        # joystick smoke test
 cargo run --example publish_telemetry           # MAVLink demo
 cargo tarpaulin -o html                         # or: just cover  (writes tarpaulin-report.html)
@@ -69,6 +70,13 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 | `TelemetryPublisher` | `MavlinkPublisher`, `FileLogger`                                   |
 
 `CopterStabilizer` is composed of PID controllers in `stabilizers::controllers::{attitude, body_rate, yaw, altitude, lateral}`.
+
+`ScriptCommander::new(path) -> Result<Self, ScriptError>` loads a CSV waypoint file
+(`x,y,altitude,cruise_speed`) from `flights/`, then follows and loops the waypoints by
+horizontal acceptance radius. It is geometry-agnostic — the figure-eight shape lives in
+`flights/figure_eight.csv`, produced by `examples/generate_figure_eight.rs`. The
+RealFlight examples share their vehicle/mixer/telemetry/run wiring via
+`examples/common/mod.rs` (`run_realflight(commander, stabilizer)`).
 
 ### Control loop (from `src/orchestrator.rs`)
 

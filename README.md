@@ -37,8 +37,11 @@ Stable Flight SITL is a library crate; runnable entrypoints live in `examples/`.
 # Joystick (Logitech Extreme 3D) controlling a quadcopter in RealFlight
 cargo run --example copter-manual-realflight
 
-# Scripted commands driving a quadcopter in RealFlight
+# Scripted figure-eight (waypoints from flights/figure_eight.csv) in RealFlight
 cargo run --example copter-auto-realflight
+
+# Regenerate flights/figure_eight.csv from the lemniscate formula
+cargo run --example generate_figure_eight
 
 # Joystick smoke test (no simulator required)
 cargo run --example extreme_3d_commander
@@ -46,6 +49,9 @@ cargo run --example extreme_3d_commander
 # MAVLink telemetry demo
 cargo run --example publish_telemetry
 ```
+
+Scripted flights are CSV waypoint files under `flights/` (`x,y,altitude,cruise_speed`,
+in meters and m/s); `ScriptCommander::new(path)` loads and loops them.
 
 Each example wires the same five-component pipeline and is a copy-paste starting point for your own setup. Let's walk through the components a `FlightOrchestrator` needs: a **Commander**, **Vehicle**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**.
 
