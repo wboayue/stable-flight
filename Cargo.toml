@@ -2,6 +2,11 @@
 name = "stable-flight-sitl"
 version = "0.1.0"
 edition = "2024"
+description = "Software-in-the-loop flight controller for VTOL drones, driven by the RealFlight simulator"
+authors = ["Wil Boayue <wil@wsbsolutions.com>"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/wboayue/stable-flight-sitl"
 keywords = ["realflight", "flight-simulator", "robotics", "control-systems"]
 categories = ["aerospace::simulation", "aerospace::drones"]
 
