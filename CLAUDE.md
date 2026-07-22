@@ -75,8 +75,8 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 (`x,y,altitude,cruise_speed`) from `flights/`, then follows and loops the waypoints by
 horizontal acceptance radius. It is geometry-agnostic — the figure-eight shape lives in
 `flights/figure_eight.csv`, produced by `examples/generate_figure_eight.rs`. The
-RealFlight examples share their vehicle/mixer/telemetry/run wiring via
-`examples/common/mod.rs` (`run_realflight(commander, stabilizer)`).
+RealFlight examples are intentionally standalone (each inlines its full pipeline wiring),
+so some setup is duplicated between them by design — readability over DRY.
 
 ### Control loop (from `src/orchestrator.rs`)
 

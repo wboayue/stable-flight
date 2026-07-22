@@ -1,25 +1,45 @@
 //! Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX
 //!
 //! Flies a quadcopter in RealFlight from a Logitech Extreme 3D joystick, using
-//! hand-tuned stabilizer gains. Shared RealFlight wiring lives in `examples/common`.
+//! hand-tuned stabilizer gains.
 //!
 //! ```text
 //! cargo run --example copter-manual-realflight
 //! ```
 
-mod common;
-
 use std::f32::consts::PI;
 
+use env_logger::Builder;
+
+use realflight_bridge::RealFlightRemoteBridge;
 use robomath::{vec2, vec3};
+use stable_flight_sitl::FlightOrchestrator;
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
+use stable_flight_sitl::mixers::QuadCopterMixer;
+use stable_flight_sitl::simulators::RealFlightVehicle;
+use stable_flight_sitl::simulators::realflight::{ActuatorMapping, RealFlightConfiguration};
 use stable_flight_sitl::stabilizers::Gains;
 use stable_flight_sitl::stabilizers::controllers::*;
 use stable_flight_sitl::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 
 fn main() {
+    // Initialize logger
+    Builder::from_default_env().format_timestamp_millis().init();
+
     // Joystick commander drives the vehicle attitude/rate directly.
     let commander = Extreme3DCommander::default();
+
+    // Configure RealFlight vehicle with network connection and actuator mapping.
+    // This mapping connects to a QuadCopterX model in RealFlight.
+    // Motors are mapped to the first 4 channels (0-3) matching the RealFlight QuadCopterX model.
+    let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+        bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
+        mapping: ActuatorMapping {
+            motors: [Some(2), Some(0), Some(1), Some(3), None, None, None, None],
+            ..Default::default()
+        },
+    });
 
     let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
         gains: Gains {
@@ -48,5 +68,13 @@ fn main() {
         ..Default::default()
     });
 
-    common::run_realflight(commander, stabilizer);
+    let mixer = QuadCopterMixer::default();
+
+    let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
+
+    let mut orchestrator =
+        FlightOrchestrator::new(commander, vehicle, stabilizer, mixer, telemetry);
+
+    let target_frequency = 250.0; // Hz
+    orchestrator.run(target_frequency);
 }
