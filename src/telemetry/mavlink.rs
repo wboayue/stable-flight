@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use mavlink::{MavHeader, MavlinkVersion, common::*};
+use mavlink::{MavConnection, MavHeader, MavlinkVersion, common::*};
 
 use crate::{Command, TelemetryPublisher, VehicleState};
 
@@ -36,7 +36,7 @@ impl MavlinkPublisher {
 
         MavlinkPublisher {
             config,
-            connection,
+            connection: Box::new(connection),
             sequence: 0,
             start_time: Instant::now(),
             heartbeat_interval: Duration::from_secs_f32(1.0 / 10.0),
