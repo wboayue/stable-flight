@@ -53,6 +53,31 @@ cargo run --example publish_telemetry
 Scripted flights are CSV waypoint files under `flights/` (`x,y,altitude,cruise_speed`,
 in meters and m/s); `ScriptCommander::new(path)` loads and loops them.
 
+To inspect a scripted path without flying it, render it as a static 3D image with the
+`plot_flight` binary (altitude on the vertical axis, path segments colored by cruise speed,
+a ground-projected shadow for depth). It reads any waypoint CSV in the `flights/` format and
+is gated behind the optional `plot` feature so it never weighs down the default build:
+
+```bash
+# Render to SVG or PNG — the output extension selects the format
+cargo run --features plot --bin plot_flight -- flights/figure_eight.csv figure_eight.svg
+
+# Rotate the camera with --pitch/--yaw (degrees); e.g. near top-down reads the horizontal shape
+cargo run --features plot --bin plot_flight -- flights/figure_eight.csv top.png --pitch 80 --yaw 0
+```
+
+```
+Usage: plot_flight [OPTIONS] <INPUT> <OUTPUT>
+
+Arguments:
+  <INPUT>   Waypoint CSV to render (columns: x,y,altitude,cruise_speed)
+  <OUTPUT>  Output image path; the .svg or .png extension selects the format
+
+Options:
+      --pitch <DEG>  Camera tilt above the horizontal, in degrees (default ~28.6)
+      --yaw <DEG>    Camera rotation about the vertical axis, in degrees (default ~28.6)
+```
+
 Each example wires the same five-component pipeline and is a copy-paste starting point for your own setup. Let's walk through the components a `FlightOrchestrator` needs: a **Commander**, **Vehicle**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**.
 
 ### Commander
