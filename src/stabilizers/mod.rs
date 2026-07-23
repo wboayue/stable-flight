@@ -1,6 +1,6 @@
 //! Control algorithms that maintain desired flight dynamics by processing commands and vehicle state feedback.
 
-use robomath::{vec3, Vec3};
+use robomath::{Vec3, vec3};
 
 pub mod copter;
 pub mod vtol;

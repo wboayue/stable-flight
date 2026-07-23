@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use log::{error, warn};
 use realflight_bridge::{ControlInputs, RealFlightBridge, SimulatorState};
-use robomath::{to_radians, Quaternion, Vec3};
+use robomath::{Quaternion, Vec3, to_radians};
 
 use crate::{ActuatorCommand, Vehicle, VehicleState};
 

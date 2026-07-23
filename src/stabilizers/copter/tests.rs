@@ -1,4 +1,4 @@
-use robomath::{vec3, Quaternion};
+use robomath::{Quaternion, vec3};
 
 use super::*;
 use std::f32::consts::PI;
@@ -128,11 +128,11 @@ fn test_altitude_controller_zero_error() {
     // For simplicity, let’s assume the controller is tuned such that hover thrust is ~0.5 (linear)
     // After quadratic curve (assuming exponent = 2.0), expect 0.5^2 = 0.25
     let expected_hover_thrust = 0.25; // Adjust based on thrust_curve_exponent
-                                      // assert!(
-                                      //     (output - expected_hover_thrust).abs() < 1e-2,
-                                      //     "Output should be near hover thrust when error is zero, got {}",
-                                      //     output
-                                      // );
+    // assert!(
+    //     (output - expected_hover_thrust).abs() < 1e-2,
+    //     "Output should be near hover thrust when error is zero, got {}",
+    //     output
+    // );
 }
 
 #[test]

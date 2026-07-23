@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use mavlink::{common::*, MavHeader, MavlinkVersion};
+use mavlink::{MavHeader, MavlinkVersion, common::*};
 
 use crate::{Command, TelemetryPublisher, VehicleState};
 
