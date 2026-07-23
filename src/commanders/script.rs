@@ -135,7 +135,8 @@ impl Commander for ScriptCommander {
 /// Parses waypoint rows from CSV `contents`.
 ///
 /// Blank lines and `#` comments are skipped, as is a leading non-numeric header row. Each
-/// remaining line must hold exactly four comma-separated floats (`x,y,altitude,cruise_speed`).
+/// remaining line must hold exactly four comma-separated, finite floats
+/// (`x,y,altitude,cruise_speed`); non-finite values (`NaN`/`Inf`) are rejected.
 fn parse_waypoints(contents: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
     let mut waypoints = Vec::new();
 
@@ -168,10 +169,19 @@ fn parse_waypoints(contents: &str) -> Result<Vec<WaypointCommand>, ScriptError> 
         }
 
         let parse = |field: &str, name: &str| {
-            field.parse::<f32>().map_err(|err| ScriptError::Parse {
+            let value = field.parse::<f32>().map_err(|err| ScriptError::Parse {
                 line: line_number,
                 message: format!("invalid {name}: {err}"),
-            })
+            })?;
+            // Reject NaN/Inf: a non-finite coordinate would stall waypoint advancement
+            // and feed a bad position straight into the stabilizer.
+            if !value.is_finite() {
+                return Err(ScriptError::Parse {
+                    line: line_number,
+                    message: format!("non-finite {name}: {field}"),
+                });
+            }
+            Ok(value)
         };
 
         waypoints.push(WaypointCommand {

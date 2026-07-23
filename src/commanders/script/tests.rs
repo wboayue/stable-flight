@@ -122,6 +122,22 @@ x,y,altitude,cruise_speed
 }
 
 #[test]
+fn non_finite_field_is_a_parse_error() {
+    for bad in ["nan", "inf", "-inf"] {
+        let csv = format!("x,y,altitude,cruise_speed\n1.0,{bad},3.0,7.0\n");
+        let_assert!(Err(ScriptError::Parse { line, message }) = parse_waypoints(&csv));
+        check!(line == 2);
+        check!(message.contains("non-finite y"));
+    }
+}
+
+#[test]
+fn new_reports_io_error_for_missing_file() {
+    let_assert!(Err(ScriptError::Io { path, .. }) = ScriptCommander::new("does/not/exist.csv"));
+    check!(path == "does/not/exist.csv");
+}
+
+#[test]
 fn advances_through_waypoints_and_loops() {
     let waypoints = vec![wp(0.0, 0.0), wp(10.0, 0.0), wp(20.0, 0.0)];
     let_assert!(Ok(mut commander) = ScriptCommander::from_waypoints(waypoints));
