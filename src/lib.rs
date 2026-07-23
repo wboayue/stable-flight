@@ -396,7 +396,7 @@ impl Default for RateCommand {
 /// - `altitude`: `0.0`
 /// - `cruise_speed`: `0.0`
 /// - `roll`: `None`
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct WaypointCommand {
     /// The target position in 2D space (X, Y coordinates).
     ///
