@@ -86,11 +86,7 @@ impl ScriptCommander {
     /// Returns [`ScriptError::Io`] if the file cannot be read, [`ScriptError::Parse`] if a
     /// row is malformed, or [`ScriptError::Empty`] if the file contains no waypoints.
     pub fn new(path: &str) -> Result<Self, ScriptError> {
-        let contents = fs::read_to_string(path).map_err(|source| ScriptError::Io {
-            path: path.to_string(),
-            source,
-        })?;
-        Self::from_waypoints(parse_waypoints(path, &contents)?)
+        Self::from_waypoints(load_waypoints(path)?)
     }
 
     /// Builds a commander from an already-constructed list of waypoints.
@@ -151,6 +147,35 @@ impl ScriptCommander {
         self.acceptance_radius_squared = radius * radius;
         self
     }
+}
+
+/// Loads and parses a waypoint script from the CSV file at `path`.
+///
+/// This is the loading seam, separate from sequencing: it turns a file into a
+/// `Vec<WaypointCommand>` without constructing a [`ScriptCommander`]. Use it when a consumer
+/// needs the raw path but not flight sequencing — for example the `plot_flight` binary, which
+/// renders these points as a 3D path. [`ScriptCommander::new`] is built on top of it.
+///
+/// # Errors
+///
+/// Returns [`ScriptError::Io`] if the file cannot be read, or [`ScriptError::Parse`] if a row
+/// is malformed. An empty file yields an empty vector (the "no waypoints" check lives in
+/// [`ScriptCommander::from_waypoints`], which is what requires a flyable path).
+///
+/// # Examples
+///
+/// ```no_run
+/// use stable_flight_sitl::commanders::script::load_waypoints;
+///
+/// let waypoints = load_waypoints("flights/figure_eight.csv").expect("failed to load script");
+/// println!("{} waypoints", waypoints.len());
+/// ```
+pub fn load_waypoints(path: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
+    let contents = fs::read_to_string(path).map_err(|source| ScriptError::Io {
+        path: path.to_string(),
+        source,
+    })?;
+    parse_waypoints(path, &contents)
 }
 
 impl Commander for ScriptCommander {
