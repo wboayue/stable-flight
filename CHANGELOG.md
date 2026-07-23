@@ -29,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `copter-auto-realflight` example flies the scripted figure-eight via
   `ScriptCommander` rather than the joystick commander. Each RealFlight example
   is now self-contained (no shared wiring module).
+- Upgraded `mavlink` requirement from 0.16.1 to 0.17.1. `mavlink::connect` now
+  returns a concrete connection that `MavlinkPublisher` boxes internally.
 
 ### Removed
 
