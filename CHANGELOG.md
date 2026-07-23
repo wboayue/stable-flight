@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is now self-contained (no shared wiring module).
 - Upgraded `mavlink` requirement from 0.16.1 to 0.17.1. `mavlink::connect` now
   returns a concrete connection that `MavlinkPublisher` boxes internally.
+- Upgraded `uom` requirement from 0.37.0 to 0.38.0, together with
+  `realflight-bridge` 1.0.0 → 1.1.0 so both share the same `uom` version.
 
 ### Removed
 
