@@ -140,7 +140,10 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 - Small, imperative commit subjects mirroring existing history (e.g. `Use f32 instead of Duration... (#18)`). Reference issues/PRs with `(#id)`.
 - Include simulator context for flight-behaviour changes (model, mode, what you flew).
 - PRs need a summary of the scenario tested, reproduction/validation steps (commands, configs), and screenshots or telemetry snippets when visual feedback changes.
+- **Merges are squash-only** — merge commits and rebase are disabled on GitHub, so a PR lands as a single commit titled `<PR title> (#id)`. Keep the PR title release-note quality; intermediate branch commits are discarded.
+- PRs must be green on the `test` GitHub Actions workflow (a `build` job running the test suite) before they can merge; the PR shows `UNSTABLE`/pending until it finishes.
 - **Keep `README.md`, `CLAUDE.md`, and `architecture.md` in sync with the code.** Renamed trait, changed a method signature, added/removed a component, retired a CLI/example, swapped a default — update all three in the same PR. Stale docs mislead both humans and AI; treat them as part of the change, not a follow-up.
+- **Maintain `CHANGELOG.md`** ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)). Every user-facing change adds a bullet under `## [Unreleased]` in the same PR, grouped by `Added`/`Changed`/`Deprecated`/`Removed`/`Fixed`/`Security`; mark breaking changes **Breaking**. Skip internal-only churn (refactors, test/CI tweaks). At release, rename `[Unreleased]` to `## [x.y.z] - YYYY-MM-DD`, add a fresh empty `[Unreleased]`, and update the compare links.
 
 ## Workflow
 
@@ -161,3 +164,4 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 - [ ] Hot-path code allocates nothing per tick.
 - [ ] Coverage refreshed if control-loop logic changed.
 - [ ] `README.md`, `CLAUDE.md`, and `architecture.md` reflect any trait, module, or example changes.
+- [ ] `CHANGELOG.md` has an `[Unreleased]` entry for any user-facing change.
