@@ -4,12 +4,13 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight SITL
 
 ## Quick facts
 
-- Rust **edition 2024**, version `0.1.0`, primarily a library. The one binary is
-  `src/bin/plot_flight.rs` (a 3D flight-path visualizer, gated behind the optional `plot`
-  feature); there is no `src/main.rs`.
+- Rust **edition 2024**, version `0.1.0`, primarily a library. Two binaries live in
+  `src/bin/`, each gated behind an optional feature: `plot_flight` (3D flight-path visualizer,
+  `plot` feature) and `generate_figure_eight` (waypoint-script generator, `tools` feature).
+  There is no `src/main.rs`.
 - Entrypoints live in `examples/*.rs`. Run with `cargo run --example <name>`.
 - Public modules: `commanders`, `mixers`, `orchestrator`, `simulators`, `stabilizers`, `telemetry`.
-- Key external crates: `realflight-bridge` (sim I/O), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`. Behind the optional `plot` feature (only the `plot_flight` binary): `plotters`, `clap`.
+- Key external crates: `realflight-bridge` (sim I/O), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). Behind the optional `plot` feature (`plot_flight` binary): `plotters`, `clap`; behind `tools` (`generate_figure_eight` binary): `clap`.
 - Untracked generated artifacts: `target/`, `tarpaulin-report.html`.
 
 ## Commands
@@ -17,21 +18,22 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight SITL
 ```bash
 cargo build                                     # or: just build
 cargo test                                      # or: just test
-cargo run --example copter-manual-realflight    # joystick + RealFlight
-cargo run --example copter-auto-realflight      # scripted figure-eight + RealFlight
-cargo run --example generate_figure_eight       # (re)write flights/figure_eight.csv
+cargo run --example copter-manual-realflight    # joystick + RealFlight (--host to override)
+cargo run --example copter-auto-realflight      # scripted figure-eight + RealFlight (script arg, --host)
 cargo run --example extreme_3d_commander        # joystick smoke test
 cargo run --example publish_telemetry           # MAVLink demo
 cargo run --features plot --bin plot_flight -- flights/figure_eight.csv out.svg  # 3D path viz (SVG or PNG)
+cargo run --features tools --bin generate_figure_eight  # (re)write flights/figure_eight.csv (flags resize the path)
 cargo tarpaulin -o html                         # or: just cover  (writes tarpaulin-report.html)
 cargo fmt --all
 cargo clippy --all-targets
 ```
 
 The flight pipeline has no CLI and there is no `cargo bench` target — don't suggest
-`cargo run -- --commander …` or `cargo bench`. The only binary is `plot_flight`, a standalone
-visualization tool behind the `plot` feature (`required-features` keeps it out of the default
-build); its unit tests run only under `cargo test --features plot`.
+`cargo run -- --commander …` or `cargo bench`. The two binaries are `plot_flight` (`plot`
+feature) and `generate_figure_eight` (`tools` feature), each kept out of the default build via
+`required-features`; their unit tests run only with the matching feature enabled (e.g.
+`cargo test --features plot`, `cargo test --features tools`).
 
 ## Architecture
 
@@ -80,7 +82,8 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 `ScriptCommander::new(path) -> Result<Self, ScriptError>` loads a CSV waypoint file
 (`x,y,altitude,cruise_speed`) from `flights/`, then follows and loops the waypoints by
 horizontal acceptance radius. It is geometry-agnostic — the figure-eight shape lives in
-`flights/figure_eight.csv`, produced by `examples/generate_figure_eight.rs`. The
+`flights/figure_eight.csv`, produced by the `generate_figure_eight` binary
+(`src/bin/generate_figure_eight.rs`, `tools` feature). The
 RealFlight examples are intentionally standalone (each inlines its full pipeline wiring),
 so some setup is duplicated between them by design — readability over DRY.
 

@@ -22,9 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   meters and m/s) from `flights/`, then follows and loops the waypoints by a
   configurable horizontal acceptance radius. Adds the public `from_waypoints`
   constructor, `with_acceptance_radius`, and a typed `ScriptError`.
-- `generate_figure_eight` example that writes `flights/figure_eight.csv` from a
-  Gerono lemniscate sized for a consumer-drone envelope (~60 m × ~30 m, altitude
-  sweeping 15–40 m).
+- `generate_figure_eight` binary (behind the optional `tools` feature) writes a
+  figure-eight waypoint script from a Gerono lemniscate. Every dimension is a `clap`
+  flag (`--output`, `--waypoints`, `--half-width`, `--height-scale`, `--alt-mid`,
+  `--alt-amp`, `--cruise`), defaulting to a consumer-drone envelope (~60 m × ~30 m,
+  altitude sweeping 15–40 m): `cargo run --features tools --bin generate_figure_eight`.
 - `flights/figure_eight.csv` scripted figure-eight flight path.
 - `WaypointCommand` now derives `Clone` and `Copy`.
 - Package metadata (`description`, `authors`, `license`, `repository`) in
@@ -38,6 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `copter-auto-realflight` example flies the scripted figure-eight via
   `ScriptCommander` rather than the joystick commander. Each RealFlight example
   is now self-contained (no shared wiring module).
+- The RealFlight examples parse arguments with `clap`: both accept `--host`
+  (default `10.211.55.3:8080`) instead of a hard-coded address, and
+  `copter-auto-realflight` takes the script path as its first argument (default
+  `flights/figure_eight.csv`).
 - Upgraded `mavlink` requirement from 0.16.1 to 0.17.1. `mavlink::connect` now
   returns a concrete connection that `MavlinkPublisher` boxes internally.
 - Upgraded `uom` requirement from 0.37.0 to 0.38.0, together with

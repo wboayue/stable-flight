@@ -35,19 +35,20 @@ Stable Flight SITL is a library crate; runnable entrypoints live in `examples/`.
 
 ```bash
 # Joystick (Logitech Extreme 3D) controlling a quadcopter in RealFlight
+# (RealFlight host defaults to 10.211.55.3:8080; override with --host)
 cargo run --example copter-manual-realflight
 
-# Scripted figure-eight (waypoints from flights/figure_eight.csv) in RealFlight
+# Scripted figure-eight in RealFlight (script path is the first arg, --host to override host)
 cargo run --example copter-auto-realflight
-
-# Regenerate flights/figure_eight.csv from the lemniscate formula
-cargo run --example generate_figure_eight
 
 # Joystick smoke test (no simulator required)
 cargo run --example extreme_3d_commander
 
 # MAVLink telemetry demo
 cargo run --example publish_telemetry
+
+# Regenerate flights/figure_eight.csv (flags like --half-width resize the path)
+cargo run --features tools --bin generate_figure_eight
 ```
 
 Scripted flights are CSV waypoint files under `flights/` (`x,y,altitude,cruise_speed`,
