@@ -35,14 +35,14 @@
 //! - **Full Control Stack**: Automatic position and altitude holding
 //! - **Selective Enabling**: Can enable altitude control while keeping manual lateral control
 
-use robomath::{vec2, vec3, Vec3};
+use robomath::{Vec3, vec2, vec3};
 
 use crate::{
     AttitudeCommand, Command, ControlOutput, RateCommand, Stabilizer, VehicleState, WaypointCommand,
 };
 
-use super::controllers::*;
 use super::Gains;
+use super::controllers::*;
 
 #[cfg(test)]
 mod tests;

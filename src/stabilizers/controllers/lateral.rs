@@ -1,4 +1,4 @@
-use robomath::{vec2, Vec2};
+use robomath::{Vec2, vec2};
 
 use crate::stabilizers::Gains;
 
