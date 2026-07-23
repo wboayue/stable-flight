@@ -36,5 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking:** the public `ScriptCommander::path` field; the commander now owns
   an internal waypoint list.
+- Unused `rand` dependency.
 
 [unreleased]: https://github.com/wboayue/stable-flight-sitl/compare/main...HEAD
