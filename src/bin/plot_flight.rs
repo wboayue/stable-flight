@@ -62,7 +62,7 @@ fn main() {
 }
 
 /// Camera orientation for the 3D projection, in radians. `None` fields keep plotters' default.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct View {
     pitch: Option<f64>,
     yaw: Option<f64>,
@@ -233,69 +233,51 @@ where
     // horizontal path. This is where a figure-eight's self-crossing is visible — in 3D the
     // altitude profile can pull the crossing apart into a non-intersecting loop.
     chart.draw_series(LineSeries::new(
-        looped(waypoints).map(|wp| (wp.position.x, floor, wp.position.y)),
+        looped(waypoints).map(|wp| xyz(wp, floor)),
         RGBColor(150, 150, 150).stroke_width(2),
     ))?;
 
     // Faint vertical stems from each waypoint down to the floor.
     for wp in waypoints {
         chart.draw_series(LineSeries::new(
-            [
-                (wp.position.x, floor, wp.position.y),
-                (wp.position.x, wp.altitude, wp.position.y),
-            ],
+            [xyz(wp, floor), xyz(wp, wp.altitude)],
             RGBColor(210, 210, 210).stroke_width(1),
         ))?;
     }
 
-    // Flight path: one segment per waypoint pair, colored by the segment's mean cruise speed.
-    // Looping connects the last waypoint back to the first, matching how scripts replay.
+    // Flight path: one segment per adjacent waypoint pair (looping last→first, matching how
+    // scripts replay), colored by the segment's mean cruise speed.
     let (speed_min, speed_max) = bounds.speed;
-    let points: Vec<&WaypointCommand> = waypoints.iter().collect();
-    for pair in looped_pairs(&points) {
-        let (a, b) = pair;
+    for (a, b) in looped(waypoints).zip(looped(waypoints).skip(1)) {
         let mean_speed = 0.5 * (a.cruise_speed + b.cruise_speed);
         let color = speed_color(speed_fraction(mean_speed, speed_min, speed_max));
         chart.draw_series(LineSeries::new(
-            [
-                (a.position.x, a.altitude, a.position.y),
-                (b.position.x, b.altitude, b.position.y),
-            ],
+            [xyz(a, a.altitude), xyz(b, b.altitude)],
             color.stroke_width(3),
         ))?;
     }
 
     // Waypoint markers.
-    chart.draw_series(waypoints.iter().map(|wp| {
-        Circle::new(
-            (wp.position.x, wp.altitude, wp.position.y),
-            3,
-            BLACK.filled(),
-        )
-    }))?;
+    chart.draw_series(
+        waypoints
+            .iter()
+            .map(|wp| Circle::new(xyz(wp, wp.altitude), 3, BLACK.filled())),
+    )?;
 
     area.present()?;
     Ok(())
 }
 
-/// Iterates the waypoints once and then yields the first again, closing the loop for the
-/// ground-projection outline.
-fn looped(waypoints: &[WaypointCommand]) -> impl Iterator<Item = &WaypointCommand> {
-    waypoints.iter().chain(waypoints.first())
+/// Maps a waypoint to a plotters 3D coordinate at the given `altitude`, encoding the axis
+/// convention in one place: horizontal `x`, altitude vertical (middle), horizontal `y` as depth.
+fn xyz(wp: &WaypointCommand, altitude: f32) -> (f32, f32, f32) {
+    (wp.position.x, altitude, wp.position.y)
 }
 
-/// Yields consecutive `(a, b)` waypoint pairs, including the wrap-around pair `(last, first)`
-/// so the drawn path forms a closed loop. Empty for fewer than two waypoints.
-fn looped_pairs<'a>(
-    points: &'a [&'a WaypointCommand],
-) -> impl Iterator<Item = (&'a WaypointCommand, &'a WaypointCommand)> {
-    points
-        .windows(2)
-        .map(|w| (w[0], w[1]))
-        .chain(match (points.first(), points.last()) {
-            (Some(&first), Some(&last)) if points.len() > 1 => Some((last, first)),
-            _ => None,
-        })
+/// Iterates the waypoints once and then yields the first again, closing the loop. Zipping this
+/// with its own `.skip(1)` yields the closed sequence of adjacent segments.
+fn looped(waypoints: &[WaypointCommand]) -> impl Iterator<Item = &WaypointCommand> {
+    waypoints.iter().chain(waypoints.first())
 }
 
 #[cfg(test)]
