@@ -3,12 +3,16 @@
 //! Flies a quadcopter in RealFlight from a Logitech Extreme 3D joystick, using
 //! hand-tuned stabilizer gains.
 //!
+//! The RealFlight host defaults to `10.211.55.3:8080`; override it with `--host`.
+//!
 //! ```text
 //! cargo run --example copter-manual-realflight
+//! cargo run --example copter-manual-realflight -- --host 192.168.1.20:8080
 //! ```
 
 use std::f32::consts::PI;
 
+use clap::Parser;
 use env_logger::Builder;
 
 use realflight_bridge::RealFlightRemoteBridge;
@@ -23,9 +27,19 @@ use stable_flight_sitl::stabilizers::controllers::*;
 use stable_flight_sitl::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 
+/// Joystick-driven quadcopter flight in RealFlight.
+#[derive(Parser)]
+struct Args {
+    /// RealFlight host to connect to (`host:port`).
+    #[arg(long, default_value = "10.211.55.3:8080")]
+    host: String,
+}
+
 fn main() {
     // Initialize logger
     Builder::from_default_env().format_timestamp_millis().init();
+
+    let args = Args::parse();
 
     // Joystick commander drives the vehicle attitude/rate directly.
     let commander = Extreme3DCommander::default();
@@ -34,7 +48,7 @@ fn main() {
     // This mapping connects to a QuadCopterX model in RealFlight.
     // Motors are mapped to the first 4 channels (0-3) matching the RealFlight QuadCopterX model.
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-        bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
+        bridge: RealFlightRemoteBridge::new(&args.host).expect("Failed to create bridge"),
         mapping: ActuatorMapping {
             motors: [Some(2), Some(0), Some(1), Some(3), None, None, None, None],
             ..Default::default()
