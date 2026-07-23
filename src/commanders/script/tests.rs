@@ -25,6 +25,19 @@ fn waypoint(command: Command) -> WaypointCommand {
     wp
 }
 
+/// Builds a waypoint at the given horizontal position, with defaults elsewhere.
+fn wp(x: f32, y: f32) -> WaypointCommand {
+    WaypointCommand {
+        position: vec2(x, y),
+        ..Default::default()
+    }
+}
+
+/// Steps the commander once from position `(x, y)` and returns the resulting target's x.
+fn target_x_after_step(commander: &mut ScriptCommander, x: f32, y: f32) -> f32 {
+    waypoint(commander.next(0.1, &state_at(x, y))).position.x
+}
+
 #[test]
 fn parses_valid_waypoints() {
     let csv = "\
@@ -82,7 +95,7 @@ fn empty_or_comment_only_file_has_no_waypoints() {
     let_assert!(Ok(waypoints) = parse_waypoints("# just a comment\n\n"));
     check!(waypoints.is_empty());
     // The commander rejects an empty waypoint list.
-    let_assert!(Err(ScriptError::Empty(_)) = ScriptCommander::from_waypoints(waypoints));
+    let_assert!(Err(ScriptError::Empty) = ScriptCommander::from_waypoints(waypoints));
 }
 
 #[test]
@@ -110,102 +123,36 @@ x,y,altitude,cruise_speed
 
 #[test]
 fn advances_through_waypoints_and_loops() {
-    let waypoints = vec![
-        WaypointCommand {
-            position: vec2(0.0, 0.0),
-            ..Default::default()
-        },
-        WaypointCommand {
-            position: vec2(10.0, 0.0),
-            ..Default::default()
-        },
-        WaypointCommand {
-            position: vec2(20.0, 0.0),
-            ..Default::default()
-        },
-    ];
+    let waypoints = vec![wp(0.0, 0.0), wp(10.0, 0.0), wp(20.0, 0.0)];
     let_assert!(Ok(mut commander) = ScriptCommander::from_waypoints(waypoints));
 
     // At waypoint 0 -> advance, now targeting waypoint 1.
-    assert_relative_eq!(
-        waypoint(commander.next(0.1, &state_at(0.0, 0.0)))
-            .position
-            .x,
-        10.0
-    );
+    assert_relative_eq!(target_x_after_step(&mut commander, 0.0, 0.0), 10.0);
     // At waypoint 1 -> advance to waypoint 2.
-    assert_relative_eq!(
-        waypoint(commander.next(0.1, &state_at(10.0, 0.0)))
-            .position
-            .x,
-        20.0
-    );
+    assert_relative_eq!(target_x_after_step(&mut commander, 10.0, 0.0), 20.0);
     // At waypoint 2 (the last) -> wrap back to waypoint 0.
-    assert_relative_eq!(
-        waypoint(commander.next(0.1, &state_at(20.0, 0.0)))
-            .position
-            .x,
-        0.0
-    );
+    assert_relative_eq!(target_x_after_step(&mut commander, 20.0, 0.0), 0.0);
 }
 
 #[test]
 fn holds_waypoint_until_within_acceptance_radius() {
-    let waypoints = vec![
-        WaypointCommand {
-            position: vec2(0.0, 0.0),
-            ..Default::default()
-        },
-        WaypointCommand {
-            position: vec2(50.0, 0.0),
-            ..Default::default()
-        },
-    ];
+    let waypoints = vec![wp(0.0, 0.0), wp(50.0, 0.0)];
     let_assert!(Ok(mut commander) = ScriptCommander::from_waypoints(waypoints));
 
     // Far from waypoint 0: no advance, keeps targeting waypoint 0.
-    assert_relative_eq!(
-        waypoint(commander.next(0.1, &state_at(100.0, 0.0)))
-            .position
-            .x,
-        0.0
-    );
+    assert_relative_eq!(target_x_after_step(&mut commander, 100.0, 0.0), 0.0);
     // Just outside the default 3 m radius: still no advance.
-    assert_relative_eq!(
-        waypoint(commander.next(0.1, &state_at(4.0, 0.0)))
-            .position
-            .x,
-        0.0
-    );
+    assert_relative_eq!(target_x_after_step(&mut commander, 4.0, 0.0), 0.0);
     // Inside the radius: advance to waypoint 1.
-    assert_relative_eq!(
-        waypoint(commander.next(0.1, &state_at(2.0, 0.0)))
-            .position
-            .x,
-        50.0
-    );
+    assert_relative_eq!(target_x_after_step(&mut commander, 2.0, 0.0), 50.0);
 }
 
 #[test]
 fn custom_acceptance_radius_changes_advance_threshold() {
-    let waypoints = vec![
-        WaypointCommand {
-            position: vec2(0.0, 0.0),
-            ..Default::default()
-        },
-        WaypointCommand {
-            position: vec2(50.0, 0.0),
-            ..Default::default()
-        },
-    ];
+    let waypoints = vec![wp(0.0, 0.0), wp(50.0, 0.0)];
     let_assert!(Ok(commander) = ScriptCommander::from_waypoints(waypoints));
     let mut commander = commander.with_acceptance_radius(10.0);
 
     // 8 m away is outside the default 3 m radius but inside the custom 10 m radius.
-    assert_relative_eq!(
-        waypoint(commander.next(0.1, &state_at(8.0, 0.0)))
-            .position
-            .x,
-        50.0
-    );
+    assert_relative_eq!(target_x_after_step(&mut commander, 8.0, 0.0), 50.0);
 }

@@ -30,6 +30,11 @@ use crate::{Command, Commander, VehicleState, WaypointCommand};
 /// reached and the commander advances to the next one.
 const DEFAULT_ACCEPTANCE_RADIUS: f32 = 3.0;
 
+/// The squared form of [`DEFAULT_ACCEPTANCE_RADIUS`], compared against squared distance
+/// each tick to avoid a per-tick `sqrt`.
+const DEFAULT_ACCEPTANCE_RADIUS_SQUARED: f32 =
+    DEFAULT_ACCEPTANCE_RADIUS * DEFAULT_ACCEPTANCE_RADIUS;
+
 /// Number of comma-separated fields expected on each waypoint row.
 const FIELDS_PER_WAYPOINT: usize = 4;
 
@@ -45,8 +50,8 @@ pub enum ScriptError {
     },
 
     /// The script contained no waypoints.
-    #[error("script '{0}' contained no waypoints")]
-    Empty(String),
+    #[error("script contained no waypoints")]
+    Empty,
 
     /// A waypoint row could not be parsed.
     #[error("line {line}: {message}")]
@@ -66,7 +71,7 @@ pub enum ScriptError {
 pub struct ScriptCommander {
     waypoints: Vec<WaypointCommand>,
     current: usize,
-    acceptance_radius: f32,
+    acceptance_radius_squared: f32,
 }
 
 impl ScriptCommander {
@@ -81,8 +86,7 @@ impl ScriptCommander {
             path: path.to_string(),
             source,
         })?;
-        let waypoints = parse_waypoints(&contents)?;
-        Self::from_waypoints(waypoints).map_err(|_| ScriptError::Empty(path.to_string()))
+        Self::from_waypoints(parse_waypoints(&contents)?)
     }
 
     /// Builds a commander from an already-constructed list of waypoints.
@@ -95,19 +99,19 @@ impl ScriptCommander {
     /// Returns [`ScriptError::Empty`] if `waypoints` is empty.
     pub fn from_waypoints(waypoints: Vec<WaypointCommand>) -> Result<Self, ScriptError> {
         if waypoints.is_empty() {
-            return Err(ScriptError::Empty(String::from("<waypoints>")));
+            return Err(ScriptError::Empty);
         }
         Ok(ScriptCommander {
             waypoints,
             current: 0,
-            acceptance_radius: DEFAULT_ACCEPTANCE_RADIUS,
+            acceptance_radius_squared: DEFAULT_ACCEPTANCE_RADIUS_SQUARED,
         })
     }
 
     /// Overrides the horizontal acceptance radius (meters) used to decide when the active
     /// waypoint has been reached.
     pub fn with_acceptance_radius(mut self, radius: f32) -> Self {
-        self.acceptance_radius = radius;
+        self.acceptance_radius_squared = radius * radius;
         self
     }
 }
@@ -115,23 +119,16 @@ impl ScriptCommander {
 impl Commander for ScriptCommander {
     fn next(&mut self, _dt: f32, current_state: &VehicleState) -> Command {
         // Advance when the vehicle is within the acceptance radius of the active waypoint
-        // (horizontal distance only). Wrapping the index loops the path forever.
+        // (horizontal distance only). Compare squared distances to avoid a per-tick sqrt.
+        // Wrapping the index loops the path forever.
         let target = &self.waypoints[self.current];
         let dx = target.position.x - current_state.position.x.value;
         let dy = target.position.y - current_state.position.y.value;
-        if (dx * dx + dy * dy).sqrt() <= self.acceptance_radius {
+        if dx * dx + dy * dy <= self.acceptance_radius_squared {
             self.current = (self.current + 1) % self.waypoints.len();
         }
 
-        // All `WaypointCommand` fields are `Copy`, so rebuild rather than clone.
-        let wp = &self.waypoints[self.current];
-        Command::Waypoint(WaypointCommand {
-            position: wp.position,
-            velocity: wp.velocity,
-            altitude: wp.altitude,
-            cruise_speed: wp.cruise_speed,
-            roll: wp.roll,
-        })
+        Command::Waypoint(self.waypoints[self.current])
     }
 }
 
