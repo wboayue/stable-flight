@@ -11,8 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `plot_flight` binary renders any waypoint CSV (`flights/*.csv`) as a static 3D
   flight path — horizontal `x`/`y` plane, altitude on the vertical axis, segments
-  colored by cruise speed. Emits SVG or PNG (chosen by output extension), with
-  `--pitch`/`--yaw` flags to adjust the 3D camera angle. Gated behind the optional
+  colored by cruise speed, each waypoint labeled with its 1-based script order.
+  Emits SVG or PNG (chosen by output extension), with `--pitch`/`--yaw` flags to
+  adjust the 3D camera angle. Gated behind the optional
   `plot` feature so the default library build stays lean:
   `cargo run --features plot --bin plot_flight -- flights/figure_eight.csv out.svg`.
 - `commanders::script::load_waypoints` public function loads and parses a waypoint

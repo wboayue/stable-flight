@@ -257,12 +257,18 @@ where
         ))?;
     }
 
-    // Waypoint markers.
-    chart.draw_series(
-        waypoints
-            .iter()
-            .map(|wp| Circle::new(xyz(wp, wp.altitude), 3, BLACK.filled())),
-    )?;
+    // Waypoint markers, each annotated with its 1-based position in the script. The label is
+    // offset a few pixels in screen space (via EmptyElement at the data point) so it sits
+    // beside the dot rather than on top of it.
+    chart.draw_series(waypoints.iter().enumerate().map(|(index, wp)| {
+        EmptyElement::at(xyz(wp, wp.altitude))
+            + Circle::new((0, 0), 3, BLACK.filled())
+            + Text::new(
+                format!("{}", index + 1),
+                (6, -6),
+                ("sans-serif", 13).into_font().color(&RGBColor(40, 40, 40)),
+            )
+    }))?;
 
     area.present()?;
     Ok(())
