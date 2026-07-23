@@ -54,8 +54,12 @@ pub enum ScriptError {
     Empty,
 
     /// A waypoint row could not be parsed.
-    #[error("line {line}: {message}")]
-    Parse { line: usize, message: String },
+    #[error("{path}:{line}: {message}")]
+    Parse {
+        path: String,
+        line: usize,
+        message: String,
+    },
 }
 
 /// A [`Commander`] that flies a looping sequence of waypoints loaded from a CSV file.
@@ -86,7 +90,7 @@ impl ScriptCommander {
             path: path.to_string(),
             source,
         })?;
-        Self::from_waypoints(parse_waypoints(&contents)?)
+        Self::from_waypoints(parse_waypoints(path, &contents)?)
     }
 
     /// Builds a commander from an already-constructed list of waypoints.
@@ -97,6 +101,20 @@ impl ScriptCommander {
     /// # Errors
     ///
     /// Returns [`ScriptError::Empty`] if `waypoints` is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use robomath::vec2;
+    /// use stable_flight_sitl::WaypointCommand;
+    /// use stable_flight_sitl::commanders::ScriptCommander;
+    ///
+    /// let waypoints = vec![WaypointCommand {
+    ///     position: vec2(0.0, 0.0),
+    ///     ..Default::default()
+    /// }];
+    /// let commander = ScriptCommander::from_waypoints(waypoints).expect("non-empty");
+    /// ```
     pub fn from_waypoints(waypoints: Vec<WaypointCommand>) -> Result<Self, ScriptError> {
         if waypoints.is_empty() {
             return Err(ScriptError::Empty);
@@ -109,8 +127,27 @@ impl ScriptCommander {
     }
 
     /// Overrides the horizontal acceptance radius (meters) used to decide when the active
-    /// waypoint has been reached.
+    /// waypoint has been reached. `radius` must be non-negative.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use robomath::vec2;
+    /// use stable_flight_sitl::WaypointCommand;
+    /// use stable_flight_sitl::commanders::ScriptCommander;
+    ///
+    /// let commander = ScriptCommander::from_waypoints(vec![WaypointCommand {
+    ///     position: vec2(0.0, 0.0),
+    ///     ..Default::default()
+    /// }])
+    /// .expect("non-empty")
+    /// .with_acceptance_radius(5.0);
+    /// ```
     pub fn with_acceptance_radius(mut self, radius: f32) -> Self {
+        debug_assert!(
+            radius >= 0.0,
+            "acceptance radius must be non-negative, got {radius}"
+        );
         self.acceptance_radius_squared = radius * radius;
         self
     }
@@ -132,12 +169,12 @@ impl Commander for ScriptCommander {
     }
 }
 
-/// Parses waypoint rows from CSV `contents`.
+/// Parses waypoint rows from CSV `contents`. `path` is used only to label parse errors.
 ///
 /// Blank lines and `#` comments are skipped, as is a leading non-numeric header row. Each
 /// remaining line must hold exactly four comma-separated, finite floats
 /// (`x,y,altitude,cruise_speed`); non-finite values (`NaN`/`Inf`) are rejected.
-fn parse_waypoints(contents: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
+fn parse_waypoints(path: &str, contents: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
     let mut waypoints = Vec::new();
 
     for (index, raw) in contents.lines().enumerate() {
@@ -160,6 +197,7 @@ fn parse_waypoints(contents: &str) -> Result<Vec<WaypointCommand>, ScriptError> 
         let line_number = index + 1;
         if fields.len() != FIELDS_PER_WAYPOINT {
             return Err(ScriptError::Parse {
+                path: path.to_string(),
                 line: line_number,
                 message: format!(
                     "expected {FIELDS_PER_WAYPOINT} fields, found {}",
@@ -170,6 +208,7 @@ fn parse_waypoints(contents: &str) -> Result<Vec<WaypointCommand>, ScriptError> 
 
         let parse = |field: &str, name: &str| {
             let value = field.parse::<f32>().map_err(|err| ScriptError::Parse {
+                path: path.to_string(),
                 line: line_number,
                 message: format!("invalid {name}: {err}"),
             })?;
@@ -177,6 +216,7 @@ fn parse_waypoints(contents: &str) -> Result<Vec<WaypointCommand>, ScriptError> 
             // and feed a bad position straight into the stabilizer.
             if !value.is_finite() {
                 return Err(ScriptError::Parse {
+                    path: path.to_string(),
                     line: line_number,
                     message: format!("non-finite {name}: {field}"),
                 });
