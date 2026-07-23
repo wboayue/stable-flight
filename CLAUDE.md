@@ -4,10 +4,12 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight SITL
 
 ## Quick facts
 
-- Rust **edition 2024**, version `0.1.0`, library only (no `src/main.rs`, no `src/bin/`).
+- Rust **edition 2024**, version `0.1.0`, primarily a library. The one binary is
+  `src/bin/plot_flight.rs` (a 3D flight-path visualizer, gated behind the optional `plot`
+  feature); there is no `src/main.rs`.
 - Entrypoints live in `examples/*.rs`. Run with `cargo run --example <name>`.
 - Public modules: `commanders`, `mixers`, `orchestrator`, `simulators`, `stabilizers`, `telemetry`.
-- Key external crates: `realflight-bridge` (sim I/O), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`.
+- Key external crates: `realflight-bridge` (sim I/O), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`. Behind the optional `plot` feature (only the `plot_flight` binary): `plotters`, `clap`.
 - Untracked generated artifacts: `target/`, `tarpaulin-report.html`.
 
 ## Commands
@@ -20,12 +22,16 @@ cargo run --example copter-auto-realflight      # scripted figure-eight + RealFl
 cargo run --example generate_figure_eight       # (re)write flights/figure_eight.csv
 cargo run --example extreme_3d_commander        # joystick smoke test
 cargo run --example publish_telemetry           # MAVLink demo
+cargo run --features plot --bin plot_flight -- flights/figure_eight.csv out.svg  # 3D path viz (SVG or PNG)
 cargo tarpaulin -o html                         # or: just cover  (writes tarpaulin-report.html)
 cargo fmt --all
 cargo clippy --all-targets
 ```
 
-There is no CLI binary and no `cargo bench` target — don't suggest `cargo run -- --commander …` or `cargo bench`.
+The flight pipeline has no CLI and there is no `cargo bench` target — don't suggest
+`cargo run -- --commander …` or `cargo bench`. The only binary is `plot_flight`, a standalone
+visualization tool behind the `plot` feature (`required-features` keeps it out of the default
+build); its unit tests run only under `cargo test --features plot`.
 
 ## Architecture
 
