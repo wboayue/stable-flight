@@ -749,7 +749,8 @@ mod tests {
         for value in [3.0, 10.0, 100.0, 255.0] {
             assert!(
                 matches!(Mode::from_channel_value(value), Mode::Attitude),
-                "Expected Attitude for value {}", value
+                "Expected Attitude for value {}",
+                value
             );
         }
     }
@@ -758,7 +759,10 @@ mod tests {
     #[test]
     fn test_mode_conversion_round_trip() {
         let attitude_value = Mode::Attitude.to_channel_value();
-        assert!(matches!(Mode::from_channel_value(attitude_value), Mode::Attitude));
+        assert!(matches!(
+            Mode::from_channel_value(attitude_value),
+            Mode::Attitude
+        ));
 
         let rate_value = Mode::Rate.to_channel_value();
         assert!(matches!(Mode::from_channel_value(rate_value), Mode::Rate));

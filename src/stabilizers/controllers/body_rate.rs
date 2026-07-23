@@ -1,4 +1,4 @@
-use robomath::{vec3, Vec3};
+use robomath::{Vec3, vec3};
 
 use super::super::Gains;
 
@@ -667,15 +667,11 @@ mod table_driven_tests {
     use super::*;
     use approx::{assert_abs_diff_eq, assert_relative_eq};
     use assert2::assert;
-    use robomath::{vec3, Vec3};
+    use robomath::{Vec3, vec3};
     use uom::num_traits::Signed;
 
     fn safe_sign_num(value: f32) -> f32 {
-        if value == 0.0 {
-            0.0
-        } else {
-            value.signum()
-        }
+        if value == 0.0 { 0.0 } else { value.signum() }
     }
 
     /// Table-driven test for validating controller responses across a range of input configurations.

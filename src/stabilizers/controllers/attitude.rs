@@ -1,6 +1,6 @@
 use std::f32::consts::FRAC_PI_4;
 
-use robomath::{vec2, Vec2};
+use robomath::{Vec2, vec2};
 
 use super::super::Gains;
 
