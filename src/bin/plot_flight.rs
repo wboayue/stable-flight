@@ -31,6 +31,9 @@ const AXIS_PADDING_FRACTION: f32 = 0.05;
 /// Padding applied when an axis has zero span (all points share a coordinate), in meters.
 const DEGENERATE_AXIS_PADDING: f32 = 1.0;
 
+/// Font family used for all chart text (caption, axis labels, waypoint numbers).
+const FONT_FAMILY: &str = "sans-serif";
+
 #[derive(Parser, Debug)]
 #[command(
     about = "Render a waypoint script (flights/*.csv) as a static 3D flight path",
@@ -198,7 +201,7 @@ where
     let bounds = plot_bounds(waypoints);
 
     let mut chart = ChartBuilder::on(&area)
-        .caption(title, ("sans-serif", 26))
+        .caption(title, (FONT_FAMILY, 26))
         .margin(20)
         // x horizontal, altitude vertical (middle axis), y depth.
         .build_cartesian_3d(
@@ -224,7 +227,7 @@ where
     chart
         .configure_axes()
         .light_grid_style(RGBColor(220, 220, 220))
-        .label_style(("sans-serif", 12))
+        .label_style((FONT_FAMILY, 12))
         .draw()?;
 
     let floor = bounds.altitude.0;
@@ -266,7 +269,7 @@ where
             + Text::new(
                 format!("{}", index + 1),
                 (6, -6),
-                ("sans-serif", 13).into_font().color(&RGBColor(40, 40, 40)),
+                (FONT_FAMILY, 13).into_font().color(&RGBColor(40, 40, 40)),
             )
     }))?;
 
@@ -345,6 +348,24 @@ mod tests {
     fn speed_fraction_constant_when_all_equal() {
         // Degenerate range → single mid-gradient color for the whole path.
         check!(speed_fraction(7.0, 7.0, 7.0) == 0.5);
+    }
+
+    #[test]
+    fn looped_closes_the_path() {
+        // `looped` must yield every waypoint once, then repeat the first, so consecutive
+        // (a, b) pairs via `.zip(.skip(1))` form a closed loop (last segment returns to start).
+        let waypoints = [
+            wp(1.0, 0.0, 0.0, 0.0),
+            wp(2.0, 0.0, 0.0, 0.0),
+            wp(3.0, 0.0, 0.0, 0.0),
+        ];
+        let xs: Vec<f32> = looped(&waypoints).map(|wp| wp.position.x).collect();
+        check!(xs == vec![1.0, 2.0, 3.0, 1.0]);
+
+        // A single waypoint yields itself twice: the degenerate loop is a zero-length segment.
+        let single = [wp(5.0, 0.0, 0.0, 0.0)];
+        let xs: Vec<f32> = looped(&single).map(|wp| wp.position.x).collect();
+        check!(xs == vec![5.0, 5.0]);
     }
 
     #[test]
