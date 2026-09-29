@@ -86,8 +86,8 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 |--------------------|----------------------------------------------------------------------|
 | `Commander`        | `Extreme3DCommander`, `SpektrumCommander`, `ScriptCommander`         |
 | `Vehicle`          | `RealFlightVehicle<T: RealFlightBridge>`                             |
-| `Stabilizer`       | `CopterStabilizer`, plus VTOL stabilizer in `stabilizers::vtol`      |
-| `Mixer`            | `QuadCopterMixer`, `TailsitterMixer`                                 |
+| `Stabilizer`       | `CopterStabilizer`                                                   |
+| `Mixer`            | `QuadCopterMixer`; `TailSitterMixer` (placeholder, outputs zeros)    |
 | `TelemetryPublisher` | `MavlinkPublisher`, `FileLogger`                                   |
 
 `CopterStabilizer` is composed of PID controllers in `stabilizers::controllers::{attitude, body_rate, yaw, altitude, lateral}`.

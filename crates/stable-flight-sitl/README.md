@@ -46,7 +46,7 @@ The RealFlightVehicle is configured with a `RealFlightLocalBridge` or `RealFligh
 
 ### Stabilizer
 
-Stabilizers calculate the difference between the vehicle's current state and the desired state, generating `ControlOutput`s that the mixer then translates into actuator commands. This component contains the core flight stabilization logic. `CopterStabilizer` targets multirotors; a VTOL stabilizer lives in `stabilizers::vtol` for airframes that transition between flight modes. This is where you would start if you want to implement custom flight control logic.
+Stabilizers calculate the difference between the vehicle's current state and the desired state, generating `ControlOutput`s that the mixer then translates into actuator commands. This component contains the core flight stabilization logic. `CopterStabilizer` targets multirotors. This is where you would start if you want to implement custom flight control logic.
 
 The simplest setup uses default gains:
 

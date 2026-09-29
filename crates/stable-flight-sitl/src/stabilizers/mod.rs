@@ -3,7 +3,6 @@
 use robomath::{Vec3, vec3};
 
 pub mod copter;
-pub mod vtol;
 
 pub mod controllers;
 
