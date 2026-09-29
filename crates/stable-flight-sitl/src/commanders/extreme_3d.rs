@@ -44,7 +44,7 @@
 //!
 //! // Generate commands in a control loop
 //! let state = VehicleState::default();
-//! let command = commander.next(0.004, &state); // 250 Hz (4ms)
+//! let command = commander.next_command(0.004, &state); // 250 Hz (4ms)
 //! # Ok(())
 //! # }
 //! ```
@@ -63,7 +63,7 @@
 //!
 //! // Press D-Pad Up on the joystick to switch to Rate mode
 //! // The commander will automatically switch modes based on D-pad input
-//! let command = commander.next(0.004, &state);
+//! let command = commander.next_command(0.004, &state);
 //! // Command type (Attitude or Rate) depends on current D-pad selection
 //! # Ok(())
 //! # }
@@ -246,7 +246,7 @@ impl Extreme3DCommander {
             CommanderError::InitializationFailed(format!("Gilrs initialization failed: {}", e))
         })?;
 
-        // Initialize channels[5] to match the chosen mode so next() preserves it
+        // Initialize channels[5] to match the chosen mode so next_command() preserves it
         let mut channels = [0.0; 6];
         channels[5] = mode.to_channel_value();
 
@@ -359,7 +359,7 @@ impl Commander for Extreme3DCommander {
     /// - Mode 1 (D-Pad Up): Returns `Command::Rate`
     ///
     /// Dead zones are automatically applied to roll, pitch, and yaw inputs.
-    fn next(&mut self, _dt: f32, _current_state: &VehicleState) -> Command {
+    fn next_command(&mut self, _dt: f32, _current_state: &VehicleState) -> Command {
         let channels = self.read_channels();
 
         self.mode = Mode::from_channel_value(channels[5]);

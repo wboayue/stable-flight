@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** trait methods renamed for clarity: `Commander::next` →
+  `next_command`, `Stabilizer::set_initial_state` → `prime`, and
+  `TelemetryPublisher::send_telemetry` → `publish`. Update implementations and
+  call sites; signatures are unchanged.
 - The repository is now the `stable-flight` Cargo workspace; this crate lives in
   `crates/stable-flight-sitl` and its `repository` URL points at
   `github.com/wboayue/stable-flight`. The dev binaries moved to the unpublished

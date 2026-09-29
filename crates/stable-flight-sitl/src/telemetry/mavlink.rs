@@ -161,7 +161,7 @@ impl MavlinkPublisher {
 }
 
 impl TelemetryPublisher for MavlinkPublisher {
-    fn send_telemetry(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState) {
+    fn publish(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState) {
         self.heartbeat_bucket += dt;
         self.global_position_bucket += dt;
         self.local_position_bucket += dt;

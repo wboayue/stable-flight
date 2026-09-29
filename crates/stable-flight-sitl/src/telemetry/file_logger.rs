@@ -73,7 +73,7 @@ impl FileLogger {
 }
 
 impl TelemetryPublisher for FileLogger {
-    fn send_telemetry(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState) {
+    fn publish(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState) {
         // Define MAVLink header (system ID and component ID)
         let header = MavHeader {
             system_id: 1,    // Simulated system ID

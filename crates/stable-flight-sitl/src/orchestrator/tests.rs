@@ -7,7 +7,7 @@ use crate::*;
 // Mock implementations for dependencies
 struct MockCommander;
 impl Commander for MockCommander {
-    fn next(&mut self, _: f32, _: &VehicleState) -> Command {
+    fn next_command(&mut self, _: f32, _: &VehicleState) -> Command {
         Command::Attitude(AttitudeCommand::default())
     }
 }
@@ -26,7 +26,7 @@ impl Stabilizer for MockStabilizer {
         ControlOutput::default()
     }
 
-    fn set_initial_state(&mut self, state: &VehicleState) {}
+    fn prime(&mut self, state: &VehicleState) {}
 }
 
 struct MockMixer;
@@ -38,7 +38,7 @@ impl Mixer for MockMixer {
 
 struct MockTelemetry;
 impl TelemetryPublisher for MockTelemetry {
-    fn send_telemetry(&mut self, _: Duration, _: &Command, _: &VehicleState) {}
+    fn publish(&mut self, _: Duration, _: &Command, _: &VehicleState) {}
 }
 
 #[test]

@@ -3,7 +3,7 @@
 //! This example polls the joystick at 2Hz and prints the generated commands
 //! for 100 iterations (50 seconds). It shows how to:
 //! - Initialize the Extreme3DCommander
-//! - Call `next()` with timing and vehicle state
+//! - Call `next_command()` with timing and vehicle state
 //! - Maintain a fixed update rate using precise sleep timing
 //!
 //! **Prerequisites**: Logitech Extreme 3D joystick must be connected.
@@ -29,7 +29,7 @@ pub fn main() {
     for _ in 0..ITERATION_COUNT {
         next_time += dt;
 
-        let command = commander.next(dt.as_secs_f32(), &vehicle_state);
+        let command = commander.next_command(dt.as_secs_f32(), &vehicle_state);
         println!("{:?}", command);
 
         // Sleep to maintain precise timing

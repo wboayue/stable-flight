@@ -14,7 +14,7 @@ pub struct ConsoleTelemetryPublisher {
 }
 
 impl TelemetryPublisher for ConsoleTelemetryPublisher {
-    fn send_telemetry(&mut self, _dt: Duration, _command: &Command, telemetry: &VehicleState) {
+    fn publish(&mut self, _dt: Duration, _command: &Command, telemetry: &VehicleState) {
         info!("Sending telemetry: {:?}", telemetry);
     }
 }

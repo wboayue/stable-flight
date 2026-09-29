@@ -54,7 +54,7 @@ use robomath::{Quaternion, Vec2, Vec3};
 /// struct ConstantAttitudeCommander;
 ///
 /// impl Commander for ConstantAttitudeCommander {
-///     fn next(&mut self, dt: f32, current_state: &VehicleState) -> Command {
+///     fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
 ///         Command::Attitude(AttitudeCommand {
 ///             throttle: 0.5,  // 50% throttle
 ///             roll: 0.0,      // No roll
@@ -84,7 +84,7 @@ pub trait Commander {
     /// - `Command::Attitude`: Direct manual control inputs for the aircraft's attitude (orientation).
     /// - `Command::Rate`: Direct manual control inputs for the aircraft's rotational rates.
     /// - `Command::Waypoint`: High-level navigational instructions for autonomous flight to a specific position.
-    fn next(&mut self, dt: f32, current_state: &VehicleState) -> Command;
+    fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command;
 }
 
 /// Represents a flight control command to be executed by the flight system.
@@ -618,9 +618,11 @@ pub trait Stabilizer {
     /// A `ControlOutput` containing the desired thrust and control moments.
     fn stabilize(&mut self, dt: f32, command: &Command, state: &VehicleState) -> ControlOutput;
 
-    /// Set the initial state of the stabilizer
-    /// This can be used to initialize internal parameters or state variables
-    fn set_initial_state(&mut self, state: &VehicleState);
+    /// Primes the stabilizer from a known-good vehicle state before the first tick.
+    ///
+    /// Warms internal state (e.g. the heading hold target) so control starts from where the
+    /// vehicle is rather than from zero. Called once before the control loop starts.
+    fn prime(&mut self, state: &VehicleState);
 }
 
 /// Component responsible for publishing telemetry data from the flight system.
@@ -642,7 +644,7 @@ pub trait TelemetryPublisher {
     /// - `dt`: Time elapsed since the last telemetry update.
     /// - `command`: The current command being executed.
     /// - `telemetry`: The current vehicle state to be published.
-    fn send_telemetry(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState);
+    fn publish(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState);
 }
 
 /// Represents commands sent to the vehicle's actuators.
