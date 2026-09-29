@@ -20,7 +20,12 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Untracked generated artifacts: `target/`, `Cargo.lock`, `tarpaulin-report.html`.
 - Unless a path says otherwise, `src/…` and `examples/…` below are relative to
   `crates/stable-flight-sitl/`.
-- `plans/workspace-migration.md` tracks the in-progress split into core / sitl / backend crates.
+- Plans live in `plans/` (tracked). `plans/workspace-migration.md` tracks the split into
+  core / sitl / backend crates; `plans/architecture-refactor.md` tracks trait-surface cleanups
+  that land first (its PR 5 is superseded by the migration). Read both before touching trait
+  surface or crate layout.
+- The repo was renamed `stable-flight-sitl` → `stable-flight`; the crate keeps the
+  `stable-flight-sitl` name. Old GitHub URLs redirect.
 
 ## Commands
 
@@ -159,6 +164,8 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 - PRs need a summary of the scenario tested, reproduction/validation steps (commands, configs), and screenshots or telemetry snippets when visual feedback changes.
 - **Merges are squash-only** — merge commits and rebase are disabled on GitHub, so a PR lands as a single commit titled `<PR title> (#id)`. Keep the PR title release-note quality; intermediate branch commits are discarded.
 - PRs must be green on the `test` GitHub Actions workflow (a `build` job running the test suite) before they can merge; the PR shows `UNSTABLE`/pending until it finishes.
+- CI triggers only on PRs whose base is `main`. In a stack of PRs (each based on the previous branch), only the bottom one gets checks. Because merges are squash-only, rebase each child onto `main` (`git rebase --onto main <old-parent-branch>`) after its parent merges, then retarget it to `main` so CI runs.
+- A new published crate inherits `[workspace.package]`, gets its own `README.md` (absolute GitHub links; crates.io doesn't resolve repo-relative ones) and `CHANGELOG.md`, and symlinks `LICENSE` (`ln -s ../../LICENSE`) so it ships in the package. Check with `cargo package -p <crate> --list`.
 - **Keep docs in sync with the code, in the same PR.** Renamed trait, changed a method signature, added/removed a component or crate, retired a CLI/example, swapped a default — update the doc that owns the fact. Stale docs mislead both humans and AI; treat them as part of the change, not a follow-up. Each fact has one home; other docs link to it rather than restating it:
   - crate `README.md` — that crate's purpose, usage, features;
   - root `README.md` — project overview, crate index, supported simulators, quick start;
@@ -173,11 +180,13 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 3. Add tests alongside the code; cover the boundary/error case, not just the happy path.
 4. `cargo fmt --all && cargo clippy --workspace --all-targets && cargo test --workspace --all-features` before sending a PR.
 5. If you change trait surface, module or crate layout, or runnable examples, update the owning docs (see Commits & PRs) in the same PR.
+6. To compare against `main` (test counts, clippy output), use a throwaway worktree — `git worktree add <dir> main` with its own `CARGO_TARGET_DIR` — not a `git stash` round-trip; stashing staged renames plus untracked files can fail to restore.
+7. Pass PR bodies to `gh pr create`/`edit` with `--body-file`; inline heredocs inside `$(…)` break on apostrophes.
 
 ## Pre-PR checklist
 
 - [ ] Builds clean (`cargo build --workspace`) and tests pass (`cargo test --workspace --all-features`).
-- [ ] `cargo fmt --all` and `cargo clippy --workspace --all-targets` clean.
+- [ ] `cargo fmt --all` clean; `cargo clippy --workspace --all-targets` adds no new warnings. The tree carries pre-existing warnings (deprecated `let_assert`, unused variables in controllers/tests), so diff against `main` rather than expecting zero.
 - [ ] New fallible APIs return `Result` with `thiserror` types; no new panics in library code.
 - [ ] No `.unwrap()` or `.expect()` introduced under `src/` (examples/tests OK).
 - [ ] New PID/quaternion/transform logic is unit-tested with table cases.
