@@ -185,10 +185,11 @@ waypoints (pure math), so waypoint flight couldn't run on firmware.
 - Split the tests: following behaviour goes to core, parsing/IO errors stay in sitl.
 
 **Add composition points to core** (each is small, allocation-free, and table-tested):
-- `ComposedVehicle<E: StateEstimator, A: Actuator>` implements `Vehicle`. This is how firmware
-  (IMU + estimator, ESC output) and sensor-synthesis SITL (truth → sensors → estimator)
-  assemble a vehicle. Depends on architecture-refactor PR 4 settling the
-  `StateEstimator`/`Actuator` signatures.
+- `ComposedVehicle<E: StateEstimator, A: Actuator>` implements `StateEstimator` and `Actuator`
+  by delegation, and gets `Vehicle` from the blanket impl (#47). Implementing `Vehicle`
+  directly is no longer possible. This is how firmware (IMU + estimator, ESC output) and
+  sensor-synthesis SITL (truth → sensors → estimator) assemble a vehicle. The #47 review
+  confirmed this compiles with no coherence conflict.
 - `impl<A: TelemetryPublisher, B: TelemetryPublisher> TelemetryPublisher for (A, B)`. This
   fans out to several sinks (MAVLink + file log) without `Vec<Box<dyn _>>`. Nest the tuples
   for more than two.
@@ -196,7 +197,8 @@ waypoints (pure math), so waypoint flight couldn't run on firmware.
 **Core `testing` feature** (off by default): `NullVehicle`, `ConstantCommander`,
 `RecordingTelemetry` (fixed-capacity, no alloc). Core tests use it via `cfg(test)`. Sitl and
 backend crates enable it in `[dev-dependencies]`. Delete the ad-hoc mocks this replaces
-(e.g. in `commanders/tests.rs` and `orchestrator/tests.rs`).
+(e.g. in `commanders/tests.rs` and `orchestrator/tests.rs`, whose `MockVehicle` is identical
+to `NullVehicle` since #47).
 
 Other points:
 - Sitl depends on `stable-flight = { path = "../stable-flight", version = "0.1.0" }` and updates
@@ -244,8 +246,10 @@ Title: `Move RealFlight backend into stable-flight-sitl-realflight`
   body frame, units, sign of each angle and rate) on `VehicleState` in core. Each backend
   converts at its boundary.
 - **Timing contract.** Document on `Vehicle` what a backend must guarantee each tick: which
-  call talks to the sim, and how old the state from `estimate_state` is relative to the last
-  `actuate`. Today `RealFlightVehicle::actuate` does the `exchange_data` round-trip and
+  call talks to the sim, and how old the state from `StateEstimator::estimate_state` is
+  relative to the last `Actuator::actuate`. #47 already documents RealFlight's caching and the
+  `dt == Duration::ZERO` first-call convention in rustdoc, so this PR formalizes it as the
+  cross-backend contract and adds the pinning test. Today `RealFlightVehicle::actuate` does the `exchange_data` round-trip and
   `estimate_state` returns the cached result, so the stabilizer sees state from the previous
   exchange. Make this explicit in the RealFlight rustdoc and add a test that pins it (mock
   bridge counts exchanges per tick).
@@ -303,7 +307,7 @@ Risk: low–medium (`rem_euclid` replacement is the only math change; covered by
   - A `LockstepRunner` in sitl, next to `RealTimeRunner`. `dt` comes from sim time, and the
     controller steps the sim instead of sleeping. It reuses `FlightLoop` and `ShutdownSignal`,
     so only pacing is new.
-  - Possibly a timestamp on `VehicleState`. `Vehicle::estimate_state(dt)` takes the elapsed
+  - Possibly a timestamp on `VehicleState`. `StateEstimator::estimate_state(dt)` takes the elapsed
     time as input, but a lockstep sim reports its own.
   - Promoting `ActuatorMapping` to a shared channel map.
   Design these against the real second backend, not speculatively.

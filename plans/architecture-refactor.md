@@ -191,6 +191,21 @@ a blanket impl, and `estimate_state` takes `&mut self`. `RealFlightVehicle`, `Nu
 and the orchestrator test mock implement the two halves. Callers on concrete types
 must now import `StateEstimator`/`Actuator` (one doctest needed it). Adds a rustdoc
 example on `Vehicle`.
+After review:
+- The crate README says to implement `StateEstimator` + `Actuator`.
+- RealFlight's `estimate_state` rustdoc describes the caching (the exchange happens in
+  `actuate`) and the `dt == ZERO` initial exchange.
+- `StateEstimator` documents why it takes `&mut self` and the first-call `Duration::ZERO`
+  convention.
+- Trimmed `Vehicle`'s duplicated implementor list, and removed unused doctest imports.
+
+**Review follow-ups (not in #47):**
+- The orchestrator test `MockVehicle` duplicates `NullVehicle`; workspace PR 2's
+  `testing` feature removes it.
+- CLAUDE.md's trait block copies `lib.rs`.
+- `&mut T` / `Box<T>` forwarding impls, if ever needed.
+- The per-tick `VehicleState` clone in RealFlight.
+- The stale ignored doctest in `orchestrator.rs` uses old paths.
 
 ---
 
