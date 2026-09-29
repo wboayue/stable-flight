@@ -22,14 +22,14 @@ stacked branch).
 | # | Title                                         | Scope             | Risk   | Status |
 |---|-----------------------------------------------|-------------------|--------|--------|
 | 1 | Stop claiming the VTOL stabilizer exists      | Docs + 1 stub     | None   | ✅ #44 |
-| 2 | Replace panicking telemetry writes            | Bug fix           | Low    | 🔍 #45 |
+| 2 | Replace panicking telemetry writes            | Bug fix           | Low    | 🔍 #50 (replaced auto-closed #45) |
 | 3 | Rename leaky method names                     | Mechanical rename | Low    | 🔍 #46 |
 | 4 | Resolve `Vehicle` vs `StateEstimator`/`Actuator` | Trait surface  | Low    | 🔍 #47 |
 | 5 | Rename `simulators/` module to `vehicles/`    | Mechanical move   | Low    | ⏭ workspace PR 3 |
 | 6 | Decouple `TelemetryPublisher` from `Command`  | Trait surface     | Medium | 🔍 #48 |
 | 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | ⬜ |
 
-PRs 2–4 and 6 are stacked (#45 → #46 → #47 → #48). Merge them in order, and after
+PRs 2–4 and 6 are stacked (#50 → #46 → #47 → #48). Merge them in order, and after
 each squash merge rebase the next branch onto `main`.
 
 ---
@@ -100,7 +100,7 @@ relevant component, not here.
 
 **Risk.** Low. Pure error-path change. Existing tests stay green.
 
-**As implemented (#45).** Option 1. The crate-private `telemetry::throttle::ErrorThrottle`
+**As implemented (#50, originally #45).** Option 1. The crate-private `telemetry::throttle::ErrorThrottle`
 logs the first failure and then one per 250 (about 1/s at 250 Hz). It's shared by both
 publishers and table-tested. A pre-epoch clock records timestamp 0. Constructor
 `.expect()`s (`MavlinkPublisher::new`, `FileLogger::new`) are still out of scope.
@@ -232,7 +232,7 @@ the record never outlives the tick.
 **As implemented (#48).** It borrows everything except `dt` (`Duration` is `Copy`) and
 derives `Copy`. Fields: `dt`, `command`, `state`, `control`, `actuators`.
 `publish` stays fire-and-forget (no `Result`). The loop can't act on a telemetry
-failure, and publishers handle their own errors since #45. The trait docs say so.
+failure, and publishers handle their own errors since #50. The trait docs say so.
 
 ---
 
