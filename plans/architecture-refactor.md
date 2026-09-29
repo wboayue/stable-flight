@@ -56,6 +56,12 @@ already signals VTOL ambition.
 
 **As implemented (#44).** Deleted. The crate README also claimed the module existed and
 was fixed too. CHANGELOG: **Breaking** removal of the empty module.
+After review: the "planned" note lives only in architecture.md, linking the eXplora VTOL
+model. `TailSitterMixer` (correct casing) is labelled a placeholder in CLAUDE.md and
+architecture.md, since it returns zeroed actuator commands.
+**Review follow-ups (not in #44):** CLAUDE.md's impl table duplicates architecture.md's
+impl list; keep one and link to it. `stabilizers::low_pass_filter_vec3` is public but
+unused, so delete it or move it to a filters module.
 
 ---
 
