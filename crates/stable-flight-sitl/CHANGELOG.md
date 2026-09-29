@@ -65,7 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `MavlinkPublisher` and `FileLogger` no longer panic the flight loop on a failed
-  send/write/flush or a pre-epoch system clock. Failures are logged at `warn`,
-  rate-limited to one line per 250 failures, and the tick continues.
+  send/write/flush or a pre-epoch system clock. Failures are logged at `warn`
+  and the tick continues. Logging is rate-limited per publisher: the first
+  failure is reported, then one per 250 consecutive failures with a count of
+  those suppressed. A success resets the count.
 
 [unreleased]: https://github.com/wboayue/stable-flight/compare/main...HEAD

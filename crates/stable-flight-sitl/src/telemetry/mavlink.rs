@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use log::warn;
 use mavlink::{MavConnection, MavHeader, MavlinkVersion, common::*};
 
 use super::throttle::ErrorThrottle;
@@ -63,8 +64,15 @@ impl MavlinkPublisher {
         self.sequence = self.sequence.wrapping_add(1);
 
         // A dropped telemetry frame must not take down the flight loop; log (rate-limited) and move on.
-        if let Err(e) = self.connection.send(&header, message) {
-            self.errors.warn("Failed to send MAVLink message", e);
+        match self.connection.send(&header, message) {
+            Ok(_) => self.errors.reset(),
+            Err(e) => {
+                if let Some(suppressed) = self.errors.record() {
+                    warn!(
+                        "Failed to send MAVLink message: {e} ({suppressed} earlier failures suppressed)"
+                    );
+                }
+            }
         }
     }
 
