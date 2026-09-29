@@ -23,7 +23,8 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Plans live in `plans/` (tracked). `plans/workspace-migration.md` tracks the split into
   core / sitl / backend crates; `plans/architecture-refactor.md` tracks trait-surface cleanups
   that land first (its PR 5 is superseded by the migration). Read both before touching trait
-  surface or crate layout.
+  surface or crate layout. Each plan has a Status table: mark a row 🔍 #n when its PR opens and
+  ✅ #n when it merges, in that PR or the next one.
 - The repo was renamed `stable-flight-sitl` → `stable-flight`; the crate keeps the
   `stable-flight-sitl` name. Old GitHub URLs redirect.
 

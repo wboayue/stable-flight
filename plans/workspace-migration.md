@@ -4,6 +4,22 @@ Turn `stable-flight-sitl` into a `stable-flight` monorepo. A `no_std` core crate
 flight-control code. A backend-agnostic SITL harness consumes it, with one crate per simulator
 backend (RealFlight first). Board firmware, added later, is another consumer.
 
+## Status
+
+Legend: ✅ merged · 🔍 in review · ⬜ not started · ⏭ superseded. Update a row when its PR
+opens (🔍 #n) and again when it merges (✅ #n). Do it in the PR itself where possible;
+otherwise do it in the next PR.
+
+| Step | Status |
+|---|---|
+| Phase 0 — prep | ✅ (step 3, the optional local dir rename, not done) |
+| PR 1 — Convert to workspace | ✅ #43 |
+| architecture-refactor PRs 1–4, 6 (see that plan) | 🔍 #44–#48 (stacked) |
+| PR 2 — Extract `stable-flight` core crate | ⬜ (blocked on #47) |
+| PR 3 — Split RealFlight into its own backend crate | ⬜ |
+| PR 4 — Make core `no_std` | ⬜ |
+| architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
+
 ## Target layout
 
 ```
@@ -58,10 +74,10 @@ size opt) and lockfile (HAL churn).
 
 ## Phase 0 — prep (no PR)
 
-1. Land or park open branches, so the big file move doesn't cause rebase conflicts.
-2. GitHub: rename `wboayue/stable-flight-sitl` → `stable-flight`, then
+1. ✅ Land or park open branches, so the big file move doesn't cause rebase conflicts.
+2. ✅ GitHub: rename `wboayue/stable-flight-sitl` → `stable-flight`, then
    `git remote set-url origin git@github.com:wboayue/stable-flight.git`.
-3. Optional: `mv ~/projects/stable-flight-sitl ~/projects/stable-flight` and move the Claude
+3. ⬜ Optional: `mv ~/projects/stable-flight-sitl ~/projects/stable-flight` and move the Claude
    memory dir (`~/.claude/projects/-Users-wboayue-projects-stable-flight-sitl`) to match.
 
 ## PR 1 — Convert to workspace (mechanical, no code changes)
@@ -116,6 +132,20 @@ Title: `Convert repo to Cargo workspace; split dev tools into their own crate`
 
 Risk: low. Blame survives through `git log --follow` (pure renames).
 
+**As landed (#43).** Differences from the steps above:
+- `Cargo.lock` stays gitignored (it already was). Revisit if the tools binaries need
+  reproducible builds.
+- `[workspace.dependencies]` has only what's inherited today (`robomath`, `log`,
+  `thiserror`, `clap`, `approx`, `assert2`) at their current default features. The
+  `no_std` feature settings (`default-features = false`, `uom`) move to PR 4.
+- `cargo run --example …` / `--bin …` resolve from the root without `-p`, so documented
+  commands barely changed. The justfile gained `plot`, `gen-figure-eight`, and a
+  per-crate `tag CRATE VERSION`.
+- The root README became the project overview with a crate table, and the component
+  walkthrough moved to the crate README. `LICENSE` is symlinked into the crate so it
+  ships in the package.
+- Regenerating `flights/figure_eight.csv` changed only its comment header.
+
 ## PR 2 — Extract `stable-flight` core crate (still std)
 
 Title: `Extract flight-control core into stable-flight crate`
@@ -128,7 +158,7 @@ Moves into `crates/stable-flight/src/`:
 | Traits: `Commander`, `Vehicle`, `StateEstimator`, `Actuator`, `Stabilizer`, `Mixer`, `TelemetryPublisher` | `lib.rs` |
 | `stabilizers/` (copter, controllers, `Gains`, tests, controllers README) | `stabilizers/` |
 | `mixers/` (quad, tailsitter, tests) | `mixers/` |
-| Per-tick sequencing from `FlightOrchestrator::run` | `flight_loop.rs`: `FlightLoop::step(dt)` + `set_initial_state` |
+| Per-tick sequencing from `FlightOrchestrator::run` | `flight_loop.rs`: `FlightLoop::step(dt)` + `prime` (was `set_initial_state` before #46) |
 | Waypoint-following logic from `ScriptCommander` | `commanders/waypoint.rs`: `WaypointFollower` |
 | `NullVehicle` (from `simulators/mod.rs`) | `testing` module |
 
@@ -313,12 +343,12 @@ That plan's PRs 4 (`Vehicle` vs `StateEstimator`/`Actuator`), 6 (decouple teleme
 API. Its PR 5 (rename `simulators/` → `vehicles/`) is superseded by workspace PR 3: the module
 disappears and backends become crates. Suggested order:
 
-1. Workspace PR 1 (mechanical move first, so everything else lands in the final layout).
-2. Refactor PRs 1–4 and 6 (cheap, and they shape the core API). Refactor PR 4 has to land
+1. ✅ Workspace PR 1 (mechanical move first, so everything else lands in the final layout).
+2. 🔍 Refactor PRs 1–4 and 6 (cheap, and they shape the core API). Refactor PR 4 has to land
    before `ComposedVehicle` (workspace PR 2): it fixes the `StateEstimator`/`Actuator`
    signatures that `ComposedVehicle` composes, and `Vehicle` is the backend contract.
-3. Workspace PRs 2–4.
-4. Refactor PR 7 before publishing `stable-flight` 0.1.0.
+3. ⬜ Workspace PRs 2–4.
+4. ⬜ Refactor PR 7 before publishing `stable-flight` 0.1.0.
 
 ## Checklist per PR
 
