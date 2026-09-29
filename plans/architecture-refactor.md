@@ -143,8 +143,17 @@ note in the next release.
 the method warms internal estimators from a known good state rather than
 clearing them; `reset` would imply "back to zero."
 
-**As implemented (#46).** `prime`. `prime` also got a rustdoc explaining what it does.
-The version stays `0.1.0` until release; the CHANGELOG marks the renames **Breaking**.
+**As implemented (#46).** `prime`, with a trait rustdoc explaining what it does. The
+version stays `0.1.0` until release; the CHANGELOG marks the renames **Breaking**. After
+review:
+- Fixed a stale `[ScriptCommander::next]` doc link.
+- `CopterStabilizer::prime` now documents only its own behaviour (latching the yaw-hold
+  heading).
+- Removed the dead commented-out `*_controller.prime` calls, since no controller has one.
+
+**Review follow-up:** CLAUDE.md's trait block and control-loop snippet, and the
+architecture.md diagram, restate the trait method names. Consider having CLAUDE.md point
+at `lib.rs` instead.
 
 ---
 
