@@ -9,7 +9,7 @@ use mavlink::common::*;
 use mavlink::{MavHeader, MavlinkVersion};
 
 use super::throttle::ErrorThrottle;
-use crate::{Command, TelemetryPublisher, VehicleState};
+use crate::{TelemetryPublisher, TelemetryRecord};
 
 /// Writes telemetry frames to `generated_telemetry.tlog`.
 ///
@@ -73,7 +73,7 @@ impl FileLogger {
 }
 
 impl TelemetryPublisher for FileLogger {
-    fn publish(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState) {
+    fn publish(&mut self, _record: &TelemetryRecord) {
         // Define MAVLink header (system ID and component ID)
         let header = MavHeader {
             system_id: 1,    // Simulated system ID

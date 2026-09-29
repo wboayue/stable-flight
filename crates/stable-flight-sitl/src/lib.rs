@@ -147,7 +147,7 @@ pub trait Commander {
 /// # Notes
 /// - For `WaypointCommand`, optional fields like `velocity` and `roll` can be `None`. When `None`,
 ///   the flight controller may use default values or ignore the parameter, depending on its implementation.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Command {
     /// Direct manual control inputs for the aircraft's attitude (orientation).
     ///
@@ -216,7 +216,7 @@ pub enum Command {
 /// - `yaw`: `0.0`
 /// - `arm`: `false`
 /// - `mode`: `0`
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct AttitudeCommand {
     /// Controls the engine power output, ranging from `0.0` (idle) to `1.0` (maximum).
     pub throttle: f32,
@@ -306,7 +306,7 @@ impl Default for AttitudeCommand {
 /// - `yaw_rate`: `0.0`
 /// - `arm`: `false`
 /// - `mode`: `0`
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct RateCommand {
     /// Controls the engine power output, ranging from `0.0` (idle) to `1.0` (maximum).
     pub throttle: f32,
@@ -450,7 +450,7 @@ pub struct WaypointCommand {
 ///     vec3(0.0, 0.0, 0.0) // No roll, pitch, or yaw moments
 /// );
 /// ```
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct ControlOutput {
     /// Normalized thrust value, typically ranging from 0.0 (no thrust) to 1.0 (maximum thrust).
     pub thrust: f32,
@@ -651,14 +651,65 @@ pub trait Stabilizer {
 /// - **Data loggers**: Record flight data for later analysis
 /// - **Visualization interfaces**: Send data to real-time flight displays
 pub trait TelemetryPublisher {
-    /// Sends telemetry data to external systems.
+    /// Publishes one control-loop tick to external systems.
+    ///
+    /// Fire-and-forget: the flight loop cannot act on a telemetry failure, so implementations
+    /// handle (log) their own errors instead of returning them.
     ///
     /// # Parameters
     ///
-    /// - `dt`: Time elapsed since the last telemetry update.
-    /// - `command`: The current command being executed.
-    /// - `telemetry`: The current vehicle state to be published.
-    fn publish(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState);
+    /// - `record`: Everything the loop produced this tick; see [`TelemetryRecord`].
+    fn publish(&mut self, record: &TelemetryRecord);
+}
+
+/// One control-loop tick, as handed to a [`TelemetryPublisher`].
+///
+/// The loop assembles it after actuating, so every stage's output is available. Fields borrow
+/// from the loop and live only for the tick; publishers copy what they need to keep. New
+/// fields can be added without changing the `publish` signature.
+///
+/// # Examples
+///
+/// ```
+/// use std::time::Duration;
+/// use stable_flight_sitl::{
+///     ActuatorCommand, AttitudeCommand, Command, ControlOutput, TelemetryPublisher,
+///     TelemetryRecord, VehicleState,
+/// };
+///
+/// struct ThrustLogger;
+///
+/// impl TelemetryPublisher for ThrustLogger {
+///     fn publish(&mut self, record: &TelemetryRecord) {
+///         println!("{:?}: thrust {}", record.dt, record.control.thrust);
+///     }
+/// }
+///
+/// let command = Command::Attitude(AttitudeCommand::default());
+/// let state = VehicleState::default();
+/// let control = ControlOutput::default();
+/// let actuators = ActuatorCommand::default();
+///
+/// ThrustLogger.publish(&TelemetryRecord {
+///     dt: Duration::from_millis(4),
+///     command: &command,
+///     state: &state,
+///     control: &control,
+///     actuators: &actuators,
+/// });
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct TelemetryRecord<'a> {
+    /// Nominal loop period (`1 / target frequency`), not measured elapsed time.
+    pub dt: Duration,
+    /// Command the commander produced.
+    pub command: &'a Command,
+    /// Estimated vehicle state the stabilizer acted on.
+    pub state: &'a VehicleState,
+    /// Stabilizer output (thrust and moments).
+    pub control: &'a ControlOutput,
+    /// Mixer output sent to the actuators.
+    pub actuators: &'a ActuatorCommand,
 }
 
 /// Represents commands sent to the vehicle's actuators.
@@ -688,7 +739,7 @@ pub trait TelemetryPublisher {
 /// cmd.aileron = -0.05;   // Slight left roll
 /// cmd.rudder = 0.0;      // No rudder
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ActuatorCommand {
     /// Motor output values, ranging from 0.0 (off) to 1.0 (full power).
     /// For multirotors, the specific mapping of array indices to physical motors
