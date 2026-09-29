@@ -1,12 +1,21 @@
-# Stable Flight SITL
+# Stable Flight
 
 ## Overview
 
-Stable Flight SITL provides the foundation for a Rust-powered flight controller designed for VTOL drones. It utilizes Software-in-the-Loop (SITL) simulation to safely refine flight control logic before real-world deployment. My goal is to create an easily extendable, robust, and approachable flight controller leveraging [Rust's advantages](https://wboayue.com/posts/flight-controller-why-rust/) in systems programming. See the following document for an [architecture overview](https://github.com/wboayue/stable-flight-sitl/blob/main/architecture.md).
+Stable Flight provides the foundation for a Rust-powered flight controller designed for VTOL drones. It utilizes Software-in-the-Loop (SITL) simulation to safely refine flight control logic before real-world deployment. My goal is to create an easily extendable, robust, and approachable flight controller leveraging [Rust's advantages](https://wboayue.com/posts/flight-controller-why-rust/) in systems programming. See the following document for an [architecture overview](architecture.md).
 
 Starting with simulation allowed me to quickly iterate on flight stabilizer logic and test different airframes without worrying about building hardware. Simulated crashes cut costs and speed up testing compared to real-world failures.
 
 Perfect for anyone keen to explore flight controllers, tweak control logic, or script aerobatic flights.
+
+## Crates
+
+The repository is a Cargo workspace:
+
+| Crate | Purpose |
+|---|---|
+| [`stable-flight-sitl`](crates/stable-flight-sitl) | Flight-control pipeline plus the RealFlight SITL harness: commanders, stabilizers, mixers, telemetry, and the runnable examples |
+| [`stable-flight-tools`](crates/stable-flight-tools) | Developer binaries (unpublished): `plot_flight` and `generate_figure_eight` |
 
 ## Simulator Choice
 
@@ -31,7 +40,7 @@ After installing RealFlight, you will need to enable **RealFlight Link**. You ca
 
 ## Getting Started
 
-Stable Flight SITL is a library crate; runnable entrypoints live in `examples/`. Pick one that matches the input you want:
+Runnable entrypoints are the `stable-flight-sitl` examples (`crates/stable-flight-sitl/examples/`); run them from the repository root. Pick one that matches the input you want:
 
 ```bash
 # Joystick (Logitech Extreme 3D) controlling a quadcopter in RealFlight
@@ -48,7 +57,7 @@ cargo run --example extreme_3d_commander
 cargo run --example publish_telemetry
 
 # Regenerate flights/figure_eight.csv (flags like --half-width resize the path)
-cargo run --features tools --bin generate_figure_eight
+cargo run --bin generate_figure_eight
 ```
 
 Scripted flights are CSV waypoint files under `flights/` (`x,y,altitude,cruise_speed`,
@@ -57,14 +66,14 @@ in meters and m/s); `ScriptCommander::new(path)` loads and loops them.
 To inspect a scripted path without flying it, render it as a static 3D image with the
 `plot_flight` binary (altitude on the vertical axis, path segments colored by cruise speed,
 a ground-projected shadow for depth). It reads any waypoint CSV in the `flights/` format and
-is gated behind the optional `plot` feature so it never weighs down the default build:
+lives in the unpublished `stable-flight-tools` crate, so it never weighs down the library:
 
 ```bash
 # Render to SVG or PNG — the output extension selects the format
-cargo run --features plot --bin plot_flight -- flights/figure_eight.csv figure_eight.svg
+cargo run --bin plot_flight -- flights/figure_eight.csv figure_eight.svg
 
 # Rotate the camera with --pitch/--yaw (degrees); e.g. near top-down reads the horizontal shape
-cargo run --features plot --bin plot_flight -- flights/figure_eight.csv top.png --pitch 80 --yaw 0
+cargo run --bin plot_flight -- flights/figure_eight.csv top.png --pitch 80 --yaw 0
 ```
 
 ```
@@ -79,114 +88,7 @@ Options:
       --yaw <DEG>    Camera rotation about the vertical axis, in degrees (default ~28.6)
 ```
 
-Each example wires the same five-component pipeline and is a copy-paste starting point for your own setup. Let's walk through the components a `FlightOrchestrator` needs: a **Commander**, **Vehicle**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**.
-
-### Commander
-
-Commanders generate Rate, Attitude, or Position control commands processed by the controller. Commands may come from input devices, scripts, or external systems. Currently, commanders are available to support scripting, Spektrum controllers, and Extreme3D joysticks. You can support new input devices by implementing the Commander trait.
-
-The following example demonstrates creating a commander for the Extreme3D joystick:
-
-```rust
-// Default: Attitude mode
-let commander = Extreme3DCommander::new()
-    .expect("Failed to initialize Extreme3D commander");
-
-// Or specify mode explicitly for Rate mode
-let commander = Extreme3DCommander::with_mode(Mode::Rate)
-    .expect("Failed to initialize Extreme3D commander");
-```
-
-Use `new()` for Attitude mode (default) or `with_mode()` to start in Rate mode. Mode can also be switched at runtime via D-pad buttons.
-
-The SpektrumCommander currently doesn't expose configuration options.
-
-### Vehicle
-
-Vehicles are responsible for retrieving state estimates from the vehicle and actuating its motors and control surfaces. There is currently one vehicle implementation for the RealFlight simulator. To support another simulator, you would implement the Vehicle trait and interface it with the new simulator.
-
-The following example demonstrates configuring the RealFlight vehicle:
-
-```rust
-let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-    bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
-    mapping: ActuatorMapping {
-        motors: [Some(2), Some(0), Some(1), Some(3), None, None, None, None],
-        ..Default::default()
-    },
-});
-```
-
-The RealFlightVehicle is configured with a `RealFlightLocalBridge` or `RealFlightRemoteBridge`, depending on whether the flight stabilizer is running on the same host as the simulator. The `ActuatorMapping` maps logical motors and control surfaces to specific channels for the RealFlight vehicle model.
-
-### Stabilizer
-
-Stabilizers calculate the difference between the vehicle's current state and the desired state, generating `ControlOutput`s that the mixer then translates into actuator commands. This component contains the core flight stabilization logic. `CopterStabilizer` targets multirotors; a VTOL stabilizer lives in `stabilizers::vtol` for airframes that transition between flight modes. This is where you would start if you want to implement custom flight control logic.
-
-The simplest setup uses default gains:
-
-```rust
-let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
-```
-
-For tuned gains, build the inner PID controllers explicitly (see `examples/copter-manual-realflight.rs` for a full example):
-
-```rust
-let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
-    gains: Gains { p: 7.0, i: 0.0, d: 0.01 },
-    max_integral: 100.0,
-    max_angular_rates: vec3(3.0, 3.0, 3.0),
-});
-
-let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
-    gains: Gains { p: 3.0, i: 0.0, d: 0.1 },
-    max_integral: 100.0,
-    max_angles: vec2(PI / 4.0, PI / 4.0),
-    max_rate: vec2(3.0, 3.0),
-});
-
-let stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
-    rates_controller,
-    attitude_controller,
-    ..Default::default()
-});
-```
-
-### Mixer
-
-Mixers convert control outputs into motor commands and control surface movements:
-
-```rust
-let mixer = QuadCopterMixer::default();
-```
-
-### TelemetryPublisher
-
-TelemetryPublishers publish the system state to external systems. There is a publisher implemented for MAVLink messages:
-
-```rust
-// Telemetry via MAVLink protocol
-let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
-```
-
-### Running the Orchestrator
-
-With all components configured, assemble and run the `FlightOrchestrator`:
-
-```rust
-let mut orchestrator = FlightOrchestrator::new(
-    commander,
-    vehicle,
-    stabilizer,
-    mixer,
-    telemetry,
-);
-
-let target_frequency = 250.0; // Hz
-orchestrator.run(target_frequency);
-```
-
-The orchestrator runs the control loop at the given frequency until it receives SIGINT (Unix) or Ctrl-C (Windows), then shuts down cleanly.
+Each example wires the same five-component pipeline. The [`stable-flight-sitl` README](crates/stable-flight-sitl/README.md) walks through each component and how to assemble them.
 
 ## Conclusion
 
@@ -194,4 +96,4 @@ This project provides a solid foundation, but there is still work ahead to make 
 
 ## Getting Involved
 
-Feel free to [open an issue](https://github.com/wboayue/stable-flight-sitl/issues), submit a pull request, or reach out with questions or suggestions.
+Feel free to [open an issue](https://github.com/wboayue/stable-flight/issues), submit a pull request, or reach out with questions or suggestions.

@@ -1,4 +1,4 @@
-//! [![github]](https://github.com/wboayue/stable-flight-sitl)&ensp;[![crates-io]](https://crates.io/crates/stable-flight-sitl)&ensp;[![license]](https://opensource.org/licenses/MIT)
+//! [![github]](https://github.com/wboayue/stable-flight)&ensp;[![crates-io]](https://crates.io/crates/stable-flight-sitl)&ensp;[![license]](https://opensource.org/licenses/MIT)
 //!
 //! [github]: https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github
 //! [crates-io]: https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust
@@ -9,9 +9,9 @@
 //! This library implements a Rust-powered flight controller in simulation.
 //! Simulation allows safe refining of the flight control logic before real-world deployment.
 //! The flight controller is designed to be easily extendable, robust, and approachable leveraging [Rust's advantages](https://wboayue.com/posts/flight-controller-why-rust/) in systems programming.
-//! See the following document for an [architecture overview](https://github.com/wboayue/stable-flight-sitl/blob/main/architecture.md).
+//! See the following document for an [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md).
 //!
-//! Checkout [README](https://github.com/wboayue/stable-flight-sitl/blob/main/README.md) to get started.
+//! Checkout [README](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl/README.md) to get started.
 //!
 //! [![Watch the demo](https://img.youtube.com/vi/KsTX3pH_htg/0.jpg)](https://youtu.be/KsTX3pH_htg)
 //!

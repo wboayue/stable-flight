@@ -13,20 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flight path — horizontal `x`/`y` plane, altitude on the vertical axis, segments
   colored by cruise speed, each waypoint labeled with its 1-based script order.
   Emits SVG or PNG (chosen by output extension), with `--pitch`/`--yaw` flags to
-  adjust the 3D camera angle. Gated behind the optional
-  `plot` feature so the default library build stays lean:
-  `cargo run --features plot --bin plot_flight -- flights/figure_eight.csv out.svg`.
+  adjust the 3D camera angle. Lives in the unpublished `stable-flight-tools`
+  crate so the library never builds `plotters`:
+  `cargo run --bin plot_flight -- flights/figure_eight.csv out.svg`.
 - `commanders::script::load_waypoints` public function loads and parses a waypoint
   CSV into a `Vec<WaypointCommand>` without building a `ScriptCommander`.
 - `ScriptCommander` loads a CSV waypoint script (`x,y,altitude,cruise_speed`, in
   meters and m/s) from `flights/`, then follows and loops the waypoints by a
   configurable horizontal acceptance radius. Adds the public `from_waypoints`
   constructor, `with_acceptance_radius`, and a typed `ScriptError`.
-- `generate_figure_eight` binary (behind the optional `tools` feature) writes a
+- `generate_figure_eight` binary (in `stable-flight-tools`) writes a
   figure-eight waypoint script from a Gerono lemniscate. Every dimension is a `clap`
   flag (`--output`, `--waypoints`, `--half-width`, `--height-scale`, `--alt-mid`,
   `--alt-amp`, `--cruise`), defaulting to a consumer-drone envelope (~60 m × ~30 m,
-  altitude sweeping 15–40 m): `cargo run --features tools --bin generate_figure_eight`.
+  altitude sweeping 15–40 m): `cargo run --bin generate_figure_eight`.
 - `flights/figure_eight.csv` scripted figure-eight flight path.
 - `WaypointCommand` now derives `Clone` and `Copy`.
 - Package metadata (`description`, `authors`, `license`, `repository`) in
@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The repository is now the `stable-flight` Cargo workspace; this crate lives in
+  `crates/stable-flight-sitl` and its `repository` URL points at
+  `github.com/wboayue/stable-flight`. The dev binaries moved to the unpublished
+  `stable-flight-tools` crate, so this crate no longer has `plot`/`tools`
+  features or `plotters`/`clap` dependencies.
 - **Breaking:** `ScriptCommander::new` now returns `Result<Self, ScriptError>`
   and reads the given CSV file, instead of being infallible and returning a
   single fixed waypoint.
@@ -55,4 +60,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an internal waypoint list.
 - Unused `rand` dependency.
 
-[unreleased]: https://github.com/wboayue/stable-flight-sitl/compare/main...HEAD
+[unreleased]: https://github.com/wboayue/stable-flight/compare/main...HEAD
