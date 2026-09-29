@@ -62,4 +62,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an internal waypoint list.
 - Unused `rand` dependency.
 
+### Fixed
+
+- `MavlinkPublisher` and `FileLogger` no longer panic the flight loop on a failed
+  send/write/flush or a pre-epoch system clock. Failures are logged at `warn`,
+  rate-limited to one line per 250 failures, and the tick continues.
+
 [unreleased]: https://github.com/wboayue/stable-flight/compare/main...HEAD
