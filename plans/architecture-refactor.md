@@ -29,8 +29,8 @@ stacked branch).
 | 6 | Decouple `TelemetryPublisher` from `Command`  | Trait surface     | Medium | 🔍 #48 |
 | 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | ⬜ |
 
-PRs 2–4 and 6 are stacked (#50 → #46 → #47 → #48). Merge them in order, and after
-each squash merge rebase the next branch onto `main`.
+PRs 2–4 and 6 are stacked (#50 → #46 → #47 → #48). Merge them in order, using CLAUDE.md's
+stacked-PR procedure: retarget the child to `main` before merging its parent.
 
 ---
 
