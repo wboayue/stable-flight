@@ -79,7 +79,16 @@ pub trait Mixer {
 }
 
 pub trait TelemetryPublisher {
-    fn publish(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState);
+    fn publish(&mut self, record: &TelemetryRecord);
+}
+
+// Borrowed per tick; assembled by the loop after actuate.
+pub struct TelemetryRecord<'a> {
+    pub dt: Duration,
+    pub command: &'a Command,
+    pub state: &'a VehicleState,
+    pub control: &'a ControlOutput,
+    pub actuators: &'a ActuatorCommand,
 }
 ```
 
@@ -115,7 +124,13 @@ state = self.vehicle.estimate_state(Duration::from_secs_f32(dt));
 let control = self.stabilizer.stabilize(dt, &command, &state);
 let actuators = self.mixer.mix(&control);
 self.vehicle.actuate(&actuators);
-self.telemetry.publish(Duration::from_secs_f32(dt), &command, &state);
+self.telemetry.publish(&TelemetryRecord {
+    dt: Duration::from_secs_f32(dt),
+    command: &command,
+    state: &state,
+    control: &control,
+    actuators: &actuators,
+});
 ```
 
 `orchestrator.run(target_frequency: f64)` runs the loop and panics on non-positive frequency. SIGINT (Unix) / Ctrl-C (Windows) triggers graceful shutdown.

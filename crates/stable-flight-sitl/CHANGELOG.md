@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `TelemetryPublisher::publish` takes a single `&TelemetryRecord`
+  (new public struct borrowing the tick's `dt`, `command`, `state`, `control`
+  output, and `actuators`) instead of `(dt, command, state)`. Publishers can now
+  see stabilizer and mixer output, and new fields no longer change the signature.
 - **Breaking:** `Vehicle` is now `Vehicle: StateEstimator + Actuator` with a
   blanket impl. Implement `StateEstimator` and `Actuator` instead of `Vehicle`, and
   import those traits where `estimate_state`/`actuate` are called on a concrete

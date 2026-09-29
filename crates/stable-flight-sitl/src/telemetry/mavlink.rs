@@ -4,7 +4,7 @@ use log::warn;
 use mavlink::{MavConnection, MavHeader, MavlinkVersion, common::*};
 
 use super::throttle::ErrorThrottle;
-use crate::{Command, TelemetryPublisher, VehicleState};
+use crate::{Command, TelemetryPublisher, TelemetryRecord, VehicleState};
 
 pub struct MavlinkConfiguration {
     // connection: String,
@@ -161,7 +161,14 @@ impl MavlinkPublisher {
 }
 
 impl TelemetryPublisher for MavlinkPublisher {
-    fn publish(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState) {
+    fn publish(&mut self, record: &TelemetryRecord) {
+        let TelemetryRecord {
+            dt,
+            command,
+            state: telemetry,
+            ..
+        } = *record;
+
         self.heartbeat_bucket += dt;
         self.global_position_bucket += dt;
         self.local_position_bucket += dt;

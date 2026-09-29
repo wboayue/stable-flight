@@ -52,7 +52,7 @@ use std::{thread, time::Duration};
 
 use log::{debug, info};
 
-use crate::{Commander, Mixer, Stabilizer, TelemetryPublisher, Vehicle};
+use crate::{Commander, Mixer, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle};
 
 #[cfg(test)]
 mod tests;
@@ -238,8 +238,13 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
             self.vehicle.actuate(&actuator_command);
 
             // Send telemetry
-            self.telemetry
-                .publish(Duration::from_secs_f32(target_dt), &command, &state);
+            self.telemetry.publish(&TelemetryRecord {
+                dt: Duration::from_secs_f32(target_dt),
+                command: &command,
+                state: &state,
+                control: &control_outputs,
+                actuators: &actuator_command,
+            });
 
             iteration_count += 1;
 

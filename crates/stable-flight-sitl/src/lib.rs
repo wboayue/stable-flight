@@ -651,14 +651,65 @@ pub trait Stabilizer {
 /// - **Data loggers**: Record flight data for later analysis
 /// - **Visualization interfaces**: Send data to real-time flight displays
 pub trait TelemetryPublisher {
-    /// Sends telemetry data to external systems.
+    /// Publishes one control-loop tick to external systems.
+    ///
+    /// Fire-and-forget: the flight loop cannot act on a telemetry failure, so implementations
+    /// handle (log) their own errors instead of returning them.
     ///
     /// # Parameters
     ///
-    /// - `dt`: Time elapsed since the last telemetry update.
-    /// - `command`: The current command being executed.
-    /// - `telemetry`: The current vehicle state to be published.
-    fn publish(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState);
+    /// - `record`: Everything the loop produced this tick; see [`TelemetryRecord`].
+    fn publish(&mut self, record: &TelemetryRecord);
+}
+
+/// One control-loop tick, as handed to a [`TelemetryPublisher`].
+///
+/// The loop assembles it after actuating, so every stage's output is available. Fields borrow
+/// from the loop and live only for the tick; publishers copy what they need to keep. New
+/// fields can be added without changing the `publish` signature.
+///
+/// # Examples
+///
+/// ```
+/// use std::time::Duration;
+/// use stable_flight_sitl::{
+///     ActuatorCommand, AttitudeCommand, Command, ControlOutput, TelemetryPublisher,
+///     TelemetryRecord, VehicleState,
+/// };
+///
+/// struct ThrustLogger;
+///
+/// impl TelemetryPublisher for ThrustLogger {
+///     fn publish(&mut self, record: &TelemetryRecord) {
+///         println!("{:?}: thrust {}", record.dt, record.control.thrust);
+///     }
+/// }
+///
+/// let command = Command::Attitude(AttitudeCommand::default());
+/// let state = VehicleState::default();
+/// let control = ControlOutput::default();
+/// let actuators = ActuatorCommand::default();
+///
+/// ThrustLogger.publish(&TelemetryRecord {
+///     dt: Duration::from_millis(4),
+///     command: &command,
+///     state: &state,
+///     control: &control,
+///     actuators: &actuators,
+/// });
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct TelemetryRecord<'a> {
+    /// Loop period for this tick.
+    pub dt: Duration,
+    /// Command the commander produced.
+    pub command: &'a Command,
+    /// Estimated vehicle state the stabilizer acted on.
+    pub state: &'a VehicleState,
+    /// Stabilizer output (thrust and moments).
+    pub control: &'a ControlOutput,
+    /// Mixer output sent to the actuators.
+    pub actuators: &'a ActuatorCommand,
 }
 
 /// Represents commands sent to the vehicle's actuators.
