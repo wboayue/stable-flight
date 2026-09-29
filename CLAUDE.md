@@ -81,16 +81,9 @@ pub trait Mixer {
 pub trait TelemetryPublisher {
     fn publish(&mut self, record: &TelemetryRecord);
 }
-
-// Borrowed per tick; assembled by the loop after actuate.
-pub struct TelemetryRecord<'a> {
-    pub dt: Duration,
-    pub command: &'a Command,
-    pub state: &'a VehicleState,
-    pub control: &'a ControlOutput,
-    pub actuators: &'a ActuatorCommand,
-}
 ```
+
+`TelemetryRecord<'a>` (defined in `lib.rs`) borrows one tick's nominal `dt`, `command`, `state`, stabilizer `control` output, and mixer `actuators`; the loop assembles it after `actuate`.
 
 Trait methods **do not return `Result`** today. Invalid configuration panics at construction or in `run`; per-tick failures are not modeled. If you add fallible operations, introduce a typed error with `thiserror` rather than panicking inside the loop.
 

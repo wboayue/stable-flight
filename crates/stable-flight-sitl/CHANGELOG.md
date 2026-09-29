@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Command`, `AttitudeCommand`, `RateCommand`, `ControlOutput`, and
+  `ActuatorCommand` now derive `Clone` and `Copy` (plain data), so telemetry
+  sinks can keep copies of a tick's `TelemetryRecord`.
 - `plot_flight` binary renders any waypoint CSV (`flights/*.csv`) as a static 3D
   flight path — horizontal `x`/`y` plane, altitude on the vertical axis, segments
   colored by cruise speed, each waypoint labeled with its 1-based script order.
@@ -45,7 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** trait methods renamed for clarity: `Commander::next` →
   `next_command`, `Stabilizer::set_initial_state` → `prime`, and
   `TelemetryPublisher::send_telemetry` → `publish`. Update implementations and
-  call sites; signatures are unchanged.
+  call sites. `next_command` and `prime` keep their signatures; `publish` also
+  changed shape (see the `TelemetryRecord` entry above).
 - The repository is now the `stable-flight` Cargo workspace; this crate lives in
   `crates/stable-flight-sitl` and its `repository` URL points at
   `github.com/wboayue/stable-flight`. The dev binaries moved to the unpublished
@@ -76,6 +80,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- MAVLink `VFR_HUD` throttle now reports the stabilizer's thrust as 0–100 %
+  for every command kind. It previously read the command's throttle and
+  truncated it to 0 or 100, and reported 0 (with a `println!` every send) for
+  waypoint commands. **Breaking:** the public helper
+  `MavlinkPublisher::send_vfr_hud` now takes `&ControlOutput` instead of
+  `&Command`.
 - `MavlinkPublisher` and `FileLogger` no longer panic the flight loop on a failed
   send/write/flush or a pre-epoch system clock. Failures are logged at `warn`
   and the tick continues. Logging is rate-limited per publisher: the first

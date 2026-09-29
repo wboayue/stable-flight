@@ -147,7 +147,7 @@ pub trait Commander {
 /// # Notes
 /// - For `WaypointCommand`, optional fields like `velocity` and `roll` can be `None`. When `None`,
 ///   the flight controller may use default values or ignore the parameter, depending on its implementation.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Command {
     /// Direct manual control inputs for the aircraft's attitude (orientation).
     ///
@@ -216,7 +216,7 @@ pub enum Command {
 /// - `yaw`: `0.0`
 /// - `arm`: `false`
 /// - `mode`: `0`
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct AttitudeCommand {
     /// Controls the engine power output, ranging from `0.0` (idle) to `1.0` (maximum).
     pub throttle: f32,
@@ -306,7 +306,7 @@ impl Default for AttitudeCommand {
 /// - `yaw_rate`: `0.0`
 /// - `arm`: `false`
 /// - `mode`: `0`
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct RateCommand {
     /// Controls the engine power output, ranging from `0.0` (idle) to `1.0` (maximum).
     pub throttle: f32,
@@ -450,7 +450,7 @@ pub struct WaypointCommand {
 ///     vec3(0.0, 0.0, 0.0) // No roll, pitch, or yaw moments
 /// );
 /// ```
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct ControlOutput {
     /// Normalized thrust value, typically ranging from 0.0 (no thrust) to 1.0 (maximum thrust).
     pub thrust: f32,
@@ -700,7 +700,7 @@ pub trait TelemetryPublisher {
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct TelemetryRecord<'a> {
-    /// Loop period for this tick.
+    /// Nominal loop period (`1 / target frequency`), not measured elapsed time.
     pub dt: Duration,
     /// Command the commander produced.
     pub command: &'a Command,
@@ -739,7 +739,7 @@ pub struct TelemetryRecord<'a> {
 /// cmd.aileron = -0.05;   // Slight left roll
 /// cmd.rudder = 0.0;      // No rudder
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ActuatorCommand {
     /// Motor output values, ranging from 0.0 (off) to 1.0 (full power).
     /// For multirotors, the specific mapping of array indices to physical motors
