@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use mavlink::{MavConnection, MavHeader, MavlinkVersion, common::*};
 
+use super::throttle::ErrorThrottle;
 use crate::{Command, TelemetryPublisher, VehicleState};
 
 pub struct MavlinkConfiguration {
@@ -23,6 +24,7 @@ pub struct MavlinkPublisher {
     local_position_bucket: Duration,
     attitude_interval: Duration,
     attitude_bucket: Duration,
+    errors: ErrorThrottle,
 }
 
 impl MavlinkPublisher {
@@ -47,6 +49,7 @@ impl MavlinkPublisher {
             local_position_bucket: Duration::from_secs(0),
             attitude_interval: Duration::from_secs_f32(1.0 / 10.0),
             attitude_bucket: Duration::from_secs(0),
+            errors: ErrorThrottle::default(),
         }
     }
 
@@ -59,9 +62,10 @@ impl MavlinkPublisher {
 
         self.sequence = self.sequence.wrapping_add(1);
 
-        self.connection
-            .send(&header, message)
-            .expect("Failed to send message");
+        // A dropped telemetry frame must not take down the flight loop; log (rate-limited) and move on.
+        if let Err(e) = self.connection.send(&header, message) {
+            self.errors.warn("Failed to send MAVLink message", e);
+        }
     }
 
     pub fn send_heartbeat(&mut self) {

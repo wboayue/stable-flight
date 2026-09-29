@@ -7,10 +7,15 @@ use byteorder::{BigEndian, WriteBytesExt};
 use mavlink::common::*;
 use mavlink::{MavHeader, MavlinkVersion};
 
+use super::throttle::ErrorThrottle;
 use crate::{Command, TelemetryPublisher, VehicleState};
 
+/// Writes telemetry frames to `generated_telemetry.tlog`.
+///
+/// Write failures are logged (rate-limited) and skipped; they never interrupt the flight loop.
 pub struct FileLogger {
     file: File,
+    errors: ErrorThrottle,
 }
 
 impl Default for FileLogger {
@@ -28,13 +33,16 @@ impl FileLogger {
             .open("generated_telemetry.tlog")
             .expect("Failed to open telemetry log file");
 
-        FileLogger { file }
+        FileLogger {
+            file,
+            errors: ErrorThrottle::default(),
+        }
     }
 
     pub fn log(&mut self, data: &[u8]) {
-        self.file
-            .write_all(data)
-            .expect("Failed to write telemetry data");
+        if let Err(e) = self.file.write_all(data) {
+            self.errors.warn("Failed to write telemetry data", e);
+        }
     }
 }
 
@@ -77,20 +85,22 @@ impl TelemetryPublisher for FileLogger {
             frame.ser(&mut raw_packet);
 
             // Get the current timestamp in microseconds since UNIX epoch
+            // A clock stepped before the epoch (e.g. by NTP) records 0 rather than panicking.
             let timestamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .expect("System time error")
-                .as_micros() as u64;
+                .map_or(0, |elapsed| elapsed.as_micros() as u64);
 
             // Write the timestamp (8 bytes, big-endian)
-            self.file
-                .write_u64::<BigEndian>(timestamp)
-                .expect("Failed to write timestamp");
+            if let Err(e) = self.file.write_u64::<BigEndian>(timestamp) {
+                self.errors.warn("Failed to write telemetry timestamp", e);
+                return;
+            }
 
             // Write the raw MAVLink packet
-            self.file
-                .write_all(&raw_packet)
-                .expect("Failed to write telemetry data");
+            if let Err(e) = self.file.write_all(&raw_packet) {
+                self.errors.warn("Failed to write telemetry data", e);
+                return;
+            }
 
             // Print info about the generated message
             println!(
@@ -100,9 +110,10 @@ impl TelemetryPublisher for FileLogger {
             );
 
             // Flush the file to ensure data is written
-            self.file
-                .flush()
-                .expect("Failed to flush telemetry log file");
+            if let Err(e) = self.file.flush() {
+                self.errors.warn("Failed to flush telemetry log file", e);
+                return;
+            }
 
             // Simulate a delay between messages (1 second)
             sleep(Duration::from_secs(1));
