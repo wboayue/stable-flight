@@ -217,11 +217,11 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
 
         let mut state = self.vehicle.estimate_state(Duration::ZERO);
 
-        self.stabilizer.set_initial_state(&state);
+        self.stabilizer.prime(&state);
 
         while self.running.load(Ordering::SeqCst) {
             // Get control inputs
-            let command = self.commander.next(target_dt, &state);
+            let command = self.commander.next_command(target_dt, &state);
 
             // Get vehicle state
             state = self
@@ -239,7 +239,7 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
 
             // Send telemetry
             self.telemetry
-                .send_telemetry(Duration::from_secs_f32(target_dt), &command, &state);
+                .publish(Duration::from_secs_f32(target_dt), &command, &state);
 
             iteration_count += 1;
 

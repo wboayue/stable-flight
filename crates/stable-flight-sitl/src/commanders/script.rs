@@ -4,7 +4,7 @@
 //! single job — sequencing waypoints — and knows nothing about how the path was shaped
 //! (e.g. a figure-eight); the geometry lives entirely in the CSV. Responsibilities are
 //! kept separate: [`parse_waypoints`] turns text into data, [`ScriptCommander::new`]
-//! handles file I/O, and [`ScriptCommander::next`] advances through the waypoints.
+//! handles file I/O, and [`ScriptCommander::next_command`] advances through the waypoints.
 //!
 //! # CSV format
 //!
@@ -179,7 +179,7 @@ pub fn load_waypoints(path: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
 }
 
 impl Commander for ScriptCommander {
-    fn next(&mut self, _dt: f32, current_state: &VehicleState) -> Command {
+    fn next_command(&mut self, _dt: f32, current_state: &VehicleState) -> Command {
         // Advance when the vehicle is within the acceptance radius of the active waypoint
         // (horizontal distance only). Compare squared distances to avoid a per-tick sqrt.
         // Wrapping the index loops the path forever.

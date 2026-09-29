@@ -184,16 +184,9 @@ impl Stabilizer for CopterStabilizer {
         }
     }
 
-    /// Set the initial state of the stabilizer
-    /// This can be used to initialize internal parameters or state variables
-    fn set_initial_state(&mut self, state: &VehicleState) {
+    /// Latches the current heading as the yaw-hold target.
+    fn prime(&mut self, state: &VehicleState) {
         self.heading = state.heading;
-
-        // self.rates_controller.set_initial_state(state);
-        // self.attitude_controller.set_initial_state(state);
-        // self.altitude_controller.set_initial_state(state);
-        // self.lateral_controller.set_initial_state(state);
-        // self.yaw_controller.set_initial_state(state);
     }
 }
 
