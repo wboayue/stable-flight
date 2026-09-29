@@ -81,7 +81,7 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 |--------------------|----------------------------------------------------------------------|
 | `Commander`        | `Extreme3DCommander`, `SpektrumCommander`, `ScriptCommander`         |
 | `Vehicle`          | `RealFlightVehicle<T: RealFlightBridge>`                             |
-| `Stabilizer`       | `CopterStabilizer`, plus VTOL stabilizer in `stabilizers::vtol`      |
+| `Stabilizer`       | `CopterStabilizer`                                                   |
 | `Mixer`            | `QuadCopterMixer`, `TailsitterMixer`                                 |
 | `TelemetryPublisher` | `MavlinkPublisher`, `FileLogger`                                   |
 
