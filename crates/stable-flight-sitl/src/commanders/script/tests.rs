@@ -35,7 +35,9 @@ fn wp(x: f32, y: f32) -> WaypointCommand {
 
 /// Steps the commander once from position `(x, y)` and returns the resulting target's x.
 fn target_x_after_step(commander: &mut ScriptCommander, x: f32, y: f32) -> f32 {
-    waypoint(commander.next(0.1, &state_at(x, y))).position.x
+    waypoint(commander.next_command(0.1, &state_at(x, y)))
+        .position
+        .x
 }
 
 #[test]

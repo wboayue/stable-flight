@@ -179,7 +179,7 @@ pub fn load_waypoints(path: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
 }
 
 impl Commander for ScriptCommander {
-    fn next(&mut self, _dt: f32, current_state: &VehicleState) -> Command {
+    fn next_command(&mut self, _dt: f32, current_state: &VehicleState) -> Command {
         // Advance when the vehicle is within the acceptance radius of the active waypoint
         // (horizontal distance only). Compare squared distances to avoid a per-tick sqrt.
         // Wrapping the index loops the path forever.

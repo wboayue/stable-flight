@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let start = Instant::now();
 
         let state = VehicleState::default(); // Simulated vehicle state
-        publisher.send_telemetry(dt, &command, &state);
+        publisher.publish(dt, &command, &state);
 
         // Sleep for 100ms (10Hz update rate)
         thread::sleep(dt - start.elapsed());

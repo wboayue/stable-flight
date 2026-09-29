@@ -41,7 +41,7 @@ sequenceDiagram
     participant Mixer
     participant TelemetryPublisher
 
-    FlightOrchestrator->>Commander: next(dt, state)
+    FlightOrchestrator->>Commander: next_command(dt, state)
     Commander-->>FlightOrchestrator: Command
     FlightOrchestrator->>Vehicle: estimate_state(dt)
     Vehicle-->>FlightOrchestrator: VehicleState
@@ -50,7 +50,7 @@ sequenceDiagram
     FlightOrchestrator->>Mixer: mix(ControlOutput)
     Mixer-->>FlightOrchestrator: ActuatorCommand
     FlightOrchestrator->>Vehicle: actuate(ActuatorCommand)
-    FlightOrchestrator->>TelemetryPublisher: send_telemetry(dt, Command, VehicleState)
+    FlightOrchestrator->>TelemetryPublisher: publish(dt, Command, VehicleState)
 ```
 
 ## Design Patterns

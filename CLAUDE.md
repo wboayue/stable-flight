@@ -54,7 +54,7 @@ The control system is a five-trait pipeline coordinated by `FlightOrchestrator`.
 
 ```rust
 pub trait Commander {
-    fn next(&mut self, dt: f32, current_state: &VehicleState) -> Command;
+    fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command;
 }
 
 pub trait Vehicle {
@@ -64,7 +64,7 @@ pub trait Vehicle {
 
 pub trait Stabilizer {
     fn stabilize(&mut self, dt: f32, command: &Command, state: &VehicleState) -> ControlOutput;
-    fn set_initial_state(&mut self, state: &VehicleState);
+    fn prime(&mut self, state: &VehicleState);
 }
 
 pub trait Mixer {
@@ -72,7 +72,7 @@ pub trait Mixer {
 }
 
 pub trait TelemetryPublisher {
-    fn send_telemetry(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState);
+    fn publish(&mut self, dt: Duration, command: &Command, telemetry: &VehicleState);
 }
 ```
 
@@ -103,12 +103,12 @@ so some setup is duplicated between them by design — readability over DRY.
 ### Control loop (from `src/orchestrator.rs`)
 
 ```rust
-let command = self.commander.next(dt, &state);
+let command = self.commander.next_command(dt, &state);
 state = self.vehicle.estimate_state(Duration::from_secs_f32(dt));
 let control = self.stabilizer.stabilize(dt, &command, &state);
 let actuators = self.mixer.mix(&control);
 self.vehicle.actuate(&actuators);
-self.telemetry.send_telemetry(Duration::from_secs_f32(dt), &command, &state);
+self.telemetry.publish(Duration::from_secs_f32(dt), &command, &state);
 ```
 
 `orchestrator.run(target_frequency: f64)` runs the loop and panics on non-positive frequency. SIGINT (Unix) / Ctrl-C (Windows) triggers graceful shutdown.

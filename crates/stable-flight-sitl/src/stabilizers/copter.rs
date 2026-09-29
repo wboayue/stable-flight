@@ -184,16 +184,18 @@ impl Stabilizer for CopterStabilizer {
         }
     }
 
-    /// Set the initial state of the stabilizer
-    /// This can be used to initialize internal parameters or state variables
-    fn set_initial_state(&mut self, state: &VehicleState) {
+    /// Primes the stabilizer from a known-good vehicle state before the first tick.
+    ///
+    /// Warms internal state (e.g. the heading hold target) so control starts from where the
+    /// vehicle is rather than from zero. Called once before the control loop starts.
+    fn prime(&mut self, state: &VehicleState) {
         self.heading = state.heading;
 
-        // self.rates_controller.set_initial_state(state);
-        // self.attitude_controller.set_initial_state(state);
-        // self.altitude_controller.set_initial_state(state);
-        // self.lateral_controller.set_initial_state(state);
-        // self.yaw_controller.set_initial_state(state);
+        // self.rates_controller.prime(state);
+        // self.attitude_controller.prime(state);
+        // self.altitude_controller.prime(state);
+        // self.lateral_controller.prime(state);
+        // self.yaw_controller.prime(state);
     }
 }
 
