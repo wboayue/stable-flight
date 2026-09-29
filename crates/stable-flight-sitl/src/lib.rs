@@ -530,10 +530,8 @@ pub struct VehicleState {
 /// The split mirrors hardware, where sensing (IMU, estimator) and actuation (ESC/servo output)
 /// are usually separate drivers, while a simulator bridge can implement both on one type.
 ///
-/// Implementors may include:
-/// - **Simulation vehicles**: Interface with flight simulators like X-Plane, RealFlight, or custom physics engines
-/// - **Hardware interfaces**: Connect to real drones, fixed-wing aircraft, or other flying vehicles
-/// - **Test vehicles**: Provide predictable responses for testing control algorithms without a full simulation
+/// Examples: a simulator bridge such as `RealFlightVehicle`, a hardware IMU/estimator paired
+/// with an ESC driver, or a test double such as `NullVehicle`.
 ///
 /// # Examples
 ///
@@ -575,8 +573,13 @@ impl<T: StateEstimator + Actuator> Vehicle for T {}
 pub trait StateEstimator {
     /// Estimates the current vehicle state based on sensor inputs and time elapsed.
     ///
+    /// Takes `&mut self` because estimators typically advance internal state on each call
+    /// (e.g. a Kalman predict/update).
+    ///
     /// # Parameters
-    /// - `dt`: Time elapsed since the last state estimation.
+    /// - `dt`: Time elapsed since the last state estimation. The first call, made once before
+    ///   the control loop starts, passes `Duration::ZERO`; implementations may use it to
+    ///   initialize (see `RealFlightVehicle`).
     ///
     /// # Returns
     /// A `VehicleState` representing the current estimated state of the vehicle.

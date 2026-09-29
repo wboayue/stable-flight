@@ -54,10 +54,8 @@ pub struct ActuatorMapping {
 /// # Examples
 ///
 /// ```no_run
-/// use std::time::Duration;
-/// use realflight_bridge::{RealFlightBridge, RealFlightLocalBridge};
-/// use stable_flight_sitl::simulators::realflight::{RealFlightConfiguration, RealFlightVehicle, ActuatorMapping};
-/// use stable_flight_sitl::{Actuator, ActuatorCommand, StateEstimator};
+/// use realflight_bridge::RealFlightLocalBridge;
+/// use stable_flight_sitl::simulators::realflight::{ActuatorMapping, RealFlightConfiguration};
 ///
 /// let bridge = RealFlightLocalBridge::new().expect("Failed to create bridge");
 /// let config = RealFlightConfiguration {
@@ -117,15 +115,13 @@ impl<T> StateEstimator for RealFlightVehicle<T>
 where
     T: RealFlightBridge,
 {
-    /// Retrieves the current estimated state of the vehicle.
+    /// Returns the vehicle state cached from the last simulator exchange.
     ///
-    /// # Arguments
-    ///
-    /// * `_dt` - Controller tick duration (currently unused as state comes from simulator).
-    ///
-    /// # Returns
-    ///
-    /// A `VehicleState` containing current position, velocity, attitude, etc.
+    /// RealFlight exchanges controls and state in a single round-trip, which happens in
+    /// [`Actuator::actuate`]; this call does not contact the simulator. The exception is
+    /// `dt == Duration::ZERO` (the first call, per the [`StateEstimator`] convention): it
+    /// performs one exchange with neutral inputs so the initial state is real. Otherwise `dt`
+    /// is ignored — the simulator reports its own truth state.
     fn estimate_state(&mut self, dt: Duration) -> VehicleState {
         if dt.is_zero() {
             // initialize state if dt is zero
