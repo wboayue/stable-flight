@@ -4,6 +4,22 @@ Turn `stable-flight-sitl` into a `stable-flight` monorepo. A `no_std` core crate
 flight-control code. A backend-agnostic SITL harness consumes it, with one crate per simulator
 backend (RealFlight first). Board firmware, added later, is another consumer.
 
+## Status
+
+Legend: ✅ merged · 🔍 in review · ⬜ not started · ⏭ superseded. Update a row when its PR
+opens (🔍 #n) and again when it merges (✅ #n). Do it in the PR itself where possible;
+otherwise do it in the next PR.
+
+| Step | Status |
+|---|---|
+| Phase 0 — prep | ✅ (step 3, the optional local dir rename, not done) |
+| PR 1 — Convert to workspace | ✅ #43 |
+| architecture-refactor PRs 1–4, 6 (see that plan) | ✅ #44, #50, #46, #47, #48 |
+| PR 2 — Extract `stable-flight` core crate | ⬜ (unblocked: #47 merged) |
+| PR 3 — Split RealFlight into its own backend crate | ⬜ |
+| PR 4 — Make core `no_std` | ⬜ |
+| architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
+
 ## Target layout
 
 ```
@@ -58,10 +74,10 @@ size opt) and lockfile (HAL churn).
 
 ## Phase 0 — prep (no PR)
 
-1. Land or park open branches, so the big file move doesn't cause rebase conflicts.
-2. GitHub: rename `wboayue/stable-flight-sitl` → `stable-flight`, then
+1. ✅ Land or park open branches, so the big file move doesn't cause rebase conflicts.
+2. ✅ GitHub: rename `wboayue/stable-flight-sitl` → `stable-flight`, then
    `git remote set-url origin git@github.com:wboayue/stable-flight.git`.
-3. Optional: `mv ~/projects/stable-flight-sitl ~/projects/stable-flight` and move the Claude
+3. ⬜ Optional: `mv ~/projects/stable-flight-sitl ~/projects/stable-flight` and move the Claude
    memory dir (`~/.claude/projects/-Users-wboayue-projects-stable-flight-sitl`) to match.
 
 ## PR 1 — Convert to workspace (mechanical, no code changes)
@@ -116,6 +132,20 @@ Title: `Convert repo to Cargo workspace; split dev tools into their own crate`
 
 Risk: low. Blame survives through `git log --follow` (pure renames).
 
+**As landed (#43).** Differences from the steps above:
+- `Cargo.lock` stays gitignored (it already was). Revisit if the tools binaries need
+  reproducible builds.
+- `[workspace.dependencies]` has only what's inherited today (`robomath`, `log`,
+  `thiserror`, `clap`, `approx`, `assert2`) at their current default features. The
+  `no_std` feature settings (`default-features = false`, `uom`) move to PR 4.
+- `cargo run --example …` / `--bin …` resolve from the root without `-p`, so documented
+  commands barely changed. The justfile gained `plot`, `gen-figure-eight`, and a
+  per-crate `tag CRATE VERSION`.
+- The root README became the project overview with a crate table, and the component
+  walkthrough moved to the crate README. `LICENSE` is symlinked into the crate so it
+  ships in the package.
+- Regenerating `flights/figure_eight.csv` changed only its comment header.
+
 ## PR 2 — Extract `stable-flight` core crate (still std)
 
 Title: `Extract flight-control core into stable-flight crate`
@@ -128,7 +158,7 @@ Moves into `crates/stable-flight/src/`:
 | Traits: `Commander`, `Vehicle`, `StateEstimator`, `Actuator`, `Stabilizer`, `Mixer`, `TelemetryPublisher` | `lib.rs` |
 | `stabilizers/` (copter, controllers, `Gains`, tests, controllers README) | `stabilizers/` |
 | `mixers/` (quad, tailsitter, tests) | `mixers/` |
-| Per-tick sequencing from `FlightOrchestrator::run` | `flight_loop.rs`: `FlightLoop::step(dt)` + `set_initial_state` |
+| Per-tick sequencing from `FlightOrchestrator::run` | `flight_loop.rs`: `FlightLoop::step(dt)` + `prime` (was `set_initial_state` before #46) |
 | Waypoint-following logic from `ScriptCommander` | `commanders/waypoint.rs`: `WaypointFollower` |
 | `NullVehicle` (from `simulators/mod.rs`) | `testing` module |
 
@@ -155,10 +185,11 @@ waypoints (pure math), so waypoint flight couldn't run on firmware.
 - Split the tests: following behaviour goes to core, parsing/IO errors stay in sitl.
 
 **Add composition points to core** (each is small, allocation-free, and table-tested):
-- `ComposedVehicle<E: StateEstimator, A: Actuator>` implements `Vehicle`. This is how firmware
-  (IMU + estimator, ESC output) and sensor-synthesis SITL (truth → sensors → estimator)
-  assemble a vehicle. Depends on architecture-refactor PR 4 settling the
-  `StateEstimator`/`Actuator` signatures.
+- `ComposedVehicle<E: StateEstimator, A: Actuator>` implements `StateEstimator` and `Actuator`
+  by delegation, and gets `Vehicle` from the blanket impl (#47). Implementing `Vehicle`
+  directly is no longer possible. This is how firmware (IMU + estimator, ESC output) and
+  sensor-synthesis SITL (truth → sensors → estimator) assemble a vehicle. The #47 review
+  confirmed this compiles with no coherence conflict.
 - `impl<A: TelemetryPublisher, B: TelemetryPublisher> TelemetryPublisher for (A, B)`. This
   fans out to several sinks (MAVLink + file log) without `Vec<Box<dyn _>>`. Nest the tuples
   for more than two.
@@ -166,7 +197,8 @@ waypoints (pure math), so waypoint flight couldn't run on firmware.
 **Core `testing` feature** (off by default): `NullVehicle`, `ConstantCommander`,
 `RecordingTelemetry` (fixed-capacity, no alloc). Core tests use it via `cfg(test)`. Sitl and
 backend crates enable it in `[dev-dependencies]`. Delete the ad-hoc mocks this replaces
-(e.g. in `commanders/tests.rs` and `orchestrator/tests.rs`).
+(e.g. in `commanders/tests.rs` and `orchestrator/tests.rs`, whose `MockVehicle` is identical
+to `NullVehicle` since #47).
 
 Other points:
 - Sitl depends on `stable-flight = { path = "../stable-flight", version = "0.1.0" }` and updates
@@ -214,8 +246,10 @@ Title: `Move RealFlight backend into stable-flight-sitl-realflight`
   body frame, units, sign of each angle and rate) on `VehicleState` in core. Each backend
   converts at its boundary.
 - **Timing contract.** Document on `Vehicle` what a backend must guarantee each tick: which
-  call talks to the sim, and how old the state from `estimate_state` is relative to the last
-  `actuate`. Today `RealFlightVehicle::actuate` does the `exchange_data` round-trip and
+  call talks to the sim, and how old the state from `StateEstimator::estimate_state` is
+  relative to the last `Actuator::actuate`. #47 already documents RealFlight's caching and the
+  `dt == Duration::ZERO` first-call convention in rustdoc, so this PR formalizes it as the
+  cross-backend contract and adds the pinning test. Today `RealFlightVehicle::actuate` does the `exchange_data` round-trip and
   `estimate_state` returns the cached result, so the stabilizer sees state from the previous
   exchange. Make this explicit in the RealFlight rustdoc and add a test that pins it (mock
   bridge counts exchanges per tick).
@@ -273,7 +307,7 @@ Risk: low–medium (`rem_euclid` replacement is the only math change; covered by
   - A `LockstepRunner` in sitl, next to `RealTimeRunner`. `dt` comes from sim time, and the
     controller steps the sim instead of sleeping. It reuses `FlightLoop` and `ShutdownSignal`,
     so only pacing is new.
-  - Possibly a timestamp on `VehicleState`. `Vehicle::estimate_state(dt)` takes the elapsed
+  - Possibly a timestamp on `VehicleState`. `StateEstimator::estimate_state(dt)` takes the elapsed
     time as input, but a lockstep sim reports its own.
   - Promoting `ActuatorMapping` to a shared channel map.
   Design these against the real second backend, not speculatively.
@@ -313,12 +347,12 @@ That plan's PRs 4 (`Vehicle` vs `StateEstimator`/`Actuator`), 6 (decouple teleme
 API. Its PR 5 (rename `simulators/` → `vehicles/`) is superseded by workspace PR 3: the module
 disappears and backends become crates. Suggested order:
 
-1. Workspace PR 1 (mechanical move first, so everything else lands in the final layout).
-2. Refactor PRs 1–4 and 6 (cheap, and they shape the core API). Refactor PR 4 has to land
+1. ✅ Workspace PR 1 (mechanical move first, so everything else lands in the final layout).
+2. ✅ Refactor PRs 1–4 and 6 (cheap, and they shape the core API). Refactor PR 4 has to land
    before `ComposedVehicle` (workspace PR 2): it fixes the `StateEstimator`/`Actuator`
    signatures that `ComposedVehicle` composes, and `Vehicle` is the backend contract.
-3. Workspace PRs 2–4.
-4. Refactor PR 7 before publishing `stable-flight` 0.1.0.
+3. ⬜ Workspace PRs 2–4.
+4. ⬜ Refactor PR 7 before publishing `stable-flight` 0.1.0.
 
 ## Checklist per PR
 

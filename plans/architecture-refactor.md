@@ -5,20 +5,32 @@ traits, misleading names, over-broad trait scopes, and one outright stale doc
 claim (VTOL stabilizer). Ordered cheapest → riskiest so each PR is independently
 reviewable, revertable, and stops the bleeding on the worst items first.
 
-Each PR ships with synchronized updates to `README.md`, `CLAUDE.md`, and
-`architecture.md` per the in-sync rule.
+Each PR ships with updates to the docs that own the changed facts (see CLAUDE.md,
+"Keep docs in sync").
+
+Since the workspace migration (#43), source paths below (`src/…`, `examples/…`) are
+relative to `crates/stable-flight-sitl/`. Line numbers are as of the original review.
+Sequencing against the workspace migration lives in `plans/workspace-migration.md`.
+
+**Status legend:** ✅ merged · 🔍 in review · ⬜ not started · ⏭ superseded. Update a
+row when its PR opens (🔍 #n) and again when it merges (✅ #n). Do it in the PR itself
+where possible; otherwise do it in the next PR (for example the rebase of the next
+stacked branch).
 
 ## PR sequence at a glance
 
-| # | Title                                         | Scope             | Risk   |
-|---|-----------------------------------------------|-------------------|--------|
-| 1 | Stop claiming the VTOL stabilizer exists      | Docs + 1 stub     | None   |
-| 2 | Replace panicking telemetry writes            | Bug fix           | Low    |
-| 3 | Rename leaky method names                     | Mechanical rename | Low    |
-| 4 | Resolve `Vehicle` vs `StateEstimator`/`Actuator` | Trait surface  | Low    |
-| 5 | Rename `simulators/` module to `vehicles/`    | Mechanical move   | Low    |
-| 6 | Decouple `TelemetryPublisher` from `Command`  | Trait surface     | Medium |
-| 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   |
+| # | Title                                         | Scope             | Risk   | Status |
+|---|-----------------------------------------------|-------------------|--------|--------|
+| 1 | Stop claiming the VTOL stabilizer exists      | Docs + 1 stub     | None   | ✅ #44 |
+| 2 | Replace panicking telemetry writes            | Bug fix           | Low    | ✅ #50 (replaced auto-closed #45) |
+| 3 | Rename leaky method names                     | Mechanical rename | Low    | ✅ #46 |
+| 4 | Resolve `Vehicle` vs `StateEstimator`/`Actuator` | Trait surface  | Low    | ✅ #47 |
+| 5 | Rename `simulators/` module to `vehicles/`    | Mechanical move   | Low    | ⏭ workspace PR 3 |
+| 6 | Decouple `TelemetryPublisher` from `Command`  | Trait surface     | Medium | ✅ #48 |
+| 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | ⬜ |
+
+PRs 1–4 and 6 are merged. For future stacked PRs, use CLAUDE.md's
+stacked-PR procedure: retarget the child to `main` before merging its parent.
 
 ---
 
@@ -41,6 +53,15 @@ component.
 **Decision.** Delete the stub vs. keep as TODO marker. Recommend delete — the
 ArduPilot URL in the comment is preserved in git history and `TailsitterMixer`
 already signals VTOL ambition.
+
+**As implemented (#44).** Deleted. The crate README also claimed the module existed and
+was fixed too. CHANGELOG: **Breaking** removal of the empty module.
+After review: the "planned" note lives only in architecture.md, linking the eXplora VTOL
+model. `TailSitterMixer` (correct casing) is labelled a placeholder in CLAUDE.md and
+architecture.md, since it returns zeroed actuator commands.
+**Review follow-ups (not in #44):** CLAUDE.md's impl table duplicates architecture.md's
+impl list; keep one and link to it. `stabilizers::low_pass_filter_vec3` is public but
+unused, so delete it or move it to a filters module.
 
 ---
 
@@ -79,6 +100,21 @@ relevant component, not here.
 
 **Risk.** Low. Pure error-path change. Existing tests stay green.
 
+**As implemented (#50, originally #45).** Option 1. The crate-private
+`telemetry::throttle::ErrorThrottle` is count-based. It reports the first failure of an
+episode, then one per 250 consecutive failures with a count of those suppressed, and a
+success ends the episode. That's roughly one line every 5 s for a dead MAVLink link, which
+sends about 50 messages/s. The throttle only decides; each publisher logs, so the log
+target is the publisher's module. `FileLogger` writes each frame through a single
+`write_frame` helper. One throttle per publisher; table-tested. A pre-epoch clock records timestamp 0. Constructor
+`.expect()`s (`MavlinkPublisher::new`, `FileLogger::new`) are still out of scope.
+**Review follow-ups (not in #50):** a failed packet write after a successful timestamp
+write leaves a truncated `.tlog` frame. `MavlinkPublisher` can't be tested against a
+failing connection until its constructor stops hard-coding `connect(...).expect`.
+**Found while here, not fixed:** `FileLogger::publish` writes 10 heartbeats with a 1 s
+`sleep` between each on every tick, stalling the loop about 10 s per tick. It's unused
+today; fix or remove it before anyone wires it in.
+
 ---
 
 ## PR 3 — Rename leaky method names
@@ -106,6 +142,18 @@ note in the next release.
 **Decision.** `prime` vs `reset` for `set_initial_state`. Recommend `prime` —
 the method warms internal estimators from a known good state rather than
 clearing them; `reset` would imply "back to zero."
+
+**As implemented (#46).** `prime`, with a trait rustdoc explaining what it does. The
+version stays `0.1.0` until release; the CHANGELOG marks the renames **Breaking**. After
+review:
+- Fixed a stale `[ScriptCommander::next]` doc link.
+- `CopterStabilizer::prime` now documents only its own behaviour (latching the yaw-hold
+  heading).
+- Removed the dead commented-out `*_controller.prime` calls, since no controller has one.
+
+**Review follow-up:** CLAUDE.md's trait block and control-loop snippet, and the
+architecture.md diagram, restate the trait method names. Consider having CLAUDE.md point
+at `lib.rs` instead.
 
 ---
 
@@ -138,6 +186,27 @@ hardware transition. Cheap to do now, expensive to do once impls multiply.
 
 **Risk.** Low. One impl. Examples don't reference these traits directly.
 
+**As implemented (#47).** Option 2: `pub trait Vehicle: StateEstimator + Actuator {}` with
+a blanket impl, and `estimate_state` takes `&mut self`. `RealFlightVehicle`, `NullVehicle`,
+and the orchestrator test mock implement the two halves. Callers on concrete types
+must now import `StateEstimator`/`Actuator` (one doctest needed it). Adds a rustdoc
+example on `Vehicle`.
+After review:
+- The crate README says to implement `StateEstimator` + `Actuator`.
+- RealFlight's `estimate_state` rustdoc describes the caching (the exchange happens in
+  `actuate`) and the `dt == ZERO` initial exchange.
+- `StateEstimator` documents why it takes `&mut self` and the first-call `Duration::ZERO`
+  convention.
+- Trimmed `Vehicle`'s duplicated implementor list, and removed unused doctest imports.
+
+**Review follow-ups (not in #47):**
+- The orchestrator test `MockVehicle` duplicates `NullVehicle`; workspace PR 2's
+  `testing` feature removes it.
+- CLAUDE.md's trait block copies `lib.rs`.
+- `&mut T` / `Box<T>` forwarding impls, if ever needed.
+- The per-tick `VehicleState` clone in RealFlight.
+- The stale ignored doctest in `orchestrator.rs` uses old paths.
+
 ---
 
 ## PR 5 — Rename `simulators/` to `vehicles/`
@@ -163,6 +232,10 @@ the trait name and the domain vocabulary in the rest of the crate.
 
 **Note.** Can ship with PR 4, but separable. Keep separate for cleaner diffs.
 
+**Superseded.** Workspace-migration PR 3 moves RealFlight into its own backend crate, and
+the `simulators` module goes away. History also shows this module was already renamed
+`vehicles` → `simulators` once (84693ea).
+
 ---
 
 ## PR 6 — Decouple `TelemetryPublisher` from `Command`
@@ -186,6 +259,28 @@ change.
 **Decision.** Lifetimes on `TelemetryRecord` — borrow everything (`&'a`) or
 copy small fields and borrow the heavy ones. Recommend borrow everything;
 the record never outlives the tick.
+
+**As implemented (#48).** It borrows everything except `dt` (`Duration` is `Copy`) and
+derives `Copy`. Fields: `dt`, `command`, `state`, `control`, `actuators`.
+`publish` stays fire-and-forget (no `Result`). The loop can't act on a telemetry
+failure, and publishers handle their own errors since #50. The trait docs say so.
+After review:
+- `MavlinkPublisher` no longer depends on `Command`. VFR_HUD throttle comes from
+  `record.control.thrust` (0–100 %), which fixes a truncation to 0/100 and a per-send
+  `println!` on waypoint commands.
+- The `dt` doc says it's the nominal period, not measured time.
+- The stale `telemetry` naming is gone.
+- `Command`/`AttitudeCommand`/`RateCommand`/`ControlOutput`/`ActuatorCommand` derive
+  `Clone + Copy`, so the planned `RecordingTelemetry` can store records.
+- The loop period is computed once before the loop.
+- CLAUDE.md describes `TelemetryRecord` in prose instead of copying it.
+- `#[non_exhaustive]` was rejected: it would block struct-literal construction from sitl and
+  tests once the type moves to core.
+
+**Review follow-ups (not in #48):** `ConsoleTelemetryPublisher` logs `info!` every tick,
+which breaks the loop logging rule. `FileLogger::publish` is still a stub that ignores the
+record. A measured timestamp/overrun field on `TelemetryRecord` would let rate-bucketed
+publishers stop drifting when the loop overruns.
 
 ---
 
@@ -232,7 +327,7 @@ change, then add the divider in a follow-up where the diff is easy to read.
 
 - Async / `Arc<Mutex<_>>` for cross-thread telemetry. Re-evaluate once
   hardware lands.
-- `no_std` migration. Re-evaluate when targeting the Matek H753.
+- `no_std` migration. Now scheduled as workspace-migration PR 4 (core crate only).
 - Replacing PID with LQR/MPC. Independent of trait shape.
 - Sensor fusion / Kalman filtering for `estimate_state`. Lives behind the
   `StateEstimator` trait surface (post-PR 4) and can be added without
