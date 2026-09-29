@@ -71,8 +71,8 @@ Each major component is defined by a trait interface, allowing multiple implemen
 
 * Multiple Commander implementations (e.g., ScriptCommander — loops CSV waypoint scripts from `flights/`; Extreme3DCommander; SpektrumCommander)
 * Different Vehicle implementations (e.g., RealFlightVehicle)
-* Stabilizer variants for different airframes (e.g., CopterStabilizer; a tailsitter/VTOL stabilizer is planned)
-* Mixer implementations for various aircraft configurations (e.g., QuadCopterMixer, TailsitterMixer)
+* Stabilizer variants for different airframes (e.g., CopterStabilizer). A tailsitter stabilizer for the [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) model is planned but not started.
+* Mixer implementations for various aircraft configurations (e.g., QuadCopterMixer). `TailSitterMixer` is a placeholder: it returns zeroed actuator commands until the tailsitter stabilizer exists.
 * Various telemetry publishers (e.g., MavlinkPublisher, FileLogger)
 
 ## Real-Time Loop Management
