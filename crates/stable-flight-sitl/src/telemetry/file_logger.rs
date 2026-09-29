@@ -1,16 +1,22 @@
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{self, Write};
 use std::thread::sleep;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use byteorder::{BigEndian, WriteBytesExt};
+use log::warn;
 use mavlink::common::*;
 use mavlink::{MavHeader, MavlinkVersion};
 
+use super::throttle::ErrorThrottle;
 use crate::{Command, TelemetryPublisher, VehicleState};
 
+/// Writes telemetry frames to `generated_telemetry.tlog`.
+///
+/// Write failures are logged (rate-limited) and skipped; they never interrupt the flight loop.
 pub struct FileLogger {
     file: File,
+    errors: ErrorThrottle,
 }
 
 impl Default for FileLogger {
@@ -28,13 +34,41 @@ impl FileLogger {
             .open("generated_telemetry.tlog")
             .expect("Failed to open telemetry log file");
 
-        FileLogger { file }
+        FileLogger {
+            file,
+            errors: ErrorThrottle::default(),
+        }
     }
 
     pub fn log(&mut self, data: &[u8]) {
-        self.file
-            .write_all(data)
-            .expect("Failed to write telemetry data");
+        let result = self.file.write_all(data);
+        self.handle_write(result);
+    }
+
+    /// Writes one `.tlog` frame (big-endian µs timestamp, then the packet) and flushes it.
+    fn write_frame(&mut self, timestamp: u64, packet: &[u8]) -> io::Result<()> {
+        self.file.write_u64::<BigEndian>(timestamp)?;
+        self.file.write_all(packet)?;
+        self.file.flush()
+    }
+
+    /// Ends the failure episode on success; reports failures through the throttle.
+    /// Returns whether the write succeeded.
+    fn handle_write(&mut self, result: io::Result<()>) -> bool {
+        match result {
+            Ok(()) => {
+                self.errors.reset();
+                true
+            }
+            Err(e) => {
+                if let Some(suppressed) = self.errors.record() {
+                    warn!(
+                        "Failed to write telemetry log: {e} ({suppressed} earlier failures suppressed)"
+                    );
+                }
+                false
+            }
+        }
     }
 }
 
@@ -77,20 +111,15 @@ impl TelemetryPublisher for FileLogger {
             frame.ser(&mut raw_packet);
 
             // Get the current timestamp in microseconds since UNIX epoch
+            // A clock stepped before the epoch (e.g. by NTP) records 0 rather than panicking.
             let timestamp = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .expect("System time error")
-                .as_micros() as u64;
+                .map_or(0, |elapsed| elapsed.as_micros() as u64);
 
-            // Write the timestamp (8 bytes, big-endian)
-            self.file
-                .write_u64::<BigEndian>(timestamp)
-                .expect("Failed to write timestamp");
-
-            // Write the raw MAVLink packet
-            self.file
-                .write_all(&raw_packet)
-                .expect("Failed to write telemetry data");
+            let result = self.write_frame(timestamp, &raw_packet);
+            if !self.handle_write(result) {
+                return;
+            }
 
             // Print info about the generated message
             println!(
@@ -98,11 +127,6 @@ impl TelemetryPublisher for FileLogger {
                 timestamp,
                 raw_packet.len()
             );
-
-            // Flush the file to ensure data is written
-            self.file
-                .flush()
-                .expect("Failed to flush telemetry log file");
 
             // Simulate a delay between messages (1 second)
             sleep(Duration::from_secs(1));

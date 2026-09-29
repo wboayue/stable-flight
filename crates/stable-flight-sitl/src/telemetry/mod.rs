@@ -7,6 +7,7 @@ use crate::{Command, TelemetryPublisher, VehicleState};
 
 pub mod file_logger;
 pub mod mavlink;
+mod throttle;
 
 pub struct ConsoleTelemetryPublisher {
     // sample_rate: f64,
