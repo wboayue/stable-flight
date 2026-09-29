@@ -22,14 +22,14 @@ stacked branch).
 | # | Title                                         | Scope             | Risk   | Status |
 |---|-----------------------------------------------|-------------------|--------|--------|
 | 1 | Stop claiming the VTOL stabilizer exists      | Docs + 1 stub     | None   | ✅ #44 |
-| 2 | Replace panicking telemetry writes            | Bug fix           | Low    | 🔍 #50 (replaced auto-closed #45) |
+| 2 | Replace panicking telemetry writes            | Bug fix           | Low    | ✅ #50 (replaced auto-closed #45) |
 | 3 | Rename leaky method names                     | Mechanical rename | Low    | 🔍 #46 |
 | 4 | Resolve `Vehicle` vs `StateEstimator`/`Actuator` | Trait surface  | Low    | 🔍 #47 |
 | 5 | Rename `simulators/` module to `vehicles/`    | Mechanical move   | Low    | ⏭ workspace PR 3 |
 | 6 | Decouple `TelemetryPublisher` from `Command`  | Trait surface     | Medium | 🔍 #48 |
 | 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | ⬜ |
 
-PRs 2–4 and 6 are stacked (#50 → #46 → #47 → #48). Merge them in order, using CLAUDE.md's
+PRs 3, 4 and 6 are stacked (#46 → #47 → #48). Merge them in order, using CLAUDE.md's
 stacked-PR procedure: retarget the child to `main` before merging its parent.
 
 ---
