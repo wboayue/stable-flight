@@ -14,7 +14,7 @@ otherwise do it in the next PR.
 |---|---|
 | Phase 0 — prep | ✅ (step 3, the optional local dir rename, not done) |
 | PR 1 — Convert to workspace | ✅ #43 |
-| architecture-refactor PRs 1–4, 6 (see that plan) | 🔍 #44–#48 (stacked) |
+| architecture-refactor PRs 1–4, 6 (see that plan) | ✅ #44; 🔍 #45–#48 (stacked) |
 | PR 2 — Extract `stable-flight` core crate | ⬜ (blocked on #47) |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |

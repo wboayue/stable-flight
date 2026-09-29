@@ -21,7 +21,7 @@ stacked branch).
 
 | # | Title                                         | Scope             | Risk   | Status |
 |---|-----------------------------------------------|-------------------|--------|--------|
-| 1 | Stop claiming the VTOL stabilizer exists      | Docs + 1 stub     | None   | 🔍 #44 |
+| 1 | Stop claiming the VTOL stabilizer exists      | Docs + 1 stub     | None   | ✅ #44 |
 | 2 | Replace panicking telemetry writes            | Bug fix           | Low    | 🔍 #45 |
 | 3 | Rename leaky method names                     | Mechanical rename | Low    | 🔍 #46 |
 | 4 | Resolve `Vehicle` vs `StateEstimator`/`Actuator` | Trait surface  | Low    | 🔍 #47 |
@@ -29,7 +29,7 @@ stacked branch).
 | 6 | Decouple `TelemetryPublisher` from `Command`  | Trait surface     | Medium | 🔍 #48 |
 | 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | ⬜ |
 
-PRs 1–4 and 6 are stacked (#44 → #45 → #46 → #47 → #48). Merge them in order, and after
+PRs 2–4 and 6 are stacked (#45 → #46 → #47 → #48). Merge them in order, and after
 each squash merge rebase the next branch onto `main`.
 
 ---
