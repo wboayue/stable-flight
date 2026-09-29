@@ -40,7 +40,7 @@ impl Mixer for MockMixer {
 
 struct MockTelemetry;
 impl TelemetryPublisher for MockTelemetry {
-    fn publish(&mut self, _: Duration, _: &Command, _: &VehicleState) {}
+    fn publish(&mut self, _: &TelemetryRecord) {}
 }
 
 #[test]

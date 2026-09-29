@@ -1,9 +1,7 @@
 //! Includes components for transmitting flight data to external systems for logging, monitoring, and visualization.
-use std::time::Duration;
-
 use log::info;
 
-use crate::{Command, TelemetryPublisher, VehicleState};
+use crate::{TelemetryPublisher, TelemetryRecord};
 
 pub mod file_logger;
 pub mod mavlink;
@@ -14,7 +12,7 @@ pub struct ConsoleTelemetryPublisher {
 }
 
 impl TelemetryPublisher for ConsoleTelemetryPublisher {
-    fn publish(&mut self, _dt: Duration, _command: &Command, telemetry: &VehicleState) {
-        info!("Sending telemetry: {:?}", telemetry);
+    fn publish(&mut self, record: &TelemetryRecord) {
+        info!("Sending telemetry: {:?}", record.state);
     }
 }

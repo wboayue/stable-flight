@@ -52,7 +52,7 @@ use std::{thread, time::Duration};
 
 use log::{debug, info};
 
-use crate::{Commander, Mixer, Stabilizer, TelemetryPublisher, Vehicle};
+use crate::{Commander, Mixer, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle};
 
 #[cfg(test)]
 mod tests;
@@ -207,6 +207,7 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
         );
 
         let target_dt = 1.0 / target_frequency as f32;
+        let period = Duration::from_secs_f32(target_dt);
 
         // Start time for the loop
         let mut next_time = Instant::now();
@@ -224,9 +225,7 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
             let command = self.commander.next_command(target_dt, &state);
 
             // Get vehicle state
-            state = self
-                .vehicle
-                .estimate_state(Duration::from_secs_f32(target_dt));
+            state = self.vehicle.estimate_state(period);
 
             // Compute control outputs (angles, rates, etc.)
             let control_outputs = self.stabilizer.stabilize(target_dt, &command, &state);
@@ -238,13 +237,18 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
             self.vehicle.actuate(&actuator_command);
 
             // Send telemetry
-            self.telemetry
-                .publish(Duration::from_secs_f32(target_dt), &command, &state);
+            self.telemetry.publish(&TelemetryRecord {
+                dt: period,
+                command: &command,
+                state: &state,
+                control: &control_outputs,
+                actuators: &actuator_command,
+            });
 
             iteration_count += 1;
 
             // Calculate when the next iteration should start
-            next_time += Duration::from_secs_f32(target_dt);
+            next_time += period;
 
             // Calculate how much time we need to sleep to hit the target
             let sleep_time = next_time

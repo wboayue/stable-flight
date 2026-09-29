@@ -50,7 +50,7 @@ sequenceDiagram
     FlightOrchestrator->>Mixer: mix(ControlOutput)
     Mixer-->>FlightOrchestrator: ActuatorCommand
     FlightOrchestrator->>Vehicle: actuate(ActuatorCommand)
-    FlightOrchestrator->>TelemetryPublisher: publish(dt, Command, VehicleState)
+    FlightOrchestrator->>TelemetryPublisher: publish(TelemetryRecord)
 ```
 
 ## Design Patterns

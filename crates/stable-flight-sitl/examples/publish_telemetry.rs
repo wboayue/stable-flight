@@ -2,8 +2,10 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
-use stable_flight_sitl::{AttitudeCommand, Command};
-use stable_flight_sitl::{TelemetryPublisher, VehicleState}; // Import common MAVLink messages
+use stable_flight_sitl::{
+    ActuatorCommand, AttitudeCommand, Command, ControlOutput, TelemetryPublisher, TelemetryRecord,
+    VehicleState,
+};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let telemetry_configuration = MavlinkConfiguration {};
@@ -26,7 +28,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let start = Instant::now();
 
         let state = VehicleState::default(); // Simulated vehicle state
-        publisher.publish(dt, &command, &state);
+        publisher.publish(&TelemetryRecord {
+            dt,
+            command: &command,
+            state: &state,
+            control: &ControlOutput::default(),
+            actuators: &ActuatorCommand::default(),
+        });
 
         // Sleep for 100ms (10Hz update rate)
         thread::sleep(dt - start.elapsed());
