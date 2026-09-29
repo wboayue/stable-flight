@@ -184,18 +184,9 @@ impl Stabilizer for CopterStabilizer {
         }
     }
 
-    /// Primes the stabilizer from a known-good vehicle state before the first tick.
-    ///
-    /// Warms internal state (e.g. the heading hold target) so control starts from where the
-    /// vehicle is rather than from zero. Called once before the control loop starts.
+    /// Latches the current heading as the yaw-hold target.
     fn prime(&mut self, state: &VehicleState) {
         self.heading = state.heading;
-
-        // self.rates_controller.prime(state);
-        // self.attitude_controller.prime(state);
-        // self.altitude_controller.prime(state);
-        // self.lateral_controller.prime(state);
-        // self.yaw_controller.prime(state);
     }
 }
 

@@ -4,7 +4,7 @@
 //! single job — sequencing waypoints — and knows nothing about how the path was shaped
 //! (e.g. a figure-eight); the geometry lives entirely in the CSV. Responsibilities are
 //! kept separate: [`parse_waypoints`] turns text into data, [`ScriptCommander::new`]
-//! handles file I/O, and [`ScriptCommander::next`] advances through the waypoints.
+//! handles file I/O, and [`ScriptCommander::next_command`] advances through the waypoints.
 //!
 //! # CSV format
 //!
