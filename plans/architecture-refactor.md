@@ -100,10 +100,17 @@ relevant component, not here.
 
 **Risk.** Low. Pure error-path change. Existing tests stay green.
 
-**As implemented (#50, originally #45).** Option 1. The crate-private `telemetry::throttle::ErrorThrottle`
-logs the first failure and then one per 250 (about 1/s at 250 Hz). It's shared by both
-publishers and table-tested. A pre-epoch clock records timestamp 0. Constructor
+**As implemented (#50, originally #45).** Option 1. The crate-private
+`telemetry::throttle::ErrorThrottle` is count-based. It reports the first failure of an
+episode, then one per 250 consecutive failures with a count of those suppressed, and a
+success ends the episode. That's roughly one line every 5 s for a dead MAVLink link, which
+sends about 50 messages/s. The throttle only decides; each publisher logs, so the log
+target is the publisher's module. `FileLogger` writes each frame through a single
+`write_frame` helper. One throttle per publisher; table-tested. A pre-epoch clock records timestamp 0. Constructor
 `.expect()`s (`MavlinkPublisher::new`, `FileLogger::new`) are still out of scope.
+**Review follow-ups (not in #50):** a failed packet write after a successful timestamp
+write leaves a truncated `.tlog` frame. `MavlinkPublisher` can't be tested against a
+failing connection until its constructor stops hard-coding `connect(...).expect`.
 **Found while here, not fixed:** `FileLogger::publish` writes 10 heartbeats with a 1 s
 `sleep` between each on every tick, stalling the loop about 10 s per tick. It's unused
 today; fix or remove it before anyone wires it in.
