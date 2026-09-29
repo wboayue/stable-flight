@@ -4,7 +4,7 @@ use log::{error, warn};
 use realflight_bridge::{ControlInputs, RealFlightBridge, SimulatorState};
 use robomath::{Quaternion, Vec3, to_radians};
 
-use crate::{ActuatorCommand, Vehicle, VehicleState};
+use crate::{Actuator, ActuatorCommand, StateEstimator, VehicleState};
 
 #[cfg(test)]
 mod tests;
@@ -57,7 +57,7 @@ pub struct ActuatorMapping {
 /// use std::time::Duration;
 /// use realflight_bridge::{RealFlightBridge, RealFlightLocalBridge};
 /// use stable_flight_sitl::simulators::realflight::{RealFlightConfiguration, RealFlightVehicle, ActuatorMapping};
-/// use stable_flight_sitl::{ActuatorCommand, Vehicle};
+/// use stable_flight_sitl::{Actuator, ActuatorCommand, StateEstimator};
 ///
 /// let bridge = RealFlightLocalBridge::new().expect("Failed to create bridge");
 /// let config = RealFlightConfiguration {
@@ -89,7 +89,7 @@ where
 /// ```no_run
 /// use realflight_bridge::{RealFlightBridge, RealFlightLocalBridge};
 /// use stable_flight_sitl::simulators::realflight::{RealFlightConfiguration, RealFlightVehicle, ActuatorMapping};
-/// use stable_flight_sitl::{ActuatorCommand, Vehicle};
+/// use stable_flight_sitl::{Actuator, ActuatorCommand, StateEstimator};
 /// use std::time::Duration;
 ///
 /// let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
@@ -113,7 +113,7 @@ where
     mapping: ActuatorMapping,
 }
 
-impl<T> Vehicle for RealFlightVehicle<T>
+impl<T> StateEstimator for RealFlightVehicle<T>
 where
     T: RealFlightBridge,
 {
@@ -137,7 +137,12 @@ where
 
         self.estimated_state.clone()
     }
+}
 
+impl<T> Actuator for RealFlightVehicle<T>
+where
+    T: RealFlightBridge,
+{
     /// Applies actuator commands and updates vehicle state from simulator feedback.
     ///
     /// # Arguments

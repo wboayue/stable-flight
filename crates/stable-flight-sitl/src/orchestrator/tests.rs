@@ -13,10 +13,12 @@ impl Commander for MockCommander {
 }
 
 struct MockVehicle;
-impl Vehicle for MockVehicle {
+impl StateEstimator for MockVehicle {
     fn estimate_state(&mut self, _: Duration) -> VehicleState {
         VehicleState::default()
     }
+}
+impl Actuator for MockVehicle {
     fn actuate(&mut self, _: &ActuatorCommand) {}
 }
 

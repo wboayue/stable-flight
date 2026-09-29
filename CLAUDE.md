@@ -57,10 +57,17 @@ pub trait Commander {
     fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command;
 }
 
-pub trait Vehicle {
+pub trait StateEstimator {
     fn estimate_state(&mut self, dt: Duration) -> VehicleState;
+}
+
+pub trait Actuator {
     fn actuate(&mut self, actuator_command: &ActuatorCommand);
 }
+
+// Blanket-implemented: implement StateEstimator + Actuator, never Vehicle directly.
+pub trait Vehicle: StateEstimator + Actuator {}
+impl<T: StateEstimator + Actuator> Vehicle for T {}
 
 pub trait Stabilizer {
     fn stabilize(&mut self, dt: f32, command: &Command, state: &VehicleState) -> ControlOutput;
@@ -85,7 +92,7 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 | Trait              | Impls                                                                |
 |--------------------|----------------------------------------------------------------------|
 | `Commander`        | `Extreme3DCommander`, `SpektrumCommander`, `ScriptCommander`         |
-| `Vehicle`          | `RealFlightVehicle<T: RealFlightBridge>`                             |
+| `Vehicle` (`StateEstimator` + `Actuator`) | `RealFlightVehicle<T: RealFlightBridge>`, `NullVehicle` |
 | `Stabilizer`       | `CopterStabilizer`                                                   |
 | `Mixer`            | `QuadCopterMixer`; `TailSitterMixer` (placeholder, outputs zeros)    |
 | `TelemetryPublisher` | `MavlinkPublisher`, `FileLogger`                                   |
