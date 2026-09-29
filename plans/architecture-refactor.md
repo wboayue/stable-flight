@@ -264,6 +264,23 @@ the record never outlives the tick.
 derives `Copy`. Fields: `dt`, `command`, `state`, `control`, `actuators`.
 `publish` stays fire-and-forget (no `Result`). The loop can't act on a telemetry
 failure, and publishers handle their own errors since #50. The trait docs say so.
+After review:
+- `MavlinkPublisher` no longer depends on `Command`. VFR_HUD throttle comes from
+  `record.control.thrust` (0–100 %), which fixes a truncation to 0/100 and a per-send
+  `println!` on waypoint commands.
+- The `dt` doc says it's the nominal period, not measured time.
+- The stale `telemetry` naming is gone.
+- `Command`/`AttitudeCommand`/`RateCommand`/`ControlOutput`/`ActuatorCommand` derive
+  `Clone + Copy`, so the planned `RecordingTelemetry` can store records.
+- The loop period is computed once before the loop.
+- CLAUDE.md describes `TelemetryRecord` in prose instead of copying it.
+- `#[non_exhaustive]` was rejected: it would block struct-literal construction from sitl and
+  tests once the type moves to core.
+
+**Review follow-ups (not in #48):** `ConsoleTelemetryPublisher` logs `info!` every tick,
+which breaks the loop logging rule. `FileLogger::publish` is still a stub that ignores the
+record. A measured timestamp/overrun field on `TelemetryRecord` would let rate-bucketed
+publishers stop drifting when the loop overruns.
 
 ---
 
