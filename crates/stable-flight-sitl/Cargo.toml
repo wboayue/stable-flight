@@ -1,0 +1,32 @@
+[package]
+name = "stable-flight-sitl"
+description = "Software-in-the-loop flight controller for VTOL drones, driven by the RealFlight simulator"
+readme = "README.md"
+keywords = ["realflight", "flight-simulator", "robotics", "control-systems"]
+categories = ["aerospace::simulation", "aerospace::drones"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+realflight-bridge = { version = "1.1.0", features = ["uom"] }
+gilrs = "0.11.0"
+env_logger = "0.11.6"
+log.workspace = true
+signal-hook = "0.4.1"
+mavlink = "0.17.1"
+uom = "0.38.0"
+byteorder = "1.5.0"
+robomath.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_Console"] }  # For Windows-specific APIs
+
+[dev-dependencies]
+approx.workspace = true
+assert2.workspace = true
+# Examples parse their CLI args with clap.
+clap.workspace = true

@@ -5,11 +5,11 @@
 //! axis. Path segments are colored by cruise speed; faint stems and a ground-projected
 //! outline give depth cues. Output format follows the file extension: `.svg` or `.png`.
 //!
-//! This binary is gated behind the `plot` feature so a bare `cargo build`/`cargo test` (and
-//! library consumers) never compile `plotters`.
+//! It lives in the unpublished `stable-flight-tools` crate so library consumers never compile
+//! `plotters`.
 //!
 //! ```bash
-//! cargo run --features plot --bin plot_flight -- flights/figure_eight.csv fig8.svg
+//! cargo run --bin plot_flight -- flights/figure_eight.csv fig8.svg
 //! ```
 
 use std::error::Error;

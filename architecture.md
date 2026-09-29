@@ -1,6 +1,22 @@
 ## Architecture
 
-This document expands upon the high-level introduction provided in the [project README](https://github.com/wboayue/stable-flight-sitl/blob/main/README.md).
+This document expands upon the high-level introduction provided in the [project README](README.md).
+
+## Crate Boundaries
+
+The repository is a Cargo workspace. Dependencies point one way:
+
+```
+stable-flight-tools ──► stable-flight-sitl
+```
+
+* **`stable-flight-sitl`** (`crates/stable-flight-sitl`): the flight-control pipeline (traits, stabilizers, mixers, orchestrator) together with the RealFlight SITL harness (vehicle, commanders, telemetry). Published.
+* **`stable-flight-tools`** (`crates/stable-flight-tools`): developer binaries (`plot_flight`, `generate_figure_eight`). Unpublished, so library consumers never compile `plotters`.
+* **`firmware/`**: excluded from the workspace; each board will be its own nested workspace with its own target, profiles, and lockfile.
+
+The split continues per `plans/workspace-migration.md`: a `no_std` `stable-flight` core crate, a backend-agnostic `stable-flight-sitl` harness, and one `stable-flight-sitl-<simulator>` crate per simulator backend.
+
+## Flight Orchestrator
 
 The heart of the system is the `FlightOrchestrator` component. The `FlightOrchestrator` depends on several traits that together form a flexible and modular flight control architecture.
 
