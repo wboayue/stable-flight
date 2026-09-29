@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `Vehicle` is now `Vehicle: StateEstimator + Actuator` with a
+  blanket impl. Implement `StateEstimator` and `Actuator` instead of `Vehicle`, and
+  import those traits where `estimate_state`/`actuate` are called on a concrete
+  type. `StateEstimator::estimate_state` now takes `&mut self` to match.
 - **Breaking:** trait methods renamed for clarity: `Commander::next` →
   `next_command`, `Stabilizer::set_initial_state` → `prime`, and
   `TelemetryPublisher::send_telemetry` → `publish`. Update implementations and

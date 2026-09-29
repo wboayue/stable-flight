@@ -525,31 +525,40 @@ pub struct VehicleState {
 
 /// Represents a physical vehicle that can be controlled by the flight system.
 ///
-/// The `Vehicle` trait defines the interface for interacting with a physical aircraft,
-/// whether it's a real vehicle or a simulated one. It handles two primary responsibilities:
-/// - Estimating the current state of the vehicle based on sensor data
-/// - Actuating the vehicle's control surfaces and motors based on control commands
+/// A `Vehicle` is anything that is both a [`StateEstimator`] and an [`Actuator`]; the blanket
+/// impl below provides it automatically, so implement those two traits rather than this one.
+/// The split mirrors hardware, where sensing (IMU, estimator) and actuation (ESC/servo output)
+/// are usually separate drivers, while a simulator bridge can implement both on one type.
 ///
-/// Implementors of this trait may include:
-/// - **Simulation vehicles**: Interface with flight simulators like X-Plane, RealFlight, or custom physics engines
-/// - **Hardware interfaces**: Connect to real drones, fixed-wing aircraft, or other flying vehicles
-/// - **Test vehicles**: Provide predictable responses for testing control algorithms without a full simulation
-pub trait Vehicle {
-    /// Estimates the current vehicle state based on sensor inputs and time elapsed.
-    ///
-    /// # Parameters
-    /// - `dt`: Time elapsed since the last state estimation.
-    ///
-    /// # Returns
-    /// A `VehicleState` representing the current estimated state of the vehicle.
-    fn estimate_state(&mut self, dt: Duration) -> VehicleState;
+/// Examples: a simulator bridge such as `RealFlightVehicle`, a hardware IMU/estimator paired
+/// with an ESC driver, or a test double such as `NullVehicle`.
+///
+/// # Examples
+///
+/// ```
+/// use std::time::Duration;
+/// use stable_flight_sitl::{Actuator, ActuatorCommand, StateEstimator, Vehicle, VehicleState};
+///
+/// struct HoverSim {
+///     state: VehicleState,
+/// }
+///
+/// impl StateEstimator for HoverSim {
+///     fn estimate_state(&mut self, _dt: Duration) -> VehicleState {
+///         self.state.clone()
+///     }
+/// }
+///
+/// impl Actuator for HoverSim {
+///     fn actuate(&mut self, _command: &ActuatorCommand) {}
+/// }
+///
+/// fn requires_vehicle(_: &impl Vehicle) {}
+/// requires_vehicle(&HoverSim { state: VehicleState::default() });
+/// ```
+pub trait Vehicle: StateEstimator + Actuator {}
 
-    /// Sends actuation commands to the vehicle's control surfaces and/or motors.
-    ///
-    /// # Parameters
-    /// - `actuator_command`: The command values to send to the vehicle's actuators.
-    fn actuate(&mut self, actuator_command: &ActuatorCommand);
-}
+impl<T: StateEstimator + Actuator> Vehicle for T {}
 
 /// Component responsible for estimating the vehicle's physical state.
 ///
@@ -564,12 +573,17 @@ pub trait Vehicle {
 pub trait StateEstimator {
     /// Estimates the current vehicle state based on sensor inputs and time elapsed.
     ///
+    /// Takes `&mut self` because estimators typically advance internal state on each call
+    /// (e.g. a Kalman predict/update).
+    ///
     /// # Parameters
-    /// - `dt`: Time elapsed since the last state estimation.
+    /// - `dt`: Time elapsed since the last state estimation. The first call, made once before
+    ///   the control loop starts, passes `Duration::ZERO`; implementations may use it to
+    ///   initialize (see `RealFlightVehicle`).
     ///
     /// # Returns
     /// A `VehicleState` representing the current estimated state of the vehicle.
-    fn estimate_state(&self, dt: Duration) -> VehicleState;
+    fn estimate_state(&mut self, dt: Duration) -> VehicleState;
 }
 
 /// Component responsible for controlling the vehicle's actuators.

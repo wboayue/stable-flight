@@ -28,7 +28,7 @@ The SpektrumCommander currently doesn't expose configuration options.
 
 ### Vehicle
 
-Vehicles are responsible for retrieving state estimates from the vehicle and actuating its motors and control surfaces. There is currently one vehicle implementation for the RealFlight simulator. To support another simulator, you would implement the Vehicle trait and interface it with the new simulator.
+Vehicles are responsible for retrieving state estimates from the vehicle and actuating its motors and control surfaces. There is currently one vehicle implementation for the RealFlight simulator. To support another simulator, implement `StateEstimator` (read state) and `Actuator` (send commands) for a type that talks to it; `Vehicle` is implemented automatically for any type with both.
 
 The following example demonstrates configuring the RealFlight vehicle:
 

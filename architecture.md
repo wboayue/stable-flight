@@ -23,7 +23,7 @@ The heart of the system is the `FlightOrchestrator` component. The `FlightOrches
 ## Core Components
 
 * **Commander**: Generates Rate, Attitude, or Waypoint commands for the stabilizer. Sources include joysticks, pre-recorded scripts, and autonomous navigation systems.
-* **Vehicle**: Represents a physical or simulated vehicle, supporting state estimation and actuation. This abstraction allows for testing with simulators before deploying to real hardware.
+* **Vehicle**: Represents a physical or simulated vehicle. It is the composition `StateEstimator + Actuator` (blanket-implemented), so sensing and actuation can be separate components on hardware (IMU/estimator, ESC output) while a simulator bridge implements both on one type. This abstraction allows for testing with simulators before deploying to real hardware.
 * **Stabilizer**: Implements the flight control logic — typically cascaded PID loops — calculating `ControlOutput` based on the difference between commanded and actual state.
 * **Mixer**: Translates `ControlOutput` into actuator commands, mapping abstract thrust/moment values to specific motor outputs or control surface positions.
 * **TelemetryPublisher**: Publishes the current state of the vehicle for monitoring, debugging, and external systems.
