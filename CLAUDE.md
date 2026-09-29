@@ -23,7 +23,8 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Plans live in `plans/` (tracked). `plans/workspace-migration.md` tracks the split into
   core / sitl / backend crates; `plans/architecture-refactor.md` tracks trait-surface cleanups
   that land first (its PR 5 is superseded by the migration). Read both before touching trait
-  surface or crate layout.
+  surface or crate layout. Each plan has a Status table: mark a row 🔍 #n when its PR opens and
+  ✅ #n when it merges, in that PR or the next one.
 - The repo was renamed `stable-flight-sitl` → `stable-flight`; the crate keeps the
   `stable-flight-sitl` name. Old GitHub URLs redirect.
 
@@ -179,7 +180,10 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 - PRs need a summary of the scenario tested, reproduction/validation steps (commands, configs), and screenshots or telemetry snippets when visual feedback changes.
 - **Merges are squash-only** — merge commits and rebase are disabled on GitHub, so a PR lands as a single commit titled `<PR title> (#id)`. Keep the PR title release-note quality; intermediate branch commits are discarded.
 - PRs must be green on the `test` GitHub Actions workflow (a `build` job running the test suite) before they can merge; the PR shows `UNSTABLE`/pending until it finishes.
-- CI triggers only on PRs whose base is `main`. In a stack of PRs (each based on the previous branch), only the bottom one gets checks. Because merges are squash-only, rebase each child onto `main` (`git rebase --onto main <old-parent-branch>`) after its parent merges, then retarget it to `main` so CI runs.
+- CI triggers only on PRs whose base is `main`. In a stack of PRs (each based on the previous branch), only the bottom one gets checks. To merge the bottom PR of a stack:
+  1. Record the parent's tip SHA, then **retarget the child to `main` first** (`gh pr edit <child> --base main`). `gh pr merge --delete-branch` on a parent *closes* any PR still based on it, and GitHub won't reopen a closed PR once its head has been force-pushed.
+  2. `gh pr merge <parent> --squash --delete-branch`.
+  3. From the top of the stack, `git rebase --update-refs --onto main <old-parent-sha>`, then `git push --force-with-lease` every stacked branch.
 - A new published crate inherits `[workspace.package]`, gets its own `README.md` (absolute GitHub links; crates.io doesn't resolve repo-relative ones) and `CHANGELOG.md`, and symlinks `LICENSE` (`ln -s ../../LICENSE`) so it ships in the package. Check with `cargo package -p <crate> --list`.
 - **Keep docs in sync with the code, in the same PR.** Renamed trait, changed a method signature, added/removed a component or crate, retired a CLI/example, swapped a default — update the doc that owns the fact. Stale docs mislead both humans and AI; treat them as part of the change, not a follow-up. Each fact has one home; other docs link to it rather than restating it:
   - crate `README.md` — that crate's purpose, usage, features;
