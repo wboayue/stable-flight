@@ -14,7 +14,7 @@ otherwise do it in the next PR.
 |---|---|
 | Phase 0 — prep | ✅ (step 3, the optional local dir rename, not done) |
 | PR 1 — Convert to workspace | ✅ #43 |
-| architecture-refactor PRs 1–4, 6 (see that plan) | ✅ #44, #50, #46, #47; 🔍 #48 |
+| architecture-refactor PRs 1–4, 6 (see that plan) | ✅ #44, #50, #46, #47, #48 |
 | PR 2 — Extract `stable-flight` core crate | ⬜ (unblocked: #47 merged) |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
@@ -348,7 +348,7 @@ API. Its PR 5 (rename `simulators/` → `vehicles/`) is superseded by workspace 
 disappears and backends become crates. Suggested order:
 
 1. ✅ Workspace PR 1 (mechanical move first, so everything else lands in the final layout).
-2. 🔍 Refactor PRs 1–4 and 6 (cheap, and they shape the core API). Refactor PR 4 has to land
+2. ✅ Refactor PRs 1–4 and 6 (cheap, and they shape the core API). Refactor PR 4 has to land
    before `ComposedVehicle` (workspace PR 2): it fixes the `StateEstimator`/`Actuator`
    signatures that `ComposedVehicle` composes, and `Vehicle` is the backend contract.
 3. ⬜ Workspace PRs 2–4.

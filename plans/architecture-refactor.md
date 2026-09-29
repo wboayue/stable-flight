@@ -26,10 +26,10 @@ stacked branch).
 | 3 | Rename leaky method names                     | Mechanical rename | Low    | ✅ #46 |
 | 4 | Resolve `Vehicle` vs `StateEstimator`/`Actuator` | Trait surface  | Low    | ✅ #47 |
 | 5 | Rename `simulators/` module to `vehicles/`    | Mechanical move   | Low    | ⏭ workspace PR 3 |
-| 6 | Decouple `TelemetryPublisher` from `Command`  | Trait surface     | Medium | 🔍 #48 |
+| 6 | Decouple `TelemetryPublisher` from `Command`  | Trait surface     | Medium | ✅ #48 |
 | 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | ⬜ |
 
-PR 6 (#48) is the last of the stack. When stacking, use CLAUDE.md's
+PRs 1–4 and 6 are merged. For future stacked PRs, use CLAUDE.md's
 stacked-PR procedure: retarget the child to `main` before merging its parent.
 
 ---
