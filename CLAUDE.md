@@ -1,43 +1,51 @@
 # CLAUDE.md
 
-Guidance for everyone (humans + AI assistants) working in the Stable Flight SITL repo. `architecture.md` covers design rationale.
+Guidance for everyone (humans + AI assistants) working in the Stable Flight repo. `architecture.md` covers design rationale.
 
 ## Quick facts
 
-- Rust **edition 2024**, version `0.1.0`, primarily a library. Two binaries live in
-  `src/bin/`, each gated behind an optional feature: `plot_flight` (3D flight-path visualizer,
-  `plot` feature) and `generate_figure_eight` (waypoint-script generator, `tools` feature).
-  There is no `src/main.rs`.
-- Entrypoints live in `examples/*.rs`. Run with `cargo run --example <name>`.
-- Public modules: `commanders`, `mixers`, `orchestrator`, `simulators`, `stabilizers`, `telemetry`.
-- Key external crates: `realflight-bridge` (sim I/O), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). Behind the optional `plot` feature (`plot_flight` binary): `plotters`, `clap`; behind `tools` (`generate_figure_eight` binary): `clap`.
-- Untracked generated artifacts: `target/`, `tarpaulin-report.html`.
+- Cargo workspace (virtual manifest at the root, `resolver = "3"`), Rust **edition 2024**,
+  version `0.1.0`. Shared package metadata and common dependency versions live in the root
+  `[workspace.package]` / `[workspace.dependencies]`; crates inherit them with `.workspace = true`.
+- Crates:
+  - `crates/stable-flight-sitl` — the library: the flight-control pipeline plus the RealFlight
+    SITL harness. Examples live in `crates/stable-flight-sitl/examples/*.rs`.
+  - `crates/stable-flight-tools` — unpublished (`publish = false`) dev binaries: `plot_flight`
+    (3D flight-path visualizer) and `generate_figure_eight` (waypoint-script generator).
+- `firmware/` is excluded from the workspace; boards will get their own nested workspaces.
+- Run every command from the repo root: `cargo run --example <name>` / `--bin <name>` resolve
+  across the workspace, and `flights/*.csv` paths are relative to the root.
+- `stable-flight-sitl` public modules: `commanders`, `mixers`, `orchestrator`, `simulators`, `stabilizers`, `telemetry`.
+- Key external crates: `realflight-bridge` (sim I/O), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
+- Untracked generated artifacts: `target/`, `Cargo.lock`, `tarpaulin-report.html`.
+- Unless a path says otherwise, `src/…` and `examples/…` below are relative to
+  `crates/stable-flight-sitl/`.
+- `plans/workspace-migration.md` tracks the in-progress split into core / sitl / backend crates.
 
 ## Commands
 
 ```bash
-cargo build                                     # or: just build
-cargo test                                      # or: just test
+cargo build --workspace                         # or: just build
+cargo test --workspace --all-features           # or: just test
 cargo run --example copter-manual-realflight    # joystick + RealFlight (--host to override)
 cargo run --example copter-auto-realflight      # scripted figure-eight + RealFlight (script arg, --host)
 cargo run --example extreme_3d_commander        # joystick smoke test
 cargo run --example publish_telemetry           # MAVLink demo
-cargo run --features plot --bin plot_flight -- flights/figure_eight.csv out.svg  # 3D path viz (SVG or PNG)
-cargo run --features tools --bin generate_figure_eight  # (re)write flights/figure_eight.csv (flags resize the path)
-cargo tarpaulin -o html                         # or: just cover  (writes tarpaulin-report.html)
+cargo run --bin plot_flight -- flights/figure_eight.csv out.svg  # 3D path viz (SVG or PNG); or: just plot …
+cargo run --bin generate_figure_eight           # (re)write flights/figure_eight.csv; or: just gen-figure-eight
+cargo tarpaulin --workspace -o html             # or: just cover  (writes tarpaulin-report.html)
 cargo fmt --all
-cargo clippy --all-targets
+cargo clippy --workspace --all-targets
 ```
 
 The flight pipeline has no CLI and there is no `cargo bench` target — don't suggest
-`cargo run -- --commander …` or `cargo bench`. The two binaries are `plot_flight` (`plot`
-feature) and `generate_figure_eight` (`tools` feature), each kept out of the default build via
-`required-features`; their unit tests run only with the matching feature enabled (e.g.
-`cargo test --features plot`, `cargo test --features tools`).
+`cargo run -- --commander …` or `cargo bench`. The only binaries are `plot_flight` and
+`generate_figure_eight` in `stable-flight-tools`; their unit tests run under
+`cargo test --workspace`. Add `-p <crate>` to scope any command to one crate.
 
 ## Architecture
 
-The control system is a five-trait pipeline coordinated by `FlightOrchestrator`. Traits and methods (from `src/lib.rs`):
+The control system is a five-trait pipeline coordinated by `FlightOrchestrator`. Traits and methods (from `crates/stable-flight-sitl/src/lib.rs`):
 
 ```rust
 pub trait Commander {
@@ -83,7 +91,7 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 (`x,y,altitude,cruise_speed`) from `flights/`, then follows and loops the waypoints by
 horizontal acceptance radius. It is geometry-agnostic — the figure-eight shape lives in
 `flights/figure_eight.csv`, produced by the `generate_figure_eight` binary
-(`src/bin/generate_figure_eight.rs`, `tools` feature). The
+(`crates/stable-flight-tools/src/bin/generate_figure_eight.rs`). The
 RealFlight examples are intentionally standalone (each inlines its full pipeline wiring),
 so some setup is duplicated between them by design — readability over DRY.
 
@@ -115,7 +123,7 @@ self.telemetry.send_telemetry(Duration::from_secs_f32(dt), &command, &state);
 ## Testing
 
 - Unit tests sit next to the code in `mod tests;` files (e.g. `src/stabilizers/copter/tests.rs`, `src/mixers/quad/tests.rs`, `src/orchestrator/tests.rs`, `src/simulators/realflight/tests.rs`, `src/commanders/tests.rs`).
-- Run `cargo test --all-targets` locally; integration-style checks that need simulator interaction live in `examples/`.
+- Run `cargo test --workspace --all-targets` locally; integration-style checks that need simulator interaction live in `examples/`.
 - Name tests after the behaviour they protect (e.g. `maintains_pitch_hold`), not the function under test.
 - Use `assert2::assert!` / `check!` and `approx::assert_relative_eq!` for floats.
 - Table-driven tests are the default for control math; one row per scenario.
@@ -151,26 +159,30 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 - PRs need a summary of the scenario tested, reproduction/validation steps (commands, configs), and screenshots or telemetry snippets when visual feedback changes.
 - **Merges are squash-only** — merge commits and rebase are disabled on GitHub, so a PR lands as a single commit titled `<PR title> (#id)`. Keep the PR title release-note quality; intermediate branch commits are discarded.
 - PRs must be green on the `test` GitHub Actions workflow (a `build` job running the test suite) before they can merge; the PR shows `UNSTABLE`/pending until it finishes.
-- **Keep `README.md`, `CLAUDE.md`, and `architecture.md` in sync with the code.** Renamed trait, changed a method signature, added/removed a component, retired a CLI/example, swapped a default — update all three in the same PR. Stale docs mislead both humans and AI; treat them as part of the change, not a follow-up.
-- **Maintain `CHANGELOG.md`** ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)). Every user-facing change adds a bullet under `## [Unreleased]` in the same PR, grouped by `Added`/`Changed`/`Deprecated`/`Removed`/`Fixed`/`Security`; mark breaking changes **Breaking**. Skip internal-only churn (refactors, test/CI tweaks). At release, rename `[Unreleased]` to `## [x.y.z] - YYYY-MM-DD`, add a fresh empty `[Unreleased]`, and update the compare links.
+- **Keep docs in sync with the code, in the same PR.** Renamed trait, changed a method signature, added/removed a component or crate, retired a CLI/example, swapped a default — update the doc that owns the fact. Stale docs mislead both humans and AI; treat them as part of the change, not a follow-up. Each fact has one home; other docs link to it rather than restating it:
+  - crate `README.md` — that crate's purpose, usage, features;
+  - root `README.md` — project overview, crate index, supported simulators, quick start;
+  - `CLAUDE.md` — commands, coding/testing rules, PR checklist;
+  - `architecture.md` — crate boundaries, dependency rules, traits, frame and timing contracts.
+- **Maintain each published crate's `CHANGELOG.md`** (`crates/<crate>/CHANGELOG.md`; unpublished `stable-flight-tools` has none) ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)). Every user-facing change adds a bullet under `## [Unreleased]` in the same PR, grouped by `Added`/`Changed`/`Deprecated`/`Removed`/`Fixed`/`Security`; mark breaking changes **Breaking**. Skip internal-only churn (refactors, test/CI tweaks). At release, rename `[Unreleased]` to `## [x.y.z] - YYYY-MM-DD`, add a fresh empty `[Unreleased]`, and update the compare links.
 
 ## Workflow
 
 1. Read the relevant trait in `src/lib.rs` and its existing impls before adding a new one.
 2. Wire new components through the orchestrator the way `examples/copter-manual-realflight.rs` does — that's the canonical reference.
 3. Add tests alongside the code; cover the boundary/error case, not just the happy path.
-4. `cargo fmt && cargo clippy --all-targets && cargo test` before sending a PR.
-5. If you change trait surface, module layout, or runnable examples, update `README.md`, `CLAUDE.md`, and `architecture.md` in the same PR.
+4. `cargo fmt --all && cargo clippy --workspace --all-targets && cargo test --workspace --all-features` before sending a PR.
+5. If you change trait surface, module or crate layout, or runnable examples, update the owning docs (see Commits & PRs) in the same PR.
 
 ## Pre-PR checklist
 
-- [ ] Builds clean (`cargo build`) and tests pass (`cargo test`).
-- [ ] `cargo fmt --all` and `cargo clippy --all-targets` clean.
+- [ ] Builds clean (`cargo build --workspace`) and tests pass (`cargo test --workspace --all-features`).
+- [ ] `cargo fmt --all` and `cargo clippy --workspace --all-targets` clean.
 - [ ] New fallible APIs return `Result` with `thiserror` types; no new panics in library code.
 - [ ] No `.unwrap()` or `.expect()` introduced under `src/` (examples/tests OK).
 - [ ] New PID/quaternion/transform logic is unit-tested with table cases.
 - [ ] Public API has Rustdoc with at least one example.
 - [ ] Hot-path code allocates nothing per tick.
 - [ ] Coverage refreshed if control-loop logic changed.
-- [ ] `README.md`, `CLAUDE.md`, and `architecture.md` reflect any trait, module, or example changes.
-- [ ] `CHANGELOG.md` has an `[Unreleased]` entry for any user-facing change.
+- [ ] Owning docs (crate/root `README.md`, `CLAUDE.md`, `architecture.md`) reflect any trait, module, crate, or example changes.
+- [ ] Each affected published crate's `CHANGELOG.md` has an `[Unreleased]` entry for any user-facing change.

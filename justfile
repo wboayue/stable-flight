@@ -1,21 +1,29 @@
-# Builds the project
+# Builds every workspace crate
 build:
-    cargo build
+    cargo build --workspace
 
 # Runs tests
 test:
-    cargo test
+    cargo test --workspace --all-features
 
 # Generate and save coverage report using tarpaulin
 cover:
-    cargo tarpaulin -o html
+    cargo tarpaulin --workspace -o html
     echo "coverage report saved to tarpaulin-report.html"
 
-# Tags repo with specified version
-tag VERSION:
-    echo "Tagging repo with version {{VERSION}}"
-    git tag {{VERSION}} -m "Version {{VERSION}}"
-    git push origin {{VERSION}}
+# Renders a waypoint script as a 3D flight path, e.g. `just plot flights/figure_eight.csv out.svg`
+plot *ARGS:
+    cargo run --bin plot_flight -- {{ARGS}}
+
+# (Re)writes flights/figure_eight.csv; flags such as --half-width resize the path
+gen-figure-eight *ARGS:
+    cargo run --bin generate_figure_eight -- {{ARGS}}
+
+# Tags a crate release, e.g. `just tag stable-flight-sitl 0.1.0` -> stable-flight-sitl-v0.1.0
+tag CRATE VERSION:
+    echo "Tagging repo with {{CRATE}}-v{{VERSION}}"
+    git tag {{CRATE}}-v{{VERSION}} -m "{{CRATE}} {{VERSION}}"
+    git push origin {{CRATE}}-v{{VERSION}}
 
 # Lists all available versions
 versions:

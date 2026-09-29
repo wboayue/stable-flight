@@ -1,0 +1,24 @@
+[package]
+name = "stable-flight-tools"
+description = "Developer tools for Stable Flight: flight-path plotting and waypoint-script generation"
+publish = false
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+stable-flight-sitl = { path = "../stable-flight-sitl" }
+clap.workspace = true
+plotters = { version = "0.3", default-features = false, features = [
+    "bitmap_backend",   # BitMapBackend (in-memory raster)
+    "bitmap_encoder",   # save rasters to .png
+    "svg_backend",      # SVGBackend
+    "line_series",      # LineSeries
+    "ttf",              # text layout via system fonts (resolves "sans-serif")
+] }
+
+[dev-dependencies]
+assert2.workspace = true
+robomath.workspace = true

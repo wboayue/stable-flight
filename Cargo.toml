@@ -1,63 +1,20 @@
-[package]
-name = "stable-flight-sitl"
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+# Board firmware lives in nested workspaces (own target, profiles, and lockfile).
+exclude = ["firmware"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-description = "Software-in-the-loop flight controller for VTOL drones, driven by the RealFlight simulator"
 authors = ["Wil Boayue <wil@wsbsolutions.com>"]
 license = "MIT"
-readme = "README.md"
-repository = "https://github.com/wboayue/stable-flight-sitl"
-keywords = ["realflight", "flight-simulator", "robotics", "control-systems"]
-categories = ["aerospace::simulation", "aerospace::drones"]
+repository = "https://github.com/wboayue/stable-flight"
 
-[dependencies]
-realflight-bridge = { version = "1.1.0", features = ["uom"] }
-gilrs = "0.11.0"
-env_logger = "0.11.6"
-log = "0.4.25"
-signal-hook = "0.4.1"
-mavlink = "0.17.1"
-uom = "0.38.0"
-byteorder = "1.5.0"
+[workspace.dependencies]
 robomath = "0.1.0"
+log = "0.4.25"
 thiserror = "2.0"
-# Optional: only the `plot_flight` visualization binary (feature = "plot") uses this.
-# Kept out of the default build so the library and test suite stay lean.
-plotters = { version = "0.3", optional = true, default-features = false, features = [
-    "bitmap_backend",   # BitMapBackend (in-memory raster)
-    "bitmap_encoder",   # save rasters to .png
-    "svg_backend",      # SVGBackend
-    "line_series",      # LineSeries
-    "ttf",              # text layout via system fonts (resolves "sans-serif")
-] }
-clap = { version = "4", optional = true, features = ["derive"] }
-
-[features]
-# Enables the `plot_flight` binary and its `plotters`/`clap` dependencies.
-plot = ["dep:plotters", "dep:clap"]
-# Enables the developer-tooling binaries (e.g. `generate_figure_eight`) and their `clap`
-# dependency. Kept out of the default build so the library and test suite stay lean.
-tools = ["dep:clap"]
-
-# 3D flight-path visualizer. Gated behind `plot` so a bare `cargo build`/`cargo test`
-# (and library consumers) never compile `plotters`.
-[[bin]]
-name = "plot_flight"
-required-features = ["plot"]
-
-# Figure-eight waypoint-script generator. Gated behind `tools` so a bare `cargo build`/
-# `cargo test` (and library consumers) never compile `clap`.
-[[bin]]
-name = "generate_figure_eight"
-required-features = ["tools"]
-
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_Console"] }  # For Windows-specific APIs
-
-[dev-dependencies]
+clap = { version = "4", features = ["derive"] }
 approx = "0.5.1"
 assert2 = "0.4.0"
-# Available to examples/tests unconditionally (the library binaries pull clap via the
-# optional `plot`/`tools` features instead).
-clap = { version = "4", features = ["derive"] }
