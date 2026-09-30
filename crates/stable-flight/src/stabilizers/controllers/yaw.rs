@@ -1,5 +1,3 @@
-use std::f32::consts::PI;
-
 use crate::stabilizers::{Gains, wrap_angle};
 
 /// Configures the yaw controller with PID gains and operational limits.
@@ -195,6 +193,8 @@ fn angle_diff(desired_yaw: f32, current_yaw: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
+
+    use std::f32::consts::PI;
 
     use approx::assert_relative_eq;
 
