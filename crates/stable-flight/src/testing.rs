@@ -18,7 +18,7 @@
 //! stable-flight = { version = "0.1", features = ["testing"] }
 //! ```
 
-use std::time::Duration;
+use core::time::Duration;
 
 use crate::{
     Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, ControlOutput, StateEstimator,

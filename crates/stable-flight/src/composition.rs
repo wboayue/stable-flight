@@ -32,7 +32,7 @@
 //!
 //! [`Vehicle`]: crate::Vehicle
 
-use std::time::Duration;
+use core::time::Duration;
 
 use crate::{
     Actuator, ActuatorCommand, StateEstimator, TelemetryPublisher, TelemetryRecord, VehicleState,

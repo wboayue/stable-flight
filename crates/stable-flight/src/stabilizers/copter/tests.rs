@@ -558,3 +558,29 @@ fn nan_rate_command_holds_zero_rate() {
     );
     assert!(a.moments != vec3(0.0, 0.0, 0.0));
 }
+
+#[test]
+fn thrust_curve_raises_linear_thrust_to_the_configured_exponent() {
+    // (linear thrust, exponent, expected)
+    let cases = [
+        (0.0, 2.0, 0.0),
+        (1.0, 2.0, 1.0),
+        (0.5, 2.0, 0.25),
+        (0.5, 1.5, 0.353_553_4),
+        (0.5, 1.0, 0.5),
+    ];
+    for (linear_thrust, exponent, expected) in cases {
+        let stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
+            thrust_curve_exponent: exponent,
+            ..Default::default()
+        });
+        approx::assert_relative_eq!(
+            stabilizer.fit_to_thrust_curve(linear_thrust),
+            expected,
+            epsilon = 1e-6
+        );
+    }
+    // NaN passes through `clamp` today; callers saturate first (backlog).
+    let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+    assert!(stabilizer.fit_to_thrust_curve(f32::NAN).is_nan());
+}
