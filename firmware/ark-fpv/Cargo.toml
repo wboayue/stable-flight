@@ -2,7 +2,7 @@
 name = "ark-fpv"
 version = "0.1.0"
 edition = "2024"
-authors = ["Wil Boayue <wil@wsbsolutions.com>"]
+authors = ["Wil Boayue <wil@wsblabs.com>"]
 license = "MIT"
 description = "Stable Flight firmware for the ARK FPV (STM32H743) flight controller"
 repository = "https://github.com/wboayue/stable-flight"
