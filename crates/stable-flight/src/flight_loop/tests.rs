@@ -94,10 +94,10 @@ impl Mixer for RecordingMixer {
     }
 }
 
-struct RecordingTelemetry {
+struct LogTelemetry {
     log: Log,
 }
-impl TelemetryPublisher for RecordingTelemetry {
+impl TelemetryPublisher for LogTelemetry {
     fn publish(&mut self, record: &TelemetryRecord) {
         self.log.borrow_mut().push(format!(
             "publish dt={} heading={} thrust={} motor0={}",
@@ -116,7 +116,7 @@ fn recording_loop(
     RecordingVehicle,
     RecordingStabilizer,
     RecordingMixer,
-    RecordingTelemetry,
+    LogTelemetry,
 > {
     FlightLoop::new(
         RecordingCommander { log: log.clone() },
@@ -126,7 +126,7 @@ fn recording_loop(
         },
         RecordingStabilizer { log: log.clone() },
         RecordingMixer { log: log.clone() },
-        RecordingTelemetry { log: log.clone() },
+        LogTelemetry { log: log.clone() },
     )
 }
 
@@ -197,4 +197,27 @@ fn commander_sees_previous_tick_state_across_steps() {
             "command dt=0.004 seen_heading=2",
         ]
     );
+}
+
+#[test]
+fn into_parts_returns_the_components_with_their_state() {
+    use crate::mixers::QuadCopterMixer;
+    use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+    use crate::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
+
+    let mut flight_loop = FlightLoop::new(
+        ConstantCommander::default(),
+        NullVehicle::new(),
+        CopterStabilizer::new(CopterStabilizerConfig::default()),
+        QuadCopterMixer::default(),
+        RecordingTelemetry::<8>::new(),
+    );
+    flight_loop.prime();
+    flight_loop.step(Duration::from_millis(4));
+    flight_loop.step(Duration::from_millis(4));
+
+    let (_commander, vehicle, _stabilizer, _mixer, telemetry) = flight_loop.into_parts();
+    check!(vehicle.estimates() == 3); // prime + 2 ticks
+    check!(vehicle.actuations() == 2);
+    check!(telemetry.total() == 2);
 }

@@ -25,6 +25,12 @@ jobs:
         sudo apt update
         sudo apt install -y libudev-dev
 
+    - name: build (default features)
+      # The test step enables every feature (including core `testing`); this catches library
+      # code that accidentally depends on a dev-only feature.
+      run: |
+        cargo build --workspace
+
     - name: test
       run: |
         cargo test --workspace --all-features

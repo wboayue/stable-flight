@@ -95,6 +95,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Breaking:** `simulators::NullVehicle`. Use `stable_flight::testing::NullVehicle`
+  (enable the core `testing` feature in `[dev-dependencies]`), which also counts
+  calls and records the last actuator command.
 - **Breaking:** the empty `stabilizers::vtol` module. It held only a reference
   link; no VTOL stabilizer exists yet.
 - **Breaking:** the public `ScriptCommander::path` field; the commander now owns
