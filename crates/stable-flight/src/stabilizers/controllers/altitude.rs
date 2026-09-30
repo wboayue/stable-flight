@@ -2,6 +2,10 @@ use robomath::Quaternion;
 
 use crate::stabilizers::Gains;
 
+/// Linear thrust that holds altitude (zero net vertical acceleration); also the output for a
+/// non-finite altitude or velocity error.
+const HOVER_LINEAR_THRUST: f32 = 0.5;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct AltitudeControllerConfig {
     pub gains: Gains,
@@ -88,11 +92,20 @@ impl AltitudeController {
         let gains = &self.config.gains;
 
         let altitude_error = desired_altitude - estimated_altitude;
+        let velocity_error = desired_velocity - estimated_velocity;
+
+        // A non-finite error (NaN/∞ altitude or velocity) must never enter the integral, where
+        // it would stick (NaN survives `clamp`) and hold thrust at NaN → 0 for good. Neutral
+        // for altitude is *hover*, not zero thrust, so return the hover setpoint instead.
+        if !(altitude_error.is_finite() && velocity_error.is_finite()) {
+            return HOVER_LINEAR_THRUST;
+        }
+
         self.integrated_error += altitude_error * dt;
         self.integrated_error = self.integrated_error.clamp(-100.0, 100.0);
 
         let proportional_term = gains.p * altitude_error;
-        let derivative_term = gains.d * (desired_velocity - estimated_velocity);
+        let derivative_term = gains.d * velocity_error;
         let integral_term = gains.i * self.integrated_error;
         let mut acceleration_cmd = proportional_term + derivative_term + integral_term;
 
@@ -102,7 +115,7 @@ impl AltitudeController {
 
         // Map acceleration_cmd such that:
         // - acceleration_cmd = -GRAVITY (free fall) -> linear_thrust = 0
-        // - acceleration_cmd = 0 (hover) -> linear_thrust = 0.5
+        // - acceleration_cmd = 0 (hover) -> linear_thrust = HOVER_LINEAR_THRUST (0.5)
         // - acceleration_cmd = MAX_ACCEL (max upward) -> linear_thrust = 1
         let accel_range_lower = GRAVITY; // From -GRAVITY to 0
         let accel_range_upper = MAX_ACCEL; // From 0 to MAX_ACCEL
@@ -119,4 +132,39 @@ impl AltitudeController {
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use robomath::Quaternion;
+
+    use super::*;
+
+    fn level() -> Quaternion {
+        Quaternion {
+            w: 1.0,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        }
+    }
+
+    #[test]
+    fn non_finite_estimate_holds_hover_and_does_not_poison_later_ticks() {
+        let nan = f32::NAN;
+        // (estimated altitude, estimated velocity)
+        let cases = [(nan, 0.0), (10.0, nan), (f32::INFINITY, 0.0), (nan, nan)];
+        for (altitude, velocity) in cases {
+            let mut controller = AltitudeController::new();
+            let during = controller.control(0.004, 20.0, 0.0, altitude, velocity, level());
+            assert!(
+                during == HOVER_LINEAR_THRUST,
+                "({altitude}, {velocity}) gave {during}"
+            );
+
+            let after = controller.control(0.004, 20.0, 0.0, 10.0, 0.0, level());
+            let fresh = AltitudeController::new().control(0.004, 20.0, 0.0, 10.0, 0.0, level());
+            assert!(
+                after == fresh,
+                "after ({altitude}, {velocity}): {after} vs fresh {fresh}"
+            );
+        }
+    }
+}

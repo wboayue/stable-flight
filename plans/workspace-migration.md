@@ -4,6 +4,25 @@ Turn `stable-flight-sitl` into a `stable-flight` monorepo. A `no_std` core crate
 flight-control code. A backend-agnostic SITL harness consumes it, with one crate per simulator
 backend (RealFlight first). Board firmware, added later, is another consumer.
 
+## Maintaining this plan
+
+This file is the running record of the migration and of everything its reviews turn up.
+Update it in the same PR as the work; it's part of the change, not a follow-up.
+
+1. **Status:** mark a row 🔍 #n when its PR opens and ✅ #n when it merges (in that PR, or
+   the next one if it's already open). Add a row for any unplanned PR (e.g. a bug fix found
+   along the way).
+2. **As implemented:** when a PR lands differently from its section below, add a short
+   "as implemented" / "after review" note to that section: what changed, what was decided,
+   and why.
+3. **Follow-ups:** every follow-up a review or investigation raises and that isn't fixed in
+   the same PR gets a row in the [Follow-up backlog](#follow-up-backlog) (the item, its
+   target PR, and its source). Don't leave follow-ups only in PR descriptions, review
+   comments, or chat. The PR that completes one deletes its row and mentions it in its own
+   note.
+4. **Found bugs:** a pre-existing bug found while verifying goes in the backlog, or in
+   Status if it's being fixed now, with how to reproduce it.
+
 ## Status
 
 Legend: ✅ merged · 🔍 in review · ⬜ not started · ⏭ superseded. Update a row when its PR
@@ -19,10 +38,42 @@ otherwise do it in the next PR.
 | PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | ✅ #53 |
 | PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | ✅ #54 |
 | Fix — attitude-controller panic in waypoint mode (found in 2b) | ✅ #55 |
-| Fix — unwrapped heading target → yaw panic in attitude mode (found in #55 review) | 🔍 #56 |
+| Fix — unwrapped heading target → yaw panic in attitude mode (found in #55 review) | ✅ #56 |
+| Fix — remaining per-tick panics (mixer, attitude-command, body-rate, altitude, rate-mode; Spektrum clamp) | 🔍 #57 |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
+
+## Follow-up backlog
+
+Open follow-ups from PR reviews and investigations, collected in one place (see
+[Maintaining this plan](#maintaining-this-plan)). Add a row when one is raised; delete it in
+the PR that completes it. The per-PR notes further down keep the history.
+
+| Follow-up | Target | Source |
+|---|---|---|
+| `SpectrumCommander` maps roll/pitch/yaw to [0, 1] centred at 0.5; `AttitudeCommand` needs [-1, 1] centred at 0 (constant bank at centre stick). Needs the transmitter to verify each axis's sign. | own PR | #57 |
+| Upstream failsafe: estimator-health checks, then a land or disarm commander. The Input Policy is last-resort only (NaN thrust → motors off). | first board / Later | #57 review |
+| `BodyRateController`: one non-finite axis zeroes all three moments; handle axes separately. | own PR | #57 review |
+| Unify derivative-gap handling (flag in attitude/body-rate, `Option` in yaw) into a shared `DerivativeState`; make `BodyRateController::last_error` private; drop the first-tick-after-construction derivative kick in attitude/body-rate. | refactor PR 7 | #57 review |
+| Make saturation observable (debug log or a telemetry flag/counter) for tuning. | refactor PR 7 | #57 review |
+| Yaw: controller state carries across mode switches, `self.heading` goes stale in waypoint mode, and guidance needs an absolute-heading path. | refactor PR 7 | #56 review |
+| Heading slew rate is per tick (`HEADING_STEP_PER_TICK`); make it `dt`-based. | own PR or refactor PR 7 | #56 review |
+| Document the `VehicleState::heading` range (RealFlight gives [0, 2π); controllers accept any). | own PR | #56 review |
+| Lateral: `accel / g` scaled by `max_angles` is a simplified tilt model; `LateralControllerConfig::max_rate` is unused. | refactor PR 7 | #55 |
+| `no_std` blockers beyond the plan list: `powf` in `fit_to_thrust_curve`, `std::f32::consts` imports, `rem_euclid` in `math::wrap_angle`. | PR 4 | #56/#57 reviews |
+| `TailSitterMixer` logs `info!` every tick; `ConsoleTelemetryPublisher` logs `info!` every tick. | PR 4 / own PR | #52, #48 reviews |
+| `RealTimeRunner` replays missed ticks back-to-back after a stall; resync instead and count overruns in `RunStats`. | own PR or lockstep runner | #53 review |
+| `Runner` trait, once a second runner exists. | Later | #53 review |
+| `WaypointFollower` runtime path updates (`AsMut`/`set_waypoints`) for a mission uploader. | Later | #53 review |
+| Sensor synthesis needs a wrapper like `Sensed<V: Vehicle, S>`; `ComposedVehicle` can't give the estimator the actuator's truth. | Later | #54 review |
+| `ComposedVehicle` `estimator_mut`/`actuator_mut`. | first board | #54 review |
+| Measured timestamp/overrun field on `TelemetryRecord`, so rate-bucketed publishers don't drift. | Later | #48 review |
+| `FileLogger::publish` writes 10 heartbeats with 1 s sleeps per tick (a stub); a failed packet write after the timestamp truncates the `.tlog` frame. | own PR | #45/#50 reviews |
+| `MavlinkPublisher::new`, `FileLogger::new`, and the joystick commanders' `Default` impls `.expect()` at construction; return `Result`. `MavlinkPublisher` is untestable against a failing connection until then. | own PR | #50 review |
+| `stabilizers::low_pass_filter_vec3` is public but unused. | own PR | #44 review |
+| CLAUDE.md's trait block and impl table repeat `lib.rs` / architecture.md; point to them instead. | docs PR | #44, #46, #47 reviews |
+| `Commander`/`Mixer` combinators; keep `TelemetryPublisher` impls opt-in (no blanket impl) so the tuple impl stays coherent. | Later | #54 review |
 
 ## Target layout
 
@@ -360,7 +411,8 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
             `angle_diff` tests merged into a table.
         - Review follow-ups:
           - Own PR: attitude returns zero rates on non-finite input (like yaw), and document
-            the NaN contract once; document the `VehicleState::heading` range.
+            the NaN contract once (**done in the remaining-panics PR**); document the
+            `VehicleState::heading` range (still open).
           - Own PR or refactor PR 7: make the heading slew rate depend on `dt`, not
             `HEADING_STEP_PER_TICK`.
           - Refactor PR 7: yaw state carries across mode switches, `self.heading` goes stale
@@ -373,6 +425,41 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
     - Still open (not in scope): `max_angles`-scaled `accel / g` is a simplified tilt
       model, and `LateralControllerConfig::max_rate` is unused. Revisit with refactor PR 7
       (guidance/inner-loop split).
+- **Remaining per-tick panics, fixed together (see Status):**
+  - `QuadCopterMixer::mix` range asserts. Rate-mode throttle was never clamped, and NaN
+    moments fail every range check.
+  - `process_attitude_command` range asserts, reachable through the Spektrum commander's
+    unclamped channels.
+  - `BodyRateController` non-finite asserts.
+  - Fixes:
+    - Saturation helpers (`saturate_unit`/`_vec2`, new `saturate_throttle`, and
+      `wrap_angle`) moved to a crate-private core `math` module, so the mixer doesn't
+      import from `stabilizers`. The module doc states the input policy once, and
+      architecture.md "Input Policy" owns it for readers.
+    - Attitude and body-rate return zero output on a non-finite error, with a private
+      `resync_derivative` flag, so the first finite tick after a gap has no derivative
+      kick. `BodyRateController::last_error` stays `pub`, so there's no API change.
+    - Spektrum `scale_value` is clamped.
+    - Panic-expecting tests are rewritten as "saturates like its in-range equivalent"
+      tables. New stabilizer regression tests reproduce the original mixer/attitude and
+      body-rate panics when run against `main`.
+  - After review:
+    - `AltitudeController` returns hover thrust on a non-finite error and keeps NaN out of
+      its integral. Before, a NaN altitude estimate stuck there and, once the mixer
+      saturated NaN thrust to 0, cut the motors for good.
+    - Rate-mode NaN commands hold zero rate (per-axis `saturate_unit`; `clamp` passed NaN).
+    - `LateralController` returns level on a non-finite error (∞ used to mean full tilt).
+    - `AttitudeController`/`YawController::with_config` validate their clamp limits.
+    - The `math` module doc now points at architecture.md, which owns the Input Policy
+      and now states that NaN thrust → 0 is a last resort and that failsafes belong
+      upstream. README and rustdoc paths fixed; CHANGELOG no longer overclaims.
+    - New tests for each (altitude table, and stabilizer NaN-altitude and NaN-rate
+      regressions) fail when their fix lines are removed.
+    - Remaining review follow-ups moved to the Follow-up backlog.
+  - **Found, not fixed (own PR, needs the transmitter):** `SpectrumCommander` maps
+    roll/pitch/yaw to [0, 1] centred at 0.5, but `AttitudeCommand` expects [-1, 1] centred
+    at 0, so centred sticks command a constant bank. It needs `2·x − 1` (and a check of
+    each axis's sign) validated on the real transmitter.
 
 2c as implemented:
 - Core `composition` module:

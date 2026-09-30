@@ -1,6 +1,7 @@
 use robomath::{Vec2, vec2};
 
-use crate::stabilizers::{Gains, saturate_unit_vec2};
+use crate::math::saturate_unit_vec2;
+use crate::stabilizers::Gains;
 
 const G: f32 = 9.81; // Gravitational acceleration in m/s²
 
@@ -103,22 +104,20 @@ impl LateralController {
         let gains = &self.config.gains;
 
         let error = desired_position - estimated_position;
+
+        // A non-finite error (NaN/∞ target or position) yields level (no tilt) and never enters
+        // the integral, where NaN would stick (it survives `clamp`).
+        if !(error.x.is_finite() && error.y.is_finite()) {
+            return Vec2::default();
+        }
         let error_derivative = (error - self.previous_error) / dt;
 
-        // Only a finite error updates the integral and derivative history. A NaN target or
-        // position would otherwise stick in the integral (NaN survives `clamp`) and hold the
-        // output at level for good, even after the inputs recover.
-        let error_is_finite = error.x.is_finite() && error.y.is_finite();
-        if error_is_finite {
-            self.integrated_error =
-                (self.integrated_error + dt * error).clamp(-self.max_integral, self.max_integral);
-        }
+        self.integrated_error =
+            (self.integrated_error + dt * error).clamp(-self.max_integral, self.max_integral);
         let accel_cmd =
             gains.p * error + gains.i * self.integrated_error + gains.d * (-estimated_velocity);
 
-        if error_is_finite {
-            self.previous_error = error;
-        }
+        self.previous_error = error;
 
         // Convert acceleration to roll/pitch angles (simplified)
         let roll_cmd = accel_cmd.y / G;
@@ -143,6 +142,7 @@ mod tests {
             (vec2(-1000.0, 0.0), vec2(0.0, 1.0)),
             (vec2(0.0, 1000.0), vec2(1.0, 0.0)), // far +y: full right roll
             (vec2(0.0, f32::NAN), vec2(0.0, 0.0)),
+            (vec2(f32::INFINITY, 0.0), vec2(0.0, 0.0)), // non-finite error: level, not full tilt
         ];
         for (target, expected) in cases {
             let mut controller = LateralController::new();

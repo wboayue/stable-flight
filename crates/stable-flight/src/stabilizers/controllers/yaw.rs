@@ -1,4 +1,5 @@
-use crate::stabilizers::{Gains, wrap_angle};
+use crate::math::wrap_angle;
+use crate::stabilizers::Gains;
 
 /// Configures the yaw controller with PID gains and operational limits.
 ///
@@ -90,7 +91,22 @@ impl YawController {
     ///
     /// let controller = YawController::with_config(&config);
     /// ```
+    ///
+    /// # Panics
+    ///
+    /// If `max_integral` or `max_rate` is negative or not finite: they bound per-tick clamps,
+    /// which would otherwise panic inside the flight loop.
     pub fn with_config(config: &YawControllerConfig) -> Self {
+        assert!(
+            config.max_integral >= 0.0 && config.max_integral.is_finite(),
+            "max_integral must be non-negative and finite, got {}",
+            config.max_integral
+        );
+        assert!(
+            config.max_rate >= 0.0 && config.max_rate.is_finite(),
+            "max_rate must be non-negative and finite, got {}",
+            config.max_rate
+        );
         Self {
             config: config.clone(),
             previous_error: None,
@@ -669,24 +685,6 @@ mod tests {
         assert_relative_eq!(after_gap, fresh);
     }
 
-    #[test]
-    fn wrap_angle_maps_into_minus_pi_to_pi() {
-        // (angle, wrapped)
-        let cases = [
-            (0.0, 0.0),
-            (PI / 2.0, PI / 2.0),
-            (PI, -PI),
-            (-PI, -PI),
-            (3.0 * PI / 2.0, -PI / 2.0),
-            (-3.0 * PI / 2.0, PI / 2.0),
-            (4.0 * PI + 0.25, 0.25),
-        ];
-        for (angle, wrapped) in cases {
-            assert_relative_eq!(wrap_angle(angle), wrapped, epsilon = 1e-5);
-        }
-        assert!(wrap_angle(f32::NAN).is_nan());
-    }
-
     /// Tests that output rate is properly limited to max_rate.
     #[test]
     fn test_max_rate_limiting() {
@@ -770,5 +768,26 @@ mod tests {
             rates[0] > rates[rates.len() / 2] && rates[rates.len() / 2] > rates[rates.len() - 1],
             "Rates should decrease as controller approaches target"
         );
+    }
+
+    #[test]
+    fn rejects_invalid_limits_at_construction() {
+        // (max_integral, max_rate)
+        let cases = [
+            (-1.0, 1.0),
+            (f32::NAN, 1.0),
+            (1.0, -1.0),
+            (1.0, f32::INFINITY),
+        ];
+        for (max_integral, max_rate) in cases {
+            let result = std::panic::catch_unwind(|| {
+                YawController::with_config(&YawControllerConfig {
+                    max_integral,
+                    max_rate,
+                    ..Default::default()
+                })
+            });
+            assert!(result.is_err(), "({max_integral}, {max_rate}) was accepted");
+        }
     }
 }

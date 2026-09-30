@@ -23,6 +23,7 @@
 //! - `DEFAULT_ROLL_PITCH_SCALING`: Scaling factor for roll and pitch moments.
 //! - `DEFAULT_YAW_SCALING`: Scaling factor for the yaw moment.
 
+use crate::math::{saturate_throttle, saturate_unit};
 use crate::{ActuatorCommand, ControlOutput, Mixer};
 
 #[cfg(test)]
@@ -94,36 +95,17 @@ impl Mixer for QuadCopterMixer {
     ///    Each raw motor command is clamped to the range [0, 1] and then scaled to a percentage
     ///    by multiplying by 100.
     fn mix(&self, command: &ControlOutput) -> ActuatorCommand {
-        assert!(
-            command.thrust >= 0.0 && command.thrust <= 1.0,
-            "Thrust ({}) must be in the range [0, 1]",
-            command.thrust
-        );
-        assert!(
-            command.moments.x >= -1.0 && command.moments.x <= 1.0,
-            "Roll moment ({}) must be in the range [-1, 1]",
-            command.moments.x
-        );
-        assert!(
-            command.moments.y >= -1.0 && command.moments.y <= 1.0,
-            "Pitch moment ({}) must be in the range [-1, 1]",
-            command.moments.y
-        );
-        assert!(
-            command.moments.z >= -1.0 && command.moments.z <= 1.0,
-            "Yaw moment ({}) must be in the range [-1, 1]",
-            command.moments.z
-        );
-
-        // println!("command: {:?}", command);
+        // Out-of-range or NaN inputs saturate rather than panic (see `crate::math`): thrust to
+        // [0, 1] (NaN → no thrust), moments to [-1, 1] (NaN → none).
+        let thrust = saturate_throttle(command.thrust);
 
         // Compute scaled moment contributions
-        let roll = command.moments.x * self.roll_pitch_scaling;
-        let pitch = command.moments.y * self.roll_pitch_scaling; // pitch is scaled more aggressively
-        let yaw = command.moments.z * self.yaw_scaling;
+        let roll = saturate_unit(command.moments.x) * self.roll_pitch_scaling;
+        let pitch = saturate_unit(command.moments.y) * self.roll_pitch_scaling; // pitch is scaled more aggressively
+        let yaw = saturate_unit(command.moments.z) * self.yaw_scaling;
 
         // Compute baseline thrust per motor (even distribution)
-        let baseline = command.thrust * THRUST_FACTOR;
+        let baseline = thrust * THRUST_FACTOR;
 
         // if baseline <= 0.0 {
         //     return ActuatorCommand::default();

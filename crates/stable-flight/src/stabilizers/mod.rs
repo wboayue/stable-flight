@@ -1,8 +1,6 @@
 //! Control algorithms that maintain desired flight dynamics by processing commands and vehicle state feedback.
 
-use core::f32::consts::PI;
-
-use robomath::{Vec2, Vec3, vec2, vec3};
+use robomath::{Vec3, vec3};
 
 pub mod copter;
 
@@ -14,34 +12,6 @@ pub struct Gains {
     pub p: f32,
     pub i: f32,
     pub d: f32,
-}
-
-/// Saturates a normalized command to [-1, 1]; NaN becomes 0 (neutral).
-///
-/// Controllers call this on normalized setpoints instead of asserting the range, so an
-/// out-of-range or non-finite request degrades to the nearest valid command rather than
-/// panicking the flight loop. Contract: a controller that *produces* a normalized command
-/// (e.g. lateral → roll/pitch) saturates its output; a controller that *consumes* one
-/// (e.g. attitude) saturates its input too, defensively, for any caller.
-pub(crate) fn saturate_unit(value: f32) -> f32 {
-    if value.is_nan() {
-        0.0
-    } else {
-        value.clamp(-1.0, 1.0)
-    }
-}
-
-/// Wraps an angle in radians to [-π, π). Non-finite input stays non-finite.
-///
-/// Shared angle math for heading targets and yaw errors (the only `rem_euclid`, which PR 4
-/// replaces with a `libm` form for `no_std`).
-pub(crate) fn wrap_angle(angle: f32) -> f32 {
-    (angle + PI).rem_euclid(2.0 * PI) - PI
-}
-
-/// [`saturate_unit`] applied to each component.
-pub(crate) fn saturate_unit_vec2(value: Vec2<f32>) -> Vec2<f32> {
-    vec2(saturate_unit(value.x), saturate_unit(value.y))
 }
 
 // alpha 0.1 is a good starting point for most applications

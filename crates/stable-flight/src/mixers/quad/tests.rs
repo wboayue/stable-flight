@@ -357,35 +357,33 @@ fn test_boundary_condition() {
     ); // Rear Right
 }
 
-/// Test 11: Out of Range Thrust (negative thrust)
-///
-/// Thrust < 0 should panic with an appropriate message.
+/// Out-of-range or NaN inputs saturate instead of panicking the loop: each row mixes the same
+/// as its in-range equivalent.
 #[test]
-#[should_panic(expected = "Thrust (-0.1) must be in the range [0, 1]")]
-fn test_negative_thrust() {
+fn out_of_range_or_nan_inputs_saturate_instead_of_panicking() {
+    // (input thrust, input moments, equivalent thrust, equivalent moments)
+    let cases = [
+        (-0.1, vec3(0.0, 0.0, 0.0), 0.0, vec3(0.0, 0.0, 0.0)),
+        (1.5, vec3(0.0, 0.0, 0.0), 1.0, vec3(0.0, 0.0, 0.0)),
+        (0.5, vec3(1.5, 0.0, 0.0), 0.5, vec3(1.0, 0.0, 0.0)),
+        (0.5, vec3(0.0, -3.0, 2.0), 0.5, vec3(0.0, -1.0, 1.0)),
+        (f32::NAN, vec3(0.2, 0.0, 0.0), 0.0, vec3(0.2, 0.0, 0.0)),
+        (0.5, vec3(f32::NAN, 0.1, f32::NAN), 0.5, vec3(0.0, 0.1, 0.0)),
+    ];
     let mixer = create_mixer();
-    let input = ControlOutput::new(-0.1, vec3(0.0, 0.0, 0.0));
-    let _ = mixer.mix(&input);
-}
-
-/// Test 12: Out of Range Thrust (thrust > 1.0)
-///
-/// Thrust > 1.0 should panic with an appropriate message.
-#[test]
-#[should_panic(expected = "Thrust (1.5) must be in the range [0, 1]")]
-fn test_out_of_range_thrust() {
-    let mixer = create_mixer();
-    let input = ControlOutput::new(1.5, vec3(0.0, 0.0, 0.0));
-    let _ = mixer.mix(&input);
-}
-
-/// Test 13: Out of Range Moment (roll > 1.0)
-///
-/// Roll moment > 1.0 should panic with an appropriate message.
-#[test]
-#[should_panic(expected = "Roll moment (1.5) must be in the range [-1, 1]")]
-fn test_out_of_range_moment() {
-    let mixer = create_mixer();
-    let input = ControlOutput::new(0.5, vec3(1.5, 0.0, 0.0));
-    let _ = mixer.mix(&input);
+    for (thrust, moments, eq_thrust, eq_moments) in cases {
+        let mixed = mixer.mix(&ControlOutput::new(thrust, moments));
+        let expected = mixer.mix(&ControlOutput::new(eq_thrust, eq_moments));
+        assert!(
+            mixed.motors.iter().all(|m| m.is_finite()),
+            "({thrust}, {moments:?}) gave non-finite motors {:?}",
+            mixed.motors
+        );
+        assert!(
+            mixed.motors == expected.motors,
+            "({thrust}, {moments:?}) gave {:?}, expected {:?}",
+            mixed.motors,
+            expected.motors
+        );
+    }
 }

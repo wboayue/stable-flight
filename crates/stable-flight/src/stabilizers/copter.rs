@@ -43,7 +43,7 @@ use crate::{
 
 use super::Gains;
 use super::controllers::*;
-use super::wrap_angle;
+use crate::math::{saturate_throttle, saturate_unit, wrap_angle};
 
 #[cfg(test)]
 mod tests;
@@ -217,26 +217,10 @@ impl CopterStabilizer {
         estimated_state: &VehicleState,
     ) -> ControlOutput {
         assert!(dt > 0.0, "Time step must be positive");
-        assert!(
-            attitude_command.throttle >= 0.0 && attitude_command.throttle <= 1.0,
-            "Throttle ({}) must be in the range [0, 1]",
-            attitude_command.throttle
-        );
-        assert!(
-            attitude_command.roll >= -1.0 && attitude_command.roll <= 1.0,
-            "Desired roll ({}) must be in the range [-1, 1]",
-            attitude_command.roll
-        );
-        assert!(
-            attitude_command.pitch >= -1.0 && attitude_command.pitch <= 1.0,
-            "Desired pitch ({}) must be in the range [-1, 1]",
-            attitude_command.pitch
-        );
-        assert!(
-            attitude_command.yaw >= -1.0 && attitude_command.yaw <= 1.0,
-            "Desired yaw ({}) must be in the range [-1, 1]",
-            attitude_command.yaw
-        );
+        // Commands from input devices can be out of range or NaN; saturate rather than panic
+        // (roll/pitch saturate inside the attitude controller; see `crate::math`).
+        let throttle = saturate_throttle(attitude_command.throttle);
+        let yaw = saturate_unit(attitude_command.yaw);
         let desired_angles = vec2(attitude_command.roll, attitude_command.pitch);
         let current_angles = vec2(estimated_state.roll, estimated_state.pitch);
 
@@ -246,7 +230,7 @@ impl CopterStabilizer {
 
         // Wrapped so sustained yaw input can't grow the target without bound; the yaw
         // controller works on the wrapped error either way.
-        let target = wrap_angle(self.heading + attitude_command.yaw * HEADING_STEP_PER_TICK);
+        let target = wrap_angle(self.heading + yaw * HEADING_STEP_PER_TICK);
         if target.is_finite() {
             self.heading = target;
         } else if estimated_state.heading.is_finite() {
@@ -272,7 +256,7 @@ impl CopterStabilizer {
             .control(dt, desired_rates, current_rates);
 
         ControlOutput {
-            thrust: self.fit_to_thrust_curve(attitude_command.throttle),
+            thrust: self.fit_to_thrust_curve(throttle),
             moments,
         }
     }
@@ -302,7 +286,13 @@ impl CopterStabilizer {
             rate_command.yaw_rate,
         );
 
-        let desired_rates = desired_rates.clamp(-1.0, 1.0) * self.max_rates;
+        // Per-component saturation: `clamp` alone passes NaN, which would zero every moment
+        // (no damping) instead of meaning "hold zero rate".
+        let desired_rates = vec3(
+            saturate_unit(desired_rates.x),
+            saturate_unit(desired_rates.y),
+            saturate_unit(desired_rates.z),
+        ) * self.max_rates;
 
         let current_rates = vec3(
             estimated_state.angular_velocity.x,
@@ -315,7 +305,7 @@ impl CopterStabilizer {
             .control(dt, desired_rates, current_rates);
 
         ControlOutput {
-            thrust: self.fit_to_thrust_curve(rate_command.throttle),
+            thrust: self.fit_to_thrust_curve(saturate_throttle(rate_command.throttle)),
             moments,
         }
     }

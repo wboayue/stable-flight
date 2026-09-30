@@ -60,6 +60,9 @@ pub struct BodyRateController {
 
     /// Last error value for computing the derivative term.
     pub last_error: Vec3<f32>,
+    /// Set after a non-finite tick: the next finite tick skips the derivative term, since
+    /// `last_error` predates the gap.
+    resync_derivative: bool,
 
     /// Maximum angular rates (roll, pitch, yaw) in rad/s.
     pub max_angular_rates: Vec3<f32>,
@@ -91,6 +94,7 @@ impl BodyRateController {
             max_integral: config.max_integral,
             integral_term: Vec3::default(),
             last_error: Vec3::default(),
+            resync_derivative: false,
         }
     }
 
@@ -115,8 +119,9 @@ impl BodyRateController {
     ///
     /// Panics if:
     /// - `dt` is not positive or finite.
-    /// - Any component of `max_angular_rates` is zero or non-finite.
-    /// - Any component of `desired_rates` or `estimated_rates` is non-finite.
+    ///
+    /// A non-finite component in `desired_rates` or `estimated_rates` returns zero moments and
+    /// leaves the controller state untouched (the input policy in `architecture.md`).
     pub fn control(
         &mut self,
         dt: f32,
@@ -128,14 +133,19 @@ impl BodyRateController {
             dt > 0.0 && dt.is_finite(),
             "Time step (dt) must be positive and finite"
         );
-        assert!(
-            desired_rates.is_finite() && estimated_rates.is_finite(),
-            "Desired and estimated rates must be finite"
-        );
+        if !(desired_rates.is_finite() && estimated_rates.is_finite()) {
+            self.resync_derivative = true;
+            return Vec3::default();
+        }
 
         let error = desired_rates - estimated_rates;
 
-        let error_derivative = (error - self.last_error) / dt;
+        let error_derivative = if self.resync_derivative {
+            self.resync_derivative = false;
+            Vec3::default()
+        } else {
+            (error - self.last_error) / dt
+        };
         self.last_error = error;
 
         self.integral_term = self.integral_term + dt * error;
@@ -184,6 +194,7 @@ impl BodyRateController {
     pub fn reset(&mut self) {
         self.integral_term = Vec3::default();
         self.last_error = Vec3::default();
+        self.resync_derivative = false;
     }
 }
 
@@ -587,36 +598,40 @@ mod tests {
         // Assert (implicitly handled by should_panic)
     }
 
-    /// Test 13: Infinite desired rates input validation
+    /// Non-finite desired or estimated rates yield zero moments without panicking, and the
+    /// first finite tick after them has no derivative kick.
     #[test]
-    #[should_panic(expected = "Desired and estimated rates must be finite")]
-    fn test_infinite_desired_rates() {
-        // Assemble
-        let mut controller = setup_controller();
-        let dt = 0.1;
-        let desired_rates = vec3(f32::INFINITY, 0.0, 0.0);
-        let estimated_rates = vec3(0.0, 0.0, 0.0);
+    fn non_finite_rates_hold_and_do_not_poison_later_ticks() {
+        let nan = f32::NAN;
+        let inf = f32::INFINITY;
+        // (desired, estimated)
+        let cases = [
+            (vec3(inf, 0.0, 0.0), vec3(0.0, 0.0, 0.0)),
+            (vec3(0.0, 0.0, 0.0), vec3(0.0, nan, 0.0)),
+            (vec3(nan, nan, nan), vec3(0.0, 0.0, 0.0)),
+        ];
+        for (desired, estimated) in cases {
+            let mut controller = setup_controller();
+            // A valid tick first, so there is derivative history to go stale.
+            controller.control(0.1, vec3(0.5, 0.0, 0.0), vec3(0.0, 0.0, 0.0));
+            let integral_before = controller.integral_term;
 
-        // Activate
-        controller.control(dt, desired_rates, estimated_rates);
+            let during = controller.control(0.1, desired, estimated);
+            assert!(
+                during == Vec3::default(),
+                "{desired:?}/{estimated:?} gave {during:?}"
+            );
+            assert!(controller.integral_term == integral_before);
 
-        // Assert (implicitly handled by should_panic)
-    }
-
-    /// Test 14: NaN estimated rates input validation
-    #[test]
-    #[should_panic(expected = "Desired and estimated rates must be finite")]
-    fn test_nan_estimated_rates() {
-        // Assemble
-        let mut controller = setup_controller();
-        let dt = 0.1;
-        let desired_rates = vec3(0.0, 0.0, 0.0);
-        let estimated_rates = vec3(f32::NAN, 0.0, 0.0);
-
-        // Activate
-        controller.control(dt, desired_rates, estimated_rates);
-
-        // Assert (implicitly handled by should_panic)
+            // After the gap: the same as a controller whose last error equals this error
+            // (derivative 0), not a kick from the pre-gap error.
+            let after = controller.control(0.1, vec3(0.2, 0.0, 0.0), vec3(0.0, 0.0, 0.0));
+            let mut reference = setup_controller();
+            reference.integral_term = controller.integral_term - 0.1 * vec3(0.2, 0.0, 0.0);
+            reference.last_error = vec3(0.2, 0.0, 0.0);
+            let expected = reference.control(0.1, vec3(0.2, 0.0, 0.0), vec3(0.0, 0.0, 0.0));
+            assert_abs_diff_eq!(after.x, expected.x, epsilon = 1e-6);
+        }
     }
 
     /// Test 15: Invalid config validation in with_config
@@ -1153,46 +1168,13 @@ mod table_driven_tests {
             }
         }
 
-        // Test infinite desired rates case
+        // Non-finite rates no longer panic: they return zero moments (see
+        // `non_finite_rates_hold_and_do_not_poison_later_ticks`).
         {
             let mut controller = BodyRateController::new();
-            let dt = 0.1;
-            let desired_rates = vec3(f32::INFINITY, 0.0, 0.0);
-            let estimated_rates = vec3(0.0, 0.0, 0.0);
-
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                controller.control(dt, desired_rates, estimated_rates);
-            }));
-
-            assert!(result.is_err(), "Expected panic for infinite desired rates");
-            if let Err(panic_value) = result {
-                if let Some(panic_message) = panic_value.downcast_ref::<String>() {
-                    assert!(panic_message.contains("Desired and estimated rates must be finite"));
-                } else if let Some(panic_message) = panic_value.downcast_ref::<&str>() {
-                    assert!(panic_message.contains("Desired and estimated rates must be finite"));
-                }
-            }
-        }
-
-        // Test NaN estimated rates case
-        {
-            let mut controller = BodyRateController::new();
-            let dt = 0.1;
-            let desired_rates = vec3(0.0, 0.0, 0.0);
-            let estimated_rates = vec3(0.0, f32::NAN, 0.0);
-
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                controller.control(dt, desired_rates, estimated_rates);
-            }));
-
-            assert!(result.is_err(), "Expected panic for NaN estimated rates");
-            if let Err(panic_value) = result {
-                if let Some(panic_message) = panic_value.downcast_ref::<String>() {
-                    assert!(panic_message.contains("Desired and estimated rates must be finite"));
-                } else if let Some(panic_message) = panic_value.downcast_ref::<&str>() {
-                    assert!(panic_message.contains("Desired and estimated rates must be finite"));
-                }
-            }
+            let moments =
+                controller.control(0.1, vec3(f32::INFINITY, 0.0, 0.0), vec3(0.0, f32::NAN, 0.0));
+            assert_eq!(moments, Vec3::default());
         }
     }
 
