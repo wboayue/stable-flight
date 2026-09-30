@@ -16,6 +16,7 @@
 //! and, later, on flight hardware. See the
 //! [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md).
 
+pub mod commanders;
 pub mod flight_loop;
 pub mod mixers;
 pub mod stabilizers;

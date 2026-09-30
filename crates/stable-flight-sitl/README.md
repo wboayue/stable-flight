@@ -4,7 +4,7 @@ Software-in-the-loop flight controller for VTOL drones, driven by the [RealFligh
 
 ## Components
 
-Each example wires the same five-component pipeline and is a copy-paste starting point for your own setup. Let's walk through the components a `FlightOrchestrator` needs: a **Commander**, **Vehicle**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**. The traits and data types come from the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate; this crate provides the simulation-side implementations and the real-time runner.
+Each example wires the same five-component pipeline and is a copy-paste starting point for your own setup. Let's walk through the components a `FlightLoop` needs: a **Commander**, **Vehicle**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**. The traits and data types come from the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate; this crate provides the simulation-side implementations and the real-time runner.
 
 ### Commander
 
@@ -57,21 +57,20 @@ TelemetryPublishers publish the system state to external systems. There is a pub
 let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
 ```
 
-### Running the Orchestrator
+### Running the Loop
 
-With all components configured, assemble and run the `FlightOrchestrator`:
+With all components configured, assemble a core `FlightLoop` and drive it with this crate's `RealTimeRunner`, stopping on a `ShutdownSignal`:
 
 ```rust
-let mut orchestrator = FlightOrchestrator::new(
-    commander,
-    vehicle,
-    stabilizer,
-    mixer,
-    telemetry,
-);
+let mut flight_loop = FlightLoop::new(commander, vehicle, stabilizer, mixer, telemetry);
 
-let target_frequency = 250.0; // Hz
-orchestrator.run(target_frequency);
+// Ctrl-C (SIGINT) requests a graceful stop between ticks.
+let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");
+
+// Prime the loop, then tick at 250 Hz until shutdown.
+let stats = RealTimeRunner::new(250.0)
+    .expect("valid loop frequency")
+    .run(&mut flight_loop, &shutdown);
 ```
 
-The orchestrator runs the control loop at the given frequency until it receives SIGINT (Unix) or Ctrl-C (Windows), then shuts down cleanly.
+`RealTimeRunner` paces ticks on the wall clock (deadlines accumulate, so a slow tick is caught up rather than shifting the schedule) and returns `RunStats` (ticks, elapsed). `ShutdownSignal::install()` wires SIGINT (Unix) or Ctrl-C/Ctrl-Break (Windows); `ShutdownSignal::new()` gives an unconnected flag you can `trigger()` yourself, e.g. in tests.

@@ -15,8 +15,8 @@ otherwise do it in the next PR.
 | Phase 0 — prep | ✅ (step 3, the optional local dir rename, not done) |
 | PR 1 — Convert to workspace | ✅ #43 |
 | architecture-refactor PRs 1–4, 6 (see that plan) | ✅ #44, #50, #46, #47, #48 |
-| PR 2a — core crate + `FlightLoop` | 🔍 #52 |
-| PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | ⬜ |
+| PR 2a — core crate + `FlightLoop` | ✅ #52 |
+| PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | 🔍 (this PR) |
 | PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | ⬜ |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
@@ -256,6 +256,36 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
     - PR 4: `TailSitterMixer` logs `info!` per tick.
   - Skipped a debug check for `step()` before `prime()`: it's documented, and a
     side-effect-free `new()` matters more.
+
+2b as implemented:
+- `FlightOrchestrator` and the `orchestrator` module are removed (**Breaking**) and
+  replaced by sitl `ShutdownSignal` (`shutdown.rs`) and `RealTimeRunner` (`runner.rs`),
+  re-exported at the sitl root.
+- `ShutdownSignal`:
+  - `new()` is unconnected; `install()` wires SIGINT and returns `io::Result`. `trigger()`
+    and `is_set()` are the rest of the API, and clones share the flag.
+  - Unix uses `signal_hook::flag::register`, with no thread.
+  - Windows keeps `SetConsoleCtrlHandler` (Ctrl-C and Ctrl-Break), since signal-hook's
+    Windows docs say not every Ctrl-C becomes SIGINT. A `OnceLock` replaces the
+    `static mut` pointer, and every install shares one process-wide flag.
+  - The Windows path was compile- and clippy-checked with
+    `--target x86_64-pc-windows-msvc`, but not run.
+- `RealTimeRunner`:
+  - `new(hz)` returns `Result<_, InvalidFrequency>` instead of asserting in `run`
+    (CLAUDE.md prefers `Result` for new fallible APIs), and also rejects NaN/∞.
+  - `run(&mut FlightLoop, &ShutdownSignal)` primes, checks the signal before each tick,
+    sleeps to accumulated deadlines, and returns `RunStats { ticks, elapsed }`.
+  - It still primes inside `run` so callers can't forget.
+- Core `commanders::WaypointFollower` plus `EmptyWaypoints` and `DEFAULT_ACCEPTANCE_RADIUS`.
+  `ScriptCommander` is now CSV loading plus a `WaypointFollower<Vec<_>>`, with the same API.
+  Following tests moved to core (table-style, including array, `&'static`, and `Vec`
+  storage); sitl keeps parse/IO tests and one delegation test.
+- Deleted sitl `commanders/tests.rs`: its 7 tests only exercised a mock defined in the test
+  file, not production code.
+- Runner tests cover invalid frequencies, the period, an already-set signal (primes, zero
+  ticks), and stopping on a trigger with the nominal `dt`. The orchestrator's `MockVehicle`
+  duplicate went with the orchestrator tests; `NullVehicle` still moves to core `testing`
+  in 2c.
 
 ## PR 3 — Split RealFlight into its own backend crate
 

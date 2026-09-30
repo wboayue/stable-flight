@@ -15,7 +15,7 @@ The repository is a Cargo workspace:
 | Crate | Purpose |
 |---|---|
 | [`stable-flight`](crates/stable-flight) | Flight-control core: pipeline traits, cascaded-PID stabilizers, mixers, and `FlightLoop` (one control tick). No simulator or I/O dependencies |
-| [`stable-flight-sitl`](crates/stable-flight-sitl) | Software-in-the-loop harness: RealFlight vehicle, commanders, telemetry, the real-time `FlightOrchestrator`, and the runnable examples |
+| [`stable-flight-sitl`](crates/stable-flight-sitl) | Software-in-the-loop harness: RealFlight vehicle, commanders, telemetry, the real-time `RealTimeRunner` + `ShutdownSignal`, and the runnable examples |
 | [`stable-flight-tools`](crates/stable-flight-tools) | Developer binaries (unpublished): `plot_flight` and `generate_figure_eight` |
 
 ## Simulator Choice
@@ -89,7 +89,7 @@ Options:
       --yaw <DEG>    Camera rotation about the vertical axis, in degrees (default ~28.6)
 ```
 
-Each example wires the same five-component pipeline. The [`stable-flight` README](crates/stable-flight/README.md) covers the pipeline, stabilizers, and mixers; the [`stable-flight-sitl` README](crates/stable-flight-sitl/README.md) covers the simulator-side components and the orchestrator.
+Each example wires the same five-component pipeline. The [`stable-flight` README](crates/stable-flight/README.md) covers the pipeline, stabilizers, and mixers; the [`stable-flight-sitl` README](crates/stable-flight-sitl/README.md) covers the simulator-side components and the real-time runner.
 
 ## Conclusion
 

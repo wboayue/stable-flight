@@ -1,10 +1,9 @@
 //! A [`Commander`] that replays a sequence of waypoints loaded from a CSV file.
 //!
-//! [`ScriptCommander`] follows and loops a fixed list of [`WaypointCommand`]s. It has a
-//! single job — sequencing waypoints — and knows nothing about how the path was shaped
-//! (e.g. a figure-eight); the geometry lives entirely in the CSV. Responsibilities are
-//! kept separate: [`parse_waypoints`] turns text into data, [`ScriptCommander::new`]
-//! handles file I/O, and [`ScriptCommander::next_command`] advances through the waypoints.
+//! [`ScriptCommander`] is a CSV front end for the core [`WaypointFollower`]: this module
+//! turns text into data (`parse_waypoints`) and handles file I/O ([`ScriptCommander::new`],
+//! [`load_waypoints`]); following and looping the waypoints is the follower's job. Neither
+//! knows how the path was shaped (e.g. a figure-eight); the geometry lives in the CSV.
 //!
 //! # CSV format
 //!
@@ -24,16 +23,8 @@ use std::fs;
 use robomath::vec2;
 use thiserror::Error;
 
+use stable_flight::commanders::WaypointFollower;
 use stable_flight::{Command, Commander, VehicleState, WaypointCommand};
-
-/// Default horizontal distance (meters) within which the active waypoint is considered
-/// reached and the commander advances to the next one.
-const DEFAULT_ACCEPTANCE_RADIUS: f32 = 3.0;
-
-/// The squared form of [`DEFAULT_ACCEPTANCE_RADIUS`], compared against squared distance
-/// each tick to avoid a per-tick `sqrt`.
-const DEFAULT_ACCEPTANCE_RADIUS_SQUARED: f32 =
-    DEFAULT_ACCEPTANCE_RADIUS * DEFAULT_ACCEPTANCE_RADIUS;
 
 /// Number of comma-separated fields expected on each waypoint row.
 const FIELDS_PER_WAYPOINT: usize = 4;
@@ -64,6 +55,9 @@ pub enum ScriptError {
 
 /// A [`Commander`] that flies a looping sequence of waypoints loaded from a CSV file.
 ///
+/// A thin wrapper over the core [`WaypointFollower`] (default acceptance radius
+/// [`DEFAULT_ACCEPTANCE_RADIUS`](stable_flight::commanders::waypoint::DEFAULT_ACCEPTANCE_RADIUS)).
+///
 /// # Examples
 ///
 /// ```no_run
@@ -73,9 +67,7 @@ pub enum ScriptError {
 ///     .expect("failed to load script");
 /// ```
 pub struct ScriptCommander {
-    waypoints: Vec<WaypointCommand>,
-    current: usize,
-    acceptance_radius_squared: f32,
+    follower: WaypointFollower<Vec<WaypointCommand>>,
 }
 
 impl ScriptCommander {
@@ -112,14 +104,8 @@ impl ScriptCommander {
     /// let commander = ScriptCommander::from_waypoints(waypoints).expect("non-empty");
     /// ```
     pub fn from_waypoints(waypoints: Vec<WaypointCommand>) -> Result<Self, ScriptError> {
-        if waypoints.is_empty() {
-            return Err(ScriptError::Empty);
-        }
-        Ok(ScriptCommander {
-            waypoints,
-            current: 0,
-            acceptance_radius_squared: DEFAULT_ACCEPTANCE_RADIUS_SQUARED,
-        })
+        let follower = WaypointFollower::new(waypoints).map_err(|_| ScriptError::Empty)?;
+        Ok(ScriptCommander { follower })
     }
 
     /// Overrides the horizontal acceptance radius (meters) used to decide when the active
@@ -139,13 +125,10 @@ impl ScriptCommander {
     /// .expect("non-empty")
     /// .with_acceptance_radius(5.0);
     /// ```
-    pub fn with_acceptance_radius(mut self, radius: f32) -> Self {
-        debug_assert!(
-            radius >= 0.0,
-            "acceptance radius must be non-negative, got {radius}"
-        );
-        self.acceptance_radius_squared = radius * radius;
-        self
+    pub fn with_acceptance_radius(self, radius: f32) -> Self {
+        ScriptCommander {
+            follower: self.follower.with_acceptance_radius(radius),
+        }
     }
 }
 
@@ -179,18 +162,10 @@ pub fn load_waypoints(path: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
 }
 
 impl Commander for ScriptCommander {
-    fn next_command(&mut self, _dt: f32, current_state: &VehicleState) -> Command {
-        // Advance when the vehicle is within the acceptance radius of the active waypoint
-        // (horizontal distance only). Compare squared distances to avoid a per-tick sqrt.
-        // Wrapping the index loops the path forever.
-        let target = &self.waypoints[self.current];
-        let dx = target.position.x - current_state.position.x.value;
-        let dy = target.position.y - current_state.position.y.value;
-        if dx * dx + dy * dy <= self.acceptance_radius_squared {
-            self.current = (self.current + 1) % self.waypoints.len();
-        }
-
-        Command::Waypoint(self.waypoints[self.current])
+    /// Delegates to the core [`WaypointFollower`]: advances within the acceptance radius
+    /// (horizontal distance) and loops the path.
+    fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
+        self.follower.next_command(dt, current_state)
     }
 }
 

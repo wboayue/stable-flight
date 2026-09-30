@@ -41,6 +41,3 @@ pub use extreme_3d::Extreme3DCommander;
 pub use script::ScriptCommander;
 #[doc(inline)]
 pub use spektrum::SpectrumCommander;
-
-#[cfg(test)]
-mod tests;

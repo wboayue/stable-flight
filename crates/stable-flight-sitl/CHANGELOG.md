@@ -37,6 +37,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `FlightOrchestrator` (and the `orchestrator` module) is replaced
+  by three pieces with one job each: the core `stable_flight::FlightLoop` (one
+  tick), `RealTimeRunner` (wall-clock pacing), and `ShutdownSignal` (graceful
+  stop). Migrate `FlightOrchestrator::new(c, v, s, m, t).run(hz)` to
+  `RealTimeRunner::new(hz)?.run(&mut FlightLoop::new(c, v, s, m, t),
+  &ShutdownSignal::install()?)`. `RealTimeRunner::new` returns
+  `InvalidFrequency` for a non-positive or non-finite rate instead of panicking
+  in `run`, and `run` returns `RunStats`. Building a loop no longer installs a
+  signal handler.
+- `ScriptCommander` now delegates waypoint following to the core
+  `stable_flight::commanders::WaypointFollower`; its API and behaviour are
+  unchanged.
 - **Breaking:** the flight-control core moved to the new `stable-flight` crate:
   the pipeline traits and data types formerly at this crate's root (`Commander`,
   `Vehicle`, `StateEstimator`, `Actuator`, `Stabilizer`, `Mixer`,
@@ -89,6 +101,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A failure to register the SIGINT handler is now returned from
+  `ShutdownSignal::install` instead of panicking on a background thread. The
+  Windows console handler no longer uses a `static mut` raw pointer.
 - MAVLink `VFR_HUD` throttle now reports the stabilizer's thrust as 0–100 %
   for every command kind. It previously read the command's throttle and
   truncated it to 0 or 100, and reported 0 (with a `println!` every send) for
