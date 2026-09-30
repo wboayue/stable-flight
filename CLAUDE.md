@@ -10,7 +10,9 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Crates:
   - `crates/stable-flight` — the flight-control core: pipeline traits and data types
     (`lib.rs`), `FlightLoop` (one tick), `stabilizers`, `mixers`. No simulator, I/O, clock, or
-    thread dependencies — keep it that way (it becomes `no_std` in workspace PR 4).
+    thread dependencies, and it is `no_std` (`#![cfg_attr(not(test), no_std)]`) — keep it that
+    way. Use `core::`, not `std::`; `f32` methods `core` lacks (`powf`, `sin`, `sqrt`, …) go
+    through `libm`. CI builds it for `thumbv7em-none-eabihf`, with and without `testing`.
   - `crates/stable-flight-sitl` — the simulator-independent SITL harness: `commanders`,
     `telemetry`, `runner` (`RealTimeRunner`, wall-clock pacing of a `FlightLoop`), `shutdown`
     (`ShutdownSignal`). Depends on the core. Non-simulator examples live in `crates/stable-flight-sitl/examples/*.rs`.
@@ -54,6 +56,7 @@ cargo run --bin generate_figure_eight           # (re)write flights/figure_eight
 cargo tarpaulin --workspace -o html             # or: just cover  (writes tarpaulin-report.html)
 cargo fmt --all
 cargo clippy --workspace --all-targets
+cargo build -p stable-flight --target thumbv7em-none-eabihf  # no_std check (also with --features testing); or: just embedded
 ```
 
 The flight pipeline has no CLI and there is no `cargo bench` target — don't suggest
@@ -205,6 +208,7 @@ rustdoc), and cover every conformance scenario with `stable_flight::conformance_
 ## Pre-PR checklist
 
 - [ ] Builds clean (`cargo build --workspace`) and tests pass (`cargo test --workspace --all-features`).
+- [ ] Core still builds `no_std` (`cargo build -p stable-flight --target thumbv7em-none-eabihf`, with and without `--features testing`).
 - [ ] `cargo fmt --all` clean; `cargo clippy --workspace --all-targets` adds no new warnings. The tree carries pre-existing warnings (deprecated `let_assert`, unused variables in controllers/tests), so diff against `main` rather than expecting zero.
 - [ ] New fallible APIs return `Result` with `thiserror` types; no new panics in library code.
 - [ ] No `.unwrap()` or `.expect()` introduced under `src/` (examples/tests OK).

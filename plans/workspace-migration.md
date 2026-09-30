@@ -40,7 +40,7 @@ otherwise do it in the next PR.
 | Fix — attitude-controller panic in waypoint mode (found in 2b) | ✅ #55 |
 | Fix — unwrapped heading target → yaw panic in attitude mode (found in #55 review) | ✅ #56 |
 | Fix — remaining per-tick panics (mixer, attitude-command, body-rate, altitude, rate-mode; Spektrum clamp) | ✅ #57 |
-| PR 3 — Split RealFlight into its own backend crate | 🔍 #58 |
+| PR 3 — Split RealFlight into its own backend crate | ✅ #58 |
 | Fix — RealFlight frame conversions: double radians, down-positive vertical (found in PR 3) | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
@@ -66,8 +66,7 @@ the PR that completes it. The per-PR notes further down keep the history.
 | Yaw: controller state carries across mode switches, `self.heading` goes stale in waypoint mode, and guidance needs an absolute-heading path. | refactor PR 7 | #56 review |
 | Heading slew rate is per tick (`HEADING_STEP_PER_TICK`); make it `dt`-based. | own PR or refactor PR 7 | #56 review |
 | Lateral: `accel / g` scaled by `max_angles` is a simplified tilt model; `LateralControllerConfig::max_rate` is unused. | refactor PR 7 | #55 |
-| `no_std` blockers beyond the plan list: `powf` in `fit_to_thrust_curve`, `std::f32::consts` imports, `rem_euclid` in `math::wrap_angle`. | PR 4 | #56/#57 reviews |
-| `TailSitterMixer` logs `info!` every tick; `ConsoleTelemetryPublisher` logs `info!` every tick. | PR 4 / own PR | #52, #48 reviews |
+| `ConsoleTelemetryPublisher` logs `info!` every tick (its whole output; `debug!` would hide it by default). | own PR | #48 review |
 | `RealTimeRunner` replays missed ticks back-to-back after a stall; resync instead and count overruns in `RunStats`. | own PR or lockstep runner | #53 review |
 | `Runner` trait, once a second runner exists. | Later | #53 review |
 | `WaypointFollower` runtime path updates (`AsMut`/`set_waypoints`) for a mission uploader. | Later | #53 review |
@@ -645,6 +644,19 @@ Title: `Make stable-flight no_std`
   (the stabilizer only reads `.value`). Separate PR if yes (**Breaking**).
 
 Risk: low–medium (`rem_euclid` replacement is the only math change; covered by tests).
+
+**As implemented.** Differences from the steps above:
+- Only two std-only calls turned up (the embedded build found them): `rem_euclid` in
+  `math::wrap_angle` and `powf` in `fit_to_thrust_curve`. `wrap_angle` uses a private `%`-based
+  `rem_euclid` (`%` on `f32` is in `core`), the same arithmetic as std's, so no `libm` there.
+  `powf` → `libm::powf`. `wrap_angle`'s table test gained negative/multi-turn rows and ∞ → NaN.
+- Workspace `robomath` and `uom` entries drop default features; sitl, sitl-realflight, and
+  tools add `features = ["std"]`. `libm` joins `[workspace.dependencies]`.
+- No `Vec`/`String`/`format!` in library code; `testing` builds `no_std` as-is.
+- `TailSitterMixer` logs `debug!`. `ConsoleTelemetryPublisher` keeps `info!` (it is the
+  publisher's output), so its backlog row stays, retargeted to its own PR.
+- CI: new `embedded` job; `just embedded` runs the same builds locally.
+- `VehicleState` keeps `uom` (optional item not taken).
 
 ## Later (out of scope)
 

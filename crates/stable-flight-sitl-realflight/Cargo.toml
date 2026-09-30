@@ -16,14 +16,14 @@ repository.workspace = true
 stable-flight = { path = "../stable-flight", version = "0.1.0" }
 realflight-bridge = { version = "1.1.0", features = ["uom"] }
 # `VehicleState` and the controller configs are built from robomath vectors.
-robomath.workspace = true
+robomath = { workspace = true, features = ["std"] }
 log.workspace = true
 
 [dev-dependencies]
 stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["testing"] }
 # Examples only: runner, commanders, telemetry.
 stable-flight-sitl = { path = "../stable-flight-sitl", version = "0.1.0" }
-uom.workspace = true
+uom = { workspace = true, features = ["std"] }
 env_logger = "0.11.6"
 # Examples parse their CLI args with clap.
 clap.workspace = true

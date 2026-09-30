@@ -11,6 +11,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+# f32 math that `core` lacks (`powf`).
+libm.workspace = true
 robomath.workspace = true
 uom.workspace = true
 log.workspace = true

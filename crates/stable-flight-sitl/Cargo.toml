@@ -17,7 +17,7 @@ log.workspace = true
 signal-hook = "0.4.1"
 mavlink = "0.17.1"
 byteorder = "1.5.0"
-robomath.workspace = true
+robomath = { workspace = true, features = ["std"] }
 thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]
@@ -25,7 +25,7 @@ windows-sys = { version = "0.61", features = ["Win32_System_Console"] }  # For W
 
 [dev-dependencies]
 stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["testing"] }
-uom.workspace = true
+uom = { workspace = true, features = ["std"] }
 approx.workspace = true
 assert2.workspace = true
 # Examples parse their CLI args with clap.

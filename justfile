@@ -6,6 +6,12 @@ build:
 test:
     cargo test --workspace --all-features
 
+# Builds the no_std core for a bare-metal target, with and without `testing` (as CI does)
+embedded:
+    rustup target add thumbv7em-none-eabihf
+    cargo build -p stable-flight --target thumbv7em-none-eabihf
+    cargo build -p stable-flight --features testing --target thumbv7em-none-eabihf
+
 # Generate and save coverage report using tarpaulin
 cover:
     cargo tarpaulin --workspace -o html
