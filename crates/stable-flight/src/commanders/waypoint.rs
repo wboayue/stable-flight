@@ -37,15 +37,15 @@ impl core::error::Error for EmptyWaypoints {}
 /// # Examples
 ///
 /// ```
-/// use robomath::vec2;
+/// use stable_flight::Vec2;
 /// use stable_flight::commanders::WaypointFollower;
 /// use stable_flight::{Command, Commander, VehicleState, WaypointCommand};
 ///
 /// let square = [
-///     WaypointCommand { position: vec2(0.0, 0.0), altitude: 10.0, ..Default::default() },
-///     WaypointCommand { position: vec2(20.0, 0.0), altitude: 10.0, ..Default::default() },
-///     WaypointCommand { position: vec2(20.0, 20.0), altitude: 10.0, ..Default::default() },
-///     WaypointCommand { position: vec2(0.0, 20.0), altitude: 10.0, ..Default::default() },
+///     WaypointCommand { position: Vec2::new(0.0, 0.0), altitude: 10.0, ..Default::default() },
+///     WaypointCommand { position: Vec2::new(20.0, 0.0), altitude: 10.0, ..Default::default() },
+///     WaypointCommand { position: Vec2::new(20.0, 20.0), altitude: 10.0, ..Default::default() },
+///     WaypointCommand { position: Vec2::new(0.0, 20.0), altitude: 10.0, ..Default::default() },
 /// ];
 /// let mut follower = WaypointFollower::new(square)
 ///     .expect("non-empty")

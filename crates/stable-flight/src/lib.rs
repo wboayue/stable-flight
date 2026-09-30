@@ -38,7 +38,16 @@ pub use composition::ComposedVehicle;
 #[doc(inline)]
 pub use flight_loop::FlightLoop;
 
-use robomath::{Quaternion, Vec2, Vec3};
+use nalgebra::UnitQuaternion;
+
+/// Re-export of the [`nalgebra`] version this crate's public types use.
+pub use nalgebra;
+
+/// 2D vector used throughout the pipeline (waypoint positions, tilt, controller limits).
+pub type Vec2<T = f32> = nalgebra::Vector2<T>;
+
+/// 3D vector used throughout the pipeline (state vectors, moments, rates).
+pub type Vec3<T = f32> = nalgebra::Vector3<T>;
 
 // Commanders
 
@@ -141,12 +150,11 @@ pub trait Commander {
 ///
 /// Creating a waypoint command:
 /// ```
-/// use robomath::{Vec2, vec2};
-/// use stable_flight::{Command, WaypointCommand};
+/// use stable_flight::{Command, Vec2, WaypointCommand};
 ///
 /// let waypoint_cmd = Command::Waypoint(WaypointCommand {
-///     position: vec2(1000.0, 2000.0),  // Target position in world coordinates
-///     velocity: Some(vec2(15.0, 0.0)), // Optional desired velocity at target
+///     position: Vec2::new(1000.0, 2000.0),  // Target position in world coordinates
+///     velocity: Some(Vec2::new(15.0, 0.0)), // Optional desired velocity at target
 ///     altitude: 500.0,                 // Target altitude in meters
 ///     cruise_speed: 25.0,              // Desired speed during transit
 ///     roll: Some(0.05),                // Optional roll angle in radians
@@ -353,12 +361,11 @@ pub struct RateCommand {
 ///
 /// Creating a `WaypointCommand` to navigate to a position with a specific altitude and speed:
 /// ```
-/// use robomath::{Vec2, vec2};
-/// use stable_flight::WaypointCommand;
+/// use stable_flight::{Vec2, WaypointCommand};
 ///
 /// let cmd = WaypointCommand {
-///     position: vec2(1000.0, 2000.0),  // Target position (X=1000m, Y=2000m)
-///     velocity: Some(vec2(15.0, 0.0)), // Arrive with 15 m/s eastward velocity
+///     position: Vec2::new(1000.0, 2000.0),  // Target position (X=1000m, Y=2000m)
+///     velocity: Some(Vec2::new(15.0, 0.0)), // Arrive with 15 m/s eastward velocity
 ///     altitude: 500.0,                 // Target altitude of 500 meters
 ///     cruise_speed: 25.0,              // Travel at 25 m/s
 ///     roll: Some(0.05),                // Slight right roll during approach
@@ -374,7 +381,7 @@ pub struct RateCommand {
 ///
 /// The `Default` trait is implemented for `WaypointCommand`, providing the following
 /// default values:
-/// - `position`: `Vec2 { x: 0.0, y: 0.0 }`
+/// - `position`: zero
 /// - `velocity`: `None`
 /// - `altitude`: `0.0`
 /// - `cruise_speed`: `0.0`
@@ -425,12 +432,11 @@ pub struct WaypointCommand {
 ///
 /// Creating a control output for a simple hover command:
 /// ```
-/// use stable_flight::ControlOutput;
-/// use robomath::{Vec3, vec3};
+/// use stable_flight::{ControlOutput, Vec3};
 ///
 /// let output = ControlOutput::new(
 ///     0.5, // 50% thrust
-///     vec3(0.0, 0.0, 0.0) // No roll, pitch, or yaw moments
+///     Vec3::new(0.0, 0.0, 0.0) // No roll, pitch, or yaw moments
 /// );
 /// ```
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -482,7 +488,7 @@ impl ControlOutput {
 /// |---|---|---|---|
 /// | `position` | `x` north, `y` east, `z` up | m | `z` is altitude above the backend's datum (e.g. sea level) |
 /// | `velocity`, `acceleration` | as `position` | m/s, m/s² | `z` climbing |
-/// | `attitude` | NED world → FRD body, ZYX (yaw, pitch, roll); `Quaternion::from_euler(heading, pitch, roll)` | — | its `roll()`/`pitch()`/`yaw()` match the fields below |
+/// | `attitude` | NED world → FRD body, ZYX (yaw, pitch, roll); `UnitQuaternion::from_euler_angles(roll, pitch, heading)` | — | its `euler_angles()` match the fields below |
 /// | `roll` | about body `x` | rad | right wing down |
 /// | `pitch` | about body `y` | rad | nose up |
 /// | `heading` | about NED `z` | rad | clockwise from north (east = π/2); any range, e.g. [0, 2π) or [-π, π) |
@@ -509,7 +515,7 @@ pub struct VehicleState {
 
     /// Orientation quaternion representing the vehicle's attitude.
     /// The quaternion represents the rotation from world frame to body frame.
-    pub attitude: Quaternion,
+    pub attitude: UnitQuaternion<f32>,
 
     /// Body angular velocity in roll (x), pitch (y), and yaw (z), in radians per second.
     pub angular_velocity: Vec3<f32>,
@@ -679,7 +685,7 @@ pub enum AttitudeReference {
     /// `roll`, `pitch`, and `heading`. Used for piloted attitude flight.
     #[default]
     Euler,
-    /// `attitude.roll()`, `attitude.pitch()`, and `attitude.yaw()`. Used for waypoint flight.
+    /// `attitude`'s Euler angles (roll, pitch, yaw). Used for waypoint flight.
     Quaternion,
 }
 
@@ -975,16 +981,15 @@ pub trait Mixer {
     /// # Examples
     ///
     /// ```
-    /// use stable_flight::{ControlOutput, Mixer};
+    /// use stable_flight::{ControlOutput, Mixer, Vec3};
     /// use stable_flight::mixers::QuadCopterMixer;
-    /// use robomath::{Vec3, vec3};
     ///
     /// let mixer = QuadCopterMixer::default();
     ///
     /// // Create control output with 70% thrust and slight roll right
     /// let control_output = ControlOutput::new(
     ///     0.7,                    // 70% thrust
-    ///     vec3(0.1, 0.0, 0.0)     // slight roll right, no pitch, no yaw
+    ///     Vec3::new(0.1, 0.0, 0.0)     // slight roll right, no pitch, no yaw
     /// );
     ///
     /// // Convert abstract controls into specific motor commands

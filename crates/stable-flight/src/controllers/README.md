@@ -30,12 +30,12 @@ Position Commands → Lateral Controller → Attitude Controller → Body Rate C
 ```rust
 use stable_flight::controllers::{BodyRateController, BodyRateControllerConfig};
 use std::time::Duration;
-use robomath::vec3;
+use stable_flight::Vec3;
 
 let mut controller = BodyRateController::new();
 let dt = Duration::from_millis(4); // 250Hz control loop
-let desired_rates = vec3(0.1, 0.0, 0.05); // Roll, pitch, yaw rates
-let estimated_rates = vec3(0.0, 0.0, 0.0);
+let desired_rates = Vec3::new(0.1, 0.0, 0.05); // Roll, pitch, yaw rates
+let estimated_rates = Vec3::new(0.0, 0.0, 0.0);
 
 let moments = controller.control(dt, desired_rates, estimated_rates);
 ```
@@ -57,12 +57,12 @@ let moments = controller.control(dt, desired_rates, estimated_rates);
 ```rust
 use stable_flight::controllers::{AttitudeController, AttitudeControllerConfig};
 use std::time::Duration;
-use robomath::vec2;
+use stable_flight::Vec2;
 
 let mut controller = AttitudeController::new();
 let dt = Duration::from_millis(4);
-let desired_angles = vec2(0.5, -0.2); // 50% roll right, 20% pitch down
-let estimated_angles = vec2(0.1, 0.0); // Current roll/pitch in radians
+let desired_angles = Vec2::new(0.5, -0.2); // 50% roll right, 20% pitch down
+let estimated_angles = Vec2::new(0.1, 0.0); // Current roll/pitch in radians
 
 let angular_rates = controller.control(dt, desired_angles, estimated_angles);
 ```
@@ -111,7 +111,7 @@ let yaw_rate = controller.control(dt, desired_yaw, estimated_yaw);
 ```rust
 use stable_flight::controllers::{AltitudeController, AltitudeControllerConfig};
 use std::time::Duration;
-use robomath::Quaternion;
+use stable_flight::nalgebra::UnitQuaternion;
 
 let mut controller = AltitudeController::new();
 let dt = Duration::from_millis(4);
@@ -119,7 +119,7 @@ let desired_altitude = 10.0; // 10 meters
 let desired_velocity = 0.0;  // Hover
 let estimated_altitude = 9.5;
 let estimated_velocity = -0.1; // Slight descent
-let estimated_attitude = Quaternion::default();
+let estimated_attitude = UnitQuaternion::identity();
 
 let thrust = controller.control(
     dt, 
@@ -148,13 +148,13 @@ let thrust = controller.control(
 ```rust
 use stable_flight::controllers::{LateralController, LateralControllerConfig};
 use std::time::Duration;
-use robomath::vec2;
+use stable_flight::Vec2;
 
 let mut controller = LateralController::new();
 let dt = Duration::from_millis(4);
-let desired_position = vec2(5.0, 2.0); // 5m north, 2m east
-let estimated_position = vec2(4.8, 1.9);
-let estimated_velocity = vec2(0.1, 0.05);
+let desired_position = Vec2::new(5.0, 2.0); // 5m north, 2m east
+let estimated_position = Vec2::new(4.8, 1.9);
+let estimated_velocity = Vec2::new(0.1, 0.05);
 
 let angles = controller.control(dt, desired_position, estimated_position, estimated_velocity);
 ```
@@ -173,15 +173,15 @@ let gains = Gains { p: 2.0, i: 0.1, d: 0.5 };
 let body_rate_config = BodyRateControllerConfig {
     gains,
     max_integral: 50.0,
-    max_angular_rates: vec3(4.0, 4.0, 2.0), // rad/s
+    max_angular_rates: Vec3::new(4.0, 4.0, 2.0), // rad/s
 };
 
 // Attitude controller config  
 let attitude_config = AttitudeControllerConfig {
     gains,
-    max_angles: vec2(PI/3.0, PI/3.0), // 60 degrees max
+    max_angles: Vec2::new(PI/3.0, PI/3.0), // 60 degrees max
     max_integral: 10.0,
-    max_rate: vec2(3.0, 3.0), // rad/s
+    max_rate: Vec2::new(3.0, 3.0), // rad/s
 };
 
 let body_rate_controller = BodyRateController::with_config(&body_rate_config);
@@ -199,7 +199,7 @@ let attitude_controller = AttitudeController::with_config(&attitude_config);
 ### Real-Time Performance  
 - Optimized for 250Hz control loops (4ms cycle time)
 - Minimal memory allocations in control paths
-- Efficient mathematical operations using `robomath` library
+- Fixed-size `nalgebra` vector math (no allocation)
 - Low-latency processing suitable for safety-critical applications
 
 ### Modularity and Testing

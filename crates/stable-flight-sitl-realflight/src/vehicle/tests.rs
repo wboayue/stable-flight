@@ -1,9 +1,10 @@
 use super::*;
 use realflight_bridge::{BridgeError, ControlInputs, RealFlightBridge, SimulatorState};
-use robomath::{Quaternion, Vec3};
 use stable_flight::FlightLoop;
+use stable_flight::Vec3;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::QuadCopterMixer;
+use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::conformance::Scenario;
 use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
@@ -303,7 +304,7 @@ fn exchanges_once_per_tick_and_estimates_from_the_previous_exchange() {
 /// ASL, angles and rates in degrees (per the `realflight-bridge` field docs).
 ///
 /// The quaternion assumes RealFlight reports a standard ZYX (yaw, pitch, roll) NED-to-body
-/// rotation, built with the same robomath code `check` reads it back with. So the quaternion
+/// rotation, built with the same nalgebra code `check` reads it back with. So the quaternion
 /// rows only check that the adapter copies components in order, not RealFlight's convention;
 /// that needs a live capture.
 fn native_fixture(scenario: &Scenario) -> SimulatorState {
@@ -311,10 +312,10 @@ fn native_fixture(scenario: &Scenario) -> SimulatorState {
     let [v_north, v_east, v_up] = scenario.velocity_neu;
     let [a_north, a_east, a_up] = scenario.acceleration_neu;
     let [roll_rate, pitch_rate, yaw_rate] = scenario.body_rates_deg_s;
-    let attitude = Quaternion::from_euler(
-        scenario.heading_deg.to_radians(),
-        scenario.pitch_deg.to_radians(),
+    let attitude = UnitQuaternion::from_euler_angles(
         scenario.roll_deg.to_radians(),
+        scenario.pitch_deg.to_radians(),
+        scenario.heading_deg.to_radians(),
     );
     let deg_s = AngularVelocity::new::<angular_velocity::degree_per_second>;
 
@@ -335,9 +336,9 @@ fn native_fixture(scenario: &Scenario) -> SimulatorState {
         pitch_rate: deg_s(pitch_rate),
         yaw_rate: deg_s(yaw_rate),
         orientation_quaternion_w: attitude.w,
-        orientation_quaternion_x: attitude.x,
-        orientation_quaternion_y: attitude.y,
-        orientation_quaternion_z: attitude.z,
+        orientation_quaternion_x: attitude.i,
+        orientation_quaternion_y: attitude.j,
+        orientation_quaternion_z: attitude.k,
         ..Default::default()
     }
 }

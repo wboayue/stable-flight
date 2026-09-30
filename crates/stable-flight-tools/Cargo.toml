@@ -22,4 +22,3 @@ plotters = { version = "0.3", default-features = false, features = [
 
 [dev-dependencies]
 assert2.workspace = true
-robomath.workspace = true

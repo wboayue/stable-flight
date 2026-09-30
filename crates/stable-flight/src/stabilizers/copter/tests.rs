@@ -1,4 +1,5 @@
-use robomath::{Quaternion, vec3};
+use crate::Vec3;
+use nalgebra::UnitQuaternion;
 
 use super::*;
 use std::f32::consts::PI;
@@ -12,7 +13,7 @@ fn setup_controller() -> CopterStabilizer {
             d: 0.05,
         },
         max_integral: 100.0,
-        max_angular_rates: vec3(3.0, 3.0, 3.0), // Max roll, pitch, yaw rates in rad/s
+        max_angular_rates: Vec3::new(3.0, 3.0, 3.0), // Max roll, pitch, yaw rates in rad/s
     });
 
     let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
@@ -22,8 +23,8 @@ fn setup_controller() -> CopterStabilizer {
             d: 0.1,
         },
         max_integral: 100.0,
-        max_angles: vec2(PI / 4.0, PI / 4.0), // 45° for roll and pitch
-        max_rate: vec2(3.0, 3.0),             // Max roll, pitch, yaw rates in rad/s
+        max_angles: Vec2::new(PI / 4.0, PI / 4.0), // 45° for roll and pitch
+        max_rate: Vec2::new(3.0, 3.0),             // Max roll, pitch, yaw rates in rad/s
     });
 
     let config = CopterStabilizerConfig {
@@ -35,7 +36,7 @@ fn setup_controller() -> CopterStabilizer {
             d: 0.06,
         },
         thrust_curve_exponent: 2.0,
-        //        max_rates: vec3(1.0, 1.0, 1.0), // Max roll, pitch, yaw rates
+        //        max_rates: Vec3::new(1.0, 1.0, 1.0), // Max roll, pitch, yaw rates
     };
     CopterStabilizer::new(config)
 }
@@ -44,8 +45,8 @@ fn setup_controller() -> CopterStabilizer {
 fn test_rate_controller_zero_error() {
     let mut controller = setup_controller();
     let dt = 0.01;
-    let desired_rates = vec3(0.0, 0.0, 0.0);
-    let current_rates = vec3(0.0, 0.0, 0.0);
+    let desired_rates = Vec3::new(0.0, 0.0, 0.0);
+    let current_rates = Vec3::new(0.0, 0.0, 0.0);
 
     let output = controller
         .rates_controller
@@ -54,7 +55,7 @@ fn test_rate_controller_zero_error() {
     // With zero error (desired and current rates are the same), PID terms should be 0
     assert_eq!(
         output,
-        vec3(0.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, 0.0),
         "Output should be zero when error is zero"
     );
 }
@@ -63,8 +64,8 @@ fn test_rate_controller_zero_error() {
 fn test_rate_controller_positive_error() {
     let mut controller = setup_controller();
     let dt = 0.01;
-    let desired_rates = vec3(1.0, 1.0, 1.0);
-    let current_rates = vec3(0.0, 0.0, 0.0);
+    let desired_rates = Vec3::new(1.0, 1.0, 1.0);
+    let current_rates = Vec3::new(0.0, 0.0, 0.0);
 
     let output = controller
         .rates_controller
@@ -183,7 +184,7 @@ fn out_of_range_or_nan_setpoints_saturate_instead_of_panicking() {
 fn attitude_reference_selects_the_tracked_estimate() {
     let (roll, pitch, heading) = (0.2, -0.1, 0.3);
     let consistent = VehicleState {
-        attitude: Quaternion::from_euler(heading, pitch, roll),
+        attitude: UnitQuaternion::from_euler_angles(roll, pitch, heading),
         roll,
         pitch,
         heading,
@@ -221,13 +222,13 @@ fn attitude_reference_selects_the_tracked_estimate() {
         approx::assert_relative_eq!(a, b, epsilon = 1e-4);
     }
     assert!(
-        euler.moments != vec3(0.0, 0.0, 0.0),
+        euler.moments != Vec3::new(0.0, 0.0, 0.0),
         "tilted state must be corrected"
     );
 
     // Level Euler fields: nothing to correct. Tilted quaternion: corrects as before.
     let level = run(AttitudeReference::Euler, &quaternion_only);
-    assert!(level.moments == vec3(0.0, 0.0, 0.0), "gave {level:?}");
+    assert!(level.moments == Vec3::new(0.0, 0.0, 0.0), "gave {level:?}");
     // The quaternion path ignores the Euler fields on every axis.
     let tilted = run(AttitudeReference::Quaternion, &quaternion_only);
     assert!(
@@ -271,7 +272,7 @@ fn heading_setpoint_is_wrapped_and_nan_is_neutral() {
 fn nan_rate_estimate_yields_zero_moments() {
     let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
     let state = VehicleState {
-        angular_velocity: vec3(f32::NAN, 0.0, 0.0),
+        angular_velocity: Vec3::new(f32::NAN, 0.0, 0.0),
         ..Default::default()
     };
     let output = stabilizer.stabilize(
@@ -283,14 +284,17 @@ fn nan_rate_estimate_yields_zero_moments() {
         }),
         &state,
     );
-    assert!(output.moments == vec3(0.0, 0.0, 0.0), "gave {output:?}");
+    assert!(
+        output.moments == Vec3::new(0.0, 0.0, 0.0),
+        "gave {output:?}"
+    );
 }
 
 /// A NaN rate setpoint means "hold zero rate" (damping), not "no moments".
 #[test]
 fn nan_rate_setpoint_holds_zero_rate() {
     let state = VehicleState {
-        angular_velocity: vec3(0.5, -0.2, 0.1), // spinning: zero-rate hold must push back
+        angular_velocity: Vec3::new(0.5, -0.2, 0.1), // spinning: zero-rate hold must push back
         ..Default::default()
     };
     let rate = |roll_rate| {
@@ -308,7 +312,7 @@ fn nan_rate_setpoint_holds_zero_rate() {
         a == b,
         "NaN rate setpoint gave {a:?}, zero-rate hold gives {b:?}"
     );
-    assert!(a.moments != vec3(0.0, 0.0, 0.0));
+    assert!(a.moments != Vec3::new(0.0, 0.0, 0.0));
 }
 
 #[test]

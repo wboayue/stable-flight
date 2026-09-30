@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** state and waypoint vectors are `nalgebra` types (via the core's
+  `Vec2`/`Vec3` aliases and `stable_flight::nalgebra`) instead of `robomath`, which is
+  no longer a dependency ([#87](https://github.com/wboayue/stable-flight/issues/87)).
+  See the core changelog for the migration.
 - **Breaking:** `FlightOrchestrator` (and the `orchestrator` module) is replaced
   by three pieces with one job each: the core `stable_flight::FlightLoop` (one
   tick), `RealTimeRunner` (wall-clock pacing), and `ShutdownSignal` (graceful

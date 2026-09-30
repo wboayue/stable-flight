@@ -30,7 +30,7 @@
 //! - [`Setpoint::Rate`]: rate loop only (acro).
 //! - [`Setpoint::Attitude`]: attitude and heading loops feeding the rate loop.
 
-use robomath::{Vec3, vec2, vec3};
+use crate::{Vec2, Vec3};
 
 use crate::{
     AttitudeReference, AttitudeSetpoint, ControlOutput, RateSetpoint, Setpoint, Stabilizer,
@@ -38,7 +38,7 @@ use crate::{
 };
 
 use crate::controllers::*;
-use crate::math::{saturate_throttle, saturate_unit};
+use crate::math::{euler_angles, saturate_throttle, saturate_unit};
 
 #[cfg(test)]
 mod tests;
@@ -125,7 +125,7 @@ impl CopterStabilizer {
                 //                max_rate: config.max_rates.z,
             }),
 
-            max_rates: vec3(3.0, 3.0, 3.0), // default max rates
+            max_rates: Vec3::new(3.0, 3.0, 3.0), // default max rates
             thrust_curve_exponent: config.thrust_curve_exponent,
         }
     }
@@ -180,19 +180,16 @@ impl CopterStabilizer {
     ) -> ControlOutput {
         // Roll/pitch saturate inside the attitude controller, thrust in the thrust curve (see
         // `crate::math`).
-        let desired_angles = vec2(setpoint.roll, setpoint.pitch);
+        let desired_angles = Vec2::new(setpoint.roll, setpoint.pitch);
         let (current_angles, current_heading) = match setpoint.reference {
             AttitudeReference::Euler => (
-                vec2(estimated_state.roll, estimated_state.pitch),
+                Vec2::new(estimated_state.roll, estimated_state.pitch),
                 estimated_state.heading,
             ),
-            AttitudeReference::Quaternion => (
-                vec2(
-                    estimated_state.attitude.roll(),
-                    estimated_state.attitude.pitch(),
-                ),
-                estimated_state.attitude.yaw(),
-            ),
+            AttitudeReference::Quaternion => {
+                let (roll, pitch, yaw) = euler_angles(&estimated_state.attitude);
+                (Vec2::new(roll, pitch), yaw)
+            }
         };
 
         let desired_rates = self
@@ -203,13 +200,13 @@ impl CopterStabilizer {
             .yaw_controller
             .control(dt, setpoint.heading, current_heading);
 
-        let current_rates = vec3(
+        let current_rates = Vec3::new(
             estimated_state.angular_velocity.x,
             estimated_state.angular_velocity.y,
             estimated_state.angular_velocity.z,
         );
 
-        let desired_rates = vec3(desired_rates.x, desired_rates.y, desired_yaw_rate);
+        let desired_rates = Vec3::new(desired_rates.x, desired_rates.y, desired_yaw_rate);
 
         let moments = self
             .rates_controller
@@ -240,13 +237,14 @@ impl CopterStabilizer {
     ) -> ControlOutput {
         // Per-component saturation: `clamp` alone passes NaN, which would zero every moment
         // (no damping) instead of meaning "hold zero rate".
-        let desired_rates = vec3(
+        let desired_rates = Vec3::new(
             saturate_unit(setpoint.roll_rate),
             saturate_unit(setpoint.pitch_rate),
             saturate_unit(setpoint.yaw_rate),
-        ) * self.max_rates;
+        )
+        .component_mul(&self.max_rates);
 
-        let current_rates = vec3(
+        let current_rates = Vec3::new(
             estimated_state.angular_velocity.x,
             estimated_state.angular_velocity.y,
             estimated_state.angular_velocity.z,

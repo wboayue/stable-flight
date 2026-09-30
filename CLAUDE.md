@@ -16,7 +16,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     (`ShutdownSignal`). Depends on the core. Non-simulator examples live in `crates/stable-flight-sitl/examples/*.rs`.
   - `crates/stable-flight-sitl-realflight` — the RealFlight backend: `RealFlightVehicle`,
     `ActuatorMapping`, `airframes` (tuned gains, mixer, and mapping per model), and the
-    `copter-*-realflight` examples. Normal deps: core, `realflight-bridge`, `robomath`, `log`; sitl is a dev-dependency only (CI checks).
+    `copter-*-realflight` examples. Normal deps: core, `realflight-bridge`, `log`; sitl is a dev-dependency only (CI checks).
     One `stable-flight-sitl-<simulator>` crate per backend.
   - `crates/stable-flight-tools` — unpublished (`publish = false`) dev binaries: `plot_flight`
     (3D flight-path visualizer) and `generate_figure_eight` (waypoint-script generator).
@@ -27,8 +27,8 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Run every command from the repo root: `cargo run --example <name>` / `--bin <name>` resolve
   across the workspace (add `-p <crate>` to be explicit), and `flights/*.csv` paths are
   relative to the root.
-- Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `stabilizers`, `testing` (feature: doubles + `conformance`) (traits/types at the crate root); `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
-- Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `robomath` (`Vec2`/`Vec3`/`Quaternion`; to be replaced by `nalgebra`, #87), `uom` (units), `libm` (`no_std` float math, core), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
+- Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `stabilizers`, `testing` (feature: doubles + `conformance`) (traits/types, the `Vec2`/`Vec3` aliases, and the `nalgebra` re-export at the crate root); `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
+- Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `nalgebra` (core only, `libm`; core aliases `Vec2`/`Vec3` and re-exports it as `stable_flight::nalgebra` — other crates use the re-export), `uom` (units), `libm` (`no_std` float math, core), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
 - Untracked generated artifacts: `target/`, root `Cargo.lock`, `tarpaulin-report.html`, `firmware/*/*.bin`.
 - Paths below are prefixed with their crate (`core:` = `crates/stable-flight/`, `sitl:` =
   `crates/stable-flight-sitl/`, `sitl-realflight:` = `crates/stable-flight-sitl-realflight/`)
@@ -160,7 +160,7 @@ self.telemetry.publish(&TelemetryRecord { dt, command: &command, setpoint: &setp
 - Use `Result<T, E>` with `thiserror` enums for new fallible APIs. Avoid panics in library code outside of clearly documented preconditions (e.g. `run`'s frequency assert).
 - **No range or finiteness `assert!`s on per-tick inputs.** Saturate, treat NaN as neutral, and wrap angles, per `architecture.md#input-policy-no-panics-in-the-tick`, using the core's `math` helpers. Asserts are only for construction-time config and `dt > 0`.
 - **No `.unwrap()` or `.expect()` in `src/`.** They turn recoverable errors into panics that crash the flight loop. Propagate with `?`, return a typed error, or — only when a value is provably non-`None` from local context — use `unwrap_or_else(|| unreachable!("..."))` with a comment explaining the invariant. `.expect()` is fine in `examples/` and `tests/` where a crash is the acceptable failure mode.
-- Express physical quantities with `uom` and vector math with `robomath`. Don't reinvent.
+- Express physical quantities with `uom` and vector math with `nalgebra` (the core's `Vec2`/`Vec3` aliases, `UnitQuaternion<f32>`). Don't reinvent. Fixed-size types only. nalgebra's `*` on two vectors is not element-wise — use `component_mul`. In core, take Euler angles through `math::euler_angles`, not `UnitQuaternion::euler_angles` (NaN-safe, less flash).
 - Watch firmware size in core: fixed-size math only (no dynamic matrices or LU/SVD-style decompositions), no `Display`/`Debug` formatting on target, and measure flash with a `thumbv7em-none-eabihf` release build (`opt-level = "s"`, LTO) rather than guessing — `libm` trig, not the vector library, dominates. `just fw-size` gives the real board number.
 - Logging via `log` + `env_logger`. Reserve `info!` for lifecycle events; use `debug!` inside the loop.
 - Use `&` and slices to avoid allocations in the hot loop. No `Box`/`Vec` per tick.

@@ -1,4 +1,4 @@
-use robomath::Quaternion;
+use nalgebra::UnitQuaternion;
 
 use crate::controllers::Gains;
 
@@ -81,12 +81,12 @@ impl AltitudeController {
         desired_velocity: f32,
         estimated_altitude: f32,
         estimated_velocity: f32,
-        estimated_attitude: Quaternion,
+        estimated_attitude: UnitQuaternion<f32>,
     ) -> f32 {
         const GRAVITY: f32 = 9.81;
         const MAX_ACCEL: f32 = 20.0;
 
-        let r = estimated_attitude.rotation_matrix_i_wrt_b();
+        let r = estimated_attitude.to_rotation_matrix();
         let gains = &self.config.gains;
 
         let altitude_error = desired_altitude - estimated_altitude;
@@ -107,7 +107,7 @@ impl AltitudeController {
         let integral_term = gains.i * self.integrated_error;
         let mut acceleration_cmd = proportional_term + derivative_term + integral_term;
 
-        let body_z_alignment = r[[2, 2]].max(0.01);
+        let body_z_alignment = r[(2, 2)].max(0.01);
         acceleration_cmd = (acceleration_cmd - GRAVITY) / body_z_alignment;
         acceleration_cmd = acceleration_cmd.clamp(-MAX_ACCEL, MAX_ACCEL);
 
@@ -129,17 +129,10 @@ impl AltitudeController {
 
 #[cfg(test)]
 mod tests {
-    use robomath::Quaternion;
-
     use super::*;
 
-    fn level() -> Quaternion {
-        Quaternion {
-            w: 1.0,
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        }
+    fn level() -> UnitQuaternion<f32> {
+        UnitQuaternion::identity()
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use robomath::{Vec2, vec2};
+use crate::{Vec2, Vec3};
 
 use super::*;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
@@ -35,9 +35,9 @@ impl Stack {
 fn lateral_loop_holds_level_at_the_target() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     let dt = 0.01;
-    let desired_position = vec2(0.0, 0.0);
-    let current_position = vec2(0.0, 0.0);
-    let current_velocity = vec2(0.0, 0.0);
+    let desired_position = Vec2::new(0.0, 0.0);
+    let current_position = Vec2::new(0.0, 0.0);
+    let current_velocity = Vec2::new(0.0, 0.0);
 
     let output = guidance.lateral_controller.control(
         dt,
@@ -47,7 +47,7 @@ fn lateral_loop_holds_level_at_the_target() {
     );
     assert_eq!(
         output,
-        vec2(0.0, 0.0),
+        Vec2::new(0.0, 0.0),
         "Output should be zero when error is zero"
     );
 }
@@ -56,9 +56,9 @@ fn lateral_loop_holds_level_at_the_target() {
 fn lateral_loop_tilts_toward_the_target() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     let dt = 0.01;
-    let desired_position = vec2(1.0, 1.0);
-    let current_position = vec2(0.0, 0.0);
-    let current_velocity = vec2(0.0, 0.0);
+    let desired_position = Vec2::new(1.0, 1.0);
+    let current_position = Vec2::new(0.0, 0.0);
+    let current_velocity = Vec2::new(0.0, 0.0);
 
     let output = guidance.lateral_controller.control(
         dt,
@@ -203,7 +203,7 @@ fn waypoint_at_rest_on_target_yields_no_output() {
     let mut stack = Stack::new();
     let dt = 0.01;
     let waypoint_command = WaypointCommand {
-        position: vec2(0.0, 0.0),
+        position: Vec2::new(0.0, 0.0),
         ..Default::default()
     };
     let state = VehicleState::default();
@@ -227,7 +227,7 @@ fn distant_waypoint_tilts_toward_target_instead_of_panicking() {
         let state = VehicleState::default();
         stack.prime(&state);
         let command = Command::Waypoint(WaypointCommand {
-            position: vec2(x, y),
+            position: Vec2::new(x, y),
             altitude: 20.0,
             cruise_speed: 7.0,
             ..Default::default()
@@ -429,7 +429,7 @@ fn out_of_range_or_nan_commands_saturate_instead_of_panicking() {
 fn nan_altitude_estimate_holds_hover_then_recovers() {
     let at_altitude = |z: f32| state_at(0.0, 0.0, z);
     let command = Command::Waypoint(WaypointCommand {
-        position: vec2(0.0, 0.0),
+        position: Vec2::new(0.0, 0.0),
         altitude: 20.0,
         cruise_speed: 7.0,
         ..Default::default()
@@ -478,11 +478,11 @@ fn state_at(x: f32, y: f32, z: f32) -> VehicleState {
     use uom::si::length::meter;
 
     VehicleState {
-        position: robomath::Vec3 {
-            x: Length::new::<meter>(x),
-            y: Length::new::<meter>(y),
-            z: Length::new::<meter>(z),
-        },
+        position: Vec3::new(
+            Length::new::<meter>(x),
+            Length::new::<meter>(y),
+            Length::new::<meter>(z),
+        ),
         ..Default::default()
     }
 }
@@ -496,7 +496,7 @@ fn drifting_state(tick: usize) -> VehicleState {
 
 fn near_waypoint() -> WaypointCommand {
     WaypointCommand {
-        position: vec2(1.0, 1.0),
+        position: Vec2::new(1.0, 1.0),
         altitude: 10.5,
         cruise_speed: 7.0,
         ..Default::default()
@@ -511,7 +511,7 @@ fn reference_loops() -> (LateralController, AltitudeController) {
         LateralController::with_config(&LateralControllerConfig {
             gains: config.lateral_gains,
             max_integral: 100.0,
-            max_rate: vec2(2.0, 2.0),
+            max_rate: Vec2::new(2.0, 2.0),
         }),
         AltitudeController::with_config(&AltitudeControllerConfig {
             gains: config.altitude_gains,
@@ -525,8 +525,8 @@ fn reference_tilt(lateral: &mut LateralController, step: f32, state: &VehicleSta
     lateral.control(
         step,
         target,
-        vec2(state.position.x.value, state.position.y.value),
-        vec2(state.velocity.x.value, state.velocity.y.value),
+        Vec2::new(state.position.x.value, state.position.y.value),
+        Vec2::new(state.velocity.x.value, state.velocity.y.value),
     )
 }
 

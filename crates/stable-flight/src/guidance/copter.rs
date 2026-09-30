@@ -7,7 +7,7 @@
 //! | [`Command::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks passed through; yaw stick slews a heading-hold target |
 //! | [`Command::Waypoint`] | [`Setpoint::Attitude`]: lateral position loop → roll/pitch (every [`navigation_period`](CopterGuidanceConfig::navigation_period)), altitude loop → thrust (every tick), heading north |
 
-use robomath::{Vec2, vec2};
+use crate::Vec2;
 
 use crate::controllers::Gains;
 use crate::controllers::*;
@@ -128,7 +128,7 @@ impl CopterGuidance {
             lateral_controller: LateralController::with_config(&LateralControllerConfig {
                 gains: config.lateral_gains,
                 max_integral: 100.0,
-                max_rate: vec2(2.0, 2.0), // unused by the lateral controller today (#71)
+                max_rate: Vec2::new(2.0, 2.0), // unused by the lateral controller today (#71)
             }),
 
             heading: 0.0,
@@ -252,12 +252,12 @@ impl CopterGuidance {
             return self.tilt;
         };
 
-        let desired_position = vec2(waypoint_command.position.x, waypoint_command.position.y);
-        let current_position = vec2(
+        let desired_position = Vec2::new(waypoint_command.position.x, waypoint_command.position.y);
+        let current_position = Vec2::new(
             estimated_state.position.x.value,
             estimated_state.position.y.value,
         );
-        let velocity = vec2(
+        let velocity = Vec2::new(
             estimated_state.velocity.x.value,
             estimated_state.velocity.y.value,
         );
