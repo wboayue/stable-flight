@@ -344,6 +344,27 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
 - Docs: core README Composition and Testing sections, architecture.md, and CLAUDE.md
   (impl table, and a testing rule to use core doubles rather than per-crate `Mock*`
   pipeline types).
+- After review:
+  - CI gained a `cargo build --workspace` step (default features), so library code that
+    accidentally uses the dev-only `testing` feature fails CI.
+  - `impl TelemetryPublisher for ()` is the no-op sink; it replaces the ad-hoc `Quiet` in the
+    `FlightLoop` example.
+  - `RecordedTick` defers its field docs to `TelemetryRecord` and gains `as_record()` for
+    replaying.
+  - `NullVehicle` counts are `u64`, matching `RunStats::ticks`.
+  - `RecordingTelemetry` documents its inline size (~200 B per tick).
+  - Rustdoc examples for `into_parts` and the fan-out, written without `testing` so they
+    also run with the feature off.
+  - `FlightLoop` tests rename the local `LogTelemetry`, and the `into_parts` test uses the
+    real stabilizer and mixer.
+  - Doc facts de-duplicated.
+  - The `composition` module doc now says `ComposedVehicle` doesn't fit estimators that
+    need the actuator's data; the sensor-synthesis bullet in "Later" is updated.
+  - Review follow-ups:
+    - First board: `estimator_mut`/`actuator_mut`.
+    - Later: `Commander`/`Mixer` combinators against a real need. Keep publishers opt-in (no
+      blanket `TelemetryPublisher` impl), so the tuple impl stays coherent.
+    - Refactor PR 7: update `runner/tests.rs`, which uses the real `CopterStabilizer`.
 
 ## PR 3 — Split RealFlight into its own backend crate
 
@@ -438,8 +459,11 @@ Risk: low–medium (`rem_euclid` replacement is the only math change; covered by
   - Promoting `ActuatorMapping` to a shared channel map.
   Design these against the real second backend, not speculatively.
 - **Sensor-synthesis path.** Backends expose truth state today. Add IMU/GNSS/baro synthesis
-  with a noise model from truth, composed through `ComposedVehicle`, so a real estimator
-  (fusion-nav) runs in the SITL loop, the same as on hardware.
+  with a noise model from truth, so a real estimator (fusion-nav) runs in the SITL loop, the
+  same as on hardware. `ComposedVehicle` doesn't fit, because its halves can't see each other
+  while the truth comes from the actuator's simulator exchange. Likely a wrapper like
+  `Sensed<V: Vehicle, S>` that post-processes a full truth vehicle's estimate through the
+  sensor model and estimator (#54 review).
 - **Unify joystick commanders.** `Extreme3DCommander` and `SpectrumCommander` duplicate gilrs
   setup, `read_channels`, and `scale_value`. Replace them with one `GamepadCommander` plus a
   per-device channel map.

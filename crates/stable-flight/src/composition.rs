@@ -1,12 +1,34 @@
 //! Combinators that build one pipeline component out of several.
 //!
-//! - [`ComposedVehicle`] joins a [`StateEstimator`] and an [`Actuator`] into a [`Vehicle`]:
-//!   firmware pairs an IMU/estimator with an ESC driver; sensor-synthesis SITL pairs a
-//!   truth-driven estimator with a simulator's actuator.
-//! - `(A, B)` is a [`TelemetryPublisher`] that fans each record out to both sinks (MAVLink and
-//!   a file log, say). Nest tuples for more: `(A, (B, C))`.
+//! - [`ComposedVehicle`] joins an independent [`StateEstimator`] and [`Actuator`] into a
+//!   [`Vehicle`], e.g. an IMU/estimator and an ESC driver on hardware. The two halves don't see
+//!   each other, so it doesn't fit an estimator that needs the actuator's data (such as a
+//!   simulator bridge's truth state); that case needs a different combinator.
+//! - `(A, B)` is a [`TelemetryPublisher`] that fans each record out to both sinks; nest tuples
+//!   for more. `()` is the no-op sink.
 //!
 //! Both are allocation-free and add no dynamic dispatch.
+//!
+//! ```
+//! # use std::time::Duration;
+//! # use stable_flight::{ActuatorCommand, Command, ControlOutput, VehicleState};
+//! use stable_flight::{TelemetryPublisher, TelemetryRecord};
+//!
+//! #[derive(Default)]
+//! struct Counter(u32);
+//! impl TelemetryPublisher for Counter {
+//!     fn publish(&mut self, _record: &TelemetryRecord) {
+//!         self.0 += 1;
+//!     }
+//! }
+//!
+//! // A ground-station sink, a log sink, and `()` where a slot needs no sink.
+//! let mut sinks = (Counter::default(), (Counter::default(), ()));
+//! # let (command, state, control, actuators) = (Command::Attitude(Default::default()), VehicleState::default(), ControlOutput::default(), ActuatorCommand::default());
+//! # let record = TelemetryRecord { dt: Duration::from_millis(4), command: &command, state: &state, control: &control, actuators: &actuators };
+//! sinks.publish(&record);
+//! assert_eq!((sinks.0.0, sinks.1.0.0), (1, 1));
+//! ```
 //!
 //! [`Vehicle`]: crate::Vehicle
 
@@ -99,6 +121,12 @@ impl<E, A: Actuator> Actuator for ComposedVehicle<E, A> {
     fn actuate(&mut self, actuator_command: &ActuatorCommand) {
         self.actuator.actuate(actuator_command);
     }
+}
+
+/// The no-op sink: discards every record. Use it where a loop needs a publisher but nothing
+/// should be published, or as a placeholder slot in a tuple fan-out.
+impl TelemetryPublisher for () {
+    fn publish(&mut self, _record: &TelemetryRecord) {}
 }
 
 /// Fans each record out to both publishers, first `A` then `B`.

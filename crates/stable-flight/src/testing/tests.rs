@@ -24,14 +24,7 @@ fn record_with_thrust(thrust: f32) -> RecordedTick {
 fn publish_thrusts<const N: usize>(thrusts: &[f32]) -> RecordingTelemetry<N> {
     let mut telemetry = RecordingTelemetry::<N>::new();
     for &thrust in thrusts {
-        let tick = record_with_thrust(thrust);
-        telemetry.publish(&TelemetryRecord {
-            dt: tick.dt,
-            command: &tick.command,
-            state: &tick.state,
-            control: &tick.control,
-            actuators: &tick.actuators,
-        });
+        telemetry.publish(&record_with_thrust(thrust).as_record());
     }
     telemetry
 }

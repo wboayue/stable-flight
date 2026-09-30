@@ -43,8 +43,8 @@ mod tests;
 #[derive(Debug, Clone, Default)]
 pub struct NullVehicle {
     state: VehicleState,
-    estimates: u32,
-    actuations: u32,
+    estimates: u64,
+    actuations: u64,
     last_actuation: Option<ActuatorCommand>,
 }
 
@@ -63,12 +63,12 @@ impl NullVehicle {
     }
 
     /// How many times `estimate_state` was called (including priming).
-    pub fn estimates(&self) -> u32 {
+    pub fn estimates(&self) -> u64 {
         self.estimates
     }
 
     /// How many times `actuate` was called.
-    pub fn actuations(&self) -> u32 {
+    pub fn actuations(&self) -> u64 {
         self.actuations
     }
 
@@ -132,19 +132,28 @@ impl Commander for ConstantCommander {
     }
 }
 
-/// An owned copy of one [`TelemetryRecord`].
+/// An owned copy of one [`TelemetryRecord`]; fields mean what they do there.
 #[derive(Debug, Clone)]
+#[allow(missing_docs)]
 pub struct RecordedTick {
-    /// Loop period of the tick.
     pub dt: Duration,
-    /// Command the commander produced.
     pub command: Command,
-    /// Estimated state the stabilizer acted on.
     pub state: VehicleState,
-    /// Stabilizer output.
     pub control: ControlOutput,
-    /// Mixer output.
     pub actuators: ActuatorCommand,
+}
+
+impl RecordedTick {
+    /// Borrows this tick as a [`TelemetryRecord`], e.g. to replay it into another sink.
+    pub fn as_record(&self) -> TelemetryRecord<'_> {
+        TelemetryRecord {
+            dt: self.dt,
+            command: &self.command,
+            state: &self.state,
+            control: &self.control,
+            actuators: &self.actuators,
+        }
+    }
 }
 
 impl From<&TelemetryRecord<'_>> for RecordedTick {
@@ -161,6 +170,10 @@ impl From<&TelemetryRecord<'_>> for RecordedTick {
 
 /// A telemetry sink that keeps the last `N` ticks (a fixed-size ring, no allocation) and
 /// counts all of them.
+///
+/// Ticks are stored inline, roughly 200 bytes each, so the recorder is about `200 × N` bytes
+/// wherever it lives. Keep `N` small (hundreds) for a stack-allocated recorder; `N = 10_000`
+/// overflows a default test thread's stack. `N = 0` only counts.
 ///
 /// # Examples
 ///

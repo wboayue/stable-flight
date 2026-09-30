@@ -91,8 +91,8 @@ fn runs_until_signalled_and_steps_with_the_nominal_period() {
     check!(stats.ticks > 0);
     check!(stats.average_hz().is_some());
     let (_, vehicle, _, _, telemetry) = flight_loop.into_parts();
-    check!(u64::from(vehicle.estimates()) == stats.ticks + 1); // priming + one per tick
-    check!(u64::from(vehicle.actuations()) == stats.ticks);
+    check!(vehicle.estimates() == stats.ticks + 1); // priming + one per tick
+    check!(vehicle.actuations() == stats.ticks);
     check!(telemetry.total() == stats.ticks);
     check!(telemetry.last().map(|tick| tick.dt) == Some(Duration::from_millis(1)));
 }

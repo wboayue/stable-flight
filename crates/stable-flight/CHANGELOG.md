@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `step(dt)` (commander → estimate → stabilize → mix → actuate → telemetry), with
   `prime()` for the initial `Duration::ZERO` estimate and stabilizer priming. No
   clock, threads, or signals; runners decide when to step. Allocation-free.
+  `into_parts()` returns the five components after a run.
 - `commanders::WaypointFollower<W: AsRef<[WaypointCommand]>>`: a `Commander` that
   follows and loops a waypoint list by horizontal acceptance radius (default
   `DEFAULT_ACCEPTANCE_RADIUS`, 3 m; `with_acceptance_radius` to override).
@@ -30,12 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ComposedVehicle<E, A>`: a `Vehicle` built from a separate `StateEstimator`
   and `Actuator` (e.g. IMU/estimator + ESC driver), with `estimator()`,
   `actuator()`, and `into_parts()`.
-- `impl TelemetryPublisher for (A, B)`: fans each tick out to both publishers;
-  nest tuples for more sinks. No allocation or dynamic dispatch.
-- `FlightLoop::into_parts()` returns the five components after a run.
+- `impl TelemetryPublisher for (A, B)` fans each tick out to both publishers
+  (nest tuples for more sinks), and `impl TelemetryPublisher for ()` is the
+  no-op sink.
 - `testing` feature (off by default) with allocation-free test doubles in
   `stable_flight::testing`: `NullVehicle` (fixed state, counts estimates and
   actuations, keeps the last command), `ConstantCommander`, and
-  `RecordingTelemetry<N>` (ring of the last `N` ticks as `RecordedTick`s).
+  `RecordingTelemetry<N>` (ring of the last `N` ticks as `RecordedTick`s, which
+  `as_record()` can replay).
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight

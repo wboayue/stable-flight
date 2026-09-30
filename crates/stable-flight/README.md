@@ -28,7 +28,7 @@ Input-device and file-based commanders (joysticks, CSV scripts) live in `stable-
 ### Composition
 
 - `ComposedVehicle::new(estimator, actuator)` makes a `Vehicle` from a separate `StateEstimator` and `Actuator` — the usual shape on hardware (IMU/estimator + ESC driver).
-- A tuple of telemetry publishers is a publisher: `(mavlink, (file_log, console))` sends every tick to all three.
+- A tuple of telemetry publishers is a publisher: `(mavlink, (file_log, console))` sends every tick to all three; `()` publishes nothing.
 - `FlightLoop::into_parts()` hands the components back after a run.
 
 ### Testing

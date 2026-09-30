@@ -16,8 +16,7 @@ uom.workspace = true
 log.workspace = true
 
 [features]
-# Test doubles (`stable_flight::testing`): NullVehicle, ConstantCommander, RecordingTelemetry.
-# For dev-dependencies of crates built on the core; never needed at runtime.
+# Test doubles in `stable_flight::testing`. For dev-dependencies only; never needed at runtime.
 testing = []
 
 [dev-dependencies]
