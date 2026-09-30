@@ -286,6 +286,15 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
   ticks), and stopping on a trigger with the nominal `dt`. The orchestrator's `MockVehicle`
   duplicate went with the orchestrator tests; `NullVehicle` still moves to core `testing`
   in 2c.
+- Verified Unix Ctrl-C end to end with a throwaway example: SIGINT → clean exit and log
+  lines, at 249.9 Hz for a 250 Hz target.
+- **Found while verifying (pre-existing, not fixed):** `AttitudeController::control`
+  (`stabilizers/controllers/attitude.rs:118-127`) `assert!`s that desired roll and pitch
+  are in [-1, 1]. In waypoint mode with the vehicle far from the target (e.g. a
+  `NullVehicle` at the origin and `flights/figure_eight.csv`), the lateral controller asks
+  for pitch ≈ -4.6, and the flight loop panics. That contradicts "no panics in the loop".
+  Clamp (or saturate the lateral output) instead of asserting; do it in its own PR with
+  table tests, before hardware.
 
 ## PR 3 — Split RealFlight into its own backend crate
 
