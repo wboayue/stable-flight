@@ -35,6 +35,21 @@ Input-device and file-based commanders (joysticks, CSV scripts) live in `stable-
 
 Enable the `testing` feature in `[dev-dependencies]` for allocation-free doubles in `stable_flight::testing`: `NullVehicle` (fixed state, counts calls), `ConstantCommander`, and `RecordingTelemetry<N>` (keeps the last `N` ticks).
 
+`testing::conformance` checks a `StateEstimator` against the `VehicleState` frame contract. It is a table of physical scenarios (level, banked, nose up, heading east, climbing, moving northeast, yaw and combined rates) with the state each must produce. A simulator backend or estimator adapter builds its native input for each scenario, and `conformance_tests!` generates one test per scenario, plus one that fails if a scenario is left uncovered:
+
+```rust
+fn state_for(scenario: &Scenario) -> VehicleState {
+    // Build the simulator's native report for `scenario` and convert it.
+}
+
+stable_flight::conformance_tests! {
+    state_for;
+    conforms_level: LEVEL;
+    conforms_climbing: CLIMBING, ignore = "vertical sign not converted yet";
+    // ... one row per scenario
+}
+```
+
 ### Stabilizer
 
 Stabilizers calculate the difference between the vehicle's current state and the desired state, generating `ControlOutput`s that the mixer then translates into actuator commands. This component contains the core flight stabilization logic. `CopterStabilizer` targets multirotors. This is where you would start if you want to implement custom flight control logic.
@@ -45,7 +60,7 @@ The simplest setup uses default gains:
 let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
 ```
 
-For tuned gains, build the inner PID controllers explicitly (see [`copter-manual-realflight.rs`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl/examples/copter-manual-realflight.rs) for a full example):
+For tuned gains, build the inner PID controllers explicitly (simulator backends ship tuned sets, e.g. [`airframes::quadcopter_x`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl-realflight/src/airframes.rs)):
 
 ```rust
 let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {

@@ -11,6 +11,14 @@ cover:
     cargo tarpaulin --workspace -o html
     echo "coverage report saved to tarpaulin-report.html"
 
+# Joystick-flown quadcopter in RealFlight, e.g. `just fly-manual --host 192.168.1.20:8080`
+fly-manual *ARGS:
+    cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- {{ARGS}}
+
+# Scripted figure-eight in RealFlight; args: [script.csv] [--host host:port]
+fly-auto *ARGS:
+    cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- {{ARGS}}
+
 # Renders a waypoint script as a 3D flight path, e.g. `just plot flights/figure_eight.csv out.svg`
 plot *ARGS:
     cargo run --bin plot_flight -- {{ARGS}}
