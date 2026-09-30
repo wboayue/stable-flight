@@ -40,9 +40,9 @@ otherwise do it in the next PR.
 | Fix — attitude-controller panic in waypoint mode (found in 2b) | ✅ #55 |
 | Fix — unwrapped heading target → yaw panic in attitude mode (found in #55 review) | ✅ #56 |
 | Fix — remaining per-tick panics (mixer, attitude-command, body-rate, altitude, rate-mode; Spektrum clamp) | ✅ #57 |
-| PR 3 — Split RealFlight into its own backend crate | 🔍 #58 |
+| PR 3 — Split RealFlight into its own backend crate | ✅ #58 |
 | Fix — RealFlight frame conversions: double radians, down-positive vertical (found in PR 3) | ⬜ |
-| PR 4 — Make core `no_std` | ⬜ |
+| PR 4 — Make core `no_std` | 🔍 #59 |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
 
 ## Follow-up backlog
@@ -61,13 +61,13 @@ the PR that completes it. The per-PR notes further down keep the history.
 | `SpectrumCommander` maps roll/pitch/yaw to [0, 1] centred at 0.5; `AttitudeCommand` needs [-1, 1] centred at 0 (constant bank at centre stick). Needs the transmitter to verify each axis's sign. | own PR | #57 |
 | Upstream failsafe: estimator-health checks, then a land or disarm commander. The Input Policy is last-resort only (NaN thrust → motors off). | first board / Later | #57 review |
 | `BodyRateController`: one non-finite axis zeroes all three moments; handle axes separately. | own PR | #57 review |
+| `fit_to_thrust_curve` lets NaN through (`clamp` keeps NaN); callers saturate first today. Use `saturate_throttle` so the helper meets the input policy itself. | own PR or refactor PR 7 | #59 review |
 | Unify derivative-gap handling (flag in attitude/body-rate, `Option` in yaw) into a shared `DerivativeState`; make `BodyRateController::last_error` private; drop the first-tick-after-construction derivative kick in attitude/body-rate. | refactor PR 7 | #57 review |
 | Make saturation observable (debug log or a telemetry flag/counter) for tuning. | refactor PR 7 | #57 review |
 | Yaw: controller state carries across mode switches, `self.heading` goes stale in waypoint mode, and guidance needs an absolute-heading path. | refactor PR 7 | #56 review |
 | Heading slew rate is per tick (`HEADING_STEP_PER_TICK`); make it `dt`-based. | own PR or refactor PR 7 | #56 review |
 | Lateral: `accel / g` scaled by `max_angles` is a simplified tilt model; `LateralControllerConfig::max_rate` is unused. | refactor PR 7 | #55 |
-| `no_std` blockers beyond the plan list: `powf` in `fit_to_thrust_curve`, `std::f32::consts` imports, `rem_euclid` in `math::wrap_angle`. | PR 4 | #56/#57 reviews |
-| `TailSitterMixer` logs `info!` every tick; `ConsoleTelemetryPublisher` logs `info!` every tick. | PR 4 / own PR | #52, #48 reviews |
+| `ConsoleTelemetryPublisher` logs `info!` every tick (its whole output; `debug!` would hide it by default). | own PR | #48 review |
 | `RealTimeRunner` replays missed ticks back-to-back after a stall; resync instead and count overruns in `RunStats`. | own PR or lockstep runner | #53 review |
 | `Runner` trait, once a second runner exists. | Later | #53 review |
 | `WaypointFollower` runtime path updates (`AsMut`/`set_waypoints`) for a mission uploader. | Later | #53 review |
@@ -627,7 +627,7 @@ Title: `Make stable-flight no_std`
 
 - `#![cfg_attr(not(test), no_std)]` (same pattern as robomath). Tests stay on host.
 - `std::time::Duration` → `core::time::Duration`. `std::f32::consts` → `core::f32::consts`.
-- `f32::rem_euclid` (now only in `yaw.rs`'s `wrap_angle`) is std-only. Replace with a small `libm`-based helper and
+- `f32::rem_euclid` (now only in `math::wrap_angle`) is std-only. Replace with a small `no_std` helper and
   add a table test for negative/wrap angles. Route any other std-only float methods
   (`sqrt`, `sin`, `powi`, …) through `libm`. The embedded CI build flags anything missed.
   `WaypointFollower`'s distance math is covered by the same rule.
@@ -645,6 +645,24 @@ Title: `Make stable-flight no_std`
   (the stabilizer only reads `.value`). Separate PR if yes (**Breaking**).
 
 Risk: low–medium (`rem_euclid` replacement is the only math change; covered by tests).
+
+**As implemented.** Differences from the steps above:
+- Only two std-only calls turned up (the embedded build found them): `rem_euclid` in
+  `math::wrap_angle` and `powf` in `fit_to_thrust_curve`. `wrap_angle` uses a private `%`-based
+  `rem_euclid` (`%` on `f32` is in `core`), the same arithmetic as std's, so no `libm` there.
+  `powf` → `libm::powf`. `wrap_angle`'s table test gained negative/multi-turn, ±π, -0.0, and
+  ±∞ rows. The review checked both exhaustively: `wrap_angle` matches std bit-for-bit over
+  all 2³² inputs; `libm::powf` is within 1 ULP of std. `fit_to_thrust_curve` got a table test.
+- Workspace `robomath` and `uom` entries drop default features. sitl and sitl-realflight add
+  `features = ["std"]` to `uom`; robomath's `std` feature is empty, so nobody enables it.
+  `libm` joins `[workspace.dependencies]`.
+- After review: the `no_std` coding rule lives in CLAUDE.md's Coding style, and `just
+  embedded` is the one command docs point to.
+- No `Vec`/`String`/`format!` in library code; `testing` builds `no_std` as-is.
+- `TailSitterMixer` logs `debug!`. `ConsoleTelemetryPublisher` keeps `info!` (it is the
+  publisher's output), so its backlog row stays, retargeted to its own PR.
+- CI: new `embedded` job; `just embedded` runs the same builds locally.
+- `VehicleState` keeps `uom` (optional item not taken).
 
 ## Later (out of scope)
 
@@ -704,7 +722,7 @@ disappears and backends become crates. Suggested order:
 2. ✅ Refactor PRs 1–4 and 6 (cheap, and they shape the core API). Refactor PR 4 has to land
    before `ComposedVehicle` (workspace PR 2): it fixes the `StateEstimator`/`Actuator`
    signatures that `ComposedVehicle` composes, and `Vehicle` is the backend contract.
-3. ⬜ Workspace PRs 2–4.
+3. 🔍 Workspace PRs 2–4 (2a–2c, 3 merged; 4 in review, #59).
 4. ⬜ Refactor PR 7 before publishing `stable-flight` 0.1.0.
 
 ## Checklist per PR

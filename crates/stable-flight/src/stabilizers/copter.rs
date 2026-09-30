@@ -403,7 +403,7 @@ impl CopterStabilizer {
     fn fit_to_thrust_curve(&self, linear_thrust: f32) -> f32 {
         let thrust_curve_exponent = self.config.thrust_curve_exponent;
         // Apply nonlinear thrust curve with tunable exponent
-        let nonlinear_thrust = linear_thrust.powf(thrust_curve_exponent);
+        let nonlinear_thrust = libm::powf(linear_thrust, thrust_curve_exponent);
         nonlinear_thrust.clamp(0.0, 1.0)
     }
 }

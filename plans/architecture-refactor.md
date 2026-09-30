@@ -331,7 +331,7 @@ change, then add the divider in a follow-up where the diff is easy to read.
 
 - Async / `Arc<Mutex<_>>` for cross-thread telemetry. Re-evaluate once
   hardware lands.
-- `no_std` migration. Now scheduled as workspace-migration PR 4 (core crate only).
+- `no_std` migration. Done in workspace-migration PR 4 (#59, core crate only).
 - Replacing PID with LQR/MPC. Independent of trait shape.
 - Sensor fusion / Kalman filtering for `estimate_state`. Lives behind the
   `StateEstimator` trait surface (post-PR 4) and can be added without

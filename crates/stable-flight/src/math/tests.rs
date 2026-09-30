@@ -33,14 +33,23 @@ fn wrap_angle_maps_into_minus_pi_to_pi() {
     let cases = [
         (0.0, 0.0),
         (PI / 2.0, PI / 2.0),
+        (-0.0, 0.0),
+        // Half-open: +π maps to -π, and -π stays.
         (PI, -PI),
         (-PI, -PI),
         (3.0 * PI / 2.0, -PI / 2.0),
         (-3.0 * PI / 2.0, PI / 2.0),
         (4.0 * PI + 0.25, 0.25),
+        // Negative inputs: `%` alone would leave these below -π.
+        (-PI - 0.25, PI - 0.25),
+        (-2.0 * PI, 0.0),
+        (-4.0 * PI - 0.25, -0.25),
+        (-7.0 * PI / 2.0, PI / 2.0),
     ];
     for (angle, wrapped) in cases {
         assert_relative_eq!(wrap_angle(angle), wrapped, epsilon = 1e-5);
     }
     assert!(wrap_angle(f32::NAN).is_nan());
+    assert!(wrap_angle(f32::INFINITY).is_nan());
+    assert!(wrap_angle(f32::NEG_INFINITY).is_nan());
 }

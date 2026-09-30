@@ -50,6 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   generates one test per scenario plus a coverage check. docs.rs renders the
   `testing` feature.
 - `QuadCopterMixer` derives `Debug`, `Clone`, `Copy`, and `PartialEq`.
+- The crate is `no_std` (including the `testing` feature), so it builds for
+  bare-metal targets such as `thumbv7em-none-eabihf`. It depends on `uom` and
+  `robomath` without their `std` features; enable them yourself if you need them.
 
 ### Fixed
 

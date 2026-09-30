@@ -11,10 +11,13 @@
 //! [`TelemetryPublisher`]), the data passed between them, the cascaded-PID stabilizers, the
 //! mixers, and [`FlightLoop`], which sequences one control tick.
 //!
-//! This crate has no simulator, I/O, or timing dependencies, so the same code runs in
-//! software-in-the-loop simulation ([`stable-flight-sitl`](https://crates.io/crates/stable-flight-sitl))
-//! and, later, on flight hardware. See the
+//! This crate is `no_std` and has no simulator, I/O, or timing dependencies, so the same code
+//! runs in software-in-the-loop simulation
+//! ([`stable-flight-sitl`](https://crates.io/crates/stable-flight-sitl)) and, later, on flight
+//! hardware. See the
 //! [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md).
+
+#![cfg_attr(not(test), no_std)]
 
 pub mod commanders;
 pub mod composition;
@@ -25,7 +28,7 @@ pub mod stabilizers;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 
-use std::time::Duration;
+use core::time::Duration;
 use uom::si::f32::*;
 
 #[doc(inline)]

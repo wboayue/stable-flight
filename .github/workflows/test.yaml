@@ -53,3 +53,18 @@ jobs:
     - name: test
       run: |
         cargo test --workspace --all-features
+
+  embedded:
+    # Keeps the core no_std: a bare-metal target has no `std` to fall back on.
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: thumbv7em-none-eabihf
+
+    - name: build core (thumbv7em-none-eabihf)
+      run: |
+        cargo build -p stable-flight --target thumbv7em-none-eabihf
+        cargo build -p stable-flight --features testing --target thumbv7em-none-eabihf

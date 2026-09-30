@@ -1,4 +1,4 @@
-use std::f32::consts::FRAC_PI_4;
+use core::f32::consts::FRAC_PI_4;
 
 use robomath::{Vec2, vec2};
 

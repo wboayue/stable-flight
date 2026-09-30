@@ -5,7 +5,7 @@
 //! error into controller state, wrap angles), which is specified in `architecture.md`,
 //! "Input Policy (no panics in the tick)".
 
-use core::f32::consts::PI;
+use core::f32::consts::{PI, TAU};
 
 use robomath::{Vec2, vec2};
 
@@ -36,8 +36,17 @@ pub(crate) fn saturate_throttle(value: f32) -> f32 {
 }
 
 /// Wraps an angle in radians to [-π, π). Non-finite input stays non-finite.
-///
-/// The only `rem_euclid` in the core, which PR 4 replaces with a `libm` form for `no_std`.
 pub(crate) fn wrap_angle(angle: f32) -> f32 {
-    (angle + PI).rem_euclid(2.0 * PI) - PI
+    rem_euclid(angle + PI, TAU) - PI
+}
+
+/// `f32::rem_euclid` for a positive `divisor`, which `core` lacks: the remainder in
+/// [0, divisor). `%` truncates toward zero, so a negative remainder is shifted up.
+fn rem_euclid(value: f32, divisor: f32) -> f32 {
+    let remainder = value % divisor;
+    if remainder < 0.0 {
+        remainder + divisor
+    } else {
+        remainder
+    }
 }

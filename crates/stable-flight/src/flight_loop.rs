@@ -5,7 +5,7 @@
 //! [`FlightLoop::step`] and with what `dt` (a wall-clock runner in `stable-flight-sitl` today;
 //! a lockstep simulator runner or a hardware timer interrupt later).
 
-use std::time::Duration;
+use core::time::Duration;
 
 use crate::{
     Commander, Mixer, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle, VehicleState,
