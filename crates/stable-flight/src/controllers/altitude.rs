@@ -34,7 +34,6 @@ impl Default for AltitudeControllerConfig {
 
 pub struct AltitudeController {
     config: AltitudeControllerConfig,
-    previous_error: f32,
     integrated_error: f32,
 }
 
@@ -52,7 +51,6 @@ impl AltitudeController {
     pub fn with_config(config: &AltitudeControllerConfig) -> Self {
         Self {
             config: config.clone(),
-            previous_error: 0.0,
             integrated_error: 0.0,
         }
     }
@@ -117,8 +115,6 @@ impl AltitudeController {
         // - acceleration_cmd = -GRAVITY (free fall) -> linear_thrust = 0
         // - acceleration_cmd = 0 (hover) -> linear_thrust = HOVER_LINEAR_THRUST (0.5)
         // - acceleration_cmd = MAX_ACCEL (max upward) -> linear_thrust = 1
-        let accel_range_lower = GRAVITY; // From -GRAVITY to 0
-        let accel_range_upper = MAX_ACCEL; // From 0 to MAX_ACCEL
         let linear_thrust = if acceleration_cmd < 0.0 {
             // Map [-GRAVITY, 0] to [0, 0.5]
             0.5 * (acceleration_cmd + GRAVITY) / GRAVITY

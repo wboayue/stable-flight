@@ -55,7 +55,7 @@ cargo run --bin plot_flight -- flights/figure_eight.csv out.svg  # 3D path viz (
 cargo run --bin generate_figure_eight           # (re)write flights/figure_eight.csv; or: just gen-figure-eight
 cargo tarpaulin --workspace -o html             # or: just cover  (writes tarpaulin-report.html)
 cargo fmt --all
-cargo clippy --workspace --all-targets
+cargo clippy --workspace --all-targets --all-features -- -D warnings  # or: just lint (adds rustdoc -D warnings)
 just embedded                                   # no_std check: core for thumbv7em-none-eabihf, with and without `testing`, then fw-build
 just fw-build                                   # ARK FPV firmware release build (fw-size: cargo size; fw-flash: DFU)
 ```
@@ -210,16 +210,16 @@ rustdoc), and cover every conformance scenario with `stable_flight::conformance_
 1. Read the relevant trait in core `src/lib.rs` and its existing impls before adding a new one. Hardware-reusable code (control math, mixing, sequencing) goes in the core crate; anything touching an OS, clock, file, or network goes in sitl; anything specific to one simulator goes in its `stable-flight-sitl-<simulator>` backend crate.
 2. Wire new components into a `FlightLoop` + `RealTimeRunner` the way sitl-realflight `examples/copter-manual-realflight.rs` does — that's the canonical reference.
 3. Add tests alongside the code; cover the boundary/error case, not just the happy path.
-4. `cargo fmt --all && cargo clippy --workspace --all-targets && cargo test --workspace --all-features` before sending a PR.
+4. `cargo fmt --all && just lint && cargo test --workspace --all-features` before sending a PR.
 5. If you change trait surface, module or crate layout, or runnable examples, update the owning docs (see Commits & PRs) in the same PR.
-6. To compare against `main` (test counts, clippy output), use a throwaway worktree — `git worktree add <dir> main` with its own `CARGO_TARGET_DIR` — not a `git stash` round-trip; stashing staged renames plus untracked files can fail to restore.
+6. To compare against `main` (e.g. test counts), use a throwaway worktree — `git worktree add <dir> main` with its own `CARGO_TARGET_DIR` — not a `git stash` round-trip; stashing staged renames plus untracked files can fail to restore.
 7. Pass PR bodies to `gh pr create`/`edit` with `--body-file`; inline heredocs inside `$(…)` break on apostrophes.
 
 ## Pre-PR checklist
 
 - [ ] Builds clean (`cargo build --workspace`) and tests pass (`cargo test --workspace --all-features`).
 - [ ] Core still builds `no_std` and the firmware still links (`just embedded`).
-- [ ] `cargo fmt --all` clean; `cargo clippy --workspace --all-targets` adds no new warnings. The tree carries pre-existing warnings (deprecated `let_assert`, unused variables in controllers/tests), so diff against `main` rather than expecting zero.
+- [ ] `cargo fmt --all` clean; `just lint` (clippy + rustdoc, `-D warnings`) passes — CI fails on any warning.
 - [ ] New fallible APIs return `Result` with `thiserror` types; no new panics in library code.
 - [ ] No `.unwrap()` or `.expect()` introduced under `src/` (examples/tests OK).
 - [ ] New PID/quaternion/transform logic is unit-tested with table cases.

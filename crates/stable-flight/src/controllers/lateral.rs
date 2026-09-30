@@ -40,8 +40,6 @@ pub struct LateralController {
     config: LateralControllerConfig,
     integrated_error: Vec2<f32>, // Accumulated error (roll, pitch)
     max_integral: f32,
-    previous_error: Vec2<f32>, // Previous error for derivative calculation
-    max_rate: Vec2<f32>,       // Max angular rates in rad/s (roll, pitch)
 }
 
 impl Default for LateralController {
@@ -71,8 +69,6 @@ impl LateralController {
             config: config.clone(),
             integrated_error: vec2(0.0, 0.0),
             max_integral: config.max_integral,
-            previous_error: vec2(0.0, 0.0),
-            max_rate: config.max_rate,
         }
     }
 
@@ -110,14 +106,11 @@ impl LateralController {
         if !(error.x.is_finite() && error.y.is_finite()) {
             return Vec2::default();
         }
-        let error_derivative = (error - self.previous_error) / dt;
 
         self.integrated_error =
             (self.integrated_error + dt * error).clamp(-self.max_integral, self.max_integral);
         let accel_cmd =
             gains.p * error + gains.i * self.integrated_error + gains.d * (-estimated_velocity);
-
-        self.previous_error = error;
 
         // Convert acceleration to roll/pitch angles (simplified)
         let roll_cmd = accel_cmd.y / G;

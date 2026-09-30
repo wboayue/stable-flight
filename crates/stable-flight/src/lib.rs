@@ -470,8 +470,8 @@ impl ControlOutput {
 /// # Frame contract
 ///
 /// This table is the reference for how every [`StateEstimator`] reports state; a backend
-/// converts from its native frames at its boundary, and
-/// [`testing::conformance`](crate::testing::conformance) (`testing` feature) checks it.
+/// converts from its native frames at its boundary, and `testing::conformance` (`testing`
+/// feature) checks it.
 ///
 /// Two frames are involved. Attitude follows aerospace convention: the NED world frame
 /// (`x` north, `y` east, `z` down) and the FRD body frame (`x` forward, `y` right, `z` down).
