@@ -19,6 +19,12 @@ The repository is a Cargo workspace:
 | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | RealFlight backend: `RealFlightVehicle`, tuned `airframes`, and the RealFlight examples |
 | [`stable-flight-tools`](crates/stable-flight-tools) | Developer binaries (unpublished): `plot_flight` and `generate_figure_eight` |
 
+Board firmware lives outside the workspace, one nested workspace per board:
+
+| Board | Firmware | Status |
+|---|---|---|
+| [ARK FPV](https://arkelectron.com/product/ark-fpv/) (STM32H743) | [`firmware/ark-fpv`](firmware/ark-fpv) | Stub: runs `FlightLoop` at 250 Hz on RTIC 2; no sensors or motors yet |
+
 ## Supported Simulators
 
 Each simulator backend is its own crate, so a backend's dependencies never reach the others.
@@ -99,7 +105,7 @@ Each example wires the same six-component pipeline. The [`stable-flight` README]
 
 ## Conclusion
 
-This project provides a solid foundation, but there is still work ahead to make it fly on real hardware. Specifically, the appropriate architecture needs to be selected for running the flight stabilizer on an embedded device. I initially plan to target the Matek Wing H753. The [RTIC](https://rtic.rs/2/book/en/) and [Embassy](https://embassy.dev/) frameworks have been explored and both look promising. Additionally, until now, state data has come directly from the simulator. On real hardware, noisy sensor data needs to be  read and filtered to generate reliable state estimates. I'm excited to tackle these next steps and get a drone airborne with stable flight.
+This project provides a solid foundation, but there is still work ahead to make it fly on real hardware. The first board is the ARK FPV (STM32H743) running [RTIC 2](https://rtic.rs/2/book/en/); its [firmware](firmware/ark-fpv) already runs the flight loop on target, with placeholder sensing and actuation. Until now, state data has come directly from the simulator. On real hardware, noisy sensor data needs to be read and filtered to generate reliable state estimates, and motor output, arming, and failsafes need to land ([#88](https://github.com/wboayue/stable-flight/issues/88)). I'm excited to tackle these next steps and get a drone airborne with stable flight.
 
 ## Getting Involved
 

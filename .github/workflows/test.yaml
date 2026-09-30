@@ -63,8 +63,21 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
       with:
         targets: thumbv7em-none-eabihf
+        components: llvm-tools, rustfmt, clippy
+
+    - uses: taiki-e/install-action@cargo-binutils
 
     - name: build core (thumbv7em-none-eabihf)
       run: |
         cargo build -p stable-flight --target thumbv7em-none-eabihf
         cargo build -p stable-flight --features testing --target thumbv7em-none-eabihf
+
+    # The firmware is a nested workspace; run from its dir so its .cargo/config.toml (target,
+    # linker script) applies. A core change that breaks the link or grows flash shows here.
+    - name: firmware (ARK FPV)
+      working-directory: firmware/ark-fpv
+      run: |
+        cargo fmt --check
+        cargo clippy --release -- -D warnings
+        cargo build --release
+        cargo size --release

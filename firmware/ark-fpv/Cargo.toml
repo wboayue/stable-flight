@@ -1,0 +1,41 @@
+[package]
+name = "ark-fpv"
+version = "0.1.0"
+edition = "2024"
+authors = ["Wil Boayue <wil@wsbsolutions.com>"]
+license = "MIT"
+description = "Stable Flight firmware for the ARK FPV (STM32H743) flight controller"
+repository = "https://github.com/wboayue/stable-flight"
+# Board firmware binary, not a library.
+publish = false
+
+# Nested workspace: own target, profiles, and lockfile, independent of the host workspace
+# at the repo root (which excludes `firmware/`).
+[workspace]
+
+[dependencies]
+stable-flight = { path = "../../crates/stable-flight" }
+
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+panic-halt = "0.2"
+
+rtic = { version = "2.2", features = ["thumbv7-backend"] }
+rtic-monotonics = { version = "2.0", features = ["cortex-m-systick"] }
+
+stm32h7xx-hal = { version = "0.16", features = ["stm32h743v", "rt"] }
+
+# Size-tuned: see #87 for the flash measurements behind these settings.
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = true # symbols only; not flashed
+
+[profile.dev]
+panic = "abort"
+
+# Dependencies unoptimized overflow flash quickly; keep them small even in debug builds.
+[profile.dev.package."*"]
+opt-level = "s"
