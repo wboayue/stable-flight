@@ -314,3 +314,101 @@ fn distant_waypoint_tilts_toward_target_instead_of_panicking() {
         }
     }
 }
+
+/// Regression: in attitude mode the heading-hold target grew by `yaw * 0.0001` every tick
+/// without wrapping, so ~63k ticks of full yaw stick (≈4 min at 250 Hz) pushed it past 2π
+/// and the yaw controller's range `assert!` panicked the flight loop.
+#[test]
+fn sustained_yaw_input_keeps_heading_target_wrapped() {
+    // (yaw stick, ticks) — enough ticks to pass ±2π several times over if unwrapped
+    let cases = [(1.0, 200_000), (-1.0, 200_000)];
+    for (yaw, ticks) in cases {
+        let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+        let state = VehicleState::default();
+        stabilizer.prime(&state);
+        let command = Command::Attitude(AttitudeCommand {
+            throttle: 0.5,
+            yaw,
+            arm: true,
+            ..Default::default()
+        });
+
+        for _ in 0..ticks {
+            let output = stabilizer.stabilize(0.004, &command, &state);
+            assert!(output.moments.z.is_finite());
+        }
+
+        assert!(
+            (-PI..PI).contains(&stabilizer.heading),
+            "yaw {yaw}: heading target {} escaped [-π, π)",
+            stabilizer.heading
+        );
+    }
+}
+
+/// Headings from an estimator can be in [0, 2π) (RealFlight's azimuth); the wrapped target
+/// must behave exactly like its [-π, π) equivalent, with no jump on the first tick.
+#[test]
+fn heading_primed_above_pi_behaves_like_its_wrapped_equivalent() {
+    let command = Command::Attitude(AttitudeCommand {
+        throttle: 0.5,
+        yaw: 1.0,
+        arm: true,
+        ..Default::default()
+    });
+    // (primed heading, equivalent heading in [-π, π))
+    let cases = [
+        (5.0, 5.0 - 2.0 * PI),
+        (2.0 * PI - 1e-3, -1e-3),
+        (3.5, 3.5 - 2.0 * PI),
+    ];
+    for (heading, equivalent) in cases {
+        let run = |primed: f32| {
+            let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+            let state = VehicleState {
+                heading: primed,
+                ..Default::default()
+            };
+            stabilizer.prime(&state);
+            (0..10)
+                .map(|_| stabilizer.stabilize(0.004, &command, &state).moments.z)
+                .collect::<Vec<f32>>()
+        };
+        // The same physical heading differs in the last float bit between the two
+        // representations (ulp near 5.0 ≈ 4.8e-7); the yaw D term divides that by dt, so allow
+        // ~1e-3 of the ±1 moment range. A real wrap bug would be off by ~2π of error.
+        for (a, b) in run(heading).into_iter().zip(run(equivalent)) {
+            assert!(
+                (a - b).abs() < 1e-3,
+                "heading {heading}: yaw moment {a} vs {b}"
+            );
+        }
+    }
+}
+
+/// A NaN heading at priming must not disable heading hold for good.
+#[test]
+fn nan_primed_heading_relatches_from_a_valid_estimate() {
+    let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+    stabilizer.prime(&VehicleState {
+        heading: f32::NAN,
+        ..Default::default()
+    });
+    let command = Command::Attitude(AttitudeCommand {
+        throttle: 0.5,
+        arm: true,
+        ..Default::default()
+    });
+    let valid = VehicleState {
+        heading: 5.0,
+        ..Default::default()
+    };
+
+    stabilizer.stabilize(0.004, &command, &valid);
+
+    assert!(
+        (stabilizer.heading - (5.0 - 2.0 * PI)).abs() < 1e-5,
+        "heading target {} did not re-latch",
+        stabilizer.heading
+    );
+}
