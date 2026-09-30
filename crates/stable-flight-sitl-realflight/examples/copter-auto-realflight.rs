@@ -58,7 +58,7 @@ fn main() {
     let guidance = CopterGuidance::new(airframe.guidance);
 
     // Default gains, not `airframe.stabilizer`: this example has only flown the defaults.
-    // One tuned set for both examples comes with the RealFlight frame fix.
+    // One tuned set for both examples comes with the RealFlight frame fix (#62).
     let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
 
     let mixer = airframe.mixer;

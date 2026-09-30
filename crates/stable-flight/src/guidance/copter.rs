@@ -128,7 +128,7 @@ impl CopterGuidance {
             lateral_controller: LateralController::with_config(&LateralControllerConfig {
                 gains: config.lateral_gains,
                 max_integral: 100.0,
-                max_rate: vec2(2.0, 2.0), // unused by the lateral controller today (backlog)
+                max_rate: vec2(2.0, 2.0), // unused by the lateral controller today (#71)
             }),
 
             heading: 0.0,

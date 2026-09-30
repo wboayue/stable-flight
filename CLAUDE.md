@@ -30,13 +30,12 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Paths below are prefixed with their crate (`core:` = `crates/stable-flight/`, `sitl:` =
   `crates/stable-flight-sitl/`, `sitl-realflight:` = `crates/stable-flight-sitl-realflight/`)
   where it matters.
-- Plans live in `plans/` (tracked). `plans/workspace-migration.md` tracks the split into
-  core / sitl / backend crates; `plans/architecture-refactor.md` tracks trait-surface cleanups
-  that land first (its PR 5 is superseded by the migration). Read both before touching trait
-  surface or crate layout. Each plan has a Status table: mark a row 🔍 #n when its PR opens and
-  ✅ #n when it merges, in that PR or the next one.
-  Every follow-up a review raises goes in the **Follow-up backlog** in
-  `plans/workspace-migration.md`; its "Maintaining this plan" section has the rules.
+- Outstanding work lives in GitHub issues. Every follow-up a review or investigation raises
+  that isn't fixed in the same PR gets an issue (with its source PR); a pre-existing bug found
+  while verifying gets a `bug` issue with repro steps. Labels: `blocks-publish` (must land
+  before publishing core; tracked in #93), `needs-flight` (needs a simulator/transmitter
+  check), `later` (waits for a real need). The PR that completes one says `Closes #n`. The
+  finished migration and refactor plans are in git history (`plans/`, removed after #61).
 - The repo was renamed `stable-flight-sitl` → `stable-flight`; the crate keeps the
   `stable-flight-sitl` name. Old GitHub URLs redirect.
 
@@ -178,7 +177,7 @@ Each backend crate's README owns its setup and usage (RealFlight:
 [`crates/stable-flight-sitl-realflight/README.md`](crates/stable-flight-sitl-realflight/README.md)).
 A backend must meet the frame contract (`VehicleState` rustdoc) and timing contract (`Vehicle`
 rustdoc), and cover every conformance scenario with `stable_flight::conformance_tests!` (core
-`testing` feature). Known gaps stay `#[ignore]`d with a reason and a backlog row.
+`testing` feature). Known gaps stay `#[ignore]`d with a reason that links a GitHub issue.
 
 ## Commits & PRs
 
