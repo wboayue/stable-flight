@@ -16,6 +16,7 @@
 //! and, later, on flight hardware. See the
 //! [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md).
 
+pub mod commanders;
 pub mod flight_loop;
 pub mod mixers;
 pub mod stabilizers;
@@ -213,7 +214,7 @@ pub enum Command {
 /// - `yaw`: `0.0`
 /// - `arm`: `false`
 /// - `mode`: `0`
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct AttitudeCommand {
     /// Controls the engine power output, ranging from `0.0` (idle) to `1.0` (maximum).
     pub throttle: f32,
@@ -238,19 +239,6 @@ pub struct AttitudeCommand {
     /// The specific meaning of each value depends on the flight system implementation
     /// (e.g., `0` might be manual mode, `1` stabilized, `2` autonomous).
     pub mode: u8,
-}
-
-impl Default for AttitudeCommand {
-    fn default() -> Self {
-        AttitudeCommand {
-            throttle: 0.0,
-            roll: 0.0,
-            pitch: 0.0,
-            yaw: 0.0,
-            arm: false,
-            mode: 0,
-        }
-    }
 }
 
 /// Represents direct manual control of an aircraft's rotational rates.
@@ -303,7 +291,7 @@ impl Default for AttitudeCommand {
 /// - `yaw_rate`: `0.0`
 /// - `arm`: `false`
 /// - `mode`: `0`
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct RateCommand {
     /// Controls the engine power output, ranging from `0.0` (idle) to `1.0` (maximum).
     pub throttle: f32,
@@ -328,19 +316,6 @@ pub struct RateCommand {
     /// The specific meaning of each value depends on the flight system implementation
     /// (e.g., `0` might be manual mode, `1` stabilized, `2` autonomous).
     pub mode: u8,
-}
-
-impl Default for RateCommand {
-    fn default() -> Self {
-        RateCommand {
-            throttle: 0.0,
-            roll_rate: 0.0,
-            pitch_rate: 0.0,
-            yaw_rate: 0.0,
-            arm: false,
-            mode: 0,
-        }
-    }
 }
 
 /// Represents a navigational waypoint for autonomous flight.

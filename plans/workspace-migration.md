@@ -15,8 +15,8 @@ otherwise do it in the next PR.
 | Phase 0 — prep | ✅ (step 3, the optional local dir rename, not done) |
 | PR 1 — Convert to workspace | ✅ #43 |
 | architecture-refactor PRs 1–4, 6 (see that plan) | ✅ #44, #50, #46, #47, #48 |
-| PR 2a — core crate + `FlightLoop` | 🔍 #52 |
-| PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | ⬜ |
+| PR 2a — core crate + `FlightLoop` | ✅ #52 |
+| PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | 🔍 #53 |
 | PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | ⬜ |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
@@ -199,8 +199,8 @@ waypoints (pure math), so waypoint flight couldn't run on firmware.
 **Core `testing` feature** (off by default): `NullVehicle`, `ConstantCommander`,
 `RecordingTelemetry` (fixed-capacity, no alloc). Core tests use it via `cfg(test)`. Sitl and
 backend crates enable it in `[dev-dependencies]`. Delete the ad-hoc mocks this replaces
-(e.g. in `commanders/tests.rs` and `orchestrator/tests.rs`, whose `MockVehicle` is identical
-to `NullVehicle` since #47).
+(since 2b: the `Mock*` types in sitl `runner/tests.rs`; `commanders/tests.rs` and
+`orchestrator/tests.rs` were deleted in 2b).
 
 Other points:
 - Sitl depends on `stable-flight = { path = "../stable-flight", version = "0.1.0" }` and updates
@@ -256,6 +256,68 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
     - PR 4: `TailSitterMixer` logs `info!` per tick.
   - Skipped a debug check for `step()` before `prime()`: it's documented, and a
     side-effect-free `new()` matters more.
+
+2b as implemented:
+- `FlightOrchestrator` and the `orchestrator` module are removed (**Breaking**) and
+  replaced by sitl `ShutdownSignal` (`shutdown.rs`) and `RealTimeRunner` (`runner.rs`),
+  re-exported at the sitl root.
+- `ShutdownSignal`:
+  - `new()` is unconnected; `install()` wires SIGINT and returns `io::Result`. `trigger()`
+    and `is_set()` are the rest of the API, and clones share the flag.
+  - Unix uses `signal_hook::flag::register`, with no thread.
+  - Windows keeps `SetConsoleCtrlHandler` (Ctrl-C and Ctrl-Break), since signal-hook's
+    Windows docs say not every Ctrl-C becomes SIGINT. A `OnceLock` replaces the
+    `static mut` pointer, and every install shares one process-wide flag.
+  - The Windows path was compile- and clippy-checked with
+    `--target x86_64-pc-windows-msvc`, but not run.
+- `RealTimeRunner`:
+  - `new(hz)` returns `Result<_, InvalidFrequency>` instead of asserting in `run`
+    (CLAUDE.md prefers `Result` for new fallible APIs), and also rejects NaN/∞.
+  - `run(&mut FlightLoop, &ShutdownSignal)` primes, checks the signal before each tick,
+    sleeps to accumulated deadlines, and returns `RunStats { ticks, elapsed }`.
+  - It still primes inside `run` so callers can't forget.
+- Core `commanders::WaypointFollower` plus `EmptyWaypoints` and `DEFAULT_ACCEPTANCE_RADIUS`.
+  `ScriptCommander` is now CSV loading plus a `WaypointFollower<Vec<_>>`, with the same API.
+  Following tests moved to core (table-style, including array, `&'static`, and `Vec`
+  storage); sitl keeps parse/IO tests and one delegation test.
+- Deleted sitl `commanders/tests.rs`: 5 of its 7 tests only exercised a mock defined in the
+  test file. The other 2 also checked the `AttitudeCommand`/`WaypointCommand` defaults; after
+  review, `AttitudeCommand` and `RateCommand` derive `Default` (same all-zero values), so no
+  hand-written default is left untested.
+- Runner tests cover invalid frequencies, the period, an already-set signal (primes, zero
+  ticks), and stopping on a trigger with the nominal `dt`. The orchestrator's `MockVehicle`
+  duplicate went with the orchestrator tests; `NullVehicle` still moves to core `testing`
+  in 2c.
+- Verified Unix Ctrl-C end to end with a throwaway example: SIGINT → clean exit and log
+  lines, at 249.9 Hz for a 250 Hz target.
+- After review:
+  - `RealTimeRunner::new` uses `Duration::try_from_secs_f64` and also rejects rates whose
+    period overflows (1e-30 Hz used to panic) or rounds to zero (1e10 Hz used to spin with
+    `dt = 0`).
+  - A second Ctrl-C terminates the process: `register_conditional_shutdown` on Unix, and
+    falling through to the default handler on Windows.
+  - Windows install failures cache and report the original OS error.
+  - `is_set`/`trigger` use Acquire/Release.
+  - `ticks.is_multiple_of`.
+  - `ScriptCommander::follower()` accessor and `From<EmptyWaypoints> for ScriptError`.
+  - Follower tests derive distances from `DEFAULT_ACCEPTANCE_RADIUS`.
+  - Docs de-duplicated: architecture.md owns the timing rules, the sitl README owns the run
+    snippet, and the core README documents `WaypointFollower`.
+  - Review follow-ups:
+    - Own PR or with the lockstep runner: resync the schedule after a stall instead of
+      replaying missed ticks back-to-back, and count overruns in `RunStats`. This isn't a
+      regression; the orchestrator did the same.
+    - Later: a `Runner` trait once a second runner exists; a primed-state guard if more
+      runners need priming; runtime path updates for `WaypointFollower` (`AsMut` or
+      `set_waypoints`) once a mission uploader exists.
+    - 2c: replace the new `runner/tests.rs` mocks with the `testing` feature.
+- **Found while verifying (pre-existing, not fixed):** `AttitudeController::control`
+  (`stabilizers/controllers/attitude.rs:118-127`) `assert!`s that desired roll and pitch
+  are in [-1, 1]. In waypoint mode with the vehicle far from the target (e.g. a
+  `NullVehicle` at the origin and `flights/figure_eight.csv`), the lateral controller asks
+  for pitch ≈ -4.6, and the flight loop panics. That contradicts "no panics in the loop".
+  Clamp (or saturate the lateral output) instead of asserting; do it in its own PR with
+  table tests, before hardware.
 
 ## PR 3 — Split RealFlight into its own backend crate
 
