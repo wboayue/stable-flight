@@ -16,7 +16,7 @@ repository.workspace = true
 stable-flight = { path = "../stable-flight", version = "0.1.0" }
 realflight-bridge = { version = "1.1.0", features = ["uom"] }
 # `VehicleState` and the controller configs are built from robomath vectors.
-robomath = { workspace = true, features = ["std"] }
+robomath.workspace = true
 log.workspace = true
 
 [dev-dependencies]

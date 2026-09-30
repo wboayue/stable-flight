@@ -14,7 +14,7 @@ The repository is a Cargo workspace:
 
 | Crate | Purpose |
 |---|---|
-| [`stable-flight`](crates/stable-flight) | Flight-control core: pipeline traits, cascaded-PID stabilizers, mixers, and `FlightLoop` (one control tick). No simulator or I/O dependencies |
+| [`stable-flight`](crates/stable-flight) | Flight-control core: pipeline traits, cascaded-PID stabilizers, mixers, and `FlightLoop` (one control tick). `no_std`, with no simulator or I/O dependencies |
 | [`stable-flight-sitl`](crates/stable-flight-sitl) | Simulator-independent software-in-the-loop harness: commanders, telemetry, the real-time `RealTimeRunner` + `ShutdownSignal`, and the backend conformance kit |
 | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | RealFlight backend: `RealFlightVehicle`, tuned `airframes`, and the RealFlight examples |
 | [`stable-flight-tools`](crates/stable-flight-tools) | Developer binaries (unpublished): `plot_flight` and `generate_figure_eight` |

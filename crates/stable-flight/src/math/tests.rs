@@ -33,6 +33,8 @@ fn wrap_angle_maps_into_minus_pi_to_pi() {
     let cases = [
         (0.0, 0.0),
         (PI / 2.0, PI / 2.0),
+        (-0.0, 0.0),
+        // Half-open: +π maps to -π, and -π stays.
         (PI, -PI),
         (-PI, -PI),
         (3.0 * PI / 2.0, -PI / 2.0),
@@ -49,4 +51,5 @@ fn wrap_angle_maps_into_minus_pi_to_pi() {
     }
     assert!(wrap_angle(f32::NAN).is_nan());
     assert!(wrap_angle(f32::INFINITY).is_nan());
+    assert!(wrap_angle(f32::NEG_INFINITY).is_nan());
 }

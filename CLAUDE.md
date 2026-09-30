@@ -10,9 +10,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Crates:
   - `crates/stable-flight` — the flight-control core: pipeline traits and data types
     (`lib.rs`), `FlightLoop` (one tick), `stabilizers`, `mixers`. No simulator, I/O, clock, or
-    thread dependencies, and it is `no_std` (`#![cfg_attr(not(test), no_std)]`) — keep it that
-    way. Use `core::`, not `std::`; `f32` methods `core` lacks (`powf`, `sin`, `sqrt`, …) go
-    through `libm`. CI builds it for `thumbv7em-none-eabihf`, with and without `testing`.
+    thread dependencies, and it is `no_std` — keep it that way (see Coding style).
   - `crates/stable-flight-sitl` — the simulator-independent SITL harness: `commanders`,
     `telemetry`, `runner` (`RealTimeRunner`, wall-clock pacing of a `FlightLoop`), `shutdown`
     (`ShutdownSignal`). Depends on the core. Non-simulator examples live in `crates/stable-flight-sitl/examples/*.rs`.
@@ -27,7 +25,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
   across the workspace (add `-p <crate>` to be explicit), and `flights/*.csv` paths are
   relative to the root.
 - Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `flight_loop`, `mixers`, `stabilizers`, `testing` (feature: doubles + `conformance`) (traits/types at the crate root); `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
-- Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
+- Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `libm` (`no_std` float math, core), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
 - Untracked generated artifacts: `target/`, `Cargo.lock`, `tarpaulin-report.html`.
 - Paths below are prefixed with their crate (`core:` = `crates/stable-flight/`, `sitl:` =
   `crates/stable-flight-sitl/`, `sitl-realflight:` = `crates/stable-flight-sitl-realflight/`)
@@ -56,7 +54,7 @@ cargo run --bin generate_figure_eight           # (re)write flights/figure_eight
 cargo tarpaulin --workspace -o html             # or: just cover  (writes tarpaulin-report.html)
 cargo fmt --all
 cargo clippy --workspace --all-targets
-cargo build -p stable-flight --target thumbv7em-none-eabihf  # no_std check (also with --features testing); or: just embedded
+just embedded                                   # no_std check: core for thumbv7em-none-eabihf, with and without `testing`
 ```
 
 The flight pipeline has no CLI and there is no `cargo bench` target — don't suggest
@@ -148,6 +146,7 @@ self.telemetry.publish(&TelemetryRecord { dt, command: &command, state: &self.st
 - `cargo fmt --all` (4-space indent, trailing commas where idiomatic).
 - snake_case files/modules, PascalCase types, SCREAMING_SNAKE_CASE constants. Pull magic numbers into named constants when they appear more than once or carry units.
 - Prefer early returns and small helpers; keep flight-math functions readable, not arbitrarily short. If a PID step is clearest as one 30-line function, leave it.
+- Core is `no_std`: use `core::`, not `std::` (tests may use std). `f32` methods `core` lacks (`powf`, `sin`, `sqrt`, …) go through `libm`.
 - Use `Result<T, E>` with `thiserror` enums for new fallible APIs. Avoid panics in library code outside of clearly documented preconditions (e.g. `run`'s frequency assert).
 - **No range or finiteness `assert!`s on per-tick inputs.** Saturate, treat NaN as neutral, and wrap angles, per `architecture.md#input-policy-no-panics-in-the-tick`, using the core's `math` helpers. Asserts are only for construction-time config and `dt > 0`.
 - **No `.unwrap()` or `.expect()` in `src/`.** They turn recoverable errors into panics that crash the flight loop. Propagate with `?`, return a typed error, or — only when a value is provably non-`None` from local context — use `unwrap_or_else(|| unreachable!("..."))` with a comment explaining the invariant. `.expect()` is fine in `examples/` and `tests/` where a crash is the acceptable failure mode.
@@ -208,7 +207,7 @@ rustdoc), and cover every conformance scenario with `stable_flight::conformance_
 ## Pre-PR checklist
 
 - [ ] Builds clean (`cargo build --workspace`) and tests pass (`cargo test --workspace --all-features`).
-- [ ] Core still builds `no_std` (`cargo build -p stable-flight --target thumbv7em-none-eabihf`, with and without `--features testing`).
+- [ ] Core still builds `no_std` (`just embedded`).
 - [ ] `cargo fmt --all` clean; `cargo clippy --workspace --all-targets` adds no new warnings. The tree carries pre-existing warnings (deprecated `let_assert`, unused variables in controllers/tests), so diff against `main` rather than expecting zero.
 - [ ] New fallible APIs return `Result` with `thiserror` types; no new panics in library code.
 - [ ] No `.unwrap()` or `.expect()` introduced under `src/` (examples/tests OK).
