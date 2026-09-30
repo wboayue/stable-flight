@@ -60,22 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (normalized roll/pitch, absolute heading, linear thrust) or `Rate(RateSetpoint)`.
   `TelemetryRecord` and `RecordedTick` gain the tick's `setpoint`.
 - `CopterGuidanceConfig::navigation_period` (default `DEFAULT_NAVIGATION_PERIOD`,
-  20 ms): the waypoint loops run once per period, rounded to the nearest tick, over
-  the elapsed time, and hold their setpoint in between. `0.0` runs them every tick.
-  Pilot commands are still interpreted every tick. `CopterGuidance::new` panics on a
-  negative or non-finite period.
+  20 ms): how often the waypoint lateral loop runs; `0.0` runs it every tick.
+  `CopterGuidance::new` panics on a negative or non-finite period.
 - The crate is `no_std` (including the `testing` feature), so it builds for
   bare-metal targets such as `thumbv7em-none-eabihf`. It depends on `uom` and
   `robomath` without their `std` features; enable them yourself if you need them.
 
 ### Changed
-
-- Waypoint flight runs the altitude and lateral loops at 50 Hz instead of every tick
-  (250 Hz in the RealFlight examples). Set `navigation_period: 0.0` for the old
-  behaviour.
-- The attitude-mode heading-hold target slews at 0.025 rad/s at full yaw stick,
-  scaled by `dt`. It moved a fixed 0.0001 rad per tick, so its rate depended on the
-  loop rate; the two are the same at 250 Hz.
 
 - **Breaking:** `Stabilizer` is the inner loop only: `stabilize` takes a
   `&Setpoint` instead of a `&Command`. `CopterStabilizer` no longer has the
@@ -84,16 +75,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `lateral_gains` (now `CopterGuidanceConfig`). Wire `CopterGuidance` into
   `FlightLoop::new` between the vehicle and the stabilizer. Flight behaviour is
   unchanged: the guidance + stabilizer pair matches the old stabilizer bit for bit.
-- `CopterStabilizer`'s thrust curve saturates its input (NaN → 0), so it meets the
-  input policy itself instead of relying on callers. No change for the built-in
-  flight modes, which already saturated; only a custom `Guidance` sending
-  out-of-range thrust sees it.
-- `Guidance::prime` and `Stabilizer::prime` default to doing nothing.
 - **Breaking:** `CopterStabilizer`'s controller and `max_rates` fields are no
   longer public, and `CopterStabilizer::config` is gone (it was a stale copy).
 - **Breaking:** the PID controllers and `Gains` moved from
   `stabilizers::controllers`/`stabilizers` to `controllers`, since guidance uses
   them too (`use stable_flight::controllers::{Gains, AttitudeController, …}`).
+- Waypoint flight runs the lateral position loop at 50 Hz instead of every tick
+  (250 Hz in the RealFlight examples), holding its roll/pitch in between; the
+  altitude loop still runs every tick. Set `navigation_period: 0.0` for the old
+  behaviour.
+- The attitude-mode heading-hold target slews at 0.025 rad/s at full yaw stick,
+  scaled by `dt`. It moved a fixed 0.0001 rad per tick, so its rate depended on the
+  loop rate; the two are the same at 250 Hz.
+- `CopterStabilizer`'s thrust curve saturates its input (NaN → 0), so it meets the
+  input policy itself instead of relying on callers. No change for the built-in
+  flight modes, which already saturated; only a custom `Guidance` sending
+  out-of-range thrust sees it.
+- `Guidance::prime` and `Stabilizer::prime` default to doing nothing.
 
 ### Fixed
 

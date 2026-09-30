@@ -374,7 +374,6 @@ change, then add the divider in a follow-up where the diff is easy to read.
     deferred: the divider inside `CopterGuidance`, and `From<&RateCommand>` for
     `RateSetpoint`.
 
-
 ---
 
 ## PR 7.5 — Guidance rate divider
@@ -399,7 +398,22 @@ Gate on flying `copter-auto-realflight` (figure-eight) before merge.
 
 **Decision.** Default 50 Hz rather than opt-in, per the plan's target; `navigation_period:
 0.0` restores the old behaviour.
----
+
+**As implemented (#61).** Closes the backlog rows for the divider and the `dt`-based heading
+slew. After review:
+- Only the lateral loop (→ roll/pitch) is divided. The altitude loop runs every tick: its
+  tilt compensation (thrust / cos tilt) needs the current attitude, and holding thrust for
+  20 ms would lag banked turns.
+- The timing lives in a crate-private `guidance::rate_divider::RateDivider` (`due(dt)` →
+  step to integrate, `ran()`, `reset()`), table-tested on its own. It covers rounding to the
+  nearest tick at 5.45 and 5.55 ticks, f32 accumulation, a period below `dt`, and jittered `dt`.
+- A non-finite target or estimate on a run tick gives level for that tick only, and the next
+  tick retries over the combined time. The neutral output is never held for a period.
+- `prime` drops the held tilt, like leaving waypoint mode. A centred yaw stick adds no slew,
+  so a pathological `dt = ∞` can't make it NaN.
+- Guidance tests compare against standalone controllers stepped by hand, not against the
+  code under test. Mutation-checked.
+- Flight: pending (fill in model, mode, and result once flown).
 
 ## Out of scope (for now)
 
