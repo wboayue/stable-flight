@@ -57,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   controller's `[-2π, 2π]` `assert!` fired; it is now wrapped to `[-π, π)` each
   tick. `YawController::control` accepts any finite target (it already works on
   the wrapped error), and a non-finite target or estimate returns a zero rate
-  without corrupting the controller state.
+  without corrupting the controller state or kicking the derivative afterwards.
+  A heading-hold target that is NaN (e.g. primed from a NaN estimate) re-latches
+  from the next valid estimate instead of disabling heading hold.
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight

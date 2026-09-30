@@ -257,13 +257,16 @@ integral_term = (integral_term + dt * error).clamp(-max_integral, max_integral);
 ```
 
 ### Angle Wrapping (Yaw Controller)
-Yaw errors are normalized to [-π, π] for shortest-path control:
+Yaw errors are normalized to [-π, π) for shortest-path control, using the shared
+`stabilizers::wrap_angle` (`rem_euclid`, so negative angles wrap correctly; `%` would not):
 
 ```rust
+fn wrap_angle(angle: f32) -> f32 {
+    (angle + PI).rem_euclid(2.0 * PI) - PI
+}
+
 fn angle_diff(desired: f32, current: f32) -> f32 {
-    let mut error = desired - current;
-    error = ((error + PI) % (2.0 * PI)) - PI;
-    error
+    wrap_angle(desired - current)
 }
 ```
 

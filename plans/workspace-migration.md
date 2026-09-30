@@ -346,6 +346,25 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
         - The 0.0001 step is named `HEADING_STEP_PER_TICK`.
         - A regression test runs 200k ticks of full yaw both ways; on `main` it fails with
           the original panic.
+        - After review:
+          - `wrap_angle` moved to `stabilizers/mod.rs` next to `saturate_unit`, so there's a
+            single place for PR 4's `libm` swap and a neutral import for PR 7.
+          - A NaN heading target re-latches from a valid estimate; before, heading hold was
+            silently lost.
+          - The yaw controller clears its previous error on a non-finite tick (no derivative
+            kick).
+          - Tests cover a heading primed above π matching its wrapped equivalent, the NaN
+            re-latch, and the derivative kick; the new tests fail when their fix lines are
+            removed.
+          - The stale `%` `angle_diff` in the controllers README was corrected, and the
+            `angle_diff` tests merged into a table.
+        - Review follow-ups:
+          - Own PR: attitude returns zero rates on non-finite input (like yaw), and document
+            the NaN contract once; document the `VehicleState::heading` range.
+          - Own PR or refactor PR 7: make the heading slew rate depend on `dt`, not
+            `HEADING_STEP_PER_TICK`.
+          - Refactor PR 7: yaw state carries across mode switches, `self.heading` goes stale
+            in waypoint mode, and guidance needs an absolute-heading path.
       - `process_attitude_command` asserts its inputs are in range, and the Spektrum
         commander's `scale_value` is unclamped.
       - `BodyRateController` panics on non-finite estimated rates.

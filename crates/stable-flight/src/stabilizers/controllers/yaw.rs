@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use crate::stabilizers::Gains;
+use crate::stabilizers::{Gains, wrap_angle};
 
 /// Configures the yaw controller with PID gains and operational limits.
 ///
@@ -148,7 +148,9 @@ impl YawController {
         let error = angle_diff(desired_yaw, estimated_yaw); // Use a helper to handle angle wrapping
         if !error.is_finite() {
             // Hold (no yaw rate) rather than letting NaN into the integral and derivative
-            // history, where it would stick; `clamp` passes NaN through.
+            // history, where it would stick; `clamp` passes NaN through. Forget the previous
+            // error too, so the first valid tick after the gap has no derivative kick.
+            self.previous_error = None;
             return 0.0;
         }
         let error_derivative = if let Some(previous_error) = self.previous_error {
@@ -177,11 +179,7 @@ impl YawController {
     }
 }
 
-/// Normalizes the yaw error to the range [-π, π] to handle angle wrapping.
-///
-/// This function ensures the controller follows the shortest angular path by:
-/// 1. Computing the raw angular difference
-/// 2. Normalizing to a [-π, π] range using modulo arithmetic
+/// The shortest-path yaw error from `current_yaw` to `desired_yaw`, in [-π, π).
 ///
 /// # Arguments
 ///
@@ -190,14 +188,9 @@ impl YawController {
 ///
 /// # Returns
 ///
-/// The shortest-path yaw error in radians, in the range [-π, π].
+/// The shortest-path yaw error in radians, in [-π, π) (see [`wrap_angle`]).
 fn angle_diff(desired_yaw: f32, current_yaw: f32) -> f32 {
     wrap_angle(desired_yaw - current_yaw)
-}
-
-/// Wraps an angle in radians to [-π, π). Non-finite input stays non-finite.
-pub(crate) fn wrap_angle(angle: f32) -> f32 {
-    (angle + PI).rem_euclid(2.0 * PI) - PI
 }
 
 #[cfg(test)]
@@ -585,55 +578,28 @@ mod tests {
 
     /// Directly tests the angle_diff helper function with various inputs.
     #[test]
-    fn test_angle_diff_function() {
-        // No wrapping needed
-        assert_relative_eq!(
-            angle_diff(0.5, 0.0),
-            0.5,
-            epsilon = EPSILON,
-            max_relative = 1e-3
-        );
-
-        // Basic wrapping
-        assert_relative_eq!(
-            angle_diff(PI + 0.1, -PI - 0.1),
-            0.2,
-            epsilon = EPSILON,
-            max_relative = 1e-3
-        );
-
-        // Common real-world cases (in degrees, converted to radians)
-        assert_relative_eq!(
-            angle_diff(350.0 * PI / 180.0, 10.0 * PI / 180.0),
-            -20.0 * PI / 180.0,
-            epsilon = EPSILON,
-            max_relative = 1e-3
-        );
-
-        assert_relative_eq!(
-            angle_diff(10.0 * PI / 180.0, 350.0 * PI / 180.0),
-            20.0 * PI / 180.0,
-            epsilon = EPSILON,
-            max_relative = 1e-3
-        );
-
-        // Edge cases
-        assert_relative_eq!(
-            angle_diff(PI, -PI),
-            0.0,
-            epsilon = EPSILON,
-            max_relative = 1e-3
-        );
-
-        assert_relative_eq!(
-            angle_diff(0.0, 2.0 * PI),
-            0.0,
-            epsilon = EPSILON,
-            max_relative = 1e-3
-        );
+    fn angle_diff_is_the_shortest_signed_path() {
+        let deg = PI / 180.0;
+        // (desired, current, expected error)
+        let cases = [
+            (0.5, 0.0, 0.5),                        // no wrapping needed
+            (PI + 0.1, -PI - 0.1, 0.2),             // wraps across ±π
+            (350.0 * deg, 10.0 * deg, -20.0 * deg), // turn left through north
+            (10.0 * deg, 350.0 * deg, 20.0 * deg),  // turn right through north
+            (PI, -PI, 0.0),                         // same heading
+            (0.0, 2.0 * PI, 0.0),                   // same heading, one turn apart
+            (5.0, 5.0 - 2.0 * PI, 0.0),             // [0, 2π) heading vs its [-π, π) form
+        ];
+        for (desired, current, expected) in cases {
+            assert_relative_eq!(
+                angle_diff(desired, current),
+                expected,
+                epsilon = EPSILON,
+                max_relative = 1e-3
+            );
+        }
     }
 
-    /// Tests that input validation checks work as expected.
     #[test]
     fn test_valid_inputs() {
         let mut controller = YawController::new();
@@ -678,6 +644,29 @@ mod tests {
         let after = controller.control(0.01, 1.0, 0.2);
         let fresh = YawController::new().control(0.01, 1.0, 0.2);
         assert_relative_eq!(after, fresh);
+    }
+
+    #[test]
+    fn nan_gap_does_not_cause_a_derivative_kick() {
+        // P+D only, so the only difference a stale previous error could make is the D term.
+        let config = YawControllerConfig {
+            gains: Gains {
+                p: 1.0,
+                i: 0.0,
+                d: 0.5,
+            },
+            max_integral: 1.0,
+            max_rate: 100.0,
+        };
+        let mut controller = YawController::with_config(&config);
+
+        controller.control(0.01, 1.0, 0.2); // error 0.8 becomes the previous error
+        controller.control(0.01, f32::NAN, 0.2); // gap
+        let after_gap = controller.control(0.01, 0.5, 0.2); // error 0.3
+
+        // Without the reset, D would add 0.5 * (0.3 - 0.8) / 0.01 = -25 rad/s.
+        let fresh = YawController::with_config(&config).control(0.01, 0.5, 0.2);
+        assert_relative_eq!(after_gap, fresh);
     }
 
     #[test]

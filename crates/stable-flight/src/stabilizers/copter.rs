@@ -42,8 +42,8 @@ use crate::{
 };
 
 use super::Gains;
-use super::controllers::yaw::wrap_angle;
 use super::controllers::*;
+use super::wrap_angle;
 
 #[cfg(test)]
 mod tests;
@@ -246,7 +246,14 @@ impl CopterStabilizer {
 
         // Wrapped so sustained yaw input can't grow the target without bound; the yaw
         // controller works on the wrapped error either way.
-        self.heading = wrap_angle(self.heading + attitude_command.yaw * HEADING_STEP_PER_TICK);
+        let target = wrap_angle(self.heading + attitude_command.yaw * HEADING_STEP_PER_TICK);
+        if target.is_finite() {
+            self.heading = target;
+        } else if estimated_state.heading.is_finite() {
+            // A NaN target (e.g. primed from a NaN estimate) would otherwise disable heading
+            // hold for good; re-latch from the current estimate once it's valid.
+            self.heading = wrap_angle(estimated_state.heading);
+        }
 
         let desired_yaw_rate =
             self.yaw_controller
