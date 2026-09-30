@@ -54,8 +54,8 @@ mod tests;
 
 /// Runs a [`FlightLoop`] at a fixed wall-clock rate until a shutdown signal arrives.
 ///
-/// Each iteration calls [`FlightLoop::step`] (commander → estimate → stabilize → mix →
-/// actuate → telemetry), then sleeps until the next period. The orchestrator also handles
+/// Each iteration calls [`FlightLoop::step`] (one tick; see its docs for the order), then
+/// sleeps until the next period. The orchestrator also handles
 /// SIGINT (Ctrl+C) to provide a graceful shutdown mechanism.
 pub struct FlightOrchestrator<
     T: Commander,

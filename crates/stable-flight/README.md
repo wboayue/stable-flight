@@ -4,16 +4,7 @@ Flight-control core for [Stable Flight](https://github.com/wboayue/stable-flight
 
 ## Pipeline
 
-Each tick, `FlightLoop::step(dt)` runs:
-
-1. `Commander::next_command` — what the pilot or mission wants (`Command::Attitude`, `Rate`, or `Waypoint`).
-2. `StateEstimator::estimate_state` — where the vehicle is.
-3. `Stabilizer::stabilize` — thrust and body moments (`ControlOutput`) to close the gap.
-4. `Mixer::mix` — motor and surface commands (`ActuatorCommand`).
-5. `Actuator::actuate` — send them to the vehicle.
-6. `TelemetryPublisher::publish` — a `TelemetryRecord` of the tick.
-
-`Vehicle` is `StateEstimator + Actuator`, implemented automatically. `FlightLoop` has no clock: a runner decides when to call `step` (the real-time `FlightOrchestrator` in `stable-flight-sitl` today).
+`FlightLoop::step(dt)` runs one tick through the pipeline traits (`Commander`, `StateEstimator` + `Actuator` = `Vehicle`, `Stabilizer`, `Mixer`, `TelemetryPublisher`); the tick order and what each stage sees are specified in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#flight-stabilization-loop). `FlightLoop` has no clock: a runner decides when to call `step` (the real-time `FlightOrchestrator` in `stable-flight-sitl` today).
 
 ```rust
 let mut flight_loop = FlightLoop::new(commander, vehicle, stabilizer, mixer, telemetry);

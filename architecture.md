@@ -31,7 +31,11 @@ The heart of the system is `FlightLoop` (core). It owns the five components and 
 
 ## Flight Stabilization Loop
 
-Each `FlightLoop::step` (called by the runner at its configured frequency) does the following:
+Each `FlightLoop::step` (called by the runner at its configured frequency) does the following. This section is the reference for tick ordering; other docs link here.
+
+* The commander sees the **previous** tick's state; the stabilizer sees this tick's **fresh** estimate.
+* `FlightLoop::prime` runs once before the first tick: `estimate_state(Duration::ZERO)`, then `Stabilizer::prime` with that state.
+* Telemetry is published after `actuate`, with the whole tick in one `TelemetryRecord`.
 
 ```mermaid
 sequenceDiagram

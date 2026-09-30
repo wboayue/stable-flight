@@ -18,6 +18,10 @@
 //! [![Watch the demo](https://img.youtube.com/vi/KsTX3pH_htg/0.jpg)](https://youtu.be/KsTX3pH_htg)
 //!
 
+/// The flight-control core this crate is built on, re-exported so users can reach the exact
+/// version it uses (`stable_flight_sitl::stable_flight::FlightLoop`) without a second copy.
+pub use stable_flight;
+
 pub mod commanders;
 pub mod orchestrator;
 pub mod simulators;

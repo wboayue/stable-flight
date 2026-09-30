@@ -19,7 +19,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - `firmware/` is excluded from the workspace; boards will get their own nested workspaces.
 - Run every command from the repo root: `cargo run --example <name>` / `--bin <name>` resolve
   across the workspace, and `flights/*.csv` paths are relative to the root.
-- Public modules: `stable-flight` — `flight_loop`, `mixers`, `stabilizers` (traits/types at the crate root); `stable-flight-sitl` — `commanders`, `orchestrator`, `simulators`, `telemetry`. There is no re-export between them: import core items from `stable_flight`.
+- Public modules: `stable-flight` — `flight_loop`, `mixers`, `stabilizers` (traits/types at the crate root); `stable-flight-sitl` — `commanders`, `orchestrator`, `simulators`, `telemetry`. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
 - Key external crates: `realflight-bridge` (sim I/O), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
 - Untracked generated artifacts: `target/`, `Cargo.lock`, `tarpaulin-report.html`.
 - Paths below are prefixed with their crate (`core:` = `crates/stable-flight/`, `sitl:` =

@@ -64,14 +64,10 @@ mod tests;
 ///     flight_loop.step(Duration::from_millis(4)); // 250 Hz
 /// }
 /// ```
-pub struct FlightLoop<C, V, S, M, T>
-where
-    C: Commander,
-    V: Vehicle,
-    S: Stabilizer,
-    M: Mixer,
-    T: TelemetryPublisher,
-{
+///
+/// The struct itself is unbounded (bounds live on the `impl`), so types that hold a
+/// `FlightLoop` — runners, firmware statics — needn't repeat the five trait bounds.
+pub struct FlightLoop<C, V, S, M, T> {
     commander: C,
     vehicle: V,
     stabilizer: S,

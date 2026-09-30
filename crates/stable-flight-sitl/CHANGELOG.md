@@ -44,9 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ActuatorCommand`, `TelemetryRecord`, …) and the `stabilizers` and `mixers`
   modules. Import them from `stable_flight` (e.g. `use stable_flight::{Commander,
   VehicleState}`, `stable_flight::mixers::QuadCopterMixer`). No re-exports are
-  provided. Entries below that describe those items now apply to `stable-flight`.
-- `FlightOrchestrator` now drives a `stable_flight::FlightLoop` (one tick per
-  period) instead of inlining the pipeline. Its public API is unchanged.
+  provided beyond the crate itself (`stable_flight_sitl::stable_flight`). Entries
+  below that describe those items now apply to `stable-flight`.
 - **Breaking:** `TelemetryPublisher::publish` takes a single `&TelemetryRecord`
   (new public struct borrowing the tick's `dt`, `command`, `state`, `control`
   output, and `actuators`) instead of `(dt, command, state)`. Publishers can now

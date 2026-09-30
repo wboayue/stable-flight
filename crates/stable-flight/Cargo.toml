@@ -12,7 +12,7 @@ repository.workspace = true
 
 [dependencies]
 robomath.workspace = true
-uom = "0.38.0"
+uom.workspace = true
 log.workspace = true
 
 [dev-dependencies]

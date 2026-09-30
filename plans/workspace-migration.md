@@ -225,8 +225,8 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
 - Moved the types and traits (sitl `lib.rs` → core `lib.rs`; git sees a copy, so use
   `git blame -C -C` or `git log --follow -C` for history), `stabilizers/`, and
   `mixers/` to `crates/stable-flight`.
-- New core `flight_loop.rs`: `FlightLoop::{new, prime, step, state}`, with table-style tests
-  of call order and what each stage sees.
+- New core `flight_loop.rs`: `FlightLoop::{new, prime, step, state}`, with sequence-log
+  tests of call order and what each stage sees.
 - `FlightOrchestrator` keeps its public API and wraps a `FlightLoop`. Its signal handling,
   pacing, and metrics move to 2b.
 - `step` takes `dt: Duration` and passes `dt.as_secs_f32()` to the commander and stabilizer.
@@ -239,6 +239,23 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
   root crate table, architecture.md crate boundaries and diagram, CLAUDE.md crate layout,
   control-loop snippet, and impl table with a crate column. Also a core CHANGELOG and a
   **Breaking** sitl entry.
+- After review:
+  - `uom` is now a `[workspace.dependencies]` entry.
+  - The tick-ordering contract lives in architecture.md, and the core README and
+    `FlightOrchestrator` docs link to it.
+  - The `FlightLoop` struct is unbounded; the bounds live on its `impl`.
+  - sitl re-exports the core crate as `stable_flight_sitl::stable_flight`, so users don't
+    get two copies. Items aren't re-exported.
+  - Dropped an internal-only CHANGELOG line.
+  - Review follow-ups:
+    - 2c: `FlightLoop::into_parts()` (or accessors) so tests and runners can recover
+      components, and the `testing` feature replacing the duplicated orchestrator and
+      flight-loop mocks.
+    - 2b: the `commanders/tests.rs` trait-only tests, and signal setup in
+      `FlightOrchestrator::new`.
+    - PR 4: `TailSitterMixer` logs `info!` per tick.
+  - Skipped a debug check for `step()` before `prime()`: it's documented, and a
+    side-effect-free `new()` matters more.
 
 ## PR 3 — Split RealFlight into its own backend crate
 
