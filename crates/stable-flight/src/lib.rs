@@ -671,8 +671,9 @@ pub struct AttitudeSetpoint {
 /// For an estimator that meets the [frame contract](VehicleState#frame-contract) the two are
 /// equivalent. The choice exists because the RealFlight backend's Euler fields don't yet
 /// (they are converted to radians twice) while its quaternion does, and each flight mode was
-/// tuned against the representation it reads. It goes away with that backend's frame fix,
-/// before this crate's first release; don't build on it.
+/// tuned against the representation it reads. It goes away with that backend's frame fix
+/// ([#63](https://github.com/wboayue/stable-flight/issues/63)), before this crate's first
+/// release; don't build on it.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum AttitudeReference {
     /// `roll`, `pitch`, and `heading`. Used for piloted attitude flight.
