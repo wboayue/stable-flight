@@ -11,7 +11,7 @@
 //!
 //! ```
 //! # use std::time::Duration;
-//! # use stable_flight::{ActuatorCommand, Command, ControlOutput, VehicleState};
+//! # use stable_flight::{ActuatorCommand, Command, ControlOutput, Setpoint, VehicleState};
 //! use stable_flight::{TelemetryPublisher, TelemetryRecord};
 //!
 //! #[derive(Default)]
@@ -24,8 +24,8 @@
 //!
 //! // A ground-station sink, a log sink, and `()` where a slot needs no sink.
 //! let mut sinks = (Counter::default(), (Counter::default(), ()));
-//! # let (command, state, control, actuators) = (Command::Attitude(Default::default()), VehicleState::default(), ControlOutput::default(), ActuatorCommand::default());
-//! # let record = TelemetryRecord { dt: Duration::from_millis(4), command: &command, state: &state, control: &control, actuators: &actuators };
+//! # let (command, setpoint, state, control, actuators) = (Command::Attitude(Default::default()), Setpoint::Attitude(Default::default()), VehicleState::default(), ControlOutput::default(), ActuatorCommand::default());
+//! # let record = TelemetryRecord { dt: Duration::from_millis(4), command: &command, setpoint: &setpoint, state: &state, control: &control, actuators: &actuators };
 //! sinks.publish(&record);
 //! assert_eq!((sinks.0.0, sinks.1.0.0), (1, 1));
 //! ```

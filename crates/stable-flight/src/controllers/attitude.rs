@@ -2,7 +2,7 @@ use core::f32::consts::FRAC_PI_4;
 
 use robomath::{Vec2, vec2};
 
-use super::super::Gains;
+use super::Gains;
 use crate::math::saturate_unit_vec2;
 
 /// Configures the attitude controller for a vehicle.

@@ -4,11 +4,11 @@ Simulator-independent software-in-the-loop harness for the Stable Flight flight 
 
 ## Components
 
-The RealFlight examples (in the backend crate) wire the same five-component pipeline and are copy-paste starting points for your own setup. Let's walk through the components a `FlightLoop` needs: a **Commander**, **Vehicle**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**. The traits and data types come from the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate; this crate provides the commanders, telemetry, and the real-time runner.
+The RealFlight examples (in the backend crate) wire the same six-component pipeline and are copy-paste starting points for your own setup. Let's walk through the components a `FlightLoop` needs: a **Commander**, **Vehicle**, **Guidance**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**. The traits and data types come from the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate; this crate provides the commanders, telemetry, and the real-time runner.
 
 ### Commander
 
-Commanders generate Rate, Attitude, or Position control commands processed by the controller. Commands may come from input devices, scripts, or external systems. Currently, commanders are available to support scripting, Spektrum controllers, and Extreme3D joysticks. You can support new input devices by implementing the Commander trait.
+Commanders generate Rate, Attitude, or Position control commands processed by guidance. Commands may come from input devices, scripts, or external systems. Currently, commanders are available to support scripting, Spektrum controllers, and Extreme3D joysticks. You can support new input devices by implementing the Commander trait.
 
 The following example demonstrates creating a commander for the Extreme3D joystick:
 
@@ -30,9 +30,9 @@ The SpektrumCommander currently doesn't expose configuration options.
 
 Vehicles retrieve state estimates and actuate motors and control surfaces. Each simulator backend is its own crate that builds on the core and never depends on this crate (except for its examples); RealFlight's is [`stable-flight-sitl-realflight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl-realflight), whose README shows how to configure it. To support another simulator, create a `stable-flight-sitl-<simulator>` crate that implements `StateEstimator` (read state) and `Actuator` (send commands) for a type that talks to it; `Vehicle` is implemented automatically for any type with both. It has to meet the frame and timing contracts ([architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#simulator-backends)) and cover the core's conformance scenarios (`stable_flight::conformance_tests!`, `testing` feature).
 
-### Stabilizer and Mixer
+### Guidance, Stabilizer, and Mixer
 
-The stabilizer (cascaded PID control) and mixer (thrust/moments → motor and surface commands) live in the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate so the same code can run on hardware. See its README for configuration; the RealFlight examples use `CopterStabilizer` and `QuadCopterMixer`.
+Guidance (commands → attitude/rate setpoints, including waypoint navigation), the stabilizer (cascaded PID control), and the mixer (thrust/moments → motor and surface commands) live in the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate so the same code can run on hardware. See its README for configuration; the RealFlight examples use `CopterGuidance`, `CopterStabilizer`, and `QuadCopterMixer`.
 
 ### TelemetryPublisher
 
@@ -48,7 +48,7 @@ let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
 With all components configured, assemble a core `FlightLoop` and drive it with this crate's `RealTimeRunner`, stopping on a `ShutdownSignal`:
 
 ```rust
-let mut flight_loop = FlightLoop::new(commander, vehicle, stabilizer, mixer, telemetry);
+let mut flight_loop = FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
 
 // Ctrl-C (SIGINT) requests a graceful stop between ticks.
 let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");

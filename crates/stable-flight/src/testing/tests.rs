@@ -6,6 +6,7 @@ use super::*;
 
 fn record_with_thrust(thrust: f32) -> RecordedTick {
     let command = Command::Attitude(AttitudeCommand::default());
+    let setpoint = Setpoint::Attitude(Default::default());
     let state = VehicleState::default();
     let control = ControlOutput {
         thrust,
@@ -15,6 +16,7 @@ fn record_with_thrust(thrust: f32) -> RecordedTick {
     RecordedTick::from(&TelemetryRecord {
         dt: Duration::from_millis(4),
         command: &command,
+        setpoint: &setpoint,
         state: &state,
         control: &control,
         actuators: &actuators,

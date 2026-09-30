@@ -4,7 +4,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use log::{debug, info};
-use stable_flight::{Commander, FlightLoop, Mixer, Stabilizer, TelemetryPublisher, Vehicle};
+use stable_flight::{
+    Commander, FlightLoop, Guidance, Mixer, Stabilizer, TelemetryPublisher, Vehicle,
+};
 use thiserror::Error;
 
 use crate::ShutdownSignal;
@@ -50,16 +52,18 @@ impl RunStats {
 /// ```no_run
 /// # use std::time::Duration;
 /// # use stable_flight::{FlightLoop, mixers::QuadCopterMixer};
+/// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 /// # use stable_flight::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
 /// use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 ///
 /// # let commander = ConstantCommander::default();
 /// # let vehicle = NullVehicle::new();
+/// # let guidance = CopterGuidance::new(CopterGuidanceConfig::default());
 /// # let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
 /// # let mixer = QuadCopterMixer::default();
 /// # let telemetry = RecordingTelemetry::<1>::new();
-/// let mut flight_loop = FlightLoop::new(commander, vehicle, stabilizer, mixer, telemetry);
+/// let mut flight_loop = FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
 /// let shutdown = ShutdownSignal::install().expect("install Ctrl-C handler");
 ///
 /// let stats = RealTimeRunner::new(250.0)
@@ -97,14 +101,15 @@ impl RealTimeRunner {
     /// Primes `flight_loop`, then ticks it every period until `shutdown` is set.
     ///
     /// `shutdown` is checked before each tick, so an already-set signal runs no ticks.
-    pub fn run<C, V, S, M, T>(
+    pub fn run<C, V, G, S, M, T>(
         &self,
-        flight_loop: &mut FlightLoop<C, V, S, M, T>,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         shutdown: &ShutdownSignal,
     ) -> RunStats
     where
         C: Commander,
         V: Vehicle,
+        G: Guidance,
         S: Stabilizer,
         M: Mixer,
         T: TelemetryPublisher,

@@ -1,5 +1,5 @@
+use crate::controllers::Gains;
 use crate::math::wrap_angle;
-use crate::stabilizers::Gains;
 
 /// Configures the yaw controller with PID gains and operational limits.
 ///
@@ -63,7 +63,7 @@ impl YawController {
     /// # Examples
     ///
     /// ```
-    /// use stable_flight::stabilizers::controllers::{YawController, YawControllerConfig};
+    /// use stable_flight::controllers::{YawController, YawControllerConfig};
     ///
     /// let controller = YawController::new();
     /// ```
@@ -80,8 +80,8 @@ impl YawController {
     /// # Examples
     ///
     /// ```
-    /// use stable_flight::stabilizers::controllers::{YawController, YawControllerConfig};
-    /// use stable_flight::stabilizers::Gains;
+    /// use stable_flight::controllers::{YawController, YawControllerConfig};
+    /// use stable_flight::controllers::Gains;
     ///
     /// let config = YawControllerConfig {
     ///     gains: Gains { p: 2.0, i: 0.1, d: 0.5 },
@@ -143,7 +143,7 @@ impl YawController {
     ///
     /// ```
     /// use std::f32::consts::PI;
-    /// use stable_flight::stabilizers::controllers::{YawController, YawControllerConfig};
+    /// use stable_flight::controllers::{YawController, YawControllerConfig};
     ///
     /// let mut controller = YawController::new();
     /// let dt = 0.02;
@@ -214,7 +214,7 @@ mod tests {
 
     use approx::assert_relative_eq;
 
-    use crate::stabilizers::Gains;
+    use crate::controllers::Gains;
 
     use super::*;
 

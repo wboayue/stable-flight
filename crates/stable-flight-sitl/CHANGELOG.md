@@ -41,8 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by three pieces with one job each: the core `stable_flight::FlightLoop` (one
   tick), `RealTimeRunner` (wall-clock pacing), and `ShutdownSignal` (graceful
   stop). Migrate `FlightOrchestrator::new(c, v, s, m, t).run(hz)` to
-  `RealTimeRunner::new(hz)?.run(&mut FlightLoop::new(c, v, s, m, t),
-  &ShutdownSignal::install()?)`. `RealTimeRunner::new` returns
+  `RealTimeRunner::new(hz)?.run(&mut FlightLoop::new(c, v, g, s, m, t),
+  &ShutdownSignal::install()?)`, where `g` is a `Guidance` such as the core
+  `CopterGuidance` (split out of the stabilizer). `RealTimeRunner::new` returns
   `InvalidFrequency` for a non-positive or non-finite rate, or one whose period
   isn't a representable non-zero `Duration`, instead of panicking in `run`, and
   `run` returns `RunStats`. Building a loop no longer installs a signal handler.

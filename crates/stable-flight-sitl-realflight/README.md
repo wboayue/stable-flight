@@ -11,6 +11,7 @@ RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). E
 ## Usage
 
 ```rust
+use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
@@ -22,13 +23,14 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
     bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
     mapping: airframe.mapping,
 });
+let guidance = CopterGuidance::new(airframe.guidance);
 let stabilizer = CopterStabilizer::new(airframe.stabilizer);
 let mixer = airframe.mixer;
 ```
 
 Use `RealFlightLocalBridge` when the controller runs on the same host as RealFlight, and `RealFlightRemoteBridge` otherwise. `realflight_bridge` is re-exported, so you don't need to depend on it yourself. `ActuatorMapping` maps the mixer's motors and control surfaces to the model's RealFlight channels, so an airframe's mapping only fits its own mixer.
 
-Each tick makes one RealFlight exchange, in `actuate`; `estimate_state` returns the cached result, so the stabilizer sees state one tick old. The `RealFlightVehicle` rustdoc covers timing and frame conversion.
+Each tick makes one RealFlight exchange, in `actuate`; `estimate_state` returns the cached result, so guidance and the stabilizer see state one tick old. The `RealFlightVehicle` rustdoc covers timing and frame conversion.
 
 ## Airframes
 

@@ -31,7 +31,7 @@ the **Follow-up backlog** in `plans/workspace-migration.md` (one list for both p
 | 4 | Resolve `Vehicle` vs `StateEstimator`/`Actuator` | Trait surface  | Low    | ✅ #47 |
 | 5 | Rename `simulators/` module to `vehicles/`    | Mechanical move   | Low    | ⏭ workspace PR 3 |
 | 6 | Decouple `TelemetryPublisher` from `Command`  | Trait surface     | Medium | ✅ #48 |
-| 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | ⬜ |
+| 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | 🔍 #60 |
 
 PRs 1–4 and 6 are merged. For future stacked PRs, use CLAUDE.md's
 stacked-PR procedure: retarget the child to `main` before merging its parent.
@@ -324,6 +324,54 @@ collapsed.
 **Decision.** Whether to do guidance rate division in this PR or defer to a
 PR 7.5. Recommend defer — first ship the structural split with no behavior
 change, then add the divider in a follow-up where the diff is easy to read.
+
+**As implemented (#60).** Structural split only; the divider is deferred to PR 7.5.
+- `Guidance::guide(dt, &Command, &VehicleState) -> Setpoint` plus `prime`, a sixth
+  `FlightLoop` slot between the vehicle and the stabilizer (`FlightLoop<C, V, G, S, M, T>`),
+  rather than a composite `FlightController`. The setpoint is visible in
+  `TelemetryRecord::setpoint`.
+- `Setpoint` is `Attitude(AttitudeSetpoint)` or `Rate(RateSetpoint)`, not `ManualCommand`:
+  a waypoint yields tilt from the position loop, an absolute heading, and altitude-loop
+  thrust, none of which fit the stick-shaped `AttitudeCommand`. Setpoints are normalized; the
+  stabilizer owns the limits, the thrust curve, and saturation. `Command` is not split into
+  `MissionCommand`/`ManualCommand`: guidance consumes the whole enum, so nothing needed it.
+- `Stabilizer` keeps its name (inner loop only now). `CopterGuidance` owns the altitude and
+  lateral controllers and the heading-hold target; `CopterStabilizer` keeps attitude, yaw,
+  and body rate. `CopterGuidanceConfig` takes the altitude/lateral gains from
+  `CopterStabilizerConfig`, and `airframes::Airframe` gains a `guidance` field.
+- No behaviour change, with one exception found during the split: the old attitude path
+  read `state.roll/pitch/heading` and the waypoint path `state.attitude` (quaternion). The
+  frame contract says they agree, but RealFlight's Euler fields are ~57× too small (frame
+  bug), and each mode was tuned against its own source. `AttitudeSetpoint::reference`
+  (`Euler`/`Quaternion`) preserves both until the frame fix removes it (backlog).
+- Verified bit-for-bit against the pre-split `CopterStabilizer`: a temporary oracle test ran
+  both over 40 × 5 000 randomized ticks (mode switches every 250 ticks, random `dt`, NaN
+  estimates, Euler fields disagreeing with the quaternion on half the trials) with zero
+  mismatches, and failed when the waypoint reference was flipped. Not committed, since the
+  old code goes away. It replaces two of the gates above: identical MAVLink telemetry (not
+  flown) and "copter tests pass unmodified" (they had to move to the new types; their
+  assertions are unchanged).
+- `fit_to_thrust_curve` now saturates its input (NaN → 0), closing that backlog row.
+- Test moves: inner-loop tests stay in `stabilizers/copter/tests.rs` (on setpoints);
+  guidance tests and the end-to-end regressions (distant waypoint, sustained yaw, heading
+  wrap, NaN re-latch, out-of-range sticks, NaN altitude) are in `guidance/copter/tests.rs`,
+  run through a guidance + stabilizer `Stack`, otherwise unchanged.
+- Remaining PR 7-targeted backlog rows (derivative state, saturation observability, yaw
+  across mode switches, lateral tilt model) change behaviour, so they were retargeted.
+- After review:
+  - The PID controllers and `Gains` moved from `stabilizers` to a top-level `controllers`
+    module, so guidance no longer depends on `stabilizers`.
+  - `prime` has a default no-op on both traits.
+  - `CopterGuidance`/`CopterStabilizer` controller fields are `pub(crate)`, and the stale
+    `CopterStabilizer::config` clone is gone.
+  - Tests: `FlightLoop` telemetry checks the published setpoint (the test guidance
+    transforms its input). The quaternion reference test compares the whole output. A new
+    test covers heading setpoint wrap and NaN, and one pins heading hold across a waypoint
+    leg. Two assertion-free altitude tests are deleted. Mutation-checked.
+  - Deferred to the backlog: the `AttitudeReference` removal and radian tilt setpoints both
+    block the first publish, as do `#[non_exhaustive]` on `Setpoint`/`Command`. Also
+    deferred: the divider inside `CopterGuidance`, and `From<&RateCommand>` for
+    `RateSetpoint`.
 
 ---
 

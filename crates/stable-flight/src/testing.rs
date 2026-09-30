@@ -21,8 +21,8 @@
 use core::time::Duration;
 
 use crate::{
-    Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, ControlOutput, StateEstimator,
-    TelemetryPublisher, TelemetryRecord, VehicleState,
+    Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, ControlOutput, Setpoint,
+    StateEstimator, TelemetryPublisher, TelemetryRecord, VehicleState,
 };
 
 pub mod conformance;
@@ -142,6 +142,7 @@ impl Commander for ConstantCommander {
 pub struct RecordedTick {
     pub dt: Duration,
     pub command: Command,
+    pub setpoint: Setpoint,
     pub state: VehicleState,
     pub control: ControlOutput,
     pub actuators: ActuatorCommand,
@@ -153,6 +154,7 @@ impl RecordedTick {
         TelemetryRecord {
             dt: self.dt,
             command: &self.command,
+            setpoint: &self.setpoint,
             state: &self.state,
             control: &self.control,
             actuators: &self.actuators,
@@ -165,6 +167,7 @@ impl From<&TelemetryRecord<'_>> for RecordedTick {
         RecordedTick {
             dt: record.dt,
             command: *record.command,
+            setpoint: *record.setpoint,
             state: record.state.clone(),
             control: *record.control,
             actuators: *record.actuators,
@@ -185,7 +188,8 @@ impl From<&TelemetryRecord<'_>> for RecordedTick {
 /// use std::time::Duration;
 /// use stable_flight::testing::RecordingTelemetry;
 /// use stable_flight::{
-///     ActuatorCommand, Command, ControlOutput, TelemetryPublisher, TelemetryRecord, VehicleState,
+///     ActuatorCommand, Command, ControlOutput, Setpoint, TelemetryPublisher, TelemetryRecord,
+///     VehicleState,
 /// };
 ///
 /// let mut telemetry = RecordingTelemetry::<2>::new();
@@ -193,6 +197,7 @@ impl From<&TelemetryRecord<'_>> for RecordedTick {
 ///     telemetry.publish(&TelemetryRecord {
 ///         dt: Duration::from_millis(4),
 ///         command: &Command::Attitude(Default::default()),
+///         setpoint: &Setpoint::Attitude(Default::default()),
 ///         state: &VehicleState::default(),
 ///         control: &ControlOutput { thrust, ..Default::default() },
 ///         actuators: &ActuatorCommand::default(),

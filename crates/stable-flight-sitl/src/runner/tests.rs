@@ -2,6 +2,7 @@ use std::thread;
 use std::time::Duration;
 
 use assert2::{check, let_assert};
+use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
@@ -12,12 +13,14 @@ use super::*;
 type TestLoop = FlightLoop<
     ConstantCommander,
     NullVehicle,
+    CopterGuidance,
     CopterStabilizer,
     QuadCopterMixer,
     RecordingTelemetry<1>,
 >;
 
-/// A hovering quad on a still vehicle: real stabilizer and mixer, core test doubles elsewhere.
+/// A hovering quad on a still vehicle: real guidance, stabilizer, and mixer, core test doubles
+/// elsewhere.
 fn hover_loop() -> TestLoop {
     FlightLoop::new(
         ConstantCommander::new(Command::Attitude(AttitudeCommand {
@@ -26,6 +29,7 @@ fn hover_loop() -> TestLoop {
             ..Default::default()
         })),
         NullVehicle::new(),
+        CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),
         QuadCopterMixer::default(),
         RecordingTelemetry::<1>::new(),
@@ -68,7 +72,7 @@ fn already_set_signal_primes_but_runs_no_ticks() {
 
     check!(stats.ticks == 0);
     check!(stats.average_hz().is_none());
-    let (_, vehicle, _, _, telemetry) = flight_loop.into_parts();
+    let (_, vehicle, _, _, _, telemetry) = flight_loop.into_parts();
     check!(vehicle.estimates() == 1); // the priming estimate only
     check!(telemetry.total() == 0); // nothing published
 }
@@ -90,7 +94,7 @@ fn runs_until_signalled_and_steps_with_the_nominal_period() {
 
     check!(stats.ticks > 0);
     check!(stats.average_hz().is_some());
-    let (_, vehicle, _, _, telemetry) = flight_loop.into_parts();
+    let (_, vehicle, _, _, _, telemetry) = flight_loop.into_parts();
     check!(vehicle.estimates() == stats.ticks + 1); // priming + one per tick
     check!(vehicle.actuations() == stats.ticks);
     check!(telemetry.total() == stats.ticks);

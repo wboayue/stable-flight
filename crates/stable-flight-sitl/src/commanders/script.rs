@@ -226,7 +226,7 @@ fn parse_waypoints(path: &str, contents: &str) -> Result<Vec<WaypointCommand>, S
                 message: format!("invalid {name}: {err}"),
             })?;
             // Reject NaN/Inf: a non-finite coordinate would stall waypoint advancement
-            // and feed a bad position straight into the stabilizer.
+            // and feed a bad position straight into guidance.
             if !value.is_finite() {
                 return Err(ScriptError::Parse {
                     path: path.to_string(),
