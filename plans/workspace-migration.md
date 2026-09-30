@@ -40,7 +40,7 @@ otherwise do it in the next PR.
 | Fix — attitude-controller panic in waypoint mode (found in 2b) | ✅ #55 |
 | Fix — unwrapped heading target → yaw panic in attitude mode (found in #55 review) | ✅ #56 |
 | Fix — remaining per-tick panics (mixer, attitude-command, body-rate, altitude, rate-mode; Spektrum clamp) | ✅ #57 |
-| PR 3 — Split RealFlight into its own backend crate | 🔍 #PRNUM |
+| PR 3 — Split RealFlight into its own backend crate | 🔍 #58 |
 | Fix — RealFlight frame conversions: double radians, down-positive vertical (found in PR 3) | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
@@ -565,7 +565,7 @@ Risk: low–medium. Code moves are mechanical. Writing down the frame contract a
 gains may surface a latent sign bug or a tuning regression. That's the point, but fix any
 behaviour change in its own PR with a flight note.
 
-As implemented (#PRNUM):
+As implemented (#58):
 - Crate `stable-flight-sitl-realflight`: `vehicle.rs` (+ `vehicle/tests.rs`) is private, with
   `RealFlightVehicle`, `RealFlightConfiguration`, and `ActuatorMapping` at the root and
   `realflight_bridge` re-exported. Normal deps are core, `realflight-bridge`, `robomath`, and
