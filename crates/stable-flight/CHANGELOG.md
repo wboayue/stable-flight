@@ -52,5 +52,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   estimate no longer sticks in the lateral or attitude integral.
   `LateralController::with_config` now rejects a negative or non-finite
   `max_integral` (it would otherwise panic inside the loop).
+- Holding yaw in attitude mode no longer panics the flight loop after a few
+  minutes. The heading-hold target grew without bound until the yaw
+  controller's `[-2π, 2π]` `assert!` fired; it is now wrapped to `[-π, π)` each
+  tick. `YawController::control` accepts any finite target (it already works on
+  the wrapped error), and a non-finite target or estimate returns a zero rate
+  without corrupting the controller state.
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight

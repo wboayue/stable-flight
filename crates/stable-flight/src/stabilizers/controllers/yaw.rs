@@ -111,7 +111,10 @@ impl YawController {
     /// # Arguments
     ///
     /// * `dt` - Time step since the last update (must be positive).
-    /// * `desired_yaw` - Target yaw angle in radians [-2π, 2π].
+    /// * `desired_yaw` - Target yaw angle in radians. Any finite value is accepted; the
+    ///   error is wrapped to the shortest path, so `desired_yaw` and `desired_yaw + 2πk` are
+    ///   equivalent. A non-finite target (or estimate) yields a zero rate and leaves the
+    ///   controller state untouched.
     /// * `estimated_yaw` - Current measured yaw angle in radians.
     ///
     /// # Returns
@@ -120,9 +123,7 @@ impl YawController {
     ///
     /// # Panics
     ///
-    /// Panics if:
-    /// * Time step is not finite or not positive
-    /// * Desired yaw is outside the range [-2π, 2π]
+    /// Panics if the time step is not finite or not positive.
     ///
     /// # Examples
     ///
@@ -141,15 +142,15 @@ impl YawController {
     pub fn control(&mut self, dt: f32, desired_yaw: f32, estimated_yaw: f32) -> f32 {
         assert!(dt.is_finite(), "Time step must be finite");
         assert!(dt > 0.0, "Time step must be positive");
-        assert!(
-            (-2.0 * PI..=2.0 * PI).contains(&desired_yaw),
-            "Desired yaw rate ({}) must be in the range [-2PI, 2PI]",
-            desired_yaw
-        );
 
         let gains = &self.config.gains;
 
         let error = angle_diff(desired_yaw, estimated_yaw); // Use a helper to handle angle wrapping
+        if !error.is_finite() {
+            // Hold (no yaw rate) rather than letting NaN into the integral and derivative
+            // history, where it would stick; `clamp` passes NaN through.
+            return 0.0;
+        }
         let error_derivative = if let Some(previous_error) = self.previous_error {
             (error - previous_error) / dt
         } else {
@@ -191,11 +192,12 @@ impl YawController {
 ///
 /// The shortest-path yaw error in radians, in the range [-π, π].
 fn angle_diff(desired_yaw: f32, current_yaw: f32) -> f32 {
-    let mut yaw_error = desired_yaw - current_yaw;
-    yaw_error += PI;
-    yaw_error = yaw_error.rem_euclid(2.0 * PI);
-    yaw_error -= PI;
-    yaw_error
+    wrap_angle(desired_yaw - current_yaw)
+}
+
+/// Wraps an angle in radians to [-π, π). Non-finite input stays non-finite.
+pub(crate) fn wrap_angle(angle: f32) -> f32 {
+    (angle + PI).rem_euclid(2.0 * PI) - PI
 }
 
 #[cfg(test)]
@@ -652,11 +654,48 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "must be in the range")]
-    fn test_invalid_yaw_range() {
+    fn any_finite_target_is_equivalent_to_its_wrapped_heading() {
+        // (target, equivalent target within [-π, π))
+        let cases = [
+            (3.0 * PI, -PI),
+            (10.0 * PI + 0.5, 0.5),
+            (-7.0 * PI / 2.0, PI / 2.0),
+            (1000.0, wrap_angle(1000.0)),
+        ];
+        for (target, equivalent) in cases {
+            let rate = YawController::new().control(0.01, target, 0.2);
+            let expected = YawController::new().control(0.01, equivalent, 0.2);
+            assert_relative_eq!(rate, expected, epsilon = 1e-3);
+        }
+    }
+
+    #[test]
+    fn non_finite_target_holds_and_does_not_poison_later_ticks() {
         let mut controller = YawController::new();
-        let dt = 0.01;
-        let _ = controller.control(dt, 3.0 * PI, 0.0);
+        for target in [f32::NAN, f32::INFINITY] {
+            assert!(controller.control(0.01, target, 0.2) == 0.0);
+        }
+        let after = controller.control(0.01, 1.0, 0.2);
+        let fresh = YawController::new().control(0.01, 1.0, 0.2);
+        assert_relative_eq!(after, fresh);
+    }
+
+    #[test]
+    fn wrap_angle_maps_into_minus_pi_to_pi() {
+        // (angle, wrapped)
+        let cases = [
+            (0.0, 0.0),
+            (PI / 2.0, PI / 2.0),
+            (PI, -PI),
+            (-PI, -PI),
+            (3.0 * PI / 2.0, -PI / 2.0),
+            (-3.0 * PI / 2.0, PI / 2.0),
+            (4.0 * PI + 0.25, 0.25),
+        ];
+        for (angle, wrapped) in cases {
+            assert_relative_eq!(wrap_angle(angle), wrapped, epsilon = 1e-5);
+        }
+        assert!(wrap_angle(f32::NAN).is_nan());
     }
 
     /// Tests that output rate is properly limited to max_rate.

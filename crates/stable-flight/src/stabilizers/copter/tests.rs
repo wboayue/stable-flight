@@ -314,3 +314,34 @@ fn distant_waypoint_tilts_toward_target_instead_of_panicking() {
         }
     }
 }
+
+/// Regression: in attitude mode the heading-hold target grew by `yaw * 0.0001` every tick
+/// without wrapping, so ~63k ticks of full yaw stick (≈4 min at 250 Hz) pushed it past 2π
+/// and the yaw controller's range `assert!` panicked the flight loop.
+#[test]
+fn sustained_yaw_input_keeps_heading_target_wrapped() {
+    // (yaw stick, ticks) — enough ticks to pass ±2π several times over if unwrapped
+    let cases = [(1.0, 200_000), (-1.0, 200_000)];
+    for (yaw, ticks) in cases {
+        let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+        let state = VehicleState::default();
+        stabilizer.prime(&state);
+        let command = Command::Attitude(AttitudeCommand {
+            throttle: 0.5,
+            yaw,
+            arm: true,
+            ..Default::default()
+        });
+
+        for _ in 0..ticks {
+            let output = stabilizer.stabilize(0.004, &command, &state);
+            assert!(output.moments.z.is_finite());
+        }
+
+        assert!(
+            (-PI..PI).contains(&stabilizer.heading),
+            "yaw {yaw}: heading target {} escaped [-π, π)",
+            stabilizer.heading
+        );
+    }
+}
