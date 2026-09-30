@@ -14,8 +14,20 @@ struct Stack {
 
 impl Stack {
     fn new() -> Self {
+        Self::with_guidance(CopterGuidanceConfig::default())
+    }
+
+    /// Waypoint loops on every tick, for tests of the loops themselves rather than the divider.
+    fn every_tick() -> Self {
+        Self::with_guidance(CopterGuidanceConfig {
+            navigation_period: 0.0,
+            ..Default::default()
+        })
+    }
+
+    fn with_guidance(config: CopterGuidanceConfig) -> Self {
         Stack {
-            guidance: CopterGuidance::new(CopterGuidanceConfig::default()),
+            guidance: CopterGuidance::new(config),
             stabilizer: CopterStabilizer::new(CopterStabilizerConfig::default()),
         }
     }
@@ -131,7 +143,7 @@ fn commands_map_to_setpoints() {
                 ..Default::default()
             }),
             Setpoint::Attitude(AttitudeSetpoint {
-                heading: wrap_angle(0.7 + HEADING_STEP_PER_TICK),
+                heading: wrap_angle(0.7 + HEADING_SLEW_RATE * 0.004),
                 ..Default::default()
             }),
         ),
@@ -191,7 +203,11 @@ fn heading_hold_target_survives_a_waypoint_leg() {
     let after = heading_of(guidance.guide(0.004, &centred, &state));
 
     assert!(after == (before, AttitudeReference::Euler));
-    approx::assert_relative_eq!(before, 0.7 + 10.0 * HEADING_STEP_PER_TICK, epsilon = 1e-6);
+    approx::assert_relative_eq!(
+        before,
+        0.7 + 10.0 * HEADING_SLEW_RATE * 0.004,
+        epsilon = 1e-6
+    );
 }
 
 #[test]
@@ -441,12 +457,12 @@ fn nan_altitude_estimate_holds_hover_then_recovers() {
         ..Default::default()
     });
 
-    let mut stack = Stack::new();
+    let mut stack = Stack::every_tick();
     stack.prime(&at_altitude(10.0));
     let during = stack.step(0.004, &command, &at_altitude(f32::NAN));
     let after = stack.step(0.004, &command, &at_altitude(10.0));
 
-    let mut fresh = Stack::new();
+    let mut fresh = Stack::every_tick();
     fresh.prime(&at_altitude(10.0));
     let expected = fresh.step(0.004, &command, &at_altitude(10.0));
 
@@ -455,4 +471,144 @@ fn nan_altitude_estimate_holds_hover_then_recovers() {
         after.thrust == expected.thrust,
         "after NaN: {after:?} vs fresh {expected:?}"
     );
+}
+
+/// Full yaw stick slews the heading-hold target by the same angle per second at any loop rate.
+#[test]
+fn heading_slew_depends_on_time_not_tick_count() {
+    // (dt, ticks): one second each
+    let cases = [(0.004, 250), (0.01, 100), (0.002, 500)];
+    let yaw_right = Command::Attitude(AttitudeCommand {
+        yaw: 1.0,
+        ..Default::default()
+    });
+    for (dt, ticks) in cases {
+        let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+        let state = VehicleState::default();
+        guidance.prime(&state);
+        for _ in 0..ticks {
+            guidance.guide(dt, &yaw_right, &state);
+        }
+        // f32 accumulation of ~1e-4 steps drifts ~3e-5 over 500 ticks.
+        approx::assert_relative_eq!(guidance.heading, HEADING_SLEW_RATE, epsilon = 1e-4);
+    }
+}
+
+/// A vehicle drifting a little each tick, near a waypoint, so every run of the waypoint loops
+/// produces a new (unsaturated) setpoint.
+fn drifting_state(tick: usize) -> VehicleState {
+    use uom::si::f32::Length;
+    use uom::si::length::meter;
+
+    let drift = tick as f32 * 0.01;
+    VehicleState {
+        position: robomath::Vec3 {
+            x: Length::new::<meter>(drift),
+            y: Length::new::<meter>(-drift),
+            z: Length::new::<meter>(10.0 + drift),
+        },
+        ..Default::default()
+    }
+}
+
+fn near_waypoint() -> Command {
+    Command::Waypoint(WaypointCommand {
+        position: vec2(1.0, 1.0),
+        altitude: 10.5,
+        cruise_speed: 7.0,
+        ..Default::default()
+    })
+}
+
+/// The waypoint loops run on the first waypoint tick, then once per navigation period
+/// (rounded to the nearest tick), holding the setpoint in between.
+#[test]
+fn waypoint_loops_run_once_per_navigation_period() {
+    // (navigation period, dt, ticks, ticks on which the loops run)
+    let cases: [(f32, f32, usize, &[usize]); 6] = [
+        (0.02, 0.004, 16, &[0, 5, 10, 15]),
+        (0.0, 0.004, 4, &[0, 1, 2, 3]),
+        (0.02, 0.005, 9, &[0, 4, 8]),
+        (0.02, 0.003, 15, &[0, 7, 14]), // 6.67 ticks rounds to 7
+        (0.004, 0.004, 3, &[0, 1, 2]),
+        (0.02, 0.0025, 17, &[0, 8, 16]), // 8 × 2.5 ms sums to 19.999998 ms in f32
+    ];
+    for (period, dt, ticks, expected) in cases {
+        let mut guidance = CopterGuidance::new(CopterGuidanceConfig {
+            navigation_period: period,
+            ..Default::default()
+        });
+        let mut previous = None;
+        let mut runs = Vec::new();
+        for tick in 0..ticks {
+            let setpoint = guidance.guide(dt, &near_waypoint(), &drifting_state(tick));
+            if previous != Some(setpoint) {
+                runs.push(tick);
+            }
+            previous = Some(setpoint);
+        }
+        assert!(
+            runs == expected,
+            "period {period}, dt {dt}: ran on {runs:?}, expected {expected:?}"
+        );
+    }
+}
+
+/// A held step integrates the whole elapsed period, so the loops see the same time whether
+/// they run every tick or once per period.
+#[test]
+fn divided_loops_step_over_the_elapsed_period() {
+    let mut divided = CopterGuidance::new(CopterGuidanceConfig::default());
+    let mut direct = CopterGuidance::new(CopterGuidanceConfig {
+        navigation_period: 0.0,
+        ..Default::default()
+    });
+
+    let mut last = None;
+    for tick in 0..6 {
+        last = Some(divided.guide(0.004, &near_waypoint(), &drifting_state(tick)));
+    }
+    direct.guide(0.004, &near_waypoint(), &drifting_state(0));
+    let expected = direct.guide(0.02, &near_waypoint(), &drifting_state(5));
+
+    // Tick 5 ran with 5 × 4 ms accumulated; tick 6 still holds it.
+    let Some(Setpoint::Attitude(last)) = last else {
+        unreachable!("waypoints yield attitude setpoints");
+    };
+    let Setpoint::Attitude(expected) = expected else {
+        unreachable!("waypoints yield attitude setpoints");
+    };
+    approx::assert_relative_eq!(last.roll, expected.roll, epsilon = 1e-6);
+    approx::assert_relative_eq!(last.pitch, expected.pitch, epsilon = 1e-6);
+    approx::assert_relative_eq!(last.thrust, expected.thrust, epsilon = 1e-6);
+}
+
+/// Returning to waypoint mode runs the loops at once instead of replaying a setpoint held
+/// from before the switch.
+#[test]
+fn returning_to_waypoints_runs_the_loops_immediately() {
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+    let held = guidance.guide(0.004, &near_waypoint(), &drifting_state(0));
+    guidance.guide(
+        0.004,
+        &Command::Attitude(AttitudeCommand::default()),
+        &drifting_state(1),
+    );
+
+    let resumed = guidance.guide(0.004, &near_waypoint(), &drifting_state(2));
+
+    assert!(resumed != held, "replayed the held setpoint {held:?}");
+}
+
+#[test]
+fn rejects_negative_or_non_finite_navigation_periods() {
+    for period in [-0.01, f32::NAN, f32::INFINITY] {
+        let result = std::panic::catch_unwind(|| {
+            CopterGuidance::new(CopterGuidanceConfig {
+                navigation_period: period,
+                ..Default::default()
+            })
+        });
+        assert!(result.is_err(), "accepted navigation_period {period}");
+    }
 }

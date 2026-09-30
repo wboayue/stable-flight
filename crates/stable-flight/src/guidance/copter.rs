@@ -6,6 +6,10 @@
 //! | [`Command::Rate`] | [`Setpoint::Rate`], sticks passed through |
 //! | [`Command::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks passed through; yaw stick slews a heading-hold target |
 //! | [`Command::Waypoint`] | [`Setpoint::Attitude`]: lateral position loop → roll/pitch, altitude loop → thrust, heading north |
+//!
+//! The waypoint loops run at [`CopterGuidanceConfig::navigation_period`] (50 Hz by default)
+//! and hold their setpoint in between; pilot commands are interpreted every tick, so stick
+//! latency doesn't grow with the navigation period.
 
 use robomath::vec2;
 
@@ -21,9 +25,12 @@ use crate::math::{saturate_unit, wrap_angle};
 #[cfg(test)]
 mod tests;
 
-/// Heading-hold target change per tick at full yaw stick (radians). At 250 Hz this is
-/// 0.025 rad/s (~1.4°/s).
-const HEADING_STEP_PER_TICK: f32 = 0.0001;
+/// Heading-hold target slew rate at full yaw stick, in rad/s (~1.4°/s).
+const HEADING_SLEW_RATE: f32 = 0.025;
+
+/// Default [`CopterGuidanceConfig::navigation_period`]: 50 Hz, a fifth of the usual 250 Hz
+/// inner loop.
+pub const DEFAULT_NAVIGATION_PERIOD: f32 = 0.02;
 
 /// Gains for the [CopterGuidance] position loops.
 ///
@@ -44,6 +51,10 @@ pub struct CopterGuidanceConfig {
     pub altitude_gains: Gains,
     /// Lateral position loop: horizontal position error (m) → roll/pitch.
     pub lateral_gains: Gains,
+    /// Seconds between runs of the waypoint (altitude and lateral) loops; the setpoint is
+    /// held in between. `0.0` runs them every tick. Rounded to the nearest tick: at a 4 ms
+    /// loop, 20 ms is every 5th tick. Defaults to [`DEFAULT_NAVIGATION_PERIOD`].
+    pub navigation_period: f32,
 }
 
 impl Default for CopterGuidanceConfig {
@@ -59,6 +70,7 @@ impl Default for CopterGuidanceConfig {
                 i: 0.15,
                 d: 0.075,
             },
+            navigation_period: DEFAULT_NAVIGATION_PERIOD,
         }
     }
 }
@@ -89,11 +101,32 @@ pub struct CopterGuidance {
 
     /// Heading-hold target for attitude commands.
     heading: f32,
+
+    navigation_period: f32,
+    /// The waypoint loops' last run; `None` until the first waypoint tick after another mode.
+    navigation: Option<Navigation>,
+}
+
+/// The waypoint loops' held output.
+#[derive(Debug, Clone, Copy)]
+struct Navigation {
+    /// Seconds since the loops last ran.
+    elapsed: f32,
+    setpoint: AttitudeSetpoint,
 }
 
 impl CopterGuidance {
     /// Creates a new [CopterGuidance] with the specified configuration.
+    ///
+    /// # Panics
+    ///
+    /// If `config.navigation_period` is negative or not finite.
     pub fn new(config: CopterGuidanceConfig) -> Self {
+        assert!(
+            config.navigation_period >= 0.0 && config.navigation_period.is_finite(),
+            "navigation_period must be non-negative and finite, got {}",
+            config.navigation_period
+        );
         CopterGuidance {
             altitude_controller: AltitudeController::with_config(&AltitudeControllerConfig {
                 gains: config.altitude_gains,
@@ -107,6 +140,9 @@ impl CopterGuidance {
             }),
 
             heading: 0.0,
+
+            navigation_period: config.navigation_period,
+            navigation: None,
         }
     }
 }
@@ -115,9 +151,15 @@ impl Guidance for CopterGuidance {
     fn guide(&mut self, dt: f32, command: &Command, estimated_state: &VehicleState) -> Setpoint {
         assert!(dt > 0.0, "Time step must be positive");
 
+        if !matches!(command, Command::Waypoint(_)) {
+            // Re-entering waypoint mode runs the loops at once instead of holding a stale
+            // setpoint.
+            self.navigation = None;
+        }
+
         match command {
             Command::Attitude(attitude_command) => {
-                Setpoint::Attitude(self.attitude_setpoint(attitude_command, estimated_state))
+                Setpoint::Attitude(self.attitude_setpoint(dt, attitude_command, estimated_state))
             }
             Command::Rate(rate_command) => Setpoint::Rate(RateSetpoint {
                 roll_rate: rate_command.roll_rate,
@@ -142,6 +184,7 @@ impl CopterGuidance {
     /// yaw stick.
     fn attitude_setpoint(
         &mut self,
+        dt: f32,
         attitude_command: &AttitudeCommand,
         estimated_state: &VehicleState,
     ) -> AttitudeSetpoint {
@@ -151,7 +194,7 @@ impl CopterGuidance {
 
         // Wrapped so sustained yaw input can't grow the target without bound; the yaw
         // controller works on the wrapped error either way.
-        let target = wrap_angle(self.heading + yaw * HEADING_STEP_PER_TICK);
+        let target = wrap_angle(self.heading + yaw * HEADING_SLEW_RATE * dt);
         if target.is_finite() {
             self.heading = target;
         } else if estimated_state.heading.is_finite() {
@@ -170,8 +213,36 @@ impl CopterGuidance {
     }
 
     /// Runs the lateral position loop (→ roll/pitch) and the altitude loop (→ thrust) toward
-    /// the waypoint, holding heading north.
+    /// the waypoint, holding heading north, once per navigation period; holds the last
+    /// setpoint on the ticks in between.
     fn navigate(
+        &mut self,
+        dt: f32,
+        waypoint_command: &WaypointCommand,
+        estimated_state: &VehicleState,
+    ) -> AttitudeSetpoint {
+        let step = match &mut self.navigation {
+            Some(navigation) => {
+                navigation.elapsed += dt;
+                // Half a tick of slack, so float accumulation (5 × 4 ms ≈ 19.999 ms) still
+                // runs on the tick nearest the period.
+                if navigation.elapsed < self.navigation_period - 0.5 * dt {
+                    return navigation.setpoint;
+                }
+                navigation.elapsed
+            }
+            None => dt,
+        };
+        let setpoint = self.run_waypoint_loops(step, waypoint_command, estimated_state);
+        self.navigation = Some(Navigation {
+            elapsed: 0.0,
+            setpoint,
+        });
+        setpoint
+    }
+
+    /// One step of the lateral and altitude loops over `dt` seconds.
+    fn run_waypoint_loops(
         &mut self,
         dt: f32,
         waypoint_command: &WaypointCommand,

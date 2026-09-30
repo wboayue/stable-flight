@@ -31,9 +31,10 @@ the **Follow-up backlog** in `plans/workspace-migration.md` (one list for both p
 | 4 | Resolve `Vehicle` vs `StateEstimator`/`Actuator` | Trait surface  | Low    | ✅ #47 |
 | 5 | Rename `simulators/` module to `vehicles/`    | Mechanical move   | Low    | ⏭ workspace PR 3 |
 | 6 | Decouple `TelemetryPublisher` from `Command`  | Trait surface     | Medium | ✅ #48 |
-| 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | 🔍 #60 |
+| 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | ✅ #60 |
+| 7.5 | Guidance rate divider                       | Behaviour         | Medium | ⬜ |
 
-PRs 1–4 and 6 are merged. For future stacked PRs, use CLAUDE.md's
+PRs 1–4, 6, and 7 are merged. For future stacked PRs, use CLAUDE.md's
 stacked-PR procedure: retarget the child to `main` before merging its parent.
 
 ---
@@ -373,6 +374,31 @@ change, then add the divider in a follow-up where the diff is easy to read.
     deferred: the divider inside `CopterGuidance`, and `From<&RateCommand>` for
     `RateSetpoint`.
 
+
+---
+
+## PR 7.5 — Guidance rate divider
+
+**Problem.** PR 7 split guidance from the inner loop but still runs the waypoint loops at the
+inner-loop rate (250 Hz in the RealFlight examples); position loops conventionally run at
+~50 Hz. The heading-hold slew is per tick, so its rate changes with the loop rate.
+
+**Change.**
+- Make the heading slew `dt`-based first: `HEADING_SLEW_RATE` (0.025 rad/s, identical at
+  250 Hz) replaces `HEADING_STEP_PER_TICK`.
+- `CopterGuidanceConfig::navigation_period` (default 20 ms = 50 Hz, `0.0` = every tick). The
+  divider sits inside `CopterGuidance`'s waypoint branch, not `FlightLoop`, so pilot commands
+  are still interpreted every tick (the #60 review: a loop-level divider adds up to 20 ms of
+  stick latency). No trait, `FlightLoop`, or generic-parameter change.
+- The loops run on the first waypoint tick (and on re-entering waypoint mode), then whenever
+  the accumulated `dt` reaches the period, with half a tick of slack for f32 accumulation.
+  Each run integrates the whole elapsed time and the setpoint is held in between.
+
+**Risk.** Medium: changes waypoint flight (a held position/altitude setpoint for up to 20 ms).
+Gate on flying `copter-auto-realflight` (figure-eight) before merge.
+
+**Decision.** Default 50 Hz rather than opt-in, per the plan's target; `navigation_period:
+0.0` restores the old behaviour.
 ---
 
 ## Out of scope (for now)
