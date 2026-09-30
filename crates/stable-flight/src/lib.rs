@@ -701,8 +701,9 @@ pub struct RateSetpoint {
 ///
 /// Guidance is the outer loop: waypoint navigation (position and altitude hold), and the
 /// interpretation of pilot sticks that needs memory, such as integrating yaw stick into a
-/// heading-hold target. The [`Stabilizer`] then tracks the setpoint. [`FlightLoop`] runs both
-/// every tick; why they are split is in the
+/// heading-hold target. The [`Stabilizer`] then tracks the setpoint. [`FlightLoop`] calls both
+/// every tick; a guidance that runs its loops slower paces them itself from `dt`. Why they are
+/// split is in the
 /// [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md#core-components).
 ///
 /// # Examples

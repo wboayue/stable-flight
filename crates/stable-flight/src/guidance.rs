@@ -2,3 +2,4 @@
 //! setpoints a [`Stabilizer`](crate::Stabilizer) tracks.
 
 pub mod copter;
+mod rate_divider;
