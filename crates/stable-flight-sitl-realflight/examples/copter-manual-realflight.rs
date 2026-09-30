@@ -1,7 +1,7 @@
-//! Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX
-//!
 //! Flies a quadcopter in RealFlight from a Logitech Extreme 3D joystick, using the
 //! hand-tuned gains from [`airframes::quadcopter_x`].
+//!
+//! Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX
 //!
 //! The RealFlight host defaults to `10.211.55.3:8080`; override it with `--host`.
 //!
@@ -14,7 +14,6 @@ use clap::Parser;
 use env_logger::Builder;
 
 use stable_flight::FlightLoop;
-use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
@@ -39,7 +38,7 @@ fn main() {
     // Joystick commander drives the vehicle attitude/rate directly.
     let commander = Extreme3DCommander::default();
 
-    // QuadCopterX model: tuned gains and its motor-to-channel mapping.
+    // QuadCopterX model: tuned gains, mixer, and motor-to-channel mapping.
     let airframe = airframes::quadcopter_x();
 
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
@@ -49,7 +48,7 @@ fn main() {
 
     let stabilizer = CopterStabilizer::new(airframe.stabilizer);
 
-    let mixer = QuadCopterMixer::default();
+    let mixer = airframe.mixer;
 
     let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
 

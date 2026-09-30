@@ -10,8 +10,8 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
-# Core only: a backend must stay usable with any runner. The sitl harness is a dev-dependency
-# (examples + conformance tests); CI checks it never becomes a normal dependency.
+# Never the sitl harness: a backend must stay usable with any runner. sitl is a
+# dev-dependency for the examples; CI checks it never becomes a normal dependency.
 [dependencies]
 stable-flight = { path = "../stable-flight", version = "0.1.0" }
 realflight-bridge = { version = "1.1.0", features = ["uom"] }
@@ -21,10 +21,9 @@ log.workspace = true
 
 [dev-dependencies]
 stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["testing"] }
-stable-flight-sitl = { path = "../stable-flight-sitl", version = "0.1.0", features = ["conformance"] }
+# Examples only: runner, commanders, telemetry.
+stable-flight-sitl = { path = "../stable-flight-sitl", version = "0.1.0" }
 uom.workspace = true
 env_logger = "0.11.6"
-approx.workspace = true
-assert2.workspace = true
 # Examples parse their CLI args with clap.
 clap.workspace = true

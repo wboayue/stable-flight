@@ -39,6 +39,7 @@ const DEFAULT_YAW_SCALING: f32 = DEFAULT_ROLL_PITCH_SCALING * 2.5; // Yaw is sca
 ///
 /// This mixer converts control outputs (thrust and moments) into individual motor commands.
 /// The roll, pitch, and yaw contributions are scaled using configurable factors.
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct QuadCopterMixer {
     /// Scaling factor for roll and pitch moments.
     roll_pitch_scaling: f32,

@@ -7,6 +7,8 @@
 //! - [`NullVehicle`]: returns a fixed state and counts calls.
 //! - [`ConstantCommander`]: emits the same [`Command`] every tick.
 //! - [`RecordingTelemetry`]: keeps copies of the last `N` ticks in a fixed-size ring.
+//! - [`conformance`]: physical scenarios that check a backend's `VehicleState` against the
+//!   frame contract, and [`conformance_tests!`](crate::conformance_tests) to run them.
 //!
 //! Recover a double after running a [`FlightLoop`](crate::FlightLoop) with
 //! [`FlightLoop::into_parts`](crate::FlightLoop::into_parts).
@@ -22,6 +24,8 @@ use crate::{
     Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, ControlOutput, StateEstimator,
     TelemetryPublisher, TelemetryRecord, VehicleState,
 };
+
+pub mod conformance;
 
 #[cfg(test)]
 mod tests;

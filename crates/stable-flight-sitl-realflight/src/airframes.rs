@@ -1,12 +1,13 @@
 //! Tuned setups for the RealFlight models this backend flies.
 //!
-//! Gains belong to the simulated airframe, not to an example: each function returns the
-//! stabilizer configuration and channel mapping for one model, so examples (and any other
-//! wiring) share one tuned set.
+//! Gains belong to the simulated airframe, not to an example: each function returns an
+//! [`Airframe`] with the stabilizer configuration, the mixer, and the channel mapping for one
+//! model, so examples (and any other wiring) share one tuned set.
 
 use std::f32::consts::PI;
 
 use robomath::{vec2, vec3};
+use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::Gains;
 use stable_flight::stabilizers::controllers::{
     AttitudeController, AttitudeControllerConfig, BodyRateController, BodyRateControllerConfig,
@@ -18,11 +19,17 @@ use crate::ActuatorMapping;
 #[cfg(test)]
 mod tests;
 
-/// Stabilizer configuration and channel mapping for the QuadCopterX model.
-pub struct QuadCopterXAirframe {
-    /// Hand-tuned stabilizer gains (rate and attitude loops; the rest are the core defaults).
-    pub stabilizer: CopterStabilizerConfig,
-    /// Motor-to-channel mapping of the RealFlight model.
+/// Everything model-specific about one RealFlight airframe.
+///
+/// `S` is the stabilizer configuration and `M` the mixer. The mixer is part of the airframe
+/// because `mapping` is only valid for its motor order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Airframe<S, M> {
+    /// Tuned stabilizer configuration.
+    pub stabilizer: S,
+    /// The mixer whose motor order `mapping` follows.
+    pub mixer: M,
+    /// RealFlight channel for each of the mixer's outputs.
     pub mapping: ActuatorMapping,
 }
 
@@ -42,9 +49,10 @@ pub struct QuadCopterXAirframe {
 ///
 /// let airframe = airframes::quadcopter_x();
 /// let stabilizer = CopterStabilizer::new(airframe.stabilizer);
+/// let mixer = airframe.mixer;
 /// assert_eq!(airframe.mapping.motors[0], Some(2));
 /// ```
-pub fn quadcopter_x() -> QuadCopterXAirframe {
+pub fn quadcopter_x() -> Airframe<CopterStabilizerConfig, QuadCopterMixer> {
     let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
         gains: Gains {
             p: 7.0,
@@ -66,13 +74,14 @@ pub fn quadcopter_x() -> QuadCopterXAirframe {
         max_rate: vec2(3.0, 3.0),             // Max roll, pitch rates in rad/s
     });
 
-    QuadCopterXAirframe {
+    Airframe {
         stabilizer: CopterStabilizerConfig {
             rates_controller,
             attitude_controller,
             ..Default::default()
         },
-        // The model's motors 1–4 are on channels 2, 0, 1, 3, in `QuadCopterMixer` order.
+        mixer: QuadCopterMixer::default(),
+        // `QuadCopterMixer` motor `i` drives RealFlight channel `motors[i]`.
         mapping: ActuatorMapping {
             motors: [Some(2), Some(0), Some(1), Some(3), None, None, None, None],
             ..Default::default()

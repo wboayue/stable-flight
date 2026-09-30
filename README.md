@@ -43,8 +43,7 @@ The ArduPilot repository also provides a helpful [collection of models](https://
 * **Rust**: Install Rust using rustup. [rustup](https://rustup.rs/)
 * **RealFlight Simulator**: The flight stabilizer was developed using RealFlight Evolution but should work with older versions as well. RealFlight runs natively on Windows, but can also run on macOS using virtualization software like Parallels.
 
-After installing RealFlight, you will need to enable **RealFlight Link**. You can find this option under:
-**Settings → Physics → Quality → RealFlight Link Enabled**.
+After installing RealFlight, enable RealFlight Link as described in the [`stable-flight-sitl-realflight` README](crates/stable-flight-sitl-realflight/README.md#setup).
 
 ## Getting Started
 

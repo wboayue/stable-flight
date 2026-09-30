@@ -1,12 +1,12 @@
 # stable-flight-sitl-realflight
 
-[RealFlight](https://www.realflight.com) simulator backend for the [Stable Flight](https://github.com/wboayue/stable-flight) flight controller. It provides `RealFlightVehicle`, a `Vehicle` (`StateEstimator` + `Actuator`) that talks to RealFlight over [RealFlight Link](https://crates.io/crates/realflight-bridge), plus tuned `airframes` for the models it flies. See the [project README](https://github.com/wboayue/stable-flight#readme) for simulator setup and [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md) for the backend contract.
+[RealFlight](https://www.realflight.com) simulator backend for the [Stable Flight](https://github.com/wboayue/stable-flight) flight controller. It provides `RealFlightVehicle`, a `Vehicle` (`StateEstimator` + `Actuator`) that talks to RealFlight over [RealFlight Link](https://crates.io/crates/realflight-bridge), plus tuned `airframes` for the models it flies. See [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#simulator-backends) for the backend contracts.
 
-The crate depends only on the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core, so any runner can drive it. The runnable examples pair it with the [`stable-flight-sitl`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl) harness (real-time runner, commanders, telemetry).
+The crate builds on the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core and never on the sitl harness, so any runner can drive it. The runnable examples pair it with the [`stable-flight-sitl`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl) harness (real-time runner, commanders, telemetry).
 
 ## Setup
 
-RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**.
+RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**. Test models: QuadCopterX (multirotor) and eXplora VTOL (tailsitter); the ArduPilot [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models) repo has more.
 
 ## Usage
 
@@ -15,7 +15,7 @@ use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
 
-// Tuned gains and channel mapping for the QuadCopterX model.
+// Tuned gains, mixer, and channel mapping for the QuadCopterX model.
 let airframe = airframes::quadcopter_x();
 
 let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
@@ -23,9 +23,10 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
     mapping: airframe.mapping,
 });
 let stabilizer = CopterStabilizer::new(airframe.stabilizer);
+let mixer = airframe.mixer;
 ```
 
-Use `RealFlightLocalBridge` when the controller runs on the same host as RealFlight, and `RealFlightRemoteBridge` otherwise. `realflight_bridge` is re-exported, so you don't need to depend on it yourself. `ActuatorMapping` maps logical motors and control surfaces to the model's RealFlight channels.
+Use `RealFlightLocalBridge` when the controller runs on the same host as RealFlight, and `RealFlightRemoteBridge` otherwise. `realflight_bridge` is re-exported, so you don't need to depend on it yourself. `ActuatorMapping` maps the mixer's motors and control surfaces to the model's RealFlight channels, so an airframe's mapping only fits its own mixer.
 
 Each tick makes one RealFlight exchange, in `actuate`; `estimate_state` returns the cached result, so the stabilizer sees state one tick old. The `RealFlightVehicle` rustdoc covers timing and frame conversion.
 
@@ -49,4 +50,4 @@ cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- f
 
 ## Known issues
 
-Some RealFlight conversions don't meet the `VehicleState` frame contract yet. Roll, pitch, heading, and body rates are converted to radians twice, so they come out about 57× too small. Vertical velocity and acceleration are also still down-positive. The conformance tests for those scenarios are `#[ignore]`d until a flight-checked fix lands.
+Some RealFlight conversions don't meet the `VehicleState` frame contract yet. Roll, pitch, heading, and body rates are converted to radians twice, so they come out about 57× too small. Vertical velocity and acceleration are also still down-positive. The conformance tests for those scenarios are `#[ignore]`d until a flight-checked fix lands. Run them with `cargo test -p stable-flight-sitl-realflight -- --ignored`.

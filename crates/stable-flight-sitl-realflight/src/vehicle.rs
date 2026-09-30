@@ -24,7 +24,7 @@ mod tests;
 /// mapping.rudder = Some(1);     // Rudder to channel 1
 /// mapping.throttle = Some(2);   // Throttle to channel 2
 /// ```
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct ActuatorMapping {
     /// Array of optional channel assignments for up to 8 motors.
     /// Index represents motor number, value represents channel number (0-15).
@@ -89,16 +89,19 @@ where
 /// the state cached from that exchange: the stabilizer on tick *n* sees the state RealFlight
 /// reported when it received tick *n − 1*'s controls, one tick old. The one exception is the
 /// priming call (`dt == Duration::ZERO`), which makes an exchange with neutral inputs so the
-/// first state is real. See the core `Vehicle` docs for the cross-backend contract.
+/// first state is real; if that exchange fails, it logs an error and returns
+/// `VehicleState::default()`. `exchange_data` is a blocking network round-trip, so a slow link
+/// stalls the tick. See the core `Vehicle` docs for the cross-backend contract.
 ///
 /// # Frames
 ///
-/// RealFlight reports world position and velocity north/east/down, altitude above sea level,
-/// and angles and body rates in degrees. `VehicleState` wants north/east/up and radians (see
-/// its docs), so this type converts at the boundary. Two conversions don't meet that yet: the
-/// angles and body rates are converted to radians twice (about 57× too small), and vertical
-/// velocity and acceleration keep RealFlight's down-positive sign. The ignored `conforms_*` tests
-/// pin both; the fix needs a flight check because the current gains were tuned against them.
+/// RealFlight reports world position, velocity, and acceleration north/east/down, altitude
+/// above sea level, and angles and body rates in degrees. `VehicleState` wants north/east/up
+/// and radians (its frame contract), so this type converts at the boundary. Two conversions
+/// don't meet that yet: angles and body rates are converted to radians twice (about 57× too
+/// small), and vertical velocity and acceleration keep RealFlight's down-positive sign. The
+/// ignored `conforms_*` tests pin both; the fix needs a flight check because the current gains
+/// were tuned against them.
 ///
 /// # Examples
 ///
@@ -142,8 +145,9 @@ where
         if dt.is_zero() {
             // initialize state if dt is zero
             let input = ControlInputs::default();
-            if let Ok(state) = self.bridge.exchange_data(&input) {
-                self.update_estimate(state);
+            match self.bridge.exchange_data(&input) {
+                Ok(state) => self.update_estimate(state),
+                Err(e) => error!("Failed initial exchange with RealFlight: {}", e),
             }
         }
 

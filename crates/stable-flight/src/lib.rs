@@ -464,18 +464,24 @@ impl ControlOutput {
 ///
 /// # Frame contract
 ///
-/// Every [`StateEstimator`] reports state in these conventions; a simulator backend converts
-/// from its native frames at its boundary (the sitl crate's `conformance` kit checks this).
+/// This table is the reference for how every [`StateEstimator`] reports state; a backend
+/// converts from its native frames at its boundary, and
+/// [`testing::conformance`](crate::testing::conformance) (`testing` feature) checks it.
+///
+/// Two frames are involved. Attitude follows aerospace convention: the NED world frame
+/// (`x` north, `y` east, `z` down) and the FRD body frame (`x` forward, `y` right, `z` down).
+/// Translation uses the same north and east axes but flips `z` to point **up**, so altitude
+/// and climb rate are positive: `position`/`velocity`/`acceleration` `z` is NED `z` negated.
 ///
 /// | Quantity | Frame | Units | Positive |
 /// |---|---|---|---|
-/// | `position` | world: `x` north, `y` east, `z` up | m | `z` is altitude (above the backend's datum, e.g. sea level) |
-/// | `velocity`, `acceleration` | world, as `position` | m/s, m/s² | `z` climbing |
-/// | `attitude` | world → body quaternion, ZYX (yaw, pitch, roll) | — | its `roll()`/`pitch()`/`yaw()` match the fields below |
-/// | `roll` | body `x` (forward) | rad | right wing down |
-/// | `pitch` | body `y` (right) | rad | nose up |
-/// | `heading` | about the vertical | rad | clockwise from north (east = π/2); any range, [0, 2π) and (-π, π] both occur |
-/// | `angular_velocity` | body: `x` roll, `y` pitch, `z` yaw | rad/s | roll right, nose up, nose right |
+/// | `position` | `x` north, `y` east, `z` up | m | `z` is altitude above the backend's datum (e.g. sea level) |
+/// | `velocity`, `acceleration` | as `position` | m/s, m/s² | `z` climbing |
+/// | `attitude` | NED world → FRD body, ZYX (yaw, pitch, roll); `Quaternion::from_euler(heading, pitch, roll)` | — | its `roll()`/`pitch()`/`yaw()` match the fields below |
+/// | `roll` | about body `x` | rad | right wing down |
+/// | `pitch` | about body `y` | rad | nose up |
+/// | `heading` | about NED `z` | rad | clockwise from north (east = π/2); any range, e.g. [0, 2π) or [-π, π) |
+/// | `angular_velocity` | FRD body: `x` roll, `y` pitch, `z` yaw | rad/s | roll right, nose up, nose right |
 ///
 /// # Examples
 ///
@@ -532,15 +538,16 @@ pub struct VehicleState {
 /// [`Actuator::actuate`] once, every tick. A backend must:
 ///
 /// - report state in the [`VehicleState` frame contract](VehicleState#frame-contract);
-/// - talk to its simulator or hardware at most once per call, and never block for longer than
-///   a tick;
+/// - talk to its simulator or hardware at most once per call, and should not block for longer
+///   than a tick (document it if a blocking link can);
 /// - document how old the state from `estimate_state` is relative to the last `actuate`. A
-///   backend whose link sends controls and returns state in one round-trip (RealFlight)
-///   exchanges in `actuate` and returns the cached result, so tick *n* stabilizes on state
-///   reported when the simulator received tick *n − 1*'s controls. A backend with a separate
-///   sensor read should read fresh state in `estimate_state`;
+///   backend whose link sends controls and returns state in one round-trip exchanges in
+///   `actuate` and returns the cached result, so tick *n* stabilizes on state reported when
+///   the simulator received tick *n − 1*'s controls. A backend with a separate sensor read
+///   should read fresh state in `estimate_state`;
 /// - produce real state on the priming call (`dt == Duration::ZERO`, made once by
-///   [`FlightLoop::prime`] before any `actuate`), contacting the simulator if it must.
+///   [`FlightLoop::prime`] before any `actuate`), contacting the simulator if it must, and
+///   document what it returns if that fails.
 ///
 /// # Examples
 ///

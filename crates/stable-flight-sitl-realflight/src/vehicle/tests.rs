@@ -4,10 +4,8 @@ use robomath::{Quaternion, Vec3};
 use stable_flight::FlightLoop;
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+use stable_flight::testing::conformance::Scenario;
 use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
-use stable_flight_sitl::conformance::{
-    CLIMBING, HEADING_EAST, LEVEL, PITCH_UP_15, ROLL_RIGHT_30, Scenario, YAW_RIGHT_RATE,
-};
 use std::{
     cell::{Cell, RefCell},
     time::Duration,
@@ -204,8 +202,6 @@ fn test_actuate_success() {
         Acceleration::new::<meter_per_second_squared>(9.0)
     );
     assert_eq!(vehicle.estimated_state.attitude.w, 1.0);
-    // FIXME
-    // assert_eq!(vehicle.estimated_state.angular_velocity.x, to_radians(90.0));
 }
 
 #[test]
@@ -304,11 +300,14 @@ fn exchanges_once_per_tick_and_estimates_from_the_previous_exchange() {
 /// RealFlight's native report for a conformance scenario: world north/east/down, altitude
 /// ASL, angles and rates in degrees (per the `realflight-bridge` field docs).
 ///
-/// The quaternion assumes RealFlight reports a standard ZYX (yaw, pitch, roll) world-to-body
-/// rotation; that hasn't been checked against a live capture yet.
+/// The quaternion assumes RealFlight reports a standard ZYX (yaw, pitch, roll) NED-to-body
+/// rotation, built with the same robomath code `check` reads it back with. So the quaternion
+/// rows only check that the adapter copies components in order, not RealFlight's convention;
+/// that needs a live capture.
 fn native_fixture(scenario: &Scenario) -> SimulatorState {
     let [north, east, up] = scenario.position_neu;
     let [v_north, v_east, v_up] = scenario.velocity_neu;
+    let [a_north, a_east, a_up] = scenario.acceleration_neu;
     let [roll_rate, pitch_rate, yaw_rate] = scenario.body_rates_deg_s;
     let attitude = Quaternion::from_euler(
         scenario.heading_deg.to_radians(),
@@ -324,6 +323,9 @@ fn native_fixture(scenario: &Scenario) -> SimulatorState {
         velocity_world_u: Velocity::new::<meter_per_second>(v_north),
         velocity_world_v: Velocity::new::<meter_per_second>(v_east),
         velocity_world_w: Velocity::new::<meter_per_second>(-v_up),
+        acceleration_world_ax: Acceleration::new::<meter_per_second_squared>(a_north),
+        acceleration_world_ay: Acceleration::new::<meter_per_second_squared>(a_east),
+        acceleration_world_az: Acceleration::new::<meter_per_second_squared>(-a_up),
         roll: Angle::new::<degree>(scenario.roll_deg),
         inclination: Angle::new::<degree>(scenario.pitch_deg),
         azimuth: Angle::new::<degree>(scenario.heading_deg),
@@ -338,50 +340,36 @@ fn native_fixture(scenario: &Scenario) -> SimulatorState {
     }
 }
 
-fn assert_conforms(scenario: Scenario) {
+/// Runs RealFlight's native report for `scenario` through the priming exchange.
+fn state_for(scenario: &Scenario) -> VehicleState {
+    let scenario = *scenario;
     let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         mapping: ActuatorMapping::default(),
         bridge: MockRealFlightBridge::with_state(move || native_fixture(&scenario)),
     });
 
+    vehicle.estimate_state(Duration::ZERO)
+}
+
+stable_flight::conformance_tests! {
+    state_for;
+    conforms_level: LEVEL;
+    conforms_roll_right_30: ROLL_RIGHT_30, ignore = "angles converted to radians twice; fix needs a flight check";
+    conforms_pitch_up_15: PITCH_UP_15, ignore = "angles converted to radians twice; fix needs a flight check";
+    conforms_heading_east: HEADING_EAST, ignore = "angles converted to radians twice; fix needs a flight check";
+    conforms_banked_climb_east: BANKED_CLIMB_EAST, ignore = "angles converted to radians twice; fix needs a flight check";
+    conforms_climbing: CLIMBING, ignore = "vertical velocity/acceleration down-positive; fix needs a flight check";
+    conforms_moving_northeast: MOVING_NORTHEAST;
+    conforms_yaw_right_rate: YAW_RIGHT_RATE, ignore = "rates converted to radians twice; fix needs a flight check";
+    conforms_combined_rates: COMBINED_RATES, ignore = "rates converted to radians twice; fix needs a flight check";
+}
+
+#[test]
+fn priming_failure_returns_the_default_state() {
+    let mut vehicle = RealFlightVehicle::new(create_test_config(true));
+
     let state = vehicle.estimate_state(Duration::ZERO);
 
-    if let Err(error) = scenario.check(&state) {
-        panic!("{error}");
-    }
-}
-
-#[test]
-fn conforms_level() {
-    assert_conforms(LEVEL);
-}
-
-#[test]
-#[ignore = "angles and rates are converted to radians twice; fix needs a flight check"]
-fn conforms_roll_right_30() {
-    assert_conforms(ROLL_RIGHT_30);
-}
-
-#[test]
-#[ignore = "angles and rates are converted to radians twice; fix needs a flight check"]
-fn conforms_pitch_up_15() {
-    assert_conforms(PITCH_UP_15);
-}
-
-#[test]
-#[ignore = "angles and rates are converted to radians twice; fix needs a flight check"]
-fn conforms_heading_east() {
-    assert_conforms(HEADING_EAST);
-}
-
-#[test]
-#[ignore = "vertical velocity keeps RealFlight's down-positive sign; fix needs a flight check"]
-fn conforms_climbing() {
-    assert_conforms(CLIMBING);
-}
-
-#[test]
-#[ignore = "angles and rates are converted to radians twice; fix needs a flight check"]
-fn conforms_yaw_right_rate() {
-    assert_conforms(YAW_RIGHT_RATE);
+    assert_eq!(state, VehicleState::default());
+    assert_eq!(vehicle.bridge.exchanges.get(), 1);
 }

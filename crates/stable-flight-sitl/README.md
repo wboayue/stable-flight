@@ -4,7 +4,7 @@ Simulator-independent software-in-the-loop harness for the Stable Flight flight 
 
 ## Components
 
-The RealFlight examples (in the backend crate) wire the same five-component pipeline and are copy-paste starting points for your own setup. Let's walk through the components a `FlightLoop` needs: a **Commander**, **Vehicle**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**. The traits and data types come from the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate; this crate provides the simulation-side implementations and the real-time runner.
+The RealFlight examples (in the backend crate) wire the same five-component pipeline and are copy-paste starting points for your own setup. Let's walk through the components a `FlightLoop` needs: a **Commander**, **Vehicle**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**. The traits and data types come from the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate; this crate provides the commanders, telemetry, and the real-time runner.
 
 ### Commander
 
@@ -28,27 +28,11 @@ The SpektrumCommander currently doesn't expose configuration options.
 
 ### Vehicle
 
-Vehicles retrieve state estimates and actuate motors and control surfaces. Each simulator backend is its own crate that depends only on the core; RealFlight's is [`stable-flight-sitl-realflight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl-realflight), whose README shows how to configure it. To support another simulator, create a `stable-flight-sitl-<simulator>` crate that implements `StateEstimator` (read state) and `Actuator` (send commands) for a type that talks to it; `Vehicle` is implemented automatically for any type with both. It has to meet the frame and timing contracts described in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#simulator-backends).
-
-### Conformance kit
-
-The `conformance` feature adds `stable_flight_sitl::conformance`, a table of physical scenarios (level, 30° right roll, 15° nose up, heading east, climbing, yaw-right rate). A backend's tests build the simulator's native report for each scenario, run it through the backend, and check the resulting `VehicleState`:
-
-```toml
-[dev-dependencies]
-stable-flight-sitl = { version = "0.1.0", features = ["conformance"] }
-```
-
-```rust
-use stable_flight_sitl::conformance::ROLL_RIGHT_30;
-
-let state = backend_state_for(&ROLL_RIGHT_30); // your mock-simulator fixture
-ROLL_RIGHT_30.check(&state).unwrap(); // Err lists every field off contract
-```
+Vehicles retrieve state estimates and actuate motors and control surfaces. Each simulator backend is its own crate that builds on the core and never depends on this crate (except for its examples); RealFlight's is [`stable-flight-sitl-realflight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl-realflight), whose README shows how to configure it. To support another simulator, create a `stable-flight-sitl-<simulator>` crate that implements `StateEstimator` (read state) and `Actuator` (send commands) for a type that talks to it; `Vehicle` is implemented automatically for any type with both. It has to meet the frame and timing contracts ([architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#simulator-backends)) and cover the core's conformance scenarios (`stable_flight::conformance_tests!`, `testing` feature).
 
 ### Stabilizer and Mixer
 
-The stabilizer (cascaded PID control) and mixer (thrust/moments → motor and surface commands) live in the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate so the same code can run on hardware. See its README for configuration; the examples here use `CopterStabilizer` and `QuadCopterMixer`.
+The stabilizer (cascaded PID control) and mixer (thrust/moments → motor and surface commands) live in the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate so the same code can run on hardware. See its README for configuration; the RealFlight examples use `CopterStabilizer` and `QuadCopterMixer`.
 
 ### TelemetryPublisher
 

@@ -16,7 +16,6 @@ use clap::Parser;
 use env_logger::Builder;
 
 use stable_flight::FlightLoop;
-use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
@@ -45,7 +44,7 @@ fn main() {
     // Replays and loops the waypoints from the CSV script.
     let commander = ScriptCommander::new(&args.script).expect("failed to load flight script");
 
-    // QuadCopterX model; only its channel mapping is used here.
+    // QuadCopterX model; its mixer and channel mapping (gains: see below).
     // Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX
     let airframe = airframes::quadcopter_x();
 
@@ -58,7 +57,7 @@ fn main() {
     // One tuned set for both examples comes with the RealFlight frame fix.
     let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
 
-    let mixer = QuadCopterMixer::default();
+    let mixer = airframe.mixer;
 
     let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
 

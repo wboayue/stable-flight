@@ -9,10 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `conformance` feature: `stable_flight_sitl::conformance`, a table of physical
-  scenarios (level, 30° right roll, 15° nose up, heading east, climbing, yaw-right
-  rate) with the `VehicleState` each must produce. Simulator backends run their
-  native fixtures through it to catch frame and unit bugs.
 - `Command`, `AttitudeCommand`, `RateCommand`, `ControlOutput`, and
   `ActuatorCommand` now derive `Clone` and `Copy` (plain data), so telemetry
   sinks can keep copies of a tick's `TelemetryRecord`.
@@ -104,6 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the `realflight-bridge` dependency and the `copter-*-realflight` examples. They
   moved to the new `stable-flight-sitl-realflight` crate:
   `use stable_flight_sitl_realflight::{ActuatorMapping, RealFlightConfiguration, RealFlightVehicle};`.
+- Unused `env_logger` dependency; `uom` is now a dev-dependency only.
 - **Breaking:** `simulators::NullVehicle`. Use `stable_flight::testing::NullVehicle`
   (enable the core `testing` feature in `[dev-dependencies]`), which also counts
   calls and records the last actuator command.

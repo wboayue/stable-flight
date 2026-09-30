@@ -12,10 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New crate: the RealFlight backend, moved out of `stable-flight-sitl`
   (`simulators::realflight`). `RealFlightVehicle`, `RealFlightConfiguration`, and
   `ActuatorMapping` are at the crate root, and `realflight_bridge` is re-exported.
-  Depends on the `stable-flight` core only.
-- `airframes::quadcopter_x()`: the QuadCopterX model's tuned stabilizer gains and
-  channel mapping.
-- `ActuatorMapping` derives `Debug`, `Clone`, and `PartialEq`.
+  Never depends on `stable-flight-sitl` (a dev-dependency for the examples).
+- `airframes::Airframe<S, M>` (stabilizer config, mixer, and channel mapping) and
+  `airframes::quadcopter_x()`, the QuadCopterX model's tuned gains with
+  `QuadCopterMixer` and its mapping.
+- `ActuatorMapping` derives `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, and `Hash`.
+- The priming `estimate_state(Duration::ZERO)` logs an error when its exchange
+  fails (it still returns the default state).
 - The `copter-manual-realflight` and `copter-auto-realflight` examples (moved from
   `stable-flight-sitl`); run with `-p stable-flight-sitl-realflight`, or
   `just fly-manual` / `just fly-auto`.

@@ -13,25 +13,19 @@ repository.workspace = true
 [dependencies]
 stable-flight = { path = "../stable-flight", version = "0.1.0" }
 gilrs = "0.11.0"
-env_logger = "0.11.6"
 log.workspace = true
 signal-hook = "0.4.1"
 mavlink = "0.17.1"
-uom.workspace = true
 byteorder = "1.5.0"
 robomath.workspace = true
 thiserror.workspace = true
-
-[features]
-# `stable_flight_sitl::conformance`: frame-conformance scenarios for backend tests. For
-# dev-dependencies only.
-conformance = []
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Console"] }  # For Windows-specific APIs
 
 [dev-dependencies]
 stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["testing"] }
+uom.workspace = true
 approx.workspace = true
 assert2.workspace = true
 # Examples parse their CLI args with clap.

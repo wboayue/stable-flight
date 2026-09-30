@@ -13,11 +13,10 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     thread dependencies — keep it that way (it becomes `no_std` in workspace PR 4).
   - `crates/stable-flight-sitl` — the simulator-independent SITL harness: `commanders`,
     `telemetry`, `runner` (`RealTimeRunner`, wall-clock pacing of a `FlightLoop`), `shutdown`
-    (`ShutdownSignal`), and `conformance` (backend frame checks; `conformance` feature). Depends
-    on the core. Non-simulator examples live in `crates/stable-flight-sitl/examples/*.rs`.
+    (`ShutdownSignal`). Depends on the core. Non-simulator examples live in `crates/stable-flight-sitl/examples/*.rs`.
   - `crates/stable-flight-sitl-realflight` — the RealFlight backend: `RealFlightVehicle`,
-    `ActuatorMapping`, `airframes` (tuned gains + mapping per model), and the `copter-*-realflight`
-    examples. Normal deps: core, `realflight-bridge`, `robomath`, `log`; sitl is a dev-dependency only (CI checks).
+    `ActuatorMapping`, `airframes` (tuned gains, mixer, and mapping per model), and the
+    `copter-*-realflight` examples. Normal deps: core, `realflight-bridge`, `robomath`, `log`; sitl is a dev-dependency only (CI checks).
     One `stable-flight-sitl-<simulator>` crate per backend.
   - `crates/stable-flight-tools` — unpublished (`publish = false`) dev binaries: `plot_flight`
     (3D flight-path visualizer) and `generate_figure_eight` (waypoint-script generator).
@@ -25,11 +24,12 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Run every command from the repo root: `cargo run --example <name>` / `--bin <name>` resolve
   across the workspace (add `-p <crate>` to be explicit), and `flights/*.csv` paths are
   relative to the root.
-- Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `flight_loop`, `mixers`, `stabilizers` (traits/types at the crate root); `stable-flight-sitl` — `commanders`, `conformance` (feature), `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes` (`RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, and the `realflight_bridge` re-export at the root). sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
+- Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `flight_loop`, `mixers`, `stabilizers`, `testing` (feature: doubles + `conformance`) (traits/types at the crate root); `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
 - Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
 - Untracked generated artifacts: `target/`, `Cargo.lock`, `tarpaulin-report.html`.
 - Paths below are prefixed with their crate (`core:` = `crates/stable-flight/`, `sitl:` =
-  `crates/stable-flight-sitl/`) where it matters.
+  `crates/stable-flight-sitl/`, `sitl-realflight:` = `crates/stable-flight-sitl-realflight/`)
+  where it matters.
 - Plans live in `plans/` (tracked). `plans/workspace-migration.md` tracks the split into
   core / sitl / backend crates; `plans/architecture-refactor.md` tracks trait-surface cleanups
   that land first (its PR 5 is superseded by the migration). Read both before touching trait
@@ -159,34 +159,17 @@ self.telemetry.publish(&TelemetryRecord { dt, command: &command, state: &self.st
 - Name tests after the behaviour they protect (e.g. `maintains_pitch_hold`), not the function under test.
 - Use `assert2::assert!` / `check!` and `approx::assert_relative_eq!` for floats.
 - Table-driven tests are the default for control math; one row per scenario.
-- For pipeline doubles, use the core `testing` feature (`stable_flight::testing::{NullVehicle, ConstantCommander, RecordingTelemetry}`; enable it in `[dev-dependencies]`) and recover them after a run with `FlightLoop::into_parts()`. Don't add per-crate `Mock*` pipeline types. Mock other traits by hand (see `MockRealFlightBridge` in sitl-realflight `src/vehicle/tests.rs`) — `mockall` is not a dependency.
+- For pipeline doubles, use the core `testing` feature (`stable_flight::testing::{NullVehicle, ConstantCommander, RecordingTelemetry}`, plus `testing::conformance` for backend frame checks; enable it in `[dev-dependencies]`) and recover them after a run with `FlightLoop::into_parts()`. Don't add per-crate `Mock*` pipeline types. Mock other traits by hand (see `MockRealFlightBridge` in sitl-realflight `src/vehicle/tests.rs`) — `mockall` is not a dependency.
 - `proptest` and `criterion` are **not** in `Cargo.toml`. Add them deliberately, with a benchmark or property test in the same PR, if you reach for them.
 - Coverage: `just cover` → review `tarpaulin-report.html`. Refresh after non-trivial control-loop changes.
 
 ## Simulator setup
 
-Each backend crate's README owns its setup and usage. Every backend must meet the `VehicleState`
-frame contract and the `Vehicle` timing contract (core rustdoc; summary in
-`architecture.md#simulator-backends`) and cover every `stable_flight_sitl::conformance` scenario
-in its tests (sitl as a dev-dependency with `features = ["conformance"]`).
-
-### RealFlight (`stable-flight-sitl-realflight`)
-
-RealFlight runs on Windows; on macOS use a Windows VM. Enable **Settings → Physics → Quality → RealFlight Link**.
-
-```rust
-use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
-use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
-
-let airframe = airframes::quadcopter_x();
-let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-    bridge: RealFlightRemoteBridge::new("10.211.55.3:8080")
-        .expect("Failed to create bridge"),
-    mapping: airframe.mapping,
-});
-```
-
-`RealFlightLocalBridge` is available when running on the same host as RealFlight. Test models: **QuadCopterX** (multirotor) and **eXplora VTOL** (tailsitter); more in the ArduPilot SITL_Models repo. Known contract gaps (double radian conversion, down-positive vertical velocity) are pinned by `#[ignore]`d `conforms_*` tests; see the plan's backlog.
+Each backend crate's README owns its setup and usage (RealFlight:
+[`crates/stable-flight-sitl-realflight/README.md`](crates/stable-flight-sitl-realflight/README.md)).
+A backend must meet the frame contract (`VehicleState` rustdoc) and timing contract (`Vehicle`
+rustdoc), and cover every conformance scenario with `stable_flight::conformance_tests!` (core
+`testing` feature). Known gaps stay `#[ignore]`d with a reason and a backlog row.
 
 ## Commits & PRs
 
@@ -204,7 +187,9 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
   - crate `README.md` — that crate's purpose, usage, features;
   - root `README.md` — project overview, crate index, supported simulators, quick start;
   - `CLAUDE.md` — commands, coding/testing rules, PR checklist;
-  - `architecture.md` — crate boundaries, dependency rules, traits, frame and timing contracts.
+  - `architecture.md` — crate boundaries, dependency rules, traits, and the rationale behind
+    the frame and timing contracts;
+  - core rustdoc — the frame contract (`VehicleState`) and timing contract (`Vehicle`) themselves.
 - **Maintain each published crate's `CHANGELOG.md`** (`crates/<crate>/CHANGELOG.md`; unpublished `stable-flight-tools` has none) ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)). Every user-facing change adds a bullet under `## [Unreleased]` in the same PR, grouped by `Added`/`Changed`/`Deprecated`/`Removed`/`Fixed`/`Security`; mark breaking changes **Breaking**. Skip internal-only churn (refactors, test/CI tweaks). At release, rename `[Unreleased]` to `## [x.y.z] - YYYY-MM-DD`, add a fresh empty `[Unreleased]`, and update the compare links.
 
 ## Workflow

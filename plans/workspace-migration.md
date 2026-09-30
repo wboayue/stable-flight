@@ -53,9 +53,11 @@ the PR that completes it. The per-PR notes further down keep the history.
 
 | Follow-up | Target | Source |
 |---|---|---|
-| RealFlight frame bugs. `update_estimate` runs `to_radians()` on uom `.value`, which is already radians, so roll/pitch/heading/body rates come out ~57× too small. `velocity_world_w`/`acceleration_world_az` are down-positive but the contract (and the altitude controller) want up. Reproduce: `cargo test -p stable-flight-sitl-realflight -- --ignored`. Fix both, un-ignore the `conforms_*` tests, and retune/flight-check (gains were tuned against the bug). | own PR (Status row) | PR 3 |
+| RealFlight frame bugs. `update_estimate` runs `to_radians()` on uom `.value`, which is already radians, so roll/pitch/heading/body rates come out ~57× too small. `velocity_world_w`/`acceleration_world_az` are down-positive but the contract (and the altitude controller) want up. Reproduce: `cargo test -p stable-flight-sitl-realflight -- --ignored` (7 scenarios fail, acceleration included). Fix both, un-ignore the `conforms_*` tests, and retune/flight-check (gains were tuned against the bug). | own PR (Status row) | PR 3 |
 | Unify QuadCopterX gains: `copter-auto` still flies `CopterStabilizerConfig::default()`, not `airframes::quadcopter_x().stabilizer`. Do it with the frame fix, since both sets were tuned against the bug. | frame-fix PR | PR 3 |
-| RealFlight conformance fixtures are synthetic. The quaternion assumes a standard ZYX world→body rotation, and the signs come from the `realflight-bridge` field docs. Capture a live `SimulatorState` per scenario (hover level, bank right, nose up, face east, climb, yaw right) and use those. | frame-fix PR | PR 3 |
+| RealFlight conformance fixtures are synthetic. The quaternion is built with the same robomath code `check` reads it back with, so its rows only prove component order; the signs come from the `realflight-bridge` field docs. Capture a live `SimulatorState` per scenario and use those. | frame-fix PR | PR 3 |
+| Pin the QuadCopterX gains in an `airframes` table test, so a retune shows in review. | frame-fix PR | #58 review |
+| Yaw sign: `QuadCopterMixer`'s +yaw raises the CW props (FR, RL), whose reaction torque turns the nose left, but the contract's +z rate is nose right. Verify in flight with the frame fix (low confidence; may cancel against RealFlight's yaw-rate sign). | frame-fix PR | #58 review |
 | `SpectrumCommander` maps roll/pitch/yaw to [0, 1] centred at 0.5; `AttitudeCommand` needs [-1, 1] centred at 0 (constant bank at centre stick). Needs the transmitter to verify each axis's sign. | own PR | #57 |
 | Upstream failsafe: estimator-health checks, then a land or disarm commander. The Input Policy is last-resort only (NaN thrust → motors off). | first board / Later | #57 review |
 | `BodyRateController`: one non-finite axis zeroes all three moments; handle axes separately. | own PR | #57 review |
@@ -63,7 +65,6 @@ the PR that completes it. The per-PR notes further down keep the history.
 | Make saturation observable (debug log or a telemetry flag/counter) for tuning. | refactor PR 7 | #57 review |
 | Yaw: controller state carries across mode switches, `self.heading` goes stale in waypoint mode, and guidance needs an absolute-heading path. | refactor PR 7 | #56 review |
 | Heading slew rate is per tick (`HEADING_STEP_PER_TICK`); make it `dt`-based. | own PR or refactor PR 7 | #56 review |
-| Document the `VehicleState::heading` range (RealFlight gives [0, 2π); controllers accept any). | own PR | #56 review |
 | Lateral: `accel / g` scaled by `max_angles` is a simplified tilt model; `LateralControllerConfig::max_rate` is unused. | refactor PR 7 | #55 |
 | `no_std` blockers beyond the plan list: `powf` in `fit_to_thrust_curve`, `std::f32::consts` imports, `rem_euclid` in `math::wrap_angle`. | PR 4 | #56/#57 reviews |
 | `TailSitterMixer` logs `info!` every tick; `ConsoleTelemetryPublisher` logs `info!` every tick. | PR 4 / own PR | #52, #48 reviews |
@@ -92,11 +93,12 @@ stable-flight/                       # GitHub: wboayue/stable-flight (renamed fr
   crates/
     stable-flight/                   # no_std core: types, traits, controllers, stabilizers, mixers,
       CHANGELOG.md  README.md        #   FlightLoop::step, WaypointFollower, ComposedVehicle,
-                                     #   tuple TelemetryPublisher; `testing` feature: test doubles
+                                     #   tuple TelemetryPublisher; `testing` feature: test doubles,
+                                     #   backend conformance kit
     stable-flight-sitl/              # std harness: runners, ShutdownSignal, commanders (joystick, script
-      CHANGELOG.md  README.md        #   loader), telemetry (MAVLink, file), conformance kit
-    stable-flight-sitl-realflight/   # RealFlightVehicle, ActuatorMapping, airframes; deps: core only
-      CHANGELOG.md  README.md        #   (sitl is a dev-dependency for examples + conformance)
+      CHANGELOG.md  README.md        #   loader), telemetry (MAVLink, file)
+    stable-flight-sitl-realflight/   # RealFlightVehicle, ActuatorMapping, airframes; never depends on
+      CHANGELOG.md  README.md        #   sitl (a dev-dependency for the examples)
     stable-flight-tools/             # publish = false: plot_flight, generate_figure_eight
     # later: stable-flight-sitl-<backend>/ per simulator (Gazebo, JSBSim, …)
   firmware/                          # later: one nested workspace per board (not part of this plan)
@@ -416,7 +418,7 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
         - Review follow-ups:
           - Own PR: attitude returns zero rates on non-finite input (like yaw), and document
             the NaN contract once (**done in the remaining-panics PR**); document the
-            `VehicleState::heading` range (still open).
+            `VehicleState::heading` range (done in #58's frame contract).
           - Own PR or refactor PR 7: make the heading slew rate depend on `dt`, not
             `HEADING_STEP_PER_TICK`.
           - Refactor PR 7: yaw state carries across mode switches, `self.heading` goes stale
@@ -574,7 +576,7 @@ As implemented (#58):
 - **Frame contract** writing surfaced two RealFlight bugs (Status row + backlog), not fixed
   here per the risk note. (1) Angles and rates are converted to radians twice. (2) Vertical
   velocity/acceleration are down-positive. Their conformance tests are `#[ignore]`d with
-  the reason; `conforms_level` and the quaternion checks pass. Attitude-mode angles and all
+  the reason; `conforms_level` passes. Attitude-mode angles and all
   body rates are ~57× too small in flight today. Waypoint-mode lateral/attitude use the
   quaternion and are unaffected; the altitude D term has the wrong sign.
 - **Gains not unified.** Both sets were tuned against those bugs, so picking one now is a
@@ -589,6 +591,35 @@ As implemented (#58):
 - **Timing:** the mock bridge counts exchanges and stamps each state. The test pins one
   exchange to prime plus one per tick, and that tick *n* stabilizes on exchange *n*'s state.
 - `ActuatorMapping` gained `Debug`/`Clone`/`PartialEq`.
+- After review:
+  - **Conformance kit moved to core** `stable_flight::testing::conformance` (the `testing`
+    feature), not a sitl `conformance` feature. In sitl, every backend's dev build pulled in
+    gilrs/mavlink/signal-hook, and the core (e.g. a fusion-nav `StateEstimator` adapter) could
+    not use it. It's allocation-free (`ConformanceError` holds its mismatches inline) and uses
+    the core's `wrap_angle`, so it stays `no_std`-ready for PR 4. sitl has no `conformance`
+    feature, and the realflight crate uses sitl only for its examples.
+  - **Kit scope:** scenarios gained acceleration and three new rows: `BANKED_CLIMB_EAST`
+    (compound attitude, catches Euler order), `MOVING_NORTHEAST` (catches an x/y swap), and
+    `COMBINED_RATES` (catches a rate-axis swap). `SCENARIOS` is `&[Scenario]` (adding a row
+    isn't breaking). `conformance_tests!` generates one test per row plus
+    `conformance_covers_every_scenario`, so a new scenario fails every backend that skips it.
+    The RealFlight kit now pins the down-positive acceleration too (7 ignored; `level` and
+    `moving_northeast` pass). The quaternion rows are circular with synthetic fixtures (see
+    backlog).
+  - **Frame contract** says attitude, angles, and rates are NED world → FRD body, and that
+    translation `z` is NED `z` negated. Plain "north/east/up" is left-handed, so the
+    rotation signs alone were ill-defined.
+  - **`airframes::Airframe<S, M>`** (stabilizer config, mixer, mapping) replaces
+    `QuadCopterXAirframe`. The mixer is part of the airframe because the mapping follows its
+    motor order. The examples take the mixer from it; `QuadCopterMixer` derives
+    `Debug`/`Clone`/`Copy`/`PartialEq`.
+  - CI dependency check fails closed (captured outputs, empty-list check) and resolves all
+    targets.
+  - The contracts' single home is core rustdoc (Docs ownership table updated); architecture.md
+    keeps the rationale; CLAUDE.md and the root README link to the backend README for setup.
+  - Also: priming-exchange failure logs `error!`; timing contract softened to "should not block"
+    and made backend-agnostic; unused sitl `env_logger` dropped and `uom` made a sitl dev-dep;
+    unused realflight `approx`/`assert2` dropped; docs.rs `all-features` for core.
 
 ## PR 4 — Make core `no_std`
 
@@ -656,7 +687,8 @@ unless each fact has one home:
 | Crate `README.md` | That crate's purpose, usage example, features |
 | Root `README.md` | Project overview, crate index with one line each, supported simulators, quick start |
 | `CLAUDE.md` | Commands, coding/testing rules, PR checklist |
-| `architecture.md` | Crate boundaries, dependency rule, traits, frame and timing contracts |
+| `architecture.md` | Crate boundaries, dependency rule, traits, rationale for the frame and timing contracts |
+| Core rustdoc | The frame contract (`VehicleState`) and timing contract (`Vehicle`) |
 
 Other docs link to the owner instead of restating it. Update CLAUDE.md's sync rule to match
 in PR 1.
