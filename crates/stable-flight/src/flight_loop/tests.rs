@@ -6,7 +6,10 @@ use assert2::check;
 use robomath::vec3;
 
 use super::*;
-use crate::{Actuator, ActuatorCommand, AttitudeCommand, Command, ControlOutput, StateEstimator};
+use crate::{
+    Actuator, ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command, ControlOutput, Setpoint,
+    StateEstimator,
+};
 
 /// Shared, ordered log of pipeline calls. Test-only; the loop itself never allocates.
 type Log = Rc<RefCell<Vec<String>>>;
@@ -57,25 +60,51 @@ impl Actuator for RecordingVehicle {
     }
 }
 
-struct RecordingStabilizer {
+/// Passes attitude-command throttle through as setpoint thrust.
+struct RecordingGuidance {
     log: Log,
 }
-impl Stabilizer for RecordingStabilizer {
-    fn stabilize(&mut self, dt: f32, command: &Command, state: &VehicleState) -> ControlOutput {
+impl Guidance for RecordingGuidance {
+    fn guide(&mut self, dt: f32, command: &Command, state: &VehicleState) -> Setpoint {
         let Command::Attitude(attitude) = command else {
             unreachable!("RecordingCommander only emits attitude commands");
         };
         self.log.borrow_mut().push(format!(
-            "stabilize dt={dt} throttle={} heading={}",
+            "guide dt={dt} throttle={} heading={}",
             attitude.throttle, state.heading
         ));
-        ControlOutput::new(attitude.throttle, vec3(0.0, 0.0, 0.0))
+        Setpoint::Attitude(AttitudeSetpoint {
+            thrust: attitude.throttle,
+            ..Default::default()
+        })
     }
 
     fn prime(&mut self, state: &VehicleState) {
         self.log
             .borrow_mut()
-            .push(format!("prime heading={}", state.heading));
+            .push(format!("prime guidance heading={}", state.heading));
+    }
+}
+
+struct RecordingStabilizer {
+    log: Log,
+}
+impl Stabilizer for RecordingStabilizer {
+    fn stabilize(&mut self, dt: f32, setpoint: &Setpoint, state: &VehicleState) -> ControlOutput {
+        let Setpoint::Attitude(attitude) = setpoint else {
+            unreachable!("RecordingGuidance only emits attitude setpoints");
+        };
+        self.log.borrow_mut().push(format!(
+            "stabilize dt={dt} thrust={} heading={}",
+            attitude.thrust, state.heading
+        ));
+        ControlOutput::new(attitude.thrust, vec3(0.0, 0.0, 0.0))
+    }
+
+    fn prime(&mut self, state: &VehicleState) {
+        self.log
+            .borrow_mut()
+            .push(format!("prime stabilizer heading={}", state.heading));
     }
 }
 
@@ -114,6 +143,7 @@ fn recording_loop(
 ) -> FlightLoop<
     RecordingCommander,
     RecordingVehicle,
+    RecordingGuidance,
     RecordingStabilizer,
     RecordingMixer,
     LogTelemetry,
@@ -124,6 +154,7 @@ fn recording_loop(
             log: log.clone(),
             estimates: 0,
         },
+        RecordingGuidance { log: log.clone() },
         RecordingStabilizer { log: log.clone() },
         RecordingMixer { log: log.clone() },
         LogTelemetry { log: log.clone() },
@@ -131,13 +162,20 @@ fn recording_loop(
 }
 
 #[test]
-fn prime_estimates_with_zero_dt_and_primes_stabilizer_from_it() {
+fn prime_estimates_with_zero_dt_and_primes_guidance_then_stabilizer_from_it() {
     let log = Log::default();
     let mut flight_loop = recording_loop(&log);
 
     flight_loop.prime();
 
-    check!(*log.borrow() == ["estimate dt=0", "prime heading=0"]);
+    check!(
+        *log.borrow()
+            == [
+                "estimate dt=0",
+                "prime guidance heading=0",
+                "prime stabilizer heading=0",
+            ]
+    );
     check!(flight_loop.state().heading == 0.0);
 }
 
@@ -164,8 +202,9 @@ fn step_runs_the_pipeline_in_order_and_publishes_the_tick() {
                 // Commander sees the primed state (heading 0), not this tick's estimate.
                 "command dt=0.004 seen_heading=0",
                 "estimate dt=0.004",
-                // Stabilizer sees the fresh estimate (heading 1).
-                "stabilize dt=0.004 throttle=0.25 heading=1",
+                // Guidance and stabilizer see the fresh estimate (heading 1).
+                "guide dt=0.004 throttle=0.25 heading=1",
+                "stabilize dt=0.004 thrust=0.25 heading=1",
                 "mix thrust=0.25",
                 "actuate motor0=0.25",
                 "publish dt=0.004 heading=1 thrust=0.25 motor0=0.25",
@@ -201,6 +240,7 @@ fn commander_sees_previous_tick_state_across_steps() {
 
 #[test]
 fn into_parts_returns_the_components_with_their_state() {
+    use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
     use crate::mixers::QuadCopterMixer;
     use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
     use crate::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
@@ -208,6 +248,7 @@ fn into_parts_returns_the_components_with_their_state() {
     let mut flight_loop = FlightLoop::new(
         ConstantCommander::default(),
         NullVehicle::new(),
+        CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),
         QuadCopterMixer::default(),
         RecordingTelemetry::<8>::new(),
@@ -216,7 +257,7 @@ fn into_parts_returns_the_components_with_their_state() {
     flight_loop.step(Duration::from_millis(4));
     flight_loop.step(Duration::from_millis(4));
 
-    let (_commander, vehicle, _stabilizer, _mixer, telemetry) = flight_loop.into_parts();
+    let (_commander, vehicle, _guidance, _stabilizer, _mixer, telemetry) = flight_loop.into_parts();
     check!(vehicle.estimates() == 3); // prime + 2 ticks
     check!(vehicle.actuations() == 2);
     check!(telemetry.total() == 2);

@@ -42,7 +42,7 @@ otherwise do it in the next PR.
 | Fix — remaining per-tick panics (mixer, attitude-command, body-rate, altitude, rate-mode; Spektrum clamp) | ✅ #57 |
 | PR 3 — Split RealFlight into its own backend crate | ✅ #58 |
 | Fix — RealFlight frame conversions: double radians, down-positive vertical (found in PR 3) | ⬜ |
-| PR 4 — Make core `no_std` | 🔍 #59 |
+| PR 4 — Make core `no_std` | ✅ #59 |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
 
 ## Follow-up backlog
@@ -61,12 +61,14 @@ the PR that completes it. The per-PR notes further down keep the history.
 | `SpectrumCommander` maps roll/pitch/yaw to [0, 1] centred at 0.5; `AttitudeCommand` needs [-1, 1] centred at 0 (constant bank at centre stick). Needs the transmitter to verify each axis's sign. | own PR | #57 |
 | Upstream failsafe: estimator-health checks, then a land or disarm commander. The Input Policy is last-resort only (NaN thrust → motors off). | first board / Later | #57 review |
 | `BodyRateController`: one non-finite axis zeroes all three moments; handle axes separately. | own PR | #57 review |
-| `fit_to_thrust_curve` lets NaN through (`clamp` keeps NaN); callers saturate first today. Use `saturate_throttle` so the helper meets the input policy itself. | own PR or refactor PR 7 | #59 review |
-| Unify derivative-gap handling (flag in attitude/body-rate, `Option` in yaw) into a shared `DerivativeState`; make `BodyRateController::last_error` private; drop the first-tick-after-construction derivative kick in attitude/body-rate. | refactor PR 7 | #57 review |
-| Make saturation observable (debug log or a telemetry flag/counter) for tuning. | refactor PR 7 | #57 review |
-| Yaw: controller state carries across mode switches, `self.heading` goes stale in waypoint mode, and guidance needs an absolute-heading path. | refactor PR 7 | #56 review |
-| Heading slew rate is per tick (`HEADING_STEP_PER_TICK`); make it `dt`-based. | own PR or refactor PR 7 | #56 review |
-| Lateral: `accel / g` scaled by `max_angles` is a simplified tilt model; `LateralControllerConfig::max_rate` is unused. | refactor PR 7 | #55 |
+| Unify derivative-gap handling (flag in attitude/body-rate, `Option` in yaw) into a shared `DerivativeState`; make `BodyRateController::last_error` private; drop the first-tick-after-construction derivative kick in attitude/body-rate. | own PR (deferred from refactor PR 7, which changes no behaviour) | #57 review |
+| Make saturation observable (debug log or a telemetry flag/counter) for tuning. `TelemetryRecord::setpoint` now shows what guidance asked for. | own PR (deferred from refactor PR 7) | #57 review |
+| Yaw: controller state carries across mode switches, and `CopterGuidance`'s heading-hold target goes stale in waypoint mode (waypoints hold north). The absolute-heading path exists since refactor PR 7 (`AttitudeSetpoint::heading`). | own PR (behaviour change) | #56 review |
+| Heading slew rate is per tick (`HEADING_STEP_PER_TICK`, now in `CopterGuidance`); make it `dt`-based. Needed before the guidance rate divider. | own PR or refactor PR 7.5 | #56 review |
+| Lateral: `accel / g` scaled by `max_angles` is a simplified tilt model; `LateralControllerConfig::max_rate` is unused. | own PR (deferred from refactor PR 7) | #55 |
+| Remove `AttitudeReference`: once RealFlight's Euler fields match its quaternion, `CopterStabilizer` reads one representation for every setpoint. Retune in the same flight check. | frame-fix PR | refactor PR 7 |
+| Guidance rate divider (e.g. guidance at 50 Hz, inner loop at 250 Hz), with a `dt`-based heading slew first. | refactor PR 7.5 | refactor PR 7 |
+| `altitude`/`lateral` controllers live in `stabilizers::controllers` but only `CopterGuidance` uses them; move them next to guidance. | Later | refactor PR 7 |
 | `ConsoleTelemetryPublisher` logs `info!` every tick (its whole output; `debug!` would hide it by default). | own PR | #48 review |
 | `RealTimeRunner` replays missed ticks back-to-back after a stall; resync instead and count overruns in `RunStats`. | own PR or lockstep runner | #53 review |
 | `Runner` trait, once a second runner exists. | Later | #53 review |
@@ -79,6 +81,7 @@ the PR that completes it. The per-PR notes further down keep the history.
 | `stabilizers::low_pass_filter_vec3` is public but unused. | own PR | #44 review |
 | CLAUDE.md's trait block and impl table repeat `lib.rs` / architecture.md; point to them instead. | docs PR | #44, #46, #47 reviews |
 | `Commander`/`Mixer` combinators; keep `TelemetryPublisher` impls opt-in (no blanket impl) so the tuple impl stays coherent. | Later | #54 review |
+| Replace `robomath` with `nalgebra` (0.35, `default-features = false, features = ["libm"]`). fusion-nav/fusion-ahrs already use it, so the fusion-nav `StateEstimator` adapter would otherwise convert every tick; `UnitQuaternion` also adds vector rotation, which robomath lacks. Breaking: `VehicleState`, `WaypointCommand`, and controller configs expose the types. Alias types in core, re-export `stable_flight::nalgebra`. Traps: `from_euler(yaw, pitch, roll)` → `from_euler_angles(roll, pitch, yaw)`, `roll()/pitch()/yaw()` → `euler_angles()`, `rotation_matrix_i_wrt_b` direction; conformance suite guards them. Check `just embedded`. | own PR, before or with the fusion-nav adapter | robomath review (chat) |
 
 ## Target layout
 
@@ -722,7 +725,7 @@ disappears and backends become crates. Suggested order:
 2. ✅ Refactor PRs 1–4 and 6 (cheap, and they shape the core API). Refactor PR 4 has to land
    before `ComposedVehicle` (workspace PR 2): it fixes the `StateEstimator`/`Actuator`
    signatures that `ComposedVehicle` composes, and `Vehicle` is the backend contract.
-3. 🔍 Workspace PRs 2–4 (2a–2c, 3 merged; 4 in review, #59).
+3. ✅ Workspace PRs 2–4 (2a–2c, 3, 4 merged; #59).
 4. ⬜ Refactor PR 7 before publishing `stable-flight` 0.1.0.
 
 ## Checklist per PR

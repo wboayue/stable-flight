@@ -11,6 +11,7 @@ RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). E
 ## Usage
 
 ```rust
+use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
@@ -22,6 +23,7 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
     bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
     mapping: airframe.mapping,
 });
+let guidance = CopterGuidance::new(airframe.guidance);
 let stabilizer = CopterStabilizer::new(airframe.stabilizer);
 let mixer = airframe.mixer;
 ```

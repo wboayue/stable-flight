@@ -287,13 +287,17 @@ fn angle_diff(desired: f32, current: f32) -> f32 {
 
 ## Integration with Flight Controller
 
-The controllers integrate into the main flight loop through the `CopterStabilizer`:
+The position controllers (altitude, lateral) run in `CopterGuidance`, which turns commands into setpoints; the attitude, yaw, and body-rate controllers run in `CopterStabilizer`, which tracks them:
 
 ```rust
-// In the main control loop (src/stabilizers/copter.rs)
-let attitude_rates = self.attitude_controller.control(dt, command.attitude, state.attitude);
-let body_moments = self.rate_controller.control(dt, attitude_rates, state.angular_rates);
-let thrust = self.altitude_controller.control(dt, command.altitude, state.altitude, ...);
+// Guidance (src/guidance/copter.rs), waypoint mode
+let tilt = self.lateral_controller.control(dt, waypoint, position, velocity);
+let thrust = self.altitude_controller.control(dt, command.altitude, 0.0, altitude, climb_rate, attitude);
+
+// Stabilizer (src/stabilizers/copter.rs)
+let attitude_rates = self.attitude_controller.control(dt, setpoint_tilt, current_tilt);
+let yaw_rate = self.yaw_controller.control(dt, setpoint.heading, current_heading);
+let body_moments = self.rates_controller.control(dt, desired_rates, current_rates);
 ```
 
 This ensures proper sequencing and data flow through the cascaded control architecture.

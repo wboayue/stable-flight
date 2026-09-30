@@ -7,9 +7,9 @@
 //! <br>
 //!
 //! Flight-control core for the Stable Flight controller: the pipeline traits ([`Commander`],
-//! [`StateEstimator`] + [`Actuator`] = [`Vehicle`], [`Stabilizer`], [`Mixer`],
-//! [`TelemetryPublisher`]), the data passed between them, the cascaded-PID stabilizers, the
-//! mixers, and [`FlightLoop`], which sequences one control tick.
+//! [`StateEstimator`] + [`Actuator`] = [`Vehicle`], [`Guidance`], [`Stabilizer`], [`Mixer`],
+//! [`TelemetryPublisher`]), the data passed between them, copter guidance, the cascaded-PID
+//! stabilizers, the mixers, and [`FlightLoop`], which sequences one control tick.
 //!
 //! This crate is `no_std` and has no simulator, I/O, or timing dependencies, so the same code
 //! runs in software-in-the-loop simulation
@@ -22,6 +22,7 @@
 pub mod commanders;
 pub mod composition;
 pub mod flight_loop;
+pub mod guidance;
 mod math;
 pub mod mixers;
 pub mod stabilizers;
@@ -624,13 +625,134 @@ pub trait Actuator {
     fn actuate(&mut self, actuator_command: &ActuatorCommand);
 }
 
-/// Component responsible for flight control and stabilization.
+/// What the [`Stabilizer`] should hold this tick, as produced by a [`Guidance`].
+///
+/// A [`Command`] says what the operator or mission wants (stick positions, a waypoint);
+/// a `Setpoint` is the inner-loop target derived from it. Values are normalized: the
+/// stabilizer owns the physical limits (maximum tilt and rates) and the thrust curve, and
+/// saturates out-of-range or NaN inputs per the input policy.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::{AttitudeSetpoint, Setpoint};
+///
+/// // Level, north-facing hover at half linear thrust.
+/// let hover = Setpoint::Attitude(AttitudeSetpoint { thrust: 0.5, ..Default::default() });
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Setpoint {
+    /// Hold a roll/pitch attitude and an absolute heading.
+    Attitude(AttitudeSetpoint),
+    /// Hold body rates.
+    Rate(RateSetpoint),
+}
+
+/// Attitude target for the [`Stabilizer`]; see [`Setpoint`].
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct AttitudeSetpoint {
+    /// Roll as a fraction of the stabilizer's maximum tilt, `-1.0` (left) to `1.0` (right).
+    pub roll: f32,
+    /// Pitch as a fraction of the stabilizer's maximum tilt, `-1.0` (nose down) to `1.0`
+    /// (nose up).
+    pub pitch: f32,
+    /// Absolute heading target in radians, in the
+    /// [frame contract](VehicleState#frame-contract)'s `heading` convention.
+    pub heading: f32,
+    /// Linear collective thrust, `0.0` to `1.0`, before the stabilizer's thrust curve.
+    pub thrust: f32,
+    /// Which part of the [`VehicleState`] the attitude is tracked against.
+    pub reference: AttitudeReference,
+}
+
+/// Which [`VehicleState`] attitude representation an [`AttitudeSetpoint`] is tracked against.
+///
+/// For an estimator that meets the [frame contract](VehicleState#frame-contract) the two are
+/// equivalent. The choice exists because the RealFlight backend's Euler fields don't yet
+/// (they are converted to radians twice) while its quaternion does, and each flight mode was
+/// tuned against the representation it reads. It goes away with that backend's frame fix.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum AttitudeReference {
+    /// `roll`, `pitch`, and `heading`. Used for piloted attitude flight.
+    #[default]
+    Euler,
+    /// `attitude.roll()`, `attitude.pitch()`, and `attitude.yaw()`. Used for waypoint flight.
+    Quaternion,
+}
+
+/// Body-rate target for the [`Stabilizer`]; see [`Setpoint`].
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct RateSetpoint {
+    /// Roll rate as a fraction of the stabilizer's maximum, `-1.0` to `1.0` (right positive).
+    pub roll_rate: f32,
+    /// Pitch rate as a fraction of the stabilizer's maximum, `-1.0` to `1.0` (nose up
+    /// positive).
+    pub pitch_rate: f32,
+    /// Yaw rate as a fraction of the stabilizer's maximum, `-1.0` to `1.0` (nose right
+    /// positive).
+    pub yaw_rate: f32,
+    /// Linear collective thrust, `0.0` to `1.0`, before the stabilizer's thrust curve.
+    pub thrust: f32,
+}
+
+/// Turns the commander's [`Command`] into an inner-loop [`Setpoint`].
+///
+/// Guidance is the outer loop: waypoint navigation (position and altitude hold), and the
+/// interpretation of pilot sticks that needs memory, such as integrating yaw stick into a
+/// heading-hold target. The [`Stabilizer`] then tracks the setpoint. Keeping the two apart
+/// lets them run at different rates later (guidance is conventionally ~50 Hz, the inner loop
+/// ~250 Hz); today [`FlightLoop`] runs both every tick.
+///
+/// # Examples
+///
+/// A guidance that flies rate commands through unchanged and levels out otherwise:
+///
+/// ```
+/// use stable_flight::{AttitudeSetpoint, Command, Guidance, RateSetpoint, Setpoint, VehicleState};
+///
+/// struct RateOnly;
+///
+/// impl Guidance for RateOnly {
+///     fn guide(&mut self, _dt: f32, command: &Command, state: &VehicleState) -> Setpoint {
+///         match command {
+///             Command::Rate(rate) => Setpoint::Rate(RateSetpoint {
+///                 roll_rate: rate.roll_rate,
+///                 pitch_rate: rate.pitch_rate,
+///                 yaw_rate: rate.yaw_rate,
+///                 thrust: rate.throttle,
+///             }),
+///             _ => Setpoint::Attitude(AttitudeSetpoint {
+///                 heading: state.heading,
+///                 ..Default::default()
+///             }),
+///         }
+///     }
+///
+///     fn prime(&mut self, _state: &VehicleState) {}
+/// }
+/// ```
+pub trait Guidance {
+    /// Produces this tick's inner-loop setpoint.
+    ///
+    /// # Parameters
+    ///
+    /// - `dt`: Time elapsed since the last guidance step in seconds.
+    /// - `command`: The commander's current command.
+    /// - `state`: The current estimated state of the vehicle.
+    fn guide(&mut self, dt: f32, command: &Command, state: &VehicleState) -> Setpoint;
+
+    /// Primes guidance from a known-good vehicle state before the first tick.
+    ///
+    /// Warms internal state (e.g. the heading-hold target) so guidance starts from where the
+    /// vehicle is rather than from zero. Called once before the control loop starts.
+    fn prime(&mut self, state: &VehicleState);
+}
+
+/// Component responsible for flight control and stabilization: the inner loop.
 ///
 /// The `Stabilizer` trait defines the interface for components that implement
-/// control algorithms to maintain desired flight dynamics based on commands and
-/// current vehicle state. These algorithms typically include PID controllers or
-/// more advanced control systems to translate high-level commands into specific
-/// control outputs.
+/// control algorithms to track a [`Setpoint`] from [`Guidance`], producing the thrust and
+/// moments that the [`Mixer`] turns into actuator commands.
 ///
 /// Implementors of this trait may include:
 /// - **PID controllers**: Simple feedback control for attitude stability
@@ -638,23 +760,24 @@ pub trait Actuator {
 /// - **Model predictive controllers**: Advanced control with future prediction
 /// - **Cascaded control systems**: Hierarchical controllers for different aspects of flight
 pub trait Stabilizer {
-    /// Generates control outputs based on the current command and vehicle state.
+    /// Generates control outputs based on the current setpoint and vehicle state.
     ///
     /// # Parameters
     ///
     /// - `dt`: Time elapsed since the last control step in seconds.
-    /// - `command`: The current command to be executed.
+    /// - `setpoint`: The attitude or rate target to track.
     /// - `state`: The current estimated state of the vehicle.
     ///
     /// # Returns
     ///
     /// A `ControlOutput` containing the desired thrust and control moments.
-    fn stabilize(&mut self, dt: f32, command: &Command, state: &VehicleState) -> ControlOutput;
+    fn stabilize(&mut self, dt: f32, setpoint: &Setpoint, state: &VehicleState) -> ControlOutput;
 
     /// Primes the stabilizer from a known-good vehicle state before the first tick.
     ///
-    /// Warms internal state (e.g. the heading hold target) so control starts from where the
-    /// vehicle is rather than from zero. Called once before the control loop starts.
+    /// Warms internal state (e.g. integrators or filters) so control starts from where the
+    /// vehicle is rather than from zero. Called once before the control loop starts, after
+    /// [`Guidance::prime`].
     fn prime(&mut self, state: &VehicleState);
 }
 
@@ -692,7 +815,7 @@ pub trait TelemetryPublisher {
 /// ```
 /// use std::time::Duration;
 /// use stable_flight::{
-///     ActuatorCommand, AttitudeCommand, Command, ControlOutput, TelemetryPublisher,
+///     ActuatorCommand, AttitudeCommand, Command, ControlOutput, Setpoint, TelemetryPublisher,
 ///     TelemetryRecord, VehicleState,
 /// };
 ///
@@ -705,6 +828,7 @@ pub trait TelemetryPublisher {
 /// }
 ///
 /// let command = Command::Attitude(AttitudeCommand::default());
+/// let setpoint = Setpoint::Attitude(Default::default());
 /// let state = VehicleState::default();
 /// let control = ControlOutput::default();
 /// let actuators = ActuatorCommand::default();
@@ -712,6 +836,7 @@ pub trait TelemetryPublisher {
 /// ThrustLogger.publish(&TelemetryRecord {
 ///     dt: Duration::from_millis(4),
 ///     command: &command,
+///     setpoint: &setpoint,
 ///     state: &state,
 ///     control: &control,
 ///     actuators: &actuators,
@@ -723,6 +848,8 @@ pub struct TelemetryRecord<'a> {
     pub dt: Duration,
     /// Command the commander produced.
     pub command: &'a Command,
+    /// Setpoint guidance derived from `command`.
+    pub setpoint: &'a Setpoint,
     /// Estimated vehicle state the stabilizer acted on.
     pub state: &'a VehicleState,
     /// Stabilizer output (thrust and moments).

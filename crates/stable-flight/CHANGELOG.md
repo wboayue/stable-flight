@@ -11,17 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release of the flight-control core, extracted from `stable-flight-sitl`:
   the pipeline traits (`Commander`, `StateEstimator`, `Actuator`, `Vehicle`,
-  `Stabilizer`, `Mixer`, `TelemetryPublisher`), their data types (`Command` and
-  its variants, `VehicleState`, `ControlOutput`, `ActuatorCommand`,
-  `TelemetryRecord`), the `stabilizers` module (`CopterStabilizer`, PID
+  `Guidance`, `Stabilizer`, `Mixer`, `TelemetryPublisher`), their data types
+  (`Command` and its variants, `Setpoint` and its variants, `VehicleState`,
+  `ControlOutput`, `ActuatorCommand`, `TelemetryRecord`), the `guidance` module
+  (`CopterGuidance`), the `stabilizers` module (`CopterStabilizer`, PID
   `controllers`, `Gains`), and the `mixers` module (`QuadCopterMixer`,
   placeholder `TailSitterMixer`). Earlier history of these items is in the
   `stable-flight-sitl` changelog.
-- `FlightLoop`: owns the five pipeline components and runs one control tick per
-  `step(dt)` (commander → estimate → stabilize → mix → actuate → telemetry), with
-  `prime()` for the initial `Duration::ZERO` estimate and stabilizer priming. No
-  clock, threads, or signals; runners decide when to step. Allocation-free.
-  `into_parts()` returns the five components after a run.
+- `FlightLoop`: owns the six pipeline components and runs one control tick per
+  `step(dt)` (commander → estimate → guide → stabilize → mix → actuate →
+  telemetry), with `prime()` for the initial `Duration::ZERO` estimate and
+  guidance and stabilizer priming. No clock, threads, or signals; runners decide
+  when to step. Allocation-free. `into_parts()` returns the six components after
+  a run.
 - `commanders::WaypointFollower<W: AsRef<[WaypointCommand]>>`: a `Commander` that
   follows and loops a waypoint list by horizontal acceptance radius (default
   `DEFAULT_ACCEPTANCE_RADIUS`, 3 m; `with_acceptance_radius` to override).
@@ -50,9 +52,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   generates one test per scenario plus a coverage check. docs.rs renders the
   `testing` feature.
 - `QuadCopterMixer` derives `Debug`, `Clone`, `Copy`, and `PartialEq`.
+- `Guidance` trait (`guide(dt, &Command, &VehicleState) -> Setpoint`, `prime`) and
+  `guidance::copter::CopterGuidance` / `CopterGuidanceConfig` (altitude and lateral
+  gains): the outer loop, split out of `CopterStabilizer`. It flies waypoints and
+  owns the attitude-mode heading-hold target. `Setpoint` is `Attitude(AttitudeSetpoint)`
+  (normalized roll/pitch, absolute heading, linear thrust) or `Rate(RateSetpoint)`.
+  `TelemetryRecord` and `RecordedTick` gain the tick's `setpoint`.
 - The crate is `no_std` (including the `testing` feature), so it builds for
   bare-metal targets such as `thumbv7em-none-eabihf`. It depends on `uom` and
   `robomath` without their `std` features; enable them yourself if you need them.
+
+### Changed
+
+- **Breaking:** `Stabilizer` is the inner loop only: `stabilize` takes a
+  `&Setpoint` instead of a `&Command`. `CopterStabilizer` no longer has the
+  altitude and lateral controllers or the heading-hold target (now in
+  `CopterGuidance`), and `CopterStabilizerConfig` drops `altitude_gains` and
+  `lateral_gains` (now `CopterGuidanceConfig`). Wire `CopterGuidance` into
+  `FlightLoop::new` between the vehicle and the stabilizer. Flight behaviour is
+  unchanged: the guidance + stabilizer pair matches the old stabilizer bit for bit.
+- `CopterStabilizer`'s thrust curve saturates its input (NaN → 0), so it meets the
+  input policy itself instead of relying on callers.
 
 ### Fixed
 

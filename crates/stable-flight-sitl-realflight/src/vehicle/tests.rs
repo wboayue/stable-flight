@@ -2,6 +2,7 @@ use super::*;
 use realflight_bridge::{BridgeError, ControlInputs, RealFlightBridge, SimulatorState};
 use robomath::{Quaternion, Vec3};
 use stable_flight::FlightLoop;
+use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::conformance::Scenario;
@@ -278,6 +279,7 @@ fn exchanges_once_per_tick_and_estimates_from_the_previous_exchange() {
     let mut flight_loop = FlightLoop::new(
         ConstantCommander::default(),
         vehicle,
+        CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),
         QuadCopterMixer::default(),
         RecordingTelemetry::<TICKS>::new(),
@@ -288,7 +290,7 @@ fn exchanges_once_per_tick_and_estimates_from_the_previous_exchange() {
         flight_loop.step(Duration::from_millis(4));
     }
 
-    let (_, vehicle, _, _, telemetry) = flight_loop.into_parts();
+    let (_, vehicle, _, _, _, telemetry) = flight_loop.into_parts();
     // One exchange to prime, then exactly one per tick (in `actuate`).
     assert_eq!(vehicle.bridge.exchanges.get(), 1 + TICKS);
     // Tick n stabilizes on the state from exchange n: priming's for tick 1, then each previous

@@ -1,12 +1,14 @@
 //! Tuned setups for the RealFlight models this backend flies.
 //!
 //! Gains belong to the simulated airframe, not to an example: each function returns an
-//! [`Airframe`] with the stabilizer configuration, the mixer, and the channel mapping for one
+//! [`Airframe`] with the guidance and stabilizer configurations, the mixer, and the channel
+//! mapping for one
 //! model, so examples (and any other wiring) share one tuned set.
 
 use std::f32::consts::PI;
 
 use robomath::{vec2, vec3};
+use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::Gains;
 use stable_flight::stabilizers::controllers::{
@@ -21,10 +23,12 @@ mod tests;
 
 /// Everything model-specific about one RealFlight airframe.
 ///
-/// `S` is the stabilizer configuration and `M` the mixer. The mixer is part of the airframe
-/// because `mapping` is only valid for its motor order.
+/// `G` is the guidance configuration, `S` the stabilizer configuration, and `M` the mixer.
+/// The mixer is part of the airframe because `mapping` is only valid for its motor order.
 #[derive(Debug, Clone, PartialEq)]
-pub struct Airframe<S, M> {
+pub struct Airframe<G, S, M> {
+    /// Guidance (position-loop) configuration.
+    pub guidance: G,
     /// Tuned stabilizer configuration.
     pub stabilizer: S,
     /// The mixer whose motor order `mapping` follows.
@@ -37,22 +41,24 @@ pub struct Airframe<S, M> {
 /// [QuadCopterX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX)
 /// in RealFlight.
 ///
-/// The gains were hand-tuned flying `copter-manual-realflight` (attitude and rate modes).
-/// `copter-auto-realflight` still flies `CopterStabilizerConfig::default()` until one set is
-/// flown in both modes.
+/// The stabilizer gains were hand-tuned flying `copter-manual-realflight` (attitude and rate
+/// modes); guidance uses the defaults. `copter-auto-realflight` still flies
+/// `CopterStabilizerConfig::default()` until one set is flown in both modes.
 ///
 /// # Examples
 ///
 /// ```
+/// use stable_flight::guidance::copter::CopterGuidance;
 /// use stable_flight::stabilizers::copter::CopterStabilizer;
 /// use stable_flight_sitl_realflight::airframes;
 ///
 /// let airframe = airframes::quadcopter_x();
+/// let guidance = CopterGuidance::new(airframe.guidance);
 /// let stabilizer = CopterStabilizer::new(airframe.stabilizer);
 /// let mixer = airframe.mixer;
 /// assert_eq!(airframe.mapping.motors[0], Some(2));
 /// ```
-pub fn quadcopter_x() -> Airframe<CopterStabilizerConfig, QuadCopterMixer> {
+pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, QuadCopterMixer> {
     let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
         gains: Gains {
             p: 7.0,
@@ -75,6 +81,7 @@ pub fn quadcopter_x() -> Airframe<CopterStabilizerConfig, QuadCopterMixer> {
     });
 
     Airframe {
+        guidance: CopterGuidanceConfig::default(),
         stabilizer: CopterStabilizerConfig {
             rates_controller,
             attitude_controller,

@@ -325,6 +325,39 @@ collapsed.
 PR 7.5. Recommend defer — first ship the structural split with no behavior
 change, then add the divider in a follow-up where the diff is easy to read.
 
+**As implemented (in progress, branch `split-stabilizer`).** Structural split only; the
+divider is deferred to PR 7.5.
+- `Guidance::guide(dt, &Command, &VehicleState) -> Setpoint` plus `prime`, a sixth
+  `FlightLoop` slot between the vehicle and the stabilizer (`FlightLoop<C, V, G, S, M, T>`),
+  rather than a composite `FlightController`. The setpoint is visible in
+  `TelemetryRecord::setpoint`, and a divider can live in the loop later.
+- `Setpoint` is `Attitude(AttitudeSetpoint)` or `Rate(RateSetpoint)`, not `ManualCommand`:
+  a waypoint yields tilt from the position loop, an absolute heading, and altitude-loop
+  thrust, none of which fit the stick-shaped `AttitudeCommand`. Setpoints are normalized; the
+  stabilizer owns the limits, the thrust curve, and saturation. `Command` is not split into
+  `MissionCommand`/`ManualCommand`: guidance consumes the whole enum, so nothing needed it.
+- `Stabilizer` keeps its name (inner loop only now). `CopterGuidance` owns the altitude and
+  lateral controllers and the heading-hold target; `CopterStabilizer` keeps attitude, yaw,
+  and body rate. `CopterGuidanceConfig` takes the altitude/lateral gains from
+  `CopterStabilizerConfig`, and `airframes::Airframe` gains a `guidance` field.
+- No behaviour change, with one exception found during the split: the old attitude path
+  read `state.roll/pitch/heading` and the waypoint path `state.attitude` (quaternion). The
+  frame contract says they agree, but RealFlight's Euler fields are ~57× too small (frame
+  bug), and each mode was tuned against its own source. `AttitudeSetpoint::reference`
+  (`Euler`/`Quaternion`) preserves both until the frame fix removes it (backlog).
+- Verified bit-for-bit against the pre-split `CopterStabilizer`: a temporary oracle test ran
+  both over 40 × 5 000 randomized ticks (mode switches every 250 ticks, random `dt`, NaN
+  estimates, Euler fields disagreeing with the quaternion on half the trials) with zero
+  mismatches, and failed when the waypoint reference was flipped. Not committed, since the
+  old code goes away.
+- `fit_to_thrust_curve` now saturates its input (NaN → 0), closing that backlog row.
+- Test moves: inner-loop tests stay in `stabilizers/copter/tests.rs` (on setpoints);
+  guidance tests and the end-to-end regressions (distant waypoint, sustained yaw, heading
+  wrap, NaN re-latch, out-of-range sticks, NaN altitude) are in `guidance/copter/tests.rs`,
+  run through a guidance + stabilizer `Stack`, otherwise unchanged.
+- Remaining PR 7-targeted backlog rows (derivative state, saturation observability, yaw
+  across mode switches, lateral tilt model) change behaviour, so they were retargeted.
+
 ---
 
 ## Out of scope (for now)
