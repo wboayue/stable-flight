@@ -1,0 +1,29 @@
+[package]
+name = "stable-flight-sitl-realflight"
+description = "RealFlight simulator backend for the Stable Flight flight controller"
+readme = "README.md"
+keywords = ["realflight", "flight-simulator", "sitl", "drone", "robotics"]
+categories = ["aerospace::simulation", "aerospace::drones"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Never the sitl harness: a backend must stay usable with any runner. sitl is a
+# dev-dependency for the examples; CI checks it never becomes a normal dependency.
+[dependencies]
+stable-flight = { path = "../stable-flight", version = "0.1.0" }
+realflight-bridge = { version = "1.1.0", features = ["uom"] }
+# `VehicleState` and the controller configs are built from robomath vectors.
+robomath.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["testing"] }
+# Examples only: runner, commanders, telemetry.
+stable-flight-sitl = { path = "../stable-flight-sitl", version = "0.1.0" }
+uom.workspace = true
+env_logger = "0.11.6"
+# Examples parse their CLI args with clap.
+clap.workspace = true

@@ -95,6 +95,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Breaking:** the `simulators` module and the RealFlight backend
+  (`RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`), along with
+  the `realflight-bridge` dependency and the `copter-*-realflight` examples. They
+  moved to the new `stable-flight-sitl-realflight` crate:
+  `use stable_flight_sitl_realflight::{ActuatorMapping, RealFlightConfiguration, RealFlightVehicle};`.
+- Unused `env_logger` dependency; `uom` is now a dev-dependency only.
 - **Breaking:** `simulators::NullVehicle`. Use `stable_flight::testing::NullVehicle`
   (enable the core `testing` feature in `[dev-dependencies]`), which also counts
   calls and records the last actuator command.

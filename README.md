@@ -15,12 +15,19 @@ The repository is a Cargo workspace:
 | Crate | Purpose |
 |---|---|
 | [`stable-flight`](crates/stable-flight) | Flight-control core: pipeline traits, cascaded-PID stabilizers, mixers, and `FlightLoop` (one control tick). No simulator or I/O dependencies |
-| [`stable-flight-sitl`](crates/stable-flight-sitl) | Software-in-the-loop harness: RealFlight vehicle, commanders, telemetry, the real-time `RealTimeRunner` + `ShutdownSignal`, and the runnable examples |
+| [`stable-flight-sitl`](crates/stable-flight-sitl) | Simulator-independent software-in-the-loop harness: commanders, telemetry, the real-time `RealTimeRunner` + `ShutdownSignal`, and the backend conformance kit |
+| [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | RealFlight backend: `RealFlightVehicle`, tuned `airframes`, and the RealFlight examples |
 | [`stable-flight-tools`](crates/stable-flight-tools) | Developer binaries (unpublished): `plot_flight` and `generate_figure_eight` |
 
-## Simulator Choice
+## Supported Simulators
 
-Currently, the flight controller supports software-in-the-loop simulation with the [RealFlight](https://www.realflight.com) simulator. RealFlight was chosen for its realistic physics model, API for external drone control, wide selection of RC aircraft, and ability to define custom aircraft models. RealFlight powers the current setup, but the design supports the addition of simulators like X-Plane in the future.
+Each simulator backend is its own crate, so a backend's dependencies never reach the others.
+
+| Simulator | Crate | Status |
+|---|---|---|
+| [RealFlight](https://www.realflight.com) | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | Flies QuadCopterX (manual and scripted) |
+
+RealFlight was chosen for its realistic physics model, API for external drone control, wide selection of RC aircraft, and ability to define custom aircraft models. Other simulators (Gazebo, JSBSim, X-Plane) can be added as `stable-flight-sitl-<simulator>` crates.
 
 ## Test Models
 
@@ -36,20 +43,19 @@ The ArduPilot repository also provides a helpful [collection of models](https://
 * **Rust**: Install Rust using rustup. [rustup](https://rustup.rs/)
 * **RealFlight Simulator**: The flight stabilizer was developed using RealFlight Evolution but should work with older versions as well. RealFlight runs natively on Windows, but can also run on macOS using virtualization software like Parallels.
 
-After installing RealFlight, you will need to enable **RealFlight Link**. You can find this option under:
-**Settings → Physics → Quality → RealFlight Link Enabled**.
+After installing RealFlight, enable RealFlight Link as described in the [`stable-flight-sitl-realflight` README](crates/stable-flight-sitl-realflight/README.md#setup).
 
 ## Getting Started
 
-Runnable entrypoints are the `stable-flight-sitl` examples (`crates/stable-flight-sitl/examples/`); run them from the repository root. Pick one that matches the input you want:
+Runnable entrypoints are the crate examples (`crates/*/examples/`); run them from the repository root. Pick one that matches the input you want:
 
 ```bash
 # Joystick (Logitech Extreme 3D) controlling a quadcopter in RealFlight
-# (RealFlight host defaults to 10.211.55.3:8080; override with --host)
-cargo run --example copter-manual-realflight
+# (RealFlight host defaults to 10.211.55.3:8080; override with --host). Or: just fly-manual
+cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight
 
-# Scripted figure-eight in RealFlight (script path is the first arg, --host to override host)
-cargo run --example copter-auto-realflight
+# Scripted figure-eight in RealFlight (script path is the first arg, --host to override host). Or: just fly-auto
+cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight
 
 # Joystick smoke test (no simulator required)
 cargo run --example extreme_3d_commander
@@ -89,7 +95,7 @@ Options:
       --yaw <DEG>    Camera rotation about the vertical axis, in degrees (default ~28.6)
 ```
 
-Each example wires the same five-component pipeline. The [`stable-flight` README](crates/stable-flight/README.md) covers the pipeline, stabilizers, and mixers; the [`stable-flight-sitl` README](crates/stable-flight-sitl/README.md) covers the simulator-side components and the real-time runner.
+Each example wires the same five-component pipeline. The [`stable-flight` README](crates/stable-flight/README.md) covers the pipeline, stabilizers, and mixers; the [`stable-flight-sitl` README](crates/stable-flight-sitl/README.md) covers the commanders, telemetry, and real-time runner; the [`stable-flight-sitl-realflight` README](crates/stable-flight-sitl-realflight/README.md) covers the RealFlight vehicle and airframes.
 
 ## Conclusion
 

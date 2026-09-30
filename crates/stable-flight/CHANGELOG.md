@@ -39,6 +39,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actuations, keeps the last command), `ConstantCommander`, and
   `RecordingTelemetry<N>` (ring of the last `N` ticks as `RecordedTick`s, which
   `as_record()` can replay).
+- Backend contracts in rustdoc: `VehicleState` documents its frame contract
+  (translation north/east/up, attitude NED world → FRD body, SI units, the sign of
+  each angle and body rate), and `Vehicle` documents the per-tick timing contract
+  every backend must meet.
+- `testing::conformance` (`testing` feature): physical scenarios (level, banked,
+  nose up, heading east, banked climb east, climbing, moving northeast, yaw and
+  combined rates) with the `VehicleState` each must produce, `Scenario::check`
+  (allocation-free `ConformanceError`), and the `conformance_tests!` macro, which
+  generates one test per scenario plus a coverage check. docs.rs renders the
+  `testing` feature.
+- `QuadCopterMixer` derives `Debug`, `Clone`, `Copy`, and `PartialEq`.
 
 ### Fixed
 

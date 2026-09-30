@@ -16,9 +16,14 @@ uom.workspace = true
 log.workspace = true
 
 [features]
-# Test doubles in `stable_flight::testing`. For dev-dependencies only; never needed at runtime.
+# Test doubles and the backend conformance kit in `stable_flight::testing`. For
+# dev-dependencies only; never needed at runtime.
 testing = []
 
 [dev-dependencies]
 approx.workspace = true
 assert2.workspace = true
+
+# Render the `testing` doubles and conformance kit on docs.rs; backend authors use them.
+[package.metadata.docs.rs]
+all-features = true
