@@ -15,6 +15,16 @@ loop {
 }
 ```
 
+### Commanders
+
+`commanders::WaypointFollower` flies and loops any waypoint list without allocating — an array or `&'static` slice on firmware, a `Vec` on a host:
+
+```rust
+let mut commander = WaypointFollower::new(PATH)?.with_acceptance_radius(2.0);
+```
+
+Input-device and file-based commanders (joysticks, CSV scripts) live in `stable-flight-sitl`.
+
 ### Stabilizer
 
 Stabilizers calculate the difference between the vehicle's current state and the desired state, generating `ControlOutput`s that the mixer then translates into actuator commands. This component contains the core flight stabilization logic. `CopterStabilizer` targets multirotors. This is where you would start if you want to implement custom flight control logic.

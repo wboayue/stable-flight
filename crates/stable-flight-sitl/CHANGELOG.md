@@ -43,9 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stop). Migrate `FlightOrchestrator::new(c, v, s, m, t).run(hz)` to
   `RealTimeRunner::new(hz)?.run(&mut FlightLoop::new(c, v, s, m, t),
   &ShutdownSignal::install()?)`. `RealTimeRunner::new` returns
-  `InvalidFrequency` for a non-positive or non-finite rate instead of panicking
-  in `run`, and `run` returns `RunStats`. Building a loop no longer installs a
-  signal handler.
+  `InvalidFrequency` for a non-positive or non-finite rate, or one whose period
+  isn't a representable non-zero `Duration`, instead of panicking in `run`, and
+  `run` returns `RunStats`. Building a loop no longer installs a signal handler.
+  A second Ctrl-C while shutdown is pending now terminates the process, so a
+  wedged loop can still be killed.
 - `ScriptCommander` now delegates waypoint following to the core
   `stable_flight::commanders::WaypointFollower`; its API and behaviour are
   unchanged.

@@ -23,7 +23,7 @@ use std::fs;
 use robomath::vec2;
 use thiserror::Error;
 
-use stable_flight::commanders::WaypointFollower;
+use stable_flight::commanders::{EmptyWaypoints, WaypointFollower};
 use stable_flight::{Command, Commander, VehicleState, WaypointCommand};
 
 /// Number of comma-separated fields expected on each waypoint row.
@@ -51,6 +51,12 @@ pub enum ScriptError {
         line: usize,
         message: String,
     },
+}
+
+impl From<EmptyWaypoints> for ScriptError {
+    fn from(_: EmptyWaypoints) -> Self {
+        ScriptError::Empty
+    }
 }
 
 /// A [`Commander`] that flies a looping sequence of waypoints loaded from a CSV file.
@@ -104,8 +110,15 @@ impl ScriptCommander {
     /// let commander = ScriptCommander::from_waypoints(waypoints).expect("non-empty");
     /// ```
     pub fn from_waypoints(waypoints: Vec<WaypointCommand>) -> Result<Self, ScriptError> {
-        let follower = WaypointFollower::new(waypoints).map_err(|_| ScriptError::Empty)?;
-        Ok(ScriptCommander { follower })
+        Ok(ScriptCommander {
+            follower: WaypointFollower::new(waypoints)?,
+        })
+    }
+
+    /// The underlying follower, e.g. for [`WaypointFollower::current_index`] or
+    /// [`WaypointFollower::waypoints`].
+    pub fn follower(&self) -> &WaypointFollower<Vec<WaypointCommand>> {
+        &self.follower
     }
 
     /// Overrides the horizontal acceptance radius (meters) used to decide when the active

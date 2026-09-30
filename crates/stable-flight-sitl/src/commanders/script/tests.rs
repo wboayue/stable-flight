@@ -157,5 +157,7 @@ fn follows_loaded_waypoints_via_core_follower() {
     let mut commander = commander.with_acceptance_radius(10.0);
 
     assert_relative_eq!(target_x_after_step(&mut commander, 8.0, 0.0), 50.0);
+    check!(commander.follower().current_index() == 1);
     assert_relative_eq!(target_x_after_step(&mut commander, 49.0, 0.0), 0.0);
+    check!(commander.follower().waypoints().len() == 2);
 }

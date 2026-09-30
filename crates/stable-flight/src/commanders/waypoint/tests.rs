@@ -62,12 +62,13 @@ fn advances_through_waypoints_and_loops() {
 #[test]
 fn holds_waypoint_until_within_acceptance_radius() {
     let mut follower = WaypointFollower::new([wp(0.0, 0.0), wp(50.0, 0.0)]).expect("non-empty");
+    let radius = DEFAULT_ACCEPTANCE_RADIUS;
 
-    // (vehicle x, expected target x after the step); default radius is 3 m.
+    // (vehicle x, expected target x after the step)
     let steps = [
-        (100.0, 0.0), // far away: hold waypoint 0
-        (4.0, 0.0),   // just outside the radius: hold
-        (2.0, 50.0),  // inside the radius: advance to waypoint 1
+        (100.0, 0.0),         // far away: hold waypoint 0
+        (radius + 1.0, 0.0),  // just outside the radius: hold
+        (radius - 1.0, 50.0), // inside the radius: advance to waypoint 1
     ];
     for (x, expected) in steps {
         assert_relative_eq!(target_x_after_step(&mut follower, x, 0.0), expected);
@@ -80,8 +81,10 @@ fn custom_acceptance_radius_changes_advance_threshold() {
         .expect("non-empty")
         .with_acceptance_radius(10.0);
 
-    // 8 m away is outside the default 3 m radius but inside the custom 10 m radius.
-    assert_relative_eq!(target_x_after_step(&mut follower, 8.0, 0.0), 50.0);
+    // Outside the default radius but inside the custom 10 m one.
+    let distance = DEFAULT_ACCEPTANCE_RADIUS + 5.0;
+    assert!(distance < 10.0);
+    assert_relative_eq!(target_x_after_step(&mut follower, distance, 0.0), 50.0);
 }
 
 #[test]

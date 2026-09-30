@@ -73,4 +73,4 @@ let stats = RealTimeRunner::new(250.0)
     .run(&mut flight_loop, &shutdown);
 ```
 
-`RealTimeRunner` paces ticks on the wall clock (deadlines accumulate, so a slow tick is caught up rather than shifting the schedule) and returns `RunStats` (ticks, elapsed). `ShutdownSignal::install()` wires SIGINT (Unix) or Ctrl-C/Ctrl-Break (Windows); `ShutdownSignal::new()` gives an unconnected flag you can `trigger()` yourself, e.g. in tests.
+`run` returns `RunStats` (ticks, elapsed). `ShutdownSignal::new()` gives an unconnected flag you can `trigger()` yourself, e.g. in tests. Pacing and shutdown behaviour are described in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#real-time-loop-management).

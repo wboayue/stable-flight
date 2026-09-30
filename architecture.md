@@ -84,47 +84,14 @@ Each major component is defined by a trait interface, allowing multiple implemen
 
 `RealTimeRunner` (sitl) implements the timing around `FlightLoop::step`:
 
-* Operates at a fixed frequency (e.g., 250 Hz) validated at construction (`RealTimeRunner::new` rejects non-positive or non-finite values)
+* Operates at a fixed frequency (e.g., 250 Hz) validated at construction (`RealTimeRunner::new` rejects non-positive or non-finite rates and ones whose period isn't a representable non-zero `Duration`)
 * Primes the loop, then steps it with the nominal period and sleeps to the next accumulated deadline
-* Checks the `ShutdownSignal` before each tick; SIGINT (Unix) / Ctrl-C or Ctrl-Break (Windows) set it once installed
+* Checks the `ShutdownSignal` before each tick; SIGINT (Unix) / Ctrl-C or Ctrl-Break (Windows) set it once installed, and a second interrupt terminates the process
+* Catches up after a slow tick: deadlines accumulate, so missed ticks run back-to-back (resync-on-stall is a planned follow-up)
 * Returns `RunStats` (ticks, elapsed, average rate)
 
 ## Configuration Example
 
-The following example demonstrates how the components can be configured for a quadcopter in the RealFlight simulator:
-
-```rust
-// Configure joystick commander (defaults to Attitude mode)
-let commander = Extreme3DCommander::new()
-    .expect("Failed to create Extreme3D commander");
-
-// Configure RealFlight simulator interface
-let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-    bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
-    mapping: ActuatorMapping {
-        motors: [Some(2), Some(0), Some(1), Some(3), None, None, None, None],
-        ..Default::default()
-    },
-});
-
-// Cascaded PID stabilizer for multirotors
-let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
-
-// Mixer for quadcopter configuration
-let mixer = QuadCopterMixer::default();
-
-// Telemetry via MAVLink protocol
-let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
-
-let mut flight_loop = FlightLoop::new(commander, vehicle, stabilizer, mixer, telemetry);
-
-// Ctrl-C (SIGINT) requests a graceful stop between ticks.
-let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");
-
-// Prime the loop, then tick at 250 Hz until shutdown.
-let stats = RealTimeRunner::new(250.0)
-    .expect("valid loop frequency")
-    .run(&mut flight_loop, &shutdown);
-```
+Wiring a quadcopter in RealFlight means choosing one implementation per trait (e.g. `Extreme3DCommander` or `ScriptCommander`, `RealFlightVehicle`, `CopterStabilizer`, `QuadCopterMixer`, `MavlinkPublisher`), assembling them into a `FlightLoop`, and handing it to a `RealTimeRunner` with a `ShutdownSignal`. The runnable code lives in the [`stable-flight-sitl` README](crates/stable-flight-sitl/README.md#running-the-loop) and `crates/stable-flight-sitl/examples/copter-*-realflight.rs`.
 
 This architecture's modularity allows for easy testing with different components while maintaining the same core stabilization loop, making it ideal for iterative flight control system development.

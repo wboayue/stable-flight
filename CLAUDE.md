@@ -108,9 +108,7 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 `CopterStabilizer` is composed of PID controllers in `stabilizers::controllers::{attitude, body_rate, yaw, altitude, lateral}`.
 
 `ScriptCommander::new(path) -> Result<Self, ScriptError>` (sitl) loads a CSV waypoint file
-(`x,y,altitude,cruise_speed`) from `flights/` and hands it to the core `WaypointFollower`, which
-follows and loops the waypoints by horizontal acceptance radius without allocating (firmware
-can use an array or `&'static` slice). It is geometry-agnostic — the figure-eight shape lives in
+(`x,y,altitude,cruise_speed`) from `flights/` into the core `WaypointFollower` (see its rustdoc). It is geometry-agnostic — the figure-eight shape lives in
 `flights/figure_eight.csv`, produced by the `generate_figure_eight` binary
 (`crates/stable-flight-tools/src/bin/generate_figure_eight.rs`). The
 RealFlight examples are intentionally standalone (each inlines its full pipeline wiring),
@@ -128,7 +126,7 @@ self.vehicle.actuate(&actuators);
 self.telemetry.publish(&TelemetryRecord { dt, command: &command, state: &self.state, control: &control, actuators: &actuators });
 ```
 
-`FlightLoop::prime()` takes the initial estimate with `Duration::ZERO` and primes the stabilizer; call it once before the first `step`. `FlightLoop` has no clock. The sitl `RealTimeRunner::new(frequency_hz)` returns `Err(InvalidFrequency)` unless the rate is positive and finite; `run(&mut flight_loop, &shutdown)` primes, then calls `step` each period until the `ShutdownSignal` is set, and returns `RunStats`. `ShutdownSignal::install()` wires SIGINT (Unix) / Ctrl-C and Ctrl-Break (Windows); `ShutdownSignal::new()` is an unconnected flag for tests.
+`FlightLoop::prime()` takes the initial estimate with `Duration::ZERO` and primes the stabilizer; call it once before the first `step`. `FlightLoop` has no clock; the sitl `RealTimeRunner` + `ShutdownSignal` pace and stop it (timing rules: `architecture.md#real-time-loop-management`; usage: sitl README).
 
 ## Coding style
 

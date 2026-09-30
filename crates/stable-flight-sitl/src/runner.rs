@@ -15,9 +15,10 @@ mod tests;
 /// Log the achieved loop rate every this many ticks (at `debug`).
 const RATE_LOG_INTERVAL: u64 = 100;
 
-/// Returned by [`RealTimeRunner::new`] for a frequency that isn't positive and finite.
-#[derive(Debug, Clone, Copy, PartialEq, Error)]
-#[error("target frequency must be positive and finite, got {0} Hz")]
+/// Returned by [`RealTimeRunner::new`] for a frequency that isn't positive and finite, or
+/// whose period isn't representable as a non-zero [`Duration`] (e.g. 1e-30 Hz, 1e10 Hz).
+#[derive(Debug, Clone, Copy, Error)]
+#[error("target frequency must be positive, finite, and give a non-zero period, got {0} Hz")]
 pub struct InvalidFrequency(pub f64);
 
 /// What a [`RealTimeRunner::run`] achieved.
@@ -78,14 +79,16 @@ impl RealTimeRunner {
     ///
     /// # Errors
     ///
-    /// Returns [`InvalidFrequency`] unless `frequency_hz` is positive and finite.
+    /// Returns [`InvalidFrequency`] unless `frequency_hz` is positive and finite and its
+    /// period fits a non-zero [`Duration`]. A zero period would spin with `dt = 0`.
     pub fn new(frequency_hz: f64) -> Result<Self, InvalidFrequency> {
         if !(frequency_hz.is_finite() && frequency_hz > 0.0) {
             return Err(InvalidFrequency(frequency_hz));
         }
-        Ok(RealTimeRunner {
-            period: Duration::from_secs_f32(1.0 / frequency_hz as f32),
-        })
+        match Duration::try_from_secs_f64(frequency_hz.recip()) {
+            Ok(period) if !period.is_zero() => Ok(RealTimeRunner { period }),
+            _ => Err(InvalidFrequency(frequency_hz)),
+        }
     }
 
     /// The nominal loop period passed to each [`FlightLoop::step`].
@@ -118,7 +121,7 @@ impl RealTimeRunner {
             flight_loop.step(self.period);
             ticks += 1;
 
-            if ticks % RATE_LOG_INTERVAL == 0 {
+            if ticks.is_multiple_of(RATE_LOG_INTERVAL) {
                 debug!(
                     "Tick {ticks}: {:.2} Hz",
                     ticks as f64 / start.elapsed().as_secs_f64()
