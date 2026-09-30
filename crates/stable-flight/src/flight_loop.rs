@@ -26,7 +26,7 @@ mod tests;
 /// use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 /// use stable_flight::{
 ///     Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, FlightLoop,
-///     StateEstimator, TelemetryPublisher, TelemetryRecord, VehicleState,
+///     StateEstimator, VehicleState,
 /// };
 ///
 /// struct Hover;
@@ -46,17 +46,12 @@ mod tests;
 ///     fn actuate(&mut self, _command: &ActuatorCommand) {}
 /// }
 ///
-/// struct Quiet;
-/// impl TelemetryPublisher for Quiet {
-///     fn publish(&mut self, _record: &TelemetryRecord) {}
-/// }
-///
 /// let mut flight_loop = FlightLoop::new(
 ///     Hover,
 ///     StillAir,
 ///     CopterStabilizer::new(CopterStabilizerConfig::default()),
 ///     QuadCopterMixer::default(),
-///     Quiet,
+///     (), // no telemetry
 /// );
 ///
 /// flight_loop.prime();
@@ -131,5 +126,58 @@ where
     /// The most recent state estimate.
     pub fn state(&self) -> &VehicleState {
         &self.state
+    }
+
+    /// Splits the loop back into `(commander, vehicle, stabilizer, mixer, telemetry)`, e.g. to
+    /// inspect test doubles after a run or to hand the vehicle to another runner.
+    ///
+    /// ```
+    /// # use std::time::Duration;
+    /// # use stable_flight::mixers::QuadCopterMixer;
+    /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+    /// # use stable_flight::{Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, StateEstimator, VehicleState};
+    /// use stable_flight::FlightLoop;
+    ///
+    /// # struct Hover;
+    /// # impl Commander for Hover {
+    /// #     fn next_command(&mut self, _: f32, _: &VehicleState) -> Command {
+    /// #         Command::Attitude(AttitudeCommand::default())
+    /// #     }
+    /// # }
+    /// /// Counts actuations.
+    /// #[derive(Default)]
+    /// struct Bench {
+    ///     actuations: u32,
+    /// }
+    /// # impl StateEstimator for Bench {
+    /// #     fn estimate_state(&mut self, _: Duration) -> VehicleState { VehicleState::default() }
+    /// # }
+    /// impl Actuator for Bench {
+    ///     fn actuate(&mut self, _: &ActuatorCommand) {
+    ///         self.actuations += 1;
+    ///     }
+    /// }
+    ///
+    /// let mut flight_loop = FlightLoop::new(
+    ///     Hover,
+    ///     Bench::default(),
+    ///     CopterStabilizer::new(CopterStabilizerConfig::default()),
+    ///     QuadCopterMixer::default(),
+    ///     (),
+    /// );
+    /// flight_loop.prime();
+    /// flight_loop.step(Duration::from_millis(4));
+    ///
+    /// let (_, bench, _, _, _) = flight_loop.into_parts();
+    /// assert_eq!(bench.actuations, 1);
+    /// ```
+    pub fn into_parts(self) -> (C, V, S, M, T) {
+        (
+            self.commander,
+            self.vehicle,
+            self.stabilizer,
+            self.mixer,
+            self.telemetry,
+        )
     }
 }

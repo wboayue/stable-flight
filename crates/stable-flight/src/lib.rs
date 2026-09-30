@@ -17,13 +17,18 @@
 //! [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md).
 
 pub mod commanders;
+pub mod composition;
 pub mod flight_loop;
 pub mod mixers;
 pub mod stabilizers;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 
 use std::time::Duration;
 use uom::si::f32::*;
 
+#[doc(inline)]
+pub use composition::ComposedVehicle;
 #[doc(inline)]
 pub use flight_loop::FlightLoop;
 
@@ -503,7 +508,8 @@ pub struct VehicleState {
 /// are usually separate drivers, while a simulator bridge can implement both on one type.
 ///
 /// Examples: a simulator bridge such as `RealFlightVehicle`, a hardware IMU/estimator paired
-/// with an ESC driver, or a test double such as `NullVehicle`.
+/// with an ESC driver (see [`ComposedVehicle`]), or a test double such as
+/// `testing::NullVehicle` (`testing` feature).
 ///
 /// # Examples
 ///

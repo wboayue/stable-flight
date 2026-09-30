@@ -15,6 +15,10 @@ robomath.workspace = true
 uom.workspace = true
 log.workspace = true
 
+[features]
+# Test doubles in `stable_flight::testing`. For dev-dependencies only; never needed at runtime.
+testing = []
+
 [dev-dependencies]
 approx.workspace = true
 assert2.workspace = true

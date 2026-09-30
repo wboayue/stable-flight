@@ -16,8 +16,8 @@ otherwise do it in the next PR.
 | PR 1 — Convert to workspace | ✅ #43 |
 | architecture-refactor PRs 1–4, 6 (see that plan) | ✅ #44, #50, #46, #47, #48 |
 | PR 2a — core crate + `FlightLoop` | ✅ #52 |
-| PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | 🔍 #53 |
-| PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | ⬜ |
+| PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | ✅ #53 |
+| PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | 🔍 #54 |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
@@ -319,6 +319,53 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
   Clamp (or saturate the lateral output) instead of asserting; do it in its own PR with
   table tests, before hardware.
 
+2c as implemented:
+- Core `composition` module:
+  - `ComposedVehicle<E, A>` (delegating `StateEstimator`/`Actuator`, plus `estimator()`,
+    `actuator()`, `into_parts()`; re-exported at the root).
+  - `impl TelemetryPublisher for (A, B)`.
+- `FlightLoop::into_parts()`, the #52 review follow-up.
+- Core `testing` module behind `#[cfg(any(test, feature = "testing"))]`, with the
+  `testing` feature off by default:
+  - `NullVehicle` moved from sitl. It now counts estimates and actuations and keeps the
+    last command; `new`/`with_state`. **Breaking** in sitl.
+  - `ConstantCommander`.
+  - `RecordingTelemetry<const N: usize>`: a fixed ring of `RecordedTick` (owned copies of
+    `TelemetryRecord`, possible because #48 made the command/control types `Copy`), plus
+    `total`/`last`/`iter`.
+  - All allocation-free.
+- sitl enables `testing` only in `[dev-dependencies]`. `cargo tree -e normal` confirms
+  normal builds don't get it.
+- sitl `runner/tests.rs` mocks are deleted. It uses the real `CopterStabilizer` +
+  `QuadCopterMixer` with core doubles and reads them back via `into_parts()`.
+- `flight_loop/tests.rs` keeps its shared-log `Recording*` doubles, because they test
+  cross-component call order, which a per-component double can't show.
+- New test code uses `assert2::assert!(let …)` instead of the deprecated `let_assert!`.
+- Docs: core README Composition and Testing sections, architecture.md, and CLAUDE.md
+  (impl table, and a testing rule to use core doubles rather than per-crate `Mock*`
+  pipeline types).
+- After review:
+  - CI gained a `cargo build --workspace` step (default features), so library code that
+    accidentally uses the dev-only `testing` feature fails CI.
+  - `impl TelemetryPublisher for ()` is the no-op sink; it replaces the ad-hoc `Quiet` in the
+    `FlightLoop` example.
+  - `RecordedTick` defers its field docs to `TelemetryRecord` and gains `as_record()` for
+    replaying.
+  - `NullVehicle` counts are `u64`, matching `RunStats::ticks`.
+  - `RecordingTelemetry` documents its inline size (~200 B per tick).
+  - Rustdoc examples for `into_parts` and the fan-out, written without `testing` so they
+    also run with the feature off.
+  - `FlightLoop` tests rename the local `LogTelemetry`, and the `into_parts` test uses the
+    real stabilizer and mixer.
+  - Doc facts de-duplicated.
+  - The `composition` module doc now says `ComposedVehicle` doesn't fit estimators that
+    need the actuator's data; the sensor-synthesis bullet in "Later" is updated.
+  - Review follow-ups:
+    - First board: `estimator_mut`/`actuator_mut`.
+    - Later: `Commander`/`Mixer` combinators against a real need. Keep publishers opt-in (no
+      blanket `TelemetryPublisher` impl), so the tuple impl stays coherent.
+    - Refactor PR 7: update `runner/tests.rs`, which uses the real `CopterStabilizer`.
+
 ## PR 3 — Split RealFlight into its own backend crate
 
 Title: `Move RealFlight backend into stable-flight-sitl-realflight`
@@ -412,8 +459,11 @@ Risk: low–medium (`rem_euclid` replacement is the only math change; covered by
   - Promoting `ActuatorMapping` to a shared channel map.
   Design these against the real second backend, not speculatively.
 - **Sensor-synthesis path.** Backends expose truth state today. Add IMU/GNSS/baro synthesis
-  with a noise model from truth, composed through `ComposedVehicle`, so a real estimator
-  (fusion-nav) runs in the SITL loop, the same as on hardware.
+  with a noise model from truth, so a real estimator (fusion-nav) runs in the SITL loop, the
+  same as on hardware. `ComposedVehicle` doesn't fit, because its halves can't see each other
+  while the truth comes from the actuator's simulator exchange. Likely a wrapper like
+  `Sensed<V: Vehicle, S>` that post-processes a full truth vehicle's estimate through the
+  sensor model and estimator (#54 review).
 - **Unify joystick commanders.** `Extreme3DCommander` and `SpectrumCommander` duplicate gilrs
   setup, `read_channels`, and `scale_value`. Replace them with one `GamepadCommander` plus a
   per-device channel map.
