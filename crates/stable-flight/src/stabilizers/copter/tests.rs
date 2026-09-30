@@ -262,3 +262,55 @@ fn test_waypoint_control() {
         "Output should be default for zero position"
     );
 }
+
+/// Regression: a waypoint far from the vehicle made the lateral loop request pitch ≈ -4.6
+/// (normalized), and the attitude controller's range `assert!` panicked the flight loop.
+#[test]
+fn distant_waypoint_tilts_toward_target_instead_of_panicking() {
+    use robomath::vec2;
+
+    // (waypoint x, y) relative to a vehicle at rest at the origin
+    let targets = [(30.0, 0.0), (-1000.0, 500.0), (0.0, 1e6)];
+    for (x, y) in targets {
+        let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+        let state = VehicleState::default();
+        stabilizer.prime(&state);
+        let command = Command::Waypoint(WaypointCommand {
+            position: vec2(x, y),
+            altitude: 20.0,
+            cruise_speed: 7.0,
+            ..Default::default()
+        });
+
+        // First tick: tilt toward the target. In this frame a +x target gives a negative
+        // pitch moment and a +y target a positive roll moment (lateral: pitch = -a_x/g,
+        // roll = a_y/g).
+        let first = stabilizer.stabilize(0.004, &command, &state);
+        if x != 0.0 {
+            assert!(
+                first.moments.y.signum() == -x.signum(),
+                "waypoint ({x}, {y}): pitch moment {} doesn't point toward it",
+                first.moments.y
+            );
+        }
+        if y != 0.0 {
+            assert!(
+                first.moments.x.signum() == y.signum(),
+                "waypoint ({x}, {y}): roll moment {} doesn't point toward it",
+                first.moments.x
+            );
+        }
+
+        // Many ticks, so the lateral integral would wind up if it weren't clamped.
+        for _ in 0..1_000 {
+            let output = stabilizer.stabilize(0.004, &command, &state);
+            assert!(
+                output.thrust.is_finite()
+                    && output.moments.x.is_finite()
+                    && output.moments.y.is_finite()
+                    && output.moments.z.is_finite(),
+                "waypoint ({x}, {y}) produced non-finite output {output:?}"
+            );
+        }
+    }
+}
