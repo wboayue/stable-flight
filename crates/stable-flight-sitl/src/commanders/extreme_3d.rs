@@ -284,20 +284,18 @@ impl Extreme3DCommander {
             self.active_gamepad = Some(id);
 
             match event {
-                EventType::AxisChanged(_, value, code) => {
-                    if code.into_u32() == THROTTLE_CODE {
-                        // Throttle is inverted (1.0 at bottom, 0.0 at top) and scaled
-                        self.channels[0] =
-                            1.0 - scale_value(value, THROTTLE_MIN, THROTTLE_MAX).clamp(0.0, 1.0);
-                    }
+                EventType::AxisChanged(_, value, code) if code.into_u32() == THROTTLE_CODE => {
+                    // Throttle is inverted (1.0 at bottom, 0.0 at top) and scaled
+                    self.channels[0] =
+                        1.0 - scale_value(value, THROTTLE_MIN, THROTTLE_MAX).clamp(0.0, 1.0);
                 }
                 EventType::ButtonChanged(Button::North, 1.0, _) => {
                     self.channels[4] = 1.0;
                 }
-                EventType::ButtonChanged(Button::Unknown, 1.0, code) => {
-                    if code.into_u32() == DISARM_BUTTON_CODE {
-                        self.channels[4] = 0.0;
-                    }
+                EventType::ButtonChanged(Button::Unknown, 1.0, code)
+                    if code.into_u32() == DISARM_BUTTON_CODE =>
+                {
+                    self.channels[4] = 0.0;
                 }
                 EventType::ButtonChanged(Button::DPadLeft, 1.0, _) => {
                     self.channels[5] = Mode::Attitude.to_channel_value();
@@ -716,11 +714,10 @@ mod tests {
         ];
 
         for (value, dead_zone, description) in test_cases {
-            let _ = apply_dead_zone(value, dead_zone);
+            let result = apply_dead_zone(value, dead_zone);
             assert!(
-                true,
-                "Successfully handled case: {} (value={}, dead_zone={})",
-                description, value, dead_zone
+                result.is_finite(),
+                "{description} (value={value}, dead_zone={dead_zone}) gave {result}"
             );
         }
     }

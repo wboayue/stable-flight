@@ -19,6 +19,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
 
     - name: prerequisites
       run: |
@@ -53,6 +55,15 @@ jobs:
     - name: test
       run: |
         cargo test --workspace --all-features
+
+    - name: lint (warnings are errors)
+      # Default-feature rustdoc catches intra-doc links to feature-gated items (docs.rs builds
+      # all features, so they'd only break locally).
+      env:
+        RUSTDOCFLAGS: -D warnings
+      run: |
+        cargo clippy --workspace --all-targets --all-features -- -D warnings
+        cargo doc --workspace --no-deps
 
   embedded:
     # Keeps the core no_std (a bare-metal target has no `std` to fall back on), and lints,

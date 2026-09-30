@@ -41,12 +41,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         thread::sleep(dt - start.elapsed());
     }
 }
-
-// Helper function to get system time in milliseconds
-fn get_time_ms() -> u32 {
-    use std::time::SystemTime;
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u32
-}

@@ -1,5 +1,5 @@
 use approx::assert_relative_eq;
-use assert2::{check, let_assert};
+use assert2::check;
 use robomath::{Vec3, vec2};
 use uom::si::f32::Length;
 use uom::si::length::meter;
@@ -32,15 +32,15 @@ fn target_x_after_step<W: AsRef<[WaypointCommand]>>(
     x: f32,
     y: f32,
 ) -> f32 {
-    let_assert!(Command::Waypoint(target) = follower.next_command(0.1, &state_at(x, y)));
+    assert2::assert!(let Command::Waypoint(target) = follower.next_command(0.1, &state_at(x, y)));
     target.position.x
 }
 
 #[test]
 fn rejects_an_empty_waypoint_list() {
     let empty: [WaypointCommand; 0] = [];
-    let_assert!(Err(EmptyWaypoints) = WaypointFollower::new(empty));
-    let_assert!(Err(EmptyWaypoints) = WaypointFollower::new(Vec::new()));
+    assert2::assert!(let Err(EmptyWaypoints) = WaypointFollower::new(empty));
+    assert2::assert!(let Err(EmptyWaypoints) = WaypointFollower::new(Vec::new()));
 }
 
 #[test]

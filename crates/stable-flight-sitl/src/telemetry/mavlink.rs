@@ -13,6 +13,7 @@ pub struct MavlinkConfiguration {
 }
 
 pub struct MavlinkPublisher {
+    #[expect(dead_code, reason = "holds the geodetic origin once #97 lands")]
     config: MavlinkConfiguration,
     connection: Box<dyn mavlink::MavConnection<MavMessage>>,
     sequence: u8,
@@ -107,7 +108,8 @@ impl MavlinkPublisher {
         self.send_message(&MavMessage::LOCAL_POSITION_NED(local_position_msg));
     }
 
-    pub fn send_global_position(&mut self, state: &VehicleState) {
+    pub fn send_global_position(&mut self, _state: &VehicleState) {
+        // Hard-coded until a geodetic origin exists (#97).
         // Send GPS position at 5 Hz (every 200ms)
         let gps_msg = GLOBAL_POSITION_INT_DATA {
             time_boot_ms: self.time_boot_ms(),

@@ -1,7 +1,7 @@
 use std::thread;
 use std::time::Duration;
 
-use assert2::{check, let_assert};
+use assert2::check;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
@@ -40,7 +40,7 @@ fn hover_loop() -> TestLoop {
 fn rejects_non_positive_or_non_finite_frequencies() {
     // Non-positive, non-finite, too slow to fit a Duration, too fast for a non-zero period.
     for hz in [0.0, -50.0, f64::NAN, f64::INFINITY, 1e-30, 1e10] {
-        let_assert!(Err(InvalidFrequency(reported)) = RealTimeRunner::new(hz));
+        assert2::assert!(let Err(InvalidFrequency(reported)) = RealTimeRunner::new(hz));
         check!(reported.to_bits() == hz.to_bits(), "frequency {hz}");
     }
 }
@@ -55,7 +55,7 @@ fn period_is_the_reciprocal_of_frequency() {
         (300.0, Duration::from_nanos(3_333_333)),
     ];
     for (hz, expected) in cases {
-        let_assert!(Ok(runner) = RealTimeRunner::new(hz));
+        assert2::assert!(let Ok(runner) = RealTimeRunner::new(hz));
         check!(runner.period() == expected, "frequency {hz}");
     }
 }
