@@ -106,6 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Scripted (waypoint) flights no longer crash the loop when the vehicle is far
+  from the active waypoint; see the `stable-flight` changelog.
 - A failure to register the SIGINT handler is now returned from
   `ShutdownSignal::install` instead of panicking on a background thread. The
   Windows console handler no longer uses a `static mut` raw pointer.

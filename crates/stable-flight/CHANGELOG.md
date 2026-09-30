@@ -40,4 +40,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RecordingTelemetry<N>` (ring of the last `N` ticks as `RecordedTick`s, which
   `as_record()` can replay).
 
+### Fixed
+
+- Waypoint flight far from the target no longer panics the flight loop. The
+  lateral controller's roll/pitch request is saturated to the normalized
+  [-1, 1] range (it previously passed an unbounded `accel / g`, e.g. -4.6),
+  its integral term is clamped to the configured `max_integral` (it was
+  unbounded), and `AttitudeController::control` saturates out-of-range or NaN
+  inputs instead of `assert!`ing. Far from a waypoint the vehicle now commands
+  full tilt (`max_angles`) toward it. A NaN target, position, or attitude
+  estimate no longer sticks in the lateral or attitude integral.
+  `LateralController::with_config` now rejects a negative or non-finite
+  `max_integral` (it would otherwise panic inside the loop).
+
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight
