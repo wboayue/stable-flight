@@ -100,9 +100,11 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 |--------------------|----------------------------------------------------------------------|-------|
 | `Commander`        | `WaypointFollower<W: AsRef<[WaypointCommand]>>`                      | core  |
 | `Commander`        | `Extreme3DCommander`, `SpektrumCommander`, `ScriptCommander`         | sitl  |
-| `Vehicle` (`StateEstimator` + `Actuator`) | `RealFlightVehicle<T: RealFlightBridge>`, `NullVehicle` | sitl |
+| `Vehicle` (`StateEstimator` + `Actuator`) | `ComposedVehicle<E, A>`; `testing::NullVehicle` (`testing` feature) | core |
+| `Vehicle` (`StateEstimator` + `Actuator`) | `RealFlightVehicle<T: RealFlightBridge>` | sitl |
 | `Stabilizer`       | `CopterStabilizer`                                                   | core  |
 | `Mixer`            | `QuadCopterMixer`; `TailSitterMixer` (placeholder, outputs zeros)    | core  |
+| `TelemetryPublisher` | `(A, B)` fan-out; `testing::RecordingTelemetry<N>` (`testing` feature) | core |
 | `TelemetryPublisher` | `MavlinkPublisher`, `FileLogger`                                   | sitl  |
 
 `CopterStabilizer` is composed of PID controllers in `stabilizers::controllers::{attitude, body_rate, yaw, altitude, lateral}`.
@@ -147,7 +149,7 @@ self.telemetry.publish(&TelemetryRecord { dt, command: &command, state: &self.st
 - Name tests after the behaviour they protect (e.g. `maintains_pitch_hold`), not the function under test.
 - Use `assert2::assert!` / `check!` and `approx::assert_relative_eq!` for floats.
 - Table-driven tests are the default for control math; one row per scenario.
-- Mock traits by hand (see `MockRealFlightBridge` in sitl `src/simulators/realflight/tests.rs`) — `mockall` is not a dependency.
+- For pipeline doubles, use the core `testing` feature (`stable_flight::testing::{NullVehicle, ConstantCommander, RecordingTelemetry}`; enable it in `[dev-dependencies]`) and recover them after a run with `FlightLoop::into_parts()`. Don't add per-crate `Mock*` pipeline types. Mock other traits by hand (see `MockRealFlightBridge` in sitl `src/simulators/realflight/tests.rs`) — `mockall` is not a dependency.
 - `proptest` and `criterion` are **not** in `Cargo.toml`. Add them deliberately, with a benchmark or property test in the same PR, if you reach for them.
 - Coverage: `just cover` → review `tarpaulin-report.html`. Refresh after non-trivial control-loop changes.
 

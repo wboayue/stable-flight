@@ -198,3 +198,28 @@ fn commander_sees_previous_tick_state_across_steps() {
         ]
     );
 }
+
+#[test]
+fn into_parts_returns_the_components_with_their_state() {
+    use crate::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
+
+    let mut flight_loop = FlightLoop::new(
+        ConstantCommander::default(),
+        NullVehicle::new(),
+        RecordingStabilizer {
+            log: Log::default(),
+        },
+        RecordingMixer {
+            log: Log::default(),
+        },
+        RecordingTelemetry::<8>::new(),
+    );
+    flight_loop.prime();
+    flight_loop.step(Duration::from_millis(4));
+    flight_loop.step(Duration::from_millis(4));
+
+    let (_commander, vehicle, _stabilizer, _mixer, telemetry) = flight_loop.into_parts();
+    check!(vehicle.estimates() == 3); // prime + 2 ticks
+    check!(vehicle.actuations() == 2);
+    check!(telemetry.total() == 2);
+}

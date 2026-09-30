@@ -27,5 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Works over an array, `&'static` slice, or `Vec`, and never allocates, so
   waypoint flight can run on firmware. `new` returns `EmptyWaypoints` for an
   empty list.
+- `ComposedVehicle<E, A>`: a `Vehicle` built from a separate `StateEstimator`
+  and `Actuator` (e.g. IMU/estimator + ESC driver), with `estimator()`,
+  `actuator()`, and `into_parts()`.
+- `impl TelemetryPublisher for (A, B)`: fans each tick out to both publishers;
+  nest tuples for more sinks. No allocation or dynamic dispatch.
+- `FlightLoop::into_parts()` returns the five components after a run.
+- `testing` feature (off by default) with allocation-free test doubles in
+  `stable_flight::testing`: `NullVehicle` (fixed state, counts estimates and
+  actuations, keeps the last command), `ConstantCommander`, and
+  `RecordingTelemetry<N>` (ring of the last `N` ticks as `RecordedTick`s).
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight

@@ -16,8 +16,8 @@ otherwise do it in the next PR.
 | PR 1 — Convert to workspace | ✅ #43 |
 | architecture-refactor PRs 1–4, 6 (see that plan) | ✅ #44, #50, #46, #47, #48 |
 | PR 2a — core crate + `FlightLoop` | ✅ #52 |
-| PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | 🔍 #53 |
-| PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | ⬜ |
+| PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | ✅ #53 |
+| PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | 🔍 (this PR) |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
@@ -318,6 +318,32 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
   for pitch ≈ -4.6, and the flight loop panics. That contradicts "no panics in the loop".
   Clamp (or saturate the lateral output) instead of asserting; do it in its own PR with
   table tests, before hardware.
+
+2c as implemented:
+- Core `composition` module:
+  - `ComposedVehicle<E, A>` (delegating `StateEstimator`/`Actuator`, plus `estimator()`,
+    `actuator()`, `into_parts()`; re-exported at the root).
+  - `impl TelemetryPublisher for (A, B)`.
+- `FlightLoop::into_parts()`, the #52 review follow-up.
+- Core `testing` module behind `#[cfg(any(test, feature = "testing"))]`, with the
+  `testing` feature off by default:
+  - `NullVehicle` moved from sitl. It now counts estimates and actuations and keeps the
+    last command; `new`/`with_state`. **Breaking** in sitl.
+  - `ConstantCommander`.
+  - `RecordingTelemetry<const N: usize>`: a fixed ring of `RecordedTick` (owned copies of
+    `TelemetryRecord`, possible because #48 made the command/control types `Copy`), plus
+    `total`/`last`/`iter`.
+  - All allocation-free.
+- sitl enables `testing` only in `[dev-dependencies]`. `cargo tree -e normal` confirms
+  normal builds don't get it.
+- sitl `runner/tests.rs` mocks are deleted. It uses the real `CopterStabilizer` +
+  `QuadCopterMixer` with core doubles and reads them back via `into_parts()`.
+- `flight_loop/tests.rs` keeps its shared-log `Recording*` doubles, because they test
+  cross-component call order, which a per-component double can't show.
+- New test code uses `assert2::assert!(let …)` instead of the deprecated `let_assert!`.
+- Docs: core README Composition and Testing sections, architecture.md, and CLAUDE.md
+  (impl table, and a testing rule to use core doubles rather than per-crate `Mock*`
+  pipeline types).
 
 ## PR 3 — Split RealFlight into its own backend crate
 

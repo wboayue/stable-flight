@@ -25,6 +25,16 @@ let mut commander = WaypointFollower::new(PATH)?.with_acceptance_radius(2.0);
 
 Input-device and file-based commanders (joysticks, CSV scripts) live in `stable-flight-sitl`.
 
+### Composition
+
+- `ComposedVehicle::new(estimator, actuator)` makes a `Vehicle` from a separate `StateEstimator` and `Actuator` — the usual shape on hardware (IMU/estimator + ESC driver).
+- A tuple of telemetry publishers is a publisher: `(mavlink, (file_log, console))` sends every tick to all three.
+- `FlightLoop::into_parts()` hands the components back after a run.
+
+### Testing
+
+Enable the `testing` feature in `[dev-dependencies]` for allocation-free doubles in `stable_flight::testing`: `NullVehicle` (fixed state, counts calls), `ConstantCommander`, and `RecordingTelemetry<N>` (keeps the last `N` ticks).
+
 ### Stabilizer
 
 Stabilizers calculate the difference between the vehicle's current state and the desired state, generating `ControlOutput`s that the mixer then translates into actuator commands. This component contains the core flight stabilization logic. `CopterStabilizer` targets multirotors. This is where you would start if you want to implement custom flight control logic.

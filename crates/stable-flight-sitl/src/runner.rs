@@ -51,16 +51,14 @@ impl RunStats {
 /// # use std::time::Duration;
 /// # use stable_flight::{FlightLoop, mixers::QuadCopterMixer};
 /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
-/// # use stable_flight_sitl::simulators::NullVehicle;
-/// # use stable_flight_sitl::telemetry::ConsoleTelemetryPublisher;
-/// # use stable_flight_sitl::commanders::ScriptCommander;
+/// # use stable_flight::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
 /// use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 ///
-/// # let commander = ScriptCommander::new("flights/figure_eight.csv").expect("script");
-/// # let vehicle = NullVehicle {};
+/// # let commander = ConstantCommander::default();
+/// # let vehicle = NullVehicle::new();
 /// # let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
 /// # let mixer = QuadCopterMixer::default();
-/// # let telemetry = ConsoleTelemetryPublisher {};
+/// # let telemetry = RecordingTelemetry::<1>::new();
 /// let mut flight_loop = FlightLoop::new(commander, vehicle, stabilizer, mixer, telemetry);
 /// let shutdown = ShutdownSignal::install().expect("install Ctrl-C handler");
 ///

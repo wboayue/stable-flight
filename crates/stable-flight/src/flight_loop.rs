@@ -132,4 +132,16 @@ where
     pub fn state(&self) -> &VehicleState {
         &self.state
     }
+
+    /// Splits the loop back into `(commander, vehicle, stabilizer, mixer, telemetry)`, e.g. to
+    /// inspect test doubles after a run or to hand the vehicle to another runner.
+    pub fn into_parts(self) -> (C, V, S, M, T) {
+        (
+            self.commander,
+            self.vehicle,
+            self.stabilizer,
+            self.mixer,
+            self.telemetry,
+        )
+    }
 }
