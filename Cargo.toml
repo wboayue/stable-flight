@@ -13,6 +13,8 @@ repository = "https://github.com/wboayue/stable-flight"
 
 [workspace.dependencies]
 robomath = "0.1.0"
+# Must match the version realflight-bridge uses (its `uom` feature).
+uom = "0.38.0"
 log = "0.4.25"
 thiserror = "2.0"
 clap = { version = "4", features = ["derive"] }

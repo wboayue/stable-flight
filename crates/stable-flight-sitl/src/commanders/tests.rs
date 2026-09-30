@@ -1,6 +1,6 @@
 use robomath::Vec2;
 
-use crate::{AttitudeCommand, Command, Commander, VehicleState, WaypointCommand};
+use stable_flight::{AttitudeCommand, Command, Commander, VehicleState, WaypointCommand};
 
 // A mock Commander implementation for testing
 struct MockCommander {

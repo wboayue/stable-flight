@@ -9,6 +9,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+stable-flight = { path = "../stable-flight" }
 stable-flight-sitl = { path = "../stable-flight-sitl" }
 clap.workspace = true
 plotters = { version = "0.3", default-features = false, features = [

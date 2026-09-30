@@ -24,7 +24,7 @@ use std::fs;
 use robomath::vec2;
 use thiserror::Error;
 
-use crate::{Command, Commander, VehicleState, WaypointCommand};
+use stable_flight::{Command, Commander, VehicleState, WaypointCommand};
 
 /// Default horizontal distance (meters) within which the active waypoint is considered
 /// reached and the commander advances to the next one.
@@ -102,7 +102,7 @@ impl ScriptCommander {
     ///
     /// ```
     /// use robomath::vec2;
-    /// use stable_flight_sitl::WaypointCommand;
+    /// use stable_flight::WaypointCommand;
     /// use stable_flight_sitl::commanders::ScriptCommander;
     ///
     /// let waypoints = vec![WaypointCommand {
@@ -129,7 +129,7 @@ impl ScriptCommander {
     ///
     /// ```
     /// use robomath::vec2;
-    /// use stable_flight_sitl::WaypointCommand;
+    /// use stable_flight::WaypointCommand;
     /// use stable_flight_sitl::commanders::ScriptCommander;
     ///
     /// let commander = ScriptCommander::from_waypoints(vec![WaypointCommand {

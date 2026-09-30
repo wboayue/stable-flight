@@ -19,7 +19,7 @@ use clap::Parser;
 use plotters::coord::Shift;
 use plotters::prelude::*;
 
-use stable_flight_sitl::WaypointCommand;
+use stable_flight::WaypointCommand;
 use stable_flight_sitl::commanders::script::load_waypoints;
 
 /// Rendered image dimensions in pixels.

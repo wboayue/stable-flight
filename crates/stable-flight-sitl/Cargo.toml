@@ -11,13 +11,14 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+stable-flight = { path = "../stable-flight", version = "0.1.0" }
 realflight-bridge = { version = "1.1.0", features = ["uom"] }
 gilrs = "0.11.0"
 env_logger = "0.11.6"
 log.workspace = true
 signal-hook = "0.4.1"
 mavlink = "0.17.1"
-uom = "0.38.0"
+uom.workspace = true
 byteorder = "1.5.0"
 robomath.workspace = true
 thiserror.workspace = true
