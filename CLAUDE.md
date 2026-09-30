@@ -25,7 +25,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
   across the workspace (add `-p <crate>` to be explicit), and `flights/*.csv` paths are
   relative to the root.
 - Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `stabilizers`, `testing` (feature: doubles + `conformance`) (traits/types at the crate root); `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
-- Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `libm` (`no_std` float math, core), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
+- Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `robomath` (`Vec2`/`Vec3`/`Quaternion`; to be replaced by `nalgebra`, #87), `uom` (units), `libm` (`no_std` float math, core), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
 - Untracked generated artifacts: `target/`, `Cargo.lock`, `tarpaulin-report.html`.
 - Paths below are prefixed with their crate (`core:` = `crates/stable-flight/`, `sitl:` =
   `crates/stable-flight-sitl/`, `sitl-realflight:` = `crates/stable-flight-sitl-realflight/`)
@@ -157,6 +157,7 @@ self.telemetry.publish(&TelemetryRecord { dt, command: &command, setpoint: &setp
 - **No range or finiteness `assert!`s on per-tick inputs.** Saturate, treat NaN as neutral, and wrap angles, per `architecture.md#input-policy-no-panics-in-the-tick`, using the core's `math` helpers. Asserts are only for construction-time config and `dt > 0`.
 - **No `.unwrap()` or `.expect()` in `src/`.** They turn recoverable errors into panics that crash the flight loop. Propagate with `?`, return a typed error, or — only when a value is provably non-`None` from local context — use `unwrap_or_else(|| unreachable!("..."))` with a comment explaining the invariant. `.expect()` is fine in `examples/` and `tests/` where a crash is the acceptable failure mode.
 - Express physical quantities with `uom` and vector math with `robomath`. Don't reinvent.
+- Watch firmware size in core: fixed-size math only (no dynamic matrices or LU/SVD-style decompositions), no `Display`/`Debug` formatting on target, and measure flash with a `thumbv7em-none-eabihf` release build (`opt-level = "s"`, LTO) rather than guessing — `libm` trig, not the vector library, dominates.
 - Logging via `log` + `env_logger`. Reserve `info!` for lifecycle events; use `debug!` inside the loop.
 - Use `&` and slices to avoid allocations in the hot loop. No `Box`/`Vec` per tick.
 
