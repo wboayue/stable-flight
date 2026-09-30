@@ -1,0 +1,20 @@
+[package]
+name = "stable-flight"
+description = "Flight-control core for Stable Flight: pipeline traits, cascaded-PID stabilizers, mixers, and the per-tick flight loop"
+readme = "README.md"
+keywords = ["flight-controller", "drone", "robotics", "control-systems", "pid"]
+categories = ["aerospace::drones", "science::robotics"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+robomath.workspace = true
+uom.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+approx.workspace = true
+assert2.workspace = true

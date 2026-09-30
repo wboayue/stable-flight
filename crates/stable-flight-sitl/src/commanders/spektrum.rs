@@ -6,7 +6,7 @@ use std::cell::RefCell;
 
 use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
 
-use crate::{AttitudeCommand, Command, Commander, VehicleState};
+use stable_flight::{AttitudeCommand, Command, Commander, VehicleState};
 
 pub struct SpectrumCommander {
     gilrs: RefCell<Gilrs>,

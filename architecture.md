@@ -7,18 +7,19 @@ This document expands upon the high-level introduction provided in the [project 
 The repository is a Cargo workspace. Dependencies point one way:
 
 ```
-stable-flight-tools ──► stable-flight-sitl
+stable-flight-tools ──► stable-flight-sitl ──► stable-flight
 ```
 
-* **`stable-flight-sitl`** (`crates/stable-flight-sitl`): the flight-control pipeline (traits, stabilizers, mixers, orchestrator) together with the RealFlight SITL harness (vehicle, commanders, telemetry). Published.
+* **`stable-flight`** (`crates/stable-flight`): the flight-control core — pipeline traits, the data passed between them (`Command`, `VehicleState`, `ControlOutput`, `ActuatorCommand`, `TelemetryRecord`), the cascaded-PID stabilizers, the mixers, and `FlightLoop`, which sequences one tick. No simulator, I/O, clock, or thread dependencies, so it can run on hardware. Published.
+* **`stable-flight-sitl`** (`crates/stable-flight-sitl`): the software-in-the-loop harness — the RealFlight vehicle, joystick and scripted commanders, MAVLink/file telemetry, and `FlightOrchestrator`, the real-time runner that drives a `FlightLoop`. Published.
 * **`stable-flight-tools`** (`crates/stable-flight-tools`): developer binaries (`plot_flight`, `generate_figure_eight`). Unpublished, so library consumers never compile `plotters`.
 * **`firmware/`**: excluded from the workspace; each board will be its own nested workspace with its own target, profiles, and lockfile.
 
-The split continues per `plans/workspace-migration.md`: a `no_std` `stable-flight` core crate, a backend-agnostic `stable-flight-sitl` harness, and one `stable-flight-sitl-<simulator>` crate per simulator backend.
+The split continues per `plans/workspace-migration.md`: the core becomes `no_std`, `FlightOrchestrator` splits into a `ShutdownSignal` and a `RealTimeRunner`, and each simulator backend gets its own `stable-flight-sitl-<simulator>` crate.
 
-## Flight Orchestrator
+## Flight Loop and Runners
 
-The heart of the system is the `FlightOrchestrator` component. The `FlightOrchestrator` depends on several traits that together form a flexible and modular flight control architecture.
+The heart of the system is `FlightLoop` (core). It owns the five components and runs one tick per `step(dt)`, with no notion of time. A runner decides when ticks happen: `FlightOrchestrator` (sitl) paces them on the wall clock and handles shutdown; a lockstep simulator runner or a hardware timer interrupt can drive the same `FlightLoop` later.
 
 ## Core Components
 
@@ -30,27 +31,31 @@ The heart of the system is the `FlightOrchestrator` component. The `FlightOrches
 
 ## Flight Stabilization Loop
 
-The flight stabilization loop runs at a configured frequency (target Hz) and does the following continuously:
+Each `FlightLoop::step` (called by the runner at its configured frequency) does the following. This section is the reference for tick ordering; other docs link here.
+
+* The commander sees the **previous** tick's state; the stabilizer sees this tick's **fresh** estimate.
+* `FlightLoop::prime` runs once before the first tick: `estimate_state(Duration::ZERO)`, then `Stabilizer::prime` with that state.
+* Telemetry is published after `actuate`, with the whole tick in one `TelemetryRecord`.
 
 ```mermaid
 sequenceDiagram
-    participant FlightOrchestrator
+    participant FlightLoop
     participant Commander
     participant Vehicle
     participant Stabilizer
     participant Mixer
     participant TelemetryPublisher
 
-    FlightOrchestrator->>Commander: next_command(dt, state)
-    Commander-->>FlightOrchestrator: Command
-    FlightOrchestrator->>Vehicle: estimate_state(dt)
-    Vehicle-->>FlightOrchestrator: VehicleState
-    FlightOrchestrator->>Stabilizer: stabilize(dt, Command, VehicleState)
-    Stabilizer-->>FlightOrchestrator: ControlOutput
-    FlightOrchestrator->>Mixer: mix(ControlOutput)
-    Mixer-->>FlightOrchestrator: ActuatorCommand
-    FlightOrchestrator->>Vehicle: actuate(ActuatorCommand)
-    FlightOrchestrator->>TelemetryPublisher: publish(TelemetryRecord)
+    FlightLoop->>Commander: next_command(dt, state)
+    Commander-->>FlightLoop: Command
+    FlightLoop->>Vehicle: estimate_state(dt)
+    Vehicle-->>FlightLoop: VehicleState
+    FlightLoop->>Stabilizer: stabilize(dt, Command, VehicleState)
+    Stabilizer-->>FlightLoop: ControlOutput
+    FlightLoop->>Mixer: mix(ControlOutput)
+    Mixer-->>FlightLoop: ActuatorCommand
+    FlightLoop->>Vehicle: actuate(ActuatorCommand)
+    FlightLoop->>TelemetryPublisher: publish(TelemetryRecord)
 ```
 
 ## Design Patterns
@@ -77,7 +82,7 @@ Each major component is defined by a trait interface, allowing multiple implemen
 
 ## Real-Time Loop Management
 
-The orchestrator implements careful timing control:
+`FlightOrchestrator` (sitl) implements the timing around `FlightLoop::step`:
 
 * Operates at a fixed frequency (e.g., 250 Hz), set per call to `run(target_frequency)`
 * Calculates and applies sleep durations to maintain consistent timing

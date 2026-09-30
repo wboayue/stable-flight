@@ -4,7 +4,7 @@ use log::warn;
 use mavlink::{MavConnection, MavHeader, MavlinkVersion, common::*};
 
 use super::throttle::ErrorThrottle;
-use crate::{ControlOutput, TelemetryPublisher, TelemetryRecord, VehicleState};
+use stable_flight::{ControlOutput, TelemetryPublisher, TelemetryRecord, VehicleState};
 
 pub struct MavlinkConfiguration {
     // connection: String,

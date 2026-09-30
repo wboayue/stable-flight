@@ -4,7 +4,7 @@ use log::{error, warn};
 use realflight_bridge::{ControlInputs, RealFlightBridge, SimulatorState};
 use robomath::{Quaternion, Vec3, to_radians};
 
-use crate::{Actuator, ActuatorCommand, StateEstimator, VehicleState};
+use stable_flight::{Actuator, ActuatorCommand, StateEstimator, VehicleState};
 
 #[cfg(test)]
 mod tests;
@@ -87,7 +87,7 @@ where
 /// ```no_run
 /// use realflight_bridge::{RealFlightBridge, RealFlightLocalBridge};
 /// use stable_flight_sitl::simulators::realflight::{RealFlightConfiguration, RealFlightVehicle, ActuatorMapping};
-/// use stable_flight_sitl::{Actuator, ActuatorCommand, StateEstimator};
+/// use stable_flight::{Actuator, ActuatorCommand, StateEstimator};
 /// use std::time::Duration;
 ///
 /// let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {

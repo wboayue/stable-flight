@@ -1,11 +1,11 @@
 use std::thread;
 use std::time::{Duration, Instant};
 
-use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
-use stable_flight_sitl::{
+use stable_flight::{
     ActuatorCommand, AttitudeCommand, Command, ControlOutput, TelemetryPublisher, TelemetryRecord,
     VehicleState,
 };
+use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let telemetry_configuration = MavlinkConfiguration {};

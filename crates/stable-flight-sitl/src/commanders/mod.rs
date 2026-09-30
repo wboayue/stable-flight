@@ -33,7 +33,7 @@ pub enum CommanderError {
 }
 
 #[allow(unused_imports)] // used in documentation
-use super::Commander;
+use stable_flight::Commander;
 
 #[doc(inline)]
 pub use extreme_3d::Extreme3DCommander;

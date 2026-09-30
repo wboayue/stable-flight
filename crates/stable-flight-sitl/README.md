@@ -4,7 +4,7 @@ Software-in-the-loop flight controller for VTOL drones, driven by the [RealFligh
 
 ## Components
 
-Each example wires the same five-component pipeline and is a copy-paste starting point for your own setup. Let's walk through the components a `FlightOrchestrator` needs: a **Commander**, **Vehicle**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**.
+Each example wires the same five-component pipeline and is a copy-paste starting point for your own setup. Let's walk through the components a `FlightOrchestrator` needs: a **Commander**, **Vehicle**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**. The traits and data types come from the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate; this crate provides the simulation-side implementations and the real-time runner.
 
 ### Commander
 
@@ -44,46 +44,9 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 
 The RealFlightVehicle is configured with a `RealFlightLocalBridge` or `RealFlightRemoteBridge`, depending on whether the flight stabilizer is running on the same host as the simulator. The `ActuatorMapping` maps logical motors and control surfaces to specific channels for the RealFlight vehicle model.
 
-### Stabilizer
+### Stabilizer and Mixer
 
-Stabilizers calculate the difference between the vehicle's current state and the desired state, generating `ControlOutput`s that the mixer then translates into actuator commands. This component contains the core flight stabilization logic. `CopterStabilizer` targets multirotors. This is where you would start if you want to implement custom flight control logic.
-
-The simplest setup uses default gains:
-
-```rust
-let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
-```
-
-For tuned gains, build the inner PID controllers explicitly (see [`examples/copter-manual-realflight.rs`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl/examples/copter-manual-realflight.rs) for a full example):
-
-```rust
-let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
-    gains: Gains { p: 7.0, i: 0.0, d: 0.01 },
-    max_integral: 100.0,
-    max_angular_rates: vec3(3.0, 3.0, 3.0),
-});
-
-let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
-    gains: Gains { p: 3.0, i: 0.0, d: 0.1 },
-    max_integral: 100.0,
-    max_angles: vec2(PI / 4.0, PI / 4.0),
-    max_rate: vec2(3.0, 3.0),
-});
-
-let stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
-    rates_controller,
-    attitude_controller,
-    ..Default::default()
-});
-```
-
-### Mixer
-
-Mixers convert control outputs into motor commands and control surface movements:
-
-```rust
-let mixer = QuadCopterMixer::default();
-```
+The stabilizer (cascaded PID control) and mixer (thrust/moments → motor and surface commands) live in the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate so the same code can run on hardware. See its README for configuration; the examples here use `CopterStabilizer` and `QuadCopterMixer`.
 
 ### TelemetryPublisher
 

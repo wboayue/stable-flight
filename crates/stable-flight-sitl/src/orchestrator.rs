@@ -1,36 +1,31 @@
-//! Coordinates communication and execution flow between all system components.
+//! Runs the flight loop in real time until shutdown.
 //!
-//! This module implements the core stabilization loop for the flight control system.
-//! It is responsible for maintaining the desired state of the aircraft by coordinating
-//! command generation, state feedback, control computations, and telemetry transmission.
-//!
-//! # Design Pattern
-//!
-//! The orchestrator follows a dependency injection pattern, allowing for flexible
-//! configuration and easy testing. Each component ([Commander], [Vehicle], [Stabilizer],
-//! [Mixer], and [TelemetryPublisher]) can be independently replaced with different
-//! implementations to adapt to various scenarios.
+//! [`FlightOrchestrator`] wraps a core [`FlightLoop`], which sequences one tick, and adds the
+//! host concerns: wall-clock pacing at a target frequency, loop-rate metrics, and graceful
+//! shutdown on SIGINT (Unix) / Ctrl-C (Windows). Each component ([`Commander`], [`Vehicle`],
+//! [`Stabilizer`], [`Mixer`], and [`TelemetryPublisher`]) is injected and can be replaced
+//! independently.
 //!
 //! # Example
 //!
 //! ```ignore
+//! use stable_flight::mixers::QuadCopterMixer;
+//! use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 //! use stable_flight_sitl::commanders::Extreme3DCommander;
-//! use stable_flight_sitl::controllers::basic::BasicController;
-//! use stable_flight_sitl::mixers::QuadCopterMixer;
-//! use stable_flight_sitl::vehicles::RealFlightVehicle;
+//! use stable_flight_sitl::simulators::RealFlightVehicle;
 //! use stable_flight_sitl::telemetry::mavlink::MavlinkPublisher;
 //! use stable_flight_sitl::FlightOrchestrator;
 //!
 //! // Create components with appropriate configurations
 //! let commander = Extreme3DCommander::default();
 //! let vehicle = RealFlightVehicle::new(/* configuration */);
-//! let controller = BasicController::new(/* configuration */);
+//! let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
 //! let mixer = QuadCopterMixer::default();
 //! let telemetry = MavlinkPublisher::new(/* configuration */);
 //!
 //! // Create and run the orchestrator
 //! let mut orchestrator = FlightOrchestrator::new(
-//!     commander, vehicle, controller, mixer, telemetry
+//!     commander, vehicle, stabilizer, mixer, telemetry
 //! );
 //!
 //! // Run at 250 Hz
@@ -52,29 +47,16 @@ use std::{thread, time::Duration};
 
 use log::{debug, info};
 
-use crate::{Commander, Mixer, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle};
+use stable_flight::{Commander, FlightLoop, Mixer, Stabilizer, TelemetryPublisher, Vehicle};
 
 #[cfg(test)]
 mod tests;
 
-/// Encapsulates the stabilization loop.
+/// Runs a [`FlightLoop`] at a fixed wall-clock rate until a shutdown signal arrives.
 ///
-/// The FlightOrchestrator coordinates components of the flight control system,
-/// including command generation, vehicle state estimation, control computation,
-/// actuator command generation, and telemetry publishing. It continuously
-/// executes a control loop at a specified target frequency.
-///
-/// During each loop iteration, it:
-///
-/// - Retrieves the next flight control command from a [Commander].
-/// - Acquires the current state of the vehicle via a [Vehicle] interface.
-/// - Computes control outputs for desired state using a [Stabilizer].
-/// - Mixes the control outputs into actuator commands using a [Mixer].
-/// - Actuates the [Vehicle] with output from the Mixer.
-/// - Publishes telemetry data via a [TelemetryPublisher].
-///
-/// The orchestrator also handles system signals like SIGINT (Ctrl+C) to provide
-/// a graceful shutdown mechanism.
+/// Each iteration calls [`FlightLoop::step`] (one tick; see its docs for the order), then
+/// sleeps until the next period. The orchestrator also handles
+/// SIGINT (Ctrl+C) to provide a graceful shutdown mechanism.
 pub struct FlightOrchestrator<
     T: Commander,
     U: Vehicle,
@@ -82,11 +64,7 @@ pub struct FlightOrchestrator<
     W: Mixer,
     X: TelemetryPublisher,
 > {
-    commander: T,
-    vehicle: U,
-    stabilizer: V,
-    mixer: W,
-    telemetry: X,
+    flight_loop: FlightLoop<T, U, V, W, X>,
     running: Arc<AtomicBool>,
 }
 
@@ -99,7 +77,7 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
     ///
     /// * `commander` - Component that generates flight control commands
     /// * `vehicle` - Represents the physical aircraft and provides state estimation
-    /// * `controller` - Computes control outputs based on commands and current state
+    /// * `stabilizer` - Computes control outputs based on commands and current state
     /// * `mixer` - Converts abstract control outputs to concrete actuator commands
     /// * `telemetry` - Handles transmission of telemetry data
     ///
@@ -162,11 +140,7 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
         }
 
         FlightOrchestrator {
-            commander,
-            vehicle,
-            stabilizer,
-            mixer,
-            telemetry,
+            flight_loop: FlightLoop::new(commander, vehicle, stabilizer, mixer, telemetry),
             running,
         }
     }
@@ -191,15 +165,9 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
     ///
     /// 1. Calculate the target duration from the frequency
     /// 2. Initialize timing variables
-    /// 3. Begin the main control loop:
-    ///    1. Get the next command from the commander
-    ///    2. Get the current vehicle state
-    ///    3. Compute control outputs using the controller
-    ///    4. Mix control outputs to actuator commands
-    ///    5. Apply actuator commands to the vehicle
-    ///    6. Publish telemetry
-    ///    7. Sleep to maintain the target frequency
-    /// 4. Continue until a shutdown signal is received
+    /// 3. Prime the flight loop ([`FlightLoop::prime`])
+    /// 4. Each period, run one tick ([`FlightLoop::step`]) and sleep to maintain the target frequency
+    /// 5. Continue until a shutdown signal is received
     pub fn run(&mut self, target_frequency: f64) {
         assert!(
             target_frequency > 0.0,
@@ -216,34 +184,10 @@ impl<T: Commander, U: Vehicle, V: Stabilizer, W: Mixer, X: TelemetryPublisher>
         let mut iteration_count = 0;
         let start_time = Instant::now();
 
-        let mut state = self.vehicle.estimate_state(Duration::ZERO);
-
-        self.stabilizer.prime(&state);
+        self.flight_loop.prime();
 
         while self.running.load(Ordering::SeqCst) {
-            // Get control inputs
-            let command = self.commander.next_command(target_dt, &state);
-
-            // Get vehicle state
-            state = self.vehicle.estimate_state(period);
-
-            // Compute control outputs (angles, rates, etc.)
-            let control_outputs = self.stabilizer.stabilize(target_dt, &command, &state);
-
-            // Mix control outputs
-            let actuator_command = self.mixer.mix(&control_outputs);
-
-            // Command actuators
-            self.vehicle.actuate(&actuator_command);
-
-            // Send telemetry
-            self.telemetry.publish(&TelemetryRecord {
-                dt: period,
-                command: &command,
-                state: &state,
-                control: &control_outputs,
-                actuators: &actuator_command,
-            });
+            self.flight_loop.step(period);
 
             iteration_count += 1;
 
