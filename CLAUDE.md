@@ -20,13 +20,16 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     One `stable-flight-sitl-<simulator>` crate per backend.
   - `crates/stable-flight-tools` — unpublished (`publish = false`) dev binaries: `plot_flight`
     (3D flight-path visualizer) and `generate_figure_eight` (waypoint-script generator).
-- `firmware/` is excluded from the workspace; boards will get their own nested workspaces.
+- `firmware/` is excluded from the workspace; each board is its own nested workspace (own
+  target, profiles, committed `Cargo.lock`) — see [`firmware/ark-fpv`](firmware/ark-fpv/README.md).
+  Run cargo from the board's directory (or use the `fw-*` recipes): its `.cargo/config.toml`
+  isn't picked up via `--manifest-path`. Root `cargo fmt --all`/`clippy` don't reach it.
 - Run every command from the repo root: `cargo run --example <name>` / `--bin <name>` resolve
   across the workspace (add `-p <crate>` to be explicit), and `flights/*.csv` paths are
   relative to the root.
 - Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `stabilizers`, `testing` (feature: doubles + `conformance`) (traits/types at the crate root); `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
 - Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `robomath` (`Vec2`/`Vec3`/`Quaternion`; to be replaced by `nalgebra`, #87), `uom` (units), `libm` (`no_std` float math, core), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
-- Untracked generated artifacts: `target/`, `Cargo.lock`, `tarpaulin-report.html`.
+- Untracked generated artifacts: `target/`, root `Cargo.lock`, `tarpaulin-report.html`, `firmware/*/*.bin`.
 - Paths below are prefixed with their crate (`core:` = `crates/stable-flight/`, `sitl:` =
   `crates/stable-flight-sitl/`, `sitl-realflight:` = `crates/stable-flight-sitl-realflight/`)
   where it matters.
@@ -53,11 +56,12 @@ cargo run --bin generate_figure_eight           # (re)write flights/figure_eight
 cargo tarpaulin --workspace -o html             # or: just cover  (writes tarpaulin-report.html)
 cargo fmt --all
 cargo clippy --workspace --all-targets
-just embedded                                   # no_std check: core for thumbv7em-none-eabihf, with and without `testing`
+just embedded                                   # no_std check: core for thumbv7em-none-eabihf, with and without `testing`, then fw-build
+just fw-build                                   # ARK FPV firmware release build (fw-size: cargo size; fw-flash: DFU)
 ```
 
 The flight pipeline has no CLI and there is no `cargo bench` target — don't suggest
-`cargo run -- --commander …` or `cargo bench`. The only binaries are `plot_flight` and
+`cargo run -- --commander …` or `cargo bench`. The only host binaries are `plot_flight` and
 `generate_figure_eight` in `stable-flight-tools`; their unit tests run under
 `cargo test --workspace`. Add `-p <crate>` to scope any command to one crate.
 
@@ -157,7 +161,7 @@ self.telemetry.publish(&TelemetryRecord { dt, command: &command, setpoint: &setp
 - **No range or finiteness `assert!`s on per-tick inputs.** Saturate, treat NaN as neutral, and wrap angles, per `architecture.md#input-policy-no-panics-in-the-tick`, using the core's `math` helpers. Asserts are only for construction-time config and `dt > 0`.
 - **No `.unwrap()` or `.expect()` in `src/`.** They turn recoverable errors into panics that crash the flight loop. Propagate with `?`, return a typed error, or — only when a value is provably non-`None` from local context — use `unwrap_or_else(|| unreachable!("..."))` with a comment explaining the invariant. `.expect()` is fine in `examples/` and `tests/` where a crash is the acceptable failure mode.
 - Express physical quantities with `uom` and vector math with `robomath`. Don't reinvent.
-- Watch firmware size in core: fixed-size math only (no dynamic matrices or LU/SVD-style decompositions), no `Display`/`Debug` formatting on target, and measure flash with a `thumbv7em-none-eabihf` release build (`opt-level = "s"`, LTO) rather than guessing — `libm` trig, not the vector library, dominates.
+- Watch firmware size in core: fixed-size math only (no dynamic matrices or LU/SVD-style decompositions), no `Display`/`Debug` formatting on target, and measure flash with a `thumbv7em-none-eabihf` release build (`opt-level = "s"`, LTO) rather than guessing — `libm` trig, not the vector library, dominates. `just fw-size` gives the real board number.
 - Logging via `log` + `env_logger`. Reserve `info!` for lifecycle events; use `debug!` inside the loop.
 - Use `&` and slices to avoid allocations in the hot loop. No `Box`/`Vec` per tick.
 
@@ -214,7 +218,7 @@ rustdoc), and cover every conformance scenario with `stable_flight::conformance_
 ## Pre-PR checklist
 
 - [ ] Builds clean (`cargo build --workspace`) and tests pass (`cargo test --workspace --all-features`).
-- [ ] Core still builds `no_std` (`just embedded`).
+- [ ] Core still builds `no_std` and the firmware still links (`just embedded`).
 - [ ] `cargo fmt --all` clean; `cargo clippy --workspace --all-targets` adds no new warnings. The tree carries pre-existing warnings (deprecated `let_assert`, unused variables in controllers/tests), so diff against `main` rather than expecting zero.
 - [ ] New fallible APIs return `Result` with `thiserror` types; no new panics in library code.
 - [ ] No `.unwrap()` or `.expect()` introduced under `src/` (examples/tests OK).
