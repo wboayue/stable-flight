@@ -42,7 +42,7 @@ otherwise do it in the next PR.
 | Fix — remaining per-tick panics (mixer, attitude-command, body-rate, altitude, rate-mode; Spektrum clamp) | ✅ #57 |
 | PR 3 — Split RealFlight into its own backend crate | ✅ #58 |
 | Fix — RealFlight frame conversions: double radians, down-positive vertical (found in PR 3) | ⬜ |
-| PR 4 — Make core `no_std` | ⬜ |
+| PR 4 — Make core `no_std` | 🔍 #59 |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
 
 ## Follow-up backlog
