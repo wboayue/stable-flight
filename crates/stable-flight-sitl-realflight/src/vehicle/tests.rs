@@ -356,14 +356,14 @@ fn state_for(scenario: &Scenario) -> VehicleState {
 stable_flight::conformance_tests! {
     state_for;
     conforms_level: LEVEL;
-    conforms_roll_right_30: ROLL_RIGHT_30, ignore = "angles converted to radians twice; fix needs a flight check";
-    conforms_pitch_up_15: PITCH_UP_15, ignore = "angles converted to radians twice; fix needs a flight check";
-    conforms_heading_east: HEADING_EAST, ignore = "angles converted to radians twice; fix needs a flight check";
-    conforms_banked_climb_east: BANKED_CLIMB_EAST, ignore = "angles converted to radians twice; fix needs a flight check";
-    conforms_climbing: CLIMBING, ignore = "vertical velocity/acceleration down-positive; fix needs a flight check";
+    conforms_roll_right_30: ROLL_RIGHT_30, ignore = "angles converted to radians twice; fix needs a flight check (#62)";
+    conforms_pitch_up_15: PITCH_UP_15, ignore = "angles converted to radians twice; fix needs a flight check (#62)";
+    conforms_heading_east: HEADING_EAST, ignore = "angles converted to radians twice; fix needs a flight check (#62)";
+    conforms_banked_climb_east: BANKED_CLIMB_EAST, ignore = "angles converted to radians twice; fix needs a flight check (#62)";
+    conforms_climbing: CLIMBING, ignore = "vertical velocity/acceleration down-positive; fix needs a flight check (#62)";
     conforms_moving_northeast: MOVING_NORTHEAST;
-    conforms_yaw_right_rate: YAW_RIGHT_RATE, ignore = "rates converted to radians twice; fix needs a flight check";
-    conforms_combined_rates: COMBINED_RATES, ignore = "rates converted to radians twice; fix needs a flight check";
+    conforms_yaw_right_rate: YAW_RIGHT_RATE, ignore = "rates converted to radians twice; fix needs a flight check (#62)";
+    conforms_combined_rates: COMBINED_RATES, ignore = "rates converted to radians twice; fix needs a flight check (#62)";
 }
 
 #[test]

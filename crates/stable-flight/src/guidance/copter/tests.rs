@@ -156,7 +156,7 @@ fn commands_map_to_setpoints() {
     }
 }
 
-/// Pins today's mode-switch behaviour (backlog: heading across mode switches). Waypoints hold
+/// Pins today's mode-switch behaviour (#70). Waypoints hold
 /// north without touching the heading-hold target, so attitude mode resumes the target it
 /// had before the waypoint leg, not the vehicle's current heading.
 #[test]
