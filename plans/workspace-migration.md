@@ -20,7 +20,7 @@ otherwise do it in the next PR.
 | PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | ✅ #54 |
 | Fix — attitude-controller panic in waypoint mode (found in 2b) | ✅ #55 |
 | Fix — unwrapped heading target → yaw panic in attitude mode (found in #55 review) | ✅ #56 |
-| Fix — remaining per-tick panics (mixer, attitude-command, body-rate; Spektrum clamp) | 🔍 (this PR) |
+| Fix — remaining per-tick panics (mixer, attitude-command, body-rate; Spektrum clamp) | 🔍 #57 |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
