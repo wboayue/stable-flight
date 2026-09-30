@@ -1,6 +1,6 @@
 use robomath::Quaternion;
 
-use crate::stabilizers::Gains;
+use crate::controllers::Gains;
 
 /// Linear thrust that holds altitude (zero net vertical acceleration); also the output for a
 /// non-finite altitude or velocity error.

@@ -2,8 +2,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use stable_flight::{
-    ActuatorCommand, AttitudeCommand, Command, ControlOutput, TelemetryPublisher, TelemetryRecord,
-    VehicleState,
+    ActuatorCommand, AttitudeCommand, Command, ControlOutput, Setpoint, TelemetryPublisher,
+    TelemetryRecord, VehicleState,
 };
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 
@@ -31,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         publisher.publish(&TelemetryRecord {
             dt,
             command: &command,
+            setpoint: &Setpoint::Attitude(Default::default()),
             state: &state,
             control: &ControlOutput::default(),
             actuators: &ActuatorCommand::default(),

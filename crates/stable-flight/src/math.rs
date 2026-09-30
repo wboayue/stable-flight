@@ -1,4 +1,4 @@
-//! Small numeric helpers shared by stabilizers and mixers: [`saturate_unit`],
+//! Small numeric helpers shared by guidance, stabilizers, controllers, and mixers: [`saturate_unit`],
 //! [`saturate_unit_vec2`], [`saturate_throttle`], and [`wrap_angle`].
 //!
 //! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite

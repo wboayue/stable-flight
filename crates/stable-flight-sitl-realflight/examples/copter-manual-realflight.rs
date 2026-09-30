@@ -14,6 +14,7 @@ use clap::Parser;
 use env_logger::Builder;
 
 use stable_flight::FlightLoop;
+use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
@@ -46,13 +47,16 @@ fn main() {
         mapping: airframe.mapping,
     });
 
+    // Heading hold for the attitude-mode sticks; the stabilizer tracks the resulting setpoint.
+    let guidance = CopterGuidance::new(airframe.guidance);
     let stabilizer = CopterStabilizer::new(airframe.stabilizer);
 
     let mixer = airframe.mixer;
 
     let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
 
-    let mut flight_loop = FlightLoop::new(commander, vehicle, stabilizer, mixer, telemetry);
+    let mut flight_loop =
+        FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
 
     // Ctrl-C stops the loop cleanly (RealFlightVehicle re-enables RC control on drop).
     let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");

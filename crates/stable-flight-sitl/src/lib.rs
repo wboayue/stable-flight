@@ -8,7 +8,7 @@
 //!
 //! This library runs the [Stable Flight](https://crates.io/crates/stable-flight) flight controller
 //! in simulation. Simulation allows safe refining of the flight control logic before real-world deployment.
-//! The flight-control core (traits, stabilizers, mixers, [`stable_flight::FlightLoop`]) lives in the
+//! The flight-control core (traits, guidance, stabilizers, mixers, [`stable_flight::FlightLoop`]) lives in the
 //! `stable-flight` crate; this crate adds the simulator-independent software-in-the-loop harness
 //! around it: joystick and scripted commanders, MAVLink/file telemetry, the real-time runner
 //! ([`RealTimeRunner`]) with graceful shutdown ([`ShutdownSignal`]). Each simulator backend is its own crate, e.g.

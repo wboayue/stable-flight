@@ -1,6 +1,6 @@
 use robomath::{Vec3, vec3};
 
-use super::super::Gains;
+use super::Gains;
 
 /// Configures the [BodyRateController] with PID gains and operational limits.
 ///

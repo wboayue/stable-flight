@@ -28,7 +28,7 @@ Position Commands → Lateral Controller → Attitude Controller → Body Rate C
 
 **Usage**:
 ```rust
-use stable_flight::stabilizers::controllers::{BodyRateController, BodyRateControllerConfig};
+use stable_flight::controllers::{BodyRateController, BodyRateControllerConfig};
 use std::time::Duration;
 use robomath::vec3;
 
@@ -55,7 +55,7 @@ let moments = controller.control(dt, desired_rates, estimated_rates);
 
 **Usage**:
 ```rust
-use stable_flight::stabilizers::controllers::{AttitudeController, AttitudeControllerConfig};
+use stable_flight::controllers::{AttitudeController, AttitudeControllerConfig};
 use std::time::Duration;
 use robomath::vec2;
 
@@ -82,7 +82,7 @@ let angular_rates = controller.control(dt, desired_angles, estimated_angles);
 
 **Usage**:
 ```rust
-use stable_flight::stabilizers::controllers::{YawController, YawControllerConfig};
+use stable_flight::controllers::{YawController, YawControllerConfig};
 use std::time::Duration;
 use std::f32::consts::PI;
 
@@ -109,7 +109,7 @@ let yaw_rate = controller.control(dt, desired_yaw, estimated_yaw);
 
 **Usage**:
 ```rust
-use stable_flight::stabilizers::controllers::{AltitudeController, AltitudeControllerConfig};
+use stable_flight::controllers::{AltitudeController, AltitudeControllerConfig};
 use std::time::Duration;
 use robomath::Quaternion;
 
@@ -146,7 +146,7 @@ let thrust = controller.control(
 
 **Usage**:
 ```rust
-use stable_flight::stabilizers::controllers::{LateralController, LateralControllerConfig};
+use stable_flight::controllers::{LateralController, LateralControllerConfig};
 use std::time::Duration;
 use robomath::vec2;
 
@@ -164,7 +164,7 @@ let angles = controller.control(dt, desired_position, estimated_position, estima
 All controllers support custom configuration through their respective `Config` structs:
 
 ```rust
-use stable_flight::stabilizers::{Gains, controllers::*};
+use stable_flight::controllers::{Gains, *};
 
 // Custom PID gains
 let gains = Gains { p: 2.0, i: 0.1, d: 0.5 };
@@ -287,13 +287,17 @@ fn angle_diff(desired: f32, current: f32) -> f32 {
 
 ## Integration with Flight Controller
 
-The controllers integrate into the main flight loop through the `CopterStabilizer`:
+The position controllers (altitude, lateral) run in `CopterGuidance`, which turns commands into setpoints; the attitude, yaw, and body-rate controllers run in `CopterStabilizer`, which tracks them:
 
 ```rust
-// In the main control loop (src/stabilizers/copter.rs)
-let attitude_rates = self.attitude_controller.control(dt, command.attitude, state.attitude);
-let body_moments = self.rate_controller.control(dt, attitude_rates, state.angular_rates);
-let thrust = self.altitude_controller.control(dt, command.altitude, state.altitude, ...);
+// Guidance (src/guidance/copter.rs), waypoint mode
+let tilt = self.lateral_controller.control(dt, waypoint, position, velocity);
+let thrust = self.altitude_controller.control(dt, command.altitude, 0.0, altitude, climb_rate, attitude);
+
+// Stabilizer (src/stabilizers/copter.rs)
+let attitude_rates = self.attitude_controller.control(dt, setpoint_tilt, current_tilt);
+let yaw_rate = self.yaw_controller.control(dt, setpoint.heading, current_heading);
+let body_moments = self.rates_controller.control(dt, desired_rates, current_rates);
 ```
 
 This ensures proper sequencing and data flow through the cascaded control architecture.

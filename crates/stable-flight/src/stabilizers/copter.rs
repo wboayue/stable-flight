@@ -21,47 +21,35 @@
 //!    - Implements angle limiting for safety
 //!    - Can be used without outer position loops for manual flight modes
 //!
-//! 3. **Outer Loop: Position Control (Optional)**
-//!    - Altitude Control: Maintains desired height
-//!    - Lateral Position Control: Maintains X,Y position
-//!    - Slow update frequency (typically 10-50Hz)
-//!    - Outputs desired roll/pitch angles to attitude controller
-//!    - Can be independently enabled/disabled based on flight mode
+//! The outer position loops (altitude and lateral position) are guidance, not stabilization:
+//! they live in [`CopterGuidance`](crate::guidance::copter::CopterGuidance), which turns
+//! commands into the [`Setpoint`] this stabilizer tracks.
 //!
-//! # Configuration Options
+//! # Setpoints
 //!
-//! - **Rate Control Only**: Direct manual control of angular rates
-//! - **Rate + Attitude Control**: Manual position control with automatic stabilization
-//! - **Full Control Stack**: Automatic position and altitude holding
-//! - **Selective Enabling**: Can enable altitude control while keeping manual lateral control
+//! - [`Setpoint::Rate`]: rate loop only (acro).
+//! - [`Setpoint::Attitude`]: attitude and heading loops feeding the rate loop.
 
 use robomath::{Vec3, vec2, vec3};
 
 use crate::{
-    AttitudeCommand, Command, ControlOutput, RateCommand, Stabilizer, VehicleState, WaypointCommand,
+    AttitudeReference, AttitudeSetpoint, ControlOutput, RateSetpoint, Setpoint, Stabilizer,
+    VehicleState,
 };
 
-use super::Gains;
-use super::controllers::*;
-use crate::math::{saturate_throttle, saturate_unit, wrap_angle};
+use crate::controllers::*;
+use crate::math::{saturate_throttle, saturate_unit};
 
 #[cfg(test)]
 mod tests;
 
-const G: f32 = 9.81; // acceleration due to gravity (m/s²)
-
-/// Heading-hold target change per tick at full yaw stick (radians). At 250 Hz this is
-/// 0.025 rad/s (~1.4°/s).
-const HEADING_STEP_PER_TICK: f32 = 0.0001;
-
-/// Configuration for the [CopterStabilizer], including gains for all control loops and thrust mapping.
+/// Configuration for the [CopterStabilizer], including gains for the inner control loops and
+/// thrust mapping.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CopterStabilizerConfig {
     pub rates_controller: BodyRateController,
     pub attitude_controller: AttitudeController,
 
-    pub altitude_gains: Gains,
-    pub lateral_gains: Gains,
     pub yaw_gains: Gains,
 
     pub thrust_curve_exponent: f32,
@@ -75,16 +63,6 @@ impl Default for CopterStabilizerConfig {
         CopterStabilizerConfig {
             rates_controller: BodyRateController::default(),
             attitude_controller: AttitudeController::default(),
-            altitude_gains: Gains {
-                p: 3.0,
-                i: 0.3,
-                d: 0.15,
-            },
-            lateral_gains: Gains {
-                p: 1.5,
-                i: 0.15,
-                d: 0.075,
-            },
             yaw_gains: Gains {
                 p: 2.5,
                 i: 0.0,
@@ -100,24 +78,33 @@ impl Default for CopterStabilizerConfig {
     }
 }
 
-/// A basic flight controller for vehicles like quadcopters, implementing a cascaded control system.
+/// The inner loop for vehicles like quadcopters, implementing a cascaded control system.
 ///
-/// This controller supports rate, attitude, and position control loops, with configurable gains
-/// for each loop. It processes commands (`RateCommand`, `AttitudeCommand`, `WaypointCommand`)
-/// and generates motor control outputs (`ControlOutput`).
+/// This controller supports rate and attitude control loops, with configurable gains for
+/// each loop. It tracks a [`Setpoint`] ([`RateSetpoint`] or [`AttitudeSetpoint`]) and
+/// generates motor control outputs ([`ControlOutput`]).
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+/// use stable_flight::{AttitudeSetpoint, Setpoint, Stabilizer, VehicleState};
+///
+/// let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+/// let hover = Setpoint::Attitude(AttitudeSetpoint { thrust: 0.5, ..Default::default() });
+///
+/// let output = stabilizer.stabilize(0.004, &hover, &VehicleState::default());
+/// assert_eq!(output.thrust, 0.25); // 0.5 through the default quadratic thrust curve
+/// ```
 pub struct CopterStabilizer {
-    pub config: CopterStabilizerConfig,
+    pub(crate) attitude_controller: AttitudeController,
+    pub(crate) rates_controller: BodyRateController,
+    pub(crate) yaw_controller: YawController,
 
-    pub altitude_controller: AltitudeController,
-    pub attitude_controller: AttitudeController,
-    pub rates_controller: BodyRateController,
-    pub yaw_controller: YawController,
-    pub lateral_controller: LateralController,
+    /// Maximum angular rates (roll, pitch, yaw) in rad/s that a full-scale rate setpoint maps to.
+    pub(crate) max_rates: Vec3<f32>,
 
-    // Maximum angular rates (roll, pitch, yaw) in rad/s.
-    pub max_rates: Vec3<f32>,
-
-    heading: f32,
+    thrust_curve_exponent: f32,
 }
 
 impl CopterStabilizer {
@@ -128,13 +115,6 @@ impl CopterStabilizer {
     /// * `config` - Configuration for the controller, including PID gains and thrust curve exponent.
     pub fn new(config: CopterStabilizerConfig) -> Self {
         CopterStabilizer {
-            config: config.clone(),
-
-            altitude_controller: AltitudeController::with_config(&AltitudeControllerConfig {
-                gains: config.altitude_gains,
-                ..Default::default()
-            }),
-
             rates_controller: config.rates_controller,
             attitude_controller: config.attitude_controller,
 
@@ -145,25 +125,19 @@ impl CopterStabilizer {
                 //                max_rate: config.max_rates.z,
             }),
 
-            lateral_controller: LateralController::with_config(&LateralControllerConfig {
-                gains: config.lateral_gains,
-                max_integral: 100.0,
-                max_rate: vec2(2.0, 2.0), // 2 rad/s (~114°/s) for roll and pitch
-            }),
-
             max_rates: vec3(3.0, 3.0, 3.0), // default max rates
-            heading: 0.0,
+            thrust_curve_exponent: config.thrust_curve_exponent,
         }
     }
 }
 impl Stabilizer for CopterStabilizer {
-    /// Processes a control command and generates motor control outputs based on the current vehicle state.
+    /// Tracks a setpoint and generates motor control outputs based on the current vehicle state.
     ///
     /// # Arguments
     ///
     /// * `dt` - Time step since the last update in seconds (must be positive).
-    /// * `command` - The desired control command (`RateCommand`, `AttitudeCommand`, or `WaypointCommand`).
-    /// * `estimated_state` - The current state of the vehicle (attitude, angular rates, position, etc.).
+    /// * `setpoint` - The attitude or rate target.
+    /// * `estimated_state` - The current state of the vehicle (attitude, angular rates, etc.).
     ///
     /// # Returns
     ///
@@ -171,77 +145,63 @@ impl Stabilizer for CopterStabilizer {
     fn stabilize(
         &mut self,
         dt: f32,
-        command: &Command,
+        setpoint: &Setpoint,
         estimated_state: &VehicleState,
     ) -> ControlOutput {
         assert!(dt > 0.0, "Time step must be positive");
 
-        match command {
-            Command::Attitude(attitude_command) => {
-                self.process_attitude_command(dt, attitude_command, estimated_state)
-            }
-            Command::Rate(rate_command) => {
-                self.process_rate_command(dt, rate_command, estimated_state)
-            }
-            Command::Waypoint(waypoint_command) => {
-                self.process_waypoint_command(dt, waypoint_command, estimated_state)
-            }
+        match setpoint {
+            Setpoint::Attitude(attitude) => self.track_attitude(dt, attitude, estimated_state),
+            Setpoint::Rate(rates) => self.track_rates(dt, rates, estimated_state),
         }
-    }
-
-    /// Latches the current heading as the yaw-hold target.
-    fn prime(&mut self, state: &VehicleState) {
-        self.heading = state.heading;
     }
 }
 
 impl CopterStabilizer {
-    /// Processes an `AttitudeCommand` to control the vehicle's orientation.
+    /// Tracks an [AttitudeSetpoint].
     ///
-    /// This method converts desired roll, pitch, and yaw angles into angular rates using the attitude controller,
-    /// then passes the rates to the rate controller to generate motor commands.
+    /// Converts the desired roll, pitch, and heading into angular rates using the attitude and
+    /// yaw controllers, then passes the rates to the rate controller to generate moments.
     ///
     /// # Arguments
     ///
     /// * `dt` - Time step since the last update in seconds (must be positive).
-    /// * `attitude_command` - The desired roll, pitch, yaw angles (in radians) and throttle (0.0 to 1.0).
+    /// * `setpoint` - The desired roll, pitch (normalized), heading (radians), and linear thrust.
     /// * `estimated_state` - The current state of the vehicle (attitude, angular rates, etc.).
     ///
     /// # Returns
     ///
     /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.
-    fn process_attitude_command(
+    fn track_attitude(
         &mut self,
         dt: f32,
-        attitude_command: &AttitudeCommand,
+        setpoint: &AttitudeSetpoint,
         estimated_state: &VehicleState,
     ) -> ControlOutput {
-        assert!(dt > 0.0, "Time step must be positive");
-        // Commands from input devices can be out of range or NaN; saturate rather than panic
-        // (roll/pitch saturate inside the attitude controller; see `crate::math`).
-        let throttle = saturate_throttle(attitude_command.throttle);
-        let yaw = saturate_unit(attitude_command.yaw);
-        let desired_angles = vec2(attitude_command.roll, attitude_command.pitch);
-        let current_angles = vec2(estimated_state.roll, estimated_state.pitch);
+        // Roll/pitch saturate inside the attitude controller, thrust in the thrust curve (see
+        // `crate::math`).
+        let desired_angles = vec2(setpoint.roll, setpoint.pitch);
+        let (current_angles, current_heading) = match setpoint.reference {
+            AttitudeReference::Euler => (
+                vec2(estimated_state.roll, estimated_state.pitch),
+                estimated_state.heading,
+            ),
+            AttitudeReference::Quaternion => (
+                vec2(
+                    estimated_state.attitude.roll(),
+                    estimated_state.attitude.pitch(),
+                ),
+                estimated_state.attitude.yaw(),
+            ),
+        };
 
         let desired_rates = self
             .attitude_controller
             .control(dt, desired_angles, current_angles);
 
-        // Wrapped so sustained yaw input can't grow the target without bound; the yaw
-        // controller works on the wrapped error either way.
-        let target = wrap_angle(self.heading + yaw * HEADING_STEP_PER_TICK);
-        if target.is_finite() {
-            self.heading = target;
-        } else if estimated_state.heading.is_finite() {
-            // A NaN target (e.g. primed from a NaN estimate) would otherwise disable heading
-            // hold for good; re-latch from the current estimate once it's valid.
-            self.heading = wrap_angle(estimated_state.heading);
-        }
-
-        let desired_yaw_rate =
-            self.yaw_controller
-                .control(dt, self.heading, estimated_state.heading);
+        let desired_yaw_rate = self
+            .yaw_controller
+            .control(dt, setpoint.heading, current_heading);
 
         let current_rates = vec3(
             estimated_state.angular_velocity.x,
@@ -256,42 +216,34 @@ impl CopterStabilizer {
             .control(dt, desired_rates, current_rates);
 
         ControlOutput {
-            thrust: self.fit_to_thrust_curve(throttle),
+            thrust: self.fit_to_thrust_curve(setpoint.thrust),
             moments,
         }
     }
 
-    /// Processes a `RateCommand` to directly control the vehicle's angular rates.
-    ///
-    /// This method bypasses the attitude controller and directly commands angular rates using the rate controller.
+    /// Tracks a [RateSetpoint], bypassing the attitude controller.
     ///
     /// # Arguments
     ///
     /// * `dt` - Time step since the last update in seconds (must be positive).
-    /// * `rate_command` - The desired roll, pitch, yaw rates (in rad/s) and throttle (0.0 to 1.0).
+    /// * `setpoint` - The desired roll, pitch, yaw rates (normalized) and linear thrust.
     /// * `estimated_state` - The current state of the vehicle (angular rates, etc.).
     ///
     /// # Returns
     ///
     /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.
-    fn process_rate_command(
+    fn track_rates(
         &mut self,
         dt: f32,
-        rate_command: &RateCommand,
+        setpoint: &RateSetpoint,
         estimated_state: &VehicleState,
     ) -> ControlOutput {
-        let desired_rates = vec3(
-            rate_command.roll_rate,
-            rate_command.pitch_rate,
-            rate_command.yaw_rate,
-        );
-
         // Per-component saturation: `clamp` alone passes NaN, which would zero every moment
         // (no damping) instead of meaning "hold zero rate".
         let desired_rates = vec3(
-            saturate_unit(desired_rates.x),
-            saturate_unit(desired_rates.y),
-            saturate_unit(desired_rates.z),
+            saturate_unit(setpoint.roll_rate),
+            saturate_unit(setpoint.pitch_rate),
+            saturate_unit(setpoint.yaw_rate),
         ) * self.max_rates;
 
         let current_rates = vec3(
@@ -305,85 +257,7 @@ impl CopterStabilizer {
             .control(dt, desired_rates, current_rates);
 
         ControlOutput {
-            thrust: self.fit_to_thrust_curve(saturate_throttle(rate_command.throttle)),
-            moments,
-        }
-    }
-
-    /// Processes a `WaypointCommand` to control the vehicle's position and altitude.
-    ///
-    /// This method uses the position controller to generate desired roll and pitch angles, the altitude controller
-    /// to compute thrust, and the attitude and rate controllers to stabilize the vehicle.
-    ///
-    /// # Arguments
-    ///
-    /// * `dt` - Time step since the last update in seconds (must be positive).
-    /// * `waypoint_command` - The desired position (x, y in meters) and altitude (in meters).
-    /// * `estimated_state` - The current state of the vehicle (position, velocity, attitude, etc.).
-    ///
-    /// # Returns
-    ///
-    /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.
-    fn process_waypoint_command(
-        &mut self,
-        dt: f32,
-        waypoint_command: &WaypointCommand,
-        estimated_state: &VehicleState,
-    ) -> ControlOutput {
-        let desired_position = vec2(waypoint_command.position.x, waypoint_command.position.y);
-        let current_position = vec2(
-            estimated_state.position.x.value,
-            estimated_state.position.y.value,
-        );
-
-        let desired_angles = self.lateral_controller.control(
-            dt,
-            desired_position,
-            current_position,
-            vec2(
-                estimated_state.velocity.x.value,
-                estimated_state.velocity.y.value,
-            ),
-        );
-
-        let current_angles = vec2(
-            estimated_state.attitude.roll(),
-            estimated_state.attitude.pitch(),
-        );
-
-        let desired_rp_rates = self
-            .attitude_controller
-            .control(dt, desired_angles, current_angles);
-        let desired_yaw_rate = self
-            .yaw_controller
-            .control(dt, 0.0, estimated_state.attitude.yaw());
-
-        let desired_rates = vec3(desired_rp_rates.x, desired_rp_rates.y, desired_yaw_rate);
-
-        let current_rates = vec3(
-            estimated_state.angular_velocity.x,
-            estimated_state.angular_velocity.y,
-            estimated_state.angular_velocity.z,
-        );
-
-        let moments = self
-            .rates_controller
-            .control(dt, desired_rates, current_rates);
-
-        let desired_altitude = waypoint_command.altitude;
-        let current_altitude = estimated_state.position.z.value;
-
-        let linear_thrust = self.altitude_controller.control(
-            dt,
-            desired_altitude,
-            0.0,
-            current_altitude,
-            estimated_state.velocity.z.value,
-            estimated_state.attitude,
-        );
-
-        ControlOutput {
-            thrust: self.fit_to_thrust_curve(linear_thrust),
+            thrust: self.fit_to_thrust_curve(setpoint.thrust),
             moments,
         }
     }
@@ -391,7 +265,8 @@ impl CopterStabilizer {
     /// Applies a nonlinear thrust curve to a linear thrust command.
     ///
     /// Maps a linear thrust value (0.0 to 1.0) to a nonlinear output using the configured thrust curve exponent.
-    /// This compensates for nonlinear motor responses.
+    /// This compensates for nonlinear motor responses. Out-of-range input saturates and NaN
+    /// becomes 0 (motors off), per the input policy.
     ///
     /// # Arguments
     ///
@@ -401,9 +276,8 @@ impl CopterStabilizer {
     ///
     /// Nonlinear thrust command (0.0 to 1.0).
     fn fit_to_thrust_curve(&self, linear_thrust: f32) -> f32 {
-        let thrust_curve_exponent = self.config.thrust_curve_exponent;
-        // Apply nonlinear thrust curve with tunable exponent
-        let nonlinear_thrust = libm::powf(linear_thrust, thrust_curve_exponent);
+        let nonlinear_thrust =
+            libm::powf(saturate_throttle(linear_thrust), self.thrust_curve_exponent);
         nonlinear_thrust.clamp(0.0, 1.0)
     }
 }

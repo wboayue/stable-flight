@@ -86,7 +86,7 @@ where
 ///
 /// RealFlight Link sends controls and returns state in one round-trip, so each tick makes
 /// exactly one exchange, in [`Actuator::actuate`]. [`StateEstimator::estimate_state`] returns
-/// the state cached from that exchange: the stabilizer on tick *n* sees the state RealFlight
+/// the state cached from that exchange: guidance and the stabilizer on tick *n* see the state RealFlight
 /// reported when it received tick *n − 1*'s controls, one tick old. The one exception is the
 /// priming call (`dt == Duration::ZERO`), which makes an exchange with neutral inputs so the
 /// first state is real; if that exchange fails, it logs an error and returns

@@ -4,7 +4,7 @@ use assert2::check;
 
 use super::*;
 use crate::testing::{NullVehicle, RecordingTelemetry};
-use crate::{Command, ControlOutput, Vehicle};
+use crate::{Command, ControlOutput, Setpoint, Vehicle};
 
 /// Estimator that reports how many times it was asked, as the heading.
 #[derive(Default)]
@@ -55,6 +55,7 @@ fn tuple_publisher_fans_out_to_every_sink() {
         ),
     );
     let command = Command::Attitude(Default::default());
+    let setpoint = Setpoint::Attitude(Default::default());
     let state = VehicleState::default();
     let actuators = ActuatorCommand::default();
 
@@ -62,6 +63,7 @@ fn tuple_publisher_fans_out_to_every_sink() {
         sinks.publish(&TelemetryRecord {
             dt: Duration::from_millis(4),
             command: &command,
+            setpoint: &setpoint,
             state: &state,
             control: &ControlOutput {
                 thrust,

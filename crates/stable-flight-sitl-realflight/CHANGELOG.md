@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`simulators::realflight`). `RealFlightVehicle`, `RealFlightConfiguration`, and
   `ActuatorMapping` are at the crate root, and `realflight_bridge` is re-exported.
   Never depends on `stable-flight-sitl` (a dev-dependency for the examples).
-- `airframes::Airframe<S, M>` (stabilizer config, mixer, and channel mapping) and
+- `airframes::Airframe<G, S, M>` (guidance and stabilizer configs, mixer, and channel mapping) and
   `airframes::quadcopter_x()`, the QuadCopterX model's tuned gains with
   `QuadCopterMixer` and its mapping.
 - `ActuatorMapping` derives `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, and `Hash`.
