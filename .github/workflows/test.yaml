@@ -55,7 +55,8 @@ jobs:
         cargo test --workspace --all-features
 
   embedded:
-    # Keeps the core no_std: a bare-metal target has no `std` to fall back on.
+    # Keeps the core no_std (a bare-metal target has no `std` to fall back on), and lints,
+    # links, and sizes the board firmware.
     runs-on: ubuntu-22.04
 
     steps:
@@ -65,21 +66,20 @@ jobs:
         targets: thumbv7em-none-eabihf
         components: llvm-tools, rustfmt, clippy
 
-    - uses: taiki-e/install-action@v2
-      with:
-        tool: cargo-binutils
-
     - name: build core (thumbv7em-none-eabihf)
       run: |
         cargo build -p stable-flight --target thumbv7em-none-eabihf
         cargo build -p stable-flight --features testing --target thumbv7em-none-eabihf
 
     # The firmware is a nested workspace; run from its dir so its .cargo/config.toml (target,
-    # linker script) applies. A core change that breaks the link or grows flash shows here.
+    # linker script) applies. A core change that breaks the link fails here; flash size is printed
+    # to the log (not gated).
     - name: firmware (ARK FPV)
       working-directory: firmware/ark-fpv
       run: |
         cargo fmt --check
-        cargo clippy --release -- -D warnings
-        cargo build --release
-        cargo size --release
+        cargo clippy --locked --release -- -D warnings
+        cargo build --locked --release
+        # llvm-size from the llvm-tools component, so no cargo-binutils install is needed.
+        "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/llvm-size" \
+          target/thumbv7em-none-eabihf/release/ark-fpv

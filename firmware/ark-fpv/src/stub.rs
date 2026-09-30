@@ -1,7 +1,8 @@
 //! Placeholder pipeline components until real sensors, ESCs, and a transmitter are wired in
 //! (#88). They let the full `FlightLoop` run on target so its timing and flash cost are real:
-//! the estimate and motor commands pass through [`black_box`], so the optimizer can't fold the
-//! pipeline away.
+//! the command, estimate, and motor commands pass through [`black_box`], so the optimizer can't
+//! fold the pipeline (or the guidance paths a constant command never takes) away. The core
+//! `testing` doubles aren't reused: that feature is dev-only and carries formatting code.
 
 use core::hint::black_box;
 use core::time::Duration;
@@ -15,7 +16,7 @@ pub struct HoldCommander;
 
 impl Commander for HoldCommander {
     fn next_command(&mut self, _dt: f32, _current_state: &VehicleState) -> Command {
-        Command::Attitude(AttitudeCommand::default())
+        black_box(Command::Attitude(AttitudeCommand::default()))
     }
 }
 

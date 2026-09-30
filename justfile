@@ -28,14 +28,20 @@ fw-size: fw-build
 fw-bin: fw-build
     cd {{fw}} && cargo objcopy --release -- -O binary {{fw_bin}}
 
-# Flash over USB DFU. Put the board in DFU first: hold BOOT0, tap RESET (the stub has no USB reboot)
+# Flash over USB DFU. Put the board in DFU first: hold BOOT0, tap NRST, release BOOT0 (the stub has no USB reboot)
 fw-flash: fw-bin
     #!/usr/bin/env bash
     set -euo pipefail
     if ! dfu-util -l 2>/dev/null | grep -q "0483:df11"; then
-        echo "no DFU device (0483:df11). Hold BOOT0 and tap RESET first."; exit 1
+        echo "no DFU device (0483:df11). Hold BOOT0, tap NRST, release BOOT0 first."; exit 1
     fi
-    dfu-util -a 0 -s 0x08000000:leave -D {{fw}}/{{fw_bin}} || true
+    # dfu-util exits non-zero on the flaky :leave even after a good write, so judge success
+    # by the download line instead of the exit status.
+    log=$(mktemp)
+    dfu-util -a 0 -s 0x08000000:leave -D {{fw}}/{{fw_bin}} 2>&1 | tee "$log" || true
+    if ! grep -qE "Download done|File downloaded successfully" "$log"; then
+        echo; echo ">>> FLASH FAILED (dfu-util never reported a completed download)."; exit 1
+    fi
     echo
     echo ">>> Flash done. PRESS NRST to boot cleanly (:leave auto-run is unreliable)."
     echo ">>> 'get_status' / 'Invalid DFU suffix' warnings above are benign."

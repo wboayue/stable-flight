@@ -6,8 +6,8 @@ LEDs, memory map, flash flow) comes from
 [ark-fpv-discovery](https://github.com/wboayue/ark-fpv-discovery).
 
 **Status: stub.** It runs the core `FlightLoop` (`CopterGuidance` → `CopterStabilizer` →
-`QuadCopterMixer`) at 250 Hz on the SysTick monotonic, with placeholder components in
-`src/stub.rs`:
+`QuadCopterMixer`) at 250 Hz on the SysTick monotonic (I-cache on), with placeholder components
+in `src/stub.rs`:
 
 | Component | Stub | Replaced by (#88) |
 |---|---|---|
@@ -31,14 +31,15 @@ just fw-size    # flash/RAM usage (cargo install cargo-binutils; rustup componen
 ```
 
 The release profile is size-tuned (`opt-level = "s"`, LTO). CI builds the firmware and prints
-`cargo size`, so a core change that breaks the link or grows flash shows up in the PR.
+its size, so a core change that breaks the link fails the PR and flash growth shows in the log.
 
 ## Flash
 
-The stub has no USB, so enter the ROM bootloader by hand. Hold **BOOT0**, tap **RESET**, then:
+The stub has no USB, so enter the ROM bootloader by hand: hold **BOOT0**, tap **NRST**, release
+**BOOT0**, then:
 
 ```bash
-just fw-flash   # objcopy → dfu-util to 0x08000000 (needs dfu-util)
+just fw-flash   # objcopy → dfu-util to 0x08000000 (needs dfu-util); fails unless the download completes
 ```
 
 Press **NRST** afterwards to boot cleanly.
@@ -47,6 +48,7 @@ Press **NRST** afterwards to boot cleanly.
 
 | LED | Meaning |
 |---|---|
-| Green | Blinks once per second: firmware alive |
-| Blue | The loop ran 250 ± 1 ticks in the last second |
-| Red | The loop rate was off in the last second |
+| Green | Toggles every second: firmware alive |
+| Blue | Last second: the loop ran 250 ± 1 ticks, none overran its 4 ms slot |
+| Red (green toggling) | Last second: the loop rate was off or a tick overran |
+| Red alone, green stopped | Panic: interrupts off, firmware halted |

@@ -21,10 +21,9 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
   - `crates/stable-flight-tools` — unpublished (`publish = false`) dev binaries: `plot_flight`
     (3D flight-path visualizer) and `generate_figure_eight` (waypoint-script generator).
 - `firmware/` is excluded from the workspace; each board is its own nested workspace (own
-  target, profiles, committed `Cargo.lock`). `firmware/ark-fpv` — ARK FPV (STM32H743, RTIC 2),
-  currently a stub running `FlightLoop` with placeholder components (#88). Run cargo from its
-  directory (or use the `fw-*` recipes): its `.cargo/config.toml` isn't picked up via
-  `--manifest-path`. Root `cargo fmt --all`/`clippy` don't reach it.
+  target, profiles, committed `Cargo.lock`) — see [`firmware/ark-fpv`](firmware/ark-fpv/README.md).
+  Run cargo from the board's directory (or use the `fw-*` recipes): its `.cargo/config.toml`
+  isn't picked up via `--manifest-path`. Root `cargo fmt --all`/`clippy` don't reach it.
 - Run every command from the repo root: `cargo run --example <name>` / `--bin <name>` resolve
   across the workspace (add `-p <crate>` to be explicit), and `flights/*.csv` paths are
   relative to the root.

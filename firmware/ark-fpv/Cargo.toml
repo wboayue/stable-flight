@@ -13,12 +13,17 @@ publish = false
 # at the repo root (which excludes `firmware/`).
 [workspace]
 
+# No test harness on thumbv7em: keeps `cargo test` here a no-op instead of an error.
+[[bin]]
+name = "ark-fpv"
+test = false
+bench = false
+
 [dependencies]
 stable-flight = { path = "../../crates/stable-flight" }
 
 cortex-m = "0.7"
 cortex-m-rt = "0.7"
-panic-halt = "0.2"
 
 rtic = { version = "2.2", features = ["thumbv7-backend"] }
 rtic-monotonics = { version = "2.0", features = ["cortex-m-systick"] }
