@@ -64,7 +64,7 @@ impl YawController {
     /// # Examples
     ///
     /// ```
-    /// use stable_flight_sitl::stabilizers::controllers::{YawController, YawControllerConfig};
+    /// use stable_flight::stabilizers::controllers::{YawController, YawControllerConfig};
     ///
     /// let controller = YawController::new();
     /// ```
@@ -81,8 +81,8 @@ impl YawController {
     /// # Examples
     ///
     /// ```
-    /// use stable_flight_sitl::stabilizers::controllers::{YawController, YawControllerConfig};
-    /// use stable_flight_sitl::stabilizers::Gains;
+    /// use stable_flight::stabilizers::controllers::{YawController, YawControllerConfig};
+    /// use stable_flight::stabilizers::Gains;
     ///
     /// let config = YawControllerConfig {
     ///     gains: Gains { p: 2.0, i: 0.1, d: 0.5 },
@@ -128,7 +128,7 @@ impl YawController {
     ///
     /// ```
     /// use std::f32::consts::PI;
-    /// use stable_flight_sitl::stabilizers::controllers::{YawController, YawControllerConfig};
+    /// use stable_flight::stabilizers::controllers::{YawController, YawControllerConfig};
     ///
     /// let mut controller = YawController::new();
     /// let dt = 0.02;

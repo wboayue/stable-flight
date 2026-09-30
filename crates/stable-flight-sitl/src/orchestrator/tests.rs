@@ -2,7 +2,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use crate::*;
+use stable_flight::{
+    Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, ControlOutput, FlightLoop,
+    Mixer, Stabilizer, StateEstimator, TelemetryPublisher, TelemetryRecord, VehicleState,
+};
+
+use super::FlightOrchestrator;
 
 // Mock implementations for dependencies
 struct MockCommander;
@@ -43,6 +48,17 @@ impl TelemetryPublisher for MockTelemetry {
     fn publish(&mut self, _: &TelemetryRecord) {}
 }
 
+fn mock_flight_loop()
+-> FlightLoop<MockCommander, MockVehicle, MockStabilizer, MockMixer, MockTelemetry> {
+    FlightLoop::new(
+        MockCommander,
+        MockVehicle,
+        MockStabilizer,
+        MockMixer,
+        MockTelemetry,
+    )
+}
+
 #[test]
 fn test_flight_orchestrator_initialization() {
     let orchestrator = FlightOrchestrator::new(
@@ -76,11 +92,7 @@ fn test_flight_orchestrator_shutdown_signal() {
     let running_clone = running.clone();
 
     let mut orchestrator = FlightOrchestrator {
-        commander: MockCommander,
-        vehicle: MockVehicle,
-        stabilizer: MockStabilizer,
-        mixer: MockMixer,
-        telemetry: MockTelemetry,
+        flight_loop: mock_flight_loop(),
         running: running_clone,
     };
 
@@ -99,11 +111,7 @@ fn test_flight_orchestrator_single_iteration() {
     let running_checker = running.clone();
 
     let mut orchestrator = FlightOrchestrator {
-        commander: MockCommander,
-        vehicle: MockVehicle,
-        stabilizer: MockStabilizer,
-        mixer: MockMixer,
-        telemetry: MockTelemetry,
+        flight_loop: mock_flight_loop(),
         running: running,
     };
 
@@ -125,11 +133,7 @@ fn test_flight_orchestrator_high_frequency() {
     let running_checker = running.clone();
 
     let mut orchestrator = FlightOrchestrator {
-        commander: MockCommander,
-        vehicle: MockVehicle,
-        stabilizer: MockStabilizer,
-        mixer: MockMixer,
-        telemetry: MockTelemetry,
+        flight_loop: mock_flight_loop(),
         running,
     };
 

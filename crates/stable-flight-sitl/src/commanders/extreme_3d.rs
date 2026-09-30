@@ -36,7 +36,7 @@
 //! Basic usage with attitude control:
 //! ```no_run
 //! use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
-//! use stable_flight_sitl::{Commander, VehicleState};
+//! use stable_flight::{Commander, VehicleState};
 //!
 //! # fn main() -> Result<(), stable_flight_sitl::commanders::CommanderError> {
 //! // Create commander in attitude mode
@@ -55,7 +55,7 @@
 //!
 //! ```no_run
 //! use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
-//! use stable_flight_sitl::{Commander, VehicleState};
+//! use stable_flight::{Commander, VehicleState};
 //!
 //! # fn main() -> Result<(), stable_flight_sitl::commanders::CommanderError> {
 //! let mut commander = Extreme3DCommander::new()?;
@@ -72,7 +72,7 @@
 use gilrs::{Axis, Button, Event, EventType, GamepadId, Gilrs};
 
 use crate::commanders::CommanderError;
-use crate::{AttitudeCommand, Command, Commander, RateCommand, VehicleState};
+use stable_flight::{AttitudeCommand, Command, Commander, RateCommand, VehicleState};
 
 /// Hardware code for the throttle axis on the Extreme 3D Pro.
 /// This value is provided by the Gilrs library for the throttle slider.

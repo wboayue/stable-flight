@@ -1,7 +1,7 @@
 //! Includes components for transmitting flight data to external systems for logging, monitoring, and visualization.
 use log::info;
 
-use crate::{TelemetryPublisher, TelemetryRecord};
+use stable_flight::{TelemetryPublisher, TelemetryRecord};
 
 pub mod file_logger;
 pub mod mavlink;

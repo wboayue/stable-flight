@@ -1,0 +1,66 @@
+# stable-flight
+
+Flight-control core for [Stable Flight](https://github.com/wboayue/stable-flight): the pipeline traits, the data passed between them, cascaded-PID stabilizers, mixers, and `FlightLoop`, which sequences one control tick. It has no simulator, I/O, or timing dependencies, so the same code runs in software-in-the-loop simulation ([`stable-flight-sitl`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl)) and, later, on flight hardware. See [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md) for design rationale.
+
+## Pipeline
+
+Each tick, `FlightLoop::step(dt)` runs:
+
+1. `Commander::next_command` — what the pilot or mission wants (`Command::Attitude`, `Rate`, or `Waypoint`).
+2. `StateEstimator::estimate_state` — where the vehicle is.
+3. `Stabilizer::stabilize` — thrust and body moments (`ControlOutput`) to close the gap.
+4. `Mixer::mix` — motor and surface commands (`ActuatorCommand`).
+5. `Actuator::actuate` — send them to the vehicle.
+6. `TelemetryPublisher::publish` — a `TelemetryRecord` of the tick.
+
+`Vehicle` is `StateEstimator + Actuator`, implemented automatically. `FlightLoop` has no clock: a runner decides when to call `step` (the real-time `FlightOrchestrator` in `stable-flight-sitl` today).
+
+```rust
+let mut flight_loop = FlightLoop::new(commander, vehicle, stabilizer, mixer, telemetry);
+flight_loop.prime(); // initial estimate (dt = 0) + stabilizer priming
+loop {
+    flight_loop.step(Duration::from_millis(4)); // 250 Hz
+    // ...wait for the next period
+}
+```
+
+### Stabilizer
+
+Stabilizers calculate the difference between the vehicle's current state and the desired state, generating `ControlOutput`s that the mixer then translates into actuator commands. This component contains the core flight stabilization logic. `CopterStabilizer` targets multirotors. This is where you would start if you want to implement custom flight control logic.
+
+The simplest setup uses default gains:
+
+```rust
+let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+```
+
+For tuned gains, build the inner PID controllers explicitly (see [`copter-manual-realflight.rs`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl/examples/copter-manual-realflight.rs) for a full example):
+
+```rust
+let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
+    gains: Gains { p: 7.0, i: 0.0, d: 0.01 },
+    max_integral: 100.0,
+    max_angular_rates: vec3(3.0, 3.0, 3.0),
+});
+
+let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
+    gains: Gains { p: 3.0, i: 0.0, d: 0.1 },
+    max_integral: 100.0,
+    max_angles: vec2(PI / 4.0, PI / 4.0),
+    max_rate: vec2(3.0, 3.0),
+});
+
+let stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
+    rates_controller,
+    attitude_controller,
+    ..Default::default()
+});
+```
+
+### Mixer
+
+Mixers convert control outputs into motor commands and control surface movements:
+
+```rust
+let mixer = QuadCopterMixer::default();
+```

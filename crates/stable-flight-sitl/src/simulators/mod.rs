@@ -6,7 +6,7 @@ use std::time::Duration;
 
 pub use realflight::RealFlightVehicle;
 
-use crate::{Actuator, ActuatorCommand, StateEstimator, VehicleState};
+use stable_flight::{Actuator, ActuatorCommand, StateEstimator, VehicleState};
 
 pub struct NullVehicle {}
 

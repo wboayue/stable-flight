@@ -8,18 +8,22 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
   version `0.1.0`. Shared package metadata and common dependency versions live in the root
   `[workspace.package]` / `[workspace.dependencies]`; crates inherit them with `.workspace = true`.
 - Crates:
-  - `crates/stable-flight-sitl` — the library: the flight-control pipeline plus the RealFlight
-    SITL harness. Examples live in `crates/stable-flight-sitl/examples/*.rs`.
+  - `crates/stable-flight` — the flight-control core: pipeline traits and data types
+    (`lib.rs`), `FlightLoop` (one tick), `stabilizers`, `mixers`. No simulator, I/O, clock, or
+    thread dependencies — keep it that way (it becomes `no_std` in workspace PR 4).
+  - `crates/stable-flight-sitl` — the SITL harness: `commanders`, `simulators` (RealFlight),
+    `telemetry`, and `orchestrator` (`FlightOrchestrator`, the real-time runner around
+    `FlightLoop`). Depends on the core. Examples live in `crates/stable-flight-sitl/examples/*.rs`.
   - `crates/stable-flight-tools` — unpublished (`publish = false`) dev binaries: `plot_flight`
     (3D flight-path visualizer) and `generate_figure_eight` (waypoint-script generator).
 - `firmware/` is excluded from the workspace; boards will get their own nested workspaces.
 - Run every command from the repo root: `cargo run --example <name>` / `--bin <name>` resolve
   across the workspace, and `flights/*.csv` paths are relative to the root.
-- `stable-flight-sitl` public modules: `commanders`, `mixers`, `orchestrator`, `simulators`, `stabilizers`, `telemetry`.
+- Public modules: `stable-flight` — `flight_loop`, `mixers`, `stabilizers` (traits/types at the crate root); `stable-flight-sitl` — `commanders`, `orchestrator`, `simulators`, `telemetry`. There is no re-export between them: import core items from `stable_flight`.
 - Key external crates: `realflight-bridge` (sim I/O), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
 - Untracked generated artifacts: `target/`, `Cargo.lock`, `tarpaulin-report.html`.
-- Unless a path says otherwise, `src/…` and `examples/…` below are relative to
-  `crates/stable-flight-sitl/`.
+- Paths below are prefixed with their crate (`core:` = `crates/stable-flight/`, `sitl:` =
+  `crates/stable-flight-sitl/`) where it matters.
 - Plans live in `plans/` (tracked). `plans/workspace-migration.md` tracks the split into
   core / sitl / backend crates; `plans/architecture-refactor.md` tracks trait-surface cleanups
   that land first (its PR 5 is superseded by the migration). Read both before touching trait
@@ -51,7 +55,7 @@ The flight pipeline has no CLI and there is no `cargo bench` target — don't su
 
 ## Architecture
 
-The control system is a five-trait pipeline coordinated by `FlightOrchestrator`. Traits and methods (from `crates/stable-flight-sitl/src/lib.rs`):
+The control system is a five-trait pipeline sequenced by the core `FlightLoop` and paced by the sitl `FlightOrchestrator`. Traits and methods (from `crates/stable-flight/src/lib.rs`):
 
 ```rust
 pub trait Commander {
@@ -92,13 +96,13 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 
 ### Concrete implementations
 
-| Trait              | Impls                                                                |
-|--------------------|----------------------------------------------------------------------|
-| `Commander`        | `Extreme3DCommander`, `SpektrumCommander`, `ScriptCommander`         |
-| `Vehicle` (`StateEstimator` + `Actuator`) | `RealFlightVehicle<T: RealFlightBridge>`, `NullVehicle` |
-| `Stabilizer`       | `CopterStabilizer`                                                   |
-| `Mixer`            | `QuadCopterMixer`; `TailSitterMixer` (placeholder, outputs zeros)    |
-| `TelemetryPublisher` | `MavlinkPublisher`, `FileLogger`                                   |
+| Trait              | Impls                                                                | Crate |
+|--------------------|----------------------------------------------------------------------|-------|
+| `Commander`        | `Extreme3DCommander`, `SpektrumCommander`, `ScriptCommander`         | sitl  |
+| `Vehicle` (`StateEstimator` + `Actuator`) | `RealFlightVehicle<T: RealFlightBridge>`, `NullVehicle` | sitl |
+| `Stabilizer`       | `CopterStabilizer`                                                   | core  |
+| `Mixer`            | `QuadCopterMixer`; `TailSitterMixer` (placeholder, outputs zeros)    | core  |
+| `TelemetryPublisher` | `MavlinkPublisher`, `FileLogger`                                   | sitl  |
 
 `CopterStabilizer` is composed of PID controllers in `stabilizers::controllers::{attitude, body_rate, yaw, altitude, lateral}`.
 
@@ -110,24 +114,19 @@ horizontal acceptance radius. It is geometry-agnostic — the figure-eight shape
 RealFlight examples are intentionally standalone (each inlines its full pipeline wiring),
 so some setup is duplicated between them by design — readability over DRY.
 
-### Control loop (from `src/orchestrator.rs`)
+### Control loop (`FlightLoop::step`, core `src/flight_loop.rs`)
 
 ```rust
-let command = self.commander.next_command(dt, &state);
-state = self.vehicle.estimate_state(Duration::from_secs_f32(dt));
-let control = self.stabilizer.stabilize(dt, &command, &state);
+let dt_secs = dt.as_secs_f32();
+let command = self.commander.next_command(dt_secs, &self.state); // previous tick's state
+self.state = self.vehicle.estimate_state(dt);
+let control = self.stabilizer.stabilize(dt_secs, &command, &self.state);
 let actuators = self.mixer.mix(&control);
 self.vehicle.actuate(&actuators);
-self.telemetry.publish(&TelemetryRecord {
-    dt: Duration::from_secs_f32(dt),
-    command: &command,
-    state: &state,
-    control: &control,
-    actuators: &actuators,
-});
+self.telemetry.publish(&TelemetryRecord { dt, command: &command, state: &self.state, control: &control, actuators: &actuators });
 ```
 
-`orchestrator.run(target_frequency: f64)` runs the loop and panics on non-positive frequency. SIGINT (Unix) / Ctrl-C (Windows) triggers graceful shutdown.
+`FlightLoop::prime()` takes the initial estimate with `Duration::ZERO` and primes the stabilizer; call it once before the first `step`. `FlightLoop` has no clock. The sitl `FlightOrchestrator::run(target_frequency: f64)` primes, then calls `step` at the target rate, and panics on a non-positive frequency. SIGINT (Unix) / Ctrl-C (Windows) triggers graceful shutdown.
 
 ## Coding style
 
@@ -143,12 +142,12 @@ self.telemetry.publish(&TelemetryRecord {
 
 ## Testing
 
-- Unit tests sit next to the code in `mod tests;` files (e.g. `src/stabilizers/copter/tests.rs`, `src/mixers/quad/tests.rs`, `src/orchestrator/tests.rs`, `src/simulators/realflight/tests.rs`, `src/commanders/tests.rs`).
+- Unit tests sit next to the code in `mod tests;` files (e.g. core `src/flight_loop/tests.rs`, `src/stabilizers/copter/tests.rs`, `src/mixers/quad/tests.rs`; sitl `src/orchestrator/tests.rs`, `src/simulators/realflight/tests.rs`, `src/commanders/tests.rs`).
 - Run `cargo test --workspace --all-targets` locally; integration-style checks that need simulator interaction live in `examples/`.
 - Name tests after the behaviour they protect (e.g. `maintains_pitch_hold`), not the function under test.
 - Use `assert2::assert!` / `check!` and `approx::assert_relative_eq!` for floats.
 - Table-driven tests are the default for control math; one row per scenario.
-- Mock traits by hand (see `MockRealFlightBridge` in `src/simulators/realflight/tests.rs`) — `mockall` is not a dependency.
+- Mock traits by hand (see `MockRealFlightBridge` in sitl `src/simulators/realflight/tests.rs`) — `mockall` is not a dependency.
 - `proptest` and `criterion` are **not** in `Cargo.toml`. Add them deliberately, with a benchmark or property test in the same PR, if you reach for them.
 - Coverage: `just cover` → review `tarpaulin-report.html`. Refresh after non-trivial control-loop changes.
 
@@ -194,8 +193,8 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 
 ## Workflow
 
-1. Read the relevant trait in `src/lib.rs` and its existing impls before adding a new one.
-2. Wire new components through the orchestrator the way `examples/copter-manual-realflight.rs` does — that's the canonical reference.
+1. Read the relevant trait in core `src/lib.rs` and its existing impls before adding a new one. Hardware-reusable code (control math, mixing, sequencing) goes in the core crate; anything touching a simulator, OS, clock, file, or network goes in sitl.
+2. Wire new components through the orchestrator the way sitl `examples/copter-manual-realflight.rs` does — that's the canonical reference.
 3. Add tests alongside the code; cover the boundary/error case, not just the happy path.
 4. `cargo fmt --all && cargo clippy --workspace --all-targets && cargo test --workspace --all-features` before sending a PR.
 5. If you change trait surface, module or crate layout, or runnable examples, update the owning docs (see Commits & PRs) in the same PR.

@@ -5,7 +5,7 @@ use uom::si::f32::Length;
 use uom::si::length::meter;
 
 use super::{ScriptCommander, ScriptError, parse_waypoints};
-use crate::{Command, Commander, VehicleState, WaypointCommand};
+use stable_flight::{Command, Commander, VehicleState, WaypointCommand};
 
 /// Builds a `VehicleState` positioned at the given horizontal coordinates (meters).
 fn state_at(x: f32, y: f32) -> VehicleState {

@@ -9,7 +9,7 @@ use mavlink::common::*;
 use mavlink::{MavHeader, MavlinkVersion};
 
 use super::throttle::ErrorThrottle;
-use crate::{TelemetryPublisher, TelemetryRecord};
+use stable_flight::{TelemetryPublisher, TelemetryRecord};
 
 /// Writes telemetry frames to `generated_telemetry.tlog`.
 ///

@@ -15,7 +15,9 @@ otherwise do it in the next PR.
 | Phase 0 — prep | ✅ (step 3, the optional local dir rename, not done) |
 | PR 1 — Convert to workspace | ✅ #43 |
 | architecture-refactor PRs 1–4, 6 (see that plan) | ✅ #44, #50, #46, #47, #48 |
-| PR 2 — Extract `stable-flight` core crate | ⬜ (unblocked: #47 merged) |
+| PR 2a — core crate + `FlightLoop` | 🔍 (this PR) |
+| PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | ⬜ |
+| PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | ⬜ |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
@@ -218,6 +220,25 @@ refactors. Keep the existing tests as the behavioural oracle, so they pass with 
 and location changes. If the PR gets too big, split it into 2a (move + `FlightLoop`), 2b
 (`ShutdownSignal`/runner, `WaypointFollower`), and 2c (`ComposedVehicle`, tuple telemetry,
 `testing`).
+
+**Split into 2a/2b/2c.** 2a as implemented:
+- Moved the types and traits (sitl `lib.rs` → core `lib.rs`; git sees a copy, so use
+  `git blame -C -C` or `git log --follow -C` for history), `stabilizers/`, and
+  `mixers/` to `crates/stable-flight`.
+- New core `flight_loop.rs`: `FlightLoop::{new, prime, step, state}`, with table-style tests
+  of call order and what each stage sees.
+- `FlightOrchestrator` keeps its public API and wraps a `FlightLoop`. Its signal handling,
+  pacing, and metrics move to 2b.
+- `step` takes `dt: Duration` and passes `dt.as_secs_f32()` to the commander and stabilizer.
+  Before, they got `1.0 / frequency` directly: identical at 250 Hz, and it differs only in
+  the last float bits for periods that aren't a whole number of nanoseconds.
+- Kept in sitl for now: `NullVehicle` (moves to core `testing` in 2c) and
+  `commanders/tests.rs` (tests the `Commander` trait with a mock; revisit in 2b with
+  `WaypointFollower`).
+- Docs: new core README (pipeline, stabilizer, and mixer usage moved from the sitl README),
+  root crate table, architecture.md crate boundaries and diagram, CLAUDE.md crate layout,
+  control-loop snippet, and impl table with a crate column. Also a core CHANGELOG and a
+  **Breaking** sitl entry.
 
 ## PR 3 — Split RealFlight into its own backend crate
 
