@@ -326,7 +326,21 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
       lateral output at the source, and the attitude input defensively.
     - The lateral integral is clamped.
     - Table tests for both controllers, plus a `CopterStabilizer` regression test that
-      reproduces the original panic without the fix.
+      reproduces the original panic without the fix and checks the tilt points toward the
+      target.
+    - After review:
+      - Finite-error guards keep a NaN input from sticking in the lateral and attitude
+        integrals; NaN survives `clamp`.
+      - `LateralController::with_config` validates `max_integral`.
+      - `saturate_unit` is `pub(crate)`, with a `saturate_unit_vec2` form, and its doc
+        states the producer/consumer contract.
+    - Review follow-ups (own PRs), the same class of in-loop panic:
+      - The attitude-mode heading target is never wrapped (`self.heading += yaw * …`), so
+        sustained yaw input trips yaw.rs's ±2π assert. Next up.
+      - `process_attitude_command` asserts its inputs are in range, and the Spektrum
+        commander's `scale_value` is unclamped.
+      - `BodyRateController` panics on non-finite estimated rates.
+      - Optional: a rate-limited log on non-finite controller input.
     - The figure-eight + `NullVehicle` run that crashed now runs at 250 Hz.
     - Still open (not in scope): `max_angles`-scaled `accel / g` is a simplified tilt
       model, and `LateralControllerConfig::max_rate` is unused. Revisit with refactor PR 7

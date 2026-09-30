@@ -2,7 +2,7 @@ use std::f32::consts::FRAC_PI_4;
 
 use robomath::{Vec2, vec2};
 
-use super::super::{Gains, saturate_unit};
+use super::super::{Gains, saturate_unit_vec2};
 
 /// Configures the attitude controller for a vehicle.
 /// Defines PID gains, maximum angles, and maximum angular rates for roll and pitch control.
@@ -120,10 +120,7 @@ impl AttitudeController {
         // Saturate normalized inputs, then scale to angle setpoints in radians. Outer loops
         // (e.g. lateral position control far from the target) can ask for more than full tilt;
         // that must not panic the flight loop.
-        let desired_angles = vec2(
-            saturate_unit(desired_angles.x),
-            saturate_unit(desired_angles.y),
-        ) * self.max_angles;
+        let desired_angles = saturate_unit_vec2(desired_angles) * self.max_angles;
 
         // Calculate error (setpoint - actual)
         let error = desired_angles - estimated_angles;
@@ -131,15 +128,22 @@ impl AttitudeController {
         // Derivative term: rate of change of error
         let error_derivative = (error - self.last_error) / dt;
 
-        // Integral term with anti-windup
-        self.integral_term =
-            (self.integral_term + dt * error).clamp(-self.max_integral, self.max_integral);
+        // Only a finite error updates the integral and derivative history. A NaN estimate
+        // would otherwise stick in both (NaN survives `clamp`) and poison every later tick.
+        let error_is_finite = error.x.is_finite() && error.y.is_finite();
+        if error_is_finite {
+            // Integral term with anti-windup
+            self.integral_term =
+                (self.integral_term + dt * error).clamp(-self.max_integral, self.max_integral);
+        }
 
         // PID calculation: Kp×error + Ki×∫error + Kd×d(error)/dt
         let Gains { p, i, d } = self.gains;
         let rates = p * error + i * self.integral_term + d * error_derivative;
 
-        self.last_error = error;
+        if error_is_finite {
+            self.last_error = error;
+        }
 
         // Scale output to configured maximum rates
         vec2(
@@ -387,10 +391,21 @@ mod tests {
                 rates.x.is_finite() && rates.y.is_finite(),
                 "{requested:?} gave non-finite rates {rates:?}"
             );
-            assert!(
-                (rates.x - expected.x).abs() < 1e-6 && (rates.y - expected.y).abs() < 1e-6,
-                "{requested:?} gave {rates:?}, expected {expected:?}"
-            );
+            approx::assert_relative_eq!(rates.x, expected.x);
+            approx::assert_relative_eq!(rates.y, expected.y);
         }
+    }
+
+    #[test]
+    fn nan_estimate_does_not_poison_later_ticks() {
+        let mut controller = default_controller();
+        let desired = vec2(0.5, -0.5);
+
+        let _ = controller.control(0.1, desired, vec2(f32::NAN, 0.0));
+        let after_nan = controller.control(0.1, desired, vec2(0.0, 0.0));
+        let fresh = default_controller().control(0.1, desired, vec2(0.0, 0.0));
+
+        approx::assert_relative_eq!(after_nan.x, fresh.x);
+        approx::assert_relative_eq!(after_nan.y, fresh.y);
     }
 }

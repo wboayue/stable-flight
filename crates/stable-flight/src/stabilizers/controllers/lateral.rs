@@ -1,6 +1,6 @@
 use robomath::{Vec2, vec2};
 
-use crate::stabilizers::{Gains, saturate_unit};
+use crate::stabilizers::{Gains, saturate_unit_vec2};
 
 const G: f32 = 9.81; // Gravitational acceleration in m/s²
 
@@ -55,7 +55,17 @@ impl LateralController {
     }
 
     /// Initializes a new lateral controller with the given configuration.
+    ///
+    /// # Panics
+    ///
+    /// If `config.max_integral` is negative or not finite (it bounds the integral term each
+    /// tick; rejecting it here keeps that clamp from panicking inside the flight loop).
     pub fn with_config(config: &LateralControllerConfig) -> Self {
+        assert!(
+            config.max_integral >= 0.0 && config.max_integral.is_finite(),
+            "max_integral must be non-negative and finite, got {}",
+            config.max_integral
+        );
         Self {
             config: config.clone(),
             integrated_error: vec2(0.0, 0.0),
@@ -95,18 +105,26 @@ impl LateralController {
         let error = desired_position - estimated_position;
         let error_derivative = (error - self.previous_error) / dt;
 
-        self.integrated_error =
-            (self.integrated_error + dt * error).clamp(-self.max_integral, self.max_integral);
+        // Only a finite error updates the integral and derivative history. A NaN target or
+        // position would otherwise stick in the integral (NaN survives `clamp`) and hold the
+        // output at level for good, even after the inputs recover.
+        let error_is_finite = error.x.is_finite() && error.y.is_finite();
+        if error_is_finite {
+            self.integrated_error =
+                (self.integrated_error + dt * error).clamp(-self.max_integral, self.max_integral);
+        }
         let accel_cmd =
             gains.p * error + gains.i * self.integrated_error + gains.d * (-estimated_velocity);
 
-        self.previous_error = error;
+        if error_is_finite {
+            self.previous_error = error;
+        }
 
         // Convert acceleration to roll/pitch angles (simplified)
         let roll_cmd = accel_cmd.y / G;
         let pitch_cmd = -accel_cmd.x / G;
 
-        vec2(saturate_unit(roll_cmd), saturate_unit(pitch_cmd))
+        saturate_unit_vec2(vec2(roll_cmd, pitch_cmd))
     }
 }
 
@@ -149,5 +167,34 @@ mod tests {
         }
 
         assert!(controller.integrated_error == vec2(5.0, -5.0));
+    }
+
+    #[test]
+    fn recovers_full_tilt_after_a_nan_tick() {
+        let mut controller = LateralController::new();
+        let at_rest = vec2(0.0, 0.0);
+
+        // One tick with a NaN target must not poison later ticks.
+        let during = controller.control(0.004, vec2(f32::NAN, 0.0), at_rest, at_rest);
+        let after = controller.control(0.004, vec2(1000.0, 0.0), at_rest, at_rest);
+
+        assert!(during == vec2(0.0, 0.0), "NaN tick gave {during:?}");
+        assert!(
+            after == vec2(0.0, -1.0),
+            "valid far target after NaN gave {after:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_max_integral_at_construction() {
+        for max_integral in [-1.0, f32::NAN, f32::INFINITY] {
+            let result = std::panic::catch_unwind(|| {
+                LateralController::with_config(&LateralControllerConfig {
+                    max_integral,
+                    ..Default::default()
+                })
+            });
+            assert!(result.is_err(), "max_integral {max_integral} was accepted");
+        }
     }
 }
