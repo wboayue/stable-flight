@@ -4,6 +4,25 @@ Turn `stable-flight-sitl` into a `stable-flight` monorepo. A `no_std` core crate
 flight-control code. A backend-agnostic SITL harness consumes it, with one crate per simulator
 backend (RealFlight first). Board firmware, added later, is another consumer.
 
+## Maintaining this plan
+
+This file is the running record of the migration and of everything its reviews turn up.
+Update it in the same PR as the work; it's part of the change, not a follow-up.
+
+1. **Status:** mark a row 🔍 #n when its PR opens and ✅ #n when it merges (in that PR, or
+   the next one if it's already open). Add a row for any unplanned PR (e.g. a bug fix found
+   along the way).
+2. **As implemented:** when a PR lands differently from its section below, add a short
+   "as implemented" / "after review" note to that section: what changed, what was decided,
+   and why.
+3. **Follow-ups:** every follow-up a review or investigation raises and that isn't fixed in
+   the same PR gets a row in the [Follow-up backlog](#follow-up-backlog) (the item, its
+   target PR, and its source). Don't leave follow-ups only in PR descriptions, review
+   comments, or chat. The PR that completes one deletes its row and mentions it in its own
+   note.
+4. **Found bugs:** a pre-existing bug found while verifying goes in the backlog, or in
+   Status if it's being fixed now, with how to reproduce it.
+
 ## Status
 
 Legend: ✅ merged · 🔍 in review · ⬜ not started · ⏭ superseded. Update a row when its PR
@@ -27,9 +46,9 @@ otherwise do it in the next PR.
 
 ## Follow-up backlog
 
-Open follow-ups from PR reviews, collected in one place. When one is done, delete its row and
-mention it in that PR's "as implemented" note. When a review raises a new one, add a row here.
-The notes further down keep the history.
+Open follow-ups from PR reviews and investigations, collected in one place (see
+[Maintaining this plan](#maintaining-this-plan)). Add a row when one is raised; delete it in
+the PR that completes it. The per-PR notes further down keep the history.
 
 | Follow-up | Target | Source |
 |---|---|---|

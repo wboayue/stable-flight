@@ -17,6 +17,10 @@ row when its PR opens (🔍 #n) and again when it merges (✅ #n). Do it in the 
 where possible; otherwise do it in the next PR (for example the rebase of the next
 stacked branch).
 
+**Follow-ups:** don't track them here. Every follow-up a review of these PRs raises goes in
+the **Follow-up backlog** in `plans/workspace-migration.md` (one list for both plans), per its
+"Maintaining this plan" section. The "Review follow-ups" notes below are history.
+
 ## PR sequence at a glance
 
 | # | Title                                         | Scope             | Risk   | Status |
