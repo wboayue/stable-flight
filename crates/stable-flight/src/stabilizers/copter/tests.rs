@@ -262,3 +262,36 @@ fn test_waypoint_control() {
         "Output should be default for zero position"
     );
 }
+
+/// Regression: a waypoint far from the vehicle made the lateral loop request pitch ≈ -4.6
+/// (normalized), and the attitude controller's range `assert!` panicked the flight loop.
+#[test]
+fn distant_waypoint_saturates_tilt_instead_of_panicking() {
+    use robomath::vec2;
+
+    // (waypoint x, y) relative to a vehicle at rest at the origin
+    let targets = [(30.0, 0.0), (-1000.0, 500.0), (0.0, 1e6)];
+    for (x, y) in targets {
+        let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+        let state = VehicleState::default();
+        stabilizer.prime(&state);
+        let command = Command::Waypoint(WaypointCommand {
+            position: vec2(x, y),
+            altitude: 20.0,
+            cruise_speed: 7.0,
+            ..Default::default()
+        });
+
+        // Many ticks, so the lateral integral would wind up if it weren't clamped.
+        for _ in 0..1_000 {
+            let output = stabilizer.stabilize(0.004, &command, &state);
+            assert!(
+                output.thrust.is_finite()
+                    && output.moments.x.is_finite()
+                    && output.moments.y.is_finite()
+                    && output.moments.z.is_finite(),
+                "waypoint ({x}, {y}) produced non-finite output {output:?}"
+            );
+        }
+    }
+}

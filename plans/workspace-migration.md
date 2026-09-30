@@ -17,7 +17,8 @@ otherwise do it in the next PR.
 | architecture-refactor PRs 1–4, 6 (see that plan) | ✅ #44, #50, #46, #47, #48 |
 | PR 2a — core crate + `FlightLoop` | ✅ #52 |
 | PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | ✅ #53 |
-| PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | 🔍 #54 |
+| PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | ✅ #54 |
+| Fix — attitude-controller panic in waypoint mode (found in 2b) | 🔍 (this PR) |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
@@ -311,13 +312,25 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
       runners need priming; runtime path updates for `WaypointFollower` (`AsMut` or
       `set_waypoints`) once a mission uploader exists.
     - 2c: replace the new `runner/tests.rs` mocks with the `testing` feature.
-- **Found while verifying (pre-existing, not fixed):** `AttitudeController::control`
+- **Found while verifying (fixed in its own PR, see Status):** `AttitudeController::control`
   (`stabilizers/controllers/attitude.rs:118-127`) `assert!`s that desired roll and pitch
   are in [-1, 1]. In waypoint mode with the vehicle far from the target (e.g. a
   `NullVehicle` at the origin and `flights/figure_eight.csv`), the lateral controller asks
   for pitch ≈ -4.6, and the flight loop panics. That contradicts "no panics in the loop".
   Clamp (or saturate the lateral output) instead of asserting; do it in its own PR with
   table tests, before hardware.
+  - As fixed:
+    - Root cause: `LateralController::control` returned an unbounded `accel / g` as a
+      "normalized" angle and never applied its configured `max_integral`.
+    - Both controllers now saturate through `stabilizers::saturate_unit` (NaN → 0): the
+      lateral output at the source, and the attitude input defensively.
+    - The lateral integral is clamped.
+    - Table tests for both controllers, plus a `CopterStabilizer` regression test that
+      reproduces the original panic without the fix.
+    - The figure-eight + `NullVehicle` run that crashed now runs at 250 Hz.
+    - Still open (not in scope): `max_angles`-scaled `accel / g` is a simplified tilt
+      model, and `LateralControllerConfig::max_rate` is unused. Revisit with refactor PR 7
+      (guidance/inner-loop split).
 
 2c as implemented:
 - Core `composition` module:

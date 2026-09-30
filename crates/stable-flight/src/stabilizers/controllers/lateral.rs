@@ -1,6 +1,6 @@
 use robomath::{Vec2, vec2};
 
-use crate::stabilizers::Gains;
+use crate::stabilizers::{Gains, saturate_unit};
 
 const G: f32 = 9.81; // Gravitational acceleration in m/s²
 
@@ -79,7 +79,10 @@ impl LateralController {
     ///
     /// # Returns
     ///
-    /// Desired roll and pitch angles in radians.
+    /// Desired roll and pitch as normalized values in [-1, 1] (the attitude controller scales
+    /// them by its `max_angles`). The acceleration demand saturates, so far from the target the
+    /// vehicle commands full tilt toward it rather than an out-of-range angle. The integral term
+    /// is clamped to `max_integral` to limit windup.
     pub fn control(
         &mut self,
         dt: f32,
@@ -92,7 +95,8 @@ impl LateralController {
         let error = desired_position - estimated_position;
         let error_derivative = (error - self.previous_error) / dt;
 
-        self.integrated_error = self.integrated_error + dt * error;
+        self.integrated_error =
+            (self.integrated_error + dt * error).clamp(-self.max_integral, self.max_integral);
         let accel_cmd =
             gains.p * error + gains.i * self.integrated_error + gains.d * (-estimated_velocity);
 
@@ -102,9 +106,48 @@ impl LateralController {
         let roll_cmd = accel_cmd.y / G;
         let pitch_cmd = -accel_cmd.x / G;
 
-        vec2(roll_cmd, pitch_cmd)
+        vec2(saturate_unit(roll_cmd), saturate_unit(pitch_cmd))
     }
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use robomath::vec2;
+
+    use super::*;
+
+    #[test]
+    fn output_is_normalized_and_saturates_far_from_target() {
+        // (target position, expected (roll, pitch)) with the vehicle at rest at the origin
+        let cases = [
+            (vec2(0.0, 0.0), vec2(0.0, 0.0)),
+            (vec2(1000.0, 0.0), vec2(0.0, -1.0)), // far +x: full nose-down pitch
+            (vec2(-1000.0, 0.0), vec2(0.0, 1.0)),
+            (vec2(0.0, 1000.0), vec2(1.0, 0.0)), // far +y: full right roll
+            (vec2(0.0, f32::NAN), vec2(0.0, 0.0)),
+        ];
+        for (target, expected) in cases {
+            let mut controller = LateralController::new();
+            let angles = controller.control(0.004, target, vec2(0.0, 0.0), vec2(0.0, 0.0));
+            assert!(
+                angles == expected,
+                "target {target:?} gave {angles:?}, expected {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn integral_term_is_clamped_to_max_integral() {
+        let mut controller = LateralController::with_config(&LateralControllerConfig {
+            max_integral: 5.0,
+            ..Default::default()
+        });
+
+        // A large, persistent error for many ticks would wind the integral far past the limit.
+        for _ in 0..10_000 {
+            controller.control(0.01, vec2(100.0, -100.0), vec2(0.0, 0.0), vec2(0.0, 0.0));
+        }
+
+        assert!(controller.integrated_error == vec2(5.0, -5.0));
+    }
+}
