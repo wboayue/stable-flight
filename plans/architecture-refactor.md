@@ -31,7 +31,7 @@ the **Follow-up backlog** in `plans/workspace-migration.md` (one list for both p
 | 4 | Resolve `Vehicle` vs `StateEstimator`/`Actuator` | Trait surface  | Low    | ✅ #47 |
 | 5 | Rename `simulators/` module to `vehicles/`    | Mechanical move   | Low    | ⏭ workspace PR 3 |
 | 6 | Decouple `TelemetryPublisher` from `Command`  | Trait surface     | Medium | ✅ #48 |
-| 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | ⬜ |
+| 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | 🔍 #60 |
 
 PRs 1–4 and 6 are merged. For future stacked PRs, use CLAUDE.md's
 stacked-PR procedure: retarget the child to `main` before merging its parent.
@@ -325,7 +325,7 @@ collapsed.
 PR 7.5. Recommend defer — first ship the structural split with no behavior
 change, then add the divider in a follow-up where the diff is easy to read.
 
-**As implemented (in progress, branch `split-stabilizer`).** Structural split only; the
+**As implemented (#60).** Structural split only; the
 divider is deferred to PR 7.5.
 - `Guidance::guide(dt, &Command, &VehicleState) -> Setpoint` plus `prime`, a sixth
   `FlightLoop` slot between the vehicle and the stabilizer (`FlightLoop<C, V, G, S, M, T>`),
