@@ -1,5 +1,7 @@
 //! Control algorithms that maintain desired flight dynamics by processing commands and vehicle state feedback.
 
+use core::f32::consts::PI;
+
 use robomath::{Vec2, Vec3, vec2, vec3};
 
 pub mod copter;
@@ -27,6 +29,14 @@ pub(crate) fn saturate_unit(value: f32) -> f32 {
     } else {
         value.clamp(-1.0, 1.0)
     }
+}
+
+/// Wraps an angle in radians to [-π, π). Non-finite input stays non-finite.
+///
+/// Shared angle math for heading targets and yaw errors (the only `rem_euclid`, which PR 4
+/// replaces with a `libm` form for `no_std`).
+pub(crate) fn wrap_angle(angle: f32) -> f32 {
+    (angle + PI).rem_euclid(2.0 * PI) - PI
 }
 
 /// [`saturate_unit`] applied to each component.

@@ -43,11 +43,16 @@ use crate::{
 
 use super::Gains;
 use super::controllers::*;
+use super::wrap_angle;
 
 #[cfg(test)]
 mod tests;
 
 const G: f32 = 9.81; // acceleration due to gravity (m/s²)
+
+/// Heading-hold target change per tick at full yaw stick (radians). At 250 Hz this is
+/// 0.025 rad/s (~1.4°/s).
+const HEADING_STEP_PER_TICK: f32 = 0.0001;
 
 /// Configuration for the [CopterStabilizer], including gains for all control loops and thrust mapping.
 #[derive(Clone, Debug, PartialEq)]
@@ -239,7 +244,16 @@ impl CopterStabilizer {
             .attitude_controller
             .control(dt, desired_angles, current_angles);
 
-        self.heading += attitude_command.yaw * 0.0001;
+        // Wrapped so sustained yaw input can't grow the target without bound; the yaw
+        // controller works on the wrapped error either way.
+        let target = wrap_angle(self.heading + attitude_command.yaw * HEADING_STEP_PER_TICK);
+        if target.is_finite() {
+            self.heading = target;
+        } else if estimated_state.heading.is_finite() {
+            // A NaN target (e.g. primed from a NaN estimate) would otherwise disable heading
+            // hold for good; re-latch from the current estimate once it's valid.
+            self.heading = wrap_angle(estimated_state.heading);
+        }
 
         let desired_yaw_rate =
             self.yaw_controller
