@@ -17,7 +17,7 @@ otherwise do it in the next PR.
 | architecture-refactor PRs 1–4, 6 (see that plan) | ✅ #44, #50, #46, #47, #48 |
 | PR 2a — core crate + `FlightLoop` | ✅ #52 |
 | PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | ✅ #53 |
-| PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | 🔍 (this PR) |
+| PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | 🔍 #54 |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
