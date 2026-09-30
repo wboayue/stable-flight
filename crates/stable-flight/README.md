@@ -45,7 +45,7 @@ The simplest setup uses default gains:
 let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
 ```
 
-For tuned gains, build the inner PID controllers explicitly (see [`copter-manual-realflight.rs`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl/examples/copter-manual-realflight.rs) for a full example):
+For tuned gains, build the inner PID controllers explicitly (simulator backends ship tuned sets, e.g. [`airframes::quadcopter_x`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl-realflight/src/airframes.rs)):
 
 ```rust
 let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {

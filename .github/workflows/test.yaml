@@ -31,6 +31,17 @@ jobs:
       run: |
         cargo build --workspace
 
+    - name: backends depend on core only
+      # A simulator backend may use the sitl harness only as a dev-dependency (examples,
+      # conformance tests), so it stays usable with any runner.
+      run: |
+        for crate in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name | select(startswith("stable-flight-sitl-"))'); do
+          if cargo tree -p "$crate" -e normal --prefix none | grep -q '^stable-flight-sitl v'; then
+            echo "::error::$crate has stable-flight-sitl as a normal dependency (dev-dependency only)"
+            exit 1
+          fi
+        done
+
     - name: test
       run: |
         cargo test --workspace --all-features

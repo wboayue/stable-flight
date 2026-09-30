@@ -1,8 +1,8 @@
 [package]
 name = "stable-flight-sitl"
-description = "Software-in-the-loop flight controller for VTOL drones, driven by the RealFlight simulator"
+description = "Software-in-the-loop harness for the Stable Flight flight controller: real-time runner, commanders, and telemetry"
 readme = "README.md"
-keywords = ["realflight", "flight-simulator", "robotics", "control-systems"]
+keywords = ["sitl", "flight-simulator", "robotics", "control-systems"]
 categories = ["aerospace::simulation", "aerospace::drones"]
 version.workspace = true
 edition.workspace = true
@@ -12,7 +12,6 @@ repository.workspace = true
 
 [dependencies]
 stable-flight = { path = "../stable-flight", version = "0.1.0" }
-realflight-bridge = { version = "1.1.0", features = ["uom"] }
 gilrs = "0.11.0"
 env_logger = "0.11.6"
 log.workspace = true
@@ -22,6 +21,11 @@ uom.workspace = true
 byteorder = "1.5.0"
 robomath.workspace = true
 thiserror.workspace = true
+
+[features]
+# `stable_flight_sitl::conformance`: frame-conformance scenarios for backend tests. For
+# dev-dependencies only.
+conformance = []
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_Console"] }  # For Windows-specific APIs

@@ -9,9 +9,11 @@
 //! This library runs the [Stable Flight](https://crates.io/crates/stable-flight) flight controller
 //! in simulation. Simulation allows safe refining of the flight control logic before real-world deployment.
 //! The flight-control core (traits, stabilizers, mixers, [`stable_flight::FlightLoop`]) lives in the
-//! `stable-flight` crate; this crate adds the software-in-the-loop harness around it: the RealFlight
-//! vehicle, joystick and scripted commanders, MAVLink/file telemetry, and the real-time runner
-//! ([`RealTimeRunner`]) with graceful shutdown ([`ShutdownSignal`]).
+//! `stable-flight` crate; this crate adds the simulator-independent software-in-the-loop harness
+//! around it: joystick and scripted commanders, MAVLink/file telemetry, the real-time runner
+//! ([`RealTimeRunner`]) with graceful shutdown ([`ShutdownSignal`]), and a frame-conformance kit
+//! for backends (`conformance` feature). Each simulator backend is its own crate, e.g.
+//! [`stable-flight-sitl-realflight`](https://crates.io/crates/stable-flight-sitl-realflight).
 //! See the following document for an [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md).
 //!
 //! Checkout [README](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl/README.md) to get started.
@@ -24,9 +26,10 @@
 pub use stable_flight;
 
 pub mod commanders;
+#[cfg(any(test, feature = "conformance"))]
+pub mod conformance;
 pub mod runner;
 pub mod shutdown;
-pub mod simulators;
 pub mod telemetry;
 
 #[doc(inline)]

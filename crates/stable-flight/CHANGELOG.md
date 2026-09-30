@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   actuations, keeps the last command), `ConstantCommander`, and
   `RecordingTelemetry<N>` (ring of the last `N` ticks as `RecordedTick`s, which
   `as_record()` can replay).
+- Backend contracts in rustdoc: `VehicleState` documents its frame contract
+  (world north/east/up, SI units, the sign of each angle and body rate), and
+  `Vehicle` documents the per-tick timing contract every backend must meet.
 
 ### Fixed
 

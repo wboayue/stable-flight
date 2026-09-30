@@ -39,8 +39,9 @@ otherwise do it in the next PR.
 | PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | ✅ #54 |
 | Fix — attitude-controller panic in waypoint mode (found in 2b) | ✅ #55 |
 | Fix — unwrapped heading target → yaw panic in attitude mode (found in #55 review) | ✅ #56 |
-| Fix — remaining per-tick panics (mixer, attitude-command, body-rate, altitude, rate-mode; Spektrum clamp) | 🔍 #57 |
-| PR 3 — Split RealFlight into its own backend crate | ⬜ |
+| Fix — remaining per-tick panics (mixer, attitude-command, body-rate, altitude, rate-mode; Spektrum clamp) | ✅ #57 |
+| PR 3 — Split RealFlight into its own backend crate | 🔍 #PRNUM |
+| Fix — RealFlight frame conversions: double radians, down-positive vertical (found in PR 3) | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
 
@@ -52,6 +53,9 @@ the PR that completes it. The per-PR notes further down keep the history.
 
 | Follow-up | Target | Source |
 |---|---|---|
+| RealFlight frame bugs. `update_estimate` runs `to_radians()` on uom `.value`, which is already radians, so roll/pitch/heading/body rates come out ~57× too small. `velocity_world_w`/`acceleration_world_az` are down-positive but the contract (and the altitude controller) want up. Reproduce: `cargo test -p stable-flight-sitl-realflight -- --ignored`. Fix both, un-ignore the `conforms_*` tests, and retune/flight-check (gains were tuned against the bug). | own PR (Status row) | PR 3 |
+| Unify QuadCopterX gains: `copter-auto` still flies `CopterStabilizerConfig::default()`, not `airframes::quadcopter_x().stabilizer`. Do it with the frame fix, since both sets were tuned against the bug. | frame-fix PR | PR 3 |
+| RealFlight conformance fixtures are synthetic. The quaternion assumes a standard ZYX world→body rotation, and the signs come from the `realflight-bridge` field docs. Capture a live `SimulatorState` per scenario (hover level, bank right, nose up, face east, climb, yaw right) and use those. | frame-fix PR | PR 3 |
 | `SpectrumCommander` maps roll/pitch/yaw to [0, 1] centred at 0.5; `AttitudeCommand` needs [-1, 1] centred at 0 (constant bank at centre stick). Needs the transmitter to verify each axis's sign. | own PR | #57 |
 | Upstream failsafe: estimator-health checks, then a land or disarm commander. The Input Policy is last-resort only (NaN thrust → motors off). | first board / Later | #57 review |
 | `BodyRateController`: one non-finite axis zeroes all three moments; handle axes separately. | own PR | #57 review |
@@ -560,6 +564,31 @@ Title: `Move RealFlight backend into stable-flight-sitl-realflight`
 Risk: low–medium. Code moves are mechanical. Writing down the frame contract and unifying the
 gains may surface a latent sign bug or a tuning regression. That's the point, but fix any
 behaviour change in its own PR with a flight note.
+
+As implemented (#PRNUM):
+- Crate `stable-flight-sitl-realflight`: `vehicle.rs` (+ `vehicle/tests.rs`) is private, with
+  `RealFlightVehicle`, `RealFlightConfiguration`, and `ActuatorMapping` at the root and
+  `realflight_bridge` re-exported. Normal deps are core, `realflight-bridge`, `robomath`, and
+  `log`. `robomath` is needed because `VehicleState` and the controller configs are built from
+  its vectors. CI's `cargo tree` check covers every `stable-flight-sitl-*` crate.
+- **Frame contract** writing surfaced two RealFlight bugs (Status row + backlog), not fixed
+  here per the risk note. (1) Angles and rates are converted to radians twice. (2) Vertical
+  velocity/acceleration are down-positive. Their conformance tests are `#[ignore]`d with
+  the reason; `conforms_level` and the quaternion checks pass. Attitude-mode angles and all
+  body rates are ~57× too small in flight today. Waypoint-mode lateral/attitude use the
+  quaternion and are unaffected; the altitude D term has the wrong sign.
+- **Gains not unified.** Both sets were tuned against those bugs, so picking one now is a
+  tuning change with no fix behind it. `airframes::quadcopter_x()` carries `copter-manual`'s
+  gains plus the mapping; `copter-auto` takes only the mapping and keeps the defaults.
+  Unify in the frame-fix PR.
+- **Conformance kit:** scenarios are `const Scenario`s (physical truth in degrees and
+  north/east/up, so a backend builds its native fixture from them). `check` returns a
+  `ConformanceError` listing every field off contract; the attitude quaternion is checked
+  through its `roll()/pitch()/yaw()`. RealFlight has one `conforms_*` test per scenario, so
+  known failures can be ignored one at a time.
+- **Timing:** the mock bridge counts exchanges and stamps each state. The test pins one
+  exchange to prime plus one per tick, and that tick *n* stabilizes on exchange *n*'s state.
+- `ActuatorMapping` gained `Debug`/`Clone`/`PartialEq`.
 
 ## PR 4 — Make core `no_std`
 

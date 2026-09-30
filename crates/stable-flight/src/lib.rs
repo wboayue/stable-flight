@@ -462,6 +462,21 @@ impl ControlOutput {
 /// It uses strongly-typed physical units (from the `uom` crate) for position, velocity,
 /// and acceleration to ensure dimensional consistency in calculations.
 ///
+/// # Frame contract
+///
+/// Every [`StateEstimator`] reports state in these conventions; a simulator backend converts
+/// from its native frames at its boundary (the sitl crate's `conformance` kit checks this).
+///
+/// | Quantity | Frame | Units | Positive |
+/// |---|---|---|---|
+/// | `position` | world: `x` north, `y` east, `z` up | m | `z` is altitude (above the backend's datum, e.g. sea level) |
+/// | `velocity`, `acceleration` | world, as `position` | m/s, m/s² | `z` climbing |
+/// | `attitude` | world → body quaternion, ZYX (yaw, pitch, roll) | — | its `roll()`/`pitch()`/`yaw()` match the fields below |
+/// | `roll` | body `x` (forward) | rad | right wing down |
+/// | `pitch` | body `y` (right) | rad | nose up |
+/// | `heading` | about the vertical | rad | clockwise from north (east = π/2); any range, [0, 2π) and (-π, π] both occur |
+/// | `angular_velocity` | body: `x` roll, `y` pitch, `z` yaw | rad/s | roll right, nose up, nose right |
+///
 /// # Examples
 ///
 /// Creating a default vehicle state:
@@ -472,31 +487,30 @@ impl ControlOutput {
 /// ```
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct VehicleState {
-    /// 3D position vector with physical length units.
+    /// World position (north, east, up); see the [frame contract](VehicleState#frame-contract).
     pub position: Vec3<Length>,
 
-    /// 3D velocity vector with physical velocity units.
+    /// World velocity (north, east, up).
     pub velocity: Vec3<Velocity>,
 
-    /// 3D acceleration vector with physical acceleration units.
+    /// World acceleration (north, east, up).
     pub acceleration: Vec3<Acceleration>,
 
     /// Orientation quaternion representing the vehicle's attitude.
     /// The quaternion represents the rotation from world frame to body frame.
     pub attitude: Quaternion,
 
-    /// Angular velocity vector in roll (x), pitch (y), and yaw (z) axes.
-    /// Typically measured in radians per second.
+    /// Body angular velocity in roll (x), pitch (y), and yaw (z), in radians per second.
     pub angular_velocity: Vec3<f32>,
 
-    /// Current roll angle in radians.
+    /// Current roll angle in radians, right wing down positive.
     pub roll: f32,
 
-    /// Current pitch angle in radians.
+    /// Current pitch angle in radians, nose up positive.
     pub pitch: f32,
 
     /// Current heading (yaw) angle in radians.
-    /// Typically 0 represents North, with positive values rotating clockwise.
+    /// 0 is north, with positive values rotating clockwise.
     pub heading: f32,
     // Note: Additional fields for flight mode, GPS data, etc. may be added in the future.
 }
@@ -511,6 +525,22 @@ pub struct VehicleState {
 /// Examples: a simulator bridge such as `RealFlightVehicle`, a hardware IMU/estimator paired
 /// with an ESC driver (see [`ComposedVehicle`]), or a test double such as
 /// `testing::NullVehicle` (`testing` feature).
+///
+/// # Timing contract
+///
+/// [`FlightLoop::step`] calls [`StateEstimator::estimate_state`] once, then
+/// [`Actuator::actuate`] once, every tick. A backend must:
+///
+/// - report state in the [`VehicleState` frame contract](VehicleState#frame-contract);
+/// - talk to its simulator or hardware at most once per call, and never block for longer than
+///   a tick;
+/// - document how old the state from `estimate_state` is relative to the last `actuate`. A
+///   backend whose link sends controls and returns state in one round-trip (RealFlight)
+///   exchanges in `actuate` and returns the cached result, so tick *n* stabilizes on state
+///   reported when the simulator received tick *n − 1*'s controls. A backend with a separate
+///   sensor read should read fresh state in `estimate_state`;
+/// - produce real state on the priming call (`dt == Duration::ZERO`, made once by
+///   [`FlightLoop::prime`] before any `actuate`), contacting the simulator if it must.
 ///
 /// # Examples
 ///

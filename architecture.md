@@ -7,15 +7,28 @@ This document expands upon the high-level introduction provided in the [project 
 The repository is a Cargo workspace. Dependencies point one way:
 
 ```
-stable-flight-tools ──► stable-flight-sitl ──► stable-flight
+stable-flight-tools ──► stable-flight-sitl ──► stable-flight ◄── stable-flight-sitl-realflight
+                                ▲                                          ┊
+                                └┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ dev ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘
 ```
 
 * **`stable-flight`** (`crates/stable-flight`): the flight-control core — pipeline traits, the data passed between them (`Command`, `VehicleState`, `ControlOutput`, `ActuatorCommand`, `TelemetryRecord`), the cascaded-PID stabilizers, the mixers, and `FlightLoop`, which sequences one tick. No simulator, I/O, clock, or thread dependencies, so it can run on hardware. Published.
-* **`stable-flight-sitl`** (`crates/stable-flight-sitl`): the software-in-the-loop harness — the RealFlight vehicle, joystick and scripted commanders, MAVLink/file telemetry, `RealTimeRunner` (wall-clock pacing of a `FlightLoop`), and `ShutdownSignal` (SIGINT/Ctrl-C flag). Published.
+* **`stable-flight-sitl`** (`crates/stable-flight-sitl`): the simulator-independent software-in-the-loop harness — joystick and scripted commanders, MAVLink/file telemetry, `RealTimeRunner` (wall-clock pacing of a `FlightLoop`), `ShutdownSignal` (SIGINT/Ctrl-C flag), and the backend `conformance` kit (feature). Published.
+* **`stable-flight-sitl-realflight`** (`crates/stable-flight-sitl-realflight`): the RealFlight backend — `RealFlightVehicle`, `ActuatorMapping`, tuned `airframes`, and the RealFlight examples. Published.
 * **`stable-flight-tools`** (`crates/stable-flight-tools`): developer binaries (`plot_flight`, `generate_figure_eight`). Unpublished, so library consumers never compile `plotters`.
 * **`firmware/`**: excluded from the workspace; each board will be its own nested workspace with its own target, profiles, and lockfile.
 
-The split continues per `plans/workspace-migration.md`: the core becomes `no_std`, and each simulator backend gets its own `stable-flight-sitl-<simulator>` crate.
+The split continues per `plans/workspace-migration.md`: the core becomes `no_std`.
+
+## Simulator Backends
+
+Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its dependencies (protocol clients, FFI, system libraries) never reach the core, the harness, or another backend.
+
+* **Dependency rule.** A backend's normal dependencies are the core and its simulator client only. `stable-flight-sitl` is a dev-dependency (examples, conformance tests), so the backend works with any runner: the sitl runners, a HIL rig, or a third-party harness. CI fails if a backend lists `stable-flight-sitl` under `cargo tree -e normal`.
+* **Frame contract.** Every `StateEstimator` reports `VehicleState` in one convention: world `x` north, `y` east, `z` up (altitude), SI units, roll right-wing-down, pitch nose-up, heading clockwise from north, and body rates roll-right/nose-up/nose-right. The table on `VehicleState` (core rustdoc) is the reference. A backend converts from its simulator's native frames at its boundary; nothing downstream knows which simulator is attached.
+* **Timing contract.** Each tick calls `estimate_state` then `actuate` once. A backend talks to its simulator at most once per call, produces real state on the priming call (`dt == Duration::ZERO`), and documents how old its state is relative to the last `actuate`. The core `Vehicle` rustdoc is the reference. RealFlight Link is one round-trip per tick, so `RealFlightVehicle` exchanges in `actuate` and returns the cached result: the stabilizer sees state one tick old.
+* **Conformance.** `stable_flight_sitl::conformance` (feature `conformance`) lists physical scenarios and the `VehicleState` each must yield. Each backend feeds its simulator's native report for every scenario (a mock-client fixture) through its conversion and checks the result, which catches frame bugs before the backend flies.
+* **Airframes.** Tuned gains and channel mappings live in the backend's `airframes` module, next to the simulated model they were tuned on. Examples still inline their pipeline wiring.
 
 ## Flight Loop and Runners
 
@@ -88,7 +101,7 @@ The system uses dependency injection to allow flexible configuration of componen
 Each major component is defined by a trait interface, allowing multiple implementations while keeping a consistent API:
 
 * Multiple Commander implementations (e.g., the core `WaypointFollower`, which follows and loops any waypoint list; sitl's ScriptCommander, which loads CSV waypoint scripts from `flights/` into a `WaypointFollower`; Extreme3DCommander; SpektrumCommander)
-* Different Vehicle implementations (e.g., RealFlightVehicle)
+* Different Vehicle implementations (e.g., RealFlightVehicle in `stable-flight-sitl-realflight`)
 * Stabilizer variants for different airframes (e.g., CopterStabilizer). A tailsitter stabilizer for the [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) model is planned but not started.
 * Mixer implementations for various aircraft configurations (e.g., QuadCopterMixer). `TailSitterMixer` is a placeholder: it returns zeroed actuator commands until the tailsitter stabilizer exists.
 * Various telemetry publishers (e.g., MavlinkPublisher, FileLogger)
@@ -105,6 +118,6 @@ Each major component is defined by a trait interface, allowing multiple implemen
 
 ## Configuration Example
 
-Wiring a quadcopter in RealFlight means choosing one implementation per trait (e.g. `Extreme3DCommander` or `ScriptCommander`, `RealFlightVehicle`, `CopterStabilizer`, `QuadCopterMixer`, `MavlinkPublisher`), assembling them into a `FlightLoop`, and handing it to a `RealTimeRunner` with a `ShutdownSignal`. The runnable code lives in the [`stable-flight-sitl` README](crates/stable-flight-sitl/README.md#running-the-loop) and `crates/stable-flight-sitl/examples/copter-*-realflight.rs`.
+Wiring a quadcopter in RealFlight means choosing one implementation per trait (e.g. `Extreme3DCommander` or `ScriptCommander`, `RealFlightVehicle`, `CopterStabilizer` with gains from `airframes::quadcopter_x()`, `QuadCopterMixer`, `MavlinkPublisher`), assembling them into a `FlightLoop`, and handing it to a `RealTimeRunner` with a `ShutdownSignal`. The runnable code lives in the [`stable-flight-sitl` README](crates/stable-flight-sitl/README.md#running-the-loop) and `crates/stable-flight-sitl-realflight/examples/copter-*-realflight.rs`.
 
 This architecture's modularity allows for easy testing with different components while maintaining the same core stabilization loop, making it ideal for iterative flight control system development.
