@@ -63,11 +63,13 @@ sequenceDiagram
 Nothing that runs every tick panics on its inputs. Stabilizers, controllers, and mixers:
 
 * **Saturate** out-of-range normalized commands (roll/pitch/yaw and moments to [-1, 1], throttle and thrust to [0, 1]). A controller that produces a normalized command saturates its output; one that consumes it saturates its input too.
-* Treat a **NaN command as neutral** (level, no rate, no thrust).
-* Return **zero output on a non-finite error** (NaN/∞ setpoint or estimate), without letting it into integral or derivative state; the first finite tick afterwards has no derivative kick.
+* Treat a **NaN command as neutral** (level, hold zero rate, no thrust).
+* Return **neutral output on a non-finite error** (NaN/∞ setpoint or estimate), without letting it into integral or derivative state; the first finite tick afterwards has no derivative kick. Neutral is zero tilt/rate/moment, except altitude, whose neutral is **hover thrust** (0.5), not zero.
 * **Wrap angles** to [-π, π) instead of range-checking them.
 
-Only construction-time config validation and `dt > 0` (guaranteed by the runners) are asserted. The helpers live in the core's crate-private `math` module.
+Only construction-time config validation (every limit a per-tick `clamp` depends on) and `dt > 0` (guaranteed by the runners) are asserted. The helpers live in the core's crate-private `math` module.
+
+These are last-resort behaviours that keep the loop alive, not a failsafe. A NaN thrust reaching the mixer becomes 0, which cuts the motors. Holding the last thrust could fly away instead, and the stateless mixer can't choose better. Real failsafes (estimator health checks, then a land or disarm commander) belong upstream; see the plan's follow-up backlog.
 
 ## Design Patterns
 

@@ -60,8 +60,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without corrupting the controller state or kicking the derivative afterwards.
   A heading-hold target that is NaN (e.g. primed from a NaN estimate) re-latches
   from the next valid estimate instead of disabling heading hold.
-- No per-tick input can panic the flight loop any more (see architecture.md,
-  "Input Policy"):
+- Out-of-range or non-finite commands and estimates no longer panic the flight
+  loop (see architecture.md, "Input Policy"):
   - `QuadCopterMixer::mix` saturates thrust to [0, 1] and moments to [-1, 1] (NaN →
     0) instead of asserting; rate-mode throttle, which was never clamped, used to
     reach this assert.
@@ -70,6 +70,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `BodyRateController::control` returns zero moments on non-finite desired or
     estimated rates instead of panicking.
   - `AttitudeController::control` returns zero rates on a non-finite error.
+  - `AltitudeController::control` returns hover thrust on a non-finite altitude or
+    velocity error, and keeps it out of the integral. Before, a NaN estimate stuck
+    there and cut the motors for good once the mixer saturated NaN thrust to 0.
+  - `LateralController::control` returns level (no tilt) on a non-finite error; an
+    infinite error used to command full tilt.
+  - Rate-mode NaN rate commands mean "hold zero rate" (per-axis saturation);
+    `clamp` let NaN through to zero every moment.
+  - `AttitudeController::with_config` and `YawController::with_config` reject a
+    negative or non-finite `max_integral`/`max_rate`, which would otherwise make a
+    per-tick `clamp` panic.
 
   Both controllers skip the derivative on the first finite tick after a
   non-finite one.

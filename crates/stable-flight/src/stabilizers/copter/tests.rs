@@ -493,3 +493,68 @@ fn nan_rate_estimate_yields_zero_moments() {
     );
     assert!(output.moments == vec3(0.0, 0.0, 0.0), "gave {output:?}");
 }
+
+/// Regression (#57 review): a NaN altitude estimate stuck in the altitude integral, so thrust
+/// stayed NaN → 0 (motors off) in waypoint mode even after the estimate recovered.
+#[test]
+fn nan_altitude_estimate_holds_hover_then_recovers() {
+    use robomath::vec2;
+    use uom::si::f32::Length;
+    use uom::si::length::meter;
+
+    let at_altitude = |z: f32| VehicleState {
+        position: robomath::Vec3 {
+            x: Length::new::<meter>(0.0),
+            y: Length::new::<meter>(0.0),
+            z: Length::new::<meter>(z),
+        },
+        ..Default::default()
+    };
+    let command = Command::Waypoint(WaypointCommand {
+        position: vec2(0.0, 0.0),
+        altitude: 20.0,
+        cruise_speed: 7.0,
+        ..Default::default()
+    });
+
+    let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+    stabilizer.prime(&at_altitude(10.0));
+    let during = stabilizer.stabilize(0.004, &command, &at_altitude(f32::NAN));
+    let after = stabilizer.stabilize(0.004, &command, &at_altitude(10.0));
+
+    let mut fresh = CopterStabilizer::new(CopterStabilizerConfig::default());
+    fresh.prime(&at_altitude(10.0));
+    let expected = fresh.stabilize(0.004, &command, &at_altitude(10.0));
+
+    assert!(during.thrust > 0.0, "NaN altitude cut thrust: {during:?}");
+    assert!(
+        after.thrust == expected.thrust,
+        "after NaN: {after:?} vs fresh {expected:?}"
+    );
+}
+
+/// A NaN rate command means "hold zero rate" (damping), not "no moments".
+#[test]
+fn nan_rate_command_holds_zero_rate() {
+    let state = VehicleState {
+        angular_velocity: vec3(0.5, -0.2, 0.1), // spinning: zero-rate hold must push back
+        ..Default::default()
+    };
+    let rate = |roll_rate| {
+        Command::Rate(RateCommand {
+            throttle: 0.5,
+            roll_rate,
+            arm: true,
+            ..Default::default()
+        })
+    };
+    let mut with_nan = CopterStabilizer::new(CopterStabilizerConfig::default());
+    let mut with_zero = CopterStabilizer::new(CopterStabilizerConfig::default());
+    let a = with_nan.stabilize(0.004, &rate(f32::NAN), &state);
+    let b = with_zero.stabilize(0.004, &rate(0.0), &state);
+    assert!(
+        a == b,
+        "NaN rate command gave {a:?}, zero-rate hold gives {b:?}"
+    );
+    assert!(a.moments != vec3(0.0, 0.0, 0.0));
+}

@@ -82,6 +82,12 @@ impl AttitudeController {
             config.max_rate.x >= 0.0 && config.max_rate.y >= 0.0,
             "Maximum rates must be non-negative"
         );
+        // The per-tick integral clamp would panic on a negative or NaN bound.
+        assert!(
+            config.max_integral >= 0.0 && config.max_integral.is_finite(),
+            "max_integral must be non-negative and finite, got {}",
+            config.max_integral
+        );
         Self {
             gains: config.gains,
             integral_term: Vec2::default(),
@@ -422,5 +428,18 @@ mod tests {
         let expected = p * error + i * (0.1 * error);
         approx::assert_relative_eq!(after_nan.x, expected.x.clamp(-2.0, 2.0));
         approx::assert_relative_eq!(after_nan.y, expected.y.clamp(-2.0, 2.0));
+    }
+
+    #[test]
+    fn rejects_invalid_max_integral_at_construction() {
+        for max_integral in [-1.0, f32::NAN, f32::INFINITY] {
+            let result = std::panic::catch_unwind(|| {
+                AttitudeController::with_config(&AttitudeControllerConfig {
+                    max_integral,
+                    ..Default::default()
+                })
+            });
+            assert!(result.is_err(), "max_integral {max_integral} was accepted");
+        }
     }
 }

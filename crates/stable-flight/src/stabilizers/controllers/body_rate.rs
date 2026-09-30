@@ -121,7 +121,7 @@ impl BodyRateController {
     /// - `dt` is not positive or finite.
     ///
     /// A non-finite component in `desired_rates` or `estimated_rates` returns zero moments and
-    /// leaves the controller state untouched (see `crate::math` for the policy).
+    /// leaves the controller state untouched (the input policy in `architecture.md`).
     pub fn control(
         &mut self,
         dt: f32,

@@ -1,22 +1,9 @@
-//! Small numeric helpers shared by stabilizers and mixers.
+//! Small numeric helpers shared by stabilizers and mixers: [`saturate_unit`],
+//! [`saturate_unit_vec2`], [`saturate_throttle`], and [`wrap_angle`].
 //!
-//! # Out-of-range and non-finite input policy
-//!
-//! Nothing that runs every tick may panic on its inputs. Controllers and mixers apply one rule:
-//!
-//! - **Out-of-range normalized commands saturate** to their valid range: [`saturate_unit`] for
-//!   [-1, 1] (roll/pitch/yaw, moments) and [`saturate_throttle`] for [0, 1]. A controller that
-//!   *produces* a normalized command saturates its output; one that *consumes* it saturates its
-//!   input too, defensively.
-//! - **NaN commands become neutral** (0: level, no rate, no thrust).
-//! - **A non-finite error (from a NaN/∞ setpoint or estimate) yields zero output** and leaves
-//!   the controller's integral and derivative history untouched; the first finite tick after
-//!   the gap has no derivative kick. `NaN` survives `f32::clamp`, so it must never enter
-//!   controller state.
-//! - **Angles wrap** to [-π, π) with [`wrap_angle`] rather than being range-checked.
-//!
-//! Only documented construction preconditions (config validation) and `dt > 0` (guaranteed by
-//! the runners) are asserted.
+//! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite
+//! error into controller state, wrap angles), which is specified in `architecture.md`,
+//! "Input Policy (no panics in the tick)".
 
 use core::f32::consts::PI;
 

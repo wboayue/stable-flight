@@ -286,7 +286,13 @@ impl CopterStabilizer {
             rate_command.yaw_rate,
         );
 
-        let desired_rates = desired_rates.clamp(-1.0, 1.0) * self.max_rates;
+        // Per-component saturation: `clamp` alone passes NaN, which would zero every moment
+        // (no damping) instead of meaning "hold zero rate".
+        let desired_rates = vec3(
+            saturate_unit(desired_rates.x),
+            saturate_unit(desired_rates.y),
+            saturate_unit(desired_rates.z),
+        ) * self.max_rates;
 
         let current_rates = vec3(
             estimated_state.angular_velocity.x,

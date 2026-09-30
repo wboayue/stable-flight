@@ -29,6 +29,8 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
   that land first (its PR 5 is superseded by the migration). Read both before touching trait
   surface or crate layout. Each plan has a Status table: mark a row 🔍 #n when its PR opens and
   ✅ #n when it merges, in that PR or the next one.
+  `plans/workspace-migration.md` also has a **Follow-up backlog** table: add a row for each
+  follow-up a review raises, and delete the row in the PR that completes it.
 - The repo was renamed `stable-flight-sitl` → `stable-flight`; the crate keeps the
   `stable-flight-sitl` name. Old GitHub URLs redirect.
 
