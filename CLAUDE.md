@@ -12,14 +12,14 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     (`lib.rs`), `FlightLoop` (one tick), `stabilizers`, `mixers`. No simulator, I/O, clock, or
     thread dependencies — keep it that way (it becomes `no_std` in workspace PR 4).
   - `crates/stable-flight-sitl` — the SITL harness: `commanders`, `simulators` (RealFlight),
-    `telemetry`, and `orchestrator` (`FlightOrchestrator`, the real-time runner around
-    `FlightLoop`). Depends on the core. Examples live in `crates/stable-flight-sitl/examples/*.rs`.
+    `telemetry`, `runner` (`RealTimeRunner`, wall-clock pacing of a `FlightLoop`), and
+    `shutdown` (`ShutdownSignal`). Depends on the core. Examples live in `crates/stable-flight-sitl/examples/*.rs`.
   - `crates/stable-flight-tools` — unpublished (`publish = false`) dev binaries: `plot_flight`
     (3D flight-path visualizer) and `generate_figure_eight` (waypoint-script generator).
 - `firmware/` is excluded from the workspace; boards will get their own nested workspaces.
 - Run every command from the repo root: `cargo run --example <name>` / `--bin <name>` resolve
   across the workspace, and `flights/*.csv` paths are relative to the root.
-- Public modules: `stable-flight` — `flight_loop`, `mixers`, `stabilizers` (traits/types at the crate root); `stable-flight-sitl` — `commanders`, `orchestrator`, `simulators`, `telemetry`. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
+- Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `flight_loop`, `mixers`, `stabilizers` (traits/types at the crate root); `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `simulators`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root). sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
 - Key external crates: `realflight-bridge` (sim I/O), `robomath` (`Vec2`/`Vec3`/`Quaternion`), `uom` (units), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
 - Untracked generated artifacts: `target/`, `Cargo.lock`, `tarpaulin-report.html`.
 - Paths below are prefixed with their crate (`core:` = `crates/stable-flight/`, `sitl:` =
@@ -55,7 +55,7 @@ The flight pipeline has no CLI and there is no `cargo bench` target — don't su
 
 ## Architecture
 
-The control system is a five-trait pipeline sequenced by the core `FlightLoop` and paced by the sitl `FlightOrchestrator`. Traits and methods (from `crates/stable-flight/src/lib.rs`):
+The control system is a five-trait pipeline sequenced by the core `FlightLoop` and paced by the sitl `RealTimeRunner`. Traits and methods (from `crates/stable-flight/src/lib.rs`):
 
 ```rust
 pub trait Commander {
@@ -98,6 +98,7 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 
 | Trait              | Impls                                                                | Crate |
 |--------------------|----------------------------------------------------------------------|-------|
+| `Commander`        | `WaypointFollower<W: AsRef<[WaypointCommand]>>`                      | core  |
 | `Commander`        | `Extreme3DCommander`, `SpektrumCommander`, `ScriptCommander`         | sitl  |
 | `Vehicle` (`StateEstimator` + `Actuator`) | `RealFlightVehicle<T: RealFlightBridge>`, `NullVehicle` | sitl |
 | `Stabilizer`       | `CopterStabilizer`                                                   | core  |
@@ -106,9 +107,8 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 
 `CopterStabilizer` is composed of PID controllers in `stabilizers::controllers::{attitude, body_rate, yaw, altitude, lateral}`.
 
-`ScriptCommander::new(path) -> Result<Self, ScriptError>` loads a CSV waypoint file
-(`x,y,altitude,cruise_speed`) from `flights/`, then follows and loops the waypoints by
-horizontal acceptance radius. It is geometry-agnostic — the figure-eight shape lives in
+`ScriptCommander::new(path) -> Result<Self, ScriptError>` (sitl) loads a CSV waypoint file
+(`x,y,altitude,cruise_speed`) from `flights/` into the core `WaypointFollower` (see its rustdoc). It is geometry-agnostic — the figure-eight shape lives in
 `flights/figure_eight.csv`, produced by the `generate_figure_eight` binary
 (`crates/stable-flight-tools/src/bin/generate_figure_eight.rs`). The
 RealFlight examples are intentionally standalone (each inlines its full pipeline wiring),
@@ -126,7 +126,7 @@ self.vehicle.actuate(&actuators);
 self.telemetry.publish(&TelemetryRecord { dt, command: &command, state: &self.state, control: &control, actuators: &actuators });
 ```
 
-`FlightLoop::prime()` takes the initial estimate with `Duration::ZERO` and primes the stabilizer; call it once before the first `step`. `FlightLoop` has no clock. The sitl `FlightOrchestrator::run(target_frequency: f64)` primes, then calls `step` at the target rate, and panics on a non-positive frequency. SIGINT (Unix) / Ctrl-C (Windows) triggers graceful shutdown.
+`FlightLoop::prime()` takes the initial estimate with `Duration::ZERO` and primes the stabilizer; call it once before the first `step`. `FlightLoop` has no clock; the sitl `RealTimeRunner` + `ShutdownSignal` pace and stop it (timing rules: `architecture.md#real-time-loop-management`; usage: sitl README).
 
 ## Coding style
 
@@ -142,7 +142,7 @@ self.telemetry.publish(&TelemetryRecord { dt, command: &command, state: &self.st
 
 ## Testing
 
-- Unit tests sit next to the code in `mod tests;` files (e.g. core `src/flight_loop/tests.rs`, `src/stabilizers/copter/tests.rs`, `src/mixers/quad/tests.rs`; sitl `src/orchestrator/tests.rs`, `src/simulators/realflight/tests.rs`, `src/commanders/tests.rs`).
+- Unit tests sit next to the code in `mod tests;` files (e.g. core `src/flight_loop/tests.rs`, `src/stabilizers/copter/tests.rs`, `src/mixers/quad/tests.rs`; sitl `src/runner/tests.rs`, `src/simulators/realflight/tests.rs`, `src/commanders/script/tests.rs`).
 - Run `cargo test --workspace --all-targets` locally; integration-style checks that need simulator interaction live in `examples/`.
 - Name tests after the behaviour they protect (e.g. `maintains_pitch_hold`), not the function under test.
 - Use `assert2::assert!` / `check!` and `approx::assert_relative_eq!` for floats.
@@ -194,7 +194,7 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 ## Workflow
 
 1. Read the relevant trait in core `src/lib.rs` and its existing impls before adding a new one. Hardware-reusable code (control math, mixing, sequencing) goes in the core crate; anything touching a simulator, OS, clock, file, or network goes in sitl.
-2. Wire new components through the orchestrator the way sitl `examples/copter-manual-realflight.rs` does — that's the canonical reference.
+2. Wire new components into a `FlightLoop` + `RealTimeRunner` the way sitl `examples/copter-manual-realflight.rs` does — that's the canonical reference.
 3. Add tests alongside the code; cover the boundary/error case, not just the happy path.
 4. `cargo fmt --all && cargo clippy --workspace --all-targets && cargo test --workspace --all-features` before sending a PR.
 5. If you change trait surface, module or crate layout, or runnable examples, update the owning docs (see Commits & PRs) in the same PR.

@@ -17,15 +17,16 @@ use env_logger::Builder;
 
 use realflight_bridge::RealFlightRemoteBridge;
 use robomath::{vec2, vec3};
+use stable_flight::FlightLoop;
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::Gains;
 use stable_flight::stabilizers::controllers::*;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
-use stable_flight_sitl::FlightOrchestrator;
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 use stable_flight_sitl::simulators::RealFlightVehicle;
 use stable_flight_sitl::simulators::realflight::{ActuatorMapping, RealFlightConfiguration};
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
+use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 
 /// Joystick-driven quadcopter flight in RealFlight.
 #[derive(Parser)]
@@ -86,9 +87,11 @@ fn main() {
 
     let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
 
-    let mut orchestrator =
-        FlightOrchestrator::new(commander, vehicle, stabilizer, mixer, telemetry);
+    let mut flight_loop = FlightLoop::new(commander, vehicle, stabilizer, mixer, telemetry);
 
-    let target_frequency = 250.0; // Hz
-    orchestrator.run(target_frequency);
+    // Ctrl-C stops the loop cleanly (RealFlightVehicle re-enables RC control on drop).
+    let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");
+
+    let runner = RealTimeRunner::new(250.0).expect("valid loop frequency"); // Hz
+    runner.run(&mut flight_loop, &shutdown);
 }

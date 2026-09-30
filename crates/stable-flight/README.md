@@ -4,7 +4,7 @@ Flight-control core for [Stable Flight](https://github.com/wboayue/stable-flight
 
 ## Pipeline
 
-`FlightLoop::step(dt)` runs one tick through the pipeline traits (`Commander`, `StateEstimator` + `Actuator` = `Vehicle`, `Stabilizer`, `Mixer`, `TelemetryPublisher`); the tick order and what each stage sees are specified in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#flight-stabilization-loop). `FlightLoop` has no clock: a runner decides when to call `step` (the real-time `FlightOrchestrator` in `stable-flight-sitl` today).
+`FlightLoop::step(dt)` runs one tick through the pipeline traits (`Commander`, `StateEstimator` + `Actuator` = `Vehicle`, `Stabilizer`, `Mixer`, `TelemetryPublisher`); the tick order and what each stage sees are specified in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#flight-stabilization-loop). `FlightLoop` has no clock: a runner decides when to call `step` (`RealTimeRunner` in `stable-flight-sitl` today).
 
 ```rust
 let mut flight_loop = FlightLoop::new(commander, vehicle, stabilizer, mixer, telemetry);
@@ -14,6 +14,16 @@ loop {
     // ...wait for the next period
 }
 ```
+
+### Commanders
+
+`commanders::WaypointFollower` flies and loops any waypoint list without allocating — an array or `&'static` slice on firmware, a `Vec` on a host:
+
+```rust
+let mut commander = WaypointFollower::new(PATH)?.with_acceptance_radius(2.0);
+```
+
+Input-device and file-based commanders (joysticks, CSV scripts) live in `stable-flight-sitl`.
 
 ### Stabilizer
 

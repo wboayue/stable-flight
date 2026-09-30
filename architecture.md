@@ -11,15 +11,15 @@ stable-flight-tools ──► stable-flight-sitl ──► stable-flight
 ```
 
 * **`stable-flight`** (`crates/stable-flight`): the flight-control core — pipeline traits, the data passed between them (`Command`, `VehicleState`, `ControlOutput`, `ActuatorCommand`, `TelemetryRecord`), the cascaded-PID stabilizers, the mixers, and `FlightLoop`, which sequences one tick. No simulator, I/O, clock, or thread dependencies, so it can run on hardware. Published.
-* **`stable-flight-sitl`** (`crates/stable-flight-sitl`): the software-in-the-loop harness — the RealFlight vehicle, joystick and scripted commanders, MAVLink/file telemetry, and `FlightOrchestrator`, the real-time runner that drives a `FlightLoop`. Published.
+* **`stable-flight-sitl`** (`crates/stable-flight-sitl`): the software-in-the-loop harness — the RealFlight vehicle, joystick and scripted commanders, MAVLink/file telemetry, `RealTimeRunner` (wall-clock pacing of a `FlightLoop`), and `ShutdownSignal` (SIGINT/Ctrl-C flag). Published.
 * **`stable-flight-tools`** (`crates/stable-flight-tools`): developer binaries (`plot_flight`, `generate_figure_eight`). Unpublished, so library consumers never compile `plotters`.
 * **`firmware/`**: excluded from the workspace; each board will be its own nested workspace with its own target, profiles, and lockfile.
 
-The split continues per `plans/workspace-migration.md`: the core becomes `no_std`, `FlightOrchestrator` splits into a `ShutdownSignal` and a `RealTimeRunner`, and each simulator backend gets its own `stable-flight-sitl-<simulator>` crate.
+The split continues per `plans/workspace-migration.md`: the core becomes `no_std`, and each simulator backend gets its own `stable-flight-sitl-<simulator>` crate.
 
 ## Flight Loop and Runners
 
-The heart of the system is `FlightLoop` (core). It owns the five components and runs one tick per `step(dt)`, with no notion of time. A runner decides when ticks happen: `FlightOrchestrator` (sitl) paces them on the wall clock and handles shutdown; a lockstep simulator runner or a hardware timer interrupt can drive the same `FlightLoop` later.
+The heart of the system is `FlightLoop` (core). It owns the five components and runs one tick per `step(dt)`, with no notion of time. A runner decides when ticks happen: `RealTimeRunner` (sitl) paces them on the wall clock until a `ShutdownSignal` is set; a lockstep simulator runner or a hardware timer interrupt can drive the same `FlightLoop` later and reuse the same `ShutdownSignal`. Shutdown, pacing, and tick sequencing are three separate pieces so each runner only supplies pacing.
 
 ## Core Components
 
@@ -74,7 +74,7 @@ The system uses dependency injection to allow flexible configuration of componen
 
 Each major component is defined by a trait interface, allowing multiple implementations while keeping a consistent API:
 
-* Multiple Commander implementations (e.g., ScriptCommander — loops CSV waypoint scripts from `flights/`; Extreme3DCommander; SpektrumCommander)
+* Multiple Commander implementations (e.g., the core `WaypointFollower`, which follows and loops any waypoint list; sitl's ScriptCommander, which loads CSV waypoint scripts from `flights/` into a `WaypointFollower`; Extreme3DCommander; SpektrumCommander)
 * Different Vehicle implementations (e.g., RealFlightVehicle)
 * Stabilizer variants for different airframes (e.g., CopterStabilizer). A tailsitter stabilizer for the [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) model is planned but not started.
 * Mixer implementations for various aircraft configurations (e.g., QuadCopterMixer). `TailSitterMixer` is a placeholder: it returns zeroed actuator commands until the tailsitter stabilizer exists.
@@ -82,51 +82,16 @@ Each major component is defined by a trait interface, allowing multiple implemen
 
 ## Real-Time Loop Management
 
-`FlightOrchestrator` (sitl) implements the timing around `FlightLoop::step`:
+`RealTimeRunner` (sitl) implements the timing around `FlightLoop::step`:
 
-* Operates at a fixed frequency (e.g., 250 Hz), set per call to `run(target_frequency)`
-* Calculates and applies sleep durations to maintain consistent timing
-* Passes delta time values to components for time-dependent calculations
-* Handles SIGINT (Unix) / Ctrl-C (Windows) for graceful shutdown
+* Operates at a fixed frequency (e.g., 250 Hz) validated at construction (`RealTimeRunner::new` rejects non-positive or non-finite rates and ones whose period isn't a representable non-zero `Duration`)
+* Primes the loop, then steps it with the nominal period and sleeps to the next accumulated deadline
+* Checks the `ShutdownSignal` before each tick; SIGINT (Unix) / Ctrl-C or Ctrl-Break (Windows) set it once installed, and a second interrupt terminates the process
+* Catches up after a slow tick: deadlines accumulate, so missed ticks run back-to-back (resync-on-stall is a planned follow-up)
+* Returns `RunStats` (ticks, elapsed, average rate)
 
 ## Configuration Example
 
-The following example demonstrates how the components can be configured for a quadcopter in the RealFlight simulator:
-
-```rust
-// Configure joystick commander (defaults to Attitude mode)
-let commander = Extreme3DCommander::new()
-    .expect("Failed to create Extreme3D commander");
-
-// Configure RealFlight simulator interface
-let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-    bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
-    mapping: ActuatorMapping {
-        motors: [Some(2), Some(0), Some(1), Some(3), None, None, None, None],
-        ..Default::default()
-    },
-});
-
-// Cascaded PID stabilizer for multirotors
-let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
-
-// Mixer for quadcopter configuration
-let mixer = QuadCopterMixer::default();
-
-// Telemetry via MAVLink protocol
-let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
-
-// Assemble the orchestrator with all components
-let mut orchestrator = FlightOrchestrator::new(
-    commander,
-    vehicle,
-    stabilizer,
-    mixer,
-    telemetry,
-);
-
-// Run the control loop at 250 Hz
-orchestrator.run(250.0);
-```
+Wiring a quadcopter in RealFlight means choosing one implementation per trait (e.g. `Extreme3DCommander` or `ScriptCommander`, `RealFlightVehicle`, `CopterStabilizer`, `QuadCopterMixer`, `MavlinkPublisher`), assembling them into a `FlightLoop`, and handing it to a `RealTimeRunner` with a `ShutdownSignal`. The runnable code lives in the [`stable-flight-sitl` README](crates/stable-flight-sitl/README.md#running-the-loop) and `crates/stable-flight-sitl/examples/copter-*-realflight.rs`.
 
 This architecture's modularity allows for easy testing with different components while maintaining the same core stabilization loop, making it ideal for iterative flight control system development.

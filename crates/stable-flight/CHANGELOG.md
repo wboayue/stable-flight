@@ -21,5 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `step(dt)` (commander → estimate → stabilize → mix → actuate → telemetry), with
   `prime()` for the initial `Duration::ZERO` estimate and stabilizer priming. No
   clock, threads, or signals; runners decide when to step. Allocation-free.
+- `commanders::WaypointFollower<W: AsRef<[WaypointCommand]>>`: a `Commander` that
+  follows and loops a waypoint list by horizontal acceptance radius (default
+  `DEFAULT_ACCEPTANCE_RADIUS`, 3 m; `with_acceptance_radius` to override).
+  Works over an array, `&'static` slice, or `Vec`, and never allocates, so
+  waypoint flight can run on firmware. `new` returns `EmptyWaypoints` for an
+  empty list.
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight
