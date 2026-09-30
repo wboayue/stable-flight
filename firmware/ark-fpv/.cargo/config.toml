@@ -1,0 +1,9 @@
+# Applies only when cargo runs from this directory (config is found from the cwd, not
+# `--manifest-path`), so build from here: `cd firmware/ark-fpv && cargo build --release`.
+[build]
+target = "thumbv7em-none-eabihf"
+
+[target.thumbv7em-none-eabihf]
+rustflags = [
+  "-C", "link-arg=-Tlink.x",
+]
