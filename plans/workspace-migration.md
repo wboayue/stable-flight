@@ -16,7 +16,7 @@ otherwise do it in the next PR.
 | PR 1 — Convert to workspace | ✅ #43 |
 | architecture-refactor PRs 1–4, 6 (see that plan) | ✅ #44, #50, #46, #47, #48 |
 | PR 2a — core crate + `FlightLoop` | ✅ #52 |
-| PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | 🔍 (this PR) |
+| PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | 🔍 #53 |
 | PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | ⬜ |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
