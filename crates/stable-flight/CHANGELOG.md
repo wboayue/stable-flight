@@ -60,5 +60,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without corrupting the controller state or kicking the derivative afterwards.
   A heading-hold target that is NaN (e.g. primed from a NaN estimate) re-latches
   from the next valid estimate instead of disabling heading hold.
+- No per-tick input can panic the flight loop any more (see architecture.md,
+  "Input Policy"):
+  - `QuadCopterMixer::mix` saturates thrust to [0, 1] and moments to [-1, 1] (NaN →
+    0) instead of asserting; rate-mode throttle, which was never clamped, used to
+    reach this assert.
+  - `CopterStabilizer` saturates attitude-command throttle and yaw instead of
+    asserting (roll and pitch saturate in the attitude controller).
+  - `BodyRateController::control` returns zero moments on non-finite desired or
+    estimated rates instead of panicking.
+  - `AttitudeController::control` returns zero rates on a non-finite error.
+
+  Both controllers skip the derivative on the first finite tick after a
+  non-finite one.
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight

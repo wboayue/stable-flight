@@ -1,4 +1,5 @@
-use crate::stabilizers::{Gains, wrap_angle};
+use crate::math::wrap_angle;
+use crate::stabilizers::Gains;
 
 /// Configures the yaw controller with PID gains and operational limits.
 ///
@@ -667,24 +668,6 @@ mod tests {
         // Without the reset, D would add 0.5 * (0.3 - 0.8) / 0.01 = -25 rad/s.
         let fresh = YawController::with_config(&config).control(0.01, 0.5, 0.2);
         assert_relative_eq!(after_gap, fresh);
-    }
-
-    #[test]
-    fn wrap_angle_maps_into_minus_pi_to_pi() {
-        // (angle, wrapped)
-        let cases = [
-            (0.0, 0.0),
-            (PI / 2.0, PI / 2.0),
-            (PI, -PI),
-            (-PI, -PI),
-            (3.0 * PI / 2.0, -PI / 2.0),
-            (-3.0 * PI / 2.0, PI / 2.0),
-            (4.0 * PI + 0.25, 0.25),
-        ];
-        for (angle, wrapped) in cases {
-            assert_relative_eq!(wrap_angle(angle), wrapped, epsilon = 1e-5);
-        }
-        assert!(wrap_angle(f32::NAN).is_nan());
     }
 
     /// Tests that output rate is properly limited to max_rate.

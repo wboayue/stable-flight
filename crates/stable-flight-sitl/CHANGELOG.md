@@ -107,8 +107,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Scripted (waypoint) flights no longer crash the loop when the vehicle is far
-  from the active waypoint, and joystick flights no longer crash after holding
-  yaw for a few minutes; see the `stable-flight` changelog.
+  from the active waypoint, joystick flights no longer crash after holding yaw
+  for a few minutes, and out-of-range stick input or a NaN estimate no longer
+  crashes the loop; see the `stable-flight` changelog.
+- `SpectrumCommander` clamps its scaled channels to [0, 1]; the configured
+  ranges are narrower than the sticks' travel, so values overshot to ~1.2.
 - A failure to register the SIGINT handler is now returned from
   `ShutdownSignal::install` instead of panicking on a background thread. The
   Windows console handler no longer uses a `static mut` raw pointer.

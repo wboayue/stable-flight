@@ -58,6 +58,17 @@ sequenceDiagram
     FlightLoop->>TelemetryPublisher: publish(TelemetryRecord)
 ```
 
+## Input Policy (no panics in the tick)
+
+Nothing that runs every tick panics on its inputs. Stabilizers, controllers, and mixers:
+
+* **Saturate** out-of-range normalized commands (roll/pitch/yaw and moments to [-1, 1], throttle and thrust to [0, 1]). A controller that produces a normalized command saturates its output; one that consumes it saturates its input too.
+* Treat a **NaN command as neutral** (level, no rate, no thrust).
+* Return **zero output on a non-finite error** (NaN/∞ setpoint or estimate), without letting it into integral or derivative state; the first finite tick afterwards has no derivative kick.
+* **Wrap angles** to [-π, π) instead of range-checking them.
+
+Only construction-time config validation and `dt > 0` (guaranteed by the runners) are asserted. The helpers live in the core's crate-private `math` module.
+
 ## Design Patterns
 
 ### Dependency Injection

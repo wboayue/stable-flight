@@ -19,7 +19,8 @@ otherwise do it in the next PR.
 | PR 2b — `ShutdownSignal` / `RealTimeRunner`, `WaypointFollower` | ✅ #53 |
 | PR 2c — `ComposedVehicle`, tuple telemetry, `testing` feature | ✅ #54 |
 | Fix — attitude-controller panic in waypoint mode (found in 2b) | ✅ #55 |
-| Fix — unwrapped heading target → yaw panic in attitude mode (found in #55 review) | 🔍 #56 |
+| Fix — unwrapped heading target → yaw panic in attitude mode (found in #55 review) | ✅ #56 |
+| Fix — remaining per-tick panics (mixer, attitude-command, body-rate; Spektrum clamp) | 🔍 (this PR) |
 | PR 3 — Split RealFlight into its own backend crate | ⬜ |
 | PR 4 — Make core `no_std` | ⬜ |
 | architecture-refactor PR 7 — split `Stabilizer` | ⬜ (before publishing core) |
@@ -360,7 +361,8 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
             `angle_diff` tests merged into a table.
         - Review follow-ups:
           - Own PR: attitude returns zero rates on non-finite input (like yaw), and document
-            the NaN contract once; document the `VehicleState::heading` range.
+            the NaN contract once (**done in the remaining-panics PR**); document the
+            `VehicleState::heading` range (still open).
           - Own PR or refactor PR 7: make the heading slew rate depend on `dt`, not
             `HEADING_STEP_PER_TICK`.
           - Refactor PR 7: yaw state carries across mode switches, `self.heading` goes stale
@@ -373,6 +375,28 @@ and location changes. If the PR gets too big, split it into 2a (move + `FlightLo
     - Still open (not in scope): `max_angles`-scaled `accel / g` is a simplified tilt
       model, and `LateralControllerConfig::max_rate` is unused. Revisit with refactor PR 7
       (guidance/inner-loop split).
+- **Remaining per-tick panics, fixed together (see Status):**
+  - `QuadCopterMixer::mix` range asserts. Rate-mode throttle was never clamped, and NaN
+    moments fail every range check.
+  - `process_attitude_command` range asserts, reachable through the Spektrum commander's
+    unclamped channels.
+  - `BodyRateController` non-finite asserts.
+  - Fixes:
+    - Saturation helpers (`saturate_unit`/`_vec2`, new `saturate_throttle`, and
+      `wrap_angle`) moved to a crate-private core `math` module, so the mixer doesn't
+      import from `stabilizers`. The module doc states the input policy once, and
+      architecture.md "Input Policy" owns it for readers.
+    - Attitude and body-rate return zero output on a non-finite error, with a private
+      `resync_derivative` flag, so the first finite tick after a gap has no derivative
+      kick. `BodyRateController::last_error` stays `pub`, so there's no API change.
+    - Spektrum `scale_value` is clamped.
+    - Panic-expecting tests are rewritten as "saturates like its in-range equivalent"
+      tables. New stabilizer regression tests reproduce the original mixer/attitude and
+      body-rate panics when run against `main`.
+  - **Found, not fixed (own PR, needs the transmitter):** `SpectrumCommander` maps
+    roll/pitch/yaw to [0, 1] centred at 0.5, but `AttitudeCommand` expects [-1, 1] centred
+    at 0, so centred sticks command a constant bank. It needs `2·x − 1` (and a check of
+    each axis's sign) validated on the real transmitter.
 
 2c as implemented:
 - Core `composition` module:
