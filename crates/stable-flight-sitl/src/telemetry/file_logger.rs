@@ -82,7 +82,7 @@ impl TelemetryPublisher for FileLogger {
         };
 
         // Simulate generating 10 HEARTBEAT messages with a 1-second interval
-        for i in 0..10 {
+        for _ in 0..10 {
             // Create a HEARTBEAT message
             let heartbeat = HEARTBEAT_DATA {
                 mavtype: MavType::MAV_TYPE_QUADROTOR,

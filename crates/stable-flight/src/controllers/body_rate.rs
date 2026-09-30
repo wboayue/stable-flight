@@ -205,16 +205,16 @@ mod tests {
 
     use super::*;
 
-    /// Test suite for the BodyRateController.
-    ///
-    /// These tests verify the controller's behavior in:
-    /// - Nominal operating conditions
-    /// - Boundary conditions (min/max rates and parameters)
-    /// - Edge cases (small time steps, controller reset)
-    /// - Error handling (invalid inputs)
-    /// - Individual component testing (P, I, D terms)
-    ///
-    /// Most tests follow the Assemble-Activate-Assert pattern for clarity.
+    // Test suite for the BodyRateController.
+    //
+    // These tests verify the controller's behavior in:
+    // - Nominal operating conditions
+    // - Boundary conditions (min/max rates and parameters)
+    // - Edge cases (small time steps, controller reset)
+    // - Error handling (invalid inputs)
+    // - Individual component testing (P, I, D terms)
+    //
+    // Most tests follow the Assemble-Activate-Assert pattern for clarity.
 
     /// Helper function to create a default controller for testing
     fn setup_controller() -> BodyRateController {
@@ -823,7 +823,7 @@ mod table_driven_tests {
     fn test_pid_component_response() {
         // Define test cases: (gains, error, last_error, integral, expected output sign)
         // Each case isolates one component of the PID controller
-        let test_cases = vec![
+        let test_cases = [
             // Test case: P-only
             (
                 "P-only (proportional response)",
@@ -1098,7 +1098,7 @@ mod table_driven_tests {
     #[test]
     fn test_integral_clamping_table() {
         // Define test cases: (max_integral, dt, error, num_iterations, expected_integral)
-        let test_cases = vec![
+        let test_cases = [
             // max_integral, dt, error, iterations, expected_integral (clamped)
             (0.1, 0.1, 1.0, 10, 0.1), // Should reach max and clamp (1.0 * 0.1 * 10 = 1.0 > 0.1)
             (0.5, 0.1, 1.0, 3, 0.3), // Should accumulate but not reach max (1.0 * 0.1 * 3 = 0.3 < 0.5)
@@ -1107,9 +1107,7 @@ mod table_driven_tests {
             (0.01, 0.01, 5.0, 1, 0.01), // Large error, small dt, hits max in one iteration
         ];
 
-        for (i, (max_integral, dt, error_value, iterations, expected_integral)) in
-            test_cases.iter().enumerate()
-        {
+        for (max_integral, dt, error_value, iterations, expected_integral) in test_cases.iter() {
             // Create a controller with the specified max_integral
             let mut controller = BodyRateController::new();
             controller.max_integral = *max_integral;

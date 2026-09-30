@@ -10,6 +10,11 @@ build:
 test:
     cargo test --workspace --all-features
 
+# Clippy and rustdoc with warnings as errors (as CI does)
+lint:
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+
 # Builds the no_std core for a bare-metal target, with and without `testing`, and the firmware (as CI does)
 embedded: && fw-build
     rustup target add thumbv7em-none-eabihf

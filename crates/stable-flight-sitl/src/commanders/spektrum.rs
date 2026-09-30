@@ -11,8 +11,6 @@ use stable_flight::{AttitudeCommand, Command, Commander, VehicleState};
 pub struct SpectrumCommander {
     gilrs: RefCell<Gilrs>,
     active_gamepad: RefCell<Option<GamepadId>>,
-    // control channels
-    channels: RefCell<[f32; 6]>,
 }
 
 impl SpectrumCommander {
@@ -20,7 +18,6 @@ impl SpectrumCommander {
         SpectrumCommander {
             gilrs: RefCell::new(Gilrs::new().expect("Failed to initialize Gilrs")),
             active_gamepad: RefCell::new(None),
-            channels: RefCell::new([0.0; 6]),
         }
     }
 
