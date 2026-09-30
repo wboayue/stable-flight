@@ -32,7 +32,7 @@ the **Follow-up backlog** in `plans/workspace-migration.md` (one list for both p
 | 5 | Rename `simulators/` module to `vehicles/`    | Mechanical move   | Low    | ⏭ workspace PR 3 |
 | 6 | Decouple `TelemetryPublisher` from `Command`  | Trait surface     | Medium | ✅ #48 |
 | 7 | Split `Stabilizer` into guidance + inner loop | Architecture      | High   | ✅ #60 |
-| 7.5 | Guidance rate divider                       | Behaviour         | Medium | ⬜ |
+| 7.5 | Guidance rate divider                       | Behaviour         | Medium | 🔍 #61 |
 
 PRs 1–4, 6, and 7 are merged. For future stacked PRs, use CLAUDE.md's
 stacked-PR procedure: retarget the child to `main` before merging its parent.

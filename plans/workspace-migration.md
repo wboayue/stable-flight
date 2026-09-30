@@ -44,7 +44,7 @@ otherwise do it in the next PR.
 | Fix — RealFlight frame conversions: double radians, down-positive vertical (found in PR 3) | ⬜ |
 | PR 4 — Make core `no_std` | ✅ #59 |
 | architecture-refactor PR 7 — split `Stabilizer` | ✅ #60 |
-| architecture-refactor PR 7.5 — guidance rate divider | ⬜ |
+| architecture-refactor PR 7.5 — guidance rate divider | 🔍 #61 |
 
 ## Follow-up backlog
 
