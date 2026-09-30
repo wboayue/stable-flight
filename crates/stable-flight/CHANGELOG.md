@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Guidance`, `Stabilizer`, `Mixer`, `TelemetryPublisher`), their data types
   (`Command` and its variants, `Setpoint` and its variants, `VehicleState`,
   `ControlOutput`, `ActuatorCommand`, `TelemetryRecord`), the `guidance` module
-  (`CopterGuidance`), the `stabilizers` module (`CopterStabilizer`, PID
-  `controllers`, `Gains`), and the `mixers` module (`QuadCopterMixer`,
+  (`CopterGuidance`), the `stabilizers` module (`CopterStabilizer`), the
+  `controllers` module (PID controllers and `Gains`, formerly
+  `stabilizers::controllers` and `stabilizers::Gains`), and the `mixers` module (`QuadCopterMixer`,
   placeholder `TailSitterMixer`). Earlier history of these items is in the
   `stable-flight-sitl` changelog.
 - `FlightLoop`: owns the six pipeline components and runs one control tick per
@@ -72,7 +73,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FlightLoop::new` between the vehicle and the stabilizer. Flight behaviour is
   unchanged: the guidance + stabilizer pair matches the old stabilizer bit for bit.
 - `CopterStabilizer`'s thrust curve saturates its input (NaN → 0), so it meets the
-  input policy itself instead of relying on callers.
+  input policy itself instead of relying on callers. No change for the built-in
+  flight modes, which already saturated; only a custom `Guidance` sending
+  out-of-range thrust sees it.
+- `Guidance::prime` and `Stabilizer::prime` default to doing nothing.
+- **Breaking:** `CopterStabilizer`'s controller and `max_rates` fields are no
+  longer public, and `CopterStabilizer::config` is gone (it was a stale copy).
+- **Breaking:** the PID controllers and `Gains` moved from
+  `stabilizers::controllers`/`stabilizers` to `controllers`, since guidance uses
+  them too (`use stable_flight::controllers::{Gains, AttitudeController, …}`).
 
 ### Fixed
 
@@ -99,8 +108,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `QuadCopterMixer::mix` saturates thrust to [0, 1] and moments to [-1, 1] (NaN →
     0) instead of asserting; rate-mode throttle, which was never clamped, used to
     reach this assert.
-  - `CopterStabilizer` saturates attitude-command throttle and yaw instead of
-    asserting (roll and pitch saturate in the attitude controller).
+  - Attitude-command throttle and yaw saturate instead of asserting: yaw in
+    `CopterGuidance`, throttle in `CopterStabilizer`'s thrust curve, roll and pitch
+    in the attitude controller.
   - `BodyRateController::control` returns zero moments on non-finite desired or
     estimated rates instead of panicking.
   - `AttitudeController::control` returns zero rates on a non-finite error.

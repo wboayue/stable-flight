@@ -2,18 +2,17 @@
 //!
 //! Gains belong to the simulated airframe, not to an example: each function returns an
 //! [`Airframe`] with the guidance and stabilizer configurations, the mixer, and the channel
-//! mapping for one
-//! model, so examples (and any other wiring) share one tuned set.
+//! mapping for one model, so examples (and any other wiring) share one tuned set.
 
 use std::f32::consts::PI;
 
 use robomath::{vec2, vec3};
-use stable_flight::guidance::copter::CopterGuidanceConfig;
-use stable_flight::mixers::QuadCopterMixer;
-use stable_flight::stabilizers::Gains;
-use stable_flight::stabilizers::controllers::{
+use stable_flight::controllers::Gains;
+use stable_flight::controllers::{
     AttitudeController, AttitudeControllerConfig, BodyRateController, BodyRateControllerConfig,
 };
+use stable_flight::guidance::copter::CopterGuidanceConfig;
+use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 
 use crate::ActuatorMapping;

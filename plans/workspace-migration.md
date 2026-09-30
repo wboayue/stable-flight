@@ -66,9 +66,11 @@ the PR that completes it. The per-PR notes further down keep the history.
 | Yaw: controller state carries across mode switches, and `CopterGuidance`'s heading-hold target goes stale in waypoint mode (waypoints hold north). The absolute-heading path exists since refactor PR 7 (`AttitudeSetpoint::heading`). | own PR (behaviour change) | #56 review |
 | Heading slew rate is per tick (`HEADING_STEP_PER_TICK`, now in `CopterGuidance`); make it `dt`-based. Needed before the guidance rate divider. | own PR or refactor PR 7.5 | #56 review |
 | Lateral: `accel / g` scaled by `max_angles` is a simplified tilt model; `LateralControllerConfig::max_rate` is unused. | own PR (deferred from refactor PR 7) | #55 |
-| Remove `AttitudeReference`: once RealFlight's Euler fields match its quaternion, `CopterStabilizer` reads one representation for every setpoint. Retune in the same flight check. | frame-fix PR | refactor PR 7 |
-| Guidance rate divider (e.g. guidance at 50 Hz, inner loop at 250 Hz), with a `dt`-based heading slew first. | refactor PR 7.5 | refactor PR 7 |
-| `altitude`/`lateral` controllers live in `stabilizers::controllers` but only `CopterGuidance` uses them; move them next to guidance. | Later | refactor PR 7 |
+| Remove `AttitudeReference`: once RealFlight's Euler fields match its quaternion, `CopterStabilizer` reads one representation for every setpoint. Retune in the same flight check. Blocks publishing `stable-flight`: it's a backend bug in the public API, and its `Euler` default is the RealFlight-broken source. | frame-fix PR | refactor PR 7 (#60) |
+| `AttitudeSetpoint` roll/pitch are a fraction of the stabilizer's `max_angles`, so retuning `max_angles` rescales the lateral loop's gain. Carry radians and let the stabilizer clamp (with the lateral tilt model row). Breaking; do it before publishing. | own PR, before publishing core | #60 review |
+| `#[non_exhaustive]` on `Setpoint` and `Command`, and document the fallback for a variant a stabilizer can't fly (neutral, never panic), so a fixed-wing variant isn't breaking. | own PR, before publishing core | #60 review |
+| `impl From<&RateCommand> for RateSetpoint` (same four fields; every guidance copies them). | Later | #60 review |
+| Guidance rate divider (e.g. guidance at 50 Hz, inner loop at 250 Hz), with a `dt`-based heading slew first. Put it inside `CopterGuidance`'s waypoint branch, not `FlightLoop`, so stick commands aren't decimated (~20 ms latency). | refactor PR 7.5 | refactor PR 7 (#60) |
 | `ConsoleTelemetryPublisher` logs `info!` every tick (its whole output; `debug!` would hide it by default). | own PR | #48 review |
 | `RealTimeRunner` replays missed ticks back-to-back after a stall; resync instead and count overruns in `RunStats`. | own PR or lockstep runner | #53 review |
 | `Runner` trait, once a second runner exists. | Later | #53 review |
@@ -78,7 +80,7 @@ the PR that completes it. The per-PR notes further down keep the history.
 | Measured timestamp/overrun field on `TelemetryRecord`, so rate-bucketed publishers don't drift. | Later | #48 review |
 | `FileLogger::publish` writes 10 heartbeats with 1 s sleeps per tick (a stub); a failed packet write after the timestamp truncates the `.tlog` frame. | own PR | #45/#50 reviews |
 | `MavlinkPublisher::new`, `FileLogger::new`, and the joystick commanders' `Default` impls `.expect()` at construction; return `Result`. `MavlinkPublisher` is untestable against a failing connection until then. | own PR | #50 review |
-| `stabilizers::low_pass_filter_vec3` is public but unused. | own PR | #44 review |
+| `controllers::low_pass_filter_vec3` is public but unused. | own PR | #44 review |
 | CLAUDE.md's trait block and impl table repeat `lib.rs` / architecture.md; point to them instead. | docs PR | #44, #46, #47 reviews |
 | `Commander`/`Mixer` combinators; keep `TelemetryPublisher` impls opt-in (no blanket impl) so the tuple impl stays coherent. | Later | #54 review |
 | Replace `robomath` with `nalgebra` (0.35, `default-features = false, features = ["libm"]`). fusion-nav/fusion-ahrs already use it, so the fusion-nav `StateEstimator` adapter would otherwise convert every tick; `UnitQuaternion` also adds vector rotation, which robomath lacks. Breaking: `VehicleState`, `WaypointCommand`, and controller configs expose the types. Alias types in core, re-export `stable_flight::nalgebra`. Traps: `from_euler(yaw, pitch, roll)` → `from_euler_angles(roll, pitch, yaw)`, `roll()/pitch()/yaw()` → `euler_angles()`, `rotation_matrix_i_wrt_b` direction; conformance suite guards them. Check `just embedded`. | own PR, before or with the fusion-nav adapter | robomath review (chat) |
@@ -726,7 +728,7 @@ disappears and backends become crates. Suggested order:
    before `ComposedVehicle` (workspace PR 2): it fixes the `StateEstimator`/`Actuator`
    signatures that `ComposedVehicle` composes, and `Vehicle` is the backend contract.
 3. ✅ Workspace PRs 2–4 (2a–2c, 3, 4 merged; #59).
-4. ⬜ Refactor PR 7 before publishing `stable-flight` 0.1.0.
+4. 🔍 Refactor PR 7 (#60) before publishing `stable-flight` 0.1.0.
 
 ## Checklist per PR
 

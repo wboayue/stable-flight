@@ -37,8 +37,7 @@ use crate::{
     VehicleState,
 };
 
-use super::Gains;
-use super::controllers::*;
+use crate::controllers::*;
 use crate::math::{saturate_throttle, saturate_unit};
 
 #[cfg(test)]
@@ -98,14 +97,14 @@ impl Default for CopterStabilizerConfig {
 /// assert_eq!(output.thrust, 0.25); // 0.5 through the default quadratic thrust curve
 /// ```
 pub struct CopterStabilizer {
-    pub config: CopterStabilizerConfig,
+    pub(crate) attitude_controller: AttitudeController,
+    pub(crate) rates_controller: BodyRateController,
+    pub(crate) yaw_controller: YawController,
 
-    pub attitude_controller: AttitudeController,
-    pub rates_controller: BodyRateController,
-    pub yaw_controller: YawController,
+    /// Maximum angular rates (roll, pitch, yaw) in rad/s that a full-scale rate setpoint maps to.
+    pub(crate) max_rates: Vec3<f32>,
 
-    // Maximum angular rates (roll, pitch, yaw) in rad/s.
-    pub max_rates: Vec3<f32>,
+    thrust_curve_exponent: f32,
 }
 
 impl CopterStabilizer {
@@ -116,8 +115,6 @@ impl CopterStabilizer {
     /// * `config` - Configuration for the controller, including PID gains and thrust curve exponent.
     pub fn new(config: CopterStabilizerConfig) -> Self {
         CopterStabilizer {
-            config: config.clone(),
-
             rates_controller: config.rates_controller,
             attitude_controller: config.attitude_controller,
 
@@ -129,6 +126,7 @@ impl CopterStabilizer {
             }),
 
             max_rates: vec3(3.0, 3.0, 3.0), // default max rates
+            thrust_curve_exponent: config.thrust_curve_exponent,
         }
     }
 }
@@ -157,9 +155,6 @@ impl Stabilizer for CopterStabilizer {
             Setpoint::Rate(rates) => self.track_rates(dt, rates, estimated_state),
         }
     }
-
-    /// Nothing to warm: the heading-hold target lives in guidance.
-    fn prime(&mut self, _state: &VehicleState) {}
 }
 
 impl CopterStabilizer {
@@ -281,9 +276,8 @@ impl CopterStabilizer {
     ///
     /// Nonlinear thrust command (0.0 to 1.0).
     fn fit_to_thrust_curve(&self, linear_thrust: f32) -> f32 {
-        let thrust_curve_exponent = self.config.thrust_curve_exponent;
-        // Apply nonlinear thrust curve with tunable exponent
-        let nonlinear_thrust = libm::powf(saturate_throttle(linear_thrust), thrust_curve_exponent);
+        let nonlinear_thrust =
+            libm::powf(saturate_throttle(linear_thrust), self.thrust_curve_exponent);
         nonlinear_thrust.clamp(0.0, 1.0)
     }
 }

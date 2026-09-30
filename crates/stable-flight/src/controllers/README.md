@@ -28,7 +28,7 @@ Position Commands → Lateral Controller → Attitude Controller → Body Rate C
 
 **Usage**:
 ```rust
-use stable_flight::stabilizers::controllers::{BodyRateController, BodyRateControllerConfig};
+use stable_flight::controllers::{BodyRateController, BodyRateControllerConfig};
 use std::time::Duration;
 use robomath::vec3;
 
@@ -55,7 +55,7 @@ let moments = controller.control(dt, desired_rates, estimated_rates);
 
 **Usage**:
 ```rust
-use stable_flight::stabilizers::controllers::{AttitudeController, AttitudeControllerConfig};
+use stable_flight::controllers::{AttitudeController, AttitudeControllerConfig};
 use std::time::Duration;
 use robomath::vec2;
 
@@ -82,7 +82,7 @@ let angular_rates = controller.control(dt, desired_angles, estimated_angles);
 
 **Usage**:
 ```rust
-use stable_flight::stabilizers::controllers::{YawController, YawControllerConfig};
+use stable_flight::controllers::{YawController, YawControllerConfig};
 use std::time::Duration;
 use std::f32::consts::PI;
 
@@ -109,7 +109,7 @@ let yaw_rate = controller.control(dt, desired_yaw, estimated_yaw);
 
 **Usage**:
 ```rust
-use stable_flight::stabilizers::controllers::{AltitudeController, AltitudeControllerConfig};
+use stable_flight::controllers::{AltitudeController, AltitudeControllerConfig};
 use std::time::Duration;
 use robomath::Quaternion;
 
@@ -146,7 +146,7 @@ let thrust = controller.control(
 
 **Usage**:
 ```rust
-use stable_flight::stabilizers::controllers::{LateralController, LateralControllerConfig};
+use stable_flight::controllers::{LateralController, LateralControllerConfig};
 use std::time::Duration;
 use robomath::vec2;
 
@@ -164,7 +164,7 @@ let angles = controller.control(dt, desired_position, estimated_position, estima
 All controllers support custom configuration through their respective `Config` structs:
 
 ```rust
-use stable_flight::stabilizers::{Gains, controllers::*};
+use stable_flight::controllers::{Gains, *};
 
 // Custom PID gains
 let gains = Gains { p: 2.0, i: 0.1, d: 0.5 };

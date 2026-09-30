@@ -21,6 +21,7 @@
 
 pub mod commanders;
 pub mod composition;
+pub mod controllers;
 pub mod flight_loop;
 pub mod guidance;
 mod math;
@@ -628,9 +629,9 @@ pub trait Actuator {
 /// What the [`Stabilizer`] should hold this tick, as produced by a [`Guidance`].
 ///
 /// A [`Command`] says what the operator or mission wants (stick positions, a waypoint);
-/// a `Setpoint` is the inner-loop target derived from it. Values are normalized: the
-/// stabilizer owns the physical limits (maximum tilt and rates) and the thrust curve, and
-/// saturates out-of-range or NaN inputs per the input policy.
+/// a `Setpoint` is the inner-loop target derived from it. Values other than the absolute
+/// heading are normalized: the stabilizer owns the physical limits (maximum tilt and rates)
+/// and the thrust curve, and saturates out-of-range or NaN inputs per the input policy.
 ///
 /// # Examples
 ///
@@ -670,7 +671,8 @@ pub struct AttitudeSetpoint {
 /// For an estimator that meets the [frame contract](VehicleState#frame-contract) the two are
 /// equivalent. The choice exists because the RealFlight backend's Euler fields don't yet
 /// (they are converted to radians twice) while its quaternion does, and each flight mode was
-/// tuned against the representation it reads. It goes away with that backend's frame fix.
+/// tuned against the representation it reads. It goes away with that backend's frame fix,
+/// before this crate's first release; don't build on it.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum AttitudeReference {
     /// `roll`, `pitch`, and `heading`. Used for piloted attitude flight.
@@ -699,13 +701,14 @@ pub struct RateSetpoint {
 ///
 /// Guidance is the outer loop: waypoint navigation (position and altitude hold), and the
 /// interpretation of pilot sticks that needs memory, such as integrating yaw stick into a
-/// heading-hold target. The [`Stabilizer`] then tracks the setpoint. Keeping the two apart
-/// lets them run at different rates later (guidance is conventionally ~50 Hz, the inner loop
-/// ~250 Hz); today [`FlightLoop`] runs both every tick.
+/// heading-hold target. The [`Stabilizer`] then tracks the setpoint. [`FlightLoop`] runs both
+/// every tick; why they are split is in the
+/// [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md#core-components).
 ///
 /// # Examples
 ///
-/// A guidance that flies rate commands through unchanged and levels out otherwise:
+/// A guidance that flies rate commands through unchanged, and otherwise levels out with
+/// thrust cut:
 ///
 /// ```
 /// use stable_flight::{AttitudeSetpoint, Command, Guidance, RateSetpoint, Setpoint, VehicleState};
@@ -727,8 +730,6 @@ pub struct RateSetpoint {
 ///             }),
 ///         }
 ///     }
-///
-///     fn prime(&mut self, _state: &VehicleState) {}
 /// }
 /// ```
 pub trait Guidance {
@@ -736,7 +737,8 @@ pub trait Guidance {
     ///
     /// # Parameters
     ///
-    /// - `dt`: Time elapsed since the last guidance step in seconds.
+    /// - `dt`: Time elapsed since the last guidance step in seconds. Must be positive;
+    ///   implementations may assert it (runners guarantee it).
     /// - `command`: The commander's current command.
     /// - `state`: The current estimated state of the vehicle.
     fn guide(&mut self, dt: f32, command: &Command, state: &VehicleState) -> Setpoint;
@@ -744,8 +746,9 @@ pub trait Guidance {
     /// Primes guidance from a known-good vehicle state before the first tick.
     ///
     /// Warms internal state (e.g. the heading-hold target) so guidance starts from where the
-    /// vehicle is rather than from zero. Called once before the control loop starts.
-    fn prime(&mut self, state: &VehicleState);
+    /// vehicle is rather than from zero. Called once before the control loop starts. The
+    /// default does nothing.
+    fn prime(&mut self, _state: &VehicleState) {}
 }
 
 /// Component responsible for flight control and stabilization: the inner loop.
@@ -764,7 +767,8 @@ pub trait Stabilizer {
     ///
     /// # Parameters
     ///
-    /// - `dt`: Time elapsed since the last control step in seconds.
+    /// - `dt`: Time elapsed since the last control step in seconds. Must be positive;
+    ///   implementations may assert it (runners guarantee it).
     /// - `setpoint`: The attitude or rate target to track.
     /// - `state`: The current estimated state of the vehicle.
     ///
@@ -777,8 +781,8 @@ pub trait Stabilizer {
     ///
     /// Warms internal state (e.g. integrators or filters) so control starts from where the
     /// vehicle is rather than from zero. Called once before the control loop starts, after
-    /// [`Guidance::prime`].
-    fn prime(&mut self, state: &VehicleState);
+    /// [`Guidance::prime`]. The default does nothing.
+    fn prime(&mut self, _state: &VehicleState) {}
 }
 
 /// Component responsible for publishing telemetry data from the flight system.

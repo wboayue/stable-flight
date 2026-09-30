@@ -60,7 +60,8 @@ impl Actuator for RecordingVehicle {
     }
 }
 
-/// Passes attitude-command throttle through as setpoint thrust.
+/// Doubles attitude-command throttle into setpoint thrust, so the logs tell the command, the
+/// setpoint, and the control output apart.
 struct RecordingGuidance {
     log: Log,
 }
@@ -74,7 +75,7 @@ impl Guidance for RecordingGuidance {
             attitude.throttle, state.heading
         ));
         Setpoint::Attitude(AttitudeSetpoint {
-            thrust: attitude.throttle,
+            thrust: 2.0 * attitude.throttle,
             ..Default::default()
         })
     }
@@ -98,7 +99,7 @@ impl Stabilizer for RecordingStabilizer {
             "stabilize dt={dt} thrust={} heading={}",
             attitude.thrust, state.heading
         ));
-        ControlOutput::new(attitude.thrust, vec3(0.0, 0.0, 0.0))
+        ControlOutput::new(attitude.thrust + 0.25, vec3(0.0, 0.0, 0.0))
     }
 
     fn prime(&mut self, state: &VehicleState) {
@@ -129,8 +130,16 @@ struct LogTelemetry {
 impl TelemetryPublisher for LogTelemetry {
     fn publish(&mut self, record: &TelemetryRecord) {
         self.log.borrow_mut().push(format!(
-            "publish dt={} heading={} thrust={} motor0={}",
+            "publish dt={} throttle={} setpoint_thrust={} heading={} thrust={} motor0={}",
             record.dt.as_secs_f32(),
+            match record.command {
+                Command::Attitude(attitude) => attitude.throttle,
+                _ => f32::NAN,
+            },
+            match record.setpoint {
+                Setpoint::Attitude(attitude) => attitude.thrust,
+                Setpoint::Rate(rate) => rate.thrust,
+            },
             record.state.heading,
             record.control.thrust,
             record.actuators.motors[0]
@@ -204,10 +213,10 @@ fn step_runs_the_pipeline_in_order_and_publishes_the_tick() {
                 "estimate dt=0.004",
                 // Guidance and stabilizer see the fresh estimate (heading 1).
                 "guide dt=0.004 throttle=0.25 heading=1",
-                "stabilize dt=0.004 thrust=0.25 heading=1",
-                "mix thrust=0.25",
-                "actuate motor0=0.25",
-                "publish dt=0.004 heading=1 thrust=0.25 motor0=0.25",
+                "stabilize dt=0.004 thrust=0.5 heading=1",
+                "mix thrust=0.75",
+                "actuate motor0=0.75",
+                "publish dt=0.004 throttle=0.25 setpoint_thrust=0.5 heading=1 thrust=0.75 motor0=0.75",
             ]
     );
     check!(flight_loop.state().heading == 1.0);

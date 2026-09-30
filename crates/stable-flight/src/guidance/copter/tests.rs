@@ -1,4 +1,4 @@
-use robomath::{Quaternion, vec2};
+use robomath::vec2;
 
 use super::*;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
@@ -25,100 +25,15 @@ impl Stack {
         self.stabilizer.prime(state);
     }
 
-    fn stabilize(&mut self, dt: f32, command: &Command, state: &VehicleState) -> ControlOutput {
+    fn step(&mut self, dt: f32, command: &Command, state: &VehicleState) -> ControlOutput {
         let setpoint = self.guidance.guide(dt, command, state);
         self.stabilizer.stabilize(dt, &setpoint, state)
     }
 }
 
-fn setup_guidance() -> CopterGuidance {
-    CopterGuidance::new(CopterGuidanceConfig {
-        altitude_gains: Gains {
-            p: 3.0,
-            i: 0.3,
-            d: 0.15,
-        },
-        lateral_gains: Gains {
-            p: 1.5,
-            i: 0.15,
-            d: 0.075,
-        },
-    })
-}
-
-// Helper function to create a quaternion representing identity (no rotation)
-fn identity_quaternion() -> Quaternion {
-    //    Quaternion::from_axis_angle(&Vec3::new(0.0, 0.0, 0.0), 0.0)
-    Quaternion {
-        w: 1.0,
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-    }
-}
-
 #[test]
-fn test_altitude_controller_zero_error() {
-    let mut controller = setup_guidance();
-    let dt = 0.01;
-    let desired_altitude = 10.0;
-    let current_altitude = 10.0;
-    let current_velocity = 0.0;
-    let attitude = identity_quaternion();
-
-    let output = controller.altitude_controller.control(
-        dt,
-        desired_altitude,
-        0.0,
-        current_altitude,
-        current_velocity,
-        attitude,
-    );
-
-    // With zero error (altitude and velocity), PID terms should be 0
-    // acceleration_cmd starts at 0 - GRAVITY = -9.81
-    // body_z_alignment = 1 (identity quaternion), so acceleration_cmd = -9.81
-    // Map to linear_thrust:
-    // linear_thrust = 0.5 * (-9.81 + 9.81) / 9.81 = 0 (in old scaling)
-    // In new scaling: linear_thrust = 0.5 * (-9.81 + 9.81) / 9.81 = 0
-    // But we expect hover to be around 0.5 (linear), then nonlinear curve applies
-    // With quadratic curve (exponent = 2.0), expect nonlinear_thrust = 0.5^2 = 0.25
-    // However, since PID terms are 0, we need to ensure hover is correct via integral term or scaling
-
-    // For simplicity, let’s assume the controller is tuned such that hover thrust is ~0.5 (linear)
-    // After quadratic curve (assuming exponent = 2.0), expect 0.5^2 = 0.25
-    let expected_hover_thrust = 0.25; // Adjust based on thrust_curve_exponent
-    // assert!(
-    //     (output - expected_hover_thrust).abs() < 1e-2,
-    //     "Output should be near hover thrust when error is zero, got {}",
-    //     output
-    // );
-}
-
-#[test]
-fn test_altitude_controller_positive_error() {
-    let mut controller = setup_guidance();
-    let dt = 0.01;
-    let desired_altitude = 11.0;
-    let current_altitude = 10.0;
-    let current_velocity = 0.0;
-    let attitude = identity_quaternion();
-
-    let output = controller.altitude_controller.control(
-        dt,
-        desired_altitude,
-        0.0,
-        current_altitude,
-        current_velocity,
-        attitude,
-    );
-
-    //   assert!(output > 0.5, "Thrust should be greater to ascend {}", output);
-}
-
-#[test]
-fn test_lateral_controller_zero_error() {
-    let mut guidance = setup_guidance();
+fn lateral_loop_holds_level_at_the_target() {
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     let dt = 0.01;
     let desired_position = vec2(0.0, 0.0);
     let current_position = vec2(0.0, 0.0);
@@ -138,8 +53,8 @@ fn test_lateral_controller_zero_error() {
 }
 
 #[test]
-fn test_lateral_controller_positive_error() {
-    let mut guidance = setup_guidance();
+fn lateral_loop_tilts_toward_the_target() {
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     let dt = 0.01;
     let desired_position = vec2(1.0, 1.0);
     let current_position = vec2(0.0, 0.0);
@@ -195,6 +110,22 @@ fn commands_map_to_setpoints() {
             }),
         ),
         (
+            // Out-of-range sticks pass through; the stabilizer saturates them.
+            Command::Attitude(AttitudeCommand {
+                throttle: 1.3,
+                roll: 1.5,
+                pitch: -2.0,
+                ..Default::default()
+            }),
+            Setpoint::Attitude(AttitudeSetpoint {
+                roll: 1.5,
+                pitch: -2.0,
+                heading: wrap_angle(0.7),
+                thrust: 1.3,
+                reference: AttitudeReference::Euler,
+            }),
+        ),
+        (
             Command::Attitude(AttitudeCommand {
                 yaw: 1.0,
                 ..Default::default()
@@ -205,8 +136,8 @@ fn commands_map_to_setpoints() {
             }),
         ),
         (
-            // At the waypoint, at rest, level: no tilt, north. The altitude loop has no
-            // gravity feed-forward, so zero error means zero linear thrust.
+            // At the waypoint, at rest, level: no tilt, north. The altitude loop maps zero
+            // error to zero linear thrust (it adds no hover thrust).
             Command::Waypoint(WaypointCommand::default()),
             Setpoint::Attitude(AttitudeSetpoint {
                 roll: 0.0,
@@ -225,9 +156,47 @@ fn commands_map_to_setpoints() {
     }
 }
 
+/// Pins today's mode-switch behaviour (backlog: heading across mode switches). Waypoints hold
+/// north without touching the heading-hold target, so attitude mode resumes the target it
+/// had before the waypoint leg, not the vehicle's current heading.
 #[test]
-fn test_waypoint_control() {
-    let mut controller = Stack::new();
+fn heading_hold_target_survives_a_waypoint_leg() {
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+    let state = VehicleState {
+        heading: 0.7,
+        ..Default::default()
+    };
+    guidance.prime(&state);
+    let yaw_right = Command::Attitude(AttitudeCommand {
+        yaw: 1.0,
+        ..Default::default()
+    });
+    let centred = Command::Attitude(AttitudeCommand::default());
+    let waypoint = Command::Waypoint(WaypointCommand::default());
+    let heading_of = |setpoint: Setpoint| match setpoint {
+        Setpoint::Attitude(attitude) => (attitude.heading, attitude.reference),
+        Setpoint::Rate(_) => {
+            unreachable!("attitude and waypoint commands yield attitude setpoints")
+        }
+    };
+
+    let mut before = 0.0;
+    for _ in 0..10 {
+        before = heading_of(guidance.guide(0.004, &yaw_right, &state)).0;
+    }
+    for _ in 0..10 {
+        let during = heading_of(guidance.guide(0.004, &waypoint, &state));
+        assert!(during == (0.0, AttitudeReference::Quaternion));
+    }
+    let after = heading_of(guidance.guide(0.004, &centred, &state));
+
+    assert!(after == (before, AttitudeReference::Euler));
+    approx::assert_relative_eq!(before, 0.7 + 10.0 * HEADING_STEP_PER_TICK, epsilon = 1e-6);
+}
+
+#[test]
+fn waypoint_at_rest_on_target_yields_no_output() {
+    let mut stack = Stack::new();
     let dt = 0.01;
     let waypoint_command = WaypointCommand {
         position: vec2(0.0, 0.0),
@@ -235,7 +204,7 @@ fn test_waypoint_control() {
     };
     let state = VehicleState::default();
 
-    let output = controller.stabilize(dt, &Command::Waypoint(waypoint_command), &state);
+    let output = stack.step(dt, &Command::Waypoint(waypoint_command), &state);
     assert_eq!(
         output,
         ControlOutput::default(),
@@ -250,9 +219,9 @@ fn distant_waypoint_tilts_toward_target_instead_of_panicking() {
     // (waypoint x, y) relative to a vehicle at rest at the origin
     let targets = [(30.0, 0.0), (-1000.0, 500.0), (0.0, 1e6)];
     for (x, y) in targets {
-        let mut stabilizer = Stack::new();
+        let mut stack = Stack::new();
         let state = VehicleState::default();
-        stabilizer.prime(&state);
+        stack.prime(&state);
         let command = Command::Waypoint(WaypointCommand {
             position: vec2(x, y),
             altitude: 20.0,
@@ -263,7 +232,7 @@ fn distant_waypoint_tilts_toward_target_instead_of_panicking() {
         // First tick: tilt toward the target. In this frame a +x target gives a negative
         // pitch moment and a +y target a positive roll moment (lateral: pitch = -a_x/g,
         // roll = a_y/g).
-        let first = stabilizer.stabilize(0.004, &command, &state);
+        let first = stack.step(0.004, &command, &state);
         if x != 0.0 {
             assert!(
                 first.moments.y.signum() == -x.signum(),
@@ -281,7 +250,7 @@ fn distant_waypoint_tilts_toward_target_instead_of_panicking() {
 
         // Many ticks, so the lateral integral would wind up if it weren't clamped.
         for _ in 0..1_000 {
-            let output = stabilizer.stabilize(0.004, &command, &state);
+            let output = stack.step(0.004, &command, &state);
             assert!(
                 output.thrust.is_finite()
                     && output.moments.x.is_finite()
@@ -301,9 +270,9 @@ fn sustained_yaw_input_keeps_heading_target_wrapped() {
     // (yaw stick, ticks) — enough ticks to pass ±2π several times over if unwrapped
     let cases = [(1.0, 200_000), (-1.0, 200_000)];
     for (yaw, ticks) in cases {
-        let mut stabilizer = Stack::new();
+        let mut stack = Stack::new();
         let state = VehicleState::default();
-        stabilizer.prime(&state);
+        stack.prime(&state);
         let command = Command::Attitude(AttitudeCommand {
             throttle: 0.5,
             yaw,
@@ -312,14 +281,14 @@ fn sustained_yaw_input_keeps_heading_target_wrapped() {
         });
 
         for _ in 0..ticks {
-            let output = stabilizer.stabilize(0.004, &command, &state);
+            let output = stack.step(0.004, &command, &state);
             assert!(output.moments.z.is_finite());
         }
 
         assert!(
-            (-PI..PI).contains(&stabilizer.guidance.heading),
+            (-PI..PI).contains(&stack.guidance.heading),
             "yaw {yaw}: heading target {} escaped [-π, π)",
-            stabilizer.guidance.heading
+            stack.guidance.heading
         );
     }
 }
@@ -342,14 +311,14 @@ fn heading_primed_above_pi_behaves_like_its_wrapped_equivalent() {
     ];
     for (heading, equivalent) in cases {
         let run = |primed: f32| {
-            let mut stabilizer = Stack::new();
+            let mut stack = Stack::new();
             let state = VehicleState {
                 heading: primed,
                 ..Default::default()
             };
-            stabilizer.prime(&state);
+            stack.prime(&state);
             (0..10)
-                .map(|_| stabilizer.stabilize(0.004, &command, &state).moments.z)
+                .map(|_| stack.step(0.004, &command, &state).moments.z)
                 .collect::<Vec<f32>>()
         };
         // The same physical heading differs in the last float bit between the two
@@ -367,8 +336,8 @@ fn heading_primed_above_pi_behaves_like_its_wrapped_equivalent() {
 /// A NaN heading at priming must not disable heading hold for good.
 #[test]
 fn nan_primed_heading_relatches_from_a_valid_estimate() {
-    let mut stabilizer = Stack::new();
-    stabilizer.prime(&VehicleState {
+    let mut stack = Stack::new();
+    stack.prime(&VehicleState {
         heading: f32::NAN,
         ..Default::default()
     });
@@ -382,12 +351,12 @@ fn nan_primed_heading_relatches_from_a_valid_estimate() {
         ..Default::default()
     };
 
-    stabilizer.stabilize(0.004, &command, &valid);
+    stack.step(0.004, &command, &valid);
 
     assert!(
-        (stabilizer.guidance.heading - (5.0 - 2.0 * PI)).abs() < 1e-5,
+        (stack.guidance.heading - (5.0 - 2.0 * PI)).abs() < 1e-5,
         "heading target {} did not re-latch",
-        stabilizer.guidance.heading
+        stack.guidance.heading
     );
 }
 
@@ -422,8 +391,8 @@ fn out_of_range_or_nan_commands_saturate_instead_of_panicking() {
         raw.prime(&state);
         saturated.prime(&state);
         for _ in 0..5 {
-            let a = raw.stabilize(0.004, &command(throttle, roll, pitch, yaw), &state);
-            let b = saturated.stabilize(0.004, &command(t, r, p, y), &state);
+            let a = raw.step(0.004, &command(throttle, roll, pitch, yaw), &state);
+            let b = saturated.step(0.004, &command(t, r, p, y), &state);
             assert!(
                 a == b,
                 "({throttle}, {roll}, {pitch}, {yaw}) gave {a:?}, expected {b:?}"
@@ -433,8 +402,8 @@ fn out_of_range_or_nan_commands_saturate_instead_of_panicking() {
 
     // Rate mode: throttle was never clamped and reached the mixer's assert.
     for throttle in [1.5, -0.3, nan] {
-        let mut stabilizer = Stack::new();
-        let output = stabilizer.stabilize(
+        let mut stack = Stack::new();
+        let output = stack.step(
             0.004,
             &Command::Rate(RateCommand {
                 throttle,
@@ -472,14 +441,14 @@ fn nan_altitude_estimate_holds_hover_then_recovers() {
         ..Default::default()
     });
 
-    let mut stabilizer = Stack::new();
-    stabilizer.prime(&at_altitude(10.0));
-    let during = stabilizer.stabilize(0.004, &command, &at_altitude(f32::NAN));
-    let after = stabilizer.stabilize(0.004, &command, &at_altitude(10.0));
+    let mut stack = Stack::new();
+    stack.prime(&at_altitude(10.0));
+    let during = stack.step(0.004, &command, &at_altitude(f32::NAN));
+    let after = stack.step(0.004, &command, &at_altitude(10.0));
 
     let mut fresh = Stack::new();
     fresh.prime(&at_altitude(10.0));
-    let expected = fresh.stabilize(0.004, &command, &at_altitude(10.0));
+    let expected = fresh.step(0.004, &command, &at_altitude(10.0));
 
     assert!(during.thrust > 0.0, "NaN altitude cut thrust: {during:?}");
     assert!(

@@ -30,7 +30,7 @@ let mixer = airframe.mixer;
 
 Use `RealFlightLocalBridge` when the controller runs on the same host as RealFlight, and `RealFlightRemoteBridge` otherwise. `realflight_bridge` is re-exported, so you don't need to depend on it yourself. `ActuatorMapping` maps the mixer's motors and control surfaces to the model's RealFlight channels, so an airframe's mapping only fits its own mixer.
 
-Each tick makes one RealFlight exchange, in `actuate`; `estimate_state` returns the cached result, so the stabilizer sees state one tick old. The `RealFlightVehicle` rustdoc covers timing and frame conversion.
+Each tick makes one RealFlight exchange, in `actuate`; `estimate_state` returns the cached result, so guidance and the stabilizer see state one tick old. The `RealFlightVehicle` rustdoc covers timing and frame conversion.
 
 ## Airframes
 

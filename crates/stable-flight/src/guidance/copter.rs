@@ -9,8 +9,8 @@
 
 use robomath::vec2;
 
-use crate::stabilizers::Gains;
-use crate::stabilizers::controllers::*;
+use crate::controllers::Gains;
+use crate::controllers::*;
 use crate::{
     AttitudeCommand, AttitudeReference, AttitudeSetpoint, Command, Guidance, RateSetpoint,
     Setpoint, VehicleState, WaypointCommand,
@@ -26,9 +26,23 @@ mod tests;
 const HEADING_STEP_PER_TICK: f32 = 0.0001;
 
 /// Gains for the [CopterGuidance] position loops.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::controllers::Gains;
+/// use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+///
+/// let guidance = CopterGuidance::new(CopterGuidanceConfig {
+///     altitude_gains: Gains { p: 2.0, i: 0.2, d: 0.1 },
+///     ..Default::default()
+/// });
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct CopterGuidanceConfig {
+    /// Altitude loop: altitude error (m) → linear thrust.
     pub altitude_gains: Gains,
+    /// Lateral position loop: horizontal position error (m) → roll/pitch.
     pub lateral_gains: Gains,
 }
 
@@ -70,8 +84,8 @@ impl Default for CopterGuidanceConfig {
 /// assert_eq!(setpoint.thrust, 0.5);
 /// ```
 pub struct CopterGuidance {
-    pub altitude_controller: AltitudeController,
-    pub lateral_controller: LateralController,
+    pub(crate) altitude_controller: AltitudeController,
+    pub(crate) lateral_controller: LateralController,
 
     /// Heading-hold target for attitude commands.
     heading: f32,
@@ -89,7 +103,7 @@ impl CopterGuidance {
             lateral_controller: LateralController::with_config(&LateralControllerConfig {
                 gains: config.lateral_gains,
                 max_integral: 100.0,
-                max_rate: vec2(2.0, 2.0), // 2 rad/s (~114°/s) for roll and pitch
+                max_rate: vec2(2.0, 2.0), // unused by the lateral controller today (backlog)
             }),
 
             heading: 0.0,
@@ -103,7 +117,7 @@ impl Guidance for CopterGuidance {
 
         match command {
             Command::Attitude(attitude_command) => {
-                Setpoint::Attitude(self.hold_heading(attitude_command, estimated_state))
+                Setpoint::Attitude(self.attitude_setpoint(attitude_command, estimated_state))
             }
             Command::Rate(rate_command) => Setpoint::Rate(RateSetpoint {
                 roll_rate: rate_command.roll_rate,
@@ -126,7 +140,7 @@ impl Guidance for CopterGuidance {
 impl CopterGuidance {
     /// Passes roll, pitch, and throttle through and slews the heading-hold target with the
     /// yaw stick.
-    fn hold_heading(
+    fn attitude_setpoint(
         &mut self,
         attitude_command: &AttitudeCommand,
         estimated_state: &VehicleState,

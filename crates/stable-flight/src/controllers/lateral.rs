@@ -1,7 +1,7 @@
 use robomath::{Vec2, vec2};
 
+use crate::controllers::Gains;
 use crate::math::saturate_unit_vec2;
-use crate::stabilizers::Gains;
 
 const G: f32 = 9.81; // Gravitational acceleration in m/s²
 

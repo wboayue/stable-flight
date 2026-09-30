@@ -106,7 +106,7 @@ fn test_yaw_controller_angle_wrapping() {
 }
 
 #[test]
-fn test_manual_control() {
+fn zero_rate_setpoint_at_rest_yields_no_output() {
     let mut controller = setup_controller();
     let dt = 0.01;
     let manual_setpoint = Setpoint::Rate(RateSetpoint {
@@ -228,8 +228,42 @@ fn attitude_reference_selects_the_tracked_estimate() {
     // Level Euler fields: nothing to correct. Tilted quaternion: corrects as before.
     let level = run(AttitudeReference::Euler, &quaternion_only);
     assert!(level.moments == vec3(0.0, 0.0, 0.0), "gave {level:?}");
+    // The quaternion path ignores the Euler fields on every axis.
     let tilted = run(AttitudeReference::Quaternion, &quaternion_only);
-    approx::assert_relative_eq!(tilted.moments.x, quaternion.moments.x, epsilon = 1e-4);
+    assert!(
+        tilted == quaternion,
+        "gave {tilted:?}, expected {quaternion:?}"
+    );
+}
+
+/// The heading setpoint is absolute and unbounded: a NaN target holds no yaw correction, and
+/// a target outside [-π, π) acts like its wrapped equivalent.
+#[test]
+fn heading_setpoint_is_wrapped_and_nan_is_neutral() {
+    let state = VehicleState::default();
+    let yaw_moment = |heading: f32| {
+        let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+        let setpoint = Setpoint::Attitude(AttitudeSetpoint {
+            heading,
+            thrust: 0.5,
+            ..Default::default()
+        });
+        (0..5)
+            .map(|_| stabilizer.stabilize(0.004, &setpoint, &state).moments.z)
+            .collect::<Vec<f32>>()
+    };
+
+    assert!(yaw_moment(f32::NAN) == [0.0; 5]);
+    // (heading, wrapped equivalent)
+    for (heading, wrapped) in [
+        (5.0, 5.0 - 2.0 * PI),
+        (-4.0, -4.0 + 2.0 * PI),
+        (7.0, 7.0 - 2.0 * PI),
+    ] {
+        for (a, b) in yaw_moment(heading).into_iter().zip(yaw_moment(wrapped)) {
+            approx::assert_relative_eq!(a, b, epsilon = 1e-3);
+        }
+    }
 }
 
 /// A NaN attitude-rate estimate yields zero moments instead of panicking the body-rate loop.
