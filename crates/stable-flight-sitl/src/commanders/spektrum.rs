@@ -110,6 +110,33 @@ impl Commander for SpectrumCommander {
     }
 }
 
+/// Maps `value` from `[min, max]` to `[0, 1]`, clamped: the configured ranges are narrower than
+/// the stick's physical travel (e.g. ±0.7 of ±1.0), so unclamped values overshoot to ~1.2.
 fn scale_value(value: f32, min: f32, max: f32) -> f32 {
-    (value - min) / (max - min)
+    ((value - min) / (max - min)).clamp(0.0, 1.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scale_value;
+
+    #[test]
+    fn scale_value_maps_to_unit_range_and_clamps_overshoot() {
+        // (value, min, max, expected)
+        let cases = [
+            (0.0, -0.7, 0.7, 0.5),
+            (0.7, -0.7, 0.7, 1.0),
+            (-0.7, -0.7, 0.7, 0.0),
+            (1.0, -0.7, 0.7, 1.0), // full physical travel past the configured range
+            (-1.0, -0.7, 0.7, 0.0),
+            (0.95, 0.1, 0.9, 1.0),
+        ];
+        for (value, min, max, expected) in cases {
+            let scaled = scale_value(value, min, max);
+            assert!(
+                (scaled - expected).abs() < 1e-6,
+                "scale_value({value}, {min}, {max}) = {scaled}, expected {expected}"
+            );
+        }
+    }
 }

@@ -19,6 +19,7 @@
 pub mod commanders;
 pub mod composition;
 pub mod flight_loop;
+mod math;
 pub mod mixers;
 pub mod stabilizers;
 #[cfg(any(test, feature = "testing"))]

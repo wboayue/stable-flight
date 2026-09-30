@@ -2,7 +2,8 @@ use std::f32::consts::FRAC_PI_4;
 
 use robomath::{Vec2, vec2};
 
-use super::super::{Gains, saturate_unit_vec2};
+use super::super::Gains;
+use crate::math::saturate_unit_vec2;
 
 /// Configures the attitude controller for a vehicle.
 /// Defines PID gains, maximum angles, and maximum angular rates for roll and pitch control.
@@ -49,6 +50,9 @@ pub struct AttitudeController {
     integral_term: Vec2<f32>, // Accumulated error (roll, pitch)
     max_integral: f32,
     last_error: Vec2<f32>, // Previous error for derivative calculation
+    /// Set after a non-finite tick: the next finite tick skips the derivative term, since
+    /// `last_error` predates the gap.
+    resync_derivative: bool,
     max_angles: Vec2<f32>, // Max angles in radians (roll, pitch)
     max_rate: Vec2<f32>,   // Max angular rates in rad/s (roll, pitch)
 }
@@ -78,11 +82,18 @@ impl AttitudeController {
             config.max_rate.x >= 0.0 && config.max_rate.y >= 0.0,
             "Maximum rates must be non-negative"
         );
+        // The per-tick integral clamp would panic on a negative or NaN bound.
+        assert!(
+            config.max_integral >= 0.0 && config.max_integral.is_finite(),
+            "max_integral must be non-negative and finite, got {}",
+            config.max_integral
+        );
         Self {
             gains: config.gains,
             integral_term: Vec2::default(),
             max_integral: config.max_integral,
             last_error: Vec2::default(),
+            resync_derivative: false,
             max_angles: config.max_angles,
             max_rate: config.max_rate,
         }
@@ -125,25 +136,30 @@ impl AttitudeController {
         // Calculate error (setpoint - actual)
         let error = desired_angles - estimated_angles;
 
-        // Derivative term: rate of change of error
-        let error_derivative = (error - self.last_error) / dt;
-
-        // Only a finite error updates the integral and derivative history. A NaN estimate
-        // would otherwise stick in both (NaN survives `clamp`) and poison every later tick.
-        let error_is_finite = error.x.is_finite() && error.y.is_finite();
-        if error_is_finite {
-            // Integral term with anti-windup
-            self.integral_term =
-                (self.integral_term + dt * error).clamp(-self.max_integral, self.max_integral);
+        // A non-finite error (NaN/∞ estimate) yields no rate command and never enters the
+        // integral or derivative history (see `crate::math` for the policy).
+        if !(error.x.is_finite() && error.y.is_finite()) {
+            self.resync_derivative = true;
+            return Vec2::default();
         }
+
+        // Derivative term: rate of change of error (skipped on the first tick after a gap)
+        let error_derivative = if self.resync_derivative {
+            self.resync_derivative = false;
+            Vec2::default()
+        } else {
+            (error - self.last_error) / dt
+        };
+
+        // Integral term with anti-windup
+        self.integral_term =
+            (self.integral_term + dt * error).clamp(-self.max_integral, self.max_integral);
 
         // PID calculation: Kp×error + Ki×∫error + Kd×d(error)/dt
         let Gains { p, i, d } = self.gains;
         let rates = p * error + i * self.integral_term + d * error_derivative;
 
-        if error_is_finite {
-            self.last_error = error;
-        }
+        self.last_error = error;
 
         // Scale output to configured maximum rates
         vec2(
@@ -401,11 +417,29 @@ mod tests {
         let mut controller = default_controller();
         let desired = vec2(0.5, -0.5);
 
-        let _ = controller.control(0.1, desired, vec2(f32::NAN, 0.0));
-        let after_nan = controller.control(0.1, desired, vec2(0.0, 0.0));
-        let fresh = default_controller().control(0.1, desired, vec2(0.0, 0.0));
+        let during = controller.control(0.1, desired, vec2(f32::NAN, 0.0));
+        assert!(during == vec2(0.0, 0.0), "NaN estimate gave {during:?}");
+        assert!(controller.integral_term == vec2(0.0, 0.0));
 
-        approx::assert_relative_eq!(after_nan.x, fresh.x);
-        approx::assert_relative_eq!(after_nan.y, fresh.y);
+        // First finite tick after the gap: P + I only (no derivative from the pre-gap error).
+        let after_nan = controller.control(0.1, desired, vec2(0.0, 0.0));
+        let error = desired * controller.max_angles;
+        let Gains { p, i, .. } = controller.gains;
+        let expected = p * error + i * (0.1 * error);
+        approx::assert_relative_eq!(after_nan.x, expected.x.clamp(-2.0, 2.0));
+        approx::assert_relative_eq!(after_nan.y, expected.y.clamp(-2.0, 2.0));
+    }
+
+    #[test]
+    fn rejects_invalid_max_integral_at_construction() {
+        for max_integral in [-1.0, f32::NAN, f32::INFINITY] {
+            let result = std::panic::catch_unwind(|| {
+                AttitudeController::with_config(&AttitudeControllerConfig {
+                    max_integral,
+                    ..Default::default()
+                })
+            });
+            assert!(result.is_err(), "max_integral {max_integral} was accepted");
+        }
     }
 }

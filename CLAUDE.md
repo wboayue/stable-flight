@@ -29,6 +29,8 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
   that land first (its PR 5 is superseded by the migration). Read both before touching trait
   surface or crate layout. Each plan has a Status table: mark a row 🔍 #n when its PR opens and
   ✅ #n when it merges, in that PR or the next one.
+  Every follow-up a review raises goes in the **Follow-up backlog** in
+  `plans/workspace-migration.md`; its "Maintaining this plan" section has the rules.
 - The repo was renamed `stable-flight-sitl` → `stable-flight`; the crate keeps the
   `stable-flight-sitl` name. Old GitHub URLs redirect.
 
@@ -137,6 +139,7 @@ self.telemetry.publish(&TelemetryRecord { dt, command: &command, state: &self.st
 - snake_case files/modules, PascalCase types, SCREAMING_SNAKE_CASE constants. Pull magic numbers into named constants when they appear more than once or carry units.
 - Prefer early returns and small helpers; keep flight-math functions readable, not arbitrarily short. If a PID step is clearest as one 30-line function, leave it.
 - Use `Result<T, E>` with `thiserror` enums for new fallible APIs. Avoid panics in library code outside of clearly documented preconditions (e.g. `run`'s frequency assert).
+- **No range or finiteness `assert!`s on per-tick inputs.** Saturate, treat NaN as neutral, and wrap angles, per `architecture.md#input-policy-no-panics-in-the-tick`, using the core's `math` helpers. Asserts are only for construction-time config and `dt > 0`.
 - **No `.unwrap()` or `.expect()` in `src/`.** They turn recoverable errors into panics that crash the flight loop. Propagate with `?`, return a typed error, or — only when a value is provably non-`None` from local context — use `unwrap_or_else(|| unreachable!("..."))` with a comment explaining the invariant. `.expect()` is fine in `examples/` and `tests/` where a crash is the acceptable failure mode.
 - Express physical quantities with `uom` and vector math with `robomath`. Don't reinvent.
 - Logging via `log` + `env_logger`. Reserve `info!` for lifecycle events; use `debug!` inside the loop.
