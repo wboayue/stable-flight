@@ -65,7 +65,9 @@ jobs:
         targets: thumbv7em-none-eabihf
         components: llvm-tools, rustfmt, clippy
 
-    - uses: taiki-e/install-action@cargo-binutils
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-binutils
 
     - name: build core (thumbv7em-none-eabihf)
       run: |
