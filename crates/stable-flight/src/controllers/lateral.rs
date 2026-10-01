@@ -1,7 +1,7 @@
-use robomath::{Vec2, vec2};
+use crate::Vec2;
 
 use crate::controllers::Gains;
-use crate::math::saturate_unit_vec2;
+use crate::math::{clamp_each, saturate_unit_vec2};
 
 const G: f32 = 9.81; // Gravitational acceleration in m/s²
 
@@ -30,8 +30,8 @@ impl Default for LateralControllerConfig {
                 i: 0.3,
                 d: 0.15,
             },
-            max_integral: 100.0,      // Arbitrary limit
-            max_rate: vec2(2.0, 2.0), // 2 rad/s (~114°/s) for roll and pitch
+            max_integral: 100.0,           // Arbitrary limit
+            max_rate: Vec2::new(2.0, 2.0), // 2 rad/s (~114°/s) for roll and pitch
         }
     }
 }
@@ -67,7 +67,7 @@ impl LateralController {
         );
         Self {
             config: config.clone(),
-            integrated_error: vec2(0.0, 0.0),
+            integrated_error: Vec2::zeros(),
             max_integral: config.max_integral,
         }
     }
@@ -104,11 +104,14 @@ impl LateralController {
         // A non-finite error (NaN/∞ target or position) yields level (no tilt) and never enters
         // the integral, where NaN would stick (it survives `clamp`).
         if !(error.x.is_finite() && error.y.is_finite()) {
-            return Vec2::default();
+            return Vec2::zeros();
         }
 
-        self.integrated_error =
-            (self.integrated_error + dt * error).clamp(-self.max_integral, self.max_integral);
+        self.integrated_error = clamp_each(
+            self.integrated_error + dt * error,
+            -self.max_integral,
+            self.max_integral,
+        );
         let accel_cmd =
             gains.p * error + gains.i * self.integrated_error + gains.d * (-estimated_velocity);
 
@@ -116,13 +119,13 @@ impl LateralController {
         let roll_cmd = accel_cmd.y / G;
         let pitch_cmd = -accel_cmd.x / G;
 
-        saturate_unit_vec2(vec2(roll_cmd, pitch_cmd))
+        saturate_unit_vec2(Vec2::new(roll_cmd, pitch_cmd))
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use robomath::vec2;
+    use crate::Vec2;
 
     use super::*;
 
@@ -130,16 +133,16 @@ mod tests {
     fn output_is_normalized_and_saturates_far_from_target() {
         // (target position, expected (roll, pitch)) with the vehicle at rest at the origin
         let cases = [
-            (vec2(0.0, 0.0), vec2(0.0, 0.0)),
-            (vec2(1000.0, 0.0), vec2(0.0, -1.0)), // far +x: full nose-down pitch
-            (vec2(-1000.0, 0.0), vec2(0.0, 1.0)),
-            (vec2(0.0, 1000.0), vec2(1.0, 0.0)), // far +y: full right roll
-            (vec2(0.0, f32::NAN), vec2(0.0, 0.0)),
-            (vec2(f32::INFINITY, 0.0), vec2(0.0, 0.0)), // non-finite error: level, not full tilt
+            (Vec2::zeros(), Vec2::zeros()),
+            (Vec2::new(1000.0, 0.0), Vec2::new(0.0, -1.0)), // far +x: full nose-down pitch
+            (Vec2::new(-1000.0, 0.0), Vec2::new(0.0, 1.0)),
+            (Vec2::new(0.0, 1000.0), Vec2::new(1.0, 0.0)), // far +y: full right roll
+            (Vec2::new(0.0, f32::NAN), Vec2::zeros()),
+            (Vec2::new(f32::INFINITY, 0.0), Vec2::zeros()), // non-finite error: level, not full tilt
         ];
         for (target, expected) in cases {
             let mut controller = LateralController::new();
-            let angles = controller.control(0.004, target, vec2(0.0, 0.0), vec2(0.0, 0.0));
+            let angles = controller.control(0.004, target, Vec2::zeros(), Vec2::zeros());
             assert!(
                 angles == expected,
                 "target {target:?} gave {angles:?}, expected {expected:?}"
@@ -156,24 +159,24 @@ mod tests {
 
         // A large, persistent error for many ticks would wind the integral far past the limit.
         for _ in 0..10_000 {
-            controller.control(0.01, vec2(100.0, -100.0), vec2(0.0, 0.0), vec2(0.0, 0.0));
+            controller.control(0.01, Vec2::new(100.0, -100.0), Vec2::zeros(), Vec2::zeros());
         }
 
-        assert!(controller.integrated_error == vec2(5.0, -5.0));
+        assert!(controller.integrated_error == Vec2::new(5.0, -5.0));
     }
 
     #[test]
     fn recovers_full_tilt_after_a_nan_tick() {
         let mut controller = LateralController::new();
-        let at_rest = vec2(0.0, 0.0);
+        let at_rest = Vec2::zeros();
 
         // One tick with a NaN target must not poison later ticks.
-        let during = controller.control(0.004, vec2(f32::NAN, 0.0), at_rest, at_rest);
-        let after = controller.control(0.004, vec2(1000.0, 0.0), at_rest, at_rest);
+        let during = controller.control(0.004, Vec2::new(f32::NAN, 0.0), at_rest, at_rest);
+        let after = controller.control(0.004, Vec2::new(1000.0, 0.0), at_rest, at_rest);
 
-        assert!(during == vec2(0.0, 0.0), "NaN tick gave {during:?}");
+        assert!(during == Vec2::zeros(), "NaN tick gave {during:?}");
         assert!(
-            after == vec2(0.0, -1.0),
+            after == Vec2::new(0.0, -1.0),
             "valid far target after NaN gave {after:?}"
         );
     }

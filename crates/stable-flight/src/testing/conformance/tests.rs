@@ -1,5 +1,7 @@
 use core::f32::consts::{PI, TAU};
 
+use nalgebra::Quaternion;
+
 use super::*;
 
 fn expected(scenario: &Scenario) -> VehicleState {
@@ -87,7 +89,7 @@ fn reports_each_field_off_contract() {
         ),
         (
             MOVING_NORTHEAST,
-            |s| core::mem::swap(&mut s.position.x, &mut s.position.y), // ENU vs NEU
+            |s| s.position.swap_rows(0, 1), // ENU vs NEU
             &["position.x", "position.y"],
         ),
         (
@@ -117,23 +119,28 @@ fn reports_each_field_off_contract() {
 fn reports_every_field_when_all_are_nan() {
     // All NaN: every field is reported, and CHECKED_FIELDS holds them all.
     let all_nan = VehicleState {
-        position: vec3(
+        position: Vec3::new(
             Length::new::<meter>(f32::NAN),
             Length::new::<meter>(f32::NAN),
             Length::new::<meter>(f32::NAN),
         ),
-        velocity: vec3(
+        velocity: Vec3::new(
             Velocity::new::<meter_per_second>(f32::NAN),
             Velocity::new::<meter_per_second>(f32::NAN),
             Velocity::new::<meter_per_second>(f32::NAN),
         ),
-        acceleration: vec3(
+        acceleration: Vec3::new(
             Acceleration::new::<meter_per_second_squared>(f32::NAN),
             Acceleration::new::<meter_per_second_squared>(f32::NAN),
             Acceleration::new::<meter_per_second_squared>(f32::NAN),
         ),
-        attitude: Quaternion::new(f32::NAN, f32::NAN, f32::NAN, f32::NAN),
-        angular_velocity: vec3(f32::NAN, f32::NAN, f32::NAN),
+        attitude: UnitQuaternion::new_unchecked(Quaternion::new(
+            f32::NAN,
+            f32::NAN,
+            f32::NAN,
+            f32::NAN,
+        )),
+        angular_velocity: Vec3::new(f32::NAN, f32::NAN, f32::NAN),
         roll: f32::NAN,
         pitch: f32::NAN,
         heading: f32::NAN,

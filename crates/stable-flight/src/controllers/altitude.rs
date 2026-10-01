@@ -1,4 +1,4 @@
-use robomath::Quaternion;
+use nalgebra::UnitQuaternion;
 
 use crate::controllers::Gains;
 
@@ -81,12 +81,12 @@ impl AltitudeController {
         desired_velocity: f32,
         estimated_altitude: f32,
         estimated_velocity: f32,
-        estimated_attitude: Quaternion,
+        estimated_attitude: UnitQuaternion<f32>,
     ) -> f32 {
         const GRAVITY: f32 = 9.81;
         const MAX_ACCEL: f32 = 20.0;
 
-        let r = estimated_attitude.rotation_matrix_i_wrt_b();
+        let r = estimated_attitude.to_rotation_matrix();
         let gains = &self.config.gains;
 
         let altitude_error = desired_altitude - estimated_altitude;
@@ -107,7 +107,7 @@ impl AltitudeController {
         let integral_term = gains.i * self.integrated_error;
         let mut acceleration_cmd = proportional_term + derivative_term + integral_term;
 
-        let body_z_alignment = r[[2, 2]].max(0.01);
+        let body_z_alignment = r[(2, 2)].max(0.01);
         acceleration_cmd = (acceleration_cmd - GRAVITY) / body_z_alignment;
         acceleration_cmd = acceleration_cmd.clamp(-MAX_ACCEL, MAX_ACCEL);
 
@@ -129,17 +129,54 @@ impl AltitudeController {
 
 #[cfg(test)]
 mod tests {
-    use robomath::Quaternion;
-
     use super::*;
 
-    fn level() -> Quaternion {
-        Quaternion {
-            w: 1.0,
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        }
+    fn level() -> UnitQuaternion<f32> {
+        UnitQuaternion::identity()
+    }
+
+    /// Tilt compensation reads only the body-z/world-z alignment, cos(roll)·cos(pitch) (the
+    /// rotation matrix's (2, 2) element), floored at 0.01. Attitudes in a row share it, so
+    /// they must command the same thrust; rows differ from each other. The climb request (15 m
+    /// below target) keeps level and 40° thrust off the limits; past 90° the floor saturates it.
+    #[test]
+    fn tilt_compensation_depends_only_on_body_z_alignment() {
+        let deg = f32::to_radians;
+        let attitude = |roll: f32, pitch: f32, yaw: f32| {
+            UnitQuaternion::from_euler_angles(deg(roll), deg(pitch), deg(yaw))
+        };
+        // Each row: attitudes with equal alignment (yaw-invariant, roll/pitch symmetric).
+        let rows = [
+            vec![attitude(0.0, 0.0, 0.0), attitude(0.0, 0.0, 120.0)],
+            vec![
+                attitude(40.0, 0.0, 0.0),
+                attitude(0.0, 40.0, 0.0),
+                attitude(-40.0, 0.0, 75.0),
+            ],
+            // Past 90°: alignment ≤ 0, floored to the same 0.01.
+            vec![
+                attitude(0.0, 89.99, 0.0),
+                attitude(100.0, 0.0, 0.0),
+                attitude(170.0, 0.0, 30.0),
+            ],
+        ];
+        let thrust =
+            |attitude| AltitudeController::new().control(0.004, 25.0, 0.0, 10.0, 0.0, attitude);
+
+        let per_row: Vec<f32> = rows
+            .iter()
+            .map(|row| {
+                let first = thrust(row[0]);
+                for &other in &row[1..] {
+                    approx::assert_relative_eq!(thrust(other), first, epsilon = 1e-5);
+                }
+                first
+            })
+            .collect();
+        assert!(
+            per_row[0] != per_row[1] && per_row[1] != per_row[2],
+            "tilt must change thrust: {per_row:?}"
+        );
     }
 
     #[test]

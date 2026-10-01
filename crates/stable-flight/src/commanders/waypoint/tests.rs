@@ -1,6 +1,6 @@
+use crate::{Vec2, Vec3};
 use approx::assert_relative_eq;
 use assert2::check;
-use robomath::{Vec3, vec2};
 use uom::si::f32::Length;
 use uom::si::length::meter;
 
@@ -9,11 +9,11 @@ use super::*;
 /// Builds a `VehicleState` positioned at the given horizontal coordinates (meters).
 fn state_at(x: f32, y: f32) -> VehicleState {
     VehicleState {
-        position: Vec3 {
-            x: Length::new::<meter>(x),
-            y: Length::new::<meter>(y),
-            z: Length::new::<meter>(0.0),
-        },
+        position: Vec3::new(
+            Length::new::<meter>(x),
+            Length::new::<meter>(y),
+            Length::new::<meter>(0.0),
+        ),
         ..Default::default()
     }
 }
@@ -21,7 +21,7 @@ fn state_at(x: f32, y: f32) -> VehicleState {
 /// Builds a waypoint at the given horizontal position, with defaults elsewhere.
 fn wp(x: f32, y: f32) -> WaypointCommand {
     WaypointCommand {
-        position: vec2(x, y),
+        position: Vec2::new(x, y),
         ..Default::default()
     }
 }
@@ -91,14 +91,14 @@ fn custom_acceptance_radius_changes_advance_threshold() {
 fn works_with_static_slices_and_vecs() {
     static PATH: [WaypointCommand; 2] = [
         WaypointCommand {
-            position: robomath::Vec2 { x: 0.0, y: 0.0 },
+            position: Vec2::new(0.0, 0.0),
             velocity: None,
             altitude: 5.0,
             cruise_speed: 2.0,
             roll: None,
         },
         WaypointCommand {
-            position: robomath::Vec2 { x: 30.0, y: 0.0 },
+            position: Vec2::new(30.0, 0.0),
             velocity: None,
             altitude: 5.0,
             cruise_speed: 2.0,

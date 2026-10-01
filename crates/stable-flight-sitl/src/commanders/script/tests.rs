@@ -1,6 +1,6 @@
 use approx::assert_relative_eq;
 use assert2::check;
-use robomath::{Vec3, vec2};
+use stable_flight::{Vec2, Vec3};
 use uom::si::f32::Length;
 use uom::si::length::meter;
 
@@ -10,11 +10,11 @@ use stable_flight::{Command, Commander, VehicleState, WaypointCommand};
 /// Builds a `VehicleState` positioned at the given horizontal coordinates (meters).
 fn state_at(x: f32, y: f32) -> VehicleState {
     VehicleState {
-        position: Vec3 {
-            x: Length::new::<meter>(x),
-            y: Length::new::<meter>(y),
-            z: Length::new::<meter>(0.0),
-        },
+        position: Vec3::new(
+            Length::new::<meter>(x),
+            Length::new::<meter>(y),
+            Length::new::<meter>(0.0),
+        ),
         ..Default::default()
     }
 }
@@ -28,7 +28,7 @@ fn waypoint(command: Command) -> WaypointCommand {
 /// Builds a waypoint at the given horizontal position, with defaults elsewhere.
 fn wp(x: f32, y: f32) -> WaypointCommand {
     WaypointCommand {
-        position: vec2(x, y),
+        position: Vec2::new(x, y),
         ..Default::default()
     }
 }
