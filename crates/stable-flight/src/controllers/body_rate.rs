@@ -93,8 +93,8 @@ impl BodyRateController {
             gains: config.gains,
             max_angular_rates: config.max_angular_rates,
             max_integral: config.max_integral,
-            integral_term: Vec3::default(),
-            last_error: Vec3::default(),
+            integral_term: Vec3::zeros(),
+            last_error: Vec3::zeros(),
             resync_derivative: false,
         }
     }
@@ -136,14 +136,14 @@ impl BodyRateController {
         );
         if !(all_finite(&desired_rates) && all_finite(&estimated_rates)) {
             self.resync_derivative = true;
-            return Vec3::default();
+            return Vec3::zeros();
         }
 
         let error = desired_rates - estimated_rates;
 
         let error_derivative = if self.resync_derivative {
             self.resync_derivative = false;
-            Vec3::default()
+            Vec3::zeros()
         } else {
             (error - self.last_error) / dt
         };
@@ -191,8 +191,8 @@ impl BodyRateController {
 
     /// Resets the controller state (integral and last error terms) to zero.
     pub fn reset(&mut self) {
-        self.integral_term = Vec3::default();
-        self.last_error = Vec3::default();
+        self.integral_term = Vec3::zeros();
+        self.last_error = Vec3::zeros();
         self.resync_derivative = false;
     }
 }
@@ -231,8 +231,8 @@ mod tests {
         // Assemble
         let mut controller = setup_controller();
         let dt = 0.1;
-        let desired_rates = Vec3::new(0.0, 0.0, 0.0); // No desired movement
-        let estimated_rates = Vec3::new(0.0, 0.0, 0.0); // No actual movement
+        let desired_rates = Vec3::zeros(); // No desired movement
+        let estimated_rates = Vec3::zeros(); // No actual movement
 
         // Activate
         let result = controller.control(dt, desired_rates, estimated_rates);
@@ -250,7 +250,7 @@ mod tests {
         let mut controller = setup_controller();
         let dt = 0.1;
         let desired_rates = Vec3::new(0.5, 0.5, 0.5); // Half max rates
-        let estimated_rates = Vec3::new(0.0, 0.0, 0.0); // No actual movement
+        let estimated_rates = Vec3::zeros(); // No actual movement
 
         // Calculate expected p-term (P gain * error * scaling factor)
         // Based on default P gain of 7.0 and desired rates scaled by max_angular_rates
@@ -285,7 +285,7 @@ mod tests {
         let mut controller = setup_controller();
         let dt = 0.1;
         let desired_rates = Vec3::new(1.0, 1.0, 1.0); // Max desired rates (normalized)
-        let estimated_rates = Vec3::new(0.0, 0.0, 0.0); // No actual movement
+        let estimated_rates = Vec3::zeros(); // No actual movement
 
         // Activate
         let result = controller.control(dt, desired_rates, estimated_rates);
@@ -309,7 +309,7 @@ mod tests {
         let mut controller = setup_controller();
         let dt = 0.1;
         let desired_rates = Vec3::new(-1.0, -1.0, -1.0); // Min desired rates (normalized)
-        let estimated_rates = Vec3::new(0.0, 0.0, 0.0); // No actual movement
+        let estimated_rates = Vec3::zeros(); // No actual movement
 
         // Activate
         let result = controller.control(dt, desired_rates, estimated_rates);
@@ -333,7 +333,7 @@ mod tests {
         let mut controller = setup_controller();
         let dt = 0.0001; // Very small time step
         let desired_rates = Vec3::new(0.5, 0.5, 0.5); // Half max rates
-        let estimated_rates = Vec3::new(0.0, 0.0, 0.0); // No actual movement
+        let estimated_rates = Vec3::zeros(); // No actual movement
 
         // Activate
         let result = controller.control(dt, desired_rates, estimated_rates);
@@ -369,7 +369,7 @@ mod tests {
         controller.gains.i = 0.1; // Enable integral term
         let dt = 0.1;
         let desired_rates = Vec3::new(0.5, 0.5, 0.5); // Half max rates
-        let estimated_rates = Vec3::new(0.0, 0.0, 0.0); // No actual movement
+        let estimated_rates = Vec3::zeros(); // No actual movement
 
         // Activate - first control call
         let _ = controller.control(dt, desired_rates, estimated_rates);
@@ -411,7 +411,7 @@ mod tests {
         controller.max_integral = 0.1; // Low integral limit
         let dt = 0.1;
         let desired_rates = Vec3::new(1.0, 1.0, 1.0); // Max rates to quickly saturate integral
-        let estimated_rates = Vec3::new(0.0, 0.0, 0.0); // No actual movement
+        let estimated_rates = Vec3::zeros(); // No actual movement
 
         // Activate - multiple calls to saturate the integral term
         for _ in 0..20 {
@@ -452,7 +452,7 @@ mod tests {
 
         // First control call establishes initial error
         let desired_rates = Vec3::new(0.5, 0.5, 0.5);
-        let estimated_rates = Vec3::new(0.0, 0.0, 0.0);
+        let estimated_rates = Vec3::zeros();
         let _ = controller.control(dt, desired_rates, estimated_rates);
 
         // Second call with same error (zero derivative)
@@ -490,7 +490,7 @@ mod tests {
         controller.gains.i = 0.1; // Enable integral term
         let dt = 0.1;
         let desired_rates = Vec3::new(0.5, 0.5, 0.5);
-        let estimated_rates = Vec3::new(0.0, 0.0, 0.0);
+        let estimated_rates = Vec3::zeros();
 
         // Activate - accumulate state
         controller.control(dt, desired_rates, estimated_rates);
@@ -588,8 +588,8 @@ mod tests {
         // Assemble
         let mut controller = setup_controller();
         let dt = 0.0;
-        let desired_rates = Vec3::new(0.0, 0.0, 0.0);
-        let estimated_rates = Vec3::new(0.0, 0.0, 0.0);
+        let desired_rates = Vec3::zeros();
+        let estimated_rates = Vec3::zeros();
 
         // Activate
         controller.control(dt, desired_rates, estimated_rates);
@@ -605,31 +605,30 @@ mod tests {
         let inf = f32::INFINITY;
         // (desired, estimated)
         let cases = [
-            (Vec3::new(inf, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0)),
-            (Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, nan, 0.0)),
-            (Vec3::new(nan, nan, nan), Vec3::new(0.0, 0.0, 0.0)),
+            (Vec3::new(inf, 0.0, 0.0), Vec3::zeros()),
+            (Vec3::zeros(), Vec3::new(0.0, nan, 0.0)),
+            (Vec3::new(nan, nan, nan), Vec3::zeros()),
         ];
         for (desired, estimated) in cases {
             let mut controller = setup_controller();
             // A valid tick first, so there is derivative history to go stale.
-            controller.control(0.1, Vec3::new(0.5, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0));
+            controller.control(0.1, Vec3::new(0.5, 0.0, 0.0), Vec3::zeros());
             let integral_before = controller.integral_term;
 
             let during = controller.control(0.1, desired, estimated);
             assert!(
-                during == Vec3::default(),
+                during == Vec3::zeros(),
                 "{desired:?}/{estimated:?} gave {during:?}"
             );
             assert!(controller.integral_term == integral_before);
 
             // After the gap: the same as a controller whose last error equals this error
             // (derivative 0), not a kick from the pre-gap error.
-            let after = controller.control(0.1, Vec3::new(0.2, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0));
+            let after = controller.control(0.1, Vec3::new(0.2, 0.0, 0.0), Vec3::zeros());
             let mut reference = setup_controller();
             reference.integral_term = controller.integral_term - Vec3::new(0.2, 0.0, 0.0) * 0.1;
             reference.last_error = Vec3::new(0.2, 0.0, 0.0);
-            let expected =
-                reference.control(0.1, Vec3::new(0.2, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0));
+            let expected = reference.control(0.1, Vec3::new(0.2, 0.0, 0.0), Vec3::zeros());
             assert_abs_diff_eq!(after.x, expected.x, epsilon = 1e-6);
         }
     }
@@ -695,41 +694,36 @@ mod table_driven_tests {
         // Define test cases: (dt, desired_rates, estimated_rates, expected_output_sign)
         let test_cases = vec![
             // dt, desired, estimated, expected_sign
-            (
-                0.1,
-                Vec3::new(0.0, 0.0, 0.0),
-                Vec3::new(0.0, 0.0, 0.0),
-                Vec3::new(0.0, 0.0, 0.0),
-            ),
+            (0.1, Vec3::zeros(), Vec3::zeros(), Vec3::zeros()),
             (
                 0.1,
                 Vec3::new(0.5, 0.0, 0.0),
-                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::zeros(),
                 Vec3::new(1.0, 0.0, 0.0),
             ),
             (
                 0.1,
                 Vec3::new(0.0, 0.5, 0.0),
-                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::zeros(),
                 Vec3::new(0.0, 1.0, 0.0),
             ),
             (
                 0.1,
                 Vec3::new(0.0, 0.0, 0.5),
-                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::zeros(),
                 Vec3::new(0.0, 0.0, 1.0),
             ),
             (
                 0.1,
                 Vec3::new(-0.5, 0.0, 0.0),
-                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::zeros(),
                 Vec3::new(-1.0, 0.0, 0.0),
             ),
             (
                 0.1,
                 Vec3::new(0.5, 0.5, 0.5),
                 Vec3::new(0.5, 0.5, 0.5),
-                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::zeros(),
             ),
             (
                 0.1,
@@ -740,13 +734,13 @@ mod table_driven_tests {
             (
                 0.1,
                 Vec3::new(1.0, 1.0, 1.0),
-                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::zeros(),
                 Vec3::new(1.0, 1.0, 1.0),
             ),
             (
                 0.1,
                 Vec3::new(-1.0, -1.0, -1.0),
-                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::zeros(),
                 Vec3::new(-1.0, -1.0, -1.0),
             ),
         ];
@@ -834,7 +828,7 @@ mod table_driven_tests {
                 },
                 Vec3::new(0.5, 0.0, 0.0), // Current error
                 Vec3::new(0.5, 0.0, 0.0), // Last error (same, so no derivative effect)
-                Vec3::new(0.0, 0.0, 0.0), // Integral term (zero, so no integral effect)
+                Vec3::zeros(),            // Integral term (zero, so no integral effect)
                 Vec3::new(1.0, 0.0, 0.0), // Expected output sign: positive in X only
             ),
             // Test case: I-only
@@ -860,7 +854,7 @@ mod table_driven_tests {
                 },
                 Vec3::new(0.0, 0.0, 0.3), // Current error (less than last error)
                 Vec3::new(0.0, 0.0, 0.5), // Last error (higher than current)
-                Vec3::new(0.0, 0.0, 0.0), // Integral term (zero)
+                Vec3::zeros(),            // Integral term (zero)
                 Vec3::new(0.0, 0.0, -1.0), // Expected output sign: negative in Z (decreasing error)
             ),
             // Test case: D-only, with increasing error
@@ -873,7 +867,7 @@ mod table_driven_tests {
                 },
                 Vec3::new(0.5, 0.0, 0.0), // Current error (higher than last error)
                 Vec3::new(0.3, 0.0, 0.0), // Last error (lower than current)
-                Vec3::new(0.0, 0.0, 0.0), // Integral term (zero)
+                Vec3::zeros(),            // Integral term (zero)
                 Vec3::new(1.0, 0.0, 0.0), // Expected output sign: positive in X (increasing error)
             ),
             // Test case: Full PID, positive error, all terms positive
@@ -1116,7 +1110,7 @@ mod table_driven_tests {
             // Create uniform error in all axes
             let error = Vec3::new(*error_value, *error_value, *error_value);
             let dt = *dt;
-            let estimated_rates = Vec3::new(0.0, 0.0, 0.0);
+            let estimated_rates = Vec3::zeros();
 
             // Run the controller for specified number of iterations
             for _ in 0..*iterations {
@@ -1149,8 +1143,8 @@ mod table_driven_tests {
         {
             let mut controller = BodyRateController::new();
             let dt = 0.0;
-            let desired_rates = Vec3::new(0.0, 0.0, 0.0);
-            let estimated_rates = Vec3::new(0.0, 0.0, 0.0);
+            let desired_rates = Vec3::zeros();
+            let estimated_rates = Vec3::zeros();
 
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 controller.control(dt, desired_rates, estimated_rates);
@@ -1175,7 +1169,7 @@ mod table_driven_tests {
                 Vec3::new(f32::INFINITY, 0.0, 0.0),
                 Vec3::new(0.0, f32::NAN, 0.0),
             );
-            assert_eq!(moments, Vec3::default());
+            assert_eq!(moments, Vec3::zeros());
         }
     }
 
@@ -1197,15 +1191,15 @@ mod table_driven_tests {
             controller.last_error = last_error;
 
             // Verify the state is set
-            assert_ne!(controller.integral_term, Vec3::default());
-            assert_ne!(controller.last_error, Vec3::default());
+            assert_ne!(controller.integral_term, Vec3::zeros());
+            assert_ne!(controller.last_error, Vec3::zeros());
 
             // Reset the controller
             controller.reset();
 
             // Verify everything is reset to default
-            assert_eq!(controller.integral_term, Vec3::default());
-            assert_eq!(controller.last_error, Vec3::default());
+            assert_eq!(controller.integral_term, Vec3::zeros());
+            assert_eq!(controller.last_error, Vec3::zeros());
         }
     }
 
@@ -1261,8 +1255,8 @@ mod table_driven_tests {
             assert_eq!(controller.max_angular_rates, config.max_angular_rates);
 
             // Verify default state was initialized
-            assert_eq!(controller.integral_term, Vec3::default());
-            assert_eq!(controller.last_error, Vec3::default());
+            assert_eq!(controller.integral_term, Vec3::zeros());
+            assert_eq!(controller.last_error, Vec3::zeros());
         }
     }
 }

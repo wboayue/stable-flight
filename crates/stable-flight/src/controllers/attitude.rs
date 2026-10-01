@@ -90,9 +90,9 @@ impl AttitudeController {
         );
         Self {
             gains: config.gains,
-            integral_term: Vec2::default(),
+            integral_term: Vec2::zeros(),
             max_integral: config.max_integral,
-            last_error: Vec2::default(),
+            last_error: Vec2::zeros(),
             resync_derivative: false,
             max_angles: config.max_angles,
             max_rate: config.max_rate,
@@ -140,13 +140,13 @@ impl AttitudeController {
         // integral or derivative history (see `crate::math` for the policy).
         if !(error.x.is_finite() && error.y.is_finite()) {
             self.resync_derivative = true;
-            return Vec2::default();
+            return Vec2::zeros();
         }
 
         // Derivative term: rate of change of error (skipped on the first tick after a gap)
         let error_derivative = if self.resync_derivative {
             self.resync_derivative = false;
-            Vec2::default()
+            Vec2::zeros()
         } else {
             (error - self.last_error) / dt
         };
@@ -196,8 +196,8 @@ mod tests {
         assert_eq!(controller.max_angles, Vec2::new(FRAC_PI_4, FRAC_PI_4));
         assert_eq!(controller.max_rate, Vec2::new(2.0, 2.0));
         assert_eq!(controller.max_integral, 100.0);
-        assert_eq!(controller.integral_term, Vec2::new(0.0, 0.0));
-        assert_eq!(controller.last_error, Vec2::new(0.0, 0.0));
+        assert_eq!(controller.integral_term, Vec2::zeros());
+        assert_eq!(controller.last_error, Vec2::zeros());
     }
 
     #[test]
@@ -235,16 +235,16 @@ mod tests {
         // Assemble
         let mut controller = default_controller();
         let dt = 0.1;
-        let desired_angles = Vec2::new(0.0, 0.0); // No tilt requested
-        let estimated_angles = Vec2::new(0.0, 0.0); // Already at target
+        let desired_angles = Vec2::zeros(); // No tilt requested
+        let estimated_angles = Vec2::zeros(); // Already at target
 
         // Activate
         let rates = controller.control(dt, desired_angles, estimated_angles);
 
         // Assert
-        assert_eq!(rates, Vec2::new(0.0, 0.0)); // No error, no rate output
-        assert_eq!(controller.integral_term, Vec2::new(0.0, 0.0)); // No integral buildup
-        assert_eq!(controller.last_error, Vec2::new(0.0, 0.0)); // Error remains zero
+        assert_eq!(rates, Vec2::zeros()); // No error, no rate output
+        assert_eq!(controller.integral_term, Vec2::zeros()); // No integral buildup
+        assert_eq!(controller.last_error, Vec2::zeros()); // Error remains zero
     }
 
     #[test]
@@ -258,7 +258,7 @@ mod tests {
         }; // No integral or derivative initially
         let dt = 0.1;
         let desired_angles = Vec2::new(1.0, -1.0); // Max roll right, max pitch down
-        let estimated_angles = Vec2::new(0.0, 0.0); // Starting at zero
+        let estimated_angles = Vec2::zeros(); // Starting at zero
 
         // Activate
         let rates = controller.control(dt, desired_angles, estimated_angles);
@@ -288,7 +288,7 @@ mod tests {
         });
         let dt = 0.1;
         let desired_angles = Vec2::new(1.0, 1.0); // Max roll and pitch
-        let estimated_angles = Vec2::new(0.0, 0.0);
+        let estimated_angles = Vec2::zeros();
 
         // Activate
         let rates = controller.control(dt, desired_angles, estimated_angles);
@@ -310,7 +310,7 @@ mod tests {
         });
         let dt = 0.1;
         let desired_angles = Vec2::new(0.5, 0.5);
-        let estimated_angles = Vec2::new(0.0, 0.0);
+        let estimated_angles = Vec2::zeros();
 
         // Activate
         let _rates1 = controller.control(dt, desired_angles, estimated_angles);
@@ -339,7 +339,7 @@ mod tests {
         });
         let dt = 2.0; // Large dt to quickly reach max_integral
         let desired_angles = Vec2::new(1.0, 1.0);
-        let estimated_angles = Vec2::new(0.0, 0.0);
+        let estimated_angles = Vec2::zeros();
 
         // Activate
         let rates = controller.control(dt, desired_angles, estimated_angles);
@@ -362,7 +362,7 @@ mod tests {
         });
         let dt = 0.1;
         let desired_angles = Vec2::new(1.0, 1.0);
-        let estimated_angles1 = Vec2::new(0.0, 0.0);
+        let estimated_angles1 = Vec2::zeros();
         let estimated_angles2 = Vec2::new(0.5 * FRAC_PI_4, 0.5 * FRAC_PI_4);
 
         // Activate
@@ -384,8 +384,8 @@ mod tests {
         // Assemble
         let mut controller = default_controller();
         let dt = 0.0;
-        let desired_angles = Vec2::new(0.0, 0.0);
-        let estimated_angles = Vec2::new(0.0, 0.0);
+        let desired_angles = Vec2::zeros();
+        let estimated_angles = Vec2::zeros();
 
         // Activate
         let _rates = controller.control(dt, desired_angles, estimated_angles);
@@ -407,8 +407,8 @@ mod tests {
             ),
         ];
         for (requested, equivalent) in cases {
-            let rates = default_controller().control(0.1, requested, Vec2::new(0.0, 0.0));
-            let expected = default_controller().control(0.1, equivalent, Vec2::new(0.0, 0.0));
+            let rates = default_controller().control(0.1, requested, Vec2::zeros());
+            let expected = default_controller().control(0.1, equivalent, Vec2::zeros());
             assert!(
                 rates.x.is_finite() && rates.y.is_finite(),
                 "{requested:?} gave non-finite rates {rates:?}"
@@ -424,14 +424,11 @@ mod tests {
         let desired = Vec2::new(0.5, -0.5);
 
         let during = controller.control(0.1, desired, Vec2::new(f32::NAN, 0.0));
-        assert!(
-            during == Vec2::new(0.0, 0.0),
-            "NaN estimate gave {during:?}"
-        );
-        assert!(controller.integral_term == Vec2::new(0.0, 0.0));
+        assert!(during == Vec2::zeros(), "NaN estimate gave {during:?}");
+        assert!(controller.integral_term == Vec2::zeros());
 
         // First finite tick after the gap: P + I only (no derivative from the pre-gap error).
-        let after_nan = controller.control(0.1, desired, Vec2::new(0.0, 0.0));
+        let after_nan = controller.control(0.1, desired, Vec2::zeros());
         let error = desired.component_mul(&controller.max_angles);
         let Gains { p, i, .. } = controller.gains;
         let expected = p * error + i * (0.1 * error);

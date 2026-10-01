@@ -104,7 +104,7 @@ impl ScriptCommander {
     /// use stable_flight_sitl::commanders::ScriptCommander;
     ///
     /// let waypoints = vec![WaypointCommand {
-    ///     position: Vec2::new(0.0, 0.0),
+    ///     position: Vec2::zeros(),
     ///     ..Default::default()
     /// }];
     /// let commander = ScriptCommander::from_waypoints(waypoints).expect("non-empty");
@@ -132,7 +132,7 @@ impl ScriptCommander {
     /// use stable_flight_sitl::commanders::ScriptCommander;
     ///
     /// let commander = ScriptCommander::from_waypoints(vec![WaypointCommand {
-    ///     position: Vec2::new(0.0, 0.0),
+    ///     position: Vec2::zeros(),
     ///     ..Default::default()
     /// }])
     /// .expect("non-empty")

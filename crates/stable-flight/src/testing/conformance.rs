@@ -255,14 +255,14 @@ impl Scenario {
                 state.angular_velocity.z,
             ),
         ];
-        let (q_roll, q_pitch, q_yaw) = crate::math::euler_angles(&state.attitude);
+        let (q_roll, q_pitch, q_yaw) = crate::euler_angles(&state.attitude);
         let angles = [
             ("roll", e.roll, state.roll),
             ("pitch", e.pitch, state.pitch),
             ("heading", e.heading, state.heading),
-            ("attitude.euler_angles().0", e.roll, q_roll),
-            ("attitude.euler_angles().1", e.pitch, q_pitch),
-            ("attitude.euler_angles().2", e.heading, q_yaw),
+            ("attitude roll", e.roll, q_roll),
+            ("attitude pitch", e.pitch, q_pitch),
+            ("attitude yaw", e.heading, q_yaw),
         ];
 
         for (field, expected, actual) in linear {

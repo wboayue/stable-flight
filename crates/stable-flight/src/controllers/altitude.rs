@@ -135,6 +135,50 @@ mod tests {
         UnitQuaternion::identity()
     }
 
+    /// Tilt compensation reads only the body-z/world-z alignment, cos(roll)·cos(pitch) (the
+    /// rotation matrix's (2, 2) element), floored at 0.01. Attitudes in a row share it, so
+    /// they must command the same thrust; rows differ from each other. The climb request (15 m
+    /// below target) keeps level and 40° thrust off the limits; past 90° the floor saturates it.
+    #[test]
+    fn tilt_compensation_depends_only_on_body_z_alignment() {
+        let deg = f32::to_radians;
+        let attitude = |roll: f32, pitch: f32, yaw: f32| {
+            UnitQuaternion::from_euler_angles(deg(roll), deg(pitch), deg(yaw))
+        };
+        // Each row: attitudes with equal alignment (yaw-invariant, roll/pitch symmetric).
+        let rows = [
+            vec![attitude(0.0, 0.0, 0.0), attitude(0.0, 0.0, 120.0)],
+            vec![
+                attitude(40.0, 0.0, 0.0),
+                attitude(0.0, 40.0, 0.0),
+                attitude(-40.0, 0.0, 75.0),
+            ],
+            // Past 90°: alignment ≤ 0, floored to the same 0.01.
+            vec![
+                attitude(0.0, 89.99, 0.0),
+                attitude(100.0, 0.0, 0.0),
+                attitude(170.0, 0.0, 30.0),
+            ],
+        ];
+        let thrust =
+            |attitude| AltitudeController::new().control(0.004, 25.0, 0.0, 10.0, 0.0, attitude);
+
+        let per_row: Vec<f32> = rows
+            .iter()
+            .map(|row| {
+                let first = thrust(row[0]);
+                for &other in &row[1..] {
+                    approx::assert_relative_eq!(thrust(other), first, epsilon = 1e-5);
+                }
+                first
+            })
+            .collect();
+        assert!(
+            per_row[0] != per_row[1] && per_row[1] != per_row[2],
+            "tilt must change thrust: {per_row:?}"
+        );
+    }
+
     #[test]
     fn non_finite_estimate_holds_hover_and_does_not_poison_later_ticks() {
         let nan = f32::NAN;

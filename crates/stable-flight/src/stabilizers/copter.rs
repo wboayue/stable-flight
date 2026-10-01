@@ -69,11 +69,6 @@ impl Default for CopterStabilizerConfig {
                 d: 0.06,
             },
             thrust_curve_exponent: 2.0,
-            // max_rates: Vec3 {
-            //     x: 3.0, // max roll rate in rad/s (~172 deg/s)
-            //     y: 3.0, // max pitch rate in rad/s (~172 deg/s)
-            //     z: 3.0, // max yaw rate in rad/s (~86 deg/s)
-            // },
         }
     }
 }

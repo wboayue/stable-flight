@@ -45,8 +45,8 @@ fn setup_controller() -> CopterStabilizer {
 fn test_rate_controller_zero_error() {
     let mut controller = setup_controller();
     let dt = 0.01;
-    let desired_rates = Vec3::new(0.0, 0.0, 0.0);
-    let current_rates = Vec3::new(0.0, 0.0, 0.0);
+    let desired_rates = Vec3::zeros();
+    let current_rates = Vec3::zeros();
 
     let output = controller
         .rates_controller
@@ -55,7 +55,7 @@ fn test_rate_controller_zero_error() {
     // With zero error (desired and current rates are the same), PID terms should be 0
     assert_eq!(
         output,
-        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::zeros(),
         "Output should be zero when error is zero"
     );
 }
@@ -65,7 +65,7 @@ fn test_rate_controller_positive_error() {
     let mut controller = setup_controller();
     let dt = 0.01;
     let desired_rates = Vec3::new(1.0, 1.0, 1.0);
-    let current_rates = Vec3::new(0.0, 0.0, 0.0);
+    let current_rates = Vec3::zeros();
 
     let output = controller
         .rates_controller
@@ -222,13 +222,13 @@ fn attitude_reference_selects_the_tracked_estimate() {
         approx::assert_relative_eq!(a, b, epsilon = 1e-4);
     }
     assert!(
-        euler.moments != Vec3::new(0.0, 0.0, 0.0),
+        euler.moments != Vec3::zeros(),
         "tilted state must be corrected"
     );
 
     // Level Euler fields: nothing to correct. Tilted quaternion: corrects as before.
     let level = run(AttitudeReference::Euler, &quaternion_only);
-    assert!(level.moments == Vec3::new(0.0, 0.0, 0.0), "gave {level:?}");
+    assert!(level.moments == Vec3::zeros(), "gave {level:?}");
     // The quaternion path ignores the Euler fields on every axis.
     let tilted = run(AttitudeReference::Quaternion, &quaternion_only);
     assert!(
@@ -284,10 +284,42 @@ fn nan_rate_estimate_yields_zero_moments() {
         }),
         &state,
     );
-    assert!(
-        output.moments == Vec3::new(0.0, 0.0, 0.0),
-        "gave {output:?}"
-    );
+    assert!(output.moments == Vec3::zeros(), "gave {output:?}");
+}
+
+/// A corrupted attitude quaternion, tracked via `AttitudeReference::Quaternion`, is "no
+/// estimate": zero moments. nalgebra's own `euler_angles` reads its yaw as a finite 0, which
+/// commanded a full yaw moment toward the heading setpoint.
+#[test]
+fn non_finite_attitude_quaternion_yields_zero_moments() {
+    use nalgebra::Quaternion;
+
+    let nan = f32::NAN;
+    // (w, x, y, z)
+    let cases = [
+        [nan, nan, nan, nan],
+        [1.0, nan, 0.0, 0.0],
+        [f32::INFINITY, 0.0, 0.0, 0.0],
+    ];
+    let setpoint = Setpoint::Attitude(AttitudeSetpoint {
+        thrust: 0.5,
+        roll: 0.3,
+        pitch: -0.2,
+        heading: 1.0,
+        reference: AttitudeReference::Quaternion,
+    });
+    for [w, x, y, z] in cases {
+        let state = VehicleState {
+            attitude: UnitQuaternion::new_unchecked(Quaternion::new(w, x, y, z)),
+            ..Default::default()
+        };
+        let output = CopterStabilizer::new(CopterStabilizerConfig::default())
+            .stabilize(0.004, &setpoint, &state);
+        assert!(
+            output.moments == Vec3::zeros(),
+            "({w}, {x}, {y}, {z}) gave {output:?}"
+        );
+    }
 }
 
 /// A NaN rate setpoint means "hold zero rate" (damping), not "no moments".
@@ -312,7 +344,7 @@ fn nan_rate_setpoint_holds_zero_rate() {
         a == b,
         "NaN rate setpoint gave {a:?}, zero-rate hold gives {b:?}"
     );
-    assert!(a.moments != Vec3::new(0.0, 0.0, 0.0));
+    assert!(a.moments != Vec3::zeros());
 }
 
 #[test]

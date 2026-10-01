@@ -99,7 +99,7 @@ impl Stabilizer for RecordingStabilizer {
             "stabilize dt={dt} thrust={} heading={}",
             attitude.thrust, state.heading
         ));
-        ControlOutput::new(attitude.thrust + 0.25, Vec3::new(0.0, 0.0, 0.0))
+        ControlOutput::new(attitude.thrust + 0.25, Vec3::zeros())
     }
 
     fn prime(&mut self, state: &VehicleState) {

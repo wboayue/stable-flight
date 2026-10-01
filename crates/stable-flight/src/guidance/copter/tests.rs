@@ -35,9 +35,9 @@ impl Stack {
 fn lateral_loop_holds_level_at_the_target() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     let dt = 0.01;
-    let desired_position = Vec2::new(0.0, 0.0);
-    let current_position = Vec2::new(0.0, 0.0);
-    let current_velocity = Vec2::new(0.0, 0.0);
+    let desired_position = Vec2::zeros();
+    let current_position = Vec2::zeros();
+    let current_velocity = Vec2::zeros();
 
     let output = guidance.lateral_controller.control(
         dt,
@@ -47,7 +47,7 @@ fn lateral_loop_holds_level_at_the_target() {
     );
     assert_eq!(
         output,
-        Vec2::new(0.0, 0.0),
+        Vec2::zeros(),
         "Output should be zero when error is zero"
     );
 }
@@ -57,8 +57,8 @@ fn lateral_loop_tilts_toward_the_target() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     let dt = 0.01;
     let desired_position = Vec2::new(1.0, 1.0);
-    let current_position = Vec2::new(0.0, 0.0);
-    let current_velocity = Vec2::new(0.0, 0.0);
+    let current_position = Vec2::zeros();
+    let current_velocity = Vec2::zeros();
 
     let output = guidance.lateral_controller.control(
         dt,
@@ -203,7 +203,7 @@ fn waypoint_at_rest_on_target_yields_no_output() {
     let mut stack = Stack::new();
     let dt = 0.01;
     let waypoint_command = WaypointCommand {
-        position: Vec2::new(0.0, 0.0),
+        position: Vec2::zeros(),
         ..Default::default()
     };
     let state = VehicleState::default();
@@ -429,7 +429,7 @@ fn out_of_range_or_nan_commands_saturate_instead_of_panicking() {
 fn nan_altitude_estimate_holds_hover_then_recovers() {
     let at_altitude = |z: f32| state_at(0.0, 0.0, z);
     let command = Command::Waypoint(WaypointCommand {
-        position: Vec2::new(0.0, 0.0),
+        position: Vec2::zeros(),
         altitude: 20.0,
         cruise_speed: 7.0,
         ..Default::default()
@@ -555,7 +555,7 @@ fn lateral_loop_runs_per_navigation_period_and_altitude_loop_every_tick() {
     const DT: f32 = 0.003;
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     let (mut lateral, mut altitude) = reference_loops();
-    let mut tilt = Vec2::default();
+    let mut tilt = Vec2::zeros();
 
     for tick in 0..10 {
         let state = drifting_state(tick);

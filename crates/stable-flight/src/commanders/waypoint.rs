@@ -42,7 +42,7 @@ impl core::error::Error for EmptyWaypoints {}
 /// use stable_flight::{Command, Commander, VehicleState, WaypointCommand};
 ///
 /// let square = [
-///     WaypointCommand { position: Vec2::new(0.0, 0.0), altitude: 10.0, ..Default::default() },
+///     WaypointCommand { position: Vec2::zeros(), altitude: 10.0, ..Default::default() },
 ///     WaypointCommand { position: Vec2::new(20.0, 0.0), altitude: 10.0, ..Default::default() },
 ///     WaypointCommand { position: Vec2::new(20.0, 20.0), altitude: 10.0, ..Default::default() },
 ///     WaypointCommand { position: Vec2::new(0.0, 20.0), altitude: 10.0, ..Default::default() },

@@ -79,6 +79,33 @@ fn euler_angles_match_nalgebra_and_are_nan_for_a_non_finite_attitude() {
     }
 }
 
+/// Float rounding pushes the `asin` argument just past ±1 near vertical; a valid attitude must
+/// still give a finite pitch, not NaN (which the controllers would treat as "no estimate").
+#[test]
+fn euler_angles_pitch_stays_finite_at_vertical() {
+    use nalgebra::{Quaternion, UnitQuaternion};
+
+    // (roll, yaw) paired with pitches swept up to ±π/2
+    let cases = [(0.0, 0.0), (0.3, 1.0), (-2.0, -2.5)];
+    for (roll, yaw) in cases {
+        for step in 0..2000 {
+            for sign in [1.0, -1.0] {
+                let pitch = sign * (PI / 2.0 - step as f32 * 1e-7);
+                let attitude = UnitQuaternion::from_euler_angles(roll, pitch, yaw);
+                let (_, p, _) = euler_angles(&attitude);
+                assert!(
+                    (p - pitch).abs() < 1e-3,
+                    "pitch {pitch} (roll {roll}, yaw {yaw}) gave {p}"
+                );
+            }
+        }
+    }
+
+    // Slightly non-unit, as a backend reporting unnormalized quaternions may send.
+    let over_unit = UnitQuaternion::new_unchecked(Quaternion::new(0.7072, 0.0, 0.7072, 0.0));
+    assert_relative_eq!(euler_angles(&over_unit).1, PI / 2.0);
+}
+
 #[test]
 fn all_finite_rejects_any_nan_or_infinite_component() {
     // (input, all finite)

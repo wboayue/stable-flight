@@ -40,13 +40,55 @@ pub use flight_loop::FlightLoop;
 
 use nalgebra::UnitQuaternion;
 
-/// Re-export of the [`nalgebra`] version this crate's public types use.
+pub use math::euler_angles;
+
+/// Re-export of the [`nalgebra`] version this crate's public types use; depend on it through
+/// here so the versions can't diverge.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::VehicleState;
+/// use stable_flight::nalgebra::UnitQuaternion;
+///
+/// let state = VehicleState {
+///     attitude: UnitQuaternion::from_euler_angles(0.0, 0.1, 0.0),
+///     ..Default::default()
+/// };
+/// assert!(state.attitude.angle() > 0.0);
+/// ```
 pub use nalgebra;
 
 /// 2D vector used throughout the pipeline (waypoint positions, tilt, controller limits).
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::Vec2;
+///
+/// let tilt: Vec2 = Vec2::new(0.3, -0.1);
+/// assert_eq!(tilt.component_mul(&Vec2::new(2.0, 2.0)), Vec2::new(0.6, -0.2));
+/// ```
 pub type Vec2<T = f32> = nalgebra::Vector2<T>;
 
-/// 3D vector used throughout the pipeline (state vectors, moments, rates).
+/// 3D vector used throughout the pipeline (state vectors, moments, rates). Element-wise
+/// products are `component_mul`; `*` between two vectors is a matrix product.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::Vec3;
+/// use uom::si::{f32::Length, length::meter};
+///
+/// // Annotate standalone literals: the alias default doesn't steer inference (they'd be f64).
+/// let rates: Vec3 = Vec3::new(3.0, 4.0, 0.0);
+/// assert_eq!(rates.norm(), 5.0);
+///
+/// // Also holds `uom` quantities, as `VehicleState::position` does.
+/// let m = Length::new::<meter>;
+/// let position = Vec3::new(m(1.0), m(2.0), m(3.0));
+/// assert_eq!(position.z.value, 3.0);
+/// ```
 pub type Vec3<T = f32> = nalgebra::Vector3<T>;
 
 // Commanders
@@ -436,7 +478,7 @@ pub struct WaypointCommand {
 ///
 /// let output = ControlOutput::new(
 ///     0.5, // 50% thrust
-///     Vec3::new(0.0, 0.0, 0.0) // No roll, pitch, or yaw moments
+///     Vec3::zeros() // No roll, pitch, or yaw moments
 /// );
 /// ```
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -488,7 +530,7 @@ impl ControlOutput {
 /// |---|---|---|---|
 /// | `position` | `x` north, `y` east, `z` up | m | `z` is altitude above the backend's datum (e.g. sea level) |
 /// | `velocity`, `acceleration` | as `position` | m/s, m/s² | `z` climbing |
-/// | `attitude` | NED world → FRD body, ZYX (yaw, pitch, roll); `UnitQuaternion::from_euler_angles(roll, pitch, heading)` | — | its `euler_angles()` match the fields below |
+/// | `attitude` | NED world → FRD body, ZYX (yaw, pitch, roll); `UnitQuaternion::from_euler_angles(roll, pitch, heading)` | — | [`euler_angles`] of it match the fields below |
 /// | `roll` | about body `x` | rad | right wing down |
 /// | `pitch` | about body `y` | rad | nose up |
 /// | `heading` | about NED `z` | rad | clockwise from north (east = π/2); any range, e.g. [0, 2π) or [-π, π) |

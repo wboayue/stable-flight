@@ -21,7 +21,7 @@ fn create_mixer() -> QuadCopterMixer {
 #[test]
 fn test_hover_no_moments() {
     let mixer = create_mixer();
-    let input = ControlOutput::new(1.0, Vec3::new(0.0, 0.0, 0.0));
+    let input = ControlOutput::new(1.0, Vec3::zeros());
     let output = mixer.mix(&input);
 
     let expected = 0.9;
@@ -197,7 +197,7 @@ fn test_max_inputs() {
 #[test]
 fn test_zero_inputs() {
     let mixer = create_mixer();
-    let input = ControlOutput::new(0.0, Vec3::new(0.0, 0.0, 0.0));
+    let input = ControlOutput::new(0.0, Vec3::zeros());
     let output = mixer.mix(&input);
 
     let expected = 0.0;
@@ -261,7 +261,7 @@ fn test_negative_outputs() {
 #[test]
 fn test_partial_thrust() {
     let mixer = create_mixer();
-    let input = ControlOutput::new(0.5, Vec3::new(0.0, 0.0, 0.0));
+    let input = ControlOutput::new(0.5, Vec3::zeros());
     let output = mixer.mix(&input);
 
     let expected = 0.45;
@@ -363,13 +363,8 @@ fn test_boundary_condition() {
 fn out_of_range_or_nan_inputs_saturate_instead_of_panicking() {
     // (input thrust, input moments, equivalent thrust, equivalent moments)
     let cases = [
-        (
-            -0.1,
-            Vec3::new(0.0, 0.0, 0.0),
-            0.0,
-            Vec3::new(0.0, 0.0, 0.0),
-        ),
-        (1.5, Vec3::new(0.0, 0.0, 0.0), 1.0, Vec3::new(0.0, 0.0, 0.0)),
+        (-0.1, Vec3::zeros(), 0.0, Vec3::zeros()),
+        (1.5, Vec3::zeros(), 1.0, Vec3::zeros()),
         (0.5, Vec3::new(1.5, 0.0, 0.0), 0.5, Vec3::new(1.0, 0.0, 0.0)),
         (
             0.5,

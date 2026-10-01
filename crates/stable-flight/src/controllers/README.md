@@ -35,7 +35,7 @@ use stable_flight::Vec3;
 let mut controller = BodyRateController::new();
 let dt = Duration::from_millis(4); // 250Hz control loop
 let desired_rates = Vec3::new(0.1, 0.0, 0.05); // Roll, pitch, yaw rates
-let estimated_rates = Vec3::new(0.0, 0.0, 0.0);
+let estimated_rates = Vec3::zeros();
 
 let moments = controller.control(dt, desired_rates, estimated_rates);
 ```

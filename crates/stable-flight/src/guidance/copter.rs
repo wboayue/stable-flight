@@ -134,7 +134,7 @@ impl CopterGuidance {
             heading: 0.0,
 
             lateral_rate: RateDivider::new(config.navigation_period),
-            tilt: Vec2::default(),
+            tilt: Vec2::zeros(),
         }
     }
 }
@@ -270,7 +270,7 @@ impl CopterGuidance {
             .iter()
             .all(|v| v.is_finite())
         {
-            return Vec2::default();
+            return Vec2::zeros();
         }
 
         self.tilt =

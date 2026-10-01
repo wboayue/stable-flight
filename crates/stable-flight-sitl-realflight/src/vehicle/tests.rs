@@ -142,7 +142,7 @@ fn test_vehicle_creation() {
     let vehicle = RealFlightVehicle::new(config);
 
     // Verify initial state
-    assert_eq!(vehicle.estimated_state.position, Vec3::default());
+    assert_eq!(vehicle.estimated_state.position, Vec3::zeros());
     assert_eq!(vehicle.mapping.motors[0], Some(0));
     assert_eq!(vehicle.mapping.rudder, Some(1));
 }
@@ -153,7 +153,7 @@ fn test_vehicle_creation_with_bridge_failure() {
     let vehicle = RealFlightVehicle::new(config);
 
     // Should still create successfully despite bridge failures
-    assert_eq!(vehicle.estimated_state.position, Vec3::default());
+    assert_eq!(vehicle.estimated_state.position, Vec3::zeros());
 }
 
 #[test]
@@ -304,7 +304,8 @@ fn exchanges_once_per_tick_and_estimates_from_the_previous_exchange() {
 /// ASL, angles and rates in degrees (per the `realflight-bridge` field docs).
 ///
 /// The quaternion assumes RealFlight reports a standard ZYX (yaw, pitch, roll) NED-to-body
-/// rotation, built with the same nalgebra code `check` reads it back with. So the quaternion
+/// rotation, built with nalgebra's `from_euler_angles`, the inverse of the
+/// `stable_flight::euler_angles` that `check` reads it back with. So the quaternion
 /// rows only check that the adapter copies components in order, not RealFlight's convention;
 /// that needs a live capture.
 fn native_fixture(scenario: &Scenario) -> SimulatorState {
