@@ -2,7 +2,8 @@ use std::time::Duration;
 
 use log::{error, warn};
 use realflight_bridge::{ControlInputs, RealFlightBridge, SimulatorState};
-use robomath::{Quaternion, Vec3, to_radians};
+use stable_flight::Vec3;
+use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
 
 use stable_flight::{Actuator, ActuatorCommand, StateEstimator, VehicleState};
 
@@ -264,40 +265,41 @@ where
     ///
     /// Converts simulator units (degrees) to SI units (radians) where appropriate.
     fn update_estimate(&mut self, state: SimulatorState) {
-        self.estimated_state.position = Vec3 {
-            x: state.aircraft_position_x,
-            y: state.aircraft_position_y,
-            z: state.altitude_asl,
-        };
+        self.estimated_state.position = Vec3::new(
+            state.aircraft_position_x,
+            state.aircraft_position_y,
+            state.altitude_asl,
+        );
 
-        self.estimated_state.velocity = Vec3 {
-            x: state.velocity_world_u,
-            y: state.velocity_world_v,
-            z: state.velocity_world_w,
-        };
+        self.estimated_state.velocity = Vec3::new(
+            state.velocity_world_u,
+            state.velocity_world_v,
+            state.velocity_world_w,
+        );
 
-        self.estimated_state.acceleration = Vec3 {
-            x: state.acceleration_world_ax,
-            y: state.acceleration_world_ay,
-            z: state.acceleration_world_az,
-        };
+        self.estimated_state.acceleration = Vec3::new(
+            state.acceleration_world_ax,
+            state.acceleration_world_ay,
+            state.acceleration_world_az,
+        );
 
-        self.estimated_state.attitude = Quaternion {
-            w: state.orientation_quaternion_w,
-            x: state.orientation_quaternion_x,
-            y: state.orientation_quaternion_y,
-            z: state.orientation_quaternion_z,
-        };
+        // Taken as reported, without renormalizing: RealFlight's quaternion is already unit.
+        self.estimated_state.attitude = UnitQuaternion::new_unchecked(Quaternion::new(
+            state.orientation_quaternion_w,
+            state.orientation_quaternion_x,
+            state.orientation_quaternion_y,
+            state.orientation_quaternion_z,
+        ));
 
-        self.estimated_state.angular_velocity = Vec3 {
-            x: to_radians(state.roll_rate.value),
-            y: to_radians(state.pitch_rate.value),
-            z: to_radians(state.yaw_rate.value),
-        };
+        self.estimated_state.angular_velocity = Vec3::new(
+            state.roll_rate.value.to_radians(),
+            state.pitch_rate.value.to_radians(),
+            state.yaw_rate.value.to_radians(),
+        );
 
-        self.estimated_state.roll = to_radians(state.roll.value);
-        self.estimated_state.pitch = to_radians(state.inclination.value);
-        self.estimated_state.heading = to_radians(state.azimuth.value);
+        self.estimated_state.roll = state.roll.value.to_radians();
+        self.estimated_state.pitch = state.inclination.value.to_radians();
+        self.estimated_state.heading = state.azimuth.value.to_radians();
     }
 }
 

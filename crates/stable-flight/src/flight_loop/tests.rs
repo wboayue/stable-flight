@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
+use crate::Vec3;
 use assert2::check;
-use robomath::vec3;
 
 use super::*;
 use crate::{
@@ -99,7 +99,7 @@ impl Stabilizer for RecordingStabilizer {
             "stabilize dt={dt} thrust={} heading={}",
             attitude.thrust, state.heading
         ));
-        ControlOutput::new(attitude.thrust + 0.25, vec3(0.0, 0.0, 0.0))
+        ControlOutput::new(attitude.thrust + 0.25, Vec3::zeros())
     }
 
     fn prime(&mut self, state: &VehicleState) {

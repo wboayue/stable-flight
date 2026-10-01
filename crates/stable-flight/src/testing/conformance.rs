@@ -28,7 +28,8 @@
 
 use core::fmt;
 
-use robomath::{Quaternion, vec3};
+use crate::Vec3;
+use nalgebra::UnitQuaternion;
 use uom::si::acceleration::meter_per_second_squared;
 use uom::si::f32::{Acceleration, Length, Velocity};
 use uom::si::length::meter;
@@ -177,19 +178,19 @@ impl Scenario {
         let accel = Acceleration::new::<meter_per_second_squared>;
 
         VehicleState {
-            position: vec3(
+            position: Vec3::new(
                 Length::new::<meter>(x),
                 Length::new::<meter>(y),
                 Length::new::<meter>(z),
             ),
-            velocity: vec3(
+            velocity: Vec3::new(
                 Velocity::new::<meter_per_second>(vx),
                 Velocity::new::<meter_per_second>(vy),
                 Velocity::new::<meter_per_second>(vz),
             ),
-            acceleration: vec3(accel(ax), accel(ay), accel(az)),
-            attitude: Quaternion::from_euler(heading, pitch, roll),
-            angular_velocity: vec3(p, q, r),
+            acceleration: Vec3::new(accel(ax), accel(ay), accel(az)),
+            attitude: UnitQuaternion::from_euler_angles(roll, pitch, heading),
+            angular_velocity: Vec3::new(p, q, r),
             roll,
             pitch,
             heading,
@@ -254,13 +255,14 @@ impl Scenario {
                 state.angular_velocity.z,
             ),
         ];
+        let (q_roll, q_pitch, q_yaw) = crate::euler_angles(&state.attitude);
         let angles = [
             ("roll", e.roll, state.roll),
             ("pitch", e.pitch, state.pitch),
             ("heading", e.heading, state.heading),
-            ("attitude.roll()", e.roll, state.attitude.roll()),
-            ("attitude.pitch()", e.pitch, state.attitude.pitch()),
-            ("attitude.yaw()", e.heading, state.attitude.yaw()),
+            ("attitude roll", e.roll, q_roll),
+            ("attitude pitch", e.pitch, q_pitch),
+            ("attitude yaw", e.heading, q_yaw),
         ];
 
         for (field, expected, actual) in linear {

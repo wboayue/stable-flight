@@ -293,11 +293,11 @@ fn looped(waypoints: &[WaypointCommand]) -> impl Iterator<Item = &WaypointComman
 mod tests {
     use super::*;
     use assert2::check;
-    use robomath::vec2;
+    use stable_flight::Vec2;
 
     fn wp(x: f32, y: f32, altitude: f32, cruise_speed: f32) -> WaypointCommand {
         WaypointCommand {
-            position: vec2(x, y),
+            position: Vec2::new(x, y),
             velocity: None,
             altitude,
             cruise_speed,

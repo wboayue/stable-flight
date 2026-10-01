@@ -20,7 +20,7 @@
 
 use std::fs;
 
-use robomath::vec2;
+use stable_flight::Vec2;
 use thiserror::Error;
 
 use stable_flight::commanders::{EmptyWaypoints, WaypointFollower};
@@ -99,12 +99,12 @@ impl ScriptCommander {
     /// # Examples
     ///
     /// ```
-    /// use robomath::vec2;
+    /// use stable_flight::Vec2;
     /// use stable_flight::WaypointCommand;
     /// use stable_flight_sitl::commanders::ScriptCommander;
     ///
     /// let waypoints = vec![WaypointCommand {
-    ///     position: vec2(0.0, 0.0),
+    ///     position: Vec2::zeros(),
     ///     ..Default::default()
     /// }];
     /// let commander = ScriptCommander::from_waypoints(waypoints).expect("non-empty");
@@ -127,12 +127,12 @@ impl ScriptCommander {
     /// # Examples
     ///
     /// ```
-    /// use robomath::vec2;
+    /// use stable_flight::Vec2;
     /// use stable_flight::WaypointCommand;
     /// use stable_flight_sitl::commanders::ScriptCommander;
     ///
     /// let commander = ScriptCommander::from_waypoints(vec![WaypointCommand {
-    ///     position: vec2(0.0, 0.0),
+    ///     position: Vec2::zeros(),
     ///     ..Default::default()
     /// }])
     /// .expect("non-empty")
@@ -238,7 +238,7 @@ fn parse_waypoints(path: &str, contents: &str) -> Result<Vec<WaypointCommand>, S
         };
 
         waypoints.push(WaypointCommand {
-            position: vec2(parse(fields[0], "x")?, parse(fields[1], "y")?),
+            position: Vec2::new(parse(fields[0], "x")?, parse(fields[1], "y")?),
             velocity: None,
             altitude: parse(fields[2], "altitude")?,
             cruise_speed: parse(fields[3], "cruise_speed")?,

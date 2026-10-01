@@ -64,10 +64,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CopterGuidance::new` panics on a negative or non-finite period.
 - The crate is `no_std` (including the `testing` feature), so it builds for
   bare-metal targets such as `thumbv7em-none-eabihf`. It depends on `uom` and
-  `robomath` without their `std` features; enable them yourself if you need them.
+  `nalgebra` without their `std` features; enable them yourself if you need them.
+- `Vec2<T = f32>` and `Vec3<T = f32>` aliases for nalgebra's `Vector2`/`Vector3`,
+  and a `stable_flight::nalgebra` re-export of the version the public types use.
+- `euler_angles(&UnitQuaternion<f32>) -> (roll, pitch, yaw)`: the frame
+  contract's Euler angles. Prefer it to nalgebra's `UnitQuaternion::euler_angles`,
+  which maps a NaN attitude to a finite pitch of -π/2 and yaw 0, and costs more
+  flash. NaN in gives NaN out; pitch stays finite at ±90°.
 
 ### Changed
 
+- **Breaking:** vector and quaternion types come from `nalgebra` 0.35 instead of
+  `robomath` ([#87](https://github.com/wboayue/stable-flight/issues/87)).
+  `VehicleState::attitude` is a `UnitQuaternion<f32>`; the other vector fields
+  (`VehicleState`, `WaypointCommand`, `ControlOutput::moments`, controller
+  configs) are `Vec2`/`Vec3`. Migrate:
+  - `vec3(x, y, z)` / `Vec3 { x, y, z }` → `Vec3::new(x, y, z)`; zero vectors →
+    `Vec3::zeros()`.
+  - `a * b` of two vectors (element-wise in robomath) → `a.component_mul(&b)`;
+    `a / b` → `a.component_div(&b)`.
+  - Vector `clamp(min, max)` → `v.map(|c| c.clamp(min, max))`; `is_finite()` →
+    `v.iter().all(|c| c.is_finite())`.
+  - `Quaternion::from_euler(yaw, pitch, roll)` →
+    `UnitQuaternion::from_euler_angles(roll, pitch, yaw)` (note the order).
+  - `Quaternion { w, x, y, z }` / `Quaternion::new(w, x, y, z)` →
+    `UnitQuaternion::new_normalize(Quaternion::new(w, x, y, z))`, or
+    `new_unchecked` to keep the components as given.
+  - `q.roll()`/`q.pitch()`/`q.yaw()` → `stable_flight::euler_angles(&q)`.
+  - `rotation_matrix_i_wrt_b()` → `to_rotation_matrix()` (the same matrix);
+    `rotation_matrix_b_wrt_i()` → `to_rotation_matrix().transpose()`.
+  - `robomath::to_radians` → `f32::to_radians`.
 - **Breaking:** `Stabilizer` is the inner loop only: `stabilize` takes a
   `&Setpoint` instead of a `&Command`. `CopterStabilizer` no longer has the
   altitude and lateral controllers or the heading-hold target (now in

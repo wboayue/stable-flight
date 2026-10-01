@@ -128,9 +128,9 @@ impl MavlinkPublisher {
     pub fn send_attitude(&mut self, state: &VehicleState) {
         let attitude_msg = ATTITUDE_DATA {
             time_boot_ms: self.time_boot_ms(),
-            roll: state.attitude.x,
-            pitch: state.attitude.y,
-            yaw: state.attitude.z,
+            roll: state.attitude.i,
+            pitch: state.attitude.j,
+            yaw: state.attitude.k,
             rollspeed: state.angular_velocity.x,
             pitchspeed: state.angular_velocity.y,
             yawspeed: state.angular_velocity.z,
@@ -147,7 +147,7 @@ impl MavlinkPublisher {
         let vfr_hud_msg = VFR_HUD_DATA {
             airspeed: state.velocity.x.value,
             groundspeed: state.velocity.y.value,
-            heading: state.attitude.z as i16,
+            heading: state.attitude.k as i16,
             throttle,
             climb: state.velocity.z.value,
             alt: state.position.z.value, // Altitude (meters)
