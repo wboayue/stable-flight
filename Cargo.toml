@@ -15,7 +15,6 @@ repository = "https://github.com/wboayue/stable-flight"
 # no_std defaults for the core. Host crates add `features = ["std"]` to `uom`. nalgebra stays
 # no_std (`libm` for float math) everywhere; host crates don't need its `std` feature.
 nalgebra = { version = "0.35", default-features = false, features = ["libm"] }
-# Must match the version realflight-bridge uses (its `uom` feature).
 uom = { version = "0.38.0", default-features = false, features = ["f32", "si"] }
 libm = "0.2"
 log = "0.4.25"
