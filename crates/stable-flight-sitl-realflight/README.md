@@ -8,6 +8,8 @@ The crate builds on the [`stable-flight`](https://github.com/wboayue/stable-flig
 
 RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**. Test models: QuadCopterX (multirotor) and eXplora VTOL (tailsitter); the ArduPilot [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models) repo has more.
 
+`RealFlightRemoteBridge` talks to the `realflight_bridge_proxy` running on the RealFlight host. Install it there with `cargo install realflight-bridge --features rt-tokio`. The proxy must be `realflight-bridge` 2.x to match this crate (the 2.0 wire format is incompatible with 1.x).
+
 ## Usage
 
 ```rust
@@ -52,4 +54,4 @@ cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- f
 
 ## Known issues
 
-Some RealFlight conversions don't meet the `VehicleState` frame contract yet. Roll, pitch, heading, and body rates are converted to radians twice, so they come out about 57× too small. Vertical velocity and acceleration are also still down-positive. The conformance tests for those scenarios are `#[ignore]`d until a flight-checked fix lands. Run them with `cargo test -p stable-flight-sitl-realflight -- --ignored`.
+Some RealFlight conversions don't meet the `VehicleState` frame contract yet. Roll, pitch, heading, and body rates are converted to radians twice, so they come out about 57× too small. Vertical velocity and acceleration are also still down-positive. Position `x`/`y` are passed through as reported, though `realflight-bridge` 2.0 documents them as east/north, and the yaw-rate sign and quaternion axes are unverified. The conformance tests for those scenarios are `#[ignore]`d until a flight-checked fix lands. Run them with `cargo test -p stable-flight-sitl-realflight -- --ignored`.

@@ -1,5 +1,5 @@
 use super::*;
-use realflight_bridge::{BridgeError, ControlInputs, RealFlightBridge, SimulatorState};
+use realflight_bridge::{BridgeError, ControlInputs, Quaternion, RealFlightBridge, SimulatorState};
 use stable_flight::FlightLoop;
 use stable_flight::Vec3;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
@@ -14,9 +14,7 @@ use std::{
 };
 use uom::si::{
     acceleration::meter_per_second_squared,
-    angle::degree,
-    angular_velocity,
-    f32::{Acceleration, Angle, AngularVelocity, Length, Velocity},
+    f32::{Acceleration, Length, Velocity},
     length::meter,
     velocity::meter_per_second,
 };
@@ -25,11 +23,11 @@ use uom::si::{
 struct MockRealFlightBridge {
     should_fail: bool,
     last_input: RefCell<Option<ControlInputs>>,
-    /// Builds the state returned by every successful exchange (`SimulatorState` isn't `Clone`).
-    state: Box<dyn Fn() -> SimulatorState>,
+    /// The state returned by every successful exchange.
+    state: SimulatorState,
     /// Number of `exchange_data` calls.
     exchanges: Cell<usize>,
-    /// Overwrites `aircraft_position_x` with the exchange number (1, 2, …) so a test can tell
+    /// Overwrites `aircraft_position_x_m` with the exchange number (1, 2, …) so a test can tell
     /// which exchange a state came from.
     stamp_exchanges: bool,
 }
@@ -39,15 +37,15 @@ impl MockRealFlightBridge {
         Self {
             should_fail,
             last_input: RefCell::new(None),
-            state: Box::new(sample_state),
+            state: sample_state(),
             exchanges: Cell::new(0),
             stamp_exchanges: false,
         }
     }
 
-    fn with_state(state: impl Fn() -> SimulatorState + 'static) -> Self {
+    fn with_state(state: SimulatorState) -> Self {
         Self {
-            state: Box::new(state),
+            state,
             ..Self::new(false)
         }
     }
@@ -55,22 +53,20 @@ impl MockRealFlightBridge {
 
 fn sample_state() -> SimulatorState {
     SimulatorState {
-        aircraft_position_x: Length::new::<meter>(1.0),
-        aircraft_position_y: Length::new::<meter>(2.0),
-        altitude_asl: Length::new::<meter>(3.0),
-        velocity_world_u: Velocity::new::<meter_per_second>(4.0),
-        velocity_world_v: Velocity::new::<meter_per_second>(5.0),
-        velocity_world_w: Velocity::new::<meter_per_second>(6.0),
-        acceleration_world_ax: Acceleration::new::<meter_per_second_squared>(7.0),
-        acceleration_world_ay: Acceleration::new::<meter_per_second_squared>(8.0),
-        acceleration_world_az: Acceleration::new::<meter_per_second_squared>(9.0),
-        orientation_quaternion_w: 1.0,
-        orientation_quaternion_x: 0.0,
-        orientation_quaternion_y: 0.0,
-        orientation_quaternion_z: 0.0,
-        roll_rate: AngularVelocity::new::<angular_velocity::degree_per_second>(90.0),
-        pitch_rate: AngularVelocity::new::<angular_velocity::degree_per_second>(45.0),
-        yaw_rate: AngularVelocity::new::<angular_velocity::degree_per_second>(30.0),
+        aircraft_position_x_m: 1.0,
+        aircraft_position_y_m: 2.0,
+        altitude_asl_m: 3.0,
+        velocity_world_mps: [4.0, 5.0, 6.0].into(),
+        acceleration_world_mps2: [7.0, 8.0, 9.0].into(),
+        orientation: Quaternion {
+            w: 1.0,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        },
+        roll_rate_dps: 90.0,
+        pitch_rate_dps: 45.0,
+        yaw_rate_dps: 30.0,
         ..Default::default()
     }
 }
@@ -86,9 +82,9 @@ impl RealFlightBridge for MockRealFlightBridge {
                 "Simulated bridge failure".to_string(),
             ))
         } else {
-            let mut state = (self.state)();
+            let mut state = self.state.clone();
             if self.stamp_exchanges {
-                state.aircraft_position_x = Length::new::<meter>(self.exchanges.get() as f32);
+                state.aircraft_position_x_m = self.exchanges.get() as f32;
             }
             Ok(state)
         }
@@ -301,7 +297,10 @@ fn exchanges_once_per_tick_and_estimates_from_the_previous_exchange() {
 }
 
 /// RealFlight's native report for a conformance scenario: world north/east/down, altitude
-/// ASL, angles and rates in degrees (per the `realflight-bridge` field docs).
+/// ASL, angles and rates in degrees.
+///
+/// Position `x`/`y` are filled north/east, matching what the adapter assumes today;
+/// `realflight-bridge` 2.0 documents them as east/north (#62).
 ///
 /// The quaternion assumes RealFlight reports a standard ZYX (yaw, pitch, roll) NED-to-body
 /// rotation, built with nalgebra's `from_euler_angles`, the inverse of the
@@ -318,38 +317,34 @@ fn native_fixture(scenario: &Scenario) -> SimulatorState {
         scenario.pitch_deg.to_radians(),
         scenario.heading_deg.to_radians(),
     );
-    let deg_s = AngularVelocity::new::<angular_velocity::degree_per_second>;
 
     SimulatorState {
-        aircraft_position_x: Length::new::<meter>(north),
-        aircraft_position_y: Length::new::<meter>(east),
-        altitude_asl: Length::new::<meter>(up),
-        velocity_world_u: Velocity::new::<meter_per_second>(v_north),
-        velocity_world_v: Velocity::new::<meter_per_second>(v_east),
-        velocity_world_w: Velocity::new::<meter_per_second>(-v_up),
-        acceleration_world_ax: Acceleration::new::<meter_per_second_squared>(a_north),
-        acceleration_world_ay: Acceleration::new::<meter_per_second_squared>(a_east),
-        acceleration_world_az: Acceleration::new::<meter_per_second_squared>(-a_up),
-        roll: Angle::new::<degree>(scenario.roll_deg),
-        inclination: Angle::new::<degree>(scenario.pitch_deg),
-        azimuth: Angle::new::<degree>(scenario.heading_deg),
-        roll_rate: deg_s(roll_rate),
-        pitch_rate: deg_s(pitch_rate),
-        yaw_rate: deg_s(yaw_rate),
-        orientation_quaternion_w: attitude.w,
-        orientation_quaternion_x: attitude.i,
-        orientation_quaternion_y: attitude.j,
-        orientation_quaternion_z: attitude.k,
+        aircraft_position_x_m: north,
+        aircraft_position_y_m: east,
+        altitude_asl_m: up,
+        velocity_world_mps: [v_north, v_east, -v_up].into(),
+        acceleration_world_mps2: [a_north, a_east, -a_up].into(),
+        roll_deg: scenario.roll_deg,
+        inclination_deg: scenario.pitch_deg,
+        azimuth_deg: scenario.heading_deg,
+        roll_rate_dps: roll_rate,
+        pitch_rate_dps: pitch_rate,
+        yaw_rate_dps: yaw_rate,
+        orientation: Quaternion {
+            w: attitude.w,
+            x: attitude.i,
+            y: attitude.j,
+            z: attitude.k,
+        },
         ..Default::default()
     }
 }
 
 /// Runs RealFlight's native report for `scenario` through the priming exchange.
 fn state_for(scenario: &Scenario) -> VehicleState {
-    let scenario = *scenario;
     let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         mapping: ActuatorMapping::default(),
-        bridge: MockRealFlightBridge::with_state(move || native_fixture(&scenario)),
+        bridge: MockRealFlightBridge::with_state(native_fixture(scenario)),
     });
 
     vehicle.estimate_state(Duration::ZERO)
