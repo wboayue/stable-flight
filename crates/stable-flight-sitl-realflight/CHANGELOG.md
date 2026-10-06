@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - New crate: the RealFlight backend, moved out of `stable-flight-sitl`
   (`simulators::realflight`). `RealFlightVehicle`, `RealFlightConfiguration`, and
-  `ActuatorMapping` are at the crate root, and `realflight_bridge` is re-exported.
+  `ActuatorMapping` are at the crate root, and `realflight_bridge` (2.x) is re-exported.
   Never depends on `stable-flight-sitl` (a dev-dependency for the examples).
 - `airframes::Airframe<G, S, M>` (guidance and stabilizer configs, mixer, and channel mapping) and
   `airframes::quadcopter_x()`, the QuadCopterX model's tuned gains with

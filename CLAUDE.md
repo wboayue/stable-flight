@@ -16,7 +16,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     (`ShutdownSignal`). Depends on the core. Non-simulator examples live in `crates/stable-flight-sitl/examples/*.rs`.
   - `crates/stable-flight-sitl-realflight` — the RealFlight backend: `RealFlightVehicle`,
     `ActuatorMapping`, `airframes` (tuned gains, mixer, and mapping per model), and the
-    `copter-*-realflight` examples. Normal deps: core, `realflight-bridge`, `log`; sitl is a dev-dependency only (CI checks).
+    `copter-*-realflight` examples. Normal deps: core, `realflight-bridge`, `uom`, `log`; sitl is a dev-dependency only (CI checks).
     One `stable-flight-sitl-<simulator>` crate per backend.
   - `crates/stable-flight-tools` — unpublished (`publish = false`) dev binaries: `plot_flight`
     (3D flight-path visualizer) and `generate_figure_eight` (waypoint-script generator).

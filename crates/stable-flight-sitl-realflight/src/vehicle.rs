@@ -4,6 +4,10 @@ use log::{error, warn};
 use realflight_bridge::{ControlInputs, RealFlightBridge, SimulatorState};
 use stable_flight::Vec3;
 use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
+use uom::si::acceleration::meter_per_second_squared;
+use uom::si::f32::{Acceleration, Length, Velocity};
+use uom::si::length::meter;
+use uom::si::velocity::meter_per_second;
 
 use stable_flight::{Actuator, ActuatorCommand, StateEstimator, VehicleState};
 
@@ -96,13 +100,15 @@ where
 ///
 /// # Frames
 ///
-/// RealFlight reports world position, velocity, and acceleration north/east/down, altitude
-/// above sea level, and angles and body rates in degrees. `VehicleState` wants north/east/up
-/// and radians (its frame contract), so this type converts at the boundary. Two conversions
-/// don't meet that yet: angles and body rates are converted to radians twice (about 57× too
-/// small), and vertical velocity and acceleration keep RealFlight's down-positive sign. The
-/// ignored `conforms_*` tests pin both; the fix needs a flight check because the current gains
-/// were tuned against them.
+/// RealFlight reports world velocity north/east/down, position east/north with altitude
+/// above sea level, and angles and body rates in degrees (see the `realflight-bridge`
+/// `SimulatorState` frame docs). `VehicleState` wants north/east/up and radians (its frame
+/// contract), so this type converts at the boundary. Several conversions don't meet that yet:
+/// angles and body rates are converted to radians twice (about 57× too small), vertical
+/// velocity and acceleration keep RealFlight's down-positive sign, position `x`/`y` are passed
+/// through unswapped, and the yaw-rate sign and quaternion axes are taken as reported. The
+/// ignored `conforms_*` tests pin the first two; the fix (#62) needs a flight check because the
+/// current gains were tuned against them.
 ///
 /// # Examples
 ///
@@ -263,43 +269,45 @@ where
     ///
     /// # Notes
     ///
-    /// Converts simulator units (degrees) to SI units (radians) where appropriate.
+    /// Wraps RealFlight's raw meters and m/s in `uom` quantities and converts degrees to
+    /// radians (twice, for now; see [Frames](RealFlightVehicle#frames)).
     fn update_estimate(&mut self, state: SimulatorState) {
         self.estimated_state.position = Vec3::new(
-            state.aircraft_position_x,
-            state.aircraft_position_y,
-            state.altitude_asl,
+            Length::new::<meter>(state.aircraft_position_x_m),
+            Length::new::<meter>(state.aircraft_position_y_m),
+            Length::new::<meter>(state.altitude_asl_m),
         );
 
+        let velocity = state.velocity_world_mps;
         self.estimated_state.velocity = Vec3::new(
-            state.velocity_world_u,
-            state.velocity_world_v,
-            state.velocity_world_w,
+            Velocity::new::<meter_per_second>(velocity.x),
+            Velocity::new::<meter_per_second>(velocity.y),
+            Velocity::new::<meter_per_second>(velocity.z),
         );
 
+        let acceleration = state.acceleration_world_mps2;
         self.estimated_state.acceleration = Vec3::new(
-            state.acceleration_world_ax,
-            state.acceleration_world_ay,
-            state.acceleration_world_az,
+            Acceleration::new::<meter_per_second_squared>(acceleration.x),
+            Acceleration::new::<meter_per_second_squared>(acceleration.y),
+            Acceleration::new::<meter_per_second_squared>(acceleration.z),
         );
 
         // Taken as reported, without renormalizing: RealFlight's quaternion is already unit.
-        self.estimated_state.attitude = UnitQuaternion::new_unchecked(Quaternion::new(
-            state.orientation_quaternion_w,
-            state.orientation_quaternion_x,
-            state.orientation_quaternion_y,
-            state.orientation_quaternion_z,
-        ));
+        let q = state.orientation;
+        self.estimated_state.attitude =
+            UnitQuaternion::new_unchecked(Quaternion::new(q.w, q.x, q.y, q.z));
 
+        // Deliberately converted to radians twice, preserving the pre-2.0 behavior the gains
+        // were tuned against (#62).
         self.estimated_state.angular_velocity = Vec3::new(
-            state.roll_rate.value.to_radians(),
-            state.pitch_rate.value.to_radians(),
-            state.yaw_rate.value.to_radians(),
+            state.roll_rate_dps.to_radians().to_radians(),
+            state.pitch_rate_dps.to_radians().to_radians(),
+            state.yaw_rate_dps.to_radians().to_radians(),
         );
 
-        self.estimated_state.roll = state.roll.value.to_radians();
-        self.estimated_state.pitch = state.inclination.value.to_radians();
-        self.estimated_state.heading = state.azimuth.value.to_radians();
+        self.estimated_state.roll = state.roll_deg.to_radians().to_radians();
+        self.estimated_state.pitch = state.inclination_deg.to_radians().to_radians();
+        self.estimated_state.heading = state.azimuth_deg.to_radians().to_radians();
     }
 }
 
