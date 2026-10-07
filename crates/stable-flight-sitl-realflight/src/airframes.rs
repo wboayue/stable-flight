@@ -41,8 +41,9 @@ pub struct Airframe<G, S, M> {
 /// in RealFlight.
 ///
 /// The stabilizer gains were hand-tuned flying `copter-manual-realflight` in attitude mode after
-/// the frame fix (#62); guidance uses the core defaults, whose lateral gains and tilt cap were
-/// flight-checked on this model. Both RealFlight examples fly this set.
+/// the frame fix (#62); guidance uses the core defaults (lateral and altitude gains and the tilt
+/// cap were flight-checked on this model) with this model's measured hover thrust. Both
+/// RealFlight examples fly this set.
 ///
 /// # Examples
 ///
@@ -85,7 +86,12 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
     });
 
     Airframe {
-        guidance: CopterGuidanceConfig::default(),
+        guidance: CopterGuidanceConfig {
+            // Measured: a settled hover holds at mean motor 0.606 = 0.9 · 0.82², through the
+            // squared thrust curve and the mixer's thrust factor.
+            hover_thrust: 0.82,
+            ..CopterGuidanceConfig::default()
+        },
         stabilizer: CopterStabilizerConfig {
             rates_controller,
             attitude_controller,

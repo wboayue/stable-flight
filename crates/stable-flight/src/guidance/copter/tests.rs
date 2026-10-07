@@ -134,14 +134,14 @@ fn commands_map_to_setpoints() {
             }),
         ),
         (
-            // At the waypoint, at rest, level: no tilt, north. The altitude loop maps zero
-            // error to zero linear thrust (it adds no hover thrust).
+            // At the waypoint, at rest, level: no tilt, north, hover thrust (the altitude
+            // loop feeds gravity forward).
             Command::Waypoint(WaypointCommand::default()),
             Setpoint::Attitude(AttitudeSetpoint {
                 roll: 0.0,
                 pitch: 0.0,
                 heading: 0.0,
-                thrust: 0.0,
+                thrust: crate::controllers::DEFAULT_HOVER_THRUST,
             }),
         ),
     ];
@@ -196,7 +196,7 @@ fn heading_hold_target_survives_a_waypoint_leg() {
 }
 
 #[test]
-fn waypoint_at_rest_on_target_yields_no_output() {
+fn waypoint_at_rest_on_target_yields_hover_thrust_and_no_moments() {
     let mut stack = Stack::new();
     let dt = 0.01;
     let waypoint_command = WaypointCommand {
@@ -206,10 +206,16 @@ fn waypoint_at_rest_on_target_yields_no_output() {
     let state = VehicleState::default();
 
     let output = stack.step(dt, &Command::Waypoint(waypoint_command), &state);
+    // Hover linear thrust, through the stabilizer's default thrust curve.
+    let hover = crate::controllers::DEFAULT_HOVER_THRUST;
+    let exponent = CopterStabilizerConfig::default().thrust_curve_exponent;
     assert_eq!(
         output,
-        ControlOutput::default(),
-        "Output should be default for zero position"
+        ControlOutput {
+            thrust: hover.powf(exponent),
+            moments: Vec3::zeros(),
+        },
+        "on target at rest: hover, no moments"
     );
 }
 
@@ -715,5 +721,16 @@ fn rejects_max_tilt_outside_zero_to_one() {
             ..Default::default()
         };
         assert_new_panics(config, "max_tilt");
+    }
+}
+
+#[test]
+fn rejects_hover_thrust_outside_zero_to_one() {
+    for hover_thrust in [0.0, -0.1, 1.2, f32::NAN] {
+        let config = CopterGuidanceConfig {
+            hover_thrust,
+            ..Default::default()
+        };
+        assert_new_panics(config, "hover_thrust");
     }
 }

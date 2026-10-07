@@ -9,7 +9,7 @@ pub mod body_rate;
 pub mod lateral;
 pub mod yaw;
 
-pub use altitude::{AltitudeController, AltitudeControllerConfig};
+pub use altitude::{AltitudeController, AltitudeControllerConfig, DEFAULT_HOVER_THRUST};
 pub use attitude::{AttitudeController, AttitudeControllerConfig};
 pub use body_rate::{BodyRateController, BodyRateControllerConfig};
 pub use lateral::{LateralController, LateralControllerConfig};
