@@ -3,7 +3,6 @@ use log::info;
 
 use stable_flight::{TelemetryPublisher, TelemetryRecord};
 
-pub mod file_logger;
 pub mod mavlink;
 mod throttle;
 
