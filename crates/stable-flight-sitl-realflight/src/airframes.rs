@@ -60,9 +60,9 @@ pub struct Airframe<G, S, M> {
 pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, QuadCopterMixer> {
     let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
         gains: Gains {
-            p: 0.15,
-            i: 0.0,
-            d: 0.003,
+            p: 0.5,
+            i: 0.2,
+            d: 0.004,
         },
         // Yaw authority is differential prop drag only, so yaw needs its own, higher gains.
         yaw_gains: Gains {

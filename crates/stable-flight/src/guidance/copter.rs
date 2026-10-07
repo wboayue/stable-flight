@@ -22,8 +22,8 @@ use crate::math::{saturate_unit, wrap_angle};
 #[cfg(test)]
 mod tests;
 
-/// Heading-hold target slew rate at full yaw stick, in rad/s (~1.4°/s).
-const HEADING_SLEW_RATE: f32 = 0.025;
+/// Heading-hold target slew rate at full yaw stick, in rad/s (~57°/s).
+const HEADING_SLEW_RATE: f32 = 1.0;
 
 /// Default [`CopterGuidanceConfig::navigation_period`]: 50 Hz, a fifth of the usual 250 Hz
 /// inner loop.
