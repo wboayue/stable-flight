@@ -6,6 +6,11 @@ use crate::controllers::Gains;
 /// Default [`AltitudeControllerConfig::hover_thrust`].
 pub const DEFAULT_HOVER_THRUST: f32 = 0.5;
 
+/// The integral only accumulates within this many meters of the target. With gravity fed
+/// forward it just trims a `hover_thrust` mismatch; winding it up over a long climb made the
+/// vehicle overshoot and settle slowly.
+const INTEGRATION_BAND: f32 = 1.0;
+
 /// Floor on the body-z alignment (cos of the tilt) used for tilt compensation: past 60° the
 /// boost stops growing, so a near-inverted estimate can't demand unbounded thrust.
 const MIN_BODY_Z_ALIGNMENT: f32 = 0.5;
@@ -106,9 +111,11 @@ impl AltitudeController {
             return hover_thrust;
         }
 
-        let max_integral = self.config.max_integral;
-        self.integrated_error =
-            (self.integrated_error + altitude_error * dt).clamp(-max_integral, max_integral);
+        if altitude_error.abs() < INTEGRATION_BAND {
+            let max_integral = self.config.max_integral;
+            self.integrated_error =
+                (self.integrated_error + altitude_error * dt).clamp(-max_integral, max_integral);
+        }
 
         let acceleration =
             gains.p * altitude_error + gains.d * velocity_error + gains.i * self.integrated_error;
@@ -179,10 +186,11 @@ mod tests {
         }
     }
 
-    /// The integral accumulates `error · dt` and stops at `max_integral`.
+    /// The integral accumulates `error · dt` only within `INTEGRATION_BAND` of the target, stops
+    /// at `max_integral`, and feeds into thrust as `I · ∫e`.
     #[test]
-    fn integral_is_clamped_to_max_integral() {
-        let mut controller = AltitudeController::with_config(&AltitudeControllerConfig {
+    fn integral_runs_near_target_only_and_is_clamped() {
+        let config = AltitudeControllerConfig {
             gains: Gains {
                 p: 0.0,
                 i: 1.0,
@@ -191,11 +199,25 @@ mod tests {
             max_integral: 2.0,
             hover_thrust: 0.5,
             ..Default::default()
-        });
-        for _ in 0..1_000 {
-            controller.control(0.01, 20.0, 0.0, 10.0, 0.0, level());
+        };
+        // (altitude error m, expected integral after 1000 ticks of 0.01 s)
+        let cases = [
+            (10.0, 0.0),
+            (-5.0, 0.0),
+            (0.5, 2.0),
+            (-0.5, -2.0),
+            (0.001, 0.01),
+        ];
+        for (error, expected) in cases {
+            let mut controller = AltitudeController::with_config(&config);
+            for _ in 0..1_000 {
+                controller.control(0.01, 10.0 + error, 0.0, 10.0, 0.0, level());
+            }
+            approx::assert_relative_eq!(controller.integrated_error, expected, epsilon = 1e-4);
         }
-        assert!(controller.integrated_error == 2.0);
+
+        let mut controller = AltitudeController::with_config(&config);
+        controller.integrated_error = 2.0;
         let thrust = controller.control(0.01, 10.0, 0.0, 10.0, 0.0, level());
         approx::assert_relative_eq!(thrust, 0.5 * (GRAVITY + 2.0) / GRAVITY, epsilon = 1e-5);
     }
