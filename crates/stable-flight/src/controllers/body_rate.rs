@@ -88,10 +88,38 @@ impl Default for BodyRateController {
 }
 
 impl BodyRateController {
+    /// Creates a controller with [`BodyRateControllerConfig::default`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::controllers::BodyRateController;
+    ///
+    /// let controller = BodyRateController::new();
+    /// ```
     pub fn new() -> Self {
         BodyRateController::default()
     }
 
+    /// Creates a controller from `config`.
+    ///
+    /// # Panics
+    ///
+    /// If `config.max_integral` is not finite.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::controllers::{BodyRateController, BodyRateControllerConfig, Gains};
+    ///
+    /// let config = BodyRateControllerConfig {
+    ///     gains: Gains { p: 0.15, i: 0.0, d: 0.003 },
+    ///     yaw_gains: Gains { p: 0.3, i: 0.1, d: 0.0 },
+    ///     max_integral: 1.0,
+    /// };
+    ///
+    /// let controller = BodyRateController::with_config(&config);
+    /// ```
     pub fn with_config(config: &BodyRateControllerConfig) -> Self {
         assert!(
             config.max_integral.is_finite(),
@@ -130,6 +158,22 @@ impl BodyRateController {
     ///
     /// A non-finite component in `desired_rates` or `estimated_rates` returns zero moments and
     /// leaves the controller state untouched (the input policy in `architecture.md`).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::controllers::BodyRateController;
+    /// use stable_flight::Vec3;
+    ///
+    /// let mut controller = BodyRateController::new();
+    /// let dt = 0.004; // seconds; 250 Hz control loop
+    /// let desired_rates = Vec3::new(0.1, 0.0, 0.05); // roll, pitch, yaw rates (rad/s)
+    /// let estimated_rates = Vec3::zeros();
+    ///
+    /// let moments = controller.control(dt, desired_rates, estimated_rates);
+    /// assert!(moments.x > 0.0 && moments.z > 0.0);
+    /// assert!(moments.iter().all(|m| (-1.0..=1.0).contains(m)));
+    /// ```
     pub fn control(
         &mut self,
         dt: f32,

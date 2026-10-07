@@ -1,12 +1,12 @@
 # Flight Control Controllers
 
-This module contains the core PID controllers for autonomous flight control in the Stable Flight SITL system. Each controller handles a specific aspect of vehicle stabilization and follows the cascaded control architecture commonly used in flight control systems.
+PID building blocks shared by guidance (altitude, lateral) and stabilizers (attitude, yaw, body rate). Each controller handles a specific aspect of vehicle stabilization and follows the cascaded control architecture commonly used in flight control systems.
 
 ## Architecture Overview
 
 The controllers implement a cascaded control structure where outer loops provide setpoints for inner loops:
 
-```
+```text
 Position Commands → Lateral Controller → Attitude Controller → Body Rate Controller → Motor Commands
                  ↘ Altitude Controller ↗             ↘ Yaw Controller ↗
 ```
@@ -28,12 +28,11 @@ Position Commands → Lateral Controller → Attitude Controller → Body Rate C
 
 **Usage**:
 ```rust
-use stable_flight::controllers::{BodyRateController, BodyRateControllerConfig};
-use std::time::Duration;
+use stable_flight::controllers::BodyRateController;
 use stable_flight::Vec3;
 
 let mut controller = BodyRateController::new();
-let dt = Duration::from_millis(4); // 250Hz control loop
+let dt = 0.004; // seconds; 250 Hz control loop
 let desired_rates = Vec3::new(0.1, 0.0, 0.05); // Roll, pitch, yaw rates
 let estimated_rates = Vec3::zeros();
 
@@ -55,12 +54,11 @@ let moments = controller.control(dt, desired_rates, estimated_rates);
 
 **Usage**:
 ```rust
-use stable_flight::controllers::{AttitudeController, AttitudeControllerConfig};
-use std::time::Duration;
+use stable_flight::controllers::AttitudeController;
 use stable_flight::Vec2;
 
 let mut controller = AttitudeController::new();
-let dt = Duration::from_millis(4);
+let dt = 0.004;
 let desired_angles = Vec2::new(0.5, -0.2); // 50% roll right, 20% pitch down
 let estimated_angles = Vec2::new(0.1, 0.0); // Current roll/pitch in radians
 
@@ -82,12 +80,11 @@ let angular_rates = controller.control(dt, desired_angles, estimated_angles);
 
 **Usage**:
 ```rust
-use stable_flight::controllers::{YawController, YawControllerConfig};
-use std::time::Duration;
+use stable_flight::controllers::YawController;
 use std::f32::consts::PI;
 
 let mut controller = YawController::new();
-let dt = Duration::from_millis(4);
+let dt = 0.004;
 let desired_yaw = PI / 2.0; // 90 degrees
 let estimated_yaw = 0.0;
 
@@ -109,12 +106,11 @@ let yaw_rate = controller.control(dt, desired_yaw, estimated_yaw);
 
 **Usage**:
 ```rust
-use stable_flight::controllers::{AltitudeController, AltitudeControllerConfig};
-use std::time::Duration;
+use stable_flight::controllers::AltitudeController;
 use stable_flight::nalgebra::UnitQuaternion;
 
 let mut controller = AltitudeController::new();
-let dt = Duration::from_millis(4);
+let dt = 0.004;
 let desired_altitude = 10.0; // 10 meters
 let desired_velocity = 0.0;  // Hover
 let estimated_altitude = 9.5;
@@ -122,12 +118,12 @@ let estimated_velocity = -0.1; // Slight descent
 let estimated_attitude = UnitQuaternion::identity();
 
 let thrust = controller.control(
-    dt, 
-    desired_altitude, 
-    desired_velocity, 
-    estimated_altitude, 
-    estimated_velocity, 
-    estimated_attitude
+    dt,
+    desired_altitude,
+    desired_velocity,
+    estimated_altitude,
+    estimated_velocity,
+    estimated_attitude,
 );
 ```
 
@@ -136,7 +132,7 @@ let thrust = controller.control(
 **Purpose**: Controls horizontal position (X-Y) by commanding roll and pitch angles.
 
 **Input**: Desired position (m), estimated position (m), velocity (m/s)  
-**Output**: Desired roll and pitch angles (rad)
+**Output**: Desired roll and pitch as normalized tilt [-1, 1] (the attitude controller scales them by its `max_angles`)
 
 **Key Features**:
 - Position-to-angle conversion using acceleration commands
@@ -146,17 +142,17 @@ let thrust = controller.control(
 
 **Usage**:
 ```rust
-use stable_flight::controllers::{LateralController, LateralControllerConfig};
-use std::time::Duration;
+use stable_flight::controllers::LateralController;
 use stable_flight::Vec2;
 
 let mut controller = LateralController::new();
-let dt = Duration::from_millis(4);
+let dt = 0.004;
 let desired_position = Vec2::new(5.0, 2.0); // 5m north, 2m east
 let estimated_position = Vec2::new(4.8, 1.9);
 let estimated_velocity = Vec2::new(0.1, 0.05);
 
-let angles = controller.control(dt, desired_position, estimated_position, estimated_velocity);
+// Normalized (roll, pitch) tilt request
+let tilt = controller.control(dt, desired_position, estimated_position, estimated_velocity);
 ```
 
 ## Configuration
@@ -164,7 +160,9 @@ let angles = controller.control(dt, desired_position, estimated_position, estima
 All controllers support custom configuration through their respective `Config` structs:
 
 ```rust
-use stable_flight::controllers::{Gains, *};
+use stable_flight::controllers::*;
+use stable_flight::Vec2;
+use std::f32::consts::PI;
 
 // Custom PID gains
 let gains = Gains { p: 2.0, i: 0.1, d: 0.5 };
@@ -204,34 +202,20 @@ let attitude_controller = AttitudeController::with_config(&attitude_config);
 
 ### Modularity and Testing
 - Each controller is independently testable and configurable
-- Comprehensive unit tests covering normal, boundary, and error cases
-- Table-driven tests for systematic validation
-- Property-based testing for mathematical invariants
+- Unit tests cover normal, boundary, and non-finite-input cases, table-driven where the
+  cases are systematic
+- The cascade is exercised end to end by the stabilizer and guidance tests
 
 ### Tuning and Configuration
 - Sensible default parameters for typical multirotor vehicles
-- Extensive documentation of parameter effects
-- Configuration validation to prevent invalid settings
-- Support for online parameter adjustment during flight testing
+- Config fields document their units and effects
+- `with_config` rejects invalid settings (negative or non-finite limits)
 
 ## Testing
 
-The controllers include extensive test suites covering:
-
-- **Unit Tests**: Individual controller functionality
-- **Integration Tests**: Controller interactions and cascaded operation  
-- **Table-Driven Tests**: Systematic validation across input ranges
-- **Property-Based Tests**: Mathematical invariants and edge cases
-- **Performance Tests**: Real-time execution benchmarks
-
-Run the tests with:
 ```bash
-cargo test controllers
-```
-
-Generate test coverage:
-```bash
-cargo tarpaulin -o html --output-dir coverage
+cargo test -p stable-flight controllers   # unit tests
+cargo test -p stable-flight --doc         # the snippets in this file and the controllers' rustdoc
 ```
 
 ## Mathematical Background
@@ -239,7 +223,7 @@ cargo tarpaulin -o html --output-dir coverage
 ### PID Control
 All controllers implement the discrete PID algorithm:
 
-```
+```text
 u(k) = Kp×e(k) + Ki×∑e(k)×dt + Kd×(e(k)-e(k-1))/dt
 ```
 
@@ -252,16 +236,16 @@ Where:
 ### Anti-Windup Protection
 Integral terms are clamped to prevent windup:
 
-```rust
+```rust,ignore
 integral_term = (integral_term + dt * error).clamp(-max_integral, max_integral);
 ```
 
 ### Angle Wrapping (Yaw Controller)
 Yaw errors are normalized to [-π, π) for shortest-path control with the core's
-crate-private [`math::wrap_angle`](../../math.rs), a Euclidean remainder (so negative angles
-wrap correctly; `%` alone would not):
+crate-private [`math::wrap_angle`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight/src/math.rs),
+a Euclidean remainder (so negative angles wrap correctly; `%` alone would not):
 
-```rust
+```rust,ignore
 fn angle_diff(desired: f32, current: f32) -> f32 {
     wrap_angle(desired - current)
 }
@@ -279,7 +263,9 @@ fn angle_diff(desired: f32, current: f32) -> f32 {
 
 ### Sluggish Response
 - **Cause**: Insufficient proportional gain  
-- **Solution**: Increase P gain, verify max_rate limits aren't constraining
+- **Solution**: Increase P gain, verify `max_rate` limits aren't constraining (the altitude
+  controller's `max_rate` is not yet applied, see
+  [#115](https://github.com/wboayue/stable-flight/issues/115))
 
 ### Integral Windup
 - **Cause**: Inadequate integral limiting
@@ -289,7 +275,7 @@ fn angle_diff(desired: f32, current: f32) -> f32 {
 
 The position controllers (altitude, lateral) run in `CopterGuidance`, which turns commands into setpoints; the attitude, yaw, and body-rate controllers run in `CopterStabilizer`, which tracks them:
 
-```rust
+```rust,ignore
 // Guidance (src/guidance/copter.rs), waypoint mode
 let tilt = self.lateral_controller.control(dt, waypoint, position, velocity);
 let thrust = self.altitude_controller.control(dt, command.altitude, 0.0, altitude, climb_rate, attitude);

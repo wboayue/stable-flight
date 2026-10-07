@@ -47,16 +47,40 @@ impl Default for LateralController {
 }
 
 impl LateralController {
+    /// Creates a controller with [`LateralControllerConfig::default`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::controllers::LateralController;
+    ///
+    /// let controller = LateralController::new();
+    /// ```
     pub fn new() -> Self {
         LateralController::with_config(&LateralControllerConfig::default())
     }
 
-    /// Initializes a new lateral controller with the given configuration.
+    /// Creates a controller from `config`.
     ///
     /// # Panics
     ///
     /// If `config.max_integral` is negative or not finite (it bounds the integral term each
     /// tick; rejecting it here keeps that clamp from panicking inside the flight loop).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::controllers::{Gains, LateralController, LateralControllerConfig};
+    /// use stable_flight::Vec2;
+    ///
+    /// let config = LateralControllerConfig {
+    ///     gains: Gains { p: 3.0, i: 0.3, d: 0.15 },
+    ///     max_integral: 100.0,
+    ///     max_rate: Vec2::new(2.0, 2.0),
+    /// };
+    ///
+    /// let controller = LateralController::with_config(&config);
+    /// ```
     pub fn with_config(config: &LateralControllerConfig) -> Self {
         assert!(
             config.max_integral >= 0.0 && config.max_integral.is_finite(),
@@ -89,6 +113,24 @@ impl LateralController {
     /// target the vehicle commands full tilt straight toward it: a far diagonal target gives
     /// about 0.71 on each axis, not 1. A non-finite error or velocity gives level. The integral
     /// term is clamped to `max_integral` to limit windup.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::controllers::LateralController;
+    /// use stable_flight::Vec2;
+    ///
+    /// let mut controller = LateralController::new();
+    /// let dt = 0.004;
+    /// let desired_position = Vec2::new(5.0, 2.0); // 5 m north, 2 m east
+    /// let estimated_position = Vec2::new(4.8, 1.9);
+    /// let estimated_velocity = Vec2::new(0.1, 0.05);
+    ///
+    /// // Target is ahead and to the right: roll right (+x), nose down (-y)
+    /// let tilt = controller.control(dt, desired_position, estimated_position, estimated_velocity);
+    /// assert!(tilt.x > 0.0 && tilt.y < 0.0);
+    /// assert!(tilt.norm() <= 1.0);
+    /// ```
     pub fn control(
         &mut self,
         dt: f32,
