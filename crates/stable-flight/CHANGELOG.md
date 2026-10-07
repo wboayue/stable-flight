@@ -70,6 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   request, so a far waypoint can't ask for full tilt while also climbing hard.
   `CopterGuidance::new` panics outside `(0, 1]`. Piloted attitude flight is not
   capped ([#110](https://github.com/wboayue/stable-flight/issues/110)).
+- **Breaking:** `hover_thrust` on `AltitudeControllerConfig` and
+  `CopterGuidanceConfig` (default `controllers::DEFAULT_HOVER_THRUST`, 0.5): the
+  airframe's level-hover linear thrust, fed forward by the altitude loop.
+  `CopterGuidance::new` panics outside `(0, 1]`
+  ([#96](https://github.com/wboayue/stable-flight/issues/96)).
 - `GRAVITY` (standard gravity, 9.80665 m/s²), used by the altitude and lateral
   controllers (they had their own 9.81) and available to backends.
 - `Vec2<T = f32>` and `Vec3<T = f32>` aliases for nalgebra's `Vector2`/`Vector3`,
@@ -151,6 +156,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Guidance::prime` and `Stabilizer::prime` default to doing nothing.
 
 ### Fixed
+
+- `AltitudeController` feeds gravity forward and compensates tilt correctly:
+  thrust is `hover_thrust · (g + a) / (g · cos tilt)`. It computed `(a − g) / cos`,
+  so zero error meant zero thrust (the integral carried all of hover, making climbs
+  slow) and a bank *lowered* thrust. The tilt boost stops at 60°, and the integral
+  clamp now honours `max_integral` (it was hard-coded to ±100). Default altitude
+  gains are P 1.5, I 0.2, D 2.0 (ζ ≈ 0.8; were P 3, I 0.3, D 0.15, ζ ≈ 0.04) and
+  `AltitudeControllerConfig::max_integral` defaults to 5
+  ([#96](https://github.com/wboayue/stable-flight/issues/96)).
 
 - `QuadCopterMixer`'s yaw sign: a positive yaw moment now speeds up the CCW props
   (front right, rear left), turning the nose right as the frame contract requires.

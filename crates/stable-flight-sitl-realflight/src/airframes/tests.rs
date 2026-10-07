@@ -34,13 +34,14 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         (
             "altitude",
             airframe.guidance.altitude_gains,
-            gains(3.0, 0.3, 0.15),
+            gains(1.5, 0.2, 2.0),
         ),
     ];
     for (name, actual, expected) in cases {
         assert_eq!(actual, expected, "{name} gains");
     }
     assert_eq!(rates.max_integral, 1.0);
+    assert_eq!(airframe.guidance.hover_thrust, 0.82);
 
     let attitude = AttitudeController::with_config(&AttitudeControllerConfig {
         gains: gains(3.0, 0.0, 0.1),
