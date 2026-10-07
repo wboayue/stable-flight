@@ -12,8 +12,8 @@ use crate::Vec2;
 use crate::controllers::Gains;
 use crate::controllers::*;
 use crate::{
-    AttitudeCommand, AttitudeReference, AttitudeSetpoint, Command, Guidance, RateSetpoint,
-    Setpoint, VehicleState, WaypointCommand,
+    AttitudeCommand, AttitudeSetpoint, Command, Guidance, RateSetpoint, Setpoint, VehicleState,
+    WaypointCommand,
 };
 
 use super::rate_divider::RateDivider;
@@ -207,7 +207,6 @@ impl CopterGuidance {
             pitch: attitude_command.pitch,
             heading: self.heading,
             thrust: attitude_command.throttle,
-            reference: AttitudeReference::Euler,
         }
     }
 
@@ -236,7 +235,6 @@ impl CopterGuidance {
             pitch: tilt.y,
             heading: 0.0,
             thrust: linear_thrust,
-            reference: AttitudeReference::Quaternion,
         }
     }
 

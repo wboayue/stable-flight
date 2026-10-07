@@ -181,11 +181,9 @@ fn out_of_range_or_nan_setpoints_saturate_instead_of_panicking() {
     }
 }
 
-/// The attitude reference picks which estimate is tracked: identical when the Euler fields
-/// agree with the quaternion (frame contract), and each follows its own source when they
-/// don't (RealFlight today).
+/// The stabilizer tracks the attitude quaternion; the Euler fields are not read.
 #[test]
-fn attitude_reference_selects_the_tracked_estimate() {
+fn attitude_is_tracked_from_the_quaternion() {
     let (roll, pitch, heading) = (0.2, -0.1, 0.3);
     let consistent = VehicleState {
         attitude: UnitQuaternion::from_euler_angles(roll, pitch, heading),
@@ -201,44 +199,21 @@ fn attitude_reference_selects_the_tracked_estimate() {
         heading: 0.0,
         ..consistent.clone()
     };
-    let setpoint = |reference| {
-        Setpoint::Attitude(AttitudeSetpoint {
-            thrust: 0.5,
-            reference,
-            ..Default::default()
-        })
-    };
-    let run = |reference, state: &VehicleState| {
-        CopterStabilizer::new(CopterStabilizerConfig::default()).stabilize(
-            0.004,
-            &setpoint(reference),
-            state,
-        )
+    let setpoint = Setpoint::Attitude(AttitudeSetpoint {
+        thrust: 0.5,
+        ..Default::default()
+    });
+    let run = |state: &VehicleState| {
+        CopterStabilizer::new(CopterStabilizerConfig::default()).stabilize(0.004, &setpoint, state)
     };
 
-    let euler = run(AttitudeReference::Euler, &consistent);
-    let quaternion = run(AttitudeReference::Quaternion, &consistent);
-    for (a, b) in [
-        (euler.moments.x, quaternion.moments.x),
-        (euler.moments.y, quaternion.moments.y),
-        (euler.moments.z, quaternion.moments.z),
-    ] {
-        approx::assert_relative_eq!(a, b, epsilon = 1e-4);
-    }
+    let expected = run(&consistent);
     assert!(
-        euler.moments != Vec3::zeros(),
+        expected.moments != Vec3::zeros(),
         "tilted state must be corrected"
     );
-
-    // Level Euler fields: nothing to correct. Tilted quaternion: corrects as before.
-    let level = run(AttitudeReference::Euler, &quaternion_only);
-    assert!(level.moments == Vec3::zeros(), "gave {level:?}");
-    // The quaternion path ignores the Euler fields on every axis.
-    let tilted = run(AttitudeReference::Quaternion, &quaternion_only);
-    assert!(
-        tilted == quaternion,
-        "gave {tilted:?}, expected {quaternion:?}"
-    );
+    let tilted = run(&quaternion_only);
+    assert!(tilted == expected, "gave {tilted:?}, expected {expected:?}");
 }
 
 /// The heading setpoint is absolute and unbounded: a NaN target holds no yaw correction, and
@@ -291,8 +266,7 @@ fn nan_rate_estimate_yields_zero_moments() {
     assert!(output.moments == Vec3::zeros(), "gave {output:?}");
 }
 
-/// A corrupted attitude quaternion, tracked via `AttitudeReference::Quaternion`, is "no
-/// estimate": zero moments. nalgebra's own `euler_angles` reads its yaw as a finite 0, which
+/// A corrupted attitude quaternion is "no estimate": zero moments. nalgebra's own `euler_angles` reads its yaw as a finite 0, which
 /// commanded a full yaw moment toward the heading setpoint.
 #[test]
 fn non_finite_attitude_quaternion_yields_zero_moments() {
@@ -310,7 +284,6 @@ fn non_finite_attitude_quaternion_yields_zero_moments() {
         roll: 0.3,
         pitch: -0.2,
         heading: 1.0,
-        reference: AttitudeReference::Quaternion,
     });
     for [w, x, y, z] in cases {
         let state = VehicleState {
