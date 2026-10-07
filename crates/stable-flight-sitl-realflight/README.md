@@ -42,7 +42,7 @@ Each tick makes one RealFlight exchange, in `actuate`; `estimate_state` returns 
 
 ## Examples
 
-Run these from the repository root (`just fly-manual` / `just fly-auto` wrap them):
+Run these from the repository root (`just fly-manual` / `just fly-auto` / `just capture` wrap them):
 
 ```bash
 # Joystick (Logitech Extreme 3D); RealFlight host defaults to 10.211.55.3:8080
@@ -50,6 +50,9 @@ cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight --
 
 # Scripted figure-eight (script path is the first argument)
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv
+
+# Record raw SimulatorState to CSV while flying your own transmitter (frame checks, #62)
+cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv
 ```
 
 ## Known issues

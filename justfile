@@ -64,6 +64,10 @@ fly-manual *ARGS:
 fly-auto *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- {{ARGS}}
 
+# Records raw RealFlight state to CSV while you fly your transmitter, e.g. `just capture --output roll.csv`
+capture *ARGS:
+    cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- {{ARGS}}
+
 # Renders a waypoint script as a 3D flight path, e.g. `just plot flights/figure_eight.csv out.svg`
 plot *ARGS:
     cargo run --bin plot_flight -- {{ARGS}}
