@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Guidance for everyone (humans + AI assistants) working in the Stable Flight repo. `architecture.md` covers design rationale.
 
@@ -200,7 +200,7 @@ rustdoc), and cover every conformance scenario with `stable_flight::conformance_
 - **Keep docs in sync with the code, in the same PR.** Renamed trait, changed a method signature, added/removed a component or crate, retired a CLI/example, swapped a default — update the doc that owns the fact. Stale docs mislead both humans and AI; treat them as part of the change, not a follow-up. Each fact has one home; other docs link to it rather than restating it:
   - crate `README.md` — that crate's purpose, usage, features;
   - root `README.md` — project overview, crate index, supported simulators, quick start;
-  - `CLAUDE.md` — commands, coding/testing rules, PR checklist;
+  - `AGENTS.md` — commands, coding/testing rules, PR checklist;
   - `architecture.md` — crate boundaries, dependency rules, traits, and the rationale behind
     the frame and timing contracts;
   - core rustdoc — the frame contract (`VehicleState`) and timing contract (`Vehicle`) themselves.
@@ -227,5 +227,5 @@ rustdoc), and cover every conformance scenario with `stable_flight::conformance_
 - [ ] Public API has Rustdoc with at least one example.
 - [ ] Hot-path code allocates nothing per tick.
 - [ ] Coverage refreshed if control-loop logic changed.
-- [ ] Owning docs (crate/root `README.md`, `CLAUDE.md`, `architecture.md`) reflect any trait, module, crate, or example changes.
+- [ ] Owning docs (crate/root `README.md`, `AGENTS.md`, `architecture.md`) reflect any trait, module, crate, or example changes.
 - [ ] Each affected published crate's `CHANGELOG.md` has an `[Unreleased]` entry for any user-facing change.
