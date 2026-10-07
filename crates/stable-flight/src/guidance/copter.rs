@@ -48,8 +48,12 @@ pub const DEFAULT_NAVIGATION_PERIOD: f32 = 0.02;
 /// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct CopterGuidanceConfig {
-    /// Altitude loop: altitude error (m) → linear thrust.
+    /// Altitude loop: altitude error (m) → vertical acceleration (m/s²), fed to the thrust law
+    /// with gravity and tilt compensation.
     pub altitude_gains: Gains,
+    /// Linear thrust that holds a level hover; see [`AltitudeControllerConfig::hover_thrust`].
+    /// Defaults to [`DEFAULT_HOVER_THRUST`].
+    pub hover_thrust: f32,
     /// Lateral position loop: horizontal position error (m) → roll/pitch.
     pub lateral_gains: Gains,
     /// Seconds between runs of the lateral position loop; its roll/pitch output is held in
@@ -71,11 +75,14 @@ pub struct CopterGuidanceConfig {
 impl Default for CopterGuidanceConfig {
     fn default() -> Self {
         CopterGuidanceConfig {
+            // A double integrator like the lateral loop: ζ ≈ 0.8. The small I trims a
+            // `hover_thrust` mismatch. Flight-checked on RealFlight's QuadCopterX (#96).
             altitude_gains: Gains {
-                p: 3.0,
-                i: 0.3,
-                d: 0.15,
+                p: 1.5,
+                i: 0.2,
+                d: 2.0,
             },
+            hover_thrust: DEFAULT_HOVER_THRUST,
             // Position → tilt is a double integrator, so D sets the damping: ζ ≈ 0.8 with the
             // stabilizer's 45° max tilt. Flight-checked on RealFlight's QuadCopterX (#108).
             lateral_gains: Gains {
@@ -129,8 +136,8 @@ impl CopterGuidance {
     ///
     /// # Panics
     ///
-    /// If `config.navigation_period` is negative or not finite, or `config.max_tilt` is not in
-    /// `(0, 1]`.
+    /// If `config.navigation_period` is negative or not finite, or `config.max_tilt` or
+    /// `config.hover_thrust` is not in `(0, 1]` (the altitude controller checks the latter).
     pub fn new(config: CopterGuidanceConfig) -> Self {
         assert!(
             config.max_tilt > 0.0 && config.max_tilt <= 1.0,
@@ -145,6 +152,7 @@ impl CopterGuidance {
         CopterGuidance {
             altitude_controller: AltitudeController::with_config(&AltitudeControllerConfig {
                 gains: config.altitude_gains,
+                hover_thrust: config.hover_thrust,
                 ..Default::default()
             }),
 
