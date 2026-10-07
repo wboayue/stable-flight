@@ -32,10 +32,7 @@
 
 use crate::{Vec2, Vec3};
 
-use crate::{
-    AttitudeReference, AttitudeSetpoint, ControlOutput, RateSetpoint, Setpoint, Stabilizer,
-    VehicleState,
-};
+use crate::{AttitudeSetpoint, ControlOutput, RateSetpoint, Setpoint, Stabilizer, VehicleState};
 
 use crate::controllers::*;
 use crate::math::{euler_angles, saturate_throttle, saturate_unit};
@@ -176,16 +173,9 @@ impl CopterStabilizer {
         // Roll/pitch saturate inside the attitude controller, thrust in the thrust curve (see
         // `crate::math`).
         let desired_angles = Vec2::new(setpoint.roll, setpoint.pitch);
-        let (current_angles, current_heading) = match setpoint.reference {
-            AttitudeReference::Euler => (
-                Vec2::new(estimated_state.roll, estimated_state.pitch),
-                estimated_state.heading,
-            ),
-            AttitudeReference::Quaternion => {
-                let (roll, pitch, yaw) = euler_angles(&estimated_state.attitude);
-                (Vec2::new(roll, pitch), yaw)
-            }
-        };
+        // The quaternion is the canonical attitude; `euler_angles` is NaN-safe.
+        let (roll, pitch, current_heading) = euler_angles(&estimated_state.attitude);
+        let current_angles = Vec2::new(roll, pitch);
 
         let desired_rates = self
             .attitude_controller

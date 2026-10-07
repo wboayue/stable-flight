@@ -27,7 +27,7 @@ struct MockRealFlightBridge {
     state: SimulatorState,
     /// Number of `exchange_data` calls.
     exchanges: Cell<usize>,
-    /// Overwrites `aircraft_position_x_m` with the exchange number (1, 2, …) so a test can tell
+    /// Overwrites `aircraft_position_y_m` (north) with the exchange number (1, 2, …) so a test can tell
     /// which exchange a state came from.
     stamp_exchanges: bool,
 }
@@ -42,13 +42,6 @@ impl MockRealFlightBridge {
             stamp_exchanges: false,
         }
     }
-
-    fn with_state(state: SimulatorState) -> Self {
-        Self {
-            state,
-            ..Self::new(false)
-        }
-    }
 }
 
 fn sample_state() -> SimulatorState {
@@ -57,7 +50,7 @@ fn sample_state() -> SimulatorState {
         aircraft_position_y_m: 2.0,
         altitude_asl_m: 3.0,
         velocity_world_mps: [4.0, 5.0, 6.0].into(),
-        acceleration_world_mps2: [7.0, 8.0, 9.0].into(),
+        acceleration_body_mps2: [7.0, 8.0, 9.0].into(),
         orientation: Quaternion {
             w: 1.0,
             x: 0.0,
@@ -84,7 +77,7 @@ impl RealFlightBridge for MockRealFlightBridge {
         } else {
             let mut state = self.state.clone();
             if self.stamp_exchanges {
-                state.aircraft_position_x_m = self.exchanges.get() as f32;
+                state.aircraft_position_y_m = self.exchanges.get() as f32;
             }
             Ok(state)
         }
@@ -189,15 +182,15 @@ fn test_actuate_success() {
     // Verify state was updated
     assert_eq!(
         vehicle.estimated_state.position.x,
-        Length::new::<meter>(1.0)
+        Length::new::<meter>(2.0)
     );
     assert_eq!(
-        vehicle.estimated_state.velocity.y,
-        Velocity::new::<meter_per_second>(5.0)
+        vehicle.estimated_state.velocity.z,
+        Velocity::new::<meter_per_second>(-6.0)
     );
     assert_eq!(
-        vehicle.estimated_state.acceleration.z,
-        Acceleration::new::<meter_per_second_squared>(9.0)
+        vehicle.estimated_state.acceleration.x,
+        Acceleration::new::<meter_per_second_squared>(7.0)
     );
     assert_eq!(vehicle.estimated_state.attitude.w, 1.0);
 }
@@ -224,11 +217,11 @@ fn test_estimate_state() {
     vehicle.actuate(&ActuatorCommand::default());
     let state = vehicle.estimate_state(Duration::from_millis(16));
 
-    assert_eq!(state.position.x, Length::new::<meter>(1.0));
-    assert_eq!(state.velocity.y, Velocity::new::<meter_per_second>(5.0));
+    assert_eq!(state.position.x, Length::new::<meter>(2.0));
+    assert_eq!(state.velocity.z, Velocity::new::<meter_per_second>(-6.0));
     assert_eq!(
-        state.acceleration.z,
-        Acceleration::new::<meter_per_second_squared>(9.0)
+        state.acceleration.x,
+        Acceleration::new::<meter_per_second_squared>(7.0)
     );
 }
 
@@ -296,17 +289,11 @@ fn exchanges_once_per_tick_and_estimates_from_the_previous_exchange() {
     assert_eq!(seen, [1.0, 2.0, 3.0]);
 }
 
-/// RealFlight's native report for a conformance scenario: world north/east/down, altitude
-/// ASL, angles and rates in degrees.
-///
-/// Position `x`/`y` are filled north/east, matching what the adapter assumes today;
-/// `realflight-bridge` 2.0 documents them as east/north (#62).
-///
-/// The quaternion assumes RealFlight reports a standard ZYX (yaw, pitch, roll) NED-to-body
-/// rotation, built with nalgebra's `from_euler_angles`, the inverse of the
-/// `stable_flight::euler_angles` that `check` reads it back with. So the quaternion
-/// rows only check that the adapter copies components in order, not RealFlight's convention;
-/// that needs a live capture.
+/// RealFlight's native report for a conformance scenario, built with the conventions the live
+/// capture established (see `RealFlightVehicle`'s Frames docs): position east/north, velocity NED,
+/// acceleration as FRD body specific force, quaternion in `(w, y, x, -z)` order, azimuth and yaw
+/// rate counterclockwise-positive, degrees. `captured_frames_agree_across_fields` checks those
+/// conventions against real RealFlight frames.
 fn native_fixture(scenario: &Scenario) -> SimulatorState {
     let [north, east, up] = scenario.position_neu;
     let [v_north, v_east, v_up] = scenario.velocity_neu;
@@ -317,50 +304,46 @@ fn native_fixture(scenario: &Scenario) -> SimulatorState {
         scenario.pitch_deg.to_radians(),
         scenario.heading_deg.to_radians(),
     );
+    let specific_force = attitude.inverse() * Vec3::new(a_north, a_east, -a_up - GRAVITY);
 
     SimulatorState {
-        aircraft_position_x_m: north,
-        aircraft_position_y_m: east,
+        aircraft_position_x_m: east,
+        aircraft_position_y_m: north,
         altitude_asl_m: up,
         velocity_world_mps: [v_north, v_east, -v_up].into(),
-        acceleration_world_mps2: [a_north, a_east, -a_up].into(),
+        acceleration_body_mps2: [specific_force.x, specific_force.y, specific_force.z].into(),
         roll_deg: scenario.roll_deg,
         inclination_deg: scenario.pitch_deg,
-        azimuth_deg: scenario.heading_deg,
+        azimuth_deg: -scenario.heading_deg,
         roll_rate_dps: roll_rate,
         pitch_rate_dps: pitch_rate,
-        yaw_rate_dps: yaw_rate,
+        yaw_rate_dps: -yaw_rate,
         orientation: Quaternion {
             w: attitude.w,
-            x: attitude.i,
-            y: attitude.j,
-            z: attitude.k,
+            x: attitude.j,
+            y: attitude.i,
+            z: -attitude.k,
         },
         ..Default::default()
     }
 }
 
-/// Runs RealFlight's native report for `scenario` through the priming exchange.
+/// Converts RealFlight's native report for `scenario`.
 fn state_for(scenario: &Scenario) -> VehicleState {
-    let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-        mapping: ActuatorMapping::default(),
-        bridge: MockRealFlightBridge::with_state(native_fixture(scenario)),
-    });
-
-    vehicle.estimate_state(Duration::ZERO)
+    vehicle_state(&native_fixture(scenario))
 }
 
 stable_flight::conformance_tests! {
     state_for;
     conforms_level: LEVEL;
-    conforms_roll_right_30: ROLL_RIGHT_30, ignore = "angles converted to radians twice; fix needs a flight check (#62)";
-    conforms_pitch_up_15: PITCH_UP_15, ignore = "angles converted to radians twice; fix needs a flight check (#62)";
-    conforms_heading_east: HEADING_EAST, ignore = "angles converted to radians twice; fix needs a flight check (#62)";
-    conforms_banked_climb_east: BANKED_CLIMB_EAST, ignore = "angles converted to radians twice; fix needs a flight check (#62)";
-    conforms_climbing: CLIMBING, ignore = "vertical velocity/acceleration down-positive; fix needs a flight check (#62)";
+    conforms_roll_right_30: ROLL_RIGHT_30;
+    conforms_pitch_up_15: PITCH_UP_15;
+    conforms_heading_east: HEADING_EAST;
+    conforms_banked_climb_east: BANKED_CLIMB_EAST;
+    conforms_climbing: CLIMBING;
     conforms_moving_northeast: MOVING_NORTHEAST;
-    conforms_yaw_right_rate: YAW_RIGHT_RATE, ignore = "rates converted to radians twice; fix needs a flight check (#62)";
-    conforms_combined_rates: COMBINED_RATES, ignore = "rates converted to radians twice; fix needs a flight check (#62)";
+    conforms_yaw_right_rate: YAW_RIGHT_RATE;
+    conforms_combined_rates: COMBINED_RATES;
 }
 
 #[test]
@@ -371,4 +354,95 @@ fn priming_failure_returns_the_default_state() {
 
     assert_eq!(state, VehicleState::default());
     assert_eq!(vehicle.bridge.exchanges.get(), 1);
+}
+
+/// Real RealFlight frames (QuadCopterX, `capture-state-realflight`): angles in degrees,
+/// quaternion `(w, x, y, z)` as reported, world and body velocity in m/s.
+struct CapturedFrame {
+    roll_deg: f32,
+    inclination_deg: f32,
+    azimuth_deg: f32,
+    orientation: [f32; 4],
+    velocity_world: [f32; 3],
+    velocity_body: [f32; 3],
+}
+
+#[rustfmt::skip]
+const CAPTURED_FRAMES: &[CapturedFrame] = &[
+    // Banked right.
+    CapturedFrame { roll_deg: 66.83714, inclination_deg: 1.5162313, azimuth_deg: -121.246864,
+        orientation: [0.41575912, 0.48530817, 0.2605223, -0.7237047],
+        velocity_world: [-1.2908397, -1.7935158, 0.011943602],
+        velocity_body: [-0.86376965, 0.79000425, -1.8742743] },
+    // Banked left, descending.
+    CapturedFrame { roll_deg: -69.56736, inclination_deg: 1.9636091, azimuth_deg: -126.60085,
+        orientation: [0.36023846, -0.50325423, -0.26885852, -0.7380235],
+        velocity_world: [4.0742207, 1.5021355, 5.37459],
+        velocity_body: [-1.4067144, -6.4487357, -2.043745] },
+    // Nose up.
+    CapturedFrame { roll_deg: 0.24343026, inclination_deg: 56.832256, azimuth_deg: -120.71308,
+        orientation: [0.43588683, 0.23699024, -0.41266477, -0.76390207],
+        velocity_world: [1.8830783, -2.9502623, -0.2262258],
+        velocity_body: [-1.7244745, -0.12510146, -3.0515168] },
+    // Nose down.
+    CapturedFrame { roll_deg: -1.0703444, inclination_deg: -49.82929, azimuth_deg: -123.159,
+        orientation: [-0.43508804, 0.2079391, -0.3664479, 0.7957234],
+        velocity_world: [-1.5399728, 0.026480667, -0.79843163],
+        velocity_body: [-0.052455604, 1.2964513, -1.1515958] },
+    // Fast, banked and pitched, heading northwest.
+    CapturedFrame { roll_deg: 12.693953, inclination_deg: 10.00485, azimuth_deg: -34.863396,
+        orientation: [-0.94750285, -0.11567435, -0.07910883, 0.2874015],
+        velocity_world: [-4.1126347, -1.9234412, 5.8557076],
+        velocity_body: [-5.423254, 1.8501548, 4.697653] },
+];
+
+/// RealFlight reports attitude twice (Euler fields and quaternion) and velocity twice (world and
+/// body). In real frames, the converted quaternion must agree with the converted Euler fields,
+/// and rotate the converted world velocity onto the body velocity. That pins the quaternion axis
+/// order, the azimuth sign, and the velocity frame without trusting any documentation.
+#[test]
+fn captured_frames_agree_across_fields() {
+    for (i, frame) in CAPTURED_FRAMES.iter().enumerate() {
+        let [w, x, y, z] = frame.orientation;
+        let state = vehicle_state(&SimulatorState {
+            roll_deg: frame.roll_deg,
+            inclination_deg: frame.inclination_deg,
+            azimuth_deg: frame.azimuth_deg,
+            orientation: Quaternion { w, x, y, z },
+            velocity_world_mps: frame.velocity_world.into(),
+            ..Default::default()
+        });
+
+        let (roll, pitch, heading) = stable_flight::euler_angles(&state.attitude);
+        assert!(
+            (roll - state.roll).abs() < 1e-3,
+            "frame {i}: roll {roll} vs {}",
+            state.roll
+        );
+        assert!(
+            (pitch - state.pitch).abs() < 1e-3,
+            "frame {i}: pitch {pitch} vs {}",
+            state.pitch
+        );
+        assert!(
+            wrap_pi(heading - state.heading).abs() < 1e-3,
+            "frame {i}: heading {heading} vs {}",
+            state.heading
+        );
+
+        let v = state.velocity;
+        let v_ned = Vec3::new(v.x.value, v.y.value, -v.z.value);
+        let body = state.attitude.inverse() * v_ned;
+        let expected = Vec3::from(frame.velocity_body);
+        assert!(
+            (body - expected).amax() < 1e-3,
+            "frame {i}: body velocity {body:?} vs {expected:?}"
+        );
+    }
+}
+
+/// Wraps an angle to [-π, π).
+fn wrap_pi(angle: f32) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    (angle + PI).rem_euclid(TAU) - PI
 }

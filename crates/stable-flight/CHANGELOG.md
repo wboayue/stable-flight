@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The crate is `no_std` (including the `testing` feature), so it builds for
   bare-metal targets such as `thumbv7em-none-eabihf`. It depends on `uom` and
   `nalgebra` without their `std` features; enable them yourself if you need them.
+- `GRAVITY` (standard gravity, 9.80665 m/s²), used by the altitude and lateral
+  controllers (they had their own 9.81) and available to backends.
 - `Vec2<T = f32>` and `Vec3<T = f32>` aliases for nalgebra's `Vector2`/`Vector3`,
   and a `stable_flight::nalgebra` re-export of the version the public types use.
 - `euler_angles(&UnitQuaternion<f32>) -> (roll, pitch, yaw)`: the frame
@@ -110,9 +112,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (250 Hz in the RealFlight examples), holding its roll/pitch in between; the
   altitude loop still runs every tick. Set `navigation_period: 0.0` for the old
   behaviour.
-- The attitude-mode heading-hold target slews at 0.025 rad/s at full yaw stick,
-  scaled by `dt`. It moved a fixed 0.0001 rad per tick, so its rate depended on the
-  loop rate; the two are the same at 250 Hz.
+- The attitude-mode heading-hold target slews at 1 rad/s at full yaw stick, scaled by
+  `dt`. It moved a fixed 0.0001 rad per tick, so its rate depended on the loop rate,
+  and that rate (0.025 rad/s at 250 Hz) was tuned against RealFlight's
+  double-radian heading bug ([#62](https://github.com/wboayue/stable-flight/issues/62)).
+- **Breaking:** `BodyRateController` is a plain PID: the moment is
+  `P·e + I·∫e + D·ė`, saturated to [-1, 1] per axis. It used to normalize by a
+  `dt`-dependent "max moment" and scale by 1000, so uniform gain changes had no
+  effect and the effective gain was ~370× typical. Gains are now in normalized
+  moment per rad/s; defaults are P 0.15, D 0.003 (roll/pitch) and P 0.3, I 0.1
+  (yaw), with `max_integral` 1.0. `BodyRateControllerConfig` drops
+  `max_angular_rates` (it only fed the normalization) and gains `yaw_gains`,
+  since yaw authority (differential prop drag) needs its own gains
+  ([#62](https://github.com/wboayue/stable-flight/issues/62)).
+- `QuadCopterMixer` gives attitude priority over thrust: when a motor would pass
+  full throttle, all four drop by the excess so the moments survive, instead of
+  clipping that motor.
+- **Breaking:** `CopterStabilizer` tracks attitude setpoints from
+  `VehicleState::attitude` (the quaternion) only; `AttitudeSetpoint::reference` and
+  `AttitudeReference` are removed. They existed only because RealFlight's Euler
+  fields were wrong ([#63](https://github.com/wboayue/stable-flight/issues/63)).
 - `CopterStabilizer`'s thrust curve saturates its input (NaN → 0), so it meets the
   input policy itself instead of relying on callers. No change for the built-in
   flight modes, which already saturated; only a custom `Guidance` sending
@@ -120,6 +139,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Guidance::prime` and `Stabilizer::prime` default to doing nothing.
 
 ### Fixed
+
+- `QuadCopterMixer`'s yaw sign: a positive yaw moment now speeds up the CCW props
+  (front right, rear left), turning the nose right as the frame contract requires.
+  It turned the nose left; RealFlight's nose-left-positive yaw rate hid this until
+  the frame fix ([#62](https://github.com/wboayue/stable-flight/issues/62)).
 
 - Waypoint flight far from the target no longer panics the flight loop. The
   lateral controller's roll/pitch request is saturated to the normalized

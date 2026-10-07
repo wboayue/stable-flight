@@ -25,4 +25,4 @@ pub use realflight_bridge;
 pub mod airframes;
 mod vehicle;
 
-pub use vehicle::{ActuatorMapping, RealFlightConfiguration, RealFlightVehicle};
+pub use vehicle::{ActuatorMapping, RealFlightConfiguration, RealFlightVehicle, vehicle_state};

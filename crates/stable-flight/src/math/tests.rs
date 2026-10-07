@@ -149,3 +149,24 @@ fn wrap_angle_maps_into_minus_pi_to_pi() {
     assert!(wrap_angle(f32::INFINITY).is_nan());
     assert!(wrap_angle(f32::NEG_INFINITY).is_nan());
 }
+
+/// Outputs above 1 shift all outputs down by the largest excess, keeping their differences;
+/// the result is clamped to [0, 1].
+#[test]
+fn desaturate_keeps_differences_by_giving_up_the_top() {
+    // (input, expected)
+    let cases: [([f32; 4], [f32; 4]); 5] = [
+        ([0.5, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]),
+        ([1.0, 0.2, 0.0, 0.7], [1.0, 0.2, 0.0, 0.7]),
+        ([1.15, 0.85, 1.15, 0.45], [1.0, 0.7, 1.0, 0.3]),
+        ([1.5, 0.2, 0.9, 0.9], [1.0, 0.0, 0.4, 0.4]), // the bottom clips once shifted
+        ([0.5, -0.25, 0.25, 0.75], [0.5, 0.0, 0.25, 0.75]), // below 0 only: clamped
+    ];
+    for (input, expected) in cases {
+        let mut outputs = input;
+        desaturate(&mut outputs);
+        for (o, e) in outputs.iter().zip(expected) {
+            assert_relative_eq!(*o, e, epsilon = 1e-6);
+        }
+    }
+}
