@@ -23,8 +23,8 @@ pub struct AltitudeControllerConfig {
     /// Prevents integral windup by limiting error accumulation.
     pub max_integral: f32,
 
-    /// Maximum climb rate in meters/second.
-    /// This is used to limit the output thrust command.
+    /// Maximum climb rate in meters/second. Currently unused
+    /// ([#115](https://github.com/wboayue/stable-flight/issues/115)).
     pub max_rate: f32,
 
     /// Linear thrust (before the stabilizer's thrust curve) that holds a level hover. The
@@ -64,7 +64,23 @@ impl AltitudeController {
         AltitudeController::with_config(&AltitudeControllerConfig::default())
     }
 
+    /// Creates a controller from `config`.
+    ///
+    /// # Panics
+    ///
+    /// If `config.max_integral` is negative or not finite (it bounds a per-tick clamp), or
+    /// `config.hover_thrust` is not in `(0, 1]`.
     pub fn with_config(config: &AltitudeControllerConfig) -> Self {
+        assert!(
+            config.max_integral >= 0.0 && config.max_integral.is_finite(),
+            "max_integral must be non-negative and finite, got {}",
+            config.max_integral
+        );
+        assert!(
+            config.hover_thrust > 0.0 && config.hover_thrust <= 1.0,
+            "hover_thrust must be in (0, 1], got {}",
+            config.hover_thrust
+        );
         Self {
             config: config.clone(),
             integrated_error: 0.0,
@@ -81,7 +97,7 @@ impl AltitudeController {
     ///
     /// * `dt` - Time step since the last update (must be positive).
     /// * `desired_altitude` - Desired altitude in meters.
-    /// * `desired_velocity` - Desired vertical velocity in m/s (currently unused, set to 0.0).
+    /// * `desired_velocity` - Desired vertical velocity in m/s (up); the D term damps toward it.
     /// * `estimated_altitude` - Current measured altitude in meters.
     /// * `estimated_velocity` - Current vertical velocity in m/s.
     /// * `estimated_attitude` - Current attitude as a quaternion.
@@ -120,7 +136,8 @@ impl AltitudeController {
         let acceleration =
             gains.p * altitude_error + gains.d * velocity_error + gains.i * self.integrated_error;
 
-        // Body z in world z: cos(roll)·cos(pitch) for a level-yaw-independent tilt.
+        // Cos of the tilt, cos(roll)·cos(pitch); yaw doesn't change it. A non-finite attitude
+        // counts as level (no boost).
         let body_z_alignment = estimated_attitude.to_rotation_matrix()[(2, 2)];
         let body_z_alignment = if body_z_alignment.is_finite() {
             body_z_alignment.max(MIN_BODY_Z_ALIGNMENT)
@@ -139,6 +156,11 @@ mod tests {
 
     fn level() -> UnitQuaternion<f32> {
         UnitQuaternion::identity()
+    }
+
+    fn nan_attitude() -> UnitQuaternion<f32> {
+        let nan = f32::NAN;
+        UnitQuaternion::new_unchecked(nalgebra::Quaternion::new(nan, nan, nan, nan))
     }
 
     /// Thrust is `hover · (g + a) / (g · cos tilt)` with the PID's acceleration `a`: zero error
@@ -170,6 +192,7 @@ mod tests {
             (0.0, 2.0, level(), hover * (GRAVITY - 1.0) / GRAVITY), // climbing: damped
             (100.0, 0.0, level(), 1.0),                             // saturates high
             (-100.0, 0.0, level(), 0.0),                            // and low
+            (0.0, 0.0, nan_attitude(), hover),                      // non-finite: level
         ];
         for (error, climb, attitude, expected) in cases {
             let mut controller = AltitudeController::with_config(&AltitudeControllerConfig {
@@ -240,6 +263,38 @@ mod tests {
             assert!(
                 after == fresh,
                 "after ({altitude}, {velocity}): {after} vs fresh {fresh}"
+            );
+        }
+    }
+
+    /// Config that would panic inside the tick is rejected at construction.
+    #[test]
+    fn rejects_invalid_config() {
+        // (max_integral, hover_thrust, field named in the panic)
+        let cases = [
+            (-1.0, 0.5, "max_integral"),
+            (f32::NAN, 0.5, "max_integral"),
+            (f32::INFINITY, 0.5, "max_integral"),
+            (5.0, 0.0, "hover_thrust"),
+            (5.0, 1.5, "hover_thrust"),
+            (5.0, f32::NAN, "hover_thrust"),
+        ];
+        for (max_integral, hover_thrust, field) in cases {
+            let config = AltitudeControllerConfig {
+                max_integral,
+                hover_thrust,
+                ..Default::default()
+            };
+            let panic = std::panic::catch_unwind(|| AltitudeController::with_config(&config))
+                .map(drop)
+                .expect_err("accepted an invalid config");
+            let message = panic
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .unwrap_or_default();
+            assert!(
+                message.contains(field),
+                "{config:?}: panicked with {message:?}"
             );
         }
     }

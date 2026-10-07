@@ -137,13 +137,8 @@ impl CopterGuidance {
     /// # Panics
     ///
     /// If `config.navigation_period` is negative or not finite, or `config.max_tilt` or
-    /// `config.hover_thrust` is not in `(0, 1]`.
+    /// `config.hover_thrust` is not in `(0, 1]` (the altitude controller checks the latter).
     pub fn new(config: CopterGuidanceConfig) -> Self {
-        assert!(
-            config.hover_thrust > 0.0 && config.hover_thrust <= 1.0,
-            "hover_thrust must be in (0, 1], got {}",
-            config.hover_thrust
-        );
         assert!(
             config.max_tilt > 0.0 && config.max_tilt <= 1.0,
             "max_tilt must be in (0, 1], got {}",

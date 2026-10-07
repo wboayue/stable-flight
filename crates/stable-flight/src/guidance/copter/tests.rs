@@ -206,12 +206,13 @@ fn waypoint_at_rest_on_target_yields_hover_thrust_and_no_moments() {
     let state = VehicleState::default();
 
     let output = stack.step(dt, &Command::Waypoint(waypoint_command), &state);
-    // Hover linear thrust, through the stabilizer's default squared thrust curve.
+    // Hover linear thrust, through the stabilizer's default thrust curve.
     let hover = crate::controllers::DEFAULT_HOVER_THRUST;
+    let exponent = CopterStabilizerConfig::default().thrust_curve_exponent;
     assert_eq!(
         output,
         ControlOutput {
-            thrust: hover * hover,
+            thrust: hover.powf(exponent),
             moments: Vec3::zeros(),
         },
         "on target at rest: hover, no moments"
