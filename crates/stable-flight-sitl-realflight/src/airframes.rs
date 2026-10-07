@@ -41,7 +41,8 @@ pub struct Airframe<G, S, M> {
 /// in RealFlight.
 ///
 /// The stabilizer gains were hand-tuned flying `copter-manual-realflight` in attitude mode after
-/// the frame fix (#62); guidance uses the defaults. Both RealFlight examples fly this set.
+/// the frame fix (#62); guidance uses the defaults except for damped lateral gains. Both
+/// RealFlight examples fly this set.
 ///
 /// # Examples
 ///
@@ -84,7 +85,16 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
     });
 
     Airframe {
-        guidance: CopterGuidanceConfig::default(),
+        guidance: CopterGuidanceConfig {
+            // Position → tilt is a double integrator: D sets the damping (ζ ≈ 0.8 here; the
+            // core default's ζ ≈ 0.03 orbits outward). No I until it hovers cleanly.
+            lateral_gains: Gains {
+                p: 0.8,
+                i: 0.0,
+                d: 1.6,
+            },
+            ..CopterGuidanceConfig::default()
+        },
         stabilizer: CopterStabilizerConfig {
             rates_controller,
             attitude_controller,
