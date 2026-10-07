@@ -11,6 +11,9 @@ use uom::si::velocity::meter_per_second;
 
 use stable_flight::{Actuator, ActuatorCommand, StateEstimator, VehicleState};
 
+/// Standard gravity in m/s², down-positive in NED.
+const GRAVITY: f32 = 9.806_65;
+
 #[cfg(test)]
 mod tests;
 
@@ -100,15 +103,13 @@ where
 ///
 /// # Frames
 ///
-/// RealFlight reports world velocity north/east/down, position east/north with altitude
-/// above sea level, and angles and body rates in degrees (see the `realflight-bridge`
-/// `SimulatorState` frame docs). `VehicleState` wants north/east/up and radians (its frame
-/// contract), so this type converts at the boundary. Several conversions don't meet that yet:
-/// angles and body rates are converted to radians twice (about 57× too small), vertical
-/// velocity and acceleration keep RealFlight's down-positive sign, position `x`/`y` are passed
-/// through unswapped, and the yaw-rate sign and quaternion axes are taken as reported. The
-/// ignored `conforms_*` tests pin the first two; the fix (#62) needs a flight check because the
-/// current gains were tuned against them.
+/// RealFlight's axes are undocumented and inconsistent across fields. A live capture (the
+/// `capture-state-realflight` example) shows: position `x` east and `y` north, with altitude above
+/// sea level; world velocity NED; the quaternion in `(w, y, x, -z)` order relative to NED → FRD;
+/// azimuth and yaw rate counterclockwise-positive (nose left); roll, inclination, and roll and
+/// pitch rates in the contract's sense; angles in degrees. World acceleration is unreliable, so it
+/// is derived from the FRD body specific force. This type converts all of these to the
+/// `VehicleState` frame contract (north/east/up, radians) at the boundary.
 ///
 /// # Examples
 ///
@@ -261,53 +262,49 @@ where
         input
     }
 
-    /// Updates the vehicle's estimated state based on simulator feedback.
-    ///
-    /// # Arguments
-    ///
-    /// * `state` - The simulator state containing position, velocity, and orientation data.
-    ///
-    /// # Notes
-    ///
-    /// Wraps RealFlight's raw meters and m/s in `uom` quantities and converts degrees to
-    /// radians (twice, for now; see [Frames](RealFlightVehicle#frames)).
+    /// Converts RealFlight's native report to the `VehicleState` frame contract (see
+    /// [Frames](RealFlightVehicle#frames)).
     fn update_estimate(&mut self, state: SimulatorState) {
+        // Position is east/north; altitude is already up-positive.
         self.estimated_state.position = Vec3::new(
-            Length::new::<meter>(state.aircraft_position_x_m),
             Length::new::<meter>(state.aircraft_position_y_m),
+            Length::new::<meter>(state.aircraft_position_x_m),
             Length::new::<meter>(state.altitude_asl_m),
         );
 
-        let velocity = state.velocity_world_mps;
+        let velocity = state.velocity_world_mps; // NED
         self.estimated_state.velocity = Vec3::new(
             Velocity::new::<meter_per_second>(velocity.x),
             Velocity::new::<meter_per_second>(velocity.y),
-            Velocity::new::<meter_per_second>(velocity.z),
+            Velocity::new::<meter_per_second>(-velocity.z),
         );
 
-        let acceleration = state.acceleration_world_mps2;
+        // RealFlight's quaternion axes are (y, x, -z) of NED → FRD. Taken as reported, without
+        // renormalizing: it is already unit.
+        let q = state.orientation;
+        let attitude = UnitQuaternion::new_unchecked(Quaternion::new(q.w, q.y, q.x, -q.z));
+        self.estimated_state.attitude = attitude;
+
+        // RealFlight's world acceleration is unreliable (z reads ~7.5 m/s² at rest), so rotate
+        // the FRD body specific force to NED and add gravity back.
+        let f = state.acceleration_body_mps2;
+        let acceleration = attitude * Vec3::new(f.x, f.y, f.z) + Vec3::new(0.0, 0.0, GRAVITY);
         self.estimated_state.acceleration = Vec3::new(
             Acceleration::new::<meter_per_second_squared>(acceleration.x),
             Acceleration::new::<meter_per_second_squared>(acceleration.y),
-            Acceleration::new::<meter_per_second_squared>(acceleration.z),
+            Acceleration::new::<meter_per_second_squared>(-acceleration.z),
         );
 
-        // Taken as reported, without renormalizing: RealFlight's quaternion is already unit.
-        let q = state.orientation;
-        self.estimated_state.attitude =
-            UnitQuaternion::new_unchecked(Quaternion::new(q.w, q.x, q.y, q.z));
-
-        // Deliberately converted to radians twice, preserving the pre-2.0 behavior the gains
-        // were tuned against (#62).
+        // Yaw rate and azimuth are counterclockwise-positive (nose left).
         self.estimated_state.angular_velocity = Vec3::new(
-            state.roll_rate_dps.to_radians().to_radians(),
-            state.pitch_rate_dps.to_radians().to_radians(),
-            state.yaw_rate_dps.to_radians().to_radians(),
+            state.roll_rate_dps.to_radians(),
+            state.pitch_rate_dps.to_radians(),
+            -state.yaw_rate_dps.to_radians(),
         );
 
-        self.estimated_state.roll = state.roll_deg.to_radians().to_radians();
-        self.estimated_state.pitch = state.inclination_deg.to_radians().to_radians();
-        self.estimated_state.heading = state.azimuth_deg.to_radians().to_radians();
+        self.estimated_state.roll = state.roll_deg.to_radians();
+        self.estimated_state.pitch = state.inclination_deg.to_radians();
+        self.estimated_state.heading = -state.azimuth_deg.to_radians();
     }
 }
 
