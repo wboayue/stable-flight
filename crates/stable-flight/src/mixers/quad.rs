@@ -10,10 +10,13 @@
 //!
 //! ## Motor Configuration (Standard X)
 //!
-//! - **Motor 0 (Front Left):** CCW rotation, contributes `+roll`, `+pitch`, `-yaw`
-//! - **Motor 1 (Front Right):** CW rotation, contributes `-roll`, `+pitch`, `+yaw`
-//! - **Motor 2 (Rear Left):** CW rotation, contributes `+roll`, `-pitch`, `+yaw`
-//! - **Motor 3 (Rear Right):** CCW rotation, contributes `-roll`, `-pitch`, `-yaw`
+//! - **Motor 0 (Front Left):** CW rotation, contributes `+roll`, `+pitch`, `-yaw`
+//! - **Motor 1 (Front Right):** CCW rotation, contributes `-roll`, `+pitch`, `+yaw`
+//! - **Motor 2 (Rear Left):** CCW rotation, contributes `+roll`, `-pitch`, `+yaw`
+//! - **Motor 3 (Rear Right):** CW rotation, contributes `-roll`, `-pitch`, `-yaw`
+//!
+//! A positive yaw moment turns the nose right: it speeds up the CCW props, whose reaction
+//! torque is clockwise seen from above (flight-checked in RealFlight, #62).
 //!
 //! ## Scaling Factors
 //!
@@ -112,21 +115,12 @@ impl Mixer for QuadCopterMixer {
         //     return ActuatorCommand::default();
         // }
 
-        // Compute raw motor outputs based on standard X configuration:
-        // Motor 0: Front Left  - CW rotation -> +roll, +pitch, -yaw
-        // Motor 1: Front Right - CCW rotation  -> -roll, +pitch, +yaw
-        // Motor 2: Rear Left   - CCW rotation  -> +roll, -pitch, +yaw
-        // Motor 3: Rear Right  - CW rotation -> -roll, -pitch, -yaw
+        // Standard X (see the module docs): +yaw speeds up the CCW props (FR, RL).
         let mut raw_outputs = [
-            baseline + yaw + pitch + roll, // Motor 0: Front Left
-            baseline - yaw + pitch - roll, // Motor 1: Front Right
-            baseline - yaw - pitch + roll, // Motor 2: Rear Left
-            baseline + yaw - pitch - roll, // Motor 3: Rear Right
-
-                                           // baseline - yaw + pitch + roll, // Motor 0: Front Left
-                                           // baseline + yaw + pitch - roll, // Motor 1: Front Right
-                                           // baseline + yaw - pitch + roll, // Motor 2: Rear Left
-                                           // baseline - yaw - pitch - roll, // Motor 3: Rear Right
+            baseline - yaw + pitch + roll, // Motor 0: Front Left (CW)
+            baseline + yaw + pitch - roll, // Motor 1: Front Right (CCW)
+            baseline + yaw - pitch + roll, // Motor 2: Rear Left (CCW)
+            baseline - yaw - pitch - roll, // Motor 3: Rear Right (CW)
         ];
 
         // Clamp each output to [0, 1] and scale to a percentage (0 to 100)
@@ -142,8 +136,6 @@ impl Mixer for QuadCopterMixer {
         actuator_command.motors[1] = raw_outputs[1];
         actuator_command.motors[2] = raw_outputs[2];
         actuator_command.motors[3] = raw_outputs[3];
-
-        //    println!("actuator_command: {:?}", actuator_command);
 
         actuator_command
     }
