@@ -106,7 +106,7 @@ Each major component is defined by a trait interface, allowing multiple implemen
 * Different Vehicle implementations (e.g., RealFlightVehicle in `stable-flight-sitl-realflight`)
 * Guidance and stabilizer variants for different airframes (e.g., CopterGuidance and CopterStabilizer). A tailsitter stabilizer for the [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) model is planned but not started.
 * Mixer implementations for various aircraft configurations (e.g., QuadCopterMixer). `TailSitterMixer` is a placeholder: it returns zeroed actuator commands until the tailsitter stabilizer exists.
-* Various telemetry publishers (e.g., MavlinkPublisher, FileLogger)
+* Various telemetry publishers (e.g., MavlinkPublisher)
 
 ## Real-Time Loop Management
 
