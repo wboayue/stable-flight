@@ -126,7 +126,7 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 | `Stabilizer`       | `CopterStabilizer`                                                   | core  |
 | `Mixer`            | `QuadCopterMixer`; `TailSitterMixer` (placeholder, outputs zeros)    | core  |
 | `TelemetryPublisher` | `(A, B)` fan-out; `testing::RecordingTelemetry<N>` (`testing` feature) | core |
-| `TelemetryPublisher` | `MavlinkPublisher`, `FileLogger`                                   | sitl  |
+| `TelemetryPublisher` | `MavlinkPublisher`                                                 | sitl  |
 
 `CopterGuidance` (outer loop: waypoints → attitude setpoint, heading hold) uses the `altitude` and `lateral` PID controllers; `CopterStabilizer` (inner loop) uses `attitude`, `yaw`, and `body_rate`. All live in the core `controllers` module, with `Gains`. `Setpoint` is `Attitude(AttitudeSetpoint)` or `Rate(RateSetpoint)`.
 

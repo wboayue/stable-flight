@@ -114,6 +114,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** the public `ScriptCommander::path` field; the commander now owns
   an internal waypoint list.
 - Unused `rand` dependency.
+- **Breaking:** `telemetry::file_logger::FileLogger`. Its `publish` ignored the
+  record and stalled the loop ~10 s per tick writing placeholder heartbeats; it
+  was never wired into a flight loop. The `byteorder` dependency goes with it.
 
 ### Fixed
 
@@ -132,7 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   waypoint commands. **Breaking:** the public helper
   `MavlinkPublisher::send_vfr_hud` now takes `&ControlOutput` instead of
   `&Command`.
-- `MavlinkPublisher` and `FileLogger` no longer panic the flight loop on a failed
+- `MavlinkPublisher` no longer panics the flight loop on a failed
   send/write/flush or a pre-epoch system clock. Failures are logged at `warn`
   and the tick continues. Logging is rate-limited per publisher: the first
   failure is reported, then one per 250 consecutive failures with a count of
