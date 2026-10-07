@@ -624,25 +624,29 @@ fn leaving_waypoints_or_priming_drops_the_held_tilt() {
     }
 }
 
+/// Asserts that `CopterGuidance::new(config)` panics with a message naming `field`.
+fn assert_new_panics(config: CopterGuidanceConfig, field: &str) {
+    let panic = std::panic::catch_unwind(|| CopterGuidance::new(config.clone()))
+        .map(drop)
+        .expect_err("accepted an invalid config");
+    let message = panic
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .unwrap_or_default();
+    assert!(
+        message.contains(field),
+        "{config:?}: panicked with {message:?}"
+    );
+}
+
 #[test]
 fn rejects_negative_or_non_finite_navigation_periods() {
-    for period in [-0.01, f32::NAN, f32::INFINITY] {
-        let panic = std::panic::catch_unwind(|| {
-            CopterGuidance::new(CopterGuidanceConfig {
-                navigation_period: period,
-                ..Default::default()
-            })
-        })
-        .map(drop)
-        .expect_err("accepted an invalid navigation_period");
-        let message = panic
-            .downcast_ref::<String>()
-            .map(String::as_str)
-            .unwrap_or_default();
-        assert!(
-            message.contains("navigation_period"),
-            "period {period}: panicked with {message:?}"
-        );
+    for navigation_period in [-0.01, f32::NAN, f32::INFINITY] {
+        let config = CopterGuidanceConfig {
+            navigation_period,
+            ..Default::default()
+        };
+        assert_new_panics(config, "navigation_period");
     }
 }
 
@@ -667,4 +671,49 @@ fn centred_yaw_stick_holds_heading_for_any_dt() {
     ));
 
     approx::assert_relative_eq!(setpoint.heading, 1.0, epsilon = 1e-6);
+}
+
+/// A far waypoint's tilt is capped at `max_tilt` in magnitude, keeping its direction; a near
+/// one is untouched.
+#[test]
+fn waypoint_tilt_is_capped_in_magnitude_and_keeps_its_direction() {
+    let state = VehicleState::default();
+    let lateral_p = CopterGuidanceConfig::default().lateral_gains.p;
+    // (waypoint x, y, max_tilt, expected |tilt|)
+    let cases = [
+        (1000.0, 0.0, 0.6, 0.6),
+        (1000.0, 1000.0, 0.6, 0.6),
+        (-30.0, 40.0, 0.3, 0.3),
+        (1000.0, -1000.0, 1.0, 1.0), // the lateral loop saturates length, not each axis
+        (0.1, 0.0, 0.6, lateral_p * 0.1 / crate::GRAVITY), // near: P term only, uncapped
+    ];
+    for (x, y, max_tilt, expected) in cases {
+        let mut guidance = CopterGuidance::new(CopterGuidanceConfig {
+            max_tilt,
+            ..Default::default()
+        });
+        guidance.prime(&state);
+        let command = Command::Waypoint(WaypointCommand {
+            position: Vec2::new(x, y),
+            ..Default::default()
+        });
+        let setpoint = attitude(guidance.guide(0.004, &command, &state));
+        let tilt = Vec2::new(setpoint.roll, setpoint.pitch);
+
+        approx::assert_relative_eq!(tilt.norm(), expected, epsilon = 1e-5);
+        // Toward the target: roll follows +y, pitch follows -x (lateral: pitch = -a_x/g).
+        let toward = Vec2::new(y, -x).normalize();
+        approx::assert_relative_eq!(tilt.normalize().dot(&toward), 1.0, epsilon = 1e-5);
+    }
+}
+
+#[test]
+fn rejects_max_tilt_outside_zero_to_one() {
+    for max_tilt in [0.0, -0.5, 1.5, f32::NAN] {
+        let config = CopterGuidanceConfig {
+            max_tilt,
+            ..Default::default()
+        };
+        assert_new_panics(config, "max_tilt");
+    }
 }

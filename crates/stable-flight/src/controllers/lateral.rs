@@ -1,7 +1,7 @@
 use crate::{GRAVITY, Vec2};
 
 use crate::controllers::Gains;
-use crate::math::{clamp_each, saturate_unit_vec2};
+use crate::math::{cap_magnitude, clamp_each};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LateralControllerConfig {
@@ -84,10 +84,11 @@ impl LateralController {
     ///
     /// # Returns
     ///
-    /// Desired roll and pitch as normalized values in [-1, 1] (the attitude controller scales
-    /// them by its `max_angles`). The acceleration demand saturates, so far from the target the
-    /// vehicle commands full tilt toward it rather than an out-of-range angle. The integral term
-    /// is clamped to `max_integral` to limit windup.
+    /// Desired roll and pitch as normalized values (the attitude controller scales them by its
+    /// `max_angles`). The length of the (roll, pitch) request is capped at 1, so far from the
+    /// target the vehicle commands full tilt straight toward it: a far diagonal target gives
+    /// about 0.71 on each axis, not 1. A non-finite error or velocity gives level. The integral
+    /// term is clamped to `max_integral` to limit windup.
     pub fn control(
         &mut self,
         dt: f32,
@@ -117,7 +118,8 @@ impl LateralController {
         let roll_cmd = accel_cmd.y / GRAVITY;
         let pitch_cmd = -accel_cmd.x / GRAVITY;
 
-        saturate_unit_vec2(Vec2::new(roll_cmd, pitch_cmd))
+        // Saturate the length, not each axis, so a far diagonal target keeps its direction.
+        cap_magnitude(Vec2::new(roll_cmd, pitch_cmd), 1.0)
     }
 }
 
@@ -144,6 +146,26 @@ mod tests {
             assert!(
                 angles == expected,
                 "target {target:?} gave {angles:?}, expected {expected:?}"
+            );
+        }
+    }
+
+    /// A NaN or infinite velocity estimate gives level, not a NaN tilt.
+    #[test]
+    fn non_finite_velocity_yields_level() {
+        let nan = f32::NAN;
+        let inf = f32::INFINITY;
+        let velocities = [
+            Vec2::new(nan, 0.0),
+            Vec2::new(0.0, inf),
+            Vec2::new(-inf, nan),
+        ];
+        for velocity in velocities {
+            let mut controller = LateralController::new();
+            let angles = controller.control(0.004, Vec2::new(10.0, 5.0), Vec2::zeros(), velocity);
+            assert!(
+                angles == Vec2::zeros(),
+                "velocity {velocity:?} gave {angles:?}"
             );
         }
     }
