@@ -1,6 +1,7 @@
-//! Small numeric helpers shared by guidance, stabilizers, controllers, and mixers: [`saturate_unit`],
-//! [`saturate_unit_vec2`], [`saturate_throttle`], [`wrap_angle`], [`desaturate`], the per-component vector
-//! helpers [`clamp_each`] and [`all_finite`], and [`euler_angles`] (public at the crate root).
+//! Small numeric helpers shared by guidance, stabilizers, controllers, and mixers:
+//! [`saturate_unit`], [`saturate_unit_vec2`], [`saturate_throttle`], [`wrap_angle`],
+//! [`desaturate`], [`cap_magnitude`], the per-component vector helpers [`clamp_each`] and
+//! [`all_finite`], and [`euler_angles`] (public at the crate root).
 //!
 //! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite
 //! error into controller state, wrap angles), which is specified in `architecture.md`,
@@ -22,6 +23,20 @@ pub(crate) fn desaturate(outputs: &mut [f32]) {
     let excess = outputs.iter().fold(0.0_f32, |m, &o| m.max(o - 1.0));
     for output in outputs.iter_mut() {
         *output = (*output - excess).clamp(0.0, 1.0);
+    }
+}
+
+/// Scales `v` down, keeping its direction, so its length is at most `max`. Unlike per-axis
+/// saturation, a diagonal request stays diagonal. A non-finite `v` has no direction, so it
+/// becomes zero (neutral), per the input policy.
+pub(crate) fn cap_magnitude(v: Vec2<f32>, max: f32) -> Vec2<f32> {
+    let length = v.norm();
+    if !length.is_finite() {
+        Vec2::zeros()
+    } else if length > max {
+        v * (max / length)
+    } else {
+        v
     }
 }
 

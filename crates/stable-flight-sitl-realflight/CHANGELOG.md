@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `airframes::quadcopter_x()`, the QuadCopterX model's tuned gains with
   `QuadCopterMixer` and its mapping, flight-checked in manual attitude mode, auto
   hover, and the figure-eight after the frame fix (#62). Its guidance uses the core
-  defaults except for damped lateral gains, and both examples fly it.
+  defaults, and both examples fly it.
 - `vehicle_state(&SimulatorState) -> VehicleState`: the frame conversion
   `RealFlightVehicle` uses, as a pure function, for recorded or replayed reports.
 - `ActuatorMapping` derives `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, and `Hash`.
