@@ -1,30 +1,38 @@
-//! Records RealFlight's raw `SimulatorState` to CSV while you fly with your own transmitter.
+//! Flies the quadcopter from a Logitech Extreme 3D joystick, exactly as
+//! `copter-manual-realflight` does, and records every raw `SimulatorState` RealFlight returns
+//! to CSV, unconverted.
 //!
-//! Hands control to RealFlight's RC device (`enable_rc`), then polls `exchange_data` at a
-//! fixed rate and writes every frame-relevant field unconverted, so the adapter's frame
-//! conversions (#62) can be checked against what RealFlight actually reports. Fly a mix of
-//! roll, pitch, yaw, translation, and climb; stop with Ctrl-C.
+//! RealFlight only reports state while its Link controller drives the model, so a passive
+//! capture alongside a transmitter isn't possible; this taps the bridge under the normal
+//! pipeline instead. The CSV is for checking the adapter's frame conversions (#62) against what
+//! RealFlight actually reports. Fly a mix of roll, pitch, yaw, translation, and climb; stop
+//! with Ctrl-C.
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv
 //! ```
 
+use std::cell::RefCell;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
-use std::thread;
-use std::time::{Duration, Instant};
 
 use clap::Parser;
 use env_logger::Builder;
 use log::{info, warn};
 
-use stable_flight_sitl::ShutdownSignal;
+use stable_flight::FlightLoop;
+use stable_flight::guidance::copter::CopterGuidance;
+use stable_flight::stabilizers::copter::CopterStabilizer;
+use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
+use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
+use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::{
-    ControlInputs, RealFlightBridge, RealFlightRemoteBridge, SimulatorState,
+    BridgeError, ControlInputs, RealFlightBridge, RealFlightRemoteBridge, SimulatorState,
 };
+use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
 
-/// Raw RealFlight state capture.
+/// Joystick flight in RealFlight with a raw-state CSV capture.
 #[derive(Parser)]
 struct Args {
     /// RealFlight host to connect to (`host:port`).
@@ -33,9 +41,6 @@ struct Args {
     /// CSV file to write.
     #[arg(long, default_value = "realflight-capture.csv")]
     output: PathBuf,
-    /// Sample rate in Hz.
-    #[arg(long, default_value_t = 50.0)]
-    rate: f32,
 }
 
 const HEADER: &str = "physics_time_s,roll_deg,inclination_deg,azimuth_deg,\
@@ -46,6 +51,42 @@ velocity_body_x,velocity_body_y,velocity_body_z,\
 acceleration_world_x,acceleration_world_y,acceleration_world_z,\
 acceleration_body_x,acceleration_body_y,acceleration_body_z,\
 is_touching_ground,is_locked";
+
+/// Passes every call through to `inner` and writes each returned state to `out`.
+struct RecordingBridge<B> {
+    inner: B,
+    out: RefCell<BufWriter<File>>,
+}
+
+impl<B: RealFlightBridge> RealFlightBridge for RecordingBridge<B> {
+    fn exchange_data(&self, control: &ControlInputs) -> Result<SimulatorState, BridgeError> {
+        let state = self.inner.exchange_data(control)?;
+        if let Err(e) = write_row(&mut *self.out.borrow_mut(), &state) {
+            warn!("Failed to write capture row: {e}");
+        }
+        Ok(state)
+    }
+
+    fn enable_rc(&self) -> Result<(), BridgeError> {
+        self.inner.enable_rc()
+    }
+
+    fn disable_rc(&self) -> Result<(), BridgeError> {
+        self.inner.disable_rc()
+    }
+
+    fn reset_aircraft(&self) -> Result<(), BridgeError> {
+        self.inner.reset_aircraft()
+    }
+}
+
+impl<B> Drop for RecordingBridge<B> {
+    fn drop(&mut self) {
+        if let Err(e) = self.out.get_mut().flush() {
+            warn!("Failed to flush capture: {e}");
+        }
+    }
+}
 
 fn write_row(out: &mut impl Write, s: &SimulatorState) -> std::io::Result<()> {
     let q = s.orientation;
@@ -93,42 +134,33 @@ fn main() {
         .init();
 
     let args = Args::parse();
-    let period = Duration::from_secs_f32(1.0 / args.rate);
-
-    let bridge = RealFlightRemoteBridge::new(&args.host).expect("Failed to create bridge");
-    // Fly with RealFlight's own RC device; Link only observes.
-    if let Err(e) = bridge.enable_rc() {
-        warn!("Failed to enable RC: {e}");
-    }
 
     let mut out = BufWriter::new(File::create(&args.output).expect("Failed to create output"));
     writeln!(out, "{HEADER}").expect("Failed to write header");
+    let bridge = RecordingBridge {
+        inner: RealFlightRemoteBridge::new(&args.host).expect("Failed to create bridge"),
+        out: RefCell::new(out),
+    };
 
+    // Same pipeline as `copter-manual-realflight`.
+    let commander = Extreme3DCommander::default();
+    let airframe = airframes::quadcopter_x();
+    let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+        bridge,
+        mapping: airframe.mapping,
+    });
+    let guidance = CopterGuidance::new(airframe.guidance);
+    let stabilizer = CopterStabilizer::new(airframe.stabilizer);
+    let mixer = airframe.mixer;
+    let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
+
+    let mut flight_loop =
+        FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
+
+    // Ctrl-C stops the loop; dropping the vehicle re-enables RC and flushes the capture.
     let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");
-    let input = ControlInputs::default();
-    let mut rows = 0usize;
-    let mut next = Instant::now();
 
-    info!(
-        "Recording to {} at {} Hz; Ctrl-C to stop",
-        args.output.display(),
-        args.rate
-    );
-    while !shutdown.is_set() {
-        match bridge.exchange_data(&input) {
-            Ok(state) => {
-                write_row(&mut out, &state).expect("Failed to write row");
-                rows += 1;
-            }
-            Err(e) => warn!("Exchange failed: {e}"),
-        }
-
-        next += period;
-        if let Some(wait) = next.checked_duration_since(Instant::now()) {
-            thread::sleep(wait);
-        }
-    }
-
-    out.flush().expect("Failed to flush output");
-    info!("Wrote {rows} rows to {}", args.output.display());
+    info!("Recording to {}; Ctrl-C to stop", args.output.display());
+    let runner = RealTimeRunner::new(250.0).expect("valid loop frequency"); // Hz
+    runner.run(&mut flight_loop, &shutdown);
 }

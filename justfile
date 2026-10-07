@@ -64,7 +64,7 @@ fly-manual *ARGS:
 fly-auto *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- {{ARGS}}
 
-# Records raw RealFlight state to CSV while you fly your transmitter, e.g. `just capture --output roll.csv`
+# Joystick flight (as fly-manual) recording raw RealFlight state to CSV, e.g. `just capture --output roll.csv`
 capture *ARGS:
     cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- {{ARGS}}
 

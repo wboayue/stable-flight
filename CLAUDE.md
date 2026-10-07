@@ -49,7 +49,7 @@ cargo build --workspace                         # or: just build
 cargo test --workspace --all-features           # or: just test
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight  # joystick + RealFlight (--host); or: just fly-manual
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight    # scripted figure-eight (script arg, --host); or: just fly-auto
-cargo run -p stable-flight-sitl-realflight --example capture-state-realflight  # raw SimulatorState → CSV while you fly your transmitter; or: just capture
+cargo run -p stable-flight-sitl-realflight --example capture-state-realflight  # joystick flight + raw SimulatorState → CSV; or: just capture
 cargo run --example extreme_3d_commander        # joystick smoke test
 cargo run --example publish_telemetry           # MAVLink demo
 cargo run --bin plot_flight -- flights/figure_eight.csv out.svg  # 3D path viz (SVG or PNG); or: just plot …

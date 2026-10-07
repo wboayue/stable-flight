@@ -51,7 +51,7 @@ cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight --
 # Scripted figure-eight (script path is the first argument)
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv
 
-# Record raw SimulatorState to CSV while flying your own transmitter (frame checks, #62)
+# Joystick flight (as copter-manual-realflight) recording raw SimulatorState to CSV (frame checks, #62)
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv
 ```
 
