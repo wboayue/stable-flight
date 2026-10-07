@@ -1,7 +1,7 @@
 use crate::{GRAVITY, Vec2};
 
 use crate::controllers::Gains;
-use crate::math::{clamp_each, saturate_unit_vec2};
+use crate::math::{cap_magnitude, clamp_each};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LateralControllerConfig {
@@ -117,7 +117,8 @@ impl LateralController {
         let roll_cmd = accel_cmd.y / GRAVITY;
         let pitch_cmd = -accel_cmd.x / GRAVITY;
 
-        saturate_unit_vec2(Vec2::new(roll_cmd, pitch_cmd))
+        // Saturate the length, not each axis, so a far diagonal target keeps its direction.
+        cap_magnitude(Vec2::new(roll_cmd, pitch_cmd), 1.0)
     }
 }
 

@@ -125,6 +125,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `max_angular_rates` (it only fed the normalization) and gains `yaw_gains`,
   since yaw authority (differential prop drag) needs its own gains
   ([#62](https://github.com/wboayue/stable-flight/issues/62)).
+- `CopterGuidanceConfig::default()` lateral gains are P 0.8, I 0, D 1.6 (ζ ≈ 0.8),
+  flight-checked on RealFlight's QuadCopterX. The old P 1.5, D 0.075 (ζ ≈ 0.03)
+  orbited the target in widening circles
+  ([#108](https://github.com/wboayue/stable-flight/issues/108)).
+- **Breaking:** `CopterGuidanceConfig::max_tilt` (default `DEFAULT_MAX_TILT`, 0.6 of
+  the stabilizer's maximum tilt) caps the magnitude of the waypoint roll/pitch
+  request, so a far waypoint can't ask for full tilt while also climbing hard.
+  `CopterGuidance::new` panics outside `(0, 1]`. Piloted attitude flight is not
+  capped ([#110](https://github.com/wboayue/stable-flight/issues/110)).
+- The lateral controller saturates the length of its roll/pitch request instead of
+  each axis, so a far diagonal waypoint keeps its direction (per-axis clipping
+  bent it toward 45°).
 - `QuadCopterMixer` gives attitude priority over thrust: when a motor would pass
   full throttle, all four drop by the excess so the moments survive, instead of
   clipping that motor.

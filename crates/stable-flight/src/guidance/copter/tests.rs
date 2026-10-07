@@ -668,3 +668,58 @@ fn centred_yaw_stick_holds_heading_for_any_dt() {
 
     approx::assert_relative_eq!(setpoint.heading, 1.0, epsilon = 1e-6);
 }
+
+/// A far waypoint's tilt is capped at `max_tilt` in magnitude, keeping its direction; a near
+/// one is untouched.
+#[test]
+fn waypoint_tilt_is_capped_in_magnitude_and_keeps_its_direction() {
+    let state = VehicleState::default();
+    // (waypoint x, y, max_tilt, expected |tilt|)
+    let cases = [
+        (1000.0, 0.0, 0.6, 0.6),
+        (1000.0, 1000.0, 0.6, 0.6),
+        (-30.0, 40.0, 0.3, 0.3),
+        (1000.0, -1000.0, 1.0, 1.0), // the lateral loop saturates length, not each axis
+        (0.1, 0.0, 0.6, 0.8 * 0.1 / crate::GRAVITY),
+    ];
+    for (x, y, max_tilt, expected) in cases {
+        let mut guidance = CopterGuidance::new(CopterGuidanceConfig {
+            max_tilt,
+            ..Default::default()
+        });
+        guidance.prime(&state);
+        let command = Command::Waypoint(WaypointCommand {
+            position: Vec2::new(x, y),
+            ..Default::default()
+        });
+        let setpoint = attitude(guidance.guide(0.004, &command, &state));
+        let tilt = Vec2::new(setpoint.roll, setpoint.pitch);
+
+        approx::assert_relative_eq!(tilt.norm(), expected, epsilon = 1e-5);
+        // Toward the target: roll follows +y, pitch follows -x (lateral: pitch = -a_x/g).
+        let toward = Vec2::new(y, -x).normalize();
+        approx::assert_relative_eq!(tilt.normalize().dot(&toward), 1.0, epsilon = 1e-5);
+    }
+}
+
+#[test]
+fn rejects_max_tilt_outside_zero_to_one() {
+    for max_tilt in [0.0, -0.5, 1.5, f32::NAN] {
+        let panic = std::panic::catch_unwind(|| {
+            CopterGuidance::new(CopterGuidanceConfig {
+                max_tilt,
+                ..Default::default()
+            })
+        })
+        .map(drop)
+        .expect_err("accepted an invalid max_tilt");
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .unwrap_or_default();
+        assert!(
+            message.contains("max_tilt"),
+            "max_tilt {max_tilt}: panicked with {message:?}"
+        );
+    }
+}

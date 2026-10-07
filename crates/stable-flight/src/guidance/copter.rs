@@ -17,13 +17,17 @@ use crate::{
 };
 
 use super::rate_divider::RateDivider;
-use crate::math::{saturate_unit, wrap_angle};
+use crate::math::{cap_magnitude, saturate_unit, wrap_angle};
 
 #[cfg(test)]
 mod tests;
 
 /// Heading-hold target slew rate at full yaw stick, in rad/s (~57°/s).
 const HEADING_SLEW_RATE: f32 = 1.0;
+
+/// Default [`CopterGuidanceConfig::max_tilt`]: 60% of the stabilizer's maximum tilt (27° at
+/// 45°), leaving thrust headroom to climb while translating.
+pub const DEFAULT_MAX_TILT: f32 = 0.6;
 
 /// Default [`CopterGuidanceConfig::navigation_period`]: 50 Hz, a fifth of the usual 250 Hz
 /// inner loop.
@@ -54,6 +58,11 @@ pub struct CopterGuidanceConfig {
     /// every tick, since its tilt compensation needs the current attitude. Defaults to
     /// [`DEFAULT_NAVIGATION_PERIOD`].
     pub navigation_period: f32,
+    /// Largest waypoint-flight tilt, as a fraction `(0, 1]` of the stabilizer's maximum tilt.
+    /// Caps the magnitude of the combined roll/pitch request, so a far waypoint can't ask for
+    /// full tilt while the altitude loop also wants full climb. Piloted attitude flight is not
+    /// capped. Defaults to [`DEFAULT_MAX_TILT`].
+    pub max_tilt: f32,
 }
 
 impl Default for CopterGuidanceConfig {
@@ -64,12 +73,15 @@ impl Default for CopterGuidanceConfig {
                 i: 0.3,
                 d: 0.15,
             },
+            // Position → tilt is a double integrator, so D sets the damping: ζ ≈ 0.8 with the
+            // stabilizer's 45° max tilt. Flight-checked on RealFlight's QuadCopterX (#108).
             lateral_gains: Gains {
-                p: 1.5,
-                i: 0.15,
-                d: 0.075,
+                p: 0.8,
+                i: 0.0,
+                d: 1.6,
             },
             navigation_period: DEFAULT_NAVIGATION_PERIOD,
+            max_tilt: DEFAULT_MAX_TILT,
         }
     }
 }
@@ -105,6 +117,8 @@ pub struct CopterGuidance {
     lateral_rate: RateDivider,
     /// The lateral loop's last roll/pitch, held between its runs.
     tilt: Vec2<f32>,
+    /// Cap on the waypoint tilt magnitude; see [`CopterGuidanceConfig::max_tilt`].
+    max_tilt: f32,
 }
 
 impl CopterGuidance {
@@ -112,8 +126,14 @@ impl CopterGuidance {
     ///
     /// # Panics
     ///
-    /// If `config.navigation_period` is negative or not finite.
+    /// If `config.navigation_period` is negative or not finite, or `config.max_tilt` is not in
+    /// `(0, 1]`.
     pub fn new(config: CopterGuidanceConfig) -> Self {
+        assert!(
+            config.max_tilt > 0.0 && config.max_tilt <= 1.0,
+            "max_tilt must be in (0, 1], got {}",
+            config.max_tilt
+        );
         assert!(
             config.navigation_period >= 0.0 && config.navigation_period.is_finite(),
             "navigation_period must be non-negative and finite, got {}",
@@ -135,6 +155,7 @@ impl CopterGuidance {
 
             lateral_rate: RateDivider::new(config.navigation_period),
             tilt: Vec2::zeros(),
+            max_tilt: config.max_tilt,
         }
     }
 }
@@ -271,9 +292,10 @@ impl CopterGuidance {
             return Vec2::zeros();
         }
 
-        self.tilt =
+        let tilt =
             self.lateral_controller
                 .control(step, desired_position, current_position, velocity);
+        self.tilt = cap_magnitude(tilt, self.max_tilt);
         self.lateral_rate.ran();
         self.tilt
     }
