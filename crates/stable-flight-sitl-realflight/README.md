@@ -51,10 +51,7 @@ cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight --
 # Scripted figure-eight (script path is the first argument)
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv
 
-# Joystick flight (as copter-manual-realflight) recording raw SimulatorState to CSV (frame checks, #62)
+# Joystick (or --script) flight recording raw SimulatorState and channels to CSV (frame checks)
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv
+cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --script flights/hover.csv
 ```
-
-## Known issues
-
-Some RealFlight conversions don't meet the `VehicleState` frame contract yet. Roll, pitch, heading, and body rates are converted to radians twice, so they come out about 57× too small. Vertical velocity and acceleration are also still down-positive. Position `x`/`y` are passed through as reported, though `realflight-bridge` 2.0 documents them as east/north, and the yaw-rate sign and quaternion axes are unverified. The conformance tests for those scenarios are `#[ignore]`d until a flight-checked fix lands. Run them with `cargo test -p stable-flight-sitl-realflight -- --ignored`.

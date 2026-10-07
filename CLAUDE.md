@@ -126,7 +126,7 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 | `TelemetryPublisher` | `(A, B)` fan-out; `testing::RecordingTelemetry<N>` (`testing` feature) | core |
 | `TelemetryPublisher` | `MavlinkPublisher`, `FileLogger`                                   | sitl  |
 
-`CopterGuidance` (outer loop: waypoints → attitude setpoint, heading hold) uses the `altitude` and `lateral` PID controllers; `CopterStabilizer` (inner loop) uses `attitude`, `yaw`, and `body_rate`. All live in the core `controllers` module, with `Gains`. `Setpoint` is `Attitude(AttitudeSetpoint)` or `Rate(RateSetpoint)`; `AttitudeReference` is temporary (see its rustdoc).
+`CopterGuidance` (outer loop: waypoints → attitude setpoint, heading hold) uses the `altitude` and `lateral` PID controllers; `CopterStabilizer` (inner loop) uses `attitude`, `yaw`, and `body_rate`. All live in the core `controllers` module, with `Gains`. `Setpoint` is `Attitude(AttitudeSetpoint)` or `Rate(RateSetpoint)`.
 
 `ScriptCommander::new(path) -> Result<Self, ScriptError>` (sitl) loads a CSV waypoint file
 (`x,y,altitude,cruise_speed`) from `flights/` into the core `WaypointFollower` (see its rustdoc). It is geometry-agnostic — the figure-eight shape lives in
