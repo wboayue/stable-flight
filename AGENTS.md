@@ -37,8 +37,9 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
   that isn't fixed in the same PR gets an issue (with its source PR); a pre-existing bug found
   while verifying gets a `bug` issue with repro steps. Labels: `blocks-publish` (must land
   before publishing core; tracked in #93), `needs-flight` (needs a simulator/transmitter
-  check), `later` (waits for a real need). The PR that completes one says `Closes #n`. The
-  finished migration and refactor plans are in git history (`plans/`, removed after #61).
+  check), `later` (waits for a real need). Milestones group issues by goal: `quad-sitl`,
+  `tailsitter-sitl`, `ark-fpv`; put a shared issue in the earliest milestone it unblocks.
+  The PR that completes one says `Closes #n`. The finished migration and refactor plans are in git history (`plans/`, removed after #61).
 - The repo was renamed `stable-flight-sitl` → `stable-flight`; the crate keeps the
   `stable-flight-sitl` name. Old GitHub URLs redirect.
 
