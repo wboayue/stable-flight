@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The crate is `no_std` (including the `testing` feature), so it builds for
   bare-metal targets such as `thumbv7em-none-eabihf`. It depends on `uom` and
   `nalgebra` without their `std` features; enable them yourself if you need them.
+- `GRAVITY` (standard gravity, 9.80665 m/s²), used by the altitude and lateral
+  controllers (they had their own 9.81) and available to backends.
 - `Vec2<T = f32>` and `Vec3<T = f32>` aliases for nalgebra's `Vector2`/`Vector3`,
   and a `stable_flight::nalgebra` re-export of the version the public types use.
 - `euler_angles(&UnitQuaternion<f32>) -> (roll, pitch, yaw)`: the frame

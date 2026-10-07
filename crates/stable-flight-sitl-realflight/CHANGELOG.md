@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `QuadCopterMixer` and its mapping, flight-checked in manual attitude mode, auto
   hover, and the figure-eight after the frame fix (#62). Its guidance uses the core
   defaults except for damped lateral gains, and both examples fly it.
+- `vehicle_state(&SimulatorState) -> VehicleState`: the frame conversion
+  `RealFlightVehicle` uses, as a pure function, for recorded or replayed reports.
 - `ActuatorMapping` derives `Debug`, `Clone`, `Copy`, `PartialEq`, `Eq`, and `Hash`.
 - The priming `estimate_state(Duration::ZERO)` logs an error when its exchange
   fails (it still returns the default state).

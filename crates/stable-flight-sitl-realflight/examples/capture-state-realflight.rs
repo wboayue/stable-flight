@@ -49,15 +49,57 @@ struct Args {
     script: Option<String>,
 }
 
-const HEADER: &str = "physics_time_s,roll_deg,inclination_deg,azimuth_deg,\
-roll_rate_dps,pitch_rate_dps,yaw_rate_dps,q_w,q_x,q_y,q_z,\
-position_x_m,position_y_m,altitude_asl_m,altitude_agl_m,\
-velocity_world_x,velocity_world_y,velocity_world_z,\
-velocity_body_x,velocity_body_y,velocity_body_z,\
-acceleration_world_x,acceleration_world_y,acceleration_world_z,\
-acceleration_body_x,acceleration_body_y,acceleration_body_z,\
-is_touching_ground,is_locked,\
-ch0,ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11";
+/// Number of RealFlight channels recorded after the state columns.
+const CHANNELS: usize = 12;
+
+/// One CSV column: its header name and how to read it from a report. Booleans record as 0/1.
+type Column = (&'static str, fn(&SimulatorState) -> f32);
+
+/// The state columns, in CSV order. The channels sent with the exchange follow them.
+const COLUMNS: &[Column] = &[
+    ("physics_time_s", |s| s.current_physics_time_s),
+    ("roll_deg", |s| s.roll_deg),
+    ("inclination_deg", |s| s.inclination_deg),
+    ("azimuth_deg", |s| s.azimuth_deg),
+    ("roll_rate_dps", |s| s.roll_rate_dps),
+    ("pitch_rate_dps", |s| s.pitch_rate_dps),
+    ("yaw_rate_dps", |s| s.yaw_rate_dps),
+    ("q_w", |s| s.orientation.w),
+    ("q_x", |s| s.orientation.x),
+    ("q_y", |s| s.orientation.y),
+    ("q_z", |s| s.orientation.z),
+    ("position_x_m", |s| s.aircraft_position_x_m),
+    ("position_y_m", |s| s.aircraft_position_y_m),
+    ("altitude_asl_m", |s| s.altitude_asl_m),
+    ("altitude_agl_m", |s| s.altitude_agl_m),
+    ("velocity_world_x", |s| s.velocity_world_mps.x),
+    ("velocity_world_y", |s| s.velocity_world_mps.y),
+    ("velocity_world_z", |s| s.velocity_world_mps.z),
+    ("velocity_body_x", |s| s.velocity_body_mps.x),
+    ("velocity_body_y", |s| s.velocity_body_mps.y),
+    ("velocity_body_z", |s| s.velocity_body_mps.z),
+    ("acceleration_world_x", |s| s.acceleration_world_mps2.x),
+    ("acceleration_world_y", |s| s.acceleration_world_mps2.y),
+    ("acceleration_world_z", |s| s.acceleration_world_mps2.z),
+    ("acceleration_body_x", |s| s.acceleration_body_mps2.x),
+    ("acceleration_body_y", |s| s.acceleration_body_mps2.y),
+    ("acceleration_body_z", |s| s.acceleration_body_mps2.z),
+    ("is_touching_ground", |s| {
+        f32::from(u8::from(s.is_touching_ground))
+    }),
+    ("is_locked", |s| f32::from(u8::from(s.is_locked))),
+];
+
+/// Writes the CSV header: the state columns, then `ch0`…`ch11`.
+fn write_header(out: &mut impl Write) -> std::io::Result<()> {
+    let names = COLUMNS.iter().map(|(name, _)| name.to_string());
+    let channels = (0..CHANNELS).map(|i| format!("ch{i}"));
+    writeln!(
+        out,
+        "{}",
+        names.chain(channels).collect::<Vec<_>>().join(",")
+    )
+}
 
 /// Passes every call through to `inner` and writes each returned state to `out`.
 struct RecordingBridge<B> {
@@ -101,44 +143,13 @@ fn write_row(
     s: &SimulatorState,
     control: &ControlInputs,
 ) -> std::io::Result<()> {
-    let q = s.orientation;
-    let (vw, vb) = (s.velocity_world_mps, s.velocity_body_mps);
-    let (aw, ab) = (s.acceleration_world_mps2, s.acceleration_body_mps2);
-    write!(
-        out,
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
-        s.current_physics_time_s,
-        s.roll_deg,
-        s.inclination_deg,
-        s.azimuth_deg,
-        s.roll_rate_dps,
-        s.pitch_rate_dps,
-        s.yaw_rate_dps,
-        q.w,
-        q.x,
-        q.y,
-        q.z,
-        s.aircraft_position_x_m,
-        s.aircraft_position_y_m,
-        s.altitude_asl_m,
-        s.altitude_agl_m,
-        vw.x,
-        vw.y,
-        vw.z,
-        vb.x,
-        vb.y,
-        vb.z,
-        aw.x,
-        aw.y,
-        aw.z,
-        ab.x,
-        ab.y,
-        ab.z,
-        s.is_touching_ground,
-        s.is_locked,
-    )?;
-    for channel in control.channels {
-        write!(out, ",{channel}")?;
+    let values = COLUMNS
+        .iter()
+        .map(|(_, read)| read(s))
+        .chain(control.channels);
+    for (i, value) in values.enumerate() {
+        let separator = if i == 0 { "" } else { "," };
+        write!(out, "{separator}{value}")?;
     }
     writeln!(out)
 }
@@ -152,7 +163,7 @@ fn main() {
     let args = Args::parse();
 
     let mut out = BufWriter::new(File::create(&args.output).expect("Failed to create output"));
-    writeln!(out, "{HEADER}").expect("Failed to write header");
+    write_header(&mut out).expect("Failed to write header");
     let bridge = RecordingBridge {
         inner: RealFlightRemoteBridge::new(&args.host).expect("Failed to create bridge"),
         out: RefCell::new(out),
