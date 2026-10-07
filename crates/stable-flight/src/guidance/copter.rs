@@ -58,10 +58,13 @@ pub struct CopterGuidanceConfig {
     /// every tick, since its tilt compensation needs the current attitude. Defaults to
     /// [`DEFAULT_NAVIGATION_PERIOD`].
     pub navigation_period: f32,
-    /// Largest waypoint-flight tilt, as a fraction `(0, 1]` of the stabilizer's maximum tilt.
-    /// Caps the magnitude of the combined roll/pitch request, so a far waypoint can't ask for
-    /// full tilt while the altitude loop also wants full climb. Piloted attitude flight is not
-    /// capped. Defaults to [`DEFAULT_MAX_TILT`].
+    /// Largest waypoint-flight tilt, as a fraction `(0, 1]` of the stabilizer's maximum tilt
+    /// (the units of [`AttitudeSetpoint`] roll/pitch; it follows them if they move to radians,
+    /// [#72](https://github.com/wboayue/stable-flight/issues/72)). Caps the magnitude of the
+    /// combined roll/pitch request, so a far waypoint can't ask for full tilt while the
+    /// altitude loop also wants full climb. It limits the request, not the achieved tilt: the
+    /// attitude loop can overshoot it briefly. Piloted attitude flight is not capped. Defaults
+    /// to [`DEFAULT_MAX_TILT`].
     pub max_tilt: f32,
 }
 

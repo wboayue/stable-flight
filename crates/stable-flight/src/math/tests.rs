@@ -170,3 +170,25 @@ fn desaturate_keeps_differences_by_giving_up_the_top() {
         }
     }
 }
+
+/// Long vectors shrink to `max` along their direction; short ones pass; non-finite ones have
+/// no direction and become zero.
+#[test]
+fn cap_magnitude_keeps_direction_and_neutralizes_non_finite() {
+    let nan = f32::NAN;
+    let inf = f32::INFINITY;
+    // (input, max, expected)
+    let cases = [
+        (Vec2::new(0.3, -0.4), 1.0, Vec2::new(0.3, -0.4)),
+        (Vec2::new(3.0, 4.0), 1.0, Vec2::new(0.6, 0.8)),
+        (Vec2::new(-30.0, 40.0), 0.5, Vec2::new(-0.3, 0.4)),
+        (Vec2::new(nan, 1.0), 1.0, Vec2::zeros()),
+        (Vec2::new(inf, 0.0), 1.0, Vec2::zeros()),
+        (Vec2::new(-inf, inf), 0.6, Vec2::zeros()),
+    ];
+    for (input, max, expected) in cases {
+        let capped = cap_magnitude(input, max);
+        assert_relative_eq!(capped.x, expected.x, epsilon = 1e-6);
+        assert_relative_eq!(capped.y, expected.y, epsilon = 1e-6);
+    }
+}
