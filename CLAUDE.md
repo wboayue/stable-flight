@@ -27,7 +27,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Run every command from the repo root: `cargo run --example <name>` / `--bin <name>` resolve
   across the workspace (add `-p <crate>` to be explicit), and `flights/*.csv` paths are
   relative to the root.
-- Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `stabilizers`, `testing` (feature: doubles + `conformance`) (traits/types, the `Vec2`/`Vec3` aliases, `euler_angles`, and the `nalgebra` re-export at the crate root); `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
+- Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `stabilizers`, `testing` (feature: doubles + `conformance`) (traits/types, the `Vec2`/`Vec3` aliases, `GRAVITY`, `euler_angles`, and the `nalgebra` re-export at the crate root); `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, `vehicle_state`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
 - Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `nalgebra` (core only, `libm`; core aliases `Vec2`/`Vec3` and re-exports it as `stable_flight::nalgebra` — other crates use the re-export), `uom` (units), `libm` (`no_std` float math, core), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
 - Untracked generated artifacts: `target/`, root `Cargo.lock`, `tarpaulin-report.html`, `firmware/*/*.bin`.
 - Paths below are prefixed with their crate (`core:` = `crates/stable-flight/`, `sitl:` =
@@ -49,6 +49,7 @@ cargo build --workspace                         # or: just build
 cargo test --workspace --all-features           # or: just test
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight  # joystick + RealFlight (--host); or: just fly-manual
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight    # scripted figure-eight (script arg, --host); or: just fly-auto
+cargo run -p stable-flight-sitl-realflight --example capture-state-realflight  # joystick flight + raw SimulatorState → CSV; or: just capture
 cargo run --example extreme_3d_commander        # joystick smoke test
 cargo run --example publish_telemetry           # MAVLink demo
 cargo run --bin plot_flight -- flights/figure_eight.csv out.svg  # 3D path viz (SVG or PNG); or: just plot …
@@ -125,7 +126,7 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 | `TelemetryPublisher` | `(A, B)` fan-out; `testing::RecordingTelemetry<N>` (`testing` feature) | core |
 | `TelemetryPublisher` | `MavlinkPublisher`, `FileLogger`                                   | sitl  |
 
-`CopterGuidance` (outer loop: waypoints → attitude setpoint, heading hold) uses the `altitude` and `lateral` PID controllers; `CopterStabilizer` (inner loop) uses `attitude`, `yaw`, and `body_rate`. All live in the core `controllers` module, with `Gains`. `Setpoint` is `Attitude(AttitudeSetpoint)` or `Rate(RateSetpoint)`; `AttitudeReference` is temporary (see its rustdoc).
+`CopterGuidance` (outer loop: waypoints → attitude setpoint, heading hold) uses the `altitude` and `lateral` PID controllers; `CopterStabilizer` (inner loop) uses `attitude`, `yaw`, and `body_rate`. All live in the core `controllers` module, with `Gains`. `Setpoint` is `Attitude(AttitudeSetpoint)` or `Rate(RateSetpoint)`.
 
 `ScriptCommander::new(path) -> Result<Self, ScriptError>` (sitl) loads a CSV waypoint file
 (`x,y,altitude,cruise_speed`) from `flights/` into the core `WaypointFollower` (see its rustdoc). It is geometry-agnostic — the figure-eight shape lives in

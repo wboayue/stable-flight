@@ -1,5 +1,6 @@
 use nalgebra::UnitQuaternion;
 
+use crate::GRAVITY;
 use crate::controllers::Gains;
 
 /// Linear thrust that holds altitude (zero net vertical acceleration); also the output for a
@@ -83,7 +84,6 @@ impl AltitudeController {
         estimated_velocity: f32,
         estimated_attitude: UnitQuaternion<f32>,
     ) -> f32 {
-        const GRAVITY: f32 = 9.81;
         const MAX_ACCEL: f32 = 20.0;
 
         let r = estimated_attitude.to_rotation_matrix();

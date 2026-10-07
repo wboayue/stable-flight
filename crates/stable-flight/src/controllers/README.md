@@ -21,8 +21,8 @@ Position Commands → Lateral Controller → Attitude Controller → Body Rate C
 **Output**: Normalized moments [-1, 1] for motor mixing
 
 **Key Features**:
-- PID control with anti-windup protection
-- Configurable maximum angular rates and integral limits
+- Plain PID per axis (`P·e + I·∫e + D·ė`, saturated to [-1, 1]), with anti-windup
+- Separate yaw gains: yaw authority (differential prop drag) is weaker than roll/pitch
 - Real-time performance optimized for high-frequency control loops
 - Comprehensive input validation and error handling
 
@@ -172,8 +172,8 @@ let gains = Gains { p: 2.0, i: 0.1, d: 0.5 };
 // Body rate controller config
 let body_rate_config = BodyRateControllerConfig {
     gains,
-    max_integral: 50.0,
-    max_angular_rates: Vec3::new(4.0, 4.0, 2.0), // rad/s
+    yaw_gains: Gains { p: 0.3, i: 0.1, d: 0.0 },
+    max_integral: 1.0,
 };
 
 // Attitude controller config  

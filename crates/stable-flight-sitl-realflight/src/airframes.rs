@@ -6,6 +6,7 @@
 
 use std::f32::consts::PI;
 
+use stable_flight::Vec2;
 use stable_flight::controllers::Gains;
 use stable_flight::controllers::{
     AttitudeController, AttitudeControllerConfig, BodyRateController, BodyRateControllerConfig,
@@ -13,7 +14,6 @@ use stable_flight::controllers::{
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
-use stable_flight::{Vec2, Vec3};
 
 use crate::ActuatorMapping;
 
@@ -40,9 +40,9 @@ pub struct Airframe<G, S, M> {
 /// [QuadCopterX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX)
 /// in RealFlight.
 ///
-/// The stabilizer gains were hand-tuned flying `copter-manual-realflight` (attitude and rate
-/// modes); guidance uses the defaults. `copter-auto-realflight` still flies
-/// `CopterStabilizerConfig::default()` until one set is flown in both modes.
+/// The stabilizer gains were hand-tuned flying `copter-manual-realflight` in attitude mode after
+/// the frame fix (#62); guidance uses the defaults except for damped lateral gains. Both
+/// RealFlight examples fly this set.
 ///
 /// # Examples
 ///
@@ -60,12 +60,17 @@ pub struct Airframe<G, S, M> {
 pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, QuadCopterMixer> {
     let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
         gains: Gains {
-            p: 7.0,
-            i: 0.00,
-            d: 0.01,
+            p: 0.5,
+            i: 0.2,
+            d: 0.004,
         },
-        max_integral: 100.0,
-        max_angular_rates: Vec3::new(3.0, 3.0, 3.0), // Max roll, pitch, yaw rates in rad/s
+        // Yaw authority is differential prop drag only, so yaw needs its own, higher gains.
+        yaw_gains: Gains {
+            p: 0.6,
+            i: 0.2,
+            d: 0.0,
+        },
+        max_integral: 1.0,
     });
 
     let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
@@ -80,7 +85,16 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
     });
 
     Airframe {
-        guidance: CopterGuidanceConfig::default(),
+        guidance: CopterGuidanceConfig {
+            // Position → tilt is a double integrator: D sets the damping (ζ ≈ 0.8 here; the
+            // core default's ζ ≈ 0.03 orbits outward). No I until it hovers cleanly.
+            lateral_gains: Gains {
+                p: 0.8,
+                i: 0.0,
+                d: 1.6,
+            },
+            ..CopterGuidanceConfig::default()
+        },
         stabilizer: CopterStabilizerConfig {
             rates_controller,
             attitude_controller,

@@ -12,8 +12,8 @@ use crate::Vec2;
 use crate::controllers::Gains;
 use crate::controllers::*;
 use crate::{
-    AttitudeCommand, AttitudeReference, AttitudeSetpoint, Command, Guidance, RateSetpoint,
-    Setpoint, VehicleState, WaypointCommand,
+    AttitudeCommand, AttitudeSetpoint, Command, Guidance, RateSetpoint, Setpoint, VehicleState,
+    WaypointCommand,
 };
 
 use super::rate_divider::RateDivider;
@@ -22,8 +22,8 @@ use crate::math::{saturate_unit, wrap_angle};
 #[cfg(test)]
 mod tests;
 
-/// Heading-hold target slew rate at full yaw stick, in rad/s (~1.4°/s).
-const HEADING_SLEW_RATE: f32 = 0.025;
+/// Heading-hold target slew rate at full yaw stick, in rad/s (~57°/s).
+const HEADING_SLEW_RATE: f32 = 1.0;
 
 /// Default [`CopterGuidanceConfig::navigation_period`]: 50 Hz, a fifth of the usual 250 Hz
 /// inner loop.
@@ -207,7 +207,6 @@ impl CopterGuidance {
             pitch: attitude_command.pitch,
             heading: self.heading,
             thrust: attitude_command.throttle,
-            reference: AttitudeReference::Euler,
         }
     }
 
@@ -236,7 +235,6 @@ impl CopterGuidance {
             pitch: tilt.y,
             heading: 0.0,
             thrust: linear_thrust,
-            reference: AttitudeReference::Quaternion,
         }
     }
 

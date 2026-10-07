@@ -1,5 +1,5 @@
 //! Small numeric helpers shared by guidance, stabilizers, controllers, and mixers: [`saturate_unit`],
-//! [`saturate_unit_vec2`], [`saturate_throttle`], [`wrap_angle`], the per-component vector
+//! [`saturate_unit_vec2`], [`saturate_throttle`], [`wrap_angle`], [`desaturate`], the per-component vector
 //! helpers [`clamp_each`] and [`all_finite`], and [`euler_angles`] (public at the crate root).
 //!
 //! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite
@@ -14,6 +14,16 @@ use crate::Vec2;
 
 #[cfg(test)]
 mod tests;
+
+/// Fits mixer outputs into `[0, 1]`, keeping their differences when it can: if any output
+/// exceeds 1, all are lowered by the excess (attitude over thrust), then each is clamped to
+/// `[0, 1]`. Only the top is shifted, so an output below 0 is still clipped.
+pub(crate) fn desaturate(outputs: &mut [f32]) {
+    let excess = outputs.iter().fold(0.0_f32, |m, &o| m.max(o - 1.0));
+    for output in outputs.iter_mut() {
+        *output = (*output - excess).clamp(0.0, 1.0);
+    }
+}
 
 /// Saturates a normalized command to [-1, 1]; NaN becomes 0 (neutral).
 pub(crate) fn saturate_unit(value: f32) -> f32 {

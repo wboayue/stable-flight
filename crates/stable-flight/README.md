@@ -72,9 +72,9 @@ For tuned gains, build the inner PID controllers explicitly (simulator backends 
 
 ```rust
 let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
-    gains: Gains { p: 7.0, i: 0.0, d: 0.01 },
-    max_integral: 100.0,
-    max_angular_rates: Vec3::new(3.0, 3.0, 3.0),
+    gains: Gains { p: 0.5, i: 0.2, d: 0.004 },
+    yaw_gains: Gains { p: 0.6, i: 0.2, d: 0.0 },
+    max_integral: 1.0,
 });
 
 let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {

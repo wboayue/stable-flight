@@ -106,7 +106,6 @@ fn commands_map_to_setpoints() {
                 pitch: -0.25,
                 heading: wrap_angle(0.7),
                 thrust: 0.4,
-                reference: AttitudeReference::Euler,
             }),
         ),
         (
@@ -122,7 +121,6 @@ fn commands_map_to_setpoints() {
                 pitch: -2.0,
                 heading: wrap_angle(0.7),
                 thrust: 1.3,
-                reference: AttitudeReference::Euler,
             }),
         ),
         (
@@ -144,7 +142,6 @@ fn commands_map_to_setpoints() {
                 pitch: 0.0,
                 heading: 0.0,
                 thrust: 0.0,
-                reference: AttitudeReference::Quaternion,
             }),
         ),
     ];
@@ -174,7 +171,7 @@ fn heading_hold_target_survives_a_waypoint_leg() {
     let centred = Command::Attitude(AttitudeCommand::default());
     let waypoint = Command::Waypoint(WaypointCommand::default());
     let heading_of = |setpoint: Setpoint| match setpoint {
-        Setpoint::Attitude(attitude) => (attitude.heading, attitude.reference),
+        Setpoint::Attitude(attitude) => attitude.heading,
         Setpoint::Rate(_) => {
             unreachable!("attitude and waypoint commands yield attitude setpoints")
         }
@@ -182,15 +179,15 @@ fn heading_hold_target_survives_a_waypoint_leg() {
 
     let mut before = 0.0;
     for _ in 0..10 {
-        before = heading_of(guidance.guide(0.004, &yaw_right, &state)).0;
+        before = heading_of(guidance.guide(0.004, &yaw_right, &state));
     }
     for _ in 0..10 {
         let during = heading_of(guidance.guide(0.004, &waypoint, &state));
-        assert!(during == (0.0, AttitudeReference::Quaternion));
+        assert!(during == 0.0);
     }
     let after = heading_of(guidance.guide(0.004, &centred, &state));
 
-    assert!(after == (before, AttitudeReference::Euler));
+    assert!(after == before);
     approx::assert_relative_eq!(
         before,
         0.7 + 10.0 * HEADING_SLEW_RATE * 0.004,
