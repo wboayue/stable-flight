@@ -17,7 +17,7 @@ use env_logger::Builder;
 
 use stable_flight::FlightLoop;
 use stable_flight::guidance::copter::CopterGuidance;
-use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
@@ -45,7 +45,7 @@ fn main() {
     // Replays and loops the waypoints from the CSV script.
     let commander = ScriptCommander::new(&args.script).expect("failed to load flight script");
 
-    // QuadCopterX model; its mixer and channel mapping (gains: see below).
+    // QuadCopterX model: tuned gains, mixer, and motor-to-channel mapping.
     // Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX
     let airframe = airframes::quadcopter_x();
 
@@ -57,9 +57,7 @@ fn main() {
     // Position loops that turn each waypoint into an attitude setpoint.
     let guidance = CopterGuidance::new(airframe.guidance);
 
-    // Default gains, not `airframe.stabilizer`: this example has only flown the defaults.
-    // One tuned set for both examples comes with the RealFlight frame fix (#62).
-    let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+    let stabilizer = CopterStabilizer::new(airframe.stabilizer);
 
     let mixer = airframe.mixer;
 

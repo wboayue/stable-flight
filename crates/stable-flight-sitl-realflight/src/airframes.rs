@@ -40,9 +40,8 @@ pub struct Airframe<G, S, M> {
 /// [QuadCopterX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX)
 /// in RealFlight.
 ///
-/// The stabilizer gains were hand-tuned flying `copter-manual-realflight` (attitude and rate
-/// modes); guidance uses the defaults. `copter-auto-realflight` still flies
-/// `CopterStabilizerConfig::default()` until one set is flown in both modes.
+/// The stabilizer gains were hand-tuned flying `copter-manual-realflight` in attitude mode after
+/// the frame fix (#62); guidance uses the defaults. Both RealFlight examples fly this set.
 ///
 /// # Examples
 ///

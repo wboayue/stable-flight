@@ -1,5 +1,6 @@
 //! Flies the quadcopter from a Logitech Extreme 3D joystick, exactly as
-//! `copter-manual-realflight` does, and records every raw `SimulatorState` RealFlight returns
+//! `copter-manual-realflight` does (or, with `--script`, a waypoint script as
+//! `copter-auto-realflight` does), and records every raw `SimulatorState` RealFlight returns
 //! to CSV, unconverted, with the 12 channels sent in the same exchange.
 //!
 //! RealFlight only reports state while its Link controller drives the model, so a passive
@@ -10,6 +11,7 @@
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv
+//! cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --script flights/hover.csv
 //! ```
 
 use std::cell::RefCell;
@@ -21,10 +23,11 @@ use clap::Parser;
 use env_logger::Builder;
 use log::{info, warn};
 
-use stable_flight::FlightLoop;
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
+use stable_flight::{Commander, FlightLoop};
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
+use stable_flight_sitl::commanders::script::ScriptCommander;
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::{
@@ -32,7 +35,7 @@ use stable_flight_sitl_realflight::realflight_bridge::{
 };
 use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
 
-/// Joystick flight in RealFlight with a raw-state CSV capture.
+/// Joystick or scripted flight in RealFlight with a raw-state CSV capture.
 #[derive(Parser)]
 struct Args {
     /// RealFlight host to connect to (`host:port`).
@@ -41,6 +44,9 @@ struct Args {
     /// CSV file to write.
     #[arg(long, default_value = "realflight-capture.csv")]
     output: PathBuf,
+    /// Fly this waypoint script instead of the joystick.
+    #[arg(long)]
+    script: Option<String>,
 }
 
 const HEADER: &str = "physics_time_s,roll_deg,inclination_deg,azimuth_deg,\
@@ -152,8 +158,18 @@ fn main() {
         out: RefCell::new(out),
     };
 
-    // Same pipeline as `copter-manual-realflight`.
-    let commander = Extreme3DCommander::default();
+    info!("Recording to {}; Ctrl-C to stop", args.output.display());
+    match &args.script {
+        Some(script) => fly(
+            ScriptCommander::new(script).expect("failed to load flight script"),
+            bridge,
+        ),
+        None => fly(Extreme3DCommander::default(), bridge),
+    }
+}
+
+/// Flies the QuadCopterX pipeline from `commander` until Ctrl-C.
+fn fly(commander: impl Commander, bridge: RecordingBridge<RealFlightRemoteBridge>) {
     let airframe = airframes::quadcopter_x();
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         bridge,
@@ -169,8 +185,6 @@ fn main() {
 
     // Ctrl-C stops the loop; dropping the vehicle re-enables RC and flushes the capture.
     let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");
-
-    info!("Recording to {}; Ctrl-C to stop", args.output.display());
     let runner = RealTimeRunner::new(250.0).expect("valid loop frequency"); // Hz
     runner.run(&mut flight_loop, &shutdown);
 }
