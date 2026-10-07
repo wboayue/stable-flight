@@ -82,6 +82,11 @@ impl AttitudeController {
 
     /// Creates a controller from `config`.
     ///
+    /// # Panics
+    ///
+    /// If `config.max_angles` or `config.max_rate` has a negative component, or
+    /// `config.max_integral` is negative or not finite.
+    ///
     /// # Examples
     ///
     /// ```
@@ -98,11 +103,6 @@ impl AttitudeController {
     ///
     /// let controller = AttitudeController::with_config(&config);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// If `config.max_angles` or `config.max_rate` has a negative component, or
-    /// `config.max_integral` is negative or not finite.
     pub fn with_config(config: &AttitudeControllerConfig) -> Self {
         assert!(
             config.max_angles.x >= 0.0 && config.max_angles.y >= 0.0,

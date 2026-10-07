@@ -75,6 +75,11 @@ impl AltitudeController {
 
     /// Creates a controller from `config`.
     ///
+    /// # Panics
+    ///
+    /// If `config.max_integral` is negative or not finite (it bounds a per-tick clamp), or
+    /// `config.hover_thrust` is not in `(0, 1]`.
+    ///
     /// # Examples
     ///
     /// ```
@@ -89,11 +94,6 @@ impl AltitudeController {
     ///
     /// let controller = AltitudeController::with_config(&config);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// If `config.max_integral` is negative or not finite (it bounds a per-tick clamp), or
-    /// `config.hover_thrust` is not in `(0, 1]`.
     pub fn with_config(config: &AltitudeControllerConfig) -> Self {
         assert!(
             config.max_integral >= 0.0 && config.max_integral.is_finite(),

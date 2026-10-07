@@ -202,34 +202,20 @@ let attitude_controller = AttitudeController::with_config(&attitude_config);
 
 ### Modularity and Testing
 - Each controller is independently testable and configurable
-- Comprehensive unit tests covering normal, boundary, and error cases
-- Table-driven tests for systematic validation
-- Property-based testing for mathematical invariants
+- Unit tests cover normal, boundary, and non-finite-input cases, table-driven where the
+  cases are systematic
+- The cascade is exercised end to end by the stabilizer and guidance tests
 
 ### Tuning and Configuration
 - Sensible default parameters for typical multirotor vehicles
-- Extensive documentation of parameter effects
-- Configuration validation to prevent invalid settings
-- Support for online parameter adjustment during flight testing
+- Config fields document their units and effects
+- `with_config` rejects invalid settings (negative or non-finite limits)
 
 ## Testing
 
-The controllers include extensive test suites covering:
-
-- **Unit Tests**: Individual controller functionality
-- **Integration Tests**: Controller interactions and cascaded operation  
-- **Table-Driven Tests**: Systematic validation across input ranges
-- **Property-Based Tests**: Mathematical invariants and edge cases
-- **Performance Tests**: Real-time execution benchmarks
-
-Run the tests with:
 ```bash
-cargo test controllers
-```
-
-Generate test coverage:
-```bash
-cargo tarpaulin -o html --output-dir coverage
+cargo test -p stable-flight controllers   # unit tests
+cargo test -p stable-flight --doc         # the snippets in this file and the controllers' rustdoc
 ```
 
 ## Mathematical Background
@@ -277,7 +263,9 @@ fn angle_diff(desired: f32, current: f32) -> f32 {
 
 ### Sluggish Response
 - **Cause**: Insufficient proportional gain  
-- **Solution**: Increase P gain, verify max_rate limits aren't constraining
+- **Solution**: Increase P gain, verify `max_rate` limits aren't constraining (the altitude
+  controller's `max_rate` is not yet applied, see
+  [#115](https://github.com/wboayue/stable-flight/issues/115))
 
 ### Integral Windup
 - **Cause**: Inadequate integral limiting

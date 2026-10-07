@@ -103,6 +103,10 @@ impl BodyRateController {
 
     /// Creates a controller from `config`.
     ///
+    /// # Panics
+    ///
+    /// If `config.max_integral` is not finite.
+    ///
     /// # Examples
     ///
     /// ```
@@ -116,10 +120,6 @@ impl BodyRateController {
     ///
     /// let controller = BodyRateController::with_config(&config);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// If `config.max_integral` is not finite.
     pub fn with_config(config: &BodyRateControllerConfig) -> Self {
         assert!(
             config.max_integral.is_finite(),

@@ -62,6 +62,11 @@ impl LateralController {
 
     /// Creates a controller from `config`.
     ///
+    /// # Panics
+    ///
+    /// If `config.max_integral` is negative or not finite (it bounds the integral term each
+    /// tick; rejecting it here keeps that clamp from panicking inside the flight loop).
+    ///
     /// # Examples
     ///
     /// ```
@@ -76,11 +81,6 @@ impl LateralController {
     ///
     /// let controller = LateralController::with_config(&config);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// If `config.max_integral` is negative or not finite (it bounds the integral term each
-    /// tick; rejecting it here keeps that clamp from panicking inside the flight loop).
     pub fn with_config(config: &LateralControllerConfig) -> Self {
         assert!(
             config.max_integral >= 0.0 && config.max_integral.is_finite(),
