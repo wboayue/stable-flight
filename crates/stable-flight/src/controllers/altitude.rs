@@ -60,6 +60,15 @@ impl Default for AltitudeController {
 }
 
 impl AltitudeController {
+    /// Creates a controller with [`AltitudeControllerConfig::default`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::controllers::AltitudeController;
+    ///
+    /// let controller = AltitudeController::new();
+    /// ```
     pub fn new() -> Self {
         AltitudeController::with_config(&AltitudeControllerConfig::default())
     }
@@ -70,6 +79,21 @@ impl AltitudeController {
     ///
     /// If `config.max_integral` is negative or not finite (it bounds a per-tick clamp), or
     /// `config.hover_thrust` is not in `(0, 1]`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::controllers::{AltitudeController, AltitudeControllerConfig, Gains};
+    ///
+    /// let config = AltitudeControllerConfig {
+    ///     gains: Gains { p: 1.0, i: 0.1, d: 0.05 },
+    ///     max_integral: 5.0,
+    ///     max_rate: 2.0,
+    ///     hover_thrust: 0.45, // airframe-specific
+    /// };
+    ///
+    /// let controller = AltitudeController::with_config(&config);
+    /// ```
     pub fn with_config(config: &AltitudeControllerConfig) -> Self {
         assert!(
             config.max_integral >= 0.0 && config.max_integral.is_finite(),
@@ -105,6 +129,25 @@ impl AltitudeController {
     /// # Returns
     ///
     /// A normalized thrust command (0.0 to 1.0).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::controllers::{AltitudeController, DEFAULT_HOVER_THRUST};
+    /// use stable_flight::nalgebra::UnitQuaternion;
+    ///
+    /// let mut controller = AltitudeController::new();
+    /// let dt = 0.004;
+    /// let level = UnitQuaternion::identity();
+    ///
+    /// // On target, still, and level: the feedforward hover thrust.
+    /// let thrust = controller.control(dt, 10.0, 0.0, 10.0, 0.0, level);
+    /// assert!((thrust - DEFAULT_HOVER_THRUST).abs() < 1e-6);
+    ///
+    /// // Below target: more than hover.
+    /// let thrust = controller.control(dt, 10.0, 0.0, 9.5, -0.1, level);
+    /// assert!(thrust > DEFAULT_HOVER_THRUST && thrust <= 1.0);
+    /// ```
     pub fn control(
         &mut self,
         dt: f32,

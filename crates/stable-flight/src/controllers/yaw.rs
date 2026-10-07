@@ -77,6 +77,11 @@ impl YawController {
     ///
     /// * `config` - Custom controller configuration settings
     ///
+    /// # Panics
+    ///
+    /// If `max_integral` or `max_rate` is negative or not finite: they bound per-tick clamps,
+    /// which would otherwise panic inside the flight loop.
+    ///
     /// # Examples
     ///
     /// ```
@@ -91,11 +96,6 @@ impl YawController {
     ///
     /// let controller = YawController::with_config(&config);
     /// ```
-    ///
-    /// # Panics
-    ///
-    /// If `max_integral` or `max_rate` is negative or not finite: they bound per-tick clamps,
-    /// which would otherwise panic inside the flight loop.
     pub fn with_config(config: &YawControllerConfig) -> Self {
         assert!(
             config.max_integral >= 0.0 && config.max_integral.is_finite(),

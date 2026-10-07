@@ -67,12 +67,42 @@ impl Default for AttitudeController {
 }
 
 impl AttitudeController {
-    /// Initializes a new attitude controller with the given configuration.
+    /// Creates a controller with [`AttitudeControllerConfig::default`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::controllers::AttitudeController;
+    ///
+    /// let controller = AttitudeController::new();
+    /// ```
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Initializes a new attitude controller with the given configuration.
+    /// Creates a controller from `config`.
+    ///
+    /// # Panics
+    ///
+    /// If `config.max_angles` or `config.max_rate` has a negative component, or
+    /// `config.max_integral` is negative or not finite.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::f32::consts::PI;
+    /// use stable_flight::controllers::{AttitudeController, AttitudeControllerConfig, Gains};
+    /// use stable_flight::Vec2;
+    ///
+    /// let config = AttitudeControllerConfig {
+    ///     gains: Gains { p: 3.0, i: 0.001, d: 1.0 },
+    ///     max_angles: Vec2::new(PI / 3.0, PI / 3.0), // 60° max tilt
+    ///     max_integral: 10.0,
+    ///     max_rate: Vec2::new(3.0, 3.0), // rad/s
+    /// };
+    ///
+    /// let controller = AttitudeController::with_config(&config);
+    /// ```
     pub fn with_config(config: &AttitudeControllerConfig) -> Self {
         assert!(
             config.max_angles.x >= 0.0 && config.max_angles.y >= 0.0,
@@ -120,6 +150,21 @@ impl AttitudeController {
     ///
     /// # Panics
     /// * If `dt` is not positive
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::controllers::AttitudeController;
+    /// use stable_flight::Vec2;
+    ///
+    /// let mut controller = AttitudeController::new();
+    /// let dt = 0.004;
+    /// let desired_angles = Vec2::new(0.5, -0.2); // 50% roll right, 20% pitch down
+    /// let estimated_angles = Vec2::new(0.1, 0.0); // current roll/pitch in radians
+    ///
+    /// let angular_rates = controller.control(dt, desired_angles, estimated_angles);
+    /// assert!(angular_rates.x > 0.0 && angular_rates.y < 0.0);
+    /// ```
     pub fn control(
         &mut self,
         dt: f32,
