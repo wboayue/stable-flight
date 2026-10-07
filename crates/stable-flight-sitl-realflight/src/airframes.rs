@@ -6,6 +6,7 @@
 
 use std::f32::consts::PI;
 
+use stable_flight::Vec2;
 use stable_flight::controllers::Gains;
 use stable_flight::controllers::{
     AttitudeController, AttitudeControllerConfig, BodyRateController, BodyRateControllerConfig,
@@ -13,7 +14,6 @@ use stable_flight::controllers::{
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
-use stable_flight::{Vec2, Vec3};
 
 use crate::ActuatorMapping;
 
@@ -60,12 +60,11 @@ pub struct Airframe<G, S, M> {
 pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, QuadCopterMixer> {
     let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
         gains: Gains {
-            p: 7.0,
-            i: 0.00,
-            d: 0.01,
+            p: 0.15,
+            i: 0.0,
+            d: 0.003,
         },
-        max_integral: 100.0,
-        max_angular_rates: Vec3::new(3.0, 3.0, 3.0), // Max roll, pitch, yaw rates in rad/s
+        max_integral: 1.0,
     });
 
     let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
