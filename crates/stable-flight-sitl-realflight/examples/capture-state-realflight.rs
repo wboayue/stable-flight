@@ -1,6 +1,6 @@
 //! Flies the quadcopter from a Logitech Extreme 3D joystick, exactly as
 //! `copter-manual-realflight` does, and records every raw `SimulatorState` RealFlight returns
-//! to CSV, unconverted.
+//! to CSV, unconverted, with the 12 channels sent in the same exchange.
 //!
 //! RealFlight only reports state while its Link controller drives the model, so a passive
 //! capture alongside a transmitter isn't possible; this taps the bridge under the normal
@@ -50,7 +50,8 @@ velocity_world_x,velocity_world_y,velocity_world_z,\
 velocity_body_x,velocity_body_y,velocity_body_z,\
 acceleration_world_x,acceleration_world_y,acceleration_world_z,\
 acceleration_body_x,acceleration_body_y,acceleration_body_z,\
-is_touching_ground,is_locked";
+is_touching_ground,is_locked,\
+ch0,ch1,ch2,ch3,ch4,ch5,ch6,ch7,ch8,ch9,ch10,ch11";
 
 /// Passes every call through to `inner` and writes each returned state to `out`.
 struct RecordingBridge<B> {
@@ -61,7 +62,7 @@ struct RecordingBridge<B> {
 impl<B: RealFlightBridge> RealFlightBridge for RecordingBridge<B> {
     fn exchange_data(&self, control: &ControlInputs) -> Result<SimulatorState, BridgeError> {
         let state = self.inner.exchange_data(control)?;
-        if let Err(e) = write_row(&mut *self.out.borrow_mut(), &state) {
+        if let Err(e) = write_row(&mut *self.out.borrow_mut(), &state, control) {
             warn!("Failed to write capture row: {e}");
         }
         Ok(state)
@@ -88,11 +89,16 @@ impl<B> Drop for RecordingBridge<B> {
     }
 }
 
-fn write_row(out: &mut impl Write, s: &SimulatorState) -> std::io::Result<()> {
+/// Writes one CSV row: the state RealFlight returned, then the channels sent with that exchange.
+fn write_row(
+    out: &mut impl Write,
+    s: &SimulatorState,
+    control: &ControlInputs,
+) -> std::io::Result<()> {
     let q = s.orientation;
     let (vw, vb) = (s.velocity_world_mps, s.velocity_body_mps);
     let (aw, ab) = (s.acceleration_world_mps2, s.acceleration_body_mps2);
-    writeln!(
+    write!(
         out,
         "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         s.current_physics_time_s,
@@ -124,7 +130,11 @@ fn write_row(out: &mut impl Write, s: &SimulatorState) -> std::io::Result<()> {
         ab.z,
         s.is_touching_ground,
         s.is_locked,
-    )
+    )?;
+    for channel in control.channels {
+        write!(out, ",{channel}")?;
+    }
+    writeln!(out)
 }
 
 fn main() {
