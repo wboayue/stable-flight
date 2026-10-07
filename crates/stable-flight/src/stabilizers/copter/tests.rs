@@ -12,6 +12,11 @@ fn setup_controller() -> CopterStabilizer {
             i: 0.1,
             d: 0.05,
         },
+        yaw_gains: Gains {
+            p: 1.0,
+            i: 0.1,
+            d: 0.05,
+        },
         max_integral: 100.0,
     });
 

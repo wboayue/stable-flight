@@ -7,6 +7,11 @@ use crate::math::{all_finite, clamp_each};
 const DEFAULT_P: f32 = 0.15;
 /// Default derivative gain, in normalized moment per rad/s².
 const DEFAULT_D: f32 = 0.003;
+/// Default yaw proportional gain. Yaw authority comes only from differential prop drag, so
+/// yaw needs more gain than roll and pitch.
+const DEFAULT_YAW_P: f32 = 0.3;
+/// Default yaw integral gain, in normalized moment per rad of accumulated error.
+const DEFAULT_YAW_I: f32 = 0.1;
 /// Default integral limit, in rad (accumulated rate error).
 const DEFAULT_MAX_INTEGRAL: f32 = 1.0;
 
@@ -16,8 +21,11 @@ const DEFAULT_MAX_INTEGRAL: f32 = 1.0;
 /// rad/s, `i` per rad of accumulated error, and `d` per rad/s².
 #[derive(Clone, Debug, PartialEq)]
 pub struct BodyRateControllerConfig {
-    /// PID gains for controlling the angular rates (roll, pitch, yaw).
+    /// PID gains for the roll and pitch rates.
     pub gains: Gains,
+
+    /// PID gains for the yaw rate.
+    pub yaw_gains: Gains,
 
     /// Maximum absolute value of the accumulated error (rad), per axis.
     /// Prevents integral windup by limiting error accumulation.
@@ -31,6 +39,11 @@ impl Default for BodyRateControllerConfig {
                 p: DEFAULT_P,
                 i: 0.0,
                 d: DEFAULT_D,
+            },
+            yaw_gains: Gains {
+                p: DEFAULT_YAW_P,
+                i: DEFAULT_YAW_I,
+                d: 0.0,
             },
             max_integral: DEFAULT_MAX_INTEGRAL,
         }
@@ -49,8 +62,11 @@ impl Default for BodyRateControllerConfig {
 ///   them to motor commands.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BodyRateController {
-    /// PID gains for controlling the angular rates (roll, pitch, yaw).
+    /// PID gains for the roll and pitch rates.
     pub gains: Gains,
+
+    /// PID gains for the yaw rate.
+    pub yaw_gains: Gains,
 
     /// Integrated error term for the PID controller.
     pub integral_term: Vec3<f32>,
@@ -83,6 +99,7 @@ impl BodyRateController {
         );
         Self {
             gains: config.gains,
+            yaw_gains: config.yaw_gains,
             max_integral: config.max_integral,
             integral_term: Vec3::zeros(),
             last_error: Vec3::zeros(),
@@ -93,7 +110,8 @@ impl BodyRateController {
     /// Controls the angular velocity (body rates) of the vehicle using a PID controller.
     ///
     /// Computes the error between desired and estimated rates (both rad/s) and applies PID
-    /// control to it, per axis.
+    /// control to it, per axis: [`gains`](Self::gains) for roll and pitch,
+    /// [`yaw_gains`](Self::yaw_gains) for yaw.
     ///
     /// # Arguments
     ///
@@ -141,9 +159,13 @@ impl BodyRateController {
         self.integral_term += dt * error;
         self.integral_term = clamp_each(self.integral_term, -self.max_integral, self.max_integral);
 
-        let moment = self.gains.p * error
-            + self.gains.d * error_derivative
-            + self.gains.i * self.integral_term;
+        let (g, y) = (self.gains, self.yaw_gains);
+        let p = Vec3::new(g.p, g.p, y.p);
+        let i = Vec3::new(g.i, g.i, y.i);
+        let d = Vec3::new(g.d, g.d, y.d);
+        let moment = p.component_mul(&error)
+            + i.component_mul(&self.integral_term)
+            + d.component_mul(&error_derivative);
 
         clamp_each(moment, -1.0, 1.0)
     }
@@ -164,9 +186,11 @@ mod tests {
 
     const DT: f32 = 0.004;
 
+    /// The same gains on every axis.
     fn controller(p: f32, i: f32, d: f32) -> BodyRateController {
         BodyRateController::with_config(&BodyRateControllerConfig {
             gains: Gains { p, i, d },
+            yaw_gains: Gains { p, i, d },
             max_integral: 1.0,
         })
     }
@@ -259,6 +283,27 @@ mod tests {
         assert!((c.integral_term - Vec3::new(1.0, -1.0, 0.0)).amax() < 1e-6);
     }
 
+    /// Yaw uses `yaw_gains`; roll and pitch use `gains`.
+    #[test]
+    fn yaw_uses_its_own_gains() {
+        let mut c = BodyRateController::with_config(&BodyRateControllerConfig {
+            gains: Gains {
+                p: 0.15,
+                i: 0.0,
+                d: 0.0,
+            },
+            yaw_gains: Gains {
+                p: 0.5,
+                i: 0.0,
+                d: 0.0,
+            },
+            max_integral: 1.0,
+        });
+        let out = c.control(DT, Vec3::new(1.0, 1.0, 1.0), Vec3::zeros());
+
+        assert!((out - Vec3::new(0.15, 0.15, 0.5)).amax() < 1e-6);
+    }
+
     #[test]
     fn reset_clears_history() {
         let mut c = controller(0.15, 0.1, 0.003);
@@ -277,11 +322,17 @@ mod tests {
                 i: 0.3,
                 d: 0.004,
             },
+            yaw_gains: Gains {
+                p: 0.4,
+                i: 0.1,
+                d: 0.0,
+            },
             max_integral: 0.5,
         };
         let c = BodyRateController::with_config(&config);
 
         assert!(c.gains == config.gains);
+        assert!(c.yaw_gains == config.yaw_gains);
         assert!(c.max_integral == 0.5);
     }
 
@@ -300,6 +351,7 @@ mod tests {
                 i: 0.0,
                 d: 0.0,
             },
+            yaw_gains: Gains::default(),
             max_integral: f32::INFINITY,
         });
     }

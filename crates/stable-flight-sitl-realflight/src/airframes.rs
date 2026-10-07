@@ -64,6 +64,12 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
             i: 0.0,
             d: 0.003,
         },
+        // Yaw authority is differential prop drag only, so yaw needs its own, higher gains.
+        yaw_gains: Gains {
+            p: 0.6,
+            i: 0.2,
+            d: 0.0,
+        },
         max_integral: 1.0,
     });
 
