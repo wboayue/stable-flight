@@ -1,5 +1,4 @@
-//! PID building blocks shared by guidance (altitude, lateral) and stabilizers (attitude, yaw,
-//! body rate).
+#![doc = include_str!("README.md")]
 
 use crate::Vec3;
 
