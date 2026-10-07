@@ -33,3 +33,6 @@ tarpaulin-report.html
 
 # Firmware images from `just fw-bin`
 firmware/*/*.bin
+
+# Raw state captures from `just capture` (default output and ad-hoc names)
+*capture*.csv

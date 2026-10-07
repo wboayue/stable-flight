@@ -42,13 +42,6 @@ impl MockRealFlightBridge {
             stamp_exchanges: false,
         }
     }
-
-    fn with_state(state: SimulatorState) -> Self {
-        Self {
-            state,
-            ..Self::new(false)
-        }
-    }
 }
 
 fn sample_state() -> SimulatorState {
@@ -335,14 +328,9 @@ fn native_fixture(scenario: &Scenario) -> SimulatorState {
     }
 }
 
-/// Runs RealFlight's native report for `scenario` through the priming exchange.
+/// Converts RealFlight's native report for `scenario`.
 fn state_for(scenario: &Scenario) -> VehicleState {
-    let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-        mapping: ActuatorMapping::default(),
-        bridge: MockRealFlightBridge::with_state(native_fixture(scenario)),
-    });
-
-    vehicle.estimate_state(Duration::ZERO)
+    vehicle_state(&native_fixture(scenario))
 }
 
 stable_flight::conformance_tests! {
@@ -369,7 +357,7 @@ fn priming_failure_returns_the_default_state() {
 }
 
 /// Real RealFlight frames (QuadCopterX, `capture-state-realflight`): angles in degrees,
-/// quaternion as reported, world and body velocity in m/s.
+/// quaternion `(w, x, y, z)` as reported, world and body velocity in m/s.
 struct CapturedFrame {
     roll_deg: f32,
     inclination_deg: f32,
@@ -383,27 +371,27 @@ struct CapturedFrame {
 const CAPTURED_FRAMES: &[CapturedFrame] = &[
     // Banked right.
     CapturedFrame { roll_deg: 66.83714, inclination_deg: 1.5162313, azimuth_deg: -121.246864,
-        orientation: [0.48530817, 0.2605223, -0.7237047, 0.41575912],
+        orientation: [0.41575912, 0.48530817, 0.2605223, -0.7237047],
         velocity_world: [-1.2908397, -1.7935158, 0.011943602],
         velocity_body: [-0.86376965, 0.79000425, -1.8742743] },
     // Banked left, descending.
     CapturedFrame { roll_deg: -69.56736, inclination_deg: 1.9636091, azimuth_deg: -126.60085,
-        orientation: [-0.50325423, -0.26885852, -0.7380235, 0.36023846],
+        orientation: [0.36023846, -0.50325423, -0.26885852, -0.7380235],
         velocity_world: [4.0742207, 1.5021355, 5.37459],
         velocity_body: [-1.4067144, -6.4487357, -2.043745] },
     // Nose up.
     CapturedFrame { roll_deg: 0.24343026, inclination_deg: 56.832256, azimuth_deg: -120.71308,
-        orientation: [0.23699024, -0.41266477, -0.76390207, 0.43588683],
+        orientation: [0.43588683, 0.23699024, -0.41266477, -0.76390207],
         velocity_world: [1.8830783, -2.9502623, -0.2262258],
         velocity_body: [-1.7244745, -0.12510146, -3.0515168] },
     // Nose down.
     CapturedFrame { roll_deg: -1.0703444, inclination_deg: -49.82929, azimuth_deg: -123.159,
-        orientation: [0.2079391, -0.3664479, 0.7957234, -0.43508804],
+        orientation: [-0.43508804, 0.2079391, -0.3664479, 0.7957234],
         velocity_world: [-1.5399728, 0.026480667, -0.79843163],
         velocity_body: [-0.052455604, 1.2964513, -1.1515958] },
     // Fast, banked and pitched, heading northwest.
     CapturedFrame { roll_deg: 12.693953, inclination_deg: 10.00485, azimuth_deg: -34.863396,
-        orientation: [-0.11567435, -0.07910883, 0.2874015, -0.94750285],
+        orientation: [-0.94750285, -0.11567435, -0.07910883, 0.2874015],
         velocity_world: [-4.1126347, -1.9234412, 5.8557076],
         velocity_body: [-5.423254, 1.8501548, 4.697653] },
 ];
@@ -415,19 +403,15 @@ const CAPTURED_FRAMES: &[CapturedFrame] = &[
 #[test]
 fn captured_frames_agree_across_fields() {
     for (i, frame) in CAPTURED_FRAMES.iter().enumerate() {
-        let [x, y, z, w] = frame.orientation;
-        let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-            mapping: ActuatorMapping::default(),
-            bridge: MockRealFlightBridge::with_state(SimulatorState {
-                roll_deg: frame.roll_deg,
-                inclination_deg: frame.inclination_deg,
-                azimuth_deg: frame.azimuth_deg,
-                orientation: Quaternion { w, x, y, z },
-                velocity_world_mps: frame.velocity_world.into(),
-                ..Default::default()
-            }),
+        let [w, x, y, z] = frame.orientation;
+        let state = vehicle_state(&SimulatorState {
+            roll_deg: frame.roll_deg,
+            inclination_deg: frame.inclination_deg,
+            azimuth_deg: frame.azimuth_deg,
+            orientation: Quaternion { w, x, y, z },
+            velocity_world_mps: frame.velocity_world.into(),
+            ..Default::default()
         });
-        let state = vehicle.estimate_state(Duration::ZERO);
 
         let (roll, pitch, heading) = stable_flight::euler_angles(&state.attitude);
         assert!(

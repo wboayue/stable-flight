@@ -9,10 +9,7 @@ use uom::si::f32::{Acceleration, Length, Velocity};
 use uom::si::length::meter;
 use uom::si::velocity::meter_per_second;
 
-use stable_flight::{Actuator, ActuatorCommand, StateEstimator, VehicleState};
-
-/// Standard gravity in m/s², down-positive in NED.
-const GRAVITY: f32 = 9.806_65;
+use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateEstimator, VehicleState};
 
 #[cfg(test)]
 mod tests;
@@ -154,7 +151,7 @@ where
             // initialize state if dt is zero
             let input = ControlInputs::default();
             match self.bridge.exchange_data(&input) {
-                Ok(state) => self.update_estimate(state),
+                Ok(state) => self.estimated_state = vehicle_state(&state),
                 Err(e) => error!("Failed initial exchange with RealFlight: {}", e),
             }
         }
@@ -176,7 +173,7 @@ where
         let input = self.map_channels(command);
 
         match self.bridge.exchange_data(&input) {
-            Ok(state) => self.update_estimate(state),
+            Ok(state) => self.estimated_state = vehicle_state(&state),
             Err(e) => error!("Failed to exchange data with RealFlight: {}", e),
         }
     }
@@ -261,50 +258,71 @@ where
 
         input
     }
+}
 
-    /// Converts RealFlight's native report to the `VehicleState` frame contract (see
-    /// [Frames](RealFlightVehicle#frames)).
-    fn update_estimate(&mut self, state: SimulatorState) {
+/// Converts one RealFlight report to the `VehicleState` frame contract.
+///
+/// This is the whole of [`RealFlightVehicle`]'s state estimate, as a pure function, so it can
+/// also convert recorded or replayed reports. See [Frames](RealFlightVehicle#frames) for
+/// RealFlight's conventions.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight_sitl_realflight::realflight_bridge::SimulatorState;
+/// use stable_flight_sitl_realflight::vehicle_state;
+///
+/// // RealFlight reports position east/north; the contract wants north/east.
+/// let report = SimulatorState {
+///     aircraft_position_x_m: 3.0,
+///     aircraft_position_y_m: 4.0,
+///     ..Default::default()
+/// };
+/// let state = vehicle_state(&report);
+/// assert_eq!(state.position.x.value, 4.0);
+/// assert_eq!(state.position.y.value, 3.0);
+/// ```
+pub fn vehicle_state(state: &SimulatorState) -> VehicleState {
+    // RealFlight's quaternion axes are (y, x, -z) of NED → FRD. Taken as reported, without
+    // renormalizing: it is already unit.
+    let q = state.orientation;
+    let attitude = UnitQuaternion::new_unchecked(Quaternion::new(q.w, q.y, q.x, -q.z));
+
+    // World velocity is NED.
+    let velocity = state.velocity_world_mps;
+
+    // RealFlight's world acceleration is unreliable (z reads ~7.5 m/s² at rest), so rotate the
+    // FRD body specific force to NED and add gravity back.
+    let f = state.acceleration_body_mps2;
+    let acceleration = attitude * Vec3::new(f.x, f.y, f.z) + Vec3::new(0.0, 0.0, GRAVITY);
+
+    VehicleState {
         // Position is east/north; altitude is already up-positive.
-        self.estimated_state.position = Vec3::new(
+        position: Vec3::new(
             Length::new::<meter>(state.aircraft_position_y_m),
             Length::new::<meter>(state.aircraft_position_x_m),
             Length::new::<meter>(state.altitude_asl_m),
-        );
-
-        let velocity = state.velocity_world_mps; // NED
-        self.estimated_state.velocity = Vec3::new(
+        ),
+        velocity: Vec3::new(
             Velocity::new::<meter_per_second>(velocity.x),
             Velocity::new::<meter_per_second>(velocity.y),
             Velocity::new::<meter_per_second>(-velocity.z),
-        );
-
-        // RealFlight's quaternion axes are (y, x, -z) of NED → FRD. Taken as reported, without
-        // renormalizing: it is already unit.
-        let q = state.orientation;
-        let attitude = UnitQuaternion::new_unchecked(Quaternion::new(q.w, q.y, q.x, -q.z));
-        self.estimated_state.attitude = attitude;
-
-        // RealFlight's world acceleration is unreliable (z reads ~7.5 m/s² at rest), so rotate
-        // the FRD body specific force to NED and add gravity back.
-        let f = state.acceleration_body_mps2;
-        let acceleration = attitude * Vec3::new(f.x, f.y, f.z) + Vec3::new(0.0, 0.0, GRAVITY);
-        self.estimated_state.acceleration = Vec3::new(
+        ),
+        acceleration: Vec3::new(
             Acceleration::new::<meter_per_second_squared>(acceleration.x),
             Acceleration::new::<meter_per_second_squared>(acceleration.y),
             Acceleration::new::<meter_per_second_squared>(-acceleration.z),
-        );
-
+        ),
+        attitude,
         // Yaw rate and azimuth are counterclockwise-positive (nose left).
-        self.estimated_state.angular_velocity = Vec3::new(
+        angular_velocity: Vec3::new(
             state.roll_rate_dps.to_radians(),
             state.pitch_rate_dps.to_radians(),
             -state.yaw_rate_dps.to_radians(),
-        );
-
-        self.estimated_state.roll = state.roll_deg.to_radians();
-        self.estimated_state.pitch = state.inclination_deg.to_radians();
-        self.estimated_state.heading = -state.azimuth_deg.to_radians();
+        ),
+        roll: state.roll_deg.to_radians(),
+        pitch: state.inclination_deg.to_radians(),
+        heading: -state.azimuth_deg.to_radians(),
     }
 }
 

@@ -91,6 +91,9 @@ pub type Vec2<T = f32> = nalgebra::Vector2<T>;
 /// ```
 pub type Vec3<T = f32> = nalgebra::Vector3<T>;
 
+/// Standard gravity, in m/s².
+pub const GRAVITY: f32 = 9.806_65;
+
 // Commanders
 
 /// Represents an entity that produces flight control commands.

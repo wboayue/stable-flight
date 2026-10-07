@@ -1,9 +1,7 @@
-use crate::Vec2;
+use crate::{GRAVITY, Vec2};
 
 use crate::controllers::Gains;
 use crate::math::{clamp_each, saturate_unit_vec2};
-
-const G: f32 = 9.81; // Gravitational acceleration in m/s²
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LateralControllerConfig {
@@ -116,8 +114,8 @@ impl LateralController {
             gains.p * error + gains.i * self.integrated_error + gains.d * (-estimated_velocity);
 
         // Convert acceleration to roll/pitch angles (simplified)
-        let roll_cmd = accel_cmd.y / G;
-        let pitch_cmd = -accel_cmd.x / G;
+        let roll_cmd = accel_cmd.y / GRAVITY;
+        let pitch_cmd = -accel_cmd.x / GRAVITY;
 
         saturate_unit_vec2(Vec2::new(roll_cmd, pitch_cmd))
     }
