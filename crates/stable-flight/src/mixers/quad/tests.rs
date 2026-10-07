@@ -158,11 +158,12 @@ fn test_pure_yaw() {
 /// - Pitch = 1.0 * `roll_pitch_scaling` = 0.1
 /// - Yaw = 1.0 * `yaw_scaling` = 0.25
 ///
-/// Motor outputs:
-/// - Motor 0: 0.9 - 0.25 + 0.1 + 0.1 = 0.85
-/// - Motor 1: 0.9 + 0.25 + 0.1 - 0.1 = 1.15 -> clamped to 1.0
-/// - Motor 2: 0.9 + 0.25 - 0.1 + 0.1 = 1.15 -> clamped to 1.0
-/// - Motor 3: 0.9 - 0.25 - 0.1 - 0.1 = 0.45
+/// Raw outputs 0.85, 1.15, 1.15, 0.45 exceed full throttle by 0.15, so all four drop by 0.15,
+/// keeping the moments and giving up thrust:
+/// - Motor 0: 0.85 - 0.15 = 0.70
+/// - Motor 1: 1.15 - 0.15 = 1.0
+/// - Motor 2: 1.15 - 0.15 = 1.0
+/// - Motor 3: 0.45 - 0.15 = 0.30
 #[test]
 fn test_max_inputs() {
     let mixer = create_mixer();
@@ -170,8 +171,8 @@ fn test_max_inputs() {
     let output = mixer.mix(&input);
 
     assert!(
-        approx_eq(output.motors[0], 0.85),
-        "Motor 0 expected 0.85 but got {}",
+        approx_eq(output.motors[0], 0.7),
+        "Motor 0 expected 0.7 but got {}",
         output.motors[0]
     ); // Front Left (CW)
     assert!(
@@ -185,8 +186,8 @@ fn test_max_inputs() {
         output.motors[2]
     ); // Rear Left (CCW)
     assert!(
-        approx_eq(output.motors[3], 0.45),
-        "Motor 3 expected 0.45 but got {}",
+        approx_eq(output.motors[3], 0.3),
+        "Motor 3 expected 0.3 but got {}",
         output.motors[3]
     ); // Rear Right (CW)
 }
@@ -324,11 +325,11 @@ fn test_mixed_moments() {
 /// - Pitch = 1.0 * `roll_pitch_scaling` = 0.1
 /// - Yaw = 0.0 * `yaw_scaling` = 0.0
 ///
-/// Motor outputs:
-/// - Motor 0: 0.9 + 0 + 0.1 + (-0.1) = 0.9
-/// - Motor 1: 0.9 + 0 + 0.1 - (-0.1) = 1.1 -> clamped to 1.0
-/// - Motor 2: 0.9 + 0 - 0.1 + (-0.1) = 0.7
-/// - Motor 3: 0.9 + 0 - 0.1 - (-0.1) = 0.9
+/// Raw outputs 0.9, 1.1, 0.7, 0.9 exceed full throttle by 0.1, so all four drop by 0.1:
+/// - Motor 0: 0.8
+/// - Motor 1: 1.0
+/// - Motor 2: 0.6
+/// - Motor 3: 0.8
 #[test]
 fn test_boundary_condition() {
     let mixer = create_mixer();
@@ -336,8 +337,8 @@ fn test_boundary_condition() {
     let output = mixer.mix(&input);
 
     assert!(
-        approx_eq(output.motors[0], 0.9),
-        "Motor 0 expected 0.9 but got {}",
+        approx_eq(output.motors[0], 0.8),
+        "Motor 0 expected 0.8 but got {}",
         output.motors[0]
     ); // Front Left
     assert!(
@@ -346,13 +347,13 @@ fn test_boundary_condition() {
         output.motors[1]
     ); // Front Right
     assert!(
-        approx_eq(output.motors[2], 0.7),
-        "Motor 2 expected 0.7 but got {}",
+        approx_eq(output.motors[2], 0.6),
+        "Motor 2 expected 0.6 but got {}",
         output.motors[2]
     ); // Rear Left
     assert!(
-        approx_eq(output.motors[3], 0.9),
-        "Motor 3 expected 0.9 but got {}",
+        approx_eq(output.motors[3], 0.8),
+        "Motor 3 expected 0.8 but got {}",
         output.motors[3]
     ); // Rear Right
 }

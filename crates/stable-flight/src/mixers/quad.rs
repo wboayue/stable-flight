@@ -95,9 +95,12 @@ impl Mixer for QuadCopterMixer {
     ///    - Motor 2 (Rear Left): `baseline + yaw - pitch + roll`
     ///    - Motor 3 (Rear Right): `baseline - yaw - pitch - roll`
     ///
-    /// 4. **Clamp and Scale:**  
-    ///    Each raw motor command is clamped to the range [0, 1] and then scaled to a percentage
-    ///    by multiplying by 100.
+    /// 4. **Desaturate:**  
+    ///    If any motor would exceed 1, all four are lowered by the excess, so the moments are kept
+    ///    and collective thrust gives way.
+    ///
+    /// 5. **Clamp:**  
+    ///    Each motor command is clamped to the range [0, 1].
     fn mix(&self, command: &ControlOutput) -> ActuatorCommand {
         // Out-of-range or NaN inputs saturate rather than panic (see `crate::math`): thrust to
         // [0, 1] (NaN → no thrust), moments to [-1, 1] (NaN → none).
@@ -123,7 +126,14 @@ impl Mixer for QuadCopterMixer {
             baseline - yaw - pitch - roll, // Motor 3: Rear Right (CW)
         ];
 
-        // Clamp each output to [0, 1] and scale to a percentage (0 to 100)
+        // Attitude over thrust: if a motor would pass full throttle, lower all four by the excess
+        // so the roll/pitch/yaw differences survive; only collective thrust is lost.
+        let excess = raw_outputs.iter().fold(0.0_f32, |m, &o| m.max(o - 1.0));
+        for output in raw_outputs.iter_mut() {
+            *output -= excess;
+        }
+
+        // Clamp each output to [0, 1]
         for output in raw_outputs.iter_mut() {
             *output = output.clamp(0.0, 1.0);
         }
