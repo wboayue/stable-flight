@@ -15,6 +15,7 @@ use super::throttle::ErrorThrottle;
 use stable_flight::{TelemetryPublisher, TelemetryRecord};
 
 mod messages;
+use messages::FlatEarth;
 #[cfg(test)]
 mod tests;
 
@@ -24,8 +25,29 @@ pub const DEFAULT_ADDRESS: &str = "udpout:127.0.0.1:14550";
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 const STREAM_INTERVAL: Duration = Duration::from_millis(100);
 
+/// Where the local origin sits on the earth: [`MavlinkConfiguration::default`] places it at
+/// 34°53'03.8"N 120°24'12.6"W at sea level (RealFlight's altitude datum).
+pub const DEFAULT_ORIGIN: GeodeticOrigin = GeodeticOrigin {
+    latitude_deg: 34.884389,
+    longitude_deg: -120.4035,
+    altitude_m: 0.0,
+};
+
+/// The geodetic point that local position (0, 0, 0) maps to, for ground stations that
+/// plot global position. `VehicleState` is local, so this is the only source of latitude
+/// and longitude.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GeodeticOrigin {
+    /// Latitude, north positive.
+    pub latitude_deg: f64,
+    /// Longitude, east positive.
+    pub longitude_deg: f64,
+    /// Altitude above mean sea level of the backend's altitude datum (0 for a sea-level datum).
+    pub altitude_m: f64,
+}
+
 /// Where and as whom a [`MavlinkPublisher`] sends.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MavlinkConfiguration {
     /// A `mavlink::connect` address, e.g. `udpout:127.0.0.1:14550` or `tcpout:host:5760`.
     pub address: String,
@@ -33,15 +55,18 @@ pub struct MavlinkConfiguration {
     pub system_id: u8,
     /// MAVLink component id in every message header.
     pub component_id: u8,
+    /// Where local position sits on the earth; `None` sends no GLOBAL_POSITION_INT.
+    pub origin: Option<GeodeticOrigin>,
 }
 
 impl Default for MavlinkConfiguration {
-    /// [`DEFAULT_ADDRESS`], system and component id 1.
+    /// [`DEFAULT_ADDRESS`], system and component id 1, [`DEFAULT_ORIGIN`].
     fn default() -> Self {
         MavlinkConfiguration {
             address: DEFAULT_ADDRESS.to_owned(),
             system_id: 1,
             component_id: 1,
+            origin: Some(DEFAULT_ORIGIN),
         }
     }
 }
@@ -61,12 +86,15 @@ pub enum MavlinkError {
 }
 
 /// A [`TelemetryPublisher`] that sends each tick's state as MAVLink messages: heartbeat at
-/// 1 Hz; VFR_HUD, local position, and attitude at 10 Hz each. Every stream sends on the
-/// first `publish`, so a ground station sees the link immediately.
+/// 1 Hz; VFR_HUD, local position, global position, and attitude at 10 Hz each. Every stream
+/// sends on the first `publish`, so a ground station sees the link immediately.
 ///
-/// No GLOBAL_POSITION_INT: `VehicleState` is local (NED from a simulator origin) and there
-/// is no geodetic origin to convert it with yet
-/// ([#185](https://github.com/wboayue/stable-flight/issues/185)).
+/// The heartbeat reports the command kind as standard `base_mode` flags: rate is
+/// `MANUAL_INPUT`, attitude `MANUAL_INPUT | STABILIZE`, waypoint `STABILIZE | GUIDED | AUTO`.
+///
+/// GLOBAL_POSITION_INT is sent only with a [`GeodeticOrigin`] ([`with_origin`](Self::with_origin)).
+/// Its `relative_alt` is measured from the altitude of the first published state, i.e. the
+/// vehicle on the ground at startup.
 ///
 /// A failed send is logged (rate-limited) and dropped; it never stops the flight loop.
 ///
@@ -88,6 +116,10 @@ pub struct MavlinkPublisher {
     vfr_hud: Every,
     local_position: Every,
     attitude: Every,
+    /// Global position stream: the projection and its timer, when an origin is set.
+    global_position: Option<(FlatEarth, Every)>,
+    /// Altitude (local `z`) `relative_alt` is measured from, latched on the first `publish`.
+    home_altitude_m: Option<f32>,
     errors: ErrorThrottle,
 }
 
@@ -106,16 +138,17 @@ impl MavlinkPublisher {
             }
         })?;
         connection.set_protocol_version(MavlinkVersion::V2);
-        Ok(Self::with_connection(
-            Box::new(connection),
-            config.system_id,
-            config.component_id,
-        ))
+        let publisher =
+            Self::with_connection(Box::new(connection), config.system_id, config.component_id);
+        Ok(match config.origin {
+            Some(origin) => publisher.with_origin(origin),
+            None => publisher,
+        })
     }
 
     /// Publishes on an already-open connection (a custom transport, or a test double),
     /// stamping headers with `system_id` and `component_id`. The connection's protocol
-    /// version is left as configured.
+    /// version is left as configured. No origin: add one with [`with_origin`](Self::with_origin).
     ///
     /// # Examples
     ///
@@ -143,8 +176,29 @@ impl MavlinkPublisher {
             vfr_hud: Every::new(STREAM_INTERVAL),
             local_position: Every::new(STREAM_INTERVAL),
             attitude: Every::new(STREAM_INTERVAL),
+            global_position: None,
+            home_altitude_m: None,
             errors: ErrorThrottle::default(),
         }
+    }
+
+    /// Also sends GLOBAL_POSITION_INT, placing local position (0, 0, 0) at `origin`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use mavlink::{MavlinkVersion, MavConnection, common::MavMessage};
+    /// use stable_flight_sitl::telemetry::mavlink::{DEFAULT_ORIGIN, MavlinkPublisher};
+    ///
+    /// let mut connection = mavlink::connect::<MavMessage>("udpout:127.0.0.1:14550")?;
+    /// connection.set_protocol_version(MavlinkVersion::V2);
+    /// let telemetry =
+    ///     MavlinkPublisher::with_connection(Box::new(connection), 1, 1).with_origin(DEFAULT_ORIGIN);
+    /// # Ok::<(), std::io::Error>(())
+    /// ```
+    pub fn with_origin(mut self, origin: GeodeticOrigin) -> Self {
+        self.global_position = Some((FlatEarth::new(origin), Every::new(STREAM_INTERVAL)));
+        self
     }
 
     fn send(&mut self, message: MavMessage) {
@@ -183,9 +237,10 @@ impl TelemetryPublisher for MavlinkPublisher {
             ..
         } = *record;
         let time_boot_ms = self.time_boot_ms();
+        let home_altitude_m = *self.home_altitude_m.get_or_insert(state.position_m.z);
 
         if self.heartbeat.ready(dt) {
-            self.send(MavMessage::HEARTBEAT(messages::heartbeat(command.arm)));
+            self.send(MavMessage::HEARTBEAT(messages::heartbeat(command)));
         }
         if self.vfr_hud.ready(dt) {
             self.send(MavMessage::VFR_HUD(messages::vfr_hud(control, state)));
@@ -194,6 +249,12 @@ impl TelemetryPublisher for MavlinkPublisher {
             self.send(MavMessage::LOCAL_POSITION_NED(
                 messages::local_position_ned(state, time_boot_ms),
             ));
+        }
+        if let Some((earth, every)) = &mut self.global_position
+            && every.ready(dt)
+        {
+            let data = messages::global_position_int(earth, state, home_altitude_m, time_boot_ms);
+            self.send(MavMessage::GLOBAL_POSITION_INT(data));
         }
         if self.attitude.ready(dt) {
             self.send(MavMessage::ATTITUDE(messages::attitude(

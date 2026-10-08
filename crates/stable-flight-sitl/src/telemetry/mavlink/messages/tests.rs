@@ -3,11 +3,40 @@ use assert2::check;
 use super::*;
 
 #[test]
-fn heartbeat_reports_the_arm_state() {
-    for armed in [false, true] {
-        let base_mode = heartbeat(armed).base_mode;
-        check!(base_mode.contains(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED) == armed);
-        check!(base_mode.contains(MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED));
+fn heartbeat_reports_the_mode_as_standard_flags_and_the_arm_state() {
+    use MavModeFlag as F;
+
+    let manual = F::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED;
+    let stabilize = F::MAV_MODE_FLAG_STABILIZE_ENABLED;
+    let auto = F::MAV_MODE_FLAG_GUIDED_ENABLED | F::MAV_MODE_FLAG_AUTO_ENABLED;
+    // (input, expected mode flags)
+    let cases = [
+        (ControlInput::Rate(Default::default()), manual),
+        (
+            ControlInput::Attitude(Default::default()),
+            manual | stabilize,
+        ),
+        (ControlInput::Waypoint(Default::default()), stabilize | auto),
+    ];
+
+    for (input, mode) in cases {
+        for (command, armed, status) in [
+            (
+                Command::disarmed(input),
+                F::empty(),
+                MavState::MAV_STATE_STANDBY,
+            ),
+            (
+                Command::armed(input),
+                F::MAV_MODE_FLAG_SAFETY_ARMED,
+                MavState::MAV_STATE_ACTIVE,
+            ),
+        ] {
+            let data = heartbeat(&command);
+            check!(data.base_mode == mode | armed, "{command:?}");
+            check!(data.system_status == status);
+            check!(data.custom_mode == 0);
+        }
     }
 }
 
@@ -128,5 +157,93 @@ fn vfr_hud_reports_horizontal_speed_climb_and_altitude() {
         check!(data.climb == velocity_mps[2]);
         check!(data.alt == altitude_m);
         check!(data.throttle == 50);
+    }
+}
+
+const ORIGIN: GeodeticOrigin = GeodeticOrigin {
+    latitude_deg: 60.0, // cos = 0.5: a degree of longitude is half a degree of latitude
+    longitude_deg: -120.0,
+    altitude_m: 100.0,
+};
+
+#[test]
+fn global_position_projects_local_offsets_around_the_origin() {
+    let m_per_deg = EARTH_RADIUS_M.to_radians() as f32;
+    // (position_m (north, east, up), expected (lat_deg, lon_deg, alt_m))
+    let cases = [
+        ([0.0, 0.0, 0.0], (60.0, -120.0, 100.0)),
+        ([m_per_deg / 1000.0, 0.0, 0.0], (60.001, -120.0, 100.0)), // north
+        ([-m_per_deg / 1000.0, 0.0, 0.0], (59.999, -120.0, 100.0)), // south
+        ([0.0, m_per_deg / 1000.0, 0.0], (60.0, -119.998, 100.0)), // east: twice the degrees
+        ([0.0, 0.0, 25.5], (60.0, -120.0, 125.5)),                 // climb
+    ];
+
+    for (position_m, (lat_deg, lon_deg, alt_m)) in cases {
+        let data = global_position_int(
+            &FlatEarth::new(ORIGIN),
+            &state_with(position_m, [0.0; 3]),
+            0.0,
+            7,
+        );
+        check!(data.time_boot_ms == 7);
+        check!(
+            data.lat == (lat_deg * DEG_E7).round() as i32,
+            "{position_m:?}"
+        );
+        check!(
+            data.lon == (lon_deg * DEG_E7).round() as i32,
+            "{position_m:?}"
+        );
+        check!(data.alt == (alt_m * MM_PER_M) as i32, "{position_m:?}");
+    }
+}
+
+#[test]
+fn global_position_reports_altitude_above_home_and_ned_velocity_in_cm() {
+    // (altitude_m, home_altitude_m, velocity_mps (north, east, up), expected relative_alt mm, (vx, vy, vz))
+    let cases = [
+        (12.5, 2.0, [1.0, -2.5, 3.0], 10_500, (100, -250, -300)), // climbing above home
+        (1.0, 2.0, [0.0, 0.0, -0.5], -1_000, (0, 0, 50)),         // below home, descending
+        (2.0, 2.0, [f32::NAN, 400.0, 0.0], 0, (0, i16::MAX, 0)),  // NaN and overflow saturate
+    ];
+
+    for (altitude_m, home_altitude_m, velocity_mps, relative_alt, velocity_cmps) in cases {
+        let data = global_position_int(
+            &FlatEarth::new(ORIGIN),
+            &state_with([0.0, 0.0, altitude_m], velocity_mps),
+            home_altitude_m,
+            0,
+        );
+        check!(
+            data.relative_alt == relative_alt,
+            "{altitude_m} over {home_altitude_m}"
+        );
+        check!(
+            (data.vx, data.vy, data.vz) == velocity_cmps,
+            "{velocity_mps:?}"
+        );
+    }
+}
+
+#[test]
+fn global_position_heading_is_centidegrees_from_north() {
+    use core::f32::consts::FRAC_PI_2;
+
+    // (heading_rad, expected centidegrees)
+    let cases = [
+        (0.0, 0),
+        (FRAC_PI_2, 9000),
+        (-FRAC_PI_2, 27000),
+        (359.996_f32.to_radians(), 0), // rounds up to 36000, wraps
+        (359.99_f32.to_radians(), 35999),
+        (f32::NAN, u16::MAX), // unknown
+        (f32::INFINITY, u16::MAX),
+    ];
+
+    for (heading_rad, expected) in cases {
+        check!(
+            heading_cdeg(heading_rad) == expected,
+            "heading {heading_rad}"
+        );
     }
 }

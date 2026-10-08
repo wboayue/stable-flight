@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use assert2::check;
+use mavlink::common::GLOBAL_POSITION_INT_DATA;
 use mavlink::error::{MessageReadError, MessageWriteError};
 use mavlink::{MAVLinkMessageRaw, Message};
 use stable_flight::{ActuatorCommand, Command, ControlOutput, Saturation, Setpoint, VehicleState};
@@ -59,20 +60,32 @@ impl MavConnection<MavMessage> for MockConnection {
 
 /// Publishes `ticks` default records `dt` apart on `connection`.
 fn run(connection: &MockConnection, ids: (u8, u8), dt: Duration, ticks: usize) {
-    let mut publisher =
-        MavlinkPublisher::with_connection(Box::new(connection.clone()), ids.0, ids.1);
-    let state = VehicleState::default();
-    for _ in 0..ticks {
+    let publisher = MavlinkPublisher::with_connection(Box::new(connection.clone()), ids.0, ids.1);
+    publish_states(publisher, dt, &vec![VehicleState::default(); ticks]);
+}
+
+/// Publishes one record per state, `dt` apart.
+fn publish_states(mut publisher: MavlinkPublisher, dt: Duration, states: &[VehicleState]) {
+    for state in states {
         publisher.publish(&TelemetryRecord {
             dt,
             command: &Command::default(),
             setpoint: &Setpoint::Attitude(Default::default()),
-            state: &state,
+            state,
             control: &ControlOutput::default(),
             actuators: &ActuatorCommand::default(),
             saturation: Saturation::default(),
         });
     }
+}
+
+fn global_positions(sent: &[(MavHeader, MavMessage)]) -> Vec<GLOBAL_POSITION_INT_DATA> {
+    sent.iter()
+        .filter_map(|(_, m)| match m {
+            MavMessage::GLOBAL_POSITION_INT(data) => Some(data.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 fn count(sent: &[(MavHeader, MavMessage)], name: &str) -> usize {
@@ -99,6 +112,49 @@ fn sends_each_stream_at_its_rate() {
         check!(count(&sent, name) == expected, "{name}");
     }
     check!(sent.len() == 66);
+    check!(
+        count(&sent, "GLOBAL_POSITION_INT") == 0,
+        "no origin, no global position"
+    );
+}
+
+#[test]
+fn sends_global_position_at_10_hz_with_an_origin() {
+    let connection = MockConnection::default();
+    let publisher = MavlinkPublisher::with_connection(Box::new(connection.clone()), 1, 1)
+        .with_origin(DEFAULT_ORIGIN);
+    // Two seconds of a 60 Hz loop.
+    publish_states(
+        publisher,
+        Duration::from_nanos(16_666_667),
+        &vec![VehicleState::default(); 120],
+    );
+
+    let positions = global_positions(&connection.sent());
+    check!(positions.len() == 21);
+    check!(positions[0].lat == 348_843_890);
+    check!(positions[0].lon == -1_204_035_000);
+}
+
+#[test]
+fn relative_altitude_is_measured_from_the_first_published_state() {
+    let at_altitude = |z| VehicleState {
+        position_m: [0.0, 0.0, z].into(),
+        ..Default::default()
+    };
+    let connection = MockConnection::default();
+    let publisher = MavlinkPublisher::with_connection(Box::new(connection.clone()), 1, 1)
+        .with_origin(DEFAULT_ORIGIN);
+    // On the ground at 30 m above sea level, then 10 m above it.
+    publish_states(
+        publisher,
+        STREAM_INTERVAL,
+        &[at_altitude(30.0), at_altitude(40.0)],
+    );
+
+    let positions = global_positions(&connection.sent());
+    check!(positions.iter().map(|p| p.relative_alt).collect::<Vec<_>>() == [0, 10_000]);
+    check!(positions[1].alt == 40_000, "alt stays above sea level");
 }
 
 #[test]
