@@ -117,8 +117,13 @@ impl Default for CopterGuidanceConfig {
 /// assert_eq!(setpoint.thrust, 0.5);
 /// ```
 pub struct CopterGuidance {
-    pub(crate) altitude_controller: AltitudeController,
-    pub(crate) lateral_controller: LateralController,
+    /// Altitude loop config, passed into [`altitude`](Self::altitude) every tick.
+    altitude_config: AltitudeControllerConfig,
+    /// Lateral loop config, passed into [`lateral`](Self::lateral) every tick.
+    pub(crate) lateral_config: LateralControllerConfig,
+
+    pub(crate) altitude: AltitudeController,
+    pub(crate) lateral: LateralController,
 
     /// Heading-hold target for attitude commands.
     heading: f32,
@@ -137,7 +142,7 @@ impl CopterGuidance {
     /// # Panics
     ///
     /// If `config.navigation_period_s` is negative or not finite, or `config.max_tilt` or
-    /// `config.hover_thrust` is not in `(0, 1]` (the altitude controller checks the latter).
+    /// `config.hover_thrust` is not in `(0, 1]` ([`AltitudeControllerConfig::validate`]).
     pub fn new(config: CopterGuidanceConfig) -> Self {
         assert!(
             config.max_tilt > 0.0 && config.max_tilt <= 1.0,
@@ -149,18 +154,23 @@ impl CopterGuidance {
             "navigation_period_s must be non-negative and finite, got {}",
             config.navigation_period_s
         );
+        let altitude_config = AltitudeControllerConfig {
+            gains: config.altitude_gains,
+            hover_thrust: config.hover_thrust,
+            ..Default::default()
+        };
+        if let Err(error) = altitude_config.validate() {
+            panic!("invalid CopterGuidanceConfig: {error}");
+        }
         CopterGuidance {
-            altitude_controller: AltitudeController::with_config(&AltitudeControllerConfig {
-                gains: config.altitude_gains,
-                hover_thrust: config.hover_thrust,
-                ..Default::default()
-            }),
-
-            lateral_controller: LateralController::with_config(&LateralControllerConfig {
+            altitude_config,
+            lateral_config: LateralControllerConfig {
                 gains: config.lateral_gains,
                 max_integral: 100.0,
                 max_rate_radps: Vec2::new(2.0, 2.0), // unused by the lateral controller today (#71)
-            }),
+            },
+            altitude: AltitudeController::default(),
+            lateral: LateralController::default(),
 
             heading: 0.0,
 
@@ -253,7 +263,8 @@ impl CopterGuidance {
     ) -> AttitudeSetpoint {
         let tilt = self.tilt_toward(dt, waypoint_command, estimated_state);
 
-        let linear_thrust = self.altitude_controller.control(
+        let linear_thrust = self.altitude.control(
+            &self.altitude_config,
             dt,
             waypoint_command.altitude_m,
             0.0,
@@ -302,9 +313,13 @@ impl CopterGuidance {
             return Vec2::zeros();
         }
 
-        let tilt =
-            self.lateral_controller
-                .control(step, desired_position, current_position, velocity);
+        let tilt = self.lateral.control(
+            &self.lateral_config,
+            step,
+            desired_position,
+            current_position,
+            velocity,
+        );
         self.tilt = cap_magnitude(tilt, self.max_tilt);
         self.lateral_rate.ran();
         self.tilt

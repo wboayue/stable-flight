@@ -78,6 +78,27 @@ impl Default for CopterStabilizerConfig {
     }
 }
 
+impl CopterStabilizerConfig {
+    /// Checks every controller config ([`BodyRateControllerConfig::validate`],
+    /// [`AttitudeControllerConfig::validate`], [`YawControllerConfig::validate`]).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::CopterStabilizerConfig;
+    ///
+    /// let mut config = CopterStabilizerConfig::default();
+    /// assert!(config.validate().is_ok());
+    /// config.yaw.max_rate_radps = -1.0;
+    /// assert!(config.validate().is_err());
+    /// ```
+    pub fn validate(&self) -> Result<(), InvalidConfig> {
+        self.body_rate.validate()?;
+        self.attitude.validate()?;
+        self.yaw.validate()
+    }
+}
+
 /// The inner loop for vehicles like quadcopters, implementing a cascaded control system.
 ///
 /// This controller supports rate and attitude control loops, with configurable gains for
@@ -97,14 +118,12 @@ impl Default for CopterStabilizerConfig {
 /// assert_eq!(output.thrust, 0.25); // 0.5 through the default quadratic thrust curve
 /// ```
 pub struct CopterStabilizer {
-    pub(crate) attitude_controller: AttitudeController,
-    pub(crate) rates_controller: BodyRateController,
-    pub(crate) yaw_controller: YawController,
+    /// Gains and limits, passed into each controller every tick.
+    config: CopterStabilizerConfig,
 
-    /// Maximum angular rates (roll, pitch, yaw) in rad/s that a full-scale rate setpoint maps to.
-    full_scale_rates_radps: Vec3,
-
-    thrust_curve_exponent: f32,
+    pub(crate) body_rate: BodyRateController,
+    pub(crate) attitude: AttitudeController,
+    pub(crate) yaw: YawController,
 }
 
 impl CopterStabilizer {
@@ -116,14 +135,16 @@ impl CopterStabilizer {
     ///
     /// # Panics
     ///
-    /// If a controller config is invalid (see each controller's `with_config`).
+    /// If `config` is invalid ([`CopterStabilizerConfig::validate`]).
     pub fn new(config: CopterStabilizerConfig) -> Self {
+        if let Err(error) = config.validate() {
+            panic!("invalid CopterStabilizerConfig: {error}");
+        }
         CopterStabilizer {
-            rates_controller: BodyRateController::with_config(&config.body_rate),
-            attitude_controller: AttitudeController::with_config(&config.attitude),
-            yaw_controller: YawController::with_config(&config.yaw),
-            full_scale_rates_radps: config.full_scale_rates_radps,
-            thrust_curve_exponent: config.thrust_curve_exponent,
+            config,
+            body_rate: BodyRateController::default(),
+            attitude: AttitudeController::default(),
+            yaw: YawController::default(),
         }
     }
 }
@@ -183,13 +204,14 @@ impl CopterStabilizer {
         let (roll, pitch, current_heading) = euler_angles(&estimated_state.attitude);
         let current_angles = Vec2::new(roll, pitch);
 
-        let desired_rates = self
-            .attitude_controller
-            .control(dt, desired_angles, current_angles);
+        let config = &self.config;
+        let desired_rates =
+            self.attitude
+                .control(&config.attitude, dt, desired_angles, current_angles);
 
         let desired_yaw_rate =
-            self.yaw_controller
-                .control(dt, setpoint.heading_rad, current_heading);
+            self.yaw
+                .control(&config.yaw, dt, setpoint.heading_rad, current_heading);
 
         let current_rates = Vec3::new(
             estimated_state.angular_velocity_radps.x,
@@ -200,8 +222,8 @@ impl CopterStabilizer {
         let desired_rates = Vec3::new(desired_rates.x, desired_rates.y, desired_yaw_rate);
 
         let moments = self
-            .rates_controller
-            .control(dt, desired_rates, current_rates);
+            .body_rate
+            .control(&config.body_rate, dt, desired_rates, current_rates);
 
         ControlOutput {
             thrust: self.fit_to_thrust_curve(setpoint.thrust),
@@ -233,7 +255,7 @@ impl CopterStabilizer {
             saturate_unit(setpoint.pitch_rate),
             saturate_unit(setpoint.yaw_rate),
         )
-        .component_mul(&self.full_scale_rates_radps);
+        .component_mul(&self.config.full_scale_rates_radps);
 
         let current_rates = Vec3::new(
             estimated_state.angular_velocity_radps.x,
@@ -241,9 +263,9 @@ impl CopterStabilizer {
             estimated_state.angular_velocity_radps.z,
         );
 
-        let moments = self
-            .rates_controller
-            .control(dt, desired_rates, current_rates);
+        let moments =
+            self.body_rate
+                .control(&self.config.body_rate, dt, desired_rates, current_rates);
 
         ControlOutput {
             thrust: self.fit_to_thrust_curve(setpoint.thrust),
@@ -265,8 +287,10 @@ impl CopterStabilizer {
     ///
     /// Nonlinear thrust command (0.0 to 1.0).
     fn fit_to_thrust_curve(&self, linear_thrust: f32) -> f32 {
-        let nonlinear_thrust =
-            libm::powf(saturate_throttle(linear_thrust), self.thrust_curve_exponent);
+        let nonlinear_thrust = libm::powf(
+            saturate_throttle(linear_thrust),
+            self.config.thrust_curve_exponent,
+        );
         nonlinear_thrust.clamp(0.0, 1.0)
     }
 }

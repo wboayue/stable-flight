@@ -50,9 +50,10 @@ fn test_rate_controller_zero_error() {
     let desired_rates = Vec3::zeros();
     let current_rates = Vec3::zeros();
 
+    let config = controller.config.body_rate;
     let output = controller
-        .rates_controller
-        .control(dt, desired_rates, current_rates);
+        .body_rate
+        .control(&config, dt, desired_rates, current_rates);
 
     // With zero error (desired and current rates are the same), PID terms should be 0
     assert_eq!(
@@ -69,9 +70,10 @@ fn test_rate_controller_positive_error() {
     let desired_rates = Vec3::new(1.0, 1.0, 1.0);
     let current_rates = Vec3::zeros();
 
+    let config = controller.config.body_rate;
     let output = controller
-        .rates_controller
-        .control(dt, desired_rates, current_rates);
+        .body_rate
+        .control(&config, dt, desired_rates, current_rates);
 
     // Check that the output is positive for all axes when there is a positive error
     assert!(output.x > 0.0, "Roll moment should be positive");
@@ -86,9 +88,10 @@ fn test_yaw_controller_zero_error() {
     let desired_yaw = 0.0;
     let current_yaw = 0.0;
 
+    let config = controller.config.yaw;
     let output = controller
-        .yaw_controller
-        .control(dt, desired_yaw, current_yaw);
+        .yaw
+        .control(&config, dt, desired_yaw, current_yaw);
     assert_eq!(output, 0.0, "Yaw rate should be zero when error is zero");
 }
 
@@ -99,9 +102,10 @@ fn test_yaw_controller_angle_wrapping() {
     let desired_yaw = PI + 0.1;
     let current_yaw = -PI + 0.1;
 
+    let config = controller.config.yaw;
     let output = controller
-        .yaw_controller
-        .control(dt, desired_yaw, current_yaw);
+        .yaw
+        .control(&config, dt, desired_yaw, current_yaw);
     assert!(
         output < 0.0,
         "Yaw rate should be negative for shortest path"

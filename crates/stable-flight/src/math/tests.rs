@@ -29,19 +29,29 @@ fn saturation_clamps_to_range_and_maps_nan_to_neutral() {
 }
 
 #[test]
-fn clamp_each_bounds_every_component_and_passes_nan() {
-    // (input, expected) clamped to [-1, 2]
+fn clamp_symmetric_bounds_value_and_never_panics_on_a_bad_limit() {
+    // (value, limit, expected); a negative or NaN limit acts as 0.
     let cases = [
-        ([0.5, -0.5, 1.5], [0.5, -0.5, 1.5]),
-        ([3.0, -4.0, 2.0], [2.0, -1.0, 2.0]),
-        ([f32::INFINITY, f32::NEG_INFINITY, 0.0], [2.0, -1.0, 0.0]),
+        (0.5, 1.0, 0.5),
+        (3.0, 2.0, 2.0),
+        (-4.0, 2.0, -2.0),
+        (f32::INFINITY, 2.0, 2.0),
+        (f32::NEG_INFINITY, 2.0, -2.0),
+        (5.0, f32::INFINITY, 5.0),
+        (5.0, 0.0, 0.0),
+        (5.0, -1.0, 0.0),
+        (5.0, f32::NAN, 0.0),
     ];
-    for (input, expected) in cases {
-        let actual = clamp_each(Vec3::from(input), -1.0, 2.0);
-        assert!(actual == Vec3::from(expected), "clamp_each({input:?})");
+    for (value, limit, expected) in cases {
+        assert!(
+            clamp_symmetric(value, limit) == expected,
+            "clamp_symmetric({value}, {limit})"
+        );
     }
-    let with_nan = clamp_each(Vec3::new(f32::NAN, 5.0, -5.0), -1.0, 2.0);
-    assert!(with_nan.x.is_nan() && with_nan.y == 2.0 && with_nan.z == -1.0);
+    assert!(clamp_symmetric(f32::NAN, 1.0).is_nan());
+
+    let each = clamp_symmetric_each(Vec3::new(f32::NAN, 5.0, -5.0), 2.0);
+    assert!(each.x.is_nan() && each.y == 2.0 && each.z == -2.0);
 }
 
 #[test]
