@@ -85,7 +85,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flash. NaN in gives NaN out; pitch stays finite at ±90°.
 - `validate()` on every controller config and on `CopterStabilizerConfig`, returning the new
   `controllers::InvalidConfig` (field and requirement). `CopterStabilizer::new` and
-  `CopterGuidance::new` still panic on an invalid config.
+  `CopterGuidance::new` still panic on an invalid config, and `CopterStabilizer::new` now also
+  rejects a negative or non-finite `full_scale_rates_radps` component, which silently zeroed
+  every rate-mode moment ([#175](https://github.com/wboayue/stable-flight/issues/175)).
 
 ### Changed
 

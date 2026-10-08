@@ -41,7 +41,7 @@ impl core::error::Error for InvalidConfig {}
 const NON_NEGATIVE_FINITE: &str = "non-negative and finite";
 
 /// `Ok` when `value` is non-negative and finite, the rule for every controller limit.
-fn check_limit(field: &'static str, value: f32) -> Result<(), InvalidConfig> {
+pub(crate) fn check_limit(field: &'static str, value: f32) -> Result<(), InvalidConfig> {
     if value >= 0.0 && value.is_finite() {
         Ok(())
     } else {

@@ -34,6 +34,7 @@ use crate::{Vec2, Vec3};
 
 use crate::{AttitudeSetpoint, ControlOutput, RateSetpoint, Setpoint, Stabilizer, VehicleState};
 
+use crate::controllers::check_limit;
 use crate::controllers::*;
 use crate::math::{euler_angles, saturate_throttle, saturate_unit};
 
@@ -52,7 +53,9 @@ pub struct CopterStabilizerConfig {
     pub attitude: AttitudeControllerConfig,
     /// Heading-hold loop ([`Setpoint::Attitude`] only).
     pub yaw: YawControllerConfig,
-    /// Body rates (roll, pitch, yaw) in rad/s that a full-scale [`RateSetpoint`] maps to.
+    /// Body rates (roll, pitch, yaw) in rad/s that a full-scale [`RateSetpoint`] maps to. Each
+    /// component must be non-negative and finite: an infinite or NaN scale makes even a neutral
+    /// stick a non-finite rate, which zeroes every moment.
     pub full_scale_rates_radps: Vec3,
     /// Exponent of the thrust curve applied to the linear thrust setpoint.
     pub thrust_curve_exponent: f32,
@@ -80,7 +83,8 @@ impl Default for CopterStabilizerConfig {
 
 impl CopterStabilizerConfig {
     /// Checks every controller config ([`BodyRateControllerConfig::validate`],
-    /// [`AttitudeControllerConfig::validate`], [`YawControllerConfig::validate`]).
+    /// [`AttitudeControllerConfig::validate`], [`YawControllerConfig::validate`]) and that each
+    /// `full_scale_rates_radps` component is non-negative and finite.
     ///
     /// # Examples
     ///
@@ -95,7 +99,11 @@ impl CopterStabilizerConfig {
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         self.body_rate.validate()?;
         self.attitude.validate()?;
-        self.yaw.validate()
+        self.yaw.validate()?;
+        let scales = &self.full_scale_rates_radps;
+        check_limit("full_scale_rates_radps.x", scales.x)?;
+        check_limit("full_scale_rates_radps.y", scales.y)?;
+        check_limit("full_scale_rates_radps.z", scales.z)
     }
 }
 

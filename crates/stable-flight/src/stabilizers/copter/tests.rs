@@ -353,3 +353,74 @@ fn thrust_curve_raises_linear_thrust_to_the_configured_exponent() {
         assert_eq!(stabilizer.fit_to_thrust_curve(linear_thrust), expected);
     }
 }
+
+#[test]
+fn validate_rejects_negative_or_non_finite_full_scale_rates() {
+    // (scales, offending field)
+    let cases = [
+        (
+            Vec3::new(f32::INFINITY, 3.0, 3.0),
+            "full_scale_rates_radps.x",
+        ),
+        (Vec3::new(3.0, f32::NAN, 3.0), "full_scale_rates_radps.y"),
+        (Vec3::new(3.0, 3.0, -1.0), "full_scale_rates_radps.z"),
+        (
+            Vec3::new(3.0, 3.0, f32::NEG_INFINITY),
+            "full_scale_rates_radps.z",
+        ),
+    ];
+    for (scales, field) in cases {
+        let config = CopterStabilizerConfig {
+            full_scale_rates_radps: scales,
+            ..Default::default()
+        };
+        assert_eq!(
+            config.validate().map_err(|e| e.field),
+            Err(field),
+            "{scales:?}"
+        );
+    }
+    // Boundary: zero (axis disabled) and large finite scales are valid.
+    for scales in [Vec3::zeros(), Vec3::new(0.0, 3.0, 100.0)] {
+        let config = CopterStabilizerConfig {
+            full_scale_rates_radps: scales,
+            ..Default::default()
+        };
+        assert!(config.validate().is_ok(), "{scales:?}");
+    }
+}
+
+#[test]
+#[should_panic(expected = "full_scale_rates_radps.x")]
+fn new_rejects_an_infinite_full_scale_rate() {
+    CopterStabilizer::new(CopterStabilizerConfig {
+        full_scale_rates_radps: Vec3::new(f32::INFINITY, 3.0, 3.0),
+        ..Default::default()
+    });
+}
+
+/// Each axis scales by its own full-scale rate: full stick on every axis at rest gives the
+/// body-rate loop desired rates equal to the per-axis scales.
+#[test]
+fn rate_setpoint_scales_each_axis_by_its_full_scale_rate() {
+    // Small enough that no moment saturates, so a mis-scaled axis would show.
+    let scales = Vec3::new(0.1, 0.2, 0.4);
+    let config = CopterStabilizerConfig {
+        full_scale_rates_radps: scales,
+        ..Default::default()
+    };
+    let setpoint = Setpoint::Rate(RateSetpoint {
+        roll_rate: 1.0,
+        pitch_rate: 1.0,
+        yaw_rate: 1.0,
+        thrust: 0.5,
+    });
+
+    let output =
+        CopterStabilizer::new(config).stabilize(0.004, &setpoint, &VehicleState::default());
+    let expected =
+        BodyRateController::default().control(&config.body_rate, 0.004, scales, Vec3::zeros());
+
+    assert_eq!(output.moments, expected);
+    assert!(expected.amax() < 1.0, "saturated: {expected:?}");
+}
