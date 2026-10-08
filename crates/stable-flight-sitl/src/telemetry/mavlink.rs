@@ -97,12 +97,12 @@ impl MavlinkPublisher {
     pub fn send_local_position(&mut self, estimated_state: &VehicleState) {
         let local_position_msg = LOCAL_POSITION_NED_DATA {
             time_boot_ms: self.time_boot_ms(),
-            x: estimated_state.position.x.value, // North position (meters)
-            y: estimated_state.position.y.value, // East position (meters)
-            z: estimated_state.position.z.value, // Down position (meters)
-            vx: estimated_state.velocity.x.value, // North velocity (m/s)
-            vy: estimated_state.velocity.y.value, // East velocity (m/s)
-            vz: estimated_state.velocity.z.value, // Down velocity (m/s)
+            x: estimated_state.position_m.x, // North position (meters)
+            y: estimated_state.position_m.y, // East position (meters)
+            z: estimated_state.position_m.z, // Down position (meters)
+            vx: estimated_state.velocity_mps.x, // North velocity (m/s)
+            vy: estimated_state.velocity_mps.y, // East velocity (m/s)
+            vz: estimated_state.velocity_mps.z, // Down velocity (m/s)
         };
 
         self.send_message(&MavMessage::LOCAL_POSITION_NED(local_position_msg));
@@ -145,12 +145,12 @@ impl MavlinkPublisher {
         let throttle = throttle_percent(control.thrust);
 
         let vfr_hud_msg = VFR_HUD_DATA {
-            airspeed: state.velocity.x.value,
-            groundspeed: state.velocity.y.value,
+            airspeed: state.velocity_mps.x,
+            groundspeed: state.velocity_mps.y,
             heading: state.attitude.k as i16,
             throttle,
-            climb: state.velocity.z.value,
-            alt: state.position.z.value, // Altitude (meters)
+            climb: state.velocity_mps.z,
+            alt: state.position_m.z, // Altitude (meters)
         };
 
         self.send_message(&MavMessage::VFR_HUD(vfr_hud_msg));

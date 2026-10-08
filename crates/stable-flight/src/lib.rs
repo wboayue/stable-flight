@@ -31,7 +31,6 @@ pub mod stabilizers;
 pub mod testing;
 
 use core::time::Duration;
-use uom::si::f32::*;
 
 #[doc(inline)]
 pub use composition::ComposedVehicle;
@@ -78,16 +77,10 @@ pub type Vec2<T = f32> = nalgebra::Vector2<T>;
 ///
 /// ```
 /// use stable_flight::Vec3;
-/// use uom::si::{f32::Length, length::meter};
 ///
 /// // Annotate standalone literals: the alias default doesn't steer inference (they'd be f64).
 /// let rates: Vec3 = Vec3::new(3.0, 4.0, 0.0);
 /// assert_eq!(rates.norm(), 5.0);
-///
-/// // Also holds `uom` quantities, as `VehicleState::position` does.
-/// let m = Length::new::<meter>;
-/// let position = Vec3::new(m(1.0), m(2.0), m(3.0));
-/// assert_eq!(position.z.value, 3.0);
 /// ```
 pub type Vec3<T = f32> = nalgebra::Vector3<T>;
 
@@ -515,8 +508,7 @@ impl ControlOutput {
 ///
 /// This struct encapsulates all the key state information needed for flight control,
 /// including position, velocity, acceleration, attitude, and angular velocity.
-/// It uses strongly-typed physical units (from the `uom` crate) for position, velocity,
-/// and acceleration to ensure dimensional consistency in calculations.
+/// Quantities are plain SI `f32`s; field names carry the unit (`position_m`, `velocity_mps`, …).
 ///
 /// # Frame contract
 ///
@@ -527,12 +519,13 @@ impl ControlOutput {
 /// Two frames are involved. Attitude follows aerospace convention: the NED world frame
 /// (`x` north, `y` east, `z` down) and the FRD body frame (`x` forward, `y` right, `z` down).
 /// Translation uses the same north and east axes but flips `z` to point **up**, so altitude
-/// and climb rate are positive: `position`/`velocity`/`acceleration` `z` is NED `z` negated.
+/// and climb rate are positive: `position_m`/`velocity_mps`/`acceleration_mps2` `z` is NED `z`
+/// negated.
 ///
 /// | Quantity | Frame | Units | Positive |
 /// |---|---|---|---|
-/// | `position` | `x` north, `y` east, `z` up | m | `z` is altitude above the backend's datum (e.g. sea level) |
-/// | `velocity`, `acceleration` | as `position` | m/s, m/s² | `z` climbing |
+/// | `position_m` | `x` north, `y` east, `z` up | m | `z` is altitude above the backend's datum (e.g. sea level) |
+/// | `velocity_mps`, `acceleration_mps2` | as `position_m` | m/s, m/s² | `z` climbing |
 /// | `attitude` | NED world → FRD body, ZYX (yaw, pitch, roll); `UnitQuaternion::from_euler_angles(roll, pitch, heading)` | — | [`euler_angles`] of it match the fields below |
 /// | `roll` | about body `x` | rad | right wing down |
 /// | `pitch` | about body `y` | rad | nose up |
@@ -550,13 +543,13 @@ impl ControlOutput {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct VehicleState {
     /// World position (north, east, up); see the [frame contract](VehicleState#frame-contract).
-    pub position: Vec3<Length>,
+    pub position_m: Vec3,
 
     /// World velocity (north, east, up).
-    pub velocity: Vec3<Velocity>,
+    pub velocity_mps: Vec3,
 
     /// World acceleration (north, east, up).
-    pub acceleration: Vec3<Acceleration>,
+    pub acceleration_mps2: Vec3,
 
     /// Orientation quaternion representing the vehicle's attitude.
     /// The quaternion represents the rotation from world frame to body frame.

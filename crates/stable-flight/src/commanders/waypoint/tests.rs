@@ -1,19 +1,13 @@
 use crate::{Vec2, Vec3};
 use approx::assert_relative_eq;
 use assert2::check;
-use uom::si::f32::Length;
-use uom::si::length::meter;
 
 use super::*;
 
 /// Builds a `VehicleState` positioned at the given horizontal coordinates (meters).
 fn state_at(x: f32, y: f32) -> VehicleState {
     VehicleState {
-        position: Vec3::new(
-            Length::new::<meter>(x),
-            Length::new::<meter>(y),
-            Length::new::<meter>(0.0),
-        ),
+        position_m: Vec3::new(x, y, 0.0),
         ..Default::default()
     }
 }
