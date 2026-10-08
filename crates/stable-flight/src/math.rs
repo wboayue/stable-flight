@@ -1,11 +1,12 @@
 //! Small numeric helpers shared by guidance, stabilizers, controllers, and mixers:
 //! [`saturate_unit`], [`saturate_unit_vec2`], [`saturate_throttle`], [`wrap_angle`],
 //! [`desaturate`], [`cap_magnitude`], [`clamp_symmetric`] and its per-component
-//! [`clamp_symmetric_each`], [`limit_or_zero`], [`all_finite`], and [`euler_angles`] (public at the crate root).
+//! [`clamp_symmetric_each`], [`limit_or_zero`], [`all_finite`], [`assert_dt`], and
+//! [`euler_angles`] (public at the crate root).
 //!
 //! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite
 //! error into controller state, wrap angles), which is specified in `architecture.md`,
-//! "Input Policy (no panics in the tick)".
+//! "Input Policy (no panics in the tick)". [`assert_dt`] is the policy's one per-tick panic.
 
 use core::f32::consts::{PI, TAU};
 
@@ -15,6 +16,14 @@ use crate::Vec2;
 
 #[cfg(test)]
 mod tests;
+
+/// Panics unless `dt` is positive and finite: the one per-tick assert the input policy allows.
+/// Runners guarantee it; a zero, negative, NaN, or infinite `dt` is a caller bug, and an
+/// infinite one would poison integrals (`0 · ∞ = NaN`).
+#[track_caller]
+pub(crate) fn assert_dt(dt: f32) {
+    assert!(dt > 0.0 && dt.is_finite(), "dt must be positive and finite");
+}
 
 /// Fits mixer outputs into `[0, 1]`, keeping their differences when it can: if any output
 /// exceeds 1, all are lowered by the excess (attitude over thrust), then each is clamped to

@@ -498,3 +498,13 @@ fn set_config_applies_next_tick_and_keeps_controller_state() {
     let expected = reference.control(&new.body_rate, 0.004, desired, Vec3::zeros());
     assert_eq!(output.moments, expected);
 }
+
+#[test]
+#[should_panic(expected = "dt must be positive and finite")]
+fn zero_dt_panics() {
+    setup_controller().stabilize(
+        0.0,
+        &Setpoint::Attitude(AttitudeSetpoint::default()),
+        &VehicleState::default(),
+    );
+}

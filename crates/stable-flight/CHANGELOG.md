@@ -101,6 +101,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** every PID controller's `control`, `CopterGuidance::guide`, and
+  `CopterStabilizer::stabilize` panic unless `dt` is positive and finite
+  ([#177](https://github.com/wboayue/stable-flight/issues/177)). `AltitudeController` and
+  `LateralController` used to accept any `dt`; attitude, guidance, and the stabilizer accepted
+  an infinite one.
 - **Breaking:** the remaining public physical quantities carry unit suffixes
   ([#161](https://github.com/wboayue/stable-flight/issues/161)):
   - `VehicleState`: `roll`/`pitch`/`heading` → `roll_rad`/`pitch_rad`/`heading_rad`,
@@ -232,6 +237,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flight modes, which already saturated; only a custom `Guidance` sending
   out-of-range thrust sees it.
 - `Guidance::prime` and `Stabilizer::prime` default to doing nothing.
+
+### Removed
+
+- **Breaking:** `BodyRateController::reset` and `YawController::reset`
+  ([#177](https://github.com/wboayue/stable-flight/issues/177)). The controllers hold only
+  state, so `*controller = Default::default()` does the same.
 
 ### Fixed
 
