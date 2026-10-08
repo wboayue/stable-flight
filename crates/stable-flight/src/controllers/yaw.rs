@@ -1,5 +1,5 @@
-use crate::controllers::Gains;
-use crate::math::wrap_angle;
+use crate::controllers::{Gains, InvalidConfig, check_limit};
+use crate::math::{clamp_symmetric, wrap_angle};
 
 /// Configures the yaw controller with PID gains and operational limits.
 ///
@@ -37,83 +37,42 @@ impl Default for YawControllerConfig {
     }
 }
 
-/// Yaw controller that maintains a desired heading using PID control with noise filtering.
+impl YawControllerConfig {
+    /// Checks the config: `max_integral` and `max_rate_radps` must be non-negative and finite.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::controllers::YawControllerConfig;
+    ///
+    /// assert!(YawControllerConfig::default().validate().is_ok());
+    /// let bad = YawControllerConfig { max_rate_radps: f32::NAN, ..Default::default() };
+    /// assert!(bad.validate().is_err());
+    /// ```
+    pub fn validate(&self) -> Result<(), InvalidConfig> {
+        check_limit("max_integral", self.max_integral)?;
+        check_limit("max_rate_radps", self.max_rate_radps)
+    }
+}
+
+/// Yaw controller that maintains a desired heading using PID control.
 ///
 /// This controller:
 /// * Takes desired and actual heading measurements
 /// * Calculates the shortest path error accounting for angle wrapping
-/// * Applies filtered PID control to generate appropriate yaw rate commands
+/// * Applies PID control to generate appropriate yaw rate commands
 /// * Incorporates anti-windup protection and output limiting
+///
+/// It holds only state (integral and derivative history); gains and limits come from the
+/// [`YawControllerConfig`] passed to each [`control`](Self::control) call, so they can change
+/// between ticks without resetting the state.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct YawController {
-    pub config: YawControllerConfig,
-
     previous_error: Option<f32>,
     integrated_error: f32,
 }
 
-impl Default for YawController {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl YawController {
-    /// Creates a new yaw controller with default configuration.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use stable_flight::controllers::{YawController, YawControllerConfig};
-    ///
-    /// let controller = YawController::new();
-    /// ```
-    pub fn new() -> Self {
-        Self::with_config(&YawControllerConfig::default())
-    }
-
-    /// Creates a new yaw controller with the specified configuration.
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - Custom controller configuration settings
-    ///
-    /// # Panics
-    ///
-    /// If `max_integral` or `max_rate_radps` is negative or not finite: they bound per-tick clamps,
-    /// which would otherwise panic inside the flight loop.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use stable_flight::controllers::{YawController, YawControllerConfig};
-    /// use stable_flight::controllers::Gains;
-    ///
-    /// let config = YawControllerConfig {
-    ///     gains: Gains { p: 2.0, i: 0.1, d: 0.5 },
-    ///     max_integral: 50.0,
-    ///     max_rate_radps: 1.5,
-    /// };
-    ///
-    /// let controller = YawController::with_config(&config);
-    /// ```
-    pub fn with_config(config: &YawControllerConfig) -> Self {
-        assert!(
-            config.max_integral >= 0.0 && config.max_integral.is_finite(),
-            "max_integral must be non-negative and finite, got {}",
-            config.max_integral
-        );
-        assert!(
-            config.max_rate_radps >= 0.0 && config.max_rate_radps.is_finite(),
-            "max_rate_radps must be non-negative and finite, got {}",
-            config.max_rate_radps
-        );
-        Self {
-            config: *config,
-            previous_error: None,
-            integrated_error: 0.0,
-        }
-    }
-
     /// Calculates desired yaw rate based on current and target headings.
     ///
     /// This implementation:
@@ -124,6 +83,8 @@ impl YawController {
     ///
     /// # Arguments
     ///
+    /// * `config` - Gains and limits; assumed valid ([`YawControllerConfig::validate`]). An
+    ///   invalid limit does not panic: a negative or NaN limit acts as 0.
     /// * `dt` - Time step since the last update (must be positive).
     /// * `desired_yaw_rad` - Target yaw angle in radians. Any finite value is accepted; the
     ///   error is wrapped to the shortest path, so `desired_yaw_rad` and `desired_yaw_rad + 2πk` are
@@ -145,24 +106,31 @@ impl YawController {
     /// use std::f32::consts::PI;
     /// use stable_flight::controllers::{YawController, YawControllerConfig};
     ///
-    /// let mut controller = YawController::new();
+    /// let config = YawControllerConfig::default();
+    /// let mut controller = YawController::default();
     /// let dt = 0.02;
     /// let desired_yaw_rad = PI / 4.0;  // 45 degrees
     /// let current_yaw_rad = 0.0;       // 0 degrees
     ///
-    /// let yaw_rate = controller.control(dt, desired_yaw_rad, current_yaw_rad);
+    /// let yaw_rate = controller.control(&config, dt, desired_yaw_rad, current_yaw_rad);
     /// // Returns a rate command to turn toward the desired heading
     /// ```
-    pub fn control(&mut self, dt: f32, desired_yaw_rad: f32, estimated_yaw_rad: f32) -> f32 {
+    pub fn control(
+        &mut self,
+        config: &YawControllerConfig,
+        dt: f32,
+        desired_yaw_rad: f32,
+        estimated_yaw_rad: f32,
+    ) -> f32 {
         assert!(dt.is_finite(), "Time step must be finite");
         assert!(dt > 0.0, "Time step must be positive");
 
-        let gains = &self.config.gains;
+        let gains = &config.gains;
 
         let error = angle_diff(desired_yaw_rad, estimated_yaw_rad); // Use a helper to handle angle wrapping
         if !error.is_finite() {
             // Hold (no yaw rate) rather than letting NaN into the integral and derivative
-            // history, where it would stick; `clamp` passes NaN through. Forget the previous
+            // history, where it would stick; clamping passes NaN through. Forget the previous
             // error too, so the first valid tick after the gap has no derivative kick.
             self.previous_error = None;
             return 0.0;
@@ -173,17 +141,15 @@ impl YawController {
             0.0
         };
 
-        self.integrated_error += dt * error;
-        self.integrated_error = self
-            .integrated_error
-            .clamp(-self.config.max_integral, self.config.max_integral);
+        self.integrated_error =
+            clamp_symmetric(self.integrated_error + dt * error, config.max_integral);
 
         let yaw_rate =
             gains.p * error + gains.i * self.integrated_error + gains.d * error_derivative;
 
         self.previous_error = Some(error);
 
-        yaw_rate.clamp(-self.config.max_rate_radps, self.config.max_rate_radps)
+        clamp_symmetric(yaw_rate, config.max_rate_radps)
     }
 
     /// Resets the controller state (integral and last error terms) to zero.
@@ -220,10 +186,30 @@ mod tests {
 
     const EPSILON: f32 = 1e-5;
 
+    /// A controller paired with the config each tick passes in.
+    struct Tuned {
+        config: YawControllerConfig,
+        state: YawController,
+    }
+
+    impl Tuned {
+        fn new(config: YawControllerConfig) -> Self {
+            Self {
+                config,
+                state: YawController::default(),
+            }
+        }
+
+        fn control(&mut self, dt: f32, desired_yaw_rad: f32, estimated_yaw_rad: f32) -> f32 {
+            self.state
+                .control(&self.config, dt, desired_yaw_rad, estimated_yaw_rad)
+        }
+    }
+
     // Helper functions for test setup
 
     /// Creates a controller with only proportional gain for testing
-    fn create_p_only_controller(p_gain: f32, max_rate_radps: f32) -> YawController {
+    fn create_p_only_controller(p_gain: f32, max_rate_radps: f32) -> Tuned {
         let config = YawControllerConfig {
             gains: Gains {
                 p: p_gain,
@@ -234,15 +220,11 @@ mod tests {
             max_rate_radps,
         };
 
-        YawController::with_config(&config)
+        Tuned::new(config)
     }
 
     /// Creates a controller with only integral gain for testing
-    fn create_i_only_controller(
-        i_gain: f32,
-        max_integral: f32,
-        max_rate_radps: f32,
-    ) -> YawController {
+    fn create_i_only_controller(i_gain: f32, max_integral: f32, max_rate_radps: f32) -> Tuned {
         let config = YawControllerConfig {
             gains: Gains {
                 p: 0.0,
@@ -253,11 +235,11 @@ mod tests {
             max_rate_radps,
         };
 
-        YawController::with_config(&config)
+        Tuned::new(config)
     }
 
     /// Creates a controller with only derivative gain for testing
-    fn create_d_only_controller(d_gain: f32, max_rate_radps: f32) -> YawController {
+    fn create_d_only_controller(d_gain: f32, max_rate_radps: f32) -> Tuned {
         let config = YawControllerConfig {
             gains: Gains {
                 p: 0.0,
@@ -268,7 +250,7 @@ mod tests {
             max_rate_radps,
         };
 
-        YawController::with_config(&config)
+        Tuned::new(config)
     }
 
     /// Tests that the default controller configuration has expected values.
@@ -293,33 +275,14 @@ mod tests {
         );
     }
 
-    /// Tests that the controller initializes correctly with both default and custom configs.
     #[test]
-    fn test_new_controller_initialization() {
-        // Test that the controller initializes with default values
-        let controller = YawController::new();
-
+    fn default_is_zeroed_state() {
         assert_eq!(
-            controller.config,
-            YawControllerConfig::default(),
-            "Controller should initialize with default config"
-        );
-
-        // Create controller with custom config
-        let config = YawControllerConfig {
-            gains: Gains {
-                p: 1.5,
-                i: 0.5,
-                d: 0.2,
-            },
-            max_integral: 10.0,
-            max_rate_radps: 2.0,
-        };
-
-        let controller = YawController::with_config(&config);
-        assert_eq!(
-            controller.config, config,
-            "Controller should initialize with configured values"
+            YawController::default(),
+            YawController {
+                previous_error: None,
+                integrated_error: 0.0,
+            }
         );
     }
 
@@ -425,7 +388,7 @@ mod tests {
             max_rate_radps: 5.0,
         };
 
-        let mut controller = YawController::with_config(&config);
+        let mut controller = Tuned::new(config);
 
         let dt = 1.0;
 
@@ -467,7 +430,7 @@ mod tests {
             max_rate_radps: 5.0,
         };
 
-        let mut controller = YawController::with_config(&config);
+        let mut controller = Tuned::new(config);
         let dt = 1.0;
 
         // Accumulate some error
@@ -482,7 +445,7 @@ mod tests {
         );
 
         // Reset the controller
-        controller.reset();
+        controller.state.reset();
 
         // First call after reset should behave like initial call
         let rate_after_reset = controller.control(dt, 0.5, 0.0);
@@ -508,7 +471,7 @@ mod tests {
             max_rate_radps: 5.0,
         };
 
-        let mut controller = YawController::with_config(&config);
+        let mut controller = Tuned::new(config);
 
         // Control with a 1-second time step
         let rate_1s = controller.control(1.0, 0.5, 0.0);
@@ -546,7 +509,7 @@ mod tests {
             max_rate_radps: 5.0,
         };
 
-        let mut controller = YawController::with_config(&config);
+        let mut controller = Tuned::new(config);
 
         // Use a very small time step
         let dt = 0.000001; // 1 microsecond
@@ -627,7 +590,7 @@ mod tests {
 
     #[test]
     fn test_valid_inputs() {
-        let mut controller = YawController::new();
+        let mut controller = Tuned::new(YawControllerConfig::default());
         let dt = 0.01;
 
         // Valid inputs should not panic
@@ -639,7 +602,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Time step must be positive")]
     fn test_zero_time_step() {
-        let mut controller = YawController::new();
+        let mut controller = Tuned::new(YawControllerConfig::default());
         let dt = 0.0;
         let _ = controller.control(dt, 0.0, 0.0);
     }
@@ -654,20 +617,21 @@ mod tests {
             (1000.0, wrap_angle(1000.0)),
         ];
         for (target, equivalent) in cases {
-            let rate = YawController::new().control(0.01, target, 0.2);
-            let expected = YawController::new().control(0.01, equivalent, 0.2);
+            let rate = Tuned::new(YawControllerConfig::default()).control(0.01, target, 0.2);
+            let expected =
+                Tuned::new(YawControllerConfig::default()).control(0.01, equivalent, 0.2);
             assert_relative_eq!(rate, expected, epsilon = 1e-3);
         }
     }
 
     #[test]
     fn non_finite_target_holds_and_does_not_poison_later_ticks() {
-        let mut controller = YawController::new();
+        let mut controller = Tuned::new(YawControllerConfig::default());
         for target in [f32::NAN, f32::INFINITY] {
             assert!(controller.control(0.01, target, 0.2) == 0.0);
         }
         let after = controller.control(0.01, 1.0, 0.2);
-        let fresh = YawController::new().control(0.01, 1.0, 0.2);
+        let fresh = Tuned::new(YawControllerConfig::default()).control(0.01, 1.0, 0.2);
         assert_relative_eq!(after, fresh);
     }
 
@@ -683,14 +647,14 @@ mod tests {
             max_integral: 1.0,
             max_rate_radps: 100.0,
         };
-        let mut controller = YawController::with_config(&config);
+        let mut controller = Tuned::new(config);
 
         controller.control(0.01, 1.0, 0.2); // error 0.8 becomes the previous error
         controller.control(0.01, f32::NAN, 0.2); // gap
         let after_gap = controller.control(0.01, 0.5, 0.2); // error 0.3
 
         // Without the reset, D would add 0.5 * (0.3 - 0.8) / 0.01 = -25 rad/s.
-        let fresh = YawController::with_config(&config).control(0.01, 0.5, 0.2);
+        let fresh = Tuned::new(config).control(0.01, 0.5, 0.2);
         assert_relative_eq!(after_gap, fresh);
     }
 
@@ -727,7 +691,7 @@ mod tests {
             max_rate_radps: 3.0,
         };
 
-        let mut controller = YawController::with_config(&config);
+        let mut controller = Tuned::new(config);
 
         let dt = 0.1; // 0.1 seconds
 
@@ -780,26 +744,53 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_limits_at_construction() {
-        // (max_integral, max_rate_radps)
+    fn validate_rejects_negative_or_non_finite_limits() {
+        // (max_integral, max_rate_radps, offending field)
         let cases = [
-            (-1.0, 1.0),
-            (f32::NAN, 1.0),
-            (1.0, -1.0),
-            (1.0, f32::INFINITY),
+            (-1.0, 1.0, "max_integral"),
+            (f32::NAN, 1.0, "max_integral"),
+            (1.0, -1.0, "max_rate_radps"),
+            (1.0, f32::INFINITY, "max_rate_radps"),
         ];
-        for (max_integral, max_rate_radps) in cases {
-            let result = std::panic::catch_unwind(|| {
-                YawController::with_config(&YawControllerConfig {
-                    max_integral,
-                    max_rate_radps,
-                    ..Default::default()
-                })
-            });
-            assert!(
-                result.is_err(),
-                "({max_integral}, {max_rate_radps}) was accepted"
-            );
+        for (max_integral, max_rate_radps, field) in cases {
+            let config = YawControllerConfig {
+                max_integral,
+                max_rate_radps,
+                ..Default::default()
+            };
+            assert_eq!(config.validate().map_err(|e| e.field), Err(field));
         }
+    }
+
+    /// An invalid limit fails `validate` but `control` stays panic-free: the limit acts as 0.
+    #[test]
+    fn invalid_limits_give_neutral_output_without_panicking() {
+        for bad in [-1.0, f32::NAN] {
+            let mut controller = Tuned::new(YawControllerConfig {
+                gains: Gains {
+                    p: 1.0,
+                    i: 1.0,
+                    d: 0.0,
+                },
+                max_integral: bad,
+                max_rate_radps: bad,
+            });
+            assert_eq!(controller.control(0.1, 1.0, 0.0), 0.0, "limit {bad}");
+            assert_eq!(controller.state.integrated_error, 0.0, "limit {bad}");
+        }
+    }
+
+    /// A gain change between ticks applies on the next tick and keeps the integral.
+    #[test]
+    fn gain_change_between_ticks_keeps_state() {
+        let mut controller = create_i_only_controller(1.0, 10.0, 10.0);
+        controller.control(1.0, 0.5, 0.0);
+        let integral = controller.state.integrated_error;
+
+        controller.config.gains.i = 2.0;
+        let rate = controller.control(0.01, 0.0, 0.0);
+
+        assert_eq!(controller.state.integrated_error, integral);
+        assert_relative_eq!(rate, 2.0 * integral, epsilon = EPSILON);
     }
 }

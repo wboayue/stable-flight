@@ -50,9 +50,10 @@ fn test_rate_controller_zero_error() {
     let desired_rates = Vec3::zeros();
     let current_rates = Vec3::zeros();
 
+    let config = controller.config.body_rate;
     let output = controller
-        .rates_controller
-        .control(dt, desired_rates, current_rates);
+        .body_rate
+        .control(&config, dt, desired_rates, current_rates);
 
     // With zero error (desired and current rates are the same), PID terms should be 0
     assert_eq!(
@@ -69,9 +70,10 @@ fn test_rate_controller_positive_error() {
     let desired_rates = Vec3::new(1.0, 1.0, 1.0);
     let current_rates = Vec3::zeros();
 
+    let config = controller.config.body_rate;
     let output = controller
-        .rates_controller
-        .control(dt, desired_rates, current_rates);
+        .body_rate
+        .control(&config, dt, desired_rates, current_rates);
 
     // Check that the output is positive for all axes when there is a positive error
     assert!(output.x > 0.0, "Roll moment should be positive");
@@ -86,9 +88,10 @@ fn test_yaw_controller_zero_error() {
     let desired_yaw = 0.0;
     let current_yaw = 0.0;
 
+    let config = controller.config.yaw;
     let output = controller
-        .yaw_controller
-        .control(dt, desired_yaw, current_yaw);
+        .yaw
+        .control(&config, dt, desired_yaw, current_yaw);
     assert_eq!(output, 0.0, "Yaw rate should be zero when error is zero");
 }
 
@@ -99,9 +102,10 @@ fn test_yaw_controller_angle_wrapping() {
     let desired_yaw = PI + 0.1;
     let current_yaw = -PI + 0.1;
 
+    let config = controller.config.yaw;
     let output = controller
-        .yaw_controller
-        .control(dt, desired_yaw, current_yaw);
+        .yaw
+        .control(&config, dt, desired_yaw, current_yaw);
     assert!(
         output < 0.0,
         "Yaw rate should be negative for shortest path"
@@ -347,5 +351,109 @@ fn thrust_curve_raises_linear_thrust_to_the_configured_exponent() {
     let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
     for (linear_thrust, expected) in [(f32::NAN, 0.0), (-0.5, 0.0), (1.5, 1.0)] {
         assert_eq!(stabilizer.fit_to_thrust_curve(linear_thrust), expected);
+    }
+}
+
+#[test]
+fn validate_rejects_negative_or_non_finite_full_scale_rates() {
+    // (scales, offending field)
+    let cases = [
+        (
+            Vec3::new(f32::INFINITY, 3.0, 3.0),
+            "full_scale_rates_radps.x",
+        ),
+        (Vec3::new(3.0, f32::NAN, 3.0), "full_scale_rates_radps.y"),
+        (Vec3::new(3.0, 3.0, -1.0), "full_scale_rates_radps.z"),
+        (
+            Vec3::new(3.0, 3.0, f32::NEG_INFINITY),
+            "full_scale_rates_radps.z",
+        ),
+    ];
+    for (scales, field) in cases {
+        let config = CopterStabilizerConfig {
+            full_scale_rates_radps: scales,
+            ..Default::default()
+        };
+        assert_eq!(
+            config.validate().map_err(|e| e.field),
+            Err(field),
+            "{scales:?}"
+        );
+    }
+    // Boundary: zero (axis disabled) and large finite scales are valid.
+    for scales in [Vec3::zeros(), Vec3::new(0.0, 3.0, 100.0)] {
+        let config = CopterStabilizerConfig {
+            full_scale_rates_radps: scales,
+            ..Default::default()
+        };
+        assert!(config.validate().is_ok(), "{scales:?}");
+    }
+}
+
+#[test]
+#[should_panic(expected = "full_scale_rates_radps.x")]
+fn new_rejects_an_infinite_full_scale_rate() {
+    CopterStabilizer::new(CopterStabilizerConfig {
+        full_scale_rates_radps: Vec3::new(f32::INFINITY, 3.0, 3.0),
+        ..Default::default()
+    });
+}
+
+/// Each axis scales by its own full-scale rate: full stick on every axis at rest gives the
+/// body-rate loop desired rates equal to the per-axis scales.
+#[test]
+fn rate_setpoint_scales_each_axis_by_its_full_scale_rate() {
+    // Small enough that no moment saturates, so a mis-scaled axis would show.
+    let scales = Vec3::new(0.1, 0.2, 0.4);
+    let config = CopterStabilizerConfig {
+        full_scale_rates_radps: scales,
+        ..Default::default()
+    };
+    let setpoint = Setpoint::Rate(RateSetpoint {
+        roll_rate: 1.0,
+        pitch_rate: 1.0,
+        yaw_rate: 1.0,
+        thrust: 0.5,
+    });
+
+    let output =
+        CopterStabilizer::new(config).stabilize(0.004, &setpoint, &VehicleState::default());
+    let expected =
+        BodyRateController::default().control(&config.body_rate, 0.004, scales, Vec3::zeros());
+
+    assert_eq!(output.moments, expected);
+    assert!(expected.amax() < 1.0, "saturated: {expected:?}");
+}
+
+#[test]
+fn validate_rejects_a_non_positive_or_non_finite_thrust_curve_exponent() {
+    for exponent in [0.0, -2.0, f32::NAN, f32::INFINITY] {
+        let config = CopterStabilizerConfig {
+            thrust_curve_exponent: exponent,
+            ..Default::default()
+        };
+        assert_eq!(
+            config.validate().map_err(|e| e.field),
+            Err("thrust_curve_exponent"),
+            "exponent {exponent}"
+        );
+    }
+}
+
+/// A controller config error names the loop it came from.
+#[test]
+fn validate_reports_the_loop_of_a_controller_error() {
+    for section in ["body_rate", "attitude", "yaw"] {
+        let mut config = CopterStabilizerConfig::default();
+        match section {
+            "body_rate" => config.body_rate.max_integral = -1.0,
+            "attitude" => config.attitude.max_integral = -1.0,
+            _ => config.yaw.max_integral = -1.0,
+        }
+        let error = config.validate().unwrap_err();
+        assert_eq!(
+            (error.section, error.field),
+            (Some(section), "max_integral")
+        );
     }
 }

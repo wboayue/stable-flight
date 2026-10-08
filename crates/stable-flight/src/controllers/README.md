@@ -11,6 +11,15 @@ Position Commands → Lateral Controller → Attitude Controller → Body Rate C
                  ↘ Altitude Controller ↗             ↘ Yaw Controller ↗
 ```
 
+## State and Config
+
+Each controller holds only its state (integral and derivative history) and is built with
+`Default`. Gains and limits live in its `*Config`, passed to every `control` call, so a config
+change (e.g. live tuning) applies on the next tick without resetting the state. Configs are plain
+`Copy` data with a `validate()` that checks them once at construction and on every change;
+`control` assumes a valid config but never panics on a bad limit (a negative or NaN limit acts
+as 0).
+
 ## Controllers
 
 ### Body Rate Controller (`body_rate.rs`)
@@ -28,15 +37,16 @@ Position Commands → Lateral Controller → Attitude Controller → Body Rate C
 
 **Usage**:
 ```rust
-use stable_flight::controllers::BodyRateController;
+use stable_flight::controllers::{BodyRateController, BodyRateControllerConfig};
 use stable_flight::Vec3;
 
-let mut controller = BodyRateController::new();
+let config = BodyRateControllerConfig::default();
+let mut controller = BodyRateController::default();
 let dt = 0.004; // seconds; 250 Hz control loop
 let desired_rates = Vec3::new(0.1, 0.0, 0.05); // Roll, pitch, yaw rates
 let estimated_rates = Vec3::zeros();
 
-let moments = controller.control(dt, desired_rates, estimated_rates);
+let moments = controller.control(&config, dt, desired_rates, estimated_rates);
 ```
 
 ### Attitude Controller (`attitude.rs`)
@@ -54,15 +64,16 @@ let moments = controller.control(dt, desired_rates, estimated_rates);
 
 **Usage**:
 ```rust
-use stable_flight::controllers::AttitudeController;
+use stable_flight::controllers::{AttitudeController, AttitudeControllerConfig};
 use stable_flight::Vec2;
 
-let mut controller = AttitudeController::new();
+let config = AttitudeControllerConfig::default();
+let mut controller = AttitudeController::default();
 let dt = 0.004;
 let desired_angles = Vec2::new(0.5, -0.2); // 50% roll right, 20% pitch down
 let estimated_angles = Vec2::new(0.1, 0.0); // Current roll/pitch in radians
 
-let angular_rates = controller.control(dt, desired_angles, estimated_angles);
+let angular_rates = controller.control(&config, dt, desired_angles, estimated_angles);
 ```
 
 ### Yaw Controller (`yaw.rs`)
@@ -80,15 +91,16 @@ let angular_rates = controller.control(dt, desired_angles, estimated_angles);
 
 **Usage**:
 ```rust
-use stable_flight::controllers::YawController;
+use stable_flight::controllers::{YawController, YawControllerConfig};
 use std::f32::consts::PI;
 
-let mut controller = YawController::new();
+let config = YawControllerConfig::default();
+let mut controller = YawController::default();
 let dt = 0.004;
 let desired_yaw = PI / 2.0; // 90 degrees
 let estimated_yaw = 0.0;
 
-let yaw_rate = controller.control(dt, desired_yaw, estimated_yaw);
+let yaw_rate = controller.control(&config, dt, desired_yaw, estimated_yaw);
 ```
 
 ### Altitude Controller (`altitude.rs`)
@@ -106,10 +118,11 @@ let yaw_rate = controller.control(dt, desired_yaw, estimated_yaw);
 
 **Usage**:
 ```rust
-use stable_flight::controllers::AltitudeController;
+use stable_flight::controllers::{AltitudeController, AltitudeControllerConfig};
 use stable_flight::nalgebra::UnitQuaternion;
 
-let mut controller = AltitudeController::new();
+let config = AltitudeControllerConfig::default();
+let mut controller = AltitudeController::default();
 let dt = 0.004;
 let desired_altitude = 10.0; // 10 meters
 let desired_velocity = 0.0;  // Hover
@@ -118,6 +131,7 @@ let estimated_velocity = -0.1; // Slight descent
 let estimated_attitude = UnitQuaternion::identity();
 
 let thrust = controller.control(
+    &config,
     dt,
     desired_altitude,
     desired_velocity,
@@ -142,26 +156,27 @@ let thrust = controller.control(
 
 **Usage**:
 ```rust
-use stable_flight::controllers::LateralController;
+use stable_flight::controllers::{LateralController, LateralControllerConfig};
 use stable_flight::Vec2;
 
-let mut controller = LateralController::new();
+let config = LateralControllerConfig::default();
+let mut controller = LateralController::default();
 let dt = 0.004;
 let desired_position = Vec2::new(5.0, 2.0); // 5m north, 2m east
 let estimated_position = Vec2::new(4.8, 1.9);
 let estimated_velocity = Vec2::new(0.1, 0.05);
 
 // Normalized (roll, pitch) tilt request
-let tilt = controller.control(dt, desired_position, estimated_position, estimated_velocity);
+let tilt = controller.control(&config, dt, desired_position, estimated_position, estimated_velocity);
 ```
 
 ## Configuration
 
-All controllers support custom configuration through their respective `Config` structs:
+Each controller has a `Config` struct; check it with `validate()` before use:
 
 ```rust
 use stable_flight::controllers::*;
-use stable_flight::Vec2;
+use stable_flight::{Vec2, Vec3};
 use std::f32::consts::PI;
 
 // Custom PID gains
@@ -182,8 +197,13 @@ let attitude_config = AttitudeControllerConfig {
     max_rate_radps: Vec2::new(3.0, 3.0), // rad/s
 };
 
-let body_rate_controller = BodyRateController::with_config(&body_rate_config);
-let attitude_controller = AttitudeController::with_config(&attitude_config);
+assert!(body_rate_config.validate().is_ok());
+assert!(attitude_config.validate().is_ok());
+
+let mut body_rate = BodyRateController::default();
+let mut attitude = AttitudeController::default();
+let rates = attitude.control(&attitude_config, 0.004, Vec2::new(0.2, 0.0), Vec2::zeros());
+let moments = body_rate.control(&body_rate_config, 0.004, rates.push(0.0), Vec3::zeros());
 ```
 
 ## Design Principles
@@ -209,7 +229,7 @@ let attitude_controller = AttitudeController::with_config(&attitude_config);
 ### Tuning and Configuration
 - Sensible default parameters for typical multirotor vehicles
 - Config fields document their units and effects
-- `with_config` rejects invalid settings (negative or non-finite limits)
+- `validate()` rejects invalid settings (negative or non-finite limits)
 
 ## Testing
 
@@ -237,7 +257,7 @@ Where:
 Integral terms are clamped to prevent windup:
 
 ```rust,ignore
-integral_term = (integral_term + dt * error).clamp(-max_integral, max_integral);
+integral_term = clamp_symmetric(integral_term + dt * error, config.max_integral);
 ```
 
 ### Angle Wrapping (Yaw Controller)
@@ -277,13 +297,13 @@ The position controllers (altitude, lateral) run in `CopterGuidance`, which turn
 
 ```rust,ignore
 // Guidance (src/guidance/copter.rs), waypoint mode
-let tilt = self.lateral_controller.control(dt, waypoint, position, velocity);
-let thrust = self.altitude_controller.control(dt, command.altitude_m, 0.0, altitude, climb_rate, attitude);
+let tilt = self.lateral.control(&self.lateral_config, dt, waypoint, position, velocity);
+let thrust = self.altitude.control(&self.altitude_config, dt, command.altitude_m, 0.0, altitude, climb_rate, attitude);
 
 // Stabilizer (src/stabilizers/copter.rs)
-let attitude_rates = self.attitude_controller.control(dt, setpoint_tilt, current_tilt);
-let yaw_rate = self.yaw_controller.control(dt, setpoint.heading_rad, current_heading);
-let body_moments = self.rates_controller.control(dt, desired_rates, current_rates);
+let attitude_rates = self.attitude.control(&config.attitude, dt, setpoint_tilt, current_tilt);
+let yaw_rate = self.yaw.control(&config.yaw, dt, setpoint.heading_rad, current_heading);
+let body_moments = self.body_rate.control(&config.body_rate, dt, desired_rates, current_rates);
 ```
 
 This ensures proper sequencing and data flow through the cascaded control architecture.
