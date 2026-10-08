@@ -15,20 +15,20 @@ pub struct AttitudeControllerConfig {
 
     /// Maximum angles in radians for roll (x) and pitch (y) (e.g., π/4 = 45°).
     /// Limits the vehicle's tilt in each axis.
-    pub max_angles: Vec2,
+    pub max_angles_rad: Vec2,
 
-    /// Maximum absolute value of the integral term.
+    /// Maximum absolute value of the integrated angle error, in rad·s, per axis.
     /// Prevents integral windup by limiting error accumulation.
     pub max_integral: f32,
 
     /// Maximum angular rates in radians/second for roll (x) and pitch (y).
     /// Limits the output rates sent to the rate controller.
-    pub max_rate: Vec2,
+    pub max_rate_radps: Vec2,
 }
 
 impl Default for AttitudeControllerConfig {
     /// Provides a default configuration with reasonable starting values.
-    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and max_rate (2 rad/s) may need tuning
+    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and max_rate_radps (2 rad/s) may need tuning
     /// for specific vehicles.
     fn default() -> Self {
         Self {
@@ -37,9 +37,9 @@ impl Default for AttitudeControllerConfig {
                 i: 0.001, // Integral gain (disabled by default)
                 d: 1.0,   // Derivative gain
             },
-            max_angles: Vec2::new(FRAC_PI_4, FRAC_PI_4), // 45° for roll and pitch
-            max_integral: 100.0,                         // Arbitrary limit
-            max_rate: Vec2::new(2.0, 2.0),               // 2 rad/s (~114°/s) for roll and pitch
+            max_angles_rad: Vec2::new(FRAC_PI_4, FRAC_PI_4), // 45° for roll and pitch
+            max_integral: 100.0,                             // Arbitrary limit
+            max_rate_radps: Vec2::new(2.0, 2.0),             // 2 rad/s (~114°/s) for roll and pitch
         }
     }
 }
@@ -53,13 +53,13 @@ pub struct AttitudeController {
     /// Set after a non-finite tick: the next finite tick skips the derivative term, since
     /// `last_error` predates the gap.
     resync_derivative: bool,
-    max_angles: Vec2, // Max angles in radians (roll, pitch)
-    max_rate: Vec2,   // Max angular rates in rad/s (roll, pitch)
+    max_angles_rad: Vec2, // Max angles in radians (roll, pitch)
+    max_rate_radps: Vec2, // Max angular rates in rad/s (roll, pitch)
 }
 
 impl Default for AttitudeController {
     /// Provides a default attitude controller with default configuration.
-    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and max_rate (2 rad/s) may need tuning
+    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and max_rate_radps (2 rad/s) may need tuning
     /// for specific vehicles.
     fn default() -> Self {
         Self::with_config(&AttitudeControllerConfig::default())
@@ -84,7 +84,7 @@ impl AttitudeController {
     ///
     /// # Panics
     ///
-    /// If `config.max_angles` or `config.max_rate` has a negative component, or
+    /// If `config.max_angles_rad` or `config.max_rate_radps` has a negative component, or
     /// `config.max_integral` is negative or not finite.
     ///
     /// # Examples
@@ -96,20 +96,20 @@ impl AttitudeController {
     ///
     /// let config = AttitudeControllerConfig {
     ///     gains: Gains { p: 3.0, i: 0.001, d: 1.0 },
-    ///     max_angles: Vec2::new(PI / 3.0, PI / 3.0), // 60° max tilt
+    ///     max_angles_rad: Vec2::new(PI / 3.0, PI / 3.0), // 60° max tilt
     ///     max_integral: 10.0,
-    ///     max_rate: Vec2::new(3.0, 3.0), // rad/s
+    ///     max_rate_radps: Vec2::new(3.0, 3.0), // rad/s
     /// };
     ///
     /// let controller = AttitudeController::with_config(&config);
     /// ```
     pub fn with_config(config: &AttitudeControllerConfig) -> Self {
         assert!(
-            config.max_angles.x >= 0.0 && config.max_angles.y >= 0.0,
+            config.max_angles_rad.x >= 0.0 && config.max_angles_rad.y >= 0.0,
             "Maximum angles must be non-negative"
         );
         assert!(
-            config.max_rate.x >= 0.0 && config.max_rate.y >= 0.0,
+            config.max_rate_radps.x >= 0.0 && config.max_rate_radps.y >= 0.0,
             "Maximum rates must be non-negative"
         );
         // The per-tick integral clamp would panic on a negative or NaN bound.
@@ -124,8 +124,8 @@ impl AttitudeController {
             max_integral: config.max_integral,
             last_error: Vec2::zeros(),
             resync_derivative: false,
-            max_angles: config.max_angles,
-            max_rate: config.max_rate,
+            max_angles_rad: config.max_angles_rad,
+            max_rate_radps: config.max_rate_radps,
         }
     }
 
@@ -133,20 +133,20 @@ impl AttitudeController {
     ///
     /// Uses a PID controller to convert angle errors into angular rates (rad/s)
     /// for the rate control loop. Input angles are scaled from [-1,1] to
-    /// [-max_angles.x, max_angles.x] for roll and [-max_angles.y, max_angles.y] for pitch.
-    /// Output rates are clamped to [-max_rate.x, max_rate.x] for roll and
-    /// [-max_rate.y, max_rate.y] for pitch.
+    /// [-max_angles_rad.x, max_angles_rad.x] for roll and [-max_angles_rad.y, max_angles_rad.y] for pitch.
+    /// Output rates are clamped to [-max_rate_radps.x, max_rate_radps.x] for roll and
+    /// [-max_rate_radps.y, max_rate_radps.y] for pitch.
     ///
     /// # Arguments
     /// * `dt` - Time step since last update in seconds (must be positive)
     /// * `desired_angles` - Target roll/pitch as normalized values in [-1,1]. Values outside
-    ///   the range saturate to it (so the setpoint never exceeds `max_angles`), and NaN is
+    ///   the range saturate to it (so the setpoint never exceeds `max_angles_rad`), and NaN is
     ///   treated as 0 (level).
-    /// * `estimated_angles` - Current roll/pitch angles in radians
+    /// * `estimated_angles_rad` - Current roll/pitch angles in radians
     ///
     /// # Returns
     /// Desired angular rates (roll rate, pitch rate) in radians/second,
-    /// clamped to configured max_rate limits
+    /// clamped to configured max_rate_radps limits
     ///
     /// # Panics
     /// * If `dt` is not positive
@@ -160,21 +160,21 @@ impl AttitudeController {
     /// let mut controller = AttitudeController::new();
     /// let dt = 0.004;
     /// let desired_angles = Vec2::new(0.5, -0.2); // 50% roll right, 20% pitch down
-    /// let estimated_angles = Vec2::new(0.1, 0.0); // current roll/pitch in radians
+    /// let estimated_angles_rad = Vec2::new(0.1, 0.0); // current roll/pitch in radians
     ///
-    /// let angular_rates = controller.control(dt, desired_angles, estimated_angles);
+    /// let angular_rates = controller.control(dt, desired_angles, estimated_angles_rad);
     /// assert!(angular_rates.x > 0.0 && angular_rates.y < 0.0);
     /// ```
-    pub fn control(&mut self, dt: f32, desired_angles: Vec2, estimated_angles: Vec2) -> Vec2 {
+    pub fn control(&mut self, dt: f32, desired_angles: Vec2, estimated_angles_rad: Vec2) -> Vec2 {
         assert!(dt > 0.0, "Time step must be positive");
 
         // Saturate normalized inputs, then scale to angle setpoints in radians. Outer loops
         // (e.g. lateral position control far from the target) can ask for more than full tilt;
         // that must not panic the flight loop.
-        let desired_angles = saturate_unit_vec2(desired_angles).component_mul(&self.max_angles);
+        let desired_angles = saturate_unit_vec2(desired_angles).component_mul(&self.max_angles_rad);
 
         // Calculate error (setpoint - actual)
-        let error = desired_angles - estimated_angles;
+        let error = desired_angles - estimated_angles_rad;
 
         // A non-finite error (NaN/∞ estimate) yields no rate command and never enters the
         // integral or derivative history (see `crate::math` for the policy).
@@ -206,8 +206,8 @@ impl AttitudeController {
 
         // Scale output to configured maximum rates
         Vec2::new(
-            rates.x.clamp(-self.max_rate.x, self.max_rate.x),
-            rates.y.clamp(-self.max_rate.y, self.max_rate.y),
+            rates.x.clamp(-self.max_rate_radps.x, self.max_rate_radps.x),
+            rates.y.clamp(-self.max_rate_radps.y, self.max_rate_radps.y),
         )
     }
 }
@@ -233,8 +233,8 @@ mod tests {
         assert_eq!(controller.gains.p, 3.0);
         // assert_eq!(controller.gains.i, 0.0);
         // assert_eq!(controller.gains.d, 0.01);
-        assert_eq!(controller.max_angles, Vec2::new(FRAC_PI_4, FRAC_PI_4));
-        assert_eq!(controller.max_rate, Vec2::new(2.0, 2.0));
+        assert_eq!(controller.max_angles_rad, Vec2::new(FRAC_PI_4, FRAC_PI_4));
+        assert_eq!(controller.max_rate_radps, Vec2::new(2.0, 2.0));
         assert_eq!(controller.max_integral, 100.0);
         assert_eq!(controller.integral_term, Vec2::zeros());
         assert_eq!(controller.last_error, Vec2::zeros());
@@ -245,7 +245,7 @@ mod tests {
     fn test_new_panics_on_negative_max_angles() {
         // Assemble
         let config = AttitudeControllerConfig {
-            max_angles: Vec2::new(-1.0, FRAC_PI_4),
+            max_angles_rad: Vec2::new(-1.0, FRAC_PI_4),
             ..AttitudeControllerConfig::default()
         };
 
@@ -260,7 +260,7 @@ mod tests {
     fn test_new_panics_on_negative_max_rate() {
         // Assemble
         let config = AttitudeControllerConfig {
-            max_rate: Vec2::new(2.0, -2.0),
+            max_rate_radps: Vec2::new(2.0, -2.0),
             ..AttitudeControllerConfig::default()
         };
 
@@ -322,8 +322,8 @@ mod tests {
                 p: 100.0,
                 i: 0.0,
                 d: 0.0,
-            }, // High P gain to exceed max_rate
-            max_rate: Vec2::new(2.0, 2.0),
+            }, // High P gain to exceed max_rate_radps
+            max_rate_radps: Vec2::new(2.0, 2.0),
             ..AttitudeControllerConfig::default()
         });
         let dt = 0.1;
@@ -334,7 +334,7 @@ mod tests {
         let rates = controller.control(dt, desired_angles, estimated_angles);
 
         // Assert
-        assert_eq!(rates, Vec2::new(2.0, 2.0)); // Clamped to max_rate
+        assert_eq!(rates, Vec2::new(2.0, 2.0)); // Clamped to max_rate_radps
     }
 
     #[test]
@@ -469,7 +469,7 @@ mod tests {
 
         // First finite tick after the gap: P + I only (no derivative from the pre-gap error).
         let after_nan = controller.control(0.1, desired, Vec2::zeros());
-        let error = desired.component_mul(&controller.max_angles);
+        let error = desired.component_mul(&controller.max_angles_rad);
         let Gains { p, i, .. } = controller.gains;
         let expected = p * error + i * (0.1 * error);
         approx::assert_relative_eq!(after_nan.x, expected.x.clamp(-2.0, 2.0));

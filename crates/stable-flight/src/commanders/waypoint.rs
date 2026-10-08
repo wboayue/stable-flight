@@ -9,7 +9,7 @@ mod tests;
 
 /// Default horizontal distance (meters) within which the active waypoint is considered
 /// reached and the follower advances to the next one.
-pub const DEFAULT_ACCEPTANCE_RADIUS: f32 = 3.0;
+pub const DEFAULT_ACCEPTANCE_RADIUS_M: f32 = 3.0;
 
 /// Returned by [`WaypointFollower::new`] when given no waypoints; there is nothing to fly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,10 +42,10 @@ impl core::error::Error for EmptyWaypoints {}
 /// use stable_flight::{Command, Commander, VehicleState, WaypointCommand};
 ///
 /// let square = [
-///     WaypointCommand { position: Vec2::zeros(), altitude: 10.0, ..Default::default() },
-///     WaypointCommand { position: Vec2::new(20.0, 0.0), altitude: 10.0, ..Default::default() },
-///     WaypointCommand { position: Vec2::new(20.0, 20.0), altitude: 10.0, ..Default::default() },
-///     WaypointCommand { position: Vec2::new(0.0, 20.0), altitude: 10.0, ..Default::default() },
+///     WaypointCommand { position_m: Vec2::zeros(), altitude_m: 10.0, ..Default::default() },
+///     WaypointCommand { position_m: Vec2::new(20.0, 0.0), altitude_m: 10.0, ..Default::default() },
+///     WaypointCommand { position_m: Vec2::new(20.0, 20.0), altitude_m: 10.0, ..Default::default() },
+///     WaypointCommand { position_m: Vec2::new(0.0, 20.0), altitude_m: 10.0, ..Default::default() },
 /// ];
 /// let mut follower = WaypointFollower::new(square)
 ///     .expect("non-empty")
@@ -55,7 +55,7 @@ impl core::error::Error for EmptyWaypoints {}
 /// let Command::Waypoint(target) = follower.next_command(0.004, &VehicleState::default()) else {
 ///     unreachable!("WaypointFollower only emits waypoint commands");
 /// };
-/// assert_eq!(target.position.x, 20.0);
+/// assert_eq!(target.position_m.x, 20.0);
 /// ```
 #[derive(Debug, Clone)]
 pub struct WaypointFollower<W> {
@@ -65,7 +65,7 @@ pub struct WaypointFollower<W> {
 }
 
 impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
-    /// Starts at the first waypoint with [`DEFAULT_ACCEPTANCE_RADIUS`].
+    /// Starts at the first waypoint with [`DEFAULT_ACCEPTANCE_RADIUS_M`].
     ///
     /// # Errors
     ///
@@ -77,17 +77,17 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
         Ok(WaypointFollower {
             waypoints,
             current: 0,
-            acceptance_radius_squared: DEFAULT_ACCEPTANCE_RADIUS * DEFAULT_ACCEPTANCE_RADIUS,
+            acceptance_radius_squared: DEFAULT_ACCEPTANCE_RADIUS_M * DEFAULT_ACCEPTANCE_RADIUS_M,
         })
     }
 
-    /// Overrides the horizontal acceptance radius (meters). `radius` must be non-negative.
-    pub fn with_acceptance_radius(mut self, radius: f32) -> Self {
+    /// Overrides the horizontal acceptance radius (meters). `radius_m` must be non-negative.
+    pub fn with_acceptance_radius(mut self, radius_m: f32) -> Self {
         debug_assert!(
-            radius >= 0.0,
-            "acceptance radius must be non-negative, got {radius}"
+            radius_m >= 0.0,
+            "acceptance radius must be non-negative, got {radius_m}"
         );
-        self.acceptance_radius_squared = radius * radius;
+        self.acceptance_radius_squared = radius_m * radius_m;
         self
     }
 
@@ -108,8 +108,8 @@ impl<W: AsRef<[WaypointCommand]>> Commander for WaypointFollower<W> {
 
         // Compare squared horizontal distance to avoid a per-tick sqrt.
         let target = &waypoints[self.current];
-        let dx = target.position.x - current_state.position_m.x;
-        let dy = target.position.y - current_state.position_m.y;
+        let dx = target.position_m.x - current_state.position_m.x;
+        let dy = target.position_m.y - current_state.position_m.y;
         if dx * dx + dy * dy <= self.acceptance_radius_squared {
             self.current = (self.current + 1) % waypoints.len();
         }

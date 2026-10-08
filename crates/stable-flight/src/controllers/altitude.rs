@@ -19,13 +19,13 @@ const MIN_BODY_Z_ALIGNMENT: f32 = 0.5;
 pub struct AltitudeControllerConfig {
     /// PID gains from altitude error (m) to vertical acceleration (m/s², up).
     pub gains: Gains,
-    /// Maximum absolute value of the integral term.
+    /// Maximum absolute value of the integrated altitude error, in m·s.
     /// Prevents integral windup by limiting error accumulation.
     pub max_integral: f32,
 
     /// Maximum climb rate in meters/second. Currently unused
     /// ([#115](https://github.com/wboayue/stable-flight/issues/115)).
-    pub max_rate: f32,
+    pub max_rate_mps: f32,
 
     /// Linear thrust (before the stabilizer's thrust curve) that holds a level hover. The
     /// controller feeds it forward, so the integral only trims the residual. Airframe-specific.
@@ -42,7 +42,7 @@ impl Default for AltitudeControllerConfig {
             },
             // With feedforward the integral only trims hover; 5 m·s at I 0.2 is ±1 m/s².
             max_integral: 5.0,
-            max_rate: 2.0, // 2 m/s for altitude
+            max_rate_mps: 2.0, // 2 m/s for altitude
             hover_thrust: DEFAULT_HOVER_THRUST,
         }
     }
@@ -88,7 +88,7 @@ impl AltitudeController {
     /// let config = AltitudeControllerConfig {
     ///     gains: Gains { p: 1.0, i: 0.1, d: 0.05 },
     ///     max_integral: 5.0,
-    ///     max_rate: 2.0,
+    ///     max_rate_mps: 2.0,
     ///     hover_thrust: 0.45, // airframe-specific
     /// };
     ///
@@ -120,10 +120,10 @@ impl AltitudeController {
     /// # Arguments
     ///
     /// * `dt` - Time step since the last update (must be positive).
-    /// * `desired_altitude` - Desired altitude in meters.
-    /// * `desired_velocity` - Desired vertical velocity in m/s (up); the D term damps toward it.
-    /// * `estimated_altitude` - Current measured altitude in meters.
-    /// * `estimated_velocity` - Current vertical velocity in m/s.
+    /// * `desired_altitude_m` - Desired altitude in meters.
+    /// * `desired_velocity_mps` - Desired vertical velocity in m/s (up); the D term damps toward it.
+    /// * `estimated_altitude_m` - Current measured altitude in meters.
+    /// * `estimated_velocity_mps` - Current vertical velocity in m/s.
     /// * `estimated_attitude` - Current attitude as a quaternion.
     ///
     /// # Returns
@@ -151,17 +151,17 @@ impl AltitudeController {
     pub fn control(
         &mut self,
         dt: f32,
-        desired_altitude: f32,
-        desired_velocity: f32,
-        estimated_altitude: f32,
-        estimated_velocity: f32,
+        desired_altitude_m: f32,
+        desired_velocity_mps: f32,
+        estimated_altitude_m: f32,
+        estimated_velocity_mps: f32,
         estimated_attitude: UnitQuaternion<f32>,
     ) -> f32 {
         let gains = &self.config.gains;
         let hover_thrust = self.config.hover_thrust;
 
-        let altitude_error = desired_altitude - estimated_altitude;
-        let velocity_error = desired_velocity - estimated_velocity;
+        let altitude_error = desired_altitude_m - estimated_altitude_m;
+        let velocity_error = desired_velocity_mps - estimated_velocity_mps;
 
         // A non-finite error (NaN/∞ altitude or velocity) must never enter the integral, where
         // it would stick (NaN survives `clamp`) and hold thrust at NaN → 0 for good. Neutral

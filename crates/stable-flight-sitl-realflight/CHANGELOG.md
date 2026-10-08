@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `RealFlightVehicle` fills the renamed plain-`f32` `VehicleState` fields
   (`position_m`, `velocity_mps`, `acceleration_mps2`); the `uom` dependency is removed
   ([#141](https://github.com/wboayue/stable-flight/issues/141)).
+- **Breaking:** `vehicle_state` and `airframes` use the core's unit-suffixed names
+  (`roll_rad`, `angular_velocity_radps`, `max_rate_radps`, `navigation_period_s`, …)
+  ([#161](https://github.com/wboayue/stable-flight/issues/161)).
 
 ### Fixed
 

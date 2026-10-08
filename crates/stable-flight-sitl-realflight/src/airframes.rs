@@ -81,8 +81,8 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
             d: 0.1,
         },
         max_integral: 100.0,
-        max_angles: Vec2::new(PI / 4.0, PI / 4.0), // 45° for roll and pitch
-        max_rate: Vec2::new(3.0, 3.0),             // Max roll, pitch rates in rad/s
+        max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0), // 45° for roll and pitch
+        max_rate_radps: Vec2::new(3.0, 3.0),           // Max roll, pitch rates in rad/s
     });
 
     Airframe {

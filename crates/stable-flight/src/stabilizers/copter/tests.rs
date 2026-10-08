@@ -27,8 +27,8 @@ fn setup_controller() -> CopterStabilizer {
             d: 0.1,
         },
         max_integral: 100.0,
-        max_angles: Vec2::new(PI / 4.0, PI / 4.0), // 45° for roll and pitch
-        max_rate: Vec2::new(3.0, 3.0),             // Max roll, pitch, yaw rates in rad/s
+        max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0), // 45° for roll and pitch
+        max_rate_radps: Vec2::new(3.0, 3.0),           // Max roll, pitch, yaw rates in rad/s
     });
 
     let config = CopterStabilizerConfig {
@@ -187,16 +187,16 @@ fn attitude_is_tracked_from_the_quaternion() {
     let (roll, pitch, heading) = (0.2, -0.1, 0.3);
     let consistent = VehicleState {
         attitude: UnitQuaternion::from_euler_angles(roll, pitch, heading),
-        roll,
-        pitch,
-        heading,
+        roll_rad: roll,
+        pitch_rad: pitch,
+        heading_rad: heading,
         ..Default::default()
     };
     // Euler fields level and north; quaternion as above.
     let quaternion_only = VehicleState {
-        roll: 0.0,
-        pitch: 0.0,
-        heading: 0.0,
+        roll_rad: 0.0,
+        pitch_rad: 0.0,
+        heading_rad: 0.0,
         ..consistent.clone()
     };
     let setpoint = Setpoint::Attitude(AttitudeSetpoint {
@@ -224,7 +224,7 @@ fn heading_setpoint_is_wrapped_and_nan_is_neutral() {
     let yaw_moment = |heading: f32| {
         let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
         let setpoint = Setpoint::Attitude(AttitudeSetpoint {
-            heading,
+            heading_rad: heading,
             thrust: 0.5,
             ..Default::default()
         });
@@ -251,7 +251,7 @@ fn heading_setpoint_is_wrapped_and_nan_is_neutral() {
 fn nan_rate_estimate_yields_zero_moments() {
     let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
     let state = VehicleState {
-        angular_velocity: Vec3::new(f32::NAN, 0.0, 0.0),
+        angular_velocity_radps: Vec3::new(f32::NAN, 0.0, 0.0),
         ..Default::default()
     };
     let output = stabilizer.stabilize(
@@ -283,7 +283,7 @@ fn non_finite_attitude_quaternion_yields_zero_moments() {
         thrust: 0.5,
         roll: 0.3,
         pitch: -0.2,
-        heading: 1.0,
+        heading_rad: 1.0,
     });
     for [w, x, y, z] in cases {
         let state = VehicleState {
@@ -303,7 +303,7 @@ fn non_finite_attitude_quaternion_yields_zero_moments() {
 #[test]
 fn nan_rate_setpoint_holds_zero_rate() {
     let state = VehicleState {
-        angular_velocity: Vec3::new(0.5, -0.2, 0.1), // spinning: zero-rate hold must push back
+        angular_velocity_radps: Vec3::new(0.5, -0.2, 0.1), // spinning: zero-rate hold must push back
         ..Default::default()
     };
     let rate = |roll_rate| {

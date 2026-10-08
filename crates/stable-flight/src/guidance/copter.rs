@@ -5,7 +5,7 @@
 //! |---|---|
 //! | [`Command::Rate`] | [`Setpoint::Rate`], sticks passed through |
 //! | [`Command::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks passed through; yaw stick slews a heading-hold target |
-//! | [`Command::Waypoint`] | [`Setpoint::Attitude`]: lateral position loop → roll/pitch (every [`navigation_period`](CopterGuidanceConfig::navigation_period)), altitude loop → thrust (every tick), heading north |
+//! | [`Command::Waypoint`] | [`Setpoint::Attitude`]: lateral position loop → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading north |
 
 use crate::Vec2;
 
@@ -29,9 +29,9 @@ const HEADING_SLEW_RATE: f32 = 1.0;
 /// 45°), leaving thrust headroom to climb while translating.
 pub const DEFAULT_MAX_TILT: f32 = 0.6;
 
-/// Default [`CopterGuidanceConfig::navigation_period`]: 50 Hz, a fifth of the usual 250 Hz
+/// Default [`CopterGuidanceConfig::navigation_period_s`]: 50 Hz, a fifth of the usual 250 Hz
 /// inner loop.
-pub const DEFAULT_NAVIGATION_PERIOD: f32 = 0.02;
+pub const DEFAULT_NAVIGATION_PERIOD_S: f32 = 0.02;
 
 /// Gains for the [CopterGuidance] position loops.
 ///
@@ -60,8 +60,8 @@ pub struct CopterGuidanceConfig {
     /// between. `0.0` runs it every tick. Rounded to the nearest tick (at a 4 ms loop, 20 ms
     /// is every 5th tick); each run steps over the actual elapsed time. The altitude loop runs
     /// every tick, since its tilt compensation needs the current attitude. Defaults to
-    /// [`DEFAULT_NAVIGATION_PERIOD`].
-    pub navigation_period: f32,
+    /// [`DEFAULT_NAVIGATION_PERIOD_S`].
+    pub navigation_period_s: f32,
     /// Largest waypoint-flight tilt, as a fraction `(0, 1]` of the stabilizer's maximum tilt
     /// (the units of [`AttitudeSetpoint`] roll/pitch; it follows them if they move to radians,
     /// [#72](https://github.com/wboayue/stable-flight/issues/72)). Caps the magnitude of the
@@ -90,7 +90,7 @@ impl Default for CopterGuidanceConfig {
                 i: 0.0,
                 d: 1.6,
             },
-            navigation_period: DEFAULT_NAVIGATION_PERIOD,
+            navigation_period_s: DEFAULT_NAVIGATION_PERIOD_S,
             max_tilt: DEFAULT_MAX_TILT,
         }
     }
@@ -106,14 +106,14 @@ impl Default for CopterGuidanceConfig {
 /// use stable_flight::{AttitudeCommand, Command, Guidance, Setpoint, VehicleState};
 ///
 /// let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
-/// let state = VehicleState { heading: 1.0, ..Default::default() };
+/// let state = VehicleState { heading_rad: 1.0, ..Default::default() };
 /// guidance.prime(&state);
 ///
 /// let command = Command::Attitude(AttitudeCommand { throttle: 0.5, ..Default::default() });
 /// let Setpoint::Attitude(setpoint) = guidance.guide(0.004, &command, &state) else {
 ///     unreachable!("attitude commands yield attitude setpoints");
 /// };
-/// assert!((setpoint.heading - 1.0).abs() < 1e-6); // holds the primed heading
+/// assert!((setpoint.heading_rad - 1.0).abs() < 1e-6); // holds the primed heading
 /// assert_eq!(setpoint.thrust, 0.5);
 /// ```
 pub struct CopterGuidance {
@@ -136,7 +136,7 @@ impl CopterGuidance {
     ///
     /// # Panics
     ///
-    /// If `config.navigation_period` is negative or not finite, or `config.max_tilt` or
+    /// If `config.navigation_period_s` is negative or not finite, or `config.max_tilt` or
     /// `config.hover_thrust` is not in `(0, 1]` (the altitude controller checks the latter).
     pub fn new(config: CopterGuidanceConfig) -> Self {
         assert!(
@@ -145,9 +145,9 @@ impl CopterGuidance {
             config.max_tilt
         );
         assert!(
-            config.navigation_period >= 0.0 && config.navigation_period.is_finite(),
-            "navigation_period must be non-negative and finite, got {}",
-            config.navigation_period
+            config.navigation_period_s >= 0.0 && config.navigation_period_s.is_finite(),
+            "navigation_period_s must be non-negative and finite, got {}",
+            config.navigation_period_s
         );
         CopterGuidance {
             altitude_controller: AltitudeController::with_config(&AltitudeControllerConfig {
@@ -159,12 +159,12 @@ impl CopterGuidance {
             lateral_controller: LateralController::with_config(&LateralControllerConfig {
                 gains: config.lateral_gains,
                 max_integral: 100.0,
-                max_rate: Vec2::new(2.0, 2.0), // unused by the lateral controller today (#71)
+                max_rate_radps: Vec2::new(2.0, 2.0), // unused by the lateral controller today (#71)
             }),
 
             heading: 0.0,
 
-            lateral_rate: RateDivider::new(config.navigation_period),
+            lateral_rate: RateDivider::new(config.navigation_period_s),
             tilt: Vec2::zeros(),
             max_tilt: config.max_tilt,
         }
@@ -199,7 +199,7 @@ impl Guidance for CopterGuidance {
 
     /// Latches the current heading as the yaw-hold target, and drops any held waypoint tilt.
     fn prime(&mut self, state: &VehicleState) {
-        self.heading = state.heading;
+        self.heading = state.heading_rad;
         self.lateral_rate.reset();
     }
 }
@@ -228,16 +228,16 @@ impl CopterGuidance {
         let target = wrap_angle(self.heading + slew);
         if target.is_finite() {
             self.heading = target;
-        } else if estimated_state.heading.is_finite() {
+        } else if estimated_state.heading_rad.is_finite() {
             // A NaN target (e.g. primed from a NaN estimate) would otherwise disable heading
             // hold for good; re-latch from the current estimate once it's valid.
-            self.heading = wrap_angle(estimated_state.heading);
+            self.heading = wrap_angle(estimated_state.heading_rad);
         }
 
         AttitudeSetpoint {
             roll: attitude_command.roll,
             pitch: attitude_command.pitch,
-            heading: self.heading,
+            heading_rad: self.heading,
             thrust: attitude_command.throttle,
         }
     }
@@ -255,7 +255,7 @@ impl CopterGuidance {
 
         let linear_thrust = self.altitude_controller.control(
             dt,
-            waypoint_command.altitude,
+            waypoint_command.altitude_m,
             0.0,
             estimated_state.position_m.z,
             estimated_state.velocity_mps.z,
@@ -265,7 +265,7 @@ impl CopterGuidance {
         AttitudeSetpoint {
             roll: tilt.x,
             pitch: tilt.y,
-            heading: 0.0,
+            heading_rad: 0.0,
             thrust: linear_thrust,
         }
     }
@@ -282,7 +282,8 @@ impl CopterGuidance {
             return self.tilt;
         };
 
-        let desired_position = Vec2::new(waypoint_command.position.x, waypoint_command.position.y);
+        let desired_position =
+            Vec2::new(waypoint_command.position_m.x, waypoint_command.position_m.y);
         let current_position =
             Vec2::new(estimated_state.position_m.x, estimated_state.position_m.y);
         let velocity = Vec2::new(

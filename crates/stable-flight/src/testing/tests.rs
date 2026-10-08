@@ -63,12 +63,12 @@ fn zero_capacity_recorder_only_counts() {
 #[test]
 fn null_vehicle_counts_calls_and_keeps_last_command() {
     let mut vehicle = NullVehicle::with_state(VehicleState {
-        heading: 1.5,
+        heading_rad: 1.5,
         ..Default::default()
     });
     check!(vehicle.last_actuation().is_none());
 
-    check!(vehicle.estimate_state(Duration::ZERO).heading == 1.5);
+    check!(vehicle.estimate_state(Duration::ZERO).heading_rad == 1.5);
     vehicle.estimate_state(Duration::from_millis(4));
     vehicle.actuate(&ActuatorCommand {
         motors: [0.25; 8],

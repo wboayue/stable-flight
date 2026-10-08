@@ -41,21 +41,21 @@ fn angles_are_compared_modulo_a_full_turn() {
     type Shift = fn(&mut VehicleState);
     // (scenario, shift, still conforms)
     let cases: [(Scenario, Shift, bool); 6] = [
-        (HEADING_EAST, |s| s.heading += TAU, true),
-        (HEADING_EAST, |s| s.heading -= TAU, true),
-        (ROLL_RIGHT_30, |s| s.roll += TAU, true),
-        (PITCH_UP_15, |s| s.pitch -= TAU, true),
+        (HEADING_EAST, |s| s.heading_rad += TAU, true),
+        (HEADING_EAST, |s| s.heading_rad -= TAU, true),
+        (ROLL_RIGHT_30, |s| s.roll_rad += TAU, true),
+        (PITCH_UP_15, |s| s.pitch_rad -= TAU, true),
         // Heading π reported as -π: the same direction.
         (
             Scenario {
                 heading_deg: 180.0,
                 ..LEVEL
             },
-            |s| s.heading = -PI,
+            |s| s.heading_rad = -PI,
             true,
         ),
         // A real error hidden behind a full turn still fails.
-        (HEADING_EAST, |s| s.heading += TAU + 0.01, false),
+        (HEADING_EAST, |s| s.heading_rad += TAU + 0.01, false),
     ];
 
     for (scenario, shift, conforms) in cases {
@@ -84,8 +84,8 @@ fn reports_each_field_off_contract() {
         ),
         (
             ROLL_RIGHT_30,
-            |s| s.roll = s.roll.to_radians(), // converted to radians twice
-            &["roll"],
+            |s| s.roll_rad = s.roll_rad.to_radians(), // converted to radians twice
+            &["roll_rad"],
         ),
         (
             MOVING_NORTHEAST,
@@ -94,8 +94,8 @@ fn reports_each_field_off_contract() {
         ),
         (
             COMBINED_RATES,
-            |s| s.angular_velocity.z = f32::NAN,
-            &["angular_velocity.z"],
+            |s| s.angular_velocity_radps.z = f32::NAN,
+            &["angular_velocity_radps.z"],
         ),
         (
             LEVEL,
@@ -128,10 +128,10 @@ fn reports_every_field_when_all_are_nan() {
             f32::NAN,
             f32::NAN,
         )),
-        angular_velocity: Vec3::new(f32::NAN, f32::NAN, f32::NAN),
-        roll: f32::NAN,
-        pitch: f32::NAN,
-        heading: f32::NAN,
+        angular_velocity_radps: Vec3::new(f32::NAN, f32::NAN, f32::NAN),
+        roll_rad: f32::NAN,
+        pitch_rad: f32::NAN,
+        heading_rad: f32::NAN,
     };
 
     let error = LEVEL.check(&all_nan).unwrap_err();

@@ -22,7 +22,7 @@ fn waypoint(command: Command) -> WaypointCommand {
 /// Builds a waypoint at the given horizontal position, with defaults elsewhere.
 fn wp(x: f32, y: f32) -> WaypointCommand {
     WaypointCommand {
-        position: Vec2::new(x, y),
+        position_m: Vec2::new(x, y),
         ..Default::default()
     }
 }
@@ -30,7 +30,7 @@ fn wp(x: f32, y: f32) -> WaypointCommand {
 /// Steps the commander once from position `(x, y)` and returns the resulting target's x.
 fn target_x_after_step(commander: &mut ScriptCommander, x: f32, y: f32) -> f32 {
     waypoint(commander.next_command(0.1, &state_at(x, y)))
-        .position
+        .position_m
         .x
 }
 
@@ -52,12 +52,12 @@ x,y,altitude,cruise_speed
         (-30.0, -15.0, 15.0, 7.0),
     ];
     for (wp, (x, y, alt, speed)) in waypoints.iter().zip(expected) {
-        assert_relative_eq!(wp.position.x, x);
-        assert_relative_eq!(wp.position.y, y);
-        assert_relative_eq!(wp.altitude, alt);
-        assert_relative_eq!(wp.cruise_speed, speed);
-        check!(wp.velocity.is_none());
-        check!(wp.roll.is_none());
+        assert_relative_eq!(wp.position_m.x, x);
+        assert_relative_eq!(wp.position_m.y, y);
+        assert_relative_eq!(wp.altitude_m, alt);
+        assert_relative_eq!(wp.cruise_speed_mps, speed);
+        check!(wp.velocity_mps.is_none());
+        check!(wp.roll_rad.is_none());
     }
 }
 
@@ -74,8 +74,8 @@ x,y,altitude,cruise_speed
 ";
     assert2::assert!(let Ok(waypoints) = parse_waypoints("test.csv", csv));
     check!(waypoints.len() == 2);
-    assert_relative_eq!(waypoints[0].position.x, 10.0);
-    assert_relative_eq!(waypoints[1].altitude, 16.0);
+    assert_relative_eq!(waypoints[0].position_m.x, 10.0);
+    assert_relative_eq!(waypoints[1].altitude_m, 16.0);
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn parses_headerless_file() {
     let csv = "5.0,6.0,7.0,8.0\n";
     assert2::assert!(let Ok(waypoints) = parse_waypoints("test.csv", csv));
     check!(waypoints.len() == 1);
-    assert_relative_eq!(waypoints[0].cruise_speed, 8.0);
+    assert_relative_eq!(waypoints[0].cruise_speed_mps, 8.0);
 }
 
 #[test]

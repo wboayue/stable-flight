@@ -17,7 +17,7 @@ type Log = Rc<RefCell<Vec<String>>>;
 /// A state whose `heading` identifies which estimate produced it.
 fn state_with_heading(heading: f32) -> VehicleState {
     VehicleState {
-        heading,
+        heading_rad: heading,
         ..Default::default()
     }
 }
@@ -27,9 +27,10 @@ struct RecordingCommander {
 }
 impl Commander for RecordingCommander {
     fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
-        self.log
-            .borrow_mut()
-            .push(format!("command dt={dt} seen_heading={}", state.heading));
+        self.log.borrow_mut().push(format!(
+            "command dt={dt} seen_heading={}",
+            state.heading_rad
+        ));
         Command::Attitude(AttitudeCommand {
             throttle: 0.25,
             ..Default::default()
@@ -72,7 +73,7 @@ impl Guidance for RecordingGuidance {
         };
         self.log.borrow_mut().push(format!(
             "guide dt={dt} throttle={} heading={}",
-            attitude.throttle, state.heading
+            attitude.throttle, state.heading_rad
         ));
         Setpoint::Attitude(AttitudeSetpoint {
             thrust: 2.0 * attitude.throttle,
@@ -83,7 +84,7 @@ impl Guidance for RecordingGuidance {
     fn prime(&mut self, state: &VehicleState) {
         self.log
             .borrow_mut()
-            .push(format!("prime guidance heading={}", state.heading));
+            .push(format!("prime guidance heading={}", state.heading_rad));
     }
 }
 
@@ -97,7 +98,7 @@ impl Stabilizer for RecordingStabilizer {
         };
         self.log.borrow_mut().push(format!(
             "stabilize dt={dt} thrust={} heading={}",
-            attitude.thrust, state.heading
+            attitude.thrust, state.heading_rad
         ));
         ControlOutput::new(attitude.thrust + 0.25, Vec3::zeros())
     }
@@ -105,7 +106,7 @@ impl Stabilizer for RecordingStabilizer {
     fn prime(&mut self, state: &VehicleState) {
         self.log
             .borrow_mut()
-            .push(format!("prime stabilizer heading={}", state.heading));
+            .push(format!("prime stabilizer heading={}", state.heading_rad));
     }
 }
 
@@ -140,7 +141,7 @@ impl TelemetryPublisher for LogTelemetry {
                 Setpoint::Attitude(attitude) => attitude.thrust,
                 Setpoint::Rate(rate) => rate.thrust,
             },
-            record.state.heading,
+            record.state.heading_rad,
             record.control.thrust,
             record.actuators.motors[0]
         ));
@@ -185,7 +186,7 @@ fn prime_estimates_with_zero_dt_and_primes_guidance_then_stabilizer_from_it() {
                 "prime stabilizer heading=0",
             ]
     );
-    check!(flight_loop.state().heading == 0.0);
+    check!(flight_loop.state().heading_rad == 0.0);
 }
 
 #[test]
@@ -219,7 +220,7 @@ fn step_runs_the_pipeline_in_order_and_publishes_the_tick() {
                 "publish dt=0.004 throttle=0.25 setpoint_thrust=0.5 heading=1 thrust=0.75 motor0=0.75",
             ]
     );
-    check!(flight_loop.state().heading == 1.0);
+    check!(flight_loop.state().heading_rad == 1.0);
 }
 
 #[test]

@@ -27,7 +27,7 @@ pub struct BodyRateControllerConfig {
     /// PID gains for the yaw rate.
     pub yaw_gains: Gains,
 
-    /// Maximum absolute value of the accumulated error (rad), per axis.
+    /// Maximum absolute value of the integrated rate error, in rad, per axis.
     /// Prevents integral windup by limiting error accumulation.
     pub max_integral: f32,
 }
@@ -69,13 +69,13 @@ pub struct BodyRateController {
     pub yaw_gains: Gains,
 
     /// Integrated error term for the PID controller.
-    pub integral_term: Vec3,
+    integral_term: Vec3,
 
     /// Maximum integral term for the PID controller.
     pub max_integral: f32,
 
     /// Last error value for computing the derivative term.
-    pub last_error: Vec3,
+    last_error: Vec3,
     /// Set after a non-finite tick: the next finite tick skips the derivative term, since
     /// `last_error` predates the gap.
     resync_derivative: bool,
@@ -145,8 +145,8 @@ impl BodyRateController {
     /// # Arguments
     ///
     /// * `dt` - Time step since the last update in seconds (must be positive and finite).
-    /// * `desired_rates` - Desired angular rates (roll, pitch, yaw) in rad/s.
-    /// * `estimated_rates` - Current measured angular rates (roll, pitch, yaw) in rad/s.
+    /// * `desired_rates_radps` - Desired angular rates (roll, pitch, yaw) in rad/s.
+    /// * `estimated_rates_radps` - Current measured angular rates (roll, pitch, yaw) in rad/s.
     ///
     /// # Returns
     ///
@@ -157,7 +157,7 @@ impl BodyRateController {
     /// Panics if:
     /// - `dt` is not positive or finite.
     ///
-    /// A non-finite component in `desired_rates` or `estimated_rates` returns zero moments and
+    /// A non-finite component in `desired_rates_radps` or `estimated_rates_radps` returns zero moments and
     /// leaves the controller state untouched (the input policy in `architecture.md`).
     ///
     /// # Examples
@@ -168,25 +168,30 @@ impl BodyRateController {
     ///
     /// let mut controller = BodyRateController::new();
     /// let dt = 0.004; // seconds; 250 Hz control loop
-    /// let desired_rates = Vec3::new(0.1, 0.0, 0.05); // roll, pitch, yaw rates (rad/s)
-    /// let estimated_rates = Vec3::zeros();
+    /// let desired_rates_radps = Vec3::new(0.1, 0.0, 0.05); // roll, pitch, yaw rates (rad/s)
+    /// let estimated_rates_radps = Vec3::zeros();
     ///
-    /// let moments = controller.control(dt, desired_rates, estimated_rates);
+    /// let moments = controller.control(dt, desired_rates_radps, estimated_rates_radps);
     /// assert!(moments.x > 0.0 && moments.z > 0.0);
     /// assert!(moments.iter().all(|m| (-1.0..=1.0).contains(m)));
     /// ```
-    pub fn control(&mut self, dt: f32, desired_rates: Vec3, estimated_rates: Vec3) -> Vec3 {
+    pub fn control(
+        &mut self,
+        dt: f32,
+        desired_rates_radps: Vec3,
+        estimated_rates_radps: Vec3,
+    ) -> Vec3 {
         // Input validation
         assert!(
             dt > 0.0 && dt.is_finite(),
             "Time step (dt) must be positive and finite"
         );
-        if !(all_finite(&desired_rates) && all_finite(&estimated_rates)) {
+        if !(all_finite(&desired_rates_radps) && all_finite(&estimated_rates_radps)) {
             self.resync_derivative = true;
             return Vec3::zeros();
         }
 
-        let error = desired_rates - estimated_rates;
+        let error = desired_rates_radps - estimated_rates_radps;
 
         let error_derivative = if self.resync_derivative {
             self.resync_derivative = false;
