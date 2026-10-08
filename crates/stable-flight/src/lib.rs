@@ -65,10 +65,10 @@ pub use nalgebra;
 /// ```
 /// use stable_flight::Vec2;
 ///
-/// let tilt: Vec2 = Vec2::new(0.3, -0.1);
+/// let tilt = Vec2::new(0.3, -0.1);
 /// assert_eq!(tilt.component_mul(&Vec2::new(2.0, 2.0)), Vec2::new(0.6, -0.2));
 /// ```
-pub type Vec2<T = f32> = nalgebra::Vector2<T>;
+pub type Vec2 = nalgebra::Vector2<f32>;
 
 /// 3D vector used throughout the pipeline (state vectors, moments, rates). Element-wise
 /// products are `component_mul`; `*` between two vectors is a matrix product.
@@ -78,11 +78,10 @@ pub type Vec2<T = f32> = nalgebra::Vector2<T>;
 /// ```
 /// use stable_flight::Vec3;
 ///
-/// // Annotate standalone literals: the alias default doesn't steer inference (they'd be f64).
-/// let rates: Vec3 = Vec3::new(3.0, 4.0, 0.0);
+/// let rates = Vec3::new(3.0, 4.0, 0.0);
 /// assert_eq!(rates.norm(), 5.0);
 /// ```
-pub type Vec3<T = f32> = nalgebra::Vector3<T>;
+pub type Vec3 = nalgebra::Vector3<f32>;
 
 /// Standard gravity, in m/s².
 pub const GRAVITY: f32 = 9.806_65;
@@ -191,16 +190,16 @@ pub trait Commander {
 /// use stable_flight::{Command, Vec2, WaypointCommand};
 ///
 /// let waypoint_cmd = Command::Waypoint(WaypointCommand {
-///     position: Vec2::new(1000.0, 2000.0),  // Target position in world coordinates
-///     velocity: Some(Vec2::new(15.0, 0.0)), // Optional desired velocity at target
-///     altitude: 500.0,                 // Target altitude in meters
-///     cruise_speed: 25.0,              // Desired speed during transit
-///     roll: Some(0.05),                // Optional roll angle in radians
+///     position_m: Vec2::new(1000.0, 2000.0),    // Target position in world coordinates
+///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Optional desired velocity at target
+///     altitude_m: 500.0,                        // Target altitude in meters
+///     cruise_speed_mps: 25.0,                   // Desired speed during transit
+///     roll_rad: Some(0.05),                     // Optional roll angle in radians
 /// });
 /// ```
 ///
 /// # Notes
-/// - For `WaypointCommand`, optional fields like `velocity` and `roll` can be `None`. When `None`,
+/// - For `WaypointCommand`, optional fields like `velocity_mps` and `roll_rad` can be `None`. When `None`,
 ///   the flight controller may use default values or ignore the parameter, depending on its implementation.
 #[derive(Debug, Clone, Copy)]
 pub enum Command {
@@ -385,11 +384,11 @@ pub struct RateCommand {
 ///
 /// # Value Ranges
 ///
-/// - `position`: X, Y coordinates in 2D space (units and coordinate system depend on the flight system, typically meters in world coordinates)
-/// - `velocity`: Optional velocity vector in meters per second (no specific range; depends on system limits)
-/// - `altitude`: Target altitude in meters (typically non-negative; negative values may be interpreted as ground level or cause undefined behavior)
-/// - `cruise_speed`: Desired speed in meters per second (typically positive; zero or negative values may cause the aircraft to stop or behave unpredictably)
-/// - `roll`: Optional roll angle in radians (typically between `-π` and `π`; depends on system limits)
+/// - `position_m`: X, Y coordinates in 2D space (units and coordinate system depend on the flight system, typically meters in world coordinates)
+/// - `velocity_mps`: Optional velocity vector in meters per second (no specific range; depends on system limits)
+/// - `altitude_m`: Target altitude in meters (typically non-negative; negative values may be interpreted as ground level or cause undefined behavior)
+/// - `cruise_speed_mps`: Desired speed in meters per second (typically positive; zero or negative values may cause the aircraft to stop or behave unpredictably)
+/// - `roll_rad`: Optional roll angle in radians (typically between `-π` and `π`; depends on system limits)
 ///
 /// Note: The specified ranges are conventional and recommended for typical use.
 /// Values outside these ranges may be clamped, ignored, or cause undefined behavior
@@ -402,54 +401,54 @@ pub struct RateCommand {
 /// use stable_flight::{Vec2, WaypointCommand};
 ///
 /// let cmd = WaypointCommand {
-///     position: Vec2::new(1000.0, 2000.0),  // Target position (X=1000m, Y=2000m)
-///     velocity: Some(Vec2::new(15.0, 0.0)), // Arrive with 15 m/s eastward velocity
-///     altitude: 500.0,                 // Target altitude of 500 meters
-///     cruise_speed: 25.0,              // Travel at 25 m/s
-///     roll: Some(0.05),                // Slight right roll during approach
+///     position_m: Vec2::new(1000.0, 2000.0),    // Target position (X=1000m, Y=2000m)
+///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Arrive with 15 m/s eastward velocity
+///     altitude_m: 500.0,                        // Target altitude of 500 meters
+///     cruise_speed_mps: 25.0,                   // Travel at 25 m/s
+///     roll_rad: Some(0.05),                     // Slight right roll during approach
 /// };
 /// ```
 ///
 /// # Behavior of Optional Fields
 ///
-/// - If `velocity` is `None`, the flight system may choose a default velocity or ignore velocity constraints.
-/// - If `roll` is `None`, the flight system typically maintains a default roll (e.g., zero or coordinated turn behavior).
+/// - If `velocity_mps` is `None`, the flight system may choose a default velocity or ignore velocity constraints.
+/// - If `roll_rad` is `None`, the flight system typically maintains a default roll (e.g., zero or coordinated turn behavior).
 ///
 /// # Default Implementation
 ///
 /// The `Default` trait is implemented for `WaypointCommand`, providing the following
 /// default values:
-/// - `position`: zero
-/// - `velocity`: `None`
-/// - `altitude`: `0.0`
-/// - `cruise_speed`: `0.0`
-/// - `roll`: `None`
+/// - `position_m`: zero
+/// - `velocity_mps`: `None`
+/// - `altitude_m`: `0.0`
+/// - `cruise_speed_mps`: `0.0`
+/// - `roll_rad`: `None`
 #[derive(Debug, Default, Clone, Copy)]
 pub struct WaypointCommand {
     /// The target position in 2D space (X, Y coordinates).
     ///
     /// The coordinate system and units depend on the flight system implementation
     /// (typically meters in world coordinates).
-    pub position: Vec2<f32>,
+    pub position_m: Vec2,
 
     /// Optional desired velocity vector at the waypoint, in meters per second.
     ///
     /// When provided, the aircraft will attempt to arrive at the position with this
     /// velocity. This is useful for creating smooth paths through multiple waypoints.
     /// If `None`, the flight system may choose a default velocity or ignore velocity constraints.
-    pub velocity: Option<Vec2<f32>>,
+    pub velocity_mps: Option<Vec2>,
 
     /// Target altitude in meters.
     ///
     /// Typically non-negative; negative values may be interpreted as ground level
     /// or cause undefined behavior depending on the flight system.
-    pub altitude: f32,
+    pub altitude_m: f32,
 
     /// Desired cruise speed in meters per second while traveling to the waypoint.
     ///
     /// Typically positive; zero or negative values may cause the aircraft to stop
     /// or behave unpredictably depending on the flight system.
-    pub cruise_speed: f32,
+    pub cruise_speed_mps: f32,
 
     /// Optional desired roll angle in radians.
     ///
@@ -458,7 +457,7 @@ pub struct WaypointCommand {
     /// acrobatic maneuvers. If `None`, the flight system typically maintains a default
     /// roll (e.g., zero or coordinated turn behavior). Values typically range between
     /// `-π` and `π`, depending on system limits.
-    pub roll: Option<f32>,
+    pub roll_rad: Option<f32>,
 }
 
 /// Represents the high-level control outputs from the stabilization system.
@@ -485,7 +484,7 @@ pub struct ControlOutput {
     /// Control moments in roll (x), pitch (y), and yaw (z) axes.
     /// Values are typically normalized between -1.0 and 1.0, where the magnitude
     /// represents the proportion of maximum control authority in each axis.
-    pub moments: Vec3<f32>,
+    pub moments: Vec3,
 }
 
 impl ControlOutput {
@@ -499,7 +498,7 @@ impl ControlOutput {
     /// # Returns
     ///
     /// A new `ControlOutput` instance with the specified parameters.
-    pub fn new(thrust: f32, moments: Vec3<f32>) -> ControlOutput {
+    pub fn new(thrust: f32, moments: Vec3) -> ControlOutput {
         ControlOutput { thrust, moments }
     }
 }
@@ -527,10 +526,10 @@ impl ControlOutput {
 /// | `position_m` | `x` north, `y` east, `z` up | m | `z` is altitude above the backend's datum (e.g. sea level) |
 /// | `velocity_mps`, `acceleration_mps2` | as `position_m` | m/s, m/s² | `z` climbing |
 /// | `attitude` | NED world → FRD body, ZYX (yaw, pitch, roll); `UnitQuaternion::from_euler_angles(roll, pitch, heading)` | — | [`euler_angles`] of it match the fields below |
-/// | `roll` | about body `x` | rad | right wing down |
-/// | `pitch` | about body `y` | rad | nose up |
-/// | `heading` | about NED `z` | rad | clockwise from north (east = π/2); any range, e.g. [0, 2π) or [-π, π) |
-/// | `angular_velocity` | FRD body: `x` roll, `y` pitch, `z` yaw | rad/s | roll right, nose up, nose right |
+/// | `roll_rad` | about body `x` | rad | right wing down |
+/// | `pitch_rad` | about body `y` | rad | nose up |
+/// | `heading_rad` | about NED `z` | rad | clockwise from north (east = π/2); any range, e.g. [0, 2π) or [-π, π) |
+/// | `angular_velocity_radps` | FRD body: `x` roll, `y` pitch, `z` yaw | rad/s | roll right, nose up, nose right |
 ///
 /// # Examples
 ///
@@ -556,17 +555,17 @@ pub struct VehicleState {
     pub attitude: UnitQuaternion<f32>,
 
     /// Body angular velocity in roll (x), pitch (y), and yaw (z), in radians per second.
-    pub angular_velocity: Vec3<f32>,
+    pub angular_velocity_radps: Vec3,
 
     /// Current roll angle in radians, right wing down positive.
-    pub roll: f32,
+    pub roll_rad: f32,
 
     /// Current pitch angle in radians, nose up positive.
-    pub pitch: f32,
+    pub pitch_rad: f32,
 
     /// Current heading (yaw) angle in radians.
     /// 0 is north, with positive values rotating clockwise.
-    pub heading: f32,
+    pub heading_rad: f32,
     // Note: Additional fields for flight mode, GPS data, etc. may be added in the future.
 }
 
@@ -702,8 +701,8 @@ pub struct AttitudeSetpoint {
     /// (nose up).
     pub pitch: f32,
     /// Absolute heading target in radians, in the
-    /// [frame contract](VehicleState#frame-contract)'s `heading` convention.
-    pub heading: f32,
+    /// [frame contract](VehicleState#frame-contract)'s `heading_rad` convention.
+    pub heading_rad: f32,
     /// Linear collective thrust, `0.0` to `1.0`, before the stabilizer's thrust curve.
     pub thrust: f32,
 }
@@ -752,7 +751,7 @@ pub struct RateSetpoint {
 ///                 thrust: rate.throttle,
 ///             }),
 ///             _ => Setpoint::Attitude(AttitudeSetpoint {
-///                 heading: state.heading,
+///                 heading_rad: state.heading_rad,
 ///                 ..Default::default()
 ///             }),
 ///         }

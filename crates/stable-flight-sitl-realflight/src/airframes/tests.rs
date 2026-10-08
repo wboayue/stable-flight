@@ -46,8 +46,8 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
     let attitude = AttitudeController::with_config(&AttitudeControllerConfig {
         gains: gains(3.0, 0.0, 0.1),
         max_integral: 100.0,
-        max_angles: Vec2::new(PI / 4.0, PI / 4.0),
-        max_rate: Vec2::new(3.0, 3.0),
+        max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
+        max_rate_radps: Vec2::new(3.0, 3.0),
     });
     assert_eq!(
         airframe.stabilizer.attitude_controller, attitude,

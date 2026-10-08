@@ -15,7 +15,7 @@ fn state_at(x: f32, y: f32) -> VehicleState {
 /// Builds a waypoint at the given horizontal position, with defaults elsewhere.
 fn wp(x: f32, y: f32) -> WaypointCommand {
     WaypointCommand {
-        position: Vec2::new(x, y),
+        position_m: Vec2::new(x, y),
         ..Default::default()
     }
 }
@@ -27,7 +27,7 @@ fn target_x_after_step<W: AsRef<[WaypointCommand]>>(
     y: f32,
 ) -> f32 {
     assert2::assert!(let Command::Waypoint(target) = follower.next_command(0.1, &state_at(x, y)));
-    target.position.x
+    target.position_m.x
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn advances_through_waypoints_and_loops() {
 #[test]
 fn holds_waypoint_until_within_acceptance_radius() {
     let mut follower = WaypointFollower::new([wp(0.0, 0.0), wp(50.0, 0.0)]).expect("non-empty");
-    let radius = DEFAULT_ACCEPTANCE_RADIUS;
+    let radius = DEFAULT_ACCEPTANCE_RADIUS_M;
 
     // (vehicle x, expected target x after the step)
     let steps = [
@@ -76,7 +76,7 @@ fn custom_acceptance_radius_changes_advance_threshold() {
         .with_acceptance_radius(10.0);
 
     // Outside the default radius but inside the custom 10 m one.
-    let distance = DEFAULT_ACCEPTANCE_RADIUS + 5.0;
+    let distance = DEFAULT_ACCEPTANCE_RADIUS_M + 5.0;
     assert!(distance < 10.0);
     assert_relative_eq!(target_x_after_step(&mut follower, distance, 0.0), 50.0);
 }
@@ -85,18 +85,18 @@ fn custom_acceptance_radius_changes_advance_threshold() {
 fn works_with_static_slices_and_vecs() {
     static PATH: [WaypointCommand; 2] = [
         WaypointCommand {
-            position: Vec2::new(0.0, 0.0),
-            velocity: None,
-            altitude: 5.0,
-            cruise_speed: 2.0,
-            roll: None,
+            position_m: Vec2::new(0.0, 0.0),
+            velocity_mps: None,
+            altitude_m: 5.0,
+            cruise_speed_mps: 2.0,
+            roll_rad: None,
         },
         WaypointCommand {
-            position: Vec2::new(30.0, 0.0),
-            velocity: None,
-            altitude: 5.0,
-            cruise_speed: 2.0,
-            roll: None,
+            position_m: Vec2::new(30.0, 0.0),
+            velocity_mps: None,
+            altitude_m: 5.0,
+            cruise_speed_mps: 2.0,
+            roll_rad: None,
         },
     ];
 

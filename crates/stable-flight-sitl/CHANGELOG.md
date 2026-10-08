@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `ScriptCommander` fills the core's unit-suffixed `WaypointCommand` fields
+  (`position_m`, `altitude_m`, `cruise_speed_mps`); the CSV columns are unchanged
+  ([#161](https://github.com/wboayue/stable-flight/issues/161)).
 - **Breaking:** `MavlinkPublisher::connect(config) -> Result<_, MavlinkError>` and
   `MavlinkPublisher::with_connection(connection, system_id, component_id)` replace
   `MavlinkPublisher::new`,

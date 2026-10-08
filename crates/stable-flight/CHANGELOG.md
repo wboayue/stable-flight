@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a run.
 - `commanders::WaypointFollower<W: AsRef<[WaypointCommand]>>`: a `Commander` that
   follows and loops a waypoint list by horizontal acceptance radius (default
-  `DEFAULT_ACCEPTANCE_RADIUS`, 3 m; `with_acceptance_radius` to override).
+  `DEFAULT_ACCEPTANCE_RADIUS_M`, 3 m; `with_acceptance_radius` to override).
   Works over an array, `&'static` slice, or `Vec`, and never allocates, so
   waypoint flight can run on firmware. `new` returns `EmptyWaypoints` for an
   empty list.
@@ -59,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   owns the attitude-mode heading-hold target. `Setpoint` is `Attitude(AttitudeSetpoint)`
   (normalized roll/pitch, absolute heading, linear thrust) or `Rate(RateSetpoint)`.
   `TelemetryRecord` and `RecordedTick` gain the tick's `setpoint`.
-- `CopterGuidanceConfig::navigation_period` (default `DEFAULT_NAVIGATION_PERIOD`,
+- `CopterGuidanceConfig::navigation_period_s` (default `DEFAULT_NAVIGATION_PERIOD_S`,
   20 ms): how often the waypoint lateral loop runs; `0.0` runs it every tick.
   `CopterGuidance::new` panics on a negative or non-finite period.
 - The crate is `no_std` (including the `testing` feature), so it builds for
@@ -77,7 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#96](https://github.com/wboayue/stable-flight/issues/96)).
 - `GRAVITY` (standard gravity, 9.80665 m/s²), used by the altitude and lateral
   controllers (they had their own 9.81) and available to backends.
-- `Vec2<T = f32>` and `Vec3<T = f32>` aliases for nalgebra's `Vector2`/`Vector3`,
+- `Vec2` and `Vec3` aliases for nalgebra's `Vector2<f32>`/`Vector3<f32>`,
   and a `stable_flight::nalgebra` re-export of the version the public types use.
 - `euler_angles(&UnitQuaternion<f32>) -> (roll, pitch, yaw)`: the frame
   contract's Euler angles. Prefer it to nalgebra's `UnitQuaternion::euler_angles`,
@@ -86,6 +86,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** the remaining public physical quantities carry unit suffixes
+  ([#161](https://github.com/wboayue/stable-flight/issues/161)):
+  - `VehicleState`: `roll`/`pitch`/`heading` → `roll_rad`/`pitch_rad`/`heading_rad`,
+    `angular_velocity` → `angular_velocity_radps`.
+  - `WaypointCommand`: `position_m`, `velocity_mps`, `altitude_m`, `cruise_speed_mps`,
+    `roll_rad`.
+  - `AttitudeSetpoint::heading` → `heading_rad`.
+  - `CopterGuidanceConfig::navigation_period` → `navigation_period_s`
+    (`DEFAULT_NAVIGATION_PERIOD` → `DEFAULT_NAVIGATION_PERIOD_S`);
+    `AltitudeControllerConfig::max_rate` → `max_rate_mps`; `max_rate` → `max_rate_radps`
+    on the attitude, lateral, and yaw configs; `AttitudeControllerConfig::max_angles` →
+    `max_angles_rad`; `DEFAULT_ACCEPTANCE_RADIUS` → `DEFAULT_ACCEPTANCE_RADIUS_M`.
+  - `testing::conformance::Scenario`: `body_rates_deg_s` → `body_rates_degps`,
+    `position_neu_m`, `velocity_neu_mps`, `acceleration_neu_mps2`; mismatches report
+    the new names (e.g. `roll_rad`, `angular_velocity_radps.z`).
+  - `Vec2`/`Vec3` are plain `f32` aliases (no type parameter).
+
+  Normalized fields (`AttitudeCommand`/`AttitudeSetpoint` roll and pitch, rate commands and
+  setpoints, thrust, throttle) and `max_integral` keep their names.
+- **Breaking:** `BodyRateController`'s `integral_term` and `last_error` are private (controller
+  state, not configuration).
 - **Breaking:** `VehicleState` translational fields are plain SI `f32` vectors with
   unit-suffixed names: `position` → `position_m`, `velocity` → `velocity_mps`,
   `acceleration` → `acceleration_mps2`. The `uom` dependency is removed
@@ -183,7 +204,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its integral term is clamped to the configured `max_integral` (it was
   unbounded), and `AttitudeController::control` saturates out-of-range or NaN
   inputs instead of `assert!`ing. Far from a waypoint the vehicle now commands
-  full tilt (`max_angles`) toward it. A NaN target, position, or attitude
+  full tilt (`max_angles_rad`) toward it. A NaN target, position, or attitude
   estimate no longer sticks in the lateral or attitude integral.
   `LateralController::with_config` now rejects a negative or non-finite
   `max_integral` (it would otherwise panic inside the loop).
@@ -214,7 +235,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Rate-mode NaN rate commands mean "hold zero rate" (per-axis saturation);
     `clamp` let NaN through to zero every moment.
   - `AttitudeController::with_config` and `YawController::with_config` reject a
-    negative or non-finite `max_integral`/`max_rate`, and
+    negative or non-finite `max_integral`/`max_rate_radps`, and
     `BodyRateController::with_config` a negative or non-finite `max_integral`,
     which would otherwise make a per-tick `clamp` panic.
 

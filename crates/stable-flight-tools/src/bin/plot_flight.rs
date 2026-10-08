@@ -140,10 +140,13 @@ fn plot_bounds(waypoints: &[WaypointCommand]) -> PlotBounds {
     let mut speed = (f32::INFINITY, f32::NEG_INFINITY);
 
     for wp in waypoints {
-        x = (x.0.min(wp.position.x), x.1.max(wp.position.x));
-        y = (y.0.min(wp.position.y), y.1.max(wp.position.y));
-        altitude = (altitude.0.min(wp.altitude), altitude.1.max(wp.altitude));
-        speed = (speed.0.min(wp.cruise_speed), speed.1.max(wp.cruise_speed));
+        x = (x.0.min(wp.position_m.x), x.1.max(wp.position_m.x));
+        y = (y.0.min(wp.position_m.y), y.1.max(wp.position_m.y));
+        altitude = (altitude.0.min(wp.altitude_m), altitude.1.max(wp.altitude_m));
+        speed = (
+            speed.0.min(wp.cruise_speed_mps),
+            speed.1.max(wp.cruise_speed_mps),
+        );
     }
 
     PlotBounds {
@@ -243,7 +246,7 @@ where
     // Faint vertical stems from each waypoint down to the floor.
     for wp in waypoints {
         chart.draw_series(LineSeries::new(
-            [xyz(wp, floor), xyz(wp, wp.altitude)],
+            [xyz(wp, floor), xyz(wp, wp.altitude_m)],
             RGBColor(210, 210, 210).stroke_width(1),
         ))?;
     }
@@ -252,10 +255,10 @@ where
     // scripts replay), colored by the segment's mean cruise speed.
     let (speed_min, speed_max) = bounds.speed;
     for (a, b) in looped(waypoints).zip(looped(waypoints).skip(1)) {
-        let mean_speed = 0.5 * (a.cruise_speed + b.cruise_speed);
+        let mean_speed = 0.5 * (a.cruise_speed_mps + b.cruise_speed_mps);
         let color = speed_color(speed_fraction(mean_speed, speed_min, speed_max));
         chart.draw_series(LineSeries::new(
-            [xyz(a, a.altitude), xyz(b, b.altitude)],
+            [xyz(a, a.altitude_m), xyz(b, b.altitude_m)],
             color.stroke_width(3),
         ))?;
     }
@@ -264,7 +267,7 @@ where
     // offset a few pixels in screen space (via EmptyElement at the data point) so it sits
     // beside the dot rather than on top of it.
     chart.draw_series(waypoints.iter().enumerate().map(|(index, wp)| {
-        EmptyElement::at(xyz(wp, wp.altitude))
+        EmptyElement::at(xyz(wp, wp.altitude_m))
             + Circle::new((0, 0), 3, BLACK.filled())
             + Text::new(
                 format!("{}", index + 1),
@@ -280,7 +283,7 @@ where
 /// Maps a waypoint to a plotters 3D coordinate at the given `altitude`, encoding the axis
 /// convention in one place: horizontal `x`, altitude vertical (middle), horizontal `y` as depth.
 fn xyz(wp: &WaypointCommand, altitude: f32) -> (f32, f32, f32) {
-    (wp.position.x, altitude, wp.position.y)
+    (wp.position_m.x, altitude, wp.position_m.y)
 }
 
 /// Iterates the waypoints once and then yields the first again, closing the loop. Zipping this
@@ -297,11 +300,11 @@ mod tests {
 
     fn wp(x: f32, y: f32, altitude: f32, cruise_speed: f32) -> WaypointCommand {
         WaypointCommand {
-            position: Vec2::new(x, y),
-            velocity: None,
-            altitude,
-            cruise_speed,
-            roll: None,
+            position_m: Vec2::new(x, y),
+            velocity_mps: None,
+            altitude_m: altitude,
+            cruise_speed_mps: cruise_speed,
+            roll_rad: None,
         }
     }
 
@@ -359,12 +362,12 @@ mod tests {
             wp(2.0, 0.0, 0.0, 0.0),
             wp(3.0, 0.0, 0.0, 0.0),
         ];
-        let xs: Vec<f32> = looped(&waypoints).map(|wp| wp.position.x).collect();
+        let xs: Vec<f32> = looped(&waypoints).map(|wp| wp.position_m.x).collect();
         check!(xs == vec![1.0, 2.0, 3.0, 1.0]);
 
         // A single waypoint yields itself twice: the degenerate loop is a zero-length segment.
         let single = [wp(5.0, 0.0, 0.0, 0.0)];
-        let xs: Vec<f32> = looped(&single).map(|wp| wp.position.x).collect();
+        let xs: Vec<f32> = looped(&single).map(|wp| wp.position_m.x).collect();
         check!(xs == vec![5.0, 5.0]);
     }
 

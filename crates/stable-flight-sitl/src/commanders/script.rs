@@ -62,7 +62,7 @@ impl From<EmptyWaypoints> for ScriptError {
 /// A [`Commander`] that flies a looping sequence of waypoints loaded from a CSV file.
 ///
 /// A thin wrapper over the core [`WaypointFollower`] (default acceptance radius
-/// [`DEFAULT_ACCEPTANCE_RADIUS`](stable_flight::commanders::waypoint::DEFAULT_ACCEPTANCE_RADIUS)).
+/// [`DEFAULT_ACCEPTANCE_RADIUS_M`](stable_flight::commanders::waypoint::DEFAULT_ACCEPTANCE_RADIUS_M)).
 ///
 /// # Examples
 ///
@@ -104,7 +104,7 @@ impl ScriptCommander {
     /// use stable_flight_sitl::commanders::ScriptCommander;
     ///
     /// let waypoints = vec![WaypointCommand {
-    ///     position: Vec2::zeros(),
+    ///     position_m: Vec2::zeros(),
     ///     ..Default::default()
     /// }];
     /// let commander = ScriptCommander::from_waypoints(waypoints).expect("non-empty");
@@ -122,7 +122,7 @@ impl ScriptCommander {
     }
 
     /// Overrides the horizontal acceptance radius (meters) used to decide when the active
-    /// waypoint has been reached. `radius` must be non-negative.
+    /// waypoint has been reached. `radius_m` must be non-negative.
     ///
     /// # Examples
     ///
@@ -132,15 +132,15 @@ impl ScriptCommander {
     /// use stable_flight_sitl::commanders::ScriptCommander;
     ///
     /// let commander = ScriptCommander::from_waypoints(vec![WaypointCommand {
-    ///     position: Vec2::zeros(),
+    ///     position_m: Vec2::zeros(),
     ///     ..Default::default()
     /// }])
     /// .expect("non-empty")
     /// .with_acceptance_radius(5.0);
     /// ```
-    pub fn with_acceptance_radius(self, radius: f32) -> Self {
+    pub fn with_acceptance_radius(self, radius_m: f32) -> Self {
         ScriptCommander {
-            follower: self.follower.with_acceptance_radius(radius),
+            follower: self.follower.with_acceptance_radius(radius_m),
         }
     }
 }
@@ -238,11 +238,11 @@ fn parse_waypoints(path: &str, contents: &str) -> Result<Vec<WaypointCommand>, S
         };
 
         waypoints.push(WaypointCommand {
-            position: Vec2::new(parse(fields[0], "x")?, parse(fields[1], "y")?),
-            velocity: None,
-            altitude: parse(fields[2], "altitude")?,
-            cruise_speed: parse(fields[3], "cruise_speed")?,
-            roll: None,
+            position_m: Vec2::new(parse(fields[0], "x")?, parse(fields[1], "y")?),
+            velocity_mps: None,
+            altitude_m: parse(fields[2], "altitude")?,
+            cruise_speed_mps: parse(fields[3], "cruise_speed")?,
+            roll_rad: None,
         });
     }
 

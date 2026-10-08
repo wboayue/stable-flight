@@ -66,10 +66,10 @@ fn attitude_reports_euler_angles_with_yaw_in_minus_pi_to_pi() {
 
     for (roll, pitch, heading, yaw) in cases {
         let state = VehicleState {
-            roll,
-            pitch,
-            heading,
-            angular_velocity: [0.1, -0.2, 0.3].into(),
+            roll_rad: roll,
+            pitch_rad: pitch,
+            heading_rad: heading,
+            angular_velocity_radps: [0.1, -0.2, 0.3].into(),
             ..Default::default()
         };
         let data = attitude(&state, 0);

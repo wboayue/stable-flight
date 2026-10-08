@@ -51,7 +51,7 @@ pub struct CopterStabilizerConfig {
 
     pub thrust_curve_exponent: f32,
     // Maximum angular rates (roll, pitch, yaw) in rad/s.
-    //    pub max_rates: Vec3<f32>,
+    //    pub max_rates: Vec3,
 }
 
 impl Default for CopterStabilizerConfig {
@@ -94,7 +94,7 @@ pub struct CopterStabilizer {
     pub(crate) yaw_controller: YawController,
 
     /// Maximum angular rates (roll, pitch, yaw) in rad/s that a full-scale rate setpoint maps to.
-    pub(crate) max_rates: Vec3<f32>,
+    pub(crate) max_rates: Vec3,
 
     thrust_curve_exponent: f32,
 }
@@ -113,7 +113,7 @@ impl CopterStabilizer {
             yaw_controller: YawController::with_config(&YawControllerConfig {
                 gains: config.yaw_gains,
                 max_integral: 100.0,
-                max_rate: 2.0,
+                max_rate_radps: 2.0,
                 //                max_rate: config.max_rates.z,
             }),
 
@@ -181,14 +181,14 @@ impl CopterStabilizer {
             .attitude_controller
             .control(dt, desired_angles, current_angles);
 
-        let desired_yaw_rate = self
-            .yaw_controller
-            .control(dt, setpoint.heading, current_heading);
+        let desired_yaw_rate =
+            self.yaw_controller
+                .control(dt, setpoint.heading_rad, current_heading);
 
         let current_rates = Vec3::new(
-            estimated_state.angular_velocity.x,
-            estimated_state.angular_velocity.y,
-            estimated_state.angular_velocity.z,
+            estimated_state.angular_velocity_radps.x,
+            estimated_state.angular_velocity_radps.y,
+            estimated_state.angular_velocity_radps.z,
         );
 
         let desired_rates = Vec3::new(desired_rates.x, desired_rates.y, desired_yaw_rate);
@@ -230,9 +230,9 @@ impl CopterStabilizer {
         .component_mul(&self.max_rates);
 
         let current_rates = Vec3::new(
-            estimated_state.angular_velocity.x,
-            estimated_state.angular_velocity.y,
-            estimated_state.angular_velocity.z,
+            estimated_state.angular_velocity_radps.x,
+            estimated_state.angular_velocity_radps.y,
+            estimated_state.angular_velocity_radps.z,
         );
 
         let moments = self

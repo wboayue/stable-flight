@@ -8,18 +8,19 @@ pub struct LateralControllerConfig {
     /// PID gains for roll and pitch control (Kp, Ki, Kd).
     pub gains: Gains,
 
-    /// Maximum absolute value of the integral term.
+    /// Maximum absolute value of the integrated position error, in m·s, per axis.
     /// Prevents integral windup by limiting error accumulation.
     pub max_integral: f32,
 
-    /// Maximum angular rates in radians/second for roll (x) and pitch (y).
-    /// Limits the output rates sent to the rate controller.
-    pub max_rate: Vec2<f32>,
+    /// Maximum roll (x) and pitch (y) rates in radians/second. Currently unused: the
+    /// controller outputs normalized tilt
+    /// ([#71](https://github.com/wboayue/stable-flight/issues/71)).
+    pub max_rate_radps: Vec2,
 }
 
 impl Default for LateralControllerConfig {
     /// Provides a default configuration with reasonable starting values.
-    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and max_rate (2 rad/s) may need tuning
+    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and `max_rate_radps` (2 rad/s) may need tuning
     /// for specific vehicles.
     fn default() -> Self {
         Self {
@@ -28,15 +29,15 @@ impl Default for LateralControllerConfig {
                 i: 0.3,
                 d: 0.15,
             },
-            max_integral: 100.0,           // Arbitrary limit
-            max_rate: Vec2::new(2.0, 2.0), // 2 rad/s (~114°/s) for roll and pitch
+            max_integral: 100.0,                 // Arbitrary limit
+            max_rate_radps: Vec2::new(2.0, 2.0), // 2 rad/s (~114°/s) for roll and pitch
         }
     }
 }
 
 pub struct LateralController {
     config: LateralControllerConfig,
-    integrated_error: Vec2<f32>, // Accumulated error (roll, pitch)
+    integrated_error: Vec2, // Accumulated error (roll, pitch)
     max_integral: f32,
 }
 
@@ -76,7 +77,7 @@ impl LateralController {
     /// let config = LateralControllerConfig {
     ///     gains: Gains { p: 3.0, i: 0.3, d: 0.15 },
     ///     max_integral: 100.0,
-    ///     max_rate: Vec2::new(2.0, 2.0),
+    ///     max_rate_radps: Vec2::new(2.0, 2.0),
     /// };
     ///
     /// let controller = LateralController::with_config(&config);
@@ -102,14 +103,14 @@ impl LateralController {
     /// # Arguments
     ///
     /// * `dt` - Time step since the last update (must be positive).
-    /// * `desired_position` - Target position (x, y) in meters.
-    /// * `estimated_position` - Current position (x, y) in meters.
-    /// * `estimated_velocity` - Current velocity (vx, vy) in m/s.
+    /// * `desired_position_m` - Target position (x, y) in meters.
+    /// * `estimated_position_m` - Current position (x, y) in meters.
+    /// * `estimated_velocity_mps` - Current velocity (vx, vy) in m/s.
     ///
     /// # Returns
     ///
     /// Desired roll and pitch as normalized values (the attitude controller scales them by its
-    /// `max_angles`). The length of the (roll, pitch) request is capped at 1, so far from the
+    /// `max_angles_rad`). The length of the (roll, pitch) request is capped at 1, so far from the
     /// target the vehicle commands full tilt straight toward it: a far diagonal target gives
     /// about 0.71 on each axis, not 1. A non-finite error or velocity gives level. The integral
     /// term is clamped to `max_integral` to limit windup.
@@ -122,25 +123,25 @@ impl LateralController {
     ///
     /// let mut controller = LateralController::new();
     /// let dt = 0.004;
-    /// let desired_position = Vec2::new(5.0, 2.0); // 5 m north, 2 m east
-    /// let estimated_position = Vec2::new(4.8, 1.9);
-    /// let estimated_velocity = Vec2::new(0.1, 0.05);
+    /// let desired_position_m = Vec2::new(5.0, 2.0); // 5 m north, 2 m east
+    /// let estimated_position_m = Vec2::new(4.8, 1.9);
+    /// let estimated_velocity_mps = Vec2::new(0.1, 0.05);
     ///
     /// // Target is ahead and to the right: roll right (+x), nose down (-y)
-    /// let tilt = controller.control(dt, desired_position, estimated_position, estimated_velocity);
+    /// let tilt = controller.control(dt, desired_position_m, estimated_position_m, estimated_velocity_mps);
     /// assert!(tilt.x > 0.0 && tilt.y < 0.0);
     /// assert!(tilt.norm() <= 1.0);
     /// ```
     pub fn control(
         &mut self,
         dt: f32,
-        desired_position: Vec2<f32>,
-        estimated_position: Vec2<f32>,
-        estimated_velocity: Vec2<f32>,
-    ) -> Vec2<f32> {
+        desired_position_m: Vec2,
+        estimated_position_m: Vec2,
+        estimated_velocity_mps: Vec2,
+    ) -> Vec2 {
         let gains = &self.config.gains;
 
-        let error = desired_position - estimated_position;
+        let error = desired_position_m - estimated_position_m;
 
         // A non-finite error (NaN/∞ target or position) yields level (no tilt) and never enters
         // the integral, where NaN would stick (it survives `clamp`).
@@ -154,7 +155,7 @@ impl LateralController {
             self.max_integral,
         );
         let accel_cmd =
-            gains.p * error + gains.i * self.integrated_error + gains.d * (-estimated_velocity);
+            gains.p * error + gains.i * self.integrated_error + gains.d * (-estimated_velocity_mps);
 
         // Convert acceleration to roll/pitch angles (simplified)
         let roll_cmd = accel_cmd.y / GRAVITY;
