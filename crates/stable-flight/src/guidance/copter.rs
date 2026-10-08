@@ -276,11 +276,15 @@ impl CopterGuidance {
         let linear_thrust = self.altitude.control(
             &self.config.altitude,
             dt,
-            waypoint_command.altitude_m,
-            0.0,
-            estimated_state.position_m.z,
-            estimated_state.velocity_mps.z,
-            estimated_state.attitude,
+            AltitudeTarget {
+                altitude_m: waypoint_command.altitude_m,
+                velocity_mps: 0.0,
+            },
+            AltitudeEstimate {
+                altitude_m: estimated_state.position_m.z,
+                velocity_mps: estimated_state.velocity_mps.z,
+                attitude: estimated_state.attitude,
+            },
         );
 
         AttitudeSetpoint {

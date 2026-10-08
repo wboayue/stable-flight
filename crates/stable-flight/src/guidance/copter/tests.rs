@@ -525,11 +525,15 @@ fn reference_thrust(altitude: &mut AltitudeController, dt: f32, state: &VehicleS
     altitude.control(
         &reference_configs().1,
         dt,
-        near_waypoint().altitude_m,
-        0.0,
-        state.position_m.z,
-        state.velocity_mps.z,
-        state.attitude,
+        AltitudeTarget {
+            altitude_m: near_waypoint().altitude_m,
+            velocity_mps: 0.0,
+        },
+        AltitudeEstimate {
+            altitude_m: state.position_m.z,
+            velocity_mps: state.velocity_mps.z,
+            attitude: state.attitude,
+        },
     )
 }
 

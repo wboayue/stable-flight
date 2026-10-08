@@ -107,7 +107,7 @@ let yaw_rate = controller.control(&config, dt, desired_yaw, estimated_yaw);
 
 **Purpose**: Controls vehicle altitude by commanding thrust.
 
-**Input**: Desired altitude (m), estimated altitude (m), velocity, attitude  
+**Input**: `AltitudeTarget` (altitude m, climb rate m/s) and `AltitudeEstimate` (altitude m, climb rate m/s, attitude)  
 **Output**: Normalized thrust command [0, 1]
 
 **Key Features**:
@@ -118,27 +118,22 @@ let yaw_rate = controller.control(&config, dt, desired_yaw, estimated_yaw);
 
 **Usage**:
 ```rust
-use stable_flight::controllers::{AltitudeController, AltitudeControllerConfig};
+use stable_flight::controllers::{
+    AltitudeController, AltitudeControllerConfig, AltitudeEstimate, AltitudeTarget,
+};
 use stable_flight::nalgebra::UnitQuaternion;
 
 let config = AltitudeControllerConfig::default();
 let mut controller = AltitudeController::default();
 let dt = 0.004;
-let desired_altitude = 10.0; // 10 meters
-let desired_velocity = 0.0;  // Hover
-let estimated_altitude = 9.5;
-let estimated_velocity = -0.1; // Slight descent
-let estimated_attitude = UnitQuaternion::identity();
+let target = AltitudeTarget { altitude_m: 10.0, velocity_mps: 0.0 }; // hover at 10 m
+let estimate = AltitudeEstimate {
+    altitude_m: 9.5,
+    velocity_mps: -0.1, // slight descent
+    attitude: UnitQuaternion::identity(),
+};
 
-let thrust = controller.control(
-    &config,
-    dt,
-    desired_altitude,
-    desired_velocity,
-    estimated_altitude,
-    estimated_velocity,
-    estimated_attitude,
-);
+let thrust = controller.control(&config, dt, target, estimate);
 ```
 
 ### Lateral Controller (`lateral.rs`)
@@ -295,8 +290,8 @@ The position controllers (altitude, lateral) run in `CopterGuidance`, which turn
 
 ```rust,ignore
 // Guidance (src/guidance/copter.rs), waypoint mode
-let tilt = self.lateral.control(&self.lateral_config, dt, waypoint, position, velocity);
-let thrust = self.altitude.control(&self.altitude_config, dt, command.altitude_m, 0.0, altitude, climb_rate, attitude);
+let tilt = self.lateral.control(&self.config.lateral, dt, waypoint, position, velocity);
+let thrust = self.altitude.control(&self.config.altitude, dt, AltitudeTarget { altitude_m, velocity_mps: 0.0 }, AltitudeEstimate { altitude_m: z, velocity_mps: vz, attitude });
 
 // Stabilizer (src/stabilizers/copter.rs)
 let attitude_rates = self.attitude.control(&config.attitude, dt, setpoint_tilt, current_tilt);
