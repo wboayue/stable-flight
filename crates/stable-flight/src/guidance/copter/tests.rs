@@ -477,15 +477,8 @@ fn heading_slew_depends_on_time_not_tick_count() {
 
 /// A vehicle at rest at `(x, y, z)` (north, east, up; m).
 fn state_at(x: f32, y: f32, z: f32) -> VehicleState {
-    use uom::si::f32::Length;
-    use uom::si::length::meter;
-
     VehicleState {
-        position: Vec3::new(
-            Length::new::<meter>(x),
-            Length::new::<meter>(y),
-            Length::new::<meter>(z),
-        ),
+        position_m: Vec3::new(x, y, z),
         ..Default::default()
     }
 }
@@ -528,8 +521,8 @@ fn reference_tilt(lateral: &mut LateralController, step: f32, state: &VehicleSta
     lateral.control(
         step,
         target,
-        Vec2::new(state.position.x.value, state.position.y.value),
-        Vec2::new(state.velocity.x.value, state.velocity.y.value),
+        Vec2::new(state.position_m.x, state.position_m.y),
+        Vec2::new(state.velocity_mps.x, state.velocity_mps.y),
     )
 }
 
@@ -538,8 +531,8 @@ fn reference_thrust(altitude: &mut AltitudeController, dt: f32, state: &VehicleS
         dt,
         near_waypoint().altitude,
         0.0,
-        state.position.z.value,
-        state.velocity.z.value,
+        state.position_m.z,
+        state.velocity_mps.z,
         state.attitude,
     )
 }

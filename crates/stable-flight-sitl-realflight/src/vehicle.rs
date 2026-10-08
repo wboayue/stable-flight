@@ -4,10 +4,6 @@ use log::{error, warn};
 use realflight_bridge::{ControlInputs, RealFlightBridge, SimulatorState};
 use stable_flight::Vec3;
 use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
-use uom::si::acceleration::meter_per_second_squared;
-use uom::si::f32::{Acceleration, Length, Velocity};
-use uom::si::length::meter;
-use uom::si::velocity::meter_per_second;
 
 use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateEstimator, VehicleState};
 
@@ -279,8 +275,8 @@ where
 ///     ..Default::default()
 /// };
 /// let state = vehicle_state(&report);
-/// assert_eq!(state.position.x.value, 4.0);
-/// assert_eq!(state.position.y.value, 3.0);
+/// assert_eq!(state.position_m.x, 4.0);
+/// assert_eq!(state.position_m.y, 3.0);
 /// ```
 pub fn vehicle_state(state: &SimulatorState) -> VehicleState {
     // RealFlight's quaternion axes are (y, x, -z) of NED → FRD. Taken as reported, without
@@ -298,21 +294,13 @@ pub fn vehicle_state(state: &SimulatorState) -> VehicleState {
 
     VehicleState {
         // Position is east/north; altitude is already up-positive.
-        position: Vec3::new(
-            Length::new::<meter>(state.aircraft_position_y_m),
-            Length::new::<meter>(state.aircraft_position_x_m),
-            Length::new::<meter>(state.altitude_asl_m),
+        position_m: Vec3::new(
+            state.aircraft_position_y_m,
+            state.aircraft_position_x_m,
+            state.altitude_asl_m,
         ),
-        velocity: Vec3::new(
-            Velocity::new::<meter_per_second>(velocity.x),
-            Velocity::new::<meter_per_second>(velocity.y),
-            Velocity::new::<meter_per_second>(-velocity.z),
-        ),
-        acceleration: Vec3::new(
-            Acceleration::new::<meter_per_second_squared>(acceleration.x),
-            Acceleration::new::<meter_per_second_squared>(acceleration.y),
-            Acceleration::new::<meter_per_second_squared>(-acceleration.z),
-        ),
+        velocity_mps: Vec3::new(velocity.x, velocity.y, -velocity.z),
+        acceleration_mps2: Vec3::new(acceleration.x, acceleration.y, -acceleration.z),
         attitude,
         // Yaw rate and azimuth are counterclockwise-positive (nose left).
         angular_velocity: Vec3::new(

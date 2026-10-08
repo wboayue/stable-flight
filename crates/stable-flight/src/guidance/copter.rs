@@ -257,8 +257,8 @@ impl CopterGuidance {
             dt,
             waypoint_command.altitude,
             0.0,
-            estimated_state.position.z.value,
-            estimated_state.velocity.z.value,
+            estimated_state.position_m.z,
+            estimated_state.velocity_mps.z,
             estimated_state.attitude,
         );
 
@@ -283,13 +283,11 @@ impl CopterGuidance {
         };
 
         let desired_position = Vec2::new(waypoint_command.position.x, waypoint_command.position.y);
-        let current_position = Vec2::new(
-            estimated_state.position.x.value,
-            estimated_state.position.y.value,
-        );
+        let current_position =
+            Vec2::new(estimated_state.position_m.x, estimated_state.position_m.y);
         let velocity = Vec2::new(
-            estimated_state.velocity.x.value,
-            estimated_state.velocity.y.value,
+            estimated_state.velocity_mps.x,
+            estimated_state.velocity_mps.y,
         );
 
         // A non-finite target or estimate gets level for this tick only (input policy). The

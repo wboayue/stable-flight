@@ -15,7 +15,6 @@ repository.workspace = true
 [dependencies]
 stable-flight = { path = "../stable-flight", version = "0.1.0" }
 realflight-bridge = "2.0.0"
-uom = { workspace = true, features = ["std"] }
 log.workspace = true
 
 [dev-dependencies]

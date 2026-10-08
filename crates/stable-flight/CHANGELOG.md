@@ -63,8 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   20 ms): how often the waypoint lateral loop runs; `0.0` runs it every tick.
   `CopterGuidance::new` panics on a negative or non-finite period.
 - The crate is `no_std` (including the `testing` feature), so it builds for
-  bare-metal targets such as `thumbv7em-none-eabihf`. It depends on `uom` and
-  `nalgebra` without their `std` features; enable them yourself if you need them.
+  bare-metal targets such as `thumbv7em-none-eabihf`. It depends on `nalgebra`
+  without its `std` feature; enable it yourself if you need it.
 - **Breaking:** `CopterGuidanceConfig::max_tilt` (default `DEFAULT_MAX_TILT`, 0.6 of
   the stabilizer's maximum tilt) caps the magnitude of the waypoint roll/pitch
   request, so a far waypoint can't ask for full tilt while also climbing hard.
@@ -86,6 +86,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `VehicleState` translational fields are plain SI `f32` vectors with
+  unit-suffixed names: `position` → `position_m`, `velocity` → `velocity_mps`,
+  `acceleration` → `acceleration_mps2`. The `uom` dependency is removed
+  ([#141](https://github.com/wboayue/stable-flight/issues/141)). Conformance mismatches
+  report the new field names (e.g. `position_m.z`).
 - **Breaking:** vector and quaternion types come from `nalgebra` 0.35 instead of
   `robomath` ([#87](https://github.com/wboayue/stable-flight/issues/87)).
   `VehicleState::attitude` is a `UnitQuaternion<f32>`; the other vector fields

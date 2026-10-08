@@ -30,10 +30,6 @@ use core::fmt;
 
 use crate::Vec3;
 use nalgebra::UnitQuaternion;
-use uom::si::acceleration::meter_per_second_squared;
-use uom::si::f32::{Acceleration, Length, Velocity};
-use uom::si::length::meter;
-use uom::si::velocity::meter_per_second;
 
 use crate::VehicleState;
 use crate::math::wrap_angle;
@@ -175,20 +171,11 @@ impl Scenario {
         let [x, y, z] = self.position_neu;
         let [vx, vy, vz] = self.velocity_neu;
         let [ax, ay, az] = self.acceleration_neu;
-        let accel = Acceleration::new::<meter_per_second_squared>;
 
         VehicleState {
-            position: Vec3::new(
-                Length::new::<meter>(x),
-                Length::new::<meter>(y),
-                Length::new::<meter>(z),
-            ),
-            velocity: Vec3::new(
-                Velocity::new::<meter_per_second>(vx),
-                Velocity::new::<meter_per_second>(vy),
-                Velocity::new::<meter_per_second>(vz),
-            ),
-            acceleration: Vec3::new(accel(ax), accel(ay), accel(az)),
+            position_m: Vec3::new(x, y, z),
+            velocity_mps: Vec3::new(vx, vy, vz),
+            acceleration_mps2: Vec3::new(ax, ay, az),
             attitude: UnitQuaternion::from_euler_angles(roll, pitch, heading),
             angular_velocity: Vec3::new(p, q, r),
             roll,
@@ -216,26 +203,26 @@ impl Scenario {
         let mut error = ConformanceError::new(self.name);
 
         let linear = [
-            ("position.x", e.position.x.value, state.position.x.value),
-            ("position.y", e.position.y.value, state.position.y.value),
-            ("position.z", e.position.z.value, state.position.z.value),
-            ("velocity.x", e.velocity.x.value, state.velocity.x.value),
-            ("velocity.y", e.velocity.y.value, state.velocity.y.value),
-            ("velocity.z", e.velocity.z.value, state.velocity.z.value),
+            ("position_m.x", e.position_m.x, state.position_m.x),
+            ("position_m.y", e.position_m.y, state.position_m.y),
+            ("position_m.z", e.position_m.z, state.position_m.z),
+            ("velocity_mps.x", e.velocity_mps.x, state.velocity_mps.x),
+            ("velocity_mps.y", e.velocity_mps.y, state.velocity_mps.y),
+            ("velocity_mps.z", e.velocity_mps.z, state.velocity_mps.z),
             (
-                "acceleration.x",
-                e.acceleration.x.value,
-                state.acceleration.x.value,
+                "acceleration_mps2.x",
+                e.acceleration_mps2.x,
+                state.acceleration_mps2.x,
             ),
             (
-                "acceleration.y",
-                e.acceleration.y.value,
-                state.acceleration.y.value,
+                "acceleration_mps2.y",
+                e.acceleration_mps2.y,
+                state.acceleration_mps2.y,
             ),
             (
-                "acceleration.z",
-                e.acceleration.z.value,
-                state.acceleration.z.value,
+                "acceleration_mps2.z",
+                e.acceleration_mps2.z,
+                state.acceleration_mps2.z,
             ),
         ];
         let rates = [
@@ -349,7 +336,7 @@ impl core::error::Error for ConformanceError {}
 /// One field of a [`ConformanceError`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Mismatch {
-    /// The `VehicleState` field, e.g. `velocity.z`.
+    /// The `VehicleState` field, e.g. `velocity_mps.z`.
     pub field: &'static str,
     /// The contract's value (SI: m, m/s, m/s², rad, rad/s).
     pub expected: f32,

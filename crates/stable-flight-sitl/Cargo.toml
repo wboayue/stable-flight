@@ -23,7 +23,6 @@ windows-sys = { version = "0.61", features = ["Win32_System_Console"] }  # For W
 
 [dev-dependencies]
 stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["testing"] }
-uom = { workspace = true, features = ["std"] }
 approx.workspace = true
 assert2.workspace = true
 # Examples parse their CLI args with clap.
