@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `copter-auto-realflight` flies the script once and hovers on the last waypoint; `--loop`
+  restores looping ([#126](https://github.com/wboayue/stable-flight/issues/126)). Waypoint
+  legs are flown at the script's cruise speed
+  ([#109](https://github.com/wboayue/stable-flight/issues/109)).
+- **Breaking:** `airframes::quadcopter_x` guidance uses the cascaded `LateralControllerConfig`
+  (same response below the speed limit) ([#109](https://github.com/wboayue/stable-flight/issues/109)).
 - **Breaking:** `RealFlightVehicle` fills the renamed plain-`f32` `VehicleState` fields
   (`position_m`, `velocity_mps`, `acceleration_mps2`); the `uom` dependency is removed
   ([#141](https://github.com/wboayue/stable-flight/issues/141)).

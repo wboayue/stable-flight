@@ -141,29 +141,39 @@ let thrust = controller.control(&config, dt, target, estimate);
 
 **Purpose**: Controls horizontal position (X-Y) by commanding a horizontal acceleration.
 
-**Input**: Desired position (m), estimated position (m), velocity (m/s)  
+**Input**: `LateralTarget` (position (m), feedforward velocity (m/s), speed limit (m/s)),
+`LateralEstimate` (position (m), velocity (m/s))  
 **Output**: Desired horizontal acceleration (m/s², unsaturated). `CopterGuidance` turns it into a
-tilt of `atan(|a| / g)` toward it, capped at its `max_tilt_rad`.
+tilt of `atan(|a| / g)` toward it, relative to the heading, capped at its `max_tilt_rad`.
 
 **Key Features**:
-- PID control with velocity damping
+- Cascade: position P → desired velocity (plus feedforward, capped at the speed limit) →
+  velocity PID → acceleration
 - Airframe-independent: tilt conversion and limits belong to the guidance
 - Anti-windup protection
 
 **Usage**:
 ```rust
-use stable_flight::controllers::{LateralController, LateralControllerConfig};
+use stable_flight::controllers::{
+    LateralController, LateralControllerConfig, LateralEstimate, LateralTarget,
+};
 use stable_flight::Vec2;
 
 let config = LateralControllerConfig::default();
 let mut controller = LateralController::default();
 let dt = 0.004;
-let desired_position = Vec2::new(5.0, 2.0); // 5m north, 2m east
-let estimated_position = Vec2::new(4.8, 1.9);
-let estimated_velocity = Vec2::new(0.1, 0.05);
+let target = LateralTarget {
+    position_m: Vec2::new(5.0, 2.0), // 5m north, 2m east
+    velocity_mps: Vec2::zeros(),     // stop there
+    max_speed_mps: 7.0,
+};
+let estimate = LateralEstimate {
+    position_m: Vec2::new(4.8, 1.9),
+    velocity_mps: Vec2::new(0.1, 0.05),
+};
 
 // Horizontal acceleration request (north, east) in m/s²
-let accel_mps2 = controller.control(&config, dt, desired_position, estimated_position, estimated_velocity);
+let accel_mps2 = controller.control(&config, dt, target, estimate);
 ```
 
 ## Configuration
@@ -291,7 +301,8 @@ The position controllers (altitude, lateral) run in `CopterGuidance`, which turn
 
 ```rust,ignore
 // Guidance (src/guidance/copter.rs), waypoint mode
-let tilt = self.lateral.control(&self.config.lateral, dt, waypoint, position, velocity);
+let accel = self.lateral.control(&self.config.lateral, dt, lateral_target, lateral_estimate);
+let tilt = tilt_for_acceleration(accel, heading);
 let target = AltitudeTarget { altitude_m: waypoint.altitude_m, velocity_mps: 0.0 };
 let estimate = AltitudeEstimate { altitude_m: z, velocity_mps: vz, attitude };
 let thrust = self.altitude.control(&self.config.altitude, dt, target, estimate);

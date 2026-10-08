@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ScriptCommander::with_route_end`: loop the script (default) or hold the last waypoint
+  ([#126](https://github.com/wboayue/stable-flight/issues/126)).
 - `Command`, `AttitudeCommand`, `RateCommand`, `ControlOutput`, and
   `ActuatorCommand` now derive `Clone` and `Copy` (plain data), so telemetry
   sinks can keep copies of a tick's `TelemetryRecord`.

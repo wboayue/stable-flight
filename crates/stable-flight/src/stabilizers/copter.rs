@@ -27,7 +27,8 @@
 //!
 //! # Setpoints
 //!
-//! - [`Setpoint::Rate`]: rate loop only (acro).
+//! - [`Setpoint::Rate`]: rate loop only (acro); the idle attitude and heading loops are
+//!   cleared, so attitude flight resumes from fresh state.
 //! - [`Setpoint::Attitude`]: attitude and heading loops feeding the rate loop.
 
 use crate::{Vec2, Vec3};
@@ -197,7 +198,13 @@ impl Stabilizer for CopterStabilizer {
 
         match setpoint {
             Setpoint::Attitude(attitude) => self.track_attitude(dt, attitude, estimated_state),
-            Setpoint::Rate(rates) => self.track_rates(dt, rates, estimated_state),
+            Setpoint::Rate(rates) => {
+                // The attitude and heading loops are idle: clear them so a switch back to
+                // attitude flight carries no stale integral or derivative history (#70).
+                self.attitude = AttitudeController::default();
+                self.yaw = YawController::default();
+                self.track_rates(dt, rates, estimated_state)
+            }
         }
     }
 

@@ -17,10 +17,12 @@ loop {
 
 ### Commanders
 
-`commanders::WaypointFollower` flies and loops any waypoint list without allocating — an array or `&'static` slice on firmware, a `Vec` on a host:
+`commanders::WaypointFollower` flies any waypoint list without allocating — an array or `&'static` slice on firmware, a `Vec` on a host — looping it or holding the last waypoint (`RouteEnd`):
 
 ```rust
-let mut commander = WaypointFollower::new(PATH)?.with_acceptance_radius(2.0);
+let mut commander = WaypointFollower::new(PATH)?
+    .with_acceptance_radius(2.0)
+    .with_route_end(RouteEnd::Hold);
 ```
 
 Input-device and file-based commanders (joysticks, CSV scripts) live in `stable-flight-sitl`.
@@ -52,7 +54,7 @@ stable_flight::conformance_tests! {
 
 ### Guidance
 
-Guidance is the outer loop: it turns the commander's `ControlInput` into a `Setpoint` (an attitude or rate target) for the stabilizer. `CopterGuidance` flies waypoints with altitude and lateral position loops (the lateral loop at a configurable, slower rate), turns attitude-mode yaw stick into a heading-hold target, and passes rate commands through.
+Guidance is the outer loop: it turns the commander's `ControlInput` into a `Setpoint` (an attitude or rate target) for the stabilizer. `CopterGuidance` flies waypoints with altitude and lateral position loops (the lateral loop at a configurable, slower rate, capped at each waypoint's cruise speed), turns attitude-mode yaw stick into a heading-hold target that waypoint flight also holds, and passes rate commands through.
 
 ```rust
 let guidance = CopterGuidance::new(CopterGuidanceConfig::default());

@@ -2,7 +2,8 @@
 //!
 //! [`ScriptCommander`] is a CSV front end for the core [`WaypointFollower`]: this module
 //! turns text into data (`parse_waypoints`) and handles file I/O ([`ScriptCommander::new`],
-//! [`load_waypoints`]); following and looping the waypoints is the follower's job. Neither
+//! [`load_waypoints`]); following the waypoints, and looping or holding at the end, is the
+//! follower's job. Neither
 //! knows how the path was shaped (e.g. a figure-eight); the geometry lives in the CSV.
 //!
 //! # CSV format
@@ -23,7 +24,7 @@ use std::fs;
 use stable_flight::Vec2;
 use thiserror::Error;
 
-use stable_flight::commanders::{EmptyWaypoints, WaypointFollower};
+use stable_flight::commanders::{EmptyWaypoints, RouteEnd, WaypointFollower};
 use stable_flight::{Command, Commander, VehicleState, WaypointCommand};
 
 /// Number of comma-separated fields expected on each waypoint row.
@@ -59,10 +60,11 @@ impl From<EmptyWaypoints> for ScriptError {
     }
 }
 
-/// A [`Commander`] that flies a looping sequence of waypoints loaded from a CSV file.
+/// A [`Commander`] that flies a sequence of waypoints loaded from a CSV file.
 ///
 /// A thin wrapper over the core [`WaypointFollower`] (default acceptance radius
-/// [`DEFAULT_ACCEPTANCE_RADIUS_M`](stable_flight::commanders::waypoint::DEFAULT_ACCEPTANCE_RADIUS_M)).
+/// [`DEFAULT_ACCEPTANCE_RADIUS_M`](stable_flight::commanders::waypoint::DEFAULT_ACCEPTANCE_RADIUS_M),
+/// default [`RouteEnd::Loop`]).
 ///
 /// # Examples
 ///
@@ -143,6 +145,31 @@ impl ScriptCommander {
             follower: self.follower.with_acceptance_radius(radius_m),
         }
     }
+
+    /// Sets what happens after the last waypoint: loop the script (the default) or hold the
+    /// last waypoint ([`RouteEnd`]).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::Vec2;
+    /// use stable_flight::WaypointCommand;
+    /// use stable_flight::commanders::RouteEnd;
+    /// use stable_flight_sitl::commanders::ScriptCommander;
+    ///
+    /// let commander = ScriptCommander::from_waypoints(vec![WaypointCommand {
+    ///     position_m: Vec2::zeros(),
+    ///     ..Default::default()
+    /// }])
+    /// .expect("non-empty")
+    /// .with_route_end(RouteEnd::Hold);
+    /// assert!(!commander.follower().is_complete());
+    /// ```
+    pub fn with_route_end(self, route_end: RouteEnd) -> Self {
+        ScriptCommander {
+            follower: self.follower.with_route_end(route_end),
+        }
+    }
 }
 
 /// Loads and parses a waypoint script from the CSV file at `path`.
@@ -176,7 +203,7 @@ pub fn load_waypoints(path: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
 
 impl Commander for ScriptCommander {
     /// Delegates to the core [`WaypointFollower`]: advances within the acceptance radius
-    /// (horizontal distance) and loops the path.
+    /// (horizontal distance), then loops or holds per its [`RouteEnd`].
     fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
         self.follower.next_command(dt, current_state)
     }

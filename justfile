@@ -60,7 +60,7 @@ cover:
 fly-manual *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- {{ARGS}}
 
-# Scripted figure-eight in RealFlight; args: [script.csv] [--host host:port]
+# Scripted figure-eight in RealFlight; args: [script.csv] [--host host:port] [--loop]
 fly-auto *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- {{ARGS}}
 

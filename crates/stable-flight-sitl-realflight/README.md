@@ -48,7 +48,7 @@ Run these from the repository root (`just fly-manual` / `just fly-auto` / `just 
 # Joystick (Logitech Extreme 3D); RealFlight host defaults to 10.211.55.3:8080
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --host 192.168.1.20:8080
 
-# Scripted figure-eight (script path is the first argument)
+# Scripted figure-eight (script path is the first argument): flies it once, then hovers; --loop repeats it
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv
 
 # Joystick (or --script) flight recording raw SimulatorState and channels to CSV (frame checks)

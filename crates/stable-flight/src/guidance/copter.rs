@@ -3,9 +3,13 @@
 //!
 //! | Control input | Setpoint |
 //! |---|---|
-//! | [`ControlInput::Rate`] | [`Setpoint::Rate`], sticks passed through |
+//! | [`ControlInput::Rate`] | [`Setpoint::Rate`], sticks passed through; the heading-hold target follows the vehicle |
 //! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target |
-//! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position loop → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading north |
+//! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading held |
+//!
+//! Switching modes doesn't jump the heading: attitude and waypoint flight share one
+//! heading-hold target, and rate flight keeps it on the vehicle's heading. The altitude and
+//! lateral loops start fresh each time waypoint flight is entered.
 
 use core::f32::consts::FRAC_PI_4;
 
@@ -19,7 +23,7 @@ use crate::{
 };
 
 use super::rate_divider::RateDivider;
-use crate::math::{assert_dt, cap_magnitude, saturate_unit, wrap_angle};
+use crate::math::{all_finite, assert_dt, cap_magnitude, saturate_unit, wrap_angle};
 
 #[cfg(test)]
 mod tests;
@@ -62,8 +66,8 @@ pub struct CopterGuidanceConfig {
     /// with gravity and tilt compensation. Its `hover_thrust` defaults to
     /// [`DEFAULT_HOVER_THRUST`].
     pub altitude: AltitudeControllerConfig,
-    /// Lateral position loop: horizontal position error (m) → acceleration (m/s²), flown as a
-    /// tilt of `atan(|a| / g)` toward it.
+    /// Lateral loop: horizontal position error (m) → velocity (m/s, capped at the waypoint's
+    /// `cruise_speed_mps`) → acceleration (m/s²), flown as a tilt of `atan(|a| / g)` toward it.
     pub lateral: LateralControllerConfig,
     /// Seconds between runs of the lateral position loop; its roll/pitch output is held in
     /// between. `0.0` runs it every tick. Rounded to the nearest tick (at a 4 ms loop, 20 ms
@@ -158,7 +162,7 @@ pub struct CopterGuidance {
     altitude: AltitudeController,
     lateral: LateralController,
 
-    /// Heading-hold target for attitude commands.
+    /// Heading-hold target for attitude and waypoint commands.
     heading: f32,
 
     /// Paces the lateral loop.
@@ -213,8 +217,11 @@ impl Guidance for CopterGuidance {
         assert_dt(dt);
 
         if !matches!(input, ControlInput::Waypoint(_)) {
-            // Re-entering waypoint mode runs the lateral loop at once instead of holding a
-            // stale tilt.
+            // The position loops are idle: clear them so re-entering waypoint mode starts
+            // fresh, runs the lateral loop at once instead of holding a stale tilt, and
+            // carries no integral from an earlier leg.
+            self.altitude = AltitudeController::default();
+            self.lateral = LateralController::default();
             self.lateral_rate.reset();
         }
 
@@ -222,12 +229,19 @@ impl Guidance for CopterGuidance {
             ControlInput::Attitude(attitude_command) => {
                 Setpoint::Attitude(self.attitude_setpoint(dt, attitude_command, estimated_state))
             }
-            ControlInput::Rate(rate_command) => Setpoint::Rate(RateSetpoint {
-                roll_rate: rate_command.roll_rate,
-                pitch_rate: rate_command.pitch_rate,
-                yaw_rate: rate_command.yaw_rate,
-                thrust: rate_command.throttle,
-            }),
+            ControlInput::Rate(rate_command) => {
+                // Track the vehicle so attitude or waypoint flight holds the heading it has
+                // when rate flight ends, not the one it had when rate flight began.
+                if estimated_state.heading_rad.is_finite() {
+                    self.heading = wrap_angle(estimated_state.heading_rad);
+                }
+                Setpoint::Rate(RateSetpoint {
+                    roll_rate: rate_command.roll_rate,
+                    pitch_rate: rate_command.pitch_rate,
+                    yaw_rate: rate_command.yaw_rate,
+                    thrust: rate_command.throttle,
+                })
+            }
             ControlInput::Waypoint(waypoint_command) => {
                 Setpoint::Attitude(self.navigate(dt, waypoint_command, estimated_state))
             }
@@ -258,17 +272,7 @@ impl CopterGuidance {
         // (throttle saturates in the stabilizer; see `crate::math`).
         let yaw = saturate_unit(attitude_command.yaw);
         let max_stick = self.config.max_stick_angles_rad;
-
-        // Wrapped so sustained yaw input can't grow the target without bound; the yaw
-        // controller works on the wrapped error either way.
-        let target = wrap_angle(self.heading + yaw * HEADING_SLEW_RATE * dt);
-        if target.is_finite() {
-            self.heading = target;
-        } else if estimated_state.heading_rad.is_finite() {
-            // A NaN target (e.g. primed from a NaN estimate) would otherwise disable heading
-            // hold for good; re-latch from the current estimate once it's valid.
-            self.heading = wrap_angle(estimated_state.heading_rad);
-        }
+        self.slew_heading(yaw * HEADING_SLEW_RATE * dt, estimated_state);
 
         AttitudeSetpoint {
             roll_rad: saturate_unit(attitude_command.roll) * max_stick.x,
@@ -278,7 +282,21 @@ impl CopterGuidance {
         }
     }
 
-    /// Flies toward the waypoint, holding heading north: the lateral position loop gives
+    /// Moves the heading-hold target by `delta_rad`.
+    fn slew_heading(&mut self, delta_rad: f32, estimated_state: &VehicleState) {
+        // Wrapped so sustained yaw input can't grow the target without bound; the yaw
+        // controller works on the wrapped error either way.
+        let target = wrap_angle(self.heading + delta_rad);
+        if target.is_finite() {
+            self.heading = target;
+        } else if estimated_state.heading_rad.is_finite() {
+            // A NaN target (e.g. primed from a NaN estimate) would otherwise disable heading
+            // hold for good; re-latch from the current estimate once it's valid.
+            self.heading = wrap_angle(estimated_state.heading_rad);
+        }
+    }
+
+    /// Flies toward the waypoint, holding the heading-hold target: the lateral loop gives
     /// roll/pitch (once per navigation period, held in between) and the altitude loop gives
     /// thrust (every tick).
     fn navigate(
@@ -287,6 +305,7 @@ impl CopterGuidance {
         waypoint_command: &WaypointCommand,
         estimated_state: &VehicleState,
     ) -> AttitudeSetpoint {
+        self.slew_heading(0.0, estimated_state);
         let tilt_rad = self.tilt_toward(dt, waypoint_command, estimated_state);
 
         let linear_thrust = self.altitude.control(
@@ -306,7 +325,7 @@ impl CopterGuidance {
         AttitudeSetpoint {
             roll_rad: tilt_rad.x,
             pitch_rad: tilt_rad.y,
-            heading_rad: 0.0,
+            heading_rad: self.heading,
             thrust: linear_thrust,
         }
     }
@@ -323,49 +342,55 @@ impl CopterGuidance {
             return self.tilt_rad;
         };
 
-        let desired_position =
-            Vec2::new(waypoint_command.position_m.x, waypoint_command.position_m.y);
-        let current_position =
-            Vec2::new(estimated_state.position_m.x, estimated_state.position_m.y);
-        let velocity = Vec2::new(
-            estimated_state.velocity_mps.x,
-            estimated_state.velocity_mps.y,
-        );
+        let target = LateralTarget {
+            position_m: waypoint_command.position_m,
+            velocity_mps: waypoint_command.velocity_mps.unwrap_or_else(Vec2::zeros),
+            max_speed_mps: waypoint_command.cruise_speed_mps,
+        };
+        let estimate = LateralEstimate {
+            position_m: estimated_state.position_m.xy(),
+            velocity_mps: estimated_state.velocity_mps.xy(),
+        };
+        let heading_rad = estimated_state.heading_rad;
 
         // A non-finite target or estimate gets level for this tick only (input policy). The
         // loop doesn't run, so the neutral output isn't held for a period and the next tick
         // retries over the combined time.
-        let error = desired_position - current_position;
-        if ![error.x, error.y, velocity.x, velocity.y]
-            .iter()
-            .all(|v| v.is_finite())
+        let error = target.position_m - estimate.position_m;
+        if !(all_finite(&error)
+            && all_finite(&target.velocity_mps)
+            && all_finite(&estimate.velocity_mps)
+            && heading_rad.is_finite())
         {
             return Vec2::zeros();
         }
 
-        let accel_mps2 = self.lateral.control(
-            &self.config.lateral,
-            step,
-            desired_position,
-            current_position,
-            velocity,
+        let accel_mps2 = self
+            .lateral
+            .control(&self.config.lateral, step, target, estimate);
+        self.tilt_rad = cap_magnitude(
+            tilt_for_acceleration(accel_mps2, heading_rad),
+            self.config.max_tilt_rad,
         );
-        self.tilt_rad = cap_magnitude(tilt_for_acceleration(accel_mps2), self.config.max_tilt_rad);
         self.lateral_rate.ran();
         self.tilt_rad
     }
 }
 
-/// Roll/pitch in radians (heading north) that points thrust to give horizontal acceleration
-/// `accel_mps2` (north, east) at constant altitude: a tilt of `atan(|a| / g)` toward it. North
-/// is nose down (negative pitch), east is right roll. The tilt is a vector of that length,
-/// split between the axes, exact for single-axis requests and close for diagonal ones at
-/// waypoint tilts. A non-finite acceleration gives level.
-fn tilt_for_acceleration(accel_mps2: Vec2) -> Vec2 {
+/// Roll/pitch in radians, at `heading_rad`, that points thrust to give horizontal
+/// acceleration `accel_mps2` (north, east) at constant altitude: a tilt of `atan(|a| / g)`
+/// toward it. Ahead is nose down (negative pitch), to the right is right roll. The tilt is a
+/// vector of that length, split between the axes, exact for single-axis requests and close for
+/// diagonal ones at waypoint tilts. A non-finite acceleration or heading gives level.
+fn tilt_for_acceleration(accel_mps2: Vec2, heading_rad: f32) -> Vec2 {
     let accel_norm = accel_mps2.norm();
-    if !accel_norm.is_finite() || accel_norm == 0.0 {
+    if !accel_norm.is_finite() || accel_norm == 0.0 || !heading_rad.is_finite() {
         return Vec2::zeros();
     }
     let tilt_rad = libm::atanf(accel_norm / GRAVITY);
-    Vec2::new(accel_mps2.y, -accel_mps2.x) * (tilt_rad / accel_norm)
+    // Rotate (north, east) into (ahead, right) of the heading.
+    let (sin, cos) = (libm::sinf(heading_rad), libm::cosf(heading_rad));
+    let ahead = accel_mps2.x * cos + accel_mps2.y * sin;
+    let right = -accel_mps2.x * sin + accel_mps2.y * cos;
+    Vec2::new(right, -ahead) * (tilt_rad / accel_norm)
 }
