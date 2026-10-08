@@ -4,7 +4,7 @@
 //! | Control input | Setpoint |
 //! |---|---|
 //! | [`ControlInput::Rate`] | [`Setpoint::Rate`], sticks passed through; the heading-hold target follows the vehicle |
-//! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target; throttle divided by cos(tilt) so tilting doesn't sink |
+//! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target; throttle boosted by 1/cos(tilt) so tilting doesn't sink (none when inverted) |
 //! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading held |
 //!
 //! Switching modes doesn't jump the heading: attitude and waypoint flight share one
@@ -24,7 +24,7 @@ use crate::{
 
 use super::rate_divider::RateDivider;
 use crate::math::{
-    all_finite, assert_dt, cap_magnitude, saturate_throttle, saturate_unit, tilt_cosine, wrap_angle,
+    all_finite, assert_dt, cap_magnitude, saturate_throttle, saturate_unit, tilt_boost, wrap_angle,
 };
 
 #[cfg(test)]
@@ -281,9 +281,10 @@ impl CopterGuidance {
             pitch_rad: saturate_unit(attitude_command.pitch) * max_stick.y,
             heading_rad: self.heading,
             // Angle boost: hold the vertical thrust the stick asks for while tilted, as the
-            // altitude loop does (floored past 60°). Saturated to [0, 1]; NaN means none.
+            // altitude loop does (at most 2× past 60°, none when inverted). Saturated to
+            // [0, 1]; NaN means none.
             thrust: saturate_throttle(
-                attitude_command.throttle / tilt_cosine(&estimated_state.attitude),
+                attitude_command.throttle * tilt_boost(&estimated_state.attitude),
             ),
         }
     }

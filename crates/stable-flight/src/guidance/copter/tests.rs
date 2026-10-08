@@ -1103,8 +1103,9 @@ fn point_mass_flies_a_route_at_cruise_speed_and_holds_the_end() {
 }
 
 /// Attitude-mode throttle is divided by the cosine of the measured tilt, so the vertical thrust
-/// the stick asks for holds while tilted (#111). The boost stops past 60°, a non-finite
-/// attitude gets none, and the result saturates to [0, 1] with NaN as no thrust.
+/// the stick asks for holds while tilted (#111). The boost stops past 60°, cuts out when
+/// inverted (no thrust toward the ground), a non-finite attitude gets none, and the result
+/// saturates to [0, 1] with NaN as no thrust.
 #[test]
 fn attitude_throttle_is_boosted_for_tilt() {
     let cos = |deg: f32| deg.to_radians().cos();
@@ -1123,8 +1124,10 @@ fn attitude_throttle_is_boosted_for_tilt() {
         (0.5, tilted(30.0, 0.0), 0.5 / cos(30.0)),
         (0.5, tilted(0.0, -30.0), 0.5 / cos(30.0)),
         (0.4, tilted(20.0, 20.0), 0.4 / (cos(20.0) * cos(20.0))),
-        (0.4, tilted(70.0, 0.0), 0.8), // floored at cos 60° = 0.5
-        (0.5, nan_attitude, 0.5),      // no boost
+        (0.4, tilted(70.0, 0.0), 0.8),  // floored at cos 60° = 0.5
+        (0.4, tilted(90.0, 0.0), 0.0),  // on its side: no thrust
+        (0.4, tilted(150.0, 0.0), 0.0), // inverted: no thrust
+        (0.5, nan_attitude, 0.5),       // no boost
         (0.0, tilted(30.0, 0.0), 0.0),
         (0.9, tilted(45.0, 0.0), 1.0), // saturated
         (f32::NAN, tilted(30.0, 0.0), 0.0),

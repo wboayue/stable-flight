@@ -67,8 +67,8 @@ impl Mixer for QuadCopterMixer {
     /// moments per the sign table in the [module docs](self). If a motor would pass full
     /// throttle, or drop below zero, all four shift together so the moments survive and
     /// collective thrust gives way; moments too large to fit at all are scaled down, keeping
-    /// their ratios. At zero thrust nothing shifts up: motors below zero are clipped. The
-    /// result is clamped to `[0, 1]`.
+    /// their ratios. Shifting up is limited to twice the collective, so it fades out toward idle
+    /// and at zero thrust motors below zero are clipped. The result is clamped to `[0, 1]`.
     fn mix(&self, command: &ControlOutput) -> ActuatorCommand {
         // Out-of-range or NaN inputs saturate rather than panic (see `crate::math`): thrust to
         // [0, 1] (NaN → no thrust), moments to [-1, 1] (NaN → none).
