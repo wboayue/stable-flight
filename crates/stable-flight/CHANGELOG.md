@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `testing::settled_yaw_rate`: the yaw rate a `BodyRateControllerConfig` settles at against
+  a constant yaw torque, for checking an airframe's rate gains against its measured hover yaw
+  imbalance ([#192](https://github.com/wboayue/stable-flight/issues/192)).
 - `commanders::RouteEnd` and `WaypointFollower::with_route_end`: loop the route (default) or
   hold the last waypoint, with `WaypointFollower::is_complete` once it is reached ([#126](https://github.com/wboayue/stable-flight/issues/126)).
 - `WaypointFollower` fills a waypoint's empty `velocity_mps` with one along the leg that leads

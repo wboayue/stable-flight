@@ -22,7 +22,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
     let stabilizer = CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
             gains: gains(0.5, 0.2, 0.004),
-            yaw_gains: gains(0.6, 0.2, 0.0),
+            yaw_gains: gains(0.6, 0.6, 0.0),
             max_integral: 1.0,
         },
         attitude: AttitudeControllerConfig {
@@ -57,4 +57,23 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         max_stick_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
     };
     assert_eq!(airframe.guidance, guidance, "guidance");
+}
+
+/// Steady yaw moment (normalized, nose right) QuadCopterX needs to hover in RealFlight,
+/// measured in #192: a mean motor yaw split of about 0.10 over the core `QuadCopterMixer`'s yaw
+/// scaling of 0.25. Re-measure if that scaling changes.
+const MEASURED_HOVER_YAW_MOMENT: f32 = 0.40;
+
+/// The flown rate gains hold zero yaw rate against the model's hover yaw imbalance with 25%
+/// margin; at the old yaw I of 0.2, acro drifted ~19°/s CCW (#192).
+#[test]
+fn quadcopter_x_holds_zero_yaw_rate_against_the_hover_imbalance() {
+    let body_rate = quadcopter_x().stabilizer.body_rate;
+    for disturbance in [MEASURED_HOVER_YAW_MOMENT, 1.25 * MEASURED_HOVER_YAW_MOMENT] {
+        let rate = stable_flight::testing::settled_yaw_rate(&body_rate, disturbance);
+        assert!(
+            rate.abs() < 1e-3,
+            "settled at {rate} rad/s against {disturbance}"
+        );
+    }
 }

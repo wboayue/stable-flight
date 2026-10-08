@@ -76,9 +76,12 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
                     d: 0.004,
                 },
                 // Yaw authority is differential prop drag only, so yaw needs its own, higher gains.
+                // The model needs a steady ~0.40 nose-right yaw moment to hover; I · max_integral
+                // = 0.6 cancels it with margin. At I 0.2 the integral pinned at 0.2 and acro
+                // drifted ~19°/s CCW (#192).
                 yaw_gains: Gains {
                     p: 0.6,
-                    i: 0.2,
+                    i: 0.6,
                     d: 0.0,
                 },
                 max_integral: 1.0,

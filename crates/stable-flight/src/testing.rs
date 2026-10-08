@@ -7,6 +7,8 @@
 //! - [`NullVehicle`]: returns a fixed state and counts calls.
 //! - [`ConstantCommander`]: emits the same [`Command`] every tick.
 //! - [`RecordingTelemetry`]: keeps copies of the last `N` ticks in a fixed-size ring.
+//! - [`settled_yaw_rate`]: closed-loop check of a body-rate config's yaw loop against a
+//!   constant torque, e.g. an airframe's measured hover yaw imbalance.
 //! - [`conformance`]: physical scenarios that check a backend's `VehicleState` against the
 //!   frame contract, and [`conformance_tests!`](crate::conformance_tests) to run them.
 //!
@@ -20,9 +22,10 @@
 
 use core::time::Duration;
 
+use crate::controllers::{BodyRateController, BodyRateControllerConfig};
 use crate::{
     Actuator, ActuatorCommand, Command, Commander, ControlOutput, Setpoint, StateEstimator,
-    TelemetryPublisher, TelemetryRecord, VehicleState,
+    TelemetryPublisher, TelemetryRecord, Vec3, VehicleState,
 };
 
 pub mod conformance;
@@ -260,4 +263,55 @@ impl<const N: usize> TelemetryPublisher for RecordingTelemetry<N> {
         }
         self.total += 1;
     }
+}
+
+/// Yaw acceleration of the [`settled_yaw_rate`] model per unit of normalized yaw moment, in
+/// rad/s².
+const YAW_MODEL_GAIN: f32 = 20.0;
+
+/// Tick of the [`settled_yaw_rate`] simulation, in seconds (250 Hz).
+const YAW_MODEL_DT: f32 = 0.004;
+
+/// Simulated time [`settled_yaw_rate`] runs before reading the rate, in seconds.
+const YAW_MODEL_DURATION_S: f32 = 60.0;
+
+/// The yaw rate in rad/s that a [`BodyRateController`] with `config` settles at while
+/// commanding zero rate against a constant yaw `disturbance` torque (normalized moment, nose
+/// right positive).
+///
+/// It flies a first-order yaw model, `ω̇ = 20 · (moment − disturbance)`, from rest for 60 s at
+/// 250 Hz. The integral cancels the disturbance up to its authority `yaw_gains.i ·
+/// max_integral`, so the result is 0 below it and `−(disturbance − i · max_integral) / p` above
+/// (the acro drift of #192). The model has no inertia beyond the integrator, so it checks
+/// authority and steady state, not tuning.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::controllers::{BodyRateControllerConfig, Gains};
+/// use stable_flight::testing::settled_yaw_rate;
+///
+/// let config = BodyRateControllerConfig {
+///     yaw_gains: Gains { p: 0.6, i: 0.2, d: 0.0 },
+///     max_integral: 1.0,
+///     ..Default::default()
+/// };
+/// // Within the integral's 0.2 authority: held at zero rate.
+/// assert!(settled_yaw_rate(&config, 0.15).abs() < 1e-3);
+/// // Past it: a steady counterclockwise drift of (0.4 - 0.2) / 0.6 rad/s.
+/// assert!((settled_yaw_rate(&config, 0.4) + 0.2 / 0.6).abs() < 1e-3);
+/// ```
+pub fn settled_yaw_rate(config: &BodyRateControllerConfig, disturbance: f32) -> f32 {
+    let mut controller = BodyRateController::default();
+    let mut rate_radps = 0.0;
+    for _ in 0..(YAW_MODEL_DURATION_S / YAW_MODEL_DT) as usize {
+        let moment = controller.control(
+            config,
+            YAW_MODEL_DT,
+            Vec3::zeros(),
+            Vec3::new(0.0, 0.0, rate_radps),
+        );
+        rate_radps += YAW_MODEL_GAIN * (moment.z - disturbance) * YAW_MODEL_DT;
+    }
+    rate_radps
 }
