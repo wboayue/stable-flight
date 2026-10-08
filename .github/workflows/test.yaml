@@ -8,12 +8,36 @@ on:
     branches:
       - main
 
+# A new push to a PR cancels its in-flight run; runs on main always finish (they seed the cache).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Line tables keep backtrace line numbers while cutting compile/link time and cache size.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
 
 jobs:
-  build:
+  test:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+
+    - name: prerequisites
+      run: |
+        sudo apt-get install -y --no-install-recommends libudev-dev
+
+    - name: test
+      run: |
+        cargo test --workspace --all-features
+
+  lint:
     runs-on: ubuntu-22.04
 
     steps:
@@ -21,17 +45,11 @@ jobs:
     - uses: dtolnay/rust-toolchain@stable
       with:
         components: clippy
+    - uses: Swatinem/rust-cache@v2
 
     - name: prerequisites
       run: |
-        sudo apt update
-        sudo apt install -y libudev-dev
-
-    - name: build (default features)
-      # The test step enables every feature (including core `testing`); this catches library
-      # code that accidentally depends on a dev-only feature.
-      run: |
-        cargo build --workspace
+        sudo apt-get install -y --no-install-recommends libudev-dev
 
     - name: backends never depend on sitl
       # A simulator backend may use the sitl harness only as a dev-dependency (examples), so it
@@ -52,13 +70,10 @@ jobs:
           fi
         done
 
-    - name: test
-      run: |
-        cargo test --workspace --all-features
-
     - name: lint (warnings are errors)
-      # Default-feature rustdoc catches intra-doc links to feature-gated items (docs.rs builds
-      # all features, so they'd only break locally).
+      # Default-feature rustdoc also type-checks every lib and bin without dev-only features (the
+      # test job enables all of them, including core `testing`), and catches intra-doc links to
+      # feature-gated items (docs.rs builds all features, so they'd only break locally).
       env:
         RUSTDOCFLAGS: -D warnings
       run: |
@@ -76,6 +91,11 @@ jobs:
       with:
         targets: thumbv7em-none-eabihf
         components: llvm-tools, rustfmt, clippy
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          . -> target
+          firmware/ark-fpv -> target
 
     - name: build core (thumbv7em-none-eabihf)
       run: |
