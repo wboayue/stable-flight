@@ -58,8 +58,9 @@ impl MavConnection<MavMessage> for MockConnection {
 }
 
 /// Publishes `ticks` default records `dt` apart on `connection`.
-fn run(connection: &MockConnection, config: MavlinkConfiguration, dt: Duration, ticks: usize) {
-    let mut publisher = MavlinkPublisher::with_connection(config, Box::new(connection.clone()));
+fn run(connection: &MockConnection, ids: (u8, u8), dt: Duration, ticks: usize) {
+    let mut publisher =
+        MavlinkPublisher::with_connection(Box::new(connection.clone()), ids.0, ids.1);
     let state = VehicleState::default();
     for _ in 0..ticks {
         publisher.publish(&TelemetryRecord {
@@ -83,38 +84,28 @@ fn count(sent: &[(MavHeader, MavMessage)], name: &str) -> usize {
 fn sends_each_stream_at_its_rate() {
     let connection = MockConnection::default();
     // Two seconds of a 60 Hz loop.
-    run(
-        &connection,
-        MavlinkConfiguration::default(),
-        Duration::from_nanos(16_666_667),
-        120,
-    );
+    run(&connection, (1, 1), Duration::from_nanos(16_666_667), 120);
     let sent = connection.sent();
 
-    // (message, expected sends in 2 s)
+    // (message, expected sends in 2 s: the first tick plus one per period)
     let cases = [
-        ("HEARTBEAT", 2),
-        ("GLOBAL_POSITION_INT", 20),
-        ("VFR_HUD", 20),
-        ("LOCAL_POSITION_NED", 20),
-        ("ATTITUDE", 20),
+        ("HEARTBEAT", 3),
+        ("GLOBAL_POSITION_INT", 21),
+        ("VFR_HUD", 21),
+        ("LOCAL_POSITION_NED", 21),
+        ("ATTITUDE", 21),
     ];
     for (name, expected) in cases {
         check!(count(&sent, name) == expected, "{name}");
     }
-    check!(sent.len() == 82);
+    check!(sent.len() == 87);
 }
 
 #[test]
 fn headers_carry_configured_ids_and_a_wrapping_sequence() {
     let connection = MockConnection::default();
-    let config = MavlinkConfiguration {
-        system_id: 42,
-        component_id: 7,
-        ..Default::default()
-    };
     // dt equals the stream interval: 4 streams every tick, plus a heartbeat every 10th.
-    run(&connection, config, STREAM_INTERVAL, 70);
+    run(&connection, (42, 7), STREAM_INTERVAL, 70);
     let sent = connection.sent();
 
     check!(sent.len() > 256, "enough messages to wrap the sequence");
@@ -131,12 +122,7 @@ fn failed_sends_are_dropped_and_publishing_continues() {
         fail: true,
         ..Default::default()
     };
-    run(
-        &connection,
-        MavlinkConfiguration::default(),
-        STREAM_INTERVAL,
-        20,
-    );
+    run(&connection, (1, 1), STREAM_INTERVAL, 20);
 
     // Every tick still attempted its sends.
     check!(count(&connection.sent(), "ATTITUDE") == 20);
@@ -164,4 +150,21 @@ fn connect_opens_udp_out() {
     };
 
     check!(MavlinkPublisher::connect(config).is_ok());
+}
+
+#[test]
+fn every_stream_sends_on_the_first_publish() {
+    let connection = MockConnection::default();
+    run(&connection, (1, 1), Duration::from_millis(4), 1);
+    let sent = connection.sent();
+
+    for name in [
+        "HEARTBEAT",
+        "GLOBAL_POSITION_INT",
+        "VFR_HUD",
+        "LOCAL_POSITION_NED",
+        "ATTITUDE",
+    ] {
+        check!(count(&sent, name) == 1, "{name}");
+    }
 }

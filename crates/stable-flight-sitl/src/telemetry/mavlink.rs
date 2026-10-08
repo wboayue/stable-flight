@@ -52,14 +52,17 @@ pub enum MavlinkError {
     /// The address didn't parse or its connection couldn't be opened.
     #[error("failed to open MAVLink connection {address}")]
     Connect {
+        /// The configured [`MavlinkConfiguration::address`].
         address: String,
+        /// Why `mavlink::connect` failed.
         #[source]
         source: io::Error,
     },
 }
 
 /// A [`TelemetryPublisher`] that sends each tick's state as MAVLink messages: heartbeat at
-/// 1 Hz; global position, VFR_HUD, local position, and attitude at 10 Hz each.
+/// 1 Hz; global position, VFR_HUD, local position, and attitude at 10 Hz each. Every stream
+/// sends on the first `publish`, so a ground station sees the link immediately.
 ///
 /// A failed send is logged (rate-limited) and dropped; it never stops the flight loop.
 ///
@@ -100,32 +103,37 @@ impl MavlinkPublisher {
             }
         })?;
         connection.set_protocol_version(MavlinkVersion::V2);
-        Ok(Self::with_connection(config, Box::new(connection)))
+        Ok(Self::with_connection(
+            Box::new(connection),
+            config.system_id,
+            config.component_id,
+        ))
     }
 
-    /// Publishes on an already-open connection (a custom transport, or a test double). Its
-    /// protocol version is left as configured; `config.address` is unused.
+    /// Publishes on an already-open connection (a custom transport, or a test double),
+    /// stamping headers with `system_id` and `component_id`. The connection's protocol
+    /// version is left as configured.
     ///
     /// # Examples
     ///
     /// ```no_run
     /// use mavlink::{MavConnection, MavlinkVersion, common::MavMessage};
-    /// use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
+    /// use stable_flight_sitl::telemetry::mavlink::MavlinkPublisher;
     ///
     /// let mut connection = mavlink::connect::<MavMessage>("tcpout:127.0.0.1:5760")?;
     /// connection.set_protocol_version(MavlinkVersion::V2);
-    /// let config = MavlinkConfiguration { system_id: 42, ..Default::default() };
-    /// let telemetry = MavlinkPublisher::with_connection(config, Box::new(connection));
+    /// let telemetry = MavlinkPublisher::with_connection(Box::new(connection), 42, 1);
     /// # Ok::<(), std::io::Error>(())
     /// ```
     pub fn with_connection(
-        config: MavlinkConfiguration,
         connection: Box<dyn MavConnection<MavMessage> + Send>,
+        system_id: u8,
+        component_id: u8,
     ) -> Self {
         MavlinkPublisher {
             connection,
-            system_id: config.system_id,
-            component_id: config.component_id,
+            system_id,
+            component_id,
             sequence: 0,
             start_time: Instant::now(),
             heartbeat: Every::new(HEARTBEAT_INTERVAL),

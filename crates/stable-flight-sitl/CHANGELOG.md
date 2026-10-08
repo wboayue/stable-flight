@@ -38,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Breaking:** `MavlinkPublisher::connect(config) -> Result<_, MavlinkError>` and
-  `MavlinkPublisher::with_connection(config, connection)` replace `MavlinkPublisher::new`,
+  `MavlinkPublisher::with_connection(connection, system_id, component_id)` replace
+  `MavlinkPublisher::new`,
   which panicked when the connection failed to open. `MavlinkConfiguration` now holds
   the `address` (default `DEFAULT_ADDRESS`, `udpout:127.0.0.1:14550`), `system_id`, and
   `component_id` (default 1), and implements `Default`. The `send_*` and `time_boot_ms`
@@ -130,7 +131,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MavlinkPublisher` streams keep their rate: leftover tick time carries into the next
   period, so the 10 Hz streams no longer run slow when the loop period doesn't divide
   100 ms (about 8.6 Hz at 60 Hz). The heartbeat is sent at 1 Hz (it was 10 Hz), and
-  VFR_HUD has its own timer ([#163](https://github.com/wboayue/stable-flight/issues/163)).
+  VFR_HUD has its own timer. Every stream sends on the first `publish`, so a ground
+  station sees the link immediately ([#163](https://github.com/wboayue/stable-flight/issues/163)).
 - Scripted (waypoint) flights no longer crash the loop when the vehicle is far
   from the active waypoint, joystick flights no longer crash after holding yaw
   for a few minutes, and out-of-range stick input or a NaN estimate no longer

@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-/// Fires once per `interval` of accumulated `dt`.
+/// Fires on the first call, then once per `interval` of accumulated `dt`.
 #[derive(Debug)]
 pub(crate) struct Every {
     interval: Duration,
@@ -16,10 +16,11 @@ pub(crate) struct Every {
 }
 
 impl Every {
+    /// Fires on the first call, then once per `interval`.
     pub(crate) fn new(interval: Duration) -> Self {
         Every {
             interval,
-            elapsed: Duration::ZERO,
+            elapsed: interval,
         }
     }
 
@@ -44,15 +45,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fires_once_per_interval_without_drift() {
+    fn fires_first_then_once_per_interval_without_drift() {
         let ms = Duration::from_millis;
-        // (interval, dt, ticks, expected firings)
+        // (interval, dt, ticks, expected firings: the first call plus one per interval)
         let cases = [
-            (ms(100), Duration::from_nanos(16_666_667), 60, 10), // 60 Hz loop, 10 Hz stream
-            (ms(100), ms(4), 250, 10),                           // 250 Hz loop
-            (ms(100), ms(30), 10, 3),                            // fires at 120, 210, 300 ms
+            (ms(100), Duration::from_nanos(16_666_667), 60, 11), // 60 Hz loop, 10 Hz stream
+            (ms(100), ms(4), 250, 11),                           // 250 Hz loop
+            (ms(100), ms(30), 10, 4),                            // ticks 1, 4, 7, 10
             (ms(100), ms(100), 5, 5),                            // dt equals interval
-            (ms(100), Duration::ZERO, 100, 0),                   // no time passes
+            (ms(100), Duration::ZERO, 100, 1),                   // only the first call
             (ms(100), ms(1000), 3, 3),                           // stalled ticks: once each
         ];
 
@@ -66,6 +67,7 @@ mod tests {
     #[test]
     fn stalled_tick_drops_the_backlog() {
         let mut every = Every::new(Duration::from_millis(100));
+        check!(every.ready(Duration::ZERO)); // the first call
         check!(every.ready(Duration::from_millis(350)));
         // Leftover is dropped, not carried: the next 99 ms don't fire.
         check!(!every.ready(Duration::from_millis(99)));
