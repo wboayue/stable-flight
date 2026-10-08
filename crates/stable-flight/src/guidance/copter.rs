@@ -12,8 +12,8 @@ use crate::Vec2;
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_unit_interval};
 use crate::{
-    AttitudeCommand, AttitudeSetpoint, Command, Guidance, RateSetpoint, Setpoint, VehicleState,
-    WaypointCommand,
+    AttitudeCommand, AttitudeSetpoint, Command, Configurable, Guidance, RateSetpoint, Setpoint,
+    VehicleState, WaypointCommand,
 };
 
 use super::rate_divider::RateDivider;
@@ -167,9 +167,27 @@ impl CopterGuidance {
 
             heading: 0.0,
 
-            lateral_rate: RateDivider::new(config.navigation_period_s),
+            lateral_rate: RateDivider::default(),
             tilt: Vec2::zeros(),
         }
+    }
+}
+
+impl Configurable for CopterGuidance {
+    type Config = CopterGuidanceConfig;
+
+    fn config(&self) -> &CopterGuidanceConfig {
+        &self.config
+    }
+
+    /// Validates with [`CopterGuidanceConfig::validate`]. The heading-hold target and the
+    /// lateral loop's timing are kept; a new `navigation_period_s` applies from the next tick,
+    /// and the held waypoint tilt is re-capped to a lowered `max_tilt` at once.
+    fn set_config(&mut self, config: CopterGuidanceConfig) -> Result<(), InvalidConfig> {
+        config.validate()?;
+        self.config = config;
+        self.tilt = cap_magnitude(self.tilt, config.max_tilt);
+        Ok(())
     }
 }
 
@@ -281,7 +299,7 @@ impl CopterGuidance {
         waypoint_command: &WaypointCommand,
         estimated_state: &VehicleState,
     ) -> Vec2 {
-        let Some(step) = self.lateral_rate.due(dt) else {
+        let Some(step) = self.lateral_rate.due(dt, self.config.navigation_period_s) else {
             return self.tilt;
         };
 

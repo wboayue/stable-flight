@@ -272,3 +272,42 @@ fn into_parts_returns_the_components_with_their_state() {
     check!(vehicle.actuations() == 2);
     check!(telemetry.total() == 2);
 }
+
+/// The config setters reach the composites in a running loop: a valid config applies, an
+/// invalid one is rejected and the current one kept.
+#[test]
+fn config_setters_retune_the_composites_between_ticks() {
+    use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+    use crate::mixers::QuadCopterMixer;
+    use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+    use crate::testing::{ConstantCommander, NullVehicle};
+
+    let mut flight_loop = FlightLoop::new(
+        ConstantCommander::default(),
+        NullVehicle::new(),
+        CopterGuidance::new(CopterGuidanceConfig::default()),
+        CopterStabilizer::new(CopterStabilizerConfig::default()),
+        QuadCopterMixer::default(),
+        (),
+    );
+    flight_loop.prime();
+    flight_loop.step(Duration::from_millis(4));
+
+    let mut guidance = *flight_loop.guidance().config();
+    guidance.max_tilt = 0.4;
+    check!(flight_loop.set_guidance_config(guidance).is_ok());
+    let mut stabilizer = *flight_loop.stabilizer().config();
+    stabilizer.body_rate.gains.p = 0.2;
+    check!(flight_loop.set_stabilizer_config(stabilizer).is_ok());
+
+    let mut bad_guidance = guidance;
+    bad_guidance.max_tilt = 0.0;
+    check!(flight_loop.set_guidance_config(bad_guidance).is_err());
+    let mut bad_stabilizer = stabilizer;
+    bad_stabilizer.thrust_curve_exponent = -1.0;
+    check!(flight_loop.set_stabilizer_config(bad_stabilizer).is_err());
+
+    check!(*flight_loop.guidance().config() == guidance);
+    check!(*flight_loop.stabilizer().config() == stabilizer);
+    flight_loop.step(Duration::from_millis(4));
+}

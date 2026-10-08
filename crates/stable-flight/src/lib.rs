@@ -811,6 +811,45 @@ pub trait Stabilizer {
     fn prime(&mut self, _state: &VehicleState) {}
 }
 
+/// A pipeline component whose gains and limits can be read and replaced between ticks.
+///
+/// The config is plain `Copy` data that the component owns as its single source of truth;
+/// [`set_config`](Self::set_config) is the one write point and validates before committing,
+/// so a running loop can be retuned without ever flying an invalid config. Implemented by
+/// [`CopterGuidance`](guidance::copter::CopterGuidance) and
+/// [`CopterStabilizer`](stabilizers::copter::CopterStabilizer); [`FlightLoop`] reaches them
+/// through [`set_guidance_config`](FlightLoop::set_guidance_config) and
+/// [`set_stabilizer_config`](FlightLoop::set_stabilizer_config).
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::Configurable;
+/// use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+///
+/// let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+///
+/// let mut retuned = *stabilizer.config();
+/// retuned.body_rate.gains.p = 0.2;
+/// assert!(stabilizer.set_config(retuned).is_ok());
+///
+/// retuned.body_rate.max_integral = -1.0;
+/// assert!(stabilizer.set_config(retuned).is_err());
+/// assert_eq!(stabilizer.config().body_rate.gains.p, 0.2); // unchanged
+/// ```
+pub trait Configurable {
+    /// The component's config.
+    type Config: Copy;
+
+    /// The config the component flies.
+    fn config(&self) -> &Self::Config;
+
+    /// Replaces the config if it is valid; otherwise keeps the current one and returns the
+    /// error. Call it between ticks: the new config applies from the next tick, and runtime
+    /// state (integrals, derivative history, timers) is kept.
+    fn set_config(&mut self, config: Self::Config) -> Result<(), controllers::InvalidConfig>;
+}
+
 /// Component responsible for publishing telemetry data from the flight system.
 ///
 /// The `TelemetryPublisher` trait defines the interface for components that send
