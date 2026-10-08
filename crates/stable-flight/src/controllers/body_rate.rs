@@ -1,5 +1,6 @@
 use crate::Vec3;
 
+use super::derivative::DerivativeState;
 use super::{Gains, InvalidConfig, check_limit};
 use crate::math::{all_finite, assert_dt, clamp_symmetric_each};
 
@@ -86,11 +87,8 @@ pub struct BodyRateController {
     /// Integrated error term for the PID controller.
     integrated_error: Vec3,
 
-    /// Last error value for computing the derivative term.
-    previous_error: Vec3,
-    /// Set after a non-finite tick: the next finite tick skips the derivative term, since
-    /// `previous_error` predates the gap.
-    resync_derivative: bool,
+    /// Previous error for the derivative term; empty on the first tick and after a gap.
+    derivative: DerivativeState<Vec3>,
 }
 
 impl BodyRateController {
@@ -143,19 +141,12 @@ impl BodyRateController {
     ) -> Vec3 {
         assert_dt(dt);
         if !(all_finite(&desired_rates_radps) && all_finite(&estimated_rates_radps)) {
-            self.resync_derivative = true;
+            self.derivative.forget();
             return Vec3::zeros();
         }
 
         let error = desired_rates_radps - estimated_rates_radps;
-
-        let error_derivative = if self.resync_derivative {
-            self.resync_derivative = false;
-            Vec3::zeros()
-        } else {
-            (error - self.previous_error) / dt
-        };
-        self.previous_error = error;
+        let error_derivative = self.derivative.step(error, dt);
 
         self.integrated_error += dt * error;
         self.integrated_error = clamp_symmetric_each(self.integrated_error, config.max_integral);
@@ -189,8 +180,8 @@ mod tests {
         }
     }
 
-    /// One tick from a fresh controller is `P·e + I·e·dt` (no derivative history yet would
-    /// give `D·e/dt`, so `d` is zero here), saturated to `[-1, 1]` per axis.
+    /// One tick from a fresh controller is `P·e + I·e·dt` (no derivative history yet; see
+    /// `first_tick_has_no_derivative_kick`), saturated to `[-1, 1]` per axis.
     #[test]
     fn first_tick_output_is_saturated_p_plus_i() {
         // (p, i, desired, estimated, expected)
@@ -268,6 +259,19 @@ mod tests {
 
         assert_abs_diff_eq!(steady.x, 0.0, epsilon = 1e-6);
         assert_abs_diff_eq!(falling.x, 0.003 * -0.5 / DT, epsilon = 1e-5);
+    }
+
+    /// A fresh controller has no previous error, so D alone gives nothing on the first tick.
+    #[test]
+    fn first_tick_has_no_derivative_kick() {
+        let mut c = BodyRateController::default();
+        let moments = c.control(
+            &config(0.0, 0.0, 0.01),
+            DT,
+            Vec3::new(1.0, -2.0, 0.5),
+            Vec3::zeros(),
+        );
+        assert!(moments == Vec3::zeros());
     }
 
     /// The accumulated error grows by `e·dt` per tick and stops at `max_integral`.
