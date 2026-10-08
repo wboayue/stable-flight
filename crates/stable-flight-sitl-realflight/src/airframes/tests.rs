@@ -48,11 +48,12 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
             hover_thrust: 0.82,
         },
         lateral: LateralControllerConfig {
-            gains: gains(0.8, 0.0, 1.6),
+            gains: gains(0.63, 0.0, 1.26),
             max_integral: 100.0,
         },
         navigation_period_s: 0.02,
-        max_tilt: 0.6,
+        max_tilt_rad: 27.0_f32.to_radians(),
+        max_stick_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
     };
     assert_eq!(airframe.guidance, guidance, "guidance");
 }

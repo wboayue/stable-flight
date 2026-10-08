@@ -3,7 +3,7 @@ use crate::{Vec2, Vec3};
 use super::*;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use crate::{ControlOutput, RateCommand, Stabilizer};
-use std::f32::consts::PI;
+use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
 /// Guidance and stabilizer run back to back, as `FlightLoop` does, for end-to-end checks of
 /// the whole copter controller.
@@ -63,13 +63,13 @@ fn lateral_loop_tilts_toward_the_target() {
     let current_velocity = Vec2::zeros();
 
     let config = guidance.config.lateral;
-    let output = guidance.lateral.control(
+    let output = tilt_for_acceleration(guidance.lateral.control(
         &config,
         dt,
         desired_position,
         current_position,
         current_velocity,
-    );
+    ));
     assert!(output.x > 0.0, "Roll should tilt to correct y-position");
     assert!(output.y < 0.0, "Pitch should tilt to correct x-position");
 }
@@ -105,15 +105,17 @@ fn commands_map_to_setpoints() {
                 pitch: -0.25,
                 ..Default::default()
             }),
+            // Sticks scale to the default 45° at full deflection.
             Setpoint::Attitude(AttitudeSetpoint {
-                roll: 0.5,
-                pitch: -0.25,
+                roll_rad: 0.5 * FRAC_PI_4,
+                pitch_rad: -0.25 * FRAC_PI_4,
                 heading_rad: wrap_angle(0.7),
                 thrust: 0.4,
             }),
         ),
         (
-            // Out-of-range sticks pass through; the stabilizer saturates them.
+            // Out-of-range sticks saturate to full deflection; thrust passes through (the
+            // stabilizer saturates it).
             Command::Attitude(AttitudeCommand {
                 throttle: 1.3,
                 roll: 1.5,
@@ -121,8 +123,8 @@ fn commands_map_to_setpoints() {
                 ..Default::default()
             }),
             Setpoint::Attitude(AttitudeSetpoint {
-                roll: 1.5,
-                pitch: -2.0,
+                roll_rad: FRAC_PI_4,
+                pitch_rad: -FRAC_PI_4,
                 heading_rad: wrap_angle(0.7),
                 thrust: 1.3,
             }),
@@ -142,8 +144,8 @@ fn commands_map_to_setpoints() {
             // loop feeds gravity forward).
             Command::Waypoint(WaypointCommand::default()),
             Setpoint::Attitude(AttitudeSetpoint {
-                roll: 0.0,
-                pitch: 0.0,
+                roll_rad: 0.0,
+                pitch_rad: 0.0,
                 heading_rad: 0.0,
                 thrust: crate::controllers::DEFAULT_HOVER_THRUST,
             }),
@@ -512,13 +514,13 @@ fn reference_configs() -> (LateralControllerConfig, AltitudeControllerConfig) {
 
 fn reference_tilt(lateral: &mut LateralController, step: f32, state: &VehicleState) -> Vec2 {
     let target = near_waypoint().position_m;
-    lateral.control(
+    tilt_for_acceleration(lateral.control(
         &reference_configs().0,
         step,
         target,
         Vec2::new(state.position_m.x, state.position_m.y),
         Vec2::new(state.velocity_mps.x, state.velocity_mps.y),
-    )
+    ))
 }
 
 fn reference_thrust(altitude: &mut AltitudeController, dt: f32, state: &VehicleState) -> f32 {
@@ -564,8 +566,8 @@ fn lateral_loop_runs_per_navigation_period_and_altitude_loop_every_tick() {
         }
         let thrust = reference_thrust(&mut altitude, DT, &state);
 
-        approx::assert_relative_eq!(setpoint.roll, tilt.x, epsilon = 1e-6);
-        approx::assert_relative_eq!(setpoint.pitch, tilt.y, epsilon = 1e-6);
+        approx::assert_relative_eq!(setpoint.roll_rad, tilt.x, epsilon = 1e-6);
+        approx::assert_relative_eq!(setpoint.pitch_rad, tilt.y, epsilon = 1e-6);
         approx::assert_relative_eq!(setpoint.thrust, thrust, epsilon = 1e-6);
     }
 }
@@ -587,10 +589,13 @@ fn nan_position_on_a_run_tick_retries_next_tick() {
     let lost = attitude(guidance.guide(DT, &waypoint, &state_at(f32::NAN, 0.0, 10.0)));
     let retried = attitude(guidance.guide(DT, &waypoint, &drifting_state(6)));
 
-    assert!((lost.roll, lost.pitch) == (0.0, 0.0), "gave {lost:?}");
+    assert!(
+        (lost.roll_rad, lost.pitch_rad) == (0.0, 0.0),
+        "gave {lost:?}"
+    );
     let expected = reference_tilt(&mut lateral, 6.0 * DT, &drifting_state(6));
-    approx::assert_relative_eq!(retried.roll, expected.x, epsilon = 1e-6);
-    approx::assert_relative_eq!(retried.pitch, expected.y, epsilon = 1e-6);
+    approx::assert_relative_eq!(retried.roll_rad, expected.x, epsilon = 1e-6);
+    approx::assert_relative_eq!(retried.pitch_rad, expected.y, epsilon = 1e-6);
 }
 
 /// Returning to waypoint mode, or re-priming, runs the lateral loop at once instead of
@@ -617,7 +622,7 @@ fn leaving_waypoints_or_priming_drops_the_held_tilt() {
         let resumed = attitude(guidance.guide(0.004, &waypoint, &drifting_state(2)));
 
         assert!(
-            (resumed.roll, resumed.pitch) != (held.roll, held.pitch),
+            (resumed.roll_rad, resumed.pitch_rad) != (held.roll_rad, held.pitch_rad),
             "row {row}: replayed the held tilt {held:?}"
         );
     }
@@ -660,23 +665,24 @@ fn infinite_dt_panics() {
     );
 }
 
-/// A far waypoint's tilt is capped at `max_tilt` in magnitude, keeping its direction; a near
-/// one is untouched.
+/// A far waypoint's tilt is capped at `max_tilt_rad` in magnitude, keeping its direction; a
+/// near one is `atan(a / g)`, uncapped.
 #[test]
 fn waypoint_tilt_is_capped_in_magnitude_and_keeps_its_direction() {
     let state = VehicleState::default();
     let lateral_p = CopterGuidanceConfig::default().lateral.gains.p;
-    // (waypoint x, y, max_tilt, expected |tilt|)
+    let near = libm::atanf(lateral_p * 0.1 / crate::GRAVITY); // P term only
+    // (waypoint x, y, max_tilt_rad, expected |tilt| in rad)
     let cases = [
-        (1000.0, 0.0, 0.6, 0.6),
-        (1000.0, 1000.0, 0.6, 0.6),
+        (1000.0, 0.0, 0.47, 0.47),
+        (1000.0, 1000.0, 0.47, 0.47),
         (-30.0, 40.0, 0.3, 0.3),
-        (1000.0, -1000.0, 1.0, 1.0), // the lateral loop saturates length, not each axis
-        (0.1, 0.0, 0.6, lateral_p * 0.1 / crate::GRAVITY), // near: P term only, uncapped
+        (1000.0, -1000.0, 1.2, 1.2), // a steep cap: atan(|a| / g) ≈ 1.56 rad is cut back
+        (0.1, 0.0, 0.47, near),
     ];
-    for (x, y, max_tilt, expected) in cases {
+    for (x, y, max_tilt_rad, expected) in cases {
         let mut guidance = CopterGuidance::new(CopterGuidanceConfig {
-            max_tilt,
+            max_tilt_rad,
             ..Default::default()
         });
         guidance.prime(&state);
@@ -685,23 +691,85 @@ fn waypoint_tilt_is_capped_in_magnitude_and_keeps_its_direction() {
             ..Default::default()
         });
         let setpoint = attitude(guidance.guide(0.004, &command, &state));
-        let tilt = Vec2::new(setpoint.roll, setpoint.pitch);
+        let tilt = Vec2::new(setpoint.roll_rad, setpoint.pitch_rad);
 
         approx::assert_relative_eq!(tilt.norm(), expected, epsilon = 1e-5);
-        // Toward the target: roll follows +y, pitch follows -x (lateral: pitch = -a_x/g).
+        // Toward the target: roll follows +y (east), pitch follows -x (north is nose down).
         let toward = Vec2::new(y, -x).normalize();
         approx::assert_relative_eq!(tilt.normalize().dot(&toward), 1.0, epsilon = 1e-5);
     }
 }
 
 #[test]
-fn rejects_max_tilt_outside_zero_to_one() {
-    for max_tilt in [0.0, -0.5, 1.5, f32::NAN] {
+fn rejects_max_tilt_outside_level_to_vertical() {
+    for max_tilt_rad in [0.0, -0.5, FRAC_PI_2, 2.0, f32::NAN] {
         let config = CopterGuidanceConfig {
-            max_tilt,
+            max_tilt_rad,
             ..Default::default()
         };
-        assert_new_panics(config, "max_tilt");
+        assert_new_panics(config, "max_tilt_rad");
+    }
+}
+
+#[test]
+fn rejects_negative_or_non_finite_stick_angles() {
+    // (max_stick_angles_rad, offending field)
+    let cases = [
+        (Vec2::new(-0.1, 0.5), "max_stick_angles_rad.x"),
+        (Vec2::new(0.5, f32::NAN), "max_stick_angles_rad.y"),
+        (Vec2::new(f32::INFINITY, 0.5), "max_stick_angles_rad.x"),
+    ];
+    for (max_stick_angles_rad, field) in cases {
+        let config = CopterGuidanceConfig {
+            max_stick_angles_rad,
+            ..Default::default()
+        };
+        assert_new_panics(config, field);
+    }
+}
+
+/// Full stick commands `max_stick_angles_rad` on each axis, scaled linearly.
+#[test]
+fn sticks_scale_to_the_configured_angles() {
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig {
+        max_stick_angles_rad: Vec2::new(0.6, 0.3),
+        ..Default::default()
+    });
+    let command = Command::Attitude(AttitudeCommand {
+        roll: -1.0,
+        pitch: 0.5,
+        ..Default::default()
+    });
+    let setpoint = attitude(guidance.guide(0.004, &command, &VehicleState::default()));
+    assert!((setpoint.roll_rad, setpoint.pitch_rad) == (-0.6, 0.15));
+}
+
+/// Tilt is `atan(|a| / g)` toward the acceleration: north is nose down, east is right roll.
+#[test]
+fn tilt_for_acceleration_points_thrust_along_the_demand() {
+    use crate::GRAVITY;
+    // (acceleration north, east in m/s², expected (roll, pitch) in rad)
+    let cases = [
+        (Vec2::zeros(), Vec2::zeros()),
+        (Vec2::new(GRAVITY, 0.0), Vec2::new(0.0, -FRAC_PI_4)),
+        (Vec2::new(0.0, -GRAVITY), Vec2::new(-FRAC_PI_4, 0.0)),
+        (
+            Vec2::new(0.6 * GRAVITY, 0.8 * GRAVITY), // |a| = g, diagonal
+            Vec2::new(0.8 * FRAC_PI_4, -0.6 * FRAC_PI_4),
+        ),
+        (
+            Vec2::new(0.1, 0.0),
+            Vec2::new(0.0, -libm::atanf(0.1 / GRAVITY)),
+        ),
+        (Vec2::new(f32::NAN, 1.0), Vec2::zeros()),
+        (Vec2::new(f32::INFINITY, 0.0), Vec2::zeros()),
+    ];
+    for (accel, expected) in cases {
+        let tilt = tilt_for_acceleration(accel);
+        assert!(
+            (tilt - expected).amax() < 1e-6,
+            "{accel:?} gave {tilt:?}, expected {expected:?}"
+        );
     }
 }
 
@@ -730,7 +798,7 @@ fn set_config_rejects_an_invalid_config_and_keeps_the_current_one() {
     bad[0].altitude.hover_thrust = 1.5;
     bad[1].lateral.max_integral = f32::NAN;
     bad[2].navigation_period_s = -0.01;
-    bad[3].max_tilt = 0.0;
+    bad[3].max_tilt_rad = 0.0;
     for config in bad {
         assert!(guidance.set_config(config).is_err(), "{config:?}");
         assert_eq!(*guidance.config(), current);
@@ -751,19 +819,22 @@ fn set_config_applies_a_new_navigation_period_on_the_next_tick() {
 
     let first = attitude(guidance.guide(0.004, &command, &moving(0.0)));
     let held = attitude(guidance.guide(0.004, &command, &moving(1.0)));
-    assert_eq!((held.roll, held.pitch), (first.roll, first.pitch));
+    assert_eq!(
+        (held.roll_rad, held.pitch_rad),
+        (first.roll_rad, first.pitch_rad)
+    );
 
     let mut every_tick = *guidance.config();
     every_tick.navigation_period_s = 0.0;
     guidance.set_config(every_tick).expect("valid config");
     let rerun = attitude(guidance.guide(0.004, &command, &moving(2.0)));
-    assert_ne!(rerun.pitch, first.pitch);
+    assert_ne!(rerun.pitch_rad, first.pitch_rad);
 }
 
-/// Lowering `max_tilt` re-caps the held waypoint tilt at once, not at the lateral loop's next
+/// Lowering `max_tilt_rad` re-caps the held waypoint tilt at once, not at the lateral loop's next
 /// run.
 #[test]
-fn lowering_max_tilt_recaps_the_held_tilt_on_the_next_tick() {
+fn lowering_max_tilt_rad_recaps_the_held_tilt_on_the_next_tick() {
     let far = Command::Waypoint(WaypointCommand {
         position_m: Vec2::new(1000.0, 0.0),
         altitude_m: 10.0,
@@ -773,12 +844,16 @@ fn lowering_max_tilt_recaps_the_held_tilt_on_the_next_tick() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default()); // 20 ms period
     guidance.prime(&state);
     let full = attitude(guidance.guide(0.004, &far, &state));
-    approx::assert_relative_eq!(full.pitch.abs(), DEFAULT_MAX_TILT, epsilon = 1e-6);
+    approx::assert_relative_eq!(full.pitch_rad.abs(), DEFAULT_MAX_TILT_RAD, epsilon = 1e-6);
 
     let mut lower = *guidance.config();
-    lower.max_tilt = 0.3;
+    lower.max_tilt_rad = 0.3;
     guidance.set_config(lower).expect("valid config");
     let held = attitude(guidance.guide(0.004, &far, &state)); // lateral loop not due yet
 
-    approx::assert_relative_eq!(Vec2::new(held.roll, held.pitch).norm(), 0.3, epsilon = 1e-6);
+    approx::assert_relative_eq!(
+        Vec2::new(held.roll_rad, held.pitch_rad).norm(),
+        0.3,
+        epsilon = 1e-6
+    );
 }

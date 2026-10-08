@@ -294,14 +294,14 @@ fn config_setters_retune_the_composites_between_ticks() {
     flight_loop.step(Duration::from_millis(4));
 
     let mut guidance = *flight_loop.guidance().config();
-    guidance.max_tilt = 0.4;
+    guidance.max_tilt_rad = 0.4;
     check!(flight_loop.set_guidance_config(guidance).is_ok());
     let mut stabilizer = *flight_loop.stabilizer().config();
     stabilizer.body_rate.gains.p = 0.2;
     check!(flight_loop.set_stabilizer_config(stabilizer).is_ok());
 
     let mut bad_guidance = guidance;
-    bad_guidance.max_tilt = 0.0;
+    bad_guidance.max_tilt_rad = 0.0;
     check!(flight_loop.set_guidance_config(bad_guidance).is_err());
     let mut bad_stabilizer = stabilizer;
     bad_stabilizer.thrust_curve_exponent = -1.0;

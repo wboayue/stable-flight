@@ -77,7 +77,8 @@ sequenceDiagram
 
 Nothing that runs every tick panics on its inputs. Guidance, stabilizers, controllers, and mixers:
 
-* **Saturate** out-of-range normalized commands (roll/pitch/yaw and moments to [-1, 1], throttle and thrust to [0, 1]). A controller that produces a normalized command saturates its output; one that consumes it saturates its input too.
+* **Saturate** out-of-range normalized commands (roll/pitch/yaw and moments to [-1, 1], throttle and thrust to [0, 1]) and physical targets to their configured limit (attitude setpoint angles to the stabilizer's `max_angles_rad`). A controller that produces a normalized command saturates its output; one that consumes it saturates its input too.
+* Give an **unsupported `Command` or `Setpoint` variant** (both are `#[non_exhaustive]`) neutral output rather than panicking: a guidance returns a level setpoint at the current heading with zero thrust, a stabilizer zero thrust and moments.
 * Treat a **NaN command as neutral** (level, hold zero rate, no thrust).
 * Return **neutral output on a non-finite error** (NaN/∞ setpoint or estimate), without letting it into integral or derivative state; the first finite tick afterwards has no derivative kick, and neither does the first tick after construction (altitude and lateral take D from measured velocity, so they never kick). Neutral is zero tilt/rate/moment, except altitude, whose neutral is **hover thrust** (0.5), not zero.
 * **Wrap angles** to [-π, π) instead of range-checking them.

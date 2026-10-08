@@ -137,19 +137,20 @@ fn zero_rate_setpoint_at_rest_yields_no_output() {
 #[test]
 fn out_of_range_or_nan_setpoints_saturate_instead_of_panicking() {
     let nan = f32::NAN;
-    // (thrust, roll, pitch, equivalent in range)
+    let max = PI / 4.0; // the config's max_angles_rad
+    // (thrust, roll_rad, pitch_rad, equivalent in range)
     let attitude_cases = [
         (1.2, 0.0, 0.0, (1.0, 0.0, 0.0)),
         (-0.1, 0.0, 0.0, (0.0, 0.0, 0.0)),
-        (0.5, 1.21, -1.3, (0.5, 1.0, -1.0)),
+        (0.5, 1.21, -1.3, (0.5, max, -max)),
         (nan, nan, 0.2, (0.0, 0.0, 0.2)),
     ];
     let state = VehicleState::default();
     for (thrust, roll, pitch, (t, r, p)) in attitude_cases {
         let setpoint = |thrust, roll, pitch| {
             Setpoint::Attitude(AttitudeSetpoint {
-                roll,
-                pitch,
+                roll_rad: roll,
+                pitch_rad: pitch,
                 thrust,
                 ..Default::default()
             })
@@ -260,7 +261,7 @@ fn nan_rate_estimate_yields_zero_moments() {
         0.004,
         &Setpoint::Attitude(AttitudeSetpoint {
             thrust: 0.5,
-            roll: 0.3,
+            roll_rad: 0.3,
             ..Default::default()
         }),
         &state,
@@ -283,8 +284,8 @@ fn non_finite_attitude_quaternion_yields_zero_moments() {
     ];
     let setpoint = Setpoint::Attitude(AttitudeSetpoint {
         thrust: 0.5,
-        roll: 0.3,
-        pitch: -0.2,
+        roll_rad: 0.3,
+        pitch_rad: -0.2,
         heading_rad: 1.0,
     });
     for [w, x, y, z] in cases {
