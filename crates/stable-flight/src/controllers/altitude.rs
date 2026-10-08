@@ -33,10 +33,12 @@ pub struct AltitudeControllerConfig {
 impl Default for AltitudeControllerConfig {
     fn default() -> Self {
         Self {
+            // A double integrator like the lateral loop: ζ ≈ 0.8. The small I trims a
+            // `hover_thrust` mismatch. Flight-checked on RealFlight's QuadCopterX (#96).
             gains: Gains {
-                p: 1.0,
-                i: 0.1,
-                d: 0.05,
+                p: 1.5,
+                i: 0.2,
+                d: 2.0,
             },
             // With feedforward the integral only trims hover; 5 m·s at I 0.2 is ±1 m/s².
             max_integral: 5.0,

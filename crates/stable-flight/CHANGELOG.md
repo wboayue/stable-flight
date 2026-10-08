@@ -118,7 +118,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `altitude_gains` + `hover_thrust` → `altitude: AltitudeControllerConfig` and `lateral_gains` →
   `lateral: LateralControllerConfig`, so every loop setting (e.g. `max_integral`) is reachable.
   It is `Copy` and has `validate()`; `CopterGuidance::new` panics with the failing field
-  (e.g. `altitude.hover_thrust`). Defaults are unchanged.
+  (e.g. `altitude.hover_thrust`). Its defaults are unchanged.
+- `AltitudeControllerConfig`, `LateralControllerConfig`, and `YawControllerConfig` default to
+  the flight-checked QuadCopterX gains (altitude P 1.5/I 0.2/D 2.0, lateral P 0.8/D 1.6,
+  heading P 2.5/D 0.06) that `CopterGuidanceConfig`/`CopterStabilizerConfig` used to hard-code
+  over untuned controller defaults. The composites' defaults, and so the copter's flight, are
+  unchanged.
 - **Breaking:** the unused `AltitudeControllerConfig::max_rate_mps`
   ([#115](https://github.com/wboayue/stable-flight/issues/115)) and
   `LateralControllerConfig::max_rate_radps`

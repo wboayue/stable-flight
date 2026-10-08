@@ -75,31 +75,12 @@ pub struct CopterGuidanceConfig {
 }
 
 impl Default for CopterGuidanceConfig {
-    /// Flight-checked gains for RealFlight's QuadCopterX; the other loop settings are the
-    /// controller defaults.
+    /// The controller defaults (flight-checked on RealFlight's QuadCopterX), a 50 Hz lateral
+    /// loop, and a 60% tilt cap.
     fn default() -> Self {
         CopterGuidanceConfig {
-            altitude: AltitudeControllerConfig {
-                // A double integrator like the lateral loop: ζ ≈ 0.8. The small I trims a
-                // `hover_thrust` mismatch. Flight-checked on RealFlight's QuadCopterX (#96).
-                gains: Gains {
-                    p: 1.5,
-                    i: 0.2,
-                    d: 2.0,
-                },
-                ..AltitudeControllerConfig::default()
-            },
-            lateral: LateralControllerConfig {
-                // Position → tilt is a double integrator, so D sets the damping: ζ ≈ 0.8 with
-                // the stabilizer's 45° max tilt. Flight-checked on RealFlight's QuadCopterX
-                // (#108).
-                gains: Gains {
-                    p: 0.8,
-                    i: 0.0,
-                    d: 1.6,
-                },
-                ..LateralControllerConfig::default()
-            },
+            altitude: AltitudeControllerConfig::default(),
+            lateral: LateralControllerConfig::default(),
             navigation_period_s: DEFAULT_NAVIGATION_PERIOD_S,
             max_tilt: DEFAULT_MAX_TILT,
         }

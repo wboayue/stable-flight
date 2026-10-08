@@ -30,7 +30,12 @@ pub struct YawControllerConfig {
 impl Default for YawControllerConfig {
     fn default() -> Self {
         Self {
-            gains: Default::default(),
+            // Heading hold, flight-checked on RealFlight's QuadCopterX (#62).
+            gains: Gains {
+                p: 2.5,
+                i: 0.0,
+                d: 0.06,
+            },
             max_integral: 100.0, // Arbitrary limit
             max_rate_radps: 2.0, // 2 rad/s (~114°/s) for yaw
         }
@@ -258,9 +263,9 @@ mod tests {
     fn test_default_config() {
         let config = YawControllerConfig::default();
 
-        assert_relative_eq!(config.gains.p, 0.0, epsilon = EPSILON, max_relative = 1e-3);
+        assert_relative_eq!(config.gains.p, 2.5, epsilon = EPSILON, max_relative = 1e-3);
         assert_relative_eq!(config.gains.i, 0.0, epsilon = EPSILON, max_relative = 1e-3);
-        assert_relative_eq!(config.gains.d, 0.0, epsilon = EPSILON, max_relative = 1e-3);
+        assert_relative_eq!(config.gains.d, 0.06, epsilon = EPSILON, max_relative = 1e-3);
         assert_relative_eq!(
             config.max_integral,
             100.0,
