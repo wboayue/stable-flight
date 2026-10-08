@@ -17,11 +17,12 @@ not each change; per-change entries start after it.
 - **Commanders:**
   - `Extreme3DCommander`: Logitech Extreme 3D joystick; attitude/rate modes on the hat, arm
     and disarm buttons.
-  - `SpektrumCommander`: Spektrum transmitter over USB.
+  - `SpektrumCommander`: Spektrum transmitter via a USB dongle.
   - `ScriptCommander`: CSV waypoint scripts (`x,y,altitude,cruise_speed`) over the core
     `WaypointFollower`; loop or hold at the end; `load_waypoints` for other tools.
 
-  The joystick constructors are fallible (`CommanderError`).
+  Fallible constructors return typed errors (`CommanderError`, `ScriptError`,
+  `InvalidFrequency`, `MavlinkError`).
 - **Telemetry:** `MavlinkPublisher` streams `HEARTBEAT`, `ATTITUDE`, `LOCAL_POSITION_NED`, and
   `VFR_HUD` to a ground station (e.g. QGroundControl) at fixed rates, with throttled error
   logging.
