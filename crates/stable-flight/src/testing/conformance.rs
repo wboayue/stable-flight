@@ -336,7 +336,7 @@ impl core::error::Error for ConformanceError {}
 /// One field of a [`ConformanceError`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Mismatch {
-    /// The `VehicleState` field, e.g. `velocity.z`.
+    /// The `VehicleState` field, e.g. `velocity_mps.z`.
     pub field: &'static str,
     /// The contract's value (SI: m, m/s, m/s², rad, rad/s).
     pub expected: f32,
