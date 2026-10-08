@@ -113,6 +113,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Normalized fields (`AttitudeCommand`/`AttitudeSetpoint` roll and pitch, rate commands and
   setpoints, thrust, throttle) and `max_integral` keep their names.
+- **Breaking:** `CopterGuidanceConfig` embeds the loop configs, matching
+  `CopterStabilizerConfig` ([#116](https://github.com/wboayue/stable-flight/issues/116)):
+  `altitude_gains` + `hover_thrust` → `altitude: AltitudeControllerConfig` and `lateral_gains` →
+  `lateral: LateralControllerConfig`, so every loop setting (e.g. `max_integral`) is reachable.
+  It is `Copy` and has `validate()`; `CopterGuidance::new` panics with the failing field
+  (e.g. `altitude.hover_thrust`). Defaults are unchanged.
+- **Breaking:** the unused `AltitudeControllerConfig::max_rate_mps`
+  ([#115](https://github.com/wboayue/stable-flight/issues/115)) and
+  `LateralControllerConfig::max_rate_radps`
+  ([#71](https://github.com/wboayue/stable-flight/issues/71)) are removed; neither limited
+  anything.
 - **Breaking:** the PID controllers (`BodyRateController`, `AttitudeController`,
   `YawController`, `AltitudeController`, `LateralController`) hold only state; their config is
   passed to every call: `control(&config, dt, …)`

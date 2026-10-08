@@ -25,10 +25,6 @@ pub struct AltitudeControllerConfig {
     /// Prevents integral windup by limiting error accumulation.
     pub max_integral: f32,
 
-    /// Maximum climb rate in meters/second. Currently unused
-    /// ([#115](https://github.com/wboayue/stable-flight/issues/115)).
-    pub max_rate_mps: f32,
-
     /// Linear thrust (before the stabilizer's thrust curve) that holds a level hover. The
     /// controller feeds it forward, so the integral only trims the residual. Airframe-specific.
     pub hover_thrust: f32,
@@ -44,7 +40,6 @@ impl Default for AltitudeControllerConfig {
             },
             // With feedforward the integral only trims hover; 5 m·s at I 0.2 is ±1 m/s².
             max_integral: 5.0,
-            max_rate_mps: 2.0, // 2 m/s for altitude
             hover_thrust: DEFAULT_HOVER_THRUST,
         }
     }
@@ -253,7 +248,6 @@ mod tests {
             },
             max_integral: 2.0,
             hover_thrust: 0.5,
-            ..Default::default()
         };
         // (altitude error m, expected integral after 1000 ticks of 0.01 s)
         let cases = [

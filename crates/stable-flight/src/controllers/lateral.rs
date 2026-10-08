@@ -12,11 +12,6 @@ pub struct LateralControllerConfig {
     /// Maximum absolute value of the integrated position error, in m·s, per axis.
     /// Prevents integral windup by limiting error accumulation.
     pub max_integral: f32,
-
-    /// Maximum roll (x) and pitch (y) rates in radians/second. Currently unused: the
-    /// controller outputs normalized tilt
-    /// ([#71](https://github.com/wboayue/stable-flight/issues/71)).
-    pub max_rate_radps: Vec2,
 }
 
 impl Default for LateralControllerConfig {
@@ -28,8 +23,7 @@ impl Default for LateralControllerConfig {
                 i: 0.3,
                 d: 0.15,
             },
-            max_integral: 100.0,                 // Arbitrary limit
-            max_rate_radps: Vec2::new(2.0, 2.0), // 2 rad/s (~114°/s) for roll and pitch
+            max_integral: 100.0, // Arbitrary limit
         }
     }
 }

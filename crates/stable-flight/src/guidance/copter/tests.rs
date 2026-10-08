@@ -39,7 +39,7 @@ fn lateral_loop_holds_level_at_the_target() {
     let current_position = Vec2::zeros();
     let current_velocity = Vec2::zeros();
 
-    let config = guidance.lateral_config;
+    let config = guidance.config.lateral;
     let output = guidance.lateral.control(
         &config,
         dt,
@@ -62,7 +62,7 @@ fn lateral_loop_tilts_toward_the_target() {
     let current_position = Vec2::zeros();
     let current_velocity = Vec2::zeros();
 
-    let config = guidance.lateral_config;
+    let config = guidance.config.lateral;
     let output = guidance.lateral.control(
         &config,
         dt,
@@ -503,20 +503,11 @@ fn near_waypoint() -> WaypointCommand {
     }
 }
 
-/// The lateral and altitude loop configs as `CopterGuidance` builds them, stepped by hand
-/// with fresh controllers: an independent reference for the divider.
+/// The lateral and altitude loop configs `CopterGuidance` flies, stepped by hand with fresh
+/// controllers: an independent reference for the divider.
 fn reference_configs() -> (LateralControllerConfig, AltitudeControllerConfig) {
     let config = CopterGuidanceConfig::default();
-    (
-        LateralControllerConfig {
-            gains: config.lateral_gains,
-            ..Default::default()
-        },
-        AltitudeControllerConfig {
-            gains: config.altitude_gains,
-            ..Default::default()
-        },
-    )
+    (config.lateral, config.altitude)
 }
 
 fn reference_tilt(lateral: &mut LateralController, step: f32, state: &VehicleState) -> Vec2 {
@@ -630,7 +621,7 @@ fn leaving_waypoints_or_priming_drops_the_held_tilt() {
 
 /// Asserts that `CopterGuidance::new(config)` panics with a message naming `field`.
 fn assert_new_panics(config: CopterGuidanceConfig, field: &str) {
-    let panic = std::panic::catch_unwind(|| CopterGuidance::new(config.clone()))
+    let panic = std::panic::catch_unwind(|| CopterGuidance::new(config))
         .map(drop)
         .expect_err("accepted an invalid config");
     let message = panic
@@ -682,7 +673,7 @@ fn centred_yaw_stick_holds_heading_for_any_dt() {
 #[test]
 fn waypoint_tilt_is_capped_in_magnitude_and_keeps_its_direction() {
     let state = VehicleState::default();
-    let lateral_p = CopterGuidanceConfig::default().lateral_gains.p;
+    let lateral_p = CopterGuidanceConfig::default().lateral.gains.p;
     // (waypoint x, y, max_tilt, expected |tilt|)
     let cases = [
         (1000.0, 0.0, 0.6, 0.6),
@@ -725,10 +716,15 @@ fn rejects_max_tilt_outside_zero_to_one() {
 #[test]
 fn rejects_hover_thrust_outside_zero_to_one() {
     for hover_thrust in [0.0, -0.1, 1.2, f32::NAN] {
-        let config = CopterGuidanceConfig {
-            hover_thrust,
-            ..Default::default()
-        };
+        let mut config = CopterGuidanceConfig::default();
+        config.altitude.hover_thrust = hover_thrust;
         assert_new_panics(config, "altitude.hover_thrust"); // names the loop
     }
+}
+
+#[test]
+fn rejects_an_invalid_lateral_loop_naming_it() {
+    let mut config = CopterGuidanceConfig::default();
+    config.lateral.max_integral = -1.0;
+    assert_new_panics(config, "lateral.max_integral");
 }

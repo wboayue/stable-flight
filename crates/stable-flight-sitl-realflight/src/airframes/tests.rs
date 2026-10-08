@@ -1,6 +1,6 @@
 use super::*;
 use stable_flight::Vec3;
-use stable_flight::controllers::YawControllerConfig;
+use stable_flight::controllers::{LateralControllerConfig, YawControllerConfig};
 
 #[test]
 fn quadcopter_x_maps_each_motor_to_its_own_channel() {
@@ -41,21 +41,18 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
     };
     assert_eq!(airframe.stabilizer, stabilizer, "stabilizer");
 
-    // (loop, actual, expected)
-    let cases = [
-        (
-            "lateral",
-            airframe.guidance.lateral_gains,
-            gains(0.8, 0.0, 1.6),
-        ),
-        (
-            "altitude",
-            airframe.guidance.altitude_gains,
-            gains(1.5, 0.2, 2.0),
-        ),
-    ];
-    for (name, actual, expected) in cases {
-        assert_eq!(actual, expected, "{name} gains");
-    }
-    assert_eq!(airframe.guidance.hover_thrust, 0.82);
+    let guidance = CopterGuidanceConfig {
+        altitude: AltitudeControllerConfig {
+            gains: gains(1.5, 0.2, 2.0),
+            max_integral: 5.0,
+            hover_thrust: 0.82,
+        },
+        lateral: LateralControllerConfig {
+            gains: gains(0.8, 0.0, 1.6),
+            max_integral: 100.0,
+        },
+        navigation_period_s: 0.02,
+        max_tilt: 0.6,
+    };
+    assert_eq!(airframe.guidance, guidance, "guidance");
 }
