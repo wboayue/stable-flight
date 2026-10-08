@@ -283,9 +283,7 @@ fn angle_diff(desired: f32, current: f32) -> f32 {
 
 ### Sluggish Response
 - **Cause**: Insufficient proportional gain  
-- **Solution**: Increase P gain, verify rate limits aren't constraining (the altitude
-  controller's `max_rate_mps` is not yet applied, see
-  [#115](https://github.com/wboayue/stable-flight/issues/115))
+- **Solution**: Increase P gain, verify rate limits aren't constraining
 
 ### Integral Windup
 - **Cause**: Inadequate integral limiting
