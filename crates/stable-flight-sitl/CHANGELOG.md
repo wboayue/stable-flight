@@ -128,6 +128,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `MavlinkPublisher` follows the `VehicleState` frame contract
+  ([#160](https://github.com/wboayue/stable-flight/issues/160)): LOCAL_POSITION_NED `z`/`vz`
+  are down-positive (they were up); ATTITUDE reports roll, pitch, and yaw in radians (yaw
+  wrapped to [-π, π]) instead of raw quaternion components; VFR_HUD heading is whole
+  degrees 0–359 (it was a quaternion component), and ground speed and airspeed are the
+  horizontal speed (they were north and east velocity).
 - `MavlinkPublisher` streams keep their rate: leftover tick time carries into the next
   period, so the 10 Hz streams no longer run slow when the loop period doesn't divide
   100 ms (about 8.6 Hz at 60 Hz). The heartbeat is sent at 1 Hz (it was 10 Hz), and
