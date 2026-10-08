@@ -649,27 +649,15 @@ fn rejects_negative_or_non_finite_navigation_periods() {
     }
 }
 
-/// A centred yaw stick holds the heading target even for a pathological `dt` (0 × ∞ is NaN,
-/// which would re-latch the target to the estimate).
+/// An infinite `dt` is a caller bug (0 × ∞ is NaN), rejected like a zero one.
 #[test]
-fn centred_yaw_stick_holds_heading_for_any_dt() {
-    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
-    guidance.prime(&VehicleState {
-        heading_rad: 1.0,
-        ..Default::default()
-    });
-    let elsewhere = VehicleState {
-        heading_rad: 2.0,
-        ..Default::default()
-    };
-
-    let setpoint = attitude(guidance.guide(
+#[should_panic(expected = "dt must be positive and finite")]
+fn infinite_dt_panics() {
+    CopterGuidance::new(CopterGuidanceConfig::default()).guide(
         f32::INFINITY,
         &Command::Attitude(AttitudeCommand::default()),
-        &elsewhere,
-    ));
-
-    approx::assert_relative_eq!(setpoint.heading_rad, 1.0, epsilon = 1e-6);
+        &VehicleState::default(),
+    );
 }
 
 /// A far waypoint's tilt is capped at `max_tilt` in magnitude, keeping its direction; a near

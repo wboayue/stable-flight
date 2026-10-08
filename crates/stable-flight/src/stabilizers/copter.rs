@@ -38,7 +38,7 @@ use crate::{
 
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_positive};
-use crate::math::{euler_angles, saturate_throttle, saturate_unit};
+use crate::math::{assert_dt, euler_angles, saturate_throttle, saturate_unit};
 
 #[cfg(test)]
 mod tests;
@@ -180,7 +180,7 @@ impl Stabilizer for CopterStabilizer {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Time step since the last update in seconds (must be positive).
+    /// * `dt` - Time step since the last update in seconds (must be positive and finite).
     /// * `setpoint` - The attitude or rate target.
     /// * `estimated_state` - The current state of the vehicle (attitude, angular rates, etc.).
     ///
@@ -193,7 +193,7 @@ impl Stabilizer for CopterStabilizer {
         setpoint: &Setpoint,
         estimated_state: &VehicleState,
     ) -> ControlOutput {
-        assert!(dt > 0.0, "Time step must be positive");
+        assert_dt(dt);
 
         match setpoint {
             Setpoint::Attitude(attitude) => self.track_attitude(dt, attitude, estimated_state),

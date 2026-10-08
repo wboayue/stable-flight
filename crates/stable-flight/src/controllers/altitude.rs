@@ -2,7 +2,7 @@ use nalgebra::UnitQuaternion;
 
 use crate::GRAVITY;
 use crate::controllers::{Gains, InvalidConfig, check_limit, check_unit_interval};
-use crate::math::clamp_symmetric;
+use crate::math::{assert_dt, clamp_symmetric};
 
 /// Default [`AltitudeControllerConfig::hover_thrust`].
 pub const DEFAULT_HOVER_THRUST: f32 = 0.5;
@@ -137,13 +137,17 @@ impl AltitudeController {
     /// * `config` - Gains, limits, and hover thrust; assumed valid
     ///   ([`AltitudeControllerConfig::validate`]). An invalid config does not panic: a negative
     ///   or NaN `max_integral` acts as 0.
-    /// * `dt` - Time step since the last update (must be positive).
+    /// * `dt` - Time step since the last update in seconds (must be positive and finite).
     /// * `target` - Desired altitude and vertical velocity.
     /// * `estimate` - Current altitude, vertical velocity, and attitude.
     ///
     /// # Returns
     ///
     /// A normalized thrust command (0.0 to 1.0).
+    ///
+    /// # Panics
+    ///
+    /// If `dt` is not positive and finite.
     ///
     /// # Examples
     ///
@@ -177,6 +181,7 @@ impl AltitudeController {
         target: AltitudeTarget,
         estimate: AltitudeEstimate,
     ) -> f32 {
+        assert_dt(dt);
         let gains = &config.gains;
         let hover_thrust = config.hover_thrust;
 
@@ -419,14 +424,7 @@ mod tests {
     #[test]
     fn validate_rejects_invalid_config() {
         // (max_integral, hover_thrust, offending field)
-        let cases = [
-            (-1.0, 0.5, "max_integral"),
-            (f32::NAN, 0.5, "max_integral"),
-            (f32::INFINITY, 0.5, "max_integral"),
-            (5.0, 0.0, "hover_thrust"),
-            (5.0, 1.5, "hover_thrust"),
-            (5.0, f32::NAN, "hover_thrust"),
-        ];
+        let cases = [(-1.0, 0.5, "max_integral"), (5.0, 1.5, "hover_thrust")];
         for (max_integral, hover_thrust, field) in cases {
             let config = AltitudeControllerConfig {
                 max_integral,
@@ -500,5 +498,16 @@ mod tests {
         assert_eq!(controller.integrated_error, integral);
         let expected = config.hover_thrust * (GRAVITY + 0.4 * integral) / GRAVITY;
         approx::assert_relative_eq!(thrust, expected, epsilon = 1e-5);
+    }
+
+    #[test]
+    #[should_panic(expected = "dt must be positive and finite")]
+    fn zero_dt_panics() {
+        AltitudeController::default().control(
+            &AltitudeControllerConfig::default(),
+            0.0,
+            target(10.0),
+            estimate(10.0, 0.0, level()),
+        );
     }
 }

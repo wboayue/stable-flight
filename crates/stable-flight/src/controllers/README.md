@@ -253,7 +253,7 @@ Where:
 Integral terms are clamped to prevent windup:
 
 ```rust,ignore
-integral_term = clamp_symmetric(integral_term + dt * error, config.max_integral);
+integrated_error = clamp_symmetric(integrated_error + dt * error, config.max_integral);
 ```
 
 ### Angle Wrapping (Yaw Controller)

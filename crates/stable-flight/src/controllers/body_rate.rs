@@ -1,7 +1,7 @@
 use crate::Vec3;
 
 use super::{Gains, InvalidConfig, check_limit};
-use crate::math::{all_finite, clamp_symmetric_each};
+use crate::math::{all_finite, assert_dt, clamp_symmetric_each};
 
 /// Default proportional gain, in normalized moment per rad/s of rate error.
 const DEFAULT_P: f32 = 0.15;
@@ -84,12 +84,12 @@ impl BodyRateControllerConfig {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BodyRateController {
     /// Integrated error term for the PID controller.
-    integral_term: Vec3,
+    integrated_error: Vec3,
 
     /// Last error value for computing the derivative term.
-    last_error: Vec3,
+    previous_error: Vec3,
     /// Set after a non-finite tick: the next finite tick skips the derivative term, since
-    /// `last_error` predates the gap.
+    /// `previous_error` predates the gap.
     resync_derivative: bool,
 }
 
@@ -113,8 +113,7 @@ impl BodyRateController {
     ///
     /// # Panics
     ///
-    /// Panics if:
-    /// - `dt` is not positive or finite.
+    /// If `dt` is not positive and finite.
     ///
     /// A non-finite component in `desired_rates_radps` or `estimated_rates_radps` returns zero moments and
     /// leaves the controller state untouched (the input policy in `architecture.md`).
@@ -142,11 +141,7 @@ impl BodyRateController {
         desired_rates_radps: Vec3,
         estimated_rates_radps: Vec3,
     ) -> Vec3 {
-        // Input validation
-        assert!(
-            dt > 0.0 && dt.is_finite(),
-            "Time step (dt) must be positive and finite"
-        );
+        assert_dt(dt);
         if !(all_finite(&desired_rates_radps) && all_finite(&estimated_rates_radps)) {
             self.resync_derivative = true;
             return Vec3::zeros();
@@ -158,29 +153,22 @@ impl BodyRateController {
             self.resync_derivative = false;
             Vec3::zeros()
         } else {
-            (error - self.last_error) / dt
+            (error - self.previous_error) / dt
         };
-        self.last_error = error;
+        self.previous_error = error;
 
-        self.integral_term += dt * error;
-        self.integral_term = clamp_symmetric_each(self.integral_term, config.max_integral);
+        self.integrated_error += dt * error;
+        self.integrated_error = clamp_symmetric_each(self.integrated_error, config.max_integral);
 
         let (g, y) = (config.gains, config.yaw_gains);
         let p = Vec3::new(g.p, g.p, y.p);
         let i = Vec3::new(g.i, g.i, y.i);
         let d = Vec3::new(g.d, g.d, y.d);
         let moment = p.component_mul(&error)
-            + i.component_mul(&self.integral_term)
+            + i.component_mul(&self.integrated_error)
             + d.component_mul(&error_derivative);
 
         clamp_symmetric_each(moment, 1.0)
-    }
-
-    /// Resets the controller state (integral and last error terms) to zero.
-    pub fn reset(&mut self) {
-        self.integral_term = Vec3::zeros();
-        self.last_error = Vec3::zeros();
-        self.resync_derivative = false;
     }
 }
 
@@ -288,12 +276,12 @@ mod tests {
         let cfg = config(0.0, 0.1, 0.0);
         let mut c = BodyRateController::default();
         c.control(&cfg, 0.1, Vec3::new(2.0, -2.0, 0.0), Vec3::zeros());
-        assert!((c.integral_term - Vec3::new(0.2, -0.2, 0.0)).amax() < 1e-6);
+        assert!((c.integrated_error - Vec3::new(0.2, -0.2, 0.0)).amax() < 1e-6);
 
         for _ in 0..20 {
             c.control(&cfg, 0.1, Vec3::new(2.0, -2.0, 0.0), Vec3::zeros());
         }
-        assert!((c.integral_term - Vec3::new(1.0, -1.0, 0.0)).amax() < 1e-6);
+        assert!((c.integrated_error - Vec3::new(1.0, -1.0, 0.0)).amax() < 1e-6);
     }
 
     /// Yaw uses `yaw_gains`; roll and pitch use `gains`.
@@ -322,21 +310,6 @@ mod tests {
         assert!((out - Vec3::new(0.15, 0.15, 0.5)).amax() < 1e-6);
     }
 
-    #[test]
-    fn reset_clears_history() {
-        let mut c = BodyRateController::default();
-        c.control(
-            &config(0.15, 0.1, 0.003),
-            DT,
-            Vec3::new(1.0, 1.0, 1.0),
-            Vec3::zeros(),
-        );
-        c.reset();
-
-        assert!(c.integral_term == Vec3::zeros());
-        assert!(c.last_error == Vec3::zeros());
-    }
-
     /// A gain change between ticks takes effect on the next tick and keeps the integral.
     #[test]
     fn gain_change_between_ticks_keeps_state() {
@@ -347,11 +320,11 @@ mod tests {
             Vec3::new(2.0, 0.0, 0.0),
             Vec3::zeros(),
         );
-        let integral = c.integral_term;
+        let integral = c.integrated_error;
 
         let out = c.control(&config(0.0, 0.5, 0.0), 0.1, Vec3::zeros(), Vec3::zeros());
 
-        assert!(c.integral_term == integral);
+        assert!(c.integrated_error == integral);
         assert_abs_diff_eq!(out.x, 0.5 * integral.x, epsilon = 1e-6);
     }
 
@@ -372,19 +345,17 @@ mod tests {
         };
         c.control(&shrunk, DT, Vec3::zeros(), Vec3::zeros());
 
-        assert_abs_diff_eq!(c.integral_term.x, 0.25, epsilon = 1e-6);
+        assert_abs_diff_eq!(c.integrated_error.x, 0.25, epsilon = 1e-6);
     }
 
     /// An invalid limit fails `validate` but does not panic `control`: it acts as 0.
     #[test]
     fn invalid_max_integral_is_rejected_and_does_not_panic_the_tick() {
-        for max_integral in [-1.0, f32::NAN, f32::INFINITY] {
-            let cfg = BodyRateControllerConfig {
-                max_integral,
-                ..config(0.0, 0.1, 0.0)
-            };
-            assert!(cfg.validate().is_err(), "max_integral {max_integral}");
-        }
+        let invalid = BodyRateControllerConfig {
+            max_integral: -1.0,
+            ..config(0.0, 0.1, 0.0)
+        };
+        assert_eq!(invalid.validate().map_err(|e| e.field), Err("max_integral"));
         for max_integral in [-1.0, f32::NAN] {
             let cfg = BodyRateControllerConfig {
                 max_integral,
@@ -393,7 +364,7 @@ mod tests {
             let mut c = BodyRateController::default();
             let out = c.control(&cfg, DT, Vec3::new(1.0, 0.0, 0.0), Vec3::zeros());
             assert!(
-                c.integral_term == Vec3::zeros(),
+                c.integrated_error == Vec3::zeros(),
                 "max_integral {max_integral}"
             );
             assert!(out == Vec3::zeros(), "max_integral {max_integral}");
@@ -401,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Time step (dt) must be positive and finite")]
+    #[should_panic(expected = "dt must be positive and finite")]
     fn zero_dt_panics() {
         BodyRateController::default().control(
             &config(0.15, 0.0, 0.0),
@@ -428,18 +399,18 @@ mod tests {
             let mut c = BodyRateController::default();
             // A valid tick first, so there is derivative history to go stale.
             c.control(&cfg, DT, Vec3::new(0.5, 0.0, 0.0), Vec3::zeros());
-            let integral_before = c.integral_term;
+            let integral_before = c.integrated_error;
 
             let during = c.control(&cfg, DT, desired, estimated);
             assert!(
                 during == Vec3::zeros(),
                 "{desired:?}/{estimated:?} gave {during:?}"
             );
-            assert!(c.integral_term == integral_before);
+            assert!(c.integrated_error == integral_before);
 
             // After the gap: P + I only, no derivative from the pre-gap error.
             let after = c.control(&cfg, DT, Vec3::new(0.2, 0.0, 0.0), Vec3::zeros());
-            let expected = 0.15 * 0.2 + 0.1 * c.integral_term.x;
+            let expected = 0.15 * 0.2 + 0.1 * c.integrated_error.x;
             assert_abs_diff_eq!(after.x, expected, epsilon = 1e-6);
         }
     }

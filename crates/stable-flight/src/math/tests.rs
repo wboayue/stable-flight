@@ -202,3 +202,23 @@ fn cap_magnitude_keeps_direction_and_neutralizes_non_finite() {
         assert_relative_eq!(capped.y, expected.y, epsilon = 1e-6);
     }
 }
+
+#[test]
+fn assert_dt_accepts_only_positive_finite_steps() {
+    // (dt, ok)
+    let cases = [
+        (0.004, true),
+        (1.0, true),
+        (0.0, false),
+        (-0.01, false),
+        (f32::NAN, false),
+        (f32::INFINITY, false),
+    ];
+    for (dt, ok) in cases {
+        assert_eq!(
+            std::panic::catch_unwind(|| assert_dt(dt)).is_ok(),
+            ok,
+            "{dt}"
+        );
+    }
+}

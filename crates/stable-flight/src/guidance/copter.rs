@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::rate_divider::RateDivider;
-use crate::math::{cap_magnitude, saturate_unit, wrap_angle};
+use crate::math::{assert_dt, cap_magnitude, saturate_unit, wrap_angle};
 
 #[cfg(test)]
 mod tests;
@@ -193,7 +193,7 @@ impl Configurable for CopterGuidance {
 
 impl Guidance for CopterGuidance {
     fn guide(&mut self, dt: f32, command: &Command, estimated_state: &VehicleState) -> Setpoint {
-        assert!(dt > 0.0, "Time step must be positive");
+        assert_dt(dt);
 
         if !matches!(command, Command::Waypoint(_)) {
             // Re-entering waypoint mode runs the lateral loop at once instead of holding a
@@ -239,13 +239,7 @@ impl CopterGuidance {
 
         // Wrapped so sustained yaw input can't grow the target without bound; the yaw
         // controller works on the wrapped error either way.
-        // Centred stick adds nothing, even for a pathological `dt` (0 × ∞ would be NaN).
-        let slew = if yaw == 0.0 {
-            0.0
-        } else {
-            yaw * HEADING_SLEW_RATE * dt
-        };
-        let target = wrap_angle(self.heading + slew);
+        let target = wrap_angle(self.heading + yaw * HEADING_SLEW_RATE * dt);
         if target.is_finite() {
             self.heading = target;
         } else if estimated_state.heading_rad.is_finite() {
