@@ -61,8 +61,12 @@ pub enum MavlinkError {
 }
 
 /// A [`TelemetryPublisher`] that sends each tick's state as MAVLink messages: heartbeat at
-/// 1 Hz; global position, VFR_HUD, local position, and attitude at 10 Hz each. Every stream
-/// sends on the first `publish`, so a ground station sees the link immediately.
+/// 1 Hz; VFR_HUD, local position, and attitude at 10 Hz each. Every stream sends on the
+/// first `publish`, so a ground station sees the link immediately.
+///
+/// No GLOBAL_POSITION_INT: `VehicleState` is local (NED from a simulator origin) and there
+/// is no geodetic origin to convert it with yet
+/// ([#185](https://github.com/wboayue/stable-flight/issues/185)).
 ///
 /// A failed send is logged (rate-limited) and dropped; it never stops the flight loop.
 ///
@@ -81,7 +85,6 @@ pub struct MavlinkPublisher {
     sequence: u8,
     start_time: Instant,
     heartbeat: Every,
-    global_position: Every,
     vfr_hud: Every,
     local_position: Every,
     attitude: Every,
@@ -137,7 +140,6 @@ impl MavlinkPublisher {
             sequence: 0,
             start_time: Instant::now(),
             heartbeat: Every::new(HEARTBEAT_INTERVAL),
-            global_position: Every::new(STREAM_INTERVAL),
             vfr_hud: Every::new(STREAM_INTERVAL),
             local_position: Every::new(STREAM_INTERVAL),
             attitude: Every::new(STREAM_INTERVAL),
@@ -180,11 +182,6 @@ impl TelemetryPublisher for MavlinkPublisher {
 
         if self.heartbeat.ready(dt) {
             self.send(MavMessage::HEARTBEAT(messages::heartbeat()));
-        }
-        if self.global_position.ready(dt) {
-            self.send(MavMessage::GLOBAL_POSITION_INT(messages::global_position(
-                time_boot_ms,
-            )));
         }
         if self.vfr_hud.ready(dt) {
             self.send(MavMessage::VFR_HUD(messages::vfr_hud(control, state)));

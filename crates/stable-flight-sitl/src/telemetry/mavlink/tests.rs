@@ -90,7 +90,6 @@ fn sends_each_stream_at_its_rate() {
     // (message, expected sends in 2 s: the first tick plus one per period)
     let cases = [
         ("HEARTBEAT", 3),
-        ("GLOBAL_POSITION_INT", 21),
         ("VFR_HUD", 21),
         ("LOCAL_POSITION_NED", 21),
         ("ATTITUDE", 21),
@@ -98,14 +97,14 @@ fn sends_each_stream_at_its_rate() {
     for (name, expected) in cases {
         check!(count(&sent, name) == expected, "{name}");
     }
-    check!(sent.len() == 87);
+    check!(sent.len() == 66);
 }
 
 #[test]
 fn headers_carry_configured_ids_and_a_wrapping_sequence() {
     let connection = MockConnection::default();
-    // dt equals the stream interval: 4 streams every tick, plus a heartbeat every 10th.
-    run(&connection, (42, 7), STREAM_INTERVAL, 70);
+    // dt equals the stream interval: 3 streams every tick, plus a heartbeat every 10th.
+    run(&connection, (42, 7), STREAM_INTERVAL, 90);
     let sent = connection.sent();
 
     check!(sent.len() > 256, "enough messages to wrap the sequence");
@@ -158,13 +157,7 @@ fn every_stream_sends_on_the_first_publish() {
     run(&connection, (1, 1), Duration::from_millis(4), 1);
     let sent = connection.sent();
 
-    for name in [
-        "HEARTBEAT",
-        "GLOBAL_POSITION_INT",
-        "VFR_HUD",
-        "LOCAL_POSITION_NED",
-        "ATTITUDE",
-    ] {
+    for name in ["HEARTBEAT", "VFR_HUD", "LOCAL_POSITION_NED", "ATTITUDE"] {
         check!(count(&sent, name) == 1, "{name}");
     }
 }

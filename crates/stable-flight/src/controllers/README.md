@@ -258,7 +258,7 @@ integrated_error = clamp_symmetric(integrated_error + dt * error, config.max_int
 
 ### Angle Wrapping (Yaw Controller)
 Yaw errors are normalized to [-π, π) for shortest-path control with the core's
-crate-private [`math::wrap_angle`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight/src/math.rs),
+[`stable_flight::wrap_angle`](https://docs.rs/stable-flight/latest/stable_flight/fn.wrap_angle.html),
 a Euclidean remainder (so negative angles wrap correctly; `%` alone would not):
 
 ```rust,ignore
