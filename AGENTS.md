@@ -29,7 +29,10 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
   relative to the root.
 - Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `stabilizers`, `testing` (feature: doubles + `conformance`) (traits/types, the `Vec2`/`Vec3` aliases, `GRAVITY`, `euler_angles`, and the `nalgebra` re-export at the crate root); `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, `vehicle_state`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
 - Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `nalgebra` (core only, `libm`; core aliases `Vec2`/`Vec3` and re-exports it as `stable_flight::nalgebra` — other crates use the re-export), `libm` (`no_std` float math, core), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
-- Untracked generated artifacts: `target/`, root `Cargo.lock`, `tarpaulin-report.html`, `firmware/*/*.bin`.
+- Untracked generated artifacts: `target/`, `tarpaulin-report.html`, `firmware/*/*.bin`.
+- The root `Cargo.lock` is committed (reproducible CI, stable cache key); CI builds with `--locked`,
+  so commit lockfile changes with the manifest change that causes them. Dependabot batches weekly
+  minor/patch bumps into one PR.
 - Paths below are prefixed with their crate (`core:` = `crates/stable-flight/`, `sitl:` =
   `crates/stable-flight-sitl/`, `sitl-realflight:` = `crates/stable-flight-sitl-realflight/`)
   where it matters.

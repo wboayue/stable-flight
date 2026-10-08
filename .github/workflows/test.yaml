@@ -38,7 +38,7 @@ jobs:
 
     - name: test
       run: |
-        cargo test --workspace --all-features
+        cargo test --workspace --all-features --locked
 
   lint:
     runs-on: ubuntu-22.04
@@ -82,8 +82,8 @@ jobs:
       env:
         RUSTDOCFLAGS: -D warnings
       run: |
-        cargo clippy --workspace --all-targets --all-features -- -D warnings
-        cargo doc --workspace --no-deps
+        cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        cargo doc --workspace --no-deps --locked
 
   embedded:
     # Keeps the core no_std (a bare-metal target has no `std` to fall back on), and lints,
@@ -104,8 +104,8 @@ jobs:
 
     - name: build core (thumbv7em-none-eabihf)
       run: |
-        cargo build -p stable-flight --target thumbv7em-none-eabihf
-        cargo build -p stable-flight --features testing --target thumbv7em-none-eabihf
+        cargo build -p stable-flight --locked --target thumbv7em-none-eabihf
+        cargo build -p stable-flight --features testing --locked --target thumbv7em-none-eabihf
 
     # The firmware is a nested workspace; run from its dir so its .cargo/config.toml (target,
     # linker script) applies. A core change that breaks the link fails here; flash size is printed
