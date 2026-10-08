@@ -66,8 +66,8 @@ impl AltitudeControllerConfig {
     }
 }
 
-/// What the [`AltitudeController`] tracks: a target altitude and climb rate, in the world frame
-/// with z up (the [`VehicleState`](crate::VehicleState) frame contract).
+/// What the [`AltitudeController`] tracks: a target altitude and climb rate, z up as in the
+/// [`VehicleState`](crate::VehicleState) frame contract.
 ///
 /// # Examples
 ///
@@ -76,7 +76,6 @@ impl AltitudeControllerConfig {
 ///
 /// // Hold 10 m.
 /// let target = AltitudeTarget { altitude_m: 10.0, velocity_mps: 0.0 };
-/// assert_eq!(target.altitude_m, 10.0);
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AltitudeTarget {
@@ -86,8 +85,9 @@ pub struct AltitudeTarget {
     pub velocity_mps: f32,
 }
 
-/// The vehicle's current vertical state as the [`AltitudeController`] consumes it, in the world
-/// frame with z up (the [`VehicleState`](crate::VehicleState) frame contract).
+/// The vehicle's current vertical state as the [`AltitudeController`] consumes it, taken from
+/// [`VehicleState`](crate::VehicleState) per its frame contract: altitude and climb rate are
+/// z up, attitude is NED world → FRD body.
 ///
 /// # Examples
 ///
@@ -101,7 +101,6 @@ pub struct AltitudeTarget {
 ///     velocity_mps: -0.1,
 ///     attitude: UnitQuaternion::identity(),
 /// };
-/// assert_eq!(estimate.velocity_mps, -0.1);
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AltitudeEstimate {
@@ -109,8 +108,9 @@ pub struct AltitudeEstimate {
     pub altitude_m: f32,
     /// Estimated vertical velocity in m/s, up positive.
     pub velocity_mps: f32,
-    /// Estimated attitude, rotating body to world. Only the tilt (cos roll · cos pitch) is used,
-    /// for tilt compensation; yaw is ignored, and a non-finite attitude counts as level.
+    /// Estimated attitude, as [`VehicleState::attitude`](crate::VehicleState::attitude). Only the
+    /// tilt (cos roll · cos pitch) is used, for tilt compensation; yaw is ignored, and a
+    /// non-finite attitude counts as level.
     pub attitude: UnitQuaternion<f32>,
 }
 
@@ -297,6 +297,42 @@ mod tests {
         }
     }
 
+    /// The D term acts on `target - estimate` climb rate: a target climb adds thrust, tracking
+    /// it is hover.
+    #[test]
+    fn damps_toward_target_climb_rate() {
+        let hover = 0.4;
+        let config = AltitudeControllerConfig {
+            gains: Gains {
+                p: 0.0,
+                i: 0.0,
+                d: 0.5,
+            },
+            hover_thrust: hover,
+            ..Default::default()
+        };
+        // (target climb m/s, estimated climb m/s, expected thrust)
+        let cases = [
+            (2.0, 0.0, hover * (GRAVITY + 1.0) / GRAVITY),
+            (-2.0, 0.0, hover * (GRAVITY - 1.0) / GRAVITY),
+            (0.0, 2.0, hover * (GRAVITY - 1.0) / GRAVITY),
+            (2.0, 2.0, hover),
+        ];
+        for (target_climb, climb, expected) in cases {
+            let target = AltitudeTarget {
+                altitude_m: 10.0,
+                velocity_mps: target_climb,
+            };
+            let thrust = AltitudeController::default().control(
+                &config,
+                0.004,
+                target,
+                estimate(10.0, climb, level()),
+            );
+            approx::assert_relative_eq!(thrust, expected, epsilon = 1e-5);
+        }
+    }
+
     /// The integral accumulates `error · dt` only within `INTEGRATION_BAND` of the target, stops
     /// at `max_integral`, and feeds into thrust as `I · ∫e`.
     #[test]
@@ -339,23 +375,34 @@ mod tests {
     }
 
     #[test]
-    fn non_finite_estimate_holds_hover_and_does_not_poison_later_ticks() {
-        let nan = f32::NAN;
-        // (estimated altitude, estimated velocity)
-        let cases = [(nan, 0.0), (10.0, nan), (f32::INFINITY, 0.0), (nan, nan)];
+    fn non_finite_input_holds_hover_and_does_not_poison_later_ticks() {
+        let (nan, inf) = (f32::NAN, f32::INFINITY);
+        // (target altitude, target velocity, estimated altitude, estimated velocity)
+        let cases = [
+            (20.0, 0.0, nan, 0.0),
+            (20.0, 0.0, 10.0, nan),
+            (20.0, 0.0, inf, 0.0),
+            (20.0, 0.0, nan, nan),
+            (nan, 0.0, 10.0, 0.0),
+            (20.0, nan, 10.0, 0.0),
+            (-inf, 0.0, 10.0, 0.0),
+            (20.0, inf, 10.0, 0.0),
+        ];
         let config = AltitudeControllerConfig::default();
-        for (altitude, velocity) in cases {
+        for (target_altitude, target_velocity, altitude, velocity) in cases {
+            let input = (target_altitude, target_velocity, altitude, velocity);
             let mut controller = AltitudeController::default();
+            let bad_target = AltitudeTarget {
+                altitude_m: target_altitude,
+                velocity_mps: target_velocity,
+            };
             let during = controller.control(
                 &config,
                 0.004,
-                target(20.0),
+                bad_target,
                 estimate(altitude, velocity, level()),
             );
-            assert!(
-                during == DEFAULT_HOVER_THRUST,
-                "({altitude}, {velocity}) gave {during}"
-            );
+            assert!(during == DEFAULT_HOVER_THRUST, "{input:?} gave {during}");
 
             let after =
                 controller.control(&config, 0.004, target(20.0), estimate(10.0, 0.0, level()));
@@ -365,10 +412,7 @@ mod tests {
                 target(20.0),
                 estimate(10.0, 0.0, level()),
             );
-            assert!(
-                after == fresh,
-                "after ({altitude}, {velocity}): {after} vs fresh {fresh}"
-            );
+            assert!(after == fresh, "after {input:?}: {after} vs fresh {fresh}");
         }
     }
 

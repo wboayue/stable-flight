@@ -111,10 +111,11 @@ let yaw_rate = controller.control(&config, dt, desired_yaw, estimated_yaw);
 **Output**: Normalized thrust command [0, 1]
 
 **Key Features**:
-- Thrust mapping accounting for vehicle attitude
-- Gravity compensation and acceleration limiting
-- PID control with velocity feedforward
-- Safety limits on maximum acceleration
+- PID on altitude error (D on climb-rate error) gives a vertical acceleration
+- Gravity feedforward via `hover_thrust`; the integral only trims the residual, and only
+  accumulates within 1 m of the target
+- Tilt compensation (boost capped at 60°); output saturated to [0, 1]
+- Non-finite inputs return hover thrust without touching the integral
 
 **Usage**:
 ```rust
@@ -291,7 +292,9 @@ The position controllers (altitude, lateral) run in `CopterGuidance`, which turn
 ```rust,ignore
 // Guidance (src/guidance/copter.rs), waypoint mode
 let tilt = self.lateral.control(&self.config.lateral, dt, waypoint, position, velocity);
-let thrust = self.altitude.control(&self.config.altitude, dt, AltitudeTarget { altitude_m, velocity_mps: 0.0 }, AltitudeEstimate { altitude_m: z, velocity_mps: vz, attitude });
+let target = AltitudeTarget { altitude_m: waypoint.altitude_m, velocity_mps: 0.0 };
+let estimate = AltitudeEstimate { altitude_m: z, velocity_mps: vz, attitude };
+let thrust = self.altitude.control(&self.config.altitude, dt, target, estimate);
 
 // Stabilizer (src/stabilizers/copter.rs)
 let attitude_rates = self.attitude.control(&config.attitude, dt, setpoint_tilt, current_tilt);
