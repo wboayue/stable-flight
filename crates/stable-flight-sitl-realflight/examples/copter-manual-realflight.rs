@@ -53,7 +53,8 @@ fn main() {
 
     let mixer = airframe.mixer;
 
-    let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
+    let telemetry = MavlinkPublisher::connect(MavlinkConfiguration::default())
+        .expect("failed to open MAVLink connection");
 
     let mut flight_loop =
         FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
