@@ -37,7 +37,7 @@ fn main() {
     let args = Args::parse();
 
     // Joystick commander drives the vehicle attitude/rate directly.
-    let commander = Extreme3DCommander::default();
+    let commander = Extreme3DCommander::new().expect("Failed to initialize Extreme3D joystick");
 
     // QuadCopterX model: tuned gains, mixer, and motor-to-channel mapping.
     let airframe = airframes::quadcopter_x();

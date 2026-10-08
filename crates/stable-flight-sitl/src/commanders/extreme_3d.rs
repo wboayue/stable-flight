@@ -335,18 +335,6 @@ impl Extreme3DCommander {
     }
 }
 
-impl Default for Extreme3DCommander {
-    /// Creates a default Extreme3DCommander in Attitude mode.
-    ///
-    /// # Panics
-    ///
-    /// Panics if joystick initialization fails. For fallible initialization,
-    /// use `Extreme3DCommander::new()` instead.
-    fn default() -> Self {
-        Self::new().expect("Failed to initialize Extreme3DCommander with default settings")
-    }
-}
-
 impl Commander for Extreme3DCommander {
     /// Generates the next control command based on current joystick input.
     ///

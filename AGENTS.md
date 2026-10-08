@@ -73,43 +73,7 @@ The flight pipeline has no CLI and there is no `cargo bench` target — don't su
 
 ## Architecture
 
-The control system is a six-trait pipeline sequenced by the core `FlightLoop` and paced by the sitl `RealTimeRunner`. Traits and methods (from `crates/stable-flight/src/lib.rs`):
-
-```rust
-pub trait Commander {
-    fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command;
-}
-
-pub trait StateEstimator {
-    fn estimate_state(&mut self, dt: Duration) -> VehicleState;
-}
-
-pub trait Actuator {
-    fn actuate(&mut self, actuator_command: &ActuatorCommand);
-}
-
-// Blanket-implemented: implement StateEstimator + Actuator, never Vehicle directly.
-pub trait Vehicle: StateEstimator + Actuator {}
-impl<T: StateEstimator + Actuator> Vehicle for T {}
-
-pub trait Guidance {
-    fn guide(&mut self, dt: f32, command: &Command, state: &VehicleState) -> Setpoint;
-    fn prime(&mut self, state: &VehicleState);
-}
-
-pub trait Stabilizer {
-    fn stabilize(&mut self, dt: f32, setpoint: &Setpoint, state: &VehicleState) -> ControlOutput;
-    fn prime(&mut self, state: &VehicleState);
-}
-
-pub trait Mixer {
-    fn mix(&self, controls: &ControlOutput) -> ActuatorCommand;
-}
-
-pub trait TelemetryPublisher {
-    fn publish(&mut self, record: &TelemetryRecord);
-}
-```
+The control system is a pipeline of traits sequenced by the core `FlightLoop` and paced by the sitl `RealTimeRunner`: `Commander`, `Vehicle` (`StateEstimator` + `Actuator`, blanket-implemented — implement those two, never `Vehicle` directly), `Guidance`, `Stabilizer`, `Mixer`, and `TelemetryPublisher`. Their signatures and contracts live in core `src/lib.rs` rustdoc; read it before implementing one.
 
 `TelemetryRecord<'a>` (defined in `lib.rs`) borrows one tick's nominal `dt`, `command`, guidance `setpoint`, `state`, stabilizer `control` output, and mixer `actuators`; the loop assembles it after `actuate`.
 
@@ -143,18 +107,7 @@ mappings are the exception: they come from the backend's `airframes`, not the ex
 
 ### Control loop (`FlightLoop::step`, core `src/flight_loop.rs`)
 
-```rust
-let dt_secs = dt.as_secs_f32();
-let command = self.commander.next_command(dt_secs, &self.state); // previous tick's state
-self.state = self.vehicle.estimate_state(dt);
-let setpoint = self.guidance.guide(dt_secs, &command, &self.state);
-let control = self.stabilizer.stabilize(dt_secs, &setpoint, &self.state);
-let actuators = self.mixer.mix(&control);
-self.vehicle.actuate(&actuators);
-self.telemetry.publish(&TelemetryRecord { dt, command: &command, setpoint: &setpoint, state: &self.state, control: &control, actuators: &actuators });
-```
-
-`FlightLoop::prime()` takes the initial estimate with `Duration::ZERO` and primes guidance, then the stabilizer; call it once before the first `step`. `FlightLoop` has no clock; the sitl `RealTimeRunner` + `ShutdownSignal` pace and stop it (timing rules: `architecture.md#real-time-loop-management`; usage: sitl README).
+Tick ordering (commander sees the previous tick's state; guidance and stabilizer the fresh estimate; telemetry after `actuate`) and `FlightLoop::prime` are specified in [`architecture.md#flight-stabilization-loop`](architecture.md#flight-stabilization-loop). Call `prime` once before the first `step`. `FlightLoop` has no clock; the sitl `RealTimeRunner` + `ShutdownSignal` pace and stop it (timing rules: `architecture.md#real-time-loop-management`; usage: sitl README).
 
 ## Coding style
 

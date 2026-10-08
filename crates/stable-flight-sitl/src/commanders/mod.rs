@@ -8,7 +8,7 @@
 //!
 //! - **[ScriptCommander]**: Supports the playback of commands from a script.
 //! - **[Extreme3DCommander]**: Generates manual commands from the Extreme3D Joystick.
-//! - **[SpectrumCommander]**: Generates manual commands from the Spextrum transmitter.
+//! - **[SpektrumCommander]**: Generates manual commands from the Spektrum transmitter.
 
 pub mod extreme_3d;
 pub mod script;
@@ -40,4 +40,4 @@ pub use extreme_3d::Extreme3DCommander;
 #[doc(inline)]
 pub use script::ScriptCommander;
 #[doc(inline)]
-pub use spektrum::SpectrumCommander;
+pub use spektrum::SpektrumCommander;

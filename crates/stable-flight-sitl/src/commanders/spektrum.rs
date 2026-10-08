@@ -6,19 +6,41 @@ use std::cell::RefCell;
 
 use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
 
+use crate::commanders::CommanderError;
 use stable_flight::{AttitudeCommand, Command, Commander, VehicleState};
 
-pub struct SpectrumCommander {
+/// [`Commander`] driven by a Spektrum transmitter connected over a USB dongle.
+pub struct SpektrumCommander {
     gilrs: RefCell<Gilrs>,
     active_gamepad: RefCell<Option<GamepadId>>,
 }
 
-impl SpectrumCommander {
-    pub fn new() -> SpectrumCommander {
-        SpectrumCommander {
-            gilrs: RefCell::new(Gilrs::new().expect("Failed to initialize Gilrs")),
+impl SpektrumCommander {
+    /// Opens the gamepad subsystem; the transmitter is picked up on its first input event.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CommanderError::InitializationFailed`] if Gilrs cannot be initialized
+    /// (input subsystem unavailable or not permitted).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use stable_flight_sitl::commanders::SpektrumCommander;
+    ///
+    /// # fn main() -> Result<(), stable_flight_sitl::commanders::CommanderError> {
+    /// let commander = SpektrumCommander::new()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn new() -> Result<Self, CommanderError> {
+        let gilrs = Gilrs::new().map_err(|e| {
+            CommanderError::InitializationFailed(format!("Gilrs initialization failed: {}", e))
+        })?;
+        Ok(Self {
+            gilrs: RefCell::new(gilrs),
             active_gamepad: RefCell::new(None),
-        }
+        })
     }
 
     /// Read control channels from Spektrum radio
@@ -78,13 +100,7 @@ impl SpectrumCommander {
     }
 }
 
-impl Default for SpectrumCommander {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl Commander for SpectrumCommander {
+impl Commander for SpektrumCommander {
     fn next_command(&mut self, _dt: f32, _current_state: &VehicleState) -> Command {
         let channels = self.read_channels();
 

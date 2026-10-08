@@ -24,7 +24,7 @@ let commander = Extreme3DCommander::with_mode(Mode::Rate)
 
 Use `new()` for Attitude mode (default) or `with_mode()` to start in Rate mode. Mode can also be switched at runtime via D-pad buttons.
 
-The SpektrumCommander currently doesn't expose configuration options.
+`SpektrumCommander::new()` likewise returns a `Result`; it doesn't expose configuration options.
 
 ### Vehicle
 
