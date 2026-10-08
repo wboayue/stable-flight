@@ -130,8 +130,22 @@ pub(crate) fn saturate_throttle(value: f32) -> f32 {
     }
 }
 
-/// Wraps an angle in radians to [-π, π). Non-finite input stays non-finite.
-pub(crate) fn wrap_angle(angle: f32) -> f32 {
+/// Wraps an angle in radians to [-π, π); non-finite input gives NaN.
+///
+/// Float rounding can return exactly `+π` for inputs just below an odd multiple of π, so
+/// treat the range as closed, [-π, π], when that matters.
+///
+/// # Examples
+///
+/// ```
+/// use core::f32::consts::{FRAC_PI_2, PI};
+/// use stable_flight::wrap_angle;
+///
+/// assert!((wrap_angle(3.0 * FRAC_PI_2) + FRAC_PI_2).abs() < 1e-6); // 270° → -90°
+/// assert_eq!(wrap_angle(PI), -PI);
+/// assert!(wrap_angle(f32::NAN).is_nan());
+/// ```
+pub fn wrap_angle(angle: f32) -> f32 {
     rem_euclid(angle + PI, TAU) - PI
 }
 

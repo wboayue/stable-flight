@@ -1,13 +1,13 @@
 use super::*;
 use realflight_bridge::{BridgeError, ControlInputs, Quaternion, RealFlightBridge, SimulatorState};
 use stable_flight::FlightLoop;
-use stable_flight::Vec3;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::conformance::Scenario;
 use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
+use stable_flight::{Vec3, wrap_angle};
 use std::{
     cell::{Cell, RefCell},
     time::Duration,
@@ -407,7 +407,7 @@ fn captured_frames_agree_across_fields() {
             state.pitch_rad
         );
         assert!(
-            wrap_pi(heading - state.heading_rad).abs() < 1e-3,
+            wrap_angle(heading - state.heading_rad).abs() < 1e-3,
             "frame {i}: heading {heading} vs {}",
             state.heading_rad
         );
@@ -421,10 +421,4 @@ fn captured_frames_agree_across_fields() {
             "frame {i}: body velocity {body:?} vs {expected:?}"
         );
     }
-}
-
-/// Wraps an angle to [-π, π).
-fn wrap_pi(angle: f32) -> f32 {
-    use std::f32::consts::{PI, TAU};
-    (angle + PI).rem_euclid(TAU) - PI
 }

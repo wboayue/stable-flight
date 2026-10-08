@@ -39,7 +39,7 @@ pub use flight_loop::FlightLoop;
 
 use nalgebra::UnitQuaternion;
 
-pub use math::euler_angles;
+pub use math::{euler_angles, wrap_angle};
 
 /// Re-export of the [`nalgebra`] version this crate's public types use; depend on it through
 /// here so the versions can't diverge.
