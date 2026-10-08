@@ -1,7 +1,7 @@
 use nalgebra::UnitQuaternion;
 
 use crate::GRAVITY;
-use crate::controllers::{Gains, InvalidConfig, check_limit};
+use crate::controllers::{Gains, InvalidConfig, check_limit, check_unit_interval};
 use crate::math::clamp_symmetric;
 
 /// Default [`AltitudeControllerConfig::hover_thrust`].
@@ -65,14 +65,7 @@ impl AltitudeControllerConfig {
     /// ```
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         check_limit("max_integral", self.max_integral)?;
-        if self.hover_thrust > 0.0 && self.hover_thrust <= 1.0 {
-            Ok(())
-        } else {
-            Err(InvalidConfig {
-                field: "hover_thrust",
-                requirement: "in (0, 1]",
-            })
-        }
+        check_unit_interval("hover_thrust", self.hover_thrust)
     }
 }
 

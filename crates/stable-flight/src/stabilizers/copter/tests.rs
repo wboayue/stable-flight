@@ -424,3 +424,36 @@ fn rate_setpoint_scales_each_axis_by_its_full_scale_rate() {
     assert_eq!(output.moments, expected);
     assert!(expected.amax() < 1.0, "saturated: {expected:?}");
 }
+
+#[test]
+fn validate_rejects_a_non_positive_or_non_finite_thrust_curve_exponent() {
+    for exponent in [0.0, -2.0, f32::NAN, f32::INFINITY] {
+        let config = CopterStabilizerConfig {
+            thrust_curve_exponent: exponent,
+            ..Default::default()
+        };
+        assert_eq!(
+            config.validate().map_err(|e| e.field),
+            Err("thrust_curve_exponent"),
+            "exponent {exponent}"
+        );
+    }
+}
+
+/// A controller config error names the loop it came from.
+#[test]
+fn validate_reports_the_loop_of_a_controller_error() {
+    for section in ["body_rate", "attitude", "yaw"] {
+        let mut config = CopterStabilizerConfig::default();
+        match section {
+            "body_rate" => config.body_rate.max_integral = -1.0,
+            "attitude" => config.attitude.max_integral = -1.0,
+            _ => config.yaw.max_integral = -1.0,
+        }
+        let error = config.validate().unwrap_err();
+        assert_eq!(
+            (error.section, error.field),
+            (Some(section), "max_integral")
+        );
+    }
+}

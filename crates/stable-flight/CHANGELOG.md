@@ -84,10 +84,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which maps a NaN attitude to a finite pitch of -π/2 and yaw 0, and costs more
   flash. NaN in gives NaN out; pitch stays finite at ±90°.
 - `validate()` on every controller config and on `CopterStabilizerConfig`, returning the new
-  `controllers::InvalidConfig` (field and requirement). `CopterStabilizer::new` and
-  `CopterGuidance::new` still panic on an invalid config, and `CopterStabilizer::new` now also
+  `controllers::InvalidConfig` (`#[non_exhaustive]`: field, requirement, and the loop
+  `section` when a composite reports it, e.g. `body_rate.max_integral`). `CopterStabilizer::new`
+  and `CopterGuidance::new` still panic on an invalid config. `CopterStabilizer::new` now also
   rejects a negative or non-finite `full_scale_rates_radps` component, which silently zeroed
-  every rate-mode moment ([#175](https://github.com/wboayue/stable-flight/issues/175)).
+  every rate-mode moment ([#175](https://github.com/wboayue/stable-flight/issues/175)), and a
+  non-positive or non-finite `thrust_curve_exponent`, under which zero throttle became full
+  thrust.
 
 ### Changed
 

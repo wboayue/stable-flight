@@ -120,10 +120,10 @@ pub struct CopterGuidance {
     /// Altitude loop config, passed into [`altitude`](Self::altitude) every tick.
     altitude_config: AltitudeControllerConfig,
     /// Lateral loop config, passed into [`lateral`](Self::lateral) every tick.
-    pub(crate) lateral_config: LateralControllerConfig,
+    lateral_config: LateralControllerConfig,
 
-    pub(crate) altitude: AltitudeController,
-    pub(crate) lateral: LateralController,
+    altitude: AltitudeController,
+    lateral: LateralController,
 
     /// Heading-hold target for attitude commands.
     heading: f32,
@@ -159,16 +159,24 @@ impl CopterGuidance {
             hover_thrust: config.hover_thrust,
             ..Default::default()
         };
-        if let Err(error) = altitude_config.validate() {
+        let lateral_config = LateralControllerConfig {
+            gains: config.lateral_gains,
+            ..Default::default()
+        };
+        let checks = altitude_config
+            .validate()
+            .map_err(|e| e.in_section("altitude"))
+            .and(
+                lateral_config
+                    .validate()
+                    .map_err(|e| e.in_section("lateral")),
+            );
+        if let Err(error) = checks {
             panic!("invalid CopterGuidanceConfig: {error}");
         }
         CopterGuidance {
             altitude_config,
-            lateral_config: LateralControllerConfig {
-                gains: config.lateral_gains,
-                max_integral: 100.0,
-                max_rate_radps: Vec2::new(2.0, 2.0), // unused by the lateral controller today (#71)
-            },
+            lateral_config,
             altitude: AltitudeController::default(),
             lateral: LateralController::default(),
 

@@ -510,8 +510,7 @@ fn reference_configs() -> (LateralControllerConfig, AltitudeControllerConfig) {
     (
         LateralControllerConfig {
             gains: config.lateral_gains,
-            max_integral: 100.0,
-            max_rate_radps: Vec2::new(2.0, 2.0),
+            ..Default::default()
         },
         AltitudeControllerConfig {
             gains: config.altitude_gains,
@@ -730,6 +729,6 @@ fn rejects_hover_thrust_outside_zero_to_one() {
             hover_thrust,
             ..Default::default()
         };
-        assert_new_panics(config, "hover_thrust");
+        assert_new_panics(config, "altitude.hover_thrust"); // names the loop
     }
 }

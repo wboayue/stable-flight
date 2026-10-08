@@ -34,8 +34,8 @@ use crate::{Vec2, Vec3};
 
 use crate::{AttitudeSetpoint, ControlOutput, RateSetpoint, Setpoint, Stabilizer, VehicleState};
 
-use crate::controllers::check_limit;
 use crate::controllers::*;
+use crate::controllers::{check_limit, check_positive};
 use crate::math::{euler_angles, saturate_throttle, saturate_unit};
 
 #[cfg(test)]
@@ -44,7 +44,8 @@ mod tests;
 /// Configuration for the [CopterStabilizer]: gains and limits for the inner control loops and
 /// the thrust mapping.
 ///
-/// Plain data: [`CopterStabilizer::new`] builds the controllers (and their state) from it.
+/// Plain data: [`CopterStabilizer::new`] validates it, and the stabilizer passes it to its
+/// controllers every tick.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CopterStabilizerConfig {
     /// Body-rate (inner) loop.
@@ -57,7 +58,8 @@ pub struct CopterStabilizerConfig {
     /// component must be non-negative and finite: an infinite or NaN scale makes even a neutral
     /// stick a non-finite rate, which zeroes every moment.
     pub full_scale_rates_radps: Vec3,
-    /// Exponent of the thrust curve applied to the linear thrust setpoint.
+    /// Exponent of the thrust curve applied to the linear thrust setpoint. Must be positive
+    /// and finite: a negative exponent maps zero throttle to full thrust.
     pub thrust_curve_exponent: f32,
 }
 
@@ -83,8 +85,9 @@ impl Default for CopterStabilizerConfig {
 
 impl CopterStabilizerConfig {
     /// Checks every controller config ([`BodyRateControllerConfig::validate`],
-    /// [`AttitudeControllerConfig::validate`], [`YawControllerConfig::validate`]) and that each
-    /// `full_scale_rates_radps` component is non-negative and finite.
+    /// [`AttitudeControllerConfig::validate`], [`YawControllerConfig::validate`]; errors carry
+    /// the loop as their `section`), that each `full_scale_rates_radps` component is
+    /// non-negative and finite, and that `thrust_curve_exponent` is positive and finite.
     ///
     /// # Examples
     ///
@@ -97,13 +100,18 @@ impl CopterStabilizerConfig {
     /// assert!(config.validate().is_err());
     /// ```
     pub fn validate(&self) -> Result<(), InvalidConfig> {
-        self.body_rate.validate()?;
-        self.attitude.validate()?;
-        self.yaw.validate()?;
+        self.body_rate
+            .validate()
+            .map_err(|e| e.in_section("body_rate"))?;
+        self.attitude
+            .validate()
+            .map_err(|e| e.in_section("attitude"))?;
+        self.yaw.validate().map_err(|e| e.in_section("yaw"))?;
         let scales = &self.full_scale_rates_radps;
         check_limit("full_scale_rates_radps.x", scales.x)?;
         check_limit("full_scale_rates_radps.y", scales.y)?;
-        check_limit("full_scale_rates_radps.z", scales.z)
+        check_limit("full_scale_rates_radps.z", scales.z)?;
+        check_positive("thrust_curve_exponent", self.thrust_curve_exponent)
     }
 }
 
@@ -129,9 +137,9 @@ pub struct CopterStabilizer {
     /// Gains and limits, passed into each controller every tick.
     config: CopterStabilizerConfig,
 
-    pub(crate) body_rate: BodyRateController,
-    pub(crate) attitude: AttitudeController,
-    pub(crate) yaw: YawController,
+    body_rate: BodyRateController,
+    attitude: AttitudeController,
+    yaw: YawController,
 }
 
 impl CopterStabilizer {
