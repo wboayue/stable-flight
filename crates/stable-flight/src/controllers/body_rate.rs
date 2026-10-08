@@ -233,6 +233,37 @@ mod tests {
         }
     }
 
+    /// Closed loop against a constant yaw disturbance torque (`testing::settled_yaw_rate`),
+    /// commanding zero rate: the integral cancels it up to its authority
+    /// `I · max_integral`; past it, the rate settles at `−(D − I · max_integral) / P` (#192).
+    #[test]
+    fn integral_cancels_a_constant_yaw_torque_up_to_its_authority() {
+        let cfg = BodyRateControllerConfig {
+            yaw_gains: Gains {
+                p: 0.6,
+                i: 0.2,
+                d: 0.0,
+            },
+            max_integral: 1.0,
+            ..config(0.0, 0.0, 0.0)
+        };
+        // (disturbance torque, expected settled yaw rate in rad/s)
+        let cases = [
+            (0.0, 0.0),
+            (0.15, 0.0),
+            (-0.15, 0.0),
+            (0.4, -0.333_333), // #192: CCW drift
+            (-0.4, 0.333_333),
+        ];
+        for (disturbance, expected) in cases {
+            let rate = crate::testing::settled_yaw_rate(&cfg, disturbance);
+            assert!(
+                (rate - expected).abs() < 1e-3,
+                "disturbance {disturbance}: settled at {rate} rad/s, expected {expected}"
+            );
+        }
+    }
+
     /// The output is independent of `dt` for a pure P controller (no hidden normalization).
     #[test]
     fn proportional_output_does_not_depend_on_dt() {
