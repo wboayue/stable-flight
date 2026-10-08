@@ -19,7 +19,7 @@ const DEFAULT_MAX_INTEGRAL: f32 = 1.0;
 ///
 /// Gains map rate error (rad/s) straight to a normalized moment in `[-1, 1]`: `p` is moment per
 /// rad/s, `i` per rad of accumulated error, and `d` per rad/s².
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BodyRateControllerConfig {
     /// PID gains for the roll and pitch rates.
     pub gains: Gains,

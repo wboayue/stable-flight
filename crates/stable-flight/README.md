@@ -68,25 +68,21 @@ The simplest setup uses default gains:
 let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
 ```
 
-For tuned gains, build the inner PID controllers explicitly (simulator backends ship tuned sets, e.g. [`airframes::quadcopter_x`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl-realflight/src/airframes.rs)):
+For tuned gains, set the inner loops' configs (simulator backends ship tuned sets, e.g. [`airframes::quadcopter_x`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl-realflight/src/airframes.rs)):
 
 ```rust
-let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
-    gains: Gains { p: 0.5, i: 0.2, d: 0.004 },
-    yaw_gains: Gains { p: 0.6, i: 0.2, d: 0.0 },
-    max_integral: 1.0,
-});
-
-let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
-    gains: Gains { p: 3.0, i: 0.0, d: 0.1 },
-    max_integral: 100.0,
-    max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
-    max_rate_radps: Vec2::new(3.0, 3.0),
-});
-
 let stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
-    rates_controller,
-    attitude_controller,
+    body_rate: BodyRateControllerConfig {
+        gains: Gains { p: 0.5, i: 0.2, d: 0.004 },
+        yaw_gains: Gains { p: 0.6, i: 0.2, d: 0.0 },
+        max_integral: 1.0,
+    },
+    attitude: AttitudeControllerConfig {
+        gains: Gains { p: 3.0, i: 0.0, d: 0.1 },
+        max_integral: 100.0,
+        max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
+        max_rate_radps: Vec2::new(3.0, 3.0),
+    },
     ..Default::default()
 });
 ```

@@ -5,7 +5,7 @@ use crate::math::wrap_angle;
 ///
 /// This structure defines the control parameters that determine how the yaw controller
 /// responds to heading errors, including responsiveness, stability, and maximum rates.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct YawControllerConfig {
     /// PID gains that determine controller responsiveness.
     ///
@@ -108,7 +108,7 @@ impl YawController {
             config.max_rate_radps
         );
         Self {
-            config: config.clone(),
+            config: *config,
             previous_error: None,
             integrated_error: 0.0,
         }
