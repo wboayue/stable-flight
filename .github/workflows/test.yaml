@@ -62,13 +62,13 @@ jobs:
       # or jq fails the step instead of passing it.
       run: |
         set -euo pipefail
-        crates=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name | select(startswith("stable-flight-sitl-"))')
+        crates=$(cargo metadata --locked --no-deps --format-version 1 | jq -r '.packages[].name | select(startswith("stable-flight-sitl-"))')
         if [ -z "$crates" ]; then
           echo "::error::no stable-flight-sitl-* backend crates found"
           exit 1
         fi
         for crate in $crates; do
-          tree=$(cargo tree -p "$crate" -e normal --target all --prefix none)
+          tree=$(cargo tree --locked -p "$crate" -e normal --target all --prefix none)
           if grep -q '^stable-flight-sitl v' <<< "$tree"; then
             echo "::error::$crate has stable-flight-sitl as a normal dependency (dev-dependency only)"
             exit 1
