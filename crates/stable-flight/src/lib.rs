@@ -190,11 +190,11 @@ pub trait Commander {
 /// use stable_flight::{Command, Vec2, WaypointCommand};
 ///
 /// let waypoint_cmd = Command::Waypoint(WaypointCommand {
-///     position_m: Vec2::new(1000.0, 2000.0),  // Target position in world coordinates
+///     position_m: Vec2::new(1000.0, 2000.0),    // Target position in world coordinates
 ///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Optional desired velocity at target
-///     altitude_m: 500.0,                 // Target altitude in meters
-///     cruise_speed_mps: 25.0,              // Desired speed during transit
-///     roll_rad: Some(0.05),                // Optional roll angle in radians
+///     altitude_m: 500.0,                        // Target altitude in meters
+///     cruise_speed_mps: 25.0,                   // Desired speed during transit
+///     roll_rad: Some(0.05),                     // Optional roll angle in radians
 /// });
 /// ```
 ///
@@ -401,11 +401,11 @@ pub struct RateCommand {
 /// use stable_flight::{Vec2, WaypointCommand};
 ///
 /// let cmd = WaypointCommand {
-///     position_m: Vec2::new(1000.0, 2000.0),  // Target position (X=1000m, Y=2000m)
+///     position_m: Vec2::new(1000.0, 2000.0),    // Target position (X=1000m, Y=2000m)
 ///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Arrive with 15 m/s eastward velocity
-///     altitude_m: 500.0,                 // Target altitude of 500 meters
-///     cruise_speed_mps: 25.0,              // Travel at 25 m/s
-///     roll_rad: Some(0.05),                // Slight right roll during approach
+///     altitude_m: 500.0,                        // Target altitude of 500 meters
+///     cruise_speed_mps: 25.0,                   // Travel at 25 m/s
+///     roll_rad: Some(0.05),                     // Slight right roll during approach
 /// };
 /// ```
 ///

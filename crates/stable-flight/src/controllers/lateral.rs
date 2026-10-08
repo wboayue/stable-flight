@@ -12,14 +12,15 @@ pub struct LateralControllerConfig {
     /// Prevents integral windup by limiting error accumulation.
     pub max_integral: f32,
 
-    /// Maximum angular rates in radians/second for roll (x) and pitch (y).
-    /// Limits the output rates sent to the rate controller.
+    /// Maximum roll (x) and pitch (y) rates in radians/second. Currently unused: the
+    /// controller outputs normalized tilt
+    /// ([#71](https://github.com/wboayue/stable-flight/issues/71)).
     pub max_rate_radps: Vec2,
 }
 
 impl Default for LateralControllerConfig {
     /// Provides a default configuration with reasonable starting values.
-    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and max_rate (2 rad/s) may need tuning
+    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and `max_rate_radps` (2 rad/s) may need tuning
     /// for specific vehicles.
     fn default() -> Self {
         Self {

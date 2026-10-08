@@ -28,7 +28,7 @@ pub struct AttitudeControllerConfig {
 
 impl Default for AttitudeControllerConfig {
     /// Provides a default configuration with reasonable starting values.
-    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and max_rate_radps (2 rad/s) may need tuning
+    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and `max_rate_radps` (2 rad/s) may need tuning
     /// for specific vehicles.
     fn default() -> Self {
         Self {
@@ -59,7 +59,7 @@ pub struct AttitudeController {
 
 impl Default for AttitudeController {
     /// Provides a default attitude controller with default configuration.
-    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and max_rate_radps (2 rad/s) may need tuning
+    /// Note: PID gains (P=7.0, I=0.0, D=0.01) and `max_rate_radps` (2 rad/s) may need tuning
     /// for specific vehicles.
     fn default() -> Self {
         Self::with_config(&AttitudeControllerConfig::default())

@@ -223,7 +223,7 @@ mod tests {
     // Helper functions for test setup
 
     /// Creates a controller with only proportional gain for testing
-    fn create_p_only_controller(p_gain: f32, max_rate: f32) -> YawController {
+    fn create_p_only_controller(p_gain: f32, max_rate_radps: f32) -> YawController {
         let config = YawControllerConfig {
             gains: Gains {
                 p: p_gain,
@@ -231,14 +231,18 @@ mod tests {
                 d: 0.0,
             },
             max_integral: 10.0,
-            max_rate_radps: max_rate,
+            max_rate_radps,
         };
 
         YawController::with_config(&config)
     }
 
     /// Creates a controller with only integral gain for testing
-    fn create_i_only_controller(i_gain: f32, max_integral: f32, max_rate: f32) -> YawController {
+    fn create_i_only_controller(
+        i_gain: f32,
+        max_integral: f32,
+        max_rate_radps: f32,
+    ) -> YawController {
         let config = YawControllerConfig {
             gains: Gains {
                 p: 0.0,
@@ -246,14 +250,14 @@ mod tests {
                 d: 0.0,
             },
             max_integral,
-            max_rate_radps: max_rate,
+            max_rate_radps,
         };
 
         YawController::with_config(&config)
     }
 
     /// Creates a controller with only derivative gain for testing
-    fn create_d_only_controller(d_gain: f32, max_rate: f32) -> YawController {
+    fn create_d_only_controller(d_gain: f32, max_rate_radps: f32) -> YawController {
         let config = YawControllerConfig {
             gains: Gains {
                 p: 0.0,
@@ -261,7 +265,7 @@ mod tests {
                 d: d_gain,
             },
             max_integral: 10.0,
-            max_rate_radps: max_rate,
+            max_rate_radps,
         };
 
         YawController::with_config(&config)
@@ -690,10 +694,10 @@ mod tests {
         assert_relative_eq!(after_gap, fresh);
     }
 
-    /// Tests that output rate is properly limited to max_rate.
+    /// Tests that output rate is properly limited to `max_rate_radps`.
     #[test]
     fn test_max_rate_limiting() {
-        // Test that output is clamped to max_rate
+        // Test that output is clamped to max_rate_radps
         let mut controller = create_p_only_controller(10.0, 2.0);
 
         let dt = 0.01;
@@ -777,22 +781,25 @@ mod tests {
 
     #[test]
     fn rejects_invalid_limits_at_construction() {
-        // (max_integral, max_rate)
+        // (max_integral, max_rate_radps)
         let cases = [
             (-1.0, 1.0),
             (f32::NAN, 1.0),
             (1.0, -1.0),
             (1.0, f32::INFINITY),
         ];
-        for (max_integral, max_rate) in cases {
+        for (max_integral, max_rate_radps) in cases {
             let result = std::panic::catch_unwind(|| {
                 YawController::with_config(&YawControllerConfig {
                     max_integral,
-                    max_rate_radps: max_rate,
+                    max_rate_radps,
                     ..Default::default()
                 })
             });
-            assert!(result.is_err(), "({max_integral}, {max_rate}) was accepted");
+            assert!(
+                result.is_err(),
+                "({max_integral}, {max_rate_radps}) was accepted"
+            );
         }
     }
 }
