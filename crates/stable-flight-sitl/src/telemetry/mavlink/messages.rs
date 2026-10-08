@@ -1,6 +1,8 @@
 //! Builds MAVLink message payloads from a tick's data. Pure functions: no connection, clock,
 //! or scheduling, so each mapping is tested on its own.
 
+use std::f32::consts::{PI, TAU};
+
 use mavlink::common::*;
 
 use stable_flight::{ControlOutput, VehicleState};
@@ -34,27 +36,30 @@ pub(super) fn global_position(time_boot_ms: u32) -> GLOBAL_POSITION_INT_DATA {
     }
 }
 
+/// `VehicleState` translation is north/east/**up**; MAVLink local NED is north/east/down.
 pub(super) fn local_position_ned(
     state: &VehicleState,
     time_boot_ms: u32,
 ) -> LOCAL_POSITION_NED_DATA {
     LOCAL_POSITION_NED_DATA {
         time_boot_ms,
-        x: state.position_m.x,    // North position (meters)
-        y: state.position_m.y,    // East position (meters)
-        z: state.position_m.z,    // Down position (meters)
-        vx: state.velocity_mps.x, // North velocity (m/s)
-        vy: state.velocity_mps.y, // East velocity (m/s)
-        vz: state.velocity_mps.z, // Down velocity (m/s)
+        x: state.position_m.x,
+        y: state.position_m.y,
+        z: -state.position_m.z,
+        vx: state.velocity_mps.x,
+        vy: state.velocity_mps.y,
+        vz: -state.velocity_mps.z,
     }
 }
 
+/// Euler angles in radians (yaw wrapped to [-π, π)) and FRD body rates in rad/s, as the
+/// frame contract already reports them.
 pub(super) fn attitude(state: &VehicleState, time_boot_ms: u32) -> ATTITUDE_DATA {
     ATTITUDE_DATA {
         time_boot_ms,
-        roll: state.attitude.i,
-        pitch: state.attitude.j,
-        yaw: state.attitude.k,
+        roll: state.roll,
+        pitch: state.pitch,
+        yaw: wrap_pi(state.heading),
         rollspeed: state.angular_velocity.x,
         pitchspeed: state.angular_velocity.y,
         yawspeed: state.angular_velocity.z,
@@ -62,15 +67,29 @@ pub(super) fn attitude(state: &VehicleState, time_boot_ms: u32) -> ATTITUDE_DATA
 }
 
 /// Throttle is the stabilizer's commanded thrust, so it is reported for every command kind.
+/// There is no air-data source, so airspeed reports horizontal ground speed too. `alt` is
+/// the state's altitude above its datum (sea level for RealFlight), as VFR_HUD expects.
 pub(super) fn vfr_hud(control: &ControlOutput, state: &VehicleState) -> VFR_HUD_DATA {
+    let ground_speed_mps = state.velocity_mps.xy().norm();
     VFR_HUD_DATA {
-        airspeed: state.velocity_mps.x,
-        groundspeed: state.velocity_mps.y,
-        heading: state.attitude.k as i16,
+        airspeed: ground_speed_mps,
+        groundspeed: ground_speed_mps,
+        heading: heading_deg(state.heading),
         throttle: throttle_percent(control.thrust),
         climb: state.velocity_mps.z,
-        alt: state.position_m.z, // Altitude (meters)
+        alt: state.position_m.z,
     }
+}
+
+/// Wraps an angle to [-π, π); NaN stays NaN.
+fn wrap_pi(angle_rad: f32) -> f32 {
+    (angle_rad + PI).rem_euclid(TAU) - PI
+}
+
+/// Heading as VFR_HUD's whole degrees in 0..360, clockwise from north; NaN reports 0.
+fn heading_deg(heading_rad: f32) -> i16 {
+    // `as` saturates and maps NaN to 0; rounding up to 360 wraps to 0.
+    (heading_rad.to_degrees().rem_euclid(360.0).round() as i16) % 360
 }
 
 /// Normalized thrust (0.0–1.0) as the 0–100 % throttle VFR_HUD expects; out-of-range clamps.
