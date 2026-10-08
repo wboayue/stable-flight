@@ -211,7 +211,7 @@ impl CopterStabilizer {
     /// # Arguments
     ///
     /// * `dt` - Time step since the last update in seconds (must be positive and finite).
-    /// * `setpoint` - The desired roll, pitch (normalized), heading (radians), and linear thrust.
+    /// * `setpoint` - The desired roll, pitch, and heading (radians), and linear thrust.
     /// * `estimated_state` - The current state of the vehicle (attitude, angular rates, etc.).
     ///
     /// # Returns
@@ -225,7 +225,7 @@ impl CopterStabilizer {
     ) -> ControlOutput {
         // Roll/pitch saturate inside the attitude controller, thrust in the thrust curve (see
         // `crate::math`).
-        let desired_angles = Vec2::new(setpoint.roll, setpoint.pitch);
+        let desired_angles_rad = Vec2::new(setpoint.roll_rad, setpoint.pitch_rad);
         // The quaternion is the canonical attitude; `euler_angles` is NaN-safe.
         let (roll, pitch, current_heading) = euler_angles(&estimated_state.attitude);
         let current_angles = Vec2::new(roll, pitch);
@@ -233,7 +233,7 @@ impl CopterStabilizer {
         let config = &self.config;
         let desired_rates =
             self.attitude
-                .control(&config.attitude, dt, desired_angles, current_angles);
+                .control(&config.attitude, dt, desired_angles_rad, current_angles);
 
         let desired_yaw_rate =
             self.yaw

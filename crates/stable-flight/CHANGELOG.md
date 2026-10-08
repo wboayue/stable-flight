@@ -108,6 +108,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   first tick after construction (they differenced against a zero previous error); like
   `YawController`, the first tick is P + I only
   ([#68](https://github.com/wboayue/stable-flight/issues/68)).
+- **Breaking:** `AttitudeSetpoint` carries `roll_rad`/`pitch_rad` in radians instead of
+  `roll`/`pitch` as a fraction of the stabilizer's maximum tilt, so retuning
+  `max_angles_rad` no longer rescales the lateral loop's gain. `AttitudeController::control`
+  takes radians and saturates them to `max_angles_rad` (NaN → level)
+  ([#72](https://github.com/wboayue/stable-flight/issues/72)).
+- **Breaking:** `CopterGuidanceConfig::max_tilt` (fraction) is now `max_tilt_rad` (radians,
+  in `(0, π/2)`; `DEFAULT_MAX_TILT` → `DEFAULT_MAX_TILT_RAD`, 27°). New
+  `max_stick_angles_rad` (default 45° per axis, `DEFAULT_MAX_STICK_ANGLE_RAD`) scales
+  attitude-mode sticks to radians; out-of-range sticks now saturate in guidance
+  ([#72](https://github.com/wboayue/stable-flight/issues/72)).
+- **Breaking:** `LateralController::control` returns horizontal acceleration (m/s²,
+  unsaturated) instead of normalized tilt. `CopterGuidance` flies it as a tilt of
+  `atan(|a| / g)` (was `a / g` × max tilt). Default lateral gains scaled by π/4
+  (P 0.8 → 0.63, D 1.6 → 1.26) to keep the small-angle loop gain
+  ([#71](https://github.com/wboayue/stable-flight/issues/71)).
+- **Breaking:** `Command` and `Setpoint` are `#[non_exhaustive]`; `Guidance::guide` and
+  `Stabilizer::stabilize` document the neutral fallback for a variant they can't fly
+  ([#73](https://github.com/wboayue/stable-flight/issues/73)).
 - **Breaking:** every PID controller's `control`, `CopterGuidance::guide`, and
   `CopterStabilizer::stabilize` panic unless `dt` is positive and finite
   ([#177](https://github.com/wboayue/stable-flight/issues/177)). `AltitudeController` and

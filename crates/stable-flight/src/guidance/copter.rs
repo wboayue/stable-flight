@@ -4,13 +4,15 @@
 //! | Command | Setpoint |
 //! |---|---|
 //! | [`Command::Rate`] | [`Setpoint::Rate`], sticks passed through |
-//! | [`Command::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks passed through; yaw stick slews a heading-hold target |
-//! | [`Command::Waypoint`] | [`Setpoint::Attitude`]: lateral position loop → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading north |
+//! | [`Command::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target |
+//! | [`Command::Waypoint`] | [`Setpoint::Attitude`]: lateral position loop → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading north |
 
-use crate::Vec2;
+use core::f32::consts::FRAC_PI_4;
+
+use crate::{GRAVITY, Vec2};
 
 use crate::controllers::*;
-use crate::controllers::{check_limit, check_unit_interval};
+use crate::controllers::{check_limit, check_tilt};
 use crate::{
     AttitudeCommand, AttitudeSetpoint, Command, Configurable, Guidance, RateSetpoint, Setpoint,
     VehicleState, WaypointCommand,
@@ -25,9 +27,13 @@ mod tests;
 /// Heading-hold target slew rate at full yaw stick, in rad/s (~57°/s).
 const HEADING_SLEW_RATE: f32 = 1.0;
 
-/// Default [`CopterGuidanceConfig::max_tilt`]: 60% of the stabilizer's maximum tilt (27° at
-/// 45°), leaving thrust headroom to climb while translating.
-pub const DEFAULT_MAX_TILT: f32 = 0.6;
+/// Default [`CopterGuidanceConfig::max_tilt_rad`]: 27°, leaving thrust headroom to climb while
+/// translating (60% of the default 45° stabilizer limit).
+pub const DEFAULT_MAX_TILT_RAD: f32 = 27.0_f32.to_radians();
+
+/// Default [`CopterGuidanceConfig::max_stick_angles_rad`] per axis: 45°, the default stabilizer
+/// limit, so full stick is full tilt.
+pub const DEFAULT_MAX_STICK_ANGLE_RAD: f32 = FRAC_PI_4;
 
 /// Default [`CopterGuidanceConfig::navigation_period_s`]: 50 Hz, a fifth of the usual 250 Hz
 /// inner loop.
@@ -56,7 +62,8 @@ pub struct CopterGuidanceConfig {
     /// with gravity and tilt compensation. Its `hover_thrust` defaults to
     /// [`DEFAULT_HOVER_THRUST`].
     pub altitude: AltitudeControllerConfig,
-    /// Lateral position loop: horizontal position error (m) → roll/pitch.
+    /// Lateral position loop: horizontal position error (m) → acceleration (m/s²), flown as a
+    /// tilt of `atan(|a| / g)` toward it.
     pub lateral: LateralControllerConfig,
     /// Seconds between runs of the lateral position loop; its roll/pitch output is held in
     /// between. `0.0` runs it every tick. Rounded to the nearest tick (at a 4 ms loop, 20 ms
@@ -64,25 +71,32 @@ pub struct CopterGuidanceConfig {
     /// every tick, since its tilt compensation needs the current attitude. Must be
     /// non-negative and finite. Defaults to [`DEFAULT_NAVIGATION_PERIOD_S`].
     pub navigation_period_s: f32,
-    /// Largest waypoint-flight tilt, as a fraction `(0, 1]` of the stabilizer's maximum tilt
-    /// (the units of [`AttitudeSetpoint`] roll/pitch; it follows them if they move to radians,
-    /// [#72](https://github.com/wboayue/stable-flight/issues/72)). Caps the magnitude of the
+    /// Largest waypoint-flight tilt in radians, in `(0, π/2)`. Caps the magnitude of the
     /// combined roll/pitch request, so a far waypoint can't ask for full tilt while the
     /// altitude loop also wants full climb. It limits the request, not the achieved tilt: the
-    /// attitude loop can overshoot it briefly. Piloted attitude flight is not capped. Defaults
-    /// to [`DEFAULT_MAX_TILT`].
-    pub max_tilt: f32,
+    /// attitude loop can overshoot it briefly, and the stabilizer's own `max_angles_rad` still
+    /// applies. Piloted attitude flight is not capped. Defaults to [`DEFAULT_MAX_TILT_RAD`].
+    pub max_tilt_rad: f32,
+    /// Roll and pitch in radians that full stick (±1) commands in piloted attitude flight;
+    /// the stick scales linearly. The stabilizer saturates to its own `max_angles_rad`, so a
+    /// larger value only reaches that limit sooner. Must be non-negative and finite. Defaults
+    /// to [`DEFAULT_MAX_STICK_ANGLE_RAD`] on both axes.
+    pub max_stick_angles_rad: Vec2,
 }
 
 impl Default for CopterGuidanceConfig {
     /// The controller defaults (flight-checked on RealFlight's QuadCopterX), a 50 Hz lateral
-    /// loop, and a 60% tilt cap.
+    /// loop, a 27° waypoint tilt cap, and 45° at full stick.
     fn default() -> Self {
         CopterGuidanceConfig {
             altitude: AltitudeControllerConfig::default(),
             lateral: LateralControllerConfig::default(),
             navigation_period_s: DEFAULT_NAVIGATION_PERIOD_S,
-            max_tilt: DEFAULT_MAX_TILT,
+            max_tilt_rad: DEFAULT_MAX_TILT_RAD,
+            max_stick_angles_rad: Vec2::new(
+                DEFAULT_MAX_STICK_ANGLE_RAD,
+                DEFAULT_MAX_STICK_ANGLE_RAD,
+            ),
         }
     }
 }
@@ -90,7 +104,8 @@ impl Default for CopterGuidanceConfig {
 impl CopterGuidanceConfig {
     /// Checks both loop configs ([`AltitudeControllerConfig::validate`],
     /// [`LateralControllerConfig::validate`]; errors carry the loop as their `section`), that
-    /// `navigation_period_s` is non-negative and finite, and that `max_tilt` is in `(0, 1]`.
+    /// `navigation_period_s` and `max_stick_angles_rad` are non-negative and finite, and that
+    /// `max_tilt_rad` is in `(0, π/2)`.
     ///
     /// # Examples
     ///
@@ -110,7 +125,9 @@ impl CopterGuidanceConfig {
             .validate()
             .map_err(|e| e.in_section("lateral"))?;
         check_limit("navigation_period_s", self.navigation_period_s)?;
-        check_unit_interval("max_tilt", self.max_tilt)
+        check_limit("max_stick_angles_rad.x", self.max_stick_angles_rad.x)?;
+        check_limit("max_stick_angles_rad.y", self.max_stick_angles_rad.y)?;
+        check_tilt("max_tilt_rad", self.max_tilt_rad)
     }
 }
 
@@ -146,8 +163,8 @@ pub struct CopterGuidance {
 
     /// Paces the lateral loop.
     lateral_rate: RateDivider,
-    /// The lateral loop's last roll/pitch, held between its runs.
-    tilt: Vec2,
+    /// The lateral loop's last roll/pitch in radians, held between its runs.
+    tilt_rad: Vec2,
 }
 
 impl CopterGuidance {
@@ -168,7 +185,7 @@ impl CopterGuidance {
             heading: 0.0,
 
             lateral_rate: RateDivider::default(),
-            tilt: Vec2::zeros(),
+            tilt_rad: Vec2::zeros(),
         }
     }
 }
@@ -182,11 +199,11 @@ impl Configurable for CopterGuidance {
 
     /// Validates with [`CopterGuidanceConfig::validate`]. The heading-hold target and the
     /// lateral loop's timing are kept; a new `navigation_period_s` applies from the next tick,
-    /// and the held waypoint tilt is re-capped to a lowered `max_tilt` at once.
+    /// and the held waypoint tilt is re-capped to a lowered `max_tilt_rad` at once.
     fn set_config(&mut self, config: CopterGuidanceConfig) -> Result<(), InvalidConfig> {
         config.validate()?;
         self.config = config;
-        self.tilt = cap_magnitude(self.tilt, config.max_tilt);
+        self.tilt_rad = cap_magnitude(self.tilt_rad, config.max_tilt_rad);
         Ok(())
     }
 }
@@ -225,8 +242,8 @@ impl Guidance for CopterGuidance {
 }
 
 impl CopterGuidance {
-    /// Passes roll, pitch, and throttle through and slews the heading-hold target with the
-    /// yaw stick.
+    /// Scales the roll/pitch sticks to radians, passes throttle through, and slews the
+    /// heading-hold target with the yaw stick.
     fn attitude_setpoint(
         &mut self,
         dt: f32,
@@ -234,8 +251,9 @@ impl CopterGuidance {
         estimated_state: &VehicleState,
     ) -> AttitudeSetpoint {
         // Commands from input devices can be out of range or NaN; saturate rather than panic
-        // (roll, pitch, and throttle saturate in the stabilizer; see `crate::math`).
+        // (throttle saturates in the stabilizer; see `crate::math`).
         let yaw = saturate_unit(attitude_command.yaw);
+        let max_stick = self.config.max_stick_angles_rad;
 
         // Wrapped so sustained yaw input can't grow the target without bound; the yaw
         // controller works on the wrapped error either way.
@@ -249,8 +267,8 @@ impl CopterGuidance {
         }
 
         AttitudeSetpoint {
-            roll: attitude_command.roll,
-            pitch: attitude_command.pitch,
+            roll_rad: saturate_unit(attitude_command.roll) * max_stick.x,
+            pitch_rad: saturate_unit(attitude_command.pitch) * max_stick.y,
             heading_rad: self.heading,
             thrust: attitude_command.throttle,
         }
@@ -265,7 +283,7 @@ impl CopterGuidance {
         waypoint_command: &WaypointCommand,
         estimated_state: &VehicleState,
     ) -> AttitudeSetpoint {
-        let tilt = self.tilt_toward(dt, waypoint_command, estimated_state);
+        let tilt_rad = self.tilt_toward(dt, waypoint_command, estimated_state);
 
         let linear_thrust = self.altitude.control(
             &self.config.altitude,
@@ -282,14 +300,14 @@ impl CopterGuidance {
         );
 
         AttitudeSetpoint {
-            roll: tilt.x,
-            pitch: tilt.y,
+            roll_rad: tilt_rad.x,
+            pitch_rad: tilt_rad.y,
             heading_rad: 0.0,
             thrust: linear_thrust,
         }
     }
 
-    /// Normalized roll/pitch toward the waypoint from the lateral loop, run when
+    /// Roll/pitch in radians toward the waypoint from the lateral loop, run when
     /// [`lateral_rate`](Self::lateral_rate) is due and held otherwise.
     fn tilt_toward(
         &mut self,
@@ -298,7 +316,7 @@ impl CopterGuidance {
         estimated_state: &VehicleState,
     ) -> Vec2 {
         let Some(step) = self.lateral_rate.due(dt, self.config.navigation_period_s) else {
-            return self.tilt;
+            return self.tilt_rad;
         };
 
         let desired_position =
@@ -321,15 +339,29 @@ impl CopterGuidance {
             return Vec2::zeros();
         }
 
-        let tilt = self.lateral.control(
+        let accel_mps2 = self.lateral.control(
             &self.config.lateral,
             step,
             desired_position,
             current_position,
             velocity,
         );
-        self.tilt = cap_magnitude(tilt, self.config.max_tilt);
+        self.tilt_rad = cap_magnitude(tilt_for_acceleration(accel_mps2), self.config.max_tilt_rad);
         self.lateral_rate.ran();
-        self.tilt
+        self.tilt_rad
     }
+}
+
+/// Roll/pitch in radians (heading north) that points thrust to give horizontal acceleration
+/// `accel_mps2` (north, east) at constant altitude: a tilt of `atan(|a| / g)` toward it. North
+/// is nose down (negative pitch), east is right roll. The tilt is a vector of that length,
+/// split between the axes, exact for single-axis requests and close for diagonal ones at
+/// waypoint tilts. A non-finite acceleration gives level.
+fn tilt_for_acceleration(accel_mps2: Vec2) -> Vec2 {
+    let accel_norm = accel_mps2.norm();
+    if !accel_norm.is_finite() || accel_norm == 0.0 {
+        return Vec2::zeros();
+    }
+    let tilt_rad = libm::atanf(accel_norm / GRAVITY);
+    Vec2::new(accel_mps2.y, -accel_mps2.x) * (tilt_rad / accel_norm)
 }

@@ -91,6 +91,15 @@ pub(crate) fn check_unit_interval(field: &'static str, value: f32) -> Result<(),
     check(field, value > 0.0 && value <= 1.0, "in (0, 1]")
 }
 
+/// `Ok` when `value` is a tilt angle strictly between level and vertical, `(0, π/2)` rad.
+pub(crate) fn check_tilt(field: &'static str, value: f32) -> Result<(), InvalidConfig> {
+    check(
+        field,
+        value > 0.0 && value < core::f32::consts::FRAC_PI_2,
+        "in (0, π/2) rad",
+    )
+}
+
 fn check(field: &'static str, ok: bool, requirement: &'static str) -> Result<(), InvalidConfig> {
     if ok {
         Ok(())

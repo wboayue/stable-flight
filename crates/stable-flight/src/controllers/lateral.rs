@@ -1,12 +1,12 @@
-use crate::{GRAVITY, Vec2};
+use crate::Vec2;
 
 use crate::controllers::{Gains, InvalidConfig, check_limit};
-use crate::math::{assert_dt, cap_magnitude, clamp_symmetric_each};
+use crate::math::{assert_dt, clamp_symmetric_each};
 
 /// Configures the [`LateralController`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LateralControllerConfig {
-    /// PID gains for roll and pitch control (Kp, Ki, Kd).
+    /// PID gains from position error (m) to horizontal acceleration (m/s²).
     pub gains: Gains,
 
     /// Maximum absolute value of the integrated position error, in m·s, per axis.
@@ -17,12 +17,13 @@ pub struct LateralControllerConfig {
 impl Default for LateralControllerConfig {
     fn default() -> Self {
         Self {
-            // Position → tilt is a double integrator, so D sets the damping: ζ ≈ 0.8 with the
-            // stabilizer's 45° max tilt. Flight-checked on RealFlight's QuadCopterX (#108).
+            // Position → acceleration is a double integrator, so D sets the damping: ζ ≈ 0.8.
+            // The #108 flight-checked gains (0.8, 1.6) fed a·45°/g of tilt; these are scaled by
+            // π/4 so the small-angle loop gain matches now that tilt is atan(a/g) (#71).
             gains: Gains {
-                p: 0.8,
+                p: 0.63,
                 i: 0.0,
-                d: 1.6,
+                d: 1.26,
             },
             max_integral: 100.0, // Arbitrary limit
         }
@@ -46,7 +47,11 @@ impl LateralControllerConfig {
     }
 }
 
-/// Horizontal position PID loop: turns a position target into normalized roll/pitch.
+/// Horizontal position PID loop: turns a position target into a horizontal acceleration demand.
+///
+/// Turning the acceleration into tilt is the guidance's job (it depends on the airframe and
+/// its heading); [`CopterGuidance`](crate::guidance::copter::CopterGuidance) tilts by
+/// `atan(|a| / g)` toward it.
 ///
 /// It holds only state (the integral); gains and limits come from the
 /// [`LateralControllerConfig`] passed to each [`control`](Self::control) call, so they can
@@ -59,7 +64,8 @@ pub struct LateralController {
 impl LateralController {
     /// Controls the lateral (X-Y) position of the vehicle using a PID controller.
     ///
-    /// This outer loop maintains the desired horizontal position by calculating desired roll and pitch angles.
+    /// This outer loop maintains the desired horizontal position by calculating the horizontal
+    /// acceleration that closes the position error.
     ///
     /// # Arguments
     ///
@@ -72,11 +78,9 @@ impl LateralController {
     ///
     /// # Returns
     ///
-    /// Desired roll and pitch as normalized values (the attitude controller scales them by its
-    /// `max_angles_rad`). The length of the (roll, pitch) request is capped at 1, so far from the
-    /// target the vehicle commands full tilt straight toward it: a far diagonal target gives
-    /// about 0.71 on each axis, not 1. A non-finite error or velocity gives level. The integral
-    /// term is clamped to `max_integral` to limit windup.
+    /// Desired horizontal acceleration (x, y) in m/s², in the position frame. It is not
+    /// saturated: the caller caps the tilt it turns into. A non-finite error or velocity gives
+    /// zero (level). The integral term is clamped to `max_integral` to limit windup.
     ///
     /// # Panics
     ///
@@ -95,10 +99,9 @@ impl LateralController {
     /// let estimated_position_m = Vec2::new(4.0, 1.0);
     /// let estimated_velocity_mps = Vec2::new(0.1, 0.05);
     ///
-    /// // Target is ahead and to the right: roll right (+x), nose down (-y)
-    /// let tilt = controller.control(&config, dt, desired_position_m, estimated_position_m, estimated_velocity_mps);
-    /// assert!(tilt.x > 0.0 && tilt.y < 0.0);
-    /// assert!(tilt.norm() <= 1.0);
+    /// // Target is north-east: accelerate north (+x) and east (+y)
+    /// let accel_mps2 = controller.control(&config, dt, desired_position_m, estimated_position_m, estimated_velocity_mps);
+    /// assert!(accel_mps2.x > 0.0 && accel_mps2.y > 0.0);
     /// ```
     pub fn control(
         &mut self,
@@ -113,7 +116,7 @@ impl LateralController {
 
         let error = desired_position_m - estimated_position_m;
 
-        // A non-finite error (NaN/∞ target or position) yields level (no tilt) and never enters
+        // A non-finite error (NaN/∞ target or position) yields no acceleration and never enters
         // the integral, where NaN would stick (it survives clamping).
         if !(error.x.is_finite() && error.y.is_finite()) {
             return Vec2::zeros();
@@ -121,15 +124,15 @@ impl LateralController {
 
         self.integrated_error =
             clamp_symmetric_each(self.integrated_error + dt * error, config.max_integral);
-        let accel_cmd =
+        let accel_mps2 =
             gains.p * error + gains.i * self.integrated_error + gains.d * (-estimated_velocity_mps);
 
-        // Convert acceleration to roll/pitch angles (simplified)
-        let roll_cmd = accel_cmd.y / GRAVITY;
-        let pitch_cmd = -accel_cmd.x / GRAVITY;
-
-        // Saturate the length, not each axis, so a far diagonal target keeps its direction.
-        cap_magnitude(Vec2::new(roll_cmd, pitch_cmd), 1.0)
+        // A non-finite velocity estimate yields no acceleration rather than NaN.
+        if accel_mps2.x.is_finite() && accel_mps2.y.is_finite() {
+            accel_mps2
+        } else {
+            Vec2::zeros()
+        }
     }
 }
 
@@ -140,31 +143,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn output_is_normalized_and_saturates_far_from_target() {
-        // (target position, expected (roll, pitch)) with the vehicle at rest at the origin
+    fn accelerates_toward_the_target_against_velocity() {
+        let config = LateralControllerConfig {
+            gains: Gains {
+                p: 2.0,
+                i: 0.0,
+                d: 0.5,
+            },
+            ..Default::default()
+        };
+        // (target position, velocity, expected acceleration) with the vehicle at the origin
         let cases = [
-            (Vec2::zeros(), Vec2::zeros()),
-            (Vec2::new(1000.0, 0.0), Vec2::new(0.0, -1.0)), // far +x: full nose-down pitch
-            (Vec2::new(-1000.0, 0.0), Vec2::new(0.0, 1.0)),
-            (Vec2::new(0.0, 1000.0), Vec2::new(1.0, 0.0)), // far +y: full right roll
-            (Vec2::new(0.0, f32::NAN), Vec2::zeros()),
-            (Vec2::new(f32::INFINITY, 0.0), Vec2::zeros()), // non-finite error: level, not full tilt
+            (Vec2::zeros(), Vec2::zeros(), Vec2::zeros()),
+            (Vec2::new(10.0, 0.0), Vec2::zeros(), Vec2::new(20.0, 0.0)), // not saturated
+            (Vec2::new(0.0, -3.0), Vec2::zeros(), Vec2::new(0.0, -6.0)),
+            (Vec2::zeros(), Vec2::new(4.0, -2.0), Vec2::new(-2.0, 1.0)), // D brakes
+            (Vec2::new(0.0, f32::NAN), Vec2::zeros(), Vec2::zeros()),
+            (Vec2::new(f32::INFINITY, 0.0), Vec2::zeros(), Vec2::zeros()), // non-finite: none
         ];
-        let config = LateralControllerConfig::default();
-        for (target, expected) in cases {
+        for (target, velocity, expected) in cases {
             let mut controller = LateralController::default();
-            let angles = controller.control(&config, 0.004, target, Vec2::zeros(), Vec2::zeros());
-            // Saturation divides by the length, so full tilt can land an ulp short of 1.
+            let accel = controller.control(&config, 0.004, target, Vec2::zeros(), velocity);
             assert!(
-                (angles - expected).amax() < 1e-6,
-                "target {target:?} gave {angles:?}, expected {expected:?}"
+                (accel - expected).amax() < 1e-5,
+                "target {target:?}, velocity {velocity:?} gave {accel:?}, expected {expected:?}"
             );
         }
     }
 
-    /// A NaN or infinite velocity estimate gives level, not a NaN tilt.
+    /// A NaN or infinite velocity estimate gives no acceleration, not NaN.
     #[test]
-    fn non_finite_velocity_yields_level() {
+    fn non_finite_velocity_yields_no_acceleration() {
         let nan = f32::NAN;
         let inf = f32::INFINITY;
         let velocities = [
@@ -212,20 +221,24 @@ mod tests {
     }
 
     #[test]
-    fn recovers_full_tilt_after_a_nan_tick() {
+    fn recovers_after_a_nan_tick() {
         let config = LateralControllerConfig::default();
         let mut controller = LateralController::default();
         let at_rest = Vec2::zeros();
 
         // One tick with a NaN target must not poison later ticks.
         let during = controller.control(&config, 0.004, Vec2::new(f32::NAN, 0.0), at_rest, at_rest);
-        let after = controller.control(&config, 0.004, Vec2::new(1000.0, 0.0), at_rest, at_rest);
+        let after = controller.control(&config, 0.004, Vec2::new(10.0, 0.0), at_rest, at_rest);
 
         assert!(during == Vec2::zeros(), "NaN tick gave {during:?}");
-        assert!(
-            (after - Vec2::new(0.0, -1.0)).amax() < 1e-6,
-            "valid far target after NaN gave {after:?}"
+        let fresh = LateralController::default().control(
+            &config,
+            0.004,
+            Vec2::new(10.0, 0.0),
+            at_rest,
+            at_rest,
         );
+        assert!(after == fresh, "valid target after NaN gave {after:?}");
     }
 
     /// An invalid `max_integral` fails `validate` but `control` stays panic-free: it acts as 0.
@@ -278,10 +291,10 @@ mod tests {
             },
             ..config
         };
-        let tilt = controller.control(&retuned, 0.01, Vec2::zeros(), Vec2::zeros(), Vec2::zeros());
+        let accel = controller.control(&retuned, 0.01, Vec2::zeros(), Vec2::zeros(), Vec2::zeros());
 
         assert!(controller.integrated_error == integral);
-        approx::assert_relative_eq!(tilt.x, 2.0 * integral.y / GRAVITY, epsilon = 1e-6);
+        approx::assert_relative_eq!(accel.y, 2.0 * integral.y, epsilon = 1e-6);
     }
 
     #[test]

@@ -25,7 +25,27 @@ fn saturation_clamps_to_range_and_maps_nan_to_neutral() {
             "saturate_throttle({input})"
         );
     }
-    assert!(saturate_unit_vec2(Vec2::new(2.0, f32::NAN)) == Vec2::new(1.0, 0.0));
+}
+
+#[test]
+fn saturate_symmetric_bounds_value_and_maps_nan_to_neutral() {
+    // (value, limit, expected); a negative or NaN limit acts as 0.
+    let cases = [
+        (0.3, 0.5, 0.3),
+        (0.9, 0.5, 0.5),
+        (-0.9, 0.5, -0.5),
+        (f32::INFINITY, 0.5, 0.5),
+        (f32::NEG_INFINITY, 0.5, -0.5),
+        (f32::NAN, 0.5, 0.0),
+        (0.3, -1.0, 0.0),
+        (0.3, f32::NAN, 0.0),
+    ];
+    for (value, limit, expected) in cases {
+        assert!(
+            saturate_symmetric(value, limit) == expected,
+            "saturate_symmetric({value}, {limit})"
+        );
+    }
 }
 
 #[test]

@@ -201,7 +201,11 @@ pub trait Commander {
 /// # Notes
 /// - For `WaypointCommand`, optional fields like `velocity_mps` and `roll_rad` can be `None`. When `None`,
 ///   the flight controller may use default values or ignore the parameter, depending on its implementation.
+/// - `#[non_exhaustive]`: new command kinds (e.g. fixed-wing) can be added without a breaking
+///   change. A [`Guidance`] that can't fly a variant must fall back to neutral, not panic (see
+///   [`Guidance::guide`]).
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum Command {
     /// Direct manual control inputs for the aircraft's attitude (orientation).
     ///
@@ -672,9 +676,14 @@ pub trait Actuator {
 /// What the [`Stabilizer`] should hold this tick, as produced by a [`Guidance`].
 ///
 /// A [`Command`] says what the operator or mission wants (stick positions, a waypoint);
-/// a `Setpoint` is the inner-loop target derived from it. Values other than the absolute
-/// heading are normalized: the stabilizer owns the physical limits (maximum tilt and rates)
-/// and the thrust curve, and saturates out-of-range or NaN inputs per the input policy.
+/// a `Setpoint` is the inner-loop target derived from it. Attitude targets are physical
+/// angles in radians; rates and thrust are normalized. The stabilizer owns the physical
+/// limits (maximum tilt and rates) and the thrust curve, and saturates out-of-range or NaN
+/// inputs per the input policy.
+///
+/// `#[non_exhaustive]`: new setpoint kinds (e.g. fixed-wing) can be added without a breaking
+/// change. A [`Stabilizer`] that can't fly a variant must fall back to neutral, not panic (see
+/// [`Stabilizer::stabilize`]).
 ///
 /// # Examples
 ///
@@ -685,6 +694,7 @@ pub trait Actuator {
 /// let hover = Setpoint::Attitude(AttitudeSetpoint { thrust: 0.5, ..Default::default() });
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum Setpoint {
     /// Hold a roll/pitch attitude and an absolute heading.
     Attitude(AttitudeSetpoint),
@@ -695,11 +705,14 @@ pub enum Setpoint {
 /// Attitude target for the [`Stabilizer`]; see [`Setpoint`].
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct AttitudeSetpoint {
-    /// Roll as a fraction of the stabilizer's maximum tilt, `-1.0` (left) to `1.0` (right).
-    pub roll: f32,
-    /// Pitch as a fraction of the stabilizer's maximum tilt, `-1.0` (nose down) to `1.0`
-    /// (nose up).
-    pub pitch: f32,
+    /// Roll target in radians, right positive, per the
+    /// [frame contract](VehicleState#frame-contract)'s `roll_rad`. The stabilizer saturates it
+    /// to its maximum tilt; NaN means level.
+    pub roll_rad: f32,
+    /// Pitch target in radians, nose up positive, per the
+    /// [frame contract](VehicleState#frame-contract)'s `pitch_rad`. The stabilizer saturates it
+    /// to its maximum tilt; NaN means level.
+    pub pitch_rad: f32,
     /// Absolute heading target in radians, in the
     /// [frame contract](VehicleState#frame-contract)'s `heading_rad` convention.
     pub heading_rad: f32,
@@ -767,6 +780,12 @@ pub trait Guidance {
     ///   finite; implementations may assert it (runners guarantee it).
     /// - `command`: The commander's current command.
     /// - `state`: The current estimated state of the vehicle.
+    ///
+    /// # Unsupported commands
+    ///
+    /// [`Command`] is `#[non_exhaustive]`. For a variant it can't fly, an implementation
+    /// returns a neutral setpoint — level attitude, the current heading, zero thrust (what the
+    /// input policy gives a NaN command) — and must not panic.
     fn guide(&mut self, dt: f32, command: &Command, state: &VehicleState) -> Setpoint;
 
     /// Primes guidance from a known-good vehicle state before the first tick.
@@ -801,6 +820,12 @@ pub trait Stabilizer {
     /// # Returns
     ///
     /// A `ControlOutput` containing the desired thrust and control moments.
+    ///
+    /// # Unsupported setpoints
+    ///
+    /// [`Setpoint`] is `#[non_exhaustive]`. For a variant it can't fly, an implementation
+    /// returns a neutral output — zero thrust and moments ([`ControlOutput::default`]) — and
+    /// must not panic.
     fn stabilize(&mut self, dt: f32, setpoint: &Setpoint, state: &VehicleState) -> ControlOutput;
 
     /// Primes the stabilizer from a known-good vehicle state before the first tick.

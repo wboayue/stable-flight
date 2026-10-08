@@ -1,8 +1,8 @@
 //! Small numeric helpers shared by guidance, stabilizers, controllers, and mixers:
-//! [`saturate_unit`], [`saturate_unit_vec2`], [`saturate_throttle`], [`wrap_angle`],
-//! [`desaturate`], [`cap_magnitude`], [`clamp_symmetric`] and its per-component
-//! [`clamp_symmetric_each`], [`limit_or_zero`], [`all_finite`], [`assert_dt`], and
-//! [`euler_angles`] (public at the crate root).
+//! [`saturate_unit`], [`saturate_symmetric`], [`saturate_throttle`], [`desaturate`],
+//! [`cap_magnitude`], [`clamp_symmetric`] and its per-component [`clamp_symmetric_each`],
+//! [`limit_or_zero`], [`all_finite`], [`assert_dt`], and [`wrap_angle`] and
+//! [`euler_angles`] (both public at the crate root).
 //!
 //! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite
 //! error into controller state, wrap angles), which is specified in `architecture.md`,
@@ -51,16 +51,17 @@ pub(crate) fn cap_magnitude(v: Vec2, max: f32) -> Vec2 {
 
 /// Saturates a normalized command to [-1, 1]; NaN becomes 0 (neutral).
 pub(crate) fn saturate_unit(value: f32) -> f32 {
+    saturate_symmetric(value, 1.0)
+}
+
+/// Saturates `value` to `[-limit, limit]`; NaN becomes 0 (neutral), and a negative or NaN
+/// `limit` acts as 0, so neither a bad input nor a bad config panics the loop.
+pub(crate) fn saturate_symmetric(value: f32, limit: f32) -> f32 {
     if value.is_nan() {
         0.0
     } else {
-        value.clamp(-1.0, 1.0)
+        clamp_symmetric(value, limit)
     }
-}
-
-/// [`saturate_unit`] applied to each component.
-pub(crate) fn saturate_unit_vec2(value: Vec2) -> Vec2 {
-    value.map(saturate_unit)
 }
 
 /// Clamps `value` to `[-limit, limit]`; NaN `value` stays NaN, like `f32::clamp`.
