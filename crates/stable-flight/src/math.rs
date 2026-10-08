@@ -1,7 +1,7 @@
 //! Small numeric helpers shared by guidance, stabilizers, controllers, and mixers:
 //! [`saturate_unit`], [`saturate_symmetric`], [`saturate_throttle`], [`desaturate`],
 //! [`cap_magnitude`], [`clamp_symmetric`] and its per-component [`clamp_symmetric_each`],
-//! [`limit_or_zero`], [`all_finite`], [`assert_dt`], and [`wrap_angle`] and
+//! [`limit_or_zero`], [`all_finite`], [`assert_dt`], [`tilt_boost`], and [`wrap_angle`] and
 //! [`euler_angles`] (both public at the crate root).
 //!
 //! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite
@@ -25,13 +25,45 @@ pub(crate) fn assert_dt(dt: f32) {
     assert!(dt > 0.0 && dt.is_finite(), "dt must be positive and finite");
 }
 
-/// Fits mixer outputs into `[0, 1]`, keeping their differences when it can: if any output
-/// exceeds 1, all are lowered by the excess (attitude over thrust), then each is clamped to
-/// `[0, 1]`. Only the top is shifted, so an output below 0 is still clipped.
-pub(crate) fn desaturate(outputs: &mut [f32]) {
-    let excess = outputs.iter().fold(0.0_f32, |m, &o| m.max(o - 1.0));
+/// How far [`desaturate`] may shift outputs up, per unit of collective: up to twice the
+/// collective. Keeps nearly the full moment split at flying throttle (a hover collective of
+/// ~0.55 allows 1.1, more than any split needs) while fading airmode out toward idle.
+const MAX_RAISE_PER_COLLECTIVE: f32 = 2.0;
+
+/// Fits mixer outputs into `[0, 1]`, keeping the moments (attitude over thrust), like PX4's
+/// airmode. Each output is `collective` plus its moment share.
+///
+/// 1. If the outputs span more than 1, the moment shares are scaled down about `collective`
+///    until they span exactly 1, keeping their ratios.
+/// 2. All outputs then shift by the smallest amount that fits them in `[0, 1]`: down if one
+///    is above 1, up if one is below 0. Collective thrust gives way.
+///
+/// Shifting up is limited to [`MAX_RAISE_PER_COLLECTIVE`] times `collective`, so it fades in
+/// from zero throttle instead of switching on at the first bit of it: at zero (or negative)
+/// collective nothing rises and the shares below 0 are clipped, so an armed vehicle at idle
+/// on the ground isn't lifted, or tipped, by wound-up moments. Outputs are then clamped to
+/// `[0, 1]`. Inputs are expected finite (the mixer saturates them); a NaN output stays NaN.
+pub(crate) fn desaturate(outputs: &mut [f32], collective: f32) {
+    let (low, high) = outputs
+        .iter()
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &o| {
+            (lo.min(o), hi.max(o))
+        });
+    let spread = high - low;
+    let scale = if spread > 1.0 { 1.0 / spread } else { 1.0 };
+    let scaled_low = collective + scale * (low - collective);
+    let scaled_high = collective + scale * (high - collective);
+
+    let shift = if scaled_high > 1.0 {
+        1.0 - scaled_high
+    } else if scaled_low < 0.0 {
+        (-scaled_low).min(MAX_RAISE_PER_COLLECTIVE * limit_or_zero(collective))
+    } else {
+        0.0
+    };
+
     for output in outputs.iter_mut() {
-        *output = (*output - excess).clamp(0.0, 1.0);
+        *output = (collective + scale * (*output - collective) + shift).clamp(0.0, 1.0);
     }
 }
 
@@ -120,6 +152,34 @@ pub fn euler_angles(attitude: &UnitQuaternion<f32>) -> (f32, f32, f32) {
     let pitch = libm::asinf((-2.0 * (x * z - w * y)).clamp(-1.0, 1.0));
     let yaw = libm::atan2f(2.0 * (x * y + w * z), w * w + x * x - y * y - z * z);
     (roll, pitch, yaw)
+}
+
+/// Floor on the tilt cosine [`tilt_boost`] divides by: past 60° of tilt the boost stops
+/// growing (2×), so a steep estimate can't demand unbounded thrust.
+const MIN_TILT_COSINE: f32 = 0.5;
+
+/// Tilt cosine below which [`tilt_boost`] fades to zero (about 84°–90° of tilt), so an
+/// inverted vehicle gets no thrust from the boost, as ArduPilot's angle boost does.
+const INVERTED_FADE_COSINE: f32 = 0.1;
+
+/// Thrust multiplier that keeps a level thrust's vertical component while tilted:
+/// `1 / cos(tilt)`, with `cos(tilt) = cos(roll) · cos(pitch)` (yaw doesn't change it).
+///
+/// Floored at [`MIN_TILT_COSINE`] (at most 2× past 60°), and faded linearly to 0 as the
+/// cosine falls from [`INVERTED_FADE_COSINE`] to 0: at 90° and beyond (inverted) the
+/// multiplier is 0, so thrust never pushes an upside-down vehicle toward the ground. A
+/// non-finite attitude counts as level (1, no boost).
+///
+/// The cosine is read from the quaternion directly (`1 − 2(x² + y²)`, the rotation matrix's
+/// `(2, 2)` entry): no trig, no matrix.
+pub(crate) fn tilt_boost(attitude: &UnitQuaternion<f32>) -> f32 {
+    let (x, y) = (attitude.i, attitude.j);
+    let cosine = 1.0 - 2.0 * (x * x + y * y);
+    if !cosine.is_finite() {
+        return 1.0;
+    }
+    let upright = (cosine / INVERTED_FADE_COSINE).clamp(0.0, 1.0);
+    upright / cosine.max(MIN_TILT_COSINE)
 }
 
 /// Saturates a throttle or thrust command to [0, 1]; NaN becomes 0 (no thrust).

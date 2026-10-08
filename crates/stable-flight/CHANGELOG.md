@@ -116,6 +116,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `QuadCopterMixer` desaturation works like PX4's airmode: when a motor would drop below 0,
+  all four shift up (collective gives way) instead of clipping it, so low-throttle moments
+  survive; moments too large to fit are scaled down, keeping their ratios. The upward shift
+  is limited to twice the collective, so it fades out toward idle and nothing rises at zero
+  thrust ([#112](https://github.com/wboayue/stable-flight/issues/112)).
+- `CopterGuidance` attitude mode divides throttle by the cosine of the measured tilt (at most
+  2× past 60°, saturated to [0, 1]), so a tilted vehicle holds altitude instead of sinking.
+  Rate mode is unchanged ([#111](https://github.com/wboayue/stable-flight/issues/111)).
+- The tilt boost (attitude mode and `AltitudeController`) fades to no thrust between about
+  84° and 90° of tilt, so an inverted vehicle is no longer driven toward the ground at 2×
+  ([#111](https://github.com/wboayue/stable-flight/issues/111)).
 - **Breaking:** `LateralController` is a position → velocity → acceleration cascade:
   `control(config, dt, LateralTarget, LateralEstimate)`, and `LateralControllerConfig` is
   `{ position_p, velocity: Gains, max_integral }` (integral on velocity error). The defaults

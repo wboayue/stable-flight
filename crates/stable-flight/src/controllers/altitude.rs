@@ -2,7 +2,7 @@ use nalgebra::UnitQuaternion;
 
 use crate::GRAVITY;
 use crate::controllers::{Gains, InvalidConfig, check_limit, check_unit_interval};
-use crate::math::{assert_dt, clamp_symmetric};
+use crate::math::{assert_dt, clamp_symmetric, tilt_boost};
 
 /// Default [`AltitudeControllerConfig::hover_thrust`].
 pub const DEFAULT_HOVER_THRUST: f32 = 0.5;
@@ -11,10 +11,6 @@ pub const DEFAULT_HOVER_THRUST: f32 = 0.5;
 /// forward it just trims a `hover_thrust` mismatch; winding it up over a long climb made the
 /// vehicle overshoot and settle slowly.
 const INTEGRATION_BAND: f32 = 1.0;
-
-/// Floor on the body-z alignment (cos of the tilt) used for tilt compensation: past 60° the
-/// boost stops growing, so a near-inverted estimate can't demand unbounded thrust.
-const MIN_BODY_Z_ALIGNMENT: f32 = 0.5;
 
 /// Configures the [`AltitudeController`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -109,8 +105,8 @@ pub struct AltitudeEstimate {
     /// Estimated vertical velocity in m/s, up positive.
     pub velocity_mps: f32,
     /// Estimated attitude, as [`VehicleState::attitude`](crate::VehicleState::attitude). Only the
-    /// tilt (cos roll · cos pitch) is used, for tilt compensation; yaw is ignored, and a
-    /// non-finite attitude counts as level.
+    /// tilt (cos roll · cos pitch) is used, for tilt compensation; yaw is ignored, an inverted
+    /// attitude gets no thrust, and a non-finite attitude counts as level.
     pub attitude: UnitQuaternion<f32>,
 }
 
@@ -131,6 +127,8 @@ impl AltitudeController {
     /// The PID gives a vertical acceleration `a` (m/s², up); the thrust is
     /// `hover_thrust · (g + a) / (g · cos tilt)`, saturated to `[0, 1]`. Zero error is hover,
     /// and a tilted vehicle gets more thrust so its vertical component still balances gravity.
+    /// The boost stops growing past 60° (2×) and fades to zero thrust between about 84° and
+    /// 90°, so an inverted vehicle isn't driven toward the ground.
     ///
     /// # Arguments
     ///
@@ -205,16 +203,10 @@ impl AltitudeController {
         let acceleration =
             gains.p * altitude_error + gains.d * velocity_error + gains.i * self.integrated_error;
 
-        // Cos of the tilt, cos(roll)·cos(pitch); yaw doesn't change it. A non-finite attitude
-        // counts as level (no boost).
-        let body_z_alignment = estimate.attitude.to_rotation_matrix()[(2, 2)];
-        let body_z_alignment = if body_z_alignment.is_finite() {
-            body_z_alignment.max(MIN_BODY_Z_ALIGNMENT)
-        } else {
-            1.0
-        };
-
-        let linear_thrust = hover_thrust * (GRAVITY + acceleration) / (GRAVITY * body_z_alignment);
+        // Boosted for tilt: at most 2× past 60°, none when inverted, none for a non-finite
+        // attitude (`math::tilt_boost`).
+        let linear_thrust =
+            hover_thrust * (GRAVITY + acceleration) / GRAVITY * tilt_boost(&estimate.attitude);
         linear_thrust.clamp(0.0, 1.0)
     }
 }
@@ -252,8 +244,8 @@ mod tests {
     }
 
     /// Thrust is `hover · (g + a) / (g · cos tilt)` with the PID's acceleration `a`: zero error
-    /// is hover, a bank adds thrust (yaw doesn't), the boost stops at 60°, and the result
-    /// saturates to [0, 1].
+    /// is hover, a bank adds thrust (yaw doesn't), the boost stops at 60° and fades to none
+    /// when inverted, and the result saturates to [0, 1].
     #[test]
     fn thrust_feeds_gravity_forward_and_boosts_for_tilt() {
         let deg = f32::to_radians;
@@ -274,7 +266,7 @@ mod tests {
                 hover / (cos(20.0) * cos(20.0)),
             ),
             (0.0, 0.0, attitude(75.0, 0.0, 0.0), hover / 0.5), // floored at 60°
-            (0.0, 0.0, attitude(170.0, 0.0, 0.0), hover / 0.5), // inverted: same floor
+            (0.0, 0.0, attitude(170.0, 0.0, 0.0), 0.0),        // inverted: no thrust
             (1.0, 0.0, level(), hover * (GRAVITY + 1.0) / GRAVITY),
             (-1.0, 0.0, level(), hover * (GRAVITY - 1.0) / GRAVITY),
             (0.0, 2.0, level(), hover * (GRAVITY - 1.0) / GRAVITY), // climbing: damped
