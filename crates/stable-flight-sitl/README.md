@@ -43,6 +43,8 @@ TelemetryPublishers publish the system state to external systems. There is a pub
 let telemetry = MavlinkPublisher::connect(MavlinkConfiguration::default())?;
 ```
 
+The default configuration sends to QGroundControl's default port and places the local origin at a fixed latitude/longitude (`DEFAULT_ORIGIN`) so the vehicle shows on the map; set `origin` to move it, or to `None` to stop sending global position.
+
 ### Running the Loop
 
 With all components configured, assemble a core `FlightLoop` and drive it with this crate's `RealTimeRunner`, stopping on a `ShutdownSignal`:
