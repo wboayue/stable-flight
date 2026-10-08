@@ -180,21 +180,33 @@ fn wrap_angle_maps_into_minus_pi_to_pi() {
     assert!(wrap_angle(f32::NEG_INFINITY).is_nan());
 }
 
-/// Outputs above 1 shift all outputs down by the largest excess, keeping their differences;
-/// the result is clamped to [0, 1].
+/// Outputs shift together into [0, 1], keeping their differences: down from above 1, up from
+/// below 0 by at most twice the collective (none at zero). Spreads over 1 scale about the
+/// collective first.
 #[test]
-fn desaturate_keeps_differences_by_giving_up_the_top() {
-    // (input, expected)
-    let cases: [([f32; 4], [f32; 4]); 5] = [
-        ([0.5, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]),
-        ([1.0, 0.2, 0.0, 0.7], [1.0, 0.2, 0.0, 0.7]),
-        ([1.15, 0.85, 1.15, 0.45], [1.0, 0.7, 1.0, 0.3]),
-        ([1.5, 0.2, 0.9, 0.9], [1.0, 0.0, 0.4, 0.4]), // the bottom clips once shifted
-        ([0.5, -0.25, 0.25, 0.75], [0.5, 0.0, 0.25, 0.75]), // below 0 only: clamped
+fn desaturate_keeps_moments_by_giving_up_collective() {
+    // (input, collective, expected)
+    let cases: [([f32; 4], f32, [f32; 4]); 11] = [
+        ([0.5, 0.5, 0.5, 0.5], 0.5, [0.5, 0.5, 0.5, 0.5]),
+        ([1.0, 0.2, 0.0, 0.7], 0.5, [1.0, 0.2, 0.0, 0.7]), // already fits
+        ([1.15, 0.85, 1.15, 0.45], 0.9, [1.0, 0.7, 1.0, 0.3]), // too high: down
+        ([0.25, -0.15, 0.35, -0.05], 0.1, [0.4, 0.0, 0.5, 0.1]), // too low: up
+        ([0.2, -0.2, 0.2, -0.2], 0.0, [0.2, 0.0, 0.2, 0.0]), // zero collective: clipped
+        ([0.2, -0.2, 0.2, -0.2], -0.1, [0.2, 0.0, 0.2, 0.0]), // below zero: same
+        // Near idle the raise is capped at 2 × collective: up 0.02, not the 0.03 needed.
+        ([0.07, -0.03, 0.07, -0.03], 0.01, [0.09, 0.0, 0.09, 0.0]),
+        // Spread 2 about 0.5: shares halve, fitting exactly.
+        ([1.5, -0.5, 0.5, 0.5], 0.5, [1.0, 0.0, 0.5, 0.5]),
+        // Spread 2 about 0.8: halved to [1.2, 0.2], then down 0.2.
+        ([1.6, -0.4, 0.8, 0.8], 0.8, [1.0, 0.0, 0.6, 0.6]),
+        // Spread 1.25 about 0.1: scaled by 0.8 to [0.9, -0.1], then up 0.1.
+        ([1.1, -0.15, 0.1, 0.1], 0.1, [1.0, 0.0, 0.2, 0.2]),
+        // Spread 2 at zero collective: halved to [0.5, -0.5], not raised, clipped.
+        ([1.0, -1.0, 0.0, 0.0], 0.0, [0.5, 0.0, 0.0, 0.0]),
     ];
-    for (input, expected) in cases {
+    for (input, collective, expected) in cases {
         let mut outputs = input;
-        desaturate(&mut outputs);
+        desaturate(&mut outputs, collective);
         for (o, e) in outputs.iter().zip(expected) {
             assert_relative_eq!(*o, e, epsilon = 1e-6);
         }
@@ -240,5 +252,50 @@ fn assert_dt_accepts_only_positive_finite_steps() {
             ok,
             "{dt}"
         );
+    }
+}
+
+/// `tilt_boost` is `1 / cos(tilt)` from the rotation matrix's `(2, 2)` entry, at most 2× past
+/// 60°, fading linearly to 0 as the cosine falls from 0.1 to 0 (about 84°–90°) and 0 when
+/// inverted; a non-finite attitude counts as level.
+#[test]
+fn tilt_boost_compensates_tilt_and_cuts_out_inverted() {
+    let euler = |roll: f32, pitch: f32, yaw: f32| {
+        UnitQuaternion::from_euler_angles(
+            f32::to_radians(roll),
+            f32::to_radians(pitch),
+            f32::to_radians(yaw),
+        )
+    };
+    // Below 60°: exactly 1 / cos(tilt).
+    for (roll, pitch, yaw) in [
+        (0.0, 0.0, 0.0),
+        (30.0, 0.0, 1.0),
+        (0.0, -30.0, -2.0),
+        (20.0, 20.0, 0.5),
+        (-45.0, 10.0, 3.0),
+    ] {
+        let attitude = euler(roll, pitch, yaw);
+        let expected = 1.0 / attitude.to_rotation_matrix()[(2, 2)];
+        assert_relative_eq!(tilt_boost(&attitude), expected, epsilon = 1e-5);
+    }
+    let roll_for_cosine = |cosine: f32| euler(cosine.acos().to_degrees(), 0.0, 0.0);
+    let nan = UnitQuaternion::new_unchecked(nalgebra::Quaternion::new(f32::NAN, 0.0, 0.0, 0.0));
+    // (attitude, expected boost)
+    let cases = [
+        (euler(70.0, 0.0, 0.0), 2.0),  // floored
+        (roll_for_cosine(0.1), 2.0),   // start of the fade: no jump
+        (roll_for_cosine(0.05), 1.0),  // halfway
+        (euler(90.0, 0.0, 0.0), 0.0),  // on its side
+        (euler(120.0, 0.0, 0.0), 0.0), // past it
+        (euler(180.0, 0.0, 0.0), 0.0), // upside down
+        (
+            euler(0.0, 89.0, 0.0),
+            2.0 * (89.0_f32.to_radians().cos() / 0.1),
+        ),
+        (nan, 1.0),
+    ];
+    for (attitude, expected) in cases {
+        assert_relative_eq!(tilt_boost(&attitude), expected, epsilon = 1e-4);
     }
 }

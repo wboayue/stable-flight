@@ -135,8 +135,7 @@ fn commands_map_to_setpoints() {
             }),
         ),
         (
-            // Out-of-range sticks saturate to full deflection; thrust passes through (the
-            // stabilizer saturates it).
+            // Out-of-range sticks saturate to full deflection, and throttle to full thrust.
             ControlInput::Attitude(AttitudeCommand {
                 throttle: 1.3,
                 roll: 1.5,
@@ -147,7 +146,7 @@ fn commands_map_to_setpoints() {
                 roll_rad: FRAC_PI_4,
                 pitch_rad: -FRAC_PI_4,
                 heading_rad: wrap_angle(0.7),
-                thrust: 1.3,
+                thrust: 1.0,
             }),
         ),
         (
@@ -1101,4 +1100,50 @@ fn point_mass_flies_a_route_at_cruise_speed_and_holds_the_end() {
         (CRUISE_MPS - 0.5..=CRUISE_MPS + 0.5).contains(&max_speed_mps),
         "peak speed {max_speed_mps} m/s"
     );
+}
+
+/// Attitude-mode throttle is divided by the cosine of the measured tilt, so the vertical thrust
+/// the stick asks for holds while tilted (#111). The boost stops past 60°, cuts out when
+/// inverted (no thrust toward the ground), a non-finite attitude gets none, and the result
+/// saturates to [0, 1] with NaN as no thrust.
+#[test]
+fn attitude_throttle_is_boosted_for_tilt() {
+    let cos = |deg: f32| deg.to_radians().cos();
+    let tilted = |roll_deg: f32, pitch_deg: f32| {
+        nalgebra::UnitQuaternion::from_euler_angles(
+            roll_deg.to_radians(),
+            pitch_deg.to_radians(),
+            0.3,
+        )
+    };
+    let nan_attitude =
+        nalgebra::UnitQuaternion::new_unchecked(nalgebra::Quaternion::new(f32::NAN, 0.0, 0.0, 0.0));
+    // (throttle, measured attitude, expected thrust)
+    let cases = [
+        (0.5, tilted(0.0, 0.0), 0.5),
+        (0.5, tilted(30.0, 0.0), 0.5 / cos(30.0)),
+        (0.5, tilted(0.0, -30.0), 0.5 / cos(30.0)),
+        (0.4, tilted(20.0, 20.0), 0.4 / (cos(20.0) * cos(20.0))),
+        (0.4, tilted(70.0, 0.0), 0.8),  // floored at cos 60° = 0.5
+        (0.4, tilted(90.0, 0.0), 0.0),  // on its side: no thrust
+        (0.4, tilted(150.0, 0.0), 0.0), // inverted: no thrust
+        (0.5, nan_attitude, 0.5),       // no boost
+        (0.0, tilted(30.0, 0.0), 0.0),
+        (0.9, tilted(45.0, 0.0), 1.0), // saturated
+        (f32::NAN, tilted(30.0, 0.0), 0.0),
+    ];
+    for (throttle, measured, expected) in cases {
+        let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+        let state = VehicleState {
+            attitude: measured,
+            ..Default::default()
+        };
+        guidance.prime(&state);
+        let command = ControlInput::Attitude(AttitudeCommand {
+            throttle,
+            ..Default::default()
+        });
+        let thrust = attitude(guidance.guide(0.004, &command, &state)).thrust;
+        approx::assert_relative_eq!(thrust, expected, epsilon = 1e-5);
+    }
 }
