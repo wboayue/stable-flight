@@ -767,3 +767,26 @@ fn set_config_applies_a_new_navigation_period_on_the_next_tick() {
     let rerun = attitude(guidance.guide(0.004, &command, &moving(2.0)));
     assert_ne!(rerun.pitch, first.pitch);
 }
+
+/// Lowering `max_tilt` re-caps the held waypoint tilt at once, not at the lateral loop's next
+/// run.
+#[test]
+fn lowering_max_tilt_recaps_the_held_tilt_on_the_next_tick() {
+    let far = Command::Waypoint(WaypointCommand {
+        position_m: Vec2::new(1000.0, 0.0),
+        altitude_m: 10.0,
+        ..Default::default()
+    });
+    let state = VehicleState::default();
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default()); // 20 ms period
+    guidance.prime(&state);
+    let full = attitude(guidance.guide(0.004, &far, &state));
+    approx::assert_relative_eq!(full.pitch.abs(), DEFAULT_MAX_TILT, epsilon = 1e-6);
+
+    let mut lower = *guidance.config();
+    lower.max_tilt = 0.3;
+    guidance.set_config(lower).expect("valid config");
+    let held = attitude(guidance.guide(0.004, &far, &state)); // lateral loop not due yet
+
+    approx::assert_relative_eq!(Vec2::new(held.roll, held.pitch).norm(), 0.3, epsilon = 1e-6);
+}

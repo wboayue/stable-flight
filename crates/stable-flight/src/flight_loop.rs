@@ -7,9 +7,10 @@
 
 use core::time::Duration;
 
+use crate::controllers::InvalidConfig;
 use crate::{
-    Commander, Guidance, Mixer, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle,
-    VehicleState,
+    Commander, Configurable, Guidance, Mixer, Stabilizer, TelemetryPublisher, TelemetryRecord,
+    Vehicle, VehicleState,
 };
 
 #[cfg(test)]
@@ -146,23 +147,27 @@ where
         &self.state
     }
 
-    /// The guidance.
+    /// The guidance, e.g. to read its config.
     pub fn guidance(&self) -> &G {
         &self.guidance
     }
 
-    /// The guidance, mutably: between ticks, e.g. to retune it with its config setter.
-    pub fn guidance_mut(&mut self) -> &mut G {
-        &mut self.guidance
-    }
-
-    /// The stabilizer.
+    /// The stabilizer, e.g. to read its config.
     pub fn stabilizer(&self) -> &S {
         &self.stabilizer
     }
 
-    /// The stabilizer, mutably: between ticks, e.g. to retune it with its config setter. The
-    /// change applies from the next [`step`](Self::step), with controller state kept.
+    /// Retunes the guidance between ticks ([`Configurable::set_config`]): an invalid config is
+    /// rejected and the current one kept.
+    pub fn set_guidance_config(&mut self, config: G::Config) -> Result<(), InvalidConfig>
+    where
+        G: Configurable,
+    {
+        self.guidance.set_config(config)
+    }
+
+    /// Retunes the stabilizer between ticks ([`Configurable::set_config`]): an invalid config
+    /// is rejected and the current one kept.
     ///
     /// ```
     /// # use std::time::Duration;
@@ -170,8 +175,7 @@ where
     /// # use stable_flight::mixers::QuadCopterMixer;
     /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
     /// # use stable_flight::{Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, StateEstimator, VehicleState};
-    /// use stable_flight::FlightLoop;
-    ///
+    /// use stable_flight::{Configurable, FlightLoop};
     /// # struct Hover;
     /// # impl Commander for Hover {
     /// #     fn next_command(&mut self, _: f32, _: &VehicleState) -> Command {
@@ -185,25 +189,27 @@ where
     /// # impl Actuator for StillAir {
     /// #     fn actuate(&mut self, _: &ActuatorCommand) {}
     /// # }
-    /// let mut flight_loop = FlightLoop::new(
-    ///     Hover,
-    ///     StillAir,
-    ///     CopterGuidance::new(CopterGuidanceConfig::default()),
-    ///     CopterStabilizer::new(CopterStabilizerConfig::default()),
-    ///     QuadCopterMixer::default(),
-    ///     (),
-    /// );
-    /// flight_loop.prime();
+    /// # let mut flight_loop = FlightLoop::new(
+    /// #     Hover,
+    /// #     StillAir,
+    /// #     CopterGuidance::new(CopterGuidanceConfig::default()),
+    /// #     CopterStabilizer::new(CopterStabilizerConfig::default()),
+    /// #     QuadCopterMixer::default(),
+    /// #     (),
+    /// # );
+    /// # flight_loop.prime();
     /// flight_loop.step(Duration::from_millis(4));
     ///
-    /// // Between ticks: raise the rate loop's P gain. An invalid config is rejected.
     /// let mut retuned = *flight_loop.stabilizer().config();
     /// retuned.body_rate.gains.p = 0.2;
-    /// flight_loop.stabilizer_mut().set_config(retuned).expect("valid config");
-    /// flight_loop.step(Duration::from_millis(4));
+    /// flight_loop.set_stabilizer_config(retuned).expect("valid config");
+    /// flight_loop.step(Duration::from_millis(4)); // flies the new gains
     /// ```
-    pub fn stabilizer_mut(&mut self) -> &mut S {
-        &mut self.stabilizer
+    pub fn set_stabilizer_config(&mut self, config: S::Config) -> Result<(), InvalidConfig>
+    where
+        S: Configurable,
+    {
+        self.stabilizer.set_config(config)
     }
 
     /// Splits the loop back into `(commander, vehicle, guidance, stabilizer, mixer, telemetry)`,

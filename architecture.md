@@ -84,19 +84,19 @@ Nothing that runs every tick panics on its inputs. Guidance, stabilizers, contro
 
 Only construction-time config validation and `dt > 0` (guaranteed by the runners) are asserted. The helpers live in the core's crate-private `math` module.
 
-These are last-resort behaviours that keep the loop alive, not a failsafe. A NaN thrust reaching the mixer becomes 0, which cuts the motors. Holding the last thrust could fly away instead, and the stateless mixer can't choose better. Real failsafes (estimator health checks, then a land or disarm commander) belong upstream ([#66](https://github.com/wboayue/stable-flight/issues/66)).
+These are last-resort behaviors that keep the loop alive, not a failsafe. A NaN thrust reaching the mixer becomes 0, which cuts the motors. Holding the last thrust could fly away instead, and the stateless mixer can't choose better. Real failsafes (estimator health checks, then a land or disarm commander) belong upstream ([#66](https://github.com/wboayue/stable-flight/issues/66)).
 
 ## Config Ownership
 
 Controllers hold only state (integral and derivative history); their gains and limits are a plain `Copy` config passed to every `control` call. Each composite (`CopterStabilizer`, `CopterGuidance`) owns exactly one config value (`CopterStabilizerConfig`, `CopterGuidanceConfig`, which embed the per-loop configs) and passes sub-references down each tick; nothing below it holds a copy, so the period of the guidance's lateral loop is also read from it every tick.
 
 ```text
-FlightLoop ──guidance_mut()──▶ CopterGuidance { config } ──&config.altitude──▶ AltitudeController
-                                                           ──&config.lateral───▶ LateralController
-           ──stabilizer_mut()─▶ CopterStabilizer { config } ─&config.body_rate─▶ BodyRateController (…)
+FlightLoop ──set_guidance_config()───▶ CopterGuidance { config } ───&config.altitude──▶ AltitudeController
+                                                                  ──&config.lateral───▶ LateralController
+           ──set_stabilizer_config()─▶ CopterStabilizer { config } ─&config.body_rate─▶ BodyRateController (…)
 ```
 
-The one write point is the composite's `set_config(config) -> Result<(), InvalidConfig>`: it runs `validate()` and commits only on `Ok`, keeping the old config otherwise. `FlightLoop` reaches the composites between ticks with `guidance_mut()`/`stabilizer_mut()`, so a change (live tuning) applies from the next tick without resetting state. The `Guidance`/`Stabilizer` traits don't carry config: generic code doesn't need it, and implementors without config aren't burdened. The contract:
+The one write point is `Configurable::set_config` (see its rustdoc), which validates before committing; `FlightLoop::set_guidance_config`/`set_stabilizer_config` forward to it between ticks. Config access is a separate, opt-in trait rather than part of `Guidance`/`Stabilizer`, so implementors without config aren't burdened, and `FlightLoop` hands out no `&mut` to its components, so nothing can run them out of tick order. The contract:
 
 * **Valid on entry.** Each config has `validate()` (composites tag errors with the loop, e.g. `body_rate.max_integral`); `new` and `set_config` enforce it. Controllers don't re-check every tick.
 * **Bad config still never panics the tick.** Limits go through `math::clamp_symmetric`, under which a negative or NaN limit acts as 0 (neutral output) instead of panicking like `f32::clamp`.

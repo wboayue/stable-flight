@@ -12,8 +12,8 @@ use crate::Vec2;
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_unit_interval};
 use crate::{
-    AttitudeCommand, AttitudeSetpoint, Command, Guidance, RateSetpoint, Setpoint, VehicleState,
-    WaypointCommand,
+    AttitudeCommand, AttitudeSetpoint, Command, Configurable, Guidance, RateSetpoint, Setpoint,
+    VehicleState, WaypointCommand,
 };
 
 use super::rate_divider::RateDivider;
@@ -171,35 +171,22 @@ impl CopterGuidance {
             tilt: Vec2::zeros(),
         }
     }
+}
 
-    /// The config the guidance flies.
-    pub fn config(&self) -> &CopterGuidanceConfig {
+impl Configurable for CopterGuidance {
+    type Config = CopterGuidanceConfig;
+
+    fn config(&self) -> &CopterGuidanceConfig {
         &self.config
     }
 
-    /// Replaces the config if it is valid ([`CopterGuidanceConfig::validate`]); otherwise keeps
-    /// the current one and returns the error. Controller state, the heading-hold target, and
-    /// the lateral loop's timing are kept, so call it between ticks to retune in flight; a new
-    /// `navigation_period_s` applies from the next tick.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-    ///
-    /// let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
-    ///
-    /// let mut retuned = *guidance.config();
-    /// retuned.max_tilt = 0.4;
-    /// assert!(guidance.set_config(retuned).is_ok());
-    ///
-    /// retuned.altitude.hover_thrust = 1.5;
-    /// assert!(guidance.set_config(retuned).is_err());
-    /// assert_eq!(guidance.config().max_tilt, 0.4); // unchanged
-    /// ```
-    pub fn set_config(&mut self, config: CopterGuidanceConfig) -> Result<(), InvalidConfig> {
+    /// Validates with [`CopterGuidanceConfig::validate`]. The heading-hold target and the
+    /// lateral loop's timing are kept; a new `navigation_period_s` applies from the next tick,
+    /// and the held waypoint tilt is re-capped to a lowered `max_tilt` at once.
+    fn set_config(&mut self, config: CopterGuidanceConfig) -> Result<(), InvalidConfig> {
         config.validate()?;
         self.config = config;
+        self.tilt = cap_magnitude(self.tilt, config.max_tilt);
         Ok(())
     }
 }
