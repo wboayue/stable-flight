@@ -115,6 +115,7 @@ jobs:
       run: |
         cargo fmt --check
         cargo clippy --locked --release -- -D warnings
+        cargo clippy --locked --release --features bench-armed -- -D warnings
         cargo build --locked --release
         # llvm-size from the llvm-tools component, so no cargo-binutils install is needed.
         "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/llvm-size" \

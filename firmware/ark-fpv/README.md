@@ -11,7 +11,7 @@ in `src/stub.rs`:
 
 | Component | Stub | Replaced by (#88) |
 |---|---|---|
-| Commander | `HoldCommander`: zero throttle, level, disarmed | receiver input |
+| Commander | `HoldCommander`: zero throttle, level, disarmed (armed with `bench-armed`) | receiver input |
 | State estimator | `HoldEstimator`: level, at rest | IMU/baro/mag fusion from ark-fpv-discovery |
 | Actuator | `NullActuator`: discards motor commands | ESC output (PWM/DShot) |
 | Telemetry | `()` | USB telemetry |
@@ -29,6 +29,11 @@ recipes handle this:
 just fw-build   # release build
 just fw-size    # flash/RAM usage (cargo install cargo-binutils; rustup component add llvm-tools)
 ```
+
+`just fw-build bench-armed` (or `cargo build --release --features bench-armed` here) arms
+`HoldCommander`, so each tick runs guidance, the stabilizer, and the mixer instead of the
+disarmed short path; use it to check loop timing on the board (blue LED). Flash is the same
+either way. Never ship it with real ESC output.
 
 The release profile is size-tuned (`opt-level = "s"`, LTO). CI builds the firmware and prints
 its size, so a core change that breaks the link fails the PR and flash growth shows in the log.

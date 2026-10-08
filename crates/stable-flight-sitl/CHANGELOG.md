@@ -147,6 +147,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `SpektrumCommander` armed whenever its arm-switch axis was centered (or not yet read); it
+  now arms only past 0.5 ([#125](https://github.com/wboayue/stable-flight/issues/125)).
 - `MavlinkPublisher` follows the `VehicleState` frame contract
   ([#160](https://github.com/wboayue/stable-flight/issues/160)): LOCAL_POSITION_NED `z`/`vz`
   are down-positive (they were up); ATTITUDE reports roll, pitch, and yaw in radians (yaw

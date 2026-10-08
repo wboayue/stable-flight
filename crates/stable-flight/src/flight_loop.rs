@@ -120,7 +120,8 @@ where
 
     /// Takes the initial estimate (with `dt = Duration::ZERO`, per the [`StateEstimator`]
     /// convention) and primes guidance, then the stabilizer, from it. Call once before the
-    /// first tick.
+    /// first tick, so the commander's first call sees a real state. The first armed tick
+    /// primes them again from its fresh estimate (see the arm gate on [`FlightLoop`]).
     ///
     /// [`StateEstimator`]: crate::StateEstimator
     pub fn prime(&mut self) {
