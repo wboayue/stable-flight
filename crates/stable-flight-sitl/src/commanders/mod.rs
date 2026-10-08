@@ -8,7 +8,7 @@
 //!
 //! - **[ScriptCommander]**: Supports the playback of commands from a script.
 //! - **[Extreme3DCommander]**: Generates manual commands from the Extreme3D Joystick.
-//! - **[SpectrumCommander]**: Generates manual commands from the Spextrum transmitter.
+//! - **[SpektrumCommander]**: Generates manual commands from the Spektrum transmitter.
 
 pub mod extreme_3d;
 pub mod script;
@@ -32,6 +32,11 @@ pub enum CommanderError {
     InvalidConfiguration(String),
 }
 
+/// Opens the gamepad subsystem shared by the joystick commanders.
+fn open_gilrs() -> Result<gilrs::Gilrs, CommanderError> {
+    gilrs::Gilrs::new().map_err(|e| CommanderError::InitializationFailed(e.to_string()))
+}
+
 #[allow(unused_imports)] // used in documentation
 use stable_flight::Commander;
 
@@ -40,4 +45,4 @@ pub use extreme_3d::Extreme3DCommander;
 #[doc(inline)]
 pub use script::ScriptCommander;
 #[doc(inline)]
-pub use spektrum::SpectrumCommander;
+pub use spektrum::SpektrumCommander;
