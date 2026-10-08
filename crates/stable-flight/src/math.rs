@@ -29,7 +29,7 @@ pub(crate) fn desaturate(outputs: &mut [f32]) {
 /// Scales `v` down, keeping its direction, so its length is at most `max`. Unlike per-axis
 /// saturation, a diagonal request stays diagonal. A non-finite `v` has no direction, so it
 /// becomes zero (neutral), per the input policy.
-pub(crate) fn cap_magnitude(v: Vec2<f32>, max: f32) -> Vec2<f32> {
+pub(crate) fn cap_magnitude(v: Vec2, max: f32) -> Vec2 {
     let length = v.norm();
     if !length.is_finite() {
         Vec2::zeros()
@@ -50,7 +50,7 @@ pub(crate) fn saturate_unit(value: f32) -> f32 {
 }
 
 /// [`saturate_unit`] applied to each component.
-pub(crate) fn saturate_unit_vec2(value: Vec2<f32>) -> Vec2<f32> {
+pub(crate) fn saturate_unit_vec2(value: Vec2) -> Vec2 {
     value.map(saturate_unit)
 }
 

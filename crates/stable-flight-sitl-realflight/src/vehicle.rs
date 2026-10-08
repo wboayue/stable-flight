@@ -303,14 +303,14 @@ pub fn vehicle_state(state: &SimulatorState) -> VehicleState {
         acceleration_mps2: Vec3::new(acceleration.x, acceleration.y, -acceleration.z),
         attitude,
         // Yaw rate and azimuth are counterclockwise-positive (nose left).
-        angular_velocity: Vec3::new(
+        angular_velocity_radps: Vec3::new(
             state.roll_rate_dps.to_radians(),
             state.pitch_rate_dps.to_radians(),
             -state.yaw_rate_dps.to_radians(),
         ),
-        roll: state.roll_deg.to_radians(),
-        pitch: state.inclination_deg.to_radians(),
-        heading: -state.azimuth_deg.to_radians(),
+        roll_rad: state.roll_deg.to_radians(),
+        pitch_rad: state.inclination_deg.to_radians(),
+        heading_rad: -state.azimuth_deg.to_radians(),
     }
 }
 

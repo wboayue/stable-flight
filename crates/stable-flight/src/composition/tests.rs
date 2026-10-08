@@ -15,7 +15,7 @@ impl StateEstimator for CountingEstimator {
     fn estimate_state(&mut self, _dt: Duration) -> VehicleState {
         self.calls += 1;
         VehicleState {
-            heading: self.calls as f32,
+            heading_rad: self.calls as f32,
             ..Default::default()
         }
     }
@@ -28,8 +28,8 @@ fn composed_vehicle_routes_estimates_and_actuation_to_their_halves() {
     let mut vehicle = ComposedVehicle::new(CountingEstimator::default(), NullVehicle::new());
     assert_is_vehicle(&vehicle);
 
-    check!(vehicle.estimate_state(Duration::ZERO).heading == 1.0);
-    check!(vehicle.estimate_state(Duration::from_millis(4)).heading == 2.0);
+    check!(vehicle.estimate_state(Duration::ZERO).heading_rad == 1.0);
+    check!(vehicle.estimate_state(Duration::from_millis(4)).heading_rad == 2.0);
     vehicle.actuate(&ActuatorCommand {
         motors: [0.75; 8],
         ..Default::default()

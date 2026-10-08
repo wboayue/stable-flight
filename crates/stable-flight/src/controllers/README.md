@@ -132,7 +132,7 @@ let thrust = controller.control(
 **Purpose**: Controls horizontal position (X-Y) by commanding roll and pitch angles.
 
 **Input**: Desired position (m), estimated position (m), velocity (m/s)  
-**Output**: Desired roll and pitch as normalized tilt [-1, 1] (the attitude controller scales them by its `max_angles`)
+**Output**: Desired roll and pitch as normalized tilt [-1, 1] (the attitude controller scales them by its `max_angles_rad`)
 
 **Key Features**:
 - Position-to-angle conversion using acceleration commands
@@ -177,9 +177,9 @@ let body_rate_config = BodyRateControllerConfig {
 // Attitude controller config  
 let attitude_config = AttitudeControllerConfig {
     gains,
-    max_angles: Vec2::new(PI/3.0, PI/3.0), // 60 degrees max
+    max_angles_rad: Vec2::new(PI/3.0, PI/3.0), // 60 degrees max
     max_integral: 10.0,
-    max_rate: Vec2::new(3.0, 3.0), // rad/s
+    max_rate_radps: Vec2::new(3.0, 3.0), // rad/s
 };
 
 let body_rate_controller = BodyRateController::with_config(&body_rate_config);
@@ -263,8 +263,8 @@ fn angle_diff(desired: f32, current: f32) -> f32 {
 
 ### Sluggish Response
 - **Cause**: Insufficient proportional gain  
-- **Solution**: Increase P gain, verify `max_rate` limits aren't constraining (the altitude
-  controller's `max_rate` is not yet applied, see
+- **Solution**: Increase P gain, verify rate limits aren't constraining (the altitude
+  controller's `max_rate_mps` is not yet applied, see
   [#115](https://github.com/wboayue/stable-flight/issues/115))
 
 ### Integral Windup
@@ -278,11 +278,11 @@ The position controllers (altitude, lateral) run in `CopterGuidance`, which turn
 ```rust,ignore
 // Guidance (src/guidance/copter.rs), waypoint mode
 let tilt = self.lateral_controller.control(dt, waypoint, position, velocity);
-let thrust = self.altitude_controller.control(dt, command.altitude, 0.0, altitude, climb_rate, attitude);
+let thrust = self.altitude_controller.control(dt, command.altitude_m, 0.0, altitude, climb_rate, attitude);
 
 // Stabilizer (src/stabilizers/copter.rs)
 let attitude_rates = self.attitude_controller.control(dt, setpoint_tilt, current_tilt);
-let yaw_rate = self.yaw_controller.control(dt, setpoint.heading, current_heading);
+let yaw_rate = self.yaw_controller.control(dt, setpoint.heading_rad, current_heading);
 let body_moments = self.rates_controller.control(dt, desired_rates, current_rates);
 ```
 

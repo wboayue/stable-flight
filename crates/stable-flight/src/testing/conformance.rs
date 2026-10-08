@@ -23,7 +23,7 @@
 //!
 //! // Level flight is not a 30° right bank.
 //! let error = ROLL_RIGHT_30.check(&LEVEL.expected_state()).unwrap_err();
-//! assert_eq!(error.mismatches()[0].field, "roll");
+//! assert_eq!(error.mismatches()[0].field, "roll_rad");
 //! ```
 
 use core::fmt;
@@ -64,13 +64,13 @@ pub struct Scenario {
     /// Heading in degrees.
     pub heading_deg: f32,
     /// Body rates (roll, pitch, yaw) in degrees per second.
-    pub body_rates_deg_s: [f32; 3],
+    pub body_rates_degps: [f32; 3],
     /// World position (north, east, up) in meters.
-    pub position_neu: [f32; 3],
+    pub position_neu_m: [f32; 3],
     /// World velocity (north, east, up) in m/s.
-    pub velocity_neu: [f32; 3],
+    pub velocity_neu_mps: [f32; 3],
     /// World acceleration (north, east, up) in m/s².
-    pub acceleration_neu: [f32; 3],
+    pub acceleration_neu_mps2: [f32; 3],
 }
 
 /// At rest, wings level, nose north.
@@ -79,10 +79,10 @@ pub const LEVEL: Scenario = Scenario {
     roll_deg: 0.0,
     pitch_deg: 0.0,
     heading_deg: 0.0,
-    body_rates_deg_s: [0.0; 3],
-    position_neu: [0.0, 0.0, SCENARIO_ALTITUDE],
-    velocity_neu: [0.0; 3],
-    acceleration_neu: [0.0; 3],
+    body_rates_degps: [0.0; 3],
+    position_neu_m: [0.0, 0.0, SCENARIO_ALTITUDE],
+    velocity_neu_mps: [0.0; 3],
+    acceleration_neu_mps2: [0.0; 3],
 };
 
 /// Banked 30° right (right wing down).
@@ -119,8 +119,8 @@ pub const BANKED_CLIMB_EAST: Scenario = Scenario {
 /// Level, climbing at 2 m/s and accelerating upward at 1 m/s².
 pub const CLIMBING: Scenario = Scenario {
     name: "climbing",
-    velocity_neu: [0.0, 0.0, 2.0],
-    acceleration_neu: [0.0, 0.0, 1.0],
+    velocity_neu_mps: [0.0, 0.0, 2.0],
+    acceleration_neu_mps2: [0.0, 0.0, 1.0],
     ..LEVEL
 };
 
@@ -128,16 +128,16 @@ pub const CLIMBING: Scenario = Scenario {
 /// catch a swapped horizontal axis (e.g. ENU vs NED).
 pub const MOVING_NORTHEAST: Scenario = Scenario {
     name: "moving northeast",
-    position_neu: [30.0, 40.0, SCENARIO_ALTITUDE],
-    velocity_neu: [3.0, 4.0, 0.0],
-    acceleration_neu: [0.5, 1.5, 0.0],
+    position_neu_m: [30.0, 40.0, SCENARIO_ALTITUDE],
+    velocity_neu_mps: [3.0, 4.0, 0.0],
+    acceleration_neu_mps2: [0.5, 1.5, 0.0],
     ..LEVEL
 };
 
 /// Level, yawing right (clockwise from above) at 30°/s.
 pub const YAW_RIGHT_RATE: Scenario = Scenario {
     name: "yaw right rate",
-    body_rates_deg_s: [0.0, 0.0, 30.0],
+    body_rates_degps: [0.0, 0.0, 30.0],
     ..LEVEL
 };
 
@@ -145,7 +145,7 @@ pub const YAW_RIGHT_RATE: Scenario = Scenario {
 /// rate axes.
 pub const COMBINED_RATES: Scenario = Scenario {
     name: "combined rates",
-    body_rates_deg_s: [10.0, 20.0, 30.0],
+    body_rates_degps: [10.0, 20.0, 30.0],
     ..LEVEL
 };
 
@@ -167,20 +167,20 @@ impl Scenario {
     pub fn expected_state(&self) -> VehicleState {
         let [roll, pitch, heading] =
             [self.roll_deg, self.pitch_deg, self.heading_deg].map(f32::to_radians);
-        let [p, q, r] = self.body_rates_deg_s.map(f32::to_radians);
-        let [x, y, z] = self.position_neu;
-        let [vx, vy, vz] = self.velocity_neu;
-        let [ax, ay, az] = self.acceleration_neu;
+        let [p, q, r] = self.body_rates_degps.map(f32::to_radians);
+        let [x, y, z] = self.position_neu_m;
+        let [vx, vy, vz] = self.velocity_neu_mps;
+        let [ax, ay, az] = self.acceleration_neu_mps2;
 
         VehicleState {
             position_m: Vec3::new(x, y, z),
             velocity_mps: Vec3::new(vx, vy, vz),
             acceleration_mps2: Vec3::new(ax, ay, az),
             attitude: UnitQuaternion::from_euler_angles(roll, pitch, heading),
-            angular_velocity: Vec3::new(p, q, r),
-            roll,
-            pitch,
-            heading,
+            angular_velocity_radps: Vec3::new(p, q, r),
+            roll_rad: roll,
+            pitch_rad: pitch,
+            heading_rad: heading,
         }
     }
 
@@ -227,29 +227,29 @@ impl Scenario {
         ];
         let rates = [
             (
-                "angular_velocity.x",
-                e.angular_velocity.x,
-                state.angular_velocity.x,
+                "angular_velocity_radps.x",
+                e.angular_velocity_radps.x,
+                state.angular_velocity_radps.x,
             ),
             (
-                "angular_velocity.y",
-                e.angular_velocity.y,
-                state.angular_velocity.y,
+                "angular_velocity_radps.y",
+                e.angular_velocity_radps.y,
+                state.angular_velocity_radps.y,
             ),
             (
-                "angular_velocity.z",
-                e.angular_velocity.z,
-                state.angular_velocity.z,
+                "angular_velocity_radps.z",
+                e.angular_velocity_radps.z,
+                state.angular_velocity_radps.z,
             ),
         ];
         let (q_roll, q_pitch, q_yaw) = crate::euler_angles(&state.attitude);
         let angles = [
-            ("roll", e.roll, state.roll),
-            ("pitch", e.pitch, state.pitch),
-            ("heading", e.heading, state.heading),
-            ("attitude roll", e.roll, q_roll),
-            ("attitude pitch", e.pitch, q_pitch),
-            ("attitude yaw", e.heading, q_yaw),
+            ("roll_rad", e.roll_rad, state.roll_rad),
+            ("pitch_rad", e.pitch_rad, state.pitch_rad),
+            ("heading_rad", e.heading_rad, state.heading_rad),
+            ("attitude roll", e.roll_rad, q_roll),
+            ("attitude pitch", e.pitch_rad, q_pitch),
+            ("attitude yaw", e.heading_rad, q_yaw),
         ];
 
         for (field, expected, actual) in linear {

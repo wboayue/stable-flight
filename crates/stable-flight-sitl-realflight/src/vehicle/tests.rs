@@ -277,10 +277,10 @@ fn exchanges_once_per_tick_and_estimates_from_the_previous_exchange() {
 /// rate counterclockwise-positive, degrees. `captured_frames_agree_across_fields` checks those
 /// conventions against real RealFlight frames.
 fn native_fixture(scenario: &Scenario) -> SimulatorState {
-    let [north, east, up] = scenario.position_neu;
-    let [v_north, v_east, v_up] = scenario.velocity_neu;
-    let [a_north, a_east, a_up] = scenario.acceleration_neu;
-    let [roll_rate, pitch_rate, yaw_rate] = scenario.body_rates_deg_s;
+    let [north, east, up] = scenario.position_neu_m;
+    let [v_north, v_east, v_up] = scenario.velocity_neu_mps;
+    let [a_north, a_east, a_up] = scenario.acceleration_neu_mps2;
+    let [roll_rate, pitch_rate, yaw_rate] = scenario.body_rates_degps;
     let attitude = UnitQuaternion::from_euler_angles(
         scenario.roll_deg.to_radians(),
         scenario.pitch_deg.to_radians(),
@@ -397,19 +397,19 @@ fn captured_frames_agree_across_fields() {
 
         let (roll, pitch, heading) = stable_flight::euler_angles(&state.attitude);
         assert!(
-            (roll - state.roll).abs() < 1e-3,
+            (roll - state.roll_rad).abs() < 1e-3,
             "frame {i}: roll {roll} vs {}",
-            state.roll
+            state.roll_rad
         );
         assert!(
-            (pitch - state.pitch).abs() < 1e-3,
+            (pitch - state.pitch_rad).abs() < 1e-3,
             "frame {i}: pitch {pitch} vs {}",
-            state.pitch
+            state.pitch_rad
         );
         assert!(
-            wrap_pi(heading - state.heading).abs() < 1e-3,
+            wrap_pi(heading - state.heading_rad).abs() < 1e-3,
             "frame {i}: heading {heading} vs {}",
-            state.heading
+            state.heading_rad
         );
 
         let v = state.velocity_mps;

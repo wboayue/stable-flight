@@ -74,7 +74,7 @@ fn lateral_loop_tilts_toward_the_target() {
 #[test]
 fn commands_map_to_setpoints() {
     let state = VehicleState {
-        heading: 0.7,
+        heading_rad: 0.7,
         ..Default::default()
     };
     // (command, expected setpoint), one fresh guidance primed at heading 0.7 per row
@@ -104,7 +104,7 @@ fn commands_map_to_setpoints() {
             Setpoint::Attitude(AttitudeSetpoint {
                 roll: 0.5,
                 pitch: -0.25,
-                heading: wrap_angle(0.7),
+                heading_rad: wrap_angle(0.7),
                 thrust: 0.4,
             }),
         ),
@@ -119,7 +119,7 @@ fn commands_map_to_setpoints() {
             Setpoint::Attitude(AttitudeSetpoint {
                 roll: 1.5,
                 pitch: -2.0,
-                heading: wrap_angle(0.7),
+                heading_rad: wrap_angle(0.7),
                 thrust: 1.3,
             }),
         ),
@@ -129,7 +129,7 @@ fn commands_map_to_setpoints() {
                 ..Default::default()
             }),
             Setpoint::Attitude(AttitudeSetpoint {
-                heading: wrap_angle(0.7 + HEADING_SLEW_RATE * 0.004),
+                heading_rad: wrap_angle(0.7 + HEADING_SLEW_RATE * 0.004),
                 ..Default::default()
             }),
         ),
@@ -140,7 +140,7 @@ fn commands_map_to_setpoints() {
             Setpoint::Attitude(AttitudeSetpoint {
                 roll: 0.0,
                 pitch: 0.0,
-                heading: 0.0,
+                heading_rad: 0.0,
                 thrust: crate::controllers::DEFAULT_HOVER_THRUST,
             }),
         ),
@@ -160,7 +160,7 @@ fn commands_map_to_setpoints() {
 fn heading_hold_target_survives_a_waypoint_leg() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     let state = VehicleState {
-        heading: 0.7,
+        heading_rad: 0.7,
         ..Default::default()
     };
     guidance.prime(&state);
@@ -171,7 +171,7 @@ fn heading_hold_target_survives_a_waypoint_leg() {
     let centred = Command::Attitude(AttitudeCommand::default());
     let waypoint = Command::Waypoint(WaypointCommand::default());
     let heading_of = |setpoint: Setpoint| match setpoint {
-        Setpoint::Attitude(attitude) => attitude.heading,
+        Setpoint::Attitude(attitude) => attitude.heading_rad,
         Setpoint::Rate(_) => {
             unreachable!("attitude and waypoint commands yield attitude setpoints")
         }
@@ -200,7 +200,7 @@ fn waypoint_at_rest_on_target_yields_hover_thrust_and_no_moments() {
     let mut stack = Stack::new();
     let dt = 0.01;
     let waypoint_command = WaypointCommand {
-        position: Vec2::zeros(),
+        position_m: Vec2::zeros(),
         ..Default::default()
     };
     let state = VehicleState::default();
@@ -230,9 +230,9 @@ fn distant_waypoint_tilts_toward_target_instead_of_panicking() {
         let state = VehicleState::default();
         stack.prime(&state);
         let command = Command::Waypoint(WaypointCommand {
-            position: Vec2::new(x, y),
-            altitude: 20.0,
-            cruise_speed: 7.0,
+            position_m: Vec2::new(x, y),
+            altitude_m: 20.0,
+            cruise_speed_mps: 7.0,
             ..Default::default()
         });
 
@@ -320,7 +320,7 @@ fn heading_primed_above_pi_behaves_like_its_wrapped_equivalent() {
         let run = |primed: f32| {
             let mut stack = Stack::new();
             let state = VehicleState {
-                heading: primed,
+                heading_rad: primed,
                 ..Default::default()
             };
             stack.prime(&state);
@@ -345,7 +345,7 @@ fn heading_primed_above_pi_behaves_like_its_wrapped_equivalent() {
 fn nan_primed_heading_relatches_from_a_valid_estimate() {
     let mut stack = Stack::new();
     stack.prime(&VehicleState {
-        heading: f32::NAN,
+        heading_rad: f32::NAN,
         ..Default::default()
     });
     let command = Command::Attitude(AttitudeCommand {
@@ -354,7 +354,7 @@ fn nan_primed_heading_relatches_from_a_valid_estimate() {
         ..Default::default()
     });
     let valid = VehicleState {
-        heading: 5.0,
+        heading_rad: 5.0,
         ..Default::default()
     };
 
@@ -432,9 +432,9 @@ fn out_of_range_or_nan_commands_saturate_instead_of_panicking() {
 fn nan_altitude_estimate_holds_hover_then_recovers() {
     let at_altitude = |z: f32| state_at(0.0, 0.0, z);
     let command = Command::Waypoint(WaypointCommand {
-        position: Vec2::zeros(),
-        altitude: 20.0,
-        cruise_speed: 7.0,
+        position_m: Vec2::zeros(),
+        altitude_m: 20.0,
+        cruise_speed_mps: 7.0,
         ..Default::default()
     });
 
@@ -492,9 +492,9 @@ fn drifting_state(tick: usize) -> VehicleState {
 
 fn near_waypoint() -> WaypointCommand {
     WaypointCommand {
-        position: Vec2::new(1.0, 1.0),
-        altitude: 10.5,
-        cruise_speed: 7.0,
+        position_m: Vec2::new(1.0, 1.0),
+        altitude_m: 10.5,
+        cruise_speed_mps: 7.0,
         ..Default::default()
     }
 }
@@ -507,7 +507,7 @@ fn reference_loops() -> (LateralController, AltitudeController) {
         LateralController::with_config(&LateralControllerConfig {
             gains: config.lateral_gains,
             max_integral: 100.0,
-            max_rate: Vec2::new(2.0, 2.0),
+            max_rate_radps: Vec2::new(2.0, 2.0),
         }),
         AltitudeController::with_config(&AltitudeControllerConfig {
             gains: config.altitude_gains,
@@ -516,8 +516,8 @@ fn reference_loops() -> (LateralController, AltitudeController) {
     )
 }
 
-fn reference_tilt(lateral: &mut LateralController, step: f32, state: &VehicleState) -> Vec2<f32> {
-    let target = near_waypoint().position;
+fn reference_tilt(lateral: &mut LateralController, step: f32, state: &VehicleState) -> Vec2 {
+    let target = near_waypoint().position_m;
     lateral.control(
         step,
         target,
@@ -529,7 +529,7 @@ fn reference_tilt(lateral: &mut LateralController, step: f32, state: &VehicleSta
 fn reference_thrust(altitude: &mut AltitudeController, dt: f32, state: &VehicleState) -> f32 {
     altitude.control(
         dt,
-        near_waypoint().altitude,
+        near_waypoint().altitude_m,
         0.0,
         state.position_m.z,
         state.velocity_mps.z,
@@ -642,7 +642,7 @@ fn assert_new_panics(config: CopterGuidanceConfig, field: &str) {
 fn rejects_negative_or_non_finite_navigation_periods() {
     for navigation_period in [-0.01, f32::NAN, f32::INFINITY] {
         let config = CopterGuidanceConfig {
-            navigation_period,
+            navigation_period_s: navigation_period,
             ..Default::default()
         };
         assert_new_panics(config, "navigation_period");
@@ -655,11 +655,11 @@ fn rejects_negative_or_non_finite_navigation_periods() {
 fn centred_yaw_stick_holds_heading_for_any_dt() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     guidance.prime(&VehicleState {
-        heading: 1.0,
+        heading_rad: 1.0,
         ..Default::default()
     });
     let elsewhere = VehicleState {
-        heading: 2.0,
+        heading_rad: 2.0,
         ..Default::default()
     };
 
@@ -669,7 +669,7 @@ fn centred_yaw_stick_holds_heading_for_any_dt() {
         &elsewhere,
     ));
 
-    approx::assert_relative_eq!(setpoint.heading, 1.0, epsilon = 1e-6);
+    approx::assert_relative_eq!(setpoint.heading_rad, 1.0, epsilon = 1e-6);
 }
 
 /// A far waypoint's tilt is capped at `max_tilt` in magnitude, keeping its direction; a near
@@ -693,7 +693,7 @@ fn waypoint_tilt_is_capped_in_magnitude_and_keeps_its_direction() {
         });
         guidance.prime(&state);
         let command = Command::Waypoint(WaypointCommand {
-            position: Vec2::new(x, y),
+            position_m: Vec2::new(x, y),
             ..Default::default()
         });
         let setpoint = attitude(guidance.guide(0.004, &command, &state));

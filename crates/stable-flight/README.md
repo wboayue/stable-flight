@@ -80,8 +80,8 @@ let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig
 let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
     gains: Gains { p: 3.0, i: 0.0, d: 0.1 },
     max_integral: 100.0,
-    max_angles: Vec2::new(PI / 4.0, PI / 4.0),
-    max_rate: Vec2::new(3.0, 3.0),
+    max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
+    max_rate_radps: Vec2::new(3.0, 3.0),
 });
 
 let stabilizer = CopterStabilizer::new(CopterStabilizerConfig {

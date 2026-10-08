@@ -57,12 +57,12 @@ pub(super) fn local_position_ned(
 pub(super) fn attitude(state: &VehicleState, time_boot_ms: u32) -> ATTITUDE_DATA {
     ATTITUDE_DATA {
         time_boot_ms,
-        roll: state.roll,
-        pitch: state.pitch,
-        yaw: wrap_pi(state.heading),
-        rollspeed: state.angular_velocity.x,
-        pitchspeed: state.angular_velocity.y,
-        yawspeed: state.angular_velocity.z,
+        roll: state.roll_rad,
+        pitch: state.pitch_rad,
+        yaw: wrap_pi(state.heading_rad),
+        rollspeed: state.angular_velocity_radps.x,
+        pitchspeed: state.angular_velocity_radps.y,
+        yawspeed: state.angular_velocity_radps.z,
     }
 }
 
@@ -74,7 +74,7 @@ pub(super) fn vfr_hud(control: &ControlOutput, state: &VehicleState) -> VFR_HUD_
     VFR_HUD_DATA {
         airspeed: ground_speed_mps,
         groundspeed: ground_speed_mps,
-        heading: heading_deg(state.heading),
+        heading: heading_deg(state.heading_rad),
         throttle: throttle_percent(control.thrust),
         climb: state.velocity_mps.z,
         alt: state.position_m.z,
