@@ -180,21 +180,30 @@ fn wrap_angle_maps_into_minus_pi_to_pi() {
     assert!(wrap_angle(f32::NEG_INFINITY).is_nan());
 }
 
-/// Outputs above 1 shift all outputs down by the largest excess, keeping their differences;
-/// the result is clamped to [0, 1].
+/// Outputs shift together into [0, 1], keeping their differences: down from above 1, up from
+/// below 0 (not at zero collective). Spreads over 1 scale about the collective first.
 #[test]
-fn desaturate_keeps_differences_by_giving_up_the_top() {
-    // (input, expected)
-    let cases: [([f32; 4], [f32; 4]); 5] = [
-        ([0.5, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]),
-        ([1.0, 0.2, 0.0, 0.7], [1.0, 0.2, 0.0, 0.7]),
-        ([1.15, 0.85, 1.15, 0.45], [1.0, 0.7, 1.0, 0.3]),
-        ([1.5, 0.2, 0.9, 0.9], [1.0, 0.0, 0.4, 0.4]), // the bottom clips once shifted
-        ([0.5, -0.25, 0.25, 0.75], [0.5, 0.0, 0.25, 0.75]), // below 0 only: clamped
+fn desaturate_keeps_moments_by_giving_up_collective() {
+    // (input, collective, expected)
+    let cases: [([f32; 4], f32, [f32; 4]); 10] = [
+        ([0.5, 0.5, 0.5, 0.5], 0.5, [0.5, 0.5, 0.5, 0.5]),
+        ([1.0, 0.2, 0.0, 0.7], 0.5, [1.0, 0.2, 0.0, 0.7]), // already fits
+        ([1.15, 0.85, 1.15, 0.45], 0.9, [1.0, 0.7, 1.0, 0.3]), // too high: down
+        ([0.25, -0.15, 0.35, -0.05], 0.1, [0.4, 0.0, 0.5, 0.1]), // too low: up
+        ([0.2, -0.2, 0.2, -0.2], 0.0, [0.2, 0.0, 0.2, 0.0]), // zero collective: clipped
+        ([0.2, -0.2, 0.2, -0.2], -0.1, [0.2, 0.0, 0.2, 0.0]), // below zero: same
+        // Spread 2 about 0.5: shares halve, fitting exactly.
+        ([1.5, -0.5, 0.5, 0.5], 0.5, [1.0, 0.0, 0.5, 0.5]),
+        // Spread 2 about 0.8: halved to [1.2, 0.2], then down 0.2.
+        ([1.6, -0.4, 0.8, 0.8], 0.8, [1.0, 0.0, 0.6, 0.6]),
+        // Spread 1.25 about 0.1: scaled by 0.8 to [0.9, -0.1], then up 0.1.
+        ([1.1, -0.15, 0.1, 0.1], 0.1, [1.0, 0.0, 0.2, 0.2]),
+        // Spread 2 at zero collective: halved to [0.5, -0.5], not raised, clipped.
+        ([1.0, -1.0, 0.0, 0.0], 0.0, [0.5, 0.0, 0.0, 0.0]),
     ];
-    for (input, expected) in cases {
+    for (input, collective, expected) in cases {
         let mut outputs = input;
-        desaturate(&mut outputs);
+        desaturate(&mut outputs, collective);
         for (o, e) in outputs.iter().zip(expected) {
             assert_relative_eq!(*o, e, epsilon = 1e-6);
         }
@@ -241,4 +250,31 @@ fn assert_dt_accepts_only_positive_finite_steps() {
             "{dt}"
         );
     }
+}
+
+/// `tilt_cosine` matches the rotation matrix's `(2, 2)` entry (cos roll · cos pitch), floored
+/// at 0.5 past 60°, with a non-finite attitude counting as level.
+#[test]
+fn tilt_cosine_matches_the_rotation_matrix_and_floors() {
+    let nan = UnitQuaternion::new_unchecked(nalgebra::Quaternion::new(f32::NAN, 0.0, 0.0, 0.0));
+    // (roll°, pitch°, yaw°)
+    let cases = [
+        (0.0, 0.0, 0.0),
+        (30.0, 0.0, 1.0),
+        (0.0, -30.0, -2.0),
+        (20.0, 20.0, 0.5),
+        (-45.0, 10.0, 3.0),
+    ];
+    for (roll, pitch, yaw) in cases {
+        let attitude = UnitQuaternion::from_euler_angles(
+            f32::to_radians(roll),
+            f32::to_radians(pitch),
+            f32::to_radians(yaw),
+        );
+        let expected = attitude.to_rotation_matrix()[(2, 2)];
+        assert_relative_eq!(tilt_cosine(&attitude), expected, epsilon = 1e-6);
+    }
+    let steep = UnitQuaternion::from_euler_angles(70.0_f32.to_radians(), 0.0, 0.0);
+    assert_relative_eq!(tilt_cosine(&steep), 0.5);
+    assert_relative_eq!(tilt_cosine(&nan), 1.0);
 }

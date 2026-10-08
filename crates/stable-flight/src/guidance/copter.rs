@@ -4,7 +4,7 @@
 //! | Control input | Setpoint |
 //! |---|---|
 //! | [`ControlInput::Rate`] | [`Setpoint::Rate`], sticks passed through; the heading-hold target follows the vehicle |
-//! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target |
+//! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target; throttle divided by cos(tilt) so tilting doesn't sink |
 //! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading held |
 //!
 //! Switching modes doesn't jump the heading: attitude and waypoint flight share one
@@ -23,7 +23,9 @@ use crate::{
 };
 
 use super::rate_divider::RateDivider;
-use crate::math::{all_finite, assert_dt, cap_magnitude, saturate_unit, wrap_angle};
+use crate::math::{
+    all_finite, assert_dt, cap_magnitude, saturate_throttle, saturate_unit, tilt_cosine, wrap_angle,
+};
 
 #[cfg(test)]
 mod tests;
@@ -260,8 +262,8 @@ impl Guidance for CopterGuidance {
 }
 
 impl CopterGuidance {
-    /// Scales the roll/pitch sticks to radians, passes throttle through, and slews the
-    /// heading-hold target with the yaw stick.
+    /// Scales the roll/pitch sticks to radians, boosts throttle for the measured tilt, and
+    /// slews the heading-hold target with the yaw stick.
     fn attitude_setpoint(
         &mut self,
         dt: f32,
@@ -269,7 +271,7 @@ impl CopterGuidance {
         estimated_state: &VehicleState,
     ) -> AttitudeSetpoint {
         // Commands from input devices can be out of range or NaN; saturate rather than panic
-        // (throttle saturates in the stabilizer; see `crate::math`).
+        // (see `crate::math`).
         let yaw = saturate_unit(attitude_command.yaw);
         let max_stick = self.config.max_stick_angles_rad;
         self.slew_heading(yaw * HEADING_SLEW_RATE * dt, estimated_state);
@@ -278,7 +280,11 @@ impl CopterGuidance {
             roll_rad: saturate_unit(attitude_command.roll) * max_stick.x,
             pitch_rad: saturate_unit(attitude_command.pitch) * max_stick.y,
             heading_rad: self.heading,
-            thrust: attitude_command.throttle,
+            // Angle boost: hold the vertical thrust the stick asks for while tilted, as the
+            // altitude loop does (floored past 60°). Saturated to [0, 1]; NaN means none.
+            thrust: saturate_throttle(
+                attitude_command.throttle / tilt_cosine(&estimated_state.attitude),
+            ),
         }
     }
 

@@ -2,7 +2,7 @@ use nalgebra::UnitQuaternion;
 
 use crate::GRAVITY;
 use crate::controllers::{Gains, InvalidConfig, check_limit, check_unit_interval};
-use crate::math::{assert_dt, clamp_symmetric};
+use crate::math::{assert_dt, clamp_symmetric, tilt_cosine};
 
 /// Default [`AltitudeControllerConfig::hover_thrust`].
 pub const DEFAULT_HOVER_THRUST: f32 = 0.5;
@@ -11,10 +11,6 @@ pub const DEFAULT_HOVER_THRUST: f32 = 0.5;
 /// forward it just trims a `hover_thrust` mismatch; winding it up over a long climb made the
 /// vehicle overshoot and settle slowly.
 const INTEGRATION_BAND: f32 = 1.0;
-
-/// Floor on the body-z alignment (cos of the tilt) used for tilt compensation: past 60° the
-/// boost stops growing, so a near-inverted estimate can't demand unbounded thrust.
-const MIN_BODY_Z_ALIGNMENT: f32 = 0.5;
 
 /// Configures the [`AltitudeController`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -205,16 +201,9 @@ impl AltitudeController {
         let acceleration =
             gains.p * altitude_error + gains.d * velocity_error + gains.i * self.integrated_error;
 
-        // Cos of the tilt, cos(roll)·cos(pitch); yaw doesn't change it. A non-finite attitude
-        // counts as level (no boost).
-        let body_z_alignment = estimate.attitude.to_rotation_matrix()[(2, 2)];
-        let body_z_alignment = if body_z_alignment.is_finite() {
-            body_z_alignment.max(MIN_BODY_Z_ALIGNMENT)
-        } else {
-            1.0
-        };
-
-        let linear_thrust = hover_thrust * (GRAVITY + acceleration) / (GRAVITY * body_z_alignment);
+        // Floored past 60° of tilt; a non-finite attitude counts as level (no boost).
+        let linear_thrust =
+            hover_thrust * (GRAVITY + acceleration) / (GRAVITY * tilt_cosine(&estimate.attitude));
         linear_thrust.clamp(0.0, 1.0)
     }
 }

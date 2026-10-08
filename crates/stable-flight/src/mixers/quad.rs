@@ -65,8 +65,10 @@ impl Mixer for QuadCopterMixer {
     ///
     /// Each motor gets `thrust · THRUST_FACTOR`, plus or minus the scaled roll, pitch, and yaw
     /// moments per the sign table in the [module docs](self). If a motor would pass full
-    /// throttle, all four are lowered by the excess so the moments survive and collective
-    /// thrust gives way; the result is then clamped to `[0, 1]`.
+    /// throttle, or drop below zero, all four shift together so the moments survive and
+    /// collective thrust gives way; moments too large to fit at all are scaled down, keeping
+    /// their ratios. At zero thrust nothing shifts up: motors below zero are clipped. The
+    /// result is clamped to `[0, 1]`.
     fn mix(&self, command: &ControlOutput) -> ActuatorCommand {
         // Out-of-range or NaN inputs saturate rather than panic (see `crate::math`): thrust to
         // [0, 1] (NaN → no thrust), moments to [-1, 1] (NaN → none).
@@ -92,7 +94,7 @@ impl Mixer for QuadCopterMixer {
             baseline - yaw - pitch - roll, // Motor 3: Rear Right (CW)
         ];
 
-        desaturate(&mut raw_outputs);
+        desaturate(&mut raw_outputs, baseline);
 
         // Assemble the actuator command with the computed motor outputs
         let mut actuator_command = ActuatorCommand::default();

@@ -403,3 +403,31 @@ fn out_of_range_or_nan_inputs_saturate_instead_of_panicking() {
         );
     }
 }
+
+/// At low throttle a large moment shifts all motors up rather than clipping the low side, so
+/// the full differential survives (#112); at zero thrust nothing is raised.
+#[test]
+fn low_throttle_moments_shift_up_instead_of_clipping() {
+    let mixer = create_mixer();
+    // (thrust, moments, expected motors)
+    let cases = [
+        // Roll 1 at thrust 0.1: raw [0.19, -0.01, 0.19, -0.01], up 0.01.
+        (0.1, Vec3::new(1.0, 0.0, 0.0), [0.2, 0.0, 0.2, 0.0]),
+        // Pitch -1 at thrust 0.05: raw [-0.055, -0.055, 0.145, 0.145], up 0.055.
+        (0.05, Vec3::new(0.0, -1.0, 0.0), [0.0, 0.0, 0.2, 0.2]),
+        // Yaw 1 at thrust 0.2: raw [-0.07, 0.43, 0.43, -0.07], up 0.07.
+        (0.2, Vec3::new(0.0, 0.0, 1.0), [0.0, 0.5, 0.5, 0.0]),
+        // Zero thrust: the low side clips, nothing rises.
+        (0.0, Vec3::new(1.0, 0.0, 0.0), [0.1, 0.0, 0.1, 0.0]),
+    ];
+    for (thrust, moments, expected) in cases {
+        let output = mixer.mix(&ControlOutput::new(thrust, moments));
+        for (i, e) in expected.iter().enumerate() {
+            assert!(
+                approx_eq(output.motors[i], *e),
+                "thrust {thrust}, moments {moments:?}: motor {i} {} vs {e}",
+                output.motors[i]
+            );
+        }
+    }
+}
