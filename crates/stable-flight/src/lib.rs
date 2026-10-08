@@ -933,7 +933,9 @@ pub struct Saturation {
     /// maximum roll/pitch angle.
     pub tilt: bool,
     /// Collective thrust was clipped to `[0, 1]` (the altitude loop, or the attitude-mode
-    /// boost).
+    /// boost). The altitude loop's flag means its thrust sits on a bound, so it is also set
+    /// when the tilt boost cuts thrust to 0 while inverted, and in a steady hover if
+    /// `hover_thrust` is 1.
     pub thrust: bool,
     /// The rate loop's moment output hit ±1, per axis (roll, pitch, yaw).
     pub moments: [bool; 3],
@@ -941,33 +943,46 @@ pub struct Saturation {
     /// throttle).
     pub mixer_thrust: bool,
     /// The mixer couldn't deliver the moments in full: it scaled them down, its upward shift
-    /// was limited near idle, or a motor was clipped.
+    /// was limited near idle, or a motor was clipped. Expected while armed at idle on the
+    /// ground, where any attitude error is clipped at zero thrust.
     pub mixer_moments: bool,
 }
 
 impl Saturation {
     /// The union of two reports: a flag set in either is set.
     pub fn merge(self, other: Self) -> Self {
+        // Exhaustive destructuring: a new flag fails to compile here until it is merged.
+        let Saturation {
+            tilt,
+            thrust,
+            moments,
+            mixer_thrust,
+            mixer_moments,
+        } = other;
         Saturation {
-            tilt: self.tilt || other.tilt,
-            thrust: self.thrust || other.thrust,
+            tilt: self.tilt || tilt,
+            thrust: self.thrust || thrust,
             moments: [
-                self.moments[0] || other.moments[0],
-                self.moments[1] || other.moments[1],
-                self.moments[2] || other.moments[2],
+                self.moments[0] || moments[0],
+                self.moments[1] || moments[1],
+                self.moments[2] || moments[2],
             ],
-            mixer_thrust: self.mixer_thrust || other.mixer_thrust,
-            mixer_moments: self.mixer_moments || other.mixer_moments,
+            mixer_thrust: self.mixer_thrust || mixer_thrust,
+            mixer_moments: self.mixer_moments || mixer_moments,
         }
     }
 
     /// True when any flag is set.
     pub fn any(&self) -> bool {
-        self.tilt
-            || self.thrust
-            || self.moments.iter().any(|&m| m)
-            || self.mixer_thrust
-            || self.mixer_moments
+        // Exhaustive destructuring: a new flag fails to compile here until it is checked.
+        let Saturation {
+            tilt,
+            thrust,
+            moments,
+            mixer_thrust,
+            mixer_moments,
+        } = *self;
+        tilt || thrust || moments.iter().any(|&m| m) || mixer_thrust || mixer_moments
     }
 }
 
@@ -1037,7 +1052,9 @@ pub trait TelemetryPublisher {
 ///
 /// The loop assembles it after actuating, so every stage's output is available. Fields borrow
 /// from the loop and live only for the tick; publishers copy what they need to keep. New
-/// fields can be added without changing the `publish` signature.
+/// fields can be added without changing the `publish` signature (struct literals, as in tests,
+/// need the new field; `testing::RecordedTick::as_record`, behind the `testing` feature,
+/// builds one from an owned copy).
 ///
 /// # Examples
 ///

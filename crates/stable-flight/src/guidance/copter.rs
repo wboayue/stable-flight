@@ -216,6 +216,9 @@ impl Configurable for CopterGuidance {
     fn set_config(&mut self, config: CopterGuidanceConfig) -> Result<(), InvalidConfig> {
         config.validate()?;
         self.config = config;
+        if self.tilt_rad.norm() > config.max_tilt_rad {
+            self.tilt_capped = true;
+        }
         self.tilt_rad = cap_magnitude(self.tilt_rad, config.max_tilt_rad);
         Ok(())
     }

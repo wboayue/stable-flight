@@ -69,7 +69,7 @@ pub(crate) fn desaturate(outputs: &mut [f32], collective: f32) -> Desaturation {
     }
 
     Desaturation {
-        lowered: shift < 0.0,
+        lowered: shift < -CLIP_TOLERANCE,
         // Scaled down, or still outside [0, 1] after the shift (a limited raise, or zero
         // collective) and clipped. The tolerance absorbs rounding in a shift that lands an
         // output exactly on a bound.
