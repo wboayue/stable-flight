@@ -83,6 +83,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contract's Euler angles. Prefer it to nalgebra's `UnitQuaternion::euler_angles`,
   which maps a NaN attitude to a finite pitch of -π/2 and yaw 0, and costs more
   flash. NaN in gives NaN out; pitch stays finite at ±90°.
+- `validate()` on every controller config and on `CopterStabilizerConfig`, returning the new
+  `controllers::InvalidConfig` (`#[non_exhaustive]`: field, requirement, and the loop
+  `section` when a composite reports it, e.g. `body_rate.max_integral`). `CopterStabilizer::new`
+  and `CopterGuidance::new` still panic on an invalid config. `CopterStabilizer::new` now also
+  rejects a negative or non-finite `full_scale_rates_radps` component, which silently zeroed
+  every rate-mode moment ([#175](https://github.com/wboayue/stable-flight/issues/175)), and a
+  non-positive or non-finite `thrust_curve_exponent`, under which zero throttle became full
+  thrust.
 
 ### Changed
 
@@ -105,6 +113,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Normalized fields (`AttitudeCommand`/`AttitudeSetpoint` roll and pitch, rate commands and
   setpoints, thrust, throttle) and `max_integral` keep their names.
+- **Breaking:** the PID controllers (`BodyRateController`, `AttitudeController`,
+  `YawController`, `AltitudeController`, `LateralController`) hold only state; their config is
+  passed to every call: `control(&config, dt, …)`
+  ([#145](https://github.com/wboayue/stable-flight/issues/145)). A config change applies on the
+  next tick without resetting the integral. `new()` and `with_config()` are removed (build
+  with `Default`), as are `BodyRateController`'s public `gains`/`yaw_gains`/`max_integral` and
+  `YawController::config`. Invalid limits no longer panic at construction: check them with
+  `validate()`; inside `control` a negative or NaN limit acts as 0 instead of panicking.
+  `AltitudeControllerConfig` and `LateralControllerConfig` derive `Copy`.
 - **Breaking:** `CopterStabilizerConfig` is plain `Copy` data: it holds controller configs, not
   controllers ([#144](https://github.com/wboayue/stable-flight/issues/144)).
   `rates_controller: BodyRateController` → `body_rate: BodyRateControllerConfig`,

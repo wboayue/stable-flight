@@ -39,7 +39,9 @@ fn lateral_loop_holds_level_at_the_target() {
     let current_position = Vec2::zeros();
     let current_velocity = Vec2::zeros();
 
-    let output = guidance.lateral_controller.control(
+    let config = guidance.lateral_config;
+    let output = guidance.lateral.control(
+        &config,
         dt,
         desired_position,
         current_position,
@@ -60,7 +62,9 @@ fn lateral_loop_tilts_toward_the_target() {
     let current_position = Vec2::zeros();
     let current_velocity = Vec2::zeros();
 
-    let output = guidance.lateral_controller.control(
+    let config = guidance.lateral_config;
+    let output = guidance.lateral.control(
+        &config,
         dt,
         desired_position,
         current_position,
@@ -499,26 +503,26 @@ fn near_waypoint() -> WaypointCommand {
     }
 }
 
-/// The lateral and altitude loops as `CopterGuidance` configures them, stepped by hand: an
-/// independent reference for the divider.
-fn reference_loops() -> (LateralController, AltitudeController) {
+/// The lateral and altitude loop configs as `CopterGuidance` builds them, stepped by hand
+/// with fresh controllers: an independent reference for the divider.
+fn reference_configs() -> (LateralControllerConfig, AltitudeControllerConfig) {
     let config = CopterGuidanceConfig::default();
     (
-        LateralController::with_config(&LateralControllerConfig {
+        LateralControllerConfig {
             gains: config.lateral_gains,
-            max_integral: 100.0,
-            max_rate_radps: Vec2::new(2.0, 2.0),
-        }),
-        AltitudeController::with_config(&AltitudeControllerConfig {
+            ..Default::default()
+        },
+        AltitudeControllerConfig {
             gains: config.altitude_gains,
             ..Default::default()
-        }),
+        },
     )
 }
 
 fn reference_tilt(lateral: &mut LateralController, step: f32, state: &VehicleState) -> Vec2 {
     let target = near_waypoint().position_m;
     lateral.control(
+        &reference_configs().0,
         step,
         target,
         Vec2::new(state.position_m.x, state.position_m.y),
@@ -528,6 +532,7 @@ fn reference_tilt(lateral: &mut LateralController, step: f32, state: &VehicleSta
 
 fn reference_thrust(altitude: &mut AltitudeController, dt: f32, state: &VehicleState) -> f32 {
     altitude.control(
+        &reference_configs().1,
         dt,
         near_waypoint().altitude_m,
         0.0,
@@ -550,7 +555,7 @@ fn attitude(setpoint: Setpoint) -> AttitudeSetpoint {
 fn lateral_loop_runs_per_navigation_period_and_altitude_loop_every_tick() {
     const DT: f32 = 0.003;
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
-    let (mut lateral, mut altitude) = reference_loops();
+    let (mut lateral, mut altitude) = (LateralController::default(), AltitudeController::default());
     let mut tilt = Vec2::zeros();
 
     for tick in 0..10 {
@@ -576,7 +581,7 @@ fn lateral_loop_runs_per_navigation_period_and_altitude_loop_every_tick() {
 fn nan_position_on_a_run_tick_retries_next_tick() {
     const DT: f32 = 0.004;
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
-    let (mut lateral, _) = reference_loops();
+    let mut lateral = LateralController::default();
     let waypoint = Command::Waypoint(near_waypoint());
 
     guidance.guide(DT, &waypoint, &drifting_state(0));
@@ -724,6 +729,6 @@ fn rejects_hover_thrust_outside_zero_to_one() {
             hover_thrust,
             ..Default::default()
         };
-        assert_new_panics(config, "hover_thrust");
+        assert_new_panics(config, "altitude.hover_thrust"); // names the loop
     }
 }

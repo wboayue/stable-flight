@@ -1,7 +1,7 @@
 //! Small numeric helpers shared by guidance, stabilizers, controllers, and mixers:
 //! [`saturate_unit`], [`saturate_unit_vec2`], [`saturate_throttle`], [`wrap_angle`],
-//! [`desaturate`], [`cap_magnitude`], the per-component vector helpers [`clamp_each`] and
-//! [`all_finite`], and [`euler_angles`] (public at the crate root).
+//! [`desaturate`], [`cap_magnitude`], [`clamp_symmetric`] and its per-component
+//! [`clamp_symmetric_each`], [`limit_or_zero`], [`all_finite`], and [`euler_angles`] (public at the crate root).
 //!
 //! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite
 //! error into controller state, wrap angles), which is specified in `architecture.md`,
@@ -54,13 +54,27 @@ pub(crate) fn saturate_unit_vec2(value: Vec2) -> Vec2 {
     value.map(saturate_unit)
 }
 
-/// `f32::clamp` applied to each component. NaN components stay NaN, like `f32::clamp`.
-pub(crate) fn clamp_each<const D: usize>(
+/// Clamps `value` to `[-limit, limit]`; NaN `value` stays NaN, like `f32::clamp`.
+///
+/// Unlike `f32::clamp`, it never panics: a negative or NaN `limit` acts as 0 (neutral output).
+/// Limits come from config passed in every tick, so a bad config must not panic the loop.
+pub(crate) fn clamp_symmetric(value: f32, limit: f32) -> f32 {
+    let limit = limit_or_zero(limit);
+    value.clamp(-limit, limit)
+}
+
+/// A config limit as given when it is non-negative, else 0 (neutral); NaN also becomes 0.
+pub(crate) fn limit_or_zero(limit: f32) -> f32 {
+    // `>=` is false for NaN.
+    if limit >= 0.0 { limit } else { 0.0 }
+}
+
+/// [`clamp_symmetric`] applied to each component.
+pub(crate) fn clamp_symmetric_each<const D: usize>(
     value: SVector<f32, D>,
-    min: f32,
-    max: f32,
+    limit: f32,
 ) -> SVector<f32, D> {
-    value.map(|component| component.clamp(min, max))
+    value.map(|component| clamp_symmetric(component, limit))
 }
 
 /// True when every component is finite.
