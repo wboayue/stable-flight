@@ -105,7 +105,7 @@ impl BodyRateController {
     ///
     /// # Panics
     ///
-    /// If `config.max_integral` is not finite.
+    /// If `config.max_integral` is negative or not finite.
     ///
     /// # Examples
     ///
@@ -121,9 +121,10 @@ impl BodyRateController {
     /// let controller = BodyRateController::with_config(&config);
     /// ```
     pub fn with_config(config: &BodyRateControllerConfig) -> Self {
+        // The per-tick integral clamp would panic on a negative or NaN bound.
         assert!(
-            config.max_integral.is_finite(),
-            "Maximum integral term must be finite"
+            config.max_integral >= 0.0 && config.max_integral.is_finite(),
+            "max_integral must be non-negative and finite"
         );
         Self {
             gains: config.gains,
@@ -387,16 +388,29 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Maximum integral term must be finite")]
+    #[should_panic(expected = "max_integral must be non-negative and finite")]
     fn infinite_max_integral_panics() {
         BodyRateController::with_config(&BodyRateControllerConfig {
-            gains: Gains {
-                p: 1.0,
-                i: 0.0,
-                d: 0.0,
-            },
-            yaw_gains: Gains::default(),
             max_integral: f32::INFINITY,
+            ..BodyRateControllerConfig::default()
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "max_integral must be non-negative and finite")]
+    fn nan_max_integral_panics() {
+        BodyRateController::with_config(&BodyRateControllerConfig {
+            max_integral: f32::NAN,
+            ..BodyRateControllerConfig::default()
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "max_integral must be non-negative and finite")]
+    fn negative_max_integral_panics() {
+        BodyRateController::with_config(&BodyRateControllerConfig {
+            max_integral: -1.0,
+            ..BodyRateControllerConfig::default()
         });
     }
 
