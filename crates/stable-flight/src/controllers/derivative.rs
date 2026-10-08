@@ -12,6 +12,8 @@ pub(crate) struct DerivativeState<T> {
     previous_error: Option<T>,
 }
 
+// `T::default()` stands in for a zero derivative, so it must be the additive zero (true for
+// `f32` and nalgebra vectors).
 impl<T> DerivativeState<T>
 where
     T: Copy + Default + Sub<Output = T> + Div<f32, Output = T>,
