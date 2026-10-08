@@ -175,7 +175,10 @@ fn main() {
             ScriptCommander::new(script).expect("failed to load flight script"),
             bridge,
         ),
-        None => fly(Extreme3DCommander::default(), bridge),
+        None => fly(
+            Extreme3DCommander::new().expect("Failed to initialize Extreme3D joystick"),
+            bridge,
+        ),
     }
 }
 
