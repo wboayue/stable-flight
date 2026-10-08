@@ -211,13 +211,18 @@ rustdoc), and cover every conformance scenario with `stable_flight::conformance_
 
 ## Workflow
 
-1. Read the relevant trait in core `src/lib.rs` and its existing impls before adding a new one. Hardware-reusable code (control math, mixing, sequencing) goes in the core crate; anything touching an OS, clock, file, or network goes in sitl; anything specific to one simulator goes in its `stable-flight-sitl-<simulator>` backend crate.
-2. Wire new components into a `FlightLoop` + `RealTimeRunner` the way sitl-realflight `examples/copter-manual-realflight.rs` does — that's the canonical reference.
-3. Add tests alongside the code; cover the boundary/error case, not just the happy path.
-4. `cargo fmt --all && just lint && cargo test --workspace --all-features` before sending a PR.
-5. If you change trait surface, module or crate layout, or runnable examples, update the owning docs (see Commits & PRs) in the same PR.
-6. To compare against `main` (e.g. test counts), use a throwaway worktree — `git worktree add <dir> main` with its own `CARGO_TARGET_DIR` — not a `git stash` round-trip; stashing staged renames plus untracked files can fail to restore.
-7. Pass PR bodies to `gh pr create`/`edit` with `--body-file`; inline heredocs inside `$(…)` break on apostrophes.
+1. Review every plan before implementing it, and include the review in the plan:
+   - **Duplication:** logic, constants, or helpers that repeat in the change or already exist elsewhere (check core `math` and sibling crates before writing a helper).
+   - **Single responsibility:** each type or function does one job; separate I/O, scheduling, and pure mapping/math.
+   - **Composability:** dependencies are injected rather than hard-coded (connections, addresses, clocks), configuration is explicit, and the public surface is no wider than callers need.
+   - **Performance**, when the code runs in the hot path (anything `FlightLoop::step` calls each tick — commander, estimator, guidance, stabilizer, mixer, actuator, telemetry — or firmware): per-tick allocations, blocking I/O, redundant trig or `libm` calls, and flash size (see Coding style).
+2. Read the relevant trait in core `src/lib.rs` and its existing impls before adding a new one. Hardware-reusable code (control math, mixing, sequencing) goes in the core crate; anything touching an OS, clock, file, or network goes in sitl; anything specific to one simulator goes in its `stable-flight-sitl-<simulator>` backend crate.
+3. Wire new components into a `FlightLoop` + `RealTimeRunner` the way sitl-realflight `examples/copter-manual-realflight.rs` does — that's the canonical reference.
+4. Add tests alongside the code; cover the boundary/error case, not just the happy path.
+5. `cargo fmt --all && just lint && cargo test --workspace --all-features` before sending a PR.
+6. If you change trait surface, module or crate layout, or runnable examples, update the owning docs (see Commits & PRs) in the same PR.
+7. To compare against `main` (e.g. test counts), use a throwaway worktree — `git worktree add <dir> main` with its own `CARGO_TARGET_DIR` — not a `git stash` round-trip; stashing staged renames plus untracked files can fail to restore.
+8. Pass PR bodies to `gh pr create`/`edit` with `--body-file`; inline heredocs inside `$(…)` break on apostrophes.
 
 ## Pre-PR checklist
 
