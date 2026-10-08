@@ -27,7 +27,7 @@
 //! - `DEFAULT_YAW_SCALING`: Scaling factor for the yaw moment.
 
 use crate::math::{desaturate, saturate_throttle, saturate_unit};
-use crate::{ActuatorCommand, ControlOutput, Mixer};
+use crate::{ActuatorCommand, ControlOutput, Mixer, Saturation};
 
 #[cfg(test)]
 mod tests;
@@ -48,6 +48,8 @@ pub struct QuadCopterMixer {
     roll_pitch_scaling: f32,
     /// Scaling factor for the yaw moment.
     yaw_scaling: f32,
+    /// What the last [`mix`](Mixer::mix) gave up.
+    saturation: Saturation,
 }
 
 impl Default for QuadCopterMixer {
@@ -56,6 +58,7 @@ impl Default for QuadCopterMixer {
         QuadCopterMixer {
             roll_pitch_scaling: DEFAULT_ROLL_PITCH_SCALING,
             yaw_scaling: DEFAULT_YAW_SCALING,
+            saturation: Saturation::default(),
         }
     }
 }
@@ -69,7 +72,7 @@ impl Mixer for QuadCopterMixer {
     /// collective thrust gives way; moments too large to fit at all are scaled down, keeping
     /// their ratios. Shifting up is limited to twice the collective, so it fades out toward idle
     /// and at zero thrust motors below zero are clipped. The result is clamped to `[0, 1]`.
-    fn mix(&self, command: &ControlOutput) -> ActuatorCommand {
+    fn mix(&mut self, command: &ControlOutput) -> ActuatorCommand {
         // Out-of-range or NaN inputs saturate rather than panic (see `crate::math`): thrust to
         // [0, 1] (NaN → no thrust), moments to [-1, 1] (NaN → none).
         let thrust = saturate_throttle(command.thrust);
@@ -94,7 +97,12 @@ impl Mixer for QuadCopterMixer {
             baseline - yaw - pitch - roll, // Motor 3: Rear Right (CW)
         ];
 
-        desaturate(&mut raw_outputs, baseline);
+        let desaturation = desaturate(&mut raw_outputs, baseline);
+        self.saturation = Saturation {
+            mixer_thrust: desaturation.lowered,
+            mixer_moments: desaturation.moments_lost,
+            ..Saturation::default()
+        };
 
         // Assemble the actuator command with the computed motor outputs
         let mut actuator_command = ActuatorCommand::default();
@@ -106,5 +114,11 @@ impl Mixer for QuadCopterMixer {
         actuator_command.motors[3] = raw_outputs[3];
 
         actuator_command
+    }
+
+    /// `mixer_thrust` when the outputs were shifted down (collective gave way), and
+    /// `mixer_moments` when the moments were scaled down or a motor was clipped.
+    fn saturation(&self) -> Saturation {
+        self.saturation
     }
 }

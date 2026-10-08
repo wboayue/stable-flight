@@ -10,7 +10,7 @@ use core::time::Duration;
 use crate::controllers::InvalidConfig;
 use crate::{
     ActuatorCommand, AttitudeSetpoint, Commander, Configurable, ControlOutput, Guidance, Mixer,
-    Setpoint, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle, VehicleState,
+    Saturation, Setpoint, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle, VehicleState,
 };
 
 #[cfg(test)]
@@ -133,9 +133,10 @@ where
     /// Runs one tick with loop period `dt`.
     ///
     /// The commander sees the state from the previous tick; guidance and the stabilizer see
-    /// the fresh estimate. Telemetry receives a [`TelemetryRecord`] after actuation. A
-    /// disarmed tick actuates [`ActuatorCommand::default`] and records a neutral setpoint and
-    /// zero control; see [`FlightLoop`] for the arm gate. Allocation-free.
+    /// the fresh estimate. Telemetry receives a [`TelemetryRecord`] after actuation, with the
+    /// [`Saturation`] guidance, the stabilizer, and the mixer report, merged. A disarmed tick
+    /// actuates [`ActuatorCommand::default`] and records a neutral setpoint, zero control, and
+    /// no saturation; see [`FlightLoop`] for the arm gate. Allocation-free.
     ///
     /// # Panics
     ///
@@ -147,7 +148,7 @@ where
         let command = self.commander.next_command(dt_secs, &self.state);
         self.state = self.vehicle.estimate_state(dt);
 
-        let (setpoint, control, actuators) = if command.arm {
+        let (setpoint, control, actuators, saturation) = if command.arm {
             if !self.armed {
                 self.guidance.prime(&self.state);
                 self.stabilizer.prime(&self.state);
@@ -155,7 +156,12 @@ where
             let setpoint = self.guidance.guide(dt_secs, &command.input, &self.state);
             let control = self.stabilizer.stabilize(dt_secs, &setpoint, &self.state);
             let actuators = self.mixer.mix(&control);
-            (setpoint, control, actuators)
+            let saturation = self
+                .guidance
+                .saturation()
+                .merge(self.stabilizer.saturation())
+                .merge(self.mixer.saturation());
+            (setpoint, control, actuators, saturation)
         } else {
             let setpoint = Setpoint::Attitude(AttitudeSetpoint {
                 heading_rad: self.state.heading_rad,
@@ -165,6 +171,7 @@ where
                 setpoint,
                 ControlOutput::default(),
                 ActuatorCommand::default(),
+                Saturation::default(),
             )
         };
         self.armed = command.arm;
@@ -177,6 +184,7 @@ where
             state: &self.state,
             control: &control,
             actuators: &actuators,
+            saturation,
         });
     }
 

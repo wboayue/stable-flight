@@ -4,7 +4,7 @@ use assert2::check;
 
 use super::*;
 use crate::testing::{NullVehicle, RecordingTelemetry};
-use crate::{Command, ControlOutput, Setpoint, Vehicle};
+use crate::{Command, ControlOutput, Saturation, Setpoint, Vehicle};
 
 /// Estimator that reports how many times it was asked, as the heading.
 #[derive(Default)]
@@ -70,6 +70,7 @@ fn tuple_publisher_fans_out_to_every_sink() {
                 ..Default::default()
             },
             actuators: &actuators,
+            saturation: Saturation::default(),
         });
     }
 

@@ -21,6 +21,7 @@ fn record_with_thrust(thrust: f32) -> RecordedTick {
         state: &state,
         control: &control,
         actuators: &actuators,
+        saturation: Saturation::default(),
     })
 }
 

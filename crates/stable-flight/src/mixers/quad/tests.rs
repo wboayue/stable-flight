@@ -20,7 +20,7 @@ fn create_mixer() -> QuadCopterMixer {
 ///     baseline = 1.0 * 0.9 = 0.9
 #[test]
 fn test_hover_no_moments() {
-    let mixer = create_mixer();
+    let mut mixer = create_mixer();
     let input = ControlOutput::new(1.0, Vec3::zeros());
     let output = mixer.mix(&input);
 
@@ -48,7 +48,7 @@ fn test_hover_no_moments() {
 /// - Motor 3 (Rear Right): 0 + 0 + 0 - 0.1 = -0.1 -> clamped to 0.0
 #[test]
 fn test_pure_roll() {
-    let mixer = create_mixer();
+    let mut mixer = create_mixer();
     let input = ControlOutput::new(0.0, Vec3::new(1.0, 0.0, 0.0));
     let output = mixer.mix(&input);
 
@@ -86,7 +86,7 @@ fn test_pure_roll() {
 /// - Motor 3 (Rear Right): 0 + 0 - 0.1 + 0 = -0.1 -> clamped to 0.0
 #[test]
 fn test_pure_pitch() {
-    let mixer = create_mixer();
+    let mut mixer = create_mixer();
     let input = ControlOutput::new(0.0, Vec3::new(0.0, 1.0, 0.0));
     let output = mixer.mix(&input);
 
@@ -124,7 +124,7 @@ fn test_pure_pitch() {
 /// - Motor 3 (Rear Right, CW): 0 - 0.25 = -0.25 -> clamped to 0.0
 #[test]
 fn test_pure_yaw() {
-    let mixer = create_mixer();
+    let mut mixer = create_mixer();
     let input = ControlOutput::new(0.0, Vec3::new(0.0, 0.0, 1.0));
     let output = mixer.mix(&input);
 
@@ -166,7 +166,7 @@ fn test_pure_yaw() {
 /// - Motor 3: 0.45 - 0.15 = 0.30
 #[test]
 fn test_max_inputs() {
-    let mixer = create_mixer();
+    let mut mixer = create_mixer();
     let input = ControlOutput::new(1.0, Vec3::new(1.0, 1.0, 1.0));
     let output = mixer.mix(&input);
 
@@ -197,7 +197,7 @@ fn test_max_inputs() {
 /// With zero thrust and zero moments, all motor outputs should be zero.
 #[test]
 fn test_zero_inputs() {
-    let mixer = create_mixer();
+    let mut mixer = create_mixer();
     let input = ControlOutput::new(0.0, Vec3::zeros());
     let output = mixer.mix(&input);
 
@@ -226,7 +226,7 @@ fn test_zero_inputs() {
 /// - Motor 3: 0 - (-0.25) - (-0.1) - (-0.1) = 0.45
 #[test]
 fn test_negative_outputs() {
-    let mixer = create_mixer();
+    let mut mixer = create_mixer();
     let input = ControlOutput::new(0.0, Vec3::new(-1.0, -1.0, -1.0));
     let output = mixer.mix(&input);
 
@@ -261,7 +261,7 @@ fn test_negative_outputs() {
 /// - All motors: 0.45
 #[test]
 fn test_partial_thrust() {
-    let mixer = create_mixer();
+    let mut mixer = create_mixer();
     let input = ControlOutput::new(0.5, Vec3::zeros());
     let output = mixer.mix(&input);
 
@@ -291,7 +291,7 @@ fn test_partial_thrust() {
 /// - Motor 3: 0 + 0 - (-0.05) - 0.05 = 0.0
 #[test]
 fn test_mixed_moments() {
-    let mixer = create_mixer();
+    let mut mixer = create_mixer();
     let input = ControlOutput::new(0.0, Vec3::new(0.5, -0.5, 0.0));
     let output = mixer.mix(&input);
 
@@ -332,7 +332,7 @@ fn test_mixed_moments() {
 /// - Motor 3: 0.8
 #[test]
 fn test_boundary_condition() {
-    let mixer = create_mixer();
+    let mut mixer = create_mixer();
     let input = ControlOutput::new(1.0, Vec3::new(-1.0, 1.0, 0.0));
     let output = mixer.mix(&input);
 
@@ -386,7 +386,7 @@ fn out_of_range_or_nan_inputs_saturate_instead_of_panicking() {
             Vec3::new(0.0, 0.1, 0.0),
         ),
     ];
-    let mixer = create_mixer();
+    let mut mixer = create_mixer();
     for (thrust, moments, eq_thrust, eq_moments) in cases {
         let mixed = mixer.mix(&ControlOutput::new(thrust, moments));
         let expected = mixer.mix(&ControlOutput::new(eq_thrust, eq_moments));
@@ -408,7 +408,7 @@ fn out_of_range_or_nan_inputs_saturate_instead_of_panicking() {
 /// the full differential survives (#112); at zero thrust nothing is raised.
 #[test]
 fn low_throttle_moments_shift_up_instead_of_clipping() {
-    let mixer = create_mixer();
+    let mut mixer = create_mixer();
     // (thrust, moments, expected motors)
     let cases = [
         // Roll 1 at thrust 0.1: raw [0.19, -0.01, 0.19, -0.01], up 0.01.
@@ -429,5 +429,29 @@ fn low_throttle_moments_shift_up_instead_of_clipping() {
                 output.motors[i]
             );
         }
+    }
+}
+
+/// The mixer reports what it gave up on its last call: collective when it shifted down,
+/// moments when it clipped (or scaled); a clean mix clears the flags.
+#[test]
+fn reports_what_the_last_mix_gave_up() {
+    // (thrust, moments, mixer_thrust, mixer_moments)
+    let cases = [
+        (0.5, Vec3::zeros(), false, false),
+        (0.5, Vec3::new(1.0, 1.0, 1.0), false, false), // fits as is
+        (1.0, Vec3::new(1.0, 1.0, 1.0), true, false),  // collective gives way
+        (0.1, Vec3::new(1.0, 0.0, 0.0), false, false), // shifted up: nothing lost
+        (0.0, Vec3::new(1.0, 0.0, 0.0), false, true),  // zero thrust: clipped
+    ];
+    let mut mixer = create_mixer();
+    for (thrust, moments, mixer_thrust, mixer_moments) in cases {
+        mixer.mix(&ControlOutput::new(thrust, moments));
+        let saturation = mixer.saturation();
+        assert!(
+            (saturation.mixer_thrust, saturation.mixer_moments) == (mixer_thrust, mixer_moments),
+            "thrust {thrust}, moments {moments:?}: {saturation:?}"
+        );
+        assert!(!saturation.tilt && !saturation.thrust && saturation.moments == [false; 3]);
     }
 }

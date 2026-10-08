@@ -338,7 +338,7 @@ fn thrust_curve_raises_linear_thrust_to_the_configured_exponent() {
         (0.5, 1.0, 0.5),
     ];
     for (linear_thrust, exponent, expected) in cases {
-        let stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
+        let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
             thrust_curve_exponent: exponent,
             ..Default::default()
         });
@@ -349,7 +349,7 @@ fn thrust_curve_raises_linear_thrust_to_the_configured_exponent() {
         );
     }
     // Out of range saturates; NaN means motors off (input policy).
-    let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+    let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
     for (linear_thrust, expected) in [(f32::NAN, 0.0), (-0.5, 0.0), (1.5, 1.0)] {
         assert_eq!(stabilizer.fit_to_thrust_curve(linear_thrust), expected);
     }
@@ -573,4 +573,75 @@ fn zero_dt_panics() {
         &Setpoint::Attitude(AttitudeSetpoint::default()),
         &VehicleState::default(),
     );
+}
+
+/// The stabilizer reports what its last call clipped: an attitude setpoint beyond
+/// `max_angles_rad` (tilt), thrust outside [0, 1], and each rate-loop moment at ±1.
+#[test]
+fn reports_what_the_last_stabilize_clipped() {
+    let level = VehicleState::default();
+    let spinning = VehicleState {
+        angular_velocity_radps: Vec3::new(-20.0, 0.0, 20.0),
+        ..Default::default()
+    };
+    let attitude = |roll_rad, pitch_rad, thrust| {
+        Setpoint::Attitude(AttitudeSetpoint {
+            roll_rad,
+            pitch_rad,
+            thrust,
+            ..Default::default()
+        })
+    };
+    let rate = |thrust| {
+        Setpoint::Rate(RateSetpoint {
+            thrust,
+            ..Default::default()
+        })
+    };
+    let flags = |tilt, thrust, moments| Saturation {
+        tilt,
+        thrust,
+        moments,
+        ..Default::default()
+    };
+    // (setpoint, state, expected) with the default 45° max angles
+    let cases = [
+        (
+            attitude(0.1, 0.0, 0.5),
+            &level,
+            flags(false, false, [false; 3]),
+        ),
+        (
+            attitude(1.0, 0.0, 0.5),
+            &level,
+            flags(true, false, [false; 3]),
+        ),
+        (
+            attitude(0.0, -1.0, 0.5),
+            &level,
+            flags(true, false, [false; 3]),
+        ),
+        (
+            attitude(f32::NAN, 0.0, 0.5),
+            &level,
+            flags(false, false, [false; 3]),
+        ),
+        (
+            attitude(0.0, 0.0, 1.5),
+            &level,
+            flags(false, true, [false; 3]),
+        ),
+        (rate(-0.2), &level, flags(false, true, [false; 3])),
+        (
+            rate(0.5),
+            &spinning,
+            flags(false, false, [true, false, true]),
+        ),
+    ];
+    for (setpoint, state, expected) in cases {
+        let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+        stabilizer.prime(state);
+        stabilizer.stabilize(0.004, &setpoint, state);
+        assert_eq!(stabilizer.saturation(), expected, "{setpoint:?}");
+    }
 }

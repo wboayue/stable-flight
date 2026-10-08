@@ -185,31 +185,98 @@ fn wrap_angle_maps_into_minus_pi_to_pi() {
 /// collective first.
 #[test]
 fn desaturate_keeps_moments_by_giving_up_collective() {
-    // (input, collective, expected)
-    let cases: [([f32; 4], f32, [f32; 4]); 11] = [
-        ([0.5, 0.5, 0.5, 0.5], 0.5, [0.5, 0.5, 0.5, 0.5]),
-        ([1.0, 0.2, 0.0, 0.7], 0.5, [1.0, 0.2, 0.0, 0.7]), // already fits
-        ([1.15, 0.85, 1.15, 0.45], 0.9, [1.0, 0.7, 1.0, 0.3]), // too high: down
-        ([0.25, -0.15, 0.35, -0.05], 0.1, [0.4, 0.0, 0.5, 0.1]), // too low: up
-        ([0.2, -0.2, 0.2, -0.2], 0.0, [0.2, 0.0, 0.2, 0.0]), // zero collective: clipped
-        ([0.2, -0.2, 0.2, -0.2], -0.1, [0.2, 0.0, 0.2, 0.0]), // below zero: same
+    // (input, collective, expected, (lowered, moments_lost))
+    type Row = ([f32; 4], f32, [f32; 4], (bool, bool));
+    let cases: [Row; 11] = [
+        (
+            [0.5, 0.5, 0.5, 0.5],
+            0.5,
+            [0.5, 0.5, 0.5, 0.5],
+            (false, false),
+        ),
+        (
+            [1.0, 0.2, 0.0, 0.7],
+            0.5,
+            [1.0, 0.2, 0.0, 0.7],
+            (false, false),
+        ), // already fits
+        // Too high: down, collective gives way.
+        (
+            [1.15, 0.85, 1.15, 0.45],
+            0.9,
+            [1.0, 0.7, 1.0, 0.3],
+            (true, false),
+        ),
+        // Too low: up, nothing lost.
+        (
+            [0.25, -0.15, 0.35, -0.05],
+            0.1,
+            [0.4, 0.0, 0.5, 0.1],
+            (false, false),
+        ),
+        // Zero collective: clipped, moments lost.
+        (
+            [0.2, -0.2, 0.2, -0.2],
+            0.0,
+            [0.2, 0.0, 0.2, 0.0],
+            (false, true),
+        ),
+        (
+            [0.2, -0.2, 0.2, -0.2],
+            -0.1,
+            [0.2, 0.0, 0.2, 0.0],
+            (false, true),
+        ), // below zero
         // Near idle the raise is capped at 2 × collective: up 0.02, not the 0.03 needed.
-        ([0.07, -0.03, 0.07, -0.03], 0.01, [0.09, 0.0, 0.09, 0.0]),
+        (
+            [0.07, -0.03, 0.07, -0.03],
+            0.01,
+            [0.09, 0.0, 0.09, 0.0],
+            (false, true),
+        ),
         // Spread 2 about 0.5: shares halve, fitting exactly.
-        ([1.5, -0.5, 0.5, 0.5], 0.5, [1.0, 0.0, 0.5, 0.5]),
+        (
+            [1.5, -0.5, 0.5, 0.5],
+            0.5,
+            [1.0, 0.0, 0.5, 0.5],
+            (false, true),
+        ),
         // Spread 2 about 0.8: halved to [1.2, 0.2], then down 0.2.
-        ([1.6, -0.4, 0.8, 0.8], 0.8, [1.0, 0.0, 0.6, 0.6]),
+        (
+            [1.6, -0.4, 0.8, 0.8],
+            0.8,
+            [1.0, 0.0, 0.6, 0.6],
+            (true, true),
+        ),
         // Spread 1.25 about 0.1: scaled by 0.8 to [0.9, -0.1], then up 0.1.
-        ([1.1, -0.15, 0.1, 0.1], 0.1, [1.0, 0.0, 0.2, 0.2]),
+        (
+            [1.1, -0.15, 0.1, 0.1],
+            0.1,
+            [1.0, 0.0, 0.2, 0.2],
+            (false, true),
+        ),
         // Spread 2 at zero collective: halved to [0.5, -0.5], not raised, clipped.
-        ([1.0, -1.0, 0.0, 0.0], 0.0, [0.5, 0.0, 0.0, 0.0]),
+        (
+            [1.0, -1.0, 0.0, 0.0],
+            0.0,
+            [0.5, 0.0, 0.0, 0.0],
+            (false, true),
+        ),
     ];
-    for (input, collective, expected) in cases {
+    for (input, collective, expected, (lowered, moments_lost)) in cases {
         let mut outputs = input;
-        desaturate(&mut outputs, collective);
+        let desaturation = desaturate(&mut outputs, collective);
         for (o, e) in outputs.iter().zip(expected) {
             assert_relative_eq!(*o, e, epsilon = 1e-6);
         }
+        assert!(
+            desaturation
+                == Desaturation {
+                    lowered,
+                    moments_lost
+                },
+            "{input:?} at {collective}: {desaturation:?}"
+        );
     }
 }
 

@@ -1029,6 +1029,28 @@ fn lowering_max_tilt_rad_recaps_the_held_tilt_on_the_next_tick() {
     );
 }
 
+/// Lowering `max_tilt_rad` below the held tilt flags `tilt` on the next tick, before the
+/// lateral loop runs again.
+#[test]
+fn lowering_max_tilt_rad_below_the_held_tilt_flags_it_at_once() {
+    let near = ControlInput::Waypoint(WaypointCommand {
+        position_m: Vec2::new(1.0, 0.0),
+        ..Default::default()
+    });
+    let state = VehicleState::default();
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default()); // 20 ms period
+    guidance.prime(&state);
+    let held = attitude(guidance.guide(0.004, &near, &state));
+    assert!(!guidance.saturation().tilt);
+
+    let mut lower = *guidance.config();
+    lower.max_tilt_rad = 0.5 * held.pitch_rad.abs();
+    guidance.set_config(lower).expect("valid config");
+    guidance.guide(0.004, &near, &state); // lateral loop not due yet
+
+    assert!(guidance.saturation().tilt);
+}
+
 /// Closed loop: a `WaypointFollower` (`Hold`) feeding `CopterGuidance`, flying a point mass
 /// that tilts instantly (horizontal acceleration `g · tan(tilt)` toward the tilt, altitude
 /// held). With a tight acceptance radius the corners are missed wide, so this also guards
@@ -1146,4 +1168,62 @@ fn attitude_throttle_is_boosted_for_tilt() {
         let thrust = attitude(guidance.guide(0.004, &command, &state)).thrust;
         approx::assert_relative_eq!(thrust, expected, epsilon = 1e-5);
     }
+}
+
+/// Guidance reports what its last call clipped: a waypoint tilt capped at `max_tilt_rad`
+/// (held with the tilt between lateral-loop runs), and thrust clipped to [0, 1] by the
+/// altitude loop or attitude mode's boost.
+#[test]
+fn reports_what_the_last_guide_clipped() {
+    let level = VehicleState::default();
+    let banked = VehicleState {
+        attitude: nalgebra::UnitQuaternion::from_euler_angles(FRAC_PI_4, 0.0, 0.0),
+        ..Default::default()
+    };
+    let waypoint = |x: f32, altitude_m| {
+        ControlInput::Waypoint(WaypointCommand {
+            position_m: Vec2::new(x, 0.0),
+            altitude_m,
+            ..Default::default()
+        })
+    };
+    let throttle = |throttle| {
+        ControlInput::Attitude(AttitudeCommand {
+            throttle,
+            ..Default::default()
+        })
+    };
+    // (input, state, expected (tilt, thrust))
+    let cases = [
+        (waypoint(0.5, 0.0), &level, (false, false)),
+        (waypoint(1000.0, 0.0), &level, (true, false)), // far: tilt capped
+        (waypoint(0.0, 100.0), &level, (false, true)),  // far below: thrust at 1
+        (waypoint(0.0, -100.0), &level, (false, true)), // far above: thrust at 0
+        (throttle(0.5), &banked, (false, false)),       // 0.5 · √2 fits
+        (throttle(0.9), &banked, (false, true)),        // 0.9 · √2 clipped
+        (
+            ControlInput::Rate(RateCommand::default()),
+            &level,
+            (false, false),
+        ),
+    ];
+    for (input, state, (tilt, thrust)) in cases {
+        let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+        guidance.prime(state);
+        guidance.guide(0.004, &input, state);
+        let saturation = guidance.saturation();
+        assert!(
+            (saturation.tilt, saturation.thrust) == (tilt, thrust),
+            "{input:?}: {saturation:?}"
+        );
+    }
+
+    // The capped tilt is held between lateral-loop runs, and priming clears it.
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+    guidance.prime(&level);
+    guidance.guide(0.004, &waypoint(1000.0, 0.0), &level);
+    guidance.guide(0.004, &waypoint(1000.0, 0.0), &level); // loop not due: held
+    assert!(guidance.saturation().tilt);
+    guidance.prime(&level);
+    assert!(guidance.saturation() == Saturation::default());
 }

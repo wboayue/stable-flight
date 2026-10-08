@@ -24,8 +24,8 @@ use core::time::Duration;
 
 use crate::controllers::{BodyRateController, BodyRateControllerConfig};
 use crate::{
-    Actuator, ActuatorCommand, Command, Commander, ControlOutput, Setpoint, StateEstimator,
-    TelemetryPublisher, TelemetryRecord, Vec3, VehicleState,
+    Actuator, ActuatorCommand, Command, Commander, ControlOutput, Saturation, Setpoint,
+    StateEstimator, TelemetryPublisher, TelemetryRecord, Vec3, VehicleState,
 };
 
 pub mod conformance;
@@ -148,6 +148,7 @@ pub struct RecordedTick {
     pub state: VehicleState,
     pub control: ControlOutput,
     pub actuators: ActuatorCommand,
+    pub saturation: Saturation,
 }
 
 impl RecordedTick {
@@ -160,6 +161,7 @@ impl RecordedTick {
             state: &self.state,
             control: &self.control,
             actuators: &self.actuators,
+            saturation: self.saturation,
         }
     }
 }
@@ -173,6 +175,7 @@ impl From<&TelemetryRecord<'_>> for RecordedTick {
             state: record.state.clone(),
             control: *record.control,
             actuators: *record.actuators,
+            saturation: record.saturation,
         }
     }
 }
@@ -190,8 +193,8 @@ impl From<&TelemetryRecord<'_>> for RecordedTick {
 /// use std::time::Duration;
 /// use stable_flight::testing::RecordingTelemetry;
 /// use stable_flight::{
-///     ActuatorCommand, Command, ControlOutput, Setpoint, TelemetryPublisher, TelemetryRecord,
-///     VehicleState,
+///     ActuatorCommand, Command, ControlOutput, Saturation, Setpoint, TelemetryPublisher,
+///     TelemetryRecord, VehicleState,
 /// };
 ///
 /// let mut telemetry = RecordingTelemetry::<2>::new();
@@ -203,6 +206,7 @@ impl From<&TelemetryRecord<'_>> for RecordedTick {
 ///         state: &VehicleState::default(),
 ///         control: &ControlOutput { thrust, ..Default::default() },
 ///         actuators: &ActuatorCommand::default(),
+///         saturation: Saturation::default(),
 ///     });
 /// }
 ///
