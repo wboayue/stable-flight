@@ -13,7 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hold the last waypoint, with `WaypointFollower::is_complete` once it is reached ([#126](https://github.com/wboayue/stable-flight/issues/126)).
 - `WaypointFollower` fills a waypoint's empty `velocity_mps` with one along the leg that leads
   to it at its `cruise_speed_mps`, so legs are flown at cruise speed instead of slowing at
-  every waypoint; the first and the held last waypoint get none ([#109](https://github.com/wboayue/stable-flight/issues/109)).
+  every waypoint; the first and the held last waypoint get none. A waypoint missed wide
+  counts as reached once the vehicle passes it along its leg
+  ([#109](https://github.com/wboayue/stable-flight/issues/109)).
 - `controllers::LateralTarget` (position, feedforward velocity, speed limit) and
   `LateralEstimate` (position, velocity) ([#109](https://github.com/wboayue/stable-flight/issues/109)).
 - `wrap_angle` wraps radians to [-π, π) (rounding can give +π; non-finite input gives

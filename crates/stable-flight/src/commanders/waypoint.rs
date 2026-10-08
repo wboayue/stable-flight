@@ -39,7 +39,8 @@ pub enum RouteEnd {
 ///
 /// Each tick it emits the active waypoint as an armed [`ControlInput::Waypoint`] (it never
 /// disarms; landing is #66). When the vehicle is within the acceptance radius of it
-/// (horizontal distance only), it advances to the next. After the last it follows its
+/// (horizontal distance only), or has passed it along the leg that leads to it (missed it
+/// wide), it advances to the next. After the last it follows its
 /// [`RouteEnd`]: wrap to the first ([`RouteEnd::Loop`], the default) or hold the last
 /// ([`RouteEnd::Hold`]). It knows nothing about where the waypoints came from or what shape
 /// they trace.
@@ -86,8 +87,11 @@ pub struct WaypointFollower<W> {
     current: usize,
     acceptance_radius_squared: f32,
     route_end: RouteEnd,
-    /// Velocity emitted with the active waypoint when it has none of its own; set on each
-    /// advance, so the per-tick path does no trig or sqrt.
+    /// Unit direction of the leg into the active waypoint, from the previous one; `None` for
+    /// the first waypoint flown or a zero-length leg. Set on each advance, so the per-tick
+    /// path does no sqrt.
+    leg_direction: Option<Vec2>,
+    /// Velocity emitted with the active waypoint when it has none of its own.
     leg_velocity_mps: Option<Vec2>,
     /// The last waypoint has been reached under [`RouteEnd::Hold`].
     complete: bool,
@@ -108,6 +112,7 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
             current: 0,
             acceptance_radius_squared: DEFAULT_ACCEPTANCE_RADIUS_M * DEFAULT_ACCEPTANCE_RADIUS_M,
             route_end: RouteEnd::default(),
+            leg_direction: None,
             leg_velocity_mps: None,
             complete: false,
         })
@@ -150,12 +155,14 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
         self.current = next;
         let waypoints = self.waypoints.as_ref();
         let to = &waypoints[next];
+        // A zero-length or non-finite leg has no direction.
+        self.leg_direction = (to.position_m - waypoints[previous].position_m)
+            .try_normalize(0.0)
+            .filter(all_finite);
         let holds_here = self.route_end == RouteEnd::Hold && next == waypoints.len() - 1;
         // `>` is false for NaN: no positive cruise speed, no leg velocity.
         self.leg_velocity_mps = if !holds_here && to.cruise_speed_mps > 0.0 {
-            // A zero-length or non-finite leg has no direction: none.
-            let leg = to.position_m - waypoints[previous].position_m;
-            leg.try_normalize(0.0)
+            self.leg_direction
                 .map(|direction| direction * to.cruise_speed_mps)
                 .filter(all_finite)
         } else {
@@ -172,7 +179,14 @@ impl<W: AsRef<[WaypointCommand]>> Commander for WaypointFollower<W> {
         let target = &waypoints[self.current];
         let dx = target.position_m.x - current_state.position_m.x;
         let dy = target.position_m.y - current_state.position_m.y;
-        if !self.complete && dx * dx + dy * dy <= self.acceptance_radius_squared {
+        let within_radius = dx * dx + dy * dy <= self.acceptance_radius_squared;
+        // Past the waypoint along its leg: the vehicle missed it wide. Without this, the leg
+        // velocity fed forward would park it past the waypoint, outside the radius, where the
+        // position loop's pull back balances it.
+        let passed = self
+            .leg_direction
+            .is_some_and(|direction| direction.x * dx + direction.y * dy <= 0.0);
+        if !self.complete && (within_radius || passed) {
             let previous = self.current;
             let last = waypoints.len() - 1;
             match self.route_end {

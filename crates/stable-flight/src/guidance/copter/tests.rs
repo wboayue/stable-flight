@@ -1029,3 +1029,76 @@ fn lowering_max_tilt_rad_recaps_the_held_tilt_on_the_next_tick() {
         epsilon = 1e-6
     );
 }
+
+/// Closed loop: a `WaypointFollower` (`Hold`) feeding `CopterGuidance`, flying a point mass
+/// that tilts instantly (horizontal acceleration `g · tan(tilt)` toward the tilt, altitude
+/// held). With a tight acceptance radius the corners are missed wide, so this also guards
+/// against the leg velocity parking the vehicle past a missed waypoint.
+#[test]
+fn point_mass_flies_a_route_at_cruise_speed_and_holds_the_end() {
+    use crate::Commander;
+    use crate::commanders::{RouteEnd, WaypointFollower};
+
+    const DT: f32 = 0.004;
+    const CRUISE_MPS: f32 = 7.0;
+    const ALTITUDE_M: f32 = 10.0;
+    let waypoint = |x, y| WaypointCommand {
+        position_m: Vec2::new(x, y),
+        altitude_m: ALTITUDE_M,
+        cruise_speed_mps: CRUISE_MPS,
+        ..Default::default()
+    };
+    let route = [
+        waypoint(0.0, 0.0),
+        waypoint(30.0, 0.0),
+        waypoint(30.0, 30.0),
+        waypoint(0.0, 30.0),
+    ];
+    let mut follower = WaypointFollower::new(route)
+        .expect("non-empty")
+        .with_acceptance_radius(0.5)
+        .with_route_end(RouteEnd::Hold);
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+
+    let (mut position, mut velocity) = (Vec2::zeros(), Vec2::zeros());
+    let state_of = |position: Vec2, velocity: Vec2| VehicleState {
+        position_m: Vec3::new(position.x, position.y, ALTITUDE_M),
+        velocity_mps: Vec3::new(velocity.x, velocity.y, 0.0),
+        ..Default::default()
+    };
+    guidance.prime(&state_of(position, velocity));
+
+    let mut max_speed_mps: f32 = 0.0;
+    for _ in 0..(60.0 / DT) as usize {
+        let state = state_of(position, velocity);
+        let command = follower.next_command(DT, &state);
+        let setpoint = attitude(guidance.guide(DT, &command.input, &state));
+
+        // Heading north: roll tilts east, nose down (negative pitch) tilts north.
+        let tilt = Vec2::new(-setpoint.pitch_rad, setpoint.roll_rad);
+        let tilt_rad = tilt.norm();
+        let accel_mps2 = if tilt_rad > 0.0 {
+            tilt * (crate::GRAVITY * libm::tanf(tilt_rad) / tilt_rad)
+        } else {
+            Vec2::zeros()
+        };
+        velocity += accel_mps2 * DT;
+        position += velocity * DT;
+        max_speed_mps = max_speed_mps.max(velocity.norm());
+    }
+
+    assert!(
+        follower.is_complete(),
+        "stuck at waypoint {}",
+        follower.current_index()
+    );
+    assert!(
+        (position - Vec2::new(0.0, 30.0)).norm() < 0.1,
+        "ended at {position:?}"
+    );
+    assert!(velocity.norm() < 0.05, "still moving at {velocity:?}");
+    assert!(
+        (CRUISE_MPS - 0.5..=CRUISE_MPS + 0.5).contains(&max_speed_mps),
+        "peak speed {max_speed_mps} m/s"
+    );
+}

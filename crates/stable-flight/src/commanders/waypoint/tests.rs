@@ -255,3 +255,39 @@ fn leg_velocity_defers_to_the_waypoint_and_needs_a_direction_and_speed() {
         check!(target.velocity_mps == expected, "{second:?}");
     }
 }
+
+/// A waypoint missed wide still counts once the vehicle is past it along the leg into it; the
+/// first waypoint, with no leg, needs the radius.
+#[test]
+fn advances_past_a_waypoint_missed_wide() {
+    let route = [wp(0.0, 0.0), wp(20.0, 0.0), wp(20.0, 20.0), wp(40.0, 20.0)];
+    let mut follower = WaypointFollower::new(route).expect("non-empty");
+
+    // (vehicle position, expected active index after the step)
+    let steps = [
+        ((10.0, 5.0), 0),     // first waypoint: no leg, outside the radius
+        ((0.0, 0.0), 1),      // on it: leg +x toward (20, 0)
+        ((19.0, 5.0), 1),     // 5 m wide, not yet past
+        ((21.0, 5.0), 2),     // 5 m wide, past along +x: advance; leg +y toward (20, 20)
+        ((25.0, 19.0), 2),    // wide, not yet past along +y
+        ((25.0, 21.0), 3),    // past along +y
+        ((0.0, f32::NAN), 3), // NaN position: neither reached nor passed
+    ];
+    for ((x, y), expected) in steps {
+        step_at(&mut follower, x, y);
+        check!(follower.current_index() == expected, "at ({x}, {y})");
+    }
+}
+
+/// Passing the held last waypoint completes the route, like reaching it.
+#[test]
+fn hold_completes_when_the_last_waypoint_is_passed() {
+    let mut follower = WaypointFollower::new([wp(0.0, 0.0), wp(20.0, 0.0)])
+        .expect("non-empty")
+        .with_route_end(RouteEnd::Hold);
+    step_at(&mut follower, 0.0, 0.0);
+    check!(!follower.is_complete());
+    let target = step_at(&mut follower, 22.0, 8.0);
+    check!(follower.is_complete());
+    check!(target.position_m == Vec2::new(20.0, 0.0));
+}
