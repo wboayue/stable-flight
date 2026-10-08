@@ -6,7 +6,7 @@ use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
-use stable_flight::{AttitudeCommand, Command, FlightLoop};
+use stable_flight::{AttitudeCommand, Command, ControlInput, FlightLoop};
 
 use super::*;
 
@@ -23,11 +23,10 @@ type TestLoop = FlightLoop<
 /// elsewhere.
 fn hover_loop() -> TestLoop {
     FlightLoop::new(
-        ConstantCommander::new(Command::Attitude(AttitudeCommand {
+        ConstantCommander::new(Command::armed(ControlInput::Attitude(AttitudeCommand {
             throttle: 0.5,
-            arm: true,
             ..Default::default()
-        })),
+        }))),
         NullVehicle::new(),
         CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),

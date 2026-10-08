@@ -1,11 +1,11 @@
 //! Guidance for multirotors such as the QuadCopter X: waypoint navigation and pilot-stick
 //! interpretation, feeding [`CopterStabilizer`](crate::stabilizers::copter::CopterStabilizer).
 //!
-//! | Command | Setpoint |
+//! | Control input | Setpoint |
 //! |---|---|
-//! | [`Command::Rate`] | [`Setpoint::Rate`], sticks passed through |
-//! | [`Command::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target |
-//! | [`Command::Waypoint`] | [`Setpoint::Attitude`]: lateral position loop → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading north |
+//! | [`ControlInput::Rate`] | [`Setpoint::Rate`], sticks passed through |
+//! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target |
+//! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position loop → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading north |
 
 use core::f32::consts::FRAC_PI_4;
 
@@ -14,8 +14,8 @@ use crate::{GRAVITY, Vec2};
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_tilt};
 use crate::{
-    AttitudeCommand, AttitudeSetpoint, Command, Configurable, Guidance, RateSetpoint, Setpoint,
-    VehicleState, WaypointCommand,
+    AttitudeCommand, AttitudeSetpoint, Configurable, ControlInput, Guidance, RateSetpoint,
+    Setpoint, VehicleState, WaypointCommand,
 };
 
 use super::rate_divider::RateDivider;
@@ -138,14 +138,14 @@ impl CopterGuidanceConfig {
 ///
 /// ```
 /// use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-/// use stable_flight::{AttitudeCommand, Command, Guidance, Setpoint, VehicleState};
+/// use stable_flight::{AttitudeCommand, ControlInput, Guidance, Setpoint, VehicleState};
 ///
 /// let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
 /// let state = VehicleState { heading_rad: 1.0, ..Default::default() };
 /// guidance.prime(&state);
 ///
-/// let command = Command::Attitude(AttitudeCommand { throttle: 0.5, ..Default::default() });
-/// let Setpoint::Attitude(setpoint) = guidance.guide(0.004, &command, &state) else {
+/// let input = ControlInput::Attitude(AttitudeCommand { throttle: 0.5, ..Default::default() });
+/// let Setpoint::Attitude(setpoint) = guidance.guide(0.004, &input, &state) else {
 ///     unreachable!("attitude commands yield attitude setpoints");
 /// };
 /// assert!((setpoint.heading_rad - 1.0).abs() < 1e-6); // holds the primed heading
@@ -209,35 +209,39 @@ impl Configurable for CopterGuidance {
 }
 
 impl Guidance for CopterGuidance {
-    fn guide(&mut self, dt: f32, command: &Command, estimated_state: &VehicleState) -> Setpoint {
+    fn guide(&mut self, dt: f32, input: &ControlInput, estimated_state: &VehicleState) -> Setpoint {
         assert_dt(dt);
 
-        if !matches!(command, Command::Waypoint(_)) {
+        if !matches!(input, ControlInput::Waypoint(_)) {
             // Re-entering waypoint mode runs the lateral loop at once instead of holding a
             // stale tilt.
             self.lateral_rate.reset();
         }
 
-        match command {
-            Command::Attitude(attitude_command) => {
+        match input {
+            ControlInput::Attitude(attitude_command) => {
                 Setpoint::Attitude(self.attitude_setpoint(dt, attitude_command, estimated_state))
             }
-            Command::Rate(rate_command) => Setpoint::Rate(RateSetpoint {
+            ControlInput::Rate(rate_command) => Setpoint::Rate(RateSetpoint {
                 roll_rate: rate_command.roll_rate,
                 pitch_rate: rate_command.pitch_rate,
                 yaw_rate: rate_command.yaw_rate,
                 thrust: rate_command.throttle,
             }),
-            Command::Waypoint(waypoint_command) => {
+            ControlInput::Waypoint(waypoint_command) => {
                 Setpoint::Attitude(self.navigate(dt, waypoint_command, estimated_state))
             }
         }
     }
 
-    /// Latches the current heading as the yaw-hold target, and drops any held waypoint tilt.
+    /// Clears the altitude and lateral controller state and any held waypoint tilt, and
+    /// latches the current heading as the yaw-hold target.
     fn prime(&mut self, state: &VehicleState) {
+        self.altitude = AltitudeController::default();
+        self.lateral = LateralController::default();
         self.heading = state.heading_rad;
         self.lateral_rate.reset();
+        self.tilt_rad = Vec2::zeros();
     }
 }
 

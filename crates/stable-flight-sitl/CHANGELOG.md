@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Commanders build the core's new `Command { arm, input }`; `Extreme3DCommander` and
+  `SpektrumCommander` put their arm switch in `Command::arm` ([#125](https://github.com/wboayue/stable-flight/issues/125)).
+- `MavlinkPublisher` sets `MAV_MODE_FLAG_SAFETY_ARMED` in `HEARTBEAT` from `Command::arm`,
+  so ground stations show the arm state ([#125](https://github.com/wboayue/stable-flight/issues/125)).
 - **Breaking:** `SpectrumCommander` renamed `SpektrumCommander` (the brand's spelling)
   ([#85](https://github.com/wboayue/stable-flight/issues/85)).
 - **Breaking:** `SpektrumCommander::new` returns `Result<Self, CommanderError>` instead of

@@ -5,7 +5,7 @@
 use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
 
 use crate::commanders::{CommanderError, open_gilrs};
-use stable_flight::{AttitudeCommand, Command, Commander, VehicleState};
+use stable_flight::{AttitudeCommand, Command, Commander, ControlInput, VehicleState};
 
 /// [`Commander`] driven by a Spektrum transmitter connected over a USB dongle.
 pub struct SpektrumCommander {
@@ -105,14 +105,16 @@ impl Commander for SpektrumCommander {
             2
         };
 
-        Command::Attitude(AttitudeCommand {
-            throttle: channels[0],
-            roll: channels[1],
-            pitch: channels[2],
-            yaw: channels[3],
-            arm: channels[4] > 0.5,
-            mode,
-        })
+        Command::new(
+            channels[4] > 0.5,
+            ControlInput::Attitude(AttitudeCommand {
+                throttle: channels[0],
+                roll: channels[1],
+                pitch: channels[2],
+                yaw: channels[3],
+                mode,
+            }),
+        )
     }
 }
 

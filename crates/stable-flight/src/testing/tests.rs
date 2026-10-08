@@ -3,9 +3,10 @@ use std::time::Duration;
 use assert2::check;
 
 use super::*;
+use crate::{AttitudeCommand, ControlInput};
 
 fn record_with_thrust(thrust: f32) -> RecordedTick {
-    let command = Command::Attitude(AttitudeCommand::default());
+    let command = Command::default();
     let setpoint = Setpoint::Attitude(Default::default());
     let state = VehicleState::default();
     let control = ControlOutput {
@@ -86,7 +87,8 @@ fn constant_commander_repeats_its_command() {
     let mut commander = ConstantCommander::default();
     for _ in 0..3 {
         let command = commander.next_command(0.004, &VehicleState::default());
-        assert2::assert!(let Command::Attitude(AttitudeCommand { throttle, arm: false, .. }) = command);
+        check!(!command.arm);
+        assert2::assert!(let ControlInput::Attitude(AttitudeCommand { throttle, .. }) = command.input);
         check!(throttle == 0.0);
     }
 }

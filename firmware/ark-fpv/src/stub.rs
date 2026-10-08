@@ -8,15 +8,18 @@ use core::hint::black_box;
 use core::time::Duration;
 
 use stable_flight::{
-    Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, StateEstimator, VehicleState,
+    Actuator, ActuatorCommand, Command, Commander, ControlInput, StateEstimator, VehicleState,
 };
 
-/// Always commands zero throttle, level, disarmed. Replaced by a receiver-driven commander.
+/// Always commands zero throttle, level, **armed**, so every tick runs guidance, the
+/// stabilizer, and the mixer and the loop's timing is real. Safe only because
+/// [`NullActuator`] drives nothing: disarm it before wiring real ESCs (#135). Replaced by a
+/// receiver-driven commander (#134).
 pub struct HoldCommander;
 
 impl Commander for HoldCommander {
     fn next_command(&mut self, _dt: f32, _current_state: &VehicleState) -> Command {
-        black_box(Command::Attitude(AttitudeCommand::default()))
+        black_box(Command::armed(ControlInput::default()))
     }
 }
 

@@ -52,7 +52,7 @@ stable_flight::conformance_tests! {
 
 ### Guidance
 
-Guidance is the outer loop: it turns the commander's `Command` into a `Setpoint` (an attitude or rate target) for the stabilizer. `CopterGuidance` flies waypoints with altitude and lateral position loops (the lateral loop at a configurable, slower rate), turns attitude-mode yaw stick into a heading-hold target, and passes rate commands through.
+Guidance is the outer loop: it turns the commander's `ControlInput` into a `Setpoint` (an attitude or rate target) for the stabilizer. `CopterGuidance` flies waypoints with altitude and lateral position loops (the lateral loop at a configurable, slower rate), turns attitude-mode yaw stick into a heading-hold target, and passes rate commands through.
 
 ```rust
 let guidance = CopterGuidance::new(CopterGuidanceConfig::default());

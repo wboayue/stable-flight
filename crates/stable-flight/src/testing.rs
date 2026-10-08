@@ -21,8 +21,8 @@
 use core::time::Duration;
 
 use crate::{
-    Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, ControlOutput, Setpoint,
-    StateEstimator, TelemetryPublisher, TelemetryRecord, VehicleState,
+    Actuator, ActuatorCommand, Command, Commander, ControlOutput, Setpoint, StateEstimator,
+    TelemetryPublisher, TelemetryRecord, VehicleState,
 };
 
 pub mod conformance;
@@ -103,16 +103,21 @@ impl Actuator for NullVehicle {
 ///
 /// ```
 /// use stable_flight::testing::ConstantCommander;
-/// use stable_flight::{AttitudeCommand, Command, Commander, VehicleState};
+/// use stable_flight::{AttitudeCommand, Command, Commander, ControlInput, VehicleState};
 ///
-/// let hover = Command::Attitude(AttitudeCommand { throttle: 0.5, arm: true, ..Default::default() });
+/// let hover = Command::armed(ControlInput::Attitude(AttitudeCommand {
+///     throttle: 0.5,
+///     ..Default::default()
+/// }));
 /// let mut commander = ConstantCommander::new(hover);
+/// let command = commander.next_command(0.004, &VehicleState::default());
+/// assert!(command.arm);
 /// assert!(matches!(
-///     commander.next_command(0.004, &VehicleState::default()),
-///     Command::Attitude(AttitudeCommand { throttle: 0.5, .. })
+///     command.input,
+///     ControlInput::Attitude(AttitudeCommand { throttle: 0.5, .. })
 /// ));
 /// ```
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct ConstantCommander {
     command: Command,
 }
@@ -121,12 +126,6 @@ impl ConstantCommander {
     /// Emits `command` every tick.
     pub fn new(command: Command) -> Self {
         ConstantCommander { command }
-    }
-}
-
-impl Default for ConstantCommander {
-    fn default() -> Self {
-        Self::new(Command::Attitude(AttitudeCommand::default()))
     }
 }
 
@@ -196,7 +195,7 @@ impl From<&TelemetryRecord<'_>> for RecordedTick {
 /// for thrust in [0.1, 0.2, 0.3] {
 ///     telemetry.publish(&TelemetryRecord {
 ///         dt: Duration::from_millis(4),
-///         command: &Command::Attitude(Default::default()),
+///         command: &Command::default(),
 ///         setpoint: &Setpoint::Attitude(Default::default()),
 ///         state: &VehicleState::default(),
 ///         control: &ControlOutput { thrust, ..Default::default() },
