@@ -189,7 +189,8 @@ fn fly(commander: impl Commander, bridge: RecordingBridge<RealFlightRemoteBridge
     let guidance = CopterGuidance::new(airframe.guidance);
     let stabilizer = CopterStabilizer::new(airframe.stabilizer);
     let mixer = airframe.mixer;
-    let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
+    let telemetry = MavlinkPublisher::connect(MavlinkConfiguration::default())
+        .expect("failed to open MAVLink connection");
 
     let mut flight_loop =
         FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);

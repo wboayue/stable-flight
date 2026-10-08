@@ -8,9 +8,7 @@ use stable_flight::{
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let telemetry_configuration = MavlinkConfiguration {};
-
-    let mut publisher = MavlinkPublisher::new(telemetry_configuration);
+    let mut publisher = MavlinkPublisher::connect(MavlinkConfiguration::default())?;
 
     // Simulated flight loop
 

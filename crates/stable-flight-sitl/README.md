@@ -40,7 +40,7 @@ TelemetryPublishers publish the system state to external systems. There is a pub
 
 ```rust
 // Telemetry via MAVLink protocol
-let telemetry = MavlinkPublisher::new(MavlinkConfiguration {});
+let telemetry = MavlinkPublisher::connect(MavlinkConfiguration::default())?;
 ```
 
 ### Running the Loop
