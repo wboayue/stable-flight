@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Saturation`: per-tick flags for the limits the pipeline hit (tilt cap, thrust clip,
+  rate-loop moments at ±1 per axis, mixer giving up collective or moments), with `merge` and
+  `any`. `Guidance`, `Stabilizer`, and `Mixer` gain a `saturation()` method (default: none);
+  `CopterGuidance`, `CopterStabilizer`, and `QuadCopterMixer` report theirs
+  ([#69](https://github.com/wboayue/stable-flight/issues/69)).
 - `testing::settled_yaw_rate`: the yaw rate a `BodyRateControllerConfig` settles at against
   a constant yaw torque, for checking an airframe's rate gains against its measured hover yaw
   imbalance ([#192](https://github.com/wboayue/stable-flight/issues/192)).
@@ -116,6 +121,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `TelemetryRecord` has a `saturation` field: the tick's merged `Saturation`
+  (none while disarmed); `testing::RecordedTick` copies it. Struct literals need the field
+  ([#69](https://github.com/wboayue/stable-flight/issues/69)).
+- **Breaking:** `Mixer::mix` takes `&mut self`, so a mixer can keep what its last call gave up
+  for `saturation()` ([#69](https://github.com/wboayue/stable-flight/issues/69)).
 - `QuadCopterMixer` desaturation works like PX4's airmode: when a motor would drop below 0,
   all four shift up (collective gives way) instead of clipping it, so low-throttle moments
   survive; moments too large to fit are scaled down, keeping their ratios. The upward shift

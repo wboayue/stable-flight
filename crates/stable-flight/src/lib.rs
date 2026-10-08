@@ -848,6 +848,12 @@ pub trait Guidance {
     /// [`Command`] arms, since guidance doesn't run while disarmed. The default does
     /// nothing.
     fn prime(&mut self, _state: &VehicleState) {}
+
+    /// What the last [`guide`](Self::guide) call clipped to a limit. [`FlightLoop`] merges it
+    /// into the tick's [`TelemetryRecord::saturation`]. The default reports nothing.
+    fn saturation(&self) -> Saturation {
+        Saturation::default()
+    }
 }
 
 /// Component responsible for flight control and stabilization: the inner loop.
@@ -889,6 +895,80 @@ pub trait Stabilizer {
     /// tick and again each time the [`Command`] arms, after [`Guidance::prime`]. The default
     /// does nothing.
     fn prime(&mut self, _state: &VehicleState) {}
+
+    /// What the last [`stabilize`](Self::stabilize) call clipped to a limit. [`FlightLoop`]
+    /// merges it into the tick's [`TelemetryRecord::saturation`]. The default reports nothing.
+    fn saturation(&self) -> Saturation {
+        Saturation::default()
+    }
+}
+
+/// Which limits the pipeline hit on one tick, as reported by [`Guidance::saturation`],
+/// [`Stabilizer::saturation`], and [`Mixer::saturation`], merged by [`FlightLoop`] into
+/// [`TelemetryRecord::saturation`].
+///
+/// A saturated tick is not an error: limits are how the pipeline stays safe. Flags that stay
+/// set across many ticks point at tuning or authority problems (e.g. a rate loop pinned at
+/// full moment, or a mixer giving up collective to hold attitude). New flags may be added, so
+/// the struct is `#[non_exhaustive]`; build one with [`Saturation::default`] and set fields.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::Saturation;
+///
+/// let mut guidance = Saturation::default();
+/// guidance.tilt = true;
+/// let mut mixer = Saturation::default();
+/// mixer.mixer_thrust = true;
+///
+/// let tick = guidance.merge(mixer);
+/// assert!(tick.tilt && tick.mixer_thrust && tick.any());
+/// assert!(!Saturation::default().any());
+/// ```
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Saturation {
+    /// A requested tilt was capped: guidance's waypoint tilt limit, or the stabilizer's
+    /// maximum roll/pitch angle.
+    pub tilt: bool,
+    /// Collective thrust was clipped to `[0, 1]` (the altitude loop, or the attitude-mode
+    /// boost).
+    pub thrust: bool,
+    /// The rate loop's moment output hit ±1, per axis (roll, pitch, yaw).
+    pub moments: [bool; 3],
+    /// The mixer lowered collective thrust to keep the moments (a motor would pass full
+    /// throttle).
+    pub mixer_thrust: bool,
+    /// The mixer couldn't deliver the moments in full: it scaled them down, its upward shift
+    /// was limited near idle, or a motor was clipped.
+    pub mixer_moments: bool,
+}
+
+impl Saturation {
+    /// The union of two reports: a flag set in either is set.
+    pub fn merge(self, other: Self) -> Self {
+        Saturation {
+            tilt: self.tilt || other.tilt,
+            thrust: self.thrust || other.thrust,
+            moments: [
+                self.moments[0] || other.moments[0],
+                self.moments[1] || other.moments[1],
+                self.moments[2] || other.moments[2],
+            ],
+            mixer_thrust: self.mixer_thrust || other.mixer_thrust,
+            mixer_moments: self.mixer_moments || other.mixer_moments,
+        }
+    }
+
+    /// True when any flag is set.
+    pub fn any(&self) -> bool {
+        self.tilt
+            || self.thrust
+            || self.moments.iter().any(|&m| m)
+            || self.mixer_thrust
+            || self.mixer_moments
+    }
 }
 
 /// A pipeline component whose gains and limits can be read and replaced between ticks.
@@ -964,8 +1044,8 @@ pub trait TelemetryPublisher {
 /// ```
 /// use std::time::Duration;
 /// use stable_flight::{
-///     ActuatorCommand, Command, ControlOutput, Setpoint, TelemetryPublisher, TelemetryRecord,
-///     VehicleState,
+///     ActuatorCommand, Command, ControlOutput, Saturation, Setpoint, TelemetryPublisher,
+///     TelemetryRecord, VehicleState,
 /// };
 ///
 /// struct ThrustLogger;
@@ -989,6 +1069,7 @@ pub trait TelemetryPublisher {
 ///     state: &state,
 ///     control: &control,
 ///     actuators: &actuators,
+///     saturation: Saturation::default(),
 /// });
 /// ```
 #[derive(Debug, Clone, Copy)]
@@ -1005,6 +1086,9 @@ pub struct TelemetryRecord<'a> {
     pub control: &'a ControlOutput,
     /// Mixer output sent to the actuators ([`ActuatorCommand::default`] while disarmed).
     pub actuators: &'a ActuatorCommand,
+    /// Limits guidance, the stabilizer, and the mixer hit this tick, merged
+    /// ([`Saturation::default`] while disarmed).
+    pub saturation: Saturation,
 }
 
 /// Represents commands sent to the vehicle's actuators.
@@ -1121,7 +1205,7 @@ pub trait Mixer {
     /// use stable_flight::{ControlOutput, Mixer, Vec3};
     /// use stable_flight::mixers::QuadCopterMixer;
     ///
-    /// let mixer = QuadCopterMixer::default();
+    /// let mut mixer = QuadCopterMixer::default();
     ///
     /// // Create control output with 70% thrust and slight roll right
     /// let control_output = ControlOutput::new(
@@ -1134,5 +1218,11 @@ pub trait Mixer {
     ///
     /// // Now actuator_command contains specific motor values for a quadcopter
     /// ```
-    fn mix(&self, controls: &ControlOutput) -> ActuatorCommand;
+    fn mix(&mut self, controls: &ControlOutput) -> ActuatorCommand;
+
+    /// What the last [`mix`](Self::mix) call couldn't deliver in full. [`FlightLoop`] merges
+    /// it into the tick's [`TelemetryRecord::saturation`]. The default reports nothing.
+    fn saturation(&self) -> Saturation {
+        Saturation::default()
+    }
 }

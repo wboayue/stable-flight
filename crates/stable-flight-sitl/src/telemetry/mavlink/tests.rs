@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use assert2::check;
 use mavlink::error::{MessageReadError, MessageWriteError};
 use mavlink::{MAVLinkMessageRaw, Message};
-use stable_flight::{ActuatorCommand, Command, ControlOutput, Setpoint, VehicleState};
+use stable_flight::{ActuatorCommand, Command, ControlOutput, Saturation, Setpoint, VehicleState};
 
 use super::*;
 
@@ -70,6 +70,7 @@ fn run(connection: &MockConnection, ids: (u8, u8), dt: Duration, ticks: usize) {
             state: &state,
             control: &ControlOutput::default(),
             actuators: &ActuatorCommand::default(),
+            saturation: Saturation::default(),
         });
     }
 }

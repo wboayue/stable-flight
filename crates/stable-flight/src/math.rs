@@ -43,7 +43,9 @@ const MAX_RAISE_PER_COLLECTIVE: f32 = 2.0;
 /// collective nothing rises and the shares below 0 are clipped, so an armed vehicle at idle
 /// on the ground isn't lifted, or tipped, by wound-up moments. Outputs are then clamped to
 /// `[0, 1]`. Inputs are expected finite (the mixer saturates them); a NaN output stays NaN.
-pub(crate) fn desaturate(outputs: &mut [f32], collective: f32) {
+///
+/// Returns what it gave up, for saturation reporting.
+pub(crate) fn desaturate(outputs: &mut [f32], collective: f32) -> Desaturation {
     let (low, high) = outputs
         .iter()
         .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), &o| {
@@ -65,6 +67,29 @@ pub(crate) fn desaturate(outputs: &mut [f32], collective: f32) {
     for output in outputs.iter_mut() {
         *output = (collective + scale * (*output - collective) + shift).clamp(0.0, 1.0);
     }
+
+    Desaturation {
+        lowered: shift < 0.0,
+        // Scaled down, or still outside [0, 1] after the shift (a limited raise, or zero
+        // collective) and clipped. The tolerance absorbs rounding in a shift that lands an
+        // output exactly on a bound.
+        moments_lost: scale < 1.0
+            || scaled_low + shift < -CLIP_TOLERANCE
+            || scaled_high + shift > 1.0 + CLIP_TOLERANCE,
+    }
+}
+
+/// How far past `[0, 1]` an output may land after [`desaturate`]'s shift before it counts as
+/// clipped rather than float rounding.
+const CLIP_TOLERANCE: f32 = 1e-6;
+
+/// What [`desaturate`] gave up to fit the outputs.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Desaturation {
+    /// Outputs were shifted down: collective thrust gave way to keep the moments.
+    pub(crate) lowered: bool,
+    /// Moments weren't delivered in full: scaled down, or an output clipped.
+    pub(crate) moments_lost: bool,
 }
 
 /// Scales `v` down, keeping its direction, so its length is at most `max`. Unlike per-axis

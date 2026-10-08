@@ -7,7 +7,7 @@ use crate::Mixer;
 pub struct TailSitterMixer {}
 
 impl Mixer for TailSitterMixer {
-    fn mix(&self, _controls: &ControlOutput) -> ActuatorCommand {
+    fn mix(&mut self, _controls: &ControlOutput) -> ActuatorCommand {
         debug!("Mixing control outputs for TailSitter");
         ActuatorCommand::default()
     }

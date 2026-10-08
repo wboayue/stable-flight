@@ -48,7 +48,7 @@ Each `FlightLoop::step` (called by the runner at its configured frequency) does 
 * The commander sees the **previous** tick's state; guidance and the stabilizer see this tick's **fresh** estimate.
 * `FlightLoop::prime` runs once before the first tick: `estimate_state(Duration::ZERO)`, then `Guidance::prime` and `Stabilizer::prime` with that state.
 * **`Command::arm` gates the motors.** A disarmed tick still runs the commander, the estimator, `actuate`, and telemetry, but skips guidance, the stabilizer, and the mixer: it actuates `ActuatorCommand::default()` (motors off) and records a neutral setpoint at the current heading with zero control, so nothing winds up on the ground. On each disarmed → armed edge (including the first armed tick) the loop re-primes guidance, then the stabilizer, from the fresh estimate, so integrals start from zero and the heading hold latches where the vehicle points. `arm` is a level the commander returns every tick; arming checks (throttle low, estimator healthy, link present) are commander-side policy ([#136](https://github.com/wboayue/stable-flight/issues/136), [#152](https://github.com/wboayue/stable-flight/issues/152)).
-* Telemetry is published after `actuate`, with the whole tick in one `TelemetryRecord`.
+* Telemetry is published after `actuate`, with the whole tick in one `TelemetryRecord`, including which limits it hit: guidance, the stabilizer, and the mixer each report a `Saturation` for their last call (only they know what they clipped), and the loop merges them (none while disarmed).
 
 ```mermaid
 sequenceDiagram

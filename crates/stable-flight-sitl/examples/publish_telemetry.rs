@@ -2,7 +2,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use stable_flight::{
-    ActuatorCommand, AttitudeCommand, Command, ControlInput, ControlOutput, Setpoint,
+    ActuatorCommand, AttitudeCommand, Command, ControlInput, ControlOutput, Saturation, Setpoint,
     TelemetryPublisher, TelemetryRecord, VehicleState,
 };
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             state: &state,
             control: &ControlOutput::default(),
             actuators: &ActuatorCommand::default(),
+            saturation: Saturation::default(),
         });
 
         // Sleep for 100ms (10Hz update rate)
