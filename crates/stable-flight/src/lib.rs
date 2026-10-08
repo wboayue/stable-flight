@@ -763,8 +763,8 @@ pub trait Guidance {
     ///
     /// # Parameters
     ///
-    /// - `dt`: Time elapsed since the last guidance step in seconds. Must be positive;
-    ///   implementations may assert it (runners guarantee it).
+    /// - `dt`: Time elapsed since the last guidance step in seconds. Must be positive and
+    ///   finite; implementations may assert it (runners guarantee it).
     /// - `command`: The commander's current command.
     /// - `state`: The current estimated state of the vehicle.
     fn guide(&mut self, dt: f32, command: &Command, state: &VehicleState) -> Setpoint;
@@ -793,8 +793,8 @@ pub trait Stabilizer {
     ///
     /// # Parameters
     ///
-    /// - `dt`: Time elapsed since the last control step in seconds. Must be positive;
-    ///   implementations may assert it (runners guarantee it).
+    /// - `dt`: Time elapsed since the last control step in seconds. Must be positive and
+    ///   finite; implementations may assert it (runners guarantee it).
     /// - `setpoint`: The attitude or rate target to track.
     /// - `state`: The current estimated state of the vehicle.
     ///

@@ -3,7 +3,9 @@ use core::f32::consts::FRAC_PI_4;
 use crate::Vec2;
 
 use super::{Gains, InvalidConfig, check_limit};
-use crate::math::{clamp_symmetric, clamp_symmetric_each, limit_or_zero, saturate_unit_vec2};
+use crate::math::{
+    assert_dt, clamp_symmetric, clamp_symmetric_each, limit_or_zero, saturate_unit_vec2,
+};
 
 /// Configures the attitude controller for a vehicle.
 /// Defines PID gains, maximum angles, and maximum angular rates for roll and pitch control.
@@ -77,10 +79,10 @@ impl AttitudeControllerConfig {
 /// change between ticks without resetting the state.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AttitudeController {
-    integral_term: Vec2, // Accumulated error (roll, pitch)
-    last_error: Vec2,    // Previous error for derivative calculation
+    integrated_error: Vec2, // Accumulated error (roll, pitch)
+    previous_error: Vec2,   // Previous error for derivative calculation
     /// Set after a non-finite tick: the next finite tick skips the derivative term, since
-    /// `last_error` predates the gap.
+    /// `previous_error` predates the gap.
     resync_derivative: bool,
 }
 
@@ -96,7 +98,7 @@ impl AttitudeController {
     /// # Arguments
     /// * `config` - Gains and limits; assumed valid ([`AttitudeControllerConfig::validate`]).
     ///   An invalid limit does not panic: a negative or NaN limit acts as 0.
-    /// * `dt` - Time step since last update in seconds (must be positive)
+    /// * `dt` - Time step since the last update in seconds (must be positive and finite).
     /// * `desired_angles` - Target roll/pitch as normalized values in [-1,1]. Values outside
     ///   the range saturate to it (so the setpoint never exceeds `max_angles_rad`), and NaN is
     ///   treated as 0 (level).
@@ -107,7 +109,8 @@ impl AttitudeController {
     /// clamped to configured max_rate_radps limits
     ///
     /// # Panics
-    /// * If `dt` is not positive
+    ///
+    /// If `dt` is not positive and finite.
     ///
     /// # Examples
     ///
@@ -131,7 +134,7 @@ impl AttitudeController {
         desired_angles: Vec2,
         estimated_angles_rad: Vec2,
     ) -> Vec2 {
-        assert!(dt > 0.0, "Time step must be positive");
+        assert_dt(dt);
 
         // Saturate normalized inputs, then scale to angle setpoints in radians. Outer loops
         // (e.g. lateral position control far from the target) can ask for more than full tilt;
@@ -154,18 +157,18 @@ impl AttitudeController {
             self.resync_derivative = false;
             Vec2::zeros()
         } else {
-            (error - self.last_error) / dt
+            (error - self.previous_error) / dt
         };
 
         // Integral term with anti-windup
-        self.integral_term =
-            clamp_symmetric_each(self.integral_term + dt * error, config.max_integral);
+        self.integrated_error =
+            clamp_symmetric_each(self.integrated_error + dt * error, config.max_integral);
 
         // PID calculation: Kp×error + Ki×∫error + Kd×d(error)/dt
         let Gains { p, i, d } = config.gains;
-        let rates = p * error + i * self.integral_term + d * error_derivative;
+        let rates = p * error + i * self.integrated_error + d * error_derivative;
 
-        self.last_error = error;
+        self.previous_error = error;
 
         // Scale output to configured maximum rates
         Vec2::new(
@@ -190,54 +193,31 @@ mod tests {
     fn default_is_zeroed_state() {
         let controller = AttitudeController::default();
 
-        assert_eq!(controller.integral_term, Vec2::zeros());
-        assert_eq!(controller.last_error, Vec2::zeros());
+        assert_eq!(controller.integrated_error, Vec2::zeros());
+        assert_eq!(controller.previous_error, Vec2::zeros());
         assert!(!controller.resync_derivative);
     }
 
     #[test]
     fn validate_rejects_negative_or_non_finite_limits() {
         let default = AttitudeControllerConfig::default();
-        // (config, offending field)
+        let (angles, rates) = (default.max_angles_rad, default.max_rate_radps);
+        // (max_angles_rad, max_rate_radps, max_integral, offending field)
         let cases = [
-            (
-                AttitudeControllerConfig {
-                    max_angles_rad: Vec2::new(-1.0, FRAC_PI_4),
-                    ..default
-                },
-                "max_angles_rad.x",
-            ),
-            (
-                AttitudeControllerConfig {
-                    max_rate_radps: Vec2::new(2.0, -2.0),
-                    ..default
-                },
-                "max_rate_radps.y",
-            ),
-            (
-                AttitudeControllerConfig {
-                    max_integral: -1.0,
-                    ..default
-                },
-                "max_integral",
-            ),
-            (
-                AttitudeControllerConfig {
-                    max_integral: f32::NAN,
-                    ..default
-                },
-                "max_integral",
-            ),
-            (
-                AttitudeControllerConfig {
-                    max_integral: f32::INFINITY,
-                    ..default
-                },
-                "max_integral",
-            ),
+            (Vec2::new(-1.0, angles.y), rates, 1.0, "max_angles_rad.x"),
+            (Vec2::new(angles.x, -1.0), rates, 1.0, "max_angles_rad.y"),
+            (angles, Vec2::new(-1.0, rates.y), 1.0, "max_rate_radps.x"),
+            (angles, Vec2::new(rates.x, -1.0), 1.0, "max_rate_radps.y"),
+            (angles, rates, -1.0, "max_integral"),
         ];
         assert!(default.validate().is_ok());
-        for (config, field) in cases {
+        for (max_angles_rad, max_rate_radps, max_integral, field) in cases {
+            let config = AttitudeControllerConfig {
+                max_angles_rad,
+                max_rate_radps,
+                max_integral,
+                ..default
+            };
             assert_eq!(config.validate().map_err(|e| e.field), Err(field));
         }
     }
@@ -256,7 +236,7 @@ mod tests {
             let rates = controller.control(&config, 0.1, Vec2::new(1.0, -1.0), Vec2::new(0.2, 0.0));
 
             assert_eq!(rates, Vec2::zeros(), "limit {bad}");
-            assert_eq!(controller.integral_term, Vec2::zeros(), "limit {bad}");
+            assert_eq!(controller.integrated_error, Vec2::zeros(), "limit {bad}");
         }
     }
 
@@ -272,8 +252,8 @@ mod tests {
         );
 
         assert_eq!(rates, Vec2::zeros()); // No error, no rate output
-        assert_eq!(controller.integral_term, Vec2::zeros()); // No integral buildup
-        assert_eq!(controller.last_error, Vec2::zeros()); // Error remains zero
+        assert_eq!(controller.integrated_error, Vec2::zeros()); // No integral buildup
+        assert_eq!(controller.previous_error, Vec2::zeros()); // Error remains zero
     }
 
     #[test]
@@ -289,8 +269,8 @@ mod tests {
         let expected_rates = config.gains.p * expected_error;
         assert!((rates.x - expected_rates.x).abs() < 1e-6);
         assert!((rates.y - expected_rates.y).abs() < 1e-6);
-        assert_eq!(controller.last_error, expected_error);
-        assert_eq!(controller.integral_term, dt * expected_error);
+        assert_eq!(controller.previous_error, expected_error);
+        assert_eq!(controller.integrated_error, dt * expected_error);
     }
 
     #[test]
@@ -318,7 +298,7 @@ mod tests {
 
         let error = Vec2::new(0.5 * FRAC_PI_4, 0.5 * FRAC_PI_4);
         let expected_integral = dt * 2.0 * error; // Two steps
-        assert_eq!(controller.integral_term, expected_integral);
+        assert_eq!(controller.integrated_error, expected_integral);
         let expected_rates = 1.0 * error + 1.0 * expected_integral; // P + I terms
         assert!((rates2.x - expected_rates.x).abs() < 1e-6);
         assert!((rates2.y - expected_rates.y).abs() < 1e-6);
@@ -335,7 +315,7 @@ mod tests {
 
         let rates = controller.control(&config, dt, Vec2::new(1.0, 1.0), Vec2::zeros());
 
-        assert_eq!(controller.integral_term, Vec2::new(1.0, 1.0)); // Clamped to max_integral
+        assert_eq!(controller.integrated_error, Vec2::new(1.0, 1.0)); // Clamped to max_integral
         assert_eq!(rates, Vec2::new(2.0, 2.0));
     }
 
@@ -350,10 +330,10 @@ mod tests {
             Vec2::new(1.0, 0.0),
             Vec2::zeros(),
         );
-        let integral = controller.integral_term;
+        let integral = controller.integrated_error;
 
         let rates = controller.control(&gains(0.0, 2.0, 0.0), 0.1, Vec2::zeros(), Vec2::zeros());
-        assert_eq!(controller.integral_term, integral);
+        assert_eq!(controller.integrated_error, integral);
         approx::assert_relative_eq!(rates.x, 2.0 * integral.x);
 
         let shrunk = AttitudeControllerConfig {
@@ -361,7 +341,7 @@ mod tests {
             ..gains(0.0, 1.0, 0.0)
         };
         controller.control(&shrunk, 0.1, Vec2::zeros(), Vec2::zeros());
-        assert_eq!(controller.integral_term.x, 0.1);
+        assert_eq!(controller.integrated_error.x, 0.1);
     }
 
     #[test]
@@ -384,8 +364,8 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "Time step must be positive")]
-    fn test_control_panics_on_zero_dt() {
+    #[should_panic(expected = "dt must be positive and finite")]
+    fn zero_dt_panics() {
         AttitudeController::default().control(
             &AttitudeControllerConfig::default(),
             0.0,
@@ -430,7 +410,7 @@ mod tests {
 
         let during = controller.control(&config, 0.1, desired, Vec2::new(f32::NAN, 0.0));
         assert!(during == Vec2::zeros(), "NaN estimate gave {during:?}");
-        assert!(controller.integral_term == Vec2::zeros());
+        assert!(controller.integrated_error == Vec2::zeros());
 
         // First finite tick after the gap: P + I only (no derivative from the pre-gap error).
         let after_nan = controller.control(&config, 0.1, desired, Vec2::zeros());

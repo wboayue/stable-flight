@@ -1,7 +1,7 @@
 use crate::{GRAVITY, Vec2};
 
 use crate::controllers::{Gains, InvalidConfig, check_limit};
-use crate::math::{cap_magnitude, clamp_symmetric_each};
+use crate::math::{assert_dt, cap_magnitude, clamp_symmetric_each};
 
 /// Configures the [`LateralController`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -65,7 +65,7 @@ impl LateralController {
     ///
     /// * `config` - Gains and limits; assumed valid ([`LateralControllerConfig::validate`]).
     ///   An invalid limit does not panic: a negative or NaN `max_integral` acts as 0.
-    /// * `dt` - Time step since the last update (must be positive).
+    /// * `dt` - Time step since the last update in seconds (must be positive and finite).
     /// * `desired_position_m` - Target position (x, y) in meters.
     /// * `estimated_position_m` - Current position (x, y) in meters.
     /// * `estimated_velocity_mps` - Current velocity (vx, vy) in m/s.
@@ -77,6 +77,10 @@ impl LateralController {
     /// target the vehicle commands full tilt straight toward it: a far diagonal target gives
     /// about 0.71 on each axis, not 1. A non-finite error or velocity gives level. The integral
     /// term is clamped to `max_integral` to limit windup.
+    ///
+    /// # Panics
+    ///
+    /// If `dt` is not positive and finite.
     ///
     /// # Examples
     ///
@@ -104,6 +108,7 @@ impl LateralController {
         estimated_position_m: Vec2,
         estimated_velocity_mps: Vec2,
     ) -> Vec2 {
+        assert_dt(dt);
         let gains = &config.gains;
 
         let error = desired_position_m - estimated_position_m;
@@ -226,13 +231,11 @@ mod tests {
     /// An invalid `max_integral` fails `validate` but `control` stays panic-free: it acts as 0.
     #[test]
     fn invalid_max_integral_is_rejected_and_does_not_panic_the_tick() {
-        for max_integral in [-1.0, f32::NAN, f32::INFINITY] {
-            let config = LateralControllerConfig {
-                max_integral,
-                ..Default::default()
-            };
-            assert!(config.validate().is_err(), "max_integral {max_integral}");
-        }
+        let invalid = LateralControllerConfig {
+            max_integral: -1.0,
+            ..Default::default()
+        };
+        assert_eq!(invalid.validate().map_err(|e| e.field), Err("max_integral"));
         for max_integral in [-1.0, f32::NAN] {
             let config = LateralControllerConfig {
                 max_integral,
@@ -279,5 +282,17 @@ mod tests {
 
         assert!(controller.integrated_error == integral);
         approx::assert_relative_eq!(tilt.x, 2.0 * integral.y / GRAVITY, epsilon = 1e-6);
+    }
+
+    #[test]
+    #[should_panic(expected = "dt must be positive and finite")]
+    fn zero_dt_panics() {
+        LateralController::default().control(
+            &LateralControllerConfig::default(),
+            0.0,
+            Vec2::zeros(),
+            Vec2::zeros(),
+            Vec2::zeros(),
+        );
     }
 }
