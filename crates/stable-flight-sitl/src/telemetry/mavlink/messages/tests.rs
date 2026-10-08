@@ -3,6 +3,15 @@ use assert2::check;
 use super::*;
 
 #[test]
+fn heartbeat_reports_the_arm_state() {
+    for armed in [false, true] {
+        let base_mode = heartbeat(armed).base_mode;
+        check!(base_mode.contains(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED) == armed);
+        check!(base_mode.contains(MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED));
+    }
+}
+
+#[test]
 fn maps_normalized_thrust_to_throttle_percent() {
     // (thrust, expected percent)
     let cases = [

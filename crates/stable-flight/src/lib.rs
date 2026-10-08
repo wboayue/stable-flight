@@ -94,8 +94,8 @@ pub const GRAVITY: f32 = 9.806_65;
 /// This allows for time-dependent and state-dependent command generation, such as ramping values, coordinating timed sequences, or adjusting commands based on the aircraft’s position or velocity.
 ///
 /// Implementors of this trait may include:
-/// - **User input handlers**: Translate joystick/keyboard inputs into manual commands (e.g., [Command::Attitude] or [Command::Rate]).
-/// - **Navigation systems**: Generate waypoint commands (e.g., [Command::Waypoint]) for autonomous flight to specific locations.
+/// - **User input handlers**: Translate joystick/keyboard inputs into manual commands (e.g., [ControlInput::Attitude] or [ControlInput::Rate]).
+/// - **Navigation systems**: Generate waypoint commands (e.g., [ControlInput::Waypoint]) for autonomous flight to specific locations.
 /// - **Mission controllers**: Produce commands based on predefined flight plans or mission objectives.
 /// - **Formation controllers**: Maintain relative positioning between multiple aircraft in a formation.
 ///
@@ -104,20 +104,19 @@ pub const GRAVITY: f32 = 9.806_65;
 /// Implementing a simple `Commander` that always returns a constant `Attitude` command:
 /// ```
 /// use stable_flight::VehicleState;
-/// use stable_flight::{Commander, Command, AttitudeCommand};
+/// use stable_flight::{AttitudeCommand, Command, Commander, ControlInput};
 ///
 /// struct ConstantAttitudeCommander;
 ///
 /// impl Commander for ConstantAttitudeCommander {
 ///     fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
-///         Command::Attitude(AttitudeCommand {
+///         Command::armed(ControlInput::Attitude(AttitudeCommand {
 ///             throttle: 0.5,  // 50% throttle
 ///             roll: 0.0,      // No roll
 ///             pitch: 0.0,     // No pitch
 ///             yaw: 0.0,       // No yaw
-///             arm: true,      // Armed
 ///             mode: 0,        // Default mode
-///         })
+///         }))
 ///     }
 /// }
 /// ```
@@ -135,16 +134,68 @@ pub trait Commander {
     ///
     /// # Returns
     ///
-    /// A `Command` instance that can be one of the following variants:
-    /// - `Command::Attitude`: Direct manual control inputs for the aircraft's attitude (orientation).
-    /// - `Command::Rate`: Direct manual control inputs for the aircraft's rotational rates.
-    /// - `Command::Waypoint`: High-level navigational instructions for autonomous flight to a specific position.
+    /// A [`Command`]: whether the vehicle should be armed, and the [`ControlInput`] to fly.
+    /// `arm` is a level, not an event: return the desired state every tick.
     fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command;
 }
 
-/// Represents a flight control command to be executed by the flight system.
+/// One tick's command from a [`Commander`]: whether the vehicle should be armed, and what to fly.
 ///
-/// The `Command` enum encapsulates different types of commands that can be issued
+/// `arm` is vehicle-level and applies to every [`ControlInput`]. It is a level, not an event:
+/// a commander returns the desired state every tick (an edge-triggered source, such as a
+/// MAVLink arm request, latches it in the commander). While `arm` is `false`,
+/// [`FlightLoop`] holds the actuators at [`ActuatorCommand::default`] (motors off) and
+/// doesn't run guidance or the stabilizer; on the tick it turns `true`, it re-primes them so
+/// integrators start from zero.
+///
+/// `#[non_exhaustive]`: build it with [`Command::new`], [`Command::armed`], or
+/// [`Command::disarmed`], so fields can be added without a breaking change.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::{AttitudeCommand, Command, ControlInput};
+///
+/// let hover = Command::armed(ControlInput::Attitude(AttitudeCommand {
+///     throttle: 0.5,
+///     ..Default::default()
+/// }));
+/// assert!(hover.arm);
+///
+/// let switch_off = false;
+/// assert!(!Command::new(switch_off, hover.input).arm);
+/// ```
+#[derive(Debug, Default, Clone, Copy)]
+#[non_exhaustive]
+pub struct Command {
+    /// `true` to arm (motors may run), `false` to disarm (motors held off). Defaults to
+    /// `false`.
+    pub arm: bool,
+
+    /// What to fly while armed. Ignored while disarmed.
+    pub input: ControlInput,
+}
+
+impl Command {
+    /// A command with the given arm state.
+    pub fn new(arm: bool, input: ControlInput) -> Self {
+        Command { arm, input }
+    }
+
+    /// An armed command: fly `input`.
+    pub fn armed(input: ControlInput) -> Self {
+        Command::new(true, input)
+    }
+
+    /// A disarmed command: motors held off; `input` is carried for telemetry only.
+    pub fn disarmed(input: ControlInput) -> Self {
+        Command::new(false, input)
+    }
+}
+
+/// The control input part of a [`Command`]: what the flight system should fly.
+///
+/// The `ControlInput` enum encapsulates different types of commands that can be issued
 /// to control an aircraft. It supports three types of commands, categorized into two
 /// primary control paradigms:
 ///
@@ -161,9 +212,9 @@ pub trait Commander {
 ///
 /// Creating a manual attitude command:
 /// ```
-/// use stable_flight::{Command, AttitudeCommand};
+/// use stable_flight::{ControlInput, AttitudeCommand};
 ///
-/// let manual_cmd = Command::Attitude(AttitudeCommand {
+/// let manual_cmd = ControlInput::Attitude(AttitudeCommand {
 ///     throttle: 0.75,  // 75% throttle
 ///     roll: 0.1,       // Slight right bank
 ///     pitch: -0.05,    // Slight nose down
@@ -174,9 +225,9 @@ pub trait Commander {
 ///
 /// Creating a manual rate command:
 /// ```
-/// use stable_flight::{Command, RateCommand};
+/// use stable_flight::{ControlInput, RateCommand};
 ///
-/// let rate_cmd = Command::Rate(RateCommand {
+/// let rate_cmd = ControlInput::Rate(RateCommand {
 ///     throttle: 0.5,   // 50% throttle
 ///     roll_rate: 0.2,  // Moderate roll rate
 ///     pitch_rate: 0.1, // Moderate pitch rate
@@ -187,9 +238,9 @@ pub trait Commander {
 ///
 /// Creating a waypoint command:
 /// ```
-/// use stable_flight::{Command, Vec2, WaypointCommand};
+/// use stable_flight::{ControlInput, Vec2, WaypointCommand};
 ///
-/// let waypoint_cmd = Command::Waypoint(WaypointCommand {
+/// let waypoint_cmd = ControlInput::Waypoint(WaypointCommand {
 ///     position_m: Vec2::new(1000.0, 2000.0),    // Target position in world coordinates
 ///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Optional desired velocity at target
 ///     altitude_m: 500.0,                        // Target altitude in meters
@@ -206,7 +257,7 @@ pub trait Commander {
 ///   [`Guidance::guide`]).
 #[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
-pub enum Command {
+pub enum ControlInput {
     /// Direct manual control inputs for the aircraft's attitude (orientation).
     ///
     /// These values typically range from -1.0 to 1.0 (or 0.0 to 1.0 for throttle)
@@ -228,11 +279,18 @@ pub enum Command {
     Waypoint(WaypointCommand),
 }
 
+/// Zero-throttle, centered-stick [`ControlInput::Attitude`].
+impl Default for ControlInput {
+    fn default() -> Self {
+        ControlInput::Attitude(AttitudeCommand::default())
+    }
+}
+
 /// Represents direct manual control of an aircraft's attitude (orientation).
 ///
 /// This struct encapsulates pilot inputs from control devices like joysticks,
 /// yokes, or keyboard/mouse combinations to control the aircraft's orientation
-/// (roll, pitch, yaw) and throttle. It is typically used within a `Command::Attitude`
+/// (roll, pitch, yaw) and throttle. It is typically used within a `ControlInput::Attitude`
 /// variant to issue manual flight commands to the flight system.
 ///
 /// # Value Ranges
@@ -241,7 +299,6 @@ pub enum Command {
 /// - `roll`: `-1.0` (full left bank) to `1.0` (full right bank)
 /// - `pitch`: `-1.0` (full nose down) to `1.0` (full nose up)
 /// - `yaw`: `-1.0` (full left turn) to `1.0` (full right turn)
-/// - `arm`: `false` (disarmed) or `true` (armed)
 /// - `mode`: `0` to `2` (specific meaning depends on the flight system)
 ///
 /// Note: The specified ranges are conventional and recommended for typical use.
@@ -259,7 +316,6 @@ pub enum Command {
 ///     roll: 0.1,       // Slight right bank
 ///     pitch: 0.05,     // Slight nose up
 ///     yaw: 0.0,        // No yaw input
-///     arm: true,       // Arm the aircraft
 ///     mode: 1,         // Example mode (e.g., stabilized)
 /// };
 /// ```
@@ -272,7 +328,6 @@ pub enum Command {
 /// - `roll`: `0.0`
 /// - `pitch`: `0.0`
 /// - `yaw`: `0.0`
-/// - `arm`: `false`
 /// - `mode`: `0`
 #[derive(Debug, Default, Clone, Copy)]
 pub struct AttitudeCommand {
@@ -291,10 +346,6 @@ pub struct AttitudeCommand {
     /// to `1.0` (full right turn).
     pub yaw: f32,
 
-    /// Controls the arming state of the aircraft (`false` for disarmed, `true` for armed).
-    /// Arming typically enables motors or other safety-critical systems.
-    pub arm: bool,
-
     /// Controls the aircraft's flight mode, ranging from `0` to `2`.
     /// The specific meaning of each value depends on the flight system implementation
     /// (e.g., `0` might be manual mode, `1` stabilized, `2` autonomous).
@@ -306,7 +357,7 @@ pub struct AttitudeCommand {
 /// This struct encapsulates pilot inputs from control devices like joysticks,
 /// yokes, or keyboard/mouse combinations to control the aircraft's rate of rotation
 /// (roll rate, pitch rate, yaw rate) and throttle. It is typically used within a
-/// `Command::Rate` variant to issue manual flight commands to the flight system.
+/// `ControlInput::Rate` variant to issue manual flight commands to the flight system.
 ///
 /// The "rate" refers to the speed of rotation around each axis, typically measured
 /// in a normalized range where `-1.0` and `1.0` represent the maximum rates supported
@@ -318,7 +369,6 @@ pub struct AttitudeCommand {
 /// - `roll_rate`: `-1.0` (maximum left roll rate) to `1.0` (maximum right roll rate)
 /// - `pitch_rate`: `-1.0` (maximum nose-down rate) to `1.0` (maximum nose-up rate)
 /// - `yaw_rate`: `-1.0` (maximum left yaw rate) to `1.0` (maximum right yaw rate)
-/// - `arm`: `false` (disarmed) or `true` (armed)
 /// - `mode`: `0` to `2` (specific meaning depends on the flight system)
 ///
 /// Note: The specified ranges are conventional and recommended for typical use.
@@ -336,7 +386,6 @@ pub struct AttitudeCommand {
 ///     roll_rate: 0.3,   // Moderate right roll rate
 ///     pitch_rate: 0.1,  // Slight nose-up rate
 ///     yaw_rate: 0.0,    // No yaw rate
-///     arm: true,        // Arm the aircraft
 ///     mode: 1,          // Example mode (e.g., stabilized)
 /// };
 /// ```
@@ -349,7 +398,6 @@ pub struct AttitudeCommand {
 /// - `roll_rate`: `0.0`
 /// - `pitch_rate`: `0.0`
 /// - `yaw_rate`: `0.0`
-/// - `arm`: `false`
 /// - `mode`: `0`
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RateCommand {
@@ -368,10 +416,6 @@ pub struct RateCommand {
     /// to `1.0` (maximum right yaw rate).
     pub yaw_rate: f32,
 
-    /// Controls the arming state of the aircraft (`false` for disarmed, `true` for armed).
-    /// Arming typically enables motors or other safety-critical systems.
-    pub arm: bool,
-
     /// Controls the aircraft's flight mode, ranging from `0` to `2`.
     /// The specific meaning of each value depends on the flight system implementation
     /// (e.g., `0` might be manual mode, `1` stabilized, `2` autonomous).
@@ -383,7 +427,7 @@ pub struct RateCommand {
 /// A `WaypointCommand` instructs the aircraft to navigate to a specific position
 /// in 2D space at a given altitude, optionally with a specified velocity to be achieved
 /// at the target position and a desired roll angle during the approach. This struct is
-/// typically used within a `Command::Waypoint` variant to issue autonomous navigation
+/// typically used within a `ControlInput::Waypoint` variant to issue autonomous navigation
 /// commands to the flight system.
 ///
 /// # Value Ranges
@@ -675,7 +719,7 @@ pub trait Actuator {
 
 /// What the [`Stabilizer`] should hold this tick, as produced by a [`Guidance`].
 ///
-/// A [`Command`] says what the operator or mission wants (stick positions, a waypoint);
+/// A [`ControlInput`] says what the operator or mission wants (stick positions, a waypoint);
 /// a `Setpoint` is the inner-loop target derived from it. Attitude targets are physical
 /// angles in radians; rates and thrust are normalized. The stabilizer owns the physical
 /// limits (maximum tilt and rates) and the thrust curve, and saturates out-of-range or NaN
@@ -735,7 +779,9 @@ pub struct RateSetpoint {
     pub thrust: f32,
 }
 
-/// Turns the commander's [`Command`] into an inner-loop [`Setpoint`].
+/// Turns the commander's [`ControlInput`] into an inner-loop [`Setpoint`].
+///
+/// Guidance only runs while the [`Command`] is armed, so it never sees `arm`.
 ///
 /// Guidance is the outer loop: waypoint navigation (position and altitude hold), and the
 /// interpretation of pilot sticks that needs memory, such as integrating yaw stick into a
@@ -750,14 +796,16 @@ pub struct RateSetpoint {
 /// thrust cut:
 ///
 /// ```
-/// use stable_flight::{AttitudeSetpoint, Command, Guidance, RateSetpoint, Setpoint, VehicleState};
+/// use stable_flight::{
+///     AttitudeSetpoint, ControlInput, Guidance, RateSetpoint, Setpoint, VehicleState,
+/// };
 ///
 /// struct RateOnly;
 ///
 /// impl Guidance for RateOnly {
-///     fn guide(&mut self, _dt: f32, command: &Command, state: &VehicleState) -> Setpoint {
-///         match command {
-///             Command::Rate(rate) => Setpoint::Rate(RateSetpoint {
+///     fn guide(&mut self, _dt: f32, input: &ControlInput, state: &VehicleState) -> Setpoint {
+///         match input {
+///             ControlInput::Rate(rate) => Setpoint::Rate(RateSetpoint {
 ///                 roll_rate: rate.roll_rate,
 ///                 pitch_rate: rate.pitch_rate,
 ///                 yaw_rate: rate.yaw_rate,
@@ -778,21 +826,23 @@ pub trait Guidance {
     ///
     /// - `dt`: Time elapsed since the last guidance step in seconds. Must be positive and
     ///   finite; implementations may assert it (runners guarantee it).
-    /// - `command`: The commander's current command.
+    /// - `input`: The commander's current control input.
     /// - `state`: The current estimated state of the vehicle.
     ///
-    /// # Unsupported commands
+    /// # Unsupported inputs
     ///
-    /// [`Command`] is `#[non_exhaustive]`. For a variant it can't fly, an implementation
+    /// [`ControlInput`] is `#[non_exhaustive]`. For a variant it can't fly, an implementation
     /// returns a neutral setpoint — level attitude, the current heading, zero thrust (what the
     /// input policy gives a NaN command) — and must not panic.
-    fn guide(&mut self, dt: f32, command: &Command, state: &VehicleState) -> Setpoint;
+    fn guide(&mut self, dt: f32, input: &ControlInput, state: &VehicleState) -> Setpoint;
 
-    /// Primes guidance from a known-good vehicle state before the first tick.
+    /// Resets guidance and primes it from a known-good vehicle state.
     ///
-    /// Warms internal state (e.g. the heading-hold target) so guidance starts from where the
-    /// vehicle is rather than from zero. Called once before the control loop starts. The
-    /// default does nothing.
+    /// Clears runtime state (integrators, held outputs) and warms the rest (e.g. the
+    /// heading-hold target) so guidance starts from where the vehicle is rather than from
+    /// zero. [`FlightLoop`] calls it before the first tick and again each time the
+    /// [`Command`] arms, since guidance doesn't run while disarmed. The default does
+    /// nothing.
     fn prime(&mut self, _state: &VehicleState) {}
 }
 
@@ -828,11 +878,12 @@ pub trait Stabilizer {
     /// must not panic.
     fn stabilize(&mut self, dt: f32, setpoint: &Setpoint, state: &VehicleState) -> ControlOutput;
 
-    /// Primes the stabilizer from a known-good vehicle state before the first tick.
+    /// Resets the stabilizer and primes it from a known-good vehicle state.
     ///
-    /// Warms internal state (e.g. integrators or filters) so control starts from where the
-    /// vehicle is rather than from zero. Called once before the control loop starts, after
-    /// [`Guidance::prime`]. The default does nothing.
+    /// Clears runtime state (integrators, derivative history) and warms any filters so
+    /// control starts from where the vehicle is. [`FlightLoop`] calls it before the first
+    /// tick and again each time the [`Command`] arms, after [`Guidance::prime`]. The default
+    /// does nothing.
     fn prime(&mut self, _state: &VehicleState) {}
 }
 
@@ -909,8 +960,8 @@ pub trait TelemetryPublisher {
 /// ```
 /// use std::time::Duration;
 /// use stable_flight::{
-///     ActuatorCommand, AttitudeCommand, Command, ControlOutput, Setpoint, TelemetryPublisher,
-///     TelemetryRecord, VehicleState,
+///     ActuatorCommand, Command, ControlOutput, Setpoint, TelemetryPublisher, TelemetryRecord,
+///     VehicleState,
 /// };
 ///
 /// struct ThrustLogger;
@@ -921,7 +972,7 @@ pub trait TelemetryPublisher {
 ///     }
 /// }
 ///
-/// let command = Command::Attitude(AttitudeCommand::default());
+/// let command = Command::default();
 /// let setpoint = Setpoint::Attitude(Default::default());
 /// let state = VehicleState::default();
 /// let control = ControlOutput::default();
@@ -942,13 +993,13 @@ pub struct TelemetryRecord<'a> {
     pub dt: Duration,
     /// Command the commander produced.
     pub command: &'a Command,
-    /// Setpoint guidance derived from `command`.
+    /// Setpoint guidance derived from `command` (neutral while disarmed).
     pub setpoint: &'a Setpoint,
     /// Estimated vehicle state the stabilizer acted on.
     pub state: &'a VehicleState,
-    /// Stabilizer output (thrust and moments).
+    /// Stabilizer output (thrust and moments; zero while disarmed).
     pub control: &'a ControlOutput,
-    /// Mixer output sent to the actuators.
+    /// Mixer output sent to the actuators ([`ActuatorCommand::default`] while disarmed).
     pub actuators: &'a ActuatorCommand,
 }
 

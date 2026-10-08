@@ -19,6 +19,11 @@ name = "ark-fpv"
 test = false
 bench = false
 
+[features]
+# Arms `HoldCommander` so every tick runs guidance, the stabilizer, and the mixer: for bench
+# timing checks (blue LED) only. Never combine with real ESC output (#135).
+bench-armed = []
+
 [dependencies]
 stable-flight = { path = "../../crates/stable-flight" }
 

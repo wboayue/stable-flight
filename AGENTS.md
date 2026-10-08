@@ -79,7 +79,7 @@ The control system is a pipeline of traits sequenced by the core `FlightLoop` an
 
 Trait methods **do not return `Result`** today. Invalid configuration panics at construction or in `run`; per-tick failures are not modeled. If you add fallible operations, introduce a typed error with `thiserror` rather than panicking inside the loop.
 
-`Command` is an enum: `Attitude(AttitudeCommand)`, `Rate(RateCommand)`, `Waypoint(WaypointCommand)`. `ActuatorCommand` carries `motors: [f32; 8]` plus fixed-wing surfaces (`rudder`/`elevator`/`aileron`/`throttle`/`elevon_*`).
+`Command` is `{ arm, input }`: `arm` gates the motors ([arm gate](architecture.md#flight-stabilization-loop)), and `input` is a `ControlInput`: `Attitude(AttitudeCommand)`, `Rate(RateCommand)`, or `Waypoint(WaypointCommand)`. `ActuatorCommand` carries `motors: [f32; 8]` plus fixed-wing surfaces (`rudder`/`elevator`/`aileron`/`throttle`/`elevon_*`).
 
 ### Concrete implementations
 

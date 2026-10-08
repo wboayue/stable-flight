@@ -26,7 +26,9 @@ fn target_x_after_step<W: AsRef<[WaypointCommand]>>(
     x: f32,
     y: f32,
 ) -> f32 {
-    assert2::assert!(let Command::Waypoint(target) = follower.next_command(0.1, &state_at(x, y)));
+    let command = follower.next_command(0.1, &state_at(x, y));
+    assert2::assert!(command.arm);
+    assert2::assert!(let ControlInput::Waypoint(target) = command.input);
     target.position_m.x
 }
 

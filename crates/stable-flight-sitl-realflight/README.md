@@ -55,3 +55,5 @@ cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- f
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --script flights/hover.csv
 ```
+
+Joystick flights start disarmed: the motors stay off until you arm (Extreme 3D: top trigger; base button disarms). Scripted flights are armed from the first tick.

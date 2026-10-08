@@ -21,20 +21,20 @@ embedded: && fw-build
     cargo build -p stable-flight --target thumbv7em-none-eabihf
     cargo build -p stable-flight --features testing --target thumbv7em-none-eabihf
 
-# Release build of the ARK FPV firmware
-fw-build:
-    cd {{fw}} && cargo build --release
+# Release build of the ARK FPV firmware; `just fw-build bench-armed` arms the stub for timing checks
+fw-build features="":
+    cd {{fw}} && cargo build --release {{ if features != "" { "--features " + features } else { "" } }}
 
 # Flash/RAM usage of the firmware (needs cargo-binutils + llvm-tools)
 fw-size: fw-build
     cd {{fw}} && cargo size --release
 
 # Firmware as a raw binary for DFU
-fw-bin: fw-build
+fw-bin features="": (fw-build features)
     cd {{fw}} && cargo objcopy --release -- -O binary {{fw_bin}}
 
 # Flash over USB DFU. Put the board in DFU first: hold BOOT0, tap NRST, release BOOT0 (the stub has no USB reboot)
-fw-flash: fw-bin
+fw-flash features="": (fw-bin features)
     #!/usr/bin/env bash
     set -euo pipefail
     if ! dfu-util -l 2>/dev/null | grep -q "0483:df11"; then

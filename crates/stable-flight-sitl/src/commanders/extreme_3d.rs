@@ -72,7 +72,7 @@
 use gilrs::{Axis, Button, Event, EventType, GamepadId, Gilrs};
 
 use crate::commanders::{CommanderError, open_gilrs};
-use stable_flight::{AttitudeCommand, Command, Commander, RateCommand, VehicleState};
+use stable_flight::{AttitudeCommand, Command, Commander, ControlInput, RateCommand, VehicleState};
 
 /// Hardware code for the throttle axis on the Extreme 3D Pro.
 /// This value is provided by the Gilrs library for the throttle slider.
@@ -355,24 +355,23 @@ impl Commander for Extreme3DCommander {
 
         let arm = channels[4] > ARM_THRESHOLD;
 
-        match &self.mode {
-            Mode::Attitude => Command::Attitude(AttitudeCommand {
+        let input = match &self.mode {
+            Mode::Attitude => ControlInput::Attitude(AttitudeCommand {
                 throttle: channels[0],
                 roll: apply_dead_zone(channels[1], ROLL_PITCH_DEAD_ZONE),
                 pitch: apply_dead_zone(channels[2], ROLL_PITCH_DEAD_ZONE),
                 yaw: apply_dead_zone(channels[3], YAW_DEAD_ZONE),
-                arm,
                 mode,
             }),
-            Mode::Rate => Command::Rate(RateCommand {
+            Mode::Rate => ControlInput::Rate(RateCommand {
                 throttle: channels[0],
                 roll_rate: apply_dead_zone(channels[1], ROLL_PITCH_DEAD_ZONE),
                 pitch_rate: apply_dead_zone(channels[2], ROLL_PITCH_DEAD_ZONE),
                 yaw_rate: apply_dead_zone(channels[3], YAW_DEAD_ZONE),
-                arm,
                 mode,
             }),
-        }
+        };
+        Command::new(arm, input)
     }
 }
 

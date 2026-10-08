@@ -104,6 +104,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `Command` is now a struct `{ arm, input }` (`#[non_exhaustive]`; build
+  with `Command::new`, `armed`, or `disarmed`), and the old enum is `ControlInput`
+  (`Attitude`/`Rate`/`Waypoint`). `arm` moved off `AttitudeCommand` and `RateCommand`, so
+  it covers waypoint flight too. `Guidance::guide` takes `&ControlInput`. `WaypointFollower`
+  emits armed commands. `ControlInput` implements `Default` (zero-throttle attitude), so
+  `Command` and `testing::ConstantCommander` derive it (disarmed) ([#125](https://github.com/wboayue/stable-flight/issues/125)).
+- **Breaking:** `FlightLoop` gates the motors on `Command::arm`: a disarmed tick skips
+  guidance, the stabilizer, and the mixer, actuates `ActuatorCommand::default()`, and
+  records a neutral setpoint and zero control. Each disarmed → armed edge re-primes guidance
+  and the stabilizer ([#125](https://github.com/wboayue/stable-flight/issues/125)).
+- **Breaking:** `Guidance::prime`/`Stabilizer::prime` now also reset runtime state and run on
+  every arm, not just once. `CopterStabilizer::prime` clears its rate, attitude, and yaw
+  controllers; `CopterGuidance::prime` also clears its altitude and lateral controllers
+  and held tilt ([#125](https://github.com/wboayue/stable-flight/issues/125)).
 - `AttitudeController` and `BodyRateController` no longer kick the derivative term on the
   first tick after construction (they differenced against a zero previous error); like
   `YawController`, the first tick is P + I only
@@ -271,6 +285,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The command's arm flag was ignored, so a disarmed vehicle still drove its motors ([#125](https://github.com/wboayue/stable-flight/issues/125)).
 - `AltitudeController` feeds gravity forward and compensates tilt correctly:
   thrust is `hover_thrust · (g + a) / (g · cos tilt)`. It computed `(a − g) / cos`,
   so zero error meant zero thrust (the integral carried all of hover, making climbs

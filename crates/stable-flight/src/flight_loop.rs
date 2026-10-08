@@ -9,8 +9,8 @@ use core::time::Duration;
 
 use crate::controllers::InvalidConfig;
 use crate::{
-    Commander, Configurable, Guidance, Mixer, Stabilizer, TelemetryPublisher, TelemetryRecord,
-    Vehicle, VehicleState,
+    ActuatorCommand, AttitudeSetpoint, Commander, Configurable, ControlOutput, Guidance, Mixer,
+    Setpoint, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle, VehicleState,
 };
 
 #[cfg(test)]
@@ -21,6 +21,11 @@ mod tests;
 ///
 /// Call [`prime`](FlightLoop::prime) once before the first [`step`](FlightLoop::step).
 ///
+/// The [`Command`](crate::Command)'s `arm` gates the motors: a disarmed tick skips guidance,
+/// the stabilizer, and the mixer and actuates [`ActuatorCommand::default`] (motors off). The
+/// first armed tick after a disarmed one (including the first tick) re-primes guidance and
+/// the stabilizer, so integrators start from zero.
+///
 /// # Examples
 ///
 /// ```
@@ -29,14 +34,17 @@ mod tests;
 /// use stable_flight::mixers::QuadCopterMixer;
 /// use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 /// use stable_flight::{
-///     Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, FlightLoop,
+///     Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, ControlInput, FlightLoop,
 ///     StateEstimator, VehicleState,
 /// };
 ///
 /// struct Hover;
 /// impl Commander for Hover {
 ///     fn next_command(&mut self, _dt: f32, _state: &VehicleState) -> Command {
-///         Command::Attitude(AttitudeCommand { throttle: 0.5, arm: true, ..Default::default() })
+///         Command::armed(ControlInput::Attitude(AttitudeCommand {
+///             throttle: 0.5,
+///             ..Default::default()
+///         }))
 ///     }
 /// }
 ///
@@ -76,6 +84,8 @@ pub struct FlightLoop<C, V, G, S, M, T> {
     telemetry: T,
     /// Latest estimate; the commander sees the previous tick's state.
     state: VehicleState,
+    /// Whether the previous tick was armed; a rising edge re-primes.
+    armed: bool,
 }
 
 impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T>
@@ -104,12 +114,14 @@ where
             mixer,
             telemetry,
             state: VehicleState::default(),
+            armed: false,
         }
     }
 
     /// Takes the initial estimate (with `dt = Duration::ZERO`, per the [`StateEstimator`]
     /// convention) and primes guidance, then the stabilizer, from it. Call once before the
-    /// first tick.
+    /// first tick, so the commander's first call sees a real state. The first armed tick
+    /// primes them again from its fresh estimate (see the arm gate on [`FlightLoop`]).
     ///
     /// [`StateEstimator`]: crate::StateEstimator
     pub fn prime(&mut self) {
@@ -121,20 +133,41 @@ where
     /// Runs one tick with loop period `dt`.
     ///
     /// The commander sees the state from the previous tick; guidance and the stabilizer see
-    /// the fresh estimate. Telemetry receives a [`TelemetryRecord`] after actuation. Allocation-free.
+    /// the fresh estimate. Telemetry receives a [`TelemetryRecord`] after actuation. A
+    /// disarmed tick actuates [`ActuatorCommand::default`] and records a neutral setpoint and
+    /// zero control; see [`FlightLoop`] for the arm gate. Allocation-free.
     ///
     /// # Panics
     ///
-    /// If `dt` is zero: guidance and the stabilizer require a positive, finite step (a
+    /// If `dt` is zero on an armed tick: guidance and the stabilizer require a positive, finite step (a
     /// `Duration` is never negative or non-finite).
     pub fn step(&mut self, dt: Duration) {
         let dt_secs = dt.as_secs_f32();
 
         let command = self.commander.next_command(dt_secs, &self.state);
         self.state = self.vehicle.estimate_state(dt);
-        let setpoint = self.guidance.guide(dt_secs, &command, &self.state);
-        let control = self.stabilizer.stabilize(dt_secs, &setpoint, &self.state);
-        let actuators = self.mixer.mix(&control);
+
+        let (setpoint, control, actuators) = if command.arm {
+            if !self.armed {
+                self.guidance.prime(&self.state);
+                self.stabilizer.prime(&self.state);
+            }
+            let setpoint = self.guidance.guide(dt_secs, &command.input, &self.state);
+            let control = self.stabilizer.stabilize(dt_secs, &setpoint, &self.state);
+            let actuators = self.mixer.mix(&control);
+            (setpoint, control, actuators)
+        } else {
+            let setpoint = Setpoint::Attitude(AttitudeSetpoint {
+                heading_rad: self.state.heading_rad,
+                ..Default::default()
+            });
+            (
+                setpoint,
+                ControlOutput::default(),
+                ActuatorCommand::default(),
+            )
+        };
+        self.armed = command.arm;
         self.vehicle.actuate(&actuators);
 
         self.telemetry.publish(&TelemetryRecord {
@@ -179,12 +212,12 @@ where
     /// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
     /// # use stable_flight::mixers::QuadCopterMixer;
     /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
-    /// # use stable_flight::{Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, StateEstimator, VehicleState};
+    /// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateEstimator, VehicleState};
     /// use stable_flight::{Configurable, FlightLoop};
     /// # struct Hover;
     /// # impl Commander for Hover {
     /// #     fn next_command(&mut self, _: f32, _: &VehicleState) -> Command {
-    /// #         Command::Attitude(AttitudeCommand::default())
+    /// #         Command::default()
     /// #     }
     /// # }
     /// # struct StillAir;
@@ -225,13 +258,13 @@ where
     /// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
     /// # use stable_flight::mixers::QuadCopterMixer;
     /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
-    /// # use stable_flight::{Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, StateEstimator, VehicleState};
+    /// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateEstimator, VehicleState};
     /// use stable_flight::FlightLoop;
     ///
     /// # struct Hover;
     /// # impl Commander for Hover {
     /// #     fn next_command(&mut self, _: f32, _: &VehicleState) -> Command {
-    /// #         Command::Attitude(AttitudeCommand::default())
+    /// #         Command::default()
     /// #     }
     /// # }
     /// /// Counts actuations.

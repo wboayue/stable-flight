@@ -54,7 +54,7 @@ fn tuple_publisher_fans_out_to_every_sink() {
             RecordingTelemetry::<4>::new(),
         ),
     );
-    let command = Command::Attitude(Default::default());
+    let command = Command::default();
     let setpoint = Setpoint::Attitude(Default::default());
     let state = VehicleState::default();
     let actuators = ActuatorCommand::default();
