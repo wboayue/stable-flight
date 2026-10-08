@@ -184,7 +184,8 @@ fn global_position_projects_local_offsets_around_the_origin() {
             &state_with(position_m, [0.0; 3]),
             0.0,
             7,
-        );
+        )
+        .expect("finite position");
         check!(data.time_boot_ms == 7);
         check!(
             data.lat == (lat_deg * DEG_E7).round() as i32,
@@ -213,7 +214,8 @@ fn global_position_reports_altitude_above_home_and_ned_velocity_in_cm() {
             &state_with([0.0, 0.0, altitude_m], velocity_mps),
             home_altitude_m,
             0,
-        );
+        )
+        .expect("finite position");
         check!(
             data.relative_alt == relative_alt,
             "{altitude_m} over {home_altitude_m}"
@@ -244,6 +246,23 @@ fn global_position_heading_is_centidegrees_from_north() {
         check!(
             heading_cdeg(heading_rad) == expected,
             "heading {heading_rad}"
+        );
+    }
+}
+
+#[test]
+fn global_position_is_skipped_for_a_non_finite_position() {
+    let cases = [
+        [f32::NAN, 0.0, 0.0],
+        [0.0, f32::INFINITY, 0.0],
+        [0.0, 0.0, f32::NAN],
+    ];
+
+    for position_m in cases {
+        let state = state_with(position_m, [0.0; 3]);
+        check!(
+            global_position_int(&FlatEarth::new(ORIGIN), &state, 0.0, 0).is_none(),
+            "{position_m:?}"
         );
     }
 }

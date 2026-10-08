@@ -84,18 +84,22 @@ impl FlatEarth {
 }
 
 /// Position from `earth`, with `relative_alt` measured from `home_altitude_m` (local `z`).
-/// Velocity is NED (down positive) in cm/s, NaN reporting zero.
+/// Velocity is NED (down positive) in cm/s, NaN reporting zero. `None` when the position
+/// isn't finite: latitude and longitude have no "unknown" value, and NaN would report 0°, 0°.
 pub(super) fn global_position_int(
     earth: &FlatEarth,
     state: &VehicleState,
     home_altitude_m: f32,
     time_boot_ms: u32,
-) -> GLOBAL_POSITION_INT_DATA {
+) -> Option<GLOBAL_POSITION_INT_DATA> {
+    if !state.position_m.iter().all(|c| c.is_finite()) {
+        return None;
+    }
     let (lat_deg, lon_deg, alt_m) = earth.project(state.position_m.into());
     let v = state.velocity_mps;
     // `as` saturates and maps NaN to 0.
     let cm_per_s = |mps: f32| (mps * CM_PER_M).round() as i16;
-    GLOBAL_POSITION_INT_DATA {
+    Some(GLOBAL_POSITION_INT_DATA {
         time_boot_ms,
         lat: (lat_deg * DEG_E7).round() as i32,
         lon: (lon_deg * DEG_E7).round() as i32,
@@ -105,7 +109,7 @@ pub(super) fn global_position_int(
         vy: cm_per_s(v.y),
         vz: cm_per_s(-v.z),
         hdg: heading_cdeg(state.heading_rad),
-    }
+    })
 }
 
 /// `VehicleState` translation is north/east/**up**; MAVLink local NED is north/east/down.
@@ -153,10 +157,15 @@ pub(super) fn vfr_hud(control: &ControlOutput, state: &VehicleState) -> VFR_HUD_
     }
 }
 
-/// Heading as VFR_HUD's whole degrees in 0..360, clockwise from north; NaN reports 0.
+/// Heading in degrees in [0, 360), clockwise from north; NaN stays NaN.
+fn heading_from_north_deg(heading_rad: f32) -> f32 {
+    heading_rad.to_degrees().rem_euclid(360.0)
+}
+
+/// Heading as VFR_HUD's whole degrees in 0..360; NaN reports 0 (VFR_HUD has no "unknown").
 fn heading_deg(heading_rad: f32) -> i16 {
     // `as` saturates and maps NaN to 0; rounding up to 360 wraps to 0.
-    (heading_rad.to_degrees().rem_euclid(360.0).round() as i16) % 360
+    (heading_from_north_deg(heading_rad).round() as i16) % 360
 }
 
 /// Heading as GLOBAL_POSITION_INT's centidegrees in 0..36000; a non-finite heading reports
@@ -166,7 +175,7 @@ fn heading_cdeg(heading_rad: f32) -> u16 {
         return u16::MAX;
     }
     // Rounding up to 36000 wraps to 0.
-    ((heading_rad.to_degrees().rem_euclid(360.0) * 100.0).round() as u16) % 36000
+    ((heading_from_north_deg(heading_rad) * 100.0).round() as u16) % 36000
 }
 
 /// Normalized thrust (0.0–1.0) as the 0–100 % throttle VFR_HUD expects; out-of-range clamps.

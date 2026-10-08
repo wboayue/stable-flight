@@ -15,9 +15,10 @@ use super::throttle::ErrorThrottle;
 use stable_flight::{TelemetryPublisher, TelemetryRecord};
 
 mod messages;
-use messages::FlatEarth;
 #[cfg(test)]
 mod tests;
+
+use messages::FlatEarth;
 
 /// Address [`MavlinkConfiguration::default`] sends to: UDP to a local ground station.
 pub const DEFAULT_ADDRESS: &str = "udpout:127.0.0.1:14550";
@@ -26,7 +27,7 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
 const STREAM_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Where the local origin sits on the earth: [`MavlinkConfiguration::default`] places it at
-/// 34°53'03.8"N 120°24'12.6"W at sea level (RealFlight's altitude datum).
+/// 34°53'03.8"N 120°24'12.6"W, at sea level.
 pub const DEFAULT_ORIGIN: GeodeticOrigin = GeodeticOrigin {
     latitude_deg: 34.884389,
     longitude_deg: -120.4035,
@@ -38,12 +39,21 @@ pub const DEFAULT_ORIGIN: GeodeticOrigin = GeodeticOrigin {
 /// and longitude.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GeodeticOrigin {
-    /// Latitude, north positive.
+    /// Latitude, north positive; strictly between -90 and 90 (the projection degenerates at
+    /// the poles).
     pub latitude_deg: f64,
-    /// Longitude, east positive.
+    /// Longitude, east positive; -180 to 180.
     pub longitude_deg: f64,
     /// Altitude above mean sea level of the backend's altitude datum (0 for a sea-level datum).
     pub altitude_m: f64,
+}
+
+impl GeodeticOrigin {
+    fn is_valid(&self) -> bool {
+        self.latitude_deg.abs() < 90.0
+            && self.longitude_deg.abs() <= 180.0
+            && self.altitude_m.is_finite()
+    }
 }
 
 /// Where and as whom a [`MavlinkPublisher`] sends.
@@ -71,7 +81,7 @@ impl Default for MavlinkConfiguration {
     }
 }
 
-/// Returned by [`MavlinkPublisher::connect`].
+/// Returned by [`MavlinkPublisher::connect`] and [`MavlinkPublisher::with_origin`].
 #[derive(Debug, Error)]
 pub enum MavlinkError {
     /// The address didn't parse or its connection couldn't be opened.
@@ -83,6 +93,9 @@ pub enum MavlinkError {
         #[source]
         source: io::Error,
     },
+    /// A coordinate is out of range or not finite (see [`GeodeticOrigin`]).
+    #[error("invalid geodetic origin {0:?}")]
+    InvalidOrigin(GeodeticOrigin),
 }
 
 /// A [`TelemetryPublisher`] that sends each tick's state as MAVLink messages: heartbeat at
@@ -92,9 +105,9 @@ pub enum MavlinkError {
 /// The heartbeat reports the command kind as standard `base_mode` flags: rate is
 /// `MANUAL_INPUT`, attitude `MANUAL_INPUT | STABILIZE`, waypoint `STABILIZE | GUIDED | AUTO`.
 ///
-/// GLOBAL_POSITION_INT is sent only with a [`GeodeticOrigin`] ([`with_origin`](Self::with_origin)).
-/// Its `relative_alt` is measured from the altitude of the first published state, i.e. the
-/// vehicle on the ground at startup.
+/// GLOBAL_POSITION_INT is sent only with a [`GeodeticOrigin`] ([`with_origin`](Self::with_origin)),
+/// and skipped on a tick whose position isn't finite. Its `relative_alt` is measured from
+/// home: the altitude at the latest arming, or before the first arm, the first finite one.
 ///
 /// A failed send is logged (rate-limited) and dropped; it never stops the flight loop.
 ///
@@ -118,8 +131,10 @@ pub struct MavlinkPublisher {
     attitude: Every,
     /// Global position stream: the projection and its timer, when an origin is set.
     global_position: Option<(FlatEarth, Every)>,
-    /// Altitude (local `z`) `relative_alt` is measured from, latched on the first `publish`.
+    /// Altitude (local `z`) `relative_alt` is measured from; see [`Self::update_home`].
     home_altitude_m: Option<f32>,
+    /// The previous tick's arm state, to find the arming edge.
+    was_armed: bool,
     errors: ErrorThrottle,
 }
 
@@ -129,7 +144,8 @@ impl MavlinkPublisher {
     /// # Errors
     ///
     /// [`MavlinkError::Connect`] if the address is malformed or the connection can't be
-    /// opened (e.g. a TCP peer refuses it).
+    /// opened (e.g. a TCP peer refuses it); [`MavlinkError::InvalidOrigin`] for an
+    /// out-of-range `config.origin`.
     pub fn connect(config: MavlinkConfiguration) -> Result<Self, MavlinkError> {
         let mut connection = mavlink::connect::<MavMessage>(&config.address).map_err(|source| {
             MavlinkError::Connect {
@@ -140,10 +156,10 @@ impl MavlinkPublisher {
         connection.set_protocol_version(MavlinkVersion::V2);
         let publisher =
             Self::with_connection(Box::new(connection), config.system_id, config.component_id);
-        Ok(match config.origin {
+        match config.origin {
             Some(origin) => publisher.with_origin(origin),
-            None => publisher,
-        })
+            None => Ok(publisher),
+        }
     }
 
     /// Publishes on an already-open connection (a custom transport, or a test double),
@@ -178,11 +194,16 @@ impl MavlinkPublisher {
             attitude: Every::new(STREAM_INTERVAL),
             global_position: None,
             home_altitude_m: None,
+            was_armed: false,
             errors: ErrorThrottle::default(),
         }
     }
 
     /// Also sends GLOBAL_POSITION_INT, placing local position (0, 0, 0) at `origin`.
+    ///
+    /// # Errors
+    ///
+    /// [`MavlinkError::InvalidOrigin`] if a coordinate is out of range or not finite.
     ///
     /// # Examples
     ///
@@ -193,12 +214,25 @@ impl MavlinkPublisher {
     /// let mut connection = mavlink::connect::<MavMessage>("udpout:127.0.0.1:14550")?;
     /// connection.set_protocol_version(MavlinkVersion::V2);
     /// let telemetry =
-    ///     MavlinkPublisher::with_connection(Box::new(connection), 1, 1).with_origin(DEFAULT_ORIGIN);
-    /// # Ok::<(), std::io::Error>(())
+    ///     MavlinkPublisher::with_connection(Box::new(connection), 1, 1).with_origin(DEFAULT_ORIGIN)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn with_origin(mut self, origin: GeodeticOrigin) -> Self {
+    pub fn with_origin(mut self, origin: GeodeticOrigin) -> Result<Self, MavlinkError> {
+        if !origin.is_valid() {
+            return Err(MavlinkError::InvalidOrigin(origin));
+        }
         self.global_position = Some((FlatEarth::new(origin), Every::new(STREAM_INTERVAL)));
-        self
+        Ok(self)
+    }
+
+    /// Latches home at each arming (height above takeoff), or at the first finite altitude
+    /// before the first arm. A non-finite altitude never becomes home.
+    fn update_home(&mut self, armed: bool, altitude_m: f32) {
+        let arming = armed && !self.was_armed;
+        self.was_armed = armed;
+        if altitude_m.is_finite() && (arming || self.home_altitude_m.is_none()) {
+            self.home_altitude_m = Some(altitude_m);
+        }
     }
 
     fn send(&mut self, message: MavMessage) {
@@ -237,7 +271,7 @@ impl TelemetryPublisher for MavlinkPublisher {
             ..
         } = *record;
         let time_boot_ms = self.time_boot_ms();
-        let home_altitude_m = *self.home_altitude_m.get_or_insert(state.position_m.z);
+        self.update_home(command.arm, state.position_m.z);
 
         if self.heartbeat.ready(dt) {
             self.send(MavMessage::HEARTBEAT(messages::heartbeat(command)));
@@ -252,8 +286,10 @@ impl TelemetryPublisher for MavlinkPublisher {
         }
         if let Some((earth, every)) = &mut self.global_position
             && every.ready(dt)
+            && let Some(home_altitude_m) = self.home_altitude_m
+            && let Some(data) =
+                messages::global_position_int(earth, state, home_altitude_m, time_boot_ms)
         {
-            let data = messages::global_position_int(earth, state, home_altitude_m, time_boot_ms);
             self.send(MavMessage::GLOBAL_POSITION_INT(data));
         }
         if self.attitude.ready(dt) {

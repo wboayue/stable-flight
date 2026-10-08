@@ -61,15 +61,19 @@ impl MavConnection<MavMessage> for MockConnection {
 /// Publishes `ticks` default records `dt` apart on `connection`.
 fn run(connection: &MockConnection, ids: (u8, u8), dt: Duration, ticks: usize) {
     let publisher = MavlinkPublisher::with_connection(Box::new(connection.clone()), ids.0, ids.1);
-    publish_states(publisher, dt, &vec![VehicleState::default(); ticks]);
+    publish_states(
+        publisher,
+        dt,
+        &vec![(false, VehicleState::default()); ticks],
+    );
 }
 
-/// Publishes one record per state, `dt` apart.
-fn publish_states(mut publisher: MavlinkPublisher, dt: Duration, states: &[VehicleState]) {
-    for state in states {
+/// Publishes one record per `(armed, state)`, `dt` apart.
+fn publish_states(mut publisher: MavlinkPublisher, dt: Duration, records: &[(bool, VehicleState)]) {
+    for (armed, state) in records {
         publisher.publish(&TelemetryRecord {
             dt,
-            command: &Command::default(),
+            command: &Command::new(*armed, Default::default()),
             setpoint: &Setpoint::Attitude(Default::default()),
             state,
             control: &ControlOutput::default(),
@@ -121,13 +125,11 @@ fn sends_each_stream_at_its_rate() {
 #[test]
 fn sends_global_position_at_10_hz_with_an_origin() {
     let connection = MockConnection::default();
-    let publisher = MavlinkPublisher::with_connection(Box::new(connection.clone()), 1, 1)
-        .with_origin(DEFAULT_ORIGIN);
     // Two seconds of a 60 Hz loop.
     publish_states(
-        publisher,
+        with_origin(&connection),
         Duration::from_nanos(16_666_667),
-        &vec![VehicleState::default(); 120],
+        &vec![(false, VehicleState::default()); 120],
     );
 
     let positions = global_positions(&connection.sent());
@@ -136,25 +138,89 @@ fn sends_global_position_at_10_hz_with_an_origin() {
     check!(positions[0].lon == -1_204_035_000);
 }
 
-#[test]
-fn relative_altitude_is_measured_from_the_first_published_state() {
-    let at_altitude = |z| VehicleState {
-        position_m: [0.0, 0.0, z].into(),
+fn with_origin(connection: &MockConnection) -> MavlinkPublisher {
+    MavlinkPublisher::with_connection(Box::new(connection.clone()), 1, 1)
+        .with_origin(DEFAULT_ORIGIN)
+        .expect("valid origin")
+}
+
+fn at_altitude(altitude_m: f32) -> VehicleState {
+    VehicleState {
+        position_m: [0.0, 0.0, altitude_m].into(),
         ..Default::default()
-    };
+    }
+}
+
+#[test]
+fn relative_altitude_is_measured_from_home_latched_at_each_arming() {
+    // (armed, altitude_m, expected relative_alt in mm; None: position not finite, skipped)
+    let ticks = [
+        (false, f32::NAN, None),      // no finite altitude yet: no home, nothing sent
+        (false, 30.0, Some(0)),       // first finite altitude becomes home
+        (false, 35.0, Some(5_000)),   // moved while disarmed: home stays
+        (true, 50.0, Some(0)),        // arming re-latches home
+        (true, 60.0, Some(10_000)),   // climbing
+        (false, 20.0, Some(-30_000)), // disarmed below home
+        (true, f32::NAN, None),       // arming on a NaN altitude keeps the old home
+        (true, 55.0, Some(5_000)),
+    ];
+    let records: Vec<_> = ticks
+        .iter()
+        .map(|&(armed, z, _)| (armed, at_altitude(z)))
+        .collect();
     let connection = MockConnection::default();
-    let publisher = MavlinkPublisher::with_connection(Box::new(connection.clone()), 1, 1)
-        .with_origin(DEFAULT_ORIGIN);
-    // On the ground at 30 m above sea level, then 10 m above it.
-    publish_states(
-        publisher,
-        STREAM_INTERVAL,
-        &[at_altitude(30.0), at_altitude(40.0)],
-    );
+    publish_states(with_origin(&connection), STREAM_INTERVAL, &records);
 
     let positions = global_positions(&connection.sent());
-    check!(positions.iter().map(|p| p.relative_alt).collect::<Vec<_>>() == [0, 10_000]);
-    check!(positions[1].alt == 40_000, "alt stays above sea level");
+    let expected: Vec<_> = ticks.iter().filter_map(|&(_, _, alt)| alt).collect();
+    check!(positions.iter().map(|p| p.relative_alt).collect::<Vec<_>>() == expected);
+    check!(positions[1].alt == 35_000, "alt stays above sea level");
+}
+
+#[test]
+fn rejects_an_out_of_range_origin() {
+    let origin = |latitude_deg, longitude_deg, altitude_m| GeodeticOrigin {
+        latitude_deg,
+        longitude_deg,
+        altitude_m,
+    };
+    // (origin, valid)
+    let cases = [
+        (DEFAULT_ORIGIN, true),
+        (origin(89.9, -180.0, -400.0), true),
+        (origin(-89.9, 180.0, 8_000.0), true),
+        (origin(90.0, 0.0, 0.0), false), // pole: longitude degenerates
+        (origin(-90.0, 0.0, 0.0), false),
+        (origin(f64::NAN, 0.0, 0.0), false),
+        (origin(0.0, 180.5, 0.0), false),
+        (origin(0.0, f64::NAN, 0.0), false),
+        (origin(0.0, 0.0, f64::INFINITY), false),
+    ];
+
+    for (origin, valid) in cases {
+        let result = MavlinkPublisher::with_connection(Box::new(MockConnection::default()), 1, 1)
+            .with_origin(origin);
+        if valid {
+            check!(result.is_ok(), "{origin:?}");
+        } else {
+            assert2::assert!(let Err(MavlinkError::InvalidOrigin(rejected)) = result);
+            // Compared as text: NaN never equals itself.
+            check!(format!("{rejected:?}") == format!("{origin:?}"));
+        }
+    }
+}
+
+#[test]
+fn connect_reports_an_invalid_origin() {
+    let config = MavlinkConfiguration {
+        origin: Some(GeodeticOrigin {
+            latitude_deg: 91.0,
+            ..DEFAULT_ORIGIN
+        }),
+        ..Default::default()
+    };
+
+    assert2::assert!(let Err(MavlinkError::InvalidOrigin(_)) = MavlinkPublisher::connect(config));
 }
 
 #[test]
