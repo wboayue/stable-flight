@@ -4,9 +4,7 @@ use crate::Vec2;
 
 use super::derivative::DerivativeState;
 use super::{Gains, InvalidConfig, check_limit};
-use crate::math::{
-    assert_dt, clamp_symmetric, clamp_symmetric_each, limit_or_zero, saturate_unit_vec2,
-};
+use crate::math::{assert_dt, clamp_symmetric, clamp_symmetric_each, saturate_symmetric};
 
 /// Configures the attitude controller for a vehicle.
 /// Defines PID gains, maximum angles, and maximum angular rates for roll and pitch control.
@@ -72,7 +70,7 @@ impl AttitudeControllerConfig {
     }
 }
 
-/// Roll/pitch angle PID loop: turns normalized tilt setpoints into body-rate setpoints for the
+/// Roll/pitch angle PID loop: turns roll/pitch setpoints in radians into body-rate setpoints for the
 /// [`BodyRateController`](super::BodyRateController).
 ///
 /// It holds only state (integral and derivative history); gains and limits come from the
@@ -89,7 +87,7 @@ impl AttitudeController {
     /// Computes desired angular rates to achieve target roll and pitch angles.
     ///
     /// Uses a PID controller to convert angle errors into angular rates (rad/s)
-    /// for the rate control loop. Input angles are scaled from [-1,1] to
+    /// for the rate control loop. Input angles are clamped to
     /// [-max_angles_rad.x, max_angles_rad.x] for roll and [-max_angles_rad.y, max_angles_rad.y] for pitch.
     /// Output rates are clamped to [-max_rate_radps.x, max_rate_radps.x] for roll and
     /// [-max_rate_radps.y, max_rate_radps.y] for pitch.
@@ -98,9 +96,8 @@ impl AttitudeController {
     /// * `config` - Gains and limits; assumed valid ([`AttitudeControllerConfig::validate`]).
     ///   An invalid limit does not panic: a negative or NaN limit acts as 0.
     /// * `dt` - Time step since the last update in seconds (must be positive and finite).
-    /// * `desired_angles` - Target roll/pitch as normalized values in [-1,1]. Values outside
-    ///   the range saturate to it (so the setpoint never exceeds `max_angles_rad`), and NaN is
-    ///   treated as 0 (level).
+    /// * `desired_angles_rad` - Target roll/pitch in radians. Values beyond `max_angles_rad`
+    ///   saturate to it, and NaN is treated as 0 (level).
     /// * `estimated_angles_rad` - Current roll/pitch angles in radians
     ///
     /// # Returns
@@ -120,29 +117,30 @@ impl AttitudeController {
     /// let config = AttitudeControllerConfig::default();
     /// let mut controller = AttitudeController::default();
     /// let dt = 0.004;
-    /// let desired_angles = Vec2::new(0.5, -0.2); // 50% roll right, 20% pitch down
+    /// let desired_angles_rad = Vec2::new(0.4, -0.15); // roll right, pitch down
     /// let estimated_angles_rad = Vec2::new(0.1, 0.0); // current roll/pitch in radians
     ///
-    /// let angular_rates = controller.control(&config, dt, desired_angles, estimated_angles_rad);
+    /// let angular_rates = controller.control(&config, dt, desired_angles_rad, estimated_angles_rad);
     /// assert!(angular_rates.x > 0.0 && angular_rates.y < 0.0);
     /// ```
     pub fn control(
         &mut self,
         config: &AttitudeControllerConfig,
         dt: f32,
-        desired_angles: Vec2,
+        desired_angles_rad: Vec2,
         estimated_angles_rad: Vec2,
     ) -> Vec2 {
         assert_dt(dt);
 
-        // Saturate normalized inputs, then scale to angle setpoints in radians. Outer loops
-        // (e.g. lateral position control far from the target) can ask for more than full tilt;
-        // that must not panic the flight loop.
-        let max_angles_rad = config.max_angles_rad.map(limit_or_zero);
-        let desired_angles = saturate_unit_vec2(desired_angles).component_mul(&max_angles_rad);
+        // Outer loops and pilots can ask for more than full tilt, or NaN; saturate to the
+        // configured limit rather than panic the flight loop.
+        let desired_angles_rad = Vec2::new(
+            saturate_symmetric(desired_angles_rad.x, config.max_angles_rad.x),
+            saturate_symmetric(desired_angles_rad.y, config.max_angles_rad.y),
+        );
 
         // Calculate error (setpoint - actual)
-        let error = desired_angles - estimated_angles_rad;
+        let error = desired_angles_rad - estimated_angles_rad;
 
         // A non-finite error (NaN/∞ estimate) yields no rate command and never enters the
         // integral or derivative history (see `crate::math` for the policy).
@@ -264,7 +262,7 @@ mod tests {
         let config = gains(2.0, 0.0, 0.0);
         let mut controller = AttitudeController::default();
         let dt = 0.1;
-        let desired_angles = Vec2::new(1.0, -1.0); // Max roll right, max pitch down
+        let desired_angles = Vec2::new(1.0, -1.0); // Beyond 45°: saturates to the max
 
         let rates = controller.control(&config, dt, desired_angles, Vec2::zeros());
 
@@ -298,7 +296,7 @@ mod tests {
         controller.control(&config, dt, desired_angles, Vec2::zeros());
         let rates2 = controller.control(&config, dt, desired_angles, Vec2::zeros());
 
-        let error = Vec2::new(0.5 * FRAC_PI_4, 0.5 * FRAC_PI_4);
+        let error = desired_angles;
         let expected_integral = dt * 2.0 * error; // Two steps
         assert_eq!(controller.integrated_error, expected_integral);
         let expected_rates = 1.0 * error + 1.0 * expected_integral; // P + I terms
@@ -351,7 +349,7 @@ mod tests {
         let config = gains(0.0, 0.0, 0.5);
         let mut controller = AttitudeController::default();
         let dt = 0.1;
-        let desired_angles = Vec2::new(1.0, 1.0);
+        let desired_angles = Vec2::new(1.0, 1.0); // saturates to 45°
         let estimated_angles2 = Vec2::new(0.5 * FRAC_PI_4, 0.5 * FRAC_PI_4);
 
         controller.control(&config, dt, desired_angles, Vec2::zeros());
@@ -379,15 +377,16 @@ mod tests {
     #[test]
     fn out_of_range_or_nan_desired_angles_saturate_instead_of_panicking() {
         let config = AttitudeControllerConfig::default();
-        // (requested normalized angles, equivalent in-range request)
+        let max = FRAC_PI_4; // default max_angles_rad
+        // (requested angles in rad, equivalent in-range request)
         let cases = [
-            (Vec2::new(2.0, 0.0), Vec2::new(1.0, 0.0)),
-            (Vec2::new(0.0, -4.6), Vec2::new(0.0, -1.0)), // lateral loop far from its waypoint
-            (Vec2::new(-1.5, 3.0), Vec2::new(-1.0, 1.0)),
+            (Vec2::new(2.0, 0.0), Vec2::new(max, 0.0)),
+            (Vec2::new(0.0, -4.6), Vec2::new(0.0, -max)),
+            (Vec2::new(-1.5, 3.0), Vec2::new(-max, max)),
             (Vec2::new(f32::NAN, 0.5), Vec2::new(0.0, 0.5)),
             (
                 Vec2::new(f32::INFINITY, f32::NEG_INFINITY),
-                Vec2::new(1.0, -1.0),
+                Vec2::new(max, -max),
             ),
         ];
         for (requested, equivalent) in cases {
@@ -416,7 +415,7 @@ mod tests {
 
         // First finite tick after the gap: P + I only (no derivative from the pre-gap error).
         let after_nan = controller.control(&config, 0.1, desired, Vec2::zeros());
-        let error = desired.component_mul(&config.max_angles_rad);
+        let error = desired;
         let Gains { p, i, .. } = config.gains;
         let expected = p * error + i * (0.1 * error);
         approx::assert_relative_eq!(after_nan.x, expected.x.clamp(-2.0, 2.0));

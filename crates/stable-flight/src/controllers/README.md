@@ -7,7 +7,7 @@ PID building blocks shared by guidance (altitude, lateral) and stabilizers (atti
 The controllers implement a cascaded control structure where outer loops provide setpoints for inner loops:
 
 ```text
-Position Commands → Lateral Controller → Attitude Controller → Body Rate Controller → Motor Commands
+Position Commands → Lateral Controller → (guidance: tilt = atan(a/g)) → Attitude Controller → Body Rate Controller → Motor Commands
                  ↘ Altitude Controller ↗             ↘ Yaw Controller ↗
 ```
 
@@ -53,7 +53,7 @@ let moments = controller.control(&config, dt, desired_rates, estimated_rates);
 
 **Purpose**: Controls vehicle orientation (roll and pitch angles) by commanding angular rates.
 
-**Input**: Desired angles (normalized [-1, 1]), estimated angles (rad)  
+**Input**: Desired angles (rad, saturated to `max_angles_rad`; NaN is level), estimated angles (rad)  
 **Output**: Desired angular rates (rad/s)
 
 **Key Features**:
@@ -139,15 +139,15 @@ let thrust = controller.control(&config, dt, target, estimate);
 
 ### Lateral Controller (`lateral.rs`)
 
-**Purpose**: Controls horizontal position (X-Y) by commanding roll and pitch angles.
+**Purpose**: Controls horizontal position (X-Y) by commanding a horizontal acceleration.
 
 **Input**: Desired position (m), estimated position (m), velocity (m/s)  
-**Output**: Desired roll and pitch as normalized tilt [-1, 1] (the attitude controller scales them by its `max_angles_rad`)
+**Output**: Desired horizontal acceleration (m/s², unsaturated). `CopterGuidance` turns it into a
+tilt of `atan(|a| / g)` toward it, capped at its `max_tilt_rad`.
 
 **Key Features**:
-- Position-to-angle conversion using acceleration commands
 - PID control with velocity damping
-- Gravity-based angle calculation for acceleration
+- Airframe-independent: tilt conversion and limits belong to the guidance
 - Anti-windup protection
 
 **Usage**:
@@ -162,8 +162,8 @@ let desired_position = Vec2::new(5.0, 2.0); // 5m north, 2m east
 let estimated_position = Vec2::new(4.8, 1.9);
 let estimated_velocity = Vec2::new(0.1, 0.05);
 
-// Normalized (roll, pitch) tilt request
-let tilt = controller.control(&config, dt, desired_position, estimated_position, estimated_velocity);
+// Horizontal acceleration request (north, east) in m/s²
+let accel_mps2 = controller.control(&config, dt, desired_position, estimated_position, estimated_velocity);
 ```
 
 ## Configuration
