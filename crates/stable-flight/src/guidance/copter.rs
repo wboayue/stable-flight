@@ -19,7 +19,7 @@ use crate::controllers::*;
 use crate::controllers::{check_limit, check_tilt};
 use crate::{
     AttitudeCommand, AttitudeSetpoint, Configurable, ControlInput, Guidance, RateSetpoint,
-    Setpoint, VehicleState, WaypointCommand,
+    Saturation, Setpoint, VehicleState, WaypointCommand,
 };
 
 use super::rate_divider::RateDivider;
@@ -171,6 +171,11 @@ pub struct CopterGuidance {
     lateral_rate: RateDivider,
     /// The lateral loop's last roll/pitch in radians, held between its runs.
     tilt_rad: Vec2,
+    /// The held tilt was capped at `max_tilt_rad` when the lateral loop last ran.
+    tilt_capped: bool,
+
+    /// What the last `guide` call clipped.
+    saturation: Saturation,
 }
 
 impl CopterGuidance {
@@ -192,6 +197,8 @@ impl CopterGuidance {
 
             lateral_rate: RateDivider::default(),
             tilt_rad: Vec2::zeros(),
+            tilt_capped: false,
+            saturation: Saturation::default(),
         }
     }
 }
@@ -209,6 +216,9 @@ impl Configurable for CopterGuidance {
     fn set_config(&mut self, config: CopterGuidanceConfig) -> Result<(), InvalidConfig> {
         config.validate()?;
         self.config = config;
+        if self.tilt_rad.norm() > config.max_tilt_rad {
+            self.tilt_capped = true;
+        }
         self.tilt_rad = cap_magnitude(self.tilt_rad, config.max_tilt_rad);
         Ok(())
     }
@@ -217,6 +227,7 @@ impl Configurable for CopterGuidance {
 impl Guidance for CopterGuidance {
     fn guide(&mut self, dt: f32, input: &ControlInput, estimated_state: &VehicleState) -> Setpoint {
         assert_dt(dt);
+        self.saturation = Saturation::default();
 
         if !matches!(input, ControlInput::Waypoint(_)) {
             // The position loops are idle: clear them so re-entering waypoint mode starts
@@ -258,6 +269,16 @@ impl Guidance for CopterGuidance {
         self.heading = state.heading_rad;
         self.lateral_rate.reset();
         self.tilt_rad = Vec2::zeros();
+        self.tilt_capped = false;
+        self.saturation = Saturation::default();
+    }
+
+    /// `tilt` when the waypoint tilt request was capped at
+    /// [`max_tilt_rad`](CopterGuidanceConfig::max_tilt_rad) (held with the tilt between
+    /// lateral-loop runs), and `thrust` when the altitude loop's thrust, or attitude mode's
+    /// boosted throttle, was clipped to `[0, 1]`.
+    fn saturation(&self) -> Saturation {
+        self.saturation
     }
 }
 
@@ -283,9 +304,8 @@ impl CopterGuidance {
             // Angle boost: hold the vertical thrust the stick asks for while tilted, as the
             // altitude loop does (at most 2× past 60°, none when inverted). Saturated to
             // [0, 1]; NaN means none.
-            thrust: saturate_throttle(
-                attitude_command.throttle * tilt_boost(&estimated_state.attitude),
-            ),
+            thrust: self
+                .clip_thrust(attitude_command.throttle * tilt_boost(&estimated_state.attitude)),
         }
     }
 
@@ -329,12 +349,23 @@ impl CopterGuidance {
             },
         );
 
+        // The altitude loop clamps its thrust to [0, 1]; landing on a bound means it clipped.
+        self.saturation.thrust = linear_thrust <= 0.0 || linear_thrust >= 1.0;
+        self.saturation.tilt = self.tilt_capped;
+
         AttitudeSetpoint {
             roll_rad: tilt_rad.x,
             pitch_rad: tilt_rad.y,
             heading_rad: self.heading,
             thrust: linear_thrust,
         }
+    }
+
+    /// Saturates a thrust request to `[0, 1]` (NaN means none), flagging `thrust` when it
+    /// was outside.
+    fn clip_thrust(&mut self, thrust: f32) -> f32 {
+        self.saturation.thrust = !(0.0..=1.0).contains(&thrust) && !thrust.is_nan();
+        saturate_throttle(thrust)
     }
 
     /// Roll/pitch in radians toward the waypoint from the lateral loop, run when
@@ -369,16 +400,16 @@ impl CopterGuidance {
             && all_finite(&estimate.velocity_mps)
             && heading_rad.is_finite())
         {
+            self.tilt_capped = false;
             return Vec2::zeros();
         }
 
         let accel_mps2 = self
             .lateral
             .control(&self.config.lateral, step, target, estimate);
-        self.tilt_rad = cap_magnitude(
-            tilt_for_acceleration(accel_mps2, heading_rad),
-            self.config.max_tilt_rad,
-        );
+        let requested = tilt_for_acceleration(accel_mps2, heading_rad);
+        self.tilt_capped = requested.norm() > self.config.max_tilt_rad;
+        self.tilt_rad = cap_magnitude(requested, self.config.max_tilt_rad);
         self.lateral_rate.ran();
         self.tilt_rad
     }

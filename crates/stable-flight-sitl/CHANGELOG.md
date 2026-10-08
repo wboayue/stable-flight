@@ -122,6 +122,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- **Breaking:** `telemetry::ConsoleTelemetryPublisher`. Nothing used it, and it logged the
+  whole state at `info!` every tick. Saturation is now in `TelemetryRecord::saturation` for
+  any publisher ([#75](https://github.com/wboayue/stable-flight/issues/75),
+  [#69](https://github.com/wboayue/stable-flight/issues/69)).
 - **Breaking:** `Default` impls for `Extreme3DCommander` and `SpektrumCommander`; they
   panicked on joystick init failure. Use the fallible `new()`
   ([#83](https://github.com/wboayue/stable-flight/issues/83)).

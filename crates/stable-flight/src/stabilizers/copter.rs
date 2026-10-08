@@ -34,7 +34,8 @@
 use crate::{Vec2, Vec3};
 
 use crate::{
-    AttitudeSetpoint, Configurable, ControlOutput, RateSetpoint, Setpoint, Stabilizer, VehicleState,
+    AttitudeSetpoint, Configurable, ControlOutput, RateSetpoint, Saturation, Setpoint, Stabilizer,
+    VehicleState,
 };
 
 use crate::controllers::*;
@@ -136,6 +137,9 @@ pub struct CopterStabilizer {
     body_rate: BodyRateController,
     attitude: AttitudeController,
     yaw: YawController,
+
+    /// What the last `stabilize` call clipped.
+    saturation: Saturation,
 }
 
 impl CopterStabilizer {
@@ -157,6 +161,7 @@ impl CopterStabilizer {
             body_rate: BodyRateController::default(),
             attitude: AttitudeController::default(),
             yaw: YawController::default(),
+            saturation: Saturation::default(),
         }
     }
 }
@@ -195,8 +200,9 @@ impl Stabilizer for CopterStabilizer {
         estimated_state: &VehicleState,
     ) -> ControlOutput {
         assert_dt(dt);
+        self.saturation = Saturation::default();
 
-        match setpoint {
+        let output = match setpoint {
             Setpoint::Attitude(attitude) => self.track_attitude(dt, attitude, estimated_state),
             Setpoint::Rate(rates) => {
                 // The attitude and heading loops are idle: clear them so a switch back to
@@ -205,7 +211,11 @@ impl Stabilizer for CopterStabilizer {
                 self.yaw = YawController::default();
                 self.track_rates(dt, rates, estimated_state)
             }
-        }
+        };
+
+        // The rate loop clamps each moment to [-1, 1]; landing on a bound means it clipped.
+        self.saturation.moments = output.moments.map(|m| m.abs() >= 1.0).into();
+        output
     }
 
     /// Clears the body-rate, attitude, and yaw controller state (integrals and derivative
@@ -214,6 +224,15 @@ impl Stabilizer for CopterStabilizer {
         self.body_rate = BodyRateController::default();
         self.attitude = AttitudeController::default();
         self.yaw = YawController::default();
+        self.saturation = Saturation::default();
+    }
+
+    /// `tilt` when an attitude setpoint's roll or pitch was beyond
+    /// [`max_angles_rad`](AttitudeControllerConfig::max_angles_rad), `thrust` when the
+    /// setpoint's thrust was outside `[0, 1]`, and `moments` per axis when the rate loop's
+    /// output hit ±1.
+    fn saturation(&self) -> Saturation {
+        self.saturation
     }
 }
 
@@ -241,6 +260,10 @@ impl CopterStabilizer {
         // Roll/pitch saturate inside the attitude controller, thrust in the thrust curve (see
         // `crate::math`).
         let desired_angles_rad = Vec2::new(setpoint.roll_rad, setpoint.pitch_rad);
+        let max_angles_rad = self.config.attitude.max_angles_rad;
+        // `>` is false for NaN, which the attitude controller treats as level.
+        self.saturation.tilt = desired_angles_rad.x.abs() > max_angles_rad.x
+            || desired_angles_rad.y.abs() > max_angles_rad.y;
         // The quaternion is the canonical attitude; `euler_angles` is NaN-safe.
         let (roll, pitch, current_heading) = euler_angles(&estimated_state.attitude);
         let current_angles = Vec2::new(roll, pitch);
@@ -317,8 +340,8 @@ impl CopterStabilizer {
     /// Applies a nonlinear thrust curve to a linear thrust command.
     ///
     /// Maps a linear thrust value (0.0 to 1.0) to a nonlinear output using the configured thrust curve exponent.
-    /// This compensates for nonlinear motor responses. Out-of-range input saturates and NaN
-    /// becomes 0 (motors off), per the input policy.
+    /// This compensates for nonlinear motor responses. Out-of-range input saturates (flagging
+    /// `thrust`) and NaN becomes 0 (motors off), per the input policy.
     ///
     /// # Arguments
     ///
@@ -327,7 +350,8 @@ impl CopterStabilizer {
     /// # Returns
     ///
     /// Nonlinear thrust command (0.0 to 1.0).
-    fn fit_to_thrust_curve(&self, linear_thrust: f32) -> f32 {
+    fn fit_to_thrust_curve(&mut self, linear_thrust: f32) -> f32 {
+        self.saturation.thrust = !(0.0..=1.0).contains(&linear_thrust) && !linear_thrust.is_nan();
         let nonlinear_thrust = libm::powf(
             saturate_throttle(linear_thrust),
             self.config.thrust_curve_exponent,

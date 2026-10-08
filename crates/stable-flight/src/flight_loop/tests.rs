@@ -123,7 +123,7 @@ struct RecordingMixer {
     log: Log,
 }
 impl Mixer for RecordingMixer {
-    fn mix(&self, controls: &ControlOutput) -> ActuatorCommand {
+    fn mix(&mut self, controls: &ControlOutput) -> ActuatorCommand {
         self.log
             .borrow_mut()
             .push(format!("mix thrust={}", controls.thrust));
@@ -434,4 +434,76 @@ fn config_setters_retune_the_composites_between_ticks() {
     check!(*flight_loop.guidance().config() == guidance);
     check!(*flight_loop.stabilizer().config() == stabilizer);
     flight_loop.step(Duration::from_millis(4));
+}
+
+/// Reports fixed saturation flags from guidance, the stabilizer, or the mixer.
+struct Flagged(Saturation);
+impl Guidance for Flagged {
+    fn guide(&mut self, _dt: f32, _input: &ControlInput, _state: &VehicleState) -> Setpoint {
+        Setpoint::Attitude(AttitudeSetpoint::default())
+    }
+    fn saturation(&self) -> Saturation {
+        self.0
+    }
+}
+impl Stabilizer for Flagged {
+    fn stabilize(
+        &mut self,
+        _dt: f32,
+        _setpoint: &Setpoint,
+        _state: &VehicleState,
+    ) -> ControlOutput {
+        ControlOutput::default()
+    }
+    fn saturation(&self) -> Saturation {
+        self.0
+    }
+}
+impl Mixer for Flagged {
+    fn mix(&mut self, _controls: &ControlOutput) -> ActuatorCommand {
+        ActuatorCommand::default()
+    }
+    fn saturation(&self) -> Saturation {
+        self.0
+    }
+}
+
+/// The record carries the union of what guidance, the stabilizer, and the mixer report on an
+/// armed tick, and no saturation on a disarmed one (none of them ran).
+#[test]
+fn record_merges_the_saturation_each_stage_reports() {
+    use crate::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
+
+    let guidance = Saturation {
+        tilt: true,
+        ..Default::default()
+    };
+    let stabilizer = Saturation {
+        moments: [false, true, false],
+        ..Default::default()
+    };
+    let mixer = Saturation {
+        mixer_thrust: true,
+        ..Default::default()
+    };
+    let merged = guidance.merge(stabilizer).merge(mixer);
+
+    for (arm, expected) in [(true, merged), (false, Saturation::default())] {
+        let mut flight_loop = FlightLoop::new(
+            ConstantCommander::new(Command::new(arm, ControlInput::default())),
+            NullVehicle::new(),
+            Flagged(guidance),
+            Flagged(stabilizer),
+            Flagged(mixer),
+            RecordingTelemetry::<1>::new(),
+        );
+        flight_loop.prime();
+        flight_loop.step(Duration::from_millis(4));
+
+        let (.., telemetry) = flight_loop.into_parts();
+        assert2::assert!(let Some(tick) = telemetry.iter().last());
+        check!(tick.saturation == expected, "arm={arm}");
+    }
+    check!(merged.tilt && merged.moments == [false, true, false] && merged.mixer_thrust);
+    check!(!merged.thrust && !merged.mixer_moments);
 }
