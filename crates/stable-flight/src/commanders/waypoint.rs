@@ -108,8 +108,8 @@ impl<W: AsRef<[WaypointCommand]>> Commander for WaypointFollower<W> {
 
         // Compare squared horizontal distance to avoid a per-tick sqrt.
         let target = &waypoints[self.current];
-        let dx = target.position.x - current_state.position.x.value;
-        let dy = target.position.y - current_state.position.y.value;
+        let dx = target.position.x - current_state.position_m.x;
+        let dy = target.position.y - current_state.position_m.y;
         if dx * dx + dy * dy <= self.acceptance_radius_squared {
             self.current = (self.current + 1) % waypoints.len();
         }

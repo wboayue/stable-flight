@@ -12,12 +12,6 @@ use std::{
     cell::{Cell, RefCell},
     time::Duration,
 };
-use uom::si::{
-    acceleration::meter_per_second_squared,
-    f32::{Acceleration, Length, Velocity},
-    length::meter,
-    velocity::meter_per_second,
-};
 
 // Mock implementation of RealFlightBridge for testing
 struct MockRealFlightBridge {
@@ -131,7 +125,7 @@ fn test_vehicle_creation() {
     let vehicle = RealFlightVehicle::new(config);
 
     // Verify initial state
-    assert_eq!(vehicle.estimated_state.position, Vec3::zeros());
+    assert_eq!(vehicle.estimated_state.position_m, Vec3::zeros());
     assert_eq!(vehicle.mapping.motors[0], Some(0));
     assert_eq!(vehicle.mapping.rudder, Some(1));
 }
@@ -142,7 +136,7 @@ fn test_vehicle_creation_with_bridge_failure() {
     let vehicle = RealFlightVehicle::new(config);
 
     // Should still create successfully despite bridge failures
-    assert_eq!(vehicle.estimated_state.position, Vec3::zeros());
+    assert_eq!(vehicle.estimated_state.position_m, Vec3::zeros());
 }
 
 #[test]
@@ -180,18 +174,9 @@ fn test_actuate_success() {
     vehicle.actuate(&command);
 
     // Verify state was updated
-    assert_eq!(
-        vehicle.estimated_state.position.x,
-        Length::new::<meter>(2.0)
-    );
-    assert_eq!(
-        vehicle.estimated_state.velocity.z,
-        Velocity::new::<meter_per_second>(-6.0)
-    );
-    assert_eq!(
-        vehicle.estimated_state.acceleration.x,
-        Acceleration::new::<meter_per_second_squared>(7.0)
-    );
+    assert_eq!(vehicle.estimated_state.position_m.x, 2.0);
+    assert_eq!(vehicle.estimated_state.velocity_mps.z, -6.0);
+    assert_eq!(vehicle.estimated_state.acceleration_mps2.x, 7.0);
     assert_eq!(vehicle.estimated_state.attitude.w, 1.0);
 }
 
@@ -217,12 +202,9 @@ fn test_estimate_state() {
     vehicle.actuate(&ActuatorCommand::default());
     let state = vehicle.estimate_state(Duration::from_millis(16));
 
-    assert_eq!(state.position.x, Length::new::<meter>(2.0));
-    assert_eq!(state.velocity.z, Velocity::new::<meter_per_second>(-6.0));
-    assert_eq!(
-        state.acceleration.x,
-        Acceleration::new::<meter_per_second_squared>(7.0)
-    );
+    assert_eq!(state.position_m.x, 2.0);
+    assert_eq!(state.velocity_mps.z, -6.0);
+    assert_eq!(state.acceleration_mps2.x, 7.0);
 }
 
 #[test]
@@ -285,7 +267,7 @@ fn exchanges_once_per_tick_and_estimates_from_the_previous_exchange() {
     assert_eq!(vehicle.bridge.exchanges.get(), 1 + TICKS);
     // Tick n stabilizes on the state from exchange n: priming's for tick 1, then each previous
     // tick's `actuate`.
-    let seen: Vec<f32> = telemetry.iter().map(|t| t.state.position.x.value).collect();
+    let seen: Vec<f32> = telemetry.iter().map(|t| t.state.position_m.x).collect();
     assert_eq!(seen, [1.0, 2.0, 3.0]);
 }
 
@@ -430,8 +412,8 @@ fn captured_frames_agree_across_fields() {
             state.heading
         );
 
-        let v = state.velocity;
-        let v_ned = Vec3::new(v.x.value, v.y.value, -v.z.value);
+        let v = state.velocity_mps;
+        let v_ned = Vec3::new(v.x, v.y, -v.z);
         let body = state.attitude.inverse() * v_ned;
         let expected = Vec3::from(frame.velocity_body);
         assert!(

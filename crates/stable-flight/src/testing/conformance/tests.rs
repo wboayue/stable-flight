@@ -74,13 +74,13 @@ fn reports_each_field_off_contract() {
     let cases: [(Scenario, Corrupt, &[&str]); 6] = [
         (
             CLIMBING,
-            |s| s.velocity.z = -s.velocity.z, // down-positive vertical velocity
-            &["velocity.z"],
+            |s| s.velocity_mps.z = -s.velocity_mps.z, // down-positive vertical velocity
+            &["velocity_mps.z"],
         ),
         (
             CLIMBING,
-            |s| s.acceleration.z = -s.acceleration.z, // down-positive vertical acceleration
-            &["acceleration.z"],
+            |s| s.acceleration_mps2.z = -s.acceleration_mps2.z, // down-positive vertical acceleration
+            &["acceleration_mps2.z"],
         ),
         (
             ROLL_RIGHT_30,
@@ -89,8 +89,8 @@ fn reports_each_field_off_contract() {
         ),
         (
             MOVING_NORTHEAST,
-            |s| s.position.swap_rows(0, 1), // ENU vs NEU
-            &["position.x", "position.y"],
+            |s| s.position_m.swap_rows(0, 1), // ENU vs NEU
+            &["position_m.x", "position_m.y"],
         ),
         (
             COMBINED_RATES,
@@ -99,8 +99,8 @@ fn reports_each_field_off_contract() {
         ),
         (
             LEVEL,
-            |s| s.position.z = -s.position.z, // altitude as NED down
-            &["position.z"],
+            |s| s.position_m.z = -s.position_m.z, // altitude as NED down
+            &["position_m.z"],
         ),
     ];
 
@@ -119,21 +119,9 @@ fn reports_each_field_off_contract() {
 fn reports_every_field_when_all_are_nan() {
     // All NaN: every field is reported, and CHECKED_FIELDS holds them all.
     let all_nan = VehicleState {
-        position: Vec3::new(
-            Length::new::<meter>(f32::NAN),
-            Length::new::<meter>(f32::NAN),
-            Length::new::<meter>(f32::NAN),
-        ),
-        velocity: Vec3::new(
-            Velocity::new::<meter_per_second>(f32::NAN),
-            Velocity::new::<meter_per_second>(f32::NAN),
-            Velocity::new::<meter_per_second>(f32::NAN),
-        ),
-        acceleration: Vec3::new(
-            Acceleration::new::<meter_per_second_squared>(f32::NAN),
-            Acceleration::new::<meter_per_second_squared>(f32::NAN),
-            Acceleration::new::<meter_per_second_squared>(f32::NAN),
-        ),
+        position_m: Vec3::new(f32::NAN, f32::NAN, f32::NAN),
+        velocity_mps: Vec3::new(f32::NAN, f32::NAN, f32::NAN),
+        acceleration_mps2: Vec3::new(f32::NAN, f32::NAN, f32::NAN),
         attitude: UnitQuaternion::new_unchecked(Quaternion::new(
             f32::NAN,
             f32::NAN,

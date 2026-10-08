@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   waypoint script (`--script`) and records every raw `SimulatorState` and the
   channels sent to CSV, for checking frame conversions.
 
+### Changed
+
+- **Breaking:** `RealFlightVehicle` fills the renamed plain-`f32` `VehicleState` fields
+  (`position_m`, `velocity_mps`, `acceleration_mps2`); the `uom` dependency is removed
+  ([#141](https://github.com/wboayue/stable-flight/issues/141)).
+
 ### Fixed
 
 - `RealFlightVehicle` meets the `VehicleState` frame contract, per a live capture
