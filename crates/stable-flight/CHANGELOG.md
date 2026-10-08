@@ -92,6 +92,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-positive or non-finite `thrust_curve_exponent`, under which zero throttle became full
   thrust.
 
+- `Configurable` trait (`type Config`, `config()`, `set_config()`): read a component's config,
+  or replace it between ticks with validation (an invalid config is rejected and the current
+  one kept); runtime state is kept. Implemented by `CopterGuidance` and `CopterStabilizer`.
+  `FlightLoop::guidance()`/`stabilizer()` read them and `set_guidance_config`/
+  `set_stabilizer_config` retune a running loop
+  ([#146](https://github.com/wboayue/stable-flight/issues/146)).
+
 ### Changed
 
 - **Breaking:** the remaining public physical quantities carry unit suffixes

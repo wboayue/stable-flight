@@ -1,14 +1,17 @@
 use super::*;
 
+/// The period of the single-period tests.
+const PERIOD: f32 = 0.02;
+
 /// (period, dts, expected `(tick, step)` runs)
 type Case = (f32, Vec<f32>, &'static [(usize, f32)]);
 
 /// Runs `dts` through a divider that always runs when due; returns `(tick, step)` per run.
 fn runs(period: f32, dts: &[f32]) -> Vec<(usize, f32)> {
-    let mut divider = RateDivider::new(period);
+    let mut divider = RateDivider::default();
     let mut runs = Vec::new();
     for (tick, &dt) in dts.iter().enumerate() {
-        if let Some(step) = divider.due(dt) {
+        if let Some(step) = divider.due(dt, period) {
             divider.ran();
             runs.push((tick, step));
         }
@@ -68,30 +71,46 @@ fn runs_on_the_tick_nearest_each_period_over_the_elapsed_time() {
 
 #[test]
 fn a_skipped_run_stays_due_and_steps_over_the_combined_time() {
-    let mut divider = RateDivider::new(0.02);
-    assert_eq!(divider.due(0.004), Some(0.004));
+    let mut divider = RateDivider::default();
+    assert_eq!(divider.due(0.004, PERIOD), Some(0.004));
     divider.ran();
     for _ in 0..4 {
-        assert_eq!(divider.due(0.004), None);
+        assert_eq!(divider.due(0.004, PERIOD), None);
     }
     // Due on tick 5, but the loop doesn't run (e.g. a NaN estimate).
-    assert!(divider.due(0.004).is_some());
-    let retry = divider.due(0.004).expect("still due");
+    assert!(divider.due(0.004, PERIOD).is_some());
+    let retry = divider.due(0.004, PERIOD).expect("still due");
     approx::assert_relative_eq!(retry, 0.024, epsilon = 1e-6);
 }
 
 #[test]
 fn a_skipped_first_run_retries_over_one_tick() {
-    let mut divider = RateDivider::new(0.02);
-    assert_eq!(divider.due(0.004), Some(0.004));
-    assert_eq!(divider.due(0.004), Some(0.004));
+    let mut divider = RateDivider::default();
+    assert_eq!(divider.due(0.004, PERIOD), Some(0.004));
+    assert_eq!(divider.due(0.004, PERIOD), Some(0.004));
 }
 
 #[test]
 fn reset_makes_the_loop_due_on_the_next_tick() {
-    let mut divider = RateDivider::new(0.02);
-    divider.due(0.004);
+    let mut divider = RateDivider::default();
+    divider.due(0.004, PERIOD);
     divider.ran();
     divider.reset();
-    assert_eq!(divider.due(0.004), Some(0.004));
+    assert_eq!(divider.due(0.004, PERIOD), Some(0.004));
+}
+
+/// A period change applies on the next tick and keeps the elapsed time.
+#[test]
+fn period_change_applies_on_the_next_tick() {
+    let mut divider = RateDivider::default();
+    assert_eq!(divider.due(0.004, PERIOD), Some(0.004));
+    divider.ran();
+    for _ in 0..2 {
+        assert_eq!(divider.due(0.004, PERIOD), None);
+    }
+    // 12 ms elapsed: due at once under a 10 ms period.
+    let step = divider
+        .due(0.004, 0.01)
+        .expect("due under the shorter period");
+    approx::assert_relative_eq!(step, 0.012, epsilon = 1e-6);
 }

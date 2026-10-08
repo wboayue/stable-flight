@@ -728,3 +728,65 @@ fn rejects_an_invalid_lateral_loop_naming_it() {
     config.lateral.max_integral = -1.0;
     assert_new_panics(config, "lateral.max_integral");
 }
+
+/// An invalid config is rejected and the current one kept.
+#[test]
+fn set_config_rejects_an_invalid_config_and_keeps_the_current_one() {
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+    let current = *guidance.config();
+    let mut bad = [current; 4];
+    bad[0].altitude.hover_thrust = 1.5;
+    bad[1].lateral.max_integral = f32::NAN;
+    bad[2].navigation_period_s = -0.01;
+    bad[3].max_tilt = 0.0;
+    for config in bad {
+        assert!(guidance.set_config(config).is_err(), "{config:?}");
+        assert_eq!(*guidance.config(), current);
+    }
+}
+
+/// A new `navigation_period_s` applies on the next tick: the lateral loop, holding its tilt
+/// under the 20 ms default, reruns at once when the period drops to every tick.
+#[test]
+fn set_config_applies_a_new_navigation_period_on_the_next_tick() {
+    let command = Command::Waypoint(near_waypoint());
+    let moving = |vx: f32| VehicleState {
+        velocity_mps: Vec3::new(vx, 0.0, 0.0),
+        ..Default::default()
+    };
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+    guidance.prime(&moving(0.0));
+
+    let first = attitude(guidance.guide(0.004, &command, &moving(0.0)));
+    let held = attitude(guidance.guide(0.004, &command, &moving(1.0)));
+    assert_eq!((held.roll, held.pitch), (first.roll, first.pitch));
+
+    let mut every_tick = *guidance.config();
+    every_tick.navigation_period_s = 0.0;
+    guidance.set_config(every_tick).expect("valid config");
+    let rerun = attitude(guidance.guide(0.004, &command, &moving(2.0)));
+    assert_ne!(rerun.pitch, first.pitch);
+}
+
+/// Lowering `max_tilt` re-caps the held waypoint tilt at once, not at the lateral loop's next
+/// run.
+#[test]
+fn lowering_max_tilt_recaps_the_held_tilt_on_the_next_tick() {
+    let far = Command::Waypoint(WaypointCommand {
+        position_m: Vec2::new(1000.0, 0.0),
+        altitude_m: 10.0,
+        ..Default::default()
+    });
+    let state = VehicleState::default();
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default()); // 20 ms period
+    guidance.prime(&state);
+    let full = attitude(guidance.guide(0.004, &far, &state));
+    approx::assert_relative_eq!(full.pitch.abs(), DEFAULT_MAX_TILT, epsilon = 1e-6);
+
+    let mut lower = *guidance.config();
+    lower.max_tilt = 0.3;
+    guidance.set_config(lower).expect("valid config");
+    let held = attitude(guidance.guide(0.004, &far, &state)); // lateral loop not due yet
+
+    approx::assert_relative_eq!(Vec2::new(held.roll, held.pitch).norm(), 0.3, epsilon = 1e-6);
+}

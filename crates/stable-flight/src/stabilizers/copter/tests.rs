@@ -457,3 +457,44 @@ fn validate_reports_the_loop_of_a_controller_error() {
         );
     }
 }
+
+/// An invalid config is rejected and the current one kept.
+#[test]
+fn set_config_rejects_an_invalid_config_and_keeps_the_current_one() {
+    let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+    let current = *stabilizer.config();
+    let mut bad = [current; 3];
+    bad[0].body_rate.max_integral = -1.0;
+    bad[1].full_scale_rates_radps.x = f32::NAN;
+    bad[2].thrust_curve_exponent = 0.0;
+    for config in bad {
+        assert!(stabilizer.set_config(config).is_err(), "{config:?}");
+        assert_eq!(*stabilizer.config(), current);
+    }
+}
+
+/// A new config applies on the next tick and keeps controller state: the output matches a
+/// body-rate controller that saw the old config, then the new one.
+#[test]
+fn set_config_applies_next_tick_and_keeps_controller_state() {
+    let setpoint = Setpoint::Rate(RateSetpoint {
+        roll_rate: 0.1,
+        ..Default::default()
+    });
+    let state = VehicleState::default();
+    let old = CopterStabilizerConfig::default();
+    let desired = Vec3::new(0.1 * old.full_scale_rates_radps.x, 0.0, 0.0);
+    let mut stabilizer = CopterStabilizer::new(old);
+    let mut reference = BodyRateController::default();
+
+    stabilizer.stabilize(0.004, &setpoint, &state);
+    reference.control(&old.body_rate, 0.004, desired, Vec3::zeros());
+
+    let mut new = old;
+    new.body_rate.gains.i = 5.0;
+    stabilizer.set_config(new).expect("valid config");
+    let output = stabilizer.stabilize(0.004, &setpoint, &state);
+
+    let expected = reference.control(&new.body_rate, 0.004, desired, Vec3::zeros());
+    assert_eq!(output.moments, expected);
+}

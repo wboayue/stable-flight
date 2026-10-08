@@ -131,7 +131,7 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 | `TelemetryPublisher` | `(A, B)` fan-out; `testing::RecordingTelemetry<N>` (`testing` feature) | core |
 | `TelemetryPublisher` | `MavlinkPublisher`                                                 | sitl  |
 
-`CopterGuidance` (outer loop: waypoints → attitude setpoint, heading hold) uses the `altitude` and `lateral` PID controllers; `CopterStabilizer` (inner loop) uses `attitude`, `yaw`, and `body_rate`. All live in the core `controllers` module, with `Gains`. `Setpoint` is `Attitude(AttitudeSetpoint)` or `Rate(RateSetpoint)`.
+`CopterGuidance` (outer loop: waypoints → attitude setpoint, heading hold) uses the `altitude` and `lateral` PID controllers; `CopterStabilizer` (inner loop) uses `attitude`, `yaw`, and `body_rate`. All live in the core `controllers` module, with `Gains`. Controllers hold only state; each composite owns one config and implements the opt-in `Configurable` trait (validated `set_config`), which `FlightLoop::set_guidance_config`/`set_stabilizer_config` reach between ticks (rules: `architecture.md#config-ownership`). `Setpoint` is `Attitude(AttitudeSetpoint)` or `Rate(RateSetpoint)`.
 
 `ScriptCommander::new(path) -> Result<Self, ScriptError>` (sitl) loads a CSV waypoint file
 (`x,y,altitude,cruise_speed`) from `flights/` into the core `WaypointFollower` (see its rustdoc). It is geometry-agnostic — the figure-eight shape lives in

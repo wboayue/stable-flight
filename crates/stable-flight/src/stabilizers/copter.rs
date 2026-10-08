@@ -32,7 +32,9 @@
 
 use crate::{Vec2, Vec3};
 
-use crate::{AttitudeSetpoint, ControlOutput, RateSetpoint, Setpoint, Stabilizer, VehicleState};
+use crate::{
+    AttitudeSetpoint, Configurable, ControlOutput, RateSetpoint, Setpoint, Stabilizer, VehicleState,
+};
 
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_positive};
@@ -155,6 +157,21 @@ impl CopterStabilizer {
             attitude: AttitudeController::default(),
             yaw: YawController::default(),
         }
+    }
+}
+
+impl Configurable for CopterStabilizer {
+    type Config = CopterStabilizerConfig;
+
+    fn config(&self) -> &CopterStabilizerConfig {
+        &self.config
+    }
+
+    /// Validates with [`CopterStabilizerConfig::validate`].
+    fn set_config(&mut self, config: CopterStabilizerConfig) -> Result<(), InvalidConfig> {
+        config.validate()?;
+        self.config = config;
+        Ok(())
     }
 }
 
