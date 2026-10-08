@@ -4,43 +4,41 @@ use nalgebra::UnitQuaternion;
 use super::*;
 use std::f32::consts::PI;
 
-// Helper function to create a BasicController with default gains
+// Builds a CopterStabilizer with non-default gains on every loop.
 fn setup_controller() -> CopterStabilizer {
-    let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
-        gains: Gains {
-            p: 1.0,
-            i: 0.1,
-            d: 0.05,
-        },
-        yaw_gains: Gains {
-            p: 1.0,
-            i: 0.1,
-            d: 0.05,
-        },
-        max_integral: 100.0,
-    });
-
-    let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
-        gains: Gains {
-            p: 2.0,
-            i: 0.2,
-            d: 0.1,
-        },
-        max_integral: 100.0,
-        max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0), // 45° for roll and pitch
-        max_rate_radps: Vec2::new(3.0, 3.0),           // Max roll, pitch, yaw rates in rad/s
-    });
-
     let config = CopterStabilizerConfig {
-        rates_controller,
-        attitude_controller,
-        yaw_gains: Gains {
-            p: 1.2,
-            i: 0.12,
-            d: 0.06,
+        body_rate: BodyRateControllerConfig {
+            gains: Gains {
+                p: 1.0,
+                i: 0.1,
+                d: 0.05,
+            },
+            yaw_gains: Gains {
+                p: 1.0,
+                i: 0.1,
+                d: 0.05,
+            },
+            max_integral: 100.0,
         },
-        thrust_curve_exponent: 2.0,
-        //        max_rates: Vec3::new(1.0, 1.0, 1.0), // Max roll, pitch, yaw rates
+        attitude: AttitudeControllerConfig {
+            gains: Gains {
+                p: 2.0,
+                i: 0.2,
+                d: 0.1,
+            },
+            max_integral: 100.0,
+            max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0), // 45° for roll and pitch
+            max_rate_radps: Vec2::new(3.0, 3.0),           // Max roll, pitch rates in rad/s
+        },
+        yaw: YawControllerConfig {
+            gains: Gains {
+                p: 1.2,
+                i: 0.12,
+                d: 0.06,
+            },
+            ..CopterStabilizerConfig::default().yaw
+        },
+        ..Default::default()
     };
     CopterStabilizer::new(config)
 }
