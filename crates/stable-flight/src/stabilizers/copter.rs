@@ -50,18 +50,16 @@ pub struct CopterStabilizerConfig {
     pub body_rate: BodyRateControllerConfig,
     /// Roll/pitch attitude loop ([`Setpoint::Attitude`] only).
     pub attitude: AttitudeControllerConfig,
-    /// Heading-hold loop ([`Setpoint::Attitude`] only). Its `max_rate_radps` caps the yaw rate
-    /// the heading loop requests; it is independent of `max_rates_radps.z`.
+    /// Heading-hold loop ([`Setpoint::Attitude`] only).
     pub yaw: YawControllerConfig,
     /// Body rates (roll, pitch, yaw) in rad/s that a full-scale [`RateSetpoint`] maps to.
-    pub max_rates_radps: Vec3,
+    pub full_scale_rates_radps: Vec3,
     /// Exponent of the thrust curve applied to the linear thrust setpoint.
     pub thrust_curve_exponent: f32,
 }
 
 impl Default for CopterStabilizerConfig {
-    /// Default controller configs, with heading-hold gains P 2.5, I 0, D 0.06, full-scale rates
-    /// of 3 rad/s per axis, and a quadratic thrust curve.
+    /// Untuned starting values; airframes override them with flight-checked sets.
     fn default() -> Self {
         CopterStabilizerConfig {
             body_rate: BodyRateControllerConfig::default(),
@@ -72,10 +70,9 @@ impl Default for CopterStabilizerConfig {
                     i: 0.0,
                     d: 0.06,
                 },
-                max_integral: 100.0,
-                max_rate_radps: 2.0,
+                ..YawControllerConfig::default()
             },
-            max_rates_radps: Vec3::new(3.0, 3.0, 3.0),
+            full_scale_rates_radps: Vec3::new(3.0, 3.0, 3.0),
             thrust_curve_exponent: 2.0,
         }
     }
@@ -105,7 +102,7 @@ pub struct CopterStabilizer {
     pub(crate) yaw_controller: YawController,
 
     /// Maximum angular rates (roll, pitch, yaw) in rad/s that a full-scale rate setpoint maps to.
-    max_rates_radps: Vec3,
+    full_scale_rates_radps: Vec3,
 
     thrust_curve_exponent: f32,
 }
@@ -125,7 +122,7 @@ impl CopterStabilizer {
             rates_controller: BodyRateController::with_config(&config.body_rate),
             attitude_controller: AttitudeController::with_config(&config.attitude),
             yaw_controller: YawController::with_config(&config.yaw),
-            max_rates_radps: config.max_rates_radps,
+            full_scale_rates_radps: config.full_scale_rates_radps,
             thrust_curve_exponent: config.thrust_curve_exponent,
         }
     }
@@ -236,7 +233,7 @@ impl CopterStabilizer {
             saturate_unit(setpoint.pitch_rate),
             saturate_unit(setpoint.yaw_rate),
         )
-        .component_mul(&self.max_rates_radps);
+        .component_mul(&self.full_scale_rates_radps);
 
         let current_rates = Vec3::new(
             estimated_state.angular_velocity_radps.x,

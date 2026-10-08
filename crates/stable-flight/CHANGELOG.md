@@ -109,9 +109,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   controllers ([#144](https://github.com/wboayue/stable-flight/issues/144)).
   `rates_controller: BodyRateController` → `body_rate: BodyRateControllerConfig`,
   `attitude_controller: AttitudeController` → `attitude: AttitudeControllerConfig`, and
-  `yaw_gains: Gains` → `yaw: YawControllerConfig`. The heading loop's `max_integral` and
-  `max_rate_radps` and the new `max_rates_radps` (full-scale rate setpoint) were hard-coded;
-  defaults are unchanged. `BodyRateControllerConfig` and `YawControllerConfig` derive `Copy`.
+  `yaw_gains: Gains` → `yaw: YawControllerConfig`. Values hard-coded in
+  `CopterStabilizer::new` are now settable: the heading loop's `max_integral` and
+  `max_rate_radps`, and `full_scale_rates_radps` (body rates a full-scale `RateSetpoint` maps
+  to). Defaults are unchanged. `BodyRateControllerConfig` and `YawControllerConfig` derive `Copy`.
 - **Breaking:** `BodyRateController`'s `integral_term` and `last_error` are private (controller
   state, not configuration).
 - **Breaking:** `VehicleState` translational fields are plain SI `f32` vectors with

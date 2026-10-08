@@ -4,7 +4,7 @@ use nalgebra::UnitQuaternion;
 use super::*;
 use std::f32::consts::PI;
 
-// Helper function to create a BasicController with default gains
+// Builds a CopterStabilizer with non-default gains on every loop.
 fn setup_controller() -> CopterStabilizer {
     let config = CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
