@@ -209,8 +209,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Rate-mode NaN rate commands mean "hold zero rate" (per-axis saturation);
     `clamp` let NaN through to zero every moment.
   - `AttitudeController::with_config` and `YawController::with_config` reject a
-    negative or non-finite `max_integral`/`max_rate`, which would otherwise make a
-    per-tick `clamp` panic.
+    negative or non-finite `max_integral`/`max_rate`, and
+    `BodyRateController::with_config` a negative or non-finite `max_integral`,
+    which would otherwise make a per-tick `clamp` panic.
 
   Both controllers skip the derivative on the first finite tick after a
   non-finite one.
