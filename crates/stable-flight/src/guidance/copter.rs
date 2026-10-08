@@ -126,7 +126,7 @@ pub struct CopterGuidance {
     /// Paces the lateral loop.
     lateral_rate: RateDivider,
     /// The lateral loop's last roll/pitch, held between its runs.
-    tilt: Vec2<f32>,
+    tilt: Vec2,
     /// Cap on the waypoint tilt magnitude; see [`CopterGuidanceConfig::max_tilt`].
     max_tilt: f32,
 }
@@ -277,7 +277,7 @@ impl CopterGuidance {
         dt: f32,
         waypoint_command: &WaypointCommand,
         estimated_state: &VehicleState,
-    ) -> Vec2<f32> {
+    ) -> Vec2 {
         let Some(step) = self.lateral_rate.due(dt) else {
             return self.tilt;
         };

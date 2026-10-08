@@ -65,10 +65,10 @@ pub use nalgebra;
 /// ```
 /// use stable_flight::Vec2;
 ///
-/// let tilt: Vec2 = Vec2::new(0.3, -0.1);
+/// let tilt = Vec2::new(0.3, -0.1);
 /// assert_eq!(tilt.component_mul(&Vec2::new(2.0, 2.0)), Vec2::new(0.6, -0.2));
 /// ```
-pub type Vec2<T = f32> = nalgebra::Vector2<T>;
+pub type Vec2 = nalgebra::Vector2<f32>;
 
 /// 3D vector used throughout the pipeline (state vectors, moments, rates). Element-wise
 /// products are `component_mul`; `*` between two vectors is a matrix product.
@@ -78,11 +78,10 @@ pub type Vec2<T = f32> = nalgebra::Vector2<T>;
 /// ```
 /// use stable_flight::Vec3;
 ///
-/// // Annotate standalone literals: the alias default doesn't steer inference (they'd be f64).
-/// let rates: Vec3 = Vec3::new(3.0, 4.0, 0.0);
+/// let rates = Vec3::new(3.0, 4.0, 0.0);
 /// assert_eq!(rates.norm(), 5.0);
 /// ```
-pub type Vec3<T = f32> = nalgebra::Vector3<T>;
+pub type Vec3 = nalgebra::Vector3<f32>;
 
 /// Standard gravity, in m/s².
 pub const GRAVITY: f32 = 9.806_65;
@@ -430,14 +429,14 @@ pub struct WaypointCommand {
     ///
     /// The coordinate system and units depend on the flight system implementation
     /// (typically meters in world coordinates).
-    pub position: Vec2<f32>,
+    pub position: Vec2,
 
     /// Optional desired velocity vector at the waypoint, in meters per second.
     ///
     /// When provided, the aircraft will attempt to arrive at the position with this
     /// velocity. This is useful for creating smooth paths through multiple waypoints.
     /// If `None`, the flight system may choose a default velocity or ignore velocity constraints.
-    pub velocity: Option<Vec2<f32>>,
+    pub velocity: Option<Vec2>,
 
     /// Target altitude in meters.
     ///
@@ -485,7 +484,7 @@ pub struct ControlOutput {
     /// Control moments in roll (x), pitch (y), and yaw (z) axes.
     /// Values are typically normalized between -1.0 and 1.0, where the magnitude
     /// represents the proportion of maximum control authority in each axis.
-    pub moments: Vec3<f32>,
+    pub moments: Vec3,
 }
 
 impl ControlOutput {
@@ -499,7 +498,7 @@ impl ControlOutput {
     /// # Returns
     ///
     /// A new `ControlOutput` instance with the specified parameters.
-    pub fn new(thrust: f32, moments: Vec3<f32>) -> ControlOutput {
+    pub fn new(thrust: f32, moments: Vec3) -> ControlOutput {
         ControlOutput { thrust, moments }
     }
 }
@@ -556,7 +555,7 @@ pub struct VehicleState {
     pub attitude: UnitQuaternion<f32>,
 
     /// Body angular velocity in roll (x), pitch (y), and yaw (z), in radians per second.
-    pub angular_velocity: Vec3<f32>,
+    pub angular_velocity: Vec3,
 
     /// Current roll angle in radians, right wing down positive.
     pub roll: f32,

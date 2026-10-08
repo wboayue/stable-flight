@@ -77,7 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#96](https://github.com/wboayue/stable-flight/issues/96)).
 - `GRAVITY` (standard gravity, 9.80665 m/s²), used by the altitude and lateral
   controllers (they had their own 9.81) and available to backends.
-- `Vec2<T = f32>` and `Vec3<T = f32>` aliases for nalgebra's `Vector2`/`Vector3`,
+- `Vec2` and `Vec3` aliases for nalgebra's `Vector2<f32>`/`Vector3<f32>`,
   and a `stable_flight::nalgebra` re-export of the version the public types use.
 - `euler_angles(&UnitQuaternion<f32>) -> (roll, pitch, yaw)`: the frame
   contract's Euler angles. Prefer it to nalgebra's `UnitQuaternion::euler_angles`,

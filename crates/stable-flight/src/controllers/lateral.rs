@@ -14,7 +14,7 @@ pub struct LateralControllerConfig {
 
     /// Maximum angular rates in radians/second for roll (x) and pitch (y).
     /// Limits the output rates sent to the rate controller.
-    pub max_rate: Vec2<f32>,
+    pub max_rate: Vec2,
 }
 
 impl Default for LateralControllerConfig {
@@ -36,7 +36,7 @@ impl Default for LateralControllerConfig {
 
 pub struct LateralController {
     config: LateralControllerConfig,
-    integrated_error: Vec2<f32>, // Accumulated error (roll, pitch)
+    integrated_error: Vec2, // Accumulated error (roll, pitch)
     max_integral: f32,
 }
 
@@ -134,10 +134,10 @@ impl LateralController {
     pub fn control(
         &mut self,
         dt: f32,
-        desired_position: Vec2<f32>,
-        estimated_position: Vec2<f32>,
-        estimated_velocity: Vec2<f32>,
-    ) -> Vec2<f32> {
+        desired_position: Vec2,
+        estimated_position: Vec2,
+        estimated_velocity: Vec2,
+    ) -> Vec2 {
         let gains = &self.config.gains;
 
         let error = desired_position - estimated_position;

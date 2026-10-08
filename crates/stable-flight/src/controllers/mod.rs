@@ -23,7 +23,7 @@ pub struct Gains {
 }
 
 // alpha 0.1 is a good starting point for most applications
-pub fn low_pass_filter_vec3(prev: Vec3<f32>, new: Vec3<f32>, alpha: f32) -> Vec3<f32> {
+pub fn low_pass_filter_vec3(prev: Vec3, new: Vec3, alpha: f32) -> Vec3 {
     Vec3::new(
         alpha * new.x + (1.0 - alpha) * prev.x,
         alpha * new.y + (1.0 - alpha) * prev.y,

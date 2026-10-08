@@ -15,7 +15,7 @@ pub struct AttitudeControllerConfig {
 
     /// Maximum angles in radians for roll (x) and pitch (y) (e.g., π/4 = 45°).
     /// Limits the vehicle's tilt in each axis.
-    pub max_angles: Vec2<f32>,
+    pub max_angles: Vec2,
 
     /// Maximum absolute value of the integral term.
     /// Prevents integral windup by limiting error accumulation.
@@ -23,7 +23,7 @@ pub struct AttitudeControllerConfig {
 
     /// Maximum angular rates in radians/second for roll (x) and pitch (y).
     /// Limits the output rates sent to the rate controller.
-    pub max_rate: Vec2<f32>,
+    pub max_rate: Vec2,
 }
 
 impl Default for AttitudeControllerConfig {
@@ -47,14 +47,14 @@ impl Default for AttitudeControllerConfig {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AttitudeController {
     gains: Gains,
-    integral_term: Vec2<f32>, // Accumulated error (roll, pitch)
+    integral_term: Vec2, // Accumulated error (roll, pitch)
     max_integral: f32,
-    last_error: Vec2<f32>, // Previous error for derivative calculation
+    last_error: Vec2, // Previous error for derivative calculation
     /// Set after a non-finite tick: the next finite tick skips the derivative term, since
     /// `last_error` predates the gap.
     resync_derivative: bool,
-    max_angles: Vec2<f32>, // Max angles in radians (roll, pitch)
-    max_rate: Vec2<f32>,   // Max angular rates in rad/s (roll, pitch)
+    max_angles: Vec2, // Max angles in radians (roll, pitch)
+    max_rate: Vec2,   // Max angular rates in rad/s (roll, pitch)
 }
 
 impl Default for AttitudeController {
@@ -165,12 +165,7 @@ impl AttitudeController {
     /// let angular_rates = controller.control(dt, desired_angles, estimated_angles);
     /// assert!(angular_rates.x > 0.0 && angular_rates.y < 0.0);
     /// ```
-    pub fn control(
-        &mut self,
-        dt: f32,
-        desired_angles: Vec2<f32>,
-        estimated_angles: Vec2<f32>,
-    ) -> Vec2<f32> {
+    pub fn control(&mut self, dt: f32, desired_angles: Vec2, estimated_angles: Vec2) -> Vec2 {
         assert!(dt > 0.0, "Time step must be positive");
 
         // Saturate normalized inputs, then scale to angle setpoints in radians. Outer loops

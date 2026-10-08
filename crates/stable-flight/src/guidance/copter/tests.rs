@@ -516,7 +516,7 @@ fn reference_loops() -> (LateralController, AltitudeController) {
     )
 }
 
-fn reference_tilt(lateral: &mut LateralController, step: f32, state: &VehicleState) -> Vec2<f32> {
+fn reference_tilt(lateral: &mut LateralController, step: f32, state: &VehicleState) -> Vec2 {
     let target = near_waypoint().position;
     lateral.control(
         step,

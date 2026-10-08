@@ -69,13 +69,13 @@ pub struct BodyRateController {
     pub yaw_gains: Gains,
 
     /// Integrated error term for the PID controller.
-    pub integral_term: Vec3<f32>,
+    pub integral_term: Vec3,
 
     /// Maximum integral term for the PID controller.
     pub max_integral: f32,
 
     /// Last error value for computing the derivative term.
-    pub last_error: Vec3<f32>,
+    pub last_error: Vec3,
     /// Set after a non-finite tick: the next finite tick skips the derivative term, since
     /// `last_error` predates the gap.
     resync_derivative: bool,
@@ -175,12 +175,7 @@ impl BodyRateController {
     /// assert!(moments.x > 0.0 && moments.z > 0.0);
     /// assert!(moments.iter().all(|m| (-1.0..=1.0).contains(m)));
     /// ```
-    pub fn control(
-        &mut self,
-        dt: f32,
-        desired_rates: Vec3<f32>,
-        estimated_rates: Vec3<f32>,
-    ) -> Vec3<f32> {
+    pub fn control(&mut self, dt: f32, desired_rates: Vec3, estimated_rates: Vec3) -> Vec3 {
         // Input validation
         assert!(
             dt > 0.0 && dt.is_finite(),

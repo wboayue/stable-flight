@@ -51,7 +51,7 @@ pub struct CopterStabilizerConfig {
 
     pub thrust_curve_exponent: f32,
     // Maximum angular rates (roll, pitch, yaw) in rad/s.
-    //    pub max_rates: Vec3<f32>,
+    //    pub max_rates: Vec3,
 }
 
 impl Default for CopterStabilizerConfig {
@@ -94,7 +94,7 @@ pub struct CopterStabilizer {
     pub(crate) yaw_controller: YawController,
 
     /// Maximum angular rates (roll, pitch, yaw) in rad/s that a full-scale rate setpoint maps to.
-    pub(crate) max_rates: Vec3<f32>,
+    pub(crate) max_rates: Vec3,
 
     thrust_curve_exponent: f32,
 }
