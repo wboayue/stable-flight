@@ -131,6 +131,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   heading P 2.5/D 0.06) that `CopterGuidanceConfig`/`CopterStabilizerConfig` used to hard-code
   over untuned controller defaults. The composites' defaults, and so the copter's flight, are
   unchanged.
+- **Breaking:** `AltitudeController::control` takes an `AltitudeTarget` (altitude, climb rate)
+  and an `AltitudeEstimate` (altitude, climb rate, attitude) after `config` and `dt`, in place
+  of five positional arguments ([#179](https://github.com/wboayue/stable-flight/issues/179)).
+  Behavior is unchanged.
 - **Breaking:** the unused `AltitudeControllerConfig::max_rate_mps`
   ([#115](https://github.com/wboayue/stable-flight/issues/115)) and
   `LateralControllerConfig::max_rate_radps`
