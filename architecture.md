@@ -79,7 +79,7 @@ Nothing that runs every tick panics on its inputs. Guidance, stabilizers, contro
 
 * **Saturate** out-of-range normalized commands (roll/pitch/yaw and moments to [-1, 1], throttle and thrust to [0, 1]). A controller that produces a normalized command saturates its output; one that consumes it saturates its input too.
 * Treat a **NaN command as neutral** (level, hold zero rate, no thrust).
-* Return **neutral output on a non-finite error** (NaN/∞ setpoint or estimate), without letting it into integral or derivative state; the first finite tick afterwards has no derivative kick. Neutral is zero tilt/rate/moment, except altitude, whose neutral is **hover thrust** (0.5), not zero.
+* Return **neutral output on a non-finite error** (NaN/∞ setpoint or estimate), without letting it into integral or derivative state; the first finite tick afterwards has no derivative kick, and neither does the first tick after construction (altitude and lateral take D from measured velocity, so they never kick). Neutral is zero tilt/rate/moment, except altitude, whose neutral is **hover thrust** (0.5), not zero.
 * **Wrap angles** to [-π, π) instead of range-checking them.
 
 Only construction-time config validation and a positive, finite `dt` (guaranteed by the runners; one shared assert in every controller and composite) are asserted. The helpers live in the core's crate-private `math` module.

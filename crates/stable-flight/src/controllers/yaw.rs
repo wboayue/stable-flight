@@ -1,3 +1,4 @@
+use crate::controllers::derivative::DerivativeState;
 use crate::controllers::{Gains, InvalidConfig, check_limit};
 use crate::math::{assert_dt, clamp_symmetric, wrap_angle};
 
@@ -73,7 +74,8 @@ impl YawControllerConfig {
 /// between ticks without resetting the state.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct YawController {
-    previous_error: Option<f32>,
+    /// Previous error for the derivative term; empty on the first tick and after a gap.
+    derivative: DerivativeState<f32>,
     integrated_error: f32,
 }
 
@@ -136,22 +138,16 @@ impl YawController {
             // Hold (no yaw rate) rather than letting NaN into the integral and derivative
             // history, where it would stick; clamping passes NaN through. Forget the previous
             // error too, so the first valid tick after the gap has no derivative kick.
-            self.previous_error = None;
+            self.derivative.forget();
             return 0.0;
         }
-        let error_derivative = if let Some(previous_error) = self.previous_error {
-            (error - previous_error) / dt
-        } else {
-            0.0
-        };
+        let error_derivative = self.derivative.step(error, dt);
 
         self.integrated_error =
             clamp_symmetric(self.integrated_error + dt * error, config.max_integral);
 
         let yaw_rate =
             gains.p * error + gains.i * self.integrated_error + gains.d * error_derivative;
-
-        self.previous_error = Some(error);
 
         clamp_symmetric(yaw_rate, config.max_rate_radps)
     }
@@ -252,7 +248,7 @@ mod tests {
         assert_eq!(
             YawController::default(),
             YawController {
-                previous_error: None,
+                derivative: DerivativeState::default(),
                 integrated_error: 0.0,
             }
         );
