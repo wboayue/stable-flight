@@ -156,6 +156,36 @@ impl CopterStabilizer {
             yaw: YawController::default(),
         }
     }
+
+    /// The config the stabilizer flies.
+    pub fn config(&self) -> &CopterStabilizerConfig {
+        &self.config
+    }
+
+    /// Replaces the config if it is valid ([`CopterStabilizerConfig::validate`]); otherwise
+    /// keeps the current one and returns the error. Controller state (integrals, derivative
+    /// history) is kept, so call it between ticks to retune in flight.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+    ///
+    /// let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+    ///
+    /// let mut retuned = *stabilizer.config();
+    /// retuned.body_rate.gains.p = 0.2;
+    /// assert!(stabilizer.set_config(retuned).is_ok());
+    ///
+    /// retuned.body_rate.max_integral = -1.0;
+    /// assert!(stabilizer.set_config(retuned).is_err());
+    /// assert_eq!(stabilizer.config().body_rate.gains.p, 0.2); // unchanged
+    /// ```
+    pub fn set_config(&mut self, config: CopterStabilizerConfig) -> Result<(), InvalidConfig> {
+        config.validate()?;
+        self.config = config;
+        Ok(())
+    }
 }
 
 impl Stabilizer for CopterStabilizer {

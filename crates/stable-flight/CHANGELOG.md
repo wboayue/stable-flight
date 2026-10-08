@@ -92,6 +92,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-positive or non-finite `thrust_curve_exponent`, under which zero throttle became full
   thrust.
 
+- `CopterStabilizer::config`/`set_config` and `CopterGuidance::config`/`set_config`: read
+  the config, or replace it between ticks with validation (an invalid config is rejected and
+  the current one kept); controller state is kept. `FlightLoop::guidance`/`guidance_mut` and
+  `stabilizer`/`stabilizer_mut` reach them in a running loop
+  ([#146](https://github.com/wboayue/stable-flight/issues/146)).
+
 ### Changed
 
 - **Breaking:** the remaining public physical quantities carry unit suffixes

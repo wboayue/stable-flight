@@ -146,6 +146,66 @@ where
         &self.state
     }
 
+    /// The guidance.
+    pub fn guidance(&self) -> &G {
+        &self.guidance
+    }
+
+    /// The guidance, mutably: between ticks, e.g. to retune it with its config setter.
+    pub fn guidance_mut(&mut self) -> &mut G {
+        &mut self.guidance
+    }
+
+    /// The stabilizer.
+    pub fn stabilizer(&self) -> &S {
+        &self.stabilizer
+    }
+
+    /// The stabilizer, mutably: between ticks, e.g. to retune it with its config setter. The
+    /// change applies from the next [`step`](Self::step), with controller state kept.
+    ///
+    /// ```
+    /// # use std::time::Duration;
+    /// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+    /// # use stable_flight::mixers::QuadCopterMixer;
+    /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+    /// # use stable_flight::{Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, StateEstimator, VehicleState};
+    /// use stable_flight::FlightLoop;
+    ///
+    /// # struct Hover;
+    /// # impl Commander for Hover {
+    /// #     fn next_command(&mut self, _: f32, _: &VehicleState) -> Command {
+    /// #         Command::Attitude(AttitudeCommand::default())
+    /// #     }
+    /// # }
+    /// # struct StillAir;
+    /// # impl StateEstimator for StillAir {
+    /// #     fn estimate_state(&mut self, _: Duration) -> VehicleState { VehicleState::default() }
+    /// # }
+    /// # impl Actuator for StillAir {
+    /// #     fn actuate(&mut self, _: &ActuatorCommand) {}
+    /// # }
+    /// let mut flight_loop = FlightLoop::new(
+    ///     Hover,
+    ///     StillAir,
+    ///     CopterGuidance::new(CopterGuidanceConfig::default()),
+    ///     CopterStabilizer::new(CopterStabilizerConfig::default()),
+    ///     QuadCopterMixer::default(),
+    ///     (),
+    /// );
+    /// flight_loop.prime();
+    /// flight_loop.step(Duration::from_millis(4));
+    ///
+    /// // Between ticks: raise the rate loop's P gain. An invalid config is rejected.
+    /// let mut retuned = *flight_loop.stabilizer().config();
+    /// retuned.body_rate.gains.p = 0.2;
+    /// flight_loop.stabilizer_mut().set_config(retuned).expect("valid config");
+    /// flight_loop.step(Duration::from_millis(4));
+    /// ```
+    pub fn stabilizer_mut(&mut self) -> &mut S {
+        &mut self.stabilizer
+    }
+
     /// Splits the loop back into `(commander, vehicle, guidance, stabilizer, mixer, telemetry)`,
     /// e.g. to inspect test doubles after a run or to hand the vehicle to another runner.
     ///
