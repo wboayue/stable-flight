@@ -9,6 +9,10 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
+    # Batch minor and patch bumps (incl. Cargo.lock-only updates) into one PR; majors stay separate.
+    groups:
+      cargo:
+        update-types: ["minor", "patch"]
   - package-ecosystem: "cargo"
     directory: "/firmware/ark-fpv"
     schedule:
