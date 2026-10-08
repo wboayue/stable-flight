@@ -69,14 +69,7 @@ impl Default for CopterStabilizerConfig {
         CopterStabilizerConfig {
             body_rate: BodyRateControllerConfig::default(),
             attitude: AttitudeControllerConfig::default(),
-            yaw: YawControllerConfig {
-                gains: Gains {
-                    p: 2.5,
-                    i: 0.0,
-                    d: 0.06,
-                },
-                ..YawControllerConfig::default()
-            },
+            yaw: YawControllerConfig::default(),
             full_scale_rates_radps: Vec3::new(3.0, 3.0, 3.0),
             thrust_curve_exponent: 2.0,
         }

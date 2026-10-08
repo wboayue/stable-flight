@@ -12,24 +12,19 @@ pub struct LateralControllerConfig {
     /// Maximum absolute value of the integrated position error, in m·s, per axis.
     /// Prevents integral windup by limiting error accumulation.
     pub max_integral: f32,
-
-    /// Maximum roll (x) and pitch (y) rates in radians/second. Currently unused: the
-    /// controller outputs normalized tilt
-    /// ([#71](https://github.com/wboayue/stable-flight/issues/71)).
-    pub max_rate_radps: Vec2,
 }
 
 impl Default for LateralControllerConfig {
-    /// Untuned starting values; airframes override them with flight-checked sets.
     fn default() -> Self {
         Self {
+            // Position → tilt is a double integrator, so D sets the damping: ζ ≈ 0.8 with the
+            // stabilizer's 45° max tilt. Flight-checked on RealFlight's QuadCopterX (#108).
             gains: Gains {
-                p: 3.0,
-                i: 0.3,
-                d: 0.15,
+                p: 0.8,
+                i: 0.0,
+                d: 1.6,
             },
-            max_integral: 100.0,                 // Arbitrary limit
-            max_rate_radps: Vec2::new(2.0, 2.0), // 2 rad/s (~114°/s) for roll and pitch
+            max_integral: 100.0, // Arbitrary limit
         }
     }
 }
@@ -93,7 +88,7 @@ impl LateralController {
     /// let mut controller = LateralController::default();
     /// let dt = 0.004;
     /// let desired_position_m = Vec2::new(5.0, 2.0); // 5 m north, 2 m east
-    /// let estimated_position_m = Vec2::new(4.8, 1.9);
+    /// let estimated_position_m = Vec2::new(4.0, 1.0);
     /// let estimated_velocity_mps = Vec2::new(0.1, 0.05);
     ///
     /// // Target is ahead and to the right: roll right (+x), nose down (-y)
@@ -154,8 +149,9 @@ mod tests {
         for (target, expected) in cases {
             let mut controller = LateralController::default();
             let angles = controller.control(&config, 0.004, target, Vec2::zeros(), Vec2::zeros());
+            // Saturation divides by the length, so full tilt can land an ulp short of 1.
             assert!(
-                angles == expected,
+                (angles - expected).amax() < 1e-6,
                 "target {target:?} gave {angles:?}, expected {expected:?}"
             );
         }
@@ -222,7 +218,7 @@ mod tests {
 
         assert!(during == Vec2::zeros(), "NaN tick gave {during:?}");
         assert!(
-            after == Vec2::new(0.0, -1.0),
+            (after - Vec2::new(0.0, -1.0)).amax() < 1e-6,
             "valid far target after NaN gave {after:?}"
         );
     }

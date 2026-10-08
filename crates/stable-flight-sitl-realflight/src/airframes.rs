@@ -7,7 +7,9 @@
 use std::f32::consts::PI;
 
 use stable_flight::Vec2;
-use stable_flight::controllers::{AttitudeControllerConfig, BodyRateControllerConfig, Gains};
+use stable_flight::controllers::{
+    AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
+};
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
@@ -58,9 +60,12 @@ pub struct Airframe<G, S, M> {
 pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, QuadCopterMixer> {
     Airframe {
         guidance: CopterGuidanceConfig {
-            // Measured: a settled hover holds at mean motor 0.606 = 0.9 · 0.82², through the
-            // squared thrust curve and the mixer's thrust factor.
-            hover_thrust: 0.82,
+            altitude: AltitudeControllerConfig {
+                // Measured: a settled hover holds at mean motor 0.606 = 0.9 · 0.82², through
+                // the squared thrust curve and the mixer's thrust factor.
+                hover_thrust: 0.82,
+                ..CopterGuidanceConfig::default().altitude
+            },
             ..CopterGuidanceConfig::default()
         },
         stabilizer: CopterStabilizerConfig {
