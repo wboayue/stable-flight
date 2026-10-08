@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `commanders::RouteEnd` and `WaypointFollower::with_route_end`: loop the route (default) or
+  hold the last waypoint, with `WaypointFollower::is_complete` once it is reached ([#126](https://github.com/wboayue/stable-flight/issues/126)).
+- `WaypointFollower` fills a waypoint's empty `velocity_mps` with one along the leg that leads
+  to it at its `cruise_speed_mps`, so legs are flown at cruise speed instead of slowing at
+  every waypoint; the first and the held last waypoint get none ([#109](https://github.com/wboayue/stable-flight/issues/109)).
+- `controllers::LateralTarget` (position, feedforward velocity, speed limit) and
+  `LateralEstimate` (position, velocity) ([#109](https://github.com/wboayue/stable-flight/issues/109)).
 - `wrap_angle` wraps radians to [-π, π) (rounding can give +π; non-finite input gives
   NaN; `no_std`), exported at the crate root beside `euler_angles`
   ([#166](https://github.com/wboayue/stable-flight/issues/166)).
@@ -104,6 +111,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `LateralController` is a position → velocity → acceleration cascade:
+  `control(config, dt, LateralTarget, LateralEstimate)`, and `LateralControllerConfig` is
+  `{ position_p, velocity: Gains, max_integral }` (integral on velocity error). The defaults
+  (`position_p` 0.5, velocity P 1.26) match the previous position PD below the speed limit
+  ([#109](https://github.com/wboayue/stable-flight/issues/109)).
+- `CopterGuidance` waypoint flight honors `WaypointCommand::cruise_speed_mps` (desired speed
+  cap; zero, negative, or NaN means none) and feeds `velocity_mps` forward ([#109](https://github.com/wboayue/stable-flight/issues/109)).
+- **Breaking:** `CopterGuidance` waypoint flight holds the heading-hold target instead of
+  north, tilting relative to the vehicle's heading; rate flight keeps the target on the
+  vehicle's heading, so attitude or waypoint flight after it doesn't snap back to an old one;
+  leaving waypoint flight clears the altitude and lateral loops ([#70](https://github.com/wboayue/stable-flight/issues/70)).
+- `CopterStabilizer` clears its attitude and yaw loops during rate flight, so attitude
+  flight after it starts from fresh state ([#70](https://github.com/wboayue/stable-flight/issues/70)).
 - **Breaking:** `Command` is now a struct `{ arm, input }` (`#[non_exhaustive]`; build
   with `Command::new`, `armed`, or `disarmed`), and the old enum is `ControlInput`
   (`Attitude`/`Rate`/`Waypoint`). `arm` moved off `AttitudeCommand` and `RateCommand`, so

@@ -1,14 +1,15 @@
 //! Flies a scripted figure-eight in RealFlight using a [`ScriptCommander`].
 //!
 //! The commander replays the waypoints in a CSV script (default `flights/figure_eight.csv`,
-//! regenerate it with `cargo run --bin generate_figure_eight`), looping the
-//! path until interrupted.
+//! regenerate it with `cargo run --bin generate_figure_eight`) once and hovers on the last
+//! waypoint until interrupted; `--loop` flies the path again and again instead.
 //!
 //! The script path is the first argument (default `flights/figure_eight.csv`); the RealFlight
 //! host defaults to `10.211.55.3:8080` via `--host`.
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight
+//! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- --loop
 //! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/wide.csv --host 192.168.1.20:8080
 //! ```
 
@@ -16,6 +17,7 @@ use clap::Parser;
 use env_logger::Builder;
 
 use stable_flight::FlightLoop;
+use stable_flight::commanders::RouteEnd;
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight_sitl::commanders::ScriptCommander;
@@ -34,6 +36,10 @@ struct Args {
     /// RealFlight host to connect to (`host:port`).
     #[arg(long, default_value = "10.211.55.3:8080")]
     host: String,
+
+    /// Loop the path instead of holding on the last waypoint.
+    #[arg(long = "loop")]
+    looping: bool,
 }
 
 fn main() {
@@ -42,8 +48,15 @@ fn main() {
 
     let args = Args::parse();
 
-    // Replays and loops the waypoints from the CSV script.
-    let commander = ScriptCommander::new(&args.script).expect("failed to load flight script");
+    // Replays the waypoints from the CSV script, then holds the last or loops.
+    let route_end = if args.looping {
+        RouteEnd::Loop
+    } else {
+        RouteEnd::Hold
+    };
+    let commander = ScriptCommander::new(&args.script)
+        .expect("failed to load flight script")
+        .with_route_end(route_end);
 
     // QuadCopterX model: tuned gains, mixer, and motor-to-channel mapping.
     // Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX

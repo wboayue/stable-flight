@@ -53,7 +53,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 cargo build --workspace                         # or: just build
 cargo test --workspace --all-features           # or: just test
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight  # joystick + RealFlight (--host); or: just fly-manual
-cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight    # scripted figure-eight (script arg, --host); or: just fly-auto
+cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight    # scripted figure-eight (script arg, --host, --loop); or: just fly-auto
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight  # joystick flight + raw SimulatorState → CSV; or: just capture
 cargo run --example extreme_3d_commander        # joystick smoke test
 cargo run --example publish_telemetry           # MAVLink demo

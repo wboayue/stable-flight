@@ -110,3 +110,148 @@ fn works_with_static_slices_and_vecs() {
     check!(from_static.current_index() == 1);
     check!(from_vec.waypoints().len() == 2);
 }
+
+/// Steps the follower once from position `(x, y)` and returns the emitted waypoint.
+fn step_at<W: AsRef<[WaypointCommand]>>(
+    follower: &mut WaypointFollower<W>,
+    x: f32,
+    y: f32,
+) -> WaypointCommand {
+    let command = follower.next_command(0.1, &state_at(x, y));
+    assert2::assert!(command.arm);
+    assert2::assert!(let ControlInput::Waypoint(target) = command.input);
+    target
+}
+
+/// A waypoint at `(x, y)` flown at `cruise_speed_mps`.
+fn cruise(x: f32, y: f32, cruise_speed_mps: f32) -> WaypointCommand {
+    WaypointCommand {
+        cruise_speed_mps,
+        ..wp(x, y)
+    }
+}
+
+#[test]
+fn hold_stops_on_the_last_waypoint_and_completes() {
+    let mut follower = WaypointFollower::new([wp(0.0, 0.0), wp(10.0, 0.0), wp(20.0, 0.0)])
+        .expect("non-empty")
+        .with_route_end(RouteEnd::Hold);
+
+    // (vehicle x, expected target x after the step, complete after the step)
+    let steps = [
+        (0.0, 10.0, false),
+        (10.0, 20.0, false),
+        (5.0, 20.0, false), // short of the last: keep flying to it
+        (20.0, 20.0, true), // at the last: hold it, done
+        (0.0, 20.0, true),  // pushed off: still hold it, still done
+    ];
+    for (x, expected, complete) in steps {
+        assert_relative_eq!(step_at(&mut follower, x, 0.0).position_m.x, expected);
+        check!(follower.is_complete() == complete, "at x {x}");
+    }
+}
+
+#[test]
+fn loop_never_completes() {
+    let mut follower = WaypointFollower::new([wp(0.0, 0.0), wp(10.0, 0.0)]).expect("non-empty");
+    for x in [0.0, 10.0, 0.0, 10.0] {
+        step_at(&mut follower, x, 0.0);
+        check!(!follower.is_complete());
+    }
+    check!(follower.current_index() == 0);
+}
+
+#[test]
+fn single_waypoint_route_holds_or_loops_in_place() {
+    for route_end in [RouteEnd::Loop, RouteEnd::Hold] {
+        let mut follower = WaypointFollower::new([cruise(5.0, 5.0, 3.0)])
+            .expect("non-empty")
+            .with_route_end(route_end);
+        for _ in 0..3 {
+            let target = step_at(&mut follower, 5.0, 5.0);
+            check!(target.position_m == Vec2::new(5.0, 5.0));
+            check!(target.velocity_mps == None, "{route_end:?}");
+        }
+        check!(follower.is_complete() == (route_end == RouteEnd::Hold));
+    }
+}
+
+/// Each waypoint after the first carries a velocity along its leg at its cruise speed,
+/// except the one held at the end; a looping route's wrap leg gets one too.
+#[test]
+fn feeds_cruise_velocity_along_each_leg() {
+    let route = [
+        cruise(0.0, 0.0, 5.0),
+        cruise(10.0, 0.0, 7.0),
+        cruise(10.0, 10.0, 7.0),
+    ];
+    // (route end, vehicle position, expected (target, velocity))
+    let hold = [
+        (
+            (0.0, 0.0),
+            (Vec2::new(10.0, 0.0), Some(Vec2::new(7.0, 0.0))),
+        ),
+        ((10.0, 0.0), (Vec2::new(10.0, 10.0), None)), // the last: stop there
+    ];
+    let looping = [
+        (
+            (0.0, 0.0),
+            (Vec2::new(10.0, 0.0), Some(Vec2::new(7.0, 0.0))),
+        ),
+        (
+            (10.0, 0.0),
+            (Vec2::new(10.0, 10.0), Some(Vec2::new(0.0, 7.0))),
+        ),
+        // The wrap leg back to the first, at its 5 m/s.
+        (
+            (10.0, 10.0),
+            (
+                Vec2::zeros(),
+                Some(Vec2::new(-1.0, -1.0) * (5.0 / 2.0_f32.sqrt())),
+            ),
+        ),
+    ];
+    for (route_end, steps) in [(RouteEnd::Hold, &hold[..]), (RouteEnd::Loop, &looping[..])] {
+        let mut follower = WaypointFollower::new(route)
+            .expect("non-empty")
+            .with_route_end(route_end);
+        // The first waypoint, flown to from wherever the vehicle is: none.
+        check!(step_at(&mut follower, 50.0, 50.0).velocity_mps == None);
+        for &((x, y), (position, velocity)) in steps {
+            let target = step_at(&mut follower, x, y);
+            check!(target.position_m == position, "{route_end:?} at ({x}, {y})");
+            match (target.velocity_mps, velocity) {
+                (Some(got), Some(want)) => {
+                    assert!((got - want).amax() < 1e-5, "{got:?} vs {want:?}")
+                }
+                (got, want) => {
+                    check!(got == want, "{route_end:?} at ({x}, {y})");
+                }
+            }
+        }
+    }
+}
+
+/// A waypoint's own velocity wins; no positive cruise speed or a zero-length leg gives none.
+#[test]
+fn leg_velocity_defers_to_the_waypoint_and_needs_a_direction_and_speed() {
+    let own = WaypointCommand {
+        velocity_mps: Some(Vec2::new(1.0, 2.0)),
+        ..cruise(10.0, 0.0, 7.0)
+    };
+    // (second waypoint, expected velocity after advancing to it)
+    let cases = [
+        (own, Some(Vec2::new(1.0, 2.0))),
+        (cruise(10.0, 0.0, 0.0), None),
+        (cruise(10.0, 0.0, -2.0), None),
+        (cruise(10.0, 0.0, f32::NAN), None),
+        (cruise(0.0, 0.0, 7.0), None), // same place as the first: no direction
+    ];
+    for (second, expected) in cases {
+        let mut follower =
+            WaypointFollower::new([wp(0.0, 0.0), second, wp(50.0, 50.0)]).expect("non-empty");
+        let target = step_at(&mut follower, 0.0, 0.0);
+        check!(follower.current_index() == 1);
+        check!(target.velocity_mps == expected, "{second:?}");
+    }
+}

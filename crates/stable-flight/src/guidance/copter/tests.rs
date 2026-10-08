@@ -31,22 +31,26 @@ impl Stack {
     }
 }
 
+/// A stop at `position_m` with no speed cap, seen from the origin at rest.
+fn lateral_toward(position_m: Vec2) -> (LateralTarget, LateralEstimate) {
+    let target = LateralTarget {
+        position_m,
+        velocity_mps: Vec2::zeros(),
+        max_speed_mps: 0.0,
+    };
+    let estimate = LateralEstimate {
+        position_m: Vec2::zeros(),
+        velocity_mps: Vec2::zeros(),
+    };
+    (target, estimate)
+}
+
 #[test]
 fn lateral_loop_holds_level_at_the_target() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
-    let dt = 0.01;
-    let desired_position = Vec2::zeros();
-    let current_position = Vec2::zeros();
-    let current_velocity = Vec2::zeros();
-
+    let (target, estimate) = lateral_toward(Vec2::zeros());
     let config = guidance.config.lateral;
-    let output = guidance.lateral.control(
-        &config,
-        dt,
-        desired_position,
-        current_position,
-        current_velocity,
-    );
+    let output = guidance.lateral.control(&config, 0.01, target, estimate);
     assert_eq!(
         output,
         Vec2::zeros(),
@@ -57,21 +61,38 @@ fn lateral_loop_holds_level_at_the_target() {
 #[test]
 fn lateral_loop_tilts_toward_the_target() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
-    let dt = 0.01;
-    let desired_position = Vec2::new(1.0, 1.0);
-    let current_position = Vec2::zeros();
-    let current_velocity = Vec2::zeros();
-
+    let (target, estimate) = lateral_toward(Vec2::new(1.0, 1.0));
     let config = guidance.config.lateral;
-    let output = tilt_for_acceleration(guidance.lateral.control(
-        &config,
-        dt,
-        desired_position,
-        current_position,
-        current_velocity,
-    ));
+    let output = tilt_for_acceleration(
+        guidance.lateral.control(&config, 0.01, target, estimate),
+        0.0,
+    );
     assert!(output.x > 0.0, "Roll should tilt to correct y-position");
     assert!(output.y < 0.0, "Pitch should tilt to correct x-position");
+}
+
+/// The tilt toward an acceleration is taken relative to the heading: ahead is nose down,
+/// right is right roll.
+#[test]
+fn tilt_is_relative_to_the_heading() {
+    let tilt = libm::atanf(1.0 / crate::GRAVITY);
+    // (acceleration north/east, heading, expected (roll, pitch))
+    let cases = [
+        (Vec2::new(1.0, 0.0), 0.0, Vec2::new(0.0, -tilt)), // north, facing north: nose down
+        (Vec2::new(0.0, 1.0), 0.0, Vec2::new(tilt, 0.0)),  // east, facing north: right roll
+        (Vec2::new(1.0, 0.0), FRAC_PI_2, Vec2::new(-tilt, 0.0)), // north, facing east: left
+        (Vec2::new(0.0, 1.0), FRAC_PI_2, Vec2::new(0.0, -tilt)), // east, facing east: ahead
+        (Vec2::new(1.0, 0.0), PI, Vec2::new(0.0, tilt)),   // north, facing south: nose up
+        (Vec2::new(0.0, -1.0), -FRAC_PI_2, Vec2::new(0.0, -tilt)), // west, facing west
+        (Vec2::new(1.0, 0.0), f32::NAN, Vec2::zeros()),
+    ];
+    for (accel, heading, expected) in cases {
+        let output = tilt_for_acceleration(accel, heading);
+        assert!(
+            (output - expected).amax() < 1e-5,
+            "accel {accel:?} at heading {heading} gave {output:?}, expected {expected:?}"
+        );
+    }
 }
 
 /// Each command kind maps to the setpoint the stabilizer tracks.
@@ -140,13 +161,13 @@ fn commands_map_to_setpoints() {
             }),
         ),
         (
-            // At the waypoint, at rest, level: no tilt, north, hover thrust (the altitude
-            // loop feeds gravity forward).
+            // At the waypoint, at rest, level: no tilt, the primed heading, hover thrust (the
+            // altitude loop feeds gravity forward).
             ControlInput::Waypoint(WaypointCommand::default()),
             Setpoint::Attitude(AttitudeSetpoint {
                 roll_rad: 0.0,
                 pitch_rad: 0.0,
-                heading_rad: 0.0,
+                heading_rad: wrap_angle(0.7),
                 thrust: crate::controllers::DEFAULT_HOVER_THRUST,
             }),
         ),
@@ -159,11 +180,19 @@ fn commands_map_to_setpoints() {
     }
 }
 
-/// Pins today's mode-switch behaviour (#70). Waypoints hold
-/// north without touching the heading-hold target, so attitude mode resumes the target it
-/// had before the waypoint leg, not the vehicle's current heading.
+fn heading_of(setpoint: Setpoint) -> f32 {
+    match setpoint {
+        Setpoint::Attitude(attitude) => attitude.heading_rad,
+        Setpoint::Rate(_) => {
+            unreachable!("attitude and waypoint commands yield attitude setpoints")
+        }
+    }
+}
+
+/// A waypoint leg holds the heading-hold target instead of turning north, so attitude flight
+/// resumes the same heading after it (#70).
 #[test]
-fn heading_hold_target_survives_a_waypoint_leg() {
+fn waypoint_leg_holds_the_heading_hold_target() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     let state = VehicleState {
         heading_rad: 0.7,
@@ -176,12 +205,6 @@ fn heading_hold_target_survives_a_waypoint_leg() {
     });
     let centred = ControlInput::Attitude(AttitudeCommand::default());
     let waypoint = ControlInput::Waypoint(WaypointCommand::default());
-    let heading_of = |setpoint: Setpoint| match setpoint {
-        Setpoint::Attitude(attitude) => attitude.heading_rad,
-        Setpoint::Rate(_) => {
-            unreachable!("attitude and waypoint commands yield attitude setpoints")
-        }
-    };
 
     let mut before = 0.0;
     for _ in 0..10 {
@@ -189,7 +212,7 @@ fn heading_hold_target_survives_a_waypoint_leg() {
     }
     for _ in 0..10 {
         let during = heading_of(guidance.guide(0.004, &waypoint, &state));
-        assert!(during == 0.0);
+        assert!(during == before);
     }
     let after = heading_of(guidance.guide(0.004, &centred, &state));
 
@@ -199,6 +222,132 @@ fn heading_hold_target_survives_a_waypoint_leg() {
         0.7 + 10.0 * HEADING_SLEW_RATE * 0.004,
         epsilon = 1e-6
     );
+}
+
+/// After rate flight, attitude and waypoint flight hold the heading the vehicle has, not the
+/// one it had when rate flight began (#70). A NaN heading during rate flight keeps the last
+/// valid one.
+#[test]
+fn rate_flight_hands_over_the_current_heading() {
+    let rate = ControlInput::Rate(RateCommand {
+        yaw_rate: 1.0,
+        ..Default::default()
+    });
+    // (next command, heading at the end of rate flight, expected heading target)
+    let cases = [
+        (ControlInput::Attitude(AttitudeCommand::default()), 2.0, 2.0),
+        (ControlInput::Waypoint(WaypointCommand::default()), 2.0, 2.0),
+        (
+            ControlInput::Attitude(AttitudeCommand::default()),
+            4.0,
+            4.0 - 2.0 * PI,
+        ),
+        (
+            ControlInput::Attitude(AttitudeCommand::default()),
+            f32::NAN,
+            1.5,
+        ),
+    ];
+    for (next, last_heading, expected) in cases {
+        let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+        let heading = |heading_rad| VehicleState {
+            heading_rad,
+            ..Default::default()
+        };
+        guidance.prime(&heading(0.7));
+        guidance.guide(0.004, &rate, &heading(1.5));
+        guidance.guide(0.004, &rate, &heading(last_heading));
+
+        let target = heading_of(guidance.guide(0.004, &next, &heading(last_heading)));
+        approx::assert_relative_eq!(target, expected, epsilon = 1e-6);
+    }
+}
+
+/// Leaving waypoint flight clears the altitude and lateral loops, so the next leg carries no
+/// integral from the last one.
+#[test]
+fn leaving_waypoints_clears_the_position_loops() {
+    let config = CopterGuidanceConfig {
+        lateral: LateralControllerConfig {
+            velocity: Gains {
+                p: 1.0,
+                i: 0.5,
+                d: 0.0,
+            },
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let others = [
+        ControlInput::Attitude(AttitudeCommand::default()),
+        ControlInput::Rate(RateCommand::default()),
+    ];
+    for other in others {
+        let mut guidance = CopterGuidance::new(config);
+        let state = drifting_state(0);
+        guidance.prime(&state);
+        for _ in 0..50 {
+            guidance.guide(0.004, &ControlInput::Waypoint(near_waypoint()), &state);
+        }
+        assert!(guidance.altitude != AltitudeController::default());
+        assert!(guidance.lateral != LateralController::default());
+
+        guidance.guide(0.004, &other, &state);
+
+        assert!(
+            guidance.altitude == AltitudeController::default(),
+            "{other:?}"
+        );
+        assert!(
+            guidance.lateral == LateralController::default(),
+            "{other:?}"
+        );
+    }
+}
+
+/// The waypoint's cruise speed caps the approach and its velocity is fed forward: flying at
+/// the demanded velocity needs no tilt (#109).
+#[test]
+fn waypoint_speed_follows_cruise_speed_and_feedforward() {
+    let moving_north = |speed_mps: f32| VehicleState {
+        velocity_mps: Vec3::new(speed_mps, 0.0, 0.0),
+        ..Default::default()
+    };
+    let far_north = |cruise_speed_mps| WaypointCommand {
+        position_m: Vec2::new(100.0, 0.0),
+        cruise_speed_mps,
+        ..Default::default()
+    };
+    let through_origin = WaypointCommand {
+        velocity_mps: Some(Vec2::new(4.0, 0.0)),
+        cruise_speed_mps: 7.0,
+        ..Default::default()
+    };
+    // (waypoint, vehicle speed north, expected pitch: 0 level, -1 nose down, 1 nose up)
+    let cases = [
+        (far_north(7.0), 7.0, 0.0),  // at cruise: hold it
+        (far_north(7.0), 3.0, -1.0), // below: speed up
+        (far_north(7.0), 9.0, 1.0),  // above: slow down
+        (far_north(0.0), 7.0, -1.0), // no cap: the position loop wants 50 m/s
+        (through_origin, 4.0, 0.0),  // on the waypoint at the fed-forward velocity
+        (through_origin, 0.0, -1.0),
+    ];
+    for (waypoint, speed_mps, expected) in cases {
+        let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+        let state = moving_north(speed_mps);
+        guidance.prime(&state);
+        let setpoint = attitude(guidance.guide(0.004, &ControlInput::Waypoint(waypoint), &state));
+        let pitch = setpoint.pitch_rad;
+        let sign = if pitch.abs() < 1e-6 {
+            0.0
+        } else {
+            pitch.signum()
+        };
+        assert!(
+            sign == expected && setpoint.roll_rad.abs() < 1e-6,
+            "{waypoint:?} at {speed_mps} m/s gave {setpoint:?}"
+        );
+    }
 }
 
 #[test]
@@ -508,14 +657,20 @@ fn reference_configs() -> (LateralControllerConfig, AltitudeControllerConfig) {
 }
 
 fn reference_tilt(lateral: &mut LateralController, step: f32, state: &VehicleState) -> Vec2 {
-    let target = near_waypoint().position_m;
-    tilt_for_acceleration(lateral.control(
-        &reference_configs().0,
-        step,
-        target,
-        Vec2::new(state.position_m.x, state.position_m.y),
-        Vec2::new(state.velocity_mps.x, state.velocity_mps.y),
-    ))
+    let waypoint = near_waypoint();
+    let target = LateralTarget {
+        position_m: waypoint.position_m,
+        velocity_mps: Vec2::zeros(),
+        max_speed_mps: waypoint.cruise_speed_mps,
+    };
+    let estimate = LateralEstimate {
+        position_m: state.position_m.xy(),
+        velocity_mps: state.velocity_mps.xy(),
+    };
+    tilt_for_acceleration(
+        lateral.control(&reference_configs().0, step, target, estimate),
+        state.heading_rad,
+    )
 }
 
 fn reference_thrust(altitude: &mut AltitudeController, dt: f32, state: &VehicleState) -> f32 {
@@ -687,8 +842,8 @@ fn infinite_dt_panics() {
 #[test]
 fn waypoint_tilt_is_capped_in_magnitude_and_keeps_its_direction() {
     let state = VehicleState::default();
-    let lateral_p = CopterGuidanceConfig::default().lateral.gains.p;
-    let near = libm::atanf(lateral_p * 0.1 / crate::GRAVITY); // P term only
+    let lateral = CopterGuidanceConfig::default().lateral;
+    let near = libm::atanf(lateral.position_p * lateral.velocity.p * 0.1 / crate::GRAVITY);
     // (waypoint x, y, max_tilt_rad, expected |tilt| in rad)
     let cases = [
         (1000.0, 0.0, 0.47, 0.47),
@@ -782,7 +937,7 @@ fn tilt_for_acceleration_points_thrust_along_the_demand() {
         (Vec2::new(f32::INFINITY, 0.0), Vec2::zeros()),
     ];
     for (accel, expected) in cases {
-        let tilt = tilt_for_acceleration(accel);
+        let tilt = tilt_for_acceleration(accel, 0.0);
         assert!(
             (tilt - expected).amax() < 1e-6,
             "{accel:?} gave {tilt:?}, expected {expected:?}"
