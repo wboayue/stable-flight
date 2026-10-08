@@ -71,7 +71,7 @@
 
 use gilrs::{Axis, Button, Event, EventType, GamepadId, Gilrs};
 
-use crate::commanders::CommanderError;
+use crate::commanders::{CommanderError, open_gilrs};
 use stable_flight::{AttitudeCommand, Command, Commander, RateCommand, VehicleState};
 
 /// Hardware code for the throttle axis on the Extreme 3D Pro.
@@ -242,9 +242,7 @@ impl Extreme3DCommander {
     /// # Ok::<(), stable_flight_sitl::commanders::CommanderError>(())
     /// ```
     pub fn with_mode(mode: Mode) -> Result<Self, CommanderError> {
-        let gilrs = Gilrs::new().map_err(|e| {
-            CommanderError::InitializationFailed(format!("Gilrs initialization failed: {}", e))
-        })?;
+        let gilrs = open_gilrs()?;
 
         // Initialize channels[5] to match the chosen mode so next_command() preserves it
         let mut channels = [0.0; 6];

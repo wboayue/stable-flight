@@ -37,9 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Breaking:** `SpectrumCommander` renamed `SpektrumCommander` (the brand's spelling).
+- **Breaking:** `SpectrumCommander` renamed `SpektrumCommander` (the brand's spelling)
+  ([#85](https://github.com/wboayue/stable-flight/issues/85)).
 - **Breaking:** `SpektrumCommander::new` returns `Result<Self, CommanderError>` instead of
-  panicking when Gilrs fails to initialize (#83).
+  panicking when Gilrs fails to initialize, and `read_channels` takes `&mut self`
+  (matching `Extreme3DCommander`) ([#83](https://github.com/wboayue/stable-flight/issues/83)).
 - `ScriptCommander` fills the core's unit-suffixed `WaypointCommand` fields
   (`position_m`, `altitude_m`, `cruise_speed_mps`); the CSV columns are unchanged
   ([#161](https://github.com/wboayue/stable-flight/issues/161)).
@@ -115,7 +117,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - **Breaking:** `Default` impls for `Extreme3DCommander` and `SpektrumCommander`; they
-  panicked on joystick init failure. Use the fallible `new()` (#83).
+  panicked on joystick init failure. Use the fallible `new()`
+  ([#83](https://github.com/wboayue/stable-flight/issues/83)).
 - **Breaking:** the `simulators` module and the RealFlight backend
   (`RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`), along with
   the `realflight-bridge` dependency and the `copter-*-realflight` examples. They

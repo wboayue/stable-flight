@@ -32,6 +32,11 @@ pub enum CommanderError {
     InvalidConfiguration(String),
 }
 
+/// Opens the gamepad subsystem shared by the joystick commanders.
+fn open_gilrs() -> Result<gilrs::Gilrs, CommanderError> {
+    gilrs::Gilrs::new().map_err(|e| CommanderError::InitializationFailed(e.to_string()))
+}
+
 #[allow(unused_imports)] // used in documentation
 use stable_flight::Commander;
 

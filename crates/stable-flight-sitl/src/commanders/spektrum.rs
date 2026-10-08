@@ -2,17 +2,15 @@
 //! Receives control inputs from Spektrum radio attached to computer
 //! via USB dongle
 
-use std::cell::RefCell;
-
 use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
 
-use crate::commanders::CommanderError;
+use crate::commanders::{CommanderError, open_gilrs};
 use stable_flight::{AttitudeCommand, Command, Commander, VehicleState};
 
 /// [`Commander`] driven by a Spektrum transmitter connected over a USB dongle.
 pub struct SpektrumCommander {
-    gilrs: RefCell<Gilrs>,
-    active_gamepad: RefCell<Option<GamepadId>>,
+    gilrs: Gilrs,
+    active_gamepad: Option<GamepadId>,
 }
 
 impl SpektrumCommander {
@@ -34,12 +32,9 @@ impl SpektrumCommander {
     /// # }
     /// ```
     pub fn new() -> Result<Self, CommanderError> {
-        let gilrs = Gilrs::new().map_err(|e| {
-            CommanderError::InitializationFailed(format!("Gilrs initialization failed: {}", e))
-        })?;
         Ok(Self {
-            gilrs: RefCell::new(gilrs),
-            active_gamepad: RefCell::new(None),
+            gilrs: open_gilrs()?,
+            active_gamepad: None,
         })
     }
 
@@ -50,17 +45,15 @@ impl SpektrumCommander {
     /// 3: yaw (left stick x)
     /// 4: arm (right stick y)
     /// 5: mode (left trigger)  
-    pub fn read_channels(&self) -> [f32; 6] {
-        let mut gilrs = self.gilrs.borrow_mut();
-
-        while let Some(Event { id, .. }) = gilrs.next_event() {
-            self.active_gamepad.replace(Some(id));
+    pub fn read_channels(&mut self) -> [f32; 6] {
+        while let Some(Event { id, .. }) = self.gilrs.next_event() {
+            self.active_gamepad = Some(id);
         }
 
         let mut channels = [0.0; 6];
 
-        if let Some(id) = *self.active_gamepad.borrow() {
-            let gamepad = gilrs.gamepad(id);
+        if let Some(id) = self.active_gamepad {
+            let gamepad = self.gilrs.gamepad(id);
 
             if let Some(data) = gamepad.button_data(Button::RightTrigger2) {
                 channels[0] = scale_value(data.value(), 0.1, 0.9);
@@ -94,7 +87,7 @@ impl SpektrumCommander {
             }
         }
 
-        gilrs.inc();
+        self.gilrs.inc();
 
         channels
     }
