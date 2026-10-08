@@ -122,6 +122,11 @@ where
     ///
     /// The commander sees the state from the previous tick; guidance and the stabilizer see
     /// the fresh estimate. Telemetry receives a [`TelemetryRecord`] after actuation. Allocation-free.
+    ///
+    /// # Panics
+    ///
+    /// If `dt` is zero: guidance and the stabilizer require a positive, finite step (a
+    /// `Duration` is never negative or non-finite).
     pub fn step(&mut self, dt: Duration) {
         let dt_secs = dt.as_secs_f32();
 

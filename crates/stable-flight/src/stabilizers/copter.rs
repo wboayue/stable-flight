@@ -210,7 +210,7 @@ impl CopterStabilizer {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Time step since the last update in seconds (must be positive).
+    /// * `dt` - Time step since the last update in seconds (must be positive and finite).
     /// * `setpoint` - The desired roll, pitch (normalized), heading (radians), and linear thrust.
     /// * `estimated_state` - The current state of the vehicle (attitude, angular rates, etc.).
     ///
@@ -261,7 +261,7 @@ impl CopterStabilizer {
     ///
     /// # Arguments
     ///
-    /// * `dt` - Time step since the last update in seconds (must be positive).
+    /// * `dt` - Time step since the last update in seconds (must be positive and finite).
     /// * `setpoint` - The desired roll, pitch, yaw rates (normalized) and linear thrust.
     /// * `estimated_state` - The current state of the vehicle (angular rates, etc.).
     ///

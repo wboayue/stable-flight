@@ -6,7 +6,7 @@
 //!
 //! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite
 //! error into controller state, wrap angles), which is specified in `architecture.md`,
-//! "Input Policy (no panics in the tick)". [`assert_dt`] is its one allowed panic.
+//! "Input Policy (no panics in the tick)". [`assert_dt`] is the policy's one per-tick panic.
 
 use core::f32::consts::{PI, TAU};
 
