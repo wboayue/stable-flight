@@ -22,7 +22,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
     let stabilizer = CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
             gains: gains(0.5, 0.2, 0.004),
-            yaw_gains: gains(0.6, 0.2, 0.0),
+            yaw_gains: gains(0.6, 0.6, 0.0),
             max_integral: 1.0,
         },
         attitude: AttitudeControllerConfig {
@@ -57,4 +57,20 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         max_stick_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
     };
     assert_eq!(airframe.guidance, guidance, "guidance");
+}
+
+/// Steady yaw moment (normalized) QuadCopterX needs to hover in RealFlight: the mean motor
+/// yaw split of about 0.10 over the mixer's yaw scaling of 0.25, measured in #192.
+const MEASURED_HOVER_YAW_MOMENT: f32 = 0.40;
+
+/// The rate loop's yaw integral can cancel the model's hover yaw imbalance with margin; below
+/// it, acro drifts at `(imbalance − I · max_integral) / P` (#192).
+#[test]
+fn quadcopter_x_yaw_integral_covers_the_hover_imbalance() {
+    let body_rate = quadcopter_x().stabilizer.body_rate;
+    let authority = body_rate.yaw_gains.i * body_rate.max_integral;
+    assert!(
+        authority >= 1.25 * MEASURED_HOVER_YAW_MOMENT,
+        "yaw integral authority {authority} vs measured {MEASURED_HOVER_YAW_MOMENT}"
+    );
 }

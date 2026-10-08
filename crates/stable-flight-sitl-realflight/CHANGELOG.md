@@ -47,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `airframes::quadcopter_x` yaw rate I raised from 0.2 to 0.6. The model needs a steady
+  ~0.40 yaw moment to hover, past the old integral authority (0.2), so acro drifted ~19°/s
+  counterclockwise with centered sticks and attitude mode held heading a few degrees off
+  ([#192](https://github.com/wboayue/stable-flight/issues/192)).
 - `RealFlightVehicle` meets the `VehicleState` frame contract, per a live capture
   ([#62](https://github.com/wboayue/stable-flight/issues/62)): angles and rates are
   converted to radians once (they were ~57× too small), position is north/east

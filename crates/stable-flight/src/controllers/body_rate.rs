@@ -233,6 +233,41 @@ mod tests {
         }
     }
 
+    /// Closed loop against a constant yaw disturbance torque `D` on a first-order yaw model
+    /// (`ω̇ = k · (moment − D)`), commanding zero rate: the integral cancels `D` up to its
+    /// authority `I · max_integral`; past it, the rate settles at `−(D − I · max_integral) / P`
+    /// (#192).
+    #[test]
+    fn integral_cancels_a_constant_yaw_torque_up_to_its_authority() {
+        const K: f32 = 20.0; // rad/s² per unit moment
+        let (p, i, max_integral) = (0.6, 0.2, 1.0);
+        let cfg = BodyRateControllerConfig {
+            yaw_gains: Gains { p, i, d: 0.0 },
+            max_integral,
+            ..config(0.0, 0.0, 0.0)
+        };
+        // (disturbance torque, expected settled yaw rate in rad/s)
+        let cases = [
+            (0.0, 0.0),
+            (0.15, 0.0),
+            (-0.15, 0.0),
+            (0.4, -(0.4 - i * max_integral) / p), // #192: ≈ −0.33 rad/s, CCW
+            (-0.4, (0.4 - i * max_integral) / p),
+        ];
+        for (disturbance, expected) in cases {
+            let mut c = BodyRateController::default();
+            let mut rate = 0.0;
+            for _ in 0..(60.0 / DT) as usize {
+                let moment = c.control(&cfg, DT, Vec3::zeros(), Vec3::new(0.0, 0.0, rate));
+                rate += K * (moment.z - disturbance) * DT;
+            }
+            assert!(
+                (rate - expected).abs() < 1e-3,
+                "disturbance {disturbance}: settled at {rate} rad/s, expected {expected}"
+            );
+        }
+    }
+
     /// The output is independent of `dt` for a pure P controller (no hidden normalization).
     #[test]
     fn proportional_output_does_not_depend_on_dt() {
