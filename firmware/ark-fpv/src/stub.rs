@@ -8,15 +8,21 @@ use core::hint::black_box;
 use core::time::Duration;
 
 use stable_flight::{
-    Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, StateEstimator, VehicleState,
+    Actuator, ActuatorCommand, Command, Commander, ControlInput, StateEstimator, VehicleState,
 };
 
-/// Always commands zero throttle, level, disarmed. Replaced by a receiver-driven commander.
+/// Whether [`HoldCommander`] arms: only with the `bench-armed` feature.
+const HOLD_ARMED: bool = cfg!(feature = "bench-armed");
+
+/// Always commands zero throttle, level; disarmed unless built with `bench-armed`, which
+/// makes every tick run guidance, the stabilizer, and the mixer so the loop's timing is real.
+/// `arm` passes through [`black_box`], so both builds link the full pipeline and flash cost
+/// is the same. Replaced by a receiver-driven commander (#134).
 pub struct HoldCommander;
 
 impl Commander for HoldCommander {
     fn next_command(&mut self, _dt: f32, _current_state: &VehicleState) -> Command {
-        black_box(Command::Attitude(AttitudeCommand::default()))
+        black_box(Command::new(HOLD_ARMED, ControlInput::default()))
     }
 }
 

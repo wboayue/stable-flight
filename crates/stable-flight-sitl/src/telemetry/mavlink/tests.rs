@@ -65,7 +65,7 @@ fn run(connection: &MockConnection, ids: (u8, u8), dt: Duration, ticks: usize) {
     for _ in 0..ticks {
         publisher.publish(&TelemetryRecord {
             dt,
-            command: &Command::Attitude(Default::default()),
+            command: &Command::default(),
             setpoint: &Setpoint::Attitude(Default::default()),
             state: &state,
             control: &ControlOutput::default(),

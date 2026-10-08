@@ -2,8 +2,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use stable_flight::{
-    ActuatorCommand, AttitudeCommand, Command, ControlOutput, Setpoint, TelemetryPublisher,
-    TelemetryRecord, VehicleState,
+    ActuatorCommand, AttitudeCommand, Command, ControlInput, ControlOutput, Setpoint,
+    TelemetryPublisher, TelemetryRecord, VehicleState,
 };
 use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 
@@ -13,14 +13,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Simulated flight loop
 
     let dt = Duration::from_millis(100); // 10Hz update rate
-    let command = Command::Attitude(AttitudeCommand {
+    let command = Command::armed(ControlInput::Attitude(AttitudeCommand {
         throttle: 0.5,
         roll: 0.0,
         pitch: 0.0,
         yaw: 0.0,
-        arm: true,
         mode: 0, // Placeholder for mode, replace with actual mode logic
-    }); // Placeholder for command, replace with actual command logic
+    })); // Placeholder for command, replace with actual command logic
 
     loop {
         let start = Instant::now();

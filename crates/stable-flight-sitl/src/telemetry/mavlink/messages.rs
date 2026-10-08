@@ -8,12 +8,15 @@ use stable_flight::{ControlOutput, VehicleState, wrap_angle};
 #[cfg(test)]
 mod tests;
 
-pub(super) fn heartbeat() -> HEARTBEAT_DATA {
+/// `armed` sets `MAV_MODE_FLAG_SAFETY_ARMED`, so ground stations show the arm state.
+pub(super) fn heartbeat(armed: bool) -> HEARTBEAT_DATA {
+    let mut base_mode = MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED;
+    base_mode.set(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED, armed);
     HEARTBEAT_DATA {
         custom_mode: 0,
         mavtype: MavType::MAV_TYPE_QUADROTOR,
         autopilot: MavAutopilot::MAV_AUTOPILOT_GENERIC,
-        base_mode: MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+        base_mode,
         system_status: MavState::MAV_STATE_ACTIVE,
         mavlink_version: 3,
     }

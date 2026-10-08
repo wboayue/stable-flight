@@ -2,7 +2,7 @@
 
 use core::fmt;
 
-use crate::{Command, Commander, VehicleState, WaypointCommand};
+use crate::{Command, Commander, ControlInput, VehicleState, WaypointCommand};
 
 #[cfg(test)]
 mod tests;
@@ -25,7 +25,8 @@ impl core::error::Error for EmptyWaypoints {}
 
 /// A [`Commander`] that flies a looping sequence of waypoints.
 ///
-/// Each tick it emits the active waypoint as a [`Command::Waypoint`]. When the vehicle is
+/// Each tick it emits the active waypoint as an armed [`ControlInput::Waypoint`] (it never
+/// disarms; the route has no end, #126). When the vehicle is
 /// within the acceptance radius of it (horizontal distance only), it advances to the next,
 /// wrapping to the first after the last. It knows nothing about where the waypoints came
 /// from or what shape they trace.
@@ -39,7 +40,7 @@ impl core::error::Error for EmptyWaypoints {}
 /// ```
 /// use stable_flight::Vec2;
 /// use stable_flight::commanders::WaypointFollower;
-/// use stable_flight::{Command, Commander, VehicleState, WaypointCommand};
+/// use stable_flight::{Commander, ControlInput, VehicleState, WaypointCommand};
 ///
 /// let square = [
 ///     WaypointCommand { position_m: Vec2::zeros(), altitude_m: 10.0, ..Default::default() },
@@ -52,7 +53,8 @@ impl core::error::Error for EmptyWaypoints {}
 ///     .with_acceptance_radius(2.0);
 ///
 /// // Starting on the first waypoint, the follower advances to the second.
-/// let Command::Waypoint(target) = follower.next_command(0.004, &VehicleState::default()) else {
+/// let command = follower.next_command(0.004, &VehicleState::default());
+/// let ControlInput::Waypoint(target) = command.input else {
 ///     unreachable!("WaypointFollower only emits waypoint commands");
 /// };
 /// assert_eq!(target.position_m.x, 20.0);
@@ -114,6 +116,6 @@ impl<W: AsRef<[WaypointCommand]>> Commander for WaypointFollower<W> {
             self.current = (self.current + 1) % waypoints.len();
         }
 
-        Command::Waypoint(waypoints[self.current])
+        Command::armed(ControlInput::Waypoint(waypoints[self.current]))
     }
 }

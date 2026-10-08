@@ -3,7 +3,7 @@ use assert2::check;
 use stable_flight::{Vec2, Vec3};
 
 use super::{ScriptCommander, ScriptError, parse_waypoints};
-use stable_flight::{Command, Commander, VehicleState, WaypointCommand};
+use stable_flight::{Command, Commander, ControlInput, VehicleState, WaypointCommand};
 
 /// Builds a `VehicleState` positioned at the given horizontal coordinates (meters).
 fn state_at(x: f32, y: f32) -> VehicleState {
@@ -13,9 +13,10 @@ fn state_at(x: f32, y: f32) -> VehicleState {
     }
 }
 
-/// Extracts the waypoint from a `Command`, failing the test otherwise.
+/// Extracts the waypoint from an armed `Command`, failing the test otherwise.
 fn waypoint(command: Command) -> WaypointCommand {
-    assert2::assert!(let Command::Waypoint(wp) = command);
+    assert2::assert!(command.arm);
+    assert2::assert!(let ControlInput::Waypoint(wp) = command.input);
     wp
 }
 

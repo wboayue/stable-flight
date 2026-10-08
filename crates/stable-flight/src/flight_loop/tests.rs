@@ -7,8 +7,8 @@ use assert2::check;
 
 use super::*;
 use crate::{
-    Actuator, ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command, ControlOutput, Setpoint,
-    StateEstimator,
+    Actuator, ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command, ControlInput,
+    ControlOutput, Setpoint, StateEstimator,
 };
 
 /// Shared, ordered log of pipeline calls. Test-only; the loop itself never allocates.
@@ -22,19 +22,27 @@ fn state_with_heading(heading: f32) -> VehicleState {
     }
 }
 
+/// Commands throttle 0.25, armed per `arms` (one entry per tick, the last one repeating).
 struct RecordingCommander {
     log: Log,
+    arms: Vec<bool>,
+    ticks: usize,
 }
 impl Commander for RecordingCommander {
     fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
+        let arm = self.arms[self.ticks.min(self.arms.len() - 1)];
+        self.ticks += 1;
         self.log.borrow_mut().push(format!(
-            "command dt={dt} seen_heading={}",
+            "command dt={dt} seen_heading={} arm={arm}",
             state.heading_rad
         ));
-        Command::Attitude(AttitudeCommand {
-            throttle: 0.25,
-            ..Default::default()
-        })
+        Command::new(
+            arm,
+            ControlInput::Attitude(AttitudeCommand {
+                throttle: 0.25,
+                ..Default::default()
+            }),
+        )
     }
 }
 
@@ -67,8 +75,8 @@ struct RecordingGuidance {
     log: Log,
 }
 impl Guidance for RecordingGuidance {
-    fn guide(&mut self, dt: f32, command: &Command, state: &VehicleState) -> Setpoint {
-        let Command::Attitude(attitude) = command else {
+    fn guide(&mut self, dt: f32, input: &ControlInput, state: &VehicleState) -> Setpoint {
+        let ControlInput::Attitude(attitude) = input else {
             unreachable!("RecordingCommander only emits attitude commands");
         };
         self.log.borrow_mut().push(format!(
@@ -131,15 +139,20 @@ struct LogTelemetry {
 impl TelemetryPublisher for LogTelemetry {
     fn publish(&mut self, record: &TelemetryRecord) {
         self.log.borrow_mut().push(format!(
-            "publish dt={} throttle={} setpoint_thrust={} heading={} thrust={} motor0={}",
+            "publish dt={} arm={} throttle={} setpoint_thrust={} setpoint_heading={} heading={} thrust={} motor0={}",
             record.dt.as_secs_f32(),
-            match record.command {
-                Command::Attitude(attitude) => attitude.throttle,
+            record.command.arm,
+            match record.command.input {
+                ControlInput::Attitude(attitude) => attitude.throttle,
                 _ => f32::NAN,
             },
             match record.setpoint {
                 Setpoint::Attitude(attitude) => attitude.thrust,
                 Setpoint::Rate(rate) => rate.thrust,
+            },
+            match record.setpoint {
+                Setpoint::Attitude(attitude) => attitude.heading_rad,
+                Setpoint::Rate(_) => f32::NAN,
             },
             record.state.heading_rad,
             record.control.thrust,
@@ -158,8 +171,26 @@ fn recording_loop(
     RecordingMixer,
     LogTelemetry,
 > {
+    recording_loop_with_arms(log, &[true])
+}
+
+fn recording_loop_with_arms(
+    log: &Log,
+    arms: &[bool],
+) -> FlightLoop<
+    RecordingCommander,
+    RecordingVehicle,
+    RecordingGuidance,
+    RecordingStabilizer,
+    RecordingMixer,
+    LogTelemetry,
+> {
     FlightLoop::new(
-        RecordingCommander { log: log.clone() },
+        RecordingCommander {
+            log: log.clone(),
+            arms: arms.to_vec(),
+            ticks: 0,
+        },
         RecordingVehicle {
             log: log.clone(),
             estimates: 0,
@@ -210,17 +241,110 @@ fn step_runs_the_pipeline_in_order_and_publishes_the_tick() {
         *log.borrow()
             == [
                 // Commander sees the primed state (heading 0), not this tick's estimate.
-                "command dt=0.004 seen_heading=0",
+                "command dt=0.004 seen_heading=0 arm=true",
                 "estimate dt=0.004",
-                // Guidance and stabilizer see the fresh estimate (heading 1).
+                // The first armed tick re-primes from the fresh estimate (heading 1)...
+                "prime guidance heading=1",
+                "prime stabilizer heading=1",
+                // ...and guidance and stabilizer see it too.
                 "guide dt=0.004 throttle=0.25 heading=1",
                 "stabilize dt=0.004 thrust=0.5 heading=1",
                 "mix thrust=0.75",
                 "actuate motor0=0.75",
-                "publish dt=0.004 throttle=0.25 setpoint_thrust=0.5 heading=1 thrust=0.75 motor0=0.75",
+                "publish dt=0.004 arm=true throttle=0.25 setpoint_thrust=0.5 setpoint_heading=0 heading=1 thrust=0.75 motor0=0.75",
             ]
     );
     check!(flight_loop.state().heading_rad == 1.0);
+}
+
+#[test]
+fn disarmed_tick_holds_the_motors_off_and_skips_guidance_stabilizer_and_mixer() {
+    let log = Log::default();
+    let mut flight_loop = recording_loop_with_arms(&log, &[false]);
+    flight_loop.prime();
+    log.borrow_mut().clear();
+
+    flight_loop.step(Duration::from_millis(4));
+
+    check!(
+        *log.borrow()
+            == [
+                "command dt=0.004 seen_heading=0 arm=false",
+                "estimate dt=0.004",
+                "actuate motor0=0",
+                // Neutral setpoint at the current heading, zero control.
+                "publish dt=0.004 arm=false throttle=0.25 setpoint_thrust=0 setpoint_heading=1 heading=1 thrust=0 motor0=0",
+            ]
+    );
+}
+
+/// Guidance and the stabilizer are re-primed on each disarmed → armed edge, and only then.
+#[test]
+fn reprimes_on_each_arm_edge_only() {
+    let cases: &[(&[bool], &[usize])] = &[
+        // arms per tick, ticks (0-based) that prime
+        (&[true, true, true], &[0]),
+        (&[false, false, true, true], &[2]),
+        (&[true, false, true], &[0, 2]),
+        (&[false, false, false], &[]),
+    ];
+    for &(arms, primed_ticks) in cases {
+        let log = Log::default();
+        let mut flight_loop = recording_loop_with_arms(&log, arms);
+        flight_loop.prime();
+
+        let mut primed = Vec::new();
+        for tick in 0..arms.len() {
+            log.borrow_mut().clear();
+            flight_loop.step(Duration::from_millis(4));
+            let lines = log.borrow();
+            let guidance = lines.iter().position(|l| l.starts_with("prime guidance"));
+            let stabilizer = lines.iter().position(|l| l.starts_with("prime stabilizer"));
+            check!(
+                guidance.is_some() == stabilizer.is_some(),
+                "arms {arms:?} tick {tick}"
+            );
+            if let (Some(g), Some(s)) = (guidance, stabilizer) {
+                check!(g < s, "guidance primes before the stabilizer");
+                primed.push(tick);
+            }
+        }
+        check!(primed == primed_ticks, "arms {arms:?}");
+    }
+}
+
+/// End to end with the copter pipeline: full throttle while disarmed leaves every motor at 0;
+/// arming spins them.
+#[test]
+fn disarmed_copter_keeps_motors_off_at_full_throttle() {
+    use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+    use crate::mixers::QuadCopterMixer;
+    use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+    use crate::testing::{ConstantCommander, NullVehicle};
+
+    let full_throttle = ControlInput::Attitude(AttitudeCommand {
+        throttle: 1.0,
+        ..Default::default()
+    });
+    for (arm, spins) in [(false, false), (true, true)] {
+        let mut flight_loop = FlightLoop::new(
+            ConstantCommander::new(Command::new(arm, full_throttle)),
+            NullVehicle::new(),
+            CopterGuidance::new(CopterGuidanceConfig::default()),
+            CopterStabilizer::new(CopterStabilizerConfig::default()),
+            QuadCopterMixer::default(),
+            (),
+        );
+        flight_loop.prime();
+        flight_loop.step(Duration::from_millis(4));
+
+        let (_, vehicle, ..) = flight_loop.into_parts();
+        assert2::assert!(let Some(actuators) = vehicle.last_actuation());
+        check!(
+            actuators.motors.iter().any(|&m| m > 0.0) == spins,
+            "arm={arm}"
+        );
+    }
 }
 
 #[test]
@@ -241,9 +365,9 @@ fn commander_sees_previous_tick_state_across_steps() {
         .collect();
     check!(
         seen == [
-            "command dt=0.004 seen_heading=0",
-            "command dt=0.004 seen_heading=1",
-            "command dt=0.004 seen_heading=2",
+            "command dt=0.004 seen_heading=0 arm=true",
+            "command dt=0.004 seen_heading=1 arm=true",
+            "command dt=0.004 seen_heading=2 arm=true",
         ]
     );
 }
@@ -283,7 +407,7 @@ fn config_setters_retune_the_composites_between_ticks() {
     use crate::testing::{ConstantCommander, NullVehicle};
 
     let mut flight_loop = FlightLoop::new(
-        ConstantCommander::default(),
+        ConstantCommander::new(Command::armed(ControlInput::default())),
         NullVehicle::new(),
         CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),

@@ -200,6 +200,14 @@ impl Stabilizer for CopterStabilizer {
             Setpoint::Rate(rates) => self.track_rates(dt, rates, estimated_state),
         }
     }
+
+    /// Clears the body-rate, attitude, and yaw controller state (integrals and derivative
+    /// history), so control after arming starts from zero.
+    fn prime(&mut self, _state: &VehicleState) {
+        self.body_rate = BodyRateController::default();
+        self.attitude = AttitudeController::default();
+        self.yaw = YawController::default();
+    }
 }
 
 impl CopterStabilizer {

@@ -500,6 +500,45 @@ fn set_config_applies_next_tick_and_keeps_controller_state() {
     assert_eq!(output.moments, expected);
 }
 
+/// After priming (as `FlightLoop` does on arming), the stabilizer flies exactly like a fresh
+/// one: integrals and derivative history from before are gone.
+#[test]
+fn prime_clears_integrals_and_derivative_history() {
+    let tilted = VehicleState {
+        attitude: UnitQuaternion::from_euler_angles(0.3, -0.2, 0.0),
+        angular_velocity_radps: Vec3::new(0.5, -0.4, 0.3),
+        ..Default::default()
+    };
+    // one row per setpoint kind; each tick has a non-zero error on every axis
+    let setpoints = [
+        Setpoint::Attitude(AttitudeSetpoint {
+            heading_rad: 1.0,
+            thrust: 0.5,
+            ..Default::default()
+        }),
+        Setpoint::Rate(RateSetpoint {
+            roll_rate: 0.5,
+            pitch_rate: -0.5,
+            yaw_rate: 0.5,
+            thrust: 0.5,
+        }),
+    ];
+    for setpoint in setpoints {
+        let mut wound = setup_controller();
+        for _ in 0..50 {
+            wound.stabilize(0.004, &setpoint, &tilted);
+        }
+        wound.prime(&tilted);
+
+        let mut fresh = setup_controller();
+        fresh.prime(&tilted);
+
+        let rearmed = wound.stabilize(0.004, &setpoint, &tilted);
+        let expected = fresh.stabilize(0.004, &setpoint, &tilted);
+        assert_eq!(rearmed.moments, expected.moments, "{setpoint:?}");
+    }
+}
+
 #[test]
 #[should_panic(expected = "dt must be positive and finite")]
 fn zero_dt_panics() {

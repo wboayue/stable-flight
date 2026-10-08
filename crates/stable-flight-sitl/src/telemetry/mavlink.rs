@@ -176,12 +176,16 @@ impl MavlinkPublisher {
 impl TelemetryPublisher for MavlinkPublisher {
     fn publish(&mut self, record: &TelemetryRecord) {
         let TelemetryRecord {
-            dt, state, control, ..
+            dt,
+            command,
+            state,
+            control,
+            ..
         } = *record;
         let time_boot_ms = self.time_boot_ms();
 
         if self.heartbeat.ready(dt) {
-            self.send(MavMessage::HEARTBEAT(messages::heartbeat()));
+            self.send(MavMessage::HEARTBEAT(messages::heartbeat(command.arm)));
         }
         if self.vfr_hud.ready(dt) {
             self.send(MavMessage::VFR_HUD(messages::vfr_hud(control, state)));
