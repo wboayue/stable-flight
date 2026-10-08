@@ -8,9 +8,10 @@ on:
     branches:
       - main
 
-# A new push to a PR cancels its in-flight run; runs on main always finish (they seed the cache).
+# A new push to a PR cancels its in-flight run. Main gets a group per commit, so every merge is
+# tested and seeds the cache (a shared group would drop queued runs).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -30,8 +31,10 @@ jobs:
     - uses: Swatinem/rust-cache@v2
 
     - name: prerequisites
+      # Skip `apt update` unless the runner image's package index is stale.
       run: |
-        sudo apt-get install -y --no-install-recommends libudev-dev
+        sudo apt-get install -y --no-install-recommends libudev-dev \
+          || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libudev-dev; }
 
     - name: test
       run: |
@@ -48,8 +51,10 @@ jobs:
     - uses: Swatinem/rust-cache@v2
 
     - name: prerequisites
+      # Skip `apt update` unless the runner image's package index is stale.
       run: |
-        sudo apt-get install -y --no-install-recommends libudev-dev
+        sudo apt-get install -y --no-install-recommends libudev-dev \
+          || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libudev-dev; }
 
     - name: backends never depend on sitl
       # A simulator backend may use the sitl harness only as a dev-dependency (examples), so it
