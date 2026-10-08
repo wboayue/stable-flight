@@ -35,7 +35,7 @@ Input-device and file-based commanders (joysticks, CSV scripts) live in `stable-
 
 ### Testing
 
-Enable the `testing` feature in `[dev-dependencies]` for allocation-free doubles in `stable_flight::testing`: `NullVehicle` (fixed state, counts calls), `ConstantCommander`, and `RecordingTelemetry<N>` (keeps the last `N` ticks).
+Enable the `testing` feature in `[dev-dependencies]` for allocation-free doubles in `stable_flight::testing`: `NullVehicle` (fixed state, counts calls), `ConstantCommander`, and `RecordingTelemetry<N>` (keeps the last `N` ticks). `settled_yaw_rate` checks a body-rate config's yaw loop against a constant torque, such as an airframe's measured hover yaw imbalance.
 
 `testing::conformance` checks a `StateEstimator` against the `VehicleState` frame contract. It is a table of physical scenarios (level, banked, nose up, heading east, climbing, moving northeast, yaw and combined rates) with the state each must produce. A simulator backend or estimator adapter builds its native input for each scenario, and `conformance_tests!` generates one test per scenario, plus one that fails if a scenario is left uncovered:
 
