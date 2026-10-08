@@ -52,7 +52,7 @@ pub(super) fn local_position_ned(
     }
 }
 
-/// Euler angles in radians (yaw wrapped to [-π, π)) and FRD body rates in rad/s, as the
+/// Euler angles in radians (yaw wrapped to [-π, π]) and FRD body rates in rad/s, as the
 /// frame contract already reports them.
 pub(super) fn attitude(state: &VehicleState, time_boot_ms: u32) -> ATTITUDE_DATA {
     ATTITUDE_DATA {
@@ -81,7 +81,7 @@ pub(super) fn vfr_hud(control: &ControlOutput, state: &VehicleState) -> VFR_HUD_
     }
 }
 
-/// Wraps an angle to [-π, π); NaN stays NaN.
+/// Wraps an angle to [-π, π] (rounding can return +π, which MAVLink accepts); NaN stays NaN.
 fn wrap_pi(angle_rad: f32) -> f32 {
     (angle_rad + PI).rem_euclid(TAU) - PI
 }
