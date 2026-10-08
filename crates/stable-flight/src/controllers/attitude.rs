@@ -2,6 +2,7 @@ use core::f32::consts::FRAC_PI_4;
 
 use crate::Vec2;
 
+use super::derivative::DerivativeState;
 use super::{Gains, InvalidConfig, check_limit};
 use crate::math::{
     assert_dt, clamp_symmetric, clamp_symmetric_each, limit_or_zero, saturate_unit_vec2,
@@ -80,10 +81,8 @@ impl AttitudeControllerConfig {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AttitudeController {
     integrated_error: Vec2, // Accumulated error (roll, pitch)
-    previous_error: Vec2,   // Previous error for derivative calculation
-    /// Set after a non-finite tick: the next finite tick skips the derivative term, since
-    /// `previous_error` predates the gap.
-    resync_derivative: bool,
+    /// Previous error for the derivative term; empty on the first tick and after a gap.
+    derivative: DerivativeState<Vec2>,
 }
 
 impl AttitudeController {
@@ -148,17 +147,12 @@ impl AttitudeController {
         // A non-finite error (NaN/∞ estimate) yields no rate command and never enters the
         // integral or derivative history (see `crate::math` for the policy).
         if !(error.x.is_finite() && error.y.is_finite()) {
-            self.resync_derivative = true;
+            self.derivative.forget();
             return Vec2::zeros();
         }
 
         // Derivative term: rate of change of error (skipped on the first tick after a gap)
-        let error_derivative = if self.resync_derivative {
-            self.resync_derivative = false;
-            Vec2::zeros()
-        } else {
-            (error - self.previous_error) / dt
-        };
+        let error_derivative = self.derivative.step(error, dt);
 
         // Integral term with anti-windup
         self.integrated_error =
@@ -167,8 +161,6 @@ impl AttitudeController {
         // PID calculation: Kp×error + Ki×∫error + Kd×d(error)/dt
         let Gains { p, i, d } = config.gains;
         let rates = p * error + i * self.integrated_error + d * error_derivative;
-
-        self.previous_error = error;
 
         // Scale output to configured maximum rates
         Vec2::new(
@@ -194,8 +186,20 @@ mod tests {
         let controller = AttitudeController::default();
 
         assert_eq!(controller.integrated_error, Vec2::zeros());
-        assert_eq!(controller.previous_error, Vec2::zeros());
-        assert!(!controller.resync_derivative);
+        assert_eq!(controller.derivative, DerivativeState::default());
+    }
+
+    /// A fresh controller has no previous error, so D alone gives nothing on the first tick.
+    #[test]
+    fn first_tick_has_no_derivative_kick() {
+        let mut controller = AttitudeController::default();
+        let rates = controller.control(
+            &gains(0.0, 0.0, 0.5),
+            0.1,
+            Vec2::new(0.3, -0.2),
+            Vec2::zeros(),
+        );
+        assert_eq!(rates, Vec2::zeros());
     }
 
     #[test]
@@ -253,7 +257,6 @@ mod tests {
 
         assert_eq!(rates, Vec2::zeros()); // No error, no rate output
         assert_eq!(controller.integrated_error, Vec2::zeros()); // No integral buildup
-        assert_eq!(controller.previous_error, Vec2::zeros()); // Error remains zero
     }
 
     #[test]
@@ -269,7 +272,6 @@ mod tests {
         let expected_rates = config.gains.p * expected_error;
         assert!((rates.x - expected_rates.x).abs() < 1e-6);
         assert!((rates.y - expected_rates.y).abs() < 1e-6);
-        assert_eq!(controller.previous_error, expected_error);
         assert_eq!(controller.integrated_error, dt * expected_error);
     }
 

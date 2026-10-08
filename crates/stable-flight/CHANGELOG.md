@@ -101,6 +101,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `AttitudeController` and `BodyRateController` no longer kick the derivative term on the
+  first tick after construction (they differenced against a zero previous error); like
+  `YawController`, the first tick is P + I only. The three share one derivative-gap rule
+  (#68).
 - **Breaking:** every PID controller's `control`, `CopterGuidance::guide`, and
   `CopterStabilizer::stabilize` panic unless `dt` is positive and finite
   ([#177](https://github.com/wboayue/stable-flight/issues/177)). `AltitudeController` and

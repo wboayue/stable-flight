@@ -7,6 +7,7 @@ use crate::Vec3;
 pub mod altitude;
 pub mod attitude;
 pub mod body_rate;
+mod derivative;
 pub mod lateral;
 pub mod yaw;
 
