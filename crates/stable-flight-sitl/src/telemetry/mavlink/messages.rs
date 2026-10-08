@@ -1,11 +1,9 @@
 //! Builds MAVLink message payloads from a tick's data. Pure functions: no connection, clock,
 //! or scheduling, so each mapping is tested on its own.
 
-use std::f32::consts::{PI, TAU};
-
 use mavlink::common::*;
 
-use stable_flight::{ControlOutput, VehicleState};
+use stable_flight::{ControlOutput, VehicleState, wrap_angle};
 
 #[cfg(test)]
 mod tests;
@@ -18,21 +16,6 @@ pub(super) fn heartbeat() -> HEARTBEAT_DATA {
         base_mode: MavModeFlag::MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
         system_status: MavState::MAV_STATE_ACTIVE,
         mavlink_version: 3,
-    }
-}
-
-/// Hard-coded until a geodetic origin exists (#97).
-pub(super) fn global_position(time_boot_ms: u32) -> GLOBAL_POSITION_INT_DATA {
-    GLOBAL_POSITION_INT_DATA {
-        time_boot_ms,
-        lat: 371234567,      // 37.1234567° N
-        lon: -1221234567,    // 122.1234567° W
-        alt: 100000,         // 100m above sea level (mm)
-        relative_alt: 50000, // 50m above home (mm)
-        vx: 100,             // 1 m/s north (cm/s)
-        vy: 50,              // 0.5 m/s east (cm/s)
-        vz: 10,              // 0.1 m/s down (cm/s)
-        hdg: 9000,           // 90° heading (degrees * 100)
     }
 }
 
@@ -59,7 +42,7 @@ pub(super) fn attitude(state: &VehicleState, time_boot_ms: u32) -> ATTITUDE_DATA
         time_boot_ms,
         roll: state.roll_rad,
         pitch: state.pitch_rad,
-        yaw: wrap_pi(state.heading_rad),
+        yaw: wrap_angle(state.heading_rad),
         rollspeed: state.angular_velocity_radps.x,
         pitchspeed: state.angular_velocity_radps.y,
         yawspeed: state.angular_velocity_radps.z,
@@ -79,11 +62,6 @@ pub(super) fn vfr_hud(control: &ControlOutput, state: &VehicleState) -> VFR_HUD_
         climb: state.velocity_mps.z,
         alt: state.position_m.z,
     }
-}
-
-/// Wraps an angle to [-π, π] (rounding can return +π, which MAVLink accepts); NaN stays NaN.
-fn wrap_pi(angle_rad: f32) -> f32 {
-    (angle_rad + PI).rem_euclid(TAU) - PI
 }
 
 /// Heading as VFR_HUD's whole degrees in 0..360, clockwise from north; NaN reports 0.

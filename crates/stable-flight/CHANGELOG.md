@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `wrap_angle` wraps radians to [-π, π) (rounding can give +π; non-finite input gives
+  NaN; `no_std`), exported at the crate root beside `euler_angles`
+  ([#166](https://github.com/wboayue/stable-flight/issues/166)).
 - Initial release of the flight-control core, extracted from `stable-flight-sitl`:
   the pipeline traits (`Commander`, `StateEstimator`, `Actuator`, `Vehicle`,
   `Guidance`, `Stabilizer`, `Mixer`, `TelemetryPublisher`), their data types

@@ -119,6 +119,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `Default` impls for `Extreme3DCommander` and `SpektrumCommander`; they
   panicked on joystick init failure. Use the fallible `new()`
   ([#83](https://github.com/wboayue/stable-flight/issues/83)).
+- `MavlinkPublisher` no longer sends `GLOBAL_POSITION_INT`. It was hard-coded (a fake,
+  stationary vehicle at a fixed lat/lon)
+  ([#97](https://github.com/wboayue/stable-flight/issues/97)); it returns once a geodetic
+  origin exists ([#185](https://github.com/wboayue/stable-flight/issues/185)).
 - **Breaking:** the `simulators` module and the RealFlight backend
   (`RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`), along with
   the `realflight-bridge` dependency and the `copter-*-realflight` examples. They
