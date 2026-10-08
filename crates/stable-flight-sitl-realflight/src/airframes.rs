@@ -7,10 +7,7 @@
 use std::f32::consts::PI;
 
 use stable_flight::Vec2;
-use stable_flight::controllers::Gains;
-use stable_flight::controllers::{
-    AttitudeController, AttitudeControllerConfig, BodyRateController, BodyRateControllerConfig,
-};
+use stable_flight::controllers::{AttitudeControllerConfig, BodyRateControllerConfig, Gains};
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
@@ -59,32 +56,6 @@ pub struct Airframe<G, S, M> {
 /// assert_eq!(airframe.mapping.motors[0], Some(2));
 /// ```
 pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, QuadCopterMixer> {
-    let rates_controller = BodyRateController::with_config(&BodyRateControllerConfig {
-        gains: Gains {
-            p: 0.5,
-            i: 0.2,
-            d: 0.004,
-        },
-        // Yaw authority is differential prop drag only, so yaw needs its own, higher gains.
-        yaw_gains: Gains {
-            p: 0.6,
-            i: 0.2,
-            d: 0.0,
-        },
-        max_integral: 1.0,
-    });
-
-    let attitude_controller = AttitudeController::with_config(&AttitudeControllerConfig {
-        gains: Gains {
-            p: 3.0,
-            i: 0.0,
-            d: 0.1,
-        },
-        max_integral: 100.0,
-        max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0), // 45° for roll and pitch
-        max_rate_radps: Vec2::new(3.0, 3.0),           // Max roll, pitch rates in rad/s
-    });
-
     Airframe {
         guidance: CopterGuidanceConfig {
             // Measured: a settled hover holds at mean motor 0.606 = 0.9 · 0.82², through the
@@ -93,8 +64,30 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
             ..CopterGuidanceConfig::default()
         },
         stabilizer: CopterStabilizerConfig {
-            rates_controller,
-            attitude_controller,
+            body_rate: BodyRateControllerConfig {
+                gains: Gains {
+                    p: 0.5,
+                    i: 0.2,
+                    d: 0.004,
+                },
+                // Yaw authority is differential prop drag only, so yaw needs its own, higher gains.
+                yaw_gains: Gains {
+                    p: 0.6,
+                    i: 0.2,
+                    d: 0.0,
+                },
+                max_integral: 1.0,
+            },
+            attitude: AttitudeControllerConfig {
+                gains: Gains {
+                    p: 3.0,
+                    i: 0.0,
+                    d: 0.1,
+                },
+                max_integral: 100.0,
+                max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0), // 45° for roll and pitch
+                max_rate_radps: Vec2::new(3.0, 3.0),           // Max roll, pitch rates in rad/s
+            },
             ..Default::default()
         },
         mixer: QuadCopterMixer::default(),
