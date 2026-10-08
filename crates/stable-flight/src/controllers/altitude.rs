@@ -150,12 +150,12 @@ impl AltitudeController {
             return hover_thrust;
         }
 
+        // Accumulate only near the target, but clamp every tick so a shrunk `max_integral`
+        // applies on the next tick even outside the band.
         if altitude_error.abs() < INTEGRATION_BAND {
-            self.integrated_error = clamp_symmetric(
-                self.integrated_error + altitude_error * dt,
-                config.max_integral,
-            );
+            self.integrated_error += altitude_error * dt;
         }
+        self.integrated_error = clamp_symmetric(self.integrated_error, config.max_integral);
 
         let acceleration =
             gains.p * altitude_error + gains.d * velocity_error + gains.i * self.integrated_error;
@@ -346,6 +346,27 @@ mod tests {
             controller.control(&config, 0.01, 10.5, 0.0, 10.0, 0.0, level());
             assert_eq!(
                 controller.integrated_error, 0.0,
+                "max_integral {max_integral}"
+            );
+        }
+    }
+
+    /// A shrunk `max_integral` clamps the stored integral on the next tick, even when the error
+    /// is outside the integration band (where nothing accumulates).
+    #[test]
+    fn shrinking_max_integral_outside_the_band_clamps_the_integral() {
+        // (max_integral, expected integral after one tick 2 m below target)
+        for (max_integral, expected) in [(0.0, 0.0), (0.2, 0.2), (1.0, 0.5)] {
+            let mut controller = AltitudeController {
+                integrated_error: 0.5,
+            };
+            let config = AltitudeControllerConfig {
+                max_integral,
+                ..Default::default()
+            };
+            controller.control(&config, 0.01, 12.0, 0.0, 10.0, 0.0, level());
+            assert_eq!(
+                controller.integrated_error, expected,
                 "max_integral {max_integral}"
             );
         }
