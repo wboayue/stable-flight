@@ -163,7 +163,7 @@ rustdoc), and cover every conformance scenario with `stable_flight::conformance_
   - `architecture.md` — crate boundaries, dependency rules, traits, and the rationale behind
     the frame and timing contracts;
   - core rustdoc — the frame contract (`VehicleState`) and timing contract (`Vehicle`) themselves.
-- **Maintain each published crate's `CHANGELOG.md`** (`crates/<crate>/CHANGELOG.md`; unpublished `stable-flight-tools` has none) ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)). Every user-facing change adds a bullet under `## [Unreleased]` in the same PR, grouped by `Added`/`Changed`/`Deprecated`/`Removed`/`Fixed`/`Security`; mark breaking changes **Breaking**. Skip internal-only churn (refactors, test/CI tweaks). At release, rename `[Unreleased]` to `## [x.y.z] - YYYY-MM-DD`, add a fresh empty `[Unreleased]`, and update the compare links.
+- **Maintain each published crate's `CHANGELOG.md`** (`crates/<crate>/CHANGELOG.md`; unpublished `stable-flight-tools` has none) ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)). **Until a crate's first release**, `[Unreleased]` is a feature summary of what the crate provides, not a change log: a PR that adds, removes, or reshapes a feature edits the summary, and nothing is marked **Breaking** (no one has a prior version). **After the first release**, every user-facing change adds a bullet under `## [Unreleased]` in the same PR, grouped by `Added`/`Changed`/`Deprecated`/`Removed`/`Fixed`/`Security`; mark breaking changes **Breaking**. Skip internal-only churn (refactors, test/CI tweaks). At release, rename `[Unreleased]` to `## [x.y.z] - YYYY-MM-DD` (at the first release, delete the summary note; the summary becomes that entry), add a fresh empty `[Unreleased]`, and update the links: tag each crate `<crate>-vx.y.z` (e.g. `stable-flight-v0.1.0`), point `[Unreleased]` at `compare/<crate>-vx.y.z...HEAD`, and add a `[x.y.z]` link (the pre-release links point at the crate's commit history, since there's no tag yet).
 
 ## Workflow
 
@@ -192,4 +192,4 @@ rustdoc), and cover every conformance scenario with `stable_flight::conformance_
 - [ ] Hot-path code allocates nothing per tick.
 - [ ] Coverage refreshed if control-loop logic changed.
 - [ ] Owning docs (crate/root `README.md`, `AGENTS.md`, `architecture.md`) reflect any trait, module, crate, or example changes.
-- [ ] Each affected published crate's `CHANGELOG.md` has an `[Unreleased]` entry for any user-facing change.
+- [ ] Each affected published crate's `CHANGELOG.md` reflects any user-facing change (pre-release: the feature summary; after: an `[Unreleased]` entry).
