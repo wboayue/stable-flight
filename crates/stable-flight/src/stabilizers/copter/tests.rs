@@ -539,6 +539,32 @@ fn prime_clears_integrals_and_derivative_history() {
     }
 }
 
+/// Rate flight clears the idle attitude and heading loops, so attitude flight after it starts
+/// from fresh state, not from integrals wound up before the switch (#70).
+#[test]
+fn rate_flight_clears_the_attitude_and_heading_loops() {
+    let tilted = VehicleState {
+        attitude: UnitQuaternion::from_euler_angles(0.3, -0.2, 0.0),
+        ..Default::default()
+    };
+    let attitude = Setpoint::Attitude(AttitudeSetpoint {
+        heading_rad: 1.0,
+        thrust: 0.5,
+        ..Default::default()
+    });
+    let rate = Setpoint::Rate(RateSetpoint::default());
+
+    let mut stabilizer = setup_controller();
+    stabilizer.prime(&tilted);
+    for _ in 0..50 {
+        stabilizer.stabilize(0.004, &attitude, &tilted);
+    }
+    stabilizer.stabilize(0.004, &rate, &tilted);
+
+    assert!(stabilizer.attitude == AttitudeController::default());
+    assert!(stabilizer.yaw == YawController::default());
+}
+
 #[test]
 #[should_panic(expected = "dt must be positive and finite")]
 fn zero_dt_panics() {

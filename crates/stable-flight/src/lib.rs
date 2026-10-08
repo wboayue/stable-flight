@@ -242,9 +242,9 @@ impl Command {
 ///
 /// let waypoint_cmd = ControlInput::Waypoint(WaypointCommand {
 ///     position_m: Vec2::new(1000.0, 2000.0),    // Target position in world coordinates
-///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Optional desired velocity at target
+///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Optional velocity to fly through it with
 ///     altitude_m: 500.0,                        // Target altitude in meters
-///     cruise_speed_mps: 25.0,                   // Desired speed during transit
+///     cruise_speed_mps: 25.0,                   // Speed cap on the way
 ///     roll_rad: Some(0.05),                     // Optional roll angle in radians
 /// });
 /// ```
@@ -425,17 +425,17 @@ pub struct RateCommand {
 /// Represents a navigational waypoint for autonomous flight.
 ///
 /// A `WaypointCommand` instructs the aircraft to navigate to a specific position
-/// in 2D space at a given altitude, optionally with a specified velocity to be achieved
-/// at the target position and a desired roll angle during the approach. This struct is
+/// in 2D space at a given altitude, at up to a cruise speed, optionally flying through it
+/// with a given velocity and a desired roll angle during the approach. This struct is
 /// typically used within a `ControlInput::Waypoint` variant to issue autonomous navigation
 /// commands to the flight system.
 ///
 /// # Value Ranges
 ///
 /// - `position_m`: X, Y coordinates in 2D space (units and coordinate system depend on the flight system, typically meters in world coordinates)
-/// - `velocity_mps`: Optional velocity vector in meters per second (no specific range; depends on system limits)
+/// - `velocity_mps`: Optional velocity vector in meters per second (north, east), fed forward while flying to the waypoint
 /// - `altitude_m`: Target altitude in meters (typically non-negative; negative values may be interpreted as ground level or cause undefined behavior)
-/// - `cruise_speed_mps`: Desired speed in meters per second (typically positive; zero or negative values may cause the aircraft to stop or behave unpredictably)
+/// - `cruise_speed_mps`: Speed cap in meters per second while flying to the waypoint; zero, negative, or NaN means no cap
 /// - `roll_rad`: Optional roll angle in radians (typically between `-π` and `π`; depends on system limits)
 ///
 /// Note: The specified ranges are conventional and recommended for typical use.
@@ -450,16 +450,18 @@ pub struct RateCommand {
 ///
 /// let cmd = WaypointCommand {
 ///     position_m: Vec2::new(1000.0, 2000.0),    // Target position (X=1000m, Y=2000m)
-///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Arrive with 15 m/s eastward velocity
+///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Fly through it northward at 15 m/s
 ///     altitude_m: 500.0,                        // Target altitude of 500 meters
-///     cruise_speed_mps: 25.0,                   // Travel at 25 m/s
+///     cruise_speed_mps: 25.0,                   // At most 25 m/s on the way
 ///     roll_rad: Some(0.05),                     // Slight right roll during approach
 /// };
 /// ```
 ///
 /// # Behavior of Optional Fields
 ///
-/// - If `velocity_mps` is `None`, the flight system may choose a default velocity or ignore velocity constraints.
+/// - If `velocity_mps` is `None`, the aircraft stops on the waypoint.
+///   [`WaypointFollower`](crate::commanders::WaypointFollower) fills it in along each leg so
+///   a route is flown at cruise speed.
 /// - If `roll_rad` is `None`, the flight system typically maintains a default roll (e.g., zero or coordinated turn behavior).
 ///
 /// # Default Implementation
@@ -479,11 +481,14 @@ pub struct WaypointCommand {
     /// (typically meters in world coordinates).
     pub position_m: Vec2,
 
-    /// Optional desired velocity vector at the waypoint, in meters per second.
+    /// Optional velocity, in meters per second (north, east), to fly through the waypoint
+    /// with.
     ///
-    /// When provided, the aircraft will attempt to arrive at the position with this
-    /// velocity. This is useful for creating smooth paths through multiple waypoints.
-    /// If `None`, the flight system may choose a default velocity or ignore velocity constraints.
+    /// Guidance feeds it forward while flying to the waypoint (added to the position loop's
+    /// demand, then capped at `cruise_speed_mps`), so the aircraft passes the waypoint
+    /// instead of stopping on it. `None` stops on the waypoint.
+    /// [`WaypointFollower`](crate::commanders::WaypointFollower) fills it in along each leg
+    /// when it's `None`.
     pub velocity_mps: Option<Vec2>,
 
     /// Target altitude in meters.
@@ -492,10 +497,9 @@ pub struct WaypointCommand {
     /// or cause undefined behavior depending on the flight system.
     pub altitude_m: f32,
 
-    /// Desired cruise speed in meters per second while traveling to the waypoint.
-    ///
-    /// Typically positive; zero or negative values may cause the aircraft to stop
-    /// or behave unpredictably depending on the flight system.
+    /// Cruise speed in meters per second: the most guidance asks for while flying to the
+    /// waypoint. Zero, negative, or NaN means no cap (the guidance's tilt limit still
+    /// bounds the speed).
     pub cruise_speed_mps: f32,
 
     /// Optional desired roll angle in radians.

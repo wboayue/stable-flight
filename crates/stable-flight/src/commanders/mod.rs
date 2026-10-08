@@ -6,4 +6,4 @@
 pub mod waypoint;
 
 #[doc(inline)]
-pub use waypoint::{EmptyWaypoints, WaypointFollower};
+pub use waypoint::{EmptyWaypoints, RouteEnd, WaypointFollower};

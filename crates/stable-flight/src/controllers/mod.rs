@@ -17,7 +17,7 @@ pub use altitude::{
 };
 pub use attitude::{AttitudeController, AttitudeControllerConfig};
 pub use body_rate::{BodyRateController, BodyRateControllerConfig};
-pub use lateral::{LateralController, LateralControllerConfig};
+pub use lateral::{LateralController, LateralControllerConfig, LateralEstimate, LateralTarget};
 pub use yaw::{YawController, YawControllerConfig};
 
 #[cfg(test)]
