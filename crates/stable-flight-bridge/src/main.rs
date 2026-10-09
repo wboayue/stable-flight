@@ -32,6 +32,7 @@ mod origin;
 mod outbox;
 mod params;
 mod pump;
+mod setpoints;
 mod state;
 #[cfg(test)]
 mod test_support;
@@ -70,6 +71,10 @@ struct Args {
     /// an all-interfaces --http-bind [default: http://HTTP_BIND].
     #[arg(long)]
     http_url: Option<String>,
+    /// Speed cap, in m/s, for position targets from offboard apps (`SET_POSITION_TARGET_LOCAL_NED`
+    /// carries none).
+    #[arg(long, default_value_t = 5.0)]
+    offboard_speed: f32,
     /// Serve no param metadata: QGC lists the params without descriptions, units, or ranges.
     #[arg(long, conflicts_with_all = ["http_url"])]
     no_metadata: bool,
@@ -83,6 +88,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let args = Args::parse();
+    // Guidance reads a zero, negative, or NaN speed cap as no cap at all.
+    if !(args.offboard_speed > 0.0 && args.offboard_speed.is_finite()) {
+        return Err(format!(
+            "--offboard-speed must be positive and finite, got {}",
+            args.offboard_speed
+        )
+        .into());
+    }
     let earth = match (args.no_origin, args.origin) {
         (true, _) => None,
         (false, Some(earth)) => Some(earth),
@@ -119,6 +132,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Bridge::new(BridgeConfig {
             earth,
             metadata,
+            offboard_speed_mps: args.offboard_speed,
             ..BridgeConfig::default()
         }),
     );

@@ -222,3 +222,38 @@ fn reads_at_most_a_bounded_batch_per_side_per_pass() {
     check!((first.downlinks, first.mavlink) == (MAX_READS_PER_PASS, MAX_READS_PER_PASS));
     check!((second.downlinks, second.mavlink) == (6, 6));
 }
+
+#[test]
+fn forwards_the_ground_stations_joystick_as_commands() {
+    let loopback = Loopback::new();
+    let gcs = MockConnection::default();
+    let (mut pump, mut fc) = pump(&loopback, gcs.clone());
+    send(&mut fc, &heartbeat(false));
+    pump.step(Instant::now());
+    uplinks(&mut fc);
+
+    gcs.push_received(
+        GCS,
+        MavMessage::MANUAL_CONTROL(mavlink::common::MANUAL_CONTROL_DATA {
+            target: 1,
+            x: 0,
+            y: 500,
+            z: 600,
+            r: 0,
+            ..Default::default()
+        }),
+    );
+    pump.step(Instant::now());
+
+    let commands: Vec<_> = uplinks(&mut fc)
+        .into_iter()
+        .filter_map(|u| match u {
+            Uplink::Control(Control::Command(c)) => Some(c.input),
+            _ => None,
+        })
+        .collect();
+    let [stable_flight_link::stable_flight::ControlInput::Attitude(sticks)] = commands[..] else {
+        panic!("expected one attitude command, got {commands:?}");
+    };
+    check!((sticks.roll, sticks.throttle) == (0.5, 0.6));
+}

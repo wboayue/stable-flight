@@ -28,7 +28,9 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     FC and GCS liveness, link heartbeat, addressing, routing, the `UNSUPPORTED` fallback for
     `COMMAND_LONG`) over services: `ParamService` (`params.rs`, with the cache),
     `ConnectService` (`connect.rs`: heartbeat, `AUTOPILOT_VERSION`, `COMPONENT_METADATA`,
-    missions), `CommandService` (`commands.rs`: arm/disarm, acked on the FC's heartbeat), and
+    missions), `CommandService` (`commands.rs`: arm/disarm, acked on the FC's heartbeat),
+    `SetpointService` (`setpoints.rs`: `MANUAL_CONTROL` → attitude, `SET_POSITION_TARGET_LOCAL_NED`
+    → waypoint), and
     `StateService` (`state.rs`: attitude, positions, home, landed state, `VFR_HUD`, paced by
     `Interval`, `interval.rs`), which queue into an `Outbox` (`outbox.rs`); payload builders in `encode.rs`. `Pump` (`pump.rs`) runs one
     I/O pass (read both sides, route, send) over generic link halves and a boxed GCS connection;
@@ -78,7 +80,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 cargo build --workspace                         # or: just build
 cargo test --workspace --all-features           # or: just test
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight  # joystick + RealFlight (--host), params + telemetry over the native link (--link-bind/--link-peer) for the bridge; or: just fly-manual
-cargo run -p stable-flight-bridge               # native link ⇄ MAVLink for QGC (--link-bind/--link-peer/--gcs/--origin/--http-bind/--http-url); or: just bridge
+cargo run -p stable-flight-bridge               # native link ⇄ MAVLink for QGC (--link-bind/--link-peer/--gcs/--origin/--http-bind/--http-url/--offboard-speed); or: just bridge
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight    # scripted figure-eight (script arg, --host, --loop); or: just fly-auto
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight  # joystick flight + raw SimulatorState → CSV; or: just capture
 cargo run --example extreme_3d_commander        # joystick smoke test

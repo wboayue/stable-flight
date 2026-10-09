@@ -36,7 +36,8 @@ not each change; per-change entries start after it.
   limits); its `FcPoller` runs between ticks. `wire_linked` also routes control messages to a
   `LinkCommander`.
 - **`commander::LinkCommander`:** flies from the link's `Control` messages (latest command;
-  arming only from `Arm`), and implements core `LinkedCommander` for a `FailsafeCommander`.
+  arming only from `Arm`), and implements core `LinkedCommander` for a `FailsafeCommander`:
+  any message keeps a waypoint fresh, only commands keep sticks fresh.
 - **`std` feature:** `udp::UdpLink`, a non-blocking UDP transport to one fixed peer, one frame
   per datagram, with rx/tx halves; `bind`s or wraps a connected socket; tolerates an absent peer.
   `DEFAULT_FC_ADDR` / `DEFAULT_BRIDGE_ADDR` are the localhost ports both ends default to.

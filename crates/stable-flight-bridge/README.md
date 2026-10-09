@@ -4,7 +4,7 @@ Companion-computer bridge for a [Stable Flight](https://github.com/wboayue/stabl
 
 ## Status
 
-[#154](https://github.com/wboayue/stable-flight/issues/154) params and state slices: QGC connects, lists and edits params, and shows attitude, position, home, and the landed state. Commands and arming come next.
+[#154](https://github.com/wboayue/stable-flight/issues/154) params, state, and commands slices: QGC connects, lists and edits params, shows attitude, position, home, and the landed state, arms and disarms, and flies a link-fed flight controller with its joystick; offboard apps send position targets. QGC has no guided actions (takeoff, go-to, land) for a generic autopilot.
 
 | MAVLink | Bridge |
 |---|---|
@@ -16,6 +16,8 @@ Companion-computer bridge for a [Stable Flight](https://github.com/wboayue/stabl
 | `GLOBAL_POSITION_INT` | 10 Hz, projected around `--origin`, once there is a home; relative altitude from home |
 | `HOME_POSITION` | 1 Hz and when home moves: the position at the latest arming, or the first one before any arm |
 | `EXTENDED_SYS_STATE` | 1 Hz and when it changes: landed state from the arm state and height above home |
+| `MANUAL_CONTROL` | QGC's joystick or virtual joystick: forwarded as an attitude command (roll = y, pitch = −x, yaw = r, throttle = z, ÷ 1000). Stops going fresh on the flight controller when the stream stops |
+| `SET_POSITION_TARGET_LOCAL_NED` | From an offboard app (QGC sends none for a generic vehicle): in `LOCAL_NED` with the position included, forwarded as a waypoint (altitude = −z; velocity as fly-through when included; at most `--offboard-speed`). Other frames and masks are dropped |
 | `MISSION_REQUEST_LIST` | `MISSION_COUNT` 0 of the requested type (mission, fence, rally) |
 | `COMMAND_LONG` | `REQUEST_MESSAGE(AUTOPILOT_VERSION)`: acked, then `AUTOPILOT_VERSION` (MAVLink 2, C-cast params). `REQUEST_MESSAGE(COMPONENT_METADATA)`: acked, then `COMPONENT_METADATA` pointing to the param metadata (below). `COMPONENT_ARM_DISARM` (QGC's Arm/Disarm; force arm and emergency stop alike): forwarded as `Control::Arm`, acked `ACCEPTED` once the flight controller's heartbeat shows the new state, `FAILED` if not within 1 s, `TEMPORARILY_REJECTED` with no flight controller or another request pending. Anything else: `UNSUPPORTED` |
 
@@ -61,6 +63,8 @@ Open QGroundControl; it listens on UDP 14550 and connects on the first heartbeat
 --http-url <URL>     base URL QGC fetches the metadata from
                                                   [default: http://HTTP_BIND]
 --no-metadata        serve no param metadata
+--offboard-speed <MPS>
+                     speed cap for position targets  [default: 5]
 ```
 
 Logging goes through `env_logger` at `info` by default (`RUST_LOG=debug` shows dropped frames).
