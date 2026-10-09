@@ -2,13 +2,16 @@
 //! `copter-manual-realflight` does, while serving params and telemetry over the native link
 //! (`stable-flight-link`, UDP) so they can be read and tuned in flight.
 //!
-//! The link binds `--link-bind` (default `127.0.0.1:14560`) and talks to the bridge (or any
-//! host speaking the link protocol) at `--link-peer` (default `127.0.0.1:14561`). Telemetry
-//! also goes to QGC over MAVLink as in the manual example. The RealFlight host defaults to
+//! The link binds `--link-bind` (default `127.0.0.1:14560`) and talks to the bridge
+//! (`stable-flight-bridge`, or any host speaking the link protocol) at `--link-peer` (default
+//! `127.0.0.1:14561`). QGC connects through the bridge, which speaks MAVLink for the flight
+//! controller; there is no direct MAVLink telemetry, so QGC shows params but not attitude or
+//! position until the bridge translates state (#154). The RealFlight host defaults to
 //! `10.211.55.3:8080`; override it with `--host`.
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example copter-tune-realflight
+//! cargo run -p stable-flight-bridge   # in a second terminal
 //! cargo run -p stable-flight-sitl-realflight --example copter-tune-realflight -- --link-peer 192.168.1.30:14561
 //! ```
 
@@ -23,10 +26,9 @@ use stable_flight_link::heapless::spsc::Queue;
 use stable_flight_link::params::ParamServer;
 use stable_flight_link::publisher::{LinkPublisher, LinkPublisherConfig};
 use stable_flight_link::router::UplinkRouter;
-use stable_flight_link::udp::UdpLink;
+use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_link::{ParamRequest, ParamValue};
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
-use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
@@ -43,10 +45,10 @@ struct Args {
     #[arg(long, default_value = "10.211.55.3:8080")]
     host: String,
     /// Local address the link listens on.
-    #[arg(long, default_value = "127.0.0.1:14560")]
+    #[arg(long, default_value = DEFAULT_FC_ADDR)]
     link_bind: String,
     /// The bridge's link address.
-    #[arg(long, default_value = "127.0.0.1:14561")]
+    #[arg(long, default_value = DEFAULT_BRIDGE_ADDR)]
     link_peer: String,
 }
 
@@ -81,19 +83,10 @@ fn main() {
     let mut router = UplinkRouter::new(link_rx, MAX_FRAMES_PER_TICK).with_params(to_server);
     let mut param_server = ParamServer::new(from_router, to_publisher, MAX_PARAM_WRITES_PER_TICK);
 
-    let mavlink = MavlinkPublisher::connect(MavlinkConfiguration::default())
-        .expect("failed to open MAVLink connection");
     let link =
         LinkPublisher::new(link_tx, LinkPublisherConfig::default()).with_param_replies(from_server);
 
-    let mut flight_loop = FlightLoop::new(
-        commander,
-        vehicle,
-        guidance,
-        stabilizer,
-        mixer,
-        (mavlink, link),
-    );
+    let mut flight_loop = FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, link);
 
     // Ctrl-C stops the loop cleanly (RealFlightVehicle re-enables RC control on drop).
     let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");

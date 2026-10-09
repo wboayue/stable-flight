@@ -49,6 +49,7 @@ Run these from the repository root (`just fly-manual` / `just fly-tune` / `just 
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --host 192.168.1.20:8080
 
 # Joystick, plus params and telemetry over the native link (UDP; binds 127.0.0.1:14560, peer 127.0.0.1:14561)
+# for stable-flight-bridge (`just bridge`), which QGC connects to; no direct MAVLink
 cargo run -p stable-flight-sitl-realflight --example copter-tune-realflight -- --link-peer 192.168.1.30:14561
 
 # Scripted figure-eight (script path is the first argument): flies it once, then hovers; --loop repeats it

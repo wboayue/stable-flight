@@ -10,11 +10,14 @@ The repository is a Cargo workspace. Dependencies point one way:
 stable-flight-tools ──► stable-flight-sitl ──► stable-flight ◄── stable-flight-sitl-realflight
                                 ▲                    ▲                     ┊
                                 ┊             stable-flight-link           ┊
+                                ┊                    ▲                     ┊
+                                ┊           stable-flight-bridge           ┊
                                 └┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ dev ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘
 ```
 
 * **`stable-flight`** (`crates/stable-flight`): the flight-control core — pipeline traits, the data passed between them (`Command`/`ControlInput`, `Setpoint`, `VehicleState`, `ControlOutput`, `ActuatorCommand`, `TelemetryRecord`), copter guidance, the cascaded-PID stabilizers and their shared PID `controllers`, the mixers, and `FlightLoop`, which sequences one tick. No simulator, I/O, clock, or thread dependencies, and `no_std`, so it can run on hardware. Published.
 * **`stable-flight-link`** (`crates/stable-flight-link`): the wire protocol between the flight controller and a companion computer — `Uplink`/`Downlink` messages, the frame codec, and the byte-level `Link` trait (see [Link](#link)). `no_std`, depends only on the core (with its `serde` feature). Published.
+* **`stable-flight-bridge`** (`crates/stable-flight-bridge`): the companion-computer binary that translates the native link to MAVLink for ground stations (see [Link](#link)). `std`; depends on the link crate and `mavlink`, never on the sitl harness, so it runs the same against SITL and a board. Published.
 * **`stable-flight-sitl`** (`crates/stable-flight-sitl`): the simulator-independent software-in-the-loop harness — joystick and scripted commanders, MAVLink telemetry, `RealTimeRunner` (wall-clock pacing of a `FlightLoop`), and `ShutdownSignal` (SIGINT/Ctrl-C flag). Published.
 * **`stable-flight-sitl-realflight`** (`crates/stable-flight-sitl-realflight`): the RealFlight backend — `RealFlightVehicle`, `ActuatorMapping`, tuned `airframes`, and the RealFlight examples. Published.
 * **`stable-flight-tools`** (`crates/stable-flight-tools`): developer binaries (`plot_flight`, `generate_figure_eight`). Unpublished, so library consumers never compile `plotters`.
@@ -47,6 +50,8 @@ Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its depen
 | Real board | USB-CDC, later a TELEM UART ([#155](https://github.com/wboayue/stable-flight/issues/155)) |
 
 On the flight controller, reading the link is separate from commanding: `UplinkRouter` drains `LinkRx` between ticks (or in a receive task) and routes each uplink to a bounded queue, params to the `ParamServer` and `Control` to a link-fed commander ([#153](https://github.com/wboayue/stable-flight/issues/153)), so params work whichever commander flies. `LinkPublisher` is the `TelemetryPublisher` that owns `LinkTx`.
+
+On the companion, `stable-flight-bridge` holds the other end of the link and speaks MAVLink for the flight controller (system 1, component 1), so MAVLink never runs on the board. It is a pure state machine (messages in, messages out, clock injected) behind a thin I/O loop. Its state is only what translation needs: the flight controller's last heartbeat (to send `HEARTBEAT` only while it is alive) and a param cache (to answer `PARAM_REQUEST_READ` without a round trip). Listings and writes go to the flight controller, whose echo is forwarded unchanged, so the flight controller stays the only judge of a param value. What it translates today: the [bridge README](crates/stable-flight-bridge/README.md).
 
 Staleness, failsafe, and arm decisions stay on the flight controller ([#152](https://github.com/wboayue/stable-flight/issues/152)); the bridge translates and never decides.
 

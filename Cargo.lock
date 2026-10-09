@@ -1475,6 +1475,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "stable-flight-bridge"
+version = "0.1.0"
+dependencies = [
+ "assert2",
+ "clap",
+ "env_logger",
+ "log",
+ "mavlink",
+ "stable-flight",
+ "stable-flight-link",
+]
+
+[[package]]
 name = "stable-flight-link"
 version = "0.1.0"
 dependencies = [

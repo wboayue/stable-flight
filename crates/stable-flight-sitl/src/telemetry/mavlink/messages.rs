@@ -138,6 +138,8 @@ pub(super) fn home_position(earth: &FlatEarth, home_m: Vec3) -> HOME_POSITION_DA
         approach_x: x,
         approach_y: y,
         approach_z: z,
+        // Unknown: 0 per the MAVLink spec.
+        time_usec: 0,
     }
 }
 
