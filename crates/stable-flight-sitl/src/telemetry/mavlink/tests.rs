@@ -110,18 +110,15 @@ fn at_altitude(altitude_m: f32) -> VehicleState {
 }
 
 #[test]
-fn relative_altitude_is_measured_from_home_latched_at_each_arming() {
-    // (armed, altitude_m, expected relative_alt in mm; None: position not finite, skipped)
+fn relative_altitude_is_measured_from_home() {
+    // The latch rules are `HomeTracker`'s; this checks the publisher measures from its home.
+    // (armed, altitude_m, expected relative_alt in mm; None: no home or position, skipped)
     let ticks = [
-        (false, f32::NAN, None),      // no finite altitude yet: no home, nothing sent
-        (false, 30.0, Some(0)),       // first finite altitude becomes home
-        (false, 35.0, Some(5_000)),   // moved while disarmed: home stays
-        (true, 50.0, Some(0)),        // arming re-latches home
-        (true, 60.0, Some(10_000)),   // climbing
-        (false, 20.0, Some(-30_000)), // disarmed below home
-        (true, f32::NAN, None),       // arming on a NaN altitude: no home yet
-        (true, 55.0, Some(0)),        // the next finite altitude becomes home
-        (true, 60.0, Some(5_000)),
+        (false, f32::NAN, None),    // no finite altitude yet: no home, nothing sent
+        (false, 30.0, Some(0)),     // first finite altitude becomes home
+        (false, 35.0, Some(5_000)), // moved while disarmed: home stays
+        (true, 50.0, Some(0)),      // arming re-latches home
+        (true, 60.0, Some(10_000)),
     ];
     let records: Vec<_> = ticks
         .iter()
@@ -250,6 +247,7 @@ fn home_position_is_sent_as_soon_as_home_is_latched() {
         position_m: [north_m, 0.0, up_m].into(),
         ..Default::default()
     };
+    // The latch rules are `HomeTracker`'s; this checks the publisher sends on each latch.
     // (armed, state, expected HOME_POSITION (x, z) sent this tick); dt is 100 ms, so the
     // 1 Hz timer alone would fire only on the first tick.
     let ticks = [
@@ -258,10 +256,6 @@ fn home_position_is_sent_as_soon_as_home_is_latched() {
         (false, at(5.0, 2.0), None),      // moved while disarmed: home stays
         (true, at(5.0, 3.0), Some((5.0, -3.0))), // arming re-latches home
         (true, at(9.0, 9.0), None),       // flying
-        (false, at(9.0, 0.0), None),
-        (true, at(f32::NAN, 0.0), None), // arming on a non-finite position: no home yet
-        (true, at(7.0, 1.0), Some((7.0, -1.0))), // the next finite position becomes home
-        (true, at(8.0, 4.0), None),
     ];
     let records: Vec<_> = ticks
         .iter()

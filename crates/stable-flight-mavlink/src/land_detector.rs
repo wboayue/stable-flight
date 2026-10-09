@@ -2,8 +2,8 @@
 
 use mavlink::common::MavLandedState;
 
-// Both thresholds are repeated in the `LandDetector` rustdoc, this crate's README, and sitl's
-// `MavlinkPublisher` rustdoc; update them together.
+// Both thresholds are repeated in the `LandDetector` rustdoc and this crate's README; update
+// them together.
 
 /// Armed and above this height over home: in the air.
 const IN_AIR_HEIGHT_M: f32 = 0.5;

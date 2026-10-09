@@ -17,7 +17,8 @@
 //!
 //! What the state messages need beyond one `VehicleState` lives here too, so both callers derive
 //! it the same way: a [`GeodeticOrigin`] and its [`FlatEarth`] projection for global position,
-//! [`HomeTracker`] for home, and [`LandDetector`] for the landed state. They hold state across
+//! [`HomeTracker`] for home, [`LandDetector`] for the landed state, and [`GroundTracker`]
+//! combining the two. They hold state across
 //! updates but, like the builders, no clock or I/O.
 //!
 //! # Examples
@@ -38,6 +39,7 @@ use stable_flight::ControlMode;
 pub use mavlink;
 
 mod geo;
+mod ground;
 mod home;
 mod land_detector;
 mod state;
@@ -47,6 +49,7 @@ pub mod testing;
 mod tests;
 
 pub use geo::{DEFAULT_ORIGIN, FlatEarth, GeodeticOrigin, InvalidOrigin};
+pub use ground::{GroundChanges, GroundTracker};
 pub use home::HomeTracker;
 pub use land_detector::LandDetector;
 pub use state::{

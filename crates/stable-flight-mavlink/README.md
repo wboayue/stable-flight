@@ -29,6 +29,7 @@ Telemetry-only estimates, stateful but with no clock or I/O, so every caller der
 
 - `HomeTracker`: home is the position at the latest arming, or before the first arm, the first finite one.
 - `LandDetector`: the landed state from the arm state and height above home (in the air above 0.5 m, landed again below 0.2 m, on the ground while disarmed).
+- `GroundTracker`: both, feeding the detector the height above the tracked home, and reporting when either changes so `HOME_POSITION` and `EXTENDED_SYS_STATE` can go out at once.
 
 `mavlink` is re-exported (`stable_flight_mavlink::mavlink`) so callers name the same types the builders return.
 
