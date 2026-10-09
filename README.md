@@ -16,6 +16,7 @@ The repository is a Cargo workspace:
 |---|---|
 | [`stable-flight`](crates/stable-flight) | Flight-control core: pipeline traits, copter guidance, cascaded-PID stabilizers, mixers, and `FlightLoop` (one control tick). `no_std`, with no simulator or I/O dependencies |
 | [`stable-flight-link`](crates/stable-flight-link) | Wire protocol between the flight controller and a companion computer: `Uplink`/`Downlink` messages, versioned COBS frames, and the byte-level `Link` trait. `no_std` |
+| [`stable-flight-bridge`](crates/stable-flight-bridge) | Companion-computer binary translating the native link to MAVLink for ground stations (QGC): params today, state and commands next |
 | [`stable-flight-sitl`](crates/stable-flight-sitl) | Simulator-independent software-in-the-loop harness: commanders, telemetry, the real-time `RealTimeRunner` + `ShutdownSignal`, and the backend conformance kit |
 | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | RealFlight backend: `RealFlightVehicle`, tuned `airframes`, and the RealFlight examples |
 | [`stable-flight-tools`](crates/stable-flight-tools) | Developer binaries (unpublished): `plot_flight` and `generate_figure_eight` |
@@ -63,6 +64,11 @@ cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight
 
 # Scripted figure-eight in RealFlight (script path is the first arg, --host to override host). Or: just fly-auto
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight
+
+# Joystick flight with params editable in QGC: the flight controller serves them over the
+# native link, and the bridge translates to MAVLink. Or: just fly-tune, then just bridge
+cargo run -p stable-flight-sitl-realflight --example copter-tune-realflight
+cargo run -p stable-flight-bridge
 
 # Joystick smoke test (no simulator required)
 cargo run --example extreme_3d_commander
