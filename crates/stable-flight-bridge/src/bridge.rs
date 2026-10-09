@@ -149,7 +149,7 @@ impl Bridge {
     /// The flight controller's latest status, if it was heard from within `fc_timeout`.
     fn alive_fc(&self, now: Instant) -> Option<FcStatus> {
         self.fc
-            .filter(|fc| now.saturating_duration_since(fc.last_seen) < self.fc_timeout)
+            .filter(|fc| heard_within(Some(fc.last_seen), now, self.fc_timeout))
     }
 
     /// Handles one message from the flight controller, received at `now`.
@@ -214,12 +214,12 @@ impl Bridge {
                         .commands
                         .on_command_long(header, data, fc_armed, now, out);
                 if !handled {
-                    out.to_gcs.push(MavMessage::COMMAND_ACK(encode::command_ack(
+                    let ack = encode::command_ack(
+                        header,
                         data.command,
                         MavResult::MAV_RESULT_UNSUPPORTED,
-                        header.system_id,
-                        header.component_id,
-                    )));
+                    );
+                    out.to_gcs.push(MavMessage::COMMAND_ACK(ack));
                 }
             }
             _ => {}
@@ -245,8 +245,7 @@ impl Bridge {
 
     /// Whether the ground station was heard from within `gcs_timeout` of `now`.
     fn gcs_alive(&self, now: Instant) -> bool {
-        self.gcs_last_seen
-            .is_some_and(|seen| now.saturating_duration_since(seen) < self.gcs_timeout)
+        heard_within(self.gcs_last_seen, now, self.gcs_timeout)
     }
 
     /// `target_system` / `target_component` select the flight controller (0 is broadcast).
@@ -254,6 +253,11 @@ impl Bridge {
         (target_system == 0 || target_system == self.system_id)
             && (target_component == 0 || target_component == self.component_id)
     }
+}
+
+/// Whether a peer last heard at `last_seen` (`None`: never) counts as alive at `now`.
+fn heard_within(last_seen: Option<Instant>, now: Instant, timeout: Duration) -> bool {
+    last_seen.is_some_and(|seen| now.saturating_duration_since(seen) < timeout)
 }
 
 /// The system and component a message the bridge routes is addressed to; `None` for every

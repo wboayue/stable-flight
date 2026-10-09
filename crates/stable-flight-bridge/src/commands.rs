@@ -98,10 +98,6 @@ impl CommandService {
 
 /// Queues an ack of `MAV_CMD_COMPONENT_ARM_DISARM` with `result` for `sender`.
 fn ack(sender: &MavHeader, result: MavResult, out: &mut Outbox) {
-    out.to_gcs.push(MavMessage::COMMAND_ACK(encode::command_ack(
-        MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
-        result,
-        sender.system_id,
-        sender.component_id,
-    )));
+    let ack = encode::command_ack(sender, MavCmd::MAV_CMD_COMPONENT_ARM_DISARM, result);
+    out.to_gcs.push(MavMessage::COMMAND_ACK(ack));
 }

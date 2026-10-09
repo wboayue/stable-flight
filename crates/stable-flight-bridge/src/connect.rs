@@ -94,12 +94,8 @@ impl ConnectService {
         let Some(answer) = self.requested_message(data) else {
             return false;
         };
-        out.to_gcs.push(MavMessage::COMMAND_ACK(encode::command_ack(
-            data.command,
-            MavResult::MAV_RESULT_ACCEPTED,
-            sender.system_id,
-            sender.component_id,
-        )));
+        let ack = encode::command_ack(sender, data.command, MavResult::MAV_RESULT_ACCEPTED);
+        out.to_gcs.push(MavMessage::COMMAND_ACK(ack));
         out.to_gcs.push(answer);
         true
     }
