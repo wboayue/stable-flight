@@ -36,6 +36,8 @@ mod link;
 pub mod loopback;
 mod message;
 pub mod params;
+pub mod publisher;
+pub mod router;
 #[cfg(feature = "std")]
 pub mod udp;
 
@@ -43,7 +45,8 @@ pub use frame::{DecodeError, EncodeError, MAX_FRAME_LEN, Message, PROTOCOL_VERSI
 pub use io::{LinkError, RecvMessage, SendMessage};
 pub use link::{Link, LinkRx, LinkTx};
 pub use message::{
-    Downlink, MAX_STATUS_LEN, ParamName, ParamRequest, ParamValue, Record, StatusText, Uplink,
+    Control, Downlink, MAX_STATUS_LEN, ParamName, ParamRequest, ParamValue, Record, StatusText,
+    Uplink,
 };
 
 /// The `heapless` version [`ParamName`] and [`StatusText`] use.

@@ -100,13 +100,13 @@ pub(crate) mod sealed {
 /// # Examples
 ///
 /// ```
-/// use stable_flight_link::{MAX_FRAME_LEN, Message, Uplink};
+/// use stable_flight_link::{Control, MAX_FRAME_LEN, Message, Uplink};
 ///
 /// let mut frame = [0u8; MAX_FRAME_LEN];
-/// let len = Uplink::Arm(true).encode(&mut frame).unwrap();
+/// let len = Uplink::Control(Control::Arm(true)).encode(&mut frame).unwrap();
 /// assert_eq!(frame[len - 1], 0x00); // delimiter
 ///
-/// assert_eq!(Uplink::decode(&mut frame[..len]), Ok(Uplink::Arm(true)));
+/// assert_eq!(Uplink::decode(&mut frame[..len]), Ok(Uplink::Control(Control::Arm(true))));
 /// ```
 pub trait Message: Serialize + DeserializeOwned + sealed::Sealed {
     /// Encodes `self` as one frame into `out`, trailing `0x00` included, and returns its

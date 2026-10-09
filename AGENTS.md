@@ -13,8 +13,9 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     thread dependencies, and it is `no_std` — keep it that way (see Coding style).
   - `crates/stable-flight-link` — the `no_std` FC ⇄ companion wire protocol: `Uplink`/`Downlink`
     messages, versioned COBS frames (`Message::encode`/`decode`), the byte-level `Link` (`LinkRx` + `LinkTx`),
-    `SendMessage`/`RecvMessage` (encode+send, receive+decode), `params::ParamServer` (serves core
-    `Params` between ticks), a `std`-feature `UdpLink`, and a
+    `SendMessage`/`RecvMessage` (encode+send, receive+decode), `router::UplinkRouter` (reads the
+    link), `publisher::LinkPublisher` (writes it), `params::ParamServer` (serves core `Params`
+    between ticks), a `std`-feature `UdpLink`, and a
     `testing`-feature `loopback`. Depends only on the core (`serde` feature); other transports
     (USB-CDC) live with their board.
   - `crates/stable-flight-sitl` — the simulator-independent SITL harness: `commanders`,
@@ -22,7 +23,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     (`ShutdownSignal`). Depends on the core. Non-simulator examples live in `crates/stable-flight-sitl/examples/*.rs`.
   - `crates/stable-flight-sitl-realflight` — the RealFlight backend: `RealFlightVehicle`,
     `ActuatorMapping`, `airframes` (tuned gains, mixer, and mapping per model), and the
-    `copter-*-realflight` examples. Normal deps: core, `realflight-bridge`, `log`; sitl is a dev-dependency only (CI checks).
+    `copter-*-realflight` examples. Normal deps: core, `realflight-bridge`, `log`; sitl and link (`std`) are dev-dependencies only (CI checks sitl).
     One `stable-flight-sitl-<simulator>` crate per backend.
   - `crates/stable-flight-tools` — unpublished (`publish = false`) dev binaries: `plot_flight`
     (3D flight-path visualizer) and `generate_figure_eight` (waypoint-script generator).
@@ -33,7 +34,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Run every command from the repo root: `cargo run --example <name>` / `--bin <name>` resolve
   across the workspace (add `-p <crate>` to be explicit), and `flights/*.csv` paths are
   relative to the root.
-- Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `params` (`Params`, `ParamTable`: name → `f32` view over the configs), `stabilizers`, `testing` (feature: doubles + `conformance`) (traits/types, the `Vec2`/`Vec3` aliases, `GRAVITY`, `euler_angles`, `wrap_angle`, and the `nalgebra` re-export at the crate root; feature `serde` derives `Serialize`/`Deserialize` on the pipeline data); `stable-flight-link` — `loopback` (feature `testing`), `params` (`ParamServer`), `udp` (feature `std`: `UdpLink`), with `Uplink`, `Downlink`, `Record`, `ParamRequest`, `ParamValue`, `Message`, `EncodeError`, `DecodeError`, `Link` (`LinkRx` + `LinkTx`, blanket-implemented), `SendMessage`/`RecvMessage` + `LinkError` (blanket-implemented), `PROTOCOL_VERSION`, `MAX_FRAME_LEN`, and the `heapless`/`stable_flight` re-exports at the root; `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, `vehicle_state`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
+- Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `params` (`Params`, `ParamTable`: name → `f32` view over the configs), `stabilizers`, `timing` (`Every`), `testing` (feature: doubles + `conformance`) (traits/types, the `Vec2`/`Vec3` aliases, `GRAVITY`, `euler_angles`, `wrap_angle`, and the `nalgebra` re-export at the crate root; feature `serde` derives `Serialize`/`Deserialize` on the pipeline data); `stable-flight-link` — `loopback` (feature `testing`), `params` (`ParamServer`), `publisher` (`LinkPublisher`, `LinkPublisherConfig`), `router` (`UplinkRouter`, `RouteStats`), `udp` (feature `std`: `UdpLink`), with `Uplink`, `Control`, `Downlink`, `Record`, `ParamRequest`, `ParamValue`, `Message`, `EncodeError`, `DecodeError`, `Link` (`LinkRx` + `LinkTx`, blanket-implemented), `SendMessage`/`RecvMessage` + `LinkError` (blanket-implemented), `PROTOCOL_VERSION`, `MAX_FRAME_LEN`, and the `heapless`/`stable_flight` re-exports at the root; `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, `vehicle_state`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
 - Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `nalgebra` (core only, `libm`; core aliases `Vec2`/`Vec3` and re-exports it as `stable_flight::nalgebra` — other crates use the re-export), `libm` (`no_std` float math, core), `serde` (core `serde` feature, link), `postcard` + `heapless` + `cobs` + `crc` (link only), `mavlink`, `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
 - Untracked generated artifacts: `target/`, `tarpaulin-report.html`, `firmware/*/*.bin`.
 - The root `Cargo.lock` is committed (reproducible CI, stable cache key); CI builds with `--locked`,
@@ -59,6 +60,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 cargo build --workspace                         # or: just build
 cargo test --workspace --all-features           # or: just test
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight  # joystick + RealFlight (--host); or: just fly-manual
+cargo run -p stable-flight-sitl-realflight --example copter-tune-realflight    # as manual, params + telemetry over the native link (--link-bind/--link-peer); or: just fly-tune
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight    # scripted figure-eight (script arg, --host, --loop); or: just fly-auto
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight  # joystick flight + raw SimulatorState → CSV; or: just capture
 cargo run --example extreme_3d_commander        # joystick smoke test

@@ -76,25 +76,27 @@ fn sample_state() -> VehicleState {
 #[test]
 fn every_uplink_variant_round_trips() {
     let cases = [
-        Uplink::Heartbeat,
-        Uplink::Command(Command::armed(ControlInput::Attitude(AttitudeCommand {
-            throttle: 0.5,
-            roll: -0.1,
-            pitch: 0.2,
-            yaw: 0.3,
-            mode: 1,
-        }))),
-        Uplink::Command(Command::new(
+        Uplink::Control(Control::Heartbeat),
+        Uplink::Control(Control::Command(Command::armed(ControlInput::Attitude(
+            AttitudeCommand {
+                throttle: 0.5,
+                roll: -0.1,
+                pitch: 0.2,
+                yaw: 0.3,
+                mode: 1,
+            },
+        )))),
+        Uplink::Control(Control::Command(Command::new(
             false,
             ControlInput::Rate(RateCommand {
                 throttle: 0.4,
                 roll_rate: 0.1,
                 ..Default::default()
             }),
-        )),
-        Uplink::Command(worst_case_record().command),
-        Uplink::Arm(true),
-        Uplink::Arm(false),
+        ))),
+        Uplink::Control(Control::Command(worst_case_record().command)),
+        Uplink::Control(Control::Arm(true)),
+        Uplink::Control(Control::Arm(false)),
         Uplink::Param(ParamRequest::Set {
             name: name("STAB_RATE_P"),
             value: 0.15,

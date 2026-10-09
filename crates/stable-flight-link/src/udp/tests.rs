@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use assert2::{assert, check};
 
 use super::*;
-use crate::{Downlink, MAX_FRAME_LEN, Message, SendMessage, Uplink};
+use crate::{Control, Downlink, MAX_FRAME_LEN, Message, SendMessage, Uplink};
 
 const WAIT: Duration = Duration::from_secs(2);
 
@@ -38,10 +38,12 @@ fn frames_cross_in_both_directions() {
     let len = peer.recv(&mut buf).unwrap();
     check!(Downlink::decode(&mut buf[..len]) == Ok(Downlink::Status("up".try_into().unwrap())));
 
-    let len = Uplink::Arm(true).encode(&mut buf).unwrap();
+    let len = Uplink::Control(Control::Arm(true))
+        .encode(&mut buf)
+        .unwrap();
     peer.send(&buf[..len]).unwrap();
     assert!(let Some(len) = recv_within(&mut link, &mut buf));
-    check!(Uplink::decode(&mut buf[..len]) == Ok(Uplink::Arm(true)));
+    check!(Uplink::decode(&mut buf[..len]) == Ok(Uplink::Control(Control::Arm(true))));
 }
 
 #[test]
@@ -62,7 +64,10 @@ fn absent_peer_drops_sends_without_error() {
     let mut buf = [0u8; MAX_FRAME_LEN];
 
     for _ in 0..3 {
-        check!(link.send_message(&Uplink::Heartbeat, &mut buf).is_ok());
+        check!(
+            link.send_message(&Uplink::Control(Control::Heartbeat), &mut buf)
+                .is_ok()
+        );
         std::thread::sleep(Duration::from_millis(10)); // let a port-unreachable land
         check!(link.try_recv(&mut buf).unwrap() == None);
     }
@@ -116,4 +121,21 @@ fn halves_share_one_socket() {
 #[test]
 fn unresolvable_address_fails_to_bind() {
     check!(UdpLink::bind("127.0.0.1:0", "not an address").is_err());
+}
+
+#[test]
+fn wraps_only_a_connected_socket() {
+    let peer = bind_peer();
+    let socket = UdpSocket::bind("127.0.0.1:0").unwrap();
+    let unconnected = socket.try_clone().unwrap();
+    check!(UdpLink::try_from(unconnected).is_err());
+
+    socket.connect(peer.local_addr().unwrap()).unwrap();
+    let mut link = UdpLink::try_from(socket).unwrap();
+    peer.connect(link.local_addr().unwrap()).unwrap();
+    let mut buf = [0u8; MAX_FRAME_LEN];
+
+    link.send(&[1, 0]).unwrap();
+    check!(peer.recv(&mut buf).unwrap() == 2);
+    check!(link.try_recv(&mut buf).unwrap() == None); // non-blocking
 }

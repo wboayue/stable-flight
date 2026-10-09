@@ -17,6 +17,18 @@ mod tests;
 /// `u8` length: smaller in memory, same on the wire.
 pub type ParamName = heapless::String<{ params::MAX_NAME_LEN }, u8>;
 
+/// The uplinks that steer the vehicle, for a link-fed commander:
+/// [`Uplink::Control`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Control {
+    /// Keeps the link alive; the flight controller tracks staleness from it.
+    Heartbeat,
+    /// What to fly, as a core [`Command`].
+    Command(Command),
+    /// Arm (`true`) or disarm request, subject to the flight controller's arm policy.
+    Arm(bool),
+}
+
 /// A parameter request from the companion: [`Uplink::Param`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ParamRequest {
@@ -61,12 +73,14 @@ pub type StatusText = heapless::String<MAX_STATUS_LEN, u8>;
 ///
 /// ```
 /// use stable_flight_link::stable_flight::{AttitudeCommand, Command, ControlInput};
-/// use stable_flight_link::{MAX_FRAME_LEN, Message, Uplink};
+/// use stable_flight_link::{Control, MAX_FRAME_LEN, Message, Uplink};
 ///
-/// let hover = Uplink::Command(Command::armed(ControlInput::Attitude(AttitudeCommand {
-///     throttle: 0.5,
-///     ..Default::default()
-/// })));
+/// let hover = Uplink::Control(Control::Command(Command::armed(ControlInput::Attitude(
+///     AttitudeCommand {
+///         throttle: 0.5,
+///         ..Default::default()
+///     },
+/// ))));
 /// let mut frame = [0u8; MAX_FRAME_LEN];
 /// let len = hover.encode(&mut frame).unwrap();
 /// assert_eq!(Uplink::decode(&mut frame[..len]), Ok(hover));
@@ -74,12 +88,8 @@ pub type StatusText = heapless::String<MAX_STATUS_LEN, u8>;
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Uplink {
-    /// Keeps the link alive; the flight controller tracks staleness from it.
-    Heartbeat,
-    /// What to fly, as a core [`Command`].
-    Command(Command),
-    /// Arm (`true`) or disarm request, subject to the flight controller's arm policy.
-    Arm(bool),
+    /// Steers the vehicle; for a link-fed commander.
+    Control(Control),
     /// Set a parameter or list them all; answered with [`Downlink::Param`]s. See
     /// [`ParamServer`](crate::params::ParamServer).
     Param(ParamRequest),
