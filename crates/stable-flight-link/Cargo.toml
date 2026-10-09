@@ -20,6 +20,8 @@ cobs = { version = "0.5", default-features = false }
 crc = "3.4"
 
 [features]
+# `udp::UdpLink`, a UDP transport for host setups (SITL, the bridge).
+std = []
 # In-memory `loopback` link for tests. For dev-dependencies only.
 testing = []
 

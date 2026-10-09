@@ -26,13 +26,20 @@
 
 #![cfg_attr(not(test), no_std)]
 
+#[cfg(all(not(test), feature = "std"))]
+extern crate std;
+
 mod frame;
+mod io;
 mod link;
 #[cfg(any(test, feature = "testing"))]
 pub mod loopback;
 mod message;
+#[cfg(feature = "std")]
+pub mod udp;
 
 pub use frame::{DecodeError, EncodeError, MAX_FRAME_LEN, Message, PROTOCOL_VERSION};
+pub use io::{LinkError, RecvMessage, SendMessage};
 pub use link::{Link, LinkRx, LinkTx};
 pub use message::{Downlink, MAX_STATUS_LEN, ParamName, Record, StatusText, Uplink};
 
