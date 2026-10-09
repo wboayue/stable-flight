@@ -8,11 +8,13 @@ The repository is a Cargo workspace. Dependencies point one way:
 
 ```
 stable-flight-tools ──► stable-flight-sitl ──► stable-flight ◄── stable-flight-sitl-realflight
-                                ▲                                          ┊
+                                ▲                    ▲                     ┊
+                                ┊             stable-flight-link           ┊
                                 └┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ dev ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘
 ```
 
 * **`stable-flight`** (`crates/stable-flight`): the flight-control core — pipeline traits, the data passed between them (`Command`/`ControlInput`, `Setpoint`, `VehicleState`, `ControlOutput`, `ActuatorCommand`, `TelemetryRecord`), copter guidance, the cascaded-PID stabilizers and their shared PID `controllers`, the mixers, and `FlightLoop`, which sequences one tick. No simulator, I/O, clock, or thread dependencies, and `no_std`, so it can run on hardware. Published.
+* **`stable-flight-link`** (`crates/stable-flight-link`): the wire protocol between the flight controller and a companion computer — `Uplink`/`Downlink` messages, the frame codec, and the byte-level `Link` trait (see [Link](#link)). `no_std`, depends only on the core (with its `serde` feature). Published.
 * **`stable-flight-sitl`** (`crates/stable-flight-sitl`): the simulator-independent software-in-the-loop harness — joystick and scripted commanders, MAVLink telemetry, `RealTimeRunner` (wall-clock pacing of a `FlightLoop`), and `ShutdownSignal` (SIGINT/Ctrl-C flag). Published.
 * **`stable-flight-sitl-realflight`** (`crates/stable-flight-sitl-realflight`): the RealFlight backend — `RealFlightVehicle`, `ActuatorMapping`, tuned `airframes`, and the RealFlight examples. Published.
 * **`stable-flight-tools`** (`crates/stable-flight-tools`): developer binaries (`plot_flight`, `generate_figure_eight`). Unpublished, so library consumers never compile `plotters`.
@@ -27,6 +29,24 @@ Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its depen
 * **Timing contract.** `FlightLoop` calls `estimate_state` then `actuate` once per tick, so a backend must say which call talks to the simulator and how old its state is. The `Vehicle` rustdoc is the reference; each backend documents its own timing (e.g. `RealFlightVehicle`).
 * **Conformance.** `stable_flight::testing::conformance` (core `testing` feature) lists physical scenarios and the `VehicleState` each must yield, and `conformance_tests!` runs a backend's native fixtures through them. It lives in the core so backends, and in-core estimator adapters, test against it without pulling in the harness.
 * **Airframes.** Tuned gains, the mixer, and channel mappings live in the backend's `airframes` module, next to the simulated model they were tuned on. Examples still inline their pipeline wiring.
+
+## Link
+
+`stable-flight-link` is the native protocol between the flight controller and a companion computer ([#150](https://github.com/wboayue/stable-flight/issues/150)). The wire format is the core types themselves (`Command`, `VehicleState`, an owned `TelemetryRecord`) in postcard, so the flight controller carries no MAVLink dialect; the bridge on the companion translates to MAVLink in `std` code.
+
+* **Frame.** `[version u8][postcard payload][crc16 LE]`, COBS-encoded, `0x00`-terminated. COBS gives the length, so there is no length field. Postcard is not self-describing (a reordered field decodes as garbage, not an error), so every frame carries `PROTOCOL_VERSION` and the receiver rejects a mismatch; any message shape change bumps it. The CRC (CRC-16/IBM-3740, bitwise to save flash) is checked before the version, so a corrupted version byte reads as corruption, not a version mismatch.
+* **Sealed messages.** Only `Uplink` and `Downlink` implement `Message`, so nothing else travels under the protocol version.
+* **Fixed size.** Every message fits `MAX_FRAME_LEN` (256 bytes; a test checks the worst case), so both ends use stack buffers and nothing allocates.
+* **One frame per decode.** `decode` rejects bytes after the delimiter, so a transport that hands over two frames at once fails loudly instead of losing the second.
+* **Transport-agnostic.** `Link` moves encoded frames without blocking; the transport is picked where the pipeline is wired. Like `Vehicle`, it is two traits blanket-joined (`LinkRx` + `LinkTx`), so the commander that receives and the publisher that sends can each own one half of the same transport. Every transport carries the same frames, so a host run exercises the real wire format:
+
+| Setup | `Link` |
+|---|---|
+| Tests | `loopback::Loopback` (`testing` feature) |
+| Flight controller (SITL) and bridge on one host, no USB | UDP on localhost ([#153](https://github.com/wboayue/stable-flight/issues/153)) |
+| Real board | USB-CDC, later a TELEM UART ([#155](https://github.com/wboayue/stable-flight/issues/155)) |
+
+Staleness, failsafe, and arm decisions stay on the flight controller ([#152](https://github.com/wboayue/stable-flight/issues/152)); the bridge translates and never decides.
 
 ## Flight Loop and Runners
 

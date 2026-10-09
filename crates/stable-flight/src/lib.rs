@@ -166,7 +166,8 @@ pub trait Commander {
 /// let switch_off = false;
 /// assert!(!Command::new(switch_off, hover.input).arm);
 /// ```
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Command {
     /// `true` to arm (motors may run), `false` to disarm (motors held off). Defaults to
@@ -256,7 +257,8 @@ impl Command {
 /// - `#[non_exhaustive]`: new command kinds (e.g. fixed-wing) can be added without a breaking
 ///   change. A [`Guidance`] that can't fly a variant must fall back to neutral, not panic (see
 ///   [`Guidance::guide`]).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum ControlInput {
     /// Direct manual control inputs for the aircraft's attitude (orientation).
@@ -330,7 +332,8 @@ impl Default for ControlInput {
 /// - `pitch`: `0.0`
 /// - `yaw`: `0.0`
 /// - `mode`: `0`
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AttitudeCommand {
     /// Controls the engine power output, ranging from `0.0` (idle) to `1.0` (maximum).
     pub throttle: f32,
@@ -400,7 +403,8 @@ pub struct AttitudeCommand {
 /// - `pitch_rate`: `0.0`
 /// - `yaw_rate`: `0.0`
 /// - `mode`: `0`
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RateCommand {
     /// Controls the engine power output, ranging from `0.0` (idle) to `1.0` (maximum).
     pub throttle: f32,
@@ -474,7 +478,8 @@ pub struct RateCommand {
 /// - `altitude_m`: `0.0`
 /// - `cruise_speed_mps`: `0.0`
 /// - `roll_rad`: `None`
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaypointCommand {
     /// The target position in 2D space (X, Y coordinates).
     ///
@@ -530,6 +535,7 @@ pub struct WaypointCommand {
 /// );
 /// ```
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ControlOutput {
     /// Normalized thrust value, typically ranging from 0.0 (no thrust) to 1.0 (maximum thrust).
     pub thrust: f32,
@@ -593,6 +599,7 @@ impl ControlOutput {
 /// let state = VehicleState::default();
 /// ```
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct VehicleState {
     /// World position (north, east, up); see the [frame contract](VehicleState#frame-contract).
     pub position_m: Vec3,
@@ -743,6 +750,7 @@ pub trait Actuator {
 /// let hover = Setpoint::Attitude(AttitudeSetpoint { thrust: 0.5, ..Default::default() });
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum Setpoint {
     /// Hold a roll/pitch attitude and an absolute heading.
@@ -753,6 +761,7 @@ pub enum Setpoint {
 
 /// Attitude target for the [`Stabilizer`]; see [`Setpoint`].
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AttitudeSetpoint {
     /// Roll target in radians, right positive, per the
     /// [frame contract](VehicleState#frame-contract)'s `roll_rad`. The stabilizer saturates it
@@ -771,6 +780,7 @@ pub struct AttitudeSetpoint {
 
 /// Body-rate target for the [`Stabilizer`]; see [`Setpoint`].
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RateSetpoint {
     /// Roll rate as a fraction of the stabilizer's maximum, `-1.0` to `1.0` (right positive).
     pub roll_rate: f32,
@@ -928,6 +938,7 @@ pub trait Stabilizer {
 /// assert!(!Saturation::default().any());
 /// ```
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub struct Saturation {
     /// A requested tilt was capped: guidance's waypoint tilt limit, or the stabilizer's
@@ -1138,7 +1149,8 @@ pub struct TelemetryRecord<'a> {
 /// cmd.aileron = -0.05;   // Slight left roll
 /// cmd.rudder = 0.0;      // No rudder
 /// ```
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ActuatorCommand {
     /// Motor output values, ranging from 0.0 (off) to 1.0 (full power).
     /// For multirotors, the specific mapping of array indices to physical motors

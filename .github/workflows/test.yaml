@@ -102,10 +102,13 @@ jobs:
           . -> target
           firmware/ark-fpv -> target
 
-    - name: build core (thumbv7em-none-eabihf)
+    - name: build core and link (thumbv7em-none-eabihf)
       run: |
         cargo build -p stable-flight --locked --target thumbv7em-none-eabihf
         cargo build -p stable-flight --features testing --locked --target thumbv7em-none-eabihf
+        cargo build -p stable-flight --features serde --locked --target thumbv7em-none-eabihf
+        cargo build -p stable-flight-link --locked --target thumbv7em-none-eabihf
+        cargo build -p stable-flight-link --features testing --locked --target thumbv7em-none-eabihf
 
     # The firmware is a nested workspace; run from its dir so its .cargo/config.toml (target,
     # linker script) applies. A core change that breaks the link fails here; flash size is printed
