@@ -4,10 +4,14 @@ Wire protocol between a [Stable Flight](https://github.com/wboayue/stable-flight
 
 ## Messages
 
-- `Uplink` (companion → FC): `Heartbeat`, `Command` (a core `Command`), `Arm`, `SetParam`, `RequestParams`.
-- `Downlink` (FC → companion): `Heartbeat`, `State` (a core `VehicleState`), `Record` (an owned copy of a tick's `TelemetryRecord`), `Param`, `Status`.
+- `Uplink` (companion → FC): `Heartbeat`, `Command` (a core `Command`), `Arm`, `Param` (a `ParamRequest`: set one, or list all).
+- `Downlink` (FC → companion): `Heartbeat`, `State` (a core `VehicleState`), `Record` (an owned copy of a tick's `TelemetryRecord`), `Param` (a `ParamValue`: name, value, index, count), `Status`.
 
 Parameter names are the core's [`params`](https://docs.rs/stable-flight/latest/stable_flight/params/) names.
+
+## Params
+
+`params::ParamServer` serves the flight controller's core `Params` over the link: the commander queues `ParamRequest`s inside the tick, and `poll(&mut flight_loop)` between ticks applies them and queues `ParamValue` replies for the publisher. Pacing and reply rules: its [rustdoc](https://docs.rs/stable-flight-link/latest/stable_flight_link/params/struct.ParamServer.html).
 
 ## Frames
 
