@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
 use assert2::check;
+use mavlink::Message;
 
 use super::*;
 use crate::test_support::GCS;
@@ -8,7 +9,14 @@ use crate::test_support::GCS;
 const INTERVAL: Duration = Duration::from_secs(1);
 
 fn service() -> ConnectService {
-    ConnectService::new(MavType::MAV_TYPE_QUADROTOR, INTERVAL)
+    ConnectService::new(MavType::MAV_TYPE_QUADROTOR, INTERVAL, None)
+}
+
+/// Param metadata at a fixed URI and CRC.
+fn metadata() -> ComponentMetadata {
+    let mut uri = [0u8; 100];
+    uri[..17].copy_from_slice(b"http://h/1/g.json");
+    ComponentMetadata { uri, crc: 7 }
 }
 
 fn request_message(id: u32) -> COMMAND_LONG_DATA {
@@ -51,7 +59,7 @@ fn answers_every_mission_type_with_an_empty_list() {
 }
 
 #[test]
-fn acks_commands_and_serves_autopilot_version() {
+fn acks_commands_and_answers_the_messages_it_serves() {
     let arm = COMMAND_LONG_DATA {
         command: MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
         param1: 1.0,
@@ -59,47 +67,76 @@ fn acks_commands_and_serves_autopilot_version() {
         target_component: 1,
         ..Default::default()
     };
-    // (case, command, expected result, AUTOPILOT_VERSION follows)
+    let with_metadata =
+        ConnectService::new(MavType::MAV_TYPE_QUADROTOR, INTERVAL, Some(metadata()));
+    // (case, service, command, expected result, expected answer)
     let cases = [
         (
             "AUTOPILOT_VERSION request",
+            service(),
             request_message(AUTOPILOT_VERSION_DATA::ID),
             MavResult::MAV_RESULT_ACCEPTED,
-            true,
+            Some("AUTOPILOT_VERSION"),
         ),
         (
-            "COMPONENT_METADATA request (#206)",
-            request_message(397),
+            "COMPONENT_METADATA request, metadata served",
+            with_metadata,
+            request_message(COMPONENT_METADATA_DATA::ID),
+            MavResult::MAV_RESULT_ACCEPTED,
+            Some("COMPONENT_METADATA"),
+        ),
+        (
+            "COMPONENT_METADATA request, none served",
+            service(),
+            request_message(COMPONENT_METADATA_DATA::ID),
             MavResult::MAV_RESULT_UNSUPPORTED,
-            false,
+            None,
+        ),
+        (
+            "another message",
+            service(),
+            request_message(HOME_POSITION_DATA::ID),
+            MavResult::MAV_RESULT_UNSUPPORTED,
+            None,
         ),
         (
             "arm (later slice)",
+            service(),
             arm,
             MavResult::MAV_RESULT_UNSUPPORTED,
-            false,
+            None,
         ),
     ];
-    for (case, data, result, version) in cases {
+    for (case, service, data, result, answer) in cases {
         let mut out = Outbox::default();
-        service().on_command_long(&GCS, &data, &mut out);
+        service.on_command_long(&GCS, &data, &mut out);
 
         let Some(MavMessage::COMMAND_ACK(ack)) = out.to_gcs.first() else {
             panic!("{case}: expected an ack first, got {:?}", out.to_gcs);
         };
         check!(ack.result == result, "{case}");
+        check!(ack.command == data.command, "{case}");
         check!((ack.target_system, ack.target_component) == (GCS.system_id, GCS.component_id));
+        check!(
+            out.to_gcs.get(1).map(|m| m.message_name()) == answer,
+            "{case}"
+        );
+        check!(out.to_gcs.len() <= 2, "{case}");
         match out.to_gcs.get(1) {
             Some(MavMessage::AUTOPILOT_VERSION(data)) => {
-                check!(version, "{case}");
                 check!(data.capabilities.contains(
                     MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_MAVLINK2
                         | MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_PARAM_ENCODE_C_CAST
                 ));
             }
-            other => {
-                check!(!version && other.is_none(), "{case}: {other:?}");
+            Some(MavMessage::COMPONENT_METADATA(data)) => {
+                check!(data.file_crc == metadata().crc, "{case}");
+                check!(
+                    data.uri.to_str().ok() == Some("http://h/1/g.json"),
+                    "{case}"
+                );
             }
+            _ => {}
         }
         check!(out.to_fc.is_empty(), "{case}");
     }
@@ -117,7 +154,7 @@ fn heartbeat_reports_the_arm_state_mode_and_vehicle_type() {
     ];
     for (armed, mode) in cases {
         let now = Instant::now();
-        let mut connect = ConnectService::new(tailsitter, INTERVAL);
+        let mut connect = ConnectService::new(tailsitter, INTERVAL, None);
         let mut out = Outbox::default();
         connect.fc_appeared(now, &mut Outbox::default());
         connect.poll(now, armed, mode, &mut out);
