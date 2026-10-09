@@ -15,11 +15,14 @@ lint:
     cargo clippy --workspace --all-targets --all-features -- -D warnings
     RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
 
-# Builds the no_std core for a bare-metal target, with and without `testing`, and the firmware (as CI does)
+# Builds the no_std core (plain, `testing`, `serde`) and link crates for a bare-metal target, and the firmware (as CI does)
 embedded: && fw-build
     rustup target add thumbv7em-none-eabihf
     cargo build -p stable-flight --target thumbv7em-none-eabihf
     cargo build -p stable-flight --features testing --target thumbv7em-none-eabihf
+    cargo build -p stable-flight --features serde --target thumbv7em-none-eabihf
+    cargo build -p stable-flight-link --target thumbv7em-none-eabihf
+    cargo build -p stable-flight-link --features testing --target thumbv7em-none-eabihf
 
 # Release build of the ARK FPV firmware; `just fw-build bench-armed` arms the stub for timing checks
 fw-build features="":
