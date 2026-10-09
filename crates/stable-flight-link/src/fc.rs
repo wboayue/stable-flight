@@ -1,7 +1,7 @@
-//! The flight controller's side of the link, wired for tests (`testing` feature): the param
-//! queues, [`UplinkRouter`], [`ParamServer`], and [`LinkPublisher`], as
-//! `copter-tune-realflight` wires them, so a test drives a real flight-controller stack from the
-//! companion's end.
+//! The flight controller's side of the link, wired in one call: the param queues,
+//! [`UplinkRouter`], [`ParamServer`], and [`LinkPublisher`]. A flight controller (a SITL example,
+//! a board) or a test gets the whole stack from [`FcLink::wire`]: the publisher is the flight
+//! loop's telemetry, and the [`FcPoller`] runs between ticks.
 //!
 //! ```
 //! use stable_flight_link::loopback::Loopback;
@@ -9,7 +9,7 @@
 //! use stable_flight_link::stable_flight::stabilizers::copter::{
 //!     CopterStabilizer, CopterStabilizerConfig,
 //! };
-//! use stable_flight_link::testing::FcLink;
+//! use stable_flight_link::fc::FcLink;
 //! use stable_flight_link::{MAX_FRAME_LEN, ParamRequest, SendMessage, Uplink};
 //!
 //! let loopback = Loopback::<16>::new();
@@ -65,14 +65,43 @@ impl<const REQUESTS: usize, const REPLIES: usize> FcLink<REQUESTS, REPLIES> {
         rx: R,
         tx: T,
     ) -> (FcPoller<'_, R>, LinkPublisher<'_, T>) {
+        self.wire_with(rx, tx, LinkPublisherConfig::default())
+    }
+
+    /// As [`wire`](Self::wire), with the publisher's rates from `config` (e.g. to send records).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use core::time::Duration;
+    ///
+    /// use stable_flight_link::fc::FcLink;
+    /// use stable_flight_link::loopback::Loopback;
+    /// use stable_flight_link::publisher::LinkPublisherConfig;
+    ///
+    /// let loopback = Loopback::<16>::new();
+    /// let (_companion, fc_end) = loopback.split();
+    /// let (rx, tx) = fc_end.into_halves();
+    /// let mut link = FcLink::<32, 16>::new();
+    /// let config = LinkPublisherConfig {
+    ///     record_interval: Some(Duration::from_millis(200)),
+    ///     ..LinkPublisherConfig::default()
+    /// };
+    /// let (_poller, _telemetry) = link.wire_with(rx, tx, config);
+    /// ```
+    pub fn wire_with<R: LinkRx, T: LinkTx>(
+        &mut self,
+        rx: R,
+        tx: T,
+        config: LinkPublisherConfig,
+    ) -> (FcPoller<'_, R>, LinkPublisher<'_, T>) {
         let (to_server, from_router) = self.requests.split();
         let (to_publisher, from_server) = self.replies.split();
         let poller = FcPoller {
             router: UplinkRouter::new(rx, MAX_FRAMES_PER_POLL).with_params(to_server),
             server: ParamServer::new(from_router, to_publisher, MAX_WRITES_PER_POLL),
         };
-        let publisher =
-            LinkPublisher::new(tx, LinkPublisherConfig::default()).with_param_replies(from_server);
+        let publisher = LinkPublisher::new(tx, config).with_param_replies(from_server);
         (poller, publisher)
     }
 }

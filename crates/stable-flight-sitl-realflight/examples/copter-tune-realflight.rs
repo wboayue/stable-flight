@@ -24,21 +24,14 @@ use log::{debug, warn};
 use stable_flight::FlightLoop;
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
-use stable_flight_link::heapless::spsc::Queue;
-use stable_flight_link::params::ParamServer;
-use stable_flight_link::publisher::{LinkPublisher, LinkPublisherConfig};
-use stable_flight_link::router::UplinkRouter;
+use stable_flight_link::fc::FcLink;
+use stable_flight_link::publisher::LinkPublisherConfig;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
-use stable_flight_link::{ParamRequest, ParamValue};
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
 
-/// Uplink frames decoded per tick; more wait for the next tick.
-const MAX_FRAMES_PER_TICK: usize = 8;
-/// Param writes applied per tick; a ground station's "load from file" bursts hundreds.
-const MAX_PARAM_WRITES_PER_TICK: usize = 4;
 /// How often a full telemetry record goes out: the bridge needs only its thrust, for throttle.
 const RECORD_INTERVAL: Duration = Duration::from_millis(200);
 
@@ -75,24 +68,18 @@ fn main() {
     let stabilizer = CopterStabilizer::new(airframe.stabilizer);
     let mixer = airframe.mixer;
 
-    // The link: the router reads it between ticks, the publisher writes it each tick, and two
-    // queues carry param requests to the server and its replies to the publisher.
+    // The link: the publisher writes it each tick (the flight loop's telemetry), and the poller
+    // reads it and serves params between ticks. Up to 32 param requests and 16 replies queue.
     let (link_rx, link_tx) = UdpLink::bind(&args.link_bind, &args.link_peer)
         .expect("failed to open link socket")
         .into_halves();
-    let mut requests = Queue::<ParamRequest, 32>::new();
-    let mut replies = Queue::<ParamValue, 16>::new();
-    let (to_server, from_router) = requests.split();
-    let (to_publisher, from_server) = replies.split();
-    let mut router = UplinkRouter::new(link_rx, MAX_FRAMES_PER_TICK).with_params(to_server);
-    let mut param_server = ParamServer::new(from_router, to_publisher, MAX_PARAM_WRITES_PER_TICK);
-
     let link_config = LinkPublisherConfig {
         // Records carry the commanded thrust the bridge reports as VFR_HUD throttle.
         record_interval: Some(RECORD_INTERVAL),
         ..LinkPublisherConfig::default()
     };
-    let link = LinkPublisher::new(link_tx, link_config).with_param_replies(from_server);
+    let mut fc_link = FcLink::<32, 16>::new();
+    let (mut poller, link) = fc_link.wire_with(link_rx, link_tx, link_config);
 
     let mut flight_loop = FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, link);
 
@@ -101,13 +88,12 @@ fn main() {
 
     let runner = RealTimeRunner::new(250.0).expect("valid loop frequency"); // Hz
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop| {
-        match router.poll() {
+        match poller.poll(flight_loop) {
             Ok(stats) if stats.decode_errors > 0 || stats.dropped > 0 => {
                 debug!("link: {stats:?}");
             }
             Ok(_) => {}
             Err(e) => warn!("link receive failed: {e}"),
         }
-        param_server.poll(flight_loop);
     });
 }
