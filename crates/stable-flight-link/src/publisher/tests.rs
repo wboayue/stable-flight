@@ -12,11 +12,12 @@ const MS: fn(u64) -> Duration = Duration::from_millis;
 
 /// One tick's telemetry, owned, with `dt` and `arm` set.
 fn tick(dt: Duration, arm: bool) -> Record {
-    let mut command = Command::default();
-    command.arm = arm;
     Record {
         dt,
-        command,
+        command: Command {
+            arm,
+            ..Default::default()
+        },
         setpoint: Setpoint::Attitude(AttitudeSetpoint::default()),
         state: VehicleState::default(),
         control: ControlOutput::default(),

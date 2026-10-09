@@ -150,9 +150,6 @@ pub trait Commander {
 /// doesn't run guidance or the stabilizer; on the tick it turns `true`, it re-primes them so
 /// integrators start from zero.
 ///
-/// `#[non_exhaustive]`: build it with [`Command::new`], [`Command::armed`], or
-/// [`Command::disarmed`], so fields can be added without a breaking change.
-///
 /// # Examples
 ///
 /// ```
@@ -169,7 +166,6 @@ pub trait Commander {
 /// ```
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[non_exhaustive]
 pub struct Command {
     /// `true` to arm (motors may run), `false` to disarm (motors held off). Defaults to
     /// `false`.
