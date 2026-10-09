@@ -7,27 +7,6 @@ use stable_flight_link::ParamValue;
 #[cfg(test)]
 mod tests;
 
-/// `HEARTBEAT` for a flight controller reporting `armed` and `mode`: a quadrotor with a generic
-/// autopilot, `mode` passed through as `custom_mode`.
-pub(crate) fn heartbeat(armed: bool, mode: u8) -> MavMessage {
-    let (base_mode, system_status) = if armed {
-        (
-            MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED,
-            MavState::MAV_STATE_ACTIVE,
-        )
-    } else {
-        (MavModeFlag::empty(), MavState::MAV_STATE_STANDBY)
-    };
-    MavMessage::HEARTBEAT(HEARTBEAT_DATA {
-        custom_mode: u32::from(mode),
-        mavtype: MavType::MAV_TYPE_QUADROTOR,
-        autopilot: MavAutopilot::MAV_AUTOPILOT_GENERIC,
-        base_mode,
-        system_status,
-        mavlink_version: 3,
-    })
-}
-
 /// `PARAM_VALUE` for one flight-controller param: index and count pass through, and every
 /// param is `REAL32`.
 pub(crate) fn param_value(param: &ParamValue) -> MavMessage {

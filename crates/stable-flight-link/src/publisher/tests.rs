@@ -1,7 +1,8 @@
 use assert2::check;
 use heapless::spsc::Queue;
 use stable_flight::{
-    ActuatorCommand, AttitudeSetpoint, Command, ControlOutput, Saturation, Setpoint, VehicleState,
+    ActuatorCommand, AttitudeSetpoint, Command, ControlInput, ControlMode, ControlOutput,
+    Saturation, Setpoint, VehicleState,
 };
 
 use super::*;
@@ -101,13 +102,33 @@ fn streams_go_out_at_their_configured_rates() {
 }
 
 #[test]
-fn heartbeat_reports_the_commanded_arm_state() {
-    for arm in [false, true] {
+fn heartbeat_reports_the_commanded_arm_state_and_mode() {
+    // (arm, input, expected mode)
+    let cases = [
+        (
+            false,
+            ControlInput::Attitude(Default::default()),
+            ControlMode::Attitude,
+        ),
+        (
+            true,
+            ControlInput::Rate(Default::default()),
+            ControlMode::Rate,
+        ),
+        (
+            true,
+            ControlInput::Waypoint(Default::default()),
+            ControlMode::Waypoint,
+        ),
+    ];
+    for (arm, input, mode) in cases {
         let loopback = Loopback::<64>::new();
         let (fc, mut companion) = loopback.split();
         let mut publisher = LinkPublisher::new(fc, LinkPublisherConfig::default());
+        let mut record = tick(MS(4), arm);
+        record.command.input = input;
 
-        publisher.publish(&tick(MS(4), arm).telemetry());
+        publisher.publish(&record.telemetry());
 
         let heartbeat = received(&mut companion)
             .into_iter()
@@ -116,9 +137,10 @@ fn heartbeat_reports_the_commanded_arm_state() {
             heartbeat
                 == Some(Downlink::Heartbeat {
                     armed: arm,
-                    mode: 0,
+                    mode,
                     link_ok: true,
-                })
+                }),
+            "{input:?}"
         );
     }
 }

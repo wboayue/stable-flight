@@ -313,7 +313,10 @@ impl TelemetryPublisher for MavlinkPublisher {
         self.update_home(command.arm, state.position_m);
 
         if self.heartbeat.ready(dt) {
-            self.send(MavMessage::HEARTBEAT(messages::heartbeat(command)));
+            self.send(MavMessage::HEARTBEAT(stable_flight_mavlink::heartbeat(
+                command.arm,
+                command.input.mode(),
+            )));
         }
         if self.vfr_hud.ready(dt) {
             self.send(MavMessage::VFR_HUD(messages::vfr_hud(control, state)));

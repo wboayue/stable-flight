@@ -3,7 +3,7 @@
 
 use mavlink::common::*;
 
-use stable_flight::{Command, ControlInput, ControlOutput, Vec3, VehicleState, wrap_angle};
+use stable_flight::{ControlOutput, Vec3, VehicleState, wrap_angle};
 
 use super::GeodeticOrigin;
 
@@ -18,39 +18,6 @@ const EARTH_RADIUS_M: f64 = 6_371_000.0;
 const DEG_E7: f64 = 1e7;
 const MM_PER_M: f64 = 1000.0;
 const CM_PER_M: f32 = 100.0;
-
-/// Reports the arm state (`MAV_MODE_FLAG_SAFETY_ARMED`, `MAV_STATE_ACTIVE`/`STANDBY`) and the
-/// command kind as standard `base_mode` flags. No custom mode: with a generic autopilot,
-/// ground stations name the mode from these flags (QGC shows e.g. "Manual,Stabilize").
-pub(super) fn heartbeat(command: &Command) -> HEARTBEAT_DATA {
-    let mut base_mode = match command.input {
-        ControlInput::Rate(_) => MavModeFlag::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED,
-        ControlInput::Attitude(_) => {
-            MavModeFlag::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED
-                | MavModeFlag::MAV_MODE_FLAG_STABILIZE_ENABLED
-        }
-        ControlInput::Waypoint(_) => {
-            MavModeFlag::MAV_MODE_FLAG_STABILIZE_ENABLED
-                | MavModeFlag::MAV_MODE_FLAG_GUIDED_ENABLED
-                | MavModeFlag::MAV_MODE_FLAG_AUTO_ENABLED
-        }
-        // `ControlInput` is non-exhaustive: an unmapped kind reports no mode.
-        _ => MavModeFlag::empty(),
-    };
-    base_mode.set(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED, command.arm);
-    HEARTBEAT_DATA {
-        custom_mode: 0,
-        mavtype: MavType::MAV_TYPE_QUADROTOR,
-        autopilot: MavAutopilot::MAV_AUTOPILOT_GENERIC,
-        base_mode,
-        system_status: if command.arm {
-            MavState::MAV_STATE_ACTIVE
-        } else {
-            MavState::MAV_STATE_STANDBY
-        },
-        mavlink_version: 3,
-    }
-}
 
 /// The landed state, from the publisher's land detector. No VTOL modes: the heartbeat
 /// reports a quadrotor.

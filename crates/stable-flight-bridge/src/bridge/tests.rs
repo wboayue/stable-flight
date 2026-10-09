@@ -31,9 +31,13 @@ fn param(name: &str, value: f32, index: u16, count: u16) -> Downlink {
 }
 
 fn heartbeat(armed: bool) -> Downlink {
+    heartbeat_in(armed, ControlMode::Attitude)
+}
+
+fn heartbeat_in(armed: bool, mode: ControlMode) -> Downlink {
     Downlink::Heartbeat {
         armed,
-        mode: 0,
+        mode,
         link_ok: true,
     }
 }
@@ -377,6 +381,42 @@ fn heartbeats_only_while_the_flight_controller_is_alive() {
 
     bridge.poll(t0 + config.fc_timeout, &mut out);
     check!(heartbeats(&mut out) == 0, "flight controller timed out");
+}
+
+#[test]
+fn heartbeat_reports_the_flight_controllers_mode() {
+    use MavModeFlag as F;
+    // (mode, a flag it sets, a flag it doesn't)
+    let cases = [
+        (
+            ControlMode::Rate,
+            F::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED,
+            F::MAV_MODE_FLAG_STABILIZE_ENABLED,
+        ),
+        (
+            ControlMode::Attitude,
+            F::MAV_MODE_FLAG_STABILIZE_ENABLED,
+            F::MAV_MODE_FLAG_AUTO_ENABLED,
+        ),
+        (
+            ControlMode::Waypoint,
+            F::MAV_MODE_FLAG_AUTO_ENABLED,
+            F::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED,
+        ),
+    ];
+    for (mode, set, unset) in cases {
+        let now = Instant::now();
+        let mut bridge = Bridge::new(BridgeConfig::default());
+        let mut out = Outbox::default();
+        bridge.on_downlink(&heartbeat_in(false, mode), now, &mut out);
+        bridge.poll(now, &mut out);
+
+        let [MavMessage::HEARTBEAT(data)] = out.to_gcs.as_slice() else {
+            panic!("{mode:?}: expected one heartbeat, got {:?}", out.to_gcs);
+        };
+        check!(data.base_mode.contains(set), "{mode:?}");
+        check!(!data.base_mode.contains(unset), "{mode:?}");
+    }
 }
 
 #[test]

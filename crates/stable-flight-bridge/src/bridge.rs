@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use mavlink::common::*;
 use mavlink::{MavHeader, MessageData};
+use stable_flight_link::stable_flight::ControlMode;
 use stable_flight_link::{Downlink, ParamRequest, Uplink};
 
 use crate::encode;
@@ -53,7 +54,7 @@ pub(crate) struct Outbox {
 struct FcStatus {
     last_seen: Instant,
     armed: bool,
-    mode: u8,
+    mode: ControlMode,
 }
 
 /// Presents a flight controller on the native link as a MAVLink autopilot. The message-by-message
@@ -163,7 +164,10 @@ impl Bridge {
             return;
         };
         if self.next_heartbeat.is_some_and(|due| now >= due) {
-            out.to_gcs.push(encode::heartbeat(fc.armed, fc.mode));
+            out.to_gcs
+                .push(MavMessage::HEARTBEAT(stable_flight_mavlink::heartbeat(
+                    fc.armed, fc.mode,
+                )));
             self.next_heartbeat = Some(now + self.config.heartbeat_interval);
         }
     }
