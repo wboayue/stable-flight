@@ -22,4 +22,5 @@ env_logger = "0.11.6"
 # The flight-controller side of the link, for end-to-end tests.
 stable-flight-link = { path = "../stable-flight-link", features = ["std", "testing"] }
 stable-flight = { path = "../stable-flight", features = ["testing"] }
+stable-flight-mavlink = { path = "../stable-flight-mavlink", features = ["testing"] }
 assert2.workspace = true

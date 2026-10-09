@@ -32,6 +32,8 @@ use stable_flight::ControlMode;
 /// The `mavlink` version the builders return types from.
 pub use mavlink;
 
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 #[cfg(test)]
 mod tests;
 

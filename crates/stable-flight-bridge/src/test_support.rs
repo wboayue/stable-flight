@@ -3,7 +3,8 @@
 use assert2::check;
 use mavlink::MavHeader;
 use mavlink::common::*;
-use stable_flight_link::ParamValue;
+use stable_flight_link::stable_flight::ControlMode;
+use stable_flight_link::{Downlink, ParamValue};
 
 /// A ground station's header.
 pub(crate) const GCS: MavHeader = MavHeader {
@@ -65,4 +66,21 @@ pub(crate) fn param_value_of(msg: &MavMessage) -> Option<(String, f32, u16, u16)
         data.param_index,
         data.param_count,
     ))
+}
+
+/// The flight controller's heartbeat, in attitude mode.
+pub(crate) fn heartbeat(armed: bool) -> Downlink {
+    Downlink::Heartbeat {
+        armed,
+        mode: ControlMode::Attitude,
+        link_ok: true,
+    }
+}
+
+/// `PARAM_REQUEST_LIST` to the flight controller.
+pub(crate) fn request_list() -> MavMessage {
+    MavMessage::PARAM_REQUEST_LIST(PARAM_REQUEST_LIST_DATA {
+        target_system: 1,
+        target_component: 1,
+    })
 }
