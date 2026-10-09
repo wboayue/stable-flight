@@ -976,6 +976,39 @@ fn set_config_rejects_an_invalid_config_and_keeps_the_current_one() {
     }
 }
 
+/// Retuning the altitude and lateral integral gains rescales their integrals so each I term
+/// carries over.
+#[test]
+fn retuning_integral_gains_rescales_the_integrals() {
+    let command = ControlInput::Waypoint(WaypointCommand {
+        position_m: Vec2::new(1.0, 0.0),
+        altitude_m: 0.1, // within the altitude loop's integration band
+        cruise_speed_mps: 5.0,
+        ..Default::default()
+    });
+    let state = VehicleState::default();
+    let mut config = CopterGuidanceConfig::default();
+    config.lateral.velocity.i = 0.1; // default 0
+    let mut guidance = CopterGuidance::new(config);
+    guidance.prime(&state);
+    for _ in 0..20 {
+        guidance.guide(0.004, &command, &state);
+    }
+    let (altitude, lateral) = (
+        guidance.altitude.integrated_error(),
+        guidance.lateral.integrated_error(),
+    );
+    assert!(altitude != 0.0 && lateral.x != 0.0);
+
+    let mut doubled = *guidance.config();
+    doubled.altitude.gains.i *= 2.0;
+    doubled.lateral.velocity.i *= 2.0;
+    guidance.set_config(doubled).expect("valid config");
+
+    approx::assert_relative_eq!(guidance.altitude.integrated_error(), 0.5 * altitude);
+    approx::assert_relative_eq!(guidance.lateral.integrated_error(), 0.5 * lateral);
+}
+
 /// A new `navigation_period_s` applies on the next tick: the lateral loop, holding its tilt
 /// under the 20 ms default, reruns at once when the period drops to every tick.
 #[test]

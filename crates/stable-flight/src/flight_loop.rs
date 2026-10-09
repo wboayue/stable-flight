@@ -8,6 +8,7 @@
 use core::time::Duration;
 
 use crate::controllers::InvalidConfig;
+use crate::params::{ParamError, Params};
 use crate::{
     ActuatorCommand, AttitudeSetpoint, Commander, Configurable, ControlOutput, Guidance, Mixer,
     Saturation, Setpoint, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle, VehicleState,
@@ -312,5 +313,94 @@ where
             self.mixer,
             self.telemetry,
         )
+    }
+}
+
+/// The guidance's params, then the stabilizer's (see [`crate::params`]): combined indices
+/// run through the guidance's first, then the stabilizer's. Nothing checks that their names
+/// are disjoint: on a duplicate, name lookup finds the guidance's and the stabilizer's is
+/// reachable only by index, so table authors keep names unique across components (the copter
+/// tables use `GUID_`/`STAB_` prefixes).
+///
+/// ```
+/// # use std::time::Duration;
+/// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+/// # use stable_flight::mixers::QuadCopterMixer;
+/// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+/// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateEstimator, VehicleState};
+/// use stable_flight::params::Params;
+/// use stable_flight::{Configurable, FlightLoop};
+/// # struct Hover;
+/// # impl Commander for Hover {
+/// #     fn next_command(&mut self, _: f32, _: &VehicleState) -> Command {
+/// #         Command::default()
+/// #     }
+/// # }
+/// # struct StillAir;
+/// # impl StateEstimator for StillAir {
+/// #     fn estimate_state(&mut self, _: Duration) -> VehicleState { VehicleState::default() }
+/// # }
+/// # impl Actuator for StillAir {
+/// #     fn actuate(&mut self, _: &ActuatorCommand) {}
+/// # }
+/// # let mut flight_loop = FlightLoop::new(
+/// #     Hover,
+/// #     StillAir,
+/// #     CopterGuidance::new(CopterGuidanceConfig::default()),
+/// #     CopterStabilizer::new(CopterStabilizerConfig::default()),
+/// #     QuadCopterMixer::default(),
+/// #     (),
+/// # );
+///
+/// flight_loop.set_param("GUID_ALT_P", 2.5).expect("valid value");
+/// flight_loop.set_param("STAB_RATE_P", 0.2).expect("valid value");
+/// assert_eq!(flight_loop.guidance().config().altitude.gains.p, 2.5);
+/// assert_eq!(flight_loop.param("STAB_RATE_P"), Some(0.2));
+/// ```
+impl<C, V, G, S, M, T> Params for FlightLoop<C, V, G, S, M, T>
+where
+    G: Params,
+    S: Params,
+{
+    fn param_count(&self) -> usize {
+        self.guidance.param_count() + self.stabilizer.param_count()
+    }
+
+    fn param_name(&self, index: usize) -> Option<&'static str> {
+        match self.split_param_index(index) {
+            ParamOwner::Guidance(i) => self.guidance.param_name(i),
+            ParamOwner::Stabilizer(i) => self.stabilizer.param_name(i),
+        }
+    }
+
+    fn param_at(&self, index: usize) -> Option<f32> {
+        match self.split_param_index(index) {
+            ParamOwner::Guidance(i) => self.guidance.param_at(i),
+            ParamOwner::Stabilizer(i) => self.stabilizer.param_at(i),
+        }
+    }
+
+    fn set_param_at(&mut self, index: usize, value: f32) -> Result<(), ParamError> {
+        match self.split_param_index(index) {
+            ParamOwner::Guidance(i) => self.guidance.set_param_at(i, value),
+            ParamOwner::Stabilizer(i) => self.stabilizer.set_param_at(i, value),
+        }
+    }
+}
+
+/// The component a combined param index belongs to, with its index there.
+enum ParamOwner {
+    Guidance(usize),
+    Stabilizer(usize),
+}
+
+impl<C, V, G: Params, S, M, T> FlightLoop<C, V, G, S, M, T> {
+    fn split_param_index(&self, index: usize) -> ParamOwner {
+        let guidance_count = self.guidance.param_count();
+        if index < guidance_count {
+            ParamOwner::Guidance(index)
+        } else {
+            ParamOwner::Stabilizer(index - guidance_count)
+        }
     }
 }

@@ -27,6 +27,7 @@ use crate::math::{
     all_finite, assert_dt, cap_magnitude, saturate_throttle, saturate_unit, tilt_boost, wrap_angle,
 };
 
+mod params;
 #[cfg(test)]
 mod tests;
 
@@ -215,6 +216,10 @@ impl Configurable for CopterGuidance {
     /// and the held waypoint tilt is re-capped to a lowered `max_tilt_rad` at once.
     fn set_config(&mut self, config: CopterGuidanceConfig) -> Result<(), InvalidConfig> {
         config.validate()?;
+        let old = &self.config;
+        self.altitude
+            .rescale_integral(&old.altitude, &config.altitude);
+        self.lateral.rescale_integral(&old.lateral, &config.lateral);
         self.config = config;
         if self.tilt_rad.norm() > config.max_tilt_rad {
             self.tilt_capped = true;

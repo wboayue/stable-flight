@@ -494,10 +494,52 @@ fn set_config_applies_next_tick_and_keeps_controller_state() {
     let mut new = old;
     new.body_rate.gains.i = 5.0;
     stabilizer.set_config(new).expect("valid config");
+    reference.rescale_integral(&old.body_rate, &new.body_rate);
     let output = stabilizer.stabilize(0.004, &setpoint, &state);
 
     let expected = reference.control(&new.body_rate, 0.004, desired, Vec3::zeros());
     assert_eq!(output.moments, expected);
+}
+
+/// Retuning an integral gain rescales the integral so the I term carries over (bumpless),
+/// except across a zero gain, where it restarts from zero.
+#[test]
+fn retuning_an_integral_gain_carries_the_i_term_over() {
+    const DT: f32 = 0.004;
+    const TICKS: usize = 10;
+    let setpoint = Setpoint::Rate(RateSetpoint {
+        roll_rate: 0.1,
+        ..Default::default()
+    });
+    let state = VehicleState::default();
+    // (old_i, new_i)
+    let cases = [(0.1, 0.2), (0.2, 0.05), (0.1, 0.0), (0.0, 0.1)];
+    for (old_i, new_i) in cases {
+        let mut old = CopterStabilizerConfig::default();
+        old.body_rate.gains = Gains {
+            p: 0.1,
+            i: old_i,
+            d: 0.0,
+        };
+        let error = 0.1 * old.full_scale_rates_radps.x;
+        let mut stabilizer = CopterStabilizer::new(old);
+        for _ in 0..TICKS {
+            stabilizer.stabilize(DT, &setpoint, &state);
+        }
+
+        let mut new = old;
+        new.body_rate.gains.i = new_i;
+        stabilizer.set_config(new).expect("valid config");
+        let output = stabilizer.stabilize(DT, &setpoint, &state);
+
+        let carried = if old_i == 0.0 || new_i == 0.0 {
+            0.0
+        } else {
+            old_i * TICKS as f32 * DT * error
+        };
+        let expected = 0.1 * error + carried + new_i * DT * error;
+        approx::assert_relative_eq!(output.moments.x, expected, max_relative = 1e-5);
+    }
 }
 
 /// After priming (as `FlightLoop` does on arming), the stabilizer flies exactly like a fresh
