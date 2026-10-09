@@ -6,13 +6,16 @@ The in-process SITL publisher ([`stable-flight-sitl`](https://github.com/wboayue
 
 ## Builders
 
-- `heartbeat(armed, mode)`: `HEARTBEAT` for a quadrotor with a generic autopilot. The arm state, and the core `ControlMode` as standard `base_mode` flags that ground stations name (QGC: "Manual,Stabilize" for attitude). The mapping table is in the rustdoc.
+Each builder returns a payload (`*_DATA`) for the caller to wrap; vehicle identity is a parameter.
+
+- `heartbeat(vehicle_type, armed, mode)`: `HEARTBEAT` for a generic autopilot of the given `MavType`. The arm state, and the core `ControlMode` as standard `base_mode` flags that ground stations name (QGC: "Manual,Stabilize" for attitude). The mapping table is in the rustdoc.
 
 ```rust
 use stable_flight::ControlMode;
 use stable_flight_mavlink::heartbeat;
+use stable_flight_mavlink::mavlink::common::MavType;
 
-let data = heartbeat(true, ControlMode::Attitude);
+let data = heartbeat(MavType::MAV_TYPE_QUADROTOR, true, ControlMode::Attitude);
 ```
 
 `mavlink` is re-exported (`stable_flight_mavlink::mavlink`) so callers name the same types the builders return.

@@ -312,12 +312,14 @@ impl ControlInput {
 ///
 /// `#[non_exhaustive]` like [`ControlInput`]: a new input kind adds a mode, and a consumer
 /// that doesn't know it reports no mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+///
+/// The variant order is on the link's wire (`stable-flight-link`'s heartbeat): changing it is
+/// a protocol change, which bumps that crate's `PROTOCOL_VERSION`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum ControlMode {
     /// Stick inputs command attitude ([`ControlInput::Attitude`]).
-    #[default]
     Attitude,
     /// Stick inputs command body rates ([`ControlInput::Rate`]).
     Rate,

@@ -22,6 +22,8 @@ pub(crate) struct BridgeConfig {
     pub(crate) system_id: u8,
     /// MAVLink component id the flight controller appears as.
     pub(crate) component_id: u8,
+    /// The vehicle type the heartbeat reports.
+    pub(crate) vehicle_type: MavType,
     /// How long after its last heartbeat the flight controller counts as gone.
     pub(crate) fc_timeout: Duration,
     /// Interval between `HEARTBEAT`s to the ground station.
@@ -29,12 +31,13 @@ pub(crate) struct BridgeConfig {
 }
 
 impl Default for BridgeConfig {
-    /// System and component id 1 (the autopilot, which QGC requires), a 3 s timeout, and 1 Hz
-    /// heartbeats.
+    /// System and component id 1 (the autopilot, which QGC requires), a quadrotor, a 3 s
+    /// timeout, and 1 Hz heartbeats.
     fn default() -> Self {
         Self {
             system_id: 1,
             component_id: 1,
+            vehicle_type: MavType::MAV_TYPE_QUADROTOR,
             fc_timeout: Duration::from_secs(3),
             heartbeat_interval: Duration::from_secs(1),
         }
@@ -109,7 +112,8 @@ impl Bridge {
                 });
             }
             Downlink::Param(param) => {
-                out.to_gcs.push(encode::param_value(param));
+                out.to_gcs
+                    .push(MavMessage::PARAM_VALUE(encode::param_value(param)));
                 self.params.insert(param.clone());
             }
             _ => {}
@@ -133,7 +137,8 @@ impl Bridge {
                     // A negative index means read by name.
                     Err(_) => param_name(&data.param_id).and_then(|name| self.params.find(&name)),
                 };
-                out.to_gcs.extend(cached.map(encode::param_value));
+                out.to_gcs
+                    .extend(cached.map(|p| MavMessage::PARAM_VALUE(encode::param_value(p))));
             }
             MavMessage::PARAM_SET(data)
                 if self.addressed(data.target_system, data.target_component) =>
@@ -143,11 +148,12 @@ impl Bridge {
             MavMessage::MISSION_REQUEST_LIST(data)
                 if self.addressed(data.target_system, data.target_component) =>
             {
-                out.to_gcs.push(encode::empty_mission_count(
-                    data.mission_type,
-                    header.system_id,
-                    header.component_id,
-                ));
+                out.to_gcs
+                    .push(MavMessage::MISSION_COUNT(encode::empty_mission_count(
+                        data.mission_type,
+                        header.system_id,
+                        header.component_id,
+                    )));
             }
             MavMessage::COMMAND_LONG(data)
                 if self.addressed(data.target_system, data.target_component) =>
@@ -166,7 +172,9 @@ impl Bridge {
         if self.next_heartbeat.is_some_and(|due| now >= due) {
             out.to_gcs
                 .push(MavMessage::HEARTBEAT(stable_flight_mavlink::heartbeat(
-                    fc.armed, fc.mode,
+                    self.config.vehicle_type,
+                    fc.armed,
+                    fc.mode,
                 )));
             self.next_heartbeat = Some(now + self.config.heartbeat_interval);
         }
@@ -190,7 +198,8 @@ impl Bridge {
             }));
         } else if let Some(current) = self.params.find(&name) {
             // Every param is REAL32: reject by echoing the current value.
-            out.to_gcs.push(encode::param_value(current));
+            out.to_gcs
+                .push(MavMessage::PARAM_VALUE(encode::param_value(current)));
         }
     }
 
@@ -202,14 +211,15 @@ impl Bridge {
         } else {
             MavResult::MAV_RESULT_UNSUPPORTED
         };
-        out.to_gcs.push(encode::command_ack(
+        out.to_gcs.push(MavMessage::COMMAND_ACK(encode::command_ack(
             data.command,
             result,
             header.system_id,
             header.component_id,
-        ));
+        )));
         if autopilot_version {
-            out.to_gcs.push(encode::autopilot_version());
+            out.to_gcs
+                .push(MavMessage::AUTOPILOT_VERSION(encode::autopilot_version()));
         }
     }
 }

@@ -27,14 +27,14 @@ fn heartbeat_reports_the_mode_as_standard_flags_and_the_arm_state() {
 
     for (mode, mode_flags) in modes {
         for (armed, arm_flag, status) in arm_states {
-            let data = heartbeat(armed, mode);
+            let data = heartbeat(MavType::MAV_TYPE_VTOL_TAILSITTER_QUADROTOR, armed, mode);
             check!(
                 data.base_mode == mode_flags | arm_flag,
                 "{mode:?} armed={armed}"
             );
             check!(data.system_status == status, "{mode:?} armed={armed}");
             check!(data.custom_mode == 0);
-            check!(data.mavtype == MavType::MAV_TYPE_QUADROTOR);
+            check!(data.mavtype == MavType::MAV_TYPE_VTOL_TAILSITTER_QUADROTOR);
             check!(data.autopilot == MavAutopilot::MAV_AUTOPILOT_GENERIC);
         }
     }

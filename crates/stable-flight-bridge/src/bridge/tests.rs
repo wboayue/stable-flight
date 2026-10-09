@@ -384,38 +384,30 @@ fn heartbeats_only_while_the_flight_controller_is_alive() {
 }
 
 #[test]
-fn heartbeat_reports_the_flight_controllers_mode() {
-    use MavModeFlag as F;
-    // (mode, a flag it sets, a flag it doesn't)
+fn heartbeat_reports_the_flight_controllers_arm_state_and_mode() {
+    let tailsitter = MavType::MAV_TYPE_VTOL_TAILSITTER_QUADROTOR;
+    // (arm state, mode): the mapping itself is `stable_flight_mavlink::heartbeat`'s; the bridge
+    // passes the flight controller's values and its configured vehicle type through.
     let cases = [
-        (
-            ControlMode::Rate,
-            F::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED,
-            F::MAV_MODE_FLAG_STABILIZE_ENABLED,
-        ),
-        (
-            ControlMode::Attitude,
-            F::MAV_MODE_FLAG_STABILIZE_ENABLED,
-            F::MAV_MODE_FLAG_AUTO_ENABLED,
-        ),
-        (
-            ControlMode::Waypoint,
-            F::MAV_MODE_FLAG_AUTO_ENABLED,
-            F::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED,
-        ),
+        (false, ControlMode::Rate),
+        (true, ControlMode::Attitude),
+        (true, ControlMode::Waypoint),
     ];
-    for (mode, set, unset) in cases {
+    for (armed, mode) in cases {
         let now = Instant::now();
-        let mut bridge = Bridge::new(BridgeConfig::default());
+        let mut bridge = Bridge::new(BridgeConfig {
+            vehicle_type: tailsitter,
+            ..BridgeConfig::default()
+        });
         let mut out = Outbox::default();
-        bridge.on_downlink(&heartbeat_in(false, mode), now, &mut out);
+        bridge.on_downlink(&heartbeat_in(armed, mode), now, &mut out);
         bridge.poll(now, &mut out);
 
-        let [MavMessage::HEARTBEAT(data)] = out.to_gcs.as_slice() else {
-            panic!("{mode:?}: expected one heartbeat, got {:?}", out.to_gcs);
-        };
-        check!(data.base_mode.contains(set), "{mode:?}");
-        check!(!data.base_mode.contains(unset), "{mode:?}");
+        let expected = stable_flight_mavlink::heartbeat(tailsitter, armed, mode);
+        check!(
+            out.to_gcs == [MavMessage::HEARTBEAT(expected)],
+            "{mode:?} armed={armed}"
+        );
     }
 }
 

@@ -12,8 +12,9 @@ not each change; per-change entries start after it.
 
 ### Added
 
-- **`heartbeat`:** `HEARTBEAT` for a quadrotor with a generic autopilot, reporting the arm state
-  and the core `ControlMode` as standard `base_mode` flags.
+- **`heartbeat`:** `HEARTBEAT` for a generic autopilot of a given `MavType`, reporting the arm
+  state and the core `ControlMode` as standard `base_mode` flags.
+- Builders return payloads (`*_DATA`) and take vehicle identity as a parameter.
 - **`mavlink` re-export**, so callers use the version the builders return.
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight-mavlink

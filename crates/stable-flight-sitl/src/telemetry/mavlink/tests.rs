@@ -384,3 +384,40 @@ fn landed_state_is_sent_as_soon_as_it_changes() {
     let expected: Vec<_> = ticks.iter().filter_map(|&(_, _, state)| state).collect();
     check!(sent == expected);
 }
+
+#[test]
+fn heartbeat_reports_the_configured_vehicle_type() {
+    // (case, override, expected type)
+    let cases = [
+        ("default", None, MavType::MAV_TYPE_QUADROTOR),
+        (
+            "configured",
+            Some(MavType::MAV_TYPE_VTOL_TAILSITTER_QUADROTOR),
+            MavType::MAV_TYPE_VTOL_TAILSITTER_QUADROTOR,
+        ),
+    ];
+    for (case, vehicle_type, expected) in cases {
+        let connection = MockConnection::default();
+        let mut publisher = MavlinkPublisher::with_connection(Box::new(connection.clone()), 1, 1);
+        if let Some(vehicle_type) = vehicle_type {
+            publisher = publisher.with_vehicle_type(vehicle_type);
+        }
+        publish_states(
+            publisher,
+            STREAM_INTERVAL,
+            &[(false, VehicleState::default())],
+        );
+
+        let heartbeat = connection
+            .sent()
+            .into_iter()
+            .find_map(|(_, msg)| match msg {
+                MavMessage::HEARTBEAT(data) => Some(data),
+                _ => None,
+            });
+        check!(
+            heartbeat.map(|data| data.mavtype) == Some(expected),
+            "{case}"
+        );
+    }
+}

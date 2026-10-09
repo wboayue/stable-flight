@@ -12,14 +12,17 @@
 //! and the companion bridge both build their messages here, so a vehicle looks the same to a
 //! ground station either way.
 //!
+//! Each builder returns a message's payload (`*_DATA`); the caller wraps it in a `MavMessage`
+//! and picks the header. Vehicle identity (e.g. the `MavType`) is a parameter, never assumed.
+//!
 //! # Examples
 //!
 //! ```
 //! use stable_flight::ControlMode;
 //! use stable_flight_mavlink::heartbeat;
-//! use stable_flight_mavlink::mavlink::common::MavModeFlag;
+//! use stable_flight_mavlink::mavlink::common::{MavModeFlag, MavType};
 //!
-//! let data = heartbeat(true, ControlMode::Attitude);
+//! let data = heartbeat(MavType::MAV_TYPE_QUADROTOR, true, ControlMode::Attitude);
 //! assert!(data.base_mode.contains(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED));
 //! ```
 
@@ -32,7 +35,7 @@ pub use mavlink;
 #[cfg(test)]
 mod tests;
 
-/// `HEARTBEAT` for a quadrotor with a generic autopilot: the arm state
+/// `HEARTBEAT` for a `vehicle_type` (e.g. `MAV_TYPE_QUADROTOR`) with a generic autopilot: the arm state
 /// (`MAV_MODE_FLAG_SAFETY_ARMED`, `MAV_STATE_ACTIVE`/`STANDBY`) and the mode as standard
 /// `base_mode` flags, from which ground stations name it (QGC shows e.g. "Manual,Stabilize").
 /// No custom mode.
@@ -50,13 +53,13 @@ mod tests;
 /// ```
 /// use stable_flight::ControlMode;
 /// use stable_flight_mavlink::heartbeat;
-/// use stable_flight_mavlink::mavlink::common::{MavModeFlag, MavState};
+/// use stable_flight_mavlink::mavlink::common::{MavModeFlag, MavState, MavType};
 ///
-/// let data = heartbeat(false, ControlMode::Rate);
+/// let data = heartbeat(MavType::MAV_TYPE_QUADROTOR, false, ControlMode::Rate);
 /// assert_eq!(data.base_mode, MavModeFlag::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED);
 /// assert_eq!(data.system_status, MavState::MAV_STATE_STANDBY);
 /// ```
-pub fn heartbeat(armed: bool, mode: ControlMode) -> HEARTBEAT_DATA {
+pub fn heartbeat(vehicle_type: MavType, armed: bool, mode: ControlMode) -> HEARTBEAT_DATA {
     let mut base_mode = match mode {
         ControlMode::Rate => MavModeFlag::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED,
         ControlMode::Attitude => {
@@ -74,7 +77,7 @@ pub fn heartbeat(armed: bool, mode: ControlMode) -> HEARTBEAT_DATA {
     base_mode.set(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED, armed);
     HEARTBEAT_DATA {
         custom_mode: 0,
-        mavtype: MavType::MAV_TYPE_QUADROTOR,
+        mavtype: vehicle_type,
         autopilot: MavAutopilot::MAV_AUTOPILOT_GENERIC,
         base_mode,
         system_status: if armed {

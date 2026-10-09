@@ -8,7 +8,7 @@ use std::mem;
 use std::time::{Duration, Instant};
 
 use log::warn;
-use mavlink::common::{MavLandedState, MavMessage};
+use mavlink::common::{MavLandedState, MavMessage, MavType};
 use mavlink::{MavConnection, MavHeader, MavlinkVersion};
 use thiserror::Error;
 
@@ -70,18 +70,21 @@ pub struct MavlinkConfiguration {
     pub system_id: u8,
     /// MAVLink component id in every message header.
     pub component_id: u8,
+    /// The vehicle type the heartbeat reports, e.g. `MAV_TYPE_QUADROTOR`.
+    pub vehicle_type: MavType,
     /// Where local position sits on the earth; `None` sends no GLOBAL_POSITION_INT or
     /// HOME_POSITION.
     pub origin: Option<GeodeticOrigin>,
 }
 
 impl Default for MavlinkConfiguration {
-    /// [`DEFAULT_ADDRESS`], system and component id 1, [`DEFAULT_ORIGIN`].
+    /// [`DEFAULT_ADDRESS`], system and component id 1, a quadrotor, [`DEFAULT_ORIGIN`].
     fn default() -> Self {
         MavlinkConfiguration {
             address: DEFAULT_ADDRESS.to_owned(),
             system_id: 1,
             component_id: 1,
+            vehicle_type: MavType::MAV_TYPE_QUADROTOR,
             origin: Some(DEFAULT_ORIGIN),
         }
     }
@@ -109,8 +112,8 @@ pub enum MavlinkError {
 /// and extended system state at 1 Hz and whenever they change. Every stream sends on the
 /// first `publish` it has data for, so a ground station sees the link immediately.
 ///
-/// The heartbeat reports the command kind as standard `base_mode` flags: rate is
-/// `MANUAL_INPUT`, attitude `MANUAL_INPUT | STABILIZE`, waypoint `STABILIZE | GUIDED | AUTO`.
+/// The heartbeat reports the arm state and the command's mode as
+/// [`stable_flight_mavlink::heartbeat`] maps them.
 ///
 /// Home is the position at the latest arming (the first finite one from it on), or before
 /// the first arm, the first finite one.
@@ -137,6 +140,8 @@ pub struct MavlinkPublisher {
     connection: Box<dyn MavConnection<MavMessage> + Send>,
     system_id: u8,
     component_id: u8,
+    /// The vehicle type the heartbeat reports.
+    vehicle_type: MavType,
     sequence: u8,
     start_time: Instant,
     heartbeat: Every,
@@ -181,7 +186,8 @@ impl MavlinkPublisher {
         })?;
         connection.set_protocol_version(MavlinkVersion::V2);
         let publisher =
-            Self::with_connection(Box::new(connection), config.system_id, config.component_id);
+            Self::with_connection(Box::new(connection), config.system_id, config.component_id)
+                .with_vehicle_type(config.vehicle_type);
         match config.origin {
             Some(origin) => publisher.with_origin(origin),
             None => Ok(publisher),
@@ -190,7 +196,9 @@ impl MavlinkPublisher {
 
     /// Publishes on an already-open connection (a custom transport, or a test double),
     /// stamping headers with `system_id` and `component_id`. The connection's protocol
-    /// version is left as configured. No origin: add one with [`with_origin`](Self::with_origin).
+    /// version is left as configured. Reports a quadrotor (change it with
+    /// [`with_vehicle_type`](Self::with_vehicle_type)), with no origin (add one with
+    /// [`with_origin`](Self::with_origin)).
     ///
     /// # Examples
     ///
@@ -212,6 +220,7 @@ impl MavlinkPublisher {
             connection,
             system_id,
             component_id,
+            vehicle_type: MavType::MAV_TYPE_QUADROTOR,
             sequence: 0,
             start_time: Instant::now(),
             heartbeat: Every::new(SLOW_STREAM_INTERVAL),
@@ -229,6 +238,25 @@ impl MavlinkPublisher {
             was_armed: false,
             errors: ErrorThrottle::default(),
         }
+    }
+
+    /// Reports `vehicle_type` in the heartbeat instead of a quadrotor.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use mavlink::{MavlinkVersion, MavConnection, common::{MavMessage, MavType}};
+    /// use stable_flight_sitl::telemetry::mavlink::MavlinkPublisher;
+    ///
+    /// let mut connection = mavlink::connect::<MavMessage>("udpout:127.0.0.1:14550")?;
+    /// connection.set_protocol_version(MavlinkVersion::V2);
+    /// let telemetry = MavlinkPublisher::with_connection(Box::new(connection), 1, 1)
+    ///     .with_vehicle_type(MavType::MAV_TYPE_VTOL_TAILSITTER_QUADROTOR);
+    /// # Ok::<(), std::io::Error>(())
+    /// ```
+    pub fn with_vehicle_type(mut self, vehicle_type: MavType) -> Self {
+        self.vehicle_type = vehicle_type;
+        self
     }
 
     /// Also sends GLOBAL_POSITION_INT and HOME_POSITION, placing local position (0, 0, 0)
@@ -314,6 +342,7 @@ impl TelemetryPublisher for MavlinkPublisher {
 
         if self.heartbeat.ready(dt) {
             self.send(MavMessage::HEARTBEAT(stable_flight_mavlink::heartbeat(
+                self.vehicle_type,
                 command.arm,
                 command.input.mode(),
             )));

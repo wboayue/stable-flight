@@ -1,5 +1,6 @@
-//! Builds the MAVLink messages the bridge sends on the flight controller's behalf. Pure
-//! functions: no connection, clock, or state.
+//! Builds the MAVLink payloads only the bridge sends, on the flight controller's behalf. Pure
+//! functions: no connection, clock, or state. Each returns a payload (`*_DATA`) for the caller
+//! to wrap, as `stable-flight-mavlink`'s builders do.
 
 use mavlink::common::*;
 use stable_flight_link::ParamValue;
@@ -9,20 +10,20 @@ mod tests;
 
 /// `PARAM_VALUE` for one flight-controller param: index and count pass through, and every
 /// param is `REAL32`.
-pub(crate) fn param_value(param: &ParamValue) -> MavMessage {
-    MavMessage::PARAM_VALUE(PARAM_VALUE_DATA {
+pub(crate) fn param_value(param: &ParamValue) -> PARAM_VALUE_DATA {
+    PARAM_VALUE_DATA {
         param_value: param.value,
         param_count: param.count,
         param_index: param.index,
         param_id: param.name.as_str().into(),
         param_type: MavParamType::MAV_PARAM_TYPE_REAL32,
-    })
+    }
 }
 
 /// `AUTOPILOT_VERSION`: MAVLink 2 and C-cast `REAL32` params, with this bridge's version as the
 /// flight software version.
-pub(crate) fn autopilot_version() -> MavMessage {
-    MavMessage::AUTOPILOT_VERSION(AUTOPILOT_VERSION_DATA {
+pub(crate) fn autopilot_version() -> AUTOPILOT_VERSION_DATA {
+    AUTOPILOT_VERSION_DATA {
         capabilities: MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_MAVLINK2
             | MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_PARAM_ENCODE_C_CAST,
         flight_sw_version: flight_sw_version(
@@ -31,7 +32,7 @@ pub(crate) fn autopilot_version() -> MavMessage {
             env!("CARGO_PKG_VERSION_PATCH"),
         ),
         ..Default::default()
-    })
+    }
 }
 
 /// MAVLink's packed version: major, minor, patch, then the release type (`FIRMWARE_VERSION_TYPE`).
@@ -47,14 +48,14 @@ pub(crate) fn empty_mission_count(
     mission_type: MavMissionType,
     target_system: u8,
     target_component: u8,
-) -> MavMessage {
-    MavMessage::MISSION_COUNT(MISSION_COUNT_DATA {
+) -> MISSION_COUNT_DATA {
+    MISSION_COUNT_DATA {
         count: 0,
         target_system,
         target_component,
         mission_type,
         opaque_id: 0,
-    })
+    }
 }
 
 /// `COMMAND_ACK` with `result` for `command`, addressed to the sender.
@@ -63,12 +64,12 @@ pub(crate) fn command_ack(
     result: MavResult,
     target_system: u8,
     target_component: u8,
-) -> MavMessage {
-    MavMessage::COMMAND_ACK(COMMAND_ACK_DATA {
+) -> COMMAND_ACK_DATA {
+    COMMAND_ACK_DATA {
         command,
         result,
         target_system,
         target_component,
         ..Default::default()
-    })
+    }
 }

@@ -1,5 +1,8 @@
 //! Builds MAVLink message payloads from a tick's data. Pure functions: no connection, clock,
 //! or scheduling, so each mapping is tested on its own.
+//!
+//! New builders go in `stable-flight-mavlink`, shared with the bridge; these move there in the
+//! #154 state slice.
 
 use mavlink::common::*;
 
