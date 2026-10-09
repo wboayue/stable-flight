@@ -3,13 +3,7 @@ use std::time::{Duration, Instant};
 use assert2::check;
 
 use super::*;
-
-/// A ground station's header.
-const GCS: MavHeader = MavHeader {
-    system_id: 255,
-    component_id: 190,
-    sequence: 0,
-};
+use crate::test_support::GCS;
 
 const INTERVAL: Duration = Duration::from_secs(1);
 
@@ -125,7 +119,7 @@ fn heartbeat_reports_the_arm_state_mode_and_vehicle_type() {
         let now = Instant::now();
         let mut connect = ConnectService::new(tailsitter, INTERVAL);
         let mut out = Outbox::default();
-        connect.fc_appeared(now);
+        connect.fc_appeared(now, &mut Outbox::default());
         connect.poll(now, armed, mode, &mut out);
 
         let expected = stable_flight_mavlink::heartbeat(tailsitter, armed, mode);
@@ -149,7 +143,7 @@ fn heartbeat_goes_out_when_the_flight_controller_appears_then_on_the_interval() 
     };
 
     check!(heartbeats_at(&mut connect, t0) == 0, "before it appears");
-    connect.fc_appeared(t0);
+    connect.fc_appeared(t0, &mut Outbox::default());
     check!(heartbeats_at(&mut connect, t0) == 1, "right away");
     check!(
         heartbeats_at(&mut connect, t0 + INTERVAL / 2) == 0,

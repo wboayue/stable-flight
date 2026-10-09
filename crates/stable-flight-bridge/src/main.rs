@@ -24,6 +24,8 @@ mod connect;
 mod encode;
 mod outbox;
 mod params;
+#[cfg(test)]
+mod test_support;
 
 use bridge::{Bridge, BridgeConfig};
 use outbox::Outbox;

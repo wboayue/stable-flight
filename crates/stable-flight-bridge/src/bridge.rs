@@ -94,8 +94,8 @@ impl Bridge {
         match msg {
             Downlink::Heartbeat { armed, mode, .. } => {
                 if self.alive_fc(now).is_none() {
-                    self.params.fc_appeared(out);
-                    self.connect.fc_appeared(now);
+                    self.params.fc_appeared(now, out);
+                    self.connect.fc_appeared(now, out);
                 }
                 self.fc = Some(FcStatus {
                     last_seen: now,
@@ -109,34 +109,19 @@ impl Bridge {
     }
 
     /// Handles one MAVLink message from the ground station, sent by `header`'s system and
-    /// component.
+    /// component. Only a message addressed to the flight controller reaches a service.
     pub(crate) fn on_mavlink(&mut self, header: &MavHeader, msg: &MavMessage, out: &mut Outbox) {
+        if !target(msg).is_some_and(|(system, component)| self.addressed(system, component)) {
+            return;
+        }
         match msg {
-            MavMessage::PARAM_REQUEST_LIST(data)
-                if self.addressed(data.target_system, data.target_component) =>
-            {
-                self.params.on_request_list(out);
-            }
-            MavMessage::PARAM_REQUEST_READ(data)
-                if self.addressed(data.target_system, data.target_component) =>
-            {
-                self.params.on_request_read(data, out);
-            }
-            MavMessage::PARAM_SET(data)
-                if self.addressed(data.target_system, data.target_component) =>
-            {
-                self.params.on_set(data, out);
-            }
-            MavMessage::MISSION_REQUEST_LIST(data)
-                if self.addressed(data.target_system, data.target_component) =>
-            {
+            MavMessage::PARAM_REQUEST_LIST(_) => self.params.on_request_list(out),
+            MavMessage::PARAM_REQUEST_READ(data) => self.params.on_request_read(data, out),
+            MavMessage::PARAM_SET(data) => self.params.on_set(data, out),
+            MavMessage::MISSION_REQUEST_LIST(data) => {
                 self.connect.on_mission_request_list(header, data, out);
             }
-            MavMessage::COMMAND_LONG(data)
-                if self.addressed(data.target_system, data.target_component) =>
-            {
-                self.connect.on_command_long(header, data, out);
-            }
+            MavMessage::COMMAND_LONG(data) => self.connect.on_command_long(header, data, out),
             _ => {}
         }
     }
@@ -152,5 +137,18 @@ impl Bridge {
     fn addressed(&self, target_system: u8, target_component: u8) -> bool {
         (target_system == 0 || target_system == self.system_id)
             && (target_component == 0 || target_component == self.component_id)
+    }
+}
+
+/// The system and component a message the bridge routes is addressed to; `None` for every
+/// other message, so a newly routed message type is ignored until it is listed here.
+fn target(msg: &MavMessage) -> Option<(u8, u8)> {
+    match msg {
+        MavMessage::PARAM_REQUEST_LIST(d) => Some((d.target_system, d.target_component)),
+        MavMessage::PARAM_REQUEST_READ(d) => Some((d.target_system, d.target_component)),
+        MavMessage::PARAM_SET(d) => Some((d.target_system, d.target_component)),
+        MavMessage::MISSION_REQUEST_LIST(d) => Some((d.target_system, d.target_component)),
+        MavMessage::COMMAND_LONG(d) => Some((d.target_system, d.target_component)),
+        _ => None,
     }
 }

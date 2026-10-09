@@ -1,5 +1,7 @@
 //! Params between MAVLink and the link: see [`ParamService`].
 
+use std::time::Instant;
+
 use mavlink::common::*;
 use mavlink::types::CharArray;
 use stable_flight_link::{ParamName, ParamRequest, ParamValue, Uplink};
@@ -65,17 +67,16 @@ pub(crate) struct ParamService {
 }
 
 impl ParamService {
-    /// The flight controller appeared (or came back): its table may have changed, so forget
-    /// the cache and list again.
-    pub(crate) fn fc_appeared(&mut self, out: &mut Outbox) {
+    /// The flight controller appeared (or came back) at `now`: its table may have changed, so
+    /// forget the cache and list again.
+    pub(crate) fn fc_appeared(&mut self, _now: Instant, out: &mut Outbox) {
         self.cache.clear();
-        out.to_fc.push(Uplink::Param(ParamRequest::List));
+        self.on_request_list(out);
     }
 
     /// A param from the flight controller: forward it and cache it.
     pub(crate) fn on_param(&mut self, param: &ParamValue, out: &mut Outbox) {
-        out.to_gcs
-            .push(MavMessage::PARAM_VALUE(encode::param_value(param)));
+        send_value(param, out);
         self.cache.insert(param.clone());
     }
 
@@ -90,8 +91,9 @@ impl ParamService {
             Ok(index) => self.cache.get(index),
             Err(_) => param_name(&data.param_id).and_then(|name| self.cache.find(&name)),
         };
-        out.to_gcs
-            .extend(cached.map(|p| MavMessage::PARAM_VALUE(encode::param_value(p))));
+        if let Some(param) = cached {
+            send_value(param, out);
+        }
     }
 
     /// `PARAM_SET`: a `REAL32` write goes to the flight controller, even for a name the cache
@@ -107,8 +109,13 @@ impl ParamService {
                 value: data.param_value,
             }));
         } else if let Some(current) = self.cache.find(&name) {
-            out.to_gcs
-                .push(MavMessage::PARAM_VALUE(encode::param_value(current)));
+            send_value(current, out);
         }
     }
+}
+
+/// Queues `param` for the ground station as a `PARAM_VALUE`.
+fn send_value(param: &ParamValue, out: &mut Outbox) {
+    out.to_gcs
+        .push(MavMessage::PARAM_VALUE(encode::param_value(param)));
 }

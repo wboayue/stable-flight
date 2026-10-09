@@ -21,6 +21,11 @@ mod tests;
 /// - `MISSION_REQUEST_LIST`: an empty `MISSION_COUNT` of the requested type.
 /// - `COMMAND_LONG`: `REQUEST_MESSAGE(AUTOPILOT_VERSION)` is acked, then answered; anything else
 ///   is acked `UNSUPPORTED`, so the ground station moves on without retrying.
+///
+/// Two answers are placeholders that move out when their real owner arrives (#154): the
+/// `UNSUPPORTED` fallback moves to `Bridge`'s routing once a second service handles
+/// `COMMAND_LONG` (arming), and `MISSION_REQUEST_LIST` moves to a missions service once
+/// missions are served.
 #[derive(Debug)]
 pub(crate) struct ConnectService {
     vehicle_type: MavType,
@@ -39,7 +44,7 @@ impl ConnectService {
     }
 
     /// The flight controller appeared (or came back) at `now`: show the ground station at once.
-    pub(crate) fn fc_appeared(&mut self, now: Instant) {
+    pub(crate) fn fc_appeared(&mut self, now: Instant, _out: &mut Outbox) {
         self.next_heartbeat = Some(now);
     }
 

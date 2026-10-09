@@ -11,27 +11,10 @@ use stable_flight::{Command, FlightLoop};
 use stable_flight_link::loopback::{Loopback, LoopbackLink};
 use stable_flight_link::publisher::LinkPublisher;
 use stable_flight_link::testing::FcLink;
-use stable_flight_link::{
-    MAX_FRAME_LEN, ParamRequest, ParamValue, RecvMessage, SendMessage, Uplink,
-};
+use stable_flight_link::{MAX_FRAME_LEN, ParamRequest, RecvMessage, SendMessage, Uplink};
 
 use super::*;
-
-/// A ground station's header.
-const GCS: MavHeader = MavHeader {
-    system_id: 255,
-    component_id: 190,
-    sequence: 0,
-};
-
-fn param(name: &str, value: f32, index: u16, count: u16) -> Downlink {
-    Downlink::Param(ParamValue {
-        name: name.try_into().unwrap(),
-        value,
-        index,
-        count,
-    })
-}
+use crate::test_support::{GCS, param, param_value_of, read_index, set};
 
 fn heartbeat(armed: bool) -> Downlink {
     Downlink::Heartbeat {
@@ -41,47 +24,14 @@ fn heartbeat(armed: bool) -> Downlink {
     }
 }
 
-fn set(name: &str, value: f32) -> MavMessage {
-    MavMessage::PARAM_SET(PARAM_SET_DATA {
-        param_value: value,
-        target_system: 1,
-        target_component: 1,
-        param_id: name.into(),
-        param_type: MavParamType::MAV_PARAM_TYPE_REAL32,
-    })
-}
-
-fn read_index(index: i16) -> MavMessage {
-    MavMessage::PARAM_REQUEST_READ(PARAM_REQUEST_READ_DATA {
-        param_index: index,
-        target_system: 1,
-        target_component: 1,
-        param_id: "".into(),
-    })
-}
-
 /// A bridge whose flight controller is up, with params `A` (index 0) = 1.0 and `B` = 2.0 cached.
 fn bridge_with_params(now: Instant) -> Bridge {
     let mut bridge = Bridge::new(BridgeConfig::default());
     let mut out = Outbox::default();
     bridge.on_downlink(&heartbeat(false), now, &mut out);
-    bridge.on_downlink(&param("A", 1.0, 0, 2), now, &mut out);
-    bridge.on_downlink(&param("B", 2.0, 1, 2), now, &mut out);
+    bridge.on_downlink(&Downlink::Param(param("A", 1.0, 0, 2)), now, &mut out);
+    bridge.on_downlink(&Downlink::Param(param("B", 2.0, 1, 2)), now, &mut out);
     bridge
-}
-
-/// `(name, value, index, count)` of a `PARAM_VALUE`.
-fn param_value_of(msg: &MavMessage) -> Option<(String, f32, u16, u16)> {
-    let MavMessage::PARAM_VALUE(data) = msg else {
-        return None;
-    };
-    check!(data.param_type == MavParamType::MAV_PARAM_TYPE_REAL32);
-    Some((
-        data.param_id.to_str().unwrap().to_owned(),
-        data.param_value,
-        data.param_index,
-        data.param_count,
-    ))
 }
 
 #[test]
@@ -153,11 +103,16 @@ fn routes_each_message_to_its_service() {
         ("list: params", request_list, 1, vec![]),
         (
             "read: params, from the cache",
-            read_index(0),
+            MavMessage::PARAM_REQUEST_READ(read_index(0)),
             0,
             vec!["PARAM_VALUE"],
         ),
-        ("set: params", set("A", 3.0), 1, vec![]),
+        (
+            "set: params",
+            MavMessage::PARAM_SET(set("A", 3.0, MavParamType::MAV_PARAM_TYPE_REAL32)),
+            1,
+            vec![],
+        ),
         (
             "mission list: connect",
             mission_list,
@@ -165,6 +120,12 @@ fn routes_each_message_to_its_service() {
             vec!["MISSION_COUNT"],
         ),
         ("command: connect", command, 0, vec!["COMMAND_ACK"]),
+        (
+            "unrouted message: ignored",
+            MavMessage::HEARTBEAT(HEARTBEAT_DATA::default()),
+            0,
+            vec![],
+        ),
     ];
     for (case, msg, uplinks, sent) in cases {
         let mut bridge = bridge_with_params(Instant::now());
@@ -197,7 +158,11 @@ fn refills_the_cache_whenever_the_flight_controller_appears() {
     bridge.on_downlink(&heartbeat(false), back, &mut out);
     check!(out.to_fc == list, "back after a timeout: list again");
 
-    bridge.on_mavlink(&GCS, &read_index(0), &mut out);
+    bridge.on_mavlink(
+        &GCS,
+        &MavMessage::PARAM_REQUEST_READ(read_index(0)),
+        &mut out,
+    );
     check!(out.to_gcs.is_empty(), "cache cleared");
 }
 
@@ -295,7 +260,11 @@ fn ground_station_lists_and_sets_flight_controller_params() {
     // QGC re-reads an index it missed: served from the cache.
     gcs.clear();
     let mut out = Outbox::default();
-    bridge.on_mavlink(&GCS, &read_index(3), &mut out);
+    bridge.on_mavlink(
+        &GCS,
+        &MavMessage::PARAM_REQUEST_READ(read_index(3)),
+        &mut out,
+    );
     check!(param_values(&out.to_gcs) == [listing[3].clone()]);
 
     // (case, set, echoed value)
@@ -316,7 +285,11 @@ fn ground_station_lists_and_sets_flight_controller_params() {
     for (case, name, value, echoed) in cases {
         gcs.clear();
         let mut out = Outbox::default();
-        bridge.on_mavlink(&GCS, &set(name, value), &mut out);
+        bridge.on_mavlink(
+            &GCS,
+            &MavMessage::PARAM_SET(set(name, value, MavParamType::MAV_PARAM_TYPE_REAL32)),
+            &mut out,
+        );
         for msg in out.to_fc.drain(..) {
             companion
                 .send_message(&msg, &mut [0u8; MAX_FRAME_LEN])

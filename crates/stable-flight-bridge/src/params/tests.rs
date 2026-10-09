@@ -1,15 +1,7 @@
 use assert2::check;
 
 use super::*;
-
-fn param(name: &str, value: f32, index: u16, count: u16) -> ParamValue {
-    ParamValue {
-        name: name.try_into().unwrap(),
-        value,
-        index,
-        count,
-    }
-}
+use crate::test_support::{param, param_value_of, read_index, read_name, set};
 
 #[test]
 fn param_id_converts_to_a_name() {
@@ -80,53 +72,11 @@ fn clear_forgets_every_param() {
     check!(cache.get(0).is_none());
 }
 
-fn set(name: &str, value: f32, param_type: MavParamType) -> PARAM_SET_DATA {
-    PARAM_SET_DATA {
-        param_value: value,
-        target_system: 1,
-        target_component: 1,
-        param_id: name.into(),
-        param_type,
-    }
-}
-
-fn read_index(index: i16) -> PARAM_REQUEST_READ_DATA {
-    PARAM_REQUEST_READ_DATA {
-        param_index: index,
-        target_system: 1,
-        target_component: 1,
-        param_id: "".into(),
-    }
-}
-
-fn read_name(name: &str) -> PARAM_REQUEST_READ_DATA {
-    PARAM_REQUEST_READ_DATA {
-        param_index: -1,
-        target_system: 1,
-        target_component: 1,
-        param_id: name.into(),
-    }
-}
-
 fn uplink_set(name: &str, value: f32) -> Uplink {
     Uplink::Param(ParamRequest::Set {
         name: name.try_into().unwrap(),
         value,
     })
-}
-
-/// `(name, value, index, count)` of a `PARAM_VALUE`.
-fn param_value_of(msg: &MavMessage) -> Option<(String, f32, u16, u16)> {
-    let MavMessage::PARAM_VALUE(data) = msg else {
-        return None;
-    };
-    check!(data.param_type == MavParamType::MAV_PARAM_TYPE_REAL32);
-    Some((
-        data.param_id.to_str().unwrap().to_owned(),
-        data.param_value,
-        data.param_index,
-        data.param_count,
-    ))
 }
 
 /// A service with params `A` (index 0) = 1.0 and `B` = 2.0 cached.
@@ -269,7 +219,7 @@ fn flight_controller_appearing_clears_the_cache_and_lists() {
     let mut service = service_with_params();
     let mut out = Outbox::default();
 
-    service.fc_appeared(&mut out);
+    service.fc_appeared(Instant::now(), &mut out);
     check!(out.to_fc == [Uplink::Param(ParamRequest::List)]);
 
     service.on_request_read(&read_index(0), &mut out);
