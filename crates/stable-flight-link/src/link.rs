@@ -7,7 +7,9 @@ pub trait LinkRx {
 
     /// Copies one received frame, with or without its trailing `0x00`, into `buf` and returns
     /// its length, or `None` when no complete frame is waiting. Never blocks. A `buf` of
-    /// [`MAX_FRAME_LEN`](crate::MAX_FRAME_LEN) bytes holds any valid frame.
+    /// [`MAX_FRAME_LEN`](crate::MAX_FRAME_LEN) bytes holds any valid frame. A frame that
+    /// doesn't fit `buf` is lost; whether that surfaces as an error or as a truncated frame
+    /// that fails decode is up to the transport. Either way, keep receiving.
     fn try_recv(&mut self, buf: &mut [u8]) -> Result<Option<usize>, Self::Error>;
 }
 

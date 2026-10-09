@@ -43,7 +43,7 @@ Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its depen
 | Setup | `Link` |
 |---|---|
 | Tests | `loopback::Loopback` (`testing` feature) |
-| Flight controller (SITL) and bridge on one host, no USB | UDP on localhost ([#153](https://github.com/wboayue/stable-flight/issues/153)) |
+| Flight controller (SITL) and bridge on one host, no USB | `udp::UdpLink` (`std` feature), UDP on localhost |
 | Real board | USB-CDC, later a TELEM UART ([#155](https://github.com/wboayue/stable-flight/issues/155)) |
 
 Staleness, failsafe, and arm decisions stay on the flight controller ([#152](https://github.com/wboayue/stable-flight/issues/152)); the bridge translates and never decides.

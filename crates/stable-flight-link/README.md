@@ -13,6 +13,8 @@ Parameter names are the core's [`params`](https://docs.rs/stable-flight/latest/s
 
 A frame is `[version u8][postcard payload][crc16 LE]`, COBS-encoded and terminated by `0x00`; every message fits `MAX_FRAME_LEN` (256 bytes). `decode` rejects bad COBS, bytes after the delimiter, a CRC mismatch, another `PROTOCOL_VERSION`, or an invalid payload (`DecodeError`). Why it looks this way: [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link).
 
+`SendMessage::send_message` and `RecvMessage::recv_message` (blanket-implemented over the link halves) do the encode-and-send and receive-and-decode in one call, with a caller-supplied buffer; a `LinkError::Decode` loses only that frame. Underneath:
+
 ```rust
 use stable_flight_link::{Link, MAX_FRAME_LEN, Message, Uplink};
 
@@ -27,8 +29,9 @@ if let Some(len) = link.try_recv(&mut frame)? {
 
 ## Transports
 
-A transport implements `LinkRx` (non-blocking `try_recv`) and `LinkTx` (non-blocking `send`, may drop); `Link` is blanket-implemented over both, and the split lets a commander and a telemetry publisher each own one half. Transports live outside this crate; which one runs where is in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link).
+A transport implements `LinkRx` (non-blocking `try_recv`) and `LinkTx` (non-blocking `send`, may drop); `Link` is blanket-implemented over both, and the split lets a commander and a telemetry publisher each own one half. `udp::UdpLink` (`std` feature) connects one fixed peer over UDP, one frame per datagram, for SITL and the bridge on a host; board transports (USB-CDC) live with the firmware. Which one runs where is in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link).
 
 ## Features
 
+- `std`: `udp::UdpLink`, a non-blocking UDP transport (splittable into rx/tx halves). An absent peer drops sends and receives nothing, without error.
 - `testing`: `loopback::Loopback`, two connected in-memory `Link` ends (each splittable into rx/tx halves) for tests. For `[dev-dependencies]` only.
