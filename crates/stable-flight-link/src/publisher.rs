@@ -47,8 +47,8 @@ impl Default for LinkPublisherConfig {
 /// almost nothing. One frame buffer, kept in the struct, serves every send. Send failures are
 /// counted ([`send_errors`](Self::send_errors)), never returned: telemetry is fire-and-forget.
 ///
-/// Until link staleness is tracked, [`Downlink::Heartbeat`] reports `link_ok: true` and
-/// `mode: 0`.
+/// [`Downlink::Heartbeat`] reports the command's arm state and [`mode`](stable_flight::ControlInput::mode);
+/// until link staleness is tracked, `link_ok` is always `true`.
 ///
 /// # Examples
 ///
@@ -112,7 +112,7 @@ impl<T: LinkTx> TelemetryPublisher for LinkPublisher<'_, T> {
         if self.heartbeat.ready(record.dt) {
             self.send(&Downlink::Heartbeat {
                 armed: record.command.arm,
-                mode: 0,
+                mode: record.command.input.mode(),
                 link_ok: true,
             });
         }

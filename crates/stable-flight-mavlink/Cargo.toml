@@ -1,0 +1,18 @@
+[package]
+name = "stable-flight-mavlink"
+description = "MAVLink message builders for the Stable Flight flight controller: pure functions from core types to MAVLink payloads"
+readme = "README.md"
+keywords = ["mavlink", "flight-controller", "drone", "telemetry"]
+categories = ["aerospace::drones", "encoding"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+stable-flight = { path = "../stable-flight", version = "0.1.0" }
+mavlink.workspace = true
+
+[dev-dependencies]
+assert2.workspace = true

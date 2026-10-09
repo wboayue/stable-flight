@@ -1,0 +1,90 @@
+//! [![github]](https://github.com/wboayue/stable-flight)&ensp;[![crates-io]](https://crates.io/crates/stable-flight-mavlink)&ensp;[![license]](https://opensource.org/licenses/MIT)
+//!
+//! [github]: https://img.shields.io/badge/github-8da0cb?style=for-the-badge&labelColor=555555&logo=github
+//! [crates-io]: https://img.shields.io/badge/crates.io-fc8d62?style=for-the-badge&labelColor=555555&logo=rust
+//! [license]: https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge&labelColor=555555
+//!
+//! <br>
+//!
+//! MAVLink message builders for a [Stable Flight](https://github.com/wboayue/stable-flight)
+//! flight controller: pure functions from core values to MAVLink payloads (`mavlink` crate,
+//! `common` dialect), with no connection, clock, or scheduling. The in-process SITL publisher
+//! and the companion bridge both build their messages here, so a vehicle looks the same to a
+//! ground station either way.
+//!
+//! Each builder returns a message's payload (`*_DATA`); the caller wraps it in a `MavMessage`
+//! and picks the header. Vehicle identity (e.g. the `MavType`) is a parameter, never assumed.
+//!
+//! # Examples
+//!
+//! ```
+//! use stable_flight::ControlMode;
+//! use stable_flight_mavlink::heartbeat;
+//! use stable_flight_mavlink::mavlink::common::{MavModeFlag, MavType};
+//!
+//! let data = heartbeat(MavType::MAV_TYPE_QUADROTOR, true, ControlMode::Attitude);
+//! assert!(data.base_mode.contains(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED));
+//! ```
+
+use mavlink::common::*;
+use stable_flight::ControlMode;
+
+/// The `mavlink` version the builders return types from.
+pub use mavlink;
+
+#[cfg(test)]
+mod tests;
+
+/// `HEARTBEAT` for a `vehicle_type` (e.g. `MAV_TYPE_QUADROTOR`) with a generic autopilot: the arm state
+/// (`MAV_MODE_FLAG_SAFETY_ARMED`, `MAV_STATE_ACTIVE`/`STANDBY`) and the mode as standard
+/// `base_mode` flags, from which ground stations name it (QGC shows e.g. "Manual,Stabilize").
+/// No custom mode.
+///
+/// | Mode | Flags |
+/// |---|---|
+/// | [`ControlMode::Rate`] | `MANUAL_INPUT` |
+/// | [`ControlMode::Attitude`] | `MANUAL_INPUT \| STABILIZE` |
+/// | [`ControlMode::Waypoint`] | `STABILIZE \| GUIDED \| AUTO` |
+///
+/// A mode added to the core later reports no flags until it is mapped here.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::ControlMode;
+/// use stable_flight_mavlink::heartbeat;
+/// use stable_flight_mavlink::mavlink::common::{MavModeFlag, MavState, MavType};
+///
+/// let data = heartbeat(MavType::MAV_TYPE_QUADROTOR, false, ControlMode::Rate);
+/// assert_eq!(data.base_mode, MavModeFlag::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED);
+/// assert_eq!(data.system_status, MavState::MAV_STATE_STANDBY);
+/// ```
+pub fn heartbeat(vehicle_type: MavType, armed: bool, mode: ControlMode) -> HEARTBEAT_DATA {
+    let mut base_mode = match mode {
+        ControlMode::Rate => MavModeFlag::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED,
+        ControlMode::Attitude => {
+            MavModeFlag::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED
+                | MavModeFlag::MAV_MODE_FLAG_STABILIZE_ENABLED
+        }
+        ControlMode::Waypoint => {
+            MavModeFlag::MAV_MODE_FLAG_STABILIZE_ENABLED
+                | MavModeFlag::MAV_MODE_FLAG_GUIDED_ENABLED
+                | MavModeFlag::MAV_MODE_FLAG_AUTO_ENABLED
+        }
+        // `ControlMode` is non-exhaustive: an unmapped mode reports none.
+        _ => MavModeFlag::empty(),
+    };
+    base_mode.set(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED, armed);
+    HEARTBEAT_DATA {
+        custom_mode: 0,
+        mavtype: vehicle_type,
+        autopilot: MavAutopilot::MAV_AUTOPILOT_GENERIC,
+        base_mode,
+        system_status: if armed {
+            MavState::MAV_STATE_ACTIVE
+        } else {
+            MavState::MAV_STATE_STANDBY
+        },
+        mavlink_version: 3,
+    }
+}

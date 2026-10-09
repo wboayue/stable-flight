@@ -15,7 +15,8 @@ not each change; per-change entries start after it.
 - **Bridge binary:** native link (UDP, `--link-bind`/`--link-peer`) ⇄ MAVLink v2
   (`--gcs`, any `mavlink::connect` address), presenting the flight controller as system 1,
   component 1.
-- **Heartbeat:** `HEARTBEAT` at 1 Hz from the flight controller's, only while it is alive.
+- **Heartbeat:** `HEARTBEAT` at 1 Hz from the flight controller's (arm state and mode flags, built
+  by `stable-flight-mavlink`), only while it is alive.
 - **Params:** `PARAM_REQUEST_LIST` and `PARAM_SET` forwarded; the flight controller's params
   and write echoes sent as `REAL32` `PARAM_VALUE`s with their index and count;
   `PARAM_REQUEST_READ` served from a cache, refilled whenever the flight controller appears.

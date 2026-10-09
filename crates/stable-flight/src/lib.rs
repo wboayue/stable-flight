@@ -286,6 +286,47 @@ impl Default for ControlInput {
     }
 }
 
+impl ControlInput {
+    /// Which kind of input this is, without its values: the flight mode a ground station shows.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::{ControlInput, ControlMode};
+    ///
+    /// assert_eq!(ControlInput::Attitude(Default::default()).mode(), ControlMode::Attitude);
+    /// assert_eq!(ControlInput::Rate(Default::default()).mode(), ControlMode::Rate);
+    /// assert_eq!(ControlInput::Waypoint(Default::default()).mode(), ControlMode::Waypoint);
+    /// ```
+    pub fn mode(&self) -> ControlMode {
+        match self {
+            ControlInput::Attitude(_) => ControlMode::Attitude,
+            ControlInput::Rate(_) => ControlMode::Rate,
+            ControlInput::Waypoint(_) => ControlMode::Waypoint,
+        }
+    }
+}
+
+/// The kind of a [`ControlInput`], one variant per input variant: the flight mode, compact
+/// enough for a heartbeat. From [`ControlInput::mode`].
+///
+/// `#[non_exhaustive]` like [`ControlInput`]: a new input kind adds a mode, and a consumer
+/// that doesn't know it reports no mode.
+///
+/// The variant order is on the link's wire (`stable-flight-link`'s heartbeat): changing it is
+/// a protocol change, which bumps that crate's `PROTOCOL_VERSION`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum ControlMode {
+    /// Stick inputs command attitude ([`ControlInput::Attitude`]).
+    Attitude,
+    /// Stick inputs command body rates ([`ControlInput::Rate`]).
+    Rate,
+    /// Autonomous flight to a waypoint ([`ControlInput::Waypoint`]).
+    Waypoint,
+}
+
 /// Represents direct manual control of an aircraft's attitude (orientation).
 ///
 /// This struct encapsulates pilot inputs from control devices like joysticks,

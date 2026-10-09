@@ -31,9 +31,13 @@ fn param(name: &str, value: f32, index: u16, count: u16) -> Downlink {
 }
 
 fn heartbeat(armed: bool) -> Downlink {
+    heartbeat_in(armed, ControlMode::Attitude)
+}
+
+fn heartbeat_in(armed: bool, mode: ControlMode) -> Downlink {
     Downlink::Heartbeat {
         armed,
-        mode: 0,
+        mode,
         link_ok: true,
     }
 }
@@ -377,6 +381,34 @@ fn heartbeats_only_while_the_flight_controller_is_alive() {
 
     bridge.poll(t0 + config.fc_timeout, &mut out);
     check!(heartbeats(&mut out) == 0, "flight controller timed out");
+}
+
+#[test]
+fn heartbeat_reports_the_flight_controllers_arm_state_and_mode() {
+    let tailsitter = MavType::MAV_TYPE_VTOL_TAILSITTER_QUADROTOR;
+    // (arm state, mode): the mapping itself is `stable_flight_mavlink::heartbeat`'s; the bridge
+    // passes the flight controller's values and its configured vehicle type through.
+    let cases = [
+        (false, ControlMode::Rate),
+        (true, ControlMode::Attitude),
+        (true, ControlMode::Waypoint),
+    ];
+    for (armed, mode) in cases {
+        let now = Instant::now();
+        let mut bridge = Bridge::new(BridgeConfig {
+            vehicle_type: tailsitter,
+            ..BridgeConfig::default()
+        });
+        let mut out = Outbox::default();
+        bridge.on_downlink(&heartbeat_in(armed, mode), now, &mut out);
+        bridge.poll(now, &mut out);
+
+        let expected = stable_flight_mavlink::heartbeat(tailsitter, armed, mode);
+        check!(
+            out.to_gcs == [MavMessage::HEARTBEAT(expected)],
+            "{mode:?} armed={armed}"
+        );
+    }
 }
 
 #[test]

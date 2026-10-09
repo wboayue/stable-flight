@@ -13,7 +13,7 @@ not each change; per-change entries start after it.
 ### Added
 
 - **Messages:** `Uplink` (`Control`: heartbeat, core `Command`, arm; `ParamRequest`) and `Downlink`
-  (heartbeat, `VehicleState`, `Record` telemetry, `ParamValue`, status text). `Record` is an owned
+  (heartbeat with arm state and core `ControlMode`, `VehicleState`, `Record` telemetry, `ParamValue`, status text). `Record` is an owned
   `TelemetryRecord`, convertible both ways.
 - **Frames:** `[version][postcard][crc16]`, COBS-encoded and `0x00`-terminated, through the
   sealed `Message` trait (`encode`/`decode`, with `EncodeError`/`DecodeError`). Rejects bad

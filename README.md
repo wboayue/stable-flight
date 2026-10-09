@@ -16,6 +16,7 @@ The repository is a Cargo workspace:
 |---|---|
 | [`stable-flight`](crates/stable-flight) | Flight-control core: pipeline traits, copter guidance, cascaded-PID stabilizers, mixers, and `FlightLoop` (one control tick). `no_std`, with no simulator or I/O dependencies |
 | [`stable-flight-link`](crates/stable-flight-link) | Wire protocol between the flight controller and a companion computer: `Uplink`/`Downlink` messages, versioned COBS frames, and the byte-level `Link` trait. `no_std` |
+| [`stable-flight-mavlink`](crates/stable-flight-mavlink) | MAVLink message builders shared by the SITL publisher and the bridge: pure functions from core values to MAVLink payloads |
 | [`stable-flight-bridge`](crates/stable-flight-bridge) | Companion-computer binary translating the native link to MAVLink for ground stations (QGC): params today, state and commands next |
 | [`stable-flight-sitl`](crates/stable-flight-sitl) | Simulator-independent software-in-the-loop harness: commanders, telemetry, the real-time `RealTimeRunner` + `ShutdownSignal`, and the backend conformance kit |
 | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | RealFlight backend: `RealFlightVehicle`, tuned `airframes`, and the RealFlight examples |

@@ -8,7 +8,7 @@ Params-first ([#154](https://github.com/wboayue/stable-flight/issues/154)): QGC 
 
 | MAVLink | Bridge |
 |---|---|
-| `HEARTBEAT` | Sent at 1 Hz from the flight controller's heartbeat (armed state, mode as `custom_mode`), only while the flight controller has been heard from within 3 s |
+| `HEARTBEAT` | Sent at 1 Hz from the flight controller's heartbeat (armed state; the FC's `ControlMode` as standard `base_mode` flags, so QGC names it, e.g. "Manual,Stabilize"), only while the flight controller has been heard from within 3 s |
 | `PARAM_REQUEST_LIST` | Forwarded; the flight controller streams every param |
 | `PARAM_REQUEST_READ` | Answered from a cache of the params the flight controller has sent (by index or name) |
 | `PARAM_SET` | Forwarded; the flight controller's echo (the value sent if accepted, the current value if rejected) goes out as `PARAM_VALUE`. Every param is `REAL32`; a set of another type is rejected with the current value |

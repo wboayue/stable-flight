@@ -1485,6 +1485,7 @@ dependencies = [
  "mavlink",
  "stable-flight",
  "stable-flight-link",
+ "stable-flight-mavlink",
 ]
 
 [[package]]
@@ -1502,6 +1503,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "stable-flight-mavlink"
+version = "0.1.0"
+dependencies = [
+ "assert2",
+ "mavlink",
+ "stable-flight",
+]
+
+[[package]]
 name = "stable-flight-sitl"
 version = "0.1.0"
 dependencies = [
@@ -1513,6 +1523,7 @@ dependencies = [
  "mavlink",
  "signal-hook",
  "stable-flight",
+ "stable-flight-mavlink",
  "thiserror",
  "windows-sys 0.61.2",
 ]
