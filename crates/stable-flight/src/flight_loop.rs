@@ -195,6 +195,11 @@ where
         &self.state
     }
 
+    /// The commander, e.g. to read its [`failsafe`](Commander::failsafe) state between ticks.
+    pub fn commander(&self) -> &C {
+        &self.commander
+    }
+
     /// The guidance, e.g. to read its config.
     pub fn guidance(&self) -> &G {
         &self.guidance

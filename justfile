@@ -64,6 +64,14 @@ cover:
 fly-manual *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- {{ARGS}}
 
+# Quadcopter in RealFlight flown from the native link, holding when the link goes quiet; drive it with `just link-pilot`
+fly-companion *ARGS:
+    cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight -- {{ARGS}}
+
+# Plays the companion for `just fly-companion`: heartbeats, arm, a scripted waypoint flight; Ctrl-C to go quiet
+link-pilot *ARGS:
+    cargo run --bin link_pilot -- {{ARGS}}
+
 # Native link ⇄ MAVLink bridge for QGC, e.g. `just bridge --gcs udpout:192.168.1.20:14550`
 bridge *ARGS:
     cargo run -p stable-flight-bridge -- {{ARGS}}
