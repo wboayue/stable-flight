@@ -24,7 +24,7 @@ use log::{debug, warn};
 use stable_flight::FlightLoop;
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
-use stable_flight_link::fc::FcLink;
+use stable_flight_link::fc::{FcLink, FcLinkConfig};
 use stable_flight_link::publisher::LinkPublisherConfig;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
@@ -73,10 +73,15 @@ fn main() {
     let (link_rx, link_tx) = UdpLink::bind(&args.link_bind, &args.link_peer)
         .expect("failed to open link socket")
         .into_halves();
-    let link_config = LinkPublisherConfig {
-        // Records carry the commanded thrust the bridge reports as VFR_HUD throttle.
-        record_interval: Some(RECORD_INTERVAL),
-        ..LinkPublisherConfig::default()
+    let link_config = FcLinkConfig {
+        publisher: LinkPublisherConfig {
+            // Records carry the commanded thrust the bridge reports as VFR_HUD throttle.
+            record_interval: Some(RECORD_INTERVAL),
+            ..LinkPublisherConfig::default()
+        },
+        // 8 frames and 4 param writes per tick: a "load from file" burst of hundreds spreads
+        // over a few hundred milliseconds at 250 Hz.
+        ..FcLinkConfig::default()
     };
     let mut fc_link = FcLink::<32, 16>::new();
     let (mut poller, link) = fc_link.wire_with(link_rx, link_tx, link_config);

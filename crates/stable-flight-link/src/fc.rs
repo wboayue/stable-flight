@@ -36,10 +36,28 @@ use crate::publisher::{LinkPublisher, LinkPublisherConfig};
 use crate::router::{RouteStats, UplinkRouter};
 use crate::{LinkRx, LinkTx, ParamRequest, ParamValue};
 
-/// Uplink frames the router decodes per poll.
-const MAX_FRAMES_PER_POLL: usize = 8;
-/// Param writes the server applies per poll.
-const MAX_WRITES_PER_POLL: usize = 4;
+/// How an [`FcLink`] is wired: the publisher's rates and the per-poll limits.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FcLinkConfig {
+    /// The publisher's rates.
+    pub publisher: LinkPublisherConfig,
+    /// Uplink frames the router decodes per poll; more wait for the next. Must be > 0.
+    pub max_frames_per_poll: usize,
+    /// Param writes the server applies per poll; a ground station's "load from file" bursts
+    /// hundreds, so this bounds the time a burst adds to one gap between ticks. Must be > 0.
+    pub max_writes_per_poll: usize,
+}
+
+impl Default for FcLinkConfig {
+    /// The default publisher rates, 8 frames and 4 param writes per poll.
+    fn default() -> Self {
+        Self {
+            publisher: LinkPublisherConfig::default(),
+            max_frames_per_poll: 8,
+            max_writes_per_poll: 4,
+        }
+    }
+}
 
 /// Storage for the flight controller's param queues: up to `REQUESTS` pending requests and
 /// `REPLIES` pending replies. [`wire`](Self::wire) borrows it to build the stack.
@@ -58,24 +76,28 @@ impl<const REQUESTS: usize, const REPLIES: usize> FcLink<REQUESTS, REPLIES> {
     }
 
     /// The stack over the flight controller's link halves: an [`FcPoller`] to call between
-    /// ticks, and the [`LinkPublisher`] (default config, param replies attached) to use as the
-    /// flight loop's telemetry.
+    /// ticks, and the [`LinkPublisher`] (param replies attached) to use as the flight loop's
+    /// telemetry, with [`FcLinkConfig::default`].
     pub fn wire<R: LinkRx, T: LinkTx>(
         &mut self,
         rx: R,
         tx: T,
     ) -> (FcPoller<'_, R>, LinkPublisher<'_, T>) {
-        self.wire_with(rx, tx, LinkPublisherConfig::default())
+        self.wire_with(rx, tx, FcLinkConfig::default())
     }
 
-    /// As [`wire`](Self::wire), with the publisher's rates from `config` (e.g. to send records).
+    /// As [`wire`](Self::wire), with the publisher's rates and per-poll limits from `config`.
+    ///
+    /// # Panics
+    ///
+    /// If either per-poll limit is zero.
     ///
     /// # Examples
     ///
     /// ```
     /// use core::time::Duration;
     ///
-    /// use stable_flight_link::fc::FcLink;
+    /// use stable_flight_link::fc::{FcLink, FcLinkConfig};
     /// use stable_flight_link::loopback::Loopback;
     /// use stable_flight_link::publisher::LinkPublisherConfig;
     ///
@@ -83,9 +105,13 @@ impl<const REQUESTS: usize, const REPLIES: usize> FcLink<REQUESTS, REPLIES> {
     /// let (_companion, fc_end) = loopback.split();
     /// let (rx, tx) = fc_end.into_halves();
     /// let mut link = FcLink::<32, 16>::new();
-    /// let config = LinkPublisherConfig {
-    ///     record_interval: Some(Duration::from_millis(200)),
-    ///     ..LinkPublisherConfig::default()
+    /// let config = FcLinkConfig {
+    ///     publisher: LinkPublisherConfig {
+    ///         record_interval: Some(Duration::from_millis(200)),
+    ///         ..LinkPublisherConfig::default()
+    ///     },
+    ///     max_writes_per_poll: 2,
+    ///     ..FcLinkConfig::default()
     /// };
     /// let (_poller, _telemetry) = link.wire_with(rx, tx, config);
     /// ```
@@ -93,15 +119,15 @@ impl<const REQUESTS: usize, const REPLIES: usize> FcLink<REQUESTS, REPLIES> {
         &mut self,
         rx: R,
         tx: T,
-        config: LinkPublisherConfig,
+        config: FcLinkConfig,
     ) -> (FcPoller<'_, R>, LinkPublisher<'_, T>) {
         let (to_server, from_router) = self.requests.split();
         let (to_publisher, from_server) = self.replies.split();
         let poller = FcPoller {
-            router: UplinkRouter::new(rx, MAX_FRAMES_PER_POLL).with_params(to_server),
-            server: ParamServer::new(from_router, to_publisher, MAX_WRITES_PER_POLL),
+            router: UplinkRouter::new(rx, config.max_frames_per_poll).with_params(to_server),
+            server: ParamServer::new(from_router, to_publisher, config.max_writes_per_poll),
         };
-        let publisher = LinkPublisher::new(tx, config).with_param_replies(from_server);
+        let publisher = LinkPublisher::new(tx, config.publisher).with_param_replies(from_server);
         (poller, publisher)
     }
 }

@@ -31,7 +31,8 @@ not each change; per-change entries start after it.
 - **Publisher:** `publisher::LinkPublisher`, a core `TelemetryPublisher`: heartbeat, state, and
   optional records at configured rates, and paced param replies.
 - **`fc::FcLink`:** the flight controller's side (param queues, router, param server, publisher)
-  wired in one call (`wire`, or `wire_with` for publisher rates); its `FcPoller` runs between
+  wired in one call (`wire`, or `wire_with` and `FcLinkConfig` for publisher rates and per-poll
+  limits); its `FcPoller` runs between
   ticks.
 - **`std` feature:** `udp::UdpLink`, a non-blocking UDP transport to one fixed peer, one frame
   per datagram, with rx/tx halves; `bind`s or wraps a connected socket; tolerates an absent peer.

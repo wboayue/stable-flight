@@ -14,7 +14,7 @@ Parameter names are the core's [`params`](https://docs.rs/stable-flight/latest/s
 - `router::UplinkRouter` drains a `LinkRx` and routes each `Uplink` to its consumer's queue, if it was given one: param requests to the `ParamServer`, `Control` to a link-fed commander. It's separate from any commander, so params work whichever commander flies.
 - `publisher::LinkPublisher` is a core `TelemetryPublisher` that sends heartbeat, state, and optional records at configured rates, plus at most M param replies per tick.
 - `params::ParamServer` serves the flight controller's core `Params` over the link: the commander queues `ParamRequest`s inside the tick, and `poll(&mut flight_loop)` between ticks applies them and queues `ParamValue` replies for the publisher. Pacing and reply rules: its [rustdoc](https://docs.rs/stable-flight-link/latest/stable_flight_link/params/struct.ParamServer.html). Wiring into a SITL run: [`copter-tune-realflight`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl-realflight/examples/copter-tune-realflight.rs).
-- `fc::FcLink` wires all three in one call: it owns the param queues, and `wire`/`wire_with` (publisher rates) return the publisher, to use as the flight loop's telemetry, and an `FcPoller`, whose `poll(&mut flight_loop)` runs between ticks (routes, then serves params).
+- `fc::FcLink` wires all three in one call: it owns the param queues, and `wire`/`wire_with` (`FcLinkConfig`: publisher rates, per-poll limits) return the publisher, to use as the flight loop's telemetry, and an `FcPoller`, whose `poll(&mut flight_loop)` runs between ticks (routes, then serves params).
 
 ## Frames
 
