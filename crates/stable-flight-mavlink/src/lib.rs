@@ -15,6 +15,12 @@
 //! Each builder returns a message's payload (`*_DATA`); the caller wraps it in a `MavMessage`
 //! and picks the header. Vehicle identity (e.g. the `MavType`) is a parameter, never assumed.
 //!
+//! What the state messages need beyond one `VehicleState` lives here too, so both callers derive
+//! it the same way: a [`GeodeticOrigin`] and its [`FlatEarth`] projection for global position,
+//! [`HomeTracker`] for home, [`LandDetector`] for the landed state, and [`GroundTracker`]
+//! combining the two. They hold state across
+//! updates but, like the builders, no clock or I/O.
+//!
 //! # Examples
 //!
 //! ```
@@ -32,10 +38,23 @@ use stable_flight::ControlMode;
 /// The `mavlink` version the builders return types from.
 pub use mavlink;
 
+mod geo;
+mod ground;
+mod home;
+mod land_detector;
+mod state;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 #[cfg(test)]
 mod tests;
+
+pub use geo::{DEFAULT_ORIGIN, FlatEarth, GeodeticOrigin, InvalidOrigin};
+pub use ground::{GroundChanges, GroundTracker};
+pub use home::HomeTracker;
+pub use land_detector::LandDetector;
+pub use state::{
+    attitude, extended_sys_state, global_position_int, home_position, local_position_ned, vfr_hud,
+};
 
 /// `HEARTBEAT` for a `vehicle_type` (e.g. `MAV_TYPE_QUADROTOR`) with a generic autopilot: the arm state
 /// (`MAV_MODE_FLAG_SAFETY_ARMED`, `MAV_STATE_ACTIVE`/`STANDBY`) and the mode as standard

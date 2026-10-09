@@ -13,12 +13,14 @@ repository.workspace = true
 [dependencies]
 stable-flight = { path = "../stable-flight", version = "0.1.0" }
 mavlink.workspace = true
+thiserror.workspace = true
 
 [features]
 # `testing::MockConnection`, a scripted MAVLink connection for tests. For dev-dependencies only.
 testing = []
 
 [dev-dependencies]
+approx.workspace = true
 assert2.workspace = true
 
 [package.metadata.docs.rs]
