@@ -3,8 +3,9 @@
 use assert2::check;
 use mavlink::MavHeader;
 use mavlink::common::*;
-use stable_flight_link::stable_flight::ControlMode;
+use stable_flight_link::stable_flight::{ControlMode, VehicleState};
 use stable_flight_link::{Downlink, ParamValue};
+use stable_flight_mavlink::{DEFAULT_ORIGIN, FlatEarth};
 
 /// A ground station's header.
 pub(crate) const GCS: MavHeader = MavHeader {
@@ -83,4 +84,37 @@ pub(crate) fn request_list() -> MavMessage {
         target_system: 1,
         target_component: 1,
     })
+}
+
+/// The projection around the default origin.
+pub(crate) fn earth() -> FlatEarth {
+    FlatEarth::new(DEFAULT_ORIGIN).expect("valid origin")
+}
+
+/// A state at `altitude_m` over the local origin.
+pub(crate) fn at_altitude(altitude_m: f32) -> VehicleState {
+    VehicleState {
+        position_m: [0.0, 0.0, altitude_m].into(),
+        ..Default::default()
+    }
+}
+
+/// The local `z` (NED, down positive) of each `HOME_POSITION` in `msgs`.
+pub(crate) fn home_zs(msgs: &[MavMessage]) -> Vec<f32> {
+    msgs.iter()
+        .filter_map(|m| match m {
+            MavMessage::HOME_POSITION(d) => Some(d.z),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The landed state of each `EXTENDED_SYS_STATE` in `msgs`.
+pub(crate) fn landed_states(msgs: &[MavMessage]) -> Vec<MavLandedState> {
+    msgs.iter()
+        .filter_map(|m| match m {
+            MavMessage::EXTENDED_SYS_STATE(d) => Some(d.landed_state),
+            _ => None,
+        })
+        .collect()
 }

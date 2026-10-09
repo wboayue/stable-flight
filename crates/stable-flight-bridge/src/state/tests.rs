@@ -3,30 +3,19 @@ use mavlink::Message;
 use stable_flight_link::stable_flight::{
     ActuatorCommand, Command, ControlOutput, Saturation, Setpoint,
 };
-use stable_flight_mavlink::DEFAULT_ORIGIN;
 
 use super::*;
+use crate::test_support::{at_altitude, earth, home_zs, landed_states};
 
 const STREAM: Duration = Duration::from_millis(100);
 const SLOW: Duration = Duration::from_secs(1);
 const MS: Duration = Duration::from_millis(1);
-
-fn earth() -> FlatEarth {
-    FlatEarth::new(DEFAULT_ORIGIN).expect("valid origin")
-}
 
 /// A service whose flight controller appeared at `t0`.
 fn service(earth: Option<FlatEarth>, t0: Instant) -> StateService {
     let mut service = StateService::new(earth, STREAM, SLOW);
     service.fc_appeared(t0, &mut Outbox::default());
     service
-}
-
-fn at_altitude(altitude_m: f32) -> VehicleState {
-    VehicleState {
-        position_m: [0.0, 0.0, altitude_m].into(),
-        ..Default::default()
-    }
 }
 
 /// The names of the messages a poll at `now` sends.
@@ -124,24 +113,11 @@ fn sends_home_and_landed_state_as_soon_as_they_change() {
         service.on_state(&at_altitude(altitude_m), armed);
         let mut out = Outbox::default();
         service.poll(t0 + i as u32 * 10 * MS, &mut out);
-        let homes: Vec<_> = out
-            .to_gcs
-            .iter()
-            .filter_map(|m| match m {
-                MavMessage::HOME_POSITION(d) => Some(d.z),
-                _ => None,
-            })
-            .collect();
-        let states: Vec<_> = out
-            .to_gcs
-            .iter()
-            .filter_map(|m| match m {
-                MavMessage::EXTENDED_SYS_STATE(d) => Some(d.landed_state),
-                _ => None,
-            })
-            .collect();
-        check!(homes == Vec::from_iter(home_z), "tick {i}");
-        check!(states == Vec::from_iter(landed), "tick {i}");
+        check!(home_zs(&out.to_gcs) == Vec::from_iter(home_z), "tick {i}");
+        check!(
+            landed_states(&out.to_gcs) == Vec::from_iter(landed),
+            "tick {i}"
+        );
     }
 }
 
@@ -226,11 +202,7 @@ fn starts_over_when_the_flight_controller_comes_back() {
     service.poll(back, &mut out);
     let names: Vec<_> = out.to_gcs.iter().map(|m| m.message_name()).collect();
     check!(names == ALL);
-    let home_z = out.to_gcs.iter().find_map(|m| match m {
-        MavMessage::HOME_POSITION(d) => Some(d.z),
-        _ => None,
-    });
-    check!(home_z == Some(-30.0), "home latched afresh");
+    check!(home_zs(&out.to_gcs) == [-30.0], "home latched afresh");
     let time_boot_ms = out.to_gcs.iter().find_map(|m| match m {
         MavMessage::ATTITUDE(d) => Some(d.time_boot_ms),
         _ => None,

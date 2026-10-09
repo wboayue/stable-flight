@@ -34,6 +34,15 @@ pub(crate) struct StateService {
     earth: Option<FlatEarth>,
     /// When the flight controller first appeared: the zero of `time_boot_ms`.
     boot: Option<Instant>,
+    session: Session,
+    stream: Interval,
+    slow: Interval,
+}
+
+/// What the flight controller has told the service since it last appeared; a restart may have
+/// changed all of it, so it starts over each time.
+#[derive(Debug, Default)]
+struct Session {
     latest: Option<VehicleState>,
     /// Normalized commanded thrust from the latest record.
     thrust: f32,
@@ -42,8 +51,6 @@ pub(crate) struct StateService {
     home_changed: bool,
     /// The landed state changed since the last poll: send `EXTENDED_SYS_STATE` now.
     landed_changed: bool,
-    stream: Interval,
-    slow: Interval,
 }
 
 impl StateService {
@@ -57,11 +64,7 @@ impl StateService {
         Self {
             earth,
             boot: None,
-            latest: None,
-            thrust: 0.0,
-            ground: GroundTracker::default(),
-            home_changed: false,
-            landed_changed: false,
+            session: Session::default(),
             stream: Interval::new(state_interval),
             slow: Interval::new(slow_interval),
         }
@@ -71,38 +74,36 @@ impl StateService {
     /// over: no state, home, or thrust until it sends them, then every stream at once.
     pub(crate) fn fc_appeared(&mut self, now: Instant, _out: &mut Outbox) {
         self.boot.get_or_insert(now);
-        self.latest = None;
-        self.thrust = 0.0;
-        self.ground = GroundTracker::default();
-        self.home_changed = false;
-        self.landed_changed = false;
+        self.session = Session::default();
         self.stream.start(now);
         self.slow.start(now);
     }
 
     /// A state from the flight controller, whose latest heartbeat reported `armed`.
     pub(crate) fn on_state(&mut self, state: &VehicleState, armed: bool) {
-        let changes = self.ground.update(armed, state.position_m);
-        self.home_changed |= changes.home;
-        self.landed_changed |= changes.landed;
-        self.latest = Some(state.clone());
+        let session = &mut self.session;
+        let changes = session.ground.update(armed, state.position_m);
+        session.home_changed |= changes.home;
+        session.landed_changed |= changes.landed;
+        session.latest = Some(state.clone());
     }
 
     /// A record from the flight controller: its commanded thrust, for `VFR_HUD`.
     pub(crate) fn on_record(&mut self, record: &Record) {
-        self.thrust = record.control.thrust;
+        self.session.thrust = record.control.thrust;
     }
 
     /// Sends what is due at `now` from the latest state.
     pub(crate) fn poll(&mut self, now: Instant, out: &mut Outbox) {
-        let Some(state) = &self.latest else {
+        let session = &mut self.session;
+        let Some(state) = &session.latest else {
             return;
         };
         // Truncates after about 49 days, like any `time_boot_ms`.
         let time_boot_ms = self.boot.map_or(0, |boot| {
             now.saturating_duration_since(boot).as_millis() as u32
         });
-        let home_m = self.ground.home_m();
+        let home_m = session.ground.home_m();
 
         if self.stream.due(now) {
             out.to_gcs
@@ -123,13 +124,13 @@ impl StateService {
             out.to_gcs
                 .push(MavMessage::VFR_HUD(stable_flight_mavlink::vfr_hud(
                     state,
-                    self.thrust,
+                    session.thrust,
                 )));
         }
 
         // `|`, not `||`: the timer advances on every poll.
         let slow_due = self.slow.due(now);
-        if slow_due | std::mem::take(&mut self.home_changed)
+        if slow_due | std::mem::take(&mut session.home_changed)
             && let Some(earth) = &self.earth
             && let Some(home_m) = home_m
         {
@@ -137,9 +138,9 @@ impl StateService {
                 stable_flight_mavlink::home_position(earth, home_m),
             ));
         }
-        if slow_due | std::mem::take(&mut self.landed_changed) {
+        if slow_due | std::mem::take(&mut session.landed_changed) {
             out.to_gcs.push(MavMessage::EXTENDED_SYS_STATE(
-                stable_flight_mavlink::extended_sys_state(self.ground.landed_state()),
+                stable_flight_mavlink::extended_sys_state(session.ground.landed_state()),
             ));
         }
     }

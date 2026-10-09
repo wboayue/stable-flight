@@ -115,9 +115,10 @@ impl Bridge {
 
     /// Handles one message from the flight controller, received at `now`.
     pub(crate) fn on_downlink(&mut self, msg: &Downlink, now: Instant, out: &mut Outbox) {
+        let alive = self.alive_fc(now);
         match msg {
             Downlink::Heartbeat { armed, mode, .. } => {
-                if self.alive_fc(now).is_none() {
+                if alive.is_none() {
                     self.params.fc_appeared(now, out);
                     self.connect.fc_appeared(now, out);
                     self.state.fc_appeared(now, out);
@@ -130,11 +131,11 @@ impl Bridge {
             }
             Downlink::Param(param) => self.params.on_param(param, out),
             Downlink::State(state) => {
-                if let Some(fc) = self.alive_fc(now) {
+                if let Some(fc) = alive {
                     self.state.on_state(state, fc.armed);
                 }
             }
-            Downlink::Record(record) if self.alive_fc(now).is_some() => {
+            Downlink::Record(record) if alive.is_some() => {
                 self.state.on_record(record);
             }
             // Status text has no MAVLink side yet.
