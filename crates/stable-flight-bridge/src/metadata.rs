@@ -2,6 +2,7 @@
 //! see [`MetadataFiles`]. Pure: no I/O; [`crate::http`] serves the files.
 
 use std::fmt;
+use std::net::SocketAddr;
 
 use crc::{CRC_32_ISO_HDLC, Crc};
 use serde_json::{Map, Value, json};
@@ -150,6 +151,42 @@ fn param_json(meta: &ParamMeta) -> Value {
     }
     Value::Object(param)
 }
+
+/// The base URL QGC fetches the metadata from: `http_url` if given, else the server's own
+/// `http_bind` address.
+///
+/// # Errors
+///
+/// [`UnreachableUrl`] when `http_bind` listens on every interface (`0.0.0.0`, `::`) and no
+/// `http_url` names one: QGC can't fetch from an unspecified address, and it only logs the
+/// failure, so the params would silently show no descriptions.
+pub(crate) fn base_url(http_bind: &str, http_url: Option<&str>) -> Result<String, UnreachableUrl> {
+    if let Some(url) = http_url {
+        return Ok(url.to_owned());
+    }
+    match http_bind.parse::<SocketAddr>() {
+        Ok(addr) if addr.ip().is_unspecified() => Err(UnreachableUrl(http_bind.to_owned())),
+        _ => Ok(format!("http://{http_bind}")),
+    }
+}
+
+/// Returned by [`base_url`]: the server listens on every interface, so its address isn't one
+/// QGC can fetch from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct UnreachableUrl(pub(crate) String);
+
+impl fmt::Display for UnreachableUrl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "--http-bind {} listens on every interface; set --http-url to an address QGC can reach, \
+             e.g. http://192.168.1.30:14580",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for UnreachableUrl {}
 
 /// Returned by [`MetadataFiles::build`]: the general file's URI is longer than
 /// `COMPONENT_METADATA`'s 100 bytes. Use a shorter `--http-url`.

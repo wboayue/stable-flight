@@ -117,6 +117,40 @@ fn crcs_and_paths_change_with_the_content() {
 }
 
 #[test]
+fn advertises_the_bind_address_unless_it_is_every_interface() {
+    // (http_bind, http_url, expected base URL; None: refused)
+    let cases = [
+        ("127.0.0.1:14580", None, Some("http://127.0.0.1:14580")),
+        (
+            "192.168.1.30:14580",
+            None,
+            Some("http://192.168.1.30:14580"),
+        ),
+        ("localhost:14580", None, Some("http://localhost:14580")), // a name: used as is
+        ("0.0.0.0:14580", None, None),
+        ("[::]:14580", None, None),
+        (
+            "0.0.0.0:14580",
+            Some("http://192.168.1.30:14580"),
+            Some("http://192.168.1.30:14580"),
+        ),
+        (
+            "127.0.0.1:14580",
+            Some("http://proxy/sf"),
+            Some("http://proxy/sf"),
+        ),
+    ];
+    for (bind, url, expected) in cases {
+        let result = base_url(bind, url);
+        check!(result.as_deref().ok() == expected, "{bind} {url:?}");
+        if expected.is_none() {
+            assert!(let Err(UnreachableUrl(rejected)) = result);
+            check!(rejected == bind);
+        }
+    }
+}
+
+#[test]
 fn rejects_a_base_url_too_long_for_component_metadata() {
     let long = format!("http://{}.example:14580", "a".repeat(60));
     let result = MetadataFiles::build(&long, copter_params());

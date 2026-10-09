@@ -37,7 +37,7 @@ mod test_support;
 
 use bridge::{Bridge, BridgeConfig};
 use idle::IdleBackoff;
-use metadata::{ComponentMetadata, MetadataFiles, copter_params};
+use metadata::{ComponentMetadata, MetadataFiles, base_url, copter_params};
 use origin::parse_origin;
 use pump::Pump;
 
@@ -65,8 +65,8 @@ struct Args {
     /// machine).
     #[arg(long, default_value = "127.0.0.1:14580")]
     http_bind: String,
-    /// Base URL QGC fetches the param metadata from, as QGC reaches this machine
-    /// [default: http://HTTP_BIND].
+    /// Base URL QGC fetches the param metadata from, as QGC reaches this machine; required with
+    /// an all-interfaces --http-bind [default: http://HTTP_BIND].
     #[arg(long)]
     http_url: Option<String>,
     /// Serve no param metadata: QGC lists the params without descriptions, units, or ranges.
@@ -107,10 +107,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metadata = if args.no_metadata {
         None
     } else {
-        let url = args
-            .http_url
-            .clone()
-            .unwrap_or_else(|| format!("http://{}", args.http_bind));
+        let url = base_url(&args.http_bind, args.http_url.as_deref()).map_err(|e| e.to_string())?;
         Some(serve_metadata(&args.http_bind, &url)?)
     };
 

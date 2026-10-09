@@ -25,7 +25,7 @@ Only messages addressed to system 1 / component 1 (or broadcast) are handled. Te
 
 QGC shows each param with a description, units, and its group, and refuses an out-of-range edit before sending it. The bridge builds the metadata at startup from the core's param tables ([`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight)'s `param-metadata` feature) and serves it over HTTP: `component_general.json` and `parameters.json`, plain JSON, at paths versioned by their CRC, because QGC caches downloads by URL and CRC. QGC asks for it while connecting (`COMPONENT_METADATA`), with no setup on its side. No defaults yet ([#229](https://github.com/wboayue/stable-flight/issues/229)). An exclusive bound (e.g. `GUID_TILT_MAX` below 90°) is sent as its value, which the flight controller still rejects.
 
-The server listens on `127.0.0.1:14580` by default, which only reaches a QGC on the same machine. For QGC on another machine, bind an address it can reach and advertise the URL it should use:
+The server listens on `127.0.0.1:14580` by default, which only reaches a QGC on the same machine. For QGC on another machine, bind an address it can reach and advertise the URL it should use; the bridge refuses to start with an all-interfaces bind (`0.0.0.0`, `::`) and no `--http-url`, since that address isn't one QGC can fetch from:
 
 ```bash
 just bridge --gcs udpout:192.168.1.20:14550 --http-bind 0.0.0.0:14580 --http-url http://192.168.1.30:14580
