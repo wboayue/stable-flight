@@ -28,13 +28,14 @@
 //! assert!((stored - 30.0).abs() < 1e-4);
 //! ```
 
-use heapless::spsc::Queue;
+use heapless::spsc::{Producer, Queue};
 use stable_flight::params::Params;
 
+use crate::commander::LinkCommander;
 use crate::params::ParamServer;
 use crate::publisher::{LinkPublisher, LinkPublisherConfig};
 use crate::router::{RouteStats, UplinkRouter};
-use crate::{LinkRx, LinkTx, ParamRequest, ParamValue};
+use crate::{Control, LinkRx, LinkTx, ParamRequest, ParamValue};
 
 /// How an [`FcLink`] is wired: the publisher's rates and the per-poll limits.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -59,19 +60,27 @@ impl Default for FcLinkConfig {
     }
 }
 
-/// Storage for the flight controller's param queues: up to `REQUESTS` pending requests and
-/// `REPLIES` pending replies. [`wire`](Self::wire) borrows it to build the stack.
-pub struct FcLink<const REQUESTS: usize, const REPLIES: usize> {
+/// Storage for the flight controller's link queues, sized `REQUESTS` (param requests), `REPLIES`
+/// (param replies), and `CONTROLS` (control messages for a [`LinkCommander`],
+/// [`wire_linked`](Self::wire_linked) only). Each is a `heapless` SPSC queue, which holds one
+/// fewer than its size: an `FcLink<32, 16>` holds 31 requests, 15 replies, and 7 control
+/// messages. [`wire`](Self::wire) borrows it
+/// to build the stack.
+pub struct FcLink<const REQUESTS: usize, const REPLIES: usize, const CONTROLS: usize = 8> {
     requests: Queue<ParamRequest, REQUESTS>,
     replies: Queue<ParamValue, REPLIES>,
+    controls: Queue<Control, CONTROLS>,
 }
 
-impl<const REQUESTS: usize, const REPLIES: usize> FcLink<REQUESTS, REPLIES> {
+impl<const REQUESTS: usize, const REPLIES: usize, const CONTROLS: usize>
+    FcLink<REQUESTS, REPLIES, CONTROLS>
+{
     /// Empty queues.
     pub const fn new() -> Self {
         Self {
             requests: Queue::new(),
             replies: Queue::new(),
+            controls: Queue::new(),
         }
     }
 
@@ -121,24 +130,89 @@ impl<const REQUESTS: usize, const REPLIES: usize> FcLink<REQUESTS, REPLIES> {
         tx: T,
         config: FcLinkConfig,
     ) -> (FcPoller<'_, R>, LinkPublisher<'_, T>) {
-        let (to_server, from_router) = self.requests.split();
-        let (to_publisher, from_server) = self.replies.split();
-        let poller = FcPoller {
-            router: UplinkRouter::new(rx, config.max_frames_per_poll).with_params(to_server),
-            server: ParamServer::new(from_router, to_publisher, config.max_writes_per_poll),
-        };
-        let publisher = LinkPublisher::new(tx, config.publisher).with_param_replies(from_server);
-        (poller, publisher)
+        stack(&mut self.requests, &mut self.replies, None, rx, tx, config)
+    }
+
+    /// As [`wire_with`](Self::wire_with), plus a [`LinkCommander`] fed by the link's
+    /// [`Control`] messages, for a vehicle flown from the companion; wrap it in a
+    /// [`FailsafeCommander`](stable_flight::commanders::FailsafeCommander).
+    ///
+    /// # Panics
+    ///
+    /// If either per-poll limit is zero.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight_link::fc::{FcLink, FcLinkConfig};
+    /// use stable_flight_link::loopback::Loopback;
+    /// use stable_flight_link::stable_flight::commanders::{
+    ///     FailsafeCommander, FailsafeConfig, HoldCommander,
+    /// };
+    ///
+    /// let loopback = Loopback::<16>::new();
+    /// let (_companion, fc_end) = loopback.split();
+    /// let (rx, tx) = fc_end.into_halves();
+    /// let mut link = FcLink::<32, 16>::new();
+    /// let (_poller, _telemetry, link_commander) =
+    ///     link.wire_linked(rx, tx, FcLinkConfig::default());
+    /// let hold = HoldCommander::default();
+    /// let commander = FailsafeCommander::new(link_commander, hold, FailsafeConfig::default())?;
+    /// # Ok::<(), stable_flight_link::stable_flight::controllers::InvalidConfig>(())
+    /// ```
+    pub fn wire_linked<R: LinkRx, T: LinkTx>(
+        &mut self,
+        rx: R,
+        tx: T,
+        config: FcLinkConfig,
+    ) -> (FcPoller<'_, R>, LinkPublisher<'_, T>, LinkCommander<'_>) {
+        let (to_commander, from_router) = self.controls.split();
+        let (poller, publisher) = stack(
+            &mut self.requests,
+            &mut self.replies,
+            Some(to_commander),
+            rx,
+            tx,
+            config,
+        );
+        (poller, publisher, LinkCommander::new(from_router))
     }
 }
 
-impl<const REQUESTS: usize, const REPLIES: usize> Default for FcLink<REQUESTS, REPLIES> {
+/// The poller and publisher over `requests` and `replies`, routing control messages to
+/// `control` when given.
+fn stack<'a, R: LinkRx, T: LinkTx, const REQUESTS: usize, const REPLIES: usize>(
+    requests: &'a mut Queue<ParamRequest, REQUESTS>,
+    replies: &'a mut Queue<ParamValue, REPLIES>,
+    control: Option<Producer<'a, Control>>,
+    rx: R,
+    tx: T,
+    config: FcLinkConfig,
+) -> (FcPoller<'a, R>, LinkPublisher<'a, T>) {
+    let (to_server, from_router) = requests.split();
+    let (to_publisher, from_server) = replies.split();
+    let mut router = UplinkRouter::new(rx, config.max_frames_per_poll).with_params(to_server);
+    if let Some(control) = control {
+        router = router.with_control(control);
+    }
+    let poller = FcPoller {
+        router,
+        server: ParamServer::new(from_router, to_publisher, config.max_writes_per_poll),
+    };
+    let publisher = LinkPublisher::new(tx, config.publisher).with_param_replies(from_server);
+    (poller, publisher)
+}
+
+impl<const REQUESTS: usize, const REPLIES: usize, const CONTROLS: usize> Default
+    for FcLink<REQUESTS, REPLIES, CONTROLS>
+{
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// The between-ticks half of an [`FcLink`]: reads the link, then serves params.
+/// The between-ticks half of an [`FcLink`]: reads the link (queuing control messages for the
+/// [`LinkCommander`], if wired), then serves params.
 pub struct FcPoller<'a, R> {
     router: UplinkRouter<'a, R>,
     server: ParamServer<'a>,

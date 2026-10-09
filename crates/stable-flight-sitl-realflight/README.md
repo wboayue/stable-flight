@@ -42,7 +42,7 @@ Each tick makes one RealFlight exchange, in `actuate`; `estimate_state` returns 
 
 ## Examples
 
-Run these from the repository root (`just fly-manual` / `just fly-auto` / `just capture` wrap them). Each serves params and telemetry over the native link (UDP; binds `127.0.0.1:14560`, peer `127.0.0.1:14561`, set with `--link-bind`/`--link-peer`) for [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) (`just bridge`), which QGC connects to; start the bridge once and leave it running:
+Run these from the repository root (`just fly-manual` / `just fly-auto` / `just capture` / `just fly-companion` wrap them). Each serves params and telemetry over the native link (UDP; binds `127.0.0.1:14560`, peer `127.0.0.1:14561`, set with `--link-bind`/`--link-peer`) for [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) (`just bridge`), which QGC connects to; start the bridge once and leave it running:
 
 ```bash
 # Joystick (Logitech Extreme 3D); RealFlight host defaults to 10.211.55.3:8080
@@ -52,9 +52,14 @@ cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight --
 # Scripted figure-eight (script path is the first argument): flies it once, then hovers; --loop repeats it
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv
 
+# Flown from the native link, holding position when it goes quiet; link_pilot plays the companion
+# (in place of the bridge). Stop the pilot mid-flight and the quad holds. Or: just fly-companion, just link-pilot
+cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight
+cargo run --bin link_pilot
+
 # Joystick (or --script) flight recording raw SimulatorState and channels to CSV (frame checks)
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --script flights/hover.csv
 ```
 
-Joystick flights start disarmed: the motors stay off until you arm (Extreme 3D: top trigger; base button disarms). Scripted flights are armed from the first tick.
+Joystick flights start disarmed: the motors stay off until you arm (Extreme 3D: top trigger; base button disarms). Scripted flights are armed from the first tick. The companion example arms only when the link says so (`Control::Arm`), never from its hold fallback.

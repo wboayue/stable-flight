@@ -212,7 +212,7 @@ fn fly(commander: impl Commander, bridge: RecordingBridge<RealFlightRemoteBridge
     let stabilizer = CopterStabilizer::new(airframe.stabilizer);
     let mixer = airframe.mixer;
     // The link: the publisher writes it each tick (the flight loop's telemetry), and the poller
-    // reads it and serves params between ticks. Up to 32 param requests and 16 replies queue.
+    // reads it and serves params between ticks. Queue sizes: 32 param requests, 16 replies.
     let (link_rx, link_tx) = link.into_halves();
     let link_config = FcLinkConfig {
         publisher: LinkPublisherConfig {

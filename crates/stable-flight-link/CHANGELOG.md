@@ -33,8 +33,10 @@ not each change; per-change entries start after it.
   optional records at configured rates, and paced param replies.
 - **`fc::FcLink`:** the flight controller's side (param queues, router, param server, publisher)
   wired in one call (`wire`, or `wire_with` and `FcLinkConfig` for publisher rates and per-poll
-  limits); its `FcPoller` runs between
-  ticks.
+  limits); its `FcPoller` runs between ticks. `wire_linked` also routes control messages to a
+  `LinkCommander`.
+- **`commander::LinkCommander`:** flies from the link's `Control` messages (latest command;
+  arming only from `Arm`), and implements core `LinkedCommander` for a `FailsafeCommander`.
 - **`std` feature:** `udp::UdpLink`, a non-blocking UDP transport to one fixed peer, one frame
   per datagram, with rx/tx halves; `bind`s or wraps a connected socket; tolerates an absent peer.
   `DEFAULT_FC_ADDR` / `DEFAULT_BRIDGE_ADDR` are the localhost ports both ends default to.
