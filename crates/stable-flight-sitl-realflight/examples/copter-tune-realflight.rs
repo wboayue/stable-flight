@@ -78,7 +78,7 @@ fn main() {
     let mut replies = Queue::<ParamValue, 16>::new();
     let (to_server, from_router) = requests.split();
     let (to_publisher, from_server) = replies.split();
-    let mut router = UplinkRouter::new(link_rx, to_server, MAX_FRAMES_PER_TICK);
+    let mut router = UplinkRouter::new(link_rx, MAX_FRAMES_PER_TICK).with_params(to_server);
     let mut param_server = ParamServer::new(from_router, to_publisher, MAX_PARAM_WRITES_PER_TICK);
 
     let mavlink = MavlinkPublisher::connect(MavlinkConfiguration::default())

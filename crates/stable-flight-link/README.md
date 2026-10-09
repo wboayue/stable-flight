@@ -4,14 +4,14 @@ Wire protocol between a [Stable Flight](https://github.com/wboayue/stable-flight
 
 ## Messages
 
-- `Uplink` (companion → FC): `Heartbeat`, `Command` (a core `Command`), `Arm`, `Param` (a `ParamRequest`: set one, or list all).
+- `Uplink` (companion → FC): `Control` (heartbeat, a core `Command`, or arm) and `Param` (a `ParamRequest`: set one, or list all).
 - `Downlink` (FC → companion): `Heartbeat`, `State` (a core `VehicleState`), `Record` (an owned copy of a tick's `TelemetryRecord`), `Param` (a `ParamValue`: name, value, index, count), `Status`.
 
 Parameter names are the core's [`params`](https://docs.rs/stable-flight/latest/stable_flight/params/) names.
 
 ## Flight-controller side
 
-- `router::UplinkRouter` drains a `LinkRx` and routes each `Uplink` to its consumer's queue: param requests to the `ParamServer`, `Control` (heartbeat, command, arm) to a link-fed commander. It's separate from any commander, so params work whichever commander flies.
+- `router::UplinkRouter` drains a `LinkRx` and routes each `Uplink` to its consumer's queue, if it was given one: param requests to the `ParamServer`, `Control` to a link-fed commander. It's separate from any commander, so params work whichever commander flies.
 - `publisher::LinkPublisher` is a core `TelemetryPublisher` that sends heartbeat, state, and optional records at configured rates, plus at most M param replies per tick.
 - `params::ParamServer` serves the flight controller's core `Params` over the link: the commander queues `ParamRequest`s inside the tick, and `poll(&mut flight_loop)` between ticks applies them and queues `ParamValue` replies for the publisher. Pacing and reply rules: its [rustdoc](https://docs.rs/stable-flight-link/latest/stable_flight_link/params/struct.ParamServer.html). Wiring into a SITL run: [`copter-tune-realflight`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl-realflight/examples/copter-tune-realflight.rs).
 
@@ -22,10 +22,10 @@ A frame is `[version u8][postcard payload][crc16 LE]`, COBS-encoded and terminat
 `SendMessage::send_message` and `RecvMessage::recv_message` (blanket-implemented over the link halves) do the encode-and-send and receive-and-decode in one call, with a caller-supplied buffer; a `LinkError::Decode` loses only that frame. Underneath:
 
 ```rust
-use stable_flight_link::{Link, MAX_FRAME_LEN, Message, Uplink};
+use stable_flight_link::{Control, Link, MAX_FRAME_LEN, Message, Uplink};
 
 let mut frame = [0u8; MAX_FRAME_LEN];
-let len = Uplink::Arm(true).encode(&mut frame)?;
+let len = Uplink::Control(Control::Arm(true)).encode(&mut frame)?;
 link.send(&frame[..len])?;
 
 if let Some(len) = link.try_recv(&mut frame)? {
@@ -39,5 +39,5 @@ A transport implements `LinkRx` (non-blocking `try_recv`) and `LinkTx` (non-bloc
 
 ## Features
 
-- `std`: `udp::UdpLink`, a non-blocking UDP transport (splittable into rx/tx halves). An absent peer drops sends and receives nothing, without error.
-- `testing`: `loopback::Loopback`, two connected in-memory `Link` ends (each splittable into rx/tx halves) for tests. For `[dev-dependencies]` only.
+- `std`: `udp::UdpLink`, a non-blocking UDP transport (splittable into rx/tx halves; `bind`, or `TryFrom` a connected `UdpSocket`). An absent peer drops sends and receives nothing, without error.
+- `testing`: `loopback::Loopback`, two connected in-memory `Link` ends (each splittable into rx/tx halves), and `loopback::FailingLink`, whose every call fails, for tests. For `[dev-dependencies]` only.

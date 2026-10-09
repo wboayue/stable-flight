@@ -5,7 +5,7 @@ use stable_flight::{
 };
 
 use super::*;
-use crate::loopback::{FrameTooLarge, Loopback, LoopbackLink};
+use crate::loopback::{FailingLink, Loopback, LoopbackLink};
 use crate::{ParamName, RecvMessage};
 
 const MS: fn(u64) -> Duration = Duration::from_millis;
@@ -165,14 +165,7 @@ fn sends_at_most_the_param_limit_per_tick_in_order() {
 
 #[test]
 fn failed_sends_are_counted_not_returned() {
-    struct Broken;
-    impl LinkTx for Broken {
-        type Error = FrameTooLarge;
-        fn send(&mut self, _frame: &[u8]) -> Result<(), Self::Error> {
-            Err(FrameTooLarge)
-        }
-    }
-    let mut publisher = LinkPublisher::new(Broken, LinkPublisherConfig::default());
+    let mut publisher = LinkPublisher::new(FailingLink, LinkPublisherConfig::default());
 
     publisher.publish(&tick(MS(4), false).telemetry()); // heartbeat + state
     publisher.publish(&tick(MS(4), false).telemetry()); // nothing due

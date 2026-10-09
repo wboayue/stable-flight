@@ -1,23 +1,11 @@
 //! Reading the link: decode [`Uplink`]s and hand each to the component that consumes it.
 
 use heapless::spsc::Producer;
-use stable_flight::Command;
 
-use crate::{LinkError, LinkRx, MAX_FRAME_LEN, ParamRequest, RecvMessage, Uplink};
+use crate::{Control, LinkError, LinkRx, MAX_FRAME_LEN, ParamRequest, RecvMessage, Uplink};
 
 #[cfg(test)]
 mod tests;
-
-/// The uplinks that steer the vehicle, for a link-fed commander.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Control {
-    /// The companion is alive.
-    Heartbeat,
-    /// What to fly.
-    Command(Command),
-    /// Arm or disarm request.
-    Arm(bool),
-}
 
 /// What one [`UplinkRouter::poll`] did.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -50,7 +38,7 @@ pub struct RouteStats {
 /// let (mut companion, fc) = loopback.split();
 /// let mut requests = Queue::<ParamRequest, 8>::new();
 /// let (to_server, mut from_router) = requests.split();
-/// let mut router = UplinkRouter::new(fc, to_server, 8);
+/// let mut router = UplinkRouter::new(fc, 8).with_params(to_server);
 ///
 /// let mut buf = [0u8; MAX_FRAME_LEN];
 /// companion.send_message(&Uplink::Param(ParamRequest::List), &mut buf).unwrap();
@@ -62,31 +50,39 @@ pub struct RouteStats {
 pub struct UplinkRouter<'a, R> {
     rx: R,
     buf: [u8; MAX_FRAME_LEN],
-    params: Producer<'a, ParamRequest>,
+    params: Option<Producer<'a, ParamRequest>>,
     control: Option<Producer<'a, Control>>,
     max_frames_per_poll: usize,
 }
 
 impl<'a, R: LinkRx> UplinkRouter<'a, R> {
-    /// A router reading `rx`, sending param requests to `params` and decoding at most
-    /// `max_frames_per_poll` frames per [`poll`](Self::poll). [`Control`] messages are dropped
-    /// until [`with_control`](Self::with_control) gives them a queue.
+    /// A router reading `rx`, decoding at most `max_frames_per_poll` frames per
+    /// [`poll`](Self::poll). Each kind of message is dropped (and counted) until a builder
+    /// gives it a queue: [`with_params`](Self::with_params),
+    /// [`with_control`](Self::with_control).
     ///
     /// # Panics
     ///
     /// If `max_frames_per_poll` is zero: nothing would be read.
-    pub fn new(rx: R, params: Producer<'a, ParamRequest>, max_frames_per_poll: usize) -> Self {
+    pub fn new(rx: R, max_frames_per_poll: usize) -> Self {
         assert!(max_frames_per_poll > 0, "max_frames_per_poll must be > 0");
         Self {
             rx,
             buf: [0; MAX_FRAME_LEN],
-            params,
+            params: None,
             control: None,
             max_frames_per_poll,
         }
     }
 
-    /// Routes [`Control`] messages to `control`, for a link-fed commander.
+    /// Routes [`Uplink::Param`] requests to `params`, for a
+    /// [`ParamServer`](crate::params::ParamServer).
+    pub fn with_params(mut self, params: Producer<'a, ParamRequest>) -> Self {
+        self.params = Some(params);
+        self
+    }
+
+    /// Routes [`Uplink::Control`] messages to `control`, for a link-fed commander.
     pub fn with_control(mut self, control: Producer<'a, Control>) -> Self {
         self.control = Some(control);
         self
@@ -121,14 +117,16 @@ impl<'a, R: LinkRx> UplinkRouter<'a, R> {
 
     /// Queues `msg` for its consumer; `false` if it was dropped.
     fn route(&mut self, msg: Uplink) -> bool {
-        let control = match msg {
-            Uplink::Param(request) => return self.params.enqueue(request).is_ok(),
-            Uplink::Heartbeat => Control::Heartbeat,
-            Uplink::Command(command) => Control::Command(command),
-            Uplink::Arm(arm) => Control::Arm(arm),
-        };
-        self.control
-            .as_mut()
-            .is_some_and(|queue| queue.enqueue(control).is_ok())
+        match msg {
+            Uplink::Param(request) => offer(&mut self.params, request),
+            Uplink::Control(control) => offer(&mut self.control, control),
+        }
     }
+}
+
+/// Enqueues `item` if there's a queue with room; `false` if it was dropped.
+fn offer<T>(queue: &mut Option<Producer<'_, T>>, item: T) -> bool {
+    queue
+        .as_mut()
+        .is_some_and(|queue| queue.enqueue(item).is_ok())
 }

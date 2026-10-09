@@ -17,7 +17,9 @@ use stable_flight_link::params::ParamServer;
 use stable_flight_link::publisher::{LinkPublisher, LinkPublisherConfig};
 use stable_flight_link::router::UplinkRouter;
 use stable_flight_link::udp::{UdpLink, UdpTx};
-use stable_flight_link::{Downlink, MAX_FRAME_LEN, Message, ParamRequest, ParamValue, Uplink};
+use stable_flight_link::{
+    Downlink, MAX_FRAME_LEN, ParamRequest, ParamValue, RecvMessage, SendMessage, Uplink,
+};
 
 type TestLoop<'a> = FlightLoop<
     ConstantCommander,
@@ -31,24 +33,22 @@ type TestLoop<'a> = FlightLoop<
 const DT: Duration = Duration::from_millis(4);
 const TIMEOUT: Duration = Duration::from_secs(5);
 
-/// The bridge's end: a plain non-blocking socket that sends uplinks and collects downlinks.
+/// The bridge's end: sends uplinks and collects downlinks.
 struct Host {
-    socket: UdpSocket,
+    link: UdpLink,
     received: Vec<Downlink>,
 }
 
 impl Host {
-    fn send(&self, msg: &Uplink) {
+    fn send(&mut self, msg: &Uplink) {
         let mut buf = [0u8; MAX_FRAME_LEN];
-        let len = msg.encode(&mut buf).expect("encodes");
-        self.socket.send(&buf[..len]).expect("sends");
+        self.link.send_message(msg, &mut buf).expect("sends");
     }
 
     fn collect(&mut self) {
         let mut buf = [0u8; MAX_FRAME_LEN];
-        while let Ok(len) = self.socket.recv(&mut buf) {
-            self.received
-                .push(Downlink::decode(&mut buf[..len]).expect("valid downlink"));
+        while let Some(msg) = self.link.recv_message(&mut buf).expect("valid downlink") {
+            self.received.push(msg);
         }
     }
 
@@ -65,14 +65,14 @@ impl Host {
 
 #[test]
 fn host_lists_and_sets_params_and_receives_telemetry() {
+    // Both ends on ephemeral ports: bind the host first, connect it once the FC end exists.
     let host_socket = UdpSocket::bind("127.0.0.1:0").expect("binds");
-    host_socket.set_nonblocking(true).expect("non-blocking");
     let link = UdpLink::bind("127.0.0.1:0", host_socket.local_addr().unwrap()).expect("binds");
     host_socket
         .connect(link.local_addr().unwrap())
         .expect("connects");
     let mut host = Host {
-        socket: host_socket,
+        link: UdpLink::try_from(host_socket).expect("connected"),
         received: Vec::new(),
     };
     let (rx, tx) = link.into_halves();
@@ -81,7 +81,7 @@ fn host_lists_and_sets_params_and_receives_telemetry() {
     let mut replies = Queue::<ParamValue, 8>::new();
     let (to_server, from_router) = requests.split();
     let (to_publisher, from_server) = replies.split();
-    let mut router = UplinkRouter::new(rx, to_server, 8);
+    let mut router = UplinkRouter::new(rx, 8).with_params(to_server);
     let mut server = ParamServer::new(from_router, to_publisher, 4);
     let telemetry =
         LinkPublisher::new(tx, LinkPublisherConfig::default()).with_param_replies(from_server);

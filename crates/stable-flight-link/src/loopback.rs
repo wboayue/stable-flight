@@ -2,17 +2,17 @@
 //!
 //! ```
 //! use stable_flight_link::loopback::Loopback;
-//! use stable_flight_link::{LinkRx, LinkTx, MAX_FRAME_LEN, Message, Uplink};
+//! use stable_flight_link::{Control, LinkRx, LinkTx, MAX_FRAME_LEN, Message, Uplink};
 //!
 //! let loopback = Loopback::<4>::new();
 //! let (mut companion, mut fc) = loopback.split();
 //!
 //! let mut frame = [0u8; MAX_FRAME_LEN];
-//! let len = Uplink::Arm(true).encode(&mut frame).unwrap();
+//! let len = Uplink::Control(Control::Arm(true)).encode(&mut frame).unwrap();
 //! companion.send(&frame[..len]).unwrap();
 //!
 //! let len = fc.try_recv(&mut frame).unwrap().unwrap();
-//! assert_eq!(Uplink::decode(&mut frame[..len]), Ok(Uplink::Arm(true)));
+//! assert_eq!(Uplink::decode(&mut frame[..len]), Ok(Uplink::Control(Control::Arm(true))));
 //! ```
 
 use core::cell::RefCell;
@@ -161,5 +161,37 @@ impl<const DEPTH: usize> LinkTx for LoopbackLink<'_, DEPTH> {
 
     fn send(&mut self, frame: &[u8]) -> Result<(), Self::Error> {
         self.tx.send(frame)
+    }
+}
+
+/// A [`Link`] whose every receive and send fails with [`LinkDown`], for testing error paths.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct FailingLink;
+
+/// [`FailingLink`]'s error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LinkDown;
+
+impl fmt::Display for LinkDown {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("link down")
+    }
+}
+
+impl core::error::Error for LinkDown {}
+
+impl LinkRx for FailingLink {
+    type Error = LinkDown;
+
+    fn try_recv(&mut self, _buf: &mut [u8]) -> Result<Option<usize>, Self::Error> {
+        Err(LinkDown)
+    }
+}
+
+impl LinkTx for FailingLink {
+    type Error = LinkDown;
+
+    fn send(&mut self, _frame: &[u8]) -> Result<(), Self::Error> {
+        Err(LinkDown)
     }
 }
