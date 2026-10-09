@@ -5,8 +5,8 @@
 //! The link binds `--link-bind` (default `127.0.0.1:14560`) and talks to the bridge
 //! (`stable-flight-bridge`, or any host speaking the link protocol) at `--link-peer` (default
 //! `127.0.0.1:14561`). QGC connects through the bridge, which speaks MAVLink for the flight
-//! controller; there is no direct MAVLink telemetry, so QGC shows params but not attitude or
-//! position until the bridge translates state (#154). The RealFlight host defaults to
+//! controller: params, attitude, and position (records at 5 Hz carry the thrust QGC shows as
+//! throttle). The RealFlight host defaults to
 //! `10.211.55.3:8080`; override it with `--host`.
 //!
 //! ```text
@@ -14,6 +14,8 @@
 //! cargo run -p stable-flight-bridge   # in a second terminal
 //! cargo run -p stable-flight-sitl-realflight --example copter-tune-realflight -- --link-peer 192.168.1.30:14561
 //! ```
+
+use std::time::Duration;
 
 use clap::Parser;
 use env_logger::Builder;
@@ -37,6 +39,8 @@ use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, 
 const MAX_FRAMES_PER_TICK: usize = 8;
 /// Param writes applied per tick; a ground station's "load from file" bursts hundreds.
 const MAX_PARAM_WRITES_PER_TICK: usize = 4;
+/// How often a full telemetry record goes out: the bridge needs only its thrust, for throttle.
+const RECORD_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Joystick-driven quadcopter flight in RealFlight, with params over the native link.
 #[derive(Parser)]
@@ -83,8 +87,12 @@ fn main() {
     let mut router = UplinkRouter::new(link_rx, MAX_FRAMES_PER_TICK).with_params(to_server);
     let mut param_server = ParamServer::new(from_router, to_publisher, MAX_PARAM_WRITES_PER_TICK);
 
-    let link =
-        LinkPublisher::new(link_tx, LinkPublisherConfig::default()).with_param_replies(from_server);
+    let link_config = LinkPublisherConfig {
+        // Records carry the commanded thrust the bridge reports as VFR_HUD throttle.
+        record_interval: Some(RECORD_INTERVAL),
+        ..LinkPublisherConfig::default()
+    };
+    let link = LinkPublisher::new(link_tx, link_config).with_param_replies(from_server);
 
     let mut flight_loop = FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, link);
 

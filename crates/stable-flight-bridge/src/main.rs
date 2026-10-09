@@ -5,6 +5,7 @@
 //! ```text
 //! cargo run -p stable-flight-bridge
 //! cargo run -p stable-flight-bridge -- --gcs udpout:192.168.1.20:14550
+//! cargo run -p stable-flight-bridge -- --origin 47.6,-122.3,56
 //! ```
 
 use std::time::Instant;
@@ -15,19 +16,24 @@ use log::info;
 use mavlink::common::MavMessage;
 use mavlink::{MavConnection, MavlinkVersion};
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
+use stable_flight_mavlink::{DEFAULT_ORIGIN, FlatEarth};
 
 mod bridge;
 mod connect;
 mod encode;
 mod idle;
+mod interval;
+mod origin;
 mod outbox;
 mod params;
 mod pump;
+mod state;
 #[cfg(test)]
 mod test_support;
 
 use bridge::{Bridge, BridgeConfig};
 use idle::IdleBackoff;
+use origin::parse_origin;
 use pump::Pump;
 
 /// Bridges a flight controller's native link to a MAVLink ground station.
@@ -43,6 +49,13 @@ struct Args {
     /// Ground station connection, as a `mavlink::connect` address.
     #[arg(long, default_value = "udpout:127.0.0.1:14550")]
     gcs: String,
+    /// Where the flight controller's local origin is on the earth, as `lat,lon,alt` (degrees,
+    /// degrees, meters above sea level), for global position and home [default: 34.884389,-120.4035,0].
+    #[arg(long, value_parser = parse_origin, allow_hyphen_values = true)]
+    origin: Option<FlatEarth>,
+    /// Send no global position or home.
+    #[arg(long, conflicts_with = "origin")]
+    no_origin: bool,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -53,6 +66,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let args = Args::parse();
+    let earth = match (args.no_origin, args.origin) {
+        (true, _) => None,
+        (false, Some(earth)) => Some(earth),
+        (false, None) => Some(FlatEarth::new(DEFAULT_ORIGIN)?),
+    };
 
     let (link_rx, link_tx) = UdpLink::bind(&args.link_bind, &args.link_peer)
         .map_err(|e| {
@@ -74,7 +92,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         link_rx,
         link_tx,
         Box::new(gcs),
-        Bridge::new(BridgeConfig::default()),
+        Bridge::new(BridgeConfig {
+            earth,
+            ..BridgeConfig::default()
+        }),
     );
     let mut backoff = IdleBackoff::default();
     loop {
