@@ -52,6 +52,15 @@ pub(super) fn heartbeat(command: &Command) -> HEARTBEAT_DATA {
     }
 }
 
+/// The landed state, from the publisher's land detector. No VTOL modes: the heartbeat
+/// reports a quadrotor.
+pub(super) fn extended_sys_state(landed_state: MavLandedState) -> EXTENDED_SYS_STATE_DATA {
+    EXTENDED_SYS_STATE_DATA {
+        vtol_state: MavVtolState::MAV_VTOL_STATE_UNDEFINED,
+        landed_state,
+    }
+}
+
 /// Projects local north/east/up positions onto latitude, longitude, and altitude around a
 /// [`GeodeticOrigin`], treating the earth as flat near it. Meters-per-degree are computed
 /// once here so a projection costs no trig.

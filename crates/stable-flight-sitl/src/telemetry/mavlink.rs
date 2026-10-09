@@ -8,23 +8,26 @@ use std::mem;
 use std::time::{Duration, Instant};
 
 use log::warn;
-use mavlink::{MavConnection, MavHeader, MavlinkVersion, common::MavMessage};
+use mavlink::common::{MavLandedState, MavMessage};
+use mavlink::{MavConnection, MavHeader, MavlinkVersion};
 use thiserror::Error;
 
 use super::every::Every;
 use super::throttle::ErrorThrottle;
 use stable_flight::{TelemetryPublisher, TelemetryRecord, Vec3};
 
+mod land_detector;
 mod messages;
 #[cfg(test)]
 mod tests;
 
+use land_detector::LandDetector;
 use messages::FlatEarth;
 
 /// Address [`MavlinkConfiguration::default`] sends to: UDP to a local ground station.
 pub const DEFAULT_ADDRESS: &str = "udpout:127.0.0.1:14550";
 
-/// Heartbeat and the slow-changing state streams (home).
+/// Heartbeat and the slow-changing state streams (home, landed state).
 const SLOW_STREAM_INTERVAL: Duration = Duration::from_secs(1);
 const STREAM_INTERVAL: Duration = Duration::from_millis(100);
 
@@ -103,7 +106,7 @@ pub enum MavlinkError {
 
 /// A [`TelemetryPublisher`] that sends each tick's state as MAVLink messages: heartbeat at
 /// 1 Hz; VFR_HUD, local position, global position, and attitude at 10 Hz each; home position
-/// at 1 Hz and whenever home moves. Every stream sends on the first `publish` it has data
+/// and extended system state at 1 Hz and whenever they change. Every stream sends on the first `publish` it has data
 /// for, so a ground station sees the link immediately.
 ///
 /// The heartbeat reports the command kind as standard `base_mode` flags: rate is
@@ -113,6 +116,10 @@ pub enum MavlinkError {
 /// GLOBAL_POSITION_INT and HOME_POSITION are sent only with a [`GeodeticOrigin`]
 /// ([`with_origin`](Self::with_origin)) and once there is a home; GLOBAL_POSITION_INT is
 /// skipped on a tick whose position isn't finite, and its `relative_alt` is measured from home.
+///
+/// EXTENDED_SYS_STATE's landed state is estimated from the arm state and height above home:
+/// disarmed is on the ground; armed, in the air above 0.5 m, landed again below 0.2 m. It is
+/// undefined while armed with no home or a non-finite altitude.
 ///
 /// A failed send is logged (rate-limited) and dropped; it never stops the flight loop.
 ///
@@ -141,6 +148,10 @@ pub struct MavlinkPublisher {
     home_m: Option<Vec3>,
     /// Home was latched since the last HOME_POSITION check, so send it now.
     home_changed: bool,
+    extended_sys_state: Every,
+    land_detector: LandDetector,
+    /// The latest estimate, to send EXTENDED_SYS_STATE as soon as it changes.
+    landed_state: MavLandedState,
     /// The previous tick's arm state, to find the arming edge.
     was_armed: bool,
     errors: ErrorThrottle,
@@ -204,6 +215,9 @@ impl MavlinkPublisher {
             home_position: Every::new(SLOW_STREAM_INTERVAL),
             home_m: None,
             home_changed: false,
+            extended_sys_state: Every::new(SLOW_STREAM_INTERVAL),
+            land_detector: LandDetector::default(),
+            landed_state: MavLandedState::MAV_LANDED_STATE_UNDEFINED,
             was_armed: false,
             errors: ErrorThrottle::default(),
         }
@@ -311,6 +325,16 @@ impl TelemetryPublisher for MavlinkPublisher {
             self.send(MavMessage::HOME_POSITION(messages::home_position(
                 earth, home_m,
             )));
+        }
+        let height_m = self
+            .home_m
+            .map_or(f32::NAN, |home_m| state.position_m.z - home_m.z);
+        let landed_state = self.land_detector.update(command.arm, height_m);
+        let landed_changed = mem::replace(&mut self.landed_state, landed_state) != landed_state;
+        if self.extended_sys_state.ready(dt) | landed_changed {
+            self.send(MavMessage::EXTENDED_SYS_STATE(
+                messages::extended_sys_state(landed_state),
+            ));
         }
         if self.attitude.ready(dt) {
             self.send(MavMessage::ATTITUDE(messages::attitude(
