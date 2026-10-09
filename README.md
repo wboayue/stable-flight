@@ -70,6 +70,11 @@ cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight
 # Scripted figure-eight in RealFlight (script path is the first arg, --host to override host). Or: just fly-auto
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight
 
+# Flown from the native link, holding when it goes quiet; link_pilot plays the companion instead
+# of the bridge. Or: just fly-companion, then just link-pilot
+cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight
+cargo run --bin link_pilot
+
 # Joystick smoke test (no simulator required)
 cargo run --example extreme_3d_commander
 

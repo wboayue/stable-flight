@@ -1570,6 +1570,7 @@ dependencies = [
  "clap",
  "plotters",
  "stable-flight",
+ "stable-flight-link",
  "stable-flight-sitl",
 ]
 

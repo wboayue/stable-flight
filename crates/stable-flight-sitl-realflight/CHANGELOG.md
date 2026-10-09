@@ -25,5 +25,7 @@ not each change; per-change entries start after it.
   - `copter-manual-realflight`: joystick.
   - `copter-auto-realflight`: scripted waypoints; holds at the end, `--loop` to repeat.
   - `capture-state-realflight`: records raw simulator state and channels to CSV.
+  - `copter-companion-realflight`: flown from the link (`FailsafeCommander<LinkCommander,
+    HoldCommander>`), holding position when the link goes quiet.
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight-sitl-realflight

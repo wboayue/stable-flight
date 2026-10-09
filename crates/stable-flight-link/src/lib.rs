@@ -29,6 +29,7 @@
 #[cfg(all(not(test), feature = "std"))]
 extern crate std;
 
+pub mod commander;
 pub mod fc;
 mod frame;
 mod io;

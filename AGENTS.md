@@ -15,7 +15,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     messages, versioned COBS frames (`Message::encode`/`decode`), the byte-level `Link` (`LinkRx` + `LinkTx`),
     `SendMessage`/`RecvMessage` (encode+send, receive+decode), `router::UplinkRouter` (reads the
     link), `publisher::LinkPublisher` (writes it), `params::ParamServer` (serves core `Params`
-    between ticks), `fc::FcLink` (all three wired in one call), a `std`-feature `UdpLink`, and a
+    between ticks), `fc::FcLink` (all three wired in one call; `wire_linked` adds a `commander::LinkCommander`), a `std`-feature `UdpLink`, and a
     `testing`-feature `loopback`. Depends only on the core (`serde` feature); other transports
     (USB-CDC) live with their board.
   - `crates/stable-flight-mavlink` — MAVLink message builders: pure functions from core values to
@@ -42,7 +42,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     `copter-*-realflight` and `capture-state-realflight` examples, all serving params and telemetry over the native link (`FcLink`) for the bridge. Normal deps: core, `realflight-bridge`, `log`; sitl and link (`std`) are dev-dependencies only (CI checks sitl).
     One `stable-flight-sitl-<simulator>` crate per backend.
   - `crates/stable-flight-tools` — unpublished (`publish = false`) dev binaries: `plot_flight`
-    (3D flight-path visualizer) and `generate_figure_eight` (waypoint-script generator).
+    (3D flight-path visualizer), `generate_figure_eight` (waypoint-script generator), and `link_pilot` (plays the companion over the native link for `copter-companion-realflight`).
 - `firmware/` is excluded from the workspace; each board is its own nested workspace (own
   target, profiles, committed `Cargo.lock`) — see [`firmware/ark-fpv`](firmware/ark-fpv/README.md).
   Run cargo from the board's directory (or use the `fw-*` recipes): its `.cargo/config.toml`
@@ -50,7 +50,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Run every command from the repo root: `cargo run --example <name>` / `--bin <name>` resolve
   across the workspace (add `-p <crate>` to be explicit), and `flights/*.csv` paths are
   relative to the root.
-- Public modules: `stable-flight` — `commanders` (`WaypointFollower`, `FailsafeCommander`/`FailsafeConfig`, `LinkedCommander`, `Fallback`, `HoldCommander`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `params` (`Params`, `ParamTable`: name → `f32` view over the configs; `params::metadata` (feature `param-metadata`): `ParamMeta`, `ParamMetadata`, descriptions/units/groups/ranges for ground stations), `stabilizers`, `timing` (`Every`), `testing` (feature: doubles + `conformance`) (traits/types, the `Vec2`/`Vec3` aliases, `GRAVITY`, `euler_angles`, `wrap_angle`, `ControlMode` (`ControlInput::mode()`), `FailsafeState`, and the `nalgebra` re-export at the crate root; feature `serde` derives `Serialize`/`Deserialize` on the pipeline data); `stable-flight-link` — `fc` (`FcLink`, `FcLinkConfig`, `FcPoller`), `loopback` (feature `testing`), `params` (`ParamServer`), `publisher` (`LinkPublisher`, `LinkPublisherConfig`), `router` (`UplinkRouter`, `RouteStats`), `udp` (feature `std`: `UdpLink`, `DEFAULT_FC_ADDR`/`DEFAULT_BRIDGE_ADDR`), with `Uplink`, `Control`, `Downlink`, `Record`, `ParamRequest`, `ParamValue`, `Message`, `EncodeError`, `DecodeError`, `Link` (`LinkRx` + `LinkTx`, blanket-implemented), `SendMessage`/`RecvMessage` + `LinkError` (blanket-implemented), `PROTOCOL_VERSION`, `MAX_FRAME_LEN`, and the `heapless`/`stable_flight` re-exports at the root; `stable-flight-mavlink` — the builders (`heartbeat`, `attitude`, `local_position_ned`, `global_position_int`, `home_position`, `extended_sys_state`, `vfr_hud`), `GeodeticOrigin`, `DEFAULT_ORIGIN`, `FlatEarth`, `InvalidOrigin`, `HomeTracker`, `LandDetector`, `GroundTracker` (`GroundChanges`), and the `mavlink` re-export at the root, `testing` (feature: `MockConnection`); `stable-flight-sitl` — `commanders`, `runner`, `shutdown` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, `vehicle_state`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
+- Public modules: `stable-flight` — `commanders` (`WaypointFollower`, `FailsafeCommander`/`FailsafeConfig`, `LinkedCommander`, `Fallback`, `HoldCommander`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `params` (`Params`, `ParamTable`: name → `f32` view over the configs; `params::metadata` (feature `param-metadata`): `ParamMeta`, `ParamMetadata`, descriptions/units/groups/ranges for ground stations), `stabilizers`, `timing` (`Every`), `testing` (feature: doubles + `conformance`) (traits/types, the `Vec2`/`Vec3` aliases, `GRAVITY`, `euler_angles`, `wrap_angle`, `ControlMode` (`ControlInput::mode()`), `FailsafeState`, and the `nalgebra` re-export at the crate root; feature `serde` derives `Serialize`/`Deserialize` on the pipeline data); `stable-flight-link` — `commander` (`LinkCommander`), `fc` (`FcLink`, `FcLinkConfig`, `FcPoller`), `loopback` (feature `testing`), `params` (`ParamServer`), `publisher` (`LinkPublisher`, `LinkPublisherConfig`), `router` (`UplinkRouter`, `RouteStats`), `udp` (feature `std`: `UdpLink`, `DEFAULT_FC_ADDR`/`DEFAULT_BRIDGE_ADDR`), with `Uplink`, `Control`, `Downlink`, `Record`, `ParamRequest`, `ParamValue`, `Message`, `EncodeError`, `DecodeError`, `Link` (`LinkRx` + `LinkTx`, blanket-implemented), `SendMessage`/`RecvMessage` + `LinkError` (blanket-implemented), `PROTOCOL_VERSION`, `MAX_FRAME_LEN`, and the `heapless`/`stable_flight` re-exports at the root; `stable-flight-mavlink` — the builders (`heartbeat`, `attitude`, `local_position_ned`, `global_position_int`, `home_position`, `extended_sys_state`, `vfr_hud`), `GeodeticOrigin`, `DEFAULT_ORIGIN`, `FlatEarth`, `InvalidOrigin`, `HomeTracker`, `LandDetector`, `GroundTracker` (`GroundChanges`), and the `mavlink` re-export at the root, `testing` (feature: `MockConnection`); `stable-flight-sitl` — `commanders`, `runner`, `shutdown` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, `vehicle_state`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
 - Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `nalgebra` (core only, `libm`; core aliases `Vec2`/`Vec3` and re-exports it as `stable_flight::nalgebra` — other crates use the re-export), `libm` (`no_std` float math, core), `serde` (core `serde` feature, link), `postcard` + `heapless` + `cobs` (link only), `crc` (link, bridge), `serde_json` (bridge), `mavlink` (`stable-flight-mavlink`, bridge; `emit-extensions` on, so struct literals need v2 extension fields), `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
 - Untracked generated artifacts: `target/`, `tarpaulin-report.html`, `firmware/*/*.bin`.
 - The root `Cargo.lock` is committed (reproducible CI, stable cache key); CI builds with `--locked`,
@@ -82,6 +82,8 @@ cargo run -p stable-flight-sitl-realflight --example capture-state-realflight  #
 cargo run --example extreme_3d_commander        # joystick smoke test
 cargo run --bin plot_flight -- flights/figure_eight.csv out.svg  # 3D path viz (SVG or PNG); or: just plot …
 cargo run --bin generate_figure_eight           # (re)write flights/figure_eight.csv; or: just gen-figure-eight
+cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight  # flown from the link, holds when it goes quiet; or: just fly-companion
+cargo run --bin link_pilot                      # plays the companion for fly-companion (instead of the bridge); or: just link-pilot
 cargo tarpaulin --workspace -o html             # or: just cover  (writes tarpaulin-report.html)
 cargo fmt --all
 cargo clippy --workspace --all-targets --all-features -- -D warnings  # or: just lint (adds rustdoc -D warnings)
@@ -90,8 +92,8 @@ just fw-build                                   # ARK FPV firmware release build
 ```
 
 The flight pipeline has no CLI and there is no `cargo bench` target — don't suggest
-`cargo run -- --commander …` or `cargo bench`. The host binaries are `stable-flight-bridge` and, in `stable-flight-tools`, `plot_flight` and
-`generate_figure_eight`; their unit tests run under `cargo test --workspace`. Add `-p <crate>` to scope any command to one crate.
+`cargo run -- --commander …` or `cargo bench`. The host binaries are `stable-flight-bridge` and, in `stable-flight-tools`, `plot_flight`,
+`generate_figure_eight`, and `link_pilot`; their unit tests run under `cargo test --workspace`. Add `-p <crate>` to scope any command to one crate.
 
 ## Architecture
 
@@ -116,6 +118,7 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 | `Mixer`            | `QuadCopterMixer`; `TailSitterMixer` (placeholder, outputs zeros)    | core  |
 | `TelemetryPublisher` | `(A, B)` fan-out; `testing::RecordingTelemetry<N>` (`testing` feature) | core |
 | `TelemetryPublisher` | `LinkPublisher` (from `fc::FcLink`; MAVLink is the bridge's job)     | link  |
+| `Commander` | `LinkCommander` (from `FcLink::wire_linked`; a `LinkedCommander`) | link |
 
 `CopterGuidance` (outer loop: waypoints → attitude setpoint, heading hold) uses the `altitude` and `lateral` PID controllers; `CopterStabilizer` (inner loop) uses `attitude`, `yaw`, and `body_rate`. All live in the core `controllers` module, with `Gains`. Controllers hold only state; each composite owns one config and implements the opt-in `Configurable` trait (validated `set_config`), which `FlightLoop::set_guidance_config`/`set_stabilizer_config` reach between ticks (rules: `architecture.md#config-ownership`). `Setpoint` is `Attitude(AttitudeSetpoint)` or `Rate(RateSetpoint)`.
 
