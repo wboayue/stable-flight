@@ -25,8 +25,10 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     on core and `mavlink` only.
   - `crates/stable-flight-bridge` — the companion-computer binary: native link (UDP today) ⇄
     MAVLink v2 for ground stations, presenting the FC as sysid 1 / compid 1. Pure `Bridge` (`bridge.rs`:
-    liveness, addressing, routing) over services: `ParamService` (`params.rs`, with the cache)
-    `ConnectService` (`connect.rs`: heartbeat, `AUTOPILOT_VERSION`, missions, command acks), and
+    FC and GCS liveness, link heartbeat, addressing, routing, the `UNSUPPORTED` fallback for
+    `COMMAND_LONG`) over services: `ParamService` (`params.rs`, with the cache),
+    `ConnectService` (`connect.rs`: heartbeat, `AUTOPILOT_VERSION`, `COMPONENT_METADATA`,
+    missions), `CommandService` (`commands.rs`: arm/disarm, acked on the FC's heartbeat), and
     `StateService` (`state.rs`: attitude, positions, home, landed state, `VFR_HUD`, paced by
     `Interval`, `interval.rs`), which queue into an `Outbox` (`outbox.rs`); payload builders in `encode.rs`. `Pump` (`pump.rs`) runs one
     I/O pass (read both sides, route, send) over generic link halves and a boxed GCS connection;

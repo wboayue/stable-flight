@@ -2,6 +2,7 @@
 //! functions: no connection, clock, or state. Each returns a payload (`*_DATA`) for the caller
 //! to wrap, as `stable-flight-mavlink`'s builders do.
 
+use mavlink::MavHeader;
 use mavlink::common::*;
 use stable_flight_link::ParamValue;
 
@@ -70,18 +71,17 @@ pub(crate) fn empty_mission_count(
     }
 }
 
-/// `COMMAND_ACK` with `result` for `command`, addressed to the sender.
+/// `COMMAND_ACK` with `result` for `command`, addressed back to its `sender`.
 pub(crate) fn command_ack(
+    sender: &MavHeader,
     command: MavCmd,
     result: MavResult,
-    target_system: u8,
-    target_component: u8,
 ) -> COMMAND_ACK_DATA {
     COMMAND_ACK_DATA {
         command,
         result,
-        target_system,
-        target_component,
+        target_system: sender.system_id,
+        target_component: sender.component_id,
         ..Default::default()
     }
 }

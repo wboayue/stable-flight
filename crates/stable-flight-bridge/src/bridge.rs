@@ -6,11 +6,14 @@ use std::time::{Duration, Instant};
 
 use mavlink::MavHeader;
 use mavlink::common::*;
-use stable_flight_link::Downlink;
 use stable_flight_link::stable_flight::ControlMode;
+use stable_flight_link::{Control, Downlink, Uplink};
 use stable_flight_mavlink::FlatEarth;
 
+use crate::commands::CommandService;
 use crate::connect::ConnectService;
+use crate::encode;
+use crate::interval::Interval;
 use crate::metadata::ComponentMetadata;
 use crate::outbox::Outbox;
 use crate::params::ParamService;
@@ -40,12 +43,21 @@ pub(crate) struct BridgeConfig {
     pub(crate) slow_interval: Duration,
     /// Where the param metadata is served, for `COMPONENT_METADATA`; `None` serves none.
     pub(crate) metadata: Option<ComponentMetadata>,
+    /// How long after its last message the ground station counts as gone.
+    pub(crate) gcs_timeout: Duration,
+    /// Interval between `Control::Heartbeat`s to the flight controller, which keep its link
+    /// fresh while the ground station is alive.
+    pub(crate) link_heartbeat_interval: Duration,
+    /// How long an arm or disarm may go unconfirmed by the flight controller's heartbeat before
+    /// it is acked `FAILED`; under QGC's 1.2 s wait.
+    pub(crate) arm_ack_timeout: Duration,
 }
 
 impl Default for BridgeConfig {
     /// System and component id 1 (the autopilot, which QGC requires), a quadrotor, a 3 s
-    /// timeout, 1 Hz heartbeats, no origin, state at 10 Hz, home and landed state at 1 Hz, and
-    /// no param metadata.
+    /// timeout, 1 Hz heartbeats, no origin, state at 10 Hz, home and landed state at 1 Hz, no
+    /// param metadata, a 3 s ground-station timeout, 5 Hz link heartbeats, and a 1 s arm ack
+    /// timeout.
     fn default() -> Self {
         Self {
             system_id: 1,
@@ -57,6 +69,9 @@ impl Default for BridgeConfig {
             state_interval: Duration::from_millis(100),
             slow_interval: Duration::from_secs(1),
             metadata: None,
+            gcs_timeout: Duration::from_secs(3),
+            link_heartbeat_interval: Duration::from_millis(200),
+            arm_ack_timeout: Duration::from_secs(1),
         }
     }
 }
@@ -72,20 +87,31 @@ struct FcStatus {
 /// Presents a flight controller on the native link as a MAVLink autopilot. The message-by-message
 /// mapping is in the crate README.
 ///
-/// `Bridge` tracks whether the flight controller is alive (heard from within `fc_timeout`),
-/// decides whether a MAVLink message is for it (its system and component, or broadcast), and
-/// routes each message to the service that handles it: [`ParamService`], [`ConnectService`],
-/// or [`StateService`]. When the flight controller appears or comes back after a timeout, every
-/// service is told; state is taken, and the heartbeat and state are sent, only while it is
-/// alive, so the ground station sees link loss and never stale state.
+/// `Bridge` tracks whether the flight controller is alive (heard from within `fc_timeout`) and
+/// whether the ground station is (any message within `gcs_timeout`), decides whether a MAVLink
+/// message is for the flight controller (its system and component, or broadcast), and routes
+/// each message to the service that handles it: [`ParamService`], [`ConnectService`],
+/// [`CommandService`], or [`StateService`]. A `COMMAND_LONG` no service handles is acked
+/// `UNSUPPORTED`, so the ground station moves on without retrying.
+///
+/// When the flight controller appears or comes back after a timeout, every service is told;
+/// state is taken, and the heartbeat and state are sent, only while it is alive, so the ground
+/// station sees link loss and never stale state. `Control::Heartbeat`s go to the flight
+/// controller only while both are alive, so losing the ground station (or this bridge) lets
+/// the flight controller's failsafe take over.
 #[derive(Debug)]
 pub(crate) struct Bridge {
     system_id: u8,
     component_id: u8,
     fc_timeout: Duration,
     fc: Option<FcStatus>,
+    gcs_timeout: Duration,
+    /// When the ground station was last heard from.
+    gcs_last_seen: Option<Instant>,
+    link_heartbeat: Interval,
     params: ParamService,
     connect: ConnectService,
+    commands: CommandService,
     state: StateService,
 }
 
@@ -96,12 +122,16 @@ impl Bridge {
             component_id: config.component_id,
             fc_timeout: config.fc_timeout,
             fc: None,
+            gcs_timeout: config.gcs_timeout,
+            gcs_last_seen: None,
+            link_heartbeat: Interval::new(config.link_heartbeat_interval),
             params: ParamService::default(),
             connect: ConnectService::new(
                 config.vehicle_type,
                 config.heartbeat_interval,
                 config.metadata,
             ),
+            commands: CommandService::new(config.arm_ack_timeout),
             state: StateService::new(config.earth, config.state_interval, config.slow_interval),
         }
     }
@@ -119,7 +149,7 @@ impl Bridge {
     /// The flight controller's latest status, if it was heard from within `fc_timeout`.
     fn alive_fc(&self, now: Instant) -> Option<FcStatus> {
         self.fc
-            .filter(|fc| now.saturating_duration_since(fc.last_seen) < self.fc_timeout)
+            .filter(|fc| heard_within(Some(fc.last_seen), now, self.fc_timeout))
     }
 
     /// Handles one message from the flight controller, received at `now`.
@@ -137,6 +167,7 @@ impl Bridge {
                     armed: *armed,
                     mode: *mode,
                 });
+                self.commands.on_fc_heartbeat(*armed, out);
             }
             Downlink::Param(param) => self.params.on_param(param, out),
             Downlink::State(state) => {
@@ -153,8 +184,19 @@ impl Bridge {
     }
 
     /// Handles one MAVLink message from the ground station, sent by `header`'s system and
-    /// component. Only a message addressed to the flight controller reaches a service.
-    pub(crate) fn on_mavlink(&mut self, header: &MavHeader, msg: &MavMessage, out: &mut Outbox) {
+    /// component and received at `now`. Any message shows the ground station is alive; only one
+    /// addressed to the flight controller reaches a service.
+    pub(crate) fn on_mavlink(
+        &mut self,
+        header: &MavHeader,
+        msg: &MavMessage,
+        now: Instant,
+        out: &mut Outbox,
+    ) {
+        if !self.gcs_alive(now) {
+            self.link_heartbeat.start(now);
+        }
+        self.gcs_last_seen = Some(now);
         if !target(msg).is_some_and(|(system, component)| self.addressed(system, component)) {
             return;
         }
@@ -165,17 +207,45 @@ impl Bridge {
             MavMessage::MISSION_REQUEST_LIST(data) => {
                 self.connect.on_mission_request_list(header, data, out);
             }
-            MavMessage::COMMAND_LONG(data) => self.connect.on_command_long(header, data, out),
+            MavMessage::COMMAND_LONG(data) => {
+                let fc_armed = self.alive_fc(now).map(|fc| fc.armed);
+                let handled = self.connect.on_command_long(header, data, out)
+                    || self
+                        .commands
+                        .on_command_long(header, data, fc_armed, now, out);
+                if !handled {
+                    let ack = encode::command_ack(
+                        header,
+                        data.command,
+                        MavResult::MAV_RESULT_UNSUPPORTED,
+                    );
+                    out.to_gcs.push(MavMessage::COMMAND_ACK(ack));
+                }
+            }
             _ => {}
         }
     }
 
-    /// Sends what is due at `now`, while the flight controller is alive: the heartbeat and state.
+    /// Sends what is due at `now`: while the flight controller is alive, the heartbeat and state,
+    /// and while the ground station is too, the link heartbeat; and fails an arm request the
+    /// flight controller never confirmed.
     pub(crate) fn poll(&mut self, now: Instant, out: &mut Outbox) {
-        if let Some(fc) = self.alive_fc(now) {
-            self.connect.poll(now, fc.armed, fc.mode, out);
-            self.state.poll(now, out);
+        self.commands.poll(now, out);
+        let Some(fc) = self.alive_fc(now) else {
+            return;
+        };
+        self.connect.poll(now, fc.armed, fc.mode, out);
+        self.state.poll(now, out);
+        // `&&` short-circuits: the timer only advances while the ground station is alive, and
+        // restarts when it comes back.
+        if self.gcs_alive(now) && self.link_heartbeat.due(now) {
+            out.to_fc.push(Uplink::Control(Control::Heartbeat));
         }
+    }
+
+    /// Whether the ground station was heard from within `gcs_timeout` of `now`.
+    fn gcs_alive(&self, now: Instant) -> bool {
+        heard_within(self.gcs_last_seen, now, self.gcs_timeout)
     }
 
     /// `target_system` / `target_component` select the flight controller (0 is broadcast).
@@ -183,6 +253,11 @@ impl Bridge {
         (target_system == 0 || target_system == self.system_id)
             && (target_component == 0 || target_component == self.component_id)
     }
+}
+
+/// Whether a peer last heard at `last_seen` (`None`: never) counts as alive at `now`.
+fn heard_within(last_seen: Option<Instant>, now: Instant, timeout: Duration) -> bool {
+    last_seen.is_some_and(|seen| now.saturating_duration_since(seen) < timeout)
 }
 
 /// The system and component a message the bridge routes is addressed to; `None` for every

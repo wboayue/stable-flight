@@ -59,7 +59,7 @@ fn answers_every_mission_type_with_an_empty_list() {
 }
 
 #[test]
-fn acks_commands_and_answers_the_messages_it_serves() {
+fn answers_the_messages_it_serves_and_leaves_the_rest() {
     let arm = COMMAND_LONG_DATA {
         command: MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
         param1: 1.0,
@@ -69,48 +69,50 @@ fn acks_commands_and_answers_the_messages_it_serves() {
     };
     let with_metadata =
         ConnectService::new(MavType::MAV_TYPE_QUADROTOR, INTERVAL, Some(metadata()));
-    // (case, service, command, expected result, expected answer)
+    // (case, service, command, expected ack result (None: not handled), expected answer)
     let cases = [
         (
             "AUTOPILOT_VERSION request",
             service(),
             request_message(AUTOPILOT_VERSION_DATA::ID),
-            MavResult::MAV_RESULT_ACCEPTED,
+            Some(MavResult::MAV_RESULT_ACCEPTED),
             Some("AUTOPILOT_VERSION"),
         ),
         (
             "COMPONENT_METADATA request, metadata served",
             with_metadata,
             request_message(COMPONENT_METADATA_DATA::ID),
-            MavResult::MAV_RESULT_ACCEPTED,
+            Some(MavResult::MAV_RESULT_ACCEPTED),
             Some("COMPONENT_METADATA"),
         ),
         (
             "COMPONENT_METADATA request, none served",
             service(),
             request_message(COMPONENT_METADATA_DATA::ID),
-            MavResult::MAV_RESULT_UNSUPPORTED,
+            None,
             None,
         ),
         (
             "another message",
             service(),
             request_message(HOME_POSITION_DATA::ID),
-            MavResult::MAV_RESULT_UNSUPPORTED,
+            None,
             None,
         ),
-        (
-            "arm (later slice)",
-            service(),
-            arm,
-            MavResult::MAV_RESULT_UNSUPPORTED,
-            None,
-        ),
+        ("arm: `CommandService`'s", service(), arm, None, None),
     ];
     for (case, service, data, result, answer) in cases {
         let mut out = Outbox::default();
-        service.on_command_long(&GCS, &data, &mut out);
+        let handled = service.on_command_long(&GCS, &data, &mut out);
 
+        check!(handled == result.is_some(), "{case}");
+        let Some(result) = result else {
+            check!(
+                out.to_gcs.is_empty() && out.to_fc.is_empty(),
+                "{case}: no output"
+            );
+            continue;
+        };
         let Some(MavMessage::COMMAND_ACK(ack)) = out.to_gcs.first() else {
             panic!("{case}: expected an ack first, got {:?}", out.to_gcs);
         };
