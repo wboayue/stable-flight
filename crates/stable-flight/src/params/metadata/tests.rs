@@ -15,7 +15,8 @@ fn names<T: ParamMetadata>() -> (Vec<&'static str>, Vec<&'static str>) {
 
 #[test]
 fn describes_every_param_in_table_order() {
-    // (table, (metadata names, param names), metadata)
+    // (table, (metadata names, param names), metadata). Every `ParamMetadata` impl gets a row
+    // here and in `ranges_match_what_validation_accepts`.
     let cases: [(&str, _, &[ParamMeta]); 2] = [
         (
             "stabilizer",

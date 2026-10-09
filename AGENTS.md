@@ -196,6 +196,9 @@ rustdoc), and cover every conformance scenario with `stable_flight::conformance_
 2. Read the relevant trait in core `src/lib.rs` and its existing impls before adding a new one. Hardware-reusable code (control math, mixing, sequencing) goes in the core crate; anything touching an OS, clock, file, or network goes in sitl; anything specific to one simulator goes in its `stable-flight-sitl-<simulator>` backend crate.
 3. Wire new components into a `FlightLoop` + `RealTimeRunner` the way sitl-realflight `examples/copter-manual-realflight.rs` does — that's the canonical reference.
 4. Add tests alongside the code; cover the boundary/error case, not just the happy path.
+   A new `ParamTable` also gets a `ParamMetadata` table in the same file and a row in core
+   `src/params/metadata/tests.rs`, so QGC describes its params and their ranges are checked
+   against `validate`.
 5. `cargo fmt --all && just lint && cargo test --workspace --all-features` before sending a PR.
 6. If you change trait surface, module or crate layout, or runnable examples, update the owning docs (see Commits & PRs) in the same PR.
 7. To compare against `main` (e.g. test counts), use a throwaway worktree — `git worktree add <dir> main` with its own `CARGO_TARGET_DIR` — not a `git stash` round-trip; stashing staged renames plus untracked files can fail to restore.
