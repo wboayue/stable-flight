@@ -14,6 +14,15 @@ not each change; per-change entries start after it.
 
 - **`heartbeat`:** `HEARTBEAT` for a generic autopilot of a given `MavType`, reporting the arm
   state and the core `ControlMode` as standard `base_mode` flags.
+- **State builders:** `attitude`, `local_position_ned`, `global_position_int`, `home_position`,
+  `vfr_hud`, and `extended_sys_state`, with the core's frames (north/east/up, FRD rates)
+  converted to MAVLink's (NED) and fixed-point units; NaN reports MAVLink's "unknown" where it
+  has one.
+- **Geodetic origin:** `GeodeticOrigin`, `DEFAULT_ORIGIN`, and `FlatEarth`, a flat-earth
+  projection of local position for global position and home; `FlatEarth::new` rejects an
+  out-of-range origin with `InvalidOrigin`.
+- **`HomeTracker` and `LandDetector`:** home latched at each arming, and the landed state from
+  the arm state and height above home.
 - Builders return payloads (`*_DATA`) and take vehicle identity as a parameter.
 - **`mavlink` re-export**, so callers use the version the builders return.
 - **`testing` feature:** `testing::MockConnection`, a scripted `MavConnection` (receives in

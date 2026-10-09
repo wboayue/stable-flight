@@ -29,9 +29,10 @@ not each change; per-change entries start after it.
   station (e.g. QGroundControl) at fixed rates, with throttled error logging. The heartbeat
   reports the configured vehicle type (`MavlinkConfiguration::vehicle_type`, or
   `with_vehicle_type`; quadrotor by default), the arm state, and the command kind as standard
-  mode flags (built by `stable-flight-mavlink`); global and home
-  position project local position around a configurable `GeodeticOrigin`, with home latched
-  at arming; the landed state comes from the arm state and height above home.
+  mode flags; global and home position project local position around a configurable
+  `GeodeticOrigin`, with home latched at arming; the landed state comes from the arm state and
+  height above home. Payloads, home, and landed state come from `stable-flight-mavlink`, shared
+  with the bridge.
 - Re-exports the core crate as `stable_flight_sitl::stable_flight`.
 - Examples: `extreme_3d_commander` (joystick smoke test) and `publish_telemetry` (MAVLink demo).
 

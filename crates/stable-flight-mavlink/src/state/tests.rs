@@ -1,6 +1,7 @@
 use assert2::check;
 
 use super::*;
+use crate::geo::{EARTH_RADIUS_M, GeodeticOrigin};
 
 #[test]
 fn maps_normalized_thrust_to_throttle_percent() {
@@ -113,7 +114,7 @@ fn vfr_hud_reports_horizontal_speed_climb_and_altitude() {
 
     for (velocity_mps, altitude_m, speed) in cases {
         let state = state_with([0.0, 0.0, altitude_m], velocity_mps);
-        let data = vfr_hud(&ControlOutput::new(0.5, Default::default()), &state);
+        let data = vfr_hud(&state, 0.5);
         check!(data.groundspeed == speed, "{velocity_mps:?}");
         check!(data.airspeed == speed);
         check!(data.climb == velocity_mps[2]);
@@ -128,6 +129,10 @@ const ORIGIN: GeodeticOrigin = GeodeticOrigin {
     altitude_m: 100.0,
 };
 
+fn earth() -> FlatEarth {
+    FlatEarth::new(ORIGIN).expect("valid origin")
+}
+
 #[test]
 fn global_position_projects_local_offsets_around_the_origin() {
     let m_per_deg = EARTH_RADIUS_M.to_radians() as f32;
@@ -141,13 +146,8 @@ fn global_position_projects_local_offsets_around_the_origin() {
     ];
 
     for (position_m, (lat_deg, lon_deg, alt_m)) in cases {
-        let data = global_position_int(
-            &FlatEarth::new(ORIGIN),
-            &state_with(position_m, [0.0; 3]),
-            0.0,
-            7,
-        )
-        .expect("finite position");
+        let data = global_position_int(&earth(), &state_with(position_m, [0.0; 3]), 0.0, 7)
+            .expect("finite position");
         check!(data.time_boot_ms == 7);
         check!(
             data.lat == (lat_deg * DEG_E7).round() as i32,
@@ -172,7 +172,7 @@ fn global_position_reports_altitude_above_home_and_ned_velocity_in_cm() {
 
     for (altitude_m, home_altitude_m, velocity_mps, relative_alt, velocity_cmps) in cases {
         let data = global_position_int(
-            &FlatEarth::new(ORIGIN),
+            &earth(),
             &state_with([0.0, 0.0, altitude_m], velocity_mps),
             home_altitude_m,
             0,
@@ -223,7 +223,7 @@ fn global_position_is_skipped_for_a_non_finite_position() {
     for position_m in cases {
         let state = state_with(position_m, [0.0; 3]);
         check!(
-            global_position_int(&FlatEarth::new(ORIGIN), &state, 0.0, 0).is_none(),
+            global_position_int(&earth(), &state, 0.0, 0).is_none(),
             "{position_m:?}"
         );
     }
@@ -240,7 +240,7 @@ fn home_position_is_global_and_local_ned_with_unknown_orientation() {
     ];
 
     for (home_m, (lat_deg, lon_deg, alt_m)) in cases {
-        let data = home_position(&FlatEarth::new(ORIGIN), home_m.into());
+        let data = home_position(&earth(), home_m.into());
         check!(
             data.latitude == (lat_deg * DEG_E7).round() as i32,
             "{home_m:?}"

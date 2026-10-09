@@ -1506,9 +1506,11 @@ dependencies = [
 name = "stable-flight-mavlink"
 version = "0.1.0"
 dependencies = [
+ "approx",
  "assert2",
  "mavlink",
  "stable-flight",
+ "thiserror",
 ]
 
 [[package]]
