@@ -8,16 +8,18 @@ use mavlink::MavHeader;
 use mavlink::common::*;
 use stable_flight_link::Downlink;
 use stable_flight_link::stable_flight::ControlMode;
+use stable_flight_mavlink::FlatEarth;
 
 use crate::connect::ConnectService;
 use crate::outbox::Outbox;
 use crate::params::ParamService;
+use crate::state::StateService;
 
 #[cfg(test)]
 mod tests;
 
 /// Identity and timing of a [`Bridge`].
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct BridgeConfig {
     /// MAVLink system id the flight controller appears as.
     pub(crate) system_id: u8,
@@ -29,11 +31,17 @@ pub(crate) struct BridgeConfig {
     pub(crate) fc_timeout: Duration,
     /// Interval between `HEARTBEAT`s to the ground station.
     pub(crate) heartbeat_interval: Duration,
+    /// Where local position sits on the earth; `None` sends no global position or home.
+    pub(crate) earth: Option<FlatEarth>,
+    /// Interval between attitude, position, and `VFR_HUD` messages.
+    pub(crate) state_interval: Duration,
+    /// Interval between `HOME_POSITION`s and `EXTENDED_SYS_STATE`s, which also go out on change.
+    pub(crate) slow_interval: Duration,
 }
 
 impl Default for BridgeConfig {
     /// System and component id 1 (the autopilot, which QGC requires), a quadrotor, a 3 s
-    /// timeout, and 1 Hz heartbeats.
+    /// timeout, 1 Hz heartbeats, no origin, state at 10 Hz, and home and landed state at 1 Hz.
     fn default() -> Self {
         Self {
             system_id: 1,
@@ -41,6 +49,9 @@ impl Default for BridgeConfig {
             vehicle_type: MavType::MAV_TYPE_QUADROTOR,
             fc_timeout: Duration::from_secs(3),
             heartbeat_interval: Duration::from_secs(1),
+            earth: None,
+            state_interval: Duration::from_millis(100),
+            slow_interval: Duration::from_secs(1),
         }
     }
 }
@@ -58,9 +69,10 @@ struct FcStatus {
 ///
 /// `Bridge` tracks whether the flight controller is alive (heard from within `fc_timeout`),
 /// decides whether a MAVLink message is for it (its system and component, or broadcast), and
-/// routes each message to the service that handles it: [`ParamService`] or [`ConnectService`].
-/// When the flight controller appears or comes back after a timeout, both services are told,
-/// and the heartbeat is sent only while it is alive, so the ground station sees link loss.
+/// routes each message to the service that handles it: [`ParamService`], [`ConnectService`],
+/// or [`StateService`]. When the flight controller appears or comes back after a timeout, every
+/// service is told; state is taken, and the heartbeat and state are sent, only while it is
+/// alive, so the ground station sees link loss and never stale state.
 #[derive(Debug)]
 pub(crate) struct Bridge {
     system_id: u8,
@@ -69,6 +81,7 @@ pub(crate) struct Bridge {
     fc: Option<FcStatus>,
     params: ParamService,
     connect: ConnectService,
+    state: StateService,
 }
 
 impl Bridge {
@@ -80,6 +93,7 @@ impl Bridge {
             fc: None,
             params: ParamService::default(),
             connect: ConnectService::new(config.vehicle_type, config.heartbeat_interval),
+            state: StateService::new(config.earth, config.state_interval, config.slow_interval),
         }
     }
 
@@ -106,6 +120,7 @@ impl Bridge {
                 if self.alive_fc(now).is_none() {
                     self.params.fc_appeared(now, out);
                     self.connect.fc_appeared(now, out);
+                    self.state.fc_appeared(now, out);
                 }
                 self.fc = Some(FcStatus {
                     last_seen: now,
@@ -114,6 +129,15 @@ impl Bridge {
                 });
             }
             Downlink::Param(param) => self.params.on_param(param, out),
+            Downlink::State(state) => {
+                if let Some(fc) = self.alive_fc(now) {
+                    self.state.on_state(state, fc.armed);
+                }
+            }
+            Downlink::Record(record) if self.alive_fc(now).is_some() => {
+                self.state.on_record(record);
+            }
+            // Status text has no MAVLink side yet.
             _ => {}
         }
     }
@@ -136,10 +160,11 @@ impl Bridge {
         }
     }
 
-    /// Sends what is due at `now`: the heartbeat, while the flight controller is alive.
+    /// Sends what is due at `now`, while the flight controller is alive: the heartbeat and state.
     pub(crate) fn poll(&mut self, now: Instant, out: &mut Outbox) {
         if let Some(fc) = self.alive_fc(now) {
             self.connect.poll(now, fc.armed, fc.mode, out);
+            self.state.poll(now, out);
         }
     }
 

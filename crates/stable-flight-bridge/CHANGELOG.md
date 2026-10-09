@@ -22,6 +22,11 @@ not each change; per-change entries start after it.
   `PARAM_REQUEST_READ` served from a cache, refilled whenever the flight controller appears.
 - **Loop:** reads both sides in bounded batches each pass; sleeps 1 ms under traffic and backs
   off to 8 ms while idle. Failures are logged at most once a second per side.
+- **State:** `ATTITUDE`, `LOCAL_POSITION_NED`, `GLOBAL_POSITION_INT`, and `VFR_HUD` at 10 Hz
+  from the flight controller's latest state; `HOME_POSITION` and `EXTENDED_SYS_STATE` at 1 Hz
+  and on change (payloads, home, and landed state from `stable-flight-mavlink`). Global position
+  and home projected around `--origin` (or none with `--no-origin`); throttle from telemetry
+  records.
 - **QGC connect sequence:** empty `MISSION_COUNT` per mission type, `AUTOPILOT_VERSION` on
   request, `UNSUPPORTED` for other commands.
 

@@ -69,6 +69,29 @@ fn moves_messages_both_ways_as_the_flight_controller() {
     check!(uplinks(&mut fc) == [Uplink::Param(ParamRequest::List)]);
 }
 
+#[test]
+fn forwards_flight_controller_state_as_mavlink() {
+    let loopback = Loopback::new();
+    let gcs = MockConnection::default();
+    let (mut pump, mut fc) = pump(&loopback, gcs.clone());
+
+    send(&mut fc, &heartbeat(false));
+    send(
+        &mut fc,
+        &Downlink::State(stable_flight_link::stable_flight::VehicleState {
+            roll_rad: 10_f32.to_radians(),
+            ..Default::default()
+        }),
+    );
+    pump.step(Instant::now());
+
+    let attitude = gcs.sent().into_iter().find_map(|(_, msg)| match msg {
+        MavMessage::ATTITUDE(data) => Some(data),
+        _ => None,
+    });
+    check!(attitude.map(|a| a.roll) == Some(10_f32.to_radians()));
+}
+
 /// How a row sets up the pass.
 enum Setup {
     /// Raw bytes on the link, then a heartbeat.

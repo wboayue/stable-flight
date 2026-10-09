@@ -155,6 +155,61 @@ fn refills_the_cache_whenever_the_flight_controller_appears() {
 }
 
 #[test]
+fn takes_state_only_while_the_flight_controller_is_alive_with_its_arm_state() {
+    let config = BridgeConfig {
+        earth: Some(
+            stable_flight_mavlink::FlatEarth::new(stable_flight_mavlink::DEFAULT_ORIGIN).unwrap(),
+        ),
+        ..BridgeConfig::default()
+    };
+    let at = |altitude_m: f32| {
+        Downlink::State(stable_flight::VehicleState {
+            position_m: [0.0, 0.0, altitude_m].into(),
+            ..Default::default()
+        })
+    };
+    let homes = |out: &Outbox| -> Vec<f32> {
+        out.to_gcs
+            .iter()
+            .filter_map(|m| match m {
+                MavMessage::HOME_POSITION(d) => Some(d.z),
+                _ => None,
+            })
+            .collect()
+    };
+    let t0 = Instant::now();
+    let ms = Duration::from_millis;
+    let mut bridge = Bridge::new(config);
+    let mut out = Outbox::default();
+
+    bridge.on_downlink(&at(5.0), t0, &mut out);
+    bridge.poll(t0, &mut out);
+    check!(
+        out.to_gcs.is_empty(),
+        "no flight controller yet: state ignored"
+    );
+
+    bridge.on_downlink(&heartbeat(false), t0, &mut out);
+    bridge.on_downlink(&at(10.0), t0, &mut out);
+    out = Outbox::default();
+    bridge.poll(t0, &mut out);
+    check!(homes(&out) == [-10.0], "first state is home");
+
+    // The arm state reaches the state service from the heartbeat: arming re-latches home.
+    bridge.on_downlink(&heartbeat(true), t0 + ms(10), &mut out);
+    bridge.on_downlink(&at(12.0), t0 + ms(10), &mut out);
+    out = Outbox::default();
+    bridge.poll(t0 + ms(10), &mut out);
+    check!(homes(&out) == [-12.0], "armed: home re-latched");
+
+    let gone = t0 + ms(10) + config.fc_timeout;
+    out = Outbox::default();
+    bridge.on_downlink(&at(20.0), gone, &mut out);
+    bridge.poll(gone, &mut out);
+    check!(out.to_gcs.is_empty(), "timed out: nothing sent");
+}
+
+#[test]
 fn first_heartbeat_lists_params() {
     let mut bridge = Bridge::new(BridgeConfig::default());
     let mut out = Outbox::default();

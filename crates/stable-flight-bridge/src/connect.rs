@@ -8,6 +8,7 @@ use mavlink::{MavHeader, MessageData};
 use stable_flight_link::stable_flight::ControlMode;
 
 use crate::encode;
+use crate::interval::Interval;
 use crate::outbox::Outbox;
 
 #[cfg(test)]
@@ -29,8 +30,7 @@ mod tests;
 #[derive(Debug)]
 pub(crate) struct ConnectService {
     vehicle_type: MavType,
-    heartbeat_interval: Duration,
-    next_heartbeat: Option<Instant>,
+    heartbeat: Interval,
 }
 
 impl ConnectService {
@@ -38,26 +38,24 @@ impl ConnectService {
     pub(crate) fn new(vehicle_type: MavType, heartbeat_interval: Duration) -> Self {
         Self {
             vehicle_type,
-            heartbeat_interval,
-            next_heartbeat: None,
+            heartbeat: Interval::new(heartbeat_interval),
         }
     }
 
     /// The flight controller appeared (or came back) at `now`: show the ground station at once.
     pub(crate) fn fc_appeared(&mut self, now: Instant, _out: &mut Outbox) {
-        self.next_heartbeat = Some(now);
+        self.heartbeat.start(now);
     }
 
     /// Sends the heartbeat if due at `now`, reporting `armed` and `mode`.
     pub(crate) fn poll(&mut self, now: Instant, armed: bool, mode: ControlMode, out: &mut Outbox) {
-        if self.next_heartbeat.is_some_and(|due| now >= due) {
+        if self.heartbeat.due(now) {
             out.to_gcs
                 .push(MavMessage::HEARTBEAT(stable_flight_mavlink::heartbeat(
                     self.vehicle_type,
                     armed,
                     mode,
                 )));
-            self.next_heartbeat = Some(now + self.heartbeat_interval);
         }
     }
 
