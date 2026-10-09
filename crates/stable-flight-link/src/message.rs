@@ -9,7 +9,6 @@ use stable_flight::{
 };
 
 use crate::frame::{Message, sealed::Sealed};
-use crate::params::{ParamRequest, ParamValue};
 
 #[cfg(test)]
 mod tests;
@@ -17,6 +16,37 @@ mod tests;
 /// A parameter name, at most [`params::MAX_NAME_LEN`] bytes (see [`stable_flight::params`]).
 /// `u8` length: smaller in memory, same on the wire.
 pub type ParamName = heapless::String<{ params::MAX_NAME_LEN }, u8>;
+
+/// A parameter request from the companion: [`Uplink::Param`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ParamRequest {
+    /// Set one parameter by name, in its own units. Echoed with the **value sent** if accepted
+    /// (exact under the core `Params` stores-or-rejects contract, where a degree param's
+    /// read-back may differ in the last bit) and the current value if rejected; an unknown name
+    /// gets no reply.
+    Set {
+        /// Parameter name.
+        name: ParamName,
+        /// New value.
+        value: f32,
+    },
+    /// List every parameter, one [`ParamValue`] each, in index order. Restarts a listing
+    /// already in progress.
+    List,
+}
+
+/// One parameter's value: [`Downlink::Param`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParamValue {
+    /// Parameter name.
+    pub name: ParamName,
+    /// Value, in the parameter's own units.
+    pub value: f32,
+    /// Index of this parameter, `0..count`, stable across the flight controller's lifetime.
+    pub index: u16,
+    /// Number of parameters.
+    pub count: u16,
+}
 
 /// Longest [`Downlink::Status`] text in bytes.
 pub const MAX_STATUS_LEN: usize = 64;

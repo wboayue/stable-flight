@@ -9,7 +9,6 @@ use stable_flight::{
 };
 
 use super::*;
-use crate::params::{ParamRequest, ParamValue};
 use crate::{MAX_FRAME_LEN, encode_vec};
 
 fn name(s: &str) -> ParamName {

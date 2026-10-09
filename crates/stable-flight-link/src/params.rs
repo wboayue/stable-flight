@@ -1,69 +1,33 @@
-//! Serving the flight controller's [`Params`] over the link.
-//!
-//! Requests arrive inside the tick (the commander decodes them) but can only be applied between
-//! ticks, where something holds `&mut` to the [`FlightLoop`](stable_flight::FlightLoop). Two
-//! bounded single-producer queues bridge that gap:
-//!
-//! ```text
-//! commander ──ParamRequest──▶ ParamServer::poll (between ticks) ──ParamValue──▶ publisher
-//! ```
-//!
-//! [`ParamServer::poll`] applies at most a configured number of writes per call, so a ground
-//! station's burst of hundreds of writes spreads over ticks instead of overrunning one, and it
-//! streams a listing from a cursor, only as fast as the publisher drains the reply queue.
+//! Serving the flight controller's [`Params`] over the link: see [`ParamServer`]. Why queues
+//! and a between-ticks poll: the
+//! [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md#params).
 
 use heapless::spsc::{Consumer, Producer};
-use serde::{Deserialize, Serialize};
 use stable_flight::params::Params;
 
-use crate::ParamName;
+use crate::{ParamName, ParamRequest, ParamValue};
 
 #[cfg(test)]
 mod tests;
 
-/// A parameter request from the companion: [`Uplink::Param`](crate::Uplink::Param).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub enum ParamRequest {
-    /// Set one parameter by name, in its own units. Echoed with the value sent if accepted,
-    /// the current value if rejected; an unknown name gets no reply.
-    Set {
-        /// Parameter name.
-        name: ParamName,
-        /// New value.
-        value: f32,
-    },
-    /// List every parameter, one [`ParamValue`] each, in index order. Restarts a listing
-    /// already in progress.
-    List,
-}
-
-/// One parameter's value: [`Downlink::Param`](crate::Downlink::Param).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ParamValue {
-    /// Parameter name.
-    pub name: ParamName,
-    /// Value, in the parameter's own units.
-    pub value: f32,
-    /// Index of this parameter, `0..count`, stable across the flight controller's lifetime.
-    pub index: u16,
-    /// Number of parameters.
-    pub count: u16,
-}
-
 /// Applies [`ParamRequest`]s to a [`Params`] and queues the [`ParamValue`] replies; call
 /// [`poll`](Self::poll) between ticks.
 ///
-/// A request is taken only when the reply queue has room for its answer, so no echo or
-/// listing entry is ever dropped: a full reply queue holds requests back instead. Writes
-/// confirm with the **value sent** (the [`Params`] stores-or-rejects contract makes it exact,
-/// where a read-back of a degree param may differ in the last bit), rejections with the
-/// current value.
+/// The commander pushes requests inside the tick; `poll` applies at most `max_writes_per_poll`
+/// writes, so a ground station's burst of hundreds spreads over ticks. A request is taken only
+/// when the reply queue has room for its answer, so no echo or listing entry is dropped: a full
+/// reply queue holds requests back, and a listing streams from a cursor as the queue drains.
+/// Replies follow [`ParamRequest`]'s rules.
+///
+/// Each poll can fill the reply queue, so how many replies go out per tick is the publisher's
+/// call: it owns the link's bandwidth and should send at most a few per tick.
 ///
 /// # Examples
 ///
 /// ```
 /// use stable_flight_link::heapless::spsc::Queue;
-/// use stable_flight_link::params::{ParamRequest, ParamServer, ParamValue};
+/// use stable_flight_link::params::ParamServer;
+/// use stable_flight_link::{ParamRequest, ParamValue};
 /// use stable_flight_link::stable_flight::stabilizers::copter::{
 ///     CopterStabilizer, CopterStabilizerConfig,
 /// };
@@ -160,7 +124,7 @@ impl<'a> ParamServer<'a> {
 }
 
 /// The reply for `index`: `value` if given, else the current value. `None` if `index` is out
-/// of range or its name doesn't fit a [`ParamName`] (core tests keep every name within
+/// of range, it or the count exceeds `u16`, or its name doesn't fit a [`ParamName`] (core tests keep every name within
 /// [`MAX_NAME_LEN`](stable_flight::params::MAX_NAME_LEN)).
 fn param_value(params: &impl Params, index: usize, value: Option<f32>) -> Option<ParamValue> {
     let name = ParamName::try_from(params.param_name(index)?).ok()?;
@@ -172,6 +136,6 @@ fn param_value(params: &impl Params, index: usize, value: Option<f32>) -> Option
         name,
         value,
         index: u16::try_from(index).ok()?,
-        count: u16::try_from(params.param_count()).unwrap_or(u16::MAX),
+        count: u16::try_from(params.param_count()).ok()?,
     })
 }

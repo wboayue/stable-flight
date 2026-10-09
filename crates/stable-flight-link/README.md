@@ -11,7 +11,7 @@ Parameter names are the core's [`params`](https://docs.rs/stable-flight/latest/s
 
 ## Params
 
-`params::ParamServer` serves the flight controller's core `Params` (a `FlightLoop`) over the link. The commander pushes `ParamRequest`s onto a bounded `heapless::spsc` queue inside the tick; between ticks, `poll(&mut flight_loop)` applies at most N writes and queues `ParamValue` replies for the publisher. It takes a request only when the reply queue has room, so a full listing streams over ticks as the publisher drains it and no reply is dropped. A write echoes the value sent if accepted (exact, where a degree param's read-back may differ in the last bit) and the current value if rejected; an unknown name gets no reply.
+`params::ParamServer` serves the flight controller's core `Params` over the link: the commander queues `ParamRequest`s inside the tick, and `poll(&mut flight_loop)` between ticks applies them and queues `ParamValue` replies for the publisher. Pacing and reply rules: its [rustdoc](https://docs.rs/stable-flight-link/latest/stable_flight_link/params/struct.ParamServer.html).
 
 ## Frames
 

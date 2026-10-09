@@ -122,30 +122,12 @@ impl RealTimeRunner {
     /// (`FlightLoop::set_param`) or config swaps. Its time counts toward the tick's period,
     /// so keep it bounded.
     ///
-    /// ```no_run
-    /// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-    /// # use stable_flight::mixers::QuadCopterMixer;
-    /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
-    /// # use stable_flight::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
-    /// # use stable_flight::FlightLoop;
-    /// use stable_flight::params::Params;
-    /// use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
+    /// With `flight_loop` and `shutdown` as in the [type-level example](Self):
     ///
-    /// # let mut flight_loop = FlightLoop::new(
-    /// #     ConstantCommander::default(),
-    /// #     NullVehicle::new(),
-    /// #     CopterGuidance::new(CopterGuidanceConfig::default()),
-    /// #     CopterStabilizer::new(CopterStabilizerConfig::default()),
-    /// #     QuadCopterMixer::default(),
-    /// #     RecordingTelemetry::<1>::new(),
-    /// # );
-    /// let shutdown = ShutdownSignal::install().expect("install Ctrl-C handler");
-    /// RealTimeRunner::new(250.0)
-    ///     .expect("valid frequency")
-    ///     .run_with(&mut flight_loop, &shutdown, |flight_loop| {
-    ///         // e.g. `param_server.poll(flight_loop)` (stable-flight-link)
-    ///         let _ = flight_loop.set_param("STAB_RATE_P", 0.12);
-    ///     });
+    /// ```ignore
+    /// RealTimeRunner::new(250.0)?.run_with(&mut flight_loop, &shutdown, |flight_loop| {
+    ///     param_server.poll(flight_loop); // stable-flight-link
+    /// });
     /// ```
     pub fn run_with<C, V, G, S, M, T>(
         &self,
