@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use assert2::check;
-use mavlink::common::GLOBAL_POSITION_INT_DATA;
+use mavlink::common::{GLOBAL_POSITION_INT_DATA, HOME_POSITION_DATA};
 use mavlink::error::{MessageReadError, MessageWriteError};
 use mavlink::{MAVLinkMessageRaw, Message};
 use stable_flight::{ActuatorCommand, Command, ControlOutput, Saturation, Setpoint, VehicleState};
@@ -92,6 +92,15 @@ fn global_positions(sent: &[(MavHeader, MavMessage)]) -> Vec<GLOBAL_POSITION_INT
         .collect()
 }
 
+fn home_positions(sent: &[(MavHeader, MavMessage)]) -> Vec<HOME_POSITION_DATA> {
+    sent.iter()
+        .filter_map(|(_, m)| match m {
+            MavMessage::HOME_POSITION(data) => Some(data.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 fn count(sent: &[(MavHeader, MavMessage)], name: &str) -> usize {
     sent.iter()
         .filter(|(_, m)| m.message_name() == name)
@@ -116,10 +125,9 @@ fn sends_each_stream_at_its_rate() {
         check!(count(&sent, name) == expected, "{name}");
     }
     check!(sent.len() == 66);
-    check!(
-        count(&sent, "GLOBAL_POSITION_INT") == 0,
-        "no origin, no global position"
-    );
+    for name in ["GLOBAL_POSITION_INT", "HOME_POSITION"] {
+        check!(count(&sent, name) == 0, "no origin, no {name}");
+    }
 }
 
 #[test]
@@ -283,4 +291,49 @@ fn every_stream_sends_on_the_first_publish() {
     for name in ["HEARTBEAT", "VFR_HUD", "LOCAL_POSITION_NED", "ATTITUDE"] {
         check!(count(&sent, name) == 1, "{name}");
     }
+}
+
+#[test]
+fn sends_home_position_at_1_hz_with_an_origin() {
+    let connection = MockConnection::default();
+    // Two seconds of a 60 Hz loop.
+    publish_states(
+        with_origin(&connection),
+        Duration::from_nanos(16_666_667),
+        &vec![(false, VehicleState::default()); 120],
+    );
+
+    let homes = home_positions(&connection.sent());
+    check!(homes.len() == 3);
+    check!(homes[0].latitude == 348_843_890);
+    check!(homes[0].longitude == -1_204_035_000);
+}
+
+#[test]
+fn home_position_is_sent_as_soon_as_home_is_latched() {
+    let at = |north_m: f32, up_m: f32| VehicleState {
+        position_m: [north_m, 0.0, up_m].into(),
+        ..Default::default()
+    };
+    // (armed, state, expected HOME_POSITION (x, z) sent this tick); dt is 100 ms, so the
+    // 1 Hz timer alone would fire only on the first tick.
+    let ticks = [
+        (false, at(f32::NAN, 0.0), None), // no finite position: no home, nothing sent
+        (false, at(1.0, 2.0), Some((1.0, -2.0))), // first finite position becomes home
+        (false, at(5.0, 2.0), None),      // moved while disarmed: home stays
+        (true, at(5.0, 3.0), Some((5.0, -3.0))), // arming re-latches home
+        (true, at(9.0, 9.0), None),       // flying
+        (false, at(9.0, 0.0), None),
+        (true, at(f32::NAN, 0.0), None), // arming on a non-finite position keeps the old home
+    ];
+    let records: Vec<_> = ticks
+        .iter()
+        .map(|(armed, s, _)| (*armed, s.clone()))
+        .collect();
+    let connection = MockConnection::default();
+    publish_states(with_origin(&connection), STREAM_INTERVAL, &records);
+
+    let homes = home_positions(&connection.sent());
+    let expected: Vec<_> = ticks.iter().filter_map(|&(_, _, home)| home).collect();
+    check!(homes.iter().map(|h| (h.x, h.z)).collect::<Vec<_>>() == expected);
 }

@@ -4,6 +4,7 @@
 //! `messages`, and each stream is paced by its own drift-free timer.
 
 use std::io;
+use std::mem;
 use std::time::{Duration, Instant};
 
 use log::warn;
@@ -12,7 +13,7 @@ use thiserror::Error;
 
 use super::every::Every;
 use super::throttle::ErrorThrottle;
-use stable_flight::{TelemetryPublisher, TelemetryRecord};
+use stable_flight::{TelemetryPublisher, TelemetryRecord, Vec3};
 
 mod messages;
 #[cfg(test)]
@@ -23,7 +24,8 @@ use messages::FlatEarth;
 /// Address [`MavlinkConfiguration::default`] sends to: UDP to a local ground station.
 pub const DEFAULT_ADDRESS: &str = "udpout:127.0.0.1:14550";
 
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(1);
+/// Heartbeat and the slow-changing state streams (home).
+const SLOW_STREAM_INTERVAL: Duration = Duration::from_secs(1);
 const STREAM_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Where the local origin sits on the earth: [`MavlinkConfiguration::default`] places it at
@@ -65,7 +67,8 @@ pub struct MavlinkConfiguration {
     pub system_id: u8,
     /// MAVLink component id in every message header.
     pub component_id: u8,
-    /// Where local position sits on the earth; `None` sends no GLOBAL_POSITION_INT.
+    /// Where local position sits on the earth; `None` sends no GLOBAL_POSITION_INT or
+    /// HOME_POSITION.
     pub origin: Option<GeodeticOrigin>,
 }
 
@@ -99,15 +102,17 @@ pub enum MavlinkError {
 }
 
 /// A [`TelemetryPublisher`] that sends each tick's state as MAVLink messages: heartbeat at
-/// 1 Hz; VFR_HUD, local position, global position, and attitude at 10 Hz each. Every stream
-/// sends on the first `publish`, so a ground station sees the link immediately.
+/// 1 Hz; VFR_HUD, local position, global position, and attitude at 10 Hz each; home position
+/// at 1 Hz and whenever home moves. Every stream sends on the first `publish` it has data
+/// for, so a ground station sees the link immediately.
 ///
 /// The heartbeat reports the command kind as standard `base_mode` flags: rate is
 /// `MANUAL_INPUT`, attitude `MANUAL_INPUT | STABILIZE`, waypoint `STABILIZE | GUIDED | AUTO`.
 ///
-/// GLOBAL_POSITION_INT is sent only with a [`GeodeticOrigin`] ([`with_origin`](Self::with_origin)),
-/// and skipped on a tick whose position isn't finite. Its `relative_alt` is measured from
-/// home: the altitude at the latest arming, or before the first arm, the first finite one.
+/// Home is the position at the latest arming, or before the first arm, the first finite one.
+/// GLOBAL_POSITION_INT and HOME_POSITION are sent only with a [`GeodeticOrigin`]
+/// ([`with_origin`](Self::with_origin)) and once there is a home; GLOBAL_POSITION_INT is
+/// skipped on a tick whose position isn't finite, and its `relative_alt` is measured from home.
 ///
 /// A failed send is logged (rate-limited) and dropped; it never stops the flight loop.
 ///
@@ -131,8 +136,11 @@ pub struct MavlinkPublisher {
     attitude: Every,
     /// Global position stream: the projection and its timer, when an origin is set.
     global_position: Option<(FlatEarth, Every)>,
-    /// Altitude (local `z`) `relative_alt` is measured from; see [`Self::update_home`].
-    home_altitude_m: Option<f32>,
+    home_position: Every,
+    /// Local position home is at; see [`Self::update_home`].
+    home_m: Option<Vec3>,
+    /// Home was latched since the last HOME_POSITION check, so send it now.
+    home_changed: bool,
     /// The previous tick's arm state, to find the arming edge.
     was_armed: bool,
     errors: ErrorThrottle,
@@ -188,18 +196,20 @@ impl MavlinkPublisher {
             component_id,
             sequence: 0,
             start_time: Instant::now(),
-            heartbeat: Every::new(HEARTBEAT_INTERVAL),
+            heartbeat: Every::new(SLOW_STREAM_INTERVAL),
             vfr_hud: Every::new(STREAM_INTERVAL),
             local_position: Every::new(STREAM_INTERVAL),
             attitude: Every::new(STREAM_INTERVAL),
             global_position: None,
-            home_altitude_m: None,
+            home_position: Every::new(SLOW_STREAM_INTERVAL),
+            home_m: None,
+            home_changed: false,
             was_armed: false,
             errors: ErrorThrottle::default(),
         }
     }
 
-    /// Also sends GLOBAL_POSITION_INT, placing local position (0, 0, 0) at `origin`.
+    /// Also sends GLOBAL_POSITION_INT and HOME_POSITION, placing local position (0, 0, 0) at `origin`.
     ///
     /// # Errors
     ///
@@ -225,13 +235,14 @@ impl MavlinkPublisher {
         Ok(self)
     }
 
-    /// Latches home at each arming (height above takeoff), or at the first finite altitude
-    /// before the first arm. A non-finite altitude never becomes home.
-    fn update_home(&mut self, armed: bool, altitude_m: f32) {
+    /// Latches home at each arming (the takeoff point), or at the first finite position
+    /// before the first arm. A position with a non-finite axis never becomes home.
+    fn update_home(&mut self, armed: bool, position_m: Vec3) {
         let arming = armed && !self.was_armed;
         self.was_armed = armed;
-        if altitude_m.is_finite() && (arming || self.home_altitude_m.is_none()) {
-            self.home_altitude_m = Some(altitude_m);
+        if position_m.iter().all(|c| c.is_finite()) && (arming || self.home_m.is_none()) {
+            self.home_m = Some(position_m);
+            self.home_changed = true;
         }
     }
 
@@ -271,7 +282,7 @@ impl TelemetryPublisher for MavlinkPublisher {
             ..
         } = *record;
         let time_boot_ms = self.time_boot_ms();
-        self.update_home(command.arm, state.position_m.z);
+        self.update_home(command.arm, state.position_m);
 
         if self.heartbeat.ready(dt) {
             self.send(MavMessage::HEARTBEAT(messages::heartbeat(command)));
@@ -286,11 +297,20 @@ impl TelemetryPublisher for MavlinkPublisher {
         }
         if let Some((earth, every)) = &mut self.global_position
             && every.ready(dt)
-            && let Some(home_altitude_m) = self.home_altitude_m
-            && let Some(data) =
-                messages::global_position_int(earth, state, home_altitude_m, time_boot_ms)
+            && let Some(home_m) = self.home_m
+            && let Some(data) = messages::global_position_int(earth, state, home_m.z, time_boot_ms)
         {
             self.send(MavMessage::GLOBAL_POSITION_INT(data));
+        }
+        // `|`, not `||`: the timer advances every tick.
+        let home_due = self.home_position.ready(dt) | mem::take(&mut self.home_changed);
+        if home_due
+            && let Some((earth, _)) = &self.global_position
+            && let Some(home_m) = self.home_m
+        {
+            self.send(MavMessage::HOME_POSITION(messages::home_position(
+                earth, home_m,
+            )));
         }
         if self.attitude.ready(dt) {
             self.send(MavMessage::ATTITUDE(messages::attitude(

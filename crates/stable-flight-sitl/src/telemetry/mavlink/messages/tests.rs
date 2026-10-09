@@ -266,3 +266,37 @@ fn global_position_is_skipped_for_a_non_finite_position() {
         );
     }
 }
+
+#[test]
+fn home_position_is_global_and_local_ned_with_unknown_orientation() {
+    let m_per_deg = EARTH_RADIUS_M.to_radians() as f32;
+    // (home_m (north, east, up), expected (lat_deg, lon_deg, alt_m))
+    let cases = [
+        ([0.0, 0.0, 0.0], (60.0, -120.0, 100.0)),
+        ([m_per_deg / 1000.0, 0.0, 12.5], (60.001, -120.0, 112.5)),
+        ([0.0, -m_per_deg / 1000.0, -3.0], (60.0, -120.002, 97.0)), // west: twice the degrees
+    ];
+
+    for (home_m, (lat_deg, lon_deg, alt_m)) in cases {
+        let data = home_position(&FlatEarth::new(ORIGIN), home_m.into());
+        check!(
+            data.latitude == (lat_deg * DEG_E7).round() as i32,
+            "{home_m:?}"
+        );
+        check!(
+            data.longitude == (lon_deg * DEG_E7).round() as i32,
+            "{home_m:?}"
+        );
+        check!(data.altitude == (alt_m * MM_PER_M) as i32, "{home_m:?}");
+        let [north, east, up] = home_m;
+        check!(
+            [data.x, data.y, data.z] == [north, east, -up],
+            "NED, down positive"
+        );
+        check!(
+            [data.approach_x, data.approach_y, data.approach_z] == [data.x, data.y, data.z],
+            "approach ends at home"
+        );
+        check!(data.q.iter().all(|q| q.is_nan()), "orientation unknown");
+    }
+}
