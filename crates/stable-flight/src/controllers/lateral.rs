@@ -1,7 +1,7 @@
 use crate::Vec2;
 
 use super::derivative::DerivativeState;
-use crate::controllers::{Gains, InvalidConfig, check_limit};
+use crate::controllers::{Gains, InvalidConfig, check_limit, rescale_integral};
 use crate::math::{all_finite, assert_dt, cap_magnitude, clamp_symmetric_each};
 
 /// Configures the [`LateralController`]: a position loop feeding a velocity loop.
@@ -206,6 +206,25 @@ impl LateralController {
             config.max_integral,
         );
         gains.p * velocity_error + gains.i * self.integrated_error + gains.d * error_derivative
+    }
+
+    /// The accumulated error, for tests of the composites' integrator policy.
+    #[cfg(test)]
+    pub(crate) fn integrated_error(&self) -> Vec2 {
+        self.integrated_error
+    }
+
+    /// Rescales the integral for a change of integral gain from `old` to `new`, so the next
+    /// tick's I term picks up where the last left off (`rescale_integral`).
+    pub(crate) fn rescale_integral(
+        &mut self,
+        old: &LateralControllerConfig,
+        new: &LateralControllerConfig,
+    ) {
+        let (old_i, new_i) = (old.velocity.i, new.velocity.i);
+        self.integrated_error = self
+            .integrated_error
+            .map(|e| rescale_integral(e, old_i, new_i));
     }
 }
 

@@ -60,3 +60,26 @@ fn check_unit_interval_accepts_only_values_in_zero_one() {
         );
     }
 }
+
+#[test]
+fn rescale_integral_keeps_the_i_term_or_resets() {
+    // (integral, old_i, new_i, expected)
+    let cases = [
+        (0.4, 0.1, 0.1, 0.4),      // unchanged gain
+        (0.4, 0.1, 0.2, 0.2),      // doubled gain halves the integral
+        (0.4, 0.2, 0.1, 0.8),      // halved gain doubles it
+        (-0.4, 0.1, -0.2, 0.2),    // sign flip keeps the term's sign
+        (0.4, 0.1, 0.0, 0.0),      // gain removed
+        (0.4, 0.0, 0.1, 0.0),      // never applied, so not carried in
+        (0.4, 0.0, 0.0, 0.4),      // unchanged zero gain
+        (0.4, 1e30, 1e-30, 0.0),   // ratio overflows
+        (0.4, 0.1, f32::NAN, 0.0), // non-finite gain
+    ];
+    for (integral, old_i, new_i, expected) in cases {
+        assert_eq!(
+            rescale_integral(integral, old_i, new_i),
+            expected,
+            "{integral} {old_i} → {new_i}"
+        );
+    }
+}

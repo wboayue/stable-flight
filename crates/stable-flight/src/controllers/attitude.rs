@@ -3,7 +3,7 @@ use core::f32::consts::FRAC_PI_4;
 use crate::Vec2;
 
 use super::derivative::DerivativeState;
-use super::{Gains, InvalidConfig, check_limit};
+use super::{Gains, InvalidConfig, check_limit, rescale_integral};
 use crate::math::{assert_dt, clamp_symmetric, clamp_symmetric_each, saturate_symmetric};
 
 /// Configures the attitude controller for a vehicle.
@@ -165,6 +165,19 @@ impl AttitudeController {
             clamp_symmetric(rates.x, config.max_rate_radps.x),
             clamp_symmetric(rates.y, config.max_rate_radps.y),
         )
+    }
+
+    /// Rescales the integral for a change of integral gain from `old` to `new`, so the next
+    /// tick's I term picks up where the last left off (`rescale_integral`).
+    pub(crate) fn rescale_integral(
+        &mut self,
+        old: &AttitudeControllerConfig,
+        new: &AttitudeControllerConfig,
+    ) {
+        let (old_i, new_i) = (old.gains.i, new.gains.i);
+        self.integrated_error = self
+            .integrated_error
+            .map(|e| rescale_integral(e, old_i, new_i));
     }
 }
 

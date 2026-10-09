@@ -1,7 +1,7 @@
 use crate::Vec3;
 
 use super::derivative::DerivativeState;
-use super::{Gains, InvalidConfig, check_limit};
+use super::{Gains, InvalidConfig, check_limit, rescale_integral};
 use crate::math::{all_finite, assert_dt, clamp_symmetric_each};
 
 /// Default proportional gain, in normalized moment per rad/s of rate error.
@@ -160,6 +160,19 @@ impl BodyRateController {
             + d.component_mul(&error_derivative);
 
         clamp_symmetric_each(moment, 1.0)
+    }
+
+    /// Rescales the integral for a change of integral gain from `old` to `new`, so the next
+    /// tick's I term picks up where the last left off (`rescale_integral`).
+    pub(crate) fn rescale_integral(
+        &mut self,
+        old: &BodyRateControllerConfig,
+        new: &BodyRateControllerConfig,
+    ) {
+        let e = &mut self.integrated_error;
+        e.x = rescale_integral(e.x, old.gains.i, new.gains.i);
+        e.y = rescale_integral(e.y, old.gains.i, new.gains.i);
+        e.z = rescale_integral(e.z, old.yaw_gains.i, new.yaw_gains.i);
     }
 }
 

@@ -8,6 +8,7 @@
 use core::time::Duration;
 
 use crate::controllers::InvalidConfig;
+use crate::params::{ParamError, Params};
 use crate::{
     ActuatorCommand, AttitudeSetpoint, Commander, Configurable, ControlOutput, Guidance, Mixer,
     Saturation, Setpoint, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle, VehicleState,
@@ -312,5 +313,67 @@ where
             self.mixer,
             self.telemetry,
         )
+    }
+}
+
+/// The guidance's params, then the stabilizer's, by name (see [`crate::params`]). Names are
+/// prefixed by component, so a name belongs to at most one of them.
+///
+/// ```
+/// # use std::time::Duration;
+/// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+/// # use stable_flight::mixers::QuadCopterMixer;
+/// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+/// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateEstimator, VehicleState};
+/// use stable_flight::params::Params;
+/// use stable_flight::{Configurable, FlightLoop};
+/// # struct Hover;
+/// # impl Commander for Hover {
+/// #     fn next_command(&mut self, _: f32, _: &VehicleState) -> Command {
+/// #         Command::default()
+/// #     }
+/// # }
+/// # struct StillAir;
+/// # impl StateEstimator for StillAir {
+/// #     fn estimate_state(&mut self, _: Duration) -> VehicleState { VehicleState::default() }
+/// # }
+/// # impl Actuator for StillAir {
+/// #     fn actuate(&mut self, _: &ActuatorCommand) {}
+/// # }
+/// # let mut flight_loop = FlightLoop::new(
+/// #     Hover,
+/// #     StillAir,
+/// #     CopterGuidance::new(CopterGuidanceConfig::default()),
+/// #     CopterStabilizer::new(CopterStabilizerConfig::default()),
+/// #     QuadCopterMixer::default(),
+/// #     (),
+/// # );
+///
+/// flight_loop.set_param("GUID_ALT_P", 2.5).expect("valid value");
+/// flight_loop.set_param("STAB_RATE_P", 0.2).expect("valid value");
+/// assert_eq!(flight_loop.guidance().config().altitude.gains.p, 2.5);
+/// assert_eq!(flight_loop.param("STAB_RATE_P"), Some(0.2));
+/// ```
+impl<C, V, G, S, M, T> Params for FlightLoop<C, V, G, S, M, T>
+where
+    G: Params,
+    S: Params,
+{
+    fn param(&self, name: &str) -> Option<f32> {
+        self.guidance
+            .param(name)
+            .or_else(|| self.stabilizer.param(name))
+    }
+
+    fn set_param(&mut self, name: &str, value: f32) -> Result<(), ParamError> {
+        match self.guidance.set_param(name, value) {
+            Err(ParamError::Unknown) => self.stabilizer.set_param(name, value),
+            result => result,
+        }
+    }
+
+    fn visit_params(&self, f: &mut dyn FnMut(&'static str, f32)) {
+        self.guidance.visit_params(f);
+        self.stabilizer.visit_params(f);
     }
 }

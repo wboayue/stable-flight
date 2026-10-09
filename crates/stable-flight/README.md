@@ -89,6 +89,17 @@ let stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
 });
 ```
 
+### Params
+
+Guidance and stabilizer gains and limits can be retuned between ticks by name: a flat name → `f32` view over the configs, sized for MAVLink's 16-byte `param_id`, with angles in degrees. A write is validated like any config change, and an invalid value leaves the config unchanged. The full name list is in the [`params`](https://docs.rs/stable-flight/latest/stable_flight/params/) rustdoc.
+
+```rust
+use stable_flight::params::Params;
+
+flight_loop.set_param("STAB_RATE_P", 0.2)?;
+flight_loop.visit_params(&mut |name, value| println!("{name} = {value}"));
+```
+
 ### Mixer
 
 Mixers convert control outputs into motor commands and control surface movements:

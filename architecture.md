@@ -104,6 +104,16 @@ The one write point is `Configurable::set_config` (see its rustdoc), which valid
 * **Valid on entry.** Each config has `validate()` (composites tag errors with the loop, e.g. `body_rate.max_integral`); `new` and `set_config` enforce it. Controllers don't re-check every tick.
 * **Bad config still never panics the tick.** Limits go through `math::clamp_symmetric`, under which a negative or NaN limit acts as 0 (neutral output) instead of panicking like `f32::clamp`.
 * **Tolerate change between ticks.** State must stay coherent when the config changes: the integral is re-clamped to the current `max_integral` every tick, so shrinking it self-heals. Future filter state (e.g. a D-term low-pass cutoff) needs the same treatment.
+* **Retuning `i` is bumpless.** Controllers integrate the error, not the I term, so a new integral gain would rescale `i · ∫e` and jump the output. `set_config` rescales each integral by `old_i / new_i` so the term carries over. Across a zero gain it resets the integral instead: an integral accumulated under `i = 0` was never applied, and a zeroed term has nothing to carry. Rescaling rather than resetting keeps a hover trim through a retune. The per-tick `max_integral` clamp still applies, so a large cut in `i` can still bump the output.
+
+### Params
+
+`stable_flight::params` is the naming layer for live tuning (e.g. MAVLink `PARAM_SET`): a flat name → `f32` view over the same configs, not a second store. Each composite config lists its fields in a `ParamTable` (`STAB_RATE_P` → `body_rate.gains.p`). Any `Configurable` with a table gets `Params`, whose `set_param` writes a copy of the config and commits it through `set_config`. Validation and the integrator policy above therefore apply to a param write as to any other config change, and an invalid value leaves the config unchanged. `FlightLoop` combines its guidance's and stabilizer's params.
+
+* **Names** fit MAVLink's 16-byte `param_id`: uppercase, component prefix (`STAB_`, `GUID_`), then loop (`RATE_`, `ATT_`, `YAW_`, `ALT_`, `LAT_`). Vector components end in `_X`/`_Y`/`_Z`, which can't be confused with a `_P` gain. A test checks length and uniqueness. The full list with units is in the `params` rustdoc.
+* **Units:** angles and angular rates are degrees and deg/s, as PX4 and ArduPilot expose them. They convert to the config's radians in the table row, so control code stays SI. Gains and integral limits keep the config's units.
+* **Order** is the table's, and stable, so it can serve as a MAVLink `param_index`.
+* Out of scope: persistence and non-`f32` params. The MAVLink handling and the runner hook that applies writes between ticks are [#153](https://github.com/wboayue/stable-flight/issues/153) and [#154](https://github.com/wboayue/stable-flight/issues/154).
 
 ## Design Patterns
 
