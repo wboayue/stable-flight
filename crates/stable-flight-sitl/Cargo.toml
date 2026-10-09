@@ -15,7 +15,7 @@ stable-flight = { path = "../stable-flight", version = "0.1.0" }
 gilrs = "0.11.0"
 log.workspace = true
 signal-hook = "0.4.1"
-mavlink = "0.17.1"
+mavlink.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]

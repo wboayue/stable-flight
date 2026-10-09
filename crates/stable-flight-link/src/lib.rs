@@ -38,6 +38,8 @@ mod message;
 pub mod params;
 pub mod publisher;
 pub mod router;
+#[cfg(any(test, feature = "testing"))]
+pub mod testing;
 #[cfg(feature = "std")]
 pub mod udp;
 

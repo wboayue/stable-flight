@@ -1,6 +1,7 @@
 //! The flight-controller side of the link, end to end over localhost UDP: a `FlightLoop` whose
 //! telemetry is a `LinkPublisher`, an `UplinkRouter` and `ParamServer` polled between ticks
-//! (as `RealTimeRunner::run_with` does), and a host socket standing in for the bridge.
+//! (as `RealTimeRunner::run_with` does; wired by `testing::FcLink`), and a host socket standing
+//! in for the bridge.
 
 use std::net::UdpSocket;
 use std::time::{Duration, Instant};
@@ -12,10 +13,8 @@ use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle};
 use stable_flight::{AttitudeCommand, Command, ControlInput, FlightLoop};
-use stable_flight_link::heapless::spsc::Queue;
-use stable_flight_link::params::ParamServer;
-use stable_flight_link::publisher::{LinkPublisher, LinkPublisherConfig};
-use stable_flight_link::router::UplinkRouter;
+use stable_flight_link::publisher::LinkPublisher;
+use stable_flight_link::testing::FcLink;
 use stable_flight_link::udp::{UdpLink, UdpTx};
 use stable_flight_link::{
     Downlink, MAX_FRAME_LEN, ParamRequest, ParamValue, RecvMessage, SendMessage, Uplink,
@@ -77,14 +76,8 @@ fn host_lists_and_sets_params_and_receives_telemetry() {
     };
     let (rx, tx) = link.into_halves();
 
-    let mut requests = Queue::<ParamRequest, 16>::new();
-    let mut replies = Queue::<ParamValue, 8>::new();
-    let (to_server, from_router) = requests.split();
-    let (to_publisher, from_server) = replies.split();
-    let mut router = UplinkRouter::new(rx, 8).with_params(to_server);
-    let mut server = ParamServer::new(from_router, to_publisher, 4);
-    let telemetry =
-        LinkPublisher::new(tx, LinkPublisherConfig::default()).with_param_replies(from_server);
+    let mut fc_link = FcLink::<16, 8>::new();
+    let (mut poller, telemetry) = fc_link.wire(rx, tx);
     let mut flight_loop: TestLoop = FlightLoop::new(
         ConstantCommander::new(Command::armed(ControlInput::Attitude(AttitudeCommand {
             throttle: 0.5,
@@ -104,8 +97,7 @@ fn host_lists_and_sets_params_and_receives_telemetry() {
             let deadline = Instant::now() + TIMEOUT;
             while !done(host) {
                 assert!(Instant::now() < deadline, "timed out");
-                router.poll().expect("link up");
-                server.poll(flight_loop);
+                poller.poll(flight_loop).expect("link up");
                 flight_loop.step(DT);
                 std::thread::sleep(Duration::from_millis(1));
                 host.collect();

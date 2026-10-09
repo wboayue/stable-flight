@@ -32,8 +32,10 @@ not each change; per-change entries start after it.
   optional records at configured rates, and paced param replies.
 - **`std` feature:** `udp::UdpLink`, a non-blocking UDP transport to one fixed peer, one frame
   per datagram, with rx/tx halves; `bind`s or wraps a connected socket; tolerates an absent peer.
+  `DEFAULT_FC_ADDR` / `DEFAULT_BRIDGE_ADDR` are the localhost ports both ends default to.
 - **`testing` feature:** `loopback::Loopback`, an in-memory `Link` pair with rx/tx halves, and
-  `loopback::FailingLink` for error paths.
+  `loopback::FailingLink` for error paths; `testing::FcLink` wires the flight controller's side
+  (param queues, router, param server, publisher) for end-to-end tests.
 - **`no_std`** (without `std`), allocation-free; builds for `thumbv7em-none-eabihf`.
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight-link
