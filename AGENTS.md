@@ -21,7 +21,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
   - `crates/stable-flight-mavlink` — MAVLink message builders: pure functions from core values to
     `mavlink` payloads (`heartbeat`, `state.rs`: attitude, positions, home, VFR_HUD, landed state),
     plus what they need beyond one `VehicleState` (`geo.rs`: `GeodeticOrigin`/`FlatEarth`;
-    `HomeTracker`; `LandDetector`; `GroundTracker` combining them), shared by sitl's `MavlinkPublisher` and the bridge. Depends
+    `HomeTracker`; `LandDetector`; `GroundTracker` combining them), used by the bridge. Depends
     on core and `mavlink` only.
   - `crates/stable-flight-bridge` — the companion-computer binary: native link (UDP today) ⇄
     MAVLink v2 for ground stations, presenting the FC as sysid 1 / compid 1. Pure `Bridge` (`bridge.rs`:
@@ -33,11 +33,11 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     `IdleBackoff` (`idle.rs`) paces passes (1 ms under traffic, up to 8 ms idle); `main.rs` only
     sets up (`--origin` parsing in `origin.rs`). Params and state slices of #154; depends on link (`std`), `stable-flight-mavlink`, and `mavlink`, not on sitl.
   - `crates/stable-flight-sitl` — the simulator-independent SITL harness: `commanders`,
-    `telemetry`, `runner` (`RealTimeRunner`, wall-clock pacing of a `FlightLoop`), `shutdown`
-    (`ShutdownSignal`). Depends on the core. Non-simulator examples live in `crates/stable-flight-sitl/examples/*.rs`.
+    `runner` (`RealTimeRunner`, wall-clock pacing of a `FlightLoop`), `shutdown`
+    (`ShutdownSignal`). Depends on the core; no telemetry publisher of its own (SITL telemetry goes over the link). Non-simulator examples live in `crates/stable-flight-sitl/examples/*.rs`.
   - `crates/stable-flight-sitl-realflight` — the RealFlight backend: `RealFlightVehicle`,
     `ActuatorMapping`, `airframes` (tuned gains, mixer, and mapping per model), and the
-    `copter-*-realflight` examples. Normal deps: core, `realflight-bridge`, `log`; sitl and link (`std`) are dev-dependencies only (CI checks sitl).
+    `copter-*-realflight` and `capture-state-realflight` examples, all serving params and telemetry over the native link (`FcLink`) for the bridge. Normal deps: core, `realflight-bridge`, `log`; sitl and link (`std`) are dev-dependencies only (CI checks sitl).
     One `stable-flight-sitl-<simulator>` crate per backend.
   - `crates/stable-flight-tools` — unpublished (`publish = false`) dev binaries: `plot_flight`
     (3D flight-path visualizer) and `generate_figure_eight` (waypoint-script generator).
@@ -48,8 +48,8 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Run every command from the repo root: `cargo run --example <name>` / `--bin <name>` resolve
   across the workspace (add `-p <crate>` to be explicit), and `flights/*.csv` paths are
   relative to the root.
-- Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `params` (`Params`, `ParamTable`: name → `f32` view over the configs), `stabilizers`, `timing` (`Every`), `testing` (feature: doubles + `conformance`) (traits/types, the `Vec2`/`Vec3` aliases, `GRAVITY`, `euler_angles`, `wrap_angle`, `ControlMode` (`ControlInput::mode()`), and the `nalgebra` re-export at the crate root; feature `serde` derives `Serialize`/`Deserialize` on the pipeline data); `stable-flight-link` — `fc` (`FcLink`, `FcLinkConfig`, `FcPoller`), `loopback` (feature `testing`), `params` (`ParamServer`), `publisher` (`LinkPublisher`, `LinkPublisherConfig`), `router` (`UplinkRouter`, `RouteStats`), `udp` (feature `std`: `UdpLink`, `DEFAULT_FC_ADDR`/`DEFAULT_BRIDGE_ADDR`), with `Uplink`, `Control`, `Downlink`, `Record`, `ParamRequest`, `ParamValue`, `Message`, `EncodeError`, `DecodeError`, `Link` (`LinkRx` + `LinkTx`, blanket-implemented), `SendMessage`/`RecvMessage` + `LinkError` (blanket-implemented), `PROTOCOL_VERSION`, `MAX_FRAME_LEN`, and the `heapless`/`stable_flight` re-exports at the root; `stable-flight-mavlink` — the builders (`heartbeat`, `attitude`, `local_position_ned`, `global_position_int`, `home_position`, `extended_sys_state`, `vfr_hud`), `GeodeticOrigin`, `DEFAULT_ORIGIN`, `FlatEarth`, `InvalidOrigin`, `HomeTracker`, `LandDetector`, `GroundTracker` (`GroundChanges`), and the `mavlink` re-export at the root, `testing` (feature: `MockConnection`); `stable-flight-sitl` — `commanders`, `runner`, `shutdown`, `telemetry` (`RealTimeRunner` and `ShutdownSignal` also at the root; `telemetry::mavlink` re-exports `GeodeticOrigin`/`DEFAULT_ORIGIN`, which its config uses); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, `vehicle_state`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
-- Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `nalgebra` (core only, `libm`; core aliases `Vec2`/`Vec3` and re-exports it as `stable_flight::nalgebra` — other crates use the re-export), `libm` (`no_std` float math, core), `serde` (core `serde` feature, link), `postcard` + `heapless` + `cobs` + `crc` (link only), `mavlink` (sitl, `stable-flight-mavlink`, bridge; `emit-extensions` on, so struct literals need v2 extension fields), `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
+- Public modules: `stable-flight` — `commanders` (`WaypointFollower`), `controllers` (PID loops, `Gains`), `flight_loop`, `guidance` (`CopterGuidance`), `mixers`, `params` (`Params`, `ParamTable`: name → `f32` view over the configs), `stabilizers`, `timing` (`Every`), `testing` (feature: doubles + `conformance`) (traits/types, the `Vec2`/`Vec3` aliases, `GRAVITY`, `euler_angles`, `wrap_angle`, `ControlMode` (`ControlInput::mode()`), and the `nalgebra` re-export at the crate root; feature `serde` derives `Serialize`/`Deserialize` on the pipeline data); `stable-flight-link` — `fc` (`FcLink`, `FcLinkConfig`, `FcPoller`), `loopback` (feature `testing`), `params` (`ParamServer`), `publisher` (`LinkPublisher`, `LinkPublisherConfig`), `router` (`UplinkRouter`, `RouteStats`), `udp` (feature `std`: `UdpLink`, `DEFAULT_FC_ADDR`/`DEFAULT_BRIDGE_ADDR`), with `Uplink`, `Control`, `Downlink`, `Record`, `ParamRequest`, `ParamValue`, `Message`, `EncodeError`, `DecodeError`, `Link` (`LinkRx` + `LinkTx`, blanket-implemented), `SendMessage`/`RecvMessage` + `LinkError` (blanket-implemented), `PROTOCOL_VERSION`, `MAX_FRAME_LEN`, and the `heapless`/`stable_flight` re-exports at the root; `stable-flight-mavlink` — the builders (`heartbeat`, `attitude`, `local_position_ned`, `global_position_int`, `home_position`, `extended_sys_state`, `vfr_hud`), `GeodeticOrigin`, `DEFAULT_ORIGIN`, `FlatEarth`, `InvalidOrigin`, `HomeTracker`, `LandDetector`, `GroundTracker` (`GroundChanges`), and the `mavlink` re-export at the root, `testing` (feature: `MockConnection`); `stable-flight-sitl` — `commanders`, `runner`, `shutdown` (`RealTimeRunner` and `ShutdownSignal` also at the root); `stable-flight-sitl-realflight` — `airframes`, with `RealFlightVehicle`, `RealFlightConfiguration`, `ActuatorMapping`, `vehicle_state`, and the `realflight_bridge` re-export at the root. sitl re-exports only the core crate itself (`stable_flight_sitl::stable_flight`), not its items: import core items from `stable_flight`.
+- Key external crates: `realflight-bridge` (RealFlight I/O, backend crate only), `nalgebra` (core only, `libm`; core aliases `Vec2`/`Vec3` and re-exports it as `stable_flight::nalgebra` — other crates use the re-export), `libm` (`no_std` float math, core), `serde` (core `serde` feature, link), `postcard` + `heapless` + `cobs` + `crc` (link only), `mavlink` (`stable-flight-mavlink`, bridge; `emit-extensions` on, so struct literals need v2 extension fields), `gilrs` (joystick), `thiserror`, `signal-hook`. Dev: `approx`, `assert2`, `clap` (examples parse args with it). `stable-flight-tools` adds `plotters` and `clap`.
 - Untracked generated artifacts: `target/`, `tarpaulin-report.html`, `firmware/*/*.bin`.
 - The root `Cargo.lock` is committed (reproducible CI, stable cache key); CI builds with `--locked`,
   so commit lockfile changes with the manifest change that causes them. Dependabot batches weekly
@@ -73,13 +73,11 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 ```bash
 cargo build --workspace                         # or: just build
 cargo test --workspace --all-features           # or: just test
-cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight  # joystick + RealFlight (--host); or: just fly-manual
-cargo run -p stable-flight-sitl-realflight --example copter-tune-realflight    # as manual, params + telemetry over the native link (--link-bind/--link-peer) for the bridge, no direct MAVLink; or: just fly-tune
+cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight  # joystick + RealFlight (--host), params + telemetry over the native link (--link-bind/--link-peer) for the bridge; or: just fly-manual
 cargo run -p stable-flight-bridge               # native link ⇄ MAVLink for QGC (--link-bind/--link-peer/--gcs/--origin); or: just bridge
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight    # scripted figure-eight (script arg, --host, --loop); or: just fly-auto
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight  # joystick flight + raw SimulatorState → CSV; or: just capture
 cargo run --example extreme_3d_commander        # joystick smoke test
-cargo run --example publish_telemetry           # MAVLink demo
 cargo run --bin plot_flight -- flights/figure_eight.csv out.svg  # 3D path viz (SVG or PNG); or: just plot …
 cargo run --bin generate_figure_eight           # (re)write flights/figure_eight.csv; or: just gen-figure-eight
 cargo tarpaulin --workspace -o html             # or: just cover  (writes tarpaulin-report.html)
@@ -115,7 +113,7 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 | `Stabilizer`       | `CopterStabilizer`                                                   | core  |
 | `Mixer`            | `QuadCopterMixer`; `TailSitterMixer` (placeholder, outputs zeros)    | core  |
 | `TelemetryPublisher` | `(A, B)` fan-out; `testing::RecordingTelemetry<N>` (`testing` feature) | core |
-| `TelemetryPublisher` | `MavlinkPublisher`                                                 | sitl  |
+| `TelemetryPublisher` | `LinkPublisher` (from `fc::FcLink`; MAVLink is the bridge's job)     | link  |
 
 `CopterGuidance` (outer loop: waypoints → attitude setpoint, heading hold) uses the `altitude` and `lateral` PID controllers; `CopterStabilizer` (inner loop) uses `attitude`, `yaw`, and `body_rate`. All live in the core `controllers` module, with `Gains`. Controllers hold only state; each composite owns one config and implements the opt-in `Configurable` trait (validated `set_config`), which `FlightLoop::set_guidance_config`/`set_stabilizer_config` reach between ticks (rules: `architecture.md#config-ownership`). `Setpoint` is `Attitude(AttitudeSetpoint)` or `Rate(RateSetpoint)`.
 
@@ -125,7 +123,8 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 (`crates/stable-flight-tools/src/bin/generate_figure_eight.rs`). The
 RealFlight examples are intentionally standalone (each inlines its full pipeline wiring),
 so some setup is duplicated between them by design — readability over DRY. Gains and channel
-mappings are the exception: they come from the backend's `airframes`, not the example.
+mappings are the exception: they come from the backend's `airframes`, not the example; so is
+the link plumbing, which comes from `stable_flight_link::fc::FcLink`.
 
 ### Control loop (`FlightLoop::step`, core `src/flight_loop.rs`)
 

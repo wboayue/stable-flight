@@ -8,9 +8,8 @@
 //!
 //! MAVLink message builders for a [Stable Flight](https://github.com/wboayue/stable-flight)
 //! flight controller: pure functions from core values to MAVLink payloads (`mavlink` crate,
-//! `common` dialect), with no connection, clock, or scheduling. The in-process SITL publisher
-//! and the companion bridge both build their messages here, so a vehicle looks the same to a
-//! ground station either way.
+//! `common` dialect), with no connection, clock, or scheduling. The companion bridge
+//! (`stable-flight-bridge`) builds its messages here, so the encoding is tested without I/O.
 //!
 //! Each builder returns a message's payload (`*_DATA`); the caller wraps it in a `MavMessage`
 //! and picks the header. Vehicle identity (e.g. the `MavType`) is a parameter, never assumed.

@@ -1,6 +1,6 @@
 # stable-flight-sitl
 
-Simulator-independent software-in-the-loop harness for the Stable Flight flight controller: commanders, telemetry, and the real-time runner. Simulator backends are separate crates, starting with [`stable-flight-sitl-realflight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl-realflight). Part of the [Stable Flight](https://github.com/wboayue/stable-flight) workspace; see the [project README](https://github.com/wboayue/stable-flight#readme) for simulator setup and the runnable examples, and [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md) for design rationale.
+Simulator-independent software-in-the-loop harness for the Stable Flight flight controller: commanders and the real-time runner. Simulator backends are separate crates, starting with [`stable-flight-sitl-realflight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl-realflight). Part of the [Stable Flight](https://github.com/wboayue/stable-flight) workspace; see the [project README](https://github.com/wboayue/stable-flight#readme) for simulator setup and the runnable examples, and [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md) for design rationale.
 
 ## Components
 
@@ -36,14 +36,14 @@ Guidance (commands → attitude/rate setpoints, including waypoint navigation), 
 
 ### TelemetryPublisher
 
-TelemetryPublishers publish the system state to external systems. There is a publisher implemented for MAVLink messages:
+TelemetryPublishers publish the system state to external systems. A SITL run sends it over the native link, as a board does, and [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) speaks MAVLink to the ground station. [`stable-flight-link`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-link)'s `FcLink` wires the publisher with the param server in one call:
 
 ```rust
-// Telemetry via MAVLink protocol
-let telemetry = MavlinkPublisher::connect(MavlinkConfiguration::default())?;
+let (link_rx, link_tx) = UdpLink::bind(DEFAULT_FC_ADDR, DEFAULT_BRIDGE_ADDR)?.into_halves();
+let mut fc_link = FcLink::<32, 16>::new();
+// `telemetry` is the flight loop's publisher; `poller` serves params between ticks (`run_with`).
+let (mut poller, telemetry) = fc_link.wire(link_rx, link_tx);
 ```
-
-The default configuration sends to QGroundControl's default port and places the local origin at a fixed latitude/longitude (`DEFAULT_ORIGIN`) so the vehicle shows on the map; set `origin` to move it, or to `None` to stop sending global position.
 
 ### Running the Loop
 

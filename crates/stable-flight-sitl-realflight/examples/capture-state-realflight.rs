@@ -7,7 +7,8 @@
 //! capture alongside a transmitter isn't possible; this taps the bridge under the normal
 //! pipeline instead. The CSV is for checking the adapter's frame conversions (#62) against what
 //! RealFlight actually reports. Fly a mix of roll, pitch, yaw, translation, and climb; stop
-//! with Ctrl-C.
+//! with Ctrl-C. Params and telemetry go over the native link for the bridge (`just bridge`), as
+//! in `copter-manual-realflight` (`--link-bind`, `--link-peer`).
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv
@@ -18,17 +19,20 @@ use std::cell::RefCell;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
+use std::time::Duration;
 
 use clap::Parser;
 use env_logger::Builder;
-use log::{info, warn};
+use log::{debug, info, warn};
 
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight::{Commander, FlightLoop};
+use stable_flight_link::fc::{FcLink, FcLinkConfig};
+use stable_flight_link::publisher::LinkPublisherConfig;
+use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 use stable_flight_sitl::commanders::script::ScriptCommander;
-use stable_flight_sitl::telemetry::mavlink::{MavlinkConfiguration, MavlinkPublisher};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::{
     BridgeError, ControlInputs, RealFlightBridge, RealFlightRemoteBridge, SimulatorState,
@@ -47,7 +51,16 @@ struct Args {
     /// Fly this waypoint script instead of the joystick.
     #[arg(long)]
     script: Option<String>,
+    /// Local address the link listens on.
+    #[arg(long, default_value = DEFAULT_FC_ADDR)]
+    link_bind: String,
+    /// The bridge's link address.
+    #[arg(long, default_value = DEFAULT_BRIDGE_ADDR)]
+    link_peer: String,
 }
+
+/// How often a full telemetry record goes out: the bridge needs only its thrust, for throttle.
+const RECORD_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Number of RealFlight channels recorded after the state columns.
 const CHANNELS: usize = 12;
@@ -169,21 +182,27 @@ fn main() {
         out: RefCell::new(out),
     };
 
+    // The native link, for the bridge.
+    let link = UdpLink::bind(&args.link_bind, &args.link_peer).expect("failed to open link socket");
+
     info!("Recording to {}; Ctrl-C to stop", args.output.display());
     match &args.script {
         Some(script) => fly(
             ScriptCommander::new(script).expect("failed to load flight script"),
             bridge,
+            link,
         ),
         None => fly(
             Extreme3DCommander::new().expect("Failed to initialize Extreme3D joystick"),
             bridge,
+            link,
         ),
     }
 }
 
-/// Flies the QuadCopterX pipeline from `commander` until Ctrl-C.
-fn fly(commander: impl Commander, bridge: RecordingBridge<RealFlightRemoteBridge>) {
+/// Flies the QuadCopterX pipeline from `commander` until Ctrl-C, with params and telemetry over
+/// `link`.
+fn fly(commander: impl Commander, bridge: RecordingBridge<RealFlightRemoteBridge>, link: UdpLink) {
     let airframe = airframes::quadcopter_x();
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         bridge,
@@ -192,8 +211,19 @@ fn fly(commander: impl Commander, bridge: RecordingBridge<RealFlightRemoteBridge
     let guidance = CopterGuidance::new(airframe.guidance);
     let stabilizer = CopterStabilizer::new(airframe.stabilizer);
     let mixer = airframe.mixer;
-    let telemetry = MavlinkPublisher::connect(MavlinkConfiguration::default())
-        .expect("failed to open MAVLink connection");
+    // The link: the publisher writes it each tick (the flight loop's telemetry), and the poller
+    // reads it and serves params between ticks. Up to 32 param requests and 16 replies queue.
+    let (link_rx, link_tx) = link.into_halves();
+    let link_config = FcLinkConfig {
+        publisher: LinkPublisherConfig {
+            // Records carry the commanded thrust the bridge reports as VFR_HUD throttle.
+            record_interval: Some(RECORD_INTERVAL),
+            ..LinkPublisherConfig::default()
+        },
+        ..FcLinkConfig::default()
+    };
+    let mut fc_link = FcLink::<32, 16>::new();
+    let (mut poller, telemetry) = fc_link.wire_with(link_rx, link_tx, link_config);
 
     let mut flight_loop =
         FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
@@ -201,5 +231,13 @@ fn fly(commander: impl Commander, bridge: RecordingBridge<RealFlightRemoteBridge
     // Ctrl-C stops the loop; dropping the vehicle re-enables RC and flushes the capture.
     let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");
     let runner = RealTimeRunner::new(250.0).expect("valid loop frequency"); // Hz
-    runner.run(&mut flight_loop, &shutdown);
+    runner.run_with(&mut flight_loop, &shutdown, |flight_loop| {
+        match poller.poll(flight_loop) {
+            Ok(stats) if stats.decode_errors > 0 || stats.dropped > 0 => {
+                debug!("link: {stats:?}");
+            }
+            Ok(_) => {}
+            Err(e) => warn!("link receive failed: {e}"),
+        }
+    });
 }
