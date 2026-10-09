@@ -15,6 +15,8 @@ repository = "https://github.com/wboayue/stable-flight"
 # nalgebra stays no_std (`libm` for float math) everywhere; host crates don't need its `std` feature.
 nalgebra = { version = "0.35", default-features = false, features = ["libm"] }
 libm = "0.2"
+# no_std serde (derive only); core's `serde` feature and the link crate.
+serde = { version = "1", default-features = false, features = ["derive"] }
 log = "0.4.25"
 thiserror = "2.0"
 clap = { version = "4", features = ["derive"] }

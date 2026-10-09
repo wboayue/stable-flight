@@ -100,6 +100,10 @@ flight_loop.set_param("STAB_RATE_P", 0.2)?;
 flight_loop.visit_params(&mut |name, value| println!("{name} = {value}"));
 ```
 
+### Serialization
+
+The `serde` feature derives `Serialize`/`Deserialize` on the pipeline data (`Command`, `Setpoint`, `VehicleState`, `ControlOutput`, `ActuatorCommand`, `Saturation`, and their parts) without `std`, so the same types cross a wire. [`stable-flight-link`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-link) carries them between the flight controller and a companion. `TelemetryRecord` borrows its parts, so the link sends an owned copy.
+
 ### Mixer
 
 Mixers convert control outputs into motor commands and control surface movements:

@@ -45,6 +45,9 @@ not each change; per-change entries start after it.
 - **`testing` feature:** allocation-free doubles (`NullVehicle`, `ConstantCommander`,
   `RecordingTelemetry`), `conformance` scenarios with `conformance_tests!` for backends, and
   `settled_yaw_rate` for checking rate gains.
+- **`serde` feature:** `Serialize`/`Deserialize` on the pipeline data (`Command`,
+  `ControlInput`, `Setpoint`, `VehicleState`, `ControlOutput`, `ActuatorCommand`,
+  `Saturation`), for wire protocols such as `stable-flight-link`. Stays `no_std`.
 - **Math:** `Vec2`/`Vec3`, `GRAVITY`, NaN-safe `euler_angles`, `wrap_angle`, and a `nalgebra`
   re-export.
 - **`no_std`**, including the `testing` feature; builds for `thumbv7em-none-eabihf`. The tick

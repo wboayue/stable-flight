@@ -1,0 +1,30 @@
+[package]
+name = "stable-flight-link"
+description = "no_std wire protocol between a Stable Flight flight controller and a companion computer: messages, framing, and a byte-level link trait"
+readme = "README.md"
+keywords = ["flight-controller", "drone", "protocol", "no-std", "postcard"]
+categories = ["aerospace::drones", "embedded", "no-std", "encoding"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["serde"] }
+serde.workspace = true
+# heapless 0.7 via the default `heapless-cas` feature isn't needed; strings come from heapless below.
+postcard = { version = "1.1", default-features = false }
+heapless = { version = "0.9", features = ["serde"] }
+cobs = { version = "0.5", default-features = false }
+crc = "3.4"
+
+[features]
+# In-memory `loopback` link for tests. For dev-dependencies only.
+testing = []
+
+[dev-dependencies]
+assert2.workspace = true
+
+[package.metadata.docs.rs]
+all-features = true
