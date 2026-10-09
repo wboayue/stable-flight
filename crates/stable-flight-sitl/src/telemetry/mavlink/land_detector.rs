@@ -3,9 +3,12 @@
 //! Telemetry only: nothing in the control loop reads it. Disarmed reports on the ground (as
 //! PX4's land detector does), so a vehicle disarmed in flight reads landed while it falls.
 //! Armed, it compares height above home against two thresholds, so hovering near one doesn't
-//! flicker the state.
+//! flicker the state. Height alone can't tell landing armed above home (a rooftop) from
+//! hovering, so that reads in the air until disarmed.
 
 use mavlink::common::MavLandedState;
+
+// Both thresholds are repeated in the `MavlinkPublisher` rustdoc; update it with them.
 
 /// Armed and above this height over home: in the air.
 const IN_AIR_HEIGHT_M: f32 = 0.5;
@@ -67,6 +70,8 @@ mod tests {
             (true, 1.0, AIR),
             (false, 1.0, GROUND), // disarmed reports landed at any height
             (true, 0.3, GROUND),  // and resets the estimate
+            (true, f32::INFINITY, AIR),
+            (true, f32::NEG_INFINITY, GROUND),
         ];
 
         let mut detector = LandDetector::default();

@@ -300,3 +300,18 @@ fn home_position_is_global_and_local_ned_with_unknown_orientation() {
         check!(data.q.iter().all(|q| q.is_nan()), "orientation unknown");
     }
 }
+
+#[test]
+fn extended_sys_state_reports_the_landed_state_and_no_vtol_mode() {
+    use MavLandedState as L;
+
+    for landed_state in [
+        L::MAV_LANDED_STATE_UNDEFINED,
+        L::MAV_LANDED_STATE_ON_GROUND,
+        L::MAV_LANDED_STATE_IN_AIR,
+    ] {
+        let data = extended_sys_state(landed_state);
+        check!(data.landed_state == landed_state);
+        check!(data.vtol_state == MavVtolState::MAV_VTOL_STATE_UNDEFINED);
+    }
+}

@@ -106,20 +106,22 @@ pub enum MavlinkError {
 
 /// A [`TelemetryPublisher`] that sends each tick's state as MAVLink messages: heartbeat at
 /// 1 Hz; VFR_HUD, local position, global position, and attitude at 10 Hz each; home position
-/// and extended system state at 1 Hz and whenever they change. Every stream sends on the first `publish` it has data
-/// for, so a ground station sees the link immediately.
+/// and extended system state at 1 Hz and whenever they change. Every stream sends on the
+/// first `publish` it has data for, so a ground station sees the link immediately.
 ///
 /// The heartbeat reports the command kind as standard `base_mode` flags: rate is
 /// `MANUAL_INPUT`, attitude `MANUAL_INPUT | STABILIZE`, waypoint `STABILIZE | GUIDED | AUTO`.
 ///
-/// Home is the position at the latest arming, or before the first arm, the first finite one.
+/// Home is the position at the latest arming (the first finite one from it on), or before
+/// the first arm, the first finite one.
 /// GLOBAL_POSITION_INT and HOME_POSITION are sent only with a [`GeodeticOrigin`]
 /// ([`with_origin`](Self::with_origin)) and once there is a home; GLOBAL_POSITION_INT is
 /// skipped on a tick whose position isn't finite, and its `relative_alt` is measured from home.
 ///
 /// EXTENDED_SYS_STATE's landed state is estimated from the arm state and height above home:
 /// disarmed is on the ground; armed, in the air above 0.5 m, landed again below 0.2 m. It is
-/// undefined while armed with no home or a non-finite altitude.
+/// undefined while armed with no home or a non-finite altitude. Landing armed well above
+/// home (a rooftop, a hill) keeps reporting in the air until disarmed.
 ///
 /// A failed send is logged (rate-limited) and dropped; it never stops the flight loop.
 ///
@@ -143,12 +145,17 @@ pub struct MavlinkPublisher {
     attitude: Every,
     /// Global position stream: the projection and its timer, when an origin is set.
     global_position: Option<(FlatEarth, Every)>,
+    /// HOME_POSITION timer.
     home_position: Every,
     /// Local position home is at; see [`Self::update_home`].
     home_m: Option<Vec3>,
+    /// Armed since the last finite position: latch home at the next one.
+    home_latch_pending: bool,
     /// Home was latched since the last HOME_POSITION check, so send it now.
     home_changed: bool,
+    /// EXTENDED_SYS_STATE timer.
     extended_sys_state: Every,
+    /// Estimates the landed state from the arm state and height above home.
     land_detector: LandDetector,
     /// The latest estimate, to send EXTENDED_SYS_STATE as soon as it changes.
     landed_state: MavLandedState,
@@ -214,6 +221,7 @@ impl MavlinkPublisher {
             global_position: None,
             home_position: Every::new(SLOW_STREAM_INTERVAL),
             home_m: None,
+            home_latch_pending: false,
             home_changed: false,
             extended_sys_state: Every::new(SLOW_STREAM_INTERVAL),
             land_detector: LandDetector::default(),
@@ -223,7 +231,8 @@ impl MavlinkPublisher {
         }
     }
 
-    /// Also sends GLOBAL_POSITION_INT and HOME_POSITION, placing local position (0, 0, 0) at `origin`.
+    /// Also sends GLOBAL_POSITION_INT and HOME_POSITION, placing local position (0, 0, 0)
+    /// at `origin`.
     ///
     /// # Errors
     ///
@@ -250,13 +259,18 @@ impl MavlinkPublisher {
     }
 
     /// Latches home at each arming (the takeoff point), or at the first finite position
-    /// before the first arm. A position with a non-finite axis never becomes home.
+    /// before the first arm. A position with a non-finite axis never becomes home: arming on
+    /// one latches the next finite position while still armed.
     fn update_home(&mut self, armed: bool, position_m: Vec3) {
         let arming = armed && !self.was_armed;
         self.was_armed = armed;
-        if position_m.iter().all(|c| c.is_finite()) && (arming || self.home_m.is_none()) {
+        self.home_latch_pending = arming || (self.home_latch_pending && armed);
+        if position_m.iter().all(|c| c.is_finite())
+            && (self.home_latch_pending || self.home_m.is_none())
+        {
             self.home_m = Some(position_m);
             self.home_changed = true;
+            self.home_latch_pending = false;
         }
     }
 

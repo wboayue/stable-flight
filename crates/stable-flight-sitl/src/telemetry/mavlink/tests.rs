@@ -170,8 +170,9 @@ fn relative_altitude_is_measured_from_home_latched_at_each_arming() {
         (true, 50.0, Some(0)),        // arming re-latches home
         (true, 60.0, Some(10_000)),   // climbing
         (false, 20.0, Some(-30_000)), // disarmed below home
-        (true, f32::NAN, None),       // arming on a NaN altitude keeps the old home
-        (true, 55.0, Some(5_000)),
+        (true, f32::NAN, None),       // arming on a NaN altitude: no home yet
+        (true, 55.0, Some(0)),        // the next finite altitude becomes home
+        (true, 60.0, Some(5_000)),
     ];
     let records: Vec<_> = ticks
         .iter()
@@ -331,7 +332,9 @@ fn home_position_is_sent_as_soon_as_home_is_latched() {
         (true, at(5.0, 3.0), Some((5.0, -3.0))), // arming re-latches home
         (true, at(9.0, 9.0), None),       // flying
         (false, at(9.0, 0.0), None),
-        (true, at(f32::NAN, 0.0), None), // arming on a non-finite position keeps the old home
+        (true, at(f32::NAN, 0.0), None), // arming on a non-finite position: no home yet
+        (true, at(7.0, 1.0), Some((7.0, -1.0))), // the next finite position becomes home
+        (true, at(8.0, 4.0), None),
     ];
     let records: Vec<_> = ticks
         .iter()
