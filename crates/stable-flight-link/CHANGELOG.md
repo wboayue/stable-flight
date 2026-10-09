@@ -26,6 +26,10 @@ not each change; per-change entries start after it.
   failing with `LinkError` (transport, encode, or decode; a bad frame loses only itself).
 - **Params:** `params::ParamServer` serves a core `Params` between ticks over bounded
   `heapless::spsc` queues, paced and lossless.
+- **Router:** `router::UplinkRouter` decodes uplinks and routes params and `Control` messages
+  to their queues, independent of the active commander.
+- **Publisher:** `publisher::LinkPublisher`, a core `TelemetryPublisher`: heartbeat, state, and
+  optional records at configured rates, and paced param replies.
 - **`std` feature:** `udp::UdpLink`, a non-blocking UDP transport to one fixed peer, one frame
   per datagram, with rx/tx halves; tolerates an absent peer.
 - **`testing` feature:** `loopback::Loopback`, an in-memory `Link` pair with rx/tx halves.

@@ -36,6 +36,8 @@ mod link;
 pub mod loopback;
 mod message;
 pub mod params;
+pub mod publisher;
+pub mod router;
 #[cfg(feature = "std")]
 pub mod udp;
 

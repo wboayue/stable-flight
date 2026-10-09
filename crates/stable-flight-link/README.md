@@ -9,9 +9,11 @@ Wire protocol between a [Stable Flight](https://github.com/wboayue/stable-flight
 
 Parameter names are the core's [`params`](https://docs.rs/stable-flight/latest/stable_flight/params/) names.
 
-## Params
+## Flight-controller side
 
-`params::ParamServer` serves the flight controller's core `Params` over the link: the commander queues `ParamRequest`s inside the tick, and `poll(&mut flight_loop)` between ticks applies them and queues `ParamValue` replies for the publisher. Pacing and reply rules: its [rustdoc](https://docs.rs/stable-flight-link/latest/stable_flight_link/params/struct.ParamServer.html).
+- `router::UplinkRouter` drains a `LinkRx` and routes each `Uplink` to its consumer's queue: param requests to the `ParamServer`, `Control` (heartbeat, command, arm) to a link-fed commander. It's separate from any commander, so params work whichever commander flies.
+- `publisher::LinkPublisher` is a core `TelemetryPublisher` that sends heartbeat, state, and optional records at configured rates, plus at most M param replies per tick.
+- `params::ParamServer` serves the flight controller's core `Params` over the link: the commander queues `ParamRequest`s inside the tick, and `poll(&mut flight_loop)` between ticks applies them and queues `ParamValue` replies for the publisher. Pacing and reply rules: its [rustdoc](https://docs.rs/stable-flight-link/latest/stable_flight_link/params/struct.ParamServer.html). Wiring into a SITL run: [`copter-tune-realflight`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl-realflight/examples/copter-tune-realflight.rs).
 
 ## Frames
 

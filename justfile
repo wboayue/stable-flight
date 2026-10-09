@@ -63,6 +63,10 @@ cover:
 fly-manual *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- {{ARGS}}
 
+# Joystick flight (as fly-manual) with params and telemetry over the native link (UDP), e.g. `just fly-tune --link-peer 192.168.1.30:14561`
+fly-tune *ARGS:
+    cargo run -p stable-flight-sitl-realflight --example copter-tune-realflight -- {{ARGS}}
+
 # Scripted figure-eight in RealFlight; args: [script.csv] [--host host:port] [--loop]
 fly-auto *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- {{ARGS}}

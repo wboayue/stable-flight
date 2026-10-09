@@ -22,6 +22,7 @@ not each change; per-change entries start after it.
   stabilizer configs, mixer, channel mapping).
 - **Examples:**
   - `copter-manual-realflight`: joystick.
+  - `copter-tune-realflight`: joystick, with params and telemetry over the native link (UDP).
   - `copter-auto-realflight`: scripted waypoints; holds at the end, `--loop` to repeat.
   - `capture-state-realflight`: records raw simulator state and channels to CSV.
 
