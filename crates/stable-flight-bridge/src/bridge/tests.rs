@@ -7,11 +7,9 @@ use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle};
 use stable_flight::{Command, FlightLoop};
-use stable_flight_link::heapless::spsc::Queue;
 use stable_flight_link::loopback::{Loopback, LoopbackLink};
-use stable_flight_link::params::ParamServer;
-use stable_flight_link::publisher::{LinkPublisher, LinkPublisherConfig};
-use stable_flight_link::router::UplinkRouter;
+use stable_flight_link::publisher::LinkPublisher;
+use stable_flight_link::testing::FcLink;
 use stable_flight_link::{MAX_FRAME_LEN, ParamValue, RecvMessage, SendMessage};
 
 use super::*;
@@ -453,14 +451,8 @@ fn ground_station_lists_and_sets_flight_controller_params() {
     let loopback = Loopback::<64>::new();
     let (mut companion, fc_end) = loopback.split();
     let (rx, tx) = fc_end.into_halves();
-    let mut requests = Queue::<ParamRequest, 16>::new();
-    let mut replies = Queue::<ParamValue, 8>::new();
-    let (to_server, from_router) = requests.split();
-    let (to_publisher, from_server) = replies.split();
-    let mut router = UplinkRouter::new(rx, 8).with_params(to_server);
-    let mut server = ParamServer::new(from_router, to_publisher, 4);
-    let telemetry =
-        LinkPublisher::new(tx, LinkPublisherConfig::default()).with_param_replies(from_server);
+    let mut fc_link = FcLink::<16, 8>::new();
+    let (mut poller, telemetry) = fc_link.wire(rx, tx);
     let mut flight_loop: FcLoop = FlightLoop::new(
         ConstantCommander::new(Command::default()),
         NullVehicle::new(),
@@ -474,8 +466,7 @@ fn ground_station_lists_and_sets_flight_controller_params() {
     flight_loop.prime();
     let mut fc = || {
         // One tick, as `RealTimeRunner::run_with` runs it.
-        router.poll().expect("link up");
-        server.poll(&mut flight_loop);
+        poller.poll(&mut flight_loop).expect("link up");
         flight_loop.step(DT);
     };
     let mut bridge = Bridge::new(BridgeConfig::default());

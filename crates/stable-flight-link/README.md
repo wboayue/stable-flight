@@ -40,4 +40,4 @@ A transport implements `LinkRx` (non-blocking `try_recv`) and `LinkTx` (non-bloc
 ## Features
 
 - `std`: `udp::UdpLink`, a non-blocking UDP transport (splittable into rx/tx halves; `bind`, or `TryFrom` a connected `UdpSocket`). An absent peer drops sends and receives nothing, without error. `DEFAULT_FC_ADDR` (`127.0.0.1:14560`) and `DEFAULT_BRIDGE_ADDR` (`127.0.0.1:14561`) are the ends' default addresses.
-- `testing`: `loopback::Loopback`, two connected in-memory `Link` ends (each splittable into rx/tx halves), and `loopback::FailingLink`, whose every call fails, for tests. For `[dev-dependencies]` only.
+- `testing`: `loopback::Loopback`, two connected in-memory `Link` ends (each splittable into rx/tx halves), `loopback::FailingLink`, whose every call fails, and `testing::FcLink`, the flight controller's side (param queues, `UplinkRouter`, `ParamServer`, `LinkPublisher`) wired in one call, for tests. For `[dev-dependencies]` only.

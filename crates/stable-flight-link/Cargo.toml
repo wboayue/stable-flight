@@ -22,7 +22,8 @@ crc = "3.4"
 [features]
 # `udp::UdpLink`, a UDP transport for host setups (SITL, the bridge).
 std = []
-# In-memory `loopback` link for tests. For dev-dependencies only.
+# In-memory `loopback` link and the wired flight-controller side (`testing::FcLink`) for
+# tests. For dev-dependencies only.
 testing = []
 
 [dev-dependencies]
