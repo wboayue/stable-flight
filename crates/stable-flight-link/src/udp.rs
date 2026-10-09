@@ -30,7 +30,8 @@ mod tests;
 ///
 /// The peer needn't be up: until it is, sends are dropped and nothing is received, with no
 /// error (the ICMP port-unreachable a connected socket reports is swallowed). A datagram larger
-/// than the receive buffer is truncated and fails decode.
+/// than the receive buffer is lost: truncated so it fails decode, or an error on platforms that
+/// report it.
 #[derive(Debug)]
 pub struct UdpLink {
     rx: UdpRx,
@@ -93,11 +94,22 @@ fn peer_down(e: &io::Error) -> bool {
     )
 }
 
+/// Runs `op`, retrying once after a peer-down error. A connected socket reports an earlier
+/// send's port-unreachable on the next call, which then does nothing else: without the retry
+/// that call would drop a frame to a peer that has since come up, or report nothing waiting
+/// while datagrams are queued. The retry sees the peer's current state.
+fn retry_peer_down<T>(mut op: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    match op() {
+        Err(e) if peer_down(&e) => op(),
+        result => result,
+    }
+}
+
 impl LinkRx for UdpRx {
     type Error = io::Error;
 
     fn try_recv(&mut self, buf: &mut [u8]) -> Result<Option<usize>, Self::Error> {
-        match self.socket.recv(buf) {
+        match retry_peer_down(|| self.socket.recv(buf)) {
             Ok(len) => Ok(Some(len)),
             Err(e) if e.kind() == ErrorKind::WouldBlock || peer_down(&e) => Ok(None),
             Err(e) => Err(e),
@@ -109,7 +121,7 @@ impl LinkTx for UdpTx {
     type Error = io::Error;
 
     fn send(&mut self, frame: &[u8]) -> Result<(), Self::Error> {
-        match self.socket.send(frame) {
+        match retry_peer_down(|| self.socket.send(frame)) {
             Ok(_) => Ok(()),
             // Full buffer or absent peer: drop, per the `LinkTx` contract.
             Err(e) if e.kind() == ErrorKind::WouldBlock || peer_down(&e) => Ok(()),

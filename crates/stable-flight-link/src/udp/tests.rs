@@ -55,7 +55,9 @@ fn nothing_waiting_receives_none() {
 
 #[test]
 fn absent_peer_drops_sends_without_error() {
-    let closed = bind_peer().local_addr().unwrap(); // socket dropped: nothing listens there
+    // Socket dropped: nothing listens there. A parallel test could rebind the port in between,
+    // which only skips the refused path; the assertions still hold.
+    let closed = bind_peer().local_addr().unwrap();
     let mut link = UdpLink::bind("127.0.0.1:0", closed).unwrap();
     let mut buf = [0u8; MAX_FRAME_LEN];
 
@@ -64,6 +66,22 @@ fn absent_peer_drops_sends_without_error() {
         std::thread::sleep(Duration::from_millis(10)); // let a port-unreachable land
         check!(link.try_recv(&mut buf).unwrap() == None);
     }
+}
+
+#[test]
+fn peer_coming_up_gets_the_next_frame() {
+    let addr = bind_peer().local_addr().unwrap(); // dropped: refuses until rebound
+    let mut link = UdpLink::bind("127.0.0.1:0", addr).unwrap();
+    let mut buf = [0u8; MAX_FRAME_LEN];
+
+    link.send(&[1, 0]).unwrap();
+    std::thread::sleep(Duration::from_millis(10)); // let the port-unreachable land
+    let peer = UdpSocket::bind(addr).expect("port still free");
+    peer.set_read_timeout(Some(WAIT)).unwrap();
+
+    link.send(&[2, 0]).unwrap(); // consumes the stale error, then sends
+    check!(peer.recv(&mut buf).unwrap() == 2);
+    check!(buf[..2] == [2, 0]);
 }
 
 #[test]

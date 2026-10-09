@@ -85,7 +85,10 @@ pub trait SendMessage: LinkTx {
         buf: &mut [u8],
     ) -> Result<(), LinkError<Self::Error>> {
         let len = msg.encode(buf).map_err(LinkError::Encode)?;
-        self.send(&buf[..len]).map_err(LinkError::Transport)
+        let frame = buf
+            .get(..len)
+            .ok_or(LinkError::Encode(EncodeError::BufferTooSmall))?;
+        self.send(frame).map_err(LinkError::Transport)
     }
 }
 
@@ -105,12 +108,12 @@ pub trait RecvMessage: LinkRx {
         let Some(len) = self.try_recv(buf).map_err(LinkError::Transport)? else {
             return Ok(None);
         };
-        // A transport reporting more than it copied breaks the `LinkRx` contract; the
-        // truncated frame then fails decode instead of panicking.
-        let len = len.min(buf.len());
-        M::decode(&mut buf[..len])
-            .map(Some)
-            .map_err(LinkError::Decode)
+        // A transport reporting more than it copied breaks the `LinkRx` contract; reject the
+        // frame instead of panicking.
+        let frame = buf
+            .get_mut(..len)
+            .ok_or(LinkError::Decode(DecodeError::TooShort))?;
+        M::decode(frame).map(Some).map_err(LinkError::Decode)
     }
 }
 

@@ -24,7 +24,10 @@
 //! assert_eq!(decoded, Downlink::Status("armed".try_into().unwrap()));
 //! ```
 
-#![cfg_attr(not(any(test, feature = "std")), no_std)]
+#![cfg_attr(not(test), no_std)]
+
+#[cfg(all(not(test), feature = "std"))]
+extern crate std;
 
 mod frame;
 mod io;
