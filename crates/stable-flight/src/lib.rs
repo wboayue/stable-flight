@@ -143,7 +143,8 @@ pub trait Commander {
     /// Which commander a failsafe let fly on the last [`next_command`](Self::next_command)
     /// call, for a commander that has one
     /// ([`FailsafeCommander`](crate::commanders::FailsafeCommander)). [`FlightLoop`] puts it in
-    /// the tick's [`TelemetryRecord::failsafe`]. The default reports none.
+    /// the tick's [`TelemetryRecord::failsafe`]. The default reports none, so a commander that
+    /// wraps another must forward this to report the inner one's.
     fn failsafe(&self) -> Option<FailsafeState> {
         None
     }

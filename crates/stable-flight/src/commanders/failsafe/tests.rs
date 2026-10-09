@@ -116,8 +116,9 @@ const fn tick(since_s: Option<f32>, link_arm: bool, state: FailsafeState, arm: b
     }
 }
 
-/// Runs `ticks` through a fresh failsafe, checking each, `DT` apart.
-fn run(scenario: &str, ticks: &[Tick]) {
+/// Runs `ticks` through a fresh failsafe, checking each, `DT` apart. Returns what the fallback
+/// saw, for checks beyond the table.
+fn run(scenario: &str, ticks: &[Tick]) -> Rc<FallbackScript> {
     use FailsafeState::{Fallback as F, Primary as P};
     let (mut commander, link, fallback) = failsafe();
     for (i, t) in ticks.iter().enumerate() {
@@ -145,6 +146,7 @@ fn run(scenario: &str, ticks: &[Tick]) {
         link.ticks.get() == ticks.len() as u32,
         "{scenario}: primary runs every tick"
     );
+    fallback
 }
 
 #[test]
@@ -181,13 +183,7 @@ fn falls_back_on_timeout_keeping_the_arm_state() {
             ..tick(None, false, F, true) // a stale primary's disarm is no one's
         },
     ];
-    run("timeout", &ticks);
-    let (mut commander, link, fallback) = failsafe();
-    for t in &ticks {
-        link.since_s.set(t.since_s);
-        link.arm.set(t.link_arm);
-        commander.next_command(DT, &VehicleState::default());
-    }
+    let fallback = run("timeout", &ticks);
     check!(
         fallback.engaged_armed.get() == Some(true),
         "engaged with the arm state"
