@@ -4,8 +4,8 @@ use assert2::check;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{
     ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command, ControlInput, ControlMode,
-    ControlOutput, RateCommand, RateSetpoint, Saturation, Setpoint, TelemetryRecord, Vec2, Vec3,
-    VehicleState, WaypointCommand,
+    ControlOutput, FailsafeState, RateCommand, RateSetpoint, Saturation, Setpoint, TelemetryRecord,
+    Vec2, Vec3, VehicleState, WaypointCommand,
 };
 
 use super::*;
@@ -57,6 +57,7 @@ fn worst_case_record() -> Record {
             elevon_right: 0.6,
         },
         saturation,
+        failsafe: Some(FailsafeState::Fallback),
     }
 }
 

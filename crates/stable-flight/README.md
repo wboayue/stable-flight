@@ -25,6 +25,12 @@ let mut commander = WaypointFollower::new(PATH)?
     .with_route_end(RouteEnd::Hold);
 ```
 
+`commanders::FailsafeCommander` flies a link-fed primary (a `LinkedCommander`, which reports how long ago it last heard the link) and switches to a `Fallback` when the link goes stale, such as `HoldCommander`, which holds the position where it took over. It starts in the fallback and returns only after the link has been back for a while; a disarm is always honored, and the fallback never arms. Rules: [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link-failsafe).
+
+```rust
+let mut commander = FailsafeCommander::new(link_commander, HoldCommander::default(), FailsafeConfig::default())?;
+```
+
 Input-device and file-based commanders (joysticks, CSV scripts) live in `stable-flight-sitl`.
 
 ### Composition

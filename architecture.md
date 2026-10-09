@@ -76,7 +76,7 @@ Each `FlightLoop::step` (called by the runner at its configured frequency) does 
 
 * The commander sees the **previous** tick's state; guidance and the stabilizer see this tick's **fresh** estimate.
 * `FlightLoop::prime` runs once before the first tick: `estimate_state(Duration::ZERO)`, then `Guidance::prime` and `Stabilizer::prime` with that state.
-* **`Command::arm` gates the motors.** A disarmed tick still runs the commander, the estimator, `actuate`, and telemetry, but skips guidance, the stabilizer, and the mixer: it actuates `ActuatorCommand::default()` (motors off) and records a neutral setpoint at the current heading with zero control, so nothing winds up on the ground. On each disarmed → armed edge (including the first armed tick) the loop re-primes guidance, then the stabilizer, from the fresh estimate, so integrals start from zero and the heading hold latches where the vehicle points. `arm` is a level the commander returns every tick; arming checks (throttle low, estimator healthy, link present) are commander-side policy ([#136](https://github.com/wboayue/stable-flight/issues/136), [#152](https://github.com/wboayue/stable-flight/issues/152)).
+* **`Command::arm` gates the motors.** A disarmed tick still runs the commander, the estimator, `actuate`, and telemetry, but skips guidance, the stabilizer, and the mixer: it actuates `ActuatorCommand::default()` (motors off) and records a neutral setpoint at the current heading with zero control, so nothing winds up on the ground. On each disarmed → armed edge (including the first armed tick) the loop re-primes guidance, then the stabilizer, from the fresh estimate, so integrals start from zero and the heading hold latches where the vehicle points. `arm` is a level the commander returns every tick; arming checks (throttle low, estimator healthy, link present) are commander-side policy ([#136](https://github.com/wboayue/stable-flight/issues/136), [link failsafe](#link-failsafe)).
 * Telemetry is published after `actuate`, with the whole tick in one `TelemetryRecord`, including which limits it hit: guidance, the stabilizer, and the mixer each report a `Saturation` for their last call (only they know what they clipped), and the loop merges them (none while disarmed).
 
 ```mermaid
@@ -103,6 +103,18 @@ sequenceDiagram
     FlightLoop->>Vehicle: actuate(ActuatorCommand)
     FlightLoop->>TelemetryPublisher: publish(TelemetryRecord)
 ```
+
+## Link Failsafe
+
+A companion's link drops (late USB enumeration, brownouts, a crashed bridge), and the flight controller, not the companion, decides what happens. `FailsafeCommander<P, F>` (core `commanders::failsafe`) is a commander like any other, so it sits where the commander does, ahead of guidance:
+
+* The primary is a `LinkedCommander`, which reports `since_update_s`: time since its last valid message, measured on the flight controller from the `dt` it is given, so no clock sync with the sender is needed. It runs every tick, flying or not, so it keeps draining its queue.
+* **Falls back** when the primary has gone `timeout_s` without a message, or was never heard: it **starts in the fallback**. The `Fallback` is engaged once per switch with the current state and arm state; `HoldCommander` latches that position.
+* **Returns** only after the primary has been fresh for `recover_after_s` without a break, and the fallback allows it (`can_release`: a landing must finish, [#66](https://github.com/wboayue/stable-flight/issues/66)).
+* **Arming:** the fallback decides the arm state while it flies, and a hold never arms a disarmed vehicle; a fresh primary's disarm is always honored, even during recovery. A policy that stops an external commander from arming at all waits for a pilot arm source (RC, [#134](https://github.com/wboayue/stable-flight/issues/134)).
+* The state reaches telemetry through `Commander::failsafe` → `TelemetryRecord::failsafe`; the link heartbeat's `link_ok` is `false` while the fallback flies.
+
+This is the input side. The [input policy](#input-policy-no-panics-in-the-tick) below keeps a bad value from crashing the tick, and estimator-health failsafes are [#66](https://github.com/wboayue/stable-flight/issues/66).
 
 ## Input Policy (no panics in the tick)
 

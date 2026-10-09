@@ -34,7 +34,11 @@ not each change; per-change entries start after it.
 - **Mixers:** `QuadCopterMixer` with airmode-style desaturation (moments kept, collective gives
   way, no lift at zero thrust); `TailSitterMixer` placeholder.
 - **Commanders:** `WaypointFollower` (allocation-free; loops or holds at the route's end, flies
-  legs at cruise speed, advances past a waypoint missed wide).
+  legs at cruise speed, advances past a waypoint missed wide). `FailsafeCommander` flies a
+  link-fed `LinkedCommander` and falls back to a `Fallback` (`HoldCommander`: hold position)
+  when it goes stale, returning after a recovery period; the fallback never arms, and a disarm
+  is always honored. `Commander::failsafe` reports the state into `TelemetryRecord::failsafe`
+  (`FailsafeState`).
 - **Params** (`params`): every guidance and stabilizer gain and limit readable, settable,
   and listable by index or by a MAVLink-sized name (`STAB_RATE_P`, `GUID_TILT_MAX`), with
   angles in degrees. Writes go through `set_config`, so an invalid value is rejected. `FlightLoop`
