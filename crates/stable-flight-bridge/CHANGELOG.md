@@ -27,6 +27,10 @@ not each change; per-change entries start after it.
   and on change (payloads, home, and landed state from `stable-flight-mavlink`). Global position
   and home projected around `--origin` (or none with `--no-origin`); throttle from telemetry
   records.
+- **Arming:** `MAV_CMD_COMPONENT_ARM_DISARM` forwarded as `Control::Arm`, acked once the flight
+  controller's heartbeat confirms it (`FAILED` after 1 s).
+- **Link heartbeat:** `Control::Heartbeat` to the flight controller at 5 Hz while the ground
+  station is alive, so losing it triggers the flight controller's failsafe.
 - **QGC connect sequence:** empty `MISSION_COUNT` per mission type, `AUTOPILOT_VERSION` and
   `COMPONENT_METADATA` on request, `UNSUPPORTED` for other commands.
 - **Param metadata:** descriptions, units, groups, and ranges from the core's param tables,

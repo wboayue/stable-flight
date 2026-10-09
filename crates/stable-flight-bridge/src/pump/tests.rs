@@ -4,7 +4,7 @@ use assert2::check;
 use mavlink::Message;
 use mavlink::error::ParserError;
 use stable_flight_link::loopback::{FailingLink, Loopback, LoopbackLink, LoopbackRx, LoopbackTx};
-use stable_flight_link::{ParamRequest, Uplink};
+use stable_flight_link::{Control, ParamRequest, Uplink};
 use stable_flight_mavlink::testing::MockConnection;
 
 use super::*;
@@ -66,7 +66,14 @@ fn moves_messages_both_ways_as_the_flight_controller() {
     let activity = pump.step(Instant::now());
 
     check!(activity.mavlink == 1);
-    check!(uplinks(&mut fc) == [Uplink::Param(ParamRequest::List)]);
+    check!(
+        uplinks(&mut fc)
+            == [
+                Uplink::Param(ParamRequest::List),
+                // The ground station is alive now, so the link heartbeat starts.
+                Uplink::Control(Control::Heartbeat),
+            ]
+    );
 }
 
 #[test]
