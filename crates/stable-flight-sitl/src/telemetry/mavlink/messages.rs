@@ -3,7 +3,7 @@
 
 use mavlink::common::*;
 
-use stable_flight::{Command, ControlInput, ControlOutput, VehicleState, wrap_angle};
+use stable_flight::{Command, ControlInput, ControlOutput, Vec3, VehicleState, wrap_angle};
 
 use super::GeodeticOrigin;
 
@@ -49,6 +49,15 @@ pub(super) fn heartbeat(command: &Command) -> HEARTBEAT_DATA {
             MavState::MAV_STATE_STANDBY
         },
         mavlink_version: 3,
+    }
+}
+
+/// The landed state, from the publisher's land detector. No VTOL modes: the heartbeat
+/// reports a quadrotor.
+pub(super) fn extended_sys_state(landed_state: MavLandedState) -> EXTENDED_SYS_STATE_DATA {
+    EXTENDED_SYS_STATE_DATA {
+        vtol_state: MavVtolState::MAV_VTOL_STATE_UNDEFINED,
+        landed_state,
     }
 }
 
@@ -110,6 +119,26 @@ pub(super) fn global_position_int(
         vz: cm_per_s(-v.z),
         hdg: heading_cdeg(state.heading_rad),
     })
+}
+
+/// Home at local `home_m` (north/east/up), as both a global position from `earth` and local
+/// NED. No surface or heading estimate, so `q` is NaN (unknown); the approach vector ends at
+/// home itself.
+pub(super) fn home_position(earth: &FlatEarth, home_m: Vec3) -> HOME_POSITION_DATA {
+    let (lat_deg, lon_deg, alt_m) = earth.project(home_m.into());
+    let [x, y, z] = [home_m.x, home_m.y, -home_m.z];
+    HOME_POSITION_DATA {
+        latitude: (lat_deg * DEG_E7).round() as i32,
+        longitude: (lon_deg * DEG_E7).round() as i32,
+        altitude: (alt_m * MM_PER_M).round() as i32,
+        x,
+        y,
+        z,
+        q: [f32::NAN; 4],
+        approach_x: x,
+        approach_y: y,
+        approach_z: z,
+    }
 }
 
 /// `VehicleState` translation is north/east/**up**; MAVLink local NED is north/east/down.

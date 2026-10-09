@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use assert2::check;
-use mavlink::common::GLOBAL_POSITION_INT_DATA;
+use mavlink::common::{GLOBAL_POSITION_INT_DATA, HOME_POSITION_DATA, MavLandedState};
 use mavlink::error::{MessageReadError, MessageWriteError};
 use mavlink::{MAVLinkMessageRaw, Message};
 use stable_flight::{ActuatorCommand, Command, ControlOutput, Saturation, Setpoint, VehicleState};
@@ -92,6 +92,15 @@ fn global_positions(sent: &[(MavHeader, MavMessage)]) -> Vec<GLOBAL_POSITION_INT
         .collect()
 }
 
+fn home_positions(sent: &[(MavHeader, MavMessage)]) -> Vec<HOME_POSITION_DATA> {
+    sent.iter()
+        .filter_map(|(_, m)| match m {
+            MavMessage::HOME_POSITION(data) => Some(data.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 fn count(sent: &[(MavHeader, MavMessage)], name: &str) -> usize {
     sent.iter()
         .filter(|(_, m)| m.message_name() == name)
@@ -108,6 +117,7 @@ fn sends_each_stream_at_its_rate() {
     // (message, expected sends in 2 s: the first tick plus one per period)
     let cases = [
         ("HEARTBEAT", 3),
+        ("EXTENDED_SYS_STATE", 3),
         ("VFR_HUD", 21),
         ("LOCAL_POSITION_NED", 21),
         ("ATTITUDE", 21),
@@ -115,11 +125,10 @@ fn sends_each_stream_at_its_rate() {
     for (name, expected) in cases {
         check!(count(&sent, name) == expected, "{name}");
     }
-    check!(sent.len() == 66);
-    check!(
-        count(&sent, "GLOBAL_POSITION_INT") == 0,
-        "no origin, no global position"
-    );
+    check!(sent.len() == 69);
+    for name in ["GLOBAL_POSITION_INT", "HOME_POSITION"] {
+        check!(count(&sent, name) == 0, "no origin, no {name}");
+    }
 }
 
 #[test]
@@ -161,8 +170,9 @@ fn relative_altitude_is_measured_from_home_latched_at_each_arming() {
         (true, 50.0, Some(0)),        // arming re-latches home
         (true, 60.0, Some(10_000)),   // climbing
         (false, 20.0, Some(-30_000)), // disarmed below home
-        (true, f32::NAN, None),       // arming on a NaN altitude keeps the old home
-        (true, 55.0, Some(5_000)),
+        (true, f32::NAN, None),       // arming on a NaN altitude: no home yet
+        (true, 55.0, Some(0)),        // the next finite altitude becomes home
+        (true, 60.0, Some(5_000)),
     ];
     let records: Vec<_> = ticks
         .iter()
@@ -226,7 +236,7 @@ fn connect_reports_an_invalid_origin() {
 #[test]
 fn headers_carry_configured_ids_and_a_wrapping_sequence() {
     let connection = MockConnection::default();
-    // dt equals the stream interval: 3 streams every tick, plus a heartbeat every 10th.
+    // dt equals the stream interval: 3 streams every tick, plus 2 slow streams every 10th.
     run(&connection, (42, 7), STREAM_INTERVAL, 90);
     let sent = connection.sent();
 
@@ -280,7 +290,97 @@ fn every_stream_sends_on_the_first_publish() {
     run(&connection, (1, 1), Duration::from_millis(4), 1);
     let sent = connection.sent();
 
-    for name in ["HEARTBEAT", "VFR_HUD", "LOCAL_POSITION_NED", "ATTITUDE"] {
+    for name in [
+        "HEARTBEAT",
+        "EXTENDED_SYS_STATE",
+        "VFR_HUD",
+        "LOCAL_POSITION_NED",
+        "ATTITUDE",
+    ] {
         check!(count(&sent, name) == 1, "{name}");
     }
+}
+
+#[test]
+fn sends_home_position_at_1_hz_with_an_origin() {
+    let connection = MockConnection::default();
+    // Two seconds of a 60 Hz loop.
+    publish_states(
+        with_origin(&connection),
+        Duration::from_nanos(16_666_667),
+        &vec![(false, VehicleState::default()); 120],
+    );
+
+    let homes = home_positions(&connection.sent());
+    check!(homes.len() == 3);
+    check!(homes[0].latitude == 348_843_890);
+    check!(homes[0].longitude == -1_204_035_000);
+}
+
+#[test]
+fn home_position_is_sent_as_soon_as_home_is_latched() {
+    let at = |north_m: f32, up_m: f32| VehicleState {
+        position_m: [north_m, 0.0, up_m].into(),
+        ..Default::default()
+    };
+    // (armed, state, expected HOME_POSITION (x, z) sent this tick); dt is 100 ms, so the
+    // 1 Hz timer alone would fire only on the first tick.
+    let ticks = [
+        (false, at(f32::NAN, 0.0), None), // no finite position: no home, nothing sent
+        (false, at(1.0, 2.0), Some((1.0, -2.0))), // first finite position becomes home
+        (false, at(5.0, 2.0), None),      // moved while disarmed: home stays
+        (true, at(5.0, 3.0), Some((5.0, -3.0))), // arming re-latches home
+        (true, at(9.0, 9.0), None),       // flying
+        (false, at(9.0, 0.0), None),
+        (true, at(f32::NAN, 0.0), None), // arming on a non-finite position: no home yet
+        (true, at(7.0, 1.0), Some((7.0, -1.0))), // the next finite position becomes home
+        (true, at(8.0, 4.0), None),
+    ];
+    let records: Vec<_> = ticks
+        .iter()
+        .map(|(armed, s, _)| (*armed, s.clone()))
+        .collect();
+    let connection = MockConnection::default();
+    publish_states(with_origin(&connection), STREAM_INTERVAL, &records);
+
+    let homes = home_positions(&connection.sent());
+    let expected: Vec<_> = ticks.iter().filter_map(|&(_, _, home)| home).collect();
+    check!(homes.iter().map(|h| (h.x, h.z)).collect::<Vec<_>>() == expected);
+}
+
+#[test]
+fn landed_state_is_sent_as_soon_as_it_changes() {
+    use MavLandedState::{
+        MAV_LANDED_STATE_IN_AIR as AIR, MAV_LANDED_STATE_ON_GROUND as GROUND,
+        MAV_LANDED_STATE_UNDEFINED as UNDEFINED,
+    };
+    // (armed, altitude_m, expected EXTENDED_SYS_STATE sent this tick); dt is 100 ms, so the
+    // 1 Hz timer alone would fire only on the first tick.
+    let ticks = [
+        (true, f32::NAN, Some(UNDEFINED)), // the first publish; no home yet
+        (true, 10.0, Some(GROUND)),        // home latched here: height 0
+        (true, 10.4, None),                // below the takeoff height
+        (true, 12.0, Some(AIR)),           // took off
+        (true, 11.0, None),
+        (true, 10.1, Some(GROUND)), // landed
+        (false, 10.1, None),
+    ];
+    let records: Vec<_> = ticks
+        .iter()
+        .map(|&(armed, z, _)| (armed, at_altitude(z)))
+        .collect();
+    let connection = MockConnection::default();
+    let publisher = MavlinkPublisher::with_connection(Box::new(connection.clone()), 1, 1);
+    publish_states(publisher, STREAM_INTERVAL, &records);
+
+    let sent: Vec<_> = connection
+        .sent()
+        .into_iter()
+        .filter_map(|(_, m)| match m {
+            MavMessage::EXTENDED_SYS_STATE(data) => Some(data.landed_state),
+            _ => None,
+        })
+        .collect();
+    let expected: Vec<_> = ticks.iter().filter_map(|&(_, _, state)| state).collect();
+    check!(sent == expected);
 }
