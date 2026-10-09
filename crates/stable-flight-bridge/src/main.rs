@@ -20,10 +20,15 @@ use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_link::{Downlink, LinkError, MAX_FRAME_LEN, RecvMessage, SendMessage};
 
 mod bridge;
+mod connect;
 mod encode;
+mod outbox;
 mod params;
+#[cfg(test)]
+mod test_support;
 
-use bridge::{Bridge, BridgeConfig, Outbox};
+use bridge::{Bridge, BridgeConfig};
+use outbox::Outbox;
 
 /// Messages read from each side per loop iteration, so neither side starves the other.
 const MAX_READS_PER_ITERATION: usize = 64;
