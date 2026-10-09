@@ -35,6 +35,7 @@ mod link;
 #[cfg(any(test, feature = "testing"))]
 pub mod loopback;
 mod message;
+pub mod params;
 #[cfg(feature = "std")]
 pub mod udp;
 

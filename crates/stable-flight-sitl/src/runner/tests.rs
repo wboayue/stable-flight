@@ -4,6 +4,7 @@ use std::time::Duration;
 use assert2::check;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::QuadCopterMixer;
+use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
 use stable_flight::{AttitudeCommand, Command, ControlInput, FlightLoop};
@@ -98,4 +99,42 @@ fn runs_until_signalled_and_steps_with_the_nominal_period() {
     check!(vehicle.actuations() == stats.ticks);
     check!(telemetry.total() == stats.ticks);
     check!(telemetry.last().map(|tick| tick.dt) == Some(Duration::from_millis(1)));
+}
+
+#[test]
+fn before_step_runs_once_before_each_tick_and_can_write_params() {
+    let mut flight_loop = hover_loop();
+    let shutdown = ShutdownSignal::new();
+    let trigger = shutdown.clone();
+    let mut hooks = 0u64;
+
+    let stats = RealTimeRunner::new(1000.0)
+        .expect("valid frequency")
+        .run_with(&mut flight_loop, &shutdown, |flight_loop| {
+            hooks += 1;
+            flight_loop
+                .set_param("STAB_RATE_P", 0.01 * hooks as f32)
+                .expect("valid value");
+            if hooks == 5 {
+                trigger.trigger(); // this tick still runs; the next doesn't
+            }
+        });
+
+    check!(stats.ticks == 5);
+    check!(hooks == stats.ticks);
+    check!(flight_loop.param("STAB_RATE_P") == Some(0.01 * 5.0));
+}
+
+#[test]
+fn already_set_signal_never_calls_before_step() {
+    let mut flight_loop = hover_loop();
+    let shutdown = ShutdownSignal::new();
+    shutdown.trigger();
+    let mut hooks = 0;
+
+    RealTimeRunner::new(250.0)
+        .expect("valid frequency")
+        .run_with(&mut flight_loop, &shutdown, |_| hooks += 1);
+
+    check!(hooks == 0);
 }

@@ -12,8 +12,8 @@ not each change; per-change entries start after it.
 
 ### Added
 
-- **Messages:** `Uplink` (heartbeat, core `Command`, arm, set/request params) and `Downlink`
-  (heartbeat, `VehicleState`, `Record` telemetry, params, status text). `Record` is an owned
+- **Messages:** `Uplink` (heartbeat, core `Command`, arm, `ParamRequest`) and `Downlink`
+  (heartbeat, `VehicleState`, `Record` telemetry, `ParamValue`, status text). `Record` is an owned
   `TelemetryRecord`, convertible both ways.
 - **Frames:** `[version][postcard][crc16]`, COBS-encoded and `0x00`-terminated, through the
   sealed `Message` trait (`encode`/`decode`, with `EncodeError`/`DecodeError`). Rejects bad
@@ -24,6 +24,10 @@ not each change; per-change entries start after it.
 - **Message I/O:** `SendMessage::send_message` / `RecvMessage::recv_message`, blanket over
   `LinkTx` / `LinkRx`: encode-and-send and receive-and-decode with a caller-supplied buffer,
   failing with `LinkError` (transport, encode, or decode; a bad frame loses only itself).
+- **Params:** `params::ParamServer` applies `ParamRequest`s to a core `Params` between ticks
+  and queues `ParamValue` replies, over bounded `heapless::spsc` queues: at most N writes per
+  poll, listings streamed as the reply queue drains, nothing dropped. Writes echo the value
+  sent (accepted) or the current value (rejected).
 - **`std` feature:** `udp::UdpLink`, a non-blocking UDP transport to one fixed peer, one frame
   per datagram, with rx/tx halves; tolerates an absent peer.
 - **`testing` feature:** `loopback::Loopback`, an in-memory `Link` pair with rx/tx halves.

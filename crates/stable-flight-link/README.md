@@ -4,10 +4,14 @@ Wire protocol between a [Stable Flight](https://github.com/wboayue/stable-flight
 
 ## Messages
 
-- `Uplink` (companion → FC): `Heartbeat`, `Command` (a core `Command`), `Arm`, `SetParam`, `RequestParams`.
-- `Downlink` (FC → companion): `Heartbeat`, `State` (a core `VehicleState`), `Record` (an owned copy of a tick's `TelemetryRecord`), `Param`, `Status`.
+- `Uplink` (companion → FC): `Heartbeat`, `Command` (a core `Command`), `Arm`, `Param` (a `ParamRequest`: set one, or list all).
+- `Downlink` (FC → companion): `Heartbeat`, `State` (a core `VehicleState`), `Record` (an owned copy of a tick's `TelemetryRecord`), `Param` (a `ParamValue`: name, value, index, count), `Status`.
 
 Parameter names are the core's [`params`](https://docs.rs/stable-flight/latest/stable_flight/params/) names.
+
+## Params
+
+`params::ParamServer` serves the flight controller's core `Params` (a `FlightLoop`) over the link. The commander pushes `ParamRequest`s onto a bounded `heapless::spsc` queue inside the tick; between ticks, `poll(&mut flight_loop)` applies at most N writes and queues `ParamValue` replies for the publisher. It takes a request only when the reply queue has room, so a full listing streams over ticks as the publisher drains it and no reply is dropped. A write echoes the value sent if accepted (exact, where a degree param's read-back may differ in the last bit) and the current value if rejected; an unknown name gets no reply.
 
 ## Frames
 

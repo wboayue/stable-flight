@@ -9,6 +9,7 @@ use stable_flight::{
 };
 
 use crate::frame::{Message, sealed::Sealed};
+use crate::params::{ParamRequest, ParamValue};
 
 #[cfg(test)]
 mod tests;
@@ -49,15 +50,9 @@ pub enum Uplink {
     Command(Command),
     /// Arm (`true`) or disarm request, subject to the flight controller's arm policy.
     Arm(bool),
-    /// Set one parameter by name.
-    SetParam {
-        /// Parameter name.
-        name: ParamName,
-        /// New value, in the parameter's own units.
-        value: f32,
-    },
-    /// Ask for every parameter; answered with a [`Downlink::Param`] each.
-    RequestParams,
+    /// Set a parameter or list them all; answered with [`Downlink::Param`]s. See
+    /// [`ParamServer`](crate::params::ParamServer).
+    Param(ParamRequest),
 }
 
 /// Flight controller → companion/host.
@@ -88,17 +83,8 @@ pub enum Downlink {
     State(VehicleState),
     /// One tick's full telemetry, for debugging and tuning; sent at a lower rate.
     Record(Record),
-    /// One parameter's value.
-    Param {
-        /// Parameter name.
-        name: ParamName,
-        /// Current value, in the parameter's own units.
-        value: f32,
-        /// Index of this parameter.
-        index: u16,
-        /// Number of parameters.
-        count: u16,
-    },
+    /// One parameter's value: a listing entry or a write's echo.
+    Param(ParamValue),
     /// Human-readable status text.
     Status(StatusText),
 }

@@ -2,6 +2,7 @@ use assert2::{assert, check};
 
 use super::*;
 use crate::loopback::{BufferTooSmall, Loopback};
+use crate::params::ParamRequest;
 use crate::{Downlink, MAX_FRAME_LEN, Uplink, encode_vec};
 
 #[test]
@@ -11,9 +12,9 @@ fn messages_round_trip_in_both_directions() {
     let mut buf = [0u8; MAX_FRAME_LEN];
 
     companion
-        .send_message(&Uplink::RequestParams, &mut buf)
+        .send_message(&Uplink::Param(ParamRequest::List), &mut buf)
         .unwrap();
-    check!(fc.recv_message::<Uplink>(&mut buf) == Ok(Some(Uplink::RequestParams)));
+    check!(fc.recv_message::<Uplink>(&mut buf) == Ok(Some(Uplink::Param(ParamRequest::List))));
 
     let status = Downlink::Status("ok".try_into().unwrap());
     fc.send_message(&status, &mut buf).unwrap();
