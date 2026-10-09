@@ -17,6 +17,9 @@
 //! scans the names. Index access is what paced output uses (a cursor that sends a few params
 //! per tick).
 //!
+//! Descriptions, groups, and valid ranges for ground stations are in the `metadata` module
+//! (feature `param-metadata`), one table per config next to its [`ParamTable`].
+//!
 //! # Copter stabilizer ([`CopterStabilizerConfig`](crate::stabilizers::copter::CopterStabilizerConfig))
 //!
 //! | Name | Field | Unit |
@@ -77,6 +80,8 @@ use core::fmt;
 use crate::Configurable;
 use crate::controllers::InvalidConfig;
 
+#[cfg(feature = "param-metadata")]
+pub mod metadata;
 #[cfg(test)]
 mod tests;
 
