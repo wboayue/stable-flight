@@ -14,7 +14,8 @@ not each change; per-change entries start after it.
 
 - **Pipeline traits and data:** `Commander`, `StateEstimator` + `Actuator` (blanket
   `Vehicle`), `Guidance`, `Stabilizer`, `Mixer`, `TelemetryPublisher`, and `Configurable`;
-  `Command { arm, input }` with `ControlInput` (attitude, rate, waypoint), `Setpoint`,
+  `Command { arm, input }` with `ControlInput` (attitude, rate, waypoint; its kind as
+  `ControlMode` via `mode()`), `Setpoint`,
   `VehicleState`, `ControlOutput`, `ActuatorCommand`, and `TelemetryRecord`. Rustdoc specifies
   the backend frame contract (`VehicleState`) and timing contract (`Vehicle`).
 - **`FlightLoop`:** runs one tick per `step(dt)` (command → estimate → guide → stabilize →

@@ -3,9 +3,9 @@ use core::time::Duration;
 use assert2::check;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{
-    ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command, ControlInput, ControlOutput,
-    RateCommand, RateSetpoint, Saturation, Setpoint, TelemetryRecord, Vec2, Vec3, VehicleState,
-    WaypointCommand,
+    ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command, ControlInput, ControlMode,
+    ControlOutput, RateCommand, RateSetpoint, Saturation, Setpoint, TelemetryRecord, Vec2, Vec3,
+    VehicleState, WaypointCommand,
 };
 
 use super::*;
@@ -120,7 +120,7 @@ fn every_downlink_variant_round_trips() {
     let cases = [
         Downlink::Heartbeat {
             armed: true,
-            mode: 2,
+            mode: ControlMode::Waypoint,
             link_ok: false,
         },
         Downlink::State(sample_state()),

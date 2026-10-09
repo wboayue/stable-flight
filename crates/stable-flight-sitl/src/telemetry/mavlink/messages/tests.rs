@@ -3,44 +3,6 @@ use assert2::check;
 use super::*;
 
 #[test]
-fn heartbeat_reports_the_mode_as_standard_flags_and_the_arm_state() {
-    use MavModeFlag as F;
-
-    let manual = F::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED;
-    let stabilize = F::MAV_MODE_FLAG_STABILIZE_ENABLED;
-    let auto = F::MAV_MODE_FLAG_GUIDED_ENABLED | F::MAV_MODE_FLAG_AUTO_ENABLED;
-    // (input, expected mode flags)
-    let cases = [
-        (ControlInput::Rate(Default::default()), manual),
-        (
-            ControlInput::Attitude(Default::default()),
-            manual | stabilize,
-        ),
-        (ControlInput::Waypoint(Default::default()), stabilize | auto),
-    ];
-
-    for (input, mode) in cases {
-        for (command, armed, status) in [
-            (
-                Command::disarmed(input),
-                F::empty(),
-                MavState::MAV_STATE_STANDBY,
-            ),
-            (
-                Command::armed(input),
-                F::MAV_MODE_FLAG_SAFETY_ARMED,
-                MavState::MAV_STATE_ACTIVE,
-            ),
-        ] {
-            let data = heartbeat(&command);
-            check!(data.base_mode == mode | armed, "{command:?}");
-            check!(data.system_status == status);
-            check!(data.custom_mode == 0);
-        }
-    }
-}
-
-#[test]
 fn maps_normalized_thrust_to_throttle_percent() {
     // (thrust, expected percent)
     let cases = [

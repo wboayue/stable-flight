@@ -4,8 +4,8 @@ use core::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use stable_flight::{
-    ActuatorCommand, Command, ControlOutput, Saturation, Setpoint, TelemetryRecord, VehicleState,
-    params,
+    ActuatorCommand, Command, ControlMode, ControlOutput, Saturation, Setpoint, TelemetryRecord,
+    VehicleState, params,
 };
 
 use crate::frame::{Message, sealed::Sealed};
@@ -100,9 +100,10 @@ pub enum Uplink {
 /// # Examples
 ///
 /// ```
+/// use stable_flight_link::stable_flight::ControlMode;
 /// use stable_flight_link::{Downlink, MAX_FRAME_LEN, Message};
 ///
-/// let heartbeat = Downlink::Heartbeat { armed: false, mode: 0, link_ok: true };
+/// let heartbeat = Downlink::Heartbeat { armed: false, mode: ControlMode::Attitude, link_ok: true };
 /// let mut frame = [0u8; MAX_FRAME_LEN];
 /// let len = heartbeat.encode(&mut frame).unwrap();
 /// assert_eq!(Downlink::decode(&mut frame[..len]), Ok(heartbeat));
@@ -114,8 +115,8 @@ pub enum Downlink {
     Heartbeat {
         /// Motors armed.
         armed: bool,
-        /// Flight mode.
-        mode: u8,
+        /// Flight mode: the kind of the commanded input.
+        mode: ControlMode,
         /// The flight controller is hearing the companion.
         link_ok: bool,
     },

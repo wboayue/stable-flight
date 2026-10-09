@@ -12,6 +12,7 @@ repository.workspace = true
 
 [dependencies]
 stable-flight-link = { path = "../stable-flight-link", version = "0.1.0", features = ["std"] }
+stable-flight-mavlink = { path = "../stable-flight-mavlink", version = "0.1.0" }
 mavlink.workspace = true
 clap.workspace = true
 log.workspace = true
