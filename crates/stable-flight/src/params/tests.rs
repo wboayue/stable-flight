@@ -264,8 +264,11 @@ fn successful_writes_read_back_the_value_given() {
     let mut flight_loop = flight_loop();
     for i in 0..flight_loop.param_count() {
         let name = flight_loop.param_name(i).unwrap();
-        let value = flight_loop.param_at(i).unwrap() * 0.9; // valid for every default
-        flight_loop.set_param_at(i, value).unwrap();
+        // 90% of each default is in range: no default sits at a lower bound
+        let value = flight_loop.param_at(i).unwrap() * 0.9;
+        flight_loop
+            .set_param_at(i, value)
+            .unwrap_or_else(|e| panic!("{name} = {value}: {e}"));
         assert_relative_eq!(flight_loop.param_at(i).unwrap(), value, max_relative = 1e-6);
         check!(flight_loop.param(name) == flight_loop.param_at(i));
     }

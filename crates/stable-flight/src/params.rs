@@ -3,9 +3,9 @@
 //! The config is the only store: [`Params::param`] reads a field of the component's config,
 //! and [`Params::set_param`] writes a copy and commits it through
 //! [`Configurable::set_config`], which validates it (an invalid value is rejected and the
-//! config unchanged) and applies the integrator policy. Any [`Configurable`] whose config implements
-//! [`ParamTable`] gets [`Params`]; [`FlightLoop`](crate::FlightLoop) combines its guidance's
-//! and stabilizer's.
+//! config unchanged) and applies the integrator policy. Any [`Configurable`] whose config
+//! implements [`ParamTable`] gets [`Params`]; [`FlightLoop`](crate::FlightLoop) combines its
+//! guidance's and stabilizer's.
 //!
 //! Names are uppercase ASCII of at most [`MAX_NAME_LEN`] bytes (MAVLink's `param_id`),
 //! prefixed by component (`STAB_`, `GUID_`) and loop. Vector components end in `_X`/`_Y`/`_Z`
@@ -92,7 +92,9 @@ pub struct Param<C> {
 
 impl<C> Param<C> {
     /// A param named `name`, read by `get` and written (unvalidated) by `set`, in the param's
-    /// unit. Use it to give your own config a [`ParamTable`]:
+    /// unit. `get` must read back what `set` wrote, up to unit-conversion rounding: no
+    /// clamping or quantizing (the [`Params`] stores-or-rejects contract). Use it to give your
+    /// own config a [`ParamTable`]:
     ///
     /// ```
     /// use stable_flight::params::{Param, ParamTable};
@@ -150,9 +152,11 @@ pub trait ParamTable: Copy + 'static {
 /// [`set_param`](Params::set_param), and [`visit_params`](Params::visit_params) are built on
 /// them.
 ///
-/// **A successful write stores the value as given**, up to the rounding of a unit conversion
-/// (degrees ↔ radians): an out-of-range value is rejected, never clamped or adjusted. A link
-/// can therefore confirm a write by echoing the value it was sent.
+/// **Contract: a successful write stores the value as given**, up to the rounding of a unit
+/// conversion (degrees ↔ radians); an out-of-range value is rejected, never clamped or
+/// adjusted. Implementors must uphold it (for the blanket impl: each [`Param`] reads back what
+/// it wrote, and `set_config` commits the config unchanged or rejects it), because a link
+/// confirms a write by echoing the value it was sent.
 pub trait Params {
     /// Number of params; their indices are `0..param_count()`.
     fn param_count(&self) -> usize;
@@ -222,7 +226,7 @@ where
     }
 }
 
-/// Why [`Params::set_param`] rejected a value.
+/// Why a param write ([`Params::set_param`], [`Params::set_param_at`]) was rejected.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ParamError {
