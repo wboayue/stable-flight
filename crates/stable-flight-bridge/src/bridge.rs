@@ -56,24 +56,16 @@ struct FcStatus {
     mode: u8,
 }
 
-/// Presents a flight controller on the native link as a MAVLink autopilot, enough for QGC to
-/// connect, list params, and edit them.
+/// Presents a flight controller on the native link as a MAVLink autopilot. The message-by-message
+/// mapping is in the crate README; the invariants behind it:
 ///
-/// - `HEARTBEAT` at `heartbeat_interval` from the flight controller's latest heartbeat, only
-///   while it is alive (heard from within `fc_timeout`), so the ground station sees link loss.
-/// - Params: `PARAM_REQUEST_LIST` and `PARAM_SET` go to the flight controller; every param it
-///   sends (a listing entry or a write's echo, which carries the index) goes out as
-///   `PARAM_VALUE`, `REAL32`, with its index and count. `PARAM_REQUEST_READ` is answered from
-///   a cache of those; a miss gets no reply, and the ground station retries. A non-`REAL32`
-///   `PARAM_SET` is rejected by echoing the cached value. Whenever the flight controller
-///   appears (or reappears after a timeout), the cache is cleared and refilled with a listing.
-/// - Answered here, without the flight controller: `MISSION_REQUEST_LIST` with an empty
-///   `MISSION_COUNT` of the requested type, and `REQUEST_MESSAGE(AUTOPILOT_VERSION)` with an
-///   `ACCEPTED` ack then `AUTOPILOT_VERSION`. Every other `COMMAND_LONG` is acked
-///   `UNSUPPORTED`, so the ground station moves on without retrying.
-///
-/// Only MAVLink addressed to the flight controller's system and component (or broadcast) is
-/// handled; the rest is ignored.
+/// - The flight controller is the only judge of a param: writes and listings go to it, and its
+///   replies go out unchanged. The cache only answers reads, and is cleared whenever the flight
+///   controller (re)appears, since its table may have changed.
+/// - `HEARTBEAT` goes out only while the flight controller is alive (heard from within
+///   `fc_timeout`), so the ground station sees link loss.
+/// - Only MAVLink addressed to the flight controller's system and component (or broadcast) is
+///   handled.
 #[derive(Debug)]
 pub(crate) struct Bridge {
     config: BridgeConfig,

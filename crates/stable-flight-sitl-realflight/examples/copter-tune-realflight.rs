@@ -26,7 +26,7 @@ use stable_flight_link::heapless::spsc::Queue;
 use stable_flight_link::params::ParamServer;
 use stable_flight_link::publisher::{LinkPublisher, LinkPublisherConfig};
 use stable_flight_link::router::UplinkRouter;
-use stable_flight_link::udp::UdpLink;
+use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_link::{ParamRequest, ParamValue};
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
@@ -45,10 +45,10 @@ struct Args {
     #[arg(long, default_value = "10.211.55.3:8080")]
     host: String,
     /// Local address the link listens on.
-    #[arg(long, default_value = "127.0.0.1:14560")]
+    #[arg(long, default_value = DEFAULT_FC_ADDR)]
     link_bind: String,
     /// The bridge's link address.
-    #[arg(long, default_value = "127.0.0.1:14561")]
+    #[arg(long, default_value = DEFAULT_BRIDGE_ADDR)]
     link_peer: String,
 }
 

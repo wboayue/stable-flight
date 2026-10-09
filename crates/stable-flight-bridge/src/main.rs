@@ -16,7 +16,7 @@ use log::{debug, info, warn};
 use mavlink::common::MavMessage;
 use mavlink::error::MessageReadError;
 use mavlink::{MavConnection, MavHeader, MavlinkVersion};
-use stable_flight_link::udp::UdpLink;
+use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_link::{Downlink, LinkError, MAX_FRAME_LEN, RecvMessage, SendMessage};
 
 mod bridge;
@@ -37,10 +37,10 @@ const ERROR_REPORT_INTERVAL: Duration = Duration::from_secs(1);
 #[command(version)]
 struct Args {
     /// Local address the link listens on.
-    #[arg(long, default_value = "127.0.0.1:14561")]
+    #[arg(long, default_value = DEFAULT_BRIDGE_ADDR)]
     link_bind: String,
     /// The flight controller's link address.
-    #[arg(long, default_value = "127.0.0.1:14560")]
+    #[arg(long, default_value = DEFAULT_FC_ADDR)]
     link_peer: String,
     /// Ground station connection, as a `mavlink::connect` address.
     #[arg(long, default_value = "udpout:127.0.0.1:14550")]

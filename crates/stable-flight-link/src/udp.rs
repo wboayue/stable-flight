@@ -2,11 +2,11 @@
 //! loop (SITL) and the bridge run on one machine or a LAN.
 //!
 //! ```no_run
-//! use stable_flight_link::udp::UdpLink;
+//! use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 //! use stable_flight_link::{MAX_FRAME_LEN, RecvMessage, SendMessage, Uplink};
 //!
-//! // The SITL side: listen on 14560, send to the bridge on 14561.
-//! let (mut rx, mut tx) = UdpLink::bind("127.0.0.1:14560", "127.0.0.1:14561")?.into_halves();
+//! // The SITL side: listen on the flight controller's address, send to the bridge.
+//! let (mut rx, mut tx) = UdpLink::bind(DEFAULT_FC_ADDR, DEFAULT_BRIDGE_ADDR)?.into_halves();
 //! let mut buf = [0u8; MAX_FRAME_LEN];
 //! while let Some(msg) = rx.recv_message::<Uplink>(&mut buf)? {
 //!     // ...
@@ -23,6 +23,11 @@ use crate::{LinkRx, LinkTx};
 
 #[cfg(test)]
 mod tests;
+
+/// Where the flight controller's end of a localhost link listens by default (SITL).
+pub const DEFAULT_FC_ADDR: &str = "127.0.0.1:14560";
+/// Where the bridge's end of a localhost link listens by default.
+pub const DEFAULT_BRIDGE_ADDR: &str = "127.0.0.1:14561";
 
 /// A [`Link`] over a non-blocking UDP socket bound to a local address and connected to one
 /// fixed peer: it sends only to the peer and receives only from it. Each datagram carries one
