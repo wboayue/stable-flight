@@ -83,6 +83,16 @@ impl Bridge {
         }
     }
 
+    /// The header MAVLink goes out with: the flight controller's system and component. The
+    /// sequence is the connection's to set.
+    pub(crate) fn header(&self) -> MavHeader {
+        MavHeader {
+            system_id: self.system_id,
+            component_id: self.component_id,
+            sequence: 0,
+        }
+    }
+
     /// The flight controller's latest status, if it was heard from within `fc_timeout`.
     fn alive_fc(&self, now: Instant) -> Option<FcStatus> {
         self.fc

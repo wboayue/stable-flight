@@ -1,6 +1,6 @@
 //! One pass of the bridge's I/O: see [`Pump`].
 
-use std::fmt::Display;
+use std::fmt::{self, Display};
 use std::io::ErrorKind;
 use std::time::{Duration, Instant};
 
@@ -23,7 +23,8 @@ const MAX_READS_PER_PASS: usize = 64;
 /// Shortest interval between reports of a repeating failure.
 const ERROR_REPORT_INTERVAL: Duration = Duration::from_secs(1);
 
-/// The ground station connection, as `mavlink::connect` returns it.
+/// The ground station connection, as `mavlink::connect` returns it. `Send + Sync` though the
+/// pump is single-threaded: an event-driven wait (#216) reads it from its own thread.
 pub(crate) type GcsConnection = Box<dyn MavConnection<MavMessage> + Send + Sync>;
 
 /// What one [`Pump::step`] did.
@@ -54,8 +55,8 @@ impl Activity {
 /// 2. reads up to as many MAVLink messages: `WouldBlock` ends them, a message that doesn't
 ///    parse (another dialect, a bad CRC) is skipped, another error ends them;
 /// 3. polls the bridge for what is due;
-/// 4. sends everything queued, the MAVLink as the flight controller (`header`'s ids); a failed
-///    send is dropped.
+/// 4. sends everything queued, the MAVLink as the flight controller ([`Bridge::header`]); a
+///    failed send is dropped.
 ///
 /// Failures are logged at most once a second per side, counting the ones skipped.
 pub(crate) struct Pump<R, T> {
@@ -75,20 +76,13 @@ where
     R: LinkRx<Error: Display>,
     T: LinkTx<Error: Display>,
 {
-    /// A pump between the link halves and `gcs`, sending MAVLink as `header`'s system and
-    /// component (its sequence is the connection's to set).
-    pub(crate) fn new(
-        link_rx: R,
-        link_tx: T,
-        gcs: GcsConnection,
-        header: MavHeader,
-        bridge: Bridge,
-    ) -> Self {
+    /// A pump between the link halves and `gcs`, through `bridge`.
+    pub(crate) fn new(link_rx: R, link_tx: T, gcs: GcsConnection, bridge: Bridge) -> Self {
         Self {
             link_rx,
             link_tx,
             gcs,
-            header,
+            header: bridge.header(),
             bridge,
             out: Outbox::default(),
             buf: [0; MAX_FRAME_LEN],
@@ -122,7 +116,7 @@ where
                 Err(e) => {
                     activity.failures += 1;
                     self.link_errors
-                        .report(now, &format!("link receive failed: {e}"));
+                        .report(now, format_args!("link receive failed: {e}"));
                     break;
                 }
             }
@@ -144,7 +138,7 @@ where
                 Err(e) => {
                     activity.failures += 1;
                     self.gcs_errors
-                        .report(now, &format!("ground station receive failed: {e}"));
+                        .report(now, format_args!("ground station receive failed: {e}"));
                     break;
                 }
             }
@@ -156,14 +150,14 @@ where
             if let Err(e) = self.link_tx.send_message(&msg, &mut self.buf) {
                 activity.failures += 1;
                 self.link_errors
-                    .report(now, &format!("link send failed: {e}"));
+                    .report(now, format_args!("link send failed: {e}"));
             }
         }
         for msg in self.out.to_gcs.drain(..) {
             if let Err(e) = self.gcs.send(&self.header, &msg) {
                 activity.failures += 1;
                 self.gcs_errors
-                    .report(now, &format!("ground station send failed: {e}"));
+                    .report(now, format_args!("ground station send failed: {e}"));
             }
         }
     }
@@ -178,7 +172,9 @@ struct ErrorReport {
 }
 
 impl ErrorReport {
-    fn report(&mut self, now: Instant, message: &str) {
+    /// Logs `message` unless a report went out within the interval; it is formatted only when
+    /// logged.
+    fn report(&mut self, now: Instant, message: fmt::Arguments<'_>) {
         if self
             .last
             .is_some_and(|last| now.saturating_duration_since(last) < ERROR_REPORT_INTERVAL)

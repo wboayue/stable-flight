@@ -13,7 +13,7 @@ use clap::Parser;
 use env_logger::Builder;
 use log::info;
 use mavlink::common::MavMessage;
-use mavlink::{MavConnection, MavHeader, MavlinkVersion};
+use mavlink::{MavConnection, MavlinkVersion};
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 
 mod bridge;
@@ -70,14 +70,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         args.link_bind, args.link_peer, args.gcs
     );
 
-    let config = BridgeConfig::default();
-    let header = MavHeader {
-        system_id: config.system_id,
-        component_id: config.component_id,
-        // The connection numbers each message itself.
-        sequence: 0,
-    };
-    let mut pump = Pump::new(link_rx, link_tx, Box::new(gcs), header, Bridge::new(config));
+    let mut pump = Pump::new(
+        link_rx,
+        link_tx,
+        Box::new(gcs),
+        Bridge::new(BridgeConfig::default()),
+    );
     let mut backoff = IdleBackoff::default();
     loop {
         let activity = pump.step(Instant::now());

@@ -2,25 +2,16 @@ use std::io;
 
 use assert2::check;
 use mavlink::Message;
-use mavlink::common::*;
 use mavlink::error::ParserError;
 use stable_flight_link::loopback::{FailingLink, Loopback, LoopbackLink, LoopbackRx, LoopbackTx};
-use stable_flight_link::stable_flight::ControlMode;
 use stable_flight_link::{ParamRequest, Uplink};
 use stable_flight_mavlink::testing::MockConnection;
 
 use super::*;
 use crate::bridge::BridgeConfig;
-use crate::test_support::{GCS, param};
+use crate::test_support::{GCS, heartbeat, param, request_list};
 
 const DEPTH: usize = 128;
-
-/// The flight controller's header, as the pump sends MAVLink.
-const FC: MavHeader = MavHeader {
-    system_id: 1,
-    component_id: 1,
-    sequence: 0,
-};
 
 type LoopbackPump<'a> = Pump<LoopbackRx<'a, DEPTH>, LoopbackTx<'a, DEPTH>>;
 
@@ -32,29 +23,8 @@ fn pump(
 ) -> (LoopbackPump<'_>, LoopbackLink<'_, DEPTH>) {
     let (bridge_end, fc) = loopback.split();
     let (rx, tx) = bridge_end.into_halves();
-    let pump = Pump::new(
-        rx,
-        tx,
-        Box::new(gcs),
-        FC,
-        Bridge::new(BridgeConfig::default()),
-    );
+    let pump = Pump::new(rx, tx, Box::new(gcs), Bridge::new(BridgeConfig::default()));
     (pump, fc)
-}
-
-fn heartbeat() -> Downlink {
-    Downlink::Heartbeat {
-        armed: false,
-        mode: ControlMode::Attitude,
-        link_ok: true,
-    }
-}
-
-fn request_list() -> MavMessage {
-    MavMessage::PARAM_REQUEST_LIST(PARAM_REQUEST_LIST_DATA {
-        target_system: 1,
-        target_component: 1,
-    })
 }
 
 fn send(fc: &mut LoopbackLink<'_, DEPTH>, msg: &Downlink) {
@@ -73,13 +43,18 @@ fn moves_messages_both_ways_as_the_flight_controller() {
     let gcs = MockConnection::default();
     let (mut pump, mut fc) = pump(&loopback, gcs.clone());
 
-    send(&mut fc, &heartbeat());
+    send(&mut fc, &heartbeat(false));
     send(&mut fc, &Downlink::Param(param("A", 1.0, 0, 1)));
     let activity = pump.step(Instant::now());
 
     check!(activity.downlinks == 2);
     let sent = gcs.sent();
-    check!(sent.iter().all(|(header, _)| *header == FC));
+    let config = BridgeConfig::default();
+    check!(
+        sent.iter()
+            .all(|(h, _)| (h.system_id, h.component_id) == (config.system_id, config.component_id)),
+        "sent as the flight controller"
+    );
     let names: Vec<_> = sent.iter().map(|(_, msg)| msg.message_name()).collect();
     check!(names == ["PARAM_VALUE", "HEARTBEAT"]);
     check!(
@@ -162,13 +137,13 @@ fn applies_the_error_policy_per_side() {
         match setup {
             Setup::GarbageFrameThenHeartbeat => {
                 fc.send(&[1, 2, 3, 0]).expect("loopback has room");
-                send(&mut fc, &heartbeat());
+                send(&mut fc, &heartbeat(false));
             }
             Setup::GcsErrorThenRequest(error) => {
                 gcs.push_error(error());
                 gcs.push_received(GCS, request_list());
             }
-            Setup::FailingSends => send(&mut fc, &heartbeat()),
+            Setup::FailingSends => send(&mut fc, &heartbeat(false)),
         }
 
         check!(pump.step(Instant::now()) == expected, "{case}");
@@ -183,7 +158,6 @@ fn link_failure_still_serves_the_ground_station() {
         FailingLink,
         FailingLink,
         Box::new(gcs.clone()),
-        FC,
         Bridge::new(BridgeConfig::default()),
     );
     gcs.push_received(GCS, request_list());
@@ -208,7 +182,7 @@ fn reads_at_most_a_bounded_batch_per_side_per_pass() {
     let (mut pump, mut fc) = pump(&loopback, gcs.clone());
     let queued = MAX_READS_PER_PASS + 6;
     for _ in 0..queued {
-        send(&mut fc, &heartbeat());
+        send(&mut fc, &heartbeat(false));
         gcs.push_received(GCS, request_list());
     }
 
