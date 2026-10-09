@@ -27,7 +27,10 @@ not each change; per-change entries start after it.
   and on change (payloads, home, and landed state from `stable-flight-mavlink`). Global position
   and home projected around `--origin` (or none with `--no-origin`); throttle from telemetry
   records.
-- **QGC connect sequence:** empty `MISSION_COUNT` per mission type, `AUTOPILOT_VERSION` on
-  request, `UNSUPPORTED` for other commands.
+- **QGC connect sequence:** empty `MISSION_COUNT` per mission type, `AUTOPILOT_VERSION` and
+  `COMPONENT_METADATA` on request, `UNSUPPORTED` for other commands.
+- **Param metadata:** descriptions, units, groups, and ranges from the core's param tables,
+  served to QGC as component metadata (plain JSON over HTTP at CRC-versioned paths;
+  `--http-bind`, `--http-url`, `--no-metadata`).
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight-bridge

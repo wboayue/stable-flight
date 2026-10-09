@@ -11,6 +11,7 @@ use stable_flight_link::stable_flight::ControlMode;
 use stable_flight_mavlink::FlatEarth;
 
 use crate::connect::ConnectService;
+use crate::metadata::ComponentMetadata;
 use crate::outbox::Outbox;
 use crate::params::ParamService;
 use crate::state::StateService;
@@ -37,11 +38,14 @@ pub(crate) struct BridgeConfig {
     pub(crate) state_interval: Duration,
     /// Interval between `HOME_POSITION`s and `EXTENDED_SYS_STATE`s, which also go out on change.
     pub(crate) slow_interval: Duration,
+    /// Where the param metadata is served, for `COMPONENT_METADATA`; `None` serves none.
+    pub(crate) metadata: Option<ComponentMetadata>,
 }
 
 impl Default for BridgeConfig {
     /// System and component id 1 (the autopilot, which QGC requires), a quadrotor, a 3 s
-    /// timeout, 1 Hz heartbeats, no origin, state at 10 Hz, and home and landed state at 1 Hz.
+    /// timeout, 1 Hz heartbeats, no origin, state at 10 Hz, home and landed state at 1 Hz, and
+    /// no param metadata.
     fn default() -> Self {
         Self {
             system_id: 1,
@@ -52,6 +56,7 @@ impl Default for BridgeConfig {
             earth: None,
             state_interval: Duration::from_millis(100),
             slow_interval: Duration::from_secs(1),
+            metadata: None,
         }
     }
 }
@@ -92,7 +97,11 @@ impl Bridge {
             fc_timeout: config.fc_timeout,
             fc: None,
             params: ParamService::default(),
-            connect: ConnectService::new(config.vehicle_type, config.heartbeat_interval),
+            connect: ConnectService::new(
+                config.vehicle_type,
+                config.heartbeat_interval,
+                config.metadata,
+            ),
             state: StateService::new(config.earth, config.state_interval, config.slow_interval),
         }
     }

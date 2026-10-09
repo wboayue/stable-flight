@@ -13,10 +13,14 @@ repository.workspace = true
 [dependencies]
 stable-flight-link = { path = "../stable-flight-link", version = "0.1.0", features = ["std"] }
 stable-flight-mavlink = { path = "../stable-flight-mavlink", version = "0.1.0" }
+# The param tables' descriptions, units, and ranges, served to QGC as component metadata.
+stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["param-metadata"] }
 mavlink.workspace = true
 clap.workspace = true
 log.workspace = true
 env_logger = "0.11.6"
+crc.workspace = true
+serde_json = "1"
 
 [dev-dependencies]
 # The flight-controller side of the link, for end-to-end tests.
