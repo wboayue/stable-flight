@@ -130,7 +130,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Some((home_m, start)) = home {
             let waypoint = script.waypoint(home_m, start.elapsed().as_secs_f32());
             link.send_message(&Uplink::Control(Control::Arm(true)), &mut buf)?;
-            let command = Command::new(true, ControlInput::Waypoint(waypoint));
+            // `arm` is ignored on a command: arming is `Control::Arm`'s.
+            let command = Command::new(false, ControlInput::Waypoint(waypoint));
             link.send_message(&Uplink::Control(Control::Command(command)), &mut buf)?;
         }
         thread::sleep(SEND_INTERVAL);

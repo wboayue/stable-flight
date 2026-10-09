@@ -69,7 +69,7 @@ fn main() {
 
     // The link: the publisher writes it each tick (the flight loop's telemetry), the poller
     // reads it and serves params between ticks, and the link commander flies from its control
-    // messages. Up to 32 param requests, 16 replies, and 8 control messages queue.
+    // messages. Queue sizes: 32 param requests, 16 replies, 8 control messages (the default).
     let (link_rx, link_tx) = UdpLink::bind(&args.link_bind, &args.link_peer)
         .expect("failed to open link socket")
         .into_halves();

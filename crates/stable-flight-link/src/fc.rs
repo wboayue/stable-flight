@@ -60,9 +60,11 @@ impl Default for FcLinkConfig {
     }
 }
 
-/// Storage for the flight controller's link queues: up to `REQUESTS` pending param requests,
-/// `REPLIES` pending param replies, and `CONTROLS` pending control messages for a
-/// [`LinkCommander`] ([`wire_linked`](Self::wire_linked) only). [`wire`](Self::wire) borrows it
+/// Storage for the flight controller's link queues, sized `REQUESTS` (param requests), `REPLIES`
+/// (param replies), and `CONTROLS` (control messages for a [`LinkCommander`],
+/// [`wire_linked`](Self::wire_linked) only). Each is a `heapless` SPSC queue, which holds one
+/// fewer than its size: an `FcLink<32, 16>` holds 31 requests, 15 replies, and 7 control
+/// messages. [`wire`](Self::wire) borrows it
 /// to build the stack.
 pub struct FcLink<const REQUESTS: usize, const REPLIES: usize, const CONTROLS: usize = 8> {
     requests: Queue<ParamRequest, REQUESTS>,

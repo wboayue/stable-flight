@@ -74,7 +74,7 @@ fn main() {
     let mixer = airframe.mixer;
 
     // The link: the publisher writes it each tick (the flight loop's telemetry), and the poller
-    // reads it and serves params between ticks. Up to 32 param requests and 16 replies queue.
+    // reads it and serves params between ticks. Queue sizes: 32 param requests, 16 replies.
     let (link_rx, link_tx) = UdpLink::bind(&args.link_bind, &args.link_peer)
         .expect("failed to open link socket")
         .into_halves();
