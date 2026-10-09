@@ -1,6 +1,6 @@
-//! Descriptions, units, grouping, and valid ranges for params, for ground stations (`param-metadata`
-//! feature): a host-side companion to each [`ParamTable`], so flight-controller firmware, which
-//! never enables the feature, carries none of it.
+//! Descriptions, units, grouping, and valid ranges for params, for ground stations
+//! (`param-metadata` feature): a host-side companion to each [`ParamTable`], so flight-controller
+//! firmware, which never enables the feature, carries none of it.
 //!
 //! A config that implements [`ParamMetadata`] describes each of its params in a
 //! [`METADATA`](ParamMetadata::METADATA) table with the same names in the same order as its
