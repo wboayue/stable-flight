@@ -13,9 +13,8 @@ use crate::outbox::Outbox;
 #[cfg(test)]
 mod tests;
 
-/// Sends the flight controller's latest [`VehicleState`] to the ground station, as sitl's
-/// `MavlinkPublisher` does in process (the payloads, home, and landed state come from the same
-/// `stable-flight-mavlink` code):
+/// Sends the flight controller's latest [`VehicleState`] to the ground station (the payloads,
+/// home, and landed state come from `stable-flight-mavlink`):
 ///
 /// - every `state_interval`: `ATTITUDE`, `LOCAL_POSITION_NED`, `GLOBAL_POSITION_INT`, `VFR_HUD`;
 /// - every `slow_interval`, and as soon as either changes: `HOME_POSITION`, `EXTENDED_SYS_STATE`.

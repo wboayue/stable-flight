@@ -19,14 +19,14 @@ Companion-computer bridge for a [Stable Flight](https://github.com/wboayue/stabl
 | `MISSION_REQUEST_LIST` | `MISSION_COUNT` 0 of the requested type (mission, fence, rally) |
 | `COMMAND_LONG` | `REQUEST_MESSAGE(AUTOPILOT_VERSION)`: acked, then `AUTOPILOT_VERSION` (MAVLink 2, C-cast params). Anything else: `UNSUPPORTED` |
 
-Only messages addressed to system 1 / component 1 (or broadcast) are handled. Telemetry goes out only while the flight controller is alive, and starts over (fresh home, no stale state) when it comes back. The payloads, home, and landed-state rules are [`stable-flight-mavlink`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-mavlink)'s, shared with sitl's in-process `MavlinkPublisher`.
+Only messages addressed to system 1 / component 1 (or broadcast) are handled. Telemetry goes out only while the flight controller is alive, and starts over (fresh home, no stale state) when it comes back. The payloads, home, and landed-state rules are [`stable-flight-mavlink`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-mavlink)'s.
 
 ## Running against SITL
 
 On one machine, flight controller and bridge over UDP on localhost (the defaults on both sides):
 
 ```bash
-just fly-tune      # flight controller in RealFlight: link on 127.0.0.1:14560
+just fly-manual    # flight controller in RealFlight: link on 127.0.0.1:14560 (fly-auto, capture too)
 just bridge        # link on 127.0.0.1:14561, MAVLink to QGC on 127.0.0.1:14550
 ```
 

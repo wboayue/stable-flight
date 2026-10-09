@@ -42,15 +42,12 @@ Each tick makes one RealFlight exchange, in `actuate`; `estimate_state` returns 
 
 ## Examples
 
-Run these from the repository root (`just fly-manual` / `just fly-tune` / `just fly-auto` / `just capture` wrap them):
+Run these from the repository root (`just fly-manual` / `just fly-auto` / `just capture` wrap them). Each serves params and telemetry over the native link (UDP; binds `127.0.0.1:14560`, peer `127.0.0.1:14561`, set with `--link-bind`/`--link-peer`) for [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) (`just bridge`), which QGC connects to; start the bridge once and leave it running:
 
 ```bash
 # Joystick (Logitech Extreme 3D); RealFlight host defaults to 10.211.55.3:8080
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --host 192.168.1.20:8080
-
-# Joystick, plus params and telemetry over the native link (UDP; binds 127.0.0.1:14560, peer 127.0.0.1:14561)
-# for stable-flight-bridge (`just bridge`), which QGC connects to; no direct MAVLink
-cargo run -p stable-flight-sitl-realflight --example copter-tune-realflight -- --link-peer 192.168.1.30:14561
+cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --link-peer 192.168.1.30:14561
 
 # Scripted figure-eight (script path is the first argument): flies it once, then hovers; --loop repeats it
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv

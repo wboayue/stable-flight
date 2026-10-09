@@ -23,17 +23,10 @@ not each change; per-change entries start after it.
     `WaypointFollower`; loop or hold at the end; `load_waypoints` for other tools.
 
   Fallible constructors return typed errors (`CommanderError`, `ScriptError`,
-  `InvalidFrequency`, `MavlinkError`).
-- **Telemetry:** `MavlinkPublisher` streams `HEARTBEAT`, `ATTITUDE`, `LOCAL_POSITION_NED`,
-  `GLOBAL_POSITION_INT`, `HOME_POSITION`, `EXTENDED_SYS_STATE`, and `VFR_HUD` to a ground
-  station (e.g. QGroundControl) at fixed rates, with throttled error logging. The heartbeat
-  reports the configured vehicle type (`MavlinkConfiguration::vehicle_type`, or
-  `with_vehicle_type`; quadrotor by default), the arm state, and the command kind as standard
-  mode flags; global and home position project local position around a configurable
-  `GeodeticOrigin`, with home latched at arming; the landed state comes from the arm state and
-  height above home. Payloads, home, and landed state come from `stable-flight-mavlink`, shared
-  with the bridge.
+  `InvalidFrequency`).
+- No telemetry publisher of its own: SITL telemetry goes over the native link
+  (`stable-flight-link`), and `stable-flight-bridge` translates it to MAVLink.
 - Re-exports the core crate as `stable_flight_sitl::stable_flight`.
-- Examples: `extreme_3d_commander` (joystick smoke test) and `publish_telemetry` (MAVLink demo).
+- Example: `extreme_3d_commander` (joystick smoke test).
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight-sitl

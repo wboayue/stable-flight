@@ -19,9 +19,9 @@ log.workspace = true
 
 [dev-dependencies]
 stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["testing"] }
-# Examples only: runner, commanders, telemetry.
+# Examples only: runner, commanders.
 stable-flight-sitl = { path = "../stable-flight-sitl", version = "0.1.0" }
-# Examples only: the native link (copter-tune-realflight).
+# Examples only: params and telemetry over the native link.
 stable-flight-link = { path = "../stable-flight-link", version = "0.1.0", features = ["std"] }
 env_logger = "0.11.6"
 # Examples parse their CLI args with clap.
