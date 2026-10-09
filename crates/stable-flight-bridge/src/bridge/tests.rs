@@ -1,6 +1,7 @@
 use std::time::{Duration, Instant};
 
 use assert2::{assert, check};
+use mavlink::Message;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::params::Params;
@@ -10,7 +11,9 @@ use stable_flight::{Command, FlightLoop};
 use stable_flight_link::loopback::{Loopback, LoopbackLink};
 use stable_flight_link::publisher::LinkPublisher;
 use stable_flight_link::testing::FcLink;
-use stable_flight_link::{MAX_FRAME_LEN, ParamValue, RecvMessage, SendMessage};
+use stable_flight_link::{
+    MAX_FRAME_LEN, ParamRequest, ParamValue, RecvMessage, SendMessage, Uplink,
+};
 
 use super::*;
 
@@ -31,24 +34,20 @@ fn param(name: &str, value: f32, index: u16, count: u16) -> Downlink {
 }
 
 fn heartbeat(armed: bool) -> Downlink {
-    heartbeat_in(armed, ControlMode::Attitude)
-}
-
-fn heartbeat_in(armed: bool, mode: ControlMode) -> Downlink {
     Downlink::Heartbeat {
         armed,
-        mode,
+        mode: ControlMode::Attitude,
         link_ok: true,
     }
 }
 
-fn set(name: &str, value: f32, param_type: MavParamType) -> MavMessage {
+fn set(name: &str, value: f32) -> MavMessage {
     MavMessage::PARAM_SET(PARAM_SET_DATA {
         param_value: value,
         target_system: 1,
         target_component: 1,
         param_id: name.into(),
-        param_type,
+        param_type: MavParamType::MAV_PARAM_TYPE_REAL32,
     })
 }
 
@@ -58,25 +57,6 @@ fn read_index(index: i16) -> MavMessage {
         target_system: 1,
         target_component: 1,
         param_id: "".into(),
-    })
-}
-
-fn read_name(name: &str) -> MavMessage {
-    MavMessage::PARAM_REQUEST_READ(PARAM_REQUEST_READ_DATA {
-        param_index: -1,
-        target_system: 1,
-        target_component: 1,
-        param_id: name.into(),
-    })
-}
-
-fn request_message(id: u32) -> MavMessage {
-    MavMessage::COMMAND_LONG(COMMAND_LONG_DATA {
-        command: MavCmd::MAV_CMD_REQUEST_MESSAGE,
-        param1: id as f32,
-        target_system: 1,
-        target_component: 1,
-        ..Default::default()
     })
 }
 
@@ -104,136 +84,6 @@ fn param_value_of(msg: &MavMessage) -> Option<(String, f32, u16, u16)> {
     ))
 }
 
-fn uplink_set(name: &str, value: f32) -> Uplink {
-    Uplink::Param(ParamRequest::Set {
-        name: name.try_into().unwrap(),
-        value,
-    })
-}
-
-#[test]
-fn params_translate_between_mavlink_and_the_link() {
-    let list = Uplink::Param(ParamRequest::List);
-    let a = Some(("A".to_owned(), 1.0, 0, 2));
-    // (case, from the ground station, expected uplinks, expected PARAM_VALUE)
-    let cases = [
-        (
-            "list goes to the flight controller",
-            MavMessage::PARAM_REQUEST_LIST(PARAM_REQUEST_LIST_DATA {
-                target_system: 1,
-                target_component: 0,
-            }),
-            vec![list.clone()],
-            None,
-        ),
-        (
-            "read by index from the cache",
-            read_index(0),
-            vec![],
-            a.clone(),
-        ),
-        (
-            "read by name from the cache",
-            read_name("A"),
-            vec![],
-            a.clone(),
-        ),
-        (
-            "read of an uncached index: no reply",
-            read_index(5),
-            vec![],
-            None,
-        ),
-        (
-            "read of an uncached name: no reply",
-            read_name("C"),
-            vec![],
-            None,
-        ),
-        (
-            "REAL32 set goes to the flight controller",
-            set("A", 30.0, MavParamType::MAV_PARAM_TYPE_REAL32),
-            vec![uplink_set("A", 30.0)],
-            None,
-        ),
-        (
-            "set of an uncached name still goes; the flight controller decides",
-            set("C", 3.0, MavParamType::MAV_PARAM_TYPE_REAL32),
-            vec![uplink_set("C", 3.0)],
-            None,
-        ),
-        (
-            "non-REAL32 set is rejected with the current value",
-            set("A", 30.0, MavParamType::MAV_PARAM_TYPE_INT32),
-            vec![],
-            a.clone(),
-        ),
-        (
-            "set without a name is ignored",
-            set("", 30.0, MavParamType::MAV_PARAM_TYPE_REAL32),
-            vec![],
-            None,
-        ),
-    ];
-    for (case, msg, to_fc, to_gcs) in cases {
-        let now = Instant::now();
-        let mut bridge = bridge_with_params(now);
-        let mut out = Outbox::default();
-        bridge.on_mavlink(&GCS, &msg, &mut out);
-        check!(out.to_fc == to_fc, "{case}");
-        check!(
-            out.to_gcs.iter().map(param_value_of).collect::<Vec<_>>()
-                == Vec::from_iter(to_gcs.map(Some)),
-            "{case}"
-        );
-    }
-}
-
-#[test]
-fn every_flight_controller_param_goes_out_as_param_value() {
-    // (case, downlink)
-    let cases = [
-        ("listing entry", param("A", 1.0, 0, 2)),
-        (
-            "accepted write's echo: the value sent",
-            param("STAB_ATT_AMAX_X", 30.0, 4, 20),
-        ),
-        (
-            "rejected write's echo: the current value",
-            param("STAB_RATE_IMAX", 0.3, 7, 20),
-        ),
-    ];
-    for (case, downlink) in cases {
-        let Downlink::Param(sent) = &downlink else {
-            unreachable!()
-        };
-        let mut bridge = Bridge::new(BridgeConfig::default());
-        let mut out = Outbox::default();
-        bridge.on_downlink(&downlink, Instant::now(), &mut out);
-        let expected = (sent.name.to_string(), sent.value, sent.index, sent.count);
-        check!(
-            out.to_gcs.iter().map(param_value_of).collect::<Vec<_>>() == [Some(expected)],
-            "{case}"
-        );
-    }
-}
-
-#[test]
-fn echo_updates_the_cache() {
-    let now = Instant::now();
-    let mut bridge = bridge_with_params(now);
-    let mut out = Outbox::default();
-    bridge.on_downlink(&param("A", 5.0, 0, 2), now, &mut out);
-    out.to_gcs.clear();
-
-    bridge.on_mavlink(&GCS, &read_name("A"), &mut out);
-
-    check!(
-        out.to_gcs.iter().map(param_value_of).collect::<Vec<_>>()
-            == [Some(("A".to_owned(), 5.0, 0, 2))]
-    );
-}
-
 #[test]
 fn ignores_mavlink_addressed_elsewhere() {
     // (case, target system, target component, handled)
@@ -257,156 +107,77 @@ fn ignores_mavlink_addressed_elsewhere() {
 }
 
 #[test]
-fn answers_every_mission_type_with_an_empty_list() {
-    let types = [
-        MavMissionType::MAV_MISSION_TYPE_MISSION,
-        MavMissionType::MAV_MISSION_TYPE_FENCE,
-        MavMissionType::MAV_MISSION_TYPE_RALLY,
-    ];
-    for mission_type in types {
-        let mut bridge = Bridge::new(BridgeConfig::default());
-        let mut out = Outbox::default();
-        let msg = MavMessage::MISSION_REQUEST_LIST(MISSION_REQUEST_LIST_DATA {
-            target_system: 1,
-            target_component: 1,
-            mission_type,
-        });
-        bridge.on_mavlink(&GCS, &msg, &mut out);
-
-        let [MavMessage::MISSION_COUNT(count)] = out.to_gcs.as_slice() else {
-            panic!(
-                "{mission_type:?}: expected one MISSION_COUNT, got {:?}",
-                out.to_gcs
-            );
-        };
-        check!(count.count == 0, "{mission_type:?}");
-        check!(count.mission_type == mission_type);
-        check!((count.target_system, count.target_component) == (GCS.system_id, GCS.component_id));
-        check!(out.to_fc.is_empty());
-    }
-}
-
-#[test]
-fn acks_commands_and_serves_autopilot_version() {
-    let arm = MavMessage::COMMAND_LONG(COMMAND_LONG_DATA {
-        command: MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
-        param1: 1.0,
-        target_system: 1,
-        target_component: 1,
-        ..Default::default()
-    });
-    // (case, command, expected result, AUTOPILOT_VERSION follows)
-    let cases = [
-        (
-            "AUTOPILOT_VERSION request",
-            request_message(AUTOPILOT_VERSION_DATA::ID),
-            MavResult::MAV_RESULT_ACCEPTED,
-            true,
-        ),
-        (
-            "COMPONENT_METADATA request (#206)",
-            request_message(397),
-            MavResult::MAV_RESULT_UNSUPPORTED,
-            false,
-        ),
-        (
-            "arm (later slice)",
-            arm,
-            MavResult::MAV_RESULT_UNSUPPORTED,
-            false,
-        ),
-    ];
-    for (case, msg, result, version) in cases {
-        let mut bridge = Bridge::new(BridgeConfig::default());
-        let mut out = Outbox::default();
-        bridge.on_mavlink(&GCS, &msg, &mut out);
-
-        let Some(MavMessage::COMMAND_ACK(ack)) = out.to_gcs.first() else {
-            panic!("{case}: expected an ack first, got {:?}", out.to_gcs);
-        };
-        check!(ack.result == result, "{case}");
-        check!((ack.target_system, ack.target_component) == (GCS.system_id, GCS.component_id));
-        match out.to_gcs.get(1) {
-            Some(MavMessage::AUTOPILOT_VERSION(data)) => {
-                check!(version, "{case}");
-                check!(data.capabilities.contains(
-                    MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_MAVLINK2
-                        | MavProtocolCapability::MAV_PROTOCOL_CAPABILITY_PARAM_ENCODE_C_CAST
-                ));
-            }
-            other => {
-                check!(!version && other.is_none(), "{case}: {other:?}");
-            }
-        }
-        check!(out.to_fc.is_empty(), "{case}");
-    }
-}
-
-#[test]
 fn heartbeats_only_while_the_flight_controller_is_alive() {
     let config = BridgeConfig::default();
     let t0 = Instant::now();
     let mut bridge = Bridge::new(config);
     let mut out = Outbox::default();
-    let heartbeats = |out: &mut Outbox| {
-        let n = out
-            .to_gcs
-            .iter()
-            .filter(|msg| matches!(msg, MavMessage::HEARTBEAT(_)))
-            .count();
+    let mut heartbeats_at = |bridge: &mut Bridge, at: Instant| {
+        bridge.poll(at, &mut out);
+        let n = out.to_gcs.len();
         out.to_gcs.clear();
         n
     };
 
-    bridge.poll(t0, &mut out);
-    check!(heartbeats(&mut out) == 0, "no flight controller yet");
-
-    bridge.on_downlink(&heartbeat(true), t0, &mut out);
-    bridge.poll(t0, &mut out);
-    let sent = out.to_gcs.clone();
-    check!(heartbeats(&mut out) == 1, "first heartbeat right away");
-    let [MavMessage::HEARTBEAT(data)] = sent.as_slice() else {
-        unreachable!()
-    };
     check!(
-        data.base_mode
-            .contains(MavModeFlag::MAV_MODE_FLAG_SAFETY_ARMED)
+        heartbeats_at(&mut bridge, t0) == 0,
+        "no flight controller yet"
     );
-
-    bridge.poll(t0 + config.heartbeat_interval / 2, &mut out);
-    check!(heartbeats(&mut out) == 0, "not due yet");
-
-    bridge.poll(t0 + config.heartbeat_interval, &mut out);
-    check!(heartbeats(&mut out) == 1, "due");
-
-    bridge.poll(t0 + config.fc_timeout, &mut out);
-    check!(heartbeats(&mut out) == 0, "flight controller timed out");
+    bridge.on_downlink(&heartbeat(true), t0, &mut Outbox::default());
+    check!(heartbeats_at(&mut bridge, t0) == 1, "right away");
+    check!(
+        heartbeats_at(&mut bridge, t0 + config.fc_timeout) == 0,
+        "timed out"
+    );
 }
 
 #[test]
-fn heartbeat_reports_the_flight_controllers_arm_state_and_mode() {
-    let tailsitter = MavType::MAV_TYPE_VTOL_TAILSITTER_QUADROTOR;
-    // (arm state, mode): the mapping itself is `stable_flight_mavlink::heartbeat`'s; the bridge
-    // passes the flight controller's values and its configured vehicle type through.
+fn routes_each_message_to_its_service() {
+    let request_list = MavMessage::PARAM_REQUEST_LIST(PARAM_REQUEST_LIST_DATA {
+        target_system: 1,
+        target_component: 1,
+    });
+    let mission_list = MavMessage::MISSION_REQUEST_LIST(MISSION_REQUEST_LIST_DATA {
+        target_system: 1,
+        target_component: 1,
+        mission_type: MavMissionType::MAV_MISSION_TYPE_MISSION,
+    });
+    let command = MavMessage::COMMAND_LONG(COMMAND_LONG_DATA {
+        command: MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+        target_system: 1,
+        target_component: 1,
+        ..Default::default()
+    });
+    // (case, message, uplinks sent, MAVLink message names sent)
     let cases = [
-        (false, ControlMode::Rate),
-        (true, ControlMode::Attitude),
-        (true, ControlMode::Waypoint),
+        ("list: params", request_list, 1, vec![]),
+        (
+            "read: params, from the cache",
+            read_index(0),
+            0,
+            vec!["PARAM_VALUE"],
+        ),
+        ("set: params", set("A", 3.0), 1, vec![]),
+        (
+            "mission list: connect",
+            mission_list,
+            0,
+            vec!["MISSION_COUNT"],
+        ),
+        ("command: connect", command, 0, vec!["COMMAND_ACK"]),
     ];
-    for (armed, mode) in cases {
-        let now = Instant::now();
-        let mut bridge = Bridge::new(BridgeConfig {
-            vehicle_type: tailsitter,
-            ..BridgeConfig::default()
-        });
+    for (case, msg, uplinks, sent) in cases {
+        let mut bridge = bridge_with_params(Instant::now());
         let mut out = Outbox::default();
-        bridge.on_downlink(&heartbeat_in(armed, mode), now, &mut out);
-        bridge.poll(now, &mut out);
-
-        let expected = stable_flight_mavlink::heartbeat(tailsitter, armed, mode);
+        bridge.on_mavlink(&GCS, &msg, &mut out);
+        check!(out.to_fc.len() == uplinks, "{case}");
         check!(
-            out.to_gcs == [MavMessage::HEARTBEAT(expected)],
-            "{mode:?} armed={armed}"
+            out.to_gcs
+                .iter()
+                .map(|m| m.message_name())
+                .collect::<Vec<_>>()
+                == sent,
+            "{case}"
         );
     }
 }
@@ -545,11 +316,7 @@ fn ground_station_lists_and_sets_flight_controller_params() {
     for (case, name, value, echoed) in cases {
         gcs.clear();
         let mut out = Outbox::default();
-        bridge.on_mavlink(
-            &GCS,
-            &set(name, value, MavParamType::MAV_PARAM_TYPE_REAL32),
-            &mut out,
-        );
+        bridge.on_mavlink(&GCS, &set(name, value), &mut out);
         for msg in out.to_fc.drain(..) {
             companion
                 .send_message(&msg, &mut [0u8; MAX_FRAME_LEN])

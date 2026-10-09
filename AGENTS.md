@@ -22,8 +22,10 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     slice moves the rest of sitl's here): pure functions from core values to `mavlink` payloads,
     shared by sitl's `MavlinkPublisher` and the bridge. Depends on core and `mavlink` only.
   - `crates/stable-flight-bridge` — the companion-computer binary: native link (UDP today) ⇄
-    MAVLink v2 for ground stations, presenting the FC as sysid 1 / compid 1. Pure `Bridge` state
-    machine (`bridge.rs`), message builders (`encode.rs`), param cache (`params.rs`); I/O only in
+    MAVLink v2 for ground stations, presenting the FC as sysid 1 / compid 1. Pure `Bridge` (`bridge.rs`:
+    liveness, addressing, routing) over services: `ParamService` (`params.rs`, with the cache)
+    and `ConnectService` (`connect.rs`: heartbeat, `AUTOPILOT_VERSION`, missions, command acks),
+    which queue into an `Outbox` (`outbox.rs`); payload builders in `encode.rs`; I/O only in
     `main.rs`. Params-first slice of #154; depends on link (`std`), `stable-flight-mavlink`, and `mavlink`, not on sitl.
   - `crates/stable-flight-sitl` — the simulator-independent SITL harness: `commanders`,
     `telemetry`, `runner` (`RealTimeRunner`, wall-clock pacing of a `FlightLoop`), `shutdown`

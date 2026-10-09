@@ -4,13 +4,14 @@
 
 use std::time::{Duration, Instant};
 
+use mavlink::MavHeader;
 use mavlink::common::*;
-use mavlink::{MavHeader, MessageData};
+use stable_flight_link::Downlink;
 use stable_flight_link::stable_flight::ControlMode;
-use stable_flight_link::{Downlink, ParamRequest, Uplink};
 
-use crate::encode;
-use crate::params::{ParamCache, param_name};
+use crate::connect::ConnectService;
+use crate::outbox::Outbox;
+use crate::params::ParamService;
 
 #[cfg(test)]
 mod tests;
@@ -44,14 +45,6 @@ impl Default for BridgeConfig {
     }
 }
 
-/// What to send after handling a message: uplinks to the flight controller and MAVLink to the
-/// ground station, stamped with the flight controller's ids.
-#[derive(Debug, Default)]
-pub(crate) struct Outbox {
-    pub(crate) to_fc: Vec<Uplink>,
-    pub(crate) to_gcs: Vec<MavMessage>,
-}
-
 /// The flight controller's latest heartbeat.
 #[derive(Debug, Clone, Copy)]
 struct FcStatus {
@@ -61,49 +54,48 @@ struct FcStatus {
 }
 
 /// Presents a flight controller on the native link as a MAVLink autopilot. The message-by-message
-/// mapping is in the crate README; the invariants behind it:
+/// mapping is in the crate README.
 ///
-/// - The flight controller is the only judge of a param: writes and listings go to it, and its
-///   replies go out unchanged. The cache only answers reads, and is cleared whenever the flight
-///   controller (re)appears, since its table may have changed.
-/// - `HEARTBEAT` goes out only while the flight controller is alive (heard from within
-///   `fc_timeout`), so the ground station sees link loss.
-/// - Only MAVLink addressed to the flight controller's system and component (or broadcast) is
-///   handled.
+/// `Bridge` tracks whether the flight controller is alive (heard from within `fc_timeout`),
+/// decides whether a MAVLink message is for it (its system and component, or broadcast), and
+/// routes each message to the service that handles it: [`ParamService`] or [`ConnectService`].
+/// When the flight controller appears or comes back after a timeout, both services are told,
+/// and the heartbeat is sent only while it is alive, so the ground station sees link loss.
 #[derive(Debug)]
 pub(crate) struct Bridge {
-    config: BridgeConfig,
+    system_id: u8,
+    component_id: u8,
+    fc_timeout: Duration,
     fc: Option<FcStatus>,
-    next_heartbeat: Option<Instant>,
-    params: ParamCache,
+    params: ParamService,
+    connect: ConnectService,
 }
 
 impl Bridge {
     pub(crate) fn new(config: BridgeConfig) -> Self {
         Self {
-            config,
+            system_id: config.system_id,
+            component_id: config.component_id,
+            fc_timeout: config.fc_timeout,
             fc: None,
-            next_heartbeat: None,
-            params: ParamCache::default(),
+            params: ParamService::default(),
+            connect: ConnectService::new(config.vehicle_type, config.heartbeat_interval),
         }
     }
 
-    /// The flight controller was heard from within `fc_timeout`.
-    fn fc_alive(&self, now: Instant) -> bool {
+    /// The flight controller's latest status, if it was heard from within `fc_timeout`.
+    fn alive_fc(&self, now: Instant) -> Option<FcStatus> {
         self.fc
-            .is_some_and(|fc| now.saturating_duration_since(fc.last_seen) < self.config.fc_timeout)
+            .filter(|fc| now.saturating_duration_since(fc.last_seen) < self.fc_timeout)
     }
 
     /// Handles one message from the flight controller, received at `now`.
     pub(crate) fn on_downlink(&mut self, msg: &Downlink, now: Instant, out: &mut Outbox) {
         match msg {
             Downlink::Heartbeat { armed, mode, .. } => {
-                if !self.fc_alive(now) {
-                    // New or back: its table may have changed, so refill the cache, and show
-                    // the ground station the link right away.
-                    self.params.clear();
-                    out.to_fc.push(Uplink::Param(ParamRequest::List));
-                    self.next_heartbeat = Some(now);
+                if self.alive_fc(now).is_none() {
+                    self.params.fc_appeared(out);
+                    self.connect.fc_appeared(now);
                 }
                 self.fc = Some(FcStatus {
                     last_seen: now,
@@ -111,11 +103,7 @@ impl Bridge {
                     mode: *mode,
                 });
             }
-            Downlink::Param(param) => {
-                out.to_gcs
-                    .push(MavMessage::PARAM_VALUE(encode::param_value(param)));
-                self.params.insert(param.clone());
-            }
+            Downlink::Param(param) => self.params.on_param(param, out),
             _ => {}
         }
     }
@@ -127,99 +115,42 @@ impl Bridge {
             MavMessage::PARAM_REQUEST_LIST(data)
                 if self.addressed(data.target_system, data.target_component) =>
             {
-                out.to_fc.push(Uplink::Param(ParamRequest::List));
+                self.params.on_request_list(out);
             }
             MavMessage::PARAM_REQUEST_READ(data)
                 if self.addressed(data.target_system, data.target_component) =>
             {
-                let cached = match usize::try_from(data.param_index) {
-                    Ok(index) => self.params.get(index),
-                    // A negative index means read by name.
-                    Err(_) => param_name(&data.param_id).and_then(|name| self.params.find(&name)),
-                };
-                out.to_gcs
-                    .extend(cached.map(|p| MavMessage::PARAM_VALUE(encode::param_value(p))));
+                self.params.on_request_read(data, out);
             }
             MavMessage::PARAM_SET(data)
                 if self.addressed(data.target_system, data.target_component) =>
             {
-                self.param_set(data, out);
+                self.params.on_set(data, out);
             }
             MavMessage::MISSION_REQUEST_LIST(data)
                 if self.addressed(data.target_system, data.target_component) =>
             {
-                out.to_gcs
-                    .push(MavMessage::MISSION_COUNT(encode::empty_mission_count(
-                        data.mission_type,
-                        header.system_id,
-                        header.component_id,
-                    )));
+                self.connect.on_mission_request_list(header, data, out);
             }
             MavMessage::COMMAND_LONG(data)
                 if self.addressed(data.target_system, data.target_component) =>
             {
-                self.command_long(header, data, out);
+                self.connect.on_command_long(header, data, out);
             }
             _ => {}
         }
     }
 
-    /// Sends what is due at `now`: the heartbeat.
+    /// Sends what is due at `now`: the heartbeat, while the flight controller is alive.
     pub(crate) fn poll(&mut self, now: Instant, out: &mut Outbox) {
-        let Some(fc) = self.fc.filter(|_| self.fc_alive(now)) else {
-            return;
-        };
-        if self.next_heartbeat.is_some_and(|due| now >= due) {
-            out.to_gcs
-                .push(MavMessage::HEARTBEAT(stable_flight_mavlink::heartbeat(
-                    self.config.vehicle_type,
-                    fc.armed,
-                    fc.mode,
-                )));
-            self.next_heartbeat = Some(now + self.config.heartbeat_interval);
+        if let Some(fc) = self.alive_fc(now) {
+            self.connect.poll(now, fc.armed, fc.mode, out);
         }
     }
 
     /// `target_system` / `target_component` select the flight controller (0 is broadcast).
     fn addressed(&self, target_system: u8, target_component: u8) -> bool {
-        (target_system == 0 || target_system == self.config.system_id)
-            && (target_component == 0 || target_component == self.config.component_id)
-    }
-
-    fn param_set(&self, data: &PARAM_SET_DATA, out: &mut Outbox) {
-        let Some(name) = param_name(&data.param_id) else {
-            return;
-        };
-        if data.param_type == MavParamType::MAV_PARAM_TYPE_REAL32 {
-            // Unknown to the cache may still be known to the flight controller; it decides.
-            out.to_fc.push(Uplink::Param(ParamRequest::Set {
-                name,
-                value: data.param_value,
-            }));
-        } else if let Some(current) = self.params.find(&name) {
-            // Every param is REAL32: reject by echoing the current value.
-            out.to_gcs
-                .push(MavMessage::PARAM_VALUE(encode::param_value(current)));
-        }
-    }
-
-    fn command_long(&self, header: &MavHeader, data: &COMMAND_LONG_DATA, out: &mut Outbox) {
-        let autopilot_version = data.command == MavCmd::MAV_CMD_REQUEST_MESSAGE
-            && data.param1 == AUTOPILOT_VERSION_DATA::ID as f32;
-        let result = if autopilot_version {
-            MavResult::MAV_RESULT_ACCEPTED
-        } else {
-            MavResult::MAV_RESULT_UNSUPPORTED
-        };
-        out.to_gcs.push(MavMessage::COMMAND_ACK(encode::command_ack(
-            data.command,
-            result,
-            header.system_id,
-            header.component_id,
-        )));
-        if autopilot_version {
-            out.to_gcs
-                .push(MavMessage::AUTOPILOT_VERSION(encode::autopilot_version()));
-        }
+        (target_system == 0 || target_system == self.system_id)
+            && (target_component == 0 || target_component == self.component_id)
     }
 }
