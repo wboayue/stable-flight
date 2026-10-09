@@ -48,6 +48,10 @@ not each change; per-change entries start after it.
 - **`testing` feature:** allocation-free doubles (`NullVehicle`, `ConstantCommander`,
   `RecordingTelemetry`), `conformance` scenarios with `conformance_tests!` for backends, and
   `settled_yaw_rate` for checking rate gains.
+- **`param-metadata` feature:** `params::metadata` describes every guidance and stabilizer
+  param for ground stations: description, units, category and group, and the valid range
+  (`ParamMeta`, `Bound`, `ParamMetadata`), checked against `validate` by tests. Stays `no_std`;
+  firmware leaves it off.
 - **`serde` feature:** `Serialize`/`Deserialize` on the pipeline data (`Command`,
   `ControlInput`, `Setpoint`, `VehicleState`, `ControlOutput`, `ActuatorCommand`,
   `Saturation`), for wire protocols such as `stable-flight-link`. Stays `no_std`.

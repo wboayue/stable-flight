@@ -24,6 +24,9 @@ testing = []
 # `Serialize`/`Deserialize` on the pipeline data types (`Command`, `VehicleState`, ...), for
 # wire protocols such as `stable-flight-link`. Stays no_std.
 serde = ["dep:serde", "nalgebra/serde-serialize-no-std"]
+# `params::metadata`: descriptions, units, groups, and ranges for each param table, for ground
+# stations (the bridge's QGC metadata). Host-side; firmware leaves it off, so it costs no flash.
+param-metadata = []
 
 [dev-dependencies]
 approx.workspace = true
