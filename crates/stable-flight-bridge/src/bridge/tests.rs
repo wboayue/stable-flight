@@ -8,9 +8,9 @@ use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle};
 use stable_flight::{Command, FlightLoop};
+use stable_flight_link::fc::FcLink;
 use stable_flight_link::loopback::{Loopback, LoopbackLink};
 use stable_flight_link::publisher::LinkPublisher;
-use stable_flight_link::testing::FcLink;
 use stable_flight_link::{MAX_FRAME_LEN, ParamRequest, RecvMessage, SendMessage, Uplink};
 
 use super::*;

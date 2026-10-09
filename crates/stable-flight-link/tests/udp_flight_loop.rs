@@ -1,6 +1,6 @@
 //! The flight-controller side of the link, end to end over localhost UDP: a `FlightLoop` whose
 //! telemetry is a `LinkPublisher`, an `UplinkRouter` and `ParamServer` polled between ticks
-//! (as `RealTimeRunner::run_with` does; wired by `testing::FcLink`), and a host socket standing
+//! (as `RealTimeRunner::run_with` does; wired by `fc::FcLink`), and a host socket standing
 //! in for the bridge.
 
 use std::net::UdpSocket;
@@ -13,8 +13,8 @@ use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle};
 use stable_flight::{AttitudeCommand, Command, ControlInput, FlightLoop};
+use stable_flight_link::fc::FcLink;
 use stable_flight_link::publisher::LinkPublisher;
-use stable_flight_link::testing::FcLink;
 use stable_flight_link::udp::{UdpLink, UdpTx};
 use stable_flight_link::{
     Downlink, MAX_FRAME_LEN, ParamRequest, ParamValue, RecvMessage, SendMessage, Uplink,

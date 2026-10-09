@@ -30,12 +30,15 @@ not each change; per-change entries start after it.
   to optional queues, independent of the active commander.
 - **Publisher:** `publisher::LinkPublisher`, a core `TelemetryPublisher`: heartbeat, state, and
   optional records at configured rates, and paced param replies.
+- **`fc::FcLink`:** the flight controller's side (param queues, router, param server, publisher)
+  wired in one call (`wire`, or `wire_with` and `FcLinkConfig` for publisher rates and per-poll
+  limits); its `FcPoller` runs between
+  ticks.
 - **`std` feature:** `udp::UdpLink`, a non-blocking UDP transport to one fixed peer, one frame
   per datagram, with rx/tx halves; `bind`s or wraps a connected socket; tolerates an absent peer.
   `DEFAULT_FC_ADDR` / `DEFAULT_BRIDGE_ADDR` are the localhost ports both ends default to.
 - **`testing` feature:** `loopback::Loopback`, an in-memory `Link` pair with rx/tx halves, and
-  `loopback::FailingLink` for error paths; `testing::FcLink` wires the flight controller's side
-  (param queues, router, param server, publisher) for end-to-end tests.
+  `loopback::FailingLink` for error paths.
 - **`no_std`** (without `std`), allocation-free; builds for `thumbv7em-none-eabihf`.
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight-link
