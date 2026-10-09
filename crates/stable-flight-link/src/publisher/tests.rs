@@ -24,6 +24,7 @@ fn tick(dt: Duration, arm: bool) -> Record {
         control: ControlOutput::default(),
         actuators: ActuatorCommand::default(),
         saturation: Saturation::default(),
+        failsafe: None,
     }
 }
 
@@ -142,6 +143,33 @@ fn heartbeat_reports_the_commanded_arm_state_and_mode() {
                 }),
             "{input:?}"
         );
+    }
+}
+
+#[test]
+fn heartbeat_link_ok_is_false_only_while_a_failsafe_flies_its_fallback() {
+    // (failsafe, expected link_ok)
+    let cases = [
+        (None, true),
+        (Some(FailsafeState::Primary), true),
+        (Some(FailsafeState::Fallback), false),
+    ];
+    for (failsafe, link_ok) in cases {
+        let loopback = Loopback::<64>::new();
+        let (fc, mut companion) = loopback.split();
+        let mut publisher = LinkPublisher::new(fc, LinkPublisherConfig::default());
+        let mut record = tick(MS(4), false);
+        record.failsafe = failsafe;
+
+        publisher.publish(&record.telemetry());
+
+        let heartbeat = received(&mut companion)
+            .into_iter()
+            .find_map(|msg| match msg {
+                Downlink::Heartbeat { link_ok, .. } => Some(link_ok),
+                _ => None,
+            });
+        check!(heartbeat == Some(link_ok), "{failsafe:?}");
     }
 }
 

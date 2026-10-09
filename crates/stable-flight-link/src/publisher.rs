@@ -4,7 +4,7 @@ use core::time::Duration;
 
 use heapless::spsc::Consumer;
 use stable_flight::timing::Every;
-use stable_flight::{TelemetryPublisher, TelemetryRecord};
+use stable_flight::{FailsafeState, TelemetryPublisher, TelemetryRecord};
 
 use crate::{Downlink, LinkTx, MAX_FRAME_LEN, ParamValue, Record, SendMessage};
 
@@ -48,7 +48,8 @@ impl Default for LinkPublisherConfig {
 /// counted ([`send_errors`](Self::send_errors)), never returned: telemetry is fire-and-forget.
 ///
 /// [`Downlink::Heartbeat`] reports the command's arm state and [`mode`](stable_flight::ControlInput::mode);
-/// until link staleness is tracked, `link_ok` is always `true`.
+/// `link_ok` is `false` while a failsafe flies its fallback (the record's
+/// [`failsafe`](stable_flight::TelemetryRecord::failsafe)), and `true` otherwise.
 ///
 /// # Examples
 ///
@@ -113,7 +114,7 @@ impl<T: LinkTx> TelemetryPublisher for LinkPublisher<'_, T> {
             self.send(&Downlink::Heartbeat {
                 armed: record.command.arm,
                 mode: record.command.input.mode(),
-                link_ok: true,
+                link_ok: record.failsafe != Some(FailsafeState::Fallback),
             });
         }
         if self.state.ready(record.dt) {

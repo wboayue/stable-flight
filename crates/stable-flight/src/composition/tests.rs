@@ -71,6 +71,7 @@ fn tuple_publisher_fans_out_to_every_sink() {
             },
             actuators: &actuators,
             saturation: Saturation::default(),
+            failsafe: None,
         });
     }
 

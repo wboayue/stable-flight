@@ -157,6 +157,7 @@ fn record(thrust: f32) -> Record {
         control: ControlOutput::new(thrust, Default::default()),
         actuators: ActuatorCommand::default(),
         saturation: Saturation::default(),
+        failsafe: None,
     }
 }
 
