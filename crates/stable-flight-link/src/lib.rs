@@ -8,11 +8,9 @@
 //!
 //! Wire protocol between a Stable Flight flight controller and a companion computer (or a
 //! laptop running the bridge): the [`Uplink`] / [`Downlink`] messages, the frame codec
-//! ([`Message`]), and the byte-level [`Link`] trait that transports implement.
-//!
-//! A frame is `[version][postcard payload][crc16]`, COBS-encoded and terminated by `0x00`;
-//! see [`PROTOCOL_VERSION`] and [`MAX_FRAME_LEN`]. The crate is `no_std` and allocation-free.
-//! Transports live elsewhere; the `testing` feature adds an in-memory `loopback` pair.
+//! ([`Message`]), and the byte-level [`Link`] trait that transports implement. `no_std` and
+//! allocation-free. Frame format and design rationale: the
+//! [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link).
 //!
 //! # Examples
 //!
@@ -34,11 +32,22 @@ mod link;
 pub mod loopback;
 mod message;
 
-pub use frame::{FrameError, MAX_FRAME_LEN, Message, PROTOCOL_VERSION};
-pub use link::Link;
+pub use frame::{DecodeError, EncodeError, MAX_FRAME_LEN, Message, PROTOCOL_VERSION};
+pub use link::{Link, LinkRx, LinkTx};
 pub use message::{Downlink, MAX_STATUS_LEN, ParamName, Record, StatusText, Uplink};
 
 /// The `heapless` version [`ParamName`] and [`StatusText`] use.
 pub use heapless;
 /// The core crate whose types the messages carry.
 pub use stable_flight;
+
+/// Encodes `msg` into a fresh, exactly sized frame.
+#[cfg(test)]
+pub(crate) fn encode_vec<M: Message>(msg: &M) -> Vec<u8> {
+    let mut frame = vec![0u8; MAX_FRAME_LEN];
+    let len = msg
+        .encode(&mut frame)
+        .expect("MAX_FRAME_LEN fits every message");
+    frame.truncate(len);
+    frame
+}

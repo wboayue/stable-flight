@@ -1,6 +1,6 @@
 # stable-flight-link
 
-Wire protocol between a [Stable Flight](https://github.com/wboayue/stable-flight) flight controller and a companion computer (or a laptop running the bridge). It provides the message types, the frame codec, and a byte-level `Link` trait that transports implement. It is `no_std` and allocation-free, so the flight controller and the host share one implementation. See [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link) for design rationale.
+Wire protocol between a [Stable Flight](https://github.com/wboayue/stable-flight) flight controller and a companion computer (or a laptop running the bridge). It provides the message types, the frame codec, and the byte-level `Link` trait (`LinkRx` + `LinkTx`) that transports implement. It is `no_std` and allocation-free, so the flight controller and the host share one implementation. See [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link) for design rationale.
 
 ## Messages
 
@@ -11,7 +11,7 @@ Parameter names are the core's [`params`](https://docs.rs/stable-flight/latest/s
 
 ## Frames
 
-A frame is `[version u8][postcard payload][crc16 LE]`, COBS-encoded and terminated by `0x00`. The CRC is CRC-16/IBM-3740 (CCITT-FALSE) over version + payload. Postcard is not self-describing, so a receiver rejects any frame whose version isn't `PROTOCOL_VERSION`. Every message fits `MAX_FRAME_LEN` (256 bytes).
+A frame is `[version u8][postcard payload][crc16 LE]`, COBS-encoded and terminated by `0x00`; every message fits `MAX_FRAME_LEN` (256 bytes). `decode` rejects bad COBS, bytes after the delimiter, a CRC mismatch, another `PROTOCOL_VERSION`, or an invalid payload (`DecodeError`). Why it looks this way: [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link).
 
 ```rust
 use stable_flight_link::{Link, MAX_FRAME_LEN, Message, Uplink};
@@ -27,14 +27,8 @@ if let Some(len) = link.try_recv(&mut frame)? {
 
 ## Transports
 
-`Link` moves encoded frames without blocking; transports live outside this crate, so the same frames cross every one:
-
-| Setup | `Link` |
-|---|---|
-| Tests | `loopback::Loopback` (`testing` feature) |
-| Flight controller and bridge on one host (no USB) | UDP on localhost ([#153](https://github.com/wboayue/stable-flight/issues/153)) |
-| Real board | USB-CDC ([#155](https://github.com/wboayue/stable-flight/issues/155)) |
+A transport implements `LinkRx` (non-blocking `try_recv`) and `LinkTx` (non-blocking `send`, may drop); `Link` is blanket-implemented over both, and the split lets a commander and a telemetry publisher each own one half. Transports live outside this crate; which one runs where is in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link).
 
 ## Features
 
-- `testing`: `loopback::Loopback`, two connected in-memory `Link` ends for tests. For `[dev-dependencies]` only.
+- `testing`: `loopback::Loopback`, two connected in-memory `Link` ends (each splittable into rx/tx halves) for tests. For `[dev-dependencies]` only.

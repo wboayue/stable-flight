@@ -2,7 +2,7 @@
 //!
 //! ```
 //! use stable_flight_link::loopback::Loopback;
-//! use stable_flight_link::{Link, MAX_FRAME_LEN, Message, Uplink};
+//! use stable_flight_link::{LinkRx, LinkTx, MAX_FRAME_LEN, Message, Uplink};
 //!
 //! let loopback = Loopback::<4>::new();
 //! let (mut companion, mut fc) = loopback.split();
@@ -20,7 +20,9 @@ use core::fmt;
 
 use heapless::Deque;
 
-use crate::{Link, MAX_FRAME_LEN};
+#[cfg(doc)]
+use crate::Link;
+use crate::{LinkRx, LinkTx, MAX_FRAME_LEN};
 
 #[cfg(test)]
 mod tests;
@@ -48,12 +50,20 @@ impl<const DEPTH: usize> Loopback<DEPTH> {
     pub fn split(&self) -> (LoopbackLink<'_, DEPTH>, LoopbackLink<'_, DEPTH>) {
         (
             LoopbackLink {
-                tx: &self.a_to_b,
-                rx: &self.b_to_a,
+                rx: LoopbackRx {
+                    queue: &self.b_to_a,
+                },
+                tx: LoopbackTx {
+                    queue: &self.a_to_b,
+                },
             },
             LoopbackLink {
-                tx: &self.b_to_a,
-                rx: &self.a_to_b,
+                rx: LoopbackRx {
+                    queue: &self.a_to_b,
+                },
+                tx: LoopbackTx {
+                    queue: &self.b_to_a,
+                },
             },
         )
     }
@@ -65,50 +75,91 @@ impl<const DEPTH: usize> Default for Loopback<DEPTH> {
     }
 }
 
-/// One end of a [`Loopback`]. When the peer's queue is full, [`Link::send`] drops the frame.
+/// One end of a [`Loopback`]: a [`Link`]. [`into_halves`](Self::into_halves) splits it so a
+/// receiver and a sender can each own one half.
 pub struct LoopbackLink<'a, const DEPTH: usize> {
-    tx: &'a Queue<DEPTH>,
-    rx: &'a Queue<DEPTH>,
+    rx: LoopbackRx<'a, DEPTH>,
+    tx: LoopbackTx<'a, DEPTH>,
 }
 
-/// [`LoopbackLink`] failure.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoopbackError {
-    /// The sent frame exceeds [`MAX_FRAME_LEN`].
-    FrameTooLarge,
-    /// The receive buffer can't hold the next frame; the frame was dropped.
-    BufferTooSmall,
-}
-
-impl fmt::Display for LoopbackError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::FrameTooLarge => f.write_str("frame exceeds MAX_FRAME_LEN"),
-            Self::BufferTooSmall => f.write_str("receive buffer too small for frame"),
-        }
+impl<'a, const DEPTH: usize> LoopbackLink<'a, DEPTH> {
+    /// The receiving and sending halves of this end.
+    pub fn into_halves(self) -> (LoopbackRx<'a, DEPTH>, LoopbackTx<'a, DEPTH>) {
+        (self.rx, self.tx)
     }
 }
 
-impl core::error::Error for LoopbackError {}
+/// Receiving half of a [`LoopbackLink`].
+pub struct LoopbackRx<'a, const DEPTH: usize> {
+    queue: &'a Queue<DEPTH>,
+}
 
-impl<const DEPTH: usize> Link for LoopbackLink<'_, DEPTH> {
-    type Error = LoopbackError;
+/// Sending half of a [`LoopbackLink`]. When the peer's queue is full, [`LinkTx::send`] drops
+/// the frame.
+pub struct LoopbackTx<'a, const DEPTH: usize> {
+    queue: &'a Queue<DEPTH>,
+}
+
+/// [`LoopbackRx`] failure: the receive buffer can't hold the next frame, which was dropped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BufferTooSmall;
+
+impl fmt::Display for BufferTooSmall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("receive buffer too small for frame")
+    }
+}
+
+impl core::error::Error for BufferTooSmall {}
+
+/// [`LoopbackTx`] failure: the sent frame exceeds [`MAX_FRAME_LEN`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FrameTooLarge;
+
+impl fmt::Display for FrameTooLarge {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("frame exceeds MAX_FRAME_LEN")
+    }
+}
+
+impl core::error::Error for FrameTooLarge {}
+
+impl<const DEPTH: usize> LinkRx for LoopbackRx<'_, DEPTH> {
+    type Error = BufferTooSmall;
 
     fn try_recv(&mut self, buf: &mut [u8]) -> Result<Option<usize>, Self::Error> {
-        let Some(frame) = self.rx.borrow_mut().pop_front() else {
+        let Some(frame) = self.queue.borrow_mut().pop_front() else {
             return Ok(None);
         };
-        let dest = buf
-            .get_mut(..frame.len())
-            .ok_or(LoopbackError::BufferTooSmall)?;
+        let dest = buf.get_mut(..frame.len()).ok_or(BufferTooSmall)?;
         dest.copy_from_slice(&frame);
         Ok(Some(frame.len()))
     }
+}
+
+impl<const DEPTH: usize> LinkTx for LoopbackTx<'_, DEPTH> {
+    type Error = FrameTooLarge;
 
     fn send(&mut self, frame: &[u8]) -> Result<(), Self::Error> {
-        let frame = Frame::from_slice(frame).map_err(|_| LoopbackError::FrameTooLarge)?;
-        // Full queue: drop, per the `Link` contract.
-        let _ = self.tx.borrow_mut().push_back(frame);
+        let frame = Frame::from_slice(frame).map_err(|_| FrameTooLarge)?;
+        // Full queue: drop, per the `LinkTx` contract.
+        let _ = self.queue.borrow_mut().push_back(frame);
         Ok(())
+    }
+}
+
+impl<const DEPTH: usize> LinkRx for LoopbackLink<'_, DEPTH> {
+    type Error = BufferTooSmall;
+
+    fn try_recv(&mut self, buf: &mut [u8]) -> Result<Option<usize>, Self::Error> {
+        self.rx.try_recv(buf)
+    }
+}
+
+impl<const DEPTH: usize> LinkTx for LoopbackLink<'_, DEPTH> {
+    type Error = FrameTooLarge;
+
+    fn send(&mut self, frame: &[u8]) -> Result<(), Self::Error> {
+        self.tx.send(frame)
     }
 }

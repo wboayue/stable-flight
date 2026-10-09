@@ -1,6 +1,6 @@
 use core::time::Duration;
 
-use assert2::{assert, check};
+use assert2::check;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{
     ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command, ControlInput, ControlOutput,
@@ -9,16 +9,16 @@ use stable_flight::{
 };
 
 use super::*;
-use crate::MAX_FRAME_LEN;
+use crate::{MAX_FRAME_LEN, encode_vec};
 
 fn name(s: &str) -> ParamName {
     ParamName::try_from(s).expect("name fits")
 }
 
 fn round_trip<M: Message + Clone + PartialEq + core::fmt::Debug>(msg: &M) -> usize {
-    let mut frame = [0u8; MAX_FRAME_LEN];
-    assert!(let Ok(len) = msg.encode(&mut frame));
-    check!(M::decode(&mut frame[..len]) == Ok(msg.clone()));
+    let mut frame = encode_vec(msg);
+    let len = frame.len();
+    check!(M::decode(&mut frame) == Ok(msg.clone()));
     len
 }
 
