@@ -17,9 +17,19 @@ Companion-computer bridge for a [Stable Flight](https://github.com/wboayue/stabl
 | `HOME_POSITION` | 1 Hz and when home moves: the position at the latest arming, or the first one before any arm |
 | `EXTENDED_SYS_STATE` | 1 Hz and when it changes: landed state from the arm state and height above home |
 | `MISSION_REQUEST_LIST` | `MISSION_COUNT` 0 of the requested type (mission, fence, rally) |
-| `COMMAND_LONG` | `REQUEST_MESSAGE(AUTOPILOT_VERSION)`: acked, then `AUTOPILOT_VERSION` (MAVLink 2, C-cast params). Anything else: `UNSUPPORTED` |
+| `COMMAND_LONG` | `REQUEST_MESSAGE(AUTOPILOT_VERSION)`: acked, then `AUTOPILOT_VERSION` (MAVLink 2, C-cast params). `REQUEST_MESSAGE(COMPONENT_METADATA)`: acked, then `COMPONENT_METADATA` pointing to the param metadata (below). Anything else: `UNSUPPORTED` |
 
 Only messages addressed to system 1 / component 1 (or broadcast) are handled. Telemetry goes out only while the flight controller is alive, and starts over (fresh home, no stale state) when it comes back. The payloads, home, and landed-state rules are [`stable-flight-mavlink`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-mavlink)'s.
+
+## Param metadata
+
+QGC shows each param with a description, units, and its group, and refuses an out-of-range edit before sending it. The bridge builds the metadata at startup from the core's param tables ([`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight)'s `param-metadata` feature) and serves it over HTTP: `component_general.json` and `parameters.json`, plain JSON, at paths versioned by their CRC, because QGC caches downloads by URL and CRC. QGC asks for it while connecting (`COMPONENT_METADATA`), with no setup on its side. No defaults yet ([#229](https://github.com/wboayue/stable-flight/issues/229)). An exclusive bound (e.g. `GUID_TILT_MAX` below 90°) is sent as its value, which the flight controller still rejects.
+
+The server listens on `127.0.0.1:14580` by default, which only reaches a QGC on the same machine. For QGC on another machine, bind an address it can reach and advertise the URL it should use:
+
+```bash
+just bridge --gcs udpout:192.168.1.20:14550 --http-bind 0.0.0.0:14580 --http-url http://192.168.1.30:14580
+```
 
 ## Running against SITL
 
@@ -45,6 +55,10 @@ Open QGroundControl; it listens on UDP 14550 and connects on the first heartbeat
                      the earth (degrees, degrees, meters above sea level)
                                                   [default: 34.884389,-120.4035,0]
 --no-origin          send no global position or home
+--http-bind <ADDR>   param metadata HTTP server   [default: 127.0.0.1:14580]
+--http-url <URL>     base URL QGC fetches the metadata from
+                                                  [default: http://HTTP_BIND]
+--no-metadata        serve no param metadata
 ```
 
 Logging goes through `env_logger` at `info` by default (`RUST_LOG=debug` shows dropped frames).

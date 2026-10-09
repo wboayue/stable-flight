@@ -5,6 +5,8 @@
 use mavlink::common::*;
 use stable_flight_link::ParamValue;
 
+use crate::metadata::ComponentMetadata;
+
 #[cfg(test)]
 mod tests;
 
@@ -41,6 +43,16 @@ fn flight_sw_version(major: &str, minor: &str, patch: &str) -> u32 {
     let part = |s: &str| s.parse::<u8>().map_or(0, u32::from);
     let release_type = FirmwareVersionType::FIRMWARE_VERSION_TYPE_DEV as u32;
     part(major) << 24 | part(minor) << 16 | part(patch) << 8 | release_type
+}
+
+/// `COMPONENT_METADATA` pointing to the general metadata file. `time_boot_ms` is 0: the link
+/// carries no flight-controller clock, and the message is a one-off answer.
+pub(crate) fn component_metadata(metadata: &ComponentMetadata) -> COMPONENT_METADATA_DATA {
+    COMPONENT_METADATA_DATA {
+        time_boot_ms: 0,
+        file_crc: metadata.crc,
+        uri: metadata.uri.into(),
+    }
 }
 
 /// `MISSION_COUNT` of 0 for `mission_type`: there is no mission, fence, or rally plan.

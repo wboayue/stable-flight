@@ -9,6 +9,7 @@ use stable_flight_link::stable_flight::ControlMode;
 
 use crate::encode;
 use crate::interval::Interval;
+use crate::metadata::ComponentMetadata;
 use crate::outbox::Outbox;
 
 #[cfg(test)]
@@ -20,8 +21,9 @@ mod tests;
 /// - `HEARTBEAT` every `heartbeat_interval`, the first as soon as the flight controller
 ///   appears. The caller polls only while the flight controller is alive.
 /// - `MISSION_REQUEST_LIST`: an empty `MISSION_COUNT` of the requested type.
-/// - `COMMAND_LONG`: `REQUEST_MESSAGE(AUTOPILOT_VERSION)` is acked, then answered; anything else
-///   is acked `UNSUPPORTED`, so the ground station moves on without retrying.
+/// - `COMMAND_LONG`: `REQUEST_MESSAGE` for `AUTOPILOT_VERSION`, or for `COMPONENT_METADATA` when
+///   the bridge serves param metadata, is acked, then answered; anything else is acked
+///   `UNSUPPORTED`, so the ground station moves on without retrying.
 ///
 /// Two answers are placeholders that move out when their real owner arrives (#154): the
 /// `UNSUPPORTED` fallback moves to `Bridge`'s routing once a second service handles
@@ -31,14 +33,22 @@ mod tests;
 pub(crate) struct ConnectService {
     vehicle_type: MavType,
     heartbeat: Interval,
+    /// Where the param metadata is, if served.
+    metadata: Option<ComponentMetadata>,
 }
 
 impl ConnectService {
-    /// Reports `vehicle_type` in heartbeats sent every `heartbeat_interval`.
-    pub(crate) fn new(vehicle_type: MavType, heartbeat_interval: Duration) -> Self {
+    /// Reports `vehicle_type` in heartbeats sent every `heartbeat_interval`, and points to
+    /// `metadata` when asked for `COMPONENT_METADATA` (none: unsupported).
+    pub(crate) fn new(
+        vehicle_type: MavType,
+        heartbeat_interval: Duration,
+        metadata: Option<ComponentMetadata>,
+    ) -> Self {
         Self {
             vehicle_type,
             heartbeat: Interval::new(heartbeat_interval),
+            metadata,
         }
     }
 
@@ -74,16 +84,15 @@ impl ConnectService {
             )));
     }
 
-    /// Acks a `COMMAND_LONG` from `sender`, and answers a request for `AUTOPILOT_VERSION`.
+    /// Acks a `COMMAND_LONG` from `sender`, then sends the message it requested if served.
     pub(crate) fn on_command_long(
         &self,
         sender: &MavHeader,
         data: &COMMAND_LONG_DATA,
         out: &mut Outbox,
     ) {
-        let autopilot_version = data.command == MavCmd::MAV_CMD_REQUEST_MESSAGE
-            && data.param1 == AUTOPILOT_VERSION_DATA::ID as f32;
-        let result = if autopilot_version {
+        let answer = self.requested_message(data);
+        let result = if answer.is_some() {
             MavResult::MAV_RESULT_ACCEPTED
         } else {
             MavResult::MAV_RESULT_UNSUPPORTED
@@ -94,9 +103,24 @@ impl ConnectService {
             sender.system_id,
             sender.component_id,
         )));
-        if autopilot_version {
-            out.to_gcs
-                .push(MavMessage::AUTOPILOT_VERSION(encode::autopilot_version()));
+        out.to_gcs.extend(answer);
+    }
+
+    /// The message a `REQUEST_MESSAGE` asks for, if this service serves it; `None` for any other
+    /// command.
+    fn requested_message(&self, data: &COMMAND_LONG_DATA) -> Option<MavMessage> {
+        if data.command != MavCmd::MAV_CMD_REQUEST_MESSAGE {
+            return None;
+        }
+        // `param1` carries the message id as a float.
+        let id = data.param1;
+        if id == AUTOPILOT_VERSION_DATA::ID as f32 {
+            Some(MavMessage::AUTOPILOT_VERSION(encode::autopilot_version()))
+        } else if id == COMPONENT_METADATA_DATA::ID as f32 {
+            self.metadata
+                .map(|m| MavMessage::COMPONENT_METADATA(encode::component_metadata(&m)))
+        } else {
+            None
         }
     }
 }
