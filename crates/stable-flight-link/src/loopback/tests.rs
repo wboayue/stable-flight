@@ -1,7 +1,7 @@
 use assert2::{assert, check};
 
 use super::*;
-use crate::{Downlink, Message, Uplink, encode_vec};
+use crate::{Control, Downlink, Message, Uplink, encode_vec};
 
 #[test]
 fn messages_cross_in_both_directions() {
@@ -9,9 +9,11 @@ fn messages_cross_in_both_directions() {
     let (mut companion, mut fc) = loopback.split();
     let mut buf = [0u8; MAX_FRAME_LEN];
 
-    companion.send(&encode_vec(&Uplink::Arm(true))).unwrap();
+    companion
+        .send(&encode_vec(&Uplink::Control(Control::Arm(true))))
+        .unwrap();
     assert!(let Ok(Some(len)) = fc.try_recv(&mut buf));
-    check!(Uplink::decode(&mut buf[..len]) == Ok(Uplink::Arm(true)));
+    check!(Uplink::decode(&mut buf[..len]) == Ok(Uplink::Control(Control::Arm(true))));
 
     let status = Downlink::Status("ok".try_into().unwrap());
     fc.send(&encode_vec(&status)).unwrap();

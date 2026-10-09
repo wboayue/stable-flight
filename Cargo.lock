@@ -1485,6 +1485,7 @@ dependencies = [
  "postcard",
  "serde",
  "stable-flight",
+ "stable-flight-link",
 ]
 
 [[package]]
@@ -1512,6 +1513,7 @@ dependencies = [
  "log",
  "realflight-bridge",
  "stable-flight",
+ "stable-flight-link",
  "stable-flight-sitl",
 ]
 

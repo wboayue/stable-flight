@@ -12,7 +12,7 @@ not each change; per-change entries start after it.
 
 ### Added
 
-- **Messages:** `Uplink` (heartbeat, core `Command`, arm, `ParamRequest`) and `Downlink`
+- **Messages:** `Uplink` (`Control`: heartbeat, core `Command`, arm; `ParamRequest`) and `Downlink`
   (heartbeat, `VehicleState`, `Record` telemetry, `ParamValue`, status text). `Record` is an owned
   `TelemetryRecord`, convertible both ways.
 - **Frames:** `[version][postcard][crc16]`, COBS-encoded and `0x00`-terminated, through the
@@ -26,9 +26,14 @@ not each change; per-change entries start after it.
   failing with `LinkError` (transport, encode, or decode; a bad frame loses only itself).
 - **Params:** `params::ParamServer` serves a core `Params` between ticks over bounded
   `heapless::spsc` queues, paced and lossless.
+- **Router:** `router::UplinkRouter` decodes uplinks and routes params and `Control` messages
+  to optional queues, independent of the active commander.
+- **Publisher:** `publisher::LinkPublisher`, a core `TelemetryPublisher`: heartbeat, state, and
+  optional records at configured rates, and paced param replies.
 - **`std` feature:** `udp::UdpLink`, a non-blocking UDP transport to one fixed peer, one frame
-  per datagram, with rx/tx halves; tolerates an absent peer.
-- **`testing` feature:** `loopback::Loopback`, an in-memory `Link` pair with rx/tx halves.
+  per datagram, with rx/tx halves; `bind`s or wraps a connected socket; tolerates an absent peer.
+- **`testing` feature:** `loopback::Loopback`, an in-memory `Link` pair with rx/tx halves, and
+  `loopback::FailingLink` for error paths.
 - **`no_std`** (without `std`), allocation-free; builds for `thumbv7em-none-eabihf`.
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight-link

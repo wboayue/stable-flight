@@ -44,7 +44,9 @@ impl<E: core::error::Error + 'static> core::error::Error for LinkError<E> {
 /// # Examples
 ///
 /// ```
-/// use stable_flight_link::{LinkRx, LinkTx, MAX_FRAME_LEN, RecvMessage, SendMessage, Uplink};
+/// use stable_flight_link::{
+///     Control, LinkRx, LinkTx, MAX_FRAME_LEN, RecvMessage, SendMessage, Uplink,
+/// };
 ///
 /// /// Hands back the last frame sent.
 /// #[derive(Default)]
@@ -71,8 +73,8 @@ impl<E: core::error::Error + 'static> core::error::Error for LinkError<E> {
 /// let mut link = Echo::default();
 /// let mut buf = [0u8; MAX_FRAME_LEN];
 ///
-/// link.send_message(&Uplink::Arm(true), &mut buf).unwrap();
-/// assert_eq!(link.recv_message::<Uplink>(&mut buf), Ok(Some(Uplink::Arm(true))));
+/// link.send_message(&Uplink::Control(Control::Arm(true)), &mut buf).unwrap();
+/// assert_eq!(link.recv_message::<Uplink>(&mut buf), Ok(Some(Uplink::Control(Control::Arm(true)))));
 /// assert_eq!(link.recv_message::<Uplink>(&mut buf), Ok(None));
 /// ```
 pub trait SendMessage: LinkTx {

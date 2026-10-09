@@ -1,7 +1,7 @@
 use assert2::check;
 
 use super::*;
-use crate::{ParamRequest, Uplink, encode_vec};
+use crate::{Control, ParamRequest, Uplink, encode_vec};
 
 /// COBS-encodes `raw` (version + payload + CRC) and terminates it.
 fn frame_from_raw(raw: &[u8]) -> Vec<u8> {
@@ -27,7 +27,7 @@ fn payload(msg: &Uplink) -> Vec<u8> {
 }
 
 fn arm() -> Uplink {
-    Uplink::Arm(true)
+    Uplink::Control(Control::Arm(true))
 }
 
 #[test]

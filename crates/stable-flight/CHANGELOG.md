@@ -38,6 +38,8 @@ not each change; per-change entries start after it.
   and listable by index or by a MAVLink-sized name (`STAB_RATE_P`, `GUID_TILT_MAX`), with
   angles in degrees. Writes go through `set_config`, so an invalid value is rejected. `FlightLoop`
   exposes both components' params. Retuning an integral gain carries the I term over.
+- **Timing** (`timing::Every`): dt-driven fixed-rate scheduling for streams slower than the
+  loop, without drift.
 - **Saturation reporting:** per-tick `Saturation` flags (tilt, thrust, rate-loop moments,
   mixer) from each stage, merged into `TelemetryRecord`.
 - **Composition:** `ComposedVehicle` (separate estimator + actuator) and tuple fan-out of

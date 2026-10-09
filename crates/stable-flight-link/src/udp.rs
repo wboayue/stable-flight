@@ -43,19 +43,12 @@ impl UdpLink {
     ///
     /// # Errors
     ///
-    /// An address that doesn't resolve, or a socket that can't be bound, connected, cloned,
-    /// or made non-blocking.
+    /// An address that doesn't resolve, or a socket that can't be bound or connected, or that
+    /// [`try_from`](Self::try_from) rejects.
     pub fn bind(local: impl ToSocketAddrs, peer: impl ToSocketAddrs) -> io::Result<Self> {
         let socket = UdpSocket::bind(local)?;
         socket.connect(peer)?;
-        socket.set_nonblocking(true)?;
-        let tx = UdpTx {
-            socket: socket.try_clone()?,
-        };
-        Ok(Self {
-            rx: UdpRx { socket },
-            tx,
-        })
+        Self::try_from(socket)
     }
 
     /// The bound local address (useful after binding port 0).
@@ -70,6 +63,28 @@ impl UdpLink {
     /// The receiving and sending halves, each owning a handle to the same socket.
     pub fn into_halves(self) -> (UdpRx, UdpTx) {
         (self.rx, self.tx)
+    }
+}
+
+impl TryFrom<UdpSocket> for UdpLink {
+    type Error = io::Error;
+
+    /// Wraps a socket already bound and connected to its peer, making it non-blocking: for
+    /// setups that create the socket themselves (e.g. both ends on ephemeral ports).
+    ///
+    /// # Errors
+    ///
+    /// The socket isn't connected, or can't be made non-blocking or cloned.
+    fn try_from(socket: UdpSocket) -> io::Result<Self> {
+        socket.peer_addr()?;
+        socket.set_nonblocking(true)?;
+        let tx = UdpTx {
+            socket: socket.try_clone()?,
+        };
+        Ok(Self {
+            rx: UdpRx { socket },
+            tx,
+        })
     }
 }
 

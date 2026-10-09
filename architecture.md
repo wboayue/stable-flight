@@ -38,13 +38,15 @@ Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its depen
 * **Sealed messages.** Only `Uplink` and `Downlink` implement `Message`, so nothing else travels under the protocol version.
 * **Fixed size.** Every message fits `MAX_FRAME_LEN` (256 bytes; a test checks the worst case), so both ends use stack buffers and nothing allocates.
 * **One frame per decode.** `decode` rejects bytes after the delimiter, so a transport that hands over two frames at once fails loudly instead of losing the second.
-* **Transport-agnostic.** `Link` moves encoded frames without blocking; the transport is picked where the pipeline is wired. Like `Vehicle`, it is two traits blanket-joined (`LinkRx` + `LinkTx`), so the commander that receives and the publisher that sends can each own one half of the same transport. Every transport carries the same frames, so a host run exercises the real wire format:
+* **Transport-agnostic.** `Link` moves encoded frames without blocking; the transport is picked where the pipeline is wired. Like `Vehicle`, it is two traits blanket-joined (`LinkRx` + `LinkTx`), so the router that receives and the publisher that sends can each own one half of the same transport. Every transport carries the same frames, so a host run exercises the real wire format:
 
 | Setup | `Link` |
 |---|---|
 | Tests | `loopback::Loopback` (`testing` feature) |
 | Flight controller (SITL) and bridge on one host, no USB | `udp::UdpLink` (`std` feature), UDP on localhost |
 | Real board | USB-CDC, later a TELEM UART ([#155](https://github.com/wboayue/stable-flight/issues/155)) |
+
+On the flight controller, reading the link is separate from commanding: `UplinkRouter` drains `LinkRx` between ticks (or in a receive task) and routes each uplink to a bounded queue, params to the `ParamServer` and `Control` to a link-fed commander ([#153](https://github.com/wboayue/stable-flight/issues/153)), so params work whichever commander flies. `LinkPublisher` is the `TelemetryPublisher` that owns `LinkTx`.
 
 Staleness, failsafe, and arm decisions stay on the flight controller ([#152](https://github.com/wboayue/stable-flight/issues/152)); the bridge translates and never decides.
 

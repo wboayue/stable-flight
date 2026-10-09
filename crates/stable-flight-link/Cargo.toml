@@ -26,6 +26,9 @@ std = []
 testing = []
 
 [dev-dependencies]
+# Doc examples use `loopback`; the integration test uses `UdpLink`.
+stable-flight-link = { path = ".", features = ["testing", "std"] }
+stable-flight = { path = "../stable-flight", features = ["serde", "testing"] }
 assert2.workspace = true
 
 [package.metadata.docs.rs]

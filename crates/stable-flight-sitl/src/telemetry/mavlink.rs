@@ -12,8 +12,8 @@ use mavlink::common::{MavLandedState, MavMessage};
 use mavlink::{MavConnection, MavHeader, MavlinkVersion};
 use thiserror::Error;
 
-use super::every::Every;
 use super::throttle::ErrorThrottle;
+use stable_flight::timing::Every;
 use stable_flight::{TelemetryPublisher, TelemetryRecord, Vec3};
 
 mod land_detector;
