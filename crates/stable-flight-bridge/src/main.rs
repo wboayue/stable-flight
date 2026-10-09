@@ -21,6 +21,7 @@ use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_mavlink::{DEFAULT_ORIGIN, FlatEarth};
 
 mod bridge;
+mod commands;
 mod connect;
 mod encode;
 mod http;

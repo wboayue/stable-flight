@@ -128,7 +128,7 @@ where
             match self.gcs.try_recv() {
                 Ok((sender, msg)) => {
                     activity.mavlink += 1;
-                    self.bridge.on_mavlink(&sender, &msg, &mut self.out);
+                    self.bridge.on_mavlink(&sender, &msg, now, &mut self.out);
                 }
                 Err(MessageReadError::Io(e)) if e.kind() == ErrorKind::WouldBlock => break,
                 Err(MessageReadError::Parse(e)) => {

@@ -22,13 +22,12 @@ mod tests;
 ///   appears. The caller polls only while the flight controller is alive.
 /// - `MISSION_REQUEST_LIST`: an empty `MISSION_COUNT` of the requested type.
 /// - `COMMAND_LONG`: `REQUEST_MESSAGE` for `AUTOPILOT_VERSION`, or for `COMPONENT_METADATA` when
-///   the bridge serves param metadata, is acked, then answered; anything else is acked
-///   `UNSUPPORTED`, so the ground station moves on without retrying.
+///   the bridge serves param metadata, is acked, then answered. Any other request is left to
+///   the caller ([`on_command_long`](Self::on_command_long) returns `false`), which acks what
+///   no service handles `UNSUPPORTED`.
 ///
-/// Two answers are placeholders that move out when their real owner arrives (#154): the
-/// `UNSUPPORTED` fallback moves to `Bridge`'s routing once a second service handles
-/// `COMMAND_LONG` (arming), and `MISSION_REQUEST_LIST` moves to a missions service once
-/// missions are served.
+/// `MISSION_REQUEST_LIST` is a placeholder that moves to a missions service once missions are
+/// served.
 #[derive(Debug)]
 pub(crate) struct ConnectService {
     vehicle_type: MavType,
@@ -84,26 +83,25 @@ impl ConnectService {
             )));
     }
 
-    /// Acks a `COMMAND_LONG` from `sender`, then sends the message it requested if served.
+    /// Answers a `COMMAND_LONG` from `sender` requesting a message this service serves: acks it,
+    /// then sends the message. Returns whether it did.
     pub(crate) fn on_command_long(
         &self,
         sender: &MavHeader,
         data: &COMMAND_LONG_DATA,
         out: &mut Outbox,
-    ) {
-        let answer = self.requested_message(data);
-        let result = if answer.is_some() {
-            MavResult::MAV_RESULT_ACCEPTED
-        } else {
-            MavResult::MAV_RESULT_UNSUPPORTED
+    ) -> bool {
+        let Some(answer) = self.requested_message(data) else {
+            return false;
         };
         out.to_gcs.push(MavMessage::COMMAND_ACK(encode::command_ack(
             data.command,
-            result,
+            MavResult::MAV_RESULT_ACCEPTED,
             sender.system_id,
             sender.component_id,
         )));
-        out.to_gcs.extend(answer);
+        out.to_gcs.push(answer);
+        true
     }
 
     /// The message a `REQUEST_MESSAGE` asks for, if this service serves it; `None` for any other

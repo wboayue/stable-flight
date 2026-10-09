@@ -46,7 +46,7 @@ fn ignores_mavlink_addressed_elsewhere() {
             target_system,
             target_component,
         });
-        bridge.on_mavlink(&GCS, &msg, &mut out);
+        bridge.on_mavlink(&GCS, &msg, Instant::now(), &mut out);
         check!(!out.to_fc.is_empty() == handled, "{case}");
     }
 }
@@ -121,7 +121,7 @@ fn routes_each_message_to_its_service() {
     for (case, msg, uplinks, sent) in cases {
         let mut bridge = bridge_with_params(Instant::now());
         let mut out = Outbox::default();
-        bridge.on_mavlink(&GCS, &msg, &mut out);
+        bridge.on_mavlink(&GCS, &msg, Instant::now(), &mut out);
         check!(out.to_fc.len() == uplinks, "{case}");
         check!(
             out.to_gcs
@@ -152,6 +152,7 @@ fn refills_the_cache_whenever_the_flight_controller_appears() {
     bridge.on_mavlink(
         &GCS,
         &MavMessage::PARAM_REQUEST_READ(read_index(0)),
+        Instant::now(),
         &mut out,
     );
     check!(out.to_gcs.is_empty(), "cache cleared");
@@ -294,6 +295,7 @@ fn ground_station_lists_and_sets_flight_controller_params() {
     bridge.on_mavlink(
         &GCS,
         &MavMessage::PARAM_REQUEST_READ(read_index(3)),
+        Instant::now(),
         &mut out,
     );
     check!(param_values(&out.to_gcs) == [listing[3].clone()]);
@@ -319,6 +321,7 @@ fn ground_station_lists_and_sets_flight_controller_params() {
         bridge.on_mavlink(
             &GCS,
             &MavMessage::PARAM_SET(set(name, value, MavParamType::MAV_PARAM_TYPE_REAL32)),
+            Instant::now(),
             &mut out,
         );
         for msg in out.to_fc.drain(..) {
@@ -339,4 +342,120 @@ fn ground_station_lists_and_sets_flight_controller_params() {
     drop(fc);
     let stored = flight_loop.param("STAB_ATT_AMAX_X").expect("exists");
     assert!((stored - 30.0).abs() < 1e-4);
+}
+
+/// The control messages in `out` to the flight controller.
+fn controls(out: &Outbox) -> Vec<Control> {
+    out.to_fc
+        .iter()
+        .filter_map(|u| match u {
+            Uplink::Control(c) => Some(c.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn heartbeats_the_link_only_while_both_ends_are_alive() {
+    let config = BridgeConfig::default();
+    let t0 = Instant::now();
+    let ms = Duration::from_millis;
+    let gcs_heartbeat = MavMessage::HEARTBEAT(HEARTBEAT_DATA::default());
+    // (case, at ms, FC heartbeat, GCS message, expected link heartbeats from a poll)
+    let ticks = [
+        ("nobody yet", 0, false, false, 0),
+        ("flight controller only", 10, true, false, 0),
+        ("ground station appears: at once", 20, false, true, 1),
+        ("within the interval", 100, true, false, 0),
+        ("due", 220, true, false, 1),
+        ("ground station silent, still alive", 2_900, true, false, 1),
+        ("ground station gone", 3_100, true, false, 0),
+        ("back: at once", 3_200, true, true, 1),
+        ("flight controller gone", 6_300, false, true, 0),
+    ];
+    let mut bridge = Bridge::new(config);
+    for (case, at_ms, fc, gcs, expected) in ticks {
+        let now = t0 + ms(at_ms);
+        let mut out = Outbox::default();
+        if fc {
+            bridge.on_downlink(&heartbeat(false), now, &mut out);
+        }
+        if gcs {
+            bridge.on_mavlink(&GCS, &gcs_heartbeat, now, &mut out);
+        }
+        let mut polled = Outbox::default();
+        bridge.poll(now, &mut polled);
+        let sent = controls(&polled)
+            .into_iter()
+            .filter(|c| *c == Control::Heartbeat)
+            .count();
+        check!(sent == expected, "{case}");
+    }
+    check!(config.gcs_timeout == Duration::from_secs(3));
+}
+
+#[test]
+fn arms_through_the_flight_controller_and_acks_unhandled_commands_unsupported() {
+    let t0 = Instant::now();
+    let ms = Duration::from_millis;
+    let mut bridge = Bridge::new(BridgeConfig::default());
+    bridge.on_downlink(&heartbeat(false), t0, &mut Outbox::default());
+    let command = |command, param1| {
+        MavMessage::COMMAND_LONG(COMMAND_LONG_DATA {
+            command,
+            param1,
+            target_system: 1,
+            target_component: 1,
+            ..Default::default()
+        })
+    };
+    let ack_results = |out: &Outbox| -> Vec<(MavCmd, MavResult)> {
+        out.to_gcs
+            .iter()
+            .filter_map(|m| match m {
+                MavMessage::COMMAND_ACK(a) => Some((a.command, a.result)),
+                _ => None,
+            })
+            .collect()
+    };
+
+    let mut out = Outbox::default();
+    bridge.on_mavlink(
+        &GCS,
+        &command(MavCmd::MAV_CMD_NAV_TAKEOFF, 0.0),
+        t0,
+        &mut out,
+    );
+    check!(
+        ack_results(&out)
+            == [(
+                MavCmd::MAV_CMD_NAV_TAKEOFF,
+                MavResult::MAV_RESULT_UNSUPPORTED
+            )],
+        "no service handles it"
+    );
+
+    let mut out = Outbox::default();
+    bridge.on_mavlink(
+        &GCS,
+        &command(MavCmd::MAV_CMD_COMPONENT_ARM_DISARM, 1.0),
+        t0,
+        &mut out,
+    );
+    check!(controls(&out) == [Control::Arm(true)]);
+    check!(
+        ack_results(&out).is_empty(),
+        "waits for the flight controller"
+    );
+
+    let mut out = Outbox::default();
+    bridge.on_downlink(&heartbeat(true), t0 + ms(200), &mut out);
+    check!(
+        ack_results(&out)
+            == [(
+                MavCmd::MAV_CMD_COMPONENT_ARM_DISARM,
+                MavResult::MAV_RESULT_ACCEPTED
+            )],
+        "confirmed by its heartbeat"
+    );
 }

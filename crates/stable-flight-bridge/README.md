@@ -17,9 +17,11 @@ Companion-computer bridge for a [Stable Flight](https://github.com/wboayue/stabl
 | `HOME_POSITION` | 1 Hz and when home moves: the position at the latest arming, or the first one before any arm |
 | `EXTENDED_SYS_STATE` | 1 Hz and when it changes: landed state from the arm state and height above home |
 | `MISSION_REQUEST_LIST` | `MISSION_COUNT` 0 of the requested type (mission, fence, rally) |
-| `COMMAND_LONG` | `REQUEST_MESSAGE(AUTOPILOT_VERSION)`: acked, then `AUTOPILOT_VERSION` (MAVLink 2, C-cast params). `REQUEST_MESSAGE(COMPONENT_METADATA)`: acked, then `COMPONENT_METADATA` pointing to the param metadata (below). Anything else: `UNSUPPORTED` |
+| `COMMAND_LONG` | `REQUEST_MESSAGE(AUTOPILOT_VERSION)`: acked, then `AUTOPILOT_VERSION` (MAVLink 2, C-cast params). `REQUEST_MESSAGE(COMPONENT_METADATA)`: acked, then `COMPONENT_METADATA` pointing to the param metadata (below). `COMPONENT_ARM_DISARM` (QGC's Arm/Disarm; force arm and emergency stop alike): forwarded as `Control::Arm`, acked `ACCEPTED` once the flight controller's heartbeat shows the new state, `FAILED` if not within 1 s, `TEMPORARILY_REJECTED` with no flight controller or another request pending. Anything else: `UNSUPPORTED` |
 
-Only messages addressed to system 1 / component 1 (or broadcast) are handled. Telemetry goes out only while the flight controller is alive, and starts over (fresh home, no stale state) when it comes back. The payloads, home, and landed-state rules are [`stable-flight-mavlink`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-mavlink)'s.
+Only messages addressed to system 1 / component 1 (or broadcast) are handled.
+
+While the ground station is alive (any message within 3 s; QGC also heartbeats at 1 Hz) and the flight controller is too, the bridge sends `Control::Heartbeat` to the flight controller at 5 Hz. That keeps a link-fed flight controller's commander fresh, and losing QGC, or the bridge itself, lets its failsafe hold position ([`copter-companion-realflight`](https://github.com/wboayue/stable-flight/blob/main/crates/stable-flight-sitl-realflight/examples/copter-companion-realflight.rs)). Telemetry goes out only while the flight controller is alive, and starts over (fresh home, no stale state) when it comes back. The payloads, home, and landed-state rules are [`stable-flight-mavlink`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-mavlink)'s.
 
 ## Param metadata
 
