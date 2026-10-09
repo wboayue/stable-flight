@@ -20,7 +20,7 @@ stable-flight-tools ──► stable-flight-sitl ──────────�
 * **`stable-flight-link`** (`crates/stable-flight-link`): the wire protocol between the flight controller and a companion computer — `Uplink`/`Downlink` messages, the frame codec, and the byte-level `Link` trait (see [Link](#link)). `no_std`, depends only on the core (with its `serde` feature). Published.
 * **`stable-flight-mavlink`** (`crates/stable-flight-mavlink`): MAVLink message builders, pure functions from core values to `mavlink` payloads, plus the telemetry-only estimates they need (home, landed state, the geodetic projection). `std`; depends only on the core and `mavlink`, so the bridge's encoding is testable without I/O and reusable by an onboard MAVLink option ([#156](https://github.com/wboayue/stable-flight/issues/156)). Published.
 * **`stable-flight-bridge`** (`crates/stable-flight-bridge`): the companion-computer binary that translates the native link to MAVLink for ground stations (see [Link](#link)). `std`; depends on the link crate, `stable-flight-mavlink`, and `mavlink`, never on the sitl harness, so it runs the same against SITL and a board. Published.
-* **`stable-flight-sitl`** (`crates/stable-flight-sitl`): the simulator-independent software-in-the-loop harness — joystick and scripted commanders, `RealTimeRunner` (wall-clock pacing of a `FlightLoop`), and `ShutdownSignal` (SIGINT/Ctrl-C flag). Published.
+* **`stable-flight-sitl`** (`crates/stable-flight-sitl`): the simulator-independent software-in-the-loop harness — joystick and scripted commanders, `RealTimeRunner` (wall-clock pacing of a `FlightLoop`), and `ShutdownSignal` (SIGINT/SIGTERM/Ctrl-C flag). Published.
 * **`stable-flight-sitl-realflight`** (`crates/stable-flight-sitl-realflight`): the RealFlight backend — `RealFlightVehicle`, `ActuatorMapping`, tuned `airframes`, and the RealFlight examples. Published.
 * **`stable-flight-tools`** (`crates/stable-flight-tools`): developer binaries (`plot_flight`, `generate_figure_eight`). Unpublished, so library consumers never compile `plotters`.
 * **`firmware/`**: excluded from the workspace; each board is its own nested workspace with its own target, profiles, and lockfile (e.g. `firmware/ark-fpv`).
@@ -174,7 +174,7 @@ Each major component is defined by a trait interface, allowing multiple implemen
 
 * Operates at a fixed frequency (e.g., 250 Hz) validated at construction (`RealTimeRunner::new` rejects non-positive or non-finite rates and ones whose period isn't a representable non-zero `Duration`)
 * Primes the loop, then steps it with the nominal period and sleeps to the next accumulated deadline
-* Checks the `ShutdownSignal` before each tick; SIGINT (Unix) / Ctrl-C or Ctrl-Break (Windows) set it once installed, and a second interrupt terminates the process
+* Checks the `ShutdownSignal` before each tick; SIGINT or SIGTERM (Unix) / Ctrl-C or Ctrl-Break (Windows) set it once installed, and a second stop signal terminates the process
 * Catches up after a slow tick: deadlines accumulate, so missed ticks run back-to-back (resync-on-stall is a planned follow-up)
 * Returns `RunStats` (ticks, elapsed, average rate)
 

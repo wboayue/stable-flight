@@ -52,7 +52,7 @@ With all components configured, assemble a core `FlightLoop` and drive it with t
 ```rust
 let mut flight_loop = FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
 
-// Ctrl-C (SIGINT) requests a graceful stop between ticks.
+// Ctrl-C (SIGINT) or SIGTERM requests a graceful stop between ticks.
 let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");
 
 // Prime the loop, then tick at 250 Hz until shutdown.
