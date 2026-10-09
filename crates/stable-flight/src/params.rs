@@ -3,8 +3,7 @@
 //! The config is the only store: [`Params::param`] reads a field of the component's config,
 //! and [`Params::set_param`] writes a copy and commits it through
 //! [`Configurable::set_config`], which validates it (an invalid value is rejected and the
-//! config unchanged) and applies the integrator policy (see
-//! [`Configurable::set_config`]). Any [`Configurable`] whose config implements
+//! config unchanged) and applies the integrator policy. Any [`Configurable`] whose config implements
 //! [`ParamTable`] gets [`Params`]; [`FlightLoop`](crate::FlightLoop) combines its guidance's
 //! and stabilizer's.
 //!
@@ -89,8 +88,30 @@ pub struct Param<C> {
 }
 
 impl<C> Param<C> {
-    /// A param read by `get` and written by `set`; use the crate-internal `param!` macro.
-    pub(crate) const fn new(name: &'static str, get: fn(&C) -> f32, set: fn(&mut C, f32)) -> Self {
+    /// A param named `name`, read by `get` and written (unvalidated) by `set`, in the param's
+    /// unit. Use it to give your own config a [`ParamTable`]:
+    ///
+    /// ```
+    /// use stable_flight::params::{Param, ParamTable};
+    ///
+    /// #[derive(Clone, Copy)]
+    /// struct TrimConfig {
+    ///     roll_trim_rad: f32,
+    /// }
+    ///
+    /// impl ParamTable for TrimConfig {
+    ///     const PARAMS: &'static [Param<Self>] = &[Param::new(
+    ///         "TRIM_ROLL",
+    ///         |c| c.roll_trim_rad.to_degrees(),
+    ///         |c, v| c.roll_trim_rad = v.to_radians(),
+    ///     )];
+    /// }
+    ///
+    /// let mut config = TrimConfig { roll_trim_rad: 0.0 };
+    /// TrimConfig::find("TRIM_ROLL").unwrap().set(&mut config, 90.0);
+    /// assert!((config.roll_trim_rad - core::f32::consts::FRAC_PI_2).abs() < 1e-6);
+    /// ```
+    pub const fn new(name: &'static str, get: fn(&C) -> f32, set: fn(&mut C, f32)) -> Self {
         Self { name, get, set }
     }
 
@@ -111,6 +132,10 @@ impl<C> Param<C> {
 }
 
 /// A config that exposes its fields as named params.
+///
+/// Names must be unique within a table and across the components combined into one view
+/// (e.g. a [`FlightLoop`](crate::FlightLoop)'s guidance and stabilizer), and at most
+/// [`MAX_NAME_LEN`] bytes.
 pub trait ParamTable: Copy + 'static {
     /// Every param, in a stable order.
     const PARAMS: &'static [Param<Self>];

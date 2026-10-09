@@ -316,8 +316,10 @@ where
     }
 }
 
-/// The guidance's params, then the stabilizer's, by name (see [`crate::params`]). Names are
-/// prefixed by component, so a name belongs to at most one of them.
+/// The guidance's params, then the stabilizer's, by name (see [`crate::params`]). Nothing
+/// checks that their names are disjoint: on a duplicate the guidance's wins and the
+/// stabilizer's is unreachable, so table authors keep names unique across components (the
+/// copter tables use `GUID_`/`STAB_` prefixes).
 ///
 /// ```
 /// # use std::time::Duration;
