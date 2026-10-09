@@ -107,6 +107,7 @@ jobs:
         cargo build -p stable-flight --locked --target thumbv7em-none-eabihf
         cargo build -p stable-flight --features testing --locked --target thumbv7em-none-eabihf
         cargo build -p stable-flight --features serde --locked --target thumbv7em-none-eabihf
+        cargo build -p stable-flight --features param-metadata --locked --target thumbv7em-none-eabihf
         cargo build -p stable-flight-link --locked --target thumbv7em-none-eabihf
         cargo build -p stable-flight-link --features testing --locked --target thumbv7em-none-eabihf
 

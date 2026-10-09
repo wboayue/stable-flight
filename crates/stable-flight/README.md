@@ -100,6 +100,19 @@ flight_loop.set_param("STAB_RATE_P", 0.2)?;
 flight_loop.visit_params(&mut |name, value| println!("{name} = {value}"));
 ```
 
+### Param metadata
+
+The `param-metadata` feature adds `params::metadata`. For each param it gives a one-line description, units, a category (the component) and group (the loop), and the valid range, for ground stations: [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) serves it to QGC. A config describes its params by implementing `ParamMetadata`: a `METADATA` table next to its `ParamTable`, with the same names in the same order. Ranges restate what `validate` accepts, and tests check each one against it. The feature is host-side data only; firmware leaves it off, so it costs no flash.
+
+```rust
+use stable_flight::params::metadata::ParamMetadata;
+use stable_flight::guidance::copter::CopterGuidanceConfig;
+
+for meta in CopterGuidanceConfig::METADATA {
+    println!("{} ({}): {}", meta.name(), meta.units(), meta.description());
+}
+```
+
 ### Serialization
 
 The `serde` feature derives `Serialize`/`Deserialize` on the pipeline data (`Command`, `Setpoint`, `VehicleState`, `ControlOutput`, `ActuatorCommand`, `Saturation`, and their parts) without `std`, so the same types cross a wire. [`stable-flight-link`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-link) carries them between the flight controller and a companion. `TelemetryRecord` borrows its parts, so the link sends an owned copy.

@@ -31,3 +31,82 @@ impl ParamTable for CopterStabilizerConfig {
         param!("STAB_THR_EXPO", thrust_curve_exponent),
     ];
 }
+
+#[cfg(feature = "param-metadata")]
+mod metadata {
+    use super::CopterStabilizerConfig;
+    use crate::params::metadata::{ParamMeta, ParamMetadata};
+
+    const RATE: ParamMeta = ParamMeta::in_group("Stabilizer", "Rate");
+    const ATTITUDE: ParamMeta = ParamMeta::in_group("Stabilizer", "Attitude");
+    const YAW: ParamMeta = ParamMeta::in_group("Stabilizer", "Yaw");
+    const STICKS: ParamMeta = ParamMeta::in_group("Stabilizer", "Sticks");
+    const THRUST: ParamMeta = ParamMeta::in_group("Stabilizer", "Thrust");
+
+    impl ParamMetadata for CopterStabilizerConfig {
+        const METADATA: &'static [ParamMeta] = &[
+            RATE.param("STAB_RATE_P", "Roll/pitch rate loop proportional gain"),
+            RATE.param("STAB_RATE_I", "Roll/pitch rate loop integral gain"),
+            RATE.param("STAB_RATE_D", "Roll/pitch rate loop derivative gain"),
+            RATE.param("STAB_RATE_YAW_P", "Yaw rate loop proportional gain"),
+            RATE.param("STAB_RATE_YAW_I", "Yaw rate loop integral gain"),
+            RATE.param("STAB_RATE_YAW_D", "Yaw rate loop derivative gain"),
+            RATE.param("STAB_RATE_IMAX", "Rate loop integral limit, per axis")
+                .with_units("rad")
+                .at_least(0.0),
+            ATTITUDE.param("STAB_ATT_P", "Roll/pitch angle loop proportional gain"),
+            ATTITUDE.param("STAB_ATT_I", "Roll/pitch angle loop integral gain"),
+            ATTITUDE.param("STAB_ATT_D", "Roll/pitch angle loop derivative gain"),
+            ATTITUDE
+                .param("STAB_ATT_AMAX_X", "Largest roll angle")
+                .with_units("deg")
+                .at_least(0.0),
+            ATTITUDE
+                .param("STAB_ATT_AMAX_Y", "Largest pitch angle")
+                .with_units("deg")
+                .at_least(0.0),
+            ATTITUDE
+                .param("STAB_ATT_IMAX", "Angle loop integral limit, per axis")
+                .with_units("rad*s")
+                .at_least(0.0),
+            ATTITUDE
+                .param(
+                    "STAB_ATT_RMAX_X",
+                    "Largest roll rate the angle loop commands",
+                )
+                .with_units("deg/s")
+                .at_least(0.0),
+            ATTITUDE
+                .param(
+                    "STAB_ATT_RMAX_Y",
+                    "Largest pitch rate the angle loop commands",
+                )
+                .with_units("deg/s")
+                .at_least(0.0),
+            YAW.param("STAB_YAW_P", "Heading-hold loop proportional gain"),
+            YAW.param("STAB_YAW_I", "Heading-hold loop integral gain"),
+            YAW.param("STAB_YAW_D", "Heading-hold loop derivative gain"),
+            YAW.param("STAB_YAW_IMAX", "Heading-hold loop integral limit")
+                .with_units("rad*s")
+                .at_least(0.0),
+            YAW.param("STAB_YAW_RMAX", "Largest yaw rate heading hold commands")
+                .with_units("deg/s")
+                .at_least(0.0),
+            STICKS
+                .param("STAB_FS_RATE_X", "Roll rate at full stick in rate mode")
+                .with_units("deg/s")
+                .at_least(0.0),
+            STICKS
+                .param("STAB_FS_RATE_Y", "Pitch rate at full stick in rate mode")
+                .with_units("deg/s")
+                .at_least(0.0),
+            STICKS
+                .param("STAB_FS_RATE_Z", "Yaw rate at full stick in rate mode")
+                .with_units("deg/s")
+                .at_least(0.0),
+            THRUST
+                .param("STAB_THR_EXPO", "Thrust curve exponent (1 is linear)")
+                .above(0.0),
+        ];
+    }
+}

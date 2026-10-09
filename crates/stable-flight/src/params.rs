@@ -17,36 +17,40 @@
 //! scans the names. Index access is what paced output uses (a cursor that sends a few params
 //! per tick).
 //!
+//! Units, descriptions, groups, and valid ranges are in the `metadata` module (feature
+//! `param-metadata`), one table per config next to its [`ParamTable`]. The tables below map
+//! names to config fields.
+//!
 //! # Copter stabilizer ([`CopterStabilizerConfig`](crate::stabilizers::copter::CopterStabilizerConfig))
 //!
-//! | Name | Field | Unit |
-//! |---|---|---|
-//! | `STAB_RATE_P`, `_I`, `_D` | `body_rate.gains` | |
-//! | `STAB_RATE_YAW_P`, `_I`, `_D` | `body_rate.yaw_gains` | |
-//! | `STAB_RATE_IMAX` | `body_rate.max_integral` | rad |
-//! | `STAB_ATT_P`, `_I`, `_D` | `attitude.gains` | |
-//! | `STAB_ATT_AMAX_X`, `_Y` | `attitude.max_angles_rad` | deg |
-//! | `STAB_ATT_IMAX` | `attitude.max_integral` | rad·s |
-//! | `STAB_ATT_RMAX_X`, `_Y` | `attitude.max_rate_radps` | deg/s |
-//! | `STAB_YAW_P`, `_I`, `_D` | `yaw.gains` | |
-//! | `STAB_YAW_IMAX` | `yaw.max_integral` | rad·s |
-//! | `STAB_YAW_RMAX` | `yaw.max_rate_radps` | deg/s |
-//! | `STAB_FS_RATE_X`, `_Y`, `_Z` | `full_scale_rates_radps` | deg/s |
-//! | `STAB_THR_EXPO` | `thrust_curve_exponent` | |
+//! | Name | Field |
+//! |---|---|
+//! | `STAB_RATE_P`, `_I`, `_D` | `body_rate.gains` |
+//! | `STAB_RATE_YAW_P`, `_I`, `_D` | `body_rate.yaw_gains` |
+//! | `STAB_RATE_IMAX` | `body_rate.max_integral` |
+//! | `STAB_ATT_P`, `_I`, `_D` | `attitude.gains` |
+//! | `STAB_ATT_AMAX_X`, `_Y` | `attitude.max_angles_rad` |
+//! | `STAB_ATT_IMAX` | `attitude.max_integral` |
+//! | `STAB_ATT_RMAX_X`, `_Y` | `attitude.max_rate_radps` |
+//! | `STAB_YAW_P`, `_I`, `_D` | `yaw.gains` |
+//! | `STAB_YAW_IMAX` | `yaw.max_integral` |
+//! | `STAB_YAW_RMAX` | `yaw.max_rate_radps` |
+//! | `STAB_FS_RATE_X`, `_Y`, `_Z` | `full_scale_rates_radps` |
+//! | `STAB_THR_EXPO` | `thrust_curve_exponent` |
 //!
 //! # Copter guidance ([`CopterGuidanceConfig`](crate::guidance::copter::CopterGuidanceConfig))
 //!
-//! | Name | Field | Unit |
-//! |---|---|---|
-//! | `GUID_ALT_P`, `_I`, `_D` | `altitude.gains` | |
-//! | `GUID_ALT_IMAX` | `altitude.max_integral` | m·s |
-//! | `GUID_ALT_HOVER` | `altitude.hover_thrust` | |
-//! | `GUID_LAT_POS_P` | `lateral.position_p` | 1/s |
-//! | `GUID_LAT_VEL_P`, `_I`, `_D` | `lateral.velocity` | |
-//! | `GUID_LAT_IMAX` | `lateral.max_integral` | m |
-//! | `GUID_NAV_PERIOD` | `navigation_period_s` | s |
-//! | `GUID_TILT_MAX` | `max_tilt_rad` | deg |
-//! | `GUID_STICK_X`, `_Y` | `max_stick_angles_rad` | deg |
+//! | Name | Field |
+//! |---|---|
+//! | `GUID_ALT_P`, `_I`, `_D` | `altitude.gains` |
+//! | `GUID_ALT_IMAX` | `altitude.max_integral` |
+//! | `GUID_ALT_HOVER` | `altitude.hover_thrust` |
+//! | `GUID_LAT_POS_P` | `lateral.position_p` |
+//! | `GUID_LAT_VEL_P`, `_I`, `_D` | `lateral.velocity` |
+//! | `GUID_LAT_IMAX` | `lateral.max_integral` |
+//! | `GUID_NAV_PERIOD` | `navigation_period_s` |
+//! | `GUID_TILT_MAX` | `max_tilt_rad` |
+//! | `GUID_STICK_X`, `_Y` | `max_stick_angles_rad` |
 //!
 //! # Examples
 //!
@@ -77,6 +81,8 @@ use core::fmt;
 use crate::Configurable;
 use crate::controllers::InvalidConfig;
 
+#[cfg(feature = "param-metadata")]
+pub mod metadata;
 #[cfg(test)]
 mod tests;
 
