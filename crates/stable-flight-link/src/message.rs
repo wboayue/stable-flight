@@ -4,8 +4,8 @@ use core::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use stable_flight::{
-    ActuatorCommand, Command, ControlMode, ControlOutput, Saturation, Setpoint, TelemetryRecord,
-    VehicleState, params,
+    ActuatorCommand, Command, ControlMode, ControlOutput, FailsafeState, Saturation, Setpoint,
+    TelemetryRecord, VehicleState, params,
 };
 
 use crate::frame::{Message, sealed::Sealed};
@@ -117,7 +117,8 @@ pub enum Downlink {
         armed: bool,
         /// Flight mode: the kind of the commanded input.
         mode: ControlMode,
-        /// The flight controller is hearing the companion.
+        /// The flight controller is hearing the companion: `false` while a failsafe flies the
+        /// fallback ([`FailsafeState::Fallback`]), `true` otherwise, including without a failsafe.
         link_ok: bool,
     },
     /// Estimated vehicle state.
@@ -159,6 +160,7 @@ impl Message for Downlink {}
 ///     control: &control,
 ///     actuators: &actuators,
 ///     saturation: Saturation::default(),
+///     failsafe: None,
 /// };
 ///
 /// let record = Record::from(&telemetry);
@@ -180,6 +182,8 @@ pub struct Record {
     pub actuators: ActuatorCommand,
     /// Limits hit this tick.
     pub saturation: Saturation,
+    /// Which commander a failsafe let fly; `None` without a failsafe.
+    pub failsafe: Option<FailsafeState>,
 }
 
 impl Record {
@@ -194,6 +198,7 @@ impl Record {
             control: &self.control,
             actuators: &self.actuators,
             saturation: self.saturation,
+            failsafe: self.failsafe,
         }
     }
 }
@@ -208,6 +213,7 @@ impl From<&TelemetryRecord<'_>> for Record {
             control: *record.control,
             actuators: *record.actuators,
             saturation: record.saturation,
+            failsafe: record.failsafe,
         }
     }
 }

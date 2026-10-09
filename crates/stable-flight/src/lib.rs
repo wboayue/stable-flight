@@ -139,6 +139,36 @@ pub trait Commander {
     /// A [`Command`]: whether the vehicle should be armed, and the [`ControlInput`] to fly.
     /// `arm` is a level, not an event: return the desired state every tick.
     fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command;
+
+    /// Which commander a failsafe let fly on the last [`next_command`](Self::next_command)
+    /// call, for a commander that has one
+    /// ([`FailsafeCommander`](crate::commanders::FailsafeCommander)). [`FlightLoop`] puts it in
+    /// the tick's [`TelemetryRecord::failsafe`]. The default reports none.
+    fn failsafe(&self) -> Option<FailsafeState> {
+        None
+    }
+}
+
+/// Which commander a [`FailsafeCommander`](crate::commanders::FailsafeCommander) let fly: its
+/// link-fed primary, or the fallback after the link went stale.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::FailsafeState;
+///
+/// let link_ok = |state: Option<FailsafeState>| state != Some(FailsafeState::Fallback);
+/// assert!(link_ok(Some(FailsafeState::Primary)));
+/// assert!(link_ok(None)); // no failsafe: nothing to report
+/// assert!(!link_ok(Some(FailsafeState::Fallback)));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub enum FailsafeState {
+    /// The primary (link-fed) commander flies.
+    Primary,
+    /// The primary went stale, or hasn't been heard yet; the fallback flies.
+    Fallback,
 }
 
 /// One tick's command from a [`Commander`]: whether the vehicle should be armed, and what to fly.
@@ -1139,6 +1169,7 @@ pub trait TelemetryPublisher {
 ///     control: &control,
 ///     actuators: &actuators,
 ///     saturation: Saturation::default(),
+///     failsafe: None,
 /// });
 /// ```
 #[derive(Debug, Clone, Copy)]
@@ -1158,6 +1189,9 @@ pub struct TelemetryRecord<'a> {
     /// Limits guidance, the stabilizer, and the mixer hit this tick, merged
     /// ([`Saturation::default`] while disarmed).
     pub saturation: Saturation,
+    /// Which commander a failsafe let fly this tick ([`Commander::failsafe`]); `None` without
+    /// a failsafe.
+    pub failsafe: Option<FailsafeState>,
 }
 
 /// Represents commands sent to the vehicle's actuators.

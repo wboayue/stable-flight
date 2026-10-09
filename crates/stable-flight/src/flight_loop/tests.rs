@@ -8,7 +8,7 @@ use assert2::check;
 use super::*;
 use crate::{
     Actuator, ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command, ControlInput,
-    ControlOutput, Setpoint, StateEstimator,
+    ControlOutput, FailsafeState, Setpoint, StateEstimator,
 };
 
 /// Shared, ordered log of pipeline calls. Test-only; the loop itself never allocates.
@@ -506,4 +506,44 @@ fn record_merges_the_saturation_each_stage_reports() {
     }
     check!(merged.tilt && merged.moments == [false, true, false] && merged.mixer_thrust);
     check!(!merged.thrust && !merged.mixer_moments);
+}
+
+/// Reports a fixed failsafe state, flying a disarmed default command.
+struct ReportsFailsafe(Option<FailsafeState>);
+
+impl Commander for ReportsFailsafe {
+    fn next_command(&mut self, _dt: f32, _state: &VehicleState) -> Command {
+        Command::default()
+    }
+
+    fn failsafe(&self) -> Option<FailsafeState> {
+        self.0
+    }
+}
+
+#[test]
+fn record_carries_the_commanders_failsafe_state() {
+    use crate::mixers::QuadCopterMixer;
+    use crate::testing::{NullVehicle, RecordingTelemetry};
+
+    for failsafe in [
+        None,
+        Some(FailsafeState::Primary),
+        Some(FailsafeState::Fallback),
+    ] {
+        let mut flight_loop = FlightLoop::new(
+            ReportsFailsafe(failsafe),
+            NullVehicle::new(),
+            Flagged(Saturation::default()),
+            Flagged(Saturation::default()),
+            QuadCopterMixer::default(),
+            RecordingTelemetry::<1>::new(),
+        );
+        flight_loop.prime();
+        flight_loop.step(Duration::from_millis(4));
+
+        let (.., telemetry) = flight_loop.into_parts();
+        assert2::assert!(let Some(tick) = telemetry.iter().last());
+        check!(tick.failsafe == failsafe, "{failsafe:?}");
+    }
 }

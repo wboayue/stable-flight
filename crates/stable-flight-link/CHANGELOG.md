@@ -14,7 +14,8 @@ not each change; per-change entries start after it.
 
 - **Messages:** `Uplink` (`Control`: heartbeat, core `Command`, arm; `ParamRequest`) and `Downlink`
   (heartbeat with arm state and core `ControlMode`, `VehicleState`, `Record` telemetry, `ParamValue`, status text). `Record` is an owned
-  `TelemetryRecord`, convertible both ways.
+  `TelemetryRecord`, convertible both ways. The heartbeat's `link_ok` is `false` while a
+  failsafe flies its fallback.
 - **Frames:** `[version][postcard][crc16]`, COBS-encoded and `0x00`-terminated, through the
   sealed `Message` trait (`encode`/`decode`, with `EncodeError`/`DecodeError`). Rejects bad
   COBS, bytes after the delimiter, short frames, CRC mismatches, other `PROTOCOL_VERSION`s,

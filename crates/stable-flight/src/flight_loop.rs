@@ -186,6 +186,7 @@ where
             control: &control,
             actuators: &actuators,
             saturation,
+            failsafe: self.commander.failsafe(),
         });
     }
 
