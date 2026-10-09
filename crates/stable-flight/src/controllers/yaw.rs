@@ -1,5 +1,5 @@
 use crate::controllers::derivative::DerivativeState;
-use crate::controllers::{Gains, InvalidConfig, check_limit};
+use crate::controllers::{Gains, InvalidConfig, check_limit, rescale_integral};
 use crate::math::{assert_dt, clamp_symmetric, wrap_angle};
 
 /// Configures the yaw controller with PID gains and operational limits.
@@ -150,6 +150,16 @@ impl YawController {
             gains.p * error + gains.i * self.integrated_error + gains.d * error_derivative;
 
         clamp_symmetric(yaw_rate, config.max_rate_radps)
+    }
+
+    /// Rescales the integral for a change of integral gain from `old` to `new`, so the next
+    /// tick's I term picks up where the last left off (`rescale_integral`).
+    pub(crate) fn rescale_integral(
+        &mut self,
+        old: &YawControllerConfig,
+        new: &YawControllerConfig,
+    ) {
+        self.integrated_error = rescale_integral(self.integrated_error, old.gains.i, new.gains.i);
     }
 }
 

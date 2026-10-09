@@ -1,7 +1,9 @@
 use nalgebra::UnitQuaternion;
 
 use crate::GRAVITY;
-use crate::controllers::{Gains, InvalidConfig, check_limit, check_unit_interval};
+use crate::controllers::{
+    Gains, InvalidConfig, check_limit, check_unit_interval, rescale_integral,
+};
 use crate::math::{assert_dt, clamp_symmetric, tilt_boost};
 
 /// Default [`AltitudeControllerConfig::hover_thrust`].
@@ -208,6 +210,22 @@ impl AltitudeController {
         let linear_thrust =
             hover_thrust * (GRAVITY + acceleration) / GRAVITY * tilt_boost(&estimate.attitude);
         linear_thrust.clamp(0.0, 1.0)
+    }
+
+    /// The accumulated error, for tests of the composites' integrator policy.
+    #[cfg(test)]
+    pub(crate) fn integrated_error(&self) -> f32 {
+        self.integrated_error
+    }
+
+    /// Rescales the integral for a change of integral gain from `old` to `new`, so the next
+    /// tick's I term picks up where the last left off (`rescale_integral`).
+    pub(crate) fn rescale_integral(
+        &mut self,
+        old: &AltitudeControllerConfig,
+        new: &AltitudeControllerConfig,
+    ) {
+        self.integrated_error = rescale_integral(self.integrated_error, old.gains.i, new.gains.i);
     }
 }
 

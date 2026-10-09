@@ -108,6 +108,23 @@ fn check(field: &'static str, ok: bool, requirement: &'static str) -> Result<(),
     }
 }
 
+/// The integrated error that keeps the I term `i · integral` unchanged when the integral gain
+/// goes from `old_i` to `new_i`, so a retune doesn't bump the output (the policy in
+/// `architecture.md#config-ownership`).
+///
+/// Unchanged when the gain is. Zero when either gain is zero (an integral accumulated under a
+/// zero gain was never applied, so carrying it in would bump) or the ratio isn't finite.
+pub(crate) fn rescale_integral(integral: f32, old_i: f32, new_i: f32) -> f32 {
+    if old_i == new_i {
+        return integral;
+    }
+    if old_i == 0.0 || new_i == 0.0 {
+        return 0.0;
+    }
+    let rescaled = integral * (old_i / new_i);
+    if rescaled.is_finite() { rescaled } else { 0.0 }
+}
+
 /// PID gains for a single control loop.
 #[derive(Default, Clone, Copy, Debug, PartialEq)]
 pub struct Gains {

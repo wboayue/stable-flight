@@ -26,6 +26,7 @@ pub mod flight_loop;
 pub mod guidance;
 mod math;
 pub mod mixers;
+pub mod params;
 pub mod stabilizers;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
@@ -1021,7 +1022,9 @@ pub trait Configurable {
 
     /// Replaces the config if it is valid; otherwise keeps the current one and returns the
     /// error. Call it between ticks: the new config applies from the next tick, and runtime
-    /// state (integrals, derivative history, timers) is kept.
+    /// state (integrals, derivative history, timers) is kept. A changed integral gain rescales
+    /// its integral so the I term carries over without a bump; across a zero gain the
+    /// integral resets (`architecture.md#config-ownership`).
     fn set_config(&mut self, config: Self::Config) -> Result<(), controllers::InvalidConfig>;
 }
 

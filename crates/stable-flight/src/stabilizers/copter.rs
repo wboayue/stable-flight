@@ -42,6 +42,7 @@ use crate::controllers::*;
 use crate::controllers::{check_limit, check_positive};
 use crate::math::{assert_dt, euler_angles, saturate_throttle, saturate_unit};
 
+mod params;
 #[cfg(test)]
 mod tests;
 
@@ -176,6 +177,12 @@ impl Configurable for CopterStabilizer {
     /// Validates with [`CopterStabilizerConfig::validate`].
     fn set_config(&mut self, config: CopterStabilizerConfig) -> Result<(), InvalidConfig> {
         config.validate()?;
+        let old = &self.config;
+        self.body_rate
+            .rescale_integral(&old.body_rate, &config.body_rate);
+        self.attitude
+            .rescale_integral(&old.attitude, &config.attitude);
+        self.yaw.rescale_integral(&old.yaw, &config.yaw);
         self.config = config;
         Ok(())
     }
