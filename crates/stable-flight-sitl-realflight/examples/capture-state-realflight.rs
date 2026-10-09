@@ -182,24 +182,27 @@ fn main() {
         out: RefCell::new(out),
     };
 
+    // The native link, for the bridge.
+    let link = UdpLink::bind(&args.link_bind, &args.link_peer).expect("failed to open link socket");
+
     info!("Recording to {}; Ctrl-C to stop", args.output.display());
     match &args.script {
         Some(script) => fly(
             ScriptCommander::new(script).expect("failed to load flight script"),
             bridge,
-            &args,
+            link,
         ),
         None => fly(
             Extreme3DCommander::new().expect("Failed to initialize Extreme3D joystick"),
             bridge,
-            &args,
+            link,
         ),
     }
 }
 
-/// Flies the QuadCopterX pipeline from `commander` until Ctrl-C, with the link at `args`'
-/// addresses.
-fn fly(commander: impl Commander, bridge: RecordingBridge<RealFlightRemoteBridge>, args: &Args) {
+/// Flies the QuadCopterX pipeline from `commander` until Ctrl-C, with params and telemetry over
+/// `link`.
+fn fly(commander: impl Commander, bridge: RecordingBridge<RealFlightRemoteBridge>, link: UdpLink) {
     let airframe = airframes::quadcopter_x();
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         bridge,
@@ -210,9 +213,7 @@ fn fly(commander: impl Commander, bridge: RecordingBridge<RealFlightRemoteBridge
     let mixer = airframe.mixer;
     // The link: the publisher writes it each tick (the flight loop's telemetry), and the poller
     // reads it and serves params between ticks. Up to 32 param requests and 16 replies queue.
-    let (link_rx, link_tx) = UdpLink::bind(&args.link_bind, &args.link_peer)
-        .expect("failed to open link socket")
-        .into_halves();
+    let (link_rx, link_tx) = link.into_halves();
     let link_config = FcLinkConfig {
         publisher: LinkPublisherConfig {
             // Records carry the commanded thrust the bridge reports as VFR_HUD throttle.

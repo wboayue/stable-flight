@@ -4,9 +4,9 @@
 //!
 //! Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX
 //!
-//! The link binds `--link-bind` (default `127.0.0.1:14560`) and talks to the bridge
-//! (`stable-flight-bridge`, or any host speaking the link protocol) at `--link-peer` (default
-//! `127.0.0.1:14561`). QGC connects through the bridge, which speaks MAVLink for the flight
+//! The link binds `--link-bind` and talks to the bridge (`stable-flight-bridge`, or any host
+//! speaking the link protocol) at `--link-peer`; both default to the localhost ports the bridge
+//! expects. QGC connects through the bridge, which speaks MAVLink for the flight
 //! controller: params, attitude, and position (records at 5 Hz carry the thrust QGC shows as
 //! throttle). The bridge can keep running across flights. The RealFlight host defaults to
 //! `10.211.55.3:8080`; override it with `--host`.
