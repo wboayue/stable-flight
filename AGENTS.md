@@ -26,11 +26,12 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
   - `crates/stable-flight-bridge` — the companion-computer binary: native link (UDP today) ⇄
     MAVLink v2 for ground stations, presenting the FC as sysid 1 / compid 1. Pure `Bridge` (`bridge.rs`:
     liveness, addressing, routing) over services: `ParamService` (`params.rs`, with the cache)
-    and `ConnectService` (`connect.rs`: heartbeat, `AUTOPILOT_VERSION`, missions, command acks),
-    which queue into an `Outbox` (`outbox.rs`); payload builders in `encode.rs`. `Pump` (`pump.rs`) runs one
+    `ConnectService` (`connect.rs`: heartbeat, `AUTOPILOT_VERSION`, missions, command acks), and
+    `StateService` (`state.rs`: attitude, positions, home, landed state, `VFR_HUD`, paced by
+    `Interval`, `interval.rs`), which queue into an `Outbox` (`outbox.rs`); payload builders in `encode.rs`. `Pump` (`pump.rs`) runs one
     I/O pass (read both sides, route, send) over generic link halves and a boxed GCS connection;
     `IdleBackoff` (`idle.rs`) paces passes (1 ms under traffic, up to 8 ms idle); `main.rs` only
-    sets up. Params-first slice of #154; depends on link (`std`), `stable-flight-mavlink`, and `mavlink`, not on sitl.
+    sets up (`--origin` parsing in `origin.rs`). Params and state slices of #154; depends on link (`std`), `stable-flight-mavlink`, and `mavlink`, not on sitl.
   - `crates/stable-flight-sitl` — the simulator-independent SITL harness: `commanders`,
     `telemetry`, `runner` (`RealTimeRunner`, wall-clock pacing of a `FlightLoop`), `shutdown`
     (`ShutdownSignal`). Depends on the core. Non-simulator examples live in `crates/stable-flight-sitl/examples/*.rs`.
@@ -73,8 +74,8 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 cargo build --workspace                         # or: just build
 cargo test --workspace --all-features           # or: just test
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight  # joystick + RealFlight (--host); or: just fly-manual
-cargo run -p stable-flight-sitl-realflight --example copter-tune-realflight    # as manual, params + telemetry over the native link (--link-bind/--link-peer), no direct MAVLink; or: just fly-tune
-cargo run -p stable-flight-bridge               # native link ⇄ MAVLink for QGC (--link-bind/--link-peer/--gcs); or: just bridge
+cargo run -p stable-flight-sitl-realflight --example copter-tune-realflight    # as manual, params + telemetry over the native link (--link-bind/--link-peer) for the bridge, no direct MAVLink; or: just fly-tune
+cargo run -p stable-flight-bridge               # native link ⇄ MAVLink for QGC (--link-bind/--link-peer/--gcs/--origin); or: just bridge
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight    # scripted figure-eight (script arg, --host, --loop); or: just fly-auto
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight  # joystick flight + raw SimulatorState → CSV; or: just capture
 cargo run --example extreme_3d_commander        # joystick smoke test
