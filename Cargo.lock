@@ -1522,10 +1522,8 @@ dependencies = [
  "clap",
  "gilrs",
  "log",
- "mavlink",
  "signal-hook",
  "stable-flight",
- "stable-flight-mavlink",
  "thiserror",
  "windows-sys 0.61.2",
 ]
