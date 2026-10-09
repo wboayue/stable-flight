@@ -35,8 +35,8 @@ not each change; per-change entries start after it.
 - **Commanders:** `WaypointFollower` (allocation-free; loops or holds at the route's end, flies
   legs at cruise speed, advances past a waypoint missed wide).
 - **Params** (`params`): every guidance and stabilizer gain and limit readable, settable,
-  and listable by a MAVLink-sized name (`STAB_RATE_P`, `GUID_TILT_MAX`), with angles in
-  degrees. Writes go through `set_config`, so an invalid value is rejected. `FlightLoop`
+  and listable by index or by a MAVLink-sized name (`STAB_RATE_P`, `GUID_TILT_MAX`), with
+  angles in degrees. Writes go through `set_config`, so an invalid value is rejected. `FlightLoop`
   exposes both components' params. Retuning an integral gain carries the I term over.
 - **Saturation reporting:** per-tick `Saturation` flags (tilt, thrust, rate-loop moments,
   mixer) from each stage, merged into `TelemetryRecord`.

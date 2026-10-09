@@ -112,7 +112,8 @@ The one write point is `Configurable::set_config` (see its rustdoc), which valid
 
 * **Names** fit MAVLink's 16-byte `param_id`: uppercase, component prefix (`STAB_`, `GUID_`), then loop (`RATE_`, `ATT_`, `YAW_`, `ALT_`, `LAT_`). Vector components end in `_X`/`_Y`/`_Z`, which can't be confused with a `_P` gain. The full list with units is in the `params` rustdoc.
 * **Units:** angles and angular rates are degrees and deg/s, as PX4 and ArduPilot expose them. They convert to the config's radians in the table row, so control code stays SI. Gains and integral limits keep the config's units.
-* **Order** is the table's, and stable, so it can serve as a MAVLink `param_index`.
+* **Addressing:** params are indexed `0..param_count()` in stable table order, and that is the trait's primitive. Name lookup, read, write, and visit are default methods over it, so a combined view (`FlightLoop`) splits only the index. Indices let the flight controller send a few params per tick from a cursor; MAVLink's `param_index` comes from the bridge's param cache ([#205](https://github.com/wboayue/stable-flight/issues/205)).
+* **Stores or rejects:** a successful write stores the value as given, up to deg ↔ rad rounding. Out-of-range values are rejected, never clamped, so a link can confirm a write by echoing what it sent.
 * Out of scope: persistence and non-`f32` params. The MAVLink handling and the runner hook that applies writes between ticks are [#153](https://github.com/wboayue/stable-flight/issues/153) and [#154](https://github.com/wboayue/stable-flight/issues/154).
 
 ## Design Patterns

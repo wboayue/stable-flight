@@ -230,3 +230,58 @@ fn errors_describe_the_rejection() {
             == "invalid param value: yaw.max_rate_radps must be non-negative and finite"
     );
 }
+
+#[test]
+fn indices_follow_table_order_and_reject_out_of_range() {
+    let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+    let names = names::<CopterStabilizerConfig>();
+    check!(stabilizer.param_count() == names.len());
+    for (i, name) in names.iter().enumerate() {
+        check!(stabilizer.param_name(i) == Some(*name));
+        check!(stabilizer.param_index(name) == Some(i));
+        check!(stabilizer.param_at(i) == stabilizer.param(name));
+    }
+
+    let end = names.len();
+    check!(stabilizer.param_name(end) == None);
+    check!(stabilizer.param_at(end) == None);
+    check!(stabilizer.set_param_at(end, 1.0) == Err(ParamError::Unknown));
+    check!(stabilizer.param_index("NO_SUCH_PARAM") == None);
+}
+
+#[test]
+fn set_by_index_writes_the_indexed_param() {
+    let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
+    let i = stabilizer.param_index("STAB_YAW_D").unwrap();
+    stabilizer.set_param_at(i, 0.25).unwrap();
+    check!(stabilizer.config().yaw.gains.d == 0.25);
+}
+
+/// The `Params` contract: a successful write stores the value as given (up to deg ↔ rad
+/// rounding), so a link can confirm it by echoing what it sent.
+#[test]
+fn successful_writes_read_back_the_value_given() {
+    let mut flight_loop = flight_loop();
+    for i in 0..flight_loop.param_count() {
+        let name = flight_loop.param_name(i).unwrap();
+        let value = flight_loop.param_at(i).unwrap() * 0.9; // valid for every default
+        flight_loop.set_param_at(i, value).unwrap();
+        assert_relative_eq!(flight_loop.param_at(i).unwrap(), value, max_relative = 1e-6);
+        check!(flight_loop.param(name) == flight_loop.param_at(i));
+    }
+}
+
+#[test]
+fn flight_loop_indexes_guidance_then_stabilizer() {
+    let mut flight_loop = flight_loop();
+    let guidance_count = names::<CopterGuidanceConfig>().len();
+    check!(flight_loop.param_count() == all_names().len());
+    check!(flight_loop.param_name(guidance_count - 1) == Some("GUID_STICK_Y"));
+    check!(flight_loop.param_name(guidance_count) == Some("STAB_RATE_P"));
+    check!(flight_loop.param_index("STAB_RATE_P") == Some(guidance_count));
+    check!(flight_loop.param_name(all_names().len()) == None);
+
+    flight_loop.set_param_at(guidance_count, 0.3).unwrap();
+    check!(flight_loop.stabilizer().config().body_rate.gains.p == 0.3);
+    check!(flight_loop.set_param_at(all_names().len(), 1.0) == Err(ParamError::Unknown));
+}

@@ -11,8 +11,11 @@
 //! prefixed by component (`STAB_`, `GUID_`) and loop. Vector components end in `_X`/`_Y`/`_Z`
 //! (roll/pitch/yaw for angles and rates). Angles and angular rates are in degrees and deg/s,
 //! as ground stations show them, and convert to the config's radians at this boundary;
-//! everything else is in the config field's own unit. A table's order is stable, so a
-//! param's position in it can serve as its index.
+//! everything else is in the config field's own unit.
+//!
+//! Params are addressed by index, `0..param_count()`, in a stable table order; name lookup
+//! scans the names. Index access is what paced output uses (a cursor that sends a few params
+//! per tick).
 //!
 //! # Copter stabilizer ([`CopterStabilizerConfig`](crate::stabilizers::copter::CopterStabilizerConfig))
 //!
@@ -108,7 +111,7 @@ impl<C> Param<C> {
     /// }
     ///
     /// let mut config = TrimConfig { roll_trim_rad: 0.0 };
-    /// TrimConfig::find("TRIM_ROLL").unwrap().set(&mut config, 90.0);
+    /// TrimConfig::PARAMS[0].set(&mut config, 90.0);
     /// assert!((config.roll_trim_rad - core::f32::consts::FRAC_PI_2).abs() < 1e-6);
     /// ```
     pub const fn new(name: &'static str, get: fn(&C) -> f32, set: fn(&mut C, f32)) -> Self {
@@ -139,23 +142,56 @@ impl<C> Param<C> {
 pub trait ParamTable: Copy + 'static {
     /// Every param, in a stable order.
     const PARAMS: &'static [Param<Self>];
-
-    /// The param called `name`, if there is one.
-    fn find(name: &str) -> Option<&'static Param<Self>> {
-        Self::PARAMS.iter().find(|p| p.name == name)
-    }
 }
 
-/// Read, write, and list a component's tunable values by name.
+/// Read, write, and list a component's tunable values by index or by name.
+///
+/// Implementors provide the four index methods; name lookup, [`param`](Params::param),
+/// [`set_param`](Params::set_param), and [`visit_params`](Params::visit_params) are built on
+/// them.
+///
+/// **A successful write stores the value as given**, up to the rounding of a unit conversion
+/// (degrees ↔ radians): an out-of-range value is rejected, never clamped or adjusted. A link
+/// can therefore confirm a write by echoing the value it was sent.
 pub trait Params {
+    /// Number of params; their indices are `0..param_count()`.
+    fn param_count(&self) -> usize;
+
+    /// The name of the param at `index`, or `None` if it is out of range.
+    fn param_name(&self, index: usize) -> Option<&'static str>;
+
+    /// The value of the param at `index`, or `None` if it is out of range.
+    fn param_at(&self, index: usize) -> Option<f32>;
+
+    /// Sets the param at `index` to `value`. Out of range is [`ParamError::Unknown`]. On error
+    /// the config is unchanged.
+    fn set_param_at(&mut self, index: usize, value: f32) -> Result<(), ParamError>;
+
+    /// The index of the param called `name`, or `None` if there is no such param. On a
+    /// duplicate name, the first index.
+    fn param_index(&self, name: &str) -> Option<usize> {
+        (0..self.param_count()).find(|&i| self.param_name(i) == Some(name))
+    }
+
     /// The value of the param called `name`, or `None` if there is no such param.
-    fn param(&self, name: &str) -> Option<f32>;
+    fn param(&self, name: &str) -> Option<f32> {
+        self.param_at(self.param_index(name)?)
+    }
 
     /// Sets the param called `name` to `value`. On error the config is unchanged.
-    fn set_param(&mut self, name: &str, value: f32) -> Result<(), ParamError>;
+    fn set_param(&mut self, name: &str, value: f32) -> Result<(), ParamError> {
+        let index = self.param_index(name).ok_or(ParamError::Unknown)?;
+        self.set_param_at(index, value)
+    }
 
-    /// Calls `f` with every param's name and value, in a stable order.
-    fn visit_params(&self, f: &mut dyn FnMut(&'static str, f32));
+    /// Calls `f` with every param's name and value, in index order.
+    fn visit_params(&self, f: &mut dyn FnMut(&'static str, f32)) {
+        for i in 0..self.param_count() {
+            if let (Some(name), Some(value)) = (self.param_name(i), self.param_at(i)) {
+                f(name, value);
+            }
+        }
+    }
 }
 
 impl<T> Params for T
@@ -163,12 +199,20 @@ where
     T: Configurable,
     T::Config: ParamTable,
 {
-    fn param(&self, name: &str) -> Option<f32> {
-        T::Config::find(name).map(|p| p.get(self.config()))
+    fn param_count(&self) -> usize {
+        T::Config::PARAMS.len()
     }
 
-    fn set_param(&mut self, name: &str, value: f32) -> Result<(), ParamError> {
-        let param = T::Config::find(name).ok_or(ParamError::Unknown)?;
+    fn param_name(&self, index: usize) -> Option<&'static str> {
+        T::Config::PARAMS.get(index).map(Param::name)
+    }
+
+    fn param_at(&self, index: usize) -> Option<f32> {
+        T::Config::PARAMS.get(index).map(|p| p.get(self.config()))
+    }
+
+    fn set_param_at(&mut self, index: usize, value: f32) -> Result<(), ParamError> {
+        let param = T::Config::PARAMS.get(index).ok_or(ParamError::Unknown)?;
         if !value.is_finite() {
             return Err(ParamError::NotFinite);
         }
@@ -176,20 +220,13 @@ where
         param.set(&mut config, value);
         self.set_config(config).map_err(ParamError::Invalid)
     }
-
-    fn visit_params(&self, f: &mut dyn FnMut(&'static str, f32)) {
-        let config = self.config();
-        for param in T::Config::PARAMS {
-            f(param.name, param.get(config));
-        }
-    }
 }
 
 /// Why [`Params::set_param`] rejected a value.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ParamError {
-    /// No param has that name.
+    /// No param has that name or index.
     Unknown,
     /// The value is NaN or infinite.
     NotFinite,

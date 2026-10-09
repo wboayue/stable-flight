@@ -316,10 +316,11 @@ where
     }
 }
 
-/// The guidance's params, then the stabilizer's, by name (see [`crate::params`]). Nothing
-/// checks that their names are disjoint: on a duplicate the guidance's wins and the
-/// stabilizer's is unreachable, so table authors keep names unique across components (the
-/// copter tables use `GUID_`/`STAB_` prefixes).
+/// The guidance's params, then the stabilizer's (see [`crate::params`]): combined indices
+/// run through the guidance's first, then the stabilizer's. Nothing checks that their names
+/// are disjoint: on a duplicate, name lookup finds the guidance's and the stabilizer's is
+/// reachable only by index, so table authors keep names unique across components (the copter
+/// tables use `GUID_`/`STAB_` prefixes).
 ///
 /// ```
 /// # use std::time::Duration;
@@ -361,21 +362,45 @@ where
     G: Params,
     S: Params,
 {
-    fn param(&self, name: &str) -> Option<f32> {
-        self.guidance
-            .param(name)
-            .or_else(|| self.stabilizer.param(name))
+    fn param_count(&self) -> usize {
+        self.guidance.param_count() + self.stabilizer.param_count()
     }
 
-    fn set_param(&mut self, name: &str, value: f32) -> Result<(), ParamError> {
-        match self.guidance.set_param(name, value) {
-            Err(ParamError::Unknown) => self.stabilizer.set_param(name, value),
-            result => result,
+    fn param_name(&self, index: usize) -> Option<&'static str> {
+        match self.split_param_index(index) {
+            ParamOwner::Guidance(i) => self.guidance.param_name(i),
+            ParamOwner::Stabilizer(i) => self.stabilizer.param_name(i),
         }
     }
 
-    fn visit_params(&self, f: &mut dyn FnMut(&'static str, f32)) {
-        self.guidance.visit_params(f);
-        self.stabilizer.visit_params(f);
+    fn param_at(&self, index: usize) -> Option<f32> {
+        match self.split_param_index(index) {
+            ParamOwner::Guidance(i) => self.guidance.param_at(i),
+            ParamOwner::Stabilizer(i) => self.stabilizer.param_at(i),
+        }
+    }
+
+    fn set_param_at(&mut self, index: usize, value: f32) -> Result<(), ParamError> {
+        match self.split_param_index(index) {
+            ParamOwner::Guidance(i) => self.guidance.set_param_at(i, value),
+            ParamOwner::Stabilizer(i) => self.stabilizer.set_param_at(i, value),
+        }
+    }
+}
+
+/// The component a combined param index belongs to, with its index there.
+enum ParamOwner {
+    Guidance(usize),
+    Stabilizer(usize),
+}
+
+impl<C, V, G: Params, S, M, T> FlightLoop<C, V, G, S, M, T> {
+    fn split_param_index(&self, index: usize) -> ParamOwner {
+        let guidance_count = self.guidance.param_count();
+        if index < guidance_count {
+            ParamOwner::Guidance(index)
+        } else {
+            ParamOwner::Stabilizer(index - guidance_count)
+        }
     }
 }
