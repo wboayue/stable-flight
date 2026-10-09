@@ -14,13 +14,15 @@ use crate::frame::{Message, sealed::Sealed};
 mod tests;
 
 /// A parameter name, at most [`params::MAX_NAME_LEN`] bytes (see [`stable_flight::params`]).
-pub type ParamName = heapless::String<{ params::MAX_NAME_LEN }>;
+/// `u8` length: smaller in memory, same on the wire.
+pub type ParamName = heapless::String<{ params::MAX_NAME_LEN }, u8>;
 
 /// Longest [`Downlink::Status`] text in bytes.
 pub const MAX_STATUS_LEN: usize = 64;
 
 /// [`Downlink::Status`] text, at most [`MAX_STATUS_LEN`] bytes.
-pub type StatusText = heapless::String<MAX_STATUS_LEN>;
+/// `u8` length: smaller in memory, same on the wire.
+pub type StatusText = heapless::String<MAX_STATUS_LEN, u8>;
 
 /// Companion/host → flight controller.
 ///
