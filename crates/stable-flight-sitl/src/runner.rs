@@ -114,6 +114,35 @@ impl RealTimeRunner {
         M: Mixer,
         T: TelemetryPublisher,
     {
+        self.run_with(flight_loop, shutdown, |_| {})
+    }
+
+    /// [`run`](Self::run), calling `before_step` with the loop before each tick: the place to
+    /// apply changes that need `&mut` to the loop, such as param writes from a link
+    /// (`FlightLoop::set_param`) or config swaps. Its time counts toward the tick's period,
+    /// so keep it bounded.
+    ///
+    /// With `flight_loop` and `shutdown` as in the [type-level example](Self):
+    ///
+    /// ```ignore
+    /// RealTimeRunner::new(250.0)?.run_with(&mut flight_loop, &shutdown, |flight_loop| {
+    ///     param_server.poll(flight_loop); // stable-flight-link
+    /// });
+    /// ```
+    pub fn run_with<C, V, G, S, M, T>(
+        &self,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+        shutdown: &ShutdownSignal,
+        mut before_step: impl FnMut(&mut FlightLoop<C, V, G, S, M, T>),
+    ) -> RunStats
+    where
+        C: Commander,
+        V: Vehicle,
+        G: Guidance,
+        S: Stabilizer,
+        M: Mixer,
+        T: TelemetryPublisher,
+    {
         let start = Instant::now();
         let mut next_deadline = start;
         let mut ticks: u64 = 0;
@@ -121,6 +150,7 @@ impl RealTimeRunner {
         flight_loop.prime();
 
         while !shutdown.is_set() {
+            before_step(flight_loop);
             flight_loop.step(self.period);
             ticks += 1;
 

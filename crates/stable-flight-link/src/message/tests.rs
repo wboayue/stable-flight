@@ -95,11 +95,11 @@ fn every_uplink_variant_round_trips() {
         Uplink::Command(worst_case_record().command),
         Uplink::Arm(true),
         Uplink::Arm(false),
-        Uplink::SetParam {
+        Uplink::Param(ParamRequest::Set {
             name: name("STAB_RATE_P"),
             value: 0.15,
-        },
-        Uplink::RequestParams,
+        }),
+        Uplink::Param(ParamRequest::List),
     ];
     for msg in &cases {
         round_trip(msg);
@@ -124,12 +124,12 @@ fn every_downlink_variant_round_trips() {
         Downlink::State(sample_state()),
         Downlink::Record(worst_case_record()),
         Downlink::Record(record),
-        Downlink::Param {
+        Downlink::Param(ParamValue {
             name: name("GUID_TILT_MAX"),
             value: 30.0,
             index: 3,
             count: 40,
-        },
+        }),
         Downlink::Status(StatusText::try_from("armed").expect("fits")),
     ];
     for msg in &cases {
@@ -143,21 +143,21 @@ fn largest_messages_fit_max_frame_len() {
     let longest_status = StatusText::try_from("S".repeat(MAX_STATUS_LEN).as_str()).expect("fits");
     let downlinks = [
         Downlink::Record(worst_case_record()),
-        Downlink::Param {
+        Downlink::Param(ParamValue {
             name: longest_name.clone(),
             value: f32::MAX,
             index: u16::MAX,
             count: u16::MAX,
-        },
+        }),
         Downlink::Status(longest_status),
     ];
     for msg in &downlinks {
         check!(round_trip(msg) <= MAX_FRAME_LEN);
     }
-    let uplink = Uplink::SetParam {
+    let uplink = Uplink::Param(ParamRequest::Set {
         name: longest_name,
         value: f32::MAX,
-    };
+    });
     check!(round_trip(&uplink) <= MAX_FRAME_LEN);
 }
 

@@ -61,4 +61,4 @@ let stats = RealTimeRunner::new(250.0)
     .run(&mut flight_loop, &shutdown);
 ```
 
-`run` returns `RunStats` (ticks, elapsed). `ShutdownSignal::new()` gives an unconnected flag you can `trigger()` yourself, e.g. in tests. Pacing and shutdown behaviour are described in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#real-time-loop-management).
+`run` returns `RunStats` (ticks, elapsed). `run_with` takes a closure called with `&mut FlightLoop` before each tick, for changes that must land between ticks (param writes from a link, config swaps). `ShutdownSignal::new()` gives an unconnected flag you can `trigger()` yourself, e.g. in tests. Pacing and shutdown behaviour are described in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#real-time-loop-management).

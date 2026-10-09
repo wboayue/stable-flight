@@ -1,7 +1,7 @@
 use assert2::check;
 
 use super::*;
-use crate::{Uplink, encode_vec};
+use crate::{ParamRequest, Uplink, encode_vec};
 
 /// COBS-encodes `raw` (version + payload + CRC) and terminates it.
 fn frame_from_raw(raw: &[u8]) -> Vec<u8> {
@@ -33,10 +33,10 @@ fn arm() -> Uplink {
 #[test]
 fn encoded_frame_has_only_the_trailing_zero() {
     // A payload full of zeros: COBS must remove every one.
-    let frame = encode_vec(&Uplink::SetParam {
+    let frame = encode_vec(&Uplink::Param(ParamRequest::Set {
         name: Default::default(),
         value: 0.0,
-    });
+    }));
     let (last, body) = frame.split_last().expect("non-empty");
     check!(*last == 0);
     check!(!body.contains(&0));
