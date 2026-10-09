@@ -4,7 +4,7 @@ use std::io;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// A shutdown request flag: set by SIGINT (Unix) / Ctrl-C or Ctrl-Break (Windows) once
+/// A shutdown request flag: set by SIGINT or SIGTERM (Unix) / Ctrl-C or Ctrl-Break (Windows) once
 /// [`install`](ShutdownSignal::install)ed, or by hand with [`trigger`](ShutdownSignal::trigger).
 ///
 /// Cheap to clone; clones share the same flag. Runners poll [`is_set`](ShutdownSignal::is_set)
@@ -32,12 +32,14 @@ impl ShutdownSignal {
         Self::default()
     }
 
-    /// Returns a flag that the process's interrupt signal sets: SIGINT on Unix, Ctrl-C or
-    /// Ctrl-Break on Windows.
+    /// Returns a flag that the process's stop signals set: SIGINT (Ctrl-C) and SIGTERM (`kill`,
+    /// systemd, process managers) on Unix, Ctrl-C or Ctrl-Break on Windows.
     ///
-    /// The first interrupt only requests a graceful stop. A second one, while the flag is
-    /// already set, terminates the process (exit status 1 on Unix; the default console
-    /// handler on Windows), so a wedged loop can still be killed.
+    /// The first stop signal only requests a graceful stop, so the loop ends between ticks and
+    /// everything it owns is dropped (e.g. a simulator vehicle hands control back, a capture
+    /// file flushes). A second one, of either kind, while the flag is already set terminates
+    /// the process (exit status 1 on Unix; the default console handler on Windows), so a
+    /// wedged loop can still be killed.
     ///
     /// On Unix each call registers an independent flag. On Windows the console handler is
     /// process-wide, so every call returns a handle to the same flag.
@@ -64,16 +66,25 @@ impl ShutdownSignal {
 mod platform {
     use std::io;
 
-    use signal_hook::consts::SIGINT;
+    use signal_hook::consts::{SIGINT, SIGTERM};
 
     use super::ShutdownSignal;
 
+    /// The signals that request a graceful stop: Ctrl-C, and what `kill` and process managers
+    /// send.
+    const STOP_SIGNALS: [i32; 2] = [SIGINT, SIGTERM];
+
     pub(super) fn install() -> io::Result<ShutdownSignal> {
         let signal = ShutdownSignal::new();
-        // Order matters: the conditional shutdown sees the flag before this SIGINT sets it,
-        // so the first SIGINT only sets the flag and a second one exits.
-        signal_hook::flag::register_conditional_shutdown(SIGINT, 1, signal.requested.clone())?;
-        signal_hook::flag::register(SIGINT, signal.requested.clone())?;
+        // Order matters: every conditional shutdown is registered before any flag setter, so
+        // each sees the flag before the signal sets it. The first stop signal only sets the
+        // flag; a second one, of either kind, exits.
+        for sig in STOP_SIGNALS {
+            signal_hook::flag::register_conditional_shutdown(sig, 1, signal.requested.clone())?;
+        }
+        for sig in STOP_SIGNALS {
+            signal_hook::flag::register(sig, signal.requested.clone())?;
+        }
         Ok(signal)
     }
 }
