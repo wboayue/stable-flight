@@ -19,3 +19,7 @@ let data = heartbeat(MavType::MAV_TYPE_QUADROTOR, true, ControlMode::Attitude);
 ```
 
 `mavlink` is re-exported (`stable_flight_mavlink::mavlink`) so callers name the same types the builders return.
+
+## Features
+
+- `testing`: `testing::MockConnection`, an in-memory `MavConnection` with scripted receives (then `WouldBlock`) and recorded sends, optionally failing. For `[dev-dependencies]` only.

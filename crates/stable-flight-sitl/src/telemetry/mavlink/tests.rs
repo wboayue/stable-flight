@@ -1,62 +1,11 @@
-use std::sync::{Arc, Mutex};
-
 use assert2::check;
+use mavlink::Message;
 use mavlink::common::{GLOBAL_POSITION_INT_DATA, HOME_POSITION_DATA, MavLandedState};
-use mavlink::error::{MessageReadError, MessageWriteError};
-use mavlink::{MAVLinkMessageRaw, Message};
 use stable_flight::{ActuatorCommand, Command, ControlOutput, Saturation, Setpoint, VehicleState};
 
+use stable_flight_mavlink::testing::MockConnection;
+
 use super::*;
-
-/// Records every sent message; fails every send when `fail` is set.
-#[derive(Clone, Default)]
-struct MockConnection {
-    sent: Arc<Mutex<Vec<(MavHeader, MavMessage)>>>,
-    fail: bool,
-}
-
-impl MockConnection {
-    fn sent(&self) -> Vec<(MavHeader, MavMessage)> {
-        self.sent.lock().expect("mock lock").clone()
-    }
-}
-
-fn unsupported() -> MessageReadError {
-    MessageReadError::Io(io::Error::from(io::ErrorKind::Unsupported))
-}
-
-impl MavConnection<MavMessage> for MockConnection {
-    fn recv(&self) -> Result<(MavHeader, MavMessage), MessageReadError> {
-        Err(unsupported())
-    }
-    fn recv_raw(&self) -> Result<MAVLinkMessageRaw, MessageReadError> {
-        Err(unsupported())
-    }
-    fn try_recv(&self) -> Result<(MavHeader, MavMessage), MessageReadError> {
-        Err(unsupported())
-    }
-    fn send(&self, header: &MavHeader, data: &MavMessage) -> Result<usize, MessageWriteError> {
-        self.sent
-            .lock()
-            .expect("mock lock")
-            .push((*header, data.clone()));
-        if self.fail {
-            Err(MessageWriteError::Io(io::Error::from(
-                io::ErrorKind::ConnectionRefused,
-            )))
-        } else {
-            Ok(0)
-        }
-    }
-    fn set_protocol_version(&mut self, _version: MavlinkVersion) {}
-    fn protocol_version(&self) -> MavlinkVersion {
-        MavlinkVersion::V2
-    }
-    fn set_allow_recv_any_version(&mut self, _allow: bool) {}
-    fn allow_recv_any_version(&self) -> bool {
-        false
-    }
-}
 
 /// Publishes `ticks` default records `dt` apart on `connection`.
 fn run(connection: &MockConnection, ids: (u8, u8), dt: Duration, ticks: usize) {
@@ -250,10 +199,7 @@ fn headers_carry_configured_ids_and_a_wrapping_sequence() {
 
 #[test]
 fn failed_sends_are_dropped_and_publishing_continues() {
-    let connection = MockConnection {
-        fail: true,
-        ..Default::default()
-    };
+    let connection = MockConnection::failing();
     run(&connection, (1, 1), STREAM_INTERVAL, 20);
 
     // Every tick still attempted its sends.

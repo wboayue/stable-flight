@@ -16,5 +16,7 @@ not each change; per-change entries start after it.
   state and the core `ControlMode` as standard `base_mode` flags.
 - Builders return payloads (`*_DATA`) and take vehicle identity as a parameter.
 - **`mavlink` re-export**, so callers use the version the builders return.
+- **`testing` feature:** `testing::MockConnection`, a scripted `MavConnection` (receives in
+  order, then `WouldBlock`; sends recorded, optionally failing) for tests.
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight-mavlink

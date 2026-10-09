@@ -20,6 +20,8 @@ not each change; per-change entries start after it.
 - **Params:** `PARAM_REQUEST_LIST` and `PARAM_SET` forwarded; the flight controller's params
   and write echoes sent as `REAL32` `PARAM_VALUE`s with their index and count;
   `PARAM_REQUEST_READ` served from a cache, refilled whenever the flight controller appears.
+- **Loop:** reads both sides in bounded batches each pass; sleeps 1 ms under traffic and backs
+  off to 8 ms while idle. Failures are logged at most once a second per side.
 - **QGC connect sequence:** empty `MISSION_COUNT` per mission type, `AUTOPILOT_VERSION` on
   request, `UNSUPPORTED` for other commands.
 

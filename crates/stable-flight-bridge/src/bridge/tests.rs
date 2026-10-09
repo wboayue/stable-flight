@@ -14,15 +14,7 @@ use stable_flight_link::testing::FcLink;
 use stable_flight_link::{MAX_FRAME_LEN, ParamRequest, RecvMessage, SendMessage, Uplink};
 
 use super::*;
-use crate::test_support::{GCS, param, param_value_of, read_index, set};
-
-fn heartbeat(armed: bool) -> Downlink {
-    Downlink::Heartbeat {
-        armed,
-        mode: ControlMode::Attitude,
-        link_ok: true,
-    }
-}
+use crate::test_support::{GCS, heartbeat, param, param_value_of, read_index, request_list, set};
 
 /// A bridge whose flight controller is up, with params `A` (index 0) = 1.0 and `B` = 2.0 cached.
 fn bridge_with_params(now: Instant) -> Bridge {
@@ -83,10 +75,6 @@ fn heartbeats_only_while_the_flight_controller_is_alive() {
 
 #[test]
 fn routes_each_message_to_its_service() {
-    let request_list = MavMessage::PARAM_REQUEST_LIST(PARAM_REQUEST_LIST_DATA {
-        target_system: 1,
-        target_component: 1,
-    });
     let mission_list = MavMessage::MISSION_REQUEST_LIST(MISSION_REQUEST_LIST_DATA {
         target_system: 1,
         target_component: 1,
@@ -100,7 +88,7 @@ fn routes_each_message_to_its_service() {
     });
     // (case, message, uplinks sent, MAVLink message names sent)
     let cases = [
-        ("list: params", request_list, 1, vec![]),
+        ("list: params", request_list(), 1, vec![]),
         (
             "read: params, from the cache",
             MavMessage::PARAM_REQUEST_READ(read_index(0)),
