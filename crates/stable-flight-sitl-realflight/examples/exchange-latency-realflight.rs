@@ -18,10 +18,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use env_logger::Builder;
+use env_logger::{Builder, Env};
 use log::{info, warn};
 
 use stable_flight_sitl::ShutdownSignal;
+use stable_flight_sitl_realflight::SLOW_EXCHANGE;
 use stable_flight_sitl_realflight::realflight_bridge::{
     Configuration, ControlInputs, RealFlightBridge, RealFlightLocalBridge, RealFlightRemoteBridge,
 };
@@ -41,14 +42,14 @@ struct Args {
     #[arg(long, default_value_t = 250.0)]
     rate: f64,
 
-    /// Log exchanges slower than this, in milliseconds.
-    #[arg(long, default_value_t = 20.0)]
+    /// Log exchanges slower than this, in milliseconds (default: the vehicle's `SLOW_EXCHANGE`).
+    #[arg(long, default_value_t = SLOW_EXCHANGE.as_secs_f64() * 1000.0)]
     threshold_ms: f64,
 }
 
 fn main() {
-    Builder::from_default_env()
-        .filter_level(log::LevelFilter::Info)
+    // Info unless RUST_LOG says otherwise.
+    Builder::from_env(Env::default().default_filter_or("info"))
         .format_timestamp_millis()
         .init();
 

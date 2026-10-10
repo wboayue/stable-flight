@@ -18,7 +18,7 @@ not each change; per-change entries start after it.
     conversion as a pure function.
   - Maps mixer outputs to RF channels with `ActuatorMapping`.
   - Survives a lost connection: `with_reconnect` rebuilds the bridge with backoff and disables
-    RC on it again; failed exchanges are logged at most once a second, and exchanges over 20 ms
+    RC on it again; failed exchanges are logged at most once a second, and exchanges over 20 ms (`SLOW_EXCHANGE`)
     at `debug`.
   - Covers every core conformance scenario.
 - **Airframes:** `airframes::quadcopter_x()`, the flight-checked QuadCopterX tune (guidance and

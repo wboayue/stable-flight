@@ -13,9 +13,10 @@ mod health;
 #[cfg(test)]
 mod tests;
 
-/// An exchange slower than this is logged at `debug` (five ticks at 250 Hz), to tell a stall
-/// in the RealFlight round trip from one elsewhere in the tick (#255).
-const SLOW_EXCHANGE: Duration = Duration::from_millis(20);
+/// [`RealFlightVehicle`] logs an exchange slower than this at `debug` (five ticks at 250 Hz),
+/// to tell a stall in the RealFlight round trip from one elsewhere in the tick (#255). The
+/// `exchange-latency-realflight` example's default threshold.
+pub const SLOW_EXCHANGE: Duration = Duration::from_millis(20);
 
 /// Builds a fresh bridge after the connection is lost; see
 /// [`RealFlightVehicle::with_reconnect`].
