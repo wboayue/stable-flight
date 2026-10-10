@@ -21,6 +21,7 @@ use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_mavlink::{DEFAULT_ORIGIN, FlatEarth};
 
 mod bridge;
+mod cli;
 mod commands;
 mod connect;
 mod encode;
@@ -28,7 +29,6 @@ mod http;
 mod idle;
 mod interval;
 mod metadata;
-mod origin;
 mod outbox;
 mod params;
 mod pump;
@@ -38,9 +38,9 @@ mod state;
 mod test_support;
 
 use bridge::{Bridge, BridgeConfig};
+use cli::{parse_origin, parse_speed};
 use idle::IdleBackoff;
 use metadata::{ComponentMetadata, MetadataFiles, base_url, copter_params};
-use origin::parse_origin;
 use pump::Pump;
 
 /// Bridges a flight controller's native link to a MAVLink ground station.
@@ -73,7 +73,7 @@ struct Args {
     http_url: Option<String>,
     /// Speed cap, in m/s, for position targets from offboard apps (`SET_POSITION_TARGET_LOCAL_NED`
     /// carries none).
-    #[arg(long, default_value_t = 5.0)]
+    #[arg(long, default_value = "5", value_parser = parse_speed)]
     offboard_speed: f32,
     /// Serve no param metadata: QGC lists the params without descriptions, units, or ranges.
     #[arg(long, conflicts_with_all = ["http_url"])]
@@ -88,14 +88,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init();
 
     let args = Args::parse();
-    // Guidance reads a zero, negative, or NaN speed cap as no cap at all.
-    if !(args.offboard_speed > 0.0 && args.offboard_speed.is_finite()) {
-        return Err(format!(
-            "--offboard-speed must be positive and finite, got {}",
-            args.offboard_speed
-        )
-        .into());
-    }
     let earth = match (args.no_origin, args.origin) {
         (true, _) => None,
         (false, Some(earth)) => Some(earth),

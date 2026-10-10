@@ -35,7 +35,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     `Interval`, `interval.rs`), which queue into an `Outbox` (`outbox.rs`); payload builders in `encode.rs`. `Pump` (`pump.rs`) runs one
     I/O pass (read both sides, route, send) over generic link halves and a boxed GCS connection;
     `IdleBackoff` (`idle.rs`) paces passes (1 ms under traffic, up to 8 ms idle); `main.rs` only
-    sets up (`--origin` parsing in `origin.rs`). Param metadata for QGC: `metadata.rs` (pure: core
+    sets up (`--origin`, `--offboard-speed` parsing in `cli.rs`). Param metadata for QGC: `metadata.rs` (pure: core
     tables → `parameters.json`/`component_general.json`, CRCs), served by `http.rs` (minimal std
     HTTP server thread); `ConnectService` answers `COMPONENT_METADATA`. Params and state slices of #154; depends on link (`std`), the core (`param-metadata`), `stable-flight-mavlink`, and `mavlink`, not on sitl.
   - `crates/stable-flight-sitl` — the simulator-independent SITL harness: `commanders`,
