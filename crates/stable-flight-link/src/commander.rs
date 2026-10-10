@@ -102,6 +102,11 @@ impl Commander for LinkCommander<'_> {
 }
 
 impl LinkedCommander for LinkCommander<'_> {
+    /// Overwrites the latched arm state, dropping a stale `Arm` request.
+    fn sync_arm(&mut self, armed: bool) {
+        self.armed = armed;
+    }
+
     fn since_update_s(&self) -> Option<f32> {
         if self.flying_sticks {
             self.since_command_s

@@ -12,23 +12,38 @@ const DT: f32 = 0.1;
 #[derive(Debug, Default)]
 struct LinkScript {
     since_s: Cell<Option<f32>>,
+    /// The latched arm state: set by the test (an `Arm` message) or by `sync_arm`.
     arm: Cell<bool>,
+    /// What it flies; `None` is a neutral rate command (sticks).
+    input: Cell<Option<ControlInput>>,
+    /// The last `sync_arm` call's argument.
+    synced: Cell<Option<bool>>,
     ticks: Cell<u32>,
 }
 
-/// A [`LinkedCommander`] whose freshness and arm state the test sets; flies a rate command.
+/// A [`LinkedCommander`] whose freshness, arm state, and input the test sets.
 struct Link(Rc<LinkScript>);
 
 impl Commander for Link {
     fn next_command(&mut self, _dt: f32, _state: &VehicleState) -> Command {
         self.0.ticks.set(self.0.ticks.get() + 1);
-        Command::new(self.0.arm.get(), ControlInput::Rate(RateCommand::default()))
+        let input = self
+            .0
+            .input
+            .get()
+            .unwrap_or(ControlInput::Rate(RateCommand::default()));
+        Command::new(self.0.arm.get(), input)
     }
 }
 
 impl LinkedCommander for Link {
     fn since_update_s(&self) -> Option<f32> {
         self.0.since_s.get()
+    }
+
+    fn sync_arm(&mut self, armed: bool) {
+        self.0.arm.set(armed);
+        self.0.synced.set(Some(armed));
     }
 }
 
@@ -88,6 +103,7 @@ fn failsafe() -> (
         FailsafeConfig {
             timeout_s: 0.5,
             recover_after_s: 0.3,
+            takeover_stick_delta: 0.1,
         },
     )
     .expect("valid config");
@@ -159,8 +175,9 @@ fn starts_in_the_fallback_and_hands_over_after_recovery() {
             tick(None, false, F, false), // never heard
             tick(fresh, true, F, false), // fresh 0.1 s; the fallback can't arm
             tick(fresh, true, F, false), // 0.2 s
-            tick(fresh, true, P, true),  // 0.3 s: the primary flies, and arms
-            tick(fresh, true, P, true),
+            tick(fresh, true, P, false), // 0.3 s: the primary flies; the arm sent during the
+            // fallback is dropped at the handover (#235)
+            tick(fresh, true, P, true), // a new arm request arms
         ],
     );
 }
@@ -172,7 +189,8 @@ fn falls_back_on_timeout_keeping_the_arm_state() {
     let ticks = [
         tick(fresh, true, F, false),
         tick(fresh, true, F, false),
-        tick(fresh, true, P, true),
+        tick(fresh, true, P, false), // handover drops the arm sent while recovering
+        tick(fresh, true, P, true),  // the link re-sends it: armed
         tick(Some(0.5), true, P, true), // at the timeout: still fresh
         Tick {
             engaged: 2,
@@ -236,7 +254,8 @@ fn honors_a_fresh_disarm_while_the_fallback_flies() {
         &[
             tick(fresh, true, F, false),
             tick(fresh, true, F, false),
-            tick(fresh, true, P, true), // armed by the link
+            tick(fresh, true, P, false), // handover drops the arm sent while recovering
+            tick(fresh, true, P, true),  // the link re-sends it: armed
             Tick {
                 engaged: 2,
                 ..tick(Some(0.6), true, F, true) // lost: holds armed
@@ -278,6 +297,13 @@ fn rejects_invalid_config() {
         (
             FailsafeConfig {
                 recover_after_s: -1.0,
+                ..FailsafeConfig::default()
+            },
+            false,
+        ),
+        (
+            FailsafeConfig {
+                takeover_stick_delta: 0.0,
                 ..FailsafeConfig::default()
             },
             false,
@@ -375,4 +401,174 @@ fn hold_rejects_a_speed_that_isnt_positive() {
         check!(HoldCommander::new(speed).is_err(), "{speed}");
     }
     check!(HoldCommander::default().cruise_speed_mps == DEFAULT_HOLD_SPEED_MPS);
+}
+
+/// One tick of a handover scenario: the link's freshness, an `Arm` message if any (`None`
+/// leaves the latched state), and its input if changed.
+fn step(
+    commander: &mut FailsafeCommander<Link, Recorder>,
+    link: &LinkScript,
+    since_s: Option<f32>,
+    arm: Option<bool>,
+    input: Option<ControlInput>,
+) -> Command {
+    link.since_s.set(since_s);
+    if let Some(arm) = arm {
+        link.arm.set(arm);
+    }
+    if input.is_some() {
+        link.input.set(input);
+    }
+    commander.next_command(DT, &VehicleState::default())
+}
+
+fn hover_at(altitude_m: f32) -> ControlInput {
+    ControlInput::Waypoint(WaypointCommand {
+        altitude_m,
+        ..Default::default()
+    })
+}
+
+fn sticks(throttle: f32, roll: f32) -> ControlInput {
+    ControlInput::Attitude(AttitudeCommand {
+        throttle,
+        roll,
+        ..Default::default()
+    })
+}
+
+#[test]
+fn drops_an_arm_latched_while_the_fallback_flew() {
+    use FailsafeState::{Fallback as F, Primary as P};
+    let fresh = Some(0.0);
+    let (mut commander, link, _) = failsafe();
+    // (case, since, Arm message, expected state, expected arm)
+    let ticks = [
+        ("never heard", None, Some(false), F, false),
+        ("arm sent while recovering", fresh, Some(true), F, false),
+        ("still recovering", fresh, None, F, false),
+        ("handover: the stale arm is dropped", fresh, None, P, false),
+        ("stays disarmed", fresh, None, P, false),
+        ("a new arm arms", fresh, Some(true), P, true),
+    ];
+    for (case, since_s, arm, state, armed) in ticks {
+        let command = step(&mut commander, &link, since_s, arm, Some(hover_at(5.0)));
+        check!(commander.failsafe() == Some(state), "{case}");
+        check!(command.arm == armed, "{case}");
+    }
+    check!(link.synced.get() == Some(false), "synced to the vehicle");
+}
+
+/// A failsafe whose link armed the vehicle and flew `input`, then went stale: the fallback
+/// holds, armed.
+fn armed_then_lost(input: ControlInput) -> (FailsafeCommander<Link, Recorder>, Rc<LinkScript>) {
+    let (mut commander, link, _) = failsafe();
+    let fresh = Some(0.0);
+    for _ in 0..4 {
+        step(&mut commander, &link, fresh, Some(true), Some(input));
+    }
+    let command = step(&mut commander, &link, fresh, None, None);
+    assert!(commander.failsafe() == Some(FailsafeState::Primary) && command.arm);
+    let command = step(&mut commander, &link, Some(0.6), None, None);
+    assert!(commander.failsafe() == Some(FailsafeState::Fallback) && command.arm);
+    (commander, link)
+}
+
+#[test]
+fn a_waypoint_takes_back_an_armed_vehicle_at_once_and_stays_armed() {
+    let (mut commander, link) = armed_then_lost(hover_at(5.0));
+    let fresh = Some(0.0);
+    for _ in 0..2 {
+        step(&mut commander, &link, fresh, None, None);
+    }
+    let command = step(&mut commander, &link, fresh, None, None); // recovered: 0.3 s
+    check!(commander.failsafe() == Some(FailsafeState::Primary));
+    check!(command.arm, "armed through the hold");
+    check!(link.synced.get() == Some(true));
+}
+
+#[test]
+fn sticks_take_back_an_armed_vehicle_only_once_they_move() {
+    use FailsafeState::{Fallback as F, Primary as P};
+    let (mut commander, link) = armed_then_lost(sticks(0.6, 0.0));
+    let fresh = Some(0.0);
+    // (case, sticks sent, expected state)
+    let ticks = [
+        ("recovering", sticks(0.2, 0.0), F), // the joystick comes back at low throttle
+        ("still recovering", sticks(0.2, 0.0), F),
+        ("recovered, sticks unchanged: holds", sticks(0.2, 0.0), F),
+        ("still unchanged", sticks(0.2, 0.0), F),
+        ("moved less than the delta", sticks(0.25, 0.05), F),
+        ("moved past it: the pilot has them", sticks(0.5, 0.0), P),
+    ];
+    for (i, (case, input, state)) in ticks.into_iter().enumerate() {
+        let command = step(&mut commander, &link, fresh, None, Some(input));
+        check!(commander.failsafe() == Some(state), "tick {i}: {case}");
+        check!(command.arm, "tick {i}: {case}: stays armed");
+    }
+}
+
+#[test]
+fn a_dropout_while_waiting_restarts_the_stick_reference() {
+    use FailsafeState::{Fallback as F, Primary as P};
+    let (mut commander, link) = armed_then_lost(sticks(0.6, 0.0));
+    let fresh = Some(0.0);
+    // (case, since, sticks sent, expected state)
+    let ticks = [
+        ("recovering", fresh, sticks(0.2, 0.0), F),
+        ("still recovering", fresh, sticks(0.2, 0.0), F),
+        (
+            "recovered at 0.2: the reference",
+            fresh,
+            sticks(0.2, 0.0),
+            F,
+        ),
+        ("dropout", Some(0.6), sticks(0.2, 0.0), F),
+        ("recovering again", fresh, sticks(0.5, 0.0), F),
+        ("still recovering again", fresh, sticks(0.5, 0.0), F),
+        (
+            "recovered at 0.5: the new reference",
+            fresh,
+            sticks(0.5, 0.0),
+            F,
+        ),
+        ("moved from 0.5", fresh, sticks(0.7, 0.0), P),
+    ];
+    for (i, (case, since_s, input, state)) in ticks.into_iter().enumerate() {
+        step(&mut commander, &link, since_s, None, Some(input));
+        check!(commander.failsafe() == Some(state), "tick {i}: {case}");
+    }
+}
+
+#[test]
+fn stick_movement_counts_any_axis_and_a_change_of_kind() {
+    let rate = |throttle: f32, yaw_rate: f32| {
+        ControlInput::Rate(RateCommand {
+            throttle,
+            yaw_rate,
+            ..Default::default()
+        })
+    };
+    // (case, reference, now, moved)
+    let cases = [
+        ("same", sticks(0.5, 0.0), sticks(0.5, 0.0), false),
+        (
+            "throttle within delta",
+            sticks(0.5, 0.0),
+            sticks(0.55, 0.0),
+            false,
+        ),
+        ("roll past delta", sticks(0.5, 0.0), sticks(0.5, -0.2), true),
+        ("rate yaw past delta", rate(0.5, 0.0), rate(0.5, 0.3), true),
+        ("attitude to rate", sticks(0.5, 0.0), rate(0.5, 0.0), true),
+        (
+            "NaN never moves",
+            sticks(f32::NAN, 0.0),
+            sticks(f32::NAN, 0.0),
+            false,
+        ),
+    ];
+    for (case, reference, now, moved) in cases {
+        check!(sticks_moved(&reference, &now, 0.1) == moved, "{case}");
+    }
 }

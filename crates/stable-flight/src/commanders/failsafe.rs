@@ -18,6 +18,12 @@ pub trait LinkedCommander: Commander {
     /// [`next_command`](Commander::next_command) call; `None` if none has arrived. Measured on
     /// this side from the `dt` the commander is given, so it needs no clock from the sender.
     fn since_update_s(&self) -> Option<f32>;
+
+    /// Sets the arm state this commander reports to `armed`. A [`FailsafeCommander`] calls it
+    /// when it hands control back, with the vehicle's actual arm state, so an arm request this
+    /// commander latched while the fallback flew (and that the vehicle never acted on) is
+    /// dropped rather than arming the vehicle at the handover.
+    fn sync_arm(&mut self, armed: bool);
 }
 
 /// A [`Commander`] that flies while a [`FailsafeCommander`]'s primary is stale.
@@ -45,14 +51,20 @@ pub struct FailsafeConfig {
     /// The primary takes over again only after it has been fresh this long without a break,
     /// so a flapping link doesn't toggle control. Must be non-negative and finite.
     pub recover_after_s: f32,
+    /// How far a stick axis (normalized) must move before the primary's sticks take back an
+    /// armed vehicle from the fallback, so a forgotten joystick resending the same positions
+    /// can't drop the vehicle out of a hold. Must be positive and finite.
+    pub takeover_stick_delta: f32,
 }
 
 impl Default for FailsafeConfig {
-    /// Fall back after 1 s without a message; return after 1 s of messages.
+    /// Fall back after 1 s without a message; return after 1 s of messages, sticks once one axis
+    /// has moved 0.1.
     fn default() -> Self {
         Self {
             timeout_s: 1.0,
             recover_after_s: 1.0,
+            takeover_stick_delta: 0.1,
         }
     }
 }
@@ -65,7 +77,8 @@ impl FailsafeConfig {
     /// [`InvalidConfig`] naming the first field out of range.
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         check_positive("timeout_s", self.timeout_s)?;
-        check_limit("recover_after_s", self.recover_after_s)
+        check_limit("recover_after_s", self.recover_after_s)?;
+        check_positive("takeover_stick_delta", self.takeover_stick_delta)
     }
 }
 
@@ -77,7 +90,14 @@ impl FailsafeConfig {
 ///   arm state.
 /// - **Returns** once the primary has been fresh for
 ///   [`recover_after_s`](FailsafeConfig::recover_after_s) without a break and the fallback
-///   [can release](Fallback::can_release).
+///   [can release](Fallback::can_release). To an **armed** vehicle, sticks (an attitude or rate
+///   command) take over only once an axis has moved
+///   [`takeover_stick_delta`](FailsafeConfig::takeover_stick_delta) from where it was when the
+///   primary recovered, so a joystick left at low throttle can't drop the vehicle out of a hold;
+///   a waypoint, or anything to a disarmed vehicle, takes over at once.
+/// - **At the handover**, the primary's arm state is [synced](LinkedCommander::sync_arm) to the
+///   vehicle's (disarmed if either the vehicle or the primary is), so an arm request made while
+///   the fallback flew doesn't arm the vehicle; a new one does.
 /// - **Arming:** the fallback decides the arm state while it flies (a [`HoldCommander`] keeps
 ///   it and never arms), except that a fresh primary's disarm is always honored, even while it
 ///   waits to take over.
@@ -108,6 +128,8 @@ impl FailsafeConfig {
 ///     fn since_update_s(&self) -> Option<f32> {
 ///         self.since_s
 ///     }
+///
+///     fn sync_arm(&mut self, _armed: bool) {}
 /// }
 ///
 /// let link = Link { since_s: None };
@@ -128,6 +150,9 @@ pub struct FailsafeCommander<P, F> {
     fresh_for_s: f32,
     /// The arm state of the last command, to engage the fallback with.
     armed: bool,
+    /// The primary's sticks when it recovered over an armed vehicle, waiting to move before
+    /// they take over.
+    takeover_reference: Option<ControlInput>,
 }
 
 impl<P: LinkedCommander, F: Fallback> FailsafeCommander<P, F> {
@@ -145,6 +170,7 @@ impl<P: LinkedCommander, F: Fallback> FailsafeCommander<P, F> {
             state: None,
             fresh_for_s: 0.0,
             armed: false,
+            takeover_reference: None,
         })
     }
 
@@ -162,7 +188,18 @@ impl<P: LinkedCommander, F: Fallback> FailsafeCommander<P, F> {
     fn fall_back(&mut self, state: &VehicleState) {
         self.state = Some(FailsafeState::Fallback);
         self.fresh_for_s = 0.0;
+        self.takeover_reference = None;
         self.fallback.engage(state, self.armed);
+    }
+
+    /// Whether the recovered primary, flying `input`, may take over now: at once, unless it
+    /// flies sticks over an armed vehicle, which must first move.
+    fn may_take_over(&mut self, input: &ControlInput) -> bool {
+        if !self.armed || !flies_sticks(input) {
+            return true;
+        }
+        let reference = *self.takeover_reference.get_or_insert(*input);
+        sticks_moved(&reference, input, self.config.takeover_stick_delta)
     }
 }
 
@@ -179,18 +216,30 @@ impl<P: LinkedCommander, F: Fallback> Commander for FailsafeCommander<P, F> {
             Some(FailsafeState::Primary) if !fresh => self.fall_back(current_state),
             _ => {}
         }
+        let mut handed_over = false;
         if self.state == Some(FailsafeState::Fallback) {
             self.fresh_for_s = if fresh { self.fresh_for_s + dt } else { 0.0 };
-            if fresh
+            let recovered = fresh
                 && self.fresh_for_s >= self.config.recover_after_s
-                && self.fallback.can_release()
-            {
+                && self.fallback.can_release();
+            if !recovered {
+                self.takeover_reference = None;
+            } else if self.may_take_over(&primary.input) {
                 self.state = Some(FailsafeState::Primary);
+                self.takeover_reference = None;
+                handed_over = true;
             }
         }
 
         let command = if self.state == Some(FailsafeState::Primary) {
-            primary
+            if handed_over {
+                // Drop an arm the primary latched while the fallback flew; keep its disarm.
+                let armed = self.armed && primary.arm;
+                self.primary.sync_arm(armed);
+                Command::new(armed, primary.input)
+            } else {
+                primary
+            }
         } else {
             let mut command = self.fallback.next_command(dt, current_state);
             // A disarm from any source is honored.
@@ -203,6 +252,32 @@ impl<P: LinkedCommander, F: Fallback> Commander for FailsafeCommander<P, F> {
 
     fn failsafe(&self) -> Option<FailsafeState> {
         self.state
+    }
+}
+
+/// Whether `input` is sticks (attitude or rate), which a forgotten joystick could keep sending.
+fn flies_sticks(input: &ControlInput) -> bool {
+    matches!(input, ControlInput::Attitude(_) | ControlInput::Rate(_))
+}
+
+/// Whether the sticks in `now` moved more than `delta` on any axis from `reference`; a change of
+/// kind (attitude ↔ rate) counts. A NaN axis never counts as moved.
+fn sticks_moved(reference: &ControlInput, now: &ControlInput, delta: f32) -> bool {
+    let moved = |a: f32, b: f32| (a - b).abs() > delta;
+    match (reference, now) {
+        (ControlInput::Attitude(a), ControlInput::Attitude(b)) => {
+            moved(a.throttle, b.throttle)
+                || moved(a.roll, b.roll)
+                || moved(a.pitch, b.pitch)
+                || moved(a.yaw, b.yaw)
+        }
+        (ControlInput::Rate(a), ControlInput::Rate(b)) => {
+            moved(a.throttle, b.throttle)
+                || moved(a.roll_rate, b.roll_rate)
+                || moved(a.pitch_rate, b.pitch_rate)
+                || moved(a.yaw_rate, b.yaw_rate)
+        }
+        _ => true,
     }
 }
 
