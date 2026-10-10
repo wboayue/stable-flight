@@ -1,0 +1,44 @@
+name: coverage
+
+# Main only: feeds the README coverage badge without slowing PR checks.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  coverage:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: Swatinem/rust-cache@v2
+    - uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-tarpaulin
+
+    - name: prerequisites
+      # Skip `apt update` unless the runner image's package index is stale.
+      run: |
+        sudo apt-get install -y --no-install-recommends libudev-dev \
+          || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libudev-dev; }
+
+    - name: coverage
+      # Same tool as `just cover`, with the test job's features, as lcov for Coveralls.
+      run: |
+        cargo tarpaulin --workspace --all-features --locked --exclude-files 'firmware/*' --out Lcov --output-dir coverage
+
+    - name: upload to Coveralls
+      uses: coverallsapp/github-action@v2
+      with:
+        file: coverage/lcov.info

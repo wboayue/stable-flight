@@ -1,5 +1,11 @@
 # stable-flight
 
+[![Build](https://github.com/wboayue/stable-flight/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/wboayue/stable-flight/actions/workflows/test.yaml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![crates.io](https://img.shields.io/crates/v/stable-flight.svg)](https://crates.io/crates/stable-flight)
+[![Documentation](https://docs.rs/stable-flight/badge.svg)](https://docs.rs/stable-flight)
+[![Coverage Status](https://coveralls.io/repos/github/wboayue/stable-flight/badge.svg?branch=main)](https://coveralls.io/github/wboayue/stable-flight?branch=main)
+
 Flight-control core for [Stable Flight](https://github.com/wboayue/stable-flight): the pipeline traits, the data passed between them, copter guidance, cascaded-PID stabilizers, mixers, and `FlightLoop`, which sequences one control tick. It is `no_std` and has no simulator, I/O, or timing dependencies, so the same code runs in software-in-the-loop simulation ([`stable-flight-sitl`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl)) and, later, on flight hardware. See [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md) for design rationale.
 
 ## Pipeline
