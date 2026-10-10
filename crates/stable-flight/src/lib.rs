@@ -1349,9 +1349,10 @@ pub struct TelemetryRecord<'a> {
 
 /// One tick's actuator outputs: motors and servos, as generic slots.
 ///
-/// The [`Mixer`] decides what each slot does (motor `0` is front-right, servo `0` is the tail
-/// tilt, …); the backend's mapping decides which output channel each slot drives. Slots a mixer
-/// doesn't use stay at their default.
+/// The [`Mixer`] decides what each slot does
+/// ([`QuadCopterMixer`](crate::mixers::QuadCopterMixer)'s motor `0` is front-left; a
+/// tricopter's servo `0` might be its tail tilt); the backend's mapping decides which output
+/// channel each slot drives. Slots a mixer doesn't use stay at their default.
 ///
 /// The default (all zeros: motors off, servos centered) is what [`FlightLoop`] actuates while
 /// disarmed.

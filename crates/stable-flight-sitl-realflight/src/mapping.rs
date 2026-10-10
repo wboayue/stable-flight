@@ -16,7 +16,8 @@ const CHANNEL_COUNT: usize = 12;
 /// servo `i` drives; `None` leaves the slot unused. The mixer sets what each slot means, so a
 /// mapping only fits its own mixer. RealFlight channels run from 0.0 to 1.0: motors pass
 /// through, and servos (-1.0 to 1.0) are rescaled so 0.0 lands on center (0.5). Channels no
-/// slot drives are sent as 0.0.
+/// slot drives are sent as 0.0, which holds a servo there at full deflection
+/// ([#271](https://github.com/wboayue/stable-flight/issues/271)): map every servo the model has.
 ///
 /// # Examples
 ///
