@@ -7,6 +7,7 @@ use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
 
 use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateSource, VehicleState};
 
+use crate::{ActuatorMapping, MappingError};
 use health::LinkHealth;
 
 mod health;
@@ -30,40 +31,6 @@ pub const REMOTE_IO_TIMEOUT: Duration = Duration::from_millis(250);
 /// Builds a fresh bridge after the connection is lost; see
 /// [`RealFlightVehicle::with_reconnect`].
 type Reconnect<T> = Box<dyn FnMut() -> Result<T, BridgeError> + Send>;
-
-/// Defines the mapping between vehicle actuator commands and RealFlight simulator channels.
-///
-/// This structure allows flexible configuration of how actuator commands (motors, control surfaces)
-/// are assigned to RealFlight's channel system (typically 8-16 channels).
-///
-/// # Examples
-///
-/// ```no_run
-/// use stable_flight_sitl_realflight::ActuatorMapping;
-///
-/// let mut mapping = ActuatorMapping::default();
-/// mapping.motors[0] = Some(0);  // Motor 1 to channel 0
-/// mapping.rudder = Some(1);     // Rudder to channel 1
-/// mapping.throttle = Some(2);   // Throttle to channel 2
-/// ```
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
-pub struct ActuatorMapping {
-    /// Array of optional channel assignments for up to 8 motors.
-    /// Index represents motor number, value represents channel number (0-15).
-    pub motors: [Option<usize>; 8],
-    /// Optional channel number for rudder control.
-    pub rudder: Option<usize>,
-    /// Optional channel number for elevator control.
-    pub elevator: Option<usize>,
-    /// Optional channel number for aileron control.
-    pub aileron: Option<usize>,
-    /// Optional channel number for throttle control.
-    pub throttle: Option<usize>,
-    /// Optional channel number for left elevon control.
-    pub elevon_left: Option<usize>,
-    /// Optional channel number for right elevon control.
-    pub elevon_right: Option<usize>,
-}
 
 /// Configuration parameters for connecting to a RealFlight simulation environment.
 ///
@@ -213,7 +180,7 @@ where
     ///
     /// * `command` - The actuator commands to send to the simulator.
     fn actuate(&mut self, command: &ActuatorCommand) {
-        let input = self.map_channels(command);
+        let input = self.mapping.channels(command);
         self.exchange(&input);
     }
 }
@@ -225,19 +192,44 @@ where
     /// Creates a new RealFlight vehicle instance with the given configuration.
     ///
     /// Initializes the simulator connection by disabling RC mode and resetting the aircraft.
+    /// Warnings are logged if either fails; the vehicle is still created.
     ///
-    /// # Arguments
+    /// # Panics
     ///
-    /// * `configuration` - Configuration containing bridge and channel mapping.
-    ///
-    /// # Returns
-    ///
-    /// A new `RealFlightVehicle` instance ready for simulation.
-    ///
-    /// # Notes
-    ///
-    /// Warnings are logged if RC disable or aircraft reset operations fail.
+    /// If `configuration.mapping` is invalid ([`ActuatorMapping::validate`]); use
+    /// [`try_new`](Self::try_new) to handle that as an error.
     pub fn new(configuration: RealFlightConfiguration<T>) -> RealFlightVehicle<T> {
+        Self::try_new(configuration).unwrap_or_else(|e| panic!("invalid ActuatorMapping: {e}"))
+    }
+
+    /// Like [`new`](Self::new), but returns an invalid mapping as an error instead of
+    /// panicking. Validates before touching the simulator.
+    ///
+    /// # Errors
+    ///
+    /// The mapping's first [`MappingError`].
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use stable_flight_sitl_realflight::realflight_bridge::RealFlightLocalBridge;
+    /// use stable_flight_sitl_realflight::{
+    ///     ActuatorMapping, MappingError, RealFlightConfiguration, RealFlightVehicle,
+    /// };
+    ///
+    /// let mut mapping = ActuatorMapping::default();
+    /// mapping.motors[0] = Some(12); // RealFlight has channels 0–11
+    /// let result = RealFlightVehicle::try_new(RealFlightConfiguration {
+    ///     mapping,
+    ///     bridge: RealFlightLocalBridge::new().expect("Failed to create bridge"),
+    /// });
+    /// assert!(matches!(result, Err(MappingError::ChannelOutOfRange { channel: 12 })));
+    /// ```
+    pub fn try_new(
+        configuration: RealFlightConfiguration<T>,
+    ) -> Result<RealFlightVehicle<T>, MappingError> {
+        configuration.mapping.validate()?;
+
         if let Err(e) = configuration.bridge.disable_rc() {
             warn!("Failed to disable RC: {}", e);
         }
@@ -246,13 +238,13 @@ where
             warn!("Failed to reset aircraft: {}", e);
         }
 
-        RealFlightVehicle {
+        Ok(RealFlightVehicle {
             bridge: Some(configuration.bridge),
             state: VehicleState::default(),
             mapping: configuration.mapping,
             reconnect: None,
             health: LinkHealth::default(),
-        }
+        })
     }
 
     /// Rebuilds the bridge with `reconnect` after a connection error, with backoff (see
@@ -351,51 +343,6 @@ where
                 false
             }
         }
-    }
-
-    /// Converts actuator commands to RealFlight control inputs based on channel mapping.
-    ///
-    /// # Arguments
-    ///
-    /// * `command` - The actuator command containing control surface and motor values.
-    ///
-    /// # Returns
-    ///
-    /// A [ControlInputs] structure with channel values set according to the mapping.
-    fn map_channels(&self, command: &ActuatorCommand) -> ControlInputs {
-        let mut input = ControlInputs::default();
-
-        for (i, val) in self.mapping.motors.iter().enumerate() {
-            if let Some(value) = val {
-                input.channels[*value] = command.motors[i];
-            }
-        }
-
-        if let Some(i) = self.mapping.rudder {
-            input.channels[i] = command.rudder;
-        }
-
-        if let Some(i) = self.mapping.elevator {
-            input.channels[i] = command.elevator;
-        }
-
-        if let Some(i) = self.mapping.aileron {
-            input.channels[i] = command.aileron;
-        }
-
-        if let Some(i) = self.mapping.throttle {
-            input.channels[i] = command.throttle;
-        }
-
-        if let Some(i) = self.mapping.elevon_left {
-            input.channels[i] = command.elevon_left;
-        }
-
-        if let Some(i) = self.mapping.elevon_right {
-            input.channels[i] = command.elevon_right;
-        }
-
-        input
     }
 }
 

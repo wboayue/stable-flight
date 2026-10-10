@@ -23,9 +23,11 @@
 pub use realflight_bridge;
 
 pub mod airframes;
+mod mapping;
 mod vehicle;
 
+pub use mapping::{ActuatorMapping, MappingError};
+
 pub use vehicle::{
-    ActuatorMapping, REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, SLOW_EXCHANGE,
-    vehicle_state,
+    REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, SLOW_EXCHANGE, vehicle_state,
 };

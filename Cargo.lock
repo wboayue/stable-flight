@@ -1553,6 +1553,7 @@ dependencies = [
 name = "stable-flight-sitl-realflight"
 version = "0.1.0"
 dependencies = [
+ "assert2",
  "clap",
  "env_logger",
  "log",
@@ -1560,6 +1561,7 @@ dependencies = [
  "stable-flight",
  "stable-flight-link",
  "stable-flight-sitl",
+ "thiserror",
 ]
 
 [[package]]

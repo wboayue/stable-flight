@@ -16,7 +16,9 @@ not each change; per-change entries start after it.
   re-exported `realflight_bridge`).
   - Converts RealFlight state to the core frame contract; `vehicle_state` exposes the
     conversion as a pure function.
-  - Maps mixer outputs to RF channels with `ActuatorMapping`.
+  - Maps the mixer's motor and servo slots to RF channels with `ActuatorMapping`, rescaling
+    servos to RealFlight's 0–1 range; `validate` and `try_new` reject a missing or shared
+    channel (`MappingError`), so a bad mapping fails at construction, not in the tick.
   - Survives a lost connection: `with_reconnect` rebuilds the bridge with backoff and disables
     RC on it again; failed exchanges are logged at most once a second, and exchanges over
     20 ms (`SLOW_EXCHANGE`) at `debug`.

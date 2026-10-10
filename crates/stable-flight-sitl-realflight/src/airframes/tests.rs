@@ -3,13 +3,13 @@ use stable_flight::Vec3;
 use stable_flight::controllers::{LateralControllerConfig, YawControllerConfig};
 
 #[test]
-fn quadcopter_x_maps_each_motor_to_its_own_channel() {
-    let airframe = quadcopter_x();
+fn quadcopter_x_maps_its_four_motors_validly() {
+    let mapping = quadcopter_x().mapping;
 
-    let mut channels: Vec<usize> = airframe.mapping.motors.iter().flatten().copied().collect();
-    channels.sort_unstable();
-
-    assert_eq!(channels, [0, 1, 2, 3]);
+    assert_eq!(mapping.validate(), Ok(()));
+    assert!(mapping.motors[..4].iter().all(Option::is_some));
+    assert!(mapping.motors[4..].iter().all(Option::is_none));
+    assert!(mapping.servos.iter().all(Option::is_none));
 }
 
 /// Pins the flight-checked QuadCopterX set (#62), so a retune (or a core default change it

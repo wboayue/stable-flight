@@ -49,12 +49,7 @@ fn worst_case_record() -> Record {
         },
         actuators: ActuatorCommand {
             motors: [0.5; 8],
-            rudder: 0.1,
-            elevator: 0.2,
-            aileron: 0.3,
-            throttle: 0.4,
-            elevon_left: 0.5,
-            elevon_right: 0.6,
+            servos: [-0.5; 8],
         },
         saturation,
         failsafe: Some(FailsafeState::Fallback),
