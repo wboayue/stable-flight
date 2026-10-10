@@ -25,7 +25,7 @@ let mut commander = WaypointFollower::new(PATH)?
     .with_route_end(RouteEnd::Hold);
 ```
 
-`commanders::FailsafeCommander` flies a link-fed primary (a `LinkedCommander`, which reports how long ago it last heard the link) and switches to a `Fallback` when the link goes stale, such as `HoldCommander`, which holds the position where it took over. It starts in the fallback and returns only after the link has been back for a while; a disarm is always honored, the fallback never arms, an arm requested during the fallback is dropped at the handover, sticks take back an armed vehicle only once they move, and a land the primary flies disarms on touchdown. Rules: [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link-failsafe).
+`commanders::FailsafeCommander` flies a link-fed primary (a `LinkedCommander`, which reports how long ago it last heard the link) and switches to a `Fallback` when the link goes stale, such as `HoldCommander`, which holds the position where it took over, or finishes a land the link dropped. It starts in the fallback and returns only after the link has been back for a while; a disarm is always honored, the fallback never arms, an arm requested during the fallback is dropped at the handover, sticks take back an armed vehicle only once they move, and a land disarms on touchdown, whichever commander flies it. Rules: [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#link-failsafe).
 
 ```rust
 let mut commander = FailsafeCommander::new(link_commander, HoldCommander::default(), FailsafeConfig::default())?;

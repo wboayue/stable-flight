@@ -31,7 +31,7 @@ not each change; per-change entries start after it.
   - `copter-auto-realflight`: scripted waypoints; `--end hold` (default), `loop`, or `land` (lands on the last waypoint and disarms).
   - `capture-state-realflight`: records raw simulator state and channels to CSV.
   - `copter-companion-realflight`: flown from the link (`FailsafeCommander<LinkCommander,
-    HoldCommander>`), holding position when the link goes quiet.
+    HoldCommander>`), holding position when the link goes quiet, or finishing a land.
   - `exchange-latency-realflight`: times the RealFlight round trip alone, through the proxy or
     directly (`--local`).
 
