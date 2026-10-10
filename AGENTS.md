@@ -241,7 +241,7 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
    - **Duplication:** logic, constants, or helpers that repeat in the change or already exist elsewhere (check core `math` and sibling crates before writing a helper).
    - **Single responsibility:** each type or function does one job; separate I/O, scheduling, and pure mapping/math.
    - **Composability:** dependencies are injected rather than hard-coded (connections, addresses, clocks), configuration is explicit, and the public surface is no wider than callers need.
-   - **Performance**, when the code runs in the hot path (anything `FlightLoop::step` calls each tick — commander, estimator, guidance, stabilizer, mixer, actuator, telemetry — or firmware): per-tick allocations, blocking I/O, redundant trig or `libm` calls, and flash size (see Coding style).
+   - **Performance**, when the code runs in the hot path (anything `FlightLoop::step` calls each tick — commander, state source, guidance, stabilizer, mixer, actuator, telemetry — or firmware): per-tick allocations, blocking I/O, redundant trig or `libm` calls, and flash size (see Coding style).
 2. Before designing around external software (QGC, other MAVLink peers, simulator clients),
    verify the behavior you rely on in its source, not from memory, and record the findings with
    file:line in the issue or PR. Examples: QGC's connect and metadata handling (#206 comment),
