@@ -36,7 +36,7 @@ pub struct RunStats {
     pub ticks: u64,
     /// Wall-clock time from priming to shutdown.
     pub elapsed: Duration,
-    /// Stalls: times the loop fell more than [`MAX_LAG`] behind and resynced.
+    /// Stalls: times the loop fell more than 100 ms (or a period) behind and resynced.
     pub overruns: u64,
     /// Deadlines dropped by those resyncs rather than replayed.
     pub skipped_ticks: u64,
