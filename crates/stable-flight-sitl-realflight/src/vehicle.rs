@@ -111,9 +111,12 @@ where
 /// A `BridgeError::Connection` can leave the bridge unusable (a remote bridge is then out of
 /// sync for good). With [`with_reconnect`](RealFlightVehicle::with_reconnect), the vehicle
 /// stops exchanging, waits 0.5 s, and builds a new bridge, doubling the wait after each failed
-/// attempt up to 4 s (`INITIAL_BACKOFF_S`, `MAX_BACKOFF_S` in `vehicle/health.rs`). A new bridge gets `disable_rc` again (but no aircraft reset: it is
-/// mid-flight) and replaces the old one. Waits count the ticks' nominal `dt`, and an attempt
-/// blocks its tick for as long as building the bridge takes, so give the closure a short
+/// attempt up to 4 s (`INITIAL_BACKOFF_S`, `MAX_BACKOFF_S` in `vehicle/health.rs`). A new
+/// bridge gets `disable_rc` again (but no aircraft reset: it is mid-flight) and replaces the old
+/// one. Only a `Connection` error from `disable_rc` fails the attempt: RealFlight keeps the Link
+/// controller across connections, so it may answer with a SOAP fault, which is logged and
+/// ignored as in [`new`](RealFlightVehicle::new). Waits count the ticks' nominal `dt`, and an
+/// attempt blocks its tick for as long as building the bridge takes, so give the closure a short
 /// connect timeout. Other errors, or any error without the hook, just retry the exchange on
 /// the next tick.
 ///
@@ -289,7 +292,16 @@ where
             return false;
         };
 
-        let bridge = reconnect().and_then(|bridge| bridge.disable_rc().map(|()| bridge));
+        let bridge = reconnect().and_then(|bridge| match bridge.disable_rc() {
+            Err(e @ BridgeError::Connection(_)) => Err(e),
+            // RealFlight keeps the Link controller across connections, so a new bridge can get a
+            // "Preexisting controller reference" fault although the Link is still in control.
+            Err(e) => {
+                warn!("Failed to disable RC on the new RealFlight bridge: {e}");
+                Ok(bridge)
+            }
+            Ok(()) => Ok(bridge),
+        });
         match bridge {
             Ok(bridge) => {
                 self.bridge = bridge;

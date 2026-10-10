@@ -28,8 +28,11 @@ struct MockRealFlightBridge {
     /// Overwrites `aircraft_position_y_m` (north) with the exchange number (1, 2, …) so a test can tell
     /// which exchange a state came from.
     stamp_exchanges: bool,
-    /// Fails every exchange with a `Connection` error, as an out-of-sync remote bridge does.
+    /// Fails every exchange and `disable_rc` with a `Connection` error, as an out-of-sync remote
+    /// bridge does.
     connection_lost: bool,
+    /// Fails `disable_rc` with a SOAP fault, as RealFlight does when the Link already has control.
+    disable_rc_fault: bool,
 }
 
 impl MockRealFlightBridge {
@@ -41,6 +44,7 @@ impl MockRealFlightBridge {
             exchanges: Cell::new(0),
             stamp_exchanges: false,
             connection_lost: false,
+            disable_rc_fault: false,
         }
     }
 }
@@ -89,7 +93,15 @@ impl RealFlightBridge for MockRealFlightBridge {
     }
 
     fn disable_rc(&self) -> Result<(), BridgeError> {
-        if self.should_fail {
+        if self.connection_lost {
+            Err(BridgeError::Connection(std::io::Error::other(
+                "failed to fill whole buffer",
+            )))
+        } else if self.disable_rc_fault {
+            Err(BridgeError::SoapFault(
+                "Preexisting controller reference".to_string(),
+            ))
+        } else if self.should_fail {
             Err(BridgeError::Initialization("RC disable failed".to_string()))
         } else {
             Ok(())
@@ -520,16 +532,38 @@ fn a_failed_reconnect_backs_off_before_the_next_attempt() {
 }
 
 #[test]
-fn a_new_bridge_that_rejects_disable_rc_is_not_used() {
-    // `MockRealFlightBridge::new(true)` fails `disable_rc`.
-    let (calls, reconnect) = counting_reconnect(|| Ok(MockRealFlightBridge::new(true)));
+fn a_new_bridge_that_loses_its_connection_on_disable_rc_is_not_used() {
+    let (calls, reconnect) = counting_reconnect(|| {
+        Ok(MockRealFlightBridge {
+            connection_lost: true,
+            ..MockRealFlightBridge::new(false)
+        })
+    });
     let mut vehicle = failing_vehicle(true).with_reconnect(reconnect);
 
     tick(&mut vehicle, 7);
 
     assert_eq!(calls.load(Ordering::Relaxed), 1);
-    assert!(vehicle.bridge.connection_lost, "kept the old bridge");
-    assert_eq!(vehicle.bridge.exchanges.get(), 1, "exchanged while down");
+    // The old bridge, which made the one exchange that lost the connection; a new one has none.
+    assert_eq!(vehicle.bridge.exchanges.get(), 1, "replaced the old bridge");
+}
+
+#[test]
+fn a_new_bridge_whose_disable_rc_fails_otherwise_is_used() {
+    // RealFlight answers "Preexisting controller reference" when the Link already has control.
+    let (calls, reconnect) = counting_reconnect(|| {
+        Ok(MockRealFlightBridge {
+            disable_rc_fault: true,
+            ..MockRealFlightBridge::new(false)
+        })
+    });
+    let mut vehicle = failing_vehicle(true).with_reconnect(reconnect);
+
+    tick(&mut vehicle, 7);
+
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    assert!(!vehicle.bridge.connection_lost, "kept the old bridge instead of the new one");
+    assert_eq!(vehicle.estimated_state.position_m.x, 2.0);
 }
 
 #[test]
