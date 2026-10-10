@@ -71,14 +71,14 @@ fn null_vehicle_counts_calls_and_keeps_last_command() {
     });
     check!(vehicle.last_actuation().is_none());
 
-    check!(vehicle.estimate_state(Duration::ZERO).heading_rad == 1.5);
-    vehicle.estimate_state(Duration::from_millis(4));
+    check!(vehicle.state(Duration::ZERO).heading_rad == 1.5);
+    vehicle.state(Duration::from_millis(4));
     vehicle.actuate(&ActuatorCommand {
         motors: [0.25; 8],
         ..Default::default()
     });
 
-    check!(vehicle.estimates() == 2);
+    check!(vehicle.state_reads() == 2);
     check!(vehicle.actuations() == 1);
     assert2::assert!(let Some(last) = vehicle.last_actuation());
     check!(last.motors[0] == 0.25);

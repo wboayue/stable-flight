@@ -5,7 +5,7 @@ use realflight_bridge::{BridgeError, ControlInputs, RealFlightBridge, SimulatorS
 use stable_flight::Vec3;
 use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
 
-use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateEstimator, VehicleState};
+use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateSource, VehicleState};
 
 use health::LinkHealth;
 
@@ -98,7 +98,7 @@ where
 /// # Timing
 ///
 /// RealFlight Link sends controls and returns state in one round-trip, so each tick makes
-/// exactly one exchange, in [`Actuator::actuate`]. [`StateEstimator::estimate_state`] returns
+/// exactly one exchange, in [`Actuator::actuate`]. [`StateSource::state`] returns
 /// the state cached from that exchange: guidance and the stabilizer on tick *n* see the state RealFlight
 /// reported when it received tick *n − 1*'s controls, one tick old. The one exception is the
 /// priming call (`dt == Duration::ZERO`), which makes an exchange with neutral inputs so the
@@ -110,7 +110,7 @@ where
 /// # Connection loss
 ///
 /// A failed exchange is logged at most once a second, with a count of the failures skipped in
-/// between. The state estimate keeps the last state RealFlight reported until an exchange
+/// between. `state` keeps returning the last state RealFlight reported until an exchange
 /// succeeds again: outputs computed meanwhile never reach the simulator, and the controllers
 /// only wind up against a frozen error, bounded by their `max_integral`.
 ///
@@ -141,7 +141,7 @@ where
 /// ```no_run
 /// use stable_flight_sitl_realflight::realflight_bridge::RealFlightLocalBridge;
 /// use stable_flight_sitl_realflight::{ActuatorMapping, RealFlightConfiguration, RealFlightVehicle};
-/// use stable_flight::{Actuator, ActuatorCommand, StateEstimator};
+/// use stable_flight::{Actuator, ActuatorCommand, StateSource};
 /// use std::time::Duration;
 ///
 /// let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
@@ -151,7 +151,7 @@ where
 ///
 /// let command = ActuatorCommand::default();
 /// vehicle.actuate(&command);
-/// let state = vehicle.estimate_state(Duration::from_secs(1));
+/// let state = vehicle.state(Duration::from_secs(1));
 /// ```
 pub struct RealFlightVehicle<T>
 where
@@ -159,8 +159,8 @@ where
 {
     /// The communication bridge to the RealFlight simulator.
     bridge: T,
-    /// Current estimated state of the vehicle based on simulator feedback.
-    estimated_state: VehicleState,
+    /// The last state RealFlight reported.
+    state: VehicleState,
     /// Configuration mapping actuator commands to simulator channels.
     mapping: ActuatorMapping,
     /// Builds a new bridge after a connection error; `None` keeps the one bridge.
@@ -169,7 +169,7 @@ where
     health: LinkHealth,
 }
 
-impl<T> StateEstimator for RealFlightVehicle<T>
+impl<T> StateSource for RealFlightVehicle<T>
 where
     T: RealFlightBridge,
 {
@@ -178,14 +178,14 @@ where
     /// Does not contact the simulator, except on the priming call (`dt == Duration::ZERO`),
     /// which makes one exchange with neutral inputs (see [Timing](RealFlightVehicle#timing)).
     /// Otherwise `dt` is ignored: the simulator reports its own truth state.
-    fn estimate_state(&mut self, dt: Duration) -> VehicleState {
+    fn state(&mut self, dt: Duration) -> VehicleState {
         self.health.advance(dt.as_secs_f32());
         if dt.is_zero() {
             // initialize state if dt is zero
             self.exchange(&ControlInputs::default());
         }
 
-        self.estimated_state.clone()
+        self.state.clone()
     }
 }
 
@@ -234,7 +234,7 @@ where
 
         RealFlightVehicle {
             bridge: configuration.bridge,
-            estimated_state: VehicleState::default(),
+            state: VehicleState::default(),
             mapping: configuration.mapping,
             reconnect: None,
             health: LinkHealth::default(),
@@ -286,7 +286,7 @@ where
             debug!("Slow RealFlight exchange: {} ms", elapsed.as_millis());
         }
         match result {
-            Ok(state) => self.estimated_state = vehicle_state(&state),
+            Ok(state) => self.state = vehicle_state(&state),
             Err(e) => {
                 self.health
                     .report(format_args!("Failed to exchange data with RealFlight: {e}"));

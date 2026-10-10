@@ -36,7 +36,7 @@ use stable_flight::{
     stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig},
 };
 
-use stub::{HoldCommander, HoldEstimator, NullActuator};
+use stub::{HoldCommander, HoldState, NullActuator};
 
 systick_monotonic!(Mono, 1_000);
 
@@ -56,7 +56,7 @@ static OVERRUNS: AtomicU32 = AtomicU32::new(0);
 
 type Flight = FlightLoop<
     HoldCommander,
-    ComposedVehicle<HoldEstimator, NullActuator>,
+    ComposedVehicle<HoldState, NullActuator>,
     CopterGuidance,
     CopterStabilizer,
     QuadCopterMixer,
@@ -118,7 +118,7 @@ mod app {
 
         let mut flight = FlightLoop::new(
             HoldCommander,
-            ComposedVehicle::new(HoldEstimator, NullActuator),
+            ComposedVehicle::new(HoldState, NullActuator),
             CopterGuidance::new(CopterGuidanceConfig::default()),
             CopterStabilizer::new(CopterStabilizerConfig::default()),
             QuadCopterMixer::default(),

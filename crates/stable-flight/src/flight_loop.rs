@@ -36,7 +36,7 @@ mod tests;
 /// use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 /// use stable_flight::{
 ///     Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, ControlInput, FlightLoop,
-///     StateEstimator, VehicleState,
+///     StateSource, VehicleState,
 /// };
 ///
 /// struct Hover;
@@ -50,8 +50,8 @@ mod tests;
 /// }
 ///
 /// struct StillAir;
-/// impl StateEstimator for StillAir {
-///     fn estimate_state(&mut self, _dt: Duration) -> VehicleState {
+/// impl StateSource for StillAir {
+///     fn state(&mut self, _dt: Duration) -> VehicleState {
 ///         VehicleState::default()
 ///     }
 /// }
@@ -119,14 +119,14 @@ where
         }
     }
 
-    /// Takes the initial estimate (with `dt = Duration::ZERO`, per the [`StateEstimator`]
+    /// Takes the initial estimate (with `dt = Duration::ZERO`, per the [`StateSource`]
     /// convention) and primes guidance, then the stabilizer, from it. Call once before the
     /// first tick, so the commander's first call sees a real state. The first armed tick
     /// primes them again from its fresh estimate (see the arm gate on [`FlightLoop`]).
     ///
-    /// [`StateEstimator`]: crate::StateEstimator
+    /// [`StateSource`]: crate::StateSource
     pub fn prime(&mut self) {
-        self.state = self.vehicle.estimate_state(Duration::ZERO);
+        self.state = self.vehicle.state(Duration::ZERO);
         self.guidance.prime(&self.state);
         self.stabilizer.prime(&self.state);
     }
@@ -147,7 +147,7 @@ where
         let dt_secs = dt.as_secs_f32();
 
         let command = self.commander.next_command(dt_secs, &self.state);
-        self.state = self.vehicle.estimate_state(dt);
+        self.state = self.vehicle.state(dt);
 
         let (setpoint, control, actuators, saturation) = if command.arm {
             if !self.armed {
@@ -227,7 +227,7 @@ where
     /// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
     /// # use stable_flight::mixers::QuadCopterMixer;
     /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
-    /// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateEstimator, VehicleState};
+    /// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateSource, VehicleState};
     /// use stable_flight::{Configurable, FlightLoop};
     /// # struct Hover;
     /// # impl Commander for Hover {
@@ -236,8 +236,8 @@ where
     /// #     }
     /// # }
     /// # struct StillAir;
-    /// # impl StateEstimator for StillAir {
-    /// #     fn estimate_state(&mut self, _: Duration) -> VehicleState { VehicleState::default() }
+    /// # impl StateSource for StillAir {
+    /// #     fn state(&mut self, _: Duration) -> VehicleState { VehicleState::default() }
     /// # }
     /// # impl Actuator for StillAir {
     /// #     fn actuate(&mut self, _: &ActuatorCommand) {}
@@ -273,7 +273,7 @@ where
     /// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
     /// # use stable_flight::mixers::QuadCopterMixer;
     /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
-    /// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateEstimator, VehicleState};
+    /// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateSource, VehicleState};
     /// use stable_flight::FlightLoop;
     ///
     /// # struct Hover;
@@ -287,8 +287,8 @@ where
     /// struct Bench {
     ///     actuations: u32,
     /// }
-    /// # impl StateEstimator for Bench {
-    /// #     fn estimate_state(&mut self, _: Duration) -> VehicleState { VehicleState::default() }
+    /// # impl StateSource for Bench {
+    /// #     fn state(&mut self, _: Duration) -> VehicleState { VehicleState::default() }
     /// # }
     /// impl Actuator for Bench {
     ///     fn actuate(&mut self, _: &ActuatorCommand) {
@@ -333,7 +333,7 @@ where
 /// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 /// # use stable_flight::mixers::QuadCopterMixer;
 /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
-/// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateEstimator, VehicleState};
+/// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateSource, VehicleState};
 /// use stable_flight::params::Params;
 /// use stable_flight::{Configurable, FlightLoop};
 /// # struct Hover;
@@ -343,8 +343,8 @@ where
 /// #     }
 /// # }
 /// # struct StillAir;
-/// # impl StateEstimator for StillAir {
-/// #     fn estimate_state(&mut self, _: Duration) -> VehicleState { VehicleState::default() }
+/// # impl StateSource for StillAir {
+/// #     fn state(&mut self, _: Duration) -> VehicleState { VehicleState::default() }
 /// # }
 /// # impl Actuator for StillAir {
 /// #     fn actuate(&mut self, _: &ActuatorCommand) {}

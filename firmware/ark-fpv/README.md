@@ -12,7 +12,7 @@ in `src/stub.rs`:
 | Component | Stub | Replaced by (#88) |
 |---|---|---|
 | Commander | `HoldCommander`: zero throttle, level, disarmed (armed with `bench-armed`) | receiver input |
-| State estimator | `HoldEstimator`: level, at rest | IMU/baro/mag fusion from ark-fpv-discovery |
+| State source | `HoldState`: level, at rest | IMU/baro/mag fusion from ark-fpv-discovery |
 | Actuator | `NullActuator`: discards motor commands | ESC output (PWM/DShot) |
 | Telemetry | `()` | USB telemetry |
 

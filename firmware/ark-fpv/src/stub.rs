@@ -8,7 +8,7 @@ use core::hint::black_box;
 use core::time::Duration;
 
 use stable_flight::{
-    Actuator, ActuatorCommand, Command, Commander, ControlInput, StateEstimator, VehicleState,
+    Actuator, ActuatorCommand, Command, Commander, ControlInput, StateSource, VehicleState,
 };
 
 /// Whether [`HoldCommander`] arms: only with the `bench-armed` feature.
@@ -28,10 +28,10 @@ impl Commander for HoldCommander {
 
 /// Reports the vehicle level and at rest at the origin. Replaced by the IMU/baro/mag fusion
 /// estimator ported from ark-fpv-discovery.
-pub struct HoldEstimator;
+pub struct HoldState;
 
-impl StateEstimator for HoldEstimator {
-    fn estimate_state(&mut self, _dt: Duration) -> VehicleState {
+impl StateSource for HoldState {
+    fn state(&mut self, _dt: Duration) -> VehicleState {
         black_box(VehicleState::default())
     }
 }

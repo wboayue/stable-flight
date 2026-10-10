@@ -148,7 +148,7 @@ fn test_vehicle_creation() {
     let vehicle = RealFlightVehicle::new(config);
 
     // Verify initial state
-    assert_eq!(vehicle.estimated_state.position_m, Vec3::zeros());
+    assert_eq!(vehicle.state.position_m, Vec3::zeros());
     assert_eq!(vehicle.mapping.motors[0], Some(0));
     assert_eq!(vehicle.mapping.rudder, Some(1));
 }
@@ -159,7 +159,7 @@ fn test_vehicle_creation_with_bridge_failure() {
     let vehicle = RealFlightVehicle::new(config);
 
     // Should still create successfully despite bridge failures
-    assert_eq!(vehicle.estimated_state.position_m, Vec3::zeros());
+    assert_eq!(vehicle.state.position_m, Vec3::zeros());
 }
 
 #[test]
@@ -197,33 +197,33 @@ fn test_actuate_success() {
     vehicle.actuate(&command);
 
     // Verify state was updated
-    assert_eq!(vehicle.estimated_state.position_m.x, 2.0);
-    assert_eq!(vehicle.estimated_state.velocity_mps.z, -6.0);
-    assert_eq!(vehicle.estimated_state.acceleration_mps2.x, 7.0);
-    assert_eq!(vehicle.estimated_state.attitude.w, 1.0);
+    assert_eq!(vehicle.state.position_m.x, 2.0);
+    assert_eq!(vehicle.state.velocity_mps.z, -6.0);
+    assert_eq!(vehicle.state.acceleration_mps2.x, 7.0);
+    assert_eq!(vehicle.state.attitude.w, 1.0);
 }
 
 #[test]
 fn test_actuate_failure() {
     let config = create_test_config(true);
     let mut vehicle = RealFlightVehicle::new(config);
-    let initial_state = vehicle.estimated_state.clone();
+    let initial_state = vehicle.state.clone();
     let command = ActuatorCommand::default();
 
     vehicle.actuate(&command);
 
     // State should remain unchanged on failure
-    assert_eq!(vehicle.estimated_state, initial_state);
+    assert_eq!(vehicle.state, initial_state);
 }
 
 #[test]
-fn test_estimate_state() {
+fn returns_cached_state() {
     let config = create_test_config(false);
     let mut vehicle = RealFlightVehicle::new(config);
 
     // Update state through actuation
     vehicle.actuate(&ActuatorCommand::default());
-    let state = vehicle.estimate_state(Duration::from_millis(16));
+    let state = vehicle.state(Duration::from_millis(16));
 
     assert_eq!(state.position_m.x, 2.0);
     assert_eq!(state.velocity_mps.z, -6.0);
@@ -261,7 +261,7 @@ fn test_partial_mapping() {
 }
 
 #[test]
-fn exchanges_once_per_tick_and_estimates_from_the_previous_exchange() {
+fn exchanges_once_per_tick_and_reports_state_from_the_previous_exchange() {
     const TICKS: usize = 3;
     let bridge = MockRealFlightBridge {
         stamp_exchanges: true,
@@ -355,7 +355,7 @@ stable_flight::conformance_tests! {
 fn priming_failure_returns_the_default_state() {
     let mut vehicle = RealFlightVehicle::new(create_test_config(true));
 
-    let state = vehicle.estimate_state(Duration::ZERO);
+    let state = vehicle.state(Duration::ZERO);
 
     assert_eq!(state, VehicleState::default());
     assert_eq!(vehicle.bridge.exchanges.get(), 1);
@@ -480,7 +480,7 @@ fn counting_reconnect(
 /// Makes the vehicle calls of `ticks` flight-loop ticks.
 fn tick(vehicle: &mut RealFlightVehicle<MockRealFlightBridge>, ticks: usize) {
     for _ in 0..ticks {
-        vehicle.estimate_state(RECONNECT_DT);
+        vehicle.state(RECONNECT_DT);
         vehicle.actuate(&ActuatorCommand::default());
     }
 }
@@ -499,13 +499,13 @@ fn reconnects_after_the_backoff_and_resumes_state_updates() {
     tick(&mut vehicle, 5);
     assert_eq!(calls.load(Ordering::Relaxed), 0);
     assert_eq!(vehicle.bridge.exchanges.get(), 1);
-    assert_eq!(vehicle.estimated_state, VehicleState::default());
+    assert_eq!(vehicle.state, VehicleState::default());
 
     // Past 0.5 s: one attempt, and the new bridge's first exchange updates the state.
     tick(&mut vehicle, 2);
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert!(!vehicle.bridge.connection_lost);
-    assert_eq!(vehicle.estimated_state.position_m.x, 1.0);
+    assert_eq!(vehicle.state.position_m.x, 1.0);
 
     // Back to one exchange per tick.
     tick(&mut vehicle, 3);
@@ -566,7 +566,7 @@ fn a_new_bridge_whose_disable_rc_fails_otherwise_is_used() {
         !vehicle.bridge.connection_lost,
         "kept the old bridge instead of the new one"
     );
-    assert_eq!(vehicle.estimated_state.position_m.x, 2.0);
+    assert_eq!(vehicle.state.position_m.x, 2.0);
 }
 
 #[test]
@@ -595,12 +595,12 @@ fn a_failed_priming_exchange_starts_the_backoff() {
     let (calls, reconnect) = counting_reconnect(|| Ok(MockRealFlightBridge::new(false)));
     let mut vehicle = failing_vehicle(true).with_reconnect(reconnect);
 
-    vehicle.estimate_state(Duration::ZERO);
+    vehicle.state(Duration::ZERO);
     assert!(vehicle.health.is_down());
 
     tick(&mut vehicle, 6);
     assert_eq!(calls.load(Ordering::Relaxed), 1);
-    assert_eq!(vehicle.estimated_state.position_m.x, 2.0);
+    assert_eq!(vehicle.state.position_m.x, 2.0);
 }
 
 #[test]

@@ -103,7 +103,7 @@ The flight pipeline has no CLI and there is no `cargo bench` target — don't su
 
 ## Architecture
 
-The control system is a pipeline of traits sequenced by the core `FlightLoop` and paced by the sitl `RealTimeRunner`: `Commander`, `Vehicle` (`StateEstimator` + `Actuator`, blanket-implemented — implement those two, never `Vehicle` directly), `Guidance`, `Stabilizer`, `Mixer`, and `TelemetryPublisher`. Their signatures and contracts live in core `src/lib.rs` rustdoc; read it before implementing one.
+The control system is a pipeline of traits sequenced by the core `FlightLoop` and paced by the sitl `RealTimeRunner`: `Commander`, `Vehicle` (`StateSource` + `Actuator`, blanket-implemented — implement those two, never `Vehicle` directly), `Guidance`, `Stabilizer`, `Mixer`, and `TelemetryPublisher`. Their signatures and contracts live in core `src/lib.rs` rustdoc; read it before implementing one.
 
 `TelemetryRecord<'a>` (defined in `lib.rs`) borrows one tick's nominal `dt`, `command`, guidance `setpoint`, `state`, stabilizer `control` output, and mixer `actuators`, plus the tick's `Saturation` flags (merged from `Guidance`/`Stabilizer`/`Mixer::saturation()`, which default to none) and `failsafe` state (`Commander::failsafe()`, default none); the loop assembles it after `actuate`.
 
@@ -117,8 +117,8 @@ Trait methods **do not return `Result`** today. Invalid configuration panics at 
 |--------------------|----------------------------------------------------------------------|-------|
 | `Commander`        | `WaypointFollower<W: AsRef<[WaypointCommand]>>`; `FailsafeCommander<P: LinkedCommander, F: Fallback>`; `HoldCommander` (a `Fallback`) | core  |
 | `Commander`        | `Extreme3DCommander`, `SpektrumCommander`, `ScriptCommander`         | sitl  |
-| `Vehicle` (`StateEstimator` + `Actuator`) | `ComposedVehicle<E, A>`; `testing::NullVehicle` (`testing` feature) | core |
-| `Vehicle` (`StateEstimator` + `Actuator`) | `RealFlightVehicle<T: RealFlightBridge>` | sitl-realflight |
+| `Vehicle` (`StateSource` + `Actuator`) | `ComposedVehicle<S, A>`; `testing::NullVehicle` (`testing` feature) | core |
+| `Vehicle` (`StateSource` + `Actuator`) | `RealFlightVehicle<T: RealFlightBridge>` | sitl-realflight |
 | `Guidance`         | `CopterGuidance`                                                     | core  |
 | `Stabilizer`       | `CopterStabilizer`                                                   | core  |
 | `Mixer`            | `QuadCopterMixer`; `TailSitterMixer` (placeholder, outputs zeros)    | core  |
