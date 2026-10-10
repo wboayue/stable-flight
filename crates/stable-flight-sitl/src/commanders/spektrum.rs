@@ -102,14 +102,7 @@ impl SpektrumCommander {
             }
 
             if let Some(data) = gamepad.button_data(Button::LeftTrigger2) {
-                let value = data.value();
-                channels[5] = if value < 0.4 {
-                    1.0
-                } else if value > 0.6 {
-                    0.0
-                } else {
-                    0.5
-                };
+                channels[5] = mode_channel(data.value());
             }
         }
 
@@ -153,6 +146,18 @@ fn arm_channel(value: f32) -> f32 {
     if value > ARM_THRESHOLD { 1.0 } else { 0.0 }
 }
 
+/// Maps the three-position mode switch to `1.0` (below 0.4), `0.0` (above 0.6), or `0.5`
+/// (between, or NaN).
+fn mode_channel(value: f32) -> f32 {
+    if value < 0.4 {
+        1.0
+    } else if value > 0.6 {
+        0.0
+    } else {
+        0.5
+    }
+}
+
 /// Maps the throttle button to `[0, 1]`.
 fn throttle_channel(value: f32) -> f32 {
     scale_value(value, THROTTLE_MIN, THROTTLE_MAX)
@@ -176,7 +181,11 @@ fn yaw_channel(value: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{arm_channel, pitch_channel, roll_channel, throttle_channel, yaw_channel};
+    use approx::relative_eq;
+
+    use super::{
+        arm_channel, mode_channel, pitch_channel, roll_channel, throttle_channel, yaw_channel,
+    };
 
     /// Only a deliberate switch throw arms; centered (or never-read) stays disarmed.
     #[test]
@@ -195,11 +204,11 @@ mod tests {
         }
     }
 
-    /// Centered sticks command level, wings-flat, no-yaw flight (#65: they read 0.5, a constant
-    /// bank), and each axis reaches full deflection with the `AttitudeCommand` sign.
     /// One axis mapping: raw dongle value to command.
     type Channel = fn(f32) -> f32;
 
+    /// Centered sticks command level, wings-flat, no-yaw flight (#65: they read 0.5, a constant
+    /// bank), and each axis reaches full deflection with the `AttitudeCommand` sign.
     #[test]
     fn sticks_map_to_signed_unit_range() {
         // (axis, raw dongle value, expected command)
@@ -223,9 +232,27 @@ mod tests {
         for (axis, channel, raw, expected) in cases {
             let command = channel(raw);
             assert!(
-                (command - expected).abs() < 1e-6,
+                relative_eq!(command, expected, epsilon = 1e-6),
                 "{axis}({raw}) = {command}, expected {expected}"
             );
+        }
+    }
+
+    #[test]
+    fn mode_channel_maps_switch_positions() {
+        // (switch value, expected channel)
+        let cases = [
+            (0.0, 1.0),
+            (0.39, 1.0),
+            (0.4, 0.5),
+            (0.5, 0.5),
+            (0.6, 0.5),
+            (0.61, 0.0),
+            (1.0, 0.0),
+            (f32::NAN, 0.5),
+        ];
+        for (value, expected) in cases {
+            assert_eq!(mode_channel(value), expected, "switch {value}");
         }
     }
 }

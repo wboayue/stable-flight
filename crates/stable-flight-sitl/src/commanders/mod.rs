@@ -62,6 +62,8 @@ pub use spektrum::SpektrumCommander;
 
 #[cfg(test)]
 mod tests {
+    use approx::relative_eq;
+
     use super::{scale_signed, scale_value};
 
     #[test]
@@ -79,7 +81,7 @@ mod tests {
         for (value, min, max, expected) in cases {
             let scaled = scale_value(value, min, max);
             assert!(
-                (scaled - expected).abs() < 1e-6,
+                relative_eq!(scaled, expected, epsilon = 1e-6),
                 "scale_value({value}, {min}, {max}) = {scaled}, expected {expected}"
             );
         }
@@ -100,7 +102,7 @@ mod tests {
         for (value, half_range, expected) in cases {
             let scaled = scale_signed(value, half_range);
             assert!(
-                (scaled - expected).abs() < 1e-6,
+                relative_eq!(scaled, expected, epsilon = 1e-6),
                 "scale_signed({value}, {half_range}) = {scaled}, expected {expected}"
             );
         }

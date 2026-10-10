@@ -28,7 +28,7 @@ use log::{debug, warn};
 
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
-use stable_flight::{Command, Commander, FailsafeState, FlightLoop, VehicleState};
+use stable_flight::{Commander, FlightLoop};
 use stable_flight_link::fc::{FcLink, FcLinkConfig};
 use stable_flight_link::publisher::LinkPublisherConfig;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
@@ -66,43 +66,27 @@ enum Device {
     Spektrum,
 }
 
-/// The selected stick commander: one concrete type for `FlightLoop`.
-enum Sticks {
-    Extreme3d(Extreme3DCommander),
-    Spektrum(SpektrumCommander),
-}
-
-impl Commander for Sticks {
-    fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
-        match self {
-            Sticks::Extreme3d(c) => c.next_command(dt, current_state),
-            Sticks::Spektrum(c) => c.next_command(dt, current_state),
-        }
-    }
-
-    fn failsafe(&self) -> Option<FailsafeState> {
-        match self {
-            Sticks::Extreme3d(c) => c.failsafe(),
-            Sticks::Spektrum(c) => c.failsafe(),
-        }
-    }
-}
-
 fn main() {
     Builder::from_default_env().format_timestamp_millis().init();
 
     let args = Args::parse();
 
     // Stick commander drives the vehicle attitude/rate directly.
-    let commander = match args.commander {
-        Device::Extreme3d => Sticks::Extreme3d(
+    match args.commander {
+        Device::Extreme3d => fly(
             Extreme3DCommander::new().expect("Failed to initialize Extreme3D joystick"),
+            &args,
         ),
-        Device::Spektrum => Sticks::Spektrum(
+        Device::Spektrum => fly(
             SpektrumCommander::new().expect("Failed to initialize Spektrum dongle"),
+            &args,
         ),
-    };
+    }
+}
 
+/// Flies the QuadCopterX pipeline from `commander` until Ctrl-C, with params and telemetry over
+/// the native link.
+fn fly(commander: impl Commander, args: &Args) {
     // QuadCopterX model: tuned gains, mixer, and motor-to-channel mapping.
     let airframe = airframes::quadcopter_x();
 
