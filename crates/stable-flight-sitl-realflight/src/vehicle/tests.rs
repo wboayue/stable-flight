@@ -10,6 +10,10 @@ use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
 use stable_flight::{Vec3, wrap_angle};
 use std::{
     cell::{Cell, RefCell},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -24,6 +28,11 @@ struct MockRealFlightBridge {
     /// Overwrites `aircraft_position_y_m` (north) with the exchange number (1, 2, …) so a test can tell
     /// which exchange a state came from.
     stamp_exchanges: bool,
+    /// Fails every exchange and `disable_rc` with a `Connection` error, as an out-of-sync remote
+    /// bridge does.
+    connection_lost: bool,
+    /// Fails `disable_rc` with a SOAP fault, as RealFlight does when the Link already has control.
+    disable_rc_fault: bool,
 }
 
 impl MockRealFlightBridge {
@@ -34,6 +43,8 @@ impl MockRealFlightBridge {
             state: sample_state(),
             exchanges: Cell::new(0),
             stamp_exchanges: false,
+            connection_lost: false,
+            disable_rc_fault: false,
         }
     }
 }
@@ -64,7 +75,11 @@ impl RealFlightBridge for MockRealFlightBridge {
         last_input.replace(input.clone());
         self.exchanges.set(self.exchanges.get() + 1);
 
-        if self.should_fail {
+        if self.connection_lost {
+            Err(BridgeError::Connection(std::io::Error::other(
+                "connection out of sync after failed request; reconnect",
+            )))
+        } else if self.should_fail {
             Err(BridgeError::Initialization(
                 "Simulated bridge failure".to_string(),
             ))
@@ -78,7 +93,15 @@ impl RealFlightBridge for MockRealFlightBridge {
     }
 
     fn disable_rc(&self) -> Result<(), BridgeError> {
-        if self.should_fail {
+        if self.connection_lost {
+            Err(BridgeError::Connection(std::io::Error::other(
+                "failed to fill whole buffer",
+            )))
+        } else if self.disable_rc_fault {
+            Err(BridgeError::SoapFault(
+                "Preexisting controller reference".to_string(),
+            ))
+        } else if self.should_fail {
             Err(BridgeError::Initialization("RC disable failed".to_string()))
         } else {
             Ok(())
@@ -421,4 +444,170 @@ fn captured_frames_agree_across_fields() {
             "frame {i}: body velocity {body:?} vs {expected:?}"
         );
     }
+}
+
+/// Tick period for the reconnect tests; thresholds sit a tick or more away from it.
+const RECONNECT_DT: Duration = Duration::from_millis(100);
+
+/// A vehicle whose bridge fails every exchange: with `Connection` errors when
+/// `connection_lost`, otherwise with a non-connection error.
+fn failing_vehicle(connection_lost: bool) -> RealFlightVehicle<MockRealFlightBridge> {
+    RealFlightVehicle::new(RealFlightConfiguration {
+        mapping: ActuatorMapping::default(),
+        bridge: MockRealFlightBridge {
+            connection_lost,
+            should_fail: !connection_lost,
+            ..MockRealFlightBridge::new(false)
+        },
+    })
+}
+
+/// A reconnect hook that counts its calls and builds bridges with `make`.
+fn counting_reconnect(
+    make: impl Fn() -> Result<MockRealFlightBridge, BridgeError> + Send + 'static,
+) -> (
+    Arc<AtomicUsize>,
+    impl FnMut() -> Result<MockRealFlightBridge, BridgeError> + Send + 'static,
+) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&calls);
+    (calls, move || {
+        counter.fetch_add(1, Ordering::Relaxed);
+        make()
+    })
+}
+
+/// Makes the vehicle calls of `ticks` flight-loop ticks.
+fn tick(vehicle: &mut RealFlightVehicle<MockRealFlightBridge>, ticks: usize) {
+    for _ in 0..ticks {
+        vehicle.estimate_state(RECONNECT_DT);
+        vehicle.actuate(&ActuatorCommand::default());
+    }
+}
+
+#[test]
+fn reconnects_after_the_backoff_and_resumes_state_updates() {
+    let (calls, reconnect) = counting_reconnect(|| {
+        Ok(MockRealFlightBridge {
+            stamp_exchanges: true,
+            ..MockRealFlightBridge::new(false)
+        })
+    });
+    let mut vehicle = failing_vehicle(true).with_reconnect(reconnect);
+
+    // Tick 1 loses the connection; the next 0.4 s neither reconnects nor exchanges.
+    tick(&mut vehicle, 5);
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    assert_eq!(vehicle.bridge.exchanges.get(), 1);
+    assert_eq!(vehicle.estimated_state, VehicleState::default());
+
+    // Past 0.5 s: one attempt, and the new bridge's first exchange updates the state.
+    tick(&mut vehicle, 2);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    assert!(!vehicle.bridge.connection_lost);
+    assert_eq!(vehicle.estimated_state.position_m.x, 1.0);
+
+    // Back to one exchange per tick.
+    tick(&mut vehicle, 3);
+    assert_eq!(vehicle.bridge.exchanges.get(), 4);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn a_failed_reconnect_backs_off_before_the_next_attempt() {
+    let (calls, reconnect) = counting_reconnect(|| {
+        Err(BridgeError::Connection(std::io::Error::other(
+            "connection refused",
+        )))
+    });
+    let mut vehicle = failing_vehicle(true).with_reconnect(reconnect);
+
+    // Lost on tick 1, first attempt past 0.5 s, the next one 1 s later.
+    tick(&mut vehicle, 7);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    tick(&mut vehicle, 8);
+    assert_eq!(calls.load(Ordering::Relaxed), 1, "retried within 1 s");
+    tick(&mut vehicle, 3);
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn a_new_bridge_that_loses_its_connection_on_disable_rc_is_not_used() {
+    let (calls, reconnect) = counting_reconnect(|| {
+        Ok(MockRealFlightBridge {
+            connection_lost: true,
+            ..MockRealFlightBridge::new(false)
+        })
+    });
+    let mut vehicle = failing_vehicle(true).with_reconnect(reconnect);
+
+    tick(&mut vehicle, 7);
+
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    // The old bridge, which made the one exchange that lost the connection; a new one has none.
+    assert_eq!(vehicle.bridge.exchanges.get(), 1, "replaced the old bridge");
+}
+
+#[test]
+fn a_new_bridge_whose_disable_rc_fails_otherwise_is_used() {
+    // RealFlight answers "Preexisting controller reference" when the Link already has control.
+    let (calls, reconnect) = counting_reconnect(|| {
+        Ok(MockRealFlightBridge {
+            disable_rc_fault: true,
+            ..MockRealFlightBridge::new(false)
+        })
+    });
+    let mut vehicle = failing_vehicle(true).with_reconnect(reconnect);
+
+    tick(&mut vehicle, 7);
+
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    assert!(!vehicle.bridge.connection_lost, "kept the old bridge instead of the new one");
+    assert_eq!(vehicle.estimated_state.position_m.x, 2.0);
+}
+
+#[test]
+fn a_non_connection_error_retries_the_exchange_without_reconnecting() {
+    let (calls, reconnect) = counting_reconnect(|| Ok(MockRealFlightBridge::new(false)));
+    let mut vehicle = failing_vehicle(false).with_reconnect(reconnect);
+
+    tick(&mut vehicle, 20);
+
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    assert_eq!(vehicle.bridge.exchanges.get(), 20);
+}
+
+#[test]
+fn without_a_reconnect_hook_a_connection_error_retries_every_tick() {
+    let mut vehicle = failing_vehicle(true);
+
+    tick(&mut vehicle, 20);
+
+    assert!(!vehicle.health.is_down());
+    assert_eq!(vehicle.bridge.exchanges.get(), 20);
+}
+
+#[test]
+fn a_failed_priming_exchange_starts_the_backoff() {
+    let (calls, reconnect) = counting_reconnect(|| Ok(MockRealFlightBridge::new(false)));
+    let mut vehicle = failing_vehicle(true).with_reconnect(reconnect);
+
+    vehicle.estimate_state(Duration::ZERO);
+    assert!(vehicle.health.is_down());
+
+    tick(&mut vehicle, 6);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    assert_eq!(vehicle.estimated_state.position_m.x, 2.0);
+}
+
+#[test]
+fn a_vehicle_with_a_reconnect_hook_is_send() {
+    fn assert_send<T: Send>(_: &T) {}
+    let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+        mapping: ActuatorMapping::default(),
+        bridge: MockRealFlightBridge::new(false),
+    })
+    .with_reconnect(|| Ok(MockRealFlightBridge::new(false)));
+
+    assert_send(&vehicle);
 }

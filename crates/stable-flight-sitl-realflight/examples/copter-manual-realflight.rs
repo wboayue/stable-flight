@@ -34,11 +34,14 @@ use stable_flight_link::publisher::LinkPublisherConfig;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::{Extreme3DCommander, SpektrumCommander};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
-use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
+use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
 use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
 
 /// How often a full telemetry record goes out: the bridge needs only its thrust, for throttle.
 const RECORD_INTERVAL: Duration = Duration::from_millis(200);
+
+/// Connect timeout for rebuilding a lost RealFlight connection; the attempt blocks its tick.
+const RECONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// Stick-driven quadcopter flight in RealFlight, with params and telemetry over the native link.
 #[derive(Parser)]
@@ -90,9 +93,14 @@ fn fly(commander: impl Commander, args: &Args) {
     // QuadCopterX model: tuned gains, mixer, and motor-to-channel mapping.
     let airframe = airframes::quadcopter_x();
 
+    // A lost RealFlight connection is rebuilt with backoff; a short timeout bounds the stall.
+    let host = args.host.clone();
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         bridge: RealFlightRemoteBridge::new(&args.host).expect("Failed to create bridge"),
         mapping: airframe.mapping,
+    })
+    .with_reconnect(move || {
+        RealFlightRemoteBridge::with_timeout(&host, RECONNECT_TIMEOUT).map_err(BridgeError::from)
     });
 
     // Heading hold for the attitude-mode sticks; the stabilizer tracks the resulting setpoint.
