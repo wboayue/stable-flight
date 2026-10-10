@@ -1,14 +1,21 @@
 use std::time::Duration;
 
-use log::{error, warn};
-use realflight_bridge::{ControlInputs, RealFlightBridge, SimulatorState};
+use log::{error, info, warn};
+use realflight_bridge::{BridgeError, ControlInputs, RealFlightBridge, SimulatorState};
 use stable_flight::Vec3;
 use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
 
 use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateEstimator, VehicleState};
 
+use health::LinkHealth;
+
+mod health;
 #[cfg(test)]
 mod tests;
+
+/// Builds a fresh bridge after the connection is lost; see
+/// [`RealFlightVehicle::with_reconnect`].
+type Reconnect<T> = Box<dyn FnMut() -> Result<T, BridgeError>>;
 
 /// Defines the mapping between vehicle actuator commands and RealFlight simulator channels.
 ///
@@ -94,6 +101,22 @@ where
 /// `VehicleState::default()`. `exchange_data` is a blocking network round-trip, so a slow link
 /// stalls the tick. See the core `Vehicle` docs for the cross-backend contract.
 ///
+/// # Connection loss
+///
+/// A failed exchange is logged at most once a second, with a count of the failures skipped in
+/// between. The state estimate keeps the last state RealFlight reported until an exchange
+/// succeeds again: outputs computed meanwhile never reach the simulator, and the controllers
+/// only wind up against a frozen error, bounded by their `max_integral`.
+///
+/// A `BridgeError::Connection` can leave the bridge unusable (a remote bridge is then out of
+/// sync for good). With [`with_reconnect`](RealFlightVehicle::with_reconnect), the vehicle
+/// stops exchanging, waits 0.5 s, and builds a new bridge, doubling the wait after each failed
+/// attempt up to 4 s. A new bridge gets `disable_rc` again (but no aircraft reset: it is
+/// mid-flight) and replaces the old one. Waits count the ticks' nominal `dt`, and an attempt
+/// blocks its tick for as long as building the bridge takes, so give the closure a short
+/// connect timeout. Other errors, or any error without the hook, just retry the exchange on
+/// the next tick.
+///
 /// # Frames
 ///
 /// RealFlight's axes are undocumented and inconsistent across fields. A live capture (the
@@ -131,6 +154,10 @@ where
     estimated_state: VehicleState,
     /// Configuration mapping actuator commands to simulator channels.
     mapping: ActuatorMapping,
+    /// Builds a new bridge after a connection error; `None` keeps the one bridge.
+    reconnect: Option<Reconnect<T>>,
+    /// Reconnect timing and failure-log rate limiting.
+    health: LinkHealth,
 }
 
 impl<T> StateEstimator for RealFlightVehicle<T>
@@ -143,13 +170,10 @@ where
     /// which makes one exchange with neutral inputs (see [Timing](RealFlightVehicle#timing)).
     /// Otherwise `dt` is ignored: the simulator reports its own truth state.
     fn estimate_state(&mut self, dt: Duration) -> VehicleState {
+        self.health.advance(dt.as_secs_f32());
         if dt.is_zero() {
             // initialize state if dt is zero
-            let input = ControlInputs::default();
-            match self.bridge.exchange_data(&input) {
-                Ok(state) => self.estimated_state = vehicle_state(&state),
-                Err(e) => error!("Failed initial exchange with RealFlight: {}", e),
-            }
+            self.exchange(&ControlInputs::default());
         }
 
         self.estimated_state.clone()
@@ -167,11 +191,7 @@ where
     /// * `command` - The actuator commands to send to the simulator.
     fn actuate(&mut self, command: &ActuatorCommand) {
         let input = self.map_channels(command);
-
-        match self.bridge.exchange_data(&input) {
-            Ok(state) => self.estimated_state = vehicle_state(&state),
-            Err(e) => error!("Failed to exchange data with RealFlight: {}", e),
-        }
+        self.exchange(&input);
     }
 }
 
@@ -207,6 +227,88 @@ where
             bridge: configuration.bridge,
             estimated_state: VehicleState::default(),
             mapping: configuration.mapping,
+            reconnect: None,
+            health: LinkHealth::default(),
+        }
+    }
+
+    /// Rebuilds the bridge with `reconnect` after a connection error, with backoff (see
+    /// [Connection loss](RealFlightVehicle#connection-loss)).
+    ///
+    /// `reconnect` is called on the flight loop's thread and blocks the tick, so it should
+    /// connect with a short timeout.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use std::time::Duration;
+    /// use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
+    /// use stable_flight_sitl_realflight::{ActuatorMapping, RealFlightConfiguration, RealFlightVehicle};
+    ///
+    /// let host = String::from("127.0.0.1:8080");
+    /// let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+    ///     mapping: ActuatorMapping::default(),
+    ///     bridge: RealFlightRemoteBridge::new(&host).expect("Failed to create bridge"),
+    /// })
+    /// .with_reconnect(move || {
+    ///     RealFlightRemoteBridge::with_timeout(&host, Duration::from_millis(250))
+    ///         .map_err(BridgeError::from)
+    /// });
+    /// ```
+    pub fn with_reconnect(
+        mut self,
+        reconnect: impl FnMut() -> Result<T, BridgeError> + 'static,
+    ) -> Self {
+        self.reconnect = Some(Box::new(reconnect));
+        self
+    }
+
+    /// Makes the tick's one exchange, updating the state on success. While the connection is
+    /// lost, skips it, except to reconnect when an attempt is due.
+    fn exchange(&mut self, input: &ControlInputs) {
+        if self.health.is_down() && !(self.health.retry_due() && self.try_reconnect()) {
+            return;
+        }
+
+        match self.bridge.exchange_data(input) {
+            Ok(state) => self.estimated_state = vehicle_state(&state),
+            Err(e) => {
+                if let Some(suppressed) = self.health.report() {
+                    error!(
+                        "Failed to exchange data with RealFlight: {e} ({suppressed} earlier failures suppressed)"
+                    );
+                }
+                if matches!(e, BridgeError::Connection(_)) && self.reconnect.is_some() {
+                    self.health.connection_lost();
+                }
+            }
+        }
+    }
+
+    /// Builds a new bridge and switches RealFlight to Link control on it (`disable_rc`). Returns
+    /// whether it replaced the old one.
+    fn try_reconnect(&mut self) -> bool {
+        let Some(reconnect) = &mut self.reconnect else {
+            return false;
+        };
+
+        let bridge = reconnect().and_then(|bridge| bridge.disable_rc().map(|()| bridge));
+        match bridge {
+            Ok(bridge) => {
+                self.bridge = bridge;
+                let failed = self.health.reconnected();
+                info!("Reconnected to RealFlight after {failed} failed attempts");
+                true
+            }
+            Err(e) => {
+                let retry_in_s = self.health.reconnect_failed();
+                if let Some(suppressed) = self.health.report() {
+                    error!(
+                        "Failed to reconnect to RealFlight: {e}; retrying in {retry_in_s} s ({suppressed} earlier failures suppressed)"
+                    );
+                }
+                false
+            }
         }
     }
 

@@ -207,8 +207,9 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
 - **Stopping:** stop examples with Ctrl-C or SIGTERM (`ShutdownSignal` handles both), so
   `RealFlightVehicle` hands RC back to RealFlight. A kill without cleanup leaves "Preexisting
   controller reference" on the next run and truncates capture CSVs.
-- **RealFlight disconnects:** one failed exchange currently needs an example restart, and floods
-  the log until then (#239).
+- **RealFlight disconnects:** the flight examples reconnect with backoff (0.5 s, doubling to
+  4 s) and log "Reconnected to RealFlight"; the state freezes until then. To test it, restart
+  the RealFlight proxy mid-flight. `capture-state-realflight` doesn't reconnect.
 
 ## Commits & PRs
 

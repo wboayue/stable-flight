@@ -34,6 +34,23 @@ Use `RealFlightLocalBridge` when the controller runs on the same host as RealFli
 
 Each tick makes one RealFlight exchange, in `actuate`; `estimate_state` returns the cached result, so guidance and the stabilizer see state one tick old. The `RealFlightVehicle` rustdoc covers timing and frame conversion.
 
+A failed exchange is logged at most once a second. A remote bridge is unusable after a connection error, so give the vehicle a way to build a new one with `with_reconnect`: it retries with backoff (0.5 s, doubling to 4 s) and hands RC control to the link again on the new bridge, keeping the last state meanwhile. The flight examples do; the `RealFlightVehicle` rustdoc has the details.
+
+```rust
+use std::time::Duration;
+use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
+
+let host = String::from("10.211.55.3:8080");
+let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+    bridge: RealFlightRemoteBridge::new(&host).expect("Failed to create bridge"),
+    mapping: airframe.mapping,
+})
+// Each attempt blocks its tick, so keep the connect timeout short.
+.with_reconnect(move || {
+    RealFlightRemoteBridge::with_timeout(&host, Duration::from_millis(250)).map_err(BridgeError::from)
+});
+```
+
 ## Airframes
 
 | Function | RealFlight model |
