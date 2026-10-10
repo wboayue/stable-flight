@@ -105,8 +105,9 @@ where
 /// first state is real; if that exchange fails, it logs an error and returns
 /// `VehicleState::default()`. `exchange_data` is a blocking network round-trip, so a slow link
 /// stalls the tick; an exchange over 20 ms is logged at `debug` with its duration. The bridge
-/// bounds the stall: `RealFlightRemoteBridge` times each call out after 100 ms by default, and a
-/// timeout is a `BridgeError::Connection` (see Connection loss). See the core
+/// bounds the stall: by default `RealFlightRemoteBridge` times each call out after 100 ms, and
+/// `RealFlightLocalBridge` each simulator request after 50 ms. A timeout is a
+/// `BridgeError::Connection` (see Connection loss). See the core
 /// `Vehicle` docs for the cross-backend contract.
 ///
 /// # Connection loss

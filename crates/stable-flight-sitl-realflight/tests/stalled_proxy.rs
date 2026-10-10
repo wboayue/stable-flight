@@ -39,8 +39,8 @@ fn stalled_proxy_times_out_instead_of_blocking_the_tick() {
 
     let attempts = Arc::clone(&reconnects);
     thread::spawn(move || {
-        // `disable_rc` times out here; `reset_aircraft` then finds the bridge out of sync.
         let host = address.clone();
+        // `disable_rc` times out here; `reset_aircraft` then finds the bridge out of sync.
         let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
             bridge: RealFlightRemoteBridge::new(&address).expect("connects"),
             mapping: ActuatorMapping::default(),

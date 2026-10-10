@@ -87,7 +87,7 @@ cargo run -p stable-flight-sitl-realflight --example capture-state-realflight --
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --script flights/hover.csv
 ```
 
-To time the RealFlight round trip on its own (no flight loop, no link), with the aircraft on the ground: the probe logs each exchange over `--threshold-ms` (default 20) and prints latency percentiles on Ctrl-C. `--local` talks to RealFlight directly, on the RealFlight machine, leaving out the proxy and the network. The flight examples also log exchanges over 20 ms at `debug` (`RUST_LOG=info,stable_flight_sitl_realflight=debug`).
+To time the RealFlight round trip on its own (no flight loop, no link), with the aircraft on the ground: the probe logs each exchange over `--threshold-ms` (default 20) and prints latency percentiles on Ctrl-C, or on the first connection error (such as an exchange over the I/O timeout). `--local` talks to RealFlight directly, on the RealFlight machine, leaving out the proxy and the network. The flight examples also log exchanges over 20 ms at `debug` (`RUST_LOG=info,stable_flight_sitl_realflight=debug`).
 
 ```bash
 cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight -- --host 192.168.1.20:8080
