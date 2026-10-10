@@ -1,0 +1,36 @@
+name: Bug report
+description: Something behaves wrong in the flight controller, link, bridge, or tools.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Commands you ran (e.g. `just fly-companion`, `just bridge`), in order.
+      placeholder: |
+        1. just bridge
+        2. just fly-companion
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: setup
+    attributes:
+      label: Setup
+      description: Simulator and airframe (or board), ground station, commit or crate version, OS.
+      placeholder: RealFlight Evolution, QuadCopterX, QGC 5.0, main @ abc1234, macOS 15
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or telemetry
+      description: Log output (`RUST_LOG=debug`), QGC screenshots, or flight CSVs.
+      render: text
