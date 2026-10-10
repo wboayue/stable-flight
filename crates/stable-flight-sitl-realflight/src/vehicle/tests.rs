@@ -133,12 +133,7 @@ impl RealFlightBridge for MockRealFlightBridge {
 fn create_test_config(should_fail: bool) -> RealFlightConfiguration<MockRealFlightBridge> {
     let mut mapping = ActuatorMapping::default();
     mapping.motors[0] = Some(0);
-    mapping.rudder = Some(1);
-    mapping.elevator = Some(2);
-    mapping.aileron = Some(3);
-    mapping.throttle = Some(4);
-    mapping.elevon_left = Some(5);
-    mapping.elevon_right = Some(6);
+    mapping.servos[0] = Some(1);
 
     RealFlightConfiguration {
         mapping,
@@ -154,7 +149,7 @@ fn test_vehicle_creation() {
     // Verify initial state
     assert_eq!(vehicle.state.position_m, Vec3::zeros());
     assert_eq!(vehicle.mapping.motors[0], Some(0));
-    assert_eq!(vehicle.mapping.rudder, Some(1));
+    assert_eq!(vehicle.mapping.servos[0], Some(1));
 }
 
 #[test]
@@ -167,29 +162,46 @@ fn test_vehicle_creation_with_bridge_failure() {
 }
 
 #[test]
-fn test_channel_mapping() {
+fn actuate_sends_mapped_channels() {
     let config = create_test_config(false);
-    let vehicle = RealFlightVehicle::new(config);
+    let mut vehicle = RealFlightVehicle::new(config);
 
-    let command = ActuatorCommand {
+    vehicle.actuate(&ActuatorCommand {
         motors: [0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        rudder: -0.3,
-        elevator: 0.7,
-        aileron: -0.1,
-        throttle: 1.0,
-        elevon_left: 0.4,
-        elevon_right: -0.4,
-    };
+        servos: [-1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    });
 
-    let inputs = vehicle.map_channels(&command);
+    let sent = vehicle
+        .bridge
+        .as_ref()
+        .expect("connected")
+        .last_input
+        .borrow()
+        .clone();
+    let channels = sent.expect("exchanged").channels;
+    assert_eq!(channels[0], 0.5); // motor 0
+    assert_eq!(channels[1], 0.0); // servo 0 at full negative
+}
 
-    assert_eq!(inputs.channels[0], 0.5); // motor 0
-    assert_eq!(inputs.channels[1], -0.3); // rudder
-    assert_eq!(inputs.channels[2], 0.7); // elevator
-    assert_eq!(inputs.channels[3], -0.1); // aileron
-    assert_eq!(inputs.channels[4], 1.0); // throttle
-    assert_eq!(inputs.channels[5], 0.4); // elevon_left
-    assert_eq!(inputs.channels[6], -0.4); // elevon_right
+#[test]
+fn try_new_rejects_invalid_mapping() {
+    let mut config = create_test_config(false);
+    config.mapping.servos[1] = Some(0); // motor 0's channel
+
+    let result = RealFlightVehicle::try_new(config);
+
+    assert!(matches!(
+        result,
+        Err(MappingError::DuplicateChannel { channel: 0 })
+    ));
+}
+
+#[test]
+#[should_panic(expected = "invalid ActuatorMapping")]
+fn new_panics_on_invalid_mapping() {
+    let mut config = create_test_config(false);
+    config.mapping.motors[1] = Some(12);
+    RealFlightVehicle::new(config);
 }
 
 #[test]
@@ -242,26 +254,6 @@ fn test_drop_behavior() {
         // Vehicle dropped at end of scope
     }
     // Can't test enable_rc directly, but we can ensure it doesn't panic
-}
-
-#[test]
-fn test_partial_mapping() {
-    let mut mapping = ActuatorMapping::default();
-    mapping.motors[0] = Some(0); // Only map motor 0
-    let config = RealFlightConfiguration {
-        mapping,
-        bridge: MockRealFlightBridge::new(false),
-    };
-    let vehicle = RealFlightVehicle::new(config);
-
-    let command = ActuatorCommand {
-        motors: [0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-        ..Default::default()
-    };
-
-    let inputs = vehicle.map_channels(&command);
-    assert_eq!(inputs.channels[0], 0.5); // Mapped
-    assert_eq!(inputs.channels[1], 0.0); // Unmapped
 }
 
 #[test]

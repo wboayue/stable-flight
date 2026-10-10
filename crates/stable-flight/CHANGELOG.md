@@ -16,7 +16,8 @@ not each change; per-change entries start after it.
   `Vehicle`), `Guidance`, `Stabilizer`, `Mixer`, `TelemetryPublisher`, and `Configurable`;
   `Command { arm, input }` with `ControlInput` (attitude, rate, waypoint, offboard absolute
   attitude, land; its kind as `ControlMode` via `mode()`), `Setpoint`, `VehicleState`,
-  `ControlOutput`, `ActuatorCommand`, and `TelemetryRecord`. Rustdoc specifies the backend
+  `ControlOutput`, `ActuatorCommand` (generic `motors` and `servos` slots, their meaning set
+  by the mixer), and `TelemetryRecord`. Rustdoc specifies the backend
   frame contract (`VehicleState`) and timing contract (`Vehicle`).
 - **`FlightLoop`:** runs one tick per `step(dt)` (command → estimate → guide → stabilize →
   mix → actuate → telemetry) with no clock or allocation. `Command::arm` gates the motors and
