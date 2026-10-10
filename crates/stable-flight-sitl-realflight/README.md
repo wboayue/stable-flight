@@ -89,3 +89,14 @@ cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight
 ```
 
 Joystick flights start disarmed: the motors stay off until you arm (Extreme 3D: top trigger; base button disarms. Spektrum: gear switch). Scripted flights are armed from the first tick. The companion example arms only when the link says so (`Control::Arm`), never from its hold fallback.
+
+## Timing
+
+Each tick waits on one RealFlight round trip ([`RealFlightVehicle`](https://docs.rs/stable-flight-sitl-realflight/latest/stable_flight_sitl_realflight/struct.RealFlightVehicle.html) rustdoc, "Timing"). Measured through the proxy to RealFlight in a Parallels VM ([#255](https://github.com/wboayue/stable-flight/issues/255)):
+
+- **Usual round trip:** about 2 ms (median 2.2 ms, p99 17 ms), out of a 4 ms tick at 250 Hz. A few each second take 20–30 ms.
+- **Dips:** occasionally, for a few seconds, every round trip slows to about 8 ms. The loop then runs at about 120 Hz. The cause is RealFlight or the VM, not the flight loop.
+- **How the loop absorbs them:** it falls behind until it is 100 ms late, then the runner resyncs. That's the `stalled, resyncing (~25 ticks skipped)` debug line: lag built up over many slow ticks, not one 100 ms block.
+- **Build mode:** for timing-sensitive runs, use `cargo run --release` (the `just` recipes build debug). Debug builds add enough per tick to resync about three times as often.
+
+`exchange-latency-realflight` and the `debug` slow-exchange log (see Examples) measure this.
