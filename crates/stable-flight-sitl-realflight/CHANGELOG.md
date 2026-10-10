@@ -17,11 +17,14 @@ not each change; per-change entries start after it.
   - Converts RealFlight state to the core frame contract; `vehicle_state` exposes the
     conversion as a pure function.
   - Maps mixer outputs to RF channels with `ActuatorMapping`.
+  - Survives a lost connection: `with_reconnect` rebuilds the bridge with backoff and disables
+    RC on it again; failed exchanges are logged at most once a second.
   - Covers every core conformance scenario.
 - **Airframes:** `airframes::quadcopter_x()`, the flight-checked QuadCopterX tune (guidance and
   stabilizer configs, mixer, channel mapping).
 - **Examples:**
   - All serve params and telemetry over the native link (UDP) for `stable-flight-bridge`.
+  - The flight examples reconnect to RealFlight after a lost connection (capture does not).
   - `copter-manual-realflight`: joystick (Extreme 3D, or Spektrum with `--commander spektrum`).
   - `copter-auto-realflight`: scripted waypoints; holds at the end, `--loop` to repeat.
   - `capture-state-realflight`: records raw simulator state and channels to CSV.
