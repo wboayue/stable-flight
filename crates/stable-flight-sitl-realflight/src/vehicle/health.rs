@@ -2,6 +2,10 @@
 //! lost connection, and when to log a failure. Time is the tick's nominal `dt`, so there is no
 //! clock here and the tests are deterministic.
 
+use core::fmt;
+
+use log::error;
+
 #[cfg(test)]
 mod tests;
 
@@ -16,7 +20,7 @@ pub(super) const REPORT_INTERVAL_S: f32 = 1.0;
 #[derive(Debug, Default)]
 pub(super) struct LinkHealth {
     down: Option<Down>,
-    report: ErrorReport,
+    errors: ErrorReport,
 }
 
 #[derive(Debug)]
@@ -35,7 +39,7 @@ impl LinkHealth {
         if let Some(down) = &mut self.down {
             down.retry_in_s -= dt_s;
         }
-        self.report.advance(dt_s);
+        self.errors.advance(dt_s);
     }
 
     /// Whether the connection is lost and waiting for a reconnect.
@@ -76,15 +80,19 @@ impl LinkHealth {
         self.down.take().map_or(0, |down| down.failed_attempts)
     }
 
-    /// Whether to log a failure now: `Some(n)` with the `n` failures skipped since the last
-    /// logged one, or `None` to skip this one.
-    pub(super) fn report(&mut self) -> Option<u32> {
-        self.report.report()
+    /// Logs a failure, unless one was logged within [`REPORT_INTERVAL_S`]; `message` is
+    /// formatted only when logged. Returns whether it was.
+    pub(super) fn report(&mut self, message: fmt::Arguments<'_>) -> bool {
+        let Some(suppressed) = self.errors.report() else {
+            return false;
+        };
+        error!("{message} ({suppressed} earlier failures suppressed)");
+        true
     }
 }
 
-/// Logs a failure at most once per [`REPORT_INTERVAL_S`], counting the ones it skips, so a dead
-/// connection doesn't flood the log at the loop rate. The bridge's `ErrorReport`
+/// Lets a failure through at most once per [`REPORT_INTERVAL_S`], counting the ones it skips,
+/// so a dead connection doesn't flood the log at the loop rate. The bridge's `ErrorReport`
 /// (`stable-flight-bridge`) does the same against a wall clock.
 #[derive(Debug, Default)]
 struct ErrorReport {
@@ -100,6 +108,8 @@ impl ErrorReport {
         }
     }
 
+    /// `Some(n)` to log this failure, with the `n` skipped since the last logged one; `None` to
+    /// skip it.
     fn report(&mut self) -> Option<u32> {
         if self
             .since_last_s

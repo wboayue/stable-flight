@@ -10,7 +10,10 @@ use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
 use stable_flight::{Vec3, wrap_angle};
 use std::{
     cell::{Cell, RefCell},
-    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     time::Duration,
 };
 
@@ -449,15 +452,15 @@ fn failing_vehicle(connection_lost: bool) -> RealFlightVehicle<MockRealFlightBri
 
 /// A reconnect hook that counts its calls and builds bridges with `make`.
 fn counting_reconnect(
-    make: impl Fn() -> Result<MockRealFlightBridge, BridgeError> + 'static,
+    make: impl Fn() -> Result<MockRealFlightBridge, BridgeError> + Send + 'static,
 ) -> (
-    Rc<Cell<usize>>,
-    impl FnMut() -> Result<MockRealFlightBridge, BridgeError> + 'static,
+    Arc<AtomicUsize>,
+    impl FnMut() -> Result<MockRealFlightBridge, BridgeError> + Send + 'static,
 ) {
-    let calls = Rc::new(Cell::new(0));
-    let counter = Rc::clone(&calls);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = Arc::clone(&calls);
     (calls, move || {
-        counter.set(counter.get() + 1);
+        counter.fetch_add(1, Ordering::Relaxed);
         make()
     })
 }
@@ -482,20 +485,20 @@ fn reconnects_after_the_backoff_and_resumes_state_updates() {
 
     // Tick 1 loses the connection; the next 0.4 s neither reconnects nor exchanges.
     tick(&mut vehicle, 5);
-    assert_eq!(calls.get(), 0);
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
     assert_eq!(vehicle.bridge.exchanges.get(), 1);
     assert_eq!(vehicle.estimated_state, VehicleState::default());
 
     // Past 0.5 s: one attempt, and the new bridge's first exchange updates the state.
     tick(&mut vehicle, 2);
-    assert_eq!(calls.get(), 1);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert!(!vehicle.bridge.connection_lost);
     assert_eq!(vehicle.estimated_state.position_m.x, 1.0);
 
     // Back to one exchange per tick.
     tick(&mut vehicle, 3);
     assert_eq!(vehicle.bridge.exchanges.get(), 4);
-    assert_eq!(calls.get(), 1);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
 }
 
 #[test]
@@ -509,11 +512,11 @@ fn a_failed_reconnect_backs_off_before_the_next_attempt() {
 
     // Lost on tick 1, first attempt past 0.5 s, the next one 1 s later.
     tick(&mut vehicle, 7);
-    assert_eq!(calls.get(), 1);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
     tick(&mut vehicle, 8);
-    assert_eq!(calls.get(), 1, "retried within 1 s");
+    assert_eq!(calls.load(Ordering::Relaxed), 1, "retried within 1 s");
     tick(&mut vehicle, 3);
-    assert_eq!(calls.get(), 2);
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
 }
 
 #[test]
@@ -524,7 +527,7 @@ fn a_new_bridge_that_rejects_disable_rc_is_not_used() {
 
     tick(&mut vehicle, 7);
 
-    assert_eq!(calls.get(), 1);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert!(vehicle.bridge.connection_lost, "kept the old bridge");
     assert_eq!(vehicle.bridge.exchanges.get(), 1, "exchanged while down");
 }
@@ -536,7 +539,7 @@ fn a_non_connection_error_retries_the_exchange_without_reconnecting() {
 
     tick(&mut vehicle, 20);
 
-    assert_eq!(calls.get(), 0);
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
     assert_eq!(vehicle.bridge.exchanges.get(), 20);
 }
 
@@ -559,6 +562,18 @@ fn a_failed_priming_exchange_starts_the_backoff() {
     assert!(vehicle.health.is_down());
 
     tick(&mut vehicle, 6);
-    assert_eq!(calls.get(), 1);
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert_eq!(vehicle.estimated_state.position_m.x, 2.0);
+}
+
+#[test]
+fn a_vehicle_with_a_reconnect_hook_is_send() {
+    fn assert_send<T: Send>(_: &T) {}
+    let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+        mapping: ActuatorMapping::default(),
+        bridge: MockRealFlightBridge::new(false),
+    })
+    .with_reconnect(|| Ok(MockRealFlightBridge::new(false)));
+
+    assert_send(&vehicle);
 }

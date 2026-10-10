@@ -85,7 +85,7 @@ fn reports_at_most_once_per_interval_with_the_suppressed_count() {
     // One failure per tick; collect (tick, suppressed) for each logged one.
     let mut reports = Vec::new();
     for tick in 0..25u32 {
-        if let Some(suppressed) = health.report() {
+        if let Some(suppressed) = health.errors.report() {
             reports.push((tick, suppressed));
         }
         health.advance(DT_S);
@@ -107,8 +107,16 @@ fn reports_at_most_once_per_interval_with_the_suppressed_count() {
 #[test]
 fn reports_again_at_once_after_a_quiet_interval() {
     let mut health = LinkHealth::default();
-    health.report();
+    health.errors.report();
     advance(&mut health, 15);
 
-    assert_eq!(health.report(), Some(0));
+    assert_eq!(health.errors.report(), Some(0));
+}
+
+#[test]
+fn report_says_whether_it_logged() {
+    let mut health = LinkHealth::default();
+
+    assert!(health.report(format_args!("first")));
+    assert!(!health.report(format_args!("within the interval")));
 }

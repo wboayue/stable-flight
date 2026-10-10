@@ -34,7 +34,7 @@ Use `RealFlightLocalBridge` when the controller runs on the same host as RealFli
 
 Each tick makes one RealFlight exchange, in `actuate`; `estimate_state` returns the cached result, so guidance and the stabilizer see state one tick old. The `RealFlightVehicle` rustdoc covers timing and frame conversion.
 
-A failed exchange is logged at most once a second. A remote bridge is unusable after a connection error, so give the vehicle a way to build a new one with `with_reconnect`: it retries with backoff (0.5 s, doubling to 4 s) and hands RC control to the link again on the new bridge, keeping the last state meanwhile. The flight examples do; the `RealFlightVehicle` rustdoc has the details.
+A failed exchange is logged at most once a second. A remote bridge is unusable after a connection error, so give the vehicle a way to build a new one with `with_reconnect`: it retries with backoff and switches RealFlight to Link control on the new bridge, keeping the last state meanwhile. The flight examples do; the `RealFlightVehicle` rustdoc (Connection loss) has the backoff and the details.
 
 ```rust
 use std::time::Duration;

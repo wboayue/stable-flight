@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use log::{error, info, warn};
+use log::{info, warn};
 use realflight_bridge::{BridgeError, ControlInputs, RealFlightBridge, SimulatorState};
 use stable_flight::Vec3;
 use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
@@ -15,7 +15,7 @@ mod tests;
 
 /// Builds a fresh bridge after the connection is lost; see
 /// [`RealFlightVehicle::with_reconnect`].
-type Reconnect<T> = Box<dyn FnMut() -> Result<T, BridgeError>>;
+type Reconnect<T> = Box<dyn FnMut() -> Result<T, BridgeError> + Send>;
 
 /// Defines the mapping between vehicle actuator commands and RealFlight simulator channels.
 ///
@@ -111,7 +111,7 @@ where
 /// A `BridgeError::Connection` can leave the bridge unusable (a remote bridge is then out of
 /// sync for good). With [`with_reconnect`](RealFlightVehicle::with_reconnect), the vehicle
 /// stops exchanging, waits 0.5 s, and builds a new bridge, doubling the wait after each failed
-/// attempt up to 4 s. A new bridge gets `disable_rc` again (but no aircraft reset: it is
+/// attempt up to 4 s (`INITIAL_BACKOFF_S`, `MAX_BACKOFF_S` in `vehicle/health.rs`). A new bridge gets `disable_rc` again (but no aircraft reset: it is
 /// mid-flight) and replaces the old one. Waits count the ticks' nominal `dt`, and an attempt
 /// blocks its tick for as long as building the bridge takes, so give the closure a short
 /// connect timeout. Other errors, or any error without the hook, just retry the exchange on
@@ -257,7 +257,7 @@ where
     /// ```
     pub fn with_reconnect(
         mut self,
-        reconnect: impl FnMut() -> Result<T, BridgeError> + 'static,
+        reconnect: impl FnMut() -> Result<T, BridgeError> + Send + 'static,
     ) -> Self {
         self.reconnect = Some(Box::new(reconnect));
         self
@@ -273,11 +273,8 @@ where
         match self.bridge.exchange_data(input) {
             Ok(state) => self.estimated_state = vehicle_state(&state),
             Err(e) => {
-                if let Some(suppressed) = self.health.report() {
-                    error!(
-                        "Failed to exchange data with RealFlight: {e} ({suppressed} earlier failures suppressed)"
-                    );
-                }
+                self.health
+                    .report(format_args!("Failed to exchange data with RealFlight: {e}"));
                 if matches!(e, BridgeError::Connection(_)) && self.reconnect.is_some() {
                     self.health.connection_lost();
                 }
@@ -302,11 +299,9 @@ where
             }
             Err(e) => {
                 let retry_in_s = self.health.reconnect_failed();
-                if let Some(suppressed) = self.health.report() {
-                    error!(
-                        "Failed to reconnect to RealFlight: {e}; retrying in {retry_in_s} s ({suppressed} earlier failures suppressed)"
-                    );
-                }
+                self.health.report(format_args!(
+                    "Failed to reconnect to RealFlight: {e}; retrying in {retry_in_s} s"
+                ));
                 false
             }
         }
