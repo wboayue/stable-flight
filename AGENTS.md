@@ -173,7 +173,7 @@ Tick ordering (commander sees the previous tick's state; guidance and stabilizer
 - Tests that raise process-wide signals get an integration-test binary of their own
   (`tests/*.rs`), one signal per binary.
 - `proptest` and `criterion` are **not** in `Cargo.toml`. Add them deliberately, with a benchmark or property test in the same PR, if you reach for them.
-- Coverage: `just cover` → review `tarpaulin-report.html`. Refresh after non-trivial control-loop changes. The `coverage` workflow runs the same tarpaulin on each push to main and uploads to Coveralls (the README badge).
+- Coverage: `just cover` → review `tarpaulin-report.html`. Refresh after non-trivial control-loop changes. The `coverage` workflow (manual run until the repo is public, #266) runs the same tarpaulin and uploads to Coveralls (the README badge).
 
 ## Simulator setup
 
