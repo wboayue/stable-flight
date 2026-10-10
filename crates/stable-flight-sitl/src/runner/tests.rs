@@ -142,21 +142,23 @@ fn already_set_signal_never_calls_before_step() {
 #[test]
 fn advance_catches_up_short_lag_and_resyncs_after_a_stall() {
     let period = Duration::from_millis(4);
+    let max_lag = Duration::from_millis(100);
     // (lag past the advanced deadline, ticks skipped, deadline resynced to now)
     let cases = [
-        (Duration::ZERO, 0, false),               // on time
-        (Duration::from_millis(2), 0, false),     // half a period: caught up
-        (Duration::from_micros(3_999), 0, false), // just under a period
-        (Duration::from_millis(4), 1, true),      // exactly one period
-        (Duration::from_millis(10), 2, true),     // 2.5 periods
-        (Duration::from_secs(60), 15_000, true),  // a long reconnect
+        (Duration::ZERO, 0, false),                 // on time
+        (Duration::from_millis(2), 0, false),       // under a period
+        (Duration::from_millis(20), 0, false),      // simulator jitter: caught up
+        (Duration::from_millis(100), 0, false),     // exactly max_lag: caught up
+        (Duration::from_micros(100_001), 25, true), // just over max_lag
+        (Duration::from_millis(250), 62, true),     // a reconnect timeout
+        (Duration::from_secs(60), 15_000, true),    // a long outage
     ];
     for (lag, expected_skipped, resynced) in cases {
         let start = Instant::now();
         let mut next_deadline = start;
         let now = start + period + lag;
 
-        let skipped = advance(&mut next_deadline, now, period);
+        let skipped = advance(&mut next_deadline, now, period, max_lag);
 
         check!(skipped == expected_skipped, "lag {lag:?}");
         let expected_deadline = if resynced { now } else { start + period };
@@ -170,13 +172,13 @@ fn advance_never_skips_when_ahead_of_schedule() {
     let start = Instant::now();
     let mut next_deadline = start;
 
-    check!(advance(&mut next_deadline, start, period) == 0);
+    check!(advance(&mut next_deadline, start, period, MAX_LAG) == 0);
     check!(next_deadline == start + period);
 }
 
 #[test]
 fn resyncs_after_a_stall_instead_of_replaying_missed_ticks() {
-    const STALL: Duration = Duration::from_millis(50);
+    const STALL: Duration = Duration::from_millis(150);
     const TICKS_AFTER_STALL: u64 = 20;
     let mut flight_loop = hover_loop();
     let shutdown = ShutdownSignal::new();
@@ -196,8 +198,32 @@ fn resyncs_after_a_stall_instead_of_replaying_missed_ticks() {
 
     check!(stats.ticks == 2 + TICKS_AFTER_STALL);
     check!(stats.overruns >= 1);
-    check!(stats.skipped_ticks >= 40);
+    check!(stats.skipped_ticks >= 140);
     // Replayed ticks would run back-to-back right after the stall; resynced ones are paced.
     let paced = runner.period() * (TICKS_AFTER_STALL as u32 - 1);
     check!(stats.elapsed >= STALL + paced);
+}
+
+#[test]
+fn catches_up_jitter_below_max_lag() {
+    const JITTER: Duration = Duration::from_millis(20);
+    let mut flight_loop = hover_loop();
+    let shutdown = ShutdownSignal::new();
+    let trigger = shutdown.clone();
+    let mut hooks = 0u64;
+
+    let stats = RealTimeRunner::new(1000.0)
+        .expect("valid frequency")
+        .run_with(&mut flight_loop, &shutdown, |_| {
+            hooks += 1;
+            if hooks == 2 {
+                thread::sleep(JITTER);
+            }
+            if hooks == 40 {
+                trigger.trigger();
+            }
+        });
+
+    check!(stats.overruns == 0);
+    check!(stats.skipped_ticks == 0);
 }

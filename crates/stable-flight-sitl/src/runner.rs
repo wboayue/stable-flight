@@ -17,6 +17,12 @@ mod tests;
 /// Log the achieved loop rate every this many ticks (at `debug`).
 const RATE_LOG_INTERVAL: u64 = 100;
 
+/// How far behind schedule the loop may fall and still catch up by running ticks
+/// back-to-back. Above it (or one period, if longer) it resyncs instead. Simulator round-trip
+/// jitter (up to ~20 ms with RealFlight, #76) stays below it, so `dt` summed over ticks keeps
+/// tracking wall time; a reconnect (up to 250 ms in the RealFlight examples) exceeds it.
+const MAX_LAG: Duration = Duration::from_millis(100);
+
 /// Returned by [`RealTimeRunner::new`] for a frequency that isn't positive and finite, or
 /// whose period isn't representable as a non-zero [`Duration`] (e.g. 1e-30 Hz, 1e10 Hz).
 #[derive(Debug, Clone, Copy, Error)]
@@ -30,7 +36,7 @@ pub struct RunStats {
     pub ticks: u64,
     /// Wall-clock time from priming to shutdown.
     pub elapsed: Duration,
-    /// Stalls: times the loop fell a full period or more behind and resynced.
+    /// Stalls: times the loop fell more than [`MAX_LAG`] behind and resynced.
     pub overruns: u64,
     /// Deadlines dropped by those resyncs rather than replayed.
     pub skipped_ticks: u64,
@@ -48,10 +54,11 @@ impl RunStats {
 ///
 /// For simulators that run in real time on their own clock, such as RealFlight. Each period
 /// it calls [`FlightLoop::step`] with the nominal period, then sleeps until the next deadline.
-/// Deadlines accumulate, so a tick late by less than a period is caught up and jitter keeps
-/// the average rate. After a stall of a full period or more (e.g. a simulator reconnect), the
-/// missed deadlines are dropped, not replayed back-to-back: the next tick runs at once and the
-/// schedule restarts from it. [`RunStats`] counts the overruns and skipped ticks.
+/// Deadlines accumulate, so jitter of up to 100 ms is caught up by running ticks back-to-back,
+/// keeping the average rate (and the sum of nominal `dt`s) on wall time. After a longer stall
+/// (e.g. a simulator reconnect), the missed deadlines are dropped, not replayed: the next tick
+/// runs at once and the schedule restarts from it. [`RunStats`] counts the overruns and
+/// skipped ticks.
 /// Tick ordering is `FlightLoop`'s concern; see its docs.
 ///
 /// # Examples
@@ -155,6 +162,7 @@ impl RealTimeRunner {
         let mut ticks: u64 = 0;
         let mut overruns: u64 = 0;
         let mut skipped_ticks: u64 = 0;
+        let max_lag = MAX_LAG.max(self.period);
 
         flight_loop.prime();
 
@@ -171,7 +179,7 @@ impl RealTimeRunner {
             }
 
             let now = Instant::now();
-            let skipped = advance(&mut next_deadline, now, self.period);
+            let skipped = advance(&mut next_deadline, now, self.period, max_lag);
             if skipped > 0 {
                 overruns += 1;
                 skipped_ticks = skipped_ticks.saturating_add(skipped);
@@ -197,13 +205,13 @@ impl RealTimeRunner {
     }
 }
 
-/// Advances `next_deadline` one `period`. If `now` is a full period or more past the new
-/// deadline, resyncs it to `now` and returns the whole periods skipped; otherwise returns 0
-/// (a smaller lag is caught up by the next sleep being short).
-fn advance(next_deadline: &mut Instant, now: Instant, period: Duration) -> u64 {
+/// Advances `next_deadline` one `period`. If `now` is more than `max_lag` (at least `period`)
+/// past the new deadline, resyncs it to `now` and returns the whole periods skipped; otherwise
+/// returns 0 (a smaller lag is caught up by short or skipped sleeps).
+fn advance(next_deadline: &mut Instant, now: Instant, period: Duration, max_lag: Duration) -> u64 {
     *next_deadline += period;
     let late = now.saturating_duration_since(*next_deadline);
-    if late < period {
+    if late <= max_lag {
         return 0;
     }
     *next_deadline = now;
