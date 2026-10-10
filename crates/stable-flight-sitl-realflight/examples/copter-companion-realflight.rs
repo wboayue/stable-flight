@@ -1,6 +1,7 @@
 //! Flies a quadcopter in RealFlight from the native link (`stable-flight-link`, UDP), as a
 //! companion computer would: the link's commands fly it, and a failsafe holds position when the
-//! link goes quiet, handing control back once it has been back for a second.
+//! link goes quiet (or finishes a land it was flying), handing control back once it has been
+//! back for a second.
 //!
 //! The commander is `FailsafeCommander<LinkCommander, HoldCommander>`: the link arms and
 //! disarms (`Control::Arm`) and says what to fly (`Control::Command`); a hold never arms. Params
@@ -119,6 +120,11 @@ fn main() {
         let state = flight_loop.commander().failsafe();
         if state != failsafe {
             match state {
+                Some(FailsafeState::Fallback)
+                    if flight_loop.commander().fallback().is_landing() =>
+                {
+                    info!("link quiet: landing");
+                }
                 Some(FailsafeState::Fallback) => info!("link quiet: holding position"),
                 Some(FailsafeState::AwaitingSticks) => {
                     info!("link back: holding until the sticks move");

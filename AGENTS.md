@@ -200,9 +200,9 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
   disappears and comes back (bridge or example restart) can leave QGC's virtual joystick silent
   while Arm still works. Restart QGC.
 - **Signals to read:**
-  - The companion example logs each failsafe handover ("link quiet: holding position", "link
-    back: holding until the sticks move", "link back: flying from the link"). Time them against
-    the event you caused; the failsafe timeout is 1 s.
+  - The companion example logs each failsafe handover ("link quiet: holding position" or
+    "link quiet: landing", "link back: holding until the sticks move", "link back: flying
+    from the link"). Time them against the event you caused; the failsafe timeout is 1 s.
   - QGC's traffic to the bridge: `nettop -p <bridge pid> -J bytes_in` on the `udp4 *:` socket.
     Heartbeat only is about 21 B/s; the joystick streaming is about 600 B/s.
 - **Stopping:** stop examples with Ctrl-C or SIGTERM (`ShutdownSignal` handles both), so

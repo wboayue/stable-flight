@@ -4,7 +4,7 @@ use core::time::Duration;
 
 use heapless::spsc::Consumer;
 use stable_flight::timing::Every;
-use stable_flight::{FailsafeState, TelemetryPublisher, TelemetryRecord};
+use stable_flight::{ControlMode, FailsafeState, TelemetryPublisher, TelemetryRecord};
 
 use crate::{Downlink, LinkTx, MAX_FRAME_LEN, ParamValue, Record, SendMessage, StatusText};
 
@@ -117,7 +117,10 @@ impl<T: LinkTx> TelemetryPublisher for LinkPublisher<'_, T> {
     fn publish(&mut self, record: &TelemetryRecord) {
         if record.failsafe != self.failsafe {
             self.failsafe = record.failsafe;
-            if let Some(text) = record.failsafe.and_then(failsafe_status) {
+            if let Some(text) = record
+                .failsafe
+                .and_then(|state| failsafe_status(state, record.command.input.mode()))
+            {
                 self.send(&Downlink::Status(text));
             }
         }
@@ -147,9 +150,10 @@ impl<T: LinkTx> TelemetryPublisher for LinkPublisher<'_, T> {
     }
 }
 
-/// What a ground station should tell the pilot when the failsafe enters `state`.
-fn failsafe_status(state: FailsafeState) -> Option<StatusText> {
+/// What a ground station should tell the pilot when the failsafe enters `state`, flying `mode`.
+fn failsafe_status(state: FailsafeState, mode: ControlMode) -> Option<StatusText> {
     let text = match state {
+        FailsafeState::Fallback if mode == ControlMode::Land => "Link quiet: landing",
         FailsafeState::Fallback => "Link quiet: holding position",
         FailsafeState::AwaitingSticks => "Link back: move the sticks to take control",
         FailsafeState::Primary => "Flying from the link",

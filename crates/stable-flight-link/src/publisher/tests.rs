@@ -232,25 +232,33 @@ fn failed_sends_are_counted_not_returned() {
 #[test]
 fn announces_each_failsafe_change_once() {
     use FailsafeState::{AwaitingSticks, Fallback, Primary};
-    // (failsafe this tick, expected status text sent)
+    let (sticks, land) = (
+        ControlInput::default(),
+        ControlInput::Land(Default::default()),
+    );
+    // (failsafe this tick, input flown, expected status text sent)
     let ticks = [
-        (None, None),
-        (Some(Fallback), Some("Link quiet: holding position")),
-        (Some(Fallback), None), // unchanged: once
+        (None, sticks, None),
+        (Some(Fallback), sticks, Some("Link quiet: holding position")),
+        (Some(Fallback), sticks, None), // unchanged: once
         (
             Some(AwaitingSticks),
+            sticks,
             Some("Link back: move the sticks to take control"),
         ),
-        (Some(Primary), Some("Flying from the link")),
-        (Some(Primary), None),
-        (None, None), // no failsafe: nothing to announce
+        (Some(Primary), sticks, Some("Flying from the link")),
+        (Some(Primary), land, None),
+        (Some(Fallback), land, Some("Link quiet: landing")), // the fallback finishes it
+        (Some(Primary), land, Some("Flying from the link")),
+        (None, sticks, None), // no failsafe: nothing to announce
     ];
     let loopback = Loopback::<64>::new();
     let (fc, mut companion) = loopback.split();
     let mut publisher = LinkPublisher::new(fc, LinkPublisherConfig::default());
-    for (i, (failsafe, expected)) in ticks.into_iter().enumerate() {
+    for (i, (failsafe, input, expected)) in ticks.into_iter().enumerate() {
         let mut record = tick(MS(4), false);
         record.failsafe = failsafe;
+        record.command.input = input;
         publisher.publish(&record.telemetry());
 
         let status: Vec<_> = received(&mut companion)

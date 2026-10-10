@@ -9,7 +9,7 @@
 use crate::commanders::TouchdownDetector;
 use crate::controllers::{InvalidConfig, check_limit, check_positive};
 use crate::{
-    Command, Commander, ControlInput, ControlMode, FailsafeState, Vec2, VehicleState,
+    Command, Commander, ControlInput, ControlMode, FailsafeState, LandCommand, Vec2, VehicleState,
     WaypointCommand,
 };
 
@@ -32,11 +32,13 @@ pub trait LinkedCommander: Commander {
 
 /// A [`Commander`] that flies while a [`FailsafeCommander`]'s primary is stale.
 pub trait Fallback: Commander {
-    /// The failsafe switched to this fallback, with the vehicle in `state` and `armed` as the
-    /// last command left it. Called once per switch, before this tick's
-    /// [`next_command`](Commander::next_command). The default does nothing.
-    fn engage(&mut self, state: &VehicleState, armed: bool) {
-        let _ = (state, armed);
+    /// The failsafe switched to this fallback, with the vehicle in `state` and `last` the
+    /// command that flew the tick before (disarmed and neutral before the first tick), so a
+    /// fallback can keep its arm state or finish what it was doing, e.g. a land. Called once
+    /// per switch, before this tick's [`next_command`](Commander::next_command). The default
+    /// does nothing.
+    fn engage(&mut self, state: &VehicleState, last: &Command) {
+        let _ = (state, last);
     }
 
     /// Whether the primary may take over again once fresh. `false` keeps the fallback flying,
@@ -102,14 +104,16 @@ impl FailsafeConfig {
 /// - **At the handover**, the primary's arm state is [synced](LinkedCommander::sync_arm) to the
 ///   vehicle's (disarmed if either the vehicle or the primary is), so an arm request made while
 ///   the fallback flew doesn't arm the vehicle; a new one does.
-/// - **Arming:** the fallback decides the arm state while it flies (a [`HoldCommander`] keeps
-///   it and never arms), except that a fresh primary's disarm is always honored, even while it
-///   waits to take over.
-/// - **Landing:** while the primary flies an armed land ([`ControlInput::Land`]), a
+/// - **Arming:** the fallback may keep the vehicle armed or disarm it, but never arms it (a
+///   [`HoldCommander`] keeps the arm state it was engaged with), and a fresh primary's disarm
+///   is always honored, even while it waits to take over.
+/// - **Landing:** while an armed land ([`ControlInput::Land`]) flies, from either commander, a
 ///   [`TouchdownDetector`] watches it. On touchdown the vehicle disarms and the primary's arm is
 ///   [synced](LinkedCommander::sync_arm) to it, so it stays disarmed until the primary arms
-///   again. The detector starts over whenever that land is interrupted (the fallback flies, a
-///   disarm, another input), so a hold that follows a descent can't read as touchdown.
+///   again. A land that carries on across a handover (a [`HoldCommander`] finishes the
+///   primary's land when the link drops, #263) keeps its detector; anything else (a hold, a
+///   disarm, another input) starts it over, so a hold that follows a descent can't read as
+///   touchdown.
 ///
 /// The primary runs every tick, flying or not, so it keeps draining its link and timing its
 /// freshness. [`failsafe`](Commander::failsafe) reports which commander flew.
@@ -157,8 +161,8 @@ pub struct FailsafeCommander<P, F> {
     state: Option<FailsafeState>,
     /// How long the primary has been fresh without a break, while the fallback flies.
     fresh_for_s: f32,
-    /// The arm state of the last command, to engage the fallback with.
-    armed: bool,
+    /// The last command flown, to engage the fallback with.
+    last: Command,
     /// The primary's sticks when it recovered over an armed vehicle, waiting to move before
     /// they take over.
     takeover_reference: Option<ControlInput>,
@@ -180,7 +184,7 @@ impl<P: LinkedCommander, F: Fallback> FailsafeCommander<P, F> {
             config,
             state: None,
             fresh_for_s: 0.0,
-            armed: false,
+            last: Command::default(),
             takeover_reference: None,
             touchdown: TouchdownDetector::default(),
         })
@@ -201,21 +205,21 @@ impl<P: LinkedCommander, F: Fallback> FailsafeCommander<P, F> {
         self.state = Some(FailsafeState::Fallback);
         self.fresh_for_s = 0.0;
         self.takeover_reference = None;
-        self.fallback.engage(state, self.armed);
+        self.fallback.engage(state, &self.last);
     }
 
     /// Whether the recovered primary, flying `input`, may take over now: at once, unless it
     /// flies sticks over an armed vehicle, which must first move.
     fn may_take_over(&mut self, input: &ControlInput) -> bool {
-        if !self.armed || !input.is_sticks() {
+        if !self.last.arm || !input.is_sticks() {
             return true;
         }
         let reference = *self.takeover_reference.get_or_insert(*input);
         sticks_moved(&reference, input, self.config.takeover_stick_delta)
     }
 
-    /// The primary's `command`, disarmed (with the primary synced) once an armed land it flies
-    /// touches down. Anything but an armed land starts the detector over.
+    /// `command`, disarmed (with the primary synced) once the armed land it flies touches down.
+    /// Anything but an armed land starts the detector over.
     fn disarm_on_touchdown(&mut self, dt: f32, state: &VehicleState, command: Command) -> Command {
         if !command.arm || command.input.mode() != ControlMode::Land {
             self.touchdown.reset();
@@ -272,23 +276,22 @@ impl<P: LinkedCommander, F: Fallback> Commander for FailsafeCommander<P, F> {
         let handed_over = self.update_state(fresh, dt, &primary.input, current_state);
 
         let command = if self.state == Some(FailsafeState::Primary) {
-            let command = if handed_over {
+            if handed_over {
                 // Drop an arm the primary latched while the fallback flew; keep its disarm.
-                let armed = self.armed && primary.arm;
+                let armed = self.last.arm && primary.arm;
                 self.primary.sync_arm(armed);
                 Command::new(armed, primary.input)
             } else {
                 primary
-            };
-            self.disarm_on_touchdown(dt, current_state, command)
+            }
         } else {
-            self.touchdown.reset();
             let mut command = self.fallback.next_command(dt, current_state);
-            // A disarm from any source is honored.
-            command.arm &= !fresh || primary.arm;
+            // The fallback never arms, and a disarm from any source is honored.
+            command.arm &= self.last.arm && (!fresh || primary.arm);
             command
         };
-        self.armed = command.arm;
+        let command = self.disarm_on_touchdown(dt, current_state, command);
+        self.last = command;
         command
     }
 
@@ -326,6 +329,10 @@ pub const DEFAULT_HOLD_SPEED_MPS: f32 = 2.0;
 /// [`cruise_speed_mps`](Self::new) back to it after any drift. It never arms a disarmed
 /// vehicle.
 ///
+/// Engaged during an armed land ([`ControlInput::Land`]), it [finishes that
+/// land](Self::is_landing) at the same position instead, as PX4 does when the link drops
+/// mid-land; the [`FailsafeCommander`] disarms on touchdown.
+///
 /// It needs a position estimate. While the position isn't finite it retries the latch each
 /// tick, flying a NaN waypoint meanwhile, which guidance treats as level at hover thrust (the
 /// input policy). A vehicle without position needs a landing fallback instead (#66).
@@ -334,21 +341,30 @@ pub const DEFAULT_HOLD_SPEED_MPS: f32 = 2.0;
 ///
 /// ```
 /// use stable_flight::commanders::{Fallback, HoldCommander};
-/// use stable_flight::{Commander, ControlInput, VehicleState};
+/// use stable_flight::{Command, Commander, ControlInput, LandCommand, Vec2, VehicleState};
 ///
 /// let state = VehicleState { position_m: [3.0, 4.0, 10.0].into(), ..Default::default() };
+/// let hovering = Command::new(true, ControlInput::Waypoint(Default::default()));
 /// let mut hold = HoldCommander::default();
-/// hold.engage(&state, true);
+/// hold.engage(&state, &hovering);
 ///
 /// let command = hold.next_command(0.004, &VehicleState::default());
 /// assert!(command.arm);
 /// let ControlInput::Waypoint(waypoint) = command.input else { panic!("a waypoint") };
 /// assert_eq!((waypoint.position_m.x, waypoint.altitude_m), (3.0, 10.0));
+///
+/// let land = LandCommand { position_m: Vec2::new(1.0, 2.0) };
+/// let landing = Command::new(true, ControlInput::Land(land));
+/// hold.engage(&state, &landing);
+/// assert!(hold.is_landing());
+/// assert_eq!(hold.next_command(0.004, &state).input, landing.input);
 /// ```
 #[derive(Debug, Clone)]
 pub struct HoldCommander {
     cruise_speed_mps: f32,
     hold: Option<WaypointCommand>,
+    /// The land it finishes instead of holding.
+    land: Option<LandCommand>,
     armed: bool,
 }
 
@@ -358,6 +374,7 @@ impl Default for HoldCommander {
         Self {
             cruise_speed_mps: DEFAULT_HOLD_SPEED_MPS,
             hold: None,
+            land: None,
             armed: false,
         }
     }
@@ -377,6 +394,11 @@ impl HoldCommander {
         })
     }
 
+    /// Whether it finishes a land rather than holding: it was engaged during an armed land.
+    pub fn is_landing(&self) -> bool {
+        self.land.is_some()
+    }
+
     /// Latches `state`'s position as the hold point, if it is finite.
     fn latch(&mut self, state: &VehicleState) {
         let p = state.position_m;
@@ -391,6 +413,9 @@ impl HoldCommander {
 
 impl Commander for HoldCommander {
     fn next_command(&mut self, _dt: f32, current_state: &VehicleState) -> Command {
+        if let Some(land) = self.land {
+            return Command::new(self.armed, ControlInput::Land(land));
+        }
         if self.hold.is_none() {
             self.latch(current_state);
         }
@@ -405,8 +430,12 @@ impl Commander for HoldCommander {
 }
 
 impl Fallback for HoldCommander {
-    fn engage(&mut self, state: &VehicleState, armed: bool) {
-        self.armed = armed;
+    fn engage(&mut self, state: &VehicleState, last: &Command) {
+        self.armed = last.arm;
+        self.land = match last.input {
+            ControlInput::Land(land) if last.arm => Some(land),
+            _ => None,
+        };
         self.latch(state);
     }
 }
