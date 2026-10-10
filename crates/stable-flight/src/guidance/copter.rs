@@ -9,8 +9,8 @@
 //! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading held |
 //!
 //! Switching modes doesn't jump the heading: attitude, absolute-attitude, and waypoint flight
-//! share one heading-hold target, and rate flight keeps it on the vehicle's heading. The altitude and
-//! lateral loops start fresh each time waypoint flight is entered.
+//! share one heading-hold target, and rate flight keeps it on the vehicle's heading. The
+//! altitude and lateral loops start fresh each time waypoint flight is entered.
 
 use core::f32::consts::FRAC_PI_4;
 
@@ -305,7 +305,7 @@ impl CopterGuidance {
         // (see `crate::math`).
         let yaw = saturate_unit(attitude_command.yaw);
         let max_stick = self.config.max_stick_angles_rad;
-        self.slew_heading(yaw * HEADING_SLEW_RATE * dt, estimated_state);
+        self.set_heading_target(self.heading + yaw * HEADING_SLEW_RATE * dt, estimated_state);
 
         AttitudeSetpoint {
             roll_rad: saturate_unit(attitude_command.roll) * max_stick.x,
@@ -326,13 +326,13 @@ impl CopterGuidance {
         command: &AbsoluteAttitudeCommand,
         estimated_state: &VehicleState,
     ) -> AttitudeSetpoint {
-        let heading_rad = wrap_angle(command.heading_rad);
-        if heading_rad.is_finite() {
-            self.heading = heading_rad;
+        // A non-finite heading holds the current target.
+        let target_rad = if command.heading_rad.is_finite() {
+            command.heading_rad
         } else {
-            // Hold the target; re-latch it from the estimate if it is NaN too.
-            self.slew_heading(0.0, estimated_state);
-        }
+            self.heading
+        };
+        self.set_heading_target(target_rad, estimated_state);
         AttitudeSetpoint {
             roll_rad: command.roll_rad,
             pitch_rad: command.pitch_rad,
@@ -341,11 +341,11 @@ impl CopterGuidance {
         }
     }
 
-    /// Moves the heading-hold target by `delta_rad`.
-    fn slew_heading(&mut self, delta_rad: f32, estimated_state: &VehicleState) {
+    /// Sets the heading-hold target to `target_rad`, wrapped.
+    fn set_heading_target(&mut self, target_rad: f32, estimated_state: &VehicleState) {
         // Wrapped so sustained yaw input can't grow the target without bound; the yaw
         // controller works on the wrapped error either way.
-        let target = wrap_angle(self.heading + delta_rad);
+        let target = wrap_angle(target_rad);
         if target.is_finite() {
             self.heading = target;
         } else if estimated_state.heading_rad.is_finite() {
@@ -364,7 +364,7 @@ impl CopterGuidance {
         waypoint_command: &WaypointCommand,
         estimated_state: &VehicleState,
     ) -> AttitudeSetpoint {
-        self.slew_heading(0.0, estimated_state);
+        self.set_heading_target(self.heading, estimated_state);
         let tilt_rad = self.tilt_toward(dt, waypoint_command, estimated_state);
 
         let linear_thrust = self.altitude.control(
