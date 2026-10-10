@@ -176,7 +176,7 @@ The system uses dependency injection to allow flexible configuration of componen
 
 Each major component is defined by a trait interface, allowing multiple implementations while keeping a consistent API:
 
-* Multiple Commander implementations (e.g., the core `WaypointFollower`, which follows any waypoint list, looping or holding at the end; sitl's ScriptCommander, which loads CSV waypoint scripts from `flights/` into a `WaypointFollower`; Extreme3DCommander; SpektrumCommander)
+* Multiple Commander implementations (e.g., the core `WaypointFollower`, which follows any waypoint list, looping, holding, or landing and disarming at the end; sitl's ScriptCommander, which loads CSV waypoint scripts from `flights/` into a `WaypointFollower`; Extreme3DCommander; SpektrumCommander)
 * Different Vehicle implementations (e.g., RealFlightVehicle in `stable-flight-sitl-realflight`)
 * Guidance and stabilizer variants for different airframes (e.g., CopterGuidance and CopterStabilizer). A tailsitter stabilizer for the [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) model is planned but not started.
 * Mixer implementations for various aircraft configurations (e.g., QuadCopterMixer). `TailSitterMixer` is a placeholder: it returns zeroed actuator commands until the tailsitter stabilizer exists.

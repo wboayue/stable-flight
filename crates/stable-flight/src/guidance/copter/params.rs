@@ -17,6 +17,8 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_LAT_IMAX", lateral.max_integral),
         param!("GUID_NAV_PERIOD", navigation_period_s),
         param!(deg "GUID_TILT_MAX", max_tilt_rad),
+        param!("GUID_DESC_MAX", max_descent_mps),
+        param!("GUID_LAND_SPD", land_speed_mps),
         param!(deg "GUID_STICK_X", max_stick_angles_rad.x),
         param!(deg "GUID_STICK_Y", max_stick_angles_rad.y),
     ];
@@ -31,6 +33,7 @@ mod metadata {
     const LATERAL: ParamMeta = ParamMeta::in_group("Guidance", "Lateral");
     const NAVIGATION: ParamMeta = ParamMeta::in_group("Guidance", "Navigation");
     const LIMITS: ParamMeta = ParamMeta::in_group("Guidance", "Limits");
+    const LANDING: ParamMeta = ParamMeta::in_group("Guidance", "Landing");
     const STICKS: ParamMeta = ParamMeta::in_group("Guidance", "Sticks");
 
     impl ParamMetadata for CopterGuidanceConfig {
@@ -69,6 +72,14 @@ mod metadata {
                 .with_units("deg")
                 .above(0.0)
                 .below(90.0),
+            LIMITS
+                .param("GUID_DESC_MAX", "Fastest descent waypoint flight requests")
+                .with_units("m/s")
+                .above(0.0),
+            LANDING
+                .param("GUID_LAND_SPD", "Descent rate while landing")
+                .with_units("m/s")
+                .above(0.0),
             STICKS
                 .param("GUID_STICK_X", "Roll angle at full stick in attitude mode")
                 .with_units("deg")

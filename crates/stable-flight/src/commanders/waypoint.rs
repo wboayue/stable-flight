@@ -1,9 +1,10 @@
-//! Follows a fixed list of waypoints, looping or holding at the end.
+//! Follows a fixed list of waypoints, looping, holding, or landing at the end.
 
 use core::fmt;
 
+use crate::commanders::TouchdownDetector;
 use crate::math::all_finite;
-use crate::{Command, Commander, ControlInput, Vec2, VehicleState, WaypointCommand};
+use crate::{Command, Commander, ControlInput, LandCommand, Vec2, VehicleState, WaypointCommand};
 
 #[cfg(test)]
 mod tests;
@@ -33,16 +34,19 @@ pub enum RouteEnd {
     /// Stop on the last waypoint and hover there;
     /// [`is_complete`](WaypointFollower::is_complete) turns true on reaching it.
     Hold,
+    /// Land on the last waypoint: on reaching it, descend there
+    /// ([`ControlInput::Land`]) until a [`TouchdownDetector`] reports touchdown, then disarm
+    /// for good. [`is_complete`](WaypointFollower::is_complete) turns true on touchdown.
+    Land,
 }
 
 /// A [`Commander`] that flies a sequence of waypoints.
 ///
-/// Each tick it emits the active waypoint as an armed [`ControlInput::Waypoint`] (it never
-/// disarms; landing is #66). When the vehicle is within the acceptance radius of it
-/// (horizontal distance only), or has passed it along the leg that leads to it (missed it
-/// wide), it advances to the next. After the last it follows its
-/// [`RouteEnd`]: wrap to the first ([`RouteEnd::Loop`], the default) or hold the last
-/// ([`RouteEnd::Hold`]). It knows nothing about where the waypoints came from or what shape
+/// Each tick it emits the active waypoint as an armed [`ControlInput::Waypoint`]. When the
+/// vehicle is within the acceptance radius of it (horizontal distance only), or has passed it
+/// along the leg that leads to it (missed it wide), it advances to the next. After the last it
+/// follows its [`RouteEnd`]: wrap to the first ([`RouteEnd::Loop`], the default), hold the last
+/// ([`RouteEnd::Hold`]), or land on the last and disarm ([`RouteEnd::Land`]). It knows nothing about where the waypoints came from or what shape
 /// they trace.
 ///
 /// So the vehicle flies each leg at cruise speed instead of slowing at every waypoint, a
@@ -93,8 +97,10 @@ pub struct WaypointFollower<W> {
     leg_direction: Option<Vec2>,
     /// Velocity emitted with the active waypoint when it has none of its own.
     leg_velocity_mps: Option<Vec2>,
-    /// The last waypoint has been reached under [`RouteEnd::Hold`].
-    complete: bool,
+    /// The last waypoint has been reached under [`RouteEnd::Hold`] or [`RouteEnd::Land`].
+    reached_end: bool,
+    /// Watches the land under [`RouteEnd::Land`].
+    touchdown: TouchdownDetector,
 }
 
 impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
@@ -114,7 +120,8 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
             route_end: RouteEnd::default(),
             leg_direction: None,
             leg_velocity_mps: None,
-            complete: false,
+            reached_end: false,
+            touchdown: TouchdownDetector::default(),
         })
     }
 
@@ -144,10 +151,15 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
         self.current
     }
 
-    /// True once the last waypoint has been reached under [`RouteEnd::Hold`]; the follower
-    /// keeps holding it. Always false under [`RouteEnd::Loop`].
+    /// True once the last waypoint has been reached under [`RouteEnd::Hold`] (the follower
+    /// keeps holding it), or once landed on it under [`RouteEnd::Land`] (the follower stays
+    /// disarmed). Always false under [`RouteEnd::Loop`].
     pub fn is_complete(&self) -> bool {
-        self.complete
+        match self.route_end {
+            RouteEnd::Loop => false,
+            RouteEnd::Hold => self.reached_end,
+            RouteEnd::Land => self.touchdown.touched_down(),
+        }
     }
 
     /// Makes `next` the active waypoint, arriving from `previous`.
@@ -159,7 +171,7 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
         self.leg_direction = (to.position_m - waypoints[previous].position_m)
             .try_normalize(0.0)
             .filter(all_finite);
-        let holds_here = self.route_end == RouteEnd::Hold && next == waypoints.len() - 1;
+        let holds_here = self.route_end != RouteEnd::Loop && next == waypoints.len() - 1;
         // `>` is false for NaN: no positive cruise speed, no leg velocity.
         self.leg_velocity_mps = if !holds_here && to.cruise_speed_mps > 0.0 {
             self.leg_direction
@@ -172,7 +184,7 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
 }
 
 impl<W: AsRef<[WaypointCommand]>> Commander for WaypointFollower<W> {
-    fn next_command(&mut self, _dt: f32, current_state: &VehicleState) -> Command {
+    fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
         let waypoints = self.waypoints.as_ref();
 
         // Compare squared horizontal distance to avoid a per-tick sqrt.
@@ -186,13 +198,21 @@ impl<W: AsRef<[WaypointCommand]>> Commander for WaypointFollower<W> {
         let passed = self
             .leg_direction
             .is_some_and(|direction| direction.x * dx + direction.y * dy <= 0.0);
-        if !self.complete && (within_radius || passed) {
+        if !self.reached_end && (within_radius || passed) {
             let previous = self.current;
             let last = waypoints.len() - 1;
             match self.route_end {
-                RouteEnd::Hold if previous == last => self.complete = true,
+                RouteEnd::Hold | RouteEnd::Land if previous == last => self.reached_end = true,
                 _ => self.advance(previous, (previous + 1) % waypoints.len()),
             }
+        }
+
+        if self.route_end == RouteEnd::Land && self.reached_end {
+            let land = ControlInput::Land(LandCommand {
+                position_m: self.waypoints.as_ref()[self.current].position_m,
+            });
+            let down = self.touchdown.update(dt, current_state.velocity_mps.z);
+            return Command::new(!down, land);
         }
 
         let mut target = self.waypoints.as_ref()[self.current];

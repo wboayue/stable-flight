@@ -151,6 +151,98 @@ fn hold_stops_on_the_last_waypoint_and_completes() {
     }
 }
 
+/// Under `Land`, reaching the last waypoint switches to an armed land there, and touchdown
+/// (a descent, then stopped past the detector's hold) disarms for good. Ticks are 0.1 s;
+/// the 1.05 s hold stays clear of `f32` rounding at the 1 s threshold.
+#[test]
+fn land_descends_on_the_last_waypoint_and_disarms_on_touchdown() {
+    let mut follower = WaypointFollower::new([wp(0.0, 0.0), wp(10.0, 0.0)])
+        .expect("non-empty")
+        .with_route_end(RouteEnd::Land);
+    let at = |x: f32, vertical_speed_mps: f32| VehicleState {
+        position_m: Vec3::new(x, 0.0, 5.0),
+        velocity_mps: Vec3::new(0.0, 0.0, vertical_speed_mps),
+        ..Default::default()
+    };
+    let waypoint = |x| ControlInput::Waypoint(wp(x, 0.0));
+    let land = ControlInput::Land(LandCommand {
+        position_m: Vec2::new(10.0, 0.0),
+    });
+    // (name, dt, vehicle x, vertical speed, expected command, complete after the step)
+    let steps = [
+        (
+            "leaving the first",
+            0.1,
+            0.0,
+            0.0,
+            Command::armed(waypoint(10.0)),
+            false,
+        ),
+        (
+            "short of the last",
+            0.1,
+            5.0,
+            -1.0,
+            Command::armed(waypoint(10.0)),
+            false,
+        ),
+        (
+            "at the last: land",
+            0.1,
+            10.0,
+            0.0,
+            Command::armed(land),
+            false,
+        ),
+        (
+            "hovering before the descent",
+            2.0,
+            10.0,
+            0.0,
+            Command::armed(land),
+            false,
+        ),
+        (
+            "pushed off: still lands there",
+            0.1,
+            0.0,
+            0.0,
+            Command::armed(land),
+            false,
+        ),
+        ("descending", 0.1, 10.0, -0.7, Command::armed(land), false),
+        (
+            "stopped, short of the hold",
+            0.95,
+            10.0,
+            0.0,
+            Command::armed(land),
+            false,
+        ),
+        (
+            "stopped past the hold",
+            0.1,
+            10.0,
+            0.0,
+            Command::disarmed(land),
+            true,
+        ),
+        (
+            "stays disarmed",
+            0.1,
+            10.0,
+            2.0,
+            Command::disarmed(land),
+            true,
+        ),
+    ];
+    for (name, dt, x, vertical_speed_mps, expected, complete) in steps {
+        let command = follower.next_command(dt, &at(x, vertical_speed_mps));
+        check!(command == expected, "{name}");
+        check!(follower.is_complete() == complete, "{name}");
+    }
+}
+
 #[test]
 fn loop_never_completes() {
     let mut follower = WaypointFollower::new([wp(0.0, 0.0), wp(10.0, 0.0)]).expect("non-empty");

@@ -4,8 +4,8 @@ use assert2::check;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{
     AbsoluteAttitudeCommand, ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command,
-    ControlInput, ControlMode, ControlOutput, FailsafeState, RateCommand, RateSetpoint, Saturation,
-    Setpoint, TelemetryRecord, Vec2, Vec3, VehicleState, WaypointCommand,
+    ControlInput, ControlMode, ControlOutput, FailsafeState, LandCommand, RateCommand,
+    RateSetpoint, Saturation, Setpoint, TelemetryRecord, Vec2, Vec3, VehicleState, WaypointCommand,
 };
 
 use super::*;
@@ -104,6 +104,11 @@ fn every_uplink_variant_round_trips() {
                 thrust: 0.45,
             }),
         ))),
+        Uplink::Control(Control::Command(Command::armed(ControlInput::Land(
+            LandCommand {
+                position_m: Vec2::new(4.0, -2.0),
+            },
+        )))),
         Uplink::Control(Control::Command(worst_case_record().command)),
         Uplink::Control(Control::Arm(true)),
         Uplink::Control(Control::Arm(false)),
@@ -134,6 +139,11 @@ fn every_downlink_variant_round_trips() {
             link_ok: false,
         },
         Downlink::State(sample_state()),
+        Downlink::Heartbeat {
+            armed: true,
+            mode: ControlMode::Land,
+            link_ok: true,
+        },
         Downlink::Record(worst_case_record()),
         Downlink::Record(record),
         Downlink::Param(ParamValue {

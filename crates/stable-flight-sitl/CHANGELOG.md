@@ -21,7 +21,7 @@ not each change; per-change entries start after it.
   - `SpektrumCommander`: Spektrum transmitter via the WS3000T USB dongle; signed stick axes,
     arm on the gear switch.
   - `ScriptCommander`: CSV waypoint scripts (`x,y,altitude,cruise_speed`) over the core
-    `WaypointFollower`; loop or hold at the end; `load_waypoints` for other tools.
+    `WaypointFollower`; loop, hold, or land at the end; `load_waypoints` for other tools.
 
   Fallible constructors return typed errors (`CommanderError`, `ScriptError`,
   `InvalidFrequency`).

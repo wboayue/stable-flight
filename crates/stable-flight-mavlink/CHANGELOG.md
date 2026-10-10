@@ -13,7 +13,8 @@ not each change; per-change entries start after it.
 ### Added
 
 - **`heartbeat`:** `HEARTBEAT` for a generic autopilot of a given `MavType`, reporting the arm
-  state and the core `ControlMode` as standard `base_mode` flags.
+  state and the core `ControlMode` as standard `base_mode` flags (land reads as auto, like
+  waypoints).
 - **State builders:** `attitude`, `local_position_ned`, `global_position_int`, `home_position`,
   `vfr_hud`, and `extended_sys_state`, with the core's frames (north/east/up, FRD rates)
   converted to MAVLink's (NED) and fixed-point units; NaN reports MAVLink's "unknown" where it

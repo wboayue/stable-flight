@@ -50,6 +50,8 @@
 //! | `GUID_LAT_IMAX` | `lateral.max_integral` |
 //! | `GUID_NAV_PERIOD` | `navigation_period_s` |
 //! | `GUID_TILT_MAX` | `max_tilt_rad` |
+//! | `GUID_DESC_MAX` | `max_descent_mps` |
+//! | `GUID_LAND_SPD` | `land_speed_mps` |
 //! | `GUID_STICK_X`, `_Y` | `max_stick_angles_rad` |
 //!
 //! # Examples
