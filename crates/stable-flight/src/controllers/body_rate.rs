@@ -66,6 +66,11 @@ impl BodyRateControllerConfig {
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         check_limit("max_integral", self.max_integral)
     }
+
+    /// Gains per axis: roll and pitch use `gains`, yaw uses `yaw_gains`.
+    fn axis_gains(&self) -> [Gains; 3] {
+        [self.gains, self.gains, self.yaw_gains]
+    }
 }
 
 /// A PID-based controller for managing angular rates (roll, pitch, yaw) of a vehicle.
@@ -168,7 +173,7 @@ impl BodyRateController {
     ) -> Vec3 {
         assert_dt(dt);
         let error = desired_rates_radps - estimated_rates_radps;
-        let gains = [config.gains, config.gains, config.yaw_gains];
+        let gains = config.axis_gains();
         Vec3::from_fn(|axis, _| {
             self.axes[axis].step(gains[axis], config.max_integral, dt, error[axis])
         })
@@ -181,13 +186,9 @@ impl BodyRateController {
         old: &BodyRateControllerConfig,
         new: &BodyRateControllerConfig,
     ) {
-        let gains = [
-            (old.gains.i, new.gains.i),
-            (old.gains.i, new.gains.i),
-            (old.yaw_gains.i, new.yaw_gains.i),
-        ];
-        for (axis, (old_i, new_i)) in self.axes.iter_mut().zip(gains) {
-            axis.integrated_error = rescale_integral(axis.integrated_error, old_i, new_i);
+        let gains = old.axis_gains().into_iter().zip(new.axis_gains());
+        for (axis, (old, new)) in self.axes.iter_mut().zip(gains) {
+            axis.integrated_error = rescale_integral(axis.integrated_error, old.i, new.i);
         }
     }
 
