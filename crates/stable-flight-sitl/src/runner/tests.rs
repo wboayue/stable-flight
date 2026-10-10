@@ -73,7 +73,7 @@ fn already_set_signal_primes_but_runs_no_ticks() {
     check!(stats.ticks == 0);
     check!(stats.average_hz().is_none());
     let (_, vehicle, _, _, _, telemetry) = flight_loop.into_parts();
-    check!(vehicle.estimates() == 1); // the priming estimate only
+    check!(vehicle.state_reads() == 1); // the priming read only
     check!(telemetry.total() == 0); // nothing published
 }
 
@@ -95,7 +95,7 @@ fn runs_until_signalled_and_steps_with_the_nominal_period() {
     check!(stats.ticks > 0);
     check!(stats.average_hz().is_some());
     let (_, vehicle, _, _, _, telemetry) = flight_loop.into_parts();
-    check!(vehicle.estimates() == stats.ticks + 1); // priming + one per tick
+    check!(vehicle.state_reads() == stats.ticks + 1); // priming + one per tick
     check!(vehicle.actuations() == stats.ticks);
     check!(telemetry.total() == stats.ticks);
     check!(telemetry.last().map(|tick| tick.dt) == Some(Duration::from_millis(1)));

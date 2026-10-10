@@ -4,7 +4,7 @@ Flight-control core for [Stable Flight](https://github.com/wboayue/stable-flight
 
 ## Pipeline
 
-`FlightLoop::step(dt)` runs one tick through the pipeline traits (`Commander`, `StateEstimator` + `Actuator` = `Vehicle`, `Guidance`, `Stabilizer`, `Mixer`, `TelemetryPublisher`); the tick order and what each stage sees are specified in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#flight-stabilization-loop). `FlightLoop` has no clock: a runner decides when to call `step` (`RealTimeRunner` in `stable-flight-sitl` today).
+`FlightLoop::step(dt)` runs one tick through the pipeline traits (`Commander`, `StateSource` + `Actuator` = `Vehicle`, `Guidance`, `Stabilizer`, `Mixer`, `TelemetryPublisher`); the tick order and what each stage sees are specified in [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md#flight-stabilization-loop). `FlightLoop` has no clock: a runner decides when to call `step` (`RealTimeRunner` in `stable-flight-sitl` today).
 
 ```rust
 let mut flight_loop = FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
@@ -35,7 +35,7 @@ Input-device and file-based commanders (joysticks, CSV scripts) live in `stable-
 
 ### Composition
 
-- `ComposedVehicle::new(estimator, actuator)` makes a `Vehicle` from a separate `StateEstimator` and `Actuator` — the usual shape on hardware (IMU/estimator + ESC driver).
+- `ComposedVehicle::new(source, actuator)` makes a `Vehicle` from a separate `StateSource` and `Actuator` — the usual shape on hardware (IMU/estimator + ESC driver).
 - A tuple of telemetry publishers is a publisher: `(mavlink, (file_log, console))` sends every tick to all three; `()` publishes nothing.
 - `FlightLoop::into_parts()` hands the components back after a run.
 
@@ -43,7 +43,7 @@ Input-device and file-based commanders (joysticks, CSV scripts) live in `stable-
 
 Enable the `testing` feature in `[dev-dependencies]` for allocation-free doubles in `stable_flight::testing`: `NullVehicle` (fixed state, counts calls), `ConstantCommander`, and `RecordingTelemetry<N>` (keeps the last `N` ticks). `settled_yaw_rate` checks a body-rate config's yaw loop against a constant torque, such as an airframe's measured hover yaw imbalance.
 
-`testing::conformance` checks a `StateEstimator` against the `VehicleState` frame contract. It is a table of physical scenarios (level, banked, nose up, heading east, climbing, moving northeast, yaw and combined rates) with the state each must produce. A simulator backend or estimator adapter builds its native input for each scenario, and `conformance_tests!` generates one test per scenario, plus one that fails if a scenario is left uncovered:
+`testing::conformance` checks a `StateSource` (simulator backend or estimator) against the `VehicleState` frame contract. It is a table of physical scenarios (level, banked, nose up, heading east, climbing, moving northeast, yaw and combined rates) with the state each must produce. A simulator backend or estimator adapter builds its native input for each scenario, and `conformance_tests!` generates one test per scenario, plus one that fails if a scenario is left uncovered:
 
 ```rust
 fn state_for(scenario: &Scenario) -> VehicleState {

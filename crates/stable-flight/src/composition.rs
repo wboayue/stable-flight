@@ -1,8 +1,8 @@
 //! Combinators that build one pipeline component out of several.
 //!
-//! - [`ComposedVehicle`] joins an independent [`StateEstimator`] and [`Actuator`] into a
+//! - [`ComposedVehicle`] joins an independent [`StateSource`] and [`Actuator`] into a
 //!   [`Vehicle`], e.g. an IMU/estimator and an ESC driver on hardware. The two halves don't see
-//!   each other, so it doesn't fit an estimator that needs the actuator's data (such as a
+//!   each other, so it doesn't fit a state source that needs the actuator's data (such as a
 //!   simulator bridge's truth state); that case needs a different combinator.
 //! - `(A, B)` is a [`TelemetryPublisher`] that fans each record out to both sinks; nest tuples
 //!   for more. `()` is the no-op sink.
@@ -35,15 +35,15 @@
 use core::time::Duration;
 
 use crate::{
-    Actuator, ActuatorCommand, StateEstimator, TelemetryPublisher, TelemetryRecord, VehicleState,
+    Actuator, ActuatorCommand, StateSource, TelemetryPublisher, TelemetryRecord, VehicleState,
 };
 
 #[cfg(test)]
 mod tests;
 
-/// A [`Vehicle`](crate::Vehicle) made of a separate estimator and actuator.
+/// A [`Vehicle`](crate::Vehicle) made of a separate state source and actuator.
 ///
-/// `estimate_state` goes to `E`, `actuate` to `A`; `Vehicle` itself comes from the blanket
+/// `state` goes to `S`, `actuate` to `A`; `Vehicle` itself comes from the blanket
 /// impl. Use it when sensing and actuation are different components, which is the normal
 /// case on hardware.
 ///
@@ -52,12 +52,12 @@ mod tests;
 /// ```
 /// use std::time::Duration;
 /// use stable_flight::{
-///     Actuator, ActuatorCommand, ComposedVehicle, StateEstimator, Vehicle, VehicleState,
+///     Actuator, ActuatorCommand, ComposedVehicle, StateSource, Vehicle, VehicleState,
 /// };
 ///
 /// struct Imu;
-/// impl StateEstimator for Imu {
-///     fn estimate_state(&mut self, _dt: Duration) -> VehicleState {
+/// impl StateSource for Imu {
+///     fn state(&mut self, _dt: Duration) -> VehicleState {
 ///         VehicleState::default()
 ///     }
 /// }
@@ -72,7 +72,7 @@ mod tests;
 /// }
 ///
 /// fn fly(vehicle: &mut impl Vehicle) {
-///     let _state = vehicle.estimate_state(Duration::from_millis(4));
+///     let _state = vehicle.state(Duration::from_millis(4));
 ///     vehicle.actuate(&ActuatorCommand { motors: [0.5; 8], ..Default::default() });
 /// }
 ///
@@ -81,23 +81,20 @@ mod tests;
 /// assert_eq!(vehicle.actuator().last.motors[0], 0.5);
 /// ```
 #[derive(Debug, Clone, Default)]
-pub struct ComposedVehicle<E, A> {
-    estimator: E,
+pub struct ComposedVehicle<S, A> {
+    source: S,
     actuator: A,
 }
 
-impl<E, A> ComposedVehicle<E, A> {
-    /// Pairs an estimator with an actuator.
-    pub fn new(estimator: E, actuator: A) -> Self {
-        ComposedVehicle {
-            estimator,
-            actuator,
-        }
+impl<S, A> ComposedVehicle<S, A> {
+    /// Pairs a state source with an actuator.
+    pub fn new(source: S, actuator: A) -> Self {
+        ComposedVehicle { source, actuator }
     }
 
-    /// The estimator half.
-    pub fn estimator(&self) -> &E {
-        &self.estimator
+    /// The state-source half.
+    pub fn source(&self) -> &S {
+        &self.source
     }
 
     /// The actuator half.
@@ -105,19 +102,19 @@ impl<E, A> ComposedVehicle<E, A> {
         &self.actuator
     }
 
-    /// Splits back into `(estimator, actuator)`.
-    pub fn into_parts(self) -> (E, A) {
-        (self.estimator, self.actuator)
+    /// Splits back into `(source, actuator)`.
+    pub fn into_parts(self) -> (S, A) {
+        (self.source, self.actuator)
     }
 }
 
-impl<E: StateEstimator, A> StateEstimator for ComposedVehicle<E, A> {
-    fn estimate_state(&mut self, dt: Duration) -> VehicleState {
-        self.estimator.estimate_state(dt)
+impl<S: StateSource, A> StateSource for ComposedVehicle<S, A> {
+    fn state(&mut self, dt: Duration) -> VehicleState {
+        self.source.state(dt)
     }
 }
 
-impl<E, A: Actuator> Actuator for ComposedVehicle<E, A> {
+impl<S, A: Actuator> Actuator for ComposedVehicle<S, A> {
     fn actuate(&mut self, actuator_command: &ActuatorCommand) {
         self.actuator.actuate(actuator_command);
     }

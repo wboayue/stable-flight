@@ -7,7 +7,7 @@
 //! <br>
 //!
 //! Flight-control core for the Stable Flight controller: the pipeline traits ([`Commander`],
-//! [`StateEstimator`] + [`Actuator`] = [`Vehicle`], [`Guidance`], [`Stabilizer`], [`Mixer`],
+//! [`StateSource`] + [`Actuator`] = [`Vehicle`], [`Guidance`], [`Stabilizer`], [`Mixer`],
 //! [`TelemetryPublisher`]), the data passed between them, copter guidance, the cascaded-PID
 //! stabilizers, the mixers, and [`FlightLoop`], which sequences one control tick.
 //!
@@ -764,7 +764,7 @@ impl ControlOutput {
 ///
 /// # Frame contract
 ///
-/// This table is the reference for how every [`StateEstimator`] reports state; a backend
+/// This table is the reference for how every [`StateSource`] reports state; a backend
 /// converts from its native frames at its boundary, and `testing::conformance` (`testing`
 /// feature) checks it.
 ///
@@ -825,7 +825,7 @@ pub struct VehicleState {
 
 /// Represents a physical vehicle that can be controlled by the flight system.
 ///
-/// A `Vehicle` is anything that is both a [`StateEstimator`] and an [`Actuator`]; the blanket
+/// A `Vehicle` is anything that is both a [`StateSource`] and an [`Actuator`]; the blanket
 /// impl below provides it automatically, so implement those two traits rather than this one.
 /// The split mirrors hardware, where sensing (IMU, estimator) and actuation (ESC/servo output)
 /// are usually separate drivers, while a simulator bridge can implement both on one type.
@@ -836,17 +836,17 @@ pub struct VehicleState {
 ///
 /// # Timing contract
 ///
-/// [`FlightLoop::step`] calls [`StateEstimator::estimate_state`] once, then
+/// [`FlightLoop::step`] calls [`StateSource::state`] once, then
 /// [`Actuator::actuate`] once, every tick. A backend must:
 ///
 /// - report state in the [`VehicleState` frame contract](VehicleState#frame-contract);
 /// - talk to its simulator or hardware at most once per call, and should not block for longer
 ///   than a tick (document it if a blocking link can);
-/// - document how old the state from `estimate_state` is relative to the last `actuate`. A
+/// - document how old the state from `state` is relative to the last `actuate`. A
 ///   backend whose link sends controls and returns state in one round-trip exchanges in
 ///   `actuate` and returns the cached result, so tick *n* stabilizes on state reported when
 ///   the simulator received tick *n − 1*'s controls. A backend with a separate sensor read
-///   should read fresh state in `estimate_state`;
+///   should read fresh state in `state`;
 /// - produce real state on the priming call (`dt == Duration::ZERO`, made once by
 ///   [`FlightLoop::prime`] before any `actuate`), contacting the simulator if it must, and
 ///   document what it returns if that fails.
@@ -855,14 +855,14 @@ pub struct VehicleState {
 ///
 /// ```
 /// use std::time::Duration;
-/// use stable_flight::{Actuator, ActuatorCommand, StateEstimator, Vehicle, VehicleState};
+/// use stable_flight::{Actuator, ActuatorCommand, StateSource, Vehicle, VehicleState};
 ///
 /// struct HoverSim {
 ///     state: VehicleState,
 /// }
 ///
-/// impl StateEstimator for HoverSim {
-///     fn estimate_state(&mut self, _dt: Duration) -> VehicleState {
+/// impl StateSource for HoverSim {
+///     fn state(&mut self, _dt: Duration) -> VehicleState {
 ///         self.state.clone()
 ///     }
 /// }
@@ -874,34 +874,29 @@ pub struct VehicleState {
 /// fn requires_vehicle(_: &impl Vehicle) {}
 /// requires_vehicle(&HoverSim { state: VehicleState::default() });
 /// ```
-pub trait Vehicle: StateEstimator + Actuator {}
+pub trait Vehicle: StateSource + Actuator {}
 
-impl<T: StateEstimator + Actuator> Vehicle for T {}
+impl<T: StateSource + Actuator> Vehicle for T {}
 
-/// Component responsible for estimating the vehicle's physical state.
+/// Where the flight loop's vehicle state comes from.
 ///
-/// The `StateEstimator` trait defines the interface for components that analyze
-/// sensor data and other inputs to estimate the current state of the vehicle,
-/// including position, velocity, attitude, and other relevant parameters.
+/// The name describes the role, not how the state is obtained. Implementors include:
+/// - **Simulator backends** that report the simulator's true state (e.g. `RealFlightVehicle`);
+/// - **Test doubles** that report a fixed state (`testing::NullVehicle`);
+/// - **Estimators** that fuse sensor readings into an estimate (IMU, baro, mag, GNSS).
 ///
-/// Implementors of this trait may include:
-/// - **Sensor fusion algorithms**: Combine data from multiple sensors (IMU, GPS, etc.)
-/// - **Kalman filters**: Estimate state with statistical techniques
-/// - **Simulation interfaces**: Get state directly from physics engines
-pub trait StateEstimator {
-    /// Estimates the current vehicle state based on sensor inputs and time elapsed.
+/// Every implementor reports in the [`VehicleState` frame contract](VehicleState#frame-contract).
+pub trait StateSource {
+    /// Returns the current vehicle state.
     ///
-    /// Takes `&mut self` because estimators typically advance internal state on each call
-    /// (e.g. a Kalman predict/update).
+    /// Takes `&mut self` because sources typically advance internal state on each call
+    /// (a filter's predict/update, a simulator exchange's bookkeeping).
     ///
     /// # Parameters
-    /// - `dt`: Time elapsed since the last state estimation. The first call, made once before
-    ///   the control loop starts, passes `Duration::ZERO`; implementations may use it to
+    /// - `dt`: Time elapsed since the previous call. The first call, made once before the
+    ///   control loop starts, passes `Duration::ZERO`; implementations may use it to
     ///   initialize (see `RealFlightVehicle`).
-    ///
-    /// # Returns
-    /// A `VehicleState` representing the current estimated state of the vehicle.
-    fn estimate_state(&mut self, dt: Duration) -> VehicleState;
+    fn state(&mut self, dt: Duration) -> VehicleState;
 }
 
 /// Component responsible for controlling the vehicle's actuators.

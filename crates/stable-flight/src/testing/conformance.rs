@@ -1,7 +1,7 @@
-//! Frame-conformance kit for state estimators and simulator backends.
+//! Frame-conformance kit for state sources: simulator backends and estimators.
 //!
 //! Every simulator or sensor stack reports state in its own frames and units; a
-//! [`StateEstimator`](crate::StateEstimator) converts to the
+//! [`StateSource`](crate::StateSource) converts to the
 //! [`VehicleState` frame contract](crate::VehicleState#frame-contract) at its boundary. This
 //! module is a table of physical [`Scenario`]s with the state each must produce. A backend's
 //! tests build the simulator's *native* report for each scenario (a mock-client fixture), run
