@@ -10,7 +10,7 @@ Simulator-independent software-in-the-loop harness for the Stable Flight flight 
 
 ## Components
 
-The RealFlight examples (in the backend crate) wire the same six-component pipeline and are copy-paste starting points for your own setup. Let's walk through the components a `FlightLoop` needs: a **Commander**, **Vehicle**, **Guidance**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**. The traits and data types come from the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate; this crate provides the commanders, telemetry, and the real-time runner.
+The RealFlight examples (in the backend crate) wire the same six-component pipeline and are copy-paste starting points for your own setup. Let's walk through the components a `FlightLoop` needs: a **Commander**, **Vehicle**, **Guidance**, **Stabilizer**, **Mixer**, and **TelemetryPublisher**. The traits and data types come from the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate; this crate provides the commanders and the real-time runner; telemetry goes over the link.
 
 ### Commander
 

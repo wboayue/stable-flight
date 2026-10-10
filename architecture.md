@@ -49,7 +49,7 @@ Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its depen
 |---|---|
 | Tests | `loopback::Loopback` (`testing` feature) |
 | Flight controller (SITL) and bridge on one host, no USB | `udp::UdpLink` (`std` feature), UDP on localhost |
-| Real board | USB-CDC, later a TELEM UART ([#155](https://github.com/wboayue/stable-flight/issues/155)) |
+| Real board (planned; the firmware has no link yet) | USB-CDC, later a TELEM UART ([#155](https://github.com/wboayue/stable-flight/issues/155)) |
 
 On the flight controller, reading the link is separate from commanding: `UplinkRouter` drains `LinkRx` between ticks (or in a receive task) and routes each uplink to a bounded queue, params to the `ParamServer` and `Control` to a link-fed commander ([#153](https://github.com/wboayue/stable-flight/issues/153)), so params work whichever commander flies. `LinkPublisher` is the `TelemetryPublisher` that owns `LinkTx`.
 
@@ -181,7 +181,7 @@ Each major component is defined by a trait interface, allowing multiple implemen
 * Different Vehicle implementations (e.g., RealFlightVehicle in `stable-flight-sitl-realflight`)
 * Guidance and stabilizer variants for different airframes (e.g., CopterGuidance and CopterStabilizer). A tailsitter stabilizer for the [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) model is planned but not started.
 * Mixer implementations for various aircraft configurations (e.g., QuadCopterMixer). `TailSitterMixer` is a placeholder: it returns zeroed actuator commands until the tailsitter stabilizer exists.
-* Telemetry publishers (e.g., the link crate's `LinkPublisher`, which SITL and boards share; MAVLink is the bridge's job)
+* Telemetry publishers (e.g., the link crate's `LinkPublisher`, which SITL uses and boards will share; MAVLink is the bridge's job)
 
 ## Real-Time Loop Management
 
