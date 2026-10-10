@@ -11,6 +11,8 @@ Thanks for your interest in Stable Flight. Bug reports, questions, and pull requ
   grouped by milestone.
 - **Security problems:** don't open an issue; see [SECURITY.md](SECURITY.md).
 
+Participation is covered by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Pull requests
 
 [AGENTS.md](AGENTS.md) holds the rules for humans and AI assistants alike: commands, coding and
@@ -31,8 +33,8 @@ testing style, docs and changelog upkeep, and the pre-PR checklist. In short:
    the bridge need a RealFlight check ([Flight checks](AGENTS.md#flight-checks)): say what you
    flew, or that you couldn't and the maintainer will fly it.
 
-The `test`, `lint`, and `embedded` checks must pass before a PR can merge. PRs are squash-merged,
-so the PR title becomes the commit subject: make it a short imperative summary.
+The `test`, `lint`, and `embedded` checks must pass before a PR can merge. Most PRs are
+squash-merged, so the PR title becomes the commit subject: make it a short imperative summary.
 
 Architecture and design rationale live in [architecture.md](architecture.md).
 

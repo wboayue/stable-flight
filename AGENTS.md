@@ -219,7 +219,7 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
 - Small, imperative commit subjects mirroring existing history (e.g. `Use f32 instead of Duration... (#18)`). Reference issues/PRs with `(#id)`.
 - Include simulator context for flight-behaviour changes (model, mode, what you flew).
 - PRs need a summary of the scenario tested, reproduction/validation steps (commands, configs), and screenshots or telemetry snippets when visual feedback changes.
-- **Merges are squash-only** — merge commits and rebase are disabled on GitHub, so a PR lands as a single commit titled `<PR title> (#id)`. Keep the PR title release-note quality; intermediate branch commits are discarded.
+- **Merge method follows the branch's commits.** Squash by default: the PR lands as one commit titled `<PR title> (#id)` with the PR body as its message, and the branch commits (review fixes, WIP) are discarded. Rebase-merge when every branch commit is a clean, self-contained step worth keeping in `main` (each builds and passes tests); use a merge commit only for a long-lived branch whose history should stay grouped. Keep the PR title release-note quality either way.
 - PRs must be green on the `test` GitHub Actions workflow (`test`, `lint`, and `embedded` jobs) before they can merge; the PR shows `UNSTABLE`/pending until it finishes. Before merging right after a push, confirm a run exists for the PR's head commit and completed (`gh run list --commit $(gh pr view <n> --json headRefOid -q .headRefOid)`): `gh pr checks --watch` returns at once with "no checks reported" when GitHub hasn't registered the checks yet.
 - CI triggers only on PRs whose base is `main`. In a stack of PRs (each based on the previous branch), only the bottom one gets checks. To merge the bottom PR of a stack:
   1. Record the parent's tip SHA, then **retarget the child to `main` first** (`gh pr edit <child> --base main`). `gh pr merge --delete-branch` on a parent *closes* any PR still based on it, and GitHub won't reopen a closed PR once its head has been force-pushed.
@@ -232,6 +232,7 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
   - `AGENTS.md` — commands, coding/testing rules, PR checklist;
   - `CONTRIBUTING.md` — the entry point for outside contributors; links here for the rules;
   - `SECURITY.md` — supported versions and how to report a vulnerability;
+  - `.github/` templates — what an issue or PR must include (they point at the rules here);
   - `architecture.md` — crate boundaries, dependency rules, traits, and the rationale behind
     the frame and timing contracts;
   - core rustdoc — the frame contract (`VehicleState`) and timing contract (`Vehicle`) themselves.
