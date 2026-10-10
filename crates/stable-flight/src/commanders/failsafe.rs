@@ -353,7 +353,8 @@ pub const DEFAULT_HOLD_SPEED_MPS: f32 = 2.0;
 /// let ControlInput::Waypoint(waypoint) = command.input else { panic!("a waypoint") };
 /// assert_eq!((waypoint.position_m.x, waypoint.altitude_m), (3.0, 10.0));
 ///
-/// let landing = Command::new(true, ControlInput::Land(LandCommand { position_m: Vec2::new(1.0, 2.0) }));
+/// let land = LandCommand { position_m: Vec2::new(1.0, 2.0) };
+/// let landing = Command::new(true, ControlInput::Land(land));
 /// hold.engage(&state, &landing);
 /// assert!(hold.is_landing());
 /// assert_eq!(hold.next_command(0.004, &state).input, landing.input);

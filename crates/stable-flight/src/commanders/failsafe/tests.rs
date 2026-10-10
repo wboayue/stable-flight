@@ -82,7 +82,14 @@ impl Fallback for Recorder {
     }
 }
 
-/// A failsafe over the scripted link and recorder, with a 0.5 s timeout and 0.3 s recovery.
+/// A 0.5 s timeout and 0.3 s recovery.
+const CONFIG: FailsafeConfig = FailsafeConfig {
+    timeout_s: 0.5,
+    recover_after_s: 0.3,
+    takeover_stick_delta: 0.1,
+};
+
+/// A failsafe over the scripted link and recorder, per [`CONFIG`].
 fn failsafe() -> (
     FailsafeCommander<Link, Recorder>,
     Rc<LinkScript>,
@@ -100,11 +107,7 @@ fn failsafe() -> (
             script: fallback.clone(),
             armed: false,
         },
-        FailsafeConfig {
-            timeout_s: 0.5,
-            recover_after_s: 0.3,
-            takeover_stick_delta: 0.1,
-        },
+        CONFIG,
     )
     .expect("valid config");
     (commander, link, fallback)
@@ -810,16 +813,9 @@ fn the_hold_finishes_a_land_the_link_dropped() {
     ];
     for (scenario, rows) in scenarios {
         let link = Rc::new(LinkScript::default());
-        let mut commander = FailsafeCommander::new(
-            Link(link.clone()),
-            HoldCommander::default(),
-            FailsafeConfig {
-                timeout_s: 0.5,
-                recover_after_s: 0.3,
-                takeover_stick_delta: 0.1,
-            },
-        )
-        .expect("valid config");
+        let mut commander =
+            FailsafeCommander::new(Link(link.clone()), HoldCommander::default(), CONFIG)
+                .expect("valid config");
         for (i, (case, since_s, arm, input, vertical_speed_mps, state, armed)) in
             armed_land.iter().chain(rows).enumerate()
         {
