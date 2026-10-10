@@ -7,7 +7,7 @@ use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle};
-use stable_flight::{Command, FlightLoop};
+use stable_flight::{Command, ControlInput, FlightLoop, LandCommand, Vec2, VehicleState};
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::loopback::{Loopback, LoopbackLink};
 use stable_flight_link::publisher::LinkPublisher;
@@ -15,8 +15,8 @@ use stable_flight_link::{MAX_FRAME_LEN, ParamRequest, RecvMessage, SendMessage, 
 
 use super::*;
 use crate::test_support::{
-    GCS, at_altitude, earth, heartbeat, home_zs, param, param_value_of, read_index, request_list,
-    set,
+    GCS, at_altitude, earth, heartbeat, home_zs, landed_states, param, param_value_of, read_index,
+    request_list, set,
 };
 
 /// A bridge whose flight controller is up, with params `A` (index 0) = 1.0 and `B` = 2.0 cached.
@@ -476,6 +476,70 @@ fn arms_through_the_flight_controller_and_acks_unhandled_commands_unsupported() 
             )],
         "confirmed by its heartbeat"
     );
+}
+
+#[test]
+fn lands_at_the_latest_position_and_reports_landing_while_the_heartbeat_shows_it() {
+    let t0 = Instant::now();
+    let ms = Duration::from_millis;
+    let mut bridge = Bridge::new(BridgeConfig::default());
+    let land_heartbeat = Downlink::Heartbeat {
+        armed: true,
+        mode: ControlMode::Land,
+        link_ok: true,
+    };
+    let nav_land = MavMessage::COMMAND_LONG(COMMAND_LONG_DATA {
+        command: MavCmd::MAV_CMD_NAV_LAND,
+        target_system: 1,
+        target_component: 1,
+        ..Default::default()
+    });
+    let landed = |out: &Outbox| landed_states(&out.to_gcs);
+    let mut out = Outbox::default();
+    bridge.on_downlink(&heartbeat(true), t0, &mut out);
+    bridge.on_downlink(
+        &Downlink::State(VehicleState {
+            position_m: [3.0, 4.0, 10.0].into(),
+            ..Default::default()
+        }),
+        t0,
+        &mut out,
+    );
+    bridge.on_downlink(
+        &Downlink::State(VehicleState {
+            position_m: [3.0, 4.0, 12.0].into(),
+            ..Default::default()
+        }),
+        t0,
+        &mut out,
+    );
+    out = Outbox::default();
+    bridge.poll(t0, &mut out);
+    check!(landed(&out) == [MavLandedState::MAV_LANDED_STATE_IN_AIR]);
+
+    out = Outbox::default();
+    bridge.on_mavlink(&GCS, &nav_land, t0, &mut out);
+    check!(
+        controls(&out)
+            == [Control::Command(Command::new(
+                false,
+                ControlInput::Land(LandCommand {
+                    position_m: Vec2::new(3.0, 4.0),
+                }),
+            ))],
+        "a land at the latest position"
+    );
+
+    out = Outbox::default();
+    bridge.on_downlink(&land_heartbeat, t0 + ms(200), &mut out);
+    bridge.on_downlink(&Downlink::State(at_altitude(11.0)), t0 + ms(200), &mut out);
+    bridge.poll(t0 + ms(200), &mut out);
+    check!(out.to_gcs.iter().any(|m| matches!(
+        m,
+        MavMessage::COMMAND_ACK(a)
+            if a.command == MavCmd::MAV_CMD_NAV_LAND && a.result == MavResult::MAV_RESULT_ACCEPTED
+    )));
+    check!(landed(&out) == [MavLandedState::MAV_LANDED_STATE_LANDING]);
 }
 
 #[test]

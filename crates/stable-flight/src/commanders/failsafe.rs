@@ -6,8 +6,12 @@
 //! timeout, a [`Fallback`] such as [`HoldCommander`] flies until the link has been back long
 //! enough.
 
+use crate::commanders::TouchdownDetector;
 use crate::controllers::{InvalidConfig, check_limit, check_positive};
-use crate::{Command, Commander, ControlInput, FailsafeState, Vec2, VehicleState, WaypointCommand};
+use crate::{
+    Command, Commander, ControlInput, ControlMode, FailsafeState, Vec2, VehicleState,
+    WaypointCommand,
+};
 
 #[cfg(test)]
 mod tests;
@@ -101,6 +105,11 @@ impl FailsafeConfig {
 /// - **Arming:** the fallback decides the arm state while it flies (a [`HoldCommander`] keeps
 ///   it and never arms), except that a fresh primary's disarm is always honored, even while it
 ///   waits to take over.
+/// - **Landing:** while the primary flies an armed land ([`ControlInput::Land`]), a
+///   [`TouchdownDetector`] watches it. On touchdown the vehicle disarms and the primary's arm is
+///   [synced](LinkedCommander::sync_arm) to it, so it stays disarmed until the primary arms
+///   again. The detector starts over whenever that land is interrupted (the fallback flies, a
+///   disarm, another input), so a hold that follows a descent can't read as touchdown.
 ///
 /// The primary runs every tick, flying or not, so it keeps draining its link and timing its
 /// freshness. [`failsafe`](Commander::failsafe) reports which commander flew.
@@ -153,6 +162,8 @@ pub struct FailsafeCommander<P, F> {
     /// The primary's sticks when it recovered over an armed vehicle, waiting to move before
     /// they take over.
     takeover_reference: Option<ControlInput>,
+    /// Watches a land the primary flies.
+    touchdown: TouchdownDetector,
 }
 
 impl<P: LinkedCommander, F: Fallback> FailsafeCommander<P, F> {
@@ -171,6 +182,7 @@ impl<P: LinkedCommander, F: Fallback> FailsafeCommander<P, F> {
             fresh_for_s: 0.0,
             armed: false,
             takeover_reference: None,
+            touchdown: TouchdownDetector::default(),
         })
     }
 
@@ -200,6 +212,20 @@ impl<P: LinkedCommander, F: Fallback> FailsafeCommander<P, F> {
         }
         let reference = *self.takeover_reference.get_or_insert(*input);
         sticks_moved(&reference, input, self.config.takeover_stick_delta)
+    }
+
+    /// The primary's `command`, disarmed (with the primary synced) once an armed land it flies
+    /// touches down. Anything but an armed land starts the detector over.
+    fn disarm_on_touchdown(&mut self, dt: f32, state: &VehicleState, command: Command) -> Command {
+        if !command.arm || command.input.mode() != ControlMode::Land {
+            self.touchdown.reset();
+            return command;
+        }
+        if !self.touchdown.update(dt, state.velocity_mps.z) {
+            return command;
+        }
+        self.primary.sync_arm(false);
+        Command::new(false, command.input)
     }
 
     /// Decides who flies this tick, given whether the primary is `fresh` and what it flies.
@@ -246,15 +272,17 @@ impl<P: LinkedCommander, F: Fallback> Commander for FailsafeCommander<P, F> {
         let handed_over = self.update_state(fresh, dt, &primary.input, current_state);
 
         let command = if self.state == Some(FailsafeState::Primary) {
-            if handed_over {
+            let command = if handed_over {
                 // Drop an arm the primary latched while the fallback flew; keep its disarm.
                 let armed = self.armed && primary.arm;
                 self.primary.sync_arm(armed);
                 Command::new(armed, primary.input)
             } else {
                 primary
-            }
+            };
+            self.disarm_on_touchdown(dt, current_state, command)
         } else {
+            self.touchdown.reset();
             let mut command = self.fallback.next_command(dt, current_state);
             // A disarm from any source is honored.
             command.arm &= !fresh || primary.arm;

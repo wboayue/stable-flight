@@ -4,7 +4,7 @@ Companion-computer bridge for a [Stable Flight](https://github.com/wboayue/stabl
 
 ## Status
 
-[#154](https://github.com/wboayue/stable-flight/issues/154) params, state, and commands slices: QGC connects, lists and edits params, shows attitude, position, home, and the landed state, arms and disarms, and flies a link-fed flight controller with its joystick; offboard apps send position targets. QGC has no guided actions (takeoff, go-to, land) for a generic autopilot.
+[#154](https://github.com/wboayue/stable-flight/issues/154) params, state, and commands slices: QGC connects, lists and edits params, shows attitude, position, home, and the landed state, arms and disarms, and flies a link-fed flight controller with its joystick; offboard apps send position targets and land. QGC has no guided actions (takeoff, go-to, land, RTL) for a generic autopilot: its base firmware plugin reports no guided-mode capability, which hides those buttons (QGC `FirmwarePlugin.h:128`, `GuidedActionsController.qml:129-131`, at `a76f229`).
 
 | MAVLink | Bridge |
 |---|---|
@@ -15,13 +15,13 @@ Companion-computer bridge for a [Stable Flight](https://github.com/wboayue/stabl
 | `ATTITUDE`, `LOCAL_POSITION_NED`, `VFR_HUD` | 10 Hz from the flight controller's latest state (it streams 50 Hz). `VFR_HUD` throttle is the commanded thrust from the latest telemetry record, 0 if the flight controller sends none |
 | `GLOBAL_POSITION_INT` | 10 Hz, projected around `--origin`, once there is a home; relative altitude from home |
 | `HOME_POSITION` | 1 Hz and when home moves: the position at the latest arming, or the first one before any arm |
-| `EXTENDED_SYS_STATE` | 1 Hz and when it changes: landed state from the arm state and height above home |
+| `EXTENDED_SYS_STATE` | 1 Hz and when it changes: landed state from the arm state and height above home, `LANDING` while in the air in the flight controller's land mode (QGC shows it only as still flying) |
 | `MANUAL_CONTROL` | QGC's joystick or virtual joystick: forwarded as an attitude command (roll = y, pitch = −x, yaw = r, throttle = z, ÷ 1000). Stops going fresh on the flight controller when the stream stops |
 | `SET_POSITION_TARGET_LOCAL_NED` | From an offboard app (QGC sends none for a generic vehicle): in `LOCAL_NED` with the position included, forwarded as a waypoint (altitude = −z; velocity as fly-through when included; at most `--offboard-speed`). Other frames and masks are dropped |
 | `SET_ATTITUDE_TARGET` | From an offboard app (e.g. MAVSDK; QGC never sends it): forwarded as an absolute attitude (roll, pitch, heading from `q`; `thrust` as collective thrust, not tilt-compensated). Body rates are ignored. Dropped when the mask ignores the attitude or throttle or sets `THRUST_BODY_SET`, or `q` is zero or non-finite. A stream like `MANUAL_CONTROL`: stops going fresh when it stops |
 | `STATUSTEXT` | The flight controller's status text (e.g. "Link back: move the sticks to take control"), at warning severity, cut to 50 bytes |
 | `MISSION_REQUEST_LIST` | `MISSION_COUNT` 0 of the requested type (mission, fence, rally) |
-| `COMMAND_LONG` | `REQUEST_MESSAGE(AUTOPILOT_VERSION)`: acked, then `AUTOPILOT_VERSION` (MAVLink 2, C-cast params). `REQUEST_MESSAGE(COMPONENT_METADATA)`: acked, then `COMPONENT_METADATA` pointing to the param metadata (below). `COMPONENT_ARM_DISARM` (QGC's Arm/Disarm; force arm and emergency stop alike): forwarded as `Control::Arm`, acked `ACCEPTED` once the flight controller's heartbeat shows the new state, `FAILED` if not within 1 s, `TEMPORARILY_REJECTED` with no flight controller or another request pending. Anything else: `UNSUPPORTED` |
+| `COMMAND_LONG` | `REQUEST_MESSAGE(AUTOPILOT_VERSION)`: acked, then `AUTOPILOT_VERSION` (MAVLink 2, C-cast params). `REQUEST_MESSAGE(COMPONENT_METADATA)`: acked, then `COMPONENT_METADATA` pointing to the param metadata (below). `COMPONENT_ARM_DISARM` (QGC's Arm/Disarm; force arm and emergency stop alike): forwarded as `Control::Arm`, acked `ACCEPTED` once the flight controller's heartbeat shows the new state, `FAILED` if not within 1 s, `TEMPORARILY_REJECTED` with no flight controller or another request pending. `NAV_LAND` (offboard apps): forwarded as a land at the latest position (param5/6 ignored), acked `ACCEPTED` once the heartbeat shows the land mode, `FAILED` if not within 1 s; `DENIED` while disarmed, `ACCEPTED` at once while already landing, `TEMPORARILY_REJECTED` before any position or as above; the flight controller disarms on touchdown. One request is pending at a time, so after an arm, wait for its ack before landing. Anything else: `UNSUPPORTED` |
 
 Only messages addressed to system 1 / component 1 (or broadcast) are handled. Fly from one source at a time: a joystick and an offboard app sending at once both go through, and the last message wins.
 

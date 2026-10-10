@@ -42,7 +42,7 @@ fn sends_nothing_until_the_first_state_then_every_stream_at_once() {
 
     check!(poll_names(&mut service, t0).is_empty(), "no state yet");
     check!(poll_names(&mut service, t0 + 500 * MS).is_empty());
-    service.on_state(&at_altitude(10.0), false);
+    service.on_state(&at_altitude(10.0), false, ControlMode::Attitude);
     check!(
         poll_names(&mut service, t0 + 500 * MS) == ALL,
         "every stream on the first state"
@@ -53,7 +53,7 @@ fn sends_nothing_until_the_first_state_then_every_stream_at_once() {
 fn sends_each_stream_at_its_rate() {
     let t0 = Instant::now();
     let mut service = service(Some(earth()), t0);
-    service.on_state(&at_altitude(10.0), false);
+    service.on_state(&at_altitude(10.0), false, ControlMode::Attitude);
 
     // Two seconds of 4 ms polls (the bridge's busiest pace), with no home or landed changes.
     let mut sent = Vec::new();
@@ -81,7 +81,7 @@ fn sends_each_stream_at_its_rate() {
 fn sends_no_global_position_or_home_without_an_origin() {
     let t0 = Instant::now();
     let mut service = service(None, t0);
-    service.on_state(&at_altitude(10.0), false);
+    service.on_state(&at_altitude(10.0), false, ControlMode::Attitude);
     check!(
         poll_names(&mut service, t0)
             == [
@@ -95,22 +95,27 @@ fn sends_no_global_position_or_home_without_an_origin() {
 
 #[test]
 fn sends_home_and_landed_state_as_soon_as_they_change() {
-    use MavLandedState::{MAV_LANDED_STATE_IN_AIR as AIR, MAV_LANDED_STATE_ON_GROUND as GROUND};
-    // (armed, altitude_m, expected (HOME_POSITION z, landed state) sent by the next poll). Polls
-    // are 10 ms apart after the first, so neither 1 Hz timer fires again.
+    use ControlMode::{Attitude as FLY, Land as LAND};
+    use MavLandedState::{
+        MAV_LANDED_STATE_IN_AIR as AIR, MAV_LANDED_STATE_LANDING as LANDING,
+        MAV_LANDED_STATE_ON_GROUND as GROUND,
+    };
+    // (armed, mode, altitude_m, expected (HOME_POSITION z, landed state) sent by the next
+    // poll). Polls are 10 ms apart after the first, so neither 1 Hz timer fires again.
     let ticks = [
-        (false, 10.0, (Some(-10.0), Some(GROUND))), // the first poll: everything
-        (false, 12.0, (None, None)),                // moved while disarmed
-        (true, 12.0, (Some(-12.0), None)),          // arming re-latches home
-        (true, 13.0, (None, Some(AIR))),            // took off
-        (true, 13.5, (None, None)),
-        (true, 12.1, (None, Some(GROUND))), // landed
+        (false, FLY, 10.0, (Some(-10.0), Some(GROUND))), // the first poll: everything
+        (false, FLY, 12.0, (None, None)),                // moved while disarmed
+        (true, FLY, 12.0, (Some(-12.0), None)),          // arming re-latches home
+        (true, FLY, 13.0, (None, Some(AIR))),            // took off
+        (true, FLY, 13.5, (None, None)),
+        (true, LAND, 13.5, (None, Some(LANDING))), // a land
+        (true, LAND, 12.1, (None, Some(GROUND))),  // landed
     ];
 
     let t0 = Instant::now();
     let mut service = service(Some(earth()), t0);
-    for (i, (armed, altitude_m, (home_z, landed))) in ticks.into_iter().enumerate() {
-        service.on_state(&at_altitude(altitude_m), armed);
+    for (i, (armed, mode, altitude_m, (home_z, landed))) in ticks.into_iter().enumerate() {
+        service.on_state(&at_altitude(altitude_m), armed, mode);
         let mut out = Outbox::default();
         service.poll(t0 + i as u32 * 10 * MS, &mut out);
         check!(home_zs(&out.to_gcs) == Vec::from_iter(home_z), "tick {i}");
@@ -133,6 +138,7 @@ fn sends_the_latest_state_with_time_since_the_flight_controller_appeared() {
                 ..Default::default()
             },
             false,
+            ControlMode::Attitude,
         );
     }
     let mut out = Outbox::default();
@@ -173,14 +179,14 @@ fn vfr_hud_throttle_is_the_latest_records_thrust() {
         })
     };
     let mut service = service(None, t0);
-    service.on_state(&VehicleState::default(), true);
+    service.on_state(&VehicleState::default(), true, ControlMode::Attitude);
 
     check!(throttle_at(&mut service, t0) == Some(0), "no record yet");
     service.on_record(&record(0.62));
     check!(throttle_at(&mut service, t0 + STREAM) == Some(62));
 
     service.fc_appeared(t0 + 5 * SLOW, &mut Outbox::default());
-    service.on_state(&VehicleState::default(), true);
+    service.on_state(&VehicleState::default(), true, ControlMode::Attitude);
     check!(
         throttle_at(&mut service, t0 + 5 * SLOW) == Some(0),
         "a restarted flight controller has sent no record"
@@ -191,14 +197,14 @@ fn vfr_hud_throttle_is_the_latest_records_thrust() {
 fn starts_over_when_the_flight_controller_comes_back() {
     let t0 = Instant::now();
     let mut service = service(Some(earth()), t0);
-    service.on_state(&at_altitude(10.0), true);
+    service.on_state(&at_altitude(10.0), true, ControlMode::Attitude);
     poll_names(&mut service, t0);
 
     let back = t0 + 10 * SLOW;
     service.fc_appeared(back, &mut Outbox::default());
     check!(poll_names(&mut service, back).is_empty(), "no state since");
 
-    service.on_state(&at_altitude(30.0), false);
+    service.on_state(&at_altitude(30.0), false, ControlMode::Attitude);
     let mut out = Outbox::default();
     service.poll(back, &mut out);
     let names: Vec<_> = out.to_gcs.iter().map(|m| m.message_name()).collect();
@@ -212,4 +218,22 @@ fn starts_over_when_the_flight_controller_comes_back() {
         time_boot_ms == Some(10_000),
         "time keeps counting from the first appearance"
     );
+}
+
+#[test]
+fn position_is_the_latest_finite_one_since_the_flight_controller_appeared() {
+    let t0 = Instant::now();
+    let mut service = service(None, t0);
+    let at = |x: f32| VehicleState {
+        position_m: [x, 4.0, 10.0].into(),
+        ..Default::default()
+    };
+    check!(service.position_m() == None, "no state yet");
+    service.on_state(&at(3.0), true, ControlMode::Attitude);
+    check!(service.position_m() == Some(Vec2::new(3.0, 4.0)));
+    service.on_state(&at(f32::NAN), true, ControlMode::Attitude);
+    check!(service.position_m() == None, "not finite");
+    service.on_state(&at(3.0), true, ControlMode::Attitude);
+    service.fc_appeared(t0, &mut Outbox::default());
+    check!(service.position_m() == None, "starts over");
 }
