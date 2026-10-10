@@ -8,7 +8,7 @@ use assert2::check;
 use super::*;
 use crate::{
     Actuator, ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command, ControlInput,
-    ControlOutput, FailsafeState, Setpoint, StateEstimator,
+    ControlOutput, FailsafeState, Setpoint, StateSource,
 };
 
 /// Shared, ordered log of pipeline calls. Test-only; the loop itself never allocates.
@@ -46,18 +46,18 @@ impl Commander for RecordingCommander {
     }
 }
 
-/// Returns heading 0 for the priming estimate, then 1, 2, … per tick.
+/// Returns heading 0 for the priming read, then 1, 2, … per tick.
 struct RecordingVehicle {
     log: Log,
-    estimates: u32,
+    state_reads: u32,
 }
-impl StateEstimator for RecordingVehicle {
-    fn estimate_state(&mut self, dt: Duration) -> VehicleState {
+impl StateSource for RecordingVehicle {
+    fn state(&mut self, dt: Duration) -> VehicleState {
         self.log
             .borrow_mut()
-            .push(format!("estimate dt={}", dt.as_secs_f32()));
-        let state = state_with_heading(self.estimates as f32);
-        self.estimates += 1;
+            .push(format!("state dt={}", dt.as_secs_f32()));
+        let state = state_with_heading(self.state_reads as f32);
+        self.state_reads += 1;
         state
     }
 }
@@ -193,7 +193,7 @@ fn recording_loop_with_arms(
         },
         RecordingVehicle {
             log: log.clone(),
-            estimates: 0,
+            state_reads: 0,
         },
         RecordingGuidance { log: log.clone() },
         RecordingStabilizer { log: log.clone() },
@@ -203,7 +203,7 @@ fn recording_loop_with_arms(
 }
 
 #[test]
-fn prime_estimates_with_zero_dt_and_primes_guidance_then_stabilizer_from_it() {
+fn prime_reads_state_with_zero_dt_and_primes_guidance_then_stabilizer_from_it() {
     let log = Log::default();
     let mut flight_loop = recording_loop(&log);
 
@@ -212,7 +212,7 @@ fn prime_estimates_with_zero_dt_and_primes_guidance_then_stabilizer_from_it() {
     check!(
         *log.borrow()
             == [
-                "estimate dt=0",
+                "state dt=0",
                 "prime guidance heading=0",
                 "prime stabilizer heading=0",
             ]
@@ -242,7 +242,7 @@ fn step_runs_the_pipeline_in_order_and_publishes_the_tick() {
             == [
                 // Commander sees the primed state (heading 0), not this tick's estimate.
                 "command dt=0.004 seen_heading=0 arm=true",
-                "estimate dt=0.004",
+                "state dt=0.004",
                 // The first armed tick re-primes from the fresh estimate (heading 1)...
                 "prime guidance heading=1",
                 "prime stabilizer heading=1",
@@ -270,7 +270,7 @@ fn disarmed_tick_holds_the_motors_off_and_skips_guidance_stabilizer_and_mixer() 
         *log.borrow()
             == [
                 "command dt=0.004 seen_heading=0 arm=false",
-                "estimate dt=0.004",
+                "state dt=0.004",
                 "actuate motor0=0",
                 // Neutral setpoint at the current heading, zero control.
                 "publish dt=0.004 arm=false throttle=0.25 setpoint_thrust=0 setpoint_heading=1 heading=1 thrust=0 motor0=0",
@@ -392,7 +392,7 @@ fn into_parts_returns_the_components_with_their_state() {
     flight_loop.step(Duration::from_millis(4));
 
     let (_commander, vehicle, _guidance, _stabilizer, _mixer, telemetry) = flight_loop.into_parts();
-    check!(vehicle.estimates() == 3); // prime + 2 ticks
+    check!(vehicle.state_reads() == 3); // prime + 2 ticks
     check!(vehicle.actuations() == 2);
     check!(telemetry.total() == 2);
 }

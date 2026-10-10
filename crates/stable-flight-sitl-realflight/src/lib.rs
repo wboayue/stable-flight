@@ -8,7 +8,7 @@
 //!
 //! [RealFlight](https://www.realflight.com) simulator backend for the
 //! [Stable Flight](https://crates.io/crates/stable-flight) flight controller.
-//! [`RealFlightVehicle`] implements the core `StateEstimator` + `Actuator` (so it is a
+//! [`RealFlightVehicle`] implements the core `StateSource` + `Actuator` (so it is a
 //! `Vehicle`) over a [`realflight_bridge`] connection, and [`airframes`] holds the tuned setup
 //! for each supported RealFlight model.
 //!

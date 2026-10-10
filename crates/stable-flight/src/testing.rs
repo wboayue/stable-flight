@@ -25,7 +25,7 @@ use core::time::Duration;
 use crate::controllers::{BodyRateController, BodyRateControllerConfig};
 use crate::{
     Actuator, ActuatorCommand, Command, Commander, ControlOutput, FailsafeState, Saturation,
-    Setpoint, StateEstimator, TelemetryPublisher, TelemetryRecord, Vec3, VehicleState,
+    Setpoint, StateSource, TelemetryPublisher, TelemetryRecord, Vec3, VehicleState,
 };
 
 pub mod conformance;
@@ -40,17 +40,17 @@ mod tests;
 /// ```
 /// use std::time::Duration;
 /// use stable_flight::testing::NullVehicle;
-/// use stable_flight::{Actuator, ActuatorCommand, StateEstimator};
+/// use stable_flight::{Actuator, ActuatorCommand, StateSource};
 ///
 /// let mut vehicle = NullVehicle::default();
-/// vehicle.estimate_state(Duration::ZERO);
+/// vehicle.state(Duration::ZERO);
 /// vehicle.actuate(&ActuatorCommand::default());
-/// assert_eq!((vehicle.estimates(), vehicle.actuations()), (1, 1));
+/// assert_eq!((vehicle.state_reads(), vehicle.actuations()), (1, 1));
 /// ```
 #[derive(Debug, Clone, Default)]
 pub struct NullVehicle {
     state: VehicleState,
-    estimates: u64,
+    state_reads: u64,
     actuations: u64,
     last_actuation: Option<ActuatorCommand>,
 }
@@ -69,9 +69,9 @@ impl NullVehicle {
         }
     }
 
-    /// How many times `estimate_state` was called (including priming).
-    pub fn estimates(&self) -> u64 {
-        self.estimates
+    /// How many times `state` was called (including priming).
+    pub fn state_reads(&self) -> u64 {
+        self.state_reads
     }
 
     /// How many times `actuate` was called.
@@ -85,9 +85,9 @@ impl NullVehicle {
     }
 }
 
-impl StateEstimator for NullVehicle {
-    fn estimate_state(&mut self, _dt: Duration) -> VehicleState {
-        self.estimates += 1;
+impl StateSource for NullVehicle {
+    fn state(&mut self, _dt: Duration) -> VehicleState {
+        self.state_reads += 1;
         self.state.clone()
     }
 }

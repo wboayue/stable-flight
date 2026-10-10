@@ -12,7 +12,7 @@ not each change; per-change entries start after it.
 
 ### Added
 
-- **Pipeline traits and data:** `Commander`, `StateEstimator` + `Actuator` (blanket
+- **Pipeline traits and data:** `Commander`, `StateSource` + `Actuator` (blanket
   `Vehicle`), `Guidance`, `Stabilizer`, `Mixer`, `TelemetryPublisher`, and `Configurable`;
   `Command { arm, input }` with `ControlInput` (attitude, rate, waypoint, offboard absolute
   attitude, land; its kind as `ControlMode` via `mode()`), `Setpoint`, `VehicleState`,
@@ -57,7 +57,7 @@ not each change; per-change entries start after it.
   loop, without drift.
 - **Saturation reporting:** per-tick `Saturation` flags (tilt, thrust, rate-loop moments,
   mixer) from each stage, merged into `TelemetryRecord`.
-- **Composition:** `ComposedVehicle` (separate estimator + actuator) and tuple fan-out of
+- **Composition:** `ComposedVehicle` (separate state source + actuator) and tuple fan-out of
   telemetry publishers.
 - **`testing` feature:** allocation-free doubles (`NullVehicle`, `ConstantCommander`,
   `RecordingTelemetry`), `conformance` scenarios with `conformance_tests!` for backends, and
