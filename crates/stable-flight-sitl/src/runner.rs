@@ -174,7 +174,7 @@ impl RealTimeRunner {
             let skipped = advance(&mut next_deadline, now, self.period);
             if skipped > 0 {
                 overruns += 1;
-                skipped_ticks += skipped;
+                skipped_ticks = skipped_ticks.saturating_add(skipped);
                 debug!("Tick {ticks}: stalled, resyncing ({skipped} ticks skipped)");
             }
             thread::sleep(next_deadline.saturating_duration_since(now));
