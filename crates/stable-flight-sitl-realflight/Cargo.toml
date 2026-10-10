@@ -6,6 +6,7 @@ keywords = ["realflight", "flight-simulator", "sitl", "drone", "robotics"]
 categories = ["aerospace::simulation", "aerospace::drones"]
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

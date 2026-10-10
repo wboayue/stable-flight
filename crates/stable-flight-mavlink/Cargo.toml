@@ -2,10 +2,11 @@
 name = "stable-flight-mavlink"
 description = "MAVLink message builders for the Stable Flight flight controller: pure functions from core types to MAVLink payloads"
 readme = "README.md"
-keywords = ["mavlink", "flight-controller", "drone", "telemetry"]
+keywords = ["mavlink", "flight-controller", "drone", "telemetry", "ground-station"]
 categories = ["aerospace::drones", "encoding"]
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

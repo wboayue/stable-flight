@@ -2,10 +2,11 @@
 name = "stable-flight-link"
 description = "no_std wire protocol between a Stable Flight flight controller and a companion computer: messages, framing, and a byte-level link trait"
 readme = "README.md"
-keywords = ["flight-controller", "drone", "protocol", "no-std", "postcard"]
-categories = ["aerospace::drones", "embedded", "no-std", "encoding"]
+keywords = ["flight-controller", "drone", "protocol", "no-std", "telemetry"]
+categories = ["aerospace::drones", "embedded", "no-std::no-alloc", "encoding"]
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

@@ -4,7 +4,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 
 ## Quick facts
 
-- Cargo workspace (virtual manifest at the root, `resolver = "3"`), Rust **edition 2024**,
+- Cargo workspace (virtual manifest at the root, `resolver = "3"`), Rust **edition 2024**, MSRV **1.89** (`rust-version`, set by nalgebra and uuid),
   version `0.1.0`. Shared package metadata and common dependency versions live in the root
   `[workspace.package]` / `[workspace.dependencies]`; crates inherit them with `.workspace = true`.
 - Crates:

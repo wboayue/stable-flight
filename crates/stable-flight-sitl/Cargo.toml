@@ -2,10 +2,11 @@
 name = "stable-flight-sitl"
 description = "Software-in-the-loop harness for the Stable Flight flight controller: real-time runner and commanders"
 readme = "README.md"
-keywords = ["sitl", "flight-simulator", "robotics", "control-systems"]
+keywords = ["sitl", "flight-simulator", "robotics", "control-systems", "drone"]
 categories = ["aerospace::simulation", "aerospace::drones"]
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
