@@ -12,8 +12,8 @@ not each change; per-change entries start after it.
 
 ### Added
 
-- **`RealTimeRunner`:** paces a core `FlightLoop` at a fixed rate on the wall clock and returns
-  `RunStats`; `run_with` adds a hook called with the loop before each tick (param writes,
+- **`RealTimeRunner`:** paces a core `FlightLoop` at a fixed rate on the wall clock, resyncs
+  after a stall instead of replaying missed ticks, and returns `RunStats` (counting overruns); `run_with` adds a hook called with the loop before each tick (param writes,
   config swaps). **`ShutdownSignal`:** stops it cleanly on Ctrl-C or SIGTERM (or a manual trigger).
 - **Commanders:**
   - `Extreme3DCommander`: Logitech Extreme 3D joystick; attitude/rate modes on the hat, arm
