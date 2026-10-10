@@ -26,9 +26,10 @@ mod tests;
 ///
 /// - a **waypoint**, or nothing yet: any message counts, heartbeats included, because flying
 ///   the last waypoint on a quiet but live link is safe;
-/// - **sticks** (an attitude or rate command): only commands count, so a joystick stream that
-///   stops (the ground station's joystick turned off, an app frozen) goes stale even while the
-///   link heartbeats, rather than holding the last stick position.
+/// - a **stream** (sticks, or an offboard absolute attitude; [`ControlInput::is_stream`]):
+///   only commands count, so a stream that stops (the ground station's joystick turned off, an
+///   app frozen) goes stale even while the link heartbeats, rather than holding the last
+///   command.
 ///
 /// Wrap it in a [`FailsafeCommander`](stable_flight::commanders::FailsafeCommander) so a stale
 /// link falls back. Until a command arrives it flies a neutral [`ControlInput::default`], and
@@ -56,8 +57,9 @@ mod tests;
 pub struct LinkCommander<'a> {
     control: Consumer<'a, Control>,
     input: ControlInput,
-    /// The latest command was sticks (attitude or rate), so only commands keep it fresh.
-    flying_sticks: bool,
+    /// The latest command was a stream ([`ControlInput::is_stream`]), so only commands keep
+    /// it fresh.
+    flying_stream: bool,
     armed: bool,
     /// Since any message.
     since_message_s: Option<f32>,
@@ -71,7 +73,7 @@ impl<'a> LinkCommander<'a> {
         Self {
             control,
             input: ControlInput::default(),
-            flying_sticks: false,
+            flying_stream: false,
             armed: false,
             since_message_s: None,
             since_command_s: None,
@@ -88,7 +90,7 @@ impl Commander for LinkCommander<'_> {
                 Control::Command(c) => {
                     command = true;
                     self.input = c.input;
-                    self.flying_sticks = c.input.is_sticks();
+                    self.flying_stream = c.input.is_stream();
                 }
                 Control::Arm(arm) => self.armed = arm,
                 Control::Heartbeat => {}
@@ -107,7 +109,7 @@ impl LinkedCommander for LinkCommander<'_> {
     }
 
     fn since_update_s(&self) -> Option<f32> {
-        if self.flying_sticks {
+        if self.flying_stream {
             self.since_command_s
         } else {
             self.since_message_s

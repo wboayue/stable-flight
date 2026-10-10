@@ -38,7 +38,8 @@ not each change; per-change entries start after it.
   `LinkCommander`.
 - **`commander::LinkCommander`:** flies from the link's `Control` messages (latest command;
   arming only from `Arm`), and implements core `LinkedCommander` for a `FailsafeCommander`:
-  any message keeps a waypoint fresh, only commands keep sticks fresh; `sync_arm` drops a stale
+  any message keeps a waypoint fresh, only commands keep a stream (sticks, absolute attitude)
+  fresh; `sync_arm` drops a stale
   latched arm at a failsafe handover.
 - **`std` feature:** `udp::UdpLink`, a non-blocking UDP transport to one fixed peer, one frame
   per datagram, with rx/tx halves; `bind`s or wraps a connected socket; tolerates an absent peer.

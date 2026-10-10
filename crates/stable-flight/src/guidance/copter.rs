@@ -5,10 +5,11 @@
 //! |---|---|
 //! | [`ControlInput::Rate`] | [`Setpoint::Rate`], sticks passed through; the heading-hold target follows the vehicle |
 //! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target; throttle boosted by 1/cos(tilt) so tilting doesn't sink (none when inverted) |
+//! | [`ControlInput::AbsoluteAttitude`] | [`Setpoint::Attitude`]: roll/pitch passed through (the stabilizer saturates them); the heading replaces the heading-hold target (NaN holds it); thrust saturated to `[0, 1]`, not boosted |
 //! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading held |
 //!
-//! Switching modes doesn't jump the heading: attitude and waypoint flight share one
-//! heading-hold target, and rate flight keeps it on the vehicle's heading. The altitude and
+//! Switching modes doesn't jump the heading: attitude, absolute-attitude, and waypoint flight
+//! share one heading-hold target, and rate flight keeps it on the vehicle's heading. The altitude and
 //! lateral loops start fresh each time waypoint flight is entered.
 
 use core::f32::consts::FRAC_PI_4;
@@ -18,8 +19,8 @@ use crate::{GRAVITY, Vec2};
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_tilt};
 use crate::{
-    AttitudeCommand, AttitudeSetpoint, Configurable, ControlInput, Guidance, RateSetpoint,
-    Saturation, Setpoint, VehicleState, WaypointCommand,
+    AbsoluteAttitudeCommand, AttitudeCommand, AttitudeSetpoint, Configurable, ControlInput,
+    Guidance, RateSetpoint, Saturation, Setpoint, VehicleState, WaypointCommand,
 };
 
 use super::rate_divider::RateDivider;
@@ -263,6 +264,9 @@ impl Guidance for CopterGuidance {
             ControlInput::Waypoint(waypoint_command) => {
                 Setpoint::Attitude(self.navigate(dt, waypoint_command, estimated_state))
             }
+            ControlInput::AbsoluteAttitude(command) => {
+                Setpoint::Attitude(self.absolute_attitude_setpoint(command, estimated_state))
+            }
         }
     }
 
@@ -280,8 +284,9 @@ impl Guidance for CopterGuidance {
 
     /// `tilt` when the waypoint tilt request was capped at
     /// [`max_tilt_rad`](CopterGuidanceConfig::max_tilt_rad) (held with the tilt between
-    /// lateral-loop runs), and `thrust` when the altitude loop's thrust, or attitude mode's
-    /// boosted throttle, was clipped to `[0, 1]`.
+    /// lateral-loop runs), and `thrust` when the altitude loop's thrust, attitude mode's
+    /// boosted throttle, or an absolute attitude's thrust was clipped to `[0, 1]`. A tilt
+    /// beyond the stabilizer's limit in an absolute attitude is the stabilizer's to flag.
     fn saturation(&self) -> Saturation {
         self.saturation
     }
@@ -311,6 +316,28 @@ impl CopterGuidance {
             // [0, 1]; NaN means none.
             thrust: self
                 .clip_thrust(attitude_command.throttle * tilt_boost(&estimated_state.attitude)),
+        }
+    }
+
+    /// Flies an absolute attitude: the heading becomes the heading-hold target, so stick
+    /// flight afterward keeps it.
+    fn absolute_attitude_setpoint(
+        &mut self,
+        command: &AbsoluteAttitudeCommand,
+        estimated_state: &VehicleState,
+    ) -> AttitudeSetpoint {
+        let heading_rad = wrap_angle(command.heading_rad);
+        if heading_rad.is_finite() {
+            self.heading = heading_rad;
+        } else {
+            // Hold the target; re-latch it from the estimate if it is NaN too.
+            self.slew_heading(0.0, estimated_state);
+        }
+        AttitudeSetpoint {
+            roll_rad: command.roll_rad,
+            pitch_rad: command.pitch_rad,
+            heading_rad: self.heading,
+            thrust: self.clip_thrust(command.thrust),
         }
     }
 

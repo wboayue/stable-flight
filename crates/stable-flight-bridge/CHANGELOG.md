@@ -31,7 +31,8 @@ not each change; per-change entries start after it.
   controller's heartbeat confirms it (`FAILED` after 1 s).
 - **Setpoints:** `MANUAL_CONTROL` forwarded as attitude commands, and
   `SET_POSITION_TARGET_LOCAL_NED` (`LOCAL_NED`, position included) as waypoints capped at
-  `--offboard-speed`.
+  `--offboard-speed`, and `SET_ATTITUDE_TARGET` (attitude and thrust included; body rates
+  ignored) as absolute attitudes.
 - **Status text:** the flight controller's `Downlink::Status` sent as `STATUSTEXT` (warning).
 - **Link heartbeat:** `Control::Heartbeat` to the flight controller at 5 Hz while the ground
   station is alive, so losing it triggers the flight controller's failsafe.

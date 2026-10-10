@@ -76,6 +76,17 @@ fn heartbeats_only_while_the_flight_controller_is_alive() {
     );
 }
 
+/// A level `SET_ATTITUDE_TARGET` for `target_system`.
+fn attitude_target(target_system: u8) -> MavMessage {
+    MavMessage::SET_ATTITUDE_TARGET(SET_ATTITUDE_TARGET_DATA {
+        target_system,
+        target_component: 1,
+        q: [1.0, 0.0, 0.0, 0.0],
+        thrust: 0.5,
+        ..Default::default()
+    })
+}
+
 #[test]
 fn routes_each_message_to_its_service() {
     let mission_list = MavMessage::MISSION_REQUEST_LIST(MISSION_REQUEST_LIST_DATA {
@@ -111,6 +122,13 @@ fn routes_each_message_to_its_service() {
             vec!["MISSION_COUNT"],
         ),
         ("command: connect", command, 0, vec!["COMMAND_ACK"]),
+        ("attitude target: setpoints", attitude_target(1), 1, vec![]),
+        (
+            "attitude target for another system: ignored",
+            attitude_target(2),
+            0,
+            vec![],
+        ),
         (
             "unrouted message: ignored",
             MavMessage::HEARTBEAT(HEARTBEAT_DATA::default()),

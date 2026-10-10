@@ -121,6 +121,11 @@ fn heartbeat_reports_the_commanded_arm_state_and_mode() {
             ControlInput::Waypoint(Default::default()),
             ControlMode::Waypoint,
         ),
+        (
+            true,
+            ControlInput::AbsoluteAttitude(Default::default()),
+            ControlMode::AbsoluteAttitude,
+        ),
     ];
     for (arm, input, mode) in cases {
         let loopback = Loopback::<64>::new();

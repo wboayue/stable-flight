@@ -8,12 +8,14 @@ fn heartbeat_reports_the_mode_as_standard_flags_and_the_arm_state() {
 
     let manual = F::MAV_MODE_FLAG_MANUAL_INPUT_ENABLED;
     let stabilize = F::MAV_MODE_FLAG_STABILIZE_ENABLED;
-    let auto = F::MAV_MODE_FLAG_GUIDED_ENABLED | F::MAV_MODE_FLAG_AUTO_ENABLED;
+    let guided = F::MAV_MODE_FLAG_GUIDED_ENABLED;
+    let auto = guided | F::MAV_MODE_FLAG_AUTO_ENABLED;
     // (mode, expected mode flags)
     let modes = [
         (ControlMode::Rate, manual),
         (ControlMode::Attitude, manual | stabilize),
         (ControlMode::Waypoint, stabilize | auto),
+        (ControlMode::AbsoluteAttitude, stabilize | guided),
     ];
     // (armed, expected arm flag, expected status)
     let arm_states = [
