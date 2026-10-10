@@ -1,5 +1,11 @@
 # stable-flight-mavlink
 
+[![Build](https://github.com/wboayue/stable-flight/actions/workflows/test.yaml/badge.svg?branch=main)](https://github.com/wboayue/stable-flight/actions/workflows/test.yaml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![crates.io](https://img.shields.io/crates/v/stable-flight-mavlink.svg)](https://crates.io/crates/stable-flight-mavlink)
+[![Documentation](https://docs.rs/stable-flight-mavlink/badge.svg)](https://docs.rs/stable-flight-mavlink)
+[![Coverage Status](https://coveralls.io/repos/github/wboayue/stable-flight/badge.svg?branch=main)](https://coveralls.io/github/wboayue/stable-flight?branch=main)
+
 MAVLink message builders for a [Stable Flight](https://github.com/wboayue/stable-flight) flight controller: pure functions from core values to MAVLink payloads (the [`mavlink`](https://crates.io/crates/mavlink) crate, `common` dialect). No connection, clock, or scheduling. When and where to send is the caller's job.
 
 The companion bridge ([`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge)) builds its messages here, so the encoding is tested without I/O.
