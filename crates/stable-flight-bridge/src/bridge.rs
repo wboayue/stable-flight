@@ -178,8 +178,7 @@ impl Bridge {
             Downlink::Param(param) => self.params.on_param(param, out),
             Downlink::State(state) => {
                 if let Some(fc) = alive {
-                    self.state
-                        .on_state(state, fc.armed, fc.mode == ControlMode::Land);
+                    self.state.on_state(state, fc.armed, fc.mode);
                 }
             }
             Downlink::Record(record) if alive.is_some() => {

@@ -37,7 +37,7 @@ not each change; per-change entries start after it.
   limits); its `FcPoller` runs between ticks. `wire_linked` also routes control messages to a
   `LinkCommander`.
 - **`commander::LinkCommander`:** flies from the link's `Control` messages (latest command;
-  arming only from `Arm`; a land disarms on touchdown), and implements core `LinkedCommander` for a `FailsafeCommander`:
+  arming only from `Arm`), and implements core `LinkedCommander` for a `FailsafeCommander`:
   any message keeps a waypoint fresh, only commands keep a stream (sticks, absolute attitude)
   fresh; `sync_arm` drops a stale
   latched arm at a failsafe handover.

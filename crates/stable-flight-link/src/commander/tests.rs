@@ -1,8 +1,6 @@
 use assert2::check;
 use heapless::spsc::Queue;
-use stable_flight::{
-    AbsoluteAttitudeCommand, AttitudeCommand, LandCommand, RateCommand, Vec3, WaypointCommand,
-};
+use stable_flight::{AbsoluteAttitudeCommand, AttitudeCommand, RateCommand, WaypointCommand};
 
 use super::*;
 
@@ -217,61 +215,4 @@ fn sync_arm_overwrites_a_latched_arm() {
         commander.next_command(DT, &VehicleState::default()).arm,
         "a new arm"
     );
-}
-
-fn land() -> Control {
-    Control::Command(Command::new(
-        false, // ignored
-        ControlInput::Land(LandCommand::default()),
-    ))
-}
-
-fn sinking(vertical_speed_mps: f32) -> VehicleState {
-    VehicleState {
-        velocity_mps: Vec3::new(0.0, 0.0, vertical_speed_mps),
-        ..Default::default()
-    }
-}
-
-#[test]
-fn disarms_on_touchdown_during_a_land_until_a_new_arm() {
-    // 0.35 s ticks: the detector needs 1 s stopped after the descent, so three stopped ticks.
-    const TICK_S: f32 = 0.35;
-    // (case, messages before the tick, vertical speed, expected arm)
-    let ticks = [
-        ("armed, hovering", vec![Control::Arm(true)], 0.0, true),
-        ("a hover isn't a land", vec![], 0.0, true),
-        ("land", vec![land()], 0.0, true),
-        ("the hover it started from doesn't count", vec![], 0.0, true),
-        ("descending", vec![], -0.7, true),
-        ("stopped", vec![], 0.0, true),
-        ("stopped 0.7 s", vec![], 0.0, true),
-        ("stopped 1.05 s: down, disarmed", vec![], 0.0, false),
-        ("stays disarmed", vec![Control::Heartbeat], 0.0, false),
-        ("the land resent keeps it", vec![land()], 0.0, false),
-        ("a new arm", vec![Control::Arm(true)], 0.0, true),
-        ("re-armed on the ground: no new descent", vec![], 0.0, true),
-        ("still armed", vec![], 0.0, true),
-        ("still armed", vec![], 0.0, true),
-        ("descends again", vec![], -0.7, true),
-        ("sticks end the land", vec![rate(0.0)], 0.0, true),
-        ("stopped under sticks", vec![], 0.0, true),
-        ("stopped under sticks", vec![], 0.0, true),
-        ("no disarm off a land", vec![], 0.0, true),
-        ("a new land starts over", vec![land()], 0.0, true),
-        ("stopped, no descent yet", vec![], 0.0, true),
-        ("stopped, no descent yet", vec![], 0.0, true),
-        ("stopped, no descent yet", vec![], 0.0, true),
-    ];
-
-    let mut queue = Queue::<Control, 8>::new();
-    let (mut router, consumer) = queue.split();
-    let mut commander = LinkCommander::new(consumer);
-    for (i, (case, messages, vertical_speed_mps, arm)) in ticks.into_iter().enumerate() {
-        for message in messages {
-            router.enqueue(message).expect("room");
-        }
-        let command = commander.next_command(TICK_S, &sinking(vertical_speed_mps));
-        check!(command.arm == arm, "tick {i}: {case}");
-    }
 }

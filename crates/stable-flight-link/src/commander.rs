@@ -1,7 +1,7 @@
 //! Flying from the link: see [`LinkCommander`].
 
 use heapless::spsc::Consumer;
-use stable_flight::commanders::{LinkedCommander, TouchdownDetector};
+use stable_flight::commanders::LinkedCommander;
 use stable_flight::{Command, Commander, ControlInput, VehicleState};
 
 use crate::Control;
@@ -20,11 +20,6 @@ mod tests;
 /// - [`Control::Arm`]: arms (`true`) or disarms (`false`); latched until the next one.
 /// - [`Control::Heartbeat`]: only keeps the link fresh.
 ///
-/// Flying a [`ControlInput::Land`], it watches for touchdown with a [`TouchdownDetector`] and
-/// disarms on it, dropping the latched arm, so the vehicle stays disarmed until a new
-/// `Control::Arm(true)`. A new land, or a re-arm, starts the detector over. Any other command
-/// ends the land: the latest command wins, so a joystick still streaming takes over at once.
-///
 /// Freshness ([`since_update_s`](LinkedCommander::since_update_s), 0 on a tick that drained a
 /// message that counts, growing by `dt` otherwise, `None` until the first) depends on what it
 /// flies:
@@ -37,7 +32,7 @@ mod tests;
 ///   command.
 ///
 /// Wrap it in a [`FailsafeCommander`](stable_flight::commanders::FailsafeCommander) so a stale
-/// link falls back. Until a command arrives it flies a neutral [`ControlInput::default`], and
+/// link falls back and a land disarms on touchdown. Until a command arrives it flies a neutral [`ControlInput::default`], and
 /// it starts disarmed.
 ///
 /// # Examples
@@ -66,8 +61,6 @@ pub struct LinkCommander<'a> {
     /// it fresh.
     flying_stream: bool,
     armed: bool,
-    /// Watches a land for touchdown.
-    touchdown: TouchdownDetector,
     /// Since any message.
     since_message_s: Option<f32>,
     /// Since a command.
@@ -82,7 +75,6 @@ impl<'a> LinkCommander<'a> {
             input: ControlInput::default(),
             flying_stream: false,
             armed: false,
-            touchdown: TouchdownDetector::default(),
             since_message_s: None,
             since_command_s: None,
         }
@@ -90,33 +82,19 @@ impl<'a> LinkCommander<'a> {
 }
 
 impl Commander for LinkCommander<'_> {
-    fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
+    fn next_command(&mut self, dt: f32, _current_state: &VehicleState) -> Command {
         let (mut message, mut command) = (false, false);
         while let Some(control) = self.control.dequeue() {
             message = true;
             match control {
                 Control::Command(c) => {
                     command = true;
-                    if is_land(&c.input) && !is_land(&self.input) {
-                        self.touchdown.reset();
-                    }
                     self.input = c.input;
                     self.flying_stream = c.input.is_stream();
                 }
-                Control::Arm(arm) => {
-                    if arm && !self.armed {
-                        self.touchdown.reset();
-                    }
-                    self.armed = arm;
-                }
+                Control::Arm(arm) => self.armed = arm,
                 Control::Heartbeat => {}
             }
-        }
-        if self.armed
-            && is_land(&self.input)
-            && self.touchdown.update(dt, current_state.velocity_mps.z)
-        {
-            self.armed = false;
         }
         self.since_message_s = since(message, self.since_message_s, dt);
         self.since_command_s = since(command, self.since_command_s, dt);
@@ -137,11 +115,6 @@ impl LinkedCommander for LinkCommander<'_> {
             self.since_message_s
         }
     }
-}
-
-/// Whether `input` is a land.
-fn is_land(input: &ControlInput) -> bool {
-    matches!(input, ControlInput::Land(_))
 }
 
 /// Time since something was last heard: 0 if it was this tick, else `last` grown by `dt`.
