@@ -4,9 +4,9 @@ use core::time::Duration;
 
 use heapless::spsc::Consumer;
 use stable_flight::timing::Every;
-use stable_flight::{ControlMode, FailsafeState, TelemetryPublisher, TelemetryRecord};
+use stable_flight::{ControlMode, FailsafeState, Saturation, TelemetryPublisher, TelemetryRecord};
 
-use crate::{Downlink, LinkTx, MAX_FRAME_LEN, ParamValue, Record, SendMessage, StatusText};
+use crate::{Downlink, LinkTx, MAX_FRAME_LEN, Output, ParamValue, Record, SendMessage, StatusText};
 
 #[cfg(test)]
 mod tests;
@@ -17,7 +17,7 @@ pub struct LinkPublisherConfig {
     /// [`Downlink::Heartbeat`] period: how quickly the companion notices a lost flight
     /// controller.
     pub heartbeat_interval: Duration,
-    /// [`Downlink::State`] period.
+    /// [`Downlink::State`] period, each followed by a [`Downlink::Output`].
     pub state_interval: Duration,
     /// [`Downlink::Record`] period, or `None` for no records. A record is the largest message
     /// (about 225 bytes); keep it slow.
@@ -39,9 +39,12 @@ impl Default for LinkPublisherConfig {
     }
 }
 
-/// A [`TelemetryPublisher`] that sends [`Downlink`]s over a [`LinkTx`]: heartbeat, state, and
-/// optional records at their [`LinkPublisherConfig`] rates, plus the
+/// A [`TelemetryPublisher`] that sends [`Downlink`]s over a [`LinkTx`]: heartbeat, state (each
+/// followed by an output), and optional records at their [`LinkPublisherConfig`] rates, plus the
 /// [`ParamServer`](crate::params::ParamServer)'s replies.
+///
+/// [`Downlink::Output`] carries the latest tick's thrust and the union of every tick's
+/// [`Saturation`] since the previous output, so a one-tick saturation between sends isn't lost.
 ///
 /// A stream is checked for being due before it's encoded, so a tick with nothing due costs
 /// almost nothing. One frame buffer, kept in the struct, serves every send. Send failures are
@@ -76,6 +79,8 @@ pub struct LinkPublisher<'a, T> {
     send_errors: u32,
     /// The failsafe state last announced, to send [`Downlink::Status`] when it changes.
     failsafe: Option<FailsafeState>,
+    /// Limits hit since the last [`Downlink::Output`].
+    saturation: Saturation,
 }
 
 impl<'a, T: LinkTx> LinkPublisher<'a, T> {
@@ -92,6 +97,7 @@ impl<'a, T: LinkTx> LinkPublisher<'a, T> {
             max_params_per_tick: config.max_params_per_tick,
             send_errors: 0,
             failsafe: None,
+            saturation: Saturation::default(),
         }
     }
 
@@ -115,6 +121,7 @@ impl<'a, T: LinkTx> LinkPublisher<'a, T> {
 
 impl<T: LinkTx> TelemetryPublisher for LinkPublisher<'_, T> {
     fn publish(&mut self, record: &TelemetryRecord) {
+        self.saturation = self.saturation.merge(record.saturation);
         if record.failsafe != self.failsafe {
             self.failsafe = record.failsafe;
             if let Some(text) = record
@@ -133,6 +140,11 @@ impl<T: LinkTx> TelemetryPublisher for LinkPublisher<'_, T> {
         }
         if self.state.ready(record.dt) {
             self.send(&Downlink::State(record.state.clone()));
+            let saturation = core::mem::take(&mut self.saturation);
+            self.send(&Downlink::Output(Output {
+                thrust: record.control.thrust,
+                saturation,
+            }));
         }
         if self
             .record

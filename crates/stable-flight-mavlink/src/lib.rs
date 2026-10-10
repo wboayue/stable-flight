@@ -41,6 +41,7 @@ mod geo;
 mod ground;
 mod home;
 mod land_detector;
+mod saturation;
 mod state;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
@@ -51,6 +52,7 @@ pub use geo::{DEFAULT_ORIGIN, FlatEarth, GeodeticOrigin, InvalidOrigin};
 pub use ground::{GroundChanges, GroundTracker};
 pub use home::HomeTracker;
 pub use land_detector::LandDetector;
+pub use saturation::{SATURATION_FLAGS, saturation};
 pub use state::{
     attitude, extended_sys_state, global_position_int, home_position, local_position_ned, vfr_hud,
 };

@@ -28,8 +28,7 @@ use log::{debug, info, warn};
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight::{Commander, FlightLoop};
-use stable_flight_link::fc::{FcLink, FcLinkConfig};
-use stable_flight_link::publisher::LinkPublisherConfig;
+use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 use stable_flight_sitl::commanders::script::ScriptCommander;
@@ -63,9 +62,6 @@ struct Args {
     #[arg(long, default_value = DEFAULT_BRIDGE_ADDR)]
     link_peer: String,
 }
-
-/// How often a full telemetry record goes out: the bridge needs only its thrust, for throttle.
-const RECORD_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Number of RealFlight channels recorded after the state columns.
 const CHANNELS: usize = 12;
@@ -224,16 +220,8 @@ fn fly(commander: impl Commander, bridge: RecordingBridge<RealFlightRemoteBridge
     // The link: the publisher writes it each tick (the flight loop's telemetry), and the poller
     // reads it and serves params between ticks. Queue sizes: 32 param requests, 16 replies.
     let (link_rx, link_tx) = link.into_halves();
-    let link_config = FcLinkConfig {
-        publisher: LinkPublisherConfig {
-            // Records carry the commanded thrust the bridge reports as VFR_HUD throttle.
-            record_interval: Some(RECORD_INTERVAL),
-            ..LinkPublisherConfig::default()
-        },
-        ..FcLinkConfig::default()
-    };
     let mut fc_link = FcLink::<32, 16>::new();
-    let (mut poller, telemetry) = fc_link.wire_with(link_rx, link_tx, link_config);
+    let (mut poller, telemetry) = fc_link.wire(link_rx, link_tx);
 
     let mut flight_loop =
         FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);

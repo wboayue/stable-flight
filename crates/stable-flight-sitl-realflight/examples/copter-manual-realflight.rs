@@ -29,8 +29,7 @@ use log::{debug, warn};
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight::{Commander, FlightLoop};
-use stable_flight_link::fc::{FcLink, FcLinkConfig};
-use stable_flight_link::publisher::LinkPublisherConfig;
+use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::{Extreme3DCommander, SpektrumCommander};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
@@ -38,9 +37,6 @@ use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRe
 use stable_flight_sitl_realflight::{
     REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, airframes,
 };
-
-/// How often a full telemetry record goes out: the bridge needs only its thrust, for throttle.
-const RECORD_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Connect timeout for the RealFlight proxy; a reconnect attempt blocks its tick.
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
@@ -116,18 +112,8 @@ fn fly(commander: impl Commander, args: &Args) {
     let (link_rx, link_tx) = UdpLink::bind(&args.link_bind, &args.link_peer)
         .expect("failed to open link socket")
         .into_halves();
-    let link_config = FcLinkConfig {
-        publisher: LinkPublisherConfig {
-            // Records carry the commanded thrust the bridge reports as VFR_HUD throttle.
-            record_interval: Some(RECORD_INTERVAL),
-            ..LinkPublisherConfig::default()
-        },
-        // 8 frames and 4 param writes per tick: a "load from file" burst of hundreds spreads
-        // over a few hundred milliseconds at 250 Hz.
-        ..FcLinkConfig::default()
-    };
     let mut fc_link = FcLink::<32, 16>::new();
-    let (mut poller, link) = fc_link.wire_with(link_rx, link_tx, link_config);
+    let (mut poller, link) = fc_link.wire(link_rx, link_tx);
 
     let mut flight_loop = FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, link);
 

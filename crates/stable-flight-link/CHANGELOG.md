@@ -13,8 +13,9 @@ not each change; per-change entries start after it.
 ### Added
 
 - **Messages:** `Uplink` (`Control`: heartbeat, core `Command`, arm; `ParamRequest`) and `Downlink`
-  (heartbeat with arm state and core `ControlMode`, `VehicleState`, `Record` telemetry, `ParamValue`, status text). `Record` is an owned
-  `TelemetryRecord`, convertible both ways. The heartbeat's `link_ok` is `false` while a
+  (heartbeat with arm state and core `ControlMode`, `VehicleState`, `Output`, `Record` telemetry, `ParamValue`, status text). `Output` is the control
+  output streamed with state: commanded thrust and the `Saturation` flags. `Record` is an owned
+  `TelemetryRecord`, convertible both ways, for opt-in debugging. The heartbeat's `link_ok` is `false` while a
   failsafe flies its fallback.
 - **Frames:** `[version][postcard][crc16]`, COBS-encoded and `0x00`-terminated, through the
   sealed `Message` trait (`encode`/`decode`, with `EncodeError`/`DecodeError`). Rejects bad
@@ -29,7 +30,8 @@ not each change; per-change entries start after it.
   `heapless::spsc` queues, paced and lossless.
 - **Router:** `router::UplinkRouter` decodes uplinks and routes params and `Control` messages
   to optional queues, independent of the active commander.
-- **Publisher:** `publisher::LinkPublisher`, a core `TelemetryPublisher`: heartbeat, state, and
+- **Publisher:** `publisher::LinkPublisher`, a core `TelemetryPublisher`: heartbeat, state (each
+  followed by an `Output` whose saturation flags are ORed over every tick since the last), and
   optional records at configured rates, and paced param replies; each failsafe change is
   announced once as status text.
 - **`fc::FcLink`:** the flight controller's side (param queues, router, param server, publisher)

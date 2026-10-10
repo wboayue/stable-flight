@@ -3,7 +3,7 @@
 use std::time::{Duration, Instant};
 
 use mavlink::common::*;
-use stable_flight_link::Record;
+use stable_flight_link::Output;
 use stable_flight_link::stable_flight::{ControlMode, Vec2, VehicleState};
 use stable_flight_mavlink::{FlatEarth, GroundTracker};
 
@@ -16,14 +16,17 @@ mod tests;
 /// Sends the flight controller's latest [`VehicleState`] to the ground station (the payloads,
 /// home, and landed state come from `stable-flight-mavlink`):
 ///
-/// - every `state_interval`: `ATTITUDE`, `LOCAL_POSITION_NED`, `GLOBAL_POSITION_INT`, `VFR_HUD`;
+/// - every `state_interval`: `ATTITUDE`, `LOCAL_POSITION_NED`, `GLOBAL_POSITION_INT`, `VFR_HUD`,
+///   and one `NAMED_VALUE_INT` per saturation flag (`SAT_*`, see
+///   [`saturation`](stable_flight_mavlink::saturation));
 /// - every `slow_interval`, and as soon as either changes: `HOME_POSITION`, `EXTENDED_SYS_STATE`.
 ///
 /// The flight controller streams state faster than this (50 Hz by default); only the latest is
 /// kept, but every one updates home and the landed state, with the arm state from its latest
 /// heartbeat. `GLOBAL_POSITION_INT` and `HOME_POSITION` need an origin ([`FlatEarth`]) and a
-/// home. `VFR_HUD`'s throttle is the commanded thrust from the latest [`Record`], 0 until one
-/// arrives (the flight controller sends none by default).
+/// home. `VFR_HUD`'s throttle is the commanded thrust from the latest [`Output`], 0 until one
+/// arrives. A saturation flag reads 1 if any `Output` since the last stream reported it, so a
+/// short saturation still shows.
 ///
 /// Nothing goes out until the first state arrives. `time_boot_ms` counts from when the flight
 /// controller first appeared: the link carries no flight-controller clock. The caller polls
@@ -43,8 +46,8 @@ pub(crate) struct StateService {
 #[derive(Debug, Default)]
 struct Session {
     latest: Option<VehicleState>,
-    /// Normalized commanded thrust from the latest record.
-    thrust: f32,
+    /// Thrust from the latest output, and every saturation reported since the last stream.
+    output: Output,
     ground: GroundTracker,
     /// Home was latched since the last poll: send `HOME_POSITION` now.
     home_changed: bool,
@@ -70,7 +73,7 @@ impl StateService {
     }
 
     /// The flight controller appeared (or came back) at `now`. It may have restarted, so start
-    /// over: no state, home, or thrust until it sends them, then every stream at once.
+    /// over: no state, home, thrust, or saturation until it sends them, then every stream at once.
     pub(crate) fn fc_appeared(&mut self, now: Instant, _out: &mut Outbox) {
         self.boot.get_or_insert(now);
         self.session = Session::default();
@@ -97,9 +100,12 @@ impl StateService {
             .then_some(position_m)
     }
 
-    /// A record from the flight controller: its commanded thrust, for `VFR_HUD`.
-    pub(crate) fn on_record(&mut self, record: &Record) {
-        self.session.thrust = record.control.thrust;
+    /// Control output from the flight controller: its thrust for `VFR_HUD`, and its saturation
+    /// flags, held until the next stream.
+    pub(crate) fn on_output(&mut self, output: &Output) {
+        let latest = &mut self.session.output;
+        latest.thrust = output.thrust;
+        latest.saturation = latest.saturation.merge(output.saturation);
     }
 
     /// Sends what is due at `now` from the latest state.
@@ -133,8 +139,13 @@ impl StateService {
             out.to_gcs
                 .push(MavMessage::VFR_HUD(stable_flight_mavlink::vfr_hud(
                     state,
-                    session.thrust,
+                    session.output.thrust,
                 )));
+            let saturation = std::mem::take(&mut session.output.saturation);
+            out.to_gcs.extend(
+                stable_flight_mavlink::saturation(&saturation, time_boot_ms)
+                    .map(MavMessage::NAMED_VALUE_INT),
+            );
         }
 
         // `|`, not `||`: the timer advances on every poll.

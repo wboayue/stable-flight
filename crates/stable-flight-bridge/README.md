@@ -18,7 +18,8 @@ Companion-computer bridge for a [Stable Flight](https://github.com/wboayue/stabl
 | `PARAM_REQUEST_LIST` | Forwarded; the flight controller streams every param |
 | `PARAM_REQUEST_READ` | Answered from a cache of the params the flight controller has sent (by index or name) |
 | `PARAM_SET` | Forwarded; the flight controller's echo (the value sent if accepted, the current value if rejected) goes out as `PARAM_VALUE`. Every param is `REAL32`; a set of another type is rejected with the current value |
-| `ATTITUDE`, `LOCAL_POSITION_NED`, `VFR_HUD` | 10 Hz from the flight controller's latest state (it streams 50 Hz). `VFR_HUD` throttle is the commanded thrust from the latest telemetry record, 0 if the flight controller sends none |
+| `ATTITUDE`, `LOCAL_POSITION_NED`, `VFR_HUD` | 10 Hz from the flight controller's latest state (it streams 50 Hz). `VFR_HUD` throttle is the commanded thrust from the latest `Output` (sent with each state) |
+| `NAMED_VALUE_INT` | 10 Hz, one per core `Saturation` flag: `SAT_TILT`, `SAT_THR`, `SAT_ROLL`, `SAT_PITCH`, `SAT_YAW`, `SAT_MIXTHR`, `SAT_MIXMOM`. 1 if the flight controller hit that limit on any tick since the last report (it ORs every tick; the bridge ORs between reports), else 0. QGC charts each name as its own entry in Analyze Tools → MAVLink Inspector (QGC `MAVLinkMessage.cc:152-166`, `MAVLinkInspectorController.cc:203-219`, at `a76f229`) |
 | `GLOBAL_POSITION_INT` | 10 Hz, projected around `--origin`, once there is a home; relative altitude from home |
 | `HOME_POSITION` | 1 Hz and when home moves: the position at the latest arming, or the first one before any arm |
 | `EXTENDED_SYS_STATE` | 1 Hz and when it changes: landed state from the arm state and height above home, `LANDING` while in the air in the flight controller's land mode (QGC shows it only as still flying) |

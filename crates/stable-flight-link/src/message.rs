@@ -123,7 +123,9 @@ pub enum Downlink {
     },
     /// Estimated vehicle state.
     State(VehicleState),
-    /// One tick's full telemetry, for debugging and tuning; sent at a lower rate.
+    /// Control output: commanded thrust and the limits hit, sent with each state.
+    Output(Output),
+    /// One tick's full telemetry, for debugging and tuning; opt-in, at a lower rate.
     Record(Record),
     /// One parameter's value: a listing entry or a write's echo.
     Param(ParamValue),
@@ -135,6 +137,32 @@ impl Sealed for Uplink {}
 impl Message for Uplink {}
 impl Sealed for Downlink {}
 impl Message for Downlink {}
+
+/// What the control loop is putting out: [`Downlink::Output`]. Small enough to stream with
+/// every [`Downlink::State`], so a companion gets thrust and saturation without a [`Record`].
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight_link::stable_flight::Saturation;
+/// use stable_flight_link::{Downlink, MAX_FRAME_LEN, Message, Output};
+///
+/// let mut saturation = Saturation::default();
+/// saturation.tilt = true;
+/// let output = Downlink::Output(Output { thrust: 0.5, saturation });
+/// let mut frame = [0u8; MAX_FRAME_LEN];
+/// let len = output.encode(&mut frame).unwrap();
+/// assert_eq!(Downlink::decode(&mut frame[..len]), Ok(output));
+/// ```
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct Output {
+    /// Normalized collective thrust the stabilizer commanded on the latest tick
+    /// ([`ControlOutput::thrust`]).
+    pub thrust: f32,
+    /// Limits hit on any tick since the previous [`Downlink::Output`], so a saturation shorter
+    /// than the send interval still shows.
+    pub saturation: Saturation,
+}
 
 /// Owned copy of a core [`TelemetryRecord`], which borrows its parts and so can't be
 /// deserialized. Same fields, same meaning.

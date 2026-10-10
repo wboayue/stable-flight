@@ -19,6 +19,8 @@ not each change; per-change entries start after it.
   `vfr_hud`, and `extended_sys_state`, with the core's frames (north/east/up, FRD rates)
   converted to MAVLink's (NED) and fixed-point units; NaN reports MAVLink's "unknown" where it
   has one.
+- **`saturation`:** one `NAMED_VALUE_INT` (0/1) per core `Saturation` flag (`SAT_TILT`, …),
+  each its own chartable entry in a ground station.
 - **Geodetic origin:** `GeodeticOrigin`, `DEFAULT_ORIGIN`, and `FlatEarth`, a flat-earth
   projection of local position for global position and home; `FlatEarth::new` rejects an
   out-of-range origin with `InvalidOrigin`.

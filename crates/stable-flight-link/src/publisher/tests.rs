@@ -37,6 +37,7 @@ fn received(companion: &mut LoopbackLink<'_, 64>) -> Vec<Downlink> {
 struct Counts {
     heartbeats: usize,
     states: usize,
+    outputs: usize,
     records: usize,
 }
 
@@ -46,6 +47,7 @@ fn count(msgs: &[Downlink]) -> Counts {
         match msg {
             Downlink::Heartbeat { .. } => counts.heartbeats += 1,
             Downlink::State(_) => counts.states += 1,
+            Downlink::Output(_) => counts.outputs += 1,
             Downlink::Record(_) => counts.records += 1,
             _ => {}
         }
@@ -70,6 +72,7 @@ fn streams_go_out_at_their_configured_rates() {
             Counts {
                 heartbeats: 6,
                 states: 51,
+                outputs: 51,
                 records: 0,
             },
         ),
@@ -80,6 +83,7 @@ fn streams_go_out_at_their_configured_rates() {
             Counts {
                 heartbeats: 6,
                 states: 51,
+                outputs: 51,
                 records: 3,
             },
         ),
@@ -95,6 +99,7 @@ fn streams_go_out_at_their_configured_rates() {
             let counts = count(&received(&mut companion));
             total.heartbeats += counts.heartbeats;
             total.states += counts.states;
+            total.outputs += counts.outputs;
             total.records += counts.records;
         }
         check!(total == expected, "{case}");
@@ -223,10 +228,10 @@ fn sends_at_most_the_param_limit_per_tick_in_order() {
 fn failed_sends_are_counted_not_returned() {
     let mut publisher = LinkPublisher::new(FailingLink, LinkPublisherConfig::default());
 
-    publisher.publish(&tick(MS(4), false).telemetry()); // heartbeat + state
+    publisher.publish(&tick(MS(4), false).telemetry()); // heartbeat + state + output
     publisher.publish(&tick(MS(4), false).telemetry()); // nothing due
 
-    check!(publisher.send_errors() == 2);
+    check!(publisher.send_errors() == 3);
 }
 
 #[test]
@@ -272,5 +277,51 @@ fn announces_each_failsafe_change_once() {
             status.iter().map(|t| t.as_str()).collect::<Vec<_>>() == Vec::from_iter(expected),
             "tick {i}"
         );
+    }
+}
+
+#[test]
+fn output_carries_the_latest_thrust_and_every_saturation_since_the_last_output() {
+    let tilt = {
+        let mut saturation = Saturation::default();
+        saturation.tilt = true;
+        saturation
+    };
+    let yaw = {
+        let mut saturation = Saturation::default();
+        saturation.moments[2] = true;
+        saturation
+    };
+    let none = Saturation::default();
+    // (saturation this tick, thrust this tick, expected output). State every 20 ms with 4 ms
+    // ticks: the first tick sends and carries 4 ms over, so ticks 0, 4, and 9 send.
+    let ticks = [
+        (none, 0.1, Some((0.1, none))),
+        (tilt, 0.2, None), // one tick, between sends
+        (none, 0.3, None),
+        (yaw, 0.4, None),
+        (none, 0.5, Some((0.5, tilt.merge(yaw)))),
+        (none, 0.6, None),
+        (none, 0.6, None),
+        (none, 0.6, None),
+        (none, 0.6, None),
+        (none, 0.7, Some((0.7, none))), // cleared by the previous send
+    ];
+    let loopback = Loopback::<64>::new();
+    let (fc, mut companion) = loopback.split();
+    let mut publisher = LinkPublisher::new(fc, LinkPublisherConfig::default());
+    for (i, (saturation, thrust, expected)) in ticks.into_iter().enumerate() {
+        let mut record = tick(MS(4), true);
+        record.saturation = saturation;
+        record.control.thrust = thrust;
+        publisher.publish(&record.telemetry());
+
+        let output = received(&mut companion)
+            .into_iter()
+            .find_map(|msg| match msg {
+                Downlink::Output(output) => Some((output.thrust, output.saturation)),
+                _ => None,
+            });
+        check!(output == expected, "tick {i}");
     }
 }
