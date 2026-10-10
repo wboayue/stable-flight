@@ -37,7 +37,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     `IdleBackoff` (`idle.rs`) paces passes (1 ms under traffic, up to 8 ms idle); `main.rs` only
     sets up (`--origin`, `--offboard-speed` parsing in `cli.rs`). Param metadata for QGC: `metadata.rs` (pure: core
     tables → `parameters.json`/`component_general.json`, CRCs), served by `http.rs` (minimal std
-    HTTP server thread); `ConnectService` answers `COMPONENT_METADATA`. Params and state slices of #154; depends on link (`std`), the core (`param-metadata`), `stable-flight-mavlink`, and `mavlink`, not on sitl.
+    HTTP server thread); `ConnectService` answers `COMPONENT_METADATA`. Params, state, and commands slices of #154; depends on link (`std`), the core (`param-metadata`), `stable-flight-mavlink`, and `mavlink`, not on sitl.
   - `crates/stable-flight-sitl` — the simulator-independent SITL harness: `commanders`,
     `runner` (`RealTimeRunner`, wall-clock pacing of a `FlightLoop`), `shutdown`
     (`ShutdownSignal`). Depends on the core; no telemetry publisher of its own (SITL telemetry goes over the link). Non-simulator examples live in `crates/stable-flight-sitl/examples/*.rs`.
@@ -163,6 +163,13 @@ Tick ordering (commander sees the previous tick's state; guidance and stabilizer
 - Use `assert2::assert!` / `check!` and `approx::assert_relative_eq!` for floats.
 - Table-driven tests are the default for control math; one row per scenario.
 - For pipeline doubles, use the core `testing` feature (`stable_flight::testing::{NullVehicle, ConstantCommander, RecordingTelemetry}`, plus `testing::conformance` for backend frame checks; enable it in `[dev-dependencies]`) and recover them after a run with `FlightLoop::into_parts()`. Don't add per-crate `Mock*` pipeline types. For the flight controller's side of the link, in tests and examples alike, use `stable_flight_link::fc::FcLink` rather than rewiring the queues, router, server, and publisher. For a MAVLink connection, use `stable_flight_mavlink::testing::MockConnection` (`testing` feature): scripted receives, recorded sends. Mock other traits by hand (see `MockRealFlightBridge` in sitl-realflight `src/vehicle/tests.rs`) — `mockall` is not a dependency.
+- A test that guards a fix must fail without it: check by reverting the fix (or mutating the
+  guarded value) locally, and say so in the PR. Example: the SIGTERM test was killed by the signal
+  without #227's handler.
+- Keep time-based table rows clear of float rounding at thresholds: `dt` accumulates in `f32`, so
+  three 0.1 s ticks may not reach 0.3. Use, e.g., a 0.35 s timeout with 0.1 s ticks.
+- Tests that raise process-wide signals get an integration-test binary of their own
+  (`tests/*.rs`), one signal per binary.
 - `proptest` and `criterion` are **not** in `Cargo.toml`. Add them deliberately, with a benchmark or property test in the same PR, if you reach for them.
 - Coverage: `just cover` → review `tarpaulin-report.html`. Refresh after non-trivial control-loop changes.
 
@@ -174,13 +181,41 @@ A backend must meet the frame contract (`VehicleState` rustdoc) and timing contr
 rustdoc), and cover every conformance scenario with `stable_flight::conformance_tests!` (core
 `testing` feature). Known gaps stay `#[ignore]`d with a reason that links a GitHub issue.
 
+## Flight checks
+
+PRs that change flight behavior, the link, or the bridge end with a RealFlight check. Example
+usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
+
+- **Setups:**
+  - `just fly-companion` + `just bridge` + QGC: the vehicle is flown from the link, and the
+    bridge speaks MAVLink to QGC.
+  - `just fly-companion` + `just link-pilot`: the pilot plays the companion on the bridge's port,
+    so run it instead of the bridge.
+  - Offboard MAVLink scripts (e.g. pymavlink) need the bridge's ground-station port (UDP 14550),
+    so close QGC first. Run them with `uv run --no-project --with pymavlink python script.py` so
+    nothing installs globally.
+- **Start order:** bridge and example first, then QGC. Under an open QGC, a vehicle that
+  disappears and comes back (bridge or example restart) can leave QGC's virtual joystick silent
+  while Arm still works. Restart QGC.
+- **Signals to read:**
+  - The companion example logs each failsafe handover ("link quiet: holding position", "link
+    back: holding until the sticks move", "link back: flying from the link"). Time them against
+    the event you caused; the failsafe timeout is 1 s.
+  - QGC's traffic to the bridge: `nettop -p <bridge pid> -J bytes_in` on the `udp4 *:` socket.
+    Heartbeat only is about 21 B/s; the joystick streaming is about 600 B/s.
+- **Stopping:** stop examples with Ctrl-C or SIGTERM (`ShutdownSignal` handles both), so
+  `RealFlightVehicle` hands RC back to RealFlight. A kill without cleanup leaves "Preexisting
+  controller reference" on the next run and truncates capture CSVs.
+- **RealFlight disconnects:** one failed exchange currently needs an example restart, and floods
+  the log until then (#239).
+
 ## Commits & PRs
 
 - Small, imperative commit subjects mirroring existing history (e.g. `Use f32 instead of Duration... (#18)`). Reference issues/PRs with `(#id)`.
 - Include simulator context for flight-behaviour changes (model, mode, what you flew).
 - PRs need a summary of the scenario tested, reproduction/validation steps (commands, configs), and screenshots or telemetry snippets when visual feedback changes.
 - **Merges are squash-only** — merge commits and rebase are disabled on GitHub, so a PR lands as a single commit titled `<PR title> (#id)`. Keep the PR title release-note quality; intermediate branch commits are discarded.
-- PRs must be green on the `test` GitHub Actions workflow (`test`, `lint`, and `embedded` jobs) before they can merge; the PR shows `UNSTABLE`/pending until it finishes.
+- PRs must be green on the `test` GitHub Actions workflow (`test`, `lint`, and `embedded` jobs) before they can merge; the PR shows `UNSTABLE`/pending until it finishes. Before merging right after a push, confirm a run exists for the PR's head commit and completed (`gh run list --commit $(gh pr view <n> --json headRefOid -q .headRefOid)`): `gh pr checks --watch` returns at once with "no checks reported" when GitHub hasn't registered the checks yet.
 - CI triggers only on PRs whose base is `main`. In a stack of PRs (each based on the previous branch), only the bottom one gets checks. To merge the bottom PR of a stack:
   1. Record the parent's tip SHA, then **retarget the child to `main` first** (`gh pr edit <child> --base main`). `gh pr merge --delete-branch` on a parent *closes* any PR still based on it, and GitHub won't reopen a closed PR once its head has been force-pushed.
   2. `gh pr merge <parent> --squash --delete-branch`.
@@ -197,21 +232,27 @@ rustdoc), and cover every conformance scenario with `stable_flight::conformance_
 
 ## Workflow
 
-1. Review every plan before implementing it, and include the review in the plan:
+1. Review every plan before implementing it, and include the review in the plan; review the
+   finished PR the same way before it merges (fixes from the review go in the same PR, and
+   anything deferred gets an issue). The lenses:
    - **Duplication:** logic, constants, or helpers that repeat in the change or already exist elsewhere (check core `math` and sibling crates before writing a helper).
    - **Single responsibility:** each type or function does one job; separate I/O, scheduling, and pure mapping/math.
    - **Composability:** dependencies are injected rather than hard-coded (connections, addresses, clocks), configuration is explicit, and the public surface is no wider than callers need.
    - **Performance**, when the code runs in the hot path (anything `FlightLoop::step` calls each tick — commander, estimator, guidance, stabilizer, mixer, actuator, telemetry — or firmware): per-tick allocations, blocking I/O, redundant trig or `libm` calls, and flash size (see Coding style).
-2. Read the relevant trait in core `src/lib.rs` and its existing impls before adding a new one. Hardware-reusable code (control math, mixing, sequencing) goes in the core crate; anything touching an OS, clock, file, or network goes in sitl; anything specific to one simulator goes in its `stable-flight-sitl-<simulator>` backend crate.
-3. Wire new components into a `FlightLoop` + `RealTimeRunner` the way sitl-realflight `examples/copter-manual-realflight.rs` does — that's the canonical reference.
-4. Add tests alongside the code; cover the boundary/error case, not just the happy path.
+2. Before designing around external software (QGC, other MAVLink peers, simulator clients),
+   verify the behavior you rely on in its source, not from memory, and record the findings with
+   file:line in the issue or PR. Examples: QGC's connect and metadata handling (#206 comment),
+   and its arming and `MANUAL_CONTROL` (#234 PR).
+3. Read the relevant trait in core `src/lib.rs` and its existing impls before adding a new one. Hardware-reusable code (control math, mixing, sequencing) goes in the core crate; anything touching an OS, clock, file, or network goes in sitl; anything specific to one simulator goes in its `stable-flight-sitl-<simulator>` backend crate.
+4. Wire new components into a `FlightLoop` + `RealTimeRunner` the way sitl-realflight `examples/copter-manual-realflight.rs` does — that's the canonical reference.
+5. Add tests alongside the code; cover the boundary/error case, not just the happy path.
    A new `ParamTable` also gets a `ParamMetadata` table in the same file and a row in core
    `src/params/metadata/tests.rs`, so QGC describes its params and their ranges are checked
    against `validate`.
-5. `cargo fmt --all && just lint && cargo test --workspace --all-features` before sending a PR.
-6. If you change trait surface, module or crate layout, or runnable examples, update the owning docs (see Commits & PRs) in the same PR.
-7. To compare against `main` (e.g. test counts), use a throwaway worktree — `git worktree add <dir> main` with its own `CARGO_TARGET_DIR` — not a `git stash` round-trip; stashing staged renames plus untracked files can fail to restore.
-8. Pass PR bodies to `gh pr create`/`edit` with `--body-file`; inline heredocs inside `$(…)` break on apostrophes.
+6. `cargo fmt --all && just lint && cargo test --workspace --all-features` before sending a PR.
+7. If you change trait surface, module or crate layout, or runnable examples, update the owning docs (see Commits & PRs) in the same PR.
+8. To compare against `main` (e.g. test counts), use a throwaway worktree — `git worktree add <dir> main` with its own `CARGO_TARGET_DIR` — not a `git stash` round-trip; stashing staged renames plus untracked files can fail to restore.
+9. Pass PR bodies to `gh pr create`/`edit` with `--body-file`; inline heredocs inside `$(…)` break on apostrophes.
 
 ## Pre-PR checklist
 
