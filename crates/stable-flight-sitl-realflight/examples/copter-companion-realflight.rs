@@ -62,6 +62,8 @@ fn main() {
     let airframe = airframes::quadcopter_x();
 
     // A lost RealFlight connection is rebuilt with backoff; a short timeout bounds the stall.
+    // Each call times out after the bridge's default 100 ms, so a stalled proxy can't hang the
+    // tick: it fails the exchange, and the reconnect takes over.
     let host = args.host.clone();
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         bridge: RealFlightRemoteBridge::new(&args.host).expect("Failed to create bridge"),

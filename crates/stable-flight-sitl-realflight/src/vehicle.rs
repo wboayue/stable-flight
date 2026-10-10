@@ -104,7 +104,9 @@ where
 /// priming call (`dt == Duration::ZERO`), which makes an exchange with neutral inputs so the
 /// first state is real; if that exchange fails, it logs an error and returns
 /// `VehicleState::default()`. `exchange_data` is a blocking network round-trip, so a slow link
-/// stalls the tick; an exchange over 20 ms is logged at `debug` with its duration. See the core
+/// stalls the tick; an exchange over 20 ms is logged at `debug` with its duration. The bridge
+/// bounds the stall: `RealFlightRemoteBridge` times each call out after 100 ms by default, and a
+/// timeout is a `BridgeError::Connection` (see Connection loss). See the core
 /// `Vehicle` docs for the cross-backend contract.
 ///
 /// # Connection loss
@@ -245,7 +247,8 @@ where
     /// [Connection loss](RealFlightVehicle#connection-loss)).
     ///
     /// `reconnect` is called on the flight loop's thread and blocks the tick, so it should
-    /// connect with a short timeout.
+    /// connect with a short timeout and keep a bounded I/O timeout (`RealFlightRemoteBridge`'s
+    /// default is 100 ms): the new bridge's `disable_rc` runs in the same tick.
     ///
     /// # Examples
     ///

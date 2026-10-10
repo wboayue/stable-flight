@@ -20,6 +20,8 @@ not each change; per-change entries start after it.
   - Survives a lost connection: `with_reconnect` rebuilds the bridge with backoff and disables
     RC on it again; failed exchanges are logged at most once a second, and exchanges over
     20 ms (`SLOW_EXCHANGE`) at `debug`.
+  - A stalled proxy or simulator can't hang the tick: built on `realflight-bridge` 2.1, whose
+    calls time out (100 ms by default) as a connection error, which the reconnect handles.
   - Covers every core conformance scenario.
 - **Airframes:** `airframes::quadcopter_x()`, the flight-checked QuadCopterX tune (guidance and
   stabilizer configs, mixer, channel mapping).
