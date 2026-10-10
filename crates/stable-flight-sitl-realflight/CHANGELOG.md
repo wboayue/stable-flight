@@ -26,7 +26,7 @@ not each change; per-change entries start after it.
   - All serve params and telemetry over the native link (UDP) for `stable-flight-bridge`.
   - The flight examples reconnect to RealFlight after a lost connection (capture does not).
   - `copter-manual-realflight`: joystick (Extreme 3D, or Spektrum with `--commander spektrum`).
-  - `copter-auto-realflight`: scripted waypoints; holds at the end, `--loop` to repeat.
+  - `copter-auto-realflight`: scripted waypoints; `--end hold` (default), `loop`, or `land` (lands on the last waypoint and disarms).
   - `capture-state-realflight`: records raw simulator state and channels to CSV.
   - `copter-companion-realflight`: flown from the link (`FailsafeCommander<LinkCommander,
     HoldCommander>`), holding position when the link goes quiet.

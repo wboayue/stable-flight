@@ -15,7 +15,7 @@ not each change; per-change entries start after it.
 - **Pipeline traits and data:** `Commander`, `StateEstimator` + `Actuator` (blanket
   `Vehicle`), `Guidance`, `Stabilizer`, `Mixer`, `TelemetryPublisher`, and `Configurable`;
   `Command { arm, input }` with `ControlInput` (attitude, rate, waypoint, offboard absolute
-  attitude; its kind as `ControlMode` via `mode()`), `Setpoint`, `VehicleState`,
+  attitude, land; its kind as `ControlMode` via `mode()`), `Setpoint`, `VehicleState`,
   `ControlOutput`, `ActuatorCommand`, and `TelemetryRecord`. Rustdoc specifies the backend
   frame contract (`VehicleState`) and timing contract (`Vehicle`).
 - **`FlightLoop`:** runs one tick per `step(dt)` (command → estimate → guide → stabilize →
@@ -24,7 +24,9 @@ not each change; per-change entries start after it.
 - **Copter guidance** (`CopterGuidance`):
   - waypoint flight: an altitude loop with gravity feedforward and tilt compensation, a
     position → velocity → acceleration lateral cascade capped at the waypoint's cruise speed,
-    and a waypoint tilt cap;
+    a waypoint tilt cap, and a descent limit (`max_descent_mps`: the altitude target slews
+    down, so a low waypoint descends instead of cutting thrust);
+  - land (`LandCommand`): hold position and descend at `land_speed_mps`;
   - piloted attitude mode with heading hold and throttle tilt boost (none when inverted);
   - rate passthrough;
   - absolute attitude (`AbsoluteAttitudeCommand`: angles flown as given, the heading as the
@@ -35,8 +37,10 @@ not each change; per-change entries start after it.
   rate, with validated configs (`InvalidConfig`).
 - **Mixers:** `QuadCopterMixer` with airmode-style desaturation (moments kept, collective gives
   way, no lift at zero thrust); `TailSitterMixer` placeholder.
-- **Commanders:** `WaypointFollower` (allocation-free; loops or holds at the route's end, flies
-  legs at cruise speed, advances past a waypoint missed wide). `FailsafeCommander` flies a
+- **Commanders:** `WaypointFollower` (allocation-free; loops, holds, or lands at the route's
+  end, flies legs at cruise speed, advances past a waypoint missed wide; `RouteEnd::Land`
+  disarms on touchdown). `TouchdownDetector` decides touchdown during a land from the vertical
+  speed (a descent, then stopped for 1 s). `FailsafeCommander` flies a
   link-fed `LinkedCommander` and falls back to a `Fallback` (`HoldCommander`: hold position)
   when it goes stale, returning after a recovery period; the fallback never arms, a disarm is
   always honored, the primary's arm is synced to the vehicle at the handover

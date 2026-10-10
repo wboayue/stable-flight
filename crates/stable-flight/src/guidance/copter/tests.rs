@@ -1297,6 +1297,10 @@ fn reports_what_the_last_guide_clipped() {
         attitude: nalgebra::UnitQuaternion::from_euler_angles(FRAC_PI_4, 0.0, 0.0),
         ..Default::default()
     };
+    let shooting_up = VehicleState {
+        velocity_mps: Vec3::new(0.0, 0.0, 30.0),
+        ..Default::default()
+    };
     let waypoint = |x: f32, altitude_m| {
         ControlInput::Waypoint(WaypointCommand {
             position_m: Vec2::new(x, 0.0),
@@ -1322,7 +1326,8 @@ fn reports_what_the_last_guide_clipped() {
         (waypoint(0.5, 0.0), &level, (false, false)),
         (waypoint(1000.0, 0.0), &level, (true, false)), // far: tilt capped
         (waypoint(0.0, 100.0), &level, (false, true)),  // far below: thrust at 1
-        (waypoint(0.0, -100.0), &level, (false, true)), // far above: thrust at 0
+        (waypoint(0.0, -100.0), &level, (false, false)), // far above: descends at the limit
+        (waypoint(0.0, -100.0), &shooting_up, (false, true)), // damped to thrust 0
         (throttle(0.5), &banked, (false, false)),       // 0.5 · √2 fits
         (throttle(0.9), &banked, (false, true)),        // 0.9 · √2 clipped
         (absolute(0.9, 1.0), &banked, (false, false)),  // not boosted; tilt is the stabilizer's
@@ -1353,4 +1358,245 @@ fn reports_what_the_last_guide_clipped() {
     assert!(guidance.saturation().tilt);
     guidance.prime(&level);
     assert!(guidance.saturation() == Saturation::default());
+}
+
+/// Fresh guidance primed at `altitude_m`, at rest and level.
+fn guidance_at(altitude_m: f32) -> (CopterGuidance, VehicleState) {
+    let state = state_at(0.0, 0.0, altitude_m);
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+    guidance.prime(&state);
+    (guidance, state)
+}
+
+/// The altitude loop's target after one tick toward a waypoint at `altitude_m`.
+fn waypoint_at(altitude_m: f32) -> ControlInput {
+    ControlInput::Waypoint(WaypointCommand {
+        altitude_m,
+        ..Default::default()
+    })
+}
+
+/// A waypoint below the vehicle is approached by an altitude target lowered at
+/// `max_descent_mps`, with that rate fed forward; one within a step, or above, is taken at
+/// once. The target starts from the vehicle's altitude, and a non-finite waypoint passes
+/// through without latching.
+#[test]
+fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
+    const DT: f32 = 0.01;
+    let step = DEFAULT_MAX_DESCENT_MPS * DT;
+    // (waypoint altitude, ticks, expected latched target) from 10 m
+    let cases = [
+        (0.0, 1, Some(10.0 - step)),
+        (0.0, 100, Some(10.0 - 100.0 * step)),
+        (0.0, 1_000, Some(0.0)), // reached: holds the waypoint
+        (10.0 - 0.5 * step, 1, Some(10.0 - 0.5 * step)), // within a step
+        (25.0, 1, Some(25.0)),   // climbs aren't limited
+        (f32::NAN, 1, None),
+    ];
+    for (waypoint_m, ticks, expected) in cases {
+        let (mut guidance, state) = guidance_at(10.0);
+        for _ in 0..ticks {
+            guidance.guide(DT, &waypoint_at(waypoint_m), &state);
+        }
+        match (guidance.altitude_target_m, expected) {
+            (Some(target), Some(expected)) => {
+                approx::assert_relative_eq!(target, expected, epsilon = 1e-3)
+            }
+            (target, expected) => assert!(target == expected, "{waypoint_m}: {target:?}"),
+        }
+    }
+}
+
+/// While the target slews down, the altitude loop sees it and the descent rate: the thrust is
+/// what a fresh controller gives for that target, not the cut-off a far-below waypoint gave.
+#[test]
+fn a_low_waypoint_descends_instead_of_cutting_thrust() {
+    let (mut guidance, state) = guidance_at(10.0);
+    let setpoint = attitude(guidance.guide(0.01, &waypoint_at(0.0), &state));
+    let expected = AltitudeController::default().control(
+        &CopterGuidanceConfig::default().altitude,
+        0.01,
+        AltitudeTarget {
+            altitude_m: 10.0 - DEFAULT_MAX_DESCENT_MPS * 0.01,
+            velocity_mps: -DEFAULT_MAX_DESCENT_MPS,
+        },
+        AltitudeEstimate {
+            altitude_m: 10.0,
+            velocity_mps: 0.0,
+            attitude: state.attitude,
+        },
+    );
+    approx::assert_relative_eq!(setpoint.thrust, expected, epsilon = 1e-6);
+    assert!(setpoint.thrust > 0.0);
+    assert!(!guidance.saturation().thrust);
+}
+
+/// A level point mass moving only vertically: thrust over hover accelerates it up, and a
+/// ground at 0 m, when there is one, stops it.
+struct VerticalPointMass {
+    altitude_m: f32,
+    climb_mps: f32,
+    ground: bool,
+    /// Sink rate when it first hit the ground.
+    touchdown_mps: Option<f32>,
+}
+
+impl VerticalPointMass {
+    fn at(altitude_m: f32, ground: bool) -> Self {
+        VerticalPointMass {
+            altitude_m,
+            climb_mps: 0.0,
+            ground,
+            touchdown_mps: None,
+        }
+    }
+
+    fn state(&self) -> VehicleState {
+        VehicleState {
+            position_m: Vec3::new(0.0, 0.0, self.altitude_m),
+            velocity_mps: Vec3::new(0.0, 0.0, self.climb_mps),
+            ..Default::default()
+        }
+    }
+
+    fn step(&mut self, dt: f32, thrust: f32) {
+        let hover = crate::controllers::DEFAULT_HOVER_THRUST;
+        self.climb_mps += crate::GRAVITY * (thrust / hover - 1.0) * dt;
+        self.altitude_m += self.climb_mps * dt;
+        if self.ground && self.altitude_m <= 0.0 {
+            self.touchdown_mps.get_or_insert(-self.climb_mps);
+            self.altitude_m = 0.0;
+            self.climb_mps = self.climb_mps.max(0.0);
+        }
+    }
+}
+
+/// Closed loop on a [`VerticalPointMass`]: a waypoint 20 m down is flown at about the descent limit. The limit is on the target, so the
+/// vehicle overshoots it a little while catching up (about 20% on the default gains), not the
+/// free fall a far-below target gave.
+#[test]
+fn point_mass_descends_at_the_limit() {
+    const DT: f32 = 0.004;
+    let (mut guidance, _) = guidance_at(30.0);
+    let mut vehicle = VerticalPointMass::at(30.0, false);
+    let mut fastest_descent_mps: f32 = 0.0;
+    for _ in 0..(15.0 / DT) as usize {
+        let setpoint = attitude(guidance.guide(DT, &waypoint_at(10.0), &vehicle.state()));
+        vehicle.step(DT, setpoint.thrust);
+        fastest_descent_mps = fastest_descent_mps.max(-vehicle.climb_mps);
+    }
+    let altitude_m = vehicle.altitude_m;
+    assert!((altitude_m - 10.0).abs() < 0.1, "ended at {altitude_m} m");
+    assert!(
+        fastest_descent_mps < 1.25 * DEFAULT_MAX_DESCENT_MPS,
+        "descended at {fastest_descent_mps} m/s"
+    );
+}
+
+/// A land holds its position and lowers the altitude target at `land_speed_mps`, never more
+/// than `LAND_LEASH_M` below the vehicle; leaving it (or priming) unlatches the target.
+#[test]
+fn land_descends_at_land_speed_on_a_leash() {
+    const DT: f32 = 0.1;
+    let land = ControlInput::Land(LandCommand {
+        position_m: Vec2::new(3.0, 0.0),
+    });
+    let speed = DEFAULT_LAND_SPEED_MPS;
+    // (ticks, expected latched target) with the vehicle held at 10 m
+    let cases = [(1, 10.0 - speed * DT), (20, 10.0 - LAND_LEASH_M)];
+    for (ticks, expected) in cases {
+        let (mut guidance, state) = guidance_at(10.0);
+        let mut setpoint = AttitudeSetpoint::default();
+        for _ in 0..ticks {
+            setpoint = attitude(guidance.guide(DT, &land, &state));
+        }
+        let target = guidance.altitude_target_m.expect("latched");
+        approx::assert_relative_eq!(target, expected, epsilon = 1e-5);
+        assert!(setpoint.pitch_rad < 0.0, "noses toward the land position");
+    }
+
+    // On the ground the leashed target settles thrust below hover, not at zero.
+    let (mut guidance, state) = guidance_at(0.0);
+    let mut thrust = 0.0;
+    for _ in 0..50 {
+        thrust = attitude(guidance.guide(DT, &land, &state)).thrust;
+    }
+    let hover = crate::controllers::DEFAULT_HOVER_THRUST;
+    assert!(
+        thrust > 0.2 * hover && thrust < 0.8 * hover,
+        "thrust {thrust}"
+    );
+
+    guidance.guide(DT, &ControlInput::default(), &state);
+    assert!(guidance.altitude_target_m.is_none());
+    guidance.guide(DT, &land, &state);
+    guidance.prime(&state);
+    assert!(guidance.altitude_target_m.is_none());
+}
+
+/// Closed loop: a `WaypointFollower` ending in `Land` drives guidance on a
+/// [`VerticalPointMass`] with a ground at 0 m; it lands at about `land_speed_mps` and disarms on touchdown, not before.
+#[test]
+fn point_mass_route_lands_softly_and_disarms() {
+    use crate::Commander;
+    use crate::commanders::{RouteEnd, WaypointFollower};
+
+    const DT: f32 = 0.004;
+    let route = [WaypointCommand {
+        altitude_m: 5.0,
+        ..Default::default()
+    }];
+    let mut follower = WaypointFollower::new(route)
+        .expect("non-empty")
+        .with_route_end(RouteEnd::Land);
+    let (mut guidance, _) = guidance_at(5.0);
+    let mut vehicle = VerticalPointMass::at(5.0, true);
+    let mut disarmed_at_m = None;
+    for _ in 0..(30.0 / DT) as usize {
+        let state = vehicle.state();
+        let command = follower.next_command(DT, &state);
+        if !command.arm {
+            disarmed_at_m = Some(vehicle.altitude_m);
+            break;
+        }
+        let setpoint = attitude(guidance.guide(DT, &command.input, &state));
+        vehicle.step(DT, setpoint.thrust);
+    }
+    let touchdown_mps = vehicle.touchdown_mps.expect("reached the ground");
+    assert!(
+        (touchdown_mps - DEFAULT_LAND_SPEED_MPS).abs() < 0.2,
+        "touched down at {touchdown_mps} m/s"
+    );
+    assert!(disarmed_at_m == Some(0.0), "disarmed at {disarmed_at_m:?}");
+    assert!(follower.is_complete());
+}
+
+/// `max_descent_mps` must be positive and finite; `land_speed_mps` must also exceed the
+/// touchdown detector's `DESCENDING_MPS`, or a land would never be seen to descend and disarm.
+#[test]
+fn rejects_descent_rates_out_of_range() {
+    for value in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        for (field, set) in [
+            (
+                "max_descent_mps",
+                (|c: &mut CopterGuidanceConfig, v| c.max_descent_mps = v) as fn(&mut _, f32),
+            ),
+            ("land_speed_mps", |c, v| c.land_speed_mps = v),
+        ] {
+            let mut config = CopterGuidanceConfig::default();
+            set(&mut config, value);
+            assert!(
+                config.validate().map_err(|e| e.field) == Err(field),
+                "{field} {value}"
+            );
+        }
+    }
+    // (land_speed_mps, valid)
+    for (land_speed_mps, valid) in [(DESCENDING_MPS, false), (0.15, false), (0.25, true)] {
+        let config = CopterGuidanceConfig {
+            land_speed_mps,
+            ..Default::default()
+        };
+        assert!(config.validate().is_ok() == valid, "{land_speed_mps}");
+    }
 }

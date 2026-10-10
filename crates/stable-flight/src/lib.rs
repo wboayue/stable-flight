@@ -231,7 +231,7 @@ impl Command {
 /// The control input part of a [`Command`]: what the flight system should fly.
 ///
 /// The `ControlInput` enum encapsulates different types of commands that can be issued
-/// to control an aircraft. It supports four types of commands, categorized into three
+/// to control an aircraft. It supports five types of commands, categorized into four
 /// control paradigms:
 ///
 /// * `Manual` - Low-level direct control inputs typically generated from user input devices.
@@ -241,6 +241,7 @@ impl Command {
 /// * `AbsoluteAttitude` - An absolute roll, pitch, and heading with collective thrust, from an
 ///   offboard app (e.g. MAVLink `SET_ATTITUDE_TARGET`).
 /// * `Waypoint` - High-level navigational commands used for autonomous flight.
+/// * `Land` - Descend in place until touchdown.
 ///
 /// This separation allows the flight control system to handle both manual piloting
 /// and automated navigation with a unified command interface.
@@ -322,6 +323,11 @@ pub enum ControlInput {
     /// are flown as given (the stabilizer saturates them to its maximum tilt), and the heading
     /// is an angle, not a rate.
     AbsoluteAttitude(AbsoluteAttitudeCommand),
+
+    /// Hold a horizontal position and descend at a steady rate until the ground stops the
+    /// vehicle. Guidance only descends; deciding it has touched down and disarming is the
+    /// commander's job ([`TouchdownDetector`](crate::commanders::TouchdownDetector)).
+    Land(LandCommand),
 }
 
 /// Zero-throttle, centered-stick [`ControlInput::Attitude`].
@@ -345,13 +351,14 @@ impl ControlInput {
     /// assert!(ControlInput::Rate(Default::default()).is_sticks());
     /// assert!(!ControlInput::AbsoluteAttitude(Default::default()).is_sticks());
     /// assert!(!ControlInput::Waypoint(Default::default()).is_sticks());
+    /// assert!(!ControlInput::Land(Default::default()).is_sticks());
     /// ```
     pub fn is_sticks(&self) -> bool {
         matches!(self, ControlInput::Attitude(_) | ControlInput::Rate(_))
     }
 
     /// Whether this input is a stream that must keep arriving to stay valid (sticks and
-    /// absolute attitudes), unlike a waypoint, which stays valid until replaced. A link-fed
+    /// absolute attitudes), unlike a waypoint or a land, which stays valid until replaced. A link-fed
     /// commander treats a stream as stale once commands stop, even if other messages arrive.
     ///
     /// # Examples
@@ -363,6 +370,7 @@ impl ControlInput {
     /// assert!(ControlInput::Rate(Default::default()).is_stream());
     /// assert!(ControlInput::AbsoluteAttitude(Default::default()).is_stream());
     /// assert!(!ControlInput::Waypoint(Default::default()).is_stream());
+    /// assert!(!ControlInput::Land(Default::default()).is_stream());
     /// ```
     pub fn is_stream(&self) -> bool {
         self.is_sticks() || matches!(self, ControlInput::AbsoluteAttitude(_))
@@ -382,6 +390,7 @@ impl ControlInput {
     ///     ControlInput::AbsoluteAttitude(Default::default()).mode(),
     ///     ControlMode::AbsoluteAttitude,
     /// );
+    /// assert_eq!(ControlInput::Land(Default::default()).mode(), ControlMode::Land);
     /// ```
     pub fn mode(&self) -> ControlMode {
         match self {
@@ -389,6 +398,7 @@ impl ControlInput {
             ControlInput::Rate(_) => ControlMode::Rate,
             ControlInput::Waypoint(_) => ControlMode::Waypoint,
             ControlInput::AbsoluteAttitude(_) => ControlMode::AbsoluteAttitude,
+            ControlInput::Land(_) => ControlMode::Land,
         }
     }
 }
@@ -413,6 +423,8 @@ pub enum ControlMode {
     Waypoint,
     /// An offboard app commands an absolute attitude ([`ControlInput::AbsoluteAttitude`]).
     AbsoluteAttitude,
+    /// Autonomous descent to touchdown ([`ControlInput::Land`]).
+    Land,
 }
 
 /// Represents direct manual control of an aircraft's attitude (orientation).
@@ -681,6 +693,23 @@ pub struct AbsoluteAttitudeCommand {
     /// Collective thrust along the body axis, `0.0` to `1.0`. Unlike an [`AttitudeCommand`]'s
     /// throttle, it is not boosted for tilt: the sender owns that compensation.
     pub thrust: f32,
+}
+
+/// Where to land, for [`ControlInput::Land`]: guidance holds `position_m` while it descends.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::{ControlInput, LandCommand, Vec2};
+///
+/// let input = ControlInput::Land(LandCommand { position_m: Vec2::new(10.0, -5.0) });
+/// ```
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct LandCommand {
+    /// Horizontal position to hold, in meters, in the same frame as
+    /// [`WaypointCommand::position_m`].
+    pub position_m: Vec2,
 }
 
 /// Represents the high-level control outputs from the stabilization system.
