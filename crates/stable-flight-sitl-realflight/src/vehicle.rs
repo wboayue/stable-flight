@@ -1,6 +1,6 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use log::{info, warn};
+use log::{debug, info, warn};
 use realflight_bridge::{BridgeError, ControlInputs, RealFlightBridge, SimulatorState};
 use stable_flight::Vec3;
 use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
@@ -12,6 +12,10 @@ use health::LinkHealth;
 mod health;
 #[cfg(test)]
 mod tests;
+
+/// An exchange slower than this is logged at `debug` (five ticks at 250 Hz), to tell a stall
+/// in the RealFlight round trip from one elsewhere in the tick (#255).
+const SLOW_EXCHANGE: Duration = Duration::from_millis(20);
 
 /// Builds a fresh bridge after the connection is lost; see
 /// [`RealFlightVehicle::with_reconnect`].
@@ -99,7 +103,8 @@ where
 /// priming call (`dt == Duration::ZERO`), which makes an exchange with neutral inputs so the
 /// first state is real; if that exchange fails, it logs an error and returns
 /// `VehicleState::default()`. `exchange_data` is a blocking network round-trip, so a slow link
-/// stalls the tick. See the core `Vehicle` docs for the cross-backend contract.
+/// stalls the tick; an exchange over 20 ms is logged at `debug` with its duration. See the core
+/// `Vehicle` docs for the cross-backend contract.
 ///
 /// # Connection loss
 ///
@@ -273,7 +278,13 @@ where
             return;
         }
 
-        match self.bridge.exchange_data(input) {
+        let start = Instant::now();
+        let result = self.bridge.exchange_data(input);
+        let elapsed = start.elapsed();
+        if elapsed > SLOW_EXCHANGE {
+            debug!("Slow RealFlight exchange: {} ms", elapsed.as_millis());
+        }
+        match result {
             Ok(state) => self.estimated_state = vehicle_state(&state),
             Err(e) => {
                 self.health

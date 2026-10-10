@@ -81,4 +81,11 @@ cargo run -p stable-flight-sitl-realflight --example capture-state-realflight --
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --script flights/hover.csv
 ```
 
+To time the RealFlight round trip on its own (no flight loop, no link), with the aircraft on the ground: the probe logs each exchange over `--threshold-ms` (default 20) and prints latency percentiles on Ctrl-C. `--local` talks to RealFlight directly, on the RealFlight machine, leaving out the proxy and the network. The flight examples also log exchanges over 20 ms at `debug` (`RUST_LOG=info,stable_flight_sitl_realflight=debug`).
+
+```bash
+cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight -- --host 192.168.1.20:8080
+cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight -- --local 127.0.0.1:18083
+```
+
 Joystick flights start disarmed: the motors stay off until you arm (Extreme 3D: top trigger; base button disarms. Spektrum: gear switch). Scripted flights are armed from the first tick. The companion example arms only when the link says so (`Control::Arm`), never from its hold fallback.
