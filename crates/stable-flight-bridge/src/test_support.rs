@@ -109,6 +109,16 @@ pub(crate) fn home_zs(msgs: &[MavMessage]) -> Vec<f32> {
         .collect()
 }
 
+/// The throttle of each `VFR_HUD` in `msgs`.
+pub(crate) fn throttles(msgs: &[MavMessage]) -> Vec<u16> {
+    msgs.iter()
+        .filter_map(|m| match m {
+            MavMessage::VFR_HUD(d) => Some(d.throttle),
+            _ => None,
+        })
+        .collect()
+}
+
 /// The landed state of each `EXTENDED_SYS_STATE` in `msgs`.
 pub(crate) fn landed_states(msgs: &[MavMessage]) -> Vec<MavLandedState> {
     msgs.iter()

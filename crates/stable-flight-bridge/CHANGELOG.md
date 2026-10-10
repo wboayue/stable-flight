@@ -25,8 +25,10 @@ not each change; per-change entries start after it.
 - **State:** `ATTITUDE`, `LOCAL_POSITION_NED`, `GLOBAL_POSITION_INT`, and `VFR_HUD` at 10 Hz
   from the flight controller's latest state; `HOME_POSITION` and `EXTENDED_SYS_STATE` at 1 Hz
   and on change (payloads, home, and landed state from `stable-flight-mavlink`). Global position
-  and home projected around `--origin` (or none with `--no-origin`); throttle from telemetry
-  records.
+  and home projected around `--origin` (or none with `--no-origin`); throttle from the flight
+  controller's `Output`.
+- **Saturation:** one `NAMED_VALUE_INT` per core `Saturation` flag (`SAT_TILT`, …) at 10 Hz,
+  set if any `Output` since the last reported it, for graphing in QGC's MAVLink Inspector.
 - **Arming:** `MAV_CMD_COMPONENT_ARM_DISARM` forwarded as `Control::Arm`, acked once the flight
   controller's heartbeat confirms it (`FAILED` after 1 s).
 - **Land:** `MAV_CMD_NAV_LAND` forwarded as a land at the latest position, acked once the
