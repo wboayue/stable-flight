@@ -59,7 +59,10 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Untracked generated artifacts: `target/`, `tarpaulin-report.html`, `firmware/*/*.bin`.
 - The root `Cargo.lock` is committed (reproducible CI, stable cache key); CI builds with `--locked`,
   so commit lockfile changes with the manifest change that causes them. Dependabot batches weekly
-  minor/patch bumps into one PR.
+  minor/patch bumps into one PR; Dependabot security updates open their own PRs.
+- A dependency bump that needs a newer compiler raises `rust-version` in `[workspace.package]` and
+  the MSRV mentions (here, root README prerequisites) in the same PR; check the floor with
+  `cargo +<version> check --workspace --all-features --all-targets --locked`.
 - Paths below are prefixed with their crate (`core:` = `crates/stable-flight/`, `sitl:` =
   `crates/stable-flight-sitl/`, `sitl-realflight:` = `crates/stable-flight-sitl-realflight/`)
   where it matters.
@@ -219,7 +222,8 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
 - Small, imperative commit subjects mirroring existing history (e.g. `Use f32 instead of Duration... (#18)`). Reference issues/PRs with `(#id)`.
 - Include simulator context for flight-behaviour changes (model, mode, what you flew).
 - PRs need a summary of the scenario tested, reproduction/validation steps (commands, configs), and screenshots or telemetry snippets when visual feedback changes.
-- **Merge method follows the branch's commits.** Squash by default: the PR lands as one commit titled `<PR title> (#id)` with the PR body as its message, and the branch commits (review fixes, WIP) are discarded. Rebase-merge when every branch commit is a clean, self-contained step worth keeping in `main` (each builds and passes tests); use a merge commit only for a long-lived branch whose history should stay grouped. Keep the PR title release-note quality either way.
+- **Merge method follows the branch's commits.** Squash by default: the PR lands as one commit titled `<PR title> (#id)` with the PR body as its message, and the branch commits (review fixes, WIP) are discarded. Rebase-merge when every branch commit is a clean, self-contained step worth keeping in `main` (each builds and passes tests); use a merge commit only for a long-lived branch whose history should stay grouped. Keep the PR title release-note quality either way, and write the PR body as the commit message it becomes (summary first; the template's checklist and flight-check sections are fine to keep).
+- `main` is guarded by the repository ruleset `main` (not classic branch protection, whose API reports none; list it with `gh api repos/wboayue/stable-flight/rulesets`): changes land through PRs, no force-push or deletion, and the `test`, `lint`, and `embedded` checks are required. Rewriting published history means disabling the ruleset briefly; do it only on the owner's explicit go and re-enable it right after.
 - PRs must be green on the `test` GitHub Actions workflow (`test`, `lint`, and `embedded` jobs) before they can merge; the PR shows `UNSTABLE`/pending until it finishes. Before merging right after a push, confirm a run exists for the PR's head commit and completed (`gh run list --commit $(gh pr view <n> --json headRefOid -q .headRefOid)`): `gh pr checks --watch` returns at once with "no checks reported" when GitHub hasn't registered the checks yet.
 - CI triggers only on PRs whose base is `main`. In a stack of PRs (each based on the previous branch), only the bottom one gets checks. To merge the bottom PR of a stack:
   1. Record the parent's tip SHA, then **retarget the child to `main` first** (`gh pr edit <child> --base main`). `gh pr merge --delete-branch` on a parent *closes* any PR still based on it, and GitHub won't reopen a closed PR once its head has been force-pushed.
