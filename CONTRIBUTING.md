@@ -25,11 +25,11 @@ testing style, docs and changelog upkeep, and the pre-PR checklist. In short:
    cargo test --workspace --all-features
    just embedded                          # no_std core and link, firmware build
    ```
-4. Update the docs that own what you changed, and the crate's `CHANGELOG.md` for user-facing
-   changes.
+4. Update the docs that own what you changed, and the crate's `CHANGELOG.md`
+   ([rules](AGENTS.md#commits--prs)).
 5. Describe what you changed and how you checked it. Changes to flight behavior, the link, or
-   the bridge need a RealFlight check ([Flight checks](AGENTS.md#flight-checks)); say what you
-   flew.
+   the bridge need a RealFlight check ([Flight checks](AGENTS.md#flight-checks)): say what you
+   flew, or that you couldn't and the maintainer will fly it.
 
 The `test`, `lint`, and `embedded` checks must pass before a PR can merge. PRs are squash-merged,
 so the PR title becomes the commit subject: make it a short imperative summary.

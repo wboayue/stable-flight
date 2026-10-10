@@ -5,8 +5,9 @@
 Stable Flight is pre-release (0.x). Only `main` gets fixes; there are no maintained release
 branches yet.
 
-Stable Flight is experimental and flies in simulation. It is not certified or flight-proven, and
-it is not meant to fly a real aircraft near people or property.
+Stable Flight is experimental and flies in simulation; the ARK FPV firmware is not flight-ready.
+It is not certified or flight-proven, and it is not meant to fly a real aircraft near people or
+property.
 
 ## Reporting a vulnerability
 
