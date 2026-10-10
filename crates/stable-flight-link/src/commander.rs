@@ -32,7 +32,7 @@ mod tests;
 ///   command.
 ///
 /// Wrap it in a [`FailsafeCommander`](stable_flight::commanders::FailsafeCommander) so a stale
-/// link falls back. Until a command arrives it flies a neutral [`ControlInput::default`], and
+/// link falls back and a land disarms on touchdown. Until a command arrives it flies a neutral [`ControlInput::default`], and
 /// it starts disarmed.
 ///
 /// # Examples

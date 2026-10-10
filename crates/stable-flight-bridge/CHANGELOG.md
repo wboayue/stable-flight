@@ -29,6 +29,8 @@ not each change; per-change entries start after it.
   records.
 - **Arming:** `MAV_CMD_COMPONENT_ARM_DISARM` forwarded as `Control::Arm`, acked once the flight
   controller's heartbeat confirms it (`FAILED` after 1 s).
+- **Land:** `MAV_CMD_NAV_LAND` forwarded as a land at the latest position, acked once the
+  heartbeat shows the land mode; `EXTENDED_SYS_STATE` reports `LANDING` meanwhile.
 - **Setpoints:** `MANUAL_CONTROL` forwarded as attitude commands, and
   `SET_POSITION_TARGET_LOCAL_NED` (`LOCAL_NED`, position included) as waypoints capped at
   `--offboard-speed`, and `SET_ATTITUDE_TARGET` (attitude and thrust included; body rates

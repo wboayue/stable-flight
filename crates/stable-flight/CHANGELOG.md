@@ -45,7 +45,8 @@ not each change; per-change entries start after it.
   when it goes stale, returning after a recovery period; the fallback never arms, a disarm is
   always honored, the primary's arm is synced to the vehicle at the handover
   (`LinkedCommander::sync_arm`), and sticks take back an armed vehicle only once they move
-  (`takeover_stick_delta`), reporting `FailsafeState::AwaitingSticks` meanwhile.
+  (`takeover_stick_delta`), reporting `FailsafeState::AwaitingSticks` meanwhile; an armed land
+  the primary flies disarms on touchdown, syncing the primary.
   `ControlInput::is_sticks` names stick-style input and `is_stream` input that must keep
   arriving (sticks and absolute attitudes). `Commander::failsafe` reports the state into
   `TelemetryRecord::failsafe` (`FailsafeState`).

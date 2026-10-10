@@ -156,11 +156,13 @@ fn unit_quaternion([w, x, y, z]: [f32; 4]) -> Option<UnitQuaternion<f32>> {
     UnitQuaternion::try_new(q, MIN_QUATERNION_NORM)
 }
 
-/// Queues `input` for the flight controller. The command's `arm` is ignored there (arming is
-/// `Control::Arm`'s), so it is left `false`.
+/// Queues `input` for the flight controller.
 fn send(input: ControlInput, out: &mut Outbox) {
-    out.to_fc
-        .push(Uplink::Control(Control::Command(Command::new(
-            false, input,
-        ))));
+    out.to_fc.push(uplink(input));
+}
+
+/// `input` as a command for the flight controller. The command's `arm` is ignored there
+/// (arming is `Control::Arm`'s), so it is left `false`.
+pub(crate) fn uplink(input: ControlInput) -> Uplink {
+    Uplink::Control(Control::Command(Command::new(false, input)))
 }

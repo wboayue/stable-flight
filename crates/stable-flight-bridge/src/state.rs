@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use mavlink::common::*;
 use stable_flight_link::Record;
-use stable_flight_link::stable_flight::VehicleState;
+use stable_flight_link::stable_flight::{ControlMode, Vec2, VehicleState};
 use stable_flight_mavlink::{FlatEarth, GroundTracker};
 
 use crate::interval::Interval;
@@ -78,13 +78,23 @@ impl StateService {
         self.slow.start(now);
     }
 
-    /// A state from the flight controller, whose latest heartbeat reported `armed`.
-    pub(crate) fn on_state(&mut self, state: &VehicleState, armed: bool) {
+    /// A state from the flight controller, whose latest heartbeat reported `armed` in `mode`.
+    pub(crate) fn on_state(&mut self, state: &VehicleState, armed: bool, mode: ControlMode) {
         let session = &mut self.session;
-        let changes = session.ground.update(armed, state.position_m);
+        let changes = session.ground.update(armed, mode, state.position_m);
         session.home_changed |= changes.home;
         session.landed_changed |= changes.landed;
         session.latest = Some(state.clone());
+    }
+
+    /// The latest state's horizontal position (north, east), if finite; none before a state
+    /// since the flight controller last appeared.
+    pub(crate) fn position_m(&self) -> Option<Vec2> {
+        let position_m = self.session.latest.as_ref()?.position_m.xy();
+        position_m
+            .iter()
+            .all(|c| c.is_finite())
+            .then_some(position_m)
     }
 
     /// A record from the flight controller: its commanded thrust, for `VFR_HUD`.

@@ -4,7 +4,7 @@ use std::rc::Rc;
 use assert2::{assert, check};
 
 use super::*;
-use crate::{AbsoluteAttitudeCommand, AttitudeCommand, RateCommand};
+use crate::{AbsoluteAttitudeCommand, AttitudeCommand, LandCommand, RateCommand, Vec3};
 
 const DT: f32 = 0.1;
 
@@ -582,5 +582,116 @@ fn stick_movement_counts_any_axis_and_a_change_of_kind() {
     ];
     for (case, reference, now, moved) in cases {
         check!(sticks_moved(&reference, &now, 0.1) == moved, "{case}");
+    }
+}
+
+fn land() -> ControlInput {
+    ControlInput::Land(LandCommand::default())
+}
+
+fn sinking(vertical_speed_mps: f32) -> VehicleState {
+    VehicleState {
+        velocity_mps: Vec3::new(0.0, 0.0, vertical_speed_mps),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn disarms_on_touchdown_only_while_the_primary_flies_the_land() {
+    use FailsafeState::{Fallback as F, Primary as P};
+    // 0.35 s ticks: the detector needs 1 s stopped after the descent, so three stopped ticks;
+    // one fresh tick passes the 0.3 s recovery.
+    const TICK_S: f32 = 0.35;
+    let (fresh, stale) = (Some(0.0), Some(0.6));
+    let (mut commander, link, _) = failsafe();
+    // (case, since, Arm message, input if changed, vertical speed, expected state, arm)
+    let ticks = [
+        (
+            "hears the link: hands over",
+            fresh,
+            None,
+            Some(hover_at(5.0)),
+            0.0,
+            P,
+            false,
+        ),
+        ("arms", fresh, Some(true), None, 0.0, P, true),
+        ("land", fresh, None, Some(land()), 0.0, P, true),
+        ("descending", fresh, None, None, -0.7, P, true),
+        (
+            "the link drops: the hold flies",
+            stale,
+            None,
+            None,
+            0.0,
+            F,
+            true,
+        ),
+        ("hovering in the hold", stale, None, None, 0.0, F, true),
+        ("still hovering", stale, None, None, 0.0, F, true),
+        ("still hovering", stale, None, None, 0.0, F, true),
+        (
+            "the link is back: no disarm at the handover",
+            fresh,
+            None,
+            None,
+            0.0,
+            P,
+            true,
+        ),
+        (
+            "stopped, no descent since the land resumed",
+            fresh,
+            None,
+            None,
+            0.0,
+            P,
+            true,
+        ),
+        ("stopped", fresh, None, None, 0.0, P, true),
+        ("stopped", fresh, None, None, 0.0, P, true),
+        ("stopped", fresh, None, None, 0.0, P, true),
+        ("descending", fresh, None, None, -0.7, P, true),
+        ("stopped", fresh, None, None, 0.0, P, true),
+        ("stopped 0.7 s", fresh, None, None, 0.0, P, true),
+        (
+            "stopped 1.05 s: down, disarmed",
+            fresh,
+            None,
+            None,
+            0.0,
+            P,
+            false,
+        ),
+        ("stays disarmed", fresh, None, None, 0.0, P, false),
+        ("a new arm", fresh, Some(true), None, 0.0, P, true),
+        (
+            "re-armed on the ground: no new descent",
+            fresh,
+            None,
+            None,
+            0.0,
+            P,
+            true,
+        ),
+        ("still armed", fresh, None, None, 0.0, P, true),
+        ("still armed", fresh, None, None, 0.0, P, true),
+    ];
+    for (i, (case, since_s, arm, input, vertical_speed_mps, state, armed)) in
+        ticks.into_iter().enumerate()
+    {
+        link.since_s.set(since_s);
+        if let Some(arm) = arm {
+            link.arm.set(arm);
+        }
+        if input.is_some() {
+            link.input.set(input);
+        }
+        let command = commander.next_command(TICK_S, &sinking(vertical_speed_mps));
+        check!(commander.failsafe() == Some(state), "tick {i}: {case}");
+        check!(command.arm == armed, "tick {i}: {case}");
+        if case.ends_with("down, disarmed") {
+            check!(link.synced.get() == Some(false), "the primary synced");
+        }
     }
 }

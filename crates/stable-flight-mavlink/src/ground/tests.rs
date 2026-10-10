@@ -23,7 +23,7 @@ fn reports_home_and_landed_state_changes_with_height_measured_from_home() {
 
     let mut ground = GroundTracker::default();
     for (i, (armed, altitude_m, (home, landed), state)) in ticks.into_iter().enumerate() {
-        let changes = ground.update(armed, [0.0, 0.0, altitude_m].into());
+        let changes = ground.update(armed, ControlMode::Attitude, [0.0, 0.0, altitude_m].into());
         check!(changes == GroundChanges { home, landed }, "tick {i}");
         check!(ground.landed_state() == state, "tick {i}");
     }

@@ -23,7 +23,7 @@ not each change; per-change entries start after it.
   projection of local position for global position and home; `FlatEarth::new` rejects an
   out-of-range origin with `InvalidOrigin`.
 - **`HomeTracker`, `LandDetector`, and `GroundTracker`:** home latched at each arming, the
-  landed state from the arm state and height above home, and both together with change flags.
+  landed state from the arm state, height above home, and land mode (`LANDING`), and both together with change flags.
 - Builders return payloads (`*_DATA`) and take vehicle identity as a parameter.
 - **`mavlink` re-export**, so callers use the version the builders return.
 - **`testing` feature:** `testing::MockConnection`, a scripted `MavConnection` (receives in
