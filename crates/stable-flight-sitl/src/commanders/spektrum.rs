@@ -1,13 +1,39 @@
-//! Spektrum receiver module
-//! Receives control inputs from Spektrum radio attached to computer
-//! via USB dongle
+//! Spektrum transmitter commander.
+//!
+//! Reads a Spektrum transmitter bound to the [Spektrum WS3000T] wireless simulator dongle, which
+//! shows up as a generic HID gamepad. Its axes reach gilrs under gamepad names that don't match
+//! the physical sticks, so the mapping below is per dongle axis:
+//!
+//! | Transmitter channel | Dongle axis (gilrs)     | Command                         |
+//! |---------------------|-------------------------|---------------------------------|
+//! | Throttle            | `RightTrigger2` button  | throttle `[0, 1]`               |
+//! | Aileron             | `RightStickX`           | roll `[-1, 1]`, + right bank    |
+//! | Elevator            | `LeftStickY` (negated)  | pitch `[-1, 1]`, + nose up      |
+//! | Rudder              | `LeftStickX` (negated)  | yaw `[-1, 1]`, + right turn     |
+//! | Gear (arm switch)   | `RightStickY`           | arm above 0.5                   |
+//! | Mode switch         | `LeftTrigger2` button   | `AttitudeCommand::mode` `0..=2` |
+//!
+//! The `spektrum_commander` example prints the raw dongle values next to the command, to check
+//! the mapping and stick travel on a given setup.
+//!
+//! [Spektrum WS3000T]: https://www.spektrumrc.com/product/spektrum-ws3000t-wireless-simulator-usb-dongle/SPMWS3000T.html
 
 use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
 
-use crate::commanders::{CommanderError, open_gilrs};
+use crate::commanders::{CommanderError, open_gilrs, scale_signed, scale_value};
 use stable_flight::{AttitudeCommand, Command, Commander, ControlInput, VehicleState};
 
-/// [`Commander`] driven by a Spektrum transmitter connected over a USB dongle.
+/// Throttle button value at idle; the dongle doesn't reach 0.0.
+const THROTTLE_MIN: f32 = 0.1;
+/// Throttle button value at full; the dongle doesn't reach 1.0.
+const THROTTLE_MAX: f32 = 0.9;
+/// Aileron axis travel each side of center; full stick reads about this, not 1.0.
+const ROLL_HALF_RANGE: f32 = 0.7;
+/// Elevator and rudder axis travel each side of center.
+const PITCH_YAW_HALF_RANGE: f32 = 0.65;
+
+/// [`Commander`] driven by a Spektrum transmitter through the WS3000T USB dongle (see the
+/// [module docs](self) for the channel mapping).
 pub struct SpektrumCommander {
     gilrs: Gilrs,
     active_gamepad: Option<GamepadId>,
@@ -38,13 +64,13 @@ impl SpektrumCommander {
         })
     }
 
-    /// Read control channels from Spektrum radio
-    /// 0: throttle (right trigger)
-    /// 1: roll (right stick x)
-    /// 2: pitch (left stick y)
-    /// 3: yaw (left stick x)
-    /// 4: arm (right stick y)
-    /// 5: mode (left trigger)  
+    /// Reads the control channels, all `0.0` until the dongle's first event:
+    /// - `[0]`: throttle, `0.0` to `1.0`
+    /// - `[1]`: roll, `-1.0` (left) to `1.0` (right)
+    /// - `[2]`: pitch, `-1.0` (nose down) to `1.0` (nose up)
+    /// - `[3]`: yaw, `-1.0` (left) to `1.0` (right)
+    /// - `[4]`: arm, `0.0` or `1.0`
+    /// - `[5]`: mode switch, `0.0`, `0.5`, or `1.0`
     pub fn read_channels(&mut self) -> [f32; 6] {
         while let Some(Event { id, .. }) = self.gilrs.next_event() {
             self.active_gamepad = Some(id);
@@ -56,19 +82,19 @@ impl SpektrumCommander {
             let gamepad = self.gilrs.gamepad(id);
 
             if let Some(data) = gamepad.button_data(Button::RightTrigger2) {
-                channels[0] = scale_value(data.value(), 0.1, 0.9);
+                channels[0] = throttle_channel(data.value());
             }
 
             if let Some(data) = gamepad.axis_data(Axis::RightStickX) {
-                channels[1] = scale_value(data.value(), -0.7, 0.7);
+                channels[1] = roll_channel(data.value());
             }
 
             if let Some(data) = gamepad.axis_data(Axis::LeftStickY) {
-                channels[2] = 1.0 - scale_value(data.value(), -0.65, 0.65);
+                channels[2] = pitch_channel(data.value());
             }
 
             if let Some(data) = gamepad.axis_data(Axis::LeftStickX) {
-                channels[3] = 1.0 - scale_value(data.value(), -0.65, 0.65);
+                channels[3] = yaw_channel(data.value());
             }
 
             if let Some(data) = gamepad.axis_data(Axis::RightStickY) {
@@ -127,15 +153,30 @@ fn arm_channel(value: f32) -> f32 {
     if value > ARM_THRESHOLD { 1.0 } else { 0.0 }
 }
 
-/// Maps `value` from `[min, max]` to `[0, 1]`, clamped: the configured ranges are narrower than
-/// the stick's physical travel (e.g. ±0.7 of ±1.0), so unclamped values overshoot to ~1.2.
-fn scale_value(value: f32, min: f32, max: f32) -> f32 {
-    ((value - min) / (max - min)).clamp(0.0, 1.0)
+/// Maps the throttle button to `[0, 1]`.
+fn throttle_channel(value: f32) -> f32 {
+    scale_value(value, THROTTLE_MIN, THROTTLE_MAX)
+}
+
+/// Maps the aileron axis to roll, `+` for a right bank.
+fn roll_channel(value: f32) -> f32 {
+    scale_signed(value, ROLL_HALF_RANGE)
+}
+
+/// Maps the elevator axis to pitch, `+` for nose up: the axis reads negative with the stick
+/// pulled back.
+fn pitch_channel(value: f32) -> f32 {
+    -scale_signed(value, PITCH_YAW_HALF_RANGE)
+}
+
+/// Maps the rudder axis to yaw, `+` for a right turn: the axis reads negative with right rudder.
+fn yaw_channel(value: f32) -> f32 {
+    -scale_signed(value, PITCH_YAW_HALF_RANGE)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{arm_channel, scale_value};
+    use super::{arm_channel, pitch_channel, roll_channel, throttle_channel, yaw_channel};
 
     /// Only a deliberate switch throw arms; centered (or never-read) stays disarmed.
     #[test]
@@ -154,22 +195,36 @@ mod tests {
         }
     }
 
+    /// Centered sticks command level, wings-flat, no-yaw flight (#65: they read 0.5, a constant
+    /// bank), and each axis reaches full deflection with the `AttitudeCommand` sign.
+    /// One axis mapping: raw dongle value to command.
+    type Channel = fn(f32) -> f32;
+
     #[test]
-    fn scale_value_maps_to_unit_range_and_clamps_overshoot() {
-        // (value, min, max, expected)
-        let cases = [
-            (0.0, -0.7, 0.7, 0.5),
-            (0.7, -0.7, 0.7, 1.0),
-            (-0.7, -0.7, 0.7, 0.0),
-            (1.0, -0.7, 0.7, 1.0), // full physical travel past the configured range
-            (-1.0, -0.7, 0.7, 0.0),
-            (0.95, 0.1, 0.9, 1.0),
+    fn sticks_map_to_signed_unit_range() {
+        // (axis, raw dongle value, expected command)
+        let cases: [(&str, Channel, f32, f32); 15] = [
+            ("roll", roll_channel, 0.0, 0.0),
+            ("roll", roll_channel, 0.7, 1.0), // right stick: right bank
+            ("roll", roll_channel, -0.7, -1.0),
+            ("roll", roll_channel, 1.0, 1.0), // past the configured travel
+            ("pitch", pitch_channel, 0.0, 0.0),
+            ("pitch", pitch_channel, -0.65, 1.0), // stick back: nose up
+            ("pitch", pitch_channel, 0.65, -1.0),
+            ("pitch", pitch_channel, -1.0, 1.0),
+            ("yaw", yaw_channel, 0.0, 0.0),
+            ("yaw", yaw_channel, -0.65, 1.0), // right rudder: right turn
+            ("yaw", yaw_channel, 0.65, -1.0),
+            ("yaw", yaw_channel, 1.0, -1.0),
+            ("throttle", throttle_channel, 0.1, 0.0),
+            ("throttle", throttle_channel, 0.5, 0.5),
+            ("throttle", throttle_channel, 0.95, 1.0),
         ];
-        for (value, min, max, expected) in cases {
-            let scaled = scale_value(value, min, max);
+        for (axis, channel, raw, expected) in cases {
+            let command = channel(raw);
             assert!(
-                (scaled - expected).abs() < 1e-6,
-                "scale_value({value}, {min}, {max}) = {scaled}, expected {expected}"
+                (command - expected).abs() < 1e-6,
+                "{axis}({raw}) = {command}, expected {expected}"
             );
         }
     }

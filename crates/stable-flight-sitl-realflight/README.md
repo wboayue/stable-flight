@@ -48,6 +48,8 @@ Run these from the repository root (`just fly-manual` / `just fly-auto` / `just 
 # Joystick (Logitech Extreme 3D); RealFlight host defaults to 10.211.55.3:8080
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --host 192.168.1.20:8080
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --link-peer 192.168.1.30:14561
+# Spektrum transmitter through the WS3000T dongle instead
+cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --commander spektrum
 
 # Scripted figure-eight (script path is the first argument): flies it once, then hovers; --loop repeats it
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv
@@ -62,4 +64,4 @@ cargo run -p stable-flight-sitl-realflight --example capture-state-realflight --
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --script flights/hover.csv
 ```
 
-Joystick flights start disarmed: the motors stay off until you arm (Extreme 3D: top trigger; base button disarms). Scripted flights are armed from the first tick. The companion example arms only when the link says so (`Control::Arm`), never from its hold fallback.
+Joystick flights start disarmed: the motors stay off until you arm (Extreme 3D: top trigger; base button disarms. Spektrum: gear switch). Scripted flights are armed from the first tick. The companion example arms only when the link says so (`Control::Arm`), never from its hold fallback.

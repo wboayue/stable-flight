@@ -518,7 +518,7 @@ fn nan_primed_heading_relatches_from_a_valid_estimate() {
     );
 }
 
-/// Regression: out-of-range stick input (e.g. the Spektrum commander's unclamped channels) hit
+/// Regression: out-of-range stick input (e.g. the Spektrum commander's once-unclamped channels) hit
 /// the attitude path's range `assert!`s and the mixer's, panicking the loop. Each row
 /// must now stabilize exactly like its saturated equivalent.
 #[test]

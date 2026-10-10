@@ -71,7 +71,7 @@
 
 use gilrs::{Axis, Button, Event, EventType, GamepadId, Gilrs};
 
-use crate::commanders::{CommanderError, open_gilrs};
+use crate::commanders::{CommanderError, open_gilrs, scale_value};
 use stable_flight::{AttitudeCommand, Command, Commander, ControlInput, RateCommand, VehicleState};
 
 /// Hardware code for the throttle axis on the Extreme 3D Pro.
@@ -284,8 +284,7 @@ impl Extreme3DCommander {
             match event {
                 EventType::AxisChanged(_, value, code) if code.into_u32() == THROTTLE_CODE => {
                     // Throttle is inverted (1.0 at bottom, 0.0 at top) and scaled
-                    self.channels[0] =
-                        1.0 - scale_value(value, THROTTLE_MIN, THROTTLE_MAX).clamp(0.0, 1.0);
+                    self.channels[0] = 1.0 - scale_value(value, THROTTLE_MIN, THROTTLE_MAX);
                 }
                 EventType::ButtonChanged(Button::North, 1.0, _) => {
                     self.channels[4] = 1.0;
@@ -373,32 +372,6 @@ impl Commander for Extreme3DCommander {
         };
         Command::new(arm, input)
     }
-}
-
-/// Scales a value from an arbitrary range to 0.0-1.0.
-///
-/// # Parameters
-///
-/// - `value`: The input value to scale
-/// - `min`: The minimum value of the input range
-/// - `max`: The maximum value of the input range
-///
-/// # Returns
-///
-/// A value scaled to the range [0.0, 1.0], where `min` maps to 0.0 and `max` maps to 1.0.
-///
-/// # Examples
-///
-/// ```
-/// # fn scale_value(value: f32, min: f32, max: f32) -> f32 {
-/// #     (value - min) / (max - min)
-/// # }
-/// assert_eq!(scale_value(0.0, -1.0, 1.0), 0.5);
-/// assert_eq!(scale_value(-1.0, -1.0, 1.0), 0.0);
-/// assert_eq!(scale_value(1.0, -1.0, 1.0), 1.0);
-/// ```
-fn scale_value(value: f32, min: f32, max: f32) -> f32 {
-    (value - min) / (max - min)
 }
 
 /// Applies a scaled dead zone to a control input value.
@@ -604,26 +577,6 @@ mod tests {
                 result
             );
         }
-    }
-
-    /// Tests the scale_value helper function.
-    #[test]
-    fn test_scale_value() {
-        // Test scaling from [-1, 1] to [0, 1]
-        assert_eq!(scale_value(-1.0, -1.0, 1.0), 0.0);
-        assert_eq!(scale_value(0.0, -1.0, 1.0), 0.5);
-        assert_eq!(scale_value(1.0, -1.0, 1.0), 1.0);
-
-        // Test scaling from [THROTTLE_MIN, THROTTLE_MAX] to [0, 1]
-        let scaled_min = scale_value(THROTTLE_MIN, THROTTLE_MIN, THROTTLE_MAX);
-        let scaled_max = scale_value(THROTTLE_MAX, THROTTLE_MIN, THROTTLE_MAX);
-        assert!((scaled_min - 0.0).abs() < 1e-6);
-        assert!((scaled_max - 1.0).abs() < 1e-6);
-
-        // Test scaling from arbitrary range
-        assert_eq!(scale_value(5.0, 0.0, 10.0), 0.5);
-        assert_eq!(scale_value(0.0, 0.0, 10.0), 0.0);
-        assert_eq!(scale_value(10.0, 0.0, 10.0), 1.0);
     }
 
     /// Tests that dead zone constants are within valid ranges.

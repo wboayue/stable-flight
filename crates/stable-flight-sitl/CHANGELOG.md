@@ -18,7 +18,8 @@ not each change; per-change entries start after it.
 - **Commanders:**
   - `Extreme3DCommander`: Logitech Extreme 3D joystick; attitude/rate modes on the hat, arm
     and disarm buttons.
-  - `SpektrumCommander`: Spektrum transmitter via a USB dongle.
+  - `SpektrumCommander`: Spektrum transmitter via the WS3000T USB dongle; signed stick axes,
+    arm on the gear switch.
   - `ScriptCommander`: CSV waypoint scripts (`x,y,altitude,cruise_speed`) over the core
     `WaypointFollower`; loop or hold at the end; `load_waypoints` for other tools.
 
@@ -27,6 +28,7 @@ not each change; per-change entries start after it.
 - No telemetry publisher of its own: SITL telemetry goes over the native link
   (`stable-flight-link`), and `stable-flight-bridge` translates it to MAVLink.
 - Re-exports the core crate as `stable_flight_sitl::stable_flight`.
-- Example: `extreme_3d_commander` (joystick smoke test).
+- Examples: `extreme_3d_commander` (joystick smoke test), `spektrum_commander` (raw dongle
+  values next to the command, for checking the mapping).
 
 [unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight-sitl
