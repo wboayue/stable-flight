@@ -41,12 +41,13 @@ not each change; per-change entries start after it.
   end, flies legs at cruise speed, advances past a waypoint missed wide; `RouteEnd::Land`
   disarms on touchdown). `TouchdownDetector` decides touchdown during a land from the vertical
   speed (a descent, then stopped for 1 s). `FailsafeCommander` flies a
-  link-fed `LinkedCommander` and falls back to a `Fallback` (`HoldCommander`: hold position)
+  link-fed `LinkedCommander` and falls back to a `Fallback` (`HoldCommander`: hold position,
+  or finish an armed land the link dropped)
   when it goes stale, returning after a recovery period; the fallback never arms, a disarm is
   always honored, the primary's arm is synced to the vehicle at the handover
   (`LinkedCommander::sync_arm`), and sticks take back an armed vehicle only once they move
   (`takeover_stick_delta`), reporting `FailsafeState::AwaitingSticks` meanwhile; an armed land
-  the primary flies disarms on touchdown, syncing the primary.
+  disarms on touchdown, syncing the primary, whichever commander flies it.
   `ControlInput::is_sticks` names stick-style input and `is_stream` input that must keep
   arriving (sticks and absolute attitudes). `Commander::failsafe` reports the state into
   `TelemetryRecord::failsafe` (`FailsafeState`).

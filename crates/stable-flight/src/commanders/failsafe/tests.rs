@@ -71,10 +71,10 @@ impl Commander for Recorder {
 }
 
 impl Fallback for Recorder {
-    fn engage(&mut self, _state: &VehicleState, armed: bool) {
-        self.armed = armed;
+    fn engage(&mut self, _state: &VehicleState, last: &Command) {
+        self.armed = last.arm;
         self.script.engaged.set(self.script.engaged.get() + 1);
-        self.script.engaged_armed.set(Some(armed));
+        self.script.engaged_armed.set(Some(last.arm));
     }
 
     fn can_release(&self) -> bool {
@@ -82,7 +82,14 @@ impl Fallback for Recorder {
     }
 }
 
-/// A failsafe over the scripted link and recorder, with a 0.5 s timeout and 0.3 s recovery.
+/// A 0.5 s timeout and 0.3 s recovery.
+const CONFIG: FailsafeConfig = FailsafeConfig {
+    timeout_s: 0.5,
+    recover_after_s: 0.3,
+    takeover_stick_delta: 0.1,
+};
+
+/// A failsafe over the scripted link and recorder, per [`CONFIG`].
 fn failsafe() -> (
     FailsafeCommander<Link, Recorder>,
     Rc<LinkScript>,
@@ -100,11 +107,7 @@ fn failsafe() -> (
             script: fallback.clone(),
             armed: false,
         },
-        FailsafeConfig {
-            timeout_s: 0.5,
-            recover_after_s: 0.3,
-            takeover_stick_delta: 0.1,
-        },
+        CONFIG,
     )
     .expect("valid config");
     (commander, link, fallback)
@@ -364,7 +367,7 @@ fn hold_latches_where_it_was_engaged_and_never_arms() {
     ];
     for (case, engaged_at, armed, flown_from, (x, y, altitude)) in cases {
         let mut hold = HoldCommander::new(1.5).expect("valid speed");
-        hold.engage(&engaged_at, armed);
+        hold.engage(&engaged_at, &Command::new(armed, hover_at(20.0)));
         let (target, arm) = hold_target(&mut hold, &flown_from);
         check!(arm == armed, "{case}: keeps the arm state");
         check!(
@@ -379,7 +382,7 @@ fn hold_latches_where_it_was_engaged_and_never_arms() {
 #[test]
 fn hold_retries_the_latch_until_the_position_is_finite() {
     let mut hold = HoldCommander::default();
-    hold.engage(&at(f32::NAN, 0.0, 5.0), true);
+    hold.engage(&at(f32::NAN, 0.0, 5.0), &Command::new(true, hover_at(20.0)));
 
     let (target, arm) = hold_target(&mut hold, &at(0.0, f32::NAN, 5.0));
     check!(arm);
@@ -393,6 +396,40 @@ fn hold_retries_the_latch_until_the_position_is_finite() {
     check!((target.position_m.x, target.position_m.y, target.altitude_m) == (7.0, 8.0, 9.0));
     let (target, _) = hold_target(&mut hold, &at(0.0, 0.0, 0.0));
     check!(target.altitude_m == 9.0, "latched once finite");
+}
+
+#[test]
+fn hold_finishes_an_armed_land_and_holds_otherwise() {
+    let land_at = ControlInput::Land(LandCommand {
+        position_m: Vec2::new(1.0, 2.0),
+    });
+    // (case, last command, lands)
+    let cases = [
+        ("armed land", Command::new(true, land_at), true),
+        (
+            "disarmed land: nothing to finish",
+            Command::new(false, land_at),
+            false,
+        ),
+        ("armed hover", Command::new(true, hover_at(20.0)), false),
+    ];
+    for (case, last, lands) in cases {
+        let mut hold = HoldCommander::default();
+        hold.engage(&at(0.0, 0.0, 0.0), &Command::new(true, land_at));
+        hold.engage(&at(3.0, 4.0, 10.0), &last); // re-engaged: forgets the earlier land
+        check!(hold.is_landing() == lands, "{case}");
+        let command = hold.next_command(DT, &at(5.0, 5.0, 8.0));
+        check!(command.arm == last.arm, "{case}: keeps the arm state");
+        if lands {
+            check!(command.input == land_at, "{case}: the same land");
+        } else {
+            let (target, _) = hold_target(&mut hold, &at(5.0, 5.0, 8.0));
+            check!(
+                (target.position_m.x, target.position_m.y, target.altitude_m) == (3.0, 4.0, 10.0),
+                "{case}: holds where engaged"
+            );
+        }
+    }
 }
 
 #[test]
@@ -693,5 +730,119 @@ fn disarms_on_touchdown_only_while_the_primary_flies_the_land() {
         if case.ends_with("down, disarmed") {
             check!(link.synced.get() == Some(false), "the primary synced");
         }
+    }
+}
+
+/// The link drops during an armed land: the hold finishes it, and the failsafe disarms on
+/// touchdown, keeping the descent it saw before the drop (#263).
+#[test]
+fn the_hold_finishes_a_land_the_link_dropped() {
+    use FailsafeState::{Fallback as F, Primary as P};
+    // As above: 0.35 s ticks, so three stopped ticks touch down and one fresh tick recovers.
+    const TICK_S: f32 = 0.35;
+    let (fresh, stale) = (Some(0.0), Some(0.6));
+    // (case, since, Arm message, input if changed, vertical speed, expected state, arm)
+    type Row = (
+        &'static str,
+        Option<f32>,
+        Option<bool>,
+        Option<ControlInput>,
+        f32,
+        FailsafeState,
+        bool,
+    );
+    let armed_land: [Row; 4] = [
+        (
+            "hears the link",
+            fresh,
+            None,
+            Some(hover_at(5.0)),
+            0.0,
+            P,
+            false,
+        ),
+        ("arms", fresh, Some(true), None, 0.0, P, true),
+        ("land", fresh, None, Some(land()), 0.0, P, true),
+        ("descending", fresh, None, None, -0.7, P, true),
+    ];
+    let scenarios: [(&str, &[Row]); 2] = [
+        (
+            "dropped mid-descent",
+            &[
+                ("the link drops: lands on", stale, None, None, -0.7, F, true),
+                ("stopped", stale, None, None, 0.0, F, true),
+                ("stopped 0.7 s", stale, None, None, 0.0, F, true),
+                (
+                    "stopped 1.05 s: down, disarmed",
+                    stale,
+                    None,
+                    None,
+                    0.0,
+                    F,
+                    false,
+                ),
+                ("stays disarmed", stale, None, None, 0.0, F, false),
+                (
+                    "the link is back, disarmed",
+                    fresh,
+                    None,
+                    None,
+                    0.0,
+                    P,
+                    false,
+                ),
+            ],
+        ),
+        (
+            "dropped on the ground before touchdown",
+            &[
+                ("stopped", fresh, None, None, 0.0, P, true),
+                ("stopped 0.7 s", fresh, None, None, 0.0, P, true),
+                (
+                    "the link drops at 1.05 s: down, disarmed",
+                    stale,
+                    None,
+                    None,
+                    0.0,
+                    F,
+                    false,
+                ),
+                ("stays disarmed", stale, None, None, 0.0, F, false),
+            ],
+        ),
+    ];
+    for (scenario, rows) in scenarios {
+        let link = Rc::new(LinkScript::default());
+        let mut commander =
+            FailsafeCommander::new(Link(link.clone()), HoldCommander::default(), CONFIG)
+                .expect("valid config");
+        for (i, (case, since_s, arm, input, vertical_speed_mps, state, armed)) in
+            armed_land.iter().chain(rows).enumerate()
+        {
+            link.since_s.set(*since_s);
+            if let Some(arm) = arm {
+                link.arm.set(*arm);
+            }
+            if input.is_some() {
+                link.input.set(*input);
+            }
+            let command = commander.next_command(TICK_S, &sinking(*vertical_speed_mps));
+            check!(
+                commander.failsafe() == Some(*state),
+                "{scenario}: tick {i}: {case}"
+            );
+            check!(command.arm == *armed, "{scenario}: tick {i}: {case}");
+            if i >= 2 {
+                check!(
+                    command.input == land(),
+                    "{scenario}: tick {i}: {case}: lands"
+                );
+            }
+        }
+        check!(commander.fallback().is_landing(), "{scenario}");
+        check!(
+            link.synced.get() == Some(false),
+            "{scenario}: the primary synced"
+        );
     }
 }
