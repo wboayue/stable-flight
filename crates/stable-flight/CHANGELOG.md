@@ -33,7 +33,7 @@ not each change; per-change entries start after it.
     heading-hold target, thrust not boosted);
   - heading carried across mode switches.
 - **Copter stabilizer** (`CopterStabilizer`): cascaded attitude/heading → body-rate PID, with
-  a thrust curve. **Controllers** (`controllers`): altitude, lateral, attitude, yaw, and body
+  a thrust curve; a non-finite gyro axis zeroes only its own moment. **Controllers** (`controllers`): altitude, lateral, attitude, yaw, and body
   rate, with validated configs (`InvalidConfig`).
 - **Mixers:** `QuadCopterMixer` with airmode-style desaturation (moments kept, collective gives
   way, no lift at zero thrust); `TailSitterMixer` placeholder.

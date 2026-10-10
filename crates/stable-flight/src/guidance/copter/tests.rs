@@ -2,7 +2,7 @@ use crate::{Vec2, Vec3};
 
 use super::*;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
-use crate::{ControlOutput, RateCommand, Stabilizer};
+use crate::{ControlOutput, RateCommand, RateSetpoint, Stabilizer};
 use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
 /// Guidance and stabilizer run back to back, as `FlightLoop` does, for end-to-end checks of
