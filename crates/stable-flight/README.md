@@ -131,7 +131,7 @@ The `serde` feature derives `Serialize`/`Deserialize` on the pipeline data (`Com
 
 ### Mixer
 
-Mixers convert control outputs into motor commands and control surface movements:
+Mixers convert control outputs into an `ActuatorCommand`: generic `motors` (0–1) and `servos` (-1–1) slots whose meaning the mixer sets, and which the backend maps to output channels:
 
 ```rust
 let mixer = QuadCopterMixer::default();

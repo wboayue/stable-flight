@@ -1347,78 +1347,43 @@ pub struct TelemetryRecord<'a> {
     pub failsafe: Option<FailsafeState>,
 }
 
-/// Represents commands sent to the vehicle's actuators.
+/// One tick's actuator outputs: motors and servos, as generic slots.
 ///
-/// This struct encapsulates all possible actuation commands for various vehicle types,
-/// including multirotor motors, fixed-wing control surfaces, and hybrid configurations.
-/// Not all fields will be used for every vehicle type; the specific mapping is determined
-/// by the `Mixer` implementation.
+/// The [`Mixer`] decides what each slot does (motor `0` is front-right, servo `0` is the tail
+/// tilt, …); the backend's mapping decides which output channel each slot drives. Slots a mixer
+/// doesn't use stay at their default.
+///
+/// The default (all zeros: motors off, servos centered) is what [`FlightLoop`] actuates while
+/// disarmed.
 ///
 /// # Examples
 ///
-/// Creating actuator commands for a quadcopter:
+/// A quadcopter uses the first four motors:
 /// ```
 /// use stable_flight::ActuatorCommand;
 ///
 /// let mut cmd = ActuatorCommand::default();
-/// cmd.motors = [0.5, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0]; // Four motors at 50% power
+/// cmd.motors[..4].copy_from_slice(&[0.5; 4]); // Four motors at 50% power
 /// ```
 ///
-/// Creating actuator commands for a fixed-wing aircraft:
+/// A tricopter adds a tail servo for yaw:
 /// ```
 /// use stable_flight::ActuatorCommand;
 ///
 /// let mut cmd = ActuatorCommand::default();
-/// cmd.throttle = 0.7;    // 70% throttle
-/// cmd.elevator = 0.1;    // Slight up elevator
-/// cmd.aileron = -0.05;   // Slight left roll
-/// cmd.rudder = 0.0;      // No rudder
+/// cmd.motors[..3].copy_from_slice(&[0.5; 3]);
+/// cmd.servos[0] = 0.2; // Tail tilted for a slight yaw
 /// ```
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ActuatorCommand {
-    /// Motor output values, ranging from 0.0 (off) to 1.0 (full power).
-    /// For multirotors, the specific mapping of array indices to physical motors
-    /// depends on the vehicle configuration and mixer.
+    /// Motor outputs, from 0.0 (off) to 1.0 (full power). The mixer sets which physical motor
+    /// each index is.
     pub motors: [f32; 8],
 
-    /// Rudder control value, ranging from -1.0 (full left) to 1.0 (full right).
-    /// Used primarily for fixed-wing aircraft.
-    pub rudder: f32,
-
-    /// Elevator control value, ranging from -1.0 (full down) to 1.0 (full up).
-    /// Used primarily for fixed-wing aircraft.
-    pub elevator: f32,
-
-    /// Aileron control value, ranging from -1.0 (roll left) to 1.0 (roll right).
-    /// Used primarily for fixed-wing aircraft.
-    pub aileron: f32,
-
-    /// Throttle control value, ranging from 0.0 (idle) to 1.0 (full power).
-    /// Used primarily for fixed-wing aircraft with a single motor/engine.
-    pub throttle: f32,
-
-    /// Left elevon control value, ranging from -1.0 to 1.0.
-    /// Used for flying wing or delta wing configurations.
-    pub elevon_left: f32,
-
-    /// Right elevon control value, ranging from -1.0 to 1.0.
-    /// Used for flying wing or delta wing configurations.
-    pub elevon_right: f32,
-}
-
-impl Default for ActuatorCommand {
-    fn default() -> Self {
-        ActuatorCommand {
-            motors: [0.0; 8],
-            rudder: 0.0,
-            elevator: 0.0,
-            aileron: 0.0,
-            throttle: 0.0,
-            elevon_left: 0.0,
-            elevon_right: 0.0,
-        }
-    }
+    /// Servo outputs, from -1.0 to 1.0, with 0.0 centered. The mixer sets what each index moves
+    /// (a control surface, a tilt servo).
+    pub servos: [f32; 8],
 }
 
 // == Mixers ==
@@ -1433,7 +1398,7 @@ impl Default for ActuatorCommand {
 /// Implementors of this trait may include:
 /// - **Quadcopter mixers**: Map controls to four motors in different configurations (X, +)
 /// - **Hexacopter mixers**: Map controls to six motors
-/// - **Fixed-wing mixers**: Map controls to throttle, ailerons, elevator, and rudder
+/// - **Fixed-wing mixers**: Map controls to a throttle motor and control-surface servos
 pub trait Mixer {
     /// Transforms abstract control outputs into specific actuator commands.
     ///
@@ -1449,12 +1414,12 @@ pub trait Mixer {
     /// # Returns
     ///
     /// An [`ActuatorCommand`] containing specific actuator settings appropriate for the
-    /// vehicle's physical configuration. Depending on the vehicle type, different fields
-    /// in the returned struct will be populated:
+    /// vehicle's physical configuration. The mixer assigns each `motors` and `servos` slot its
+    /// meaning; slots it doesn't use stay at their default:
     ///
-    /// * For multicopters: Primarily the `motors` array
-    /// * For fixed-wing: `throttle`, `aileron`, `elevator`, and `rudder`
-    /// * For hybrid vehicles: Combination of the above
+    /// * For multicopters: the `motors` array
+    /// * For fixed-wing: a throttle motor, with control surfaces on `servos`
+    /// * For tilting or hybrid vehicles: both
     ///
     /// # Examples
     ///
