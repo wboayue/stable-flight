@@ -220,6 +220,7 @@ impl Bridge {
             MavMessage::SET_POSITION_TARGET_LOCAL_NED(data) => {
                 self.setpoints.on_position_target(data, out);
             }
+            MavMessage::SET_ATTITUDE_TARGET(data) => self.setpoints.on_attitude_target(data, out),
             MavMessage::COMMAND_LONG(data) => {
                 let fc_armed = self.alive_fc(now).map(|fc| fc.armed);
                 let handled = self.connect.on_command_long(header, data, out)
@@ -285,6 +286,7 @@ fn target(msg: &MavMessage) -> Option<(u8, u8)> {
         // `MANUAL_CONTROL` names only the system.
         MavMessage::MANUAL_CONTROL(d) => Some((d.target, 0)),
         MavMessage::SET_POSITION_TARGET_LOCAL_NED(d) => Some((d.target_system, d.target_component)),
+        MavMessage::SET_ATTITUDE_TARGET(d) => Some((d.target_system, d.target_component)),
         _ => None,
     }
 }

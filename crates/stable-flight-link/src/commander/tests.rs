@@ -1,6 +1,6 @@
 use assert2::check;
 use heapless::spsc::Queue;
-use stable_flight::{AttitudeCommand, RateCommand, WaypointCommand};
+use stable_flight::{AbsoluteAttitudeCommand, AttitudeCommand, RateCommand, WaypointCommand};
 
 use super::*;
 
@@ -21,6 +21,16 @@ fn waypoint(altitude_m: f32) -> Control {
         false, // ignored
         ControlInput::Waypoint(WaypointCommand {
             altitude_m,
+            ..Default::default()
+        }),
+    ))
+}
+
+fn absolute(roll_rad: f32) -> Control {
+    Control::Command(Command::new(
+        false, // ignored
+        ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+            roll_rad,
             ..Default::default()
         }),
     ))
@@ -119,7 +129,7 @@ fn flies_the_latest_command_armed_only_by_arm_messages() {
 }
 
 #[test]
-fn sticks_stay_fresh_only_on_commands_waypoints_on_any_message() {
+fn streams_stay_fresh_only_on_commands_waypoints_on_any_message() {
     // (case, messages before the tick, expected since_update_s)
     let ticks = [
         (
@@ -157,6 +167,13 @@ fn sticks_stay_fresh_only_on_commands_waypoints_on_any_message() {
             vec![Control::Heartbeat],
             Some(DT),
         ),
+        ("an offboard attitude", vec![absolute(0.1)], Some(0.0)),
+        (
+            "is a stream too: heartbeats don't refresh it",
+            vec![Control::Heartbeat],
+            Some(DT),
+        ),
+        ("its next command does", vec![absolute(0.2)], Some(0.0)),
     ];
 
     let mut queue = Queue::<Control, 8>::new();

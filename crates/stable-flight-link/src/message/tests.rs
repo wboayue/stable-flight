@@ -3,9 +3,9 @@ use core::time::Duration;
 use assert2::check;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{
-    ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command, ControlInput, ControlMode,
-    ControlOutput, FailsafeState, RateCommand, RateSetpoint, Saturation, Setpoint, TelemetryRecord,
-    Vec2, Vec3, VehicleState, WaypointCommand,
+    AbsoluteAttitudeCommand, ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command,
+    ControlInput, ControlMode, ControlOutput, FailsafeState, RateCommand, RateSetpoint, Saturation,
+    Setpoint, TelemetryRecord, Vec2, Vec3, VehicleState, WaypointCommand,
 };
 
 use super::*;
@@ -93,6 +93,15 @@ fn every_uplink_variant_round_trips() {
                 throttle: 0.4,
                 roll_rate: 0.1,
                 ..Default::default()
+            }),
+        ))),
+        Uplink::Control(Control::Command(Command::new(
+            false,
+            ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+                roll_rad: 0.1,
+                pitch_rad: -0.2,
+                heading_rad: 3.0,
+                thrust: 0.45,
             }),
         ))),
         Uplink::Control(Control::Command(worst_case_record().command)),

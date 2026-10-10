@@ -4,7 +4,7 @@ use std::rc::Rc;
 use assert2::{assert, check};
 
 use super::*;
-use crate::{AttitudeCommand, RateCommand};
+use crate::{AbsoluteAttitudeCommand, AttitudeCommand, RateCommand};
 
 const DT: f32 = 0.1;
 
@@ -474,17 +474,29 @@ fn armed_then_lost(input: ControlInput) -> (FailsafeCommander<Link, Recorder>, R
     (commander, link)
 }
 
+/// Waypoints and offboard absolute attitudes aren't sticks: a recovered link flying one takes
+/// back an armed vehicle at once, unchanged (an app streaming a constant hover never "moves").
 #[test]
-fn a_waypoint_takes_back_an_armed_vehicle_at_once_and_stays_armed() {
-    let (mut commander, link) = armed_then_lost(hover_at(5.0));
-    let fresh = Some(0.0);
-    for _ in 0..2 {
-        step(&mut commander, &link, fresh, None, None);
+fn a_waypoint_or_absolute_attitude_takes_back_an_armed_vehicle_at_once_and_stays_armed() {
+    let absolute = ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+        thrust: 0.45,
+        ..Default::default()
+    });
+    for input in [hover_at(5.0), absolute] {
+        let (mut commander, link) = armed_then_lost(input);
+        let fresh = Some(0.0);
+        for _ in 0..2 {
+            step(&mut commander, &link, fresh, None, None);
+        }
+        let command = step(&mut commander, &link, fresh, None, None); // recovered: 0.3 s
+        check!(
+            commander.failsafe() == Some(FailsafeState::Primary),
+            "{input:?}"
+        );
+        check!(command.arm, "{input:?}: armed through the hold");
+        check!(command.input == input, "{input:?}");
+        check!(link.synced.get() == Some(true), "{input:?}");
     }
-    let command = step(&mut commander, &link, fresh, None, None); // recovered: 0.3 s
-    check!(commander.failsafe() == Some(FailsafeState::Primary));
-    check!(command.arm, "armed through the hold");
-    check!(link.synced.get() == Some(true));
 }
 
 #[test]

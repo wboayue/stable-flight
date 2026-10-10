@@ -30,7 +30,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     `ConnectService` (`connect.rs`: heartbeat, `AUTOPILOT_VERSION`, `COMPONENT_METADATA`,
     missions), `CommandService` (`commands.rs`: arm/disarm, acked on the FC's heartbeat),
     `SetpointService` (`setpoints.rs`: `MANUAL_CONTROL` → attitude, `SET_POSITION_TARGET_LOCAL_NED`
-    → waypoint), and
+    → waypoint, `SET_ATTITUDE_TARGET` → absolute attitude), and
     `StateService` (`state.rs`: attitude, positions, home, landed state, `VFR_HUD`, paced by
     `Interval`, `interval.rs`), which queue into an `Outbox` (`outbox.rs`); payload builders in `encode.rs`. `Pump` (`pump.rs`) runs one
     I/O pass (read both sides, route, send) over generic link halves and a boxed GCS connection;

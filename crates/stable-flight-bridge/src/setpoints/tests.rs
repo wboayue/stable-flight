@@ -1,5 +1,7 @@
 use assert2::check;
 
+use stable_flight_link::stable_flight::wrap_angle;
+
 use super::*;
 
 fn sent(out: &Outbox) -> Vec<ControlInput> {
@@ -157,5 +159,126 @@ fn flies_local_ned_position_targets_as_waypoints() {
                 check!(waypoint.cruise_speed_mps == 3.0, "{case}");
             }
         }
+    }
+}
+
+fn attitude_target(q: [f32; 4], type_mask: AttitudeTargetTypemask) -> SET_ATTITUDE_TARGET_DATA {
+    SET_ATTITUDE_TARGET_DATA {
+        target_system: 1,
+        target_component: 1,
+        q,
+        body_roll_rate: 0.5,
+        body_pitch_rate: -0.5,
+        body_yaw_rate: 1.0,
+        thrust: 0.45,
+        type_mask,
+        ..Default::default()
+    }
+}
+
+/// The absolute attitude sent for `data`, or `None` if it was dropped.
+fn absolute_attitude(data: &SET_ATTITUDE_TARGET_DATA) -> Option<AbsoluteAttitudeCommand> {
+    let mut out = Outbox::default();
+    SetpointService::new(5.0).on_attitude_target(data, &mut out);
+    match sent(&out)[..] {
+        [] => None,
+        [ControlInput::AbsoluteAttitude(command)] => Some(command),
+        ref other => panic!("expected one absolute attitude, got {other:?}"),
+    }
+}
+
+#[test]
+fn converts_attitude_target_quaternions_to_angles() {
+    use std::f32::consts::{FRAC_1_SQRT_2, FRAC_PI_2, PI};
+    let (s, c) = (0.15_f32.sin(), 0.15_f32.cos()); // half of 0.3 rad
+    let combined = UnitQuaternion::from_euler_angles(0.2, -0.1, 2.5);
+    let rates = AttitudeTargetTypemask::empty(); // rates "included": still ignored
+    // (case, q [w, x, y, z], expected (roll, pitch, heading))
+    let cases = [
+        (
+            "identity: level, north",
+            [1.0, 0.0, 0.0, 0.0],
+            (0.0, 0.0, 0.0),
+        ),
+        ("roll right", [c, s, 0.0, 0.0], (0.3, 0.0, 0.0)),
+        ("nose up", [c, 0.0, s, 0.0], (0.0, 0.3, 0.0)),
+        (
+            "heading east",
+            [FRAC_1_SQRT_2, 0.0, 0.0, FRAC_1_SQRT_2],
+            (0.0, 0.0, FRAC_PI_2),
+        ),
+        ("heading south", [0.0, 0.0, 0.0, 1.0], (0.0, 0.0, PI)),
+        (
+            "combined",
+            [combined.w, combined.i, combined.j, combined.k],
+            (0.2, -0.1, 2.5),
+        ),
+        (
+            "not unit: normalized",
+            [2.0 * c, 2.0 * s, 0.0, 0.0],
+            (0.3, 0.0, 0.0),
+        ),
+    ];
+    for (case, q, (roll, pitch, heading)) in cases {
+        let Some(command) = absolute_attitude(&attitude_target(q, rates)) else {
+            panic!("{case}: dropped");
+        };
+        check!(
+            (command.roll_rad - roll).abs() < 1e-5,
+            "{case}: {command:?}"
+        );
+        check!(
+            (command.pitch_rad - pitch).abs() < 1e-5,
+            "{case}: {command:?}"
+        );
+        check!(
+            wrap_angle(command.heading_rad - heading).abs() < 1e-5,
+            "{case}: {command:?}"
+        );
+        check!(command.thrust == 0.45, "{case}");
+    }
+}
+
+#[test]
+fn drops_attitude_targets_it_cant_fly() {
+    use AttitudeTargetTypemask as M;
+    let level = [1.0, 0.0, 0.0, 0.0];
+    let rates = M::ATTITUDE_TARGET_TYPEMASK_BODY_ROLL_RATE_IGNORE
+        | M::ATTITUDE_TARGET_TYPEMASK_BODY_PITCH_RATE_IGNORE
+        | M::ATTITUDE_TARGET_TYPEMASK_BODY_YAW_RATE_IGNORE;
+    // (case, q, mask, flown)
+    let cases = [
+        ("attitude and thrust, rates ignored", level, rates, true),
+        ("rates requested: flown as angles", level, M::empty(), true),
+        (
+            "no attitude",
+            level,
+            M::ATTITUDE_TARGET_TYPEMASK_ATTITUDE_IGNORE,
+            false,
+        ),
+        (
+            "no throttle",
+            level,
+            rates | M::ATTITUDE_TARGET_TYPEMASK_THROTTLE_IGNORE,
+            false,
+        ),
+        (
+            "thrust as a body vector",
+            level,
+            rates | M::ATTITUDE_TARGET_TYPEMASK_THRUST_BODY_SET,
+            false,
+        ),
+        ("zero quaternion", [0.0; 4], rates, false),
+        ("NaN quaternion", [f32::NAN, 0.0, 0.0, 0.0], rates, false),
+        (
+            "infinite quaternion",
+            [f32::INFINITY, 0.0, 0.0, 0.0],
+            rates,
+            false,
+        ),
+    ];
+    for (case, q, mask, flown) in cases {
+        let command = absolute_attitude(&attitude_target(q, mask));
+        check!(command.is_some() == flown, "{case}: {command:?}");
     }
 }
