@@ -20,11 +20,11 @@ mod tests;
 /// use stable_flight_mavlink::mavlink::common::MavLandedState;
 ///
 /// let mut ground = GroundTracker::default();
-/// let changes = ground.update(true, [0.0, 0.0, 10.0].into()); // armed: home latched
+/// let changes = ground.update(true, false, [0.0, 0.0, 10.0].into()); // armed: home latched
 /// assert!(changes.home && changes.landed);
 /// assert_eq!(ground.landed_state(), MavLandedState::MAV_LANDED_STATE_ON_GROUND);
 ///
-/// let changes = ground.update(true, [0.0, 0.0, 12.0].into()); // took off
+/// let changes = ground.update(true, false, [0.0, 0.0, 12.0].into()); // took off
 /// assert!(!changes.home && changes.landed);
 /// assert_eq!(ground.landed_state(), MavLandedState::MAV_LANDED_STATE_IN_AIR);
 /// ```
@@ -55,14 +55,15 @@ impl Default for GroundTracker {
 }
 
 impl GroundTracker {
-    /// Advances by one update with the arm state and local `position_m` (north/east/up).
-    pub fn update(&mut self, armed: bool, position_m: Vec3) -> GroundChanges {
+    /// Advances by one update with the arm state, whether the flight controller flies a land
+    /// (`landing`), and local `position_m` (north/east/up).
+    pub fn update(&mut self, armed: bool, landing: bool, position_m: Vec3) -> GroundChanges {
         let home = self.home.update(armed, position_m);
         let height_m = self
             .home
             .home_m()
             .map_or(f32::NAN, |home_m| position_m.z - home_m.z);
-        let landed_state = self.land_detector.update(armed, height_m);
+        let landed_state = self.land_detector.update(armed, landing, height_m);
         let landed = landed_state != self.landed_state;
         self.landed_state = landed_state;
         GroundChanges { home, landed }

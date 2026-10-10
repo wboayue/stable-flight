@@ -28,7 +28,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     FC and GCS liveness, link heartbeat, addressing, routing, the `UNSUPPORTED` fallback for
     `COMMAND_LONG`) over services: `ParamService` (`params.rs`, with the cache),
     `ConnectService` (`connect.rs`: heartbeat, `AUTOPILOT_VERSION`, `COMPONENT_METADATA`,
-    missions), `CommandService` (`commands.rs`: arm/disarm, acked on the FC's heartbeat),
+    missions), `CommandService` (`commands.rs`: arm/disarm and `NAV_LAND`, acked on the FC's heartbeat),
     `SetpointService` (`setpoints.rs`: `MANUAL_CONTROL` → attitude, `SET_POSITION_TARGET_LOCAL_NED`
     → waypoint, `SET_ATTITUDE_TARGET` → absolute attitude), and
     `StateService` (`state.rs`: attitude, positions, home, landed state, `VFR_HUD`, paced by

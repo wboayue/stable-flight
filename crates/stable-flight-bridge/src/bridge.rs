@@ -10,7 +10,7 @@ use stable_flight_link::stable_flight::ControlMode;
 use stable_flight_link::{Control, Downlink, Uplink};
 use stable_flight_mavlink::FlatEarth;
 
-use crate::commands::CommandService;
+use crate::commands::{CommandService, FcView};
 use crate::connect::ConnectService;
 use crate::encode;
 use crate::interval::Interval;
@@ -173,12 +173,13 @@ impl Bridge {
                     armed: *armed,
                     mode: *mode,
                 });
-                self.commands.on_fc_heartbeat(*armed, out);
+                self.commands.on_fc_heartbeat(*armed, *mode, out);
             }
             Downlink::Param(param) => self.params.on_param(param, out),
             Downlink::State(state) => {
                 if let Some(fc) = alive {
-                    self.state.on_state(state, fc.armed);
+                    self.state
+                        .on_state(state, fc.armed, fc.mode == ControlMode::Land);
                 }
             }
             Downlink::Record(record) if alive.is_some() => {
@@ -222,11 +223,13 @@ impl Bridge {
             }
             MavMessage::SET_ATTITUDE_TARGET(data) => self.setpoints.on_attitude_target(data, out),
             MavMessage::COMMAND_LONG(data) => {
-                let fc_armed = self.alive_fc(now).map(|fc| fc.armed);
+                let fc = self.alive_fc(now).map(|fc| FcView {
+                    armed: fc.armed,
+                    mode: fc.mode,
+                    position_m: self.state.position_m(),
+                });
                 let handled = self.connect.on_command_long(header, data, out)
-                    || self
-                        .commands
-                        .on_command_long(header, data, fc_armed, now, out);
+                    || self.commands.on_command_long(header, data, fc, now, out);
                 if !handled {
                     let ack = encode::command_ack(
                         header,
