@@ -562,7 +562,10 @@ fn a_new_bridge_whose_disable_rc_fails_otherwise_is_used() {
     tick(&mut vehicle, 7);
 
     assert_eq!(calls.load(Ordering::Relaxed), 1);
-    assert!(!vehicle.bridge.connection_lost, "kept the old bridge instead of the new one");
+    assert!(
+        !vehicle.bridge.connection_lost,
+        "kept the old bridge instead of the new one"
+    );
     assert_eq!(vehicle.estimated_state.position_m.x, 2.0);
 }
 

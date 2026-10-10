@@ -30,6 +30,10 @@ pub struct RunStats {
     pub ticks: u64,
     /// Wall-clock time from priming to shutdown.
     pub elapsed: Duration,
+    /// Stalls: times the loop fell a full period or more behind and resynced.
+    pub overruns: u64,
+    /// Deadlines dropped by those resyncs rather than replayed.
+    pub skipped_ticks: u64,
 }
 
 impl RunStats {
@@ -43,8 +47,11 @@ impl RunStats {
 /// Runs a [`FlightLoop`] at a fixed wall-clock rate until a [`ShutdownSignal`] is set.
 ///
 /// For simulators that run in real time on their own clock, such as RealFlight. Each period
-/// it calls [`FlightLoop::step`] with the nominal period, then sleeps until the next deadline
-/// (deadlines accumulate, so a slow tick is caught up rather than shifting the schedule).
+/// it calls [`FlightLoop::step`] with the nominal period, then sleeps until the next deadline.
+/// Deadlines accumulate, so a tick late by less than a period is caught up and jitter keeps
+/// the average rate. After a stall of a full period or more (e.g. a simulator reconnect), the
+/// missed deadlines are dropped, not replayed back-to-back: the next tick runs at once and the
+/// schedule restarts from it. [`RunStats`] counts the overruns and skipped ticks.
 /// Tick ordering is `FlightLoop`'s concern; see its docs.
 ///
 /// # Examples
@@ -146,6 +153,8 @@ impl RealTimeRunner {
         let start = Instant::now();
         let mut next_deadline = start;
         let mut ticks: u64 = 0;
+        let mut overruns: u64 = 0;
+        let mut skipped_ticks: u64 = 0;
 
         flight_loop.prime();
 
@@ -161,18 +170,43 @@ impl RealTimeRunner {
                 );
             }
 
-            next_deadline += self.period;
-            thread::sleep(next_deadline.saturating_duration_since(Instant::now()));
+            let now = Instant::now();
+            let skipped = advance(&mut next_deadline, now, self.period);
+            if skipped > 0 {
+                overruns += 1;
+                skipped_ticks += skipped;
+                debug!("Tick {ticks}: stalled, resyncing ({skipped} ticks skipped)");
+            }
+            thread::sleep(next_deadline.saturating_duration_since(now));
         }
 
         let stats = RunStats {
             ticks,
             elapsed: start.elapsed(),
+            overruns,
+            skipped_ticks,
         };
         info!("Shutdown requested; stopping flight loop");
         if let Some(hz) = stats.average_hz() {
             info!("Ran {ticks} ticks at an average {hz:.2} Hz");
         }
+        if overruns > 0 {
+            info!("{overruns} overruns, {skipped_ticks} ticks skipped");
+        }
         stats
     }
+}
+
+/// Advances `next_deadline` one `period`. If `now` is a full period or more past the new
+/// deadline, resyncs it to `now` and returns the whole periods skipped; otherwise returns 0
+/// (a smaller lag is caught up by the next sleep being short).
+fn advance(next_deadline: &mut Instant, now: Instant, period: Duration) -> u64 {
+    *next_deadline += period;
+    let late = now.saturating_duration_since(*next_deadline);
+    if late < period {
+        return 0;
+    }
+    *next_deadline = now;
+    // `period` is non-zero (`RealTimeRunner::new`); saturate a ludicrous stall.
+    u64::try_from(late.as_nanos() / period.as_nanos()).unwrap_or(u64::MAX)
 }
