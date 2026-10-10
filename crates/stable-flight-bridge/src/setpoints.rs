@@ -2,8 +2,10 @@
 
 use log::debug;
 use mavlink::common::*;
+use stable_flight_link::stable_flight::nalgebra::{Quaternion, UnitQuaternion};
 use stable_flight_link::stable_flight::{
-    AttitudeCommand, Command, ControlInput, Vec2, WaypointCommand,
+    AbsoluteAttitudeCommand, AttitudeCommand, Command, ControlInput, Vec2, WaypointCommand,
+    euler_angles,
 };
 use stable_flight_link::{Control, Uplink};
 
@@ -25,6 +27,17 @@ const VELOCITY_IGNORE: PositionTargetTypemask =
     PositionTargetTypemask::POSITION_TARGET_TYPEMASK_VX_IGNORE
         .union(PositionTargetTypemask::POSITION_TARGET_TYPEMASK_VY_IGNORE);
 
+/// `SET_ATTITUDE_TARGET` type-mask bits the flight controller can't fly without: the attitude
+/// and the throttle must be included, and thrust must be the scalar `thrust`, not a vector.
+const ATTITUDE_TARGET_UNSUPPORTED: AttitudeTargetTypemask =
+    AttitudeTargetTypemask::ATTITUDE_TARGET_TYPEMASK_ATTITUDE_IGNORE
+        .union(AttitudeTargetTypemask::ATTITUDE_TARGET_TYPEMASK_THROTTLE_IGNORE)
+        .union(AttitudeTargetTypemask::ATTITUDE_TARGET_TYPEMASK_THRUST_BODY_SET);
+
+/// Smallest `SET_ATTITUDE_TARGET` quaternion norm accepted; below it the rotation is
+/// undefined.
+const MIN_QUATERNION_NORM: f32 = 1e-6;
+
 /// Translates setpoints into `Control::Command`s for the flight controller. It only
 /// translates: arming is [`CommandService`](crate::commands::CommandService)'s, and the flight
 /// controller decides when a stream has gone stale.
@@ -39,6 +52,12 @@ const VELOCITY_IGNORE: PositionTargetTypemask =
 ///   are ignored. The message has no speed, so the waypoint's cruise speed is
 ///   `offboard_speed_mps`. Any other frame, or a mask without the position, is dropped (the
 ///   message has no ack) and logged at debug level.
+/// - `SET_ATTITUDE_TARGET` (offboard apps) → an absolute attitude: roll, pitch, and heading
+///   from the quaternion `q` (`[w, x, y, z]`, body FRD from local NED, normalized here), and
+///   `thrust` as collective thrust. Body rates are ignored whatever the mask says (the flight
+///   controller has no rate feedforward). A mask that ignores the attitude or the throttle, or
+///   sets `THRUST_BODY_SET`, or a non-finite or zero quaternion, is dropped and logged at
+///   debug level.
 ///
 /// A joystick and an offboard app sending at once both go through; the last message wins.
 #[derive(Debug)]
@@ -62,6 +81,28 @@ impl SetpointService {
             mode: 0,
         });
         send(input, out);
+    }
+
+    /// `SET_ATTITUDE_TARGET`: an absolute attitude, if the mask and quaternion are supported.
+    pub(crate) fn on_attitude_target(&self, data: &SET_ATTITUDE_TARGET_DATA, out: &mut Outbox) {
+        if data.type_mask.intersects(ATTITUDE_TARGET_UNSUPPORTED) {
+            debug!("dropped attitude target with mask {:?}", data.type_mask);
+            return;
+        }
+        let Some(attitude) = unit_quaternion(data.q) else {
+            debug!("dropped attitude target with quaternion {:?}", data.q);
+            return;
+        };
+        let (roll_rad, pitch_rad, heading_rad) = euler_angles(&attitude);
+        send(
+            ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+                roll_rad,
+                pitch_rad,
+                heading_rad,
+                thrust: data.thrust,
+            }),
+            out,
+        );
     }
 
     /// `SET_POSITION_TARGET_LOCAL_NED`: a waypoint, if the frame and mask are supported.
@@ -103,6 +144,16 @@ fn axis(value: i16) -> f32 {
         return f32::NAN;
     }
     f32::from(value) / AXIS_FULL_SCALE
+}
+
+/// MAVLink's `[w, x, y, z]` quaternion, normalized; `None` when it has no rotation (a
+/// non-finite or zero component set).
+fn unit_quaternion([w, x, y, z]: [f32; 4]) -> Option<UnitQuaternion<f32>> {
+    let q = Quaternion::new(w, x, y, z);
+    if !q.coords.iter().all(|c| c.is_finite()) {
+        return None;
+    }
+    UnitQuaternion::try_new(q, MIN_QUATERNION_NORM)
 }
 
 /// Queues `input` for the flight controller. The command's `arm` is ignored there (arming is

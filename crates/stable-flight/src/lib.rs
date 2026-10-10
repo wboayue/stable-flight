@@ -231,13 +231,15 @@ impl Command {
 /// The control input part of a [`Command`]: what the flight system should fly.
 ///
 /// The `ControlInput` enum encapsulates different types of commands that can be issued
-/// to control an aircraft. It supports three types of commands, categorized into two
-/// primary control paradigms:
+/// to control an aircraft. It supports four types of commands, categorized into three
+/// control paradigms:
 ///
 /// * `Manual` - Low-level direct control inputs typically generated from user input devices.
 ///   This includes:
 ///   - `Attitude`: Controls the aircraft's orientation (roll, pitch, yaw).
 ///   - `Rate`: Controls the aircraft's rotational rates (rate of change of roll, pitch, yaw).
+/// * `AbsoluteAttitude` - An absolute roll, pitch, and heading with collective thrust, from an
+///   offboard app (e.g. MAVLink `SET_ATTITUDE_TARGET`).
 /// * `Waypoint` - High-level navigational commands used for autonomous flight.
 ///
 /// This separation allows the flight control system to handle both manual piloting
@@ -313,6 +315,13 @@ pub enum ControlInput {
     /// This command provides high-level navigational instructions that are translated
     /// into appropriate control surface and throttle settings by the flight controller.
     Waypoint(WaypointCommand),
+
+    /// An absolute attitude in radians and collective thrust, typically from an offboard app.
+    ///
+    /// Unlike [`ControlInput::Attitude`], the angles are not stick positions: roll and pitch
+    /// are flown as given (the stabilizer saturates them to its maximum tilt), and the heading
+    /// is an angle, not a rate.
+    AbsoluteAttitude(AbsoluteAttitudeCommand),
 }
 
 /// Zero-throttle, centered-stick [`ControlInput::Attitude`].
@@ -323,9 +332,9 @@ impl Default for ControlInput {
 }
 
 impl ControlInput {
-    /// Whether this is pilot-style stick input (attitude or rate): a stream that must keep
-    /// arriving to stay valid, unlike a waypoint, which stays valid until replaced. A link-fed
-    /// commander and its failsafe treat it as stale sooner, and hand it back only once it moves.
+    /// Whether this is pilot stick input (attitude or rate). After a link outage, the
+    /// failsafe hands an armed vehicle back to sticks only once they move, so a stick left
+    /// deflected can't take over unattended. Sticks are also a [stream](Self::is_stream).
     ///
     /// # Examples
     ///
@@ -334,10 +343,29 @@ impl ControlInput {
     ///
     /// assert!(ControlInput::Attitude(Default::default()).is_sticks());
     /// assert!(ControlInput::Rate(Default::default()).is_sticks());
+    /// assert!(!ControlInput::AbsoluteAttitude(Default::default()).is_sticks());
     /// assert!(!ControlInput::Waypoint(Default::default()).is_sticks());
     /// ```
     pub fn is_sticks(&self) -> bool {
         matches!(self, ControlInput::Attitude(_) | ControlInput::Rate(_))
+    }
+
+    /// Whether this input is a stream that must keep arriving to stay valid (sticks and
+    /// absolute attitudes), unlike a waypoint, which stays valid until replaced. A link-fed
+    /// commander treats a stream as stale once commands stop, even if other messages arrive.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::ControlInput;
+    ///
+    /// assert!(ControlInput::Attitude(Default::default()).is_stream());
+    /// assert!(ControlInput::Rate(Default::default()).is_stream());
+    /// assert!(ControlInput::AbsoluteAttitude(Default::default()).is_stream());
+    /// assert!(!ControlInput::Waypoint(Default::default()).is_stream());
+    /// ```
+    pub fn is_stream(&self) -> bool {
+        self.is_sticks() || matches!(self, ControlInput::AbsoluteAttitude(_))
     }
 
     /// Which kind of input this is, without its values: the flight mode a ground station shows.
@@ -350,12 +378,17 @@ impl ControlInput {
     /// assert_eq!(ControlInput::Attitude(Default::default()).mode(), ControlMode::Attitude);
     /// assert_eq!(ControlInput::Rate(Default::default()).mode(), ControlMode::Rate);
     /// assert_eq!(ControlInput::Waypoint(Default::default()).mode(), ControlMode::Waypoint);
+    /// assert_eq!(
+    ///     ControlInput::AbsoluteAttitude(Default::default()).mode(),
+    ///     ControlMode::AbsoluteAttitude,
+    /// );
     /// ```
     pub fn mode(&self) -> ControlMode {
         match self {
             ControlInput::Attitude(_) => ControlMode::Attitude,
             ControlInput::Rate(_) => ControlMode::Rate,
             ControlInput::Waypoint(_) => ControlMode::Waypoint,
+            ControlInput::AbsoluteAttitude(_) => ControlMode::AbsoluteAttitude,
         }
     }
 }
@@ -378,6 +411,8 @@ pub enum ControlMode {
     Rate,
     /// Autonomous flight to a waypoint ([`ControlInput::Waypoint`]).
     Waypoint,
+    /// An offboard app commands an absolute attitude ([`ControlInput::AbsoluteAttitude`]).
+    AbsoluteAttitude,
 }
 
 /// Represents direct manual control of an aircraft's attitude (orientation).
@@ -607,6 +642,45 @@ pub struct WaypointCommand {
     /// roll (e.g., zero or coordinated turn behavior). Values typically range between
     /// `-π` and `π`, depending on system limits.
     pub roll_rad: Option<f32>,
+}
+
+/// An absolute attitude and collective thrust, for [`ControlInput::AbsoluteAttitude`]: what
+/// an offboard app (e.g. MAVLink `SET_ATTITUDE_TARGET`) asks for, as opposed to the normalized
+/// stick positions of an [`AttitudeCommand`].
+///
+/// Per the input policy, nothing is rejected: the stabilizer saturates roll and pitch to its
+/// maximum tilt and flies NaN as level, a NaN heading holds the current heading-hold target,
+/// and thrust saturates to `[0, 1]` (NaN means none).
+///
+/// # Examples
+///
+/// A 10° right bank, holding north, at 45% thrust:
+/// ```
+/// use stable_flight::{AbsoluteAttitudeCommand, ControlInput};
+///
+/// let input = ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+///     roll_rad: 10.0_f32.to_radians(),
+///     pitch_rad: 0.0,
+///     heading_rad: 0.0,
+///     thrust: 0.45,
+/// });
+/// ```
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct AbsoluteAttitudeCommand {
+    /// Roll in radians, right positive, per the
+    /// [frame contract](VehicleState#frame-contract)'s `roll_rad`.
+    pub roll_rad: f32,
+    /// Pitch in radians, nose up positive, per the
+    /// [frame contract](VehicleState#frame-contract)'s `pitch_rad`.
+    pub pitch_rad: f32,
+    /// Absolute heading in radians, in the
+    /// [frame contract](VehicleState#frame-contract)'s `heading_rad` convention; any value,
+    /// wrapped by guidance.
+    pub heading_rad: f32,
+    /// Collective thrust along the body axis, `0.0` to `1.0`. Unlike an [`AttitudeCommand`]'s
+    /// throttle, it is not boosted for tilt: the sender owns that compensation.
+    pub thrust: f32,
 }
 
 /// Represents the high-level control outputs from the stabilization system.

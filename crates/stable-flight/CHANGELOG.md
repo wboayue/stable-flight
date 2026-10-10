@@ -14,10 +14,10 @@ not each change; per-change entries start after it.
 
 - **Pipeline traits and data:** `Commander`, `StateEstimator` + `Actuator` (blanket
   `Vehicle`), `Guidance`, `Stabilizer`, `Mixer`, `TelemetryPublisher`, and `Configurable`;
-  `Command { arm, input }` with `ControlInput` (attitude, rate, waypoint; its kind as
-  `ControlMode` via `mode()`), `Setpoint`,
-  `VehicleState`, `ControlOutput`, `ActuatorCommand`, and `TelemetryRecord`. Rustdoc specifies
-  the backend frame contract (`VehicleState`) and timing contract (`Vehicle`).
+  `Command { arm, input }` with `ControlInput` (attitude, rate, waypoint, offboard absolute
+  attitude; its kind as `ControlMode` via `mode()`), `Setpoint`, `VehicleState`,
+  `ControlOutput`, `ActuatorCommand`, and `TelemetryRecord`. Rustdoc specifies the backend
+  frame contract (`VehicleState`) and timing contract (`Vehicle`).
 - **`FlightLoop`:** runs one tick per `step(dt)` (command → estimate → guide → stabilize →
   mix → actuate → telemetry) with no clock or allocation. `Command::arm` gates the motors and
   re-primes on arming. Guidance and stabilizer configs can be retuned between ticks.
@@ -27,6 +27,8 @@ not each change; per-change entries start after it.
     and a waypoint tilt cap;
   - piloted attitude mode with heading hold and throttle tilt boost (none when inverted);
   - rate passthrough;
+  - absolute attitude (`AbsoluteAttitudeCommand`: angles flown as given, the heading as the
+    heading-hold target, thrust not boosted);
   - heading carried across mode switches.
 - **Copter stabilizer** (`CopterStabilizer`): cascaded attitude/heading → body-rate PID, with
   a thrust curve. **Controllers** (`controllers`): altitude, lateral, attitude, yaw, and body
@@ -40,8 +42,9 @@ not each change; per-change entries start after it.
   always honored, the primary's arm is synced to the vehicle at the handover
   (`LinkedCommander::sync_arm`), and sticks take back an armed vehicle only once they move
   (`takeover_stick_delta`), reporting `FailsafeState::AwaitingSticks` meanwhile.
-  `ControlInput::is_sticks` names stick-style input. `Commander::failsafe` reports the state into `TelemetryRecord::failsafe`
-  (`FailsafeState`).
+  `ControlInput::is_sticks` names stick-style input and `is_stream` input that must keep
+  arriving (sticks and absolute attitudes). `Commander::failsafe` reports the state into
+  `TelemetryRecord::failsafe` (`FailsafeState`).
 - **Params** (`params`): every guidance and stabilizer gain and limit readable, settable,
   and listable by index or by a MAVLink-sized name (`STAB_RATE_P`, `GUID_TILT_MAX`), with
   angles in degrees. Writes go through `set_config`, so an invalid value is rejected. `FlightLoop`

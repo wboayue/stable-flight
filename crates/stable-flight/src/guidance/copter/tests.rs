@@ -160,6 +160,22 @@ fn commands_map_to_setpoints() {
             }),
         ),
         (
+            // Absolute angles pass through (the stabilizer saturates them), and the heading
+            // replaces the primed one. Thrust isn't boosted.
+            ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+                roll_rad: 0.2,
+                pitch_rad: -1.2,
+                heading_rad: -2.0,
+                thrust: 0.45,
+            }),
+            Setpoint::Attitude(AttitudeSetpoint {
+                roll_rad: 0.2,
+                pitch_rad: -1.2,
+                heading_rad: -2.0,
+                thrust: 0.45,
+            }),
+        ),
+        (
             // At the waypoint, at rest, level: no tilt, the primed heading, hover thrust (the
             // altitude loop feeds gravity forward).
             ControlInput::Waypoint(WaypointCommand::default()),
@@ -262,6 +278,42 @@ fn rate_flight_hands_over_the_current_heading() {
     }
 }
 
+/// An absolute attitude's heading becomes the heading-hold target, wrapped, so stick flight
+/// afterward keeps it; a NaN heading holds the target it had.
+#[test]
+fn absolute_attitude_sets_the_heading_hold_target() {
+    let absolute = |heading_rad| {
+        ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+            heading_rad,
+            ..Default::default()
+        })
+    };
+    let state = VehicleState {
+        heading_rad: 0.7,
+        ..Default::default()
+    };
+    // (commanded heading, expected heading target)
+    let cases = [
+        (1.5, 1.5),
+        (7.0, 7.0 - 2.0 * PI),
+        (-4.0, -4.0 + 2.0 * PI),
+        (f32::NAN, 0.7),
+        (f32::INFINITY, 0.7),
+    ];
+    for (heading_rad, expected) in cases {
+        let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+        guidance.prime(&state);
+        let during = heading_of(guidance.guide(0.004, &absolute(heading_rad), &state));
+        let after = heading_of(guidance.guide(
+            0.004,
+            &ControlInput::Attitude(AttitudeCommand::default()),
+            &state,
+        ));
+        approx::assert_relative_eq!(during, expected, epsilon = 1e-5);
+        approx::assert_relative_eq!(after, expected, epsilon = 1e-5);
+    }
+}
+
 /// Leaving waypoint flight clears the altitude and lateral loops, so the next leg carries no
 /// integral from the last one.
 #[test]
@@ -280,6 +332,7 @@ fn leaving_waypoints_clears_the_position_loops() {
     let others = [
         ControlInput::Attitude(AttitudeCommand::default()),
         ControlInput::Rate(RateCommand::default()),
+        ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand::default()),
     ];
     for other in others {
         let mut guidance = CopterGuidance::new(config);
@@ -555,6 +608,37 @@ fn out_of_range_or_nan_commands_saturate_instead_of_panicking() {
                 "({throttle}, {roll}, {pitch}, {yaw}) gave {a:?}, expected {b:?}"
             );
         }
+    }
+
+    // Absolute attitude: tilt beyond the stabilizer's 45° flies as 45° and is flagged there;
+    // NaN flies level.
+    let absolute = |roll_rad, pitch_rad| {
+        ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+            roll_rad,
+            pitch_rad,
+            thrust: 0.5,
+            ..Default::default()
+        })
+    };
+    // ((roll, pitch), equivalent in range, stabilizer tilt flag)
+    let absolute_cases = [
+        ((1.0, -2.0), (FRAC_PI_4, -FRAC_PI_4), true),
+        ((nan, 0.3), (0.0, 0.3), false),
+    ];
+    for ((roll, pitch), (r, p), tilt) in absolute_cases {
+        let mut raw = Stack::new();
+        let mut saturated = Stack::new();
+        raw.prime(&state);
+        saturated.prime(&state);
+        for _ in 0..5 {
+            let a = raw.step(0.004, &absolute(roll, pitch), &state);
+            let b = saturated.step(0.004, &absolute(r, p), &state);
+            assert!(a == b, "({roll}, {pitch}) gave {a:?}, expected {b:?}");
+        }
+        assert!(
+            raw.stabilizer.saturation().tilt == tilt,
+            "({roll}, {pitch})"
+        );
     }
 
     // Rate mode: throttle was never clamped and reached the mixer's assert.
@@ -1205,7 +1289,7 @@ fn attitude_throttle_is_boosted_for_tilt() {
 
 /// Guidance reports what its last call clipped: a waypoint tilt capped at `max_tilt_rad`
 /// (held with the tilt between lateral-loop runs), and thrust clipped to [0, 1] by the
-/// altitude loop or attitude mode's boost.
+/// altitude loop, attitude mode's boost, or an absolute attitude's thrust.
 #[test]
 fn reports_what_the_last_guide_clipped() {
     let level = VehicleState::default();
@@ -1226,6 +1310,13 @@ fn reports_what_the_last_guide_clipped() {
             ..Default::default()
         })
     };
+    let absolute = |thrust, roll_rad| {
+        ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+            roll_rad,
+            thrust,
+            ..Default::default()
+        })
+    };
     // (input, state, expected (tilt, thrust))
     let cases = [
         (waypoint(0.5, 0.0), &level, (false, false)),
@@ -1234,6 +1325,9 @@ fn reports_what_the_last_guide_clipped() {
         (waypoint(0.0, -100.0), &level, (false, true)), // far above: thrust at 0
         (throttle(0.5), &banked, (false, false)),       // 0.5 · √2 fits
         (throttle(0.9), &banked, (false, true)),        // 0.9 · √2 clipped
+        (absolute(0.9, 1.0), &banked, (false, false)),  // not boosted; tilt is the stabilizer's
+        (absolute(1.2, 0.0), &level, (false, true)),
+        (absolute(f32::NAN, 0.0), &level, (false, false)),
         (
             ControlInput::Rate(RateCommand::default()),
             &level,
