@@ -228,7 +228,7 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
 - A new published crate inherits `[workspace.package]`, gets its own `README.md` (absolute GitHub links; crates.io doesn't resolve repo-relative ones) and `CHANGELOG.md`, and symlinks `LICENSE` (`ln -s ../../LICENSE`) so it ships in the package. Check with `cargo package -p <crate> --list`.
 - **Keep docs in sync with the code, in the same PR.** Renamed trait, changed a method signature, added/removed a component or crate, retired a CLI/example, swapped a default — update the doc that owns the fact. Stale docs mislead both humans and AI; treat them as part of the change, not a follow-up. Each fact has one home; other docs link to it rather than restating it:
   - crate `README.md` — that crate's purpose, usage, features;
-  - root `README.md` — project overview, crate index, supported simulators, quick start;
+  - root `README.md` — project overview and **Status**, crate index, boards, supported simulators, quick start;
   - `AGENTS.md` — commands, coding/testing rules, PR checklist;
   - `CONTRIBUTING.md` — the entry point for outside contributors; links here for the rules;
   - `SECURITY.md` — supported versions and how to report a vulnerability;
@@ -236,6 +236,7 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
   - `architecture.md` — crate boundaries, dependency rules, traits, and the rationale behind
     the frame and timing contracts;
   - core rustdoc — the frame contract (`VehicleState`) and timing contract (`Vehicle`) themselves.
+- **Keep the project status current.** When a milestone closes or what actually flies changes (firmware flies, a new simulator or airframe flies, the tailsitter flies, a crate is published), update every status claim in the same PR, or the milestone's last one: the root README **Status** paragraph and its board, simulator, and test-model tables; the board's firmware README status; the scope line in `SECURITY.md`; and the GitHub repo description (`gh repo edit --description`). Claim only what has flown; plans say "planned" and link their milestone.
 - **Maintain each published crate's `CHANGELOG.md`** (`crates/<crate>/CHANGELOG.md`; unpublished `stable-flight-tools` has none) ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/)). **Until a crate's first release**, `[Unreleased]` is a feature summary of what the crate provides, not a change log: a PR that adds, removes, or reshapes a feature edits the summary, and nothing is marked **Breaking** (no one has a prior version). **After the first release**, every user-facing change adds a bullet under `## [Unreleased]` in the same PR, grouped by `Added`/`Changed`/`Deprecated`/`Removed`/`Fixed`/`Security`; mark breaking changes **Breaking**. Skip internal-only churn (refactors, test/CI tweaks). At release, rename `[Unreleased]` to `## [x.y.z] - YYYY-MM-DD` (at the first release, delete the summary note; the summary becomes that entry), add a fresh empty `[Unreleased]`, and update the links: tag each crate `<crate>-vx.y.z` (e.g. `stable-flight-v0.1.0`), point `[Unreleased]` at `compare/<crate>-vx.y.z...HEAD`, and add a `[x.y.z]` link (the pre-release links point at the crate's commit history, since there's no tag yet).
 
 ## Workflow
@@ -274,4 +275,5 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
 - [ ] Hot-path code allocates nothing per tick.
 - [ ] Coverage refreshed if control-loop logic changed.
 - [ ] Owning docs (crate/root `README.md`, `AGENTS.md`, `architecture.md`) reflect any trait, module, crate, or example changes.
+- [ ] If this PR changes what flies or closes a milestone, the status claims match (see Keep the project status current).
 - [ ] Each affected published crate's `CHANGELOG.md` reflects any user-facing change (pre-release: the feature summary; after: an `[Unreleased]` entry).
