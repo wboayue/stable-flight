@@ -20,9 +20,17 @@ mod tests;
 /// - [`Control::Arm`]: arms (`true`) or disarms (`false`); latched until the next one.
 /// - [`Control::Heartbeat`]: only keeps the link fresh.
 ///
-/// Any message counts as hearing the link: [`since_update_s`](LinkedCommander::since_update_s)
-/// is 0 on a tick that drained one, grows by `dt` otherwise, and is `None` until the first.
-/// Wrap it in a [`FailsafeCommander`](stable_flight::commanders::FailsafeCommander) so a silent
+/// Freshness ([`since_update_s`](LinkedCommander::since_update_s), 0 on a tick that drained a
+/// message that counts, growing by `dt` otherwise, `None` until the first) depends on what it
+/// flies:
+///
+/// - a **waypoint**, or nothing yet: any message counts, heartbeats included, because flying
+///   the last waypoint on a quiet but live link is safe;
+/// - **sticks** (an attitude or rate command): only commands count, so a joystick stream that
+///   stops (the ground station's joystick turned off, an app frozen) goes stale even while the
+///   link heartbeats, rather than holding the last stick position.
+///
+/// Wrap it in a [`FailsafeCommander`](stable_flight::commanders::FailsafeCommander) so a stale
 /// link falls back. Until a command arrives it flies a neutral [`ControlInput::default`], and
 /// it starts disarmed.
 ///
@@ -48,8 +56,13 @@ mod tests;
 pub struct LinkCommander<'a> {
     control: Consumer<'a, Control>,
     input: ControlInput,
+    /// The latest command was sticks (attitude or rate), so only commands keep it fresh.
+    flying_sticks: bool,
     armed: bool,
-    since_update_s: Option<f32>,
+    /// Since any message.
+    since_message_s: Option<f32>,
+    /// Since a command.
+    since_command_s: Option<f32>,
 }
 
 impl<'a> LinkCommander<'a> {
@@ -58,33 +71,51 @@ impl<'a> LinkCommander<'a> {
         Self {
             control,
             input: ControlInput::default(),
+            flying_sticks: false,
             armed: false,
-            since_update_s: None,
+            since_message_s: None,
+            since_command_s: None,
         }
     }
 }
 
 impl Commander for LinkCommander<'_> {
     fn next_command(&mut self, dt: f32, _current_state: &VehicleState) -> Command {
-        let mut heard = false;
-        while let Some(message) = self.control.dequeue() {
-            heard = true;
-            match message {
-                Control::Command(command) => self.input = command.input,
+        let (mut message, mut command) = (false, false);
+        while let Some(control) = self.control.dequeue() {
+            message = true;
+            match control {
+                Control::Command(c) => {
+                    command = true;
+                    self.input = c.input;
+                    self.flying_sticks =
+                        matches!(c.input, ControlInput::Attitude(_) | ControlInput::Rate(_));
+                }
                 Control::Arm(arm) => self.armed = arm,
                 Control::Heartbeat => {}
             }
         }
-        self.since_update_s = match (heard, self.since_update_s) {
-            (true, _) => Some(0.0),
-            (false, since) => since.map(|s| s + dt),
-        };
+        self.since_message_s = since(message, self.since_message_s, dt);
+        self.since_command_s = since(command, self.since_command_s, dt);
         Command::new(self.armed, self.input)
     }
 }
 
 impl LinkedCommander for LinkCommander<'_> {
     fn since_update_s(&self) -> Option<f32> {
-        self.since_update_s
+        if self.flying_sticks {
+            self.since_command_s
+        } else {
+            self.since_message_s
+        }
+    }
+}
+
+/// Time since something was last heard: 0 if it was this tick, else `last` grown by `dt`.
+fn since(heard: bool, last: Option<f32>, dt: f32) -> Option<f32> {
+    if heard {
+        Some(0.0)
+    } else {
+        last.map(|s| s + dt)
     }
 }

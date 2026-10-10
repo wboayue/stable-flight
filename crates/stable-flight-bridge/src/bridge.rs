@@ -17,6 +17,7 @@ use crate::interval::Interval;
 use crate::metadata::ComponentMetadata;
 use crate::outbox::Outbox;
 use crate::params::ParamService;
+use crate::setpoints::SetpointService;
 use crate::state::StateService;
 
 #[cfg(test)]
@@ -51,13 +52,15 @@ pub(crate) struct BridgeConfig {
     /// How long an arm or disarm may go unconfirmed by the flight controller's heartbeat before
     /// it is acked `FAILED`; under QGC's 1.2 s wait.
     pub(crate) arm_ack_timeout: Duration,
+    /// Speed cap, in m/s, for position targets from offboard apps, which carry none.
+    pub(crate) offboard_speed_mps: f32,
 }
 
 impl Default for BridgeConfig {
     /// System and component id 1 (the autopilot, which QGC requires), a quadrotor, a 3 s
     /// timeout, 1 Hz heartbeats, no origin, state at 10 Hz, home and landed state at 1 Hz, no
-    /// param metadata, a 3 s ground-station timeout, 5 Hz link heartbeats, and a 1 s arm ack
-    /// timeout.
+    /// param metadata, a 3 s ground-station timeout, 5 Hz link heartbeats, a 1 s arm ack
+    /// timeout, and position targets flown at most 5 m/s.
     fn default() -> Self {
         Self {
             system_id: 1,
@@ -72,6 +75,7 @@ impl Default for BridgeConfig {
             gcs_timeout: Duration::from_secs(3),
             link_heartbeat_interval: Duration::from_millis(200),
             arm_ack_timeout: Duration::from_secs(1),
+            offboard_speed_mps: 5.0,
         }
     }
 }
@@ -91,7 +95,7 @@ struct FcStatus {
 /// whether the ground station is (any message within `gcs_timeout`), decides whether a MAVLink
 /// message is for the flight controller (its system and component, or broadcast), and routes
 /// each message to the service that handles it: [`ParamService`], [`ConnectService`],
-/// [`CommandService`], or [`StateService`]. A `COMMAND_LONG` no service handles is acked
+/// [`CommandService`], [`SetpointService`], or [`StateService`]. A `COMMAND_LONG` no service handles is acked
 /// `UNSUPPORTED`, so the ground station moves on without retrying.
 ///
 /// When the flight controller appears or comes back after a timeout, every service is told;
@@ -112,6 +116,7 @@ pub(crate) struct Bridge {
     params: ParamService,
     connect: ConnectService,
     commands: CommandService,
+    setpoints: SetpointService,
     state: StateService,
 }
 
@@ -132,6 +137,7 @@ impl Bridge {
                 config.metadata,
             ),
             commands: CommandService::new(config.arm_ack_timeout),
+            setpoints: SetpointService::new(config.offboard_speed_mps),
             state: StateService::new(config.earth, config.state_interval, config.slow_interval),
         }
     }
@@ -207,6 +213,10 @@ impl Bridge {
             MavMessage::MISSION_REQUEST_LIST(data) => {
                 self.connect.on_mission_request_list(header, data, out);
             }
+            MavMessage::MANUAL_CONTROL(data) => self.setpoints.on_manual_control(data, out),
+            MavMessage::SET_POSITION_TARGET_LOCAL_NED(data) => {
+                self.setpoints.on_position_target(data, out);
+            }
             MavMessage::COMMAND_LONG(data) => {
                 let fc_armed = self.alive_fc(now).map(|fc| fc.armed);
                 let handled = self.connect.on_command_long(header, data, out)
@@ -269,6 +279,9 @@ fn target(msg: &MavMessage) -> Option<(u8, u8)> {
         MavMessage::PARAM_SET(d) => Some((d.target_system, d.target_component)),
         MavMessage::MISSION_REQUEST_LIST(d) => Some((d.target_system, d.target_component)),
         MavMessage::COMMAND_LONG(d) => Some((d.target_system, d.target_component)),
+        // `MANUAL_CONTROL` names only the system.
+        MavMessage::MANUAL_CONTROL(d) => Some((d.target, 0)),
+        MavMessage::SET_POSITION_TARGET_LOCAL_NED(d) => Some((d.target_system, d.target_component)),
         _ => None,
     }
 }

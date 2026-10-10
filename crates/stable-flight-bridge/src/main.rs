@@ -21,6 +21,7 @@ use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_mavlink::{DEFAULT_ORIGIN, FlatEarth};
 
 mod bridge;
+mod cli;
 mod commands;
 mod connect;
 mod encode;
@@ -28,18 +29,18 @@ mod http;
 mod idle;
 mod interval;
 mod metadata;
-mod origin;
 mod outbox;
 mod params;
 mod pump;
+mod setpoints;
 mod state;
 #[cfg(test)]
 mod test_support;
 
 use bridge::{Bridge, BridgeConfig};
+use cli::{parse_origin, parse_speed};
 use idle::IdleBackoff;
 use metadata::{ComponentMetadata, MetadataFiles, base_url, copter_params};
-use origin::parse_origin;
 use pump::Pump;
 
 /// Bridges a flight controller's native link to a MAVLink ground station.
@@ -70,6 +71,10 @@ struct Args {
     /// an all-interfaces --http-bind [default: http://HTTP_BIND].
     #[arg(long)]
     http_url: Option<String>,
+    /// Speed cap, in m/s, for position targets from offboard apps (`SET_POSITION_TARGET_LOCAL_NED`
+    /// carries none).
+    #[arg(long, default_value = "5", value_parser = parse_speed)]
+    offboard_speed: f32,
     /// Serve no param metadata: QGC lists the params without descriptions, units, or ranges.
     #[arg(long, conflicts_with_all = ["http_url"])]
     no_metadata: bool,
@@ -119,6 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Bridge::new(BridgeConfig {
             earth,
             metadata,
+            offboard_speed_mps: args.offboard_speed,
             ..BridgeConfig::default()
         }),
     );
