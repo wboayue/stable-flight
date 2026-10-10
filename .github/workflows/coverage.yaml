@@ -36,7 +36,7 @@ jobs:
     - name: coverage
       # Same tool as `just cover`, with the test job's features, as lcov for Coveralls.
       run: |
-        cargo tarpaulin --workspace --all-features --locked --out Lcov --output-dir coverage
+        cargo tarpaulin --workspace --all-features --locked --exclude-files 'firmware/*' --out Lcov --output-dir coverage
 
     - name: upload to Coveralls
       uses: coverallsapp/github-action@v2
