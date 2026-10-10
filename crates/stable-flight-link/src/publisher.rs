@@ -6,7 +6,7 @@ use heapless::spsc::Consumer;
 use stable_flight::timing::Every;
 use stable_flight::{FailsafeState, TelemetryPublisher, TelemetryRecord};
 
-use crate::{Downlink, LinkTx, MAX_FRAME_LEN, ParamValue, Record, SendMessage};
+use crate::{Downlink, LinkTx, MAX_FRAME_LEN, ParamValue, Record, SendMessage, StatusText};
 
 #[cfg(test)]
 mod tests;
@@ -49,7 +49,9 @@ impl Default for LinkPublisherConfig {
 ///
 /// [`Downlink::Heartbeat`] reports the command's arm state and [`mode`](stable_flight::ControlInput::mode);
 /// `link_ok` is `false` while a failsafe flies its fallback (the record's
-/// [`failsafe`](stable_flight::TelemetryRecord::failsafe)), and `true` otherwise.
+/// [`failsafe`](stable_flight::TelemetryRecord::failsafe)), and `true` otherwise. Each change
+/// of failsafe state is announced once as [`Downlink::Status`] text for the pilot ("Link quiet:
+/// holding position", "Link back: move the sticks to take control", "Flying from the link").
 ///
 /// # Examples
 ///
@@ -72,6 +74,8 @@ pub struct LinkPublisher<'a, T> {
     replies: Option<Consumer<'a, ParamValue>>,
     max_params_per_tick: usize,
     send_errors: u32,
+    /// The failsafe state last announced, to send [`Downlink::Status`] when it changes.
+    failsafe: Option<FailsafeState>,
 }
 
 impl<'a, T: LinkTx> LinkPublisher<'a, T> {
@@ -87,6 +91,7 @@ impl<'a, T: LinkTx> LinkPublisher<'a, T> {
             replies: None,
             max_params_per_tick: config.max_params_per_tick,
             send_errors: 0,
+            failsafe: None,
         }
     }
 
@@ -110,6 +115,12 @@ impl<'a, T: LinkTx> LinkPublisher<'a, T> {
 
 impl<T: LinkTx> TelemetryPublisher for LinkPublisher<'_, T> {
     fn publish(&mut self, record: &TelemetryRecord) {
+        if record.failsafe != self.failsafe {
+            self.failsafe = record.failsafe;
+            if let Some(text) = record.failsafe.and_then(failsafe_status) {
+                self.send(&Downlink::Status(text));
+            }
+        }
         if self.heartbeat.ready(record.dt) {
             self.send(&Downlink::Heartbeat {
                 armed: record.command.arm,
@@ -134,4 +145,17 @@ impl<T: LinkTx> TelemetryPublisher for LinkPublisher<'_, T> {
             self.send(&Downlink::Param(reply));
         }
     }
+}
+
+/// What a ground station should tell the pilot when the failsafe enters `state`.
+fn failsafe_status(state: FailsafeState) -> Option<StatusText> {
+    let text = match state {
+        FailsafeState::Fallback => "Link quiet: holding position",
+        FailsafeState::AwaitingSticks => "Link back: move the sticks to take control",
+        FailsafeState::Primary => "Flying from the link",
+        // `FailsafeState` is non-exhaustive: a new state announces nothing until mapped here.
+        _ => return None,
+    };
+    // Each text is well under `MAX_STATUS_LEN`.
+    StatusText::try_from(text).ok()
 }

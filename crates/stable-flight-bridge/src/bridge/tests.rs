@@ -459,3 +459,19 @@ fn arms_through_the_flight_controller_and_acks_unhandled_commands_unsupported() 
         "confirmed by its heartbeat"
     );
 }
+
+#[test]
+fn forwards_the_flight_controllers_status_text_to_the_ground_station() {
+    let mut bridge = Bridge::new(BridgeConfig::default());
+    let mut out = Outbox::default();
+    let text = "Link back: move the sticks to take control";
+    bridge.on_downlink(
+        &Downlink::Status(text.try_into().expect("short")),
+        Instant::now(),
+        &mut out,
+    );
+    let [MavMessage::STATUSTEXT(data)] = out.to_gcs.as_slice() else {
+        panic!("expected one STATUSTEXT, got {:?}", out.to_gcs);
+    };
+    check!(data.text.to_str().ok() == Some(text));
+}

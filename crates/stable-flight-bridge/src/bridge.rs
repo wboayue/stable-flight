@@ -184,7 +184,10 @@ impl Bridge {
             Downlink::Record(record) if alive.is_some() => {
                 self.state.on_record(record);
             }
-            // Status text has no MAVLink side yet.
+            Downlink::Status(text) => {
+                out.to_gcs
+                    .push(MavMessage::STATUSTEXT(encode::statustext(text.as_str())));
+            }
             _ => {}
         }
     }

@@ -88,8 +88,7 @@ impl Commander for LinkCommander<'_> {
                 Control::Command(c) => {
                     command = true;
                     self.input = c.input;
-                    self.flying_sticks =
-                        matches!(c.input, ControlInput::Attitude(_) | ControlInput::Rate(_));
+                    self.flying_sticks = c.input.is_sticks();
                 }
                 Control::Arm(arm) => self.armed = arm,
                 Control::Heartbeat => {}
@@ -102,6 +101,11 @@ impl Commander for LinkCommander<'_> {
 }
 
 impl LinkedCommander for LinkCommander<'_> {
+    /// Overwrites the latched arm state, dropping a stale `Arm` request.
+    fn sync_arm(&mut self, armed: bool) {
+        self.armed = armed;
+    }
+
     fn since_update_s(&self) -> Option<f32> {
         if self.flying_sticks {
             self.since_command_s

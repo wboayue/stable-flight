@@ -223,3 +223,41 @@ fn failed_sends_are_counted_not_returned() {
 
     check!(publisher.send_errors() == 2);
 }
+
+#[test]
+fn announces_each_failsafe_change_once() {
+    use FailsafeState::{AwaitingSticks, Fallback, Primary};
+    // (failsafe this tick, expected status text sent)
+    let ticks = [
+        (None, None),
+        (Some(Fallback), Some("Link quiet: holding position")),
+        (Some(Fallback), None), // unchanged: once
+        (
+            Some(AwaitingSticks),
+            Some("Link back: move the sticks to take control"),
+        ),
+        (Some(Primary), Some("Flying from the link")),
+        (Some(Primary), None),
+        (None, None), // no failsafe: nothing to announce
+    ];
+    let loopback = Loopback::<64>::new();
+    let (fc, mut companion) = loopback.split();
+    let mut publisher = LinkPublisher::new(fc, LinkPublisherConfig::default());
+    for (i, (failsafe, expected)) in ticks.into_iter().enumerate() {
+        let mut record = tick(MS(4), false);
+        record.failsafe = failsafe;
+        publisher.publish(&record.telemetry());
+
+        let status: Vec<_> = received(&mut companion)
+            .into_iter()
+            .filter_map(|msg| match msg {
+                Downlink::Status(text) => Some(text),
+                _ => None,
+            })
+            .collect();
+        check!(
+            status.iter().map(|t| t.as_str()).collect::<Vec<_>>() == Vec::from_iter(expected),
+            "tick {i}"
+        );
+    }
+}

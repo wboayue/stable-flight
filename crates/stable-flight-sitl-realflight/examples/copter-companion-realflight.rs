@@ -112,8 +112,11 @@ fn main() {
         if state != failsafe {
             match state {
                 Some(FailsafeState::Fallback) => info!("link quiet: holding position"),
+                Some(FailsafeState::AwaitingSticks) => {
+                    info!("link back: holding until the sticks move");
+                }
                 Some(FailsafeState::Primary) => info!("link back: flying from the link"),
-                None => {}
+                _ => {}
             }
             failsafe = state;
         }

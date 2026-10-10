@@ -18,3 +18,23 @@ fn packs_flight_sw_version() {
         );
     }
 }
+
+#[test]
+fn statustext_is_a_warning_cut_at_fifty_bytes_on_a_char_boundary() {
+    // (text, expected text sent)
+    let long = "x".repeat(60);
+    let accented = format!("{}é", "x".repeat(49)); // `é` straddles byte 50
+    let cases = [
+        (
+            "Link back: move the sticks to take control",
+            "Link back: move the sticks to take control",
+        ),
+        (long.as_str(), &long[..50]),
+        (accented.as_str(), &accented[..49]),
+    ];
+    for (text, expected) in cases {
+        let data = statustext(text);
+        check!(data.severity == MavSeverity::MAV_SEVERITY_WARNING);
+        check!(data.text.to_str().ok() == Some(expected), "{text}");
+    }
+}
