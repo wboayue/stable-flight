@@ -37,7 +37,8 @@ pub fn saturation(
     flags: &Saturation,
     time_boot_ms: u32,
 ) -> [NAMED_VALUE_INT_DATA; SATURATION_FLAGS] {
-    // `Saturation` is non-exhaustive: a flag added to the core isn't reported until mapped here.
+    // `Saturation` is non-exhaustive: a flag added to the core isn't reported until mapped here
+    // (the `maps_every_core_flag` test catches a new `bool` flag).
     let Saturation {
         tilt,
         thrust,

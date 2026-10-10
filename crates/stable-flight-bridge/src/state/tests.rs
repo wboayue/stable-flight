@@ -3,7 +3,7 @@ use mavlink::Message;
 use stable_flight_link::stable_flight::Saturation;
 
 use super::*;
-use crate::test_support::{at_altitude, earth, home_zs, landed_states};
+use crate::test_support::{at_altitude, earth, home_zs, landed_states, throttles};
 
 const STREAM: Duration = Duration::from_millis(100);
 const SLOW: Duration = Duration::from_secs(1);
@@ -162,13 +162,9 @@ fn output(thrust: f32, saturation: Saturation) -> Output {
 }
 
 /// `VFR_HUD` throttle and the saturation flags set, by name, from a poll at `at`.
-fn throttle_and_saturation(service: &mut StateService, at: Instant) -> (Option<u16>, Vec<String>) {
+fn throttle_and_saturation(service: &mut StateService, at: Instant) -> (Vec<u16>, Vec<String>) {
     let mut out = Outbox::default();
     service.poll(at, &mut out);
-    let throttle = out.to_gcs.iter().find_map(|m| match m {
-        MavMessage::VFR_HUD(d) => Some(d.throttle),
-        _ => None,
-    });
     let set = out
         .to_gcs
         .iter()
@@ -179,7 +175,7 @@ fn throttle_and_saturation(service: &mut StateService, at: Instant) -> (Option<u
             _ => None,
         })
         .collect();
-    (throttle, set)
+    (throttles(&out.to_gcs), set)
 }
 
 #[test]
@@ -189,17 +185,17 @@ fn vfr_hud_throttle_is_the_latest_outputs_thrust() {
     service.on_state(&VehicleState::default(), true, ControlMode::Attitude);
 
     check!(
-        throttle_and_saturation(&mut service, t0).0 == Some(0),
+        throttle_and_saturation(&mut service, t0).0 == [0],
         "no output yet"
     );
     service.on_output(&output(0.3, Saturation::default()));
     service.on_output(&output(0.62, Saturation::default()));
-    check!(throttle_and_saturation(&mut service, t0 + STREAM).0 == Some(62));
+    check!(throttle_and_saturation(&mut service, t0 + STREAM).0 == [62]);
 
     service.fc_appeared(t0 + 5 * SLOW, &mut Outbox::default());
     service.on_state(&VehicleState::default(), true, ControlMode::Attitude);
     check!(
-        throttle_and_saturation(&mut service, t0 + 5 * SLOW).0 == Some(0),
+        throttle_and_saturation(&mut service, t0 + 5 * SLOW).0 == [0],
         "a restarted flight controller has sent no output"
     );
 }

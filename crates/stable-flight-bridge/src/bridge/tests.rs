@@ -18,7 +18,7 @@ use stable_flight_link::{MAX_FRAME_LEN, Output, ParamRequest, RecvMessage, SendM
 use super::*;
 use crate::test_support::{
     GCS, at_altitude, earth, heartbeat, home_zs, landed_states, param, param_value_of, read_index,
-    request_list, set,
+    request_list, set, throttles,
 };
 
 /// A bridge whose flight controller is up, with params `A` (index 0) = 1.0 and `B` = 2.0 cached.
@@ -224,12 +224,6 @@ fn takes_control_output_only_while_the_flight_controller_is_alive() {
         thrust: 0.4,
         saturation: Saturation::default(),
     });
-    let throttle = |out: &Outbox| {
-        out.to_gcs.iter().find_map(|m| match m {
-            MavMessage::VFR_HUD(d) => Some(d.throttle),
-            _ => None,
-        })
-    };
     let t0 = Instant::now();
     let mut bridge = Bridge::new(BridgeConfig::default());
     let mut out = Outbox::default();
@@ -239,14 +233,14 @@ fn takes_control_output_only_while_the_flight_controller_is_alive() {
     bridge.on_downlink(&Downlink::State(at_altitude(10.0)), t0, &mut out);
     bridge.poll(t0, &mut out);
     check!(
-        throttle(&out) == Some(0),
+        throttles(&out.to_gcs) == [0],
         "no flight controller yet: output ignored"
     );
 
     bridge.on_downlink(&output, t0, &mut out);
     out = Outbox::default();
     bridge.poll(t0 + Duration::from_secs(1), &mut out);
-    check!(throttle(&out) == Some(40));
+    check!(throttles(&out.to_gcs) == [40]);
 }
 
 #[test]

@@ -55,3 +55,11 @@ fn stamps_every_value_with_the_time() {
             .all(|data| data.time_boot_ms == 1234)
     );
 }
+
+#[test]
+fn maps_every_core_flag() {
+    // `Saturation` is non-exhaustive, so the builder can't destructure it exhaustively. Every
+    // flag is a one-byte `bool`: a flag added to the core changes the size and fails this until
+    // it is mapped (and `SATURATION_FLAGS` bumped).
+    check!(size_of::<Saturation>() == SATURATION_FLAGS);
+}
