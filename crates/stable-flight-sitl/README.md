@@ -8,7 +8,7 @@ The RealFlight examples (in the backend crate) wire the same six-component pipel
 
 ### Commander
 
-Commanders generate Rate, Attitude, or Position control commands processed by guidance. Commands may come from input devices, scripts, or external systems. Currently, commanders are available to support scripting, Spektrum controllers, and Extreme3D joysticks. You can support new input devices by implementing the Commander trait.
+Commanders generate Rate, Attitude, or Position control commands processed by guidance. Commands may come from input devices, scripts, or external systems. Currently, commanders are available to support scripting, Spektrum transmitters (through the WS3000T dongle), and Extreme3D joysticks. You can support new input devices by implementing the Commander trait.
 
 The following example demonstrates creating a commander for the Extreme3D joystick:
 

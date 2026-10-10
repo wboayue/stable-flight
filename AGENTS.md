@@ -79,11 +79,12 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 ```bash
 cargo build --workspace                         # or: just build
 cargo test --workspace --all-features           # or: just test
-cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight  # joystick + RealFlight (--host), params + telemetry over the native link (--link-bind/--link-peer) for the bridge; or: just fly-manual
+cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight  # joystick + RealFlight (--host, --commander extreme3d|spektrum), params + telemetry over the native link (--link-bind/--link-peer) for the bridge; or: just fly-manual
 cargo run -p stable-flight-bridge               # native link ⇄ MAVLink for QGC (--link-bind/--link-peer/--gcs/--origin/--http-bind/--http-url/--offboard-speed); or: just bridge
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight    # scripted figure-eight (script arg, --host, --loop); or: just fly-auto
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight  # joystick flight + raw SimulatorState → CSV; or: just capture
 cargo run --example extreme_3d_commander        # joystick smoke test
+cargo run --example spektrum_commander          # Spektrum (WS3000T dongle) mapping check: raw values + command
 cargo run --bin plot_flight -- flights/figure_eight.csv out.svg  # 3D path viz (SVG or PNG); or: just plot …
 cargo run --bin generate_figure_eight           # (re)write flights/figure_eight.csv; or: just gen-figure-eight
 cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight  # flown from the link, holds when it goes quiet; or: just fly-companion

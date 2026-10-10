@@ -22,7 +22,7 @@ not each change; per-change entries start after it.
   stabilizer configs, mixer, channel mapping).
 - **Examples:**
   - All serve params and telemetry over the native link (UDP) for `stable-flight-bridge`.
-  - `copter-manual-realflight`: joystick.
+  - `copter-manual-realflight`: joystick (Extreme 3D, or Spektrum with `--commander spektrum`).
   - `copter-auto-realflight`: scripted waypoints; holds at the end, `--loop` to repeat.
   - `capture-state-realflight`: records raw simulator state and channels to CSV.
   - `copter-companion-realflight`: flown from the link (`FailsafeCommander<LinkCommander,

@@ -1,4 +1,5 @@
-//! Flies a quadcopter in RealFlight from a Logitech Extreme 3D joystick, using the
+//! Flies a quadcopter in RealFlight from a Logitech Extreme 3D joystick (or, with
+//! `--commander spektrum`, a Spektrum transmitter through the WS3000T dongle), using the
 //! hand-tuned gains from [`airframes::quadcopter_x`], with params and telemetry over the native
 //! link (`stable-flight-link`, UDP) so they can be watched and tuned in flight.
 //!
@@ -15,22 +16,23 @@
 //! cargo run -p stable-flight-bridge   # once, in a second terminal
 //! cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight
 //! cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --host 192.168.1.20:8080
+//! cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --commander spektrum
 //! cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --link-peer 192.168.1.30:14561
 //! ```
 
 use std::time::Duration;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use env_logger::Builder;
 use log::{debug, warn};
 
-use stable_flight::FlightLoop;
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
+use stable_flight::{Commander, FlightLoop};
 use stable_flight_link::fc::{FcLink, FcLinkConfig};
 use stable_flight_link::publisher::LinkPublisherConfig;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
-use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
+use stable_flight_sitl::commanders::{Extreme3DCommander, SpektrumCommander};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
@@ -38,7 +40,7 @@ use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, 
 /// How often a full telemetry record goes out: the bridge needs only its thrust, for throttle.
 const RECORD_INTERVAL: Duration = Duration::from_millis(200);
 
-/// Joystick-driven quadcopter flight in RealFlight, with params and telemetry over the native link.
+/// Stick-driven quadcopter flight in RealFlight, with params and telemetry over the native link.
 #[derive(Parser)]
 struct Args {
     /// RealFlight host to connect to (`host:port`).
@@ -50,6 +52,18 @@ struct Args {
     /// The bridge's link address.
     #[arg(long, default_value = DEFAULT_BRIDGE_ADDR)]
     link_peer: String,
+    /// Stick input device.
+    #[arg(long, value_enum, default_value_t = Device::Extreme3d)]
+    commander: Device,
+}
+
+/// The stick input devices `--commander` selects.
+#[derive(Clone, Copy, ValueEnum)]
+enum Device {
+    /// Logitech Extreme 3D joystick.
+    Extreme3d,
+    /// Spektrum transmitter through the WS3000T dongle.
+    Spektrum,
 }
 
 fn main() {
@@ -57,9 +71,22 @@ fn main() {
 
     let args = Args::parse();
 
-    // Joystick commander drives the vehicle attitude/rate directly.
-    let commander = Extreme3DCommander::new().expect("Failed to initialize Extreme3D joystick");
+    // Stick commander drives the vehicle attitude/rate directly.
+    match args.commander {
+        Device::Extreme3d => fly(
+            Extreme3DCommander::new().expect("Failed to initialize Extreme3D joystick"),
+            &args,
+        ),
+        Device::Spektrum => fly(
+            SpektrumCommander::new().expect("Failed to initialize Spektrum dongle"),
+            &args,
+        ),
+    }
+}
 
+/// Flies the QuadCopterX pipeline from `commander` until Ctrl-C, with params and telemetry over
+/// the native link.
+fn fly(commander: impl Commander, args: &Args) {
     // QuadCopterX model: tuned gains, mixer, and motor-to-channel mapping.
     let airframe = airframes::quadcopter_x();
 

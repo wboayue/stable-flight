@@ -64,7 +64,8 @@ Runnable entrypoints are the crate examples (`crates/*/examples/`); run them fro
 cargo run -p stable-flight-bridge
 
 # Joystick (Logitech Extreme 3D) controlling a quadcopter in RealFlight
-# (RealFlight host defaults to 10.211.55.3:8080; override with --host). Or: just fly-manual
+# (RealFlight host defaults to 10.211.55.3:8080; override with --host; --commander spektrum
+# for a Spektrum transmitter through the WS3000T dongle). Or: just fly-manual
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight
 
 # Scripted figure-eight in RealFlight (script path is the first arg, --host to override host). Or: just fly-auto
@@ -77,6 +78,8 @@ cargo run --bin link_pilot
 
 # Joystick smoke test (no simulator required)
 cargo run --example extreme_3d_commander
+# Spektrum transmitter (WS3000T dongle) check: raw dongle values next to the command
+cargo run --example spektrum_commander
 
 # Regenerate flights/figure_eight.csv (flags like --half-width resize the path)
 cargo run --bin generate_figure_eight
