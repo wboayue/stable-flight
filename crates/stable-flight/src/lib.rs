@@ -983,6 +983,45 @@ pub struct RateSetpoint {
     pub thrust: f32,
 }
 
+/// Passes the sticks through as rates, with `throttle` as `thrust`; `mode` is dropped.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::{RateCommand, RateSetpoint};
+///
+/// let command = RateCommand {
+///     throttle: 0.6,
+///     roll_rate: 0.1,
+///     pitch_rate: -0.2,
+///     yaw_rate: 0.3,
+///     mode: 2,
+/// };
+/// let setpoint = RateSetpoint::from(&command);
+/// assert_eq!(
+///     setpoint,
+///     RateSetpoint { roll_rate: 0.1, pitch_rate: -0.2, yaw_rate: 0.3, thrust: 0.6 }
+/// );
+/// ```
+impl From<&RateCommand> for RateSetpoint {
+    fn from(command: &RateCommand) -> Self {
+        // Exhaustive destructuring: a new field fails to compile here until it is mapped.
+        let RateCommand {
+            throttle,
+            roll_rate,
+            pitch_rate,
+            yaw_rate,
+            mode: _,
+        } = *command;
+        Self {
+            roll_rate,
+            pitch_rate,
+            yaw_rate,
+            thrust: throttle,
+        }
+    }
+}
+
 /// Turns the commander's [`ControlInput`] into an inner-loop [`Setpoint`].
 ///
 /// Guidance only runs while the [`Command`] is armed, so it never sees `arm`.
@@ -1000,21 +1039,14 @@ pub struct RateSetpoint {
 /// thrust cut:
 ///
 /// ```
-/// use stable_flight::{
-///     AttitudeSetpoint, ControlInput, Guidance, RateSetpoint, Setpoint, VehicleState,
-/// };
+/// use stable_flight::{AttitudeSetpoint, ControlInput, Guidance, Setpoint, VehicleState};
 ///
 /// struct RateOnly;
 ///
 /// impl Guidance for RateOnly {
 ///     fn guide(&mut self, _dt: f32, input: &ControlInput, state: &VehicleState) -> Setpoint {
 ///         match input {
-///             ControlInput::Rate(rate) => Setpoint::Rate(RateSetpoint {
-///                 roll_rate: rate.roll_rate,
-///                 pitch_rate: rate.pitch_rate,
-///                 yaw_rate: rate.yaw_rate,
-///                 thrust: rate.throttle,
-///             }),
+///             ControlInput::Rate(rate) => Setpoint::Rate(rate.into()),
 ///             _ => Setpoint::Attitude(AttitudeSetpoint {
 ///                 heading_rad: state.heading_rad,
 ///                 ..Default::default()

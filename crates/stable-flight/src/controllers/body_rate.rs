@@ -2,7 +2,7 @@ use crate::Vec3;
 
 use super::derivative::DerivativeState;
 use super::{Gains, InvalidConfig, check_limit, rescale_integral};
-use crate::math::{all_finite, assert_dt, clamp_symmetric_each};
+use crate::math::{assert_dt, clamp_symmetric};
 
 /// Default proportional gain, in normalized moment per rad/s of rate error.
 const DEFAULT_P: f32 = 0.15;
@@ -84,11 +84,37 @@ impl BodyRateControllerConfig {
 ///   them to motor commands.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BodyRateController {
-    /// Integrated error term for the PID controller.
-    integrated_error: Vec3,
+    /// Roll, pitch, and yaw, each with its own PID state.
+    axes: [RateAxis; 3],
+}
+
+/// One axis of the rate loop: its integral and derivative history.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct RateAxis {
+    /// Integrated rate error, in rad.
+    integrated_error: f32,
 
     /// Previous error for the derivative term; empty on the first tick and after a gap.
-    derivative: DerivativeState<Vec3>,
+    derivative: DerivativeState<f32>,
+}
+
+impl RateAxis {
+    /// `P·e + I·∫e + D·ė` for one axis, saturated to `[-1, 1]`. A non-finite `error_radps`
+    /// gives 0 and stays out of the integral and derivative state.
+    fn step(&mut self, gains: Gains, max_integral: f32, dt: f32, error_radps: f32) -> f32 {
+        if !error_radps.is_finite() {
+            self.derivative.forget();
+            return 0.0;
+        }
+
+        let error_derivative = self.derivative.step(error_radps, dt);
+        self.integrated_error =
+            clamp_symmetric(self.integrated_error + dt * error_radps, max_integral);
+
+        let moment =
+            gains.p * error_radps + gains.i * self.integrated_error + gains.d * error_derivative;
+        clamp_symmetric(moment, 1.0)
+    }
 }
 
 impl BodyRateController {
@@ -113,8 +139,9 @@ impl BodyRateController {
     ///
     /// If `dt` is not positive and finite.
     ///
-    /// A non-finite component in `desired_rates_radps` or `estimated_rates_radps` returns zero moments and
-    /// leaves the controller state untouched (the input policy in `architecture.md`).
+    /// A non-finite component in `desired_rates_radps` or `estimated_rates_radps` gives a zero
+    /// moment on that axis alone and leaves that axis's state untouched, so a bad gyro axis
+    /// doesn't take damping off the others (the input policy in `architecture.md`).
     ///
     /// # Examples
     ///
@@ -140,26 +167,11 @@ impl BodyRateController {
         estimated_rates_radps: Vec3,
     ) -> Vec3 {
         assert_dt(dt);
-        if !(all_finite(&desired_rates_radps) && all_finite(&estimated_rates_radps)) {
-            self.derivative.forget();
-            return Vec3::zeros();
-        }
-
         let error = desired_rates_radps - estimated_rates_radps;
-        let error_derivative = self.derivative.step(error, dt);
-
-        self.integrated_error += dt * error;
-        self.integrated_error = clamp_symmetric_each(self.integrated_error, config.max_integral);
-
-        let (g, y) = (config.gains, config.yaw_gains);
-        let p = Vec3::new(g.p, g.p, y.p);
-        let i = Vec3::new(g.i, g.i, y.i);
-        let d = Vec3::new(g.d, g.d, y.d);
-        let moment = p.component_mul(&error)
-            + i.component_mul(&self.integrated_error)
-            + d.component_mul(&error_derivative);
-
-        clamp_symmetric_each(moment, 1.0)
+        let gains = [config.gains, config.gains, config.yaw_gains];
+        Vec3::from_fn(|axis, _| {
+            self.axes[axis].step(gains[axis], config.max_integral, dt, error[axis])
+        })
     }
 
     /// Rescales the integral for a change of integral gain from `old` to `new`, so the next
@@ -169,10 +181,20 @@ impl BodyRateController {
         old: &BodyRateControllerConfig,
         new: &BodyRateControllerConfig,
     ) {
-        let e = &mut self.integrated_error;
-        e.x = rescale_integral(e.x, old.gains.i, new.gains.i);
-        e.y = rescale_integral(e.y, old.gains.i, new.gains.i);
-        e.z = rescale_integral(e.z, old.yaw_gains.i, new.yaw_gains.i);
+        let gains = [
+            (old.gains.i, new.gains.i),
+            (old.gains.i, new.gains.i),
+            (old.yaw_gains.i, new.yaw_gains.i),
+        ];
+        for (axis, (old_i, new_i)) in self.axes.iter_mut().zip(gains) {
+            axis.integrated_error = rescale_integral(axis.integrated_error, old_i, new_i);
+        }
+    }
+
+    /// The integrated rate error per axis, in rad.
+    #[cfg(test)]
+    fn integrated_error(&self) -> Vec3 {
+        Vec3::from_fn(|axis, _| self.axes[axis].integrated_error)
     }
 }
 
@@ -324,12 +346,12 @@ mod tests {
         let cfg = config(0.0, 0.1, 0.0);
         let mut c = BodyRateController::default();
         c.control(&cfg, 0.1, Vec3::new(2.0, -2.0, 0.0), Vec3::zeros());
-        assert!((c.integrated_error - Vec3::new(0.2, -0.2, 0.0)).amax() < 1e-6);
+        assert!((c.integrated_error() - Vec3::new(0.2, -0.2, 0.0)).amax() < 1e-6);
 
         for _ in 0..20 {
             c.control(&cfg, 0.1, Vec3::new(2.0, -2.0, 0.0), Vec3::zeros());
         }
-        assert!((c.integrated_error - Vec3::new(1.0, -1.0, 0.0)).amax() < 1e-6);
+        assert!((c.integrated_error() - Vec3::new(1.0, -1.0, 0.0)).amax() < 1e-6);
     }
 
     /// Yaw uses `yaw_gains`; roll and pitch use `gains`.
@@ -368,11 +390,11 @@ mod tests {
             Vec3::new(2.0, 0.0, 0.0),
             Vec3::zeros(),
         );
-        let integral = c.integrated_error;
+        let integral = c.integrated_error();
 
         let out = c.control(&config(0.0, 0.5, 0.0), 0.1, Vec3::zeros(), Vec3::zeros());
 
-        assert!(c.integrated_error == integral);
+        assert!(c.integrated_error() == integral);
         assert_abs_diff_eq!(out.x, 0.5 * integral.x, epsilon = 1e-6);
     }
 
@@ -393,7 +415,7 @@ mod tests {
         };
         c.control(&shrunk, DT, Vec3::zeros(), Vec3::zeros());
 
-        assert_abs_diff_eq!(c.integrated_error.x, 0.25, epsilon = 1e-6);
+        assert_abs_diff_eq!(c.integrated_error().x, 0.25, epsilon = 1e-6);
     }
 
     /// An invalid limit fails `validate` but does not panic `control`: it acts as 0.
@@ -412,7 +434,7 @@ mod tests {
             let mut c = BodyRateController::default();
             let out = c.control(&cfg, DT, Vec3::new(1.0, 0.0, 0.0), Vec3::zeros());
             assert!(
-                c.integrated_error == Vec3::zeros(),
+                c.integrated_error() == Vec3::zeros(),
                 "max_integral {max_integral}"
             );
             assert!(out == Vec3::zeros(), "max_integral {max_integral}");
@@ -430,36 +452,52 @@ mod tests {
         );
     }
 
-    /// Non-finite desired or estimated rates yield zero moments without panicking, and the
-    /// first finite tick after them has no derivative kick.
+    /// A non-finite desired or estimated rate zeroes that axis alone (#67): the other axes
+    /// match a controller that never saw it, the bad axis's integral is untouched, and its
+    /// first finite tick afterwards has no derivative kick.
     #[test]
-    fn non_finite_rates_hold_and_do_not_poison_later_ticks() {
+    fn non_finite_rate_zeroes_only_its_axis() {
         let nan = f32::NAN;
         let inf = f32::INFINITY;
         // (desired, estimated)
         let cases = [
-            (Vec3::new(inf, 0.0, 0.0), Vec3::zeros()),
-            (Vec3::zeros(), Vec3::new(0.0, nan, 0.0)),
+            (Vec3::new(inf, 0.3, -0.2), Vec3::zeros()),
+            (Vec3::new(0.4, 0.3, -0.2), Vec3::new(0.0, nan, 0.0)),
+            (Vec3::new(0.4, 0.3, nan), Vec3::zeros()),
+            (Vec3::new(0.4, inf, 0.0), Vec3::new(0.0, inf, 0.0)), // ∞ − ∞
             (Vec3::new(nan, nan, nan), Vec3::zeros()),
         ];
+        let cfg = config(0.15, 0.1, 0.003);
+        let warm_up = Vec3::new(0.5, -0.4, 0.3);
+        let after_gap = Vec3::new(0.2, 0.2, 0.2);
         for (desired, estimated) in cases {
-            let cfg = config(0.15, 0.1, 0.003);
+            let bad = (desired - estimated).map(|e| !e.is_finite());
+            let finite = |v: Vec3| v.map(|c| if c.is_finite() { c } else { 0.0 });
             let mut c = BodyRateController::default();
+            let mut twin = BodyRateController::default();
             // A valid tick first, so there is derivative history to go stale.
-            c.control(&cfg, DT, Vec3::new(0.5, 0.0, 0.0), Vec3::zeros());
-            let integral_before = c.integrated_error;
+            c.control(&cfg, DT, warm_up, Vec3::zeros());
+            twin.control(&cfg, DT, warm_up, Vec3::zeros());
+            let integral_before = c.integrated_error();
 
             let during = c.control(&cfg, DT, desired, estimated);
-            assert!(
-                during == Vec3::zeros(),
-                "{desired:?}/{estimated:?} gave {during:?}"
-            );
-            assert!(c.integrated_error == integral_before);
+            let twin_during = twin.control(&cfg, DT, finite(desired), finite(estimated));
+            let after = c.control(&cfg, DT, after_gap, Vec3::zeros());
+            let twin_after = twin.control(&cfg, DT, after_gap, Vec3::zeros());
 
-            // After the gap: P + I only, no derivative from the pre-gap error.
-            let after = c.control(&cfg, DT, Vec3::new(0.2, 0.0, 0.0), Vec3::zeros());
-            let expected = 0.15 * 0.2 + 0.1 * c.integrated_error.x;
-            assert_abs_diff_eq!(after.x, expected, epsilon = 1e-6);
+            for axis in 0..3 {
+                let row = format!("{desired:?}/{estimated:?} axis {axis}");
+                if bad[axis] {
+                    assert!(during[axis] == 0.0, "{row}: {during:?}");
+                    // After the gap: P + I only, no derivative from the pre-gap error.
+                    let integral = integral_before[axis] + DT * after_gap[axis];
+                    let expected = 0.15 * after_gap[axis] + 0.1 * integral;
+                    assert!((after[axis] - expected).abs() < 1e-6, "{row}: {after:?}");
+                } else {
+                    assert!(during[axis] == twin_during[axis], "{row}: {during:?}");
+                    assert!(after[axis] == twin_after[axis], "{row}: {after:?}");
+                }
+            }
         }
     }
 }

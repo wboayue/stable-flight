@@ -61,7 +61,7 @@ pub struct CopterStabilizerConfig {
     pub yaw: YawControllerConfig,
     /// Body rates (roll, pitch, yaw) in rad/s that a full-scale [`RateSetpoint`] maps to. Each
     /// component must be non-negative and finite: an infinite or NaN scale makes even a neutral
-    /// stick a non-finite rate, which zeroes every moment.
+    /// stick a non-finite rate, which zeroes that axis's moment.
     pub full_scale_rates_radps: Vec3,
     /// Exponent of the thrust curve applied to the linear thrust setpoint. Must be positive
     /// and finite: a negative exponent maps zero throttle to full thrust.
@@ -319,8 +319,8 @@ impl CopterStabilizer {
         setpoint: &RateSetpoint,
         estimated_state: &VehicleState,
     ) -> ControlOutput {
-        // Per-component saturation: `clamp` alone passes NaN, which would zero every moment
-        // (no damping) instead of meaning "hold zero rate".
+        // Per-component saturation: `clamp` alone passes NaN, which would zero that axis's
+        // moment (no damping) instead of meaning "hold zero rate".
         let desired_rates = Vec3::new(
             saturate_unit(setpoint.roll_rate),
             saturate_unit(setpoint.pitch_rate),
