@@ -189,8 +189,8 @@ Each major component is defined by a trait interface, allowing multiple implemen
 * Operates at a fixed frequency (e.g., 250 Hz) validated at construction (`RealTimeRunner::new` rejects non-positive or non-finite rates and ones whose period isn't a representable non-zero `Duration`)
 * Primes the loop, then steps it with the nominal period and sleeps to the next accumulated deadline
 * Checks the `ShutdownSignal` before each tick; SIGINT or SIGTERM (Unix) / Ctrl-C or Ctrl-Break (Windows) set it once installed, and a second stop signal terminates the process
-* Catches up after a slow tick: deadlines accumulate, so missed ticks run back-to-back (resync-on-stall is a planned follow-up)
-* Returns `RunStats` (ticks, elapsed, average rate)
+* Catches up when up to 100 ms behind: deadlines accumulate, so simulator jitter is absorbed by back-to-back ticks and the sum of nominal `dt`s keeps tracking wall time (dropping those ticks instead would slow every `dt`-based clock: integrators, pacing, failsafe timeouts). After a longer stall (e.g. a simulator reconnect) it drops the missed deadlines and resyncs rather than replaying them, since a long burst would step stale state
+* Returns `RunStats` (ticks, elapsed, average rate, overruns, skipped ticks)
 
 ## Configuration Example
 
