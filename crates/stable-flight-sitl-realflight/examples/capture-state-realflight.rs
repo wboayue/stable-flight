@@ -37,7 +37,12 @@ use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::{
     BridgeError, ControlInputs, RealFlightBridge, RealFlightRemoteBridge, SimulatorState,
 };
-use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
+use stable_flight_sitl_realflight::{
+    REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, airframes,
+};
+
+/// Connect timeout for the RealFlight proxy.
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// Joystick or scripted flight in RealFlight with a raw-state CSV capture.
 #[derive(Parser)]
@@ -178,7 +183,12 @@ fn main() {
     let mut out = BufWriter::new(File::create(&args.output).expect("Failed to create output"));
     write_header(&mut out).expect("Failed to write header");
     let bridge = RecordingBridge {
-        inner: RealFlightRemoteBridge::new(&args.host).expect("Failed to create bridge"),
+        inner: RealFlightRemoteBridge::with_timeouts(
+            &args.host,
+            CONNECT_TIMEOUT,
+            REMOTE_IO_TIMEOUT,
+        )
+        .expect("Failed to create bridge"),
         out: RefCell::new(out),
     };
 

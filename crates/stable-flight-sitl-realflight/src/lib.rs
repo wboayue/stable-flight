@@ -26,5 +26,6 @@ pub mod airframes;
 mod vehicle;
 
 pub use vehicle::{
-    ActuatorMapping, RealFlightConfiguration, RealFlightVehicle, SLOW_EXCHANGE, vehicle_state,
+    ActuatorMapping, REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, SLOW_EXCHANGE,
+    vehicle_state,
 };
