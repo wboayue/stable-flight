@@ -7,6 +7,8 @@ exclude = ["firmware"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+# Floor set by dependencies (nalgebra, uuid); checked with `cargo +1.89 check`.
+rust-version = "1.89"
 authors = ["Wil Boayue <wil@wsblabs.com>"]
 license = "MIT"
 repository = "https://github.com/wboayue/stable-flight"

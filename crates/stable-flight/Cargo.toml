@@ -1,11 +1,12 @@
 [package]
 name = "stable-flight"
-description = "Flight-control core for Stable Flight: pipeline traits, copter guidance, cascaded-PID stabilizers, mixers, and the per-tick flight loop"
+description = "no_std flight-control core for Stable Flight: pipeline traits, copter guidance, cascaded-PID stabilizers, mixers, and the per-tick flight loop"
 readme = "README.md"
-keywords = ["flight-controller", "drone", "robotics", "control-systems", "pid"]
-categories = ["aerospace::drones", "science::robotics"]
+keywords = ["flight-controller", "drone", "quadcopter", "control-systems", "pid"]
+categories = ["aerospace::drones", "science::robotics", "embedded", "no-std::no-alloc"]
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
