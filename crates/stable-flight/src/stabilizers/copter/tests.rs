@@ -249,9 +249,9 @@ fn heading_setpoint_is_wrapped_and_nan_is_neutral() {
     }
 }
 
-/// A NaN attitude-rate estimate yields zero moments instead of panicking the body-rate loop.
+/// A NaN on one gyro axis zeroes that axis's moment only; the others keep tracking (#67).
 #[test]
-fn nan_rate_estimate_yields_zero_moments() {
+fn nan_rate_estimate_zeroes_only_its_axis() {
     let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
     let state = VehicleState {
         angular_velocity_radps: Vec3::new(f32::NAN, 0.0, 0.0),
@@ -259,14 +259,19 @@ fn nan_rate_estimate_yields_zero_moments() {
     };
     let output = stabilizer.stabilize(
         0.004,
-        &Setpoint::Attitude(AttitudeSetpoint {
+        &Setpoint::Rate(RateSetpoint {
+            roll_rate: 0.5,
+            pitch_rate: 0.5,
+            yaw_rate: 0.5,
             thrust: 0.5,
-            roll_rad: 0.3,
-            ..Default::default()
         }),
         &state,
     );
-    assert!(output.moments == Vec3::zeros(), "gave {output:?}");
+    assert!(output.moments.x == 0.0, "gave {output:?}");
+    assert!(
+        output.moments.y > 0.0 && output.moments.z > 0.0,
+        "gave {output:?}"
+    );
 }
 
 /// A corrupted attitude quaternion is "no estimate": zero moments. nalgebra's own `euler_angles` reads its yaw as a finite 0, which

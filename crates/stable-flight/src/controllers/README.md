@@ -32,6 +32,7 @@ as 0).
 **Key Features**:
 - Plain PID per axis (`P·e + I·∫e + D·ė`, saturated to [-1, 1]), with anti-windup
 - Separate yaw gains: yaw authority (differential prop drag) is weaker than roll/pitch
+- A non-finite rate on one axis zeroes that axis's moment only; the others keep their loop
 - Real-time performance optimized for high-frequency control loops
 - Comprehensive input validation and error handling
 

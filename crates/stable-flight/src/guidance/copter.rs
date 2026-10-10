@@ -23,7 +23,7 @@ use crate::controllers::*;
 use crate::controllers::{check, check_limit, check_positive, check_tilt};
 use crate::{
     AbsoluteAttitudeCommand, AttitudeCommand, AttitudeSetpoint, Configurable, ControlInput,
-    Guidance, LandCommand, RateSetpoint, Saturation, Setpoint, VehicleState, WaypointCommand,
+    Guidance, LandCommand, Saturation, Setpoint, VehicleState, WaypointCommand,
 };
 
 use super::rate_divider::RateDivider;
@@ -295,12 +295,7 @@ impl Guidance for CopterGuidance {
                 if estimated_state.heading_rad.is_finite() {
                     self.heading = wrap_angle(estimated_state.heading_rad);
                 }
-                Setpoint::Rate(RateSetpoint {
-                    roll_rate: rate_command.roll_rate,
-                    pitch_rate: rate_command.pitch_rate,
-                    yaw_rate: rate_command.yaw_rate,
-                    thrust: rate_command.throttle,
-                })
+                Setpoint::Rate(rate_command.into())
             }
             ControlInput::Waypoint(waypoint_command) => {
                 Setpoint::Attitude(self.navigate(dt, waypoint_command, estimated_state))
