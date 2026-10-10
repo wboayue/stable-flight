@@ -29,6 +29,9 @@ not each change; per-change entries start after it.
   records.
 - **Arming:** `MAV_CMD_COMPONENT_ARM_DISARM` forwarded as `Control::Arm`, acked once the flight
   controller's heartbeat confirms it (`FAILED` after 1 s).
+- **Setpoints:** `MANUAL_CONTROL` forwarded as attitude commands, and
+  `SET_POSITION_TARGET_LOCAL_NED` (`LOCAL_NED`, position included) as waypoints capped at
+  `--offboard-speed`.
 - **Link heartbeat:** `Control::Heartbeat` to the flight controller at 5 Hz while the ground
   station is alive, so losing it triggers the flight controller's failsafe.
 - **QGC connect sequence:** empty `MISSION_COUNT` per mission type, `AUTOPILOT_VERSION` and

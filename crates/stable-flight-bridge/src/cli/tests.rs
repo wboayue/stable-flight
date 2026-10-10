@@ -22,3 +22,20 @@ fn parses_lat_lon_alt_and_rejects_malformed_or_out_of_range_origins() {
         check!(parse_origin(arg).is_ok() == accepted, "{arg:?}");
     }
 }
+
+#[test]
+fn accepts_only_positive_finite_speeds() {
+    // (argument, expected)
+    let cases = [
+        ("5", Some(5.0)),
+        (" 2.5 ", Some(2.5)),
+        ("0", None),
+        ("-1", None),
+        ("NaN", None),
+        ("inf", None),
+        ("fast", None),
+    ];
+    for (arg, expected) in cases {
+        check!(parse_speed(arg).ok() == expected, "{arg:?}");
+    }
+}

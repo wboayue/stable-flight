@@ -1,4 +1,5 @@
-//! The `--origin` argument: see [`parse_origin`].
+//! Parsers for the command-line values clap can't check on its own: `--origin`
+//! ([`parse_origin`]) and `--offboard-speed` ([`parse_speed`]).
 
 use stable_flight_mavlink::{FlatEarth, GeodeticOrigin};
 
@@ -22,4 +23,18 @@ pub(crate) fn parse_origin(s: &str) -> Result<FlatEarth, String> {
         altitude_m: number(alt)?,
     };
     FlatEarth::new(origin).map_err(|e| e.to_string())
+}
+
+/// Parses a speed cap in m/s, rejecting one that isn't positive and finite: guidance reads a
+/// zero, negative, or NaN cap as no cap at all.
+pub(crate) fn parse_speed(s: &str) -> Result<f32, String> {
+    let speed: f32 = s
+        .trim()
+        .parse()
+        .map_err(|e| format!("{s:?} is not a number: {e}"))?;
+    if speed > 0.0 && speed.is_finite() {
+        Ok(speed)
+    } else {
+        Err(format!("speed must be positive and finite, got {speed}"))
+    }
 }

@@ -117,3 +117,64 @@ fn flies_the_latest_command_armed_only_by_arm_messages() {
         }
     }
 }
+
+#[test]
+fn sticks_stay_fresh_only_on_commands_waypoints_on_any_message() {
+    // (case, messages before the tick, expected since_update_s)
+    let ticks = [
+        (
+            "heartbeat, nothing flown yet: any message counts",
+            vec![Control::Heartbeat],
+            Some(0.0),
+        ),
+        ("sticks", vec![rate(0.1)], Some(0.0)),
+        (
+            "heartbeats don't refresh sticks",
+            vec![Control::Heartbeat],
+            Some(DT),
+        ),
+        ("still stale", vec![Control::Heartbeat], Some(2.0 * DT)),
+        (
+            "an arm doesn't either",
+            vec![Control::Arm(true)],
+            Some(3.0 * DT),
+        ),
+        ("a stick command does", vec![rate(0.2)], Some(0.0)),
+        ("a waypoint", vec![waypoint(5.0)], Some(0.0)),
+        (
+            "heartbeats refresh a waypoint",
+            vec![Control::Heartbeat],
+            Some(0.0),
+        ),
+        ("silence", vec![], Some(DT)),
+        (
+            "back to sticks: counts from that command",
+            vec![rate(0.0)],
+            Some(0.0),
+        ),
+        (
+            "and stale again on heartbeats",
+            vec![Control::Heartbeat],
+            Some(DT),
+        ),
+    ];
+
+    let mut queue = Queue::<Control, 8>::new();
+    let (mut router, consumer) = queue.split();
+    let mut commander = LinkCommander::new(consumer);
+    for (i, (case, messages, since)) in ticks.into_iter().enumerate() {
+        for message in messages {
+            router.enqueue(message).expect("room");
+        }
+        commander.next_command(DT, &VehicleState::default());
+        let (got, want) = (commander.since_update_s(), since);
+        match (got, want) {
+            (Some(got), Some(want)) => {
+                check!((got - want).abs() < 1e-6, "tick {i}: {case}: {got}");
+            }
+            _ => {
+                check!(got == want, "tick {i}: {case}");
+            }
+        }
+    }
+}
