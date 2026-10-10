@@ -47,8 +47,8 @@ pub use frame::{DecodeError, EncodeError, MAX_FRAME_LEN, Message, PROTOCOL_VERSI
 pub use io::{LinkError, RecvMessage, SendMessage};
 pub use link::{Link, LinkRx, LinkTx};
 pub use message::{
-    Control, Downlink, MAX_STATUS_LEN, ParamName, ParamRequest, ParamValue, Record, StatusText,
-    Uplink,
+    Control, Downlink, MAX_STATUS_LEN, Output, ParamName, ParamRequest, ParamValue, Record,
+    StatusText, Uplink,
 };
 
 /// The `heapless` version [`ParamName`] and [`StatusText`] use.

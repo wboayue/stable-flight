@@ -56,6 +56,17 @@ fn worst_case_record() -> Record {
     }
 }
 
+/// Every flag set.
+fn worst_case_saturation() -> Saturation {
+    let mut saturation = Saturation::default();
+    saturation.tilt = true;
+    saturation.thrust = true;
+    saturation.moments = [true; 3];
+    saturation.mixer_thrust = true;
+    saturation.mixer_moments = true;
+    saturation
+}
+
 fn sample_state() -> VehicleState {
     VehicleState {
         position_m: Vec3::new(1.0, 2.0, 3.0),
@@ -134,6 +145,11 @@ fn every_downlink_variant_round_trips() {
             link_ok: false,
         },
         Downlink::State(sample_state()),
+        Downlink::Output(Output::default()),
+        Downlink::Output(Output {
+            thrust: 0.6,
+            saturation: worst_case_saturation(),
+        }),
         Downlink::Heartbeat {
             armed: true,
             mode: ControlMode::Land,
@@ -160,6 +176,10 @@ fn largest_messages_fit_max_frame_len() {
     let longest_status = StatusText::try_from("S".repeat(MAX_STATUS_LEN).as_str()).expect("fits");
     let downlinks = [
         Downlink::Record(worst_case_record()),
+        Downlink::Output(Output {
+            thrust: f32::MAX,
+            saturation: worst_case_saturation(),
+        }),
         Downlink::Param(ParamValue {
             name: longest_name.clone(),
             value: f32::MAX,

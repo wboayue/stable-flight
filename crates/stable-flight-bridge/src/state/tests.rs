@@ -1,8 +1,6 @@
 use assert2::check;
 use mavlink::Message;
-use stable_flight_link::stable_flight::{
-    ActuatorCommand, Command, ControlOutput, Saturation, Setpoint,
-};
+use stable_flight_link::stable_flight::Saturation;
 
 use super::*;
 use crate::test_support::{at_altitude, earth, home_zs, landed_states};
@@ -26,14 +24,23 @@ fn poll_names(service: &mut StateService, now: Instant) -> Vec<&'static str> {
     out.to_gcs.iter().map(|m| m.message_name()).collect()
 }
 
-const ALL: [&str; 6] = [
-    "ATTITUDE",
-    "LOCAL_POSITION_NED",
-    "GLOBAL_POSITION_INT",
-    "VFR_HUD",
-    "HOME_POSITION",
-    "EXTENDED_SYS_STATE",
-];
+/// What a stream poll sends, in order: with global position or without, then the slow
+/// messages.
+fn stream(global: bool, slow: &[&'static str]) -> Vec<&'static str> {
+    let position = ["ATTITUDE", "LOCAL_POSITION_NED", "GLOBAL_POSITION_INT"];
+    let saturation = ["NAMED_VALUE_INT"; stable_flight_mavlink::SATURATION_FLAGS];
+    let position = if global {
+        &position[..]
+    } else {
+        &position[..2]
+    };
+    [position, &["VFR_HUD"], &saturation, slow].concat()
+}
+
+/// Everything, as the first poll after a state sends it.
+fn all() -> Vec<&'static str> {
+    stream(true, &["HOME_POSITION", "EXTENDED_SYS_STATE"])
+}
 
 #[test]
 fn sends_nothing_until_the_first_state_then_every_stream_at_once() {
@@ -44,7 +51,7 @@ fn sends_nothing_until_the_first_state_then_every_stream_at_once() {
     check!(poll_names(&mut service, t0 + 500 * MS).is_empty());
     service.on_state(&at_altitude(10.0), false, ControlMode::Attitude);
     check!(
-        poll_names(&mut service, t0 + 500 * MS) == ALL,
+        poll_names(&mut service, t0 + 500 * MS) == all(),
         "every stream on the first state"
     );
 }
@@ -66,6 +73,10 @@ fn sends_each_stream_at_its_rate() {
         ("LOCAL_POSITION_NED", 20),
         ("GLOBAL_POSITION_INT", 20),
         ("VFR_HUD", 20),
+        (
+            "NAMED_VALUE_INT",
+            20 * stable_flight_mavlink::SATURATION_FLAGS,
+        ),
         ("HOME_POSITION", 2),
         ("EXTENDED_SYS_STATE", 2),
     ];
@@ -82,15 +93,7 @@ fn sends_no_global_position_or_home_without_an_origin() {
     let t0 = Instant::now();
     let mut service = service(None, t0);
     service.on_state(&at_altitude(10.0), false, ControlMode::Attitude);
-    check!(
-        poll_names(&mut service, t0)
-            == [
-                "ATTITUDE",
-                "LOCAL_POSITION_NED",
-                "VFR_HUD",
-                "EXTENDED_SYS_STATE"
-            ]
-    );
+    check!(poll_names(&mut service, t0) == stream(false, &["EXTENDED_SYS_STATE"]));
 }
 
 #[test]
@@ -154,42 +157,90 @@ fn sends_the_latest_state_with_time_since_the_flight_controller_appeared() {
     check!(attitude.time_boot_ms == 250);
 }
 
-fn record(thrust: f32) -> Record {
-    Record {
-        dt: Duration::from_millis(4),
-        command: Command::default(),
-        setpoint: Setpoint::Attitude(Default::default()),
-        state: VehicleState::default(),
-        control: ControlOutput::new(thrust, Default::default()),
-        actuators: ActuatorCommand::default(),
-        saturation: Saturation::default(),
-        failsafe: None,
-    }
+fn output(thrust: f32, saturation: Saturation) -> Output {
+    Output { thrust, saturation }
+}
+
+/// `VFR_HUD` throttle and the saturation flags set, by name, from a poll at `at`.
+fn throttle_and_saturation(service: &mut StateService, at: Instant) -> (Option<u16>, Vec<String>) {
+    let mut out = Outbox::default();
+    service.poll(at, &mut out);
+    let throttle = out.to_gcs.iter().find_map(|m| match m {
+        MavMessage::VFR_HUD(d) => Some(d.throttle),
+        _ => None,
+    });
+    let set = out
+        .to_gcs
+        .iter()
+        .filter_map(|m| match m {
+            MavMessage::NAMED_VALUE_INT(d) if d.value == 1 => {
+                Some(d.name.to_str().expect("ASCII").to_owned())
+            }
+            _ => None,
+        })
+        .collect();
+    (throttle, set)
 }
 
 #[test]
-fn vfr_hud_throttle_is_the_latest_records_thrust() {
+fn vfr_hud_throttle_is_the_latest_outputs_thrust() {
     let t0 = Instant::now();
-    let throttle_at = |service: &mut StateService, at: Instant| {
-        let mut out = Outbox::default();
-        service.poll(at, &mut out);
-        out.to_gcs.iter().find_map(|m| match m {
-            MavMessage::VFR_HUD(d) => Some(d.throttle),
-            _ => None,
-        })
-    };
     let mut service = service(None, t0);
     service.on_state(&VehicleState::default(), true, ControlMode::Attitude);
 
-    check!(throttle_at(&mut service, t0) == Some(0), "no record yet");
-    service.on_record(&record(0.62));
-    check!(throttle_at(&mut service, t0 + STREAM) == Some(62));
+    check!(
+        throttle_and_saturation(&mut service, t0).0 == Some(0),
+        "no output yet"
+    );
+    service.on_output(&output(0.3, Saturation::default()));
+    service.on_output(&output(0.62, Saturation::default()));
+    check!(throttle_and_saturation(&mut service, t0 + STREAM).0 == Some(62));
 
     service.fc_appeared(t0 + 5 * SLOW, &mut Outbox::default());
     service.on_state(&VehicleState::default(), true, ControlMode::Attitude);
     check!(
-        throttle_at(&mut service, t0 + 5 * SLOW) == Some(0),
-        "a restarted flight controller has sent no record"
+        throttle_and_saturation(&mut service, t0 + 5 * SLOW).0 == Some(0),
+        "a restarted flight controller has sent no output"
+    );
+}
+
+#[test]
+fn reports_every_saturation_since_the_last_stream_once() {
+    let mut tilt = Saturation::default();
+    tilt.tilt = true;
+    let mut yaw = Saturation::default();
+    yaw.moments[2] = true;
+    let none = Saturation::default();
+    // (outputs before the poll, poll offset from t0, expected flags set)
+    let polls: [(&[Saturation], Duration, &[&str]); 5] = [
+        (&[], Duration::ZERO, &[]),
+        (&[tilt, none, yaw, none], STREAM, &["SAT_TILT", "SAT_YAW"]), // ORed
+        (&[tilt], STREAM + 10 * MS, &[]),                             // stream not due: held
+        (&[none], 2 * STREAM, &["SAT_TILT"]),
+        (&[none], 3 * STREAM, &[]), // cleared by the previous stream
+    ];
+
+    let t0 = Instant::now();
+    let mut service = service(None, t0);
+    service.on_state(&VehicleState::default(), true, ControlMode::Attitude);
+    for (i, (outputs, at, expected)) in polls.into_iter().enumerate() {
+        for saturation in outputs {
+            service.on_output(&output(0.5, *saturation));
+        }
+        check!(
+            throttle_and_saturation(&mut service, t0 + at).1 == expected,
+            "poll {i}"
+        );
+    }
+
+    service.on_output(&output(0.5, tilt));
+    service.fc_appeared(t0 + 5 * SLOW, &mut Outbox::default());
+    service.on_state(&VehicleState::default(), true, ControlMode::Attitude);
+    check!(
+        throttle_and_saturation(&mut service, t0 + 5 * SLOW)
+            .1
+            .is_empty(),
+        "a restarted flight controller starts clear"
     );
 }
 
@@ -208,7 +259,7 @@ fn starts_over_when_the_flight_controller_comes_back() {
     let mut out = Outbox::default();
     service.poll(back, &mut out);
     let names: Vec<_> = out.to_gcs.iter().map(|m| m.message_name()).collect();
-    check!(names == ALL);
+    check!(names == all());
     check!(home_zs(&out.to_gcs) == [-30.0], "home latched afresh");
     let time_boot_ms = out.to_gcs.iter().find_map(|m| match m {
         MavMessage::ATTITUDE(d) => Some(d.time_boot_ms),

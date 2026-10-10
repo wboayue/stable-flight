@@ -7,11 +7,13 @@ use stable_flight::mixers::QuadCopterMixer;
 use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle};
-use stable_flight::{Command, ControlInput, FlightLoop, LandCommand, Vec2, VehicleState};
+use stable_flight::{
+    Command, ControlInput, FlightLoop, LandCommand, Saturation, Vec2, VehicleState,
+};
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::loopback::{Loopback, LoopbackLink};
 use stable_flight_link::publisher::LinkPublisher;
-use stable_flight_link::{MAX_FRAME_LEN, ParamRequest, RecvMessage, SendMessage, Uplink};
+use stable_flight_link::{MAX_FRAME_LEN, Output, ParamRequest, RecvMessage, SendMessage, Uplink};
 
 use super::*;
 use crate::test_support::{
@@ -214,6 +216,37 @@ fn takes_state_only_while_the_flight_controller_is_alive_with_its_arm_state() {
     bridge.on_downlink(&at(20.0), gone, &mut out);
     bridge.poll(gone, &mut out);
     check!(out.to_gcs.is_empty(), "timed out: nothing sent");
+}
+
+#[test]
+fn takes_control_output_only_while_the_flight_controller_is_alive() {
+    let output = Downlink::Output(Output {
+        thrust: 0.4,
+        saturation: Saturation::default(),
+    });
+    let throttle = |out: &Outbox| {
+        out.to_gcs.iter().find_map(|m| match m {
+            MavMessage::VFR_HUD(d) => Some(d.throttle),
+            _ => None,
+        })
+    };
+    let t0 = Instant::now();
+    let mut bridge = Bridge::new(BridgeConfig::default());
+    let mut out = Outbox::default();
+
+    bridge.on_downlink(&output, t0, &mut out);
+    bridge.on_downlink(&heartbeat(true), t0, &mut out);
+    bridge.on_downlink(&Downlink::State(at_altitude(10.0)), t0, &mut out);
+    bridge.poll(t0, &mut out);
+    check!(
+        throttle(&out) == Some(0),
+        "no flight controller yet: output ignored"
+    );
+
+    bridge.on_downlink(&output, t0, &mut out);
+    out = Outbox::default();
+    bridge.poll(t0 + Duration::from_secs(1), &mut out);
+    check!(throttle(&out) == Some(40));
 }
 
 #[test]

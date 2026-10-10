@@ -20,6 +20,7 @@ Each builder returns a payload (`*_DATA`) for the caller to wrap; vehicle identi
 - `global_position_int`, `home_position`: `GLOBAL_POSITION_INT` (relative altitude from home; `None` for a non-finite position) and `HOME_POSITION`, projected through a `FlatEarth` around a `GeodeticOrigin` (`DEFAULT_ORIGIN`, or your own; `FlatEarth::new` rejects an out-of-range one with `InvalidOrigin`).
 - `vfr_hud(state, thrust)`: `VFR_HUD`, throttle from the normalized commanded thrust.
 - `extended_sys_state(landed_state)`: `EXTENDED_SYS_STATE`, no VTOL state.
+- `saturation(flags, time_boot_ms)`: one `NAMED_VALUE_INT` (0/1) per core `Saturation` flag (`SAT_TILT`, `SAT_THR`, `SAT_ROLL`/`PITCH`/`YAW`, `SAT_MIXTHR`, `SAT_MIXMOM`; `SATURATION_FLAGS` of them), so QGC's MAVLink Inspector charts each flag on its own.
 
 ```rust
 use stable_flight::ControlMode;

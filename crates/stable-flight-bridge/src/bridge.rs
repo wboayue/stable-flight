@@ -181,8 +181,8 @@ impl Bridge {
                     self.state.on_state(state, fc.armed, fc.mode);
                 }
             }
-            Downlink::Record(record) if alive.is_some() => {
-                self.state.on_record(record);
+            Downlink::Output(output) if alive.is_some() => {
+                self.state.on_output(output);
             }
             Downlink::Status(text) => {
                 out.to_gcs
