@@ -88,8 +88,7 @@ impl Commander for LinkCommander<'_> {
                 Control::Command(c) => {
                     command = true;
                     self.input = c.input;
-                    self.flying_sticks =
-                        matches!(c.input, ControlInput::Attitude(_) | ControlInput::Rate(_));
+                    self.flying_sticks = c.input.is_sticks();
                 }
                 Control::Arm(arm) => self.armed = arm,
                 Control::Heartbeat => {}

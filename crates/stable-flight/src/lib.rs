@@ -160,16 +160,21 @@ pub trait Commander {
 ///
 /// let link_ok = |state: Option<FailsafeState>| state != Some(FailsafeState::Fallback);
 /// assert!(link_ok(Some(FailsafeState::Primary)));
+/// assert!(link_ok(Some(FailsafeState::AwaitingSticks))); // heard, not yet in control
 /// assert!(link_ok(None)); // no failsafe: nothing to report
 /// assert!(!link_ok(Some(FailsafeState::Fallback)));
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
 pub enum FailsafeState {
     /// The primary (link-fed) commander flies.
     Primary,
     /// The primary went stale, or hasn't been heard yet; the fallback flies.
     Fallback,
+    /// The primary is fresh again, but flies sticks over an armed vehicle: the fallback flies
+    /// until a stick moves, so a forgotten joystick can't take over.
+    AwaitingSticks,
 }
 
 /// One tick's command from a [`Commander`]: whether the vehicle should be armed, and what to fly.
@@ -318,6 +323,23 @@ impl Default for ControlInput {
 }
 
 impl ControlInput {
+    /// Whether this is pilot-style stick input (attitude or rate): a stream that must keep
+    /// arriving to stay valid, unlike a waypoint, which stays valid until replaced. A link-fed
+    /// commander and its failsafe treat it as stale sooner, and hand it back only once it moves.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::ControlInput;
+    ///
+    /// assert!(ControlInput::Attitude(Default::default()).is_sticks());
+    /// assert!(ControlInput::Rate(Default::default()).is_sticks());
+    /// assert!(!ControlInput::Waypoint(Default::default()).is_sticks());
+    /// ```
+    pub fn is_sticks(&self) -> bool {
+        matches!(self, ControlInput::Attitude(_) | ControlInput::Rate(_))
+    }
+
     /// Which kind of input this is, without its values: the flight mode a ground station shows.
     ///
     /// # Examples

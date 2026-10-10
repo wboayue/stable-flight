@@ -489,16 +489,16 @@ fn a_waypoint_takes_back_an_armed_vehicle_at_once_and_stays_armed() {
 
 #[test]
 fn sticks_take_back_an_armed_vehicle_only_once_they_move() {
-    use FailsafeState::{Fallback as F, Primary as P};
+    use FailsafeState::{AwaitingSticks as A, Fallback as F, Primary as P};
     let (mut commander, link) = armed_then_lost(sticks(0.6, 0.0));
     let fresh = Some(0.0);
     // (case, sticks sent, expected state)
     let ticks = [
         ("recovering", sticks(0.2, 0.0), F), // the joystick comes back at low throttle
         ("still recovering", sticks(0.2, 0.0), F),
-        ("recovered, sticks unchanged: holds", sticks(0.2, 0.0), F),
-        ("still unchanged", sticks(0.2, 0.0), F),
-        ("moved less than the delta", sticks(0.25, 0.05), F),
+        ("recovered, sticks unchanged: holds", sticks(0.2, 0.0), A),
+        ("still unchanged", sticks(0.2, 0.0), A),
+        ("moved less than the delta", sticks(0.25, 0.05), A),
         ("moved past it: the pilot has them", sticks(0.5, 0.0), P),
     ];
     for (i, (case, input, state)) in ticks.into_iter().enumerate() {
@@ -510,7 +510,7 @@ fn sticks_take_back_an_armed_vehicle_only_once_they_move() {
 
 #[test]
 fn a_dropout_while_waiting_restarts_the_stick_reference() {
-    use FailsafeState::{Fallback as F, Primary as P};
+    use FailsafeState::{AwaitingSticks as A, Fallback as F, Primary as P};
     let (mut commander, link) = armed_then_lost(sticks(0.6, 0.0));
     let fresh = Some(0.0);
     // (case, since, sticks sent, expected state)
@@ -521,7 +521,7 @@ fn a_dropout_while_waiting_restarts_the_stick_reference() {
             "recovered at 0.2: the reference",
             fresh,
             sticks(0.2, 0.0),
-            F,
+            A,
         ),
         ("dropout", Some(0.6), sticks(0.2, 0.0), F),
         ("recovering again", fresh, sticks(0.5, 0.0), F),
@@ -530,7 +530,7 @@ fn a_dropout_while_waiting_restarts_the_stick_reference() {
             "recovered at 0.5: the new reference",
             fresh,
             sticks(0.5, 0.0),
-            F,
+            A,
         ),
         ("moved from 0.5", fresh, sticks(0.7, 0.0), P),
     ];

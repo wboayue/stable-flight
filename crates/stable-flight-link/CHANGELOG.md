@@ -30,7 +30,8 @@ not each change; per-change entries start after it.
 - **Router:** `router::UplinkRouter` decodes uplinks and routes params and `Control` messages
   to optional queues, independent of the active commander.
 - **Publisher:** `publisher::LinkPublisher`, a core `TelemetryPublisher`: heartbeat, state, and
-  optional records at configured rates, and paced param replies.
+  optional records at configured rates, and paced param replies; each failsafe change is
+  announced once as status text.
 - **`fc::FcLink`:** the flight controller's side (param queues, router, param server, publisher)
   wired in one call (`wire`, or `wire_with` and `FcLinkConfig` for publisher rates and per-poll
   limits); its `FcPoller` runs between ticks. `wire_linked` also routes control messages to a

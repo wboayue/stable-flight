@@ -195,11 +195,43 @@ impl<P: LinkedCommander, F: Fallback> FailsafeCommander<P, F> {
     /// Whether the recovered primary, flying `input`, may take over now: at once, unless it
     /// flies sticks over an armed vehicle, which must first move.
     fn may_take_over(&mut self, input: &ControlInput) -> bool {
-        if !self.armed || !flies_sticks(input) {
+        if !self.armed || !input.is_sticks() {
             return true;
         }
         let reference = *self.takeover_reference.get_or_insert(*input);
         sticks_moved(&reference, input, self.config.takeover_stick_delta)
+    }
+
+    /// Decides who flies this tick, given whether the primary is `fresh` and what it flies.
+    /// Returns whether the primary took over this tick.
+    fn update_state(
+        &mut self,
+        fresh: bool,
+        dt: f32,
+        input: &ControlInput,
+        state: &VehicleState,
+    ) -> bool {
+        match self.state {
+            Some(FailsafeState::Primary) if fresh => return false,
+            None | Some(FailsafeState::Primary) => self.fall_back(state),
+            _ => {}
+        }
+        // The fallback flies: is the primary back, and may it take over?
+        self.fresh_for_s = if fresh { self.fresh_for_s + dt } else { 0.0 };
+        let recovered =
+            fresh && self.fresh_for_s >= self.config.recover_after_s && self.fallback.can_release();
+        if !recovered {
+            self.state = Some(FailsafeState::Fallback);
+            self.takeover_reference = None;
+            return false;
+        }
+        if !self.may_take_over(input) {
+            self.state = Some(FailsafeState::AwaitingSticks);
+            return false;
+        }
+        self.state = Some(FailsafeState::Primary);
+        self.takeover_reference = None;
+        true
     }
 }
 
@@ -211,25 +243,7 @@ impl<P: LinkedCommander, F: Fallback> Commander for FailsafeCommander<P, F> {
             .since_update_s()
             .is_some_and(|s| s <= self.config.timeout_s);
 
-        match self.state {
-            None => self.fall_back(current_state),
-            Some(FailsafeState::Primary) if !fresh => self.fall_back(current_state),
-            _ => {}
-        }
-        let mut handed_over = false;
-        if self.state == Some(FailsafeState::Fallback) {
-            self.fresh_for_s = if fresh { self.fresh_for_s + dt } else { 0.0 };
-            let recovered = fresh
-                && self.fresh_for_s >= self.config.recover_after_s
-                && self.fallback.can_release();
-            if !recovered {
-                self.takeover_reference = None;
-            } else if self.may_take_over(&primary.input) {
-                self.state = Some(FailsafeState::Primary);
-                self.takeover_reference = None;
-                handed_over = true;
-            }
-        }
+        let handed_over = self.update_state(fresh, dt, &primary.input, current_state);
 
         let command = if self.state == Some(FailsafeState::Primary) {
             if handed_over {
@@ -253,11 +267,6 @@ impl<P: LinkedCommander, F: Fallback> Commander for FailsafeCommander<P, F> {
     fn failsafe(&self) -> Option<FailsafeState> {
         self.state
     }
-}
-
-/// Whether `input` is sticks (attitude or rate), which a forgotten joystick could keep sending.
-fn flies_sticks(input: &ControlInput) -> bool {
-    matches!(input, ControlInput::Attitude(_) | ControlInput::Rate(_))
 }
 
 /// Whether the sticks in `now` moved more than `delta` on any axis from `reference`; a change of

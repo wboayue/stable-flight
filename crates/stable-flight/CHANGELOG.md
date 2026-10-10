@@ -39,7 +39,8 @@ not each change; per-change entries start after it.
   when it goes stale, returning after a recovery period; the fallback never arms, a disarm is
   always honored, the primary's arm is synced to the vehicle at the handover
   (`LinkedCommander::sync_arm`), and sticks take back an armed vehicle only once they move
-  (`takeover_stick_delta`). `Commander::failsafe` reports the state into `TelemetryRecord::failsafe`
+  (`takeover_stick_delta`), reporting `FailsafeState::AwaitingSticks` meanwhile.
+  `ControlInput::is_sticks` names stick-style input. `Commander::failsafe` reports the state into `TelemetryRecord::failsafe`
   (`FailsafeState`).
 - **Params** (`params`): every guidance and stabilizer gain and limit readable, settable,
   and listable by index or by a MAVLink-sized name (`STAB_RATE_P`, `GUID_TILT_MAX`), with
