@@ -230,6 +230,8 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
   - crate `README.md` — that crate's purpose, usage, features;
   - root `README.md` — project overview, crate index, supported simulators, quick start;
   - `AGENTS.md` — commands, coding/testing rules, PR checklist;
+  - `CONTRIBUTING.md` — the entry point for outside contributors; links here for the rules;
+  - `SECURITY.md` — supported versions and how to report a vulnerability;
   - `architecture.md` — crate boundaries, dependency rules, traits, and the rationale behind
     the frame and timing contracts;
   - core rustdoc — the frame contract (`VehicleState`) and timing contract (`Vehicle`) themselves.
