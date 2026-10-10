@@ -20,6 +20,10 @@ not each change; per-change entries start after it.
   - Survives a lost connection: `with_reconnect` rebuilds the bridge with backoff and disables
     RC on it again; failed exchanges are logged at most once a second, and exchanges over
     20 ms (`SLOW_EXCHANGE`) at `debug`.
+  - A stalled proxy or simulator can't hang the tick: built on `realflight-bridge` 2.1, whose
+    calls time out as a connection error. On one, the vehicle closes the connection at once,
+    so the proxy (one client at a time) accepts the reconnect. `REMOTE_IO_TIMEOUT` (250 ms),
+    the examples' I/O timeout, pairs with a proxy run with `--request-timeout-ms 150`.
   - Covers every core conformance scenario.
 - **Airframes:** `airframes::quadcopter_x()`, the flight-checked QuadCopterX tune (guidance and
   stabilizer configs, mixer, channel mapping).

@@ -3,7 +3,8 @@
 //! Calls `exchange_data` with neutral inputs (motors off: run it with the aircraft on the
 //! ground) at a paced rate, and logs every exchange slower than `--threshold-ms` with the time
 //! since the previous slow one. Ctrl-C prints the latency percentiles and hands RC back to
-//! RealFlight.
+//! RealFlight. A connection error, such as an exchange over the bridge's I/O timeout, stops the
+//! probe and reports: a remote bridge is out of sync after one, so rerun the probe.
 //!
 //! By default it goes through the `realflight_bridge_proxy` at `--host`, as the flight examples
 //! do. `--local <simulator addr>` talks to RealFlight directly instead (run it on the RealFlight
@@ -22,10 +23,14 @@ use env_logger::{Builder, Env};
 use log::{info, warn};
 
 use stable_flight_sitl::ShutdownSignal;
-use stable_flight_sitl_realflight::SLOW_EXCHANGE;
 use stable_flight_sitl_realflight::realflight_bridge::{
-    Configuration, ControlInputs, RealFlightBridge, RealFlightLocalBridge, RealFlightRemoteBridge,
+    BridgeError, Configuration, ControlInputs, RealFlightBridge, RealFlightLocalBridge,
+    RealFlightRemoteBridge,
 };
+use stable_flight_sitl_realflight::{REMOTE_IO_TIMEOUT, SLOW_EXCHANGE};
+
+/// Connect timeout for the RealFlight proxy.
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// RealFlight exchange latency probe.
 #[derive(Parser)]
@@ -72,8 +77,12 @@ fn main() {
             probe(&bridge, &args, &shutdown);
         }
         None => {
-            let bridge =
-                RealFlightRemoteBridge::new(&args.host).expect("failed to connect to the proxy");
+            let bridge = RealFlightRemoteBridge::with_timeouts(
+                &args.host,
+                CONNECT_TIMEOUT,
+                REMOTE_IO_TIMEOUT,
+            )
+            .expect("failed to connect to the proxy");
             info!("Timing exchanges through the proxy at {}", args.host);
             probe(&bridge, &args, &shutdown);
         }
@@ -99,9 +108,21 @@ fn probe(bridge: &impl RealFlightBridge, args: &Args, shutdown: &ShutdownSignal)
         let elapsed = start.elapsed();
         latencies.push(elapsed);
 
-        if let Err(e) = result {
-            errors += 1;
-            warn!("Exchange {} failed: {e}", latencies.len());
+        match result {
+            Err(e @ BridgeError::Connection(_)) => {
+                errors += 1;
+                warn!(
+                    "Exchange {} failed after {:.1} ms, stopping: {e}",
+                    latencies.len(),
+                    elapsed.as_secs_f64() * 1000.0
+                );
+                break;
+            }
+            Err(e) => {
+                errors += 1;
+                warn!("Exchange {} failed: {e}", latencies.len());
+            }
+            Ok(_) => {}
         }
         if elapsed > threshold {
             let since = previous_slow.map_or(String::from("first"), |at: Instant| {

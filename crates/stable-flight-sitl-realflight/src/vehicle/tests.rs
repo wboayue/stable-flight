@@ -33,6 +33,9 @@ struct MockRealFlightBridge {
     connection_lost: bool,
     /// Fails `disable_rc` with a SOAP fault, as RealFlight does when the Link already has control.
     disable_rc_fault: bool,
+    /// Stands in for the bridge's open connection: a test holding a clone sees it close (the
+    /// strong count drop) when the bridge is dropped.
+    _connection: Option<Arc<()>>,
 }
 
 impl MockRealFlightBridge {
@@ -45,6 +48,7 @@ impl MockRealFlightBridge {
             stamp_exchanges: false,
             connection_lost: false,
             disable_rc_fault: false,
+            _connection: None,
         }
     }
 }
@@ -287,7 +291,7 @@ fn exchanges_once_per_tick_and_reports_state_from_the_previous_exchange() {
 
     let (_, vehicle, _, _, _, telemetry) = flight_loop.into_parts();
     // One exchange to prime, then exactly one per tick (in `actuate`).
-    assert_eq!(vehicle.bridge.exchanges.get(), 1 + TICKS);
+    assert_eq!(current_bridge(&vehicle).exchanges.get(), 1 + TICKS);
     // Tick n stabilizes on the state from exchange n: priming's for tick 1, then each previous
     // tick's `actuate`.
     let seen: Vec<f32> = telemetry.iter().map(|t| t.state.position_m.x).collect();
@@ -358,7 +362,7 @@ fn priming_failure_returns_the_default_state() {
     let state = vehicle.state(Duration::ZERO);
 
     assert_eq!(state, VehicleState::default());
-    assert_eq!(vehicle.bridge.exchanges.get(), 1);
+    assert_eq!(current_bridge(&vehicle).exchanges.get(), 1);
 }
 
 /// Real RealFlight frames (QuadCopterX, `capture-state-realflight`): angles in degrees,
@@ -477,6 +481,11 @@ fn counting_reconnect(
     })
 }
 
+/// The vehicle's current bridge; panics if a lost connection dropped it.
+fn current_bridge(vehicle: &RealFlightVehicle<MockRealFlightBridge>) -> &MockRealFlightBridge {
+    vehicle.bridge.as_ref().expect("has a bridge")
+}
+
 /// Makes the vehicle calls of `ticks` flight-loop ticks.
 fn tick(vehicle: &mut RealFlightVehicle<MockRealFlightBridge>, ticks: usize) {
     for _ in 0..ticks {
@@ -495,21 +504,22 @@ fn reconnects_after_the_backoff_and_resumes_state_updates() {
     });
     let mut vehicle = failing_vehicle(true).with_reconnect(reconnect);
 
-    // Tick 1 loses the connection; the next 0.4 s neither reconnects nor exchanges.
+    // Tick 1 loses the connection and drops the bridge; the next 0.4 s neither reconnects nor
+    // exchanges.
     tick(&mut vehicle, 5);
     assert_eq!(calls.load(Ordering::Relaxed), 0);
-    assert_eq!(vehicle.bridge.exchanges.get(), 1);
+    assert!(vehicle.bridge.is_none());
     assert_eq!(vehicle.state, VehicleState::default());
 
     // Past 0.5 s: one attempt, and the new bridge's first exchange updates the state.
     tick(&mut vehicle, 2);
     assert_eq!(calls.load(Ordering::Relaxed), 1);
-    assert!(!vehicle.bridge.connection_lost);
+    assert!(!current_bridge(&vehicle).connection_lost);
     assert_eq!(vehicle.state.position_m.x, 1.0);
 
     // Back to one exchange per tick.
     tick(&mut vehicle, 3);
-    assert_eq!(vehicle.bridge.exchanges.get(), 4);
+    assert_eq!(current_bridge(&vehicle).exchanges.get(), 4);
     assert_eq!(calls.load(Ordering::Relaxed), 1);
 }
 
@@ -544,8 +554,7 @@ fn a_new_bridge_that_loses_its_connection_on_disable_rc_is_not_used() {
     tick(&mut vehicle, 7);
 
     assert_eq!(calls.load(Ordering::Relaxed), 1);
-    // The old bridge, which made the one exchange that lost the connection; a new one has none.
-    assert_eq!(vehicle.bridge.exchanges.get(), 1, "replaced the old bridge");
+    assert!(vehicle.bridge.is_none(), "kept the new bridge");
 }
 
 #[test]
@@ -563,7 +572,7 @@ fn a_new_bridge_whose_disable_rc_fails_otherwise_is_used() {
 
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert!(
-        !vehicle.bridge.connection_lost,
+        !current_bridge(&vehicle).connection_lost,
         "kept the old bridge instead of the new one"
     );
     assert_eq!(vehicle.state.position_m.x, 2.0);
@@ -577,7 +586,7 @@ fn a_non_connection_error_retries_the_exchange_without_reconnecting() {
     tick(&mut vehicle, 20);
 
     assert_eq!(calls.load(Ordering::Relaxed), 0);
-    assert_eq!(vehicle.bridge.exchanges.get(), 20);
+    assert_eq!(current_bridge(&vehicle).exchanges.get(), 20);
 }
 
 #[test]
@@ -587,7 +596,7 @@ fn without_a_reconnect_hook_a_connection_error_retries_every_tick() {
     tick(&mut vehicle, 20);
 
     assert!(!vehicle.health.is_down());
-    assert_eq!(vehicle.bridge.exchanges.get(), 20);
+    assert_eq!(current_bridge(&vehicle).exchanges.get(), 20);
 }
 
 #[test]
@@ -601,6 +610,39 @@ fn a_failed_priming_exchange_starts_the_backoff() {
     tick(&mut vehicle, 6);
     assert_eq!(calls.load(Ordering::Relaxed), 1);
     assert_eq!(vehicle.state.position_m.x, 2.0);
+}
+
+#[test]
+fn a_lost_connection_is_closed_before_the_reconnect() {
+    // The RealFlight proxy serves one client at a time: while the old bridge's connection stays
+    // open, the new bridge's calls queue behind it and time out.
+    let connection = Arc::new(());
+    let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+        mapping: ActuatorMapping::default(),
+        bridge: MockRealFlightBridge {
+            connection_lost: true,
+            _connection: Some(Arc::clone(&connection)),
+            ..MockRealFlightBridge::new(false)
+        },
+    });
+    let open_at_reconnect = Arc::new(AtomicUsize::new(usize::MAX));
+    let observed = Arc::clone(&open_at_reconnect);
+    let watched = Arc::clone(&connection);
+    vehicle = vehicle.with_reconnect(move || {
+        // Minus the test's two handles: whether the old bridge still holds it.
+        observed.store(Arc::strong_count(&watched) - 2, Ordering::Relaxed);
+        Ok(MockRealFlightBridge::new(false))
+    });
+
+    tick(&mut vehicle, 1);
+    assert_eq!(
+        Arc::strong_count(&connection),
+        2,
+        "still open after the loss"
+    );
+
+    tick(&mut vehicle, 6);
+    assert_eq!(open_at_reconnect.load(Ordering::Relaxed), 0);
 }
 
 #[test]
