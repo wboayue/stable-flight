@@ -35,13 +35,15 @@ use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::{Extreme3DCommander, SpektrumCommander};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
-use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
+use stable_flight_sitl_realflight::{
+    REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, airframes,
+};
 
 /// How often a full telemetry record goes out: the bridge needs only its thrust, for throttle.
 const RECORD_INTERVAL: Duration = Duration::from_millis(200);
 
-/// Connect timeout for rebuilding a lost RealFlight connection; the attempt blocks its tick.
-const RECONNECT_TIMEOUT: Duration = Duration::from_millis(250);
+/// Connect timeout for the RealFlight proxy; a reconnect attempt blocks its tick.
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// Stick-driven quadcopter flight in RealFlight, with params and telemetry over the native link.
 #[derive(Parser)]
@@ -93,16 +95,16 @@ fn fly(commander: impl Commander, args: &Args) {
     // QuadCopterX model: tuned gains, mixer, and motor-to-channel mapping.
     let airframe = airframes::quadcopter_x();
 
-    // A lost or stalled RealFlight connection (the bridge's default I/O timeout) is rebuilt
-    // with backoff; a short connect timeout bounds each attempt's stall.
+    // A lost or stalled RealFlight connection is dropped and rebuilt with backoff; short
+    // timeouts bound each attempt's stall.
     let host = args.host.clone();
+    let connect =
+        move || RealFlightRemoteBridge::with_timeouts(&host, CONNECT_TIMEOUT, REMOTE_IO_TIMEOUT);
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-        bridge: RealFlightRemoteBridge::new(&args.host).expect("Failed to create bridge"),
+        bridge: connect().expect("Failed to create bridge"),
         mapping: airframe.mapping,
     })
-    .with_reconnect(move || {
-        RealFlightRemoteBridge::with_timeout(&host, RECONNECT_TIMEOUT).map_err(BridgeError::from)
-    });
+    .with_reconnect(move || connect().map_err(BridgeError::from));
 
     // Heading hold for the attitude-mode sticks; the stabilizer tracks the resulting setpoint.
     let guidance = CopterGuidance::new(airframe.guidance);

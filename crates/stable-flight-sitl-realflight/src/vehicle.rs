@@ -18,6 +18,15 @@ mod tests;
 /// `exchange-latency-realflight` example's default threshold.
 pub const SLOW_EXCHANGE: Duration = Duration::from_millis(20);
 
+/// I/O timeout for a `RealFlightRemoteBridge` (`with_timeouts`), as the examples use it.
+///
+/// It must stay above the proxy's request timeout, so a slow RealFlight comes back as an error
+/// reply rather than a client timeout. RealFlight needs that raised from realflight-bridge's
+/// 50 ms default: run the proxy with `--request-timeout-ms 150` (an aircraft reset, and the
+/// exchanges just after it, take over 50 ms). A timeout drops the connection, and
+/// [`with_reconnect`](RealFlightVehicle::with_reconnect) rebuilds it.
+pub const REMOTE_IO_TIMEOUT: Duration = Duration::from_millis(250);
+
 /// Builds a fresh bridge after the connection is lost; see
 /// [`RealFlightVehicle::with_reconnect`].
 type Reconnect<T> = Box<dyn FnMut() -> Result<T, BridgeError> + Send>;
@@ -105,9 +114,9 @@ where
 /// first state is real; if that exchange fails, it logs an error and returns
 /// `VehicleState::default()`. `exchange_data` is a blocking network round-trip, so a slow link
 /// stalls the tick; an exchange over 20 ms is logged at `debug` with its duration. The bridge
-/// bounds the stall: by default `RealFlightRemoteBridge` times each call out after 100 ms, and
-/// `RealFlightLocalBridge` each simulator request after 50 ms. A timeout is a
-/// `BridgeError::Connection` (see Connection loss). See the core
+/// bounds the stall: `RealFlightRemoteBridge` times each call out (100 ms by default; the
+/// examples use [`REMOTE_IO_TIMEOUT`]), and `RealFlightLocalBridge` each simulator request (50 ms
+/// by default). A timeout is a `BridgeError::Connection` (see Connection loss). See the core
 /// `Vehicle` docs for the cross-backend contract.
 ///
 /// # Connection loss
@@ -119,7 +128,8 @@ where
 ///
 /// A `BridgeError::Connection` can leave the bridge unusable (a remote bridge is then out of
 /// sync for good). With [`with_reconnect`](RealFlightVehicle::with_reconnect), the vehicle
-/// stops exchanging, waits 0.5 s, and builds a new bridge, doubling the wait after each failed
+/// drops the bridge at once (closing its connection: the RealFlight proxy serves one client at a
+/// time, and accepts a new one only once the old one disconnects), waits 0.5 s, and builds a new bridge, doubling the wait after each failed
 /// attempt up to 4 s (`INITIAL_BACKOFF_S`, `MAX_BACKOFF_S` in `vehicle/health.rs`). A new
 /// bridge gets `disable_rc` again (but no aircraft reset: it is mid-flight) and replaces the old
 /// one. Only a `Connection` error from `disable_rc` fails the attempt: RealFlight keeps the Link
@@ -160,8 +170,9 @@ pub struct RealFlightVehicle<T>
 where
     T: RealFlightBridge,
 {
-    /// The communication bridge to the RealFlight simulator.
-    bridge: T,
+    /// The communication bridge to the RealFlight simulator; `None` once a connection error
+    /// dropped it, until a reconnect replaces it.
+    bridge: Option<T>,
     /// The last state RealFlight reported.
     state: VehicleState,
     /// Configuration mapping actuator commands to simulator channels.
@@ -236,7 +247,7 @@ where
         }
 
         RealFlightVehicle {
-            bridge: configuration.bridge,
+            bridge: Some(configuration.bridge),
             state: VehicleState::default(),
             mapping: configuration.mapping,
             reconnect: None,
@@ -248,25 +259,27 @@ where
     /// [Connection loss](RealFlightVehicle#connection-loss)).
     ///
     /// `reconnect` is called on the flight loop's thread and blocks the tick, so it should
-    /// connect with a short timeout and keep a bounded I/O timeout (`RealFlightRemoteBridge`'s
-    /// default is 100 ms): the new bridge's `disable_rc` runs in the same tick.
+    /// connect with a short timeout and keep a bounded I/O timeout ([`REMOTE_IO_TIMEOUT`]): the
+    /// new bridge's `disable_rc` runs in the same tick.
     ///
     /// # Examples
     ///
     /// ```no_run
     /// use std::time::Duration;
     /// use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
-    /// use stable_flight_sitl_realflight::{ActuatorMapping, RealFlightConfiguration, RealFlightVehicle};
+    /// use stable_flight_sitl_realflight::{
+    ///     ActuatorMapping, REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle,
+    /// };
     ///
     /// let host = String::from("127.0.0.1:8080");
+    /// let connect = move || {
+    ///     RealFlightRemoteBridge::with_timeouts(&host, Duration::from_millis(250), REMOTE_IO_TIMEOUT)
+    /// };
     /// let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
     ///     mapping: ActuatorMapping::default(),
-    ///     bridge: RealFlightRemoteBridge::new(&host).expect("Failed to create bridge"),
+    ///     bridge: connect().expect("Failed to create bridge"),
     /// })
-    /// .with_reconnect(move || {
-    ///     RealFlightRemoteBridge::with_timeout(&host, Duration::from_millis(250))
-    ///         .map_err(BridgeError::from)
-    /// });
+    /// .with_reconnect(move || connect().map_err(BridgeError::from));
     /// ```
     pub fn with_reconnect(
         mut self,
@@ -282,9 +295,12 @@ where
         if self.health.is_down() && !(self.health.retry_due() && self.try_reconnect()) {
             return;
         }
+        let Some(bridge) = &self.bridge else {
+            return;
+        };
 
         let start = Instant::now();
-        let result = self.bridge.exchange_data(input);
+        let result = bridge.exchange_data(input);
         let elapsed = start.elapsed();
         if elapsed > SLOW_EXCHANGE {
             debug!("Slow RealFlight exchange: {} ms", elapsed.as_millis());
@@ -295,6 +311,8 @@ where
                 self.health
                     .report(format_args!("Failed to exchange data with RealFlight: {e}"));
                 if matches!(e, BridgeError::Connection(_)) && self.reconnect.is_some() {
+                    // Close the connection now, so the proxy can accept the reconnect.
+                    self.bridge = None;
                     self.health.connection_lost();
                 }
             }
@@ -320,7 +338,7 @@ where
         });
         match bridge {
             Ok(bridge) => {
-                self.bridge = bridge;
+                self.bridge = Some(bridge);
                 let failed = self.health.reconnected();
                 info!("Reconnected to RealFlight after {failed} failed attempts");
                 true
@@ -447,9 +465,14 @@ where
     ///
     /// # Notes
     ///
-    /// Logs a warning if RC mode cannot be re-enabled.
+    /// Logs a warning if RC mode cannot be re-enabled, including when a lost connection left
+    /// no bridge to do it on.
     fn drop(&mut self) {
-        if let Err(e) = self.bridge.enable_rc() {
+        let Some(bridge) = &self.bridge else {
+            warn!("Failed to enable RC: no RealFlight connection");
+            return;
+        };
+        if let Err(e) = bridge.enable_rc() {
             warn!("Failed to enable RC: {}", e);
         }
     }

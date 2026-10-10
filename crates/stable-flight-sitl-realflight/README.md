@@ -14,7 +14,7 @@ The crate builds on the [`stable-flight`](https://github.com/wboayue/stable-flig
 
 RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**. Test models: QuadCopterX (multirotor) and eXplora VTOL (tailsitter); the ArduPilot [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models) repo has more.
 
-`RealFlightRemoteBridge` talks to the `realflight_bridge_proxy` running on the RealFlight host. Install it there with `cargo install realflight-bridge --features rt-tokio`. The proxy must be `realflight-bridge` 2.x to match this crate (the 2.0 wire format is incompatible with 1.x), and 2.1 or later so a stalled RealFlight comes back as an error reply rather than a client timeout.
+`RealFlightRemoteBridge` talks to the `realflight_bridge_proxy` running on the RealFlight host. Install it there with `cargo install realflight-bridge --features rt-tokio`, and run it with `--request-timeout-ms 150`: RealFlight's aircraft reset, and the exchanges just after it, take over the 50 ms default ([`REMOTE_IO_TIMEOUT`](https://docs.rs/stable-flight-sitl-realflight/latest/stable_flight_sitl_realflight/constant.REMOTE_IO_TIMEOUT.html), which the examples use, stays above it). The proxy must be `realflight-bridge` 2.x to match this crate (the 2.0 wire format is incompatible with 1.x), and 2.1 or later for that timeout.
 
 ## Usage
 
@@ -44,17 +44,18 @@ A failed exchange is logged at most once a second. A remote bridge is unusable a
 
 ```rust
 use std::time::Duration;
+use stable_flight_sitl_realflight::REMOTE_IO_TIMEOUT;
 use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
 
 let host = String::from("10.211.55.3:8080");
+// Each reconnect attempt blocks its tick, so keep the timeouts short.
+let connect =
+    move || RealFlightRemoteBridge::with_timeouts(&host, Duration::from_millis(250), REMOTE_IO_TIMEOUT);
 let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-    bridge: RealFlightRemoteBridge::new(&host).expect("Failed to create bridge"),
+    bridge: connect().expect("Failed to create bridge"),
     mapping: airframe.mapping,
 })
-// Each attempt blocks its tick, so keep the connect timeout short.
-.with_reconnect(move || {
-    RealFlightRemoteBridge::with_timeout(&host, Duration::from_millis(250)).map_err(BridgeError::from)
-});
+.with_reconnect(move || connect().map_err(BridgeError::from));
 ```
 
 ## Airframes
@@ -103,7 +104,7 @@ Each tick waits on one RealFlight round trip ([`RealFlightVehicle`](https://docs
 - **Usual round trip:** about 2 ms (median 2.2 ms, p99 17 ms), out of a 4 ms tick at 250 Hz. A few each second take 20–30 ms.
 - **Dips:** occasionally, for a few seconds, every round trip slows to about 8 ms. The loop then runs at about 120 Hz. The cause is RealFlight or the VM, not the flight loop.
 - **How the loop absorbs them:** it falls behind until it is 100 ms late, then the runner resyncs. That's the `stalled, resyncing (~25 ticks skipped)` debug line: lag built up over many slow ticks, not one 100 ms block.
-- **Stalls:** each call to the proxy times out after 100 ms (`RealFlightRemoteBridge`'s default I/O timeout; the proxy's own request timeout to RealFlight is 50 ms). A timed-out exchange fails like a lost connection, and the flight examples reconnect, so a stalled proxy or simulator blocks one tick per attempt, not the loop.
+- **Stalls:** in the examples, each call to the proxy times out after 250 ms (`REMOTE_IO_TIMEOUT`), and the proxy's request to RealFlight after 150 ms (`--request-timeout-ms`). A timed-out exchange fails like a lost connection: the vehicle closes the connection (the proxy serves one client at a time) and the flight examples reconnect, so a stalled proxy or simulator blocks one tick per attempt, not the loop.
 - **Build mode:** for timing-sensitive runs, use `cargo run --release` (the `just` recipes build debug). Debug builds add enough per tick to resync about three times as often.
 
 `exchange-latency-realflight` and the `debug` slow-exchange log (see Examples) measure this.

@@ -23,11 +23,14 @@ use env_logger::{Builder, Env};
 use log::{info, warn};
 
 use stable_flight_sitl::ShutdownSignal;
-use stable_flight_sitl_realflight::SLOW_EXCHANGE;
 use stable_flight_sitl_realflight::realflight_bridge::{
     BridgeError, Configuration, ControlInputs, RealFlightBridge, RealFlightLocalBridge,
     RealFlightRemoteBridge,
 };
+use stable_flight_sitl_realflight::{REMOTE_IO_TIMEOUT, SLOW_EXCHANGE};
+
+/// Connect timeout for the RealFlight proxy.
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// RealFlight exchange latency probe.
 #[derive(Parser)]
@@ -74,8 +77,12 @@ fn main() {
             probe(&bridge, &args, &shutdown);
         }
         None => {
-            let bridge =
-                RealFlightRemoteBridge::new(&args.host).expect("failed to connect to the proxy");
+            let bridge = RealFlightRemoteBridge::with_timeouts(
+                &args.host,
+                CONNECT_TIMEOUT,
+                REMOTE_IO_TIMEOUT,
+            )
+            .expect("failed to connect to the proxy");
             info!("Timing exchanges through the proxy at {}", args.host);
             probe(&bridge, &args, &shutdown);
         }
