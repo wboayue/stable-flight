@@ -68,7 +68,7 @@ cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight --
 # Spektrum transmitter through the WS3000T dongle instead
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --commander spektrum
 
-# Scripted figure-eight (script path is the first argument): flies it once, then hovers; --loop repeats it
+# Scripted figure-eight (script path is the first argument): flies it once, then hovers; --end loop repeats it, --end land lands on the last waypoint and disarms
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv
 
 # Flown from the native link, holding position when it goes quiet; link_pilot plays the companion

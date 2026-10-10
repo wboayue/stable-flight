@@ -76,7 +76,7 @@ link-pilot *ARGS:
 bridge *ARGS:
     cargo run -p stable-flight-bridge -- {{ARGS}}
 
-# Scripted figure-eight in RealFlight; args: [script.csv] [--host host:port] [--loop]
+# Scripted figure-eight in RealFlight; args: [script.csv] [--host host:port] [--end hold|loop|land]
 fly-auto *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- {{ARGS}}
 

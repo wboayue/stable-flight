@@ -1,8 +1,9 @@
 //! Flies a scripted figure-eight in RealFlight using a [`ScriptCommander`].
 //!
 //! The commander replays the waypoints in a CSV script (default `flights/figure_eight.csv`,
-//! regenerate it with `cargo run --bin generate_figure_eight`) once and hovers on the last
-//! waypoint until interrupted; `--loop` flies the path again and again instead.
+//! regenerate it with `cargo run --bin generate_figure_eight`) once, then follows `--end`:
+//! `hold` (the default) hovers on the last waypoint until interrupted, `loop` flies the path
+//! again and again, and `land` lands on the last waypoint and disarms on touchdown.
 //!
 //! Params and telemetry go over the native link for the bridge (`just bridge`), as
 //! `copter-manual-realflight` does, so QGC shows the path and params can be tuned while it
@@ -15,15 +16,16 @@
 //! ```text
 //! cargo run -p stable-flight-bridge   # once, in a second terminal
 //! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight
-//! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- --loop
+//! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- --end loop
+//! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- --end land
 //! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/wide.csv --host 192.168.1.20:8080
 //! ```
 
 use std::time::Duration;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use env_logger::Builder;
-use log::{debug, warn};
+use log::{debug, info, warn};
 
 use stable_flight::FlightLoop;
 use stable_flight::commanders::RouteEnd;
@@ -54,9 +56,9 @@ struct Args {
     #[arg(long, default_value = "10.211.55.3:8080")]
     host: String,
 
-    /// Loop the path instead of holding on the last waypoint.
-    #[arg(long = "loop")]
-    looping: bool,
+    /// What to do after the last waypoint.
+    #[arg(long, value_enum, default_value_t = End::Hold)]
+    end: End,
 
     /// Local address the link listens on.
     #[arg(long, default_value = DEFAULT_FC_ADDR)]
@@ -66,21 +68,37 @@ struct Args {
     link_peer: String,
 }
 
+/// `--end`: the core [`RouteEnd`], as a CLI value.
+#[derive(Clone, Copy, ValueEnum)]
+enum End {
+    /// Hover on the last waypoint.
+    Hold,
+    /// Fly the path again.
+    Loop,
+    /// Land on the last waypoint and disarm.
+    Land,
+}
+
+impl From<End> for RouteEnd {
+    fn from(end: End) -> Self {
+        match end {
+            End::Hold => RouteEnd::Hold,
+            End::Loop => RouteEnd::Loop,
+            End::Land => RouteEnd::Land,
+        }
+    }
+}
+
 fn main() {
     // Initialize logger
     Builder::from_default_env().format_timestamp_millis().init();
 
     let args = Args::parse();
 
-    // Replays the waypoints from the CSV script, then holds the last or loops.
-    let route_end = if args.looping {
-        RouteEnd::Loop
-    } else {
-        RouteEnd::Hold
-    };
+    // Replays the waypoints from the CSV script, then holds the last, loops, or lands.
     let commander = ScriptCommander::new(&args.script)
         .expect("failed to load flight script")
-        .with_route_end(route_end);
+        .with_route_end(args.end.into());
 
     // QuadCopterX model: tuned gains, mixer, and motor-to-channel mapping.
     // Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX
@@ -126,7 +144,16 @@ fn main() {
     let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");
 
     let runner = RealTimeRunner::new(250.0).expect("valid loop frequency"); // Hz
+    let mut complete = false;
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop| {
+        if !complete && flight_loop.commander().follower().is_complete() {
+            complete = true;
+            match args.end {
+                End::Land => info!("touched down: disarmed"),
+                End::Hold => info!("reached the last waypoint: holding"),
+                End::Loop => {}
+            }
+        }
         match poller.poll(flight_loop) {
             Ok(stats) if stats.decode_errors > 0 || stats.dropped > 0 => {
                 debug!("link: {stats:?}");

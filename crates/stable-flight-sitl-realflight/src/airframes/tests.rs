@@ -55,6 +55,8 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         navigation_period_s: 0.02,
         max_tilt_rad: 27.0_f32.to_radians(),
         max_stick_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
+        max_descent_mps: 3.0,
+        land_speed_mps: 0.7,
     };
     assert_eq!(airframe.guidance, guidance, "guidance");
 }
