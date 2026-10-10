@@ -45,14 +45,16 @@ fn falls_back_on_silence_and_flies_the_link_once_it_is_back() {
         (Nothing, (false, Waypoint, false)), // never heard: the hold flies, disarmed
         (ArmAndHover, (false, Waypoint, false)), // fresh 0.1 s: the hold can't arm
         (Heartbeat, (false, Waypoint, false)), // 0.2 s
-        (Heartbeat, (true, Waypoint, true)), // 0.3 s: the link flies, armed, hovering
-        (Nothing, (true, Waypoint, true)),   // silent 0.1 s
-        (Nothing, (true, Waypoint, true)),   // 0.2 s
-        (Nothing, (true, Waypoint, true)),   // 0.3 s
-        (Nothing, (true, Waypoint, false)),  // 0.4 s: stale, holds, still armed
-        (Heartbeat, (true, Waypoint, false)), // back, recovering
-        (Disarm, (false, Waypoint, false)),  // a fresh disarm, honored during recovery
-        (Heartbeat, (false, Waypoint, true)), // recovered, disarmed
+        (Heartbeat, (false, Waypoint, true)), // 0.3 s: the link flies; its arm, sent during
+        // the hold, is dropped at the handover (#235)
+        (ArmAndHover, (true, Waypoint, true)), // a new arm arms, hovering
+        (Nothing, (true, Waypoint, true)),     // silent 0.1 s
+        (Nothing, (true, Waypoint, true)),     // 0.2 s
+        (Nothing, (true, Waypoint, true)),     // 0.3 s
+        (Nothing, (true, Waypoint, false)),    // 0.4 s: stale, holds, still armed
+        (Heartbeat, (true, Waypoint, false)),  // back, recovering
+        (Disarm, (false, Waypoint, false)),    // a fresh disarm, honored during recovery
+        (Heartbeat, (false, Waypoint, true)),  // recovered, disarmed
     ];
 
     let loopback = Loopback::<64>::new();
@@ -73,6 +75,7 @@ fn falls_back_on_silence_and_flies_the_link_once_it_is_back() {
         FailsafeConfig {
             timeout_s: 0.35,
             recover_after_s: 0.25,
+            ..FailsafeConfig::default()
         },
     )
     .expect("valid config");

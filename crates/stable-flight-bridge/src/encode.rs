@@ -85,3 +85,21 @@ pub(crate) fn command_ack(
         ..Default::default()
     }
 }
+
+/// Longest `STATUSTEXT` text, in bytes.
+const MAX_STATUSTEXT_LEN: usize = 50;
+
+/// `STATUSTEXT` with the flight controller's status `text`, at warning severity: it announces
+/// events the pilot should notice (e.g. a failsafe handover). Text past 50 bytes is cut at a
+/// character boundary.
+pub(crate) fn statustext(text: &str) -> STATUSTEXT_DATA {
+    let mut end = text.len().min(MAX_STATUSTEXT_LEN);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    STATUSTEXT_DATA {
+        severity: MavSeverity::MAV_SEVERITY_WARNING,
+        text: text[..end].into(),
+        ..Default::default()
+    }
+}

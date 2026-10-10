@@ -178,3 +178,24 @@ fn sticks_stay_fresh_only_on_commands_waypoints_on_any_message() {
         }
     }
 }
+
+#[test]
+fn sync_arm_overwrites_a_latched_arm() {
+    let mut queue = Queue::<Control, 8>::new();
+    let (mut router, consumer) = queue.split();
+    let mut commander = LinkCommander::new(consumer);
+    router.enqueue(Control::Arm(true)).expect("room");
+    check!(commander.next_command(DT, &VehicleState::default()).arm);
+
+    commander.sync_arm(false); // the vehicle never armed
+    check!(
+        !commander.next_command(DT, &VehicleState::default()).arm,
+        "dropped"
+    );
+
+    router.enqueue(Control::Arm(true)).expect("room");
+    check!(
+        commander.next_command(DT, &VehicleState::default()).arm,
+        "a new arm"
+    );
+}
