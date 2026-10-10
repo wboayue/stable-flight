@@ -27,6 +27,7 @@ impl ParamTable for CopterGuidanceConfig {
 #[cfg(feature = "param-metadata")]
 mod metadata {
     use super::CopterGuidanceConfig;
+    use crate::commanders::touchdown::DESCENDING_MPS;
     use crate::params::metadata::{ParamMeta, ParamMetadata};
 
     const ALTITUDE: ParamMeta = ParamMeta::in_group("Guidance", "Altitude");
@@ -79,7 +80,7 @@ mod metadata {
             LANDING
                 .param("GUID_LAND_SPD", "Descent rate while landing")
                 .with_units("m/s")
-                .above(0.0),
+                .above(DESCENDING_MPS),
             STICKS
                 .param("GUID_STICK_X", "Roll angle at full stick in attitude mode")
                 .with_units("deg")

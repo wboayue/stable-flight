@@ -46,8 +46,8 @@ pub enum RouteEnd {
 /// vehicle is within the acceptance radius of it (horizontal distance only), or has passed it
 /// along the leg that leads to it (missed it wide), it advances to the next. After the last it
 /// follows its [`RouteEnd`]: wrap to the first ([`RouteEnd::Loop`], the default), hold the last
-/// ([`RouteEnd::Hold`]), or land on the last and disarm ([`RouteEnd::Land`]). It knows nothing about where the waypoints came from or what shape
-/// they trace.
+/// ([`RouteEnd::Hold`]), or land on the last and disarm ([`RouteEnd::Land`]). It knows nothing
+/// about where the waypoints came from or what shape they trace.
 ///
 /// So the vehicle flies each leg at cruise speed instead of slowing at every waypoint, a
 /// waypoint without its own `velocity_mps` is emitted with one along the leg that leads to it:

@@ -1431,28 +1431,61 @@ fn a_low_waypoint_descends_instead_of_cutting_thrust() {
     assert!(!guidance.saturation().thrust);
 }
 
-/// Closed loop on a point mass (vertical acceleration `g · (thrust / hover − 1)`, level): a
-/// waypoint 20 m down is flown at about the descent limit. The limit is on the target, so the
+/// A level point mass moving only vertically: thrust over hover accelerates it up, and a
+/// ground at 0 m, when there is one, stops it.
+struct VerticalPointMass {
+    altitude_m: f32,
+    climb_mps: f32,
+    ground: bool,
+    /// Sink rate when it first hit the ground.
+    touchdown_mps: Option<f32>,
+}
+
+impl VerticalPointMass {
+    fn at(altitude_m: f32, ground: bool) -> Self {
+        VerticalPointMass {
+            altitude_m,
+            climb_mps: 0.0,
+            ground,
+            touchdown_mps: None,
+        }
+    }
+
+    fn state(&self) -> VehicleState {
+        VehicleState {
+            position_m: Vec3::new(0.0, 0.0, self.altitude_m),
+            velocity_mps: Vec3::new(0.0, 0.0, self.climb_mps),
+            ..Default::default()
+        }
+    }
+
+    fn step(&mut self, dt: f32, thrust: f32) {
+        let hover = crate::controllers::DEFAULT_HOVER_THRUST;
+        self.climb_mps += crate::GRAVITY * (thrust / hover - 1.0) * dt;
+        self.altitude_m += self.climb_mps * dt;
+        if self.ground && self.altitude_m <= 0.0 {
+            self.touchdown_mps.get_or_insert(-self.climb_mps);
+            self.altitude_m = 0.0;
+            self.climb_mps = self.climb_mps.max(0.0);
+        }
+    }
+}
+
+/// Closed loop on a [`VerticalPointMass`]: a waypoint 20 m down is flown at about the descent limit. The limit is on the target, so the
 /// vehicle overshoots it a little while catching up (about 20% on the default gains), not the
 /// free fall a far-below target gave.
 #[test]
 fn point_mass_descends_at_the_limit() {
     const DT: f32 = 0.004;
-    let hover = crate::controllers::DEFAULT_HOVER_THRUST;
     let (mut guidance, _) = guidance_at(30.0);
-    let (mut altitude_m, mut climb_mps) = (30.0_f32, 0.0_f32);
+    let mut vehicle = VerticalPointMass::at(30.0, false);
     let mut fastest_descent_mps: f32 = 0.0;
     for _ in 0..(15.0 / DT) as usize {
-        let state = VehicleState {
-            position_m: Vec3::new(0.0, 0.0, altitude_m),
-            velocity_mps: Vec3::new(0.0, 0.0, climb_mps),
-            ..Default::default()
-        };
-        let setpoint = attitude(guidance.guide(DT, &waypoint_at(10.0), &state));
-        climb_mps += crate::GRAVITY * (setpoint.thrust / hover - 1.0) * DT;
-        altitude_m += climb_mps * DT;
-        fastest_descent_mps = fastest_descent_mps.max(-climb_mps);
+        let setpoint = attitude(guidance.guide(DT, &waypoint_at(10.0), &vehicle.state()));
+        vehicle.step(DT, setpoint.thrust);
+        fastest_descent_mps = fastest_descent_mps.max(-vehicle.climb_mps);
     }
+    let altitude_m = vehicle.altitude_m;
     assert!((altitude_m - 10.0).abs() < 0.1, "ended at {altitude_m} m");
     assert!(
         fastest_descent_mps < 1.25 * DEFAULT_MAX_DESCENT_MPS,
@@ -1501,15 +1534,14 @@ fn land_descends_at_land_speed_on_a_leash() {
     assert!(guidance.altitude_target_m.is_none());
 }
 
-/// Closed loop: a `WaypointFollower` ending in `Land` drives guidance on a point mass with a
-/// ground at 0 m; it lands at about `land_speed_mps` and disarms on touchdown, not before.
+/// Closed loop: a `WaypointFollower` ending in `Land` drives guidance on a
+/// [`VerticalPointMass`] with a ground at 0 m; it lands at about `land_speed_mps` and disarms on touchdown, not before.
 #[test]
 fn point_mass_route_lands_softly_and_disarms() {
     use crate::Commander;
     use crate::commanders::{RouteEnd, WaypointFollower};
 
     const DT: f32 = 0.004;
-    let hover = crate::controllers::DEFAULT_HOVER_THRUST;
     let route = [WaypointCommand {
         altitude_m: 5.0,
         ..Default::default()
@@ -1518,31 +1550,19 @@ fn point_mass_route_lands_softly_and_disarms() {
         .expect("non-empty")
         .with_route_end(RouteEnd::Land);
     let (mut guidance, _) = guidance_at(5.0);
-    let (mut altitude_m, mut climb_mps) = (5.0_f32, 0.0_f32);
-    let mut touchdown_mps = None;
+    let mut vehicle = VerticalPointMass::at(5.0, true);
     let mut disarmed_at_m = None;
     for _ in 0..(30.0 / DT) as usize {
-        let state = VehicleState {
-            position_m: Vec3::new(0.0, 0.0, altitude_m),
-            velocity_mps: Vec3::new(0.0, 0.0, climb_mps),
-            ..Default::default()
-        };
+        let state = vehicle.state();
         let command = follower.next_command(DT, &state);
         if !command.arm {
-            disarmed_at_m = Some(altitude_m);
+            disarmed_at_m = Some(vehicle.altitude_m);
             break;
         }
         let setpoint = attitude(guidance.guide(DT, &command.input, &state));
-        climb_mps += crate::GRAVITY * (setpoint.thrust / hover - 1.0) * DT;
-        altitude_m += climb_mps * DT;
-        if altitude_m <= 0.0 {
-            // The ground stops it.
-            touchdown_mps.get_or_insert(-climb_mps);
-            altitude_m = 0.0;
-            climb_mps = climb_mps.max(0.0);
-        }
+        vehicle.step(DT, setpoint.thrust);
     }
-    let touchdown_mps = touchdown_mps.expect("reached the ground");
+    let touchdown_mps = vehicle.touchdown_mps.expect("reached the ground");
     assert!(
         (touchdown_mps - DEFAULT_LAND_SPEED_MPS).abs() < 0.2,
         "touched down at {touchdown_mps} m/s"
@@ -1551,8 +1571,10 @@ fn point_mass_route_lands_softly_and_disarms() {
     assert!(follower.is_complete());
 }
 
+/// `max_descent_mps` must be positive and finite; `land_speed_mps` must also exceed the
+/// touchdown detector's `DESCENDING_MPS`, or a land would never be seen to descend and disarm.
 #[test]
-fn rejects_non_positive_or_non_finite_descent_rates() {
+fn rejects_descent_rates_out_of_range() {
     for value in [0.0, -1.0, f32::NAN, f32::INFINITY] {
         for (field, set) in [
             (
@@ -1568,5 +1590,13 @@ fn rejects_non_positive_or_non_finite_descent_rates() {
                 "{field} {value}"
             );
         }
+    }
+    // (land_speed_mps, valid)
+    for (land_speed_mps, valid) in [(DESCENDING_MPS, false), (0.15, false), (0.25, true)] {
+        let config = CopterGuidanceConfig {
+            land_speed_mps,
+            ..Default::default()
+        };
+        assert!(config.validate().is_ok() == valid, "{land_speed_mps}");
     }
 }

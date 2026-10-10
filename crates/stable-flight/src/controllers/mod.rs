@@ -100,7 +100,12 @@ pub(crate) fn check_tilt(field: &'static str, value: f32) -> Result<(), InvalidC
     )
 }
 
-fn check(field: &'static str, ok: bool, requirement: &'static str) -> Result<(), InvalidConfig> {
+/// `Ok` when `ok`, otherwise an [`InvalidConfig`] naming `field` and its `requirement`.
+pub(crate) fn check(
+    field: &'static str,
+    ok: bool,
+    requirement: &'static str,
+) -> Result<(), InvalidConfig> {
     if ok {
         Ok(())
     } else {

@@ -18,8 +18,9 @@ use core::f32::consts::FRAC_PI_4;
 
 use crate::{GRAVITY, Vec2};
 
+use crate::commanders::touchdown::DESCENDING_MPS;
 use crate::controllers::*;
-use crate::controllers::{check_limit, check_positive, check_tilt};
+use crate::controllers::{check, check_limit, check_positive, check_tilt};
 use crate::{
     AbsoluteAttitudeCommand, AttitudeCommand, AttitudeSetpoint, Configurable, ControlInput,
     Guidance, LandCommand, RateSetpoint, Saturation, Setpoint, VehicleState, WaypointCommand,
@@ -110,10 +111,9 @@ pub struct CopterGuidanceConfig {
     /// rate: the vehicle can exceed it briefly while catching up. Must be positive and finite.
     /// Defaults to [`DEFAULT_MAX_DESCENT_MPS`].
     pub max_descent_mps: f32,
-    /// Descent rate of a land ([`ControlInput::Land`]), in m/s. Must be positive and finite,
-    /// and well above the touchdown detector's
-    /// [`DESCENDING_MPS`](crate::commanders::touchdown::DESCENDING_MPS) so the detector sees the
-    /// descent. Defaults to [`DEFAULT_LAND_SPEED_MPS`].
+    /// Descent rate of a land ([`ControlInput::Land`]), in m/s. Must be finite and above the
+    /// touchdown detector's [`DESCENDING_MPS`] (0.2 m/s), so the detector sees the descent and
+    /// the land ends in a disarm. Defaults to [`DEFAULT_LAND_SPEED_MPS`].
     pub land_speed_mps: f32,
 }
 
@@ -141,8 +141,8 @@ impl CopterGuidanceConfig {
     /// Checks both loop configs ([`AltitudeControllerConfig::validate`],
     /// [`LateralControllerConfig::validate`]; errors carry the loop as their `section`), that
     /// `navigation_period_s` and `max_stick_angles_rad` are non-negative and finite, that
-    /// `max_tilt_rad` is in `(0, π/2)`, and that `max_descent_mps` and `land_speed_mps` are
-    /// positive and finite.
+    /// `max_tilt_rad` is in `(0, π/2)`, that `max_descent_mps` is positive and finite, and that
+    /// `land_speed_mps` is finite and above [`DESCENDING_MPS`].
     ///
     /// # Examples
     ///
@@ -166,7 +166,11 @@ impl CopterGuidanceConfig {
         check_limit("max_stick_angles_rad.y", self.max_stick_angles_rad.y)?;
         check_tilt("max_tilt_rad", self.max_tilt_rad)?;
         check_positive("max_descent_mps", self.max_descent_mps)?;
-        check_positive("land_speed_mps", self.land_speed_mps)
+        check(
+            "land_speed_mps",
+            self.land_speed_mps > DESCENDING_MPS && self.land_speed_mps.is_finite(),
+            "above the touchdown detector's DESCENDING_MPS and finite",
+        )
     }
 }
 
@@ -201,7 +205,7 @@ pub struct CopterGuidance {
     /// it from the vehicle's altitude.
     altitude_target_m: Option<f32>,
 
-    /// Heading-hold target for attitude and waypoint commands.
+    /// Heading-hold target for attitude, absolute-attitude, waypoint, and land commands.
     heading: f32,
 
     /// Paces the lateral loop.
@@ -424,10 +428,11 @@ impl CopterGuidance {
     ) -> AttitudeSetpoint {
         let altitude_m = estimated_state.position_m.z;
         let speed_mps = self.config.land_speed_mps;
-        let start_m = self.altitude_target_m.unwrap_or(altitude_m);
-        // `f32::max` ignores a NaN side: a NaN altitude keeps descending the target (the
-        // altitude loop holds hover meanwhile), and a NaN target re-latches from the altitude.
-        let target_m = (start_m - speed_mps * dt).max(altitude_m - LAND_LEASH_M);
+        // `f32::max` ignores a NaN side: a NaN altitude keeps lowering a latched target (the
+        // altitude loop holds hover meanwhile). With nothing latched, the NaN target holds hover.
+        let target_m = self
+            .lowered_altitude_target_m(dt, speed_mps, altitude_m)
+            .map_or(f32::NAN, |t| t.max(altitude_m - LAND_LEASH_M));
         self.altitude_target_m = Some(target_m).filter(|t| t.is_finite());
         let waypoint = WaypointCommand {
             position_m: land_command.position_m,
@@ -449,15 +454,9 @@ impl CopterGuidance {
             altitude_m: waypoint_m,
             velocity_mps: 0.0,
         };
-        // Nothing to descend from until a finite altitude latches the target; the altitude
-        // loop holds hover on a non-finite estimate meanwhile (input policy).
-        let Some(current_m) = self
-            .altitude_target_m
-            .or(Some(altitude_m).filter(|a| a.is_finite()))
-        else {
+        let Some(step_m) = self.lowered_altitude_target_m(dt, max_descent_mps, altitude_m) else {
             return level;
         };
-        let step_m = current_m - max_descent_mps * dt;
         // `<` is false for NaN: a non-finite waypoint passes through, and the altitude loop
         // holds hover on it.
         let target = if waypoint_m < step_m {
@@ -470,6 +469,15 @@ impl CopterGuidance {
         };
         self.altitude_target_m = Some(target.altitude_m).filter(|t| t.is_finite());
         target
+    }
+
+    /// The latched altitude target, or with none latched the vehicle's `altitude_m`, lowered
+    /// by `rate_mps · dt`. `None` until there is a finite altitude to descend from; the
+    /// altitude loop holds hover on a non-finite estimate meanwhile (input policy).
+    fn lowered_altitude_target_m(&self, dt: f32, rate_mps: f32, altitude_m: f32) -> Option<f32> {
+        self.altitude_target_m
+            .or(Some(altitude_m).filter(|a| a.is_finite()))
+            .map(|start_m| start_m - rate_mps * dt)
     }
 
     /// Flies toward the waypoint's position and the altitude `target`, holding the heading-hold
