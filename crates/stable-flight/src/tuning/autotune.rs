@@ -249,9 +249,10 @@ pub const COPTER_STEP_SETTLE: Settle = Settle {
 
 /// A step test: `pairs` pairs of steps, alternating `+step` and `−step` so a trim or CG offset
 /// shows as asymmetry rather than bias, each from a [`Settle`]. A step clipped for longer than
-/// `max_saturated_s` (a clipped step measures the limit, not the loop), or flagged stalled
-/// ([`Autotune::note_stall`]), is invalid and runs again; `max_invalid` in a row fail the
-/// stage.
+/// `max_saturated_s` (a clipped step measures the limit, not the loop) is invalid and runs
+/// again; `max_invalid` in a row fail the stage. A step flagged stalled
+/// ([`Autotune::note_stall`]) runs again too, on its own budget: a stall says nothing about the
+/// loop, so `max_stalled` in a row (the host can't keep time) fail the stage.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StepTestPlan {
     /// The step, in its positive direction.
@@ -263,14 +264,17 @@ pub struct StepTestPlan {
     /// How long a step may be clipped and still count, in s. Non-negative and finite: a D kick
     /// clips the first tick or so of a rate step.
     pub max_saturated_s: f32,
-    /// Invalid steps in a row that fail the stage. At least 1.
+    /// Clipped steps in a row that fail the stage. At least 1.
     pub max_invalid: usize,
+    /// Stalled steps in a row that fail the stage. At least 1.
+    pub max_stalled: usize,
 }
 
 impl StepTestPlan {
     /// The copter defaults for `target`: three pairs of [`COPTER_RATE_STEP`] (rate loops) or
     /// [`COPTER_ANGLE_STEP`] (angle and heading loops) from [`COPTER_STEP_SETTLE`], allowing
-    /// 5 ticks of clipping at 250 Hz and 3 invalid steps in a row. The allowance is 22 ms,
+    /// 5 ticks of clipping at 250 Hz, 3 clipped steps in a row, and 10 stalled steps in a row
+    /// (RealFlight's proxy has frozen for 100 ms dozens of times a run). The allowance is 22 ms,
     /// half a tick past 20: clipped time sums `dt` in `f32`, and five 4 ms ticks come to
     /// slightly over 0.02.
     ///
@@ -294,6 +298,7 @@ impl StepTestPlan {
             settle: COPTER_STEP_SETTLE,
             max_saturated_s: 0.022,
             max_invalid: 3,
+            max_stalled: 10,
         }
     }
 
@@ -302,7 +307,8 @@ impl StepTestPlan {
         self.step.validate()?;
         check("pairs", self.pairs >= 1, "at least 1")?;
         check_limit("max_saturated_s", self.max_saturated_s)?;
-        check("max_invalid", self.max_invalid >= 1, "at least 1")
+        check("max_invalid", self.max_invalid >= 1, "at least 1")?;
+        check("max_stalled", self.max_stalled >= 1, "at least 1")
     }
 }
 
@@ -386,9 +392,10 @@ impl RelayPlan {
 ///    meets the criterion); else the start gains stay.
 ///
 /// A pair is judged on its two steps' means, so a trim offset doesn't bias it. A step that
-/// aborts (reversed or runaway) fails its pair, as do `test.max_invalid` invalid steps in a
+/// aborts (reversed or runaway) fails its pair, as do `test.max_invalid` clipped steps in a
 /// row (a gain whose steps keep clipping measures the limit) and an [`Envelope`] breach while
-/// the candidate flies; on the baseline, they fail the stage. Only the step under test flies a candidate;
+/// the candidate flies; on the baseline, they fail the stage. Stalled steps only run again
+/// (`test.max_stalled`). Only the step under test flies a candidate;
 /// the vehicle settles on the committed gains between steps.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SearchPlan {
@@ -824,9 +831,11 @@ pub enum AutotuneAbort {
     AltitudeLoss,
     /// The vehicle didn't settle within [`Envelope::settle_timeout_s`].
     NotSettled,
-    /// Too many invalid probes in a row (clipped or stalled steps:
-    /// [`StepTestPlan::max_invalid`]).
+    /// Too many clipped steps in a row ([`StepTestPlan::max_invalid`]).
     Invalid,
+    /// Too many steps in a row during which the host stalled
+    /// ([`StepTestPlan::max_stalled`]): it can't keep time for a measurement.
+    Stalled,
     /// The probe gave up.
     Probe(ProbeAbort),
     /// The stabilizer idled the loop under test (e.g. a rate setpoint), or the probe was

@@ -507,3 +507,33 @@ fn a_breach_fails_the_candidate_only() {
     };
     check!(lower.d < candidate.d);
 }
+
+/// Stalled steps never fail a candidate: they run again until `max_stalled` in a row, which
+/// fails the stage (the host can't keep time).
+#[test]
+fn stalls_rerun_and_never_fail_a_candidate() {
+    let plan = d_plan();
+    let stalled_step = |stalled| Input::Measured {
+        measurement: Measurement::Step(metrics(0.0, 0.0)),
+        gains: START,
+        stalled,
+    };
+    let mut search = Procedure::new(Method::Search(plan));
+    search.next(Input::Start { gains: START });
+    for _ in 0..2 * plan.test.pairs {
+        search.next(stalled_step(false));
+    }
+    // On the first bracket point: stalls below the budget, then a valid pair passes it.
+    for _ in 1..plan.test.max_stalled {
+        let Action::Probe { gains: Some(_), .. } = search.next(stalled_step(true)) else {
+            panic!("reruns the candidate");
+        };
+    }
+    search.next(stalled_step(false));
+    search.next(stalled_step(false));
+    check!(search.take_verdict().map(|v| v.passed) == Some(true));
+    for _ in 1..plan.test.max_stalled {
+        search.next(stalled_step(true));
+    }
+    check!(search.next(stalled_step(true)) == Action::Fail(AutotuneAbort::Stalled));
+}

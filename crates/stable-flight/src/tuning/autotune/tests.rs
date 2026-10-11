@@ -829,8 +829,18 @@ fn candidates_fly_only_during_their_step() {
 fn search_plan_validation() {
     let good = SearchPlan::copter_rate();
     let relay = good.relay.expect("the rate search has a relay");
-    let rows: [(SearchPlan, &str); 13] = [
+    let rows: [(SearchPlan, &str); 14] = [
         (SearchPlan { confirm: 0, ..good }, "confirm"),
+        (
+            SearchPlan {
+                test: StepTestPlan {
+                    max_stalled: 0,
+                    ..good.test
+                },
+                ..good
+            },
+            "max_stalled",
+        ),
         (
             SearchPlan {
                 test: StepTestPlan {

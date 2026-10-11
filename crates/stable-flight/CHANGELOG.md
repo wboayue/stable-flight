@@ -30,7 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`tuning::autotune::Autotune`** (#149, #298): executes a plan of stages between ticks
   (`StagePlan`: a `TunedLoop` and a `Method`; `Method::Relay(RelayPlan)` measures once and
   sets the rule's gains; `Method::StepTest(StepTestPlan)` measures alternating steps and
-  keeps the gains, repeating clipped or stalled steps (`Autotune::note_stall`);
+  keeps the gains, repeating clipped or stalled steps (`Autotune::note_stall`) up to
+  `max_invalid` and `max_stalled` in a row (`AutotuneAbort::Invalid`, `Stalled`);
   `Method::Search(SearchPlan)` finds the largest gain of one `Term` whose ± step pairs meet a
   `Criterion`, by bracketing and bisection from gains a relay may seed and cap
   (`SearchRelay`), and keeps it only if its verify flies no worse than a baseline on the start

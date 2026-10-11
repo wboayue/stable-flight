@@ -103,8 +103,11 @@ impl Search {
                     ..
                 },
             ) => match self.pairs.record(&metrics, stalled) {
-                // The start gains can't be measured: nothing to compare with.
-                Err(abort) if self.leg == Leg::Baseline => Action::Fail(abort),
+                // The start gains can't be measured: nothing to compare with; nor can anything
+                // when the host keeps stalling.
+                Err(abort) if self.leg == Leg::Baseline || abort == AutotuneAbort::Stalled => {
+                    Action::Fail(abort)
+                }
                 // A candidate whose steps keep clipping can't be shown to pass.
                 Err(_) => self.judge(false),
                 Ok(()) if self.pairs.done() => self.judge(true),
