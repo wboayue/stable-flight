@@ -1,7 +1,7 @@
 //! Autotune stages hosted by the [`CopterStabilizer`]: one loop's output replaced by a
 //! [`Probe`] (#149, #298). See the "Tuning" section on [`CopterStabilizer`].
 
-use crate::tuning::{Probe, ProbeConfig, ProbeStatus, Tunable};
+use crate::tuning::{Injection, LoopSignals, Probe, ProbeConfig, ProbeStatus, Tunable};
 
 use super::{CopterStabilizer, CopterStabilizerConfig};
 use crate::controllers::Gains;
@@ -108,8 +108,8 @@ impl Tunable for CopterStabilizer {
     type Target = TunedLoop;
 
     /// Starts a probe on `target`: from the next [`stabilize`](crate::Stabilizer::stabilize),
-    /// a [`Probe`] with `config` sets that loop's output (see the "Tuning" section on
-    /// [`CopterStabilizer`]). It starts from the loop's current I term (its trim).
+    /// a [`Probe`] with `config` sets that loop's output or setpoint (see the "Tuning" section
+    /// on [`CopterStabilizer`]). A relay starts from the loop's current I term (its trim).
     ///
     /// # Examples
     ///
@@ -160,9 +160,9 @@ impl Tunable for CopterStabilizer {
 }
 
 impl CopterStabilizer {
-    /// Hands a running stage's loop back to its controller: the loop restarts with the probe's
-    /// trim as its I term and no derivative history, so the trim carries over. A no-op when no
-    /// stage is running.
+    /// Hands a running stage's loop back to its controller: the loop restarts with no
+    /// derivative history and the probe's trim as its I term (a step has none, so the I term
+    /// stays). A no-op when no stage is running.
     pub(super) fn hand_back(&mut self) {
         let Some(stage) = &mut self.stage else {
             return;
@@ -171,7 +171,9 @@ impl CopterStabilizer {
             return;
         }
         stage.handed_back = true;
-        let (location, trim) = (stage.target.location(), stage.probe.trim());
+        let (target, trim) = (stage.target, stage.probe.trim());
+        let location = target.location();
+        let trim = trim.unwrap_or_else(|| self.integral_term(target));
         let config = &self.config;
         match location {
             Location::Rate(axis) => self.body_rate.hand_back(&config.body_rate, axis, trim),
@@ -201,17 +203,34 @@ impl CopterStabilizer {
             .map(|stage| stage.target.location())
     }
 
-    /// Steps the running stage with its loop's `error` and returns the probe's output (0 when
-    /// no stage runs). Hands the loop back once the probe finishes.
-    pub(super) fn step_stage(&mut self, dt: f32, error: f32) -> f32 {
-        let Some(stage) = self.stage.as_mut().filter(|stage| stage.is_running()) else {
-            return 0.0;
-        };
-        let output = stage.probe.step(dt, error);
-        if !stage.probe.status().is_running() {
+    /// Steps the running stage with its loop's `signals` and returns what to do with the loop
+    /// (`None` when no stage runs). The loop is handed back at the end of the tick
+    /// ([`finish_stage`](Self::finish_stage)), after its controller ran.
+    pub(super) fn step_stage(&mut self, dt: f32, signals: &LoopSignals) -> Option<Injection> {
+        let stage = self.stage.as_mut().filter(|stage| stage.is_running())?;
+        Some(stage.probe.step(dt, signals))
+    }
+
+    /// Hands the loop back once its probe has finished; call it at the end of the tick.
+    pub(super) fn finish_stage(&mut self) {
+        let finished = self
+            .stage
+            .as_ref()
+            .is_some_and(|stage| stage.is_running() && !stage.probe.status().is_running());
+        if finished {
             self.hand_back();
         }
-        output
+    }
+
+    /// Whether `location`'s loop, or the loop under it, clipped on the last tick: a rate
+    /// loop's moment; an angle or heading loop's rate setpoint or that axis's moment.
+    pub(super) fn loop_saturated(&self, location: Location) -> bool {
+        let clipped = &self.clipped;
+        match location {
+            Location::Rate(axis) => clipped.moments[axis],
+            Location::Angle(axis) => clipped.rates[axis] || clipped.moments[axis],
+            Location::Heading => clipped.rates[2] || clipped.moments[2],
+        }
     }
 
     /// The I term of `target`'s controller: its trim.

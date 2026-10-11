@@ -9,7 +9,7 @@ use crate::{Configurable, FlightLoop, VehicleState};
 
 use super::{
     ControllerForm, Measurement, ProbeAbort, ProbeConfig, ProbeStatus, RelayConfig, RelayResult,
-    Tunable, TuningRule, gains_from_ultimate,
+    StepConfig, Tunable, TuningRule, gains_from_ultimate,
 };
 
 use procedure::{Action, Input, Procedure};
@@ -18,8 +18,8 @@ mod procedure;
 #[cfg(test)]
 mod tests;
 
-/// The most stages a plan may hold: one per [`TunedLoop`].
-pub const MAX_STAGES: usize = 6;
+/// The most stages a plan may hold: a tune and a step test of every [`TunedLoop`].
+pub const MAX_STAGES: usize = 12;
 
 /// Relay for a copter rate loop: normalized moment out, rad/s in. RealFlight's QuadCopterX
 /// cycles in about 70 ms (17 ticks) with cycle-to-cycle jitter, so it averages 8 cycles
@@ -104,6 +104,14 @@ impl StagePlan {
     pub fn copter_sequence() -> [Self; COPTER_SEQUENCE.len()] {
         COPTER_SEQUENCE.map(Self::copter)
     }
+
+    /// A step test of `target` with the copter defaults ([`StepTestPlan::copter`]).
+    pub fn copter_step_test(target: TunedLoop) -> Self {
+        Self {
+            target,
+            method: Method::StepTest(StepTestPlan::copter(target)),
+        }
+    }
 }
 
 /// How a stage tunes its loop: which probes it runs and what gains follow from them.
@@ -111,17 +119,30 @@ impl StagePlan {
 pub enum Method {
     /// One relay measurement, turned into gains by a tuning rule.
     Relay(RelayPlan),
+    /// Alternating step responses, measured and reported; the gains don't change.
+    StepTest(StepTestPlan),
 }
 
 impl Method {
-    /// Checks the method's probe configs.
+    /// Checks the method's own fields and probe configs (its settle is checked against the
+    /// envelope by [`Autotune::new`]).
     ///
     /// # Errors
     ///
-    /// When the relay is invalid ([`RelayConfig::validate`]).
+    /// When the relay is invalid ([`RelayConfig::validate`]), or the step test is
+    /// ([`StepTestPlan::validate`]).
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         match self {
             Self::Relay(plan) => plan.relay.validate(),
+            Self::StepTest(plan) => plan.validate(),
+        }
+    }
+
+    /// The settle this method asks for before each probe; `None` uses the envelope's.
+    pub fn settle(&self) -> Option<Settle> {
+        match self {
+            Self::Relay(_) => None,
+            Self::StepTest(plan) => Some(plan.settle),
         }
     }
 
@@ -129,7 +150,94 @@ impl Method {
     fn plan_section(&self) -> &'static str {
         match self {
             Self::Relay(_) => "plan.relay",
+            Self::StepTest(_) => "plan.step_test",
         }
+    }
+}
+
+/// Step response of a copter rate loop: 1 rad/s (57°/s) held for 0.25 s, about four of
+/// QuadCopterX's 67 ms ultimate periods (#295), which tilts it about 14°; filtered at 40 Hz.
+pub const COPTER_RATE_STEP: StepConfig = StepConfig {
+    amplitude: 1.0,
+    duration_s: 0.25,
+    settle_band: 0.1,
+    filter_hz: 40.0,
+};
+
+/// Step response of a copter angle loop: 10° held for 0.8 s, filtered at 20 Hz.
+pub const COPTER_ANGLE_STEP: StepConfig = StepConfig {
+    amplitude: 0.175,
+    duration_s: 0.8,
+    settle_band: 0.1,
+    filter_hz: 20.0,
+};
+
+/// Level before each copter step: within 2.5° and 0.1 rad/s for 0.5 s (ArduPilot's
+/// `AUTOTUNE_LEVEL_ANGLE_CD` and `AUTOTUNE_REQUIRED_LEVEL_TIME_MS`), so each step starts from
+/// rest.
+pub const COPTER_STEP_SETTLE: Settle = Settle {
+    tilt_rad: 0.044,
+    rate_radps: 0.1,
+    hold_s: 0.5,
+};
+
+/// A step test: `pairs` pairs of steps, alternating `+step` and `−step` so a trim or CG offset
+/// shows as asymmetry rather than bias, each from a [`Settle`]. A step clipped for longer than
+/// `max_saturated_s` (a clipped step measures the limit, not the loop), or flagged stalled
+/// ([`Autotune::note_stall`]), is invalid and runs again; `max_invalid` in a row fail the
+/// stage.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepTestPlan {
+    /// The step, in its positive direction.
+    pub step: StepConfig,
+    /// Pairs of steps to measure. At least 1.
+    pub pairs: usize,
+    /// Level before each step.
+    pub settle: Settle,
+    /// How long a step may be clipped and still count, in s. Non-negative and finite: a D kick
+    /// clips the first tick or so of a rate step.
+    pub max_saturated_s: f32,
+    /// Invalid steps in a row that fail the stage. At least 1.
+    pub max_invalid: usize,
+}
+
+impl StepTestPlan {
+    /// The copter defaults for `target`: three pairs of [`COPTER_RATE_STEP`] (rate loops) or
+    /// [`COPTER_ANGLE_STEP`] (angle and heading loops) from [`COPTER_STEP_SETTLE`], allowing
+    /// 20 ms (5 ticks) of clipping and 3 invalid steps in a row.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::TunedLoop;
+    /// use stable_flight::tuning::autotune::{COPTER_ANGLE_STEP, StepTestPlan};
+    ///
+    /// assert_eq!(StepTestPlan::copter(TunedLoop::Roll).step, COPTER_ANGLE_STEP);
+    /// ```
+    pub fn copter(target: TunedLoop) -> Self {
+        let step = match target {
+            TunedLoop::RollRate | TunedLoop::PitchRate | TunedLoop::YawRate => COPTER_RATE_STEP,
+            TunedLoop::Roll | TunedLoop::Pitch | TunedLoop::Heading => COPTER_ANGLE_STEP,
+        };
+        Self {
+            step,
+            pairs: 3,
+            settle: COPTER_STEP_SETTLE,
+            max_saturated_s: 0.02,
+            max_invalid: 3,
+        }
+    }
+
+    /// Checks the step ([`StepConfig::validate`]) and the counts and clip allowance.
+    pub fn validate(&self) -> Result<(), InvalidConfig> {
+        self.step.validate()?;
+        check("pairs", self.pairs >= 1, "at least 1")?;
+        check(
+            "max_saturated_s",
+            self.max_saturated_s >= 0.0 && self.max_saturated_s.is_finite(),
+            "non-negative and finite",
+        )?;
+        check("max_invalid", self.max_invalid >= 1, "at least 1")
     }
 }
 
@@ -193,7 +301,25 @@ impl RelayPlan {
     }
 }
 
-/// Limits that end a stage, and how still the vehicle must be before one starts.
+/// How level and still the vehicle must hold before a probe starts.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Settle {
+    /// Roll and pitch within this, in rad.
+    pub tilt_rad: f32,
+    /// Every body rate within this, in rad/s.
+    pub rate_radps: f32,
+    /// For this long, in s.
+    pub hold_s: f32,
+}
+
+impl Settle {
+    /// Whether `motion` is level and still enough.
+    fn holds(&self, motion: &Motion) -> bool {
+        motion.tilt_rad < self.tilt_rad && motion.rate_radps < self.rate_radps
+    }
+}
+
+/// Limits that end a stage, and how still the vehicle must be before a probe starts.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Envelope {
     /// Roll or pitch beyond this aborts the stage, in rad.
@@ -202,13 +328,10 @@ pub struct Envelope {
     pub max_rate_radps: f32,
     /// Sinking more than this below the altitude at [`Autotune::start`] aborts, in m.
     pub max_altitude_loss_m: f32,
-    /// Level enough to start a stage: roll and pitch within this, in rad.
-    pub settle_tilt_rad: f32,
-    /// Still enough to start a stage: body rates within this, in rad/s.
-    pub settle_rate_radps: f32,
-    /// How long the vehicle must stay level and still before a stage starts, in s.
-    pub settle_s: f32,
-    /// How long to wait for it before failing, in s.
+    /// Level and still enough to start a probe, unless the stage's method sets its own
+    /// ([`Method::settle`]).
+    pub settle: Settle,
+    /// How long to wait for a settle before failing, in s.
     pub settle_timeout_s: f32,
 }
 
@@ -220,36 +343,44 @@ impl Default for Envelope {
             max_tilt_rad: 0.6,
             max_rate_radps: 4.0,
             max_altitude_loss_m: 3.0,
-            settle_tilt_rad: 0.1,
-            settle_rate_radps: 0.3,
-            settle_s: 1.0,
+            settle: Settle {
+                tilt_rad: 0.1,
+                rate_radps: 0.3,
+                hold_s: 1.0,
+            },
             settle_timeout_s: 10.0,
         }
     }
 }
 
 impl Envelope {
-    /// Checks that every limit and time is positive and finite, and that settling is
-    /// tighter than aborting.
+    /// Checks that every limit and time is positive and finite, and that settling
+    /// ([`check_settle`](Self::check_settle)) is tighter than aborting.
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         check_positive("max_tilt_rad", self.max_tilt_rad)?;
         check_positive("max_rate_radps", self.max_rate_radps)?;
         check_positive("max_altitude_loss_m", self.max_altitude_loss_m)?;
+        check_positive("settle_timeout_s", self.settle_timeout_s)?;
+        self.check_settle(&self.settle)
+    }
+
+    /// Checks that `settle` is positive and tighter than the abort limits, and that its hold
+    /// fits in `settle_timeout_s`.
+    pub fn check_settle(&self, settle: &Settle) -> Result<(), InvalidConfig> {
         check(
-            "settle_tilt_rad",
-            self.settle_tilt_rad > 0.0 && self.settle_tilt_rad < self.max_tilt_rad,
+            "settle.tilt_rad",
+            settle.tilt_rad > 0.0 && settle.tilt_rad < self.max_tilt_rad,
             "positive and below max_tilt_rad",
         )?;
         check(
-            "settle_rate_radps",
-            self.settle_rate_radps > 0.0 && self.settle_rate_radps < self.max_rate_radps,
+            "settle.rate_radps",
+            settle.rate_radps > 0.0 && settle.rate_radps < self.max_rate_radps,
             "positive and below max_rate_radps",
         )?;
-        check_positive("settle_s", self.settle_s)?;
         check(
-            "settle_timeout_s",
-            self.settle_timeout_s > self.settle_s && self.settle_timeout_s.is_finite(),
-            "finite and longer than settle_s",
+            "settle.hold_s",
+            settle.hold_s > 0.0 && settle.hold_s < self.settle_timeout_s,
+            "positive and below settle_timeout_s",
         )
     }
 
@@ -264,11 +395,6 @@ impl Envelope {
         } else {
             None
         }
-    }
-
-    /// Whether `motion` is level and still enough to start a stage.
-    fn settled(&self, motion: &Motion) -> bool {
-        motion.tilt_rad < self.settle_tilt_rad && motion.rate_radps < self.settle_rate_radps
     }
 }
 
@@ -303,6 +429,9 @@ pub enum AutotuneAbort {
     AltitudeLoss,
     /// The vehicle didn't settle within [`Envelope::settle_timeout_s`].
     NotSettled,
+    /// Too many invalid probes in a row (clipped or stalled steps:
+    /// [`StepTestPlan::max_invalid`]).
+    Invalid,
     /// The probe gave up.
     Probe(ProbeAbort),
     /// The stabilizer idled the loop under test (e.g. a rate setpoint), or the probe was
@@ -452,8 +581,11 @@ impl Phase {
 enum Decide {
     /// The stage's start.
     Start,
-    /// A finished probe's measurement.
-    Measured(Measurement),
+    /// A finished probe's measurement, and whether the host stalled during it.
+    Measured {
+        measurement: Measurement,
+        stalled: bool,
+    },
 }
 
 /// Runs a copter autotune between ticks (#149, #298): each [`StagePlan`]'s procedure decides
@@ -462,12 +594,15 @@ enum Decide {
 ///
 /// - **Start** ([`start`](Self::start)) when armed and hovering; the caller owns the trigger.
 ///   The config and altitude at start are the baseline.
-/// - **Settle:** before each probe, the vehicle must stay within the [`Envelope`]'s settle
-///   limits for `settle_s`.
+/// - **Settle:** before each probe, the vehicle must hold the method's [`Settle`]
+///   ([`Method::settle`]), or the [`Envelope`]'s.
 /// - **Probe and decide:** a finished probe's [`Measurement`] goes to the stage's procedure,
 ///   which asks for another probe or finishes with gains for its loop, committed through
 ///   [`set_stabilizer_config`](FlightLoop::set_stabilizer_config); the next stage flies them.
-///   With [`Method::Relay`], one relay measurement and its rule's gains.
+///   With [`Method::Relay`], one relay measurement and its rule's gains; with
+///   [`Method::StepTest`], alternating steps and the gains unchanged.
+/// - **Stalls:** [`note_stall`](Self::note_stall) marks the running probe's measurement as
+///   untimely; a step test runs that step again.
 /// - **Fail:** an envelope breach, a probe abort, an interrupt, or a rejected config stops the
 ///   stage, puts back the last committed config (the earlier stages' gains stay), and ends the
 ///   run.
@@ -517,6 +652,8 @@ pub struct Autotune {
     /// The config as of the last commit: what a failure reverts to.
     last_good: Option<CopterStabilizerConfig>,
     start_altitude_m: f32,
+    /// The host stalled during the running probe ([`note_stall`](Self::note_stall)).
+    stalled: bool,
 }
 
 /// What the supervisor needs from the stabilizer: copter probes and config.
@@ -555,6 +692,11 @@ impl Autotune {
                 .map_err(|e| e.in_section(stage.method.plan_section()))?;
         }
         envelope.validate().map_err(|e| e.in_section("envelope"))?;
+        for settle in plan.iter().filter_map(|stage| stage.method.settle()) {
+            envelope
+                .check_settle(&settle)
+                .map_err(|e| e.in_section("plan"))?;
+        }
 
         let mut stages = [None; MAX_STAGES];
         for (slot, stage) in stages.iter_mut().zip(plan) {
@@ -569,6 +711,7 @@ impl Autotune {
             baseline: None,
             last_good: None,
             start_altitude_m: 0.0,
+            stalled: false,
         })
     }
 
@@ -654,6 +797,15 @@ impl Autotune {
         }
     }
 
+    /// Tells the supervisor the host fell behind (e.g. a stalled simulator exchange,
+    /// sitl's `RunStats::skipped_ticks` growing): the running probe's timing can't be trusted,
+    /// so its procedure treats the measurement as invalid. A no-op unless a probe runs.
+    pub fn note_stall(&mut self) {
+        if matches!(self.phase, Phase::Probing { .. }) {
+            self.stalled = true;
+        }
+    }
+
     /// Where the run stands.
     pub fn status(&self) -> AutotuneStatus {
         match self.phase {
@@ -667,7 +819,7 @@ impl Autotune {
             Phase::Probing { stage }
             | Phase::Deciding {
                 stage,
-                on: Decide::Measured(_),
+                on: Decide::Measured { .. },
             } => AutotuneStatus::Running {
                 stage,
                 target: self.target(stage),
@@ -708,7 +860,14 @@ impl Autotune {
         let gains = self.target(stage).gains(flight_loop.stabilizer().config());
         let input = match on {
             Decide::Start => Input::Start { gains },
-            Decide::Measured(measurement) => Input::Measured { measurement, gains },
+            Decide::Measured {
+                measurement,
+                stalled,
+            } => Input::Measured {
+                measurement,
+                gains,
+                stalled,
+            },
         };
         match self.procedure.next(input) {
             Action::Probe(probe) => {
@@ -721,12 +880,12 @@ impl Autotune {
                 None
             }
             Action::Finish(gains) => Some(self.commit(flight_loop, stage, gains)),
+            Action::Fail(reason) => Some(self.fail(flight_loop, stage, reason)),
         }
     }
 
-    /// Waits for the vehicle to hold level and still for `settle_s` (`level_s` counts it,
-    /// restarting when it moves), then starts `probe` for `stage`; fails after
-    /// `settle_timeout_s`.
+    /// Waits for the vehicle to hold the stage's [`Settle`] (`level_s` counts it, restarting
+    /// when it moves), then starts `probe` for `stage`; fails after `settle_timeout_s`.
     fn settle<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
@@ -735,14 +894,12 @@ impl Autotune {
         level_s: f32,
         waited_s: f32,
     ) -> Option<AutotuneEvent> {
-        let level_s = if self.envelope.settled(motion) {
-            level_s
-        } else {
-            0.0
-        };
-        if level_s >= self.envelope.settle_s {
+        let settle = self.settle_for(stage);
+        let level_s = if settle.holds(motion) { level_s } else { 0.0 };
+        if level_s >= settle.hold_s {
             flight_loop.start_probe(self.target(stage), probe);
             self.phase = Phase::Probing { stage };
+            self.stalled = false;
             return None;
         }
         if waited_s >= self.envelope.settle_timeout_s {
@@ -770,7 +927,10 @@ impl Autotune {
                 flight_loop.stop_probe();
                 self.phase = Phase::Deciding {
                     stage,
-                    on: Decide::Measured(measurement),
+                    on: Decide::Measured {
+                        measurement,
+                        stalled: self.stalled,
+                    },
                 };
                 return Some(AutotuneEvent::Measured {
                     target,
@@ -781,6 +941,13 @@ impl Autotune {
             Some((_, ProbeStatus::Interrupted)) | None => AutotuneAbort::Interrupted,
         };
         Some(self.fail(flight_loop, stage, reason))
+    }
+
+    /// The settle before `stage`'s probes: its method's, or the envelope's.
+    fn settle_for(&self, stage: usize) -> Settle {
+        self.stage(stage)
+            .and_then(|plan| plan.method.settle())
+            .unwrap_or(self.envelope.settle)
     }
 
     fn stage(&self, stage: usize) -> Option<StagePlan> {

@@ -34,14 +34,19 @@
 //! # Tuning
 //!
 //! An autotune stage ([`start_probe`](crate::tuning::Tunable::start_probe)) hands one loop to a
-//! [`Probe`](crate::tuning::Probe) (#149), today a relay. Every controller still runs each
-//! tick; the stage replaces one value:
+//! [`Probe`](crate::tuning::Probe) (#149, #298). Every controller still runs each tick; before
+//! the loop's controller runs, the probe sees its
+//! [`LoopSignals`] and replaces one value: the loop's output (relay)
+//! or its setpoint (step).
 //!
-//! | [`TunedLoop`] | Probe error | Replaces |
+//! | [`TunedLoop`] | Setpoint, error | Output (relay replaces) |
 //! |---|---|---|
-//! | `RollRate`, `PitchRate`, `YawRate` | desired − measured body rate | that axis's moment (±1) |
-//! | `Roll`, `Pitch` | saturated desired − estimated angle | that axis's rate setpoint (`max_rate_radps`) |
-//! | `Heading` | wrapped heading error | the yaw rate setpoint (`yaw.max_rate_radps`) |
+//! | `RollRate`, `PitchRate`, `YawRate` | desired body rate; desired − measured | that axis's moment (±1) |
+//! | `Roll`, `Pitch` | saturated desired angle; that − estimated angle | that axis's rate setpoint (`max_rate_radps`) |
+//! | `Heading` | desired heading; wrapped heading error | the yaw rate setpoint (`yaw.max_rate_radps`) |
+//!
+//! The signals' `saturated` is the last tick's clip on the loop's path: the axis's moment, and
+//! for an angle or heading loop also its rate setpoint.
 //!
 //! - **Rate stages** keep the angle loop around the tested axis, which keeps it near level, so
 //!   the relay measures the rate loop with the angle loop's `(s + Kp)/s` wrapped around it: a
@@ -66,6 +71,7 @@ use crate::controllers::yaw::angle_diff;
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_positive};
 use crate::math::{assert_dt, euler_angles, saturate_symmetric, saturate_throttle, saturate_unit};
+use crate::tuning::{Injection, LoopSignals};
 
 mod params;
 #[cfg(test)]
@@ -173,6 +179,19 @@ pub struct CopterStabilizer {
 
     /// The autotune stage, if one was started and not yet stopped.
     stage: Option<tuning::Stage>,
+
+    /// What the last `stabilize` call clipped per axis, for a probe's
+    /// [`LoopSignals::saturated`](crate::tuning::LoopSignals::saturated).
+    clipped: Clipped,
+}
+
+/// Per-axis clips (roll, pitch, yaw) of one tick.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct Clipped {
+    /// The rate loop's moment hit ±1.
+    moments: [bool; 3],
+    /// The attitude or heading loop's rate setpoint hit its `max_rate_radps`.
+    rates: [bool; 3],
 }
 
 impl CopterStabilizer {
@@ -196,6 +215,7 @@ impl CopterStabilizer {
             yaw: YawController::default(),
             saturation: Saturation::default(),
             stage: None,
+            clipped: Clipped::default(),
         }
     }
 }
@@ -251,12 +271,15 @@ impl Stabilizer for CopterStabilizer {
                 self.interrupt_attitude_stage();
                 self.attitude = AttitudeController::default();
                 self.yaw = YawController::default();
+                self.clipped.rates = [false; 3];
                 self.track_rates(dt, rates, estimated_state)
             }
         };
 
         // The rate loop clamps each moment to [-1, 1]; landing on a bound means it clipped.
         self.saturation.moments = output.moments.map(|m| m.abs() >= 1.0).into();
+        self.clipped.moments = self.saturation.moments;
+        self.finish_stage();
         output
     }
 
@@ -264,6 +287,7 @@ impl Stabilizer for CopterStabilizer {
     /// history), so control after arming starts from zero, and ends any tuning stage.
     fn prime(&mut self, _state: &VehicleState) {
         self.stage = None;
+        self.clipped = Clipped::default();
         self.body_rate = BodyRateController::default();
         self.attitude = AttitudeController::default();
         self.yaw = YawController::default();
@@ -302,8 +326,10 @@ impl CopterStabilizer {
     ) -> ControlOutput {
         // Roll/pitch saturate inside the attitude controller, thrust in the thrust curve (see
         // `crate::math`).
-        let desired_angles_rad = Vec2::new(setpoint.roll_rad, setpoint.pitch_rad);
-        let max_angles_rad = self.config.attitude.max_angles_rad;
+        let mut desired_angles_rad = Vec2::new(setpoint.roll_rad, setpoint.pitch_rad);
+        let mut desired_heading_rad = setpoint.heading_rad;
+        let config = self.config;
+        let max_angles_rad = config.attitude.max_angles_rad;
         // `>` is false for NaN, which the attitude controller treats as level.
         self.saturation.tilt = desired_angles_rad.x.abs() > max_angles_rad.x
             || desired_angles_rad.y.abs() > max_angles_rad.y;
@@ -311,31 +337,64 @@ impl CopterStabilizer {
         let (roll, pitch, current_heading) = euler_angles(&estimated_state.attitude);
         let current_angles = Vec2::new(roll, pitch);
 
-        let config = &self.config;
-        let mut desired_rates =
-            self.attitude
-                .control(&config.attitude, dt, desired_angles_rad, current_angles);
-
-        let mut desired_yaw_rate =
-            self.yaw
-                .control(&config.yaw, dt, setpoint.heading_rad, current_heading);
-
-        // A stage on an angle or heading loop replaces that loop's rate setpoint.
+        // A stage on an angle or heading loop sees the loop before its controller runs, and
+        // replaces its setpoint (step) or, below, its rate output (relay).
+        let mut replaced_rate = None;
         match self.running_stage() {
-            Some(Location::Angle(axis)) => {
-                let attitude = config.attitude;
-                let error =
-                    AttitudeController::angle_error(&attitude, desired_angles_rad, current_angles);
-                let rate = self.step_stage(dt, error[axis]);
-                desired_rates[axis] = saturate_symmetric(rate, attitude.max_rate_radps[axis]);
+            Some(location @ Location::Angle(axis)) => {
+                let signals = LoopSignals {
+                    setpoint: saturate_symmetric(desired_angles_rad[axis], max_angles_rad[axis]),
+                    error: AttitudeController::angle_error(
+                        &config.attitude,
+                        desired_angles_rad,
+                        current_angles,
+                    )[axis],
+                    saturated: self.loop_saturated(location),
+                };
+                match self.step_stage(dt, &signals) {
+                    Some(Injection::Setpoint(angle)) => desired_angles_rad[axis] = angle,
+                    Some(Injection::Output(rate)) => replaced_rate = Some((axis, rate)),
+                    None => {}
+                }
             }
-            Some(Location::Heading) => {
-                let max_rate_radps = config.yaw.max_rate_radps;
-                let error = angle_diff(setpoint.heading_rad, current_heading);
-                desired_yaw_rate = saturate_symmetric(self.step_stage(dt, error), max_rate_radps);
+            Some(location @ Location::Heading) => {
+                let signals = LoopSignals {
+                    setpoint: desired_heading_rad,
+                    error: angle_diff(desired_heading_rad, current_heading),
+                    saturated: self.loop_saturated(location),
+                };
+                match self.step_stage(dt, &signals) {
+                    Some(Injection::Setpoint(heading)) => desired_heading_rad = heading,
+                    Some(Injection::Output(rate)) => replaced_rate = Some((2, rate)),
+                    None => {}
+                }
             }
             Some(Location::Rate(_)) | None => {}
         }
+
+        let mut desired_rates =
+            self.attitude
+                .control(&config.attitude, dt, desired_angles_rad, current_angles);
+        let mut desired_yaw_rate =
+            self.yaw
+                .control(&config.yaw, dt, desired_heading_rad, current_heading);
+        match replaced_rate {
+            Some((2, rate)) => {
+                desired_yaw_rate = saturate_symmetric(rate, config.yaw.max_rate_radps);
+            }
+            Some((axis, rate)) => {
+                desired_rates[axis] =
+                    saturate_symmetric(rate, config.attitude.max_rate_radps[axis]);
+            }
+            None => {}
+        }
+        // The controllers clamp their rate outputs; landing on a bound means they clipped.
+        let max_rates = config.attitude.max_rate_radps;
+        self.clipped.rates = [
+            desired_rates.x.abs() >= max_rates.x,
+            desired_rates.y.abs() >= max_rates.y,
+            desired_yaw_rate.abs() >= config.yaw.max_rate_radps,
+        ];
 
         let desired_rates = Vec3::new(desired_rates.x, desired_rates.y, desired_yaw_rate);
         let moments = self.track_body_rates(dt, desired_rates, estimated_state);
@@ -389,15 +448,30 @@ impl CopterStabilizer {
         estimated_state: &VehicleState,
     ) -> Vec3 {
         let current_rates = estimated_state.angular_velocity_radps;
+        let mut desired_rates_radps = desired_rates_radps;
+        // A stage on a rate loop replaces its setpoint (step) before the controller runs, or
+        // its moment (relay) after.
+        let mut replaced_moment = None;
+        if let Some(location @ Location::Rate(axis)) = self.running_stage() {
+            let signals = LoopSignals {
+                setpoint: desired_rates_radps[axis],
+                error: desired_rates_radps[axis] - current_rates[axis],
+                saturated: self.loop_saturated(location),
+            };
+            match self.step_stage(dt, &signals) {
+                Some(Injection::Setpoint(rate)) => desired_rates_radps[axis] = rate,
+                Some(Injection::Output(moment)) => replaced_moment = Some((axis, moment)),
+                None => {}
+            }
+        }
         let mut moments = self.body_rate.control(
             &self.config.body_rate,
             dt,
             desired_rates_radps,
             current_rates,
         );
-        if let Some(Location::Rate(axis)) = self.running_stage() {
-            let error = desired_rates_radps[axis] - current_rates[axis];
-            moments[axis] = saturate_unit(self.step_stage(dt, error));
+        if let Some((axis, moment)) = replaced_moment {
+            moments[axis] = saturate_unit(moment);
         }
         moments
     }

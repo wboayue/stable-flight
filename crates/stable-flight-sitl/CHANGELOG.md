@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `RealTimeRunner::run_with`'s hook also gets the `RunStats` so far
+  (`FnMut(&mut FlightLoop, &RunStats)`), so a caller can react to a stall between ticks
+  (#298). Add a `_` parameter to existing closures.
+
 ## [0.1.0] - 2026-10-10
 
 First release.

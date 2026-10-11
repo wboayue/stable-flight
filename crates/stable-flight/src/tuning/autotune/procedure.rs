@@ -1,6 +1,6 @@
 //! A stage's decisions, apart from the flying: see [`Procedure`].
 
-use super::{Method, RelayPlan};
+use super::{AutotuneAbort, Method, RelayPlan, StepTestPlan};
 use crate::controllers::Gains;
 use crate::tuning::{Measurement, ProbeConfig};
 
@@ -12,10 +12,13 @@ mod tests;
 pub(super) enum Input {
     /// The stage starts; `gains` are its loop's current gains.
     Start { gains: Gains },
-    /// A probe finished; `gains` are the loop's gains it flew on.
+    /// A probe finished; `gains` are the loop's gains it flew on. `stalled`: the host fell
+    /// behind during it ([`Autotune::note_stall`](super::Autotune::note_stall)), so its timing
+    /// can't be trusted.
     Measured {
         measurement: Measurement,
         gains: Gains,
+        stalled: bool,
     },
 }
 
@@ -26,6 +29,8 @@ pub(super) enum Action {
     Probe(ProbeConfig),
     /// Commit these gains for the stage's loop and end the stage.
     Finish(Gains),
+    /// End the run: the stage can't go on.
+    Fail(AutotuneAbort),
 }
 
 /// A stage's method as a pure state machine: fed what happened, it returns what to do next.
@@ -35,12 +40,29 @@ pub(super) enum Action {
 pub(super) enum Procedure {
     /// One relay measurement, then the rule's gains.
     Relay(RelayPlan),
+    /// Alternating steps, then the same gains.
+    StepTest(StepTest),
+}
+
+/// A step test's progress.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct StepTest {
+    plan: StepTestPlan,
+    /// Valid steps measured.
+    measured: usize,
+    /// Invalid steps since the last valid one.
+    invalid: usize,
 }
 
 impl Procedure {
     pub(super) fn new(method: Method) -> Self {
         match method {
             Method::Relay(plan) => Self::Relay(plan),
+            Method::StepTest(plan) => Self::StepTest(StepTest {
+                plan,
+                measured: 0,
+                invalid: 0,
+            }),
         }
     }
 
@@ -51,8 +73,49 @@ impl Procedure {
                 Input::Measured {
                     measurement: Measurement::Relay(result),
                     gains,
+                    ..
                 } => Action::Finish(plan.gains(&result, gains)),
+                Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
             },
+            Self::StepTest(test) => test.next(input),
         }
+    }
+}
+
+impl StepTest {
+    fn next(&mut self, input: Input) -> Action {
+        let (metrics, gains, stalled) = match input {
+            Input::Start { .. } => return self.probe(),
+            Input::Measured {
+                measurement: Measurement::Step(metrics),
+                gains,
+                stalled,
+            } => (metrics, gains, stalled),
+            Input::Measured { .. } => return Action::Fail(AutotuneAbort::Interrupted),
+        };
+        if stalled || metrics.saturated_s > self.plan.max_saturated_s {
+            self.invalid += 1;
+            if self.invalid >= self.plan.max_invalid {
+                return Action::Fail(AutotuneAbort::Invalid);
+            }
+            return self.probe();
+        }
+        self.invalid = 0;
+        self.measured += 1;
+        if self.measured >= 2 * self.plan.pairs {
+            return Action::Finish(gains);
+        }
+        self.probe()
+    }
+
+    /// The next step: positive after an even count of valid steps, negative after an odd one
+    /// (an invalid step runs again in the same direction).
+    fn probe(&self) -> Action {
+        let step = if self.measured.is_multiple_of(2) {
+            self.plan.step
+        } else {
+            self.plan.step.reversed()
+        };
+        Action::Probe(ProbeConfig::Step(step))
     }
 }

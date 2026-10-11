@@ -100,7 +100,7 @@ fn main() {
 
     let mut failsafe = None;
     let runner = RealTimeRunner::new(250.0).expect("valid loop frequency"); // Hz
-    runner.run_with(&mut flight_loop, &shutdown, |flight_loop| {
+    runner.run_with(&mut flight_loop, &shutdown, |flight_loop, _| {
         match poller.poll(flight_loop) {
             Ok(stats) if stats.decode_errors > 0 || stats.dropped > 0 => {
                 debug!("link: {stats:?}");

@@ -136,7 +136,7 @@ fn main() {
 
     let runner = RealTimeRunner::new(250.0).expect("valid loop frequency"); // Hz
     let mut complete = false;
-    runner.run_with(&mut flight_loop, &shutdown, |flight_loop| {
+    runner.run_with(&mut flight_loop, &shutdown, |flight_loop, _| {
         if !complete && flight_loop.commander().follower().is_complete() {
             complete = true;
             match args.end {

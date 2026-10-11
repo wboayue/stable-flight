@@ -2,7 +2,7 @@ use assert2::check;
 
 use super::*;
 use crate::stabilizers::copter::TunedLoop;
-use crate::tuning::{ControllerForm, RelayResult, UltimatePoint, gains_from_ultimate};
+use crate::tuning::{ControllerForm, RelayResult, StepMetrics, UltimatePoint, gains_from_ultimate};
 
 const CURRENT: Gains = Gains {
     p: 9.0,
@@ -19,6 +19,7 @@ fn measured(ku: f32, tu_s: f32) -> Input {
             bias: 0.0,
         }),
         gains: CURRENT,
+        stalled: false,
     }
 }
 
@@ -76,4 +77,75 @@ fn relay_tunes_only_its_forms_terms() {
             "{form:?}"
         );
     }
+}
+
+/// A step's measurement: `saturated_s` clipped, `stalled` or not.
+fn stepped(saturated_s: f32, stalled: bool) -> Input {
+    Input::Measured {
+        measurement: Measurement::Step(StepMetrics {
+            saturated_s,
+            ..Default::default()
+        }),
+        gains: CURRENT,
+        stalled,
+    }
+}
+
+fn step_test(pairs: usize) -> (Procedure, StepTestPlan) {
+    let plan = StepTestPlan {
+        pairs,
+        ..StepTestPlan::copter(TunedLoop::RollRate)
+    };
+    (Procedure::new(Method::StepTest(plan)), plan)
+}
+
+/// A step test alternates `+step` and `−step` for its pairs, then finishes with the gains it
+/// flew (no change).
+#[test]
+fn step_test_alternates_then_finishes_with_the_same_gains() {
+    let (mut procedure, plan) = step_test(2);
+    let up = Action::Probe(ProbeConfig::Step(plan.step));
+    let down = Action::Probe(ProbeConfig::Step(plan.step.reversed()));
+
+    let mut actions = vec![procedure.next(Input::Start { gains: CURRENT })];
+    for _ in 0..4 {
+        actions.push(procedure.next(stepped(0.0, false)));
+    }
+
+    check!(actions == [up, down, up, down, Action::Finish(CURRENT)]);
+}
+
+/// A clipped or stalled step runs again in the same direction; `max_invalid` in a row fail the
+/// stage, and a valid step resets the count.
+#[test]
+fn step_test_repeats_invalid_steps_and_fails_on_too_many() {
+    let (mut procedure, plan) = step_test(3);
+    let up = Action::Probe(ProbeConfig::Step(plan.step));
+    let down = Action::Probe(ProbeConfig::Step(plan.step.reversed()));
+    let clipped = plan.max_saturated_s + 0.01;
+
+    procedure.next(Input::Start { gains: CURRENT });
+    // (input, expected action)
+    let script = [
+        (stepped(plan.max_saturated_s, false), down), // at the limit: valid
+        (stepped(clipped, false), down),
+        (stepped(0.0, true), down),
+        (stepped(0.0, false), up), // valid: count reset
+        (stepped(clipped, false), up),
+        (stepped(clipped, false), up),
+        (stepped(0.0, true), Action::Fail(AutotuneAbort::Invalid)),
+    ];
+    check!(plan.max_invalid == 3);
+    for (index, (input, expected)) in script.into_iter().enumerate() {
+        check!(procedure.next(input) == expected, "step {index}");
+    }
+}
+
+/// A measurement the method didn't ask for fails the stage.
+#[test]
+fn a_mismatched_measurement_fails() {
+    let (mut step, _) = step_test(1);
+    check!(step.next(measured(2.0, 0.1)) == Action::Fail(AutotuneAbort::Interrupted));
+    let mut relay = Procedure::new(Method::Relay(RelayPlan::copter(TunedLoop::RollRate)));
+    check!(relay.next(stepped(0.0, false)) == Action::Fail(AutotuneAbort::Interrupted));
 }

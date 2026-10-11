@@ -15,9 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aborts); `gains_from_ultimate` turns the result into
   `Gains` by Tyreus–Luyben or no-overshoot Ziegler–Nichols, as PID, PI, PD, or P
   (`ControllerForm::has_integral`/`has_derivative`).
-- **Autotune probes** (#149, #298): `Probe` excites and measures one loop inside the tick
-  (`ProbeConfig::Relay`: a `RelayTuner` seeded with the loop's trim), reporting
-  `ProbeStatus` and, when done, a `Measurement`. The `Tunable` trait (`start_probe`, `probe`,
+- **Autotune probes** (#149, #298): `Probe` excites and measures one loop inside the tick,
+  fed the loop's `LoopSignals` and answering with an `Injection` (a replaced output or
+  setpoint): `ProbeConfig::Relay` (a `RelayTuner` seeded with the loop's trim) or
+  `ProbeConfig::Step` (a `StepProbe`: holds a step for a fixed window and reports
+  `StepMetrics`: overshoot, rise, settling, bounce-back, final value, clipped time;
+  `StepSummary` aggregates them). It reports `ProbeStatus` and, when done, a `Measurement`. The `Tunable` trait (`start_probe`, `probe`,
   `stop_probe`), implemented by `CopterStabilizer` on a `TunedLoop` (roll/pitch/yaw rate,
   roll/pitch angle, or heading), hosts one; the loop is handed back with the measured trim as
   its I term when the probe finishes, on `stop_probe`, or when a rate tick interrupts an angle
@@ -26,10 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CopterStabilizerConfig`.
 - **`tuning::autotune::Autotune`** (#149, #298): executes a plan of stages between ticks
   (`StagePlan`: a `TunedLoop` and a `Method`; `Method::Relay(RelayPlan)` measures once and
-  sets the rule's gains; copter defaults in `StagePlan::copter_sequence`: roll and pitch rate,
+  sets the rule's gains; `Method::StepTest(StepTestPlan)` measures alternating steps and
+  keeps the gains, repeating clipped or stalled steps (`Autotune::note_stall`); presets
+  `COPTER_RATE_STEP`, `COPTER_ANGLE_STEP`, `COPTER_STEP_SETTLE`; copter defaults in `StagePlan::copter_sequence`: roll and pitch rate,
   PD keeping each loop's I; the angle, heading, and yaw-rate stages are opt-in, see
   `COPTER_SEQUENCE`). Each stage's decisions run as a pure procedure; the executor settles
-  before each probe, aborts on an `Envelope` breach (back to the last committed config),
+  before each probe (`Envelope::settle`, or the method's `Settle`), aborts on an `Envelope` breach (back to the last committed config),
   commits each stage's gains through `set_stabilizer_config`, and reverts to the starting
   config on disarm; reports `AutotuneEvent`s for logging (`StageStarted`, `Measured`,
   `StageDone`, ...). Works with any `CopterTunable` stabilizer (`Tunable` on `TunedLoop` +

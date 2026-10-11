@@ -1,6 +1,9 @@
 //! What an autotune stage runs inside the tick: see [`Probe`].
 
-use super::{RelayAbort, RelayConfig, RelayResult, RelayStatus, RelayTuner};
+use super::{
+    RelayAbort, RelayConfig, RelayResult, RelayStatus, RelayTuner, StepAbort, StepConfig,
+    StepMetrics, StepProbe, StepStatus,
+};
 use crate::controllers::InvalidConfig;
 
 /// How to excite and measure one loop: what a [`Probe`] runs.
@@ -8,10 +11,12 @@ use crate::controllers::InvalidConfig;
 pub enum ProbeConfig {
     /// Relay feedback: the relay replaces the loop's output and measures its ultimate point.
     Relay(RelayConfig),
+    /// A step: the loop's setpoint is held at a step and its response measured.
+    Step(StepConfig),
 }
 
 impl ProbeConfig {
-    /// Checks the probe's config ([`RelayConfig::validate`]).
+    /// Checks the probe's config ([`RelayConfig::validate`], [`StepConfig::validate`]).
     ///
     /// # Examples
     ///
@@ -26,8 +31,38 @@ impl ProbeConfig {
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         match self {
             Self::Relay(config) => config.validate(),
+            Self::Step(config) => config.validate(),
         }
     }
+}
+
+/// What the host tells a probe about its loop each tick, before the loop's controller runs.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct LoopSignals {
+    /// The loop's setpoint this tick, as its controller would see it (a saturated angle, a
+    /// heading).
+    pub setpoint: f32,
+    /// The error the loop acts on: setpoint − measurement (wrapped for a heading).
+    pub error: f32,
+    /// Whether the loop's output, or the loop under it, was clipped on the last tick.
+    pub saturated: bool,
+}
+
+impl LoopSignals {
+    /// The measurement: `setpoint − error`, consistent with the setpoint even for a wrapped
+    /// heading.
+    pub fn measurement(&self) -> f32 {
+        self.setpoint - self.error
+    }
+}
+
+/// What a probe asks its host to do with the loop this tick.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Injection {
+    /// Use this in place of the loop's controller output (relay).
+    Output(f32),
+    /// Run the loop's controller on this setpoint instead of its own (step).
+    Setpoint(f32),
 }
 
 /// Where a running probe stands.
@@ -40,6 +75,11 @@ pub enum Progress {
         /// Measured cycles in the window.
         cycles: usize,
     },
+    /// Time into the step.
+    Step {
+        /// Seconds since the step.
+        elapsed_s: f32,
+    },
 }
 
 /// What a finished probe measured.
@@ -47,6 +87,8 @@ pub enum Progress {
 pub enum Measurement {
     /// The relay's ultimate point and the cycle it came from.
     Relay(RelayResult),
+    /// The step response.
+    Step(StepMetrics),
 }
 
 /// Why a probe gave up.
@@ -54,6 +96,8 @@ pub enum Measurement {
 pub enum ProbeAbort {
     /// The relay tuner gave up.
     Relay(RelayAbort),
+    /// The step response ran the wrong way or away.
+    Step(StepAbort),
 }
 
 /// Where a probe stands, as its host reports it ([`Tunable::probe`](super::Tunable::probe)).
@@ -91,8 +135,19 @@ impl From<RelayStatus> for ProbeStatus {
     }
 }
 
+impl From<StepStatus> for ProbeStatus {
+    fn from(status: StepStatus) -> Self {
+        match status {
+            StepStatus::Running { elapsed_s } => Self::Running(Progress::Step { elapsed_s }),
+            StepStatus::Done(metrics) => Self::Done(Measurement::Step(metrics)),
+            StepStatus::Aborted(abort) => Self::Aborted(ProbeAbort::Step(abort)),
+        }
+    }
+}
+
 /// One loop's excitation and measurement, stepped by its host inside the tick: the host feeds
-/// it the loop's error and applies the output it returns in place of the loop's controller.
+/// it the loop's [`LoopSignals`] before the loop's controller runs and applies the
+/// [`Injection`] it returns.
 ///
 /// The host owns the loop and the handoff; the probe owns the signal and what it measures.
 /// Plain data, no allocation.
@@ -101,11 +156,12 @@ impl From<RelayStatus> for ProbeStatus {
 ///
 /// ```
 /// use stable_flight::tuning::autotune::COPTER_RATE_RELAY;
-/// use stable_flight::tuning::{Probe, ProbeConfig, ProbeStatus};
+/// use stable_flight::tuning::{Injection, LoopSignals, Probe, ProbeConfig};
 ///
 /// let mut probe = Probe::new(ProbeConfig::Relay(COPTER_RATE_RELAY), 0.0);
 /// // Rolling right faster than wanted: the relay pushes left.
-/// assert_eq!(probe.step(0.004, -0.5), -COPTER_RATE_RELAY.initial_relay);
+/// let signals = LoopSignals { setpoint: 0.0, error: -0.5, saturated: false };
+/// assert_eq!(probe.step(0.004, &signals), Injection::Output(-COPTER_RATE_RELAY.initial_relay));
 /// assert!(probe.status().is_running());
 /// ```
 #[derive(Clone, Debug, PartialEq)]
@@ -116,10 +172,12 @@ pub struct Probe {
 #[derive(Clone, Debug, PartialEq)]
 enum Kind {
     Relay(RelayTuner),
+    Step(StepProbe),
 }
 
 impl Probe {
-    /// A probe ready to run, from the loop's current `trim` (its I term, in output units).
+    /// A probe ready to run, from the loop's current `trim` (its I term, in output units; the
+    /// relay starts its bias there).
     ///
     /// # Panics
     ///
@@ -127,19 +185,23 @@ impl Probe {
     pub fn new(config: ProbeConfig, trim: f32) -> Self {
         let kind = match config {
             ProbeConfig::Relay(config) => Kind::Relay(RelayTuner::new(config, trim)),
+            ProbeConfig::Step(config) => Kind::Step(StepProbe::new(config)),
         };
         Self { kind }
     }
 
-    /// Advances the probe by `dt` seconds with the loop's `error` (setpoint − measurement) and
-    /// returns the output to apply in place of the loop's controller.
+    /// Advances the probe by `dt` seconds with the loop's `signals` and returns what to do
+    /// with the loop this tick.
     ///
     /// # Panics
     ///
     /// If `dt` is not positive and finite.
-    pub fn step(&mut self, dt: f32, error: f32) -> f32 {
+    pub fn step(&mut self, dt: f32, signals: &LoopSignals) -> Injection {
         match &mut self.kind {
-            Kind::Relay(tuner) => tuner.step(dt, error),
+            Kind::Relay(tuner) => Injection::Output(tuner.step(dt, signals.error)),
+            Kind::Step(step) => {
+                Injection::Setpoint(step.step(dt, signals.measurement(), signals.saturated))
+            }
         }
     }
 
@@ -147,13 +209,16 @@ impl Probe {
     pub fn status(&self) -> ProbeStatus {
         match &self.kind {
             Kind::Relay(tuner) => tuner.status().into(),
+            Kind::Step(step) => step.status().into(),
         }
     }
 
-    /// The trim to hand the loop back with, as its I term: the relay's bias.
-    pub fn trim(&self) -> f32 {
+    /// The trim to hand the loop back with, as its I term: the relay's bias. `None` for a
+    /// step, which leaves the loop's integral as it is.
+    pub fn trim(&self) -> Option<f32> {
         match &self.kind {
-            Kind::Relay(tuner) => tuner.bias(),
+            Kind::Relay(tuner) => Some(tuner.bias()),
+            Kind::Step(_) => None,
         }
     }
 }

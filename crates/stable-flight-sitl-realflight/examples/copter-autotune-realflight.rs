@@ -8,13 +8,20 @@
 //! (`architecture.md#autotune`). The log has each stage's measurement and gains; on completion
 //! the tuned config is printed as an `airframes.rs` snippet. A failed stage (envelope breach,
 //! relay timeout) keeps the stages before it. `--rate-p-scale` starts from deliberately bad rate
-//! gains (e.g. `0.1` or `10`), to check the tune recovers from them. Params and telemetry go over
+//! gains (e.g. `0.1` or `10`), to check the tune recovers from them.
+//!
+//! `--step-test` appends step tests of roll and pitch rate and angle (#298): alternating steps,
+//! each one's response logged at `debug`, and a summary per loop at `info` (overshoot, rise,
+//! settling, bounce-back: mean and range). `--stages none --step-test` measures the hand tune;
+//! `--stages rate --step-test` the relay tune, in one flight. Steps during which the runner
+//! skipped ticks run again. Params and telemetry go over
 //! the native link for the bridge, so QGC shows the gains change. The RealFlight host defaults to
 //! `10.211.55.3:8080`; override it with `--host`.
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --rate-p-scale 10
+//! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages none --step-test
 //! ```
 
 use std::cell::Cell;
@@ -31,10 +38,10 @@ use stable_flight::commanders::{RouteEnd, TouchdownDetector};
 use stable_flight::controllers::Gains;
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
-use stable_flight::tuning::Measurement;
 use stable_flight::tuning::autotune::{
     Autotune, AutotuneEvent, AutotuneStatus, Envelope, StagePlan,
 };
+use stable_flight::tuning::{Measurement, Stat, StepMetrics, StepSummary};
 use stable_flight::{
     Command, Commander, Configurable, ControlInput, FlightLoop, LandCommand, TelemetryPublisher,
     TelemetryRecord, VehicleState, euler_angles,
@@ -86,6 +93,10 @@ struct Args {
     #[arg(long, value_enum, default_value_t = Stages::Rate)]
     stages: Stages,
 
+    /// After tuning, step-tests roll and pitch rate and angle and logs their responses.
+    #[arg(long)]
+    step_test: bool,
+
     /// Writes every tick (wall time, body rates, angles, moments) to this CSV, to diagnose a
     /// run.
     #[arg(long)]
@@ -102,6 +113,8 @@ struct Args {
 /// `--stages`.
 #[derive(Clone, Copy, ValueEnum)]
 enum Stages {
+    /// None: the hand tune (with `--step-test`, to measure it).
+    None,
     /// Roll and pitch rate: the core's default sequence.
     Rate,
     /// Roll, pitch, and heading (opt-in: their relay gains oscillated on QuadCopterX).
@@ -113,16 +126,34 @@ enum Stages {
 /// The opt-in angle and heading stages.
 const ANGLE_LOOPS: [TunedLoop; 3] = [TunedLoop::Roll, TunedLoop::Pitch, TunedLoop::Heading];
 
+/// The loops `--step-test` measures, in order.
+const STEP_TESTED: [TunedLoop; 4] = [
+    TunedLoop::RollRate,
+    TunedLoop::PitchRate,
+    TunedLoop::Roll,
+    TunedLoop::Pitch,
+];
+
 impl Stages {
     fn plan(self) -> Vec<StagePlan> {
         let rate = StagePlan::copter_sequence().into_iter();
         let angle = ANGLE_LOOPS.into_iter().map(StagePlan::copter);
         match self {
+            Stages::None => Vec::new(),
             Stages::Rate => rate.collect(),
             Stages::Angle => angle.collect(),
             Stages::All => rate.chain(angle).collect(),
         }
     }
+}
+
+/// The run's plan: the tuning stages, then the step tests if asked for.
+fn plan(args: &Args) -> Vec<StagePlan> {
+    let mut plan = args.stages.plan();
+    if args.step_test {
+        plan.extend(STEP_TESTED.map(StagePlan::copter_step_test));
+    }
+    plan
 }
 
 /// Flies the script until told to land (`land`), then lands where it is and disarms on
@@ -199,8 +230,8 @@ fn main() {
     let mut flight_loop =
         FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
 
-    let mut autotune =
-        Autotune::new(&args.stages.plan(), Envelope::default()).expect("valid autotune plan");
+    let mut autotune = Autotune::new(&plan(&args), Envelope::default())
+        .expect("valid autotune plan (--stages none needs --step-test)");
 
     // Ctrl-C stops the loop cleanly (RealFlightVehicle re-enables RC control on drop); so does
     // touchdown after the autotune.
@@ -212,7 +243,14 @@ fn main() {
     );
     let runner = RealTimeRunner::new(LOOP_HZ).expect("valid loop frequency");
     let mut ticks = 0u32;
-    runner.run_with(&mut flight_loop, &shutdown, |flight_loop| {
+    let mut skipped_ticks = 0;
+    let mut steps = StepSummary::default();
+    runner.run_with(&mut flight_loop, &shutdown, |flight_loop, stats| {
+        // A stall (the runner dropped ticks) spoils a running step's timing: it runs again.
+        if stats.skipped_ticks > skipped_ticks {
+            skipped_ticks = stats.skipped_ticks;
+            autotune.note_stall();
+        }
         match poller.poll(flight_loop) {
             Ok(stats) if stats.decode_errors > 0 || stats.dropped > 0 => {
                 debug!("link: {stats:?}");
@@ -245,7 +283,7 @@ fn main() {
         let Some(event) = autotune.update(flight_loop, LOOP_DT_S) else {
             return;
         };
-        log_event(&event, flight_loop.stabilizer().config());
+        log_event(&event, flight_loop.stabilizer().config(), &mut steps);
         if !autotune.is_running() {
             info!("landing");
             land.set(true);
@@ -253,11 +291,21 @@ fn main() {
     });
 }
 
-/// Logs an autotune event (lifecycle, so `info!`/`warn!`); on completion, prints the tuned
-/// gains for pasting.
-fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
+/// Logs an autotune event (lifecycle, so `info!`/`warn!`; each step at `debug!`), summing a
+/// stage's steps in `steps`; on completion, prints the tuned gains for pasting.
+fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig, steps: &mut StepSummary) {
     match event {
-        AutotuneEvent::StageStarted(target) => info!("autotune: tuning {target:?}"),
+        AutotuneEvent::StageStarted(target) => {
+            *steps = StepSummary::default();
+            info!("autotune: stage {target:?}");
+        }
+        AutotuneEvent::Measured {
+            target,
+            measurement: Measurement::Step(metrics),
+        } => {
+            steps.add(metrics);
+            debug!("autotune: {target:?} step {}", format_step(metrics));
+        }
         AutotuneEvent::Measured {
             target,
             measurement: Measurement::Relay(result),
@@ -265,6 +313,10 @@ fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
             "autotune: {target:?} Ku {:.3} Tu {:.3} s (relay {:.3}, cycle {:.4}, bias {:.3})",
             result.point.ku, result.point.tu_s, result.relay, result.cycle_amplitude, result.bias,
         ),
+        AutotuneEvent::StageDone { target, gains } if steps.count() > 0 => {
+            info!("autotune: {target:?} steps {}", format_summary(steps));
+            info!("autotune: {target:?} flies {}", format_gains(gains));
+        }
         AutotuneEvent::StageDone { target, gains } => {
             info!("autotune: {target:?} -> {}", format_gains(gains));
         }
@@ -352,6 +404,56 @@ fn at_hover_point(commander: &ThenLand, state: &VehicleState) -> bool {
     };
     follower.is_complete()
         && (state.position_m.z - hover.altitude_m).abs() < START_ALTITUDE_TOLERANCE_M
+}
+
+/// One step's response: the step, then its metrics (normalized to the step).
+fn format_step(metrics: &StepMetrics) -> String {
+    format!(
+        "{:+.3}: overshoot {:.2}, rise {}, settle {}, bounce {:.2}, final {:.2}, clipped {:.0} ms",
+        metrics.amplitude,
+        metrics.overshoot,
+        format_ms(metrics.rise_time_s),
+        format_ms(metrics.settling_time_s),
+        metrics.bounce_back,
+        metrics.final_value,
+        metrics.saturated_s * 1e3,
+    )
+}
+
+fn format_ms(time_s: Option<f32>) -> String {
+    time_s.map_or("-".to_string(), |s| format!("{:.0} ms", s * 1e3))
+}
+
+/// A stage's steps: each metric's mean [min-max]; overshoot per direction; steps that never
+/// rose or settled.
+fn format_summary(summary: &StepSummary) -> String {
+    let stat = |stat: &Stat, scale: f32| match stat.mean() {
+        Some(mean) => format!(
+            "{:.2} [{:.2}-{:.2}]",
+            mean * scale,
+            stat.min * scale,
+            stat.max * scale
+        ),
+        None => "-".to_string(),
+    };
+    let mean = |stat: &Stat| {
+        stat.mean()
+            .map_or("-".to_string(), |mean| format!("{mean:.2}"))
+    };
+    format!(
+        "n {}: overshoot {} (+ {}, - {}), rise {} ms, settle {} ms, bounce {}, final {}; \
+         not risen {}, not settled {}",
+        summary.count(),
+        stat(&summary.overshoot, 1.0),
+        mean(&summary.overshoot_positive),
+        mean(&summary.overshoot_negative),
+        stat(&summary.rise_time_s, 1e3),
+        stat(&summary.settling_time_s, 1e3),
+        stat(&summary.bounce_back, 1.0),
+        stat(&summary.final_value, 1.0),
+        summary.not_risen,
+        summary.not_settled,
+    )
 }
 
 fn format_gains(gains: &Gains) -> String {
