@@ -58,16 +58,18 @@ struct Sample {
     realflight_quaternion_euler: Vec3,
     /// On the ground.
     grounded: bool,
-    /// RealFlight's body specific force, in the vehicle's FRD body frame, m/s².
+    /// RealFlight's body specific force, in the vehicle's FRD body frame, m/s²: recovered from
+    /// the converted state, so it goes through the backend's body rotation.
     specific_force: Vec3,
 }
 
 fn sample(exchange: &CapturedExchange, body_rotation: &UnitQuaternion<f32>) -> Sample {
     let s = &exchange.state;
+    let state = vehicle_state(s, body_rotation);
     let unrotated = vehicle_state(s, &UnitQuaternion::identity());
     Sample {
         t_s: s.current_physics_time_s,
-        state: vehicle_state(s, body_rotation),
+
         realflight_euler: Vec3::new(
             s.roll_deg.to_radians(),
             s.inclination_deg.to_radians(),
@@ -79,13 +81,16 @@ fn sample(exchange: &CapturedExchange, body_rotation: &UnitQuaternion<f32>) -> S
             unrotated.heading_rad,
         ),
         grounded: s.is_touching_ground,
-        specific_force: body_rotation.inverse()
-            * Vec3::new(
-                s.acceleration_body_mps2.x,
-                s.acceleration_body_mps2.y,
-                s.acceleration_body_mps2.z,
-            ),
+        specific_force: specific_force(&state),
+        state,
     }
+}
+
+/// The body specific force (FRD, m/s²) behind `state`'s acceleration: `attitude⁻¹ · (a − g)`,
+/// with the acceleration up-positive and gravity NED.
+fn specific_force(state: &VehicleState) -> Vec3 {
+    let a = state.acceleration_mps2;
+    state.attitude.inverse() * Vec3::new(a.x, a.y, -a.z - GRAVITY)
 }
 
 /// The body-frame angular velocity that turns `from` into `to` over `dt` seconds (FRD, rad/s):

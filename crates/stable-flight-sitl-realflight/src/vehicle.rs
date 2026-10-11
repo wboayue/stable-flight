@@ -1,7 +1,10 @@
 use std::time::{Duration, Instant};
 
 use log::{debug, info, warn};
-use realflight_bridge::{BridgeError, ControlInputs, RealFlightBridge, SimulatorState};
+use realflight_bridge::{
+    BridgeError, ControlInputs, Quaternion as RealFlightQuaternion, RealFlightBridge,
+    SimulatorState,
+};
 use stable_flight::Vec3;
 use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
 
@@ -408,11 +411,7 @@ where
 /// assert!((state.pitch_rad.to_degrees() - 90.0).abs() < 0.05);
 /// ```
 pub fn vehicle_state(state: &SimulatorState, body_rotation: &UnitQuaternion<f32>) -> VehicleState {
-    // RealFlight's quaternion axes are (y, x, -z) of NED → FRD. Taken as reported, without
-    // renormalizing: it is already unit.
-    let q = state.orientation;
-    let realflight_attitude = UnitQuaternion::new_unchecked(Quaternion::new(q.w, q.y, q.x, -q.z));
-    let attitude = realflight_attitude * body_rotation;
+    let attitude = realflight_attitude(&state.orientation) * body_rotation;
     let to_body = body_rotation.inverse();
 
     // World velocity is NED.
@@ -435,13 +434,7 @@ pub fn vehicle_state(state: &SimulatorState, body_rotation: &UnitQuaternion<f32>
         velocity_mps: Vec3::new(velocity.x, velocity.y, -velocity.z),
         acceleration_mps2: Vec3::new(acceleration.x, acceleration.y, -acceleration.z),
         attitude,
-        // Yaw rate is counterclockwise-positive (nose left).
-        angular_velocity_radps: to_body
-            * Vec3::new(
-                state.roll_rate_dps.to_radians(),
-                state.pitch_rate_dps.to_radians(),
-                -state.yaw_rate_dps.to_radians(),
-            ),
+        angular_velocity_radps: to_body * realflight_body_rates_radps(state),
         // From the quaternion rather than RealFlight's own Euler angles, so they always agree
         // with `attitude` (they match RealFlight's away from ±90° pitch, where both are
         // degenerate: roll and heading turn about the same axis).
@@ -449,6 +442,23 @@ pub fn vehicle_state(state: &SimulatorState, body_rotation: &UnitQuaternion<f32>
         pitch_rad,
         heading_rad,
     }
+}
+
+/// RealFlight's attitude (NED → RealFlight's FRD body frame), before any body rotation. Its
+/// quaternion axes are (y, x, -z) of NED → FRD. Taken as reported, without renormalizing: it is
+/// already unit.
+fn realflight_attitude(q: &RealFlightQuaternion) -> UnitQuaternion<f32> {
+    UnitQuaternion::new_unchecked(Quaternion::new(q.w, q.y, q.x, -q.z))
+}
+
+/// RealFlight's body rates in its FRD body frame, rad/s, before any body rotation. Yaw rate is
+/// counterclockwise-positive (nose left).
+fn realflight_body_rates_radps(state: &SimulatorState) -> Vec3 {
+    Vec3::new(
+        state.roll_rate_dps.to_radians(),
+        state.pitch_rate_dps.to_radians(),
+        -state.yaw_rate_dps.to_radians(),
+    )
 }
 
 impl<T> Drop for RealFlightVehicle<T>

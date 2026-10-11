@@ -41,7 +41,7 @@ Use `RealFlightLocalBridge` when the controller runs on the same host as RealFli
 
 Each tick makes one RealFlight exchange, in `actuate`; `state` returns the cached result, so guidance and the stabilizer see state one tick old. The `RealFlightVehicle` rustdoc covers timing and frame conversion.
 
-`body_rotation` is the vehicle's body frame expressed in RealFlight's: a constant rotation, like a flight controller board's mounting, for a model whose RealFlight frame isn't the vehicle's. Identity for most models; the eXplora VTOL tailsitter reads level on its tail in RealFlight, so its rotation is +90° pitch and it hovers at pitch +90° (airplane body frame, #314). The `RealFlightVehicle` rustdoc (Body rotation) has the math.
+`body_rotation` is a constant rotation from RealFlight's body frame to the vehicle's, like a board's mounting; identity unless RealFlight's frame for the model differs (a tailsitter). The `RealFlightVehicle` rustdoc (Body rotation) covers it.
 
 A failed exchange is logged at most once a second. A remote bridge is unusable after a connection error, so give the vehicle a way to build a new one with `with_reconnect`: it retries with backoff and switches RealFlight to Link control on the new bridge, keeping the last state meanwhile. The flight examples do; the `RealFlightVehicle` rustdoc (Connection loss) has the backoff and the details.
 

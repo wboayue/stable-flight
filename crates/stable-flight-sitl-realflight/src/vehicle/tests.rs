@@ -4,7 +4,7 @@ use realflight_bridge::{BridgeError, ControlInputs, Quaternion, RealFlightBridge
 use stable_flight::FlightLoop;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::QuadCopterMixer;
-use stable_flight::nalgebra::{Quaternion as NaQuaternion, UnitQuaternion};
+use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::conformance::Scenario;
 use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
@@ -360,14 +360,8 @@ fn explora_rotation() -> UnitQuaternion<f32> {
 /// `report` (built for the vehicle's frame) with attitude, body rates, and specific force moved
 /// into RealFlight's frame, the inverse of `vehicle_state`'s rotation. World-frame fields stay.
 fn mounted(report: SimulatorState, body_rotation: &UnitQuaternion<f32>) -> SimulatorState {
-    let q = report.orientation;
-    let attitude = UnitQuaternion::new_unchecked(NaQuaternion::new(q.w, q.y, q.x, -q.z));
-    let rates = body_rotation
-        * Vec3::new(
-            report.roll_rate_dps,
-            report.pitch_rate_dps,
-            -report.yaw_rate_dps,
-        );
+    let attitude = realflight_attitude(&report.orientation);
+    let rates = (body_rotation * realflight_body_rates_radps(&report)).map(f32::to_degrees);
     let f = report.acceleration_body_mps2;
     let specific_force = body_rotation * Vec3::new(f.x, f.y, f.z);
     SimulatorState {
@@ -449,19 +443,13 @@ fn identity_body_rotation_is_a_no_op() {
     for scenario in stable_flight::testing::conformance::SCENARIOS {
         let report = native_fixture(scenario);
         let state = vehicle_state(&report, &UnitQuaternion::identity());
-        let q = report.orientation;
         check!(
-            state.attitude.into_inner() == NaQuaternion::new(q.w, q.y, q.x, -q.z),
+            state.attitude == realflight_attitude(&report.orientation),
             "{}",
             scenario.name
         );
-        let rates_degps = Vec3::new(
-            report.roll_rate_dps,
-            report.pitch_rate_dps,
-            -report.yaw_rate_dps,
-        );
         check!(
-            state.angular_velocity_radps == rates_degps.map(f32::to_radians),
+            state.angular_velocity_radps == realflight_body_rates_radps(&report),
             "{}",
             scenario.name
         );
