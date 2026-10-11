@@ -210,6 +210,20 @@ where
         &self.stabilizer
     }
 
+    /// The stabilizer, mutably, between ticks: e.g. to start or stop an autotune stage
+    /// ([`CopterStabilizer::start_tuning`](crate::stabilizers::copter::CopterStabilizer::start_tuning)).
+    /// Retune through [`set_stabilizer_config`](Self::set_stabilizer_config) or the
+    /// stabilizer's own validated [`Configurable::set_config`].
+    pub fn stabilizer_mut(&mut self) -> &mut S {
+        &mut self.stabilizer
+    }
+
+    /// Whether the last tick was armed (false before the first tick). A disarm between ticks
+    /// shows here after the next tick.
+    pub fn armed(&self) -> bool {
+        self.armed
+    }
+
     /// Retunes the guidance between ticks ([`Configurable::set_config`]): an invalid config is
     /// rejected and the current one kept.
     pub fn set_guidance_config(&mut self, config: G::Config) -> Result<(), InvalidConfig>

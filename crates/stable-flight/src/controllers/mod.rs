@@ -130,6 +130,19 @@ pub(crate) fn rescale_integral(integral: f32, old_i: f32, new_i: f32) -> f32 {
     if rescaled.is_finite() { rescaled } else { 0.0 }
 }
 
+/// The integrated error that makes the I term `i · integral` equal `i_term`, clamped to
+/// `max_integral`: how a loop resumes from a trim it didn't integrate itself (an autotune
+/// stage's bias at handoff).
+///
+/// Zero when `i` is zero (no integral can hold a trim) or the ratio isn't finite.
+pub(crate) fn seed_integral(i_term: f32, i: f32, max_integral: f32) -> f32 {
+    let integral = i_term / i;
+    if i == 0.0 || !integral.is_finite() {
+        return 0.0;
+    }
+    crate::math::clamp_symmetric(integral, max_integral)
+}
+
 /// PID gains for a single control loop.
 #[derive(Default, Clone, Copy, Debug, PartialEq)]
 pub struct Gains {

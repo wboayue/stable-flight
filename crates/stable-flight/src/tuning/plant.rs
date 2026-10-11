@@ -8,6 +8,10 @@
 use std::collections::VecDeque;
 use std::f32::consts::PI;
 
+use nalgebra::UnitQuaternion;
+
+use crate::{Vec3, VehicleState};
+
 /// Integration sub-steps per control tick.
 const SUBSTEPS: usize = 40;
 
@@ -78,6 +82,11 @@ impl Plant {
         self.output + self.params.noise * unit
     }
 
+    /// The true output, without noise.
+    pub(crate) fn output(&self) -> f32 {
+        self.output
+    }
+
     /// Holds `input` for one control tick.
     pub(crate) fn step(&mut self, input: f32) {
         self.queue.push_back(input);
@@ -112,5 +121,51 @@ impl Plant {
         let magnitude = p.gain
             / (w * (1.0 + (w * p.lag1_s).powi(2)).sqrt() * (1.0 + (w * p.lag2_s).powi(2)).sqrt());
         (1.0 / magnitude, 2.0 * PI / w)
+    }
+}
+
+/// Three decoupled rate axes (roll, pitch, yaw), each a [`Plant`] from moment to body rate,
+/// with their angles integrated: a small-angle vehicle for stabilizer tuning tests.
+pub(crate) struct Axes {
+    rates: [Plant; 3],
+    /// Roll, pitch, and yaw, in rad.
+    angles_rad: Vec3,
+    dt: f32,
+}
+
+impl Axes {
+    /// Axes at `angles_rad`, at rest, stepped every `dt` seconds.
+    pub(crate) fn new(params: [PlantParams; 3], angles_rad: Vec3, dt: f32) -> Self {
+        Self {
+            rates: params.map(|p| Plant::new(p, dt)),
+            angles_rad,
+            dt,
+        }
+    }
+
+    /// Roll, pitch, and yaw, in rad.
+    pub(crate) fn angles_rad(&self) -> Vec3 {
+        self.angles_rad
+    }
+
+    /// The state the stabilizer sees: attitude from the angles, body rates as measured.
+    pub(crate) fn state(&mut self) -> VehicleState {
+        let a = self.angles_rad;
+        VehicleState {
+            attitude: UnitQuaternion::from_euler_angles(a.x, a.y, a.z),
+            angular_velocity_radps: Vec3::from_fn(|axis, _| self.rates[axis].measure()),
+            roll_rad: a.x,
+            pitch_rad: a.y,
+            heading_rad: a.z,
+            ..VehicleState::default()
+        }
+    }
+
+    /// Applies `moments` (roll, pitch, yaw) for one tick.
+    pub(crate) fn step(&mut self, moments: Vec3) {
+        for (axis, plant) in self.rates.iter_mut().enumerate() {
+            plant.step(moments[axis]);
+            self.angles_rad[axis] += self.dt * plant.output();
+        }
     }
 }

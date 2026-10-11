@@ -143,12 +143,13 @@ FlightLoop ──set_guidance_config()───▶ CopterGuidance { config } ─
            ──set_stabilizer_config()─▶ CopterStabilizer { config } ─&config.body_rate─▶ BodyRateController (…)
 ```
 
-The one write point is `Configurable::set_config` (see its rustdoc), which validates before committing; `FlightLoop::set_guidance_config`/`set_stabilizer_config` forward to it between ticks. Config access is a separate, opt-in trait rather than part of `Guidance`/`Stabilizer`, so implementors without config aren't burdened, and `FlightLoop` hands out no `&mut` to its components, so nothing can run them out of tick order. The contract:
+The one write point is `Configurable::set_config` (see its rustdoc), which validates before committing; `FlightLoop::set_guidance_config`/`set_stabilizer_config` forward to it between ticks. Config access is a separate, opt-in trait rather than part of `Guidance`/`Stabilizer`, so implementors without config aren't burdened. `FlightLoop` hands out one `&mut`, `stabilizer_mut()`, for starting and stopping autotune stages between ticks; callers must not run the stabilizer's `Stabilizer` methods through it, which would run it out of tick order. The contract:
 
 * **Valid on entry.** Each config has `validate()` (composites tag errors with the loop, e.g. `body_rate.max_integral`); `new` and `set_config` enforce it. Controllers don't re-check every tick.
 * **Bad config still never panics the tick.** Limits go through `math::clamp_symmetric`, under which a negative or NaN limit acts as 0 (neutral output) instead of panicking like `f32::clamp`.
 * **Tolerate change between ticks.** State must stay coherent when the config changes: the integral is re-clamped to the current `max_integral` every tick, so shrinking it self-heals. Future filter state (e.g. a D-term low-pass cutoff) needs the same treatment.
 * **Retuning `i` is bumpless.** Controllers integrate the error, not the I term, so a new integral gain would rescale `i · ∫e` and jump the output. `set_config` rescales each integral by `old_i / new_i` so the term carries over. Across a zero gain it resets the integral instead: an integral accumulated under `i = 0` was never applied, and a zeroed term has nothing to carry. Rescaling rather than resetting keeps a hover trim through a retune. The per-tick `max_integral` clamp still applies, so a large cut in `i` can still bump the output.
+* **Tuning stages are runtime state, not config.** An autotune stage (`CopterStabilizer::start_tuning`, #149) replaces one loop's output with a relay inside the tick; it lives next to the controllers' state and is never part of `CopterStabilizerConfig` or its params. Handing the loop back seeds its integral so the I term equals the relay's measured trim (`seed_integral`); a following `set_config` with the tuned gains rescales it like any retune, so the trim carries through both.
 
 ### Params
 

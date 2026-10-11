@@ -3,7 +3,7 @@ use core::f32::consts::FRAC_PI_4;
 use crate::Vec2;
 
 use super::derivative::DerivativeState;
-use super::{Gains, InvalidConfig, check_limit, rescale_integral};
+use super::{Gains, InvalidConfig, check_limit, rescale_integral, seed_integral};
 use crate::math::{assert_dt, clamp_symmetric, clamp_symmetric_each, saturate_symmetric};
 
 /// Configures the attitude controller for a vehicle.
@@ -89,8 +89,9 @@ impl AttitudeControllerConfig {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct AttitudeController {
     integrated_error: Vec2, // Accumulated error (roll, pitch)
-    /// Previous error for the derivative term; empty on the first tick and after a gap.
-    derivative: DerivativeState<Vec2>,
+    /// Previous error per axis for the derivative term; empty on the first tick and after a
+    /// gap.
+    derivative: [DerivativeState<f32>; 2],
 }
 
 impl AttitudeController {
@@ -142,25 +143,17 @@ impl AttitudeController {
     ) -> Vec2 {
         assert_dt(dt);
 
-        // Outer loops and pilots can ask for more than full tilt, or NaN; saturate to the
-        // configured limit rather than panic the flight loop.
-        let desired_angles_rad = Vec2::new(
-            saturate_symmetric(desired_angles_rad.x, config.max_angles_rad.x),
-            saturate_symmetric(desired_angles_rad.y, config.max_angles_rad.y),
-        );
-
-        // Calculate error (setpoint - actual)
-        let error = desired_angles_rad - estimated_angles_rad;
+        let error = Self::angle_error(config, desired_angles_rad, estimated_angles_rad);
 
         // A non-finite error (NaN/∞ estimate) yields no rate command and never enters the
         // integral or derivative history (see `crate::math` for the policy).
         if !(error.x.is_finite() && error.y.is_finite()) {
-            self.derivative.forget();
+            self.derivative.iter_mut().for_each(DerivativeState::forget);
             return Vec2::zeros();
         }
 
         // Derivative term: rate of change of error (skipped on the first tick after a gap)
-        let error_derivative = self.derivative.step(error, dt);
+        let error_derivative = Vec2::from_fn(|axis, _| self.derivative[axis].step(error[axis], dt));
 
         // Integral term with anti-windup
         self.integrated_error =
@@ -178,6 +171,40 @@ impl AttitudeController {
             clamp_symmetric(rates.x, config.max_rate_radps.x),
             clamp_symmetric(rates.y, config.max_rate_radps.y),
         )
+    }
+
+    /// The angle error (setpoint − estimate) the loop acts on, per axis. Outer loops and pilots
+    /// can ask for more than full tilt, or NaN: the setpoint saturates to `max_angles_rad`
+    /// (NaN is level) rather than panic the flight loop.
+    pub(crate) fn angle_error(
+        config: &AttitudeControllerConfig,
+        desired_angles_rad: Vec2,
+        estimated_angles_rad: Vec2,
+    ) -> Vec2 {
+        let desired_angles_rad = Vec2::new(
+            saturate_symmetric(desired_angles_rad.x, config.max_angles_rad.x),
+            saturate_symmetric(desired_angles_rad.y, config.max_angles_rad.y),
+        );
+        desired_angles_rad - estimated_angles_rad
+    }
+
+    /// The I term (`i · integral`) of `axis` (0 roll, 1 pitch): the rate the loop holds as
+    /// trim.
+    pub(crate) fn integral_term(&self, config: &AttitudeControllerConfig, axis: usize) -> f32 {
+        config.axis_gains()[axis].i * self.integrated_error[axis]
+    }
+
+    /// Restarts `axis` from a trim: its I term becomes `i_term` (`seed_integral`) and its
+    /// derivative history is cleared. The other axis is untouched.
+    pub(crate) fn hand_back(
+        &mut self,
+        config: &AttitudeControllerConfig,
+        axis: usize,
+        i_term: f32,
+    ) {
+        let i = config.axis_gains()[axis].i;
+        self.integrated_error[axis] = seed_integral(i_term, i, config.max_integral);
+        self.derivative[axis] = DerivativeState::default();
     }
 
     /// Rescales the integral for a change of integral gain from `old` to `new`, so the next
@@ -211,7 +238,7 @@ mod tests {
         let controller = AttitudeController::default();
 
         assert_eq!(controller.integrated_error, Vec2::zeros());
-        assert_eq!(controller.derivative, DerivativeState::default());
+        assert_eq!(controller.derivative, [DerivativeState::default(); 2]);
     }
 
     /// A fresh controller has no previous error, so D alone gives nothing on the first tick.
@@ -336,6 +363,24 @@ mod tests {
 
         approx::assert_relative_eq!(controller.integrated_error.x, integral.x / 2.0);
         assert_eq!(controller.integrated_error.y, integral.y);
+    }
+
+    /// Handing back one axis seeds its I term and clears its derivative history; the other
+    /// axis keeps both.
+    #[test]
+    fn hand_back_restarts_one_axis_only() {
+        let config = gains(1.0, 2.0, 0.5);
+        let mut controller = AttitudeController::default();
+        controller.control(&config, 0.1, Vec2::new(0.5, 0.5), Vec2::zeros());
+        let pitch_integral = controller.integrated_error.y;
+        let pitch_derivative = controller.derivative[1];
+
+        controller.hand_back(&config, 0, 0.3);
+
+        approx::assert_relative_eq!(controller.integral_term(&config, 0), 0.3);
+        assert_eq!(controller.derivative[0], DerivativeState::default());
+        assert_eq!(controller.integrated_error.y, pitch_integral);
+        assert_eq!(controller.derivative[1], pitch_derivative);
     }
 
     /// Roll uses `roll_gains` and pitch `pitch_gains`, for each PID term.
