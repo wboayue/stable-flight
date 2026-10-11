@@ -191,3 +191,16 @@ fn relay_and_step_test_fail_on_an_abort() {
         check!(procedure.take_verdict() == None);
     }
 }
+
+/// The copter step test counts a step clipped for five 250 Hz ticks as valid: clipped time
+/// sums `dt` in `f32`, and five 4 ms ticks come to slightly over 20 ms.
+#[test]
+fn five_clipped_ticks_stay_valid() {
+    let (mut procedure, plan) = step_test(1);
+    let saturated_s = (0..5).fold(0.0_f32, |sum, _| sum + 0.004);
+    check!(saturated_s > 0.02);
+    let down = Action::probe(ProbeConfig::Step(plan.step.reversed()));
+
+    procedure.next(Input::Start { gains: CURRENT });
+    check!(procedure.next(stepped(saturated_s, false)) == down);
+}

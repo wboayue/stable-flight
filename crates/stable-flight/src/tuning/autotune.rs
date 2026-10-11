@@ -232,7 +232,9 @@ pub struct StepTestPlan {
 impl StepTestPlan {
     /// The copter defaults for `target`: three pairs of [`COPTER_RATE_STEP`] (rate loops) or
     /// [`COPTER_ANGLE_STEP`] (angle and heading loops) from [`COPTER_STEP_SETTLE`], allowing
-    /// 20 ms (5 ticks) of clipping and 3 invalid steps in a row.
+    /// 5 ticks of clipping at 250 Hz and 3 invalid steps in a row. The allowance is 22 ms,
+    /// half a tick past 20: clipped time sums `dt` in `f32`, and five 4 ms ticks come to
+    /// slightly over 0.02.
     ///
     /// # Examples
     ///
@@ -252,7 +254,7 @@ impl StepTestPlan {
             step,
             pairs: 3,
             settle: COPTER_STEP_SETTLE,
-            max_saturated_s: 0.02,
+            max_saturated_s: 0.022,
             max_invalid: 3,
         }
     }
