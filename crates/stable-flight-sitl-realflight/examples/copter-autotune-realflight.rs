@@ -314,7 +314,8 @@ fn main() {
         {
             searched.push((target, outcome, baseline, verify));
         }
-        if event == AutotuneEvent::Complete {
+        // Every finished search's baseline vs verify, however the run ends.
+        if !autotune.is_running() {
             for (target, outcome, baseline, verify) in &searched {
                 info!(
                     "autotune: {target:?} {outcome:?}: {} -> {}",
@@ -491,17 +492,13 @@ fn format_summary(summary: &StepSummary) -> String {
         ),
         None => "-".to_string(),
     };
-    let mean = |stat: &Stat| {
-        stat.mean()
-            .map_or("-".to_string(), |mean| format!("{mean:.2}"))
-    };
     format!(
         "n {}: overshoot {} (+ {}, - {}), rise {} ms, settle {} ms, bounce {}, final {}; \
          not risen {}, not settled {}",
         summary.count(),
         stat(&summary.overshoot, 1.0),
-        mean(&summary.overshoot_positive),
-        mean(&summary.overshoot_negative),
+        format_mean(&summary.overshoot_positive, 1.0),
+        format_mean(&summary.overshoot_negative, 1.0),
         stat(&summary.rise_time_s, 1e3),
         stat(&summary.settling_time_s, 1e3),
         stat(&summary.bounce_back, 1.0),
@@ -513,17 +510,19 @@ fn format_summary(summary: &StepSummary) -> String {
 
 /// A summary's means, for the baseline-vs-verify table.
 fn format_brief(summary: &StepSummary) -> String {
-    let mean = |stat: &Stat, scale: f32| {
-        stat.mean()
-            .map_or("-".to_string(), |mean| format!("{:.2}", mean * scale))
-    };
     format!(
         "rise {} ms, settle {} ms, overshoot {}, final {}",
-        mean(&summary.rise_time_s, 1e3),
-        mean(&summary.settling_time_s, 1e3),
-        mean(&summary.overshoot, 1.0),
-        mean(&summary.final_value, 1.0),
+        format_mean(&summary.rise_time_s, 1e3),
+        format_mean(&summary.settling_time_s, 1e3),
+        format_mean(&summary.overshoot, 1.0),
+        format_mean(&summary.final_value, 1.0),
     )
+}
+
+/// A metric's mean times `scale`, or `-` with no samples.
+fn format_mean(stat: &Stat, scale: f32) -> String {
+    stat.mean()
+        .map_or("-".to_string(), |mean| format!("{:.2}", mean * scale))
 }
 
 fn format_gains(gains: &Gains) -> String {

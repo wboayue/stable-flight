@@ -235,14 +235,14 @@ pub const COPTER_ANGLE_STEP: StepConfig = StepConfig {
 /// QuadCopterX's rate P above about 1 clipped the moment past the allowance, so clipping rather
 /// than overshoot capped the search (#304); at 0.5 rad/s P can reach about 2.
 pub const COPTER_RATE_SEARCH_STEP: StepConfig = StepConfig {
-    amplitude: 0.5,
+    amplitude: COPTER_RATE_STEP.amplitude / 2.0,
     ..COPTER_RATE_STEP
 };
 
 /// A copter angle search's step: [`COPTER_ANGLE_STEP`] at half the size (5°). At 10°, an angle
 /// P of about 6 asks the tuned rate loop (P about 1) for a full moment; at 5°, about 12.
 pub const COPTER_ANGLE_SEARCH_STEP: StepConfig = StepConfig {
-    amplitude: 0.0873,
+    amplitude: COPTER_ANGLE_STEP.amplitude / 2.0,
     ..COPTER_ANGLE_STEP
 };
 

@@ -2,7 +2,6 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
-use approx::assert_relative_eq;
 use assert2::{assert, check};
 
 use super::*;
@@ -1055,12 +1054,8 @@ fn search_steps_are_half_the_step_tests() {
     let angle = SearchPlan::copter_angle().test.step;
     check!(rate == COPTER_RATE_SEARCH_STEP);
     check!(angle == COPTER_ANGLE_SEARCH_STEP);
-    assert_relative_eq!(rate.amplitude, COPTER_RATE_STEP.amplitude / 2.0);
-    assert_relative_eq!(
-        angle.amplitude,
-        COPTER_ANGLE_STEP.amplitude / 2.0,
-        epsilon = 1e-3
-    );
+    check!(rate.amplitude == COPTER_RATE_STEP.amplitude / 2.0);
+    check!(angle.amplitude == COPTER_ANGLE_STEP.amplitude / 2.0);
     check!(rate.duration_s == COPTER_RATE_STEP.duration_s);
     check!(angle.duration_s == COPTER_ANGLE_STEP.duration_s);
     check!(SearchPlan::copter_angle().validate() == Ok(()));
