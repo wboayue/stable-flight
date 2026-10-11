@@ -177,7 +177,7 @@ Tick ordering (commander sees the previous tick's state; guidance and stabilizer
 - Tests that raise process-wide signals get an integration-test binary of their own
   (`tests/*.rs`), one signal per binary.
 - `proptest` and `criterion` are **not** in `Cargo.toml`. Add them deliberately, with a benchmark or property test in the same PR, if you reach for them.
-- Coverage: `just cover` → review `tarpaulin-report.html`. Refresh after non-trivial control-loop changes. The `coverage` workflow (on push to `main`, or by hand) runs the same tarpaulin and uploads to Coveralls (the README badge).
+- Coverage: target **90%+ overall** (the Coveralls number for `main`; 86.9% at #285). A PR should not lower it, and one that adds library code covers it at 90%+; examples and firmware are excluded (`.tarpaulin.toml`), so the target applies to tested code. `just cover` → review `tarpaulin-report.html`. Refresh after non-trivial control-loop changes. The `coverage` workflow (on push to `main`, or by hand) runs the same tarpaulin and uploads to Coveralls (the README badge).
 
 ## Simulator setup
 
@@ -278,7 +278,7 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
 - [ ] New PID/quaternion/transform logic is unit-tested with table cases.
 - [ ] Public API has Rustdoc with at least one example.
 - [ ] Hot-path code allocates nothing per tick.
-- [ ] Coverage refreshed if control-loop logic changed.
+- [ ] Coverage refreshed if control-loop logic changed; overall stays at or moves toward 90%+.
 - [ ] Owning docs (crate/root `README.md`, `AGENTS.md`, `architecture.md`) reflect any trait, module, crate, or example changes.
 - [ ] If this PR changes what flies or closes a milestone, the status claims match (see Keep the project status current).
 - [ ] Each affected published crate's `CHANGELOG.md` reflects any user-facing change (pre-release: the feature summary; after: an `[Unreleased]` entry).
