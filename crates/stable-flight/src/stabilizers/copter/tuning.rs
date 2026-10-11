@@ -1,6 +1,10 @@
 //! Autotune stages hosted by the [`CopterStabilizer`]: one loop's output replaced by a
 //! [`Probe`] (#149, #298). See the "Tuning" section on [`CopterStabilizer`].
 
+use crate::Vec3;
+use crate::controllers::AttitudeController;
+use crate::controllers::yaw::angle_diff;
+use crate::math::saturate_symmetric;
 use crate::tuning::{Injection, LoopSignals, Probe, ProbeConfig, ProbeStatus, Tunable};
 
 use super::{CopterStabilizer, CopterStabilizerConfig};
@@ -65,6 +69,20 @@ impl TunedLoop {
             Self::Pitch => &mut config.attitude.pitch_gains,
             Self::Heading => &mut config.yaw.gains,
         }
+    }
+
+    /// Whether this is a rate loop (the others are angle and heading loops).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::TunedLoop;
+    ///
+    /// assert!(TunedLoop::YawRate.is_rate());
+    /// assert!(!TunedLoop::Heading.is_rate());
+    /// ```
+    pub fn is_rate(self) -> bool {
+        matches!(self.location(), Location::Rate(_))
     }
 
     pub(super) fn location(self) -> Location {
@@ -206,7 +224,7 @@ impl CopterStabilizer {
     /// Steps the running stage with its loop's `signals` and returns what to do with the loop
     /// (`None` when no stage runs). The loop is handed back at the end of the tick
     /// ([`finish_stage`](Self::finish_stage)), after its controller ran.
-    pub(super) fn step_stage(&mut self, dt: f32, signals: &LoopSignals) -> Option<Injection> {
+    fn step_stage(&mut self, dt: f32, signals: &LoopSignals) -> Option<Injection> {
         let stage = self.stage.as_mut().filter(|stage| stage.is_running())?;
         Some(stage.probe.step(dt, signals))
     }
@@ -222,9 +240,89 @@ impl CopterStabilizer {
         }
     }
 
+    /// Steps a probe on an angle or heading loop before the controllers run. `setpoints` are
+    /// the roll, pitch, and heading setpoints, `current` the estimate: a step replaces one
+    /// setpoint; a relay's rate output comes back as `(axis, rate)` (axis 2: heading) for the
+    /// caller to apply after the controllers.
+    pub(super) fn probe_attitude(
+        &mut self,
+        dt: f32,
+        setpoints: &mut Vec3,
+        current: &Vec3,
+    ) -> Option<(usize, f32)> {
+        let location = self.running_stage()?;
+        let saturated = self.loop_saturated(location);
+        let (axis, signals) = match location {
+            Location::Angle(axis) => {
+                let attitude = &self.config.attitude;
+                let error = AttitudeController::angle_error(attitude, setpoints.xy(), current.xy());
+                let setpoint = saturate_symmetric(setpoints[axis], attitude.max_angles_rad[axis]);
+                (
+                    axis,
+                    LoopSignals {
+                        setpoint,
+                        error: error[axis],
+                        saturated,
+                    },
+                )
+            }
+            Location::Heading => {
+                let error = angle_diff(setpoints.z, current.z);
+                (
+                    2,
+                    LoopSignals {
+                        setpoint: setpoints.z,
+                        error,
+                        saturated,
+                    },
+                )
+            }
+            Location::Rate(_) => return None,
+        };
+        self.inject(dt, axis, &signals, setpoints)
+    }
+
+    /// Steps a probe on a rate loop before the rate controller runs: a step replaces that
+    /// axis's rate in `setpoints`; a relay's moment comes back as `(axis, moment)` for the
+    /// caller to apply after it.
+    pub(super) fn probe_rates(
+        &mut self,
+        dt: f32,
+        setpoints: &mut Vec3,
+        current: &Vec3,
+    ) -> Option<(usize, f32)> {
+        let location @ Location::Rate(axis) = self.running_stage()? else {
+            return None;
+        };
+        let signals = LoopSignals {
+            setpoint: setpoints[axis],
+            error: setpoints[axis] - current[axis],
+            saturated: self.loop_saturated(location),
+        };
+        self.inject(dt, axis, &signals, setpoints)
+    }
+
+    /// Steps the running probe with `signals` for `axis` of `setpoints`: a step's setpoint
+    /// replaces `setpoints[axis]`; a relay's output comes back as `(axis, output)`.
+    fn inject(
+        &mut self,
+        dt: f32,
+        axis: usize,
+        signals: &LoopSignals,
+        setpoints: &mut Vec3,
+    ) -> Option<(usize, f32)> {
+        match self.step_stage(dt, signals)? {
+            Injection::Setpoint(setpoint) => {
+                setpoints[axis] = setpoint;
+                None
+            }
+            Injection::Output(output) => Some((axis, output)),
+        }
+    }
+
     /// Whether `location`'s loop, or the loop under it, clipped on the last tick: a rate
     /// loop's moment; an angle or heading loop's rate setpoint or that axis's moment.
-    pub(super) fn loop_saturated(&self, location: Location) -> bool {
+    fn loop_saturated(&self, location: Location) -> bool {
         let clipped = &self.clipped;
         match location {
             Location::Rate(axis) => clipped.moments[axis],

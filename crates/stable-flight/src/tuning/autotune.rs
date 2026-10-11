@@ -215,9 +215,10 @@ impl StepTestPlan {
     /// assert_eq!(StepTestPlan::copter(TunedLoop::Roll).step, COPTER_ANGLE_STEP);
     /// ```
     pub fn copter(target: TunedLoop) -> Self {
-        let step = match target {
-            TunedLoop::RollRate | TunedLoop::PitchRate | TunedLoop::YawRate => COPTER_RATE_STEP,
-            TunedLoop::Roll | TunedLoop::Pitch | TunedLoop::Heading => COPTER_ANGLE_STEP,
+        let step = if target.is_rate() {
+            COPTER_RATE_STEP
+        } else {
+            COPTER_ANGLE_STEP
         };
         Self {
             step,
@@ -270,9 +271,10 @@ impl RelayPlan {
     /// assert_eq!(RelayPlan::copter(TunedLoop::RollRate).form, ControllerForm::Pd);
     /// ```
     pub fn copter(target: TunedLoop) -> Self {
-        let relay = match target {
-            TunedLoop::RollRate | TunedLoop::PitchRate | TunedLoop::YawRate => COPTER_RATE_RELAY,
-            TunedLoop::Roll | TunedLoop::Pitch | TunedLoop::Heading => COPTER_ANGLE_RELAY,
+        let relay = if target.is_rate() {
+            COPTER_RATE_RELAY
+        } else {
+            COPTER_ANGLE_RELAY
         };
         Self {
             relay,

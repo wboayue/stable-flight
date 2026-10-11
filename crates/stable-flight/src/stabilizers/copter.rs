@@ -36,7 +36,7 @@
 //! An autotune stage ([`start_probe`](crate::tuning::Tunable::start_probe)) hands one loop to a
 //! [`Probe`](crate::tuning::Probe) (#149, #298). Every controller still runs each tick; before
 //! the loop's controller runs, the probe sees its
-//! [`LoopSignals`] and replaces one value: the loop's output (relay)
+//! [`LoopSignals`](crate::tuning::LoopSignals) and replaces one value: the loop's output (relay)
 //! or its setpoint (step).
 //!
 //! | [`TunedLoop`] | Setpoint, error | Output (relay replaces) |
@@ -60,25 +60,22 @@
 //!   tick then clears the idle angle loops (#70), so that trim is dropped.
 //! - The stage is runtime state, not config; [`prime`](crate::Stabilizer::prime) ends it.
 
-use crate::{Vec2, Vec3};
+use crate::Vec3;
 
 use crate::{
     AttitudeSetpoint, Configurable, ControlOutput, RateSetpoint, Saturation, Setpoint, Stabilizer,
     VehicleState,
 };
 
-use crate::controllers::yaw::angle_diff;
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_positive};
 use crate::math::{assert_dt, euler_angles, saturate_symmetric, saturate_throttle, saturate_unit};
-use crate::tuning::{Injection, LoopSignals};
 
 mod params;
 #[cfg(test)]
 mod tests;
 mod tuning;
 
-use tuning::Location;
 pub use tuning::TunedLoop;
 
 /// Configuration for the [CopterStabilizer]: gains and limits for the inner control loops and
@@ -326,58 +323,23 @@ impl CopterStabilizer {
     ) -> ControlOutput {
         // Roll/pitch saturate inside the attitude controller, thrust in the thrust curve (see
         // `crate::math`).
-        let mut desired_angles_rad = Vec2::new(setpoint.roll_rad, setpoint.pitch_rad);
-        let mut desired_heading_rad = setpoint.heading_rad;
-        let config = self.config;
-        let max_angles_rad = config.attitude.max_angles_rad;
+        let max_angles_rad = self.config.attitude.max_angles_rad;
         // `>` is false for NaN, which the attitude controller treats as level.
-        self.saturation.tilt = desired_angles_rad.x.abs() > max_angles_rad.x
-            || desired_angles_rad.y.abs() > max_angles_rad.y;
+        self.saturation.tilt = setpoint.roll_rad.abs() > max_angles_rad.x
+            || setpoint.pitch_rad.abs() > max_angles_rad.y;
         // The quaternion is the canonical attitude; `euler_angles` is NaN-safe.
         let (roll, pitch, current_heading) = euler_angles(&estimated_state.attitude);
-        let current_angles = Vec2::new(roll, pitch);
+        let current = Vec3::new(roll, pitch, current_heading);
 
-        // A stage on an angle or heading loop sees the loop before its controller runs, and
-        // replaces its setpoint (step) or, below, its rate output (relay).
-        let mut replaced_rate = None;
-        match self.running_stage() {
-            Some(location @ Location::Angle(axis)) => {
-                let signals = LoopSignals {
-                    setpoint: saturate_symmetric(desired_angles_rad[axis], max_angles_rad[axis]),
-                    error: AttitudeController::angle_error(
-                        &config.attitude,
-                        desired_angles_rad,
-                        current_angles,
-                    )[axis],
-                    saturated: self.loop_saturated(location),
-                };
-                match self.step_stage(dt, &signals) {
-                    Some(Injection::Setpoint(angle)) => desired_angles_rad[axis] = angle,
-                    Some(Injection::Output(rate)) => replaced_rate = Some((axis, rate)),
-                    None => {}
-                }
-            }
-            Some(location @ Location::Heading) => {
-                let signals = LoopSignals {
-                    setpoint: desired_heading_rad,
-                    error: angle_diff(desired_heading_rad, current_heading),
-                    saturated: self.loop_saturated(location),
-                };
-                match self.step_stage(dt, &signals) {
-                    Some(Injection::Setpoint(heading)) => desired_heading_rad = heading,
-                    Some(Injection::Output(rate)) => replaced_rate = Some((2, rate)),
-                    None => {}
-                }
-            }
-            Some(Location::Rate(_)) | None => {}
-        }
+        // Roll, pitch, and heading setpoints; a probe on one of these loops may replace one.
+        let mut desired = Vec3::new(setpoint.roll_rad, setpoint.pitch_rad, setpoint.heading_rad);
+        let replaced_rate = self.probe_attitude(dt, &mut desired, &current);
 
+        let config = &self.config;
         let mut desired_rates =
             self.attitude
-                .control(&config.attitude, dt, desired_angles_rad, current_angles);
-        let mut desired_yaw_rate =
-            self.yaw
-                .control(&config.yaw, dt, desired_heading_rad, current_heading);
+                .control(&config.attitude, dt, desired.xy(), current.xy());
+        let mut desired_yaw_rate = self.yaw.control(&config.yaw, dt, desired.z, current.z);
         match replaced_rate {
             Some((2, rate)) => {
                 desired_yaw_rate = saturate_symmetric(rate, config.yaw.max_rate_radps);
@@ -449,21 +411,7 @@ impl CopterStabilizer {
     ) -> Vec3 {
         let current_rates = estimated_state.angular_velocity_radps;
         let mut desired_rates_radps = desired_rates_radps;
-        // A stage on a rate loop replaces its setpoint (step) before the controller runs, or
-        // its moment (relay) after.
-        let mut replaced_moment = None;
-        if let Some(location @ Location::Rate(axis)) = self.running_stage() {
-            let signals = LoopSignals {
-                setpoint: desired_rates_radps[axis],
-                error: desired_rates_radps[axis] - current_rates[axis],
-                saturated: self.loop_saturated(location),
-            };
-            match self.step_stage(dt, &signals) {
-                Some(Injection::Setpoint(rate)) => desired_rates_radps[axis] = rate,
-                Some(Injection::Output(moment)) => replaced_moment = Some((axis, moment)),
-                None => {}
-            }
-        }
+        let replaced_moment = self.probe_rates(dt, &mut desired_rates_radps, &current_rates);
         let mut moments = self.body_rate.control(
             &self.config.body_rate,
             dt,

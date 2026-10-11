@@ -383,9 +383,10 @@ fn an_aborted_stage_is_handed_back_and_stop_reports_it() {
 
 /// The probe's step for `target`: the copter presets.
 fn step_for(target: TunedLoop) -> StepConfig {
-    match target {
-        TunedLoop::RollRate | TunedLoop::PitchRate | TunedLoop::YawRate => COPTER_RATE_STEP,
-        TunedLoop::Roll | TunedLoop::Pitch | TunedLoop::Heading => COPTER_ANGLE_STEP,
+    if target.is_rate() {
+        COPTER_RATE_STEP
+    } else {
+        COPTER_ANGLE_STEP
     }
 }
 

@@ -143,6 +143,8 @@ pub struct StepMetrics {
 #[derive(Clone, Debug, PartialEq)]
 pub struct StepProbe {
     config: StepConfig,
+    /// The filter's time constant, in s (0: no filter).
+    filter_tau_s: f32,
     /// The measurement at the step and the setpoint held, once the first tick ran.
     start: Option<(f32, f32)>,
     elapsed_s: f32,
@@ -181,8 +183,14 @@ impl StepProbe {
         if let Err(error) = config.validate() {
             panic!("invalid StepConfig: {error}");
         }
+        let filter_tau_s = if config.filter_hz > 0.0 {
+            1.0 / (2.0 * PI * config.filter_hz)
+        } else {
+            0.0
+        };
         Self {
             config,
+            filter_tau_s,
             start: None,
             elapsed_s: 0.0,
             filtered: 0.0,
@@ -241,12 +249,8 @@ impl StepProbe {
     /// Filters one response sample and updates the metrics; aborts on a reversed or runaway
     /// response.
     fn track(&mut self, dt: f32, response: f32) {
-        self.filtered = if self.config.filter_hz > 0.0 {
-            let tau = 1.0 / (2.0 * PI * self.config.filter_hz);
-            self.filtered + dt / (dt + tau) * (response - self.filtered)
-        } else {
-            response
-        };
+        // With no filter (τ 0) the gain is 1: the response itself.
+        self.filtered += dt / (dt + self.filter_tau_s) * (response - self.filtered);
         let (y, t) = (self.filtered, self.elapsed_s);
         if y > self.peak {
             self.peak = y;

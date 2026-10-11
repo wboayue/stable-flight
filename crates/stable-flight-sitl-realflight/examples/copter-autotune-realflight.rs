@@ -30,7 +30,8 @@ use std::io::{BufWriter, Write};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use clap::{Parser, ValueEnum};
+use clap::error::ErrorKind;
+use clap::{CommandFactory, Parser, ValueEnum};
 use env_logger::Builder;
 use log::{debug, info, warn};
 
@@ -182,6 +183,15 @@ fn main() {
     Builder::from_default_env().format_timestamp_millis().init();
 
     let args = Args::parse();
+    let plan = plan(&args);
+    if plan.is_empty() {
+        Args::command()
+            .error(
+                ErrorKind::MissingRequiredArgument,
+                "--stages none tunes nothing: add --step-test",
+            )
+            .exit();
+    }
 
     // Climbs to the script's waypoint and holds; `land` ends the flight after the autotune.
     let land = Rc::new(Cell::new(false));
@@ -230,8 +240,7 @@ fn main() {
     let mut flight_loop =
         FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
 
-    let mut autotune = Autotune::new(&plan(&args), Envelope::default())
-        .expect("valid autotune plan (--stages none needs --step-test)");
+    let mut autotune = Autotune::new(&plan, Envelope::default()).expect("valid autotune plan");
 
     // Ctrl-C stops the loop cleanly (RealFlightVehicle re-enables RC control on drop); so does
     // touchdown after the autotune.

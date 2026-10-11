@@ -1,4 +1,4 @@
-use crate::Vec3;
+use crate::{Vec2, Vec3};
 use nalgebra::UnitQuaternion;
 
 use super::*;
