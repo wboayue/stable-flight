@@ -38,7 +38,7 @@ pub(super) enum Location {
 }
 
 impl TunedLoop {
-    /// The gains this loop flies in `config`, to read or retune them.
+    /// The gains this loop flies in `config`.
     ///
     /// # Examples
     ///
@@ -48,7 +48,14 @@ impl TunedLoop {
     /// let mut config = CopterStabilizerConfig::default();
     /// TunedLoop::Heading.gains_mut(&mut config).p = 4.0;
     /// assert_eq!(config.yaw.gains.p, 4.0);
+    /// assert_eq!(TunedLoop::Heading.gains(&config).p, 4.0);
     /// ```
+    pub fn gains(self, config: &CopterStabilizerConfig) -> Gains {
+        let mut config = *config;
+        *self.gains_mut(&mut config)
+    }
+
+    /// The gains this loop flies in `config`, to retune them.
     pub fn gains_mut(self, config: &mut CopterStabilizerConfig) -> &mut Gains {
         match self {
             Self::RollRate => &mut config.body_rate.roll_gains,
@@ -123,6 +130,7 @@ impl Tunable for CopterStabilizer {
     ///     max_cycle_amplitude: 2.0,
     ///     max_half_cycle_s: 0.3,
     ///     max_bias: 0.3,
+    ///     bias_gain: 0.2,
     ///     cycles: 4,
     ///     tolerance: 0.1,
     ///     timeout_s: 20.0,

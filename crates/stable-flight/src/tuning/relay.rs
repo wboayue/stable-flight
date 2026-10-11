@@ -12,6 +12,10 @@ mod tests;
 /// The most cycles [`RelayConfig::cycles`] may ask for: the window is a fixed-size array.
 pub const MAX_CYCLES: usize = 8;
 
+/// Windows' worth of cycles (`cycles` each) the relay waits for a consistent window before
+/// raising itself: a larger relay lifts the cycle above the loop's disturbances.
+const PATIENCE_WINDOWS: usize = 3;
+
 /// Configures a [`RelayTuner`].
 ///
 /// Relay and bias values are in the hosting loop's output units (a normalized moment for a
@@ -44,6 +48,10 @@ pub struct RelayConfig {
     pub max_half_cycle_s: f32,
     /// Largest bias magnitude, in output units. Non-negative and finite.
     pub max_bias: f32,
+    /// Fraction of each cycle's mean-output offset the bias moves by, in `(0, 1]`. Below 1 it
+    /// averages over cycles: on a real loop each cycle's duty jitters, and moving the bias all
+    /// the way to one cycle's mean feeds that jitter into the next cycle.
+    pub bias_gain: f32,
     /// Consecutive consistent cycles needed for a result, in `2..=MAX_CYCLES`.
     pub cycles: usize,
     /// Largest relative deviation from the mean, for the period and the amplitude of the
@@ -71,6 +79,7 @@ impl RelayConfig {
     ///     max_cycle_amplitude: 2.0,
     ///     max_half_cycle_s: 1.0,
     ///     max_bias: 0.3,
+    ///     bias_gain: 0.2,
     ///     cycles: 4,
     ///     tolerance: 0.1,
     ///     timeout_s: 20.0,
@@ -105,6 +114,11 @@ impl RelayConfig {
         )?;
         check_positive("max_half_cycle_s", self.max_half_cycle_s)?;
         check_limit("max_bias", self.max_bias)?;
+        check(
+            "bias_gain",
+            self.bias_gain > 0.0 && self.bias_gain <= 1.0,
+            "in (0, 1]",
+        )?;
         check(
             "cycles",
             (2..=MAX_CYCLES).contains(&self.cycles),
@@ -213,11 +227,13 @@ impl OpenCycle {
 /// action, like the PID it replaces), so the plant settles into a limit cycle.
 ///
 /// - **Ramp:** `h` starts at `initial_relay` and grows by `relay_step` (up to `max_relay`)
-///   while the cycle's error amplitude is below `min_cycle_amplitude`, or when the relay holds
-///   one side longer than `max_half_cycle_s` (too small to overcome the loop's offset).
-/// - **Bias:** at each cycle's end the bias moves to that cycle's mean output (clamped to
-///   `max_bias`), trimming a steady offset such as a CG offset or yaw drag so the two
-///   half-cycles even out. Seed it with the loop's current trim (e.g. its I term).
+///   while the cycle's error amplitude is below `min_cycle_amplitude`, when the relay holds
+///   one side longer than `max_half_cycle_s` (too small to overcome the loop's offset), or
+///   when three windows' worth of cycles pass without a consistent window (too small to stand
+///   out from the loop's disturbances).
+/// - **Bias:** at each cycle's end the bias moves `bias_gain` of the way to that cycle's mean
+///   output (clamped to `max_bias`), trimming a steady offset such as a CG offset or yaw drag
+///   so the two half-cycles even out. Seed it with the loop's current trim (e.g. its I term).
 /// - **Measure:** cycles with an even duty (within `tolerance`) fill a window of `cycles`; the
 ///   first cycle after the start or an `h` change is skipped as transient. When the window's
 ///   periods and amplitudes agree within `tolerance`, the run is [`Done`](RelayStatus::Done)
@@ -245,6 +261,7 @@ impl OpenCycle {
 ///     max_cycle_amplitude: 2.0,
 ///     max_half_cycle_s: 1.0,
 ///     max_bias: 0.3,
+///     bias_gain: 0.2,
 ///     cycles: 4,
 ///     tolerance: 0.1,
 ///     timeout_s: 20.0,
@@ -272,6 +289,8 @@ pub struct RelayTuner {
     skip_next: bool,
     window: [Cycle; MAX_CYCLES],
     measured: usize,
+    /// Cycles measured (not skipped) since the relay last changed.
+    since_raise: usize,
     result: Option<Result<RelayResult, RelayAbort>>,
 }
 
@@ -297,6 +316,7 @@ impl RelayTuner {
             skip_next: true,
             window: [Cycle::default(); MAX_CYCLES],
             measured: 0,
+            since_raise: 0,
             result: None,
         }
     }
@@ -392,15 +412,24 @@ impl RelayTuner {
         let negative_s = period_s - open.positive_s;
         let amplitude = 0.5 * (open.max_error - open.min_error);
 
-        // The cycle's mean output: the steady output the loop needs.
+        // The cycle's mean output is the steady output the loop needs; move part of the way
+        // toward it.
         let mean_offset = self.relay * (open.positive_s - negative_s) / period_s;
-        self.bias = clamp_symmetric(self.bias + mean_offset, self.config.max_bias);
+        let step = self.config.bias_gain * mean_offset;
+        self.bias = clamp_symmetric(self.bias + step, self.config.max_bias);
 
         if amplitude < self.config.min_cycle_amplitude && self.relay < self.config.max_relay {
             self.raise_relay();
             return;
         }
         if core::mem::take(&mut self.skip_next) {
+            return;
+        }
+        self.since_raise += 1;
+        if self.since_raise >= PATIENCE_WINDOWS * self.config.cycles
+            && self.relay < self.config.max_relay
+        {
+            self.raise_relay();
             return;
         }
         let duty_error = (open.positive_s - 0.5 * period_s).abs() / (0.5 * period_s);
@@ -459,6 +488,7 @@ impl RelayTuner {
         self.relay = (self.relay * self.config.relay_step).min(self.config.max_relay);
         self.side_since_s = self.elapsed_s;
         self.measured = 0;
+        self.since_raise = 0;
         self.skip_next = true;
     }
 }

@@ -168,20 +168,36 @@ fn started(flight_loop: &TestLoop, plan: &[StagePlan]) -> Autotune {
     autotune
 }
 
-/// The six-stage copter sequence tunes every loop in order and commits each stage's gains
+/// The default copter sequence is the roll and pitch rate loops.
+#[test]
+fn copter_sequence_tunes_the_rate_loops() {
+    let targets = StagePlan::copter_sequence().map(|plan| plan.target);
+    check!(targets == [TunedLoop::RollRate, TunedLoop::PitchRate]);
+}
+
+/// Roll and pitch rate, then the angle and heading loops (opt-in stages).
+const EVERY_LOOP: [TunedLoop; 5] = [
+    TunedLoop::RollRate,
+    TunedLoop::PitchRate,
+    TunedLoop::Roll,
+    TunedLoop::Pitch,
+    TunedLoop::Heading,
+];
+
+/// Every loop with a working relay, rate loops first, tunes in order and commits each stage's gains
 /// from its own measurement; nothing else in the config changes.
 #[test]
 fn full_run_tunes_every_loop_in_order() {
     let (mut flight_loop, _controls) = hovering(1.0);
     let baseline = *flight_loop.stabilizer().config();
-    let mut autotune = started(&flight_loop, &StagePlan::copter_sequence());
+    let mut autotune = started(&flight_loop, &EVERY_LOOP.map(StagePlan::copter));
 
     let events = run(&mut flight_loop, &mut autotune, 300.0, |_| {});
 
     check!(autotune.status() == AutotuneStatus::Complete);
     let mut expected = baseline;
     let mut index = 0;
-    for target in COPTER_SEQUENCE {
+    for target in EVERY_LOOP {
         check!(events.get(index) == Some(&AutotuneEvent::StageStarted(target)));
         let Some(&AutotuneEvent::StageDone {
             target: done,
@@ -195,14 +211,59 @@ fn full_run_tunes_every_loop_in_order() {
             );
         };
         check!(done == target);
+        // PD: the rule's P and D; the integral keeps the baseline's gain.
         let plan = StagePlan::copter(target);
-        check!(gains == gains_from_ultimate(&result.point, plan.rule, plan.form));
+        let rule = gains_from_ultimate(&result.point, plan.rule, plan.form);
+        check!(gains.p == rule.p, "{target:?}");
+        check!(gains.d == rule.d, "{target:?}");
+        check!(gains.i == target.gains(&baseline).i, "{target:?}");
         *target.gains_mut(&mut expected) = gains;
         index += 2;
     }
     check!(events.get(index) == Some(&AutotuneEvent::Complete));
     check!(events.len() == index + 1);
     check!(*flight_loop.stabilizer().config() == expected);
+}
+
+/// A stage commits the rule's gains for the terms its form tunes and keeps the current gains
+/// for the rest.
+#[test]
+fn a_stage_tunes_only_its_forms_terms() {
+    let plan = StagePlan::copter(TunedLoop::RollRate);
+    let result = RelayResult {
+        point: crate::tuning::UltimatePoint { ku: 2.0, tu_s: 0.1 },
+        relay: 0.2,
+        cycle_amplitude: 0.1,
+        bias: 0.0,
+    };
+    let current = Gains {
+        p: 9.0,
+        i: 8.0,
+        d: 7.0,
+    };
+    // (form, tunes I, tunes D)
+    let cases = [
+        (ControllerForm::Pid, true, true),
+        (ControllerForm::Pi, true, false),
+        (ControllerForm::Pd, false, true),
+        (ControllerForm::P, false, false),
+    ];
+    for (form, tunes_i, tunes_d) in cases {
+        let plan = StagePlan { form, ..plan };
+        let rule = gains_from_ultimate(&result.point, plan.rule, form);
+
+        let gains = tuned_gains(&plan, &result, current);
+
+        check!(gains.p == rule.p, "{form:?}");
+        check!(
+            gains.i == if tunes_i { rule.i } else { current.i },
+            "{form:?}"
+        );
+        check!(
+            gains.d == if tunes_d { rule.d } else { current.d },
+            "{form:?}"
+        );
+    }
 }
 
 /// The relay ignores the gains of the loop it measures: from rate P at 0.3× and 3× the sane

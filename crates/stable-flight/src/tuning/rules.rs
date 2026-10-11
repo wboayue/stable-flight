@@ -22,7 +22,8 @@ pub enum TuningRule {
     NoOvershootZn,
 }
 
-/// Which terms the tuned controller uses. A dropped term's gain is zero.
+/// Which terms the tuned controller uses. [`gains_from_ultimate`] zeroes a dropped term; the
+/// autotune supervisor leaves it at its current gain instead.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ControllerForm {
     /// Proportional, integral, and derivative (rate loops).
@@ -33,6 +34,18 @@ pub enum ControllerForm {
     Pd,
     /// Proportional only: the PI row's `Kp`.
     P,
+}
+
+impl ControllerForm {
+    /// Whether the form tunes the integral term.
+    pub fn has_integral(self) -> bool {
+        matches!(self, Self::Pid | Self::Pi)
+    }
+
+    /// Whether the form tunes the derivative term.
+    pub fn has_derivative(self) -> bool {
+        matches!(self, Self::Pid | Self::Pd)
+    }
 }
 
 /// Gains for a loop from its measured [`UltimatePoint`], by `rule`, in the parallel form
@@ -62,15 +75,15 @@ pub fn gains_from_ultimate(point: &UltimatePoint, rule: TuningRule, form: Contro
             ((kp, tu_s / 2.0, tu_s / 3.0), (kp, tu_s / 2.0, 0.0))
         }
     };
-    let ((kp, ti_s, td_s), integral, derivative) = match form {
-        ControllerForm::Pid => (pid, true, true),
-        ControllerForm::Pi => (pi, true, false),
-        ControllerForm::Pd => (pid, false, true),
-        ControllerForm::P => (pi, false, false),
-    };
+    // The PID row unless the form drops the derivative.
+    let (kp, ti_s, td_s) = if form.has_derivative() { pid } else { pi };
     Gains {
         p: kp,
-        i: if integral { kp / ti_s } else { 0.0 },
-        d: if derivative { kp * td_s } else { 0.0 },
+        i: if form.has_integral() { kp / ti_s } else { 0.0 },
+        d: if form.has_derivative() {
+            kp * td_s
+        } else {
+            0.0
+        },
     }
 }

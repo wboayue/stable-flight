@@ -83,6 +83,15 @@ cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- f
 cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight
 cargo run --bin link_pilot
 
+# Relay autotune (#149): climbs to the hover point, tunes roll and pitch rate, logs each stage
+# (Ku, Tu, gains), prints the tuned gains as an airframes.rs snippet, lands, and disarms.
+# --rate-p-scale starts from bad rate gains; --stages angle|all adds the angle and heading
+# stages (opt-in: their gains oscillated on QuadCopterX); --record run.csv writes every tick (rates, angles, moments) for diagnosis.
+# RUST_LOG=info,copter_autotune_realflight=debug logs each stage's status every second.
+# Or: just fly-autotune
+cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight
+cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --rate-p-scale 10
+
 # Joystick (or --script) flight recording raw SimulatorState and channels to CSV (frame checks)
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --script flights/hover.csv
@@ -95,7 +104,7 @@ cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight
 cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight -- --local 127.0.0.1:18083
 ```
 
-Joystick flights start disarmed: the motors stay off until you arm (Extreme 3D: top trigger; base button disarms. Spektrum: gear switch). Scripted flights are armed from the first tick. The companion example arms only when the link says so (`Control::Arm`), never from its hold fallback.
+Joystick flights start disarmed: the motors stay off until you arm (Extreme 3D: top trigger; base button disarms. Spektrum: gear switch). Scripted flights (including the autotune) are armed from the first tick. The companion example arms only when the link says so (`Control::Arm`), never from its hold fallback.
 
 ## Timing
 

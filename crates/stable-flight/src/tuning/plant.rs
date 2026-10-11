@@ -29,6 +29,9 @@ pub(crate) struct PlantParams {
     pub offset: f32,
     /// Peak of the uniform measurement noise, in output units.
     pub noise: f32,
+    /// Peak of a uniform disturbance added to the input each tick, in input units: turbulence
+    /// and unmodeled dynamics that make each limit cycle a little different.
+    pub disturbance: f32,
 }
 
 impl PlantParams {
@@ -41,6 +44,7 @@ impl PlantParams {
             delay_s: 0.0,
             offset: 0.0,
             noise: 0.0,
+            disturbance: 0.0,
         }
     }
 }
@@ -75,11 +79,20 @@ impl Plant {
 
     /// The measured output (with noise).
     pub(crate) fn measure(&mut self) -> f32 {
+        self.output + self.params.noise * self.uniform()
+    }
+
+    /// A uniform sample in [-1, 1] (xorshift32).
+    fn uniform(&mut self) -> f32 {
         self.rng ^= self.rng << 13;
         self.rng ^= self.rng >> 17;
         self.rng ^= self.rng << 5;
-        let unit = self.rng as f32 / u32::MAX as f32 * 2.0 - 1.0;
-        self.output + self.params.noise * unit
+        self.rng as f32 / u32::MAX as f32 * 2.0 - 1.0
+    }
+
+    /// Reseeds the noise, for repeat runs.
+    pub(crate) fn seed(&mut self, seed: u32) {
+        self.rng = 0x2545_f491 ^ seed.wrapping_mul(0x9e37_79b9);
     }
 
     /// The true output, without noise.
@@ -90,7 +103,8 @@ impl Plant {
     /// Holds `input` for one control tick.
     pub(crate) fn step(&mut self, input: f32) {
         self.queue.push_back(input);
-        let applied = self.queue.pop_front().unwrap_or(input) + self.params.offset;
+        let disturbance = self.params.disturbance * self.uniform();
+        let applied = self.queue.pop_front().unwrap_or(input) + self.params.offset + disturbance;
         let h = self.dt / SUBSTEPS as f32;
         let p = &self.params;
         for _ in 0..SUBSTEPS {
