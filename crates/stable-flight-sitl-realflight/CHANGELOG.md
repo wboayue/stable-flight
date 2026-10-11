@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Body rotation** (#314): `RealFlightConfiguration::body_rotation` and
+  `Airframe::body_rotation`, the vehicle's body frame expressed in RealFlight's, for models whose
+  RealFlight frame isn't the vehicle's (the eXplora VTOL tailsitter reads level on its tail; its
+  vehicle frame is the airplane's, +90° pitch). `vehicle_state` applies it to the attitude, body
+  rates, and body specific force. `airframes::quadcopter_x()` uses identity.
+
 - **`copter-autotune-realflight` example** (`just fly-autotune`): the core autotune (#149,
   #298) on QuadCopterX. Climbs to the hover point, tunes roll and pitch rate, then roll and
   pitch angle, by step-response search (`--stages search`, the default: relay D, searched P,
@@ -29,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--neutral` sets any channel's rest value; `--tail-s` keeps recording after the last step.
 
 ### Changed
+
+- **Breaking:** `RealFlightConfiguration` and `Airframe` have a new `body_rotation` field, and
+  `vehicle_state` takes the body rotation as a second argument (#314). Pass
+  `UnitQuaternion::identity()`, or the airframe's `body_rotation`, for the previous behavior.
 
 - **`vehicle_state`'s Euler fields come from the quaternion** (#120), not RealFlight's own Euler
   angles, so `roll_rad`, `pitch_rad`, and `heading_rad` always agree with `attitude`. They match

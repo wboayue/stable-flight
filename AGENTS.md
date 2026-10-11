@@ -42,7 +42,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
     `runner` (`RealTimeRunner`, wall-clock pacing of a `FlightLoop`), `shutdown`
     (`ShutdownSignal`). Depends on the core; no telemetry publisher of its own (SITL telemetry goes over the link). Non-simulator examples live in `crates/stable-flight-sitl/examples/*.rs`.
   - `crates/stable-flight-sitl-realflight` — the RealFlight backend: `RealFlightVehicle`,
-    `ActuatorMapping`, `airframes` (tuned gains, mixer, and mapping per model), and the
+    `ActuatorMapping`, `airframes` (tuned gains, mixer, mapping, and body rotation per model), and the
     `copter-*-realflight` and `capture-state-realflight` examples, all serving params and telemetry over the native link (`FcLink`) for the bridge, plus `exchange-latency-realflight` (times the RealFlight round trip alone) and `channel-sweep-realflight` (drives a model's raw channels, no flight loop). `capture` (raw `SimulatorState` CSV: `RecordingBridge`, `read_capture`) serves the capture examples and `check_frames`. Normal deps: core, `realflight-bridge`, `log`; sitl and link (`std`) are dev-dependencies only (CI checks sitl).
     One `stable-flight-sitl-<simulator>` crate per backend.
   - `crates/stable-flight-tools` — unpublished (`publish = false`) dev binaries: `plot_flight`
@@ -89,7 +89,7 @@ cargo run -p stable-flight-bridge               # native link ⇄ MAVLink for QG
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight    # scripted figure-eight (script arg, --host, --end hold|loop|land); or: just fly-auto
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight  # joystick flight + raw SimulatorState → CSV; or: just capture
 cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight -- --motors 0,1 --servos 2,3  # sweeps a model's raw channels on the ground → capture CSV
-cargo run --bin check_frames -- capture.csv     # capture vs the frame contract: body rates, gravity at rest, Euler near 90°
+cargo run --bin check_frames -- capture.csv     # capture vs the frame contract: body rates, gravity at rest, Euler near 90° (--pitch-deg: body rotation, 90 for the eXplora)
 cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight  # times RealFlight exchanges alone (--host, or --local on the RealFlight machine)
 cargo run --example extreme_3d_commander        # joystick smoke test
 cargo run --example spektrum_commander          # Spektrum (WS3000T dongle) mapping check: raw values + command

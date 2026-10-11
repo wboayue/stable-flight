@@ -1,8 +1,8 @@
 //! Tuned setups for the RealFlight models this backend flies.
 //!
 //! Gains belong to the simulated airframe, not to an example: each function returns an
-//! [`Airframe`] with the guidance and stabilizer configurations, the mixer, and the channel
-//! mapping for one model, so examples (and any other wiring) share one tuned set.
+//! [`Airframe`] with the guidance and stabilizer configurations, the mixer, the channel
+//! mapping, and the body rotation for one model, so examples (and any other wiring) share one tuned set.
 
 use std::f32::consts::PI;
 
@@ -12,6 +12,7 @@ use stable_flight::controllers::{
 };
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::mixers::QuadCopterMixer;
+use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 
 use crate::ActuatorMapping;
@@ -33,6 +34,9 @@ pub struct Airframe<G, S, M> {
     pub mixer: M,
     /// RealFlight channel for each of the mixer's outputs.
     pub mapping: ActuatorMapping,
+    /// The vehicle's body frame expressed in RealFlight's
+    /// ([`RealFlightConfiguration::body_rotation`](crate::RealFlightConfiguration::body_rotation)).
+    pub body_rotation: UnitQuaternion<f32>,
 }
 
 /// The ArduPilot SITL_Models
@@ -109,5 +113,7 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
             motors: [Some(2), Some(0), Some(1), Some(3), None, None, None, None],
             ..Default::default()
         },
+        // RealFlight's frame for this model is already the copter's.
+        body_rotation: UnitQuaternion::identity(),
     }
 }
