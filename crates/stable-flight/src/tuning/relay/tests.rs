@@ -17,7 +17,8 @@ const UNCONSERVATIVE_TOLERANCE: f32 = 0.02;
 
 /// Checks a measured point against the exact one: within [`RECOVERY_TOLERANCE`], and on the
 /// conservative side (lower `Ku`, longer `Tu`) within [`UNCONSERVATIVE_TOLERANCE`].
-fn check_recovered(name: &str, point: &UltimatePoint, (ku, tu_s): (f32, f32)) {
+fn check_recovered(name: &str, result: &RelayResult, (ku, tu_s): (f32, f32)) {
+    let point = &result.point;
     let ku_error = point.ku / ku - 1.0;
     let tu_error = point.tu_s / tu_s - 1.0;
     check!(
@@ -63,9 +64,9 @@ fn run(tuner: &mut RelayTuner, plant: &mut Plant, max_s: f32) -> RelayStatus {
     tuner.status()
 }
 
-fn done(status: RelayStatus) -> UltimatePoint {
+fn done(status: RelayStatus) -> RelayResult {
     match status {
-        RelayStatus::Done(point) => point,
+        RelayStatus::Done(result) => result,
         other => panic!("expected Done, got {other:?}"),
     }
 }
@@ -114,9 +115,9 @@ fn recovers_the_ultimate_point() {
         let exact = plant.ultimate_point();
         let mut tuner = RelayTuner::new(config(), 0.0);
 
-        let point = done(run(&mut tuner, &mut plant, 30.0));
+        let result = done(run(&mut tuner, &mut plant, 30.0));
 
-        check_recovered(name, &point, exact);
+        check_recovered(name, &result, exact);
     }
 }
 
@@ -131,11 +132,11 @@ fn ramps_the_relay_until_the_cycle_is_large_enough() {
     };
     let mut tuner = RelayTuner::new(config, 0.0);
 
-    let point = done(run(&mut tuner, &mut plant, 30.0));
+    let result = done(run(&mut tuner, &mut plant, 30.0));
 
-    check!(point.relay > config.initial_relay);
-    check!(point.relay <= config.max_relay);
-    check!(point.cycle_amplitude >= config.min_cycle_amplitude);
+    check!(result.relay > config.initial_relay);
+    check!(result.relay <= config.max_relay);
+    check!(result.cycle_amplitude >= config.min_cycle_amplitude);
 }
 
 /// `Ku = 4h / (π·√(a² − ε²))`, and nothing for a cycle inside the band.
@@ -174,12 +175,12 @@ fn bias_trims_a_steady_offset() {
         let mut plant = Plant::new(params, DT);
         let mut tuner = RelayTuner::new(config(), initial_bias);
 
-        let point = done(run(&mut tuner, &mut plant, 30.0));
+        let result = done(run(&mut tuner, &mut plant, 30.0));
 
         check!(
-            (point.bias + offset).abs() < 0.01,
+            (result.bias + offset).abs() < 0.01,
             "offset {offset}, seed {initial_bias}: bias {}",
-            point.bias
+            result.bias
         );
     }
 }
@@ -191,6 +192,8 @@ fn bias_is_clamped_to_max_bias() {
     assert!(tuner.bias == config().max_bias);
     let tuner = RelayTuner::new(config(), f32::NAN);
     assert!(tuner.bias == 0.0);
+    let tuner = RelayTuner::new(config(), f32::NEG_INFINITY);
+    assert!(tuner.bias == -config().max_bias);
 
     let params = PlantParams {
         offset: 0.5, // more than max_bias can cancel
@@ -247,11 +250,11 @@ fn aborts_on_timeout_and_on_a_cycle_too_large() {
 fn outputs_the_bias_once_done() {
     let mut plant = Plant::new(PlantParams::rate_axis(), DT);
     let mut tuner = RelayTuner::new(config(), 0.0);
-    let point = done(run(&mut tuner, &mut plant, 30.0));
+    let result = done(run(&mut tuner, &mut plant, 30.0));
 
-    assert!(tuner.step(DT, 1.0) == point.bias);
-    assert!(tuner.step(DT, -1.0) == point.bias);
-    assert!(tuner.status() == RelayStatus::Done(point));
+    assert!(tuner.step(DT, 1.0) == result.bias);
+    assert!(tuner.step(DT, -1.0) == result.bias);
+    assert!(tuner.status() == RelayStatus::Done(result));
 }
 
 /// Non-finite errors mid-run hold the relay's side and stay out of the measurement: the

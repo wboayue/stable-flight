@@ -2,8 +2,9 @@
 
 use core::f32::consts::PI;
 
+use super::UltimatePoint;
 use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
-use crate::math::{assert_dt, clamp_symmetric};
+use crate::math::{assert_dt, clamp_symmetric, saturate_symmetric};
 
 #[cfg(test)]
 mod tests;
@@ -118,15 +119,13 @@ impl RelayConfig {
     }
 }
 
-/// A loop's ultimate point, measured by a [`RelayTuner`]: the input to
-/// [`gains_from_ultimate`](super::gains_from_ultimate), plus the run's figures for logging.
+/// What a [`RelayTuner`] run measured: the loop's [`UltimatePoint`], plus the run's figures
+/// for logging.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct UltimatePoint {
-    /// Ultimate gain `Ku`: the proportional gain at which the loop would oscillate, in output
-    /// units per error unit.
-    pub ku: f32,
-    /// Ultimate period `Tu`: the oscillation period at `Ku`, in seconds.
-    pub tu_s: f32,
+pub struct RelayResult {
+    /// The loop's ultimate gain and period: the input to
+    /// [`gains_from_ultimate`](super::gains_from_ultimate).
+    pub point: UltimatePoint,
     /// Relay amplitude `h` the result was measured at, in output units.
     pub relay: f32,
     /// Mean error amplitude `a` of the measured cycles, in error units.
@@ -155,7 +154,7 @@ pub enum RelayStatus {
         cycles: usize,
     },
     /// Measured.
-    Done(UltimatePoint),
+    Done(RelayResult),
     /// Gave up.
     Aborted(RelayAbort),
 }
@@ -190,6 +189,18 @@ impl OpenCycle {
             positive_s: 0.0,
             min_error: error,
             max_error: error,
+        }
+    }
+
+    /// Accounts for one tick of `dt` seconds: time on the positive side, and the error's range
+    /// (a non-finite `error` stays out of it).
+    fn record(&mut self, dt: f32, positive: bool, error: f32) {
+        if positive {
+            self.positive_s += dt;
+        }
+        if error.is_finite() {
+            self.min_error = self.min_error.min(error);
+            self.max_error = self.max_error.max(error);
         }
     }
 }
@@ -261,12 +272,12 @@ pub struct RelayTuner {
     skip_next: bool,
     window: [Cycle; MAX_CYCLES],
     measured: usize,
-    result: Option<Result<UltimatePoint, RelayAbort>>,
+    result: Option<Result<RelayResult, RelayAbort>>,
 }
 
 impl RelayTuner {
-    /// A tuner ready to run, with `initial_bias` (output units) as the starting trim, clamped
-    /// to `max_bias`.
+    /// A tuner ready to run, with `initial_bias` (output units) as the starting trim, saturated
+    /// to `max_bias` (NaN is 0).
     ///
     /// # Panics
     ///
@@ -275,15 +286,10 @@ impl RelayTuner {
         if let Err(error) = config.validate() {
             panic!("invalid RelayConfig: {error}");
         }
-        let initial_bias = if initial_bias.is_finite() {
-            initial_bias
-        } else {
-            0.0
-        };
         Self {
             config,
             relay: config.initial_relay,
-            bias: clamp_symmetric(initial_bias, config.max_bias),
+            bias: saturate_symmetric(initial_bias, config.max_bias),
             side: None,
             elapsed_s: 0.0,
             side_since_s: 0.0,
@@ -320,20 +326,13 @@ impl RelayTuner {
             self.raise_relay();
         }
 
+        let positive = self.side == Some(Side::Positive);
         if let Some(open) = &mut self.open {
-            if self.side == Some(Side::Positive) {
-                open.positive_s += dt;
-            }
-            if error.is_finite() {
-                open.min_error = open.min_error.min(error);
-                open.max_error = open.max_error.max(error);
-            }
+            open.record(dt, positive, error);
         }
 
-        if self.result.is_none() && self.elapsed_s > self.config.timeout_s {
+        if self.elapsed_s > self.config.timeout_s {
             self.result = Some(Err(RelayAbort::Timeout));
-        }
-        if self.result.is_some() {
             return self.bias;
         }
 
@@ -437,9 +436,11 @@ impl RelayTuner {
         let Some(ku) = ultimate_gain(self.relay, mean_amplitude, self.config.hysteresis) else {
             return;
         };
-        self.result = Some(Ok(UltimatePoint {
-            ku,
-            tu_s: mean_period_s,
+        self.result = Some(Ok(RelayResult {
+            point: UltimatePoint {
+                ku,
+                tu_s: mean_period_s,
+            },
             relay: self.relay,
             cycle_amplitude: mean_amplitude,
             bias: self.bias,

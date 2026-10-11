@@ -43,7 +43,7 @@ pub enum ControllerForm {
 /// ```
 /// use stable_flight::tuning::{ControllerForm, TuningRule, UltimatePoint, gains_from_ultimate};
 ///
-/// let point = UltimatePoint { ku: 2.0, tu_s: 0.5, relay: 0.1, cycle_amplitude: 0.06, bias: 0.0 };
+/// let point = UltimatePoint { ku: 2.0, tu_s: 0.5 };
 /// let gains = gains_from_ultimate(&point, TuningRule::NoOvershootZn, ControllerForm::Pd);
 /// assert!((gains.p - 0.4).abs() < 1e-6); // 0.2·Ku
 /// assert_eq!(gains.i, 0.0); // PD drops the integral

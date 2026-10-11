@@ -5,13 +5,7 @@ use super::*;
 /// Each rule × form against the published rows, for `Ku` 2 and `Tu` 0.5 s.
 #[test]
 fn gains_follow_the_rule_tables() {
-    let point = UltimatePoint {
-        ku: 2.0,
-        tu_s: 0.5,
-        relay: 0.1,
-        cycle_amplitude: 0.06,
-        bias: 0.0,
-    };
+    let point = UltimatePoint { ku: 2.0, tu_s: 0.5 };
     let gains = |p, i, d| Gains { p, i, d };
     let (tl_kp, tl_pi_kp, zn_kp) = (2.0 / 2.2, 2.0 / 3.2, 0.4);
     // (rule, form, expected)

@@ -17,7 +17,7 @@
 //! use stable_flight::tuning::{ControllerForm, TuningRule, UltimatePoint, gains_from_ultimate};
 //!
 //! // A measured rate loop: Ku 3.5, Tu 0.2 s.
-//! let point = UltimatePoint { ku: 3.5, tu_s: 0.2, relay: 0.1, cycle_amplitude: 0.036, bias: 0.0 };
+//! let point = UltimatePoint { ku: 3.5, tu_s: 0.2 };
 //! let gains = gains_from_ultimate(&point, TuningRule::TyreusLuyben, ControllerForm::Pid);
 //! assert!((gains.p - 3.5 / 2.2).abs() < 1e-6);
 //! ```
@@ -28,5 +28,16 @@ pub mod rules;
 #[cfg(test)]
 pub(crate) mod plant;
 
-pub use relay::{MAX_CYCLES, RelayAbort, RelayConfig, RelayStatus, RelayTuner, UltimatePoint};
+pub use relay::{MAX_CYCLES, RelayAbort, RelayConfig, RelayResult, RelayStatus, RelayTuner};
 pub use rules::{ControllerForm, TuningRule, gains_from_ultimate};
+
+/// A loop's ultimate point: the proportional gain at which it would oscillate, and the period
+/// it would oscillate at. A [`RelayTuner`] measures it; [`gains_from_ultimate`] turns it into
+/// gains.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct UltimatePoint {
+    /// Ultimate gain `Ku`, in the loop's output units per error unit.
+    pub ku: f32,
+    /// Ultimate period `Tu`, in seconds.
+    pub tu_s: f32,
+}
