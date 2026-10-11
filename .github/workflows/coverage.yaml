@@ -1,8 +1,10 @@
 name: coverage
 
-# Feeds the README coverage badge. Manual only while the repo is private: Coveralls rejects private
-# uploads without a subscription. Run on push to main once public (#266).
+# Main only: feeds the README coverage badge without slowing PR checks.
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 concurrency:
