@@ -1574,6 +1574,7 @@ dependencies = [
  "stable-flight",
  "stable-flight-link",
  "stable-flight-sitl",
+ "stable-flight-sitl-realflight",
 ]
 
 [[package]]

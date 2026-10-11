@@ -1,4 +1,5 @@
 use super::*;
+use assert2::check;
 use realflight_bridge::{BridgeError, ControlInputs, Quaternion, RealFlightBridge, SimulatorState};
 use stable_flight::FlightLoop;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
@@ -647,4 +648,55 @@ fn a_vehicle_with_a_reconnect_hook_is_send() {
     .with_reconnect(|| Ok(MockRealFlightBridge::new(false)));
 
     assert_send(&vehicle);
+}
+
+/// RealFlight's orientation for an FRD `attitude`: the adapter's (y, x, -z) axis swap inverted.
+fn realflight_orientation(attitude: &UnitQuaternion<f32>) -> Quaternion {
+    let q = attitude.quaternion();
+    Quaternion {
+        w: q.w,
+        x: q.j,
+        y: q.i,
+        z: -q.k,
+    }
+}
+
+/// The Euler fields come from the quaternion, so they agree with `attitude` at any pitch,
+/// including nose-up (a tailsitter's hover, #120), where RealFlight's own roll and azimuth are
+/// degenerate; RealFlight's Euler angles are ignored.
+#[test]
+fn euler_fields_follow_the_quaternion_nose_up() {
+    // (roll, pitch, heading) in rad
+    let cases = [
+        (0.0, 0.0, 0.0),
+        (0.3, -0.2, 2.0),
+        (0.0, 1.5, 0.7),
+        (0.2, std::f32::consts::FRAC_PI_2, 1.0),
+        (-0.4, -1.55, -2.5),
+    ];
+    for (roll, pitch, heading) in cases {
+        let attitude = UnitQuaternion::from_euler_angles(roll, pitch, heading);
+        let report = SimulatorState {
+            orientation: realflight_orientation(&attitude),
+            // Nonsense Euler angles: they must not reach the state.
+            roll_deg: 99.0,
+            inclination_deg: -99.0,
+            azimuth_deg: 99.0,
+            ..Default::default()
+        };
+
+        let state = vehicle_state(&report);
+
+        check!(state.attitude.angle_to(&attitude) < 1e-5, "{pitch}");
+        let (r, p, h) = euler_angles(&state.attitude);
+        check!(
+            (state.roll_rad, state.pitch_rad, state.heading_rad) == (r, p, h),
+            "{pitch}"
+        );
+        // FRD x (the nose) points up when pitched to 90°.
+        if pitch == std::f32::consts::FRAC_PI_2 {
+            let nose = state.attitude * Vec3::x();
+            check!((nose.z + 1.0).abs() < 1e-5, "{nose:?}");
+        }
+    }
 }

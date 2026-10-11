@@ -9,8 +9,9 @@
 //! [RealFlight](https://www.realflight.com) simulator backend for the
 //! [Stable Flight](https://crates.io/crates/stable-flight) flight controller.
 //! [`RealFlightVehicle`] implements the core `StateSource` + `Actuator` (so it is a
-//! `Vehicle`) over a [`realflight_bridge`] connection, and [`airframes`] holds the tuned setup
-//! for each supported RealFlight model.
+//! `Vehicle`) over a [`realflight_bridge`] connection, [`airframes`] holds the tuned setup
+//! for each supported RealFlight model, and [`capture`] records and reads raw RealFlight state
+//! for checking the frame conversions.
 //!
 //! The crate depends on the `stable-flight` core only, so it works with any runner; pair it
 //! with [`stable-flight-sitl`](https://crates.io/crates/stable-flight-sitl) for the real-time
@@ -23,10 +24,11 @@
 pub use realflight_bridge;
 
 pub mod airframes;
+pub mod capture;
 mod mapping;
 mod vehicle;
 
-pub use mapping::{ActuatorMapping, MappingError};
+pub use mapping::{ActuatorMapping, CHANNEL_COUNT, MappingError};
 
 pub use vehicle::{
     REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, SLOW_EXCHANGE, vehicle_state,

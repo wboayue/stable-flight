@@ -19,6 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--step-test` appends step tests of roll and pitch rate and angle, logging each step's
   response and a summary per loop (`--stages none --step-test` measures the hand tune). A step
   during which the runner skipped more than two ticks at once runs again.
+- **`CHANNEL_COUNT`:** RealFlight's 12 channels, exported.
+- **`capture`** (#120): raw RealFlight captures as CSV, every `SimulatorState` with the
+  channels sent. `RecordingBridge` records under any pipeline (`capture-state-realflight` uses
+  it); `read_capture` reads a capture back (columns by name; a cut-off last row is dropped).
+- **`channel-sweep-realflight` example** (#120): drives a model's raw channels on the ground
+  with no flight loop (neutral, each servo full both ways, each motor alone, a hop) and records
+  a capture, for mapping a new model's channels and checking the frame contract on it.
+  `--neutral` sets any channel's rest value; `--tail-s` keeps recording after the last step.
+
+### Changed
+
+- **`vehicle_state`'s Euler fields come from the quaternion** (#120), not RealFlight's own Euler
+  angles, so `roll_rad`, `pitch_rad`, and `heading_rad` always agree with `attitude`. They match
+  RealFlight's away from ±90° pitch; near it both are degenerate (a tailsitter's hover).
 
 ## [0.1.0] - 2026-10-10
 

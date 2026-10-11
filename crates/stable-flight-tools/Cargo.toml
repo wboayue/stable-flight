@@ -1,6 +1,6 @@
 [package]
 name = "stable-flight-tools"
-description = "Developer tools for Stable Flight: flight-path plotting, waypoint-script generation, and a native-link pilot"
+description = "Developer tools for Stable Flight: flight-path plotting, waypoint-script generation, a native-link pilot, and a RealFlight frame checker"
 publish = false
 version.workspace = true
 edition.workspace = true
@@ -13,6 +13,7 @@ repository.workspace = true
 stable-flight = { path = "../stable-flight" }
 stable-flight-sitl = { path = "../stable-flight-sitl" }
 stable-flight-link = { path = "../stable-flight-link", features = ["std"] }
+stable-flight-sitl-realflight = { path = "../stable-flight-sitl-realflight" }
 clap.workspace = true
 plotters = { version = "0.3", default-features = false, features = [
     "bitmap_backend",   # BitMapBackend (in-memory raster)
