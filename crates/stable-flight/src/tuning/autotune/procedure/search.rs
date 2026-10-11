@@ -169,18 +169,7 @@ impl Search {
                 (self.start, self.seed == self.start)
             }
             Leg::Try(gain) => (self.with(gain), true),
-            Leg::Verify(gain) => {
-                let accepted = complete
-                    && self
-                        .plan
-                        .acceptance
-                        .accepts(&self.plan.criterion, &self.baseline, &steps);
-                return if accepted {
-                    self.finish(self.with(gain), Outcome::Tuned, Some(steps))
-                } else {
-                    self.finish(self.start, Outcome::Kept(KeepReason::Worse), Some(steps))
-                };
-            }
+            Leg::Verify(gain) => return self.verified(gain, complete, steps),
             Leg::Relay { .. } => return Action::Fail(AutotuneAbort::Interrupted),
         };
         self.verdict = Some(Verdict {
@@ -197,6 +186,28 @@ impl Search {
             }
         }
         self.advance()
+    }
+
+    /// Keeps the verified `gain` if its steps (`complete`: none aborted or kept clipping) fly
+    /// no worse than the baseline, or, with no baseline steps to compare (the start's
+    /// aborted), meet the criterion; else the start gains stay.
+    fn verified(&self, gain: f32, complete: bool, steps: StepSummary) -> Action {
+        let SearchPlan {
+            criterion,
+            acceptance,
+            ..
+        } = self.plan;
+        let accepted = complete
+            && if self.baseline.count() > 0 {
+                acceptance.accepts(&criterion, &self.baseline, &steps)
+            } else {
+                criterion.passes(&steps)
+            };
+        if accepted {
+            self.finish(self.with(gain), Outcome::Tuned, Some(steps))
+        } else {
+            self.finish(self.start, Outcome::Kept(KeepReason::Worse), Some(steps))
+        }
     }
 
     /// Tries the next bracket point, or verifies the result once the bracket is narrow

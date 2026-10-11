@@ -393,3 +393,31 @@ fn a_mismatched_input_fails() {
     let relay = relay_input(POINT, false);
     check!(search.next(relay) == Action::Fail(AutotuneAbort::Interrupted));
 }
+
+/// With no baseline to compare (the start's steps abort), the verify must meet the criterion
+/// itself: a result that bounces back too far leaves the start.
+#[test]
+fn without_a_baseline_the_verify_meets_the_criterion() {
+    let plan = d_plan();
+    // The start aborts; below it everything passes, except a bouncing `verify` gain.
+    let respond = |verify: Option<f32>| {
+        move |gains: Gains| {
+            let bounce = if Some(gains.d) == verify { 1.0 } else { 0.0 };
+            (gains != START).then(|| metrics(0.0, bounce))
+        }
+    };
+    let clean = drive(plan, no_relays, respond(None));
+    let (tuned, outcome) = finished(&clean);
+    check!(outcome == Outcome::Tuned);
+    let Action::Finish {
+        baseline: Some(baseline),
+        ..
+    } = clean.end
+    else {
+        panic!("no baseline: {:?}", clean.end);
+    };
+    check!(baseline.count() == 0);
+
+    let bouncing = drive(plan, no_relays, respond(Some(tuned.d)));
+    check!(finished(&bouncing) == (START, Outcome::Kept(KeepReason::Worse)));
+}

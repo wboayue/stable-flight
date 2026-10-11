@@ -340,7 +340,8 @@ impl RelayPlan {
 ///    `÷ factor` while they fail, down to `min` (nothing passing: the start gains stay).
 /// 4. **Bisect** (geometric mean) until the bracket is within `resolution`.
 /// 5. **Verify** `margin ×` the largest pass with `test.pairs` pairs, and keep it only if it
-///    passes [`Acceptance`] against the baseline; else the start gains stay.
+///    passes [`Acceptance`] against the baseline (or, if the baseline's steps all aborted,
+///    meets the criterion); else the start gains stay.
 ///
 /// A pair is judged on its two steps' means, so a trim offset doesn't bias it. A step that
 /// aborts (reversed or runaway) fails its pair, as do `test.max_invalid` invalid steps in a
@@ -1269,15 +1270,12 @@ impl Autotune {
         let settle = self.settle_for(stage);
         let level_s = if settle.holds(motion) { level_s } else { 0.0 };
         if level_s >= settle.hold_s {
-            let target = self.target(stage);
-            if let Some(gains) = request.gains {
-                let mut config = *flight_loop.stabilizer().config();
-                *target.gains_mut(&mut config) = gains;
-                if flight_loop.set_stabilizer_config(config).is_err() {
-                    return Some(self.fail(flight_loop, stage, AutotuneAbort::Rejected));
-                }
+            if let Some(gains) = request.gains
+                && self.set_gains(flight_loop, stage, gains).is_none()
+            {
+                return Some(self.fail(flight_loop, stage, AutotuneAbort::Rejected));
             }
-            flight_loop.start_probe(target, request.probe);
+            flight_loop.start_probe(self.target(stage), request.probe);
             self.phase = Phase::Probing {
                 stage,
                 candidate: request.gains.is_some(),
@@ -1357,12 +1355,9 @@ impl Autotune {
         gains: Gains,
         (outcome, steps, baseline): (Outcome, Option<StepSummary>, Option<StepSummary>),
     ) -> AutotuneEvent {
-        let target = self.target(stage);
-        let mut config = *flight_loop.stabilizer().config();
-        *target.gains_mut(&mut config) = gains;
-        if flight_loop.set_stabilizer_config(config).is_err() {
+        let Some(config) = self.set_gains(flight_loop, stage, gains) else {
             return self.fail(flight_loop, stage, AutotuneAbort::Rejected);
-        }
+        };
         self.last_good = Some(config);
         self.phase = if stage + 1 < self.stages {
             Phase::Starting { stage: stage + 1 }
@@ -1370,12 +1365,28 @@ impl Autotune {
             Phase::Finishing
         };
         AutotuneEvent::StageDone {
-            target,
+            target: self.target(stage),
             gains,
             outcome,
             steps,
             baseline,
         }
+    }
+
+    /// Sets `gains` on `stage`'s loop; the config flown, or `None` if the stabilizer
+    /// rejected it.
+    fn set_gains<C, V, G, S: CopterTunable, M, T>(
+        &self,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+        stage: usize,
+        gains: Gains,
+    ) -> Option<CopterStabilizerConfig> {
+        let mut config = *flight_loop.stabilizer().config();
+        *self.target(stage).gains_mut(&mut config) = gains;
+        flight_loop
+            .set_stabilizer_config(config)
+            .ok()
+            .map(|()| config)
     }
 
     /// Ends the run at `stage`: stops its probe and puts back the last committed config.
