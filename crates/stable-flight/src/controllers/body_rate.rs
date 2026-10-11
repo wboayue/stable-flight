@@ -22,8 +22,11 @@ const DEFAULT_MAX_INTEGRAL: f32 = 1.0;
 /// rad/s, `i` per rad of accumulated error, and `d` per rad/s².
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BodyRateControllerConfig {
-    /// PID gains for the roll and pitch rates.
-    pub gains: Gains,
+    /// PID gains for the roll rate.
+    pub roll_gains: Gains,
+
+    /// PID gains for the pitch rate.
+    pub pitch_gains: Gains,
 
     /// PID gains for the yaw rate.
     pub yaw_gains: Gains,
@@ -35,12 +38,14 @@ pub struct BodyRateControllerConfig {
 
 impl Default for BodyRateControllerConfig {
     fn default() -> Self {
+        let roll_pitch_gains = Gains {
+            p: DEFAULT_P,
+            i: 0.0,
+            d: DEFAULT_D,
+        };
         Self {
-            gains: Gains {
-                p: DEFAULT_P,
-                i: 0.0,
-                d: DEFAULT_D,
-            },
+            roll_gains: roll_pitch_gains,
+            pitch_gains: roll_pitch_gains,
             yaw_gains: Gains {
                 p: DEFAULT_YAW_P,
                 i: DEFAULT_YAW_I,
@@ -67,9 +72,9 @@ impl BodyRateControllerConfig {
         check_limit("max_integral", self.max_integral)
     }
 
-    /// Gains per axis: roll and pitch use `gains`, yaw uses `yaw_gains`.
+    /// Gains per axis: roll, pitch, yaw.
     fn axis_gains(&self) -> [Gains; 3] {
-        [self.gains, self.gains, self.yaw_gains]
+        [self.roll_gains, self.pitch_gains, self.yaw_gains]
     }
 }
 
@@ -126,7 +131,7 @@ impl BodyRateController {
     /// Controls the angular velocity (body rates) of the vehicle using a PID controller.
     ///
     /// Computes the error between desired and estimated rates (both rad/s) and applies PID
-    /// control to it, per axis: `config.gains` for roll and pitch, `config.yaw_gains` for yaw.
+    /// control to it, per axis with `config.roll_gains`, `pitch_gains`, and `yaw_gains`.
     ///
     /// # Arguments
     ///
@@ -210,7 +215,8 @@ mod tests {
     /// The same gains on every axis.
     fn config(p: f32, i: f32, d: f32) -> BodyRateControllerConfig {
         BodyRateControllerConfig {
-            gains: Gains { p, i, d },
+            roll_gains: Gains { p, i, d },
+            pitch_gains: Gains { p, i, d },
             yaw_gains: Gains { p, i, d },
             max_integral: 1.0,
         }
@@ -355,20 +361,14 @@ mod tests {
         assert!((c.integrated_error() - Vec3::new(1.0, -1.0, 0.0)).amax() < 1e-6);
     }
 
-    /// Yaw uses `yaw_gains`; roll and pitch use `gains`.
+    /// Each axis uses its own gains: roll `roll_gains`, pitch `pitch_gains`, yaw `yaw_gains`.
     #[test]
-    fn yaw_uses_its_own_gains() {
+    fn each_axis_uses_its_own_gains() {
+        let p_only = |p| Gains { p, i: 0.0, d: 0.0 };
         let cfg = BodyRateControllerConfig {
-            gains: Gains {
-                p: 0.15,
-                i: 0.0,
-                d: 0.0,
-            },
-            yaw_gains: Gains {
-                p: 0.5,
-                i: 0.0,
-                d: 0.0,
-            },
+            roll_gains: p_only(0.15),
+            pitch_gains: p_only(0.25),
+            yaw_gains: p_only(0.5),
             max_integral: 1.0,
         };
         let out = BodyRateController::default().control(
@@ -378,7 +378,7 @@ mod tests {
             Vec3::zeros(),
         );
 
-        assert!((out - Vec3::new(0.15, 0.15, 0.5)).amax() < 1e-6);
+        assert!((out - Vec3::new(0.15, 0.25, 0.5)).amax() < 1e-6);
     }
 
     /// A gain change between ticks takes effect on the next tick and keeps the integral.

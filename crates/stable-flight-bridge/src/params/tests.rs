@@ -7,7 +7,11 @@ use crate::test_support::{param, param_value_of, read_index, read_name, set};
 fn param_id_converts_to_a_name() {
     // (case, param_id bytes, expected name)
     let cases: [(&str, &[u8], Option<&str>); 4] = [
-        ("NUL-terminated", b"STAB_RATE_P\0", Some("STAB_RATE_P")),
+        (
+            "NUL-terminated",
+            b"STAB_RATE_RLL_P\0",
+            Some("STAB_RATE_RLL_P"),
+        ),
         (
             "all 16 bytes, no NUL",
             b"ABCDEFGHIJKLMNOP",

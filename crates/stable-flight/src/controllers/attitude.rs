@@ -11,8 +11,11 @@ use crate::math::{assert_dt, clamp_symmetric, clamp_symmetric_each, saturate_sym
 /// Yaw is typically handled separately by a dedicated yaw controller.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AttitudeControllerConfig {
-    /// PID gains for roll and pitch control (Kp, Ki, Kd).
-    pub gains: Gains,
+    /// PID gains for roll.
+    pub roll_gains: Gains,
+
+    /// PID gains for pitch.
+    pub pitch_gains: Gains,
 
     /// Maximum angles in radians for roll (x) and pitch (y) (e.g., π/4 = 45°).
     /// Limits the vehicle's tilt in each axis.
@@ -31,12 +34,14 @@ impl Default for AttitudeControllerConfig {
     /// Untuned starting values (45° tilt, 2 rad/s rate cap); airframes override them with
     /// flight-checked sets.
     fn default() -> Self {
+        let gains = Gains {
+            p: 3.0,
+            i: 0.001,
+            d: 1.0,
+        };
         Self {
-            gains: Gains {
-                p: 3.0,
-                i: 0.001,
-                d: 1.0,
-            },
+            roll_gains: gains,
+            pitch_gains: gains,
             max_angles_rad: Vec2::new(FRAC_PI_4, FRAC_PI_4), // 45° for roll and pitch
             max_integral: 100.0,
             max_rate_radps: Vec2::new(2.0, 2.0), // 2 rad/s (~114°/s) for roll and pitch
@@ -67,6 +72,11 @@ impl AttitudeControllerConfig {
         check_limit("max_rate_radps.x", self.max_rate_radps.x)?;
         check_limit("max_rate_radps.y", self.max_rate_radps.y)?;
         check_limit("max_integral", self.max_integral)
+    }
+
+    /// Gains per axis: roll, pitch.
+    fn axis_gains(&self) -> [Gains; 2] {
+        [self.roll_gains, self.pitch_gains]
     }
 }
 
@@ -156,9 +166,12 @@ impl AttitudeController {
         self.integrated_error =
             clamp_symmetric_each(self.integrated_error + dt * error, config.max_integral);
 
-        // PID calculation: Kp×error + Ki×∫error + Kd×d(error)/dt
-        let Gains { p, i, d } = config.gains;
-        let rates = p * error + i * self.integrated_error + d * error_derivative;
+        // PID calculation per axis: Kp×error + Ki×∫error + Kd×d(error)/dt
+        let gains = config.axis_gains();
+        let rates = Vec2::from_fn(|axis, _| {
+            let Gains { p, i, d } = gains[axis];
+            p * error[axis] + i * self.integrated_error[axis] + d * error_derivative[axis]
+        });
 
         // Scale output to configured maximum rates
         Vec2::new(
@@ -174,10 +187,10 @@ impl AttitudeController {
         old: &AttitudeControllerConfig,
         new: &AttitudeControllerConfig,
     ) {
-        let (old_i, new_i) = (old.gains.i, new.gains.i);
-        self.integrated_error = self
-            .integrated_error
-            .map(|e| rescale_integral(e, old_i, new_i));
+        let (old, new) = (old.axis_gains(), new.axis_gains());
+        self.integrated_error = Vec2::from_fn(|axis, _| {
+            rescale_integral(self.integrated_error[axis], old[axis].i, new[axis].i)
+        });
     }
 }
 
@@ -187,7 +200,8 @@ mod tests {
 
     fn gains(p: f32, i: f32, d: f32) -> AttitudeControllerConfig {
         AttitudeControllerConfig {
-            gains: Gains { p, i, d },
+            roll_gains: Gains { p, i, d },
+            pitch_gains: Gains { p, i, d },
             ..AttitudeControllerConfig::default()
         }
     }
@@ -280,7 +294,7 @@ mod tests {
         let rates = controller.control(&config, dt, desired_angles, Vec2::zeros());
 
         let expected_error = Vec2::new(FRAC_PI_4, -FRAC_PI_4); // 45° in radians
-        let expected_rates = config.gains.p * expected_error;
+        let expected_rates = config.roll_gains.p * expected_error;
         assert!((rates.x - expected_rates.x).abs() < 1e-6);
         assert!((rates.y - expected_rates.y).abs() < 1e-6);
         assert_eq!(controller.integrated_error, dt * expected_error);
@@ -297,6 +311,75 @@ mod tests {
             AttitudeController::default().control(&config, 0.1, Vec2::new(1.0, 1.0), Vec2::zeros());
 
         assert_eq!(rates, Vec2::new(2.0, 2.0)); // Clamped to max_rate_radps
+    }
+
+    /// A retune rescales each axis's integral by its own gain change: doubling roll's `i`
+    /// halves roll's integral and leaves pitch's alone.
+    #[test]
+    fn retune_rescales_each_axis_integral_by_its_own_gain() {
+        let old = gains(0.0, 1.0, 0.0);
+        let mut controller = AttitudeController::default();
+        controller.control(&old, 0.1, Vec2::new(0.5, 0.5), Vec2::zeros());
+        let integral = controller.integrated_error;
+
+        let new = AttitudeControllerConfig {
+            roll_gains: Gains {
+                i: 2.0,
+                ..old.roll_gains
+            },
+            ..old
+        };
+        controller.rescale_integral(&old, &new);
+
+        approx::assert_relative_eq!(controller.integrated_error.x, integral.x / 2.0);
+        assert_eq!(controller.integrated_error.y, integral.y);
+    }
+
+    /// Roll uses `roll_gains` and pitch `pitch_gains`, for each PID term.
+    #[test]
+    fn each_axis_uses_its_own_gains() {
+        let gains = |p, i, d| Gains { p, i, d };
+        // (roll gains, pitch gains, expected first-tick rates for a 0.5 rad error on both axes
+        // over dt 0.1: P·e + I·e·dt, no derivative yet)
+        let cases = [
+            (
+                gains(1.0, 0.0, 0.0),
+                gains(3.0, 0.0, 0.0),
+                Vec2::new(0.5, 1.5),
+            ),
+            (
+                gains(0.0, 2.0, 0.0),
+                gains(0.0, 4.0, 0.0),
+                Vec2::new(0.1, 0.2),
+            ),
+        ];
+        for (roll_gains, pitch_gains, expected) in cases {
+            let config = AttitudeControllerConfig {
+                roll_gains,
+                pitch_gains,
+                max_rate_radps: Vec2::new(10.0, 10.0),
+                ..AttitudeControllerConfig::default()
+            };
+            let rates = AttitudeController::default().control(
+                &config,
+                0.1,
+                Vec2::new(0.5, 0.5),
+                Vec2::zeros(),
+            );
+            approx::assert_relative_eq!(rates, expected, epsilon = 1e-6);
+        }
+
+        // Derivative: second tick after the error drops by 0.1 rad on both axes.
+        let config = AttitudeControllerConfig {
+            roll_gains: gains(0.0, 0.0, 0.1),
+            pitch_gains: gains(0.0, 0.0, 0.3),
+            max_rate_radps: Vec2::new(10.0, 10.0),
+            ..AttitudeControllerConfig::default()
+        };
+        let mut controller = AttitudeController::default();
+        controller.control(&config, 0.1, Vec2::new(0.5, 0.5), Vec2::zeros());
+        let rates = controller.control(&config, 0.1, Vec2::new(0.5, 0.5), Vec2::new(0.1, 0.1));
+        approx::assert_relative_eq!(rates, Vec2::new(-0.1, -0.3), epsilon = 1e-5);
     }
 
     #[test]
@@ -371,7 +454,7 @@ mod tests {
         let error1 = Vec2::new(FRAC_PI_4, FRAC_PI_4);
         let error2 = error1 - estimated_angles2;
         let derivative = (error2 - error1) / dt;
-        let expected_rates = config.gains.d * derivative;
+        let expected_rates = config.roll_gains.d * derivative;
         assert!((rates2.x - expected_rates.x).abs() < 1e-6);
         assert!((rates2.y - expected_rates.y).abs() < 1e-6);
     }
@@ -429,7 +512,7 @@ mod tests {
         // First finite tick after the gap: P + I only (no derivative from the pre-gap error).
         let after_nan = controller.control(&config, 0.1, desired, Vec2::zeros());
         let error = desired;
-        let Gains { p, i, .. } = config.gains;
+        let Gains { p, i, .. } = config.roll_gains;
         let expected = p * error + i * (0.1 * error);
         approx::assert_relative_eq!(after_nan.x, expected.x.clamp(-2.0, 2.0));
         approx::assert_relative_eq!(after_nan.y, expected.y.clamp(-2.0, 2.0));

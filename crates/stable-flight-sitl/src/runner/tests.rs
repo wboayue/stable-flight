@@ -113,7 +113,7 @@ fn before_step_runs_once_before_each_tick_and_can_write_params() {
         .run_with(&mut flight_loop, &shutdown, |flight_loop| {
             hooks += 1;
             flight_loop
-                .set_param("STAB_RATE_P", 0.01 * hooks as f32)
+                .set_param("STAB_RATE_RLL_P", 0.01 * hooks as f32)
                 .expect("valid value");
             if hooks == 5 {
                 trigger.trigger(); // this tick still runs; the next doesn't
@@ -122,7 +122,7 @@ fn before_step_runs_once_before_each_tick_and_can_write_params() {
 
     check!(stats.ticks == 5);
     check!(hooks == stats.ticks);
-    check!(flight_loop.param("STAB_RATE_P") == Some(0.01 * 5.0));
+    check!(flight_loop.param("STAB_RATE_RLL_P") == Some(0.01 * 5.0));
 }
 
 #[test]

@@ -119,7 +119,7 @@ fn every_uplink_variant_round_trips() {
         Uplink::Control(Control::Arm(true)),
         Uplink::Control(Control::Arm(false)),
         Uplink::Param(ParamRequest::Set {
-            name: name("STAB_RATE_P"),
+            name: name("STAB_RATE_RLL_P"),
             value: 0.15,
         }),
         Uplink::Param(ParamRequest::List),

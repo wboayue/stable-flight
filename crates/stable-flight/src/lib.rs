@@ -1238,12 +1238,12 @@ impl Saturation {
 /// let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
 ///
 /// let mut retuned = *stabilizer.config();
-/// retuned.body_rate.gains.p = 0.2;
+/// retuned.body_rate.roll_gains.p = 0.2;
 /// assert!(stabilizer.set_config(retuned).is_ok());
 ///
 /// retuned.body_rate.max_integral = -1.0;
 /// assert!(stabilizer.set_config(retuned).is_err());
-/// assert_eq!(stabilizer.config().body_rate.gains.p, 0.2); // unchanged
+/// assert_eq!(stabilizer.config().body_rate.roll_gains.p, 0.2); // unchanged
 /// ```
 pub trait Configurable {
     /// The component's config.

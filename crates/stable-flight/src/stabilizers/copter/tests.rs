@@ -8,7 +8,12 @@ use std::f32::consts::PI;
 fn setup_controller() -> CopterStabilizer {
     let config = CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
-            gains: Gains {
+            roll_gains: Gains {
+                p: 1.0,
+                i: 0.1,
+                d: 0.05,
+            },
+            pitch_gains: Gains {
                 p: 1.0,
                 i: 0.1,
                 d: 0.05,
@@ -21,7 +26,12 @@ fn setup_controller() -> CopterStabilizer {
             max_integral: 100.0,
         },
         attitude: AttitudeControllerConfig {
-            gains: Gains {
+            roll_gains: Gains {
+                p: 2.0,
+                i: 0.2,
+                d: 0.1,
+            },
+            pitch_gains: Gains {
                 p: 2.0,
                 i: 0.2,
                 d: 0.1,
@@ -497,7 +507,7 @@ fn set_config_applies_next_tick_and_keeps_controller_state() {
     reference.control(&old.body_rate, 0.004, desired, Vec3::zeros());
 
     let mut new = old;
-    new.body_rate.gains.i = 5.0;
+    new.body_rate.roll_gains.i = 5.0;
     stabilizer.set_config(new).expect("valid config");
     reference.rescale_integral(&old.body_rate, &new.body_rate);
     let output = stabilizer.stabilize(0.004, &setpoint, &state);
@@ -521,7 +531,7 @@ fn retuning_an_integral_gain_carries_the_i_term_over() {
     let cases = [(0.1, 0.2), (0.2, 0.05), (0.1, 0.0), (0.0, 0.1)];
     for (old_i, new_i) in cases {
         let mut old = CopterStabilizerConfig::default();
-        old.body_rate.gains = Gains {
+        old.body_rate.roll_gains = Gains {
             p: 0.1,
             i: old_i,
             d: 0.0,
@@ -533,7 +543,7 @@ fn retuning_an_integral_gain_carries_the_i_term_over() {
         }
 
         let mut new = old;
-        new.body_rate.gains.i = new_i;
+        new.body_rate.roll_gains.i = new_i;
         stabilizer.set_config(new).expect("valid config");
         let output = stabilizer.stabilize(DT, &setpoint, &state);
 

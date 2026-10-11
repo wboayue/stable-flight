@@ -5,16 +5,22 @@ use crate::params::{Param, ParamTable, param};
 
 impl ParamTable for CopterStabilizerConfig {
     const PARAMS: &'static [Param<Self>] = &[
-        param!("STAB_RATE_P", body_rate.gains.p),
-        param!("STAB_RATE_I", body_rate.gains.i),
-        param!("STAB_RATE_D", body_rate.gains.d),
+        param!("STAB_RATE_RLL_P", body_rate.roll_gains.p),
+        param!("STAB_RATE_RLL_I", body_rate.roll_gains.i),
+        param!("STAB_RATE_RLL_D", body_rate.roll_gains.d),
+        param!("STAB_RATE_PIT_P", body_rate.pitch_gains.p),
+        param!("STAB_RATE_PIT_I", body_rate.pitch_gains.i),
+        param!("STAB_RATE_PIT_D", body_rate.pitch_gains.d),
         param!("STAB_RATE_YAW_P", body_rate.yaw_gains.p),
         param!("STAB_RATE_YAW_I", body_rate.yaw_gains.i),
         param!("STAB_RATE_YAW_D", body_rate.yaw_gains.d),
         param!("STAB_RATE_IMAX", body_rate.max_integral),
-        param!("STAB_ATT_P", attitude.gains.p),
-        param!("STAB_ATT_I", attitude.gains.i),
-        param!("STAB_ATT_D", attitude.gains.d),
+        param!("STAB_ATT_RLL_P", attitude.roll_gains.p),
+        param!("STAB_ATT_RLL_I", attitude.roll_gains.i),
+        param!("STAB_ATT_RLL_D", attitude.roll_gains.d),
+        param!("STAB_ATT_PIT_P", attitude.pitch_gains.p),
+        param!("STAB_ATT_PIT_I", attitude.pitch_gains.i),
+        param!("STAB_ATT_PIT_D", attitude.pitch_gains.d),
         param!(deg "STAB_ATT_AMAX_X", attitude.max_angles_rad.x),
         param!(deg "STAB_ATT_AMAX_Y", attitude.max_angles_rad.y),
         param!("STAB_ATT_IMAX", attitude.max_integral),
@@ -45,18 +51,24 @@ mod metadata {
 
     impl ParamMetadata for CopterStabilizerConfig {
         const METADATA: &'static [ParamMeta] = &[
-            RATE.param("STAB_RATE_P", "Roll/pitch rate loop proportional gain"),
-            RATE.param("STAB_RATE_I", "Roll/pitch rate loop integral gain"),
-            RATE.param("STAB_RATE_D", "Roll/pitch rate loop derivative gain"),
+            RATE.param("STAB_RATE_RLL_P", "Roll rate loop proportional gain"),
+            RATE.param("STAB_RATE_RLL_I", "Roll rate loop integral gain"),
+            RATE.param("STAB_RATE_RLL_D", "Roll rate loop derivative gain"),
+            RATE.param("STAB_RATE_PIT_P", "Pitch rate loop proportional gain"),
+            RATE.param("STAB_RATE_PIT_I", "Pitch rate loop integral gain"),
+            RATE.param("STAB_RATE_PIT_D", "Pitch rate loop derivative gain"),
             RATE.param("STAB_RATE_YAW_P", "Yaw rate loop proportional gain"),
             RATE.param("STAB_RATE_YAW_I", "Yaw rate loop integral gain"),
             RATE.param("STAB_RATE_YAW_D", "Yaw rate loop derivative gain"),
             RATE.param("STAB_RATE_IMAX", "Rate loop integral limit, per axis")
                 .with_units("rad")
                 .at_least(0.0),
-            ATTITUDE.param("STAB_ATT_P", "Roll/pitch angle loop proportional gain"),
-            ATTITUDE.param("STAB_ATT_I", "Roll/pitch angle loop integral gain"),
-            ATTITUDE.param("STAB_ATT_D", "Roll/pitch angle loop derivative gain"),
+            ATTITUDE.param("STAB_ATT_RLL_P", "Roll angle loop proportional gain"),
+            ATTITUDE.param("STAB_ATT_RLL_I", "Roll angle loop integral gain"),
+            ATTITUDE.param("STAB_ATT_RLL_D", "Roll angle loop derivative gain"),
+            ATTITUDE.param("STAB_ATT_PIT_P", "Pitch angle loop proportional gain"),
+            ATTITUDE.param("STAB_ATT_PIT_I", "Pitch angle loop integral gain"),
+            ATTITUDE.param("STAB_ATT_PIT_D", "Pitch angle loop derivative gain"),
             ATTITUDE
                 .param("STAB_ATT_AMAX_X", "Largest roll angle")
                 .with_units("deg")

@@ -58,6 +58,17 @@ pub struct Airframe<G, S, M> {
 /// assert_eq!(airframe.mapping.motors[0], Some(2));
 /// ```
 pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, QuadCopterMixer> {
+    // Roll and pitch share one hand tune; autotune (#149) can split them.
+    let rate_roll_pitch = Gains {
+        p: 0.5,
+        i: 0.2,
+        d: 0.004,
+    };
+    let attitude_roll_pitch = Gains {
+        p: 3.0,
+        i: 0.0,
+        d: 0.1,
+    };
     Airframe {
         guidance: CopterGuidanceConfig {
             altitude: AltitudeControllerConfig {
@@ -70,11 +81,8 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
         },
         stabilizer: CopterStabilizerConfig {
             body_rate: BodyRateControllerConfig {
-                gains: Gains {
-                    p: 0.5,
-                    i: 0.2,
-                    d: 0.004,
-                },
+                roll_gains: rate_roll_pitch,
+                pitch_gains: rate_roll_pitch,
                 // Yaw authority is differential prop drag only, so yaw needs its own, higher gains.
                 // The model needs a steady ~0.40 nose-right yaw moment to hover; I · max_integral
                 // = 0.6 cancels it with margin. At I 0.2 the integral pinned at 0.2 and acro
@@ -87,11 +95,8 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
                 max_integral: 1.0,
             },
             attitude: AttitudeControllerConfig {
-                gains: Gains {
-                    p: 3.0,
-                    i: 0.0,
-                    d: 0.1,
-                },
+                roll_gains: attitude_roll_pitch,
+                pitch_gains: attitude_roll_pitch,
                 max_integral: 100.0,
                 max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0), // 45° for roll and pitch
                 max_rate_radps: Vec2::new(3.0, 3.0),           // Max roll, pitch rates in rad/s
