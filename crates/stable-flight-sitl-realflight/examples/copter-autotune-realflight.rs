@@ -10,6 +10,10 @@
 //! relay timeout) keeps the stages before it. `--rate-p-scale` starts from deliberately bad rate
 //! gains (e.g. `0.1` or `10`), to check the tune recovers from them.
 //!
+//! `--stages search` tunes roll and pitch rate by step response instead (#298): per loop, a
+//! relay sets D and caps P, then P is searched by steps (each judgment logged with its
+//! steps), verified, and kept only if it flies no worse than the start.
+//!
 //! `--step-test` appends step tests of roll and pitch rate and angle (#298): alternating steps,
 //! each one's response logged at `debug`, and a summary per loop at `info` (overshoot, rise,
 //! settling, bounce-back: mean and range). `--stages none --step-test` measures the hand tune;
@@ -22,6 +26,7 @@
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --rate-p-scale 10
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages none --step-test
+//! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages search --step-test
 //! ```
 
 use std::cell::Cell;
@@ -122,6 +127,8 @@ enum Stages {
     Angle,
     /// Rate, then angle and heading.
     All,
+    /// Roll and pitch rate by step-response search (relay D, searched P).
+    Search,
 }
 
 /// The opt-in angle and heading stages.
@@ -144,6 +151,7 @@ impl Stages {
             Stages::Rate => rate.collect(),
             Stages::Angle => angle.collect(),
             Stages::All => rate.chain(angle).collect(),
+            Stages::Search => StagePlan::copter_rate_search().into(),
         }
     }
 }
@@ -315,19 +323,35 @@ fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
             "autotune: {target:?} Ku {:.3} Tu {:.3} s (relay {:.3}, cycle {:.4}, bias {:.3})",
             result.point.ku, result.point.tu_s, result.relay, result.cycle_amplitude, result.bias,
         ),
+        AutotuneEvent::Tried {
+            target,
+            gains,
+            passed,
+            steps,
+        } => info!(
+            "autotune: {target:?} {} {}: {}",
+            format_gains(gains),
+            if *passed { "passed" } else { "failed" },
+            format_summary(steps),
+        ),
         AutotuneEvent::StageDone {
             target,
             gains,
-            steps: Some(steps),
+            outcome,
+            steps,
+            baseline,
         } => {
-            info!("autotune: {target:?} steps {}", format_summary(steps));
-            info!("autotune: {target:?} flies {}", format_gains(gains));
+            if let Some(baseline) = baseline {
+                info!("autotune: {target:?} baseline {}", format_summary(baseline));
+            }
+            if let Some(steps) = steps {
+                info!("autotune: {target:?} steps {}", format_summary(steps));
+            }
+            info!(
+                "autotune: {target:?} {outcome:?}: flies {}",
+                format_gains(gains)
+            );
         }
-        AutotuneEvent::StageDone {
-            target,
-            gains,
-            steps: None,
-        } => info!("autotune: {target:?} -> {}", format_gains(gains)),
         AutotuneEvent::StageFailed { target, reason } => {
             warn!("autotune: {target:?} failed: {reason:?}; earlier stages kept");
         }

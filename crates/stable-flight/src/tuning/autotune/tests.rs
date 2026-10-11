@@ -122,10 +122,15 @@ fn stabilizer_config(rate_p_scale: f32) -> CopterStabilizerConfig {
 
 /// An armed loop hovering level over the sim for a second.
 fn hovering(rate_p_scale: f32) -> (TestLoop, Controls) {
+    hovering_on(rate_p_scale, PlantParams::rate_axis())
+}
+
+/// [`hovering`] over axes with `params`.
+fn hovering_on(rate_p_scale: f32, params: PlantParams) -> (TestLoop, Controls) {
     let controls = Controls::default();
     controls.arm.set(true);
     controls.altitude_m.set(ALTITUDE_M);
-    *controls.axes.borrow_mut() = Some(Axes::new([PlantParams::rate_axis(); 3], Vec3::zeros(), DT));
+    *controls.axes.borrow_mut() = Some(Axes::new([params; 3], Vec3::zeros(), DT));
     let mut flight_loop = FlightLoop::new(
         TestCommander(controls.clone()),
         SimVehicle(controls.clone()),
@@ -225,7 +230,9 @@ fn full_run_tunes_every_loop_in_order() {
         let Some(&AutotuneEvent::StageDone {
             target: done,
             gains,
+            outcome: Outcome::Tuned,
             steps: None,
+            baseline: None,
         }) = events.get(index + 2)
         else {
             panic!(
@@ -578,7 +585,9 @@ fn step_tests_measure_alternating_steps_and_keep_the_gains() {
             AutotuneEvent::StageDone {
                 target: done,
                 gains,
+                outcome: Outcome::Measured,
                 steps,
+                ..
             } if *done == target => Some((*gains, *steps)),
             _ => None,
         });
@@ -665,4 +674,322 @@ fn a_step_test_settles_to_its_own_limits() {
         autotune.status(),
         AutotuneStatus::Running { .. } | AutotuneStatus::Complete
     ));
+}
+
+/// A rate axis with QuadCopterX-like lag: 12 ms of dead time.
+fn delayed_axis() -> PlantParams {
+    PlantParams {
+        delay_s: 0.012,
+        ..PlantParams::rate_axis()
+    }
+}
+
+/// The rate search tunes roll and pitch rate from a hand-tune-like start and from half its
+/// P: each stage keeps a result that flies no worse than its baseline, under the relay's
+/// ceiling, with the rule's D; the other loops keep their gains.
+#[test]
+fn rate_search_tunes_the_rate_loops() {
+    for scale in [1.0, 0.5] {
+        let (mut flight_loop, _controls) = hovering_on(scale, delayed_axis());
+        let start = *flight_loop.stabilizer().config();
+        let plan = StagePlan::copter_rate_search();
+        let mut autotune = started(&flight_loop, &plan);
+
+        let events = run(&mut flight_loop, &mut autotune, 300.0, |_| {});
+
+        check!(events.last() == Some(&AutotuneEvent::Complete), "{scale}");
+        let tried = events
+            .iter()
+            .filter(|event| matches!(event, AutotuneEvent::Tried { .. }))
+            .count();
+        check!(
+            tried >= 2 * plan.len(),
+            "{scale}: baseline and a bracket point per stage"
+        );
+        let config = *flight_loop.stabilizer().config();
+        for stage in plan {
+            let target = stage.target;
+            let done = events.iter().find_map(|event| match *event {
+                AutotuneEvent::StageDone {
+                    target: done,
+                    gains,
+                    outcome,
+                    steps: Some(verify),
+                    baseline: Some(baseline),
+                } if done == target => Some((gains, outcome, verify, baseline)),
+                _ => None,
+            });
+            let Some((gains, outcome, verify, baseline)) = done else {
+                panic!("{scale} {target:?}: no StageDone: {events:?}");
+            };
+            check!(outcome == Outcome::Tuned, "{scale} {target:?}");
+            check!(target.gains(&config) == gains, "{scale} {target:?}");
+            check!(
+                gains.i == target.gains(&start).i,
+                "{scale} {target:?}: I kept"
+            );
+            check!(
+                gains.d != target.gains(&start).d,
+                "{scale} {target:?}: the rule's D"
+            );
+            let (Some(verify_os), Some(baseline_os)) =
+                (verify.overshoot.mean(), baseline.overshoot.mean())
+            else {
+                panic!("{scale} {target:?}: no overshoot");
+            };
+            check!(verify_os <= baseline_os + 0.05, "{scale} {target:?}");
+        }
+        for target in [
+            TunedLoop::YawRate,
+            TunedLoop::Roll,
+            TunedLoop::Pitch,
+            TunedLoop::Heading,
+        ] {
+            check!(
+                target.gains(&config) == target.gains(&start),
+                "{scale} {target:?}"
+            );
+        }
+    }
+}
+
+/// Only a step flies a candidate: the vehicle settles on the committed gains, a candidate
+/// goes in when its step starts and comes out when it ends. A breach while it flies fails the
+/// stage back to the committed gains.
+#[test]
+fn candidates_fly_only_during_their_step() {
+    let (mut flight_loop, controls) = hovering_on(1.0, delayed_axis());
+    let start = *flight_loop.stabilizer().config();
+    let plan = [StagePlan::copter_rate_search()[0]];
+    let mut autotune = started(&flight_loop, &plan);
+
+    let mut candidate_ticks = 0;
+    let mut event = None;
+    for _ in 0..(120.0 / DT) as usize {
+        flight_loop.step(Duration::from_secs_f32(DT));
+        let flying = *flight_loop.stabilizer().config() != start;
+        match autotune.status() {
+            AutotuneStatus::Settling { .. } => {
+                check!(!flying, "settles on the committed gains");
+            }
+            AutotuneStatus::Running { .. } if flying => {
+                check!(
+                    flight_loop.probe().is_some(),
+                    "a candidate flies only under a probe"
+                );
+                candidate_ticks += 1;
+                // Well into the search: a gust past the envelope's rate.
+                if candidate_ticks == 200 {
+                    controls.rate_spike_radps.set(10.0);
+                }
+            }
+            _ => {}
+        }
+        event = autotune.update(&mut flight_loop, DT).or(event);
+        if !autotune.is_running() {
+            break;
+        }
+    }
+
+    check!(candidate_ticks >= 200);
+    check!(
+        event
+            == Some(AutotuneEvent::StageFailed {
+                target: TunedLoop::RollRate,
+                reason: AutotuneAbort::Rate,
+            })
+    );
+    check!(*flight_loop.stabilizer().config() == start);
+}
+
+/// `SearchPlan::validate` rejects each bad field; the copter default is valid.
+#[test]
+fn search_plan_validation() {
+    let good = SearchPlan::copter_rate();
+    let relay = good.relay.expect("the rate search has a relay");
+    let rows: [(SearchPlan, &str); 12] = [
+        (
+            SearchPlan {
+                test: StepTestPlan {
+                    pairs: 0,
+                    ..good.test
+                },
+                ..good
+            },
+            "pairs",
+        ),
+        (
+            SearchPlan {
+                criterion: Criterion::Overshoot {
+                    max_overshoot: -0.1,
+                    max_bounce_back: 0.1,
+                },
+                ..good
+            },
+            "criterion.max_overshoot",
+        ),
+        (
+            SearchPlan {
+                criterion: Criterion::Overshoot {
+                    max_overshoot: 0.05,
+                    max_bounce_back: f32::NAN,
+                },
+                ..good
+            },
+            "criterion.max_bounce_back",
+        ),
+        (
+            SearchPlan {
+                factor: 1.0,
+                ..good
+            },
+            "factor",
+        ),
+        (
+            SearchPlan {
+                resolution: 1.0,
+                ..good
+            },
+            "resolution",
+        ),
+        (
+            SearchPlan {
+                margin: 0.0,
+                ..good
+            },
+            "margin",
+        ),
+        (
+            SearchPlan {
+                margin: 1.1,
+                ..good
+            },
+            "margin",
+        ),
+        (SearchPlan { min: 0.0, ..good }, "min"),
+        (
+            SearchPlan {
+                max: good.min,
+                ..good
+            },
+            "max",
+        ),
+        (
+            SearchPlan {
+                relay: Some(SearchRelay {
+                    plan: RelayPlan {
+                        relay: RelayConfig {
+                            cycles: 0,
+                            ..relay.plan.relay
+                        },
+                        ..relay.plan
+                    },
+                    ..relay
+                }),
+                ..good
+            },
+            "cycles",
+        ),
+        (
+            SearchPlan {
+                relay: Some(SearchRelay {
+                    ceiling: 0.0,
+                    ..relay
+                }),
+                ..good
+            },
+            "relay.ceiling",
+        ),
+        (
+            SearchPlan {
+                acceptance: Acceptance {
+                    settling_ratio: 0.9,
+                    ..Acceptance::default()
+                },
+                ..good
+            },
+            "acceptance.settling_ratio",
+        ),
+    ];
+    check!(good.validate() == Ok(()));
+    for (plan, field) in rows {
+        let error = plan.validate().expect_err(field);
+        check!(error.field == field);
+    }
+    let stage = StagePlan {
+        target: TunedLoop::RollRate,
+        method: Method::Search(SearchPlan {
+            factor: 0.5,
+            ..good
+        }),
+    };
+    let error = Autotune::new(&[stage], Envelope::default()).expect_err("bad factor");
+    check!(error.section == Some("plan.search"));
+}
+
+/// The criterion passes on its limits' means; acceptance compares the verify's means with the
+/// baseline's, a missing baseline mean allowing anything.
+#[test]
+fn criterion_and_acceptance_judge_the_means() {
+    // (overshoot, bounce-back, settling time)
+    type Step = (f32, f32, Option<f32>);
+    let summary = |steps: &[Step]| {
+        let mut summary = StepSummary::default();
+        for &(overshoot, bounce_back, settling_time_s) in steps {
+            summary.add(&StepMetrics {
+                amplitude: 1.0,
+                overshoot,
+                bounce_back,
+                settling_time_s,
+                ..Default::default()
+            });
+        }
+        summary
+    };
+    let criterion = SearchPlan::copter_rate().criterion;
+    // (steps, passes): limits 0.05 overshoot, 0.1 bounce-back
+    let criteria: [(&[Step], bool); 5] = [
+        (&[(0.05, 0.1, None)], true),
+        (&[(0.0, 0.0, None), (0.1, 0.0, None)], true), // mean 0.05
+        (&[(0.06, 0.0, None)], false),
+        (&[(0.0, 0.11, None)], false),
+        (&[], false),
+    ];
+    for (index, (steps, passes)) in criteria.into_iter().enumerate() {
+        check!(criterion.passes(&summary(steps)) == passes, "row {index}");
+    }
+
+    let acceptance = Acceptance::default();
+    let base = [(0.1, 0.0, Some(0.2))];
+    // (baseline, verify, accepted)
+    let rows: [(&[Step], &[Step], bool); 8] = [
+        (&base, &[(0.15, 0.0, Some(0.22))], true), // at both limits
+        (&base, &[(0.16, 0.0, Some(0.2))], false), // more overshoot
+        (&base, &[(0.1, 0.0, Some(0.23))], false), // slower
+        (&base, &[(0.1, 0.0, None)], false),       // unsettled
+        (&base, &[(0.1, 0.11, Some(0.2))], false), // bounces past both
+        (&[(0.1, 0.2, Some(0.2))], &[(0.1, 0.15, Some(0.2))], true), // less than baseline's
+        (&[(0.1, 0.0, None)], &[(0.1, 0.0, Some(0.3))], true), // the baseline never settled
+        (&base, &[], false),
+    ];
+    for (index, (baseline, verify, accepted)) in rows.into_iter().enumerate() {
+        check!(
+            acceptance.accepts(&criterion, &summary(baseline), &summary(verify)) == accepted,
+            "row {index}"
+        );
+    }
+}
+
+/// A term reads and replaces its own gain only.
+#[test]
+fn terms_read_and_replace_their_gain() {
+    let gains = Gains {
+        p: 1.0,
+        i: 2.0,
+        d: 3.0,
+    };
+    check!(Term::P.get(gains) == 1.0);
+    check!(Term::D.get(gains) == 3.0);
+    check!(Term::P.with(gains, 9.0) == Gains { p: 9.0, ..gains });
+    check!(Term::D.with(gains, 9.0) == Gains { d: 9.0, ..gains });
 }
