@@ -95,6 +95,7 @@ cargo run --bin plot_flight -- flights/figure_eight.csv out.svg  # 3D path viz (
 cargo run --bin generate_figure_eight           # (re)write flights/figure_eight.csv; or: just gen-figure-eight
 cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight  # flown from the link, holds when it goes quiet; or: just fly-companion
 cargo run --bin link_pilot                      # plays the companion for fly-companion (instead of the bridge); or: just link-pilot
+cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight  # relay autotune of every loop (script arg, --host, --rate-p-scale, --stages all|rate|angle), prints the gains, lands; or: just fly-autotune
 cargo tarpaulin -o html                         # or: just cover  (writes tarpaulin-report.html; settings and exclusions in .tarpaulin.toml)
 cargo fmt --all
 cargo clippy --workspace --all-targets --all-features -- -D warnings  # or: just lint (adds rustdoc -D warnings)

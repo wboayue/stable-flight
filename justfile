@@ -68,6 +68,10 @@ fly-manual *ARGS:
 fly-companion *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight -- {{ARGS}}
 
+# Relay autotune of every PID loop in RealFlight: climbs to the hover point, tunes, prints the gains, lands; e.g. `just fly-autotune --rate-p-scale 10`
+fly-autotune *ARGS:
+    cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- {{ARGS}}
+
 # Plays the companion for `just fly-companion`: heartbeats, arm, a scripted waypoint flight; Ctrl-C to go quiet
 link-pilot *ARGS:
     cargo run --bin link_pilot -- {{ARGS}}
