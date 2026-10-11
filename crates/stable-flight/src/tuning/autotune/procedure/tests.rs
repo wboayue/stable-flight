@@ -204,17 +204,31 @@ fn relay_and_step_test_fail_on_an_abort() {
     }
 }
 
-/// The copter step test counts a step clipped for five 250 Hz ticks as valid: clipped time
-/// sums `dt` in `f32`, and five 4 ms ticks come to slightly over 20 ms.
+/// The copter step tests count a step clipped for their allowance in 250 Hz ticks as valid
+/// (rate loops 10, angle loops 5), summed in `f32` as the probe does (five 4 ms ticks come to
+/// slightly over 20 ms); one more tick is too many.
 #[test]
-fn five_clipped_ticks_stay_valid() {
-    let (mut procedure, plan) = step_test(1);
-    let saturated_s = (0..5).fold(0.0_f32, |sum, _| sum + 0.004);
-    check!(saturated_s > 0.02);
-    let down = Action::probe(ProbeConfig::Step(plan.step.reversed()));
+fn clipped_ticks_within_the_allowance_stay_valid() {
+    // (loop, ticks allowed)
+    let cases = [(TunedLoop::RollRate, 10), (TunedLoop::Roll, 5)];
+    for (target, ticks) in cases {
+        let plan = StepTestPlan::copter(target);
+        let clipped = |ticks| (0..ticks).fold(0.0_f32, |sum, _| sum + 0.004);
+        let up = Action::probe(ProbeConfig::Step(plan.step));
+        let down = Action::probe(ProbeConfig::Step(plan.step.reversed()));
 
-    procedure.next(Input::Start { gains: CURRENT });
-    check!(procedure.next(stepped(saturated_s, false)) == down);
+        let mut procedure = Procedure::new(Method::StepTest(plan));
+        procedure.next(Input::Start { gains: CURRENT });
+        check!(
+            procedure.next(stepped(clipped(ticks), false)) == down,
+            "{target:?}"
+        );
+        check!(
+            procedure.next(stepped(clipped(ticks + 1), false)) == down,
+            "{target:?}: reruns"
+        );
+        check!(procedure.next(stepped(0.0, false)) == up, "{target:?}");
+    }
 }
 
 /// A relay or a step test never flies a candidate; a breach reported to one fails it.

@@ -273,10 +273,12 @@ pub struct StepTestPlan {
 impl StepTestPlan {
     /// The copter defaults for `target`: three pairs of [`COPTER_RATE_STEP`] (rate loops) or
     /// [`COPTER_ANGLE_STEP`] (angle and heading loops) from [`COPTER_STEP_SETTLE`], allowing
-    /// 5 ticks of clipping at 250 Hz, 3 clipped steps in a row, and 10 stalled steps in a row
-    /// (RealFlight's proxy has frozen for 100 ms dozens of times a run). The allowance is 22 ms,
-    /// half a tick past 20: clipped time sums `dt` in `f32`, and five 4 ms ticks come to
-    /// slightly over 0.02.
+    /// 3 clipped steps in a row and 10 stalled steps in a row (RealFlight's proxy has frozen
+    /// for 100 ms dozens of times a run). A step may clip for 10 ticks at 250 Hz on a rate loop
+    /// and 5 on an angle loop, each half a tick clear of `f32` rounding (clipped time sums `dt`;
+    /// five 4 ms ticks come to slightly over 0.02). Above P 1, a 1 rad/s rate step asks for
+    /// more than full moment until the rate catches up: a real limit, not a bad response, and
+    /// tuned rate loops reach P 1.3 on QuadCopterX.
     ///
     /// # Examples
     ///
@@ -287,16 +289,16 @@ impl StepTestPlan {
     /// assert_eq!(StepTestPlan::copter(TunedLoop::Roll).step, COPTER_ANGLE_STEP);
     /// ```
     pub fn copter(target: TunedLoop) -> Self {
-        let step = if target.is_rate() {
-            COPTER_RATE_STEP
+        let (step, max_saturated_s) = if target.is_rate() {
+            (COPTER_RATE_STEP, 0.042)
         } else {
-            COPTER_ANGLE_STEP
+            (COPTER_ANGLE_STEP, 0.022)
         };
         Self {
             step,
             pairs: 3,
             settle: COPTER_STEP_SETTLE,
-            max_saturated_s: 0.022,
+            max_saturated_s,
             max_invalid: 3,
             max_stalled: 10,
         }
@@ -430,12 +432,9 @@ impl SearchPlan {
     /// [`Criterion::Overshoot`] at ArduPilot's default aggressiveness (0.1: overshoot 0.05,
     /// bounce-back 0.1) in [0.1, 3]. Steps of [`COPTER_RATE_STEP`], two pairs for the baseline
     /// and the verify; a bracket point passes on two pairs in a row; brackets of `× 1.3`
-    /// bisected to 10%, a 0.9 margin.
-    ///
-    /// A step may clip for 10 ticks (42 ms, half a tick clear of `f32` rounding): above P 1, a
-    /// 1 rad/s step asks for more than full moment until the rate catches up, a real limit
-    /// rather than a bad response. With 5 ticks, clipping rather than overshoot capped P on
-    /// QuadCopterX; a 0.5 rad/s step instead doubled the noise relative to the step (#304).
+    /// bisected to 10%, a 0.9 margin. Steps clip for up to 10 ticks ([`StepTestPlan::copter`]):
+    /// with 5, clipping rather than overshoot capped P on QuadCopterX; a 0.5 rad/s step instead
+    /// doubled the noise relative to the step (#304).
     ///
     /// ArduPilot's D search (largest D before bounce-back) doesn't bound D on closed-loop
     /// steps: with the rate I, overshoot decays without falling back, so D climbs until the
@@ -459,7 +458,6 @@ impl SearchPlan {
             },
             test: StepTestPlan {
                 pairs: 2,
-                max_saturated_s: 0.042,
                 ..StepTestPlan::copter(TunedLoop::RollRate)
             },
             confirm: 2,
