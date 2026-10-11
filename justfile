@@ -68,7 +68,7 @@ fly-manual *ARGS:
 fly-companion *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight -- {{ARGS}}
 
-# Relay autotune of the rate loops in RealFlight: climbs to the hover point, tunes, prints the gains, lands; e.g. `just fly-autotune --rate-p-scale 10`
+# Autotune of the rate and angle loops in RealFlight: climbs to the hover point, tunes, prints the gains, lands; e.g. `just fly-autotune --step-test`
 fly-autotune *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- {{ARGS}}
 

@@ -61,17 +61,18 @@ pub const COPTER_ANGLE_RELAY: RelayConfig = RelayConfig {
     timeout_s: 30.0,
 };
 
-/// The loops [`StagePlan::copter_sequence`] tunes: roll and pitch rate, the loops a bad start
-/// breaks. Flights on QuadCopterX (#295) left the rest out:
+/// The loops [`StagePlan::copter_sequence`] tunes by relay: roll and pitch rate, the loops a
+/// bad start breaks. Flights on QuadCopterX (#295) left the rest out:
 ///
 /// - Yaw rate: the relay can't measure it within the yaw authority the mixer leaves at hover
 ///   (#296).
 /// - Roll and pitch angle: the relay measures a high ultimate gain (about 60: an integrator
 ///   around a fast rate loop), and the rule's P oscillates once a few degrees of error saturate
-///   the rate setpoint and the moments. Step-response tuning (phase 2) sees the saturation.
+///   the rate setpoint and the moments. [`StagePlan::copter_search`] tunes them by step
+///   response instead, which sees the saturation.
 /// - Heading: both of the above.
 ///
-/// Their stages still run when planned explicitly (`StagePlan::copter`).
+/// Their relay stages still run when planned explicitly (`StagePlan::copter`).
 pub const COPTER_SEQUENCE: [TunedLoop; 2] = [TunedLoop::RollRate, TunedLoop::PitchRate];
 
 /// One stage of an autotune: which loop, and the method that tunes it.
@@ -132,6 +133,36 @@ impl StagePlan {
             target,
             method: Method::Search(SearchPlan::copter_rate()),
         })
+    }
+
+    /// The copter step-response tune: [`copter_rate_search`](Self::copter_rate_search), then
+    /// roll and pitch angle by [`SearchPlan::copter_angle`], so the angle search flies on the
+    /// tuned rate loops.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::TunedLoop;
+    /// use stable_flight::tuning::autotune::StagePlan;
+    ///
+    /// let targets = StagePlan::copter_search().map(|stage| stage.target);
+    /// assert_eq!(
+    ///     targets,
+    ///     [TunedLoop::RollRate, TunedLoop::PitchRate, TunedLoop::Roll, TunedLoop::Pitch]
+    /// );
+    /// ```
+    pub fn copter_search() -> [Self; 4] {
+        let [roll_rate, pitch_rate] = Self::copter_rate_search();
+        let angle = |target| Self {
+            target,
+            method: Method::Search(SearchPlan::copter_angle()),
+        };
+        [
+            roll_rate,
+            pitch_rate,
+            angle(TunedLoop::Roll),
+            angle(TunedLoop::Pitch),
+        ]
     }
 }
 
@@ -198,6 +229,21 @@ pub const COPTER_ANGLE_STEP: StepConfig = StepConfig {
     duration_s: 1.5,
     settle_band: 0.1,
     filter_hz: 20.0,
+};
+
+/// A copter rate search's step: [`COPTER_RATE_STEP`] at half the size (0.5 rad/s). At 1 rad/s,
+/// QuadCopterX's rate P above about 1 clipped the moment past the allowance, so clipping rather
+/// than overshoot capped the search (#304); at 0.5 rad/s P can reach about 2.
+pub const COPTER_RATE_SEARCH_STEP: StepConfig = StepConfig {
+    amplitude: 0.5,
+    ..COPTER_RATE_STEP
+};
+
+/// A copter angle search's step: [`COPTER_ANGLE_STEP`] at half the size (5°). At 10°, an angle
+/// P of about 6 asks the tuned rate loop (P about 1) for a full moment; at 5°, about 12.
+pub const COPTER_ANGLE_SEARCH_STEP: StepConfig = StepConfig {
+    amplitude: 0.0873,
+    ..COPTER_ANGLE_STEP
 };
 
 /// Level before each copter step: within 2.5° and 0.1 rad/s for 0.5 s (ArduPilot's
@@ -379,8 +425,8 @@ impl SearchPlan {
     /// The copter defaults for a rate loop's P: a [`RelayPlan::copter`] relay (Tyreus–Luyben
     /// PD, so it sets D and seeds P; I keeps its gain) capping P at `0.6 · Ku`; then
     /// [`Criterion::Overshoot`] at ArduPilot's default aggressiveness (0.1: overshoot 0.05,
-    /// bounce-back 0.1) in [0.1, 3]. Two pairs of [`COPTER_RATE_STEP`] for the baseline and
-    /// the verify, brackets of `× 1.3` bisected to 10%, a 0.9 margin.
+    /// bounce-back 0.1) in [0.1, 3]. Steps of [`COPTER_RATE_SEARCH_STEP`], two pairs for the
+    /// baseline and the verify; brackets of `× 1.3` bisected to 10%, a 0.9 margin.
     ///
     /// ArduPilot's D search (largest D before bounce-back) doesn't bound D on closed-loop
     /// steps: with the rate I, overshoot decays without falling back, so D climbs until the
@@ -403,6 +449,7 @@ impl SearchPlan {
                 max_bounce_back: 0.1,
             },
             test: StepTestPlan {
+                step: COPTER_RATE_SEARCH_STEP,
                 pairs: 2,
                 ..StepTestPlan::copter(TunedLoop::RollRate)
             },
@@ -416,6 +463,39 @@ impl SearchPlan {
                 ceiling: 0.6,
             }),
             acceptance: Acceptance::default(),
+        }
+    }
+
+    /// The copter defaults for a roll or pitch angle loop's P (ArduPilot's angle-P stage): no
+    /// relay (an angle loop's `Ku` is high, about 60 on QuadCopterX, so `0.6 · Ku` caps
+    /// nothing), from the start gains in [1, 15]; overshoot and bounce-back at most 0.05
+    /// (ArduPilot's aggressiveness halved, as for its angle P). Bounce-back is the overshoot
+    /// above where the response levels off, so it counts even when a disturbance holds the
+    /// response short of the step (about 8% on QuadCopterX). Steps of
+    /// [`COPTER_ANGLE_SEARCH_STEP`]; otherwise as [`copter_rate`](Self::copter_rate).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::tuning::autotune::SearchPlan;
+    ///
+    /// assert!(SearchPlan::copter_angle().relay.is_none());
+    /// ```
+    pub fn copter_angle() -> Self {
+        Self {
+            criterion: Criterion::Overshoot {
+                max_overshoot: 0.05,
+                max_bounce_back: 0.05,
+            },
+            test: StepTestPlan {
+                step: COPTER_ANGLE_SEARCH_STEP,
+                pairs: 2,
+                ..StepTestPlan::copter(TunedLoop::Roll)
+            },
+            min: 1.0,
+            max: 15.0,
+            relay: None,
+            ..Self::copter_rate()
         }
     }
 

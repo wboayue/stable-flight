@@ -83,20 +83,20 @@ cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- f
 cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight
 cargo run --bin link_pilot
 
-# Relay autotune (#149): climbs to the hover point, tunes roll and pitch rate, logs each stage
-# (Ku, Tu, gains), prints the tuned gains as an airframes.rs snippet, lands, and disarms.
-# --rate-p-scale starts from bad rate gains; --stages angle|all adds the angle and heading
-# stages (opt-in: their gains oscillated on QuadCopterX); --record run.csv writes every tick (rates, angles, moments) for diagnosis.
+# Autotune (#149, #298): climbs to the hover point, tunes roll and pitch rate, then roll and
+# pitch angle, by step response (per rate loop a relay sets D; P is searched, verified against
+# the start, and kept only if no worse), logs each judgment and baseline vs verify, prints the
+# tuned gains as an airframes.rs snippet, lands, and disarms.
 # --step-test appends step tests of roll/pitch rate and angle and logs a response summary per
-# loop (--stages none --step-test: the hand tune; --stages rate --step-test: the relay tune).
-# --stages search tunes roll and pitch rate by step response (#298): relay D, searched P,
-# verified against the start and kept only if no worse.
+# loop (--stages none --step-test: the hand tune). --stages rate runs the relay autotune instead
+# (--stages angle|all adds relay angle and heading stages, whose gains oscillated on
+# QuadCopterX); --rate-p-scale starts from bad rate gains; --record run.csv writes every tick
+# (rates, angles, moments) for diagnosis.
 # RUST_LOG=info,copter_autotune_realflight=debug logs each stage's status every second and each step.
 # Or: just fly-autotune
-cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight
-cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --rate-p-scale 10
+cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --step-test
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages none --step-test
-cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages search --step-test
+cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages rate --rate-p-scale 10
 
 # Joystick (or --script) flight recording raw SimulatorState and channels to CSV (frame checks)
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv

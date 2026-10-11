@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
+use approx::assert_relative_eq;
 use assert2::{assert, check};
 
 use super::*;
@@ -992,4 +993,76 @@ fn terms_read_and_replace_their_gain() {
     check!(Term::D.get(gains) == 3.0);
     check!(Term::P.with(gains, 9.0) == Gains { p: 9.0, ..gains });
     check!(Term::D.with(gains, 9.0) == Gains { d: 9.0, ..gains });
+}
+
+/// The full copter search, on axes with delay and noise: rate loops first, then angle; each
+/// stage keeps a result no worse than its baseline, and the angle loops settle faster on a
+/// higher P within the plan's bounds.
+#[test]
+fn copter_search_tunes_rate_then_angle() {
+    let params = PlantParams {
+        delay_s: 0.02,
+        noise: 0.02,
+        ..PlantParams::rate_axis()
+    };
+    let (mut flight_loop, _controls) = hovering_on(1.0, params);
+    let start = *flight_loop.stabilizer().config();
+    let plan = StagePlan::copter_search();
+    let mut autotune = started(&flight_loop, &plan);
+
+    let events = run(&mut flight_loop, &mut autotune, 600.0, |_| {});
+
+    check!(events.last() == Some(&AutotuneEvent::Complete));
+    let done: Vec<_> = events
+        .iter()
+        .filter_map(|event| match *event {
+            AutotuneEvent::StageDone {
+                target,
+                gains,
+                outcome,
+                steps: Some(verify),
+                baseline: Some(baseline),
+            } => Some((target, gains, outcome, verify, baseline)),
+            _ => None,
+        })
+        .collect();
+    let targets: Vec<_> = done.iter().map(|(target, ..)| *target).collect();
+    check!(targets == plan.map(|stage| stage.target));
+    let angle = SearchPlan::copter_angle();
+    for (target, gains, outcome, verify, baseline) in done {
+        check!(outcome == Outcome::Tuned, "{target:?}");
+        if target.is_rate() {
+            continue;
+        }
+        check!(gains.p > target.gains(&start).p, "{target:?}");
+        check!((angle.min..=angle.max).contains(&gains.p), "{target:?}");
+        check!(gains.d == target.gains(&start).d, "{target:?}: D kept");
+        let (Some(verify_s), Some(baseline_s)) = (
+            verify.settling_time_s.mean(),
+            baseline.settling_time_s.mean(),
+        ) else {
+            panic!("{target:?}: unsettled");
+        };
+        check!(verify_s < baseline_s, "{target:?}");
+    }
+}
+
+/// A search steps at half the step test's size, so its candidates' moment demand stays below
+/// full scale (#304); the angle search runs without a relay.
+#[test]
+fn search_steps_are_half_the_step_tests() {
+    let rate = SearchPlan::copter_rate().test.step;
+    let angle = SearchPlan::copter_angle().test.step;
+    check!(rate == COPTER_RATE_SEARCH_STEP);
+    check!(angle == COPTER_ANGLE_SEARCH_STEP);
+    assert_relative_eq!(rate.amplitude, COPTER_RATE_STEP.amplitude / 2.0);
+    assert_relative_eq!(
+        angle.amplitude,
+        COPTER_ANGLE_STEP.amplitude / 2.0,
+        epsilon = 1e-3
+    );
+    check!(rate.duration_s == COPTER_RATE_STEP.duration_s);
+    check!(angle.duration_s == COPTER_ANGLE_STEP.duration_s);
+    check!(SearchPlan::copter_angle().validate() == Ok(()));
+    check!(SearchPlan::copter_angle().relay.is_none());
 }

@@ -9,15 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`copter-autotune-realflight` example** (`just fly-autotune`): the core relay autotune
-  (#149) on QuadCopterX. Climbs to the hover point, tunes the roll and pitch rate loops, logs each stage's
-  measurement and gains, prints the tuned gains as an `airframes.rs` snippet, then lands and
-  disarms. `--rate-p-scale` starts from bad rate gains; `--stages angle|all` adds the opt-in angle and heading stages; `--record`
-  writes every tick to CSV for diagnosing a run. `--step-test` (#298) appends step tests of
-  roll and pitch rate and angle, logging each step's response and a summary per loop
-  (`--stages none --step-test` measures the hand tune); steps during a stall run again.
-  `--stages search` tunes roll and pitch rate by step-response search (relay D, searched P,
-  kept only if no worse than the start), logging each judgment.
+- **`copter-autotune-realflight` example** (`just fly-autotune`): the core autotune (#149,
+  #298) on QuadCopterX. Climbs to the hover point, tunes roll and pitch rate, then roll and
+  pitch angle, by step-response search (`--stages search`, the default: relay D, searched P,
+  kept only if no worse than the start), logs each judgment and baseline vs verify, prints the
+  tuned gains as an `airframes.rs` snippet, then lands and disarms. `--stages rate` runs the
+  relay autotune instead (`angle|all` add relay angle and heading stages); `--rate-p-scale`
+  starts from bad rate gains; `--record` writes every tick to CSV for diagnosing a run.
+  `--step-test` appends step tests of roll and pitch rate and angle, logging each step's
+  response and a summary per loop (`--stages none --step-test` measures the hand tune). A step
+  during which the runner skipped more than two ticks at once runs again.
 
 ## [0.1.0] - 2026-10-10
 

@@ -34,8 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Method::Search(SearchPlan)` finds the largest gain of one `Term` whose ± step pairs meet a
   `Criterion`, by bracketing and bisection from gains a relay may seed and cap
   (`SearchRelay`), and keeps it only if its verify flies no worse than a baseline on the start
-  gains (`Acceptance`); `StagePlan::copter_rate_search` tunes roll and pitch rate this way
-  (relay PD sets D, step overshoot sets P under `0.6·Ku`); candidate gains fly only during
+  gains (`Acceptance`); `StagePlan::copter_search` tunes roll and pitch rate this way
+  (`copter_rate_search`: relay PD sets D, step overshoot sets P under `0.6·Ku`), then roll and
+  pitch angle P (`SearchPlan::copter_angle`), with search steps half the step test's
+  (`COPTER_RATE_SEARCH_STEP`, `COPTER_ANGLE_SEARCH_STEP`); candidate gains fly only during
   their step; presets
   `COPTER_RATE_STEP`, `COPTER_ANGLE_STEP`, `COPTER_STEP_SETTLE`; copter defaults in `StagePlan::copter_sequence`: roll and pitch rate,
   PD keeping each loop's I; the angle, heading, and yaw-rate stages are opt-in, see
