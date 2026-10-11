@@ -1,7 +1,7 @@
 //! Autotune stages hosted by the [`CopterStabilizer`]: one loop's output replaced by a
-//! [`RelayTuner`] (#149). See the "Tuning" section on [`CopterStabilizer`].
+//! [`Probe`] (#149, #298). See the "Tuning" section on [`CopterStabilizer`].
 
-use crate::tuning::{RelayConfig, RelayStatus, RelayTuner, Tunable, TuningStatus};
+use crate::tuning::{Probe, ProbeConfig, ProbeStatus, Tunable};
 
 use super::{CopterStabilizer, CopterStabilizerConfig};
 use crate::controllers::Gains;
@@ -12,17 +12,17 @@ mod tests;
 /// A loop of the [`CopterStabilizer`] that a tuning stage can replace.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TunedLoop {
-    /// Roll rate loop: the relay sets the roll moment.
+    /// Roll rate loop: a probe sets the roll moment.
     RollRate,
-    /// Pitch rate loop: the relay sets the pitch moment.
+    /// Pitch rate loop: a probe sets the pitch moment.
     PitchRate,
-    /// Yaw rate loop: the relay sets the yaw moment.
+    /// Yaw rate loop: a probe sets the yaw moment.
     YawRate,
-    /// Roll angle loop: the relay sets the roll rate setpoint, in rad/s.
+    /// Roll angle loop: a probe sets the roll rate setpoint, in rad/s.
     Roll,
-    /// Pitch angle loop: the relay sets the pitch rate setpoint, in rad/s.
+    /// Pitch angle loop: a probe sets the pitch rate setpoint, in rad/s.
     Pitch,
-    /// Heading loop: the relay sets the yaw rate setpoint, in rad/s.
+    /// Heading loop: a probe sets the yaw rate setpoint, in rad/s.
     Heading,
 }
 
@@ -79,27 +79,27 @@ impl TunedLoop {
     }
 }
 
-/// A tuning stage: the loop under test and its tuner.
+/// A tuning stage: the loop under test and its probe.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Stage {
     pub(super) target: TunedLoop,
-    pub(super) tuner: RelayTuner,
+    pub(super) probe: Probe,
     /// The loop has been handed back (finished, interrupted, or stopped): no more override.
     handed_back: bool,
     interrupted: bool,
 }
 
 impl Stage {
-    /// Whether the relay still flies the loop.
+    /// Whether the probe still flies the loop.
     pub(super) fn is_running(&self) -> bool {
         !self.handed_back
     }
 
-    fn status(&self) -> TuningStatus {
+    fn status(&self) -> ProbeStatus {
         if self.interrupted {
-            TuningStatus::Interrupted
+            ProbeStatus::Interrupted
         } else {
-            self.tuner.status().into()
+            self.probe.status()
         }
     }
 }
@@ -107,9 +107,9 @@ impl Stage {
 impl Tunable for CopterStabilizer {
     type Target = TunedLoop;
 
-    /// Starts relay tuning on `target`: from the next [`stabilize`](crate::Stabilizer::stabilize),
-    /// a [`RelayTuner`] with `config` sets that loop's output (see the "Tuning" section on
-    /// [`CopterStabilizer`]). Its bias starts at the loop's current I term (its trim).
+    /// Starts a probe on `target`: from the next [`stabilize`](crate::Stabilizer::stabilize),
+    /// a [`Probe`] with `config` sets that loop's output (see the "Tuning" section on
+    /// [`CopterStabilizer`]). It starts from the loop's current I term (its trim).
     ///
     /// # Examples
     ///
@@ -117,54 +117,41 @@ impl Tunable for CopterStabilizer {
     /// use stable_flight::stabilizers::copter::{
     ///     CopterStabilizer, CopterStabilizerConfig, TunedLoop,
     /// };
-    /// use stable_flight::tuning::{RelayConfig, Tunable, TuningStatus};
+    /// use stable_flight::tuning::autotune::COPTER_RATE_RELAY;
+    /// use stable_flight::tuning::{ProbeConfig, ProbeStatus, Tunable};
     /// use stable_flight::{RateSetpoint, Setpoint, Stabilizer, VehicleState};
     ///
     /// let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
-    /// let relay = RelayConfig {
-    ///     initial_relay: 0.05,
-    ///     max_relay: 0.3,
-    ///     relay_step: 1.5,
-    ///     hysteresis: 0.002,
-    ///     min_cycle_amplitude: 0.05,
-    ///     max_cycle_amplitude: 2.0,
-    ///     max_half_cycle_s: 0.3,
-    ///     max_bias: 0.3,
-    ///     bias_gain: 0.2,
-    ///     cycles: 4,
-    ///     tolerance: 0.1,
-    ///     timeout_s: 20.0,
-    /// };
-    /// stabilizer.start_tuning(TunedLoop::RollRate, relay);
+    /// stabilizer.start_probe(TunedLoop::RollRate, ProbeConfig::Relay(COPTER_RATE_RELAY));
     ///
     /// // Rolling right at 0.5 rad/s with a zero rate setpoint: the relay pushes left.
     /// let mut state = VehicleState::default();
     /// state.angular_velocity_radps.x = 0.5;
     /// let output = stabilizer.stabilize(0.004, &Setpoint::Rate(RateSetpoint::default()), &state);
-    /// assert_eq!(output.moments.x, -0.05);
+    /// assert_eq!(output.moments.x, -COPTER_RATE_RELAY.initial_relay);
     ///
-    /// assert!(matches!(stabilizer.tuning(), Some((TunedLoop::RollRate, TuningStatus::Running { .. }))));
-    /// stabilizer.stop_tuning(); // hands the roll rate loop back
-    /// assert!(stabilizer.tuning().is_none());
+    /// assert!(matches!(stabilizer.probe(), Some((TunedLoop::RollRate, ProbeStatus::Running(_)))));
+    /// stabilizer.stop_probe(); // hands the roll rate loop back
+    /// assert!(stabilizer.probe().is_none());
     /// ```
-    fn start_tuning(&mut self, target: TunedLoop, config: RelayConfig) {
-        self.stop_tuning();
+    fn start_probe(&mut self, target: TunedLoop, config: ProbeConfig) {
+        self.stop_probe();
         let trim = self.integral_term(target);
         self.stage = Some(Stage {
             target,
-            tuner: RelayTuner::new(config, trim),
+            probe: Probe::new(config, trim),
             handed_back: false,
             interrupted: false,
         });
     }
 
-    fn tuning(&self) -> Option<(TunedLoop, TuningStatus)> {
+    fn probe(&self) -> Option<(TunedLoop, ProbeStatus)> {
         self.stage
             .as_ref()
             .map(|stage| (stage.target, stage.status()))
     }
 
-    fn stop_tuning(&mut self) -> Option<(TunedLoop, TuningStatus)> {
+    fn stop_probe(&mut self) -> Option<(TunedLoop, ProbeStatus)> {
         self.hand_back();
         self.stage
             .take()
@@ -173,8 +160,8 @@ impl Tunable for CopterStabilizer {
 }
 
 impl CopterStabilizer {
-    /// Hands a running stage's loop back to its controller: the loop restarts with the tuner's
-    /// bias as its I term and no derivative history, so the trim carries over. A no-op when no
+    /// Hands a running stage's loop back to its controller: the loop restarts with the probe's
+    /// trim as its I term and no derivative history, so the trim carries over. A no-op when no
     /// stage is running.
     pub(super) fn hand_back(&mut self) {
         let Some(stage) = &mut self.stage else {
@@ -184,7 +171,7 @@ impl CopterStabilizer {
             return;
         }
         stage.handed_back = true;
-        let (location, trim) = (stage.target.location(), stage.tuner.bias());
+        let (location, trim) = (stage.target.location(), stage.probe.trim());
         let config = &self.config;
         match location {
             Location::Rate(axis) => self.body_rate.hand_back(&config.body_rate, axis, trim),
@@ -214,14 +201,14 @@ impl CopterStabilizer {
             .map(|stage| stage.target.location())
     }
 
-    /// Steps the running stage with its loop's `error` and returns the relay output (0 when no
-    /// stage runs). Hands the loop back once the tuner finishes.
+    /// Steps the running stage with its loop's `error` and returns the probe's output (0 when
+    /// no stage runs). Hands the loop back once the probe finishes.
     pub(super) fn step_stage(&mut self, dt: f32, error: f32) -> f32 {
         let Some(stage) = self.stage.as_mut().filter(|stage| stage.is_running()) else {
             return 0.0;
         };
-        let output = stage.tuner.step(dt, error);
-        if !matches!(stage.tuner.status(), RelayStatus::Running { .. }) {
+        let output = stage.probe.step(dt, error);
+        if !stage.probe.status().is_running() {
             self.hand_back();
         }
         output

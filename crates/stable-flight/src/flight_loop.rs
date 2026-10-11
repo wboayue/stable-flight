@@ -9,7 +9,7 @@ use core::time::Duration;
 
 use crate::controllers::InvalidConfig;
 use crate::params::{ParamError, Params};
-use crate::tuning::{RelayConfig, Tunable, TuningStatus};
+use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
 use crate::{
     ActuatorCommand, AttitudeSetpoint, Commander, Configurable, ControlOutput, Guidance, Mixer,
     Saturation, Setpoint, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle, VehicleState,
@@ -380,24 +380,24 @@ impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T>
 where
     S: Tunable,
 {
-    /// Starts relay tuning on one of the stabilizer's loops, from the next tick
-    /// ([`Tunable::start_tuning`]).
+    /// Starts a probe on one of the stabilizer's loops, from the next tick
+    /// ([`Tunable::start_probe`]).
     ///
     /// # Panics
     ///
-    /// If `config` is invalid ([`RelayConfig::validate`]).
-    pub fn start_tuning(&mut self, target: S::Target, config: RelayConfig) {
-        self.stabilizer.start_tuning(target, config);
+    /// If `config` is invalid ([`ProbeConfig::validate`]).
+    pub fn start_probe(&mut self, target: S::Target, config: ProbeConfig) {
+        self.stabilizer.start_probe(target, config);
     }
 
-    /// The stabilizer's current stage, if any ([`Tunable::tuning`]).
-    pub fn tuning(&self) -> Option<(S::Target, TuningStatus)> {
-        self.stabilizer.tuning()
+    /// The stabilizer's current probe, if any ([`Tunable::probe`]).
+    pub fn probe(&self) -> Option<(S::Target, ProbeStatus)> {
+        self.stabilizer.probe()
     }
 
-    /// Ends the stage and hands its loop back ([`Tunable::stop_tuning`]).
-    pub fn stop_tuning(&mut self) -> Option<(S::Target, TuningStatus)> {
-        self.stabilizer.stop_tuning()
+    /// Ends the probe and hands its loop back ([`Tunable::stop_probe`]).
+    pub fn stop_probe(&mut self) -> Option<(S::Target, ProbeStatus)> {
+        self.stabilizer.stop_probe()
     }
 }
 

@@ -15,21 +15,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aborts); `gains_from_ultimate` turns the result into
   `Gains` by Tyreus–Luyben or no-overshoot Ziegler–Nichols, as PID, PI, PD, or P
   (`ControllerForm::has_integral`/`has_derivative`).
-- **Autotune stages** (#149): the `Tunable` trait (`start_tuning`, `tuning`, `stop_tuning`),
-  implemented by `CopterStabilizer` on a `TunedLoop` (roll/pitch/yaw rate, roll/pitch angle,
-  or heading), hands one loop to a `RelayTuner` seeded with the loop's trim; `TuningStatus`
-  reports it; the loop is handed back with the measured trim as its I term when the tuner
-  finishes, on `stop_tuning`, or when a rate tick interrupts an angle or heading stage.
-  `prime` ends a stage. `FlightLoop` forwards the three calls, and adds `armed()`.
-  `TunedLoop::gains`/`gains_mut` read or retune a loop's gains in a `CopterStabilizerConfig`.
-- **`tuning::autotune::Autotune`** (#149): sequences stages between ticks (`StagePlan`,
-  copter defaults in `StagePlan::copter_sequence`: roll and pitch rate, PD keeping each loop's
-  I; the angle, heading, and yaw-rate stages are opt-in, see `COPTER_SEQUENCE`), waits for the vehicle to
-  settle, aborts
-  on an `Envelope` breach, commits each stage's gains through `set_stabilizer_config`, and
-  reverts to the starting config on disarm; reports `AutotuneEvent`s for logging. Works with
-  any `CopterTunable` stabilizer (`Tunable` on `TunedLoop` + `Configurable`). `FlightLoop`'s
-  accessors and config setters no longer require the pipeline bounds.
+- **Autotune probes** (#149, #298): `Probe` excites and measures one loop inside the tick
+  (`ProbeConfig::Relay`: a `RelayTuner` seeded with the loop's trim), reporting
+  `ProbeStatus` and, when done, a `Measurement`. The `Tunable` trait (`start_probe`, `probe`,
+  `stop_probe`), implemented by `CopterStabilizer` on a `TunedLoop` (roll/pitch/yaw rate,
+  roll/pitch angle, or heading), hosts one; the loop is handed back with the measured trim as
+  its I term when the probe finishes, on `stop_probe`, or when a rate tick interrupts an angle
+  or heading probe. `prime` ends a probe. `FlightLoop` forwards the three calls, and adds
+  `armed()`. `TunedLoop::gains`/`gains_mut` read or retune a loop's gains in a
+  `CopterStabilizerConfig`.
+- **`tuning::autotune::Autotune`** (#149, #298): executes a plan of stages between ticks
+  (`StagePlan`: a `TunedLoop` and a `Method`; `Method::Relay(RelayPlan)` measures once and
+  sets the rule's gains; copter defaults in `StagePlan::copter_sequence`: roll and pitch rate,
+  PD keeping each loop's I; the angle, heading, and yaw-rate stages are opt-in, see
+  `COPTER_SEQUENCE`). Each stage's decisions run as a pure procedure; the executor settles
+  before each probe, aborts on an `Envelope` breach (back to the last committed config),
+  commits each stage's gains through `set_stabilizer_config`, and reverts to the starting
+  config on disarm; reports `AutotuneEvent`s for logging (`StageStarted`, `Measured`,
+  `StageDone`, ...). Works with any `CopterTunable` stabilizer (`Tunable` on `TunedLoop` +
+  `Configurable`). `FlightLoop`'s accessors and config setters no longer require the pipeline
+  bounds.
 
 ### Changed
 

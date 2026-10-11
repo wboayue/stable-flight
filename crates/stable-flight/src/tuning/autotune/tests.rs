@@ -7,6 +7,7 @@ use assert2::{assert, check};
 use super::*;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::stabilizers::copter::CopterStabilizer;
+use crate::tuning::RelayAbort;
 use crate::tuning::plant::{Axes, PlantParams};
 use crate::{
     AbsoluteAttitudeCommand, Actuator, ActuatorCommand, Command, Commander, ControlInput,
@@ -162,6 +163,17 @@ fn run(
     events
 }
 
+/// A copter relay stage on `target` with `relay` in place of the default.
+fn relay_stage(target: TunedLoop, relay: RelayConfig) -> StagePlan {
+    StagePlan {
+        target,
+        method: Method::Relay(RelayPlan {
+            relay,
+            ..RelayPlan::copter(target)
+        }),
+    }
+}
+
 fn started(flight_loop: &TestLoop, plan: &[StagePlan]) -> Autotune {
     let mut autotune = Autotune::new(plan, Envelope::default()).expect("valid plan");
     autotune.start(flight_loop).expect("armed and idle");
@@ -199,71 +211,40 @@ fn full_run_tunes_every_loop_in_order() {
     let mut index = 0;
     for target in EVERY_LOOP {
         check!(events.get(index) == Some(&AutotuneEvent::StageStarted(target)));
-        let Some(&AutotuneEvent::StageDone {
-            target: done,
-            result,
-            gains,
+        let Some(&AutotuneEvent::Measured {
+            target: measured,
+            measurement: Measurement::Relay(result),
         }) = events.get(index + 1)
         else {
             panic!(
-                "{target:?}: expected StageDone, got {:?}",
+                "{target:?}: expected Measured, got {:?}",
                 events.get(index + 1)
+            );
+        };
+        check!(measured == target);
+        let Some(&AutotuneEvent::StageDone {
+            target: done,
+            gains,
+        }) = events.get(index + 2)
+        else {
+            panic!(
+                "{target:?}: expected StageDone, got {:?}",
+                events.get(index + 2)
             );
         };
         check!(done == target);
         // PD: the rule's P and D; the integral keeps the baseline's gain.
-        let plan = StagePlan::copter(target);
+        let plan = RelayPlan::copter(target);
         let rule = gains_from_ultimate(&result.point, plan.rule, plan.form);
         check!(gains.p == rule.p, "{target:?}");
         check!(gains.d == rule.d, "{target:?}");
         check!(gains.i == target.gains(&baseline).i, "{target:?}");
         *target.gains_mut(&mut expected) = gains;
-        index += 2;
+        index += 3;
     }
     check!(events.get(index) == Some(&AutotuneEvent::Complete));
     check!(events.len() == index + 1);
     check!(*flight_loop.stabilizer().config() == expected);
-}
-
-/// A stage commits the rule's gains for the terms its form tunes and keeps the current gains
-/// for the rest.
-#[test]
-fn a_stage_tunes_only_its_forms_terms() {
-    let plan = StagePlan::copter(TunedLoop::RollRate);
-    let result = RelayResult {
-        point: crate::tuning::UltimatePoint { ku: 2.0, tu_s: 0.1 },
-        relay: 0.2,
-        cycle_amplitude: 0.1,
-        bias: 0.0,
-    };
-    let current = Gains {
-        p: 9.0,
-        i: 8.0,
-        d: 7.0,
-    };
-    // (form, tunes I, tunes D)
-    let cases = [
-        (ControllerForm::Pid, true, true),
-        (ControllerForm::Pi, true, false),
-        (ControllerForm::Pd, false, true),
-        (ControllerForm::P, false, false),
-    ];
-    for (form, tunes_i, tunes_d) in cases {
-        let plan = StagePlan { form, ..plan };
-        let rule = gains_from_ultimate(&result.point, plan.rule, form);
-
-        let gains = tuned_gains(&plan, &result, current);
-
-        check!(gains.p == rule.p, "{form:?}");
-        check!(
-            gains.i == if tunes_i { rule.i } else { current.i },
-            "{form:?}"
-        );
-        check!(
-            gains.d == if tunes_d { rule.d } else { current.d },
-            "{form:?}"
-        );
-    }
 }
 
 /// The relay ignores the gains of the loop it measures: from rate P at 0.3× and 3× the sane
@@ -296,8 +277,8 @@ fn result_does_not_depend_on_the_starting_rate_gains() {
     }
 }
 
-/// Breaking the envelope mid-stage stops it and fails the run: the failing loop keeps its
-/// gains (the stage never committed), the earlier stage's stay committed.
+/// Breaking the envelope mid-stage stops it and fails the run: the config goes back to the
+/// last commit, so the failing loop keeps its gains and the earlier stage's stay committed.
 #[test]
 fn an_envelope_breach_ends_the_run_keeping_earlier_stages() {
     let plan = [
@@ -345,7 +326,7 @@ fn an_envelope_breach_ends_the_run_keeping_earlier_stages() {
             config.body_rate.pitch_gains == baseline.body_rate.pitch_gains,
             "{reason:?}"
         );
-        check!(flight_loop.tuning() == None, "{reason:?}");
+        check!(flight_loop.probe() == None, "{reason:?}");
     }
 }
 
@@ -381,7 +362,7 @@ fn disarm_reverts_until_complete() {
     check!(*flight_loop.stabilizer().config() == tuned);
 }
 
-/// A vehicle that never settles fails the run before any stage starts.
+/// A vehicle that never settles fails the run before the first probe.
 #[test]
 fn a_vehicle_that_never_settles_fails_before_the_first_stage() {
     let (mut flight_loop, controls) = hovering(1.0);
@@ -402,27 +383,31 @@ fn a_vehicle_that_never_settles_fails_before_the_first_stage() {
         target: TunedLoop::RollRate,
         reason: AutotuneAbort::NotSettled,
     };
-    check!(events == [failed]);
+    check!(events == [AutotuneEvent::StageStarted(TunedLoop::RollRate), failed]);
     check!(*flight_loop.stabilizer().config() == baseline);
 }
 
-/// A relay abort or an interrupt fails the stage; its loop keeps its gains.
+/// A probe abort or an interrupt fails the stage; its loop keeps its gains.
 #[test]
-fn relay_aborts_and_interrupts_fail_the_stage() {
-    let short = StagePlan {
-        relay: RelayConfig {
+fn probe_aborts_and_interrupts_fail_the_stage() {
+    let short = relay_stage(
+        TunedLoop::RollRate,
+        RelayConfig {
             timeout_s: 0.2,
             ..COPTER_RATE_RELAY
         },
-        ..StagePlan::copter(TunedLoop::RollRate)
-    };
+    );
     let acro = ControlInput::Rate(RateCommand {
         throttle: 0.5,
         ..Default::default()
     });
     // (plan, input once running, expected reason)
     let cases = [
-        (short, None, AutotuneAbort::Relay(RelayAbort::Timeout)),
+        (
+            short,
+            None,
+            AutotuneAbort::Probe(ProbeAbort::Relay(RelayAbort::Timeout)),
+        ),
         (
             StagePlan::copter(TunedLoop::Roll),
             Some(acro),
@@ -453,13 +438,13 @@ fn relay_aborts_and_interrupts_fail_the_stage() {
 #[test]
 fn new_and_start_reject_bad_input() {
     let stage = StagePlan::copter(TunedLoop::RollRate);
-    let bad_relay = StagePlan {
-        relay: RelayConfig {
+    let bad_relay = relay_stage(
+        TunedLoop::RollRate,
+        RelayConfig {
             cycles: 0,
             ..COPTER_RATE_RELAY
         },
-        ..stage
-    };
+    );
     let bad_envelope = Envelope {
         settle_tilt_rad: 1.0, // looser than max_tilt_rad
         ..Envelope::default()
