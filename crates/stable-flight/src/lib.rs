@@ -31,6 +31,7 @@ pub mod stabilizers;
 #[cfg(any(test, feature = "testing"))]
 pub mod testing;
 pub mod timing;
+pub mod tuning;
 
 use core::time::Duration;
 

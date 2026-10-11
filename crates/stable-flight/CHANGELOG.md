@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`tuning`:** building blocks for PID autotune (#149). `RelayTuner` measures a loop's
+  ultimate gain and period by relay feedback (hysteresis, relay ramp, adaptive bias for a
+  steady offset, timeout and amplitude aborts); `gains_from_ultimate` turns the result into
+  `Gains` by Tyreus–Luyben or no-overshoot Ziegler–Nichols, as PID, PI, PD, or P.
+
 ### Changed
 
 - **Breaking:** roll and pitch have separate gains in the rate and attitude loops (#289).
