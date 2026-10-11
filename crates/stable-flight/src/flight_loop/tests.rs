@@ -313,6 +313,69 @@ fn reprimes_on_each_arm_edge_only() {
     }
 }
 
+/// `armed()` reports the last tick's arm flag, false before the first tick.
+#[test]
+fn armed_follows_the_last_tick() {
+    let arms = [false, true, true, false, true];
+    let log = Log::default();
+    let mut flight_loop = recording_loop_with_arms(&log, &arms);
+    flight_loop.prime();
+    check!(!flight_loop.armed());
+
+    for (tick, &arm) in arms.iter().enumerate() {
+        flight_loop.step(Duration::from_millis(4));
+        check!(flight_loop.armed() == arm, "tick {tick}");
+    }
+}
+
+/// `stabilizer_mut()` reaches the stabilizer between ticks, e.g. to start a tuning stage that
+/// the next tick runs.
+#[test]
+fn stabilizer_mut_starts_a_tuning_stage_between_ticks() {
+    use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+    use crate::mixers::QuadCopterMixer;
+    use crate::stabilizers::copter::{
+        CopterStabilizer, CopterStabilizerConfig, TunedLoop, TuningStatus,
+    };
+    use crate::testing::{ConstantCommander, NullVehicle};
+    use crate::tuning::RelayConfig;
+
+    let mut flight_loop = FlightLoop::new(
+        ConstantCommander::new(Command::armed(ControlInput::default())),
+        NullVehicle::new(),
+        CopterGuidance::new(CopterGuidanceConfig::default()),
+        CopterStabilizer::new(CopterStabilizerConfig::default()),
+        QuadCopterMixer::default(),
+        (),
+    );
+    flight_loop.prime();
+    flight_loop.step(Duration::from_millis(4));
+
+    let relay = RelayConfig {
+        initial_relay: 0.05,
+        max_relay: 0.3,
+        relay_step: 1.5,
+        hysteresis: 0.002,
+        min_cycle_amplitude: 0.05,
+        max_cycle_amplitude: 2.0,
+        max_half_cycle_s: 0.3,
+        max_bias: 0.3,
+        cycles: 4,
+        tolerance: 0.1,
+        timeout_s: 20.0,
+    };
+    flight_loop
+        .stabilizer_mut()
+        .start_tuning(TunedLoop::YawRate, relay);
+    flight_loop.step(Duration::from_millis(4));
+
+    let tuning = flight_loop.stabilizer().tuning();
+    check!(matches!(
+        tuning,
+        Some((TunedLoop::YawRate, TuningStatus::Running { .. }))
+    ));
+}
+
 /// End to end with the copter pipeline: full throttle while disarmed leaves every motor at 0;
 /// arming spins them.
 #[test]

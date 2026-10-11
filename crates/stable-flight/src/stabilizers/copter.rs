@@ -30,6 +30,29 @@
 //! - [`Setpoint::Rate`]: rate loop only (acro); the idle attitude and heading loops are
 //!   cleared, so attitude flight resumes from fresh state.
 //! - [`Setpoint::Attitude`]: attitude and heading loops feeding the rate loop.
+//!
+//! # Tuning
+//!
+//! An autotune stage ([`CopterStabilizer::start_tuning`]) hands one loop to a
+//! [`RelayTuner`](crate::tuning::RelayTuner) (#149). Every controller still runs each tick;
+//! the stage replaces one value:
+//!
+//! | [`TunedLoop`] | Relay error | Replaces |
+//! |---|---|---|
+//! | `RollRate`, `PitchRate`, `YawRate` | desired − measured body rate | that axis's moment (±1) |
+//! | `Roll`, `Pitch` | saturated desired − estimated angle | that axis's rate setpoint (`max_rate_radps`) |
+//! | `Heading` | wrapped heading error | the yaw rate setpoint (`yaw.max_rate_radps`) |
+//!
+//! - **Rate stages** keep the angle loop around the tested axis, which keeps it near level, so
+//!   the relay measures the rate loop with the angle loop's `(s + Kp)/s` wrapped around it: a
+//!   few degrees of phase at the rate loop's ultimate frequency.
+//! - **Handoff:** when the tuner finishes, on [`stop_tuning`](CopterStabilizer::stop_tuning),
+//!   or when a [`Setpoint::Rate`] tick idles the angle or heading loop under test
+//!   ([`TuningStatus::Interrupted`]), the loop restarts with the tuner's bias as its I term and
+//!   no derivative history: the measured trim carries over, and a retune with the tuned gains
+//!   rescales it like any other (`architecture.md#config-ownership`). On an interrupt the rate
+//!   tick then clears the idle angle loops (#70), so that trim is dropped.
+//! - The stage is runtime state, not config; [`prime`](crate::Stabilizer::prime) ends it.
 
 use crate::{Vec2, Vec3};
 
@@ -38,13 +61,18 @@ use crate::{
     VehicleState,
 };
 
+use crate::controllers::yaw::angle_diff;
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_positive};
-use crate::math::{assert_dt, euler_angles, saturate_throttle, saturate_unit};
+use crate::math::{assert_dt, euler_angles, saturate_symmetric, saturate_throttle, saturate_unit};
 
 mod params;
 #[cfg(test)]
 mod tests;
+mod tuning;
+
+use tuning::Location;
+pub use tuning::{TunedLoop, TuningStatus};
 
 /// Configuration for the [CopterStabilizer]: gains and limits for the inner control loops and
 /// the thrust mapping.
@@ -141,6 +169,9 @@ pub struct CopterStabilizer {
 
     /// What the last `stabilize` call clipped.
     saturation: Saturation,
+
+    /// The autotune stage, if one was started and not yet stopped.
+    stage: Option<tuning::Stage>,
 }
 
 impl CopterStabilizer {
@@ -163,6 +194,7 @@ impl CopterStabilizer {
             attitude: AttitudeController::default(),
             yaw: YawController::default(),
             saturation: Saturation::default(),
+            stage: None,
         }
     }
 }
@@ -212,8 +244,10 @@ impl Stabilizer for CopterStabilizer {
         let output = match setpoint {
             Setpoint::Attitude(attitude) => self.track_attitude(dt, attitude, estimated_state),
             Setpoint::Rate(rates) => {
-                // The attitude and heading loops are idle: clear them so a switch back to
-                // attitude flight carries no stale integral or derivative history (#70).
+                // The attitude and heading loops are idle: a stage on one of them ends, and
+                // they are cleared so a switch back to attitude flight carries no stale
+                // integral or derivative history (#70).
+                self.interrupt_attitude_stage();
                 self.attitude = AttitudeController::default();
                 self.yaw = YawController::default();
                 self.track_rates(dt, rates, estimated_state)
@@ -226,8 +260,9 @@ impl Stabilizer for CopterStabilizer {
     }
 
     /// Clears the body-rate, attitude, and yaw controller state (integrals and derivative
-    /// history), so control after arming starts from zero.
+    /// history), so control after arming starts from zero, and ends any tuning stage.
     fn prime(&mut self, _state: &VehicleState) {
+        self.stage = None;
         self.body_rate = BodyRateController::default();
         self.attitude = AttitudeController::default();
         self.yaw = YawController::default();
@@ -276,25 +311,33 @@ impl CopterStabilizer {
         let current_angles = Vec2::new(roll, pitch);
 
         let config = &self.config;
-        let desired_rates =
+        let mut desired_rates =
             self.attitude
                 .control(&config.attitude, dt, desired_angles_rad, current_angles);
 
-        let desired_yaw_rate =
+        let mut desired_yaw_rate =
             self.yaw
                 .control(&config.yaw, dt, setpoint.heading_rad, current_heading);
 
-        let current_rates = Vec3::new(
-            estimated_state.angular_velocity_radps.x,
-            estimated_state.angular_velocity_radps.y,
-            estimated_state.angular_velocity_radps.z,
-        );
+        // A stage on an angle or heading loop replaces that loop's rate setpoint.
+        match self.running_stage() {
+            Some(Location::Angle(axis)) => {
+                let attitude = config.attitude;
+                let error =
+                    AttitudeController::angle_error(&attitude, desired_angles_rad, current_angles);
+                let rate = self.step_stage(dt, error[axis]);
+                desired_rates[axis] = saturate_symmetric(rate, attitude.max_rate_radps[axis]);
+            }
+            Some(Location::Heading) => {
+                let max_rate_radps = config.yaw.max_rate_radps;
+                let error = angle_diff(setpoint.heading_rad, current_heading);
+                desired_yaw_rate = saturate_symmetric(self.step_stage(dt, error), max_rate_radps);
+            }
+            Some(Location::Rate(_)) | None => {}
+        }
 
         let desired_rates = Vec3::new(desired_rates.x, desired_rates.y, desired_yaw_rate);
-
-        let moments = self
-            .body_rate
-            .control(&config.body_rate, dt, desired_rates, current_rates);
+        let moments = self.track_body_rates(dt, desired_rates, estimated_state);
 
         ControlOutput {
             thrust: self.fit_to_thrust_curve(setpoint.thrust),
@@ -328,20 +371,34 @@ impl CopterStabilizer {
         )
         .component_mul(&self.config.full_scale_rates_radps);
 
-        let current_rates = Vec3::new(
-            estimated_state.angular_velocity_radps.x,
-            estimated_state.angular_velocity_radps.y,
-            estimated_state.angular_velocity_radps.z,
-        );
-
-        let moments =
-            self.body_rate
-                .control(&self.config.body_rate, dt, desired_rates, current_rates);
+        let moments = self.track_body_rates(dt, desired_rates, estimated_state);
 
         ControlOutput {
             thrust: self.fit_to_thrust_curve(setpoint.thrust),
             moments,
         }
+    }
+
+    /// Runs the body-rate loop toward `desired_rates_radps`; a stage on a rate loop replaces
+    /// that axis's moment.
+    fn track_body_rates(
+        &mut self,
+        dt: f32,
+        desired_rates_radps: Vec3,
+        estimated_state: &VehicleState,
+    ) -> Vec3 {
+        let current_rates = estimated_state.angular_velocity_radps;
+        let mut moments = self.body_rate.control(
+            &self.config.body_rate,
+            dt,
+            desired_rates_radps,
+            current_rates,
+        );
+        if let Some(Location::Rate(axis)) = self.running_stage() {
+            let error = desired_rates_radps[axis] - current_rates[axis];
+            moments[axis] = saturate_unit(self.step_stage(dt, error));
+        }
+        moments
     }
 
     /// Applies a nonlinear thrust curve to a linear thrust command.

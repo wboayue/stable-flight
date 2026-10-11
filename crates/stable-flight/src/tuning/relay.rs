@@ -343,6 +343,12 @@ impl RelayTuner {
         }
     }
 
+    /// The current bias, in output units: the steady output (trim) the loop needs, as far as
+    /// the run has measured it.
+    pub fn bias(&self) -> f32 {
+        self.bias
+    }
+
     /// The run's status.
     pub fn status(&self) -> RelayStatus {
         match self.result {
