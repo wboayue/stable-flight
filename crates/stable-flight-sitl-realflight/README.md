@@ -87,10 +87,13 @@ cargo run --bin link_pilot
 # (Ku, Tu, gains), prints the tuned gains as an airframes.rs snippet, lands, and disarms.
 # --rate-p-scale starts from bad rate gains; --stages angle|all adds the angle and heading
 # stages (opt-in: their gains oscillated on QuadCopterX); --record run.csv writes every tick (rates, angles, moments) for diagnosis.
-# RUST_LOG=info,copter_autotune_realflight=debug logs each stage's status every second.
+# --step-test appends step tests of roll/pitch rate and angle and logs a response summary per
+# loop (--stages none --step-test: the hand tune; --stages rate --step-test: the relay tune).
+# RUST_LOG=info,copter_autotune_realflight=debug logs each stage's status every second and each step.
 # Or: just fly-autotune
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --rate-p-scale 10
+cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages none --step-test
 
 # Joystick (or --script) flight recording raw SimulatorState and channels to CSV (frame checks)
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv

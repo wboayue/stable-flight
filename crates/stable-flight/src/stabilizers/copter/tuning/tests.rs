@@ -4,8 +4,9 @@ use super::*;
 use crate::controllers::Gains;
 use crate::stabilizers::copter::CopterStabilizerConfig;
 use crate::tuning::Measurement;
+use crate::tuning::autotune::{COPTER_ANGLE_STEP, COPTER_RATE_STEP};
 use crate::tuning::plant::{Axes, PlantParams};
-use crate::tuning::{ProbeAbort, RelayAbort, RelayConfig};
+use crate::tuning::{ProbeAbort, RelayAbort, RelayConfig, StepConfig};
 use crate::{AttitudeSetpoint, ControlOutput, RateSetpoint, Setpoint, Stabilizer, Vec2, Vec3};
 
 /// The flight loop's tick: 250 Hz.
@@ -244,7 +245,7 @@ fn stop_hands_back_only_the_tested_loop() {
     let bias = stabilizer
         .stage
         .as_ref()
-        .map(|s| s.probe.trim())
+        .and_then(|s| s.probe.trim())
         .unwrap_or_default();
 
     let stopped = stabilizer.stop_probe();
@@ -346,7 +347,7 @@ fn a_stage_starts_from_the_loops_trim() {
 
     stabilizer.start_probe(TunedLoop::YawRate, ProbeConfig::Relay(rate_relay()));
 
-    let bias = stabilizer.stage.as_ref().map(|s| s.probe.trim());
+    let bias = stabilizer.stage.as_ref().and_then(|s| s.probe.trim());
     check!(bias == Some(trim));
 }
 
@@ -378,4 +379,191 @@ fn an_aborted_stage_is_handed_back_and_stop_reports_it() {
 
     check!(stabilizer.stop_probe() == aborted);
     check!(stabilizer.body_rate.integral_term(&config.body_rate, 0) == roll_i_term);
+}
+
+/// The probe's step for `target`: the copter presets.
+fn step_for(target: TunedLoop) -> StepConfig {
+    if target.is_rate() {
+        COPTER_RATE_STEP
+    } else {
+        COPTER_ANGLE_STEP
+    }
+}
+
+/// A step replaces the loop's setpoint with the measurement plus the step, before its
+/// controller runs: the first tick's moments match a stabilizer without a probe asked for that
+/// setpoint directly (the heading wraps past π).
+#[test]
+fn a_step_replaces_the_loops_setpoint() {
+    let config = config();
+    let full_scale = config.full_scale_rates_radps;
+    let level = AttitudeSetpoint {
+        thrust: 0.5,
+        ..Default::default()
+    };
+    let state = crate::VehicleState {
+        angular_velocity_radps: Vec3::new(0.2, -0.1, 0.05),
+        attitude: nalgebra::UnitQuaternion::from_euler_angles(0.05, -0.03, 3.1),
+        ..Default::default()
+    };
+    let rate = COPTER_RATE_STEP.amplitude;
+    let angle = COPTER_ANGLE_STEP.amplitude;
+    // (target, the tick's setpoint, the setpoint a probe-free stabilizer is asked for)
+    let cases = [
+        (
+            TunedLoop::RollRate,
+            Setpoint::Rate(RateSetpoint::default()),
+            Setpoint::Rate(RateSetpoint {
+                roll_rate: (0.2 + rate) / full_scale.x,
+                ..Default::default()
+            }),
+        ),
+        (
+            TunedLoop::YawRate,
+            Setpoint::Rate(RateSetpoint::default()),
+            Setpoint::Rate(RateSetpoint {
+                yaw_rate: (0.05 + rate) / full_scale.z,
+                ..Default::default()
+            }),
+        ),
+        (
+            TunedLoop::Pitch,
+            Setpoint::Attitude(level),
+            Setpoint::Attitude(AttitudeSetpoint {
+                pitch_rad: -0.03 + angle,
+                ..level
+            }),
+        ),
+        (
+            TunedLoop::Heading,
+            Setpoint::Attitude(AttitudeSetpoint {
+                heading_rad: 3.1,
+                ..level
+            }),
+            Setpoint::Attitude(AttitudeSetpoint {
+                heading_rad: 3.1 + angle,
+                ..level
+            }),
+        ),
+    ];
+    for (target, setpoint, direct) in cases {
+        let mut stabilizer = CopterStabilizer::new(config);
+        stabilizer.start_probe(target, ProbeConfig::Step(step_for(target)));
+        let mut reference = CopterStabilizer::new(config);
+
+        let output = stabilizer.stabilize(DT, &setpoint, &state);
+        let expected = reference.stabilize(DT, &direct, &state);
+
+        for axis in 0..3 {
+            approx::assert_relative_eq!(
+                output.moments[axis],
+                expected.moments[axis],
+                max_relative = 1e-4,
+                epsilon = 1e-6
+            );
+        }
+        check!(
+            stabilizer
+                .probe()
+                .is_some_and(|(_, status)| status.is_running())
+        );
+    }
+}
+
+/// Every target's step runs to `Done` on the sim and follows the step (hand-tune-like gains),
+/// while the untested axes hold.
+#[test]
+fn each_step_measures_its_loops_response() {
+    let targets = [
+        TunedLoop::RollRate,
+        TunedLoop::PitchRate,
+        TunedLoop::Roll,
+        TunedLoop::Pitch,
+        TunedLoop::Heading,
+    ];
+    for target in targets {
+        let mut stabilizer = CopterStabilizer::new(config());
+        let mut axes = axes(0.0);
+        for _ in 0..(3.0 / DT) as usize {
+            tick(&mut stabilizer, &mut axes, &level());
+        }
+        stabilizer.start_probe(target, ProbeConfig::Step(step_for(target)));
+
+        fly_stage(&mut stabilizer, &mut axes, &level(), 2.0);
+
+        let Some((_, ProbeStatus::Done(Measurement::Step(metrics)))) = stabilizer.probe() else {
+            panic!("{target:?}: {:?}", stabilizer.probe());
+        };
+        check!(
+            (metrics.final_value - 1.0).abs() < 0.15,
+            "{target:?}: {metrics:?}"
+        );
+        // The heading loop (P 2.5) is still rising at the end of the angle window.
+        if target != TunedLoop::Heading {
+            check!(metrics.rise_time_s.is_some(), "{target:?}: {metrics:?}");
+        }
+        for &axis in untested_axes(target) {
+            let angle = axes.angles_rad()[axis];
+            check!(angle.abs() < 0.02, "{target:?}: axis {axis} at {angle} rad");
+        }
+    }
+}
+
+/// Stopping a step mid-way hands the loop back with its I term as it was: a step has no trim
+/// to seed.
+#[test]
+fn a_step_hands_back_keeping_the_integral() {
+    let config = config();
+    let mut stabilizer = CopterStabilizer::new(config);
+    let mut axes = axes(0.08);
+    for _ in 0..(3.0 / DT) as usize {
+        tick(&mut stabilizer, &mut axes, &level());
+    }
+    stabilizer.start_probe(TunedLoop::YawRate, ProbeConfig::Step(COPTER_RATE_STEP));
+    for _ in 0..10 {
+        tick(&mut stabilizer, &mut axes, &level());
+    }
+    let i_term = stabilizer.body_rate.integral_term(&config.body_rate, 2);
+    check!(i_term.abs() > 0.01, "yaw I term {i_term}");
+
+    stabilizer.stop_probe();
+
+    check!(stabilizer.body_rate.integral_term(&config.body_rate, 2) == i_term);
+}
+
+/// A step's saturated time counts the ticks its loop's path clipped: a rate loop whose P pins
+/// the moment, an angle loop whose rate output sits at `max_rate_radps`.
+#[test]
+fn a_step_counts_the_ticks_its_loop_clipped() {
+    let mut stiff_rate = config();
+    stiff_rate.body_rate.roll_gains.p = 50.0;
+    let mut slow_angle = config();
+    slow_angle.attitude.max_rate_radps = Vec2::new(0.2, 0.2);
+    // (config, target, clipped for at least this long, in s)
+    let cases = [
+        (config(), TunedLoop::RollRate, 0.0),
+        (stiff_rate, TunedLoop::RollRate, 0.1),
+        (slow_angle, TunedLoop::Roll, 0.3),
+    ];
+    for (config, target, min_saturated_s) in cases {
+        let mut stabilizer = CopterStabilizer::new(config);
+        let mut axes = axes(0.0);
+        for _ in 0..(3.0 / DT) as usize {
+            tick(&mut stabilizer, &mut axes, &level());
+        }
+        stabilizer.start_probe(target, ProbeConfig::Step(step_for(target)));
+
+        fly_stage(&mut stabilizer, &mut axes, &level(), 2.0);
+
+        let saturated_s = match stabilizer.probe() {
+            Some((_, ProbeStatus::Done(Measurement::Step(metrics)))) => metrics.saturated_s,
+            other => panic!("{target:?}: {other:?}"),
+        };
+        if min_saturated_s == 0.0 {
+            // The D kick clips at most the first couple of ticks.
+            check!(saturated_s <= 2.0 * DT, "{target:?}: {saturated_s}");
+        } else {
+            check!(saturated_s >= min_saturated_s, "{target:?}: {saturated_s}");
+        }
+    }
 }

@@ -10,7 +10,8 @@
 //! The relay never uses the loop's own gains, so a bad starting tune doesn't matter for the axis
 //! under test.
 //!
-//! - [`Probe`]: one loop's excitation and measurement, run inside the tick (today the relay).
+//! - [`Probe`]: one loop's excitation and measurement, run inside the tick: the relay, or a
+//!   [`StepProbe`] (#298) whose [`StepMetrics`] describe the loop's step response.
 //! - [`Tunable`]: a stabilizer that hosts a probe on one of its loops
 //!   ([`CopterStabilizer`](crate::stabilizers::copter::CopterStabilizer)).
 //! - [`autotune::Autotune`]: the copter supervisor, run between ticks: executes each stage's
@@ -34,13 +35,17 @@ pub mod autotune;
 pub mod probe;
 pub mod relay;
 pub mod rules;
+pub mod step;
 
 #[cfg(test)]
 pub(crate) mod plant;
 
-pub use probe::{Measurement, Probe, ProbeAbort, ProbeConfig, ProbeStatus, Progress};
+pub use probe::{
+    Injection, LoopSignals, Measurement, Probe, ProbeAbort, ProbeConfig, ProbeStatus, Progress,
+};
 pub use relay::{MAX_CYCLES, RelayAbort, RelayConfig, RelayResult, RelayStatus, RelayTuner};
 pub use rules::{ControllerForm, TuningRule, gains_from_ultimate};
+pub use step::{Stat, StepAbort, StepConfig, StepMetrics, StepProbe, StepStatus, StepSummary};
 
 /// A stabilizer that hosts autotune stages: one of its loops handed to a [`Probe`] inside the
 /// tick, then handed back. [`FlightLoop`](crate::FlightLoop) forwards these between ticks

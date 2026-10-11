@@ -29,7 +29,8 @@ const MAX_LAG: Duration = Duration::from_millis(100);
 #[error("target frequency must be positive, finite, and give a non-zero period, got {0} Hz")]
 pub struct InvalidFrequency(pub f64);
 
-/// What a [`RealTimeRunner::run`] achieved.
+/// What a [`RealTimeRunner::run`] achieved, or (passed to
+/// [`run_with`](RealTimeRunner::run_with)'s hook) has achieved so far.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RunStats {
     /// Ticks executed.
@@ -128,18 +129,19 @@ impl RealTimeRunner {
         M: Mixer,
         T: TelemetryPublisher,
     {
-        self.run_with(flight_loop, shutdown, |_| {})
+        self.run_with(flight_loop, shutdown, |_, _| {})
     }
 
-    /// [`run`](Self::run), calling `before_step` with the loop before each tick: the place to
-    /// apply changes that need `&mut` to the loop, such as param writes from a link
-    /// (`FlightLoop::set_param`) or config swaps. Its time counts toward the tick's period,
-    /// so keep it bounded.
+    /// [`run`](Self::run), calling `before_step` with the loop and the [`RunStats`] so far
+    /// before each tick: the place to apply changes that need `&mut` to the loop, such as
+    /// param writes from a link (`FlightLoop::set_param`) or config swaps, and to react to
+    /// stalls (`skipped_ticks` growing). Its time counts toward the tick's period, so keep it
+    /// bounded.
     ///
     /// With `flight_loop` and `shutdown` as in the [type-level example](Self):
     ///
     /// ```ignore
-    /// RealTimeRunner::new(250.0)?.run_with(&mut flight_loop, &shutdown, |flight_loop| {
+    /// RealTimeRunner::new(250.0)?.run_with(&mut flight_loop, &shutdown, |flight_loop, _stats| {
     ///     param_server.poll(flight_loop); // stable-flight-link
     /// });
     /// ```
@@ -147,7 +149,7 @@ impl RealTimeRunner {
         &self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         shutdown: &ShutdownSignal,
-        mut before_step: impl FnMut(&mut FlightLoop<C, V, G, S, M, T>),
+        mut before_step: impl FnMut(&mut FlightLoop<C, V, G, S, M, T>, &RunStats),
     ) -> RunStats
     where
         C: Commander,
@@ -167,7 +169,13 @@ impl RealTimeRunner {
         flight_loop.prime();
 
         while !shutdown.is_set() {
-            before_step(flight_loop);
+            let stats = RunStats {
+                ticks,
+                elapsed: start.elapsed(),
+                overruns,
+                skipped_ticks,
+            };
+            before_step(flight_loop, &stats);
             flight_loop.step(self.period);
             ticks += 1;
 

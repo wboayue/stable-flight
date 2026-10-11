@@ -7,8 +7,8 @@ use assert2::{assert, check};
 use super::*;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::stabilizers::copter::CopterStabilizer;
-use crate::tuning::RelayAbort;
 use crate::tuning::plant::{Axes, PlantParams};
+use crate::tuning::{RelayAbort, StepMetrics};
 use crate::{
     AbsoluteAttitudeCommand, Actuator, ActuatorCommand, Command, Commander, ControlInput,
     ControlOutput, Mixer, RateCommand, StateSource, Vec3,
@@ -225,6 +225,7 @@ fn full_run_tunes_every_loop_in_order() {
         let Some(&AutotuneEvent::StageDone {
             target: done,
             gains,
+            steps: None,
         }) = events.get(index + 2)
         else {
             panic!(
@@ -446,11 +447,37 @@ fn new_and_start_reject_bad_input() {
         },
     );
     let bad_envelope = Envelope {
-        settle_tilt_rad: 1.0, // looser than max_tilt_rad
+        settle: Settle {
+            tilt_rad: 1.0, // looser than max_tilt_rad
+            ..Envelope::default().settle
+        },
         ..Envelope::default()
     };
+    let step_test = |plan: StepTestPlan| StagePlan {
+        target: TunedLoop::RollRate,
+        method: Method::StepTest(plan),
+    };
+    let copter_step = StepTestPlan::copter(TunedLoop::RollRate);
+    let bad_step = step_test(StepTestPlan {
+        step: StepConfig {
+            duration_s: 0.0,
+            ..COPTER_RATE_STEP
+        },
+        ..copter_step
+    });
+    let no_pairs = step_test(StepTestPlan {
+        pairs: 0,
+        ..copter_step
+    });
+    let loose_settle = step_test(StepTestPlan {
+        settle: Settle {
+            hold_s: 20.0, // longer than settle_timeout_s
+            ..COPTER_STEP_SETTLE
+        },
+        ..copter_step
+    });
     // (plan, envelope, section, field)
-    let cases: [(&[StagePlan], Envelope, &str, &str); 4] = [
+    let cases: [(&[StagePlan], Envelope, &str, &str); 7] = [
         (&[], Envelope::default(), "plan", "stages"),
         (
             &[stage; MAX_STAGES + 1],
@@ -459,7 +486,20 @@ fn new_and_start_reject_bad_input() {
             "stages",
         ),
         (&[bad_relay], Envelope::default(), "plan.relay", "cycles"),
-        (&[stage], bad_envelope, "envelope", "settle_tilt_rad"),
+        (&[stage], bad_envelope, "envelope", "settle.tilt_rad"),
+        (
+            &[bad_step],
+            Envelope::default(),
+            "plan.step_test",
+            "duration_s",
+        ),
+        (&[no_pairs], Envelope::default(), "plan.step_test", "pairs"),
+        (
+            &[loose_settle],
+            Envelope::default(),
+            "plan",
+            "settle.hold_s",
+        ),
     ];
     for (plan, envelope, section, field) in cases {
         let error = Autotune::new(plan, envelope).expect_err(field);
@@ -491,4 +531,138 @@ fn update_before_start_does_nothing() {
     check!(autotune.update(&mut flight_loop, DT) == None);
     assert!(autotune.status() == AutotuneStatus::Idle);
     check!(*flight_loop.stabilizer().config() == baseline);
+}
+
+/// The `Measured` step metrics of `events`, in order.
+fn step_metrics(events: &[AutotuneEvent]) -> Vec<StepMetrics> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            AutotuneEvent::Measured {
+                measurement: Measurement::Step(metrics),
+                ..
+            } => Some(*metrics),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A step-test stage measures alternating steps on its loop and keeps the gains: each stage
+/// reports `2·pairs` steps, then `StageDone` with the loop's gains unchanged.
+#[test]
+fn step_tests_measure_alternating_steps_and_keep_the_gains() {
+    let (mut flight_loop, _controls) = hovering(1.0);
+    let baseline = *flight_loop.stabilizer().config();
+    let targets = [TunedLoop::RollRate, TunedLoop::Pitch];
+    let mut autotune = started(&flight_loop, &targets.map(StagePlan::copter_step_test));
+
+    let events = run(&mut flight_loop, &mut autotune, 60.0, |_| {});
+
+    check!(autotune.status() == AutotuneStatus::Complete);
+    check!(*flight_loop.stabilizer().config() == baseline);
+    let pairs = StepTestPlan::copter(TunedLoop::RollRate).pairs;
+    let mut stages = events.split(|event| matches!(event, AutotuneEvent::StageStarted(_)));
+    stages.next(); // before the first stage: nothing
+    for (target, stage) in targets.into_iter().zip(stages) {
+        let metrics = step_metrics(stage);
+        check!(metrics.len() == 2 * pairs, "{target:?}");
+        for (index, step) in metrics.iter().enumerate() {
+            let up = index % 2 == 0;
+            check!((step.amplitude > 0.0) == up, "{target:?} step {index}");
+            check!(
+                (step.final_value - 1.0).abs() < 0.15,
+                "{target:?} step {index}: {step:?}"
+            );
+        }
+        let done = stage.iter().find_map(|event| match event {
+            AutotuneEvent::StageDone {
+                target: done,
+                gains,
+                steps,
+            } if *done == target => Some((*gains, *steps)),
+            _ => None,
+        });
+        let Some((gains, Some(steps))) = done else {
+            panic!("{target:?}: no StageDone with steps: {done:?}");
+        };
+        check!(gains == target.gains(&baseline), "{target:?}");
+        check!(steps.count() == 2 * pairs, "{target:?}");
+    }
+}
+
+/// A stall noted while a step runs makes that step run again; noted between probes, it's
+/// ignored.
+#[test]
+fn a_stalled_step_runs_again() {
+    let (mut flight_loop, _controls) = hovering(1.0);
+    let plan = [StagePlan::copter_step_test(TunedLoop::RollRate)];
+    let pairs = StepTestPlan::copter(TunedLoop::RollRate).pairs;
+    let mut autotune = started(&flight_loop, &plan);
+    autotune.note_stall(); // settling: no probe yet
+
+    let mut noted = false;
+    let mut events = Vec::new();
+    for _ in 0..(60.0 / DT) as usize {
+        flight_loop.step(Duration::from_secs_f32(DT));
+        if !noted && matches!(autotune.status(), AutotuneStatus::Running { .. }) {
+            autotune.note_stall();
+            noted = true;
+        }
+        if let Some(event) = autotune.update(&mut flight_loop, DT) {
+            events.push(event);
+        }
+        if !autotune.is_running() {
+            break;
+        }
+    }
+
+    check!(autotune.status() == AutotuneStatus::Complete);
+    let metrics = step_metrics(&events);
+    check!(metrics.len() == 2 * pairs + 1);
+    // The stalled first step and its rerun both go up.
+    check!(metrics[0].amplitude > 0.0 && metrics[1].amplitude > 0.0);
+}
+
+/// A step test settles to its own, tighter limits: held 3.4° off level (inside the envelope's
+/// 6°, outside the step settle's 2.5°), it never starts; a relay stage does.
+#[test]
+fn a_step_test_settles_to_its_own_limits() {
+    let (mut flight_loop, controls) = hovering(1.0);
+    let baseline = *flight_loop.stabilizer().config();
+    controls.input.set(Some(ControlInput::AbsoluteAttitude(
+        AbsoluteAttitudeCommand {
+            roll_rad: 0.06,
+            thrust: 0.5,
+            ..Default::default()
+        },
+    )));
+    let mut autotune = started(
+        &flight_loop,
+        &[StagePlan::copter_step_test(TunedLoop::RollRate)],
+    );
+
+    let events = run(&mut flight_loop, &mut autotune, 30.0, |_| {});
+
+    let failed = AutotuneEvent::StageFailed {
+        target: TunedLoop::RollRate,
+        reason: AutotuneAbort::NotSettled,
+    };
+    check!(events.last() == Some(&failed));
+    check!(*flight_loop.stabilizer().config() == baseline);
+
+    // The relay settles to the envelope's 6°: the same hold starts it.
+    let (mut flight_loop, controls) = hovering(1.0);
+    controls.input.set(Some(ControlInput::AbsoluteAttitude(
+        AbsoluteAttitudeCommand {
+            roll_rad: 0.06,
+            thrust: 0.5,
+            ..Default::default()
+        },
+    )));
+    let mut autotune = started(&flight_loop, &[StagePlan::copter(TunedLoop::PitchRate)]);
+    run(&mut flight_loop, &mut autotune, 5.0, |_| {});
+    check!(matches!(
+        autotune.status(),
+        AutotuneStatus::Running { .. } | AutotuneStatus::Complete
+    ));
 }

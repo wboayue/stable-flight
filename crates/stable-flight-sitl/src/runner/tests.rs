@@ -110,7 +110,8 @@ fn before_step_runs_once_before_each_tick_and_can_write_params() {
 
     let stats = RealTimeRunner::new(1000.0)
         .expect("valid frequency")
-        .run_with(&mut flight_loop, &shutdown, |flight_loop| {
+        .run_with(&mut flight_loop, &shutdown, |flight_loop, stats| {
+            check!(stats.ticks == hooks);
             hooks += 1;
             flight_loop
                 .set_param("STAB_RATE_RLL_P", 0.01 * hooks as f32)
@@ -134,7 +135,7 @@ fn already_set_signal_never_calls_before_step() {
 
     RealTimeRunner::new(250.0)
         .expect("valid frequency")
-        .run_with(&mut flight_loop, &shutdown, |_| hooks += 1);
+        .run_with(&mut flight_loop, &shutdown, |_, _| hooks += 1);
 
     check!(hooks == 0);
 }
@@ -186,10 +187,14 @@ fn resyncs_after_a_stall_instead_of_replaying_missed_ticks() {
     let mut hooks = 0u64;
 
     let runner = RealTimeRunner::new(1000.0).expect("valid frequency");
-    let stats = runner.run_with(&mut flight_loop, &shutdown, |_| {
+    let mut seen_after_stall = 0;
+    let stats = runner.run_with(&mut flight_loop, &shutdown, |_, stats| {
         hooks += 1;
         if hooks == 2 {
             thread::sleep(STALL);
+        }
+        if hooks == 3 {
+            seen_after_stall = stats.skipped_ticks;
         }
         if hooks == 2 + TICKS_AFTER_STALL {
             trigger.trigger();
@@ -199,6 +204,8 @@ fn resyncs_after_a_stall_instead_of_replaying_missed_ticks() {
     check!(stats.ticks == 2 + TICKS_AFTER_STALL);
     check!(stats.overruns >= 1);
     check!(stats.skipped_ticks >= 140);
+    // The hook sees the stall on the next tick.
+    check!(seen_after_stall == stats.skipped_ticks);
     // Replayed ticks would run back-to-back right after the stall; resynced ones are paced.
     let paced = runner.period() * (TICKS_AFTER_STALL as u32 - 1);
     check!(stats.elapsed >= STALL + paced);
@@ -214,7 +221,7 @@ fn catches_up_jitter_below_max_lag() {
 
     let stats = RealTimeRunner::new(1000.0)
         .expect("valid frequency")
-        .run_with(&mut flight_loop, &shutdown, |_| {
+        .run_with(&mut flight_loop, &shutdown, |_, _| {
             hooks += 1;
             if hooks == 2 {
                 thread::sleep(JITTER);

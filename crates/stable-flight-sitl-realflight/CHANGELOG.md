@@ -13,7 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#149) on QuadCopterX. Climbs to the hover point, tunes the roll and pitch rate loops, logs each stage's
   measurement and gains, prints the tuned gains as an `airframes.rs` snippet, then lands and
   disarms. `--rate-p-scale` starts from bad rate gains; `--stages angle|all` adds the opt-in angle and heading stages; `--record`
-  writes every tick to CSV for diagnosing a run.
+  writes every tick to CSV for diagnosing a run. `--step-test` (#298) appends step tests of
+  roll and pitch rate and angle, logging each step's response and a summary per loop
+  (`--stages none --step-test` measures the hand tune); steps during a stall run again.
 
 ## [0.1.0] - 2026-10-10
 
