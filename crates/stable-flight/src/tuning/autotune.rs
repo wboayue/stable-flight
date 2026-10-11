@@ -61,17 +61,18 @@ pub const COPTER_ANGLE_RELAY: RelayConfig = RelayConfig {
     timeout_s: 30.0,
 };
 
-/// The loops [`StagePlan::copter_sequence`] tunes: roll and pitch rate, the loops a bad start
-/// breaks. Flights on QuadCopterX (#295) left the rest out:
+/// The loops [`StagePlan::copter_sequence`] tunes by relay: roll and pitch rate, the loops a
+/// bad start breaks. Flights on QuadCopterX (#295) left the rest out:
 ///
 /// - Yaw rate: the relay can't measure it within the yaw authority the mixer leaves at hover
 ///   (#296).
 /// - Roll and pitch angle: the relay measures a high ultimate gain (about 60: an integrator
 ///   around a fast rate loop), and the rule's P oscillates once a few degrees of error saturate
-///   the rate setpoint and the moments. Step-response tuning (phase 2) sees the saturation.
+///   the rate setpoint and the moments. [`StagePlan::copter_search`] tunes them by step
+///   response instead, which sees the saturation.
 /// - Heading: both of the above.
 ///
-/// Their stages still run when planned explicitly (`StagePlan::copter`).
+/// Their relay stages still run when planned explicitly (`StagePlan::copter`).
 pub const COPTER_SEQUENCE: [TunedLoop; 2] = [TunedLoop::RollRate, TunedLoop::PitchRate];
 
 /// One stage of an autotune: which loop, and the method that tunes it.
@@ -132,6 +133,36 @@ impl StagePlan {
             target,
             method: Method::Search(SearchPlan::copter_rate()),
         })
+    }
+
+    /// The copter step-response tune: [`copter_rate_search`](Self::copter_rate_search), then
+    /// roll and pitch angle by [`SearchPlan::copter_angle`], so the angle search flies on the
+    /// tuned rate loops.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::TunedLoop;
+    /// use stable_flight::tuning::autotune::StagePlan;
+    ///
+    /// let targets = StagePlan::copter_search().map(|stage| stage.target);
+    /// assert_eq!(
+    ///     targets,
+    ///     [TunedLoop::RollRate, TunedLoop::PitchRate, TunedLoop::Roll, TunedLoop::Pitch]
+    /// );
+    /// ```
+    pub fn copter_search() -> [Self; 4] {
+        let [roll_rate, pitch_rate] = Self::copter_rate_search();
+        let angle = |target| Self {
+            target,
+            method: Method::Search(SearchPlan::copter_angle()),
+        };
+        [
+            roll_rate,
+            pitch_rate,
+            angle(TunedLoop::Roll),
+            angle(TunedLoop::Pitch),
+        ]
     }
 }
 
@@ -200,6 +231,13 @@ pub const COPTER_ANGLE_STEP: StepConfig = StepConfig {
     filter_hz: 20.0,
 };
 
+/// A copter angle search's step: [`COPTER_ANGLE_STEP`] at half the size (5°). At 10°, an angle
+/// P of about 6 asks the tuned rate loop (P about 1) for a full moment; at 5°, about 12 (#304).
+pub const COPTER_ANGLE_SEARCH_STEP: StepConfig = StepConfig {
+    amplitude: COPTER_ANGLE_STEP.amplitude / 2.0,
+    ..COPTER_ANGLE_STEP
+};
+
 /// Level before each copter step: within 2.5° and 0.1 rad/s for 0.5 s (ArduPilot's
 /// `AUTOTUNE_LEVEL_ANGLE_CD` and `AUTOTUNE_REQUIRED_LEVEL_TIME_MS`), so each step starts from
 /// rest.
@@ -211,9 +249,10 @@ pub const COPTER_STEP_SETTLE: Settle = Settle {
 
 /// A step test: `pairs` pairs of steps, alternating `+step` and `−step` so a trim or CG offset
 /// shows as asymmetry rather than bias, each from a [`Settle`]. A step clipped for longer than
-/// `max_saturated_s` (a clipped step measures the limit, not the loop), or flagged stalled
-/// ([`Autotune::note_stall`]), is invalid and runs again; `max_invalid` in a row fail the
-/// stage.
+/// `max_saturated_s` (a clipped step measures the limit, not the loop) is invalid and runs
+/// again; `max_invalid` in a row fail the stage. A step flagged stalled
+/// ([`Autotune::note_stall`]) runs again too, on its own budget: a stall says nothing about the
+/// loop, so `max_stalled` in a row (the host can't keep time) fail the stage.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StepTestPlan {
     /// The step, in its positive direction.
@@ -225,16 +264,21 @@ pub struct StepTestPlan {
     /// How long a step may be clipped and still count, in s. Non-negative and finite: a D kick
     /// clips the first tick or so of a rate step.
     pub max_saturated_s: f32,
-    /// Invalid steps in a row that fail the stage. At least 1.
+    /// Clipped steps in a row that fail the stage. At least 1.
     pub max_invalid: usize,
+    /// Stalled steps in a row that fail the stage. At least 1.
+    pub max_stalled: usize,
 }
 
 impl StepTestPlan {
     /// The copter defaults for `target`: three pairs of [`COPTER_RATE_STEP`] (rate loops) or
     /// [`COPTER_ANGLE_STEP`] (angle and heading loops) from [`COPTER_STEP_SETTLE`], allowing
-    /// 5 ticks of clipping at 250 Hz and 3 invalid steps in a row. The allowance is 22 ms,
-    /// half a tick past 20: clipped time sums `dt` in `f32`, and five 4 ms ticks come to
-    /// slightly over 0.02.
+    /// 3 clipped steps in a row and 10 stalled steps in a row (RealFlight's proxy has frozen
+    /// for 100 ms dozens of times a run). A step may clip for 10 ticks at 250 Hz on a rate loop
+    /// and 5 on an angle loop, each half a tick clear of `f32` rounding (clipped time sums `dt`;
+    /// five 4 ms ticks come to slightly over 0.02). Above P 1, a 1 rad/s rate step asks for
+    /// more than full moment until the rate catches up: a real limit, not a bad response, and
+    /// tuned rate loops reach P 1.3 on QuadCopterX.
     ///
     /// # Examples
     ///
@@ -245,17 +289,18 @@ impl StepTestPlan {
     /// assert_eq!(StepTestPlan::copter(TunedLoop::Roll).step, COPTER_ANGLE_STEP);
     /// ```
     pub fn copter(target: TunedLoop) -> Self {
-        let step = if target.is_rate() {
-            COPTER_RATE_STEP
+        let (step, max_saturated_s) = if target.is_rate() {
+            (COPTER_RATE_STEP, 0.042)
         } else {
-            COPTER_ANGLE_STEP
+            (COPTER_ANGLE_STEP, 0.022)
         };
         Self {
             step,
             pairs: 3,
             settle: COPTER_STEP_SETTLE,
-            max_saturated_s: 0.022,
+            max_saturated_s,
             max_invalid: 3,
+            max_stalled: 10,
         }
     }
 
@@ -264,7 +309,8 @@ impl StepTestPlan {
         self.step.validate()?;
         check("pairs", self.pairs >= 1, "at least 1")?;
         check_limit("max_saturated_s", self.max_saturated_s)?;
-        check("max_invalid", self.max_invalid >= 1, "at least 1")
+        check("max_invalid", self.max_invalid >= 1, "at least 1")?;
+        check("max_stalled", self.max_stalled >= 1, "at least 1")
     }
 }
 
@@ -338,17 +384,20 @@ impl RelayPlan {
 ///    `test.max_invalid` times leaves `max` and the start gains as they are.
 /// 2. **Baseline:** `test.pairs` pairs at the start gains; their summary is what the result
 ///    must not be worse than.
-/// 3. **Bracket** from the seed's gain: `× factor` per pair while pairs pass, up to `max`;
-///    `÷ factor` while they fail, down to `min` (nothing passing: the start gains stay).
+/// 3. **Bracket** from the seed's gain: `× factor` per point while points pass, up to `max`;
+///    `÷ factor` while they fail, down to `min` (nothing passing: the start gains stay). A
+///    point passes when `confirm` pairs in a row pass, so one lucky pair near a sharp limit
+///    doesn't (ArduPilot's `ignore_next`); the first failing pair fails it.
 /// 4. **Bisect** (geometric mean) until the bracket is within `resolution`.
 /// 5. **Verify** `margin ×` the largest pass with `test.pairs` pairs, and keep it only if it
 ///    passes [`Acceptance`] against the baseline (or, if the baseline's steps all aborted,
 ///    meets the criterion); else the start gains stay.
 ///
 /// A pair is judged on its two steps' means, so a trim offset doesn't bias it. A step that
-/// aborts (reversed or runaway) fails its pair, as do `test.max_invalid` invalid steps in a
-/// row (a gain whose steps keep clipping measures the limit); on the baseline, they fail the
-/// stage. Only the step under test flies a candidate;
+/// aborts (reversed or runaway) fails its pair, as do `test.max_invalid` clipped steps in a
+/// row (a gain whose steps keep clipping measures the limit) and an [`Envelope`] breach while
+/// the candidate flies; on the baseline, they fail the stage. Stalled steps only run again
+/// (`test.max_stalled`). Only the step under test flies a candidate;
 /// the vehicle settles on the committed gains between steps.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SearchPlan {
@@ -357,8 +406,10 @@ pub struct SearchPlan {
     /// What a pair must meet to pass.
     pub criterion: Criterion,
     /// The steps, their settle, clip allowance, and invalid limit; `pairs` sizes the baseline
-    /// and the verify (a bracket point flies one pair).
+    /// and the verify.
     pub test: StepTestPlan,
+    /// Pairs in a row a bracket point must pass. At least 1.
+    pub confirm: usize,
     /// The bracket's growth per pair. Above 1.
     pub factor: f32,
     /// The bracket's ratio at which bisection stops. Above 1.
@@ -379,8 +430,11 @@ impl SearchPlan {
     /// The copter defaults for a rate loop's P: a [`RelayPlan::copter`] relay (Tyreus–Luyben
     /// PD, so it sets D and seeds P; I keeps its gain) capping P at `0.6 · Ku`; then
     /// [`Criterion::Overshoot`] at ArduPilot's default aggressiveness (0.1: overshoot 0.05,
-    /// bounce-back 0.1) in [0.1, 3]. Two pairs of [`COPTER_RATE_STEP`] for the baseline and
-    /// the verify, brackets of `× 1.3` bisected to 10%, a 0.9 margin.
+    /// bounce-back 0.1) in [0.1, 3]. Steps of [`COPTER_RATE_STEP`], two pairs for the baseline
+    /// and the verify; a bracket point passes on two pairs in a row; brackets of `× 1.3`
+    /// bisected to 10%, a 0.9 margin. Steps clip for up to 10 ticks ([`StepTestPlan::copter`]):
+    /// with 5, clipping rather than overshoot capped P on QuadCopterX; a 0.5 rad/s step instead
+    /// doubled the noise relative to the step (#304).
     ///
     /// ArduPilot's D search (largest D before bounce-back) doesn't bound D on closed-loop
     /// steps: with the rate I, overshoot decays without falling back, so D climbs until the
@@ -406,6 +460,7 @@ impl SearchPlan {
                 pairs: 2,
                 ..StepTestPlan::copter(TunedLoop::RollRate)
             },
+            confirm: 2,
             factor: 1.3,
             resolution: 1.1,
             margin: 0.9,
@@ -419,11 +474,46 @@ impl SearchPlan {
         }
     }
 
+    /// The copter defaults for a roll or pitch angle loop's P (ArduPilot's angle-P stage): no
+    /// relay (an angle loop's `Ku` is high, about 60 on QuadCopterX, so `0.6 · Ku` caps
+    /// nothing), from the start gains in [1, 10] (above about 10, 5° steps clip the moment on
+    /// QuadCopterX); overshoot and bounce-back at most 0.05
+    /// (ArduPilot's aggressiveness halved, as for its angle P). Bounce-back is the overshoot
+    /// above where the response levels off, so it counts even when a disturbance holds the
+    /// response short of the step (about 8% on QuadCopterX). Steps of
+    /// [`COPTER_ANGLE_SEARCH_STEP`]; otherwise as [`copter_rate`](Self::copter_rate).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::tuning::autotune::SearchPlan;
+    ///
+    /// assert!(SearchPlan::copter_angle().relay.is_none());
+    /// ```
+    pub fn copter_angle() -> Self {
+        Self {
+            criterion: Criterion::Overshoot {
+                max_overshoot: 0.05,
+                max_bounce_back: 0.05,
+            },
+            test: StepTestPlan {
+                step: COPTER_ANGLE_SEARCH_STEP,
+                pairs: 2,
+                ..StepTestPlan::copter(TunedLoop::Roll)
+            },
+            min: 1.0,
+            max: 10.0,
+            relay: None,
+            ..Self::copter_rate()
+        }
+    }
+
     /// Checks the steps ([`StepTestPlan::validate`]), the criterion, the bracket's factors and
     /// bounds, the relay ([`RelayConfig::validate`]) and its ceiling, and the acceptance.
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         self.test.validate()?;
         self.criterion.validate()?;
+        check("confirm", self.confirm >= 1, "at least 1")?;
         check(
             "factor",
             self.factor > 1.0 && self.factor.is_finite(),
@@ -637,11 +727,15 @@ pub struct Envelope {
     pub settle: Settle,
     /// How long to wait for a settle before failing, in s.
     pub settle_timeout_s: f32,
+    /// After a probe on candidate gains ends, how long the vehicle has on the committed gains
+    /// to come back inside the limits before a breach fails the stage, in s. A breach while
+    /// the candidate flies fails only the candidate. Non-negative.
+    pub recovery_s: f32,
 }
 
 impl Default for Envelope {
     /// Copter limits: 35° tilt, 4 rad/s, 3 m sink; settle within 6° and 0.3 rad/s for 1 s,
-    /// waiting up to 10 s.
+    /// waiting up to 10 s; 1 s to recover from a candidate.
     fn default() -> Self {
         Self {
             max_tilt_rad: 0.6,
@@ -653,6 +747,7 @@ impl Default for Envelope {
                 hold_s: 1.0,
             },
             settle_timeout_s: 10.0,
+            recovery_s: 1.0,
         }
     }
 }
@@ -665,6 +760,7 @@ impl Envelope {
         check_positive("max_rate_radps", self.max_rate_radps)?;
         check_positive("max_altitude_loss_m", self.max_altitude_loss_m)?;
         check_positive("settle_timeout_s", self.settle_timeout_s)?;
+        check_limit("recovery_s", self.recovery_s)?;
         self.check_settle(&self.settle)
     }
 
@@ -733,9 +829,11 @@ pub enum AutotuneAbort {
     AltitudeLoss,
     /// The vehicle didn't settle within [`Envelope::settle_timeout_s`].
     NotSettled,
-    /// Too many invalid probes in a row (clipped or stalled steps:
-    /// [`StepTestPlan::max_invalid`]).
+    /// Too many clipped steps in a row ([`StepTestPlan::max_invalid`]).
     Invalid,
+    /// Too many steps in a row during which the host stalled
+    /// ([`StepTestPlan::max_stalled`]): it can't keep time for a measurement.
+    Stalled,
     /// The probe gave up.
     Probe(ProbeAbort),
     /// The stabilizer idled the loop under test (e.g. a rate setpoint), or the probe was
@@ -934,6 +1032,8 @@ enum Decide {
     },
     /// A probe that gave up.
     Aborted { abort: ProbeAbort },
+    /// A probe on candidate gains that took the vehicle past the envelope.
+    Breached { reason: AutotuneAbort },
 }
 
 /// A probe a procedure asked for, and the gains to fly it on (`None`: the committed ones).
@@ -960,7 +1060,8 @@ struct Request {
 ///   ([`AutotuneEvent::Tried`] per judgment, the [`Outcome`] in `StageDone`).
 /// - **Candidates:** a procedure may ask for a probe on other gains; they go in once the
 ///   vehicle has settled on the committed ones and come out when the probe ends, so only the
-///   probe flies them.
+///   probe flies them. An envelope breach while they fly fails the candidate, not the stage;
+///   the committed gains then have [`Envelope::recovery_s`] to bring the vehicle back.
 /// - **Stalls:** [`note_stall`](Self::note_stall) marks the running probe's measurement as
 ///   untimely; a step test runs that step again.
 /// - **Fail:** an envelope breach, a probe abort the procedure can't use (a search counts a
@@ -1015,6 +1116,9 @@ pub struct Autotune {
     start_altitude_m: f32,
     /// The host stalled during the running probe ([`note_stall`](Self::note_stall)).
     stalled: bool,
+    /// Time left, in s, for the vehicle to come back inside the envelope after a candidate
+    /// ([`Envelope::recovery_s`]); breaches meanwhile don't fail the stage.
+    recovering_s: f32,
 }
 
 /// What the supervisor needs from the stabilizer: copter probes and config.
@@ -1073,6 +1177,7 @@ impl Autotune {
             last_good: None,
             start_altitude_m: 0.0,
             stalled: false,
+            recovering_s: 0.0,
         })
     }
 
@@ -1097,6 +1202,7 @@ impl Autotune {
         self.baseline = Some(config);
         self.last_good = Some(config);
         self.start_altitude_m = flight_loop.state().position_m.z;
+        self.recovering_s = 0.0;
         self.phase = Phase::Starting { stage: 0 };
         Ok(())
     }
@@ -1129,10 +1235,22 @@ impl Autotune {
             return Some(AutotuneEvent::Reverted);
         }
         let motion = Motion::of(flight_loop.state());
+        self.recovering_s = (self.recovering_s - dt).max(0.0);
         if let Some(stage) = self.phase.active_stage()
             && let Some(reason) = self.envelope.breach(&motion, self.start_altitude_m)
         {
-            return Some(self.fail(flight_loop, stage, reason));
+            // A candidate's breach fails the candidate; the committed gains get time to
+            // recover from it before a breach fails the stage.
+            if let Phase::Probing {
+                candidate: true, ..
+            } = self.phase
+            {
+                self.end_probe(flight_loop, stage, true, Decide::Breached { reason });
+                return None;
+            }
+            if self.recovering_s <= 0.0 {
+                return Some(self.fail(flight_loop, stage, reason));
+            }
         }
         match self.phase {
             Phase::Starting { stage } => self.begin(stage),
@@ -1180,7 +1298,7 @@ impl Autotune {
             Phase::Probing { stage, .. }
             | Phase::Deciding {
                 stage,
-                on: Decide::Measured { .. } | Decide::Aborted { .. },
+                on: Decide::Measured { .. } | Decide::Aborted { .. } | Decide::Breached { .. },
             } => AutotuneStatus::Running {
                 stage,
                 target: self.target(stage),
@@ -1230,6 +1348,7 @@ impl Autotune {
                 stalled,
             },
             Decide::Aborted { abort } => Input::Aborted { abort, gains },
+            Decide::Breached { reason } => Input::Breached { reason, gains },
         };
         match self.procedure.next(input) {
             Action::Probe { probe, gains } => {
@@ -1323,12 +1442,26 @@ impl Autotune {
                 return Some(self.fail(flight_loop, stage, AutotuneAbort::Interrupted));
             }
         };
+        self.end_probe(flight_loop, stage, candidate, on);
+        event
+    }
+
+    /// Stops `stage`'s probe and hands `on` to its procedure on the next update; a
+    /// candidate's gains go back to the committed ones, which get [`Envelope::recovery_s`] to
+    /// bring the vehicle back inside the envelope.
+    fn end_probe<C, V, G, S: CopterTunable, M, T>(
+        &mut self,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+        stage: usize,
+        candidate: bool,
+        on: Decide,
+    ) {
         flight_loop.stop_probe();
         if candidate && let Some(last_good) = self.last_good {
             restore(flight_loop, last_good);
+            self.recovering_s = self.envelope.recovery_s;
         }
         self.phase = Phase::Deciding { stage, on };
-        event
     }
 
     /// The settle before `stage`'s probes: its method's, or the envelope's.

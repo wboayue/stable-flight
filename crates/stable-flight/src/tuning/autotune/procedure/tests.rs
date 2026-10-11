@@ -140,8 +140,9 @@ fn step_test_alternates_then_finishes_with_the_same_gains() {
     check!(steps.overshoot.max == 0.4);
 }
 
-/// A clipped or stalled step runs again in the same direction; `max_invalid` in a row fail the
-/// stage, and a valid step resets the count.
+/// A clipped or stalled step runs again in the same direction. `max_invalid` clipped steps in
+/// a row fail the stage, and a valid step resets the count; stalls don't count toward it, but
+/// `max_stalled` of them in a row fail the stage too.
 #[test]
 fn step_test_repeats_invalid_steps_and_fails_on_too_many() {
     let (mut procedure, plan) = step_test(3);
@@ -154,16 +155,27 @@ fn step_test_repeats_invalid_steps_and_fails_on_too_many() {
     let script = [
         (stepped(plan.max_saturated_s, false), down), // at the limit: valid
         (stepped(clipped, false), down),
-        (stepped(0.0, true), down),
+        (stepped(0.0, true), down), // a stall: doesn't count as clipped
+        (stepped(clipped, false), down),
         (stepped(0.0, false), up), // valid: count reset
         (stepped(clipped, false), up),
         (stepped(clipped, false), up),
-        (stepped(0.0, true), Action::Fail(AutotuneAbort::Invalid)),
+        (
+            stepped(clipped, false),
+            Action::Fail(AutotuneAbort::Invalid),
+        ),
     ];
     check!(plan.max_invalid == 3);
     for (index, (input, expected)) in script.into_iter().enumerate() {
         check!(procedure.next(input) == expected, "step {index}");
     }
+
+    let (mut procedure, plan) = step_test(3);
+    procedure.next(Input::Start { gains: CURRENT });
+    for index in 1..plan.max_stalled {
+        check!(procedure.next(stepped(0.0, true)) == up, "stall {index}");
+    }
+    check!(procedure.next(stepped(0.0, true)) == Action::Fail(AutotuneAbort::Stalled));
 }
 
 /// A measurement the method didn't ask for fails the stage.
@@ -192,15 +204,44 @@ fn relay_and_step_test_fail_on_an_abort() {
     }
 }
 
-/// The copter step test counts a step clipped for five 250 Hz ticks as valid: clipped time
-/// sums `dt` in `f32`, and five 4 ms ticks come to slightly over 20 ms.
+/// The copter step tests count a step clipped for their allowance in 250 Hz ticks as valid
+/// (rate loops 10, angle loops 5), summed in `f32` as the probe does (five 4 ms ticks come to
+/// slightly over 20 ms); one more tick is too many.
 #[test]
-fn five_clipped_ticks_stay_valid() {
-    let (mut procedure, plan) = step_test(1);
-    let saturated_s = (0..5).fold(0.0_f32, |sum, _| sum + 0.004);
-    check!(saturated_s > 0.02);
-    let down = Action::probe(ProbeConfig::Step(plan.step.reversed()));
+fn clipped_ticks_within_the_allowance_stay_valid() {
+    // (loop, ticks allowed)
+    let cases = [(TunedLoop::RollRate, 10), (TunedLoop::Roll, 5)];
+    for (target, ticks) in cases {
+        let plan = StepTestPlan::copter(target);
+        let clipped = |ticks| (0..ticks).fold(0.0_f32, |sum, _| sum + 0.004);
+        let up = Action::probe(ProbeConfig::Step(plan.step));
+        let down = Action::probe(ProbeConfig::Step(plan.step.reversed()));
 
-    procedure.next(Input::Start { gains: CURRENT });
-    check!(procedure.next(stepped(saturated_s, false)) == down);
+        let mut procedure = Procedure::new(Method::StepTest(plan));
+        procedure.next(Input::Start { gains: CURRENT });
+        check!(
+            procedure.next(stepped(clipped(ticks), false)) == down,
+            "{target:?}"
+        );
+        check!(
+            procedure.next(stepped(clipped(ticks + 1), false)) == down,
+            "{target:?}: reruns"
+        );
+        check!(procedure.next(stepped(0.0, false)) == up, "{target:?}");
+    }
+}
+
+/// A relay or a step test never flies a candidate; a breach reported to one fails it.
+#[test]
+fn relay_and_step_test_fail_on_a_breach() {
+    let (step, _) = step_test(1);
+    let relay = Procedure::new(Method::Relay(RelayPlan::copter(TunedLoop::RollRate)));
+    for mut procedure in [step, relay] {
+        procedure.next(Input::Start { gains: CURRENT });
+        let failed = procedure.next(Input::Breached {
+            reason: AutotuneAbort::Tilt,
+            gains: CURRENT,
+        });
+        check!(failed == Action::Fail(AutotuneAbort::Tilt));
+    }
 }

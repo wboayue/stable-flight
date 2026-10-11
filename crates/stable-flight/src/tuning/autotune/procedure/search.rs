@@ -38,8 +38,8 @@ enum Leg {
     Relay { tries: usize },
     /// Stepping on the start gains.
     Baseline,
-    /// Stepping on a bracket point.
-    Try(f32),
+    /// Stepping on a bracket point that has passed `passes` pairs in a row.
+    Try { gain: f32, passes: usize },
     /// Stepping on the result.
     Verify(f32),
 }
@@ -96,27 +96,33 @@ impl Search {
                 },
             ) => self.retry_relay(tries + 1),
             (
-                Leg::Baseline | Leg::Try(_) | Leg::Verify(_),
+                Leg::Baseline | Leg::Try { .. } | Leg::Verify(_),
                 Input::Measured {
                     measurement: Measurement::Step(metrics),
                     stalled,
                     ..
                 },
             ) => match self.pairs.record(&metrics, stalled) {
-                // The start gains can't be measured: nothing to compare with.
-                Err(abort) if self.leg == Leg::Baseline => Action::Fail(abort),
+                // The start gains can't be measured: nothing to compare with; nor can anything
+                // when the host keeps stalling.
+                Err(abort) if self.leg == Leg::Baseline || abort == AutotuneAbort::Stalled => {
+                    Action::Fail(abort)
+                }
                 // A candidate whose steps keep clipping can't be shown to pass.
                 Err(_) => self.judge(false),
                 Ok(()) if self.pairs.done() => self.judge(true),
                 Ok(()) => self.step(),
             },
             (
-                Leg::Baseline | Leg::Try(_) | Leg::Verify(_),
+                Leg::Baseline | Leg::Try { .. } | Leg::Verify(_),
                 Input::Aborted {
                     abort: ProbeAbort::Step(_),
                     ..
                 },
             ) => self.judge(false),
+            // A candidate that took the vehicle past the envelope fails.
+            (Leg::Try { .. } | Leg::Verify(_), Input::Breached { .. }) => self.judge(false),
+            (_, Input::Breached { reason, .. }) => Action::Fail(reason),
             _ => Action::Fail(AutotuneAbort::Interrupted),
         }
     }
@@ -143,7 +149,7 @@ impl Search {
     /// The next step on the gain under test.
     fn step(&self) -> Action {
         let gains = match self.leg {
-            Leg::Try(gain) | Leg::Verify(gain) => Some(self.with(gain)),
+            Leg::Try { gain, .. } | Leg::Verify(gain) => Some(self.with(gain)),
             Leg::Relay { .. } | Leg::Baseline => None,
         };
         Action::Probe {
@@ -158,7 +164,8 @@ impl Search {
     }
 
     /// Judges the batch on the gain under test (`complete`: every step ran; else one
-    /// aborted or too many were invalid, which fails it) and moves on.
+    /// aborted, too many were invalid, or the vehicle breached the envelope, which fails it)
+    /// and moves on. A bracket point needs `confirm` passing pairs in a row.
     fn judge(&mut self, complete: bool) -> Action {
         let steps = self.pairs.summary;
         let passed = complete && self.plan.criterion.passes(&steps);
@@ -168,7 +175,7 @@ impl Search {
                 self.baseline = steps;
                 (self.start, self.seed == self.start)
             }
-            Leg::Try(gain) => (self.with(gain), true),
+            Leg::Try { gain, .. } => (self.with(gain), true),
             Leg::Verify(gain) => return self.verified(gain, complete, steps),
             Leg::Relay { .. } => return Action::Fail(AutotuneAbort::Interrupted),
         };
@@ -177,6 +184,18 @@ impl Search {
             passed,
             steps,
         });
+        // A passing pair short of `confirm` in a row: another pair on the same gain.
+        if let Leg::Try { gain, passes } = self.leg
+            && passed
+            && passes + 1 < self.plan.confirm
+        {
+            self.leg = Leg::Try {
+                gain,
+                passes: passes + 1,
+            };
+            self.pairs.restart(1);
+            return self.step();
+        }
         if bracketed {
             let gain = self.plan.term.get(gains);
             if passed {
@@ -233,7 +252,7 @@ impl Search {
             (None, None) => Some(self.plan.term.get(self.seed).clamp(min, self.max)),
         };
         let (leg, pairs) = match next {
-            Some(gain) => (Leg::Try(gain), 1),
+            Some(gain) => (Leg::Try { gain, passes: 0 }, 1),
             None => {
                 let pass = self.pass.unwrap_or(min);
                 let result = (margin * pass).clamp(min, self.max);

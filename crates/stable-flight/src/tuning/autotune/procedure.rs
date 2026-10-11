@@ -25,6 +25,9 @@ pub(super) enum Input {
     },
     /// A probe gave up; `gains` are the loop's committed gains.
     Aborted { abort: ProbeAbort, gains: Gains },
+    /// A probe on candidate gains took the vehicle past the envelope; `gains` are the
+    /// loop's committed gains, back in place.
+    Breached { reason: AutotuneAbort, gains: Gains },
 }
 
 /// What the supervisor does next for the stage.
@@ -108,6 +111,7 @@ impl Procedure {
                     baseline: None,
                 },
                 Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
+                Input::Breached { reason, .. } => Action::Fail(reason),
                 Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
             },
             Self::StepTest(pairs) => match input {
@@ -127,6 +131,7 @@ impl Procedure {
                     Ok(()) => Action::probe(pairs.probe()),
                 },
                 Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
+                Input::Breached { reason, .. } => Action::Fail(reason),
                 Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
             },
             Self::Search(search) => search.next(input),
@@ -143,15 +148,18 @@ impl Procedure {
 }
 
 /// A batch of alternating steps: `+step` after an even count of valid steps, `−step` after an
-/// odd one. A step clipped longer than the plan allows, or stalled, is invalid: it is left out
-/// and runs again in the same direction, and `max_invalid` in a row fail the stage.
+/// odd one. A step clipped longer than the plan allows, or stalled, is left out and runs again
+/// in the same direction; `max_invalid` clipped or `max_stalled` stalled in a row fail the
+/// batch.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Pairs {
     plan: StepTestPlan,
     /// Pairs in this batch.
     pairs: usize,
-    /// Invalid steps since the last valid one.
+    /// Clipped steps in a row.
     invalid: usize,
+    /// Stalled steps in a row.
+    stalled: usize,
     /// The valid steps.
     summary: StepSummary,
 }
@@ -162,6 +170,7 @@ impl Pairs {
             plan,
             pairs,
             invalid: 0,
+            stalled: 0,
             summary: StepSummary::default(),
         }
     }
@@ -181,13 +190,22 @@ impl Pairs {
         ProbeConfig::Step(step)
     }
 
-    /// Adds a step's metrics, or counts it invalid.
+    /// Adds a step's metrics, or counts it stalled or clipped.
     ///
     /// # Errors
     ///
-    /// [`AutotuneAbort::Invalid`] at `max_invalid` invalid steps in a row.
+    /// [`AutotuneAbort::Stalled`] at `max_stalled` stalled steps in a row,
+    /// [`AutotuneAbort::Invalid`] at `max_invalid` clipped steps in a row.
     fn record(&mut self, metrics: &StepMetrics, stalled: bool) -> Result<(), AutotuneAbort> {
-        if stalled || metrics.saturated_s > self.plan.max_saturated_s {
+        if stalled {
+            self.stalled += 1;
+            if self.stalled >= self.plan.max_stalled {
+                return Err(AutotuneAbort::Stalled);
+            }
+            return Ok(());
+        }
+        self.stalled = 0;
+        if metrics.saturated_s > self.plan.max_saturated_s {
             self.invalid += 1;
             if self.invalid >= self.plan.max_invalid {
                 return Err(AutotuneAbort::Invalid);

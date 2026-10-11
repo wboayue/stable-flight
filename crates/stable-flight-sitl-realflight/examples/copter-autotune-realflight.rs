@@ -1,18 +1,17 @@
-//! Autotunes the quadcopter's rate loops in RealFlight (#149): climbs to the hover script's
-//! waypoint, runs the relay autotune on roll and pitch rate, lands, and disarms. The other loops
-//! keep their hand tune (see `COPTER_SEQUENCE` for why); `--stages angle` or `all` runs the
-//! angle and heading stages anyway, whose gains flew badly on QuadCopterX.
+//! Autotunes the quadcopter in RealFlight (#149, #298): climbs to the hover script's waypoint,
+//! tunes roll and pitch rate, then roll and pitch angle, by step response, lands, and disarms
+//! (`StagePlan::copter_search`, `architecture.md#autotune`). Per rate loop a relay sets D and
+//! caps P; per loop P is searched by pairs of steps (each judgment logged with its steps),
+//! verified against a baseline on the start gains, and kept only if it flies no worse. On
+//! completion it logs baseline vs verify per loop and prints the tuned config as an
+//! `airframes.rs` snippet. A failed stage (envelope breach, too many invalid steps) keeps the
+//! stages before it.
 //!
-//! Each stage hands one loop to a relay that measures its ultimate gain and period; the
-//! Tyreus–Luyben rule turns them into gains, committed before the next stage
-//! (`architecture.md#autotune`). The log has each stage's measurement and gains; on completion
-//! the tuned config is printed as an `airframes.rs` snippet. A failed stage (envelope breach,
-//! relay timeout) keeps the stages before it. `--rate-p-scale` starts from deliberately bad rate
-//! gains (e.g. `0.1` or `10`), to check the tune recovers from them.
-//!
-//! `--stages search` tunes roll and pitch rate by step response instead (#298): per loop, a
-//! relay sets D and caps P, then P is searched by steps (each judgment logged with its
-//! steps), verified, and kept only if it flies no worse than the start.
+//! `--stages rate` runs the phase-1 relay autotune instead: each stage's relay measures the
+//! loop's ultimate point and the Tyreus–Luyben rule sets its gains; `--stages angle` or `all`
+//! adds relay stages for the angle and heading loops, whose gains flew badly on QuadCopterX
+//! (see `COPTER_SEQUENCE`). `--rate-p-scale` starts from deliberately bad rate gains (e.g. `0.1`
+//! or `10`), to check the tune recovers from them.
 //!
 //! `--step-test` appends step tests of roll and pitch rate and angle (#298): alternating steps,
 //! each one's response logged at `debug`, and a summary per loop at `info` (overshoot, rise,
@@ -24,9 +23,9 @@
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight
-//! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --rate-p-scale 10
+//! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --step-test
+//! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages rate --rate-p-scale 10
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages none --step-test
-//! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages search --step-test
 //! ```
 
 use std::cell::Cell;
@@ -69,6 +68,9 @@ const LOOP_HZ: f64 = 250.0;
 const LOOP_DT_S: f32 = (1.0 / LOOP_HZ) as f32;
 /// How close to the hover altitude the vehicle must be before the autotune starts, in m.
 const START_ALTITUDE_TOLERANCE_M: f32 = 0.5;
+/// Ticks the runner may skip at once before a running step counts as stalled: a one- or
+/// two-tick slip is jitter the step's filter absorbs, a longer gap breaks its timing.
+const STALL_TICKS: u64 = 2;
 /// How often a running stage's status is logged at `debug`, in ticks (1 s).
 const STATUS_EVERY_TICKS: u32 = 250;
 /// The rate loops (the others are angle and heading loops); `--rate-p-scale` scales all
@@ -96,7 +98,7 @@ struct Args {
     rate_p_scale: f32,
 
     /// Which loops to tune.
-    #[arg(long, value_enum, default_value_t = Stages::Rate)]
+    #[arg(long, value_enum, default_value_t = Stages::Search)]
     stages: Stages,
 
     /// After tuning, step-tests roll and pitch rate and angle and logs their responses.
@@ -119,16 +121,16 @@ struct Args {
 /// `--stages`.
 #[derive(Clone, Copy, ValueEnum)]
 enum Stages {
+    /// Roll and pitch rate, then angle, by step-response search (relay D, searched P).
+    Search,
     /// None: the hand tune (with `--step-test`, to measure it).
     None,
-    /// Roll and pitch rate: the core's default sequence.
+    /// Roll and pitch rate by relay: the core's relay sequence.
     Rate,
-    /// Roll, pitch, and heading (opt-in: their relay gains oscillated on QuadCopterX).
+    /// Roll, pitch, and heading by relay (their relay gains oscillated on QuadCopterX).
     Angle,
-    /// Rate, then angle and heading.
+    /// Relay rate, then relay angle and heading.
     All,
-    /// Roll and pitch rate by step-response search (relay D, searched P).
-    Search,
 }
 
 /// The opt-in angle and heading stages.
@@ -151,7 +153,7 @@ impl Stages {
             Stages::Rate => rate.collect(),
             Stages::Angle => angle.collect(),
             Stages::All => rate.chain(angle).collect(),
-            Stages::Search => StagePlan::copter_rate_search().into(),
+            Stages::Search => StagePlan::copter_search().into(),
         }
     }
 }
@@ -261,12 +263,14 @@ fn main() {
     let runner = RealTimeRunner::new(LOOP_HZ).expect("valid loop frequency");
     let mut ticks = 0u32;
     let mut skipped_ticks = 0;
+    let mut searched = Vec::new();
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop, stats| {
-        // A stall (the runner dropped ticks) spoils a running step's timing: it runs again.
-        if stats.skipped_ticks > skipped_ticks {
-            skipped_ticks = stats.skipped_ticks;
+        // A stall (the runner dropped several ticks at once) spoils a running step's timing:
+        // it runs again.
+        if stats.skipped_ticks > skipped_ticks + STALL_TICKS {
             autotune.note_stall();
         }
+        skipped_ticks = stats.skipped_ticks;
         match poller.poll(flight_loop) {
             Ok(stats) if stats.decode_errors > 0 || stats.dropped > 0 => {
                 debug!("link: {stats:?}");
@@ -300,6 +304,26 @@ fn main() {
             return;
         };
         log_event(&event, flight_loop.stabilizer().config());
+        if let AutotuneEvent::StageDone {
+            target,
+            outcome,
+            steps: Some(verify),
+            baseline: Some(baseline),
+            ..
+        } = event
+        {
+            searched.push((target, outcome, baseline, verify));
+        }
+        // Every finished search's baseline vs verify, however the run ends.
+        if !autotune.is_running() {
+            for (target, outcome, baseline, verify) in &searched {
+                info!(
+                    "autotune: {target:?} {outcome:?}: {} -> {}",
+                    format_brief(baseline),
+                    format_brief(verify)
+                );
+            }
+        }
         if !autotune.is_running() {
             info!("landing");
             land.set(true);
@@ -468,17 +492,13 @@ fn format_summary(summary: &StepSummary) -> String {
         ),
         None => "-".to_string(),
     };
-    let mean = |stat: &Stat| {
-        stat.mean()
-            .map_or("-".to_string(), |mean| format!("{mean:.2}"))
-    };
     format!(
         "n {}: overshoot {} (+ {}, - {}), rise {} ms, settle {} ms, bounce {}, final {}; \
          not risen {}, not settled {}",
         summary.count(),
         stat(&summary.overshoot, 1.0),
-        mean(&summary.overshoot_positive),
-        mean(&summary.overshoot_negative),
+        format_mean(&summary.overshoot_positive, 1.0),
+        format_mean(&summary.overshoot_negative, 1.0),
         stat(&summary.rise_time_s, 1e3),
         stat(&summary.settling_time_s, 1e3),
         stat(&summary.bounce_back, 1.0),
@@ -486,6 +506,23 @@ fn format_summary(summary: &StepSummary) -> String {
         summary.not_risen,
         summary.not_settled,
     )
+}
+
+/// A summary's means, for the baseline-vs-verify table.
+fn format_brief(summary: &StepSummary) -> String {
+    format!(
+        "rise {} ms, settle {} ms, overshoot {}, final {}",
+        format_mean(&summary.rise_time_s, 1e3),
+        format_mean(&summary.settling_time_s, 1e3),
+        format_mean(&summary.overshoot, 1.0),
+        format_mean(&summary.final_value, 1.0),
+    )
+}
+
+/// A metric's mean times `scale`, or `-` with no samples.
+fn format_mean(stat: &Stat, scale: f32) -> String {
+    stat.mean()
+        .map_or("-".to_string(), |mean| format!("{:.2}", mean * scale))
 }
 
 fn format_gains(gains: &Gains) -> String {
