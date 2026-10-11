@@ -177,7 +177,7 @@ Tick ordering (commander sees the previous tick's state; guidance and stabilizer
 - Tests that raise process-wide signals get an integration-test binary of their own
   (`tests/*.rs`), one signal per binary.
 - `proptest` and `criterion` are **not** in `Cargo.toml`. Add them deliberately, with a benchmark or property test in the same PR, if you reach for them.
-- Coverage: target **90%+ overall** (the Coveralls number for `main`; 86.9% at #285). A PR should not lower it, and one that adds library code covers it at 90%+; examples and firmware are excluded (`.tarpaulin.toml`), so the target applies to tested code. `just cover` → review `tarpaulin-report.html`. Refresh after non-trivial control-loop changes. The `coverage` workflow (on push to `main`, or by hand) runs the same tarpaulin and uploads to Coveralls (the README badge).
+- Coverage: target **90%+ overall** (the Coveralls number for `main`; 85.7% at #285). A PR should not lower it, and one that adds library code covers it at 90%+; examples and firmware are excluded (`.tarpaulin.toml`), so the target applies to tested code. `just cover` → review `tarpaulin-report.html`. Refresh after non-trivial control-loop changes. The `coverage` workflow (on push to `main`, or by hand) runs the same tarpaulin and uploads to Coveralls (the README badge).
 
 ## Simulator setup
 
@@ -257,7 +257,7 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
    verify the behavior you rely on in its source, not from memory, and record the findings with
    file:line in the issue or PR. Examples: QGC's connect and metadata handling (#206 comment),
    and its arming and `MANUAL_CONTROL` (#234 PR).
-3. Read the relevant trait in core `src/lib.rs` and its existing impls before adding a new one. Hardware-reusable code (control math, mixing, sequencing) goes in the core crate; anything touching an OS, clock, file, or network goes in sitl; anything specific to one simulator goes in its `stable-flight-sitl-<simulator>` backend crate.
+3. Read the relevant trait in core `src/lib.rs` and its existing impls before adding a new one. Hardware-reusable code (control math, mixing, sequencing) goes in the core crate; anything touching an OS, clock, file, or network goes in sitl; anything specific to one simulator goes in its `stable-flight-sitl-<simulator>` backend crate. Firmware stays thin: a board crate only wires hardware to the pipeline (clocks, RTIC tasks, peripheral setup); logic it needs (sensor parsing, ESC protocol encoding, estimation) goes in core or another `no_std` crate under `crates/`, unit-tested on the host (`embedded-hal-mock` for drivers) so it counts toward coverage. Firmware itself is excluded from coverage; on-target tests (`embedded-test`) and HIL (#243) check it instead.
 4. Wire new components into a `FlightLoop` + `RealTimeRunner` the way sitl-realflight `examples/copter-manual-realflight.rs` does — that's the canonical reference.
 5. Add tests alongside the code; cover the boundary/error case, not just the happy path.
    A new `ParamTable` also gets a `ParamMetadata` table in the same file and a row in core
