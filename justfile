@@ -57,7 +57,7 @@ fw-flash features="": (fw-bin features)
 
 # Generate and save coverage report using tarpaulin
 cover:
-    cargo tarpaulin --workspace --exclude-files 'firmware/*' -o html
+    cargo tarpaulin -o html
     echo "coverage report saved to tarpaulin-report.html"
 
 # Joystick-flown quadcopter in RealFlight, params and telemetry over the native link for `just bridge`, e.g. `just fly-manual --host 192.168.1.20:8080`

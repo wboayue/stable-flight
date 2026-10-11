@@ -1,0 +1,7 @@
+# Coverage settings shared by `just cover` and the `coverage` workflow; each adds only its output
+# format. Excluded: board firmware (its own workspace) and examples, which need a simulator or a
+# joystick, so tests never run them.
+[coverage]
+workspace = true
+all-features = true
+exclude-files = ["firmware/*", "crates/*/examples/*"]
