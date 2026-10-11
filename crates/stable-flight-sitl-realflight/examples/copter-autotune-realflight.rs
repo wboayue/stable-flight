@@ -31,6 +31,7 @@ use stable_flight::commanders::{RouteEnd, TouchdownDetector};
 use stable_flight::controllers::Gains;
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
+use stable_flight::tuning::Measurement;
 use stable_flight::tuning::autotune::{
     Autotune, AutotuneEvent, AutotuneStatus, Envelope, StagePlan,
 };
@@ -237,7 +238,7 @@ fn main() {
         }
         ticks = ticks.wrapping_add(1);
         if ticks.is_multiple_of(STATUS_EVERY_TICKS)
-            && let Some((target, status)) = flight_loop.tuning()
+            && let Some((target, status)) = flight_loop.probe()
         {
             debug!("autotune: {target:?} {status:?}");
         }
@@ -257,19 +258,16 @@ fn main() {
 fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
     match event {
         AutotuneEvent::StageStarted(target) => info!("autotune: tuning {target:?}"),
-        AutotuneEvent::StageDone {
+        AutotuneEvent::Measured {
             target,
-            result,
-            gains,
+            measurement: Measurement::Relay(result),
         } => info!(
-            "autotune: {target:?} Ku {:.3} Tu {:.3} s (relay {:.3}, cycle {:.4}, bias {:.3}) -> {}",
-            result.point.ku,
-            result.point.tu_s,
-            result.relay,
-            result.cycle_amplitude,
-            result.bias,
-            format_gains(gains)
+            "autotune: {target:?} Ku {:.3} Tu {:.3} s (relay {:.3}, cycle {:.4}, bias {:.3})",
+            result.point.ku, result.point.tu_s, result.relay, result.cycle_amplitude, result.bias,
         ),
+        AutotuneEvent::StageDone { target, gains } => {
+            info!("autotune: {target:?} -> {}", format_gains(gains));
+        }
         AutotuneEvent::StageFailed { target, reason } => {
             warn!("autotune: {target:?} failed: {reason:?}; earlier stages kept");
         }

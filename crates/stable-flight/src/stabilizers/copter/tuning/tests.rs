@@ -3,8 +3,9 @@ use assert2::{assert, check};
 use super::*;
 use crate::controllers::Gains;
 use crate::stabilizers::copter::CopterStabilizerConfig;
-use crate::tuning::RelayAbort;
+use crate::tuning::Measurement;
 use crate::tuning::plant::{Axes, PlantParams};
+use crate::tuning::{ProbeAbort, RelayAbort, RelayConfig};
 use crate::{AttitudeSetpoint, ControlOutput, RateSetpoint, Setpoint, Stabilizer, Vec2, Vec3};
 
 /// The flight loop's tick: 250 Hz.
@@ -111,7 +112,10 @@ fn tick(stabilizer: &mut CopterStabilizer, axes: &mut Axes, setpoint: &Setpoint)
 fn fly_stage(stabilizer: &mut CopterStabilizer, axes: &mut Axes, setpoint: &Setpoint, max_s: f32) {
     for _ in 0..(max_s / DT) as usize {
         tick(stabilizer, axes, setpoint);
-        if !matches!(stabilizer.tuning(), Some((_, TuningStatus::Running { .. }))) {
+        if !stabilizer
+            .probe()
+            .is_some_and(|(_, status)| status.is_running())
+        {
             break;
         }
     }
@@ -143,13 +147,13 @@ fn each_stage_measures_its_loop_while_the_others_hold() {
     for (target, relay) in cases {
         let mut stabilizer = CopterStabilizer::new(config());
         let mut axes = axes(0.0);
-        stabilizer.start_tuning(target, relay);
+        stabilizer.start_probe(target, ProbeConfig::Relay(relay));
 
         fly_stage(&mut stabilizer, &mut axes, &level(), 30.0);
 
-        let status = stabilizer.tuning().map(|(_, status)| status);
+        let status = stabilizer.probe().map(|(_, status)| status);
         check!(
-            matches!(status, Some(TuningStatus::Done(_))),
+            matches!(status, Some(ProbeStatus::Done(_))),
             "{target:?}: {status:?}"
         );
         for &axis in untested_axes(target) {
@@ -168,7 +172,7 @@ fn a_rate_stage_replaces_the_moment_with_the_relay() {
     config.body_rate.roll_gains.p = 50.0; // would saturate the moment if it still flew
     let mut stabilizer = CopterStabilizer::new(config);
     let mut axes = axes(0.0);
-    stabilizer.start_tuning(TunedLoop::RollRate, rate_relay());
+    stabilizer.start_probe(TunedLoop::RollRate, ProbeConfig::Relay(rate_relay()));
 
     let mut moments: Vec<f32> = Vec::new();
     for _ in 0..50 {
@@ -190,11 +194,11 @@ fn handoff_carries_the_trim_into_the_integral() {
     const YAW_TORQUE: f32 = 0.08;
     let mut stabilizer = CopterStabilizer::new(config());
     let mut axes = axes(YAW_TORQUE);
-    stabilizer.start_tuning(TunedLoop::YawRate, rate_relay());
+    stabilizer.start_probe(TunedLoop::YawRate, ProbeConfig::Relay(rate_relay()));
 
     fly_stage(&mut stabilizer, &mut axes, &level(), 30.0);
-    let Some((_, TuningStatus::Done(result))) = stabilizer.tuning() else {
-        panic!("stage didn't finish: {:?}", stabilizer.tuning());
+    let Some((_, ProbeStatus::Done(Measurement::Relay(result)))) = stabilizer.probe() else {
+        panic!("stage didn't finish: {:?}", stabilizer.probe());
     };
     // The duty check bounds the bias to about relay × tolerance of the trim.
     check!(
@@ -230,7 +234,7 @@ fn stop_hands_back_only_the_tested_loop() {
     for _ in 0..100 {
         tick(&mut stabilizer, &mut axes, &level());
     }
-    stabilizer.start_tuning(TunedLoop::RollRate, rate_relay());
+    stabilizer.start_probe(TunedLoop::RollRate, ProbeConfig::Relay(rate_relay()));
     for _ in 0..100 {
         tick(&mut stabilizer, &mut axes, &level());
     }
@@ -240,16 +244,16 @@ fn stop_hands_back_only_the_tested_loop() {
     let bias = stabilizer
         .stage
         .as_ref()
-        .map(|s| s.tuner.bias())
+        .map(|s| s.probe.trim())
         .unwrap_or_default();
 
-    let stopped = stabilizer.stop_tuning();
+    let stopped = stabilizer.stop_probe();
 
     check!(matches!(
         stopped,
-        Some((TunedLoop::RollRate, TuningStatus::Running { .. }))
+        Some((TunedLoop::RollRate, ProbeStatus::Running(_)))
     ));
-    check!(stabilizer.tuning() == None);
+    check!(stabilizer.probe() == None);
     check!(stabilizer.attitude == attitude);
     check!(stabilizer.yaw == yaw);
     for (index, axis) in [1, 2].into_iter().enumerate() {
@@ -264,15 +268,15 @@ fn stop_hands_back_only_the_tested_loop() {
 #[test]
 fn starting_a_stage_hands_back_the_running_one() {
     let mut stabilizer = CopterStabilizer::new(config());
-    stabilizer.start_tuning(TunedLoop::RollRate, rate_relay());
-    stabilizer.start_tuning(TunedLoop::PitchRate, rate_relay());
+    stabilizer.start_probe(TunedLoop::RollRate, ProbeConfig::Relay(rate_relay()));
+    stabilizer.start_probe(TunedLoop::PitchRate, ProbeConfig::Relay(rate_relay()));
 
     let mut state = crate::VehicleState::default();
     state.angular_velocity_radps.x = 0.5;
     let output = stabilizer.stabilize(DT, &Setpoint::Rate(RateSetpoint::default()), &state);
 
     check!(matches!(
-        stabilizer.tuning(),
+        stabilizer.probe(),
         Some((TunedLoop::PitchRate, _))
     ));
     let gains = config().body_rate.roll_gains;
@@ -299,7 +303,7 @@ fn rate_ticks_interrupt_angle_stages_only() {
     for (target, relay, interrupted) in cases {
         let mut stabilizer = CopterStabilizer::new(config());
         let mut axes = axes(0.0);
-        stabilizer.start_tuning(target, relay);
+        stabilizer.start_probe(target, ProbeConfig::Relay(relay));
         for _ in 0..10 {
             tick(&mut stabilizer, &mut axes, &level());
         }
@@ -307,12 +311,12 @@ fn rate_ticks_interrupt_angle_stages_only() {
         tick(&mut stabilizer, &mut axes, &acro);
         tick(&mut stabilizer, &mut axes, &level());
 
-        let status = stabilizer.tuning().map(|(_, status)| status);
+        let status = stabilizer.probe().map(|(_, status)| status);
         if interrupted {
-            check!(status == Some(TuningStatus::Interrupted), "{target:?}");
+            check!(status == Some(ProbeStatus::Interrupted), "{target:?}");
         } else {
             check!(
-                matches!(status, Some(TuningStatus::Running { .. })),
+                status.is_some_and(|status| status.is_running()),
                 "{target:?}"
             );
         }
@@ -323,9 +327,9 @@ fn rate_ticks_interrupt_angle_stages_only() {
 #[test]
 fn prime_ends_the_stage() {
     let mut stabilizer = CopterStabilizer::new(config());
-    stabilizer.start_tuning(TunedLoop::Roll, angle_relay());
+    stabilizer.start_probe(TunedLoop::Roll, ProbeConfig::Relay(angle_relay()));
     stabilizer.prime(&crate::VehicleState::default());
-    assert!(stabilizer.tuning() == None);
+    assert!(stabilizer.probe() == None);
 }
 
 /// The stage's bias starts at the loop's I term, so the relay is centered on the trim.
@@ -340,9 +344,9 @@ fn a_stage_starts_from_the_loops_trim() {
     let trim = stabilizer.body_rate.integral_term(&config.body_rate, 2);
     check!(trim < -0.05, "yaw trim {trim}");
 
-    stabilizer.start_tuning(TunedLoop::YawRate, rate_relay());
+    stabilizer.start_probe(TunedLoop::YawRate, ProbeConfig::Relay(rate_relay()));
 
-    let bias = stabilizer.stage.as_ref().map(|s| s.tuner.bias());
+    let bias = stabilizer.stage.as_ref().map(|s| s.probe.trim());
     check!(bias == Some(trim));
 }
 
@@ -356,14 +360,14 @@ fn an_aborted_stage_is_handed_back_and_stop_reports_it() {
         timeout_s: 0.1,
         ..rate_relay()
     };
-    stabilizer.start_tuning(TunedLoop::RollRate, relay);
+    stabilizer.start_probe(TunedLoop::RollRate, ProbeConfig::Relay(relay));
 
     fly_stage(&mut stabilizer, &mut axes, &level(), 1.0);
     let aborted = Some((
         TunedLoop::RollRate,
-        TuningStatus::Aborted(RelayAbort::Timeout),
+        ProbeStatus::Aborted(ProbeAbort::Relay(RelayAbort::Timeout)),
     ));
-    check!(stabilizer.tuning() == aborted);
+    check!(stabilizer.probe() == aborted);
 
     // Flying on after the handoff moves the roll integral; a second handoff would reset it.
     for _ in 0..50 {
@@ -372,6 +376,6 @@ fn an_aborted_stage_is_handed_back_and_stop_reports_it() {
     let config = config();
     let roll_i_term = stabilizer.body_rate.integral_term(&config.body_rate, 0);
 
-    check!(stabilizer.stop_tuning() == aborted);
+    check!(stabilizer.stop_probe() == aborted);
     check!(stabilizer.body_rate.integral_term(&config.body_rate, 0) == roll_i_term);
 }

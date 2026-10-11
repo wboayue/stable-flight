@@ -33,11 +33,11 @@
 //!
 //! # Tuning
 //!
-//! An autotune stage ([`start_tuning`](crate::tuning::Tunable::start_tuning)) hands one loop to a
-//! [`RelayTuner`](crate::tuning::RelayTuner) (#149). Every controller still runs each tick;
-//! the stage replaces one value:
+//! An autotune stage ([`start_probe`](crate::tuning::Tunable::start_probe)) hands one loop to a
+//! [`Probe`](crate::tuning::Probe) (#149), today a relay. Every controller still runs each
+//! tick; the stage replaces one value:
 //!
-//! | [`TunedLoop`] | Relay error | Replaces |
+//! | [`TunedLoop`] | Probe error | Replaces |
 //! |---|---|---|
 //! | `RollRate`, `PitchRate`, `YawRate` | desired − measured body rate | that axis's moment (±1) |
 //! | `Roll`, `Pitch` | saturated desired − estimated angle | that axis's rate setpoint (`max_rate_radps`) |
@@ -46,10 +46,11 @@
 //! - **Rate stages** keep the angle loop around the tested axis, which keeps it near level, so
 //!   the relay measures the rate loop with the angle loop's `(s + Kp)/s` wrapped around it: a
 //!   few degrees of phase at the rate loop's ultimate frequency.
-//! - **Handoff:** when the tuner finishes, on [`stop_tuning`](crate::tuning::Tunable::stop_tuning),
+//! - **Handoff:** when the probe finishes, on [`stop_probe`](crate::tuning::Tunable::stop_probe),
 //!   or when a [`Setpoint::Rate`] tick idles the angle or heading loop under test
-//!   ([`TuningStatus::Interrupted`](crate::tuning::TuningStatus::Interrupted)), the loop restarts with the tuner's bias as its I term and
-//!   no derivative history: the measured trim carries over, and a retune with the tuned gains
+//!   ([`ProbeStatus::Interrupted`](crate::tuning::ProbeStatus::Interrupted)), the loop
+//!   restarts with the probe's trim (the relay's bias) as its I term and no derivative
+//!   history: the measured trim carries over, and a retune with the tuned gains
 //!   rescales it like any other (`architecture.md#config-ownership`). On an interrupt the rate
 //!   tick then clears the idle angle loops (#70), so that trim is dropped.
 //! - The stage is runtime state, not config; [`prime`](crate::Stabilizer::prime) ends it.
