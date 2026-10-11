@@ -13,13 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ultimate gain and period by relay feedback (hysteresis, relay ramp, adaptive bias for a
   steady offset, timeout and amplitude aborts); `gains_from_ultimate` turns the result into
   `Gains` by Tyreus–Luyben or no-overshoot Ziegler–Nichols, as PID, PI, PD, or P.
-- **Autotune stages in `CopterStabilizer`** (#149): `start_tuning(TunedLoop, RelayConfig)`
-  hands one loop (roll/pitch/yaw rate, roll/pitch angle, or heading) to a `RelayTuner`, seeded
-  with the loop's trim; `tuning()` reports `TuningStatus`; the loop is handed back with the
-  measured trim as its I term when the tuner finishes, on `stop_tuning`, or when a rate tick
-  interrupts an angle or heading stage. `prime` ends a stage.
-- **`FlightLoop::armed()` and `FlightLoop::stabilizer_mut()`**, for driving autotune between
-  ticks.
+- **Autotune stages** (#149): the `Tunable` trait (`start_tuning`, `tuning`, `stop_tuning`),
+  implemented by `CopterStabilizer` on a `TunedLoop` (roll/pitch/yaw rate, roll/pitch angle,
+  or heading), hands one loop to a `RelayTuner` seeded with the loop's trim; `TuningStatus`
+  reports it; the loop is handed back with the measured trim as its I term when the tuner
+  finishes, on `stop_tuning`, or when a rate tick interrupts an angle or heading stage.
+  `prime` ends a stage. `FlightLoop` forwards the three calls, and adds `armed()`.
+- **`tuning::autotune::Autotune`** (#149): sequences stages between ticks (`StagePlan`,
+  copter defaults in `StagePlan::copter_sequence`), waits for the vehicle to settle, aborts
+  on an `Envelope` breach, commits each stage's gains through `set_stabilizer_config`, and
+  reverts to the starting config on disarm; reports `AutotuneEvent`s for logging.
 
 ### Changed
 

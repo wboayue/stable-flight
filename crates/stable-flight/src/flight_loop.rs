@@ -9,6 +9,7 @@ use core::time::Duration;
 
 use crate::controllers::InvalidConfig;
 use crate::params::{ParamError, Params};
+use crate::tuning::{RelayConfig, Tunable, TuningStatus};
 use crate::{
     ActuatorCommand, AttitudeSetpoint, Commander, Configurable, ControlOutput, Guidance, Mixer,
     Saturation, Setpoint, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle, VehicleState,
@@ -210,14 +211,6 @@ where
         &self.stabilizer
     }
 
-    /// The stabilizer, mutably, between ticks: e.g. to start or stop an autotune stage
-    /// ([`CopterStabilizer::start_tuning`](crate::stabilizers::copter::CopterStabilizer::start_tuning)).
-    /// Retune through [`set_stabilizer_config`](Self::set_stabilizer_config) or the
-    /// stabilizer's own validated [`Configurable::set_config`].
-    pub fn stabilizer_mut(&mut self) -> &mut S {
-        &mut self.stabilizer
-    }
-
     /// Whether the last tick was armed (false before the first tick). A disarm between ticks
     /// shows here after the next tick.
     pub fn armed(&self) -> bool {
@@ -377,6 +370,33 @@ where
 /// assert_eq!(flight_loop.guidance().config().altitude.gains.p, 2.5);
 /// assert_eq!(flight_loop.param("STAB_RATE_RLL_P"), Some(0.2));
 /// ```
+/// Autotune stages on a [`Tunable`] stabilizer, between ticks; forwarded so the loop hands out
+/// no `&mut` to its components.
+impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T>
+where
+    S: Tunable,
+{
+    /// Starts relay tuning on one of the stabilizer's loops, from the next tick
+    /// ([`Tunable::start_tuning`]).
+    ///
+    /// # Panics
+    ///
+    /// If `config` is invalid ([`RelayConfig::validate`]).
+    pub fn start_tuning(&mut self, target: S::Target, config: RelayConfig) {
+        self.stabilizer.start_tuning(target, config);
+    }
+
+    /// The stabilizer's current stage, if any ([`Tunable::tuning`]).
+    pub fn tuning(&self) -> Option<(S::Target, TuningStatus)> {
+        self.stabilizer.tuning()
+    }
+
+    /// Ends the stage and hands its loop back ([`Tunable::stop_tuning`]).
+    pub fn stop_tuning(&mut self) -> Option<(S::Target, TuningStatus)> {
+        self.stabilizer.stop_tuning()
+    }
+}
+
 impl<C, V, G, S, M, T> Params for FlightLoop<C, V, G, S, M, T>
 where
     G: Params,

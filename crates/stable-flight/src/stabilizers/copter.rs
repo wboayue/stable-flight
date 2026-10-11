@@ -33,7 +33,7 @@
 //!
 //! # Tuning
 //!
-//! An autotune stage ([`CopterStabilizer::start_tuning`]) hands one loop to a
+//! An autotune stage ([`start_tuning`](crate::tuning::Tunable::start_tuning)) hands one loop to a
 //! [`RelayTuner`](crate::tuning::RelayTuner) (#149). Every controller still runs each tick;
 //! the stage replaces one value:
 //!
@@ -46,9 +46,9 @@
 //! - **Rate stages** keep the angle loop around the tested axis, which keeps it near level, so
 //!   the relay measures the rate loop with the angle loop's `(s + Kp)/s` wrapped around it: a
 //!   few degrees of phase at the rate loop's ultimate frequency.
-//! - **Handoff:** when the tuner finishes, on [`stop_tuning`](CopterStabilizer::stop_tuning),
+//! - **Handoff:** when the tuner finishes, on [`stop_tuning`](crate::tuning::Tunable::stop_tuning),
 //!   or when a [`Setpoint::Rate`] tick idles the angle or heading loop under test
-//!   ([`TuningStatus::Interrupted`]), the loop restarts with the tuner's bias as its I term and
+//!   ([`TuningStatus::Interrupted`](crate::tuning::TuningStatus::Interrupted)), the loop restarts with the tuner's bias as its I term and
 //!   no derivative history: the measured trim carries over, and a retune with the tuned gains
 //!   rescales it like any other (`architecture.md#config-ownership`). On an interrupt the rate
 //!   tick then clears the idle angle loops (#70), so that trim is dropped.
@@ -72,7 +72,7 @@ mod tests;
 mod tuning;
 
 use tuning::Location;
-pub use tuning::{TunedLoop, TuningStatus};
+pub use tuning::TunedLoop;
 
 /// Configuration for the [CopterStabilizer]: gains and limits for the inner control loops and
 /// the thrust mapping.
