@@ -25,6 +25,30 @@ pub enum TunedLoop {
     Heading,
 }
 
+/// Where a [`TunedLoop`] sits in the cascade: the controller that owns it and its axis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Location {
+    /// The body-rate loop, axis 0 roll, 1 pitch, 2 yaw.
+    Rate(usize),
+    /// The attitude loop, axis 0 roll, 1 pitch.
+    Angle(usize),
+    /// The heading loop.
+    Heading,
+}
+
+impl TunedLoop {
+    pub(super) fn location(self) -> Location {
+        match self {
+            Self::RollRate => Location::Rate(0),
+            Self::PitchRate => Location::Rate(1),
+            Self::YawRate => Location::Rate(2),
+            Self::Roll => Location::Angle(0),
+            Self::Pitch => Location::Angle(1),
+            Self::Heading => Location::Heading,
+        }
+    }
+}
+
 /// Where a tuning stage stands.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TuningStatus {
@@ -40,7 +64,8 @@ pub enum TuningStatus {
     /// The tuner gave up; the loop is back with its controller.
     Aborted(RelayAbort),
     /// A [`Setpoint::Rate`](crate::Setpoint::Rate) tick idled the angle or heading loop under
-    /// test (the pilot switched to acro); the loop is back with its controller.
+    /// test (the pilot switched to acro). The loop is back with its controller, cleared like
+    /// any idle angle loop on a rate tick, so the measured trim is not carried over.
     Interrupted,
 }
 
@@ -161,15 +186,12 @@ impl CopterStabilizer {
             return;
         }
         stage.handed_back = true;
-        let (target, trim) = (stage.target, stage.tuner.bias());
+        let (location, trim) = (stage.target.location(), stage.tuner.bias());
         let config = &self.config;
-        match target {
-            TunedLoop::RollRate => self.body_rate.hand_back(&config.body_rate, 0, trim),
-            TunedLoop::PitchRate => self.body_rate.hand_back(&config.body_rate, 1, trim),
-            TunedLoop::YawRate => self.body_rate.hand_back(&config.body_rate, 2, trim),
-            TunedLoop::Roll => self.attitude.hand_back(&config.attitude, 0, trim),
-            TunedLoop::Pitch => self.attitude.hand_back(&config.attitude, 1, trim),
-            TunedLoop::Heading => self.yaw.hand_back(&config.yaw, trim),
+        match location {
+            Location::Rate(axis) => self.body_rate.hand_back(&config.body_rate, axis, trim),
+            Location::Angle(axis) => self.attitude.hand_back(&config.attitude, axis, trim),
+            Location::Heading => self.yaw.hand_back(&config.yaw, trim),
         }
     }
 
@@ -178,40 +200,42 @@ impl CopterStabilizer {
         let Some(stage) = &mut self.stage else {
             return;
         };
-        let angle_loop = matches!(
-            stage.target,
-            TunedLoop::Roll | TunedLoop::Pitch | TunedLoop::Heading
-        );
+        let angle_loop = !matches!(stage.target.location(), Location::Rate(_));
         if angle_loop && stage.is_running() {
             stage.interrupted = true;
             self.hand_back();
         }
     }
 
-    /// Steps the running stage on `target` with `error` and returns the relay output, or None
-    /// when no stage runs on `target`. Hands the loop back once the tuner finishes.
-    pub(super) fn step_stage(&mut self, target: TunedLoop, dt: f32, error: f32) -> Option<f32> {
-        let stage = self.stage.as_mut()?;
-        if stage.target != target || !stage.is_running() {
-            return None;
-        }
+    /// Where the running stage replaces a value, or None when no stage runs: the one check an
+    /// idle tick pays.
+    pub(super) fn running_stage(&self) -> Option<Location> {
+        self.stage
+            .as_ref()
+            .filter(|stage| stage.is_running())
+            .map(|stage| stage.target.location())
+    }
+
+    /// Steps the running stage with its loop's `error` and returns the relay output (0 when no
+    /// stage runs). Hands the loop back once the tuner finishes.
+    pub(super) fn step_stage(&mut self, dt: f32, error: f32) -> f32 {
+        let Some(stage) = self.stage.as_mut().filter(|stage| stage.is_running()) else {
+            return 0.0;
+        };
         let output = stage.tuner.step(dt, error);
         if !matches!(stage.tuner.status(), RelayStatus::Running { .. }) {
             self.hand_back();
         }
-        Some(output)
+        output
     }
 
     /// The I term of `target`'s controller: its trim.
     fn integral_term(&self, target: TunedLoop) -> f32 {
         let config = &self.config;
-        match target {
-            TunedLoop::RollRate => self.body_rate.integral_term(&config.body_rate, 0),
-            TunedLoop::PitchRate => self.body_rate.integral_term(&config.body_rate, 1),
-            TunedLoop::YawRate => self.body_rate.integral_term(&config.body_rate, 2),
-            TunedLoop::Roll => self.attitude.integral_term(&config.attitude, 0),
-            TunedLoop::Pitch => self.attitude.integral_term(&config.attitude, 1),
-            TunedLoop::Heading => self.yaw.integral_term(&config.yaw),
+        match target.location() {
+            Location::Rate(axis) => self.body_rate.integral_term(&config.body_rate, axis),
+            Location::Angle(axis) => self.attitude.integral_term(&config.attitude, axis),
+            Location::Heading => self.yaw.integral_term(&config.yaw),
         }
     }
 }

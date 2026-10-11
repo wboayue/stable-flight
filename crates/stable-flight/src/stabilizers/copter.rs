@@ -50,7 +50,8 @@
 //!   or when a [`Setpoint::Rate`] tick idles the angle or heading loop under test
 //!   ([`TuningStatus::Interrupted`]), the loop restarts with the tuner's bias as its I term and
 //!   no derivative history: the measured trim carries over, and a retune with the tuned gains
-//!   rescales it like any other (`architecture.md#config-ownership`).
+//!   rescales it like any other (`architecture.md#config-ownership`). On an interrupt the rate
+//!   tick then clears the idle angle loops (#70), so that trim is dropped.
 //! - The stage is runtime state, not config; [`prime`](crate::Stabilizer::prime) ends it.
 
 use crate::{Vec2, Vec3};
@@ -70,6 +71,7 @@ mod params;
 mod tests;
 mod tuning;
 
+use tuning::Location;
 pub use tuning::{TunedLoop, TuningStatus};
 
 /// Configuration for the [CopterStabilizer]: gains and limits for the inner control loops and
@@ -318,18 +320,20 @@ impl CopterStabilizer {
                 .control(&config.yaw, dt, setpoint.heading_rad, current_heading);
 
         // A stage on an angle or heading loop replaces that loop's rate setpoint.
-        let angle_error =
-            AttitudeController::angle_error(&config.attitude, desired_angles_rad, current_angles);
-        let max_rates_radps = config.attitude.max_rate_radps;
-        let max_yaw_rate_radps = config.yaw.max_rate_radps;
-        for (axis, target) in [TunedLoop::Roll, TunedLoop::Pitch].into_iter().enumerate() {
-            if let Some(rate) = self.step_stage(target, dt, angle_error[axis]) {
-                desired_rates[axis] = saturate_symmetric(rate, max_rates_radps[axis]);
+        match self.running_stage() {
+            Some(Location::Angle(axis)) => {
+                let attitude = config.attitude;
+                let error =
+                    AttitudeController::angle_error(&attitude, desired_angles_rad, current_angles);
+                let rate = self.step_stage(dt, error[axis]);
+                desired_rates[axis] = saturate_symmetric(rate, attitude.max_rate_radps[axis]);
             }
-        }
-        let heading_error = angle_diff(setpoint.heading_rad, current_heading);
-        if let Some(rate) = self.step_stage(TunedLoop::Heading, dt, heading_error) {
-            desired_yaw_rate = saturate_symmetric(rate, max_yaw_rate_radps);
+            Some(Location::Heading) => {
+                let max_rate_radps = config.yaw.max_rate_radps;
+                let error = angle_diff(setpoint.heading_rad, current_heading);
+                desired_yaw_rate = saturate_symmetric(self.step_stage(dt, error), max_rate_radps);
+            }
+            Some(Location::Rate(_)) | None => {}
         }
 
         let desired_rates = Vec3::new(desired_rates.x, desired_rates.y, desired_yaw_rate);
@@ -390,16 +394,9 @@ impl CopterStabilizer {
             desired_rates_radps,
             current_rates,
         );
-        let rate_loops = [
-            TunedLoop::RollRate,
-            TunedLoop::PitchRate,
-            TunedLoop::YawRate,
-        ];
-        for (axis, target) in rate_loops.into_iter().enumerate() {
+        if let Some(Location::Rate(axis)) = self.running_stage() {
             let error = desired_rates_radps[axis] - current_rates[axis];
-            if let Some(moment) = self.step_stage(target, dt, error) {
-                moments[axis] = saturate_unit(moment);
-            }
+            moments[axis] = saturate_unit(self.step_stage(dt, error));
         }
         moments
     }
