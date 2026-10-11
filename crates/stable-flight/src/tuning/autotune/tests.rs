@@ -168,20 +168,36 @@ fn started(flight_loop: &TestLoop, plan: &[StagePlan]) -> Autotune {
     autotune
 }
 
-/// The six-stage copter sequence tunes every loop in order and commits each stage's gains
+/// The default copter sequence is the roll and pitch rate loops.
+#[test]
+fn copter_sequence_tunes_the_rate_loops() {
+    let targets = StagePlan::copter_sequence().map(|plan| plan.target);
+    check!(targets == [TunedLoop::RollRate, TunedLoop::PitchRate]);
+}
+
+/// Roll and pitch rate, then the angle and heading loops (opt-in stages).
+const EVERY_LOOP: [TunedLoop; 5] = [
+    TunedLoop::RollRate,
+    TunedLoop::PitchRate,
+    TunedLoop::Roll,
+    TunedLoop::Pitch,
+    TunedLoop::Heading,
+];
+
+/// Every loop with a working relay, rate loops first, tunes in order and commits each stage's gains
 /// from its own measurement; nothing else in the config changes.
 #[test]
 fn full_run_tunes_every_loop_in_order() {
     let (mut flight_loop, _controls) = hovering(1.0);
     let baseline = *flight_loop.stabilizer().config();
-    let mut autotune = started(&flight_loop, &StagePlan::copter_sequence());
+    let mut autotune = started(&flight_loop, &EVERY_LOOP.map(StagePlan::copter));
 
     let events = run(&mut flight_loop, &mut autotune, 300.0, |_| {});
 
     check!(autotune.status() == AutotuneStatus::Complete);
     let mut expected = baseline;
     let mut index = 0;
-    for target in COPTER_SEQUENCE {
+    for target in EVERY_LOOP {
         check!(events.get(index) == Some(&AutotuneEvent::StageStarted(target)));
         let Some(&AutotuneEvent::StageDone {
             target: done,

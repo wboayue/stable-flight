@@ -37,32 +37,37 @@ pub const COPTER_RATE_RELAY: RelayConfig = RelayConfig {
 };
 
 /// Relay for a copter angle or heading loop: rad/s out, rad in; averaging as
-/// [`COPTER_RATE_RELAY`].
+/// [`COPTER_RATE_RELAY`]. The relay stays small (at most 0.6 rad/s) so the rate loop under it
+/// doesn't saturate its moment: a saturated inner loop doesn't grow its cycle with the relay,
+/// which reads `Ku` high (on QuadCopterX a 1.5 rad/s relay gave angle P 15, which oscillated).
+/// Cycles of half a degree count.
 pub const COPTER_ANGLE_RELAY: RelayConfig = RelayConfig {
-    initial_relay: 0.2,
-    max_relay: 2.0,
+    initial_relay: 0.1,
+    max_relay: 0.6,
     relay_step: 1.5,
-    hysteresis: 0.002,
-    min_cycle_amplitude: 0.04,
+    hysteresis: 0.0005,
+    min_cycle_amplitude: 0.01,
     max_cycle_amplitude: 0.35,
     max_half_cycle_s: 1.0,
-    max_bias: 1.0,
+    max_bias: 0.3,
     bias_gain: 0.2,
     cycles: 8,
     tolerance: 0.25,
     timeout_s: 30.0,
 };
 
-/// The order [`StagePlan::copter_sequence`] tunes in: innermost loops first, so each stage
-/// flies on the gains the earlier ones found. Yaw rate is left out: on QuadCopterX the relay
-/// can't measure it within the yaw authority the mixer leaves at hover (#296).
-pub const COPTER_SEQUENCE: [TunedLoop; 5] = [
-    TunedLoop::RollRate,
-    TunedLoop::PitchRate,
-    TunedLoop::Roll,
-    TunedLoop::Pitch,
-    TunedLoop::Heading,
-];
+/// The loops [`StagePlan::copter_sequence`] tunes: roll and pitch rate, the loops a bad start
+/// breaks. Flights on QuadCopterX (#295) left the rest out:
+///
+/// - Yaw rate: the relay can't measure it within the yaw authority the mixer leaves at hover
+///   (#296).
+/// - Roll and pitch angle: the relay measures a high ultimate gain (about 60: an integrator
+///   around a fast rate loop), and the rule's P oscillates once a few degrees of error saturate
+///   the rate setpoint and the moments. Step-response tuning (phase 2) sees the saturation.
+/// - Heading: both of the above.
+///
+/// Their stages still run when planned explicitly (`StagePlan::copter`).
+pub const COPTER_SEQUENCE: [TunedLoop; 2] = [TunedLoop::RollRate, TunedLoop::PitchRate];
 
 /// One stage of an autotune: which loop, how to excite it, and how to turn the measurement
 /// into gains.

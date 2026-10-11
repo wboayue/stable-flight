@@ -23,8 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `prime` ends a stage. `FlightLoop` forwards the three calls, and adds `armed()`.
   `TunedLoop::gains`/`gains_mut` read or retune a loop's gains in a `CopterStabilizerConfig`.
 - **`tuning::autotune::Autotune`** (#149): sequences stages between ticks (`StagePlan`,
-  copter defaults in `StagePlan::copter_sequence`: roll and pitch rate, roll and pitch angle,
-  heading, PD keeping each loop's I; yaw rate left out, #296), waits for the vehicle to
+  copter defaults in `StagePlan::copter_sequence`: roll and pitch rate, PD keeping each loop's
+  I; the angle, heading, and yaw-rate stages are opt-in, see `COPTER_SEQUENCE`), waits for the vehicle to
   settle, aborts
   on an `Envelope` breach, commits each stage's gains through `set_stabilizer_config`, and
   reverts to the starting config on disarm; reports `AutotuneEvent`s for logging. Works with

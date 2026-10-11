@@ -1,6 +1,7 @@
-//! Autotunes the quadcopter's PID loops in RealFlight (#149): climbs to the hover script's
-//! waypoint, runs the relay autotune on each loop (roll and pitch rate, then roll, pitch, and
-//! heading; yaw rate keeps its hand tune, #296), lands, and disarms.
+//! Autotunes the quadcopter's rate loops in RealFlight (#149): climbs to the hover script's
+//! waypoint, runs the relay autotune on roll and pitch rate, lands, and disarms. The other loops
+//! keep their hand tune (see `COPTER_SEQUENCE` for why); `--stages angle` or `all` runs the
+//! angle and heading stages anyway, whose gains flew badly on QuadCopterX.
 //!
 //! Each stage hands one loop to a relay that measures its ultimate gain and period; the
 //! Tyreus–Luyben rule turns them into gains, committed before the next stage
@@ -81,7 +82,7 @@ struct Args {
     rate_p_scale: f32,
 
     /// Which loops to tune.
-    #[arg(long, value_enum, default_value_t = Stages::All)]
+    #[arg(long, value_enum, default_value_t = Stages::Rate)]
     stages: Stages,
 
     /// Writes every tick (wall time, body rates, angles, moments) to this CSV, to diagnose a
@@ -100,22 +101,25 @@ struct Args {
 /// `--stages`.
 #[derive(Clone, Copy, ValueEnum)]
 enum Stages {
-    /// Rate loops, then angle and heading loops.
-    All,
-    /// Roll and pitch rate.
+    /// Roll and pitch rate: the core's default sequence.
     Rate,
-    /// Roll, pitch, and heading.
+    /// Roll, pitch, and heading (opt-in: their relay gains oscillated on QuadCopterX).
     Angle,
+    /// Rate, then angle and heading.
+    All,
 }
+
+/// The opt-in angle and heading stages.
+const ANGLE_LOOPS: [TunedLoop; 3] = [TunedLoop::Roll, TunedLoop::Pitch, TunedLoop::Heading];
 
 impl Stages {
     fn plan(self) -> Vec<StagePlan> {
-        let sequence = StagePlan::copter_sequence().into_iter();
-        let is_rate = |stage: &StagePlan| RATE_LOOPS.contains(&stage.target);
+        let rate = StagePlan::copter_sequence().into_iter();
+        let angle = ANGLE_LOOPS.into_iter().map(StagePlan::copter);
         match self {
-            Stages::All => sequence.collect(),
-            Stages::Rate => sequence.filter(is_rate).collect(),
-            Stages::Angle => sequence.filter(|stage| !is_rate(stage)).collect(),
+            Stages::Rate => rate.collect(),
+            Stages::Angle => angle.collect(),
+            Stages::All => rate.chain(angle).collect(),
         }
     }
 }
