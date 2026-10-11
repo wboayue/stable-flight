@@ -86,7 +86,9 @@ cargo run --bin link_pilot
 # Relay autotune (#149): climbs to the hover point, tunes roll/pitch/yaw rate, then roll, pitch,
 # and heading, logs each stage (Ku, Tu, gains), prints the tuned gains as an airframes.rs
 # snippet, lands, and disarms. --rate-p-scale starts from bad rate gains; --stages rate|angle
-# tunes a subset. Or: just fly-autotune
+# tunes a subset; --record run.csv writes every tick (rates, angles, moments) for diagnosis.
+# RUST_LOG=info,copter_autotune_realflight=debug logs each stage's status every second.
+# Or: just fly-autotune
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --rate-p-scale 10
 

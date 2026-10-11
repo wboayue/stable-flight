@@ -18,7 +18,9 @@ mod tests;
 /// The most stages a plan may hold: one per [`TunedLoop`].
 pub const MAX_STAGES: usize = 6;
 
-/// Relay for a copter rate loop: normalized moment out, rad/s in.
+/// Relay for a copter rate loop: normalized moment out, rad/s in. RealFlight's QuadCopterX
+/// cycles in about 70 ms (17 ticks) with cycle-to-cycle jitter, so it averages 8 cycles
+/// within 25% and moves the bias a fifth of the way per cycle.
 pub const COPTER_RATE_RELAY: RelayConfig = RelayConfig {
     initial_relay: 0.05,
     max_relay: 0.4,
@@ -28,12 +30,14 @@ pub const COPTER_RATE_RELAY: RelayConfig = RelayConfig {
     max_cycle_amplitude: 2.0,
     max_half_cycle_s: 0.3,
     max_bias: 0.5,
-    cycles: 4,
-    tolerance: 0.1,
+    bias_gain: 0.2,
+    cycles: 8,
+    tolerance: 0.25,
     timeout_s: 20.0,
 };
 
-/// Relay for a copter angle or heading loop: rad/s out, rad in.
+/// Relay for a copter angle or heading loop: rad/s out, rad in; averaging as
+/// [`COPTER_RATE_RELAY`].
 pub const COPTER_ANGLE_RELAY: RelayConfig = RelayConfig {
     initial_relay: 0.2,
     max_relay: 2.0,
@@ -43,8 +47,9 @@ pub const COPTER_ANGLE_RELAY: RelayConfig = RelayConfig {
     max_cycle_amplitude: 0.35,
     max_half_cycle_s: 1.0,
     max_bias: 1.0,
-    cycles: 4,
-    tolerance: 0.1,
+    bias_gain: 0.2,
+    cycles: 8,
+    tolerance: 0.25,
     timeout_s: 30.0,
 };
 

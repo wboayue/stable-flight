@@ -55,6 +55,7 @@ fn rate_relay() -> RelayConfig {
         max_cycle_amplitude: 1.0,
         max_half_cycle_s: 0.3,
         max_bias: 0.3,
+        bias_gain: 0.2,
         cycles: 4,
         tolerance: 0.1,
         timeout_s: 30.0,
@@ -72,6 +73,7 @@ fn angle_relay() -> RelayConfig {
         max_cycle_amplitude: 0.5,
         max_half_cycle_s: 1.0,
         max_bias: 1.0,
+        bias_gain: 0.2,
         cycles: 4,
         tolerance: 0.1,
         timeout_s: 30.0,
@@ -194,8 +196,9 @@ fn handoff_carries_the_trim_into_the_integral() {
     let Some((_, TuningStatus::Done(result))) = stabilizer.tuning() else {
         panic!("stage didn't finish: {:?}", stabilizer.tuning());
     };
+    // The duty check bounds the bias to about relay × tolerance of the trim.
     check!(
-        (result.bias + YAW_TORQUE).abs() < 0.01,
+        (result.bias + YAW_TORQUE).abs() < 0.02,
         "bias {}",
         result.bias
     );

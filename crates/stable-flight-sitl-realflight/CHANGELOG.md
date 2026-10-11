@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`copter-autotune-realflight` example** (`just fly-autotune`): the core relay autotune
   (#149) on QuadCopterX. Climbs to the hover point, tunes every PID loop, logs each stage's
   measurement and gains, prints the tuned gains as an `airframes.rs` snippet, then lands and
-  disarms. `--rate-p-scale` starts from bad rate gains; `--stages` tunes a subset.
+  disarms. `--rate-p-scale` starts from bad rate gains; `--stages` tunes a subset; `--record`
+  writes every tick to CSV for diagnosing a run.
 
 ## [0.1.0] - 2026-10-10
 

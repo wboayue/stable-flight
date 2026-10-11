@@ -17,8 +17,10 @@
 //! ```
 
 use std::cell::Cell;
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use clap::{Parser, ValueEnum};
 use env_logger::Builder;
@@ -32,7 +34,8 @@ use stable_flight::tuning::autotune::{
     Autotune, AutotuneEvent, AutotuneStatus, Envelope, StagePlan,
 };
 use stable_flight::{
-    Command, Commander, Configurable, ControlInput, FlightLoop, LandCommand, VehicleState,
+    Command, Commander, Configurable, ControlInput, FlightLoop, LandCommand, TelemetryPublisher,
+    TelemetryRecord, VehicleState, euler_angles,
 };
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
@@ -51,6 +54,8 @@ const LOOP_HZ: f64 = 250.0;
 const LOOP_DT_S: f32 = (1.0 / LOOP_HZ) as f32;
 /// How close to the hover altitude the vehicle must be before the autotune starts, in m.
 const START_ALTITUDE_TOLERANCE_M: f32 = 0.5;
+/// How often a running stage's status is logged at `debug`, in ticks (1 s).
+const STATUS_EVERY_TICKS: u32 = 250;
 /// The rate loops (the others are angle and heading loops).
 const RATE_LOOPS: [TunedLoop; 3] = [
     TunedLoop::RollRate,
@@ -77,6 +82,11 @@ struct Args {
     /// Which loops to tune.
     #[arg(long, value_enum, default_value_t = Stages::All)]
     stages: Stages,
+
+    /// Writes every tick (wall time, body rates, angles, moments) to this CSV, to diagnose a
+    /// run.
+    #[arg(long)]
+    record: Option<String>,
 
     /// Local address the link listens on.
     #[arg(long, default_value = DEFAULT_FC_ADDR)]
@@ -175,7 +185,10 @@ fn main() {
         .expect("failed to open link socket")
         .into_halves();
     let mut fc_link = FcLink::<32, 16>::new();
-    let (mut poller, telemetry) = fc_link.wire(link_rx, link_tx);
+    let (mut poller, link) = fc_link.wire(link_rx, link_tx);
+    let recorder =
+        Recorder::create(args.record.as_deref()).expect("failed to create the record CSV");
+    let telemetry = (link, recorder);
 
     let mut flight_loop =
         FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
@@ -192,6 +205,7 @@ fn main() {
         args.rate_p_scale
     );
     let runner = RealTimeRunner::new(LOOP_HZ).expect("valid loop frequency");
+    let mut ticks = 0u32;
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop| {
         match poller.poll(flight_loop) {
             Ok(stats) if stats.decode_errors > 0 || stats.dropped > 0 => {
@@ -215,6 +229,12 @@ fn main() {
                 Ok(()) => info!("autotune: started"),
                 Err(e) => warn!("autotune: can't start: {e}"),
             }
+        }
+        ticks = ticks.wrapping_add(1);
+        if ticks.is_multiple_of(STATUS_EVERY_TICKS)
+            && let Some((target, status)) = flight_loop.tuning()
+        {
+            debug!("autotune: {target:?} {status:?}");
         }
         let Some(event) = autotune.update(flight_loop, LOOP_DT_S) else {
             return;
@@ -263,6 +283,61 @@ fn positive(value: &str) -> Result<f32, String> {
         Ok(scale) if scale > 0.0 && scale.is_finite() => Ok(scale),
         Ok(_) => Err("must be positive and finite".into()),
         Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Writes one CSV row per tick to `--record`, for diagnosing a run; does nothing without it.
+struct Recorder {
+    out: Option<BufWriter<File>>,
+    start: Instant,
+}
+
+impl Recorder {
+    fn create(path: Option<&str>) -> std::io::Result<Self> {
+        let out = match path {
+            Some(path) => {
+                let mut out = BufWriter::new(File::create(path)?);
+                writeln!(
+                    out,
+                    "wall_s,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,altitude,moment_x,moment_y,moment_z,thrust"
+                )?;
+                Some(out)
+            }
+            None => None,
+        };
+        Ok(Self {
+            out,
+            start: Instant::now(),
+        })
+    }
+}
+
+impl TelemetryPublisher for Recorder {
+    fn publish(&mut self, record: &TelemetryRecord) {
+        let Some(out) = &mut self.out else {
+            return;
+        };
+        let state = record.state;
+        let rates = state.angular_velocity_radps;
+        let (roll, pitch, heading) = euler_angles(&state.attitude);
+        let moments = record.control.moments;
+        // A failed write loses diagnostics, not flight: ignore it.
+        let _ = writeln!(
+            out,
+            "{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.4},{:.4},{:.4}",
+            self.start.elapsed().as_secs_f32(),
+            rates.x,
+            rates.y,
+            rates.z,
+            roll,
+            pitch,
+            heading,
+            state.position_m.z,
+            moments.x,
+            moments.y,
+            moments.z,
+            record.control.thrust,
+        );
     }
 }
 

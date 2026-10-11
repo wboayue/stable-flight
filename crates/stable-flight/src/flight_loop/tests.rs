@@ -358,6 +358,7 @@ fn tuning_calls_reach_the_stabilizer_between_ticks() {
         max_cycle_amplitude: 2.0,
         max_half_cycle_s: 0.3,
         max_bias: 0.3,
+        bias_gain: 0.2,
         cycles: 4,
         tolerance: 0.1,
         timeout_s: 20.0,

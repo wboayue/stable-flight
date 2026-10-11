@@ -44,6 +44,7 @@ fn config() -> RelayConfig {
         max_cycle_amplitude: 1.0,
         max_half_cycle_s: 0.3,
         max_bias: 0.3,
+        bias_gain: 0.2,
         cycles: 4,
         tolerance: 0.1,
         timeout_s: 30.0,
@@ -371,9 +372,17 @@ fn validate_rejects_each_broken_field() {
             },
         ),
         (
+            "bias_gain",
+            RelayConfig {
+                bias_gain: 0.0,
+                ..base
+            },
+        ),
+        (
             "max_bias",
             RelayConfig {
                 max_bias: f32::NAN,
+                bias_gain: 0.2,
                 ..base
             },
         ),
@@ -403,5 +412,71 @@ fn validate_rejects_each_broken_field() {
     for (field, broken) in cases {
         let error = broken.validate().expect_err(field);
         check!(error.field == field);
+    }
+}
+
+/// One cycle with a 75/25 duty has a mean output of `h/2` above the bias; the bias moves
+/// `bias_gain` of the way there.
+#[test]
+fn bias_moves_a_fraction_of_each_cycles_offset() {
+    // (bias gain, expected bias after one cycle)
+    let relay = config().initial_relay;
+    let cases = [(1.0, 0.5 * relay), (0.2, 0.1 * relay), (0.5, 0.25 * relay)];
+    for (bias_gain, expected) in cases {
+        let mut tuner = RelayTuner::new(
+            RelayConfig {
+                bias_gain,
+                ..config()
+            },
+            0.0,
+        );
+        // Error +1 for 30 ticks, -1 for 10: the relay follows it. The first rising switch (tick
+        // 40) opens a cycle; the second (tick 80) closes it.
+        for tick in 0..81 {
+            let error = if tick % 40 < 30 { 1.0 } else { -1.0 };
+            tuner.step(DT, error);
+        }
+        approx::assert_relative_eq!(tuner.bias(), expected, max_relative = 0.05);
+    }
+}
+
+/// A fast loop (about 30 ticks per cycle, like RealFlight's rate loops) with a random input
+/// disturbance each tick: no two cycles agree closely. The relay raises itself until the cycle
+/// stands out, and a partial bias step keeps the duty jitter from feeding on itself, so every
+/// seed converges, on the conservative side.
+#[test]
+fn rides_out_cycle_to_cycle_disturbance() {
+    let fast = PlantParams {
+        gain: 60.0,
+        lag1_s: 0.008,
+        lag2_s: 0.012,
+        delay_s: 0.008,
+        disturbance: 0.3,
+        ..PlantParams::rate_axis()
+    };
+    let config = RelayConfig {
+        tolerance: 0.25,
+        cycles: 8,
+        bias_gain: 0.2,
+        ..config()
+    };
+    for seed in 1..=5 {
+        let mut plant = Plant::new(fast, DT);
+        plant.seed(seed);
+        let (ku, tu_s) = plant.ultimate_point();
+        let mut tuner = RelayTuner::new(config, 0.0);
+
+        let result = done(run(&mut tuner, &mut plant, 30.0));
+
+        let (ku_error, tu_error) = (result.point.ku / ku - 1.0, result.point.tu_s / tu_s - 1.0);
+        check!(
+            (-0.25..0.02).contains(&ku_error),
+            "seed {seed}: Ku off by {ku_error}"
+        );
+        check!(
+            (-0.02..0.25).contains(&tu_error),
+            "seed {seed}: Tu off by {tu_error}"
+        );
+        check!(result.relay > config.initial_relay, "seed {seed}");
     }
 }
