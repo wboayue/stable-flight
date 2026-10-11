@@ -328,17 +328,15 @@ fn armed_follows_the_last_tick() {
     }
 }
 
-/// `stabilizer_mut()` reaches the stabilizer between ticks, e.g. to start a tuning stage that
-/// the next tick runs.
+/// The tuning calls reach a `Tunable` stabilizer between ticks: a stage started between ticks
+/// runs on the next one, and stopping it returns its status.
 #[test]
-fn stabilizer_mut_starts_a_tuning_stage_between_ticks() {
+fn tuning_calls_reach_the_stabilizer_between_ticks() {
     use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
     use crate::mixers::QuadCopterMixer;
-    use crate::stabilizers::copter::{
-        CopterStabilizer, CopterStabilizerConfig, TunedLoop, TuningStatus,
-    };
+    use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
     use crate::testing::{ConstantCommander, NullVehicle};
-    use crate::tuning::RelayConfig;
+    use crate::tuning::{RelayConfig, TuningStatus};
 
     let mut flight_loop = FlightLoop::new(
         ConstantCommander::new(Command::armed(ControlInput::default())),
@@ -364,16 +362,19 @@ fn stabilizer_mut_starts_a_tuning_stage_between_ticks() {
         tolerance: 0.1,
         timeout_s: 20.0,
     };
-    flight_loop
-        .stabilizer_mut()
-        .start_tuning(TunedLoop::YawRate, relay);
+    flight_loop.start_tuning(TunedLoop::YawRate, relay);
     flight_loop.step(Duration::from_millis(4));
 
-    let tuning = flight_loop.stabilizer().tuning();
-    check!(matches!(
-        tuning,
-        Some((TunedLoop::YawRate, TuningStatus::Running { .. }))
+    let running = Some((
+        TunedLoop::YawRate,
+        TuningStatus::Running {
+            relay: 0.05,
+            cycles: 0,
+        },
     ));
+    check!(flight_loop.tuning() == running);
+    check!(flight_loop.stop_tuning() == running);
+    check!(flight_loop.tuning() == None);
 }
 
 /// End to end with the copter pipeline: full throttle while disarmed leaves every motor at 0;

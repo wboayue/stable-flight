@@ -3,6 +3,7 @@ use assert2::{assert, check};
 use super::*;
 use crate::controllers::Gains;
 use crate::stabilizers::copter::CopterStabilizerConfig;
+use crate::tuning::RelayAbort;
 use crate::tuning::plant::{Axes, PlantParams};
 use crate::{AttitudeSetpoint, ControlOutput, RateSetpoint, Setpoint, Stabilizer, Vec2, Vec3};
 

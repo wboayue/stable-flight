@@ -148,6 +148,11 @@ impl Axes {
         self.angles_rad
     }
 
+    /// Sets one angle (0 roll, 1 pitch, 2 yaw), in rad: a disturbance.
+    pub(crate) fn tilt(&mut self, axis: usize, angle_rad: f32) {
+        self.angles_rad[axis] = angle_rad;
+    }
+
     /// The state the stabilizer sees: attitude from the angles, body rates as measured.
     pub(crate) fn state(&mut self) -> VehicleState {
         let a = self.angles_rad;

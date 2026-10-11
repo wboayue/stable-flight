@@ -1,9 +1,10 @@
 //! Autotune stages hosted by the [`CopterStabilizer`]: one loop's output replaced by a
 //! [`RelayTuner`] (#149). See the "Tuning" section on [`CopterStabilizer`].
 
-use crate::tuning::{RelayAbort, RelayConfig, RelayResult, RelayStatus, RelayTuner};
+use crate::tuning::{RelayConfig, RelayStatus, RelayTuner, Tunable, TuningStatus};
 
-use super::CopterStabilizer;
+use super::{CopterStabilizer, CopterStabilizerConfig};
+use crate::controllers::Gains;
 
 #[cfg(test)]
 mod tests;
@@ -37,6 +38,28 @@ pub(super) enum Location {
 }
 
 impl TunedLoop {
+    /// The gains this loop flies in `config`, to read or retune them.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
+    ///
+    /// let mut config = CopterStabilizerConfig::default();
+    /// TunedLoop::Heading.gains_mut(&mut config).p = 4.0;
+    /// assert_eq!(config.yaw.gains.p, 4.0);
+    /// ```
+    pub fn gains_mut(self, config: &mut CopterStabilizerConfig) -> &mut Gains {
+        match self {
+            Self::RollRate => &mut config.body_rate.roll_gains,
+            Self::PitchRate => &mut config.body_rate.pitch_gains,
+            Self::YawRate => &mut config.body_rate.yaw_gains,
+            Self::Roll => &mut config.attitude.roll_gains,
+            Self::Pitch => &mut config.attitude.pitch_gains,
+            Self::Heading => &mut config.yaw.gains,
+        }
+    }
+
     pub(super) fn location(self) -> Location {
         match self {
             Self::RollRate => Location::Rate(0),
@@ -45,36 +68,6 @@ impl TunedLoop {
             Self::Roll => Location::Angle(0),
             Self::Pitch => Location::Angle(1),
             Self::Heading => Location::Heading,
-        }
-    }
-}
-
-/// Where a tuning stage stands.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum TuningStatus {
-    /// The relay is flying the loop: its current amplitude and the consistent cycles in hand.
-    Running {
-        /// Relay amplitude `h`, in the loop's output units.
-        relay: f32,
-        /// Measured cycles in the window.
-        cycles: usize,
-    },
-    /// Measured; the loop is back with its controller.
-    Done(RelayResult),
-    /// The tuner gave up; the loop is back with its controller.
-    Aborted(RelayAbort),
-    /// A [`Setpoint::Rate`](crate::Setpoint::Rate) tick idled the angle or heading loop under
-    /// test (the pilot switched to acro). The loop is back with its controller, cleared like
-    /// any idle angle loop on a rate tick, so the measured trim is not carried over.
-    Interrupted,
-}
-
-impl From<RelayStatus> for TuningStatus {
-    fn from(status: RelayStatus) -> Self {
-        match status {
-            RelayStatus::Running { relay, cycles } => Self::Running { relay, cycles },
-            RelayStatus::Done(result) => Self::Done(result),
-            RelayStatus::Aborted(abort) => Self::Aborted(abort),
         }
     }
 }
@@ -104,22 +97,20 @@ impl Stage {
     }
 }
 
-impl CopterStabilizer {
+impl Tunable for CopterStabilizer {
+    type Target = TunedLoop;
+
     /// Starts relay tuning on `target`: from the next [`stabilize`](crate::Stabilizer::stabilize),
-    /// a [`RelayTuner`] with `config` sets that loop's output. Its bias starts at the loop's
-    /// current I term (its trim). A running stage is handed back first.
-    ///
-    /// # Panics
-    ///
-    /// If `config` is invalid ([`RelayConfig::validate`]).
+    /// a [`RelayTuner`] with `config` sets that loop's output (see the "Tuning" section on
+    /// [`CopterStabilizer`]). Its bias starts at the loop's current I term (its trim).
     ///
     /// # Examples
     ///
     /// ```
     /// use stable_flight::stabilizers::copter::{
-    ///     CopterStabilizer, CopterStabilizerConfig, TunedLoop, TuningStatus,
+    ///     CopterStabilizer, CopterStabilizerConfig, TunedLoop,
     /// };
-    /// use stable_flight::tuning::RelayConfig;
+    /// use stable_flight::tuning::{RelayConfig, Tunable, TuningStatus};
     /// use stable_flight::{RateSetpoint, Setpoint, Stabilizer, VehicleState};
     ///
     /// let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
@@ -148,7 +139,7 @@ impl CopterStabilizer {
     /// stabilizer.stop_tuning(); // hands the roll rate loop back
     /// assert!(stabilizer.tuning().is_none());
     /// ```
-    pub fn start_tuning(&mut self, target: TunedLoop, config: RelayConfig) {
+    fn start_tuning(&mut self, target: TunedLoop, config: RelayConfig) {
         self.stop_tuning();
         let trim = self.integral_term(target);
         self.stage = Some(Stage {
@@ -159,22 +150,21 @@ impl CopterStabilizer {
         });
     }
 
-    /// The current stage, if any: running, or finished and not yet stopped.
-    pub fn tuning(&self) -> Option<(TunedLoop, TuningStatus)> {
+    fn tuning(&self) -> Option<(TunedLoop, TuningStatus)> {
         self.stage
             .as_ref()
             .map(|stage| (stage.target, stage.status()))
     }
 
-    /// Ends the stage, handing the loop back to its controller if the relay still flies it,
-    /// and returns its last status.
-    pub fn stop_tuning(&mut self) -> Option<(TunedLoop, TuningStatus)> {
+    fn stop_tuning(&mut self) -> Option<(TunedLoop, TuningStatus)> {
         self.hand_back();
         self.stage
             .take()
             .map(|stage| (stage.target, stage.status()))
     }
+}
 
+impl CopterStabilizer {
     /// Hands a running stage's loop back to its controller: the loop restarts with the tuner's
     /// bias as its I term and no derivative history, so the trim carries over. A no-op when no
     /// stage is running.
