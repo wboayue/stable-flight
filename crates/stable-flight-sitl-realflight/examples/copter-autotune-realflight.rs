@@ -70,7 +70,8 @@ struct Args {
     host: String,
 
     /// Scales the rate loops' P before tuning (roll, pitch, yaw), to start from bad gains.
-    #[arg(long, default_value_t = 1.0)]
+    /// Positive.
+    #[arg(long, default_value_t = 1.0, value_parser = positive)]
     rate_p_scale: f32,
 
     /// Which loops to tune.
@@ -218,35 +219,51 @@ fn main() {
         let Some(event) = autotune.update(flight_loop, LOOP_DT_S) else {
             return;
         };
-        match event {
-            AutotuneEvent::StageStarted(target) => info!("autotune: tuning {target:?}"),
-            AutotuneEvent::StageDone {
-                target,
-                result,
-                gains,
-            } => info!(
-                "autotune: {target:?} Ku {:.3} Tu {:.3} s (relay {:.3}, cycle {:.4}, bias {:.3}) -> {}",
-                result.point.ku,
-                result.point.tu_s,
-                result.relay,
-                result.cycle_amplitude,
-                result.bias,
-                format_gains(&gains)
-            ),
-            AutotuneEvent::StageFailed { target, reason } => {
-                warn!("autotune: {target:?} failed: {reason:?}; earlier stages kept");
-            }
-            AutotuneEvent::Complete => {
-                info!("autotune: complete");
-                println!("{}", airframe_snippet(flight_loop.stabilizer().config()));
-            }
-            AutotuneEvent::Reverted => warn!("autotune: disarmed, gains reverted"),
-        }
+        log_event(&event, flight_loop.stabilizer().config());
         if !autotune.is_running() {
             info!("landing");
             land.set(true);
         }
     });
+}
+
+/// Logs an autotune event (lifecycle, so `info!`/`warn!`); on completion, prints the tuned
+/// gains for pasting.
+fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
+    match event {
+        AutotuneEvent::StageStarted(target) => info!("autotune: tuning {target:?}"),
+        AutotuneEvent::StageDone {
+            target,
+            result,
+            gains,
+        } => info!(
+            "autotune: {target:?} Ku {:.3} Tu {:.3} s (relay {:.3}, cycle {:.4}, bias {:.3}) -> {}",
+            result.point.ku,
+            result.point.tu_s,
+            result.relay,
+            result.cycle_amplitude,
+            result.bias,
+            format_gains(gains)
+        ),
+        AutotuneEvent::StageFailed { target, reason } => {
+            warn!("autotune: {target:?} failed: {reason:?}; earlier stages kept");
+        }
+        AutotuneEvent::Complete => {
+            info!("autotune: complete");
+            println!("{}", airframe_snippet(config));
+        }
+        AutotuneEvent::Reverted => warn!("autotune: disarmed, gains reverted"),
+    }
+}
+
+/// `--rate-p-scale`: a positive, finite factor (zero, negative, or NaN would invert or drop the
+/// rate loops' P).
+fn positive(value: &str) -> Result<f32, String> {
+    match value.parse::<f32>() {
+        Ok(scale) if scale > 0.0 && scale.is_finite() => Ok(scale),
+        Ok(_) => Err("must be positive and finite".into()),
+        Err(e) => Err(e.to_string()),
+    }
 }
 
 /// Whether the script has reached its hover waypoint and the vehicle is near its altitude.
@@ -268,10 +285,7 @@ fn format_gains(gains: &Gains) -> String {
 
 /// The tuned gains, laid out like `airframes::quadcopter_x()` for pasting.
 fn airframe_snippet(config: &CopterStabilizerConfig) -> String {
-    let gains = |target: TunedLoop| {
-        let mut config = *config;
-        format_gains(target.gains_mut(&mut config))
-    };
+    let gains = |target: TunedLoop| format_gains(&target.gains(config));
     format!(
         "// copter-autotune-realflight\n\
          body_rate: BodyRateControllerConfig {{\n    \
