@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use assert2::{assert, check};
 
 use super::*;
@@ -187,7 +189,7 @@ fn search_converges_below_the_threshold() {
         );
         check!(run.verdicts[0].passed == start_passes, "{threshold}");
         check!(
-            run.verdicts.len() <= 12,
+            run.verdicts.len() <= 20,
             "{threshold}: {:?}",
             run.tried(Term::D)
         );
@@ -420,4 +422,88 @@ fn without_a_baseline_the_verify_meets_the_criterion() {
 
     let bouncing = drive(plan, no_relays, respond(Some(tuned.d)));
     check!(finished(&bouncing) == (START, Outcome::Kept(KeepReason::Worse)));
+}
+
+/// A bracket point passes only on `confirm` passing pairs in a row: a gain that passes one
+/// pair and fails the next (a lucky pair near a sharp limit) fails.
+#[test]
+fn a_point_needs_confirming_pairs() {
+    let plan = d_plan();
+    check!(plan.confirm == 2);
+    // Above 0.0045, pairs alternate pass and fail on each gain.
+    let steps_at = RefCell::new(Vec::<(f32, usize)>::new());
+    let run = drive(plan, no_relays, |gains| {
+        let mut steps_at = steps_at.borrow_mut();
+        let count = match steps_at.iter_mut().find(|(gain, _)| *gain == gains.d) {
+            Some((_, count)) => count,
+            None => {
+                steps_at.push((gains.d, 0));
+                &mut steps_at.last_mut().expect("just pushed").1
+            }
+        };
+        let pair = *count / 2;
+        *count += 1;
+        let flaky = gains.d > 0.0045 && pair % 2 == 1;
+        Some(metrics(0.0, if flaky { 1.0 } else { 0.0 }))
+    });
+
+    let (gains, outcome) = finished(&run);
+    check!(outcome == Outcome::Tuned);
+    check!(gains.d < plan.margin * 0.0045, "{}", gains.d);
+    // Each flaky gain flew a passing pair, then a failing one.
+    let flaky: Vec<_> = run
+        .verdicts
+        .iter()
+        .filter(|v| v.gains.d > 0.0045)
+        .map(|v| v.passed)
+        .collect();
+    check!(!flaky.is_empty());
+    check!(
+        flaky.chunks(2).all(|pair| pair == [true, false]),
+        "{flaky:?}"
+    );
+}
+
+/// A breach while a candidate flies fails that candidate, and the search goes on; one
+/// reported on the baseline (committed gains) fails the stage.
+#[test]
+fn a_breach_fails_the_candidate_only() {
+    let breached = |gains| Input::Breached {
+        reason: AutotuneAbort::Rate,
+        gains,
+    };
+    let mut search = Procedure::new(Method::Search(d_plan()));
+    let Action::Probe { gains: None, .. } = search.next(Input::Start { gains: START }) else {
+        panic!("the baseline flies the committed gains");
+    };
+    check!(search.next(breached(START)) == Action::Fail(AutotuneAbort::Rate));
+
+    let mut search = Procedure::new(Method::Search(d_plan()));
+    let mut action = search.next(Input::Start { gains: START });
+    // The baseline passes; then the first bracket point breaches.
+    for _ in 0..2 * d_plan().test.pairs {
+        action = search.next(Input::Measured {
+            measurement: Measurement::Step(metrics(0.0, 0.0)),
+            gains: START,
+            stalled: false,
+        });
+    }
+    let Action::Probe {
+        gains: Some(candidate),
+        ..
+    } = action
+    else {
+        panic!("a bracket point: {action:?}");
+    };
+    let next = search.next(breached(START));
+    let verdict = search.take_verdict().expect("judged");
+    check!(verdict.gains == candidate);
+    check!(!verdict.passed);
+    let Action::Probe {
+        gains: Some(lower), ..
+    } = next
+    else {
+        panic!("searches on: {next:?}");
+    };
+    check!(lower.d < candidate.d);
 }

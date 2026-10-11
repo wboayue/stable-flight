@@ -204,3 +204,18 @@ fn five_clipped_ticks_stay_valid() {
     procedure.next(Input::Start { gains: CURRENT });
     check!(procedure.next(stepped(saturated_s, false)) == down);
 }
+
+/// A relay or a step test never flies a candidate; a breach reported to one fails it.
+#[test]
+fn relay_and_step_test_fail_on_a_breach() {
+    let (step, _) = step_test(1);
+    let relay = Procedure::new(Method::Relay(RelayPlan::copter(TunedLoop::RollRate)));
+    for mut procedure in [step, relay] {
+        procedure.next(Input::Start { gains: CURRENT });
+        let failed = procedure.next(Input::Breached {
+            reason: AutotuneAbort::Tilt,
+            gains: CURRENT,
+        });
+        check!(failed == Action::Fail(AutotuneAbort::Tilt));
+    }
+}

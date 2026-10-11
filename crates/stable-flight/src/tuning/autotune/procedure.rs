@@ -25,6 +25,9 @@ pub(super) enum Input {
     },
     /// A probe gave up; `gains` are the loop's committed gains.
     Aborted { abort: ProbeAbort, gains: Gains },
+    /// A probe on candidate gains took the vehicle past the envelope; `gains` are the
+    /// loop's committed gains, back in place.
+    Breached { reason: AutotuneAbort, gains: Gains },
 }
 
 /// What the supervisor does next for the stage.
@@ -108,6 +111,7 @@ impl Procedure {
                     baseline: None,
                 },
                 Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
+                Input::Breached { reason, .. } => Action::Fail(reason),
                 Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
             },
             Self::StepTest(pairs) => match input {
@@ -127,6 +131,7 @@ impl Procedure {
                     Ok(()) => Action::probe(pairs.probe()),
                 },
                 Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
+                Input::Breached { reason, .. } => Action::Fail(reason),
                 Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
             },
             Self::Search(search) => search.next(input),

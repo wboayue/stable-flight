@@ -36,9 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`SearchRelay`), and keeps it only if its verify flies no worse than a baseline on the start
   gains (`Acceptance`); `StagePlan::copter_search` tunes roll and pitch rate this way
   (`copter_rate_search`: relay PD sets D, step overshoot sets P under `0.6·Ku`), then roll and
-  pitch angle P (`SearchPlan::copter_angle`), with search steps half the step test's
-  (`COPTER_RATE_SEARCH_STEP`, `COPTER_ANGLE_SEARCH_STEP`); candidate gains fly only during
-  their step; presets
+  pitch angle P (`SearchPlan::copter_angle`, 5° steps: `COPTER_ANGLE_SEARCH_STEP`); a
+  bracket point passes on `SearchPlan::confirm` pairs in a row; candidate gains fly only
+  during their step, and an `Envelope` breach while they fly fails only the candidate (the
+  committed gains get `Envelope::recovery_s` to recover); presets
   `COPTER_RATE_STEP`, `COPTER_ANGLE_STEP`, `COPTER_STEP_SETTLE`; copter defaults in `StagePlan::copter_sequence`: roll and pitch rate,
   PD keeping each loop's I; the angle, heading, and yaw-rate stages are opt-in, see
   `COPTER_SEQUENCE`). Each stage's decisions run as a pure procedure; the executor settles

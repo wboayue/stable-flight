@@ -483,8 +483,13 @@ fn new_and_start_reject_bad_input() {
         },
         ..copter_step
     });
+    let no_recovery = Envelope {
+        recovery_s: -1.0,
+        ..Envelope::default()
+    };
     // (plan, envelope, section, field)
-    let cases: [(&[StagePlan], Envelope, &str, &str); 7] = [
+    let cases: [(&[StagePlan], Envelope, &str, &str); 8] = [
+        (&[stage], no_recovery, "envelope", "recovery_s"),
         (&[], Envelope::default(), "plan", "stages"),
         (
             &[stage; MAX_STAGES + 1],
@@ -754,52 +759,69 @@ fn rate_search_tunes_the_rate_loops() {
 }
 
 /// Only a step flies a candidate: the vehicle settles on the committed gains, a candidate
-/// goes in when its step starts and comes out when it ends. A breach while it flies fails the
-/// stage back to the committed gains.
+/// goes in when its step starts and comes out when it ends. A gust past the envelope while a
+/// candidate flies fails only that candidate (the run goes on); one that lasts past
+/// `Envelope::recovery_s` on the committed gains fails the stage back to them.
 #[test]
 fn candidates_fly_only_during_their_step() {
-    let (mut flight_loop, controls) = hovering_on(1.0, delayed_axis());
-    let start = *flight_loop.stabilizer().config();
-    let plan = [StagePlan::copter_rate_search()[0]];
-    let mut autotune = started(&flight_loop, &plan);
+    // (gust length in ticks, run completes)
+    let cases = [(5, true), (usize::MAX, false)];
+    for (gust_ticks, completes) in cases {
+        let (mut flight_loop, controls) = hovering_on(1.0, delayed_axis());
+        let start = *flight_loop.stabilizer().config();
+        let plan = [StagePlan::copter_rate_search()[0]];
+        let mut autotune = started(&flight_loop, &plan);
 
-    let mut candidate_ticks = 0;
-    let mut event = None;
-    for _ in 0..(120.0 / DT) as usize {
-        flight_loop.step(Duration::from_secs_f32(DT));
-        let flying = *flight_loop.stabilizer().config() != start;
-        match autotune.status() {
-            AutotuneStatus::Settling { .. } => {
-                check!(!flying, "settles on the committed gains");
-            }
-            AutotuneStatus::Running { .. } if flying => {
-                check!(
-                    flight_loop.probe().is_some(),
-                    "a candidate flies only under a probe"
-                );
-                candidate_ticks += 1;
-                // Well into the search: a gust past the envelope's rate.
-                if candidate_ticks == 200 {
-                    controls.rate_spike_radps.set(10.0);
+        let mut candidate_ticks = 0;
+        let mut gust_left = 0;
+        let mut events = Vec::new();
+        for _ in 0..(300.0 / DT) as usize {
+            flight_loop.step(Duration::from_secs_f32(DT));
+            let flying = *flight_loop.stabilizer().config() != start;
+            match autotune.status() {
+                AutotuneStatus::Settling { .. } => {
+                    check!(!flying, "settles on the committed gains");
                 }
+                AutotuneStatus::Running { .. } if flying => {
+                    check!(flight_loop.probe().is_some(), "only under a probe");
+                    candidate_ticks += 1;
+                    // Well into the search: a gust past the envelope's rate.
+                    if candidate_ticks == 200 {
+                        gust_left = gust_ticks;
+                    }
+                }
+                _ => {}
             }
-            _ => {}
+            controls
+                .rate_spike_radps
+                .set(if gust_left > 0 { 10.0 } else { 0.0 });
+            gust_left = gust_left.saturating_sub(1);
+            events.extend(autotune.update(&mut flight_loop, DT));
+            if !autotune.is_running() {
+                break;
+            }
         }
-        event = autotune.update(&mut flight_loop, DT).or(event);
-        if !autotune.is_running() {
-            break;
+
+        check!(candidate_ticks >= 200, "{gust_ticks}");
+        let failed_candidate = events.iter().any(|event| {
+            matches!(event, AutotuneEvent::Tried { gains, passed: false, .. } if *gains != TunedLoop::RollRate.gains(&start))
+        });
+        check!(failed_candidate, "{gust_ticks}: the gusted candidate fails");
+        if completes {
+            check!(
+                events.last() == Some(&AutotuneEvent::Complete),
+                "{gust_ticks}"
+            );
+        } else {
+            // The lasting gust rolls the vehicle past the tilt limit.
+            let failed = AutotuneEvent::StageFailed {
+                target: TunedLoop::RollRate,
+                reason: AutotuneAbort::Tilt,
+            };
+            check!(events.last() == Some(&failed), "{gust_ticks}");
+            check!(*flight_loop.stabilizer().config() == start, "{gust_ticks}");
         }
     }
-
-    check!(candidate_ticks >= 200);
-    check!(
-        event
-            == Some(AutotuneEvent::StageFailed {
-                target: TunedLoop::RollRate,
-                reason: AutotuneAbort::Rate,
-            })
-    );
-    check!(*flight_loop.stabilizer().config() == start);
 }
 
 /// `SearchPlan::validate` rejects each bad field; the copter default is valid.
@@ -807,7 +829,8 @@ fn candidates_fly_only_during_their_step() {
 fn search_plan_validation() {
     let good = SearchPlan::copter_rate();
     let relay = good.relay.expect("the rate search has a relay");
-    let rows: [(SearchPlan, &str); 12] = [
+    let rows: [(SearchPlan, &str); 13] = [
+        (SearchPlan { confirm: 0, ..good }, "confirm"),
         (
             SearchPlan {
                 test: StepTestPlan {
@@ -1046,18 +1069,21 @@ fn copter_search_tunes_rate_then_angle() {
     }
 }
 
-/// A search steps at half the step test's size, so its candidates' moment demand stays below
-/// full scale (#304); the angle search runs without a relay.
+/// The rate search steps as the step test does, allowing 10 clipped ticks (a 1 rad/s step
+/// asks for more than full moment above P 1); the angle search steps at half the step test's
+/// size, so its candidates' moment demand stays below full scale, and runs without a relay
+/// (#304).
 #[test]
-fn search_steps_are_half_the_step_tests() {
-    let rate = SearchPlan::copter_rate().test.step;
-    let angle = SearchPlan::copter_angle().test.step;
-    check!(rate == COPTER_RATE_SEARCH_STEP);
-    check!(angle == COPTER_ANGLE_SEARCH_STEP);
-    check!(rate.amplitude == COPTER_RATE_STEP.amplitude / 2.0);
-    check!(angle.amplitude == COPTER_ANGLE_STEP.amplitude / 2.0);
-    check!(rate.duration_s == COPTER_RATE_STEP.duration_s);
-    check!(angle.duration_s == COPTER_ANGLE_STEP.duration_s);
-    check!(SearchPlan::copter_angle().validate() == Ok(()));
-    check!(SearchPlan::copter_angle().relay.is_none());
+fn search_step_presets() {
+    let rate = SearchPlan::copter_rate().test;
+    let angle = SearchPlan::copter_angle();
+    check!(rate.step == COPTER_RATE_STEP);
+    let ten_ticks = (0..10).fold(0.0_f32, |sum, _| sum + 0.004);
+    check!(ten_ticks <= rate.max_saturated_s);
+    check!(ten_ticks + 0.004 > rate.max_saturated_s);
+    check!(angle.test.step == COPTER_ANGLE_SEARCH_STEP);
+    check!(angle.test.step.amplitude == COPTER_ANGLE_STEP.amplitude / 2.0);
+    check!(angle.test.step.duration_s == COPTER_ANGLE_STEP.duration_s);
+    check!(angle.validate() == Ok(()));
+    check!(angle.relay.is_none());
 }

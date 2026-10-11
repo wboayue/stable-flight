@@ -231,16 +231,8 @@ pub const COPTER_ANGLE_STEP: StepConfig = StepConfig {
     filter_hz: 20.0,
 };
 
-/// A copter rate search's step: [`COPTER_RATE_STEP`] at half the size (0.5 rad/s). At 1 rad/s,
-/// QuadCopterX's rate P above about 1 clipped the moment past the allowance, so clipping rather
-/// than overshoot capped the search (#304); at 0.5 rad/s P can reach about 2.
-pub const COPTER_RATE_SEARCH_STEP: StepConfig = StepConfig {
-    amplitude: COPTER_RATE_STEP.amplitude / 2.0,
-    ..COPTER_RATE_STEP
-};
-
 /// A copter angle search's step: [`COPTER_ANGLE_STEP`] at half the size (5°). At 10°, an angle
-/// P of about 6 asks the tuned rate loop (P about 1) for a full moment; at 5°, about 12.
+/// P of about 6 asks the tuned rate loop (P about 1) for a full moment; at 5°, about 12 (#304).
 pub const COPTER_ANGLE_SEARCH_STEP: StepConfig = StepConfig {
     amplitude: COPTER_ANGLE_STEP.amplitude / 2.0,
     ..COPTER_ANGLE_STEP
@@ -384,8 +376,10 @@ impl RelayPlan {
 ///    `test.max_invalid` times leaves `max` and the start gains as they are.
 /// 2. **Baseline:** `test.pairs` pairs at the start gains; their summary is what the result
 ///    must not be worse than.
-/// 3. **Bracket** from the seed's gain: `× factor` per pair while pairs pass, up to `max`;
-///    `÷ factor` while they fail, down to `min` (nothing passing: the start gains stay).
+/// 3. **Bracket** from the seed's gain: `× factor` per point while points pass, up to `max`;
+///    `÷ factor` while they fail, down to `min` (nothing passing: the start gains stay). A
+///    point passes when `confirm` pairs in a row pass, so one lucky pair near a sharp limit
+///    doesn't (ArduPilot's `ignore_next`); the first failing pair fails it.
 /// 4. **Bisect** (geometric mean) until the bracket is within `resolution`.
 /// 5. **Verify** `margin ×` the largest pass with `test.pairs` pairs, and keep it only if it
 ///    passes [`Acceptance`] against the baseline (or, if the baseline's steps all aborted,
@@ -393,8 +387,8 @@ impl RelayPlan {
 ///
 /// A pair is judged on its two steps' means, so a trim offset doesn't bias it. A step that
 /// aborts (reversed or runaway) fails its pair, as do `test.max_invalid` invalid steps in a
-/// row (a gain whose steps keep clipping measures the limit); on the baseline, they fail the
-/// stage. Only the step under test flies a candidate;
+/// row (a gain whose steps keep clipping measures the limit) and an [`Envelope`] breach while
+/// the candidate flies; on the baseline, they fail the stage. Only the step under test flies a candidate;
 /// the vehicle settles on the committed gains between steps.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SearchPlan {
@@ -403,8 +397,10 @@ pub struct SearchPlan {
     /// What a pair must meet to pass.
     pub criterion: Criterion,
     /// The steps, their settle, clip allowance, and invalid limit; `pairs` sizes the baseline
-    /// and the verify (a bracket point flies one pair).
+    /// and the verify.
     pub test: StepTestPlan,
+    /// Pairs in a row a bracket point must pass. At least 1.
+    pub confirm: usize,
     /// The bracket's growth per pair. Above 1.
     pub factor: f32,
     /// The bracket's ratio at which bisection stops. Above 1.
@@ -425,8 +421,14 @@ impl SearchPlan {
     /// The copter defaults for a rate loop's P: a [`RelayPlan::copter`] relay (Tyreus–Luyben
     /// PD, so it sets D and seeds P; I keeps its gain) capping P at `0.6 · Ku`; then
     /// [`Criterion::Overshoot`] at ArduPilot's default aggressiveness (0.1: overshoot 0.05,
-    /// bounce-back 0.1) in [0.1, 3]. Steps of [`COPTER_RATE_SEARCH_STEP`], two pairs for the
-    /// baseline and the verify; brackets of `× 1.3` bisected to 10%, a 0.9 margin.
+    /// bounce-back 0.1) in [0.1, 3]. Steps of [`COPTER_RATE_STEP`], two pairs for the baseline
+    /// and the verify; a bracket point passes on two pairs in a row; brackets of `× 1.3`
+    /// bisected to 10%, a 0.9 margin.
+    ///
+    /// A step may clip for 10 ticks (42 ms, half a tick clear of `f32` rounding): above P 1, a
+    /// 1 rad/s step asks for more than full moment until the rate catches up, a real limit
+    /// rather than a bad response. With 5 ticks, clipping rather than overshoot capped P on
+    /// QuadCopterX; a 0.5 rad/s step instead doubled the noise relative to the step (#304).
     ///
     /// ArduPilot's D search (largest D before bounce-back) doesn't bound D on closed-loop
     /// steps: with the rate I, overshoot decays without falling back, so D climbs until the
@@ -449,10 +451,11 @@ impl SearchPlan {
                 max_bounce_back: 0.1,
             },
             test: StepTestPlan {
-                step: COPTER_RATE_SEARCH_STEP,
                 pairs: 2,
+                max_saturated_s: 0.042,
                 ..StepTestPlan::copter(TunedLoop::RollRate)
             },
+            confirm: 2,
             factor: 1.3,
             resolution: 1.1,
             margin: 0.9,
@@ -468,7 +471,8 @@ impl SearchPlan {
 
     /// The copter defaults for a roll or pitch angle loop's P (ArduPilot's angle-P stage): no
     /// relay (an angle loop's `Ku` is high, about 60 on QuadCopterX, so `0.6 · Ku` caps
-    /// nothing), from the start gains in [1, 15]; overshoot and bounce-back at most 0.05
+    /// nothing), from the start gains in [1, 10] (above about 10, 5° steps clip the moment on
+    /// QuadCopterX); overshoot and bounce-back at most 0.05
     /// (ArduPilot's aggressiveness halved, as for its angle P). Bounce-back is the overshoot
     /// above where the response levels off, so it counts even when a disturbance holds the
     /// response short of the step (about 8% on QuadCopterX). Steps of
@@ -493,7 +497,7 @@ impl SearchPlan {
                 ..StepTestPlan::copter(TunedLoop::Roll)
             },
             min: 1.0,
-            max: 15.0,
+            max: 10.0,
             relay: None,
             ..Self::copter_rate()
         }
@@ -504,6 +508,7 @@ impl SearchPlan {
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         self.test.validate()?;
         self.criterion.validate()?;
+        check("confirm", self.confirm >= 1, "at least 1")?;
         check(
             "factor",
             self.factor > 1.0 && self.factor.is_finite(),
@@ -717,11 +722,15 @@ pub struct Envelope {
     pub settle: Settle,
     /// How long to wait for a settle before failing, in s.
     pub settle_timeout_s: f32,
+    /// After a probe on candidate gains ends, how long the vehicle has on the committed gains
+    /// to come back inside the limits before a breach fails the stage, in s. A breach while
+    /// the candidate flies fails only the candidate. Non-negative.
+    pub recovery_s: f32,
 }
 
 impl Default for Envelope {
     /// Copter limits: 35° tilt, 4 rad/s, 3 m sink; settle within 6° and 0.3 rad/s for 1 s,
-    /// waiting up to 10 s.
+    /// waiting up to 10 s; 1 s to recover from a candidate.
     fn default() -> Self {
         Self {
             max_tilt_rad: 0.6,
@@ -733,6 +742,7 @@ impl Default for Envelope {
                 hold_s: 1.0,
             },
             settle_timeout_s: 10.0,
+            recovery_s: 1.0,
         }
     }
 }
@@ -745,6 +755,7 @@ impl Envelope {
         check_positive("max_rate_radps", self.max_rate_radps)?;
         check_positive("max_altitude_loss_m", self.max_altitude_loss_m)?;
         check_positive("settle_timeout_s", self.settle_timeout_s)?;
+        check_limit("recovery_s", self.recovery_s)?;
         self.check_settle(&self.settle)
     }
 
@@ -1014,6 +1025,8 @@ enum Decide {
     },
     /// A probe that gave up.
     Aborted { abort: ProbeAbort },
+    /// A probe on candidate gains that took the vehicle past the envelope.
+    Breached { reason: AutotuneAbort },
 }
 
 /// A probe a procedure asked for, and the gains to fly it on (`None`: the committed ones).
@@ -1040,7 +1053,8 @@ struct Request {
 ///   ([`AutotuneEvent::Tried`] per judgment, the [`Outcome`] in `StageDone`).
 /// - **Candidates:** a procedure may ask for a probe on other gains; they go in once the
 ///   vehicle has settled on the committed ones and come out when the probe ends, so only the
-///   probe flies them.
+///   probe flies them. An envelope breach while they fly fails the candidate, not the stage;
+///   the committed gains then have [`Envelope::recovery_s`] to bring the vehicle back.
 /// - **Stalls:** [`note_stall`](Self::note_stall) marks the running probe's measurement as
 ///   untimely; a step test runs that step again.
 /// - **Fail:** an envelope breach, a probe abort the procedure can't use (a search counts a
@@ -1095,6 +1109,9 @@ pub struct Autotune {
     start_altitude_m: f32,
     /// The host stalled during the running probe ([`note_stall`](Self::note_stall)).
     stalled: bool,
+    /// Time left, in s, for the vehicle to come back inside the envelope after a candidate
+    /// ([`Envelope::recovery_s`]); breaches meanwhile don't fail the stage.
+    recovering_s: f32,
 }
 
 /// What the supervisor needs from the stabilizer: copter probes and config.
@@ -1153,6 +1170,7 @@ impl Autotune {
             last_good: None,
             start_altitude_m: 0.0,
             stalled: false,
+            recovering_s: 0.0,
         })
     }
 
@@ -1177,6 +1195,7 @@ impl Autotune {
         self.baseline = Some(config);
         self.last_good = Some(config);
         self.start_altitude_m = flight_loop.state().position_m.z;
+        self.recovering_s = 0.0;
         self.phase = Phase::Starting { stage: 0 };
         Ok(())
     }
@@ -1209,10 +1228,22 @@ impl Autotune {
             return Some(AutotuneEvent::Reverted);
         }
         let motion = Motion::of(flight_loop.state());
+        self.recovering_s = (self.recovering_s - dt).max(0.0);
         if let Some(stage) = self.phase.active_stage()
             && let Some(reason) = self.envelope.breach(&motion, self.start_altitude_m)
         {
-            return Some(self.fail(flight_loop, stage, reason));
+            // A candidate's breach fails the candidate; the committed gains get time to
+            // recover from it before a breach fails the stage.
+            if let Phase::Probing {
+                candidate: true, ..
+            } = self.phase
+            {
+                self.end_probe(flight_loop, stage, true, Decide::Breached { reason });
+                return None;
+            }
+            if self.recovering_s <= 0.0 {
+                return Some(self.fail(flight_loop, stage, reason));
+            }
         }
         match self.phase {
             Phase::Starting { stage } => self.begin(stage),
@@ -1260,7 +1291,7 @@ impl Autotune {
             Phase::Probing { stage, .. }
             | Phase::Deciding {
                 stage,
-                on: Decide::Measured { .. } | Decide::Aborted { .. },
+                on: Decide::Measured { .. } | Decide::Aborted { .. } | Decide::Breached { .. },
             } => AutotuneStatus::Running {
                 stage,
                 target: self.target(stage),
@@ -1310,6 +1341,7 @@ impl Autotune {
                 stalled,
             },
             Decide::Aborted { abort } => Input::Aborted { abort, gains },
+            Decide::Breached { reason } => Input::Breached { reason, gains },
         };
         match self.procedure.next(input) {
             Action::Probe { probe, gains } => {
@@ -1403,12 +1435,26 @@ impl Autotune {
                 return Some(self.fail(flight_loop, stage, AutotuneAbort::Interrupted));
             }
         };
+        self.end_probe(flight_loop, stage, candidate, on);
+        event
+    }
+
+    /// Stops `stage`'s probe and hands `on` to its procedure on the next update; a
+    /// candidate's gains go back to the committed ones, which get [`Envelope::recovery_s`] to
+    /// bring the vehicle back inside the envelope.
+    fn end_probe<C, V, G, S: CopterTunable, M, T>(
+        &mut self,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+        stage: usize,
+        candidate: bool,
+        on: Decide,
+    ) {
         flight_loop.stop_probe();
         if candidate && let Some(last_good) = self.last_good {
             restore(flight_loop, last_good);
+            self.recovering_s = self.envelope.recovery_s;
         }
         self.phase = Phase::Deciding { stage, on };
-        event
     }
 
     /// The settle before `stage`'s probes: its method's, or the envelope's.
