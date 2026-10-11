@@ -59,7 +59,7 @@ fn burst_larger_than_the_write_limit_applies_over_successive_polls_in_order() {
     with_server::<16>(2, |h| {
         let sent = [0.1, 0.2, 0.3, 0.4, 0.5];
         for value in sent {
-            h.send(set("STAB_RATE_P", value));
+            h.send(set("STAB_RATE_RLL_P", value));
         }
 
         let mut echoes = Vec::new();
@@ -70,7 +70,7 @@ fn burst_larger_than_the_write_limit_applies_over_successive_polls_in_order() {
             echoes.extend(batch.into_iter().map(|reply| reply.value));
         }
         check!(echoes == sent);
-        check!(h.params.param("STAB_RATE_P") == Some(0.5));
+        check!(h.params.param("STAB_RATE_RLL_P") == Some(0.5));
     });
 }
 
@@ -158,17 +158,17 @@ fn degree_echo_is_exact_where_the_read_back_is_not() {
 fn full_reply_queue_holds_writes_back_until_it_drains() {
     with_server::<2>(4, |h| {
         // Room for one reply.
-        h.send(set("STAB_RATE_P", 0.1));
-        h.send(set("STAB_RATE_P", 0.2));
+        h.send(set("STAB_RATE_RLL_P", 0.1));
+        h.send(set("STAB_RATE_RLL_P", 0.2));
 
         h.poll();
-        check!(h.params.param("STAB_RATE_P") == Some(0.1));
+        check!(h.params.param("STAB_RATE_RLL_P") == Some(0.1));
         h.poll(); // reply queue still full: nothing applied
-        check!(h.params.param("STAB_RATE_P") == Some(0.1));
+        check!(h.params.param("STAB_RATE_RLL_P") == Some(0.1));
 
         check!(h.publisher.dequeue().map(|r| r.value) == Some(0.1));
         h.poll();
-        check!(h.params.param("STAB_RATE_P") == Some(0.2));
+        check!(h.params.param("STAB_RATE_RLL_P") == Some(0.2));
         check!(h.publisher.dequeue().map(|r| r.value) == Some(0.2));
     });
 }

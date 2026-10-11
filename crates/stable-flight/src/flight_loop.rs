@@ -254,7 +254,7 @@ where
     /// flight_loop.step(Duration::from_millis(4));
     ///
     /// let mut retuned = *flight_loop.stabilizer().config();
-    /// retuned.body_rate.gains.p = 0.2;
+    /// retuned.body_rate.roll_gains.p = 0.2;
     /// flight_loop.set_stabilizer_config(retuned).expect("valid config");
     /// flight_loop.step(Duration::from_millis(4)); // flies the new gains
     /// ```
@@ -359,9 +359,9 @@ where
 /// # );
 ///
 /// flight_loop.set_param("GUID_ALT_P", 2.5).expect("valid value");
-/// flight_loop.set_param("STAB_RATE_P", 0.2).expect("valid value");
+/// flight_loop.set_param("STAB_RATE_RLL_P", 0.2).expect("valid value");
 /// assert_eq!(flight_loop.guidance().config().altitude.gains.p, 2.5);
-/// assert_eq!(flight_loop.param("STAB_RATE_P"), Some(0.2));
+/// assert_eq!(flight_loop.param("STAB_RATE_RLL_P"), Some(0.2));
 /// ```
 impl<C, V, G, S, M, T> Params for FlightLoop<C, V, G, S, M, T>
 where

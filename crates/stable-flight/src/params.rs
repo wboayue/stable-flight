@@ -25,10 +25,12 @@
 //!
 //! | Name | Field |
 //! |---|---|
-//! | `STAB_RATE_P`, `_I`, `_D` | `body_rate.gains` |
+//! | `STAB_RATE_RLL_P`, `_I`, `_D` | `body_rate.roll_gains` |
+//! | `STAB_RATE_PIT_P`, `_I`, `_D` | `body_rate.pitch_gains` |
 //! | `STAB_RATE_YAW_P`, `_I`, `_D` | `body_rate.yaw_gains` |
 //! | `STAB_RATE_IMAX` | `body_rate.max_integral` |
-//! | `STAB_ATT_P`, `_I`, `_D` | `attitude.gains` |
+//! | `STAB_ATT_RLL_P`, `_I`, `_D` | `attitude.roll_gains` |
+//! | `STAB_ATT_PIT_P`, `_I`, `_D` | `attitude.pitch_gains` |
 //! | `STAB_ATT_AMAX_X`, `_Y` | `attitude.max_angles_rad` |
 //! | `STAB_ATT_IMAX` | `attitude.max_integral` |
 //! | `STAB_ATT_RMAX_X`, `_Y` | `attitude.max_rate_radps` |
@@ -63,9 +65,9 @@
 //!
 //! let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
 //!
-//! stabilizer.set_param("STAB_RATE_P", 0.2).expect("valid value");
-//! assert_eq!(stabilizer.param("STAB_RATE_P"), Some(0.2));
-//! assert_eq!(stabilizer.config().body_rate.gains.p, 0.2);
+//! stabilizer.set_param("STAB_RATE_RLL_P", 0.2).expect("valid value");
+//! assert_eq!(stabilizer.param("STAB_RATE_RLL_P"), Some(0.2));
+//! assert_eq!(stabilizer.config().body_rate.roll_gains.p, 0.2);
 //!
 //! stabilizer.set_param("STAB_ATT_AMAX_X", 30.0).expect("valid value"); // degrees
 //! assert!((stabilizer.config().attitude.max_angles_rad.x - 30f32.to_radians()).abs() < 1e-6);
@@ -75,7 +77,7 @@
 //!
 //! let mut count = 0;
 //! stabilizer.visit_params(&mut |_name, _value| count += 1);
-//! assert_eq!(count, 24);
+//! assert_eq!(count, 30);
 //! ```
 
 use core::fmt;
@@ -128,7 +130,7 @@ impl<C> Param<C> {
         Self { name, get, set }
     }
 
-    /// The param's name, e.g. `"STAB_RATE_P"`.
+    /// The param's name, e.g. `"STAB_RATE_RLL_P"`.
     pub fn name(&self) -> &'static str {
         self.name
     }

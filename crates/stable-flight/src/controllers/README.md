@@ -31,7 +31,7 @@ as 0).
 
 **Key Features**:
 - Plain PID per axis (`P·e + I·∫e + D·ė`, saturated to [-1, 1]), with anti-windup
-- Separate yaw gains: yaw authority (differential prop drag) is weaker than roll/pitch
+- Gains per axis (`roll_gains`, `pitch_gains`, `yaw_gains`): frames differ in roll and pitch inertia, and yaw authority (differential prop drag) is weaker than either
 - A non-finite rate on one axis zeroes that axis's moment only; the others keep their loop
 - Real-time performance optimized for high-frequency control loops
 - Comprehensive input validation and error handling
@@ -191,14 +191,16 @@ let gains = Gains { p: 2.0, i: 0.1, d: 0.5 };
 
 // Body rate controller config
 let body_rate_config = BodyRateControllerConfig {
-    gains,
+    roll_gains: gains,
+    pitch_gains: gains,
     yaw_gains: Gains { p: 0.3, i: 0.1, d: 0.0 },
     max_integral: 1.0,
 };
 
 // Attitude controller config  
 let attitude_config = AttitudeControllerConfig {
-    gains,
+    roll_gains: gains,
+    pitch_gains: gains,
     max_angles_rad: Vec2::new(PI/3.0, PI/3.0), // 60 degrees max
     max_integral: 10.0,
     max_rate_radps: Vec2::new(3.0, 3.0), // rad/s

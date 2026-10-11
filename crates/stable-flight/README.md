@@ -87,12 +87,14 @@ For tuned gains, set the inner loops' configs (simulator backends ship tuned set
 ```rust
 let stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
     body_rate: BodyRateControllerConfig {
-        gains: Gains { p: 0.5, i: 0.2, d: 0.004 },
+        roll_gains: Gains { p: 0.5, i: 0.2, d: 0.004 },
+        pitch_gains: Gains { p: 0.5, i: 0.2, d: 0.004 },
         yaw_gains: Gains { p: 0.6, i: 0.2, d: 0.0 },
         max_integral: 1.0,
     },
     attitude: AttitudeControllerConfig {
-        gains: Gains { p: 3.0, i: 0.0, d: 0.1 },
+        roll_gains: Gains { p: 3.0, i: 0.0, d: 0.1 },
+        pitch_gains: Gains { p: 3.0, i: 0.0, d: 0.1 },
         max_integral: 100.0,
         max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
         max_rate_radps: Vec2::new(3.0, 3.0),
@@ -108,7 +110,7 @@ Guidance and stabilizer gains and limits can be retuned between ticks by name: a
 ```rust
 use stable_flight::params::Params;
 
-flight_loop.set_param("STAB_RATE_P", 0.2)?;
+flight_loop.set_param("STAB_RATE_RLL_P", 0.2)?;
 flight_loop.visit_params(&mut |name, value| println!("{name} = {value}"));
 ```
 

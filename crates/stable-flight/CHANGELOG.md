@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** roll and pitch have separate gains in the rate and attitude loops (#289).
+  `BodyRateControllerConfig` and `AttitudeControllerConfig` replace `gains` with `roll_gains`
+  and `pitch_gains`, and the params `STAB_RATE_P/I/D` and `STAB_ATT_P/I/D` become
+  `STAB_RATE_RLL_*`, `STAB_RATE_PIT_*`, `STAB_ATT_RLL_*`, and `STAB_ATT_PIT_*`. To keep a
+  shared tune, set both to the old value.
+
 ## [0.1.0] - 2026-10-10
 
 First release.

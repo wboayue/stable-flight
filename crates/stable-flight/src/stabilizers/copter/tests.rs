@@ -6,13 +6,20 @@ use std::f32::consts::PI;
 
 // Builds a CopterStabilizer with non-default gains on every loop.
 fn setup_controller() -> CopterStabilizer {
+    let rate_gains = Gains {
+        p: 1.0,
+        i: 0.1,
+        d: 0.05,
+    };
+    let attitude_gains = Gains {
+        p: 2.0,
+        i: 0.2,
+        d: 0.1,
+    };
     let config = CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
-            gains: Gains {
-                p: 1.0,
-                i: 0.1,
-                d: 0.05,
-            },
+            roll_gains: rate_gains,
+            pitch_gains: rate_gains,
             yaw_gains: Gains {
                 p: 1.0,
                 i: 0.1,
@@ -21,11 +28,8 @@ fn setup_controller() -> CopterStabilizer {
             max_integral: 100.0,
         },
         attitude: AttitudeControllerConfig {
-            gains: Gains {
-                p: 2.0,
-                i: 0.2,
-                d: 0.1,
-            },
+            roll_gains: attitude_gains,
+            pitch_gains: attitude_gains,
             max_integral: 100.0,
             max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0), // 45° for roll and pitch
             max_rate_radps: Vec2::new(3.0, 3.0),           // Max roll, pitch rates in rad/s
@@ -497,7 +501,7 @@ fn set_config_applies_next_tick_and_keeps_controller_state() {
     reference.control(&old.body_rate, 0.004, desired, Vec3::zeros());
 
     let mut new = old;
-    new.body_rate.gains.i = 5.0;
+    new.body_rate.roll_gains.i = 5.0;
     stabilizer.set_config(new).expect("valid config");
     reference.rescale_integral(&old.body_rate, &new.body_rate);
     let output = stabilizer.stabilize(0.004, &setpoint, &state);
@@ -521,7 +525,7 @@ fn retuning_an_integral_gain_carries_the_i_term_over() {
     let cases = [(0.1, 0.2), (0.2, 0.05), (0.1, 0.0), (0.0, 0.1)];
     for (old_i, new_i) in cases {
         let mut old = CopterStabilizerConfig::default();
-        old.body_rate.gains = Gains {
+        old.body_rate.roll_gains = Gains {
             p: 0.1,
             i: old_i,
             d: 0.0,
@@ -533,7 +537,7 @@ fn retuning_an_integral_gain_carries_the_i_term_over() {
         }
 
         let mut new = old;
-        new.body_rate.gains.i = new_i;
+        new.body_rate.roll_gains.i = new_i;
         stabilizer.set_config(new).expect("valid config");
         let output = stabilizer.stabilize(DT, &setpoint, &state);
 

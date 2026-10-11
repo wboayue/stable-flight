@@ -21,12 +21,14 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
 
     let stabilizer = CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
-            gains: gains(0.5, 0.2, 0.004),
+            roll_gains: gains(0.5, 0.2, 0.004),
+            pitch_gains: gains(0.5, 0.2, 0.004),
             yaw_gains: gains(0.6, 0.6, 0.0),
             max_integral: 1.0,
         },
         attitude: AttitudeControllerConfig {
-            gains: gains(3.0, 0.0, 0.1),
+            roll_gains: gains(3.0, 0.0, 0.1),
+            pitch_gains: gains(3.0, 0.0, 0.1),
             max_integral: 100.0,
             max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
             max_rate_radps: Vec2::new(3.0, 3.0),

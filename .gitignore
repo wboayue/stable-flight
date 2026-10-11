@@ -30,3 +30,6 @@ firmware/*/*.bin
 
 # Raw state captures from `just capture` (default output and ad-hoc names)
 *capture*.csv
+
+# Local scratch: plans and notes, not committed
+/sandbox

@@ -30,13 +30,15 @@ fn tables_cover_every_config_field() {
     let CopterStabilizerConfig {
         body_rate:
             BodyRateControllerConfig {
-                gains: Gains { p: _, i: _, d: _ },
+                roll_gains: Gains { p: _, i: _, d: _ },
+                pitch_gains: Gains { p: _, i: _, d: _ },
                 yaw_gains: Gains { p: _, i: _, d: _ },
                 max_integral: _,
             },
         attitude:
             AttitudeControllerConfig {
-                gains: Gains { p: _, i: _, d: _ },
+                roll_gains: Gains { p: _, i: _, d: _ },
+                pitch_gains: Gains { p: _, i: _, d: _ },
                 max_angles_rad: _,
                 max_integral: _,
                 max_rate_radps: _,
@@ -70,7 +72,7 @@ fn tables_cover_every_config_field() {
         land_speed_mps: _,
     } = CopterGuidanceConfig::default();
     // one param per scalar, vector component, or gain term in the destructuring above
-    check!(names::<CopterStabilizerConfig>().len() == 24);
+    check!(names::<CopterStabilizerConfig>().len() == 30);
     check!(names::<CopterGuidanceConfig>().len() == 16);
 }
 
@@ -147,8 +149,8 @@ fn rejected_values_leave_the_config_unchanged() {
     let cases = [
         ("NO_SUCH_PARAM", 1.0, ParamError::Unknown),
         ("GUID_ALT_P", 1.0, ParamError::Unknown), // the guidance's, not the stabilizer's
-        ("STAB_RATE_P", f32::NAN, ParamError::NotFinite),
-        ("STAB_RATE_P", f32::INFINITY, ParamError::NotFinite),
+        ("STAB_RATE_RLL_P", f32::NAN, ParamError::NotFinite),
+        ("STAB_RATE_RLL_P", f32::INFINITY, ParamError::NotFinite),
         ("STAB_RATE_IMAX", -1.0, body_rate_max_integral),
     ];
     for (name, value, error) in cases {
@@ -178,7 +180,7 @@ fn visit_lists_every_param_in_table_order() {
 #[test]
 fn unknown_name_reads_as_none() {
     let guidance = CopterGuidance::new(CopterGuidanceConfig::default());
-    check!(guidance.param("STAB_RATE_P") == None);
+    check!(guidance.param("STAB_RATE_RLL_P") == None);
     check!(guidance.param("GUID_ALT_P") == Some(guidance.config().altitude.gains.p));
 }
 
@@ -282,11 +284,11 @@ fn flight_loop_indexes_guidance_then_stabilizer() {
     let guidance_count = names::<CopterGuidanceConfig>().len();
     check!(flight_loop.param_count() == all_names().len());
     check!(flight_loop.param_name(guidance_count - 1) == Some("GUID_STICK_Y"));
-    check!(flight_loop.param_name(guidance_count) == Some("STAB_RATE_P"));
-    check!(flight_loop.param_index("STAB_RATE_P") == Some(guidance_count));
+    check!(flight_loop.param_name(guidance_count) == Some("STAB_RATE_RLL_P"));
+    check!(flight_loop.param_index("STAB_RATE_RLL_P") == Some(guidance_count));
     check!(flight_loop.param_name(all_names().len()) == None);
 
     flight_loop.set_param_at(guidance_count, 0.3).unwrap();
-    check!(flight_loop.stabilizer().config().body_rate.gains.p == 0.3);
+    check!(flight_loop.stabilizer().config().body_rate.roll_gains.p == 0.3);
     check!(flight_loop.set_param_at(all_names().len(), 1.0) == Err(ParamError::Unknown));
 }

@@ -421,7 +421,7 @@ fn config_setters_retune_the_composites_between_ticks() {
     guidance.max_tilt_rad = 0.4;
     check!(flight_loop.set_guidance_config(guidance).is_ok());
     let mut stabilizer = *flight_loop.stabilizer().config();
-    stabilizer.body_rate.gains.p = 0.2;
+    stabilizer.body_rate.roll_gains.p = 0.2;
     check!(flight_loop.set_stabilizer_config(stabilizer).is_ok());
 
     let mut bad_guidance = guidance;
