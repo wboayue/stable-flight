@@ -30,14 +30,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`tuning::autotune::Autotune`** (#149, #298): executes a plan of stages between ticks
   (`StagePlan`: a `TunedLoop` and a `Method`; `Method::Relay(RelayPlan)` measures once and
   sets the rule's gains; `Method::StepTest(StepTestPlan)` measures alternating steps and
-  keeps the gains, repeating clipped or stalled steps (`Autotune::note_stall`); presets
+  keeps the gains, repeating clipped or stalled steps (`Autotune::note_stall`);
+  `Method::Search(SearchPlan)` finds the largest gain of one `Term` whose ± step pairs meet a
+  `Criterion`, by bracketing and bisection from gains a relay may seed and cap
+  (`SearchRelay`), and keeps it only if its verify flies no worse than a baseline on the start
+  gains (`Acceptance`); `StagePlan::copter_rate_search` tunes roll and pitch rate this way
+  (relay PD sets D, step overshoot sets P under `0.6·Ku`); candidate gains fly only during
+  their step; presets
   `COPTER_RATE_STEP`, `COPTER_ANGLE_STEP`, `COPTER_STEP_SETTLE`; copter defaults in `StagePlan::copter_sequence`: roll and pitch rate,
   PD keeping each loop's I; the angle, heading, and yaw-rate stages are opt-in, see
   `COPTER_SEQUENCE`). Each stage's decisions run as a pure procedure; the executor settles
   before each probe (`Envelope::settle`, or the method's `Settle`), aborts on an `Envelope` breach (back to the last committed config),
   commits each stage's gains through `set_stabilizer_config`, and reverts to the starting
   config on disarm; reports `AutotuneEvent`s for logging (`StageStarted`, `Measured`,
-  `StageDone`, ...). Works with any `CopterTunable` stabilizer (`Tunable` on `TunedLoop` +
+  `Tried`, `StageDone` with its `Outcome`, ...). Works with any `CopterTunable` stabilizer (`Tunable` on `TunedLoop` +
   `Configurable`). `FlightLoop`'s accessors and config setters no longer require the pipeline
   bounds.
 

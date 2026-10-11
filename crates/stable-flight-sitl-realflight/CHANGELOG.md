@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   writes every tick to CSV for diagnosing a run. `--step-test` (#298) appends step tests of
   roll and pitch rate and angle, logging each step's response and a summary per loop
   (`--stages none --step-test` measures the hand tune); steps during a stall run again.
+  `--stages search` tunes roll and pitch rate by step-response search (relay D, searched P,
+  kept only if no worse than the start), logging each judgment.
 
 ## [0.1.0] - 2026-10-10
 

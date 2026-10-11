@@ -2,7 +2,9 @@
 
 use core::fmt;
 
-use crate::controllers::{Gains, InvalidConfig, check, check_positive};
+use crate::controllers::{
+    Gains, InvalidConfig, check, check_limit, check_positive, check_unit_interval,
+};
 use crate::math::euler_angles;
 use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use crate::{Configurable, FlightLoop, VehicleState};
@@ -112,6 +114,25 @@ impl StagePlan {
             method: Method::StepTest(StepTestPlan::copter(target)),
         }
     }
+
+    /// The copter rate search: each of [`COPTER_SEQUENCE`]'s loops by
+    /// [`SearchPlan::copter_rate`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::TunedLoop;
+    /// use stable_flight::tuning::autotune::StagePlan;
+    ///
+    /// let plan = StagePlan::copter_rate_search();
+    /// assert_eq!(plan.map(|stage| stage.target), [TunedLoop::RollRate, TunedLoop::PitchRate]);
+    /// ```
+    pub fn copter_rate_search() -> [Self; COPTER_SEQUENCE.len()] {
+        COPTER_SEQUENCE.map(|target| Self {
+            target,
+            method: Method::Search(SearchPlan::copter_rate()),
+        })
+    }
 }
 
 /// How a stage tunes its loop: which probes it runs and what gains follow from them.
@@ -121,6 +142,9 @@ pub enum Method {
     Relay(RelayPlan),
     /// Alternating step responses, measured and reported; the gains don't change.
     StepTest(StepTestPlan),
+    /// A search for the largest gain of one term whose step responses meet a criterion, from
+    /// gains a relay may seed, kept only if it flies no worse than the start.
+    Search(SearchPlan),
 }
 
 impl Method {
@@ -129,20 +153,21 @@ impl Method {
     ///
     /// # Errors
     ///
-    /// When the relay is invalid ([`RelayConfig::validate`]), or the step test is
-    /// ([`StepTestPlan::validate`]).
+    /// When the relay is invalid ([`RelayConfig::validate`]), the step test is
+    /// ([`StepTestPlan::validate`]), or the search is ([`SearchPlan::validate`]).
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         match self {
             Self::Relay(plan) => plan.relay.validate(),
             Self::StepTest(plan) => plan.validate(),
+            Self::Search(plan) => plan.validate(),
         }
     }
-
     /// The settle this method asks for before each probe; `None` uses the envelope's.
     pub fn settle(&self) -> Option<Settle> {
         match self {
             Self::Relay(_) => None,
             Self::StepTest(plan) => Some(plan.settle),
+            Self::Search(plan) => Some(plan.test.settle),
         }
     }
 
@@ -151,6 +176,7 @@ impl Method {
         match self {
             Self::Relay(_) => "plan.relay",
             Self::StepTest(_) => "plan.step_test",
+            Self::Search(_) => "plan.search",
         }
     }
 }
@@ -206,7 +232,9 @@ pub struct StepTestPlan {
 impl StepTestPlan {
     /// The copter defaults for `target`: three pairs of [`COPTER_RATE_STEP`] (rate loops) or
     /// [`COPTER_ANGLE_STEP`] (angle and heading loops) from [`COPTER_STEP_SETTLE`], allowing
-    /// 20 ms (5 ticks) of clipping and 3 invalid steps in a row.
+    /// 5 ticks of clipping at 250 Hz and 3 invalid steps in a row. The allowance is 22 ms,
+    /// half a tick past 20: clipped time sums `dt` in `f32`, and five 4 ms ticks come to
+    /// slightly over 0.02.
     ///
     /// # Examples
     ///
@@ -226,7 +254,7 @@ impl StepTestPlan {
             step,
             pairs: 3,
             settle: COPTER_STEP_SETTLE,
-            max_saturated_s: 0.02,
+            max_saturated_s: 0.022,
             max_invalid: 3,
         }
     }
@@ -235,11 +263,7 @@ impl StepTestPlan {
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         self.step.validate()?;
         check("pairs", self.pairs >= 1, "at least 1")?;
-        check(
-            "max_saturated_s",
-            self.max_saturated_s >= 0.0 && self.max_saturated_s.is_finite(),
-            "non-negative and finite",
-        )?;
+        check_limit("max_saturated_s", self.max_saturated_s)?;
         check("max_invalid", self.max_invalid >= 1, "at least 1")
     }
 }
@@ -302,6 +326,282 @@ impl RelayPlan {
                 current.d
             },
         }
+    }
+}
+
+/// A gain search on one term of a loop: the largest gain whose step responses meet
+/// `criterion`, found by bracketing and bisection, then backed off by `margin` and verified.
+///
+/// 1. **Relay** (optional): measures the loop's ultimate point. `ceiling · Ku` caps `max`,
+///    and the relay's rule seeds the gains the search starts from (e.g. a PD rule sets D,
+///    and P, the searched term, starts at the rule's). A relay that aborts or stalls
+///    `test.max_invalid` times leaves `max` and the start gains as they are.
+/// 2. **Baseline:** `test.pairs` pairs at the start gains; their summary is what the result
+///    must not be worse than.
+/// 3. **Bracket** from the seed's gain: `× factor` per pair while pairs pass, up to `max`;
+///    `÷ factor` while they fail, down to `min` (nothing passing: the start gains stay).
+/// 4. **Bisect** (geometric mean) until the bracket is within `resolution`.
+/// 5. **Verify** `margin ×` the largest pass with `test.pairs` pairs, and keep it only if it
+///    passes [`Acceptance`] against the baseline (or, if the baseline's steps all aborted,
+///    meets the criterion); else the start gains stay.
+///
+/// A pair is judged on its two steps' means, so a trim offset doesn't bias it. A step that
+/// aborts (reversed or runaway) fails its pair, as do `test.max_invalid` invalid steps in a
+/// row (a gain whose steps keep clipping measures the limit); on the baseline, they fail the
+/// stage. Only the step under test flies a candidate;
+/// the vehicle settles on the committed gains between steps.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SearchPlan {
+    /// The term searched.
+    pub term: Term,
+    /// What a pair must meet to pass.
+    pub criterion: Criterion,
+    /// The steps, their settle, clip allowance, and invalid limit; `pairs` sizes the baseline
+    /// and the verify (a bracket point flies one pair).
+    pub test: StepTestPlan,
+    /// The bracket's growth per pair. Above 1.
+    pub factor: f32,
+    /// The bracket's ratio at which bisection stops. Above 1.
+    pub resolution: f32,
+    /// The fraction of the largest pass to verify and keep. In (0, 1].
+    pub margin: f32,
+    /// The least gain tried. Positive.
+    pub min: f32,
+    /// The largest gain tried. Above `min`.
+    pub max: f32,
+    /// A relay measurement that caps `max` and seeds the gains, if any.
+    pub relay: Option<SearchRelay>,
+    /// How much worse than the baseline the result may fly.
+    pub acceptance: Acceptance,
+}
+
+impl SearchPlan {
+    /// The copter defaults for a rate loop's P: a [`RelayPlan::copter`] relay (Tyreus–Luyben
+    /// PD, so it sets D and seeds P; I keeps its gain) capping P at `0.6 · Ku`; then
+    /// [`Criterion::Overshoot`] at ArduPilot's default aggressiveness (0.1: overshoot 0.05,
+    /// bounce-back 0.1) in [0.1, 3]. Two pairs of [`COPTER_RATE_STEP`] for the baseline and
+    /// the verify, brackets of `× 1.3` bisected to 10%, a 0.9 margin.
+    ///
+    /// ArduPilot's D search (largest D before bounce-back) doesn't bound D on closed-loop
+    /// steps: with the rate I, overshoot decays without falling back, so D climbs until the
+    /// response overdamps. The relay's D flew well on QuadCopterX (#295, #301).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::tuning::autotune::{SearchPlan, Term};
+    ///
+    /// let plan = SearchPlan::copter_rate();
+    /// assert_eq!(plan.term, Term::P);
+    /// assert!(plan.relay.is_some());
+    /// ```
+    pub fn copter_rate() -> Self {
+        Self {
+            term: Term::P,
+            criterion: Criterion::Overshoot {
+                max_overshoot: 0.05,
+                max_bounce_back: 0.1,
+            },
+            test: StepTestPlan {
+                pairs: 2,
+                ..StepTestPlan::copter(TunedLoop::RollRate)
+            },
+            factor: 1.3,
+            resolution: 1.1,
+            margin: 0.9,
+            min: 0.1,
+            max: 3.0,
+            relay: Some(SearchRelay {
+                plan: RelayPlan::copter(TunedLoop::RollRate),
+                ceiling: 0.6,
+            }),
+            acceptance: Acceptance::default(),
+        }
+    }
+
+    /// Checks the steps ([`StepTestPlan::validate`]), the criterion, the bracket's factors and
+    /// bounds, the relay ([`RelayConfig::validate`]) and its ceiling, and the acceptance.
+    pub fn validate(&self) -> Result<(), InvalidConfig> {
+        self.test.validate()?;
+        self.criterion.validate()?;
+        check(
+            "factor",
+            self.factor > 1.0 && self.factor.is_finite(),
+            "above 1",
+        )?;
+        check(
+            "resolution",
+            self.resolution > 1.0 && self.resolution.is_finite(),
+            "above 1",
+        )?;
+        check_unit_interval("margin", self.margin)?;
+        check_positive("min", self.min)?;
+        check(
+            "max",
+            self.max > self.min && self.max.is_finite(),
+            "above min and finite",
+        )?;
+        if let Some(relay) = self.relay {
+            relay.plan.relay.validate()?;
+            check_positive("relay.ceiling", relay.ceiling)?;
+        }
+        self.acceptance.validate()
+    }
+}
+
+/// A relay measurement before a search: it caps the search and seeds its gains.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SearchRelay {
+    /// The relay, and the rule whose gains seed the search.
+    pub plan: RelayPlan,
+    /// The fraction of `Ku` the searched gain may reach. Positive (0.6: Ziegler–Nichols P).
+    pub ceiling: f32,
+}
+
+/// A term of a PID loop's [`Gains`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Term {
+    /// The proportional gain.
+    P,
+    /// The derivative gain.
+    D,
+}
+
+impl Term {
+    /// This term's gain in `gains`.
+    pub fn get(self, gains: Gains) -> f32 {
+        match self {
+            Self::P => gains.p,
+            Self::D => gains.d,
+        }
+    }
+
+    /// `gains` with this term set to `gain`.
+    pub fn with(self, gains: Gains, gain: f32) -> Gains {
+        match self {
+            Self::P => Gains { p: gain, ..gains },
+            Self::D => Gains { d: gain, ..gains },
+        }
+    }
+}
+
+/// What a search's pair of steps must meet, on the means of [`StepSummary`]; limits are
+/// fractions of the step (ArduPilot's aggressiveness).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Criterion {
+    /// The response overshoots at most `max_overshoot` and falls back at most
+    /// `max_bounce_back` after its peak: for a rate loop's P.
+    Overshoot {
+        /// The most overshoot. Non-negative.
+        max_overshoot: f32,
+        /// The most bounce-back. Non-negative.
+        max_bounce_back: f32,
+    },
+}
+
+impl Criterion {
+    /// Whether `steps` meet it: their means within the limits. No steps don't.
+    pub fn passes(&self, steps: &StepSummary) -> bool {
+        let (Some(overshoot), Some(bounce_back)) =
+            (steps.overshoot.mean(), steps.bounce_back.mean())
+        else {
+            return false;
+        };
+        match *self {
+            Self::Overshoot {
+                max_overshoot,
+                max_bounce_back,
+            } => overshoot <= max_overshoot && bounce_back <= max_bounce_back,
+        }
+    }
+
+    /// The most bounce-back it allows.
+    pub fn max_bounce_back(&self) -> f32 {
+        match *self {
+            Self::Overshoot {
+                max_bounce_back, ..
+            } => max_bounce_back,
+        }
+    }
+
+    fn validate(&self) -> Result<(), InvalidConfig> {
+        match *self {
+            Self::Overshoot {
+                max_overshoot,
+                max_bounce_back,
+            } => {
+                check_limit("criterion.max_overshoot", max_overshoot)?;
+                check_limit("criterion.max_bounce_back", max_bounce_back)
+            }
+        }
+    }
+}
+
+/// How a search's verify compares with its baseline: the result is kept unless it is worse.
+/// Worse is more overshoot than the baseline's plus `overshoot_margin`, a mean settling time
+/// above the baseline's times `settling_ratio`, more steps unsettled, or more bounce-back than
+/// both the baseline's and the criterion's limit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Acceptance {
+    /// Overshoot allowed above the baseline's. Non-negative.
+    pub overshoot_margin: f32,
+    /// Settling time allowed, as a multiple of the baseline's. At least 1.
+    pub settling_ratio: f32,
+}
+
+impl Default for Acceptance {
+    /// 0.05 more overshoot, 10% slower settling.
+    fn default() -> Self {
+        Self {
+            overshoot_margin: 0.05,
+            settling_ratio: 1.1,
+        }
+    }
+}
+
+impl Acceptance {
+    /// Whether `verify` flies no worse than `baseline` (see [`Acceptance`]); a mean the
+    /// baseline lacks (no valid steps, none settled) can't be worse.
+    pub fn accepts(
+        &self,
+        criterion: &Criterion,
+        baseline: &StepSummary,
+        verify: &StepSummary,
+    ) -> bool {
+        verify.count() > 0
+            && no_worse(baseline.overshoot.mean(), verify.overshoot.mean(), |base| {
+                base + self.overshoot_margin
+            })
+            && no_worse(
+                baseline.settling_time_s.mean(),
+                verify.settling_time_s.mean(),
+                |base| base * self.settling_ratio,
+            )
+            && verify.not_settled <= baseline.not_settled
+            && no_worse(
+                baseline.bounce_back.mean(),
+                verify.bounce_back.mean(),
+                |base| base.max(criterion.max_bounce_back()),
+            )
+    }
+
+    fn validate(&self) -> Result<(), InvalidConfig> {
+        check_limit("acceptance.overshoot_margin", self.overshoot_margin)?;
+        check(
+            "acceptance.settling_ratio",
+            self.settling_ratio >= 1.0 && self.settling_ratio.is_finite(),
+            "at least 1 and finite",
+        )
+    }
+}
+
+/// Whether `value` is within `limit(base)`: a missing baseline allows anything, a missing
+/// value against a present baseline is worse.
+fn no_worse(base: Option<f32>, value: Option<f32>, limit: impl FnOnce(f32) -> f32) -> bool {
+    match (base, value) {
+        (Some(base), Some(value)) => value <= limit(base),
+        (Some(_), None) => false,
+        (None, _) => true,
     }
 }
 
@@ -457,14 +757,30 @@ pub enum AutotuneEvent {
         /// What the probe measured.
         measurement: Measurement,
     },
+    /// A search judged a pair of steps (or its baseline) on a gain.
+    Tried {
+        /// The searched loop.
+        target: TunedLoop,
+        /// The gains the steps flew.
+        gains: Gains,
+        /// Whether they met the criterion.
+        passed: bool,
+        /// The valid steps.
+        steps: StepSummary,
+    },
     /// A stage finished and committed its loop's gains.
     StageDone {
         /// The tuned loop.
         target: TunedLoop,
         /// The gains committed for it.
         gains: Gains,
-        /// A step test's valid steps (invalid ones, which ran again, left out).
+        /// What the stage did to them.
+        outcome: Outcome,
+        /// A step test's valid steps, or a search's verify (invalid ones, which ran again,
+        /// left out).
         steps: Option<StepSummary>,
+        /// A search's baseline: its steps at the start gains.
+        baseline: Option<StepSummary>,
     },
     /// A stage failed: the config went back to the last committed one (earlier stages stay),
     /// and the run ends.
@@ -479,6 +795,27 @@ pub enum AutotuneEvent {
     /// Disarmed before completion: every stage reverted to the config at
     /// [`Autotune::start`].
     Reverted,
+}
+
+/// What a finished stage did to its loop's gains.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// Set them from its measurements.
+    Tuned,
+    /// Measured only; they didn't change.
+    Measured,
+    /// Kept the start gains.
+    Kept(KeepReason),
+}
+
+/// Why a search kept the start gains.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeepReason {
+    /// No gain down to the search's `min` passed.
+    NoPass,
+    /// The result flew worse than the start ([`Acceptance`]), or its steps aborted or kept
+    /// clipping.
+    Worse,
 }
 
 /// Where a run stands.
@@ -544,15 +881,18 @@ enum Phase {
         stage: usize,
         on: Decide,
     },
-    /// Waiting for the vehicle to settle before running `probe`.
+    /// Waiting for the vehicle to settle before running `request`.
     Settling {
         stage: usize,
-        probe: ProbeConfig,
+        request: Request,
         level_s: f32,
         waited_s: f32,
     },
+    /// A probe runs; `candidate`: on gains the procedure asked for, which go back to the
+    /// committed ones when it ends.
     Probing {
         stage: usize,
+        candidate: bool,
     },
     /// The last stage committed; the next update reports `Complete`.
     Finishing,
@@ -572,7 +912,7 @@ impl Phase {
             Phase::Starting { stage }
             | Phase::Deciding { stage, .. }
             | Phase::Settling { stage, .. }
-            | Phase::Probing { stage } => Some(stage),
+            | Phase::Probing { stage, .. } => Some(stage),
             Phase::Idle
             | Phase::Finishing
             | Phase::Complete
@@ -592,6 +932,15 @@ enum Decide {
         measurement: Measurement,
         stalled: bool,
     },
+    /// A probe that gave up.
+    Aborted { abort: ProbeAbort },
+}
+
+/// A probe a procedure asked for, and the gains to fly it on (`None`: the committed ones).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Request {
+    probe: ProbeConfig,
+    gains: Option<Gains>,
 }
 
 /// Runs a copter autotune between ticks (#149, #298): each [`StagePlan`]'s procedure decides
@@ -606,11 +955,17 @@ enum Decide {
 ///   which asks for another probe or finishes with gains for its loop, committed through
 ///   [`set_stabilizer_config`](FlightLoop::set_stabilizer_config); the next stage flies them.
 ///   With [`Method::Relay`], one relay measurement and its rule's gains; with
-///   [`Method::StepTest`], alternating steps and the gains unchanged.
+///   [`Method::StepTest`], alternating steps and the gains unchanged; with
+///   [`Method::Search`], a gain search verified against a baseline
+///   ([`AutotuneEvent::Tried`] per judgment, the [`Outcome`] in `StageDone`).
+/// - **Candidates:** a procedure may ask for a probe on other gains; they go in once the
+///   vehicle has settled on the committed ones and come out when the probe ends, so only the
+///   probe flies them.
 /// - **Stalls:** [`note_stall`](Self::note_stall) marks the running probe's measurement as
 ///   untimely; a step test runs that step again.
-/// - **Fail:** an envelope breach, a probe abort, an interrupt, or a rejected config stops the
-///   stage, puts back the last committed config (the earlier stages' gains stay), and ends the
+/// - **Fail:** an envelope breach, a probe abort the procedure can't use (a search counts a
+///   step's abort against its gain), an interrupt, or a rejected config stops the stage, puts
+///   back the last committed config (the earlier stages' gains stay), and ends the
 ///   run.
 /// - **Disarm** before completion reverts every stage to the baseline.
 /// - **Complete:** the gains stay; read them from the stabilizer's config.
@@ -784,17 +1139,17 @@ impl Autotune {
             Phase::Deciding { stage, on } => self.decide(flight_loop, stage, on),
             Phase::Settling {
                 stage,
-                probe,
+                request,
                 level_s,
                 waited_s,
             } => self.settle(
                 flight_loop,
                 &motion,
-                (stage, probe),
+                (stage, request),
                 level_s + dt,
                 waited_s + dt,
             ),
-            Phase::Probing { stage } => self.poll_probe(flight_loop, stage),
+            Phase::Probing { stage, candidate } => self.poll_probe(flight_loop, stage, candidate),
             Phase::Idle
             | Phase::Finishing
             | Phase::Complete
@@ -822,10 +1177,10 @@ impl Autotune {
                 stage,
                 on: Decide::Start,
             } => AutotuneStatus::Settling { stage },
-            Phase::Probing { stage }
+            Phase::Probing { stage, .. }
             | Phase::Deciding {
                 stage,
-                on: Decide::Measured { .. },
+                on: Decide::Measured { .. } | Decide::Aborted { .. },
             } => AutotuneStatus::Running {
                 stage,
                 target: self.target(stage),
@@ -855,8 +1210,8 @@ impl Autotune {
         Some(AutotuneEvent::StageStarted(plan.target))
     }
 
-    /// Hands the procedure the stage's start or its last measurement, with the loop's current
-    /// gains, and carries out what it asks for.
+    /// Hands the procedure the stage's start or its last probe's result, with the loop's
+    /// committed gains, and carries out what it asks for; reports a search's verdict.
     fn decide<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
@@ -874,37 +1229,59 @@ impl Autotune {
                 gains,
                 stalled,
             },
+            Decide::Aborted { abort } => Input::Aborted { abort, gains },
         };
         match self.procedure.next(input) {
-            Action::Probe(probe) => {
+            Action::Probe { probe, gains } => {
                 self.phase = Phase::Settling {
                     stage,
-                    probe,
+                    request: Request { probe, gains },
                     level_s: 0.0,
                     waited_s: 0.0,
                 };
-                None
+                self.procedure
+                    .take_verdict()
+                    .map(|verdict| AutotuneEvent::Tried {
+                        target: self.target(stage),
+                        gains: verdict.gains,
+                        passed: verdict.passed,
+                        steps: verdict.steps,
+                    })
             }
-            Action::Finish { gains, steps } => Some(self.commit(flight_loop, stage, gains, steps)),
+            Action::Finish {
+                gains,
+                outcome,
+                steps,
+                baseline,
+            } => Some(self.commit(flight_loop, stage, gains, (outcome, steps, baseline))),
             Action::Fail(reason) => Some(self.fail(flight_loop, stage, reason)),
         }
     }
 
     /// Waits for the vehicle to hold the stage's [`Settle`] (`level_s` counts it, restarting
-    /// when it moves), then starts `probe` for `stage`; fails after `settle_timeout_s`.
+    /// when it moves), then sets the request's gains, if any, and starts its probe for
+    /// `stage`; fails after `settle_timeout_s`.
     fn settle<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         motion: &Motion,
-        (stage, probe): (usize, ProbeConfig),
+        (stage, request): (usize, Request),
         level_s: f32,
         waited_s: f32,
     ) -> Option<AutotuneEvent> {
         let settle = self.settle_for(stage);
         let level_s = if settle.holds(motion) { level_s } else { 0.0 };
         if level_s >= settle.hold_s {
-            flight_loop.start_probe(self.target(stage), probe);
-            self.phase = Phase::Probing { stage };
+            if let Some(gains) = request.gains
+                && self.set_gains(flight_loop, stage, gains).is_none()
+            {
+                return Some(self.fail(flight_loop, stage, AutotuneAbort::Rejected));
+            }
+            flight_loop.start_probe(self.target(stage), request.probe);
+            self.phase = Phase::Probing {
+                stage,
+                candidate: request.gains.is_some(),
+            };
             self.stalled = false;
             return None;
         }
@@ -913,40 +1290,45 @@ impl Autotune {
         }
         self.phase = Phase::Settling {
             stage,
-            probe,
+            request,
             level_s,
             waited_s,
         };
         None
     }
 
-    /// Checks the running probe: a measurement goes to the procedure on the next update; a
-    /// stopped probe fails the run.
+    /// Checks the running probe: a measurement or an abort goes to the procedure on the next
+    /// update, after a candidate's gains go back to the committed ones; a stopped probe fails
+    /// the run.
     fn poll_probe<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
+        candidate: bool,
     ) -> Option<AutotuneEvent> {
-        let reason = match flight_loop.probe() {
+        let (on, event) = match flight_loop.probe() {
             Some((_, ProbeStatus::Running(_))) => return None,
-            Some((target, ProbeStatus::Done(measurement))) => {
-                flight_loop.stop_probe();
-                self.phase = Phase::Deciding {
-                    stage,
-                    on: Decide::Measured {
-                        measurement,
-                        stalled: self.stalled,
-                    },
-                };
-                return Some(AutotuneEvent::Measured {
+            Some((target, ProbeStatus::Done(measurement))) => (
+                Decide::Measured {
+                    measurement,
+                    stalled: self.stalled,
+                },
+                Some(AutotuneEvent::Measured {
                     target,
                     measurement,
-                });
+                }),
+            ),
+            Some((_, ProbeStatus::Aborted(abort))) => (Decide::Aborted { abort }, None),
+            Some((_, ProbeStatus::Interrupted)) | None => {
+                return Some(self.fail(flight_loop, stage, AutotuneAbort::Interrupted));
             }
-            Some((_, ProbeStatus::Aborted(abort))) => AutotuneAbort::Probe(abort),
-            Some((_, ProbeStatus::Interrupted)) | None => AutotuneAbort::Interrupted,
         };
-        Some(self.fail(flight_loop, stage, reason))
+        flight_loop.stop_probe();
+        if candidate && let Some(last_good) = self.last_good {
+            restore(flight_loop, last_good);
+        }
+        self.phase = Phase::Deciding { stage, on };
+        event
     }
 
     /// The settle before `stage`'s probes: its method's, or the envelope's.
@@ -973,14 +1355,11 @@ impl Autotune {
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
         gains: Gains,
-        steps: Option<StepSummary>,
+        (outcome, steps, baseline): (Outcome, Option<StepSummary>, Option<StepSummary>),
     ) -> AutotuneEvent {
-        let target = self.target(stage);
-        let mut config = *flight_loop.stabilizer().config();
-        *target.gains_mut(&mut config) = gains;
-        if flight_loop.set_stabilizer_config(config).is_err() {
+        let Some(config) = self.set_gains(flight_loop, stage, gains) else {
             return self.fail(flight_loop, stage, AutotuneAbort::Rejected);
-        }
+        };
         self.last_good = Some(config);
         self.phase = if stage + 1 < self.stages {
             Phase::Starting { stage: stage + 1 }
@@ -988,10 +1367,28 @@ impl Autotune {
             Phase::Finishing
         };
         AutotuneEvent::StageDone {
-            target,
+            target: self.target(stage),
             gains,
+            outcome,
             steps,
+            baseline,
         }
+    }
+
+    /// Sets `gains` on `stage`'s loop; the config flown, or `None` if the stabilizer
+    /// rejected it.
+    fn set_gains<C, V, G, S: CopterTunable, M, T>(
+        &self,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+        stage: usize,
+        gains: Gains,
+    ) -> Option<CopterStabilizerConfig> {
+        let mut config = *flight_loop.stabilizer().config();
+        *self.target(stage).gains_mut(&mut config) = gains;
+        flight_loop
+            .set_stabilizer_config(config)
+            .ok()
+            .map(|()| config)
     }
 
     /// Ends the run at `stage`: stops its probe and puts back the last committed config.

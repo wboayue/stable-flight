@@ -31,7 +31,7 @@ fn relay_probes_once_then_finishes_with_the_rules_gains() {
     let mut procedure = Procedure::new(Method::Relay(plan));
 
     let first = procedure.next(Input::Start { gains: CURRENT });
-    check!(first == Action::Probe(ProbeConfig::Relay(plan.relay)));
+    check!(first == Action::probe(ProbeConfig::Relay(plan.relay)));
 
     let rule = gains_from_ultimate(&UltimatePoint { ku: 2.0, tu_s: 0.1 }, plan.rule, plan.form);
     let last = procedure.next(measured(2.0, 0.1));
@@ -42,7 +42,9 @@ fn relay_probes_once_then_finishes_with_the_rules_gains() {
                 i: CURRENT.i,
                 d: rule.d,
             },
+            outcome: Outcome::Tuned,
             steps: None,
+            baseline: None,
         }
     );
 }
@@ -113,8 +115,8 @@ fn step_test(pairs: usize) -> (Procedure, StepTestPlan) {
 #[test]
 fn step_test_alternates_then_finishes_with_the_same_gains() {
     let (mut procedure, plan) = step_test(2);
-    let up = Action::Probe(ProbeConfig::Step(plan.step));
-    let down = Action::Probe(ProbeConfig::Step(plan.step.reversed()));
+    let up = Action::probe(ProbeConfig::Step(plan.step));
+    let down = Action::probe(ProbeConfig::Step(plan.step.reversed()));
     let clipped = plan.max_saturated_s + 0.01;
 
     let mut actions = vec![procedure.next(Input::Start { gains: CURRENT })];
@@ -125,7 +127,9 @@ fn step_test_alternates_then_finishes_with_the_same_gains() {
 
     let Some(Action::Finish {
         gains,
+        outcome: Outcome::Measured,
         steps: Some(steps),
+        baseline: None,
     }) = actions.pop()
     else {
         panic!("no summary: {actions:?}");
@@ -141,8 +145,8 @@ fn step_test_alternates_then_finishes_with_the_same_gains() {
 #[test]
 fn step_test_repeats_invalid_steps_and_fails_on_too_many() {
     let (mut procedure, plan) = step_test(3);
-    let up = Action::Probe(ProbeConfig::Step(plan.step));
-    let down = Action::Probe(ProbeConfig::Step(plan.step.reversed()));
+    let up = Action::probe(ProbeConfig::Step(plan.step));
+    let down = Action::probe(ProbeConfig::Step(plan.step.reversed()));
     let clipped = plan.max_saturated_s + 0.01;
 
     procedure.next(Input::Start { gains: CURRENT });
@@ -169,4 +173,34 @@ fn a_mismatched_measurement_fails() {
     check!(step.next(measured(2.0, 0.1)) == Action::Fail(AutotuneAbort::Interrupted));
     let mut relay = Procedure::new(Method::Relay(RelayPlan::copter(TunedLoop::RollRate)));
     check!(relay.next(stepped(0.0, false)) == Action::Fail(AutotuneAbort::Interrupted));
+}
+
+/// A relay or a step test fails on a probe abort, and judges nothing (no verdicts).
+#[test]
+fn relay_and_step_test_fail_on_an_abort() {
+    let abort = ProbeAbort::Step(crate::tuning::StepAbort::Runaway);
+    let (step, _) = step_test(1);
+    let relay = Procedure::new(Method::Relay(RelayPlan::copter(TunedLoop::RollRate)));
+    for mut procedure in [step, relay] {
+        procedure.next(Input::Start { gains: CURRENT });
+        let failed = procedure.next(Input::Aborted {
+            abort,
+            gains: CURRENT,
+        });
+        check!(failed == Action::Fail(AutotuneAbort::Probe(abort)));
+        check!(procedure.take_verdict() == None);
+    }
+}
+
+/// The copter step test counts a step clipped for five 250 Hz ticks as valid: clipped time
+/// sums `dt` in `f32`, and five 4 ms ticks come to slightly over 20 ms.
+#[test]
+fn five_clipped_ticks_stay_valid() {
+    let (mut procedure, plan) = step_test(1);
+    let saturated_s = (0..5).fold(0.0_f32, |sum, _| sum + 0.004);
+    check!(saturated_s > 0.02);
+    let down = Action::probe(ProbeConfig::Step(plan.step.reversed()));
+
+    procedure.next(Input::Start { gains: CURRENT });
+    check!(procedure.next(stepped(saturated_s, false)) == down);
 }
