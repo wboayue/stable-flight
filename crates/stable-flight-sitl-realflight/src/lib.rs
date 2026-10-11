@@ -28,7 +28,7 @@ pub mod capture;
 mod mapping;
 mod vehicle;
 
-pub use mapping::{ActuatorMapping, MappingError};
+pub use mapping::{ActuatorMapping, CHANNEL_COUNT, MappingError};
 
 pub use vehicle::{
     REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, SLOW_EXCHANGE, vehicle_state,

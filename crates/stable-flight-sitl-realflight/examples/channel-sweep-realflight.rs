@@ -4,16 +4,18 @@
 //!
 //! Set the model in RealFlight so each actuator has its own channel (no model-side mixes or
 //! gyro), put it on the ground, and name its motor and servo channels. The sweep holds every
-//! channel at neutral (motors 0, everything else centered at 0.5), then:
+//! channel at neutral (motors 0, everything else centered at 0.5; `--neutral` overrides any,
+//! e.g. a throttle or switch channel left off `--motors`), then:
 //!
 //! 1. rests 2 s (a static frame check);
 //! 2. moves each servo to full one way, the other way, and back, 1 s each;
 //! 3. pulses each motor alone at `--pulse-throttle` for 1 s;
 //! 4. hops: every motor at `--hop-throttle` for 1 s, the first servo at full for its last half,
-//!    then everything neutral for 3 s while the model falls (the dynamic frame check).
+//!    then everything neutral while the model falls (the dynamic frame check).
 //!
 //! `--script` replaces the sweep with a CSV of `t_s,channel,value` steps (each channel holds its
-//! last value). The capture (`--output`) has the raw `SimulatorState` and the 12 channels per
+//! last value; an optional header line is skipped). Recording goes on for `--tail-s` after the
+//! last step, so its response is captured. The capture (`--output`) has the raw `SimulatorState` and the 12 channels per
 //! exchange, as `capture-state-realflight` writes. Ctrl-C stops early and hands RC back.
 //!
 //! ```text
@@ -32,16 +34,14 @@ use env_logger::Builder;
 use log::{info, warn};
 
 use stable_flight_sitl::ShutdownSignal;
-use stable_flight_sitl_realflight::REMOTE_IO_TIMEOUT;
 use stable_flight_sitl_realflight::capture::RecordingBridge;
 use stable_flight_sitl_realflight::realflight_bridge::{
     ControlInputs, RealFlightBridge, RealFlightRemoteBridge,
 };
+use stable_flight_sitl_realflight::{CHANNEL_COUNT, REMOTE_IO_TIMEOUT};
 
 /// Connect timeout for the RealFlight proxy.
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
-/// RealFlight's channel count.
-const CHANNELS: usize = 12;
 /// A centered channel.
 const CENTER: f32 = 0.5;
 
@@ -69,6 +69,12 @@ struct Args {
     /// Steps to run instead of the sweep: a CSV of `t_s,channel,value` rows.
     #[arg(long)]
     script: Option<PathBuf>,
+    /// Neutral values that override the defaults, as `channel:value` pairs, e.g. `4:0,5:1`.
+    #[arg(long, value_delimiter = ',', value_parser = parse_neutral)]
+    neutral: Vec<(usize, f32)>,
+    /// How long to keep recording after the last step, in s.
+    #[arg(long, default_value_t = 3.0)]
+    tail_s: f32,
     /// Exchanges per second.
     #[arg(long, default_value_t = 250.0)]
     rate_hz: f64,
@@ -82,11 +88,33 @@ struct Step {
     value: f32,
 }
 
-/// Every channel at neutral: motors off, the rest centered.
-fn neutral(motors: &[usize]) -> [f32; CHANNELS] {
-    let mut channels = [CENTER; CHANNELS];
+/// `--neutral`'s `channel:value`.
+fn parse_neutral(text: &str) -> Result<(usize, f32), String> {
+    let (channel, value) = text
+        .split_once(':')
+        .ok_or_else(|| format!("`{text}`: expected channel:value"))?;
+    let channel: usize = channel
+        .trim()
+        .parse()
+        .map_err(|e| format!("`{text}`: {e}"))?;
+    let value: f32 = value.trim().parse().map_err(|e| format!("`{text}`: {e}"))?;
+    if channel >= CHANNEL_COUNT || !(0.0..=1.0).contains(&value) {
+        return Err(format!(
+            "`{text}`: channel 0–{} and value 0–1",
+            CHANNEL_COUNT - 1
+        ));
+    }
+    Ok((channel, value))
+}
+
+/// Every channel at neutral: motors off, the rest centered, then `overrides`.
+fn neutral(motors: &[usize], overrides: &[(usize, f32)]) -> [f32; CHANNEL_COUNT] {
+    let mut channels = [CENTER; CHANNEL_COUNT];
     for &motor in motors {
         channels[motor] = 0.0;
+    }
+    for &(channel, value) in overrides {
+        channels[channel] = value;
     }
     channels
 }
@@ -121,31 +149,40 @@ fn sweep(args: &Args) -> Vec<Step> {
         at(t_s + 0.5, servo, 1.0);
         at(t_s + 1.0, servo, CENTER);
     }
-    // The fall.
-    let end = t_s + 4.0;
-    if let Some(&motor) = args.motors.first() {
-        at(end, motor, 0.0);
-    }
     steps
 }
 
-/// Reads `t_s,channel,value` rows (a header line is skipped).
+/// Reads `t_s,channel,value` rows; a first line that doesn't start with a number is a header.
+/// Panics on any other row it can't read, naming the line.
 fn read_script(path: &PathBuf) -> Vec<Step> {
     let text = fs::read_to_string(path).expect("failed to read the script");
-    text.lines()
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| {
-            let mut fields = line.split(',').map(str::trim);
-            let t_s = fields.next()?.parse().ok()?;
-            let channel = fields.next()?.parse().ok()?;
-            let value = fields.next()?.parse().ok()?;
-            Some(Step {
-                t_s,
-                channel,
-                value,
-            })
-        })
-        .collect()
+    let mut steps = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        let fields: Vec<&str> = line.split(',').map(str::trim).collect();
+        if line.trim().is_empty() || (index == 0 && fields[0].parse::<f32>().is_err()) {
+            continue;
+        }
+        let parsed = match fields.as_slice() {
+            [t_s, channel, value] => t_s
+                .parse()
+                .ok()
+                .zip(channel.parse().ok())
+                .zip(value.parse().ok()),
+            _ => None,
+        };
+        let Some(((t_s, channel), value)) = parsed else {
+            panic!(
+                "script line {}: expected t_s,channel,value: `{line}`",
+                index + 1
+            );
+        };
+        steps.push(Step {
+            t_s,
+            channel,
+            value,
+        });
+    }
+    steps
 }
 
 fn main() {
@@ -155,11 +192,11 @@ fn main() {
         .init();
 
     let args = Args::parse();
-    let channels_ok = |list: &[usize]| list.iter().all(|&c| c < CHANNELS);
+    let channels_ok = |list: &[usize]| list.iter().all(|&c| c < CHANNEL_COUNT);
     assert!(
         channels_ok(&args.motors) && channels_ok(&args.servos),
         "channels run 0–{}",
-        CHANNELS - 1
+        CHANNEL_COUNT - 1
     );
     let mut steps = match &args.script {
         Some(path) => read_script(path),
@@ -170,12 +207,12 @@ fn main() {
         "nothing to sweep: name --motors/--servos or a --script"
     );
     assert!(
-        steps.iter().all(|step| step.channel < CHANNELS),
+        steps.iter().all(|step| step.channel < CHANNEL_COUNT),
         "a step names a channel past {}",
-        CHANNELS - 1
+        CHANNEL_COUNT - 1
     );
     steps.sort_by(|a, b| a.t_s.total_cmp(&b.t_s));
-    let end_s = steps.last().map_or(0.0, |step| step.t_s);
+    let end_s = steps.last().map_or(0.0, |step| step.t_s) + args.tail_s;
 
     let out = BufWriter::new(File::create(&args.output).expect("failed to create the output"));
     let bridge = RecordingBridge::new(
@@ -193,9 +230,9 @@ fn main() {
 
     let shutdown = ShutdownSignal::install().expect("failed to install the Ctrl-C handler");
     let period = Duration::from_secs_f64(1.0 / args.rate_hz);
-    let mut control = ControlInputs {
-        channels: neutral(&args.motors),
-    };
+    let neutral = neutral(&args.motors, &args.neutral);
+    info!("neutral: {neutral:?}");
+    let mut control = ControlInputs { channels: neutral };
     info!(
         "sweeping {} steps over {end_s:.1} s to {}; Ctrl-C to stop",
         steps.len(),
@@ -224,7 +261,7 @@ fn main() {
         thread::sleep(deadline.saturating_duration_since(Instant::now()));
     }
 
-    control.channels = neutral(&args.motors);
+    control.channels = neutral;
     if let Err(e) = bridge.exchange_data(&control) {
         warn!("failed to send neutral: {e}");
     }
