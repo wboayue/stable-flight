@@ -404,10 +404,10 @@ enum Phase {
     Starting {
         stage: usize,
     },
-    /// The stage's procedure decides what follows `measurement` (`None`: the stage's start).
+    /// The stage's procedure decides what follows `on`.
     Deciding {
         stage: usize,
-        measurement: Option<Measurement>,
+        on: Decide,
     },
     /// Waiting for the vehicle to settle before running `probe`.
     Settling {
@@ -427,6 +427,33 @@ enum Phase {
         reason: AutotuneAbort,
     },
     Reverted,
+}
+
+impl Phase {
+    /// The stage a run in progress is on; `None` before, between (`Finishing`), and after
+    /// runs.
+    fn active_stage(&self) -> Option<usize> {
+        match *self {
+            Phase::Starting { stage }
+            | Phase::Deciding { stage, .. }
+            | Phase::Settling { stage, .. }
+            | Phase::Probing { stage } => Some(stage),
+            Phase::Idle
+            | Phase::Finishing
+            | Phase::Complete
+            | Phase::Failed { .. }
+            | Phase::Reverted => None,
+        }
+    }
+}
+
+/// What a stage's procedure decides on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Decide {
+    /// The stage's start.
+    Start,
+    /// A finished probe's measurement.
+    Measured(Measurement),
 }
 
 /// Runs a copter autotune between ticks (#149, #298): each [`StagePlan`]'s procedure decides
@@ -598,12 +625,14 @@ impl Autotune {
             return Some(AutotuneEvent::Reverted);
         }
         let motion = Motion::of(flight_loop.state());
-        if let Some(reason) = self.envelope.breach(&motion, self.start_altitude_m) {
-            return Some(self.fail(flight_loop, reason));
+        if let Some(stage) = self.phase.active_stage()
+            && let Some(reason) = self.envelope.breach(&motion, self.start_altitude_m)
+        {
+            return Some(self.fail(flight_loop, stage, reason));
         }
         match self.phase {
             Phase::Starting { stage } => self.begin(stage),
-            Phase::Deciding { stage, measurement } => self.decide(flight_loop, stage, measurement),
+            Phase::Deciding { stage, on } => self.decide(flight_loop, stage, on),
             Phase::Settling {
                 stage,
                 probe,
@@ -633,12 +662,12 @@ impl Autotune {
             | Phase::Settling { stage, .. }
             | Phase::Deciding {
                 stage,
-                measurement: None,
+                on: Decide::Start,
             } => AutotuneStatus::Settling { stage },
             Phase::Probing { stage }
             | Phase::Deciding {
                 stage,
-                measurement: Some(_),
+                on: Decide::Measured(_),
             } => AutotuneStatus::Running {
                 stage,
                 target: self.target(stage),
@@ -663,7 +692,7 @@ impl Autotune {
         self.procedure = Procedure::new(plan.method);
         self.phase = Phase::Deciding {
             stage,
-            measurement: None,
+            on: Decide::Start,
         };
         Some(AutotuneEvent::StageStarted(plan.target))
     }
@@ -674,12 +703,12 @@ impl Autotune {
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
-        measurement: Option<Measurement>,
+        on: Decide,
     ) -> Option<AutotuneEvent> {
         let gains = self.target(stage).gains(flight_loop.stabilizer().config());
-        let input = match measurement {
-            None => Input::Start { gains },
-            Some(measurement) => Input::Measured { measurement, gains },
+        let input = match on {
+            Decide::Start => Input::Start { gains },
+            Decide::Measured(measurement) => Input::Measured { measurement, gains },
         };
         match self.procedure.next(input) {
             Action::Probe(probe) => {
@@ -717,7 +746,7 @@ impl Autotune {
             return None;
         }
         if waited_s >= self.envelope.settle_timeout_s {
-            return Some(self.fail(flight_loop, AutotuneAbort::NotSettled));
+            return Some(self.fail(flight_loop, stage, AutotuneAbort::NotSettled));
         }
         self.phase = Phase::Settling {
             stage,
@@ -741,7 +770,7 @@ impl Autotune {
                 flight_loop.stop_probe();
                 self.phase = Phase::Deciding {
                     stage,
-                    measurement: Some(measurement),
+                    on: Decide::Measured(measurement),
                 };
                 return Some(AutotuneEvent::Measured {
                     target,
@@ -751,7 +780,7 @@ impl Autotune {
             Some((_, ProbeStatus::Aborted(abort))) => AutotuneAbort::Probe(abort),
             Some((_, ProbeStatus::Interrupted)) | None => AutotuneAbort::Interrupted,
         };
-        Some(self.fail(flight_loop, reason))
+        Some(self.fail(flight_loop, stage, reason))
     }
 
     fn stage(&self, stage: usize) -> Option<StagePlan> {
@@ -776,7 +805,7 @@ impl Autotune {
         let mut config = *flight_loop.stabilizer().config();
         *target.gains_mut(&mut config) = gains;
         if flight_loop.set_stabilizer_config(config).is_err() {
-            return self.fail(flight_loop, AutotuneAbort::Rejected);
+            return self.fail(flight_loop, stage, AutotuneAbort::Rejected);
         }
         self.last_good = Some(config);
         self.phase = if stage + 1 < self.stages {
@@ -787,20 +816,13 @@ impl Autotune {
         AutotuneEvent::StageDone { target, gains }
     }
 
-    /// Ends the run at the current stage: stops its probe and puts back the last committed
-    /// config.
+    /// Ends the run at `stage`: stops its probe and puts back the last committed config.
     fn fail<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+        stage: usize,
         reason: AutotuneAbort,
     ) -> AutotuneEvent {
-        let stage = match self.phase {
-            Phase::Starting { stage }
-            | Phase::Deciding { stage, .. }
-            | Phase::Settling { stage, .. }
-            | Phase::Probing { stage } => stage,
-            _ => 0,
-        };
         flight_loop.stop_probe();
         if let Some(last_good) = self.last_good {
             restore(flight_loop, last_good);
