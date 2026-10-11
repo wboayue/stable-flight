@@ -225,6 +225,7 @@ fn full_run_tunes_every_loop_in_order() {
         let Some(&AutotuneEvent::StageDone {
             target: done,
             gains,
+            steps: None,
         }) = events.get(index + 2)
         else {
             panic!(
@@ -573,13 +574,19 @@ fn step_tests_measure_alternating_steps_and_keep_the_gains() {
                 "{target:?} step {index}: {step:?}"
             );
         }
-        check!(
-            stage.contains(&AutotuneEvent::StageDone {
-                target,
-                gains: target.gains(&baseline),
-            }),
-            "{target:?}"
-        );
+        let done = stage.iter().find_map(|event| match event {
+            AutotuneEvent::StageDone {
+                target: done,
+                gains,
+                steps,
+            } if *done == target => Some((*gains, *steps)),
+            _ => None,
+        });
+        let Some((gains, Some(steps))) = done else {
+            panic!("{target:?}: no StageDone with steps: {done:?}");
+        };
+        check!(gains == target.gains(&baseline), "{target:?}");
+        check!(steps.count() == 2 * pairs, "{target:?}");
     }
 }
 

@@ -9,7 +9,7 @@ use crate::{Configurable, FlightLoop, VehicleState};
 
 use super::{
     ControllerForm, Measurement, ProbeAbort, ProbeConfig, ProbeStatus, RelayConfig, RelayResult,
-    StepConfig, Tunable, TuningRule, gains_from_ultimate,
+    StepConfig, StepSummary, Tunable, TuningRule, gains_from_ultimate,
 };
 
 use procedure::{Action, Input, Procedure};
@@ -164,10 +164,12 @@ pub const COPTER_RATE_STEP: StepConfig = StepConfig {
     filter_hz: 40.0,
 };
 
-/// Step response of a copter angle loop: 10° held for 0.8 s, filtered at 20 Hz.
+/// Step response of a copter angle loop: 10° held for 1.5 s, filtered at 20 Hz. QuadCopterX's
+/// hand-tuned angle loop (P 3) reached only 89% of the step in 0.8 s (#298), so the window
+/// covers about four of its time constants; the vehicle drifts about 2 m meanwhile.
 pub const COPTER_ANGLE_STEP: StepConfig = StepConfig {
     amplitude: 0.175,
-    duration_s: 0.8,
+    duration_s: 1.5,
     settle_band: 0.1,
     filter_hz: 20.0,
 };
@@ -461,6 +463,8 @@ pub enum AutotuneEvent {
         target: TunedLoop,
         /// The gains committed for it.
         gains: Gains,
+        /// A step test's valid steps (invalid ones, which ran again, left out).
+        steps: Option<StepSummary>,
     },
     /// A stage failed: the config went back to the last committed one (earlier stages stay),
     /// and the run ends.
@@ -881,7 +885,7 @@ impl Autotune {
                 };
                 None
             }
-            Action::Finish(gains) => Some(self.commit(flight_loop, stage, gains)),
+            Action::Finish { gains, steps } => Some(self.commit(flight_loop, stage, gains, steps)),
             Action::Fail(reason) => Some(self.fail(flight_loop, stage, reason)),
         }
     }
@@ -969,6 +973,7 @@ impl Autotune {
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
         gains: Gains,
+        steps: Option<StepSummary>,
     ) -> AutotuneEvent {
         let target = self.target(stage);
         let mut config = *flight_loop.stabilizer().config();
@@ -982,7 +987,11 @@ impl Autotune {
         } else {
             Phase::Finishing
         };
-        AutotuneEvent::StageDone { target, gains }
+        AutotuneEvent::StageDone {
+            target,
+            gains,
+            steps,
+        }
     }
 
     /// Ends the run at `stage`: stops its probe and puts back the last committed config.

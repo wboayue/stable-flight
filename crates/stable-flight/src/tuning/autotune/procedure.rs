@@ -2,7 +2,7 @@
 
 use super::{AutotuneAbort, Method, RelayPlan, StepTestPlan};
 use crate::controllers::Gains;
-use crate::tuning::{Measurement, ProbeConfig};
+use crate::tuning::{Measurement, ProbeConfig, StepSummary};
 
 #[cfg(test)]
 mod tests;
@@ -27,8 +27,12 @@ pub(super) enum Input {
 pub(super) enum Action {
     /// Settle, then run this probe on the stage's loop.
     Probe(ProbeConfig),
-    /// Commit these gains for the stage's loop and end the stage.
-    Finish(Gains),
+    /// Commit these gains for the stage's loop and end the stage; a step test also reports
+    /// its valid steps.
+    Finish {
+        gains: Gains,
+        steps: Option<StepSummary>,
+    },
     /// End the run: the stage can't go on.
     Fail(AutotuneAbort),
 }
@@ -48,10 +52,10 @@ pub(super) enum Procedure {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct StepTest {
     plan: StepTestPlan,
-    /// Valid steps measured.
-    measured: usize,
     /// Invalid steps since the last valid one.
     invalid: usize,
+    /// The valid steps.
+    summary: StepSummary,
 }
 
 impl Procedure {
@@ -60,8 +64,8 @@ impl Procedure {
             Method::Relay(plan) => Self::Relay(plan),
             Method::StepTest(plan) => Self::StepTest(StepTest {
                 plan,
-                measured: 0,
                 invalid: 0,
+                summary: StepSummary::default(),
             }),
         }
     }
@@ -74,7 +78,10 @@ impl Procedure {
                     measurement: Measurement::Relay(result),
                     gains,
                     ..
-                } => Action::Finish(plan.gains(&result, gains)),
+                } => Action::Finish {
+                    gains: plan.gains(&result, gains),
+                    steps: None,
+                },
                 Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
             },
             Self::StepTest(test) => test.next(input),
@@ -101,9 +108,12 @@ impl StepTest {
             return self.probe();
         }
         self.invalid = 0;
-        self.measured += 1;
-        if self.measured >= 2 * self.plan.pairs {
-            return Action::Finish(gains);
+        self.summary.add(&metrics);
+        if self.summary.count() >= 2 * self.plan.pairs {
+            return Action::Finish {
+                gains,
+                steps: Some(self.summary),
+            };
         }
         self.probe()
     }
@@ -111,7 +121,7 @@ impl StepTest {
     /// The next step: positive after an even count of valid steps, negative after an odd one
     /// (an invalid step runs again in the same direction).
     fn probe(&self) -> Action {
-        let step = if self.measured.is_multiple_of(2) {
+        let step = if self.summary.count().is_multiple_of(2) {
             self.plan.step
         } else {
             self.plan.step.reversed()

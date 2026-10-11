@@ -253,7 +253,6 @@ fn main() {
     let runner = RealTimeRunner::new(LOOP_HZ).expect("valid loop frequency");
     let mut ticks = 0u32;
     let mut skipped_ticks = 0;
-    let mut steps = StepSummary::default();
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop, stats| {
         // A stall (the runner dropped ticks) spoils a running step's timing: it runs again.
         if stats.skipped_ticks > skipped_ticks {
@@ -292,7 +291,7 @@ fn main() {
         let Some(event) = autotune.update(flight_loop, LOOP_DT_S) else {
             return;
         };
-        log_event(&event, flight_loop.stabilizer().config(), &mut steps);
+        log_event(&event, flight_loop.stabilizer().config());
         if !autotune.is_running() {
             info!("landing");
             land.set(true);
@@ -300,21 +299,15 @@ fn main() {
     });
 }
 
-/// Logs an autotune event (lifecycle, so `info!`/`warn!`; each step at `debug!`), summing a
-/// stage's steps in `steps`; on completion, prints the tuned gains for pasting.
-fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig, steps: &mut StepSummary) {
+/// Logs an autotune event (lifecycle, so `info!`/`warn!`; each step, including ones that run
+/// again, at `debug!`); on completion, prints the tuned gains for pasting.
+fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
     match event {
-        AutotuneEvent::StageStarted(target) => {
-            *steps = StepSummary::default();
-            info!("autotune: stage {target:?}");
-        }
+        AutotuneEvent::StageStarted(target) => info!("autotune: stage {target:?}"),
         AutotuneEvent::Measured {
             target,
             measurement: Measurement::Step(metrics),
-        } => {
-            steps.add(metrics);
-            debug!("autotune: {target:?} step {}", format_step(metrics));
-        }
+        } => debug!("autotune: {target:?} step {}", format_step(metrics)),
         AutotuneEvent::Measured {
             target,
             measurement: Measurement::Relay(result),
@@ -322,13 +315,19 @@ fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig, steps: &mut
             "autotune: {target:?} Ku {:.3} Tu {:.3} s (relay {:.3}, cycle {:.4}, bias {:.3})",
             result.point.ku, result.point.tu_s, result.relay, result.cycle_amplitude, result.bias,
         ),
-        AutotuneEvent::StageDone { target, gains } if steps.count() > 0 => {
+        AutotuneEvent::StageDone {
+            target,
+            gains,
+            steps: Some(steps),
+        } => {
             info!("autotune: {target:?} steps {}", format_summary(steps));
             info!("autotune: {target:?} flies {}", format_gains(gains));
         }
-        AutotuneEvent::StageDone { target, gains } => {
-            info!("autotune: {target:?} -> {}", format_gains(gains));
-        }
+        AutotuneEvent::StageDone {
+            target,
+            gains,
+            steps: None,
+        } => info!("autotune: {target:?} -> {}", format_gains(gains)),
         AutotuneEvent::StageFailed { target, reason } => {
             warn!("autotune: {target:?} failed: {reason:?}; earlier stages kept");
         }

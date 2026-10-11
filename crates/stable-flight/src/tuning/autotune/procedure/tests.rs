@@ -36,11 +36,14 @@ fn relay_probes_once_then_finishes_with_the_rules_gains() {
     let rule = gains_from_ultimate(&UltimatePoint { ku: 2.0, tu_s: 0.1 }, plan.rule, plan.form);
     let last = procedure.next(measured(2.0, 0.1));
     check!(
-        last == Action::Finish(Gains {
-            p: rule.p,
-            i: CURRENT.i,
-            d: rule.d,
-        })
+        last == Action::Finish {
+            gains: Gains {
+                p: rule.p,
+                i: CURRENT.i,
+                d: rule.d,
+            },
+            steps: None,
+        }
     );
 }
 
@@ -63,7 +66,7 @@ fn relay_tunes_only_its_forms_terms() {
         let rule = gains_from_ultimate(&UltimatePoint { ku: 2.0, tu_s: 0.1 }, plan.rule, form);
         let mut procedure = Procedure::new(Method::Relay(plan));
 
-        let Action::Finish(gains) = procedure.next(measured(2.0, 0.1)) else {
+        let Action::Finish { gains, .. } = procedure.next(measured(2.0, 0.1)) else {
             panic!("{form:?}: no gains");
         };
 
@@ -79,11 +82,17 @@ fn relay_tunes_only_its_forms_terms() {
     }
 }
 
-/// A step's measurement: `saturated_s` clipped, `stalled` or not.
+/// A step's measurement: `saturated_s` clipped, `stalled` or not; its overshoot tells steps
+/// apart.
 fn stepped(saturated_s: f32, stalled: bool) -> Input {
+    stepped_with(saturated_s, stalled, 0.0)
+}
+
+fn stepped_with(saturated_s: f32, stalled: bool, overshoot: f32) -> Input {
     Input::Measured {
         measurement: Measurement::Step(StepMetrics {
             saturated_s,
+            overshoot,
             ..Default::default()
         }),
         gains: CURRENT,
@@ -100,19 +109,31 @@ fn step_test(pairs: usize) -> (Procedure, StepTestPlan) {
 }
 
 /// A step test alternates `+step` and `−step` for its pairs, then finishes with the gains it
-/// flew (no change).
+/// flew (no change) and a summary of its valid steps only.
 #[test]
 fn step_test_alternates_then_finishes_with_the_same_gains() {
     let (mut procedure, plan) = step_test(2);
     let up = Action::Probe(ProbeConfig::Step(plan.step));
     let down = Action::Probe(ProbeConfig::Step(plan.step.reversed()));
+    let clipped = plan.max_saturated_s + 0.01;
 
     let mut actions = vec![procedure.next(Input::Start { gains: CURRENT })];
-    for _ in 0..4 {
-        actions.push(procedure.next(stepped(0.0, false)));
+    actions.push(procedure.next(stepped_with(clipped, false, 9.0))); // invalid: left out
+    for overshoot in [0.1, 0.2, 0.3, 0.4] {
+        actions.push(procedure.next(stepped_with(0.0, false, overshoot)));
     }
 
-    check!(actions == [up, down, up, down, Action::Finish(CURRENT)]);
+    let Some(Action::Finish {
+        gains,
+        steps: Some(steps),
+    }) = actions.pop()
+    else {
+        panic!("no summary: {actions:?}");
+    };
+    check!(actions == [up, up, down, up, down]);
+    check!(gains == CURRENT);
+    check!(steps.count() == 4);
+    check!(steps.overshoot.max == 0.4);
 }
 
 /// A clipped or stalled step runs again in the same direction; `max_invalid` in a row fail the
