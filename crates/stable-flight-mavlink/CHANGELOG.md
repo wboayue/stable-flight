@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Not yet released. Until the first release this section summarizes what the crate provides,
-not each change; per-change entries start after it.
+## [0.1.0] - 2026-10-10
+
+First release.
 
 ### Added
 
@@ -31,4 +32,5 @@ not each change; per-change entries start after it.
 - **`testing` feature:** `testing::MockConnection`, a scripted `MavConnection` (receives in
   order, then `WouldBlock`; sends recorded, optionally failing) for tests.
 
-[unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight-mavlink
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-mavlink-v0.1.0...HEAD
+[0.1.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-mavlink-v0.1.0

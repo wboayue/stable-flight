@@ -7,8 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Not yet released. Until the first release this section summarizes what the crate provides,
-not each change; per-change entries start after it.
+## [0.1.0] - 2026-10-10
+
+First release.
 
 ### Added
 
@@ -77,4 +78,5 @@ not each change; per-change entries start after it.
 - **`no_std`**, including the `testing` feature; builds for `thumbv7em-none-eabihf`. The tick
   never panics on bad input (saturate, NaN as neutral), only on `dt <= 0`.
 
-[unreleased]: https://github.com/wboayue/stable-flight/commits/main/crates/stable-flight
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-v0.1.0...HEAD
+[0.1.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-v0.1.0
