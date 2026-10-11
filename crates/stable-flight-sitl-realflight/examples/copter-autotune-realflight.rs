@@ -1,6 +1,6 @@
 //! Autotunes the quadcopter's PID loops in RealFlight (#149): climbs to the hover script's
-//! waypoint, runs the relay autotune on each loop (roll, pitch, yaw rate, then roll, pitch, and
-//! heading), lands, and disarms.
+//! waypoint, runs the relay autotune on each loop (roll and pitch rate, then roll, pitch, and
+//! heading; yaw rate keeps its hand tune, #296), lands, and disarms.
 //!
 //! Each stage hands one loop to a relay that measures its ultimate gain and period; the
 //! Tyreus–Luyben rule turns them into gains, committed before the next stage
@@ -56,7 +56,8 @@ const LOOP_DT_S: f32 = (1.0 / LOOP_HZ) as f32;
 const START_ALTITUDE_TOLERANCE_M: f32 = 0.5;
 /// How often a running stage's status is logged at `debug`, in ticks (1 s).
 const STATUS_EVERY_TICKS: u32 = 250;
-/// The rate loops (the others are angle and heading loops).
+/// The rate loops (the others are angle and heading loops); `--rate-p-scale` scales all
+/// three, though the default sequence leaves yaw rate out.
 const RATE_LOOPS: [TunedLoop; 3] = [
     TunedLoop::RollRate,
     TunedLoop::PitchRate,
@@ -101,7 +102,7 @@ struct Args {
 enum Stages {
     /// Rate loops, then angle and heading loops.
     All,
-    /// Roll, pitch, and yaw rate.
+    /// Roll and pitch rate.
     Rate,
     /// Roll, pitch, and heading.
     Angle,
@@ -109,12 +110,12 @@ enum Stages {
 
 impl Stages {
     fn plan(self) -> Vec<StagePlan> {
-        let sequence = StagePlan::copter_sequence();
-        let (rate, angle) = sequence.split_at(RATE_LOOPS.len());
+        let sequence = StagePlan::copter_sequence().into_iter();
+        let is_rate = |stage: &StagePlan| RATE_LOOPS.contains(&stage.target);
         match self {
-            Stages::All => sequence.to_vec(),
-            Stages::Rate => rate.to_vec(),
-            Stages::Angle => angle.to_vec(),
+            Stages::All => sequence.collect(),
+            Stages::Rate => sequence.filter(is_rate).collect(),
+            Stages::Angle => sequence.filter(|stage| !is_rate(stage)).collect(),
         }
     }
 }

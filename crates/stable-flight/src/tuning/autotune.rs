@@ -54,11 +54,11 @@ pub const COPTER_ANGLE_RELAY: RelayConfig = RelayConfig {
 };
 
 /// The order [`StagePlan::copter_sequence`] tunes in: innermost loops first, so each stage
-/// flies on the gains the earlier ones found.
-pub const COPTER_SEQUENCE: [TunedLoop; MAX_STAGES] = [
+/// flies on the gains the earlier ones found. Yaw rate is left out: on QuadCopterX the relay
+/// can't measure it within the yaw authority the mixer leaves at hover (#296).
+pub const COPTER_SEQUENCE: [TunedLoop; 5] = [
     TunedLoop::RollRate,
     TunedLoop::PitchRate,
-    TunedLoop::YawRate,
     TunedLoop::Roll,
     TunedLoop::Pitch,
     TunedLoop::Heading,
@@ -79,9 +79,11 @@ pub struct StagePlan {
 }
 
 impl StagePlan {
-    /// The copter defaults for `target`, Tyreus–Luyben throughout: roll and pitch rate PID
-    /// ([`COPTER_RATE_RELAY`]), yaw rate PI (its D is 0 in hand tunes), and the angle and
-    /// heading loops PD ([`COPTER_ANGLE_RELAY`]).
+    /// The copter defaults for `target`: Tyreus–Luyben PD throughout, so the integral keeps its
+    /// current gain. A rate loop's I holds trim against steady disturbances rather than
+    /// shaping its response, and the rule's integral time (`2.2·Tu`) is a fraction of a second
+    /// on these fast loops: about 30× a flown hand tune on QuadCopterX. Rate loops use
+    /// [`COPTER_RATE_RELAY`], angle and heading loops [`COPTER_ANGLE_RELAY`].
     ///
     /// # Examples
     ///
@@ -90,16 +92,14 @@ impl StagePlan {
     /// use stable_flight::tuning::ControllerForm;
     /// use stable_flight::tuning::autotune::StagePlan;
     ///
-    /// assert_eq!(StagePlan::copter(TunedLoop::YawRate).form, ControllerForm::Pi);
+    /// assert_eq!(StagePlan::copter(TunedLoop::RollRate).form, ControllerForm::Pd);
     /// ```
     pub fn copter(target: TunedLoop) -> Self {
-        let (relay, form) = match target {
-            TunedLoop::RollRate | TunedLoop::PitchRate => (COPTER_RATE_RELAY, ControllerForm::Pid),
-            TunedLoop::YawRate => (COPTER_RATE_RELAY, ControllerForm::Pi),
-            TunedLoop::Roll | TunedLoop::Pitch | TunedLoop::Heading => {
-                (COPTER_ANGLE_RELAY, ControllerForm::Pd)
-            }
+        let relay = match target {
+            TunedLoop::RollRate | TunedLoop::PitchRate | TunedLoop::YawRate => COPTER_RATE_RELAY,
+            TunedLoop::Roll | TunedLoop::Pitch | TunedLoop::Heading => COPTER_ANGLE_RELAY,
         };
+        let form = ControllerForm::Pd;
         Self {
             target,
             relay,
@@ -108,8 +108,8 @@ impl StagePlan {
         }
     }
 
-    /// Every loop, in [`COPTER_SEQUENCE`] order, with the [`copter`](Self::copter) defaults.
-    pub fn copter_sequence() -> [Self; MAX_STAGES] {
+    /// The loops in [`COPTER_SEQUENCE`], in order, with the [`copter`](Self::copter) defaults.
+    pub fn copter_sequence() -> [Self; COPTER_SEQUENCE.len()] {
         COPTER_SEQUENCE.map(Self::copter)
     }
 }
@@ -340,7 +340,8 @@ enum Phase {
 /// - **Settle:** before each stage, the vehicle must stay within the [`Envelope`]'s settle
 ///   limits for `settle_s`.
 /// - **Measure:** the stage runs until the relay finishes. On `Done`, the plan's rule turns
-///   the [`RelayResult`] into gains, committed through
+///   the [`RelayResult`] into gains for the terms its form tunes (the others keep their
+///   current gains), committed through
 ///   [`set_stabilizer_config`](FlightLoop::set_stabilizer_config); the next stage flies them.
 /// - **Fail:** an envelope breach, a relay abort, or an interrupt stops the stage and ends the
 ///   run. A stage commits only when it finishes, so the failed loop keeps its gains and the
@@ -602,8 +603,8 @@ impl Autotune {
         let Some(plan) = self.stage(stage) else {
             return self.fail(flight_loop, AutotuneAbort::Interrupted);
         };
-        let gains = gains_from_ultimate(&result.point, plan.rule, plan.form);
         let mut config = *flight_loop.stabilizer().config();
+        let gains = tuned_gains(&plan, &result, plan.target.gains(&config));
         *plan.target.gains_mut(&mut config) = gains;
         flight_loop.stop_tuning();
         if flight_loop.set_stabilizer_config(config).is_err() {
@@ -641,6 +642,25 @@ impl Autotune {
             target: self.target(stage),
             reason,
         }
+    }
+}
+
+/// The gains a finished stage commits: the plan's rule for the terms its form tunes, and
+/// `current` for the terms it leaves out.
+fn tuned_gains(plan: &StagePlan, result: &RelayResult, current: Gains) -> Gains {
+    let tuned = gains_from_ultimate(&result.point, plan.rule, plan.form);
+    Gains {
+        p: tuned.p,
+        i: if plan.form.has_integral() {
+            tuned.i
+        } else {
+            current.i
+        },
+        d: if plan.form.has_derivative() {
+            tuned.d
+        } else {
+            current.d
+        },
     }
 }
 
