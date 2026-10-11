@@ -785,6 +785,11 @@ impl ControlOutput {
 /// | `heading_rad` | about NED `z` | rad | clockwise from north (east = π/2); any range, e.g. [0, 2π) or [-π, π) |
 /// | `angular_velocity_radps` | FRD body: `x` roll, `y` pitch, `z` yaw | rad/s | roll right, nose up, nose right |
 ///
+/// Near ±90° pitch the Euler fields are degenerate: roll and heading turn about the same axis,
+/// so only their sum (or difference) means anything, and [`euler_angles`] picks one split.
+/// `attitude` and `angular_velocity_radps` stay well defined, so code that must work there (a
+/// tailsitter's nose-up hover) uses them, not the Euler fields.
+///
 /// # Examples
 ///
 /// Creating a default vehicle state:

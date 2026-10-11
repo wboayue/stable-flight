@@ -103,6 +103,19 @@ cargo run -p stable-flight-sitl-realflight --example capture-state-realflight --
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --script flights/hover.csv
 ```
 
+To map a new model's channels and check the frame contract on it (#120), with no flight loop:
+set the model in RealFlight so each actuator has its own channel (no model-side mixes or gyro),
+put it on the ground, and sweep. The sweep holds every channel at neutral (motors 0, the rest
+centered), rests 2 s, moves each servo full both ways, pulses each motor alone, then hops on
+all motors with a servo kick so the model tumbles; `--script` runs your own `t_s,channel,value`
+steps instead. `check_frames` then compares the capture with the frame contract: reported body
+rates against the quaternions, gravity at rest, and RealFlight's Euler angles near ±90° pitch.
+
+```bash
+cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight -- --motors 0,1 --servos 2,3 --output sweep.csv
+cargo run --bin check_frames -- sweep.csv
+```
+
 To time the RealFlight round trip on its own (no flight loop, no link), with the aircraft on the ground: the probe logs each exchange over `--threshold-ms` (default 20) and prints latency percentiles on Ctrl-C, or on the first connection error (such as an exchange over the I/O timeout). `--local` talks to RealFlight directly, on the RealFlight machine, leaving out the proxy and the network. The flight examples also log exchanges over 20 ms at `debug` (`RUST_LOG=info,stable_flight_sitl_realflight=debug`).
 
 ```bash

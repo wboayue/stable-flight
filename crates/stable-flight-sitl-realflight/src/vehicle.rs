@@ -5,7 +5,7 @@ use realflight_bridge::{BridgeError, ControlInputs, RealFlightBridge, SimulatorS
 use stable_flight::Vec3;
 use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
 
-use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateSource, VehicleState};
+use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateSource, VehicleState, euler_angles};
 
 use crate::{ActuatorMapping, MappingError};
 use health::LinkHealth;
@@ -381,6 +381,7 @@ pub fn vehicle_state(state: &SimulatorState) -> VehicleState {
     // FRD body specific force to NED and add gravity back.
     let f = state.acceleration_body_mps2;
     let acceleration = attitude * Vec3::new(f.x, f.y, f.z) + Vec3::new(0.0, 0.0, GRAVITY);
+    let (roll_rad, pitch_rad, heading_rad) = euler_angles(&attitude);
 
     VehicleState {
         // Position is east/north; altitude is already up-positive.
@@ -392,15 +393,18 @@ pub fn vehicle_state(state: &SimulatorState) -> VehicleState {
         velocity_mps: Vec3::new(velocity.x, velocity.y, -velocity.z),
         acceleration_mps2: Vec3::new(acceleration.x, acceleration.y, -acceleration.z),
         attitude,
-        // Yaw rate and azimuth are counterclockwise-positive (nose left).
+        // Yaw rate is counterclockwise-positive (nose left).
         angular_velocity_radps: Vec3::new(
             state.roll_rate_dps.to_radians(),
             state.pitch_rate_dps.to_radians(),
             -state.yaw_rate_dps.to_radians(),
         ),
-        roll_rad: state.roll_deg.to_radians(),
-        pitch_rad: state.inclination_deg.to_radians(),
-        heading_rad: -state.azimuth_deg.to_radians(),
+        // From the quaternion rather than RealFlight's own Euler angles, so they always agree
+        // with `attitude` (they match RealFlight's away from ±90° pitch, where both are
+        // degenerate: roll and heading turn about the same axis).
+        roll_rad,
+        pitch_rad,
+        heading_rad,
     }
 }
 

@@ -8,7 +8,7 @@ use thiserror::Error;
 mod tests;
 
 /// Number of RealFlight channels ([`ControlInputs::channels`]); a test checks it.
-const CHANNEL_COUNT: usize = 12;
+pub(crate) const CHANNEL_COUNT: usize = 12;
 
 /// Maps [`ActuatorCommand`] slots to RealFlight channels.
 ///
