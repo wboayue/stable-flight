@@ -9,8 +9,8 @@ use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::stabilizers::copter::CopterStabilizer;
 use crate::tuning::plant::{Axes, PlantParams};
 use crate::{
-    AbsoluteAttitudeCommand, Actuator, ActuatorCommand, Command, ControlInput, ControlOutput,
-    RateCommand, StateSource, Vec3,
+    AbsoluteAttitudeCommand, Actuator, ActuatorCommand, Command, Commander, ControlInput,
+    ControlOutput, Mixer, RateCommand, StateSource, Vec3,
 };
 
 /// The flight loop's tick: 250 Hz.

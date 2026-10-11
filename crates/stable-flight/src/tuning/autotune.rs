@@ -5,10 +5,7 @@ use core::fmt;
 use crate::controllers::{Gains, InvalidConfig, check, check_positive};
 use crate::math::euler_angles;
 use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
-use crate::{
-    Commander, Configurable, FlightLoop, Guidance, Mixer, Stabilizer, TelemetryPublisher, Vehicle,
-    VehicleState,
-};
+use crate::{Configurable, FlightLoop, VehicleState};
 
 use super::{
     ControllerForm, RelayAbort, RelayConfig, RelayResult, Tunable, TuningRule, TuningStatus,
@@ -172,27 +169,42 @@ impl Envelope {
         )
     }
 
-    /// The limit `state` breaks, if any. NaN never counts as a breach.
-    fn breach(&self, state: &VehicleState, start_altitude_m: f32) -> Option<AutotuneAbort> {
-        let (roll, pitch, _) = euler_angles(&state.attitude);
-        if roll.abs() > self.max_tilt_rad || pitch.abs() > self.max_tilt_rad {
-            return Some(AutotuneAbort::Tilt);
+    /// The limit `motion` breaks, if any. NaN never counts as a breach.
+    fn breach(&self, motion: &Motion, start_altitude_m: f32) -> Option<AutotuneAbort> {
+        if motion.tilt_rad > self.max_tilt_rad {
+            Some(AutotuneAbort::Tilt)
+        } else if motion.rate_radps > self.max_rate_radps {
+            Some(AutotuneAbort::Rate)
+        } else if start_altitude_m - motion.altitude_m > self.max_altitude_loss_m {
+            Some(AutotuneAbort::AltitudeLoss)
+        } else {
+            None
         }
-        if state.angular_velocity_radps.amax() > self.max_rate_radps {
-            return Some(AutotuneAbort::Rate);
-        }
-        if start_altitude_m - state.position_m.z > self.max_altitude_loss_m {
-            return Some(AutotuneAbort::AltitudeLoss);
-        }
-        None
     }
 
-    /// Whether `state` is level and still enough to start a stage.
-    fn settled(&self, state: &VehicleState) -> bool {
+    /// Whether `motion` is level and still enough to start a stage.
+    fn settled(&self, motion: &Motion) -> bool {
+        motion.tilt_rad < self.settle_tilt_rad && motion.rate_radps < self.settle_rate_radps
+    }
+}
+
+/// What the envelope checks, read once per update from the state.
+struct Motion {
+    /// The larger of |roll| and |pitch|, in rad.
+    tilt_rad: f32,
+    /// The largest body rate magnitude, in rad/s.
+    rate_radps: f32,
+    altitude_m: f32,
+}
+
+impl Motion {
+    fn of(state: &VehicleState) -> Self {
         let (roll, pitch, _) = euler_angles(&state.attitude);
-        roll.abs() < self.settle_tilt_rad
-            && pitch.abs() < self.settle_tilt_rad
-            && state.angular_velocity_radps.amax() < self.settle_rate_radps
+        Self {
+            tilt_rad: roll.abs().max(pitch.abs()),
+            rate_radps: state.angular_velocity_radps.amax(),
+            altitude_m: state.position_m.z,
+        }
     }
 }
 
@@ -369,6 +381,17 @@ pub struct Autotune {
     start_altitude_m: f32,
 }
 
+/// What the supervisor needs from the stabilizer: copter tuning stages and config.
+pub trait CopterTunable:
+    Tunable<Target = TunedLoop> + Configurable<Config = CopterStabilizerConfig>
+{
+}
+
+impl<S> CopterTunable for S where
+    S: Tunable<Target = TunedLoop> + Configurable<Config = CopterStabilizerConfig>
+{
+}
+
 impl Autotune {
     /// A supervisor for `plan` (1 to [`MAX_STAGES`] stages) within `envelope`.
     ///
@@ -412,18 +435,10 @@ impl Autotune {
     ///
     /// [`StartError::NotArmed`] unless the last tick was armed; [`StartError::Running`]
     /// while a run is in progress.
-    pub fn start<C, V, G, S, M, T>(
+    pub fn start<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &FlightLoop<C, V, G, S, M, T>,
-    ) -> Result<(), StartError>
-    where
-        C: Commander,
-        V: Vehicle,
-        G: Guidance,
-        S: Stabilizer + Tunable<Target = TunedLoop> + Configurable<Config = CopterStabilizerConfig>,
-        M: Mixer,
-        T: TelemetryPublisher,
-    {
+    ) -> Result<(), StartError> {
         if self.is_running() {
             return Err(StartError::Running);
         }
@@ -438,19 +453,15 @@ impl Autotune {
 
     /// Advances the run by `dt` seconds; call it between ticks (after
     /// [`step`](FlightLoop::step)). Returns what happened, if anything.
-    pub fn update<C, V, G, S, M, T>(
+    ///
+    /// In order: a finished run reports [`Complete`](AutotuneEvent::Complete); a disarm
+    /// reverts everything; an envelope breach fails the stage; then the run settles or polls
+    /// the running stage.
+    pub fn update<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         dt: f32,
-    ) -> Option<AutotuneEvent>
-    where
-        C: Commander,
-        V: Vehicle,
-        G: Guidance,
-        S: Stabilizer + Tunable<Target = TunedLoop> + Configurable<Config = CopterStabilizerConfig>,
-        M: Mixer,
-        T: TelemetryPublisher,
-    {
+    ) -> Option<AutotuneEvent> {
         if !self.is_running() {
             return None;
         }
@@ -466,53 +477,17 @@ impl Autotune {
             self.phase = Phase::Reverted;
             return Some(AutotuneEvent::Reverted);
         }
-        if let Some(reason) = self
-            .envelope
-            .breach(flight_loop.state(), self.start_altitude_m)
-        {
+        let motion = Motion::of(flight_loop.state());
+        if let Some(reason) = self.envelope.breach(&motion, self.start_altitude_m) {
             return Some(self.fail(flight_loop, reason));
         }
-
         match self.phase {
             Phase::Settling {
                 stage,
                 level_s,
                 waited_s,
-            } => {
-                let waited_s = waited_s + dt;
-                let level_s = if self.envelope.settled(flight_loop.state()) {
-                    level_s + dt
-                } else {
-                    0.0
-                };
-                if level_s >= self.envelope.settle_s {
-                    let plan = self.stage(stage)?;
-                    flight_loop.start_tuning(plan.target, plan.relay);
-                    self.phase = Phase::Running { stage };
-                    return Some(AutotuneEvent::StageStarted(plan.target));
-                }
-                if waited_s >= self.envelope.settle_timeout_s {
-                    return Some(self.fail(flight_loop, AutotuneAbort::NotSettled));
-                }
-                self.phase = Phase::Settling {
-                    stage,
-                    level_s,
-                    waited_s,
-                };
-                None
-            }
-            Phase::Running { stage } => match flight_loop.tuning() {
-                Some((_, TuningStatus::Running { .. })) => None,
-                Some((_, TuningStatus::Done(result))) => {
-                    Some(self.commit(flight_loop, stage, result))
-                }
-                Some((_, TuningStatus::Aborted(abort))) => {
-                    Some(self.fail(flight_loop, AutotuneAbort::Relay(abort)))
-                }
-                Some((_, TuningStatus::Interrupted)) | None => {
-                    Some(self.fail(flight_loop, AutotuneAbort::Interrupted))
-                }
-            },
+            } => self.settle(flight_loop, &motion, stage, level_s + dt, waited_s + dt),
+            Phase::Running { stage } => self.poll_stage(flight_loop, stage),
             Phase::Idle
             | Phase::Finishing
             | Phase::Complete
@@ -544,6 +519,55 @@ impl Autotune {
         )
     }
 
+    /// Waits for the vehicle to hold level and still for `settle_s` (`level_s` counts it,
+    /// restarting when it moves), then starts `stage`; fails after `settle_timeout_s`.
+    fn settle<C, V, G, S: CopterTunable, M, T>(
+        &mut self,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+        motion: &Motion,
+        stage: usize,
+        level_s: f32,
+        waited_s: f32,
+    ) -> Option<AutotuneEvent> {
+        let level_s = if self.envelope.settled(motion) {
+            level_s
+        } else {
+            0.0
+        };
+        if level_s >= self.envelope.settle_s {
+            let plan = self.stage(stage)?;
+            flight_loop.start_tuning(plan.target, plan.relay);
+            self.phase = Phase::Running { stage };
+            return Some(AutotuneEvent::StageStarted(plan.target));
+        }
+        if waited_s >= self.envelope.settle_timeout_s {
+            return Some(self.fail(flight_loop, AutotuneAbort::NotSettled));
+        }
+        self.phase = Phase::Settling {
+            stage,
+            level_s,
+            waited_s,
+        };
+        None
+    }
+
+    /// Checks the running stage: commits it when done, fails the run when it stopped.
+    fn poll_stage<C, V, G, S: CopterTunable, M, T>(
+        &mut self,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+        stage: usize,
+    ) -> Option<AutotuneEvent> {
+        let reason = match flight_loop.tuning() {
+            Some((_, TuningStatus::Running { .. })) => return None,
+            Some((_, TuningStatus::Done(result))) => {
+                return Some(self.commit(flight_loop, stage, result));
+            }
+            Some((_, TuningStatus::Aborted(abort))) => AutotuneAbort::Relay(abort),
+            Some((_, TuningStatus::Interrupted)) | None => AutotuneAbort::Interrupted,
+        };
+        Some(self.fail(flight_loop, reason))
+    }
+
     fn settling(stage: usize) -> Phase {
         Phase::Settling {
             stage,
@@ -564,20 +588,12 @@ impl Autotune {
     }
 
     /// Commits a finished stage's gains and moves on.
-    fn commit<C, V, G, S, M, T>(
+    fn commit<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
         result: RelayResult,
-    ) -> AutotuneEvent
-    where
-        C: Commander,
-        V: Vehicle,
-        G: Guidance,
-        S: Stabilizer + Tunable<Target = TunedLoop> + Configurable<Config = CopterStabilizerConfig>,
-        M: Mixer,
-        T: TelemetryPublisher,
-    {
+    ) -> AutotuneEvent {
         let Some(plan) = self.stage(stage) else {
             return self.fail(flight_loop, AutotuneAbort::Interrupted);
         };
@@ -602,19 +618,11 @@ impl Autotune {
 
     /// Ends the run at the current stage, stopping it if it runs. A stage commits only when it
     /// finishes, so a failed one leaves the config as it found it.
-    fn fail<C, V, G, S, M, T>(
+    fn fail<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         reason: AutotuneAbort,
-    ) -> AutotuneEvent
-    where
-        C: Commander,
-        V: Vehicle,
-        G: Guidance,
-        S: Stabilizer + Tunable<Target = TunedLoop> + Configurable<Config = CopterStabilizerConfig>,
-        M: Mixer,
-        T: TelemetryPublisher,
-    {
+    ) -> AutotuneEvent {
         let stage = match self.phase {
             Phase::Settling { stage, .. } => stage,
             Phase::Running { stage } => {
@@ -633,16 +641,9 @@ impl Autotune {
 
 /// Puts back a config the stabilizer flew before. It was valid then and validation doesn't
 /// change between calls, so it can't be rejected.
-fn restore<C, V, G, S, M, T>(
+fn restore<C, V, G, S: CopterTunable, M, T>(
     flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
     config: CopterStabilizerConfig,
-) where
-    C: Commander,
-    V: Vehicle,
-    G: Guidance,
-    S: Stabilizer + Configurable<Config = CopterStabilizerConfig>,
-    M: Mixer,
-    T: TelemetryPublisher,
-{
+) {
     let _ = flight_loop.set_stabilizer_config(config);
 }

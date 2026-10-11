@@ -22,7 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`tuning::autotune::Autotune`** (#149): sequences stages between ticks (`StagePlan`,
   copter defaults in `StagePlan::copter_sequence`), waits for the vehicle to settle, aborts
   on an `Envelope` breach, commits each stage's gains through `set_stabilizer_config`, and
-  reverts to the starting config on disarm; reports `AutotuneEvent`s for logging.
+  reverts to the starting config on disarm; reports `AutotuneEvent`s for logging. Works with
+  any `CopterTunable` stabilizer (`Tunable` on `TunedLoop` + `Configurable`). `FlightLoop`'s
+  accessors and config setters no longer require the pipeline bounds.
 
 ### Changed
 

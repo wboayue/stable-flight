@@ -190,7 +190,11 @@ where
             failsafe: self.commander.failsafe(),
         });
     }
+}
 
+/// Accessors and between-ticks changes: they don't run the pipeline, so they need none of its
+/// bounds.
+impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T> {
     /// The most recent state estimate.
     pub fn state(&self) -> &VehicleState {
         &self.state
