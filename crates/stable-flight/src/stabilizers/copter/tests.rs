@@ -6,18 +6,20 @@ use std::f32::consts::PI;
 
 // Builds a CopterStabilizer with non-default gains on every loop.
 fn setup_controller() -> CopterStabilizer {
+    let rate_gains = Gains {
+        p: 1.0,
+        i: 0.1,
+        d: 0.05,
+    };
+    let attitude_gains = Gains {
+        p: 2.0,
+        i: 0.2,
+        d: 0.1,
+    };
     let config = CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
-            roll_gains: Gains {
-                p: 1.0,
-                i: 0.1,
-                d: 0.05,
-            },
-            pitch_gains: Gains {
-                p: 1.0,
-                i: 0.1,
-                d: 0.05,
-            },
+            roll_gains: rate_gains,
+            pitch_gains: rate_gains,
             yaw_gains: Gains {
                 p: 1.0,
                 i: 0.1,
@@ -26,16 +28,8 @@ fn setup_controller() -> CopterStabilizer {
             max_integral: 100.0,
         },
         attitude: AttitudeControllerConfig {
-            roll_gains: Gains {
-                p: 2.0,
-                i: 0.2,
-                d: 0.1,
-            },
-            pitch_gains: Gains {
-                p: 2.0,
-                i: 0.2,
-                d: 0.1,
-            },
+            roll_gains: attitude_gains,
+            pitch_gains: attitude_gains,
             max_integral: 100.0,
             max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0), // 45° for roll and pitch
             max_rate_radps: Vec2::new(3.0, 3.0),           // Max roll, pitch rates in rad/s

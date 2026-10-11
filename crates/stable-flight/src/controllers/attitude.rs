@@ -294,7 +294,10 @@ mod tests {
         let rates = controller.control(&config, dt, desired_angles, Vec2::zeros());
 
         let expected_error = Vec2::new(FRAC_PI_4, -FRAC_PI_4); // 45° in radians
-        let expected_rates = config.roll_gains.p * expected_error;
+        let expected_rates = Vec2::new(
+            config.roll_gains.p * expected_error.x,
+            config.pitch_gains.p * expected_error.y,
+        );
         assert!((rates.x - expected_rates.x).abs() < 1e-6);
         assert!((rates.y - expected_rates.y).abs() < 1e-6);
         assert_eq!(controller.integrated_error, dt * expected_error);
@@ -338,20 +341,12 @@ mod tests {
     /// Roll uses `roll_gains` and pitch `pitch_gains`, for each PID term.
     #[test]
     fn each_axis_uses_its_own_gains() {
-        let gains = |p, i, d| Gains { p, i, d };
+        let pid = |p, i, d| Gains { p, i, d };
         // (roll gains, pitch gains, expected first-tick rates for a 0.5 rad error on both axes
         // over dt 0.1: P·e + I·e·dt, no derivative yet)
         let cases = [
-            (
-                gains(1.0, 0.0, 0.0),
-                gains(3.0, 0.0, 0.0),
-                Vec2::new(0.5, 1.5),
-            ),
-            (
-                gains(0.0, 2.0, 0.0),
-                gains(0.0, 4.0, 0.0),
-                Vec2::new(0.1, 0.2),
-            ),
+            (pid(1.0, 0.0, 0.0), pid(3.0, 0.0, 0.0), Vec2::new(0.5, 1.5)),
+            (pid(0.0, 2.0, 0.0), pid(0.0, 4.0, 0.0), Vec2::new(0.1, 0.2)),
         ];
         for (roll_gains, pitch_gains, expected) in cases {
             let config = AttitudeControllerConfig {
@@ -371,8 +366,8 @@ mod tests {
 
         // Derivative: second tick after the error drops by 0.1 rad on both axes.
         let config = AttitudeControllerConfig {
-            roll_gains: gains(0.0, 0.0, 0.1),
-            pitch_gains: gains(0.0, 0.0, 0.3),
+            roll_gains: pid(0.0, 0.0, 0.1),
+            pitch_gains: pid(0.0, 0.0, 0.3),
             max_rate_radps: Vec2::new(10.0, 10.0),
             ..AttitudeControllerConfig::default()
         };
@@ -454,7 +449,10 @@ mod tests {
         let error1 = Vec2::new(FRAC_PI_4, FRAC_PI_4);
         let error2 = error1 - estimated_angles2;
         let derivative = (error2 - error1) / dt;
-        let expected_rates = config.roll_gains.d * derivative;
+        let expected_rates = Vec2::new(
+            config.roll_gains.d * derivative.x,
+            config.pitch_gains.d * derivative.y,
+        );
         assert!((rates2.x - expected_rates.x).abs() < 1e-6);
         assert!((rates2.y - expected_rates.y).abs() < 1e-6);
     }
@@ -512,8 +510,11 @@ mod tests {
         // First finite tick after the gap: P + I only (no derivative from the pre-gap error).
         let after_nan = controller.control(&config, 0.1, desired, Vec2::zeros());
         let error = desired;
-        let Gains { p, i, .. } = config.roll_gains;
-        let expected = p * error + i * (0.1 * error);
+        let [roll, pitch] = config.axis_gains();
+        let expected = Vec2::new(
+            roll.p * error.x + roll.i * (0.1 * error.x),
+            pitch.p * error.y + pitch.i * (0.1 * error.y),
+        );
         approx::assert_relative_eq!(after_nan.x, expected.x.clamp(-2.0, 2.0));
         approx::assert_relative_eq!(after_nan.y, expected.y.clamp(-2.0, 2.0));
     }
