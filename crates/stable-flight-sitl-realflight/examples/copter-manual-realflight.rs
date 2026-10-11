@@ -99,6 +99,7 @@ fn fly(commander: impl Commander, args: &Args) {
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         bridge: connect().expect("Failed to create bridge"),
         mapping: airframe.mapping,
+        body_rotation: airframe.body_rotation,
     })
     .with_reconnect(move || connect().map_err(BridgeError::from));
 

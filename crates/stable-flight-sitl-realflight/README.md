@@ -24,12 +24,13 @@ use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, airframes};
 
-// Tuned gains, mixer, and channel mapping for the QuadCopterX model.
+// Tuned gains, mixer, channel mapping, and body rotation for the QuadCopterX model.
 let airframe = airframes::quadcopter_x();
 
 let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
     bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
     mapping: airframe.mapping,
+    body_rotation: airframe.body_rotation,
 });
 let guidance = CopterGuidance::new(airframe.guidance);
 let stabilizer = CopterStabilizer::new(airframe.stabilizer);
@@ -39,6 +40,8 @@ let mixer = airframe.mixer;
 Use `RealFlightLocalBridge` when the controller runs on the same host as RealFlight, and `RealFlightRemoteBridge` otherwise. `realflight_bridge` is re-exported, so you don't need to depend on it yourself. `ActuatorMapping` maps the mixer's motor and servo slots to the model's RealFlight channels (servos rescaled from -1–1 to RealFlight's 0–1), so an airframe's mapping only fits its own mixer. `RealFlightVehicle::new` panics on an invalid mapping (a channel out of range or used twice); `try_new` returns a `MappingError` instead.
 
 Each tick makes one RealFlight exchange, in `actuate`; `state` returns the cached result, so guidance and the stabilizer see state one tick old. The `RealFlightVehicle` rustdoc covers timing and frame conversion.
+
+`body_rotation` is the vehicle's body frame expressed in RealFlight's: a constant rotation, like a flight controller board's mounting, for a model whose RealFlight frame isn't the vehicle's. Identity for most models; the eXplora VTOL tailsitter reads level on its tail in RealFlight, so its rotation is +90° pitch and it hovers at pitch +90° (airplane body frame, #314). The `RealFlightVehicle` rustdoc (Body rotation) has the math.
 
 A failed exchange is logged at most once a second. A remote bridge is unusable after a connection error, so give the vehicle a way to build a new one with `with_reconnect`: it retries with backoff and switches RealFlight to Link control on the new bridge, keeping the last state meanwhile. The flight examples do; the `RealFlightVehicle` rustdoc (Connection loss) has the backoff and the details.
 
@@ -54,6 +57,7 @@ let connect =
 let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
     bridge: connect().expect("Failed to create bridge"),
     mapping: airframe.mapping,
+    body_rotation: airframe.body_rotation,
 })
 .with_reconnect(move || connect().map_err(BridgeError::from));
 ```
@@ -110,6 +114,8 @@ centered), rests 2 s, moves each servo full both ways, pulses each motor alone, 
 all motors with a servo kick so the model tumbles; `--script` runs your own `t_s,channel,value`
 steps instead. `check_frames` then compares the capture with the frame contract: reported body
 rates against the quaternions, gravity at rest, and RealFlight's Euler angles near ±90° pitch.
+`--pitch-deg` converts with the model's body rotation (`--pitch-deg 90` for the eXplora, which
+then reads pitch +90° at rest on its tail).
 
 ```bash
 cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight -- --motors 0,1 --servos 2,3 --output sweep.csv

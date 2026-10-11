@@ -4,7 +4,7 @@ use realflight_bridge::{BridgeError, ControlInputs, Quaternion, RealFlightBridge
 use stable_flight::FlightLoop;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::QuadCopterMixer;
-use stable_flight::nalgebra::UnitQuaternion;
+use stable_flight::nalgebra::{Quaternion as NaQuaternion, UnitQuaternion};
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::conformance::Scenario;
 use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
@@ -138,6 +138,7 @@ fn create_test_config(should_fail: bool) -> RealFlightConfiguration<MockRealFlig
 
     RealFlightConfiguration {
         mapping,
+        body_rotation: UnitQuaternion::identity(),
         bridge: MockRealFlightBridge::new(should_fail),
     }
 }
@@ -266,6 +267,7 @@ fn exchanges_once_per_tick_and_reports_state_from_the_previous_exchange() {
     };
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         mapping: ActuatorMapping::default(),
+        body_rotation: UnitQuaternion::identity(),
         bridge,
     });
     let mut flight_loop = FlightLoop::new(
@@ -332,7 +334,7 @@ fn native_fixture(scenario: &Scenario) -> SimulatorState {
 
 /// Converts RealFlight's native report for `scenario`.
 fn state_for(scenario: &Scenario) -> VehicleState {
-    vehicle_state(&native_fixture(scenario))
+    vehicle_state(&native_fixture(scenario), &UnitQuaternion::identity())
 }
 
 stable_flight::conformance_tests! {
@@ -346,6 +348,124 @@ stable_flight::conformance_tests! {
     conforms_moving_northeast: MOVING_NORTHEAST;
     conforms_yaw_right_rate: YAW_RIGHT_RATE;
     conforms_combined_rates: COMBINED_RATES;
+}
+
+/// The eXplora VTOL's body rotation: its RealFlight frame is hover-level, the vehicle's is the
+/// airplane's, so RealFlight's level is nose up (#314).
+fn explora_rotation() -> UnitQuaternion<f32> {
+    UnitQuaternion::from_euler_angles(0.0, std::f32::consts::FRAC_PI_2, 0.0)
+}
+
+/// RealFlight's report for a vehicle whose body frame is `body_rotation` in RealFlight's:
+/// `report` (built for the vehicle's frame) with attitude, body rates, and specific force moved
+/// into RealFlight's frame, the inverse of `vehicle_state`'s rotation. World-frame fields stay.
+fn mounted(report: SimulatorState, body_rotation: &UnitQuaternion<f32>) -> SimulatorState {
+    let q = report.orientation;
+    let attitude = UnitQuaternion::new_unchecked(NaQuaternion::new(q.w, q.y, q.x, -q.z));
+    let rates = body_rotation
+        * Vec3::new(
+            report.roll_rate_dps,
+            report.pitch_rate_dps,
+            -report.yaw_rate_dps,
+        );
+    let f = report.acceleration_body_mps2;
+    let specific_force = body_rotation * Vec3::new(f.x, f.y, f.z);
+    SimulatorState {
+        orientation: realflight_orientation(&(attitude * body_rotation.inverse())),
+        roll_rate_dps: rates.x,
+        pitch_rate_dps: rates.y,
+        yaw_rate_dps: -rates.z,
+        acceleration_body_mps2: [specific_force.x, specific_force.y, specific_force.z].into(),
+        ..report
+    }
+}
+
+/// Every contract field survives the eXplora's rotation: RealFlight reports the scenario in its
+/// hover-level frame, and the converted state still meets the contract.
+mod explora_rotation_conformance {
+    use super::*;
+
+    fn state_for(scenario: &Scenario) -> VehicleState {
+        let rotation = explora_rotation();
+        vehicle_state(&mounted(native_fixture(scenario), &rotation), &rotation)
+    }
+
+    stable_flight::conformance_tests! {
+        state_for;
+        conforms_level: LEVEL;
+        conforms_roll_right_30: ROLL_RIGHT_30;
+        conforms_pitch_up_15: PITCH_UP_15;
+        conforms_heading_east: HEADING_EAST;
+        conforms_banked_climb_east: BANKED_CLIMB_EAST;
+        conforms_climbing: CLIMBING;
+        conforms_moving_northeast: MOVING_NORTHEAST;
+        conforms_yaw_right_rate: YAW_RIGHT_RATE;
+        conforms_combined_rates: COMBINED_RATES;
+    }
+}
+
+/// The eXplora sitting on its tail reads RealFlight-level: with its rotation, that is nose up,
+/// gravity along −x, at rest; RealFlight's body axes (x, y, z) become the vehicle's (z, y, −x),
+/// for rates and specific force alike.
+#[test]
+fn explora_rotation_maps_realflight_level_to_nose_up() {
+    let rest = SimulatorState {
+        orientation: realflight_orientation(&UnitQuaternion::identity()),
+        acceleration_body_mps2: [0.0, 0.0, -GRAVITY].into(),
+        ..Default::default()
+    };
+    let state = vehicle_state(&rest, &explora_rotation());
+    check!(
+        (state.pitch_rad.to_degrees() - 90.0).abs() < 0.05,
+        "{}",
+        state.pitch_rad.to_degrees()
+    );
+    check!((state.attitude * Vec3::x() - Vec3::new(0.0, 0.0, -1.0)).norm() < 1e-5);
+    check!(state.acceleration_mps2.norm() < 1e-4);
+
+    // RealFlight (roll, pitch, yaw) rate in °/s → the vehicle's body rate (FRD, rad/s). Yaw is
+    // RealFlight's counterclockwise-positive field: −1 is a turn about RealFlight's +z.
+    let deg = 1.0_f32.to_radians();
+    let cases = [
+        ((1.0, 0.0, 0.0), Vec3::new(0.0, 0.0, deg)),
+        ((0.0, 1.0, 0.0), Vec3::new(0.0, deg, 0.0)),
+        ((0.0, 0.0, -1.0), Vec3::new(-deg, 0.0, 0.0)),
+    ];
+    for ((roll, pitch, yaw), expected) in cases {
+        let report = SimulatorState {
+            roll_rate_dps: roll,
+            pitch_rate_dps: pitch,
+            yaw_rate_dps: yaw,
+            ..Default::default()
+        };
+        let rate = vehicle_state(&report, &explora_rotation()).angular_velocity_radps;
+        check!((rate - expected).norm() < 1e-6, "{rate:?} vs {expected:?}");
+    }
+}
+
+/// At identity, the rotation changes nothing: attitude and body rates are RealFlight's, exactly.
+#[test]
+fn identity_body_rotation_is_a_no_op() {
+    for scenario in stable_flight::testing::conformance::SCENARIOS {
+        let report = native_fixture(scenario);
+        let state = vehicle_state(&report, &UnitQuaternion::identity());
+        let q = report.orientation;
+        check!(
+            state.attitude.into_inner() == NaQuaternion::new(q.w, q.y, q.x, -q.z),
+            "{}",
+            scenario.name
+        );
+        let rates_degps = Vec3::new(
+            report.roll_rate_dps,
+            report.pitch_rate_dps,
+            -report.yaw_rate_dps,
+        );
+        check!(
+            state.angular_velocity_radps == rates_degps.map(f32::to_radians),
+            "{}",
+            scenario.name
+        );
+    }
 }
 
 #[test]
@@ -406,14 +526,17 @@ const CAPTURED_FRAMES: &[CapturedFrame] = &[
 fn captured_frames_agree_across_fields() {
     for (i, frame) in CAPTURED_FRAMES.iter().enumerate() {
         let [w, x, y, z] = frame.orientation;
-        let state = vehicle_state(&SimulatorState {
-            roll_deg: frame.roll_deg,
-            inclination_deg: frame.inclination_deg,
-            azimuth_deg: frame.azimuth_deg,
-            orientation: Quaternion { w, x, y, z },
-            velocity_world_mps: frame.velocity_world.into(),
-            ..Default::default()
-        });
+        let state = vehicle_state(
+            &SimulatorState {
+                roll_deg: frame.roll_deg,
+                inclination_deg: frame.inclination_deg,
+                azimuth_deg: frame.azimuth_deg,
+                orientation: Quaternion { w, x, y, z },
+                velocity_world_mps: frame.velocity_world.into(),
+                ..Default::default()
+            },
+            &UnitQuaternion::identity(),
+        );
 
         let (roll, pitch, heading) = stable_flight::euler_angles(&state.attitude);
         assert!(
@@ -451,6 +574,7 @@ const RECONNECT_DT: Duration = Duration::from_millis(100);
 fn failing_vehicle(connection_lost: bool) -> RealFlightVehicle<MockRealFlightBridge> {
     RealFlightVehicle::new(RealFlightConfiguration {
         mapping: ActuatorMapping::default(),
+        body_rotation: UnitQuaternion::identity(),
         bridge: MockRealFlightBridge {
             connection_lost,
             should_fail: !connection_lost,
@@ -612,6 +736,7 @@ fn a_lost_connection_is_closed_before_the_reconnect() {
     let connection = Arc::new(());
     let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         mapping: ActuatorMapping::default(),
+        body_rotation: UnitQuaternion::identity(),
         bridge: MockRealFlightBridge {
             connection_lost: true,
             _connection: Some(Arc::clone(&connection)),
@@ -643,6 +768,7 @@ fn a_vehicle_with_a_reconnect_hook_is_send() {
     fn assert_send<T: Send>(_: &T) {}
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         mapping: ActuatorMapping::default(),
+        body_rotation: UnitQuaternion::identity(),
         bridge: MockRealFlightBridge::new(false),
     })
     .with_reconnect(|| Ok(MockRealFlightBridge::new(false)));
@@ -685,7 +811,7 @@ fn euler_fields_follow_the_quaternion_nose_up() {
             ..Default::default()
         };
 
-        let state = vehicle_state(&report);
+        let state = vehicle_state(&report, &UnitQuaternion::identity());
 
         check!(state.attitude.angle_to(&attitude) < 1e-5, "{pitch}");
         let (r, p, h) = euler_angles(&state.attitude);

@@ -34,7 +34,8 @@ type Reconnect<T> = Box<dyn FnMut() -> Result<T, BridgeError> + Send>;
 
 /// Configuration parameters for connecting to a RealFlight simulation environment.
 ///
-/// This structure combines the communication bridge with channel mapping configuration.
+/// This structure combines the communication bridge with the channel mapping and the airframe's
+/// body rotation.
 ///
 /// # Type Parameters
 ///
@@ -45,10 +46,12 @@ type Reconnect<T> = Box<dyn FnMut() -> Result<T, BridgeError> + Send>;
 /// ```no_run
 /// use stable_flight_sitl_realflight::realflight_bridge::RealFlightLocalBridge;
 /// use stable_flight_sitl_realflight::{ActuatorMapping, RealFlightConfiguration};
+/// use stable_flight::nalgebra::UnitQuaternion;
 ///
 /// let bridge = RealFlightLocalBridge::new().expect("Failed to create bridge");
 /// let config = RealFlightConfiguration {
 ///     mapping: ActuatorMapping::default(),
+///     body_rotation: UnitQuaternion::identity(),
 ///     bridge,
 /// };
 /// ```
@@ -58,6 +61,10 @@ where
 {
     /// Configuration mapping actuator commands to simulator channels.
     pub mapping: ActuatorMapping,
+    /// The vehicle's body frame expressed in RealFlight's: the attitude the vehicle reports when
+    /// RealFlight reads level. Identity for a model whose RealFlight frame is already the
+    /// vehicle's; see [Body rotation](RealFlightVehicle#body-rotation).
+    pub body_rotation: UnitQuaternion<f32>,
     /// The bridge implementation for RealFlight communication.
     pub bridge: T,
 }
@@ -116,16 +123,30 @@ where
 /// is derived from the FRD body specific force. This type converts all of these to the
 /// `VehicleState` frame contract (north/east/up, radians) at the boundary.
 ///
+/// # Body rotation
+///
+/// Some models' RealFlight body frame isn't the vehicle's. The eXplora VTOL tailsitter reads level
+/// sitting on its tail (a hover-level, copter-style frame), while a tailsitter's body frame is the
+/// airplane's, x along the nose, so that hover is pitch +90° (#314). Like a flight controller
+/// board's mounting, this is a constant rotation applied at the boundary:
+/// [`RealFlightConfiguration::body_rotation`] `m`, the vehicle's body frame expressed in
+/// RealFlight's. With RealFlight's attitude `q_rf`, the vehicle's attitude is `q_rf · m`, and
+/// body rates and specific force (RF frame) are rotated by `m⁻¹`. World-frame quantities don't
+/// change. The eXplora's `m` is +90° about body y: on its tail it reads pitch +90°, and level
+/// forward flight reads pitch 0.
+///
 /// # Examples
 ///
 /// ```no_run
 /// use stable_flight_sitl_realflight::realflight_bridge::RealFlightLocalBridge;
 /// use stable_flight_sitl_realflight::{ActuatorMapping, RealFlightConfiguration, RealFlightVehicle};
+/// use stable_flight::nalgebra::UnitQuaternion;
 /// use stable_flight::{Actuator, ActuatorCommand, StateSource};
 /// use std::time::Duration;
 ///
 /// let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 ///     mapping: ActuatorMapping::default(),
+///     body_rotation: UnitQuaternion::identity(),
 ///     bridge: RealFlightLocalBridge::new().expect("Failed to create bridge"),
 /// });
 ///
@@ -144,6 +165,8 @@ where
     state: VehicleState,
     /// Configuration mapping actuator commands to simulator channels.
     mapping: ActuatorMapping,
+    /// The vehicle's body frame expressed in RealFlight's.
+    body_rotation: UnitQuaternion<f32>,
     /// Builds a new bridge after a connection error; `None` keeps the one bridge.
     reconnect: Option<Reconnect<T>>,
     /// Reconnect timing and failure-log rate limiting.
@@ -216,11 +239,13 @@ where
     /// use stable_flight_sitl_realflight::{
     ///     ActuatorMapping, MappingError, RealFlightConfiguration, RealFlightVehicle,
     /// };
+    /// use stable_flight::nalgebra::UnitQuaternion;
     ///
     /// let mut mapping = ActuatorMapping::default();
     /// mapping.motors[0] = Some(12); // RealFlight has channels 0–11
     /// let result = RealFlightVehicle::try_new(RealFlightConfiguration {
     ///     mapping,
+    ///     body_rotation: UnitQuaternion::identity(),
     ///     bridge: RealFlightLocalBridge::new().expect("Failed to create bridge"),
     /// });
     /// assert!(matches!(result, Err(MappingError::ChannelOutOfRange { channel: 12 })));
@@ -242,6 +267,7 @@ where
             bridge: Some(configuration.bridge),
             state: VehicleState::default(),
             mapping: configuration.mapping,
+            body_rotation: configuration.body_rotation,
             reconnect: None,
             health: LinkHealth::default(),
         })
@@ -262,6 +288,7 @@ where
     /// use stable_flight_sitl_realflight::{
     ///     ActuatorMapping, REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle,
     /// };
+    /// use stable_flight::nalgebra::UnitQuaternion;
     ///
     /// let host = String::from("127.0.0.1:8080");
     /// let connect = move || {
@@ -269,6 +296,7 @@ where
     /// };
     /// let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
     ///     mapping: ActuatorMapping::default(),
+    ///     body_rotation: UnitQuaternion::identity(),
     ///     bridge: connect().expect("Failed to create bridge"),
     /// })
     /// .with_reconnect(move || connect().map_err(BridgeError::from));
@@ -298,7 +326,7 @@ where
             debug!("Slow RealFlight exchange: {} ms", elapsed.as_millis());
         }
         match result {
-            Ok(state) => self.state = vehicle_state(&state),
+            Ok(state) => self.state = vehicle_state(&state, &self.body_rotation),
             Err(e) => {
                 self.health
                     .report(format_args!("Failed to exchange data with RealFlight: {e}"));
@@ -350,12 +378,14 @@ where
 ///
 /// This is the whole of [`RealFlightVehicle`]'s state estimate, as a pure function, so it can
 /// also convert recorded or replayed reports. See [Frames](RealFlightVehicle#frames) for
-/// RealFlight's conventions.
+/// RealFlight's conventions, and [Body rotation](RealFlightVehicle#body-rotation) for
+/// `body_rotation`, the vehicle's body frame expressed in RealFlight's (identity for most models).
 ///
 /// # Examples
 ///
 /// ```
-/// use stable_flight_sitl_realflight::realflight_bridge::SimulatorState;
+/// use stable_flight::nalgebra::UnitQuaternion;
+/// use stable_flight_sitl_realflight::realflight_bridge::{Quaternion, SimulatorState};
 /// use stable_flight_sitl_realflight::vehicle_state;
 ///
 /// // RealFlight reports position east/north; the contract wants north/east.
@@ -364,15 +394,26 @@ where
 ///     aircraft_position_y_m: 4.0,
 ///     ..Default::default()
 /// };
-/// let state = vehicle_state(&report);
+/// let state = vehicle_state(&report, &UnitQuaternion::identity());
 /// assert_eq!(state.position_m.x, 4.0);
 /// assert_eq!(state.position_m.y, 3.0);
+///
+/// // A tailsitter whose RealFlight frame is hover-level: level in RealFlight is nose up.
+/// let level = SimulatorState {
+///     orientation: Quaternion { w: 1.0, x: 0.0, y: 0.0, z: 0.0 },
+///     ..Default::default()
+/// };
+/// let nose_up = UnitQuaternion::from_euler_angles(0.0, std::f32::consts::FRAC_PI_2, 0.0);
+/// let state = vehicle_state(&level, &nose_up);
+/// assert!((state.pitch_rad.to_degrees() - 90.0).abs() < 0.05);
 /// ```
-pub fn vehicle_state(state: &SimulatorState) -> VehicleState {
+pub fn vehicle_state(state: &SimulatorState, body_rotation: &UnitQuaternion<f32>) -> VehicleState {
     // RealFlight's quaternion axes are (y, x, -z) of NED → FRD. Taken as reported, without
     // renormalizing: it is already unit.
     let q = state.orientation;
-    let attitude = UnitQuaternion::new_unchecked(Quaternion::new(q.w, q.y, q.x, -q.z));
+    let realflight_attitude = UnitQuaternion::new_unchecked(Quaternion::new(q.w, q.y, q.x, -q.z));
+    let attitude = realflight_attitude * body_rotation;
+    let to_body = body_rotation.inverse();
 
     // World velocity is NED.
     let velocity = state.velocity_world_mps;
@@ -380,7 +421,8 @@ pub fn vehicle_state(state: &SimulatorState) -> VehicleState {
     // RealFlight's world acceleration is unreliable (z reads ~7.5 m/s² at rest), so rotate the
     // FRD body specific force to NED and add gravity back.
     let f = state.acceleration_body_mps2;
-    let acceleration = attitude * Vec3::new(f.x, f.y, f.z) + Vec3::new(0.0, 0.0, GRAVITY);
+    let specific_force = to_body * Vec3::new(f.x, f.y, f.z);
+    let acceleration = attitude * specific_force + Vec3::new(0.0, 0.0, GRAVITY);
     let (roll_rad, pitch_rad, heading_rad) = euler_angles(&attitude);
 
     VehicleState {
@@ -394,11 +436,12 @@ pub fn vehicle_state(state: &SimulatorState) -> VehicleState {
         acceleration_mps2: Vec3::new(acceleration.x, acceleration.y, -acceleration.z),
         attitude,
         // Yaw rate is counterclockwise-positive (nose left).
-        angular_velocity_radps: Vec3::new(
-            state.roll_rate_dps.to_radians(),
-            state.pitch_rate_dps.to_radians(),
-            -state.yaw_rate_dps.to_radians(),
-        ),
+        angular_velocity_radps: to_body
+            * Vec3::new(
+                state.roll_rate_dps.to_radians(),
+                state.pitch_rate_dps.to_radians(),
+                -state.yaw_rate_dps.to_radians(),
+            ),
         // From the quaternion rather than RealFlight's own Euler angles, so they always agree
         // with `attitude` (they match RealFlight's away from ±90° pitch, where both are
         // degenerate: roll and heading turn about the same axis).

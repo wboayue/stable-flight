@@ -106,6 +106,7 @@ fn fly(
     let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
         bridge,
         mapping: airframe.mapping,
+        body_rotation: airframe.body_rotation,
     });
     let guidance = CopterGuidance::new(airframe.guidance);
     let stabilizer = CopterStabilizer::new(airframe.stabilizer);

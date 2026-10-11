@@ -1,18 +1,21 @@
 //! Checks RealFlight captures against the `VehicleState` frame contract (#62, #120), offline.
 //!
 //! Reads a capture (`capture-state-realflight` or `channel-sweep-realflight`), converts each
-//! exchange with the backend's `vehicle_state`, and reports, binned by |pitch|:
+//! exchange with the backend's `vehicle_state` (with the model's body rotation, `--pitch-deg`),
+//! and reports, binned by |pitch|:
 //!
 //! - **Body rates:** `angular_velocity_radps` against the body rate implied by the quaternions
 //!   around it, and against the Euler-angle rates. Body rates match the first; if the backend
 //!   reported Euler rates, they'd match the second, which differs once pitched.
 //! - **Gravity at rest:** on the ground and still, RealFlight's body specific force against the
 //!   attitude's "up" (`attitude⁻¹ · (0, 0, −g)` NED, in FRD).
-//! - **RealFlight's Euler angles** against the quaternion's: they agree away from ±90° pitch
-//!   and fall apart near it.
+//! - **RealFlight's Euler angles** against the quaternion's, both in RealFlight's frame (before
+//!   the body rotation) and binned by RealFlight's pitch: they agree away from ±90° pitch and
+//!   fall apart near it.
 //!
 //! ```text
 //! cargo run --bin check_frames -- realflight-sweep.csv
+//! cargo run --bin check_frames -- --pitch-deg 90 explora.csv  # eXplora: hover-level → nose up
 //! ```
 
 use std::f32::consts::PI;
@@ -39,6 +42,10 @@ const PITCH_BINS_DEG: [f32; 4] = [0.0, 60.0, 80.0, 90.01];
 struct Args {
     /// The capture CSV.
     capture: PathBuf,
+    /// The model's body rotation as a pitch, in degrees: the vehicle's pitch when RealFlight
+    /// reads level (90 for the eXplora VTOL, whose RealFlight frame is hover-level).
+    #[arg(long, default_value_t = 0.0, allow_negative_numbers = true)]
+    pitch_deg: f32,
 }
 
 /// One converted sample.
@@ -47,28 +54,37 @@ struct Sample {
     state: VehicleState,
     /// RealFlight's Euler angles in the frame contract's convention (roll, pitch, heading).
     realflight_euler: Vec3,
+    /// The quaternion's Euler angles in RealFlight's body frame (before the body rotation).
+    realflight_quaternion_euler: Vec3,
     /// On the ground.
     grounded: bool,
-    /// RealFlight's body specific force, FRD, m/s².
+    /// RealFlight's body specific force, in the vehicle's FRD body frame, m/s².
     specific_force: Vec3,
 }
 
-fn sample(exchange: &CapturedExchange) -> Sample {
+fn sample(exchange: &CapturedExchange, body_rotation: &UnitQuaternion<f32>) -> Sample {
     let s = &exchange.state;
+    let unrotated = vehicle_state(s, &UnitQuaternion::identity());
     Sample {
         t_s: s.current_physics_time_s,
-        state: vehicle_state(s),
+        state: vehicle_state(s, body_rotation),
         realflight_euler: Vec3::new(
             s.roll_deg.to_radians(),
             s.inclination_deg.to_radians(),
             -s.azimuth_deg.to_radians(),
         ),
-        grounded: s.is_touching_ground,
-        specific_force: Vec3::new(
-            s.acceleration_body_mps2.x,
-            s.acceleration_body_mps2.y,
-            s.acceleration_body_mps2.z,
+        realflight_quaternion_euler: Vec3::new(
+            unrotated.roll_rad,
+            unrotated.pitch_rad,
+            unrotated.heading_rad,
         ),
+        grounded: s.is_touching_ground,
+        specific_force: body_rotation.inverse()
+            * Vec3::new(
+                s.acceleration_body_mps2.x,
+                s.acceleration_body_mps2.y,
+                s.acceleration_body_mps2.z,
+            ),
     }
 }
 
@@ -161,9 +177,9 @@ fn check(samples: &[Sample]) -> Report {
             let expected = rest_specific_force(&s.state.attitude);
             report.gravity[at].add(expected.angle(&s.specific_force));
         }
-        let quaternion = Vec3::new(s.state.roll_rad, s.state.pitch_rad, s.state.heading_rad);
-        let difference = (s.realflight_euler - quaternion).map(|d| wrap_angle(d).abs());
-        report.realflight_euler[at].add(difference.max());
+        let difference =
+            (s.realflight_euler - s.realflight_quaternion_euler).map(|d| wrap_angle(d).abs());
+        report.realflight_euler[bin(s.realflight_quaternion_euler.y)].add(difference.max());
     }
     report
 }
@@ -172,8 +188,17 @@ fn main() {
     let args = Args::parse();
     let file = File::open(&args.capture).expect("failed to open the capture");
     let exchanges = read_capture(BufReader::new(file)).expect("failed to read the capture");
-    let samples: Vec<Sample> = exchanges.iter().map(sample).collect();
-    println!("{}: {} exchanges", args.capture.display(), samples.len());
+    let body_rotation = UnitQuaternion::from_euler_angles(0.0, args.pitch_deg.to_radians(), 0.0);
+    let samples: Vec<Sample> = exchanges
+        .iter()
+        .map(|exchange| sample(exchange, &body_rotation))
+        .collect();
+    println!(
+        "{}: {} exchanges, body rotation pitch {}°",
+        args.capture.display(),
+        samples.len(),
+        args.pitch_deg
+    );
 
     let report = check(&samples);
     for (at, edges) in PITCH_BINS_DEG.windows(2).enumerate() {
@@ -191,7 +216,7 @@ fn main() {
             report.gravity[at].report("°", 180.0 / PI)
         );
         println!(
-            "  RealFlight Euler vs quat:     {}",
+            "  RealFlight Euler vs quat (RealFlight |pitch|): {}",
             report.realflight_euler[at].report("°", 180.0 / PI)
         );
     }
@@ -223,6 +248,7 @@ mod tests {
                 Sample {
                     t_s: i as f32 * DT,
                     realflight_euler: Vec3::new(roll_rad, pitch_rad, heading_rad),
+                    realflight_quaternion_euler: Vec3::new(roll_rad, pitch_rad, heading_rad),
                     grounded: false,
                     specific_force: Vec3::zeros(),
                     state,
@@ -255,6 +281,37 @@ mod tests {
         let nose_up = UnitQuaternion::from_euler_angles(0.0, std::f32::consts::FRAC_PI_2, 0.0);
         check!((rest_specific_force(&level) - Vec3::new(0.0, 0.0, -GRAVITY)).norm() < 1e-4);
         check!((rest_specific_force(&nose_up) - Vec3::new(GRAVITY, 0.0, 0.0)).norm() < 1e-4);
+    }
+
+    /// A hover-level model (the eXplora) at rest on its tail, RealFlight-level: with a 90° body
+    /// rotation it reads nose up, gravity along −x, and the gravity check passes; RealFlight's
+    /// Euler angles are still compared in RealFlight's frame, where it reads level.
+    #[test]
+    fn body_rotation_reads_a_hover_level_rest_as_nose_up() {
+        use stable_flight_sitl_realflight::realflight_bridge::{Quaternion, SimulatorState};
+        let exchange = CapturedExchange {
+            state: SimulatorState {
+                orientation: Quaternion {
+                    w: 1.0,
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                acceleration_body_mps2: [0.0, 0.0, -GRAVITY].into(),
+                is_touching_ground: true,
+                ..Default::default()
+            },
+            channels: Default::default(),
+        };
+        let nose_up = UnitQuaternion::from_euler_angles(0.0, std::f32::consts::FRAC_PI_2, 0.0);
+        let s = sample(&exchange, &nose_up);
+        check!((s.state.pitch_rad.to_degrees() - 90.0).abs() < 0.05);
+        check!((s.specific_force - Vec3::new(GRAVITY, 0.0, 0.0)).norm() < 1e-4);
+
+        let report = check(&[s]);
+        check!(report.gravity[2].count == 1);
+        check!(report.gravity[2].max < 1e-3);
+        check!(report.realflight_euler[0].count == 1);
     }
 
     /// Pitch bins split at 60° and 80°, and ±90° falls in the last.

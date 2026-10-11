@@ -8,6 +8,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{Actuator, ActuatorCommand, StateSource};
 use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
 use stable_flight_sitl_realflight::{ActuatorMapping, RealFlightConfiguration, RealFlightVehicle};
@@ -44,6 +45,7 @@ fn stalled_proxy_times_out_instead_of_blocking_the_tick() {
         let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
             bridge: RealFlightRemoteBridge::new(&address).expect("connects"),
             mapping: ActuatorMapping::default(),
+            body_rotation: UnitQuaternion::identity(),
         })
         .with_reconnect(move || {
             attempts.fetch_add(1, Ordering::SeqCst);
