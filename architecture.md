@@ -194,8 +194,8 @@ Each major component is defined by a trait interface, allowing multiple implemen
 
 * Multiple Commander implementations (e.g., the core `WaypointFollower`, which follows any waypoint list, looping, holding, or landing and disarming at the end; sitl's ScriptCommander, which loads CSV waypoint scripts from `flights/` into a `WaypointFollower`; Extreme3DCommander; SpektrumCommander)
 * Different Vehicle implementations (e.g., RealFlightVehicle in `stable-flight-sitl-realflight`)
-* Guidance and stabilizer variants for different airframes (e.g., CopterGuidance and CopterStabilizer). A tailsitter stabilizer for the [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) model is planned but not started.
-* Mixer implementations: `TableMixer`, one table-driven mixer (a row per motor or servo slot, with presets per frame) for multirotors and thrust-and-servo frames. `TailSitterMixer` is a placeholder: it returns zeroed actuator commands until the tailsitter stabilizer exists.
+* Guidance and stabilizer variants for different airframes (e.g., CopterGuidance and CopterStabilizer). A tailsitter stabilizer for the [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) model is planned (#122); until then `tailsitter-manual-realflight` flies the eXplora's mixer on the copter stabilizer in RealFlight's hover-level frame.
+* Mixer implementations: `TableMixer`, one table-driven mixer (a row per motor or servo slot, with presets per frame) for multirotors and thrust-and-servo frames, including the tailsitter's hover (`tailsitter_2p_hover`).
 * Telemetry publishers (e.g., the link crate's `LinkPublisher`, which SITL uses and boards will share; MAVLink is the bridge's job)
 
 ## Real-Time Loop Management

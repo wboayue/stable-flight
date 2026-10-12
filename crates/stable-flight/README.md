@@ -133,7 +133,7 @@ The `serde` feature derives `Serialize`/`Deserialize` on the pipeline data (`Com
 
 ### Mixer
 
-Mixers convert control outputs into an `ActuatorCommand`: generic `motors` (0–1) and `servos` (-1–1) slots whose meaning the mixer sets, and which the backend maps to output channels. `TableMixer` covers multirotors and thrust-and-servo frames with one row per output; presets include `quad_x`, `quad_plus`, `hex_x`, `hex_plus`, `octo_x`, `y6`, `x8`, `tri`, and `bi` (motor order and signs: the `mixers::table` rustdoc), and `TableMixer::new` takes a custom table:
+Mixers convert control outputs into an `ActuatorCommand`: generic `motors` (0–1) and `servos` (-1–1) slots whose meaning the mixer sets, and which the backend maps to output channels. `TableMixer` covers multirotors and thrust-and-servo frames with one row per output; presets include `quad_x`, `quad_plus`, `hex_x`, `hex_plus`, `octo_x`, `y6`, `x8`, `tri`, `bi`, and `tailsitter_2p_hover` (motor order and signs: the `mixers::table` rustdoc), and `TableMixer::new` takes a custom table:
 
 ```rust
 let mixer = TableMixer::quad_x();

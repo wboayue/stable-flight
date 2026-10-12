@@ -589,7 +589,7 @@ fn motor_presets_make_the_requested_moment_only() {
     }
 }
 
-/// Tricopter and bicopter: servos carry the moments their rows name, motors the rest; servo
+/// Tricopter, bicopter, and tailsitter hover: servos carry the moments their rows name, motors the rest; servo
 /// outputs don't depend on thrust.
 #[test]
 fn servo_presets_move_the_right_outputs() {
@@ -597,7 +597,8 @@ fn servo_presets_move_the_right_outputs() {
     type Case = (&'static str, MixFn, f32, Vec3, [f32; 3], [f32; 2]);
     let tri: MixFn = |c| TableMixer::tri().mix(c);
     let bi: MixFn = |c| TableMixer::bi().mix(c);
-    let cases: [Case; 8] = [
+    let tailsitter: MixFn = |c| TableMixer::tailsitter_2p_hover().mix(c);
+    let cases: [Case; 13] = [
         // Tail servo yaws; motors stay level.
         (
             "tri",
@@ -668,6 +669,50 @@ fn servo_presets_move_the_right_outputs() {
             Vec3::new(0.0, 0.4, 0.4),
             [0.9, 0.9, 0.0],
             [0.0, 0.8],
+        ),
+        // Tailsitter, airplane frame. Roll right: left trailing edge down, right up.
+        (
+            "tailsitter",
+            tailsitter,
+            0.5,
+            Vec3::new(0.4, 0.0, 0.0),
+            [0.45, 0.45, 0.0],
+            [-0.4, 0.4],
+        ),
+        // Nose up: both trailing edges up.
+        (
+            "tailsitter",
+            tailsitter,
+            0.5,
+            Vec3::new(0.0, 0.4, 0.0),
+            [0.45, 0.45, 0.0],
+            [0.4, 0.4],
+        ),
+        // Nose right: more left thrust (yaw ratio 2.5 on 0.1 headroom).
+        (
+            "tailsitter",
+            tailsitter,
+            0.5,
+            Vec3::new(0.0, 0.0, 0.4),
+            [0.55, 0.35, 0.0],
+            [0.0, 0.0],
+        ),
+        // Elevons ignore thrust; at full thrust the motors give way to keep the yaw split.
+        (
+            "tailsitter",
+            tailsitter,
+            0.0,
+            Vec3::new(0.2, 0.3, 0.0),
+            [0.0, 0.0, 0.0],
+            [0.1, 0.5],
+        ),
+        (
+            "tailsitter",
+            tailsitter,
+            1.0,
+            Vec3::new(0.0, 0.0, 1.0),
+            [1.0, 0.5, 0.0],
+            [0.0, 0.0],
         ),
     ];
     for (name, mix, thrust, moments, motors, servos) in cases {
@@ -772,6 +817,7 @@ fn presets_are_valid_tables() {
     check("quad_plus", TableMixer::quad_plus());
     check("tri", TableMixer::tri());
     check("bi", TableMixer::bi());
+    check("tailsitter_2p_hover", TableMixer::tailsitter_2p_hover());
     check("hex_x", TableMixer::hex_x());
     check("hex_plus", TableMixer::hex_plus());
     check("y6", TableMixer::y6());

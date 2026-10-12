@@ -117,3 +117,69 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
         body_rotation: UnitQuaternion::identity(),
     }
 }
+
+/// The [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) tailsitter
+/// in RealFlight: two motors on the wing and two elevons, hovering nose up.
+///
+/// - **Mixer:** [`TableMixer::tailsitter_2p_hover`], whose factors are in the airplane body
+///   frame (x the nose).
+/// - **Mapping:** motors 0/1 (left/right) on channels 5/6, elevons (servos 0/1) on channels
+///   1/2 (RealFlight numbering; 4/5 and 0/1 here), captured in #120.
+/// - **Body rotation:** +90° pitch. RealFlight's frame for this model is hover-level (sitting
+///   on its tail reads level), and the vehicle's is the airplane's, so hover reads pitch 90°.
+///
+/// **Interim until the nose-up stabilizer (#122):** the copter stabilizer can't fly at the
+/// 90° Euler singularity, so `tailsitter-manual-realflight` flies this airframe in
+/// RealFlight's hover-level frame instead (identity rotation), turning the stabilizer's
+/// moments into the airplane frame for the mixer. The stabilizer gains below are for that
+/// interim wiring, in RealFlight's hover-level axes (roll: tilting sideways, yaw: turning about
+/// the vertical), and are a starting point, not a tune.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight_sitl_realflight::airframes;
+///
+/// let airframe = airframes::explora_vtol();
+/// assert_eq!(airframe.mapping.motors[..2], [Some(4), Some(5)]);
+/// assert_eq!(airframe.mapping.servos[..2], [Some(0), Some(1)]);
+/// ```
+pub fn explora_vtol() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, TableMixer<4>> {
+    let gains = |p, i, d| Gains { p, i, d };
+    Airframe {
+        guidance: CopterGuidanceConfig {
+            altitude: AltitudeControllerConfig {
+                // Hover motor 0.7 (#120) = 0.9 · 0.88², through the squared thrust curve and
+                // the mixer's thrust factor.
+                hover_thrust: 0.88,
+                ..CopterGuidanceConfig::default().altitude
+            },
+            ..CopterGuidanceConfig::default()
+        },
+        stabilizer: CopterStabilizerConfig {
+            body_rate: BodyRateControllerConfig {
+                // Differential thrust (the mixer's airplane yaw, 0.25 per unit moment).
+                roll_gains: gains(0.2, 0.1, 0.0),
+                // Elevons (full range per unit moment).
+                pitch_gains: gains(0.1, 0.05, 0.0),
+                yaw_gains: gains(0.1, 0.05, 0.0),
+                max_integral: 1.0,
+            },
+            attitude: AttitudeControllerConfig {
+                roll_gains: gains(2.0, 0.0, 0.0),
+                pitch_gains: gains(2.0, 0.0, 0.0),
+                max_integral: 100.0,
+                max_angles_rad: Vec2::new(PI / 6.0, PI / 6.0), // 30° for roll and pitch
+                max_rate_radps: Vec2::new(2.0, 2.0),
+            },
+            ..Default::default()
+        },
+        mixer: TableMixer::tailsitter_2p_hover(),
+        mapping: ActuatorMapping {
+            motors: [Some(4), Some(5), None, None, None, None, None, None],
+            servos: [Some(0), Some(1), None, None, None, None, None, None],
+            ..Default::default()
+        },
+        body_rotation: UnitQuaternion::from_euler_angles(0.0, PI / 2.0, 0.0),
+    }
+}

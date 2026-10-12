@@ -79,6 +79,13 @@ const TRI: [MixRow; 4] = [
     MixRow::servo(0, 0.0, 0.0, 1.0),
 ];
 
+const TAILSITTER_2P_HOVER: [MixRow; 4] = [
+    MixRow::motor(0, 0.0, 0.0, 1.0),
+    MixRow::motor(1, 0.0, 0.0, -1.0),
+    MixRow::servo(0, -1.0, 1.0, 0.0),
+    MixRow::servo(1, 1.0, 1.0, 0.0),
+];
+
 const BI: [MixRow; 4] = [
     MixRow::motor(0, 1.0, 0.0, 0.0),
     MixRow::motor(1, -1.0, 0.0, 0.0),
@@ -142,6 +149,28 @@ impl TableMixer<4> {
     /// servo 1 the right.
     pub fn bi() -> Self {
         Self::from_valid(BI, MixerConfig::default())
+    }
+
+    /// Two-motor tailsitter with elevons, in hover (nose up). Seen from above in forward
+    /// flight, the frame its factors use (airplane FRD: x the nose, z the belly):
+    ///
+    /// ```text
+    ///          nose
+    ///   0 ------+------ 1
+    ///   servo 0   servo 1     elevons on the trailing edge
+    /// ```
+    ///
+    /// - **Yaw** (about z; in hover, tilting sideways): differential thrust, more on the left
+    ///   motor to yaw right.
+    /// - **Pitch** (about y): both elevons together, in the prop wash.
+    /// - **Roll** (about x; in hover, turning about the vertical): the elevons opposite ways,
+    ///   like ailerons.
+    ///
+    /// Positive servo raises its elevon's trailing edge; servo 0 is the left elevon, servo 1
+    /// the right. The props' reaction torque from differential thrust (about x) is not
+    /// compensated, nor is surface authority scaled with prop wash.
+    pub fn tailsitter_2p_hover() -> Self {
+        Self::from_valid(TAILSITTER_2P_HOVER, MixerConfig::default())
     }
 }
 

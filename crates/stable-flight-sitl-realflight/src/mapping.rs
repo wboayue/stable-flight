@@ -15,9 +15,11 @@ pub const CHANNEL_COUNT: usize = 12;
 /// `motors[i]` and `servos[i]` name the RealFlight channel (0–11) that the mixer's motor or
 /// servo `i` drives; `None` leaves the slot unused. The mixer sets what each slot means, so a
 /// mapping only fits its own mixer. RealFlight channels run from 0.0 to 1.0: motors pass
-/// through, and servos (-1.0 to 1.0) are rescaled so 0.0 lands on center (0.5). Channels no
-/// slot drives are sent as 0.0, which holds a servo there at full deflection
-/// ([#271](https://github.com/wboayue/stable-flight/issues/271)): map every servo the model has.
+/// through, and servos (-1.0 to 1.0) are rescaled so 0.0 lands on center (0.5), after negating
+/// any slot in `reversed_servos` (a surface the model moves the other way from the mixer's
+/// convention). Channels no slot drives are sent as 0.0, which holds a servo there at full
+/// deflection ([#271](https://github.com/wboayue/stable-flight/issues/271)): map every servo the model
+/// has.
 ///
 /// # Examples
 ///
@@ -35,6 +37,8 @@ pub struct ActuatorMapping {
     pub motors: [Option<usize>; ActuatorCommand::SLOTS],
     /// RealFlight channel for each servo slot.
     pub servos: [Option<usize>; ActuatorCommand::SLOTS],
+    /// Servo slots whose command is negated before it reaches the channel.
+    pub reversed_servos: [bool; ActuatorCommand::SLOTS],
 }
 
 /// Why an [`ActuatorMapping`] is invalid.
@@ -79,7 +83,14 @@ impl ActuatorMapping {
     pub(crate) fn channels(&self, command: &ActuatorCommand) -> ControlInputs {
         let mut input = ControlInputs::default();
         write(&mut input, &self.motors, &command.motors, |m| m);
-        write(&mut input, &self.servos, &command.servos, servo_to_channel);
+        let servos: [f32; ActuatorCommand::SLOTS] = core::array::from_fn(|i| {
+            if self.reversed_servos[i] {
+                -command.servos[i]
+            } else {
+                command.servos[i]
+            }
+        });
+        write(&mut input, &self.servos, &servos, servo_to_channel);
         input
     }
 }

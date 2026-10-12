@@ -1,4 +1,5 @@
 use super::*;
+use stable_flight::Mixer;
 use stable_flight::Vec3;
 use stable_flight::controllers::{LateralControllerConfig, YawControllerConfig};
 
@@ -80,4 +81,33 @@ fn quadcopter_x_holds_zero_yaw_rate_against_the_hover_imbalance() {
             "settled at {rate} rad/s against {disturbance}"
         );
     }
+}
+
+#[test]
+fn explora_vtol_maps_two_motors_and_two_elevons_validly() {
+    let mapping = explora_vtol().mapping;
+
+    assert_eq!(mapping.validate(), Ok(()));
+    assert_eq!(mapping.motors[..2], [Some(4), Some(5)]);
+    assert!(mapping.motors[2..].iter().all(Option::is_none));
+    assert_eq!(mapping.servos[..2], [Some(0), Some(1)]);
+    assert!(mapping.servos[2..].iter().all(Option::is_none));
+}
+
+/// RealFlight-level on its tail is nose-up hover: 90° pitch in the vehicle frame.
+#[test]
+fn explora_vtol_reads_nose_up_at_realflight_level() {
+    let (roll, pitch, _) = stable_flight::euler_angles(&explora_vtol().body_rotation);
+    assert!(roll.abs() < 1e-3);
+    assert!((pitch - PI / 2.0).abs() < 1e-3, "pitch {pitch}");
+}
+
+/// The airframe's mixer is the tailsitter preset: a hover thrust command drives both motors,
+/// and the elevons stay centered.
+#[test]
+fn explora_vtol_hovers_on_both_motors() {
+    let mut mixer = explora_vtol().mixer;
+    let output = mixer.mix(&stable_flight::ControlOutput::new(0.88, Vec3::zeros()));
+    assert!(output.motors[0] == output.motors[1] && output.motors[0] > 0.7);
+    assert!(output.servos[..2] == [0.0, 0.0]);
 }

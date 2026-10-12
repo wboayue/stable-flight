@@ -59,6 +59,20 @@ fn motors_pass_through_and_servos_center_on_half() {
 }
 
 #[test]
+fn reversed_servos_mirror_about_center() {
+    let mut mapping = mapping(&[0], &[1, 2]);
+    mapping.reversed_servos[1] = true;
+    let command = ActuatorCommand {
+        motors: [0.6; 8],
+        servos: [0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    };
+
+    let channels = mapping.channels(&command).channels;
+
+    check!(channels[..3] == [0.6, 0.75, 0.25]); // motors are never reversed
+}
+
+#[test]
 fn out_of_range_channel_is_skipped() {
     let mapping = mapping(&[0, 99], &[99]);
     let command = ActuatorCommand {

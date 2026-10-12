@@ -55,7 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   yaw factors; motors share airmode-style desaturation, servos clamp on their own (both
   reported in `Saturation`). `MixerConfig` (thrust factor, yaw ratio) is set at construction;
   `TableMixer::new` validates a custom table (`MixerError`). Presets: `quad_x`, `quad_plus`,
-  `hex_x`, `hex_plus`, `octo_x`, `y6`, `x8`, `tri` (tail tilt servo), `bi` (tilting rotors).
+  `hex_x`, `hex_plus`, `octo_x`, `y6`, `x8`, `tri` (tail tilt servo), `bi` (tilting rotors),
+  `tailsitter_2p_hover` (2 motors and 2 elevons, airplane frame, #121).
 - **`ActuatorCommand::SLOTS`:** the number of motor and of servo slots (8).
 
 ### Changed
@@ -70,6 +71,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking:** `mixers::QuadCopterMixer` (#245). Use `TableMixer::quad_x()`, which mixes the
   same; its type is `TableMixer<4>`.
+- **Breaking:** the `mixers::TailSitterMixer` placeholder (#121). Use
+  `TableMixer::tailsitter_2p_hover()`.
 
 ## [0.1.0] - 2026-10-10
 
