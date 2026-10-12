@@ -31,6 +31,10 @@
 //!   cleared, so attitude flight resumes from fresh state.
 //! - [`Setpoint::Attitude`]: attitude and heading loops feeding the rate loop.
 //!
+//! A setpoint with zero thrust (or NaN) clears every loop's integral after the tick: on the
+//! ground at idle there's nothing for the I terms to hold, and they'd wind up against the
+//! resting attitude.
+//!
 //! # Tuning
 //!
 //! An autotune stage ([`start_probe`](crate::tuning::Tunable::start_probe)) hands one loop to a
@@ -272,6 +276,20 @@ impl Stabilizer for CopterStabilizer {
                 self.track_rates(dt, rates, estimated_state)
             }
         };
+
+        // At zero thrust (on the ground, or cut) the I terms can't act on anything and would
+        // wind up against a resting attitude, to kick at liftoff; clear them every such tick,
+        // as ArduPilot does at zero throttle (`ArduCopter/mode_stabilize.cpp`, GROUND_IDLE).
+        // A NaN thrust counts as none (input policy).
+        let thrust = match setpoint {
+            Setpoint::Attitude(attitude) => attitude.thrust,
+            Setpoint::Rate(rates) => rates.thrust,
+        };
+        if thrust <= 0.0 || thrust.is_nan() {
+            self.body_rate.clear_integral();
+            self.attitude.clear_integral();
+            self.yaw.clear_integral();
+        }
 
         // The rate loop clamps each moment to [-1, 1]; landing on a bound means it clipped.
         self.saturation.moments = output.moments.map(|m| m.abs() >= 1.0).into();

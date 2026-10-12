@@ -516,8 +516,10 @@ fn set_config_applies_next_tick_and_keeps_controller_state() {
 fn retuning_an_integral_gain_carries_the_i_term_over() {
     const DT: f32 = 0.004;
     const TICKS: usize = 10;
+    // In flight: at zero thrust the integrals are cleared every tick.
     let setpoint = Setpoint::Rate(RateSetpoint {
         roll_rate: 0.1,
+        thrust: 0.5,
         ..Default::default()
     });
     let state = VehicleState::default();
@@ -694,5 +696,48 @@ fn reports_what_the_last_stabilize_clipped() {
         stabilizer.prime(state);
         stabilizer.stabilize(0.004, &setpoint, state);
         assert_eq!(stabilizer.saturation(), expected, "{setpoint:?}");
+    }
+}
+
+/// Resting 3° off level (the yaw rate loop on a steady 0.1 rad/s too), a setpoint with thrust
+/// lets the I terms build the moments up over time; one at zero or NaN thrust (on the ground
+/// at idle) clears them every tick, so the moments stay at what P alone gives.
+#[test]
+fn zero_thrust_keeps_the_integrals_from_winding_up() {
+    let resting = VehicleState {
+        attitude: UnitQuaternion::from_euler_angles(0.0, 3.0_f32.to_radians(), 0.0),
+        ..Default::default()
+    };
+    let attitude = |thrust| {
+        Setpoint::Attitude(AttitudeSetpoint {
+            thrust,
+            ..Default::default()
+        })
+    };
+    let rate = |thrust| {
+        Setpoint::Rate(RateSetpoint {
+            yaw_rate: 0.1,
+            thrust,
+            ..Default::default()
+        })
+    };
+    // (setpoint, moment axis, integrals build)
+    let cases = [
+        (attitude(0.5), 1, true),
+        (attitude(0.0), 1, false),
+        (attitude(f32::NAN), 1, false),
+        (rate(0.5), 2, true),
+        (rate(0.0), 2, false),
+    ];
+    for (setpoint, axis, builds) in cases {
+        let mut stabilizer = setup_controller();
+        stabilizer.prime(&resting);
+        let first = stabilizer.stabilize(0.004, &setpoint, &resting).moments[axis];
+        let mut last = first;
+        for _ in 0..500 {
+            last = stabilizer.stabilize(0.004, &setpoint, &resting).moments[axis];
+        }
+        let grew = (last - first).abs() > 0.01;
+        assert!(grew == builds, "{setpoint:?}: {first} → {last}");
     }
 }

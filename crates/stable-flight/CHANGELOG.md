@@ -77,6 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`CopterStabilizer` clears its integrals at zero thrust** (#123): a setpoint with thrust 0
+  (or NaN) zeroes the rate, attitude, and yaw I terms after the tick, so they don't wind up
+  against a resting attitude on the ground and kick at liftoff (as ArduPilot does at zero
+  throttle).
 - **Breaking:** `CopterGuidanceConfig` has new `min_thrust`, `sink_limit_mps`, `sink_gain`, and
   `max_boost_thrust` fields (#123); struct literals add `..Default::default()` (the previous
   behavior).

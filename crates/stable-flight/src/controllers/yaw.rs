@@ -152,6 +152,11 @@ impl YawController {
         clamp_symmetric(yaw_rate, config.max_rate_radps)
     }
 
+    /// Zeroes the integral, keeping the derivative history.
+    pub(crate) fn clear_integral(&mut self) {
+        self.integrated_error = 0.0;
+    }
+
     /// Rescales the integral for a change of integral gain from `old` to `new`, so the next
     /// tick's I term picks up where the last left off (`rescale_integral`).
     pub(crate) fn rescale_integral(
