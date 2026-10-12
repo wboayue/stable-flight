@@ -23,8 +23,8 @@ use nalgebra::UnitQuaternion;
 use crate::controllers::InvalidConfig;
 use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
 use crate::{
-    Configurable, ControlInput, ControlOutput, Guidance, Saturation, Setpoint, Stabilizer,
-    VehicleState,
+    Configurable, ControlInput, ControlOutput, FlightModeReport, FlightRegime, Guidance,
+    Saturation, Setpoint, Stabilizer, VehicleState,
 };
 
 #[cfg(test)]
@@ -110,9 +110,15 @@ impl<T> View<T> {
 }
 
 impl<G: Guidance> Guidance for View<G> {
-    fn guide(&mut self, dt: f32, input: &ControlInput, state: &VehicleState) -> Setpoint {
+    fn guide(
+        &mut self,
+        dt: f32,
+        regime: FlightRegime,
+        input: &ControlInput,
+        state: &VehicleState,
+    ) -> Setpoint {
         let state = self.view_state(state);
-        self.inner.guide(dt, input, &state)
+        self.inner.guide(dt, regime, input, &state)
     }
 
     fn prime(&mut self, state: &VehicleState) {
@@ -122,6 +128,10 @@ impl<G: Guidance> Guidance for View<G> {
 
     fn saturation(&self) -> Saturation {
         self.inner.saturation()
+    }
+
+    fn flight_mode(&self) -> Option<FlightModeReport> {
+        self.inner.flight_mode()
     }
 }
 

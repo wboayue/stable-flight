@@ -3,7 +3,7 @@
 use assert2::check;
 use mavlink::MavHeader;
 use mavlink::common::*;
-use stable_flight_link::stable_flight::{ControlMode, VehicleState};
+use stable_flight_link::stable_flight::{ControlMode, FlightModeReport, VehicleState};
 use stable_flight_link::{Downlink, ParamValue};
 use stable_flight_mavlink::{DEFAULT_ORIGIN, FlatEarth};
 
@@ -74,6 +74,7 @@ pub(crate) fn heartbeat(armed: bool) -> Downlink {
     Downlink::Heartbeat {
         armed,
         mode: ControlMode::Attitude,
+        flight_mode: FlightModeReport::default(),
         link_ok: true,
     }
 }

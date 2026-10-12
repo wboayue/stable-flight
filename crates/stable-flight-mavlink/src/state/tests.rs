@@ -123,6 +123,29 @@ fn vfr_hud_reports_horizontal_speed_climb_and_altitude() {
     }
 }
 
+#[test]
+fn vfr_hud_airspeed_falls_back_to_ground_speed_without_air_data() {
+    // (airspeed_mps, expected airspeed); ground speed is 5 m/s
+    let cases = [
+        (Some(7.0), 7.0),
+        (Some(0.0), 0.0),
+        (None, 5.0),
+        (Some(f32::NAN), 5.0),
+        (Some(-1.0), 5.0),
+    ];
+
+    for (airspeed_mps, expected) in cases {
+        let state = VehicleState {
+            airspeed_mps,
+            ..state_with([0.0, 0.0, 0.0], [3.0, 4.0, 0.0])
+        };
+        check!(
+            vfr_hud(&state, 0.5).airspeed == expected,
+            "{airspeed_mps:?}"
+        );
+    }
+}
+
 const ORIGIN: GeodeticOrigin = GeodeticOrigin {
     latitude_deg: 60.0, // cos = 0.5: a degree of longitude is half a degree of latitude
     longitude_deg: -120.0,

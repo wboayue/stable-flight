@@ -301,7 +301,7 @@ impl Extreme3DCommander {
                     self.channels[5] = Mode::Rate.to_channel_value();
                 }
                 EventType::ButtonChanged(Button::DPadRight, 1.0, _) => {
-                    // D-pad Right also selects Attitude mode (value 2.0 preserved for telemetry)
+                    // D-pad Right also selects Attitude mode
                     self.channels[5] = 2.0;
                 }
                 _ => {}
@@ -360,14 +360,12 @@ impl Commander for Extreme3DCommander {
                 roll: apply_dead_zone(channels[1], ROLL_PITCH_DEAD_ZONE),
                 pitch: apply_dead_zone(channels[2], ROLL_PITCH_DEAD_ZONE),
                 yaw: apply_dead_zone(channels[3], YAW_DEAD_ZONE),
-                mode,
             }),
             Mode::Rate => ControlInput::Rate(RateCommand {
                 throttle: channels[0],
                 roll_rate: apply_dead_zone(channels[1], ROLL_PITCH_DEAD_ZONE),
                 pitch_rate: apply_dead_zone(channels[2], ROLL_PITCH_DEAD_ZONE),
                 yaw_rate: apply_dead_zone(channels[3], YAW_DEAD_ZONE),
-                mode,
             }),
         };
         Command::new(arm, input)

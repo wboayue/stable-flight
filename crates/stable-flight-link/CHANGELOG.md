@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `PROTOCOL_VERSION` 2 (#181): `Downlink::Heartbeat` carries the flown
+  `flight_mode` (a core `FlightModeReport`), `Record` gains `flight_mode`, and the core message
+  types changed shape (`Command::regime`, `VehicleState::airspeed_mps`; `AttitudeCommand::mode`,
+  `RateCommand::mode`, and `WaypointCommand::roll_rad` removed). Flight controller and companion
+  must both update.
+
 ## [0.1.0] - 2026-10-10
 
 First release.

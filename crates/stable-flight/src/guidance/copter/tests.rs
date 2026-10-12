@@ -26,7 +26,9 @@ impl Stack {
     }
 
     fn step(&mut self, dt: f32, command: &ControlInput, state: &VehicleState) -> ControlOutput {
-        let setpoint = self.guidance.guide(dt, command, state);
+        let setpoint = self
+            .guidance
+            .guide(dt, FlightRegime::Copter, command, state);
         self.stabilizer.stabilize(dt, &setpoint, state)
     }
 }
@@ -110,7 +112,6 @@ fn commands_map_to_setpoints() {
                 roll_rate: 0.1,
                 pitch_rate: -0.2,
                 yaw_rate: 0.3,
-                ..Default::default()
             }),
             Setpoint::Rate(RateSetpoint {
                 roll_rate: 0.1,
@@ -190,7 +191,7 @@ fn commands_map_to_setpoints() {
     for (command, expected) in cases {
         let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
         guidance.prime(&state);
-        let setpoint = guidance.guide(0.004, &command, &state);
+        let setpoint = guidance.guide(0.004, FlightRegime::Copter, &command, &state);
         assert!(setpoint == expected, "{command:?} gave {setpoint:?}");
     }
 }
@@ -223,13 +224,13 @@ fn waypoint_leg_holds_the_heading_hold_target() {
 
     let mut before = 0.0;
     for _ in 0..10 {
-        before = heading_of(guidance.guide(0.004, &yaw_right, &state));
+        before = heading_of(guidance.guide(0.004, FlightRegime::Copter, &yaw_right, &state));
     }
     for _ in 0..10 {
-        let during = heading_of(guidance.guide(0.004, &waypoint, &state));
+        let during = heading_of(guidance.guide(0.004, FlightRegime::Copter, &waypoint, &state));
         assert!(during == before);
     }
-    let after = heading_of(guidance.guide(0.004, &centred, &state));
+    let after = heading_of(guidance.guide(0.004, FlightRegime::Copter, &centred, &state));
 
     assert!(after == before);
     approx::assert_relative_eq!(
@@ -270,10 +271,11 @@ fn rate_flight_hands_over_the_current_heading() {
             ..Default::default()
         };
         guidance.prime(&heading(0.7));
-        guidance.guide(0.004, &rate, &heading(1.5));
-        guidance.guide(0.004, &rate, &heading(last_heading));
+        guidance.guide(0.004, FlightRegime::Copter, &rate, &heading(1.5));
+        guidance.guide(0.004, FlightRegime::Copter, &rate, &heading(last_heading));
 
-        let target = heading_of(guidance.guide(0.004, &next, &heading(last_heading)));
+        let target =
+            heading_of(guidance.guide(0.004, FlightRegime::Copter, &next, &heading(last_heading)));
         approx::assert_relative_eq!(target, expected, epsilon = 1e-6);
     }
 }
@@ -303,9 +305,11 @@ fn absolute_attitude_sets_the_heading_hold_target() {
     for (heading_rad, expected) in cases {
         let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
         guidance.prime(&state);
-        let during = heading_of(guidance.guide(0.004, &absolute(heading_rad), &state));
+        let during =
+            heading_of(guidance.guide(0.004, FlightRegime::Copter, &absolute(heading_rad), &state));
         let after = heading_of(guidance.guide(
             0.004,
+            FlightRegime::Copter,
             &ControlInput::Attitude(AttitudeCommand::default()),
             &state,
         ));
@@ -339,12 +343,17 @@ fn leaving_waypoints_clears_the_position_loops() {
         let state = drifting_state(0);
         guidance.prime(&state);
         for _ in 0..50 {
-            guidance.guide(0.004, &ControlInput::Waypoint(near_waypoint()), &state);
+            guidance.guide(
+                0.004,
+                FlightRegime::Copter,
+                &ControlInput::Waypoint(near_waypoint()),
+                &state,
+            );
         }
         assert!(guidance.altitude != AltitudeController::default());
         assert!(guidance.lateral != LateralController::default());
 
-        guidance.guide(0.004, &other, &state);
+        guidance.guide(0.004, FlightRegime::Copter, &other, &state);
 
         assert!(
             guidance.altitude == AltitudeController::default(),
@@ -388,7 +397,12 @@ fn waypoint_speed_follows_cruise_speed_and_feedforward() {
         let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
         let state = moving_north(speed_mps);
         guidance.prime(&state);
-        let setpoint = attitude(guidance.guide(0.004, &ControlInput::Waypoint(waypoint), &state));
+        let setpoint = attitude(guidance.guide(
+            0.004,
+            FlightRegime::Copter,
+            &ControlInput::Waypoint(waypoint),
+            &state,
+        ));
         let pitch = setpoint.pitch_rad;
         let sign = if pitch.abs() < 1e-6 {
             0.0
@@ -593,7 +607,6 @@ fn out_of_range_or_nan_commands_saturate_instead_of_panicking() {
                 roll,
                 pitch,
                 yaw,
-                mode: 0,
             })
         };
         let mut raw = Stack::new();
@@ -702,7 +715,7 @@ fn heading_slew_depends_on_time_not_tick_count() {
         let state = VehicleState::default();
         guidance.prime(&state);
         for _ in 0..ticks {
-            guidance.guide(dt, &yaw_right, &state);
+            guidance.guide(dt, FlightRegime::Copter, &yaw_right, &state);
         }
         // f32 accumulation of ~1e-4 steps drifts ~3e-5 over 500 ticks.
         approx::assert_relative_eq!(guidance.heading, HEADING_SLEW_RATE, epsilon = 1e-4);
@@ -791,8 +804,12 @@ fn lateral_loop_runs_per_navigation_period_and_altitude_loop_every_tick() {
 
     for tick in 0..10 {
         let state = drifting_state(tick);
-        let setpoint =
-            attitude(guidance.guide(DT, &ControlInput::Waypoint(near_waypoint()), &state));
+        let setpoint = attitude(guidance.guide(
+            DT,
+            FlightRegime::Copter,
+            &ControlInput::Waypoint(near_waypoint()),
+            &state,
+        ));
 
         match tick {
             0 => tilt = reference_tilt(&mut lateral, DT, &state),
@@ -816,13 +833,18 @@ fn nan_position_on_a_run_tick_retries_next_tick() {
     let mut lateral = LateralController::default();
     let waypoint = ControlInput::Waypoint(near_waypoint());
 
-    guidance.guide(DT, &waypoint, &drifting_state(0));
+    guidance.guide(DT, FlightRegime::Copter, &waypoint, &drifting_state(0));
     reference_tilt(&mut lateral, DT, &drifting_state(0));
     for tick in 1..5 {
-        guidance.guide(DT, &waypoint, &drifting_state(tick));
+        guidance.guide(DT, FlightRegime::Copter, &waypoint, &drifting_state(tick));
     }
-    let lost = attitude(guidance.guide(DT, &waypoint, &state_at(f32::NAN, 0.0, 10.0)));
-    let retried = attitude(guidance.guide(DT, &waypoint, &drifting_state(6)));
+    let lost = attitude(guidance.guide(
+        DT,
+        FlightRegime::Copter,
+        &waypoint,
+        &state_at(f32::NAN, 0.0, 10.0),
+    ));
+    let retried = attitude(guidance.guide(DT, FlightRegime::Copter, &waypoint, &drifting_state(6)));
 
     assert!(
         (lost.roll_rad, lost.pitch_rad) == (0.0, 0.0),
@@ -843,6 +865,7 @@ fn leaving_waypoints_or_priming_drops_the_held_tilt() {
         |guidance| {
             guidance.guide(
                 0.004,
+                FlightRegime::Copter,
                 &ControlInput::Attitude(AttitudeCommand::default()),
                 &drifting_state(1),
             );
@@ -851,10 +874,12 @@ fn leaving_waypoints_or_priming_drops_the_held_tilt() {
     ];
     for (row, interrupt) in interruptions.into_iter().enumerate() {
         let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
-        let held = attitude(guidance.guide(0.004, &waypoint, &drifting_state(0)));
+        let held =
+            attitude(guidance.guide(0.004, FlightRegime::Copter, &waypoint, &drifting_state(0)));
         interrupt(&mut guidance);
 
-        let resumed = attitude(guidance.guide(0.004, &waypoint, &drifting_state(2)));
+        let resumed =
+            attitude(guidance.guide(0.004, FlightRegime::Copter, &waypoint, &drifting_state(2)));
 
         assert!(
             (resumed.roll_rad, resumed.pitch_rad) != (held.roll_rad, held.pitch_rad),
@@ -870,7 +895,12 @@ fn prime_clears_altitude_and_lateral_state() {
     let waypoint = ControlInput::Waypoint(near_waypoint());
     let mut wound = CopterGuidance::new(CopterGuidanceConfig::default());
     for tick in 0..250 {
-        wound.guide(0.004, &waypoint, &drifting_state(tick));
+        wound.guide(
+            0.004,
+            FlightRegime::Copter,
+            &waypoint,
+            &drifting_state(tick),
+        );
     }
     let state = drifting_state(250);
     wound.prime(&state);
@@ -879,8 +909,8 @@ fn prime_clears_altitude_and_lateral_state() {
     fresh.prime(&state);
 
     assert_eq!(
-        wound.guide(0.004, &waypoint, &state),
-        fresh.guide(0.004, &waypoint, &state)
+        wound.guide(0.004, FlightRegime::Copter, &waypoint, &state),
+        fresh.guide(0.004, FlightRegime::Copter, &waypoint, &state)
     );
 }
 
@@ -916,6 +946,7 @@ fn rejects_negative_or_non_finite_navigation_periods() {
 fn infinite_dt_panics() {
     CopterGuidance::new(CopterGuidanceConfig::default()).guide(
         f32::INFINITY,
+        FlightRegime::Copter,
         &ControlInput::Attitude(AttitudeCommand::default()),
         &VehicleState::default(),
     );
@@ -946,7 +977,7 @@ fn waypoint_tilt_is_capped_in_magnitude_and_keeps_its_direction() {
             position_m: Vec2::new(x, y),
             ..Default::default()
         });
-        let setpoint = attitude(guidance.guide(0.004, &command, &state));
+        let setpoint = attitude(guidance.guide(0.004, FlightRegime::Copter, &command, &state));
         let tilt = Vec2::new(setpoint.roll_rad, setpoint.pitch_rad);
 
         approx::assert_relative_eq!(tilt.norm(), expected, epsilon = 1e-5);
@@ -996,7 +1027,12 @@ fn sticks_scale_to_the_configured_angles() {
         pitch: 0.5,
         ..Default::default()
     });
-    let setpoint = attitude(guidance.guide(0.004, &command, &VehicleState::default()));
+    let setpoint = attitude(guidance.guide(
+        0.004,
+        FlightRegime::Copter,
+        &command,
+        &VehicleState::default(),
+    ));
     assert!((setpoint.roll_rad, setpoint.pitch_rad) == (-0.6, 0.15));
 }
 
@@ -1077,7 +1113,7 @@ fn retuning_integral_gains_rescales_the_integrals() {
     let mut guidance = CopterGuidance::new(config);
     guidance.prime(&state);
     for _ in 0..20 {
-        guidance.guide(0.004, &command, &state);
+        guidance.guide(0.004, FlightRegime::Copter, &command, &state);
     }
     let (altitude, lateral) = (
         guidance.altitude.integrated_error(),
@@ -1106,8 +1142,8 @@ fn set_config_applies_a_new_navigation_period_on_the_next_tick() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     guidance.prime(&moving(0.0));
 
-    let first = attitude(guidance.guide(0.004, &command, &moving(0.0)));
-    let held = attitude(guidance.guide(0.004, &command, &moving(1.0)));
+    let first = attitude(guidance.guide(0.004, FlightRegime::Copter, &command, &moving(0.0)));
+    let held = attitude(guidance.guide(0.004, FlightRegime::Copter, &command, &moving(1.0)));
     assert_eq!(
         (held.roll_rad, held.pitch_rad),
         (first.roll_rad, first.pitch_rad)
@@ -1116,7 +1152,7 @@ fn set_config_applies_a_new_navigation_period_on_the_next_tick() {
     let mut every_tick = *guidance.config();
     every_tick.navigation_period_s = 0.0;
     guidance.set_config(every_tick).expect("valid config");
-    let rerun = attitude(guidance.guide(0.004, &command, &moving(2.0)));
+    let rerun = attitude(guidance.guide(0.004, FlightRegime::Copter, &command, &moving(2.0)));
     assert_ne!(rerun.pitch_rad, first.pitch_rad);
 }
 
@@ -1132,13 +1168,13 @@ fn lowering_max_tilt_rad_recaps_the_held_tilt_on_the_next_tick() {
     let state = VehicleState::default();
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default()); // 20 ms period
     guidance.prime(&state);
-    let full = attitude(guidance.guide(0.004, &far, &state));
+    let full = attitude(guidance.guide(0.004, FlightRegime::Copter, &far, &state));
     approx::assert_relative_eq!(full.pitch_rad.abs(), DEFAULT_MAX_TILT_RAD, epsilon = 1e-6);
 
     let mut lower = *guidance.config();
     lower.max_tilt_rad = 0.3;
     guidance.set_config(lower).expect("valid config");
-    let held = attitude(guidance.guide(0.004, &far, &state)); // lateral loop not due yet
+    let held = attitude(guidance.guide(0.004, FlightRegime::Copter, &far, &state)); // lateral loop not due yet
 
     approx::assert_relative_eq!(
         Vec2::new(held.roll_rad, held.pitch_rad).norm(),
@@ -1158,13 +1194,13 @@ fn lowering_max_tilt_rad_below_the_held_tilt_flags_it_at_once() {
     let state = VehicleState::default();
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default()); // 20 ms period
     guidance.prime(&state);
-    let held = attitude(guidance.guide(0.004, &near, &state));
+    let held = attitude(guidance.guide(0.004, FlightRegime::Copter, &near, &state));
     assert!(!guidance.saturation().tilt);
 
     let mut lower = *guidance.config();
     lower.max_tilt_rad = 0.5 * held.pitch_rad.abs();
     guidance.set_config(lower).expect("valid config");
-    guidance.guide(0.004, &near, &state); // lateral loop not due yet
+    guidance.guide(0.004, FlightRegime::Copter, &near, &state); // lateral loop not due yet
 
     assert!(guidance.saturation().tilt);
 }
@@ -1211,7 +1247,7 @@ fn point_mass_flies_a_route_at_cruise_speed_and_holds_the_end() {
     for _ in 0..(60.0 / DT) as usize {
         let state = state_of(position, velocity);
         let command = follower.next_command(DT, &state);
-        let setpoint = attitude(guidance.guide(DT, &command.input, &state));
+        let setpoint = attitude(guidance.guide(DT, FlightRegime::Copter, &command.input, &state));
 
         // Heading north: roll tilts east, nose down (negative pitch) tilts north.
         let tilt = Vec2::new(-setpoint.pitch_rad, setpoint.roll_rad);
@@ -1283,7 +1319,7 @@ fn attitude_throttle_is_boosted_for_tilt() {
             throttle,
             ..Default::default()
         });
-        let thrust = attitude(guidance.guide(0.004, &command, &state)).thrust;
+        let thrust = attitude(guidance.guide(0.004, FlightRegime::Copter, &command, &state)).thrust;
         approx::assert_relative_eq!(thrust, expected, epsilon = 1e-5);
     }
 }
@@ -1337,7 +1373,7 @@ fn reports_what_the_last_guide_clipped() {
     for (input, state, (tilt, thrust)) in cases {
         let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
         guidance.prime(state);
-        guidance.guide(0.004, &input, state);
+        guidance.guide(0.004, FlightRegime::Copter, &input, state);
         let saturation = guidance.saturation();
         assert!(
             (saturation.tilt, saturation.thrust) == (tilt, thrust),
@@ -1348,8 +1384,8 @@ fn reports_what_the_last_guide_clipped() {
     // The capped tilt is held between lateral-loop runs, and priming clears it.
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     guidance.prime(&level);
-    guidance.guide(0.004, &waypoint(1000.0, 0.0), &level);
-    guidance.guide(0.004, &waypoint(1000.0, 0.0), &level); // loop not due: held
+    guidance.guide(0.004, FlightRegime::Copter, &waypoint(1000.0, 0.0), &level);
+    guidance.guide(0.004, FlightRegime::Copter, &waypoint(1000.0, 0.0), &level); // loop not due: held
     assert!(guidance.saturation().tilt);
     guidance.prime(&level);
     assert!(guidance.saturation() == Saturation::default());
@@ -1391,7 +1427,7 @@ fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
     for (waypoint_m, ticks, expected) in cases {
         let (mut guidance, state) = guidance_at(10.0);
         for _ in 0..ticks {
-            guidance.guide(DT, &waypoint_at(waypoint_m), &state);
+            guidance.guide(DT, FlightRegime::Copter, &waypoint_at(waypoint_m), &state);
         }
         match (guidance.altitude_target_m, expected) {
             (Some(target), Some(expected)) => {
@@ -1407,7 +1443,7 @@ fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
 #[test]
 fn a_low_waypoint_descends_instead_of_cutting_thrust() {
     let (mut guidance, state) = guidance_at(10.0);
-    let setpoint = attitude(guidance.guide(0.01, &waypoint_at(0.0), &state));
+    let setpoint = attitude(guidance.guide(0.01, FlightRegime::Copter, &waypoint_at(0.0), &state));
     let expected = AltitudeController::default().control(
         &CopterGuidanceConfig::default().altitude,
         0.01,
@@ -1476,7 +1512,12 @@ fn point_mass_descends_at_the_limit() {
     let mut vehicle = VerticalPointMass::at(30.0, false);
     let mut fastest_descent_mps: f32 = 0.0;
     for _ in 0..(15.0 / DT) as usize {
-        let setpoint = attitude(guidance.guide(DT, &waypoint_at(10.0), &vehicle.state()));
+        let setpoint = attitude(guidance.guide(
+            DT,
+            FlightRegime::Copter,
+            &waypoint_at(10.0),
+            &vehicle.state(),
+        ));
         vehicle.step(DT, setpoint.thrust);
         fastest_descent_mps = fastest_descent_mps.max(-vehicle.climb_mps);
     }
@@ -1503,7 +1544,7 @@ fn land_descends_at_land_speed_on_a_leash() {
         let (mut guidance, state) = guidance_at(10.0);
         let mut setpoint = AttitudeSetpoint::default();
         for _ in 0..ticks {
-            setpoint = attitude(guidance.guide(DT, &land, &state));
+            setpoint = attitude(guidance.guide(DT, FlightRegime::Copter, &land, &state));
         }
         let target = guidance.altitude_target_m.expect("latched");
         approx::assert_relative_eq!(target, expected, epsilon = 1e-5);
@@ -1514,7 +1555,7 @@ fn land_descends_at_land_speed_on_a_leash() {
     let (mut guidance, state) = guidance_at(0.0);
     let mut thrust = 0.0;
     for _ in 0..50 {
-        thrust = attitude(guidance.guide(DT, &land, &state)).thrust;
+        thrust = attitude(guidance.guide(DT, FlightRegime::Copter, &land, &state)).thrust;
     }
     let hover = crate::controllers::DEFAULT_HOVER_THRUST;
     assert!(
@@ -1522,9 +1563,9 @@ fn land_descends_at_land_speed_on_a_leash() {
         "thrust {thrust}"
     );
 
-    guidance.guide(DT, &ControlInput::default(), &state);
+    guidance.guide(DT, FlightRegime::Copter, &ControlInput::default(), &state);
     assert!(guidance.altitude_target_m.is_none());
-    guidance.guide(DT, &land, &state);
+    guidance.guide(DT, FlightRegime::Copter, &land, &state);
     guidance.prime(&state);
     assert!(guidance.altitude_target_m.is_none());
 }
@@ -1554,7 +1595,7 @@ fn point_mass_route_lands_softly_and_disarms() {
             disarmed_at_m = Some(vehicle.altitude_m);
             break;
         }
-        let setpoint = attitude(guidance.guide(DT, &command.input, &state));
+        let setpoint = attitude(guidance.guide(DT, FlightRegime::Copter, &command.input, &state));
         vehicle.step(DT, setpoint.thrust);
     }
     let touchdown_mps = vehicle.touchdown_mps.expect("reached the ground");
@@ -1668,7 +1709,9 @@ fn min_thrust_floors_the_thrust_while_flying() {
             ..Default::default()
         };
         let mut guidance = limited(limits, state);
-        let thrust = guidance.guide(0.004, &input, state).thrust();
+        let thrust = guidance
+            .guide(0.004, FlightRegime::Copter, &input, state)
+            .thrust();
         assert!(thrust == expected, "{input:?}");
         assert!(guidance.saturation().thrust == flagged, "{input:?}");
     }
@@ -1686,11 +1729,21 @@ fn no_thrust_limits_by_default() {
         velocity_mps: Vec3::new(0.0, 0.0, -5.0),
         ..state
     };
-    assert!(guidance.guide(0.004, &stick(0.3), &state).thrust() == 0.3);
-    assert!(guidance.guide(0.004, &stick(0.3), &sinking).thrust() == 0.3);
     assert!(
         guidance
-            .guide(0.004, &waypoint_at(0.0), &shooting_up)
+            .guide(0.004, FlightRegime::Copter, &stick(0.3), &state)
+            .thrust()
+            == 0.3
+    );
+    assert!(
+        guidance
+            .guide(0.004, FlightRegime::Copter, &stick(0.3), &sinking)
+            .thrust()
+            == 0.3
+    );
+    assert!(
+        guidance
+            .guide(0.004, FlightRegime::Copter, &waypoint_at(0.0), &shooting_up)
             .thrust()
             == 0.0
     );
@@ -1726,7 +1779,9 @@ fn sink_guard_adds_thrust_past_the_limit() {
             ..Default::default()
         };
         let mut guidance = limited(limits, &state);
-        let thrust = guidance.guide(0.004, &input, &state).thrust();
+        let thrust = guidance
+            .guide(0.004, FlightRegime::Copter, &input, &state)
+            .thrust();
         approx::assert_relative_eq!(thrust, expected, epsilon = 1e-5);
         assert!(
             guidance.saturation().thrust == flagged,
@@ -1758,7 +1813,9 @@ fn tilt_boost_stops_at_max_boost_thrust() {
             ..Default::default()
         };
         let mut guidance = limited(limits, &state);
-        let thrust = guidance.guide(0.004, &stick(throttle), &state).thrust();
+        let thrust = guidance
+            .guide(0.004, FlightRegime::Copter, &stick(throttle), &state)
+            .thrust();
         approx::assert_relative_eq!(thrust, expected, epsilon = 1e-5);
         assert!(
             guidance.saturation().thrust == flagged,

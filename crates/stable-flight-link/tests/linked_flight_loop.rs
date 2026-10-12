@@ -112,6 +112,7 @@ fn falls_back_on_silence_and_flies_the_link_once_it_is_back() {
                         armed,
                         mode,
                         link_ok,
+                        ..
                     } => Some((armed, mode, link_ok)),
                     _ => None,
                 })

@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Flight regimes** (#181): `Command::regime` requests a `FlightRegime` (`Copter`, the
+  default, or `Plane`) every tick, like `arm`; `Command::with_regime` sets it. Guidance owns
+  the flown `FlightMode` (`Copter`, `Plane`, `ToPlane`, `ToCopter`) and reports it with an
+  optional `ModeRefusal` as a `FlightModeReport` through `Guidance::flight_mode` (default
+  `None`: copter only, recorded as `FlightModeReport::copter_only`, which refuses `Plane` as
+  `Unsupported`). `TelemetryRecord::flight_mode` carries it; `View` forwards it.
+- **`VehicleState::airspeed_mps`** (`Option<f32>`): speed relative to the air mass, `None`
+  without air data; `valid_airspeed_mps` drops a NaN or negative reading. The conformance kit expects ground speed (still air) and passes a backend
+  that reports `None`.
+
 - **`tuning`:** building blocks for PID autotune (#149). `RelayTuner` measures a loop's
   ultimate gain and period by relay feedback (hysteresis, relay ramp, adaptive bias for a
   steady offset, raising the relay when cycles stay inconsistent, timeout and amplitude
@@ -78,6 +88,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `Guidance::guide` takes the requested `FlightRegime` after `dt` (#181). A
+  copter-only guidance ignores it.
+- **Breaking:** `Command`, `VehicleState`, `TelemetryRecord`, and `testing::RecordedTick` have
+  new fields (`regime`, `airspeed_mps`, `flight_mode`); struct literals need them or
+  `..Default::default()`.
+
 - **`CopterStabilizer` clears its integrals at zero thrust** (#123): a setpoint with thrust 0
   (or NaN) zeroes the rate, attitude, and yaw I terms after the tick, so they don't wind up
   against a resting attitude on the ground and kick at liftoff (as ArduPilot does at zero
@@ -92,6 +108,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shared tune, set both to the old value.
 
 ### Removed
+
+- **Breaking:** `AttitudeCommand::mode` and `RateCommand::mode` (unspecified, never read)
+  and `WaypointCommand::roll_rad` (never read) (#181). The regime is `Command::regime`.
 
 - **Breaking:** `mixers::QuadCopterMixer` (#245). Use `TableMixer::quad_x()`, which mixes the
   same; its type is `TableMixer<4>`.

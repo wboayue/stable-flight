@@ -28,7 +28,8 @@ use crate::controllers::*;
 use crate::controllers::{check, check_limit, check_positive, check_tilt, check_unit_interval};
 use crate::{
     AbsoluteAttitudeCommand, AttitudeCommand, AttitudeSetpoint, Configurable, ControlInput,
-    Guidance, LandCommand, RateSetpoint, Saturation, Setpoint, VehicleState, WaypointCommand,
+    FlightRegime, Guidance, LandCommand, RateSetpoint, Saturation, Setpoint, VehicleState,
+    WaypointCommand,
 };
 
 use super::rate_divider::RateDivider;
@@ -267,14 +268,16 @@ impl CopterGuidanceConfig {
 ///
 /// ```
 /// use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-/// use stable_flight::{AttitudeCommand, ControlInput, Guidance, Setpoint, VehicleState};
+/// use stable_flight::{
+///     AttitudeCommand, ControlInput, FlightRegime, Guidance, Setpoint, VehicleState,
+/// };
 ///
 /// let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
 /// let state = VehicleState { heading_rad: 1.0, ..Default::default() };
 /// guidance.prime(&state);
 ///
 /// let input = ControlInput::Attitude(AttitudeCommand { throttle: 0.5, ..Default::default() });
-/// let Setpoint::Attitude(setpoint) = guidance.guide(0.004, &input, &state) else {
+/// let Setpoint::Attitude(setpoint) = guidance.guide(0.004, FlightRegime::Copter, &input, &state) else {
 ///     unreachable!("attitude commands yield attitude setpoints");
 /// };
 /// assert!((setpoint.heading_rad - 1.0).abs() < 1e-6); // holds the primed heading
@@ -357,7 +360,13 @@ impl Configurable for CopterGuidance {
 }
 
 impl Guidance for CopterGuidance {
-    fn guide(&mut self, dt: f32, input: &ControlInput, estimated_state: &VehicleState) -> Setpoint {
+    fn guide(
+        &mut self,
+        dt: f32,
+        _regime: FlightRegime,
+        input: &ControlInput,
+        estimated_state: &VehicleState,
+    ) -> Setpoint {
         assert_dt(dt);
         self.saturation = Saturation::default();
 

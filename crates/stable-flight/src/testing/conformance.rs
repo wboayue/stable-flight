@@ -181,11 +181,14 @@ impl Scenario {
             roll_rad: roll,
             pitch_rad: pitch,
             heading_rad: heading,
+            // Still air: airspeed is ground speed.
+            airspeed_mps: Some(Vec3::new(vx, vy, vz).norm()),
         }
     }
 
     /// Checks `state` against this scenario: position, velocity, acceleration, the Euler
-    /// angles, the attitude quaternion's Euler angles, and the body rates.
+    /// angles, the attitude quaternion's Euler angles, the body rates, and airspeed when the
+    /// backend reports one (`None` passes: no air-data source).
     ///
     /// Angles are compared modulo a full turn, so a heading in [0, 2π) or [-π, π) both pass.
     /// A NaN field always fails.
@@ -255,6 +258,15 @@ impl Scenario {
         for (field, expected, actual) in linear {
             error.check(field, expected, actual, expected - actual, LINEAR_TOLERANCE);
         }
+        if let (Some(expected), Some(actual)) = (e.airspeed_mps, state.airspeed_mps) {
+            error.check(
+                "airspeed_mps",
+                expected,
+                actual,
+                expected - actual,
+                LINEAR_TOLERANCE,
+            );
+        }
         for (field, expected, actual) in rates {
             error.check(field, expected, actual, expected - actual, ANGLE_TOLERANCE);
         }
@@ -272,7 +284,7 @@ impl Scenario {
 }
 
 /// Number of fields [`Scenario::check`] compares.
-const CHECKED_FIELDS: usize = 18;
+const CHECKED_FIELDS: usize = 19;
 
 /// A backend's state for a [`Scenario`] broke the frame contract.
 ///

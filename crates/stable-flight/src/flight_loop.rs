@@ -11,8 +11,9 @@ use crate::controllers::InvalidConfig;
 use crate::params::{ParamError, Params};
 use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
 use crate::{
-    ActuatorCommand, AttitudeSetpoint, Commander, Configurable, ControlOutput, Guidance, Mixer,
-    Saturation, Setpoint, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle, VehicleState,
+    ActuatorCommand, AttitudeSetpoint, Commander, Configurable, ControlOutput, FlightModeReport,
+    Guidance, Mixer, Saturation, Setpoint, Stabilizer, TelemetryPublisher, TelemetryRecord,
+    Vehicle, VehicleState,
 };
 
 #[cfg(test)]
@@ -137,8 +138,9 @@ where
     /// The commander sees the state from the previous tick; guidance and the stabilizer see
     /// the fresh estimate. Telemetry receives a [`TelemetryRecord`] after actuation, with the
     /// [`Saturation`] guidance, the stabilizer, and the mixer report, merged. A disarmed tick
-    /// actuates [`ActuatorCommand::default`] and records a neutral setpoint, zero control, and
-    /// no saturation; see [`FlightLoop`] for the arm gate. Allocation-free.
+    /// actuates [`ActuatorCommand::default`] and records a neutral setpoint, zero control, no
+    /// saturation, and [`FlightModeReport::copter_only`] (guidance didn't fly); see
+    /// [`FlightLoop`] for the arm gate. Allocation-free.
     ///
     /// # Panics
     ///
@@ -150,12 +152,15 @@ where
         let command = self.commander.next_command(dt_secs, &self.state);
         self.state = self.vehicle.state(dt);
 
-        let (setpoint, control, actuators, saturation) = if command.arm {
+        let copter_only = FlightModeReport::copter_only(command.regime);
+        let (setpoint, control, actuators, saturation, flight_mode) = if command.arm {
             if !self.armed {
                 self.guidance.prime(&self.state);
                 self.stabilizer.prime(&self.state);
             }
-            let setpoint = self.guidance.guide(dt_secs, &command.input, &self.state);
+            let setpoint =
+                self.guidance
+                    .guide(dt_secs, command.regime, &command.input, &self.state);
             let control = self.stabilizer.stabilize(dt_secs, &setpoint, &self.state);
             let actuators = self.mixer.mix(&control);
             let saturation = self
@@ -163,7 +168,8 @@ where
                 .saturation()
                 .merge(self.stabilizer.saturation())
                 .merge(self.mixer.saturation());
-            (setpoint, control, actuators, saturation)
+            let flight_mode = self.guidance.flight_mode().unwrap_or(copter_only);
+            (setpoint, control, actuators, saturation, flight_mode)
         } else {
             let setpoint = Setpoint::Attitude(AttitudeSetpoint {
                 heading_rad: self.state.heading_rad,
@@ -174,6 +180,7 @@ where
                 ControlOutput::default(),
                 ActuatorCommand::default(),
                 Saturation::default(),
+                copter_only,
             )
         };
         self.armed = command.arm;
@@ -188,6 +195,7 @@ where
             actuators: &actuators,
             saturation,
             failsafe: self.commander.failsafe(),
+            flight_mode,
         });
     }
 }

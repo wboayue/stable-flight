@@ -8,7 +8,8 @@ use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle};
 use stable_flight::{
-    Command, ControlInput, FlightLoop, LandCommand, Saturation, Vec2, VehicleState,
+    Command, ControlInput, FlightLoop, FlightModeReport, LandCommand, Saturation, Vec2,
+    VehicleState,
 };
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::loopback::{Loopback, LoopbackLink};
@@ -513,6 +514,7 @@ fn lands_at_the_latest_position_and_reports_landing_while_the_heartbeat_shows_it
     let land_heartbeat = Downlink::Heartbeat {
         armed: true,
         mode: ControlMode::Land,
+        flight_mode: FlightModeReport::default(),
         link_ok: true,
     };
     let nav_land = MavMessage::COMMAND_LONG(COMMAND_LONG_DATA {

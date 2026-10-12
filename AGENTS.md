@@ -75,7 +75,8 @@ bench` target.
 `FlightLoop` (core) runs one tick of a pipeline of traits; sitl's `RealTimeRunner` paces it.
 Traits and their contracts are in core `src/lib.rs` rustdoc: read it before implementing one.
 
-- `Commander` → `Command { arm, input }`. `arm` gates the motors; `input` is a `ControlInput`:
+- `Commander` → `Command { arm, regime, input }`. `arm` gates the motors; `regime` requests a
+  `FlightRegime` (guidance owns the flown `FlightMode`); `input` is a `ControlInput`:
   `Attitude`, `Rate`, `Waypoint`, `AbsoluteAttitude`, or `Land`.
 - `Vehicle` = `StateSource` + `Actuator` (blanket-implemented: implement those two, never
   `Vehicle`). `VehicleState` rustdoc holds the frame contract; `Vehicle` rustdoc the timing
@@ -84,7 +85,7 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   moments); `Mixer` → `ActuatorCommand` (`motors: [f32; 8]` in [0, 1], `servos: [f32; 8]` in
   [-1, 1]; the mixer sets each slot's meaning, the backend mapping its channel).
 - `TelemetryPublisher` gets a `TelemetryRecord` after `actuate`: the tick's `dt`, command,
-  setpoint, state, control, actuators, merged `Saturation`, and failsafe state.
+  setpoint, state, control, actuators, merged `Saturation`, failsafe state, and flight mode.
 - Tick order, `prime` (call once before the first `step`), and the arm gate:
   `architecture.md#flight-stabilization-loop`. Timing: `architecture.md#real-time-loop-management`.
 - Components own one config each and implement `Configurable` (validated `set_config`), reached

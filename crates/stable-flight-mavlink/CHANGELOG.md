@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `vfr_hud` reports `VehicleState::airspeed_mps` as airspeed when present (#181); ground speed
+  without it (`None`, NaN, or negative).
+
 ## [0.1.0] - 2026-10-10
 
 First release.

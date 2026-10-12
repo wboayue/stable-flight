@@ -458,6 +458,7 @@ pub fn vehicle_state(state: &SimulatorState, body_rotation: &UnitQuaternion<f32>
         acceleration_mps2: Vec3::new(acceleration.x, acceleration.y, -acceleration.z),
         attitude,
         angular_velocity_radps: realflight_body_rates_radps(state),
+        airspeed_mps: Some(state.airspeed_mps),
         // From the quaternion (by `rotate_body`) rather than RealFlight's own Euler angles, so
         // they always agree with `attitude` (they match RealFlight's away from ±90° pitch,
         // where both are degenerate: roll and heading turn about the same axis).

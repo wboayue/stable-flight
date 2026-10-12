@@ -4,8 +4,9 @@ use assert2::check;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{
     AbsoluteAttitudeCommand, ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command,
-    ControlInput, ControlMode, ControlOutput, FailsafeState, LandCommand, RateCommand,
-    RateSetpoint, Saturation, Setpoint, TelemetryRecord, Vec2, Vec3, VehicleState, WaypointCommand,
+    ControlInput, ControlMode, ControlOutput, FailsafeState, FlightMode, FlightModeReport,
+    FlightRegime, LandCommand, ModeRefusal, RateCommand, RateSetpoint, Saturation, Setpoint,
+    TelemetryRecord, Vec2, Vec3, VehicleState, WaypointCommand,
 };
 
 use super::*;
@@ -34,8 +35,8 @@ fn worst_case_record() -> Record {
             velocity_mps: Some(Vec2::new(3.0, 4.0)),
             altitude_m: 5.0,
             cruise_speed_mps: 6.0,
-            roll_rad: Some(0.1),
-        })),
+        }))
+        .with_regime(FlightRegime::Plane),
         setpoint: Setpoint::Attitude(AttitudeSetpoint {
             roll_rad: 0.1,
             pitch_rad: 0.2,
@@ -53,6 +54,10 @@ fn worst_case_record() -> Record {
         },
         saturation,
         failsafe: Some(FailsafeState::Fallback),
+        flight_mode: FlightModeReport {
+            mode: FlightMode::ToCopter,
+            refusal: Some(ModeRefusal::TransitionTimeout),
+        },
     }
 }
 
@@ -77,6 +82,7 @@ fn sample_state() -> VehicleState {
         roll_rad: 0.1,
         pitch_rad: 0.2,
         heading_rad: 0.3,
+        airspeed_mps: Some(4.0),
     }
 }
 
@@ -90,7 +96,6 @@ fn every_uplink_variant_round_trips() {
                 roll: -0.1,
                 pitch: 0.2,
                 yaw: 0.3,
-                mode: 1,
             },
         )))),
         Uplink::Control(Control::Command(Command::new(
@@ -142,6 +147,10 @@ fn every_downlink_variant_round_trips() {
         Downlink::Heartbeat {
             armed: true,
             mode: ControlMode::Waypoint,
+            flight_mode: FlightModeReport {
+                mode: FlightMode::ToPlane,
+                refusal: None,
+            },
             link_ok: false,
         },
         Downlink::State(sample_state()),
@@ -153,6 +162,7 @@ fn every_downlink_variant_round_trips() {
         Downlink::Heartbeat {
             armed: true,
             mode: ControlMode::Land,
+            flight_mode: FlightModeReport::copter_only(FlightRegime::Plane),
             link_ok: true,
         },
         Downlink::Record(worst_case_record()),

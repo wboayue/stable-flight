@@ -58,7 +58,6 @@ x,y,altitude,cruise_speed
         assert_relative_eq!(wp.altitude_m, alt);
         assert_relative_eq!(wp.cruise_speed_mps, speed);
         check!(wp.velocity_mps.is_none());
-        check!(wp.roll_rad.is_none());
     }
 }
 

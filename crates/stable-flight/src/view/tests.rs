@@ -228,7 +228,8 @@ fn viewed_guidance_holds_the_hover_heading() {
         throttle: 0.5,
         ..Default::default()
     });
-    let Setpoint::Attitude(setpoint) = guidance.guide(DT, &input, &body) else {
+    let Setpoint::Attitude(setpoint) = guidance.guide(DT, FlightRegime::Copter, &input, &body)
+    else {
         unreachable!("attitude commands yield attitude setpoints");
     };
     assert_relative_eq!(setpoint.heading_rad, 1.0, epsilon = 1e-4);
@@ -291,5 +292,48 @@ fn saturation_flags_follow_the_moments_into_body_axes() {
             saturation.moments
         );
         check!(saturation.mixer_thrust);
+    }
+}
+
+/// Records the regime it's asked for and reports a fixed flight mode.
+struct RegimeGuidance {
+    requested: Option<FlightRegime>,
+    report: Option<FlightModeReport>,
+}
+impl Guidance for RegimeGuidance {
+    fn guide(
+        &mut self,
+        _dt: f32,
+        regime: FlightRegime,
+        _input: &ControlInput,
+        _state: &VehicleState,
+    ) -> Setpoint {
+        self.requested = Some(regime);
+        Setpoint::Attitude(AttitudeSetpoint::default())
+    }
+    fn flight_mode(&self) -> Option<FlightModeReport> {
+        self.report
+    }
+}
+
+#[test]
+fn view_passes_the_regime_in_and_the_flight_mode_out() {
+    let report = FlightModeReport {
+        mode: crate::FlightMode::ToCopter,
+        refusal: None,
+    };
+    for report in [None, Some(report)] {
+        let mut view = View::tailsitter(RegimeGuidance {
+            requested: None,
+            report,
+        });
+        view.guide(
+            DT,
+            FlightRegime::Plane,
+            &ControlInput::default(),
+            &VehicleState::default(),
+        );
+        check!(view.inner().requested == Some(FlightRegime::Plane));
+        check!(view.flight_mode() == report);
     }
 }

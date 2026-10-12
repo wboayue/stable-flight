@@ -24,8 +24,8 @@ use core::time::Duration;
 
 use crate::controllers::{BodyRateController, BodyRateControllerConfig};
 use crate::{
-    Actuator, ActuatorCommand, Command, Commander, ControlOutput, FailsafeState, Saturation,
-    Setpoint, StateSource, TelemetryPublisher, TelemetryRecord, Vec3, VehicleState,
+    Actuator, ActuatorCommand, Command, Commander, ControlOutput, FailsafeState, FlightModeReport,
+    Saturation, Setpoint, StateSource, TelemetryPublisher, TelemetryRecord, Vec3, VehicleState,
 };
 
 pub mod conformance;
@@ -150,6 +150,7 @@ pub struct RecordedTick {
     pub actuators: ActuatorCommand,
     pub saturation: Saturation,
     pub failsafe: Option<FailsafeState>,
+    pub flight_mode: FlightModeReport,
 }
 
 impl RecordedTick {
@@ -164,6 +165,7 @@ impl RecordedTick {
             actuators: &self.actuators,
             saturation: self.saturation,
             failsafe: self.failsafe,
+            flight_mode: self.flight_mode,
         }
     }
 }
@@ -179,6 +181,7 @@ impl From<&TelemetryRecord<'_>> for RecordedTick {
             actuators: *record.actuators,
             saturation: record.saturation,
             failsafe: record.failsafe,
+            flight_mode: record.flight_mode,
         }
     }
 }
@@ -211,6 +214,7 @@ impl From<&TelemetryRecord<'_>> for RecordedTick {
 ///         actuators: &ActuatorCommand::default(),
 ///         saturation: Saturation::default(),
 ///         failsafe: None,
+///         flight_mode: Default::default(),
 ///     });
 /// }
 ///
