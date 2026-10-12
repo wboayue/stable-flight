@@ -88,8 +88,8 @@ cargo run -p stable-flight-sitl-realflight --example tailsitter-manual-realfligh
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv
 
 # The same for the eXplora tailsitter, in hover, in the tailsitter View: a small, slow figure-eight
-# by default (flights/explora_figure_eight.csv); flights/explora_hover.csv holds 5 m over its
-# spawn point. Or: just fly-tailsitter-auto
+# centered on its spawn point by default (flights/explora_figure_eight.csv); flights/explora_hover.csv
+# holds 5 m over it. Or: just fly-tailsitter-auto
 cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- --end land
 
 # Flown from the native link, holding position when it goes quiet; link_pilot plays the companion

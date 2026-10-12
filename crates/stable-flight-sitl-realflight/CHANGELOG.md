@@ -35,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`tailsitter-auto-realflight` example** (`just fly-tailsitter-auto`, #123): the eXplora
   through a waypoint script in hover, wired as `copter-auto-realflight` with the tailsitter
   `View`; `--end hold|loop|land`. Its scripts: `flights/explora_figure_eight.csv` (small and
-  slow, the default) and `flights/explora_hover.csv` (5 m over its spawn point).
+  slow, centered on the spawn point; the default) and `flights/explora_hover.csv` (5 m over its spawn point).
 - **`ActuatorMapping::reversed_servos`** (#121): servo slots negated before they reach their
   channel, for a surface the model moves the other way from the mixer's convention.
 - **`CHANNEL_COUNT`:** RealFlight's 12 channels, exported.
