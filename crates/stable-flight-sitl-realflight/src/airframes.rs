@@ -136,7 +136,7 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 /// Fly the copter guidance and stabilizer in a tailsitter
 /// [`View`](stable_flight::View), as `tailsitter-manual-realflight` does: hover is level there.
 /// The stabilizer gains are in the view's axes (roll: tilting sideways, yaw: turning about the
-/// vertical), from the first hovers (#121), and are a starting point, not a tune (#123).
+/// vertical), hand-tuned from stick pulses and low-throttle descents (#121, #123).
 ///
 /// # Examples
 ///
