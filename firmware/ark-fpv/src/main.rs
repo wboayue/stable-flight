@@ -32,7 +32,7 @@ use rtic_monotonics::systick::prelude::*;
 use stable_flight::{
     ComposedVehicle, FlightLoop,
     guidance::copter::{CopterGuidance, CopterGuidanceConfig},
-    mixers::QuadCopterMixer,
+    mixers::TableMixer,
     stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig},
 };
 
@@ -59,7 +59,7 @@ type Flight = FlightLoop<
     ComposedVehicle<HoldState, NullActuator>,
     CopterGuidance,
     CopterStabilizer,
-    QuadCopterMixer,
+    TableMixer<4>,
     (),
 >;
 
@@ -121,7 +121,7 @@ mod app {
             ComposedVehicle::new(HoldState, NullActuator),
             CopterGuidance::new(CopterGuidanceConfig::default()),
             CopterStabilizer::new(CopterStabilizerConfig::default()),
-            QuadCopterMixer::default(),
+            TableMixer::quad_x(),
             (),
         );
         flight.prime();

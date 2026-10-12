@@ -7,9 +7,10 @@ fn approx_eq(a: f32, b: f32) -> bool {
     (a - b).abs() < 1e-5
 }
 
-/// Helper function to create a mixer instance.
-fn create_mixer() -> QuadCopterMixer {
-    QuadCopterMixer::default()
+/// The quad X preset: the rows below are the former `QuadCopterMixer`'s tests, unchanged, so
+/// the preset is checked to mix the same.
+fn create_mixer() -> TableMixer<4> {
+    TableMixer::quad_x()
 }
 
 /// Test 1: Hover (no moments, thrust only)
@@ -454,4 +455,419 @@ fn reports_what_the_last_mix_gave_up() {
         );
         assert!(!saturation.tilt && !saturation.thrust && saturation.moments == [false; 3]);
     }
+}
+
+/// Where each motor of a motor-only preset sits: azimuth from the nose (degrees, clockwise
+/// seen from above) and spin (+1 counterclockwise, whose drag torque yaws the nose right).
+type Geometry = &'static [(f32, f32)];
+
+/// One mix through a fresh preset.
+type MixFn = fn(&ControlOutput) -> ActuatorCommand;
+
+const CW: f32 = -1.0;
+const CCW: f32 = 1.0;
+
+/// Motor-only presets with their geometry, written from the diagrams, not the tables.
+const MOTOR_PRESETS: [(&str, MixFn, Geometry); 7] = [
+    (
+        "quad_x",
+        |c| TableMixer::quad_x().mix(c),
+        &[(-45.0, CW), (45.0, CCW), (-135.0, CCW), (135.0, CW)],
+    ),
+    (
+        "quad_plus",
+        |c| TableMixer::quad_plus().mix(c),
+        &[(0.0, CW), (90.0, CCW), (180.0, CW), (-90.0, CCW)],
+    ),
+    (
+        "hex_x",
+        |c| TableMixer::hex_x().mix(c),
+        &[
+            (-30.0, CW),
+            (30.0, CCW),
+            (90.0, CW),
+            (150.0, CCW),
+            (-150.0, CW),
+            (-90.0, CCW),
+        ],
+    ),
+    (
+        "hex_plus",
+        |c| TableMixer::hex_plus().mix(c),
+        &[
+            (0.0, CW),
+            (60.0, CCW),
+            (120.0, CW),
+            (180.0, CCW),
+            (-120.0, CW),
+            (-60.0, CCW),
+        ],
+    ),
+    (
+        "octo_x",
+        |c| TableMixer::octo_x().mix(c),
+        &[
+            (-22.5, CW),
+            (22.5, CCW),
+            (67.5, CW),
+            (112.5, CCW),
+            (157.5, CW),
+            (-157.5, CCW),
+            (-112.5, CW),
+            (-67.5, CCW),
+        ],
+    ),
+    (
+        "y6",
+        |c| TableMixer::y6().mix(c),
+        &[
+            (-60.0, CW),
+            (60.0, CW),
+            (180.0, CW),
+            (-60.0, CCW),
+            (60.0, CCW),
+            (180.0, CCW),
+        ],
+    ),
+    (
+        "x8",
+        |c| TableMixer::x8().mix(c),
+        &[
+            (-45.0, CW),
+            (45.0, CCW),
+            (135.0, CW),
+            (-135.0, CCW),
+            (-45.0, CCW),
+            (45.0, CW),
+            (135.0, CCW),
+            (-135.0, CW),
+        ],
+    ),
+];
+
+/// The body moments (roll, pitch, yaw) a change in motor outputs makes on `geometry`.
+fn moments_from(geometry: Geometry, delta: &[f32]) -> Vec3 {
+    geometry
+        .iter()
+        .zip(delta)
+        .fold(Vec3::zeros(), |sum, (&(azimuth_deg, spin), &d)| {
+            let azimuth_rad = azimuth_deg.to_radians();
+            // A motor left of center (negative sine) rolls right as it speeds up; one ahead of
+            // center (positive cosine) raises the nose.
+            sum + Vec3::new(-azimuth_rad.sin(), azimuth_rad.cos(), spin) * d
+        })
+}
+
+/// Each motor preset hovers with equal motors, and turns a pure roll, pitch, or yaw request
+/// into that moment alone, with the frame-contract sign (roll right, nose up, nose right).
+#[test]
+fn motor_presets_make_the_requested_moment_only() {
+    for (name, mix, geometry) in MOTOR_PRESETS {
+        let n = geometry.len();
+        let hover = mix(&ControlOutput::new(0.5, Vec3::zeros())).motors;
+        assert!(
+            hover[..n].iter().all(|&m| approx_eq(m, 0.45)) && hover[n..].iter().all(|&m| m == 0.0),
+            "{name}: hover {hover:?}"
+        );
+        for axis in 0..3 {
+            let mut request = Vec3::zeros();
+            request[axis] = 0.5;
+            let output = mix(&ControlOutput::new(0.5, request)).motors;
+            let delta: [f32; 8] = core::array::from_fn(|i| output[i] - hover[i]);
+            let made = moments_from(geometry, &delta[..n]);
+            for other in 0..3 {
+                if other == axis {
+                    assert!(made[other] > 0.01, "{name}: axis {axis} made {made:?}");
+                } else {
+                    assert!(
+                        made[other].abs() < 1e-5,
+                        "{name}: axis {axis} made {made:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Tricopter and bicopter: servos carry the moments their rows name, motors the rest; servo
+/// outputs don't depend on thrust.
+#[test]
+fn servo_presets_move_the_right_outputs() {
+    // (preset, mix, thrust, moments, expected motors[..3], expected servos[..2])
+    type Case = (&'static str, MixFn, f32, Vec3, [f32; 3], [f32; 2]);
+    let tri: MixFn = |c| TableMixer::tri().mix(c);
+    let bi: MixFn = |c| TableMixer::bi().mix(c);
+    let cases: [Case; 8] = [
+        // Tail servo yaws; motors stay level.
+        (
+            "tri",
+            tri,
+            0.5,
+            Vec3::new(0.0, 0.0, 0.3),
+            [0.45, 0.45, 0.45],
+            [0.3, 0.0],
+        ),
+        // Roll: front-left up, front-right down, tail motor unchanged.
+        (
+            "tri",
+            tri,
+            0.5,
+            Vec3::new(0.5, 0.0, 0.0),
+            [0.5, 0.4, 0.45],
+            [0.0, 0.0],
+        ),
+        // Pitch up: front pair up half as much as the tail goes down.
+        (
+            "tri",
+            tri,
+            0.5,
+            Vec3::new(0.0, 0.5, 0.0),
+            [0.475, 0.475, 0.4],
+            [0.0, 0.0],
+        ),
+        // Roll: differential thrust only.
+        (
+            "bi",
+            bi,
+            0.5,
+            Vec3::new(0.5, 0.0, 0.0),
+            [0.5, 0.4, 0.0],
+            [0.0, 0.0],
+        ),
+        // Pitch up: both rotors tilt aft.
+        (
+            "bi",
+            bi,
+            0.5,
+            Vec3::new(0.0, 0.4, 0.0),
+            [0.45, 0.45, 0.0],
+            [0.4, 0.4],
+        ),
+        // Nose right: left rotor forward, right rotor aft.
+        (
+            "bi",
+            bi,
+            0.5,
+            Vec3::new(0.0, 0.0, 0.4),
+            [0.45, 0.45, 0.0],
+            [-0.4, 0.4],
+        ),
+        // Servos ignore thrust.
+        (
+            "bi",
+            bi,
+            0.0,
+            Vec3::new(0.0, 0.4, 0.4),
+            [0.0, 0.0, 0.0],
+            [0.0, 0.8],
+        ),
+        (
+            "bi",
+            bi,
+            1.0,
+            Vec3::new(0.0, 0.4, 0.4),
+            [0.9, 0.9, 0.0],
+            [0.0, 0.8],
+        ),
+    ];
+    for (name, mix, thrust, moments, motors, servos) in cases {
+        let output = mix(&ControlOutput::new(thrust, moments));
+        for (i, &e) in motors.iter().enumerate() {
+            assert!(
+                approx_eq(output.motors[i], e),
+                "{name} {thrust} {moments:?}: motors {:?}",
+                output.motors
+            );
+        }
+        for (i, &e) in servos.iter().enumerate() {
+            assert!(
+                approx_eq(output.servos[i], e),
+                "{name} {thrust} {moments:?}: servos {:?}",
+                output.servos
+            );
+        }
+    }
+}
+
+/// A servo asked past its range clamps on its own and reports the lost moment; the other
+/// servo and the motors are untouched.
+#[test]
+fn servo_clamp_reports_lost_moments() {
+    let mut mixer = TableMixer::bi();
+    let output = mixer.mix(&ControlOutput::new(0.5, Vec3::new(0.0, 1.0, 1.0)));
+    assert!(output.servos[..2] == [0.0, 1.0]);
+    assert!(output.motors[..2] == [0.45, 0.45]);
+    assert!(mixer.saturation().mixer_moments);
+    assert!(!mixer.saturation().mixer_thrust);
+
+    mixer.mix(&ControlOutput::new(0.5, Vec3::new(0.0, 0.5, 0.5)));
+    assert!(mixer.saturation() == Saturation::default());
+}
+
+/// On six motors, too much thrust plus full roll and pitch still delivers the whole moment:
+/// collective gives way, as on the quad.
+#[test]
+fn hex_desaturation_keeps_moments() {
+    let mut mixer = TableMixer::hex_x();
+    let moments = Vec3::new(1.0, 1.0, 0.0);
+    let fits = mixer.mix(&ControlOutput::new(0.5, moments)).motors;
+    assert!(mixer.saturation() == Saturation::default());
+    let full = mixer.mix(&ControlOutput::new(1.0, moments)).motors;
+    assert!(mixer.saturation().mixer_thrust && !mixer.saturation().mixer_moments);
+    for i in 0..6 {
+        assert!(
+            approx_eq(full[i] - full[0], fits[i] - fits[0]),
+            "motor {i}: {full:?} vs {fits:?}"
+        );
+    }
+    assert!(full[..6].iter().all(|&m| (0.0..=1.0).contains(&m)));
+}
+
+/// A table of servos alone mixes with nothing to desaturate: motors stay off, servos follow
+/// the moments, and only a clamped servo reports.
+#[test]
+fn servo_only_table_mixes_without_motors() {
+    let rows = [
+        MixRow::servo(0, 1.0, 0.0, 0.0),
+        MixRow::servo(1, 0.0, 1.0, 1.0),
+    ];
+    let mut mixer = TableMixer::new(rows, MixerConfig::default()).expect("valid table");
+    // (thrust, moments, expected servos[..2], mixer_moments)
+    let cases = [
+        (0.0, Vec3::new(0.3, -0.2, 0.1), [0.3, -0.1], false),
+        (1.0, Vec3::new(-0.5, 0.0, 0.0), [-0.5, 0.0], false),
+        (0.5, Vec3::new(0.0, 0.8, 0.8), [0.0, 1.0], true),
+    ];
+    for (thrust, moments, servos, mixer_moments) in cases {
+        let output = mixer.mix(&ControlOutput::new(thrust, moments));
+        assert!(output.motors == [0.0; ActuatorCommand::SLOTS]);
+        assert!(
+            output.servos[..2]
+                .iter()
+                .zip(servos)
+                .all(|(&s, e)| approx_eq(s, e)),
+            "{thrust} {moments:?}: {:?}",
+            output.servos
+        );
+        assert!(
+            mixer.saturation()
+                == Saturation {
+                    mixer_moments,
+                    ..Saturation::default()
+                }
+        );
+    }
+}
+
+/// Every preset passes the same validation a custom table gets.
+#[test]
+fn presets_are_valid_tables() {
+    fn check<const N: usize>(name: &str, mixer: TableMixer<N>) {
+        assert!(
+            TableMixer::new(mixer.rows, mixer.config) == Ok(mixer),
+            "{name}"
+        );
+    }
+    check("quad_x", TableMixer::quad_x());
+    check("quad_plus", TableMixer::quad_plus());
+    check("tri", TableMixer::tri());
+    check("bi", TableMixer::bi());
+    check("hex_x", TableMixer::hex_x());
+    check("hex_plus", TableMixer::hex_plus());
+    check("y6", TableMixer::y6());
+    check("octo_x", TableMixer::octo_x());
+    check("x8", TableMixer::x8());
+}
+
+/// Invalid tables and configs are rejected at construction, naming the problem.
+#[test]
+fn rejects_invalid_tables_and_configs() {
+    let motor = |i| MixRow::motor(i, 1.0, 0.0, 0.0);
+    let good = MixerConfig::default();
+    let cases: [([MixRow; 2], MixerConfig, MixerError); 8] = [
+        (
+            [motor(0), motor(2)],
+            good,
+            MixerError::MotorGap(Slot::Motor(2)),
+        ),
+        (
+            [motor(0), motor(8)],
+            good,
+            MixerError::SlotOutOfRange(Slot::Motor(8)),
+        ),
+        (
+            [motor(0), MixRow::servo(8, 0.0, 0.0, 1.0)],
+            good,
+            MixerError::SlotOutOfRange(Slot::Servo(8)),
+        ),
+        (
+            [motor(3), motor(3)],
+            good,
+            MixerError::DuplicateSlot(Slot::Motor(3)),
+        ),
+        (
+            [motor(0), MixRow::motor(1, 0.0, f32::NAN, 0.0)],
+            good,
+            MixerError::NonFiniteFactor(Slot::Motor(1)),
+        ),
+        (
+            [motor(0), motor(1)],
+            MixerConfig {
+                thrust_factor: 1.0,
+                ..good
+            },
+            MixerError::ThrustFactor,
+        ),
+        (
+            [motor(0), motor(1)],
+            MixerConfig {
+                thrust_factor: f32::NAN,
+                ..good
+            },
+            MixerError::ThrustFactor,
+        ),
+        (
+            [motor(0), motor(1)],
+            MixerConfig {
+                yaw_ratio: -0.5,
+                ..good
+            },
+            MixerError::YawRatio,
+        ),
+    ];
+    for (rows, config, error) in cases {
+        assert!(
+            TableMixer::new(rows, config) == Err(error),
+            "{rows:?} {config:?}"
+        );
+    }
+    assert!(TableMixer::<0>::new([], good) == Err(MixerError::Empty));
+    // A motor and a servo may share an index: they are different slots.
+    assert!(TableMixer::new([motor(0), MixRow::servo(0, 0.0, 0.0, 1.0)], good).is_ok());
+    assert!(
+        TableMixer::quad_x().with_config(MixerConfig {
+            yaw_ratio: f32::INFINITY,
+            ..good
+        }) == Err(MixerError::YawRatio)
+    );
+}
+
+/// Config scales the motor split: a lower thrust factor leaves more headroom for moments.
+#[test]
+fn config_sets_the_thrust_and_moment_split() {
+    let config = MixerConfig {
+        thrust_factor: 0.8,
+        yaw_ratio: 1.0,
+    };
+    let mut mixer = TableMixer::quad_x()
+        .with_config(config)
+        .expect("valid config");
+    let output = mixer.mix(&ControlOutput::new(0.5, Vec3::new(0.0, 0.0, 1.0)));
+    // Collective 0.4; yaw 1 · headroom 0.2 · ratio 1.
+    assert!(
+        output.motors[..4]
+            .iter()
+            .zip([0.2, 0.6, 0.6, 0.2])
+            .all(|(&m, e)| approx_eq(m, e))
+    );
 }

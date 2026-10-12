@@ -50,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Tried`, `StageDone` with its `Outcome`, ...). Works with any `CopterTunable` stabilizer (`Tunable` on `TunedLoop` +
   `Configurable`). `FlightLoop`'s accessors and config setters no longer require the pipeline
   bounds.
+- **`mixers::TableMixer`** (#245): one table-driven mixer for multirotors and
+  thrust-and-servo frames. Each `MixRow` drives a motor or servo `Slot` with roll, pitch, and
+  yaw factors; motors share airmode-style desaturation, servos clamp on their own (both
+  reported in `Saturation`). `MixerConfig` (thrust factor, yaw ratio) is set at construction;
+  `TableMixer::new` validates a custom table (`MixerError`). Presets: `quad_x`, `quad_plus`,
+  `hex_x`, `hex_plus`, `octo_x`, `y6`, `x8`, `tri` (tail tilt servo), `bi` (tilting rotors).
+- **`ActuatorCommand::SLOTS`:** the number of motor and of servo slots (8).
 
 ### Changed
 
@@ -58,6 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `pitch_gains`, and the params `STAB_RATE_P/I/D` and `STAB_ATT_P/I/D` become
   `STAB_RATE_RLL_*`, `STAB_RATE_PIT_*`, `STAB_ATT_RLL_*`, and `STAB_ATT_PIT_*`. To keep a
   shared tune, set both to the old value.
+
+### Removed
+
+- **Breaking:** `mixers::QuadCopterMixer` (#245). Use `TableMixer::quad_x()`, which mixes the
+  same; its type is `TableMixer<4>`.
 
 ## [0.1.0] - 2026-10-10
 

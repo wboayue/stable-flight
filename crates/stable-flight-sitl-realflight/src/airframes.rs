@@ -11,7 +11,7 @@ use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
 };
 use stable_flight::guidance::copter::CopterGuidanceConfig;
-use stable_flight::mixers::QuadCopterMixer;
+use stable_flight::mixers::TableMixer;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 
@@ -61,7 +61,7 @@ pub struct Airframe<G, S, M> {
 /// let mixer = airframe.mixer;
 /// assert_eq!(airframe.mapping.motors[0], Some(2));
 /// ```
-pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, QuadCopterMixer> {
+pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, TableMixer<4>> {
     // Roll and pitch share one hand tune; autotune (#149) can split them.
     let rate_roll_pitch = Gains {
         p: 0.5,
@@ -107,8 +107,8 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
             },
             ..Default::default()
         },
-        mixer: QuadCopterMixer::default(),
-        // `QuadCopterMixer` motor `i` drives RealFlight channel `motors[i]`.
+        mixer: TableMixer::quad_x(),
+        // `TableMixer::quad_x` motor `i` drives RealFlight channel `motors[i]`.
         mapping: ActuatorMapping {
             motors: [Some(2), Some(0), Some(1), Some(3), None, None, None, None],
             ..Default::default()

@@ -333,7 +333,7 @@ fn armed_follows_the_last_tick() {
 #[test]
 fn probe_calls_reach_the_stabilizer_between_ticks() {
     use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-    use crate::mixers::QuadCopterMixer;
+    use crate::mixers::TableMixer;
     use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
     use crate::testing::{ConstantCommander, NullVehicle};
     use crate::tuning::{ProbeConfig, ProbeStatus, Progress, RelayConfig};
@@ -343,7 +343,7 @@ fn probe_calls_reach_the_stabilizer_between_ticks() {
         NullVehicle::new(),
         CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),
-        QuadCopterMixer::default(),
+        TableMixer::quad_x(),
         (),
     );
     flight_loop.prime();
@@ -383,7 +383,7 @@ fn probe_calls_reach_the_stabilizer_between_ticks() {
 #[test]
 fn disarmed_copter_keeps_motors_off_at_full_throttle() {
     use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-    use crate::mixers::QuadCopterMixer;
+    use crate::mixers::TableMixer;
     use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
     use crate::testing::{ConstantCommander, NullVehicle};
 
@@ -397,7 +397,7 @@ fn disarmed_copter_keeps_motors_off_at_full_throttle() {
             NullVehicle::new(),
             CopterGuidance::new(CopterGuidanceConfig::default()),
             CopterStabilizer::new(CopterStabilizerConfig::default()),
-            QuadCopterMixer::default(),
+            TableMixer::quad_x(),
             (),
         );
         flight_loop.prime();
@@ -440,7 +440,7 @@ fn commander_sees_previous_tick_state_across_steps() {
 #[test]
 fn into_parts_returns_the_components_with_their_state() {
     use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-    use crate::mixers::QuadCopterMixer;
+    use crate::mixers::TableMixer;
     use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
     use crate::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
 
@@ -449,7 +449,7 @@ fn into_parts_returns_the_components_with_their_state() {
         NullVehicle::new(),
         CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),
-        QuadCopterMixer::default(),
+        TableMixer::quad_x(),
         RecordingTelemetry::<8>::new(),
     );
     flight_loop.prime();
@@ -467,7 +467,7 @@ fn into_parts_returns_the_components_with_their_state() {
 #[test]
 fn config_setters_retune_the_composites_between_ticks() {
     use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-    use crate::mixers::QuadCopterMixer;
+    use crate::mixers::TableMixer;
     use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
     use crate::testing::{ConstantCommander, NullVehicle};
 
@@ -476,7 +476,7 @@ fn config_setters_retune_the_composites_between_ticks() {
         NullVehicle::new(),
         CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),
-        QuadCopterMixer::default(),
+        TableMixer::quad_x(),
         (),
     );
     flight_loop.prime();
@@ -588,7 +588,7 @@ impl Commander for ReportsFailsafe {
 
 #[test]
 fn record_carries_the_commanders_failsafe_state() {
-    use crate::mixers::QuadCopterMixer;
+    use crate::mixers::TableMixer;
     use crate::testing::{NullVehicle, RecordingTelemetry};
 
     for failsafe in [
@@ -601,7 +601,7 @@ fn record_carries_the_commanders_failsafe_state() {
             NullVehicle::new(),
             Flagged(Saturation::default()),
             Flagged(Saturation::default()),
-            QuadCopterMixer::default(),
+            TableMixer::quad_x(),
             RecordingTelemetry::<1>::new(),
         );
         flight_loop.prime();

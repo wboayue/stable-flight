@@ -8,7 +8,7 @@ use std::time::Duration;
 use assert2::check;
 use stable_flight::commanders::{FailsafeCommander, FailsafeConfig, HoldCommander};
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-use stable_flight::mixers::QuadCopterMixer;
+use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::NullVehicle;
 use stable_flight::{Command, ControlInput, ControlMode, FlightLoop, WaypointCommand};
@@ -84,7 +84,7 @@ fn falls_back_on_silence_and_flies_the_link_once_it_is_back() {
         NullVehicle::new(),
         CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),
-        QuadCopterMixer::default(),
+        TableMixer::quad_x(),
         telemetry,
     );
     flight_loop.prime();

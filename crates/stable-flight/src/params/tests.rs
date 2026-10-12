@@ -9,7 +9,7 @@ use crate::controllers::{
     LateralControllerConfig, YawControllerConfig,
 };
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-use crate::mixers::QuadCopterMixer;
+use crate::mixers::TableMixer;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use crate::testing::{ConstantCommander, NullVehicle};
 use crate::{Command, FlightLoop};
@@ -185,14 +185,13 @@ fn unknown_name_reads_as_none() {
 }
 
 fn flight_loop()
--> FlightLoop<ConstantCommander, NullVehicle, CopterGuidance, CopterStabilizer, QuadCopterMixer, ()>
-{
+-> FlightLoop<ConstantCommander, NullVehicle, CopterGuidance, CopterStabilizer, TableMixer<4>, ()> {
     FlightLoop::new(
         ConstantCommander::new(Command::default()),
         NullVehicle::new(),
         CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),
-        QuadCopterMixer::default(),
+        TableMixer::quad_x(),
         (),
     )
 }

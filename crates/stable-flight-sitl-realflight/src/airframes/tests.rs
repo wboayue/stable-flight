@@ -64,7 +64,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
 }
 
 /// Steady yaw moment (normalized, nose right) QuadCopterX needs to hover in RealFlight,
-/// measured in #192: a mean motor yaw split of about 0.10 over the core `QuadCopterMixer`'s yaw
+/// measured in #192: a mean motor yaw split of about 0.10 over the core `TableMixer::quad_x`'s yaw
 /// scaling of 0.25. Re-measure if that scaling changes.
 const MEASURED_HOVER_YAW_MOMENT: f32 = 0.40;
 

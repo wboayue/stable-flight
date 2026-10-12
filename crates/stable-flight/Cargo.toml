@@ -16,6 +16,7 @@ repository.workspace = true
 libm.workspace = true
 nalgebra.workspace = true
 log.workspace = true
+thiserror.workspace = true
 serde = { workspace = true, optional = true }
 
 [features]

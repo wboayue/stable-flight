@@ -3,7 +3,7 @@ use assert2::check;
 use realflight_bridge::{BridgeError, ControlInputs, Quaternion, RealFlightBridge, SimulatorState};
 use stable_flight::FlightLoop;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-use stable_flight::mixers::QuadCopterMixer;
+use stable_flight::mixers::TableMixer;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::conformance::Scenario;
@@ -275,7 +275,7 @@ fn exchanges_once_per_tick_and_reports_state_from_the_previous_exchange() {
         vehicle,
         CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),
-        QuadCopterMixer::default(),
+        TableMixer::quad_x(),
         RecordingTelemetry::<TICKS>::new(),
     );
 

@@ -20,7 +20,7 @@ libm = "0.2"
 # no_std serde (derive only); core's `serde` feature and the link crate.
 serde = { version = "1", default-features = false, features = ["derive"] }
 log = "0.4.25"
-thiserror = "2.0"
+thiserror = { version = "2.0", default-features = false }
 clap = { version = "4", features = ["derive"] }
 # MAVLink (sitl telemetry, the bridge). `emit-extensions` keeps v2 extension fields such as
 # `mission_type`, which QGC sets.
