@@ -1,0 +1,4 @@
+# Hover 5 m above the RealFlight eXplora VTOL spawn point (north -10.55 m, east 6.49 m, from
+# the #120 capture; ground ~0 m ASL). A single waypoint: the follower holds it.
+x,y,altitude,cruise_speed
+-10.55,6.49,5.0,2.0

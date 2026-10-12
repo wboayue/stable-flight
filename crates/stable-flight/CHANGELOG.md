@@ -64,8 +64,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`VehicleState::rotate_body`:** the state in another body frame (attitude, body rates, Euler
   fields), for a constant mount or view rotation.
 - **`ActuatorCommand::SLOTS`:** the number of motor and of servo slots (8).
+- **`ThrustLimits`** (#123): `CopterGuidanceConfig::thrust` bounds guidance's thrust while
+  flying, all off by default. **Thrust floor:** `min_thrust` (param `GUID_THR_MIN`, default
+  0: none) holds every thrust at or above it while flying, so a tailsitter's elevons keep the
+  propwash they need to hold the nose up (as ArduPilot's `Q_TAILSIT_MIN_VO`). A piloted
+  throttle at or below `IDLE_THROTTLE` (0.05) passes through, so the motors can idle on the
+  ground; waypoint and land flight always get it. Raising a thrust flags `thrust` saturation.
+  **Sink guard and boost ceiling:** piloted flight sinking faster than `sink_limit_mps`
+  (`GUID_SINK_LIM`) gets `sink_gain` (`GUID_SINK_GAIN`) more thrust per m/s past it, since
+  direct throttle can't hold a descent rate and a sinking tailsitter loses its elevons; `max_boost_thrust` (`GUID_BOOST_MAX`) stops the attitude-mode
+  tilt boost short of full thrust, keeping motor headroom for the moments.
+- **`Setpoint::thrust`:** the linear thrust either variant carries.
 
 ### Changed
+
+- **`CopterStabilizer` clears its integrals at zero thrust** (#123): a setpoint with thrust 0
+  (or NaN) zeroes the rate, attitude, and yaw I terms after the tick, so they don't wind up
+  against a resting attitude on the ground and kick at liftoff (as ArduPilot does at zero
+  throttle).
+- **Breaking:** `CopterGuidanceConfig` has a new `thrust` field (`ThrustLimits`, #123); struct
+  literals add `..Default::default()` (no limits, the previous behavior).
 
 - **Breaking:** roll and pitch have separate gains in the rate and attitude loops (#289).
   `BodyRateControllerConfig` and `AttitudeControllerConfig` replace `gains` with `roll_gains`

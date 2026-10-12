@@ -197,6 +197,13 @@ impl BodyRateController {
         }
     }
 
+    /// Zeroes every axis's integral, keeping the derivative history.
+    pub(crate) fn clear_integral(&mut self) {
+        for axis in &mut self.axes {
+            axis.integrated_error = 0.0;
+        }
+    }
+
     /// The I term (`i · integral`) of `axis` (0 roll, 1 pitch, 2 yaw): the moment the loop
     /// holds as trim.
     pub(crate) fn integral_term(&self, config: &BodyRateControllerConfig, axis: usize) -> f32 {

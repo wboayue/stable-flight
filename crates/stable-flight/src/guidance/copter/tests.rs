@@ -1308,12 +1308,6 @@ fn reports_what_the_last_guide_clipped() {
             ..Default::default()
         })
     };
-    let throttle = |throttle| {
-        ControlInput::Attitude(AttitudeCommand {
-            throttle,
-            ..Default::default()
-        })
-    };
     let absolute = |thrust, roll_rad| {
         ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
             roll_rad,
@@ -1328,8 +1322,8 @@ fn reports_what_the_last_guide_clipped() {
         (waypoint(0.0, 100.0), &level, (false, true)),  // far below: thrust at 1
         (waypoint(0.0, -100.0), &level, (false, false)), // far above: descends at the limit
         (waypoint(0.0, -100.0), &shooting_up, (false, true)), // damped to thrust 0
-        (throttle(0.5), &banked, (false, false)),       // 0.5 · √2 fits
-        (throttle(0.9), &banked, (false, true)),        // 0.9 · √2 clipped
+        (stick(0.5), &banked, (false, false)),          // 0.5 · √2 fits
+        (stick(0.9), &banked, (false, true)),           // 0.9 · √2 clipped
         (absolute(0.9, 1.0), &banked, (false, false)),  // not boosted; tilt is the stabilizer's
         (absolute(1.2, 0.0), &level, (false, true)),
         (absolute(f32::NAN, 0.0), &level, (false, false)),
@@ -1598,5 +1592,275 @@ fn rejects_descent_rates_out_of_range() {
             ..Default::default()
         };
         assert!(config.validate().is_ok() == valid, "{land_speed_mps}");
+    }
+}
+
+/// Attitude-mode sticks centered, at `throttle`.
+fn stick(throttle: f32) -> ControlInput {
+    ControlInput::Attitude(AttitudeCommand {
+        throttle,
+        ..Default::default()
+    })
+}
+
+/// Rate-mode sticks centered, at `throttle`.
+fn rate(throttle: f32) -> ControlInput {
+    ControlInput::Rate(RateCommand {
+        throttle,
+        ..Default::default()
+    })
+}
+
+/// A level absolute attitude at `thrust`.
+fn absolute(thrust: f32) -> ControlInput {
+    ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+        thrust,
+        ..Default::default()
+    })
+}
+
+/// Guidance with `thrust` limits and default loops, primed on `state`.
+fn limited(thrust: ThrustLimits, state: &VehicleState) -> CopterGuidance {
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig {
+        thrust,
+        ..Default::default()
+    });
+    guidance.prime(state);
+    guidance
+}
+
+/// `min_thrust` raises every thrust while flying: a piloted throttle above idle (after the
+/// tilt boost, so even inverted), waypoint and land flight always; an idle or NaN throttle
+/// passes through, and a thrust above the floor is untouched. Raising it flags `thrust`.
+#[test]
+fn min_thrust_floors_the_thrust_while_flying() {
+    const FLOOR: f32 = 0.6;
+    let level = VehicleState::default();
+    let inverted = VehicleState {
+        attitude: nalgebra::UnitQuaternion::from_euler_angles(PI, 0.0, 0.0),
+        ..Default::default()
+    };
+    // Shooting up toward a waypoint at its altitude: the altitude loop cuts thrust to 0.
+    let shooting_up = VehicleState {
+        velocity_mps: Vec3::new(0.0, 0.0, 30.0),
+        ..Default::default()
+    };
+    let land = ControlInput::Land(LandCommand::default());
+    // (input, state, expected thrust, thrust flagged)
+    let cases = [
+        (stick(0.3), &level, FLOOR, true),
+        (stick(0.8), &level, 0.8, false),
+        (stick(IDLE_THROTTLE), &level, IDLE_THROTTLE, false), // idle: the pilot can cut
+        (stick(0.0), &level, 0.0, false),
+        (stick(f32::NAN), &level, 0.0, false),
+        (stick(0.3), &inverted, FLOOR, true), // the boost gives none; the floor holds
+        (rate(0.3), &level, FLOOR, true),
+        (rate(0.0), &level, 0.0, false),
+        (absolute(0.3), &level, FLOOR, true),
+        (absolute(0.0), &level, 0.0, false),
+        (waypoint_at(0.0), &shooting_up, FLOOR, true),
+        (land, &shooting_up, FLOOR, true),
+    ];
+    for (input, state, expected, flagged) in cases {
+        let limits = ThrustLimits {
+            min_thrust: FLOOR,
+            ..Default::default()
+        };
+        let mut guidance = limited(limits, state);
+        let thrust = guidance.guide(0.004, &input, state).thrust();
+        assert!(thrust == expected, "{input:?}");
+        assert!(guidance.saturation().thrust == flagged, "{input:?}");
+    }
+}
+
+/// With the default limits, low thrust passes through as before.
+#[test]
+fn no_thrust_limits_by_default() {
+    let (mut guidance, state) = guidance_at(0.0);
+    let shooting_up = VehicleState {
+        velocity_mps: Vec3::new(0.0, 0.0, 30.0),
+        ..state
+    };
+    let sinking = VehicleState {
+        velocity_mps: Vec3::new(0.0, 0.0, -5.0),
+        ..state
+    };
+    assert!(guidance.guide(0.004, &stick(0.3), &state).thrust() == 0.3);
+    assert!(guidance.guide(0.004, &stick(0.3), &sinking).thrust() == 0.3);
+    assert!(
+        guidance
+            .guide(0.004, &waypoint_at(0.0), &shooting_up)
+            .thrust()
+            == 0.0
+    );
+}
+
+/// The sink guard adds `sink_gain` per m/s of sink past `sink_limit_mps` to piloted thrust
+/// (on top of the floor), saturated to 1, and flags `thrust`; at or inside the limit, idle,
+/// disabled, or with a NaN climb rate it adds nothing.
+#[test]
+fn sink_guard_adds_thrust_past_the_limit() {
+    // (input, climb m/s, (sink_limit_mps, min_thrust), expected thrust, thrust flagged)
+    let cases = [
+        (stick(0.5), 0.0, (1.0, 0.0), 0.5, false),
+        (stick(0.5), -1.0, (1.0, 0.0), 0.5, false), // at the limit
+        (stick(0.5), -2.0, (1.0, 0.0), 0.7, true),
+        (stick(0.5), -10.0, (1.0, 0.0), 1.0, true), // saturated
+        (stick(0.0), -3.0, (1.0, 0.0), 0.0, false), // idle: on the ground or cut
+        (stick(0.5), f32::NAN, (1.0, 0.0), 0.5, false),
+        (stick(0.5), -5.0, (0.0, 0.0), 0.5, false), // disabled
+        (stick(0.3), -2.0, (1.0, 0.6), 0.8, true),  // on top of the floor
+        (rate(0.5), -2.0, (1.0, 0.0), 0.7, true),
+        (absolute(0.5), -2.0, (1.0, 0.0), 0.7, true),
+    ];
+    for (input, climb_mps, (sink_limit_mps, min_thrust), expected, flagged) in cases {
+        let limits = ThrustLimits {
+            sink_limit_mps,
+            sink_gain: 0.2,
+            min_thrust,
+            ..Default::default()
+        };
+        let state = VehicleState {
+            velocity_mps: Vec3::new(0.0, 0.0, climb_mps),
+            ..Default::default()
+        };
+        let mut guidance = limited(limits, &state);
+        let thrust = guidance.guide(0.004, &input, &state).thrust();
+        approx::assert_relative_eq!(thrust, expected, epsilon = 1e-5);
+        assert!(
+            guidance.saturation().thrust == flagged,
+            "{input:?} at {climb_mps}"
+        );
+    }
+}
+
+/// The tilt boost stops at `max_boost_thrust`, flagging `thrust`; a stick above it passes
+/// through unboosted.
+#[test]
+fn tilt_boost_stops_at_max_boost_thrust() {
+    let cos = |deg: f32| deg.to_radians().cos();
+    // (throttle, roll in degrees, expected thrust, thrust flagged)
+    let cases = [
+        (0.8, 45.0_f32, 0.9, true),
+        (0.8, 20.0, 0.8 / cos(20.0), false),
+        (0.95, 45.0, 0.95, true), // above the ceiling: the stick, not boosted
+        (0.95, 0.0, 0.95, false),
+        (f32::NAN, 45.0, 0.0, false),
+    ];
+    for (throttle, roll_deg, expected, flagged) in cases {
+        let limits = ThrustLimits {
+            max_boost_thrust: 0.9,
+            ..Default::default()
+        };
+        let state = VehicleState {
+            attitude: nalgebra::UnitQuaternion::from_euler_angles(roll_deg.to_radians(), 0.0, 0.0),
+            ..Default::default()
+        };
+        let mut guidance = limited(limits, &state);
+        let thrust = guidance.guide(0.004, &stick(throttle), &state).thrust();
+        approx::assert_relative_eq!(thrust, expected, epsilon = 1e-5);
+        assert!(
+            guidance.saturation().thrust == flagged,
+            "{throttle} at {roll_deg}°"
+        );
+    }
+}
+
+/// `ThrustLimits::validate`, reached through the guidance config with the `thrust` section.
+#[test]
+fn rejects_thrust_limits_out_of_range() {
+    let base = ThrustLimits::default;
+    // (limits, rejected field or None)
+    let cases = [
+        (
+            ThrustLimits {
+                min_thrust: 0.6,
+                sink_limit_mps: 1.0,
+                sink_gain: 0.2,
+                ..base()
+            },
+            None,
+        ),
+        (
+            ThrustLimits {
+                min_thrust: -0.1,
+                ..base()
+            },
+            Some("min_thrust"),
+        ),
+        (
+            ThrustLimits {
+                min_thrust: 1.0,
+                ..base()
+            },
+            Some("min_thrust"),
+        ),
+        (
+            ThrustLimits {
+                min_thrust: f32::NAN,
+                ..base()
+            },
+            Some("min_thrust"),
+        ),
+        (
+            ThrustLimits {
+                sink_limit_mps: -1.0,
+                ..base()
+            },
+            Some("sink_limit_mps"),
+        ),
+        (
+            ThrustLimits {
+                sink_limit_mps: f32::INFINITY,
+                ..base()
+            },
+            Some("sink_limit_mps"),
+        ),
+        (
+            ThrustLimits {
+                sink_gain: -0.1,
+                ..base()
+            },
+            Some("sink_gain"),
+        ),
+        (
+            ThrustLimits {
+                sink_gain: f32::NAN,
+                ..base()
+            },
+            Some("sink_gain"),
+        ),
+        (
+            ThrustLimits {
+                max_boost_thrust: 0.5,
+                ..base()
+            },
+            None,
+        ),
+        (
+            ThrustLimits {
+                max_boost_thrust: 0.0,
+                ..base()
+            },
+            Some("max_boost_thrust"),
+        ),
+        (
+            ThrustLimits {
+                max_boost_thrust: 1.1,
+                ..base()
+            },
+            Some("max_boost_thrust"),
+        ),
+    ];
+    for (thrust, rejected) in cases {
+        let config = CopterGuidanceConfig {
+            thrust,
+            ..Default::default()
+        };
+        let result = config.validate().map_err(|e| (e.section, e.field));
+        assert!(
+            result == rejected.map_or(Ok(()), |field| Err((Some("thrust"), field))),
+            "{thrust:?}"
+        );
     }
 }

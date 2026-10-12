@@ -19,6 +19,10 @@ impl ParamTable for CopterGuidanceConfig {
         param!(deg "GUID_TILT_MAX", max_tilt_rad),
         param!("GUID_DESC_MAX", max_descent_mps),
         param!("GUID_LAND_SPD", land_speed_mps),
+        param!("GUID_THR_MIN", thrust.min_thrust),
+        param!("GUID_SINK_LIM", thrust.sink_limit_mps),
+        param!("GUID_SINK_GAIN", thrust.sink_gain),
+        param!("GUID_BOOST_MAX", thrust.max_boost_thrust),
         param!(deg "GUID_STICK_X", max_stick_angles_rad.x),
         param!(deg "GUID_STICK_Y", max_stick_angles_rad.y),
     ];
@@ -81,6 +85,31 @@ mod metadata {
                 .param("GUID_LAND_SPD", "Descent rate while landing")
                 .with_units("m/s")
                 .above(DESCENDING_MPS),
+            LIMITS
+                .param("GUID_THR_MIN", "Least thrust while flying (0: none)")
+                .at_least(0.0)
+                .below(1.0),
+            LIMITS
+                .param(
+                    "GUID_SINK_LIM",
+                    "Sink rate past which piloted flight gets more thrust (0: off)",
+                )
+                .with_units("m/s")
+                .at_least(0.0),
+            LIMITS
+                .param(
+                    "GUID_SINK_GAIN",
+                    "Thrust added per m/s of sink past the limit",
+                )
+                .with_units("s/m")
+                .at_least(0.0),
+            STICKS
+                .param(
+                    "GUID_BOOST_MAX",
+                    "Most thrust the attitude-mode tilt boost gives",
+                )
+                .above(0.0)
+                .at_most(1.0),
             STICKS
                 .param("GUID_STICK_X", "Roll angle at full stick in attitude mode")
                 .with_units("deg")

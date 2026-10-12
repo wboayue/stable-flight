@@ -28,10 +28,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`airframes::explora_vtol()`** (#121): the eXplora VTOL tailsitter's mixer
   (`TableMixer::tailsitter_2p_hover`), channel mapping (left/right motors on channels 6/5,
   elevons on 1/2, the left reversed), +90° pitch body rotation, and copter gains in the
-  tailsitter `View`'s axes (#122) from its first hovers.
+  tailsitter `View`'s axes (#122) from its first hovers, with the measured hover thrust, a
+  thrust floor and sink guard that keep the elevons in the propwash, and a tilt-boost ceiling
+  that leaves differential-thrust headroom (#123).
 - **`tailsitter-manual-realflight` example** (`just fly-tailsitter`, #121, #122): joystick
   hover of the eXplora, on the copter guidance and stabilizer in the core's tailsitter `View`;
-  `--record` writes every tick to CSV (body rates and actuators, and the attitude in the view).
+  `--record` writes every tick to CSV (body rates and actuators, the attitude in the view, and
+  guidance's setpoint, the climb rate, and the stick throttle, #123).
+- **`tailsitter-auto-realflight` example** (`just fly-tailsitter-auto`, #123): the eXplora
+  through a waypoint script in hover, wired as `copter-auto-realflight` with the tailsitter
+  `View`; `--end hold|loop|land`. Its scripts: `flights/explora_figure_eight.csv` (small and
+  slow, centered on the spawn point; the default) and `flights/explora_hover.csv` (5 m over
+  it).
 - **`ActuatorMapping::reversed_servos`** (#121): servo slots negated before they reach their
   channel, for a surface the model moves the other way from the mixer's convention.
 - **`CHANNEL_COUNT`:** RealFlight's 12 channels, exported.

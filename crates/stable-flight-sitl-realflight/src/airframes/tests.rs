@@ -60,6 +60,12 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         max_stick_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
         max_descent_mps: 3.0,
         land_speed_mps: 0.7,
+        thrust: ThrustLimits {
+            min_thrust: 0.0,
+            sink_limit_mps: 0.0,
+            sink_gain: 0.0,
+            max_boost_thrust: 1.0,
+        },
     };
     assert_eq!(airframe.guidance, guidance, "guidance");
 }
@@ -102,8 +108,9 @@ fn explora_vtol_reads_nose_up_at_realflight_level() {
     assert!((pitch - PI / 2.0).abs() < 1e-3, "pitch {pitch}");
 }
 
-/// Both motors at about 0.7 hover the eXplora in RealFlight (#120).
-const MEASURED_HOVER_MOTOR: f32 = 0.7;
+/// Both motors at about 0.63 hold the eXplora's level hover in RealFlight (#123 hop 1; #120's
+/// first estimate was 0.7).
+const MEASURED_HOVER_MOTOR: f32 = 0.63;
 
 /// `hover_thrust`, through the stabilizer's thrust curve and the mixer, lands both motors on
 /// the measured hover throttle, with the elevons centered.
@@ -125,4 +132,19 @@ fn explora_vtol_hover_thrust_reaches_the_measured_hover_motor() {
         );
     }
     assert!(output.servos[..2] == [0.0, 0.0]);
+}
+
+/// Each airframe's thrust floor sits below its hover thrust, so waypoint flight can descend
+/// and a land can touch down.
+#[test]
+fn thrust_floor_stays_below_hover() {
+    for (name, guidance) in [
+        ("quadcopter_x", quadcopter_x().guidance),
+        ("explora_vtol", explora_vtol().guidance),
+    ] {
+        assert!(
+            guidance.thrust.min_thrust < guidance.altitude.hover_thrust,
+            "{name}: {guidance:?}"
+        );
+    }
 }

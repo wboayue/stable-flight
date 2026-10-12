@@ -207,6 +207,11 @@ impl AttitudeController {
         self.derivative[axis] = DerivativeState::default();
     }
 
+    /// Zeroes the integral, keeping the derivative history.
+    pub(crate) fn clear_integral(&mut self) {
+        self.integrated_error = Vec2::zeros();
+    }
+
     /// Rescales the integral for a change of integral gain from `old` to `new`, so the next
     /// tick's I term picks up where the last left off (`rescale_integral`).
     pub(crate) fn rescale_integral(
