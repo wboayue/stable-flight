@@ -1356,7 +1356,7 @@ pub struct TelemetryRecord<'a> {
 /// One tick's actuator outputs: motors and servos, as generic slots.
 ///
 /// The [`Mixer`] decides what each slot does
-/// ([`QuadCopterMixer`](crate::mixers::QuadCopterMixer)'s motor `0` is front-left; a
+/// ([`TableMixer::quad_x`](crate::mixers::TableMixer::quad_x)'s motor `0` is front-left; a
 /// tricopter's servo `0` might be its tail tilt); the backend's mapping decides which output
 /// channel each slot drives. Slots a mixer doesn't use stay at their default.
 ///
@@ -1432,9 +1432,9 @@ pub trait Mixer {
     ///
     /// ```
     /// use stable_flight::{ControlOutput, Mixer, Vec3};
-    /// use stable_flight::mixers::QuadCopterMixer;
+    /// use stable_flight::mixers::TableMixer;
     ///
-    /// let mut mixer = QuadCopterMixer::default();
+    /// let mut mixer = TableMixer::quad_x();
     ///
     /// // Create control output with 70% thrust and slight roll right
     /// let control_output = ControlOutput::new(

@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use assert2::check;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-use stable_flight::mixers::QuadCopterMixer;
+use stable_flight::mixers::TableMixer;
 use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
@@ -16,7 +16,7 @@ type TestLoop = FlightLoop<
     NullVehicle,
     CopterGuidance,
     CopterStabilizer,
-    QuadCopterMixer,
+    TableMixer<4>,
     RecordingTelemetry<1>,
 >;
 
@@ -31,7 +31,7 @@ fn hover_loop() -> TestLoop {
         NullVehicle::new(),
         CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),
-        QuadCopterMixer::default(),
+        TableMixer::quad_x(),
         RecordingTelemetry::<1>::new(),
     )
 }

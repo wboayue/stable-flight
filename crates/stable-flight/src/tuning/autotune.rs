@@ -1082,11 +1082,11 @@ struct Request {
 /// # use stable_flight::FlightLoop;
 /// # use stable_flight::stabilizers::copter::CopterStabilizer;
 /// # use stable_flight::guidance::copter::CopterGuidance;
-/// # use stable_flight::mixers::QuadCopterMixer;
+/// # use stable_flight::mixers::TableMixer;
 /// # use stable_flight::testing::{ConstantCommander, NullVehicle};
 /// use stable_flight::tuning::autotune::{Autotune, AutotuneEvent, Envelope, StagePlan};
 ///
-/// # fn fly(flight_loop: &mut FlightLoop<ConstantCommander, NullVehicle, CopterGuidance, CopterStabilizer, QuadCopterMixer, ()>) {
+/// # fn fly(flight_loop: &mut FlightLoop<ConstantCommander, NullVehicle, CopterGuidance, CopterStabilizer, TableMixer<4>, ()>) {
 /// let mut autotune = Autotune::new(&StagePlan::copter_sequence(), Envelope::default())
 ///     .expect("valid plan");
 /// autotune.start(flight_loop).expect("armed");

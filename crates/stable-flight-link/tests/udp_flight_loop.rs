@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use assert2::{assert, check};
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-use stable_flight::mixers::QuadCopterMixer;
+use stable_flight::mixers::TableMixer;
 use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle};
@@ -25,7 +25,7 @@ type TestLoop<'a> = FlightLoop<
     NullVehicle,
     CopterGuidance,
     CopterStabilizer,
-    QuadCopterMixer,
+    TableMixer<4>,
     LinkPublisher<'a, UdpTx>,
 >;
 
@@ -86,7 +86,7 @@ fn host_lists_and_sets_params_and_receives_telemetry() {
         NullVehicle::new(),
         CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),
-        QuadCopterMixer::default(),
+        TableMixer::quad_x(),
         telemetry,
     );
     let count = flight_loop.param_count();

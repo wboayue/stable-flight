@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use assert2::{assert, check};
 use mavlink::Message;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-use stable_flight::mixers::QuadCopterMixer;
+use stable_flight::mixers::TableMixer;
 use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle};
@@ -256,7 +256,7 @@ type FcLoop<'a> = FlightLoop<
     NullVehicle,
     CopterGuidance,
     CopterStabilizer,
-    QuadCopterMixer,
+    TableMixer<4>,
     LinkPublisher<'a, stable_flight_link::loopback::LoopbackTx<'a, 64>>,
 >;
 
@@ -303,7 +303,7 @@ fn ground_station_lists_and_sets_flight_controller_params() {
         NullVehicle::new(),
         CopterGuidance::new(CopterGuidanceConfig::default()),
         CopterStabilizer::new(CopterStabilizerConfig::default()),
-        QuadCopterMixer::default(),
+        TableMixer::quad_x(),
         telemetry,
     );
     let count = flight_loop.param_count();

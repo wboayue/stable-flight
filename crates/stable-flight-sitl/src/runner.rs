@@ -66,7 +66,7 @@ impl RunStats {
 ///
 /// ```no_run
 /// # use std::time::Duration;
-/// # use stable_flight::{FlightLoop, mixers::QuadCopterMixer};
+/// # use stable_flight::{FlightLoop, mixers::TableMixer};
 /// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 /// # use stable_flight::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
@@ -76,7 +76,7 @@ impl RunStats {
 /// # let vehicle = NullVehicle::new();
 /// # let guidance = CopterGuidance::new(CopterGuidanceConfig::default());
 /// # let stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
-/// # let mixer = QuadCopterMixer::default();
+/// # let mixer = TableMixer::quad_x();
 /// # let telemetry = RecordingTelemetry::<1>::new();
 /// let mut flight_loop = FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
 /// let shutdown = ShutdownSignal::install().expect("install Ctrl-C handler");

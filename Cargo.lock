@@ -1491,6 +1491,7 @@ dependencies = [
  "log",
  "nalgebra",
  "serde",
+ "thiserror",
 ]
 
 [[package]]

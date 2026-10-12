@@ -6,7 +6,7 @@ LEDs, memory map, flash flow) comes from
 [ark-fpv-discovery](https://github.com/wboayue/ark-fpv-discovery).
 
 **Status: stub.** It runs the core `FlightLoop` (`CopterGuidance` → `CopterStabilizer` →
-`QuadCopterMixer`) at 250 Hz on the SysTick monotonic (I-cache on), with placeholder components
+`TableMixer::quad_x`) at 250 Hz on the SysTick monotonic (I-cache on), with placeholder components
 in `src/stub.rs`:
 
 | Component | Stub | Replaced by (#88) |

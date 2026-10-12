@@ -33,7 +33,7 @@ mod tests;
 /// ```
 /// use std::time::Duration;
 /// use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-/// use stable_flight::mixers::QuadCopterMixer;
+/// use stable_flight::mixers::TableMixer;
 /// use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 /// use stable_flight::{
 ///     Actuator, ActuatorCommand, AttitudeCommand, Command, Commander, ControlInput, FlightLoop,
@@ -65,7 +65,7 @@ mod tests;
 ///     StillAir,
 ///     CopterGuidance::new(CopterGuidanceConfig::default()),
 ///     CopterStabilizer::new(CopterStabilizerConfig::default()),
-///     QuadCopterMixer::default(),
+///     TableMixer::quad_x(),
 ///     (), // no telemetry
 /// );
 ///
@@ -236,7 +236,7 @@ impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T> {
     /// ```
     /// # use std::time::Duration;
     /// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-    /// # use stable_flight::mixers::QuadCopterMixer;
+    /// # use stable_flight::mixers::TableMixer;
     /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
     /// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateSource, VehicleState};
     /// use stable_flight::{Configurable, FlightLoop};
@@ -258,7 +258,7 @@ impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T> {
     /// #     StillAir,
     /// #     CopterGuidance::new(CopterGuidanceConfig::default()),
     /// #     CopterStabilizer::new(CopterStabilizerConfig::default()),
-    /// #     QuadCopterMixer::default(),
+    /// #     TableMixer::quad_x(),
     /// #     (),
     /// # );
     /// # flight_loop.prime();
@@ -282,7 +282,7 @@ impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T> {
     /// ```
     /// # use std::time::Duration;
     /// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-    /// # use stable_flight::mixers::QuadCopterMixer;
+    /// # use stable_flight::mixers::TableMixer;
     /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
     /// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateSource, VehicleState};
     /// use stable_flight::FlightLoop;
@@ -312,7 +312,7 @@ impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T> {
     ///     Bench::default(),
     ///     CopterGuidance::new(CopterGuidanceConfig::default()),
     ///     CopterStabilizer::new(CopterStabilizerConfig::default()),
-    ///     QuadCopterMixer::default(),
+    ///     TableMixer::quad_x(),
     ///     (),
     /// );
     /// flight_loop.prime();
@@ -342,7 +342,7 @@ impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T> {
 /// ```
 /// # use std::time::Duration;
 /// # use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-/// # use stable_flight::mixers::QuadCopterMixer;
+/// # use stable_flight::mixers::TableMixer;
 /// # use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 /// # use stable_flight::{Actuator, ActuatorCommand, Command, Commander, StateSource, VehicleState};
 /// use stable_flight::params::Params;
@@ -365,7 +365,7 @@ impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T> {
 /// #     StillAir,
 /// #     CopterGuidance::new(CopterGuidanceConfig::default()),
 /// #     CopterStabilizer::new(CopterStabilizerConfig::default()),
-/// #     QuadCopterMixer::default(),
+/// #     TableMixer::quad_x(),
 /// #     (),
 /// # );
 ///
