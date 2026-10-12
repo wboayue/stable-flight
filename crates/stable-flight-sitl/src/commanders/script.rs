@@ -269,7 +269,6 @@ fn parse_waypoints(path: &str, contents: &str) -> Result<Vec<WaypointCommand>, S
             velocity_mps: None,
             altitude_m: parse(fields[2], "altitude")?,
             cruise_speed_mps: parse(fields[3], "cruise_speed")?,
-            roll_rad: None,
         });
     }
 

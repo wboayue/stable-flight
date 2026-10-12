@@ -4,8 +4,8 @@ use core::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use stable_flight::{
-    ActuatorCommand, Command, ControlMode, ControlOutput, FailsafeState, Saturation, Setpoint,
-    TelemetryRecord, VehicleState, params,
+    ActuatorCommand, Command, ControlMode, ControlOutput, FailsafeState, FlightModeReport,
+    Saturation, Setpoint, TelemetryRecord, VehicleState, params,
 };
 
 use crate::frame::{Message, sealed::Sealed};
@@ -100,10 +100,15 @@ pub enum Uplink {
 /// # Examples
 ///
 /// ```
-/// use stable_flight_link::stable_flight::ControlMode;
+/// use stable_flight_link::stable_flight::{ControlMode, FlightModeReport};
 /// use stable_flight_link::{Downlink, MAX_FRAME_LEN, Message};
 ///
-/// let heartbeat = Downlink::Heartbeat { armed: false, mode: ControlMode::Attitude, link_ok: true };
+/// let heartbeat = Downlink::Heartbeat {
+///     armed: false,
+///     mode: ControlMode::Attitude,
+///     flight_mode: FlightModeReport::default(),
+///     link_ok: true,
+/// };
 /// let mut frame = [0u8; MAX_FRAME_LEN];
 /// let len = heartbeat.encode(&mut frame).unwrap();
 /// assert_eq!(Downlink::decode(&mut frame[..len]), Ok(heartbeat));
@@ -117,6 +122,9 @@ pub enum Downlink {
         armed: bool,
         /// Flight mode: the kind of the commanded input.
         mode: ControlMode,
+        /// The regime guidance flies, and why it isn't the requested one
+        /// ([`TelemetryRecord::flight_mode`]).
+        flight_mode: FlightModeReport,
         /// The flight controller is hearing the companion: `false` while a failsafe flies the
         /// fallback ([`FailsafeState::Fallback`]), `true` otherwise, including without a failsafe.
         link_ok: bool,
@@ -173,8 +181,8 @@ pub struct Output {
 /// use core::time::Duration;
 /// use stable_flight_link::Record;
 /// use stable_flight_link::stable_flight::{
-///     ActuatorCommand, Command, ControlOutput, Saturation, Setpoint, TelemetryRecord,
-///     VehicleState,
+///     ActuatorCommand, Command, ControlOutput, FlightModeReport, Saturation, Setpoint,
+///     TelemetryRecord, VehicleState,
 /// };
 ///
 /// let (command, state) = (Command::default(), VehicleState::default());
@@ -189,6 +197,7 @@ pub struct Output {
 ///     actuators: &actuators,
 ///     saturation: Saturation::default(),
 ///     failsafe: None,
+///     flight_mode: FlightModeReport::default(),
 /// };
 ///
 /// let record = Record::from(&telemetry);
@@ -212,6 +221,8 @@ pub struct Record {
     pub saturation: Saturation,
     /// Which commander a failsafe let fly; `None` without a failsafe.
     pub failsafe: Option<FailsafeState>,
+    /// The flight mode guidance flew, and why it isn't the requested regime.
+    pub flight_mode: FlightModeReport,
 }
 
 impl Record {
@@ -227,6 +238,7 @@ impl Record {
             actuators: &self.actuators,
             saturation: self.saturation,
             failsafe: self.failsafe,
+            flight_mode: self.flight_mode,
         }
     }
 }
@@ -242,6 +254,7 @@ impl From<&TelemetryRecord<'_>> for Record {
             actuators: *record.actuators,
             saturation: record.saturation,
             failsafe: record.failsafe,
+            flight_mode: record.flight_mode,
         }
     }
 }

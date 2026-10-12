@@ -8,7 +8,8 @@ use assert2::check;
 use super::*;
 use crate::{
     Actuator, ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command, ControlInput,
-    ControlOutput, FailsafeState, Setpoint, StateSource,
+    ControlOutput, FailsafeState, FlightMode, FlightModeReport, FlightRegime, Setpoint,
+    StateSource,
 };
 
 /// Shared, ordered log of pipeline calls. Test-only; the loop itself never allocates.
@@ -75,7 +76,13 @@ struct RecordingGuidance {
     log: Log,
 }
 impl Guidance for RecordingGuidance {
-    fn guide(&mut self, dt: f32, input: &ControlInput, state: &VehicleState) -> Setpoint {
+    fn guide(
+        &mut self,
+        dt: f32,
+        _regime: FlightRegime,
+        input: &ControlInput,
+        state: &VehicleState,
+    ) -> Setpoint {
         let ControlInput::Attitude(attitude) = input else {
             unreachable!("RecordingCommander only emits attitude commands");
         };
@@ -504,7 +511,13 @@ fn config_setters_retune_the_composites_between_ticks() {
 /// Reports fixed saturation flags from guidance, the stabilizer, or the mixer.
 struct Flagged(Saturation);
 impl Guidance for Flagged {
-    fn guide(&mut self, _dt: f32, _input: &ControlInput, _state: &VehicleState) -> Setpoint {
+    fn guide(
+        &mut self,
+        _dt: f32,
+        _regime: FlightRegime,
+        _input: &ControlInput,
+        _state: &VehicleState,
+    ) -> Setpoint {
         Setpoint::Attitude(AttitudeSetpoint::default())
     }
     fn saturation(&self) -> Saturation {
@@ -610,5 +623,95 @@ fn record_carries_the_commanders_failsafe_state() {
         let (.., telemetry) = flight_loop.into_parts();
         assert2::assert!(let Some(tick) = telemetry.iter().last());
         check!(tick.failsafe == failsafe, "{failsafe:?}");
+    }
+}
+
+/// Records the regime each `guide` call is asked for, and reports a fixed flight mode.
+struct RegimeGuidance {
+    requested: Option<FlightRegime>,
+    report: Option<FlightModeReport>,
+}
+impl Guidance for RegimeGuidance {
+    fn guide(
+        &mut self,
+        _dt: f32,
+        regime: FlightRegime,
+        _input: &ControlInput,
+        _state: &VehicleState,
+    ) -> Setpoint {
+        self.requested = Some(regime);
+        Setpoint::Attitude(AttitudeSetpoint::default())
+    }
+    fn flight_mode(&self) -> Option<FlightModeReport> {
+        self.report
+    }
+}
+
+/// Guidance gets the command's regime on armed ticks; the record carries guidance's flight
+/// mode, or the copter-only report for a guidance that has none.
+#[test]
+fn guidance_gets_the_requested_regime_and_the_record_its_flight_mode() {
+    use crate::mixers::TableMixer;
+    use crate::testing::{ConstantCommander, NullVehicle, RecordingTelemetry};
+
+    let to_plane = FlightModeReport {
+        mode: FlightMode::ToPlane,
+        refusal: None,
+    };
+    // (arm, requested, guidance's report, regime guidance saw, recorded flight mode)
+    let cases = [
+        (
+            true,
+            FlightRegime::Copter,
+            None,
+            Some(FlightRegime::Copter),
+            FlightModeReport::default(),
+        ),
+        (
+            true,
+            FlightRegime::Plane,
+            None,
+            Some(FlightRegime::Plane),
+            FlightModeReport::copter_only(FlightRegime::Plane),
+        ),
+        (
+            true,
+            FlightRegime::Plane,
+            Some(to_plane),
+            Some(FlightRegime::Plane),
+            to_plane,
+        ),
+        (
+            false,
+            FlightRegime::Plane,
+            None,
+            None,
+            FlightModeReport::copter_only(FlightRegime::Plane),
+        ),
+    ];
+
+    for (arm, requested, report, seen, expected) in cases {
+        let command = Command::new(arm, ControlInput::default()).with_regime(requested);
+        let mut flight_loop = FlightLoop::new(
+            ConstantCommander::new(command),
+            NullVehicle::new(),
+            RegimeGuidance {
+                requested: None,
+                report,
+            },
+            Flagged(Saturation::default()),
+            TableMixer::quad_x(),
+            RecordingTelemetry::<1>::new(),
+        );
+        flight_loop.prime();
+        flight_loop.step(Duration::from_millis(4));
+
+        let (_, _, guidance, .., telemetry) = flight_loop.into_parts();
+        assert2::assert!(let Some(tick) = telemetry.iter().last());
+        check!(guidance.requested == seen, "{arm} {requested:?} {report:?}");
+        check!(
+            tick.flight_mode == expected,
+            "{arm} {requested:?} {report:?}"
+        );
     }
 }

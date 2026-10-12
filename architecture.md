@@ -118,12 +118,13 @@ supplies pacing.
 
 ## Core Components
 
-* **Commander**: produces a `Command` (arm flag and `ControlInput`) each tick, from joysticks,
-  scripts, the link, or navigation.
+* **Commander**: produces a `Command` (arm flag, requested `FlightRegime`, and `ControlInput`)
+  each tick, from joysticks, scripts, the link, or navigation.
 * **Vehicle**: `StateSource + Actuator` (blanket-implemented), so sensing and actuation can be
   separate components on hardware (IMU/estimator, ESC output) while a simulator client implements
   both on one type. `ComposedVehicle<S, A>` joins a separate state source and actuator.
-* **Guidance**: the outer loop. Turns a `ControlInput` into a `Setpoint` (attitude or rate):
+* **Guidance**: the outer loop. Turns a `ControlInput` into a `Setpoint` (attitude or rate) in
+  the requested regime, and owns the flight mode ([flight regimes](#flight-regimes)):
   position and altitude loops for waypoints, and stick interpretation that needs memory (the
   heading-hold target). `FlightLoop` calls guidance and the stabilizer every tick, and a guidance
   paces its own slow loops (`CopterGuidance`'s lateral loop); pacing inside guidance keeps pilot
@@ -184,7 +185,7 @@ sequenceDiagram
     FlightLoop->>Vehicle: state(dt)
     Vehicle-->>FlightLoop: VehicleState
     Note over FlightLoop: disarmed: skip to actuate(default)
-    FlightLoop->>Guidance: guide(dt, ControlInput, VehicleState)
+    FlightLoop->>Guidance: guide(dt, FlightRegime, ControlInput, VehicleState)
     Guidance-->>FlightLoop: Setpoint
     FlightLoop->>Stabilizer: stabilize(dt, Setpoint, VehicleState)
     Stabilizer-->>FlightLoop: ControlOutput
@@ -193,6 +194,46 @@ sequenceDiagram
     FlightLoop->>Vehicle: actuate(ActuatorCommand)
     FlightLoop->>TelemetryPublisher: publish(TelemetryRecord)
 ```
+
+## Flight Regimes
+
+A VTOL flies two regimes, copter (rotor-borne) and plane (wing-borne), and moves between them
+deliberately. The pieces:
+
+* **Request: `Command::regime`, a level.** The commander returns the regime it wants every tick,
+  like `arm`, so repeating a request can't restart a transition and a failsafe's fallback asks
+  for copter by default (`Command::new`). Both ArduPilot and PX4 treat the request as a level
+  too: ArduPilot derives it from the flight mode (`ArduPlane/quadplane.cpp`, `in_vtol_mode`),
+  PX4 latches a transition command (`vtol_att_control_main.cpp`). The regime is orthogonal to
+  the `ControlInput`: the input says what to fly (sticks, a waypoint, a landing), the regime
+  how. Rejected: a `FlightRequest` enum replacing `ControlInput` (`Takeoff`, `Fly`, `Land`
+  duplicate inputs that exist), and a one-shot `ChangeRegime` input (it still has to say what to
+  fly, and an event is lost if a tick drops it).
+* **State: one owner, guidance.** `FlightMode` (`Copter`, `Plane`, `ToPlane`, `ToCopter`) is
+  what guidance actually flies; `Guidance::flight_mode` reports it with a `ModeRefusal` when
+  the request can't be met, and `FlightLoop` puts it in `TelemetryRecord::flight_mode` (and
+  the link heartbeat). A copter-only guidance reports nothing: the loop records
+  `FlightModeReport::copter_only`, which refuses `Plane` as `Unsupported`. Both stacks decide
+  the mode in one place before control runs each tick. Rejected: a supervisor in `FlightLoop`
+  broadcasting the mode to every stage; it would split mode logic from the guidance that has
+  the state to decide it.
+* **Phases are not modes.** Takeoff and landing are vertical, in the copter regime, flown by
+  `ControlInput` (a waypoint up, `Land` down) and decided by commanders (`TouchdownDetector`).
+  Being on the ground is a guard against starting a transition (`ModeRefusal::OnGround`), not
+  a mode. `Land` implies copter.
+* **Flip, not blend.** A tailsitter drives the same elevons and motors in both regimes, so a
+  transition hands control from one controller to the other instead of weighting both: one
+  active controller and integrator set, testable per mode, one controller per tick. ArduPilot
+  and PX4 both flip for tailsitters, with a short thrust hold or blend at the handoff
+  (`ArduPlane/tailsitter.cpp`; PX4 `vtol_att_control/tailsitter.cpp`). Blending suits separate
+  lift and cruise actuators; for a tailsitter it would mix two controllers fighting over shared
+  actuators, their integrators winding on each other's errors, and attitude errors from
+  different frames near the view's singularity. The transition itself
+  ([#124](https://github.com/wboayue/stable-flight/issues/124), planned) pitches over on the
+  hover controller, primes the incoming controller at the handoff, and slews thrust; the
+  setpoint variant selects the stabilizer's controller, so the mixer never sees the regime.
+* **Airspeed is optional.** `VehicleState::airspeed_mps` is `None` without air data; a
+  transition gates on pitch and adds airspeed when present (as PX4 does).
 
 ## Link Failsafe
 

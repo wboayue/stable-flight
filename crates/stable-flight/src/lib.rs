@@ -120,7 +120,6 @@ pub const GRAVITY: f32 = 9.806_65;
 ///             roll: 0.0,      // No roll
 ///             pitch: 0.0,     // No pitch
 ///             yaw: 0.0,       // No yaw
-///             mode: 0,        // Default mode
 ///         }))
 ///     }
 /// }
@@ -180,7 +179,8 @@ pub enum FailsafeState {
     AwaitingSticks,
 }
 
-/// One tick's command from a [`Commander`]: whether the vehicle should be armed, and what to fly.
+/// One tick's command from a [`Commander`]: whether the vehicle should be armed, which
+/// [`FlightRegime`] to fly in, and what to fly.
 ///
 /// `arm` is vehicle-level and applies to every [`ControlInput`]. It is a level, not an event:
 /// a commander returns the desired state every tick (an edge-triggered source, such as a
@@ -189,19 +189,28 @@ pub enum FailsafeState {
 /// doesn't run guidance or the stabilizer; on the tick it turns `true`, it re-primes them so
 /// integrators start from zero.
 ///
+/// `regime` is a level too: the regime the commander wants, every tick. Guidance owns the
+/// regime actually flown and moves toward the request ([`FlightModeReport`]), so repeating a
+/// request can't restart a transition. It is orthogonal to `input`: the input says what to
+/// fly, the regime how.
+///
 /// # Examples
 ///
 /// ```
-/// use stable_flight::{AttitudeCommand, Command, ControlInput};
+/// use stable_flight::{AttitudeCommand, Command, ControlInput, FlightRegime};
 ///
 /// let hover = Command::armed(ControlInput::Attitude(AttitudeCommand {
 ///     throttle: 0.5,
 ///     ..Default::default()
 /// }));
 /// assert!(hover.arm);
+/// assert_eq!(hover.regime, FlightRegime::Copter);
 ///
 /// let switch_off = false;
 /// assert!(!Command::new(switch_off, hover.input).arm);
+///
+/// let cruise = hover.with_regime(FlightRegime::Plane);
+/// assert_eq!(cruise.regime, FlightRegime::Plane);
 /// ```
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -210,14 +219,21 @@ pub struct Command {
     /// `false`.
     pub arm: bool,
 
+    /// The regime to fly in. Defaults to [`FlightRegime::Copter`].
+    pub regime: FlightRegime,
+
     /// What to fly while armed. Ignored while disarmed.
     pub input: ControlInput,
 }
 
 impl Command {
-    /// A command with the given arm state.
+    /// A command with the given arm state, in [`FlightRegime::Copter`].
     pub fn new(arm: bool, input: ControlInput) -> Self {
-        Command { arm, input }
+        Command {
+            arm,
+            regime: FlightRegime::default(),
+            input,
+        }
     }
 
     /// An armed command: fly `input`.
@@ -228,6 +244,128 @@ impl Command {
     /// A disarmed command: motors held off; `input` is carried for telemetry only.
     pub fn disarmed(input: ControlInput) -> Self {
         Command::new(false, input)
+    }
+
+    /// This command, requesting `regime`.
+    pub fn with_regime(self, regime: FlightRegime) -> Self {
+        Command { regime, ..self }
+    }
+}
+
+/// How the vehicle flies: hovering on its rotors, or wing-borne. Requested by a [`Command`];
+/// what is actually flown, including transitions, is a [`FlightMode`].
+///
+/// A copter-only stack flies [`Copter`](FlightRegime::Copter) whatever is requested and
+/// reports a `Plane` request as [`ModeRefusal::Unsupported`].
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum FlightRegime {
+    /// Rotor-borne: hover and copter-style flight. Takeoff and landing are flown here.
+    #[default]
+    Copter,
+    /// Wing-borne forward flight.
+    Plane,
+}
+
+/// The regime guidance is actually flying, including the transitions between regimes. Owned
+/// by [`Guidance`] and reported in a [`FlightModeReport`].
+///
+/// Not to be confused with [`ControlMode`], the kind of the commanded [`ControlInput`]: the
+/// input says what to fly, the flight mode how it's being flown.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum FlightMode {
+    /// Flying in [`FlightRegime::Copter`].
+    #[default]
+    Copter,
+    /// Flying in [`FlightRegime::Plane`].
+    Plane,
+    /// Transitioning from copter to plane flight.
+    ToPlane,
+    /// Transitioning from plane to copter flight.
+    ToCopter,
+}
+
+impl FlightMode {
+    /// The regime this mode flies in or is heading to.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::{FlightMode, FlightRegime};
+    ///
+    /// assert_eq!(FlightMode::ToPlane.target(), FlightRegime::Plane);
+    /// assert_eq!(FlightMode::Copter.target(), FlightRegime::Copter);
+    /// ```
+    pub fn target(&self) -> FlightRegime {
+        match self {
+            FlightMode::Copter | FlightMode::ToCopter => FlightRegime::Copter,
+            FlightMode::Plane | FlightMode::ToPlane => FlightRegime::Plane,
+        }
+    }
+}
+
+/// Why guidance isn't flying, or stopped moving toward, the requested [`FlightRegime`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[non_exhaustive]
+pub enum ModeRefusal {
+    /// This guidance can't fly the requested regime (e.g. `Plane` on a copter).
+    Unsupported,
+    /// The vehicle is on the ground; transitions start only in the air.
+    OnGround,
+    /// Too low to start a transition safely.
+    BelowMinAltitude,
+    /// A transition didn't complete in time and was abandoned.
+    TransitionTimeout,
+}
+
+/// The flight mode guidance is flying, and why it isn't the requested regime when it can't
+/// be. From [`Guidance::flight_mode`] (or [`copter_only`](Self::copter_only)); [`FlightLoop`] puts it in
+/// [`TelemetryRecord::flight_mode`].
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::{FlightMode, FlightModeReport, ModeRefusal};
+///
+/// let refused = FlightModeReport {
+///     mode: FlightMode::Copter,
+///     refusal: Some(ModeRefusal::Unsupported),
+/// };
+/// assert_ne!(refused, FlightModeReport::default());
+/// ```
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct FlightModeReport {
+    /// What guidance flies this tick.
+    pub mode: FlightMode,
+    /// Why the requested regime isn't being flown or approached; `None` when it is (or a
+    /// transition toward it is under way).
+    pub refusal: Option<ModeRefusal>,
+}
+
+impl FlightModeReport {
+    /// What a copter-only guidance flies when `requested`: copter, refusing a plane request
+    /// as [`ModeRefusal::Unsupported`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::{FlightMode, FlightModeReport, FlightRegime, ModeRefusal};
+    ///
+    /// assert_eq!(FlightModeReport::copter_only(FlightRegime::Copter), FlightModeReport::default());
+    /// let refused = FlightModeReport::copter_only(FlightRegime::Plane);
+    /// assert_eq!(refused.mode, FlightMode::Copter);
+    /// assert_eq!(refused.refusal, Some(ModeRefusal::Unsupported));
+    /// ```
+    pub fn copter_only(requested: FlightRegime) -> Self {
+        FlightModeReport {
+            mode: FlightMode::Copter,
+            refusal: (requested != FlightRegime::Copter).then_some(ModeRefusal::Unsupported),
+        }
     }
 }
 
@@ -286,13 +424,11 @@ impl Command {
 ///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Optional velocity to fly through it with
 ///     altitude_m: 500.0,                        // Target altitude in meters
 ///     cruise_speed_mps: 25.0,                   // Speed cap on the way
-///     roll_rad: Some(0.05),                     // Optional roll angle in radians
 /// });
 /// ```
 ///
 /// # Notes
-/// - For `WaypointCommand`, optional fields like `velocity_mps` and `roll_rad` can be `None`. When `None`,
-///   the flight controller may use default values or ignore the parameter, depending on its implementation.
+/// - A [`WaypointCommand`] with `velocity_mps: None` stops on the waypoint.
 /// - `#[non_exhaustive]`: new command kinds (e.g. fixed-wing) can be added without a breaking
 ///   change. A [`Guidance`] that can't fly a variant must fall back to neutral, not panic (see
 ///   [`Guidance::guide`]).
@@ -443,7 +579,6 @@ pub enum ControlMode {
 /// - `roll`: `-1.0` (full left bank) to `1.0` (full right bank)
 /// - `pitch`: `-1.0` (full nose down) to `1.0` (full nose up)
 /// - `yaw`: `-1.0` (full left turn) to `1.0` (full right turn)
-/// - `mode`: `0` to `2` (specific meaning depends on the flight system)
 ///
 /// Note: The specified ranges are conventional and recommended for typical use.
 /// Values outside these ranges may be clamped, ignored, or cause undefined behavior
@@ -460,7 +595,6 @@ pub enum ControlMode {
 ///     roll: 0.1,       // Slight right bank
 ///     pitch: 0.05,     // Slight nose up
 ///     yaw: 0.0,        // No yaw input
-///     mode: 1,         // Example mode (e.g., stabilized)
 /// };
 /// ```
 ///
@@ -472,7 +606,6 @@ pub enum ControlMode {
 /// - `roll`: `0.0`
 /// - `pitch`: `0.0`
 /// - `yaw`: `0.0`
-/// - `mode`: `0`
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AttitudeCommand {
@@ -490,11 +623,6 @@ pub struct AttitudeCommand {
     /// Controls the aircraft's yaw rotation, ranging from `-1.0` (full left turn)
     /// to `1.0` (full right turn).
     pub yaw: f32,
-
-    /// Controls the aircraft's flight mode, ranging from `0` to `2`.
-    /// The specific meaning of each value depends on the flight system implementation
-    /// (e.g., `0` might be manual mode, `1` stabilized, `2` autonomous).
-    pub mode: u8,
 }
 
 /// Represents direct manual control of an aircraft's rotational rates.
@@ -514,7 +642,6 @@ pub struct AttitudeCommand {
 /// - `roll_rate`: `-1.0` (maximum left roll rate) to `1.0` (maximum right roll rate)
 /// - `pitch_rate`: `-1.0` (maximum nose-down rate) to `1.0` (maximum nose-up rate)
 /// - `yaw_rate`: `-1.0` (maximum left yaw rate) to `1.0` (maximum right yaw rate)
-/// - `mode`: `0` to `2` (specific meaning depends on the flight system)
 ///
 /// Note: The specified ranges are conventional and recommended for typical use.
 /// Values outside these ranges may be clamped, ignored, or cause undefined behavior
@@ -531,7 +658,6 @@ pub struct AttitudeCommand {
 ///     roll_rate: 0.3,   // Moderate right roll rate
 ///     pitch_rate: 0.1,  // Slight nose-up rate
 ///     yaw_rate: 0.0,    // No yaw rate
-///     mode: 1,          // Example mode (e.g., stabilized)
 /// };
 /// ```
 ///
@@ -543,7 +669,6 @@ pub struct AttitudeCommand {
 /// - `roll_rate`: `0.0`
 /// - `pitch_rate`: `0.0`
 /// - `yaw_rate`: `0.0`
-/// - `mode`: `0`
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct RateCommand {
@@ -561,18 +686,13 @@ pub struct RateCommand {
     /// Controls the aircraft's yaw rate, ranging from `-1.0` (maximum left yaw rate)
     /// to `1.0` (maximum right yaw rate).
     pub yaw_rate: f32,
-
-    /// Controls the aircraft's flight mode, ranging from `0` to `2`.
-    /// The specific meaning of each value depends on the flight system implementation
-    /// (e.g., `0` might be manual mode, `1` stabilized, `2` autonomous).
-    pub mode: u8,
 }
 
 /// Represents a navigational waypoint for autonomous flight.
 ///
 /// A `WaypointCommand` instructs the aircraft to navigate to a specific position
 /// in 2D space at a given altitude, at up to a cruise speed, optionally flying through it
-/// with a given velocity and a desired roll angle during the approach. This struct is
+/// with a given velocity. This struct is
 /// typically used within a `ControlInput::Waypoint` variant to issue autonomous navigation
 /// commands to the flight system.
 ///
@@ -582,7 +702,6 @@ pub struct RateCommand {
 /// - `velocity_mps`: Optional velocity vector in meters per second (north, east), fed forward while flying to the waypoint
 /// - `altitude_m`: Target altitude in meters (typically non-negative; negative values may be interpreted as ground level or cause undefined behavior)
 /// - `cruise_speed_mps`: Speed cap in meters per second while flying to the waypoint; zero, negative, or NaN means no cap
-/// - `roll_rad`: Optional roll angle in radians (typically between `-π` and `π`; depends on system limits)
 ///
 /// Note: The specified ranges are conventional and recommended for typical use.
 /// Values outside these ranges may be clamped, ignored, or cause undefined behavior
@@ -599,7 +718,6 @@ pub struct RateCommand {
 ///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Fly through it northward at 15 m/s
 ///     altitude_m: 500.0,                        // Target altitude of 500 meters
 ///     cruise_speed_mps: 25.0,                   // At most 25 m/s on the way
-///     roll_rad: Some(0.05),                     // Slight right roll during approach
 /// };
 /// ```
 ///
@@ -608,7 +726,6 @@ pub struct RateCommand {
 /// - If `velocity_mps` is `None`, the aircraft stops on the waypoint.
 ///   [`WaypointFollower`](crate::commanders::WaypointFollower) fills it in along each leg so
 ///   a route is flown at cruise speed.
-/// - If `roll_rad` is `None`, the flight system typically maintains a default roll (e.g., zero or coordinated turn behavior).
 ///
 /// # Default Implementation
 ///
@@ -618,7 +735,6 @@ pub struct RateCommand {
 /// - `velocity_mps`: `None`
 /// - `altitude_m`: `0.0`
 /// - `cruise_speed_mps`: `0.0`
-/// - `roll_rad`: `None`
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaypointCommand {
@@ -648,15 +764,6 @@ pub struct WaypointCommand {
     /// waypoint. Zero, negative, or NaN means no cap (the guidance's tilt limit still
     /// bounds the speed).
     pub cruise_speed_mps: f32,
-
-    /// Optional desired roll angle in radians.
-    ///
-    /// When provided, the aircraft will attempt to maintain this roll angle while
-    /// approaching the waypoint. This is useful for creating coordinated turns or
-    /// acrobatic maneuvers. If `None`, the flight system typically maintains a default
-    /// roll (e.g., zero or coordinated turn behavior). Values typically range between
-    /// `-π` and `π`, depending on system limits.
-    pub roll_rad: Option<f32>,
 }
 
 /// An absolute attitude and collective thrust, for [`ControlInput::AbsoluteAttitude`]: what
@@ -786,6 +893,7 @@ impl ControlOutput {
 /// | `pitch_rad` | about body `y` | rad | nose up |
 /// | `heading_rad` | about NED `z` | rad | clockwise from north (east = π/2); any range, e.g. [0, 2π) or [-π, π) |
 /// | `angular_velocity_radps` | FRD body: `x` roll, `y` pitch, `z` yaw | rad/s | roll right, nose up, nose right |
+/// | `airspeed_mps` | speed relative to the air mass (any frame) | m/s | non-negative; `None` without an air-data source |
 ///
 /// Near ±90° pitch the Euler fields are degenerate: roll and heading turn about the same axis,
 /// so only their sum (or difference) means anything, and [`euler_angles`] picks one split.
@@ -828,7 +936,11 @@ pub struct VehicleState {
     /// Current heading (yaw) angle in radians.
     /// 0 is north, with positive values rotating clockwise.
     pub heading_rad: f32,
-    // Note: Additional fields for flight mode, GPS data, etc. may be added in the future.
+
+    /// Speed relative to the air mass in meters per second, or `None` without an air-data
+    /// source (e.g. no pitot). A magnitude, so it doesn't depend on the body frame. Consumers
+    /// treat a NaN or negative value as `None` (input policy).
+    pub airspeed_mps: Option<f32>,
 }
 
 impl VehicleState {
@@ -837,8 +949,8 @@ impl VehicleState {
     ///
     /// The attitude becomes `attitude · rotation`, the body rates `rotation⁻¹ · ω` (the same
     /// rotation seen in the new axes), and the Euler fields are recomputed from the new
-    /// attitude. World position, velocity, and acceleration don't depend on the body frame and
-    /// are unchanged.
+    /// attitude. World position, velocity, acceleration, and airspeed don't depend on the body
+    /// frame and are unchanged.
     ///
     /// # Examples
     ///
@@ -1048,7 +1160,7 @@ pub struct RateSetpoint {
     pub thrust: f32,
 }
 
-/// Passes the sticks through as rates, with `throttle` as `thrust`; `mode` is dropped.
+/// Passes the sticks through as rates, with `throttle` as `thrust`.
 ///
 /// # Examples
 ///
@@ -1060,7 +1172,6 @@ pub struct RateSetpoint {
 ///     roll_rate: 0.1,
 ///     pitch_rate: -0.2,
 ///     yaw_rate: 0.3,
-///     mode: 2,
 /// };
 /// let setpoint = RateSetpoint::from(&command);
 /// assert_eq!(
@@ -1076,7 +1187,6 @@ impl From<&RateCommand> for RateSetpoint {
             roll_rate,
             pitch_rate,
             yaw_rate,
-            mode: _,
         } = *command;
         Self {
             roll_rate,
@@ -1087,9 +1197,14 @@ impl From<&RateCommand> for RateSetpoint {
     }
 }
 
-/// Turns the commander's [`ControlInput`] into an inner-loop [`Setpoint`].
+/// Turns the commander's [`ControlInput`] into an inner-loop [`Setpoint`], in the requested
+/// [`FlightRegime`].
 ///
-/// Guidance only runs while the [`Command`] is armed, so it never sees `arm`.
+/// Guidance only runs while the [`Command`] is armed, so it never sees `arm`. It owns the
+/// flight mode: a guidance that flies more than one regime moves toward the requested one and
+/// reports what it flies through [`flight_mode`](Self::flight_mode); a copter-only guidance
+/// ignores the request and reports nothing, and [`FlightLoop`] reports it as
+/// [`FlightModeReport::copter_only`].
 ///
 /// Guidance is the outer loop: waypoint navigation (position and altitude hold), and the
 /// interpretation of pilot sticks that needs memory, such as integrating yaw stick into a
@@ -1104,12 +1219,20 @@ impl From<&RateCommand> for RateSetpoint {
 /// thrust cut:
 ///
 /// ```
-/// use stable_flight::{AttitudeSetpoint, ControlInput, Guidance, Setpoint, VehicleState};
+/// use stable_flight::{
+///     AttitudeSetpoint, ControlInput, FlightRegime, Guidance, Setpoint, VehicleState,
+/// };
 ///
 /// struct RateOnly;
 ///
 /// impl Guidance for RateOnly {
-///     fn guide(&mut self, _dt: f32, input: &ControlInput, state: &VehicleState) -> Setpoint {
+///     fn guide(
+///         &mut self,
+///         _dt: f32,
+///         _regime: FlightRegime,
+///         input: &ControlInput,
+///         state: &VehicleState,
+///     ) -> Setpoint {
 ///         match input {
 ///             ControlInput::Rate(rate) => Setpoint::Rate(rate.into()),
 ///             _ => Setpoint::Attitude(AttitudeSetpoint {
@@ -1127,6 +1250,8 @@ pub trait Guidance {
     ///
     /// - `dt`: Time elapsed since the last guidance step in seconds. Must be positive and
     ///   finite; implementations may assert it (runners guarantee it).
+    /// - `regime`: The commander's requested regime ([`Command::regime`]), repeated every
+    ///   tick.
     /// - `input`: The commander's current control input.
     /// - `state`: The current estimated state of the vehicle.
     ///
@@ -1134,8 +1259,16 @@ pub trait Guidance {
     ///
     /// [`ControlInput`] is `#[non_exhaustive]`. For a variant it can't fly, an implementation
     /// returns a neutral setpoint — level attitude, the current heading, zero thrust (what the
-    /// input policy gives a NaN command) — and must not panic.
-    fn guide(&mut self, dt: f32, input: &ControlInput, state: &VehicleState) -> Setpoint;
+    /// input policy gives a NaN command) — and must not panic. A regime it can't fly is
+    /// refused, not an error: it keeps flying the one it can and reports why
+    /// ([`ModeRefusal`]).
+    fn guide(
+        &mut self,
+        dt: f32,
+        regime: FlightRegime,
+        input: &ControlInput,
+        state: &VehicleState,
+    ) -> Setpoint;
 
     /// Resets guidance and primes it from a known-good vehicle state.
     ///
@@ -1150,6 +1283,14 @@ pub trait Guidance {
     /// into the tick's [`TelemetryRecord::saturation`]. The default reports nothing.
     fn saturation(&self) -> Saturation {
         Saturation::default()
+    }
+
+    /// The flight mode the last [`guide`](Self::guide) call flew, for a guidance that flies
+    /// more than one regime. [`FlightLoop`] puts it in the tick's
+    /// [`TelemetryRecord::flight_mode`]. The default, `None`, means copter only: the loop
+    /// reports [`FlightModeReport::copter_only`]. A guidance that wraps another forwards this.
+    fn flight_mode(&self) -> Option<FlightModeReport> {
+        None
     }
 }
 
@@ -1361,8 +1502,8 @@ pub trait TelemetryPublisher {
 /// ```
 /// use std::time::Duration;
 /// use stable_flight::{
-///     ActuatorCommand, Command, ControlOutput, Saturation, Setpoint, TelemetryPublisher,
-///     TelemetryRecord, VehicleState,
+///     ActuatorCommand, Command, ControlOutput, FlightModeReport, Saturation, Setpoint,
+///     TelemetryPublisher, TelemetryRecord, VehicleState,
 /// };
 ///
 /// struct ThrustLogger;
@@ -1388,6 +1529,7 @@ pub trait TelemetryPublisher {
 ///     actuators: &actuators,
 ///     saturation: Saturation::default(),
 ///     failsafe: None,
+///     flight_mode: FlightModeReport::default(),
 /// });
 /// ```
 #[derive(Debug, Clone, Copy)]
@@ -1410,6 +1552,9 @@ pub struct TelemetryRecord<'a> {
     /// Which commander a failsafe let fly this tick ([`Commander::failsafe`]); `None` without
     /// a failsafe.
     pub failsafe: Option<FailsafeState>,
+    /// The flight mode guidance flew this tick ([`Guidance::flight_mode`]), and why it isn't
+    /// the requested [`Command::regime`] when it can't be.
+    pub flight_mode: FlightModeReport,
 }
 
 /// One tick's actuator outputs: motors and servos, as generic slots.

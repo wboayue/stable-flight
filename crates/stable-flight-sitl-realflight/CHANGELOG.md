@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `vehicle_state` fills `VehicleState::airspeed_mps` from RealFlight's airspeed (#181).
+
 - **Body rotation** (#314): `RealFlightConfiguration::body_rotation` and
   `Airframe::body_rotation`, the vehicle's body frame expressed in RealFlight's, for models whose
   RealFlight frame isn't the vehicle's (the eXplora VTOL tailsitter reads level on its tail; its

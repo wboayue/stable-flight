@@ -78,7 +78,6 @@ impl SetpointService {
             roll: axis(data.y),
             pitch: -axis(data.x),
             yaw: axis(data.r),
-            mode: 0,
         });
         send(input, out);
     }
@@ -130,7 +129,6 @@ impl SetpointService {
                 velocity_mps,
                 altitude_m: -data.z,
                 cruise_speed_mps: self.offboard_speed_mps,
-                ..Default::default()
             }),
             out,
         );

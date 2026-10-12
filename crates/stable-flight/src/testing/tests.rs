@@ -23,6 +23,7 @@ fn record_with_thrust(thrust: f32) -> RecordedTick {
         actuators: &actuators,
         saturation: Saturation::default(),
         failsafe: None,
+        flight_mode: Default::default(),
     })
 }
 

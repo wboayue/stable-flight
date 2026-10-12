@@ -11,7 +11,7 @@
 //! | Elevator            | `LeftStickY` (negated)  | pitch `[-1, 1]`, + nose up      |
 //! | Rudder              | `LeftStickX` (negated)  | yaw `[-1, 1]`, + right turn     |
 //! | Gear (arm switch)   | `RightStickY`           | arm above 0.5                   |
-//! | Mode switch         | `LeftTrigger2` button   | `AttitudeCommand::mode` `0..=2` |
+//! | Mode switch         | `LeftTrigger2` button   | channel `[5]` only (unmapped)   |
 //!
 //! The `spektrum_commander` example prints the raw dongle values next to the command, to check
 //! the mapping and stick travel on a given setup.
@@ -116,14 +116,6 @@ impl Commander for SpektrumCommander {
     fn next_command(&mut self, _dt: f32, _current_state: &VehicleState) -> Command {
         let channels = self.read_channels();
 
-        let mode = if channels[5] < 0.45 {
-            0
-        } else if channels[5] < 0.55 {
-            1
-        } else {
-            2
-        };
-
         Command::new(
             channels[4] > ARM_THRESHOLD,
             ControlInput::Attitude(AttitudeCommand {
@@ -131,7 +123,6 @@ impl Commander for SpektrumCommander {
                 roll: channels[1],
                 pitch: channels[2],
                 yaw: channels[3],
-                mode,
             }),
         )
     }

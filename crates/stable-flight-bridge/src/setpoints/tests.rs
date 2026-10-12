@@ -68,7 +68,6 @@ fn maps_joystick_axes_to_attitude_sticks() {
                     roll,
                     pitch,
                     yaw,
-                    mode: 0,
                 })],
             "{case}"
         );

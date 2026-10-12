@@ -11,8 +11,9 @@ use crate::controllers::InvalidConfig;
 use crate::params::{ParamError, Params};
 use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
 use crate::{
-    ActuatorCommand, AttitudeSetpoint, Commander, Configurable, ControlOutput, Guidance, Mixer,
-    Saturation, Setpoint, Stabilizer, TelemetryPublisher, TelemetryRecord, Vehicle, VehicleState,
+    ActuatorCommand, AttitudeSetpoint, Commander, Configurable, ControlOutput, FlightModeReport,
+    Guidance, Mixer, Saturation, Setpoint, Stabilizer, TelemetryPublisher, TelemetryRecord,
+    Vehicle, VehicleState,
 };
 
 #[cfg(test)]
@@ -155,7 +156,9 @@ where
                 self.guidance.prime(&self.state);
                 self.stabilizer.prime(&self.state);
             }
-            let setpoint = self.guidance.guide(dt_secs, &command.input, &self.state);
+            let setpoint =
+                self.guidance
+                    .guide(dt_secs, command.regime, &command.input, &self.state);
             let control = self.stabilizer.stabilize(dt_secs, &setpoint, &self.state);
             let actuators = self.mixer.mix(&control);
             let saturation = self
@@ -188,6 +191,10 @@ where
             actuators: &actuators,
             saturation,
             failsafe: self.commander.failsafe(),
+            flight_mode: self
+                .guidance
+                .flight_mode()
+                .unwrap_or_else(|| FlightModeReport::copter_only(command.regime)),
         });
     }
 }

@@ -339,6 +339,8 @@ fn native_fixture(scenario: &Scenario) -> SimulatorState {
         aircraft_position_y_m: north,
         altitude_asl_m: up,
         velocity_world_mps: [v_north, v_east, -v_up].into(),
+        // Still air: airspeed is ground speed.
+        airspeed_mps: Vec3::new(v_north, v_east, v_up).norm(),
         acceleration_body_mps2: [specific_force.x, specific_force.y, specific_force.z].into(),
         roll_deg: scenario.roll_deg,
         inclination_deg: scenario.pitch_deg,

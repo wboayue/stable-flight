@@ -2,7 +2,7 @@ use assert2::check;
 use heapless::spsc::Queue;
 use stable_flight::{
     ActuatorCommand, AttitudeSetpoint, Command, ControlInput, ControlMode, ControlOutput,
-    Saturation, Setpoint, VehicleState,
+    FlightModeReport, FlightRegime, Saturation, Setpoint, VehicleState,
 };
 
 use super::*;
@@ -25,6 +25,7 @@ fn tick(dt: Duration, arm: bool) -> Record {
         actuators: ActuatorCommand::default(),
         saturation: Saturation::default(),
         failsafe: None,
+        flight_mode: FlightModeReport::default(),
     }
 }
 
@@ -138,6 +139,7 @@ fn heartbeat_reports_the_commanded_arm_state_and_mode() {
         let mut publisher = LinkPublisher::new(fc, LinkPublisherConfig::default());
         let mut record = tick(MS(4), arm);
         record.command.input = input;
+        record.flight_mode = FlightModeReport::copter_only(FlightRegime::Plane);
 
         publisher.publish(&record.telemetry());
 
@@ -149,6 +151,7 @@ fn heartbeat_reports_the_commanded_arm_state_and_mode() {
                 == Some(Downlink::Heartbeat {
                     armed: arm,
                     mode,
+                    flight_mode: FlightModeReport::copter_only(FlightRegime::Plane),
                     link_ok: true,
                 }),
             "{input:?}"

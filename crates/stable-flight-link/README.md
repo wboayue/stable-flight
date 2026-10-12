@@ -11,7 +11,7 @@ Wire protocol between a [Stable Flight](https://github.com/wboayue/stable-flight
 ## Messages
 
 - `Uplink` (companion → FC): `Control` (heartbeat, a core `Command`, or arm) and `Param` (a `ParamRequest`: set one, or list all).
-- `Downlink` (FC → companion): `Heartbeat` (armed, the command's `ControlMode`, `link_ok`: false while a failsafe flies its fallback), `State` (a core `VehicleState`), `Record` (an owned copy of a tick's `TelemetryRecord`), `Param` (a `ParamValue`: name, value, index, count), `Status`.
+- `Downlink` (FC → companion): `Heartbeat` (armed, the command's `ControlMode`, the flown `FlightModeReport`, `link_ok`: false while a failsafe flies its fallback), `State` (a core `VehicleState`), `Record` (an owned copy of a tick's `TelemetryRecord`), `Param` (a `ParamValue`: name, value, index, count), `Status`.
 
 Parameter names are the core's [`params`](https://docs.rs/stable-flight/latest/stable_flight/params/) names.
 

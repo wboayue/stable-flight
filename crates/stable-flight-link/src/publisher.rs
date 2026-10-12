@@ -135,6 +135,7 @@ impl<T: LinkTx> TelemetryPublisher for LinkPublisher<'_, T> {
             self.send(&Downlink::Heartbeat {
                 armed: record.command.arm,
                 mode: record.command.input.mode(),
+                flight_mode: record.flight_mode,
                 link_ok: record.failsafe != Some(FailsafeState::Fallback),
             });
         }

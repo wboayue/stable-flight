@@ -68,10 +68,21 @@ fn angles_are_compared_modulo_a_full_turn() {
 }
 
 #[test]
+fn a_backend_without_air_data_conforms() {
+    for scenario in SCENARIOS {
+        let state = VehicleState {
+            airspeed_mps: None,
+            ..scenario.expected_state()
+        };
+        assert!(scenario.check(&state).is_ok(), "{}", scenario.name);
+    }
+}
+
+#[test]
 fn reports_each_field_off_contract() {
     type Corrupt = fn(&mut VehicleState);
     // (scenario, corruption, fields reported)
-    let cases: [(Scenario, Corrupt, &[&str]); 6] = [
+    let cases: [(Scenario, Corrupt, &[&str]); 8] = [
         (
             CLIMBING,
             |s| s.velocity_mps.z = -s.velocity_mps.z, // down-positive vertical velocity
@@ -101,6 +112,16 @@ fn reports_each_field_off_contract() {
             LEVEL,
             |s| s.position_m.z = -s.position_m.z, // altitude as NED down
             &["position_m.z"],
+        ),
+        (
+            MOVING_NORTHEAST,
+            |s| s.airspeed_mps = Some(0.0), // still air, yet no airspeed while moving
+            &["airspeed_mps"],
+        ),
+        (
+            MOVING_NORTHEAST,
+            |s| s.airspeed_mps = s.airspeed_mps.map(f32::to_degrees), // wrong unit stand-in
+            &["airspeed_mps"],
         ),
     ];
 
@@ -132,6 +153,7 @@ fn reports_every_field_when_all_are_nan() {
         roll_rad: f32::NAN,
         pitch_rad: f32::NAN,
         heading_rad: f32::NAN,
+        airspeed_mps: Some(f32::NAN),
     };
 
     let error = LEVEL.check(&all_nan).unwrap_err();
