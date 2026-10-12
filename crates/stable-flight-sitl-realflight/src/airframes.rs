@@ -187,8 +187,10 @@ pub fn explora_vtol() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
                 max_integral: 1.0,
             },
             attitude: AttitudeControllerConfig {
-                roll_gains: gains(2.0, 0.0, 0.0),
-                pitch_gains: gains(2.0, 0.0, 0.0),
+                // P raised from 2 (#327): at 2 the rate loops tracked, but asked only ~54°/s
+                // at 27° off, so recoveries took ~1 s and left a 2–4° tail for seconds.
+                roll_gains: gains(4.0, 0.0, 0.0),
+                pitch_gains: gains(4.0, 0.0, 0.0),
                 max_integral: 100.0,
                 max_angles_rad: Vec2::new(PI / 6.0, PI / 6.0), // 30° for roll and pitch
                 max_rate_radps: Vec2::new(2.0, 2.0),
