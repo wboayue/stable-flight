@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`tailsitter-manual-realflight` example** (`just fly-tailsitter`, #121, #122): joystick
   hover of the eXplora, on the copter guidance and stabilizer in the core's tailsitter `View`;
   `--record` writes every tick to CSV (body rates and actuators, the attitude in the view, and
-  guidance's setpoint and the climb rate, #123).
+  guidance's setpoint, the climb rate, and the stick throttle, #123).
 - **`tailsitter-auto-realflight` example** (`just fly-tailsitter-auto`, #123): the eXplora
   through a waypoint script in hover, wired as `copter-auto-realflight` with the tailsitter
   `View`; `--end hold|loop|land`. Its scripts: `flights/explora_figure_eight.csv` (small and

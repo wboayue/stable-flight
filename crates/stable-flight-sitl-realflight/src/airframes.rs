@@ -176,8 +176,10 @@ pub fn explora_vtol() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
                 // Differential thrust (the mixer's airplane yaw, 0.25 per unit moment). Raised
                 // from 0.2/0.1: at 0.2 a 0.58 moment only slowed a hop 2 roll (#123).
                 roll_gains: gains(0.4, 0.2, 0.0),
-                // Elevons (full range per unit moment).
-                pitch_gains: gains(0.3, 0.1, 0.0),
+                // Elevons (full range per unit moment). I raised from 0.1: sinking 1.5 m/s in
+                // hop 3 (#123) the nose sat 31° off with the integral at its limit (0.1 of
+                // moment); I · max_integral = 0.5 holds against the sink's airflow.
+                pitch_gains: gains(0.3, 0.5, 0.0),
                 yaw_gains: gains(0.1, 0.05, 0.0),
                 max_integral: 1.0,
             },
