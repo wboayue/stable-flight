@@ -174,7 +174,7 @@ pub fn euler_angles(attitude: &UnitQuaternion<f32>) -> (f32, f32, f32) {
     let (w, x, y, z) = (attitude.w, attitude.i, attitude.j, attitude.k);
     let roll = libm::atan2f(2.0 * (y * z + w * x), w * w - x * x - y * y + z * z);
     // `clamp` passes NaN through, so a NaN attitude still gives NaN pitch.
-    let pitch = libm::asinf((-2.0 * (x * z - w * y)).clamp(-1.0, 1.0));
+    let pitch = libm::asinf(nose_up_cosine(attitude).clamp(-1.0, 1.0));
     let yaw = libm::atan2f(2.0 * (x * y + w * z), w * w + x * x - y * y - z * z);
     (roll, pitch, yaw)
 }

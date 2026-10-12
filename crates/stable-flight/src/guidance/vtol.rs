@@ -29,7 +29,8 @@
 //!
 //! A standing `Plane` request refused for height starts the transition once the vehicle
 //! climbs past `min_height_m`; one refused by a timeout waits for a `Copter` request first.
-//! Height is above the altitude at [`prime`](Transition::prime) (where the vehicle armed).
+//! Height is above the altitude at [`prime`](Transition::prime) (where the vehicle armed);
+//! before the first `prime` there is none, and `Plane` is refused.
 //! A `Land` input means `Copter`: the guidance driving this passes that as the request.
 //!
 //! # Sources
@@ -188,7 +189,8 @@ pub struct Transition {
 }
 
 impl Transition {
-    /// A transition in `Copter` with `config`.
+    /// A transition in `Copter` with `config`. Until [`prime`](Self::prime) sets the arming
+    /// altitude it has no height reference, so it refuses `Plane` as `BelowMinAltitude`.
     ///
     /// # Panics
     ///
@@ -197,10 +199,11 @@ impl Transition {
         if let Err(error) = config.validate() {
             panic!("invalid TransitionConfig: {error}");
         }
+        let (forward_done_cosine, back_done_cosine) = done_cosines(&config);
         Transition {
             config,
-            forward_done_cosine: libm::cosf(config.forward_done_rad),
-            back_done_cosine: libm::cosf(config.back_done_rad),
+            forward_done_cosine,
+            back_done_cosine,
             mode: FlightMode::Copter,
             refusal: None,
             timed_out: false,
@@ -360,10 +363,18 @@ impl Configurable for Transition {
     fn set_config(&mut self, config: TransitionConfig) -> Result<(), InvalidConfig> {
         config.validate()?;
         self.config = config;
-        self.forward_done_cosine = libm::cosf(config.forward_done_rad);
-        self.back_done_cosine = libm::cosf(config.back_done_rad);
+        (self.forward_done_cosine, self.back_done_cosine) = done_cosines(&config);
         Ok(())
     }
+}
+
+/// The cosines of the forward and back completion tilts, which [`Transition`] compares the
+/// nose's [`nose_up_cosine`] against instead of taking its `acos` every tick.
+fn done_cosines(config: &TransitionConfig) -> (f32, f32) {
+    (
+        libm::cosf(config.forward_done_rad),
+        libm::cosf(config.back_done_rad),
+    )
 }
 
 /// Blends thrust from its value when control passed between controllers to the incoming

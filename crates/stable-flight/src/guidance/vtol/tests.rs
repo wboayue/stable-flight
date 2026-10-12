@@ -374,6 +374,15 @@ fn standing_request_starts_once_high_enough() {
     }
 }
 
+/// Without `prime` there is no arming altitude to measure height from: `Plane` is refused.
+#[test]
+fn unprimed_refuses_plane() {
+    let mut transition = Transition::new(TransitionConfig::default());
+    let step = transition.update(DT, FlightRegime::Plane, &state(0.0, 1_000.0, None));
+    check!(step.mode == FlightMode::Copter);
+    check!(transition.report().refusal == Some(ModeRefusal::BelowMinAltitude));
+}
+
 /// `prime` returns to copter and clears a timeout, whatever the mode.
 #[test]
 fn prime_resets_mode_and_timeout() {
