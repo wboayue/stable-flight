@@ -35,6 +35,13 @@ struct MockRealFlightBridge {
     connection_lost: bool,
     /// Fails `disable_rc` with a SOAP fault, as RealFlight does when the Link already has control.
     disable_rc_fault: bool,
+    /// Fails every exchange and `disable_rc` with a `Simulator` error, as the proxy does when
+    /// RealFlight doesn't answer in time (the connection stays in sync).
+    simulator_timeout: bool,
+    /// `reset_aircraft` fails with a `Simulator` error this many times, then succeeds.
+    reset_timeouts: Cell<usize>,
+    /// Number of `reset_aircraft` calls.
+    resets: Cell<usize>,
     /// Stands in for the bridge's open connection: a test holding a clone sees it close (the
     /// strong count drop) when the bridge is dropped.
     _connection: Option<Arc<()>>,
@@ -50,9 +57,17 @@ impl MockRealFlightBridge {
             stamp_exchanges: false,
             connection_lost: false,
             disable_rc_fault: false,
+            simulator_timeout: false,
+            reset_timeouts: Cell::new(0),
+            resets: Cell::new(0),
             _connection: None,
         }
     }
+}
+
+/// The proxy's reply when RealFlight doesn't answer within its request timeout.
+fn simulator_timeout() -> BridgeError {
+    BridgeError::Simulator("no response from simulator within 150ms".to_string())
 }
 
 fn sample_state() -> SimulatorState {
@@ -85,6 +100,8 @@ impl RealFlightBridge for MockRealFlightBridge {
             Err(BridgeError::Connection(std::io::Error::other(
                 "connection out of sync after failed request; reconnect",
             )))
+        } else if self.simulator_timeout {
+            Err(simulator_timeout())
         } else if self.should_fail {
             Err(BridgeError::Initialization(
                 "Simulated bridge failure".to_string(),
@@ -103,6 +120,8 @@ impl RealFlightBridge for MockRealFlightBridge {
             Err(BridgeError::Connection(std::io::Error::other(
                 "failed to fill whole buffer",
             )))
+        } else if self.simulator_timeout {
+            Err(simulator_timeout())
         } else if self.disable_rc_fault {
             Err(BridgeError::SoapFault(
                 "Preexisting controller reference".to_string(),
@@ -123,7 +142,11 @@ impl RealFlightBridge for MockRealFlightBridge {
     }
 
     fn reset_aircraft(&self) -> Result<(), BridgeError> {
-        if self.should_fail {
+        self.resets.set(self.resets.get() + 1);
+        if self.reset_timeouts.get() > 0 {
+            self.reset_timeouts.set(self.reset_timeouts.get() - 1);
+            Err(simulator_timeout())
+        } else if self.should_fail {
             Err(BridgeError::Initialization("Reset failed".to_string()))
         } else {
             Ok(())
@@ -813,5 +836,75 @@ fn euler_fields_follow_the_quaternion_nose_up() {
             let nose = state.attitude * Vec3::x();
             check!((nose.z + 1.0).abs() < 1e-5, "{nose:?}");
         }
+    }
+}
+
+/// A proxy-side simulator timeout keeps the connection in sync: the exchange is retried on the
+/// same bridge every tick, with no reconnect.
+#[test]
+fn a_simulator_timeout_retries_on_the_same_bridge() {
+    let (calls, reconnect) = counting_reconnect(|| Ok(MockRealFlightBridge::new(false)));
+    let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+        mapping: ActuatorMapping::default(),
+        body_rotation: UnitQuaternion::identity(),
+        bridge: MockRealFlightBridge {
+            simulator_timeout: true,
+            ..MockRealFlightBridge::new(false)
+        },
+    })
+    .with_reconnect(reconnect);
+
+    tick(&mut vehicle, 20);
+
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    assert!(!vehicle.health.is_down());
+    assert_eq!(current_bridge(&vehicle).exchanges.get(), 20);
+}
+
+/// A new bridge whose `disable_rc` times out on the simulator isn't used: RC isn't known to be
+/// off, so the attempt fails and backs off like a lost connection.
+#[test]
+fn a_new_bridge_whose_disable_rc_times_out_is_not_used() {
+    let (calls, reconnect) = counting_reconnect(|| {
+        Ok(MockRealFlightBridge {
+            simulator_timeout: true,
+            ..MockRealFlightBridge::new(false)
+        })
+    });
+    let mut vehicle = failing_vehicle(true).with_reconnect(reconnect);
+
+    tick(&mut vehicle, 7);
+
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    assert!(vehicle.bridge.is_none(), "kept the new bridge");
+}
+
+/// The startup reset is retried while RealFlight times out on it, up to three attempts; any
+/// other error isn't retried.
+#[test]
+fn startup_reset_retries_simulator_timeouts() {
+    // (timeouts before success, other error, expected reset calls)
+    let cases = [
+        (0, false, 1),
+        (1, false, 2),
+        (2, false, 3),
+        (3, false, 3), // gives up
+        (5, false, 3),
+        (0, true, 1), // not a timeout: not retried
+    ];
+    for (timeouts, other_error, expected) in cases {
+        let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+            mapping: ActuatorMapping::default(),
+            body_rotation: UnitQuaternion::identity(),
+            bridge: MockRealFlightBridge {
+                reset_timeouts: Cell::new(timeouts),
+                ..MockRealFlightBridge::new(other_error)
+            },
+        });
+        assert_eq!(
+            current_bridge(&vehicle).resets.get(),
+            expected,
+            "{timeouts} timeouts, other error {other_error}"
+        );
     }
 }

@@ -22,14 +22,19 @@ mod tests;
 /// `exchange-latency-realflight` example's default threshold.
 pub const SLOW_EXCHANGE: Duration = Duration::from_millis(20);
 
-/// I/O timeout for a `RealFlightRemoteBridge` (`with_timeouts`), as the examples use it.
+/// I/O timeout for a `RealFlightRemoteBridge` (`with_timeouts`), as the examples use it:
+/// realflight-bridge's own default, which `with_timeouts` doesn't expose.
 ///
-/// It must stay above the proxy's request timeout, so a slow RealFlight comes back as an error
-/// reply rather than a client timeout. RealFlight needs that raised from realflight-bridge's
-/// 50 ms default: run the proxy with `--request-timeout-ms 150` (an aircraft reset, and the
-/// exchanges just after it, take over 50 ms). A timeout drops the connection, and
+/// It stays above the proxy's request timeout (150 ms by default), so a slow RealFlight comes
+/// back as `BridgeError::Simulator` on a connection still in sync, not as a client timeout. A
+/// client timeout is a `BridgeError::Connection`: the connection is dropped, and
 /// [`with_reconnect`](RealFlightVehicle::with_reconnect) rebuilds it.
 pub const REMOTE_IO_TIMEOUT: Duration = Duration::from_millis(250);
+
+/// Attempts at the aircraft reset in [`RealFlightVehicle::new`]: RealFlight can take longer than
+/// the proxy's request timeout to reset, which comes back as `BridgeError::Simulator` on a
+/// connection that's still usable.
+const RESET_ATTEMPTS: usize = 3;
 
 /// Builds a fresh bridge after the connection is lost; see
 /// [`RealFlightVehicle::with_reconnect`].
@@ -91,9 +96,10 @@ where
 /// first state is real; if that exchange fails, it logs an error and returns
 /// `VehicleState::default()`. `exchange_data` is a blocking network round-trip, so a slow link
 /// stalls the tick; an exchange over 20 ms is logged at `debug` with its duration. The bridge
-/// bounds the stall: `RealFlightRemoteBridge` times each call out (100 ms by default; the
-/// examples use [`REMOTE_IO_TIMEOUT`]), and `RealFlightLocalBridge` each simulator request (50 ms
-/// by default). A timeout is a `BridgeError::Connection` (see Connection loss). See the core
+/// bounds the stall: `RealFlightRemoteBridge` times each call out ([`REMOTE_IO_TIMEOUT`]), its
+/// proxy each simulator request (150 ms by default), and `RealFlightLocalBridge` each simulator
+/// request. A proxy-side timeout is a `BridgeError::Simulator`, retried on the same bridge; a
+/// client-side one is a `BridgeError::Connection` (see Connection loss). See the core
 /// `Vehicle` docs for the cross-backend contract.
 ///
 /// # Connection loss
@@ -109,9 +115,9 @@ where
 /// time, and accepts a new one only once the old one disconnects), waits 0.5 s, and builds a new bridge, doubling the wait after each failed
 /// attempt up to 4 s (`INITIAL_BACKOFF_S`, `MAX_BACKOFF_S` in `vehicle/health.rs`). A new
 /// bridge gets `disable_rc` again (but no aircraft reset: it is mid-flight) and replaces the old
-/// one. Only a `Connection` error from `disable_rc` fails the attempt: RealFlight keeps the Link
-/// controller across connections, so it may answer with a SOAP fault, which is logged and
-/// ignored as in [`new`](RealFlightVehicle::new). Waits count the ticks' nominal `dt`, and an
+/// one. A `Connection` or `Simulator` error from `disable_rc` fails the attempt (RC isn't known to
+/// be off); RealFlight keeps the Link controller across connections, so it may answer with a SOAP
+/// fault, which is logged and ignored as in [`new`](RealFlightVehicle::new). Waits count the ticks' nominal `dt`, and an
 /// attempt blocks its tick for as long as building the bridge takes, so give the closure a short
 /// connect timeout. Other errors, or any error without the hook, just retry the exchange on
 /// the next tick.
@@ -176,6 +182,23 @@ where
     health: LinkHealth,
 }
 
+/// Resets the aircraft, retrying a reset RealFlight didn't finish in time (`Simulator`) up to
+/// [`RESET_ATTEMPTS`] in all; any failure left is logged, and the flight starts where it is.
+fn reset_aircraft(bridge: &impl RealFlightBridge) {
+    for attempt in 1..=RESET_ATTEMPTS {
+        match bridge.reset_aircraft() {
+            Ok(()) => return,
+            Err(BridgeError::Simulator(e)) if attempt < RESET_ATTEMPTS => {
+                debug!("Aircraft reset not finished ({e}), retrying");
+            }
+            Err(e) => {
+                warn!("Failed to reset aircraft: {e}");
+                return;
+            }
+        }
+    }
+}
+
 impl<T> StateSource for RealFlightVehicle<T>
 where
     T: RealFlightBridge,
@@ -217,8 +240,9 @@ where
 {
     /// Creates a new RealFlight vehicle instance with the given configuration.
     ///
-    /// Initializes the simulator connection by disabling RC mode and resetting the aircraft.
-    /// Warnings are logged if either fails; the vehicle is still created.
+    /// Initializes the simulator connection by disabling RC mode and resetting the aircraft (a
+    /// reset RealFlight doesn't finish in time is retried, up to three attempts). Warnings are
+    /// logged if either fails; the vehicle is still created.
     ///
     /// # Panics
     ///
@@ -262,9 +286,7 @@ where
             warn!("Failed to disable RC: {}", e);
         }
 
-        if let Err(e) = configuration.bridge.reset_aircraft() {
-            warn!("Failed to reset aircraft: {}", e);
-        }
+        reset_aircraft(&configuration.bridge);
 
         Ok(RealFlightVehicle {
             bridge: Some(configuration.bridge),
@@ -350,7 +372,8 @@ where
         };
 
         let bridge = reconnect().and_then(|bridge| match bridge.disable_rc() {
-            Err(e @ BridgeError::Connection(_)) => Err(e),
+            // RC isn't known to be off: fail the attempt and back off.
+            Err(e @ (BridgeError::Connection(_) | BridgeError::Simulator(_))) => Err(e),
             // RealFlight keeps the Link controller across connections, so a new bridge can get a
             // "Preexisting controller reference" fault although the Link is still in control.
             Err(e) => {

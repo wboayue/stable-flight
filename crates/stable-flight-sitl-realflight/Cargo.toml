@@ -15,7 +15,7 @@ repository.workspace = true
 # dev-dependency for the examples; CI checks it never becomes a normal dependency.
 [dependencies]
 stable-flight = { path = "../stable-flight", version = "0.1.0" }
-realflight-bridge = "2.1.0"
+realflight-bridge = "2.2.0"
 log.workspace = true
 thiserror.workspace = true
 
