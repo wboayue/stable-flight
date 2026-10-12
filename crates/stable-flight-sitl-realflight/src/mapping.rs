@@ -32,9 +32,9 @@ pub const CHANNEL_COUNT: usize = 12;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct ActuatorMapping {
     /// RealFlight channel for each motor slot.
-    pub motors: [Option<usize>; 8],
+    pub motors: [Option<usize>; ActuatorCommand::SLOTS],
     /// RealFlight channel for each servo slot.
-    pub servos: [Option<usize>; 8],
+    pub servos: [Option<usize>; ActuatorCommand::SLOTS],
 }
 
 /// Why an [`ActuatorMapping`] is invalid.

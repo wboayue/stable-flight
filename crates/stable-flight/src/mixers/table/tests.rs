@@ -723,6 +723,42 @@ fn hex_desaturation_keeps_moments() {
     assert!(full[..6].iter().all(|&m| (0.0..=1.0).contains(&m)));
 }
 
+/// A table of servos alone mixes with nothing to desaturate: motors stay off, servos follow
+/// the moments, and only a clamped servo reports.
+#[test]
+fn servo_only_table_mixes_without_motors() {
+    let rows = [
+        MixRow::servo(0, 1.0, 0.0, 0.0),
+        MixRow::servo(1, 0.0, 1.0, 1.0),
+    ];
+    let mut mixer = TableMixer::new(rows, MixerConfig::default()).expect("valid table");
+    // (thrust, moments, expected servos[..2], mixer_moments)
+    let cases = [
+        (0.0, Vec3::new(0.3, -0.2, 0.1), [0.3, -0.1], false),
+        (1.0, Vec3::new(-0.5, 0.0, 0.0), [-0.5, 0.0], false),
+        (0.5, Vec3::new(0.0, 0.8, 0.8), [0.0, 1.0], true),
+    ];
+    for (thrust, moments, servos, mixer_moments) in cases {
+        let output = mixer.mix(&ControlOutput::new(thrust, moments));
+        assert!(output.motors == [0.0; ActuatorCommand::SLOTS]);
+        assert!(
+            output.servos[..2]
+                .iter()
+                .zip(servos)
+                .all(|(&s, e)| approx_eq(s, e)),
+            "{thrust} {moments:?}: {:?}",
+            output.servos
+        );
+        assert!(
+            mixer.saturation()
+                == Saturation {
+                    mixer_moments,
+                    ..Saturation::default()
+                }
+        );
+    }
+}
+
 /// Every preset passes the same validation a custom table gets.
 #[test]
 fn presets_are_valid_tables() {

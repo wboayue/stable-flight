@@ -1386,11 +1386,16 @@ pub struct TelemetryRecord<'a> {
 pub struct ActuatorCommand {
     /// Motor outputs, from 0.0 (off) to 1.0 (full power). The mixer sets which physical motor
     /// each index is.
-    pub motors: [f32; 8],
+    pub motors: [f32; ActuatorCommand::SLOTS],
 
     /// Servo outputs, from -1.0 to 1.0, with 0.0 centered. The mixer sets what each index moves
     /// (a control surface, a tilt servo).
-    pub servos: [f32; 8],
+    pub servos: [f32; ActuatorCommand::SLOTS],
+}
+
+impl ActuatorCommand {
+    /// Slots per kind: `motors` and `servos` each hold this many.
+    pub const SLOTS: usize = 8;
 }
 
 // == Mixers ==

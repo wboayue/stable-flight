@@ -58,9 +58,6 @@ mod presets;
 #[cfg(test)]
 mod tests;
 
-/// Slots per kind in an [`ActuatorCommand`] (`motors` and `servos` each hold this many).
-const SLOT_COUNT: usize = 8;
-
 /// One [`ActuatorCommand`] slot a [`MixRow`] drives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Slot {
@@ -154,7 +151,7 @@ pub enum MixerError {
     /// The table has no rows.
     #[error("mixer table is empty")]
     Empty,
-    /// A row's slot index is past the [`ActuatorCommand`] arrays (8 each).
+    /// A row's slot index is past the [`ActuatorCommand`] arrays ([`ActuatorCommand::SLOTS`]).
     #[error("mixer slot {0:?} is out of range")]
     SlotOutOfRange(Slot),
     /// Two rows drive the same slot.
@@ -339,7 +336,7 @@ fn validate_rows(rows: &[MixRow]) -> Result<(), MixerError> {
     }
     for (i, row) in rows.iter().enumerate() {
         let (Slot::Motor(index) | Slot::Servo(index)) = row.slot;
-        if usize::from(index) >= SLOT_COUNT {
+        if usize::from(index) >= ActuatorCommand::SLOTS {
             return Err(MixerError::SlotOutOfRange(row.slot));
         }
         if rows[..i].iter().any(|earlier| earlier.slot == row.slot) {

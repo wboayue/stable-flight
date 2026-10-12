@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reported in `Saturation`). `MixerConfig` (thrust factor, yaw ratio) is set at construction;
   `TableMixer::new` validates a custom table (`MixerError`). Presets: `quad_x`, `quad_plus`,
   `hex_x`, `hex_plus`, `octo_x`, `y6`, `x8`, `tri` (tail tilt servo), `bi` (tilting rotors).
+- **`ActuatorCommand::SLOTS`:** the number of motor and of servo slots (8).
 
 ### Changed
 
