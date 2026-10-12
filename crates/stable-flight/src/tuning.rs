@@ -1,6 +1,6 @@
 //! PID autotune: measure a loop, turn the measurement into gains, and run it per loop.
 //!
-//! The relay is feedback (Åström & Hägglund, 1984). A [`RelayTuner`]
+//! The relay probe uses relay feedback (Åström & Hägglund, 1984). A [`RelayTuner`]
 //! replaces one loop's controller output with `bias ± h`, switching on the sign of the error
 //! (with hysteresis). The plant settles into a limit cycle whose period `Tu` and amplitude `a`
 //! give the ultimate gain `Ku = 4h / (π·√(a² − ε²))`: the point where a proportional

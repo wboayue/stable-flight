@@ -147,7 +147,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   - Cite where evidence or a spec lives, one trailing reference: `(#n)` for flight data behind
     a tuned value, ArduPilot `file:line`. No narrative ("raised from", "previously", "after
     #n", "interim").
-  - Open work is `TODO(#n)` (`just todo-check` flags ones whose issue closed).
+  - Open work is `TODO(#n)` in code comments (`just todo-check` flags ones whose issue
+    closed); markdown links the issue.
   - `architecture.md` gives rationale, including briefly why rejected alternatives were
     rejected. A regression test may name the issue it guards; its name states the behavior.
   - History lives in commits, PR bodies, and CHANGELOGs.

@@ -659,8 +659,9 @@ fn out_of_range_or_nan_commands_saturate_instead_of_panicking() {
     }
 }
 
-/// Regression (#57): a NaN altitude estimate stays out of the altitude integral: waypoint flight holds hover
-/// thrust meanwhile, not NaN → 0 (motors off), and recovers with the estimate.
+/// Regression (#57): a NaN altitude estimate stays out of the altitude integral. Waypoint
+/// flight holds hover thrust meanwhile, not NaN → 0 (motors off), and recovers with the
+/// estimate.
 #[test]
 fn nan_altitude_estimate_holds_hover_then_recovers() {
     let at_altitude = |z: f32| state_at(0.0, 0.0, z);

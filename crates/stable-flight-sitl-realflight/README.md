@@ -143,7 +143,7 @@ Joystick flights start disarmed: the motors stay off until you arm (Extreme 3D: 
 
 ## Timing
 
-Each tick waits on one RealFlight round trip ([`RealFlightVehicle`](https://docs.rs/stable-flight-sitl-realflight/latest/stable_flight_sitl_realflight/struct.RealFlightVehicle.html) rustdoc, "Timing"). Measured through the proxy to RealFlight in a Parallels VM:
+Each tick waits on one RealFlight round trip ([`RealFlightVehicle`](https://docs.rs/stable-flight-sitl-realflight/latest/stable_flight_sitl_realflight/struct.RealFlightVehicle.html) rustdoc, "Timing"). Measured through the proxy to RealFlight in a Parallels VM ([#255](https://github.com/wboayue/stable-flight/issues/255)):
 
 - **Usual round trip:** about 2 ms (median 2.2 ms, p99 17 ms), out of a 4 ms tick at 250 Hz. A few each second take 20–30 ms.
 - **Dips:** occasionally, for a few seconds, every round trip slows to about 8 ms. The loop then runs at about 120 Hz. The cause is RealFlight or the VM, not the flight loop.

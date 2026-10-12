@@ -13,7 +13,7 @@ fn quadcopter_x_maps_its_four_motors_validly() {
     assert!(mapping.servos.iter().all(Option::is_none));
 }
 
-/// Pins the flight-checked QuadCopterX set, so a retune (or a core default change it
+/// Pins the flight-checked QuadCopterX set (#62), so a retune (or a core default change it
 /// inherits) shows up in review.
 #[test]
 fn quadcopter_x_gains_are_the_flight_checked_set() {
@@ -71,8 +71,8 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
 }
 
 /// Steady yaw moment (normalized, nose right) QuadCopterX needs to hover in RealFlight,
-/// measured: a mean motor yaw split of about 0.10 over the core `TableMixer::quad_x`'s yaw
-/// scaling of 0.25. Re-measure if that scaling changes.
+/// measured (#192): a mean motor yaw split of about 0.10 over the core `TableMixer::quad_x`'s
+/// yaw scaling of 0.25. Re-measure if that scaling changes.
 const MEASURED_HOVER_YAW_MOMENT: f32 = 0.40;
 
 /// The flown rate gains hold zero yaw rate against the model's hover yaw imbalance with 25%
@@ -108,7 +108,7 @@ fn explora_vtol_reads_nose_up_at_realflight_level() {
     assert!((pitch - PI / 2.0).abs() < 1e-3, "pitch {pitch}");
 }
 
-/// Both motors at about 0.63 hold the eXplora's level hover in RealFlight (measured).
+/// Both motors at about 0.63 hold the eXplora's level hover in RealFlight (#123).
 const MEASURED_HOVER_MOTOR: f32 = 0.63;
 
 /// `hover_thrust`, through the stabilizer's thrust curve and the mixer, lands both motors on
