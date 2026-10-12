@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`tailsitter-manual-realflight` example** (`just fly-tailsitter`, #121, #122): joystick
   hover of the eXplora, on the copter guidance and stabilizer in the core's tailsitter `View`;
   `--record` writes every tick to CSV (body rates and actuators, and the attitude in the view).
+- **`tailsitter-auto-realflight` example** (`just fly-tailsitter-auto`, #123): the eXplora
+  through a waypoint script in hover, wired as `copter-auto-realflight` with the tailsitter
+  `View`; `--end hold|loop|land`. Its scripts: `flights/explora_figure_eight.csv` (small and
+  slow, the default) and `flights/explora_hover.csv` (5 m over its spawn point).
 - **`ActuatorMapping::reversed_servos`** (#121): servo slots negated before they reach their
   channel, for a surface the model moves the other way from the mixer's convention.
 - **`CHANNEL_COUNT`:** RealFlight's 12 channels, exported.

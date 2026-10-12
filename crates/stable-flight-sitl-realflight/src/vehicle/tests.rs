@@ -354,7 +354,7 @@ stable_flight::conformance_tests! {
 /// The eXplora VTOL's body rotation: its RealFlight frame is hover-level, the vehicle's is the
 /// airplane's, so RealFlight's level is nose up (#314).
 fn explora_rotation() -> UnitQuaternion<f32> {
-    UnitQuaternion::from_euler_angles(0.0, std::f32::consts::FRAC_PI_2, 0.0)
+    crate::airframes::explora_vtol().body_rotation
 }
 
 /// RealFlight's report for a vehicle whose body frame is `body_rotation` in RealFlight's:

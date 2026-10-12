@@ -68,6 +68,10 @@ fly-manual *ARGS:
 fly-tailsitter *ARGS:
     cargo run -p stable-flight-sitl-realflight --example tailsitter-manual-realflight -- {{ARGS}}
 
+# Scripted eXplora VTOL tailsitter hover flight in RealFlight; args: [script.csv] [--host host:port] [--end hold|loop|land]
+fly-tailsitter-auto *ARGS:
+    cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- {{ARGS}}
+
 # Quadcopter in RealFlight flown from the native link, holding when the link goes quiet; drive it with `just link-pilot`
 fly-companion *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight -- {{ARGS}}

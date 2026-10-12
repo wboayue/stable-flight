@@ -71,7 +71,7 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 
 ## Examples
 
-Run these from the repository root (`just fly-manual` / `just fly-tailsitter` / `just fly-auto` / `just capture` / `just fly-companion` wrap them). Each serves params and telemetry over the native link (UDP; binds `127.0.0.1:14560`, peer `127.0.0.1:14561`, set with `--link-bind`/`--link-peer`) for [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) (`just bridge`), which QGC connects to; start the bridge once and leave it running:
+Run these from the repository root (`just fly-manual` / `just fly-tailsitter` / `just fly-auto` / `just fly-tailsitter-auto` / `just capture` / `just fly-companion` wrap them). Each serves params and telemetry over the native link (UDP; binds `127.0.0.1:14560`, peer `127.0.0.1:14561`, set with `--link-bind`/`--link-peer`) for [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) (`just bridge`), which QGC connects to; start the bridge once and leave it running:
 
 ```bash
 # Joystick (Logitech Extreme 3D); RealFlight host defaults to 10.211.55.3:8080
@@ -86,6 +86,11 @@ cargo run -p stable-flight-sitl-realflight --example tailsitter-manual-realfligh
 
 # Scripted figure-eight (script path is the first argument): flies it once, then hovers; --end loop repeats it, --end land lands on the last waypoint and disarms
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv
+
+# The same for the eXplora tailsitter, in hover, in the tailsitter View: a small, slow figure-eight
+# by default (flights/explora_figure_eight.csv); flights/explora_hover.csv holds 5 m over its
+# spawn point. Or: just fly-tailsitter-auto
+cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- --end land
 
 # Flown from the native link, holding position when it goes quiet; link_pilot plays the companion
 # (in place of the bridge). Stop the pilot mid-flight and the quad holds. Or: just fly-companion, just link-pilot
