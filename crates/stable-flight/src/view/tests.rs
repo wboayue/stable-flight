@@ -148,9 +148,8 @@ fn moments_return_to_the_body_axes() {
     }
 }
 
-/// The viewed copter stabilizer on the airplane-frame state flies exactly as #121's interim
-/// wiring did: the copter stabilizer on RealFlight's hover-level state, its moments turned into
-/// the airplane frame.
+/// The viewed copter stabilizer on the airplane-frame state flies exactly as the copter
+/// stabilizer on RealFlight's hover-level state, its moments turned into the airplane frame.
 #[test]
 fn matches_the_hover_level_wiring() {
     let config = CopterStabilizerConfig::default();

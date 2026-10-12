@@ -205,7 +205,7 @@ fn heading_of(setpoint: Setpoint) -> f32 {
 }
 
 /// A waypoint leg holds the heading-hold target instead of turning north, so attitude flight
-/// resumes the same heading after it (#70).
+/// resumes the same heading after it.
 #[test]
 fn waypoint_leg_holds_the_heading_hold_target() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
@@ -240,7 +240,7 @@ fn waypoint_leg_holds_the_heading_hold_target() {
 }
 
 /// After rate flight, attitude and waypoint flight hold the heading the vehicle has, not the
-/// one it had when rate flight began (#70). A NaN heading during rate flight keeps the last
+/// one it had when rate flight began. A NaN heading during rate flight keeps the last
 /// valid one.
 #[test]
 fn rate_flight_hands_over_the_current_heading() {
@@ -358,7 +358,7 @@ fn leaving_waypoints_clears_the_position_loops() {
 }
 
 /// The waypoint's cruise speed caps the approach and its velocity is fed forward: flying at
-/// the demanded velocity needs no tilt (#109).
+/// the demanded velocity needs no tilt.
 #[test]
 fn waypoint_speed_follows_cruise_speed_and_feedforward() {
     let moving_north = |speed_mps: f32| VehicleState {
@@ -659,8 +659,9 @@ fn out_of_range_or_nan_commands_saturate_instead_of_panicking() {
     }
 }
 
-/// Regression (#57 review): a NaN altitude estimate stuck in the altitude integral, so thrust
-/// stayed NaN → 0 (motors off) in waypoint mode even after the estimate recovered.
+/// Regression (#57): a NaN altitude estimate stays out of the altitude integral. Waypoint
+/// flight holds hover thrust meanwhile, not NaN → 0 (motors off), and recovers with the
+/// estimate.
 #[test]
 fn nan_altitude_estimate_holds_hover_then_recovers() {
     let at_altitude = |z: f32| state_at(0.0, 0.0, z);
@@ -1242,7 +1243,7 @@ fn point_mass_flies_a_route_at_cruise_speed_and_holds_the_end() {
 }
 
 /// Attitude-mode throttle is divided by the cosine of the measured tilt, so the vertical thrust
-/// the stick asks for holds while tilted (#111). The boost stops past 60°, cuts out when
+/// the stick asks for holds while tilted. The boost stops past 60°, cuts out when
 /// inverted (no thrust toward the ground), a non-finite attitude gets none, and the result
 /// saturates to [0, 1] with NaN as no thrust.
 #[test]

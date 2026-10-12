@@ -1,4 +1,4 @@
-//! Autotunes the quadcopter in RealFlight (#149, #298): climbs to the hover script's waypoint,
+//! Autotunes the quadcopter in RealFlight: climbs to the hover script's waypoint,
 //! tunes roll and pitch rate, then roll and pitch angle, by step response, lands, and disarms
 //! (`StagePlan::copter_search`, `architecture.md#autotune`). Per rate loop a relay sets D and
 //! caps P; per loop P is searched by pairs of steps (each judgment logged with its steps),
@@ -7,13 +7,13 @@
 //! `airframes.rs` snippet. A failed stage (envelope breach, too many invalid steps) keeps the
 //! stages before it.
 //!
-//! `--stages rate` runs the phase-1 relay autotune instead: each stage's relay measures the
+//! `--stages rate` runs the relay autotune instead: each stage's relay measures the
 //! loop's ultimate point and the Tyreus–Luyben rule sets its gains; `--stages angle` or `all`
 //! adds relay stages for the angle and heading loops, whose gains flew badly on QuadCopterX
 //! (see `COPTER_SEQUENCE`). `--rate-p-scale` starts from deliberately bad rate gains (e.g. `0.1`
 //! or `10`), to check the tune recovers from them.
 //!
-//! `--step-test` appends step tests of roll and pitch rate and angle (#298): alternating steps,
+//! `--step-test` appends step tests of roll and pitch rate and angle: alternating steps,
 //! each one's response logged at `debug`, and a summary per loop at `info` (overshoot, rise,
 //! settling, bounce-back: mean and range). `--stages none --step-test` measures the hand tune;
 //! `--stages rate --step-test` the relay tune, in one flight. Steps during which the runner

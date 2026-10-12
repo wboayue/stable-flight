@@ -18,7 +18,7 @@ mod health;
 mod tests;
 
 /// [`RealFlightVehicle`] logs an exchange slower than this at `debug` (five ticks at 250 Hz),
-/// to tell a stall in the RealFlight round trip from one elsewhere in the tick (#255). The
+/// to tell a stall in the RealFlight round trip from one elsewhere in the tick. The
 /// `exchange-latency-realflight` example's default threshold.
 pub const SLOW_EXCHANGE: Duration = Duration::from_millis(20);
 
@@ -130,7 +130,7 @@ where
 ///
 /// Some models' RealFlight body frame isn't the vehicle's. The eXplora VTOL tailsitter reads level
 /// sitting on its tail (a hover-level, copter-style frame), while a tailsitter's body frame is the
-/// airplane's, x along the nose, so that hover is pitch +90° (#314). Like a flight controller
+/// airplane's, x along the nose, so that hover is pitch +90°. Like a flight controller
 /// board's mounting, this is a constant rotation applied at the boundary:
 /// [`RealFlightConfiguration::body_rotation`] `m`, the vehicle's body frame expressed in
 /// RealFlight's. With RealFlight's attitude `q_rf`, the vehicle's attitude is `q_rf · m`, and

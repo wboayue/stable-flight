@@ -253,7 +253,7 @@ fn heading_setpoint_is_wrapped_and_nan_is_neutral() {
     }
 }
 
-/// A NaN on one gyro axis zeroes that axis's moment only; the others keep tracking (#67).
+/// A NaN on one gyro axis zeroes that axis's moment only; the others keep tracking.
 #[test]
 fn nan_rate_estimate_zeroes_only_its_axis() {
     let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
@@ -593,7 +593,7 @@ fn prime_clears_integrals_and_derivative_history() {
 }
 
 /// Rate flight clears the idle attitude and heading loops, so attitude flight after it starts
-/// from fresh state, not from integrals wound up before the switch (#70).
+/// from fresh state, not from integrals wound up before the switch.
 #[test]
 fn rate_flight_clears_the_attitude_and_heading_loops() {
     let tilted = VehicleState {

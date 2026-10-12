@@ -60,7 +60,7 @@ impl MetadataFile {
 /// Only the keys QGC's parameter schema accepts are written (it drops a param's metadata on any
 /// other): `name`, `type` (`"Float"`: every param is `REAL32` on the wire), `shortDesc`,
 /// `category`, `group`, and when present `units`, `min`, and `max`. An exclusive bound is sent
-/// as its value; the flight controller still rejects the value itself. No defaults yet (#229).
+/// as its value; the flight controller still rejects the value itself. No defaults yet: TODO(#229).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MetadataFiles {
     pub(crate) parameters: MetadataFile,

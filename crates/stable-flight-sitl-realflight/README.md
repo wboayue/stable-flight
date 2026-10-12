@@ -80,7 +80,7 @@ cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight --
 # Spektrum transmitter through the WS3000T dongle instead
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --commander spektrum
 
-# eXplora VTOL tailsitter hover: copter guidance and stabilizer in the tailsitter View (#122);
+# eXplora VTOL tailsitter hover: copter guidance and stabilizer in the tailsitter View;
 # --record writes every tick to CSV. Or: just fly-tailsitter
 cargo run -p stable-flight-sitl-realflight --example tailsitter-manual-realflight -- --record hover.csv
 
@@ -97,7 +97,7 @@ cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight 
 cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight
 cargo run --bin link_pilot
 
-# Autotune (#149, #298): climbs to the hover point, tunes roll and pitch rate, then roll and
+# Autotune: climbs to the hover point, tunes roll and pitch rate, then roll and
 # pitch angle, by step response (per rate loop a relay sets D; P is searched, verified against
 # the start, and kept only if no worse), logs each judgment and baseline vs verify, prints the
 # tuned gains as an airframes.rs snippet, lands, and disarms.
@@ -117,7 +117,7 @@ cargo run -p stable-flight-sitl-realflight --example capture-state-realflight --
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --script flights/hover.csv
 ```
 
-To map a new model's channels and check the frame contract on it (#120), with no flight loop:
+To map a new model's channels and check the frame contract on it, with no flight loop:
 set the model in RealFlight so each actuator has its own channel (no model-side mixes or gyro),
 put it on the ground, and sweep. The sweep holds every channel at neutral (motors 0, the rest
 centered), rests 2 s, moves each servo full both ways, pulses each motor alone, then hops on

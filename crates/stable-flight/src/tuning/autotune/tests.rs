@@ -1081,8 +1081,7 @@ fn copter_search_tunes_rate_then_angle() {
 
 /// The rate search steps as the step test does, allowing 10 clipped ticks (a 1 rad/s step
 /// asks for more than full moment above P 1); the angle search steps at half the step test's
-/// size, so its candidates' moment demand stays below full scale, and runs without a relay
-/// (#304).
+/// size, so its candidates' moment demand stays below full scale, and runs without a relay.
 #[test]
 fn search_step_presets() {
     let rate = SearchPlan::copter_rate().test;

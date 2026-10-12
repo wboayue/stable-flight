@@ -406,7 +406,7 @@ fn out_of_range_or_nan_inputs_saturate_instead_of_panicking() {
 }
 
 /// At low throttle a large moment shifts all motors up rather than clipping the low side, so
-/// the full differential survives (#112); at zero thrust nothing is raised.
+/// the full differential survives; at zero thrust nothing is raised.
 #[test]
 fn low_throttle_moments_shift_up_instead_of_clipping() {
     let mut mixer = create_mixer();

@@ -290,7 +290,7 @@ const YAW_MODEL_DURATION_S: f32 = 60.0;
 /// It flies a first-order yaw model, `ω̇ = 20 · (moment − disturbance)`, from rest for 60 s at
 /// 250 Hz. The integral cancels the disturbance up to its authority `yaw_gains.i ·
 /// max_integral`, so the result is 0 below it and `−(disturbance − i · max_integral) / p` above
-/// (the acro drift of #192). The model has no inertia beyond the integrator, so it checks
+/// (a steady acro drift). The model has no inertia beyond the integrator, so it checks
 /// authority and steady state, not tuning.
 ///
 /// # Examples

@@ -24,7 +24,7 @@ const MAX_READS_PER_PASS: usize = 64;
 const ERROR_REPORT_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The ground station connection, as `mavlink::connect` returns it. `Send + Sync` though the
-/// pump is single-threaded: an event-driven wait (#216) reads it from its own thread.
+/// pump is single-threaded: an event-driven wait (TODO(#216)) would read it from its own thread.
 pub(crate) type GcsConnection = Box<dyn MavConnection<MavMessage> + Send + Sync>;
 
 /// What one [`Pump::step`] did.

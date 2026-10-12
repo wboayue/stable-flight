@@ -1,4 +1,4 @@
-//! A proxy that accepts and then never answers can't hang the vehicle (#250): every bridge call
+//! A proxy that accepts and then never answers can't hang the vehicle: every bridge call
 //! times out, and the reconnect path runs and fails instead of blocking the tick.
 
 use std::net::TcpListener;

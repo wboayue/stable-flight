@@ -322,7 +322,7 @@ mod tests {
             (0.0, 0.0),
             (0.15, 0.0),
             (-0.15, 0.0),
-            (0.4, -0.333_333), // #192: CCW drift
+            (0.4, -0.333_333), // past the authority: CCW drift (#192)
             (-0.4, 0.333_333),
         ];
         for (disturbance, expected) in cases {
@@ -481,7 +481,7 @@ mod tests {
         );
     }
 
-    /// A non-finite desired or estimated rate zeroes that axis alone (#67): the other axes
+    /// A non-finite desired or estimated rate zeroes that axis alone: the other axes
     /// match a controller that never saw it, the bad axis's integral is untouched, and its
     /// first finite tick afterwards has no derivative kick.
     #[test]

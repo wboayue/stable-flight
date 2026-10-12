@@ -46,7 +46,7 @@ fn falls_back_on_silence_and_flies_the_link_once_it_is_back() {
         (ArmAndHover, (false, Waypoint, false)), // fresh 0.1 s: the hold can't arm
         (Heartbeat, (false, Waypoint, false)), // 0.2 s
         (Heartbeat, (false, Waypoint, true)), // 0.3 s: the link flies; its arm, sent during
-        // the hold, is dropped at the handover (#235)
+        // the hold, is dropped at the handover
         (ArmAndHover, (true, Waypoint, true)), // a new arm arms, hovering
         (Nothing, (true, Waypoint, true)),     // silent 0.1 s
         (Nothing, (true, Waypoint, true)),     // 0.2 s

@@ -16,7 +16,7 @@
 //! controller are in those view axes.
 //!
 //! The view's Euler angles are singular at view pitch ±90°, which is forward flight, not hover;
-//! the transition between the two needs a quaternion attitude error (#124).
+//! the transition between the two needs a quaternion attitude error: TODO(#124).
 
 use nalgebra::UnitQuaternion;
 
@@ -42,8 +42,7 @@ const AXIS_SHARE: f32 = 1e-3;
 /// flags with them. Config ([`Configurable`], so params too) and autotune probes ([`Tunable`])
 /// pass through to the inner component, in view axes. The autotune supervisor
 /// ([`Autotune`](crate::tuning::autotune::Autotune)) still checks its envelope's tilt in the
-/// body frame, so it can't tune a tailsitter in its view yet
-/// ([#321](https://github.com/wboayue/stable-flight/issues/321)).
+/// body frame, so it can't tune a tailsitter in its view yet: TODO(#321).
 ///
 /// Wrap guidance and the stabilizer each in the same view, as ArduPilot builds each tailsitter
 /// controller on its view (see the [module docs](self)).

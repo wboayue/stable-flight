@@ -179,7 +179,7 @@ fn starts_in_the_fallback_and_hands_over_after_recovery() {
             tick(fresh, true, F, false), // fresh 0.1 s; the fallback can't arm
             tick(fresh, true, F, false), // 0.2 s
             tick(fresh, true, P, false), // 0.3 s: the primary flies; the arm sent during the
-            // fallback is dropped at the handover (#235)
+            // fallback is dropped at the handover
             tick(fresh, true, P, true), // a new arm request arms
         ],
     );
@@ -734,7 +734,7 @@ fn disarms_on_touchdown_only_while_the_primary_flies_the_land() {
 }
 
 /// The link drops during an armed land: the hold finishes it, and the failsafe disarms on
-/// touchdown, keeping the descent it saw before the drop (#263).
+/// touchdown, keeping the descent it saw before the drop.
 #[test]
 fn the_hold_finishes_a_land_the_link_dropped() {
     use FailsafeState::{Fallback as F, Primary as P};

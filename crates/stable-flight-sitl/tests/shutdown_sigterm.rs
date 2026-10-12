@@ -1,4 +1,4 @@
-//! SIGTERM requests a graceful stop (#226). A test binary of its own: the signal is
+//! SIGTERM requests a graceful stop. A test binary of its own: the signal is
 //! process-wide, and a second stop signal would exit the process.
 #![cfg(unix)]
 

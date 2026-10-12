@@ -1,5 +1,5 @@
-//! Placeholder pipeline components until real sensors, ESCs, and a transmitter are wired in
-//! (#88). They let the full `FlightLoop` run on target so its timing and flash cost are real:
+//! Placeholder pipeline components until real sensors, ESCs, and a transmitter are wired in.
+//! They let the full `FlightLoop` run on target so its timing and flash cost are real:
 //! the command, estimate, and motor commands pass through [`black_box`], so the optimizer can't
 //! fold the pipeline (or the guidance paths a constant command never takes) away. The core
 //! `testing` doubles aren't reused: that feature is dev-only and carries formatting code.
@@ -17,7 +17,7 @@ const HOLD_ARMED: bool = cfg!(feature = "bench-armed");
 /// Always commands zero throttle, level; disarmed unless built with `bench-armed`, which
 /// makes every tick run guidance, the stabilizer, and the mixer so the loop's timing is real.
 /// `arm` passes through [`black_box`], so both builds link the full pipeline and flash cost
-/// is the same. Replaced by a receiver-driven commander (#134).
+/// is the same. TODO(#134): replace with a receiver-driven commander.
 pub struct HoldCommander;
 
 impl Commander for HoldCommander {

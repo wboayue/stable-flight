@@ -121,7 +121,7 @@ Each example wires the same six-component pipeline. The [`stable-flight` README]
 
 ## Conclusion
 
-This project provides a solid foundation, but there is still work ahead to make it fly on real hardware. The first board is the ARK FPV (STM32H743) running [RTIC 2](https://rtic.rs/2/book/en/); its [firmware](firmware/ark-fpv) already runs the flight loop on target, with placeholder sensing and actuation. Until now, state data has come directly from the simulator. On real hardware, noisy sensor data needs to be read and filtered to generate reliable state estimates, and motor output, arming, and failsafes need to land ([#88](https://github.com/wboayue/stable-flight/issues/88)). I'm excited to tackle these next steps and get a drone airborne with stable flight.
+This project provides a solid foundation, but there is still work ahead to make it fly on real hardware. The first board is the ARK FPV (STM32H743) running [RTIC 2](https://rtic.rs/2/book/en/); its [firmware](firmware/ark-fpv) runs the flight loop on target, with placeholder sensing and actuation. In simulation, state comes directly from the simulator; on real hardware, noisy sensor data needs to be read and filtered into reliable state estimates, and motor output, arming, and failsafes need to land. I'm excited to tackle these next steps and get a drone airborne with stable flight.
 
 ## Getting Involved
 

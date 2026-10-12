@@ -207,8 +207,8 @@ mod tests {
     /// One axis mapping: raw dongle value to command.
     type Channel = fn(f32) -> f32;
 
-    /// Centered sticks command level, wings-flat, no-yaw flight (#65: they read 0.5, a constant
-    /// bank), and each axis reaches full deflection with the `AttitudeCommand` sign.
+    /// Centered sticks command level, wings-flat, no-yaw flight (not 0.5, a constant bank), and
+    /// each axis reaches full deflection with the `AttitudeCommand` sign.
     #[test]
     fn sticks_map_to_signed_unit_range() {
         // (axis, raw dongle value, expected command)

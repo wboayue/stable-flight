@@ -10,7 +10,7 @@
 //! | `heartbeat`   | every 1 s                | 1    | toggle green; blue = on rate, red = off     |
 //!
 //! A panic disables interrupts and lights red alone. The IMU data-ready interrupt will pace
-//! `flight_step` once the sensors land (#130).
+//! `flight_step` once the sensors land: TODO(#130).
 
 #![no_std]
 #![no_main]

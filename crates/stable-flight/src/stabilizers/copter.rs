@@ -38,7 +38,7 @@
 //! # Tuning
 //!
 //! An autotune stage ([`start_probe`](crate::tuning::Tunable::start_probe)) hands one loop to a
-//! [`Probe`](crate::tuning::Probe) (#149, #298). Every controller still runs each tick; before
+//! [`Probe`](crate::tuning::Probe). Every controller still runs each tick; before
 //! the loop's controller runs, the probe sees its
 //! [`LoopSignals`](crate::tuning::LoopSignals) and replaces one value: the loop's output (relay)
 //! or its setpoint (step).
@@ -61,7 +61,7 @@
 //!   restarts with the probe's trim (the relay's bias) as its I term and no derivative
 //!   history: the measured trim carries over, and a retune with the tuned gains
 //!   rescales it like any other (`architecture.md#config-ownership`). On an interrupt the rate
-//!   tick then clears the idle angle loops (#70), so that trim is dropped.
+//!   tick then clears the idle angle loops, so that trim is dropped.
 //! - The stage is runtime state, not config; [`prime`](crate::Stabilizer::prime) ends it.
 
 use crate::Vec3;
@@ -268,7 +268,7 @@ impl Stabilizer for CopterStabilizer {
             Setpoint::Rate(rates) => {
                 // The attitude and heading loops are idle: a stage on one of them ends, and
                 // they are cleared so a switch back to attitude flight carries no stale
-                // integral or derivative history (#70).
+                // integral or derivative history.
                 self.interrupt_attitude_stage();
                 self.attitude = AttitudeController::default();
                 self.yaw = YawController::default();
