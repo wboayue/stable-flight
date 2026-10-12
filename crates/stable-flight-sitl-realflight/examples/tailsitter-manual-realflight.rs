@@ -34,7 +34,7 @@ use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight::{
     ActuatorCommand, Commander, ControlOutput, FlightLoop, Mixer, Saturation, TelemetryPublisher,
-    TelemetryRecord, Vec3, euler_angles,
+    TelemetryRecord, euler_angles,
 };
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
@@ -113,7 +113,7 @@ fn fly(commander: impl Commander, args: &Args) {
 
     let guidance = CopterGuidance::new(airframe.guidance);
     let stabilizer = CopterStabilizer::new(airframe.stabilizer);
-    let mixer = HoverLevel(airframe.mixer);
+    let mixer = HoverLevel::new(airframe.mixer, &airframe.body_rotation);
 
     // The link: the publisher writes it each tick (the flight loop's telemetry), and the poller
     // reads it and serves params between ticks. Queue sizes: 32 param requests, 16 replies.
@@ -149,25 +149,36 @@ fn fly(commander: impl Commander, args: &Args) {
     });
 }
 
-/// Interim (#122): turns moments in RealFlight's hover-level frame into the airplane frame the
-/// tailsitter mixer takes.
+/// Interim (#122): turns moments in RealFlight's hover-level frame into the vehicle (airplane)
+/// frame the tailsitter mixer takes.
 ///
-/// The airplane frame is RealFlight's rotated +90° in pitch: its nose (x) is RealFlight's up
-/// (−z), its belly (z) RealFlight's x, and the span (y) is shared. So airplane roll is
-/// RealFlight's −yaw, pitch is pitch, and airplane yaw is RealFlight's roll.
-struct HoverLevel<M>(M);
+/// The airframe's `body_rotation` is the vehicle frame expressed in RealFlight's, so its
+/// inverse carries a RealFlight-frame vector into the vehicle frame, as `vehicle_state` does
+/// for body rates. For the eXplora (+90° pitch): airplane roll is RealFlight's −yaw, pitch is
+/// pitch, and airplane yaw is RealFlight's roll.
+struct HoverLevel<M> {
+    mixer: M,
+    to_body: UnitQuaternion<f32>,
+}
+
+impl<M> HoverLevel<M> {
+    fn new(mixer: M, body_rotation: &UnitQuaternion<f32>) -> Self {
+        Self {
+            mixer,
+            to_body: body_rotation.inverse(),
+        }
+    }
+}
 
 impl<M: Mixer> Mixer for HoverLevel<M> {
     fn mix(&mut self, controls: &ControlOutput) -> ActuatorCommand {
-        let m = controls.moments;
-        self.0.mix(&ControlOutput::new(
-            controls.thrust,
-            Vec3::new(-m.z, m.y, m.x),
-        ))
+        let moments = self.to_body * controls.moments;
+        self.mixer
+            .mix(&ControlOutput::new(controls.thrust, moments))
     }
 
     fn saturation(&self) -> Saturation {
-        self.0.saturation()
+        self.mixer.saturation()
     }
 }
 

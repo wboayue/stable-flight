@@ -102,12 +102,27 @@ fn explora_vtol_reads_nose_up_at_realflight_level() {
     assert!((pitch - PI / 2.0).abs() < 1e-3, "pitch {pitch}");
 }
 
-/// The airframe's mixer is the tailsitter preset: a hover thrust command drives both motors,
-/// and the elevons stay centered.
+/// Both motors at about 0.7 hover the eXplora in RealFlight (#120).
+const MEASURED_HOVER_MOTOR: f32 = 0.7;
+
+/// `hover_thrust`, through the stabilizer's thrust curve and the mixer, lands both motors on
+/// the measured hover throttle, with the elevons centered.
 #[test]
-fn explora_vtol_hovers_on_both_motors() {
-    let mut mixer = explora_vtol().mixer;
-    let output = mixer.mix(&stable_flight::ControlOutput::new(0.88, Vec3::zeros()));
-    assert!(output.motors[0] == output.motors[1] && output.motors[0] > 0.7);
+fn explora_vtol_hover_thrust_reaches_the_measured_hover_motor() {
+    let airframe = explora_vtol();
+    let curved = airframe
+        .guidance
+        .altitude
+        .hover_thrust
+        .powf(airframe.stabilizer.thrust_curve_exponent);
+    let mut mixer = airframe.mixer;
+    let output = mixer.mix(&stable_flight::ControlOutput::new(curved, Vec3::zeros()));
+    for motor in &output.motors[..2] {
+        assert!(
+            (motor - MEASURED_HOVER_MOTOR).abs() < 0.01,
+            "motors {:?}",
+            output.motors
+        );
+    }
     assert!(output.servos[..2] == [0.0, 0.0]);
 }

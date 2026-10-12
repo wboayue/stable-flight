@@ -18,8 +18,8 @@ pub const CHANNEL_COUNT: usize = 12;
 /// through, and servos (-1.0 to 1.0) are rescaled so 0.0 lands on center (0.5), after negating
 /// any slot in `reversed_servos` (a surface the model moves the other way from the mixer's
 /// convention). Channels no slot drives are sent as 0.0, which holds a servo there at full
-/// deflection ([#271](https://github.com/wboayue/stable-flight/issues/271)): map every servo the model
-/// has.
+/// deflection ([#271](https://github.com/wboayue/stable-flight/issues/271)): map every servo
+/// the model has.
 ///
 /// # Examples
 ///
