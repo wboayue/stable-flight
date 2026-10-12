@@ -32,6 +32,7 @@ pub mod stabilizers;
 pub mod testing;
 pub mod timing;
 pub mod tuning;
+pub mod view;
 
 use core::time::Duration;
 
@@ -39,6 +40,7 @@ use core::time::Duration;
 pub use composition::ComposedVehicle;
 #[doc(inline)]
 pub use flight_loop::FlightLoop;
+pub use view::View;
 
 use nalgebra::UnitQuaternion;
 
@@ -827,6 +829,44 @@ pub struct VehicleState {
     /// 0 is north, with positive values rotating clockwise.
     pub heading_rad: f32,
     // Note: Additional fields for flight mode, GPS data, etc. may be added in the future.
+}
+
+impl VehicleState {
+    /// This state in another body frame: `rotation` is the new body frame expressed in the old
+    /// one (a constant mount or view rotation).
+    ///
+    /// The attitude becomes `attitude · rotation`, the body rates `rotation⁻¹ · ω` (the same
+    /// rotation seen in the new axes), and the Euler fields are recomputed from the new
+    /// attitude. World position, velocity, and acceleration don't depend on the body frame and
+    /// are unchanged.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use core::f32::consts::FRAC_PI_2;
+    /// use stable_flight::nalgebra::UnitQuaternion;
+    /// use stable_flight::VehicleState;
+    ///
+    /// // A tailsitter hovering nose up, seen in a frame rotated −90° in pitch, reads level.
+    /// let nose_up = VehicleState {
+    ///     attitude: UnitQuaternion::from_euler_angles(0.0, FRAC_PI_2, 0.0),
+    ///     ..Default::default()
+    /// };
+    /// let view = nose_up.rotate_body(&UnitQuaternion::from_euler_angles(0.0, -FRAC_PI_2, 0.0));
+    /// assert!(view.pitch_rad.abs() < 1e-6);
+    /// ```
+    pub fn rotate_body(&self, rotation: &UnitQuaternion<f32>) -> Self {
+        let attitude = self.attitude * rotation;
+        let (roll_rad, pitch_rad, heading_rad) = euler_angles(&attitude);
+        VehicleState {
+            attitude,
+            angular_velocity_radps: rotation.inverse_transform_vector(&self.angular_velocity_radps),
+            roll_rad,
+            pitch_rad,
+            heading_rad,
+            ..self.clone()
+        }
+    }
 }
 
 /// Represents a physical vehicle that can be controlled by the flight system.

@@ -57,6 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TableMixer::new` validates a custom table (`MixerError`). Presets: `quad_x`, `quad_plus`,
   `hex_x`, `hex_plus`, `octo_x`, `y6`, `x8`, `tri` (tail tilt servo), `bi` (tilting rotors),
   `tailsitter_2p_hover` (2 motors and 2 elevons, airplane frame, #121).
+- **`View`** (#122): runs a `Guidance` or `Stabilizer` in a body frame rotated by a
+  constant: the state goes in rotated, a stabilizer's moments come back in the body frame, and
+  config, params, and autotune probes pass through. `View::tailsitter` (90° in pitch) flies a
+  tailsitter's nose-up hover on the copter controllers, as ArduPilot's tailsitter view does.
+- **`VehicleState::rotate_body`:** the state in another body frame (attitude, body rates, Euler
+  fields), for a constant mount or view rotation.
 - **`ActuatorCommand::SLOTS`:** the number of motor and of servo slots (8).
 
 ### Changed
