@@ -19,7 +19,7 @@ const RATE_LOG_INTERVAL: u64 = 100;
 
 /// How far behind schedule the loop may fall and still catch up by running ticks
 /// back-to-back. Above it (or one period, if longer) it resyncs instead. Simulator round-trip
-/// jitter (up to ~20 ms with RealFlight, #76) stays below it, so `dt` summed over ticks keeps
+/// jitter (up to ~20 ms with RealFlight) stays below it, so `dt` summed over ticks keeps
 /// tracking wall time; a reconnect (up to 250 ms in the RealFlight examples) exceeds it.
 const MAX_LAG: Duration = Duration::from_millis(100);
 

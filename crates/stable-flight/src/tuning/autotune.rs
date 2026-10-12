@@ -62,10 +62,10 @@ pub const COPTER_ANGLE_RELAY: RelayConfig = RelayConfig {
 };
 
 /// The loops [`StagePlan::copter_sequence`] tunes by relay: roll and pitch rate, the loops a
-/// bad start breaks. Flights on QuadCopterX (#295) left the rest out:
+/// bad start breaks. The rest stay out (measured on QuadCopterX, #295):
 ///
-/// - Yaw rate: the relay can't measure it within the yaw authority the mixer leaves at hover
-///   (#296).
+/// - Yaw rate: the relay can't measure it within the yaw authority the mixer leaves at hover:
+///   TODO(#296).
 /// - Roll and pitch angle: the relay measures a high ultimate gain (about 60: an integrator
 ///   around a fast rate loop), and the rule's P oscillates once a few degrees of error saturate
 ///   the rate setpoint and the moments. [`StagePlan::copter_search`] tunes them by step
@@ -222,7 +222,7 @@ pub const COPTER_RATE_STEP: StepConfig = StepConfig {
 };
 
 /// Step response of a copter angle loop: 10° held for 1.5 s, filtered at 20 Hz. QuadCopterX's
-/// hand-tuned angle loop (P 3) reached only 89% of the step in 0.8 s (#298), so the window
+/// hand-tuned angle loop (P 3) reaches only 89% of the step in 0.8 s (#298), so the window
 /// covers about four of its time constants; the vehicle drifts about 2 m meanwhile.
 pub const COPTER_ANGLE_STEP: StepConfig = StepConfig {
     amplitude: 0.175,
@@ -433,12 +433,12 @@ impl SearchPlan {
     /// bounce-back 0.1) in [0.1, 3]. Steps of [`COPTER_RATE_STEP`], two pairs for the baseline
     /// and the verify; a bracket point passes on two pairs in a row; brackets of `× 1.3`
     /// bisected to 10%, a 0.9 margin. Steps clip for up to 10 ticks ([`StepTestPlan::copter`]):
-    /// with 5, clipping rather than overshoot capped P on QuadCopterX; a 0.5 rad/s step instead
-    /// doubled the noise relative to the step (#304).
+    /// with 5, clipping rather than overshoot caps P on QuadCopterX, and a 0.5 rad/s step
+    /// doubles the noise relative to the step (#304).
     ///
     /// ArduPilot's D search (largest D before bounce-back) doesn't bound D on closed-loop
     /// steps: with the rate I, overshoot decays without falling back, so D climbs until the
-    /// response overdamps. The relay's D flew well on QuadCopterX (#295, #301).
+    /// response overdamps. The relay's D flies well on QuadCopterX (#295, #301).
     ///
     /// # Examples
     ///
@@ -1043,7 +1043,7 @@ struct Request {
     gains: Option<Gains>,
 }
 
-/// Runs a copter autotune between ticks (#149, #298): each [`StagePlan`]'s procedure decides
+/// Runs a copter autotune between ticks: each [`StagePlan`]'s procedure decides
 /// which probes to run on its loop ([`Tunable::start_probe`]) and what gains follow from
 /// them; the supervisor executes it.
 ///

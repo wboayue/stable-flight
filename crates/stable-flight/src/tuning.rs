@@ -1,6 +1,6 @@
-//! PID autotune (#149): measure a loop, turn the measurement into gains, and run it per loop.
+//! PID autotune: measure a loop, turn the measurement into gains, and run it per loop.
 //!
-//! Phase 1 of the autotune is relay feedback (Åström & Hägglund, 1984). A [`RelayTuner`]
+//! The relay is feedback (Åström & Hägglund, 1984). A [`RelayTuner`]
 //! replaces one loop's controller output with `bias ± h`, switching on the sign of the error
 //! (with hysteresis). The plant settles into a limit cycle whose period `Tu` and amplitude `a`
 //! give the ultimate gain `Ku = 4h / (π·√(a² − ε²))`: the point where a proportional
@@ -11,7 +11,7 @@
 //! under test.
 //!
 //! - [`Probe`]: one loop's excitation and measurement, run inside the tick: the relay, or a
-//!   [`StepProbe`] (#298) whose [`StepMetrics`] describe the loop's step response.
+//!   [`StepProbe`] whose [`StepMetrics`] describe the loop's step response.
 //! - [`Tunable`]: a stabilizer that hosts a probe on one of its loops
 //!   ([`CopterStabilizer`](crate::stabilizers::copter::CopterStabilizer)).
 //! - [`autotune::Autotune`]: the copter supervisor, run between ticks: executes each stage's

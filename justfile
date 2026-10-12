@@ -55,6 +55,18 @@ fw-flash features="": (fw-bin features)
     echo ">>> Flash done. PRESS NRST to boot cleanly (:leave auto-run is unreliable)."
     echo ">>> 'get_status' / 'Invalid DFU suffix' warnings above are benign."
 
+# Lists TODO(#n) markers in Rust sources whose issue is closed (needs gh); fails if any
+todo-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    open=$(gh issue list --state open --limit 1000 --json number -q '.[].number')
+    stale=0
+    while IFS= read -r hit; do
+        n=$(sed -E 's/.*TODO\(#([0-9]+)\)$/\1/' <<<"$hit")
+        if ! grep -qx "$n" <<<"$open"; then echo "closed: $hit"; stale=1; fi
+    done < <(grep -rnoE --include='*.rs' --exclude-dir=target 'TODO\(#[0-9]+\)' crates firmware || true)
+    exit $stale
+
 # Generate and save coverage report using tarpaulin
 cover:
     cargo tarpaulin -o html

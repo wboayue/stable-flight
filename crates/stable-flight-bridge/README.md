@@ -10,7 +10,7 @@ Companion-computer bridge for a [Stable Flight](https://github.com/wboayue/stabl
 
 ## Status
 
-[#154](https://github.com/wboayue/stable-flight/issues/154) params, state, and commands slices: QGC connects, lists and edits params, shows attitude, position, home, and the landed state, arms and disarms, and flies a link-fed flight controller with its joystick; offboard apps send position targets and land. QGC has no guided actions (takeoff, go-to, land, RTL) for a generic autopilot: its base firmware plugin reports no guided-mode capability, which hides those buttons (QGC `FirmwarePlugin.h:128`, `GuidedActionsController.qml:129-131`, at `a76f229`).
+QGC connects, lists and edits params, shows attitude, position, home, and the landed state, arms and disarms, and flies a link-fed flight controller with its joystick; offboard apps send position targets and land. QGC has no guided actions (takeoff, go-to, land, RTL) for a generic autopilot: its base firmware plugin reports no guided-mode capability, which hides those buttons (QGC `FirmwarePlugin.h:128`, `GuidedActionsController.qml:129-131`, at `a76f229`).
 
 | MAVLink | Bridge |
 |---|---|

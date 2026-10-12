@@ -1,4 +1,4 @@
-//! Times RealFlight exchanges with no flight loop around them, to locate periodic stalls (#255).
+//! Times RealFlight exchanges with no flight loop around them, to locate periodic stalls.
 //!
 //! Calls `exchange_data` with neutral inputs (motors off: run it with the aircraft on the
 //! ground) at a paced rate, and logs every exchange slower than `--threshold-ms` with the time

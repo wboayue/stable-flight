@@ -23,8 +23,8 @@ pub struct LateralControllerConfig {
 impl Default for LateralControllerConfig {
     fn default() -> Self {
         Self {
-            // Unsaturated, `velocity.p · (position_p · e − v)` is the flight-checked position
-            // PD (#108, rescaled for the atan tilt in #71): P 0.63, D 1.26, ζ ≈ 0.8.
+            // Unsaturated, `velocity.p · (position_p · e − v)` is a flight-checked position PD
+            // for the atan tilt: P 0.63, D 1.26, ζ ≈ 0.8 (#108).
             position_p: 0.5,
             velocity: Gains {
                 p: 1.26,

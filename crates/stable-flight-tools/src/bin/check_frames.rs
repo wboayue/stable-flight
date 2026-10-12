@@ -1,4 +1,4 @@
-//! Checks RealFlight captures against the `VehicleState` frame contract (#62, #120), offline.
+//! Checks RealFlight captures against the `VehicleState` frame contract, offline.
 //!
 //! Reads a capture (`capture-state-realflight` or `channel-sweep-realflight`), converts each
 //! exchange with the backend's `vehicle_state` (with the model's body rotation, `--pitch-deg`),

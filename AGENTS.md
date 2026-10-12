@@ -59,6 +59,7 @@ just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXpl
 just capture                                  # capture-state-realflight: joystick flight, raw SimulatorState → CSV
 just plot <csv> <out> | just gen-figure-eight # plot_flight, generate_figure_eight
 just tag <crate> <version> | just versions    # push a <crate>-v<version> tag; list tags
+just todo-check                               # TODO(#n) markers whose issue is closed (needs gh)
 cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight -- --motors 0,1 --servos 2,3  # drive raw channels, record a capture
 cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight                           # time RealFlight exchanges alone
 cargo run --bin check_frames -- capture.csv   # capture vs the frame contract (--pitch-deg: body rotation, 90 for the eXplora)
@@ -139,6 +140,17 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 - Firmware size: fixed-size math only (no dynamic matrices or decompositions), no
   `Display`/`Debug` formatting on target; measure with `just fw-size` rather than guess (`libm`
   trig dominates).
+- **Comments and docs state the current code**, not how it got there:
+  - Rustdoc is the contract: behavior, units, invariants.
+  - Inline comments give the non-obvious *why* in present tense: physics, invariants, a
+    measured fact.
+  - Cite where evidence or a spec lives, one trailing reference: `(#n)` for flight data behind
+    a tuned value, ArduPilot `file:line`. No narrative ("raised from", "previously", "after
+    #n", "interim").
+  - Open work is `TODO(#n)` (`just todo-check` flags ones whose issue closed).
+  - `architecture.md` gives rationale, including briefly why rejected alternatives were
+    rejected. A regression test may name the issue it guards; its name states the behavior.
+  - History lives in commits, PR bodies, and CHANGELOGs.
 - Logging via `log`: `info!` for lifecycle events, `debug!` inside the loop.
 - Hot path (anything `FlightLoop::step` calls, and firmware): no allocation per tick, no blocking
   I/O.
@@ -222,7 +234,7 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 - **Docs follow the code in the same PR.** Each fact has one home; others link to it:
   - crate `README.md`: that crate's purpose, usage, and features;
   - root `README.md`: overview, **Status**, crate index, boards, simulators, quick start;
-  - `AGENTS.md`: layout, commands, rules, checklist (current state, not history);
+  - `AGENTS.md`: layout, commands, rules, checklist;
   - `CONTRIBUTING.md`: entry point for outside contributors, linking here;
   - `SECURITY.md`: supported versions and reporting;
   - `.github/` templates: what an issue or PR must include;
@@ -286,4 +298,4 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 - [ ] Public API has rustdoc with at least one example.
 - [ ] Hot-path code allocates nothing per tick.
 - [ ] Coverage stays at or moves toward 90%+.
-- [ ] Owning docs, status claims, and affected changelogs reflect the change.
+- [ ] Owning docs, status claims, and affected changelogs reflect the change; comments state the current code.

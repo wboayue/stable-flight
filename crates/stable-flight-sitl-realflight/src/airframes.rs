@@ -43,10 +43,9 @@ pub struct Airframe<G, S, M> {
 /// [QuadCopterX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX)
 /// in RealFlight.
 ///
-/// The stabilizer gains were hand-tuned flying `copter-manual-realflight` in attitude mode after
-/// the frame fix (#62); guidance uses the core defaults (lateral and altitude gains and the tilt
-/// cap were flight-checked on this model) with this model's measured hover thrust. Both
-/// RealFlight examples fly this set.
+/// The stabilizer gains are hand-tuned in attitude mode; guidance uses the core defaults
+/// (lateral and altitude gains and the tilt cap are flight-checked on this model) with this
+/// model's measured hover thrust. The QuadCopterX examples fly this set.
 ///
 /// # Examples
 ///
@@ -62,7 +61,7 @@ pub struct Airframe<G, S, M> {
 /// assert_eq!(airframe.mapping.motors[0], Some(2));
 /// ```
 pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, TableMixer<4>> {
-    // Roll and pitch share one hand tune; autotune (#149) can split them.
+    // Roll and pitch share one hand tune; autotune can split them.
     let rate_roll_pitch = Gains {
         p: 0.5,
         i: 0.2,
@@ -89,8 +88,7 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
                 pitch_gains: rate_roll_pitch,
                 // Yaw authority is differential prop drag only, so yaw needs its own, higher gains.
                 // The model needs a steady ~0.40 nose-right yaw moment to hover; I · max_integral
-                // = 0.6 cancels it with margin. At I 0.2 the integral pinned at 0.2 and acro
-                // drifted ~19°/s CCW (#192).
+                // = 0.6 cancels it with margin; with less, acro drifts in yaw (#192).
                 yaw_gains: Gains {
                     p: 0.6,
                     i: 0.6,
@@ -124,19 +122,19 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 /// - **Mixer:** [`TableMixer::tailsitter_2p_hover`], whose factors are in the airplane body
 ///   frame (x the nose).
 /// - **Mapping:** motors 0/1 (left/right) on channels 6/5, elevons (servos 0/1) on channels
-///   1/2 (RealFlight numbering; 5/4 and 0/1 here), the left elevon reversed. The channels are
-///   from the #120 capture; which motor is which and the reversal from #121's first hops.
+///   1/2 (RealFlight numbering; 5/4 and 0/1 here), the left elevon reversed (captures: #120,
+///   #121).
 /// - **Body rotation:** +90° pitch. RealFlight's frame for this model is hover-level (sitting
 ///   on its tail reads level), and the vehicle's is the airplane's, so hover reads pitch 90°.
 /// - **Thrust limits:** the elevons hold the nose up only in the propwash, and a sink turns
-///   the airflow against it (#123 hops 1 and 2). A floor (0.65, below the 0.84 hover) and a
+///   the airflow against it (flight data: #123). A floor (0.65, below the 0.84 hover) and a
 ///   sink guard (past 1 m/s) keep the propwash; the tilt boost stops at 0.9, leaving motor
 ///   headroom for differential thrust.
 ///
 /// Fly the copter guidance and stabilizer in a tailsitter
 /// [`View`](stable_flight::View), as `tailsitter-manual-realflight` does: hover is level there.
 /// The stabilizer gains are in the view's axes (roll: tilting sideways, yaw: turning about the
-/// vertical), hand-tuned from stick pulses and low-throttle descents (#121, #123).
+/// vertical), hand-tuned from stick pulses and low-throttle descents (flight data: #123, #328).
 ///
 /// # Examples
 ///
@@ -152,43 +150,41 @@ pub fn explora_vtol() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
     Airframe {
         guidance: CopterGuidanceConfig {
             altitude: AltitudeControllerConfig {
-                // Measured (#123 hop 1): a level hover holds at mean motor 0.63 = 0.9 · 0.84²,
+                // Measured (#123): a level hover holds at mean motor 0.63 = 0.9 · 0.84²,
                 // through the squared thrust curve and the mixer's thrust factor.
                 hover_thrust: 0.84,
                 ..CopterGuidanceConfig::default().altitude
             },
             // The elevons hold the nose up only in the propwash, and a sink of a few m/s turns
-            // the airflow against it: every hop 1 and 2 upset (#123) began as the climb rate
-            // passed into a sink, at the hop 2 floor (0.75) too. The floor keeps some propwash
-            // (0.65 is 60% of hover thrust force, which goes as its square); the sink guard
+            // the airflow against it and drops the nose, whatever the floor. The floor keeps
+            // some propwash (0.65 is 60% of hover thrust force, which goes as its square); the
+            // sink guard
             // brings thrust back toward hover past a 1 m/s sink (0.65 + 0.15 · 2 m/s = 0.95 at
             // 3 m/s).
             thrust: ThrustLimits {
                 min_thrust: 0.65,
                 sink_limit_mps: 1.0,
                 sink_gain: 0.15,
-                // At full boost the motor pair hit 1.0 and differential thrust (view roll)
-                // could only push one way: hop 2 rolled on to −80° after the stick centered
-                // (#123).
+                // At full boost the motor pair saturates and differential thrust (view roll)
+                // can only push one way, so a roll can't be stopped (#123).
                 max_boost_thrust: 0.9,
             },
             ..CopterGuidanceConfig::default()
         },
         stabilizer: CopterStabilizerConfig {
             body_rate: BodyRateControllerConfig {
-                // Differential thrust (the mixer's airplane yaw, 0.25 per unit moment). Raised
-                // from 0.2/0.1: at 0.2 a 0.58 moment only slowed a hop 2 roll (#123).
+                // Differential thrust (the mixer's airplane yaw, 0.25 per unit moment): weak
+                // authority, so it needs these gains to stop a roll (#123).
                 roll_gains: gains(0.4, 0.2, 0.0),
-                // Elevons (full range per unit moment). I raised from 0.1: sinking 1.5 m/s in
-                // hop 3 (#123) the nose sat 31° off with the integral at its limit (0.1 of
-                // moment); I · max_integral = 0.5 holds against the sink's airflow.
+                // Elevons (full range per unit moment). Sinking, the airflow pushes the nose
+                // over; I · max_integral = 0.5 of moment holds it level (#123).
                 pitch_gains: gains(0.3, 0.5, 0.0),
                 yaw_gains: gains(0.1, 0.05, 0.0),
                 max_integral: 1.0,
             },
             attitude: AttitudeControllerConfig {
-                // P raised from 2 (#327): at 2 the rate loops tracked, but asked only ~54°/s
-                // at 27° off, so recoveries took ~1 s and left a 2–4° tail for seconds.
+                // The rate loops track well; P 4 asks ~110°/s at 27° off, so recoveries take
+                // about half a second without a lingering tail (#328).
                 roll_gains: gains(4.0, 0.0, 0.0),
                 pitch_gains: gains(4.0, 0.0, 0.0),
                 max_integral: 100.0,
@@ -199,12 +195,10 @@ pub fn explora_vtol() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
         },
         mixer: TableMixer::tailsitter_2p_hover(),
         mapping: ActuatorMapping {
-            // Left motor on channel 6, right on 5: the first hops (#121) rolled toward the motor
-            // with more thrust with them the other way round.
+            // Left motor on channel 6, right on 5.
             motors: [Some(5), Some(4), None, None, None, None, None, None],
             servos: [Some(0), Some(1), None, None, None, None, None, None],
-            // The elevon channels run opposite ways (#121 ground check); with the right one reversed,
-            // pitch and yaw diverged on the first hop, so it is the left.
+            // The elevon channels run opposite ways; the left one is reversed.
             reversed_servos: [true, false, false, false, false, false, false, false],
         },
         body_rotation: UnitQuaternion::from_euler_angles(0.0, PI / 2.0, 0.0),

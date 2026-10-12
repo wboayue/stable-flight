@@ -7,7 +7,7 @@
 //!
 //! The vehicle frame is the airplane's (the airframe's body rotation), so hover reads pitch 90°.
 //! The copter guidance and stabilizer fly it in a tailsitter [`View`], where nose-up hover reads
-//! level (ArduPilot's tailsitter view, #122), and the stabilizer's moments come back in the
+//! level (ArduPilot's tailsitter view), and the stabilizer's moments come back in the
 //! airplane frame for the tailsitter mixer. In the view the sticks fly it like a copter whose
 //! front is the belly: roll tilts it sideways (differential thrust), pitch tilts it toward its
 //! belly or back (elevons together), and yaw turns it about the vertical (elevons opposite).

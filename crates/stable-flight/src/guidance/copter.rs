@@ -130,7 +130,7 @@ pub struct CopterGuidanceConfig {
 }
 
 /// Bounds on [`CopterGuidance`]'s thrust while flying, for an airframe whose control comes
-/// from the propwash (a tailsitter, #123). The defaults bound nothing.
+/// from the propwash (a tailsitter). The defaults bound nothing.
 ///
 /// # Examples
 ///
@@ -159,7 +159,7 @@ pub struct ThrustLimits {
     /// above [`IDLE_THROTTLE`]) gets more thrust: [`sink_gain`](Self::sink_gain) per m/s of
     /// sink past it, on top of the stick (and floor). Direct throttle can't hold a descent
     /// rate, and a tailsitter sinking a few m/s has air flowing up against its propwash, which
-    /// takes the elevons' authority and drops the nose (#123). Waypoint and land flight limit
+    /// takes the elevons' authority and drops the nose. Waypoint and land flight limit
     /// their own descents ([`CopterGuidanceConfig::max_descent_mps`]). Must be non-negative
     /// and finite; `0` (the default) disables it.
     pub sink_limit_mps: f32,
@@ -168,7 +168,7 @@ pub struct ThrustLimits {
     pub sink_gain: f32,
     /// Most thrust the attitude-mode tilt boost may raise the stick to, in `(0, 1]`. A stick
     /// above it passes through; the boost doesn't push past it, so a tilted vehicle keeps
-    /// motor headroom for the moments (a tailsitter rolling on differential thrust, #123).
+    /// motor headroom for the moments (a tailsitter rolling on differential thrust).
     /// Defaults to 1 (no ceiling).
     pub max_boost_thrust: f32,
 }

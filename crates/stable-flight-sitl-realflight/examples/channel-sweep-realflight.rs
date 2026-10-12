@@ -1,4 +1,4 @@
-//! Sweeps a RealFlight model's channels one by one and records every exchange (#120): for
+//! Sweeps a RealFlight model's channels one by one and records every exchange: for
 //! mapping a new model's channels and checking the frame contract on it (`check_frames` in
 //! `stable-flight-tools`), with no flight loop around it.
 //!

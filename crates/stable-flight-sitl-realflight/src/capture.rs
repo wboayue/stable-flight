@@ -1,6 +1,6 @@
 //! Raw RealFlight captures: every [`SimulatorState`] an exchange returns, unconverted, with the
 //! channels sent in it, as CSV. [`RecordingBridge`] writes them under any pipeline;
-//! [`read_capture`] reads them back for offline checks (e.g. the frame contract, #62, #120).
+//! [`read_capture`] reads them back for offline checks (e.g. the frame contract).
 
 use std::cell::RefCell;
 use std::io::{self, BufRead, Write};

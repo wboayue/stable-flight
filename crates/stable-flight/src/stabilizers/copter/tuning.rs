@@ -1,5 +1,5 @@
 //! Autotune stages hosted by the [`CopterStabilizer`]: one loop's output replaced by a
-//! [`Probe`] (#149, #298). See the "Tuning" section on [`CopterStabilizer`].
+//! [`Probe`]. See the "Tuning" section on [`CopterStabilizer`].
 
 use crate::Vec3;
 use crate::controllers::AttitudeController;

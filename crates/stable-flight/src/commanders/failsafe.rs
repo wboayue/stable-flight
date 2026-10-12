@@ -42,7 +42,7 @@ pub trait Fallback: Commander {
     }
 
     /// Whether the primary may take over again once fresh. `false` keeps the fallback flying,
-    /// e.g. a landing that must finish (#66). The default always releases.
+    /// e.g. a landing that must finish. The default always releases.
     fn can_release(&self) -> bool {
         true
     }
@@ -111,7 +111,7 @@ impl FailsafeConfig {
 ///   [`TouchdownDetector`] watches it. On touchdown the vehicle disarms and the primary's arm is
 ///   [synced](LinkedCommander::sync_arm) to it, so it stays disarmed until the primary arms
 ///   again. A land that carries on across a handover (a [`HoldCommander`] finishes the
-///   primary's land when the link drops, #263) keeps its detector; anything else (a hold, a
+///   primary's land when the link drops) keeps its detector; anything else (a hold, a
 ///   disarm, another input) starts it over, so a hold that follows a descent can't read as
 ///   touchdown.
 ///
@@ -335,7 +335,7 @@ pub const DEFAULT_HOLD_SPEED_MPS: f32 = 2.0;
 ///
 /// It needs a position estimate. While the position isn't finite it retries the latch each
 /// tick, flying a NaN waypoint meanwhile, which guidance treats as level at hover thrust (the
-/// input policy). A vehicle without position needs a landing fallback instead (#66).
+/// input policy). A vehicle without position needs a landing fallback instead.
 ///
 /// # Examples
 ///

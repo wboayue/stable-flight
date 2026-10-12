@@ -352,7 +352,7 @@ stable_flight::conformance_tests! {
 }
 
 /// The eXplora VTOL's body rotation: its RealFlight frame is hover-level, the vehicle's is the
-/// airplane's, so RealFlight's level is nose up (#314).
+/// airplane's, so RealFlight's level is nose up.
 fn explora_rotation() -> UnitQuaternion<f32> {
     crate::airframes::explora_vtol().body_rotation
 }
@@ -777,7 +777,7 @@ fn realflight_orientation(attitude: &UnitQuaternion<f32>) -> Quaternion {
 }
 
 /// The Euler fields come from the quaternion, so they agree with `attitude` at any pitch,
-/// including nose-up (a tailsitter's hover, #120), where RealFlight's own roll and azimuth are
+/// including nose-up (a tailsitter's hover), where RealFlight's own roll and azimuth are
 /// degenerate; RealFlight's Euler angles are ignored.
 #[test]
 fn euler_fields_follow_the_quaternion_nose_up() {

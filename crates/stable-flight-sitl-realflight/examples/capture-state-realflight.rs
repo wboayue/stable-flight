@@ -5,7 +5,7 @@
 //!
 //! RealFlight only reports state while its Link controller drives the model, so a passive
 //! capture alongside a transmitter isn't possible; this taps the bridge under the normal
-//! pipeline instead. The CSV is for checking the adapter's frame conversions (#62) against what
+//! pipeline instead. The CSV is for checking the adapter's frame conversions against what
 //! RealFlight actually reports. Fly a mix of roll, pitch, yaw, translation, and climb; stop
 //! with Ctrl-C. Params and telemetry go over the native link for the bridge (`just bridge`), as
 //! in `copter-manual-realflight` (`--link-bind`, `--link-peer`).
