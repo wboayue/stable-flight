@@ -4,7 +4,9 @@
 //! ground) at a paced rate, and logs every exchange slower than `--threshold-ms` with the time
 //! since the previous slow one. Ctrl-C prints the latency percentiles and hands RC back to
 //! RealFlight. A connection error, such as an exchange over the bridge's I/O timeout, stops the
-//! probe and reports: a remote bridge is out of sync after one, so rerun the probe.
+//! probe and reports: a remote bridge is out of sync after one, so rerun the probe. A request
+//! RealFlight doesn't answer in time on the proxy (`BridgeError::Simulator`) counts as an error,
+//! and the probe goes on.
 //!
 //! By default it goes through the `realflight_bridge_proxy` at `--host`, as the flight examples
 //! do. `--local <simulator addr>` talks to RealFlight directly instead (run it on the RealFlight
