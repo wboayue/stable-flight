@@ -207,6 +207,15 @@ pub(crate) fn tilt_boost(attitude: &UnitQuaternion<f32>) -> f32 {
     upright / cosine.max(MIN_TILT_COSINE)
 }
 
+/// The cosine of the nose's (body `x`) tilt from vertical: `1` pointing straight up, `0`
+/// level, `−1` straight down; the sine of the pitch, read from the quaternion directly (the
+/// rotation matrix's `(2, 0)` entry, negated for NED's down `z`), so it stays well defined at
+/// ±90° pitch where the Euler angles don't. NaN for a non-finite attitude.
+pub(crate) fn nose_up_cosine(attitude: &UnitQuaternion<f32>) -> f32 {
+    let (w, x, y, z) = (attitude.w, attitude.i, attitude.j, attitude.k);
+    2.0 * (w * y - x * z)
+}
+
 /// Saturates a throttle or thrust command to [0, 1]; NaN becomes 0 (no thrust).
 pub(crate) fn saturate_throttle(value: f32) -> f32 {
     if value.is_nan() {
