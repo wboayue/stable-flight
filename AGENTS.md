@@ -263,7 +263,11 @@ usage: [sitl-realflight README](crates/stable-flight-sitl-realflight/README.md).
 2. Before designing around external software (QGC, other MAVLink peers, simulator clients),
    verify the behavior you rely on in its source, not from memory, and record the findings with
    file:line in the issue or PR. Examples: QGC's connect and metadata handling (#206 comment),
-   and its arming and `MANUAL_CONTROL` (#234 PR).
+   and its arming and `MANUAL_CONTROL` (#234 PR). Other flight stacks are references too
+   (ArduPilot: #122, #325), but this repo is MIT: from GPL code (ArduPilot, GPL-3.0) cite
+   file:line and describe the behavior in your own words, then implement from that
+   description; never copy or translate its code. Do the same by default with permissive code
+   (PX4 BSD-3-Clause, QGC Apache-2.0); copying it would also carry its notice.
 3. Read the relevant trait in core `src/lib.rs` and its existing impls before adding a new one. Hardware-reusable code (control math, mixing, sequencing) goes in the core crate; anything touching an OS, clock, file, or network goes in sitl; anything specific to one simulator goes in its `stable-flight-sitl-<simulator>` backend crate. Firmware stays thin: a board crate only wires hardware to the pipeline (clocks, RTIC tasks, peripheral setup); logic it needs (sensor parsing, ESC protocol encoding, estimation) goes in core or another `no_std` crate under `crates/`, unit-tested on the host (`embedded-hal-mock` for drivers) so it counts toward coverage. Firmware itself is excluded from coverage; on-target tests (`embedded-test`) and HIL (#243) check it instead.
 4. Wire new components into a `FlightLoop` + `RealTimeRunner` the way sitl-realflight `examples/copter-manual-realflight.rs` does — that's the canonical reference.
 5. Add tests alongside the code; cover the boundary/error case, not just the happy path.
