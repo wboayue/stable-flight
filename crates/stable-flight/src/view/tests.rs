@@ -7,7 +7,7 @@ use super::*;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::params::Params;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
-use crate::tuning::RelayConfig;
+use crate::tuning::autotune::COPTER_RATE_RELAY;
 use crate::{AttitudeCommand, AttitudeSetpoint, Vec3, euler_angles};
 
 const DT: f32 = 0.004;
@@ -98,8 +98,9 @@ fn body_rates_land_on_the_view_axes() {
     }
 }
 
-/// A stabilizer that answers every tick with fixed moments.
-struct FixedMoments(Vec3);
+/// A stabilizer that answers every tick with fixed moments, and reports fixed per-axis
+/// saturation.
+struct FixedMoments(Vec3, [bool; 3]);
 
 impl Stabilizer for FixedMoments {
     fn stabilize(
@@ -109,6 +110,14 @@ impl Stabilizer for FixedMoments {
         _state: &VehicleState,
     ) -> ControlOutput {
         ControlOutput::new(0.5, self.0)
+    }
+
+    fn saturation(&self) -> Saturation {
+        Saturation {
+            moments: self.1,
+            mixer_thrust: true,
+            ..Saturation::default()
+        }
     }
 }
 
@@ -124,7 +133,7 @@ fn moments_return_to_the_body_axes() {
         (Vec3::new(0.1, -0.2, 0.3), Vec3::new(-0.3, -0.2, 0.1)),
     ];
     for (view_moments, body_moments) in cases {
-        let mut stabilizer = View::tailsitter(FixedMoments(view_moments));
+        let mut stabilizer = View::tailsitter(FixedMoments(view_moments, [false; 3]));
         let output = stabilizer.stabilize(
             DT,
             &Setpoint::Attitude(AttitudeSetpoint::default()),
@@ -246,22 +255,42 @@ fn probes_pass_through_the_view() {
     let mut stabilizer = View::tailsitter(CopterStabilizer::new(CopterStabilizerConfig::default()));
     check!(stabilizer.probe().is_none());
 
-    let relay = RelayConfig {
-        initial_relay: 0.05,
-        max_relay: 0.3,
-        relay_step: 1.5,
-        hysteresis: 0.002,
-        min_cycle_amplitude: 0.05,
-        max_cycle_amplitude: 2.0,
-        max_half_cycle_s: 0.3,
-        max_bias: 0.3,
-        bias_gain: 0.2,
-        cycles: 4,
-        tolerance: 0.1,
-        timeout_s: 20.0,
-    };
-    stabilizer.start_probe(TunedLoop::YawRate, ProbeConfig::Relay(relay));
+    stabilizer.start_probe(TunedLoop::YawRate, ProbeConfig::Relay(COPTER_RATE_RELAY));
     check!(stabilizer.inner().probe().map(|(target, _)| target) == Some(TunedLoop::YawRate));
     check!(stabilizer.stop_probe().map(|(target, _)| target) == Some(TunedLoop::YawRate));
     check!(stabilizer.probe().is_none());
+}
+
+/// Per-axis saturation flags follow the moments into body axes (view roll is airplane yaw, view
+/// yaw is airplane roll); an identity view leaves them alone, and other flags pass through.
+#[test]
+fn saturation_flags_follow_the_moments_into_body_axes() {
+    let tailsitter = View::tailsitter(()).rotation;
+    // (view, view flags, body flags)
+    let cases = [
+        (tailsitter, [true, false, false], [false, false, true]),
+        (tailsitter, [false, true, false], [false, true, false]),
+        (tailsitter, [false, false, true], [true, false, false]),
+        (tailsitter, [true, false, true], [true, false, true]),
+        (
+            UnitQuaternion::identity(),
+            [true, false, false],
+            [true, false, false],
+        ),
+        (
+            UnitQuaternion::from_euler_angles(0.0, 0.0, 0.3),
+            [true, false, false],
+            [true, true, false],
+        ),
+    ];
+    for (rotation, view_flags, body_flags) in cases {
+        let stabilizer = View::new(FixedMoments(Vec3::zeros(), view_flags), rotation);
+        let saturation = stabilizer.saturation();
+        check!(
+            saturation.moments == body_flags,
+            "{view_flags:?} → {:?}",
+            saturation.moments
+        );
+        check!(saturation.mixer_thrust);
+    }
 }

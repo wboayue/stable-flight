@@ -30,13 +30,20 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
+/// The smallest share of a view axis in a body axis that carries a saturation flag across:
+/// above float noise (a 90° rotation leaves ~1e-7 off-axis).
+const AXIS_SHARE: f32 = 1e-3;
+
 /// A [`Guidance`] or [`Stabilizer`] run in a body frame rotated by a constant.
 ///
 /// `rotation` is the view's frame expressed in the vehicle's body frame. Each tick the inner
 /// component sees the state in the view ([`VehicleState::rotate_body`]); a viewed stabilizer's
-/// moments are rotated back into the body frame for the mixer. Config ([`Configurable`], so
-/// params too) and autotune probes ([`Tunable`]) pass through to the inner component, in view
-/// axes.
+/// moments are rotated back into the body frame for the mixer, and its per-axis saturation
+/// flags with them. Config ([`Configurable`], so params too) and autotune probes ([`Tunable`])
+/// pass through to the inner component, in view axes. The autotune supervisor
+/// ([`Autotune`](crate::tuning::autotune::Autotune)) still checks its envelope's tilt in the
+/// body frame, so it can't tune a tailsitter in its view yet
+/// ([#321](https://github.com/wboayue/stable-flight/issues/321)).
 ///
 /// Wrap guidance and the stabilizer each in the same view, as ArduPilot builds each tailsitter
 /// controller on its view (see the [module docs](self)).
@@ -135,9 +142,16 @@ impl<S: Stabilizer> Stabilizer for View<S> {
         self.inner.prime(&state);
     }
 
-    /// The inner stabilizer's report; its per-axis `moments` flags are in view axes.
+    /// The inner stabilizer's report, its per-axis `moments` flags carried into body axes: a
+    /// body axis is flagged when a saturated view axis feeds it (for a 90° view, the flags are
+    /// relabeled).
     fn saturation(&self) -> Saturation {
-        self.inner.saturation()
+        let inner = self.inner.saturation();
+        let to_body = self.rotation.to_rotation_matrix();
+        let moments = core::array::from_fn(|body| {
+            (0..3).any(|view| inner.moments[view] && to_body[(body, view)].abs() > AXIS_SHARE)
+        });
+        Saturation { moments, ..inner }
     }
 }
 
