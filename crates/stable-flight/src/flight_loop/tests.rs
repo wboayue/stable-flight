@@ -648,7 +648,7 @@ impl Guidance for RegimeGuidance {
 }
 
 /// Guidance gets the command's regime on armed ticks; the record carries guidance's flight
-/// mode, or the copter-only report for a guidance that has none.
+/// mode, or the copter-only report for a guidance that has none or didn't run (disarmed).
 #[test]
 fn guidance_gets_the_requested_regime_and_the_record_its_flight_mode() {
     use crate::mixers::TableMixer;
@@ -685,6 +685,13 @@ fn guidance_gets_the_requested_regime_and_the_record_its_flight_mode() {
             false,
             FlightRegime::Plane,
             None,
+            None,
+            FlightModeReport::copter_only(FlightRegime::Plane),
+        ),
+        (
+            false,
+            FlightRegime::Plane,
+            Some(to_plane),
             None,
             FlightModeReport::copter_only(FlightRegime::Plane),
         ),

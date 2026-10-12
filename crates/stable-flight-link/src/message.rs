@@ -120,7 +120,8 @@ pub enum Downlink {
     Heartbeat {
         /// Motors armed.
         armed: bool,
-        /// Flight mode: the kind of the commanded input.
+        /// Control mode: the kind of the commanded input (sticks, waypoint, land), not the
+        /// regime; that is `flight_mode`.
         mode: ControlMode,
         /// The regime guidance flies, and why it isn't the requested one
         /// ([`TelemetryRecord::flight_mode`]).

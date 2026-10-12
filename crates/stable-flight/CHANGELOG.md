@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `None`: copter only, recorded as `FlightModeReport::copter_only`, which refuses `Plane` as
   `Unsupported`). `TelemetryRecord::flight_mode` carries it; `View` forwards it.
 - **`VehicleState::airspeed_mps`** (`Option<f32>`): speed relative to the air mass, `None`
-  without air data. The conformance kit expects ground speed (still air) and passes a backend
+  without air data; `valid_airspeed_mps` drops a NaN or negative reading. The conformance kit expects ground speed (still air) and passes a backend
   that reports `None`.
 
 - **`tuning`:** building blocks for PID autotune (#149). `RelayTuner` measures a loop's

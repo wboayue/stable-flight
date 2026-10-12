@@ -939,11 +939,38 @@ pub struct VehicleState {
 
     /// Speed relative to the air mass in meters per second, or `None` without an air-data
     /// source (e.g. no pitot). A magnitude, so it doesn't depend on the body frame. Consumers
-    /// treat a NaN or negative value as `None` (input policy).
+    /// read it through [`valid_airspeed_mps`](Self::valid_airspeed_mps), which treats a NaN
+    /// or negative value as `None` (input policy).
     pub airspeed_mps: Option<f32>,
 }
 
 impl VehicleState {
+    /// [`airspeed_mps`](Self::airspeed_mps) when it is usable: `None` without air data, and
+    /// for a NaN or negative reading (input policy).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::VehicleState;
+    ///
+    /// // (reported, usable)
+    /// let cases = [
+    ///     (Some(12.0), Some(12.0)),
+    ///     (Some(0.0), Some(0.0)),
+    ///     (None, None),
+    ///     (Some(f32::NAN), None),
+    ///     (Some(-1.0), None),
+    /// ];
+    /// for (airspeed_mps, usable) in cases {
+    ///     let state = VehicleState { airspeed_mps, ..Default::default() };
+    ///     assert_eq!(state.valid_airspeed_mps(), usable, "{airspeed_mps:?}");
+    /// }
+    /// ```
+    pub fn valid_airspeed_mps(&self) -> Option<f32> {
+        self.airspeed_mps
+            .filter(|airspeed_mps| *airspeed_mps >= 0.0)
+    }
+
     /// This state in another body frame: `rotation` is the new body frame expressed in the old
     /// one (a constant mount or view rotation).
     ///
@@ -1286,7 +1313,7 @@ pub trait Guidance {
     }
 
     /// The flight mode the last [`guide`](Self::guide) call flew, for a guidance that flies
-    /// more than one regime. [`FlightLoop`] puts it in the tick's
+    /// more than one regime. [`FlightLoop`] puts it in an armed tick's
     /// [`TelemetryRecord::flight_mode`]. The default, `None`, means copter only: the loop
     /// reports [`FlightModeReport::copter_only`]. A guidance that wraps another forwards this.
     fn flight_mode(&self) -> Option<FlightModeReport> {
@@ -1553,7 +1580,8 @@ pub struct TelemetryRecord<'a> {
     /// a failsafe.
     pub failsafe: Option<FailsafeState>,
     /// The flight mode guidance flew this tick ([`Guidance::flight_mode`]), and why it isn't
-    /// the requested [`Command::regime`] when it can't be.
+    /// the requested [`Command::regime`] when it can't be. A disarmed tick, where guidance
+    /// doesn't run, records [`FlightModeReport::copter_only`].
     pub flight_mode: FlightModeReport,
 }
 

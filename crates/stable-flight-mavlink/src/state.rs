@@ -159,7 +159,7 @@ pub fn attitude(state: &VehicleState, time_boot_ms: u32) -> ATTITUDE_DATA {
 
 /// `VFR_HUD`. Throttle is the normalized commanded `thrust` (0.0–1.0, e.g. the stabilizer's
 /// `ControlOutput::thrust`), so it is reported for every command kind; out-of-range clamps and
-/// NaN reports 0. Airspeed is the state's `airspeed_mps`; without one (`None`, NaN, or
+/// NaN reports 0. Airspeed is the state's `valid_airspeed_mps`; without one (`None`, NaN, or
 /// negative) it reports horizontal ground speed.
 /// `alt` is the state's altitude above its datum (sea level for RealFlight), as VFR_HUD expects.
 ///
@@ -179,10 +179,7 @@ pub fn attitude(state: &VehicleState, time_boot_ms: u32) -> ATTITUDE_DATA {
 pub fn vfr_hud(state: &VehicleState, thrust: f32) -> VFR_HUD_DATA {
     let ground_speed_mps = state.velocity_mps.xy().norm();
     VFR_HUD_DATA {
-        airspeed: state
-            .airspeed_mps
-            .filter(|airspeed_mps| *airspeed_mps >= 0.0)
-            .unwrap_or(ground_speed_mps),
+        airspeed: state.valid_airspeed_mps().unwrap_or(ground_speed_mps),
         groundspeed: ground_speed_mps,
         heading: heading_deg(state.heading_rad),
         throttle: throttle_percent(thrust),

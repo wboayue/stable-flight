@@ -157,7 +157,7 @@ Each `FlightLoop::step` does the following; this section is the reference for ti
 * **`Command::arm` gates the motors.** A disarmed tick still runs the commander, the estimator,
   `actuate`, and telemetry, but skips guidance, the stabilizer, and the mixer: it actuates
   `ActuatorCommand::default()` (motors off) and records a neutral setpoint at the current heading
-  with zero control, so nothing winds up on the ground. Each disarmed → armed edge (including the
+  with zero control and a copter flight mode, so nothing winds up on the ground. Each disarmed → armed edge (including the
   first armed tick) re-primes guidance, then the stabilizer, from the fresh estimate, so
   integrals start from zero and the heading hold latches where the vehicle points. Armed at zero
   thrust, `CopterStabilizer` clears its integrals each tick for the same reason
@@ -219,8 +219,9 @@ deliberately. The pieces:
   the state to decide it.
 * **Phases are not modes.** Takeoff and landing are vertical, in the copter regime, flown by
   `ControlInput` (a waypoint up, `Land` down) and decided by commanders (`TouchdownDetector`).
-  Being on the ground is a guard against starting a transition (`ModeRefusal::OnGround`), not
-  a mode. `Land` implies copter.
+  Being on the ground will be a guard against starting a transition (`ModeRefusal::OnGround`;
+  the transition sequencer is planned in [#181](https://github.com/wboayue/stable-flight/issues/181)),
+  not a mode. `Land` implies copter.
 * **Flip, not blend.** A tailsitter drives the same elevons and motors in both regimes, so a
   transition hands control from one controller to the other instead of weighting both: one
   active controller and integrator set, testable per mode, one controller per tick. ArduPilot
@@ -232,8 +233,9 @@ deliberately. The pieces:
   ([#124](https://github.com/wboayue/stable-flight/issues/124), planned) pitches over on the
   hover controller, primes the incoming controller at the handoff, and slews thrust; the
   setpoint variant selects the stabilizer's controller, so the mixer never sees the regime.
-* **Airspeed is optional.** `VehicleState::airspeed_mps` is `None` without air data; a
-  transition gates on pitch and adds airspeed when present (as PX4 does).
+* **Airspeed is optional.** `VehicleState::airspeed_mps` is `None` without air data
+  (`valid_airspeed_mps` also drops NaN and negative readings). The planned transition gates on
+  pitch and adds airspeed when present (as PX4 does).
 
 ## Link Failsafe
 
