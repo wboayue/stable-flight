@@ -2,6 +2,7 @@ use super::*;
 use assert2::check;
 use realflight_bridge::{BridgeError, ControlInputs, Quaternion, RealFlightBridge, SimulatorState};
 use stable_flight::FlightLoop;
+use stable_flight::euler_angles;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::TableMixer;
 use stable_flight::nalgebra::UnitQuaternion;

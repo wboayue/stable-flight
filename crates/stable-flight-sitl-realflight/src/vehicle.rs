@@ -8,7 +8,7 @@ use realflight_bridge::{
 use stable_flight::Vec3;
 use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
 
-use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateSource, VehicleState, euler_angles};
+use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateSource, VehicleState};
 
 use crate::{ActuatorMapping, MappingError};
 use health::LinkHealth;
@@ -411,18 +411,18 @@ where
 /// assert!((state.pitch_rad.to_degrees() - 90.0).abs() < 0.05);
 /// ```
 pub fn vehicle_state(state: &SimulatorState, body_rotation: &UnitQuaternion<f32>) -> VehicleState {
-    let attitude = realflight_attitude(&state.orientation) * body_rotation;
-    let to_body = body_rotation.inverse();
+    // RealFlight's own body frame first; `rotate_body` then turns it into the vehicle's and
+    // fills the Euler fields from the quaternion.
+    let attitude = realflight_attitude(&state.orientation);
 
     // World velocity is NED.
     let velocity = state.velocity_world_mps;
 
     // RealFlight's world acceleration is unreliable (z reads ~7.5 m/s² at rest), so rotate the
-    // FRD body specific force to NED and add gravity back.
+    // FRD body specific force to NED and add gravity back. The world result doesn't depend on
+    // the body frame.
     let f = state.acceleration_body_mps2;
-    let specific_force = to_body * Vec3::new(f.x, f.y, f.z);
-    let acceleration = attitude * specific_force + Vec3::new(0.0, 0.0, GRAVITY);
-    let (roll_rad, pitch_rad, heading_rad) = euler_angles(&attitude);
+    let acceleration = attitude * Vec3::new(f.x, f.y, f.z) + Vec3::new(0.0, 0.0, GRAVITY);
 
     VehicleState {
         // Position is east/north; altitude is already up-positive.
@@ -434,14 +434,13 @@ pub fn vehicle_state(state: &SimulatorState, body_rotation: &UnitQuaternion<f32>
         velocity_mps: Vec3::new(velocity.x, velocity.y, -velocity.z),
         acceleration_mps2: Vec3::new(acceleration.x, acceleration.y, -acceleration.z),
         attitude,
-        angular_velocity_radps: to_body * realflight_body_rates_radps(state),
-        // From the quaternion rather than RealFlight's own Euler angles, so they always agree
-        // with `attitude` (they match RealFlight's away from ±90° pitch, where both are
-        // degenerate: roll and heading turn about the same axis).
-        roll_rad,
-        pitch_rad,
-        heading_rad,
+        angular_velocity_radps: realflight_body_rates_radps(state),
+        // From the quaternion (by `rotate_body`) rather than RealFlight's own Euler angles, so
+        // they always agree with `attitude` (they match RealFlight's away from ±90° pitch,
+        // where both are degenerate: roll and heading turn about the same axis).
+        ..Default::default()
     }
+    .rotate_body(body_rotation)
 }
 
 /// RealFlight's attitude (NED → RealFlight's FRD body frame), before any body rotation. Its

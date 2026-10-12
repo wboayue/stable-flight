@@ -129,12 +129,10 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 /// - **Body rotation:** +90° pitch. RealFlight's frame for this model is hover-level (sitting
 ///   on its tail reads level), and the vehicle's is the airplane's, so hover reads pitch 90°.
 ///
-/// **Interim until the nose-up stabilizer (#122):** the copter stabilizer can't fly at the
-/// 90° Euler singularity, so `tailsitter-manual-realflight` flies this airframe in
-/// RealFlight's hover-level frame instead (identity rotation), turning the stabilizer's
-/// moments into the airplane frame for the mixer. The stabilizer gains below are for that
-/// interim wiring, in RealFlight's hover-level axes (roll: tilting sideways, yaw: turning about
-/// the vertical), and are a starting point, not a tune.
+/// Fly the copter guidance and stabilizer in a tailsitter
+/// [`View`](stable_flight::View), as `tailsitter-manual-realflight` does: hover is level there.
+/// The stabilizer gains are in the view's axes (roll: tilting sideways, yaw: turning about the
+/// vertical), from the first hovers (#121), and are a starting point, not a tune (#123).
 ///
 /// # Examples
 ///
