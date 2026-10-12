@@ -184,7 +184,6 @@ pub fn explora_vtol() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
             // The elevon channels run opposite ways (#121 ground check); with the right one reversed,
             // pitch and yaw diverged on the first hop, so it is the left.
             reversed_servos: [true, false, false, false, false, false, false, false],
-            ..Default::default()
         },
         body_rotation: UnitQuaternion::from_euler_angles(0.0, PI / 2.0, 0.0),
     }
