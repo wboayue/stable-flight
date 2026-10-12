@@ -281,10 +281,7 @@ impl Stabilizer for CopterStabilizer {
         // wind up against a resting attitude, to kick at liftoff; clear them every such tick,
         // as ArduPilot does at zero throttle (`ArduCopter/mode_stabilize.cpp`, GROUND_IDLE).
         // A NaN thrust counts as none (input policy).
-        let thrust = match setpoint {
-            Setpoint::Attitude(attitude) => attitude.thrust,
-            Setpoint::Rate(rates) => rates.thrust,
-        };
+        let thrust = setpoint.thrust();
         if thrust <= 0.0 || thrust.is_nan() {
             self.body_rate.clear_integral();
             self.attitude.clear_integral();

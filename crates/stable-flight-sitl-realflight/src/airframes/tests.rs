@@ -60,10 +60,12 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         max_stick_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
         max_descent_mps: 3.0,
         land_speed_mps: 0.7,
-        min_thrust: 0.0,
-        sink_limit_mps: 0.0,
-        sink_gain: 0.0,
-        max_boost_thrust: 1.0,
+        thrust: ThrustLimits {
+            min_thrust: 0.0,
+            sink_limit_mps: 0.0,
+            sink_gain: 0.0,
+            max_boost_thrust: 1.0,
+        },
     };
     assert_eq!(airframe.guidance, guidance, "guidance");
 }
@@ -141,7 +143,7 @@ fn thrust_floor_stays_below_hover() {
         ("explora_vtol", explora_vtol().guidance),
     ] {
         assert!(
-            guidance.min_thrust < guidance.altitude.hover_thrust,
+            guidance.thrust.min_thrust < guidance.altitude.hover_thrust,
             "{name}: {guidance:?}"
         );
     }

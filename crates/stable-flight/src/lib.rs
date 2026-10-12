@@ -994,6 +994,25 @@ pub enum Setpoint {
     Rate(RateSetpoint),
 }
 
+impl Setpoint {
+    /// The linear thrust either variant carries.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::{RateSetpoint, Setpoint};
+    ///
+    /// let setpoint = Setpoint::Rate(RateSetpoint { thrust: 0.4, ..Default::default() });
+    /// assert_eq!(setpoint.thrust(), 0.4);
+    /// ```
+    pub fn thrust(&self) -> f32 {
+        match self {
+            Setpoint::Attitude(attitude) => attitude.thrust,
+            Setpoint::Rate(rates) => rates.thrust,
+        }
+    }
+}
+
 /// Attitude target for the [`Stabilizer`]; see [`Setpoint`].
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]

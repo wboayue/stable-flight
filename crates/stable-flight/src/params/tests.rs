@@ -8,7 +8,7 @@ use crate::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
     LateralControllerConfig, YawControllerConfig,
 };
-use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig, ThrustLimits};
 use crate::mixers::TableMixer;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use crate::testing::{ConstantCommander, NullVehicle};
@@ -70,10 +70,13 @@ fn tables_cover_every_config_field() {
         max_stick_angles_rad: _,
         max_descent_mps: _,
         land_speed_mps: _,
-        min_thrust: _,
-        sink_limit_mps: _,
-        sink_gain: _,
-        max_boost_thrust: _,
+        thrust:
+            ThrustLimits {
+                min_thrust: _,
+                sink_limit_mps: _,
+                sink_gain: _,
+                max_boost_thrust: _,
+            },
     } = CopterGuidanceConfig::default();
     // one param per scalar, vector component, or gain term in the destructuring above
     check!(names::<CopterStabilizerConfig>().len() == 30);

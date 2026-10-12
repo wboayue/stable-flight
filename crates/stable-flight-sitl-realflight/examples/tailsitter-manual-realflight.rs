@@ -152,8 +152,7 @@ fn fly(commander: impl Commander, args: &Args) {
 /// Writes one CSV row per tick to `--record`, for reading stick pulses; does nothing without it.
 /// Rates, moments, and actuators are in the airplane body frame; `view_*` are the attitude in
 /// the tailsitter view, where hover is level (the body Euler angles are degenerate there), and
-/// `sp_*` guidance's setpoint, also in the view (NaN angles under a rate setpoint, all NaN
-/// for any other). `sp_thrust` is linear thrust, before the stabilizer's thrust curve;
+/// `sp_*` guidance's setpoint, also in the view (NaN angles under a rate setpoint). `sp_thrust` is linear thrust, before the stabilizer's thrust curve;
 /// `thrust` is after it. `climb_mps` is the vertical speed, up positive, and `stick_throttle`
 /// the commander's throttle (or absolute thrust), before boost, floor, and sink guard.
 struct Recorder {
@@ -194,11 +193,11 @@ impl TelemetryPublisher for Recorder {
         let view = state.rotate_body(&self.view);
         let moments = record.control.moments;
         let actuators = record.actuators;
-        let (sp_roll, sp_pitch, sp_heading, sp_thrust) = match record.setpoint {
-            Setpoint::Attitude(s) => (s.roll_rad, s.pitch_rad, s.heading_rad, s.thrust),
-            Setpoint::Rate(s) => (f32::NAN, f32::NAN, f32::NAN, s.thrust),
-            _ => (f32::NAN, f32::NAN, f32::NAN, f32::NAN),
+        let (sp_roll, sp_pitch, sp_heading) = match record.setpoint {
+            Setpoint::Attitude(s) => (s.roll_rad, s.pitch_rad, s.heading_rad),
+            _ => (f32::NAN, f32::NAN, f32::NAN),
         };
+        let sp_thrust = record.setpoint.thrust();
         let stick_throttle = match &record.command.input {
             ControlInput::Attitude(c) => c.throttle,
             ControlInput::Rate(c) => c.throttle,
