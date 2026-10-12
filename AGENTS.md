@@ -38,7 +38,8 @@ lives in `architecture.md`; each crate's README owns its usage.
   or network goes in sitl; anything specific to one simulator goes in its
   `stable-flight-sitl-<simulator>` crate. Board crates only wire hardware to the pipeline.
 - Outstanding work lives in GitHub issues. Labels: `needs-flight` (needs a simulator or
-  transmitter check), `later` (waits for a real need), `bug`. Milestones group issues by goal;
+  transmitter check), `later` (waits for a real need), `bug`, and `pr:<name>` (issues that land
+  as one PR; the label's description says what it covers). Milestones group issues by goal;
   put a shared issue in the earliest milestone it unblocks.
 
 ## Commands
