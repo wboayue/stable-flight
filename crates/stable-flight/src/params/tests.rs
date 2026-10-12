@@ -71,10 +71,13 @@ fn tables_cover_every_config_field() {
         max_descent_mps: _,
         land_speed_mps: _,
         min_thrust: _,
+        sink_limit_mps: _,
+        sink_gain: _,
+        max_boost_thrust: _,
     } = CopterGuidanceConfig::default();
     // one param per scalar, vector component, or gain term in the destructuring above
     check!(names::<CopterStabilizerConfig>().len() == 30);
-    check!(names::<CopterGuidanceConfig>().len() == 17);
+    check!(names::<CopterGuidanceConfig>().len() == 20);
 }
 
 #[test]

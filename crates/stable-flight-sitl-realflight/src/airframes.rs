@@ -128,8 +128,10 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 ///   from the #120 capture; which motor is which and the reversal from #121's first hops.
 /// - **Body rotation:** +90° pitch. RealFlight's frame for this model is hover-level (sitting
 ///   on its tail reads level), and the vehicle's is the airplane's, so hover reads pitch 90°.
-/// - **Thrust floor:** `min_thrust` 0.75 while flying, below the 0.84 hover. The elevons
-///   hold the nose up only in the propwash, and both #123 hop 1 upsets began at low throttle.
+/// - **Thrust:** the elevons hold the nose up only in the propwash, and a sink turns the
+///   airflow against it (#123 hops 1 and 2). A floor (`min_thrust` 0.65, below the 0.84
+///   hover) and a sink guard (past 1 m/s) keep the propwash; the tilt boost stops at 0.9,
+///   leaving motor headroom for differential thrust.
 ///
 /// Fly the copter guidance and stabilizer in a tailsitter
 /// [`View`](stable_flight::View), as `tailsitter-manual-realflight` does: hover is level there.
@@ -155,16 +157,25 @@ pub fn explora_vtol() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
                 hover_thrust: 0.84,
                 ..CopterGuidanceConfig::default().altitude
             },
-            // At low throttle the elevons lose the propwash and can't hold the nose up: both
-            // hop 1 upsets (#123) began sinking at 69% and 43% of hover thrust force. 0.75 is
-            // 80% (thrust force goes as its square), low enough to descend.
-            min_thrust: 0.75,
+            // The elevons hold the nose up only in the propwash, and a sink of a few m/s turns
+            // the airflow against it: every hop 1 and 2 upset (#123) began as the climb rate
+            // passed into a sink, at the hop 2 floor (0.75) too. The floor keeps some propwash
+            // (0.65 is 60% of hover thrust force, which goes as its square); the sink guard
+            // brings thrust back toward hover past a 1 m/s sink (0.65 + 0.15 · 2 m/s = 0.95 at
+            // 3 m/s).
+            min_thrust: 0.65,
+            sink_limit_mps: 1.0,
+            sink_gain: 0.15,
+            // At full boost the motor pair hit 1.0 and differential thrust (view roll) could
+            // only push one way: hop 2 rolled on to −80° after the stick centered (#123).
+            max_boost_thrust: 0.9,
             ..CopterGuidanceConfig::default()
         },
         stabilizer: CopterStabilizerConfig {
             body_rate: BodyRateControllerConfig {
-                // Differential thrust (the mixer's airplane yaw, 0.25 per unit moment).
-                roll_gains: gains(0.2, 0.1, 0.0),
+                // Differential thrust (the mixer's airplane yaw, 0.25 per unit moment). Raised
+                // from 0.2/0.1: at 0.2 a 0.58 moment only slowed a hop 2 roll (#123).
+                roll_gains: gains(0.4, 0.2, 0.0),
                 // Elevons (full range per unit moment).
                 pitch_gains: gains(0.3, 0.1, 0.0),
                 yaw_gains: gains(0.1, 0.05, 0.0),

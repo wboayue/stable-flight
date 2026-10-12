@@ -1702,3 +1702,170 @@ fn rejects_min_thrust_outside_zero_to_one() {
         assert!(config.validate().is_ok() == valid, "{min_thrust}");
     }
 }
+
+/// The sink guard adds `sink_gain` per m/s of sink past `sink_limit_mps` to piloted thrust
+/// (on top of the floor), saturated to 1, and flags `thrust`; at or inside the limit, idle,
+/// disabled, or with a NaN climb rate it adds nothing.
+#[test]
+fn sink_guard_adds_thrust_past_the_limit() {
+    let stick = |throttle| {
+        ControlInput::Attitude(AttitudeCommand {
+            throttle,
+            ..Default::default()
+        })
+    };
+    let rate = |throttle| {
+        ControlInput::Rate(RateCommand {
+            throttle,
+            ..Default::default()
+        })
+    };
+    let absolute = |thrust| {
+        ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+            thrust,
+            ..Default::default()
+        })
+    };
+    let thrust_of = |setpoint| match setpoint {
+        Setpoint::Attitude(s) => s.thrust,
+        Setpoint::Rate(s) => s.thrust,
+    };
+    // (input, climb m/s, (sink_limit_mps, min_thrust), expected thrust, thrust flagged)
+    let cases = [
+        (stick(0.5), 0.0, (1.0, 0.0), 0.5, false),
+        (stick(0.5), -1.0, (1.0, 0.0), 0.5, false), // at the limit
+        (stick(0.5), -2.0, (1.0, 0.0), 0.7, true),
+        (stick(0.5), -10.0, (1.0, 0.0), 1.0, true), // saturated
+        (stick(0.0), -3.0, (1.0, 0.0), 0.0, false), // idle: on the ground or cut
+        (stick(0.5), f32::NAN, (1.0, 0.0), 0.5, false),
+        (stick(0.5), -5.0, (0.0, 0.0), 0.5, false), // disabled
+        (stick(0.3), -2.0, (1.0, 0.6), 0.8, true),  // on top of the floor
+        (rate(0.5), -2.0, (1.0, 0.0), 0.7, true),
+        (absolute(0.5), -2.0, (1.0, 0.0), 0.7, true),
+    ];
+    for (input, climb_mps, (sink_limit_mps, min_thrust), expected, flagged) in cases {
+        let config = CopterGuidanceConfig {
+            sink_limit_mps,
+            sink_gain: 0.2,
+            min_thrust,
+            ..Default::default()
+        };
+        let state = VehicleState {
+            velocity_mps: Vec3::new(0.0, 0.0, climb_mps),
+            ..Default::default()
+        };
+        let mut guidance = CopterGuidance::new(config);
+        guidance.prime(&state);
+        let thrust = thrust_of(guidance.guide(0.004, &input, &state));
+        approx::assert_relative_eq!(thrust, expected, epsilon = 1e-5);
+        assert!(
+            guidance.saturation().thrust == flagged,
+            "{input:?} at {climb_mps}"
+        );
+    }
+}
+
+/// The tilt boost stops at `max_boost_thrust`, flagging `thrust`; a stick above it passes
+/// through unboosted.
+#[test]
+fn tilt_boost_stops_at_max_boost_thrust() {
+    let cos = |deg: f32| deg.to_radians().cos();
+    // (throttle, roll in degrees, expected thrust, thrust flagged)
+    let cases = [
+        (0.8, 45.0_f32, 0.9, true),
+        (0.8, 20.0, 0.8 / cos(20.0), false),
+        (0.95, 45.0, 0.95, true), // above the ceiling: the stick, not boosted
+        (0.95, 0.0, 0.95, false),
+        (f32::NAN, 45.0, 0.0, false),
+    ];
+    for (throttle, roll_deg, expected, flagged) in cases {
+        let config = CopterGuidanceConfig {
+            max_boost_thrust: 0.9,
+            ..Default::default()
+        };
+        let state = VehicleState {
+            attitude: nalgebra::UnitQuaternion::from_euler_angles(roll_deg.to_radians(), 0.0, 0.0),
+            ..Default::default()
+        };
+        let mut guidance = CopterGuidance::new(config);
+        guidance.prime(&state);
+        let input = ControlInput::Attitude(AttitudeCommand {
+            throttle,
+            ..Default::default()
+        });
+        let thrust = attitude(guidance.guide(0.004, &input, &state)).thrust;
+        approx::assert_relative_eq!(thrust, expected, epsilon = 1e-5);
+        assert!(
+            guidance.saturation().thrust == flagged,
+            "{throttle} at {roll_deg}°"
+        );
+    }
+}
+
+#[test]
+fn rejects_sink_guard_and_boost_ceiling_out_of_range() {
+    let base = CopterGuidanceConfig::default;
+    // (config, valid)
+    let cases = [
+        (
+            CopterGuidanceConfig {
+                sink_limit_mps: 1.0,
+                sink_gain: 0.2,
+                ..base()
+            },
+            true,
+        ),
+        (
+            CopterGuidanceConfig {
+                sink_limit_mps: -1.0,
+                ..base()
+            },
+            false,
+        ),
+        (
+            CopterGuidanceConfig {
+                sink_limit_mps: f32::INFINITY,
+                ..base()
+            },
+            false,
+        ),
+        (
+            CopterGuidanceConfig {
+                sink_gain: -0.1,
+                ..base()
+            },
+            false,
+        ),
+        (
+            CopterGuidanceConfig {
+                sink_gain: f32::NAN,
+                ..base()
+            },
+            false,
+        ),
+        (
+            CopterGuidanceConfig {
+                max_boost_thrust: 0.5,
+                ..base()
+            },
+            true,
+        ),
+        (
+            CopterGuidanceConfig {
+                max_boost_thrust: 0.0,
+                ..base()
+            },
+            false,
+        ),
+        (
+            CopterGuidanceConfig {
+                max_boost_thrust: 1.1,
+                ..base()
+            },
+            false,
+        ),
+    ];
+    for (config, valid) in cases {
+        assert!(config.validate().is_ok() == valid, "{config:?}");
+    }
+}

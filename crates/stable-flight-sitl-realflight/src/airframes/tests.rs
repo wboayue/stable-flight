@@ -61,6 +61,9 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         max_descent_mps: 3.0,
         land_speed_mps: 0.7,
         min_thrust: 0.0,
+        sink_limit_mps: 0.0,
+        sink_gain: 0.0,
+        max_boost_thrust: 1.0,
     };
     assert_eq!(airframe.guidance, guidance, "guidance");
 }

@@ -69,11 +69,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   propwash they need to hold the nose up (as ArduPilot's `Q_TAILSIT_MIN_VO`). A piloted
   throttle at or below `IDLE_THROTTLE` (0.05) passes through, so the motors can idle on the
   ground; waypoint and land flight always get it. Raising a thrust flags `thrust` saturation.
+- **Sink guard and boost ceiling** (#123): piloted flight sinking faster than
+  `CopterGuidanceConfig::sink_limit_mps` (`GUID_SINK_LIM`) gets `sink_gain` (`GUID_SINK_GAIN`)
+  more thrust per m/s past it, since direct throttle can't hold a descent rate and a sinking
+  tailsitter loses its elevons; `max_boost_thrust` (`GUID_BOOST_MAX`) stops the attitude-mode
+  tilt boost short of full thrust, keeping motor headroom for the moments. Both off by default.
 
 ### Changed
 
-- **Breaking:** `CopterGuidanceConfig` has a new `min_thrust` field (#123); struct literals add
-  `..Default::default()` (0, the previous behavior).
+- **Breaking:** `CopterGuidanceConfig` has new `min_thrust`, `sink_limit_mps`, `sink_gain`, and
+  `max_boost_thrust` fields (#123); struct literals add `..Default::default()` (the previous
+  behavior).
 
 - **Breaking:** roll and pitch have separate gains in the rate and attitude loops (#289).
   `BodyRateControllerConfig` and `AttitudeControllerConfig` replace `gains` with `roll_gains`
