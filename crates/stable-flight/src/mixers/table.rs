@@ -26,7 +26,7 @@
 //!
 //! Factors follow the frame contract: a positive roll moment rolls right, pitch raises the
 //! nose, yaw turns the nose right. Motor roll and pitch factors are normalized per axis so the
-//! largest is 1, so gains carry across frames. Yaw comes from prop drag: a positive yaw moment
+//! largest is 1, so gains carry across frames. On multirotors, yaw comes from prop drag: a positive yaw moment
 //! speeds up the counterclockwise props (seen from above), whose reaction torque is clockwise
 //! (flight-checked in RealFlight on the quad, #62).
 //!
@@ -48,6 +48,7 @@
 //! | [`x8`](TableMixer::x8) | top 0 FL, 1 FR, 2 RR, 3 RL; bottom 4–7 under them | |
 //! | [`tri`](TableMixer::tri) | 0 FL, 1 FR, 2 B | 0 tail tilt (yaw) |
 //! | [`bi`](TableMixer::bi) | 0 L, 1 R | 0 left tilt, 1 right tilt |
+//! | [`tailsitter_2p_hover`](TableMixer::tailsitter_2p_hover) | 0 L, 1 R | 0 left elevon, 1 right elevon |
 
 use thiserror::Error;
 

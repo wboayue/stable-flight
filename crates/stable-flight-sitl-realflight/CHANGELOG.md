@@ -25,6 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--step-test` appends step tests of roll and pitch rate and angle, logging each step's
   response and a summary per loop (`--stages none --step-test` measures the hand tune). A step
   during which the runner skipped more than two ticks at once runs again.
+- **`airframes::explora_vtol()`** (#121): the eXplora VTOL tailsitter's mixer
+  (`TableMixer::tailsitter_2p_hover`), channel mapping (motors on channels 5/6, elevons on
+  1/2), and +90° pitch body rotation, with interim copter gains for flying it in RealFlight's
+  hover-level frame until the nose-up stabilizer (#122).
+- **`tailsitter-manual-realflight` example** (`just fly-tailsitter`, #121): joystick hover of
+  the eXplora, on the copter stabilizer in RealFlight's hover-level frame with an adapter to the
+  airplane-frame mixer (interim until #122); `--record` writes every tick to CSV.
+- **`ActuatorMapping::reversed_servos`** (#121): servo slots negated before they reach their
+  channel, for a surface the model moves the other way from the mixer's convention.
 - **`CHANNEL_COUNT`:** RealFlight's 12 channels, exported.
 - **`capture`** (#120): raw RealFlight captures as CSV, every `SimulatorState` with the
   channels sent. `RecordingBridge` records under any pipeline (`capture-state-realflight` uses
@@ -39,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `RealFlightConfiguration` and `Airframe` have a new `body_rotation` field, and
   `vehicle_state` takes the body rotation as a second argument (#314). Pass
   `UnitQuaternion::identity()`, or the airframe's `body_rotation`, for the previous behavior.
+- **Breaking:** `ActuatorMapping` has a new `reversed_servos` field (#121); struct literals
+  add `..Default::default()` (all `false`, the previous behavior).
+- **Breaking:** `airframes::quadcopter_x()`'s mixer is `TableMixer<4>` (`TableMixer::quad_x`),
+  following the core's removal of `QuadCopterMixer` (#245).
 
 - **`vehicle_state`'s Euler fields come from the quaternion** (#120), not RealFlight's own Euler
   angles, so `roll_rad`, `pitch_rad`, and `heading_rad` always agree with `attitude`. They match

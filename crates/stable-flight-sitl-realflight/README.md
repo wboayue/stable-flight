@@ -12,7 +12,7 @@ The crate builds on the [`stable-flight`](https://github.com/wboayue/stable-flig
 
 ## Setup
 
-RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**. Tuned model: QuadCopterX (multirotor); eXplora VTOL (tailsitter) is planned, not flyable yet; the ArduPilot [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models) repo has more.
+RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**. Tuned model: QuadCopterX (multirotor); eXplora VTOL (tailsitter) has a mixer and mapping and an interim hover setup (`tailsitter-manual-realflight`), with its nose-up stabilizer planned (#122); the ArduPilot [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models) repo has more.
 
 `RealFlightRemoteBridge` talks to the `realflight_bridge_proxy` running on the RealFlight host. Install it there with `cargo install realflight-bridge --features rt-tokio`, and run it with `--request-timeout-ms 150`: RealFlight's aircraft reset, and the exchanges just after it, take over the 50 ms default ([`REMOTE_IO_TIMEOUT`](https://docs.rs/stable-flight-sitl-realflight/latest/stable_flight_sitl_realflight/constant.REMOTE_IO_TIMEOUT.html), which the examples use, stays above it). The proxy must be `realflight-bridge` 2.x to match this crate (the 2.0 wire format is incompatible with 1.x), and 2.1 or later for that timeout.
 
@@ -37,7 +37,7 @@ let stabilizer = CopterStabilizer::new(airframe.stabilizer);
 let mixer = airframe.mixer;
 ```
 
-Use `RealFlightLocalBridge` when the controller runs on the same host as RealFlight, and `RealFlightRemoteBridge` otherwise. `realflight_bridge` is re-exported, so you don't need to depend on it yourself. `ActuatorMapping` maps the mixer's motor and servo slots to the model's RealFlight channels (servos rescaled from -1–1 to RealFlight's 0–1), so an airframe's mapping only fits its own mixer. `RealFlightVehicle::new` panics on an invalid mapping (a channel out of range or used twice); `try_new` returns a `MappingError` instead.
+Use `RealFlightLocalBridge` when the controller runs on the same host as RealFlight, and `RealFlightRemoteBridge` otherwise. `realflight_bridge` is re-exported, so you don't need to depend on it yourself. `ActuatorMapping` maps the mixer's motor and servo slots to the model's RealFlight channels (servos rescaled from -1–1 to RealFlight's 0–1, and negated first for any slot in `reversed_servos`), so an airframe's mapping only fits its own mixer. `RealFlightVehicle::new` panics on an invalid mapping (a channel out of range or used twice); `try_new` returns a `MappingError` instead.
 
 Each tick makes one RealFlight exchange, in `actuate`; `state` returns the cached result, so guidance and the stabilizer see state one tick old. The `RealFlightVehicle` rustdoc covers timing and frame conversion.
 
@@ -67,10 +67,11 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
 | Function | RealFlight model |
 |---|---|
 | `airframes::quadcopter_x()` | ArduPilot SITL_Models [QuadCopterX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX) |
+| `airframes::explora_vtol()` | [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) tailsitter (interim gains until #122) |
 
 ## Examples
 
-Run these from the repository root (`just fly-manual` / `just fly-auto` / `just capture` / `just fly-companion` wrap them). Each serves params and telemetry over the native link (UDP; binds `127.0.0.1:14560`, peer `127.0.0.1:14561`, set with `--link-bind`/`--link-peer`) for [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) (`just bridge`), which QGC connects to; start the bridge once and leave it running:
+Run these from the repository root (`just fly-manual` / `just fly-tailsitter` / `just fly-auto` / `just capture` / `just fly-companion` wrap them). Each serves params and telemetry over the native link (UDP; binds `127.0.0.1:14560`, peer `127.0.0.1:14561`, set with `--link-bind`/`--link-peer`) for [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) (`just bridge`), which QGC connects to; start the bridge once and leave it running:
 
 ```bash
 # Joystick (Logitech Extreme 3D); RealFlight host defaults to 10.211.55.3:8080
@@ -78,6 +79,10 @@ cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight --
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --link-peer 192.168.1.30:14561
 # Spektrum transmitter through the WS3000T dongle instead
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --commander spektrum
+
+# eXplora VTOL tailsitter hover (interim until #122: the copter stabilizer in RealFlight's
+# hover-level frame); --record writes every tick to CSV. Or: just fly-tailsitter
+cargo run -p stable-flight-sitl-realflight --example tailsitter-manual-realflight -- --record hover.csv
 
 # Scripted figure-eight (script path is the first argument): flies it once, then hovers; --end loop repeats it, --end land lands on the last waypoint and disarms
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv

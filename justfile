@@ -64,6 +64,10 @@ cover:
 fly-manual *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- {{ARGS}}
 
+# Joystick-flown eXplora VTOL tailsitter hover in RealFlight (interim until #122), e.g. `just fly-tailsitter --record hover.csv`
+fly-tailsitter *ARGS:
+    cargo run -p stable-flight-sitl-realflight --example tailsitter-manual-realflight -- {{ARGS}}
+
 # Quadcopter in RealFlight flown from the native link, holding when the link goes quiet; drive it with `just link-pilot`
 fly-companion *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight -- {{ARGS}}

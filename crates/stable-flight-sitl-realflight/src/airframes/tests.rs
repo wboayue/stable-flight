@@ -1,4 +1,5 @@
 use super::*;
+use stable_flight::Mixer;
 use stable_flight::Vec3;
 use stable_flight::controllers::{LateralControllerConfig, YawControllerConfig};
 
@@ -80,4 +81,48 @@ fn quadcopter_x_holds_zero_yaw_rate_against_the_hover_imbalance() {
             "settled at {rate} rad/s against {disturbance}"
         );
     }
+}
+
+#[test]
+fn explora_vtol_maps_two_motors_and_two_elevons_validly() {
+    let mapping = explora_vtol().mapping;
+
+    assert_eq!(mapping.validate(), Ok(()));
+    assert_eq!(mapping.motors[..2], [Some(5), Some(4)]);
+    assert!(mapping.motors[2..].iter().all(Option::is_none));
+    assert_eq!(mapping.servos[..2], [Some(0), Some(1)]);
+    assert!(mapping.servos[2..].iter().all(Option::is_none));
+}
+
+/// RealFlight-level on its tail is nose-up hover: 90° pitch in the vehicle frame.
+#[test]
+fn explora_vtol_reads_nose_up_at_realflight_level() {
+    let (roll, pitch, _) = stable_flight::euler_angles(&explora_vtol().body_rotation);
+    assert!(roll.abs() < 1e-3);
+    assert!((pitch - PI / 2.0).abs() < 1e-3, "pitch {pitch}");
+}
+
+/// Both motors at about 0.7 hover the eXplora in RealFlight (#120).
+const MEASURED_HOVER_MOTOR: f32 = 0.7;
+
+/// `hover_thrust`, through the stabilizer's thrust curve and the mixer, lands both motors on
+/// the measured hover throttle, with the elevons centered.
+#[test]
+fn explora_vtol_hover_thrust_reaches_the_measured_hover_motor() {
+    let airframe = explora_vtol();
+    let curved = airframe
+        .guidance
+        .altitude
+        .hover_thrust
+        .powf(airframe.stabilizer.thrust_curve_exponent);
+    let mut mixer = airframe.mixer;
+    let output = mixer.mix(&stable_flight::ControlOutput::new(curved, Vec3::zeros()));
+    for motor in &output.motors[..2] {
+        assert!(
+            (motor - MEASURED_HOVER_MOTOR).abs() < 0.01,
+            "motors {:?}",
+            output.motors
+        );
+    }
+    assert!(output.servos[..2] == [0.0, 0.0]);
 }
