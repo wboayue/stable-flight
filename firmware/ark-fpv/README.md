@@ -9,7 +9,7 @@ LEDs, memory map, flash flow) comes from
 `TableMixer::quad_x`) at 250 Hz on the SysTick monotonic (I-cache on), with placeholder components
 in `src/stub.rs`:
 
-| Component | Stub | Replaced by (#88) |
+| Component | Stub | Replaced by ([`ark-fpv` milestone](https://github.com/wboayue/stable-flight/milestone/3)) |
 |---|---|---|
 | Commander | `HoldCommander`: zero throttle, level, disarmed (armed with `bench-armed`) | receiver input |
 | State source | `HoldState`: level, at rest | IMU/baro/mag fusion from ark-fpv-discovery |
