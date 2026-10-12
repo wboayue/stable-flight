@@ -1,14 +1,10 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
 version: 2
 updates:
-  - package-ecosystem: "cargo" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "cargo"
+    directory: "/"
     schedule:
       interval: "weekly"
+    labels: ["dependencies"]
     # Batch minor and patch bumps (incl. Cargo.lock-only updates) into one PR; majors stay separate.
     groups:
       cargo:
@@ -17,3 +13,15 @@ updates:
     directory: "/firmware/ark-fpv"
     schedule:
       interval: "weekly"
+    labels: ["dependencies"]
+    groups:
+      firmware:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies"]
+    groups:
+      actions:
+        update-types: ["minor", "patch"]

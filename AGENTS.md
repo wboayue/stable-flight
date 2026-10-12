@@ -60,7 +60,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
 - Untracked generated artifacts: `target/`, `tarpaulin-report.html`, `firmware/*/*.bin`.
 - The root `Cargo.lock` is committed (reproducible CI, stable cache key); CI builds with `--locked`,
   so commit lockfile changes with the manifest change that causes them. Dependabot batches weekly
-  minor/patch bumps into one PR; Dependabot security updates open their own PRs.
+  minor/patch bumps per ecosystem (root cargo, firmware cargo, GitHub Actions) into one PR each; Dependabot security updates open their own PRs.
 - A dependency bump that needs a newer compiler raises `rust-version` in `[workspace.package]` and
   the MSRV mentions (here, root README prerequisites) in the same PR; check the floor with
   `cargo +<version> check --workspace --all-features --all-targets --locked`.
@@ -71,7 +71,7 @@ Guidance for everyone (humans + AI assistants) working in the Stable Flight repo
   that isn't fixed in the same PR gets an issue (with its source PR); a pre-existing bug found
   while verifying gets a `bug` issue with repro steps. Labels: `needs-flight` (needs a
   simulator/transmitter check), `later` (waits for a real need). Milestones group issues by
-  goal: `tailsitter-sitl`, `ark-fpv` (closed: `quad-sitl`, `publish-0.1`, which shipped 0.1.0);
+  goal: `tailsitter-sitl`, `ark-fpv`, `autotune` (closed: `quad-sitl`, `publish-0.1`, which shipped 0.1.0);
   put a shared issue in the earliest milestone it unblocks; one that unblocks none gets no milestone.
   The PR that completes an issue says `Closes #n`. GitHub closes on `closes #n` anywhere in the body
   ("Closes #n once published" too), so reference an issue the PR doesn't finish without that word. The finished migration and refactor plans
