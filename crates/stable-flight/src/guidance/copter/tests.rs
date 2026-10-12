@@ -1600,3 +1600,105 @@ fn rejects_descent_rates_out_of_range() {
         assert!(config.validate().is_ok() == valid, "{land_speed_mps}");
     }
 }
+
+/// `min_thrust` raises every thrust while flying: a piloted throttle above idle (after the
+/// tilt boost, so even inverted), waypoint and land flight always; an idle or NaN throttle
+/// passes through, and a thrust above the floor is untouched. Raising it flags `thrust`.
+#[test]
+fn min_thrust_floors_the_thrust_while_flying() {
+    const FLOOR: f32 = 0.6;
+    let level = VehicleState::default();
+    let inverted = VehicleState {
+        attitude: nalgebra::UnitQuaternion::from_euler_angles(PI, 0.0, 0.0),
+        ..Default::default()
+    };
+    // Shooting up toward a waypoint at its altitude: the altitude loop cuts thrust to 0.
+    let shooting_up = VehicleState {
+        velocity_mps: Vec3::new(0.0, 0.0, 30.0),
+        ..Default::default()
+    };
+    let stick = |throttle| {
+        ControlInput::Attitude(AttitudeCommand {
+            throttle,
+            ..Default::default()
+        })
+    };
+    let rate = |throttle| {
+        ControlInput::Rate(RateCommand {
+            throttle,
+            ..Default::default()
+        })
+    };
+    let absolute = |thrust| {
+        ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+            thrust,
+            ..Default::default()
+        })
+    };
+    let land = ControlInput::Land(LandCommand::default());
+    let thrust_of = |setpoint| match setpoint {
+        Setpoint::Attitude(s) => s.thrust,
+        Setpoint::Rate(s) => s.thrust,
+    };
+    // (input, state, expected thrust, thrust flagged)
+    let cases = [
+        (stick(0.3), &level, FLOOR, true),
+        (stick(0.8), &level, 0.8, false),
+        (stick(IDLE_THROTTLE), &level, IDLE_THROTTLE, false), // idle: the pilot can cut
+        (stick(0.0), &level, 0.0, false),
+        (stick(f32::NAN), &level, 0.0, false),
+        (stick(0.3), &inverted, FLOOR, true), // the boost gives none; the floor holds
+        (rate(0.3), &level, FLOOR, true),
+        (rate(0.0), &level, 0.0, false),
+        (absolute(0.3), &level, FLOOR, true),
+        (absolute(0.0), &level, 0.0, false),
+        (waypoint_at(0.0), &shooting_up, FLOOR, true),
+        (land, &shooting_up, FLOOR, true),
+    ];
+    for (input, state, expected, flagged) in cases {
+        let config = CopterGuidanceConfig {
+            min_thrust: FLOOR,
+            ..Default::default()
+        };
+        let mut guidance = CopterGuidance::new(config);
+        guidance.prime(state);
+        let thrust = thrust_of(guidance.guide(0.004, &input, state));
+        assert!(thrust == expected, "{input:?}");
+        assert!(guidance.saturation().thrust == flagged, "{input:?}");
+    }
+}
+
+/// With the default `min_thrust` of 0, low thrust passes through as before.
+#[test]
+fn no_floor_by_default() {
+    let (mut guidance, state) = guidance_at(0.0);
+    let shooting_up = VehicleState {
+        velocity_mps: Vec3::new(0.0, 0.0, 30.0),
+        ..state
+    };
+    let input = ControlInput::Attitude(AttitudeCommand {
+        throttle: 0.3,
+        ..Default::default()
+    });
+    assert!(attitude(guidance.guide(0.004, &input, &state)).thrust == 0.3);
+    assert!(attitude(guidance.guide(0.004, &waypoint_at(0.0), &shooting_up)).thrust == 0.0);
+}
+
+#[test]
+fn rejects_min_thrust_outside_zero_to_one() {
+    // (min_thrust, valid)
+    let cases = [
+        (0.0, true),
+        (0.6, true),
+        (-0.1, false),
+        (1.0, false),
+        (f32::NAN, false),
+    ];
+    for (min_thrust, valid) in cases {
+        let config = CopterGuidanceConfig {
+            min_thrust,
+            ..Default::default()
+        };
+        assert!(config.validate().is_ok() == valid, "{min_thrust}");
+    }
+}

@@ -128,6 +128,8 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 ///   from the #120 capture; which motor is which and the reversal from #121's first hops.
 /// - **Body rotation:** +90° pitch. RealFlight's frame for this model is hover-level (sitting
 ///   on its tail reads level), and the vehicle's is the airplane's, so hover reads pitch 90°.
+/// - **Thrust floor:** `min_thrust` 0.75 while flying, below the 0.84 hover. The elevons
+///   hold the nose up only in the propwash, and both #123 hop 1 upsets began at low throttle.
 ///
 /// Fly the copter guidance and stabilizer in a tailsitter
 /// [`View`](stable_flight::View), as `tailsitter-manual-realflight` does: hover is level there.
@@ -148,11 +150,15 @@ pub fn explora_vtol() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
     Airframe {
         guidance: CopterGuidanceConfig {
             altitude: AltitudeControllerConfig {
-                // Hover motor 0.7 (#120) = 0.9 · 0.88², through the squared thrust curve and
-                // the mixer's thrust factor.
-                hover_thrust: 0.88,
+                // Measured (#123 hop 1): a level hover holds at mean motor 0.63 = 0.9 · 0.84²,
+                // through the squared thrust curve and the mixer's thrust factor.
+                hover_thrust: 0.84,
                 ..CopterGuidanceConfig::default().altitude
             },
+            // At low throttle the elevons lose the propwash and can't hold the nose up: both
+            // hop 1 upsets (#123) began sinking at 69% and 43% of hover thrust force. 0.75 is
+            // 80% (thrust force goes as its square), low enough to descend.
+            min_thrust: 0.75,
             ..CopterGuidanceConfig::default()
         },
         stabilizer: CopterStabilizerConfig {

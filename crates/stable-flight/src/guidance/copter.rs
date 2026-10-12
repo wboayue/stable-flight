@@ -9,6 +9,9 @@
 //! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading held; descents slewed at [`max_descent_mps`](CopterGuidanceConfig::max_descent_mps) |
 //! | [`ControlInput::Land`] | [`Setpoint::Attitude`]: as a waypoint at the land position, with an altitude target that keeps descending at [`land_speed_mps`](CopterGuidanceConfig::land_speed_mps), at most [`LAND_LEASH_M`] below the vehicle |
 //!
+//! Every thrust is held at or above [`min_thrust`](CopterGuidanceConfig::min_thrust) while
+//! flying (none by default): a tailsitter's control surfaces need the propwash.
+//!
 //! Switching modes doesn't jump the heading: attitude, absolute-attitude, waypoint, and land
 //! flight share one heading-hold target, and rate flight keeps it on the vehicle's heading. The
 //! altitude and lateral loops start fresh each time waypoint or land flight is entered, with
@@ -23,7 +26,7 @@ use crate::controllers::*;
 use crate::controllers::{check, check_limit, check_positive, check_tilt};
 use crate::{
     AbsoluteAttitudeCommand, AttitudeCommand, AttitudeSetpoint, Configurable, ControlInput,
-    Guidance, LandCommand, Saturation, Setpoint, VehicleState, WaypointCommand,
+    Guidance, LandCommand, RateSetpoint, Saturation, Setpoint, VehicleState, WaypointCommand,
 };
 
 use super::rate_divider::RateDivider;
@@ -56,6 +59,11 @@ pub const DEFAULT_MAX_DESCENT_MPS: f32 = 3.0;
 
 /// Default [`CopterGuidanceConfig::land_speed_mps`], as PX4's `MPC_LAND_SPEED`.
 pub const DEFAULT_LAND_SPEED_MPS: f32 = 0.7;
+
+/// A piloted throttle (stick, rate, or absolute-attitude thrust) at or below this is idle:
+/// [`CopterGuidanceConfig::min_thrust`] doesn't raise it, so the motors can idle on the ground
+/// and the pilot can still cut them.
+pub const IDLE_THROTTLE: f32 = 0.05;
 
 /// How far, in meters, a land's altitude target may run below the vehicle. Once the ground
 /// stops the vehicle, the altitude loop then settles on a thrust below hover instead of winding
@@ -115,12 +123,22 @@ pub struct CopterGuidanceConfig {
     /// touchdown detector's [`DESCENDING_MPS`] (0.2 m/s), so the detector sees the descent and
     /// the land ends in a disarm. Defaults to [`DEFAULT_LAND_SPEED_MPS`].
     pub land_speed_mps: f32,
+    /// Least linear thrust while flying, in `[0, 1)`; `0` (the default) is none. It keeps air
+    /// over a tailsitter's control surfaces, whose authority comes from the propwash: at low
+    /// throttle the elevons can't hold the nose up. ArduPilot's tailsitters floor the motors
+    /// the same way (`Q_TAILSIT_MIN_VO`, `ArduPlane/tailsitter.cpp`, applied by
+    /// `AP_MotorsTailsitter` only once spooled up). Every setpoint's thrust is raised to it,
+    /// after the tilt boost (so even inverted), except a piloted throttle at or below
+    /// [`IDLE_THROTTLE`], which passes through. Waypoint and land flight always get it. Set it
+    /// below `altitude.hover_thrust`, or waypoint flight can't descend and a land never
+    /// touches down.
+    pub min_thrust: f32,
 }
 
 impl Default for CopterGuidanceConfig {
     /// The controller defaults (flight-checked on RealFlight's QuadCopterX), a 50 Hz lateral
-    /// loop, a 27° waypoint tilt cap, 45° at full stick, a 3 m/s descent limit, and a 0.7 m/s
-    /// land.
+    /// loop, a 27° waypoint tilt cap, 45° at full stick, a 3 m/s descent limit, a 0.7 m/s
+    /// land, and no thrust floor.
     fn default() -> Self {
         CopterGuidanceConfig {
             altitude: AltitudeControllerConfig::default(),
@@ -133,6 +151,7 @@ impl Default for CopterGuidanceConfig {
             ),
             max_descent_mps: DEFAULT_MAX_DESCENT_MPS,
             land_speed_mps: DEFAULT_LAND_SPEED_MPS,
+            min_thrust: 0.0,
         }
     }
 }
@@ -141,8 +160,9 @@ impl CopterGuidanceConfig {
     /// Checks both loop configs ([`AltitudeControllerConfig::validate`],
     /// [`LateralControllerConfig::validate`]; errors carry the loop as their `section`), that
     /// `navigation_period_s` and `max_stick_angles_rad` are non-negative and finite, that
-    /// `max_tilt_rad` is in `(0, π/2)`, that `max_descent_mps` is positive and finite, and that
-    /// `land_speed_mps` is finite and above [`DESCENDING_MPS`].
+    /// `max_tilt_rad` is in `(0, π/2)`, that `max_descent_mps` is positive and finite, that
+    /// `land_speed_mps` is finite and above [`DESCENDING_MPS`], and that `min_thrust` is in
+    /// `[0, 1)`.
     ///
     /// # Examples
     ///
@@ -170,6 +190,11 @@ impl CopterGuidanceConfig {
             "land_speed_mps",
             self.land_speed_mps > DESCENDING_MPS && self.land_speed_mps.is_finite(),
             "above the touchdown detector's DESCENDING_MPS and finite",
+        )?;
+        check(
+            "min_thrust",
+            (0.0..1.0).contains(&self.min_thrust),
+            "in [0, 1)",
         )
     }
 }
@@ -295,7 +320,9 @@ impl Guidance for CopterGuidance {
                 if estimated_state.heading_rad.is_finite() {
                     self.heading = wrap_angle(estimated_state.heading_rad);
                 }
-                Setpoint::Rate(rate_command.into())
+                let mut setpoint: RateSetpoint = rate_command.into();
+                setpoint.thrust = self.floor_piloted(rate_command.throttle, setpoint.thrust);
+                Setpoint::Rate(setpoint)
             }
             ControlInput::Waypoint(waypoint_command) => {
                 Setpoint::Attitude(self.navigate(dt, waypoint_command, estimated_state))
@@ -325,7 +352,8 @@ impl Guidance for CopterGuidance {
     /// `tilt` when the waypoint tilt request was capped at
     /// [`max_tilt_rad`](CopterGuidanceConfig::max_tilt_rad) (held with the tilt between
     /// lateral-loop runs), and `thrust` when the altitude loop's thrust, attitude mode's
-    /// boosted throttle, or an absolute attitude's thrust was clipped to `[0, 1]`. A tilt
+    /// boosted throttle, or an absolute attitude's thrust was clipped to `[0, 1]` or raised to
+    /// [`min_thrust`](CopterGuidanceConfig::min_thrust). A tilt
     /// beyond the stabilizer's limit in an absolute attitude is the stabilizer's to flag.
     fn saturation(&self) -> Saturation {
         self.saturation
@@ -354,8 +382,11 @@ impl CopterGuidance {
             // Angle boost: hold the vertical thrust the stick asks for while tilted, as the
             // altitude loop does (at most 2× past 60°, none when inverted). Saturated to
             // [0, 1]; NaN means none.
-            thrust: self
-                .clip_thrust(attitude_command.throttle * tilt_boost(&estimated_state.attitude)),
+            thrust: {
+                let throttle = attitude_command.throttle;
+                let boosted = self.clip_thrust(throttle * tilt_boost(&estimated_state.attitude));
+                self.floor_piloted(throttle, boosted)
+            },
         }
     }
 
@@ -377,7 +408,10 @@ impl CopterGuidance {
             roll_rad: command.roll_rad,
             pitch_rad: command.pitch_rad,
             heading_rad: self.heading,
-            thrust: self.clip_thrust(command.thrust),
+            thrust: {
+                let thrust = self.clip_thrust(command.thrust);
+                self.floor_piloted(command.thrust, thrust)
+            },
         }
     }
 
@@ -506,7 +540,7 @@ impl CopterGuidance {
             roll_rad: tilt_rad.x,
             pitch_rad: tilt_rad.y,
             heading_rad: self.heading,
-            thrust: linear_thrust,
+            thrust: self.floor_thrust(linear_thrust),
         }
     }
 
@@ -515,6 +549,27 @@ impl CopterGuidance {
     fn clip_thrust(&mut self, thrust: f32) -> f32 {
         self.saturation.thrust = !(0.0..=1.0).contains(&thrust) && !thrust.is_nan();
         saturate_throttle(thrust)
+    }
+
+    /// Raises a piloted `thrust` to `min_thrust` unless the pilot's `throttle` is idle (at or
+    /// below [`IDLE_THROTTLE`], or NaN).
+    fn floor_piloted(&mut self, throttle: f32, thrust: f32) -> f32 {
+        if throttle > IDLE_THROTTLE {
+            self.floor_thrust(thrust)
+        } else {
+            thrust
+        }
+    }
+
+    /// Raises `thrust` to `min_thrust`, flagging `thrust` when it does.
+    fn floor_thrust(&mut self, thrust: f32) -> f32 {
+        let min_thrust = self.config.min_thrust;
+        if thrust < min_thrust {
+            self.saturation.thrust = true;
+            min_thrust
+        } else {
+            thrust
+        }
     }
 
     /// Roll/pitch in radians toward the waypoint from the lateral loop, run when

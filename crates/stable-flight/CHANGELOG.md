@@ -64,8 +64,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`VehicleState::rotate_body`:** the state in another body frame (attitude, body rates, Euler
   fields), for a constant mount or view rotation.
 - **`ActuatorCommand::SLOTS`:** the number of motor and of servo slots (8).
+- **Thrust floor** (#123): `CopterGuidanceConfig::min_thrust` (param `GUID_THR_MIN`, default
+  0: none) holds every thrust at or above it while flying, so a tailsitter's elevons keep the
+  propwash they need to hold the nose up (as ArduPilot's `Q_TAILSIT_MIN_VO`). A piloted
+  throttle at or below `IDLE_THROTTLE` (0.05) passes through, so the motors can idle on the
+  ground; waypoint and land flight always get it. Raising a thrust flags `thrust` saturation.
 
 ### Changed
+
+- **Breaking:** `CopterGuidanceConfig` has a new `min_thrust` field (#123); struct literals add
+  `..Default::default()` (0, the previous behavior).
 
 - **Breaking:** roll and pitch have separate gains in the rate and attitude loops (#289).
   `BodyRateControllerConfig` and `AttitudeControllerConfig` replace `gains` with `roll_gains`

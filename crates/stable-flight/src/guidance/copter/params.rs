@@ -19,6 +19,7 @@ impl ParamTable for CopterGuidanceConfig {
         param!(deg "GUID_TILT_MAX", max_tilt_rad),
         param!("GUID_DESC_MAX", max_descent_mps),
         param!("GUID_LAND_SPD", land_speed_mps),
+        param!("GUID_THR_MIN", min_thrust),
         param!(deg "GUID_STICK_X", max_stick_angles_rad.x),
         param!(deg "GUID_STICK_Y", max_stick_angles_rad.y),
     ];
@@ -81,6 +82,10 @@ mod metadata {
                 .param("GUID_LAND_SPD", "Descent rate while landing")
                 .with_units("m/s")
                 .above(DESCENDING_MPS),
+            LIMITS
+                .param("GUID_THR_MIN", "Least thrust while flying (0: none)")
+                .at_least(0.0)
+                .below(1.0),
             STICKS
                 .param("GUID_STICK_X", "Roll angle at full stick in attitude mode")
                 .with_units("deg")

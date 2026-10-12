@@ -12,8 +12,8 @@
 //! front is the belly: roll tilts it sideways (differential thrust), pitch tilts it toward its
 //! belly or back (elevons together), and yaw turns it about the vertical (elevons opposite).
 //!
-//! `--record <csv>` writes one row per tick (sticks' moments, actuators, rates, attitude) for
-//! reading the response to stick pulses.
+//! `--record <csv>` writes one row per tick (setpoint, moments, actuators, rates, attitude,
+//! climb rate) for reading the response to stick pulses.
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example tailsitter-manual-realflight
@@ -33,7 +33,7 @@ use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight::{
-    Commander, FlightLoop, TelemetryPublisher, TelemetryRecord, View, euler_angles,
+    Commander, FlightLoop, Setpoint, TelemetryPublisher, TelemetryRecord, View, euler_angles,
 };
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
@@ -150,7 +150,10 @@ fn fly(commander: impl Commander, args: &Args) {
 
 /// Writes one CSV row per tick to `--record`, for reading stick pulses; does nothing without it.
 /// Rates, moments, and actuators are in the airplane body frame; `view_*` are the attitude in
-/// the tailsitter view, where hover is level (the body Euler angles are degenerate there).
+/// the tailsitter view, where hover is level (the body Euler angles are degenerate there), and
+/// `sp_*` guidance's setpoint, also in the view (NaN angles under a rate setpoint, all NaN
+/// for any other). `sp_thrust` is linear thrust, before the stabilizer's thrust curve;
+/// `thrust` is after it. `climb_mps` is the vertical speed, up positive.
 struct Recorder {
     out: Option<BufWriter<File>>,
     start: Instant,
@@ -164,7 +167,7 @@ impl Recorder {
                 let mut out = BufWriter::new(File::create(path)?);
                 writeln!(
                     out,
-                    "wall_s,armed,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,view_roll,view_pitch,view_heading,altitude,moment_x,moment_y,moment_z,thrust,motor_left,motor_right,elevon_left,elevon_right"
+                    "wall_s,armed,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,view_roll,view_pitch,view_heading,altitude,moment_x,moment_y,moment_z,thrust,motor_left,motor_right,elevon_left,elevon_right,sp_roll,sp_pitch,sp_heading,sp_thrust,climb_mps"
                 )?;
                 Some(out)
             }
@@ -189,10 +192,15 @@ impl TelemetryPublisher for Recorder {
         let view = state.rotate_body(&self.view);
         let moments = record.control.moments;
         let actuators = record.actuators;
+        let (sp_roll, sp_pitch, sp_heading, sp_thrust) = match record.setpoint {
+            Setpoint::Attitude(s) => (s.roll_rad, s.pitch_rad, s.heading_rad, s.thrust),
+            Setpoint::Rate(s) => (f32::NAN, f32::NAN, f32::NAN, s.thrust),
+            _ => (f32::NAN, f32::NAN, f32::NAN, f32::NAN),
+        };
         // A failed write loses diagnostics, not flight: ignore it.
         let _ = writeln!(
             out,
-            "{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4}",
+            "{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3}",
             self.start.elapsed().as_secs_f32(),
             u8::from(record.command.arm),
             rates.x,
@@ -213,6 +221,11 @@ impl TelemetryPublisher for Recorder {
             actuators.motors[1],
             actuators.servos[0],
             actuators.servos[1],
+            sp_roll,
+            sp_pitch,
+            sp_heading,
+            sp_thrust,
+            state.velocity_mps.z,
         );
     }
 }

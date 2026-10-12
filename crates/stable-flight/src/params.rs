@@ -54,6 +54,7 @@
 //! | `GUID_TILT_MAX` | `max_tilt_rad` |
 //! | `GUID_DESC_MAX` | `max_descent_mps` |
 //! | `GUID_LAND_SPD` | `land_speed_mps` |
+//! | `GUID_THR_MIN` | `min_thrust` |
 //! | `GUID_STICK_X`, `_Y` | `max_stick_angles_rad` |
 //!
 //! # Examples
