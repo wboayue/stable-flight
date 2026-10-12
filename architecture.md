@@ -219,9 +219,10 @@ deliberately. The pieces:
   the state to decide it.
 * **Phases are not modes.** Takeoff and landing are vertical, in the copter regime, flown by
   `ControlInput` (a waypoint up, `Land` down) and decided by commanders (`TouchdownDetector`).
-  Being on the ground will be a guard against starting a transition (`ModeRefusal::OnGround`;
-  the transition sequencer is planned in [#181](https://github.com/wboayue/stable-flight/issues/181)),
-  not a mode. `Land` implies copter.
+  Height is a guard against starting a transition, not a mode: `guidance::vtol::Transition`
+  refuses below a height above the arming point (`ModeRefusal::BelowMinAltitude`), which
+  covers the ground too (`OnGround` waits for a landed estimator,
+  [#66](https://github.com/wboayue/stable-flight/issues/66)). `Land` implies copter.
 * **Flip, not blend.** A tailsitter drives the same elevons and motors in both regimes, so a
   transition hands control from one controller to the other instead of weighting both: one
   active controller and integrator set, testable per mode, one controller per tick. ArduPilot
@@ -229,13 +230,19 @@ deliberately. The pieces:
   (`ArduPlane/tailsitter.cpp`; PX4 `vtol_att_control/tailsitter.cpp`). Blending suits separate
   lift and cruise actuators; for a tailsitter it would mix two controllers fighting over shared
   actuators, their integrators winding on each other's errors, and attitude errors from
-  different frames near the view's singularity. The transition itself
-  ([#124](https://github.com/wboayue/stable-flight/issues/124), planned) pitches over on the
-  hover controller, primes the incoming controller at the handoff, and slews thrust; the
-  setpoint variant selects the stabilizer's controller, so the mixer never sees the regime.
+  different frames near the view's singularity. `guidance::vtol::Transition` owns the mode and
+  ramps a frame-free tilt target (the nose's angle from vertical) for whichever controller
+  flies the transition, and flags the tick control passes between them; `ThrustHandoff`
+  blends thrust across it. Wiring them into a VTOL guidance and stabilizer
+  ([#124](https://github.com/wboayue/stable-flight/issues/124), planned): the forward ramp on
+  the hover controller, the back ramp on the plane controller, the incoming controller primed
+  at the handoff, and the setpoint variant selecting the stabilizer's controller, so the
+  mixer never sees the regime.
 * **Airspeed is optional.** `VehicleState::airspeed_mps` is `None` without air data
-  (`valid_airspeed_mps` also drops NaN and negative readings). The planned transition gates on
-  pitch and adds airspeed when present (as PX4 does).
+  (`valid_airspeed_mps` also drops NaN and negative readings). The forward transition
+  completes on tilt and, when a valid airspeed is present, a minimum airspeed (as PX4 does).
+  A forward timeout falls back to hover, as PX4's does, since without an airspeed gate the
+  vehicle may not be flying; a back timeout completes, as in both stacks.
 
 ## Link Failsafe
 

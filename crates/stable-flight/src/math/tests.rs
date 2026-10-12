@@ -366,3 +366,29 @@ fn tilt_boost_compensates_tilt_and_cuts_out_inverted() {
         assert_relative_eq!(tilt_boost(&attitude), expected, epsilon = 1e-4);
     }
 }
+
+/// `nose_up_cosine` is the sine of the pitch, whatever the roll and heading, and stays defined
+/// nose up (pitch 90°), where the Euler angles are degenerate.
+#[test]
+fn nose_up_cosine_is_the_sine_of_the_pitch() {
+    // (roll°, pitch°, heading°, expected)
+    let cases = [
+        (0.0, 0.0, 0.0, 0.0),
+        (0.0, 90.0, 0.0, 1.0),
+        (0.0, -90.0, 0.0, -1.0),
+        (0.0, 45.0, 120.0, core::f32::consts::FRAC_1_SQRT_2),
+        (30.0, 30.0, -60.0, 0.5),
+        (170.0, 90.0, 33.0, 1.0), // nose up, any roll/heading split
+        (180.0, 0.0, 0.0, 0.0),   // inverted, level nose
+    ];
+    for (roll, pitch, heading, expected) in cases {
+        let attitude = UnitQuaternion::from_euler_angles(
+            f32::to_radians(roll),
+            f32::to_radians(pitch),
+            f32::to_radians(heading),
+        );
+        assert_relative_eq!(nose_up_cosine(&attitude), expected, epsilon = 1e-5);
+    }
+    let nan = UnitQuaternion::new_unchecked(nalgebra::Quaternion::new(f32::NAN, 0.0, 0.0, 0.0));
+    assert!(nose_up_cosine(&nan).is_nan());
+}

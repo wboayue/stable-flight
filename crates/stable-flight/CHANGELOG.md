@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`guidance::vtol`** (#181): `Transition`, the copter ⇄ plane state machine a VTOL
+  guidance owns. It moves toward the requested `FlightRegime`, ramps a frame-free tilt target
+  (the nose's angle from vertical) through `ToPlane`/`ToCopter`, completes on tilt (and a
+  minimum airspeed when valid), flags the controller handoff, and refuses below a height
+  above the arming point. A forward timeout falls back to copter until copter is requested;
+  a back timeout completes. `ThrustHandoff` blends thrust across a handoff. Defaults follow
+  ArduPilot's tailsitter (50°/s, 45°) and PX4's 15 s timeout. Not wired into a guidance
+  yet (#124).
+
 - **Flight regimes** (#181): `Command::regime` requests a `FlightRegime` (`Copter`, the
   default, or `Plane`) every tick, like `arm`; `Command::with_regime` sets it. Guidance owns
   the flown `FlightMode` (`Copter`, `Plane`, `ToPlane`, `ToCopter`) and reports it with an

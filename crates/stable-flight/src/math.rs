@@ -174,7 +174,7 @@ pub fn euler_angles(attitude: &UnitQuaternion<f32>) -> (f32, f32, f32) {
     let (w, x, y, z) = (attitude.w, attitude.i, attitude.j, attitude.k);
     let roll = libm::atan2f(2.0 * (y * z + w * x), w * w - x * x - y * y + z * z);
     // `clamp` passes NaN through, so a NaN attitude still gives NaN pitch.
-    let pitch = libm::asinf((-2.0 * (x * z - w * y)).clamp(-1.0, 1.0));
+    let pitch = libm::asinf(nose_up_cosine(attitude).clamp(-1.0, 1.0));
     let yaw = libm::atan2f(2.0 * (x * y + w * z), w * w + x * x - y * y - z * z);
     (roll, pitch, yaw)
 }
@@ -205,6 +205,15 @@ pub(crate) fn tilt_boost(attitude: &UnitQuaternion<f32>) -> f32 {
     }
     let upright = (cosine / INVERTED_FADE_COSINE).clamp(0.0, 1.0);
     upright / cosine.max(MIN_TILT_COSINE)
+}
+
+/// The cosine of the nose's (body `x`) tilt from vertical: `1` pointing straight up, `0`
+/// level, `−1` straight down; the sine of the pitch, read from the quaternion directly (the
+/// rotation matrix's `(2, 0)` entry, negated for NED's down `z`), so it stays well defined at
+/// ±90° pitch where the Euler angles don't. NaN for a non-finite attitude.
+pub(crate) fn nose_up_cosine(attitude: &UnitQuaternion<f32>) -> f32 {
+    let (w, x, y, z) = (attitude.w, attitude.i, attitude.j, attitude.k);
+    2.0 * (w * y - x * z)
 }
 
 /// Saturates a throttle or thrust command to [0, 1]; NaN becomes 0 (no thrust).
