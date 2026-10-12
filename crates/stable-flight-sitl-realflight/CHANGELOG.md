@@ -53,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **realflight-bridge 2.2** (#270): a request RealFlight doesn't answer in time on the proxy
+  (`BridgeError::Simulator`) is retried on the same bridge instead of forcing a reconnect, and
+  the startup aircraft reset is retried up to three times. A reconnect whose `disable_rc` times
+  out that way fails and backs off. The proxy's defaults now fit RealFlight: run it without
+  `--request-timeout-ms`.
 - **Breaking:** `RealFlightConfiguration` and `Airframe` have a new `body_rotation` field, and
   `vehicle_state` takes the body rotation as a second argument (#314). Pass
   `UnitQuaternion::identity()`, or the airframe's `body_rotation`, for the previous behavior.
