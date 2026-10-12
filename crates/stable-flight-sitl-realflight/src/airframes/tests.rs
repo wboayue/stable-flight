@@ -88,7 +88,7 @@ fn explora_vtol_maps_two_motors_and_two_elevons_validly() {
     let mapping = explora_vtol().mapping;
 
     assert_eq!(mapping.validate(), Ok(()));
-    assert_eq!(mapping.motors[..2], [Some(4), Some(5)]);
+    assert_eq!(mapping.motors[..2], [Some(5), Some(4)]);
     assert!(mapping.motors[2..].iter().all(Option::is_none));
     assert_eq!(mapping.servos[..2], [Some(0), Some(1)]);
     assert!(mapping.servos[2..].iter().all(Option::is_none));

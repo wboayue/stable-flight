@@ -123,8 +123,9 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 ///
 /// - **Mixer:** [`TableMixer::tailsitter_2p_hover`], whose factors are in the airplane body
 ///   frame (x the nose).
-/// - **Mapping:** motors 0/1 (left/right) on channels 5/6, elevons (servos 0/1) on channels
-///   1/2 (RealFlight numbering; 4/5 and 0/1 here), captured in #120.
+/// - **Mapping:** motors 0/1 (left/right) on channels 6/5, elevons (servos 0/1) on channels
+///   1/2 (RealFlight numbering; 5/4 and 0/1 here), the left elevon reversed. The channels are
+///   from the #120 capture; which motor is which and the reversal from #121's first hops.
 /// - **Body rotation:** +90° pitch. RealFlight's frame for this model is hover-level (sitting
 ///   on its tail reads level), and the vehicle's is the airplane's, so hover reads pitch 90°.
 ///
@@ -141,7 +142,7 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 /// use stable_flight_sitl_realflight::airframes;
 ///
 /// let airframe = airframes::explora_vtol();
-/// assert_eq!(airframe.mapping.motors[..2], [Some(4), Some(5)]);
+/// assert_eq!(airframe.mapping.motors[..2], [Some(5), Some(4)]);
 /// assert_eq!(airframe.mapping.servos[..2], [Some(0), Some(1)]);
 /// ```
 pub fn explora_vtol() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, TableMixer<4>> {
@@ -161,7 +162,7 @@ pub fn explora_vtol() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
                 // Differential thrust (the mixer's airplane yaw, 0.25 per unit moment).
                 roll_gains: gains(0.2, 0.1, 0.0),
                 // Elevons (full range per unit moment).
-                pitch_gains: gains(0.1, 0.05, 0.0),
+                pitch_gains: gains(0.3, 0.1, 0.0),
                 yaw_gains: gains(0.1, 0.05, 0.0),
                 max_integral: 1.0,
             },
@@ -176,8 +177,13 @@ pub fn explora_vtol() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
         },
         mixer: TableMixer::tailsitter_2p_hover(),
         mapping: ActuatorMapping {
-            motors: [Some(4), Some(5), None, None, None, None, None, None],
+            // Left motor on channel 6, right on 5: the first hops (#121) rolled toward the motor
+            // with more thrust with them the other way round.
+            motors: [Some(5), Some(4), None, None, None, None, None, None],
             servos: [Some(0), Some(1), None, None, None, None, None, None],
+            // The elevon channels run opposite ways (#121 ground check); with the right one reversed,
+            // pitch and yaw diverged on the first hop, so it is the left.
+            reversed_servos: [true, false, false, false, false, false, false, false],
             ..Default::default()
         },
         body_rotation: UnitQuaternion::from_euler_angles(0.0, PI / 2.0, 0.0),
