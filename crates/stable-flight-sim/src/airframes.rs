@@ -3,7 +3,10 @@
 
 use stable_flight::GRAVITY;
 use stable_flight::Vec3;
-use stable_flight::controllers::AltitudeControllerConfig;
+use stable_flight::controllers::{
+    AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
+    YawControllerConfig,
+};
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::mixers::{MixerConfig, Slot, TableMixer};
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
@@ -30,8 +33,10 @@ pub struct Airframe {
 /// A 1 kg X quad, 250 mm motor to motor, thrust-to-weight about 2.4: roughly a 5-inch
 /// freestyle quad with a camera, chosen to be plausible, not to match a real one.
 ///
-/// Guidance and the stabilizer use the core defaults, with the hover thrust worked out from
-/// the model rather than measured.
+/// Roll and pitch rate and angle gains are the sim autotune's (`StagePlan::copter_search`,
+/// `tests/autotune.rs`); yaw rate and heading are hand-tuned on the sim's step responses
+/// (`tests/step_response.rs`). Guidance uses the core defaults, with the hover thrust worked
+/// out from the model rather than measured.
 ///
 /// # Examples
 ///
@@ -68,7 +73,50 @@ pub fn quad_x() -> Airframe {
         max_step_s: 0.001,
     };
     let mixer = TableMixer::quad_x();
-    let stabilizer = CopterStabilizerConfig::default();
+    let defaults = CopterStabilizerConfig::default();
+    let angle = |p| Gains {
+        p,
+        ..defaults.attitude.roll_gains
+    };
+    let stabilizer = CopterStabilizerConfig {
+        body_rate: BodyRateControllerConfig {
+            // Sim autotune (#347); the symmetric model's roll and pitch differ by the search's
+            // step size.
+            roll_gains: Gains {
+                p: 1.95,
+                i: 0.0,
+                d: 0.0288,
+            },
+            pitch_gains: Gains {
+                p: 1.70,
+                i: 0.0,
+                d: 0.0258,
+            },
+            // Prop drag gives yaw about 7 rad/s² per unit moment: P 1.5 rises in 0.16 s on a
+            // 0.5 rad/s step without clipping (#347).
+            yaw_gains: Gains {
+                p: 1.5,
+                ..defaults.body_rate.yaw_gains
+            },
+            ..defaults.body_rate
+        },
+        // Sim autotune (#347).
+        attitude: AttitudeControllerConfig {
+            roll_gains: angle(9.0),
+            pitch_gains: angle(9.0),
+            ..defaults.attitude
+        },
+        // A 10° heading step without overshoot or clipping on the yaw rate loop above (#347).
+        yaw: YawControllerConfig {
+            gains: Gains {
+                p: 3.5,
+                i: 0.0,
+                d: 0.0,
+            },
+            ..defaults.yaw
+        },
+        ..defaults
+    };
     let guidance = CopterGuidanceConfig {
         altitude: AltitudeControllerConfig {
             hover_thrust: hover_thrust(&model, &mixer, &MixerConfig::default(), &stabilizer),

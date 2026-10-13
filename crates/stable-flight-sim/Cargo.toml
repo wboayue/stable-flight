@@ -19,3 +19,5 @@ thiserror.workspace = true
 approx.workspace = true
 assert2.workspace = true
 stable-flight = { path = "../stable-flight", features = ["testing"] }
+# The failsafe test flies from the link, as a companion would.
+stable-flight-link = { path = "../stable-flight-link", features = ["testing"] }

@@ -1543,6 +1543,7 @@ dependencies = [
  "assert2",
  "libm",
  "stable-flight",
+ "stable-flight-link",
  "thiserror",
 ]
 

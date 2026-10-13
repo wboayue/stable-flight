@@ -25,9 +25,7 @@ fn lands_on_the_waypoint_and_disarms() {
     let mut peak_m = 0.0_f32;
     let mut touchdown_mps = 0.0_f32;
     let mut landed_s = None;
-    let mut elapsed_s = 0.0;
-    fly(&mut flight_loop, 20.0, |flight_loop| {
-        elapsed_s += common::TICK.as_secs_f32();
+    fly(&mut flight_loop, 20.0, |flight_loop, elapsed_s| {
         let state = flight_loop.state();
         peak_m = peak_m.max(state.position_m.z);
         if state.position_m.z < 0.05 && peak_m > 1.0 {
