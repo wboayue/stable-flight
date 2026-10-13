@@ -153,13 +153,10 @@ impl TelemetryPublisher for LogTelemetry {
                 ControlInput::Attitude(attitude) => attitude.throttle,
                 _ => f32::NAN,
             },
-            match record.setpoint {
-                Setpoint::Attitude(attitude) => attitude.thrust,
-                Setpoint::Rate(rate) => rate.thrust,
-            },
+            record.setpoint.thrust(),
             match record.setpoint {
                 Setpoint::Attitude(attitude) => attitude.heading_rad,
-                Setpoint::Rate(_) => f32::NAN,
+                _ => f32::NAN,
             },
             record.state.heading_rad,
             record.control.thrust,

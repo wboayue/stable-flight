@@ -448,6 +448,8 @@ fn attitude_error_is_tilt_then_heading_in_body_axes() {
             [0.0, 0.0, 0.0],
             1e-3,
         ),
+        // Exactly upside down from the setpoint: roll back over (not a zero error).
+        (at(180.0, 0.0, 0.0), 0.0, 0.0, 0.0, [180.0, 0.0, 0.0], 1e-3),
         // Upside down: no heading correction.
         (at(180.0, 0.0, 0.0), 180.0, 0.0, 20.0, [0.0, 0.0, 0.0], 1e-3),
         // Heading wraps the short way.

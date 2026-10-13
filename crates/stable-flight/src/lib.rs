@@ -312,7 +312,8 @@ impl FlightMode {
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[non_exhaustive]
 pub enum ModeRefusal {
-    /// This guidance can't fly the requested regime (e.g. `Plane` on a copter).
+    /// This guidance can't fly the requested regime (`Plane` on a copter, `Copter` on a
+    /// plane).
     Unsupported,
     /// The vehicle is on the ground; transitions start only in the air.
     OnGround,
@@ -320,6 +321,8 @@ pub enum ModeRefusal {
     BelowMinAltitude,
     /// A transition didn't complete in time and was abandoned.
     TransitionTimeout,
+    /// A transition rolled too far off its target and was abandoned or cut short.
+    RollError,
 }
 
 /// The flight mode guidance is flying, and why it isn't the requested regime when it can't
@@ -367,13 +370,31 @@ impl FlightModeReport {
             refusal: (requested != FlightRegime::Copter).then_some(ModeRefusal::Unsupported),
         }
     }
+    /// What a plane-only guidance flies when `requested`: plane, refusing a copter request
+    /// as [`ModeRefusal::Unsupported`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::{FlightMode, FlightModeReport, FlightRegime, ModeRefusal};
+    ///
+    /// let report = FlightModeReport::plane_only(FlightRegime::Plane);
+    /// assert_eq!((report.mode, report.refusal), (FlightMode::Plane, None));
+    /// let refused = FlightModeReport::plane_only(FlightRegime::Copter);
+    /// assert_eq!(refused.refusal, Some(ModeRefusal::Unsupported));
+    /// ```
+    pub fn plane_only(requested: FlightRegime) -> Self {
+        FlightModeReport {
+            mode: FlightMode::Plane,
+            refusal: (requested != FlightRegime::Plane).then_some(ModeRefusal::Unsupported),
+        }
+    }
 }
 
 /// The control input part of a [`Command`]: what the flight system should fly.
 ///
 /// The `ControlInput` enum encapsulates different types of commands that can be issued
-/// to control an aircraft. It supports five types of commands, categorized into four
-/// control paradigms:
+/// to control an aircraft:
 ///
 /// * `Manual` - Low-level direct control inputs typically generated from user input devices.
 ///   This includes:
@@ -381,6 +402,8 @@ impl FlightModeReport {
 ///   - `Rate`: Controls the aircraft's rotational rates (rate of change of roll, pitch, yaw).
 /// * `AbsoluteAttitude` - An absolute roll, pitch, and heading with collective thrust, from an
 ///   offboard app (e.g. MAVLink `SET_ATTITUDE_TARGET`).
+/// * `AbsoluteRate` - Absolute body rates with collective thrust, from an offboard app or a
+///   maneuver script.
 /// * `Waypoint` - High-level navigational commands used for autonomous flight.
 /// * `Land` - Descend in place until touchdown.
 ///
@@ -467,6 +490,11 @@ pub enum ControlInput {
     /// vehicle. Guidance only descends; deciding it has touched down and disarming is the
     /// commander's job ([`TouchdownDetector`](crate::commanders::TouchdownDetector)).
     Land(LandCommand),
+
+    /// Absolute body rates in rad/s and collective thrust, typically from an offboard app or a
+    /// maneuver script (a flip, a roll, a loop). Unlike [`ControlInput::Rate`], the rates are
+    /// not stick fractions: they are flown as given, at any attitude.
+    AbsoluteRate(AbsoluteRateCommand),
 }
 
 /// Zero-throttle, centered-stick [`ControlInput::Attitude`].
@@ -497,7 +525,7 @@ impl ControlInput {
     }
 
     /// Whether this input is a stream that must keep arriving to stay valid (sticks and
-    /// absolute attitudes), unlike a waypoint or a land, which stays valid until replaced. A link-fed
+    /// absolute attitudes and rates), unlike a waypoint or a land, which stays valid until replaced. A link-fed
     /// commander treats a stream as stale once commands stop, even if other messages arrive.
     ///
     /// # Examples
@@ -508,11 +536,16 @@ impl ControlInput {
     /// assert!(ControlInput::Attitude(Default::default()).is_stream());
     /// assert!(ControlInput::Rate(Default::default()).is_stream());
     /// assert!(ControlInput::AbsoluteAttitude(Default::default()).is_stream());
+    /// assert!(ControlInput::AbsoluteRate(Default::default()).is_stream());
     /// assert!(!ControlInput::Waypoint(Default::default()).is_stream());
     /// assert!(!ControlInput::Land(Default::default()).is_stream());
     /// ```
     pub fn is_stream(&self) -> bool {
-        self.is_sticks() || matches!(self, ControlInput::AbsoluteAttitude(_))
+        self.is_sticks()
+            || matches!(
+                self,
+                ControlInput::AbsoluteAttitude(_) | ControlInput::AbsoluteRate(_)
+            )
     }
 
     /// Which kind of input this is, without its values: the flight mode a ground station shows.
@@ -530,6 +563,10 @@ impl ControlInput {
     ///     ControlMode::AbsoluteAttitude,
     /// );
     /// assert_eq!(ControlInput::Land(Default::default()).mode(), ControlMode::Land);
+    /// assert_eq!(
+    ///     ControlInput::AbsoluteRate(Default::default()).mode(),
+    ///     ControlMode::AbsoluteRate,
+    /// );
     /// ```
     pub fn mode(&self) -> ControlMode {
         match self {
@@ -538,6 +575,7 @@ impl ControlInput {
             ControlInput::Waypoint(_) => ControlMode::Waypoint,
             ControlInput::AbsoluteAttitude(_) => ControlMode::AbsoluteAttitude,
             ControlInput::Land(_) => ControlMode::Land,
+            ControlInput::AbsoluteRate(_) => ControlMode::AbsoluteRate,
         }
     }
 }
@@ -564,6 +602,8 @@ pub enum ControlMode {
     AbsoluteAttitude,
     /// Autonomous descent to touchdown ([`ControlInput::Land`]).
     Land,
+    /// An offboard app or script commands absolute body rates ([`ControlInput::AbsoluteRate`]).
+    AbsoluteRate,
 }
 
 /// Represents direct manual control of an aircraft's attitude (orientation).
@@ -802,6 +842,38 @@ pub struct AbsoluteAttitudeCommand {
     pub heading_rad: f32,
     /// Collective thrust along the body axis, `0.0` to `1.0`. Unlike an [`AttitudeCommand`]'s
     /// throttle, it is not boosted for tilt: the sender owns that compensation.
+    pub thrust: f32,
+}
+
+/// Absolute body rates and collective thrust, for [`ControlInput::AbsoluteRate`]: what a
+/// maneuver or an offboard app (e.g. MAVLink `SET_ATTITUDE_TARGET` body rates) asks for, as
+/// opposed to the stick fractions of a [`RateCommand`].
+///
+/// Per the input policy, nothing is rejected: the stabilizer saturates the rates to its
+/// limits (NaN as zero) and thrust to `[0, 1]` (NaN means none).
+///
+/// # Examples
+///
+/// A full-rate roll to the right at 60% thrust:
+/// ```
+/// use stable_flight::{AbsoluteRateCommand, ControlInput};
+///
+/// let input = ControlInput::AbsoluteRate(AbsoluteRateCommand {
+///     roll_radps: 360.0_f32.to_radians(),
+///     thrust: 0.6,
+///     ..Default::default()
+/// });
+/// ```
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct AbsoluteRateCommand {
+    /// Roll rate about body `x` in rad/s, right positive.
+    pub roll_radps: f32,
+    /// Pitch rate about body `y` in rad/s, nose up positive.
+    pub pitch_radps: f32,
+    /// Yaw rate about body `z` in rad/s, nose right positive.
+    pub yaw_radps: f32,
+    /// Collective thrust, `0.0` to `1.0`.
     pub thrust: f32,
 }
 
@@ -1129,8 +1201,16 @@ pub trait Actuator {
 pub enum Setpoint {
     /// Hold a roll/pitch attitude and an absolute heading.
     Attitude(AttitudeSetpoint),
-    /// Hold body rates.
+    /// Hold body rates, as fractions of the stabilizer's maximum.
     Rate(RateSetpoint),
+    /// Hold absolute body rates (rad/s): a copter stabilizer's acro and maneuvers.
+    BodyRate(BodyRateSetpoint),
+    /// Fly a wing-borne roll/pitch attitude, turns coordinated (no heading): a plane
+    /// stabilizer's.
+    Plane(PlaneSetpoint),
+    /// Hold absolute body rates (rad/s) on the wing, at any attitude: a plane stabilizer's acro
+    /// and maneuvers (rolls, loops).
+    PlaneRate(BodyRateSetpoint),
 }
 
 impl Setpoint {
@@ -1148,8 +1228,69 @@ impl Setpoint {
         match self {
             Setpoint::Attitude(attitude) => attitude.thrust,
             Setpoint::Rate(rates) => rates.thrust,
+            Setpoint::BodyRate(rates) | Setpoint::PlaneRate(rates) => rates.thrust,
+            Setpoint::Plane(plane) => plane.thrust,
         }
     }
+}
+
+/// Absolute body-rate target, for [`Setpoint::BodyRate`] (copter) and [`Setpoint::PlaneRate`]
+/// (plane). The stabilizer saturates each rate to its limit (NaN as zero).
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct BodyRateSetpoint {
+    /// Roll rate about body `x` in rad/s, right positive.
+    pub roll_radps: f32,
+    /// Pitch rate about body `y` in rad/s, nose up positive.
+    pub pitch_radps: f32,
+    /// Yaw rate about body `z` in rad/s, nose right positive.
+    pub yaw_radps: f32,
+    /// Linear collective thrust, `0.0` to `1.0`, before the stabilizer's thrust curve.
+    pub thrust: f32,
+}
+
+/// The rates of an [`AbsoluteRateCommand`], as given.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::{AbsoluteRateCommand, BodyRateSetpoint};
+///
+/// let command = AbsoluteRateCommand { roll_radps: 2.0, thrust: 0.5, ..Default::default() };
+/// assert_eq!(BodyRateSetpoint::from(&command).roll_radps, 2.0);
+/// ```
+impl From<&AbsoluteRateCommand> for BodyRateSetpoint {
+    fn from(command: &AbsoluteRateCommand) -> Self {
+        // Exhaustive destructuring: a new field fails to compile here until it is mapped.
+        let AbsoluteRateCommand {
+            roll_radps,
+            pitch_radps,
+            yaw_radps,
+            thrust,
+        } = *command;
+        Self {
+            roll_radps,
+            pitch_radps,
+            yaw_radps,
+            thrust,
+        }
+    }
+}
+
+/// Wing-borne attitude target for a plane stabilizer, for [`Setpoint::Plane`], in the
+/// [frame contract](VehicleState#frame-contract)'s body frame (a tailsitter's airplane
+/// frame). Turns are coordinated, so there is no heading: the stabilizer derives the yaw rate
+/// from bank and airspeed. The stabilizer saturates roll and pitch to its limits; NaN means
+/// level.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct PlaneSetpoint {
+    /// Bank in radians, right wing down positive.
+    pub roll_rad: f32,
+    /// Pitch in radians, nose up positive.
+    pub pitch_rad: f32,
+    /// Linear throttle, `0.0` to `1.0`, before the stabilizer's thrust curve.
+    pub thrust: f32,
 }
 
 /// Attitude target for the [`Stabilizer`]; see [`Setpoint`].

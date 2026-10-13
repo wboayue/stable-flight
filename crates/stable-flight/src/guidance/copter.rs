@@ -4,6 +4,7 @@
 //! | Control input | Setpoint |
 //! |---|---|
 //! | [`ControlInput::Rate`] | [`Setpoint::Rate`], sticks passed through; the heading-hold target follows the vehicle |
+//! | [`ControlInput::AbsoluteRate`] | [`Setpoint::BodyRate`]: rates passed through (the stabilizer saturates them); the heading-hold target follows the vehicle; thrust saturated to `[0, 1]`, not boosted |
 //! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target; throttle boosted by 1/cos(tilt) so tilting doesn't sink (none when inverted) |
 //! | [`ControlInput::AbsoluteAttitude`] | [`Setpoint::Attitude`]: roll/pitch passed through (the stabilizer saturates them); the heading replaces the heading-hold target (NaN holds it); thrust saturated to `[0, 1]`, not boosted |
 //! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading held; descents slewed at [`max_descent_mps`](CopterGuidanceConfig::max_descent_mps) |
@@ -27,9 +28,9 @@ use crate::commanders::touchdown::DESCENDING_MPS;
 use crate::controllers::*;
 use crate::controllers::{check, check_limit, check_positive, check_tilt, check_unit_interval};
 use crate::{
-    AbsoluteAttitudeCommand, AttitudeCommand, AttitudeSetpoint, Configurable, ControlInput,
-    FlightRegime, Guidance, LandCommand, RateSetpoint, Saturation, Setpoint, VehicleState,
-    WaypointCommand,
+    AbsoluteAttitudeCommand, AbsoluteRateCommand, AttitudeCommand, AttitudeSetpoint,
+    BodyRateSetpoint, Configurable, ControlInput, FlightRegime, Guidance, LandCommand,
+    RateSetpoint, Saturation, Setpoint, VehicleState, WaypointCommand,
 };
 
 use super::rate_divider::RateDivider;
@@ -385,11 +386,7 @@ impl Guidance for CopterGuidance {
                 Setpoint::Attitude(self.attitude_setpoint(dt, attitude_command, estimated_state))
             }
             ControlInput::Rate(rate_command) => {
-                // Track the vehicle so attitude or waypoint flight holds the heading it has
-                // when rate flight ends, not the one it had when rate flight began.
-                if estimated_state.heading_rad.is_finite() {
-                    self.heading = wrap_angle(estimated_state.heading_rad);
-                }
+                self.follow_heading(estimated_state);
                 let mut setpoint: RateSetpoint = rate_command.into();
                 setpoint.thrust = self.hold_piloted(
                     rate_command.throttle,
@@ -406,6 +403,9 @@ impl Guidance for CopterGuidance {
             }
             ControlInput::Land(command) => {
                 Setpoint::Attitude(self.land(dt, command, estimated_state))
+            }
+            ControlInput::AbsoluteRate(command) => {
+                Setpoint::BodyRate(self.absolute_rate_setpoint(command, estimated_state))
             }
         }
     }
@@ -464,6 +464,27 @@ impl CopterGuidance {
                 self.hold_piloted(throttle, boosted, estimated_state.velocity_mps.z)
             },
         }
+    }
+
+    /// Rate flight: tracks the vehicle so attitude or waypoint flight holds the heading it has
+    /// when rate flight ends, not the one it had when rate flight began.
+    fn follow_heading(&mut self, estimated_state: &VehicleState) {
+        if estimated_state.heading_rad.is_finite() {
+            self.heading = wrap_angle(estimated_state.heading_rad);
+        }
+    }
+
+    /// Flies absolute rates as given, with the thrust saturated (not boosted).
+    fn absolute_rate_setpoint(
+        &mut self,
+        command: &AbsoluteRateCommand,
+        estimated_state: &VehicleState,
+    ) -> BodyRateSetpoint {
+        self.follow_heading(estimated_state);
+        let mut setpoint = BodyRateSetpoint::from(command);
+        let thrust = self.clip_thrust(command.thrust);
+        setpoint.thrust = self.hold_piloted(command.thrust, thrust, estimated_state.velocity_mps.z);
+        setpoint
     }
 
     /// Flies an absolute attitude: the heading becomes the heading-hold target, so stick

@@ -77,11 +77,12 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 
 - `Commander` → `Command { arm, regime, input }`. `arm` gates the motors; `regime` requests a
   `FlightRegime` (guidance owns the flown `FlightMode`); `input` is a `ControlInput`:
-  `Attitude`, `Rate`, `Waypoint`, `AbsoluteAttitude`, or `Land`.
+  `Attitude`, `Rate`, `Waypoint`, `AbsoluteAttitude`, `Land`, or `AbsoluteRate`.
 - `Vehicle` = `StateSource` + `Actuator` (blanket-implemented: implement those two, never
   `Vehicle`). `VehicleState` rustdoc holds the frame contract; `Vehicle` rustdoc the timing
   contract.
-- `Guidance` → `Setpoint` (`Attitude` or `Rate`); `Stabilizer` → `ControlOutput` (thrust,
+- `Guidance` → `Setpoint` (copter: `Attitude`, `Rate`, `BodyRate`; plane: `Plane`,
+  `PlaneRate`; the variant picks the controller); `Stabilizer` → `ControlOutput` (thrust,
   moments); `Mixer` → `ActuatorCommand` (`motors: [f32; 8]` in [0, 1], `servos: [f32; 8]` in
   [-1, 1]; the mixer sets each slot's meaning, the backend mapping its channel).
 - `TelemetryPublisher` gets a `TelemetryRecord` after `actuate`: the tick's `dt`, command,
@@ -103,8 +104,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 | `Commander` | `LinkCommander` (a `LinkedCommander`, from `FcLink::wire_linked`) | link |
 | `StateSource` + `Actuator` | `ComposedVehicle<S, A>`; `testing::NullVehicle` | core |
 | `StateSource` + `Actuator` | `RealFlightVehicle<T: RealFlightBridge>` | sitl-realflight |
-| `Guidance` | `CopterGuidance` (altitude/lateral loops, heading hold, `ThrustLimits`); `View<G>` | core |
-| `Stabilizer` | `CopterStabilizer` (attitude, yaw, body-rate loops); `View<S>` | core |
+| `Guidance` | `CopterGuidance` (altitude/lateral loops, heading hold, `ThrustLimits`); `PlaneGuidance` (FBWA sticks, acro, offboard); `View<G>` | core |
+| `Stabilizer` | `CopterStabilizer` (attitude, yaw, body-rate loops); `PlaneStabilizer` (attitude, turn coordination, airspeed-scaled rate loop); `View<S>` | core |
 | `Mixer` | `TableMixer<N>` (presets `quad_x`, `hex_x`, `tri`, `tailsitter_2p_hover`, …) | core |
 | `TelemetryPublisher` | `(A, B)` fan-out; `testing::RecordingTelemetry<N>` | core |
 | `TelemetryPublisher` | `LinkPublisher` (from `FcLink`; MAVLink is the bridge's job) | link |

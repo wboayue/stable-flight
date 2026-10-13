@@ -27,8 +27,12 @@
 //!
 //! # Setpoints
 //!
-//! - [`Setpoint::Rate`]: rate loop only (acro); the idle attitude and heading loops are
-//!   cleared, so attitude flight resumes from fresh state.
+//! - [`Setpoint::Rate`]: rate loop only (acro), at stick fractions of
+//!   [`full_scale_rates_radps`](CopterStabilizerConfig::full_scale_rates_radps); the idle
+//!   attitude and heading loops are cleared, so attitude flight resumes from fresh state.
+//! - [`Setpoint::BodyRate`]: the same, at absolute rates saturated to the full-scale rates
+//!   (maneuvers, offboard rates).
+//! - [`Setpoint::Plane`], [`Setpoint::PlaneRate`]: a plane stabilizer's; neutral output.
 //! - [`Setpoint::Attitude`]: attitude and heading loops feeding the rate loop. They act on the
 //!   body-frame error from the attitude quaternion: the shortest tilt of the thrust axis onto
 //!   the setpoint's (roll and pitch relative to the current heading), then the heading error,
@@ -72,14 +76,13 @@
 use crate::{Vec2, Vec3};
 
 use crate::{
-    AttitudeSetpoint, Configurable, ControlOutput, RateSetpoint, Saturation, Setpoint, Stabilizer,
-    VehicleState,
+    AttitudeSetpoint, Configurable, ControlOutput, Saturation, Setpoint, Stabilizer, VehicleState,
 };
 
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_positive};
 use crate::math::{
-    assert_dt, attitude_error, saturate_symmetric, saturate_throttle, saturate_unit,
+    assert_dt, attitude_error, saturate_rates, saturate_symmetric, saturate_unit, thrust_curve,
 };
 
 mod params;
@@ -102,7 +105,7 @@ pub struct CopterStabilizerConfig {
     pub attitude: AttitudeControllerConfig,
     /// Heading-hold loop ([`Setpoint::Attitude`] only).
     pub yaw: YawControllerConfig,
-    /// Body rates (roll, pitch, yaw) in rad/s that a full-scale [`RateSetpoint`] maps to. Each
+    /// Body rates (roll, pitch, yaw) in rad/s that a full-scale [`RateSetpoint`](crate::RateSetpoint) maps to. Each
     /// component must be non-negative and finite: an infinite or NaN scale makes even a neutral
     /// stick a non-finite rate, which zeroes that axis's moment.
     pub full_scale_rates_radps: Vec3,
@@ -159,7 +162,7 @@ impl CopterStabilizerConfig {
 /// The inner loop for vehicles like quadcopters, implementing a cascaded control system.
 ///
 /// This controller supports rate and attitude control loops, with configurable gains for
-/// each loop. It tracks a [`Setpoint`] ([`RateSetpoint`] or [`AttitudeSetpoint`]) and
+/// each loop. It tracks a [`Setpoint`] ([`RateSetpoint`](crate::RateSetpoint) or [`AttitudeSetpoint`]) and
 /// generates motor control outputs ([`ControlOutput`]).
 ///
 /// # Examples
@@ -273,15 +276,25 @@ impl Stabilizer for CopterStabilizer {
         let output = match setpoint {
             Setpoint::Attitude(attitude) => self.track_attitude(dt, attitude, estimated_state),
             Setpoint::Rate(rates) => {
-                // The attitude and heading loops are idle: a stage on one of them ends, and
-                // they are cleared so a switch back to attitude flight carries no stale
-                // integral or derivative history.
-                self.interrupt_attitude_stage();
-                self.attitude = AttitudeController::default();
-                self.yaw = YawController::default();
-                self.clipped.rates = [false; 3];
-                self.track_rates(dt, rates, estimated_state)
+                // Per-component saturation: `clamp` alone passes NaN, which would zero that
+                // axis's moment (no damping) instead of meaning "hold zero rate".
+                let fractions = Vec3::new(
+                    saturate_unit(rates.roll_rate),
+                    saturate_unit(rates.pitch_rate),
+                    saturate_unit(rates.yaw_rate),
+                );
+                let desired = fractions.component_mul(&self.config.full_scale_rates_radps);
+                self.track_rates(dt, desired, rates.thrust, estimated_state)
             }
+            Setpoint::BodyRate(rates) => {
+                let desired = saturate_rates(
+                    Vec3::new(rates.roll_radps, rates.pitch_radps, rates.yaw_radps),
+                    self.config.full_scale_rates_radps,
+                );
+                self.track_rates(dt, desired, rates.thrust, estimated_state)
+            }
+            // A plane stabilizer's setpoints: neutral (the trait's rule for unsupported ones).
+            Setpoint::Plane(_) | Setpoint::PlaneRate(_) => ControlOutput::default(),
         };
 
         // At zero thrust (on the ground, or cut) the I terms can't act on anything and would
@@ -408,36 +421,25 @@ impl CopterStabilizer {
         Vec3::new(tilt.x, tilt.y, heading_rad)
     }
 
-    /// Tracks a [RateSetpoint], bypassing the attitude controller.
-    ///
-    /// # Arguments
-    ///
-    /// * `dt` - Time step since the last update in seconds (must be positive and finite).
-    /// * `setpoint` - The desired roll, pitch, yaw rates (normalized) and linear thrust.
-    /// * `estimated_state` - The current state of the vehicle (angular rates, etc.).
-    ///
-    /// # Returns
-    ///
-    /// A `ControlOutput` containing the normalized thrust (0.0 to 1.0) and moments (roll, pitch, yaw) in N·m.
+    /// Tracks body rates in rad/s with linear `thrust`, bypassing the attitude controller.
     fn track_rates(
         &mut self,
         dt: f32,
-        setpoint: &RateSetpoint,
+        desired_rates_radps: Vec3,
+        thrust: f32,
         estimated_state: &VehicleState,
     ) -> ControlOutput {
-        // Per-component saturation: `clamp` alone passes NaN, which would zero that axis's
-        // moment (no damping) instead of meaning "hold zero rate".
-        let desired_rates = Vec3::new(
-            saturate_unit(setpoint.roll_rate),
-            saturate_unit(setpoint.pitch_rate),
-            saturate_unit(setpoint.yaw_rate),
-        )
-        .component_mul(&self.config.full_scale_rates_radps);
+        // The attitude and heading loops are idle: a stage on one of them ends, and they are
+        // cleared so a switch back to attitude flight carries no stale integral or derivative
+        // history.
+        self.interrupt_attitude_stage();
+        self.attitude = AttitudeController::default();
+        self.yaw = YawController::default();
+        self.clipped.rates = [false; 3];
 
-        let moments = self.track_body_rates(dt, desired_rates, estimated_state);
-
+        let moments = self.track_body_rates(dt, desired_rates_radps, estimated_state);
         ControlOutput {
-            thrust: self.fit_to_thrust_curve(setpoint.thrust),
+            thrust: self.fit_to_thrust_curve(thrust),
             moments,
         }
     }
@@ -480,10 +482,6 @@ impl CopterStabilizer {
     /// Nonlinear thrust command (0.0 to 1.0).
     fn fit_to_thrust_curve(&mut self, linear_thrust: f32) -> f32 {
         self.saturation.thrust = !(0.0..=1.0).contains(&linear_thrust) && !linear_thrust.is_nan();
-        let nonlinear_thrust = libm::powf(
-            saturate_throttle(linear_thrust),
-            self.config.thrust_curve_exponent,
-        );
-        nonlinear_thrust.clamp(0.0, 1.0)
+        thrust_curve(linear_thrust, self.config.thrust_curve_exponent)
     }
 }

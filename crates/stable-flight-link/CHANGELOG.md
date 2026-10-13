@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `PROTOCOL_VERSION` 3 (#124): core `ControlInput::AbsoluteRate`,
+  `ControlMode::AbsoluteRate`, `Setpoint::BodyRate`/`Plane`/`PlaneRate`, and
+  `ModeRefusal::RollError` change the message shapes.
 - **Breaking:** `PROTOCOL_VERSION` 2 (#181): `Downlink::Heartbeat` carries the flown
   `flight_mode` (a core `FlightModeReport`), `Record` gains `flight_mode`, and the core message
   types changed shape (`Command::regime`, `VehicleState::airspeed_mps`; `AttitudeCommand::mode`,

@@ -177,6 +177,18 @@ let estimate = LateralEstimate {
 let accel_mps2 = controller.control(&config, dt, target, estimate);
 ```
 
+### Plane Rate Controller (`plane_rate.rs`)
+
+**Purpose**: The fixed-wing body-rate loop, under `PlaneStabilizer`.
+
+**Input**: Desired and estimated body rates (rad/s), the airspeed scale `s` (trim ÷ airspeed), and whether to integrate  
+**Output**: Normalized moments [-1, 1] for the control surfaces
+
+**Key Features**:
+- Per axis `s²·(P·e + I·∫e) + s·FF·setpoint`, clamped to [-1, 1]: a surface's moment grows with dynamic pressure, so feedback shrinks with `s²`, and the feedforward (the deflection that holds a rate against the wing's damping) with `s` (PX4 `FixedwingRateControl`)
+- The integral holds below the wing's minimum airspeed, where the surfaces have little authority
+- A non-finite rate on one axis zeroes that axis's moment only
+
 ## Configuration
 
 Each controller has a `Config` struct; check it with `validate()` before use:

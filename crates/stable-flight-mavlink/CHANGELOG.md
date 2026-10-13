@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `heartbeat` maps `ControlMode::AbsoluteRate` to `GUIDED` (offboard rates, neither manual
+  nor stabilized) (#124).
+
 - `vfr_hud` reports `VehicleState::airspeed_mps` as airspeed when present (#181); ground speed
   without it (`None`, NaN, or negative).
 

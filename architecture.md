@@ -234,7 +234,9 @@ deliberately. The pieces:
   different frames near the view's singularity. `guidance::vtol::Transition` owns the mode and
   ramps a frame-free tilt target (the nose's angle from vertical) for whichever controller
   flies the transition, and flags the tick control passes between them; `ThrustHandoff`
-  blends thrust across it. Wiring them into a VTOL guidance and stabilizer
+  blends thrust across it. The plane side is `PlaneGuidance` and `PlaneStabilizer`
+  (`Setpoint::Plane` attitudes with coordinated turns, `Setpoint::PlaneRate` body rates at any
+  attitude for rolls and loops). Wiring them into a VTOL guidance and stabilizer
   ([#124](https://github.com/wboayue/stable-flight/issues/124), planned): the forward ramp on
   the hover controller, the back ramp on the plane controller, the incoming controller primed
   at the handoff, and the setpoint variant selecting the stabilizer's controller, so the

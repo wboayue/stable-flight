@@ -2,3 +2,4 @@
 //! state feedback.
 
 pub mod copter;
+pub mod plane;

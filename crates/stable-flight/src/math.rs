@@ -271,8 +271,12 @@ pub(crate) fn attitude_error(
     // The rotation onto it is about z × it, by the angle between them.
     let axis = Vec2::new(-z.y, z.x);
     let sine = axis.norm();
-    // Below this the cross product is the angle itself to f32 precision (sin x ≈ x).
-    let tilt = if sine < 1e-6 {
+    // Below this the cross product is the angle itself to f32 precision (sin x ≈ x), except
+    // exactly upside down from the setpoint, where it vanishes too: turn about body x (roll
+    // back over), so a vehicle inverted by a maneuver still recovers.
+    let tilt = if sine < 1e-6 && z.z < 0.0 {
+        Vec2::new(PI, 0.0)
+    } else if sine < 1e-6 {
         axis
     } else {
         axis * (libm::atan2f(sine, z.z) / sine)
@@ -285,6 +289,25 @@ pub(crate) fn attitude_error(
         tilt.y,
         wrap_angle(heading_rad - current_heading_rad) * upright,
     )
+}
+
+/// Radians per degree, for constants written in degrees.
+pub(crate) const DEG: f32 = PI / 180.0;
+
+/// `rates` saturated per axis to `limits` (rad/s), NaN as zero (hold no rate).
+pub(crate) fn saturate_rates(rates: Vec3, limits: Vec3) -> Vec3 {
+    Vec3::new(
+        saturate_symmetric(rates.x, limits.x),
+        saturate_symmetric(rates.y, limits.y),
+        saturate_symmetric(rates.z, limits.z),
+    )
+}
+
+/// A stabilizer's thrust curve: linear thrust (saturated to [0, 1], NaN as 0) raised to
+/// `exponent`, the motor command that gives it (2 when thrust goes as the square of the motor
+/// command, 1 for a throttle passed through).
+pub(crate) fn thrust_curve(linear_thrust: f32, exponent: f32) -> f32 {
+    libm::powf(saturate_throttle(linear_thrust), exponent).clamp(0.0, 1.0)
 }
 
 /// Saturates a throttle or thrust command to [0, 1]; NaN becomes 0 (no thrust).

@@ -69,6 +69,7 @@ pub use state::{
 /// | [`ControlMode::Waypoint`] | `STABILIZE \| GUIDED \| AUTO` |
 /// | [`ControlMode::AbsoluteAttitude`] | `STABILIZE \| GUIDED` (offboard, not manual) |
 /// | [`ControlMode::Land`] | `STABILIZE \| GUIDED \| AUTO`, as waypoints |
+/// | [`ControlMode::AbsoluteRate`] | `GUIDED` (offboard rates: neither manual nor stabilized) |
 ///
 /// A mode added to the core later reports no flags until it is mapped here.
 ///
@@ -98,6 +99,7 @@ pub fn heartbeat(vehicle_type: MavType, armed: bool, mode: ControlMode) -> HEART
         ControlMode::AbsoluteAttitude => {
             MavModeFlag::MAV_MODE_FLAG_STABILIZE_ENABLED | MavModeFlag::MAV_MODE_FLAG_GUIDED_ENABLED
         }
+        ControlMode::AbsoluteRate => MavModeFlag::MAV_MODE_FLAG_GUIDED_ENABLED,
         // `ControlMode` is non-exhaustive: an unmapped mode reports none.
         _ => MavModeFlag::empty(),
     };
