@@ -16,6 +16,7 @@ flowchart TB
     bridge["stable-flight-bridge"] --> link & mavlink & core
     link["stable-flight-link<br/>no_std"] --> core
     mavlink["stable-flight-mavlink"] --> core
+    sim["stable-flight-sim<br/>no_std (unpublished)"] --> core
     firmware["firmware/ark-fpv<br/>(own workspace)"] --> core
     core["stable-flight<br/>no_std"]
 ```
@@ -39,6 +40,8 @@ Solid arrows are dependencies, dashed ones dev-dependencies (examples and tests)
   commanders, `RealTimeRunner`, and `ShutdownSignal`.
 * **`stable-flight-sitl-realflight`**: the RealFlight backend ([Simulator
   Backends](#simulator-backends)).
+* **`stable-flight-sim`**: the in-repo simulator for closed-loop tests ([In-Repo
+  Simulator](#in-repo-simulator)). `no_std`; depends only on the core.
 * **`stable-flight-tools`**: unpublished developer binaries, so library consumers never compile
   their dependencies.
 * **`firmware/`**: excluded from the workspace; each board is its own nested workspace.
@@ -69,6 +72,27 @@ Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its depen
   without the harness.
 * **Airframes.** Tuned gains, the mixer, channel mapping, and body rotation live in the
   backend's `airframes` module, next to the simulated model they were tuned on.
+
+### In-Repo Simulator
+
+RealFlight (and X-Plane, planned) can't run in `cargo test` or CI, so without another plant
+the pipeline's closed loop is only checked by hand. `stable-flight-sim` is that plant: a rigid
+body with motor lag, quadratic thrust, linear drag, a ground plane, and deterministic wind,
+stepped in lockstep with `FlightLoop` (no wall clock, no noise), so a test flight repeats bit
+for bit and runs in milliseconds. It aims at plausible dynamics, not fidelity; RealFlight stays
+the check for realism.
+
+* **Why not JSBSim (or Gazebo).** An external engine brings a C++ build or a process to
+  manage in CI, nondeterminism from its own scheduling, and no `no_std` path. A small Rust
+  model is enough for what the tests assert (loops close, modes sequence, limits flag) and,
+  being `no_std` with fixed-size math, can later drive a board in hardware-in-the-loop runs.
+* **Geometry from the mixer.** Each motor's torque comes from its `TableMixer` row's factors
+  (a factor of 1 at the model's moment arm), so the sim and mixer can't disagree on motor
+  order or spin, and there is no second table to keep in sync.
+* **Not a backend crate.** It meets the frame and timing contracts and covers every
+  conformance scenario like a backend, but it has no simulator client, so it isn't a
+  `stable-flight-sitl-<simulator>` crate. Core can't take it as a dev-dependency (a cycle
+  builds two copies of core), so the closed-loop tests live in its `tests/`.
 
 ## Link
 

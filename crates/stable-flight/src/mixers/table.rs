@@ -115,6 +115,21 @@ impl MixRow {
         self.slot
     }
 
+    /// How much a roll moment moves this output.
+    pub const fn roll(&self) -> f32 {
+        self.roll
+    }
+
+    /// How much a pitch moment moves this output.
+    pub const fn pitch(&self) -> f32 {
+        self.pitch
+    }
+
+    /// How much a yaw moment moves this output.
+    pub const fn yaw(&self) -> f32 {
+        self.yaw
+    }
+
     fn moment(&self, moments: Vec3) -> f32 {
         self.roll * moments.x + self.pitch * moments.y + self.yaw * moments.z
     }
@@ -251,6 +266,22 @@ impl<const N: usize> TableMixer<N> {
     pub fn with_config(self, config: MixerConfig) -> Result<Self, MixerError> {
         validate_config(&config)?;
         Ok(Self { config, ..self })
+    }
+
+    /// The table's rows, e.g. for a simulator that derives each motor's torque from them.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::mixers::{Slot, TableMixer};
+    ///
+    /// // quad_x motor 0 is front-left: more thrust there rolls right and pitches up.
+    /// let front_left = TableMixer::quad_x().rows()[0];
+    /// assert_eq!(front_left.slot(), Slot::Motor(0));
+    /// assert_eq!((front_left.roll(), front_left.pitch()), (1.0, 1.0));
+    /// ```
+    pub const fn rows(&self) -> &[MixRow; N] {
+        &self.rows
     }
 
     /// Rows and config already known valid (the presets; a test runs each through `new`).

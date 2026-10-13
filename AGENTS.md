@@ -28,6 +28,7 @@ lives in `architecture.md`; each crate's README owns its usage.
 | `stable-flight-bridge` | Companion binary: native link ⇄ MAVLink v2 for ground stations (FC as sysid 1/compid 1). Pure `Bridge` over services (params, connect/metadata, commands, setpoints, state) queuing into an `Outbox`; `Pump` runs one I/O pass; `http` serves QGC param metadata; `main.rs` only sets up (`cli.rs`) | link (`std`), core (`param-metadata`), `stable-flight-mavlink`, `mavlink`, `crc`, `serde_json`, `clap` |
 | `stable-flight-sitl` | Simulator-independent SITL: `commanders` (joystick, Spektrum, `ScriptCommander`), `RealTimeRunner` (wall-clock pacing), `ShutdownSignal` | core, `gilrs`, `signal-hook` |
 | `stable-flight-sitl-realflight` | RealFlight backend: `RealFlightVehicle`, `ActuatorMapping`, `airframes` (per-model gains, mixer, mapping, body rotation), `capture` (raw state CSV), and the RealFlight examples | core, `realflight-bridge`; sitl and link as dev-dependencies |
+| `stable-flight-sim` | Unpublished `no_std` deterministic multirotor simulator: `SimVehicle` (lockstep `StateSource` + `Actuator`), `MultirotorModel`, `Wind`/`Gust`, `airframes::quad_x`; closed-loop tests in `tests/` | core, `libm`, `thiserror` |
 | `stable-flight-tools` | Unpublished dev binaries: `plot_flight`, `generate_figure_eight`, `link_pilot`, `check_frames` | core, sitl, link, sitl-realflight, `plotters`, `clap` |
 
 - Other crates use core's `nalgebra` re-export (`stable_flight::nalgebra`) and `Vec2`/`Vec3`
@@ -51,7 +52,7 @@ lives in `architecture.md`; each crate's README owns its usage.
 ```bash
 just build | just test | just lint            # build; cargo test --workspace --all-features; clippy + rustdoc, -D warnings
 cargo fmt --all
-just embedded                                 # no_std check on thumbv7em-none-eabihf: core (plain, testing, serde, param-metadata), link (plain, testing); then fw-build
+just embedded                                 # no_std check on thumbv7em-none-eabihf: core (plain, testing, serde, param-metadata), link (plain, testing), sim; then fw-build
 just fw-build | fw-size | fw-bin | fw-flash   # ARK FPV firmware: release build, flash/RAM size, raw binary, USB DFU flash
 just cover                                    # tarpaulin → tarpaulin-report.html (.tarpaulin.toml)
 just bridge                                   # native link ⇄ MAVLink for QGC (--link-bind/--link-peer/--gcs/--origin/--http-bind/--http-url/--offboard-speed)
@@ -65,6 +66,7 @@ just capture                                  # capture-state-realflight: joysti
 just plot <csv> <out> | just gen-figure-eight # plot_flight, generate_figure_eight
 just tag <crate> <version> | just versions    # push a <crate>-v<version> tag; list tags
 just todo-check                               # TODO(#n) markers whose issue is closed (needs gh)
+cargo test -p stable-flight-sim               # closed-loop flights on the in-repo simulator (hover, land, determinism)
 cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight -- --motors 0,1 --servos 2,3  # drive raw channels, record a capture
 cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight                           # time RealFlight exchanges alone
 cargo run --bin check_frames -- capture.csv   # capture vs the frame contract (--pitch-deg: body rotation, 90 for the eXplora)
@@ -167,7 +169,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 
 - Unit tests sit next to the code in `mod tests;` files (e.g. core `src/flight_loop/tests.rs`,
   `src/mixers/table/tests.rs`; sitl-realflight `src/vehicle/tests.rs`). Simulator-dependent
-  checks are examples, not tests.
+  checks are examples, not tests; closed-loop checks that need no realism fly `stable-flight-sim`
+  in its `tests/`.
 - Name tests after the behavior they protect (`maintains_pitch_hold`), not the function.
 - Table-driven tests are the default for control math, one row per scenario. Use `assert2`
   (`assert!`/`check!`) and `approx::assert_relative_eq!` for floats.

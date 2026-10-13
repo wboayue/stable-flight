@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `TableMixer::rows` and `MixRow::{roll, pitch, yaw}`: read a mixer table back, e.g. for a
+  simulator that derives motor torques from it (#347).
 - **Plane waypoint navigation** (#124): `PlaneGuidance` flies `Waypoint`s. It follows the
   leg's line with L1 (ArduPilot's lateral acceleration, from the ground velocity so a
   crosswind crab is flown), loiters clockwise around a waypoint with no leg, holds the
