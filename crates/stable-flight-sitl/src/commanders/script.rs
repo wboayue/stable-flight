@@ -11,8 +11,10 @@
 //! One waypoint per line, four comma-separated fields: `x,y,altitude,cruise_speed`
 //! (meters and meters-per-second), and an optional fifth, `regime`: `copter` (the default) or
 //! `plane`, the [`FlightRegime`] to fly the leg *to* that waypoint in (a VTOL transitions as
-//! the leg begins; a copter refuses `plane`). Blank lines and lines starting with `#` are
-//! ignored, and an optional non-numeric header row is skipped.
+//! the leg begins; a copter refuses `plane`). A route that holds on a final `plane` waypoint
+//! (`RouteEnd::Hold`) loiters around it; one that lands transitions back first, since a land
+//! asks for copter. Blank lines and lines starting with `#` are ignored, and an optional
+//! non-numeric header row is skipped.
 //!
 //! ```text
 //! # figure-eight, medium/park envelope

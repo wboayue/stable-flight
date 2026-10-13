@@ -199,12 +199,15 @@ x,y,altitude,cruise_speed,regime
 /// advance.
 #[test]
 fn commander_requests_each_legs_regime() {
+    // Through both builders, which rebuild the commander: the regimes carry over.
     let mut commander = ScriptCommander::from_route(vec![
         (wp(0.0, 0.0), FlightRegime::Copter),
         (wp(100.0, 0.0), FlightRegime::Plane),
         (wp(100.0, 100.0), FlightRegime::Copter),
     ])
-    .expect("non-empty");
+    .expect("non-empty")
+    .with_acceptance_radius(1.0)
+    .with_route_end(stable_flight::commanders::RouteEnd::Hold);
     // At the first waypoint: advances to the plane leg.
     check!(commander.next_command(0.01, &state_at(0.0, 0.0)).regime == FlightRegime::Plane);
     check!(commander.next_command(0.01, &state_at(50.0, 0.0)).regime == FlightRegime::Plane);
