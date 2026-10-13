@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Plane waypoint navigation** (#124): `PlaneGuidance` flies `Waypoint`s. It follows the
+  leg's line with L1 (ArduPilot's lateral acceleration, from the ground velocity so a
+  crosswind crab is flown), loiters clockwise around a waypoint with no leg, holds the
+  waypoint's altitude with pitch (PI), and its `cruise_speed_mps` as airspeed with throttle
+  (PI around cruise; cruise plus a climb share without airspeed). New `PlaneGuidanceConfig`
+  fields and `PGUID_*` params.
+
 - **Tailsitter wiring** (#124): `guidance::vtol::TailsitterGuidance` (hover guidance in the
   tailsitter view and `PlaneGuidance` under a `Transition`: the forward ramp on the hover side,
   the back ramp on the plane side, `Land` asks for copter, a roll past the limit cuts a

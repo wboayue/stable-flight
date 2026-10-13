@@ -8,7 +8,7 @@
 //! | [`ControlInput::Rate`] | [`Setpoint::PlaneRate`]: sticks × [`max_rate_radps`](PlaneGuidanceConfig::max_rate_radps) (acro: rolls, loops), throttle as thrust |
 //! | [`ControlInput::AbsoluteAttitude`] | [`Setpoint::Plane`]: roll, pitch, and thrust as given (heading unused) |
 //! | [`ControlInput::AbsoluteRate`] | [`Setpoint::PlaneRate`]: rates and thrust as given |
-//! | [`ControlInput::Waypoint`] | [`Setpoint::Plane`]: wings level at [`trim_pitch_rad`](PlaneGuidanceConfig::trim_pitch_rad) and [`cruise_thrust`](PlaneGuidanceConfig::cruise_thrust); navigation: TODO(#124) |
+//! | [`ControlInput::Waypoint`] | [`Setpoint::Plane`]: with a leg velocity, L1 along the line through the waypoint in its direction; without one (a route's final hold, an offboard point), a clockwise loiter of [`loiter_radius_m`](PlaneGuidanceConfig::loiter_radius_m) around it; bank `atan(a/g)` capped at [`max_bank_rad`](PlaneGuidanceConfig::max_bank_rad). Pitch holds the waypoint's altitude (a PI loop), throttle its `cruise_speed_mps` as airspeed (a PI loop around [`cruise_thrust`](PlaneGuidanceConfig::cruise_thrust)) |
 //! | [`ControlInput::Land`] | Neutral (level, zero thrust): a plane doesn't land here; a VTOL lands as a copter |
 //!
 //! Sticks and angles saturate (NaN as centered or level), throttle to `[0, 1]` (NaN as
@@ -16,16 +16,19 @@
 //! [`ModeRefusal::Unsupported`](crate::ModeRefusal::Unsupported)
 //! ([`FlightModeReport::plane_only`]).
 
-use crate::controllers::{InvalidConfig, check, check_limit};
-use crate::math::{DEG, saturate_throttle, saturate_unit};
+use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
+use crate::math::{DEG, all_finite, assert_dt, clamp_symmetric, saturate_throttle, saturate_unit};
 use crate::{
     BodyRateSetpoint, Configurable, ControlInput, FlightModeReport, FlightRegime, Guidance,
-    PlaneSetpoint, Setpoint, Vec3, VehicleState,
+    PlaneSetpoint, Setpoint, Vec3, VehicleState, WaypointCommand,
 };
 
+mod navigation;
 mod params;
 #[cfg(test)]
 mod tests;
+
+use navigation::{PiLoop, bank_for_accel_rad, loiter_accel_mps2, track_accel_mps2};
 
 /// [`PlaneGuidance`] settings.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -40,13 +43,40 @@ pub struct PlaneGuidanceConfig {
     pub max_rate_radps: Vec3,
     /// Pitch for wings-level cruise, in radians.
     pub trim_pitch_rad: f32,
-    /// Throttle for wings-level cruise, `[0, 1]`.
+    /// Throttle for wings-level cruise, `[0, 1]`: the feedforward of the airspeed loop.
     pub cruise_thrust: f32,
+    /// L1 period, in seconds: how quickly the path is captured (shorter is tighter).
+    pub l1_period_s: f32,
+    /// L1 damping ratio.
+    pub l1_damping: f32,
+    /// Radius of the loiter around a waypoint with no leg, in meters.
+    pub loiter_radius_m: f32,
+    /// Altitude loop: pitch per meter of altitude error, rad/m.
+    pub altitude_p: f32,
+    /// Altitude loop: pitch per meter-second of accumulated error.
+    pub altitude_i: f32,
+    /// Altitude loop integral limit, in m·s.
+    pub altitude_max_integral: f32,
+    /// Airspeed loop: thrust per m/s of airspeed error.
+    pub speed_p: f32,
+    /// Airspeed loop: thrust per meter of accumulated airspeed error.
+    pub speed_i: f32,
+    /// Airspeed loop integral limit, in m.
+    pub speed_max_integral: f32,
+    /// Least thrust waypoint flight commands, `[0, 1]`.
+    pub min_thrust: f32,
+    /// Most thrust waypoint flight commands, `[0, 1]`.
+    pub max_thrust: f32,
+    /// Without an airspeed: thrust added per radian of pitch up (a climb needs more).
+    pub climb_thrust_per_rad: f32,
 }
 
 impl Default for PlaneGuidanceConfig {
     /// ArduPlane's FBWA limits (45° bank, +20°/−25° pitch, `mode_fbwa.cpp`), its acro rates
-    /// (180°/s roll and pitch, yaw stick unused), level trim, and half throttle to cruise.
+    /// (180°/s roll and pitch, yaw stick unused), level trim, and half throttle to cruise;
+    /// for waypoints, ArduPilot's L1 damping (0.75) with a shorter period than its 17 s (12 s,
+    /// for a small airframe), a 40 m loiter, and starting gains for the altitude and airspeed
+    /// loops (an airframe tunes its own).
     fn default() -> Self {
         PlaneGuidanceConfig {
             max_bank_rad: 45.0 * DEG,
@@ -55,6 +85,18 @@ impl Default for PlaneGuidanceConfig {
             max_rate_radps: Vec3::new(180.0 * DEG, 180.0 * DEG, 0.0),
             trim_pitch_rad: 0.0,
             cruise_thrust: 0.5,
+            l1_period_s: 12.0,
+            l1_damping: 0.75,
+            loiter_radius_m: 40.0,
+            altitude_p: 0.05,
+            altitude_i: 0.01,
+            altitude_max_integral: 20.0,
+            speed_p: 0.05,
+            speed_i: 0.02,
+            speed_max_integral: 10.0,
+            min_thrust: 0.2,
+            max_thrust: 1.0,
+            climb_thrust_per_rad: 0.5,
         }
     }
 }
@@ -89,11 +131,20 @@ impl PlaneGuidanceConfig {
             (-half..=half).contains(&self.trim_pitch_rad),
             "in [−π/2, π/2] rad",
         )?;
-        check(
-            "cruise_thrust",
-            (0.0..=1.0).contains(&self.cruise_thrust),
-            "in [0, 1]",
-        )
+        let unit = |value: f32| (0.0..=1.0).contains(&value);
+        check("cruise_thrust", unit(self.cruise_thrust), "in [0, 1]")?;
+        check_positive("l1_period_s", self.l1_period_s)?;
+        check_positive("l1_damping", self.l1_damping)?;
+        check_positive("loiter_radius_m", self.loiter_radius_m)?;
+        check_limit("altitude_p", self.altitude_p)?;
+        check_limit("altitude_i", self.altitude_i)?;
+        check_limit("altitude_max_integral", self.altitude_max_integral)?;
+        check_limit("speed_p", self.speed_p)?;
+        check_limit("speed_i", self.speed_i)?;
+        check_limit("speed_max_integral", self.speed_max_integral)?;
+        check("min_thrust", unit(self.min_thrust), "in [0, 1]")?;
+        check("max_thrust", unit(self.max_thrust), "in [0, 1]")?;
+        check_limit("climb_thrust_per_rad", self.climb_thrust_per_rad)
     }
 }
 
@@ -123,6 +174,9 @@ impl PlaneGuidanceConfig {
 pub struct PlaneGuidance {
     config: PlaneGuidanceConfig,
     requested: FlightRegime,
+    /// Waypoint flight's altitude (→ pitch) and airspeed (→ thrust) loops.
+    altitude: PiLoop,
+    speed: PiLoop,
 }
 
 impl PlaneGuidance {
@@ -138,6 +192,83 @@ impl PlaneGuidance {
         PlaneGuidance {
             config,
             requested: FlightRegime::Plane,
+            altitude: PiLoop::default(),
+            speed: PiLoop::default(),
+        }
+    }
+
+    /// Waypoint flight: bank from L1 along the leg (or a loiter without one), pitch from the
+    /// altitude loop, thrust from the airspeed loop.
+    fn navigate(
+        &mut self,
+        dt: f32,
+        waypoint: &WaypointCommand,
+        state: &VehicleState,
+    ) -> PlaneSetpoint {
+        let config = &self.config;
+        let (position_m, velocity_mps) = (state.position_m.xy(), state.velocity_mps.xy());
+        let (period_s, damping) = (config.l1_period_s, config.l1_damping);
+        let leg = waypoint.velocity_mps.filter(all_finite);
+        let accel_mps2 = match leg {
+            Some(leg) => track_accel_mps2(
+                position_m,
+                velocity_mps,
+                waypoint.position_m,
+                leg,
+                period_s,
+                damping,
+            ),
+            None => loiter_accel_mps2(
+                position_m,
+                velocity_mps,
+                waypoint.position_m,
+                config.loiter_radius_m,
+                period_s,
+                damping,
+            ),
+        };
+        let roll_rad = clamp_symmetric(bank_for_accel_rad(accel_mps2), config.max_bank_rad);
+
+        // Pitch around trim, within the pitch limits.
+        let trim = config.trim_pitch_rad;
+        let pitch_rad = trim
+            + self.altitude.step(
+                dt,
+                waypoint.altitude_m - state.position_m.z,
+                config.altitude_p,
+                config.altitude_i,
+                config.altitude_max_integral,
+                (
+                    -config.max_pitch_down_rad - trim,
+                    config.max_pitch_up_rad - trim,
+                ),
+                0.0,
+            );
+
+        // Thrust around cruise toward the waypoint's speed as airspeed; without a speed target
+        // or an airspeed, cruise plus what a climb needs.
+        let (low, high) = (config.min_thrust, config.max_thrust.max(config.min_thrust));
+        let cruise = config.cruise_thrust;
+        let target_mps = Some(waypoint.cruise_speed_mps).filter(|speed| *speed > 0.0);
+        let thrust = match (target_mps, state.valid_airspeed_mps()) {
+            (Some(target_mps), Some(airspeed_mps)) => {
+                cruise
+                    + self.speed.step(
+                        dt,
+                        target_mps - airspeed_mps,
+                        config.speed_p,
+                        config.speed_i,
+                        config.speed_max_integral,
+                        (low - cruise, high - cruise),
+                        0.0,
+                    )
+            }
+            _ => (cruise + config.climb_thrust_per_rad * (pitch_rad - trim)).clamp(low, high),
+        };
+        PlaneSetpoint {
+            roll_rad,
+            pitch_rad,
+            thrust,
         }
     }
 
@@ -176,12 +307,18 @@ impl Configurable for PlaneGuidance {
 impl Guidance for PlaneGuidance {
     fn guide(
         &mut self,
-        _dt: f32,
+        dt: f32,
         regime: FlightRegime,
         input: &ControlInput,
-        _state: &VehicleState,
+        state: &VehicleState,
     ) -> Setpoint {
+        assert_dt(dt);
         self.requested = regime;
+        if !matches!(input, ControlInput::Waypoint(_)) {
+            // The navigation loops are idle: clear them so waypoint flight starts fresh.
+            self.altitude = PiLoop::default();
+            self.speed = PiLoop::default();
+        }
         let config = &self.config;
         match input {
             ControlInput::Attitude(sticks) => {
@@ -203,13 +340,15 @@ impl Guidance for PlaneGuidance {
                 rates.thrust = saturate_throttle(command.thrust);
                 Setpoint::PlaneRate(rates)
             }
-            ControlInput::Waypoint(_) => Setpoint::Plane(PlaneSetpoint {
-                roll_rad: 0.0,
-                pitch_rad: config.trim_pitch_rad,
-                thrust: config.cruise_thrust,
-            }),
+            ControlInput::Waypoint(waypoint) => Setpoint::Plane(self.navigate(dt, waypoint, state)),
             ControlInput::Land(_) => Setpoint::Plane(PlaneSetpoint::default()),
         }
+    }
+
+    /// Clears the navigation loops' integrals.
+    fn prime(&mut self, _state: &VehicleState) {
+        self.altitude = PiLoop::default();
+        self.speed = PiLoop::default();
     }
 
     /// Always plane; a `Copter` request is refused as unsupported.

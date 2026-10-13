@@ -56,7 +56,7 @@ just fly-auto                                 # copter-auto-realflight: waypoint
 just fly-companion | just link-pilot          # copter-companion-realflight flown from the link; link_pilot plays the companion
 just fly-autotune                             # copter-autotune-realflight: step-response autotune of roll/pitch rate and angle, prints gains, lands
 just fly-tailsitter                           # tailsitter-manual-realflight: eXplora hover, transitions, plane from a joystick (D-pad Right plane, Left copter, Up rate; --record CSV)
-just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv, --end)
+just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv; flights/explora_transition.csv flies plane legs; --end, --record)
 just capture                                  # capture-state-realflight: joystick flight, raw SimulatorState → CSV
 just plot <csv> <out> | just gen-figure-eight # plot_flight, generate_figure_eight
 just tag <crate> <version> | just versions    # push a <crate>-v<version> tag; list tags

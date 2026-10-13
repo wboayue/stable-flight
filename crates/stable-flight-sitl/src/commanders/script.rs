@@ -9,8 +9,10 @@
 //! # CSV format
 //!
 //! One waypoint per line, four comma-separated fields: `x,y,altitude,cruise_speed`
-//! (meters and meters-per-second). Blank lines and lines starting with `#` are ignored,
-//! and an optional non-numeric header row is skipped.
+//! (meters and meters-per-second), and an optional fifth, `regime`: `copter` (the default) or
+//! `plane`, the [`FlightRegime`] to fly the leg *to* that waypoint in (a VTOL transitions as
+//! the leg begins; a copter refuses `plane`). Blank lines and lines starting with `#` are
+//! ignored, and an optional non-numeric header row is skipped.
 //!
 //! ```text
 //! # figure-eight, medium/park envelope
@@ -25,10 +27,11 @@ use stable_flight::Vec2;
 use thiserror::Error;
 
 use stable_flight::commanders::{EmptyWaypoints, RouteEnd, WaypointFollower};
-use stable_flight::{Command, Commander, VehicleState, WaypointCommand};
+use stable_flight::{Command, Commander, FlightRegime, VehicleState, WaypointCommand};
 
-/// Number of comma-separated fields expected on each waypoint row.
-const FIELDS_PER_WAYPOINT: usize = 4;
+/// Comma-separated fields on a waypoint row: four numbers, then an optional regime.
+const NUMERIC_FIELDS: usize = 4;
+const MAX_FIELDS: usize = NUMERIC_FIELDS + 1;
 
 /// Errors that can occur while loading or parsing a waypoint script.
 #[derive(Debug, Error)]
@@ -76,6 +79,8 @@ impl From<EmptyWaypoints> for ScriptError {
 /// ```
 pub struct ScriptCommander {
     follower: WaypointFollower<Vec<WaypointCommand>>,
+    /// The regime of the leg to each waypoint, by index.
+    regimes: Vec<FlightRegime>,
 }
 
 impl ScriptCommander {
@@ -86,7 +91,7 @@ impl ScriptCommander {
     /// Returns [`ScriptError::Io`] if the file cannot be read, [`ScriptError::Parse`] if a
     /// row is malformed, or [`ScriptError::Empty`] if the file contains no waypoints.
     pub fn new(path: &str) -> Result<Self, ScriptError> {
-        Self::from_waypoints(load_waypoints(path)?)
+        Self::from_route(load_route(path)?)
     }
 
     /// Builds a commander from an already-constructed list of waypoints.
@@ -112,8 +117,38 @@ impl ScriptCommander {
     /// let commander = ScriptCommander::from_waypoints(waypoints).expect("non-empty");
     /// ```
     pub fn from_waypoints(waypoints: Vec<WaypointCommand>) -> Result<Self, ScriptError> {
+        Self::from_route(
+            waypoints
+                .into_iter()
+                .map(|waypoint| (waypoint, FlightRegime::Copter))
+                .collect(),
+        )
+    }
+
+    /// Builds a commander from waypoints, each with the regime of the leg to it.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ScriptError::Empty`] if `route` is empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::{FlightRegime, Vec2, WaypointCommand};
+    /// use stable_flight_sitl::commanders::ScriptCommander;
+    ///
+    /// let at = |north: f32| WaypointCommand { position_m: Vec2::new(north, 0.0), ..Default::default() };
+    /// let commander = ScriptCommander::from_route(vec![
+    ///     (at(0.0), FlightRegime::Copter),
+    ///     (at(200.0), FlightRegime::Plane),
+    /// ])
+    /// .expect("non-empty");
+    /// ```
+    pub fn from_route(route: Vec<(WaypointCommand, FlightRegime)>) -> Result<Self, ScriptError> {
+        let (waypoints, regimes) = route.into_iter().unzip();
         Ok(ScriptCommander {
             follower: WaypointFollower::new(waypoints)?,
+            regimes,
         })
     }
 
@@ -143,6 +178,7 @@ impl ScriptCommander {
     pub fn with_acceptance_radius(self, radius_m: f32) -> Self {
         ScriptCommander {
             follower: self.follower.with_acceptance_radius(radius_m),
+            ..self
         }
     }
 
@@ -168,6 +204,7 @@ impl ScriptCommander {
     pub fn with_route_end(self, route_end: RouteEnd) -> Self {
         ScriptCommander {
             follower: self.follower.with_route_end(route_end),
+            ..self
         }
     }
 }
@@ -194,27 +231,47 @@ impl ScriptCommander {
 /// println!("{} waypoints", waypoints.len());
 /// ```
 pub fn load_waypoints(path: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
+    Ok(load_route(path)?
+        .into_iter()
+        .map(|(waypoint, _)| waypoint)
+        .collect())
+}
+
+/// Loads a script's waypoints with the regime of the leg to each.
+fn load_route(path: &str) -> Result<Vec<(WaypointCommand, FlightRegime)>, ScriptError> {
     let contents = fs::read_to_string(path).map_err(|source| ScriptError::Io {
         path: path.to_string(),
         source,
     })?;
-    parse_waypoints(path, &contents)
+    parse_route(path, &contents)
 }
 
 impl Commander for ScriptCommander {
-    /// Delegates to the core [`WaypointFollower`]: advances within the acceptance radius
-    /// (horizontal distance), then loops or holds per its [`RouteEnd`].
+    /// Delegates to the core [`WaypointFollower`] (advances within the acceptance radius or
+    /// once past a waypoint along its leg, then loops, holds, or lands per its [`RouteEnd`]),
+    /// asking for the regime of the leg to the current waypoint.
     fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
-        self.follower.next_command(dt, current_state)
+        let command = self.follower.next_command(dt, current_state);
+        let regime = self
+            .regimes
+            .get(self.follower.current_index())
+            .copied()
+            .unwrap_or_default();
+        command.with_regime(regime)
     }
 }
 
-/// Parses waypoint rows from CSV `contents`. `path` is used only to label parse errors.
+/// Parses waypoint rows, with the regime of the leg to each, from CSV `contents`. `path` is
+/// used only to label parse errors.
 ///
 /// Blank lines and `#` comments are skipped, as is a leading non-numeric header row. Each
-/// remaining line must hold exactly four comma-separated, finite floats
-/// (`x,y,altitude,cruise_speed`); non-finite values (`NaN`/`Inf`) are rejected.
-fn parse_waypoints(path: &str, contents: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
+/// remaining line must hold four comma-separated, finite floats
+/// (`x,y,altitude,cruise_speed`; non-finite values are rejected), then optionally a regime,
+/// `copter` or `plane` (any case; `copter` when absent).
+fn parse_route(
+    path: &str,
+    contents: &str,
+) -> Result<Vec<(WaypointCommand, FlightRegime)>, ScriptError> {
     let mut waypoints = Vec::new();
 
     for (index, raw) in contents.lines().enumerate() {
@@ -235,12 +292,12 @@ fn parse_waypoints(path: &str, contents: &str) -> Result<Vec<WaypointCommand>, S
         }
 
         let line_number = index + 1;
-        if fields.len() != FIELDS_PER_WAYPOINT {
+        if !(NUMERIC_FIELDS..=MAX_FIELDS).contains(&fields.len()) {
             return Err(ScriptError::Parse {
                 path: path.to_string(),
                 line: line_number,
                 message: format!(
-                    "expected {FIELDS_PER_WAYPOINT} fields, found {}",
+                    "expected {NUMERIC_FIELDS} or {MAX_FIELDS} fields, found {}",
                     fields.len()
                 ),
             });
@@ -264,12 +321,25 @@ fn parse_waypoints(path: &str, contents: &str) -> Result<Vec<WaypointCommand>, S
             Ok(value)
         };
 
-        waypoints.push(WaypointCommand {
+        let regime = match fields.get(NUMERIC_FIELDS).map(|f| f.to_ascii_lowercase()) {
+            None => FlightRegime::Copter,
+            Some(regime) if regime == "copter" => FlightRegime::Copter,
+            Some(regime) if regime == "plane" => FlightRegime::Plane,
+            Some(other) => {
+                return Err(ScriptError::Parse {
+                    path: path.to_string(),
+                    line: line_number,
+                    message: format!("invalid regime {other:?}: expected copter or plane"),
+                });
+            }
+        };
+        let waypoint = WaypointCommand {
             position_m: Vec2::new(parse(fields[0], "x")?, parse(fields[1], "y")?),
             velocity_mps: None,
             altitude_m: parse(fields[2], "altitude")?,
             cruise_speed_mps: parse(fields[3], "cruise_speed")?,
-        });
+        };
+        waypoints.push((waypoint, regime));
     }
 
     Ok(waypoints)

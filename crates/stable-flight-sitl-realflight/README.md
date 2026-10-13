@@ -89,6 +89,10 @@ cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- f
 # holds 5 m over it. Or: just fly-tailsitter-auto
 cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- --end land
 
+# A transition mission: hover climb, two plane laps of a rectangle (the CSV's regime column),
+# back to hover and home
+cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- flights/explora_transition.csv --end land
+
 # Flown from the native link, holding position when it goes quiet; link_pilot plays the companion
 # (in place of the bridge). Stop the pilot mid-flight and the quad holds. Or: just fly-companion, just link-pilot
 cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight
