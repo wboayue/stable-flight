@@ -10,6 +10,7 @@ use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
 
 use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateSource, VehicleState};
 
+use crate::airframes::Airframe;
 use crate::{ActuatorMapping, MappingError};
 use health::LinkHealth;
 
@@ -43,7 +44,8 @@ type Reconnect<T> = Box<dyn FnMut() -> Result<T, BridgeError> + Send>;
 /// Configuration parameters for connecting to a RealFlight simulation environment.
 ///
 /// This structure combines the communication bridge with the channel mapping and the airframe's
-/// body rotation.
+/// body rotation. [`from_airframe`](Self::from_airframe) takes both from an
+/// [`Airframe`](crate::airframes::Airframe), so a flight example doesn't repeat them.
 ///
 /// # Type Parameters
 ///
@@ -75,6 +77,27 @@ where
     pub body_rotation: UnitQuaternion<f32>,
     /// The bridge implementation for RealFlight communication.
     pub bridge: T,
+}
+
+impl<T: RealFlightBridge> RealFlightConfiguration<T> {
+    /// A configuration over `bridge` with `airframe`'s channel mapping and body rotation.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use stable_flight_sitl_realflight::realflight_bridge::RealFlightLocalBridge;
+    /// use stable_flight_sitl_realflight::{RealFlightConfiguration, airframes};
+    ///
+    /// let bridge = RealFlightLocalBridge::new().expect("Failed to create bridge");
+    /// let config = RealFlightConfiguration::from_airframe(&airframes::explora_vtol(), bridge);
+    /// ```
+    pub fn from_airframe<G, S, M>(airframe: &Airframe<G, S, M>, bridge: T) -> Self {
+        RealFlightConfiguration {
+            mapping: airframe.mapping,
+            body_rotation: airframe.body_rotation,
+            bridge,
+        }
+    }
 }
 
 /// A vehicle implementation interfacing with the RealFlight flight simulator.

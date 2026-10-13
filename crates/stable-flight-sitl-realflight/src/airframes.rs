@@ -123,7 +123,8 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 ///   frame (x the nose).
 /// - **Mapping:** motors 0/1 (left/right) on channels 6/5, elevons (servos 0/1) on channels
 ///   1/2 (RealFlight numbering; 5/4 and 0/1 here), the left elevon reversed (captures: #120,
-///   #121).
+///   #121). A sweep of every other channel (3, 4, 7–12; 2, 3, 6–11 here) moved nothing: the
+///   model has no other surfaces, so sending them 0.0 is harmless (#271).
 /// - **Body rotation:** +90° pitch. RealFlight's frame for this model is hover-level (sitting
 ///   on its tail reads level), and the vehicle's is the airplane's, so hover reads pitch 90°.
 /// - **Thrust limits:** the elevons hold the nose up only in the propwash, and a sink turns

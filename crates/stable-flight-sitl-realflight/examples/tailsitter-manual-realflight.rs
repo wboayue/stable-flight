@@ -103,11 +103,10 @@ fn fly(commander: impl Commander, args: &Args) {
     let host = args.host.clone();
     let connect =
         move || RealFlightRemoteBridge::with_timeouts(&host, CONNECT_TIMEOUT, REMOTE_IO_TIMEOUT);
-    let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-        bridge: connect().expect("Failed to create bridge"),
-        mapping: airframe.mapping,
-        body_rotation: airframe.body_rotation,
-    })
+    let vehicle = RealFlightVehicle::new(RealFlightConfiguration::from_airframe(
+        &airframe,
+        connect().expect("Failed to create bridge"),
+    ))
     .with_reconnect(move || connect().map_err(BridgeError::from));
 
     // Copter guidance and stabilizer in the tailsitter view, where nose-up hover is level.

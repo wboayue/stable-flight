@@ -27,17 +27,14 @@ use stable_flight_sitl_realflight::{RealFlightConfiguration, RealFlightVehicle, 
 // Tuned gains, mixer, channel mapping, and body rotation for the QuadCopterX model.
 let airframe = airframes::quadcopter_x();
 
-let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-    bridge: RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge"),
-    mapping: airframe.mapping,
-    body_rotation: airframe.body_rotation,
-});
+let bridge = RealFlightRemoteBridge::new("10.211.55.3:8080").expect("Failed to create bridge");
+let vehicle = RealFlightVehicle::new(RealFlightConfiguration::from_airframe(&airframe, bridge));
 let guidance = CopterGuidance::new(airframe.guidance);
 let stabilizer = CopterStabilizer::new(airframe.stabilizer);
 let mixer = airframe.mixer;
 ```
 
-Use `RealFlightLocalBridge` when the controller runs on the same host as RealFlight, and `RealFlightRemoteBridge` otherwise. `realflight_bridge` is re-exported, so you don't need to depend on it yourself. `ActuatorMapping` maps the mixer's motor and servo slots to the model's RealFlight channels (servos rescaled from -1–1 to RealFlight's 0–1, and negated first for any slot in `reversed_servos`), so an airframe's mapping only fits its own mixer. `RealFlightVehicle::new` panics on an invalid mapping (a channel out of range or used twice); `try_new` returns a `MappingError` instead.
+Use `RealFlightLocalBridge` when the controller runs on the same host as RealFlight, and `RealFlightRemoteBridge` otherwise. `realflight_bridge` is re-exported, so you don't need to depend on it yourself. `ActuatorMapping` maps the mixer's motor and servo slots to the model's RealFlight channels (servos rescaled from -1–1 to RealFlight's 0–1, and negated first for any slot in `reversed_servos`), so an airframe's mapping only fits its own mixer. Channels no slot drives are sent as 0.0, which would hold a servo hard over, so a mapping covers every surface the model has; `RealFlightConfiguration::from_airframe` takes the mapping and body rotation from an airframe. `RealFlightVehicle::new` panics on an invalid mapping (a channel out of range or used twice); `try_new` returns a `MappingError` instead.
 
 Each tick makes one RealFlight exchange, in `actuate`; `state` returns the cached result, so guidance and the stabilizer see state one tick old. The `RealFlightVehicle` rustdoc covers timing and frame conversion.
 
@@ -54,11 +51,10 @@ let host = String::from("10.211.55.3:8080");
 // Each reconnect attempt blocks its tick, so keep the timeouts short.
 let connect =
     move || RealFlightRemoteBridge::with_timeouts(&host, Duration::from_millis(250), REMOTE_IO_TIMEOUT);
-let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-    bridge: connect().expect("Failed to create bridge"),
-    mapping: airframe.mapping,
-    body_rotation: airframe.body_rotation,
-})
+let vehicle = RealFlightVehicle::new(RealFlightConfiguration::from_airframe(
+    &airframe,
+    connect().expect("Failed to create bridge"),
+))
 .with_reconnect(move || connect().map_err(BridgeError::from));
 ```
 
