@@ -238,8 +238,8 @@ let moments = body_rate.control(&body_rate_config, 0.004, rates.push(0.0), Vec3:
 - **No panics in the tick:** outputs saturate, and a non-finite input gives neutral output
   without touching integral or derivative state
   ([input policy](https://github.com/wboayue/stable-flight/blob/main/architecture.md#input-policy-no-panics-in-the-tick)).
-- **Anti-windup:** the integral is clamped to `max_integral` every tick, and `set_config`
-  rescales it when `i` changes, so a retune is bumpless.
+- **Anti-windup:** the integral is clamped to `max_integral` every tick. On a retune, the
+  composite's `set_config` calls each controller's `rescale_integral`, so a new `i` is bumpless.
 - **No allocation:** fixed-size `nalgebra` math, so the loops run on firmware.
 - **Validated config:** `validate()` rejects negative or non-finite limits; config fields
   document their units.
@@ -310,8 +310,9 @@ fn angle_diff(desired: f32, current: f32) -> f32 {
 The position controllers (altitude, lateral) run in `CopterGuidance`, which turns commands into setpoints; the attitude, yaw, and body-rate controllers run in `CopterStabilizer`, which tracks them:
 
 ```rust,ignore
-// Guidance (src/guidance/copter.rs), waypoint mode
-let accel = self.lateral.control(&self.config.lateral, dt, lateral_target, lateral_estimate);
+// Guidance (src/guidance/copter.rs), waypoint mode; the lateral loop runs at its own slower
+// rate, so it takes that loop's `step`, not the tick's `dt`
+let accel = self.lateral.control(&self.config.lateral, step, lateral_target, lateral_estimate);
 let tilt = tilt_for_acceleration(accel, heading);
 let target = AltitudeTarget { altitude_m: waypoint.altitude_m, velocity_mps: 0.0 };
 let estimate = AltitudeEstimate { altitude_m: z, velocity_mps: vz, attitude };
