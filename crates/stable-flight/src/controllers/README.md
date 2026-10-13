@@ -1,15 +1,25 @@
 # Flight Control Controllers
 
-PID building blocks shared by guidance (altitude, lateral) and stabilizers (attitude, yaw, body rate). Each controller handles a specific aspect of vehicle stabilization and follows the cascaded control architecture commonly used in flight control systems.
+PID building blocks shared by guidance (altitude, lateral) and stabilizers (attitude, yaw, body rate, plane rate). Each controller runs one loop of a cascade, where outer loops provide setpoints for inner loops.
 
 ## Architecture Overview
 
-The controllers implement a cascaded control structure where outer loops provide setpoints for inner loops:
-
 ```text
-Position Commands → Lateral Controller → (guidance: tilt = atan(a/g)) → Attitude Controller → Body Rate Controller → Motor Commands
-                 ↘ Altitude Controller ↗             ↘ Yaw Controller ↗
+Copter (CopterGuidance → CopterStabilizer):
+
+  waypoint ─┬─ Lateral ─▶ accel ─▶ tilt = atan(a/g) ─┐
+            │                                         ├─▶ Attitude ─┐
+            │                          heading hold ──┴─▶ Yaw ──────┴─▶ Body Rate ─▶ moments
+            └─ Altitude ─▶ thrust
+
+Plane (PlaneGuidance → PlaneStabilizer):
+
+  attitude setpoint ─▶ error / time constant + turn feedforward ─▶ Plane Rate ─▶ moments
+  rate setpoint ─────────────────────────────────────────────────▶ Plane Rate ─▶ moments
 ```
+
+Guidance runs the position loops; the stabilizers run the attitude and rate loops. A rate
+setpoint skips the attitude loop on either side.
 
 ## State and Config
 
@@ -33,8 +43,6 @@ as 0).
 - Plain PID per axis (`P·e + I·∫e + D·ė`, saturated to [-1, 1]), with anti-windup
 - Gains per axis (`roll_gains`, `pitch_gains`, `yaw_gains`): frames differ in roll and pitch inertia, and yaw authority (differential prop drag) is weaker than either
 - A non-finite rate on one axis zeroes that axis's moment only; the others keep their loop
-- Real-time performance optimized for high-frequency control loops
-- Comprehensive input validation and error handling
 
 **Usage**:
 ```rust
@@ -58,10 +66,9 @@ let moments = controller.control(&config, dt, desired_rates, estimated_rates);
 **Output**: Desired angular rates (rad/s)
 
 **Key Features**:
-- Converts normalized joystick inputs to physical angle setpoints
-- PID control with derivative damping to prevent overshoot
-- Configurable maximum angles and rates for safety
-- Anti-windup protection for integral term
+- PID per axis, output clamped to `max_rate_radps`, with anti-windup
+- `CopterStabilizer` feeds it the roll and pitch of a quaternion attitude error instead of Euler
+  differences, so its rates are body rates at any attitude (a tailsitter in transition)
 
 **Usage**:
 ```rust
@@ -71,7 +78,7 @@ use stable_flight::Vec2;
 let config = AttitudeControllerConfig::default();
 let mut controller = AttitudeController::default();
 let dt = 0.004;
-let desired_angles = Vec2::new(0.5, -0.2); // 50% roll right, 20% pitch down
+let desired_angles = Vec2::new(0.5, -0.2); // roll right, pitch down, in radians
 let estimated_angles = Vec2::new(0.1, 0.0); // Current roll/pitch in radians
 
 let angular_rates = controller.control(&config, dt, desired_angles, estimated_angles);
@@ -85,10 +92,9 @@ let angular_rates = controller.control(&config, dt, desired_angles, estimated_an
 **Output**: Desired yaw rate (rad/s)
 
 **Key Features**:
-- Handles angle wrapping for shortest-path navigation
-- PID control with proper derivative filtering
-- Configurable maximum yaw rates
-- Robust handling of ±π boundary crossings
+- Wraps the error to [-π, π), so it turns the short way across ±π
+- PID, output clamped to `max_rate_radps`
+- `CopterStabilizer` feeds it the heading part of the quaternion attitude error
 
 **Usage**:
 ```rust
@@ -229,28 +235,16 @@ let moments = body_rate.control(&body_rate_config, 0.004, rates.push(0.0), Vec3:
 
 ## Design Principles
 
-### Safety-Critical Operation
-- All controllers include input validation and bounds checking
-- Integral windup protection prevents control instability
-- Output limiting ensures commands stay within physical constraints
-- Graceful handling of edge cases and error conditions
-
-### Real-Time Performance  
-- Optimized for 250Hz control loops (4ms cycle time)
-- Minimal memory allocations in control paths
-- Fixed-size `nalgebra` vector math (no allocation)
-- Low-latency processing suitable for safety-critical applications
-
-### Modularity and Testing
-- Each controller is independently testable and configurable
-- Unit tests cover normal, boundary, and non-finite-input cases, table-driven where the
-  cases are systematic
-- The cascade is exercised end to end by the stabilizer and guidance tests
-
-### Tuning and Configuration
-- Sensible default parameters for typical multirotor vehicles
-- Config fields document their units and effects
-- `validate()` rejects invalid settings (negative or non-finite limits)
+- **No panics in the tick:** outputs saturate, and a non-finite input gives neutral output
+  without touching integral or derivative state
+  ([input policy](https://github.com/wboayue/stable-flight/blob/main/architecture.md#input-policy-no-panics-in-the-tick)).
+- **Anti-windup:** the integral is clamped to `max_integral` every tick, and `set_config`
+  rescales it when `i` changes, so a retune is bumpless.
+- **No allocation:** fixed-size `nalgebra` math, so the loops run on firmware.
+- **Validated config:** `validate()` rejects negative or non-finite limits; config fields
+  document their units.
+- **Tested:** unit tests cover normal, boundary, and non-finite-input cases, table-driven where
+  the cases are systematic; the stabilizer and guidance tests run the cascade end to end.
 
 ## Testing
 
@@ -262,7 +256,8 @@ cargo test -p stable-flight --doc         # the snippets in this file and the co
 ## Mathematical Background
 
 ### PID Control
-All controllers implement the discrete PID algorithm:
+The PID loops implement the discrete PID algorithm (the altitude loop takes D from the measured
+climb rate; the plane rate loop scales by airspeed, above):
 
 ```text
 u(k) = Kp×e(k) + Ki×∑e(k)×dt + Kd×(e(k)-e(k-1))/dt
@@ -308,7 +303,7 @@ fn angle_diff(desired: f32, current: f32) -> f32 {
 
 ### Integral Windup
 - **Cause**: Inadequate integral limiting
-- **Solution**: Reduce max_integral, verify anti-windup implementation
+- **Solution**: Reduce max_integral
 
 ## Integration with Flight Controller
 
@@ -322,10 +317,12 @@ let target = AltitudeTarget { altitude_m: waypoint.altitude_m, velocity_mps: 0.0
 let estimate = AltitudeEstimate { altitude_m: z, velocity_mps: vz, attitude };
 let thrust = self.altitude.control(&self.config.altitude, dt, target, estimate);
 
-// Stabilizer (src/stabilizers/copter.rs)
-let attitude_rates = self.attitude.control(&config.attitude, dt, setpoint_tilt, current_tilt);
-let yaw_rate = self.yaw.control(&config.yaw, dt, setpoint.heading_rad, current_heading);
-let body_moments = self.body_rate.control(&config.body_rate, dt, desired_rates, current_rates);
+// Stabilizer (src/stabilizers/copter.rs): one quaternion attitude error feeds both angle loops
+let error = attitude_error(attitude, roll_rad, pitch_rad, heading_rad);
+let rates = self.attitude.control_error(&config.attitude, dt, error.xy());
+let yaw_rate = self.yaw.control_error(&config.yaw, dt, error.z);
+let moments = self.body_rate.control(&config.body_rate, dt, desired_rates, current_rates);
 ```
 
-This ensures proper sequencing and data flow through the cascaded control architecture.
+`PlaneStabilizer` runs `PlaneRateController` the same way under its own attitude loop
+(`src/stabilizers/plane.rs`).
