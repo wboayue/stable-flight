@@ -28,6 +28,9 @@ use std::fs;
 use stable_flight::Vec2;
 use thiserror::Error;
 
+use stable_flight::commanders::waypoint::{
+    DEFAULT_ALTITUDE_ACCEPTANCE_M, PLANE_ALTITUDE_ACCEPTANCE_M,
+};
 use stable_flight::commanders::{EmptyWaypoints, RouteEnd, WaypointFollower};
 use stable_flight::{Command, Commander, FlightRegime, VehicleState, WaypointCommand};
 
@@ -69,7 +72,8 @@ impl From<EmptyWaypoints> for ScriptError {
 ///
 /// A thin wrapper over the core [`WaypointFollower`] (default acceptance radius
 /// [`DEFAULT_ACCEPTANCE_RADIUS_M`](stable_flight::commanders::waypoint::DEFAULT_ACCEPTANCE_RADIUS_M),
-/// default [`RouteEnd::Loop`]).
+/// default [`RouteEnd::Loop`]), with the altitude acceptance of each leg's regime
+/// ([`with_altitude_acceptance`](Self::with_altitude_acceptance)).
 ///
 /// # Examples
 ///
@@ -83,6 +87,10 @@ pub struct ScriptCommander {
     follower: WaypointFollower<Vec<WaypointCommand>>,
     /// The regime of the leg to each waypoint, by index.
     regimes: Vec<FlightRegime>,
+    /// Altitude acceptance on copter legs, in meters.
+    copter_altitude_acceptance_m: f32,
+    /// Altitude acceptance on plane legs, in meters.
+    plane_altitude_acceptance_m: f32,
 }
 
 impl ScriptCommander {
@@ -151,6 +159,8 @@ impl ScriptCommander {
         Ok(ScriptCommander {
             follower: WaypointFollower::new(waypoints)?,
             regimes,
+            copter_altitude_acceptance_m: DEFAULT_ALTITUDE_ACCEPTANCE_M,
+            plane_altitude_acceptance_m: PLANE_ALTITUDE_ACCEPTANCE_M,
         })
     }
 
@@ -184,6 +194,33 @@ impl ScriptCommander {
         }
     }
 
+    /// Overrides the altitude acceptance (meters, either way) a waypoint on a `regime` leg also
+    /// needs to be reached (defaults [`DEFAULT_ALTITUDE_ACCEPTANCE_M`] for copter legs,
+    /// [`PLANE_ALTITUDE_ACCEPTANCE_M`] for plane legs; any other regime is rotor-borne and shares the copter band).
+    /// `altitude_m` must be non-negative.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::{FlightRegime, Vec2, WaypointCommand};
+    /// use stable_flight_sitl::commanders::ScriptCommander;
+    ///
+    /// let commander = ScriptCommander::from_waypoints(vec![WaypointCommand {
+    ///     position_m: Vec2::zeros(),
+    ///     altitude_m: 5.0,
+    ///     ..Default::default()
+    /// }])
+    /// .expect("non-empty")
+    /// .with_altitude_acceptance(FlightRegime::Copter, 0.5);
+    /// ```
+    pub fn with_altitude_acceptance(mut self, regime: FlightRegime, altitude_m: f32) -> Self {
+        match regime {
+            FlightRegime::Plane => self.plane_altitude_acceptance_m = altitude_m,
+            _ => self.copter_altitude_acceptance_m = altitude_m,
+        }
+        self
+    }
+
     /// Sets what happens after the last waypoint: loop the script (the default) or hold the
     /// last waypoint ([`RouteEnd`]).
     ///
@@ -208,6 +245,14 @@ impl ScriptCommander {
             follower: self.follower.with_route_end(route_end),
             ..self
         }
+    }
+
+    /// The regime of the leg to the active waypoint.
+    fn active_regime(&self) -> FlightRegime {
+        self.regimes
+            .get(self.follower.current_index())
+            .copied()
+            .unwrap_or_default()
     }
 }
 
@@ -250,16 +295,17 @@ fn load_route(path: &str) -> Result<Vec<(WaypointCommand, FlightRegime)>, Script
 
 impl Commander for ScriptCommander {
     /// Delegates to the core [`WaypointFollower`] (advances within the acceptance radius or
-    /// once past a waypoint along its leg, then loops, holds, or lands per its [`RouteEnd`]),
-    /// asking for the regime of the leg to the current waypoint.
+    /// once past a waypoint along its leg, and within the altitude acceptance of the active
+    /// leg's regime; then loops, holds, or lands per its [`RouteEnd`]), asking for the regime
+    /// of the leg to the current waypoint.
     fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
+        let altitude_acceptance_m = match self.active_regime() {
+            FlightRegime::Plane => self.plane_altitude_acceptance_m,
+            _ => self.copter_altitude_acceptance_m,
+        };
+        self.follower.set_altitude_acceptance(altitude_acceptance_m);
         let command = self.follower.next_command(dt, current_state);
-        let regime = self
-            .regimes
-            .get(self.follower.current_index())
-            .copied()
-            .unwrap_or_default();
-        command.with_regime(regime)
+        command.with_regime(self.active_regime())
     }
 }
 

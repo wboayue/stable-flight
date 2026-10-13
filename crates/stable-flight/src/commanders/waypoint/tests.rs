@@ -100,8 +100,13 @@ fn works_with_static_slices_and_vecs() {
         },
     ];
 
-    let mut from_static = WaypointFollower::new(&PATH[..]).expect("non-empty");
-    let mut from_vec = WaypointFollower::new(PATH.to_vec()).expect("non-empty");
+    // Within the altitude acceptance of the 5 m waypoints.
+    let mut from_static = WaypointFollower::new(&PATH[..])
+        .expect("non-empty")
+        .with_altitude_acceptance(5.0);
+    let mut from_vec = WaypointFollower::new(PATH.to_vec())
+        .expect("non-empty")
+        .with_altitude_acceptance(5.0);
 
     assert_relative_eq!(target_x_after_step(&mut from_static, 0.0, 0.0), 30.0);
     assert_relative_eq!(target_x_after_step(&mut from_vec, 0.0, 0.0), 30.0);
@@ -154,7 +159,12 @@ fn hold_stops_on_the_last_waypoint_and_completes() {
 /// the 1.05 s hold stays clear of `f32` rounding at the 1 s threshold.
 #[test]
 fn land_descends_on_the_last_waypoint_and_disarms_on_touchdown() {
-    let mut follower = WaypointFollower::new([wp(0.0, 0.0), wp(10.0, 0.0)])
+    // Waypoints at 5 m, flown at 5 m: altitude is never what holds an advance here.
+    let at_5m = |x| WaypointCommand {
+        altitude_m: 5.0,
+        ..wp(x, 0.0)
+    };
+    let mut follower = WaypointFollower::new([at_5m(0.0), at_5m(10.0)])
         .expect("non-empty")
         .with_route_end(RouteEnd::Land);
     let at = |x: f32, vertical_speed_mps: f32| VehicleState {
@@ -162,7 +172,7 @@ fn land_descends_on_the_last_waypoint_and_disarms_on_touchdown() {
         velocity_mps: Vec3::new(0.0, 0.0, vertical_speed_mps),
         ..Default::default()
     };
-    let waypoint = |x| ControlInput::Waypoint(wp(x, 0.0));
+    let waypoint = |x| ControlInput::Waypoint(at_5m(x));
     let land = ControlInput::Land(LandCommand {
         position_m: Vec2::new(10.0, 0.0),
     });
@@ -380,4 +390,108 @@ fn hold_completes_when_the_last_waypoint_is_passed() {
     let target = step_at(&mut follower, 22.0, 8.0);
     check!(follower.is_complete());
     check!(target.position_m == Vec2::new(20.0, 0.0));
+}
+
+/// A waypoint at `(x, y)` and `altitude_m`.
+fn wp_at(x: f32, y: f32, altitude_m: f32) -> WaypointCommand {
+    WaypointCommand {
+        altitude_m,
+        ..wp(x, y)
+    }
+}
+
+/// A waypoint is reached only within the altitude acceptance as well as the radius (or past
+/// it): one overhead isn't reached on the ground, and one passed high or low isn't passed.
+#[test]
+fn reaching_a_waypoint_needs_its_altitude() {
+    let route = [wp_at(0.0, 0.0, 5.0), wp_at(20.0, 0.0, 5.0)];
+    // (name, vehicle (x, y, z), expected active index after one step from the start)
+    let cases = [
+        ("overhead, on the ground", (0.0, 0.0, 0.0), 0),
+        ("overhead, mid-climb", (0.0, 0.0, 4.1), 0),
+        ("overhead, at the band's edge", (0.0, 0.0, 4.25), 1),
+        ("overhead, above the band", (0.0, 0.0, 5.9), 0),
+        ("within the radius, at altitude", (2.0, 1.0, 5.0), 1),
+        ("NaN altitude", (0.0, 0.0, f32::NAN), 0),
+    ];
+    for (name, (x, y, z), expected) in cases {
+        let mut follower = WaypointFollower::new(route).expect("non-empty");
+        let state = VehicleState {
+            position_m: Vec3::new(x, y, z),
+            ..Default::default()
+        };
+        follower.next_command(0.1, &state);
+        check!(follower.current_index() == expected, "{name}");
+    }
+
+    // Past the second waypoint along its leg (5 m wide), but 2 m low: not passed until at
+    // altitude.
+    let route = [
+        wp_at(0.0, 0.0, 5.0),
+        wp_at(20.0, 0.0, 5.0),
+        wp_at(40.0, 0.0, 5.0),
+    ];
+    let mut follower = WaypointFollower::new(route).expect("non-empty");
+    let at = |x: f32, y: f32, z: f32| VehicleState {
+        position_m: Vec3::new(x, y, z),
+        ..Default::default()
+    };
+    // (vehicle (x, y, z), expected active index after the step)
+    let steps = [
+        ((0.0, 0.0, 5.0), 1),  // on the first: leg +x toward (20, 0)
+        ((22.0, 5.0, 3.0), 1), // passed, low
+        ((22.0, 5.0, 5.0), 2), // passed, at altitude
+    ];
+    for ((x, y, z), expected) in steps {
+        follower.next_command(0.1, &at(x, y, z));
+        check!(follower.current_index() == expected, "at ({x}, {y}, {z})");
+    }
+}
+
+/// The altitude acceptance is configurable: a looser band reaches the waypoint lower.
+#[test]
+fn altitude_acceptance_is_configurable() {
+    let route = [wp_at(0.0, 0.0, 30.0), wp_at(100.0, 0.0, 30.0)];
+    let mid_climb = VehicleState {
+        position_m: Vec3::new(0.0, 0.0, 22.0),
+        ..Default::default()
+    };
+    let mut tight = WaypointFollower::new(route).expect("non-empty");
+    let mut loose = WaypointFollower::new(route)
+        .expect("non-empty")
+        .with_altitude_acceptance(10.0);
+    tight.next_command(0.1, &mid_climb);
+    loose.next_command(0.1, &mid_climb);
+    check!(tight.current_index() == 0);
+    check!(loose.current_index() == 1);
+}
+
+/// One waypoint over the start: `Hold` completes only once climbed to it, and `Land` flies
+/// the waypoint (the climb) until then rather than landing on the ground (#359).
+#[test]
+fn route_end_over_the_start_waits_for_the_climb() {
+    let hover = [wp_at(0.0, 0.0, 5.0)];
+    let at = |z: f32| VehicleState {
+        position_m: Vec3::new(0.0, 0.0, z),
+        ..Default::default()
+    };
+    // (route end, altitude, expected input is a waypoint (not a land), complete)
+    let cases = [
+        (RouteEnd::Hold, 0.0, true, false),
+        (RouteEnd::Hold, 4.5, true, true),
+        (RouteEnd::Land, 0.0, true, false),
+        (RouteEnd::Land, 4.5, false, false),
+    ];
+    for (route_end, z, flies_waypoint, complete) in cases {
+        let mut follower = WaypointFollower::new(hover)
+            .expect("non-empty")
+            .with_route_end(route_end);
+        let command = follower.next_command(0.1, &at(z));
+        check!(command.arm, "{route_end:?} at {z} m");
+        check!(
+            matches!(command.input, ControlInput::Waypoint(_)) == flies_waypoint,
+            "{route_end:?} at {z} m"
+        );
+        check!(follower.is_complete() == complete, "{route_end:?} at {z} m");
+    }
 }
