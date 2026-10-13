@@ -2,8 +2,18 @@ use approx::assert_relative_eq;
 use assert2::check;
 use stable_flight::{Vec2, Vec3};
 
-use super::{ScriptCommander, ScriptError, parse_waypoints};
-use stable_flight::{Command, Commander, ControlInput, VehicleState, WaypointCommand};
+use super::{ScriptCommander, ScriptError, parse_route};
+use stable_flight::{
+    Command, Commander, ControlInput, FlightRegime, VehicleState, WaypointCommand,
+};
+
+/// The waypoints of a parsed script, without their regimes.
+fn parse_waypoints(path: &str, contents: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
+    Ok(parse_route(path, contents)?
+        .into_iter()
+        .map(|(waypoint, _)| waypoint)
+        .collect())
+}
 
 /// Builds a `VehicleState` positioned at the given horizontal coordinates (meters).
 fn state_at(x: f32, y: f32) -> VehicleState {
@@ -109,7 +119,7 @@ x,y,altitude,cruise_speed
     );
     check!(path == "test.csv");
     check!(line == 2);
-    check!(message.contains("expected 4 fields"));
+    check!(message.contains("expected 4 or 5 fields"));
 }
 
 #[test]
@@ -154,4 +164,58 @@ fn follows_loaded_waypoints_via_core_follower() {
     check!(commander.follower().current_index() == 1);
     assert_relative_eq!(target_x_after_step(&mut commander, 49.0, 0.0), 0.0);
     check!(commander.follower().waypoints().len() == 2);
+}
+
+/// The optional fifth field is the leg's regime, any case; absent is copter; anything else, or
+/// a sixth field, is a parse error.
+#[test]
+fn fifth_field_is_the_regime() {
+    let csv = "\
+x,y,altitude,cruise_speed,regime
+0,0,20,3
+200,0,30,14,plane
+200,100,30,14, Plane
+0,0,20,3,copter
+";
+    assert2::assert!(let Ok(route) = parse_route("test.csv", csv));
+    let regimes: Vec<_> = route.iter().map(|(_, regime)| *regime).collect();
+    check!(
+        regimes
+            == [
+                FlightRegime::Copter,
+                FlightRegime::Plane,
+                FlightRegime::Plane,
+                FlightRegime::Copter,
+            ]
+    );
+
+    for bad in ["0,0,20,3,boat", "0,0,20,3,plane,extra"] {
+        assert2::assert!(let Err(ScriptError::Parse { line, .. }) = parse_route("test.csv", bad));
+        check!(line == 1, "{bad}");
+    }
+}
+
+/// The commander asks for the regime of the leg to the current waypoint, changing as legs
+/// advance.
+#[test]
+fn commander_requests_each_legs_regime() {
+    // Through both builders, which rebuild the commander: the regimes carry over.
+    let mut commander = ScriptCommander::from_route(vec![
+        (wp(0.0, 0.0), FlightRegime::Copter),
+        (wp(100.0, 0.0), FlightRegime::Plane),
+        (wp(100.0, 100.0), FlightRegime::Copter),
+    ])
+    .expect("non-empty")
+    .with_acceptance_radius(1.0)
+    .with_route_end(stable_flight::commanders::RouteEnd::Hold);
+    // At the first waypoint: advances to the plane leg.
+    check!(commander.next_command(0.01, &state_at(0.0, 0.0)).regime == FlightRegime::Plane);
+    check!(commander.next_command(0.01, &state_at(50.0, 0.0)).regime == FlightRegime::Plane);
+    // At the second: the copter leg.
+    check!(commander.next_command(0.01, &state_at(100.0, 0.0)).regime == FlightRegime::Copter);
+
+    let all_copter = ScriptCommander::from_waypoints(vec![wp(0.0, 0.0), wp(10.0, 0.0)])
+        .expect("non-empty")
+        .next_command(0.01, &state_at(0.0, 0.0));
+    check!(all_copter.regime == FlightRegime::Copter);
 }

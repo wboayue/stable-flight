@@ -4,7 +4,7 @@ use assert2::check;
 use super::*;
 use crate::{
     AbsoluteAttitudeCommand, AbsoluteRateCommand, AttitudeCommand, FlightMode, LandCommand,
-    ModeRefusal, RateCommand, WaypointCommand,
+    ModeRefusal, RateCommand, Vec2, WaypointCommand,
 };
 
 fn guide(input: ControlInput) -> Setpoint {
@@ -76,8 +76,9 @@ fn rate_inputs_give_plane_rates() {
     check!(rates.thrust == 1.0);
 }
 
-/// An absolute attitude passes through (heading unused); a waypoint cruises wings level until
-/// navigation exists; a land is neutral.
+/// An absolute attitude passes through (heading unused); a waypoint at the vehicle (at rest,
+/// on its altitude, no speed target) holds trim pitch and cruise thrust, wings level; a land
+/// is neutral.
 #[test]
 fn offboard_waypoint_and_land_inputs() {
     let config = PlaneGuidanceConfig {
@@ -155,5 +156,138 @@ fn validates_config() {
         check!(config.validate().map_err(|e| e.field) == Err(field));
         let mut guidance = PlaneGuidance::new(PlaneGuidanceConfig::default());
         check!(guidance.set_config(config).is_err());
+    }
+}
+
+/// Waypoint flight, from a vehicle flying north at 15 m/s airspeed at 30 m: the setpoint's
+/// bank, pitch, and thrust against the waypoint. (waypoint, airspeed, expected signs of
+/// (bank, pitch − trim, thrust − cruise))
+#[test]
+fn waypoint_flight_steers_climbs_and_holds_speed() {
+    let along_north = |east: f32, altitude: f32, speed: f32| WaypointCommand {
+        position_m: Vec2::new(200.0, east),
+        velocity_mps: Some(Vec2::new(14.0, 0.0)),
+        altitude_m: altitude,
+        cruise_speed_mps: speed,
+    };
+    let sign = |v: f32| if v.abs() < 1e-4 { 0 } else { v.signum() as i32 };
+    let cases = [
+        // On the line, at altitude, at speed: nothing to do.
+        (along_north(0.0, 30.0, 15.0), Some(15.0), (0, 0, 0)),
+        // The line is east (right): bank right.
+        (along_north(20.0, 30.0, 15.0), Some(15.0), (1, 0, 0)),
+        (along_north(-20.0, 30.0, 15.0), Some(15.0), (-1, 0, 0)),
+        // Above the vehicle: pitch up; below: down.
+        (along_north(0.0, 40.0, 15.0), Some(15.0), (0, 1, 0)),
+        (along_north(0.0, 20.0, 15.0), Some(15.0), (0, -1, 0)),
+        // Slow: more thrust; fast: less.
+        (along_north(0.0, 30.0, 18.0), Some(15.0), (0, 0, 1)),
+        (along_north(0.0, 30.0, 12.0), Some(15.0), (0, 0, -1)),
+        // No airspeed: cruise, plus a climb's share when climbing.
+        (along_north(0.0, 30.0, 15.0), None, (0, 0, 0)),
+        (along_north(0.0, 40.0, 15.0), None, (0, 1, 1)),
+    ];
+    let config = PlaneGuidanceConfig::default();
+    for (waypoint, airspeed_mps, (bank, pitch, thrust)) in cases {
+        let state = VehicleState {
+            position_m: crate::Vec3::new(0.0, 0.0, 30.0),
+            velocity_mps: crate::Vec3::new(15.0, 0.0, 0.0),
+            airspeed_mps,
+            ..Default::default()
+        };
+        let mut guidance = PlaneGuidance::new(config);
+        let Setpoint::Plane(setpoint) = guidance.guide(
+            0.01,
+            FlightRegime::Plane,
+            &ControlInput::Waypoint(waypoint),
+            &state,
+        ) else {
+            panic!("waypoints give plane attitudes");
+        };
+        check!(
+            (
+                sign(setpoint.roll_rad),
+                sign(setpoint.pitch_rad - config.trim_pitch_rad),
+                sign(setpoint.thrust - config.cruise_thrust),
+            ) == (bank, pitch, thrust),
+            "{waypoint:?} {airspeed_mps:?}: {setpoint:?}"
+        );
+        check!(setpoint.roll_rad.abs() <= config.max_bank_rad);
+    }
+}
+
+/// A waypoint with no leg is a loiter: on its circle, flying the clockwise tangent, the bank
+/// is the circle's (atan(V²/(r·g))).
+#[test]
+fn waypoint_without_a_leg_loiters() {
+    let config = PlaneGuidanceConfig::default();
+    let (radius, speed) = (config.loiter_radius_m, 15.0_f32);
+    let state = VehicleState {
+        // North of the center, flying east: clockwise.
+        position_m: crate::Vec3::new(radius, 0.0, 30.0),
+        velocity_mps: crate::Vec3::new(0.0, speed, 0.0),
+        airspeed_mps: Some(speed),
+        ..Default::default()
+    };
+    let point = WaypointCommand {
+        position_m: Vec2::zeros(),
+        altitude_m: 30.0,
+        cruise_speed_mps: speed,
+        ..Default::default()
+    };
+    let Setpoint::Plane(setpoint) = PlaneGuidance::new(config).guide(
+        0.01,
+        FlightRegime::Plane,
+        &ControlInput::Waypoint(point),
+        &state,
+    ) else {
+        panic!("waypoints give plane attitudes");
+    };
+    let expected = (speed * speed / (radius * crate::GRAVITY)).atan();
+    assert_relative_eq!(setpoint.roll_rad, expected, epsilon = 1e-4);
+}
+
+/// The navigation integrals build in waypoint flight and clear on `prime` or on any other
+/// input.
+#[test]
+fn navigation_integrals_clear_on_prime_and_other_inputs() {
+    let config = PlaneGuidanceConfig::default();
+    let state = VehicleState {
+        position_m: crate::Vec3::new(0.0, 0.0, 20.0),
+        velocity_mps: crate::Vec3::new(15.0, 0.0, 0.0),
+        airspeed_mps: Some(15.0),
+        ..Default::default()
+    };
+    let climb = ControlInput::Waypoint(WaypointCommand {
+        position_m: Vec2::new(500.0, 0.0),
+        velocity_mps: Some(Vec2::new(14.0, 0.0)),
+        altitude_m: 21.0,
+        cruise_speed_mps: 15.0,
+    });
+    let pitch = |guidance: &mut PlaneGuidance| match guidance.guide(
+        0.1,
+        FlightRegime::Plane,
+        &climb,
+        &state,
+    ) {
+        Setpoint::Plane(setpoint) => setpoint.pitch_rad,
+        other => panic!("{other:?}"),
+    };
+    type Reset = fn(&mut PlaneGuidance, &VehicleState);
+    let resets: [(&str, Reset); 2] = [
+        ("prime", |g, s| g.prime(s)),
+        ("sticks", |g, s| {
+            g.guide(0.1, FlightRegime::Plane, &sticks(0.0, 0.0, 0.5), s);
+        }),
+    ];
+    for (name, reset) in resets {
+        let mut guidance = PlaneGuidance::new(config);
+        let first = pitch(&mut guidance);
+        for _ in 0..50 {
+            pitch(&mut guidance);
+        }
+        check!(pitch(&mut guidance) > first, "{name}: the integral builds");
+        reset(&mut guidance, &state);
+        assert_relative_eq!(pitch(&mut guidance), first, epsilon = 1e-6);
     }
 }

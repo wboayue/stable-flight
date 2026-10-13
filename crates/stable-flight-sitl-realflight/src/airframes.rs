@@ -194,7 +194,14 @@ pub fn explora_vtol()
                 ..Default::default()
             },
             transition: TransitionConfig {
-                min_height_m: 10.0,
+                // Above a script's hover climb: its first leg is reached on horizontal distance,
+                // before the climb ends (#124).
+                min_height_m: 20.0,
+                // A slower nose-up, handing over closer to vertical (PX4 hands over at 15°):
+                // at 50°/s and 45° it reached hover at 11 m/s and ballooned 10 m, and the hover
+                // side cut thrust to descend and tumbled for 8 s (#343).
+                back_rate_radps: 25f32.to_radians(),
+                back_done_rad: 20f32.to_radians(),
                 // The plane side's minimum airspeed: completing at 45° and 1.5 m/s, the wing
                 // sank 6 m while it gained speed (#124).
                 min_airspeed_mps: 9.0,
@@ -234,8 +241,9 @@ pub fn explora_vtol()
                 // The hover side's thrust curve, so a handoff keeps the motor commands
                 // continuous.
                 thrust_curve_exponent: 2.0,
-                // The back transition pitches up to π/2 − 45° = 45° on this side.
-                max_pitch_rad: 60f32.to_radians(),
+                // The back transition pitches up to π/2 − 20° = 70° on this side; sticks stay
+                // within the plane guidance's limits.
+                max_pitch_rad: 75f32.to_radians(),
                 // Guesses until plane flights measure them (#124).
                 trim_airspeed_mps: 14.0,
                 min_airspeed_mps: 9.0,

@@ -12,7 +12,7 @@ The crate builds on the [`stable-flight`](https://github.com/wboayue/stable-flig
 
 ## Setup
 
-RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**. Tuned model: QuadCopterX (multirotor); eXplora VTOL (tailsitter) hovers from a joystick (`tailsitter-manual-realflight`) or a waypoint script (`tailsitter-auto-realflight`), and from the joystick transitions to stabilized plane flight and back, with plane navigation planned; the ArduPilot [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models) repo has more.
+RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**. Tuned model: QuadCopterX (multirotor); eXplora VTOL (tailsitter) hovers from a joystick (`tailsitter-manual-realflight`) or a waypoint script (`tailsitter-auto-realflight`), and transitions to plane flight and back, stabilized from the joystick or navigating waypoints from a script (`flights/explora_transition.csv`); the ArduPilot [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models) repo has more.
 
 `RealFlightRemoteBridge` talks to the `realflight_bridge_proxy` running on the RealFlight host. Install it there with `cargo install realflight-bridge --features rt-tokio` (2.2 or later, to match this crate's error handling). Its default request timeout (150 ms) covers RealFlight's slower requests, and [`REMOTE_IO_TIMEOUT`](https://docs.rs/stable-flight-sitl-realflight/latest/stable_flight_sitl_realflight/constant.REMOTE_IO_TIMEOUT.html), which the examples use, stays above it.
 
@@ -88,6 +88,10 @@ cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- f
 # centered on its spawn point by default (flights/explora_figure_eight.csv); flights/explora_hover.csv
 # holds 5 m over it. Or: just fly-tailsitter-auto
 cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- --end land
+
+# A transition mission: hover climb, two plane laps of a rectangle (the CSV's regime column),
+# back to hover and home
+cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- flights/explora_transition.csv --end land
 
 # Flown from the native link, holding position when it goes quiet; link_pilot plays the companion
 # (in place of the bridge). Stop the pilot mid-flight and the quad holds. Or: just fly-companion, just link-pilot

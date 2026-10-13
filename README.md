@@ -8,7 +8,7 @@
 
 Stable Flight provides the foundation for a Rust-powered flight controller designed for VTOL drones. It utilizes Software-in-the-Loop (SITL) simulation to safely refine flight control logic before real-world deployment. My goal is to create an easily extendable, robust, and approachable flight controller leveraging [Rust's advantages](https://wboayue.com/posts/flight-controller-why-rust/) in systems programming. See the following document for an [architecture overview](architecture.md).
 
-**Status:** Stable Flight flies a quadcopter, and a tailsitter that hovers (from a joystick or a waypoint script) and, from a joystick, transitions to stabilized plane flight and back, in simulation only: RealFlight SITL, from a joystick, a waypoint script, or QGroundControl through the MAVLink bridge. It does not fly real hardware yet: the [ARK FPV firmware](firmware/ark-fpv) is a stub that reads no sensors and drives no motors. The tailsitter's autonomous plane navigation and aerobatics are planned ([`tailsitter-sitl`](https://github.com/wboayue/stable-flight/milestone/2)).
+**Status:** Stable Flight flies a quadcopter, and a tailsitter that hovers and transitions to plane flight and back, from a joystick (stabilized plane) or a waypoint script (plane waypoint navigation), in simulation only: RealFlight SITL, from a joystick, a waypoint script, or QGroundControl through the MAVLink bridge. It does not fly real hardware yet: the [ARK FPV firmware](firmware/ark-fpv) is a stub that reads no sensors and drives no motors. The tailsitter's aerobatics are planned ([`tailsitter-sitl`](https://github.com/wboayue/stable-flight/milestone/2)).
 
 Starting with simulation allowed me to quickly iterate on flight stabilizer logic and test different airframes without worrying about building hardware. Simulated crashes cut costs and speed up testing compared to real-world failures.
 
@@ -47,7 +47,7 @@ RealFlight was chosen for its realistic physics model, API for external drone co
 ## Test Models
 
 * [QuadcopterX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX): A go-to for mastering control theory basics. The flight controller is tuned for and flies this model.
-* [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation): A tricky tail-sitter testing smooth copter-to-plane transitions. Flies in hover from a joystick or a waypoint script (takeoff, a small figure-eight, landing), and from a joystick transitions to stabilized plane flight and back; plane navigation is planned ([`tailsitter-sitl`](https://github.com/wboayue/stable-flight/milestone/2)).
+* [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation): A tricky tail-sitter testing smooth copter-to-plane transitions. Flies in hover from a joystick or a waypoint script (takeoff, a small figure-eight, landing), and transitions to plane flight and back: stabilized from a joystick, or a scripted mission (climb, transition, plane laps on waypoint navigation, back transition, landing); aerobatics are planned ([`tailsitter-sitl`](https://github.com/wboayue/stable-flight/milestone/2)).
 
 The ArduPilot repository also provides a helpful [collection of models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models).
 

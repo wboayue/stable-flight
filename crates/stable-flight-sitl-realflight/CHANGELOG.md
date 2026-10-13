@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `flights/explora_transition.csv` and `tailsitter-auto-realflight` plane legs (#124): the
+  script's regime column drives transitions; the example logs mode changes and takes
+  `--record` like the manual one.
+
 - `RealFlightConfiguration::from_airframe(&airframe, bridge)`: takes the channel mapping and
   body rotation from an `Airframe`; the flight examples use it (#271).
 

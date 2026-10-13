@@ -85,6 +85,12 @@
 //! | `PGUID_ACRO_X`, `_Y`, `_Z` | `max_rate_radps` |
 //! | `PGUID_TRIM_PIT` | `trim_pitch_rad` |
 //! | `PGUID_CRUISE` | `cruise_thrust` |
+//! | `PGUID_L1_PERIOD`, `PGUID_L1_DAMP` | `l1_period_s`, `l1_damping` |
+//! | `PGUID_LOIT_RAD` | `loiter_radius_m` |
+//! | `PGUID_ALT_P`, `_I`, `_IMAX` | `altitude_p`, `altitude_i`, `altitude_max_integral` |
+//! | `PGUID_SPD_P`, `_I`, `_IMAX` | `speed_p`, `speed_i`, `speed_max_integral` |
+//! | `PGUID_THR_MIN`, `PGUID_THR_MAX` | `min_thrust`, `max_thrust` |
+//! | `PGUID_CLMB_THR` | `climb_thrust_per_rad` |
 //!
 //! # Transition ([`TransitionConfig`](crate::guidance::vtol::TransitionConfig))
 //!

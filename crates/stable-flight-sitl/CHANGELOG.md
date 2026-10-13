@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `ScriptCommander` reads an optional fifth CSV field per waypoint, `copter` or `plane`: the
+  regime of the leg to it, requested as the leg begins (#124). `ScriptCommander::from_route`
+  takes waypoints with their regimes.
+
 ### Changed
 
 - Commanders request a regime (#124): `Extreme3DCommander` D-pad Left asks for copter and
