@@ -3,8 +3,8 @@
 //! controller flying the transition; [`ThrustHandoff`] blends thrust when control passes from
 //! one controller to the other.
 //!
-//! Both are pure building blocks for a VTOL guidance (TODO(#124)): they build no setpoints and
-//! know no frames. The tilt is the nose's (body `x`) angle from vertical: 0 in hover,
+//! Both are pure building blocks for a VTOL guidance ([`TailsitterGuidance`]): they build no
+//! setpoints and know no frames. The tilt is the nose's (body `x`) angle from vertical: 0 in hover,
 //! π/2 in level forward flight. A tailsitter's hover controller, in its
 //! [`View`](crate::View), flies view pitch `−tilt`; its plane controller flies airplane pitch
 //! `π/2 − tilt`.
