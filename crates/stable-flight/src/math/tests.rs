@@ -392,3 +392,78 @@ fn nose_up_cosine_is_the_sine_of_the_pitch() {
     let nan = UnitQuaternion::new_unchecked(nalgebra::Quaternion::new(f32::NAN, 0.0, 0.0, 0.0));
     assert!(nose_up_cosine(&nan).is_nan());
 }
+
+/// The attitude error is the tilt (relative to the current heading) and the wrapped heading
+/// error weighted by the tilt's cosine, as body-frame rotations: per-axis Euler differences
+/// near level, a heading error that never leaks into roll or pitch, and finite through ±90°
+/// pitch.
+#[test]
+fn attitude_error_is_tilt_then_heading_in_body_axes() {
+    let deg = f32::to_radians;
+    let at = |roll: f32, pitch: f32, heading: f32| {
+        UnitQuaternion::from_euler_angles(deg(roll), deg(pitch), deg(heading))
+    };
+    // (current, setpoint roll°, pitch°, heading°, expected (x, y, z)°, tolerance°)
+    let cases = [
+        (at(0.0, 0.0, 0.0), 0.0, 0.0, 0.0, [0.0, 0.0, 0.0], 1e-4),
+        (at(0.0, 0.0, 0.0), 10.0, 0.0, 0.0, [10.0, 0.0, 0.0], 1e-3),
+        (at(0.0, 0.0, 0.0), 0.0, -8.0, 0.0, [0.0, -8.0, 0.0], 1e-3),
+        (at(0.0, 0.0, 0.0), 0.0, 0.0, 30.0, [0.0, 0.0, 30.0], 1e-3),
+        // The heading error fades with tilt: cos 60° halves it, and far over it's nearly gone.
+        (at(0.0, 60.0, 0.0), 0.0, 60.0, 10.0, [0.0, 0.0, 5.0], 1e-3),
+        (
+            at(0.0, -80.0, 30.0),
+            0.0,
+            -80.0,
+            40.0,
+            [0.0, 0.0, 1.736],
+            1e-2,
+        ),
+        // Tilt is relative to the current heading, whatever the heading setpoint.
+        (at(0.0, 0.0, 120.0), 0.0, 6.0, 120.0, [0.0, 6.0, 0.0], 1e-3),
+        (
+            at(0.0, 0.0, 120.0),
+            6.0,
+            0.0,
+            -50.0,
+            [6.0, 0.0, -170.0],
+            1e-3,
+        ),
+        // Near level: the Euler differences, as body rates.
+        (at(3.0, -2.0, 45.0), 5.0, 1.0, 50.0, [2.0, 3.0, 5.0], 0.2),
+        // Upside down: no heading correction.
+        (at(180.0, 0.0, 0.0), 180.0, 0.0, 20.0, [0.0, 0.0, 0.0], 1e-3),
+        // Heading wraps the short way.
+        (at(0.0, 0.0, 178.0), 0.0, 0.0, -178.0, [0.0, 0.0, 4.0], 1e-3),
+        // Far over, where Euler roll and heading degenerate: still a clean pitch error.
+        (
+            at(0.0, -80.0, 30.0),
+            0.0,
+            -85.0,
+            30.0,
+            [0.0, -5.0, 0.0],
+            1e-2,
+        ),
+        (at(0.0, 89.0, 0.0), 0.0, 80.0, 0.0, [0.0, -9.0, 0.0], 1e-2),
+    ];
+    for (current, roll, pitch, heading, expected, tolerance) in cases {
+        let error = attitude_error(&current, deg(roll), deg(pitch), deg(heading));
+        for axis in 0..3 {
+            assert!(
+                (error[axis].to_degrees() - expected[axis]).abs() <= tolerance,
+                "{roll}/{pitch}/{heading}: axis {axis} gave {}°, expected {}°",
+                error[axis].to_degrees(),
+                expected[axis]
+            );
+        }
+    }
+
+    let nan = UnitQuaternion::new_unchecked(nalgebra::Quaternion::new(1.0, f32::NAN, 0.0, 0.0));
+    assert!(
+        attitude_error(&nan, 0.0, 0.0, 0.0)
+            .iter()
+            .all(|e| e.is_nan())
+    );
+    let error = attitude_error(&at(0.0, 0.0, 0.0), deg(5.0), 0.0, f32::NAN);
+    assert!(error.x > 0.0 && error.y == 0.0 && error.z.is_nan());
+}

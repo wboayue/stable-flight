@@ -408,6 +408,12 @@ fn a_step_replaces_the_loops_setpoint() {
     };
     let rate = COPTER_RATE_STEP.amplitude;
     let angle = COPTER_ANGLE_STEP.amplitude;
+    // The attitude as the angle loops measure it: setpoint minus their error.
+    let error = crate::math::attitude_error(&state.attitude, 0.0, 0.0, 3.1);
+    let (measured_pitch, measured_heading) = (-error.y, 3.1 - error.z);
+    // Within second-order terms of the Euler angles it measured before.
+    approx::assert_abs_diff_eq!(measured_pitch, -0.03, epsilon = 2e-3);
+    approx::assert_abs_diff_eq!(measured_heading, 3.1, epsilon = 2e-3);
     // (target, the tick's setpoint, the setpoint a probe-free stabilizer is asked for)
     let cases = [
         (
@@ -430,7 +436,7 @@ fn a_step_replaces_the_loops_setpoint() {
             TunedLoop::Pitch,
             Setpoint::Attitude(level),
             Setpoint::Attitude(AttitudeSetpoint {
-                pitch_rad: -0.03 + angle,
+                pitch_rad: measured_pitch + angle,
                 ..level
             }),
         ),
@@ -441,7 +447,7 @@ fn a_step_replaces_the_loops_setpoint() {
                 ..level
             }),
             Setpoint::Attitude(AttitudeSetpoint {
-                heading_rad: 3.1 + angle,
+                heading_rad: measured_heading + angle,
                 ..level
             }),
         ),

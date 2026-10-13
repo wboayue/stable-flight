@@ -129,11 +129,27 @@ impl YawController {
         desired_yaw_rad: f32,
         estimated_yaw_rad: f32,
     ) -> f32 {
+        let error = angle_diff(desired_yaw_rad, estimated_yaw_rad); // Use a helper to handle angle wrapping
+        self.control_error(config, dt, error)
+    }
+
+    /// The PID of [`control`](Self::control) on a yaw error already taken (radians, the short
+    /// way round): for a caller that measures the error itself, e.g. from quaternions. The
+    /// output is clamped to `max_rate_radps`; a non-finite error gives zero.
+    ///
+    /// # Panics
+    ///
+    /// If `dt` is not positive and finite.
+    pub(crate) fn control_error(
+        &mut self,
+        config: &YawControllerConfig,
+        dt: f32,
+        error: f32,
+    ) -> f32 {
         assert_dt(dt);
 
         let gains = &config.gains;
 
-        let error = angle_diff(desired_yaw_rad, estimated_yaw_rad); // Use a helper to handle angle wrapping
         if !error.is_finite() {
             // Hold (no yaw rate) rather than letting NaN into the integral and derivative
             // history, where it would stick; clamping passes NaN through. Forget the previous

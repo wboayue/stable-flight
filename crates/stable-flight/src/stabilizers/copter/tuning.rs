@@ -2,9 +2,6 @@
 //! [`Probe`]. See the "Tuning" section on [`CopterStabilizer`].
 
 use crate::Vec3;
-use crate::controllers::AttitudeController;
-use crate::controllers::yaw::angle_diff;
-use crate::math::saturate_symmetric;
 use crate::tuning::{Injection, LoopSignals, Probe, ProbeConfig, ProbeStatus, Tunable};
 
 use super::{CopterStabilizer, CopterStabilizerConfig};
@@ -241,43 +238,26 @@ impl CopterStabilizer {
     }
 
     /// Steps a probe on an angle or heading loop before the controllers run. `setpoints` are
-    /// the roll, pitch, and heading setpoints, `current` the estimate: a step replaces one
-    /// setpoint; a relay's rate output comes back as `(axis, rate)` (axis 2: heading) for the
+    /// the saturated roll, pitch, and heading setpoints, `error` the body-frame attitude error
+    /// the loops act on: a step replaces one setpoint; a relay's rate output comes back as `(axis, rate)` (axis 2: heading) for the
     /// caller to apply after the controllers.
     pub(super) fn probe_attitude(
         &mut self,
         dt: f32,
         setpoints: &mut Vec3,
-        current: &Vec3,
+        error: &Vec3,
     ) -> Option<(usize, f32)> {
         let location = self.running_stage()?;
         let saturated = self.loop_saturated(location);
-        let (axis, signals) = match location {
-            Location::Angle(axis) => {
-                let attitude = &self.config.attitude;
-                let error = AttitudeController::angle_error(attitude, setpoints.xy(), current.xy());
-                let setpoint = saturate_symmetric(setpoints[axis], attitude.max_angles_rad[axis]);
-                (
-                    axis,
-                    LoopSignals {
-                        setpoint,
-                        error: error[axis],
-                        saturated,
-                    },
-                )
-            }
-            Location::Heading => {
-                let error = angle_diff(setpoints.z, current.z);
-                (
-                    2,
-                    LoopSignals {
-                        setpoint: setpoints.z,
-                        error,
-                        saturated,
-                    },
-                )
-            }
+        let axis = match location {
+            Location::Angle(axis) => axis,
+            Location::Heading => 2,
             Location::Rate(_) => return None,
+        };
+        let signals = LoopSignals {
+            setpoint: setpoints[axis],
+            error: error[axis],
+            saturated,
         };
         self.inject(dt, axis, &signals, setpoints)
     }

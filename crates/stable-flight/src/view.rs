@@ -15,8 +15,11 @@
 //! roll is airplane yaw, view pitch is pitch, and view yaw is airplane −roll. Gains for a viewed
 //! controller are in those view axes.
 //!
-//! The view's Euler angles are singular at view pitch ±90°, which is forward flight, not hover;
-//! the transition between the two needs a quaternion attitude error: TODO(#124).
+//! The view's Euler angles are singular at view pitch ±90°, which is forward flight, not hover.
+//! The transition pitches toward it, so a viewed [`CopterStabilizer`] works from a quaternion
+//! attitude error, not Euler differences.
+//!
+//! [`CopterStabilizer`]: crate::stabilizers::copter::CopterStabilizer
 
 use nalgebra::UnitQuaternion;
 

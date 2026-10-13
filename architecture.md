@@ -142,9 +142,10 @@ supplies pacing.
   hovers on the copter guidance and stabilizer in `View::tailsitter` (90° in pitch), where
   nose-up hover reads level, away from the airplane frame's Euler singularity, as ArduPilot's
   tailsitter AHRS view does (PX4 instead keeps a hover body frame and views its fixed-wing
-  controllers). The view's own singularity is forward flight, so the transition
-  ([#124](https://github.com/wboayue/stable-flight/issues/124)) needs a quaternion attitude
-  error.
+  controllers). The view's Euler angles are singular at forward flight, which the transition
+  pitches toward, so `CopterStabilizer` takes its attitude error from quaternions (tilt of the
+  thrust axis, then heading, as PX4's multicopter attitude control does) rather than Euler
+  differences, and its loops output body rates at any attitude.
 
 ## Flight Stabilization Loop
 

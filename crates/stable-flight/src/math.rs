@@ -12,7 +12,7 @@ use core::f32::consts::{PI, TAU};
 
 use nalgebra::{SVector, UnitQuaternion};
 
-use crate::Vec2;
+use crate::{Vec2, Vec3};
 
 #[cfg(test)]
 mod tests;
@@ -214,6 +214,66 @@ pub(crate) fn tilt_boost(attitude: &UnitQuaternion<f32>) -> f32 {
 pub(crate) fn nose_up_cosine(attitude: &UnitQuaternion<f32>) -> f32 {
     let (w, x, y, z) = (attitude.w, attitude.i, attitude.j, attitude.k);
     2.0 * (w * y - x * z)
+}
+
+/// The attitude error a roll/pitch/heading setpoint asks of `current`, in `current`'s body
+/// axes (`x` roll, `y` pitch, `z` yaw), in radians: what the attitude loops act on.
+///
+/// Tilt first, as PX4's multicopter attitude control does (`mc_att_control`,
+/// `AttitudeControl.cpp`, reduced attitude): roll and pitch are taken relative to the
+/// vehicle's current heading, as guidance and pilots set them, and `x`/`y` are the shortest
+/// rotation that turns the body `z` axis onto the setpoint's. `z` is the heading error, wrapped
+/// to the short way round, weighted by the cosine of the current tilt (0 past 90°): the yaw
+/// loop turns about the thrust axis, and far over that axis is nearly horizontal, where a turn
+/// about it tips the vehicle more than it changes heading. The heading is the attitude's twist
+/// about the world vertical, which equals the Euler heading for a tilt about one axis and,
+/// unlike it, stays defined at ±90° pitch, where a tailsitter's view pitches through in
+/// transition. Near level each component is the Euler difference of its axis (the heading's
+/// within the tilt weighting), but as body rates, so the loops' outputs are body rates at any
+/// attitude.
+///
+/// A non-finite `current` gives NaN components; a NaN `heading_rad` gives a NaN `z` only.
+pub(crate) fn attitude_error(
+    current: &UnitQuaternion<f32>,
+    roll_rad: f32,
+    pitch_rad: f32,
+    heading_rad: f32,
+) -> Vec3 {
+    if !current.coords.iter().all(|c| c.is_finite()) {
+        return Vec3::repeat(f32::NAN);
+    }
+    let (w, k) = (current.w, current.k);
+    let current_heading_rad = 2.0 * libm::atan2f(k, w);
+
+    // The current heading alone, as a rotation about the vertical; built from the twist part
+    // of the quaternion directly (no trig). Inverted (no twist part), any heading will do.
+    let twist = libm::sqrtf(w * w + k * k);
+    let heading = if twist > 1e-6 {
+        UnitQuaternion::new_unchecked(nalgebra::Quaternion::new(w / twist, 0.0, 0.0, k / twist))
+    } else {
+        UnitQuaternion::identity()
+    };
+    let desired_tilt = heading * UnitQuaternion::from_euler_angles(roll_rad, pitch_rad, 0.0);
+
+    // The setpoint's body z axis, seen from the current body; the rotation onto it is about
+    // z × it, by the angle between them.
+    let z = (current.inverse() * desired_tilt).transform_vector(&Vec3::z());
+    let axis = Vec2::new(-z.y, z.x);
+    let sine = axis.norm();
+    // Below this the cross product is the angle itself to f32 precision (sin x ≈ x).
+    let tilt = if sine < 1e-6 {
+        axis
+    } else {
+        axis * (libm::atan2f(sine, z.z) / sine)
+    };
+    // The rotation matrix's (2, 2) entry: the body z axis's share of the vertical.
+    let (x, y) = (current.i, current.j);
+    let upright = (1.0 - 2.0 * (x * x + y * y)).max(0.0);
+    Vec3::new(
+        tilt.x,
+        tilt.y,
+        wrap_angle(heading_rad - current_heading_rad) * upright,
+    )
 }
 
 /// Saturates a throttle or thrust command to [0, 1]; NaN becomes 0 (no thrust).

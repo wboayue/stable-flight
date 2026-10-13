@@ -141,9 +141,24 @@ impl AttitudeController {
         desired_angles_rad: Vec2,
         estimated_angles_rad: Vec2,
     ) -> Vec2 {
-        assert_dt(dt);
-
         let error = Self::angle_error(config, desired_angles_rad, estimated_angles_rad);
+        self.control_error(config, dt, error)
+    }
+
+    /// The PID of [`control`](Self::control) on an angle error already taken (roll, pitch, in
+    /// radians): for a caller that measures the error itself, e.g. from quaternions. Output
+    /// rates are clamped to `max_rate_radps`; a non-finite error gives zero rates.
+    ///
+    /// # Panics
+    ///
+    /// If `dt` is not positive and finite.
+    pub(crate) fn control_error(
+        &mut self,
+        config: &AttitudeControllerConfig,
+        dt: f32,
+        error: Vec2,
+    ) -> Vec2 {
+        assert_dt(dt);
 
         // A non-finite error (NaN/∞ estimate) yields no rate command and never enters the
         // integral or derivative history (see `crate::math` for the policy).
@@ -181,11 +196,18 @@ impl AttitudeController {
         desired_angles_rad: Vec2,
         estimated_angles_rad: Vec2,
     ) -> Vec2 {
-        let desired_angles_rad = Vec2::new(
+        Self::saturate_setpoint(config, desired_angles_rad) - estimated_angles_rad
+    }
+
+    /// `desired_angles_rad` saturated to `max_angles_rad`, NaN as level.
+    pub(crate) fn saturate_setpoint(
+        config: &AttitudeControllerConfig,
+        desired_angles_rad: Vec2,
+    ) -> Vec2 {
+        Vec2::new(
             saturate_symmetric(desired_angles_rad.x, config.max_angles_rad.x),
             saturate_symmetric(desired_angles_rad.y, config.max_angles_rad.y),
-        );
-        desired_angles_rad - estimated_angles_rad
+        )
     }
 
     /// The I term (`i · integral`) of `axis` (0 roll, 1 pitch): the rate the loop holds as
