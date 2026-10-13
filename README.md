@@ -39,7 +39,7 @@ The repository is a Cargo workspace:
 
 | Crate | Purpose |
 |---|---|
-| [`stable-flight`](crates/stable-flight) | Flight-control core: pipeline traits, copter guidance, cascaded-PID stabilizers, mixers, and `FlightLoop` (one control tick). `no_std`, with no simulator or I/O dependencies |
+| [`stable-flight`](crates/stable-flight) | Flight-control core: pipeline traits, guidance and cascaded-PID stabilizers for copters, planes, and tailsitters, mixers, and `FlightLoop` (one control tick). `no_std`, with no simulator or I/O dependencies |
 | [`stable-flight-link`](crates/stable-flight-link) | Wire protocol between the flight controller and a companion computer: `Uplink`/`Downlink` messages, versioned COBS frames, and the byte-level `Link` trait. `no_std` |
 | [`stable-flight-mavlink`](crates/stable-flight-mavlink) | MAVLink message builders for the bridge: pure functions from core values to MAVLink payloads |
 | [`stable-flight-bridge`](crates/stable-flight-bridge) | Companion-computer binary translating the native link to MAVLink for ground stations (QGC): params, state, arming, joystick and offboard setpoints, land |
@@ -59,7 +59,7 @@ Each simulator backend is its own crate, so a backend's dependencies never reach
 
 | Simulator | Crate | Status |
 |---|---|---|
-| [RealFlight](https://www.realflight.com) | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | Flies QuadCopterX: manual (joystick or transmitter), scripted, and from the link (QGC via the bridge) |
+| [RealFlight](https://www.realflight.com) | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | Flies QuadCopterX: manual (joystick or transmitter), scripted, and from the link (QGC via the bridge). Flies the eXplora VTOL tailsitter in hover and plane flight with transitions both ways: manual and scripted |
 
 RealFlight was chosen for its realistic physics model, API for external drone control, wide selection of RC aircraft, and ability to define custom aircraft models. Other simulators (Gazebo, JSBSim, X-Plane) can be added as `stable-flight-sitl-<simulator>` crates.
 

@@ -14,7 +14,7 @@ The RealFlight examples (in the backend crate) wire the same six-component pipel
 
 ### Commander
 
-Commanders generate Rate, Attitude, or Position control commands processed by guidance. Commands may come from input devices, scripts, or external systems. Currently, commanders are available to support scripting, Spektrum transmitters (through the WS3000T dongle), and Extreme3D joysticks. You can support new input devices by implementing the Commander trait.
+Commanders produce each tick's `Command`: arm, the requested flight regime (copter or plane), and a `ControlInput` (attitude or rate sticks, a waypoint, a land, or offboard absolute attitudes and rates) for guidance. Commands may come from input devices, scripts, or external systems. Currently, commanders are available to support scripting, Spektrum transmitters (through the WS3000T dongle), and Extreme3D joysticks. You can support new input devices by implementing the Commander trait.
 
 The following example demonstrates creating a commander for the Extreme3D joystick:
 
@@ -38,7 +38,7 @@ Vehicles report state and actuate motors and control surfaces. Each simulator ba
 
 ### Guidance, Stabilizer, and Mixer
 
-Guidance (commands → attitude/rate setpoints, including waypoint navigation), the stabilizer (cascaded PID control), and the mixer (thrust/moments → motor and surface commands) live in the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate so the same code can run on hardware. See its README for configuration; the RealFlight examples use `CopterGuidance`, `CopterStabilizer`, and `QuadCopterMixer`.
+Guidance (commands → attitude/rate setpoints, including waypoint navigation), the stabilizer (cascaded PID control), and the mixer (thrust/moments → motor and surface commands) live in the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core crate so the same code can run on hardware. See its README for configuration; the RealFlight examples take all three from an airframe: `CopterGuidance`, `CopterStabilizer`, and `TableMixer::quad_x()` for QuadCopterX; `TailsitterGuidance`, `TailsitterStabilizer`, and `TableMixer::tailsitter_2p()` for the eXplora VTOL.
 
 ### TelemetryPublisher
 
