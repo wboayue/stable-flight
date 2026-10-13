@@ -291,6 +291,18 @@ pub(crate) fn attitude_error(
     )
 }
 
+/// Radians per degree, for constants written in degrees.
+pub(crate) const DEG: f32 = PI / 180.0;
+
+/// `rates` saturated per axis to `limits` (rad/s), NaN as zero (hold no rate).
+pub(crate) fn saturate_rates(rates: Vec3, limits: Vec3) -> Vec3 {
+    Vec3::new(
+        saturate_symmetric(rates.x, limits.x),
+        saturate_symmetric(rates.y, limits.y),
+        saturate_symmetric(rates.z, limits.z),
+    )
+}
+
 /// A stabilizer's thrust curve: linear thrust (saturated to [0, 1], NaN as 0) raised to
 /// `exponent`, the motor command that gives it (2 when thrust goes as the square of the motor
 /// command, 1 for a throttle passed through).

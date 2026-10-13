@@ -81,7 +81,9 @@ use crate::{
 
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_positive};
-use crate::math::{assert_dt, attitude_error, saturate_symmetric, saturate_unit, thrust_curve};
+use crate::math::{
+    assert_dt, attitude_error, saturate_rates, saturate_symmetric, saturate_unit, thrust_curve,
+};
 
 mod params;
 #[cfg(test)]
@@ -285,11 +287,9 @@ impl Stabilizer for CopterStabilizer {
                 self.track_rates(dt, desired, rates.thrust, estimated_state)
             }
             Setpoint::BodyRate(rates) => {
-                let limits = self.config.full_scale_rates_radps;
-                let desired = Vec3::new(
-                    saturate_symmetric(rates.roll_radps, limits.x),
-                    saturate_symmetric(rates.pitch_radps, limits.y),
-                    saturate_symmetric(rates.yaw_radps, limits.z),
+                let desired = saturate_rates(
+                    Vec3::new(rates.roll_radps, rates.pitch_radps, rates.yaw_radps),
+                    self.config.full_scale_rates_radps,
                 );
                 self.track_rates(dt, desired, rates.thrust, estimated_state)
             }

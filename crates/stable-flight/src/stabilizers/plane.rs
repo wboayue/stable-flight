@@ -27,7 +27,10 @@ use crate::controllers::{
     InvalidConfig, PlaneRateController, PlaneRateControllerConfig, check, check_limit,
     check_positive,
 };
-use crate::math::{assert_dt, attitude_error, clamp_symmetric, saturate_symmetric, thrust_curve};
+use crate::math::{
+    DEG, assert_dt, attitude_error, clamp_symmetric, saturate_rates, saturate_symmetric,
+    thrust_curve,
+};
 use crate::{
     BodyRateSetpoint, Configurable, ControlOutput, GRAVITY, PlaneSetpoint, Saturation, Setpoint,
     Stabilizer, Vec2, Vec3, VehicleState,
@@ -38,7 +41,6 @@ mod tests;
 
 /// Bank where turn coordination starts to fade, and where it's gone (PX4's 70°–75°).
 const COORDINATION_FADE_RAD: (f32, f32) = (70.0 * DEG, 75.0 * DEG);
-const DEG: f32 = core::f32::consts::PI / 180.0;
 
 /// [`PlaneStabilizer`] settings.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -49,7 +51,7 @@ pub struct PlaneStabilizerConfig {
     /// rate target is the error divided by it.
     pub time_constant_s: Vec2,
     /// Largest roll (`x`) and pitch (`y`) rate the attitude loops ask for, in rad/s.
-    pub max_rate_radps: Vec2,
+    pub max_attitude_rate_radps: Vec2,
     /// Largest body rate an absolute-rate setpoint gets, per axis, in rad/s.
     pub max_body_rate_radps: Vec3,
     /// Largest bank an attitude setpoint gets, in radians.
@@ -76,7 +78,7 @@ impl Default for PlaneStabilizerConfig {
         PlaneStabilizerConfig {
             rate: PlaneRateControllerConfig::default(),
             time_constant_s: Vec2::new(0.4, 0.4),
-            max_rate_radps: Vec2::new(70.0 * DEG, 60.0 * DEG),
+            max_attitude_rate_radps: Vec2::new(70.0 * DEG, 60.0 * DEG),
             max_body_rate_radps: Vec3::new(180.0 * DEG, 180.0 * DEG, 60.0 * DEG),
             max_bank_rad: 50.0 * DEG,
             max_pitch_rad: 30.0 * DEG,
@@ -100,8 +102,8 @@ impl PlaneStabilizerConfig {
         self.rate.validate().map_err(|e| e.in_section("rate"))?;
         check_positive("time_constant_s.x", self.time_constant_s.x)?;
         check_positive("time_constant_s.y", self.time_constant_s.y)?;
-        check_limit("max_rate_radps.x", self.max_rate_radps.x)?;
-        check_limit("max_rate_radps.y", self.max_rate_radps.y)?;
+        check_limit("max_attitude_rate_radps.x", self.max_attitude_rate_radps.x)?;
+        check_limit("max_attitude_rate_radps.y", self.max_attitude_rate_radps.y)?;
         check_limit("max_body_rate_radps.x", self.max_body_rate_radps.x)?;
         check_limit("max_body_rate_radps.y", self.max_body_rate_radps.y)?;
         check_limit("max_body_rate_radps.z", self.max_body_rate_radps.z)?;
@@ -185,8 +187,14 @@ impl PlaneStabilizer {
         let pitch_rad = saturate_symmetric(setpoint.pitch_rad, config.max_pitch_rad);
         let error = attitude_error(&state.attitude, roll_rad, pitch_rad, f32::NAN);
         let correction = Vec2::new(
-            clamp_symmetric(error.x / config.time_constant_s.x, config.max_rate_radps.x),
-            clamp_symmetric(error.y / config.time_constant_s.y, config.max_rate_radps.y),
+            clamp_symmetric(
+                error.x / config.time_constant_s.x,
+                config.max_attitude_rate_radps.x,
+            ),
+            clamp_symmetric(
+                error.y / config.time_constant_s.y,
+                config.max_attitude_rate_radps.y,
+            ),
         );
         coordinated_turn_radps(state, self.airspeed_mps(state))
             + Vec3::new(correction.x, correction.y, 0.0)
@@ -194,11 +202,13 @@ impl PlaneStabilizer {
 
     /// Rate targets for an absolute-rate setpoint, saturated (NaN as zero).
     fn body_rates(&self, setpoint: &BodyRateSetpoint) -> Vec3 {
-        let limits = self.config.max_body_rate_radps;
-        Vec3::new(
-            saturate_symmetric(setpoint.roll_radps, limits.x),
-            saturate_symmetric(setpoint.pitch_radps, limits.y),
-            saturate_symmetric(setpoint.yaw_radps, limits.z),
+        saturate_rates(
+            Vec3::new(
+                setpoint.roll_radps,
+                setpoint.pitch_radps,
+                setpoint.yaw_radps,
+            ),
+            self.config.max_body_rate_radps,
         )
     }
 

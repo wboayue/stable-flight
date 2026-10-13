@@ -17,7 +17,7 @@
 //! ([`FlightModeReport::plane_only`]).
 
 use crate::controllers::{InvalidConfig, check, check_limit};
-use crate::math::{saturate_throttle, saturate_unit};
+use crate::math::{DEG, saturate_throttle, saturate_unit};
 use crate::{
     BodyRateSetpoint, Configurable, ControlInput, FlightModeReport, FlightRegime, Guidance,
     PlaneSetpoint, Setpoint, Vec3, VehicleState,
@@ -25,8 +25,6 @@ use crate::{
 
 #[cfg(test)]
 mod tests;
-
-const DEG: f32 = core::f32::consts::PI / 180.0;
 
 /// [`PlaneGuidance`] settings.
 #[derive(Clone, Copy, Debug, PartialEq)]
