@@ -196,8 +196,8 @@ impl ScriptCommander {
 
     /// Overrides the altitude acceptance (meters, either way) a waypoint on a `regime` leg also
     /// needs to be reached (defaults [`DEFAULT_ALTITUDE_ACCEPTANCE_M`] for copter legs,
-    /// [`PLANE_ALTITUDE_ACCEPTANCE_M`] for plane legs; any other regime is rotor-borne and shares the copter band).
-    /// `altitude_m` must be non-negative.
+    /// [`PLANE_ALTITUDE_ACCEPTANCE_M`] for plane legs; any other regime is rotor-borne and
+    /// shares the copter band). `altitude_m` must be non-negative.
     ///
     /// # Examples
     ///
