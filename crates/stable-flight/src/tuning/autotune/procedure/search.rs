@@ -25,7 +25,8 @@ pub(in crate::tuning::autotune) struct Search {
     fail: Option<f32>,
     /// The steps on the gain under test.
     pairs: Pairs,
-    /// The steps on the start gains.
+    /// The steps on the start gains: empty when they weren't flown (the start is above `max`)
+    /// or couldn't be measured (a step aborted or kept clipping).
     baseline: StepSummary,
     /// The last judgment, until taken.
     verdict: Option<Verdict>,
@@ -80,8 +81,7 @@ impl Search {
                     let cap = relay.ceiling * result.point.ku;
                     self.max = self.max.min(cap).max(self.plan.min);
                 }
-                self.leg = Leg::Baseline;
-                self.step()
+                self.baseline()
             }
             (
                 Leg::Relay { tries },
@@ -103,12 +103,10 @@ impl Search {
                     ..
                 },
             ) => match self.pairs.record(&metrics, stalled) {
-                // The start gains can't be measured: nothing to compare with; nor can anything
-                // when the host keeps stalling.
-                Err(abort) if self.leg == Leg::Baseline || abort == AutotuneAbort::Stalled => {
-                    Action::Fail(abort)
-                }
-                // A candidate whose steps keep clipping can't be shown to pass.
+                // Nothing can be measured while the host keeps stalling.
+                Err(abort @ AutotuneAbort::Stalled) => Action::Fail(abort),
+                // Steps that keep clipping measure the limit, not the loop: a candidate can't be
+                // shown to pass, and the start gains leave no baseline (#361).
                 Err(_) => self.judge(false),
                 Ok(()) if self.pairs.done() => self.judge(true),
                 Ok(()) => self.step(),
@@ -139,11 +137,19 @@ impl Search {
                 self.leg = Leg::Relay { tries };
                 Action::probe(ProbeConfig::Relay(relay.plan.relay))
             }
-            _ => {
-                self.leg = Leg::Baseline;
-                self.step()
-            }
+            _ => self.baseline(),
         }
+    }
+
+    /// Steps on the start gains, or, when the searched term starts above `max` (a gain the
+    /// search would never pick, which the relay's ceiling may have shown is too high), goes on
+    /// without a baseline rather than fly it (#361).
+    fn baseline(&mut self) -> Action {
+        self.leg = Leg::Baseline;
+        if self.plan.term.get(self.start) > self.max {
+            return self.advance();
+        }
+        self.step()
     }
 
     /// The next step on the gain under test.
@@ -170,9 +176,14 @@ impl Search {
         let steps = self.pairs.summary;
         let passed = complete && self.plan.criterion.passes(&steps);
         let (gains, bracketed) = match self.leg {
-            // The baseline is a bracket point only when the search starts from it.
+            // The baseline is a bracket point only when the search starts from it. Incomplete,
+            // it's no baseline: the start gains aborted or clipped.
             Leg::Baseline => {
-                self.baseline = steps;
+                self.baseline = if complete {
+                    steps
+                } else {
+                    StepSummary::default()
+                };
                 (self.start, self.seed == self.start)
             }
             Leg::Try { gain, .. } => (self.with(gain), true),
@@ -208,8 +219,11 @@ impl Search {
     }
 
     /// Keeps the verified `gain` if its steps (`complete`: none aborted or kept clipping) fly
-    /// no worse than the baseline, or, with no baseline steps to compare (the start's
-    /// aborted), meet the criterion; else the start gains stay.
+    /// no worse than a baseline that met the criterion, or, with no such baseline (the start's
+    /// steps weren't flown, aborted, clipped, or failed the criterion), meet the criterion
+    /// themselves; else the start gains stay. A start that fails the criterion isn't a
+    /// standard to hold the result to: a too-high rate P settles fast because it overshoots
+    /// within the settle band (#361).
     fn verified(&self, gain: f32, complete: bool, steps: StepSummary) -> Action {
         let SearchPlan {
             criterion,
@@ -217,7 +231,7 @@ impl Search {
             ..
         } = self.plan;
         let accepted = complete
-            && if self.baseline.count() > 0 {
+            && if self.baseline.count() > 0 && criterion.passes(&self.baseline) {
                 acceptance.accepts(&criterion, &self.baseline, &steps)
             } else {
                 criterion.passes(&steps)
