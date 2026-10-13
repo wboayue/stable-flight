@@ -45,6 +45,7 @@ The repository is a Cargo workspace:
 | [`stable-flight-bridge`](crates/stable-flight-bridge) | Companion-computer binary translating the native link to MAVLink for ground stations (QGC): params, state, arming, joystick and offboard setpoints, land |
 | [`stable-flight-sitl`](crates/stable-flight-sitl) | Simulator-independent software-in-the-loop harness: commanders and the real-time `RealTimeRunner` + `ShutdownSignal` |
 | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | RealFlight backend: `RealFlightVehicle`, tuned `airframes`, and the RealFlight examples |
+| [`stable-flight-sim`](crates/stable-flight-sim) | Deterministic rigid-body multirotor simulator (unpublished) for closed-loop tests in `cargo test` and CI. `no_std` |
 | [`stable-flight-tools`](crates/stable-flight-tools) | Developer binaries (unpublished): `plot_flight`, `generate_figure_eight`, `link_pilot`, and `check_frames` |
 
 Board firmware lives outside the workspace, one nested workspace per board:
@@ -60,6 +61,8 @@ Each simulator backend is its own crate, so a backend's dependencies never reach
 | Simulator | Crate | Status |
 |---|---|---|
 | [RealFlight](https://www.realflight.com) | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | Flies QuadCopterX: manual (joystick or transmitter), scripted, and from the link (QGC via the bridge). Flies the eXplora VTOL tailsitter in hover and plane flight with transitions both ways: manual and scripted |
+
+For `cargo test` and CI, [`stable-flight-sim`](crates/stable-flight-sim) flies the pipeline closed loop on a deterministic in-repo quadcopter model: no realism, no setup, the same flight every run.
 
 RealFlight was chosen for its realistic physics model, API for external drone control, wide selection of RC aircraft, and ability to define custom aircraft models. Other simulators (Gazebo, JSBSim, X-Plane) can be added as `stable-flight-sitl-<simulator>` crates.
 

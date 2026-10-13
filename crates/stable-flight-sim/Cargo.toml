@@ -1,0 +1,21 @@
+[package]
+name = "stable-flight-sim"
+description = "Deterministic rigid-body multirotor simulator for Stable Flight's closed-loop tests"
+readme = "README.md"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+stable-flight = { path = "../stable-flight" }
+libm.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+approx.workspace = true
+assert2.workspace = true
+stable-flight = { path = "../stable-flight", features = ["testing"] }

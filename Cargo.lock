@@ -1536,6 +1536,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "stable-flight-sim"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "assert2",
+ "libm",
+ "stable-flight",
+ "thiserror",
+]
+
+[[package]]
 name = "stable-flight-sitl"
 version = "0.1.0"
 dependencies = [
