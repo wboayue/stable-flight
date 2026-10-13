@@ -910,3 +910,17 @@ fn startup_reset_retries_simulator_timeouts() {
         );
     }
 }
+
+/// `from_airframe` carries the airframe's mapping and body rotation.
+#[test]
+fn from_airframe_takes_mapping_and_body_rotation() {
+    let quad = crate::airframes::quadcopter_x();
+    let config = RealFlightConfiguration::from_airframe(&quad, MockRealFlightBridge::new(false));
+    check!(config.mapping == quad.mapping);
+    check!(config.body_rotation == quad.body_rotation);
+
+    let explora = crate::airframes::explora_vtol();
+    let config = RealFlightConfiguration::from_airframe(&explora, MockRealFlightBridge::new(false));
+    check!(config.mapping == explora.mapping);
+    check!(config.body_rotation == explora.body_rotation);
+}

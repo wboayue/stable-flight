@@ -17,8 +17,10 @@ pub const CHANNEL_COUNT: usize = 12;
 /// mapping only fits its own mixer. RealFlight channels run from 0.0 to 1.0: motors pass
 /// through, and servos (-1.0 to 1.0) are rescaled so 0.0 lands on center (0.5), after negating
 /// any slot in `reversed_servos` (a surface the model moves the other way from the mixer's
-/// convention). Channels no slot drives are sent as 0.0, which holds a servo there at full
-/// deflection: map every servo the model has. TODO(#271): center unmapped channels.
+/// convention). Channels no slot drives are sent as 0.0, which would hold a servo there at full
+/// deflection, so a mapping covers every surface and switch the model has; channels it leaves
+/// unmapped drive nothing on the model (check with `channel-sweep-realflight`; each airframe's
+/// docs say what its unmapped channels do).
 ///
 /// # Examples
 ///

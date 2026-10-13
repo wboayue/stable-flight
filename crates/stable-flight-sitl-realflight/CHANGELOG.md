@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `RealFlightConfiguration::from_airframe(&airframe, bridge)`: takes the channel mapping and
+  body rotation from an `Airframe`; the flight examples use it (#271).
+
 - `vehicle_state` fills `VehicleState::airspeed_mps` from RealFlight's airspeed (#181).
 
 - **Body rotation** (#314): `RealFlightConfiguration::body_rotation` and

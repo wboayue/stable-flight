@@ -103,11 +103,7 @@ fn fly(
     link: UdpLink,
 ) {
     let airframe = airframes::quadcopter_x();
-    let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
-        bridge,
-        mapping: airframe.mapping,
-        body_rotation: airframe.body_rotation,
-    });
+    let vehicle = RealFlightVehicle::new(RealFlightConfiguration::from_airframe(&airframe, bridge));
     let guidance = CopterGuidance::new(airframe.guidance);
     let stabilizer = CopterStabilizer::new(airframe.stabilizer);
     let mixer = airframe.mixer;
