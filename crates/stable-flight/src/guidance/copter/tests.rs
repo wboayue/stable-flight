@@ -1264,6 +1264,32 @@ fn capped_tilt_holds_the_lateral_integral() {
     assert!(integral_m.norm() < 0.5, "integral wound to {integral_m:?}");
 }
 
+/// Lowering `max_tilt_rad` under a held tilt counts as capped for the integral too: the next
+/// lateral run doesn't grow it along the request.
+#[test]
+fn lowered_tilt_cap_holds_the_lateral_integral() {
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+    let state = VehicleState::default();
+    guidance.prime(&state);
+    // 2 m north at rest: about 1.3 m/s², well under the default cap.
+    let near = ControlInput::Waypoint(WaypointCommand {
+        position_m: Vec2::new(2.0, 0.0),
+        altitude_m: 0.0,
+        cruise_speed_mps: 7.0,
+        ..Default::default()
+    });
+    guidance.guide(0.02, FlightRegime::Copter, &near, &state);
+    let integral_m = guidance.lateral.integrated_error();
+    assert!(integral_m.x > 0.0);
+
+    let mut lower = *guidance.config();
+    lower.max_tilt_rad = 0.01;
+    guidance.set_config(lower).expect("valid config");
+    guidance.guide(0.02, FlightRegime::Copter, &near, &state);
+
+    assert!(guidance.lateral.integrated_error() == integral_m);
+}
+
 /// Closed loop: a `WaypointFollower` (`Hold`) feeding `CopterGuidance`, flying a point mass
 /// that tilts instantly (horizontal acceleration `g · tan(tilt)` toward the tilt, altitude
 /// held). With a tight acceptance radius the corners are missed wide, so this also guards

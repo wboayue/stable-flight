@@ -158,8 +158,9 @@ tilt of `atan(|a| / g)` toward it, relative to the heading, capped at its `max_t
 - Cascade: position P → desired velocity (plus feedforward, capped at the speed limit) →
   velocity PID → acceleration
 - Airframe-independent: tilt conversion and limits belong to the guidance
-- Velocity I trims a steady wind; the integral doesn't grow along the capped acceleration
-  (ArduPilot `libraries/AC_PID/AC_PID_2D.cpp:127-146`) and is clamped to `max_integral`
+- Velocity I trims a steady wind; the caller passes the acceleration it last capped, and the
+  integral doesn't grow along it
+  ([integrator policy](https://github.com/wboayue/stable-flight/blob/main/architecture.md#config-ownership))
 
 **Usage**:
 ```rust

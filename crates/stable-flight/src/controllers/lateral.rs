@@ -139,7 +139,7 @@ impl LateralController {
     /// * `dt` - Time step since the last update in seconds (must be positive and finite).
     /// * `target` - Desired position, feedforward velocity, and speed limit.
     /// * `estimate` - Current position and velocity.
-    /// * `limit` - The acceleration the caller last had to cap (e.g. at its tilt limit), or
+    /// * `limit_mps2` - The acceleration the caller last had to cap (e.g. at its tilt limit), or
     ///   zero. The integral doesn't grow in that direction, so it can't wind up against a
     ///   limit; it may still shrink or turn.
     ///
@@ -184,7 +184,7 @@ impl LateralController {
         dt: f32,
         target: LateralTarget,
         estimate: LateralEstimate,
-        limit: Vec2,
+        limit_mps2: Vec2,
     ) -> Vec2 {
         assert_dt(dt);
         let gains = &config.velocity;
@@ -209,7 +209,12 @@ impl LateralController {
         let error_derivative = self.derivative.step(velocity_error, dt);
 
         self.integrated_error = clamp_symmetric_each(
-            hold_against_limit(self.integrated_error, dt * velocity_error, gains.i, limit),
+            hold_against_limit(
+                self.integrated_error,
+                dt * velocity_error,
+                gains.i,
+                limit_mps2,
+            ),
             config.max_integral,
         );
         gains.p * velocity_error + gains.i * self.integrated_error + gains.d * error_derivative
@@ -235,13 +240,13 @@ impl LateralController {
     }
 }
 
-/// `integral + step`, except that a step whose I term pushes along `limit` may not lengthen
-/// the integral (it can still turn it): conditional integration against a capped output. A
-/// zero or non-finite `limit` never holds.
-fn hold_against_limit(integral: Vec2, step: Vec2, i: f32, limit: Vec2) -> Vec2 {
+/// `integral + step`, except that a step whose I term pushes along `limit_mps2` may not
+/// lengthen the integral (it can still turn it): conditional integration against a capped
+/// output. A zero or non-finite `limit_mps2` never holds.
+fn hold_against_limit(integral: Vec2, step: Vec2, i: f32, limit_mps2: Vec2) -> Vec2 {
     let next = integral + step;
     // `>` is false for NaN, so a non-finite limit integrates freely.
-    if i * step.dot(&limit) > 0.0 {
+    if i * step.dot(&limit_mps2) > 0.0 {
         cap_magnitude(next, integral.norm())
     } else {
         next
