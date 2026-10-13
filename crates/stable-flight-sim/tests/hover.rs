@@ -3,16 +3,10 @@
 mod common;
 
 use assert2::check;
-use stable_flight::commanders::{RouteEnd, WaypointFollower};
 use stable_flight::{Vec2, Vec3};
-use stable_flight_sim::{Gust, Wind};
+use stable_flight_sim::{Gust, Wind, airframes};
 
-use common::{fly, sim_loop, waypoint};
-
-const ALTITUDE_M: f32 = 5.0;
-
-/// Seconds allowed to take off and settle on the waypoint.
-const SETTLE_S: f32 = 15.0;
+use common::{HOVER_ALTITUDE_M as ALTITUDE_M, HOVER_SETTLE_S as SETTLE_S, fly};
 
 /// Largest deviations from the hover point seen while holding.
 #[derive(Debug, Default)]
@@ -30,11 +24,7 @@ struct Deviation {
 /// Takes off to the hover point in `wind`, settles, then holds for `hold_s`, returning the
 /// largest deviations during the hold.
 fn hover(wind: Wind, hold_s: f32) -> Deviation {
-    let follower = WaypointFollower::new([waypoint(0.0, 0.0, ALTITUDE_M)])
-        .expect("one waypoint")
-        .with_route_end(RouteEnd::Hold);
-    let mut flight_loop = sim_loop(follower, wind);
-    fly(&mut flight_loop, SETTLE_S, |_| {});
+    let mut flight_loop = common::hover(airframes::quad_x(), wind);
     check!(flight_loop.commander().is_complete());
 
     let horizontal = |position_m: Vec3| Vec2::new(position_m.x, position_m.y);

@@ -89,6 +89,10 @@ the check for realism.
 * **Geometry from the mixer.** Each motor's torque comes from its `TableMixer` row's factors
   (a factor of 1 at the model's moment arm), so the sim and mixer can't disagree on motor
   order or spin, and there is no second table to keep in sync.
+* **Spec bands, not snapshots.** Step-response tests hold each loop to ArduPilot's and PX4's
+  autotune targets (cited in `tests/step_response.rs`), not to whatever the sim measured, so
+  a regression and a tuning gap both fail. `quad_x`'s gains come from running the core
+  autotune on the sim.
 * **Not a backend crate.** It meets the frame and timing contracts and covers every
   conformance scenario like a backend, but it has no simulator client, so it isn't a
   `stable-flight-sitl-<simulator>` crate. Core can't take it as a dev-dependency (a cycle

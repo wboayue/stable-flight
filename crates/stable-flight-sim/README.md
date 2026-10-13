@@ -35,8 +35,24 @@ flight_loop.step(Duration::from_millis(4));
 ```
 
 ```bash
-cargo test -p stable-flight-sim   # unit tests, conformance, and the closed-loop flights in tests/
+cargo test -p stable-flight-sim   # unit tests, conformance, and the closed-loop flights below (~7 s)
 ```
+
+## Closed-loop tests
+
+Each file in `tests/` flies the full pipeline on `airframes::quad_x()` (wiring in
+`tests/common`):
+
+| Test | Asserts |
+|---|---|
+| `hover` | Altitude, position, and heading hold in calm air; a steady offset in steady wind (TODO #357); return after a gust |
+| `step_response` | Every loop (roll/pitch/yaw rate, roll/pitch angle, heading), both ways, against ArduPilot's and PX4's autotune targets: overshoot ≤ 5%, rate bounce-back ≤ 10%, rate rise ≤ 0.14 s (yaw 0.2 s), settled, clipping within the step plan's allowance |
+| `waypoint` | A square route: each leg near its line and altitude at cruise speed; holds the last corner |
+| `land` | Climb, land on a waypoint, disarm, rest on the ground |
+| `failsafe` | Over the link (`FcLink` + loopback): silence hands over to `HoldCommander` within the timeout, which holds in place armed; the link takes back over after recovery |
+| `saturation` | Each limit (tilt caps, altitude thrust, moments, mixer collective, mixer near idle) sets its `Saturation` flags, and a hover sets none |
+| `autotune` | `StagePlan::copter_search` from low rate gains tunes every stage to `quad_x`'s gains within 25%; from high gains it doesn't yet (`#[ignore]`, #361) |
+| `determinism` | A windy, gusty route twice gives bit-identical states |
 
 ## Timing
 
@@ -57,8 +73,9 @@ perfect (no noise or estimator), and the same inputs give the same flight bit fo
 | Ground | Plane at altitude 0. Contact stops sinking; resting (thrust below weight) holds the body level, stops rotation, and applies Coulomb friction |
 
 `airframes::quad_x()`: 1 kg, 250 mm motor to motor, 6 N per motor (thrust-to-weight about
-2.4), motor time constant 30 ms, core default gains with the hover thrust derived from the
-model.
+2.4), motor time constant 30 ms. Roll and pitch gains come from the sim autotune, yaw and
+heading are hand-tuned on the sim, guidance uses the core defaults, and the hover thrust is
+derived from the model.
 
 ## Limits
 
