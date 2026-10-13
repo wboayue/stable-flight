@@ -11,7 +11,7 @@
 //! | Elevator            | `LeftStickY` (negated)  | pitch `[-1, 1]`, + nose up      |
 //! | Rudder              | `LeftStickX` (negated)  | yaw `[-1, 1]`, + right turn     |
 //! | Gear (arm switch)   | `RightStickY`           | arm above 0.5                   |
-//! | Mode switch         | `LeftTrigger2` button   | channel `[5]` only (unmapped)   |
+//! | Mode switch         | `LeftTrigger2` button   | regime: plane at one end (`[5]` = 1.0), copter otherwise |
 //!
 //! The `spektrum_commander` example prints the raw dongle values next to the command, to check
 //! the mapping and stick travel on a given setup.
@@ -21,7 +21,9 @@
 use gilrs::{Axis, Button, Event, GamepadId, Gilrs};
 
 use crate::commanders::{CommanderError, open_gilrs, scale_signed, scale_value};
-use stable_flight::{AttitudeCommand, Command, Commander, ControlInput, VehicleState};
+use stable_flight::{
+    AttitudeCommand, Command, Commander, ControlInput, FlightRegime, VehicleState,
+};
 
 /// Throttle button value at idle; the dongle doesn't reach 0.0.
 const THROTTLE_MIN: f32 = 0.1;
@@ -125,6 +127,18 @@ impl Commander for SpektrumCommander {
                 yaw: channels[3],
             }),
         )
+        .with_regime(regime(channels[5]))
+    }
+}
+
+/// The regime the mode switch requests: plane at the end that reads `1.0`, copter in the
+/// middle and at the other end. An unread switch (`0.0`) is copter, so a dongle that hasn't
+/// reported yet never asks a VTOL to transition.
+fn regime(mode_channel: f32) -> FlightRegime {
+    if mode_channel > 0.75 {
+        FlightRegime::Plane
+    } else {
+        FlightRegime::Copter
     }
 }
 
@@ -175,8 +189,24 @@ mod tests {
     use approx::relative_eq;
 
     use super::{
-        arm_channel, mode_channel, pitch_channel, roll_channel, throttle_channel, yaw_channel,
+        arm_channel, mode_channel, pitch_channel, regime, roll_channel, throttle_channel,
+        yaw_channel,
     };
+    use stable_flight::FlightRegime;
+
+    /// The mode switch's raw value → regime: plane only at the end below 0.4 (channel 1.0).
+    #[test]
+    fn mode_switch_selects_the_regime() {
+        for (raw, expected) in [
+            (0.1, FlightRegime::Plane),
+            (0.5, FlightRegime::Copter),
+            (0.9, FlightRegime::Copter),
+            (f32::NAN, FlightRegime::Copter),
+        ] {
+            assert_eq!(regime(mode_channel(raw)), expected, "{raw}");
+        }
+        assert_eq!(regime(0.0), FlightRegime::Copter); // unread
+    }
 
     /// Only a deliberate switch throw arms; centered (or never-read) stays disarmed.
     #[test]

@@ -8,7 +8,7 @@
 use core::time::Duration;
 
 use crate::controllers::InvalidConfig;
-use crate::params::{ParamError, Params};
+use crate::params::{ParamError, Params, locate};
 use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
 use crate::{
     ActuatorCommand, AttitudeSetpoint, Commander, Configurable, ControlOutput, FlightModeReport,
@@ -419,40 +419,23 @@ where
     }
 
     fn param_name(&self, index: usize) -> Option<&'static str> {
-        match self.split_param_index(index) {
-            ParamOwner::Guidance(i) => self.guidance.param_name(i),
-            ParamOwner::Stabilizer(i) => self.stabilizer.param_name(i),
+        match locate(&[&self.guidance, &self.stabilizer], index)? {
+            (0, i) => self.guidance.param_name(i),
+            (_, i) => self.stabilizer.param_name(i),
         }
     }
 
     fn param_at(&self, index: usize) -> Option<f32> {
-        match self.split_param_index(index) {
-            ParamOwner::Guidance(i) => self.guidance.param_at(i),
-            ParamOwner::Stabilizer(i) => self.stabilizer.param_at(i),
+        match locate(&[&self.guidance, &self.stabilizer], index)? {
+            (0, i) => self.guidance.param_at(i),
+            (_, i) => self.stabilizer.param_at(i),
         }
     }
 
     fn set_param_at(&mut self, index: usize, value: f32) -> Result<(), ParamError> {
-        match self.split_param_index(index) {
-            ParamOwner::Guidance(i) => self.guidance.set_param_at(i, value),
-            ParamOwner::Stabilizer(i) => self.stabilizer.set_param_at(i, value),
-        }
-    }
-}
-
-/// The component a combined param index belongs to, with its index there.
-enum ParamOwner {
-    Guidance(usize),
-    Stabilizer(usize),
-}
-
-impl<C, V, G: Params, S, M, T> FlightLoop<C, V, G, S, M, T> {
-    fn split_param_index(&self, index: usize) -> ParamOwner {
-        let guidance_count = self.guidance.param_count();
-        if index < guidance_count {
-            ParamOwner::Guidance(index)
-        } else {
-            ParamOwner::Stabilizer(index - guidance_count)
+        match locate(&[&self.guidance, &self.stabilizer], index).ok_or(ParamError::Unknown)? {
+            (0, i) => self.guidance.set_param_at(i, value),
+            (_, i) => self.stabilizer.set_param_at(i, value),
         }
     }
 }

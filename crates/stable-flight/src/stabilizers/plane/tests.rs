@@ -290,8 +290,8 @@ fn validates_config() {
         ),
         (|c| c.max_bank_rad = 4.0, "max_bank_rad"),
         (|c| c.min_airspeed_mps = 0.0, "min_airspeed_mps"),
-        (|c| c.trim_airspeed_mps = 5.0, "trim_airspeed_mps"),
-        (|c| c.max_airspeed_mps = 12.0, "max_airspeed_mps"),
+        (|c| c.trim_airspeed_mps = f32::INFINITY, "trim_airspeed_mps"),
+        (|c| c.max_airspeed_mps = -1.0, "max_airspeed_mps"),
     ];
     check!(PlaneStabilizerConfig::default().validate().is_ok());
     for (corrupt, field) in cases {

@@ -3,3 +3,4 @@
 
 pub mod copter;
 pub mod plane;
+pub mod vtol;

@@ -406,20 +406,21 @@ fn prime_resets_mode_and_timeout() {
 #[test]
 fn validates_each_config_field() {
     type Break = fn(&mut TransitionConfig);
-    let cases: [(Break, &str); 10] = [
+    let cases: [(Break, &str); 14] = [
         (|c| c.forward_rate_radps = 0.0, "forward_rate_radps"),
         (|c| c.forward_done_rad = 0.0, "forward_done_rad"),
         (|c| c.forward_done_rad = FRAC_PI_2, "forward_done_rad"),
-        (
-            |c| c.forward_max_tilt_rad = c.forward_done_rad - 0.1,
-            "forward_max_tilt_rad",
-        ),
+        (|c| c.forward_max_tilt_rad = 0.0, "forward_max_tilt_rad"),
         (|c| c.forward_max_tilt_rad = 1.6, "forward_max_tilt_rad"),
         (|c| c.min_airspeed_mps = -1.0, "min_airspeed_mps"),
         (|c| c.back_rate_radps = f32::NAN, "back_rate_radps"),
         (|c| c.back_done_rad = -0.1, "back_done_rad"),
         (|c| c.timeout_s = 0.0, "timeout_s"),
         (|c| c.min_height_m = f32::INFINITY, "min_height_m"),
+        (|c| c.forward_thrust = 1.1, "forward_thrust"),
+        (|c| c.back_thrust = f32::NAN, "back_thrust"),
+        (|c| c.handoff_s = -0.1, "handoff_s"),
+        (|c| c.roll_limit_rad = 0.0, "roll_limit_rad"),
     ];
     check!(TransitionConfig::default().validate().is_ok());
     for (corrupt, field) in cases {
@@ -481,4 +482,35 @@ fn thrust_handoff_blends_then_passes_through() {
 #[should_panic(expected = "invalid ThrustHandoff")]
 fn thrust_handoff_panics_on_a_negative_duration() {
     ThrustHandoff::new(-0.1);
+}
+
+/// A roll error cuts a transition short: forward is abandoned like a timeout (held until
+/// `Copter` is requested), back completes with a handoff; outside a transition nothing changes.
+#[test]
+fn cut_short_abandons_forward_and_completes_back() {
+    let mut transition = primed();
+    transition.update(DT, FlightRegime::Plane, &hover());
+    let step = transition.cut_short(ModeRefusal::RollError);
+    check!((step.mode, step.handoff, step.tilt_target_rad) == (FlightMode::Copter, false, None));
+    let refused = FlightModeReport {
+        mode: FlightMode::Copter,
+        refusal: Some(ModeRefusal::RollError),
+    };
+    check!(transition.report() == refused);
+    check!(transition.update(DT, FlightRegime::Plane, &hover()).mode == FlightMode::Copter);
+    check!(transition.report() == refused);
+    transition.update(DT, FlightRegime::Copter, &hover());
+    check!(transition.update(DT, FlightRegime::Plane, &hover()).mode == FlightMode::ToPlane);
+
+    let mut transition = in_plane();
+    transition.update(DT, FlightRegime::Copter, &state(80.0, CLEAR_M, None));
+    let step = transition.cut_short(ModeRefusal::RollError);
+    check!((step.mode, step.handoff) == (FlightMode::Copter, true));
+    check!(transition.report() == FlightModeReport::default());
+
+    for mut transition in [primed(), in_plane()] {
+        let before = transition.report().mode;
+        let step = transition.cut_short(ModeRefusal::RollError);
+        check!((step.mode, step.handoff) == (before, false));
+    }
 }

@@ -49,9 +49,11 @@
 //! # }
 //! ```
 //!
-//! Mode selection is done at runtime using the D-pad buttons:
-//! - D-Pad Up: Switch to Rate mode (Mode 1) for acrobatic flight
-//! - D-Pad Left/Right: Switch to Attitude mode (Mode 0 or 2) for stable flight
+//! Mode and regime selection are done at runtime using the D-pad buttons:
+//! - D-Pad Up: Rate mode for acrobatic flight, in the current regime (acro rolls and loops in
+//!   plane)
+//! - D-Pad Left: Attitude mode, copter regime
+//! - D-Pad Right: Attitude mode, plane regime (a VTOL transitions; a copter refuses it)
 //!
 //! ```no_run
 //! use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
@@ -72,7 +74,9 @@
 use gilrs::{Axis, Button, Event, EventType, GamepadId, Gilrs};
 
 use crate::commanders::{CommanderError, open_gilrs, scale_value};
-use stable_flight::{AttitudeCommand, Command, Commander, ControlInput, RateCommand, VehicleState};
+use stable_flight::{
+    AttitudeCommand, Command, Commander, ControlInput, FlightRegime, RateCommand, VehicleState,
+};
 
 /// Hardware code for the throttle axis on the Extreme 3D Pro.
 /// This value is provided by the Gilrs library for the throttle slider.
@@ -145,11 +149,11 @@ impl Mode {
 
     /// Converts channel value to Mode.
     ///
-    /// D-pad maps: Left=0 (Attitude), Up=1 (Rate), Right=2 (Attitude).
+    /// 0 is attitude (D-pad Left or Right), 1 rate (D-pad Up).
     ///
     /// # Preconditions
     ///
-    /// `value` must be one of: 0.0, 1.0, or 2.0 (as set by D-pad handlers).
+    /// `value` must be 0.0 or 1.0 (as set by the D-pad handlers).
     fn from_channel_value(value: f32) -> Self {
         if (value - 1.0).abs() < f32::EPSILON {
             Self::Rate
@@ -184,6 +188,9 @@ pub struct Extreme3DCommander {
 
     /// Control mode (Attitude or Rate)
     mode: Mode,
+
+    /// Requested regime, set by D-pad Left (copter) and Right (plane).
+    regime: FlightRegime,
 }
 
 impl Extreme3DCommander {
@@ -253,6 +260,7 @@ impl Extreme3DCommander {
             active_gamepad: None,
             channels,
             mode,
+            regime: FlightRegime::Copter,
         })
     }
 
@@ -270,7 +278,7 @@ impl Extreme3DCommander {
     /// - `[2]`: Pitch (-1.0 to 1.0)
     /// - `[3]`: Yaw (-1.0 to 1.0)
     /// - `[4]`: Arm state (0.0 = disarmed, 1.0 = armed)
-    /// - `[5]`: Mode (0.0, 1.0, or 2.0)
+    /// - `[5]`: Mode (0.0 attitude, 1.0 rate)
     ///
     /// # Performance
     ///
@@ -294,15 +302,14 @@ impl Extreme3DCommander {
                 {
                     self.channels[4] = 0.0;
                 }
-                EventType::ButtonChanged(Button::DPadLeft, 1.0, _) => {
-                    self.channels[5] = Mode::Attitude.to_channel_value();
-                }
-                EventType::ButtonChanged(Button::DPadUp, 1.0, _) => {
-                    self.channels[5] = Mode::Rate.to_channel_value();
-                }
-                EventType::ButtonChanged(Button::DPadRight, 1.0, _) => {
-                    // D-pad Right also selects Attitude mode
-                    self.channels[5] = 2.0;
+                EventType::ButtonChanged(button, 1.0, _) if is_dpad(button) => {
+                    let (mode, regime) = dpad(
+                        button,
+                        Mode::from_channel_value(self.channels[5]),
+                        self.regime,
+                    );
+                    self.channels[5] = mode.to_channel_value();
+                    self.regime = regime;
                 }
                 _ => {}
             }
@@ -368,7 +375,26 @@ impl Commander for Extreme3DCommander {
                 yaw_rate: apply_dead_zone(channels[3], YAW_DEAD_ZONE),
             }),
         };
-        Command::new(arm, input)
+        Command::new(arm, input).with_regime(self.regime)
+    }
+}
+
+/// Whether `button` is one of the D-pad's mode buttons.
+fn is_dpad(button: Button) -> bool {
+    matches!(
+        button,
+        Button::DPadLeft | Button::DPadUp | Button::DPadRight
+    )
+}
+
+/// The mode and regime after a D-pad press: Left is attitude in copter, Right attitude in
+/// plane, Up rate in the regime already requested; anything else changes nothing.
+fn dpad(button: Button, mode: Mode, regime: FlightRegime) -> (Mode, FlightRegime) {
+    match button {
+        Button::DPadLeft => (Mode::Attitude, FlightRegime::Copter),
+        Button::DPadRight => (Mode::Attitude, FlightRegime::Plane),
+        Button::DPadUp => (Mode::Rate, regime),
+        _ => (mode, regime),
     }
 }
 
@@ -448,6 +474,36 @@ fn apply_dead_zone(value: f32, dead_zone: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// D-pad Left: attitude in copter; Right: attitude in plane; Up: rate in the regime
+    /// already requested. (button, starting mode and regime, expected mode and regime)
+    #[test]
+    fn dpad_sets_mode_and_regime() {
+        use FlightRegime::{Copter, Plane};
+        let cases = [
+            (
+                Button::DPadLeft,
+                (Mode::Rate, Plane),
+                (Mode::Attitude, Copter),
+            ),
+            (
+                Button::DPadRight,
+                (Mode::Rate, Copter),
+                (Mode::Attitude, Plane),
+            ),
+            (Button::DPadUp, (Mode::Attitude, Plane), (Mode::Rate, Plane)),
+            (
+                Button::DPadUp,
+                (Mode::Attitude, Copter),
+                (Mode::Rate, Copter),
+            ),
+            (Button::South, (Mode::Rate, Plane), (Mode::Rate, Plane)),
+        ];
+        for (button, (mode, regime), expected) in cases {
+            assert_eq!(dpad(button, mode, regime), expected, "{button:?}");
+        }
+        assert!(is_dpad(Button::DPadRight) && !is_dpad(Button::DPadDown));
+    }
 
     /// Tests that the scaled dead zone function correctly handles inputs within the dead zone.
     #[test]
@@ -672,8 +728,6 @@ mod tests {
         assert!(matches!(Mode::from_channel_value(0.0), Mode::Attitude));
         // D-pad Up (1.0) -> Rate
         assert!(matches!(Mode::from_channel_value(1.0), Mode::Rate));
-        // D-pad Right (2.0) -> Attitude
-        assert!(matches!(Mode::from_channel_value(2.0), Mode::Attitude));
     }
 
     /// Tests Mode::from_channel_value defaults to Attitude for unexpected values.

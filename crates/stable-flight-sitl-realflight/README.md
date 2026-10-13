@@ -63,7 +63,7 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration::from_airframe(
 | Function | RealFlight model |
 |---|---|
 | `airframes::quadcopter_x()` | ArduPilot SITL_Models [QuadCopterX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX) |
-| `airframes::explora_vtol()` | [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) tailsitter (hover; gains in the tailsitter `View`'s axes, hand-tuned; thrust floor, sink guard, and boost ceiling) |
+| `airframes::explora_vtol()` | [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) tailsitter, for `TailsitterGuidance`/`TailsitterStabilizer` (hover gains in the tailsitter `View`'s axes, hand-tuned, with thrust floor, sink guard, and boost ceiling; plane and transition starting values) |
 
 ## Examples
 
@@ -76,14 +76,15 @@ cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight --
 # Spektrum transmitter through the WS3000T dongle instead
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --commander spektrum
 
-# eXplora VTOL tailsitter hover: copter guidance and stabilizer in the tailsitter View;
-# --record writes every tick to CSV. Or: just fly-tailsitter
+# eXplora VTOL tailsitter on TailsitterGuidance/TailsitterStabilizer: D-pad Right asks for plane
+# (transition), Left for copter, Up rate sticks; --record writes every tick to CSV.
+# Or: just fly-tailsitter
 cargo run -p stable-flight-sitl-realflight --example tailsitter-manual-realflight -- --record hover.csv
 
 # Scripted figure-eight (script path is the first argument): flies it once, then hovers; --end loop repeats it, --end land lands on the last waypoint and disarms
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv
 
-# The same for the eXplora tailsitter, in hover, in the tailsitter View: a small, slow figure-eight
+# The same for the eXplora tailsitter, in the copter regime: a small, slow figure-eight
 # centered on its spawn point by default (flights/explora_figure_eight.csv); flights/explora_hover.csv
 # holds 5 m over it. Or: just fly-tailsitter-auto
 cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- --end land

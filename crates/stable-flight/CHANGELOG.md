@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tailsitter wiring** (#124): `guidance::vtol::TailsitterGuidance` (hover guidance in the
+  tailsitter view and `PlaneGuidance` under a `Transition`: the forward ramp on the hover side,
+  the back ramp on the plane side, `Land` asks for copter, a roll past the limit cuts a
+  transition short, a thrust blend at each handoff) and `stabilizers::vtol::TailsitterStabilizer`
+  (each setpoint on its side, the incoming side primed). `Transition::cut_short`;
+  `TransitionConfig` gains `forward_thrust`, `back_thrust`, `handoff_s`, `roll_limit_rad`;
+  `Setpoint::with_thrust`.
+- **Params** for the plane and transition configs (`PSTAB_*`, `PGUID_*`, `TRAN_*`, with
+  metadata); the tailsitter composites chain their parts' tables.
+
 - **Plane control** (#124): `stabilizers::plane::PlaneStabilizer` (PX4's fixed-wing
   structure: yaw-free attitude error over a time constant, level-turn feedforward on pitch and
   yaw rate faded past 70° bank, and `controllers::PlaneRateController`, a PI + feedforward rate
@@ -88,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reported in `Saturation`). `MixerConfig` (thrust factor, yaw ratio) is set at construction;
   `TableMixer::new` validates a custom table (`MixerError`). Presets: `quad_x`, `quad_plus`,
   `hex_x`, `hex_plus`, `octo_x`, `y6`, `x8`, `tri` (tail tilt servo), `bi` (tilting rotors),
-  `tailsitter_2p_hover` (2 motors and 2 elevons, airplane frame, #121).
+  `tailsitter_2p` (2 motors and 2 elevons, airplane frame, #121).
 - **`View`** (#122): runs a `Guidance` or `Stabilizer` in a body frame rotated by a
   constant: the state goes in rotated, a stabilizer's moments come back in the body frame, and
   config, params, and autotune probes pass through. `View::tailsitter` (90° in pitch) flies a
@@ -109,6 +119,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Setpoint::thrust`:** the linear thrust either variant carries.
 
 ### Changed
+
+- `PlaneStabilizerConfig`, `PlaneGuidanceConfig`, and `TransitionConfig` check each field on
+  its own (no cross-field rules), so each param's range is fixed; out-of-order airspeeds
+  clamp, and a `forward_max_tilt_rad` below `forward_done_rad` leaves the forward transition
+  to its timeout.
 
 - `CopterStabilizer` takes its attitude error from the attitude quaternion (#124): the
   shortest tilt of the thrust axis onto the setpoint's (roll and pitch relative to the current
@@ -144,7 +159,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `mixers::QuadCopterMixer` (#245). Use `TableMixer::quad_x()`, which mixes the
   same; its type is `TableMixer<4>`.
 - **Breaking:** the `mixers::TailSitterMixer` placeholder (#121). Use
-  `TableMixer::tailsitter_2p_hover()`.
+  `TableMixer::tailsitter_2p()`.
 
 ### Fixed
 

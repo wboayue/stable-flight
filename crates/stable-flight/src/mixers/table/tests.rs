@@ -597,7 +597,7 @@ fn servo_presets_move_the_right_outputs() {
     type Case = (&'static str, MixFn, f32, Vec3, [f32; 3], [f32; 2]);
     let tri: MixFn = |c| TableMixer::tri().mix(c);
     let bi: MixFn = |c| TableMixer::bi().mix(c);
-    let tailsitter: MixFn = |c| TableMixer::tailsitter_2p_hover().mix(c);
+    let tailsitter: MixFn = |c| TableMixer::tailsitter_2p().mix(c);
     let cases: [Case; 13] = [
         // Tail servo yaws; motors stay level.
         (
@@ -817,7 +817,7 @@ fn presets_are_valid_tables() {
     check("quad_plus", TableMixer::quad_plus());
     check("tri", TableMixer::tri());
     check("bi", TableMixer::bi());
-    check("tailsitter_2p_hover", TableMixer::tailsitter_2p_hover());
+    check("tailsitter_2p", TableMixer::tailsitter_2p());
     check("hex_x", TableMixer::hex_x());
     check("hex_plus", TableMixer::hex_plus());
     check("y6", TableMixer::y6());

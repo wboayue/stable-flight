@@ -11,9 +11,13 @@ use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
 };
 use stable_flight::guidance::copter::{CopterGuidanceConfig, ThrustLimits};
+use stable_flight::guidance::plane::PlaneGuidanceConfig;
+use stable_flight::guidance::vtol::{TailsitterGuidanceConfig, TransitionConfig};
 use stable_flight::mixers::TableMixer;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
+use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
+use stable_flight::stabilizers::vtol::TailsitterStabilizerConfig;
 
 use crate::ActuatorMapping;
 
@@ -120,7 +124,7 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 /// The [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) tailsitter
 /// in RealFlight: two motors on the wing and two elevons, hovering nose up.
 ///
-/// - **Mixer:** [`TableMixer::tailsitter_2p_hover`], whose factors are in the airplane body
+/// - **Mixer:** [`TableMixer::tailsitter_2p`], whose factors are in the airplane body
 ///   frame (x the nose).
 /// - **Mapping:** motors 0/1 (left/right) on channels 6/5, elevons (servos 0/1) on channels
 ///   1/2 (RealFlight numbering; 5/4 and 0/1 here), the left elevon reversed (captures: #120,
@@ -133,10 +137,18 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 ///   sink guard (past 1 m/s) keep the propwash; the tilt boost stops at 0.9, leaving motor
 ///   headroom for differential thrust.
 ///
-/// Fly the copter guidance and stabilizer in a tailsitter
-/// [`View`](stable_flight::View), as `tailsitter-manual-realflight` does: hover is level there.
-/// The stabilizer gains are in the view's axes (roll: tilting sideways, yaw: turning about the
-/// vertical), hand-tuned from stick pulses and low-throttle descents (flight data: #123, #328).
+/// Fly it with [`TailsitterGuidance`](stable_flight::guidance::vtol::TailsitterGuidance) and
+/// [`TailsitterStabilizer`](stable_flight::stabilizers::vtol::TailsitterStabilizer), as the
+/// tailsitter examples do: hover runs the copter controllers in the tailsitter
+/// [`View`](stable_flight::View), where hover is level; forward flight runs the plane
+/// controllers in the airplane frame.
+///
+/// - **Hover:** gains in the view's axes (roll: tilting sideways, yaw: turning about the
+///   vertical), hand-tuned from stick pulses and low-throttle descents (flight data: #123,
+///   #328). View pitch is capped at 85° for the forward ramp; sticks at 30°.
+/// - **Plane and transition:** starting values (cruise throttle, airspeeds, thrusts) until
+///   plane flights measure them (#124). The plane side uses the hover thrust curve, so a
+///   handoff keeps the motor commands continuous.
 ///
 /// # Examples
 ///
@@ -147,55 +159,88 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 /// assert_eq!(airframe.mapping.motors[..2], [Some(5), Some(4)]);
 /// assert_eq!(airframe.mapping.servos[..2], [Some(0), Some(1)]);
 /// ```
-pub fn explora_vtol() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, TableMixer<4>> {
+pub fn explora_vtol()
+-> Airframe<TailsitterGuidanceConfig, TailsitterStabilizerConfig, TableMixer<4>> {
     let gains = |p, i, d| Gains { p, i, d };
     Airframe {
-        guidance: CopterGuidanceConfig {
-            altitude: AltitudeControllerConfig {
-                // Measured (#123): a level hover holds at mean motor 0.63 = 0.9 · 0.84²,
-                // through the squared thrust curve and the mixer's thrust factor.
-                hover_thrust: 0.84,
-                ..CopterGuidanceConfig::default().altitude
+        guidance: TailsitterGuidanceConfig {
+            hover: CopterGuidanceConfig {
+                altitude: AltitudeControllerConfig {
+                    // Measured (#123): a level hover holds at mean motor 0.63 = 0.9 · 0.84²,
+                    // through the squared thrust curve and the mixer's thrust factor.
+                    hover_thrust: 0.84,
+                    ..CopterGuidanceConfig::default().altitude
+                },
+                // The elevons hold the nose up only in the propwash, and a sink of a few m/s
+                // turns the airflow against it and drops the nose, whatever the floor. The
+                // floor keeps some propwash (0.65 is 60% of hover thrust force, which goes as
+                // its square); the sink guard brings thrust back toward hover past a 1 m/s
+                // sink (0.65 + 0.15 · 2 m/s = 0.95 at 3 m/s).
+                thrust: ThrustLimits {
+                    min_thrust: 0.65,
+                    sink_limit_mps: 1.0,
+                    sink_gain: 0.15,
+                    // At full boost the motor pair saturates and differential thrust (view
+                    // roll) can only push one way, so a roll can't be stopped (#123).
+                    max_boost_thrust: 0.9,
+                },
+                // The stabilizer's pitch cap is raised for the forward ramp; sticks keep 30°.
+                max_stick_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
+                ..CopterGuidanceConfig::default()
             },
-            // The elevons hold the nose up only in the propwash, and a sink of a few m/s turns
-            // the airflow against it and drops the nose, whatever the floor. The floor keeps
-            // some propwash (0.65 is 60% of hover thrust force, which goes as its square); the
-            // sink guard
-            // brings thrust back toward hover past a 1 m/s sink (0.65 + 0.15 · 2 m/s = 0.95 at
-            // 3 m/s).
-            thrust: ThrustLimits {
-                min_thrust: 0.65,
-                sink_limit_mps: 1.0,
-                sink_gain: 0.15,
-                // At full boost the motor pair saturates and differential thrust (view roll)
-                // can only push one way, so a roll can't be stopped (#123).
-                max_boost_thrust: 0.9,
+            plane: PlaneGuidanceConfig {
+                // A guess until plane flights measure it (#124).
+                cruise_thrust: 0.6,
+                ..Default::default()
             },
-            ..CopterGuidanceConfig::default()
+            transition: TransitionConfig {
+                min_height_m: 10.0,
+                // More than hover (0.84): lift drops as the nose tilts over, until the wing
+                // flies.
+                forward_thrust: 0.9,
+                back_thrust: 0.84,
+                ..Default::default()
+            },
         },
-        stabilizer: CopterStabilizerConfig {
-            body_rate: BodyRateControllerConfig {
-                // Differential thrust (the mixer's airplane yaw, 0.25 per unit moment): weak
-                // authority, so it needs these gains to stop a roll (#123).
-                roll_gains: gains(0.4, 0.2, 0.0),
-                // Elevons (full range per unit moment). Sinking, the airflow pushes the nose
-                // over; I · max_integral = 0.5 of moment holds it level (#123).
-                pitch_gains: gains(0.3, 0.5, 0.0),
-                yaw_gains: gains(0.1, 0.05, 0.0),
-                max_integral: 1.0,
+        stabilizer: TailsitterStabilizerConfig {
+            hover: CopterStabilizerConfig {
+                body_rate: BodyRateControllerConfig {
+                    // Differential thrust (the mixer's airplane yaw, 0.25 per unit moment):
+                    // weak authority, so it needs these gains to stop a roll (#123).
+                    roll_gains: gains(0.4, 0.2, 0.0),
+                    // Elevons (full range per unit moment). Sinking, the airflow pushes the
+                    // nose over; I · max_integral = 0.5 of moment holds it level (#123).
+                    pitch_gains: gains(0.3, 0.5, 0.0),
+                    yaw_gains: gains(0.1, 0.05, 0.0),
+                    max_integral: 1.0,
+                },
+                attitude: AttitudeControllerConfig {
+                    // The rate loops track well; P 4 asks ~110°/s at 27° off, so recoveries
+                    // take about half a second without a lingering tail (#328).
+                    roll_gains: gains(4.0, 0.0, 0.0),
+                    pitch_gains: gains(4.0, 0.0, 0.0),
+                    max_integral: 100.0,
+                    // 30° of view roll; view pitch to 85° for the forward ramp (80°), which
+                    // the quaternion attitude error flies cleanly (#124).
+                    max_angles_rad: Vec2::new(PI / 6.0, 85f32.to_radians()),
+                    max_rate_radps: Vec2::new(2.0, 2.0),
+                },
+                ..Default::default()
             },
-            attitude: AttitudeControllerConfig {
-                // The rate loops track well; P 4 asks ~110°/s at 27° off, so recoveries take
-                // about half a second without a lingering tail (#328).
-                roll_gains: gains(4.0, 0.0, 0.0),
-                pitch_gains: gains(4.0, 0.0, 0.0),
-                max_integral: 100.0,
-                max_angles_rad: Vec2::new(PI / 6.0, PI / 6.0), // 30° for roll and pitch
-                max_rate_radps: Vec2::new(2.0, 2.0),
+            plane: PlaneStabilizerConfig {
+                // The hover side's thrust curve, so a handoff keeps the motor commands
+                // continuous.
+                thrust_curve_exponent: 2.0,
+                // The back transition pitches up to π/2 − 45° = 45° on this side.
+                max_pitch_rad: 60f32.to_radians(),
+                // Guesses until plane flights measure them (#124).
+                trim_airspeed_mps: 14.0,
+                min_airspeed_mps: 9.0,
+                max_airspeed_mps: 25.0,
+                ..Default::default()
             },
-            ..Default::default()
         },
-        mixer: TableMixer::tailsitter_2p_hover(),
+        mixer: TableMixer::tailsitter_2p(),
         mapping: ActuatorMapping {
             // Left motor on channel 6, right on 5.
             motors: [Some(5), Some(4), None, None, None, None, None, None],

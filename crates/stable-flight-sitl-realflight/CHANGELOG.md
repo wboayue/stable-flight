@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response and a summary per loop (`--stages none --step-test` measures the hand tune). A step
   during which the runner skipped more than two ticks at once runs again.
 - **`airframes::explora_vtol()`** (#121): the eXplora VTOL tailsitter's mixer
-  (`TableMixer::tailsitter_2p_hover`), channel mapping (left/right motors on channels 6/5,
+  (`TableMixer::tailsitter_2p`), channel mapping (left/right motors on channels 6/5,
   elevons on 1/2, the left reversed), +90° pitch body rotation, and copter gains in the
   tailsitter `View`'s axes (#122), hand-tuned in flight (#123; roll/pitch angle P 4, #327),
   with the measured hover thrust, a thrust floor and sink guard that keep the elevons in the
@@ -57,6 +57,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--neutral` sets any channel's rest value; `--tail-s` keeps recording after the last step.
 
 ### Changed
+
+- `airframes::explora_vtol()` returns `TailsitterGuidanceConfig`/`TailsitterStabilizerConfig`
+  (hover as before, with the view pitch cap raised to 85° for the forward ramp and sticks
+  kept at 30°; plane and transition starting values), and the tailsitter examples fly
+  `TailsitterGuidance`/`TailsitterStabilizer`; the manual example takes the regime from the
+  sticks, logs mode changes, and records mode, airspeed, and plane setpoints (#124).
 
 - **realflight-bridge 2.2** (#270): a request RealFlight doesn't answer in time on the proxy
   (`BridgeError::Simulator`) is retried on the same bridge instead of forcing a reconnect, and

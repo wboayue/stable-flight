@@ -1,19 +1,29 @@
-//! Hovers the eXplora VTOL tailsitter in RealFlight from a Logitech Extreme 3D joystick (or,
-//! with `--commander spektrum`, a Spektrum transmitter through the WS3000T dongle), on the
-//! [`airframes::explora_vtol`] mixer and mapping, with params and telemetry over the native link
-//! as in `copter-manual-realflight`.
+//! Flies the eXplora VTOL tailsitter in RealFlight from a Logitech Extreme 3D joystick (or,
+//! with `--commander spektrum`, a Spektrum transmitter through the WS3000T dongle): hover, the
+//! transition to plane and back, and plane flight, on [`airframes::explora_vtol`], with params
+//! and telemetry over the native link as in `copter-manual-realflight`.
 //!
 //! Reference: https://github.com/robustini/eXploraVTOL/tree/main/simulation
 //!
 //! The vehicle frame is the airplane's (the airframe's body rotation), so hover reads pitch 90°.
-//! The copter guidance and stabilizer fly it in a tailsitter [`View`], where nose-up hover reads
-//! level (ArduPilot's tailsitter view), and the stabilizer's moments come back in the
-//! airplane frame for the tailsitter mixer. In the view the sticks fly it like a copter whose
-//! front is the belly: roll tilts it sideways (differential thrust), pitch tilts it toward its
-//! belly or back (elevons together), and yaw turns it about the vertical (elevons opposite).
+//! [`TailsitterGuidance`] and [`TailsitterStabilizer`] fly it:
 //!
-//! `--record <csv>` writes one row per tick (setpoint, moments, actuators, rates, attitude,
-//! climb rate) for reading the response to stick pulses.
+//! - **Copter:** the copter controllers in a tailsitter view, where nose-up hover reads level
+//!   (ArduPilot's tailsitter view). The sticks fly it like a copter whose front is the belly:
+//!   roll tilts it sideways (differential thrust), pitch tilts it toward its belly or back
+//!   (elevons together), and yaw turns it about the vertical (elevons opposite).
+//! - **Plane:** the plane controllers in the airplane frame: attitude sticks bank and pitch
+//!   (turns coordinated), rate sticks fly acro (rolls, loops).
+//! - **Regime:** Extreme 3D D-pad Right asks for plane, Left for copter (both attitude sticks),
+//!   Up switches to rate sticks in the current regime; the Spektrum mode switch asks for plane
+//!   at one end. Asking for plane starts the transition once 10 m above where it armed; each
+//!   mode change is logged.
+//!
+//! `--record <csv>` writes one row per tick (mode, setpoint, moments, actuators, rates,
+//! attitude, airspeed, climb rate) for reading the response to stick pulses and transitions.
+//!
+//! [`TailsitterGuidance`]: stable_flight::guidance::vtol::TailsitterGuidance
+//! [`TailsitterStabilizer`]: stable_flight::stabilizers::vtol::TailsitterStabilizer
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example tailsitter-manual-realflight
@@ -27,14 +37,14 @@ use std::time::{Duration, Instant};
 
 use clap::{Parser, ValueEnum};
 use env_logger::Builder;
-use log::{debug, warn};
+use log::{debug, info, warn};
 
-use stable_flight::guidance::copter::CopterGuidance;
+use stable_flight::guidance::vtol::TailsitterGuidance;
 use stable_flight::nalgebra::UnitQuaternion;
-use stable_flight::stabilizers::copter::CopterStabilizer;
+use stable_flight::stabilizers::vtol::TailsitterStabilizer;
 use stable_flight::{
-    Commander, ControlInput, FlightLoop, Setpoint, TelemetryPublisher, TelemetryRecord, View,
-    euler_angles,
+    Commander, ControlInput, FlightLoop, FlightModeReport, Setpoint, TelemetryPublisher,
+    TelemetryRecord, View, euler_angles,
 };
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
@@ -97,7 +107,8 @@ fn main() {
 /// Flies the eXplora from `commander` until Ctrl-C, with params and telemetry over the native
 /// link.
 fn fly(commander: impl Commander, args: &Args) {
-    // eXplora VTOL model: gains (in the view's axes), mixer, channel mapping, and body rotation.
+    // eXplora VTOL model: hover (view axes) and plane gains, transition, mixer, channel
+    // mapping, and body rotation.
     let airframe = airframes::explora_vtol();
 
     let host = args.host.clone();
@@ -109,9 +120,10 @@ fn fly(commander: impl Commander, args: &Args) {
     ))
     .with_reconnect(move || connect().map_err(BridgeError::from));
 
-    // Copter guidance and stabilizer in the tailsitter view, where nose-up hover is level.
-    let guidance = View::tailsitter(CopterGuidance::new(airframe.guidance));
-    let stabilizer = View::tailsitter(CopterStabilizer::new(airframe.stabilizer));
+    // Hover (copter controllers in the tailsitter view) and plane controllers, under one
+    // transition.
+    let guidance = TailsitterGuidance::new(airframe.guidance);
+    let stabilizer = TailsitterStabilizer::new(airframe.stabilizer);
     let mixer = airframe.mixer;
 
     // The link: the publisher writes it each tick (the flight loop's telemetry), and the poller
@@ -121,7 +133,7 @@ fn fly(commander: impl Commander, args: &Args) {
         .into_halves();
     let mut fc_link = FcLink::<32, 16>::new();
     let (mut poller, link) = fc_link.wire(link_rx, link_tx);
-    let recorder = Recorder::create(args.record.as_deref(), *stabilizer.rotation())
+    let recorder = Recorder::create(args.record.as_deref(), *View::tailsitter(()).rotation())
         .expect("failed to create the record CSV");
 
     let mut flight_loop = FlightLoop::new(
@@ -130,7 +142,7 @@ fn fly(commander: impl Commander, args: &Args) {
         guidance,
         stabilizer,
         mixer,
-        (link, recorder),
+        (link, (recorder, ModeLog::default())),
     );
 
     // Ctrl-C stops the loop cleanly (RealFlightVehicle re-enables RC control on drop).
@@ -148,12 +160,36 @@ fn fly(commander: impl Commander, args: &Args) {
     });
 }
 
-/// Writes one CSV row per tick to `--record`, for reading stick pulses; does nothing without it.
-/// Rates, moments, and actuators are in the airplane body frame; `view_*` are the attitude in
-/// the tailsitter view, where hover is level (the body Euler angles are degenerate there), and
-/// `sp_*` guidance's setpoint, also in the view (NaN angles under a rate setpoint). `sp_thrust` is linear thrust, before the stabilizer's thrust curve;
-/// `thrust` is after it. `climb_mps` is the vertical speed, up positive, and `stick_throttle`
-/// the commander's throttle (or absolute thrust), before boost, floor, and sink guard.
+/// Logs each change of flight mode, and why a requested regime is refused.
+#[derive(Default)]
+struct ModeLog {
+    last: Option<FlightModeReport>,
+}
+
+impl TelemetryPublisher for ModeLog {
+    fn publish(&mut self, record: &TelemetryRecord) {
+        if self.last != Some(record.flight_mode) {
+            let FlightModeReport { mode, refusal } = record.flight_mode;
+            info!(
+                "flight mode {mode:?}, refused: {refusal:?}, requested {:?}",
+                record.command.regime
+            );
+            self.last = Some(record.flight_mode);
+        }
+    }
+}
+
+/// Writes one CSV row per tick to `--record`, for reading stick pulses and transitions; does
+/// nothing without it. Rates, moments, and actuators are in the airplane body frame; `view_*`
+/// are the attitude in the tailsitter view, where hover is level (the body Euler angles are
+/// degenerate there). `mode` is the flight mode (0 copter, 1 plane, 2 to plane, 3 to copter)
+/// and `refused` whether a requested regime is refused. `sp_kind` names guidance's setpoint;
+/// `sp_roll`/`sp_pitch`/`sp_heading` are its angles (in the view for a copter attitude, the
+/// airplane frame for a plane one; NaN otherwise) and `sp_p`/`sp_q`/`sp_r` its body rates in
+/// rad/s (NaN for attitudes and stick-fraction rates). `sp_thrust` is linear thrust, before the
+/// stabilizer's thrust curve; `thrust` is after it. `airspeed_mps` is NaN without air data,
+/// `climb_mps` the vertical speed, up positive, and `stick_throttle` the commander's throttle
+/// (or absolute thrust), before boost, floor, and sink guard.
 struct Recorder {
     out: Option<BufWriter<File>>,
     start: Instant,
@@ -167,7 +203,7 @@ impl Recorder {
                 let mut out = BufWriter::new(File::create(path)?);
                 writeln!(
                     out,
-                    "wall_s,armed,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,view_roll,view_pitch,view_heading,altitude,moment_x,moment_y,moment_z,thrust,motor_left,motor_right,elevon_left,elevon_right,sp_roll,sp_pitch,sp_heading,sp_thrust,climb_mps,stick_throttle"
+                    "wall_s,armed,mode,refused,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,view_roll,view_pitch,view_heading,altitude,airspeed_mps,moment_x,moment_y,moment_z,thrust,motor_left,motor_right,elevon_left,elevon_right,sp_kind,sp_roll,sp_pitch,sp_heading,sp_p,sp_q,sp_r,sp_thrust,climb_mps,stick_throttle"
                 )?;
                 Some(out)
             }
@@ -192,9 +228,44 @@ impl TelemetryPublisher for Recorder {
         let view = state.rotate_body(&self.view);
         let moments = record.control.moments;
         let actuators = record.actuators;
-        let (sp_roll, sp_pitch, sp_heading) = match record.setpoint {
-            Setpoint::Attitude(s) => (s.roll_rad, s.pitch_rad, s.heading_rad),
-            _ => (f32::NAN, f32::NAN, f32::NAN),
+        let nan = f32::NAN;
+        let (sp_kind, sp_roll, sp_pitch, sp_heading, sp_p, sp_q, sp_r) = match record.setpoint {
+            Setpoint::Attitude(s) => (
+                "attitude",
+                s.roll_rad,
+                s.pitch_rad,
+                s.heading_rad,
+                nan,
+                nan,
+                nan,
+            ),
+            Setpoint::Plane(s) => ("plane", s.roll_rad, s.pitch_rad, nan, nan, nan, nan),
+            Setpoint::BodyRate(s) => (
+                "body_rate",
+                nan,
+                nan,
+                nan,
+                s.roll_radps,
+                s.pitch_radps,
+                s.yaw_radps,
+            ),
+            Setpoint::PlaneRate(s) => (
+                "plane_rate",
+                nan,
+                nan,
+                nan,
+                s.roll_radps,
+                s.pitch_radps,
+                s.yaw_radps,
+            ),
+            _ => ("rate", nan, nan, nan, nan, nan, nan),
+        };
+        let mode = match record.flight_mode.mode {
+            stable_flight::FlightMode::Copter => 0,
+            stable_flight::FlightMode::Plane => 1,
+            stable_flight::FlightMode::ToPlane => 2,
+            stable_flight::FlightMode::ToCopter => 3,
+            _ => 9,
         };
         let sp_thrust = record.setpoint.thrust();
         let stick_throttle = match &record.command.input {
@@ -206,9 +277,11 @@ impl TelemetryPublisher for Recorder {
         // A failed write loses diagnostics, not flight: ignore it.
         let _ = writeln!(
             out,
-            "{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4}",
+            "{:.4},{},{},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4}",
             self.start.elapsed().as_secs_f32(),
             u8::from(record.command.arm),
+            mode,
+            u8::from(record.flight_mode.refusal.is_some()),
             rates.x,
             rates.y,
             rates.z,
@@ -219,6 +292,7 @@ impl TelemetryPublisher for Recorder {
             view.pitch_rad,
             view.heading_rad,
             state.position_m.z,
+            state.valid_airspeed_mps().unwrap_or(f32::NAN),
             moments.x,
             moments.y,
             moments.z,
@@ -227,9 +301,13 @@ impl TelemetryPublisher for Recorder {
             actuators.motors[1],
             actuators.servos[0],
             actuators.servos[1],
+            sp_kind,
             sp_roll,
             sp_pitch,
             sp_heading,
+            sp_p,
+            sp_q,
+            sp_r,
             sp_thrust,
             state.velocity_mps.z,
             stick_throttle,

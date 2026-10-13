@@ -8,7 +8,7 @@
 //! guidance's and stabilizer's.
 //!
 //! Names are uppercase ASCII of at most [`MAX_NAME_LEN`] bytes (MAVLink's `param_id`),
-//! prefixed by component (`STAB_`, `GUID_`) and loop. Vector components end in `_X`/`_Y`/`_Z`
+//! prefixed by component (`STAB_`, `GUID_`, `PSTAB_`, `PGUID_`, `TRAN_`) and loop. Vector components end in `_X`/`_Y`/`_Z`
 //! (roll/pitch/yaw for angles and rates). Angles and angular rates are in degrees and deg/s,
 //! as ground stations show them, and convert to the config's radians at this boundary;
 //! everything else is in the config field's own unit.
@@ -59,6 +59,45 @@
 //! | `GUID_SINK_GAIN` | `thrust.sink_gain` |
 //! | `GUID_BOOST_MAX` | `thrust.max_boost_thrust` |
 //! | `GUID_STICK_X`, `_Y` | `max_stick_angles_rad` |
+//!
+//! # Plane stabilizer ([`PlaneStabilizerConfig`](crate::stabilizers::plane::PlaneStabilizerConfig))
+//!
+//! | Name | Field |
+//! |---|---|
+//! | `PSTAB_RLL_P`, `_I`, `_FF` | `rate.roll` |
+//! | `PSTAB_PIT_P`, `_I`, `_FF` | `rate.pitch` |
+//! | `PSTAB_YAW_P`, `_I`, `_FF` | `rate.yaw` |
+//! | `PSTAB_IMAX` | `rate.max_integral` |
+//! | `PSTAB_TC_X`, `_Y` | `time_constant_s` |
+//! | `PSTAB_RMAX_X`, `_Y` | `max_attitude_rate_radps` |
+//! | `PSTAB_BRATE_X`, `_Y`, `_Z` | `max_body_rate_radps` |
+//! | `PSTAB_BANK_MAX` | `max_bank_rad` |
+//! | `PSTAB_PIT_MAX` | `max_pitch_rad` |
+//! | `PSTAB_ASPD_TRIM`, `_MIN`, `_MAX` | `trim_airspeed_mps`, `min_airspeed_mps`, `max_airspeed_mps` |
+//! | `PSTAB_THR_EXPO` | `thrust_curve_exponent` |
+//!
+//! # Plane guidance ([`PlaneGuidanceConfig`](crate::guidance::plane::PlaneGuidanceConfig))
+//!
+//! | Name | Field |
+//! |---|---|
+//! | `PGUID_BANK_MAX` | `max_bank_rad` |
+//! | `PGUID_PIT_UP`, `PGUID_PIT_DN` | `max_pitch_up_rad`, `max_pitch_down_rad` |
+//! | `PGUID_ACRO_X`, `_Y`, `_Z` | `max_rate_radps` |
+//! | `PGUID_TRIM_PIT` | `trim_pitch_rad` |
+//! | `PGUID_CRUISE` | `cruise_thrust` |
+//!
+//! # Transition ([`TransitionConfig`](crate::guidance::vtol::TransitionConfig))
+//!
+//! | Name | Field |
+//! |---|---|
+//! | `TRAN_FW_RATE`, `TRAN_FW_DONE`, `TRAN_FW_MAX` | `forward_rate_radps`, `forward_done_rad`, `forward_max_tilt_rad` |
+//! | `TRAN_ASPD_MIN` | `min_airspeed_mps` |
+//! | `TRAN_VT_RATE`, `TRAN_VT_DONE` | `back_rate_radps`, `back_done_rad` |
+//! | `TRAN_TIMEOUT` | `timeout_s` |
+//! | `TRAN_MIN_HGT` | `min_height_m` |
+//! | `TRAN_FW_THR`, `TRAN_VT_THR` | `forward_thrust`, `back_thrust` |
+//! | `TRAN_HANDOFF` | `handoff_s` |
+//! | `TRAN_ROLL_MAX` | `roll_limit_rad` |
 //!
 //! # Examples
 //!
@@ -238,6 +277,22 @@ where
         param.set(&mut config, value);
         self.set_config(config).map_err(ParamError::Invalid)
     }
+}
+
+/// Where a combined index falls when `parts`' params are chained in order: the part, and the
+/// index within it. `None` past the last. How a composite (e.g.
+/// [`FlightLoop`](crate::FlightLoop): guidance, then stabilizer) presents its parts' params as
+/// one table.
+pub(crate) fn locate(parts: &[&dyn Params], index: usize) -> Option<(usize, usize)> {
+    let mut index = index;
+    for (part, params) in parts.iter().enumerate() {
+        let count = params.param_count();
+        if index < count {
+            return Some((part, index));
+        }
+        index -= count;
+    }
+    None
 }
 
 /// Why a param write ([`Params::set_param`], [`Params::set_param_at`]) was rejected.

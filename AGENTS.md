@@ -104,9 +104,9 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 | `Commander` | `LinkCommander` (a `LinkedCommander`, from `FcLink::wire_linked`) | link |
 | `StateSource` + `Actuator` | `ComposedVehicle<S, A>`; `testing::NullVehicle` | core |
 | `StateSource` + `Actuator` | `RealFlightVehicle<T: RealFlightBridge>` | sitl-realflight |
-| `Guidance` | `CopterGuidance` (altitude/lateral loops, heading hold, `ThrustLimits`); `PlaneGuidance` (FBWA sticks, acro, offboard); `View<G>` | core |
-| `Stabilizer` | `CopterStabilizer` (attitude, yaw, body-rate loops); `PlaneStabilizer` (attitude, turn coordination, airspeed-scaled rate loop); `View<S>` | core |
-| `Mixer` | `TableMixer<N>` (presets `quad_x`, `hex_x`, `tri`, `tailsitter_2p_hover`, …) | core |
+| `Guidance` | `CopterGuidance` (altitude/lateral loops, heading hold, `ThrustLimits`); `PlaneGuidance` (FBWA sticks, acro, offboard); `TailsitterGuidance` (hover + plane under a `Transition`); `View<G>` | core |
+| `Stabilizer` | `CopterStabilizer` (attitude, yaw, body-rate loops); `PlaneStabilizer` (attitude, turn coordination, airspeed-scaled rate loop); `TailsitterStabilizer` (each setpoint on its side); `View<S>` | core |
+| `Mixer` | `TableMixer<N>` (presets `quad_x`, `hex_x`, `tri`, `tailsitter_2p`, …) | core |
 | `TelemetryPublisher` | `(A, B)` fan-out; `testing::RecordingTelemetry<N>` | core |
 | `TelemetryPublisher` | `LinkPublisher` (from `FcLink`; MAVLink is the bridge's job) | link |
 
