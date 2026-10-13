@@ -219,3 +219,56 @@ fn commander_requests_each_legs_regime() {
         .next_command(0.01, &state_at(0.0, 0.0));
     check!(all_copter.regime == FlightRegime::Copter);
 }
+
+/// Each leg's waypoint is reached within its regime's altitude acceptance: a plane leg's
+/// loose band takes it 5 m off, a copter leg's tight band doesn't, and either band can be
+/// overridden.
+#[test]
+fn altitude_acceptance_follows_each_legs_regime() {
+    let at = |x: f32, altitude_m: f32| WaypointCommand {
+        altitude_m,
+        ..wp(x, 0.0)
+    };
+    let route = || {
+        vec![
+            (at(0.0, 30.0), FlightRegime::Copter),
+            (at(100.0, 30.0), FlightRegime::Plane),
+            (at(200.0, 30.0), FlightRegime::Copter),
+        ]
+    };
+    let state = |x: f32, z: f32| VehicleState {
+        position_m: Vec3::new(x, 0.0, z),
+        ..Default::default()
+    };
+    // (name, overrides (copter, plane), vehicle (x, z) on each waypoint, expected index after)
+    let cases = [
+        ("copter leg, 5 m low", (None, None), &[(0.0, 25.0)][..], 0),
+        ("copter leg, at altitude", (None, None), &[(0.0, 30.0)], 1),
+        (
+            "plane leg, 5 m low",
+            (None, None),
+            &[(0.0, 30.0), (100.0, 25.0)],
+            2,
+        ),
+        ("copter band widened", (Some(6.0), None), &[(0.0, 25.0)], 1),
+        (
+            "plane band tightened",
+            (None, Some(1.0)),
+            &[(0.0, 30.0), (100.0, 25.0)],
+            1,
+        ),
+    ];
+    for (name, (copter, plane), steps, expected) in cases {
+        let mut commander = ScriptCommander::from_route(route()).expect("non-empty");
+        if let Some(band) = copter {
+            commander = commander.with_altitude_acceptance(FlightRegime::Copter, band);
+        }
+        if let Some(band) = plane {
+            commander = commander.with_altitude_acceptance(FlightRegime::Plane, band);
+        }
+        for &(x, z) in steps {
+            commander.next_command(0.01, &state(x, z));
+        }
+        check!(commander.follower().current_index() == expected, "{name}");
+    }
+}

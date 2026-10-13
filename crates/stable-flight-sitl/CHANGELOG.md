@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ScriptCommander` reads an optional fifth CSV field per waypoint, `copter` or `plane`: the
   regime of the leg to it, requested as the leg begins (#124). `ScriptCommander::from_route`
   takes waypoints with their regimes.
+- `ScriptCommander` reaches each waypoint within its leg regime's altitude band (copter 0.8 m,
+  plane 10 m, as PX4), set with `with_altitude_acceptance(regime, altitude_m)` (#359).
 
 ### Changed
 

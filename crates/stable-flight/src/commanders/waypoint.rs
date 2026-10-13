@@ -13,6 +13,15 @@ mod tests;
 /// reached and the follower advances to the next one.
 pub const DEFAULT_ACCEPTANCE_RADIUS_M: f32 = 3.0;
 
+/// Default altitude error (meters, either way) within which a waypoint can be reached: PX4's
+/// multicopter `NAV_MC_ALT_RAD` (`src/modules/navigator/navigator_params.yaml:56-64`).
+pub const DEFAULT_ALTITUDE_ACCEPTANCE_M: f32 = 0.8;
+
+/// Altitude acceptance (meters, either way) for a wing-borne leg, which holds altitude loosely
+/// while it flies: PX4's fixed-wing `NAV_FW_ALT_RAD`
+/// (`src/modules/navigator/navigator_params.yaml:33-38`).
+pub const PLANE_ALTITUDE_ACCEPTANCE_M: f32 = 10.0;
+
 /// Returned by [`WaypointFollower::new`] when given no waypoints; there is nothing to fly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EmptyWaypoints;
@@ -43,8 +52,11 @@ pub enum RouteEnd {
 /// A [`Commander`] that flies a sequence of waypoints.
 ///
 /// Each tick it emits the active waypoint as an armed [`ControlInput::Waypoint`]. When the
-/// vehicle is within the acceptance radius of it (horizontal distance only), or has passed it
-/// along the leg that leads to it (missed it wide), it advances to the next. After the last it
+/// vehicle is within the acceptance radius of it (horizontal distance), or has passed it along
+/// the leg that leads to it (missed it wide), *and* is within the altitude acceptance of its
+/// altitude, it advances to the next: an acceptance cylinder, as in PX4
+/// (`src/modules/navigator/mission_block.cpp:380`). So a waypoint straight above the vehicle
+/// is reached at the end of the climb, not on the ground. After the last it
 /// follows its [`RouteEnd`]: wrap to the first ([`RouteEnd::Loop`], the default), hold the last
 /// ([`RouteEnd::Hold`]), or land on the last and disarm ([`RouteEnd::Land`]). It knows nothing
 /// about where the waypoints came from or what shape they trace.
@@ -62,7 +74,7 @@ pub enum RouteEnd {
 /// # Examples
 ///
 /// ```
-/// use stable_flight::Vec2;
+/// use stable_flight::{Vec2, Vec3};
 /// use stable_flight::commanders::{RouteEnd, WaypointFollower};
 /// use stable_flight::{Commander, ControlInput, VehicleState, WaypointCommand};
 ///
@@ -77,8 +89,12 @@ pub enum RouteEnd {
 ///     .with_acceptance_radius(2.0)
 ///     .with_route_end(RouteEnd::Hold);
 ///
-/// // Starting on the first waypoint, the follower advances to the second.
-/// let command = follower.next_command(0.004, &VehicleState::default());
+/// // Starting on the first waypoint, at its altitude, the follower advances to the second.
+/// let on_first = VehicleState {
+///     position_m: Vec3::new(0.0, 0.0, 10.0),
+///     ..Default::default()
+/// };
+/// let command = follower.next_command(0.004, &on_first);
 /// let ControlInput::Waypoint(target) = command.input else {
 ///     unreachable!("WaypointFollower only emits waypoint commands");
 /// };
@@ -90,6 +106,7 @@ pub struct WaypointFollower<W> {
     waypoints: W,
     current: usize,
     acceptance_radius_squared: f32,
+    altitude_acceptance_m: f32,
     route_end: RouteEnd,
     /// Unit direction of the leg into the active waypoint, from the previous one; `None` for
     /// the first waypoint flown or a zero-length leg. Set on each advance, so the per-tick
@@ -104,7 +121,8 @@ pub struct WaypointFollower<W> {
 }
 
 impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
-    /// Starts at the first waypoint with [`DEFAULT_ACCEPTANCE_RADIUS_M`].
+    /// Starts at the first waypoint with [`DEFAULT_ACCEPTANCE_RADIUS_M`] and
+    /// [`DEFAULT_ALTITUDE_ACCEPTANCE_M`].
     ///
     /// # Errors
     ///
@@ -117,6 +135,7 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
             waypoints,
             current: 0,
             acceptance_radius_squared: DEFAULT_ACCEPTANCE_RADIUS_M * DEFAULT_ACCEPTANCE_RADIUS_M,
+            altitude_acceptance_m: DEFAULT_ALTITUDE_ACCEPTANCE_M,
             route_end: RouteEnd::default(),
             leg_direction: None,
             leg_velocity_mps: None,
@@ -139,6 +158,24 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
         );
         self.acceptance_radius_squared = radius_m * radius_m;
         self
+    }
+
+    /// Overrides the altitude acceptance (meters, either way; default
+    /// [`DEFAULT_ALTITUDE_ACCEPTANCE_M`]). A wing-borne leg wants a looser band
+    /// ([`PLANE_ALTITUDE_ACCEPTANCE_M`]). `altitude_m` must be non-negative.
+    pub fn with_altitude_acceptance(mut self, altitude_m: f32) -> Self {
+        self.set_altitude_acceptance(altitude_m);
+        self
+    }
+
+    /// Sets the altitude acceptance (meters, either way) from the next tick, e.g. per leg as
+    /// the regime flown changes. `altitude_m` must be non-negative.
+    pub fn set_altitude_acceptance(&mut self, altitude_m: f32) {
+        debug_assert!(
+            altitude_m >= 0.0,
+            "altitude acceptance must be non-negative, got {altitude_m}"
+        );
+        self.altitude_acceptance_m = altitude_m;
     }
 
     /// The waypoints being followed.
@@ -198,7 +235,10 @@ impl<W: AsRef<[WaypointCommand]>> Commander for WaypointFollower<W> {
         let passed = self
             .leg_direction
             .is_some_and(|direction| direction.x * dx + direction.y * dy <= 0.0);
-        if !self.reached_end && (within_radius || passed) {
+        // `<=` is false for NaN: a non-finite altitude never reaches a waypoint.
+        let at_altitude =
+            (target.altitude_m - current_state.position_m.z).abs() <= self.altitude_acceptance_m;
+        if !self.reached_end && (within_radius || passed) && at_altitude {
             let previous = self.current;
             let last = waypoints.len() - 1;
             match self.route_end {

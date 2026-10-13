@@ -3,6 +3,7 @@
 mod common;
 
 use assert2::check;
+use stable_flight::commanders::waypoint::DEFAULT_ALTITUDE_ACCEPTANCE_M;
 use stable_flight::{Vec2, Vec3};
 use stable_flight_sim::{Gust, Wind, airframes};
 
@@ -89,4 +90,22 @@ fn rides_out_a_gust_and_returns() {
     // Back near the waypoint 6 s after the gust: 0.17 m measured, the lateral I's slow tail
     // (#357; TODO(#367)).
     check!(worst.final_m < 0.25, "{worst:?}");
+}
+
+/// Holding a waypoint over the start completes only near its altitude, not on the ground
+/// (#359): within the follower's altitude acceptance.
+#[test]
+fn hold_over_the_start_completes_at_its_altitude() {
+    let mut flight_loop = common::sim_loop(common::hover_follower(), Wind::default());
+    let mut completed_m = None;
+    fly(&mut flight_loop, SETTLE_S, |flight_loop, _| {
+        if completed_m.is_none() && flight_loop.commander().is_complete() {
+            completed_m = Some(flight_loop.state().position_m.z);
+        }
+    });
+    let completed_m = completed_m.expect("never completed");
+    check!(
+        (completed_m - ALTITUDE_M).abs() <= DEFAULT_ALTITUDE_ACCEPTANCE_M,
+        "completed at {completed_m} m"
+    );
 }

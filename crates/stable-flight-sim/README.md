@@ -45,10 +45,10 @@ Each file in `tests/` flies the full pipeline on `airframes::quad_x()` (wiring i
 
 | Test | Asserts |
 |---|---|
-| `hover` | Altitude, position, and heading hold in calm air; on the waypoint in steady wind; return after a gust |
+| `hover` | Altitude, position, and heading hold in calm air; on the waypoint in steady wind; return after a gust; a hold over the start completes at its altitude |
 | `step_response` | Every loop (roll/pitch/yaw rate, roll/pitch angle, heading), both ways, against ArduPilot's and PX4's autotune targets: overshoot ≤ 5%, rate bounce-back ≤ 10%, rate rise ≤ 0.14 s (yaw 0.2 s), settled, clipping within the step plan's allowance |
 | `waypoint` | A square route: each leg near its line and altitude at cruise speed; holds the last corner |
-| `land` | Climb, land on a waypoint, disarm, rest on the ground |
+| `land` | Climb, land on a waypoint (one leg out, or over the start), disarm, rest on the ground |
 | `failsafe` | Over the link (`FcLink` + loopback): silence hands over to `HoldCommander` within the timeout, which holds in place armed; the link takes back over after recovery |
 | `saturation` | Each limit (tilt caps, altitude thrust, moments, mixer collective, mixer near idle) sets its `Saturation` flags, and a hover sets none |
 | `autotune` | `StagePlan::copter_search` from low rate gains tunes every stage to `quad_x`'s gains within 25%; from high gains it doesn't yet (`#[ignore]`, #361) |

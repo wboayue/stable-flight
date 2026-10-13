@@ -3,6 +3,7 @@
 mod common;
 
 use assert2::check;
+use stable_flight::commanders::waypoint::DEFAULT_ALTITUDE_ACCEPTANCE_M;
 use stable_flight::commanders::{RouteEnd, WaypointFollower};
 use stable_flight_sim::Wind;
 
@@ -10,8 +11,7 @@ use common::{fly, sim_loop, waypoint};
 
 const ALTITUDE_M: f32 = 5.0;
 
-/// Where to land: far enough that the climb to `ALTITUDE_M` finishes on the way, since the
-/// follower accepts a waypoint on horizontal distance alone (TODO(#359)).
+/// Where to land: a leg away from the start, so the land follows a cruise.
 const NORTH_M: f32 = 20.0;
 const EAST_M: f32 = -15.0;
 
@@ -60,4 +60,33 @@ fn lands_on_the_waypoint_and_disarms() {
 
     let (_, vehicle, ..) = flight_loop.into_parts();
     check!(vehicle.on_ground());
+}
+
+/// One waypoint straight over the start: the follower waits for the climb before landing, so
+/// the vehicle takes off, lands back on the start, and disarms (#359).
+#[test]
+fn lands_back_on_a_waypoint_over_the_start() {
+    let follower = WaypointFollower::new([waypoint(0.0, 0.0, ALTITUDE_M)])
+        .expect("one waypoint")
+        .with_route_end(RouteEnd::Land);
+    let mut flight_loop = sim_loop(follower, Wind::default());
+
+    let mut peak_m = 0.0_f32;
+    fly(&mut flight_loop, 20.0, |flight_loop, _| {
+        peak_m = peak_m.max(flight_loop.state().position_m.z);
+    });
+
+    // Climbed into the waypoint's altitude acceptance before landing: 4.27 m peak measured.
+    check!(
+        peak_m >= ALTITUDE_M - DEFAULT_ALTITUDE_ACCEPTANCE_M,
+        "peak {peak_m} m"
+    );
+    check!(flight_loop.commander().is_complete(), "never landed");
+    check!(!flight_loop.armed());
+    let position_m = flight_loop.state().position_m;
+    check!(position_m.z == 0.0);
+    check!(
+        position_m.xy().norm() < MAX_TOUCHDOWN_ERROR_M,
+        "{position_m:?}"
+    );
 }

@@ -130,6 +130,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `WaypointFollower` reaches a waypoint only within an altitude band as well as the
+  horizontal radius (or past it), as PX4 does: default `DEFAULT_ALTITUDE_ACCEPTANCE_M` 0.8 m,
+  `with_altitude_acceptance`/`set_altitude_acceptance` to change it, and
+  `PLANE_ALTITUDE_ACCEPTANCE_M` 10 m for wing-borne legs.
 - **Breaking:** `LateralController::control` takes `limit`, the acceleration the caller last
   capped; the integral doesn't grow along it. `CopterGuidance` passes its capped tilt request
   (#357).
@@ -179,6 +183,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A waypoint straight over the vehicle is no longer reached on the ground: `RouteEnd::Land`
+  climbs to it before landing (instead of staying armed on the ground), and `RouteEnd::Hold`
+  completes at its altitude (#359).
 - The attitude error recovers from exactly inverted: a 180° tilt turns about body `x` instead
   of giving no correction (#124).
 
