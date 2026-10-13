@@ -145,10 +145,10 @@ impl Search {
     /// search would never pick, which the relay's ceiling may have shown is too high), goes on
     /// without a baseline rather than fly it (#361).
     fn baseline(&mut self) -> Action {
-        self.leg = Leg::Baseline;
         if self.plan.term.get(self.start) > self.max {
             return self.advance();
         }
+        self.leg = Leg::Baseline;
         self.step()
     }
 
@@ -231,7 +231,8 @@ impl Search {
             ..
         } = self.plan;
         let accepted = complete
-            && if self.baseline.count() > 0 && criterion.passes(&self.baseline) {
+            // An empty baseline doesn't pass the criterion.
+            && if criterion.passes(&self.baseline) {
                 acceptance.accepts(&criterion, &self.baseline, &steps)
             } else {
                 criterion.passes(&steps)
