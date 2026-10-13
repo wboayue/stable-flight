@@ -1,0 +1,45 @@
+name: Task
+description: Planned work with a scope and a definition of done.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's wrong or missing today, and who it affects. Cite code (`file:line`) or flight data (#n).
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Depends on / blocks (#n), related issues, `architecture.md` sections.
+  - type: textarea
+    id: investigate
+    attributes:
+      label: Investigate first
+      description: Open questions about external software (QGC, MAVLink peers, simulators, other flight stacks). Answer here with file:line before designing.
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: Changes grouped by crate, and what this issue leaves out (link the issue that covers it).
+      value: |
+        In:
+        -
+
+        Out:
+        -
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: Outcomes someone other than the author can check with a command, test, or flight. Only what's specific to this issue; the AGENTS.md pre-PR checklist applies to every PR.
+      value: |
+        - [ ] Outcome: what flies or works (simulator, airframe, mode)
+        - [ ] Tests: behavior guarded, including boundary and error cases
+        - [ ] Docs: owning README, CHANGELOG, Status claims
+        - [ ] Flight check: `just ...` recipe that reproduces it (if `needs-flight`)
+    validations:
+      required: true
