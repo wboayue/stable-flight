@@ -27,7 +27,7 @@ flowchart LR
         fclink["FcLink<br/>telemetry, params,<br/>link commands"]
         loop <--> fclink
     end
-    fclink <-->|"native link<br/>UDP 14560 ⇄ 14561"| bridge["stable-flight-bridge"]
+    fclink <-->|"native link<br/>UDP"| bridge["stable-flight-bridge"]
     bridge <-->|"MAVLink v2<br/>UDP 14550"| gcs["QGroundControl<br/>or offboard app"]
 ```
 
@@ -90,7 +90,7 @@ Runnable entrypoints are the crate examples (`crates/*/examples/`); run them fro
 | Tailsitter, manual | Joystick (D-pad picks copter or plane) | `just fly-tailsitter` |
 | Tailsitter, scripted | Waypoint CSV: hover, or a transition mission | `just fly-tailsitter-auto` |
 
-Every flight serves telemetry and params over the link, so `just bridge` + QGC can watch any of them. The commands behind the copter recipes:
+Every flight serves telemetry and params over the link, so `just bridge` + QGC can watch any of them. The tailsitter and autotune commands are in the [`stable-flight-sitl-realflight` README](crates/stable-flight-sitl-realflight/README.md#examples); the commands behind the copter recipes:
 
 ```bash
 # The bridge: the examples send params and telemetry over the native link, and it speaks

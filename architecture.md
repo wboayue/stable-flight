@@ -260,7 +260,7 @@ transition that times out or hits the roll limit stays refused until copter is r
 stateDiagram-v2
     [*] --> Copter: arm (prime)
     Copter --> ToPlane: plane requested, height ≥ min_height_m
-    ToPlane --> Plane: tilt ≥ forward_done_rad and airspeed ≥ min (handoff)
+    ToPlane --> Plane: tilt ≥ forward_done_rad and airspeed ≥ min if measured (handoff)
     ToPlane --> Copter: copter requested, timeout, or roll limit
     Plane --> ToCopter: copter requested
     ToCopter --> Plane: plane requested
@@ -287,8 +287,8 @@ controller, not the companion, decides what happens. `FailsafeCommander<P, F>` (
 stateDiagram-v2
     [*] --> Fallback: first tick
     Primary --> Fallback: stale for timeout_s
-    Fallback --> Primary: fresh for recover_after_s, fallback releases
-    Fallback --> AwaitingSticks: fresh and released, but armed sticks unmoved
+    Fallback --> Primary: fresh for recover_after_s, fallback releases; waypoint or disarmed
+    Fallback --> AwaitingSticks: same, but armed on sticks
     AwaitingSticks --> Primary: an axis moves takeover_stick_delta
     AwaitingSticks --> Fallback: stale
 ```
