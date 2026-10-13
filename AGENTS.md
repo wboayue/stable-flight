@@ -55,7 +55,7 @@ just fly-manual                               # copter-manual-realflight: QuadCo
 just fly-auto                                 # copter-auto-realflight: waypoint script (script arg, --end hold|loop|land)
 just fly-companion | just link-pilot          # copter-companion-realflight flown from the link; link_pilot plays the companion
 just fly-autotune                             # copter-autotune-realflight: step-response autotune of roll/pitch rate and angle, prints gains, lands
-just fly-tailsitter                           # tailsitter-manual-realflight: eXplora hover from a joystick (--record CSV)
+just fly-tailsitter                           # tailsitter-manual-realflight: eXplora hover, transitions, plane from a joystick (D-pad Right plane, Left copter, Up rate; --record CSV)
 just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv, --end)
 just capture                                  # capture-state-realflight: joystick flight, raw SimulatorState → CSV
 just plot <csv> <out> | just gen-figure-eight # plot_flight, generate_figure_eight
@@ -104,9 +104,9 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 | `Commander` | `LinkCommander` (a `LinkedCommander`, from `FcLink::wire_linked`) | link |
 | `StateSource` + `Actuator` | `ComposedVehicle<S, A>`; `testing::NullVehicle` | core |
 | `StateSource` + `Actuator` | `RealFlightVehicle<T: RealFlightBridge>` | sitl-realflight |
-| `Guidance` | `CopterGuidance` (altitude/lateral loops, heading hold, `ThrustLimits`); `PlaneGuidance` (FBWA sticks, acro, offboard); `View<G>` | core |
-| `Stabilizer` | `CopterStabilizer` (attitude, yaw, body-rate loops); `PlaneStabilizer` (attitude, turn coordination, airspeed-scaled rate loop); `View<S>` | core |
-| `Mixer` | `TableMixer<N>` (presets `quad_x`, `hex_x`, `tri`, `tailsitter_2p_hover`, …) | core |
+| `Guidance` | `CopterGuidance` (altitude/lateral loops, heading hold, `ThrustLimits`); `PlaneGuidance` (FBWA sticks, acro, offboard); `TailsitterGuidance` (hover + plane under a `Transition`); `View<G>` | core |
+| `Stabilizer` | `CopterStabilizer` (attitude, yaw, body-rate loops); `PlaneStabilizer` (attitude, turn coordination, airspeed-scaled rate loop); `TailsitterStabilizer` (each setpoint on its side); `View<S>` | core |
+| `Mixer` | `TableMixer<N>` (presets `quad_x`, `hex_x`, `tri`, `tailsitter_2p`, …) | core |
 | `TelemetryPublisher` | `(A, B)` fan-out; `testing::RecordingTelemetry<N>` | core |
 | `TelemetryPublisher` | `LinkPublisher` (from `FcLink`; MAVLink is the bridge's job) | link |
 

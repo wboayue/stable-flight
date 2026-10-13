@@ -3,8 +3,13 @@
 //!
 //! Reference: https://github.com/robustini/eXploraVTOL/tree/main/simulation
 //!
-//! As in `tailsitter-manual-realflight`, the vehicle frame is the airplane's, and the copter
-//! guidance and stabilizer fly it in a tailsitter [`View`], where nose-up hover reads level.
+//! As in `tailsitter-manual-realflight`, the vehicle frame is the airplane's, and it flies on
+//! [`TailsitterGuidance`] and [`TailsitterStabilizer`]: the copter controllers in a tailsitter
+//! view, where nose-up hover reads level. The script requests the copter regime throughout (a
+//! per-waypoint regime is TODO(#124)).
+//!
+//! [`TailsitterGuidance`]: stable_flight::guidance::vtol::TailsitterGuidance
+//! [`TailsitterStabilizer`]: stable_flight::stabilizers::vtol::TailsitterStabilizer
 //!
 //! The commander replays the waypoints in a CSV script (default
 //! `flights/explora_figure_eight.csv`, small and slow for this airframe and centered on its
@@ -34,10 +39,10 @@ use clap::{Parser, ValueEnum};
 use env_logger::Builder;
 use log::{debug, info, warn};
 
+use stable_flight::FlightLoop;
 use stable_flight::commanders::RouteEnd;
-use stable_flight::guidance::copter::CopterGuidance;
-use stable_flight::stabilizers::copter::CopterStabilizer;
-use stable_flight::{FlightLoop, View};
+use stable_flight::guidance::vtol::TailsitterGuidance;
+use stable_flight::stabilizers::vtol::TailsitterStabilizer;
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::ScriptCommander;
@@ -119,10 +124,10 @@ fn main() {
     ))
     .with_reconnect(move || connect().map_err(BridgeError::from));
 
-    // Copter guidance and stabilizer in the tailsitter view, where nose-up hover is level: the
-    // position loops turn each waypoint into an attitude setpoint in the view.
-    let guidance = View::tailsitter(CopterGuidance::new(airframe.guidance));
-    let stabilizer = View::tailsitter(CopterStabilizer::new(airframe.stabilizer));
+    // Hover and plane controllers under one transition; in the copter regime the position
+    // loops turn each waypoint into an attitude setpoint in the tailsitter view.
+    let guidance = TailsitterGuidance::new(airframe.guidance);
+    let stabilizer = TailsitterStabilizer::new(airframe.stabilizer);
 
     let mixer = airframe.mixer;
 

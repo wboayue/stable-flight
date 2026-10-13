@@ -236,11 +236,12 @@ deliberately. The pieces:
   flies the transition, and flags the tick control passes between them; `ThrustHandoff`
   blends thrust across it. The plane side is `PlaneGuidance` and `PlaneStabilizer`
   (`Setpoint::Plane` attitudes with coordinated turns, `Setpoint::PlaneRate` body rates at any
-  attitude for rolls and loops). Wiring them into a VTOL guidance and stabilizer
-  ([#124](https://github.com/wboayue/stable-flight/issues/124), planned): the forward ramp on
-  the hover controller, the back ramp on the plane controller, the incoming controller primed
-  at the handoff, and the setpoint variant selecting the stabilizer's controller, so the
-  mixer never sees the regime.
+  attitude for rolls and loops). `TailsitterGuidance` wires them: the forward ramp on the
+  hover controller, the back ramp on the plane controller, a roll past the limit cutting a
+  transition short (checked before the step, since a sideways lean also tilts the nose), and
+  the incoming guidance primed at the handoff. `TailsitterStabilizer` flies each setpoint on
+  the side its variant names and primes the incoming side, so the mixer never sees the regime.
+  Each composite's params chain its parts' tables.
 * **Airspeed is optional.** `VehicleState::airspeed_mps` is `None` without air data
   (`valid_airspeed_mps` also drops NaN and negative readings). The forward transition
   completes on tilt and, when a valid airspeed is present, a minimum airspeed (as PX4 does).

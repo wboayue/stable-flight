@@ -48,7 +48,7 @@
 //! | [`x8`](TableMixer::x8) | top 0 FL, 1 FR, 2 RR, 3 RL; bottom 4–7 under them | |
 //! | [`tri`](TableMixer::tri) | 0 FL, 1 FR, 2 B | 0 tail tilt (yaw) |
 //! | [`bi`](TableMixer::bi) | 0 L, 1 R | 0 left tilt, 1 right tilt |
-//! | [`tailsitter_2p_hover`](TableMixer::tailsitter_2p_hover) | 0 L, 1 R | 0 left elevon, 1 right elevon |
+//! | [`tailsitter_2p`](TableMixer::tailsitter_2p) | 0 L, 1 R | 0 left elevon, 1 right elevon |
 
 use thiserror::Error;
 

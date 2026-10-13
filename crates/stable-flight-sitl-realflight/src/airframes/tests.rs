@@ -118,9 +118,10 @@ fn explora_vtol_hover_thrust_reaches_the_measured_hover_motor() {
     let airframe = explora_vtol();
     let curved = airframe
         .guidance
+        .hover
         .altitude
         .hover_thrust
-        .powf(airframe.stabilizer.thrust_curve_exponent);
+        .powf(airframe.stabilizer.hover.thrust_curve_exponent);
     let mut mixer = airframe.mixer;
     let output = mixer.mix(&stable_flight::ControlOutput::new(curved, Vec3::zeros()));
     for motor in &output.motors[..2] {
@@ -139,11 +140,30 @@ fn explora_vtol_hover_thrust_reaches_the_measured_hover_motor() {
 fn thrust_floor_stays_below_hover() {
     for (name, guidance) in [
         ("quadcopter_x", quadcopter_x().guidance),
-        ("explora_vtol", explora_vtol().guidance),
+        ("explora_vtol", explora_vtol().guidance.hover),
     ] {
         assert!(
             guidance.thrust.min_thrust < guidance.altitude.hover_thrust,
             "{name}: {guidance:?}"
         );
     }
+}
+
+/// The eXplora's tailsitter configs validate, and fit together: the hover side can fly the
+/// whole forward ramp, the plane side the whole back ramp, and both share a thrust curve so a
+/// handoff keeps the motor commands continuous.
+#[test]
+fn explora_vtol_transition_fits_both_sides() {
+    let airframe = explora_vtol();
+    let (guidance, stabilizer) = (airframe.guidance, airframe.stabilizer);
+    assert_eq!(guidance.validate(), Ok(()));
+    assert_eq!(stabilizer.validate(), Ok(()));
+    let transition = guidance.transition;
+    assert!(stabilizer.hover.attitude.max_angles_rad.y >= transition.forward_max_tilt_rad);
+    assert!(stabilizer.plane.max_pitch_rad >= PI / 2.0 - transition.back_done_rad);
+    assert_eq!(
+        stabilizer.plane.thrust_curve_exponent,
+        stabilizer.hover.thrust_curve_exponent
+    );
+    assert!(transition.forward_max_tilt_rad >= transition.forward_done_rad);
 }

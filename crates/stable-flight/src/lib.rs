@@ -1232,6 +1232,28 @@ impl Setpoint {
             Setpoint::Plane(plane) => plane.thrust,
         }
     }
+
+    /// This setpoint with its thrust replaced by `thrust`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::{RateSetpoint, Setpoint};
+    ///
+    /// let setpoint = Setpoint::Rate(RateSetpoint { thrust: 0.4, ..Default::default() });
+    /// assert_eq!(setpoint.with_thrust(0.7).thrust(), 0.7);
+    /// ```
+    pub fn with_thrust(self, thrust: f32) -> Self {
+        match self {
+            Setpoint::Attitude(attitude) => {
+                Setpoint::Attitude(AttitudeSetpoint { thrust, ..attitude })
+            }
+            Setpoint::Rate(rates) => Setpoint::Rate(RateSetpoint { thrust, ..rates }),
+            Setpoint::BodyRate(rates) => Setpoint::BodyRate(BodyRateSetpoint { thrust, ..rates }),
+            Setpoint::Plane(plane) => Setpoint::Plane(PlaneSetpoint { thrust, ..plane }),
+            Setpoint::PlaneRate(rates) => Setpoint::PlaneRate(BodyRateSetpoint { thrust, ..rates }),
+        }
+    }
 }
 
 /// Absolute body-rate target, for [`Setpoint::BodyRate`] (copter) and [`Setpoint::PlaneRate`]

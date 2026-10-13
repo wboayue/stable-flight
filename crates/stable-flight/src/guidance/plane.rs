@@ -23,6 +23,7 @@ use crate::{
     PlaneSetpoint, Setpoint, Vec3, VehicleState,
 };
 
+mod params;
 #[cfg(test)]
 mod tests;
 
@@ -59,8 +60,8 @@ impl Default for PlaneGuidanceConfig {
 }
 
 impl PlaneGuidanceConfig {
-    /// `Ok` when the angle limits are in `[0, π/2]`, the rates non-negative, the trim pitch
-    /// within the pitch limits, and the cruise thrust in `[0, 1]`.
+    /// `Ok` when the angle limits are in `[0, π/2]`, the rates non-negative, the trim pitch in
+    /// `[−π/2, π/2]`, and the cruise thrust in `[0, 1]`.
     ///
     /// # Errors
     ///
@@ -82,10 +83,11 @@ impl PlaneGuidanceConfig {
         check_limit("max_rate_radps.x", self.max_rate_radps.x)?;
         check_limit("max_rate_radps.y", self.max_rate_radps.y)?;
         check_limit("max_rate_radps.z", self.max_rate_radps.z)?;
+        let half = core::f32::consts::FRAC_PI_2;
         check(
             "trim_pitch_rad",
-            (-self.max_pitch_down_rad..=self.max_pitch_up_rad).contains(&self.trim_pitch_rad),
-            "within the pitch limits",
+            (-half..=half).contains(&self.trim_pitch_rad),
+            "in [−π/2, π/2] rad",
         )?;
         check(
             "cruise_thrust",

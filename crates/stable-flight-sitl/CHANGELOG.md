@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Commanders request a regime (#124): `Extreme3DCommander` D-pad Left asks for copter and
+  Right for plane (both attitude sticks), Up keeps the regime with rate sticks;
+  `SpektrumCommander`'s mode switch asks for plane at one end (an unread switch is copter).
+
 - `SpektrumCommander` and `Extreme3DCommander` no longer fill `AttitudeCommand::mode`/
   `RateCommand::mode` (removed from core, #181); the Spektrum mode switch is read into channel
   `[5]` but not mapped.

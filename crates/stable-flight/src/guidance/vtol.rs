@@ -17,7 +17,7 @@
 //! | Mode | Condition | Next | Handoff | Refusal reported |
 //! |---|---|---|---|---|
 //! | `Copter` | `Copter` requested | `Copter` | | none; clears a timeout |
-//! | `Copter` | `Plane` requested after a forward timeout | `Copter` | | `TransitionTimeout` |
+//! | `Copter` | `Plane` requested after a forward transition was abandoned | `Copter` | | why: `TransitionTimeout`, `RollError` |
 //! | `Copter` | `Plane` requested below `min_height_m` (or NaN altitude) | `Copter` | | `BelowMinAltitude` |
 //! | `Copter` | `Plane` requested | `ToPlane`, ramp from the current tilt | | |
 //! | `ToPlane` | `Copter` requested | `Copter` (same hover controller) | | |
@@ -27,8 +27,12 @@
 //! | `ToCopter` | `Plane` requested | `Plane` (same plane controller) | | |
 //! | `ToCopter` | tilt ≤ `back_done_rad`, or longer than `timeout_s` | `Copter` | yes | |
 //!
+//! The caller can cut a transition short ([`Transition::cut_short`], e.g. on a roll error it
+//! measures): forward is abandoned like a timeout, back completes with a handoff.
+//!
 //! A standing `Plane` request refused for height starts the transition once the vehicle
-//! climbs past `min_height_m`; one refused by a timeout waits for a `Copter` request first.
+//! climbs past `min_height_m`; one refused by an abandoned transition waits for a `Copter`
+//! request first.
 //! Height is above the altitude at [`prime`](Transition::prime) (where the vehicle armed);
 //! before the first `prime` there is none, and `Plane` is refused.
 //! A `Land` input means `Copter`: the guidance driving this passes that as the request.
@@ -56,11 +60,18 @@ use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
 use crate::math::{assert_dt, nose_up_cosine, saturate_throttle};
 use crate::{Configurable, FlightMode, FlightModeReport, FlightRegime, ModeRefusal, VehicleState};
 
+mod params;
+mod tailsitter;
+
+pub use tailsitter::{TailsitterGuidance, TailsitterGuidanceConfig};
 #[cfg(test)]
 mod tests;
 
-/// [`Transition`] settings: ramp rates, completion tilts, the airspeed gate, the timeout, and
-/// the height a forward transition needs. Angles are the nose's tilt from vertical.
+/// Transition settings: what [`Transition`] uses (ramp rates, completion tilts, the airspeed
+/// gate, the timeout, the height a forward transition needs) and what the VTOL guidance around
+/// it applies (thrusts, the handoff blend, the roll limit). Angles are the nose's tilt from
+/// vertical. Each field is checked on its own: a `forward_max_tilt_rad` below
+/// `forward_done_rad` is accepted, and leaves the forward transition to its timeout.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TransitionConfig {
     /// How fast the forward (nose-down) tilt target ramps, in rad/s.
@@ -69,7 +80,7 @@ pub struct TransitionConfig {
     /// `(0, π/2)`.
     pub forward_done_rad: f32,
     /// Where the forward ramp stops while the transition waits on airspeed, in radians, in
-    /// `[forward_done_rad, π/2]`.
+    /// `(0, π/2]`; at least `forward_done_rad` for the ramp to reach completion.
     pub forward_max_tilt_rad: f32,
     /// The airspeed the forward transition also needs when the state has a valid one, in m/s;
     /// `0` turns the gate off.
@@ -83,6 +94,17 @@ pub struct TransitionConfig {
     pub timeout_s: f32,
     /// The height above the arming altitude a forward transition needs to start, in meters.
     pub min_height_m: f32,
+    /// Least linear thrust through the forward transition, `[0, 1]`: the hover thrust when it
+    /// began, if higher, holds.
+    pub forward_thrust: f32,
+    /// Linear thrust through the back transition, `[0, 1]`.
+    pub back_thrust: f32,
+    /// How long thrust blends from one controller to the other at a handoff, in seconds
+    /// ([`ThrustHandoff`]); 0 switches at once.
+    pub handoff_s: f32,
+    /// Roll error past which a transition is cut short, in radians, in `(0, π]`: forward
+    /// aborts to copter, back completes ([`Transition::cut_short`]).
+    pub roll_limit_rad: f32,
 }
 
 impl TransitionConfig {
@@ -101,9 +123,8 @@ impl TransitionConfig {
         )?;
         check(
             "forward_max_tilt_rad",
-            self.forward_max_tilt_rad >= self.forward_done_rad
-                && self.forward_max_tilt_rad <= FRAC_PI_2,
-            "in [forward_done_rad, π/2] rad",
+            self.forward_max_tilt_rad > 0.0 && self.forward_max_tilt_rad <= FRAC_PI_2,
+            "in (0, π/2] rad",
         )?;
         check_limit("min_airspeed_mps", self.min_airspeed_mps)?;
         check_positive("back_rate_radps", self.back_rate_radps)?;
@@ -113,14 +134,24 @@ impl TransitionConfig {
             "in (0, π/2) rad",
         )?;
         check_positive("timeout_s", self.timeout_s)?;
-        check_limit("min_height_m", self.min_height_m)
+        check_limit("min_height_m", self.min_height_m)?;
+        let unit = |value: f32| (0.0..=1.0).contains(&value);
+        check("forward_thrust", unit(self.forward_thrust), "in [0, 1]")?;
+        check("back_thrust", unit(self.back_thrust), "in [0, 1]")?;
+        check_limit("handoff_s", self.handoff_s)?;
+        check(
+            "roll_limit_rad",
+            self.roll_limit_rad > 0.0 && self.roll_limit_rad <= core::f32::consts::PI,
+            "in (0, π] rad",
+        )
     }
 }
 
 impl Default for TransitionConfig {
     /// ArduPilot's tailsitter rates and angles (50°/s each way, complete at 45° from vertical
-    /// both ways), the forward ramp stopping at 80°, PX4's 15 s timeout, no airspeed gate, and
-    /// 5 m of height; see the [module sources](self#sources).
+    /// both ways) and roll limit (45°), the forward ramp stopping at 80°, PX4's 15 s timeout
+    /// and 0.5 s thrust blend, no airspeed gate, 5 m of height, and half thrust each way (an
+    /// airframe sets its own); see the [module sources](self#sources).
     fn default() -> Self {
         TransitionConfig {
             forward_rate_radps: 50.0_f32.to_radians(),
@@ -131,6 +162,10 @@ impl Default for TransitionConfig {
             back_done_rad: 45.0_f32.to_radians(),
             timeout_s: 15.0,
             min_height_m: 5.0,
+            forward_thrust: 0.5,
+            back_thrust: 0.5,
+            handoff_s: 0.5,
+            roll_limit_rad: 45.0_f32.to_radians(),
         }
     }
 }
@@ -182,7 +217,8 @@ pub struct Transition {
     back_done_cosine: f32,
     mode: FlightMode,
     refusal: Option<ModeRefusal>,
-    timed_out: bool,
+    /// Why the last forward transition was abandoned, held until `Copter` is requested.
+    abandoned: Option<ModeRefusal>,
     elapsed_s: f32,
     start_tilt_rad: f32,
     home_altitude_m: f32,
@@ -206,7 +242,7 @@ impl Transition {
             back_done_cosine,
             mode: FlightMode::Copter,
             refusal: None,
-            timed_out: false,
+            abandoned: None,
             elapsed_s: 0.0,
             start_tilt_rad: 0.0,
             home_altitude_m: f32::NAN,
@@ -218,7 +254,7 @@ impl Transition {
     pub fn prime(&mut self, state: &VehicleState) {
         self.mode = FlightMode::Copter;
         self.refusal = None;
-        self.timed_out = false;
+        self.abandoned = None;
         self.elapsed_s = 0.0;
         self.home_altitude_m = state.position_m.z;
     }
@@ -242,7 +278,7 @@ impl Transition {
         match self.mode {
             FlightMode::Copter => match requested {
                 FlightRegime::Plane => self.try_forward(state, nose_up),
-                FlightRegime::Copter => self.timed_out = false,
+                FlightRegime::Copter => self.abandoned = None,
             },
             FlightMode::ToPlane => {
                 self.elapsed_s += dt;
@@ -252,9 +288,7 @@ impl Transition {
                     self.mode = FlightMode::Plane;
                     handoff = true;
                 } else if self.elapsed_s > self.config.timeout_s {
-                    self.mode = FlightMode::Copter;
-                    self.timed_out = true;
-                    self.refusal = Some(ModeRefusal::TransitionTimeout);
+                    self.abandon(ModeRefusal::TransitionTimeout);
                 }
             }
             FlightMode::Plane => {
@@ -281,6 +315,54 @@ impl Transition {
         }
     }
 
+    /// Cuts a transition short for `refusal` (e.g. [`ModeRefusal::RollError`], from a check the
+    /// caller makes), returning the step to fly this tick instead of the one
+    /// [`update`](Self::update) gave: a forward transition is abandoned to `Copter`, held
+    /// refused until `Copter` is requested (like a timeout); a back transition completes to
+    /// `Copter` with a handoff. Outside a transition it returns the current mode, unchanged.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::guidance::vtol::{Transition, TransitionConfig};
+    /// use stable_flight::{FlightMode, FlightRegime, ModeRefusal, Vec3, VehicleState};
+    ///
+    /// let mut transition = Transition::new(TransitionConfig::default());
+    /// transition.prime(&VehicleState::default());
+    /// let high = VehicleState { position_m: Vec3::new(0.0, 0.0, 10.0), ..Default::default() };
+    /// transition.update(0.01, FlightRegime::Plane, &high);
+    ///
+    /// let step = transition.cut_short(ModeRefusal::RollError);
+    /// assert_eq!(step.mode, FlightMode::Copter);
+    /// assert_eq!(transition.report().refusal, Some(ModeRefusal::RollError));
+    /// ```
+    pub fn cut_short(&mut self, refusal: ModeRefusal) -> TransitionStep {
+        let handoff = match self.mode {
+            FlightMode::ToPlane => {
+                self.abandon(refusal);
+                false
+            }
+            FlightMode::ToCopter => {
+                self.mode = FlightMode::Copter;
+                true
+            }
+            _ => false,
+        };
+        TransitionStep {
+            mode: self.mode,
+            tilt_target_rad: self.tilt_target_rad(),
+            handoff,
+        }
+    }
+
+    /// Gives up a forward transition: back to `Copter`, refused for `refusal` until `Copter`
+    /// is requested.
+    fn abandon(&mut self, refusal: ModeRefusal) {
+        self.mode = FlightMode::Copter;
+        self.abandoned = Some(refusal);
+        self.refusal = Some(refusal);
+    }
+
     /// The mode the last [`update`](Self::update) flew, and why it isn't the requested regime
     /// when it can't be: what a VTOL guidance reports as its
     /// [`flight_mode`](crate::Guidance::flight_mode).
@@ -296,8 +378,8 @@ impl Transition {
         let height_m = state.position_m.z - self.home_altitude_m;
         // A NaN height isn't high enough.
         let high_enough = height_m.is_finite() && height_m >= self.config.min_height_m;
-        self.refusal = if self.timed_out {
-            Some(ModeRefusal::TransitionTimeout)
+        self.refusal = if self.abandoned.is_some() {
+            self.abandoned
         } else if !high_enough {
             Some(ModeRefusal::BelowMinAltitude)
         } else {

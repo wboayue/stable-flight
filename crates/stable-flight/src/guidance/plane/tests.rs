@@ -145,7 +145,7 @@ fn validates_config() {
         (|c| c.max_bank_rad = 2.0, "max_bank_rad"),
         (|c| c.max_pitch_down_rad = -0.1, "max_pitch_down_rad"),
         (|c| c.max_rate_radps.y = f32::NAN, "max_rate_radps.y"),
-        (|c| c.trim_pitch_rad = 0.5, "trim_pitch_rad"),
+        (|c| c.trim_pitch_rad = 2.0, "trim_pitch_rad"),
         (|c| c.cruise_thrust = 1.1, "cruise_thrust"),
     ];
     check!(PlaneGuidanceConfig::default().validate().is_ok());

@@ -28,7 +28,7 @@ use crate::controllers::{
     check_positive,
 };
 use crate::math::{
-    DEG, assert_dt, attitude_error, clamp_symmetric, saturate_rates, saturate_symmetric,
+    DEG, assert_dt, attitude_error, bank_rad, clamp_symmetric, saturate_rates, saturate_symmetric,
     thrust_curve,
 };
 use crate::{
@@ -36,6 +36,7 @@ use crate::{
     Stabilizer, Vec2, Vec3, VehicleState,
 };
 
+mod params;
 #[cfg(test)]
 mod tests;
 
@@ -92,8 +93,9 @@ impl Default for PlaneStabilizerConfig {
 
 impl PlaneStabilizerConfig {
     /// `Ok` when every field is in range: positive time constants, non-negative rate limits,
-    /// bank and pitch limits in `[0, π]`, `0 < min ≤ trim ≤ max` airspeed, and a positive thrust
-    /// exponent.
+    /// bank and pitch limits in `[0, π]`, positive airspeeds, and a positive thrust exponent.
+    /// Each is checked on its own; the scale clamps the airspeed to `[min, max]` with a `max`
+    /// below `min` read as `min`, so out-of-order airspeeds degrade, not fail.
     ///
     /// # Errors
     ///
@@ -118,17 +120,9 @@ impl PlaneStabilizerConfig {
             half_turn(self.max_pitch_rad),
             "in [0, π] rad",
         )?;
+        check_positive("trim_airspeed_mps", self.trim_airspeed_mps)?;
         check_positive("min_airspeed_mps", self.min_airspeed_mps)?;
-        check(
-            "trim_airspeed_mps",
-            self.trim_airspeed_mps >= self.min_airspeed_mps && self.trim_airspeed_mps.is_finite(),
-            "finite and ≥ min_airspeed_mps",
-        )?;
-        check(
-            "max_airspeed_mps",
-            self.max_airspeed_mps >= self.trim_airspeed_mps && self.max_airspeed_mps.is_finite(),
-            "finite and ≥ trim_airspeed_mps",
-        )?;
+        check_positive("max_airspeed_mps", self.max_airspeed_mps)?;
         check_positive("thrust_curve_exponent", self.thrust_curve_exponent)
     }
 }
@@ -219,7 +213,8 @@ impl PlaneStabilizer {
         state
             .valid_airspeed_mps()
             .map_or(config.trim_airspeed_mps, |airspeed_mps| {
-                airspeed_mps.clamp(config.min_airspeed_mps, config.max_airspeed_mps)
+                let max_mps = config.max_airspeed_mps.max(config.min_airspeed_mps);
+                airspeed_mps.clamp(config.min_airspeed_mps, max_mps)
             })
     }
 
@@ -260,7 +255,7 @@ impl PlaneStabilizer {
 fn coordinated_turn_radps(state: &VehicleState, airspeed_mps: f32) -> Vec3 {
     let m = state.attitude.to_rotation_matrix();
     let (sin_roll_cos_pitch, cos_roll_cos_pitch) = (m[(2, 1)], m[(2, 2)]);
-    let bank_rad = libm::atan2f(sin_roll_cos_pitch, cos_roll_cos_pitch).abs();
+    let bank_rad = bank_rad(&state.attitude).abs();
     let (start, end) = COORDINATION_FADE_RAD;
     let fade = ((end - bank_rad) / (end - start)).clamp(0.0, 1.0);
     // A NaN bank (non-finite attitude) fades to NaN: no feedforward either.
