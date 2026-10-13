@@ -304,6 +304,9 @@ pub struct CopterGuidance {
     tilt_rad: Vec2,
     /// The held tilt was capped at `max_tilt_rad` when the lateral loop last ran.
     tilt_capped: bool,
+    /// The lateral loop's last acceleration request in m/s², before the tilt cap. While
+    /// `tilt_capped`, the loop's integral is held against it on the next run.
+    requested_accel_mps2: Vec2,
 
     /// What the last `guide` call clipped.
     saturation: Saturation,
@@ -330,6 +333,7 @@ impl CopterGuidance {
             lateral_rate: RateDivider::default(),
             tilt_rad: Vec2::zeros(),
             tilt_capped: false,
+            requested_accel_mps2: Vec2::zeros(),
             saturation: Saturation::default(),
         }
     }
@@ -377,6 +381,7 @@ impl Guidance for CopterGuidance {
             // integral from an earlier leg, and starts its altitude target from the vehicle.
             self.altitude = AltitudeController::default();
             self.lateral = LateralController::default();
+            self.requested_accel_mps2 = Vec2::zeros();
             self.altitude_target_m = None;
             self.lateral_rate.reset();
         }
@@ -420,6 +425,7 @@ impl Guidance for CopterGuidance {
         self.lateral_rate.reset();
         self.tilt_rad = Vec2::zeros();
         self.tilt_capped = false;
+        self.requested_accel_mps2 = Vec2::zeros();
         self.saturation = Saturation::default();
     }
 
@@ -735,9 +741,15 @@ impl CopterGuidance {
             return Vec2::zeros();
         }
 
-        let accel_mps2 = self
-            .lateral
-            .control(&self.config.lateral, step, target, estimate);
+        let limit_mps2 = if self.tilt_capped {
+            self.requested_accel_mps2
+        } else {
+            Vec2::zeros()
+        };
+        let accel_mps2 =
+            self.lateral
+                .control(&self.config.lateral, step, target, estimate, limit_mps2);
+        self.requested_accel_mps2 = accel_mps2;
         let requested = tilt_for_acceleration(accel_mps2, heading_rad);
         self.tilt_capped = requested.norm() > self.config.max_tilt_rad;
         self.tilt_rad = cap_magnitude(requested, self.config.max_tilt_rad);

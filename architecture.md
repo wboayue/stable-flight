@@ -415,6 +415,10 @@ contract:
   which a negative or NaN limit acts as 0 instead of panicking like `f32::clamp`.
 * **Tolerate change between ticks.** The integral is re-clamped to the current `max_integral`
   every tick, so shrinking it self-heals. Filter state needs the same treatment.
+* **The lateral integral doesn't wind against the tilt cap.** `CopterGuidance` passes the
+  lateral loop the acceleration it last cut to `max_tilt_rad`, and the integral doesn't grow
+  along it (ArduPilot `libraries/AC_PID/AC_PID_2D.cpp:127-146`). Clamping to `max_integral`
+  alone would let a long leg at the tilt limit wind it full and overshoot the waypoint.
 * **Retuning `i` is bumpless.** Controllers integrate the error, not the I term, so a new
   integral gain would rescale `i · ∫e` and jump the output. `set_config` rescales each integral
   by `old_i / new_i` so the term carries over (a hover trim survives a retune). Across a zero

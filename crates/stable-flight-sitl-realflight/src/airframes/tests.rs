@@ -52,8 +52,8 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         },
         lateral: LateralControllerConfig {
             position_p: 0.5,
-            velocity: gains(1.26, 0.0, 0.0),
-            max_integral: 100.0,
+            velocity: gains(1.26, 0.4, 0.0),
+            max_integral: 12.5,
         },
         navigation_period_s: 0.02,
         max_tilt_rad: 27.0_f32.to_radians(),

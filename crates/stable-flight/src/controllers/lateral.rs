@@ -16,7 +16,7 @@ pub struct LateralControllerConfig {
     pub velocity: Gains,
 
     /// Maximum absolute value of the integrated velocity error, in m, per axis.
-    /// Prevents integral windup by limiting error accumulation.
+    /// Bounds the I term's authority at `velocity.i · max_integral` m/s².
     pub max_integral: f32,
 }
 
@@ -26,12 +26,15 @@ impl Default for LateralControllerConfig {
             // Unsaturated, `velocity.p · (position_p · e − v)` is a flight-checked position PD
             // for the atan tilt: P 0.63, D 1.26, ζ ≈ 0.8 (#108).
             position_p: 0.5,
+            // I trims a steady wind; at 0.4 its closed-loop pole (≈ 0.26 /s) leaves the step
+            // response unchanged (#357).
             velocity: Gains {
                 p: 1.26,
-                i: 0.0,
+                i: 0.4,
                 d: 0.0,
             },
-            max_integral: 100.0, // Arbitrary limit
+            // 12.5 m at I 0.4 is ±5 m/s², the default 27° tilt cap (g · tan 27°).
+            max_integral: 12.5,
         }
     }
 }
@@ -136,6 +139,9 @@ impl LateralController {
     /// * `dt` - Time step since the last update in seconds (must be positive and finite).
     /// * `target` - Desired position, feedforward velocity, and speed limit.
     /// * `estimate` - Current position and velocity.
+    /// * `limit_mps2` - The acceleration the caller last had to cap (e.g. at its tilt limit), or
+    ///   zero. The integral doesn't grow in that direction, so it can't wind up against a
+    ///   limit; it may still shrink or turn.
     ///
     /// # Returns
     ///
@@ -169,7 +175,7 @@ impl LateralController {
     /// };
     ///
     /// // Target is north-east: accelerate north (+x) and east (+y)
-    /// let accel_mps2 = controller.control(&config, 0.004, target, estimate);
+    /// let accel_mps2 = controller.control(&config, 0.004, target, estimate, Vec2::zeros());
     /// assert!(accel_mps2.x > 0.0 && accel_mps2.y > 0.0);
     /// ```
     pub fn control(
@@ -178,6 +184,7 @@ impl LateralController {
         dt: f32,
         target: LateralTarget,
         estimate: LateralEstimate,
+        limit_mps2: Vec2,
     ) -> Vec2 {
         assert_dt(dt);
         let gains = &config.velocity;
@@ -202,7 +209,12 @@ impl LateralController {
         let error_derivative = self.derivative.step(velocity_error, dt);
 
         self.integrated_error = clamp_symmetric_each(
-            self.integrated_error + dt * velocity_error,
+            hold_against_limit(
+                self.integrated_error,
+                dt * velocity_error,
+                gains.i,
+                limit_mps2,
+            ),
             config.max_integral,
         );
         gains.p * velocity_error + gains.i * self.integrated_error + gains.d * error_derivative
@@ -225,6 +237,19 @@ impl LateralController {
         self.integrated_error = self
             .integrated_error
             .map(|e| rescale_integral(e, old_i, new_i));
+    }
+}
+
+/// `integral + step`, except that a step whose I term pushes along `limit_mps2` may not
+/// lengthen the integral (it can still turn it): conditional integration against a capped
+/// output. A zero or non-finite `limit_mps2` never holds.
+fn hold_against_limit(integral: Vec2, step: Vec2, i: f32, limit_mps2: Vec2) -> Vec2 {
+    let next = integral + step;
+    // `>` is false for NaN, so a non-finite limit integrates freely.
+    if i * step.dot(&limit_mps2) > 0.0 {
+        cap_magnitude(next, integral.norm())
+    } else {
+        next
     }
 }
 
@@ -292,7 +317,8 @@ mod tests {
         ];
         for (target, velocity, expected) in cases {
             let mut controller = LateralController::default();
-            let accel = controller.control(&p_only(), 0.004, target, moving(velocity));
+            let accel =
+                controller.control(&p_only(), 0.004, target, moving(velocity), Vec2::zeros());
             assert!(
                 (accel - expected).amax() < 1e-5,
                 "target {target:?}, velocity {velocity:?} gave {accel:?}, expected {expected:?}"
@@ -326,6 +352,7 @@ mod tests {
                 0.004,
                 target,
                 moving(Vec2::zeros()),
+                Vec2::zeros(),
             );
             assert!(
                 (accel - expected).amax() < 1e-4,
@@ -349,18 +376,25 @@ mod tests {
             0.004,
             target,
             moving(Vec2::new(7.0, 0.0)),
+            Vec2::zeros(),
         );
-        let at_rest =
-            LateralController::default().control(&config, 0.004, target, moving(Vec2::zeros()));
+        let at_rest = LateralController::default().control(
+            &config,
+            0.004,
+            target,
+            moving(Vec2::zeros()),
+            Vec2::zeros(),
+        );
         assert!(cruising == Vec2::zeros());
         assert!((at_rest - Vec2::new(14.0, 0.0)).amax() < 1e-5);
     }
 
-    /// Below the cap, the default cascade is the flight-checked position PD it replaced:
-    /// `0.63 · e − 1.26 · v`.
+    /// Below the cap, the default cascade is the flight-checked position PD it replaced,
+    /// `0.63 · e − 1.26 · v`, plus the velocity I, here one tick of it.
     #[test]
-    fn default_gains_match_the_position_pd() {
+    fn default_gains_are_the_position_pd_plus_velocity_i() {
         let config = LateralControllerConfig::default();
+        const DT: f32 = 0.004;
         // (position error, velocity)
         let cases = [
             (Vec2::new(2.0, -1.0), Vec2::zeros()),
@@ -368,12 +402,66 @@ mod tests {
             (Vec2::new(-3.0, 4.0), Vec2::new(0.4, -0.2)),
         ];
         for (error, velocity) in cases {
-            let accel =
-                LateralController::default().control(&config, 0.004, at(error), moving(velocity));
-            let expected = 0.63 * error - 1.26 * velocity;
+            let accel = LateralController::default().control(
+                &config,
+                DT,
+                at(error),
+                moving(velocity),
+                Vec2::zeros(),
+            );
+            let velocity_error = 0.5 * error - velocity;
+            let expected = 0.63 * error - 1.26 * velocity + 0.4 * DT * velocity_error;
             assert!(
                 (accel - expected).amax() < 1e-5,
                 "error {error:?}, velocity {velocity:?} gave {accel:?}"
+            );
+        }
+    }
+
+    /// Against a constant disturbance (a steady wind's drag), the default gains settle on the
+    /// target rather than offset from it: drag over the position-to-tilt gain without I.
+    #[test]
+    fn default_gains_trim_a_constant_disturbance() {
+        const DT: f32 = 0.02;
+        const DRAG_MPS2: f32 = 1.5;
+        let config = LateralControllerConfig::default();
+        let mut controller = LateralController::default();
+        let (mut position_m, mut velocity_mps) = (Vec2::zeros(), Vec2::zeros());
+        let drag = Vec2::new(DRAG_MPS2, 0.0);
+        for _ in 0..(60.0 / DT) as usize {
+            let estimate = LateralEstimate {
+                position_m,
+                velocity_mps,
+            };
+            let accel = controller.control(&config, DT, at(Vec2::zeros()), estimate, Vec2::zeros());
+            velocity_mps += (accel + drag) * DT;
+            position_m += velocity_mps * DT;
+        }
+        assert!(position_m.norm() < 0.01, "settled at {position_m:?}");
+    }
+
+    /// While `limit` points along the I term's push, the integral can't lengthen; it still
+    /// shrinks or turns, and a zero, opposed, or non-finite limit doesn't hold.
+    #[test]
+    fn integral_is_held_against_the_limit() {
+        let x = Vec2::new(1.0, 0.0);
+        let y = Vec2::new(0.0, 1.0);
+        // (integral, step, i, limit, expected)
+        let cases = [
+            (x, x, 0.4, Vec2::zeros(), 2.0 * x),            // no limit
+            (x, x, 0.4, x, x),                              // held at its length
+            (Vec2::zeros(), x, 0.4, x, Vec2::zeros()),      // can't start along the limit
+            (x, -x, 0.4, x, Vec2::zeros()),                 // shrinks
+            (x, 0.5 * x, 0.4, -x, 1.5 * x),                 // limit the other way
+            (x, y, 0.4, y, (x + y) / 2.0_f32.sqrt()),       // turns, keeps length
+            (x, x, 0.0, x, 2.0 * x),                        // no I term: nothing to hold
+            (x, x, 0.4, Vec2::new(f32::NAN, 0.0), 2.0 * x), // non-finite limit
+        ];
+        for (integral, step, i, limit, expected) in cases {
+            let held = hold_against_limit(integral, step, i, limit);
+            assert!(
+                (held - expected).amax() < 1e-6,
+                "{integral:?} + {step:?} against {limit:?} gave {held:?}, expected {expected:?}"
             );
         }
     }
@@ -391,8 +479,13 @@ mod tests {
         let config = LateralControllerConfig::default();
         for velocity in velocities {
             let mut controller = LateralController::default();
-            let accel =
-                controller.control(&config, 0.004, at(Vec2::new(10.0, 5.0)), moving(velocity));
+            let accel = controller.control(
+                &config,
+                0.004,
+                at(Vec2::new(10.0, 5.0)),
+                moving(velocity),
+                Vec2::zeros(),
+            );
             assert!(
                 accel == Vec2::zeros(),
                 "velocity {velocity:?} gave {accel:?}"
@@ -415,6 +508,7 @@ mod tests {
                 0.01,
                 at(Vec2::new(100.0, -100.0)),
                 moving(Vec2::zeros()),
+                Vec2::zeros(),
             );
         }
 
@@ -435,12 +529,29 @@ mod tests {
         let at_rest = moving(Vec2::zeros());
 
         // One tick with a NaN target must not poison later ticks.
-        let during = controller.control(&config, 0.004, at(Vec2::new(f32::NAN, 0.0)), at_rest);
-        let after = controller.control(&config, 0.004, at(Vec2::new(10.0, 0.0)), at_rest);
+        let during = controller.control(
+            &config,
+            0.004,
+            at(Vec2::new(f32::NAN, 0.0)),
+            at_rest,
+            Vec2::zeros(),
+        );
+        let after = controller.control(
+            &config,
+            0.004,
+            at(Vec2::new(10.0, 0.0)),
+            at_rest,
+            Vec2::zeros(),
+        );
 
         assert!(during == Vec2::zeros(), "NaN tick gave {during:?}");
-        let fresh =
-            LateralController::default().control(&config, 0.004, at(Vec2::new(10.0, 0.0)), at_rest);
+        let fresh = LateralController::default().control(
+            &config,
+            0.004,
+            at(Vec2::new(10.0, 0.0)),
+            at_rest,
+            Vec2::zeros(),
+        );
         assert!(after == fresh, "valid target after NaN gave {after:?}");
     }
 
@@ -458,8 +569,20 @@ mod tests {
         };
         let mut controller = LateralController::default();
         let target = at(Vec2::zeros());
-        let first = controller.control(&config, 0.1, target, moving(Vec2::new(1.0, 0.0)));
-        let second = controller.control(&config, 0.1, target, moving(Vec2::new(2.0, 0.0)));
+        let first = controller.control(
+            &config,
+            0.1,
+            target,
+            moving(Vec2::new(1.0, 0.0)),
+            Vec2::zeros(),
+        );
+        let second = controller.control(
+            &config,
+            0.1,
+            target,
+            moving(Vec2::new(2.0, 0.0)),
+            Vec2::zeros(),
+        );
         assert!(first == Vec2::zeros());
         assert!((second - Vec2::new(-5.0, 0.0)).amax() < 1e-4);
     }
@@ -494,6 +617,7 @@ mod tests {
                 0.01,
                 at(Vec2::new(1.0, 1.0)),
                 moving(Vec2::zeros()),
+                Vec2::zeros(),
             );
             assert!(
                 controller.integrated_error == Vec2::zeros(),
@@ -507,7 +631,13 @@ mod tests {
     fn gain_change_between_ticks_keeps_state() {
         let config = LateralControllerConfig::default();
         let mut controller = LateralController::default();
-        controller.control(&config, 1.0, at(Vec2::new(0.0, 1.0)), moving(Vec2::zeros()));
+        controller.control(
+            &config,
+            1.0,
+            at(Vec2::new(0.0, 1.0)),
+            moving(Vec2::zeros()),
+            Vec2::zeros(),
+        );
         let integral = controller.integrated_error;
 
         let retuned = LateralControllerConfig {
@@ -519,7 +649,13 @@ mod tests {
             },
             ..config
         };
-        let accel = controller.control(&retuned, 0.01, at(Vec2::zeros()), moving(Vec2::zeros()));
+        let accel = controller.control(
+            &retuned,
+            0.01,
+            at(Vec2::zeros()),
+            moving(Vec2::zeros()),
+            Vec2::zeros(),
+        );
 
         assert!(controller.integrated_error == integral);
         approx::assert_relative_eq!(accel.y, 2.0 * integral.y, epsilon = 1e-6);
@@ -533,6 +669,7 @@ mod tests {
             0.0,
             at(Vec2::zeros()),
             moving(Vec2::zeros()),
+            Vec2::zeros(),
         );
     }
 }

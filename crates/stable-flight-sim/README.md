@@ -45,7 +45,7 @@ Each file in `tests/` flies the full pipeline on `airframes::quad_x()` (wiring i
 
 | Test | Asserts |
 |---|---|
-| `hover` | Altitude, position, and heading hold in calm air; a steady offset in steady wind (TODO #357); return after a gust |
+| `hover` | Altitude, position, and heading hold in calm air; on the waypoint in steady wind; return after a gust |
 | `step_response` | Every loop (roll/pitch/yaw rate, roll/pitch angle, heading), both ways, against ArduPilot's and PX4's autotune targets: overshoot ≤ 5%, rate bounce-back ≤ 10%, rate rise ≤ 0.14 s (yaw 0.2 s), settled, clipping within the step plan's allowance |
 | `waypoint` | A square route: each leg near its line and altitude at cruise speed; holds the last corner |
 | `land` | Climb, land on a waypoint, disarm, rest on the ground |

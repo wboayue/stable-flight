@@ -130,6 +130,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `LateralController::control` takes `limit`, the acceleration the caller last
+  capped; the integral doesn't grow along it. `CopterGuidance` passes its capped tilt request
+  (#357).
+- `LateralControllerConfig::default()` has a velocity I of 0.4 and `max_integral` 12.5 m (±5
+  m/s², the default tilt cap), so a waypoint hold trims a steady wind instead of settling
+  downwind (#357).
 - `PlaneStabilizerConfig`, `PlaneGuidanceConfig`, and `TransitionConfig` check each field on
   its own (no cross-field rules), so each param's range is fixed; out-of-order airspeeds
   clamp, and a `forward_max_tilt_rad` below `forward_done_rad` leaves the forward transition
