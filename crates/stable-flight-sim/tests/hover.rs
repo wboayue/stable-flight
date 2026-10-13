@@ -30,7 +30,7 @@ fn hover(wind: Wind, hold_s: f32) -> Deviation {
     let horizontal = |position_m: Vec3| Vec2::new(position_m.x, position_m.y);
     let start = horizontal(flight_loop.state().position_m);
     let mut worst = Deviation::default();
-    fly(&mut flight_loop, hold_s, |flight_loop| {
+    fly(&mut flight_loop, hold_s, |flight_loop, _| {
         let state = flight_loop.state();
         let position = horizontal(state.position_m);
         worst.altitude_m = worst

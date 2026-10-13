@@ -4,7 +4,6 @@
 mod common;
 
 use assert2::check;
-use stable_flight::commanders::{RouteEnd, WaypointFollower};
 use stable_flight::{
     AbsoluteAttitudeCommand, AbsoluteRateCommand, Command, Commander, ControlInput, Saturation,
     Vec2, VehicleState, WaypointCommand,
@@ -38,17 +37,14 @@ const FLY_S: f32 = 0.2;
 /// The flags of the last recorded ticks after hovering, then flying `input` (if any) for
 /// [`FLY_S`].
 fn flags(input: Option<ControlInput>) -> Saturation {
-    let hover = WaypointFollower::new([waypoint(0.0, 0.0, HOVER_ALTITUDE_M)])
-        .expect("one waypoint")
-        .with_route_end(RouteEnd::Hold);
     let commander = ThenFly {
-        hover,
+        hover: common::hover_follower(),
         elapsed_s: 0.0,
         after_s: common::HOVER_SETTLE_S,
         input,
     };
     let mut flight_loop = common::sim_loop_with(airframes::quad_x(), commander, Wind::default());
-    fly(&mut flight_loop, common::HOVER_SETTLE_S + FLY_S, |_| {});
+    fly(&mut flight_loop, common::HOVER_SETTLE_S + FLY_S, |_, _| {});
     let (.., telemetry) = flight_loop.into_parts();
     telemetry.iter().fold(Saturation::default(), |all, tick| {
         all.merge(tick.saturation)

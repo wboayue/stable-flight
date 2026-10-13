@@ -25,7 +25,7 @@ fn flight() -> Vec<stable_flight::VehicleState> {
     };
     let mut flight_loop = sim_loop(follower, wind);
     let mut states = Vec::new();
-    fly(&mut flight_loop, 20.0, |flight_loop| {
+    fly(&mut flight_loop, 20.0, |flight_loop, _| {
         states.push(flight_loop.state().clone());
     });
     states

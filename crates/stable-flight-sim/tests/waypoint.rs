@@ -69,9 +69,7 @@ fn flies_a_square_on_its_legs_and_holds_the_last_corner() {
 
     let mut legs = [Leg::default(); 3];
     let mut completed_s = None;
-    let mut elapsed_s = 0.0;
-    fly(&mut flight_loop, 60.0, |flight_loop| {
-        elapsed_s += common::TICK.as_secs_f32();
+    fly(&mut flight_loop, 60.0, |flight_loop, elapsed_s| {
         let follower = flight_loop.commander();
         if completed_s.is_none() && follower.is_complete() {
             completed_s = Some(elapsed_s);

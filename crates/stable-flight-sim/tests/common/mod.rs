@@ -14,7 +14,9 @@ use stable_flight::stabilizers::copter::{CopterStabilizer, TunedLoop};
 use stable_flight::testing::RecordingTelemetry;
 use stable_flight::tuning::autotune::{Autotune, AutotuneEvent, Envelope, StagePlan};
 use stable_flight::tuning::{ProbeConfig, ProbeStatus};
-use stable_flight::{Commander, Configurable, FlightLoop, Vec2, WaypointCommand};
+use stable_flight::{
+    Commander, Configurable, FlightLoop, TelemetryPublisher, Vec2, WaypointCommand,
+};
 use stable_flight_sim::airframes::{self, Airframe};
 use stable_flight_sim::{SimVehicle, Wind};
 
@@ -24,14 +26,12 @@ pub const TICK: Duration = Duration::from_millis(4);
 /// Ticks of telemetry kept.
 pub const RECORDED: usize = 64;
 
-pub type SimLoop<C> = FlightLoop<
-    C,
-    SimVehicle,
-    CopterGuidance,
-    CopterStabilizer,
-    TableMixer<4>,
-    RecordingTelemetry<RECORDED>,
->;
+/// The copter pipeline on a [`SimVehicle`], publishing to `T`.
+pub type Pipeline<C, T> =
+    FlightLoop<C, SimVehicle, CopterGuidance, CopterStabilizer, TableMixer<4>, T>;
+
+/// The pipeline recording its last [`RECORDED`] ticks.
+pub type SimLoop<C> = Pipeline<C, RecordingTelemetry<RECORDED>>;
 
 /// Altitude of the [`hover`] point over the origin, in m.
 pub const HOVER_ALTITUDE_M: f32 = 5.0;
@@ -49,6 +49,17 @@ pub fn sim_loop<C: Commander>(commander: C, wind: Wind) -> SimLoop<C> {
 
 /// As [`sim_loop`], for `airframe` (e.g. `quad_x` with other gains).
 pub fn sim_loop_with<C: Commander>(airframe: Airframe, commander: C, wind: Wind) -> SimLoop<C> {
+    pipeline(airframe, commander, wind, RecordingTelemetry::new())
+}
+
+/// `airframe` on the ground at the origin in `wind`, flown by `commander`, publishing to
+/// `telemetry`, primed.
+pub fn pipeline<C: Commander, T: TelemetryPublisher>(
+    airframe: Airframe,
+    commander: C,
+    wind: Wind,
+    telemetry: T,
+) -> Pipeline<C, T> {
     let vehicle = SimVehicle::new(airframe.model, &airframe.mixer)
         .expect("valid airframe")
         .with_wind(wind);
@@ -58,22 +69,32 @@ pub fn sim_loop_with<C: Commander>(airframe: Airframe, commander: C, wind: Wind)
         CopterGuidance::new(airframe.guidance),
         CopterStabilizer::new(airframe.stabilizer),
         airframe.mixer,
-        RecordingTelemetry::new(),
+        telemetry,
     );
     flight_loop.prime();
     flight_loop
 }
 
-/// Steps `flight_loop` for `seconds` of simulated time, calling `each` after every tick.
+/// Ticks in `seconds` of simulated time.
+pub fn ticks(seconds: f32) -> usize {
+    (seconds / TICK.as_secs_f32()).round() as usize
+}
+
+/// Simulated seconds after `ticks` ticks.
+pub fn seconds(ticks: usize) -> f32 {
+    ticks as f32 * TICK.as_secs_f32()
+}
+
+/// Steps `flight_loop` for `seconds` of simulated time, calling `each` after every tick with
+/// the seconds flown so far in this call.
 pub fn fly<C: Commander>(
     flight_loop: &mut SimLoop<C>,
     seconds: f32,
-    mut each: impl FnMut(&SimLoop<C>),
+    mut each: impl FnMut(&SimLoop<C>, f32),
 ) {
-    let ticks = (seconds / TICK.as_secs_f32()).round() as usize;
-    for _ in 0..ticks {
+    for tick in 1..=ticks(seconds) {
         flight_loop.step(TICK);
-        each(flight_loop);
+        each(flight_loop, self::seconds(tick));
     }
 }
 
@@ -86,14 +107,18 @@ pub fn waypoint(north_m: f32, east_m: f32, altitude_m: f32) -> WaypointCommand {
     }
 }
 
-/// `airframe` taken off and settled for [`HOVER_SETTLE_S`] on a held waypoint
-/// [`HOVER_ALTITUDE_M`] over the origin, in `wind`.
-pub fn hover(airframe: Airframe, wind: Wind) -> SimLoop<Hover> {
-    let follower = WaypointFollower::new([waypoint(0.0, 0.0, HOVER_ALTITUDE_M)])
+/// Holds a waypoint [`HOVER_ALTITUDE_M`] over the origin.
+pub fn hover_follower() -> Hover {
+    WaypointFollower::new([waypoint(0.0, 0.0, HOVER_ALTITUDE_M)])
         .expect("one waypoint")
-        .with_route_end(RouteEnd::Hold);
-    let mut flight_loop = sim_loop_with(airframe, follower, wind);
-    fly(&mut flight_loop, HOVER_SETTLE_S, |_| {});
+        .with_route_end(RouteEnd::Hold)
+}
+
+/// `airframe` taken off and settled for [`HOVER_SETTLE_S`] on [`hover_follower`]'s point, in
+/// `wind`.
+pub fn hover(airframe: Airframe, wind: Wind) -> SimLoop<Hover> {
+    let mut flight_loop = sim_loop_with(airframe, hover_follower(), wind);
+    fly(&mut flight_loop, HOVER_SETTLE_S, |_, _| {});
     flight_loop
 }
 
@@ -107,8 +132,7 @@ pub fn probe(
 ) -> Option<ProbeStatus> {
     let mut flight_loop = hover(airframe, Wind::default());
     flight_loop.start_probe(target, config);
-    let ticks = (timeout_s / TICK.as_secs_f32()).round() as usize;
-    for _ in 0..ticks {
+    for _ in 0..ticks(timeout_s) {
         flight_loop.step(TICK);
         match flight_loop.probe() {
             Some((_, ProbeStatus::Running(_))) => {}
@@ -137,10 +161,9 @@ pub fn autotune(airframe: Airframe, plan: &[StagePlan], timeout_s: f32) -> Autot
     autotune.start(&flight_loop).expect("armed, idle");
     let mut stages = Vec::new();
     let mut duration_s = 0.0;
-    let ticks = (timeout_s / TICK.as_secs_f32()).round() as usize;
-    for _ in 0..ticks {
+    for tick in 1..=ticks(timeout_s) {
         flight_loop.step(TICK);
-        duration_s += TICK.as_secs_f32();
+        duration_s = seconds(tick);
         let event = autotune.update(&mut flight_loop, TICK.as_secs_f32());
         if let Some(event @ (AutotuneEvent::StageDone { .. } | AutotuneEvent::StageFailed { .. })) =
             event

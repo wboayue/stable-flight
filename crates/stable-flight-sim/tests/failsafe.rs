@@ -2,20 +2,23 @@
 //! silent, and comes back. `FailsafeCommander` hands over to `HoldCommander`, which holds the
 //! vehicle where it was, armed, and back to the link once it's heard again.
 
+mod common;
+
 use std::time::Duration;
 
 use assert2::check;
 use stable_flight::commanders::{FailsafeCommander, FailsafeConfig, HoldCommander};
-use stable_flight::guidance::copter::CopterGuidance;
-use stable_flight::stabilizers::copter::CopterStabilizer;
-use stable_flight::{Command, ControlInput, FlightLoop, Vec3, WaypointCommand};
+use stable_flight::{Command, ControlInput, Vec3, WaypointCommand};
 use stable_flight_link::fc::{FcLink, FcLinkConfig};
 use stable_flight_link::loopback::{Loopback, LoopbackLink};
 use stable_flight_link::publisher::LinkPublisherConfig;
 use stable_flight_link::{Control, Downlink, MAX_FRAME_LEN, RecvMessage, SendMessage, Uplink};
-use stable_flight_sim::{SimVehicle, airframes};
+use stable_flight_sim::{Wind, airframes};
 
-const TICK: Duration = Duration::from_millis(4);
+use common::TICK;
+
+/// Loopback queue depth, in frames.
+const DEPTH: usize = 64;
 
 /// The companion's heartbeat period while it talks, and the vehicle's back.
 const HEARTBEAT: Duration = Duration::from_millis(100);
@@ -44,9 +47,26 @@ struct Phase {
     moved_m: f32,
 }
 
+/// Each heartbeat the vehicle has sent since the last call: `(armed, link_ok)`.
+fn heartbeats(
+    companion: &mut LoopbackLink<'_, DEPTH>,
+    buf: &mut [u8; MAX_FRAME_LEN],
+) -> Vec<(bool, bool)> {
+    std::iter::from_fn(|| {
+        companion
+            .recv_message::<Downlink>(buf)
+            .expect("valid frame")
+    })
+    .filter_map(|message| match message {
+        Downlink::Heartbeat { armed, link_ok, .. } => Some((armed, link_ok)),
+        _ => None,
+    })
+    .collect()
+}
+
 #[test]
 fn holds_position_through_a_link_outage_and_hands_back() {
-    let loopback = Loopback::<64>::new();
+    let loopback = Loopback::<DEPTH>::new();
     let (mut companion, fc_end) = loopback.split();
     let (rx, tx) = fc_end.into_halves();
     let mut fc_link = FcLink::<16, 8>::new();
@@ -61,19 +81,11 @@ fn holds_position_through_a_link_outage_and_hands_back() {
     let failsafe = FailsafeConfig::default();
     let commander = FailsafeCommander::new(link_commander, HoldCommander::default(), failsafe)
         .expect("valid config");
-    let airframe = airframes::quad_x();
-    let vehicle = SimVehicle::new(airframe.model, &airframe.mixer).expect("valid airframe");
-    let mut flight_loop = FlightLoop::new(
-        commander,
-        vehicle,
-        CopterGuidance::new(airframe.guidance),
-        CopterStabilizer::new(airframe.stabilizer),
-        airframe.mixer,
-        telemetry,
-    );
-    flight_loop.prime();
+    let mut flight_loop =
+        common::pipeline(airframes::quad_x(), commander, Wind::default(), telemetry);
 
     let mut buf = [0u8; MAX_FRAME_LEN];
+    let mut recv = [0u8; MAX_FRAME_LEN];
     let hover = Command::new(
         true,
         ControlInput::Waypoint(WaypointCommand {
@@ -81,7 +93,7 @@ fn holds_position_through_a_link_outage_and_hands_back() {
             ..Default::default()
         }),
     );
-    let mut send = |companion: &mut LoopbackLink<'_, 64>, control: Control| {
+    let mut send = |companion: &mut LoopbackLink<'_, DEPTH>, control: Control| {
         companion
             .send_message(&Uplink::Control(control), &mut buf)
             .expect("loopback has room");
@@ -95,7 +107,7 @@ fn holds_position_through_a_link_outage_and_hands_back() {
         (Companion::Silent, 5.0),
         (Companion::Talks, 5.0),
     ];
-    let heartbeat_ticks = (HEARTBEAT.as_secs_f32() / TICK.as_secs_f32()).round() as usize;
+    let heartbeat_ticks = common::ticks(HEARTBEAT.as_secs_f32());
     let mut tick = 0;
     let mut reports = Vec::new();
     for (index, (talking, seconds)) in phases.into_iter().enumerate() {
@@ -109,7 +121,7 @@ fn holds_position_through_a_link_outage_and_hands_back() {
             ..Phase::default()
         };
         let mut first_link_ok = None;
-        for phase_tick in 0..(seconds / TICK.as_secs_f32()).round() as usize {
+        for phase_tick in 1..=common::ticks(seconds) {
             if talking == Companion::Talks && tick % heartbeat_ticks == 0 {
                 send(&mut companion, Control::Heartbeat);
             }
@@ -119,19 +131,12 @@ fn holds_position_through_a_link_outage_and_hands_back() {
 
             let moved: Vec3 = flight_loop.state().position_m - start;
             report.moved_m = report.moved_m.max(moved.norm());
-            let mut recv = [0u8; MAX_FRAME_LEN];
-            while let Some(message) = companion
-                .recv_message::<Downlink>(&mut recv)
-                .expect("valid frame")
-            {
-                let Downlink::Heartbeat { armed, link_ok, .. } = message else {
-                    continue;
-                };
+            for (armed, link_ok) in heartbeats(&mut companion, &mut recv) {
                 report.armed &= armed;
                 report.link_flies = link_ok;
                 let first = *first_link_ok.get_or_insert(link_ok);
                 if link_ok != first && report.switched_s.is_none() {
-                    report.switched_s = Some(phase_tick as f32 * TICK.as_secs_f32());
+                    report.switched_s = Some(common::seconds(phase_tick));
                 }
             }
         }
