@@ -171,6 +171,16 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   `src/mixers/table/tests.rs`; sitl-realflight `src/vehicle/tests.rs`). Simulator-dependent
   checks are examples, not tests; closed-loop checks that need no realism fly `stable-flight-sim`
   in its `tests/`.
+- **Closed-loop behavior** (loops, guidance, commanders, failsafe, mixer limits) is tested on
+  `stable-flight-sim`, wired through `tests/common` (`pipeline`, `hover`, `probe`, `autotune`,
+  `fly`). Reproduce a suspected flight bug there before filing it, put the measured repro in the
+  issue, and land the fix's regression test there. A behavior the sim shows but the fix waits on
+  stays `#[ignore = "... (#n)"]`. `FlightLoop` exposes no telemetry mid-run: read per-tick
+  values in `fly`'s callback, recorded ticks after `into_parts()`, or the link's downlink.
+- **Sim test bands** come from a cited external target (ArduPilot, PX4 `file:line`) or a measured
+  value with its margin stated beside the constant, never from the thresholds of the code under
+  test. A band that only a tuning change can meet comes with that tuning, in `airframes`, from
+  the sim autotune where it covers the loop.
 - Name tests after the behavior they protect (`maintains_pitch_hold`), not the function.
 - Table-driven tests are the default for control math, one row per scenario. Use `assert2`
   (`assert!`/`check!`) and `approx::assert_relative_eq!` for floats.
