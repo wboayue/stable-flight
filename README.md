@@ -14,6 +14,25 @@ Starting with simulation allowed me to quickly iterate on flight stabilizer logi
 
 Perfect for anyone keen to explore flight controllers, tweak control logic, or script flights in simulation.
 
+## How It Fits Together
+
+A RealFlight example is the flight controller: it runs `FlightLoop` against the simulator and serves telemetry, params, and link commands to a companion. The bridge turns that native link into MAVLink for a ground station.
+
+```mermaid
+flowchart LR
+    pilot["Joystick, transmitter,<br/>or waypoint CSV"] --> loop
+    rf["RealFlight"] <-->|"RealFlight Link:<br/>state ⇄ channels"| loop
+    subgraph fc ["Flight controller (a RealFlight example)"]
+        loop["FlightLoop at 250 Hz<br/>commander → guidance →<br/>stabilizer → mixer"]
+        fclink["FcLink<br/>telemetry, params,<br/>link commands"]
+        loop <--> fclink
+    end
+    fclink <-->|"native link<br/>UDP"| bridge["stable-flight-bridge"]
+    bridge <-->|"MAVLink v2<br/>UDP 14550"| gcs["QGroundControl<br/>or offboard app"]
+```
+
+`link_pilot` can take the bridge's place for scripted link flights. On a board, sensor and ESC drivers take RealFlight's place, and the link runs over USB or a UART (planned).
+
 ## Crates
 
 The repository is a Cargo workspace:
@@ -61,6 +80,17 @@ After installing RealFlight, enable RealFlight Link as described in the [`stable
 ## Getting Started
 
 Runnable entrypoints are the crate examples (`crates/*/examples/`); run them from the repository root. Pick one that matches the input you want:
+
+| Flight | Pilot | Run |
+|---|---|---|
+| Quadcopter, manual | Joystick or Spektrum transmitter | `just fly-manual` |
+| Quadcopter, scripted | Waypoint CSV | `just fly-auto` |
+| Quadcopter, from a companion | QGC through the bridge, or `link_pilot` | `just fly-companion` + `just bridge` (or `just link-pilot`) |
+| Quadcopter autotune | None: tunes, prints gains, lands | `just fly-autotune` |
+| Tailsitter, manual | Joystick (D-pad picks copter or plane) | `just fly-tailsitter` |
+| Tailsitter, scripted | Waypoint CSV: hover, or a transition mission | `just fly-tailsitter-auto` |
+
+Every flight serves telemetry and params over the link, so `just bridge` + QGC can watch any of them. The tailsitter and autotune commands are in the [`stable-flight-sitl-realflight` README](crates/stable-flight-sitl-realflight/README.md#examples); the commands behind the copter recipes:
 
 ```bash
 # The bridge: the examples send params and telemetry over the native link, and it speaks
