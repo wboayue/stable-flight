@@ -189,12 +189,15 @@ pub fn explora_vtol()
                 ..CopterGuidanceConfig::default()
             },
             plane: PlaneGuidanceConfig {
-                // A guess until plane flights measure it (#124).
-                cruise_thrust: 0.6,
+                // Level cruise held at 14–15 m/s with the stick at 0.85–0.89 (#124).
+                cruise_thrust: 0.85,
                 ..Default::default()
             },
             transition: TransitionConfig {
                 min_height_m: 10.0,
+                // The plane side's minimum airspeed: completing at 45° and 1.5 m/s, the wing
+                // sank 6 m while it gained speed (#124).
+                min_airspeed_mps: 9.0,
                 // More than hover (0.84): lift drops as the nose tilts over, until the wing
                 // flies.
                 forward_thrust: 0.9,
