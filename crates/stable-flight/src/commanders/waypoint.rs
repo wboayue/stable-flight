@@ -18,7 +18,8 @@ pub const DEFAULT_ACCEPTANCE_RADIUS_M: f32 = 3.0;
 pub const DEFAULT_ALTITUDE_ACCEPTANCE_M: f32 = 0.8;
 
 /// Altitude acceptance (meters, either way) for a wing-borne leg, which holds altitude loosely
-/// while it flies: PX4's fixed-wing `NAV_FW_ALT_RAD` (`navigator_params.yaml`).
+/// while it flies: PX4's fixed-wing `NAV_FW_ALT_RAD`
+/// (`src/modules/navigator/navigator_params.yaml:33-38`).
 pub const PLANE_ALTITUDE_ACCEPTANCE_M: f32 = 10.0;
 
 /// Returned by [`WaypointFollower::new`] when given no waypoints; there is nothing to fly.

@@ -214,10 +214,7 @@ impl ScriptCommander {
     /// .with_altitude_acceptance(FlightRegime::Copter, 0.5);
     /// ```
     pub fn with_altitude_acceptance(mut self, regime: FlightRegime, altitude_m: f32) -> Self {
-        match regime {
-            FlightRegime::Plane => self.plane_altitude_acceptance_m = altitude_m,
-            _ => self.copter_altitude_acceptance_m = altitude_m,
-        }
+        *self.altitude_acceptance_m(regime) = altitude_m;
         self
     }
 
@@ -244,6 +241,15 @@ impl ScriptCommander {
         ScriptCommander {
             follower: self.follower.with_route_end(route_end),
             ..self
+        }
+    }
+
+    /// The altitude acceptance of a `regime` leg: plane legs have their own, and any other
+    /// regime is rotor-borne and shares the copter one.
+    fn altitude_acceptance_m(&mut self, regime: FlightRegime) -> &mut f32 {
+        match regime {
+            FlightRegime::Plane => &mut self.plane_altitude_acceptance_m,
+            _ => &mut self.copter_altitude_acceptance_m,
         }
     }
 
@@ -299,10 +305,7 @@ impl Commander for ScriptCommander {
     /// leg's regime; then loops, holds, or lands per its [`RouteEnd`]), asking for the regime
     /// of the leg to the current waypoint.
     fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
-        let altitude_acceptance_m = match self.active_regime() {
-            FlightRegime::Plane => self.plane_altitude_acceptance_m,
-            _ => self.copter_altitude_acceptance_m,
-        };
+        let altitude_acceptance_m = *self.altitude_acceptance_m(self.active_regime());
         self.follower.set_altitude_acceptance(altitude_acceptance_m);
         let command = self.follower.next_command(dt, current_state);
         command.with_regime(self.active_regime())
