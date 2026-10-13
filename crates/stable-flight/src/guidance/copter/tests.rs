@@ -1332,7 +1332,8 @@ fn point_mass_flies_a_route_at_cruise_speed_and_holds_the_end() {
     );
     assert!(velocity.norm() < 0.05, "still moving at {velocity:?}");
     assert!(
-        // 7.52 m/s measured: the lateral I overshoots cruise briefly at the leg start (#357; TODO(#367)).
+        // 7.52 m/s measured: the lateral I overshoots cruise briefly at the leg start
+        // (#357; TODO(#367)).
         (CRUISE_MPS - 0.5..=CRUISE_MPS + 0.75).contains(&max_speed_mps),
         "peak speed {max_speed_mps} m/s"
     );
