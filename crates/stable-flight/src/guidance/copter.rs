@@ -304,6 +304,9 @@ pub struct CopterGuidance {
     tilt_rad: Vec2,
     /// The held tilt was capped at `max_tilt_rad` when the lateral loop last ran.
     tilt_capped: bool,
+    /// The acceleration in m/s² the lateral loop asked for when its tilt was last capped, zero
+    /// otherwise: the direction its integral is held against on the next run.
+    lateral_limit_mps2: Vec2,
 
     /// What the last `guide` call clipped.
     saturation: Saturation,
@@ -330,6 +333,7 @@ impl CopterGuidance {
             lateral_rate: RateDivider::default(),
             tilt_rad: Vec2::zeros(),
             tilt_capped: false,
+            lateral_limit_mps2: Vec2::zeros(),
             saturation: Saturation::default(),
         }
     }
@@ -377,6 +381,7 @@ impl Guidance for CopterGuidance {
             // integral from an earlier leg, and starts its altitude target from the vehicle.
             self.altitude = AltitudeController::default();
             self.lateral = LateralController::default();
+            self.lateral_limit_mps2 = Vec2::zeros();
             self.altitude_target_m = None;
             self.lateral_rate.reset();
         }
@@ -420,6 +425,7 @@ impl Guidance for CopterGuidance {
         self.lateral_rate.reset();
         self.tilt_rad = Vec2::zeros();
         self.tilt_capped = false;
+        self.lateral_limit_mps2 = Vec2::zeros();
         self.saturation = Saturation::default();
     }
 
@@ -735,11 +741,20 @@ impl CopterGuidance {
             return Vec2::zeros();
         }
 
-        let accel_mps2 = self
-            .lateral
-            .control(&self.config.lateral, step, target, estimate);
+        let accel_mps2 = self.lateral.control(
+            &self.config.lateral,
+            step,
+            target,
+            estimate,
+            self.lateral_limit_mps2,
+        );
         let requested = tilt_for_acceleration(accel_mps2, heading_rad);
         self.tilt_capped = requested.norm() > self.config.max_tilt_rad;
+        self.lateral_limit_mps2 = if self.tilt_capped {
+            accel_mps2
+        } else {
+            Vec2::zeros()
+        };
         self.tilt_rad = cap_magnitude(requested, self.config.max_tilt_rad);
         self.lateral_rate.ran();
         self.tilt_rad

@@ -149,7 +149,8 @@ let thrust = controller.control(&config, dt, target, estimate);
 **Purpose**: Controls horizontal position (X-Y) by commanding a horizontal acceleration.
 
 **Input**: `LateralTarget` (position (m), feedforward velocity (m/s), speed limit (m/s)),
-`LateralEstimate` (position (m), velocity (m/s))  
+`LateralEstimate` (position (m), velocity (m/s)), and the acceleration the caller last capped
+(m/s², zero when none)  
 **Output**: Desired horizontal acceleration (m/s², unsaturated). `CopterGuidance` turns it into a
 tilt of `atan(|a| / g)` toward it, relative to the heading, capped at its `max_tilt_rad`.
 
@@ -157,7 +158,8 @@ tilt of `atan(|a| / g)` toward it, relative to the heading, capped at its `max_t
 - Cascade: position P → desired velocity (plus feedforward, capped at the speed limit) →
   velocity PID → acceleration
 - Airframe-independent: tilt conversion and limits belong to the guidance
-- Anti-windup protection
+- Velocity I trims a steady wind; the integral doesn't grow along the capped acceleration
+  (ArduPilot `libraries/AC_PID/AC_PID_2D.cpp:127-146`) and is clamped to `max_integral`
 
 **Usage**:
 ```rust
@@ -180,7 +182,7 @@ let estimate = LateralEstimate {
 };
 
 // Horizontal acceleration request (north, east) in m/s²
-let accel_mps2 = controller.control(&config, dt, target, estimate);
+let accel_mps2 = controller.control(&config, dt, target, estimate, Vec2::zeros());
 ```
 
 ### Plane Rate Controller (`plane_rate.rs`)

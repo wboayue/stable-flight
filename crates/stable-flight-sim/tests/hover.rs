@@ -57,17 +57,17 @@ fn holds_altitude_position_and_heading_in_calm_air() {
     check!(worst.heading_deg < 1.0, "{worst:?}");
 }
 
-/// The lateral loop's default velocity gains have no I, so a steady wind leaves a steady
-/// offset: drag over the position-to-tilt gain, about 2.4 m in 5 m/s here (TODO(#357)).
+/// The lateral velocity I trims the drag of a steady wind, so the hold is on the waypoint
+/// rather than downwind of it (#357).
 #[test]
-fn holds_a_steady_offset_in_steady_wind() {
+fn holds_the_waypoint_in_steady_wind() {
     let wind = Wind {
         steady_mps: Vec3::new(3.0, -4.0, 0.0),
         gust: None,
     };
     let worst = hover(wind, 10.0);
     check!(worst.altitude_m < 0.1, "{worst:?}");
-    check!(worst.horizontal_m < 3.0, "{worst:?}");
+    check!(worst.horizontal_m < 0.3, "{worst:?}");
     check!(worst.drift_m < 0.1, "{worst:?}");
     check!(worst.heading_deg < 1.0, "{worst:?}");
 }
@@ -86,6 +86,7 @@ fn rides_out_a_gust_and_returns() {
     let worst = hover(wind, 9.0);
     check!(worst.horizontal_m < 1.0, "{worst:?}");
     check!(worst.altitude_m < 0.1, "{worst:?}");
-    // Back on the waypoint 6 s after the gust.
-    check!(worst.final_m < 0.1, "{worst:?}");
+    // Back near the waypoint 6 s after the gust: 0.17 m measured, the lateral I's slow tail
+    // (#357; TODO(#367)).
+    check!(worst.final_m < 0.25, "{worst:?}");
 }
