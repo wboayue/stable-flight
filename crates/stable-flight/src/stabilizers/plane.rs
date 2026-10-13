@@ -28,7 +28,7 @@ use crate::controllers::{
     check_positive,
 };
 use crate::math::{
-    DEG, assert_dt, attitude_error, clamp_symmetric, saturate_rates, saturate_symmetric,
+    DEG, assert_dt, attitude_error, bank_rad, clamp_symmetric, saturate_rates, saturate_symmetric,
     thrust_curve,
 };
 use crate::{
@@ -255,7 +255,7 @@ impl PlaneStabilizer {
 fn coordinated_turn_radps(state: &VehicleState, airspeed_mps: f32) -> Vec3 {
     let m = state.attitude.to_rotation_matrix();
     let (sin_roll_cos_pitch, cos_roll_cos_pitch) = (m[(2, 1)], m[(2, 2)]);
-    let bank_rad = libm::atan2f(sin_roll_cos_pitch, cos_roll_cos_pitch).abs();
+    let bank_rad = bank_rad(&state.attitude).abs();
     let (start, end) = COORDINATION_FADE_RAD;
     let fade = ((end - bank_rad) / (end - start)).clamp(0.0, 1.0);
     // A NaN bank (non-finite attitude) fades to NaN: no feedforward either.

@@ -486,3 +486,30 @@ fn attitude_error_is_tilt_then_heading_in_body_axes() {
     let error = attitude_error(&at(0.0, 0.0, 0.0), deg(5.0), 0.0, f32::NAN);
     assert!(error.x > 0.0 && error.y == 0.0 && error.z.is_nan());
 }
+
+/// `bank_rad` is the roll about the nose, through inverted, at any heading and moderate pitch.
+#[test]
+fn bank_is_roll_about_the_nose() {
+    // (roll°, pitch°, heading°, expected°)
+    let cases = [
+        (0.0, 0.0, 0.0, 0.0),
+        (30.0, 0.0, 70.0, 30.0),
+        (-45.0, 20.0, -120.0, -45.0),
+        (120.0, 10.0, 0.0, 120.0),
+        (180.0, 0.0, 0.0, 180.0),
+    ];
+    for (roll, pitch, heading, expected) in cases {
+        let attitude = UnitQuaternion::from_euler_angles(
+            f32::to_radians(roll),
+            f32::to_radians(pitch),
+            f32::to_radians(heading),
+        );
+        let bank = bank_rad(&attitude).to_degrees();
+        assert!(
+            crate::wrap_angle((bank - expected).to_radians()).abs() < 1e-3,
+            "{roll}/{pitch}/{heading}: {bank}"
+        );
+    }
+    let nan = UnitQuaternion::new_unchecked(nalgebra::Quaternion::new(f32::NAN, 0.0, 0.0, 0.0));
+    assert!(bank_rad(&nan).is_nan());
+}

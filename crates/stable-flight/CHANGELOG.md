@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tailsitter wiring** (#124): `guidance::vtol::TailsitterGuidance` (hover guidance in the
   tailsitter view and `PlaneGuidance` under a `Transition`: the forward ramp on the hover side,
   the back ramp on the plane side, `Land` asks for copter, a roll past the limit cuts a
-  transition short, a thrust blend at each handoff) and `stabilizers::vtol::TailsitterStabilizer`
+  transition short, a thrust blend at each handoff, and stick throttle held at cruise after
+  the handoff into plane until the stick reaches it) and `stabilizers::vtol::TailsitterStabilizer`
   (each setpoint on its side, the incoming side primed). `Transition::cut_short`;
   `TransitionConfig` gains `forward_thrust`, `back_thrust`, `handoff_s`, `roll_limit_rad`;
   `Setpoint::with_thrust`.

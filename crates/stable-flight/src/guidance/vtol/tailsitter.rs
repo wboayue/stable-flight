@@ -6,6 +6,7 @@ use super::{ThrustHandoff, Transition, TransitionConfig, TransitionStep};
 use crate::controllers::InvalidConfig;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::guidance::plane::{PlaneGuidance, PlaneGuidanceConfig};
+use crate::math::bank_rad;
 use crate::params::{ParamError, Params, locate};
 use crate::{
     AbsoluteAttitudeCommand, Configurable, ControlInput, FlightMode, FlightModeReport,
@@ -66,6 +67,11 @@ impl TailsitterGuidanceConfig {
 /// 4. On a handoff (`ToPlane` → `Plane`, `ToCopter` → `Copter`) the incoming guidance is
 ///    primed, and thrust blends from its last value over
 ///    [`handoff_s`](TransitionConfig::handoff_s) ([`ThrustHandoff`]).
+/// 5. After the handoff into `Plane`, stick throttle (attitude or rate sticks) is held at
+///    least at the plane's [`cruise_thrust`](PlaneGuidanceConfig::cruise_thrust) until the
+///    stick reaches it: the forward ramp flies a fixed thrust and ignores the stick, so a stick
+///    left low would otherwise cut thrust as the wing takes over. Offboard thrust is flown as
+///    given.
 ///
 /// Pair it with a [`TailsitterStabilizer`](crate::stabilizers::vtol::TailsitterStabilizer),
 /// which flies each setpoint on the matching side. Params chain the parts' (`GUID_*`,
@@ -106,6 +112,8 @@ pub struct TailsitterGuidance {
     last_thrust: f32,
     /// The forward ramp's thrust, set when it begins.
     forward_thrust: f32,
+    /// Least stick thrust after a handoff into `Plane`, until the stick reaches it.
+    throttle_floor: Option<f32>,
 }
 
 impl TailsitterGuidance {
@@ -127,6 +135,7 @@ impl TailsitterGuidance {
             mode: FlightMode::Copter,
             last_thrust: 0.0,
             forward_thrust: 0.0,
+            throttle_floor: None,
         }
     }
 
@@ -141,11 +150,9 @@ impl TailsitterGuidance {
             FlightMode::ToCopter => Some(state.attitude),
             _ => None,
         };
+        // `>` is false for NaN: an unknown attitude leaves it to the timeout.
         let rolled_over = attitude.is_some_and(|attitude| {
-            let m = attitude.to_rotation_matrix();
-            let roll_rad = libm::atan2f(m[(2, 1)], m[(2, 2)]);
-            // `>` is false for NaN: an unknown attitude leaves it to the timeout.
-            roll_rad.abs() > self.config.transition.roll_limit_rad
+            bank_rad(&attitude).abs() > self.config.transition.roll_limit_rad
         });
         if rolled_over {
             self.transition.cut_short(ModeRefusal::RollError)
@@ -157,11 +164,27 @@ impl TailsitterGuidance {
     /// Primes the guidance taking over at a handoff and starts the thrust blend.
     fn hand_off(&mut self, to: FlightMode, state: &VehicleState) {
         match to {
-            FlightMode::Plane => self.plane.prime(state),
+            FlightMode::Plane => {
+                self.plane.prime(state);
+                self.throttle_floor = Some(self.config.plane.cruise_thrust);
+            }
             _ => self.hover.prime(state),
         }
         self.handoff = ThrustHandoff::new(self.config.transition.handoff_s);
         self.handoff.start(self.last_thrust);
+    }
+
+    /// `setpoint` with stick throttle held at the floor set by the handoff into `Plane`, until
+    /// the stick reaches it; offboard thrust passes through.
+    fn floor_stick_throttle(&mut self, setpoint: Setpoint, input: &ControlInput) -> Setpoint {
+        let Some(floor) = self.throttle_floor else {
+            return setpoint;
+        };
+        if !input.is_sticks() || setpoint.thrust() >= floor {
+            self.throttle_floor = None;
+            return setpoint;
+        }
+        setpoint.with_thrust(floor)
     }
 
     /// Copies the parts' configs back after a param write, so [`Configurable::config`] stays
@@ -208,7 +231,10 @@ impl Guidance for TailsitterGuidance {
                 });
                 self.hover.guide(dt, FlightRegime::Copter, &ramp, state)
             }
-            FlightMode::Plane => self.plane.guide(dt, FlightRegime::Plane, input, state),
+            FlightMode::Plane => {
+                let setpoint = self.plane.guide(dt, FlightRegime::Plane, input, state);
+                self.floor_stick_throttle(setpoint, input)
+            }
             FlightMode::ToCopter => {
                 let ramp = ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
                     roll_rad: 0.0,
@@ -225,6 +251,9 @@ impl Guidance for TailsitterGuidance {
         } else {
             setpoint
         };
+        if step.mode != FlightMode::Plane {
+            self.throttle_floor = None;
+        }
         self.mode = step.mode;
         self.last_thrust = setpoint.thrust();
         setpoint
@@ -238,6 +267,7 @@ impl Guidance for TailsitterGuidance {
         self.handoff = ThrustHandoff::new(self.config.transition.handoff_s);
         self.mode = FlightMode::Copter;
         self.last_thrust = 0.0;
+        self.throttle_floor = None;
     }
 
     /// The side that flew the last tick: hover in `Copter` and `ToPlane`, plane otherwise.

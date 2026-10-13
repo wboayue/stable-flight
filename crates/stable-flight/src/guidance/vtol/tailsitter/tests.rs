@@ -134,22 +134,22 @@ fn back_ramp_pitches_the_plane_up_and_land_asks_for_it() {
 fn handoff_blends_thrust() {
     let mut guidance = primed();
     guidance.guide(DT, FlightRegime::Copter, &sticks(0.8), &at(0.0, 0.0));
-    guidance.guide(DT, FlightRegime::Plane, &sticks(0.3), &at(0.0, 0.0));
+    guidance.guide(DT, FlightRegime::Plane, &sticks(0.7), &at(0.0, 0.0));
     let ramp_thrust = guidance.last_thrust;
-    // Completes: the plane side takes over at the sticks' 0.3.
-    let first = guidance.guide(0.1, FlightRegime::Plane, &sticks(0.3), &at(50.0, 0.0));
+    // Completes: the plane side takes over at the sticks' 0.7.
+    let first = guidance.guide(0.1, FlightRegime::Plane, &sticks(0.7), &at(50.0, 0.0));
     check!(mode(&guidance) == FlightMode::Plane);
     // A fifth of the 0.5 s blend.
     assert_relative_eq!(
         first.thrust(),
-        ramp_thrust + (0.3 - ramp_thrust) * 0.2,
+        ramp_thrust + (0.7 - ramp_thrust) * 0.2,
         epsilon = 1e-4
     );
     for _ in 0..5 {
-        guidance.guide(0.1, FlightRegime::Plane, &sticks(0.3), &at(80.0, 0.0));
+        guidance.guide(0.1, FlightRegime::Plane, &sticks(0.7), &at(80.0, 0.0));
     }
-    let settled = guidance.guide(0.1, FlightRegime::Plane, &sticks(0.3), &at(80.0, 0.0));
-    assert_relative_eq!(settled.thrust(), 0.3, epsilon = 1e-6);
+    let settled = guidance.guide(0.1, FlightRegime::Plane, &sticks(0.7), &at(80.0, 0.0));
+    assert_relative_eq!(settled.thrust(), 0.7, epsilon = 1e-6);
 }
 
 /// A roll past the limit cuts a transition short: forward aborts to copter and reports the
@@ -224,4 +224,40 @@ fn params_chain_the_parts() {
     check!(guidance.set_param("TRAN_FW_THR", 1.5).is_err());
     check!(guidance.set_param("NOPE", 1.0) == Err(ParamError::Unknown));
     check!(*guidance.config() == before);
+}
+
+/// After the handoff into plane, a stick left below cruise is held at cruise until the stick
+/// reaches it; from then the stick flies. Offboard thrust isn't floored.
+#[test]
+fn plane_handoff_holds_cruise_until_the_stick_reaches_it() {
+    let cruise = PlaneGuidanceConfig::default().cruise_thrust;
+    let settle = |guidance: &mut TailsitterGuidance, input: ControlInput| {
+        for _ in 0..10 {
+            guidance.guide(0.1, FlightRegime::Plane, &input, &at(85.0, 0.0));
+        }
+        guidance
+            .guide(0.1, FlightRegime::Plane, &input, &at(85.0, 0.0))
+            .thrust()
+    };
+    let mut guidance = in_plane_with(sticks(0.1));
+    assert_relative_eq!(settle(&mut guidance, sticks(0.1)), cruise, epsilon = 1e-6);
+    assert_relative_eq!(settle(&mut guidance, sticks(0.8)), 0.8, epsilon = 1e-6);
+    // Released: the stick flies, even below cruise.
+    assert_relative_eq!(settle(&mut guidance, sticks(0.1)), 0.1, epsilon = 1e-6);
+
+    let mut offboard = in_plane_with(sticks(0.1));
+    let absolute = ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+        thrust: 0.2,
+        ..Default::default()
+    });
+    assert_relative_eq!(settle(&mut offboard, absolute), 0.2, epsilon = 1e-6);
+}
+
+/// Driven into `Plane` with `input` on the handoff tick.
+fn in_plane_with(input: ControlInput) -> TailsitterGuidance {
+    let mut guidance = primed();
+    guidance.guide(DT, FlightRegime::Plane, &input, &at(0.0, 0.0));
+    guidance.guide(DT, FlightRegime::Plane, &input, &at(50.0, 0.0));
+    assert!(mode(&guidance) == FlightMode::Plane);
+    guidance
 }

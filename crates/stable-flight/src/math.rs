@@ -310,6 +310,14 @@ pub(crate) fn thrust_curve(linear_thrust: f32, exponent: f32) -> f32 {
     libm::powf(saturate_throttle(linear_thrust), exponent).clamp(0.0, 1.0)
 }
 
+/// The bank: roll about the nose, from the rotation matrix's bottom row (`cos θ sin φ`,
+/// `cos θ cos φ`), so it reads past ±90° (inverted is ±π) and needs no Euler angles. Ill-defined
+/// only with the nose straight up or down. NaN for a non-finite attitude.
+pub(crate) fn bank_rad(attitude: &UnitQuaternion<f32>) -> f32 {
+    let m = attitude.to_rotation_matrix();
+    libm::atan2f(m[(2, 1)], m[(2, 2)])
+}
+
 /// Saturates a throttle or thrust command to [0, 1]; NaN becomes 0 (no thrust).
 pub(crate) fn saturate_throttle(value: f32) -> f32 {
     if value.is_nan() {
