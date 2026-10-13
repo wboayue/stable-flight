@@ -45,7 +45,8 @@ pub struct Airframe<G, S, M> {
 ///
 /// The stabilizer gains are hand-tuned in attitude mode; guidance uses the core defaults
 /// (lateral and altitude gains and the tilt cap are flight-checked on this model) with this
-/// model's measured hover thrust. The QuadCopterX examples fly this set.
+/// model's measured hover thrust. The QuadCopterX examples fly this set. The model is four
+/// motors on channels 0–3; its other channels drive nothing (#271).
 ///
 /// # Examples
 ///
