@@ -7,15 +7,20 @@ overview; trait contracts are in core rustdoc.
 
 The repository is a Cargo workspace. Dependencies point one way:
 
+```mermaid
+flowchart TB
+    tools["stable-flight-tools<br/>(unpublished)"] --> sitl & realflight & link
+    sitl["stable-flight-sitl"] --> core
+    realflight["stable-flight-sitl-realflight"] --> core
+    realflight -. dev .-> sitl & link
+    bridge["stable-flight-bridge"] --> link & mavlink & core
+    link["stable-flight-link<br/>no_std"] --> core
+    mavlink["stable-flight-mavlink"] --> core
+    firmware["firmware/ark-fpv<br/>(own workspace)"] --> core
+    core["stable-flight<br/>no_std"]
 ```
-stable-flight-tools ──► stable-flight-sitl ─────────────► stable-flight ◄── stable-flight-sitl-realflight
-                          ▲       │                         ▲     ▲                 ┊
-                          ┊       ▼                         │     │                 ┊
-                          ┊  stable-flight-mavlink ─────────┘  stable-flight-link   ┊
-                          ┊       ▲                                ▲                ┊
-                          ┊       └─────── stable-flight-bridge ───┘                ┊
-                          └┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄ dev ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘
-```
+
+Solid arrows are dependencies, dashed ones dev-dependencies (examples and tests).
 
 * **`stable-flight`**: the flight-control core: pipeline traits, the data passed between them
   (`Command`/`ControlInput`, `Setpoint`, `VehicleState`, `ControlOutput`, `ActuatorCommand`,
@@ -248,11 +253,47 @@ deliberately. The pieces:
   A forward timeout falls back to hover, as PX4's does, since without an airspeed gate the
   vehicle may not be flying; a back timeout completes, as in both stacks.
 
+`Transition` moves through the modes as below (`TransitionConfig` names the limits). A forward
+transition that times out or hits the roll limit stays refused until copter is requested again.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Copter: arm (prime)
+    Copter --> ToPlane: plane requested, height ≥ min_height_m
+    ToPlane --> Plane: tilt ≥ forward_done_rad and airspeed ≥ min (handoff)
+    ToPlane --> Copter: copter requested, timeout, or roll limit
+    Plane --> ToCopter: copter requested
+    ToCopter --> Plane: plane requested
+    ToCopter --> Copter: tilt ≤ back_done_rad, timeout, or roll limit (handoff)
+```
+
+| Mode | Flown by | Tilt target (nose from vertical) |
+|---|---|---|
+| `Copter` | Hover: copter guidance and stabilizer in `View::tailsitter` | None |
+| `ToPlane` | Hover | Ramps from the current tilt at `forward_rate_radps`, up to `forward_max_tilt_rad` |
+| `Plane` | Plane: `PlaneGuidance`, `PlaneStabilizer` | None |
+| `ToCopter` | Plane | Ramps from the current tilt to 0 at `back_rate_radps` |
+
+At each handoff the incoming side is primed and `ThrustHandoff` blends thrust over `handoff_s`.
+
 ## Link Failsafe
 
 A companion's link drops (late USB enumeration, brownouts, a crashed bridge), and the flight
 controller, not the companion, decides what happens. `FailsafeCommander<P, F>` (core
-`commanders::failsafe`) is a commander like any other, ahead of guidance:
+`commanders::failsafe`) is a commander like any other, ahead of guidance. Its state
+(`FailsafeState`, limits from `FailsafeConfig`):
+
+```mermaid
+stateDiagram-v2
+    [*] --> Fallback: first tick
+    Primary --> Fallback: stale for timeout_s
+    Fallback --> Primary: fresh for recover_after_s, fallback releases
+    Fallback --> AwaitingSticks: fresh and released, but armed sticks unmoved
+    AwaitingSticks --> Primary: an axis moves takeover_stick_delta
+    AwaitingSticks --> Fallback: stale
+```
+
+The fallback flies in `Fallback` and `AwaitingSticks`. The rules:
 
 * The primary is a `LinkedCommander`, which reports `since_update_s`: time since its last valid
   message, measured on the flight controller from the `dt` it is given, so no clock sync with
