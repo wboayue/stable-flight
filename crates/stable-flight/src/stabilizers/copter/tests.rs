@@ -741,3 +741,35 @@ fn zero_thrust_keeps_the_integrals_from_winding_up() {
         assert!(grew == builds, "{setpoint:?}: {first} → {last}");
     }
 }
+
+/// Far over in pitch (a tailsitter's hover view mid-transition, Euler roll and heading nearly
+/// degenerate), holding the setpoint gives no moments, and a pitch-only error gives a
+/// pitch-only moment: no roll or yaw leaks in.
+#[test]
+fn holds_and_corrects_pitch_far_over_without_cross_coupling() {
+    let mut config = CopterStabilizerConfig::default();
+    config.attitude.max_angles_rad = Vec2::new(PI / 4.0, 85f32.to_radians());
+    let heading = 0.7;
+    let at = |pitch_deg: f32| VehicleState {
+        attitude: UnitQuaternion::from_euler_angles(0.0, pitch_deg.to_radians(), heading),
+        ..Default::default()
+    };
+    let setpoint = |pitch_deg: f32| {
+        Setpoint::Attitude(AttitudeSetpoint {
+            pitch_rad: pitch_deg.to_radians(),
+            heading_rad: heading,
+            thrust: 0.5,
+            ..Default::default()
+        })
+    };
+
+    let held = CopterStabilizer::new(config).stabilize(0.004, &setpoint(-80.0), &at(-80.0));
+    assert!(held.moments.norm() < 1e-4, "{held:?}");
+
+    let corrected = CopterStabilizer::new(config).stabilize(0.004, &setpoint(-80.0), &at(-75.0));
+    assert!(corrected.moments.y < -1e-3, "{corrected:?}");
+    assert!(
+        corrected.moments.x.abs() < 1e-4 && corrected.moments.z.abs() < 1e-4,
+        "{corrected:?}"
+    );
+}

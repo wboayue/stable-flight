@@ -97,6 +97,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `CopterStabilizer` takes its attitude error from the attitude quaternion (#124): the
+  shortest tilt of the thrust axis onto the setpoint's (roll and pitch relative to the current
+  heading), then the heading error weighted by the cosine of the tilt, as body rates. Near
+  level it matches the per-axis Euler difference it replaces; far over (a tailsitter's view
+  in transition, view pitch toward ±90°) it stays defined and no longer treats Euler rates as
+  body rates.
+
 - **Breaking:** `Guidance::guide` takes the requested `FlightRegime` after `dt` (#181). A
   copter-only guidance ignores it.
 - **Breaking:** `Command`, `VehicleState`, `TelemetryRecord`, and `testing::RecordedTick` have
