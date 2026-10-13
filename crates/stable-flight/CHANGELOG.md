@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Plane control** (#124): `stabilizers::plane::PlaneStabilizer` (PX4's fixed-wing
+  structure: yaw-free attitude error over a time constant, level-turn feedforward on pitch and
+  yaw rate faded past 70° bank, and `controllers::PlaneRateController`, a PI + feedforward rate
+  loop scaled by airspeed with its integral held below minimum airspeed) and
+  `guidance::plane::PlaneGuidance` (FBWA sticks, acro rate sticks, absolute attitude and rates,
+  a wings-level placeholder for waypoints). New setpoints `Setpoint::Plane(PlaneSetpoint)` and
+  `Setpoint::PlaneRate(BodyRateSetpoint)`; `PlaneRate` flies at any attitude (rolls, loops).
+  `FlightModeReport::plane_only`; `ModeRefusal::RollError`.
+- **Absolute rates** (#124): `ControlInput::AbsoluteRate(AbsoluteRateCommand)` (rad/s and
+  thrust, a stream; `ControlMode::AbsoluteRate`) for maneuvers and offboard rates.
+  `CopterGuidance` flies it as the new `Setpoint::BodyRate(BodyRateSetpoint)`, which
+  `CopterStabilizer` tracks at absolute rates saturated to its full-scale rates.
+
 - **`guidance::vtol`** (#181): `Transition`, the copter ⇄ plane state machine a VTOL
   guidance owns. It moves toward the requested `FlightRegime`, ramps a frame-free tilt target
   (the nose's angle from vertical) through `ToPlane`/`ToCopter`, completes on tilt (and a
@@ -132,6 +145,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same; its type is `TableMixer<4>`.
 - **Breaking:** the `mixers::TailSitterMixer` placeholder (#121). Use
   `TableMixer::tailsitter_2p_hover()`.
+
+### Fixed
+
+- The attitude error recovers from exactly inverted: a 180° tilt turns about body `x` instead
+  of giving no correction (#124).
 
 ## [0.1.0] - 2026-10-10
 

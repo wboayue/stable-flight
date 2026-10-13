@@ -120,6 +120,14 @@ fn every_uplink_variant_round_trips() {
                 position_m: Vec2::new(4.0, -2.0),
             },
         )))),
+        Uplink::Control(Control::Command(Command::armed(
+            ControlInput::AbsoluteRate(stable_flight::AbsoluteRateCommand {
+                roll_radps: 3.0,
+                pitch_radps: -1.0,
+                yaw_radps: 0.5,
+                thrust: 0.7,
+            }),
+        ))),
         Uplink::Control(Control::Command(worst_case_record().command)),
         Uplink::Control(Control::Arm(true)),
         Uplink::Control(Control::Arm(false)),
@@ -166,7 +174,34 @@ fn every_downlink_variant_round_trips() {
             link_ok: true,
         },
         Downlink::Record(worst_case_record()),
-        Downlink::Record(record),
+        Downlink::Record(record.clone()),
+        Downlink::Record(Record {
+            setpoint: Setpoint::PlaneRate(stable_flight::BodyRateSetpoint {
+                roll_radps: 3.0,
+                pitch_radps: 0.2,
+                yaw_radps: 0.1,
+                thrust: 0.6,
+            }),
+            ..record.clone()
+        }),
+        Downlink::Record(Record {
+            setpoint: Setpoint::Plane(stable_flight::PlaneSetpoint {
+                roll_rad: 0.4,
+                pitch_rad: 0.1,
+                thrust: 0.5,
+            }),
+            flight_mode: FlightModeReport {
+                mode: FlightMode::Plane,
+                refusal: Some(ModeRefusal::RollError),
+            },
+            ..record
+        }),
+        Downlink::Heartbeat {
+            armed: true,
+            mode: ControlMode::AbsoluteRate,
+            flight_mode: FlightModeReport::plane_only(FlightRegime::Copter),
+            link_ok: true,
+        },
         Downlink::Param(ParamValue {
             name: name("GUID_TILT_MAX"),
             value: 30.0,

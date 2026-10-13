@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Speaks link `PROTOCOL_VERSION` 2 (#181); update the flight controller with it.
+- Speaks link `PROTOCOL_VERSION` 3 (#124); update the flight controller with it.
 - `VFR_HUD` airspeed is the flight controller's airspeed when it reports one (RealFlight
   does), ground speed otherwise.
 

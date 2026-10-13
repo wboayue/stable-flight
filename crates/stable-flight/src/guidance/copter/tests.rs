@@ -121,6 +121,21 @@ fn commands_map_to_setpoints() {
             }),
         ),
         (
+            // Absolute rates pass through; thrust saturates, not boosted.
+            ControlInput::AbsoluteRate(crate::AbsoluteRateCommand {
+                roll_radps: 2.0,
+                pitch_radps: -1.0,
+                yaw_radps: 0.5,
+                thrust: 1.3,
+            }),
+            Setpoint::BodyRate(crate::BodyRateSetpoint {
+                roll_radps: 2.0,
+                pitch_radps: -1.0,
+                yaw_radps: 0.5,
+                thrust: 1.0,
+            }),
+        ),
+        (
             ControlInput::Attitude(AttitudeCommand {
                 throttle: 0.4,
                 roll: 0.5,
@@ -199,9 +214,7 @@ fn commands_map_to_setpoints() {
 fn heading_of(setpoint: Setpoint) -> f32 {
     match setpoint {
         Setpoint::Attitude(attitude) => attitude.heading_rad,
-        Setpoint::Rate(_) => {
-            unreachable!("attitude and waypoint commands yield attitude setpoints")
-        }
+        _ => unreachable!("attitude and waypoint commands yield attitude setpoints"),
     }
 }
 
@@ -240,15 +253,26 @@ fn waypoint_leg_holds_the_heading_hold_target() {
     );
 }
 
-/// After rate flight, attitude and waypoint flight hold the heading the vehicle has, not the
-/// one it had when rate flight began. A NaN heading during rate flight keeps the last
-/// valid one.
+/// After rate flight (sticks or absolute rates), attitude and waypoint flight hold the heading
+/// the vehicle has, not the one it had when rate flight began. A NaN heading during rate flight
+/// keeps the last valid one.
 #[test]
 fn rate_flight_hands_over_the_current_heading() {
-    let rate = ControlInput::Rate(RateCommand {
-        yaw_rate: 1.0,
-        ..Default::default()
-    });
+    for rate in [
+        ControlInput::Rate(RateCommand {
+            yaw_rate: 1.0,
+            ..Default::default()
+        }),
+        ControlInput::AbsoluteRate(crate::AbsoluteRateCommand {
+            yaw_radps: 1.0,
+            ..Default::default()
+        }),
+    ] {
+        rate_flight_hands_over_the_current_heading_from(rate);
+    }
+}
+
+fn rate_flight_hands_over_the_current_heading_from(rate: ControlInput) {
     // (next command, heading at the end of rate flight, expected heading target)
     let cases = [
         (ControlInput::Attitude(AttitudeCommand::default()), 2.0, 2.0),
@@ -789,7 +813,7 @@ fn reference_thrust(altitude: &mut AltitudeController, dt: f32, state: &VehicleS
 fn attitude(setpoint: Setpoint) -> AttitudeSetpoint {
     match setpoint {
         Setpoint::Attitude(attitude) => attitude,
-        Setpoint::Rate(_) => unreachable!("waypoints yield attitude setpoints"),
+        _ => unreachable!("waypoints yield attitude setpoints"),
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::{Vec2, Vec3};
+use crate::{RateSetpoint, Vec2, Vec3};
 use nalgebra::UnitQuaternion;
 
 use super::*;
@@ -772,4 +772,54 @@ fn holds_and_corrects_pitch_far_over_without_cross_coupling() {
         corrected.moments.x.abs() < 1e-4 && corrected.moments.z.abs() < 1e-4,
         "{corrected:?}"
     );
+}
+
+/// Absolute body rates fly as given, saturated to the full-scale rates, the same as the
+/// matching stick fractions; a plane's setpoints are neutral.
+#[test]
+fn body_rates_match_stick_rates_and_plane_setpoints_are_neutral() {
+    use crate::{BodyRateSetpoint, PlaneSetpoint};
+
+    let config = CopterStabilizerConfig::default(); // full scale 3 rad/s
+    let state = VehicleState::default();
+    // (absolute rad/s, matching stick fraction)
+    for (radps, fraction) in [(1.5, 0.5), (-3.0, -1.0), (6.0, 1.0), (f32::NAN, 0.0)] {
+        let absolute = CopterStabilizer::new(config).stabilize(
+            0.004,
+            &Setpoint::BodyRate(BodyRateSetpoint {
+                roll_radps: radps,
+                yaw_radps: radps,
+                thrust: 0.5,
+                ..Default::default()
+            }),
+            &state,
+        );
+        let sticks = CopterStabilizer::new(config).stabilize(
+            0.004,
+            &Setpoint::Rate(RateSetpoint {
+                roll_rate: fraction,
+                yaw_rate: fraction,
+                thrust: 0.5,
+                ..Default::default()
+            }),
+            &state,
+        );
+        assert_eq!(absolute, sticks, "{radps}");
+    }
+
+    for setpoint in [
+        Setpoint::Plane(PlaneSetpoint {
+            roll_rad: 0.3,
+            thrust: 0.6,
+            ..Default::default()
+        }),
+        Setpoint::PlaneRate(BodyRateSetpoint {
+            roll_radps: 1.0,
+            thrust: 0.6,
+            ..Default::default()
+        }),
+    ] {
+        let out = CopterStabilizer::new(config).stabilize(0.004, &setpoint, &state);
+        assert_eq!(out, ControlOutput::default(), "{setpoint:?}");
+    }
 }

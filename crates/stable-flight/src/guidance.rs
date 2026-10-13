@@ -3,5 +3,6 @@
 //! ([`vtol`]'s transition state machine).
 
 pub mod copter;
+pub mod plane;
 mod rate_divider;
 pub mod vtol;

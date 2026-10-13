@@ -17,6 +17,7 @@ fn heartbeat_reports_the_mode_as_standard_flags_and_the_arm_state() {
         (ControlMode::Waypoint, stabilize | auto),
         (ControlMode::AbsoluteAttitude, stabilize | guided),
         (ControlMode::Land, stabilize | auto),
+        (ControlMode::AbsoluteRate, guided),
     ];
     // (armed, expected arm flag, expected status)
     let arm_states = [
