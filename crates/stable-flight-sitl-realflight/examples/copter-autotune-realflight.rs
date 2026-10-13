@@ -2,7 +2,9 @@
 //! tunes roll and pitch rate, then roll and pitch angle, by step response, lands, and disarms
 //! (`StagePlan::copter_search`, `architecture.md#autotune`). Per rate loop a relay sets D and
 //! caps P; per loop P is searched by pairs of steps (each judgment logged with its steps),
-//! verified against a baseline on the start gains, and kept only if it flies no worse. On
+//! verified, and kept only if it flies no worse than a baseline on the start gains that met
+//! the criterion (or, without one, meets the criterion; a start above the relay's cap flies no
+//! baseline). On
 //! completion it logs baseline vs verify per loop and prints the tuned config as an
 //! `airframes.rs` snippet. A failed stage (envelope breach, too many invalid steps) keeps the
 //! stages before it.
