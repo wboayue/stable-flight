@@ -1,6 +1,6 @@
-//! Autotune converges: `StagePlan::copter_search` from detuned starts, rate P too low and too
-//! high, tunes every stage to gains that agree with each other and with `quad_x`'s (which
-//! came from this autotune).
+//! Autotune converges: `StagePlan::copter_search` from detuned starts, rate P too low, a little
+//! too high, and far too high, tunes every stage to gains that agree with each other and with
+//! `quad_x`'s (which came from this autotune).
 
 mod common;
 
@@ -12,7 +12,11 @@ use stable_flight_sim::airframes::{self, Airframe};
 /// Rate P multiplier for the low start (the RealFlight example's `--rate-p-scale`).
 const LOW_RATE_P_SCALE: f32 = 0.3;
 
-/// Rate P multiplier for the high start.
+/// Rate P multiplier for a start a little too high: its steps overshoot past the criterion
+/// but don't clip.
+const MODERATE_RATE_P_SCALE: f32 = 1.5;
+
+/// Rate P multiplier for the high start: its steps clip.
 const HIGH_RATE_P_SCALE: f32 = 3.0;
 
 /// The angle P every run starts from: core's default, a third of `quad_x`'s.
@@ -100,8 +104,18 @@ fn converges_from_low_rate_gains() {
     check_agree(autotune_from(LOW_RATE_P_SCALE), &[reference]);
 }
 
+/// From a rate P a little too high, the search comes down and its result is kept though it
+/// settles slower than the start, which settles fast by overshooting within the settle band
+/// (#361).
 #[test]
-#[ignore = "the rate search keeps or fails on a too-high start (#361)"]
+fn converges_from_moderately_high_rate_gains() {
+    let reference = tuned_p(&airframes::quad_x().stabilizer);
+    check_agree(autotune_from(MODERATE_RATE_P_SCALE), &[reference]);
+}
+
+/// From a rate P too high to step cleanly (×3 clips its steps), the relay's ceiling brings the
+/// search down and the result is judged by the criterion, not by the start (#361).
+#[test]
 fn converges_from_high_rate_gains() {
     let reference = tuned_p(&airframes::quad_x().stabilizer);
     let low = autotune_from(LOW_RATE_P_SCALE);

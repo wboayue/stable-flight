@@ -183,6 +183,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Autotune's gain search tunes down from a too-high start (#361): the result is held to the
+  baseline only when the baseline met the criterion (a too-high rate P settles fast and kept
+  itself as `Kept(Worse)`), a start above the search's maximum flies no baseline, and a
+  baseline whose steps keep clipping no longer fails the stage `Invalid`.
 - A waypoint straight over the vehicle is no longer reached on the ground: `RouteEnd::Land`
   climbs to it before landing (instead of staying armed on the ground), and `RouteEnd::Hold`
   completes at its altitude (#359).

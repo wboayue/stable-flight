@@ -174,7 +174,8 @@ pub enum Method {
     /// Alternating step responses, measured and reported; the gains don't change.
     StepTest(StepTestPlan),
     /// A search for the largest gain of one term whose step responses meet a criterion, from
-    /// gains a relay may seed, kept only if it flies no worse than the start.
+    /// gains a relay may seed, kept only if it flies no worse than a start that met the
+    /// criterion.
     Search(SearchPlan),
 }
 
@@ -382,21 +383,24 @@ impl RelayPlan {
 ///    and the relay's rule seeds the gains the search starts from (e.g. a PD rule sets D,
 ///    and P, the searched term, starts at the rule's). A relay that aborts or stalls
 ///    `test.max_invalid` times leaves `max` and the start gains as they are.
-/// 2. **Baseline:** `test.pairs` pairs at the start gains; their summary is what the result
-///    must not be worse than.
+/// 2. **Baseline:** `test.pairs` pairs at the start gains; if they meet the criterion, their
+///    summary is what the result must not be worse than. A start above `max` (a gain the
+///    search would never pick) isn't flown, and a start whose steps abort or keep clipping
+///    leaves no baseline.
 /// 3. **Bracket** from the seed's gain: `× factor` per point while points pass, up to `max`;
 ///    `÷ factor` while they fail, down to `min` (nothing passing: the start gains stay). A
 ///    point passes when `confirm` pairs in a row pass, so one lucky pair near a sharp limit
 ///    doesn't (ArduPilot's `ignore_next`); the first failing pair fails it.
 /// 4. **Bisect** (geometric mean) until the bracket is within `resolution`.
 /// 5. **Verify** `margin ×` the largest pass with `test.pairs` pairs, and keep it only if it
-///    passes [`Acceptance`] against the baseline (or, if the baseline's steps all aborted,
-///    meets the criterion); else the start gains stay.
+///    passes [`Acceptance`] against a baseline that met the criterion, or, without one, meets
+///    the criterion itself; else the start gains stay.
 ///
 /// A pair is judged on its two steps' means, so a trim offset doesn't bias it. A step that
 /// aborts (reversed or runaway) fails its pair, as do `test.max_invalid` clipped steps in a
 /// row (a gain whose steps keep clipping measures the limit) and an [`Envelope`] breach while
-/// the candidate flies; on the baseline, they fail the stage. Stalled steps only run again
+/// the candidate flies; on the baseline, aborts and clipping leave no baseline, and a breach
+/// fails the stage. Stalled steps only run again
 /// (`test.max_stalled`). Only the step under test flies a candidate;
 /// the vehicle settles on the committed gains between steps.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -627,7 +631,8 @@ impl Criterion {
     }
 }
 
-/// How a search's verify compares with its baseline: the result is kept unless it is worse.
+/// How a search's verify compares with a baseline that met the criterion: the result is kept
+/// unless it is worse.
 /// Worse is more overshoot than the baseline's plus `overshoot_margin`, a mean settling time
 /// above the baseline's times `settling_ratio`, more steps unsettled, or more bounce-back than
 /// both the baseline's and the criterion's limit.

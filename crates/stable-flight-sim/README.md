@@ -51,7 +51,7 @@ Each file in `tests/` flies the full pipeline on `airframes::quad_x()` (wiring i
 | `land` | Climb, land on a waypoint (one leg out, or over the start), disarm, rest on the ground |
 | `failsafe` | Over the link (`FcLink` + loopback): silence hands over to `HoldCommander` within the timeout, which holds in place armed; the link takes back over after recovery |
 | `saturation` | Each limit (tilt caps, altitude thrust, moments, mixer collective, mixer near idle) sets its `Saturation` flags, and a hover sets none |
-| `autotune` | `StagePlan::copter_search` from low rate gains tunes every stage to `quad_x`'s gains within 25%; from high gains it doesn't yet (`#[ignore]`, #361) |
+| `autotune` | `StagePlan::copter_search` from low, a little high (×1.5), and far too high (×3, steps clip) rate gains tunes every stage to `quad_x`'s gains within 25% |
 | `determinism` | A windy, gusty route twice gives bit-identical states |
 
 ## Timing

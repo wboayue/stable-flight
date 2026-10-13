@@ -502,9 +502,13 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
   gain (`0.6·Ku`) and seeds the other terms from its rule. A baseline on the start gains, then a
   bracket (`×1.3` per pair) and bisection to 10%, each point one `±` pair judged on its means
   (trim doesn't bias it). The result, backed off 10% (as ArduPilot does), is verified with fresh
-  pairs and kept only if it flies no worse than the baseline (`Acceptance`). The copter plan
-  (`StagePlan::copter_search`) tunes roll and pitch rate, then angle, so the angle search flies
-  on the tuned rate loops:
+  pairs and kept only if it flies no worse than the baseline (`Acceptance`), when the baseline
+  met the criterion; otherwise it need only meet the criterion. A too-high start fails the
+  criterion yet settles fast, overshooting within the settle band, so holding the result to
+  it would keep the high gain (#361). A start above the search's maximum (the relay's
+  ceiling) isn't flown, and one whose steps keep clipping leaves no baseline rather than
+  ending the stage. The copter plan (`StagePlan::copter_search`) tunes roll and pitch rate,
+  then angle, so the angle search flies on the tuned rate loops:
   * Rate: D seeded from the relay's Tyreus–Luyben PD, P searched on overshoot ≤ 0.05 and
     bounce-back ≤ 0.1 (ArduPilot's default aggressiveness). Rate P has a sharp limit
     (QuadCopterX: P 1.14 flew clean, 1.22 overshot 0.18; #298), so a bracket point passes only on
