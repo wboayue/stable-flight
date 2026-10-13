@@ -6,11 +6,11 @@ use crate::airframes;
 
 const H: f32 = 0.001;
 
-fn model() -> QuadModel {
+fn model() -> MultirotorModel {
     airframes::quad_x().model
 }
 
-fn weight_n(model: &QuadModel) -> f32 {
+fn weight_n(model: &MultirotorModel) -> f32 {
     model.mass_kg * GRAVITY
 }
 

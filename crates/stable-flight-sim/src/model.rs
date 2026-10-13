@@ -1,4 +1,4 @@
-//! The physical parameters of a simulated multirotor: see [`QuadModel`].
+//! The physical parameters of a simulated multirotor: see [`MultirotorModel`].
 
 use stable_flight::Vec3;
 use thiserror::Error;
@@ -16,14 +16,14 @@ mod tests;
 /// # Examples
 ///
 /// ```
-/// use stable_flight_sim::QuadModel;
+/// use stable_flight_sim::MultirotorModel;
 ///
-/// let heavier = QuadModel { mass_kg: 1.5, ..stable_flight_sim::airframes::quad_x().model };
+/// let heavier = MultirotorModel { mass_kg: 1.5, ..stable_flight_sim::airframes::quad_x().model };
 /// assert!(heavier.validate().is_ok());
-/// assert!(QuadModel { mass_kg: 0.0, ..heavier }.validate().is_err());
+/// assert!(MultirotorModel { mass_kg: 0.0, ..heavier }.validate().is_err());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct QuadModel {
+pub struct MultirotorModel {
     /// Total mass, in kg.
     pub mass_kg: f32,
     /// Principal moments of inertia about the FRD body axes (roll, pitch, yaw), in kg·m².
@@ -44,11 +44,13 @@ pub struct QuadModel {
     pub angular_damping_nm_per_radps: Vec3,
     /// Friction coefficient against the ground while resting on it (Coulomb, unitless).
     pub ground_friction: f32,
-    /// Integration steps per [`state`](stable_flight::StateSource::state) call; at least 1.
-    pub substeps: u32,
+    /// Longest integration step, in s: each [`state`](stable_flight::StateSource::state) call
+    /// splits its `dt` into the fewest equal steps no longer than this, so accuracy doesn't
+    /// depend on the loop rate.
+    pub max_step_s: f32,
 }
 
-/// Why a [`QuadModel`] or a [`SimVehicle`](crate::SimVehicle)'s mixer was rejected.
+/// Why a [`MultirotorModel`] or a [`SimVehicle`](crate::SimVehicle)'s mixer was rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum ModelError {
@@ -58,23 +60,19 @@ pub enum ModelError {
     /// A parameter that must be non-negative and finite isn't.
     #[error("{0} must be non-negative and finite")]
     Negative(&'static str),
-    /// [`QuadModel::substeps`] is 0.
-    #[error("substeps must be at least 1")]
-    NoSubsteps,
     /// The mixer drives a servo; the simulator models motors only.
     #[error("the mixer drives servo {0}, which the simulator doesn't model")]
     Servo(u8),
 }
 
-impl QuadModel {
+impl MultirotorModel {
     /// Checks every parameter's range.
     ///
     /// # Errors
     ///
-    /// [`ModelError::NotPositive`] for a mass, inertia, moment arm, max thrust, or motor time
-    /// constant that isn't positive and finite; [`ModelError::Negative`] for a yaw torque,
-    /// drag, damping, or friction that is negative or not finite; [`ModelError::NoSubsteps`]
-    /// for zero substeps.
+    /// [`ModelError::NotPositive`] for a mass, inertia, moment arm, max thrust, motor time
+    /// constant, or max step that isn't positive and finite; [`ModelError::Negative`] for a yaw
+    /// torque, drag, damping, or friction that is negative or not finite.
     pub fn validate(&self) -> Result<(), ModelError> {
         let positive = [
             ("mass_kg", self.mass_kg),
@@ -84,6 +82,7 @@ impl QuadModel {
             ("moment_arm_m", self.moment_arm_m),
             ("max_thrust_n", self.max_thrust_n),
             ("motor_time_constant_s", self.motor_time_constant_s),
+            ("max_step_s", self.max_step_s),
         ];
         if let Some((name, _)) = positive
             .iter()
@@ -113,9 +112,6 @@ impl QuadModel {
             .find(|(_, value)| !(value.is_finite() && *value >= 0.0))
         {
             return Err(ModelError::Negative(name));
-        }
-        if self.substeps == 0 {
-            return Err(ModelError::NoSubsteps);
         }
         Ok(())
     }

@@ -3,7 +3,7 @@ use assert2::check;
 use super::*;
 use crate::airframes;
 
-fn valid() -> QuadModel {
+fn valid() -> MultirotorModel {
     airframes::quad_x().model
 }
 
@@ -13,7 +13,7 @@ fn accepts_the_quad_x_model() {
 }
 
 /// An edit applied to a valid model.
-type Change = fn(&mut QuadModel);
+type Change = fn(&mut MultirotorModel);
 
 #[test]
 fn rejects_each_out_of_range_parameter() {
@@ -53,7 +53,10 @@ fn rejects_each_out_of_range_parameter() {
             |m| m.ground_friction = -0.5,
             ModelError::Negative("ground_friction"),
         ),
-        (|m| m.substeps = 0, ModelError::NoSubsteps),
+        (
+            |m| m.max_step_s = 0.0,
+            ModelError::NotPositive("max_step_s"),
+        ),
     ];
     for (change, expected) in cases {
         let mut model = valid();
@@ -64,7 +67,7 @@ fn rejects_each_out_of_range_parameter() {
 
 #[test]
 fn accepts_zero_for_non_negative_parameters() {
-    let model = QuadModel {
+    let model = MultirotorModel {
         yaw_torque_per_thrust_m: 0.0,
         drag_n_per_mps: 0.0,
         angular_damping_nm_per_radps: Vec3::zeros(),

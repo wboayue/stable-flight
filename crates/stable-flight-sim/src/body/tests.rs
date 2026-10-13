@@ -7,7 +7,7 @@ use crate::airframes;
 
 const H: f32 = 0.001;
 
-fn model() -> QuadModel {
+fn model() -> MultirotorModel {
     airframes::quad_x().model
 }
 
@@ -20,7 +20,7 @@ fn calm(thrust_n: f32, torque_nm: Vec3) -> Loads {
 }
 
 /// Steps `body` for `seconds` under `loads`.
-fn run(body: &mut Body, model: &QuadModel, loads: &Loads, seconds: f32) {
+fn run(body: &mut Body, model: &MultirotorModel, loads: &Loads, seconds: f32) {
     for _ in 0..(seconds / H).round() as usize {
         body.step(model, loads, H);
     }
@@ -28,7 +28,7 @@ fn run(body: &mut Body, model: &QuadModel, loads: &Loads, seconds: f32) {
 
 #[test]
 fn falls_freely_without_thrust_or_drag() {
-    let model = QuadModel {
+    let model = MultirotorModel {
         drag_n_per_mps: 0.0,
         ..model()
     };
@@ -69,7 +69,7 @@ fn drag_sets_the_terminal_speed_in_wind() {
 
 #[test]
 fn torque_spins_each_axis_up_at_torque_over_inertia() {
-    let model = QuadModel {
+    let model = MultirotorModel {
         angular_damping_nm_per_radps: Vec3::zeros(),
         ..model()
     };
@@ -107,7 +107,7 @@ fn damping_slows_a_free_spin() {
 /// the frame contract says: roll right, nose up, nose right.
 #[test]
 fn body_rates_turn_the_attitude_the_contract_way() {
-    let model = QuadModel {
+    let model = MultirotorModel {
         angular_damping_nm_per_radps: Vec3::zeros(),
         ..model()
     };
@@ -133,7 +133,7 @@ fn body_rates_turn_the_attitude_the_contract_way() {
 /// A body banked right and lifting its weight accelerates east (north-east-down: +y).
 #[test]
 fn tilted_thrust_accelerates_toward_the_bank() {
-    let model = QuadModel {
+    let model = MultirotorModel {
         drag_n_per_mps: 0.0,
         ..model()
     };

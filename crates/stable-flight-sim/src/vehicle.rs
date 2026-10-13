@@ -7,7 +7,7 @@ use stable_flight::{Actuator, ActuatorCommand, StateSource, Vec3, VehicleState, 
 
 use crate::body::{Body, Loads, flip_z};
 use crate::ground;
-use crate::model::{ModelError, QuadModel};
+use crate::model::{ModelError, MultirotorModel};
 use crate::motors::Motors;
 use crate::wind::Wind;
 
@@ -17,14 +17,15 @@ mod tests;
 /// A simulated multirotor that a [`FlightLoop`](stable_flight::FlightLoop) flies: a
 /// [`StateSource`] and [`Actuator`] stepped in lockstep with the loop, with no wall clock.
 ///
-/// The physics: a rigid body with [`QuadModel`]'s mass and diagonal inertia, under gravity,
+/// The physics: a rigid body with [`MultirotorModel`]'s mass and diagonal inertia, under gravity,
 /// motor thrust and torque, linear drag through the [`Wind`], and rotational damping, on a
 /// ground plane at altitude 0. It starts at rest there, at the origin, level, nose north.
 ///
 /// # Timing contract
 ///
 /// [`actuate`](Actuator::actuate) stores the command. [`state`](StateSource::state)`(dt)`
-/// integrates the last stored command over `dt` (in [`QuadModel::substeps`] steps) and returns
+/// integrates the last stored command over `dt` (in steps of at most
+/// [`MultirotorModel::max_step_s`]) and returns
 /// the state at the end, so tick *n* sees the result of tick *n − 1*'s command, a one-tick
 /// zero-order hold. The priming call (`dt == Duration::ZERO`) returns the current state
 /// without stepping. State is perfect: no noise, delay, or estimation.
@@ -49,7 +50,7 @@ mod tests;
 /// ```
 #[derive(Debug, Clone)]
 pub struct SimVehicle {
-    model: QuadModel,
+    model: MultirotorModel,
     motors: Motors,
     body: Body,
     wind: Wind,
@@ -62,13 +63,13 @@ pub struct SimVehicle {
 
 impl SimVehicle {
     /// A vehicle with `model`'s physics whose motors are laid out by `mixer`'s rows (see
-    /// [`QuadModel`]), at rest on the ground in calm air.
+    /// [`MultirotorModel`]), at rest on the ground in calm air.
     ///
     /// # Errors
     ///
-    /// [`QuadModel::validate`]'s errors, or [`ModelError::Servo`] when `mixer` drives a servo.
+    /// [`MultirotorModel::validate`]'s errors, or [`ModelError::Servo`] when `mixer` drives a servo.
     pub fn new<const N: usize>(
-        model: QuadModel,
+        model: MultirotorModel,
         mixer: &TableMixer<N>,
     ) -> Result<Self, ModelError> {
         model.validate()?;
@@ -106,10 +107,11 @@ impl SimVehicle {
 
     /// Steps the physics `dt_s` seconds under the stored command.
     fn advance(&mut self, dt_s: f32) {
-        let h = dt_s / self.model.substeps as f32;
+        let steps = libm::ceilf(dt_s / self.model.max_step_s).max(1.0);
+        let h = dt_s / steps;
         let alpha = 1.0 - libm::expf(-h / self.model.motor_time_constant_s);
         let start_velocity = self.body.velocity_ned_mps;
-        for _ in 0..self.model.substeps {
+        for _ in 0..steps as u32 {
             self.motors.spin(&self.command, alpha);
             let (thrust_n, torque_nm) = self.motors.wrench(&self.model);
             let loads = Loads {

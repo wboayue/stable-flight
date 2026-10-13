@@ -125,6 +125,29 @@ fn cutting_the_motors_falls_back_and_lands() {
     check!(landed.velocity_mps == Vec3::zeros());
 }
 
+/// A tick longer than the max step is split into equal steps no longer than it, so a slower
+/// loop still integrates finely: a 10 ms tick at 1 ms steps matches ten 1 ms ticks.
+#[test]
+fn long_ticks_split_into_max_steps() {
+    let model = MultirotorModel {
+        max_step_s: 0.001,
+        ..airframes::quad_x().model
+    };
+    let mixer = airframes::quad_x().mixer;
+    let mut coarse = SimVehicle::new(model, &mixer).expect("valid airframe");
+    let mut fine = coarse.clone();
+    coarse.actuate(&motors(1.0));
+    fine.actuate(&motors(1.0));
+    let long = coarse.state(Duration::from_millis(10));
+    let mut short = fine.state(Duration::ZERO);
+    for _ in 0..10 {
+        short = fine.state(Duration::from_millis(1));
+    }
+    assert_relative_eq!(long.position_m, short.position_m, epsilon = 1e-6);
+    assert_relative_eq!(long.velocity_mps, short.velocity_mps, epsilon = 1e-5);
+    assert_relative_eq!(coarse.time_s(), 0.010, epsilon = 1e-9);
+}
+
 #[test]
 fn servos_are_ignored() {
     let mut vehicle = vehicle();
@@ -164,11 +187,14 @@ fn wind_pushes_an_airborne_vehicle_downwind() {
 #[test]
 fn rejects_an_invalid_model_or_a_servo_mixer() {
     let airframe = airframes::quad_x();
-    let model = QuadModel {
-        substeps: 0,
+    let model = MultirotorModel {
+        max_step_s: 0.0,
         ..airframe.model
     };
-    check!(SimVehicle::new(model, &airframe.mixer).err() == Some(ModelError::NoSubsteps));
+    check!(
+        SimVehicle::new(model, &airframe.mixer).err()
+            == Some(ModelError::NotPositive("max_step_s"))
+    );
     check!(SimVehicle::new(airframe.model, &TableMixer::tri()).err() == Some(ModelError::Servo(0)));
 }
 

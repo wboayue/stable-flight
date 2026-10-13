@@ -3,7 +3,7 @@
 use stable_flight::mixers::{MixRow, Slot};
 use stable_flight::{ActuatorCommand, Vec3};
 
-use crate::model::{ModelError, QuadModel};
+use crate::model::{ModelError, MultirotorModel};
 
 #[cfg(test)]
 mod tests;
@@ -29,7 +29,7 @@ impl Motors {
     /// so the simulated vehicle answers each moment the way the mixer expects.
     pub(crate) fn new<const N: usize>(
         rows: &[MixRow; N],
-        model: &QuadModel,
+        model: &MultirotorModel,
     ) -> Result<Self, ModelError> {
         let mut motors = Motors {
             count: 0,
@@ -68,13 +68,13 @@ impl Motors {
     }
 
     /// Each motor's thrust, in N: `max_thrust_n · running²`.
-    pub(crate) fn thrusts_n(&self, model: &QuadModel) -> [f32; SLOTS] {
+    pub(crate) fn thrusts_n(&self, model: &MultirotorModel) -> [f32; SLOTS] {
         self.running
             .map(|running| model.max_thrust_n * running * running)
     }
 
     /// Total thrust along body −z, in N, and the FRD body torque, in N·m.
-    pub(crate) fn wrench(&self, model: &QuadModel) -> (f32, Vec3) {
+    pub(crate) fn wrench(&self, model: &MultirotorModel) -> (f32, Vec3) {
         let thrusts_n = self.thrusts_n(model);
         let torque_nm = thrusts_n
             .iter()

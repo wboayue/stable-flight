@@ -6,7 +6,7 @@
 //! inputs give the same flight, bit for bit. It aims at plausible, repeatable dynamics for
 //! `cargo test` and CI, not fidelity; RealFlight covers realism.
 //!
-//! - [`QuadModel`]: mass, inertia, motors, drag, ground friction. Motor geometry comes from
+//! - [`MultirotorModel`]: mass, inertia, motors, drag, ground friction. Motor geometry comes from
 //!   the mixer's rows, so the simulated vehicle answers each moment the way the mixer expects.
 //! - [`Wind`]: steady wind plus an optional deterministic [`Gust`].
 //! - [`airframes`]: physics paired with the configs that fly it ([`airframes::quad_x`]).
@@ -55,6 +55,6 @@ mod motors;
 mod vehicle;
 mod wind;
 
-pub use model::{ModelError, QuadModel};
+pub use model::{ModelError, MultirotorModel};
 pub use vehicle::SimVehicle;
 pub use wind::{Gust, Wind};

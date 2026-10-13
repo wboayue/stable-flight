@@ -6,7 +6,7 @@ use stable_flight::{ControlOutput, Mixer};
 use super::*;
 use crate::airframes;
 
-fn quad_x_motors() -> (Motors, QuadModel) {
+fn quad_x_motors() -> (Motors, MultirotorModel) {
     let model = airframes::quad_x().model;
     let motors = Motors::new(TableMixer::quad_x().rows(), &model).expect("motor-only table");
     (motors, model)

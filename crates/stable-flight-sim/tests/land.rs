@@ -11,7 +11,7 @@ use common::{fly, sim_loop, waypoint};
 const ALTITUDE_M: f32 = 5.0;
 
 /// Where to land: far enough that the climb to `ALTITUDE_M` finishes on the way, since the
-/// follower accepts a waypoint on horizontal distance alone.
+/// follower accepts a waypoint on horizontal distance alone (TODO(#359)).
 const NORTH_M: f32 = 20.0;
 const EAST_M: f32 = -15.0;
 

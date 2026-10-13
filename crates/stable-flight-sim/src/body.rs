@@ -3,7 +3,7 @@
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{GRAVITY, Vec3};
 
-use crate::model::QuadModel;
+use crate::model::MultirotorModel;
 
 #[cfg(test)]
 mod tests;
@@ -52,7 +52,7 @@ impl Body {
     /// and rotational damping, with semi-implicit Euler: velocities first, then position and
     /// attitude from the new velocities. Rotation follows Euler's equations for a diagonal
     /// inertia, gyroscopic term included.
-    pub(crate) fn step(&mut self, model: &QuadModel, loads: &Loads, h: f32) {
+    pub(crate) fn step(&mut self, model: &MultirotorModel, loads: &Loads, h: f32) {
         let thrust_ned_n = self.attitude * Vec3::new(0.0, 0.0, -loads.thrust_n);
         let air_velocity_mps = self.velocity_ned_mps - loads.wind_ned_mps;
         let force_n = thrust_ned_n - air_velocity_mps * model.drag_n_per_mps;

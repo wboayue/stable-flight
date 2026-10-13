@@ -5,10 +5,10 @@ use stable_flight::GRAVITY;
 use stable_flight::Vec3;
 use stable_flight::controllers::AltitudeControllerConfig;
 use stable_flight::guidance::copter::CopterGuidanceConfig;
-use stable_flight::mixers::{MixerConfig, TableMixer};
+use stable_flight::mixers::{MixerConfig, Slot, TableMixer};
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 
-use crate::model::QuadModel;
+use crate::model::MultirotorModel;
 
 #[cfg(test)]
 mod tests;
@@ -18,7 +18,7 @@ mod tests;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Airframe {
     /// Physical parameters.
-    pub model: QuadModel,
+    pub model: MultirotorModel,
     /// The mixer; [`SimVehicle`](crate::SimVehicle) takes the motor layout from its rows.
     pub mixer: TableMixer<4>,
     /// Guidance (position-loop) configuration.
@@ -54,7 +54,7 @@ pub struct Airframe {
 /// );
 /// ```
 pub fn quad_x() -> Airframe {
-    let model = QuadModel {
+    let model = MultirotorModel {
         mass_kg: 1.0,
         inertia_kgm2: Vec3::new(0.01, 0.01, 0.018),
         // 250 mm motor to motor on the diagonal: 125 mm arms, at 45° to each axis.
@@ -65,13 +65,13 @@ pub fn quad_x() -> Airframe {
         drag_n_per_mps: 0.3,
         angular_damping_nm_per_radps: Vec3::new(0.002, 0.002, 0.004),
         ground_friction: 0.5,
-        substeps: 4,
+        max_step_s: 0.001,
     };
     let mixer = TableMixer::quad_x();
     let stabilizer = CopterStabilizerConfig::default();
     let guidance = CopterGuidanceConfig {
         altitude: AltitudeControllerConfig {
-            hover_thrust: hover_thrust(&model, 4, &MixerConfig::default(), &stabilizer),
+            hover_thrust: hover_thrust(&model, &mixer, &MixerConfig::default(), &stabilizer),
             ..CopterGuidanceConfig::default().altitude
         },
         ..CopterGuidanceConfig::default()
@@ -84,19 +84,25 @@ pub fn quad_x() -> Airframe {
     }
 }
 
-/// The linear thrust setpoint that holds `model` level in a hover on `motors` motors: the
+/// The linear thrust setpoint that holds `model` level in a hover on `mixer`'s motors: the
 /// motor command whose thrust carries the weight (`max_thrust_n · command²`), undone through
-/// the mixer's thrust factor and the stabilizer's thrust curve.
-fn hover_thrust(
-    model: &QuadModel,
-    motors: u8,
-    mixer: &MixerConfig,
+/// the mixer's thrust factor (`mixer_config`, which `TableMixer` doesn't expose) and the
+/// stabilizer's thrust curve.
+fn hover_thrust<const N: usize>(
+    model: &MultirotorModel,
+    mixer: &TableMixer<N>,
+    mixer_config: &MixerConfig,
     stabilizer: &CopterStabilizerConfig,
 ) -> f32 {
-    let motor_n = model.mass_kg * GRAVITY / f32::from(motors);
+    let motors = mixer
+        .rows()
+        .iter()
+        .filter(|row| matches!(row.slot(), Slot::Motor(_)))
+        .count();
+    let motor_n = model.mass_kg * GRAVITY / motors as f32;
     let motor_command = libm::sqrtf(motor_n / model.max_thrust_n);
     libm::powf(
-        motor_command / mixer.thrust_factor,
+        motor_command / mixer_config.thrust_factor,
         1.0 / stabilizer.thrust_curve_exponent,
     )
 }

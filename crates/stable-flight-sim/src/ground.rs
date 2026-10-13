@@ -4,7 +4,7 @@ use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{GRAVITY, Vec3, euler_angles};
 
 use crate::body::Body;
-use crate::model::QuadModel;
+use crate::model::MultirotorModel;
 
 #[cfg(test)]
 mod tests;
@@ -19,7 +19,7 @@ mod tests;
 ///
 /// The leveling is instant, not a modeled tip-over: the simulator aims at plausible landings
 /// and takeoffs, not at gear dynamics.
-pub(crate) fn contact(body: &mut Body, model: &QuadModel, thrust_n: f32, h: f32) -> bool {
+pub(crate) fn contact(body: &mut Body, model: &MultirotorModel, thrust_n: f32, h: f32) -> bool {
     // NED: above the ground is z < 0.
     if body.position_ned_m.z < 0.0 {
         return false;
