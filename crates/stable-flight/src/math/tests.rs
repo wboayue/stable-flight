@@ -393,10 +393,10 @@ fn nose_up_cosine_is_the_sine_of_the_pitch() {
     assert!(nose_up_cosine(&nan).is_nan());
 }
 
-/// The attitude error is the tilt (relative to the current heading) and the wrapped heading
-/// error weighted by the tilt's cosine, as body-frame rotations: per-axis Euler differences
-/// near level, a heading error that never leaks into roll or pitch, and finite through ±90°
-/// pitch.
+/// The attitude error is the tilt (at the current heading) and the wrapped heading error
+/// weighted by the tilt's cosine, as body-frame rotations: per-axis Euler differences near
+/// level, zero when the setpoint is the current attitude, a heading error that never leaks into
+/// roll or pitch, and clean pitch errors far over.
 #[test]
 fn attitude_error_is_tilt_then_heading_in_body_axes() {
     let deg = f32::to_radians;
@@ -431,6 +431,23 @@ fn attitude_error_is_tilt_then_heading_in_body_axes() {
         ),
         // Near level: the Euler differences, as body rates.
         (at(3.0, -2.0, 45.0), 5.0, 1.0, 50.0, [2.0, 3.0, 5.0], 0.2),
+        // Holding a two-axis tilt (current Euler angles as the setpoint): no error at all.
+        (
+            at(20.0, 20.0, 70.0),
+            20.0,
+            20.0,
+            70.0,
+            [0.0, 0.0, 0.0],
+            1e-3,
+        ),
+        (
+            at(-15.0, 30.0, -100.0),
+            -15.0,
+            30.0,
+            -100.0,
+            [0.0, 0.0, 0.0],
+            1e-3,
+        ),
         // Upside down: no heading correction.
         (at(180.0, 0.0, 0.0), 180.0, 0.0, 20.0, [0.0, 0.0, 0.0], 1e-3),
         // Heading wraps the short way.
