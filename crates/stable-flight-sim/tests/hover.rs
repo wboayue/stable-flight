@@ -7,7 +7,10 @@ use stable_flight::commanders::waypoint::DEFAULT_ALTITUDE_ACCEPTANCE_M;
 use stable_flight::{Vec2, Vec3};
 use stable_flight_sim::{Gust, Wind, airframes};
 
-use common::{HOVER_ALTITUDE_M as ALTITUDE_M, HOVER_SETTLE_S as SETTLE_S, Plant, fly};
+use common::{
+    CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_ALTITUDE_M as ALTITUDE_M,
+    HOVER_SETTLE_S as SETTLE_S, Plant, fly,
+};
 
 /// Largest deviations from the hover point seen while holding.
 #[derive(Debug, Default)]
@@ -52,10 +55,10 @@ fn hover(wind: Wind, hold_s: f32) -> Deviation {
 #[test]
 fn holds_altitude_position_and_heading_in_calm_air() {
     let worst = hover(Wind::default(), 10.0);
-    check!(worst.altitude_m < 0.1, "{worst:?}");
-    check!(worst.horizontal_m < 0.1, "{worst:?}");
-    check!(worst.drift_m < 0.1, "{worst:?}");
-    check!(worst.heading_deg < 1.0, "{worst:?}");
+    check!(worst.altitude_m < CALM_ALTITUDE_M, "{worst:?}");
+    check!(worst.horizontal_m < CALM_HORIZONTAL_M, "{worst:?}");
+    check!(worst.drift_m < CALM_HORIZONTAL_M, "{worst:?}");
+    check!(worst.heading_deg < CALM_ANGLE_DEG, "{worst:?}");
 }
 
 /// The lateral velocity I trims the drag of a steady wind, so the hold is on the waypoint

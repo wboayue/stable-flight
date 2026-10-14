@@ -4,48 +4,27 @@
 mod common;
 
 use assert2::check;
-use stable_flight::{Vec2, Vec3};
+use stable_flight::Vec3;
 use stable_flight_sim::{Gust, Wind, airframes};
 
-use common::tailsitter::{TailsitterPlant, tailsitter_loop, view_angles};
-use common::{HOVER_ALTITUDE_M as ALTITUDE_M, HOVER_SETTLE_S as SETTLE_S, fly, hover_follower};
-
-/// Largest deviations from the hover point seen while holding.
-#[derive(Debug, Default)]
-struct Deviation {
-    altitude_m: f32,
-    /// Horizontal distance from the waypoint.
-    horizontal_m: f32,
-    /// Hover-view roll or pitch: the nose off vertical.
-    tilt_deg: f32,
-    /// Hover-view heading.
-    heading_deg: f32,
-    /// Horizontal distance from the waypoint at the end of the hold.
-    final_m: f32,
-}
+use common::tailsitter::{HoverDeviation, TailsitterPlant, tailsitter_loop};
+use common::{
+    CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_ALTITUDE_M as ALTITUDE_M,
+    HOVER_SETTLE_S as SETTLE_S, fly, hover_follower,
+};
 
 /// Takes off to the hover point in `wind`, settles, then holds for `hold_s`, returning the
 /// largest deviations during the hold.
-fn hover(wind: Wind, hold_s: f32) -> Deviation {
+fn hover(wind: Wind, hold_s: f32) -> HoverDeviation {
     let plant = TailsitterPlant::in_wind(airframes::tailsitter(), wind);
     let mut flight_loop = tailsitter_loop(&plant, hover_follower());
     fly(&mut flight_loop, SETTLE_S, |_, _| {});
     check!(flight_loop.commander().is_complete());
 
-    let horizontal = |position_m: Vec3| Vec2::new(position_m.x, position_m.y);
-    let mut worst = Deviation::default();
+    let point_m = Vec3::new(0.0, 0.0, ALTITUDE_M);
+    let mut worst = HoverDeviation::default();
     fly(&mut flight_loop, hold_s, |flight_loop, _| {
-        let state = flight_loop.state();
-        let (roll_rad, pitch_rad, heading_rad) = view_angles(state);
-        worst.altitude_m = worst
-            .altitude_m
-            .max((state.position_m.z - ALTITUDE_M).abs());
-        worst.horizontal_m = worst.horizontal_m.max(horizontal(state.position_m).norm());
-        worst.tilt_deg = worst
-            .tilt_deg
-            .max(roll_rad.abs().max(pitch_rad.abs()).to_degrees());
-        worst.heading_deg = worst.heading_deg.max(heading_rad.abs().to_degrees());
-        worst.final_m = horizontal(state.position_m).norm();
+        worst.observe(flight_loop.state(), point_m);
     });
     worst
 }
@@ -54,10 +33,10 @@ fn hover(wind: Wind, hold_s: f32) -> Deviation {
 #[test]
 fn holds_altitude_position_and_heading_in_calm_air() {
     let worst = hover(Wind::default(), 10.0);
-    check!(worst.altitude_m < 0.1, "{worst:?}");
-    check!(worst.horizontal_m < 0.1, "{worst:?}");
-    check!(worst.tilt_deg < 1.0, "{worst:?}");
-    check!(worst.heading_deg < 1.0, "{worst:?}");
+    check!(worst.altitude_m < CALM_ALTITUDE_M, "{worst:?}");
+    check!(worst.horizontal_m < CALM_HORIZONTAL_M, "{worst:?}");
+    check!(worst.tilt_deg < CALM_ANGLE_DEG, "{worst:?}");
+    check!(worst.heading_deg < CALM_ANGLE_DEG, "{worst:?}");
 }
 
 /// Altitude band in a steady wind or a gust, in m: measured 0.27 m at most; 0.5 m leaves

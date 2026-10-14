@@ -48,6 +48,17 @@ pub const HOVER_ALTITUDE_M: f32 = 5.0;
 /// Seconds [`hover`] allows to take off and settle on its point.
 pub const HOVER_SETTLE_S: f32 = 15.0;
 
+/// Calm-air hover band: altitude off the point, in m, over a whole hold (`hover.rs`).
+pub const CALM_ALTITUDE_M: f32 = 0.1;
+
+/// Calm-air hover band: horizontal distance from the point (or wander from where the hold
+/// began), in m, over a whole hold.
+pub const CALM_HORIZONTAL_M: f32 = 0.1;
+
+/// Calm-air hover band: heading off its hold (and a tailsitter's nose off vertical), in
+/// degrees, over a whole hold.
+pub const CALM_ANGLE_DEG: f32 = 1.0;
+
 /// A commander that holds one waypoint.
 pub type Hover = WaypointFollower<[WaypointCommand; 1]>;
 
@@ -159,7 +170,12 @@ pub fn waypoint(north_m: f32, east_m: f32, altitude_m: f32) -> WaypointCommand {
 
 /// Holds a waypoint [`HOVER_ALTITUDE_M`] over the origin.
 pub fn hover_follower() -> Hover {
-    WaypointFollower::new([waypoint(0.0, 0.0, HOVER_ALTITUDE_M)])
+    hover_at(HOVER_ALTITUDE_M)
+}
+
+/// Holds a waypoint `altitude_m` over the origin.
+pub fn hover_at(altitude_m: f32) -> Hover {
+    WaypointFollower::new([waypoint(0.0, 0.0, altitude_m)])
         .expect("one waypoint")
         .with_route_end(RouteEnd::Hold)
 }
