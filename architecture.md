@@ -511,8 +511,11 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
   met the criterion; otherwise it need only meet the criterion. A too-high start fails the
   criterion yet settles fast, overshooting within the settle band, so holding the result to
   it would keep the high gain (#361). A start above the search's maximum (the relay's
-  ceiling) isn't flown, and one whose steps keep clipping leaves no baseline rather than
-  ending the stage. The copter plan (`StagePlan::copter_search`) tunes roll and pitch rate,
+  ceiling) isn't flown: it's lowered to the relay's rule gains, P at most the ceiling, and
+  committed at once, so the vehicle settles on them and they stay if nothing better passes or
+  the stage fails, since a gain above the ceiling can ring once the relay disturbs it and never
+  settle (#375). A start whose steps keep clipping leaves no baseline rather than ending the
+  stage. The copter plan (`StagePlan::copter_search`) tunes roll and pitch rate,
   then angle, so the angle search flies on the tuned rate loops:
   * Rate: D seeded from the relay's Tyreus–Luyben PD, P searched on overshoot ≤ 0.05 and
     bounce-back ≤ 0.1 (ArduPilot's default aggressiveness). Rate P has a sharp limit
@@ -535,11 +538,19 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
   ([#296](https://github.com/wboayue/stable-flight/issues/296)). The relay on roll and pitch angle
   measures a high ultimate gain (an integrator around a fast rate loop) whose rule P oscillates
   once the rate setpoint saturates, so angles are tuned by step-response search. Before each
-  probe the vehicle must hold level and still (`Envelope::settle`). A finished stage commits its
+  probe the vehicle must hold level and still (`Envelope::settle`) on every axis. A relay
+  that can't settle starts at the timeout instead of failing: it replaces the loop's output,
+  so it measures a loop ringing on its own gains. A step can't, so a loop the run hasn't
+  reached yet that rings on its start gains fails the stage
+  ([#379](https://github.com/wboayue/stable-flight/issues/379)). ArduPilot's level check also
+  covers every axis; it widens its limits up to twice as the wait grows
+  (`AC_AutoTune.cpp:343`), which here started about half the probes before the vehicle was
+  still and made angle steps clip. A finished stage commits its
   gains through `set_stabilizer_config`.
 * **Envelope and outcomes:** tilt, body rate, or altitude loss past the `Envelope` limits, a
   probe abort, or a rate setpoint interrupting an angle stage fails the run, and the config goes
-  back to the last commit: earlier stages stay, nothing the failing stage tried survives.
+  back to the last commit: earlier stages stay, and nothing the failing stage tried survives
+  except gains it lowered from above the relay's ceiling.
   Disarming before completion reverts to the config at start. The caller owns the trigger and the
   logging (`AutotuneEvent`s); the executor has no clock. The envelope measures tilt in the body
   frame, so autotune can't yet run on a viewed tailsitter

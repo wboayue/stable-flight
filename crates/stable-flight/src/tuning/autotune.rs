@@ -385,8 +385,10 @@ impl RelayPlan {
 ///    `test.max_invalid` times leaves `max` and the start gains as they are.
 /// 2. **Baseline:** `test.pairs` pairs at the start gains; if they meet the criterion, their
 ///    summary is what the result must not be worse than. A start above `max` (a gain the
-///    search would never pick) isn't flown, and a start whose steps abort or keep clipping
-///    leaves no baseline.
+///    search would never pick) isn't flown: it's lowered to the seed, its term at most
+///    `max`, and committed ([`AutotuneEvent::Lowered`]), so the vehicle settles on it and
+///    it stays if nothing better passes or the stage fails. A start whose steps abort or keep
+///    clipping leaves no baseline.
 /// 3. **Bracket** from the seed's gain: `× factor` per point while points pass, up to `max`;
 ///    `÷ factor` while they fail, down to `min` (nothing passing: the start gains stay). A
 ///    point passes when `confirm` pairs in a row pass, so one lucky pair near a sharp limit
@@ -730,7 +732,8 @@ pub struct Envelope {
     /// Level and still enough to start a probe, unless the stage's method sets its own
     /// ([`Method::settle`]).
     pub settle: Settle,
-    /// How long to wait for a settle before failing, in s.
+    /// How long to wait for a settle, in s. At the timeout a step fails the stage and a relay
+    /// starts anyway: it replaces the loop's output, so a ringing loop doesn't stop it.
     pub settle_timeout_s: f32,
     /// After a probe on candidate gains ends, how long the vehicle has on the committed gains
     /// to come back inside the limits before a breach fails the stage, in s. A breach while
@@ -884,6 +887,15 @@ pub enum AutotuneEvent {
         steps: Option<StepSummary>,
         /// A search's baseline: its steps at the start gains.
         baseline: Option<StepSummary>,
+    },
+    /// A search lowered its loop's gains, which started above the largest it would pick (the
+    /// relay's ceiling), and committed them: the stage settles on them, and they stay if it
+    /// fails or nothing better passes.
+    Lowered {
+        /// The searched loop.
+        target: TunedLoop,
+        /// The gains committed.
+        gains: Gains,
     },
     /// A stage failed: the config went back to the last committed one (earlier stages stay),
     /// and the run ends.
@@ -1356,21 +1368,40 @@ impl Autotune {
             Decide::Breached { reason } => Input::Breached { reason, gains },
         };
         match self.procedure.next(input) {
-            Action::Probe { probe, gains } => {
+            Action::Probe {
+                probe,
+                gains,
+                commit,
+            } => {
+                let lowered = match commit {
+                    Some(commit) => {
+                        let Some(config) = self.set_gains(flight_loop, stage, commit) else {
+                            return Some(self.fail(flight_loop, stage, AutotuneAbort::Rejected));
+                        };
+                        self.last_good = Some(config);
+                        Some(AutotuneEvent::Lowered {
+                            target: self.target(stage),
+                            gains: commit,
+                        })
+                    }
+                    None => None,
+                };
                 self.phase = Phase::Settling {
                     stage,
                     request: Request { probe, gains },
                     level_s: 0.0,
                     waited_s: 0.0,
                 };
-                self.procedure
+                let tried = self
+                    .procedure
                     .take_verdict()
                     .map(|verdict| AutotuneEvent::Tried {
                         target: self.target(stage),
                         gains: verdict.gains,
                         passed: verdict.passed,
                         steps: verdict.steps,
-                    })
+                    });
+                lowered.or(tried)
             }
             Action::Finish {
                 gains,
@@ -1384,7 +1415,9 @@ impl Autotune {
 
     /// Waits for the vehicle to hold the stage's [`Settle`] (`level_s` counts it, restarting
     /// when it moves), then sets the request's gains, if any, and starts its probe for
-    /// `stage`; fails after `settle_timeout_s`.
+    /// `stage`; fails after
+    /// `settle_timeout_s`, except a relay, which starts then instead: it replaces the loop's
+    /// output, so a loop that rings on its own gains doesn't keep it from measuring (#375).
     fn settle<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
@@ -1394,8 +1427,10 @@ impl Autotune {
         waited_s: f32,
     ) -> Option<AutotuneEvent> {
         let settle = self.settle_for(stage);
+        let relay = matches!(request.probe, ProbeConfig::Relay(_));
         let level_s = if settle.holds(motion) { level_s } else { 0.0 };
-        if level_s >= settle.hold_s {
+        let timed_out = waited_s >= self.envelope.settle_timeout_s;
+        if level_s >= settle.hold_s || (relay && timed_out) {
             if let Some(gains) = request.gains
                 && self.set_gains(flight_loop, stage, gains).is_none()
             {
@@ -1409,7 +1444,7 @@ impl Autotune {
             self.stalled = false;
             return None;
         }
-        if waited_s >= self.envelope.settle_timeout_s {
+        if timed_out {
             return Some(self.fail(flight_loop, stage, AutotuneAbort::NotSettled));
         }
         self.phase = Phase::Settling {

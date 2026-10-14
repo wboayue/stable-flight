@@ -378,6 +378,10 @@ fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
                 format_gains(gains)
             );
         }
+        AutotuneEvent::Lowered { target, gains } => warn!(
+            "autotune: {target:?} start above the relay's ceiling, lowered to {}",
+            format_gains(gains)
+        ),
         AutotuneEvent::StageFailed { target, reason } => {
             warn!("autotune: {target:?} failed: {reason:?}; earlier stages kept");
         }

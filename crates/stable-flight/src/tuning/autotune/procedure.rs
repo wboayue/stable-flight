@@ -37,11 +37,13 @@ pub(super) enum Input {
 )]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Action {
-    /// Settle on the committed gains, then run `probe` on the stage's loop, flying `gains`
-    /// for that probe only when given.
+    /// Commit `commit` first when given (it stays if the stage fails), settle on the
+    /// committed gains, then run `probe` on the stage's loop, flying `gains` for that probe
+    /// only when given.
     Probe {
         probe: ProbeConfig,
         gains: Option<Gains>,
+        commit: Option<Gains>,
     },
     /// Commit these gains for the stage's loop and end the stage; a step test reports its
     /// valid steps, a search its verify and baseline.
@@ -58,7 +60,11 @@ pub(super) enum Action {
 impl Action {
     /// Runs `probe` on the committed gains.
     fn probe(probe: ProbeConfig) -> Self {
-        Self::Probe { probe, gains: None }
+        Self::Probe {
+            probe,
+            gains: None,
+            commit: None,
+        }
     }
 }
 
