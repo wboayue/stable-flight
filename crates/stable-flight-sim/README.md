@@ -163,4 +163,4 @@ doesn't compensate it either), the wash's lift, drag, and damping on the wing, e
 washing only its own elevon, and ground effect. It keeps the airplane's sideslip
 derivatives, tail included, so wind along the span in a hover (90° of sideslip) yaws it
 harder than a flying wing: a 5 m/s wind with 4 m/s along the span outgrows its differential
-thrust.
+thrust ([#387](https://github.com/wboayue/stable-flight/issues/387)).

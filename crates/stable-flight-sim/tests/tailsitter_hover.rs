@@ -68,7 +68,7 @@ const WIND_ALTITUDE_M: f32 = 0.5;
 /// the span (differential thrust leaning it): the hold stays near the waypoint. Measured
 /// 0.12 m and 0.57 m off; 1 m leaves about 2× margin. A 5 m/s wind with 4 m/s along the span
 /// departs: the plane's weathercock moment (`c_yaw_beta` at 90° of sideslip) outgrows the
-/// differential thrust.
+/// differential thrust (#387).
 #[test]
 fn holds_near_the_waypoint_in_steady_wind() {
     // (case, steady wind NEU m/s)
