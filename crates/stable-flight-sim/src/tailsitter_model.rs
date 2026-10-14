@@ -1,5 +1,6 @@
 //! The physical parameters of a simulated tailsitter: see [`TailsitterModel`].
 
+use crate::aero::AIR_DENSITY_KGPM3;
 use crate::fixed_wing::FixedWingModel;
 use crate::model::{ModelError, check_fraction, check_positive};
 
@@ -34,8 +35,14 @@ pub struct TailsitterModel {
     pub prop_wash: PropWash,
 }
 
-/// The props' slipstream over the control surfaces, by actuator-disc momentum theory: the
-/// far wake carries `thrust / disc area` more dynamic pressure than the free stream.
+/// The props' slipstream over the control surfaces, by actuator-disc momentum theory along the
+/// thrust axis.
+///
+/// Flying nose first (or still), the far wake carries `thrust / disc area` more dynamic
+/// pressure than the free stream. Sinking tail first, the air meets the wash head on: the
+/// flow over the surfaces is the static jet's speed less the sink, so the wash's share shrinks
+/// and, sinking as fast as the jet, is gone (the eXplora's elevons lose the nose sinking a few
+/// m/s, #123). Vortex-ring flow isn't modeled.
 ///
 /// The surfaces see [`surface_fraction`](Self::surface_fraction) of it on top of the free
 /// stream's, so they keep authority in a hover; the wing's lift, drag, and damping see the
@@ -69,9 +76,22 @@ impl PropWash {
         }
     }
 
-    /// Dynamic pressure the wash adds over the surfaces at `thrust_n`, in Pa.
-    pub(crate) fn pressure_pa(&self, thrust_n: f32) -> f32 {
-        self.surface_fraction * thrust_n / self.disc_area_m2
+    /// Dynamic pressure the wash adds over the surfaces at `thrust_n` while moving through the
+    /// air at `axial_mps` along the thrust axis (negative sinking tail first), in Pa; negative
+    /// where it takes away from the free stream's.
+    ///
+    /// Nose first, `T/A`. Tail first at speed `V` against a static jet of speed
+    /// `v = √(2T/ρA)`, the surfaces see `½ρ(v − V)²` in place of the free stream's `½ρV²`:
+    /// `T/A − ρ·v·V`.
+    pub(crate) fn pressure_pa(&self, thrust_n: f32, axial_mps: f32) -> f32 {
+        let disc_pa = thrust_n / self.disc_area_m2;
+        let added_pa = if axial_mps < 0.0 {
+            let jet_mps = libm::sqrtf(2.0 * disc_pa / AIR_DENSITY_KGPM3);
+            disc_pa - AIR_DENSITY_KGPM3 * jet_mps * -axial_mps
+        } else {
+            disc_pa
+        };
+        self.surface_fraction * added_pa
     }
 }
 

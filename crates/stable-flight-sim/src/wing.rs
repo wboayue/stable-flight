@@ -13,7 +13,7 @@ use crate::lag;
 use crate::lockstep::Dynamics;
 use crate::motors::{MotorLayout, Motors};
 use crate::surfaces::Surfaces;
-use crate::tailsitter_model::PropWash;
+use crate::tailsitter_model::{PropWash, TailsitterModel};
 
 #[cfg(test)]
 mod tests;
@@ -26,17 +26,22 @@ pub(crate) struct Rotors {
     pub motor_arm_m: f32,
     /// The props' wash over the surfaces; `None` for surfaces out of it.
     pub wash: Option<PropWash>,
-    /// The attitude resting on the ground, relative to level ([`Ground::rest`]).
-    pub rest: UnitQuaternion<f32>,
 }
 
 impl Rotors {
-    /// One prop on the centerline, nothing in its wash, resting level: an airplane.
+    /// One prop on the centerline, nothing in its wash: an airplane.
     pub(crate) fn airplane() -> Self {
         Rotors {
             motor_arm_m: 0.0,
             wash: None,
-            rest: UnitQuaternion::identity(),
+        }
+    }
+
+    /// `model`'s motors along the wing, the surfaces in their wash.
+    pub(crate) fn tailsitter(model: &TailsitterModel) -> Self {
+        Rotors {
+            motor_arm_m: model.motor_arm_m,
+            wash: Some(model.prop_wash),
         }
     }
 }
@@ -47,6 +52,8 @@ impl Rotors {
 pub(crate) struct FixedWing {
     model: FixedWingModel,
     rotors: Rotors,
+    /// The attitude resting on the ground, relative to level ([`Ground::rest`]).
+    rest: UnitQuaternion<f32>,
     motors: Motors,
     surfaces: Surfaces,
     /// The motor and servo lags' step factors for the current step length.
@@ -60,11 +67,12 @@ pub(crate) struct FixedWing {
 
 impl FixedWing {
     /// `model`'s physics, its motors and surfaces driven by `mixer`'s rows and placed by
-    /// `rotors`. `model` must be valid.
+    /// `rotors`, resting on the ground at `rest`. `model` must be valid.
     pub(crate) fn new<const N: usize>(
         model: FixedWingModel,
         mixer: &TableMixer<N>,
         rotors: Rotors,
+        rest: UnitQuaternion<f32>,
     ) -> Self {
         // Each motor's thrust is along body `x`, so a roll or pitch factor turns nothing, and
         // prop drag torque isn't modeled: a yaw factor acts through the motor's arm.
@@ -78,6 +86,7 @@ impl FixedWing {
             surfaces: Surfaces::new(mixer.rows()),
             model,
             rotors,
+            rest,
             motor_alpha: 0.0,
             servo_alpha: 0.0,
             force_n: Vec3::zeros(),
@@ -108,7 +117,7 @@ impl Dynamics for FixedWing {
         Ground {
             mass_kg: self.model.mass_kg,
             friction: self.model.ground_friction,
-            rest: self.rotors.rest,
+            rest: self.rest,
         }
     }
 
@@ -125,13 +134,14 @@ impl Dynamics for FixedWing {
         self.motors.spin(&command.motors, self.motor_alpha);
         self.surfaces.move_to(&command.servos, self.servo_alpha);
         let (thrust_n, motor_torque_nm) = self.motors.wrench();
-        let wash_pa = self
-            .rotors
-            .wash
-            .map_or(0.0, |wash| wash.pressure_pa(thrust_n));
         let air_mps = body
             .attitude
             .inverse_transform_vector(&body.air_relative_velocity_ned_mps(wind_ned_mps));
+        // The thrust axis is body `x`.
+        let wash_pa = self
+            .rotors
+            .wash
+            .map_or(0.0, |wash| wash.pressure_pa(thrust_n, air_mps.x));
         self.aero = aero::wrench(
             &self.model,
             air_mps,

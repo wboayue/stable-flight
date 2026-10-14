@@ -73,16 +73,16 @@ pub struct TailsitterAirframe {
 /// );
 /// ```
 pub fn tailsitter() -> TailsitterAirframe {
-    const MOTORS: f32 = 2.0;
+    const MOTORS: u8 = 2;
     const PROP_DIAMETER_M: f32 = 0.254;
     let airplane = plane();
     let model = TailsitterModel {
         wing: FixedWingModel {
-            max_thrust_n: 1.5 * airplane.model.max_thrust_n / MOTORS,
+            max_thrust_n: 1.5 * airplane.model.max_thrust_n / f32::from(MOTORS),
             ..airplane.model
         },
         motor_arm_m: 0.25,
-        prop_wash: PropWash::props(MOTORS as u8, PROP_DIAMETER_M, 1.0),
+        prop_wash: PropWash::props(MOTORS, PROP_DIAMETER_M, 1.0),
     };
     let mixer = TableMixer::tailsitter_2p();
     let gains = |p, i, d| Gains { p, i, d };

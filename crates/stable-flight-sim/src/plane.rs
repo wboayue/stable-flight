@@ -3,6 +3,7 @@
 use core::time::Duration;
 
 use stable_flight::mixers::TableMixer;
+use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{Actuator, ActuatorCommand, StateSource, VehicleState};
 
 use crate::fixed_wing::FixedWingModel;
@@ -67,7 +68,7 @@ impl SimPlane {
         model.validate()?;
         Ok(SimPlane {
             lockstep: Lockstep::new(),
-            dynamics: FixedWing::new(model, mixer, Rotors::airplane()),
+            dynamics: FixedWing::new(model, mixer, Rotors::airplane(), UnitQuaternion::identity()),
         })
     }
 

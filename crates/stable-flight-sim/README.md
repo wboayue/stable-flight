@@ -106,7 +106,7 @@ Shared by every vehicle:
 | Part | Model |
 |---|---|
 | Motors | Each motor's thrust along body `x`; a mixer yaw factor of ±1 acts at `motor_arm_m` from the centerline (differential thrust); `max_thrust_n` per motor |
-| Prop wash | `PropWash`: actuator-disc momentum theory, the far wake's `thrust / disc area` of added dynamic pressure, `surface_fraction` of it over the surfaces only, so the elevons work in a hover |
+| Prop wash | `PropWash`: actuator-disc momentum theory along the thrust axis, `surface_fraction` of it over the surfaces only, so the elevons work in a hover. Nose first, the far wake's `thrust / disc area` of added dynamic pressure; sinking tail first, the static jet less the sink, so the elevons lose authority as it sinks (none at the jet's speed; no vortex-ring flow) |
 | Frame | Airplane FRD body: hovering nose up is 90° of pitch, level in `View::tailsitter`; it rests on its tail |
 
 `Perturbations` (`with_perturbations` on either vehicle, all off by default) bring the things that

@@ -42,8 +42,8 @@ pub struct FixedWingModel {
     pub max_deflection_rad: Vec3,
     /// First-order lag from a servo's command to its position, in s.
     pub servo_time_constant_s: f32,
-    /// Prop thrust at full command, in N, along body `x`. Thrust is `max_thrust_n · command²`,
-    /// as on the multirotor, and doesn't fall off with airspeed.
+    /// Each motor's thrust at full command, in N, along body `x`. Thrust is
+    /// `max_thrust_n · command²`, as on the multirotor, and doesn't fall off with airspeed.
     pub max_thrust_n: f32,
     /// First-order lag from the motor's command to the command it runs at, in s.
     pub motor_time_constant_s: f32,

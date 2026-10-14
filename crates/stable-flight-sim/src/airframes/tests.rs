@@ -7,7 +7,10 @@ use stable_flight::{AttitudeSetpoint, ControlOutput, Mixer, Setpoint, Stabilizer
 
 use super::*;
 use crate::aero;
-use crate::motors::{MotorLayout, Motors};
+use crate::body::Body;
+use crate::lockstep::Dynamics;
+use crate::motors::Motors;
+use crate::wing::{FixedWing, Rotors};
 
 #[test]
 fn every_airframe_is_valid() {
@@ -134,16 +137,21 @@ fn tailsitter_hover_thrust_carries_the_weight() {
     let mut mixer = airframe.mixer;
     let command = mixer.mix(&output);
 
-    let layout = MotorLayout {
-        moment_arm_m: 0.0,
-        yaw_torque_per_thrust_m: airframe.model.motor_arm_m,
-        max_thrust_n: airframe.model.wing.max_thrust_n,
+    // Nose up in still air, after a step far longer than the motor lag.
+    let mut dynamics = FixedWing::new(
+        airframe.model.wing,
+        &airframe.mixer,
+        Rotors::tailsitter(&airframe.model),
+        UnitQuaternion::identity(),
+    );
+    dynamics.begin(100.0);
+    let body = Body {
+        attitude: nose_up.attitude,
+        ..Body::default()
     };
-    let mut motors = Motors::new(airframe.mixer.rows(), &layout);
-    motors.spin(&command.motors, 1.0);
-    let (thrust_n, _) = motors.wrench();
+    dynamics.loads(&command, &body, Vec3::zeros());
     assert_relative_eq!(
-        thrust_n,
+        dynamics.lift_n(&body),
         airframe.model.wing.mass_kg * GRAVITY,
         max_relative = 1e-4
     );

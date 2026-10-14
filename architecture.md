@@ -107,6 +107,8 @@ the check for realism.
 * **Prop wash by momentum theory.** A tailsitter's elevons hold it in a hover only in the
   props' wash, so the surface terms see the actuator disc's far-wake pressure (thrust over
   disc area) on top of the free stream's; lift, drag, and damping see the free stream.
+  Sinking tail first, the air meets the wash head on and the surfaces see the static jet
+  less the sink, so authority fades with the sink, as the eXplora's did in RealFlight (#123).
   ArduPilot's SITL instead adds 20 m/s × throttle to the airspeed of every moment
   (`SIM_Plane.cpp:154-162`), which ties authority to throttle rather than thrust and damps
   the body in a still hover.

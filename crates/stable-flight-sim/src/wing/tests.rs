@@ -15,17 +15,22 @@ fn command(motors: [f32; 2], elevons: [f32; 2]) -> ActuatorCommand {
 
 fn plane() -> FixedWing {
     let airframe = airframes::plane();
-    FixedWing::new(airframe.model, &airframe.mixer, Rotors::airplane())
+    FixedWing::new(
+        airframe.model,
+        &airframe.mixer,
+        Rotors::airplane(),
+        UnitQuaternion::identity(),
+    )
 }
 
 fn tailsitter() -> FixedWing {
     let airframe = airframes::tailsitter();
-    let rotors = Rotors {
-        motor_arm_m: airframe.model.motor_arm_m,
-        wash: Some(airframe.model.prop_wash),
-        rest: UnitQuaternion::identity(),
-    };
-    FixedWing::new(airframe.model.wing, &airframe.mixer, rotors)
+    FixedWing::new(
+        airframe.model.wing,
+        &airframe.mixer,
+        Rotors::tailsitter(&airframe.model),
+        UnitQuaternion::identity(),
+    )
 }
 
 /// The loads on the airframe: prop thrust along the nose plus the aerodynamics, rotated to
@@ -56,14 +61,21 @@ fn loads_combine_prop_and_aero() {
     check!(dynamics.lift_n(&body) > 0.5 * dynamics.model.mass_kg * GRAVITY);
 }
 
-/// The tailsitter's torque in still air after one step far longer than the lags, so every
-/// motor and servo runs at its command: only the motors and the surfaces in their wash act.
-fn still_air_torque_nm(command: &ActuatorCommand) -> Vec3 {
+/// The tailsitter's torque moving at `velocity_mps` (body axes) through still air, after one
+/// step far longer than the lags, so every motor and servo runs at its command.
+fn torque_nm(command: &ActuatorCommand, velocity_mps: Vec3) -> Vec3 {
     let mut dynamics = tailsitter();
     dynamics.begin(100.0);
-    dynamics
-        .loads(command, &Body::default(), Vec3::zeros())
-        .torque_nm
+    let body = Body {
+        velocity_ned_mps: velocity_mps,
+        ..Body::default()
+    };
+    dynamics.loads(command, &body, Vec3::zeros()).torque_nm
+}
+
+/// [`torque_nm`] at rest: only the motors and the surfaces in their wash act.
+fn still_air_torque_nm(command: &ActuatorCommand) -> Vec3 {
+    torque_nm(command, Vec3::zeros())
 }
 
 /// In still air, `tailsitter_2p`'s moments come back as the mixer means them: differential
@@ -118,4 +130,27 @@ fn wash_scales_elevon_authority_with_thrust() {
     elevator.servos[1] = 0.5;
     let still = airplane.loads(&elevator, &Body::default(), Vec3::zeros());
     check!(still.torque_nm == Vec3::zeros());
+}
+
+/// Sinking tail first into the wash takes the elevons' authority: less pitch per deflection
+/// the faster it sinks, none sinking as fast as the static jet (#123).
+#[test]
+fn sinking_into_the_wash_takes_elevon_authority() {
+    // The elevons' pitch moment alone: deflected less centered, at the same motion.
+    let elevon_pitch_nm = |sink_mps: f32| {
+        let velocity_mps = Vec3::new(-sink_mps, 0.0, 0.0);
+        torque_nm(&command([0.7; 2], [0.5, 0.5]), velocity_mps).y
+            - torque_nm(&command([0.7; 2], [0.0, 0.0]), velocity_mps).y
+    };
+    let hover_nm = elevon_pitch_nm(0.0);
+    check!(hover_nm > 0.0);
+    check!(elevon_pitch_nm(2.0) < hover_nm);
+    check!(elevon_pitch_nm(5.0) < elevon_pitch_nm(2.0));
+
+    // The static jet at 0.7 on both motors.
+    let airframe = airframes::tailsitter();
+    let thrust_n = 2.0 * airframe.model.wing.max_thrust_n * 0.49;
+    let disc_pa = thrust_n / airframe.model.prop_wash.disc_area_m2;
+    let jet_mps = libm::sqrtf(2.0 * disc_pa / aero::AIR_DENSITY_KGPM3);
+    check!(elevon_pitch_nm(jet_mps).abs() < 1e-3 * hover_nm);
 }

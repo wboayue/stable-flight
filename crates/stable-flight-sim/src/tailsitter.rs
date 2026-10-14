@@ -70,11 +70,6 @@ impl SimTailsitter {
     ) -> Result<Self, ModelError> {
         model.validate()?;
         let rest = resting_on_tail();
-        let rotors = Rotors {
-            motor_arm_m: model.motor_arm_m,
-            wash: Some(model.prop_wash),
-            rest,
-        };
         let mut lockstep = Lockstep::new();
         lockstep.place(&Start {
             position_m: Vec3::zeros(),
@@ -84,7 +79,7 @@ impl SimTailsitter {
         });
         Ok(SimTailsitter {
             lockstep,
-            dynamics: FixedWing::new(model.wing, mixer, rotors),
+            dynamics: FixedWing::new(model.wing, mixer, Rotors::tailsitter(&model), rest),
         })
     }
 

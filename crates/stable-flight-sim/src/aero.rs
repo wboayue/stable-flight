@@ -32,7 +32,8 @@ pub(crate) struct Aero {
 /// The aerodynamics of `model` moving through the air at `air_mps` (its velocity relative to
 /// the air, FRD body axes) while turning at `rates_radps`, with its aileron, elevator, and
 /// rudder axes deflected by `deflection_rad` (`x`, `y`, `z`), and `wash_pa` of prop-wash
-/// dynamic pressure over the surfaces on top of the free stream's.
+/// dynamic pressure over the surfaces on top of the free stream's (negative where the wash
+/// opposes it; the sum is never below zero).
 ///
 /// α is `atan2(w, u)` and β is `asin(v / V)`. Rate terms are written per unit of airspeed
 /// rather than divided by it, so they vanish smoothly as the airspeed goes to zero; at zero
@@ -45,7 +46,6 @@ pub(crate) fn wrench(
     wash_pa: f32,
 ) -> Aero {
     let c = &model.aero;
-    let (aileron, elevator, rudder) = (deflection_rad.x, deflection_rad.y, deflection_rad.z);
     let (span, chord) = (model.span_m, model.chord_m);
     let speed_mps = air_mps.norm();
     // `>` is false for NaN: unknown air is still air.
@@ -57,16 +57,8 @@ pub(crate) fn wrench(
     } else {
         0.0
     };
-    let surface_area_n = pressure_area_n + wash_pa * model.wing_area_m2;
-    let surfaces = Aero {
-        force_n: Vec3::new(0.0, surface_area_n * c.c_side_rudder * rudder, 0.0),
-        torque_nm: Vec3::new(
-            span * (c.c_roll_aileron * aileron + c.c_roll_rudder * rudder),
-            chord * c.c_pitch_elevator * elevator,
-            span * c.c_yaw_rudder * rudder,
-        ) * surface_area_n,
-        ..Aero::default()
-    };
+    let surface_area_n = (pressure_area_n + wash_pa * model.wing_area_m2).max(0.0);
+    let surfaces = surface_wrench(model, surface_area_n, deflection_rad);
     if !moving {
         return surfaces;
     }
@@ -105,6 +97,22 @@ pub(crate) fn wrench(
         torque_nm: Vec3::new(roll_nm, pitch_nm, yaw_nm) + surfaces.torque_nm,
         alpha_rad,
         beta_rad,
+    }
+}
+
+/// The side force and moments of `model`'s surfaces deflected by `deflection_rad` (aileron,
+/// elevator, rudder) under `pressure_area_n` (their dynamic pressure times wing area, in N).
+fn surface_wrench(model: &FixedWingModel, pressure_area_n: f32, deflection_rad: Vec3) -> Aero {
+    let c = &model.aero;
+    let (aileron, elevator, rudder) = (deflection_rad.x, deflection_rad.y, deflection_rad.z);
+    Aero {
+        force_n: Vec3::new(0.0, pressure_area_n * c.c_side_rudder * rudder, 0.0),
+        torque_nm: Vec3::new(
+            model.span_m * (c.c_roll_aileron * aileron + c.c_roll_rudder * rudder),
+            model.chord_m * c.c_pitch_elevator * elevator,
+            model.span_m * c.c_yaw_rudder * rudder,
+        ) * pressure_area_n,
+        ..Aero::default()
     }
 }
 
