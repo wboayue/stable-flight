@@ -7,6 +7,7 @@
 pub mod plane;
 pub mod plane_spec;
 pub mod spec;
+pub mod tailsitter;
 
 use std::time::Duration;
 

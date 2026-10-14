@@ -45,7 +45,7 @@ The repository is a Cargo workspace:
 | [`stable-flight-bridge`](crates/stable-flight-bridge) | Companion-computer binary translating the native link to MAVLink for ground stations (QGC): params, state, arming, joystick and offboard setpoints, land |
 | [`stable-flight-sitl`](crates/stable-flight-sitl) | Simulator-independent software-in-the-loop harness: commanders, the real-time `RealTimeRunner` + `ShutdownSignal`, and the per-tick `CsvRecorder` |
 | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | RealFlight backend: `RealFlightVehicle`, tuned `airframes`, and the RealFlight examples |
-| [`stable-flight-sim`](crates/stable-flight-sim) | Deterministic rigid-body multirotor and airplane simulator (unpublished) for closed-loop tests in `cargo test` and CI. `no_std` |
+| [`stable-flight-sim`](crates/stable-flight-sim) | Deterministic rigid-body multirotor, airplane, and tailsitter simulator (unpublished) for closed-loop tests in `cargo test` and CI. `no_std` |
 | [`stable-flight-tools`](crates/stable-flight-tools) | Developer binaries (unpublished): `plot_flight`, `generate_figure_eight`, `link_pilot`, and `check_frames` |
 
 Board firmware lives outside the workspace, one nested workspace per board:

@@ -1,0 +1,157 @@
+//! The simulated tailsitter: see [`tailsitter`].
+
+use core::f32::consts::PI;
+
+use stable_flight::Vec2;
+use stable_flight::controllers::{
+    AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains, RateGains,
+};
+use stable_flight::guidance::copter::CopterGuidanceConfig;
+use stable_flight::guidance::plane::PlaneGuidanceConfig;
+use stable_flight::guidance::vtol::{TailsitterGuidanceConfig, TransitionConfig};
+use stable_flight::mixers::{MixerConfig, TableMixer};
+use stable_flight::stabilizers::copter::CopterStabilizerConfig;
+use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
+use stable_flight::stabilizers::vtol::TailsitterStabilizerConfig;
+
+use crate::fixed_wing::FixedWingModel;
+use crate::tailsitter_model::{PropWash, TailsitterModel};
+
+use super::hover_thrust;
+use super::plane::{cruise_thrust, plane};
+
+/// A simulated tailsitter: its physics, the mixer that drives its motors and elevons, and the
+/// guidance and stabilizer configs tuned for it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TailsitterAirframe {
+    /// Physical parameters.
+    pub model: TailsitterModel,
+    /// The mixer; [`SimTailsitter`](crate::SimTailsitter) reads the motors and surfaces from
+    /// its rows.
+    pub mixer: TableMixer<4>,
+    /// Guidance configuration: hover, plane, and the transition between them.
+    pub guidance: TailsitterGuidanceConfig,
+    /// Stabilizer configuration: hover and plane.
+    pub stabilizer: TailsitterStabilizerConfig,
+}
+
+/// ArduPilot SITL's tailsitter (`plane-tailsitter`: [`plane`]'s airframe with 1.5× its
+/// thrust, `libraries/SITL/SIM_Plane.cpp:78-81`, Plane-4.5), its thrust split over two motors
+/// on [`TableMixer::tailsitter_2p`], with the elevons in their wash.
+///
+/// The rest isn't in ArduPilot's model and is chosen:
+/// - Motors 25 cm either side of the centerline, for the differential thrust that yaws it.
+/// - Two 10-inch props washing the elevons wholly. In a hover that is about 190 Pa over them,
+///   as from 18 m/s of airspeed; ArduPilot adds 20 m/s × throttle to the airspeed of its
+///   moments instead (`SIM_Plane.cpp:154-162`).
+///
+/// The hover side flies the eXplora's RealFlight gains (#123, #328; the same layout of
+/// differential thrust and elevons), which hold the sim's nose-up hover within the copter's
+/// calm-air bands (`tests/tailsitter_hover.rs`); the autotune can't run in the tailsitter view
+/// (#321). The plane side is [`plane`]'s, without
+/// the rudder feedforward (yaw is differential thrust here) and on the hover side's thrust
+/// curve, so a handoff keeps the motor commands continuous.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::FlightLoop;
+/// use stable_flight::guidance::vtol::TailsitterGuidance;
+/// use stable_flight::stabilizers::vtol::TailsitterStabilizer;
+/// use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
+/// use stable_flight_sim::{SimTailsitter, airframes};
+///
+/// let airframe = airframes::tailsitter();
+/// let vehicle = SimTailsitter::new(airframe.model, &airframe.mixer).expect("valid airframe");
+/// let flight_loop = FlightLoop::new(
+///     ConstantCommander::default(),
+///     vehicle,
+///     TailsitterGuidance::new(airframe.guidance),
+///     TailsitterStabilizer::new(airframe.stabilizer),
+///     airframe.mixer,
+///     RecordingTelemetry::<16>::new(),
+/// );
+/// ```
+pub fn tailsitter() -> TailsitterAirframe {
+    const MOTORS: f32 = 2.0;
+    const PROP_DIAMETER_M: f32 = 0.254;
+    let airplane = plane();
+    let model = TailsitterModel {
+        wing: FixedWingModel {
+            max_thrust_n: 1.5 * airplane.model.max_thrust_n / MOTORS,
+            ..airplane.model
+        },
+        motor_arm_m: 0.25,
+        prop_wash: PropWash::props(MOTORS as u8, PROP_DIAMETER_M, 1.0),
+    };
+    let mixer = TableMixer::tailsitter_2p();
+    let gains = |p, i, d| Gains { p, i, d };
+    let hover_stabilizer = CopterStabilizerConfig {
+        body_rate: BodyRateControllerConfig {
+            // View roll: differential thrust.
+            roll_gains: gains(0.4, 0.2, 0.0),
+            // View pitch: the elevons together.
+            pitch_gains: gains(0.3, 0.5, 0.0),
+            // View yaw: the elevons opposite ways.
+            yaw_gains: gains(0.1, 0.05, 0.0),
+            max_integral: 1.0,
+        },
+        attitude: AttitudeControllerConfig {
+            roll_gains: gains(4.0, 0.0, 0.0),
+            pitch_gains: gains(4.0, 0.0, 0.0),
+            max_integral: 100.0,
+            // 30° of view roll; view pitch to 85° for the forward ramp.
+            max_angles_rad: Vec2::new(PI / 6.0, 85f32.to_radians()),
+            max_rate_radps: Vec2::new(2.0, 2.0),
+        },
+        ..CopterStabilizerConfig::default()
+    };
+    let thrust_curve_exponent = hover_stabilizer.thrust_curve_exponent;
+    let plane_stabilizer = PlaneStabilizerConfig {
+        rate: stable_flight::controllers::PlaneRateControllerConfig {
+            yaw: RateGains {
+                ff: 0.0,
+                ..airplane.stabilizer.rate.yaw
+            },
+            ..airplane.stabilizer.rate
+        },
+        thrust_curve_exponent,
+        ..airplane.stabilizer
+    };
+    let mixer_config = MixerConfig::default();
+    let guidance = TailsitterGuidanceConfig {
+        hover: CopterGuidanceConfig {
+            altitude: AltitudeControllerConfig {
+                hover_thrust: hover_thrust(
+                    model.wing.mass_kg,
+                    model.wing.max_thrust_n,
+                    &mixer,
+                    &mixer_config,
+                    thrust_curve_exponent,
+                ),
+                ..CopterGuidanceConfig::default().altitude
+            },
+            ..CopterGuidanceConfig::default()
+        },
+        plane: PlaneGuidanceConfig {
+            cruise_thrust: cruise_thrust(
+                &model.wing,
+                &mixer,
+                &mixer_config,
+                thrust_curve_exponent,
+                plane_stabilizer.trim_airspeed_mps,
+            ),
+            ..airplane.guidance
+        },
+        transition: TransitionConfig::default(),
+    };
+    TailsitterAirframe {
+        model,
+        mixer,
+        guidance,
+        stabilizer: TailsitterStabilizerConfig {
+            hover: hover_stabilizer,
+            plane: plane_stabilizer,
+        },
+    }
+}

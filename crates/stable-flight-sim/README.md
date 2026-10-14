@@ -1,6 +1,6 @@
 # stable-flight-sim
 
-A deterministic rigid-body multirotor and airplane simulator for closed-loop tests of the
+A deterministic rigid-body multirotor, airplane, and tailsitter simulator for closed-loop tests of the
 Stable Flight pipeline in `cargo test` and CI. Unpublished, `no_std`, fixed-size math only.
 
 The goal is plausible, repeatable dynamics, not fidelity:
@@ -9,7 +9,7 @@ The goal is plausible, repeatable dynamics, not fidelity:
 
 ## Usage
 
-`SimCopter` and `SimPlane` are `StateSource` + `Actuator`, so a `FlightLoop` flies them like
+`SimCopter`, `SimPlane`, and `SimTailsitter` are `StateSource` + `Actuator`, so a `FlightLoop` flies them like
 any backend. `airframes::quad_x()` pairs a model with the mixer and configs that fly it:
 
 ```rust
@@ -36,6 +36,8 @@ flight_loop.step(Duration::from_millis(4));
 
 `airframes::plane()` does the same for `SimPlane` with `PlaneGuidance` and `PlaneStabilizer`,
 plus a `Start` in level flight (`SimPlane::with_start`); it doesn't take off from the ground.
+`airframes::tailsitter()` pairs `SimTailsitter` with `TailsitterGuidance` and
+`TailsitterStabilizer`; it starts resting on its tail and takes off nose up.
 
 ```bash
 cargo test -p stable-flight-sim   # unit tests, conformance, and the closed-loop flights below (~7 s)
@@ -44,7 +46,7 @@ cargo test -p stable-flight-sim   # unit tests, conformance, and the closed-loop
 ## Closed-loop tests
 
 Each file in `tests/` flies the full pipeline on `airframes::quad_x()` unless noted (`plane_*`
-on `airframes::plane()`); wiring and the copter and plane step-response specs are in
+on `airframes::plane()`, `tailsitter_*` on `airframes::tailsitter()`); wiring and the copter and plane step-response specs are in
 `tests/common`:
 
 | Test | Asserts |
@@ -60,8 +62,9 @@ on `airframes::plane()`); wiring and the copter and plane step-response specs ar
 | `plane_level` | The line north at 100 m and 15 m/s in calm air, a 5 m/s headwind, and a 5 m/s crosswind: altitude within ±1 m and airspeed within ±1 m/s (ArduPilot's autotest bands) for 30 s after settling, on the line |
 | `plane_step` | Roll ±30° and pitch ±10° steps in absolute attitude mode from level flight: rise within PX4's 2.2 × the attitude time constant (`fw_att_control_params.c:56,71`), overshoot within the copter spec's 5%, settled in 4 s, surfaces unclipped past the copter angle steps' allowance |
 | `plane_turn` | A loiter by guidance and a held 30° and 45° bank: sideslip within 2.5° (measured + margin); the loiter also within 5 m of its circle and ±1 m of its altitude (ArduPilot's band) |
-| `plane_stall` | A zoom at zero throttle on a held pitch-up rate, wings level and rolling, until past the stall: every state finite, body rates bounded, flying again within 2 s of the entry's end, at most 8 m lost, off the ground (measured + margin) |
-| `determinism` | A windy, gusty route twice gives bit-identical states, clean and with every perturbation on (one seed); the airplane's line through the same wind too |
+| `plane_stall` | A zoom at zero throttle on a held pitch-up rate, wings level and rolling, until past the stall: every state finite, body rates bounded, flying again within 2 s of the entry's end, at most 60 m lost (wings level, the held pitch-up carries the tail slide over the back), off the ground (measured + margin) |
+| `tailsitter_hover` | Takes off from its tail and holds a nose-up hover: within the copter's calm-air bands; near the waypoint in a steady 3 m/s wind on the belly or along the span; back after a 5 m/s gust either way (measured + margin) |
+| `determinism` | A windy, gusty route twice gives bit-identical states, clean and with every perturbation on (one seed); the airplane's line and the tailsitter's takeoff to a hover through the same wind too |
 
 ## Timing
 
@@ -73,13 +76,13 @@ below, and the same inputs and seed give the same flight bit for bit.
 
 ## Model
 
-Shared by both vehicles:
+Shared by every vehicle:
 
 | Part | Model |
 |---|---|
 | Rigid body | NED world, FRD body; mass, diagonal inertia, gravity; Euler's equations with the gyroscopic term; semi-implicit Euler, steps of at most `max_step_s` (1 ms for every airframe) |
 | Wind | Steady wind plus an optional "1 − cos" `Gust`, a function of simulated time only |
-| Ground | Plane at altitude 0. Contact stops sinking; resting (thrust and lift below weight) holds the body level, stops rotation, and applies Coulomb friction |
+| Ground | Plane at altitude 0. Contact stops sinking; resting (thrust and lift below weight) holds the body level (a tailsitter nose up on its tail), heading kept, stops rotation, and applies Coulomb friction |
 
 `SimCopter` (`MultirotorModel`):
 
@@ -93,9 +96,18 @@ Shared by both vehicles:
 
 | Part | Model |
 |---|---|
-| Aerodynamics | Stability derivatives (Beard and McLain, *Small Unmanned Aircraft*, ch. 4) on the air-relative velocity: lift linear in α, blended by a sigmoid at the stall into a flat plate's, so it falls off past it; parasitic plus induced drag; side force from sideslip and rudder; roll, pitch, and yaw moments from α, β, the body rates (damping), and the surfaces |
+| Aerodynamics | Stability derivatives (Beard and McLain, *Small Unmanned Aircraft*, ch. 4) on the air-relative velocity: lift linear in α, blended by a sigmoid at the stall into a flat plate's, so it falls off past it; parasitic plus induced drag, blended the same way into a flat plate's `2·sin²α`; side force from sideslip and rudder; roll, pitch (static stability on `sin α`), and yaw moments from α, β, the body rates (damping), and the surfaces. Bounded at any α, broadside and backward included |
 | Surfaces | First-order lag on each servo; the mixer's servo rows say which of the aileron, elevator, and rudder axes each moves (an axis's deflection is the servos' least-squares fit to the row factors, so elevons work too), times `max_deflection_rad` |
 | Prop | The motor rows, through the motor lag, thrust `max_thrust_n · command²` along body `x`; no torque, no falloff with airspeed |
+
+`SimTailsitter` (`TailsitterModel`: a `FixedWingModel` plus the motors and their wash) is
+`SimPlane`'s physics with:
+
+| Part | Model |
+|---|---|
+| Motors | Each motor's thrust along body `x`; a mixer yaw factor of ±1 acts at `motor_arm_m` from the centerline (differential thrust); `max_thrust_n` per motor |
+| Prop wash | `PropWash`: actuator-disc momentum theory, the far wake's `thrust / disc area` of added dynamic pressure, `surface_fraction` of it over the surfaces only, so the elevons work in a hover |
+| Frame | Airplane FRD body: hovering nose up is 90° of pitch, level in `View::tailsitter`; it rests on its tail |
 
 `Perturbations` (`with_perturbations` on either vehicle, all off by default) bring the things that
 most often break a tune on hardware. Each is a range to sweep, so a method that passes on them
@@ -129,6 +141,12 @@ for what the model gives: each rate loop's feedforward from its rate damping and
 thrust from its level-flight drag; pitch rate I is tuned to the plane step spec (sources in
 `airframes` rustdoc).
 
+`tailsitter()` is ArduPilot SITL's tailsitter (`plane-tailsitter`: the default airplane with
+1.5× its thrust) on two motors 25 cm either side of the centerline and
+`TableMixer::tailsitter_2p()`, with two 10-inch props washing the elevons. The hover side flies
+the eXplora's RealFlight gains; the plane side is `plane()`'s on the hover thrust curve,
+without rudder feedforward (yaw is differential thrust).
+
 ## Limits
 
 Out of scope: blade-element props, ground effect, battery sag, estimator and filter models
@@ -137,5 +155,12 @@ real-time pacing, and multiple vehicles. Landing levels the body instantly
 rather than modeling a tip-over. Multirotor servos (tilt rotors) aren't modeled.
 
 The airplane leaves out flaps, accuracy at high α (past the stall it is only plausible),
-prop wash over the surfaces, prop torque and thrust falloff with airspeed, and takeoff: it
-starts in the air (`Start`), and on the ground it rests rather than rolling.
+prop torque and thrust falloff with airspeed, and takeoff: it starts in the air (`Start`),
+and on the ground it rests rather than rolling.
+
+The tailsitter leaves out the props' reaction torque under differential thrust (the mixer
+doesn't compensate it either), the wash's lift, drag, and damping on the wing, each prop
+washing only its own elevon, and ground effect. It keeps the airplane's sideslip
+derivatives, tail included, so wind along the span in a hover (90° of sideslip) yaws it
+harder than a flying wing: a 5 m/s wind with 4 m/s along the span outgrows its differential
+thrust.

@@ -1,5 +1,5 @@
 //! The same flight twice gives the same states, bit for bit, with or without perturbations, on
-//! the copter and the airplane.
+//! the copter, the airplane, and the tailsitter.
 
 mod common;
 
@@ -10,6 +10,7 @@ use stable_flight_sim::airframes;
 use stable_flight_sim::{Gust, GyroNoise, Perturbations, Vibration, Wind};
 
 use common::plane::{PlanePlant, plane_loop};
+use common::tailsitter::{TailsitterPlant, tailsitter_loop};
 use common::{Plant, fly, sim_loop_with, waypoint};
 
 /// A steady wind with a gust at 6 s.
@@ -57,6 +58,17 @@ fn plane_flight() -> Vec<stable_flight::VehicleState> {
     states
 }
 
+/// The tailsitter taking off from its tail to a hover through a gusty wind; every tick's state.
+fn tailsitter_flight() -> Vec<stable_flight::VehicleState> {
+    let plant = TailsitterPlant::in_wind(airframes::tailsitter(), gusty());
+    let mut flight_loop = tailsitter_loop(&plant, common::hover_follower());
+    let mut states = Vec::new();
+    fly(&mut flight_loop, 20.0, |flight_loop, _| {
+        states.push(flight_loop.state().clone());
+    });
+    states
+}
+
 /// Every perturbation on, mild enough that the route still flies, noise seeded by `seed`.
 fn all_on(seed: u64) -> Perturbations {
     let mut motor_thrust_scale = Perturbations::default().motor_thrust_scale;
@@ -96,4 +108,11 @@ fn plane_repeats_bit_for_bit() {
     let first = plane_flight();
     check!(first.len() == 5000);
     check!(first == plane_flight());
+}
+
+#[test]
+fn tailsitter_repeats_bit_for_bit() {
+    let first = tailsitter_flight();
+    check!(first.len() == 5000);
+    check!(first == tailsitter_flight());
 }

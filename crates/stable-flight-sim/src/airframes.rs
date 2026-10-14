@@ -14,10 +14,12 @@ use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use crate::model::MultirotorModel;
 
 mod plane;
+mod tailsitter;
 #[cfg(test)]
 mod tests;
 
 pub use plane::{PlaneAirframe, plane};
+pub use tailsitter::{TailsitterAirframe, tailsitter};
 
 /// A simulated multirotor: its physics, the mixer that lays out its motors, and the guidance
 /// and stabilizer configs tuned for it.
@@ -288,7 +290,13 @@ fn build(model: MultirotorModel, tune: Tune) -> Airframe {
     };
     let guidance = CopterGuidanceConfig {
         altitude: AltitudeControllerConfig {
-            hover_thrust: hover_thrust(&model, &mixer, &MixerConfig::default(), &stabilizer),
+            hover_thrust: hover_thrust(
+                model.mass_kg,
+                model.max_thrust_n,
+                &mixer,
+                &MixerConfig::default(),
+                stabilizer.thrust_curve_exponent,
+            ),
             ..CopterGuidanceConfig::default().altitude
         },
         ..CopterGuidanceConfig::default()
@@ -301,25 +309,42 @@ fn build(model: MultirotorModel, tune: Tune) -> Airframe {
     }
 }
 
-/// The linear thrust setpoint that holds `model` level in a hover on `mixer`'s motors: the
-/// motor command whose thrust carries the weight (`max_thrust_n · command²`), undone through
-/// the mixer's thrust factor (`mixer_config`, which `TableMixer` doesn't expose) and the
-/// stabilizer's thrust curve.
+/// The linear thrust setpoint that holds `mass_kg` level in a hover on `mixer`'s motors, each
+/// `max_thrust_n` at full command: the motor command whose thrust carries the weight
+/// (`max_thrust_n · command²`), undone through the mixer's thrust factor (`mixer_config`,
+/// which `TableMixer` doesn't expose) and the stabilizer's `thrust_curve_exponent`.
 fn hover_thrust<const N: usize>(
-    model: &MultirotorModel,
+    mass_kg: f32,
+    max_thrust_n: f32,
     mixer: &TableMixer<N>,
     mixer_config: &MixerConfig,
-    stabilizer: &CopterStabilizerConfig,
+    thrust_curve_exponent: f32,
 ) -> f32 {
-    let motors = mixer
+    let motor_n = mass_kg * GRAVITY / motor_count(mixer);
+    thrust_for(motor_n, max_thrust_n, mixer_config, thrust_curve_exponent)
+}
+
+/// The linear thrust setpoint that runs each motor at `motor_n` of `max_thrust_n`, undoing
+/// `max_thrust_n · command²`, the mixer's thrust factor, and the stabilizer's
+/// `thrust_curve_exponent`.
+fn thrust_for(
+    motor_n: f32,
+    max_thrust_n: f32,
+    mixer_config: &MixerConfig,
+    thrust_curve_exponent: f32,
+) -> f32 {
+    let motor_command = libm::sqrtf(motor_n / max_thrust_n);
+    libm::powf(
+        motor_command / mixer_config.thrust_factor,
+        1.0 / thrust_curve_exponent,
+    )
+}
+
+/// How many motors `mixer` drives.
+fn motor_count<const N: usize>(mixer: &TableMixer<N>) -> f32 {
+    mixer
         .rows()
         .iter()
         .filter(|row| matches!(row.slot(), Slot::Motor(_)))
-        .count();
-    let motor_n = model.mass_kg * GRAVITY / motors as f32;
-    let motor_command = libm::sqrtf(motor_n / model.max_thrust_n);
-    libm::powf(
-        motor_command / mixer_config.thrust_factor,
-        1.0 / stabilizer.thrust_curve_exponent,
-    )
+        .count() as f32
 }

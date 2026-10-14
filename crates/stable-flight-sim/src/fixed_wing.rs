@@ -63,7 +63,9 @@ pub struct FixedWingModel {
 /// Lift is linear in α up to [`alpha_stall_rad`](Self::alpha_stall_rad), then blends over a
 /// sigmoid of [`stall_sharpness`](Self::stall_sharpness) into a flat plate's
 /// (`2·sign α·sin²α·cos α`), so it falls off past the stall. Drag is parasitic plus induced,
-/// `c_drag_0 + CL²/(π·e·AR)` with the linear lift.
+/// `c_drag_0 + CL²/(π·e·AR)` with the linear lift, blended by the same sigmoid into a flat
+/// plate's `c_drag_0 + 2·sin²α`. Static pitch stability acts on `sin α`. So forces and moments
+/// stay bounded all the way round, broadside (α ±90°, a tailsitter's hover) and backward alike.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AeroCoefficients {
     /// Lift at zero α.
@@ -94,7 +96,8 @@ pub struct AeroCoefficients {
     pub c_roll_rudder: f32,
     /// Pitch moment at zero α.
     pub c_pitch_0: f32,
-    /// Pitch moment per rad of α (static stability; negative is stable).
+    /// Pitch moment per unit of `sin α`, per rad at small α (static stability; negative is
+    /// stable).
     pub c_pitch_alpha: f32,
     /// Pitch moment per normalized pitch rate (pitch damping).
     pub c_pitch_q: f32,

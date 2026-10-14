@@ -1,6 +1,6 @@
 use approx::assert_relative_eq;
 use assert2::check;
-use stable_flight::GRAVITY;
+use stable_flight::{GRAVITY, Vec3};
 
 use super::*;
 use crate::airframes;
@@ -136,30 +136,4 @@ fn rejects_an_invalid_model_or_perturbations() {
         ..Default::default()
     };
     check!(plane().with_perturbations(delay).err() == Some(ModelError::DelayTooLong));
-}
-
-/// The loads on the airframe: prop thrust along the nose plus the aerodynamics, rotated to
-/// the world, and the lift that would carry the weight on the ground.
-#[test]
-fn loads_combine_prop_and_aero() {
-    let mut dynamics = plane().dynamics;
-    dynamics.begin(1.0);
-    let body = Body {
-        velocity_ned_mps: Vec3::new(15.0, 0.0, 0.0),
-        ..Body::default()
-    };
-    let loads = dynamics.loads(&command(1.0, [0.0; 3]), &body, Vec3::zeros());
-    let full_alpha = lag::factor(1.0, dynamics.model.motor_time_constant_s);
-    let thrust_n = dynamics.model.max_thrust_n * full_alpha * full_alpha;
-    let aero = dynamics.aero;
-    assert_relative_eq!(
-        loads.force_ned_n,
-        aero.force_n + Vec3::new(thrust_n, 0.0, 0.0)
-    );
-    check!(loads.torque_nm == aero.torque_nm);
-    check!(loads.damping_nm == Vec3::zeros());
-    // At 15 m/s head-on, the wing's lift is short of the weight (it flies at α ≈ −2° only
-    // because c_lift_0 is large): lift_n reads it.
-    assert_relative_eq!(dynamics.lift_n(&body), -aero.force_n.z, max_relative = 1e-5);
-    check!(dynamics.lift_n(&body) > 0.5 * dynamics.model.mass_kg * GRAVITY);
 }
