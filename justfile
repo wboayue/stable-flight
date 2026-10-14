@@ -73,7 +73,7 @@ cover:
     cargo tarpaulin -o html
     echo "coverage report saved to tarpaulin-report.html"
 
-# Joystick-flown quadcopter in RealFlight, params and telemetry over the native link for `just bridge`, e.g. `just fly-manual --host 192.168.1.20:8080`
+# Joystick-flown quadcopter in RealFlight, params and telemetry over the native link for `just bridge`, e.g. `just fly-manual --host 192.168.1.20:8080` or `just fly-manual --record flight.csv`
 fly-manual *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- {{ARGS}}
 
