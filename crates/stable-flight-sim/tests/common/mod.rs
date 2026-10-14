@@ -9,6 +9,7 @@ pub mod spec;
 use std::time::Duration;
 
 use stable_flight::commanders::{RouteEnd, WaypointFollower};
+use stable_flight::controllers::Gains;
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
@@ -178,6 +179,15 @@ pub fn probe(
         }
     }
     None
+}
+
+/// `airframe` with each tuned loop's ([`spec::TUNED`]) gains replaced by `retune(target, gains)`.
+pub fn retuned(mut airframe: Airframe, retune: impl Fn(TunedLoop, Gains) -> Gains) -> Airframe {
+    for target in spec::TUNED {
+        let gains = target.gains_mut(&mut airframe.stabilizer);
+        *gains = retune(target, *gains);
+    }
+    airframe
 }
 
 /// Simulated seconds an autotune may run (`copter_search` takes about 430–620 s from core's

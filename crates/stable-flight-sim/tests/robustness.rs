@@ -6,6 +6,7 @@ mod common;
 
 use assert2::check;
 use stable_flight::Vec3;
+use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use stable_flight::tuning::autotune::StagePlan;
 use stable_flight::{ActuatorCommand, GRAVITY};
@@ -18,7 +19,9 @@ use common::{AUTOTUNE_TIMEOUT_S, Plant, spec};
 /// high start, 724 s) plus 25%.
 const BUDGET_S: f32 = 905.0;
 
-/// Rate P and D multiplier for the high start: steps at ×3 clip on every airframe.
+/// Rate P and D multiplier for the high start. At ×3, `quad_x`'s rate steps clip; `heavy_quad`'s
+/// and `racer`'s rate P sits above the relay's ceiling (0.6·Ku: 2.16 and 0.85 against 2.45 and
+/// 1.86), so the search doesn't fly it as a baseline.
 const HIGH_RATE_SCALE: f32 = 3.0;
 
 /// Gyro white noise RMS per axis, in rad/s.
@@ -29,6 +32,12 @@ const VIBRATION_AMPLITUDE_RADPS: f32 = 0.1;
 
 /// Gyro vibration tone frequency, in Hz: below the 125 Hz Nyquist of the 4 ms tick.
 const VIBRATION_FREQUENCY_HZ: f32 = 90.0;
+
+/// Actuator delay of the delay and combined rows, in s.
+const DELAY_S: f32 = 0.01;
+
+/// Actuator delay of the long-delay rows, in s.
+const LONG_DELAY_S: f32 = 0.025;
 
 /// Seed of every noisy row's gyro.
 const NOISE_SEED: u64 = 1;
@@ -43,7 +52,9 @@ const WEAK_MOTOR_SCALE: f32 = 0.9;
 #[derive(Clone, Copy, Debug)]
 enum Set {
     Clean,
+    /// [`DELAY_S`].
     Delay10Ms,
+    /// [`LONG_DELAY_S`].
     Delay25Ms,
     Noise,
     CgOffset,
@@ -63,64 +74,75 @@ enum Start {
 
 /// `set`'s perturbations on `airframe`.
 fn perturbations(set: Set, airframe: &Airframe) -> Perturbations {
-    let delay_s = |actuator_delay_s| Perturbations {
-        actuator_delay_s,
-        ..Default::default()
-    };
-    let noise = Perturbations {
-        gyro: GyroNoise {
-            rms_radps: Vec3::repeat(NOISE_RMS_RADPS),
-            vibration: Some(Vibration {
-                amplitude_radps: Vec3::repeat(VIBRATION_AMPLITUDE_RADPS),
-                frequency_hz: VIBRATION_FREQUENCY_HZ,
-            }),
-            seed: NOISE_SEED,
-        },
-        ..Default::default()
-    };
-    let cg_moment_nm = airframe.model.mass_kg * GRAVITY * CG_OFFSET_M;
-    let cg_offset = Perturbations {
-        disturbance_moment_nm: Vec3::new(cg_moment_nm, cg_moment_nm, 0.0),
-        ..Default::default()
-    };
-    let mut motor_thrust_scale = [1.0; ActuatorCommand::SLOTS];
-    motor_thrust_scale[0] = WEAK_MOTOR_SCALE;
-    let weak_motor = Perturbations {
-        motor_thrust_scale,
-        ..Default::default()
-    };
     match set {
         Set::Clean => Perturbations::default(),
-        Set::Delay10Ms => delay_s(0.01),
-        Set::Delay25Ms => delay_s(0.025),
-        Set::Noise => noise,
-        Set::CgOffset => cg_offset,
-        Set::WeakMotor => weak_motor,
+        Set::Delay10Ms => delay(DELAY_S),
+        Set::Delay25Ms => delay(LONG_DELAY_S),
+        Set::Noise => Perturbations {
+            gyro: noise(),
+            ..Default::default()
+        },
+        Set::CgOffset => Perturbations {
+            disturbance_moment_nm: cg_moment_nm(airframe),
+            ..Default::default()
+        },
+        Set::WeakMotor => Perturbations {
+            motor_thrust_scale: weak_motor(),
+            ..Default::default()
+        },
         Set::Combined => Perturbations {
-            actuator_delay_s: 0.01,
-            gyro: noise.gyro,
-            disturbance_moment_nm: cg_offset.disturbance_moment_nm,
-            motor_thrust_scale,
+            actuator_delay_s: DELAY_S,
+            gyro: noise(),
+            disturbance_moment_nm: cg_moment_nm(airframe),
+            motor_thrust_scale: weak_motor(),
         },
     }
 }
 
-/// `airframe` with its tuned loops' gains set to `start`.
-fn starting(mut airframe: Airframe, start: Start) -> Airframe {
-    let defaults = CopterStabilizerConfig::default();
-    for target in spec::TUNED {
-        let gains = target.gains_mut(&mut airframe.stabilizer);
-        *gains = match (start, target.is_rate()) {
-            (Start::High, true) => {
-                let mut high = *gains;
-                high.p *= HIGH_RATE_SCALE;
-                high.d *= HIGH_RATE_SCALE;
-                high
-            }
-            _ => target.gains(&defaults),
-        };
+/// `delay_s` of actuator delay alone.
+fn delay(delay_s: f32) -> Perturbations {
+    Perturbations {
+        actuator_delay_s: delay_s,
+        ..Default::default()
     }
-    airframe
+}
+
+/// White noise plus the vibration tone.
+fn noise() -> GyroNoise {
+    GyroNoise {
+        rms_radps: Vec3::repeat(NOISE_RMS_RADPS),
+        vibration: Some(Vibration {
+            amplitude_radps: Vec3::repeat(VIBRATION_AMPLITUDE_RADPS),
+            frequency_hz: VIBRATION_FREQUENCY_HZ,
+        }),
+        seed: NOISE_SEED,
+    }
+}
+
+/// The roll and pitch moment of a [`CG_OFFSET_M`] offset on `airframe`, in N·m.
+fn cg_moment_nm(airframe: &Airframe) -> Vec3 {
+    let moment_nm = airframe.model.mass_kg * GRAVITY * CG_OFFSET_M;
+    Vec3::new(moment_nm, moment_nm, 0.0)
+}
+
+/// Slot 0 at [`WEAK_MOTOR_SCALE`], the rest at full thrust.
+fn weak_motor() -> [f32; ActuatorCommand::SLOTS] {
+    let mut motor_thrust_scale = [1.0; ActuatorCommand::SLOTS];
+    motor_thrust_scale[0] = WEAK_MOTOR_SCALE;
+    motor_thrust_scale
+}
+
+/// `airframe` with its tuned loops' gains set to `start`.
+fn starting(airframe: Airframe, start: Start) -> Airframe {
+    let defaults = CopterStabilizerConfig::default();
+    common::retuned(airframe, |target, gains| match (start, target.is_rate()) {
+        (Start::High, true) => Gains {
+            p: gains.p * HIGH_RATE_SCALE,
+            d: gains.d * HIGH_RATE_SCALE,
+            ..gains
+        },
+        _ => target.gains(&defaults),
+    })
 }
 
 /// Autotunes `airframe` under `set` from `start` and checks the row's criteria.

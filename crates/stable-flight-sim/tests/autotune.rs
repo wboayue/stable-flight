@@ -8,7 +8,8 @@ use common::spec::TUNED;
 use common::{AUTOTUNE_TIMEOUT_S, Plant};
 
 use assert2::check;
-use stable_flight::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
+use stable_flight::controllers::Gains;
+use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight::tuning::autotune::StagePlan;
 use stable_flight_sim::airframes::{self, Airframe};
 
@@ -22,22 +23,21 @@ const MODERATE_RATE_P_SCALE: f32 = 1.5;
 /// Rate P multiplier for the high start: its steps clip.
 const HIGH_RATE_P_SCALE: f32 = 3.0;
 
-/// The angle P every run starts from: core's default, a third of `quad_x`'s.
-const START_ANGLE_P: f32 = 3.0;
-
 /// How far apart, as a fraction of the larger, two converged gains may be.
 const AGREEMENT: f32 = 0.25;
 
-/// `quad_x` with rate P scaled by `rate_p_scale` and angle P at [`START_ANGLE_P`].
+/// `quad_x` with rate P scaled by `rate_p_scale` and angle P at core's default (a third of
+/// `quad_x`'s).
 fn detuned(rate_p_scale: f32) -> Airframe {
-    let mut airframe = airframes::quad_x();
-    for target in [TunedLoop::RollRate, TunedLoop::PitchRate] {
-        target.gains_mut(&mut airframe.stabilizer).p *= rate_p_scale;
-    }
-    for target in [TunedLoop::Roll, TunedLoop::Pitch] {
-        target.gains_mut(&mut airframe.stabilizer).p = START_ANGLE_P;
-    }
-    airframe
+    let defaults = CopterStabilizerConfig::default();
+    common::retuned(airframes::quad_x(), |target, gains| Gains {
+        p: if target.is_rate() {
+            gains.p * rate_p_scale
+        } else {
+            target.gains(&defaults).p
+        },
+        ..gains
+    })
 }
 
 /// Whether `a` and `b` are within [`AGREEMENT`] of the larger.
