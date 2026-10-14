@@ -15,6 +15,35 @@ use stable_flight_sim::{Perturbations, SimPlane, Wind};
 
 use super::RECORDED;
 
+/// Level-flight altitude band, either way, in m: ArduPilot's for a loiter altitude regained
+/// (Plane-4.5 `Tools/autotest/arduplane.py:2727`), held for a whole window.
+pub const ALTITUDE_BAND_M: f32 = 1.0;
+
+/// Level-flight airspeed band, either way, in m/s: ArduPilot's for a commanded airspeed held
+/// (`arduplane.py:897`, 5 s minimum), held for a whole window.
+pub const AIRSPEED_BAND_MPS: f32 = 1.0;
+
+/// Largest deviations from level flight up the north line seen while holding it.
+#[derive(Debug, Default)]
+pub struct LineDeviation {
+    /// Off the held altitude, in m.
+    pub altitude_m: f32,
+    /// Off the held airspeed, in m/s.
+    pub airspeed_mps: f32,
+    /// Off the line (east), in m.
+    pub cross_track_m: f32,
+}
+
+impl LineDeviation {
+    /// Widens the deviations to cover `state`, holding `altitude_m` at `airspeed_mps`.
+    pub fn observe(&mut self, state: &VehicleState, altitude_m: f32, airspeed_mps: f32) {
+        let airspeed = state.airspeed_mps.unwrap_or(f32::NAN);
+        self.altitude_m = self.altitude_m.max((state.position_m.z - altitude_m).abs());
+        self.airspeed_mps = self.airspeed_mps.max((airspeed - airspeed_mps).abs());
+        self.cross_track_m = self.cross_track_m.max(state.position_m.y.abs());
+    }
+}
+
 /// The plane pipeline on a [`SimPlane`], publishing to `T`.
 pub type PlanePipeline<C, T> =
     FlightLoop<C, SimPlane, PlaneGuidance, PlaneStabilizer, TableMixer<4>, T>;
@@ -94,12 +123,17 @@ pub fn plane_command(input: ControlInput) -> Command {
 
 /// Flies the line north through the origin, at `altitude_m` and `airspeed_mps`.
 pub fn north_line(altitude_m: f32, airspeed_mps: f32) -> ConstantCommander {
-    ConstantCommander::new(plane_command(ControlInput::Waypoint(WaypointCommand {
+    ConstantCommander::new(north_line_command(altitude_m, airspeed_mps))
+}
+
+/// [`north_line`]'s command.
+pub fn north_line_command(altitude_m: f32, airspeed_mps: f32) -> Command {
+    plane_command(ControlInput::Waypoint(WaypointCommand {
         position_m: Vec2::new(100_000.0, 0.0),
         velocity_mps: Some(Vec2::new(airspeed_mps, 0.0)),
         altitude_m,
         cruise_speed_mps: airspeed_mps,
-    })))
+    }))
 }
 
 /// Loiters around `center_m` (north, east) at `altitude_m` and `airspeed_mps`.

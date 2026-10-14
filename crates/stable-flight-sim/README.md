@@ -40,7 +40,7 @@ plus a `Start` in level flight (`SimPlane::with_start`); it doesn't take off fro
 `TailsitterStabilizer`; it starts resting on its tail and takes off nose up.
 
 ```bash
-cargo test -p stable-flight-sim   # unit tests, conformance, and the closed-loop flights below (~7 s)
+cargo test -p stable-flight-sim   # unit tests, conformance, and the closed-loop flights below (~30 s)
 ```
 
 ## Closed-loop tests
@@ -64,7 +64,8 @@ on `airframes::plane()`, `tailsitter_*` on `airframes::tailsitter()`); wiring an
 | `plane_turn` | A loiter by guidance and a held 30° and 45° bank: sideslip within 2.5° (measured + margin); the loiter also within 5 m of its circle and ±1 m of its altitude (ArduPilot's band) |
 | `plane_stall` | A zoom at zero throttle on a held pitch-up rate, wings level and rolling, until past the stall: every state finite, body rates bounded, flying again within 2 s of the entry's end, at most 60 m lost (wings level, the held pitch-up carries the tail slide over the back), off the ground (measured + margin) |
 | `tailsitter_hover` | Takes off from its tail and holds a nose-up hover: within the copter's calm-air bands; near the waypoint in a steady 3 m/s wind on the belly or along the span; back after a 5 m/s gust either way (measured + margin) |
-| `determinism` | A windy, gusty route twice gives bit-identical states, clean and with every perturbation on (one seed); the airplane's line and the tailsitter's takeoff to a hover through the same wind too |
+| `tailsitter_transition` | Against PX4's VTOL limits (`vtol_att_control_params.yaml`), calm air: from a hover at 30 m, forward to plane flight within 15 s (`VT_TRANS_TIMEOUT`), then the line held within `plane_level`'s bands; back to a hover ahead on the line within 10 s (`VT_B_TRANS_DUR`), then held within the copter's calm-air bands; a forward transition ended by a `Copter` request, the timeout (`TransitionTimeout`), or an 8 m/s span gust past the roll limit (`RollError`); `Plane` requested below `min_height_m` refused (`BelowMinAltitude`) until it climbs past. Each loses at most 20 m (`VT_QC_T_ALT_LOSS`, until 5 s after). The back transition's climb is [#343](https://github.com/wboayue/stable-flight/issues/343)'s |
+| `determinism` | A windy, gusty route twice gives bit-identical states, clean and with every perturbation on (one seed); the airplane's line and the tailsitter's takeoff, transition to plane flight, and back through the same wind too |
 
 ## Timing
 
@@ -145,7 +146,10 @@ thrust from its level-flight drag; pitch rate I is tuned to the plane step spec 
 1.5× its thrust) on two motors 25 cm either side of the centerline and
 `TableMixer::tailsitter_2p()`, with two 10-inch props washing the elevons. The hover side flies
 the eXplora's RealFlight gains; the plane side is `plane()`'s on the hover thrust curve,
-without rudder feedforward (yaw is differential thrust).
+without rudder feedforward (yaw is differential thrust), its pitch limit raised to 75° so the
+back transition can pitch up to hand over
+([#388](https://github.com/wboayue/stable-flight/issues/388)). Transitions fly core's
+defaults but for the airspeed gate, the wing's 10 m/s minimum.
 
 ## Limits
 
@@ -162,5 +166,7 @@ The tailsitter leaves out the props' reaction torque under differential thrust (
 doesn't compensate it either), the wash's lift, drag, and damping on the wing, each prop
 washing only its own elevon, and ground effect. It keeps the airplane's sideslip
 derivatives, tail included, so wind along the span in a hover (90° of sideslip) yaws it
-harder than a flying wing: a 5 m/s wind with 4 m/s along the span outgrows its differential
-thrust ([#387](https://github.com/wboayue/stable-flight/issues/387)).
+harder than a flying wing: about 4 m/s of air along the span, from wind or from flying
+sideways, outgrows its differential thrust
+([#387](https://github.com/wboayue/stable-flight/issues/387)). Its hover tests stay on the
+belly axis, and its transitions fly in calm air.

@@ -49,8 +49,10 @@ pub struct TailsitterAirframe {
 /// differential thrust and elevons), which hold the sim's nose-up hover within the copter's
 /// calm-air bands (`tests/tailsitter_hover.rs`); the autotune can't run in the tailsitter view
 /// (#321). The plane side is [`plane`]'s, without
-/// the rudder feedforward (yaw is differential thrust here) and on the hover side's thrust
-/// curve, so a handoff keeps the motor commands continuous.
+/// the rudder feedforward (yaw is differential thrust here), on the hover side's thrust
+/// curve so a handoff keeps the motor commands continuous, and with room to pitch up for the
+/// back transition. Transitions fly core's defaults but for the airspeed gate, the wing's
+/// minimum airspeed; they meet PX4's limits in `tests/tailsitter_transition.rs`.
 ///
 /// # Examples
 ///
@@ -116,6 +118,8 @@ pub fn tailsitter() -> TailsitterAirframe {
             ..airplane.stabilizer.rate
         },
         thrust_curve_exponent,
+        // The back transition pitches up to π/2 − `back_done_rad` on this side (#388).
+        max_pitch_rad: 75f32.to_radians(),
         ..airplane.stabilizer
     };
     let mixer_config = MixerConfig::default();
@@ -143,7 +147,11 @@ pub fn tailsitter() -> TailsitterAirframe {
             ),
             ..airplane.guidance
         },
-        transition: TransitionConfig::default(),
+        transition: TransitionConfig {
+            // The wing's own: handing over slower, it sinks while gaining speed (#124).
+            min_airspeed_mps: plane_stabilizer.min_airspeed_mps,
+            ..TransitionConfig::default()
+        },
     };
     TailsitterAirframe {
         model,

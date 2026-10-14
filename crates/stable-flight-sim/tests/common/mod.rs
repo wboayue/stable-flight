@@ -159,7 +159,12 @@ pub fn waypoint(north_m: f32, east_m: f32, altitude_m: f32) -> WaypointCommand {
 
 /// Holds a waypoint [`HOVER_ALTITUDE_M`] over the origin.
 pub fn hover_follower() -> Hover {
-    WaypointFollower::new([waypoint(0.0, 0.0, HOVER_ALTITUDE_M)])
+    hover_at(HOVER_ALTITUDE_M)
+}
+
+/// Holds a waypoint `altitude_m` over the origin.
+pub fn hover_at(altitude_m: f32) -> Hover {
+    WaypointFollower::new([waypoint(0.0, 0.0, altitude_m)])
         .expect("one waypoint")
         .with_route_end(RouteEnd::Hold)
 }

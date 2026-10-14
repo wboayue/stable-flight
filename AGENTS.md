@@ -66,7 +66,7 @@ just capture                                  # capture-state-realflight: joysti
 just plot <csv> <out> | just gen-figure-eight # plot_flight, generate_figure_eight
 just tag <crate> <version> | just versions    # push a <crate>-v<version> tag; list tags
 just todo-check                               # TODO(#n) markers whose issue is closed (needs gh)
-cargo test -p stable-flight-sim               # closed-loop flights on the in-repo simulator (hover, steps, waypoints, land, failsafe, saturation, autotune, robustness, plane level flight, steps, turns, stall, tailsitter hover)
+cargo test -p stable-flight-sim               # closed-loop flights on the in-repo simulator (hover, steps, waypoints, land, failsafe, saturation, autotune, robustness, plane level flight, steps, turns, stall, tailsitter hover, transitions)
 cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight -- --motors 0,1 --servos 2,3  # drive raw channels, record a capture
 cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight                           # time RealFlight exchanges alone
 cargo run --bin check_frames -- capture.csv   # capture vs the frame contract (--pitch-deg: body rotation, 90 for the eXplora)

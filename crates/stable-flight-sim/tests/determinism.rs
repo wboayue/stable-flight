@@ -10,7 +10,7 @@ use stable_flight_sim::airframes;
 use stable_flight_sim::{Gust, GyroNoise, Perturbations, Vibration, Wind};
 
 use common::plane::{PlanePlant, plane_loop};
-use common::tailsitter::{TailsitterPlant, tailsitter_loop};
+use common::tailsitter::{TailsitterPlant, forward_and_back, tailsitter_loop};
 use common::{Plant, fly, sim_loop_with, waypoint};
 
 /// A steady wind with a gust at 6 s.
@@ -58,12 +58,14 @@ fn plane_flight() -> Vec<stable_flight::VehicleState> {
     states
 }
 
-/// The tailsitter taking off from its tail to a hover through a gusty wind; every tick's state.
+/// The tailsitter taking off from its tail through a gusty wind, transitioning to plane
+/// flight, and back to a hover; every tick's state.
 fn tailsitter_flight() -> Vec<stable_flight::VehicleState> {
-    let plant = TailsitterPlant::in_wind(airframes::tailsitter(), gusty());
-    let mut flight_loop = tailsitter_loop(&plant, common::hover_follower());
+    let airframe = airframes::tailsitter();
+    let plant = TailsitterPlant::in_wind(airframe, gusty());
+    let mut flight_loop = tailsitter_loop(&plant, forward_and_back(&airframe, 30.0, 130.0));
     let mut states = Vec::new();
-    fly(&mut flight_loop, 20.0, |flight_loop, _| {
+    fly(&mut flight_loop, 40.0, |flight_loop, _| {
         states.push(flight_loop.state().clone());
     });
     states
@@ -113,6 +115,6 @@ fn plane_repeats_bit_for_bit() {
 #[test]
 fn tailsitter_repeats_bit_for_bit() {
     let first = tailsitter_flight();
-    check!(first.len() == 5000);
+    check!(first.len() == 10_000);
     check!(first == tailsitter_flight());
 }
