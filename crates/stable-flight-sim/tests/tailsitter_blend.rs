@@ -300,6 +300,9 @@ impl Stabilizer for Blend {
 /// One tick, as published.
 struct Tick {
     mode: FlightMode,
+    setpoint: Setpoint,
+    thrust: f32,
+    saturation: Saturation,
     state: VehicleState,
     moments: Vec3,
     saturated: bool,
@@ -315,6 +318,9 @@ impl TelemetryPublisher for Recorder {
         let saturation = record.saturation;
         self.ticks.push(Tick {
             mode: record.flight_mode.mode,
+            setpoint: *record.setpoint,
+            thrust: record.control.thrust,
+            saturation,
             state: record.state.clone(),
             moments: record.control.moments,
             saturated: saturation.mixer_moments || saturation.moments.iter().any(|&m| m),
@@ -575,5 +581,90 @@ fn compares_transition_blends() {
             );
         }
         println!();
+    }
+}
+
+/// Tick by tick around the back handoff on the clean airframe, per `handoff_s`: the setpoint,
+/// thrust, moments, and saturation, to find what steps the moments after the handoff.
+#[test]
+#[ignore = "exploration: prints a trace, asserts nothing"]
+fn traces_the_back_handoff() {
+    for handoff_s in [0.25, 0.5, 1.0] {
+        let mut airframe = airframes::tailsitter();
+        airframe.guidance.transition.handoff_s = handoff_s;
+        let plant = TailsitterPlant::clean(airframe);
+        let mode = Rc::new(Cell::new(FlightMode::Copter));
+        let ticks = fly_with(&plant, TailsitterStabilizer::new(airframe.stabilizer), mode);
+        let handoff = (1..ticks.len())
+            .find(|&i| {
+                tick_time_s(i) > BACK_AT_S
+                    && ticks[i].mode == FlightMode::Copter
+                    && ticks[i - 1].mode != FlightMode::Copter
+            })
+            .expect("hands over");
+        println!(
+            "\nhandoff_s {handoff_s}: handoff at {:.3} s",
+            tick_time_s(handoff)
+        );
+        let ticks_per_s = (1.0 / TICK.as_secs_f32()) as usize;
+        let mut worst = (0, 0.0);
+        for i in handoff + 1..handoff + 2 * ticks_per_s {
+            let jump = (ticks[i].moments - ticks[i - 1].moments).norm();
+            if jump > worst.1 {
+                worst = (i, jump);
+            }
+        }
+        println!(
+            "largest jump {:.3} at +{:.3} s",
+            worst.1,
+            tick_time_s(worst.0) - tick_time_s(handoff)
+        );
+        let zero: Vec<f32> = (handoff..ticks.len())
+            .filter(|&i| ticks[i].thrust <= 0.0)
+            .map(|i| tick_time_s(i) - tick_time_s(handoff))
+            .collect();
+        let height_m = ticks[handoff].state.position_m.z;
+        println!(
+            "zero-thrust ticks after handoff: {} ({:.2} s), first +{:.3} s, last +{:.3} s; height at handoff {height_m:.1} m",
+            zero.len(),
+            zero.len() as f32 * TICK.as_secs_f32(),
+            zero.first().copied().unwrap_or(f32::NAN),
+            zero.last().copied().unwrap_or(f32::NAN),
+        );
+        let from = worst.0.saturating_sub(3);
+        for i in (handoff - 1..handoff + 3).chain(from..worst.0 + 4) {
+            let t = &ticks[i];
+            let sp = match t.setpoint {
+                Setpoint::Attitude(a) => format!(
+                    "att r{:6.2} p{:7.2} h{:7.2} T{:.3}",
+                    a.roll_rad.to_degrees(),
+                    a.pitch_rad.to_degrees(),
+                    a.heading_rad.to_degrees(),
+                    a.thrust
+                ),
+                Setpoint::Plane(a) => format!(
+                    "pln r{:6.2} p{:7.2}          T{:.3}",
+                    a.roll_rad.to_degrees(),
+                    a.pitch_rad.to_degrees(),
+                    a.thrust
+                ),
+                other => format!("{other:?}"),
+            };
+            let s = t.saturation;
+            println!(
+                "+{:6.3} {:?} {sp} | thr {:.3} m [{:6.3} {:6.3} {:6.3}] | sat tilt{} thr{} m{:?} mixT{} mixM{}",
+                tick_time_s(i) - tick_time_s(handoff),
+                t.mode,
+                t.thrust,
+                t.moments.x,
+                t.moments.y,
+                t.moments.z,
+                s.tilt as u8,
+                s.thrust as u8,
+                s.moments.map(u8::from),
+                s.mixer_thrust as u8,
+                s.mixer_moments as u8,
+            );
+        }
     }
 }
