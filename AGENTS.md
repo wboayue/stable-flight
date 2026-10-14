@@ -28,7 +28,7 @@ lives in `architecture.md`; each crate's README owns its usage.
 | `stable-flight-bridge` | Companion binary: native link ⇄ MAVLink v2 for ground stations (FC as sysid 1/compid 1). Pure `Bridge` over services (params, connect/metadata, commands, setpoints, state) queuing into an `Outbox`; `Pump` runs one I/O pass; `http` serves QGC param metadata; `main.rs` only sets up (`cli.rs`) | link (`std`), core (`param-metadata`), `stable-flight-mavlink`, `mavlink`, `crc`, `serde_json`, `clap` |
 | `stable-flight-sitl` | Simulator-independent SITL: `commanders` (joystick, Spektrum, `ScriptCommander`), `RealTimeRunner` (wall-clock pacing), `ShutdownSignal`, `recorder` (`CsvRecorder`: per-tick CSV, copter and tailsitter column sets) | core, `gilrs`, `signal-hook` |
 | `stable-flight-sitl-realflight` | RealFlight backend: `RealFlightVehicle`, `ActuatorMapping`, `airframes` (per-model gains, mixer, mapping, body rotation), `capture` (raw state CSV), and the RealFlight examples | core, `realflight-bridge`; sitl and link as dev-dependencies |
-| `stable-flight-sim` | Unpublished `no_std` deterministic multirotor simulator: `SimCopter` (lockstep `StateSource` + `Actuator`), `MultirotorModel`, `Wind`/`Gust`, `Perturbations` (delay, seeded gyro noise, disturbance moment, motor mismatch), `airframes` (`quad_x`, `heavy_quad`, `racer`); closed-loop tests in `tests/` (`Plant` and the step spec in `tests/common`) | core, `libm`, `thiserror` |
+| `stable-flight-sim` | Unpublished `no_std` deterministic simulator: `SimCopter` and `SimPlane` (lockstep `StateSource` + `Actuator`), `MultirotorModel`, `FixedWingModel`/`AeroCoefficients`, `Start`, `Wind`/`Gust`, `Perturbations` (delay, seeded gyro noise, disturbance moment, motor mismatch), `airframes` (`quad_x`, `heavy_quad`, `racer`; `plane`); closed-loop tests in `tests/` (`Plant`, `plane::PlanePlant`, and the step spec in `tests/common`) | core, `libm`, `thiserror` |
 | `stable-flight-tools` | Unpublished dev binaries: `plot_flight`, `generate_figure_eight`, `link_pilot`, `check_frames` | core, sitl, link, sitl-realflight, `plotters`, `clap` |
 
 - Other crates use core's `nalgebra` re-export (`stable_flight::nalgebra`) and `Vec2`/`Vec3`
@@ -66,7 +66,7 @@ just capture                                  # capture-state-realflight: joysti
 just plot <csv> <out> | just gen-figure-eight # plot_flight, generate_figure_eight
 just tag <crate> <version> | just versions    # push a <crate>-v<version> tag; list tags
 just todo-check                               # TODO(#n) markers whose issue is closed (needs gh)
-cargo test -p stable-flight-sim               # closed-loop flights on the in-repo simulator (hover, steps, waypoints, land, failsafe, saturation, autotune, robustness)
+cargo test -p stable-flight-sim               # closed-loop flights on the in-repo simulator (hover, steps, waypoints, land, failsafe, saturation, autotune, robustness, plane level flight)
 cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight -- --motors 0,1 --servos 2,3  # drive raw channels, record a capture
 cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight                           # time RealFlight exchanges alone
 cargo run --bin check_frames -- capture.csv   # capture vs the frame contract (--pitch-deg: body rotation, 90 for the eXplora)

@@ -77,9 +77,10 @@ Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its depen
 
 RealFlight (and X-Plane, planned) can't run in `cargo test` or CI, so without another plant
 the pipeline's closed loop is only checked by hand. `stable-flight-sim` is that plant: a rigid
-body with motor lag, quadratic thrust, linear drag, a ground plane, and deterministic wind,
-stepped in lockstep with `FlightLoop` (no wall clock, only seeded noise), so a test flight
-repeats bit for bit and runs in milliseconds. It aims at plausible dynamics, not fidelity; RealFlight stays
+body on a ground plane in deterministic wind, as a multirotor (motor lag, quadratic thrust,
+linear drag) or an airplane (stability-derivative aerodynamics, servo-driven surfaces, a
+tractor prop), stepped in lockstep with `FlightLoop` (no wall clock, only seeded noise), so a
+test flight repeats bit for bit and runs in milliseconds. It aims at plausible dynamics, not fidelity; RealFlight stays
 the check for realism.
 
 * **Why not JSBSim (or Gazebo).** An external engine brings a C++ build or a process to
@@ -87,8 +88,17 @@ the check for realism.
   model is enough for what the tests assert (loops close, modes sequence, limits flag) and,
   being `no_std` with fixed-size math, can later drive a board in hardware-in-the-loop runs.
 * **Geometry from the mixer.** Each motor's torque comes from its `TableMixer` row's factors
-  (a factor of 1 at the model's moment arm), so the sim and mixer can't disagree on motor
-  order or spin, and there is no second table to keep in sync.
+  (a factor of 1 at the model's moment arm), and each servo moves the aileron, elevator, and
+  rudder axes its row names (an axis's deflection is the servos' least-squares fit to the
+  factors, so elevons and separate surfaces read back alike). The sim and mixer can't
+  disagree on motor order, spin, or surface slots, and there is no second table to keep in
+  sync.
+* **Two vehicles over shared parts.** `SimCopter` and `SimPlane` are separate types over
+  crate-private components: lockstep timing, the actuator delay, wind, gyro noise, the rigid
+  body, and ground contact live once; each vehicle adds only its loads. A public generic
+  vehicle (`SimVehicle<P: Physics>`) was rejected: its trait would have to absorb what the
+  two differ in (how each rests on the ground, plane-only flow angles) and stay stable as a
+  public API, for less duplication than the vehicles' thin builder glue.
 * **Spec bands, not snapshots.** Step-response tests hold each loop to ArduPilot's and PX4's
   autotune targets (cited in `tests/step_response.rs`), not to whatever the sim measured, so
   a regression and a tuning gap both fail. Each airframe's roll and pitch gains come from

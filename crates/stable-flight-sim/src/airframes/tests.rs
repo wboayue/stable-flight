@@ -60,9 +60,9 @@ fn check_hover_thrust(name: &str, airframe: Airframe) {
     let mut mixer = airframe.mixer;
     let command = mixer.mix(&output);
 
-    let mut motors = Motors::new(airframe.mixer.rows(), &airframe.model).expect("motors only");
+    let mut motors = Motors::new(airframe.mixer.rows(), &airframe.model.motor_layout());
     motors.spin(&command.motors, 1.0);
-    let (thrust_n, _) = motors.wrench(&airframe.model);
+    let (thrust_n, _) = motors.wrench();
     assert_relative_eq!(
         thrust_n,
         airframe.model.mass_kg * GRAVITY,

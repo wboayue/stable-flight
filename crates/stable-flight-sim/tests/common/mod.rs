@@ -4,6 +4,7 @@
 // Each test binary compiles this module and uses only part of it.
 #![allow(dead_code)]
 
+pub mod plane;
 pub mod spec;
 
 use std::time::Duration;
@@ -20,7 +21,8 @@ use stable_flight::tuning::autotune::{
 };
 use stable_flight::tuning::{ProbeConfig, ProbeStatus};
 use stable_flight::{
-    Commander, Configurable, FlightLoop, TelemetryPublisher, Vec2, WaypointCommand,
+    Commander, Configurable, FlightLoop, Guidance, Mixer, Stabilizer, TelemetryPublisher, Vec2,
+    Vehicle, WaypointCommand,
 };
 use stable_flight_sim::airframes::{self, Airframe};
 use stable_flight_sim::{Perturbations, SimCopter, Wind};
@@ -124,13 +126,20 @@ pub fn seconds(ticks: usize) -> f32 {
     ticks as f32 * TICK.as_secs_f32()
 }
 
-/// Steps `flight_loop` for `seconds` of simulated time, calling `each` after every tick with
-/// the seconds flown so far in this call.
-pub fn fly<C: Commander>(
-    flight_loop: &mut SimLoop<C>,
+/// Steps `flight_loop` (copter or plane) for `seconds` of simulated time, calling `each` after
+/// every tick with the seconds flown so far in this call.
+pub fn fly<C, V, G, S, M, T>(
+    flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
     seconds: f32,
-    mut each: impl FnMut(&SimLoop<C>, f32),
-) {
+    mut each: impl FnMut(&FlightLoop<C, V, G, S, M, T>, f32),
+) where
+    C: Commander,
+    V: Vehicle,
+    G: Guidance,
+    S: Stabilizer,
+    M: Mixer,
+    T: TelemetryPublisher,
+{
     for tick in 1..=ticks(seconds) {
         flight_loop.step(TICK);
         each(flight_loop, self::seconds(tick));

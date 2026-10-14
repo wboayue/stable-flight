@@ -2,11 +2,12 @@
 
 use core::time::Duration;
 
-use stable_flight::mixers::TableMixer;
+use stable_flight::mixers::{Slot, TableMixer};
 use stable_flight::{Actuator, ActuatorCommand, StateSource, Vec3, VehicleState};
 
 use crate::body::{Body, Loads, MassProperties};
 use crate::ground::Ground;
+use crate::lag;
 use crate::lockstep::{Dynamics, Lockstep};
 use crate::model::{ModelError, MultirotorModel};
 use crate::motors::Motors;
@@ -83,10 +84,16 @@ impl SimCopter {
         mixer: &TableMixer<N>,
     ) -> Result<Self, ModelError> {
         model.validate()?;
+        if let Some(index) = mixer.rows().iter().find_map(|row| match row.slot() {
+            Slot::Servo(index) => Some(index),
+            Slot::Motor(_) => None,
+        }) {
+            return Err(ModelError::Servo(index));
+        }
         Ok(SimCopter {
             lockstep: Lockstep::new(),
             dynamics: Multirotor {
-                motors: Motors::new(mixer.rows(), &model)?,
+                motors: Motors::new(mixer.rows(), &model.motor_layout()),
                 model,
                 alpha: 0.0,
                 thrust_n: 0.0,
@@ -126,7 +133,7 @@ impl SimCopter {
 
     /// Each motor's thrust, in N, by motor slot.
     pub fn motor_thrusts_n(&self) -> [f32; ActuatorCommand::SLOTS] {
-        self.dynamics.motors.thrusts_n(&self.dynamics.model)
+        self.dynamics.motors.thrusts_n()
     }
 }
 
@@ -150,12 +157,12 @@ impl Dynamics for Multirotor {
     }
 
     fn begin(&mut self, h: f32) {
-        self.alpha = 1.0 - libm::expf(-h / self.model.motor_time_constant_s);
+        self.alpha = lag::factor(h, self.model.motor_time_constant_s);
     }
 
     fn loads(&mut self, command: &ActuatorCommand, body: &Body, wind_ned_mps: Vec3) -> Loads {
         self.motors.spin(&command.motors, self.alpha);
-        let (thrust_n, torque_nm) = self.motors.wrench(&self.model);
+        let (thrust_n, torque_nm) = self.motors.wrench();
         self.thrust_n = thrust_n;
         let thrust_ned_n = body.attitude * Vec3::new(0.0, 0.0, -thrust_n);
         let drag_ned_n =

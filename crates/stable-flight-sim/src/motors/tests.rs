@@ -4,11 +4,12 @@ use stable_flight::mixers::TableMixer;
 use stable_flight::{ControlOutput, Mixer};
 
 use super::*;
+use crate::MultirotorModel;
 use crate::airframes;
 
 fn quad_x_motors() -> (Motors, MultirotorModel) {
     let model = airframes::quad_x().model;
-    let motors = Motors::new(TableMixer::quad_x().rows(), &model).expect("motor-only table");
+    let motors = Motors::new(TableMixer::quad_x().rows(), &model.motor_layout());
     (motors, model)
 }
 
@@ -20,14 +21,18 @@ fn settled(motors: &mut Motors, commands: &[f32; SLOTS]) {
 #[test]
 fn counts_the_mixer_motors() {
     check!(quad_x_motors().0.count() == 4);
-    let hex = Motors::new(TableMixer::hex_x().rows(), &quad_x_motors().1).expect("motors only");
+    let hex = Motors::new(
+        TableMixer::hex_x().rows(),
+        &quad_x_motors().1.motor_layout(),
+    );
     check!(hex.count() == 6);
 }
 
 #[test]
-fn rejects_a_mixer_with_servos() {
+fn skips_servo_rows() {
     let model = quad_x_motors().1;
-    check!(Motors::new(TableMixer::tri().rows(), &model) == Err(ModelError::Servo(0)));
+    let tri = Motors::new(TableMixer::tri().rows(), &model.motor_layout());
+    check!(tri.count() == 3);
 }
 
 #[test]
@@ -44,7 +49,7 @@ fn thrust_is_quadratic_in_the_command() {
     ];
     for (command, fraction) in cases {
         settled(&mut motors, &[command; SLOTS]);
-        let thrusts_n = motors.thrusts_n(&model);
+        let thrusts_n = motors.thrusts_n();
         assert_relative_eq!(thrusts_n[0], model.max_thrust_n * fraction);
         // Unused slots stay stopped.
         check!(thrusts_n[4] == 0.0);
@@ -55,20 +60,17 @@ fn thrust_is_quadratic_in_the_command() {
 fn lag_moves_by_alpha_each_step() {
     let (mut motors, model) = quad_x_motors();
     motors.spin(&[1.0; SLOTS], 0.25);
-    assert_relative_eq!(motors.thrusts_n(&model)[0], model.max_thrust_n * 0.0625);
+    assert_relative_eq!(motors.thrusts_n()[0], model.max_thrust_n * 0.0625);
     motors.spin(&[1.0; SLOTS], 0.25);
     // 0.25 + 0.75 · 0.25 = 0.4375
-    assert_relative_eq!(
-        motors.thrusts_n(&model)[0],
-        model.max_thrust_n * 0.4375 * 0.4375
-    );
+    assert_relative_eq!(motors.thrusts_n()[0], model.max_thrust_n * 0.4375 * 0.4375);
 }
 
 #[test]
 fn equal_thrust_makes_no_torque() {
     let (mut motors, model) = quad_x_motors();
     settled(&mut motors, &[0.6; SLOTS]);
-    let (thrust_n, torque_nm) = motors.wrench(&model);
+    let (thrust_n, torque_nm) = motors.wrench();
     assert_relative_eq!(thrust_n, 4.0 * model.max_thrust_n * 0.36, epsilon = 1e-5);
     assert_relative_eq!(torque_nm, Vec3::zeros(), epsilon = 1e-6);
 }
@@ -77,7 +79,7 @@ fn equal_thrust_makes_no_torque() {
 /// torque signs match the frame contract the mixer is written for.
 #[test]
 fn mixed_moments_torque_the_body_the_same_way() {
-    let (mut motors, model) = quad_x_motors();
+    let (mut motors, _) = quad_x_motors();
     let mut mixer = TableMixer::quad_x();
     // (moments, axis that must turn positive)
     let cases = [
@@ -89,7 +91,7 @@ fn mixed_moments_torque_the_body_the_same_way() {
         for sign in [1.0, -1.0] {
             let command = mixer.mix(&ControlOutput::new(0.6, moments * sign));
             settled(&mut motors, &command.motors);
-            let (_, torque_nm) = motors.wrench(&model);
+            let (_, torque_nm) = motors.wrench();
             check!(torque_nm[axis] * sign > 0.0, "moments {moments:?} × {sign}");
             for other in (0..3).filter(|other| *other != axis) {
                 check!(
@@ -116,7 +118,7 @@ fn mismatched_motors_torque_at_hover() {
         scale[slow] = 0.9;
         motors.set_thrust_scale(scale);
         settled(&mut motors, &[hover; SLOTS]);
-        let (thrust_n, torque_nm) = motors.wrench(&model);
+        let (thrust_n, torque_nm) = motors.wrench();
         // Equal motors cancel, so the torque is the slow motor's lost thrust on its lever.
         let lost_n = 0.1 * full_n;
         let (roll, pitch, yaw) = rows[slow];
