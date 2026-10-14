@@ -10,9 +10,9 @@ use crate::perturbations::{GyroNoise, Vibration};
 
 const TICK: Duration = Duration::from_millis(4);
 
-fn vehicle() -> SimVehicle {
+fn vehicle() -> SimCopter {
     let airframe = airframes::quad_x();
-    SimVehicle::new(airframe.model, &airframe.mixer).expect("valid airframe")
+    SimCopter::new(airframe.model, &airframe.mixer).expect("valid airframe")
 }
 
 fn motors(command: f32) -> ActuatorCommand {
@@ -23,7 +23,7 @@ fn motors(command: f32) -> ActuatorCommand {
 }
 
 /// Runs `ticks` loop ticks: read state, then actuate `command`, as `FlightLoop::step` does.
-fn fly(vehicle: &mut SimVehicle, command: &ActuatorCommand, ticks: usize) -> VehicleState {
+fn fly(vehicle: &mut SimCopter, command: &ActuatorCommand, ticks: usize) -> VehicleState {
     let mut state = vehicle.state(Duration::ZERO);
     for _ in 0..ticks {
         state = vehicle.state(TICK);
@@ -135,7 +135,7 @@ fn long_ticks_split_into_max_steps() {
         ..airframes::quad_x().model
     };
     let mixer = airframes::quad_x().mixer;
-    let mut coarse = SimVehicle::new(model, &mixer).expect("valid airframe");
+    let mut coarse = SimCopter::new(model, &mixer).expect("valid airframe");
     let mut fine = coarse.clone();
     coarse.actuate(&motors(1.0));
     fine.actuate(&motors(1.0));
@@ -193,10 +193,9 @@ fn rejects_an_invalid_model_or_a_servo_mixer() {
         ..airframe.model
     };
     check!(
-        SimVehicle::new(model, &airframe.mixer).err()
-            == Some(ModelError::NotPositive("max_step_s"))
+        SimCopter::new(model, &airframe.mixer).err() == Some(ModelError::NotPositive("max_step_s"))
     );
-    check!(SimVehicle::new(airframe.model, &TableMixer::tri()).err() == Some(ModelError::Servo(0)));
+    check!(SimCopter::new(airframe.model, &TableMixer::tri()).err() == Some(ModelError::Servo(0)));
 }
 
 #[test]
@@ -213,7 +212,7 @@ fn same_commands_give_the_same_state() {
     check!(run() == run());
 }
 
-fn perturbed(perturbations: Perturbations) -> SimVehicle {
+fn perturbed(perturbations: Perturbations) -> SimCopter {
     vehicle()
         .with_perturbations(perturbations)
         .expect("valid perturbations")

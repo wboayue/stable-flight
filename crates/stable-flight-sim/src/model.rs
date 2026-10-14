@@ -8,7 +8,7 @@ mod tests;
 
 /// Physical parameters of a simulated multirotor.
 ///
-/// Geometry isn't listed here: [`SimVehicle`](crate::SimVehicle) takes each motor's torque
+/// Geometry isn't listed here: [`SimCopter`](crate::SimCopter) takes each motor's torque
 /// directions from the mixer's rows, so a row factor of 1 sits [`moment_arm_m`](Self::moment_arm_m)
 /// from the roll or pitch axis and a yaw factor of ±1 gives
 /// [`yaw_torque_per_thrust_m`](Self::yaw_torque_per_thrust_m) of reaction torque.
@@ -51,7 +51,7 @@ pub struct MultirotorModel {
 }
 
 /// Why a [`MultirotorModel`], [`Perturbations`](crate::Perturbations), or a
-/// [`SimVehicle`](crate::SimVehicle)'s mixer was rejected.
+/// [`SimCopter`](crate::SimCopter)'s mixer was rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum ModelError {

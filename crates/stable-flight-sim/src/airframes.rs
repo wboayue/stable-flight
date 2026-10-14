@@ -22,7 +22,7 @@ mod tests;
 pub struct Airframe {
     /// Physical parameters.
     pub model: MultirotorModel,
-    /// The mixer; [`SimVehicle`](crate::SimVehicle) takes the motor layout from its rows.
+    /// The mixer; [`SimCopter`](crate::SimCopter) takes the motor layout from its rows.
     pub mixer: TableMixer<4>,
     /// Guidance (position-loop) configuration.
     pub guidance: CopterGuidanceConfig,
@@ -45,10 +45,10 @@ pub struct Airframe {
 /// use stable_flight::guidance::copter::CopterGuidance;
 /// use stable_flight::stabilizers::copter::CopterStabilizer;
 /// use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
-/// use stable_flight_sim::{SimVehicle, airframes};
+/// use stable_flight_sim::{SimCopter, airframes};
 ///
 /// let airframe = airframes::quad_x();
-/// let vehicle = SimVehicle::new(airframe.model, &airframe.mixer).expect("valid airframe");
+/// let vehicle = SimCopter::new(airframe.model, &airframe.mixer).expect("valid airframe");
 /// let flight_loop = FlightLoop::new(
 ///     ConstantCommander::default(),
 ///     vehicle,

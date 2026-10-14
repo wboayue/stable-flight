@@ -1,4 +1,4 @@
-//! The simulator as a flight-loop backend: see [`SimVehicle`].
+//! The simulator as a flight-loop backend: see [`SimCopter`].
 
 use core::time::Duration;
 
@@ -41,10 +41,10 @@ mod tests;
 /// ```
 /// use std::time::Duration;
 /// use stable_flight::{Actuator, ActuatorCommand, StateSource};
-/// use stable_flight_sim::{SimVehicle, airframes};
+/// use stable_flight_sim::{SimCopter, airframes};
 ///
 /// let airframe = airframes::quad_x();
-/// let mut vehicle = SimVehicle::new(airframe.model, &airframe.mixer).expect("valid airframe");
+/// let mut vehicle = SimCopter::new(airframe.model, &airframe.mixer).expect("valid airframe");
 /// assert_eq!(vehicle.state(Duration::ZERO).position_m.z, 0.0);
 ///
 /// // Full throttle for a second climbs.
@@ -55,7 +55,7 @@ mod tests;
 /// assert!(vehicle.state(Duration::ZERO).position_m.z > 1.0);
 /// ```
 #[derive(Debug, Clone)]
-pub struct SimVehicle {
+pub struct SimCopter {
     model: MultirotorModel,
     motors: Motors,
     body: Body,
@@ -69,7 +69,7 @@ pub struct SimVehicle {
     resting: bool,
 }
 
-impl SimVehicle {
+impl SimCopter {
     /// A vehicle with `model`'s physics whose motors are laid out by `mixer`'s rows (see
     /// [`MultirotorModel`]), at rest on the ground in calm air.
     ///
@@ -81,7 +81,7 @@ impl SimVehicle {
         mixer: &TableMixer<N>,
     ) -> Result<Self, ModelError> {
         model.validate()?;
-        Ok(SimVehicle {
+        Ok(SimCopter {
             motors: Motors::new(mixer.rows(), &model)?,
             model,
             body: Body::default(),
@@ -156,9 +156,9 @@ impl SimVehicle {
     }
 }
 
-impl StateSource for SimVehicle {
+impl StateSource for SimCopter {
     /// Steps `dt` and returns the new state; `Duration::ZERO` returns the current state
-    /// unchanged (see the [timing contract](SimVehicle#timing-contract)).
+    /// unchanged (see the [timing contract](SimCopter#timing-contract)).
     fn state(&mut self, dt: Duration) -> VehicleState {
         let dt_s = dt.as_secs_f32();
         if dt_s > 0.0 {
@@ -172,7 +172,7 @@ impl StateSource for SimVehicle {
     }
 }
 
-impl Actuator for SimVehicle {
+impl Actuator for SimCopter {
     /// Queues the motor commands for the next [`state`](StateSource::state) step, after any
     /// [`actuator_delay_s`](Perturbations::actuator_delay_s); servos are ignored.
     fn actuate(&mut self, actuator_command: &ActuatorCommand) {

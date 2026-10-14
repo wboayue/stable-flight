@@ -1,4 +1,4 @@
-//! Wiring shared by the closed-loop tests: an airframe's pipeline on a `SimVehicle` (a
+//! Wiring shared by the closed-loop tests: an airframe's pipeline on a `SimCopter` (a
 //! [`Plant`]), flown in simulated time, and the step-response [`spec`].
 
 // Each test binary compiles this module and uses only part of it.
@@ -23,7 +23,7 @@ use stable_flight::{
     Commander, Configurable, FlightLoop, TelemetryPublisher, Vec2, WaypointCommand,
 };
 use stable_flight_sim::airframes::{self, Airframe};
-use stable_flight_sim::{Perturbations, SimVehicle, Wind};
+use stable_flight_sim::{Perturbations, SimCopter, Wind};
 
 /// Loop rate of the RealFlight examples.
 pub const TICK: Duration = Duration::from_millis(4);
@@ -31,9 +31,9 @@ pub const TICK: Duration = Duration::from_millis(4);
 /// Ticks of telemetry kept.
 pub const RECORDED: usize = 64;
 
-/// The copter pipeline on a [`SimVehicle`], publishing to `T`.
+/// The copter pipeline on a [`SimCopter`], publishing to `T`.
 pub type Pipeline<C, T> =
-    FlightLoop<C, SimVehicle, CopterGuidance, CopterStabilizer, TableMixer<4>, T>;
+    FlightLoop<C, SimCopter, CopterGuidance, CopterStabilizer, TableMixer<4>, T>;
 
 /// The pipeline recording its last [`RECORDED`] ticks.
 pub type SimLoop<C> = Pipeline<C, RecordingTelemetry<RECORDED>>;
@@ -75,8 +75,8 @@ impl Plant {
     }
 
     /// The vehicle, at rest on the ground at the origin.
-    pub fn vehicle(&self) -> SimVehicle {
-        SimVehicle::new(self.airframe.model, &self.airframe.mixer)
+    pub fn vehicle(&self) -> SimCopter {
+        SimCopter::new(self.airframe.model, &self.airframe.mixer)
             .expect("valid airframe")
             .with_wind(self.wind)
             .with_perturbations(self.perturbations)

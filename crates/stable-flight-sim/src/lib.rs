@@ -1,6 +1,6 @@
 //! A deterministic rigid-body multirotor simulator for Stable Flight's closed-loop tests.
 //!
-//! [`SimVehicle`] is a [`Vehicle`](stable_flight::Vehicle) a
+//! [`SimCopter`] is a [`Vehicle`](stable_flight::Vehicle) a
 //! [`FlightLoop`](stable_flight::FlightLoop) flies in lockstep: each tick integrates the last
 //! motor command over the tick's `dt`, with no wall clock and only seeded noise, so the same
 //! inputs give the same flight, bit for bit. It aims at plausible, repeatable dynamics for
@@ -25,10 +25,10 @@
 //! use stable_flight::stabilizers::copter::CopterStabilizer;
 //! use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
 //! use stable_flight::{AttitudeCommand, Command, ControlInput, FlightLoop};
-//! use stable_flight_sim::{SimVehicle, airframes};
+//! use stable_flight_sim::{SimCopter, airframes};
 //!
 //! let airframe = airframes::quad_x();
-//! let vehicle = SimVehicle::new(airframe.model, &airframe.mixer).expect("valid airframe");
+//! let vehicle = SimCopter::new(airframe.model, &airframe.mixer).expect("valid airframe");
 //! // Armed, level, full stick throttle.
 //! let climb = Command::new(
 //!     true,
@@ -53,16 +53,16 @@
 
 pub mod airframes;
 mod body;
+mod copter;
 mod delay;
 mod ground;
 mod gyro;
 mod model;
 mod motors;
 mod perturbations;
-mod vehicle;
 mod wind;
 
+pub use copter::SimCopter;
 pub use model::{ModelError, MultirotorModel};
 pub use perturbations::{GyroNoise, MAX_ACTUATOR_DELAY_S, Perturbations, Vibration};
-pub use vehicle::SimVehicle;
 pub use wind::{Gust, Wind};

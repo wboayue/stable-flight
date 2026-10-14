@@ -11,7 +11,7 @@ mod tests;
 pub const MAX_ACTUATOR_DELAY_S: f32 = 0.05;
 
 /// Delay, gyro noise, a disturbance moment, and motor mismatch on a
-/// [`SimVehicle`](crate::SimVehicle), each a value to sweep rather than a fit to one plant.
+/// [`SimCopter`](crate::SimCopter), each a value to sweep rather than a fit to one plant.
 ///
 /// The default turns every perturbation off, which leaves the clean plant exactly as it was.
 ///
@@ -19,7 +19,7 @@ pub const MAX_ACTUATOR_DELAY_S: f32 = 0.05;
 ///
 /// ```
 /// use stable_flight::Vec3;
-/// use stable_flight_sim::{GyroNoise, Perturbations, SimVehicle, Vibration, airframes};
+/// use stable_flight_sim::{GyroNoise, Perturbations, SimCopter, Vibration, airframes};
 ///
 /// let mut motor_thrust_scale = Perturbations::default().motor_thrust_scale;
 /// motor_thrust_scale[0] = 0.95;
@@ -34,7 +34,7 @@ pub const MAX_ACTUATOR_DELAY_S: f32 = 0.05;
 ///     motor_thrust_scale,
 /// };
 /// let airframe = airframes::quad_x();
-/// let vehicle = SimVehicle::new(airframe.model, &airframe.mixer)
+/// let vehicle = SimCopter::new(airframe.model, &airframe.mixer)
 ///     .expect("valid airframe")
 ///     .with_perturbations(perturbations)
 ///     .expect("valid perturbations");
@@ -43,7 +43,7 @@ pub const MAX_ACTUATOR_DELAY_S: f32 = 0.05;
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Perturbations {
     /// Delay from [`actuate`](stable_flight::Actuator::actuate) to the motors, in s, on top of
-    /// the one-tick hold in the [timing contract](crate::SimVehicle#timing-contract) (ESC
+    /// the one-tick hold in the [timing contract](crate::SimCopter#timing-contract) (ESC
     /// update, gyro filtering, estimator). At most [`MAX_ACTUATOR_DELAY_S`].
     pub actuator_delay_s: f32,
     /// Noise and vibration on the reported body rates.

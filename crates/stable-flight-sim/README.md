@@ -9,7 +9,7 @@ The goal is plausible, repeatable dynamics, not fidelity:
 
 ## Usage
 
-`SimVehicle` is a `StateSource` + `Actuator`, so a `FlightLoop` flies it like any backend.
+`SimCopter` is a `StateSource` + `Actuator`, so a `FlightLoop` flies it like any backend.
 `airframes::quad_x()` pairs a model with the mixer and configs that fly it:
 
 ```rust
@@ -18,10 +18,10 @@ use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
 use stable_flight::FlightLoop;
-use stable_flight_sim::{SimVehicle, Wind, airframes};
+use stable_flight_sim::{SimCopter, Wind, airframes};
 
 let airframe = airframes::quad_x();
-let vehicle = SimVehicle::new(airframe.model, &airframe.mixer)?.with_wind(Wind::default());
+let vehicle = SimCopter::new(airframe.model, &airframe.mixer)?.with_wind(Wind::default());
 let mut flight_loop = FlightLoop::new(
     ConstantCommander::default(),
     vehicle,
@@ -74,7 +74,7 @@ below, and the same inputs and seed give the same flight bit for bit.
 | Wind | Steady wind plus an optional "1 − cos" `Gust`, a function of simulated time only |
 | Ground | Plane at altitude 0. Contact stops sinking; resting (thrust below weight) holds the body level, stops rotation, and applies Coulomb friction |
 
-`Perturbations` (`SimVehicle::with_perturbations`, all off by default) bring the things that
+`Perturbations` (`SimCopter::with_perturbations`, all off by default) bring the things that
 most often break a tune on hardware. Each is a range to sweep, so a method that passes on them
 isn't fitted to one clean plant:
 
