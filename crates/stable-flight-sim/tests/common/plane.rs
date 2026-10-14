@@ -131,6 +131,9 @@ pub enum Axis {
 
 /// Flies `lead` for `lead_s`, then steps `axis` through a core [`StepProbe`] in absolute
 /// attitude mode, holding the other axis where the step found it, at `thrust`.
+///
+/// A commander doesn't see the surfaces, so the probe's `saturated_s` stays 0: [`ClipTimer`]
+/// measures clipping.
 pub struct StepCommander<C> {
     lead: C,
     lead_s: f32,
@@ -172,6 +175,38 @@ impl<C: Commander> Commander for StepCommander<C> {
             Axis::Pitch => (roll_rad, self.probe.step(dt, state.pitch_rad, false)),
         };
         attitude_command(command.0, command.1, self.thrust)
+    }
+}
+
+/// Flies `lead`, except from `from_s` until `until_s` (simulated seconds from the first tick),
+/// when it sends `command`.
+pub struct Interlude<C> {
+    lead: C,
+    from_s: f32,
+    until_s: f32,
+    command: Command,
+    elapsed_s: f32,
+}
+
+impl<C> Interlude<C> {
+    pub fn new(lead: C, from_s: f32, until_s: f32, command: Command) -> Self {
+        Interlude {
+            lead,
+            from_s,
+            until_s,
+            command,
+            elapsed_s: 0.0,
+        }
+    }
+}
+
+impl<C: Commander> Commander for Interlude<C> {
+    fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
+        self.elapsed_s += dt;
+        if (self.from_s..self.until_s).contains(&self.elapsed_s) {
+            return self.command;
+        }
+        self.lead.next_command(dt, state)
     }
 }
 

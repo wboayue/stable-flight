@@ -5,11 +5,10 @@ mod common;
 
 use assert2::check;
 use stable_flight::Vec2;
-use stable_flight::tuning::StepConfig;
 use stable_flight_sim::airframes;
 
 use common::fly;
-use common::plane::{Axis, PlanePlant, StepCommander, loiter, plane_loop};
+use common::plane::{Interlude, PlanePlant, attitude_command, loiter, plane_loop};
 
 /// Seconds to fly before a turn is judged: the loiter's entry, or the held bank's lead on the
 /// line and its roll-in.
@@ -23,7 +22,7 @@ const LEAD_S: f32 = 20.0;
 
 /// Sideslip, either way, in rad: no external band applies. Measured 0.9° in the loiter and
 /// 1.4° at a held 45° bank; 2.5° leaves about 2× margin and fails rate feedforward that
-/// leaves the rudder to feedback (PX4's yaw default: 2.9° and 3.8°).
+/// leaves the rudder to feedback (PX4's yaw default: 2.9° and 4.0°).
 const SIDESLIP_RAD: f32 = 2.5 * core::f32::consts::PI / 180.0;
 
 /// Altitude band, either way, in m: ArduPilot's for a loiter altitude regained
@@ -68,13 +67,8 @@ fn holds_a_bank_coordinated() {
     let thrust = plant.airframe.guidance.cruise_thrust;
     // (bank °): a loiter's, and FBWA's limit (core's plane guidance `max_bank_rad`).
     for bank_deg in [30.0_f32, 45.0] {
-        let bank = StepConfig {
-            amplitude: bank_deg.to_radians(),
-            duration_s: SETTLE_S + HOLD_S,
-            settle_band: 0.1,
-            filter_hz: 0.0,
-        };
-        let commander = StepCommander::new(plant.line(), LEAD_S, Axis::Roll, bank, thrust);
+        let bank = attitude_command(bank_deg.to_radians(), 0.0, thrust);
+        let commander = Interlude::new(plant.line(), LEAD_S, f32::INFINITY, bank);
         let mut flight_loop = plane_loop(&plant, commander);
         fly(&mut flight_loop, SETTLE_S, |_, _| {});
         let mut sideslip_rad = 0.0_f32;

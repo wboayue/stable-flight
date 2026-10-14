@@ -34,23 +34,20 @@ type Change = fn(&mut StepMetrics);
 /// of 2.2 time constants (0.88 s at 0.4 s).
 #[test]
 fn missed_targets_flags_each_band() {
-    // (change to a clean step, clipped s, targets missed)
-    let cases: [(Change, f32, &[&str]); 8] = [
-        (|_| {}, 0.0, &[]),
-        (|m| m.overshoot = 0.05, 0.0, &[]),
-        (|m| m.overshoot = 0.051, 0.0, &["overshoot"]),
-        (|m| m.settling_time_s = None, 0.0, &["unsettled"]),
-        (|_| {}, 0.022, &[]),
-        (|_| {}, 0.023, &["clipped"]),
-        (|m| m.rise_time_s = Some(0.881), 0.0, &["rise"]),
-        (|m| m.rise_time_s = None, 0.0, &["rise"]),
+    // (change to a clean step, targets missed)
+    let cases: [(Change, &[&str]); 8] = [
+        (|_| {}, &[]),
+        (|m| m.overshoot = 0.05, &[]),
+        (|m| m.overshoot = 0.051, &["overshoot"]),
+        (|m| m.settling_time_s = None, &["unsettled"]),
+        (|m| m.saturated_s = 0.022, &[]),
+        (|m| m.saturated_s = 0.023, &["clipped"]),
+        (|m| m.rise_time_s = Some(0.881), &["rise"]),
+        (|m| m.rise_time_s = None, &["rise"]),
     ];
-    for (change, clipped_s, expected) in cases {
+    for (change, expected) in cases {
         let mut m = clean_step();
         change(&mut m);
-        check!(
-            plane_spec::missed_targets(&m, clipped_s, 0.4) == expected,
-            "{m:?}"
-        );
+        check!(plane_spec::missed_targets(&m, 0.4) == expected, "{m:?}");
     }
 }

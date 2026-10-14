@@ -9,7 +9,7 @@ use stable_flight::commanders::{RouteEnd, WaypointFollower};
 use stable_flight_sim::airframes;
 use stable_flight_sim::{Gust, GyroNoise, Perturbations, Vibration, Wind};
 
-use common::plane::{PlanePlant, north_line, plane_loop};
+use common::plane::{PlanePlant, plane_loop};
 use common::{Plant, fly, sim_loop_with, waypoint};
 
 /// A steady wind with a gust at 6 s.
@@ -49,7 +49,7 @@ fn plane_flight() -> Vec<stable_flight::VehicleState> {
         wind: gusty(),
         ..PlanePlant::clean(airframes::plane())
     };
-    let mut flight_loop = plane_loop(&plant, north_line(100.0, 15.0));
+    let mut flight_loop = plane_loop(&plant, plant.line());
     let mut states = Vec::new();
     fly(&mut flight_loop, 20.0, |flight_loop, _| {
         states.push(flight_loop.state().clone());

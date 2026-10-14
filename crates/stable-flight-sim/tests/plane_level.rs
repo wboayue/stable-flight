@@ -8,13 +8,7 @@ use stable_flight::Vec3;
 use stable_flight_sim::{Wind, airframes};
 
 use common::fly;
-use common::plane::{PlanePlant, north_line, plane_loop};
-
-/// Altitude flown, in m (the airframe's start).
-const ALTITUDE_M: f32 = 100.0;
-
-/// Airspeed flown, in m/s (the airframe's trim and start).
-const AIRSPEED_MPS: f32 = 15.0;
+use common::plane::{PlanePlant, plane_loop};
 
 /// Seconds to settle from the start (the prop spins up from rest) before the hold is judged.
 const SETTLE_S: f32 = 15.0;
@@ -50,23 +44,28 @@ fn holds_line_altitude_and_airspeed() {
             },
             ..PlanePlant::clean(airframes::plane())
         };
-        let mut flight_loop = plane_loop(&plant, north_line(ALTITUDE_M, AIRSPEED_MPS));
+        let (altitude_m, airspeed_mps) = (
+            plant.altitude_m(),
+            plant.airframe.stabilizer.trim_airspeed_mps,
+        );
+        let mut flight_loop = plane_loop(&plant, plant.line());
         fly(&mut flight_loop, SETTLE_S, |_, _| {});
-        let (mut altitude_m, mut airspeed_mps, mut cross_track_m) = (0.0_f32, 0.0_f32, 0.0_f32);
+        let (mut altitude_off_m, mut airspeed_off_mps, mut cross_track_m) =
+            (0.0_f32, 0.0_f32, 0.0_f32);
         fly(&mut flight_loop, HOLD_S, |flight_loop, _| {
             let state = flight_loop.state();
-            altitude_m = altitude_m.max((state.position_m.z - ALTITUDE_M).abs());
+            altitude_off_m = altitude_off_m.max((state.position_m.z - altitude_m).abs());
             let airspeed = state.airspeed_mps.unwrap_or(f32::NAN);
-            airspeed_mps = airspeed_mps.max((airspeed - AIRSPEED_MPS).abs());
+            airspeed_off_mps = airspeed_off_mps.max((airspeed - airspeed_mps).abs());
             cross_track_m = cross_track_m.max(state.position_m.y.abs());
         });
         check!(
-            altitude_m <= ALTITUDE_BAND_M,
-            "{case}: altitude off by {altitude_m} m"
+            altitude_off_m <= ALTITUDE_BAND_M,
+            "{case}: altitude off by {altitude_off_m} m"
         );
         check!(
-            airspeed_mps <= AIRSPEED_BAND_MPS,
-            "{case}: airspeed off by {airspeed_mps} m/s"
+            airspeed_off_mps <= AIRSPEED_BAND_MPS,
+            "{case}: airspeed off by {airspeed_off_mps} m/s"
         );
         check!(
             cross_track_m <= CROSS_TRACK_M,

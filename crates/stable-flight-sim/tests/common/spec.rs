@@ -134,6 +134,11 @@ pub fn missed_targets(target: TunedLoop, m: &StepMetrics) -> Vec<&'static str> {
             max_bounce_back.is_none_or(|max| m.bounce_back <= max),
         ),
     ];
+    failed(&checks)
+}
+
+/// The names of the `checks` (name, met) not met.
+pub fn failed(checks: &[(&'static str, bool)]) -> Vec<&'static str> {
     checks
         .iter()
         .filter(|(_, met)| !met)

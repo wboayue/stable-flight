@@ -43,9 +43,9 @@ pub const PITCH_STEP: StepConfig = StepConfig {
     ..ROLL_STEP
 };
 
-/// One axis step on `plant`: its metrics and the seconds its surfaces clipped; `None` if the
-/// probe didn't finish.
-pub fn respond(plant: &PlanePlant, axis: Axis, step: StepConfig) -> Option<(StepMetrics, f32)> {
+/// One axis step on `plant`, with the seconds its surfaces clipped ([`ClipTimer`]) as
+/// `saturated_s`; `None` if the probe didn't finish.
+pub fn respond(plant: &PlanePlant, axis: Axis, step: StepConfig) -> Option<StepMetrics> {
     let thrust = plant.airframe.guidance.cruise_thrust;
     let commander = StepCommander::new(plant.line(), LEAD_S, axis, step, thrust);
     let mut flight_loop = plane_pipeline(plant, commander, ClipTimer::default());
@@ -56,30 +56,29 @@ pub fn respond(plant: &PlanePlant, axis: Axis, step: StepConfig) -> Option<(Step
     );
     let (commander, .., clips) = flight_loop.into_parts();
     match commander.status() {
-        StepStatus::Done(metrics) => Some((metrics, clips.clipped_s)),
+        StepStatus::Done(metrics) => Some(StepMetrics {
+            saturated_s: clips.clipped_s,
+            ..metrics
+        }),
         _ => None,
     }
 }
 
-/// The targets a step misses, given its metrics, the seconds its surfaces clipped, and its
-/// axis's attitude time constant in s; empty when it meets them all.
-pub fn missed_targets(m: &StepMetrics, clipped_s: f32, time_constant_s: f32) -> Vec<&'static str> {
+/// The targets a step misses, given its metrics and its axis's attitude time constant in s;
+/// empty when it meets them all.
+pub fn missed_targets(m: &StepMetrics, time_constant_s: f32) -> Vec<&'static str> {
     let max_rise_s = RISE_PER_TIME_CONSTANT * time_constant_s;
     let max_clipped_s = StepTestPlan::copter(TunedLoop::Roll).max_saturated_s;
     let checks = [
         ("overshoot", m.overshoot <= spec::MAX_OVERSHOOT),
         ("unsettled", m.settling_time_s.is_some()),
-        ("clipped", clipped_s <= max_clipped_s),
+        ("clipped", m.saturated_s <= max_clipped_s),
         (
             "rise",
             m.rise_time_s.is_some_and(|rise_s| rise_s <= max_rise_s),
         ),
     ];
-    checks
-        .iter()
-        .filter(|(_, met)| !met)
-        .map(|(name, _)| *name)
-        .collect()
+    spec::failed(&checks)
 }
 
 /// `axis`'s attitude time constant on `plant`, in s.
@@ -101,13 +100,10 @@ pub fn misses(plant: &PlanePlant) -> Vec<String> {
             let row = format!("{axis:?} step {}", step.amplitude);
             match respond(plant, axis, step) {
                 None => misses.push(format!("{row}: no measurement")),
-                Some((m, clipped_s)) => {
-                    let missed = missed_targets(&m, clipped_s, time_constant_s(plant, axis));
+                Some(m) => {
+                    let missed = missed_targets(&m, time_constant_s(plant, axis));
                     if !missed.is_empty() {
-                        misses.push(format!(
-                            "{row}: {} in {m:?}, clipped {clipped_s} s",
-                            missed.join(", ")
-                        ));
+                        misses.push(format!("{row}: {} in {m:?}", missed.join(", ")));
                     }
                 }
             }

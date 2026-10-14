@@ -6,12 +6,11 @@
 mod common;
 
 use assert2::check;
-use stable_flight::testing::ConstantCommander;
-use stable_flight::{AbsoluteRateCommand, Command, Commander, ControlInput, VehicleState};
+use stable_flight::{AbsoluteRateCommand, ControlInput};
 use stable_flight_sim::airframes;
 
 use common::fly;
-use common::plane::{PlanePlant, plane_command, plane_loop};
+use common::plane::{Interlude, PlanePlant, plane_command, plane_loop};
 
 /// Seconds on the line before the entry: the prop spins up from rest and the loops settle.
 const LEAD_S: f32 = 20.0;
@@ -37,30 +36,6 @@ const ALTITUDE_LOSS_M: f32 = 8.0;
 /// Largest body rate, in rad/s. Measured 1.8 rad/s at most; 3.5 rad/s leaves about 2× margin.
 const MAX_BODY_RATE_RADPS: f32 = 3.5;
 
-/// Flies `line` for [`LEAD_S`], then holds [`ENTRY_PITCH_RATE_RADPS`] and `roll_radps` at zero
-/// throttle for [`ENTRY_S`], then flies `line` again.
-struct StallEntry {
-    line: ConstantCommander,
-    roll_radps: f32,
-    elapsed_s: f32,
-}
-
-impl Commander for StallEntry {
-    fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
-        self.elapsed_s += dt;
-        let entering = (LEAD_S..LEAD_S + ENTRY_S).contains(&self.elapsed_s);
-        if !entering {
-            return self.line.next_command(dt, state);
-        }
-        plane_command(ControlInput::AbsoluteRate(AbsoluteRateCommand {
-            roll_radps: self.roll_radps,
-            pitch_radps: ENTRY_PITCH_RATE_RADPS,
-            yaw_radps: 0.0,
-            thrust: 0.0,
-        }))
-    }
-}
-
 #[test]
 fn stalls_and_recovers_from_a_zoom() {
     // (case, roll rate through the entry rad/s). A pull-up in a held bank only tightens the
@@ -71,11 +46,13 @@ fn stalls_and_recovers_from_a_zoom() {
         let plant = PlanePlant::clean(airframes::plane());
         let stall_rad = plant.airframe.model.aero.alpha_stall_rad;
         let min_airspeed_mps = plant.airframe.stabilizer.min_airspeed_mps;
-        let commander = StallEntry {
-            line: plant.line(),
+        let entry = plane_command(ControlInput::AbsoluteRate(AbsoluteRateCommand {
             roll_radps,
-            elapsed_s: 0.0,
-        };
+            pitch_radps: ENTRY_PITCH_RATE_RADPS,
+            yaw_radps: 0.0,
+            thrust: 0.0,
+        }));
+        let commander = Interlude::new(plant.line(), LEAD_S, LEAD_S + ENTRY_S, entry);
         let mut flight_loop = plane_loop(&plant, commander);
         fly(&mut flight_loop, LEAD_S, |_, _| {});
         let entry_altitude_m = flight_loop.state().position_m.z;

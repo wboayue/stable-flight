@@ -162,7 +162,11 @@ fn aerosonde_inertia(mass_kg: f32, span_m: f32) -> Vec3 {
 /// The surface command per rad/s that holds a steady roll, pitch, and yaw rate on `model` at
 /// `airspeed_mps`: each axis's rate damping (`c_roll_p`, `c_pitch_q`, `c_yaw_r`, over the
 /// 2V/length that nondimensionalizes the rate) balanced by its surface at full deflection.
-fn rate_feedforward(model: &FixedWingModel, airspeed_mps: f32) -> Vec3 {
+///
+/// A unit moment command is taken as full deflection, as [`TableMixer::plane`]'s unit-weight
+/// servo rows give it. The stabilizer scales feedforward by trim over measured airspeed, which
+/// keeps it right off trim: the deflection a rate needs falls as 1/V too.
+pub(super) fn rate_feedforward(model: &FixedWingModel, airspeed_mps: f32) -> Vec3 {
     let c = &model.aero;
     let per_rate = |damping: f32, length_m: f32, control: f32, max_deflection_rad: f32| {
         -damping * length_m / (2.0 * airspeed_mps * control * max_deflection_rad)

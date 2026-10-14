@@ -4,6 +4,7 @@ use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight::{AttitudeSetpoint, ControlOutput, Mixer, Setpoint, Stabilizer, VehicleState};
 
 use super::*;
+use crate::aero;
 use crate::motors::Motors;
 
 #[test]
@@ -71,4 +72,23 @@ fn check_hover_thrust(name: &str, airframe: Airframe) {
     // Plausible hover: neither near idle nor near full.
     let hover = airframe.guidance.altitude.hover_thrust;
     check!((0.5..0.95).contains(&hover), "{name} hover thrust {hover}");
+}
+
+/// A body rate with its feedforward deflection makes the moment that neither does: the
+/// surface cancels the rate damping, on each axis.
+#[test]
+fn rate_feedforward_cancels_rate_damping() {
+    let model = plane().model;
+    let airspeed_mps = 15.0;
+    let feedforward = plane::rate_feedforward(&model, airspeed_mps);
+    let air_mps = Vec3::new(airspeed_mps, 0.0, 0.0);
+    let still_nm = aero::wrench(&model, air_mps, Vec3::zeros(), Vec3::zeros()).torque_nm;
+    for axis in 0..3 {
+        let rates_radps = Vec3::ith(axis, 0.5);
+        let deflection_rad = rates_radps
+            .component_mul(&feedforward)
+            .component_mul(&model.max_deflection_rad);
+        let torque_nm = aero::wrench(&model, air_mps, rates_radps, deflection_rad).torque_nm;
+        assert_relative_eq!(torque_nm[axis], still_nm[axis], epsilon = 1e-4);
+    }
 }
