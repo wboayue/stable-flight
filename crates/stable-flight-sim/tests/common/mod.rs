@@ -9,12 +9,15 @@ pub mod spec;
 use std::time::Duration;
 
 use stable_flight::commanders::{RouteEnd, WaypointFollower};
+use stable_flight::controllers::Gains;
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight::stabilizers::copter::{CopterStabilizer, TunedLoop};
 use stable_flight::testing::RecordingTelemetry;
-use stable_flight::tuning::autotune::{Autotune, AutotuneEvent, Envelope, StagePlan};
+use stable_flight::tuning::autotune::{
+    Autotune, AutotuneAbort, AutotuneEvent, Envelope, Outcome, StagePlan,
+};
 use stable_flight::tuning::{ProbeConfig, ProbeStatus};
 use stable_flight::{
     Commander, Configurable, FlightLoop, TelemetryPublisher, Vec2, WaypointCommand,
@@ -178,6 +181,19 @@ pub fn probe(
     None
 }
 
+/// `airframe` with each tuned loop's ([`spec::TUNED`]) gains replaced by `retune(target, gains)`.
+pub fn retuned(mut airframe: Airframe, retune: impl Fn(TunedLoop, Gains) -> Gains) -> Airframe {
+    for target in spec::TUNED {
+        let gains = target.gains_mut(&mut airframe.stabilizer);
+        *gains = retune(target, *gains);
+    }
+    airframe
+}
+
+/// Simulated seconds an autotune may run (`copter_search` takes about 430–620 s from core's
+/// default gains on the clean airframes).
+pub const AUTOTUNE_TIMEOUT_S: f32 = 1200.0;
+
 /// How an [`autotune`] run ended.
 #[derive(Debug)]
 pub struct AutotuneRun {
@@ -187,6 +203,27 @@ pub struct AutotuneRun {
     pub config: CopterStabilizerConfig,
     /// Simulated seconds the autotune ran.
     pub duration_s: f32,
+}
+
+impl AutotuneRun {
+    /// Each stage's loop and outcome, in order, or why it failed.
+    pub fn outcomes(&self) -> Vec<(TunedLoop, Result<Outcome, AutotuneAbort>)> {
+        self.stages
+            .iter()
+            .map(|event| match event {
+                AutotuneEvent::StageDone {
+                    target, outcome, ..
+                } => (*target, Ok(*outcome)),
+                AutotuneEvent::StageFailed { target, reason } => (*target, Err(*reason)),
+                _ => unreachable!("autotune() keeps stage ends only"),
+            })
+            .collect()
+    }
+
+    /// Whether every stage of `StagePlan::copter_search` ran and ended `Tuned`.
+    pub fn all_tuned(&self) -> bool {
+        self.outcomes() == spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)))
+    }
 }
 
 /// Runs `plan` on `plant` settled in a [`hover`], until it ends or `timeout_s` passes.
