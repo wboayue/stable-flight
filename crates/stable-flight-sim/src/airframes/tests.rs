@@ -25,6 +25,12 @@ fn ring_inertia_puts_half_the_mass_on_the_motor_ring() {
 }
 
 #[test]
+fn x_moment_arm_is_half_the_diagonal_at_45_degrees() {
+    // A 250 mm diagonal: 125 mm arms, 88.4 mm from each axis.
+    assert_relative_eq!(x_moment_arm_m(0.25), 0.088_388_35, max_relative = 1e-6);
+}
+
+#[test]
 fn max_thrust_gives_the_thrust_to_weight() {
     let racer = racer().model;
     assert_relative_eq!(

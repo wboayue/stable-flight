@@ -62,8 +62,8 @@ pub fn quad_x() -> Airframe {
     let model = MultirotorModel {
         mass_kg: 1.0,
         inertia_kgm2: Vec3::new(0.01, 0.01, 0.018),
-        // 250 mm motor to motor on the diagonal: 125 mm arms, at 45° to each axis.
-        moment_arm_m: 0.125 * core::f32::consts::FRAC_1_SQRT_2,
+        // 250 mm motor to motor on the diagonal.
+        moment_arm_m: x_moment_arm_m(0.25),
         max_thrust_n: 6.0,
         motor_time_constant_s: 0.03,
         yaw_torque_per_thrust_m: 0.016,
@@ -89,11 +89,8 @@ pub fn quad_x() -> Airframe {
             },
             // Sim autotune (#347).
             angle_p: 9.0,
-            // Prop drag gives yaw about 7 rad/s² per unit moment: P 1.5 rises in 0.16 s on a
-            // 0.5 rad/s step without clipping (#347).
-            yaw_rate_p: 1.5,
-            // A 10° heading step without overshoot or clipping on the yaw rate loop above (#347).
-            heading_p: 3.5,
+            yaw_rate_p: YAW_RATE_P,
+            heading_p: HEADING_P,
         },
     )
 }
@@ -114,7 +111,7 @@ pub fn heavy_quad() -> Airframe {
     let model = MultirotorModel {
         mass_kg: MASS_KG,
         inertia_kgm2: ring_inertia(MASS_KG, DIAGONAL_M),
-        moment_arm_m: DIAGONAL_M / 2.0 * core::f32::consts::FRAC_1_SQRT_2,
+        moment_arm_m: x_moment_arm_m(DIAGONAL_M),
         max_thrust_n: max_thrust_n(MASS_KG, 2.0),
         motor_time_constant_s: 0.05,
         // Prop drag torque per thrust grows with prop diameter: about 7-inch props against
@@ -143,8 +140,8 @@ pub fn heavy_quad() -> Airframe {
             },
             angle_p: 9.0,
             // `quad_x`'s: they hold heading in a hover; the autotune doesn't tune them.
-            yaw_rate_p: 1.5,
-            heading_p: 3.5,
+            yaw_rate_p: YAW_RATE_P,
+            heading_p: HEADING_P,
         },
     )
 }
@@ -164,7 +161,7 @@ pub fn racer() -> Airframe {
     let model = MultirotorModel {
         mass_kg: MASS_KG,
         inertia_kgm2: ring_inertia(MASS_KG, DIAGONAL_M),
-        moment_arm_m: DIAGONAL_M / 2.0 * core::f32::consts::FRAC_1_SQRT_2,
+        moment_arm_m: x_moment_arm_m(DIAGONAL_M),
         max_thrust_n: max_thrust_n(MASS_KG, 8.0),
         motor_time_constant_s: 0.015,
         yaw_torque_per_thrust_m: 0.016,
@@ -190,8 +187,8 @@ pub fn racer() -> Airframe {
             },
             angle_p: 9.0,
             // `quad_x`'s: they hold heading in a hover; the autotune doesn't tune them.
-            yaw_rate_p: 1.5,
-            heading_p: 3.5,
+            yaw_rate_p: YAW_RATE_P,
+            heading_p: HEADING_P,
         },
     )
 }
@@ -221,11 +218,26 @@ fn ring_inertia(mass_kg: f32, diagonal_m: f32) -> Vec3 {
     Vec3::new(roll_kgm2, roll_kgm2, 2.0 * roll_kgm2)
 }
 
+/// Distance from the roll or pitch axis to each motor of an X quad whose motors are
+/// `diagonal_m` apart across the diagonal, in m: the arm (half the diagonal) at 45° to each
+/// axis.
+fn x_moment_arm_m(diagonal_m: f32) -> f32 {
+    diagonal_m / 2.0 * core::f32::consts::FRAC_1_SQRT_2
+}
+
 /// One motor's full thrust, in N, giving a quad of `mass_kg` a thrust-to-weight of
 /// `thrust_to_weight`.
 fn max_thrust_n(mass_kg: f32, thrust_to_weight: f32) -> f32 {
     mass_kg * GRAVITY * thrust_to_weight / 4.0
 }
+
+/// Yaw rate P, hand-tuned on `quad_x`: prop drag gives yaw about 7 rad/s² per unit moment,
+/// and P 1.5 rises in 0.16 s on a 0.5 rad/s step without clipping (#347).
+const YAW_RATE_P: f32 = 1.5;
+
+/// Heading P, hand-tuned on `quad_x`: a 10° heading step without overshoot or clipping on the
+/// [`YAW_RATE_P`] loop (#347).
+const HEADING_P: f32 = 3.5;
 
 /// The gains an airframe's stabilizer differs from the core defaults by.
 struct Tune {

@@ -38,9 +38,10 @@ const MAX_RATE_RISE_S: f32 = 0.14;
 /// Longest yaw rate rise, in s (PX4's yaw rise time).
 const MAX_YAW_RATE_RISE_S: f32 = 0.2;
 
-/// Yaw rate step, in rad/s: `quad_x`'s yaw authority (prop drag, about 7 rad/s² per unit
-/// moment) clips the standard 1 rad/s step past the allowance at any P that meets the rise
-/// target, so its step is half that.
+/// Yaw rate step, in rad/s, sized on `quad_x`: its yaw authority (prop drag, about 7 rad/s²
+/// per unit moment) clips the standard 1 rad/s step past the allowance at any P that meets
+/// the rise target, so its step is half that. Only `quad_x`'s yaw is held to the spec; the
+/// other airframes are checked on their tuned loops.
 const YAW_RATE_STEP_RADPS: f32 = 0.5;
 
 /// Simulated seconds a probe may run before the check gives up on it.
@@ -95,42 +96,49 @@ fn rise_and_bounce_back(target: TunedLoop) -> (Option<f32>, Option<f32>) {
 }
 
 /// Steps each of `loops` both ways on `plant` and returns a line for each step that misses
-/// the spec (empty when every step meets it), naming the loop, the step, its metrics, and the
-/// band it missed.
+/// the spec (empty when every step meets it), naming the loop, the step, the targets it
+/// missed, and its metrics.
 pub fn misses(plant: &Plant, loops: &[TunedLoop]) -> Vec<String> {
     let mut misses = Vec::new();
     for &target in loops {
         let plan = plan(target);
-        let (max_rise_s, max_bounce_back) = rise_and_bounce_back(target);
         for step in [plan.step, plan.step.reversed()] {
             let row = format!("{target:?} step {}", step.amplitude);
-            let Some(m) = respond(plant, target, step) else {
-                misses.push(format!("{row}: no measurement"));
-                continue;
-            };
-            let mut missed = Vec::new();
-            if m.overshoot > MAX_OVERSHOOT {
-                missed.push("overshoot");
-            }
-            if m.settling_time_s.is_none() {
-                missed.push("unsettled");
-            }
-            if m.saturated_s > plan.max_saturated_s {
-                missed.push("clipped");
-            }
-            if max_rise_s.is_some_and(|max_s| !m.rise_time_s.is_some_and(|rise_s| rise_s <= max_s))
-            {
-                missed.push("rise");
-            }
-            if max_bounce_back.is_some_and(|max| m.bounce_back > max) {
-                missed.push("bounce-back");
-            }
-            if !missed.is_empty() {
-                misses.push(format!("{row}: {} in {m:?}", missed.join(", ")));
+            match respond(plant, target, step) {
+                None => misses.push(format!("{row}: no measurement")),
+                Some(m) => {
+                    let missed = missed_targets(target, &m);
+                    if !missed.is_empty() {
+                        misses.push(format!("{row}: {} in {m:?}", missed.join(", ")));
+                    }
+                }
             }
         }
     }
     misses
+}
+
+/// The targets `m`, a step of `target`, misses; empty when it meets them all.
+pub fn missed_targets(target: TunedLoop, m: &StepMetrics) -> Vec<&'static str> {
+    let (max_rise_s, max_bounce_back) = rise_and_bounce_back(target);
+    let checks = [
+        ("overshoot", m.overshoot <= MAX_OVERSHOOT),
+        ("unsettled", m.settling_time_s.is_some()),
+        ("clipped", m.saturated_s <= plan(target).max_saturated_s),
+        (
+            "rise",
+            max_rise_s.is_none_or(|max_s| m.rise_time_s.is_some_and(|rise_s| rise_s <= max_s)),
+        ),
+        (
+            "bounce-back",
+            max_bounce_back.is_none_or(|max| m.bounce_back <= max),
+        ),
+    ];
+    checks
+        .iter()
+        .filter(|(_, met)| !met)
+        .map(|(name, _)| *name)
+        .collect()
 }
 
 /// `target`'s response to `step` from a settled hover on `plant`; `None` if the probe didn't
