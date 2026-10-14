@@ -42,7 +42,7 @@ fn flight(perturbations: Perturbations) -> Vec<stable_flight::VehicleState> {
 
 /// Every perturbation on, mild enough that the route still flies, noise seeded by `seed`.
 fn all_on(seed: u64) -> Perturbations {
-    let mut motor_thrust_scale = [1.0; 8];
+    let mut motor_thrust_scale = Perturbations::default().motor_thrust_scale;
     motor_thrust_scale[1] = 0.95;
     Perturbations {
         actuator_delay_s: 0.01,

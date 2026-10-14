@@ -96,12 +96,7 @@ impl MultirotorModel {
             ("motor_time_constant_s", self.motor_time_constant_s),
             ("max_step_s", self.max_step_s),
         ];
-        if let Some((name, _)) = positive
-            .iter()
-            .find(|(_, value)| !(value.is_finite() && *value > 0.0))
-        {
-            return Err(ModelError::NotPositive(name));
-        }
+        check_positive(&positive)?;
         let non_negative = [
             ("yaw_torque_per_thrust_m", self.yaw_torque_per_thrust_m),
             ("drag_n_per_mps", self.drag_n_per_mps),
@@ -119,12 +114,29 @@ impl MultirotorModel {
             ),
             ("ground_friction", self.ground_friction),
         ];
-        if let Some((name, _)) = non_negative
-            .iter()
-            .find(|(_, value)| !(value.is_finite() && *value >= 0.0))
-        {
-            return Err(ModelError::Negative(name));
-        }
-        Ok(())
+        check_non_negative(&non_negative)
     }
+}
+
+/// [`ModelError::NotPositive`] naming the first of `params` that isn't positive and finite.
+pub(crate) fn check_positive(params: &[(&'static str, f32)]) -> Result<(), ModelError> {
+    first_failing(params, |value| value > 0.0)
+        .map_or(Ok(()), |name| Err(ModelError::NotPositive(name)))
+}
+
+/// [`ModelError::Negative`] naming the first of `params` that is negative or not finite.
+pub(crate) fn check_non_negative(params: &[(&'static str, f32)]) -> Result<(), ModelError> {
+    first_failing(params, |value| value >= 0.0)
+        .map_or(Ok(()), |name| Err(ModelError::Negative(name)))
+}
+
+/// The name of the first of `params` that isn't finite or fails `in_range`.
+fn first_failing(
+    params: &[(&'static str, f32)],
+    in_range: impl Fn(f32) -> bool,
+) -> Option<&'static str> {
+    params
+        .iter()
+        .find(|(_, value)| !(value.is_finite() && in_range(*value)))
+        .map(|(name, _)| *name)
 }

@@ -137,7 +137,7 @@ impl SimVehicle {
         let alpha = 1.0 - libm::expf(-h / self.model.motor_time_constant_s);
         let start_velocity = self.body.velocity_ned_mps;
         for _ in 0..steps as u32 {
-            self.motors.spin(self.commands.at(self.time_s), alpha);
+            self.motors.spin(self.commands.due_at(self.time_s), alpha);
             let (thrust_n, torque_nm) = self.motors.wrench(&self.model);
             let loads = Loads {
                 thrust_n,

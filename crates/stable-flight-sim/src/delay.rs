@@ -54,8 +54,9 @@ impl DelayLine {
         self.len += 1;
     }
 
-    /// The command due at `time_s`: the newest one pushed at least `delay_s` earlier.
-    pub(crate) fn at(&mut self, time_s: f64) -> &[f32; SLOTS] {
+    /// Applies every command due by `time_s` (pushed at least `delay_s` earlier) and returns the
+    /// one the motors now run on: the newest of them, or the last applied if none came due.
+    pub(crate) fn due_at(&mut self, time_s: f64) -> &[f32; SLOTS] {
         let due_s = time_s - self.delay_s + DUE_TOLERANCE_S;
         while self.len > 0 && self.pending[self.head].0 <= due_s {
             self.pop();

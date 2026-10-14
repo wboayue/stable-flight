@@ -2,7 +2,7 @@
 
 use stable_flight::{ActuatorCommand, Vec3};
 
-use crate::model::ModelError;
+use crate::model::{ModelError, check_non_negative, check_positive};
 
 #[cfg(test)]
 mod tests;
@@ -21,7 +21,7 @@ pub const MAX_ACTUATOR_DELAY_S: f32 = 0.05;
 /// use stable_flight::Vec3;
 /// use stable_flight_sim::{GyroNoise, Perturbations, SimVehicle, Vibration, airframes};
 ///
-/// let mut motor_thrust_scale = [1.0; 8];
+/// let mut motor_thrust_scale = Perturbations::default().motor_thrust_scale;
 /// motor_thrust_scale[0] = 0.95;
 /// let perturbations = Perturbations {
 ///     actuator_delay_s: 0.01,
@@ -114,19 +114,12 @@ impl Perturbations {
             ("gyro.vibration.amplitude_radps.y", amplitude_radps.y),
             ("gyro.vibration.amplitude_radps.z", amplitude_radps.z),
         ];
-        if let Some((name, _)) = non_negative
-            .iter()
-            .find(|(_, value)| !(value.is_finite() && *value >= 0.0))
-        {
-            return Err(ModelError::Negative(name));
-        }
+        check_non_negative(&non_negative)?;
         if self.actuator_delay_s > MAX_ACTUATOR_DELAY_S {
             return Err(ModelError::DelayTooLong);
         }
-        if let Some(vibration) = vibration
-            && !(vibration.frequency_hz.is_finite() && vibration.frequency_hz > 0.0)
-        {
-            return Err(ModelError::NotPositive("gyro.vibration.frequency_hz"));
+        if let Some(vibration) = vibration {
+            check_positive(&[("gyro.vibration.frequency_hz", vibration.frequency_hz)])?;
         }
         if !self.disturbance_moment_nm.iter().all(|m| m.is_finite()) {
             return Err(ModelError::NotFinite("disturbance_moment_nm"));
