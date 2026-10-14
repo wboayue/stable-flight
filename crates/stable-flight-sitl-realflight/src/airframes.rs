@@ -184,7 +184,7 @@ pub fn explora_vtol()
                     // roll) can only push one way, so a roll can't be stopped (#123).
                     max_boost_thrust: 0.9,
                 },
-                // The stabilizer's pitch cap is raised for the forward ramp; sticks keep 30°.
+                // Full stick at the stabilizer's 30° tilt.
                 max_stick_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
                 ..CopterGuidanceConfig::default()
             },
@@ -230,9 +230,9 @@ pub fn explora_vtol()
                     roll_gains: gains(4.0, 0.0, 0.0),
                     pitch_gains: gains(4.0, 0.0, 0.0),
                     max_integral: 100.0,
-                    // 30° of view roll; view pitch to 85° for the forward ramp (80°), which
+                    // 30° of view roll and pitch; the forward ramp flies past it, to 80°, which
                     // the quaternion attitude error flies cleanly (#124).
-                    max_angles_rad: Vec2::new(PI / 6.0, 85f32.to_radians()),
+                    max_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
                     max_rate_radps: Vec2::new(2.0, 2.0),
                 },
                 ..Default::default()
@@ -241,9 +241,6 @@ pub fn explora_vtol()
                 // The hover side's thrust curve, so a handoff keeps the motor commands
                 // continuous.
                 thrust_curve_exponent: 2.0,
-                // The back transition pitches up to π/2 − 20° = 70° on this side; sticks stay
-                // within the plane guidance's limits.
-                max_pitch_rad: 75f32.to_radians(),
                 // Guesses until plane flights measure them (#124).
                 trim_airspeed_mps: 14.0,
                 min_airspeed_mps: 9.0,

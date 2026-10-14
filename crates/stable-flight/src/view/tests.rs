@@ -160,6 +160,7 @@ fn matches_the_hover_level_wiring() {
         pitch_rad: -0.05,
         heading_rad: 0.4,
         thrust: 0.6,
+        transition: false,
     });
     // RealFlight hover-level states (roll, pitch, heading, rates), a few ticks each.
     let states = [

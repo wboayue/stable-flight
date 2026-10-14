@@ -38,7 +38,9 @@
 //!   the setpoint's (roll and pitch relative to the current heading), then the heading error,
 //!   weighted by the cosine of the tilt (PX4 `mc_att_control`, reduced attitude). Near level
 //!   that is the per-axis Euler difference; far over (a tailsitter's view in transition) it
-//!   stays defined and gives body rates.
+//!   stays defined and gives body rates. Roll and pitch saturate to
+//!   [`max_angles_rad`](AttitudeControllerConfig::max_angles_rad), pitch to ±π/2 for a
+//!   [`transition`](crate::AttitudeSetpoint::transition) ramp.
 //!
 //! A setpoint with zero thrust (or NaN) clears every loop's integral after the tick: on the
 //! ground at idle there's nothing for the I terms to hold, and they'd wind up against the
@@ -82,7 +84,8 @@ use crate::{
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_positive};
 use crate::math::{
-    assert_dt, attitude_error, saturate_rates, saturate_symmetric, saturate_unit, thrust_curve,
+    assert_dt, attitude_error, pitch_limit_rad, saturate_rates, saturate_symmetric, saturate_unit,
+    thrust_curve,
 };
 
 mod params;
@@ -358,23 +361,30 @@ impl CopterStabilizer {
     ) -> ControlOutput {
         // Roll/pitch saturate inside the attitude controller, thrust in the thrust curve (see
         // `crate::math`).
-        let max_angles_rad = self.config.attitude.max_angles_rad;
+        let max_angles_rad = self.max_angles_rad(setpoint);
         // `>` is false for NaN, which saturates to level.
         self.saturation.tilt = setpoint.roll_rad.abs() > max_angles_rad.x
             || setpoint.pitch_rad.abs() > max_angles_rad.y;
         let attitude = &estimated_state.attitude;
+        let saturate_tilt = |roll_rad: f32, pitch_rad: f32, heading_rad: f32| {
+            let tilt = AttitudeController::saturate_setpoint(
+                max_angles_rad,
+                Vec2::new(roll_rad, pitch_rad),
+            );
+            Vec3::new(tilt.x, tilt.y, heading_rad)
+        };
 
         // Roll, pitch, and heading setpoints; a probe on one of these loops may replace one.
         // A NaN heading gives a NaN yaw error, which the yaw loop holds on (no yaw rate).
         let mut desired =
-            self.saturate_tilt(setpoint.roll_rad, setpoint.pitch_rad, setpoint.heading_rad);
+            saturate_tilt(setpoint.roll_rad, setpoint.pitch_rad, setpoint.heading_rad);
         let error_for = |angles: &Vec3| attitude_error(attitude, angles.x, angles.y, angles.z);
         let mut error = error_for(&desired);
         let probed = desired;
         let replaced_rate = self.probe_attitude(dt, &mut desired, &error);
         // `!=` is true for a NaN heading too; recomputing is harmless.
         if desired != probed {
-            desired = self.saturate_tilt(desired.x, desired.y, desired.z);
+            desired = saturate_tilt(desired.x, desired.y, desired.z);
             error = error_for(&desired);
         }
 
@@ -412,13 +422,14 @@ impl CopterStabilizer {
         }
     }
 
-    /// Roll and pitch saturated to `max_angles_rad` (NaN as level), with `heading_rad`.
-    fn saturate_tilt(&self, roll_rad: f32, pitch_rad: f32, heading_rad: f32) -> Vec3 {
-        let tilt = AttitudeController::saturate_setpoint(
-            &self.config.attitude,
-            Vec2::new(roll_rad, pitch_rad),
-        );
-        Vec3::new(tilt.x, tilt.y, heading_rad)
+    /// The roll and pitch limits for `setpoint`: `max_angles_rad`, with pitch lifted to ±π/2
+    /// for a transition ramp.
+    fn max_angles_rad(&self, setpoint: &AttitudeSetpoint) -> Vec2 {
+        let limits_rad = self.config.attitude.max_angles_rad;
+        Vec2::new(
+            limits_rad.x,
+            pitch_limit_rad(limits_rad.y, setpoint.transition),
+        )
     }
 
     /// Tracks body rates in rad/s with linear `thrust`, bypassing the attitude controller.

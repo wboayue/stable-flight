@@ -152,6 +152,7 @@ fn commands_map_to_setpoints() {
                 pitch_rad: -0.25 * FRAC_PI_4,
                 heading_rad: wrap_angle(0.7),
                 thrust: 0.4,
+                transition: false,
             }),
         ),
         (
@@ -167,6 +168,7 @@ fn commands_map_to_setpoints() {
                 pitch_rad: -FRAC_PI_4,
                 heading_rad: wrap_angle(0.7),
                 thrust: 1.0,
+                transition: false,
             }),
         ),
         (
@@ -193,6 +195,7 @@ fn commands_map_to_setpoints() {
                 pitch_rad: -1.2,
                 heading_rad: -2.0,
                 thrust: 0.45,
+                transition: false,
             }),
         ),
         (
@@ -204,6 +207,7 @@ fn commands_map_to_setpoints() {
                 pitch_rad: 0.0,
                 heading_rad: wrap_angle(0.7),
                 thrust: crate::controllers::DEFAULT_HOVER_THRUST,
+                transition: false,
             }),
         ),
     ];

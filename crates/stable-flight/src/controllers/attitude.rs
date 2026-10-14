@@ -196,17 +196,14 @@ impl AttitudeController {
         desired_angles_rad: Vec2,
         estimated_angles_rad: Vec2,
     ) -> Vec2 {
-        Self::saturate_setpoint(config, desired_angles_rad) - estimated_angles_rad
+        Self::saturate_setpoint(config.max_angles_rad, desired_angles_rad) - estimated_angles_rad
     }
 
-    /// `desired_angles_rad` saturated to `max_angles_rad`, NaN as level.
-    pub(crate) fn saturate_setpoint(
-        config: &AttitudeControllerConfig,
-        desired_angles_rad: Vec2,
-    ) -> Vec2 {
+    /// `desired_angles_rad` saturated to `max_angles_rad` (roll, pitch), NaN as level.
+    pub(crate) fn saturate_setpoint(max_angles_rad: Vec2, desired_angles_rad: Vec2) -> Vec2 {
         Vec2::new(
-            saturate_symmetric(desired_angles_rad.x, config.max_angles_rad.x),
-            saturate_symmetric(desired_angles_rad.y, config.max_angles_rad.y),
+            saturate_symmetric(desired_angles_rad.x, max_angles_rad.x),
+            saturate_symmetric(desired_angles_rad.y, max_angles_rad.y),
         )
     }
 

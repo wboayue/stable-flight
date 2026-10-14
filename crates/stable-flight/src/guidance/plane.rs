@@ -269,6 +269,7 @@ impl PlaneGuidance {
             roll_rad,
             pitch_rad,
             thrust,
+            transition: false,
         }
     }
 
@@ -285,6 +286,7 @@ impl PlaneGuidance {
             roll_rad: saturate_unit(roll) * config.max_bank_rad,
             pitch_rad: pitch * pitch_limit,
             thrust: saturate_throttle(throttle),
+            transition: false,
         }
     }
 }
@@ -334,6 +336,7 @@ impl Guidance for PlaneGuidance {
                 roll_rad: command.roll_rad,
                 pitch_rad: command.pitch_rad,
                 thrust: saturate_throttle(command.thrust),
+                transition: false,
             }),
             ControlInput::AbsoluteRate(command) => {
                 let mut rates = BodyRateSetpoint::from(command);

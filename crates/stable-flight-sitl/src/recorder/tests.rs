@@ -40,6 +40,7 @@ fn attitude_setpoint() -> Setpoint {
         pitch_rad: -0.125,
         heading_rad: 1.5,
         thrust: 0.5,
+        transition: false,
     })
 }
 

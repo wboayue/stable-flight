@@ -1313,6 +1313,10 @@ pub struct PlaneSetpoint {
     pub pitch_rad: f32,
     /// Linear throttle, `0.0` to `1.0`, before the stabilizer's thrust curve.
     pub thrust: f32,
+    /// A tailsitter transition ramp: pitch saturates at ±π/2, not the stabilizer's limit, so
+    /// the ramp reaches its handover whatever the cruise limit (ArduPilot's tailsitter ramps
+    /// past its pitch limits, `tailsitter.cpp:957`).
+    pub transition: bool,
 }
 
 /// Attitude target for the [`Stabilizer`]; see [`Setpoint`].
@@ -1332,6 +1336,10 @@ pub struct AttitudeSetpoint {
     pub heading_rad: f32,
     /// Linear collective thrust, `0.0` to `1.0`, before the stabilizer's thrust curve.
     pub thrust: f32,
+    /// A tailsitter transition ramp: pitch saturates at ±π/2, not the stabilizer's maximum
+    /// tilt, so the ramp reaches its handover whatever the hover limit (ArduPilot's tailsitter
+    /// ramps past its angle limit, `tailsitter.cpp:871`).
+    pub transition: bool,
 }
 
 /// Body-rate target for the [`Stabilizer`]; see [`Setpoint`].

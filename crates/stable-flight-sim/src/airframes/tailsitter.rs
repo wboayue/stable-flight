@@ -102,8 +102,8 @@ pub fn tailsitter() -> TailsitterAirframe {
             roll_gains: gains(4.0, 0.0, 0.0),
             pitch_gains: gains(4.0, 0.0, 0.0),
             max_integral: 100.0,
-            // 30° of view roll; view pitch to 85° for the forward ramp.
-            max_angles_rad: Vec2::new(PI / 6.0, 85f32.to_radians()),
+            // 30° of view roll and pitch; the forward ramp flies past it.
+            max_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
             max_rate_radps: Vec2::new(2.0, 2.0),
         },
         ..CopterStabilizerConfig::default()
@@ -118,8 +118,6 @@ pub fn tailsitter() -> TailsitterAirframe {
             ..airplane.stabilizer.rate
         },
         thrust_curve_exponent,
-        // The back transition pitches up to π/2 − `back_done_rad` on this side (#388).
-        max_pitch_rad: 75f32.to_radians(),
         ..airplane.stabilizer
     };
     let mixer_config = MixerConfig::default();

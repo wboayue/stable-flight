@@ -4,6 +4,8 @@
 
 mod common;
 
+use core::f32::consts::FRAC_PI_2;
+
 use assert2::check;
 use stable_flight::{Command, ControlInput, FlightMode, ModeRefusal, Vec3};
 use stable_flight_sim::{Gust, Wind, airframes};
@@ -89,6 +91,17 @@ fn check_calm_hover(worst: &HoverDeviation, what: &str) {
     check!(worst.horizontal_m < CALM_HORIZONTAL_M, "{what}: {worst:?}");
     check!(worst.tilt_deg < CALM_ANGLE_DEG, "{what}: {worst:?}");
     check!(worst.heading_deg < CALM_ANGLE_DEG, "{what}: {worst:?}");
+}
+
+/// The airframe's hover tilt and plane pitch caps sit short of where the ramps hand over, so
+/// the transitions below complete only by flying past them (#388).
+#[test]
+fn ramps_hand_over_past_the_stabilizer_caps() {
+    let airframe = airframes::tailsitter();
+    let transition = airframe.guidance.transition;
+    let stabilizer = airframe.stabilizer;
+    check!(stabilizer.hover.attitude.max_angles_rad.y < transition.forward_done_rad);
+    check!(stabilizer.plane.max_pitch_rad < FRAC_PI_2 - transition.back_done_rad);
 }
 
 /// From a hover, `Plane` on the north line reaches plane flight within PX4's timeout and

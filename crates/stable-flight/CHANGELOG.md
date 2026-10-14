@@ -133,6 +133,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `AttitudeSetpoint` and `PlaneSetpoint` have a `transition` field (#388):
+  struct literals add `transition: false` or `..Default::default()`. A tailsitter ramp sets it,
+  and the stabilizer saturates its pitch at ±π/2 instead of `max_angles_rad` or
+  `max_pitch_rad` (ArduPilot ramps past its limits the same way).
 - **Breaking:** `AutotuneEvent::Lowered`. A search whose start is above its maximum (the
   relay's ceiling) lowers it to the relay's rule gains, P at most the ceiling, and commits
   them before anything else flies, so the vehicle settles on them and they stay if the stage
@@ -196,6 +200,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A tailsitter completes its transitions below its stabilizers' limits (#388): the back
+  ramp no longer stops at the plane pitch cap (30° by default) and flies to the 15 s timeout,
+  nor the forward ramp at the hover tilt cap.
 - Autotune's gain search tunes down from a too-high start (#361): the result is held to the
   baseline only when the baseline met the criterion (a too-high rate P settles fast and kept
   itself as `Kept(Worse)`), a start above the search's maximum flies no baseline, and a
