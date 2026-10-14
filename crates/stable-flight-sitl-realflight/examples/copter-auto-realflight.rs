@@ -1,7 +1,8 @@
 //! Flies a scripted figure-eight in RealFlight using a [`ScriptCommander`].
 //!
 //! The commander replays the waypoints in a CSV script (default `flights/figure_eight.csv`,
-//! regenerate it with `cargo run --bin generate_figure_eight`) once, then follows `--end`:
+//! which starts and ends over the QuadCopterX spawn point; regenerate it with
+//! `cargo run --bin generate_figure_eight`) once, then follows `--end`:
 //! `hold` (the default) hovers on the last waypoint until interrupted, `loop` flies the path
 //! again and again, and `land` lands on the last waypoint and disarms on touchdown.
 //!
@@ -140,7 +141,13 @@ fn main() {
         if !complete && flight_loop.commander().follower().is_complete() {
             complete = true;
             match args.end {
-                End::Land => info!("touched down: disarmed"),
+                End::Land => {
+                    let position_m = flight_loop.state().position_m;
+                    info!(
+                        "touched down at north {:.2} m, east {:.2} m: disarmed",
+                        position_m.x, position_m.y
+                    );
+                }
                 End::Hold => info!("reached the last waypoint: holding"),
                 End::Loop => {}
             }

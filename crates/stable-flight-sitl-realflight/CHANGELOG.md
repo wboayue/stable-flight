@@ -85,6 +85,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   angles, so `roll_rad`, `pitch_rad`, and `heading_rad` always agree with `attitude`. They match
   RealFlight's away from ±90° pitch; near it both are degenerate (a tailsitter's hover).
 
+### Fixed
+
+- `flights/figure_eight.csv` and `flights/explora_figure_eight.csv` start and end over their
+  airframe's spawn point, so `--end land` touches down where the flight took off (#345).
+
 ## [0.1.0] - 2026-10-10
 
 First release.

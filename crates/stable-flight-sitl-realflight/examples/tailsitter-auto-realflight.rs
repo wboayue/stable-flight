@@ -16,8 +16,9 @@
 //! [`TailsitterStabilizer`]: stable_flight::stabilizers::vtol::TailsitterStabilizer
 //!
 //! The commander replays the waypoints in a CSV script (default
-//! `flights/explora_figure_eight.csv`, small and slow for this airframe and centered on its
-//! spawn point; `flights/explora_hover.csv` holds 5 m over it) once, then follows `--end`:
+//! `flights/explora_figure_eight.csv`, small and slow for this airframe, starting and ending
+//! over its spawn point; `flights/explora_hover.csv` holds 5 m over it) once, then follows
+//! `--end`:
 //! `hold` (the default) hovers on the last waypoint until interrupted, `loop` flies the path
 //! again and again, and `land` lands on the last waypoint and disarms on touchdown.
 //!
@@ -174,7 +175,13 @@ fn main() {
         if !complete && flight_loop.commander().follower().is_complete() {
             complete = true;
             match args.end {
-                End::Land => info!("touched down: disarmed"),
+                End::Land => {
+                    let position_m = flight_loop.state().position_m;
+                    info!(
+                        "touched down at north {:.2} m, east {:.2} m: disarmed",
+                        position_m.x, position_m.y
+                    );
+                }
                 End::Hold => info!("reached the last waypoint: holding"),
                 End::Loop => {}
             }
