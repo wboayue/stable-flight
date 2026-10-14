@@ -1,7 +1,8 @@
 //! Flies a scripted figure-eight in RealFlight using a [`ScriptCommander`].
 //!
 //! The commander replays the waypoints in a CSV script (default `flights/figure_eight.csv`,
-//! regenerate it with `cargo run --bin generate_figure_eight`) once, then follows `--end`:
+//! which starts and ends over the QuadCopterX spawn point; regenerate it with
+//! `cargo run --bin generate_figure_eight`) once, then follows `--end`:
 //! `hold` (the default) hovers on the last waypoint until interrupted, `loop` flies the path
 //! again and again, and `land` lands on the last waypoint and disarms on touchdown.
 //!

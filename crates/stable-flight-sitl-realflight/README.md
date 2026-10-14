@@ -82,10 +82,11 @@ cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight --
 cargo run -p stable-flight-sitl-realflight --example tailsitter-manual-realflight -- --record hover.csv
 
 # Scripted figure-eight (script path is the first argument): flies it once, then hovers; --end loop repeats it, --end land lands on the last waypoint and disarms
+# (flights/figure_eight.csv starts and ends over the QuadCopterX spawn point)
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv
 
 # The same for the eXplora tailsitter, in the copter regime: a small, slow figure-eight
-# centered on its spawn point by default (flights/explora_figure_eight.csv); flights/explora_hover.csv
+# starting and ending over its spawn point by default (flights/explora_figure_eight.csv); flights/explora_hover.csv
 # holds 5 m over it. Or: just fly-tailsitter-auto
 cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- --end land
 

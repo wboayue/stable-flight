@@ -16,8 +16,9 @@
 //! [`TailsitterStabilizer`]: stable_flight::stabilizers::vtol::TailsitterStabilizer
 //!
 //! The commander replays the waypoints in a CSV script (default
-//! `flights/explora_figure_eight.csv`, small and slow for this airframe and centered on its
-//! spawn point; `flights/explora_hover.csv` holds 5 m over it) once, then follows `--end`:
+//! `flights/explora_figure_eight.csv`, small and slow for this airframe, starting and ending
+//! over its spawn point; `flights/explora_hover.csv` holds 5 m over it) once, then follows
+//! `--end`:
 //! `hold` (the default) hovers on the last waypoint until interrupted, `loop` flies the path
 //! again and again, and `land` lands on the last waypoint and disarms on touchdown.
 //!
