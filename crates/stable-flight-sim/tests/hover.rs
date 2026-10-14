@@ -7,7 +7,7 @@ use stable_flight::commanders::waypoint::DEFAULT_ALTITUDE_ACCEPTANCE_M;
 use stable_flight::{Vec2, Vec3};
 use stable_flight_sim::{Gust, Wind, airframes};
 
-use common::{HOVER_ALTITUDE_M as ALTITUDE_M, HOVER_SETTLE_S as SETTLE_S, fly};
+use common::{HOVER_ALTITUDE_M as ALTITUDE_M, HOVER_SETTLE_S as SETTLE_S, Plant, fly};
 
 /// Largest deviations from the hover point seen while holding.
 #[derive(Debug, Default)]
@@ -25,7 +25,7 @@ struct Deviation {
 /// Takes off to the hover point in `wind`, settles, then holds for `hold_s`, returning the
 /// largest deviations during the hold.
 fn hover(wind: Wind, hold_s: f32) -> Deviation {
-    let mut flight_loop = common::hover(airframes::quad_x(), wind);
+    let mut flight_loop = common::hover(&Plant::in_wind(airframes::quad_x(), wind));
     check!(flight_loop.commander().is_complete());
 
     let horizontal = |position_m: Vec3| Vec2::new(position_m.x, position_m.y);

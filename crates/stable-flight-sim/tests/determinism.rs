@@ -5,11 +5,10 @@ mod common;
 use assert2::check;
 use stable_flight::Vec3;
 use stable_flight::commanders::{RouteEnd, WaypointFollower};
-use stable_flight::testing::RecordingTelemetry;
 use stable_flight_sim::airframes;
-use stable_flight_sim::{Gust, GyroNoise, Perturbations, SimVehicle, Vibration, Wind};
+use stable_flight_sim::{Gust, GyroNoise, Perturbations, Vibration, Wind};
 
-use common::{fly, pipeline_on, waypoint};
+use common::{Plant, fly, sim_loop_with, waypoint};
 
 /// A windy route with a gust under `perturbations`; every tick's state.
 fn flight(perturbations: Perturbations) -> Vec<stable_flight::VehicleState> {
@@ -25,14 +24,12 @@ fn flight(perturbations: Perturbations) -> Vec<stable_flight::VehicleState> {
             peak_mps: Vec3::new(0.0, 4.0, -1.0),
         }),
     };
-    let airframe = airframes::quad_x();
-    let vehicle = SimVehicle::new(airframe.model, &airframe.mixer)
-        .expect("valid airframe")
-        .with_wind(wind)
-        .with_perturbations(perturbations)
-        .expect("valid perturbations");
-    let telemetry = RecordingTelemetry::<{ common::RECORDED }>::new();
-    let mut flight_loop = pipeline_on(airframe, vehicle, follower, telemetry);
+    let plant = Plant {
+        airframe: airframes::quad_x(),
+        wind,
+        perturbations,
+    };
+    let mut flight_loop = sim_loop_with(&plant, follower);
     let mut states = Vec::new();
     fly(&mut flight_loop, 20.0, |flight_loop, _| {
         states.push(flight_loop.state().clone());

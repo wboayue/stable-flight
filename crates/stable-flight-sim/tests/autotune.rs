@@ -4,6 +4,9 @@
 
 mod common;
 
+use common::Plant;
+use common::spec::TUNED;
+
 use assert2::check;
 use stable_flight::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use stable_flight::tuning::autotune::{AutotuneEvent, Outcome, StagePlan};
@@ -27,14 +30,6 @@ const AGREEMENT: f32 = 0.25;
 
 /// Simulated seconds an autotune may run (about 460 s from `quad_x`'s gains).
 const TIMEOUT_S: f32 = 1200.0;
-
-/// The loops `copter_search` tunes, by their P.
-const TUNED: [TunedLoop; 4] = [
-    TunedLoop::RollRate,
-    TunedLoop::PitchRate,
-    TunedLoop::Roll,
-    TunedLoop::Pitch,
-];
 
 /// `quad_x` with rate P scaled by `rate_p_scale` and angle P at [`START_ANGLE_P`].
 fn detuned(rate_p_scale: f32) -> Airframe {
@@ -62,7 +57,7 @@ fn tuned_p(config: &CopterStabilizerConfig) -> [f32; 4] {
 /// returns each tuned loop's P.
 fn autotune_from(rate_p_scale: f32) -> [f32; 4] {
     let run = common::autotune(
-        detuned(rate_p_scale),
+        &Plant::clean(detuned(rate_p_scale)),
         &StagePlan::copter_search(),
         TIMEOUT_S,
     );
