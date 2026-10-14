@@ -3,12 +3,14 @@
 use stable_flight::Vec3;
 use thiserror::Error;
 
+use crate::motors::MotorLayout;
+
 #[cfg(test)]
 mod tests;
 
 /// Physical parameters of a simulated multirotor.
 ///
-/// Geometry isn't listed here: [`SimVehicle`](crate::SimVehicle) takes each motor's torque
+/// Geometry isn't listed here: [`SimCopter`](crate::SimCopter) takes each motor's torque
 /// directions from the mixer's rows, so a row factor of 1 sits [`moment_arm_m`](Self::moment_arm_m)
 /// from the roll or pitch axis and a yaw factor of ±1 gives
 /// [`yaw_torque_per_thrust_m`](Self::yaw_torque_per_thrust_m) of reaction torque.
@@ -50,8 +52,9 @@ pub struct MultirotorModel {
     pub max_step_s: f32,
 }
 
-/// Why a [`MultirotorModel`], [`Perturbations`](crate::Perturbations), or a
-/// [`SimVehicle`](crate::SimVehicle)'s mixer was rejected.
+/// Why a [`MultirotorModel`], [`FixedWingModel`](crate::FixedWingModel),
+/// [`Perturbations`](crate::Perturbations), or a [`SimCopter`](crate::SimCopter)'s mixer was
+/// rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum ModelError {
@@ -64,8 +67,8 @@ pub enum ModelError {
     /// A parameter that must be finite isn't.
     #[error("{0} must be finite")]
     NotFinite(&'static str),
-    /// The mixer drives a servo; the simulator models motors only.
-    #[error("the mixer drives servo {0}, which the simulator doesn't model")]
+    /// The mixer drives a servo, which the multirotor doesn't model.
+    #[error("the mixer drives servo {0}, which the multirotor doesn't model")]
     Servo(u8),
     /// A motor slot's [`Perturbations::motor_thrust_scale`](crate::Perturbations::motor_thrust_scale)
     /// isn't positive and finite.
@@ -78,6 +81,15 @@ pub enum ModelError {
 }
 
 impl MultirotorModel {
+    /// The motors' torque arms and strength.
+    pub(crate) fn motor_layout(&self) -> MotorLayout {
+        MotorLayout {
+            moment_arm_m: self.moment_arm_m,
+            yaw_torque_per_thrust_m: self.yaw_torque_per_thrust_m,
+            max_thrust_n: self.max_thrust_n,
+        }
+    }
+
     /// Checks every parameter's range.
     ///
     /// # Errors
@@ -128,6 +140,11 @@ pub(crate) fn check_positive(params: &[(&'static str, f32)]) -> Result<(), Model
 pub(crate) fn check_non_negative(params: &[(&'static str, f32)]) -> Result<(), ModelError> {
     first_failing(params, |value| value >= 0.0)
         .map_or(Ok(()), |name| Err(ModelError::Negative(name)))
+}
+
+/// [`ModelError::NotFinite`] naming the first of `params` that isn't finite.
+pub(crate) fn check_finite(params: &[(&'static str, f32)]) -> Result<(), ModelError> {
+    first_failing(params, |_| true).map_or(Ok(()), |name| Err(ModelError::NotFinite(name)))
 }
 
 /// The name of the first of `params` that isn't finite or fails `in_range`.

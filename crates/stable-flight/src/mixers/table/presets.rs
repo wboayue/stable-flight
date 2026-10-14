@@ -86,6 +86,13 @@ const TAILSITTER_2P: [MixRow; 4] = [
     MixRow::servo(1, 1.0, 1.0, 0.0),
 ];
 
+const PLANE: [MixRow; 4] = [
+    MixRow::motor(0, 0.0, 0.0, 0.0),
+    MixRow::servo(0, 1.0, 0.0, 0.0),
+    MixRow::servo(1, 0.0, 1.0, 0.0),
+    MixRow::servo(2, 0.0, 0.0, 1.0),
+];
+
 const BI: [MixRow; 4] = [
     MixRow::motor(0, 1.0, 0.0, 0.0),
     MixRow::motor(1, -1.0, 0.0, 0.0),
@@ -174,6 +181,24 @@ impl TableMixer<4> {
     /// scales its moments with airspeed).
     pub fn tailsitter_2p() -> Self {
         Self::from_valid(TAILSITTER_2P, MixerConfig::default())
+    }
+
+    /// Conventional airplane: one tractor motor and three surfaces, each carrying one moment.
+    /// Seen from above (airplane FRD: x the nose, z the belly):
+    ///
+    /// ```text
+    ///            0
+    ///   servo 0 -+- servo 0     ailerons
+    ///            |
+    ///   servo 1 -+- servo 1     elevator, servo 2 rudder
+    /// ```
+    ///
+    /// Each positive servo deflects its surface the way that makes a positive moment: servo 0
+    /// (ailerons) rolls right, servo 1 (elevator, trailing edge up) raises the nose, servo 2
+    /// (rudder, trailing edge right) turns the nose right. The motor carries thrust only, so
+    /// full throttle drives it to the mixer's `thrust_factor` (0.9 by default).
+    pub fn plane() -> Self {
+        Self::from_valid(PLANE, MixerConfig::default())
     }
 }
 

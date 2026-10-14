@@ -1,9 +1,10 @@
-//! Wiring shared by the closed-loop tests: an airframe's pipeline on a `SimVehicle` (a
+//! Wiring shared by the closed-loop tests: an airframe's pipeline on a `SimCopter` (a
 //! [`Plant`]), flown in simulated time, and the step-response [`spec`].
 
 // Each test binary compiles this module and uses only part of it.
 #![allow(dead_code)]
 
+pub mod plane;
 pub mod spec;
 
 use std::time::Duration;
@@ -20,10 +21,11 @@ use stable_flight::tuning::autotune::{
 };
 use stable_flight::tuning::{ProbeConfig, ProbeStatus};
 use stable_flight::{
-    Commander, Configurable, FlightLoop, TelemetryPublisher, Vec2, WaypointCommand,
+    Commander, Configurable, FlightLoop, Guidance, Mixer, Stabilizer, TelemetryPublisher, Vec2,
+    Vehicle, WaypointCommand,
 };
 use stable_flight_sim::airframes::{self, Airframe};
-use stable_flight_sim::{Perturbations, SimVehicle, Wind};
+use stable_flight_sim::{Perturbations, SimCopter, Wind};
 
 /// Loop rate of the RealFlight examples.
 pub const TICK: Duration = Duration::from_millis(4);
@@ -31,9 +33,9 @@ pub const TICK: Duration = Duration::from_millis(4);
 /// Ticks of telemetry kept.
 pub const RECORDED: usize = 64;
 
-/// The copter pipeline on a [`SimVehicle`], publishing to `T`.
+/// The copter pipeline on a [`SimCopter`], publishing to `T`.
 pub type Pipeline<C, T> =
-    FlightLoop<C, SimVehicle, CopterGuidance, CopterStabilizer, TableMixer<4>, T>;
+    FlightLoop<C, SimCopter, CopterGuidance, CopterStabilizer, TableMixer<4>, T>;
 
 /// The pipeline recording its last [`RECORDED`] ticks.
 pub type SimLoop<C> = Pipeline<C, RecordingTelemetry<RECORDED>>;
@@ -75,8 +77,8 @@ impl Plant {
     }
 
     /// The vehicle, at rest on the ground at the origin.
-    pub fn vehicle(&self) -> SimVehicle {
-        SimVehicle::new(self.airframe.model, &self.airframe.mixer)
+    pub fn vehicle(&self) -> SimCopter {
+        SimCopter::new(self.airframe.model, &self.airframe.mixer)
             .expect("valid airframe")
             .with_wind(self.wind)
             .with_perturbations(self.perturbations)
@@ -124,13 +126,20 @@ pub fn seconds(ticks: usize) -> f32 {
     ticks as f32 * TICK.as_secs_f32()
 }
 
-/// Steps `flight_loop` for `seconds` of simulated time, calling `each` after every tick with
-/// the seconds flown so far in this call.
-pub fn fly<C: Commander>(
-    flight_loop: &mut SimLoop<C>,
+/// Steps `flight_loop` (copter or plane) for `seconds` of simulated time, calling `each` after
+/// every tick with the seconds flown so far in this call.
+pub fn fly<C, V, G, S, M, T>(
+    flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
     seconds: f32,
-    mut each: impl FnMut(&SimLoop<C>, f32),
-) {
+    mut each: impl FnMut(&FlightLoop<C, V, G, S, M, T>, f32),
+) where
+    C: Commander,
+    V: Vehicle,
+    G: Guidance,
+    S: Stabilizer,
+    M: Mixer,
+    T: TelemetryPublisher,
+{
     for tick in 1..=ticks(seconds) {
         flight_loop.step(TICK);
         each(flight_loop, self::seconds(tick));

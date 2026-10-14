@@ -213,6 +213,11 @@ impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T> {
         &self.commander
     }
 
+    /// The vehicle, e.g. to read a simulator's internals between ticks.
+    pub fn vehicle(&self) -> &V {
+        &self.vehicle
+    }
+
     /// The guidance, e.g. to read its config.
     pub fn guidance(&self) -> &G {
         &self.guidance

@@ -13,16 +13,19 @@ use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 
 use crate::model::MultirotorModel;
 
+mod plane;
 #[cfg(test)]
 mod tests;
 
-/// A simulated airframe: its physics, the mixer that lays out its motors, and the guidance and
-/// stabilizer configs tuned for it.
+pub use plane::{PlaneAirframe, plane};
+
+/// A simulated multirotor: its physics, the mixer that lays out its motors, and the guidance
+/// and stabilizer configs tuned for it.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Airframe {
     /// Physical parameters.
     pub model: MultirotorModel,
-    /// The mixer; [`SimVehicle`](crate::SimVehicle) takes the motor layout from its rows.
+    /// The mixer; [`SimCopter`](crate::SimCopter) takes the motor layout from its rows.
     pub mixer: TableMixer<4>,
     /// Guidance (position-loop) configuration.
     pub guidance: CopterGuidanceConfig,
@@ -45,10 +48,10 @@ pub struct Airframe {
 /// use stable_flight::guidance::copter::CopterGuidance;
 /// use stable_flight::stabilizers::copter::CopterStabilizer;
 /// use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
-/// use stable_flight_sim::{SimVehicle, airframes};
+/// use stable_flight_sim::{SimCopter, airframes};
 ///
 /// let airframe = airframes::quad_x();
-/// let vehicle = SimVehicle::new(airframe.model, &airframe.mixer).expect("valid airframe");
+/// let vehicle = SimCopter::new(airframe.model, &airframe.mixer).expect("valid airframe");
 /// let flight_loop = FlightLoop::new(
 ///     ConstantCommander::default(),
 ///     vehicle,

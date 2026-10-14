@@ -1,4 +1,5 @@
-//! The same flight twice gives the same states, bit for bit, with or without perturbations.
+//! The same flight twice gives the same states, bit for bit, with or without perturbations, on
+//! the copter and the airplane.
 
 mod common;
 
@@ -8,7 +9,20 @@ use stable_flight::commanders::{RouteEnd, WaypointFollower};
 use stable_flight_sim::airframes;
 use stable_flight_sim::{Gust, GyroNoise, Perturbations, Vibration, Wind};
 
+use common::plane::{PlanePlant, north_line, plane_loop};
 use common::{Plant, fly, sim_loop_with, waypoint};
+
+/// A steady wind with a gust at 6 s.
+fn gusty() -> Wind {
+    Wind {
+        steady_mps: Vec3::new(-2.0, 1.0, 0.0),
+        gust: Some(Gust {
+            start_s: 6.0,
+            duration_s: 1.5,
+            peak_mps: Vec3::new(0.0, 4.0, -1.0),
+        }),
+    }
+}
 
 /// A windy route with a gust under `perturbations`; every tick's state.
 fn flight(perturbations: Perturbations) -> Vec<stable_flight::VehicleState> {
@@ -16,20 +30,26 @@ fn flight(perturbations: Perturbations) -> Vec<stable_flight::VehicleState> {
     let follower = WaypointFollower::new(route)
         .expect("waypoints")
         .with_route_end(RouteEnd::Land);
-    let wind = Wind {
-        steady_mps: Vec3::new(-2.0, 1.0, 0.0),
-        gust: Some(Gust {
-            start_s: 6.0,
-            duration_s: 1.5,
-            peak_mps: Vec3::new(0.0, 4.0, -1.0),
-        }),
-    };
     let plant = Plant {
         airframe: airframes::quad_x(),
-        wind,
+        wind: gusty(),
         perturbations,
     };
     let mut flight_loop = sim_loop_with(&plant, follower);
+    let mut states = Vec::new();
+    fly(&mut flight_loop, 20.0, |flight_loop, _| {
+        states.push(flight_loop.state().clone());
+    });
+    states
+}
+
+/// The airplane on its line through a crosswind and a gust; every tick's state.
+fn plane_flight() -> Vec<stable_flight::VehicleState> {
+    let plant = PlanePlant {
+        wind: gusty(),
+        ..PlanePlant::clean(airframes::plane())
+    };
+    let mut flight_loop = plane_loop(&plant, north_line(100.0, 15.0));
     let mut states = Vec::new();
     fly(&mut flight_loop, 20.0, |flight_loop, _| {
         states.push(flight_loop.state().clone());
@@ -69,4 +89,11 @@ fn repeats_bit_for_bit_with_perturbations() {
     check!(first.len() == 5000);
     check!(first == flight(all_on(7)));
     check!(first != flight(all_on(8)));
+}
+
+#[test]
+fn plane_repeats_bit_for_bit() {
+    let first = plane_flight();
+    check!(first.len() == 5000);
+    check!(first == plane_flight());
 }

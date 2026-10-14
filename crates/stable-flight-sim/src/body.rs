@@ -3,8 +3,6 @@
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{GRAVITY, Vec3};
 
-use crate::model::MultirotorModel;
-
 #[cfg(test)]
 mod tests;
 
@@ -36,38 +34,47 @@ impl Default for Body {
     }
 }
 
-/// The forces and torques acting on the body during one integration step.
+/// A body's mass and principal moments of inertia.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct MassProperties {
+    /// Total mass, in kg.
+    pub mass_kg: f32,
+    /// Principal moments of inertia about the FRD body axes (roll, pitch, yaw), in kg·m².
+    pub inertia_kgm2: Vec3,
+}
+
+/// The forces and torques acting on the body during one integration step, gravity aside.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Loads {
-    /// Total motor thrust along body −z, in N.
-    pub thrust_n: f32,
-    /// Motor torque on the FRD body axes, in N·m.
+    /// Force (north, east, down), in N: thrust, drag, and lift.
+    pub force_ned_n: Vec3,
+    /// Torque on the FRD body axes, in N·m.
     pub torque_nm: Vec3,
-    /// Air-mass velocity (north, east, down), in m/s.
-    pub wind_ned_mps: Vec3,
+    /// Rotational damping torque opposing the body rates, in N·m: subtracted from the torque.
+    pub damping_nm: Vec3,
 }
 
 impl Body {
-    /// Advances `h` seconds under `loads`, gravity, linear drag on the air-relative velocity,
-    /// and rotational damping, with semi-implicit Euler: velocities first, then position and
-    /// attitude from the new velocities. Rotation follows Euler's equations for a diagonal
-    /// inertia, gyroscopic term included.
-    pub(crate) fn step(&mut self, model: &MultirotorModel, loads: &Loads, h: f32) {
-        let thrust_ned_n = self.attitude * Vec3::new(0.0, 0.0, -loads.thrust_n);
-        let air_velocity_mps = self.velocity_ned_mps - loads.wind_ned_mps;
-        let force_n = thrust_ned_n - air_velocity_mps * model.drag_n_per_mps;
-        let acceleration_mps2 = force_n / model.mass_kg + Vec3::new(0.0, 0.0, GRAVITY);
+    /// Advances `h` seconds under `loads` and gravity with semi-implicit Euler: velocities
+    /// first, then position and attitude from the new velocities. Rotation follows Euler's
+    /// equations for a diagonal inertia, gyroscopic term included.
+    pub(crate) fn step(&mut self, mass: &MassProperties, loads: &Loads, h: f32) {
+        let acceleration_mps2 = loads.force_ned_n / mass.mass_kg + Vec3::new(0.0, 0.0, GRAVITY);
         self.velocity_ned_mps += acceleration_mps2 * h;
         self.position_ned_m += self.velocity_ned_mps * h;
 
         let rates = self.angular_velocity_radps;
-        let momentum = model.inertia_kgm2.component_mul(&rates);
-        let damping_nm = model.angular_damping_nm_per_radps.component_mul(&rates);
-        let net_torque_nm = loads.torque_nm - rates.cross(&momentum) - damping_nm;
-        self.angular_velocity_radps += net_torque_nm.component_div(&model.inertia_kgm2) * h;
+        let momentum = mass.inertia_kgm2.component_mul(&rates);
+        let net_torque_nm = loads.torque_nm - rates.cross(&momentum) - loads.damping_nm;
+        self.angular_velocity_radps += net_torque_nm.component_div(&mass.inertia_kgm2) * h;
         // Body rates turn the body frame, so the increment composes on the right.
         self.attitude *= UnitQuaternion::from_scaled_axis(self.angular_velocity_radps * h);
         self.attitude.renormalize_fast();
+    }
+
+    /// The body's velocity through the air (north, east, down), in m/s, in `wind_ned_mps`.
+    pub(crate) fn air_relative_velocity_ned_mps(&self, wind_ned_mps: Vec3) -> Vec3 {
+        self.velocity_ned_mps - wind_ned_mps
     }
 }
 
