@@ -42,9 +42,10 @@
 //!   [`max_angles_rad`](AttitudeControllerConfig::max_angles_rad), pitch to ±π/2 for a
 //!   [`transition`](crate::AttitudeSetpoint::transition) ramp.
 //!
-//! A setpoint with zero thrust (or NaN) clears every loop's integral after the tick: on the
-//! ground at idle there's nothing for the I terms to hold, and they'd wind up against the
-//! resting attitude.
+//! An [`idle`](Setpoint::idle) setpoint (guidance's ground idle) clears every loop's integral
+//! after the tick: on the ground there's nothing for the I terms to hold, and they'd wind up
+//! against the resting attitude. Zero thrust alone doesn't: in the air it is the altitude loop
+//! shedding a climb, and the I terms hold the trim.
 //!
 //! # Tuning
 //!
@@ -300,12 +301,10 @@ impl Stabilizer for CopterStabilizer {
             Setpoint::Plane(_) | Setpoint::PlaneRate(_) => ControlOutput::default(),
         };
 
-        // At zero thrust (on the ground, or cut) the I terms can't act on anything and would
-        // wind up against a resting attitude, to kick at liftoff; clear them every such tick,
-        // as ArduPilot does at zero throttle (`ArduCopter/mode_stabilize.cpp`, GROUND_IDLE).
-        // A NaN thrust counts as none (input policy).
-        let thrust = setpoint.thrust();
-        if thrust <= 0.0 || thrust.is_nan() {
+        // At ground idle the I terms can't act on anything and would wind up against a
+        // resting attitude, to kick at liftoff; clear them every such tick, as ArduPilot does
+        // at GROUND_IDLE (`ArduCopter/mode_stabilize.cpp:19-40`).
+        if setpoint.idle() {
             self.body_rate.clear_integral();
             self.attitude.clear_integral();
             self.yaw.clear_integral();

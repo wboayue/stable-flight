@@ -41,6 +41,7 @@ fn attitude_setpoint() -> Setpoint {
         heading_rad: 1.5,
         thrust: 0.5,
         transition: false,
+        idle: false,
     })
 }
 
@@ -165,6 +166,7 @@ fn tailsitter_columns_name_the_setpoint_and_mode() {
         pitch_radps: 2.0,
         yaw_radps: 3.0,
         thrust: 0.5,
+        idle: false,
     };
     // (setpoint, flight mode, expected (sp_kind, sp_roll, sp_p, mode))
     let cases = [

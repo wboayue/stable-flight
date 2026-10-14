@@ -43,6 +43,7 @@ fn worst_case_record() -> Record {
             heading_rad: 0.3,
             thrust: 0.4,
             transition: false,
+            idle: false,
         }),
         state: sample_state(),
         control: ControlOutput {
@@ -151,6 +152,7 @@ fn every_downlink_variant_round_trips() {
         pitch_rate: 0.2,
         yaw_rate: 0.3,
         thrust: 0.4,
+        idle: false,
     });
     let cases = [
         Downlink::Heartbeat {
@@ -182,6 +184,7 @@ fn every_downlink_variant_round_trips() {
                 pitch_radps: 0.2,
                 yaw_radps: 0.1,
                 thrust: 0.6,
+                idle: false,
             }),
             ..record.clone()
         }),

@@ -173,6 +173,7 @@ where
         } else {
             let setpoint = Setpoint::Attitude(AttitudeSetpoint {
                 heading_rad: self.state.heading_rad,
+                idle: true,
                 ..Default::default()
             });
             (

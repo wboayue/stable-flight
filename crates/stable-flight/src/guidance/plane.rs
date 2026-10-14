@@ -331,6 +331,7 @@ impl Guidance for PlaneGuidance {
                 pitch_radps: saturate_unit(sticks.pitch_rate) * config.max_rate_radps.y,
                 yaw_radps: saturate_unit(sticks.yaw_rate) * config.max_rate_radps.z,
                 thrust: saturate_throttle(sticks.throttle),
+                idle: false,
             }),
             ControlInput::AbsoluteAttitude(command) => Setpoint::Plane(PlaneSetpoint {
                 roll_rad: command.roll_rad,

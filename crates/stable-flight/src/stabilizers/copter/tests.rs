@@ -1,4 +1,4 @@
-use crate::{RateSetpoint, Vec2, Vec3};
+use crate::{BodyRateSetpoint, RateSetpoint, Vec2, Vec3};
 use assert2::check;
 use nalgebra::UnitQuaternion;
 
@@ -126,6 +126,7 @@ fn zero_rate_setpoint_at_rest_yields_no_output() {
         pitch_rate: 0.0,
         yaw_rate: 0.0,
         thrust: 0.0,
+        idle: false,
     });
     let state = VehicleState::default();
 
@@ -269,6 +270,7 @@ fn nan_rate_estimate_zeroes_only_its_axis() {
             pitch_rate: 0.5,
             yaw_rate: 0.5,
             thrust: 0.5,
+            idle: false,
         }),
         &state,
     );
@@ -298,6 +300,7 @@ fn non_finite_attitude_quaternion_yields_zero_moments() {
         pitch_rad: -0.2,
         heading_rad: 1.0,
         transition: false,
+        idle: false,
     });
     for [w, x, y, z] in cases {
         let state = VehicleState {
@@ -426,6 +429,7 @@ fn rate_setpoint_scales_each_axis_by_its_full_scale_rate() {
         pitch_rate: 1.0,
         yaw_rate: 1.0,
         thrust: 0.5,
+        idle: false,
     });
 
     let output =
@@ -576,6 +580,7 @@ fn prime_clears_integrals_and_derivative_history() {
             pitch_rate: -0.5,
             yaw_rate: 0.5,
             thrust: 0.5,
+            idle: false,
         }),
     ];
     for setpoint in setpoints {
@@ -701,35 +706,52 @@ fn reports_what_the_last_stabilize_clipped() {
     }
 }
 
-/// Resting 3° off level (the yaw rate loop on a steady 0.1 rad/s too), a setpoint with thrust
-/// lets the I terms build the moments up over time; one at zero or NaN thrust (on the ground
-/// at idle) clears them every tick, so the moments stay at what P alone gives.
+/// Resting 3° off level (the yaw rate loop on a steady 0.1 rad/s too), a flying setpoint lets
+/// the I terms build the moments up over time, even at zero thrust (the altitude loop shedding a
+/// climb, #326); an idle one (ground idle, whatever its thrust) clears them every tick, so the
+/// moments stay at what P alone gives.
 #[test]
-fn zero_thrust_keeps_the_integrals_from_winding_up() {
+fn idle_setpoint_keeps_the_integrals_from_winding_up() {
     let resting = VehicleState {
         attitude: UnitQuaternion::from_euler_angles(0.0, 3.0_f32.to_radians(), 0.0),
         ..Default::default()
     };
-    let attitude = |thrust| {
+    let attitude = |thrust, idle| {
         Setpoint::Attitude(AttitudeSetpoint {
             thrust,
+            idle,
             ..Default::default()
         })
     };
-    let rate = |thrust| {
+    let rate = |thrust, idle| {
         Setpoint::Rate(RateSetpoint {
             yaw_rate: 0.1,
             thrust,
+            idle,
+            ..Default::default()
+        })
+    };
+    let body_rate = |thrust, idle| {
+        Setpoint::BodyRate(BodyRateSetpoint {
+            yaw_radps: 0.1,
+            thrust,
+            idle,
             ..Default::default()
         })
     };
     // (setpoint, moment axis, integrals build)
     let cases = [
-        (attitude(0.5), 1, true),
-        (attitude(0.0), 1, false),
-        (attitude(f32::NAN), 1, false),
-        (rate(0.5), 2, true),
-        (rate(0.0), 2, false),
+        (attitude(0.5, false), 1, true),
+        (attitude(0.0, false), 1, true),
+        (attitude(f32::NAN, false), 1, true),
+        (attitude(0.03, true), 1, false),
+        (attitude(0.0, true), 1, false),
+        (attitude(f32::NAN, true), 1, false),
+        (rate(0.5, false), 2, true),
+        (rate(0.0, false), 2, true),
+        (rate(0.03, true), 2, false),
+        (body_rate(0.0, false), 2, true),
+        (body_rate(0.03, true), 2, false),
     ];
     for (setpoint, axis, builds) in cases {
         let mut stabilizer = setup_controller();
@@ -742,6 +764,47 @@ fn zero_thrust_keeps_the_integrals_from_winding_up() {
         let grew = (last - first).abs() > 0.01;
         assert!(grew == builds, "{setpoint:?}: {first} → {last}");
     }
+}
+
+/// Shooting up past a waypoint, guidance's altitude loop asks for zero thrust in the air; the
+/// setpoint isn't idle, so the yaw trim the rate loop's I term holds survives it (#326).
+#[test]
+fn zero_thrust_in_flight_keeps_the_yaw_trim() {
+    use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+    use crate::{ControlInput, FlightRegime, Guidance, WaypointCommand};
+
+    let shooting_up = VehicleState {
+        velocity_mps: Vec3::new(0.0, 0.0, 30.0),
+        ..Default::default()
+    };
+    let mut stabilizer = setup_controller();
+    stabilizer.prime(&shooting_up);
+    // A yaw rate the vehicle doesn't reach builds a yaw trim in the rate loop's I term.
+    let yawing = Setpoint::Rate(RateSetpoint {
+        yaw_rate: 0.1,
+        thrust: 0.5,
+        ..Default::default()
+    });
+    for _ in 0..500 {
+        stabilizer.stabilize(0.004, &yawing, &shooting_up);
+    }
+    let trim = stabilizer
+        .body_rate
+        .integral_term(&stabilizer.config.body_rate, 2);
+    assert!(trim > 0.01, "trim {trim}");
+
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+    guidance.prime(&shooting_up);
+    let level_off = ControlInput::Waypoint(WaypointCommand::default());
+    let setpoint = guidance.guide(0.004, FlightRegime::Copter, &level_off, &shooting_up);
+    assert!(setpoint.thrust() == 0.0 && !setpoint.idle(), "{setpoint:?}");
+
+    stabilizer.stabilize(0.004, &setpoint, &shooting_up);
+    let held = stabilizer
+        .body_rate
+        .integral_term(&stabilizer.config.body_rate, 2);
+    // One tick's integration (the heading-hold rate replaces the 0.1 yaw rate) moves it a little.
+    approx::assert_relative_eq!(held, trim, max_relative = 0.01);
 }
 
 /// Far over in pitch (a tailsitter's hover view mid-transition, Euler roll and heading nearly
@@ -850,6 +913,7 @@ fn transition_ramps_fly_pitch_past_the_tilt_limit() {
             heading_rad: heading,
             thrust: 0.5,
             transition,
+            idle: false,
         });
         let mut stabilizer = setup_controller();
         let output = stabilizer.stabilize(0.004, &setpoint, &state);

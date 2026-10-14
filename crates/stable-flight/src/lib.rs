@@ -1233,7 +1233,28 @@ impl Setpoint {
         }
     }
 
-    /// This setpoint with its thrust replaced by `thrust`.
+    /// Whether guidance marked this setpoint ground idle (see
+    /// [`AttitudeSetpoint::idle`]); a plane attitude never is.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::{PlaneSetpoint, RateSetpoint, Setpoint};
+    ///
+    /// assert!(Setpoint::Rate(RateSetpoint { idle: true, ..Default::default() }).idle());
+    /// assert!(!Setpoint::Plane(PlaneSetpoint::default()).idle());
+    /// ```
+    pub fn idle(&self) -> bool {
+        match self {
+            Setpoint::Attitude(attitude) => attitude.idle,
+            Setpoint::Rate(rates) => rates.idle,
+            Setpoint::BodyRate(rates) | Setpoint::PlaneRate(rates) => rates.idle,
+            Setpoint::Plane(_) => false,
+        }
+    }
+
+    /// This setpoint with its thrust replaced by `thrust`, its other fields (the
+    /// [`idle`](Self::idle) mark included) kept.
     ///
     /// # Examples
     ///
@@ -1269,6 +1290,8 @@ pub struct BodyRateSetpoint {
     pub yaw_radps: f32,
     /// Linear collective thrust, `0.0` to `1.0`, before the stabilizer's thrust curve.
     pub thrust: f32,
+    /// Ground idle, as [`AttitudeSetpoint::idle`]; a plane stabilizer ignores it.
+    pub idle: bool,
 }
 
 /// The rates of an [`AbsoluteRateCommand`], as given.
@@ -1295,6 +1318,7 @@ impl From<&AbsoluteRateCommand> for BodyRateSetpoint {
             pitch_radps,
             yaw_radps,
             thrust,
+            idle: false,
         }
     }
 }
@@ -1340,6 +1364,11 @@ pub struct AttitudeSetpoint {
     /// tilt, so the ramp reaches its handover whatever the hover limit (ArduPilot's tailsitter
     /// ramps past its angle limit, `tailsitter.cpp:871`).
     pub transition: bool,
+    /// Ground idle: guidance sets it while a piloted throttle is at or below
+    /// [`IDLE_THROTTLE`](crate::guidance::copter::IDLE_THROTTLE) (or NaN), and a copter
+    /// stabilizer then clears its integrals. A zero `thrust` alone (the altitude loop in
+    /// flight) is not idle.
+    pub idle: bool,
 }
 
 /// Body-rate target for the [`Stabilizer`]; see [`Setpoint`].
@@ -1356,6 +1385,8 @@ pub struct RateSetpoint {
     pub yaw_rate: f32,
     /// Linear collective thrust, `0.0` to `1.0`, before the stabilizer's thrust curve.
     pub thrust: f32,
+    /// Ground idle, as [`AttitudeSetpoint::idle`].
+    pub idle: bool,
 }
 
 /// Passes the sticks through as rates, with `throttle` as `thrust`.
@@ -1374,7 +1405,7 @@ pub struct RateSetpoint {
 /// let setpoint = RateSetpoint::from(&command);
 /// assert_eq!(
 ///     setpoint,
-///     RateSetpoint { roll_rate: 0.1, pitch_rate: -0.2, yaw_rate: 0.3, thrust: 0.6 }
+///     RateSetpoint { roll_rate: 0.1, pitch_rate: -0.2, yaw_rate: 0.3, thrust: 0.6, idle: false }
 /// );
 /// ```
 impl From<&RateCommand> for RateSetpoint {
@@ -1391,6 +1422,7 @@ impl From<&RateCommand> for RateSetpoint {
             pitch_rate,
             yaw_rate,
             thrust: throttle,
+            idle: false,
         }
     }
 }
