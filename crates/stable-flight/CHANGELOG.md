@@ -130,6 +130,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `AutotuneEvent::Lowered`. A search whose start is above its maximum (the
+  relay's ceiling) lowers it to the relay's rule gains, P at most the ceiling, and commits
+  them before anything else flies, so the vehicle settles on them and they stay if the stage
+  keeps or fails; a gain above the ceiling could ring once disturbed and fail the stage
+  `NotSettled` (#375).
+- **Breaking:** `AutotuneEvent` is `#[non_exhaustive]`: a `match` on it needs a wildcard arm,
+  and new events stop being breaking.
+- An autotune relay that can't settle starts at `Envelope::settle_timeout_s` instead of
+  failing the stage: it replaces the loop's output, so a loop ringing on its own gains still
+  measures (#375).
 - `WaypointFollower` reaches a waypoint only within an altitude band as well as the
   horizontal radius (or past it), as PX4 does: default `DEFAULT_ALTITUDE_ACCEPTANCE_M` 0.8 m,
   `with_altitude_acceptance`/`set_altitude_acceptance` to change it, and

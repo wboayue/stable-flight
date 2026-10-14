@@ -152,11 +152,11 @@ fn run(
     flight_loop: &mut TestLoop,
     autotune: &mut Autotune,
     max_s: f32,
-    mut poke: impl FnMut(&Autotune),
+    mut poke: impl FnMut(&Autotune, &TestLoop),
 ) -> Vec<AutotuneEvent> {
     let mut events = Vec::new();
     for _ in 0..(max_s / DT) as usize {
-        poke(autotune);
+        poke(autotune, flight_loop);
         flight_loop.step(Duration::from_secs_f32(DT));
         if let Some(event) = autotune.update(flight_loop, DT) {
             events.push(event);
@@ -209,7 +209,7 @@ fn full_run_tunes_every_loop_in_order() {
     let baseline = *flight_loop.stabilizer().config();
     let mut autotune = started(&flight_loop, &EVERY_LOOP.map(StagePlan::copter));
 
-    let events = run(&mut flight_loop, &mut autotune, 300.0, |_| {});
+    let events = run(&mut flight_loop, &mut autotune, 300.0, |_, _| {});
 
     check!(autotune.status() == AutotuneStatus::Complete);
     let mut expected = baseline;
@@ -266,7 +266,7 @@ fn result_does_not_depend_on_the_starting_rate_gains() {
     let tuned = [0.3, 3.0].map(|scale| {
         let (mut flight_loop, _controls) = hovering(scale);
         let mut autotune = started(&flight_loop, &plan);
-        run(&mut flight_loop, &mut autotune, 60.0, |_| {});
+        run(&mut flight_loop, &mut autotune, 60.0, |_, _| {});
         check!(
             autotune.status() == AutotuneStatus::Complete,
             "scale {scale}"
@@ -310,7 +310,7 @@ fn an_envelope_breach_ends_the_run_keeping_earlier_stages() {
         let baseline = *flight_loop.stabilizer().config();
         let mut autotune = started(&flight_loop, &plan);
 
-        let events = run(&mut flight_loop, &mut autotune, 60.0, |autotune| {
+        let events = run(&mut flight_loop, &mut autotune, 60.0, |autotune, _| {
             if matches!(autotune.status(), AutotuneStatus::Running { stage: 1, .. }) {
                 cause(&controls);
             }
@@ -350,7 +350,7 @@ fn disarm_reverts_until_complete() {
     let (mut flight_loop, controls) = hovering(1.0);
     let baseline = *flight_loop.stabilizer().config();
     let mut autotune = started(&flight_loop, &plan);
-    let events = run(&mut flight_loop, &mut autotune, 60.0, |autotune| {
+    let events = run(&mut flight_loop, &mut autotune, 60.0, |autotune, _| {
         if matches!(autotune.status(), AutotuneStatus::Running { stage: 1, .. }) {
             controls.arm.set(false);
         }
@@ -362,7 +362,7 @@ fn disarm_reverts_until_complete() {
     // After completion: disarming changes nothing.
     let (mut flight_loop, controls) = hovering(1.0);
     let mut autotune = started(&flight_loop, &plan);
-    run(&mut flight_loop, &mut autotune, 60.0, |_| {});
+    run(&mut flight_loop, &mut autotune, 60.0, |_, _| {});
     let tuned = *flight_loop.stabilizer().config();
     controls.arm.set(false);
     flight_loop.step(Duration::from_secs_f32(DT));
@@ -370,22 +370,31 @@ fn disarm_reverts_until_complete() {
     check!(*flight_loop.stabilizer().config() == tuned);
 }
 
-/// A vehicle that never settles fails the run before the first probe.
-#[test]
-fn a_vehicle_that_never_settles_fails_before_the_first_stage() {
-    let (mut flight_loop, controls) = hovering(1.0);
-    let baseline = *flight_loop.stabilizer().config();
-    // Held at 0.2 rad of roll: past settle_tilt_rad, inside max_tilt_rad.
+/// Holds the vehicle at `roll_rad` of roll through the commander.
+fn hold_roll(controls: &Controls, roll_rad: f32) {
     controls.input.set(Some(ControlInput::AbsoluteAttitude(
         AbsoluteAttitudeCommand {
-            roll_rad: 0.2,
+            roll_rad,
             thrust: 0.5,
             ..Default::default()
         },
     )));
-    let mut autotune = started(&flight_loop, &StagePlan::copter_sequence());
+}
 
-    let events = run(&mut flight_loop, &mut autotune, 30.0, |_| {});
+/// A vehicle held past the settle limits fails a step stage before its first probe, and its
+/// config stays.
+#[test]
+fn a_vehicle_that_never_settles_fails_before_the_first_step() {
+    let (mut flight_loop, controls) = hovering(1.0);
+    let baseline = *flight_loop.stabilizer().config();
+    // 0.12 rad: past the step settle's 0.044 rad, inside max_tilt_rad.
+    hold_roll(&controls, 0.12);
+    let mut autotune = started(
+        &flight_loop,
+        &[StagePlan::copter_step_test(TunedLoop::RollRate)],
+    );
+
+    let events = run(&mut flight_loop, &mut autotune, 30.0, |_, _| {});
 
     let failed = AutotuneEvent::StageFailed {
         target: TunedLoop::RollRate,
@@ -393,6 +402,22 @@ fn a_vehicle_that_never_settles_fails_before_the_first_stage() {
     };
     check!(events == [AutotuneEvent::StageStarted(TunedLoop::RollRate), failed]);
     check!(*flight_loop.stabilizer().config() == baseline);
+}
+
+/// A relay that can't settle starts when the settle times out rather than failing the
+/// stage: it replaces the loop's output, so a vehicle that can't get still (here held off
+/// level) still gets measured (#375).
+#[test]
+fn a_relay_starts_when_the_settle_times_out() {
+    let (mut flight_loop, controls) = hovering(1.0);
+    hold_roll(&controls, 0.25);
+    let mut autotune = started(&flight_loop, &[StagePlan::copter(TunedLoop::PitchRate)]);
+    let timeout_s = Envelope::default().settle_timeout_s;
+
+    run(&mut flight_loop, &mut autotune, timeout_s - 0.1, |_, _| {});
+    check!(matches!(autotune.status(), AutotuneStatus::Settling { .. }));
+    run(&mut flight_loop, &mut autotune, 0.2, |_, _| {});
+    check!(matches!(autotune.status(), AutotuneStatus::Running { .. }));
 }
 
 /// A probe abort or an interrupt fails the stage; its loop keeps its gains.
@@ -427,7 +452,7 @@ fn probe_aborts_and_interrupts_fail_the_stage() {
         let baseline = *flight_loop.stabilizer().config();
         let mut autotune = started(&flight_loop, &[plan]);
 
-        let events = run(&mut flight_loop, &mut autotune, 30.0, |autotune| {
+        let events = run(&mut flight_loop, &mut autotune, 30.0, |autotune, _| {
             if matches!(autotune.status(), AutotuneStatus::Running { .. }) {
                 controls.input.set(input);
             }
@@ -568,7 +593,7 @@ fn step_tests_measure_alternating_steps_and_keep_the_gains() {
     let targets = [TunedLoop::RollRate, TunedLoop::Pitch];
     let mut autotune = started(&flight_loop, &targets.map(StagePlan::copter_step_test));
 
-    let events = run(&mut flight_loop, &mut autotune, 60.0, |_| {});
+    let events = run(&mut flight_loop, &mut autotune, 60.0, |_, _| {});
 
     check!(autotune.status() == AutotuneStatus::Complete);
     check!(*flight_loop.stabilizer().config() == baseline);
@@ -655,7 +680,7 @@ fn a_step_test_settles_to_its_own_limits() {
         &[StagePlan::copter_step_test(TunedLoop::RollRate)],
     );
 
-    let events = run(&mut flight_loop, &mut autotune, 30.0, |_| {});
+    let events = run(&mut flight_loop, &mut autotune, 30.0, |_, _| {});
 
     let failed = AutotuneEvent::StageFailed {
         target: TunedLoop::RollRate,
@@ -674,12 +699,16 @@ fn a_step_test_settles_to_its_own_limits() {
         },
     )));
     let mut autotune = started(&flight_loop, &[StagePlan::copter(TunedLoop::PitchRate)]);
-    run(&mut flight_loop, &mut autotune, 5.0, |_| {});
+    run(&mut flight_loop, &mut autotune, 5.0, |_, _| {});
     check!(matches!(
         autotune.status(),
         AutotuneStatus::Running { .. } | AutotuneStatus::Complete
     ));
 }
+
+/// Rate P multiplier that puts the start well above the relay's ceiling on
+/// [`delayed_axis`].
+const SCALE_ABOVE_CEILING: f32 = 6.0;
 
 /// A rate axis with QuadCopterX-like lag: 12 ms of dead time.
 fn delayed_axis() -> PlantParams {
@@ -687,6 +716,85 @@ fn delayed_axis() -> PlantParams {
         delay_s: 0.012,
         ..PlantParams::rate_axis()
     }
+}
+
+/// A rate P far above the relay's ceiling is lowered and committed once the relay measures:
+/// the vehicle settles on the lowered gains between probes, never on the start, and a kept
+/// result is the lowered gains (#375).
+#[test]
+fn a_start_above_the_ceiling_settles_on_lowered_gains() {
+    let (mut flight_loop, _controls) = hovering_on(SCALE_ABOVE_CEILING, delayed_axis());
+    let start = TunedLoop::RollRate.gains(flight_loop.stabilizer().config());
+    let mut autotune = started(&flight_loop, &[StagePlan::copter_rate_search()[0]]);
+
+    // The roll rate gains flown on each tick spent settling.
+    let mut settling = Vec::new();
+    let events = run(
+        &mut flight_loop,
+        &mut autotune,
+        300.0,
+        |autotune, flight_loop| {
+            if matches!(autotune.status(), AutotuneStatus::Settling { .. }) {
+                settling.push(TunedLoop::RollRate.gains(flight_loop.stabilizer().config()));
+            }
+        },
+    );
+
+    let Some(lowered) = events.iter().find_map(|event| match *event {
+        AutotuneEvent::Lowered { gains, .. } => Some(gains),
+        _ => None,
+    }) else {
+        panic!("no Lowered event: {events:?}");
+    };
+    check!(lowered.p < start.p);
+    let Some(first) = settling.iter().position(|gains| *gains == lowered) else {
+        panic!("never settled on the lowered gains");
+    };
+    check!(settling[first..].iter().all(|gains| *gains == lowered));
+    let Some((gains, outcome)) = events.iter().find_map(|event| match *event {
+        AutotuneEvent::StageDone { gains, outcome, .. } => Some((gains, outcome)),
+        _ => None,
+    }) else {
+        panic!("no StageDone: {events:?}");
+    };
+    check!(gains != start);
+    if matches!(outcome, Outcome::Kept(_)) {
+        check!(gains == lowered);
+    }
+}
+
+/// A stage that fails after lowering its start puts back the lowered gains, not the start
+/// (#375).
+#[test]
+fn a_failure_after_lowering_keeps_the_lowered_gains() {
+    let (mut flight_loop, _controls) = hovering_on(SCALE_ABOVE_CEILING, delayed_axis());
+    let start = TunedLoop::RollRate.gains(flight_loop.stabilizer().config());
+    let mut autotune = started(&flight_loop, &[StagePlan::copter_rate_search()[0]]);
+
+    let mut lowered = None;
+    for _ in 0..(60.0 / DT) as usize {
+        flight_loop.step(Duration::from_secs_f32(DT));
+        if let Some(AutotuneEvent::Lowered { gains, .. }) = autotune.update(&mut flight_loop, DT) {
+            lowered = Some(gains);
+        }
+        if lowered.is_some() && matches!(autotune.status(), AutotuneStatus::Running { .. }) {
+            break;
+        }
+    }
+    let Some(lowered) = lowered else {
+        panic!("no Lowered event");
+    };
+    check!(lowered != start);
+
+    // Stopped from outside mid-probe: the stage fails as interrupted.
+    flight_loop.stop_probe();
+    flight_loop.step(Duration::from_secs_f32(DT));
+    let failed = AutotuneEvent::StageFailed {
+        target: TunedLoop::RollRate,
+        reason: AutotuneAbort::Interrupted,
+    };
+    check!(autotune.update(&mut flight_loop, DT) == Some(failed));
+    check!(TunedLoop::RollRate.gains(flight_loop.stabilizer().config()) == lowered);
 }
 
 /// The rate search tunes roll and pitch rate from a hand-tune-like start and from half its
@@ -700,7 +808,7 @@ fn rate_search_tunes_the_rate_loops() {
         let plan = StagePlan::copter_rate_search();
         let mut autotune = started(&flight_loop, &plan);
 
-        let events = run(&mut flight_loop, &mut autotune, 300.0, |_| {});
+        let events = run(&mut flight_loop, &mut autotune, 300.0, |_, _| {});
 
         check!(events.last() == Some(&AutotuneEvent::Complete), "{scale}");
         let tried = events
@@ -1042,7 +1150,7 @@ fn copter_search_tunes_rate_then_angle() {
     let plan = StagePlan::copter_search();
     let mut autotune = started(&flight_loop, &plan);
 
-    let events = run(&mut flight_loop, &mut autotune, 600.0, |_| {});
+    let events = run(&mut flight_loop, &mut autotune, 600.0, |_, _| {});
 
     check!(events.last() == Some(&AutotuneEvent::Complete));
     let done: Vec<_> = events

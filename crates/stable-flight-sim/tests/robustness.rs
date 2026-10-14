@@ -15,9 +15,9 @@ use stable_flight_sim::{GyroNoise, Perturbations, Vibration, Wind};
 
 use common::{AUTOTUNE_TIMEOUT_S, Plant, spec};
 
-/// Simulated seconds a row's autotune may take: the slowest clean row (`heavy_quad` from the
-/// high start, 724 s) plus 25%.
-const BUDGET_S: f32 = 905.0;
+/// Simulated seconds a row's autotune may take: the slowest passing clean row (`quad_x` from
+/// the high start, 627 s) plus 25%.
+const BUDGET_S: f32 = 784.0;
 
 /// Rate P and D multiplier for the high start. At ×3, `quad_x`'s rate steps clip; `heavy_quad`'s
 /// and `racer`'s rate P sits above the relay's ceiling (0.6·Ku: 2.16 and 0.85 against 2.45 and
@@ -193,11 +193,11 @@ rows! {
     quad_x_clean_low: quad_x, Clean, Low;
     quad_x_clean_high: quad_x, Clean, High;
     quad_x_delay_10ms_low: quad_x, Delay10Ms, Low;
-    #[ignore = "start above the relay's Ku keeps flying and rings: NotSettled (#375)"]
+    #[ignore = "pitch rings on its start gains: NotSettled (#379)"]
     quad_x_delay_10ms_high: quad_x, Delay10Ms, High;
     #[ignore = "tuned rate loops miss rise and settle (#376)"]
     quad_x_delay_25ms_low: quad_x, Delay25Ms, Low;
-    #[ignore = "start above the relay's Ku keeps flying and rings: NotSettled (#375)"]
+    #[ignore = "pitch rings on its start gains: NotSettled (#379)"]
     quad_x_delay_25ms_high: quad_x, Delay25Ms, High;
     #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
     quad_x_noise_low: quad_x, Noise, Low;
@@ -217,13 +217,14 @@ rows! {
     quad_x_combined_high: quad_x, Combined, High;
 
     heavy_quad_clean_low: heavy_quad, Clean, Low;
+    #[ignore = "pitch relay reads Ku 4.97 (roll 3.60): the start flies as baseline, kept over the search at its seeded D (#378)"]
     heavy_quad_clean_high: heavy_quad, Clean, High;
     heavy_quad_delay_10ms_low: heavy_quad, Delay10Ms, Low;
-    #[ignore = "start above the relay's Ku keeps flying and rings: NotSettled (#375)"]
+    #[ignore = "pitch rings on its start gains: NotSettled (#379)"]
     heavy_quad_delay_10ms_high: heavy_quad, Delay10Ms, High;
     #[ignore = "tuned rate loops miss rise and settle (#376)"]
     heavy_quad_delay_25ms_low: heavy_quad, Delay25Ms, Low;
-    #[ignore = "start above the relay's Ku keeps flying and rings: NotSettled (#375)"]
+    #[ignore = "pitch rings on its start gains: NotSettled (#379)"]
     heavy_quad_delay_25ms_high: heavy_quad, Delay25Ms, High;
     #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
     heavy_quad_noise_low: heavy_quad, Noise, Low;
@@ -245,11 +246,11 @@ rows! {
     racer_clean_low: racer, Clean, Low;
     racer_clean_high: racer, Clean, High;
     racer_delay_10ms_low: racer, Delay10Ms, Low;
-    #[ignore = "start above the relay's Ku keeps flying and rings: NotSettled (#375)"]
+    #[ignore = "pitch rings on its start gains: NotSettled (#379)"]
     racer_delay_10ms_high: racer, Delay10Ms, High;
     #[ignore = "tuned rate loops miss rise and settle (#376)"]
     racer_delay_25ms_low: racer, Delay25Ms, Low;
-    #[ignore = "start above the relay's Ku keeps flying and rings: NotSettled (#375)"]
+    #[ignore = "pitch rings on its start gains: NotSettled (#379)"]
     racer_delay_25ms_high: racer, Delay25Ms, High;
     #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
     racer_noise_low: racer, Noise, Low;

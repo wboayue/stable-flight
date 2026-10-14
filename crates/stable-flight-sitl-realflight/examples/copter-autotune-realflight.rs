@@ -378,6 +378,10 @@ fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
                 format_gains(gains)
             );
         }
+        AutotuneEvent::Lowered { target, gains } => warn!(
+            "autotune: {target:?} start above the search's max, lowered to {}",
+            format_gains(gains)
+        ),
         AutotuneEvent::StageFailed { target, reason } => {
             warn!("autotune: {target:?} failed: {reason:?}; earlier stages kept");
         }
@@ -386,6 +390,7 @@ fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
             println!("{}", airframe_snippet(config));
         }
         AutotuneEvent::Reverted => warn!("autotune: disarmed, gains reverted"),
+        event => debug!("autotune: {event:?}"),
     }
 }
 

@@ -143,10 +143,20 @@ impl Search {
 
     /// Steps on the start gains, or, when the searched term starts above `max` (a gain the
     /// search would never pick, which the relay's ceiling may have shown is too high), goes on
-    /// without a baseline rather than fly it (#361).
+    /// without a baseline rather than fly it (#361) and commits the seed, its term at most
+    /// `max`, in the start's place: a start above the relay's ceiling can ring once disturbed
+    /// and never settle (#375). Those gains are what stays if nothing better passes.
     fn baseline(&mut self) -> Action {
         if self.plan.term.get(self.start) > self.max {
-            return self.advance();
+            self.start = self.with(self.plan.term.get(self.seed).min(self.max));
+            return match self.advance() {
+                Action::Probe { probe, gains, .. } => Action::Probe {
+                    probe,
+                    gains,
+                    commit: Some(self.start),
+                },
+                end => end,
+            };
         }
         self.leg = Leg::Baseline;
         self.step()
@@ -161,6 +171,7 @@ impl Search {
         Action::Probe {
             probe: self.pairs.probe(),
             gains,
+            commit: None,
         }
     }
 

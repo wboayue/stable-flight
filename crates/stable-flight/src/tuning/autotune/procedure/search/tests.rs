@@ -65,6 +65,8 @@ struct Run {
     flown: Vec<Gains>,
     /// The verdicts, in order.
     verdicts: Vec<Verdict>,
+    /// The gains each commit set, in order.
+    committed: Vec<Gains>,
     /// How it ended.
     end: Action,
 }
@@ -86,13 +88,23 @@ fn drive(
     let mut procedure = Procedure::new(Method::Search(plan));
     let mut flown = Vec::new();
     let mut verdicts = Vec::new();
+    let mut committed = Vec::new();
     let mut action = procedure.next(Input::Start { gains: START });
     for _ in 0..MAX_PROBES {
         verdicts.extend(procedure.take_verdict());
+        if let Action::Probe {
+            commit: Some(gains),
+            ..
+        } = action
+        {
+            committed.push(gains);
+        }
+        let current = committed.last().copied().unwrap_or(START);
         let input = match action {
             Action::Probe {
                 probe: ProbeConfig::Relay(_),
                 gains,
+                ..
             } => {
                 assert!(gains.is_none());
                 relays()
@@ -100,18 +112,19 @@ fn drive(
             Action::Probe {
                 probe: ProbeConfig::Step(_),
                 gains,
+                ..
             } => {
-                let gains = gains.unwrap_or(START);
+                let gains = gains.unwrap_or(current);
                 flown.push(gains);
                 match step(gains) {
                     Some(metrics) => Input::Measured {
                         measurement: Measurement::Step(metrics),
-                        gains: START,
+                        gains: current,
                         stalled: false,
                     },
                     None => Input::Aborted {
                         abort: ProbeAbort::Step(StepAbort::Runaway),
-                        gains: START,
+                        gains: current,
                     },
                 }
             }
@@ -119,6 +132,7 @@ fn drive(
                 return Run {
                     flown,
                     verdicts,
+                    committed,
                     end,
                 };
             }
@@ -405,8 +419,9 @@ fn invalid_steps_fail_a_point_not_the_stage() {
     check!(baseline_count(&everywhere) == 0);
 }
 
-/// A start the search would never pick (its term above `max`) flies no baseline: the search
-/// goes straight to its bracket, and the verify meets the criterion itself (#361).
+/// A start the search would never pick (its term above `max`) flies no baseline: it's lowered
+/// to `max` and committed, the search goes straight to its bracket, and the verify meets the
+/// criterion itself (#361).
 #[test]
 fn a_start_above_max_flies_no_baseline() {
     let plan = SearchPlan {
@@ -415,10 +430,49 @@ fn a_start_above_max_flies_no_baseline() {
     };
     let run = drive(plan, no_relays, damping(0.001));
 
+    // Without a relay, the seed is the start: lowered to `max` and committed.
+    check!(
+        run.committed
+            == [Gains {
+                d: plan.max,
+                ..START
+            }]
+    );
     check!(run.flown.iter().all(|gains| *gains != START));
     let (gains, outcome) = finished(&run);
     check!(outcome == Outcome::Tuned);
     check!(gains.d < plan.max);
+}
+
+/// A start above the relay's ceiling is lowered to the relay's rule gains, P at most the
+/// ceiling, and committed before anything flies: the stage settles on them, and they're what
+/// stays when nothing passes (#375).
+#[test]
+fn a_start_above_the_ceiling_is_lowered_and_kept() {
+    let plan = SearchPlan::copter_rate();
+    let Some(relay) = plan.relay else {
+        panic!("the rate search has a relay");
+    };
+    // The start's P 0.5 is above the ceiling, 0.6 · 0.5.
+    let point = UltimatePoint { ku: 0.5, ..POINT };
+    let rule = gains_from_ultimate(&point, relay.plan.rule, relay.plan.form);
+    let lowered = Gains {
+        p: rule.p.min(relay.ceiling * point.ku),
+        i: START.i,
+        d: rule.d,
+    };
+    let run = drive(plan, || relay_input(point, false), |_| None);
+
+    check!(run.committed == [lowered]);
+    check!(run.flown.iter().all(|gains| *gains != START));
+    check!(finished(&run) == (lowered, Outcome::Kept(KeepReason::NoPass)));
+}
+
+/// A start at or below `max` commits nothing.
+#[test]
+fn a_start_within_max_commits_nothing() {
+    let run = drive(d_plan(), no_relays, damping(0.01));
+    check!(run.committed.is_empty());
 }
 
 /// A baseline that fails the criterion isn't a standard: a result that meets the criterion
