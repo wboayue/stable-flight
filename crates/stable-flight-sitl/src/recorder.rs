@@ -26,6 +26,31 @@ use stable_flight::{
 };
 
 /// The fields a [`CsvRecorder`] writes after `wall_s`.
+///
+/// # Examples
+///
+/// A set recording only altitude and thrust:
+///
+/// ```
+/// use std::io::{self, Write};
+///
+/// use stable_flight::TelemetryRecord;
+/// use stable_flight_sitl::recorder::{Columns, CsvRecorder};
+///
+/// struct Climb;
+///
+/// impl Columns for Climb {
+///     const HEADER: &'static str = "altitude,thrust";
+///
+///     fn write_row(&mut self, out: &mut impl Write, record: &TelemetryRecord) -> io::Result<()> {
+///         write!(out, "{:.3},{:.4}", record.state.position_m.z, record.control.thrust)
+///     }
+/// }
+///
+/// let recorder = CsvRecorder::new(Some(Vec::new()), Climb).expect("header written");
+/// let csv = recorder.into_writer().expect("a writer");
+/// assert_eq!(csv, b"wall_s,altitude,thrust\n");
+/// ```
 pub trait Columns {
     /// The header's names, comma-separated, matching [`write_row`](Columns::write_row)'s fields.
     const HEADER: &'static str;
