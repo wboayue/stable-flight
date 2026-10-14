@@ -546,6 +546,11 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
   ([#321](https://github.com/wboayue/stable-flight/issues/321)).
 * **Rate stages keep the angle loop**, which holds the vehicle near level; the relay then
   measures the error the rate PID actually acts on, including the angle loop's D term.
+* **Robustness:** the claim is that the method, not one tune, transfers to hardware, so the sim
+  checks it on a table of plants (airframes × delay, gyro noise, trim moments) from a low and a
+  high start, each result held to the published step targets on its own plant
+  ([`robustness`](crates/stable-flight-sim/README.md#closed-loop-tests)). Rows that fail stay
+  ignored on the issue blocking them rather than loosening the targets.
 
 ## Real-Time Loop Management
 

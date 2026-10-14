@@ -4,12 +4,12 @@
 
 mod common;
 
-use common::Plant;
 use common::spec::TUNED;
+use common::{AUTOTUNE_TIMEOUT_S, Plant};
 
 use assert2::check;
 use stable_flight::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
-use stable_flight::tuning::autotune::{AutotuneEvent, Outcome, StagePlan};
+use stable_flight::tuning::autotune::StagePlan;
 use stable_flight_sim::airframes::{self, Airframe};
 
 /// Rate P multiplier for the low start (the RealFlight example's `--rate-p-scale`).
@@ -27,9 +27,6 @@ const START_ANGLE_P: f32 = 3.0;
 
 /// How far apart, as a fraction of the larger, two converged gains may be.
 const AGREEMENT: f32 = 0.25;
-
-/// Simulated seconds an autotune may run (about 460 s from `quad_x`'s gains).
-const TIMEOUT_S: f32 = 1200.0;
 
 /// `quad_x` with rate P scaled by `rate_p_scale` and angle P at [`START_ANGLE_P`].
 fn detuned(rate_p_scale: f32) -> Airframe {
@@ -59,25 +56,9 @@ fn autotune_from(rate_p_scale: f32) -> [f32; 4] {
     let run = common::autotune(
         &Plant::clean(detuned(rate_p_scale)),
         &StagePlan::copter_search(),
-        TIMEOUT_S,
+        AUTOTUNE_TIMEOUT_S,
     );
-    let outcomes: Vec<_> = run
-        .stages
-        .iter()
-        .map(|event| match event {
-            AutotuneEvent::StageDone {
-                target, outcome, ..
-            } => (*target, Some(*outcome)),
-            AutotuneEvent::StageFailed { target, .. } => (*target, None),
-            _ => unreachable!("autotune() keeps stage ends only"),
-        })
-        .collect();
-    let tuned = TUNED.map(|target| (target, Some(Outcome::Tuned)));
-    check!(
-        outcomes == tuned,
-        "rate P × {rate_p_scale}: {:?}",
-        run.stages
-    );
+    check!(run.all_tuned(), "rate P × {rate_p_scale}: {:?}", run.stages);
     tuned_p(&run.config)
 }
 
