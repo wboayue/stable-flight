@@ -734,6 +734,31 @@ fn servo_presets_move_the_right_outputs() {
     }
 }
 
+/// Plane: each surface carries its one moment, the motor only thrust, up to `thrust_factor`.
+#[test]
+fn plane_preset_puts_each_moment_on_its_surface() {
+    // (thrust, moments, expected motor 0, expected servos[..3])
+    let cases = [
+        (0.5, Vec3::zeros(), 0.45, [0.0, 0.0, 0.0]),
+        (1.0, Vec3::zeros(), 0.9, [0.0, 0.0, 0.0]),
+        (0.5, Vec3::new(0.3, 0.0, 0.0), 0.45, [0.3, 0.0, 0.0]),
+        (0.5, Vec3::new(0.0, -0.4, 0.0), 0.45, [0.0, -0.4, 0.0]),
+        (0.0, Vec3::new(0.0, 0.0, 0.2), 0.0, [0.0, 0.0, 0.2]),
+        (0.7, Vec3::new(-0.1, 0.2, -0.3), 0.63, [-0.1, 0.2, -0.3]),
+    ];
+    for (thrust, moments, motor, servos) in cases {
+        let mut mixer = TableMixer::plane();
+        let output = mixer.mix(&ControlOutput::new(thrust, moments));
+        let label = format!("{thrust} {moments:?}: {output:?}");
+        assert!(approx_eq(output.motors[0], motor), "{label}");
+        assert!(output.motors[1..] == [0.0; 7], "{label}");
+        for (servo, expected) in output.servos.iter().zip(servos) {
+            assert!(approx_eq(*servo, expected), "{label}");
+        }
+        assert!(mixer.saturation() == Saturation::default(), "{label}");
+    }
+}
+
 /// A servo asked past its range clamps on its own and reports the lost moment; the other
 /// servo and the motors are untouched.
 #[test]
@@ -818,6 +843,7 @@ fn presets_are_valid_tables() {
     check("tri", TableMixer::tri());
     check("bi", TableMixer::bi());
     check("tailsitter_2p", TableMixer::tailsitter_2p());
+    check("plane", TableMixer::plane());
     check("hex_x", TableMixer::hex_x());
     check("hex_plus", TableMixer::hex_plus());
     check("y6", TableMixer::y6());

@@ -49,6 +49,7 @@
 //! | [`tri`](TableMixer::tri) | 0 FL, 1 FR, 2 B | 0 tail tilt (yaw) |
 //! | [`bi`](TableMixer::bi) | 0 L, 1 R | 0 left tilt, 1 right tilt |
 //! | [`tailsitter_2p`](TableMixer::tailsitter_2p) | 0 L, 1 R | 0 left elevon, 1 right elevon |
+//! | [`plane`](TableMixer::plane) | 0 nose | 0 ailerons, 1 elevator, 2 rudder |
 
 use thiserror::Error;
 

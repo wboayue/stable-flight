@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `TableMixer::plane()`: a conventional airplane preset (motor 0; servos 0 ailerons,
+  1 elevator, 2 rudder), flown by the simulator's fixed-wing model (#348).
 - `TableMixer::rows` and `MixRow::{roll, pitch, yaw}`: read a mixer table back, e.g. for a
   simulator that derives motor torques from it (#347).
 - **Plane waypoint navigation** (#124): `PlaneGuidance` flies `Waypoint`s. It follows the
