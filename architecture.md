@@ -91,8 +91,8 @@ the check for realism.
   order or spin, and there is no second table to keep in sync.
 * **Spec bands, not snapshots.** Step-response tests hold each loop to ArduPilot's and PX4's
   autotune targets (cited in `tests/step_response.rs`), not to whatever the sim measured, so
-  a regression and a tuning gap both fail. `quad_x`'s gains come from running the core
-  autotune on the sim.
+  a regression and a tuning gap both fail. Each airframe's roll and pitch gains come from
+  running the core autotune on the sim.
 * **Perturbation ranges, not a fitted plant.** Delay, gyro noise and vibration, a disturbance
   moment, and motor mismatch are parameters to sweep, so the autotune *method* is checked on
   many plausible plants and transfers to hardware. Fitting the sim to RealFlight's QuadCopterX

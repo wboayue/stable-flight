@@ -13,9 +13,9 @@ use stable_flight_link::fc::{FcLink, FcLinkConfig};
 use stable_flight_link::loopback::{Loopback, LoopbackLink};
 use stable_flight_link::publisher::LinkPublisherConfig;
 use stable_flight_link::{Control, Downlink, MAX_FRAME_LEN, RecvMessage, SendMessage, Uplink};
-use stable_flight_sim::{Wind, airframes};
+use stable_flight_sim::airframes;
 
-use common::TICK;
+use common::{Plant, TICK};
 
 /// Loopback queue depth, in frames.
 const DEPTH: usize = 64;
@@ -82,7 +82,7 @@ fn holds_position_through_a_link_outage_and_hands_back() {
     let commander = FailsafeCommander::new(link_commander, HoldCommander::default(), failsafe)
         .expect("valid config");
     let mut flight_loop =
-        common::pipeline(airframes::quad_x(), commander, Wind::default(), telemetry);
+        common::pipeline(&Plant::clean(airframes::quad_x()), commander, telemetry);
 
     let mut buf = [0u8; MAX_FRAME_LEN];
     let mut recv = [0u8; MAX_FRAME_LEN];

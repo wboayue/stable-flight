@@ -40,13 +40,13 @@ cargo test -p stable-flight-sim   # unit tests, conformance, and the closed-loop
 
 ## Closed-loop tests
 
-Each file in `tests/` flies the full pipeline on `airframes::quad_x()` (wiring in
-`tests/common`):
+Each file in `tests/` flies the full pipeline on `airframes::quad_x()` unless noted (wiring
+and the step-response spec in `tests/common`):
 
 | Test | Asserts |
 |---|---|
 | `hover` | Altitude, position, and heading hold in calm air; on the waypoint in steady wind; return after a gust; a hold over the start completes at its altitude |
-| `step_response` | Every loop (roll/pitch/yaw rate, roll/pitch angle, heading), both ways, against ArduPilot's and PX4's autotune targets: overshoot ≤ 5%, rate bounce-back ≤ 10%, rate rise ≤ 0.14 s (yaw 0.2 s), settled, clipping within the step plan's allowance |
+| `step_response` | Every loop (roll/pitch/yaw rate, roll/pitch angle, heading), both ways, against ArduPilot's and PX4's autotune targets: overshoot ≤ 5%, rate bounce-back ≤ 10%, rate rise ≤ 0.14 s (yaw 0.2 s), settled, clipping within the step plan's allowance. `heavy_quad` and `racer` meet the same targets on their tuned loops (roll/pitch rate and angle) |
 | `waypoint` | A square route: each leg near its line and altitude at cruise speed; holds the last corner |
 | `land` | Climb, land on a waypoint (one leg out, or over the start), disarm, rest on the ground |
 | `failsafe` | Over the link (`FcLink` + loopback): silence hands over to `HoldCommander` within the timeout, which holds in place armed; the link takes back over after recovery |
@@ -84,10 +84,18 @@ isn't fitted to one clean plant:
 | `disturbance_moment_nm` | A constant FRD body moment (CG offset) |
 | `motor_thrust_scale` | Each motor's thrust as a fraction of the model's (mismatch); its yaw torque follows |
 
-`airframes::quad_x()`: 1 kg, 250 mm motor to motor, 6 N per motor (thrust-to-weight about
-2.4), motor time constant 30 ms. Roll and pitch gains come from the sim autotune, yaw and
-heading are hand-tuned on the sim, guidance uses the core defaults, and the hover thrust is
-derived from the model.
+Airframes span the plausible range of multirotors, so a method checked on all of them isn't
+fitted to one. Each is an X quad whose guidance uses the core defaults, with the hover thrust
+derived from the model; roll and pitch gains come from the sim autotune.
+
+| Airframe | Mass | Motor to motor | Thrust-to-weight | Motor lag | Source |
+|---|---|---|---|---|---|
+| `quad_x()` | 1 kg | 250 mm | 2.4 | 30 ms | Plausible 5-inch with a camera; yaw and heading hand-tuned on the step responses |
+| `heavy_quad()` | 3 kg | 350 mm | 2 | 50 ms | Mass and diagonal from ArduPilot SITL's default frame; yaw and heading `quad_x`'s |
+| `racer()` | 0.8 kg | 250 mm | 8 | 15 ms | Mass and diagonal from ArduPilot SITL's freestyle model; yaw and heading `quad_x`'s |
+
+`heavy_quad` and `racer` take ArduPilot's ring inertia (half the mass on the motor ring); their
+thrust-to-weight and motor lag are chosen to span the range (sources in `airframes` rustdoc).
 
 ## Limits
 

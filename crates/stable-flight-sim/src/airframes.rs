@@ -72,44 +72,198 @@ pub fn quad_x() -> Airframe {
         ground_friction: 0.5,
         max_step_s: 0.001,
     };
-    let mixer = TableMixer::quad_x();
-    let defaults = CopterStabilizerConfig::default();
-    let angle = |p| Gains {
-        p,
-        ..defaults.attitude.roll_gains
-    };
-    let stabilizer = CopterStabilizerConfig {
-        body_rate: BodyRateControllerConfig {
+    build(
+        model,
+        Tune {
             // Sim autotune (#347); the symmetric model's roll and pitch differ by the search's
             // step size.
-            roll_gains: Gains {
+            roll_rate: Gains {
                 p: 1.95,
                 i: 0.0,
                 d: 0.0288,
             },
-            pitch_gains: Gains {
+            pitch_rate: Gains {
                 p: 1.70,
                 i: 0.0,
                 d: 0.0258,
             },
+            // Sim autotune (#347).
+            angle_p: 9.0,
             // Prop drag gives yaw about 7 rad/s² per unit moment: P 1.5 rises in 0.16 s on a
             // 0.5 rad/s step without clipping (#347).
+            yaw_rate_p: 1.5,
+            // A 10° heading step without overshoot or clipping on the yaw rate loop above (#347).
+            heading_p: 3.5,
+        },
+    )
+}
+
+/// A 3 kg X quad, 350 mm motor to motor, thrust-to-weight 2: ArduPilot SITL's default
+/// multicopter (`libraries/SITL/SIM_Frame.cpp:51,57`, mass and diagonal), heavier and slower
+/// to turn than [`quad_x`].
+///
+/// Inertia follows ArduPilot's ring model: half the mass on the motor ring
+/// (`SIM_Frame.cpp:821-825`). The rest isn't in ArduPilot's model and is chosen:
+/// thrust-to-weight 2 at the low end of what flies well (ArduPilot's own hover throttle maps
+/// through a PWM curve that isn't comparable to the sim's `command²`), 50 ms motor lag for
+/// larger props, and drag, damping, and yaw torque scaled from `quad_x`. Gains come from the
+/// sim autotune like `quad_x`'s.
+pub fn heavy_quad() -> Airframe {
+    const MASS_KG: f32 = 3.0;
+    const DIAGONAL_M: f32 = 0.35;
+    let model = MultirotorModel {
+        mass_kg: MASS_KG,
+        inertia_kgm2: ring_inertia(MASS_KG, DIAGONAL_M),
+        moment_arm_m: DIAGONAL_M / 2.0 * core::f32::consts::FRAC_1_SQRT_2,
+        max_thrust_n: max_thrust_n(MASS_KG, 2.0),
+        motor_time_constant_s: 0.05,
+        // Prop drag torque per thrust grows with prop diameter: about 7-inch props against
+        // `quad_x`'s 5-inch.
+        yaw_torque_per_thrust_m: 0.022,
+        // Frontal area goes with the diagonal squared.
+        drag_n_per_mps: 0.6,
+        // `quad_x`'s scaled by mass × moment arm (about 4.2).
+        angular_damping_nm_per_radps: Vec3::new(0.0084, 0.0084, 0.0168),
+        ground_friction: 0.5,
+        max_step_s: 0.001,
+    };
+    build(
+        model,
+        Tune {
+            // Sim autotune from core's defaults (#366).
+            roll_rate: Gains {
+                p: 0.816,
+                i: 0.0,
+                d: 0.0209,
+            },
+            pitch_rate: Gains {
+                p: 0.795,
+                i: 0.0,
+                d: 0.0200,
+            },
+            angle_p: 9.0,
+            // `quad_x`'s: they hold heading in a hover; the autotune doesn't tune them.
+            yaw_rate_p: 1.5,
+            heading_p: 3.5,
+        },
+    )
+}
+
+/// A 0.8 kg X quad, 250 mm motor to motor, thrust-to-weight 8: ArduPilot SITL's 5-inch
+/// freestyle model (`Tools/autotest/models/freestyle.json`, mass and diagonal), lighter and
+/// far stronger than [`quad_x`].
+///
+/// Inertia follows ArduPilot's ring model: half the mass on the motor ring
+/// (`SIM_Frame.cpp:821-825`). The rest is chosen: thrust-to-weight 8, typical of a freestyle
+/// build (the model's hover throttle maps through a PWM curve that isn't comparable to the
+/// sim's `command²`), 15 ms motor lag for small high-kV motors, and drag, damping, and yaw
+/// torque from `quad_x`, the same size. Gains come from the sim autotune like `quad_x`'s.
+pub fn racer() -> Airframe {
+    const MASS_KG: f32 = 0.8;
+    const DIAGONAL_M: f32 = 0.25;
+    let model = MultirotorModel {
+        mass_kg: MASS_KG,
+        inertia_kgm2: ring_inertia(MASS_KG, DIAGONAL_M),
+        moment_arm_m: DIAGONAL_M / 2.0 * core::f32::consts::FRAC_1_SQRT_2,
+        max_thrust_n: max_thrust_n(MASS_KG, 8.0),
+        motor_time_constant_s: 0.015,
+        yaw_torque_per_thrust_m: 0.016,
+        drag_n_per_mps: 0.3,
+        // `quad_x`'s scaled by mass (same moment arm).
+        angular_damping_nm_per_radps: Vec3::new(0.0016, 0.0016, 0.0032),
+        ground_friction: 0.5,
+        max_step_s: 0.001,
+    };
+    build(
+        model,
+        Tune {
+            // Sim autotune from core's defaults (#366).
+            roll_rate: Gains {
+                p: 0.621,
+                i: 0.0,
+                d: 0.00446,
+            },
+            pitch_rate: Gains {
+                p: 0.598,
+                i: 0.0,
+                d: 0.00439,
+            },
+            angle_p: 9.0,
+            // `quad_x`'s: they hold heading in a hover; the autotune doesn't tune them.
+            yaw_rate_p: 1.5,
+            heading_p: 3.5,
+        },
+    )
+}
+
+/// Every airframe, by its function's name: [`quad_x`], [`heavy_quad`], and [`racer`].
+///
+/// # Examples
+///
+/// ```
+/// let names = stable_flight_sim::airframes::all().map(|(name, _)| name);
+/// assert_eq!(names, ["quad_x", "heavy_quad", "racer"]);
+/// ```
+pub fn all() -> [(&'static str, Airframe); 3] {
+    [
+        ("quad_x", quad_x()),
+        ("heavy_quad", heavy_quad()),
+        ("racer", racer()),
+    ]
+}
+
+/// Principal inertia (roll, pitch, yaw) of a quad with half its mass on a ring through the
+/// motors, in kg·m²: ArduPilot SITL's model when a frame gives none
+/// (`libraries/SITL/SIM_Frame.cpp:821-825`).
+fn ring_inertia(mass_kg: f32, diagonal_m: f32) -> Vec3 {
+    let radius_m = diagonal_m / 2.0;
+    let roll_kgm2 = mass_kg * 0.25 * radius_m * radius_m;
+    Vec3::new(roll_kgm2, roll_kgm2, 2.0 * roll_kgm2)
+}
+
+/// One motor's full thrust, in N, giving a quad of `mass_kg` a thrust-to-weight of
+/// `thrust_to_weight`.
+fn max_thrust_n(mass_kg: f32, thrust_to_weight: f32) -> f32 {
+    mass_kg * GRAVITY * thrust_to_weight / 4.0
+}
+
+/// The gains an airframe's stabilizer differs from the core defaults by.
+struct Tune {
+    roll_rate: Gains,
+    pitch_rate: Gains,
+    /// Roll and pitch angle P.
+    angle_p: f32,
+    yaw_rate_p: f32,
+    heading_p: f32,
+}
+
+/// `model` on the X-quad mixer, flown by core's configs with `tune`'s gains and the hover
+/// thrust worked out from the model.
+fn build(model: MultirotorModel, tune: Tune) -> Airframe {
+    let mixer = TableMixer::quad_x();
+    let defaults = CopterStabilizerConfig::default();
+    let angle = Gains {
+        p: tune.angle_p,
+        ..defaults.attitude.roll_gains
+    };
+    let stabilizer = CopterStabilizerConfig {
+        body_rate: BodyRateControllerConfig {
+            roll_gains: tune.roll_rate,
+            pitch_gains: tune.pitch_rate,
             yaw_gains: Gains {
-                p: 1.5,
+                p: tune.yaw_rate_p,
                 ..defaults.body_rate.yaw_gains
             },
             ..defaults.body_rate
         },
-        // Sim autotune (#347).
         attitude: AttitudeControllerConfig {
-            roll_gains: angle(9.0),
-            pitch_gains: angle(9.0),
+            roll_gains: angle,
+            pitch_gains: angle,
             ..defaults.attitude
         },
-        // A 10° heading step without overshoot or clipping on the yaw rate loop above (#347).
         yaw: YawControllerConfig {
             gains: Gains {
-                p: 3.5,
+                p: tune.heading_p,
                 i: 0.0,
                 d: 0.0,
             },

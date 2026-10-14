@@ -12,7 +12,8 @@
 //! - [`Perturbations`]: actuator delay, gyro noise and vibration, a disturbance moment, and
 //!   motor mismatch, all off by default. Ranges to sweep, so a method that passes on them
 //!   isn't fitted to one clean plant.
-//! - [`airframes`]: physics paired with the configs that fly it ([`airframes::quad_x`]).
+//! - [`airframes`]: physics paired with the configs that fly it ([`airframes::quad_x`],
+//!   [`airframes::heavy_quad`], [`airframes::racer`]).
 //!
 //! `no_std` with fixed-size math, so it can later drive hardware-in-the-loop runs.
 //!

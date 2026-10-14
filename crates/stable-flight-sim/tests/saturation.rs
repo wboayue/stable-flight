@@ -8,9 +8,9 @@ use stable_flight::{
     AbsoluteAttitudeCommand, AbsoluteRateCommand, Command, Commander, ControlInput, Saturation,
     Vec2, VehicleState, WaypointCommand,
 };
-use stable_flight_sim::{Wind, airframes};
+use stable_flight_sim::airframes;
 
-use common::{HOVER_ALTITUDE_M, Hover, fly, waypoint};
+use common::{HOVER_ALTITUDE_M, Hover, Plant, fly, waypoint};
 
 /// Hovers, then flies `input` from `after_s` on.
 struct ThenFly {
@@ -43,7 +43,7 @@ fn flags(input: Option<ControlInput>) -> Saturation {
         after_s: common::HOVER_SETTLE_S,
         input,
     };
-    let mut flight_loop = common::sim_loop_with(airframes::quad_x(), commander, Wind::default());
+    let mut flight_loop = common::sim_loop_with(&Plant::clean(airframes::quad_x()), commander);
     fly(&mut flight_loop, common::HOVER_SETTLE_S + FLY_S, |_, _| {});
     let (.., telemetry) = flight_loop.into_parts();
     telemetry.iter().fold(Saturation::default(), |all, tick| {

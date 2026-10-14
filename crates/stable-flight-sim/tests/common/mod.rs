@@ -1,8 +1,10 @@
-//! Wiring shared by the closed-loop tests: the `quad_x` pipeline on a `SimVehicle`, flown in
-//! simulated time.
+//! Wiring shared by the closed-loop tests: an airframe's pipeline on a `SimVehicle` (a
+//! [`Plant`]), flown in simulated time, and the step-response [`spec`].
 
 // Each test binary compiles this module and uses only part of it.
 #![allow(dead_code)]
+
+pub mod spec;
 
 use std::time::Duration;
 
@@ -18,7 +20,7 @@ use stable_flight::{
     Commander, Configurable, FlightLoop, TelemetryPublisher, Vec2, WaypointCommand,
 };
 use stable_flight_sim::airframes::{self, Airframe};
-use stable_flight_sim::{SimVehicle, Wind};
+use stable_flight_sim::{Perturbations, SimVehicle, Wind};
 
 /// Loop rate of the RealFlight examples.
 pub const TICK: Duration = Duration::from_millis(4);
@@ -42,41 +44,64 @@ pub const HOVER_SETTLE_S: f32 = 15.0;
 /// A commander that holds one waypoint.
 pub type Hover = WaypointFollower<[WaypointCommand; 1]>;
 
+/// What a test flies: an airframe, the air it flies through, and how its plant departs from
+/// the clean model.
+#[derive(Debug, Clone, Copy)]
+pub struct Plant {
+    pub airframe: Airframe,
+    pub wind: Wind,
+    pub perturbations: Perturbations,
+}
+
+impl Plant {
+    /// `airframe` in calm air, unperturbed.
+    pub fn clean(airframe: Airframe) -> Self {
+        Plant {
+            airframe,
+            wind: Wind::default(),
+            perturbations: Perturbations::default(),
+        }
+    }
+
+    /// `airframe` in `wind`, unperturbed.
+    pub fn in_wind(airframe: Airframe, wind: Wind) -> Self {
+        Plant {
+            wind,
+            ..Plant::clean(airframe)
+        }
+    }
+
+    /// The vehicle, at rest on the ground at the origin.
+    pub fn vehicle(&self) -> SimVehicle {
+        SimVehicle::new(self.airframe.model, &self.airframe.mixer)
+            .expect("valid airframe")
+            .with_wind(self.wind)
+            .with_perturbations(self.perturbations)
+            .expect("valid perturbations")
+    }
+}
+
 /// The `quad_x` airframe on the ground at the origin in `wind`, flown by `commander`, primed.
 pub fn sim_loop<C: Commander>(commander: C, wind: Wind) -> SimLoop<C> {
-    sim_loop_with(airframes::quad_x(), commander, wind)
+    sim_loop_with(&Plant::in_wind(airframes::quad_x(), wind), commander)
 }
 
-/// As [`sim_loop`], for `airframe` (e.g. `quad_x` with other gains).
-pub fn sim_loop_with<C: Commander>(airframe: Airframe, commander: C, wind: Wind) -> SimLoop<C> {
-    pipeline(airframe, commander, wind, RecordingTelemetry::new())
+/// As [`sim_loop`], for `plant`.
+pub fn sim_loop_with<C: Commander>(plant: &Plant, commander: C) -> SimLoop<C> {
+    pipeline(plant, commander, RecordingTelemetry::new())
 }
 
-/// `airframe` on the ground at the origin in `wind`, flown by `commander`, publishing to
-/// `telemetry`, primed.
+/// `plant` on the ground at the origin, flown by `commander`, publishing to `telemetry`,
+/// primed.
 pub fn pipeline<C: Commander, T: TelemetryPublisher>(
-    airframe: Airframe,
-    commander: C,
-    wind: Wind,
-    telemetry: T,
-) -> Pipeline<C, T> {
-    let vehicle = SimVehicle::new(airframe.model, &airframe.mixer)
-        .expect("valid airframe")
-        .with_wind(wind);
-    pipeline_on(airframe, vehicle, commander, telemetry)
-}
-
-/// `airframe`'s configs flying `vehicle` (built from `airframe`'s model, with any wind or
-/// perturbations), flown by `commander`, publishing to `telemetry`, primed.
-pub fn pipeline_on<C: Commander, T: TelemetryPublisher>(
-    airframe: Airframe,
-    vehicle: SimVehicle,
+    plant: &Plant,
     commander: C,
     telemetry: T,
 ) -> Pipeline<C, T> {
+    let airframe = plant.airframe;
     let mut flight_loop = FlightLoop::new(
         commander,
-        vehicle,
+        plant.vehicle(),
         CopterGuidance::new(airframe.guidance),
         CopterStabilizer::new(airframe.stabilizer),
         airframe.mixer,
@@ -125,23 +150,22 @@ pub fn hover_follower() -> Hover {
         .with_route_end(RouteEnd::Hold)
 }
 
-/// `airframe` taken off and settled for [`HOVER_SETTLE_S`] on [`hover_follower`]'s point, in
-/// `wind`.
-pub fn hover(airframe: Airframe, wind: Wind) -> SimLoop<Hover> {
-    let mut flight_loop = sim_loop_with(airframe, hover_follower(), wind);
+/// `plant` taken off and settled for [`HOVER_SETTLE_S`] on [`hover_follower`]'s point.
+pub fn hover(plant: &Plant) -> SimLoop<Hover> {
+    let mut flight_loop = sim_loop_with(plant, hover_follower());
     fly(&mut flight_loop, HOVER_SETTLE_S, |_, _| {});
     flight_loop
 }
 
-/// Probes `target` with `config` on `airframe` settled in a calm [`hover`], until the probe
-/// ends or `timeout_s` passes; `None` on the timeout.
+/// Probes `target` with `config` on `plant` settled in a [`hover`], until the probe ends or
+/// `timeout_s` passes; `None` on the timeout.
 pub fn probe(
-    airframe: Airframe,
+    plant: &Plant,
     target: TunedLoop,
     config: ProbeConfig,
     timeout_s: f32,
 ) -> Option<ProbeStatus> {
-    let mut flight_loop = hover(airframe, Wind::default());
+    let mut flight_loop = hover(plant);
     flight_loop.start_probe(target, config);
     for _ in 0..ticks(timeout_s) {
         flight_loop.step(TICK);
@@ -165,9 +189,9 @@ pub struct AutotuneRun {
     pub duration_s: f32,
 }
 
-/// Runs `plan` on `airframe` settled in a calm [`hover`], until it ends or `timeout_s` passes.
-pub fn autotune(airframe: Airframe, plan: &[StagePlan], timeout_s: f32) -> AutotuneRun {
-    let mut flight_loop = hover(airframe, Wind::default());
+/// Runs `plan` on `plant` settled in a [`hover`], until it ends or `timeout_s` passes.
+pub fn autotune(plant: &Plant, plan: &[StagePlan], timeout_s: f32) -> AutotuneRun {
+    let mut flight_loop = hover(plant);
     let mut autotune = Autotune::new(plan, Envelope::default()).expect("valid plan");
     autotune.start(&flight_loop).expect("armed, idle");
     let mut stages = Vec::new();
