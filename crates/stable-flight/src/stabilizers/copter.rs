@@ -361,21 +361,17 @@ impl CopterStabilizer {
     ) -> ControlOutput {
         // Roll/pitch saturate inside the attitude controller, thrust in the thrust curve (see
         // `crate::math`).
-        let limits_rad = self.config.attitude.max_angles_rad;
-        let max_angles_rad = Vec2::new(
-            limits_rad.x,
-            pitch_limit_rad(limits_rad.y, setpoint.transition),
-        );
+        let max_angles_rad = self.max_angles_rad(setpoint);
         // `>` is false for NaN, which saturates to level.
         self.saturation.tilt = setpoint.roll_rad.abs() > max_angles_rad.x
             || setpoint.pitch_rad.abs() > max_angles_rad.y;
         let attitude = &estimated_state.attitude;
         let saturate_tilt = |roll_rad: f32, pitch_rad: f32, heading_rad: f32| {
-            Vec3::new(
-                saturate_symmetric(roll_rad, max_angles_rad.x),
-                saturate_symmetric(pitch_rad, max_angles_rad.y),
-                heading_rad,
-            )
+            let tilt = AttitudeController::saturate_setpoint(
+                max_angles_rad,
+                Vec2::new(roll_rad, pitch_rad),
+            );
+            Vec3::new(tilt.x, tilt.y, heading_rad)
         };
 
         // Roll, pitch, and heading setpoints; a probe on one of these loops may replace one.
@@ -424,6 +420,16 @@ impl CopterStabilizer {
             thrust: self.fit_to_thrust_curve(setpoint.thrust),
             moments,
         }
+    }
+
+    /// The roll and pitch limits for `setpoint`: `max_angles_rad`, with pitch lifted to ±π/2
+    /// for a transition ramp.
+    fn max_angles_rad(&self, setpoint: &AttitudeSetpoint) -> Vec2 {
+        let limits_rad = self.config.attitude.max_angles_rad;
+        Vec2::new(
+            limits_rad.x,
+            pitch_limit_rad(limits_rad.y, setpoint.transition),
+        )
     }
 
     /// Tracks body rates in rad/s with linear `thrust`, bypassing the attitude controller.
