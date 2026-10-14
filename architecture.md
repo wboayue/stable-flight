@@ -78,8 +78,8 @@ Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its depen
 RealFlight (and X-Plane, planned) can't run in `cargo test` or CI, so without another plant
 the pipeline's closed loop is only checked by hand. `stable-flight-sim` is that plant: a rigid
 body with motor lag, quadratic thrust, linear drag, a ground plane, and deterministic wind,
-stepped in lockstep with `FlightLoop` (no wall clock, no noise), so a test flight repeats bit
-for bit and runs in milliseconds. It aims at plausible dynamics, not fidelity; RealFlight stays
+stepped in lockstep with `FlightLoop` (no wall clock, only seeded noise), so a test flight
+repeats bit for bit and runs in milliseconds. It aims at plausible dynamics, not fidelity; RealFlight stays
 the check for realism.
 
 * **Why not JSBSim (or Gazebo).** An external engine brings a C++ build or a process to
@@ -93,6 +93,11 @@ the check for realism.
   autotune targets (cited in `tests/step_response.rs`), not to whatever the sim measured, so
   a regression and a tuning gap both fail. `quad_x`'s gains come from running the core
   autotune on the sim.
+* **Perturbation ranges, not a fitted plant.** Delay, gyro noise and vibration, a disturbance
+  moment, and motor mismatch are parameters to sweep, so the autotune *method* is checked on
+  many plausible plants and transfers to hardware. Fitting the sim to RealFlight's QuadCopterX
+  (#365) was rejected: it would match one simulated plant, and its gains still wouldn't be a
+  board's.
 * **Not a backend crate.** It meets the frame and timing contracts and covers every
   conformance scenario like a backend, but it has no simulator client, so it isn't a
   `stable-flight-sitl-<simulator>` crate. Core can't take it as a dev-dependency (a cycle

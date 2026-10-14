@@ -63,6 +63,17 @@ pub fn pipeline<C: Commander, T: TelemetryPublisher>(
     let vehicle = SimVehicle::new(airframe.model, &airframe.mixer)
         .expect("valid airframe")
         .with_wind(wind);
+    pipeline_on(airframe, vehicle, commander, telemetry)
+}
+
+/// `airframe`'s configs flying `vehicle` (built from `airframe`'s model, with any wind or
+/// perturbations), flown by `commander`, publishing to `telemetry`, primed.
+pub fn pipeline_on<C: Commander, T: TelemetryPublisher>(
+    airframe: Airframe,
+    vehicle: SimVehicle,
+    commander: C,
+    telemetry: T,
+) -> Pipeline<C, T> {
     let mut flight_loop = FlightLoop::new(
         commander,
         vehicle,

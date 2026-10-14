@@ -6,6 +6,7 @@ use stable_flight::{GRAVITY, Vec3};
 
 use super::*;
 use crate::airframes;
+use crate::perturbations::{GyroNoise, Vibration};
 
 const TICK: Duration = Duration::from_millis(4);
 
@@ -210,4 +211,115 @@ fn same_commands_give_the_same_state() {
         fly(&mut vehicle, &command, 500)
     };
     check!(run() == run());
+}
+
+fn perturbed(perturbations: Perturbations) -> SimVehicle {
+    vehicle()
+        .with_perturbations(perturbations)
+        .expect("valid perturbations")
+}
+
+#[test]
+fn rejects_invalid_perturbations() {
+    let perturbations = Perturbations {
+        actuator_delay_s: 1.0,
+        ..Default::default()
+    };
+    check!(vehicle().with_perturbations(perturbations).err() == Some(ModelError::DelayTooLong));
+}
+
+/// A command reaches the motors one tick (the hold) plus `actuator_delay_s` after `actuate`,
+/// to the 1 ms tick.
+#[test]
+fn delays_motor_commands_by_actuator_delay() {
+    const MS: Duration = Duration::from_millis(1);
+    for delay_ms in [0_u32, 10, 25] {
+        let mut vehicle = perturbed(Perturbations {
+            actuator_delay_s: delay_ms as f32 * 1e-3,
+            ..Default::default()
+        });
+        vehicle.actuate(&motors(1.0));
+        // The step that starts `delay_ms` after `actuate` is the first to spin the motors.
+        for _ in 0..delay_ms {
+            vehicle.state(MS);
+        }
+        check!(vehicle.motor_thrusts_n()[0] == 0.0, "{delay_ms} ms");
+        vehicle.state(MS);
+        check!(vehicle.motor_thrusts_n()[0] > 0.0, "{delay_ms} ms");
+    }
+}
+
+/// At rest on the ground the true rates are zero, so the reported rates are the noise alone.
+#[test]
+fn gyro_noise_rms_reads_back() {
+    const SAMPLES: usize = 10_000;
+    let rms_radps = Vec3::new(0.01, 0.02, 0.05);
+    let mut vehicle = perturbed(Perturbations {
+        gyro: GyroNoise {
+            rms_radps,
+            vibration: None,
+            seed: 11,
+        },
+        ..Default::default()
+    });
+    let sum_squares = (0..SAMPLES)
+        .map(|_| vehicle.state(TICK).angular_velocity_radps)
+        .fold(Vec3::zeros(), |sum, rates| {
+            sum + rates.component_mul(&rates)
+        });
+    let measured_radps = (sum_squares / SAMPLES as f32).map(libm::sqrtf);
+    check!(vehicle.on_ground());
+    // The RMS estimate's standard error is RMS/√(2N), 0.7% here.
+    assert_relative_eq!(measured_radps, rms_radps, max_relative = 0.03);
+}
+
+/// Zero crossings over a second of 1 kHz samples give the tone's frequency, and the peak its
+/// amplitude.
+#[test]
+fn vibration_tone_reads_back() {
+    const MS: Duration = Duration::from_millis(1);
+    let amplitude_radps = Vec3::new(0.05, 0.1, 0.02);
+    let frequency_hz = 80.0;
+    let mut vehicle = perturbed(Perturbations {
+        gyro: GyroNoise {
+            vibration: Some(Vibration {
+                amplitude_radps,
+                frequency_hz,
+            }),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let rolls: Vec<f32> = (0..1000)
+        .map(|_| vehicle.state(MS).angular_velocity_radps.x)
+        .collect();
+    let crossings = rolls
+        .windows(2)
+        .filter(|pair| (pair[0] < 0.0) != (pair[1] < 0.0))
+        .count();
+    check!((crossings as f32 / 2.0 - frequency_hz).abs() <= 1.0);
+    let peak_radps = rolls
+        .iter()
+        .fold(0.0_f32, |peak, roll| peak.max(roll.abs()));
+    // 1 kHz samples land within 0.04 cycle of the peak: sin ≥ 0.97.
+    assert_relative_eq!(peak_radps, amplitude_radps.x, max_relative = 0.03);
+}
+
+/// From rest in the air, the disturbance moment accelerates each axis at `M / I`.
+#[test]
+fn disturbance_moment_accelerates_the_body() {
+    let moment_nm = Vec3::new(0.01, -0.02, 0.005);
+    let mut vehicle = perturbed(Perturbations {
+        disturbance_moment_nm: moment_nm,
+        ..Default::default()
+    });
+    vehicle.body.position_ned_m.z = -10.0;
+    let h_s = 0.001;
+    let state = vehicle.state(Duration::from_millis(1));
+    let expected_radps2 = moment_nm.component_div(&vehicle.model.inertia_kgm2);
+    assert_relative_eq!(
+        state.angular_velocity_radps / h_s,
+        expected_radps2,
+        max_relative = 1e-4
+    );
 }

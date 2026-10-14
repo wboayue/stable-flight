@@ -50,7 +50,8 @@ pub struct MultirotorModel {
     pub max_step_s: f32,
 }
 
-/// Why a [`MultirotorModel`] or a [`SimVehicle`](crate::SimVehicle)'s mixer was rejected.
+/// Why a [`MultirotorModel`], [`Perturbations`](crate::Perturbations), or a
+/// [`SimVehicle`](crate::SimVehicle)'s mixer was rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum ModelError {
@@ -60,9 +61,20 @@ pub enum ModelError {
     /// A parameter that must be non-negative and finite isn't.
     #[error("{0} must be non-negative and finite")]
     Negative(&'static str),
+    /// A parameter that must be finite isn't.
+    #[error("{0} must be finite")]
+    NotFinite(&'static str),
     /// The mixer drives a servo; the simulator models motors only.
     #[error("the mixer drives servo {0}, which the simulator doesn't model")]
     Servo(u8),
+    /// A motor slot's [`Perturbations::motor_thrust_scale`](crate::Perturbations::motor_thrust_scale)
+    /// isn't positive and finite.
+    #[error("motor_thrust_scale[{0}] must be positive and finite")]
+    ThrustScale(u8),
+    /// [`Perturbations::actuator_delay_s`](crate::Perturbations::actuator_delay_s) is over
+    /// [`MAX_ACTUATOR_DELAY_S`](crate::MAX_ACTUATOR_DELAY_S).
+    #[error("actuator_delay_s must be at most {max_s} s", max_s = crate::MAX_ACTUATOR_DELAY_S)]
+    DelayTooLong,
 }
 
 impl MultirotorModel {
@@ -84,12 +96,7 @@ impl MultirotorModel {
             ("motor_time_constant_s", self.motor_time_constant_s),
             ("max_step_s", self.max_step_s),
         ];
-        if let Some((name, _)) = positive
-            .iter()
-            .find(|(_, value)| !(value.is_finite() && *value > 0.0))
-        {
-            return Err(ModelError::NotPositive(name));
-        }
+        check_positive(&positive)?;
         let non_negative = [
             ("yaw_torque_per_thrust_m", self.yaw_torque_per_thrust_m),
             ("drag_n_per_mps", self.drag_n_per_mps),
@@ -107,12 +114,29 @@ impl MultirotorModel {
             ),
             ("ground_friction", self.ground_friction),
         ];
-        if let Some((name, _)) = non_negative
-            .iter()
-            .find(|(_, value)| !(value.is_finite() && *value >= 0.0))
-        {
-            return Err(ModelError::Negative(name));
-        }
-        Ok(())
+        check_non_negative(&non_negative)
     }
+}
+
+/// [`ModelError::NotPositive`] naming the first of `params` that isn't positive and finite.
+pub(crate) fn check_positive(params: &[(&'static str, f32)]) -> Result<(), ModelError> {
+    first_failing(params, |value| value > 0.0)
+        .map_or(Ok(()), |name| Err(ModelError::NotPositive(name)))
+}
+
+/// [`ModelError::Negative`] naming the first of `params` that is negative or not finite.
+pub(crate) fn check_non_negative(params: &[(&'static str, f32)]) -> Result<(), ModelError> {
+    first_failing(params, |value| value >= 0.0)
+        .map_or(Ok(()), |name| Err(ModelError::Negative(name)))
+}
+
+/// The name of the first of `params` that isn't finite or fails `in_range`.
+fn first_failing(
+    params: &[(&'static str, f32)],
+    in_range: impl Fn(f32) -> bool,
+) -> Option<&'static str> {
+    params
+        .iter()
+        .find(|(_, value)| !(value.is_finite() && in_range(*value)))
+        .map(|(name, _)| *name)
 }

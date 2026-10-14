@@ -52,14 +52,15 @@ Each file in `tests/` flies the full pipeline on `airframes::quad_x()` (wiring i
 | `failsafe` | Over the link (`FcLink` + loopback): silence hands over to `HoldCommander` within the timeout, which holds in place armed; the link takes back over after recovery |
 | `saturation` | Each limit (tilt caps, altitude thrust, moments, mixer collective, mixer near idle) sets its `Saturation` flags, and a hover sets none |
 | `autotune` | `StagePlan::copter_search` from low, a little high (×1.5), and far too high (×3, steps clip) rate gains tunes every stage to `quad_x`'s gains within 25% |
-| `determinism` | A windy, gusty route twice gives bit-identical states |
+| `determinism` | A windy, gusty route twice gives bit-identical states, clean and with every perturbation on (one seed) |
 
 ## Timing
 
 Lockstep, no wall clock. `actuate` stores the motor commands; `state(dt)` integrates them over
 `dt` in steps of at most `MultirotorModel::max_step_s` and returns the result, so tick *n* sees tick *n − 1*'s
-command. The priming call (`dt` zero) returns the current state without stepping. State is
-perfect (no noise or estimator), and the same inputs give the same flight bit for bit.
+command, plus `Perturbations::actuator_delay_s` when set. The priming call (`dt` zero) returns
+the current state without stepping. State is exact (no estimator) apart from the gyro noise
+below, and the same inputs and seed give the same flight bit for bit.
 
 ## Model
 
@@ -72,6 +73,17 @@ perfect (no noise or estimator), and the same inputs give the same flight bit fo
 | Wind | Steady wind plus an optional "1 − cos" `Gust`, a function of simulated time only |
 | Ground | Plane at altitude 0. Contact stops sinking; resting (thrust below weight) holds the body level, stops rotation, and applies Coulomb friction |
 
+`Perturbations` (`SimVehicle::with_perturbations`, all off by default) bring the things that
+most often break a tune on hardware. Each is a range to sweep, so a method that passes on them
+isn't fitted to one clean plant:
+
+| Perturbation | Model |
+|---|---|
+| `actuator_delay_s` | Motor commands applied this long after `actuate`, to the integration step; up to `MAX_ACTUATOR_DELAY_S` (50 ms) |
+| `gyro` | Gaussian white noise at `rms_radps` per axis from a seeded generator, plus an optional `Vibration` tone, on the reported body rates only. Sampled at the tick, so a tone above half the loop rate aliases |
+| `disturbance_moment_nm` | A constant FRD body moment (CG offset) |
+| `motor_thrust_scale` | Each motor's thrust as a fraction of the model's (mismatch); its yaw torque follows |
+
 `airframes::quad_x()`: 1 kg, 250 mm motor to motor, 6 N per motor (thrust-to-weight about
 2.4), motor time constant 30 ms. Roll and pitch gains come from the sim autotune, yaw and
 heading are hand-tuned on the sim, guidance uses the core defaults, and the hover thrust is
@@ -79,6 +91,7 @@ derived from the model.
 
 ## Limits
 
-Out of scope: blade-element props, ground effect, battery sag, sensor noise and latency,
-terrain, visuals, real-time pacing, and multiple vehicles. Landing levels the body instantly
+Out of scope: blade-element props, ground effect, battery sag, estimator and filter models
+(attitude, position, and velocity are exact; only the gyro is noisy), terrain, visuals,
+real-time pacing, and multiple vehicles. Landing levels the body instantly
 rather than modeling a tip-over. Servos (tilt rotors, control surfaces) aren't modeled.
