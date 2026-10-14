@@ -9,8 +9,9 @@ use crate::guidance::plane::{PlaneGuidance, PlaneGuidanceConfig};
 use crate::math::bank_rad;
 use crate::params::{ParamError, Params, locate};
 use crate::{
-    AbsoluteAttitudeCommand, Configurable, ControlInput, FlightMode, FlightModeReport,
-    FlightRegime, Guidance, ModeRefusal, Saturation, Setpoint, VehicleState, View,
+    AbsoluteAttitudeCommand, AttitudeSetpoint, Configurable, ControlInput, FlightMode,
+    FlightModeReport, FlightRegime, Guidance, ModeRefusal, PlaneSetpoint, Saturation, Setpoint,
+    VehicleState, View,
 };
 
 #[cfg(test)]
@@ -60,9 +61,12 @@ impl TailsitterGuidanceConfig {
 ///    | Mode | Setpoint |
 ///    |---|---|
 ///    | `Copter` | hover guidance, on the command's input |
-///    | `ToPlane` | hover guidance on an absolute attitude: wings level, view pitch −tilt, heading held, thrust the larger of [`forward_thrust`](TransitionConfig::forward_thrust) and the hover thrust when it began |
+///    | `ToPlane` | hover guidance on an absolute attitude: wings level, view pitch −tilt, heading held, thrust the larger of [`forward_thrust`](TransitionConfig::forward_thrust) and the hover thrust when it began; a [`transition`](AttitudeSetpoint::transition) ramp |
 ///    | `Plane` | plane guidance, on the command's input |
-///    | `ToCopter` | plane guidance on an absolute attitude: wings level, pitch π/2 − tilt, [`back_thrust`](TransitionConfig::back_thrust) |
+///    | `ToCopter` | plane guidance on an absolute attitude: wings level, pitch π/2 − tilt, [`back_thrust`](TransitionConfig::back_thrust); a [`transition`](PlaneSetpoint::transition) ramp |
+///
+///    A ramp's pitch isn't held to the stabilizer's limits (hover tilt, plane pitch), which
+///    would stop it short of completing.
 ///
 /// 4. On a handoff (`ToPlane` → `Plane`, `ToCopter` → `Copter`) the incoming guidance is
 ///    primed, and thrust blends from its last value over
@@ -198,6 +202,22 @@ impl TailsitterGuidance {
     }
 }
 
+/// `setpoint` marked as a transition ramp, so the stabilizer flies its pitch past the side's
+/// limit to the handover.
+fn transition_ramp(setpoint: Setpoint) -> Setpoint {
+    match setpoint {
+        Setpoint::Attitude(attitude) => Setpoint::Attitude(AttitudeSetpoint {
+            transition: true,
+            ..attitude
+        }),
+        Setpoint::Plane(plane) => Setpoint::Plane(PlaneSetpoint {
+            transition: true,
+            ..plane
+        }),
+        other => other,
+    }
+}
+
 impl Guidance for TailsitterGuidance {
     fn guide(
         &mut self,
@@ -229,7 +249,7 @@ impl Guidance for TailsitterGuidance {
                     heading_rad: f32::NAN,
                     thrust: self.forward_thrust,
                 });
-                self.hover.guide(dt, FlightRegime::Copter, &ramp, state)
+                transition_ramp(self.hover.guide(dt, FlightRegime::Copter, &ramp, state))
             }
             FlightMode::Plane => {
                 let setpoint = self.plane.guide(dt, FlightRegime::Plane, input, state);
@@ -242,7 +262,7 @@ impl Guidance for TailsitterGuidance {
                     heading_rad: f32::NAN,
                     thrust: transition.back_thrust,
                 });
-                self.plane.guide(dt, FlightRegime::Plane, &ramp, state)
+                transition_ramp(self.plane.guide(dt, FlightRegime::Plane, &ramp, state))
             }
             _ => self.hover.guide(dt, FlightRegime::Copter, input, state),
         };

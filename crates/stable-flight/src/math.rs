@@ -111,6 +111,16 @@ pub(crate) fn saturate_unit(value: f32) -> f32 {
     saturate_symmetric(value, 1.0)
 }
 
+/// The pitch limit for a setpoint: the stabilizer's `limit_rad`, or ±π/2 for a tailsitter
+/// transition ramp, whose pitch is bounded by its own config and must reach its handover.
+pub(crate) fn pitch_limit_rad(limit_rad: f32, transition: bool) -> f32 {
+    if transition {
+        core::f32::consts::FRAC_PI_2
+    } else {
+        limit_rad
+    }
+}
+
 /// Saturates `value` to `[-limit, limit]`; NaN becomes 0 (neutral), and a negative or NaN
 /// `limit` acts as 0, so neither a bad input nor a bad config panics the loop.
 pub(crate) fn saturate_symmetric(value: f32, limit: f32) -> f32 {

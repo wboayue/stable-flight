@@ -42,6 +42,7 @@ fn worst_case_record() -> Record {
             pitch_rad: 0.2,
             heading_rad: 0.3,
             thrust: 0.4,
+            transition: false,
         }),
         state: sample_state(),
         control: ControlOutput {
@@ -188,6 +189,7 @@ fn every_downlink_variant_round_trips() {
             setpoint: Setpoint::Plane(stable_flight::PlaneSetpoint {
                 roll_rad: 0.4,
                 pitch_rad: 0.1,
+                transition: true,
                 thrust: 0.5,
             }),
             flight_mode: FlightModeReport {

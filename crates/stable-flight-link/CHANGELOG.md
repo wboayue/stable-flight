@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `PROTOCOL_VERSION` 4 (#388): core `AttitudeSetpoint` and `PlaneSetpoint`
+  gain `transition`, which changes the `Record` shape.
 - **Breaking:** `PROTOCOL_VERSION` 3 (#124): core `ControlInput::AbsoluteRate`,
   `ControlMode::AbsoluteRate`, `Setpoint::BodyRate`/`Plane`/`PlaneRate`, and
   `ModeRefusal::RollError` change the message shapes.

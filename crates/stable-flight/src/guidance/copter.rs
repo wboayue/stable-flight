@@ -469,6 +469,7 @@ impl CopterGuidance {
                 let boosted = self.clip_thrust(boosted);
                 self.hold_piloted(throttle, boosted, estimated_state.velocity_mps.z)
             },
+            transition: false,
         }
     }
 
@@ -515,6 +516,7 @@ impl CopterGuidance {
                 let thrust = self.clip_thrust(command.thrust);
                 self.hold_piloted(command.thrust, thrust, estimated_state.velocity_mps.z)
             },
+            transition: false,
         }
     }
 
@@ -644,6 +646,7 @@ impl CopterGuidance {
             pitch_rad: tilt_rad.y,
             heading_rad: self.heading,
             thrust: self.floor_thrust(linear_thrust),
+            transition: false,
         }
     }
 

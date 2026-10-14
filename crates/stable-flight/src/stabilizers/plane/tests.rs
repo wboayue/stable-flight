@@ -34,6 +34,7 @@ fn plane(roll_deg: f32, pitch_deg: f32) -> Setpoint {
         roll_rad: roll_deg.to_radians(),
         pitch_rad: pitch_deg.to_radians(),
         thrust: 0.5,
+        transition: false,
     })
 }
 
@@ -245,6 +246,36 @@ fn reports_saturation() {
     let mut stabilizer = PlaneStabilizer::new(config);
     stabilizer.stabilize(DT, &plane(40.0, 0.0), &state);
     check!(stabilizer.saturation().moments == [true, false, false]);
+}
+
+/// A transition ramp's pitch saturates at ±90°, not `max_pitch_rad` (#388); bank keeps its
+/// limit. From 60° nose up with the default 30° limit: (bank°, pitch°, transition, sign of
+/// the pitch moment if read, tilt flagged)
+#[test]
+fn transition_ramps_fly_pitch_past_the_cap() {
+    let state = at(0.0, 60.0, Some(15.0));
+    let cases = [
+        (0.0, 70.0, true, Some(1.0), false),
+        (0.0, 70.0, false, Some(-1.0), true),
+        (0.0, 100.0, true, Some(1.0), true),
+        (0.0, f32::NAN, true, Some(-1.0), false),
+        (60.0, 60.0, true, None, true),
+    ];
+    for (roll_deg, pitch_deg, transition, pitch_sign, tilt) in cases {
+        let setpoint = Setpoint::Plane(PlaneSetpoint {
+            roll_rad: f32::to_radians(roll_deg),
+            pitch_rad: f32::to_radians(pitch_deg),
+            thrust: 0.5,
+            transition,
+        });
+        let mut stabilizer = PlaneStabilizer::new(p_only());
+        let output = stabilizer.stabilize(DT, &setpoint, &state);
+        let case = (roll_deg, pitch_deg, transition);
+        if let Some(sign) = pitch_sign {
+            check!(output.moments.y.signum() == sign, "{case:?}: {output:?}");
+        }
+        check!(stabilizer.saturation().tilt == tilt, "{case:?}");
+    }
 }
 
 /// The thrust curve, and neutral for a copter's setpoints.

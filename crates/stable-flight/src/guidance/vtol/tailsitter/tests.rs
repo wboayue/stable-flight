@@ -62,7 +62,7 @@ fn in_plane() -> TailsitterGuidance {
 fn routes_each_settled_mode_to_its_guidance() {
     let mut copter = primed();
     let setpoint = copter.guide(DT, FlightRegime::Copter, &sticks(0.6), &at(0.0, 0.0));
-    check!(matches!(setpoint, Setpoint::Attitude(_)));
+    check!(matches!(setpoint, Setpoint::Attitude(a) if !a.transition));
     check!(mode(&copter) == FlightMode::Copter);
 
     let mut plane = in_plane();
@@ -76,13 +76,15 @@ fn routes_each_settled_mode_to_its_guidance() {
             == Setpoint::Plane(PlaneSetpoint {
                 roll_rad: 0.0,
                 pitch_rad: 0.0,
-                thrust: 0.7
+                thrust: 0.7,
+                transition: false,
             })
     );
 }
 
 /// The forward ramp flies the hover side wings level, nose down by the tilt target in the
-/// view, at the larger of the configured thrust and the hover thrust when it began.
+/// view, at the larger of the configured thrust and the hover thrust when it began, marked a
+/// transition so the hover tilt limit doesn't stop it (#388).
 #[test]
 fn forward_ramp_tilts_the_hover_view() {
     let mut guidance = primed();
@@ -95,14 +97,16 @@ fn forward_ramp_tilts_the_hover_view() {
     };
     check!(mode(&guidance) == FlightMode::ToPlane);
     check!(first.roll_rad == 0.0 && later.roll_rad == 0.0);
+    check!(first.transition && later.transition);
     // 50°/s for 0.2 s past the 0° start: 10° of tilt, view pitch −10°.
     assert_relative_eq!(later.pitch_rad, -10f32.to_radians(), epsilon = 1e-3);
     check!(later.pitch_rad < first.pitch_rad);
     check!(first.thrust >= 0.8 - 1e-6 && later.thrust >= 0.8 - 1e-6);
 }
 
-/// The back ramp flies the plane side wings level, nose up to π/2 − tilt, at the back thrust;
-/// a `Land` input asks for it too.
+/// The back ramp flies the plane side wings level, nose up to π/2 − tilt, at the back thrust,
+/// marked a transition so the plane pitch cap doesn't stop it (#388); a `Land` input asks for
+/// it too.
 #[test]
 fn back_ramp_pitches_the_plane_up_and_land_asks_for_it() {
     for input in [sticks(0.6), ControlInput::Land(LandCommand::default())] {
@@ -125,6 +129,7 @@ fn back_ramp_pitches_the_plane_up_and_land_asks_for_it() {
             epsilon = 1e-3
         );
         check!(plane.roll_rad == 0.0);
+        check!(plane.transition, "{input:?}");
     }
 }
 

@@ -308,6 +308,16 @@ deliberately. The pieces:
   the incoming guidance primed at the handoff. `TailsitterStabilizer` flies each setpoint on
   the side its variant names and primes the incoming side, so the mixer never sees the regime.
   Each composite's params chain its parts' tables.
+* **Ramps fly past the cruise limits.** A ramp's setpoint is marked `transition`, and the
+  stabilizer saturates its pitch at ±90° instead of the hover tilt or plane pitch limit, which
+  sit below the handover angles (a plane's 30° cap against a 45° back handover): capped, a ramp
+  stalls short of completing and flies to its timeout. ArduPilot's tailsitter ramps the same
+  way, limited only to ±85° on either side (`ArduPlane/tailsitter.cpp:871`, `:957`, applied
+  after the plane's pitch limit, `Attitude.cpp:429`); PX4 flies its back ramp on the
+  multicopter controller (`vtol_att_control/tailsitter.cpp:264-285`). Rejected: rejecting a cap
+  below the handover when the configs are validated. The two values live in different
+  components' configs and params, so it needs a cross-component check `FlightLoop` doesn't
+  have, and it forces a high cap on all hover or plane flight.
 * **Airspeed is optional.** `VehicleState::airspeed_mps` is `None` without air data
   (`valid_airspeed_mps` also drops NaN and negative readings). The forward transition
   completes on tilt and, when a valid airspeed is present, a minimum airspeed (as PX4 does).

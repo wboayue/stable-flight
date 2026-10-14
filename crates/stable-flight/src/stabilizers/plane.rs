@@ -3,7 +3,7 @@
 //!
 //! | Setpoint | Behavior |
 //! |---|---|
-//! | [`Setpoint::Plane`] | Bank and pitch (saturated to [`max_bank_rad`](PlaneStabilizerConfig::max_bank_rad) / [`max_pitch_rad`](PlaneStabilizerConfig::max_pitch_rad)) → rate targets = error / time constant, plus the coordinated-turn rates for the current bank and airspeed → rate loop |
+//! | [`Setpoint::Plane`] | Bank and pitch (saturated to [`max_bank_rad`](PlaneStabilizerConfig::max_bank_rad) / [`max_pitch_rad`](PlaneStabilizerConfig::max_pitch_rad), pitch to ±π/2 for a [`transition`](PlaneSetpoint::transition) ramp) → rate targets = error / time constant, plus the coordinated-turn rates for the current bank and airspeed → rate loop |
 //! | [`Setpoint::PlaneRate`] | Absolute body rates (saturated to [`max_body_rate_radps`](PlaneStabilizerConfig::max_body_rate_radps)) → rate loop, at any attitude: acro, rolls, loops |
 //! | others | Neutral (zero thrust and moments) |
 //!
@@ -28,8 +28,8 @@ use crate::controllers::{
     check_positive,
 };
 use crate::math::{
-    DEG, assert_dt, attitude_error, bank_rad, clamp_symmetric, saturate_rates, saturate_symmetric,
-    thrust_curve,
+    DEG, assert_dt, attitude_error, bank_rad, clamp_symmetric, pitch_limit_rad, saturate_rates,
+    saturate_symmetric, thrust_curve,
 };
 use crate::{
     BodyRateSetpoint, Configurable, ControlOutput, GRAVITY, PlaneSetpoint, Saturation, Setpoint,
@@ -57,7 +57,8 @@ pub struct PlaneStabilizerConfig {
     pub max_body_rate_radps: Vec3,
     /// Largest bank an attitude setpoint gets, in radians.
     pub max_bank_rad: f32,
-    /// Largest pitch, up or down, an attitude setpoint gets, in radians.
+    /// Largest pitch, up or down, an attitude setpoint gets, in radians; a
+    /// [`transition`](PlaneSetpoint::transition) ramp's isn't held to it.
     pub max_pitch_rad: f32,
     /// The airspeed the gains are tuned at (scale 1), in m/s; assumed without an airspeed.
     pub trim_airspeed_mps: f32,
@@ -174,11 +175,12 @@ impl PlaneStabilizer {
     /// the coordinated-turn rates.
     fn attitude_rates(&mut self, setpoint: &PlaneSetpoint, state: &VehicleState) -> Vec3 {
         let config = &self.config;
+        let max_pitch_rad = pitch_limit_rad(config.max_pitch_rad, setpoint.transition);
         // `>` is false for NaN, which saturates to level.
         self.saturation.tilt = setpoint.roll_rad.abs() > config.max_bank_rad
-            || setpoint.pitch_rad.abs() > config.max_pitch_rad;
+            || setpoint.pitch_rad.abs() > max_pitch_rad;
         let roll_rad = saturate_symmetric(setpoint.roll_rad, config.max_bank_rad);
-        let pitch_rad = saturate_symmetric(setpoint.pitch_rad, config.max_pitch_rad);
+        let pitch_rad = saturate_symmetric(setpoint.pitch_rad, max_pitch_rad);
         let error = attitude_error(&state.attitude, roll_rad, pitch_rad, f32::NAN);
         let correction = Vec2::new(
             clamp_symmetric(

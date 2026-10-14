@@ -1,4 +1,5 @@
 use crate::{RateSetpoint, Vec2, Vec3};
+use assert2::check;
 use nalgebra::UnitQuaternion;
 
 use super::*;
@@ -296,6 +297,7 @@ fn non_finite_attitude_quaternion_yields_zero_moments() {
         roll_rad: 0.3,
         pitch_rad: -0.2,
         heading_rad: 1.0,
+        transition: false,
     });
     for [w, x, y, z] in cases {
         let state = VehicleState {
@@ -821,5 +823,40 @@ fn body_rates_match_stick_rates_and_plane_setpoints_are_neutral() {
     ] {
         let out = CopterStabilizer::new(config).stabilize(0.004, &setpoint, &state);
         assert_eq!(out, ControlOutput::default(), "{setpoint:?}");
+    }
+}
+
+/// A transition ramp's pitch saturates at ±90°, not `max_angles_rad` (#388); roll keeps its
+/// limit. From 60° nose down with 45° limits: (roll°, pitch°, transition, sign of the pitch
+/// moment if read, tilt flagged)
+#[test]
+fn transition_ramps_fly_pitch_past_the_tilt_limit() {
+    let heading = 0.7;
+    let state = VehicleState {
+        attitude: UnitQuaternion::from_euler_angles(0.0, -60f32.to_radians(), heading),
+        ..Default::default()
+    };
+    let cases = [
+        (0.0, -70.0, true, Some(-1.0), false),
+        (0.0, -70.0, false, Some(1.0), true),
+        (0.0, -100.0, true, Some(-1.0), true),
+        (0.0, f32::NAN, true, Some(1.0), false),
+        (60.0, -60.0, true, None, true),
+    ];
+    for (roll_deg, pitch_deg, transition, pitch_sign, tilt) in cases {
+        let setpoint = Setpoint::Attitude(AttitudeSetpoint {
+            roll_rad: f32::to_radians(roll_deg),
+            pitch_rad: f32::to_radians(pitch_deg),
+            heading_rad: heading,
+            thrust: 0.5,
+            transition,
+        });
+        let mut stabilizer = setup_controller();
+        let output = stabilizer.stabilize(0.004, &setpoint, &state);
+        let case = (roll_deg, pitch_deg, transition);
+        if let Some(sign) = pitch_sign {
+            check!(output.moments.y.signum() == sign, "{case:?}: {output:?}");
+        }
+        check!(stabilizer.saturation().tilt == tilt, "{case:?}");
     }
 }

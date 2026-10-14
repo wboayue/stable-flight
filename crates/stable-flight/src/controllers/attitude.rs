@@ -200,10 +200,7 @@ impl AttitudeController {
     }
 
     /// `desired_angles_rad` saturated to `max_angles_rad`, NaN as level.
-    pub(crate) fn saturate_setpoint(
-        config: &AttitudeControllerConfig,
-        desired_angles_rad: Vec2,
-    ) -> Vec2 {
+    fn saturate_setpoint(config: &AttitudeControllerConfig, desired_angles_rad: Vec2) -> Vec2 {
         Vec2::new(
             saturate_symmetric(desired_angles_rad.x, config.max_angles_rad.x),
             saturate_symmetric(desired_angles_rad.y, config.max_angles_rad.y),

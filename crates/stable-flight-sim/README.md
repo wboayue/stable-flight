@@ -146,8 +146,8 @@ thrust from its level-flight drag; pitch rate I is tuned to the plane step spec 
 1.5× its thrust) on two motors 25 cm either side of the centerline and
 `TableMixer::tailsitter_2p()`, with two 10-inch props washing the elevons. The hover side flies
 the eXplora's RealFlight gains; the plane side is `plane()`'s on the hover thrust curve,
-without rudder feedforward (yaw is differential thrust), its pitch limit raised to 75° so the
-back transition can pitch up to hand over
+without rudder feedforward (yaw is differential thrust). Its 30° hover tilt and plane pitch
+limits sit below both handover angles, so the transition tests fly ramps past them
 ([#388](https://github.com/wboayue/stable-flight/issues/388)). Transitions fly core's
 defaults but for the airspeed gate, the wing's 10 m/s minimum.
 

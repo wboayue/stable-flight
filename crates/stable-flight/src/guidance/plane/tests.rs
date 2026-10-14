@@ -101,7 +101,8 @@ fn offboard_waypoint_and_land_inputs() {
             == Setpoint::Plane(PlaneSetpoint {
                 roll_rad: 0.4,
                 pitch_rad: 0.8,
-                thrust: 0.3
+                thrust: 0.3,
+                transition: false,
             })
     );
 
@@ -111,7 +112,8 @@ fn offboard_waypoint_and_land_inputs() {
             == Setpoint::Plane(PlaneSetpoint {
                 roll_rad: 0.0,
                 pitch_rad: 0.05,
-                thrust: 0.55
+                thrust: 0.55,
+                transition: false,
             })
     );
 
