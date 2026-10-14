@@ -36,9 +36,10 @@ struct Config {
     #[arg(short, long, default_value = "flights/figure_eight.csv")]
     output: String,
 
-    /// Number of legs sampled around the loop (the script has one more row, back at the start).
+    /// Number of legs sampled around the loop; the script has one more waypoint than legs, its
+    /// last back at the start.
     #[arg(long, default_value_t = 24, value_parser = RangedU64ValueParser::<usize>::new().range(1..))]
-    waypoints: usize,
+    legs: usize,
 
     /// Half the figure-eight width, meters (full width is twice this).
     #[arg(long, default_value_t = 30.0)]
@@ -82,8 +83,9 @@ fn main() {
 fn run(config: &Config) -> Result<(), Box<dyn Error>> {
     fs::write(&config.output, build_csv(config))?;
     println!(
-        "wrote {} waypoints to {}",
-        config.waypoints + 1,
+        "wrote {} waypoints ({} legs) to {}",
+        config.legs + 1,
+        config.legs,
         config.output
     );
     Ok(())
@@ -93,7 +95,7 @@ fn run(config: &Config) -> Result<(), Box<dyn Error>> {
 ///
 /// Gerono lemniscate: `x = center_north + half_width*cos(t)`,
 /// `y = center_east + height_scale*sin(t)*cos(t)`, `altitude = alt_mid + alt_amp*sin(t)`,
-/// sampled at `waypoints + 1` evenly spaced angles from `t = π/2` to `t = 5π/2`: the first and
+/// sampled at `legs + 1` evenly spaced angles from `t = π/2` to `t = 5π/2`: the first and
 /// last rows are the center, at the top of the altitude sweep.
 fn build_csv(config: &Config) -> String {
     let mut csv = String::new();
@@ -106,8 +108,8 @@ fn build_csv(config: &Config) -> String {
     csv.push_str("# Starts and ends over the center (t = pi/2), where the lobes cross.\n");
     csv.push_str("x,y,altitude,cruise_speed\n");
 
-    for i in 0..=config.waypoints {
-        let t = PI / 2.0 + 2.0 * PI * (i as f32) / (config.waypoints as f32);
+    for i in 0..=config.legs {
+        let t = PI / 2.0 + 2.0 * PI * (i as f32) / (config.legs as f32);
         let x = config.center_north + config.half_width * t.cos();
         let y = config.center_east + config.height_scale * t.sin() * t.cos();
         let altitude = config.alt_mid + config.alt_amp * t.sin();
@@ -123,9 +125,9 @@ fn build_csv(config: &Config) -> String {
 /// The command that writes `config`'s script, every dimension spelled out.
 fn command(config: &Config) -> String {
     format!(
-        "cargo run --bin generate_figure_eight -- --waypoints {} --half-width {} --height-scale {} \
+        "cargo run --bin generate_figure_eight -- --legs {} --half-width {} --height-scale {} \
          --alt-mid {} --alt-amp {} --cruise {} --center-north {} --center-east {} -o {}",
-        config.waypoints,
+        config.legs,
         config.half_width,
         config.height_scale,
         config.alt_mid,
@@ -142,6 +144,14 @@ mod tests {
     use super::*;
     use assert2::check;
 
+    /// Comment lines plus the column header, ahead of the first waypoint row.
+    const HEADER_LINES: usize = 6;
+
+    /// The waypoint rows of `csv`, header skipped.
+    fn data_rows(csv: &str) -> Vec<&str> {
+        csv.lines().skip(HEADER_LINES).collect()
+    }
+
     /// Config with the documented defaults, for tests that tweak one field at a time.
     fn default_config() -> Config {
         Config::parse_from(["generate_figure_eight"])
@@ -151,7 +161,7 @@ mod tests {
     fn defaults_match_documented_envelope() {
         let config = default_config();
         check!(config.output == "flights/figure_eight.csv");
-        check!(config.waypoints == 24);
+        check!(config.legs == 24);
         check!(config.half_width == 30.0);
         check!(config.cruise == 7.0);
         check!(config.center_north == -7.94);
@@ -159,20 +169,19 @@ mod tests {
     }
 
     #[test]
-    fn rejects_zero_waypoints() {
-        check!(Config::try_parse_from(["generate_figure_eight", "--waypoints", "0"]).is_err());
+    fn rejects_zero_legs() {
+        check!(Config::try_parse_from(["generate_figure_eight", "--legs", "0"]).is_err());
     }
 
     #[test]
     fn csv_has_header_and_one_row_per_waypoint() {
         let mut config = default_config();
-        config.waypoints = 4;
+        config.legs = 4;
         let csv = build_csv(&config);
 
-        // 5 comment lines + 1 column header + 4 legs' rows and the closing row.
-        let lines: Vec<&str> = csv.lines().collect();
-        check!(lines.len() == 11);
-        check!(lines[5] == "x,y,altitude,cruise_speed");
+        check!(csv.lines().nth(HEADER_LINES - 1) == Some("x,y,altitude,cruise_speed"));
+        // One row per leg plus the closing row.
+        check!(data_rows(&csv).len() == 5);
     }
 
     /// `--end land` touches down on the last row and the takeoff climbs to the first: both sit
@@ -198,7 +207,7 @@ mod tests {
             "6.49",
         ]);
         let csv = build_csv(&config);
-        let rows: Vec<&str> = csv.lines().skip(6).collect();
+        let rows = data_rows(&csv);
         // t = π/2 → the center, at the top of the altitude sweep.
         check!(rows.first() == Some(&"-10.55,6.49,13.00,3.0"));
         check!(rows.last() == Some(&"-10.55,6.49,13.00,3.0"));
@@ -209,7 +218,7 @@ mod tests {
         // 24 legs of π/12 from t = π/2: t = π (row 6) → center_north - half_width,
         // t = 2π (row 18) → center_north + half_width, both at alt_mid.
         let csv = build_csv(&default_config());
-        let rows: Vec<&str> = csv.lines().skip(6).collect();
+        let rows = data_rows(&csv);
         check!(rows[6] == "-37.94,8.46,27.50,7.0");
         check!(rows[18] == "22.06,8.46,27.50,7.0");
     }
@@ -251,23 +260,19 @@ mod tests {
         ]);
         let csv = build_csv(&config);
         // t = π/2 → the center; t = π → (center_north - half_width, center_east).
-        check!(csv.lines().nth(6).unwrap().starts_with("-10.50,6.50,"));
-        check!(csv.lines().nth(6 + 6).unwrap().starts_with("-20.50,6.50,"));
+        let rows = data_rows(&csv);
+        check!(rows[0].starts_with("-10.50,6.50,"));
+        check!(rows[6].starts_with("-20.50,6.50,"));
     }
 
     #[test]
     fn dimensions_scale_with_flags() {
-        let config = Config::parse_from([
-            "generate_figure_eight",
-            "--half-width",
-            "40",
-            "--waypoints",
-            "8",
-        ]);
+        let config =
+            Config::parse_from(["generate_figure_eight", "--half-width", "40", "--legs", "8"]);
         let csv = build_csv(&config);
-        // 5 comment lines + header + 8 legs' rows and the closing row.
-        check!(csv.lines().count() == 15);
+        let rows = data_rows(&csv);
+        check!(rows.len() == 9);
         // t = 2π (row 6 of 8 legs from π/2) → center_north + half_width.
-        check!(csv.lines().nth(6 + 6).unwrap().starts_with("32.06,"));
+        check!(rows[6].starts_with("32.06,"));
     }
 }
