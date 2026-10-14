@@ -497,9 +497,7 @@ impl CopterGuidance {
     ) -> BodyRateSetpoint {
         self.follow_heading(estimated_state);
         let mut setpoint = BodyRateSetpoint::from(command);
-        let thrust = self.clip_thrust(command.thrust);
-        (setpoint.thrust, setpoint.idle) =
-            self.hold_piloted(command.thrust, thrust, estimated_state.velocity_mps.z);
+        (setpoint.thrust, setpoint.idle) = self.hold_absolute(command.thrust, estimated_state);
         setpoint
     }
 
@@ -517,9 +515,7 @@ impl CopterGuidance {
             self.heading
         };
         self.set_heading_target(target_rad, estimated_state);
-        let thrust = self.clip_thrust(command.thrust);
-        let (thrust, idle) =
-            self.hold_piloted(command.thrust, thrust, estimated_state.velocity_mps.z);
+        let (thrust, idle) = self.hold_absolute(command.thrust, estimated_state);
         AttitudeSetpoint {
             roll_rad: command.roll_rad,
             pitch_rad: command.pitch_rad,
@@ -683,6 +679,13 @@ impl CopterGuidance {
         } else {
             boosted
         }
+    }
+
+    /// An absolute command's `thrust`, saturated to `[0, 1]` (not boosted), then held as a
+    /// piloted throttle ([`hold_piloted`](Self::hold_piloted)), and whether it is idle.
+    fn hold_absolute(&mut self, thrust: f32, estimated_state: &VehicleState) -> (f32, bool) {
+        let clipped = self.clip_thrust(thrust);
+        self.hold_piloted(thrust, clipped, estimated_state.velocity_mps.z)
     }
 
     /// The piloted `thrust` and whether the pilot's `throttle` is idle (at or below
