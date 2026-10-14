@@ -111,6 +111,11 @@ pub struct AeroCoefficients {
 }
 
 impl FixedWingModel {
+    /// Wing aspect ratio: span² over area.
+    pub(crate) fn aspect_ratio(&self) -> f32 {
+        self.span_m * self.span_m / self.wing_area_m2
+    }
+
     /// Checks every parameter's range.
     ///
     /// # Errors

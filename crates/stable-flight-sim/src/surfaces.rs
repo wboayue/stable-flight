@@ -49,12 +49,7 @@ impl Surfaces {
     /// `[-1, 1]` saturates; NaN centers the servo.
     pub(crate) fn move_to(&mut self, commands: &[f32; SLOTS], alpha: f32) {
         for (running, command) in self.running.iter_mut().zip(commands) {
-            let target = if command.is_nan() {
-                0.0
-            } else {
-                command.clamp(-1.0, 1.0)
-            };
-            lag::approach(running, target, alpha);
+            lag::approach_saturated(running, *command, &(-1.0..=1.0), 0.0, alpha);
         }
     }
 

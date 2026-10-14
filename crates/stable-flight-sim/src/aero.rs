@@ -52,18 +52,16 @@ pub(crate) fn wrench(
     let (aileron, elevator, rudder) = (deflection_rad.x, deflection_rad.y, deflection_rad.z);
     let (span, chord) = (model.span_m, model.chord_m);
 
-    // Dynamic pressure times wing area, in N, and its per-unit-airspeed part for rate terms.
-    let pressure_area_n = 0.5 * AIR_DENSITY_KGPM3 * speed_mps * speed_mps * model.wing_area_m2;
-    let rate_scale = 0.5 * AIR_DENSITY_KGPM3 * speed_mps * model.wing_area_m2;
+    // Dynamic pressure times wing area, and its per-unit-airspeed part for rate terms.
+    let pressure_area_n = pressure_area_n(model, speed_mps);
+    let rate_scale = pressure_area_n / speed_mps;
 
+    let (sin_alpha, cos_alpha) = (libm::sinf(alpha_rad), libm::cosf(alpha_rad));
     let linear_lift = c.c_lift_0 + c.c_lift_alpha * alpha_rad;
-    let aspect_ratio = span * span / model.wing_area_m2;
-    let lift_n = pressure_area_n * lift_coefficient(c, alpha_rad);
-    let drag_n =
-        pressure_area_n * (c.c_drag_0 + linear_lift * linear_lift / (PI * c.oswald * aspect_ratio));
+    let lift_n = pressure_area_n * lift_coefficient(c, alpha_rad, sin_alpha, cos_alpha);
+    let drag_n = pressure_area_n * drag_coefficient(model, linear_lift);
     let side_n = pressure_area_n * (c.c_side_beta * beta_rad + c.c_side_rudder * rudder);
     // Lift is normal to the airflow, toward body −z; drag along it.
-    let (sin_alpha, cos_alpha) = (libm::sinf(alpha_rad), libm::cosf(alpha_rad));
     let force_n = Vec3::new(
         lift_n * sin_alpha - drag_n * cos_alpha,
         side_n,
@@ -90,16 +88,32 @@ pub(crate) fn wrench(
     }
 }
 
-/// Lift coefficient at `alpha_rad`: linear below the stall, a flat plate's past it, blended by
-/// a sigmoid that is 0 inside `±alpha_stall_rad` and 1 outside.
-pub(crate) fn lift_coefficient(c: &AeroCoefficients, alpha_rad: f32) -> f32 {
+/// Dynamic pressure at `speed_mps` times `model`'s wing area, in N.
+pub(crate) fn pressure_area_n(model: &FixedWingModel, speed_mps: f32) -> f32 {
+    0.5 * AIR_DENSITY_KGPM3 * speed_mps * speed_mps * model.wing_area_m2
+}
+
+/// Drag coefficient at `linear_lift` (the linear lift coefficient): parasitic plus induced,
+/// `c_drag_0 + CL²/(π·e·AR)`.
+pub(crate) fn drag_coefficient(model: &FixedWingModel, linear_lift: f32) -> f32 {
+    let c = &model.aero;
+    c.c_drag_0 + linear_lift * linear_lift / (PI * c.oswald * model.aspect_ratio())
+}
+
+/// Lift coefficient at `alpha_rad` (with its sine and cosine): linear below the stall, a flat
+/// plate's past it, blended by a sigmoid that is 0 inside `±alpha_stall_rad` and 1 outside.
+pub(crate) fn lift_coefficient(
+    c: &AeroCoefficients,
+    alpha_rad: f32,
+    sin_alpha: f32,
+    cos_alpha: f32,
+) -> f32 {
     let exponent = |x: f32| libm::expf(x.clamp(-MAX_BLEND_EXPONENT, MAX_BLEND_EXPONENT));
     let past_positive = exponent(-c.stall_sharpness * (alpha_rad - c.alpha_stall_rad));
     let past_negative = exponent(c.stall_sharpness * (alpha_rad + c.alpha_stall_rad));
     let blend =
         (1.0 + past_positive + past_negative) / ((1.0 + past_positive) * (1.0 + past_negative));
     let linear = c.c_lift_0 + c.c_lift_alpha * alpha_rad;
-    let sin_alpha = libm::sinf(alpha_rad);
-    let flat_plate = 2.0 * alpha_rad.signum() * sin_alpha * sin_alpha * libm::cosf(alpha_rad);
+    let flat_plate = 2.0 * alpha_rad.signum() * sin_alpha * sin_alpha * cos_alpha;
     (1.0 - blend) * linear + blend * flat_plate
 }

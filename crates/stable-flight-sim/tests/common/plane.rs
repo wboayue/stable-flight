@@ -8,7 +8,7 @@ use stable_flight::{
     Command, Commander, ControlInput, FlightLoop, FlightRegime, Vec2, WaypointCommand,
 };
 use stable_flight_sim::airframes::PlaneAirframe;
-use stable_flight_sim::{SimPlane, Wind};
+use stable_flight_sim::{Perturbations, SimPlane, Wind};
 
 use super::RECORDED;
 
@@ -22,19 +22,22 @@ pub type PlaneLoop<C> = FlightLoop<
     RecordingTelemetry<RECORDED>,
 >;
 
-/// What a plane test flies: an airframe and the air it flies through.
+/// What a plane test flies: an airframe, the air it flies through, and how its plant departs
+/// from the clean model (the copter's [`Plant`](super::Plant) for the airplane).
 #[derive(Debug, Clone, Copy)]
 pub struct PlanePlant {
     pub airframe: PlaneAirframe,
     pub wind: Wind,
+    pub perturbations: Perturbations,
 }
 
 impl PlanePlant {
-    /// `airframe` in calm air.
+    /// `airframe` in calm air, unperturbed.
     pub fn clean(airframe: PlaneAirframe) -> Self {
         PlanePlant {
             airframe,
             wind: Wind::default(),
+            perturbations: Perturbations::default(),
         }
     }
 
@@ -44,6 +47,8 @@ impl PlanePlant {
             .expect("valid airframe")
             .with_start(self.airframe.start)
             .with_wind(self.wind)
+            .with_perturbations(self.perturbations)
+            .expect("valid perturbations")
     }
 }
 

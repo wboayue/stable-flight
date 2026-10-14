@@ -8,6 +8,10 @@ fn model() -> FixedWingModel {
     airframes::plane().model
 }
 
+fn lift_at(c: &AeroCoefficients, alpha_rad: f32) -> f32 {
+    lift_coefficient(c, alpha_rad, libm::sinf(alpha_rad), libm::cosf(alpha_rad))
+}
+
 /// Air at `speed_mps` along body `x`, tilted by `alpha_rad` (from below) and `beta_rad` (from
 /// the right).
 fn air(speed_mps: f32, alpha_rad: f32, beta_rad: f32) -> Vec3 {
@@ -57,17 +61,15 @@ fn head_on_lift_and_drag() {
     let model = model();
     let c = &model.aero;
     let aero = wrench(&model, air(15.0, 0.0, 0.0), Vec3::zeros(), Vec3::zeros());
-    let pressure_area_n = 0.5 * AIR_DENSITY_KGPM3 * 225.0 * model.wing_area_m2;
+    let dynamic_n = 0.5 * AIR_DENSITY_KGPM3 * 225.0 * model.wing_area_m2;
     let aspect_ratio = model.span_m * model.span_m / model.wing_area_m2;
     let induced = c.c_lift_0 * c.c_lift_0 / (PI * c.oswald * aspect_ratio);
-    assert_relative_eq!(
-        aero.force_n.z,
-        -pressure_area_n * c.c_lift_0,
-        max_relative = 1e-4
-    );
+    check!(pressure_area_n(&model, 15.0) == dynamic_n);
+    assert_relative_eq!(drag_coefficient(&model, c.c_lift_0), c.c_drag_0 + induced);
+    assert_relative_eq!(aero.force_n.z, -dynamic_n * c.c_lift_0, max_relative = 1e-4);
     assert_relative_eq!(
         aero.force_n.x,
-        -pressure_area_n * (c.c_drag_0 + induced),
+        -dynamic_n * (c.c_drag_0 + induced),
         max_relative = 1e-4
     );
     check!(aero.force_n.y == 0.0);
@@ -168,11 +170,11 @@ fn moments_point_the_contract_way() {
 fn moments_scale_from_the_coefficients() {
     let model = model();
     let c = &model.aero;
-    let pressure_area_n = 0.5 * AIR_DENSITY_KGPM3 * 100.0 * model.wing_area_m2;
+    let dynamic_n = 0.5 * AIR_DENSITY_KGPM3 * 100.0 * model.wing_area_m2;
     let level = wrench(&model, air(10.0, 0.0, 0.0), Vec3::zeros(), Vec3::zeros());
     assert_relative_eq!(
         level.torque_nm.y,
-        pressure_area_n * model.chord_m * c.c_pitch_0,
+        dynamic_n * model.chord_m * c.c_pitch_0,
         max_relative = 1e-4
     );
     let roll_damping = |speed_mps: f32| {
@@ -211,16 +213,16 @@ fn lift_falls_off_past_the_stall() {
         (1.5, flat_plate(1.5)),
     ];
     for (alpha_rad, expected) in cases {
-        assert_relative_eq!(lift_coefficient(&c, alpha_rad), expected, epsilon = 1e-3);
+        assert_relative_eq!(lift_at(&c, alpha_rad), expected, epsilon = 1e-3);
     }
     // Past the stall, lift is well below the linear slope's.
     let past = c.alpha_stall_rad + 0.1;
-    check!(lift_coefficient(&c, past) < 0.5 * linear(past));
+    check!(lift_at(&c, past) < 0.5 * linear(past));
     // Continuous through the blend, and finite all the way round.
-    let mut previous = lift_coefficient(&c, -PI);
+    let mut previous = lift_at(&c, -PI);
     for step in 1..=3600 {
         let alpha_rad = -PI + step as f32 * (2.0 * PI / 3600.0);
-        let lift = lift_coefficient(&c, alpha_rad);
+        let lift = lift_at(&c, alpha_rad);
         check!(lift.is_finite(), "at {alpha_rad} rad");
         check!((lift - previous).abs() < 0.2, "jump at {alpha_rad} rad");
         previous = lift;

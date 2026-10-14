@@ -68,13 +68,14 @@ mod model;
 mod motors;
 mod perturbations;
 mod plane;
+mod start;
 mod surfaces;
 mod wind;
 
 pub use copter::SimCopter;
 pub use fixed_wing::{AeroCoefficients, FixedWingModel};
-pub use lockstep::Start;
 pub use model::{ModelError, MultirotorModel};
 pub use perturbations::{GyroNoise, MAX_ACTUATOR_DELAY_S, Perturbations, Vibration};
 pub use plane::SimPlane;
+pub use start::Start;
 pub use wind::{Gust, Wind};

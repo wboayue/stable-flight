@@ -72,12 +72,7 @@ impl Motors {
     /// `[0, 1]` saturates; NaN stops the motor.
     pub(crate) fn spin(&mut self, commands: &[f32; SLOTS], alpha: f32) {
         for (running, command) in self.running.iter_mut().zip(commands).take(self.count) {
-            let target = if command.is_nan() {
-                0.0
-            } else {
-                command.clamp(0.0, 1.0)
-            };
-            lag::approach(running, target, alpha);
+            lag::approach_saturated(running, *command, &(0.0..=1.0), 0.0, alpha);
         }
     }
 

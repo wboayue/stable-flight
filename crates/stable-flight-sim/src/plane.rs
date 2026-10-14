@@ -10,10 +10,11 @@ use crate::body::{Body, Loads, MassProperties};
 use crate::fixed_wing::FixedWingModel;
 use crate::ground::Ground;
 use crate::lag;
-use crate::lockstep::{Dynamics, Lockstep, Start};
+use crate::lockstep::{Dynamics, Lockstep};
 use crate::model::ModelError;
 use crate::motors::{MotorLayout, Motors};
 use crate::perturbations::Perturbations;
+use crate::start::Start;
 use crate::surfaces::Surfaces;
 use crate::wind::Wind;
 
