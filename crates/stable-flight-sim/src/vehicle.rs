@@ -6,9 +6,12 @@ use stable_flight::mixers::TableMixer;
 use stable_flight::{Actuator, ActuatorCommand, StateSource, Vec3, VehicleState, euler_angles};
 
 use crate::body::{Body, Loads, flip_z};
+use crate::delay::DelayLine;
 use crate::ground;
+use crate::gyro::Gyro;
 use crate::model::{ModelError, MultirotorModel};
 use crate::motors::Motors;
+use crate::perturbations::Perturbations;
 use crate::wind::Wind;
 
 #[cfg(test)]
@@ -20,6 +23,7 @@ mod tests;
 /// The physics: a rigid body with [`MultirotorModel`]'s mass and diagonal inertia, under gravity,
 /// motor thrust and torque, linear drag through the [`Wind`], and rotational damping, on a
 /// ground plane at altitude 0. It starts at rest there, at the origin, level, nose north.
+/// [`Perturbations`] add delay, gyro noise, a disturbance moment, and motor mismatch.
 ///
 /// # Timing contract
 ///
@@ -27,8 +31,10 @@ mod tests;
 /// integrates the last stored command over `dt` (in steps of at most
 /// [`MultirotorModel::max_step_s`]) and returns
 /// the state at the end, so tick *n* sees the result of tick *n − 1*'s command, a one-tick
-/// zero-order hold. The priming call (`dt == Duration::ZERO`) returns the current state
-/// without stepping. State is perfect: no noise, delay, or estimation.
+/// zero-order hold. [`Perturbations::actuator_delay_s`] delays each command further, to the
+/// integration step. The priming call (`dt == Duration::ZERO`) returns the current state
+/// without stepping. State is exact (no estimation) apart from [`Perturbations::gyro`] on the
+/// body rates.
 ///
 /// # Examples
 ///
@@ -54,8 +60,10 @@ pub struct SimVehicle {
     motors: Motors,
     body: Body,
     wind: Wind,
-    /// Motor commands from the last `actuate`.
-    command: [f32; ActuatorCommand::SLOTS],
+    /// Motor commands from `actuate`, waiting out the actuator delay.
+    commands: DelayLine,
+    gyro: Gyro,
+    disturbance_moment_nm: Vec3,
     /// Simulated time, in s; `f64` so long runs keep sub-millisecond steps exact enough.
     time_s: f64,
     resting: bool,
@@ -78,7 +86,9 @@ impl SimVehicle {
             model,
             body: Body::default(),
             wind: Wind::default(),
-            command: [0.0; ActuatorCommand::SLOTS],
+            commands: DelayLine::new(0.0),
+            gyro: Gyro::new(Default::default()),
+            disturbance_moment_nm: Vec3::zeros(),
             time_s: 0.0,
             resting: true,
         })
@@ -88,6 +98,21 @@ impl SimVehicle {
     pub fn with_wind(mut self, wind: Wind) -> Self {
         self.wind = wind;
         self
+    }
+
+    /// This vehicle under `perturbations` (all off by default).
+    ///
+    /// # Errors
+    ///
+    /// [`Perturbations::validate`]'s errors.
+    pub fn with_perturbations(mut self, perturbations: Perturbations) -> Result<Self, ModelError> {
+        perturbations.validate()?;
+        self.commands.set_delay(perturbations.actuator_delay_s);
+        self.gyro = Gyro::new(perturbations.gyro);
+        self.disturbance_moment_nm = perturbations.disturbance_moment_nm;
+        self.motors
+            .set_thrust_scale(perturbations.motor_thrust_scale);
+        Ok(self)
     }
 
     /// Simulated time since construction, in s.
@@ -112,11 +137,11 @@ impl SimVehicle {
         let alpha = 1.0 - libm::expf(-h / self.model.motor_time_constant_s);
         let start_velocity = self.body.velocity_ned_mps;
         for _ in 0..steps as u32 {
-            self.motors.spin(&self.command, alpha);
+            self.motors.spin(self.commands.at(self.time_s), alpha);
             let (thrust_n, torque_nm) = self.motors.wrench(&self.model);
             let loads = Loads {
                 thrust_n,
-                torque_nm,
+                torque_nm: torque_nm + self.disturbance_moment_nm,
                 wind_ned_mps: self.wind_ned_mps(),
             };
             self.body.step(&self.model, &loads, h);
@@ -139,15 +164,19 @@ impl StateSource for SimVehicle {
         if dt_s > 0.0 {
             self.advance(dt_s);
         }
-        vehicle_state(&self.body, self.wind_ned_mps())
+        let mut state = vehicle_state(&self.body, self.wind_ned_mps());
+        if let Some(error_radps) = self.gyro.error_radps(self.time_s) {
+            state.angular_velocity_radps += error_radps;
+        }
+        state
     }
 }
 
 impl Actuator for SimVehicle {
-    /// Stores the motor commands for the next [`state`](StateSource::state) step; servos are
-    /// ignored.
+    /// Queues the motor commands for the next [`state`](StateSource::state) step, after any
+    /// [`actuator_delay_s`](Perturbations::actuator_delay_s); servos are ignored.
     fn actuate(&mut self, actuator_command: &ActuatorCommand) {
-        self.command = actuator_command.motors;
+        self.commands.push(self.time_s, actuator_command.motors);
     }
 }
 

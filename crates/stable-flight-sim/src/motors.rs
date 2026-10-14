@@ -19,6 +19,8 @@ pub(crate) struct Motors {
     torque_per_thrust_m: [Vec3; SLOTS],
     /// The command each motor runs at, after its lag, in `[0, 1]`.
     running: [f32; SLOTS],
+    /// Each motor's thrust as a fraction of the model's.
+    thrust_scale: [f32; SLOTS],
 }
 
 impl Motors {
@@ -35,6 +37,7 @@ impl Motors {
             count: 0,
             torque_per_thrust_m: [Vec3::zeros(); SLOTS],
             running: [0.0; SLOTS],
+            thrust_scale: [1.0; SLOTS],
         };
         for row in rows {
             let index = match row.slot() {
@@ -67,10 +70,22 @@ impl Motors {
         }
     }
 
-    /// Each motor's thrust, in N: `max_thrust_n · running²`.
+    /// Scales each motor's thrust (mismatched motors); all 1 at construction.
+    pub(crate) fn set_thrust_scale(&mut self, thrust_scale: [f32; SLOTS]) {
+        self.thrust_scale = thrust_scale;
+    }
+
+    /// Each motor's thrust, in N: `thrust_scale · max_thrust_n · running²`.
     pub(crate) fn thrusts_n(&self, model: &MultirotorModel) -> [f32; SLOTS] {
-        self.running
-            .map(|running| model.max_thrust_n * running * running)
+        let mut thrusts_n = [0.0; SLOTS];
+        for ((thrust_n, running), scale) in thrusts_n
+            .iter_mut()
+            .zip(&self.running)
+            .zip(&self.thrust_scale)
+        {
+            *thrust_n = scale * model.max_thrust_n * running * running;
+        }
+        thrusts_n
     }
 
     /// Total thrust along body −z, in N, and the FRD body torque, in N·m.

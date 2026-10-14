@@ -50,7 +50,8 @@ pub struct MultirotorModel {
     pub max_step_s: f32,
 }
 
-/// Why a [`MultirotorModel`] or a [`SimVehicle`](crate::SimVehicle)'s mixer was rejected.
+/// Why a [`MultirotorModel`], [`Perturbations`](crate::Perturbations), or a
+/// [`SimVehicle`](crate::SimVehicle)'s mixer was rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[non_exhaustive]
 pub enum ModelError {
@@ -60,9 +61,20 @@ pub enum ModelError {
     /// A parameter that must be non-negative and finite isn't.
     #[error("{0} must be non-negative and finite")]
     Negative(&'static str),
+    /// A parameter that must be finite isn't.
+    #[error("{0} must be finite")]
+    NotFinite(&'static str),
     /// The mixer drives a servo; the simulator models motors only.
     #[error("the mixer drives servo {0}, which the simulator doesn't model")]
     Servo(u8),
+    /// A motor slot's [`Perturbations::motor_thrust_scale`](crate::Perturbations::motor_thrust_scale)
+    /// isn't positive and finite.
+    #[error("motor_thrust_scale[{0}] must be positive and finite")]
+    ThrustScale(u8),
+    /// [`Perturbations::actuator_delay_s`](crate::Perturbations::actuator_delay_s) is over
+    /// [`MAX_ACTUATOR_DELAY_S`](crate::MAX_ACTUATOR_DELAY_S).
+    #[error("actuator_delay_s must be at most {max_s} s", max_s = crate::MAX_ACTUATOR_DELAY_S)]
+    DelayTooLong,
 }
 
 impl MultirotorModel {

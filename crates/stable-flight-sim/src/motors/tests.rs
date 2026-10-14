@@ -100,3 +100,34 @@ fn mixed_moments_torque_the_body_the_same_way() {
         }
     }
 }
+
+/// One slow motor at an equal hover command leaves the others' torque unbalanced by its
+/// missing thrust, about each axis its row reaches.
+#[test]
+fn mismatched_motors_torque_at_hover() {
+    let (mut motors, model) = quad_x_motors();
+    let rows = TableMixer::quad_x()
+        .rows()
+        .map(|row| (row.roll(), row.pitch(), row.yaw()));
+    let hover = 0.6;
+    let full_n = model.max_thrust_n * hover * hover;
+    for slow in 0..4 {
+        let mut scale = [1.0; SLOTS];
+        scale[slow] = 0.9;
+        motors.set_thrust_scale(scale);
+        settled(&mut motors, &[hover; SLOTS]);
+        let (thrust_n, torque_nm) = motors.wrench(&model);
+        // Equal motors cancel, so the torque is the slow motor's lost thrust on its lever.
+        let lost_n = 0.1 * full_n;
+        let (roll, pitch, yaw) = rows[slow];
+        let expected_nm = -lost_n
+            * Vec3::new(
+                roll * model.moment_arm_m,
+                pitch * model.moment_arm_m,
+                yaw * model.yaw_torque_per_thrust_m,
+            );
+        assert_relative_eq!(thrust_n, 4.0 * full_n - lost_n, epsilon = 1e-5);
+        assert_relative_eq!(torque_nm, expected_nm, epsilon = 1e-6);
+        check!(torque_nm.x.abs() > 0.0, "motor {slow}");
+    }
+}

@@ -2,13 +2,16 @@
 //!
 //! [`SimVehicle`] is a [`Vehicle`](stable_flight::Vehicle) a
 //! [`FlightLoop`](stable_flight::FlightLoop) flies in lockstep: each tick integrates the last
-//! motor command over the tick's `dt`, with no wall clock, noise, or randomness, so the same
+//! motor command over the tick's `dt`, with no wall clock and only seeded noise, so the same
 //! inputs give the same flight, bit for bit. It aims at plausible, repeatable dynamics for
 //! `cargo test` and CI, not fidelity; RealFlight covers realism.
 //!
 //! - [`MultirotorModel`]: mass, inertia, motors, drag, ground friction. Motor geometry comes from
 //!   the mixer's rows, so the simulated vehicle answers each moment the way the mixer expects.
 //! - [`Wind`]: steady wind plus an optional deterministic [`Gust`].
+//! - [`Perturbations`]: actuator delay, gyro noise and vibration, a disturbance moment, and
+//!   motor mismatch, all off by default. Ranges to sweep, so a method that passes on them
+//!   isn't fitted to one clean plant.
 //! - [`airframes`]: physics paired with the configs that fly it ([`airframes::quad_x`]).
 //!
 //! `no_std` with fixed-size math, so it can later drive hardware-in-the-loop runs.
@@ -49,12 +52,16 @@
 
 pub mod airframes;
 mod body;
+mod delay;
 mod ground;
+mod gyro;
 mod model;
 mod motors;
+mod perturbations;
 mod vehicle;
 mod wind;
 
 pub use model::{ModelError, MultirotorModel};
+pub use perturbations::{GyroNoise, MAX_ACTUATOR_DELAY_S, Perturbations, Vibration};
 pub use vehicle::SimVehicle;
 pub use wind::{Gust, Wind};
