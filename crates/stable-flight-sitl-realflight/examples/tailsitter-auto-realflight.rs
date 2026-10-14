@@ -175,7 +175,13 @@ fn main() {
         if !complete && flight_loop.commander().follower().is_complete() {
             complete = true;
             match args.end {
-                End::Land => info!("touched down: disarmed"),
+                End::Land => {
+                    let position_m = flight_loop.state().position_m;
+                    info!(
+                        "touched down at north {:.2} m, east {:.2} m: disarmed",
+                        position_m.x, position_m.y
+                    );
+                }
                 End::Hold => info!("reached the last waypoint: holding"),
                 End::Loop => {}
             }
