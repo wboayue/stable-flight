@@ -27,7 +27,7 @@ use super::Plant;
 const AGGR: f32 = 0.1;
 
 /// Largest overshoot, as a fraction of the step (ArduPilot: `1 + AGGR/2`).
-const MAX_OVERSHOOT: f32 = AGGR / 2.0;
+pub const MAX_OVERSHOOT: f32 = AGGR / 2.0;
 
 /// Largest rate-loop bounce-back, as a fraction of the step (ArduPilot: `AGGR`).
 const MAX_RATE_BOUNCE_BACK: f32 = AGGR;
@@ -134,6 +134,11 @@ pub fn missed_targets(target: TunedLoop, m: &StepMetrics) -> Vec<&'static str> {
             max_bounce_back.is_none_or(|max| m.bounce_back <= max),
         ),
     ];
+    failed(&checks)
+}
+
+/// The names of the `checks` (name, met) not met.
+pub fn failed(checks: &[(&'static str, bool)]) -> Vec<&'static str> {
     checks
         .iter()
         .filter(|(_, met)| !met)

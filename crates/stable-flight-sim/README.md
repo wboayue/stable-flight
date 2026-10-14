@@ -44,7 +44,8 @@ cargo test -p stable-flight-sim   # unit tests, conformance, and the closed-loop
 ## Closed-loop tests
 
 Each file in `tests/` flies the full pipeline on `airframes::quad_x()` unless noted (`plane_*`
-on `airframes::plane()`); wiring and the step-response spec are in `tests/common`:
+on `airframes::plane()`); wiring and the copter and plane step-response specs are in
+`tests/common`:
 
 | Test | Asserts |
 |---|---|
@@ -57,6 +58,9 @@ on `airframes::plane()`); wiring and the step-response spec are in `tests/common
 | `autotune` | `StagePlan::copter_search` from low, a little high (×1.5), and far too high (×3, steps clip) rate gains tunes every stage to `quad_x`'s gains within 25% |
 | `robustness` | `StagePlan::copter_search` on every airframe × perturbation set (clean, 10 and 25 ms delay, gyro noise with a 90 Hz tone, CG offset, weak motor, all combined) × start (core's default gains; ×3 the airframe's rate P and D): every stage `Tuned`, the result meets the `step_response` targets on that same plant, within a simulated-time budget. Clean rows (but `heavy_quad` from the high start) and 10 ms delay from the low start pass; the rest stay ignored on what blocks them: the seeded D ([#378](https://github.com/wboayue/stable-flight/issues/378)), gyro noise ([#373](https://github.com/wboayue/stable-flight/issues/373)), trim moments ([#374](https://github.com/wboayue/stable-flight/issues/374)), 25 ms delay ([#376](https://github.com/wboayue/stable-flight/issues/376)), a later loop ringing on its start gains ([#379](https://github.com/wboayue/stable-flight/issues/379)) |
 | `plane_level` | The line north at 100 m and 15 m/s in calm air, a 5 m/s headwind, and a 5 m/s crosswind: altitude within ±1 m and airspeed within ±1 m/s (ArduPilot's autotest bands) for 30 s after settling, on the line |
+| `plane_step` | Roll ±30° and pitch ±10° steps in absolute attitude mode from level flight: rise within PX4's 2.2 × the attitude time constant (`fw_att_control_params.c:56,71`), overshoot within the copter spec's 5%, settled in 4 s, surfaces unclipped past the copter angle steps' allowance |
+| `plane_turn` | A loiter by guidance and a held 30° and 45° bank: sideslip within 2.5° (measured + margin); the loiter also within 5 m of its circle and ±1 m of its altitude (ArduPilot's band) |
+| `plane_stall` | A zoom at zero throttle on a held pitch-up rate, wings level and rolling, until past the stall: every state finite, body rates bounded, flying again within 2 s of the entry's end, at most 8 m lost, off the ground (measured + margin) |
 | `determinism` | A windy, gusty route twice gives bit-identical states, clean and with every perturbation on (one seed); the airplane's line through the same wind too |
 
 ## Timing
@@ -120,8 +124,10 @@ thrust-to-weight and motor lag are chosen to span the range (sources in `airfram
 `plane()` is ArduPilot SITL's default airplane (2 kg, 1.88 m span, 0.45 m² wing, its
 coefficients and ±20° surfaces) on `TableMixer::plane()`, with the Aerosonde's inertia scaled
 to it, ArduPilot SITL's default servo lag (0.14 s), and a prop of static thrust-to-weight 1.2.
-It flies core's plane stabilizer and guidance defaults at a 15 m/s trim airspeed, with the
-cruise thrust derived from the model (sources in `airframes` rustdoc).
+It flies core's plane stabilizer and guidance defaults at a 15 m/s trim airspeed, except
+for what the model gives: each rate loop's feedforward from its rate damping and the cruise
+thrust from its level-flight drag; pitch rate I is tuned to the plane step spec (sources in
+`airframes` rustdoc).
 
 ## Limits
 
