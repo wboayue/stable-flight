@@ -73,6 +73,8 @@ Run these from the repository root (`just fly-manual` / `just fly-tailsitter` / 
 # Joystick (Logitech Extreme 3D); RealFlight host defaults to 10.211.55.3:8080
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --host 192.168.1.20:8080
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --link-peer 192.168.1.30:14561
+# --record writes every tick to CSV (rates, attitude, moments, attitude setpoint, stick yaw).
+cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --record flight.csv
 # Spektrum transmitter through the WS3000T dongle instead
 cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight -- --commander spektrum
 
@@ -107,7 +109,7 @@ cargo run --bin link_pilot
 # loop (--stages none --step-test: the hand tune). --stages rate runs the relay autotune instead
 # (--stages angle|all adds relay angle and heading stages, whose gains oscillated on
 # QuadCopterX); --rate-p-scale starts from bad rate gains; --record run.csv writes every tick
-# (rates, angles, moments) for diagnosis.
+# (rates, angles, moments, setpoint) for diagnosis.
 # RUST_LOG=info,copter_autotune_realflight=debug logs each stage's status every second and each step.
 # Or: just fly-autotune
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --step-test

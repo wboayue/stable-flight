@@ -31,10 +31,8 @@
 //! ```
 
 use std::cell::Cell;
-use std::fs::File;
-use std::io::{BufWriter, Write};
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, ValueEnum};
@@ -50,12 +48,12 @@ use stable_flight::tuning::autotune::{
 };
 use stable_flight::tuning::{Measurement, Stat, StepMetrics, StepSummary};
 use stable_flight::{
-    Command, Commander, Configurable, ControlInput, FlightLoop, LandCommand, TelemetryPublisher,
-    TelemetryRecord, VehicleState, euler_angles,
+    Command, Commander, Configurable, ControlInput, FlightLoop, LandCommand, VehicleState,
 };
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::ScriptCommander;
+use stable_flight_sitl::recorder::{CopterColumns, CsvRecorder};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
 use stable_flight_sitl_realflight::{
@@ -107,8 +105,8 @@ struct Args {
     #[arg(long)]
     step_test: bool,
 
-    /// Writes every tick (wall time, body rates, angles, moments) to this CSV, to diagnose a
-    /// run.
+    /// Writes every tick (body rates, angles, moments, setpoint; `CopterColumns`) to this CSV,
+    /// to diagnose a run.
     #[arg(long)]
     record: Option<String>,
 
@@ -245,8 +243,8 @@ fn main() {
         .into_halves();
     let mut fc_link = FcLink::<32, 16>::new();
     let (mut poller, link) = fc_link.wire(link_rx, link_tx);
-    let recorder =
-        Recorder::create(args.record.as_deref()).expect("failed to create the record CSV");
+    let recorder = CsvRecorder::create(args.record.as_deref(), CopterColumns)
+        .expect("failed to create the record CSV");
     let telemetry = (link, recorder);
 
     let mut flight_loop =
@@ -401,61 +399,6 @@ fn positive(value: &str) -> Result<f32, String> {
         Ok(scale) if scale > 0.0 && scale.is_finite() => Ok(scale),
         Ok(_) => Err("must be positive and finite".into()),
         Err(e) => Err(e.to_string()),
-    }
-}
-
-/// Writes one CSV row per tick to `--record`, for diagnosing a run; does nothing without it.
-struct Recorder {
-    out: Option<BufWriter<File>>,
-    start: Instant,
-}
-
-impl Recorder {
-    fn create(path: Option<&str>) -> std::io::Result<Self> {
-        let out = match path {
-            Some(path) => {
-                let mut out = BufWriter::new(File::create(path)?);
-                writeln!(
-                    out,
-                    "wall_s,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,altitude,moment_x,moment_y,moment_z,thrust"
-                )?;
-                Some(out)
-            }
-            None => None,
-        };
-        Ok(Self {
-            out,
-            start: Instant::now(),
-        })
-    }
-}
-
-impl TelemetryPublisher for Recorder {
-    fn publish(&mut self, record: &TelemetryRecord) {
-        let Some(out) = &mut self.out else {
-            return;
-        };
-        let state = record.state;
-        let rates = state.angular_velocity_radps;
-        let (roll, pitch, heading) = euler_angles(&state.attitude);
-        let moments = record.control.moments;
-        // A failed write loses diagnostics, not flight: ignore it.
-        let _ = writeln!(
-            out,
-            "{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.4},{:.4},{:.4}",
-            self.start.elapsed().as_secs_f32(),
-            rates.x,
-            rates.y,
-            rates.z,
-            roll,
-            pitch,
-            heading,
-            state.position_m.z,
-            moments.x,
-            moments.y,
-            moments.z,
-            record.control.thrust,
-        );
     }
 }
 

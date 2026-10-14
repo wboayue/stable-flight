@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `copter-manual-realflight --record <csv>` (`just fly-manual`): one row per tick of body
+  rates, attitude, moments, the attitude setpoint, and the stick yaw (#337).
+
 - `flights/explora_transition.csv` and `tailsitter-auto-realflight` plane legs (#124): the
   script's regime column drives transitions; the example logs mode changes and takes
   `--record` like the manual one.

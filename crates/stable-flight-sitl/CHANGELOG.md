@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `recorder::CsvRecorder`: a `TelemetryPublisher` writing one CSV row per tick (`wall_s`, then a
+  `Columns` set) to a file or any writer, or nothing without one; write failures are ignored.
+  Column sets `CopterColumns` and `TailsitterColumns` (#337).
+
 - `ScriptCommander` reads an optional fifth CSV field per waypoint, `copter` or `plane`: the
   regime of the leg to it, requested as the leg begins (#124). `ScriptCommander::from_route`
   takes waypoints with their regimes.

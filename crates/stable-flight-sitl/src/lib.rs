@@ -11,7 +11,7 @@
 //! The flight-control core (traits, guidance, stabilizers, mixers, [`stable_flight::FlightLoop`]) lives in the
 //! `stable-flight` crate; this crate adds the simulator-independent software-in-the-loop harness
 //! around it: joystick and scripted commanders, and the real-time runner ([`RealTimeRunner`])
-//! with graceful shutdown ([`ShutdownSignal`]). Telemetry goes over the native link
+//! with graceful shutdown ([`ShutdownSignal`]), and per-tick CSV recording ([`recorder`]). Telemetry goes over the native link
 //! (`stable-flight-link`'s `LinkPublisher`), and `stable-flight-bridge` speaks MAVLink for it. Each simulator backend is its own crate, e.g.
 //! [`stable-flight-sitl-realflight`](https://crates.io/crates/stable-flight-sitl-realflight).
 //! See the following document for an [architecture overview](https://github.com/wboayue/stable-flight/blob/main/architecture.md).
@@ -26,6 +26,7 @@
 pub use stable_flight;
 
 pub mod commanders;
+pub mod recorder;
 pub mod runner;
 pub mod shutdown;
 
