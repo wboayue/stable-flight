@@ -3,12 +3,11 @@
 use core::time::Duration;
 
 use stable_flight::mixers::TableMixer;
-use stable_flight::{Actuator, ActuatorCommand, StateSource, Vec3, VehicleState, euler_angles};
+use stable_flight::{Actuator, ActuatorCommand, StateSource, Vec3, VehicleState};
 
-use crate::body::{Body, Loads, flip_z};
-use crate::delay::DelayLine;
-use crate::ground;
-use crate::gyro::Gyro;
+use crate::body::{Body, Loads, MassProperties};
+use crate::ground::Ground;
+use crate::lockstep::{Dynamics, Lockstep};
 use crate::model::{ModelError, MultirotorModel};
 use crate::motors::Motors;
 use crate::perturbations::Perturbations;
@@ -56,17 +55,20 @@ mod tests;
 /// ```
 #[derive(Debug, Clone)]
 pub struct SimCopter {
+    lockstep: Lockstep,
+    dynamics: Multirotor,
+}
+
+/// The multirotor's physics: motors through the lag, thrust along body −z, linear drag, and
+/// rotational damping.
+#[derive(Debug, Clone)]
+struct Multirotor {
     model: MultirotorModel,
     motors: Motors,
-    body: Body,
-    wind: Wind,
-    /// Motor commands from `actuate`, waiting out the actuator delay.
-    commands: DelayLine,
-    gyro: Gyro,
-    disturbance_moment_nm: Vec3,
-    /// Simulated time, in s; `f64` so long runs keep sub-millisecond steps exact enough.
-    time_s: f64,
-    resting: bool,
+    /// The motor lag's step factor for the current step length.
+    alpha: f32,
+    /// Total thrust over the last step, in N.
+    thrust_n: f32,
 }
 
 impl SimCopter {
@@ -82,21 +84,19 @@ impl SimCopter {
     ) -> Result<Self, ModelError> {
         model.validate()?;
         Ok(SimCopter {
-            motors: Motors::new(mixer.rows(), &model)?,
-            model,
-            body: Body::default(),
-            wind: Wind::default(),
-            commands: DelayLine::new(0.0),
-            gyro: Gyro::new(Default::default()),
-            disturbance_moment_nm: Vec3::zeros(),
-            time_s: 0.0,
-            resting: true,
+            lockstep: Lockstep::new(),
+            dynamics: Multirotor {
+                motors: Motors::new(mixer.rows(), &model)?,
+                model,
+                alpha: 0.0,
+                thrust_n: 0.0,
+            },
         })
     }
 
     /// This vehicle flying through `wind`.
     pub fn with_wind(mut self, wind: Wind) -> Self {
-        self.wind = wind;
+        self.lockstep.set_wind(wind);
         self
     }
 
@@ -107,52 +107,71 @@ impl SimCopter {
     /// [`Perturbations::validate`]'s errors.
     pub fn with_perturbations(mut self, perturbations: Perturbations) -> Result<Self, ModelError> {
         perturbations.validate()?;
-        self.commands.set_delay(perturbations.actuator_delay_s);
-        self.gyro = Gyro::new(perturbations.gyro);
-        self.disturbance_moment_nm = perturbations.disturbance_moment_nm;
-        self.motors
+        self.lockstep.set_perturbations(&perturbations);
+        self.dynamics
+            .motors
             .set_thrust_scale(perturbations.motor_thrust_scale);
         Ok(self)
     }
 
     /// Simulated time since construction, in s.
     pub fn time_s(&self) -> f64 {
-        self.time_s
+        self.lockstep.time_s()
     }
 
     /// Whether the vehicle rests on the ground (thrust below its weight there).
     pub fn on_ground(&self) -> bool {
-        self.resting
+        self.lockstep.resting()
     }
 
     /// Each motor's thrust, in N, by motor slot.
     pub fn motor_thrusts_n(&self) -> [f32; ActuatorCommand::SLOTS] {
-        self.motors.thrusts_n(&self.model)
+        self.dynamics.motors.thrusts_n(&self.dynamics.model)
     }
+}
 
-    /// Steps the physics `dt_s` seconds under the stored command.
-    fn advance(&mut self, dt_s: f32) {
-        let steps = libm::ceilf(dt_s / self.model.max_step_s).max(1.0);
-        let h = dt_s / steps;
-        let alpha = 1.0 - libm::expf(-h / self.model.motor_time_constant_s);
-        let start_velocity = self.body.velocity_ned_mps;
-        for _ in 0..steps as u32 {
-            self.motors.spin(self.commands.due_at(self.time_s), alpha);
-            let (thrust_n, torque_nm) = self.motors.wrench(&self.model);
-            let loads = Loads {
-                thrust_n,
-                torque_nm: torque_nm + self.disturbance_moment_nm,
-                wind_ned_mps: self.wind_ned_mps(),
-            };
-            self.body.step(&self.model, &loads, h);
-            self.resting = ground::contact(&mut self.body, &self.model, thrust_n, h);
-            self.time_s += f64::from(h);
+impl Dynamics for Multirotor {
+    fn mass(&self) -> MassProperties {
+        MassProperties {
+            mass_kg: self.model.mass_kg,
+            inertia_kgm2: self.model.inertia_kgm2,
         }
-        self.body.acceleration_ned_mps2 = (self.body.velocity_ned_mps - start_velocity) / dt_s;
     }
 
-    fn wind_ned_mps(&self) -> Vec3 {
-        flip_z(self.wind.velocity_mps(self.time_s as f32))
+    fn ground(&self) -> Ground {
+        Ground {
+            mass_kg: self.model.mass_kg,
+            friction: self.model.ground_friction,
+        }
+    }
+
+    fn max_step_s(&self) -> f32 {
+        self.model.max_step_s
+    }
+
+    fn begin(&mut self, h: f32) {
+        self.alpha = 1.0 - libm::expf(-h / self.model.motor_time_constant_s);
+    }
+
+    fn loads(&mut self, command: &ActuatorCommand, body: &Body, wind_ned_mps: Vec3) -> Loads {
+        self.motors.spin(&command.motors, self.alpha);
+        let (thrust_n, torque_nm) = self.motors.wrench(&self.model);
+        self.thrust_n = thrust_n;
+        let thrust_ned_n = body.attitude * Vec3::new(0.0, 0.0, -thrust_n);
+        let drag_ned_n =
+            body.air_relative_velocity_ned_mps(wind_ned_mps) * self.model.drag_n_per_mps;
+        Loads {
+            force_ned_n: thrust_ned_n - drag_ned_n,
+            torque_nm,
+            damping_nm: self
+                .model
+                .angular_damping_nm_per_radps
+                .component_mul(&body.angular_velocity_radps),
+        }
+    }
+
+    fn lift_n(&self, body: &Body) -> f32 {
+        -(body.attitude * Vec3::new(0.0, 0.0, -self.thrust_n)).z
     }
 }
 
@@ -160,15 +179,7 @@ impl StateSource for SimCopter {
     /// Steps `dt` and returns the new state; `Duration::ZERO` returns the current state
     /// unchanged (see the [timing contract](SimCopter#timing-contract)).
     fn state(&mut self, dt: Duration) -> VehicleState {
-        let dt_s = dt.as_secs_f32();
-        if dt_s > 0.0 {
-            self.advance(dt_s);
-        }
-        let mut state = vehicle_state(&self.body, self.wind_ned_mps());
-        if let Some(error_radps) = self.gyro.error_radps(self.time_s) {
-            state.angular_velocity_radps += error_radps;
-        }
-        state
+        self.lockstep.state(&mut self.dynamics, dt)
     }
 }
 
@@ -176,24 +187,6 @@ impl Actuator for SimCopter {
     /// Queues the motor commands for the next [`state`](StateSource::state) step, after any
     /// [`actuator_delay_s`](Perturbations::actuator_delay_s); servos are ignored.
     fn actuate(&mut self, actuator_command: &ActuatorCommand) {
-        self.commands.push(self.time_s, actuator_command.motors);
-    }
-}
-
-/// `body` in the [frame contract](stable_flight::VehicleState#frame-contract): world vectors
-/// from NED to north-east-up, Euler angles from the attitude, and airspeed against
-/// `wind_ned_mps`.
-pub(crate) fn vehicle_state(body: &Body, wind_ned_mps: Vec3) -> VehicleState {
-    let (roll_rad, pitch_rad, heading_rad) = euler_angles(&body.attitude);
-    VehicleState {
-        position_m: flip_z(body.position_ned_m),
-        velocity_mps: flip_z(body.velocity_ned_mps),
-        acceleration_mps2: flip_z(body.acceleration_ned_mps2),
-        attitude: body.attitude,
-        angular_velocity_radps: body.angular_velocity_radps,
-        roll_rad,
-        pitch_rad,
-        heading_rad,
-        airspeed_mps: Some((body.velocity_ned_mps - wind_ned_mps).norm()),
+        self.lockstep.push(actuator_command);
     }
 }

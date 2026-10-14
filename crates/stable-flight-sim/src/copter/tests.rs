@@ -1,11 +1,11 @@
 use approx::assert_relative_eq;
 use assert2::check;
 use stable_flight::nalgebra::UnitQuaternion;
-use stable_flight::testing::conformance::Scenario;
 use stable_flight::{GRAVITY, Vec3};
 
 use super::*;
 use crate::airframes;
+use crate::lockstep::vehicle_state;
 use crate::perturbations::{GyroNoise, Vibration};
 
 const TICK: Duration = Duration::from_millis(4);
@@ -30,37 +30,6 @@ fn fly(vehicle: &mut SimCopter, command: &ActuatorCommand, ticks: usize) -> Vehi
         vehicle.actuate(command);
     }
     state
-}
-
-/// The simulator's native body state for `scenario`: the physical truth in NED.
-fn native_fixture(scenario: &Scenario) -> Body {
-    let [roll, pitch, heading] =
-        [scenario.roll_deg, scenario.pitch_deg, scenario.heading_deg].map(f32::to_radians);
-    let ned = |[n, e, u]: [f32; 3]| Vec3::new(n, e, -u);
-    Body {
-        position_ned_m: ned(scenario.position_neu_m),
-        velocity_ned_mps: ned(scenario.velocity_neu_mps),
-        acceleration_ned_mps2: ned(scenario.acceleration_neu_mps2),
-        attitude: UnitQuaternion::from_euler_angles(roll, pitch, heading),
-        angular_velocity_radps: Vec3::from(scenario.body_rates_degps.map(f32::to_radians)),
-    }
-}
-
-fn state_for(scenario: &Scenario) -> VehicleState {
-    vehicle_state(&native_fixture(scenario), Vec3::zeros())
-}
-
-stable_flight::conformance_tests! {
-    state_for;
-    conforms_level: LEVEL;
-    conforms_roll_right_30: ROLL_RIGHT_30;
-    conforms_pitch_up_15: PITCH_UP_15;
-    conforms_heading_east: HEADING_EAST;
-    conforms_banked_climb_east: BANKED_CLIMB_EAST;
-    conforms_climbing: CLIMBING;
-    conforms_moving_northeast: MOVING_NORTHEAST;
-    conforms_yaw_right_rate: YAW_RIGHT_RATE;
-    conforms_combined_rates: COMBINED_RATES;
 }
 
 #[test]
@@ -312,13 +281,73 @@ fn disturbance_moment_accelerates_the_body() {
         disturbance_moment_nm: moment_nm,
         ..Default::default()
     });
-    vehicle.body.position_ned_m.z = -10.0;
+    vehicle.lockstep.body.position_ned_m.z = -10.0;
     let h_s = 0.001;
     let state = vehicle.state(Duration::from_millis(1));
-    let expected_radps2 = moment_nm.component_div(&vehicle.model.inertia_kgm2);
+    let expected_radps2 = moment_nm.component_div(&vehicle.dynamics.model.inertia_kgm2);
     assert_relative_eq!(
         state.angular_velocity_radps / h_s,
         expected_radps2,
         max_relative = 1e-4
     );
+}
+
+/// The multirotor's loads: thrust along body −z, drag against the air-relative velocity, and
+/// damping against the body rates.
+#[test]
+fn loads_point_the_contract_way() {
+    let model = airframes::quad_x().model;
+    let mut dynamics = vehicle().dynamics;
+    dynamics.begin(1.0);
+    // All motors at full command after a step far longer than the lag: full thrust.
+    let full_n = 4.0 * model.max_thrust_n;
+    let alpha = 1.0 - libm::expf(-1.0 / model.motor_time_constant_s);
+    let thrust_n = full_n * alpha * alpha;
+    // (roll rad, body velocity NED m/s, wind NED m/s, body rates rad/s, expected force NED N)
+    let cases = [
+        (
+            0.0,
+            Vec3::zeros(),
+            Vec3::zeros(),
+            Vec3::zeros(),
+            Vec3::new(0.0, 0.0, -thrust_n),
+        ),
+        (
+            0.0,
+            Vec3::new(2.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::zeros(),
+            Vec3::new(-2.0, 1.0, 0.0) * model.drag_n_per_mps + Vec3::new(0.0, 0.0, -thrust_n),
+        ),
+        // Banked right, the thrust leans east (NED +y).
+        (
+            0.2,
+            Vec3::zeros(),
+            Vec3::zeros(),
+            Vec3::new(1.0, -1.0, 0.5),
+            Vec3::new(0.0, libm::sinf(0.2), -libm::cosf(0.2)) * thrust_n,
+        ),
+    ];
+    for (roll_rad, velocity_ned_mps, wind_ned_mps, rates_radps, force_ned_n) in cases {
+        let mut dynamics = dynamics.clone();
+        let body = Body {
+            velocity_ned_mps,
+            attitude: UnitQuaternion::from_euler_angles(roll_rad, 0.0, 0.0),
+            angular_velocity_radps: rates_radps,
+            ..Body::default()
+        };
+        let loads = dynamics.loads(&motors(1.0), &body, wind_ned_mps);
+        assert_relative_eq!(loads.force_ned_n, force_ned_n, epsilon = 1e-5);
+        assert_relative_eq!(
+            loads.damping_nm,
+            model
+                .angular_damping_nm_per_radps
+                .component_mul(&rates_radps)
+        );
+        assert_relative_eq!(
+            dynamics.lift_n(&body),
+            thrust_n * libm::cosf(roll_rad),
+            epsilon = 1e-5
+        );
+    }
 }

@@ -2,34 +2,32 @@ use approx::assert_relative_eq;
 use assert2::check;
 
 use super::*;
-use crate::airframes;
 
 const H: f32 = 0.001;
 
-fn model() -> MultirotorModel {
-    airframes::quad_x().model
-}
+const GROUND: Ground = Ground {
+    mass_kg: 1.0,
+    friction: 0.5,
+};
 
-fn weight_n(model: &MultirotorModel) -> f32 {
-    model.mass_kg * GRAVITY
+fn weight_n() -> f32 {
+    GROUND.mass_kg * GRAVITY
 }
 
 #[test]
 fn airborne_body_is_untouched() {
-    let model = model();
     let airborne = Body {
         position_ned_m: Vec3::new(0.0, 0.0, -0.01),
         velocity_ned_mps: Vec3::new(1.0, 0.0, 2.0),
         ..Body::default()
     };
     let mut body = airborne.clone();
-    check!(!contact(&mut body, &model, 0.0, H));
+    check!(!contact(&mut body, &GROUND, 0.0, H));
     check!(body == airborne);
 }
 
 #[test]
 fn touching_down_stops_the_sink_and_levels() {
-    let model = model();
     let mut body = Body {
         position_ned_m: Vec3::new(3.0, 4.0, 0.02),
         velocity_ned_mps: Vec3::new(0.0, 0.0, 1.5),
@@ -37,7 +35,7 @@ fn touching_down_stops_the_sink_and_levels() {
         angular_velocity_radps: Vec3::new(0.3, 0.2, 0.1),
         ..Body::default()
     };
-    check!(contact(&mut body, &model, 0.5 * weight_n(&model), H));
+    check!(contact(&mut body, &GROUND, 0.5 * weight_n(), H));
     check!(body.position_ned_m == Vec3::new(3.0, 4.0, 0.0));
     check!(body.velocity_ned_mps == Vec3::zeros());
     check!(body.angular_velocity_radps == Vec3::zeros());
@@ -48,14 +46,13 @@ fn touching_down_stops_the_sink_and_levels() {
 }
 
 #[test]
-fn thrust_above_weight_lifts_off() {
-    let model = model();
+fn lift_above_weight_lifts_off() {
     let mut body = Body {
         position_ned_m: Vec3::new(0.0, 0.0, 0.001),
         velocity_ned_mps: Vec3::new(0.0, 0.0, -0.2),
         ..Body::default()
     };
-    check!(!contact(&mut body, &model, 1.1 * weight_n(&model), H));
+    check!(!contact(&mut body, &GROUND, 1.1 * weight_n(), H));
     check!(body.position_ned_m.z == 0.0);
     // Climbing (NED −z) is kept.
     check!(body.velocity_ned_mps.z == -0.2);
@@ -63,20 +60,19 @@ fn thrust_above_weight_lifts_off() {
 
 #[test]
 fn friction_slows_and_stops_a_slide() {
-    let model = model();
-    // (thrust as a fraction of weight, initial speed m/s, speed after one step)
-    let slowdown = model.ground_friction * GRAVITY * H;
+    // (lift as a fraction of weight, initial speed m/s, speed after one step)
+    let slowdown = GROUND.friction * GRAVITY * H;
     let cases = [
         (0.0, 1.0, 1.0 - slowdown),
         (0.5, 1.0, 1.0 - 0.5 * slowdown),
         (0.0, 0.5 * slowdown, 0.0),
     ];
-    for (thrust, speed_mps, expected_mps) in cases {
+    for (lift, speed_mps, expected_mps) in cases {
         let mut body = Body {
             velocity_ned_mps: Vec3::new(0.6, 0.8, 0.0) * speed_mps,
             ..Body::default()
         };
-        check!(contact(&mut body, &model, thrust * weight_n(&model), H));
+        check!(contact(&mut body, &GROUND, lift * weight_n(), H));
         assert_relative_eq!(body.velocity_ned_mps.norm(), expected_mps, epsilon = 1e-6);
     }
 }

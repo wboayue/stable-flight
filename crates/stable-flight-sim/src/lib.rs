@@ -57,6 +57,7 @@ mod copter;
 mod delay;
 mod ground;
 mod gyro;
+mod lockstep;
 mod model;
 mod motors;
 mod perturbations;
