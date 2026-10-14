@@ -119,7 +119,9 @@ impl Schedule {
 /// airplane pitch `θ`, heading held where the hover view points. Airplane bank (a view heading
 /// change) is dropped, so in a banked turn the hover side only damps.
 struct Blend {
-    schedule: Schedule,
+    /// Flown in `ToPlane` and `Plane`, and in `ToCopter` and `Copter`.
+    forward: Schedule,
+    back: Schedule,
     mode: Rc<Cell<FlightMode>>,
     hover: View<CopterStabilizer>,
     plane: PlaneStabilizer,
@@ -134,9 +136,14 @@ struct Blend {
 }
 
 impl Blend {
-    fn new(airframe: &TailsitterAirframe, schedule: Schedule, mode: Rc<Cell<FlightMode>>) -> Self {
+    fn new(
+        airframe: &TailsitterAirframe,
+        (forward, back): (Schedule, Schedule),
+        mode: Rc<Cell<FlightMode>>,
+    ) -> Self {
         Blend {
-            schedule,
+            forward,
+            back,
             mode,
             hover: View::tailsitter(CopterStabilizer::new(airframe.stabilizer.hover)),
             plane: PlaneStabilizer::new(airframe.stabilizer.plane),
@@ -155,7 +162,11 @@ impl Blend {
         let native = if on_plane { 1.0 } else { 0.0 };
         let mode = self.mode.get();
         let tilt_rad = FRAC_PI_2 - stable_flight::euler_angles(&state.attitude).1;
-        match self.schedule {
+        let schedule = match mode {
+            FlightMode::ToPlane | FlightMode::Plane => self.forward,
+            _ => self.back,
+        };
+        match schedule {
             Schedule::Switch => native,
             Schedule::Tilt => match mode {
                 FlightMode::ToPlane => smoothstep(tilt_rad / self.forward_done_rad),
@@ -441,7 +452,7 @@ fn fly_with<S: Stabilizer>(
     flight_loop.into_parts().5.ticks
 }
 
-fn run(plant: &TailsitterPlant, schedule: Option<Schedule>) -> Outcome {
+fn run(plant: &TailsitterPlant, schedule: Option<(Schedule, Schedule)>) -> Outcome {
     let mode = Rc::new(Cell::new(FlightMode::Copter));
     let ticks = match schedule {
         None => fly_with(
@@ -491,21 +502,34 @@ fn compares_transition_blends() {
     let airframe = airframes::tailsitter();
     let min_mps = airframe.guidance.transition.min_airspeed_mps;
     let trim_mps = airframe.stabilizer.plane.trim_airspeed_mps;
+    let tilt = Schedule::Tilt;
+    let q_min = Schedule::Pressure { ref_mps: min_mps };
+    let q_trim = Schedule::Pressure { ref_mps: trim_mps };
+    let time = Schedule::Time { ramp_s: 1.0 };
+    let both = |schedule| Some((schedule, schedule));
     let schedules = [
         None,
-        Some(Schedule::Switch),
-        Some(Schedule::Tilt),
-        Some(Schedule::Pressure { ref_mps: min_mps }),
-        Some(Schedule::Pressure { ref_mps: trim_mps }),
-        Some(Schedule::Time { ramp_s: 0.5 }),
-        Some(Schedule::Time { ramp_s: 1.0 }),
+        both(Schedule::Switch),
+        both(tilt),
+        both(q_min),
+        both(q_trim),
+        both(Schedule::Time { ramp_s: 0.5 }),
+        both(time),
+        // Forward / back.
+        Some((tilt, time)),
+        Some((time, tilt)),
+        Some((tilt, q_min)),
+        Some((time, q_min)),
+        Some((q_min, time)),
+        Some((Schedule::Switch, tilt)),
+        Some((tilt, Schedule::Switch)),
     ];
     println!(
         "\nforward: s to Plane, m lost, max |Δmoment|/tick, max rate deg/s, % saturated; back: \
          the same to Copter, then climb m, final m off the hover point\n"
     );
     println!(
-        "{:<15} {:<10} | {:>5} {:>5} {:>5} {:>5} {:>5} {:>4} | {:>5} {:>5} {:>5} {:>5} {:>5} {:>4} | {:>5} {:>6}",
+        "{:<15} {:<16} | {:>5} {:>5} {:>5} {:>5} {:>5} {:>4} | {:>5} {:>5} {:>5} {:>5} {:>5} {:>4} | {:>5} {:>6}",
         "plant",
         "blend",
         "s",
@@ -525,11 +549,15 @@ fn compares_transition_blends() {
     );
     for (name, plant) in plants() {
         for schedule in schedules {
-            let label = schedule.map_or("stock".into(), |s| s.label());
+            let label = match schedule {
+                None => "stock".into(),
+                Some((forward, back)) if forward.label() == back.label() => forward.label(),
+                Some((forward, back)) => format!("{}/{}", forward.label(), back.label()),
+            };
             let o = run(&plant, schedule);
             let (f, b) = (&o.forward, &o.back);
             println!(
-                "{name:<15} {label:<10} | {:>5.2} {:>5.2} {:>5.3} {:>5.2} {:>5.0} {:>4.0} | {:>5.2} {:>5.2} {:>5.3} {:>5.2} {:>5.0} {:>4.0} | {:>5.1} {:>6.1}",
+                "{name:<15} {label:<16} | {:>5.2} {:>5.2} {:>5.3} {:>5.2} {:>5.0} {:>4.0} | {:>5.2} {:>5.2} {:>5.3} {:>5.2} {:>5.0} {:>4.0} | {:>5.1} {:>6.1}",
                 f.duration_s,
                 f.loss_m,
                 f.jump,
