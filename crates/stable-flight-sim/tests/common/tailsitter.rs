@@ -191,17 +191,21 @@ pub fn trace<C: Commander>(flight_loop: &mut TailsitterLoop<C>, seconds: f32) ->
     Trace { samples }
 }
 
-/// The ticks of a transition flight, for asking when modes changed and how high it flew.
+/// The ticks of a transition flight, for asking when modes changed and how low it flew.
 pub struct Trace {
     pub samples: Vec<Sample>,
 }
 
 impl Trace {
-    /// The first tick at or after `from_s` flying `mode`.
+    /// The first tick at or after `from_s` that switched into `mode` (a flight's first tick
+    /// counts as a switch).
     pub fn entered(&self, mode: FlightMode, from_s: f32) -> Option<&Sample> {
-        self.samples
-            .iter()
-            .find(|sample| sample.time_s >= from_s && sample.mode == mode)
+        let mut previous = None;
+        self.samples.iter().find(|sample| {
+            let switched = sample.mode == mode && previous != Some(mode);
+            previous = Some(sample.mode);
+            switched && sample.time_s >= from_s
+        })
     }
 
     /// The first tick at or after `time_s`.
@@ -216,16 +220,10 @@ impl Trace {
             .filter(move |sample| (from_s..until_s).contains(&sample.time_s))
     }
 
-    /// The lowest and highest heights from `from_s` until `until_s`, in m.
-    pub fn height_range_m(&self, from_s: f32, until_s: f32) -> (f32, f32) {
-        self.window(from_s, until_s).fold(
-            (f32::INFINITY, f32::NEG_INFINITY),
-            |(low, high), sample| {
-                (
-                    low.min(sample.state.position_m.z),
-                    high.max(sample.state.position_m.z),
-                )
-            },
-        )
+    /// The lowest height from `from_s` until `until_s`, in m.
+    pub fn lowest_m(&self, from_s: f32, until_s: f32) -> f32 {
+        self.window(from_s, until_s)
+            .map(|sample| sample.state.position_m.z)
+            .fold(f32::INFINITY, f32::min)
     }
 }

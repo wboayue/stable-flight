@@ -48,6 +48,17 @@ pub const HOVER_ALTITUDE_M: f32 = 5.0;
 /// Seconds [`hover`] allows to take off and settle on its point.
 pub const HOVER_SETTLE_S: f32 = 15.0;
 
+/// Calm-air hover band: altitude off the point, in m, over a whole hold (`hover.rs`).
+pub const CALM_ALTITUDE_M: f32 = 0.1;
+
+/// Calm-air hover band: horizontal distance from the point (or wander from where the hold
+/// began), in m, over a whole hold.
+pub const CALM_HORIZONTAL_M: f32 = 0.1;
+
+/// Calm-air hover band: heading off its hold (and a tailsitter's nose off vertical), in
+/// degrees, over a whole hold.
+pub const CALM_ANGLE_DEG: f32 = 1.0;
+
 /// A commander that holds one waypoint.
 pub type Hover = WaypointFollower<[WaypointCommand; 1]>;
 

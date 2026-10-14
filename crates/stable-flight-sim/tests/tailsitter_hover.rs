@@ -8,7 +8,10 @@ use stable_flight::Vec3;
 use stable_flight_sim::{Gust, Wind, airframes};
 
 use common::tailsitter::{HoverDeviation, TailsitterPlant, tailsitter_loop};
-use common::{HOVER_ALTITUDE_M as ALTITUDE_M, HOVER_SETTLE_S as SETTLE_S, fly, hover_follower};
+use common::{
+    CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_ALTITUDE_M as ALTITUDE_M,
+    HOVER_SETTLE_S as SETTLE_S, fly, hover_follower,
+};
 
 /// Takes off to the hover point in `wind`, settles, then holds for `hold_s`, returning the
 /// largest deviations during the hold.
@@ -30,10 +33,10 @@ fn hover(wind: Wind, hold_s: f32) -> HoverDeviation {
 #[test]
 fn holds_altitude_position_and_heading_in_calm_air() {
     let worst = hover(Wind::default(), 10.0);
-    check!(worst.altitude_m < 0.1, "{worst:?}");
-    check!(worst.horizontal_m < 0.1, "{worst:?}");
-    check!(worst.tilt_deg < 1.0, "{worst:?}");
-    check!(worst.heading_deg < 1.0, "{worst:?}");
+    check!(worst.altitude_m < CALM_ALTITUDE_M, "{worst:?}");
+    check!(worst.horizontal_m < CALM_HORIZONTAL_M, "{worst:?}");
+    check!(worst.tilt_deg < CALM_ANGLE_DEG, "{worst:?}");
+    check!(worst.heading_deg < CALM_ANGLE_DEG, "{worst:?}");
 }
 
 /// Altitude band in a steady wind or a gust, in m: measured 0.27 m at most; 0.5 m leaves

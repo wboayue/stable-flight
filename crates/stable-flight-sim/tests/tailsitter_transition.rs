@@ -15,7 +15,9 @@ use common::tailsitter::{
     FORWARD_AT_S, HoverDeviation, TRANSITION_ALTITUDE_M, TailsitterPlant, Trace, forward,
     forward_and_back, tailsitter_loop, trace,
 };
-use common::{hover_at, waypoint};
+use common::{
+    CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK, hover_at, waypoint,
+};
 
 /// PX4's forward-transition timeout (`VT_TRANS_TIMEOUT`, `:92-97`): plane flight by then.
 const FORWARD_TIMEOUT_S: f32 = 15.0;
@@ -45,13 +47,16 @@ const PLANE_SETTLE_S: f32 = 15.0;
 
 /// Seconds the hover settles after the back transition before the hold is judged. It arrives
 /// at 9 m/s, 30 m short: measured 0.14 m off after 15 s, 0.05 m after 20 s.
-const HOVER_SETTLE_S: f32 = 20.0;
+const BACK_SETTLE_S: f32 = 20.0;
 
 /// Seconds a level hold is judged over.
 const HOLD_S: f32 = 10.0;
 
 /// Seconds a plane hold is judged over (`plane_level`'s window).
 const PLANE_HOLD_S: f32 = 30.0;
+
+/// When `Plane` is requested on the way up, in s: below `min_height_m` (measured 1.6 m).
+const LOW_REQUEST_S: f32 = 1.0;
 
 /// Distance off the line in plane flight, in m: no external band applies. Measured under 1 mm
 /// in calm air; the plane's 1 m (`plane_level`).
@@ -70,12 +75,20 @@ fn check_altitude_loss(trace: &Trace, from_s: f32, ended_s: f32, what: &str) {
     let start_m = trace
         .at(from_s)
         .map_or(f32::NAN, |sample| sample.state.position_m.z);
-    let (lowest_m, _) = trace.height_range_m(from_s, ended_s + ALTITUDE_LOSS_AFTER_S);
+    let lowest_m = trace.lowest_m(from_s, ended_s + ALTITUDE_LOSS_AFTER_S);
     check!(
         start_m - lowest_m <= ALTITUDE_LOSS_M,
         "{what}: fell {} m below {start_m} m",
         start_m - lowest_m
     );
+}
+
+/// Checks a hold against the copter's calm-air hover bands (`hover.rs`).
+fn check_calm_hover(worst: &HoverDeviation, what: &str) {
+    check!(worst.altitude_m < CALM_ALTITUDE_M, "{what}: {worst:?}");
+    check!(worst.horizontal_m < CALM_HORIZONTAL_M, "{what}: {worst:?}");
+    check!(worst.tilt_deg < CALM_ANGLE_DEG, "{what}: {worst:?}");
+    check!(worst.heading_deg < CALM_ANGLE_DEG, "{what}: {worst:?}");
 }
 
 /// From a hover, `Plane` on the north line reaches plane flight within PX4's timeout and
@@ -117,7 +130,7 @@ fn transitions_back_into_a_hover() {
     let mut flight_loop = tailsitter_loop(&plant, commander);
     let flight = trace(
         &mut flight_loop,
-        BACK_AT_S + BACK_DURATION_S + HOVER_SETTLE_S + HOLD_S,
+        BACK_AT_S + BACK_DURATION_S + BACK_SETTLE_S + HOLD_S,
     );
 
     check!(flight.entered(FlightMode::ToCopter, BACK_AT_S).is_some());
@@ -127,15 +140,12 @@ fn transitions_back_into_a_hover() {
     check_altitude_loss(&flight, BACK_AT_S, copter_s, "back");
 
     let point_m = Vec3::new(BACK_HOVER_NORTH_M, 0.0, TRANSITION_ALTITUDE_M);
-    let hold_s = copter_s + HOVER_SETTLE_S;
+    let hold_s = copter_s + BACK_SETTLE_S;
     let mut worst = HoverDeviation::default();
     for sample in flight.window(hold_s, hold_s + HOLD_S) {
         worst.observe(&sample.state, point_m);
     }
-    check!(worst.altitude_m < 0.1, "{worst:?}");
-    check!(worst.horizontal_m < 0.1, "{worst:?}");
-    check!(worst.tilt_deg < 1.0, "{worst:?}");
-    check!(worst.heading_deg < 1.0, "{worst:?}");
+    check_calm_hover(&worst, "back");
 }
 
 /// A forward transition that ends in a hover instead: asked to, timed out, or rolled past its
@@ -180,6 +190,9 @@ fn ends_a_forward_transition_early() {
             None,
         ),
     ];
+    // The timeout trips on the tick after it runs out.
+    let tolerance_s = 2.0 * TICK.as_secs_f32();
+    let origin_m = Vec3::new(0.0, 0.0, TRANSITION_ALTITUDE_M);
     for (case, plant, copter_after_s, refusal, hover_after_s) in cases {
         let hover = Command::new(
             true,
@@ -192,24 +205,40 @@ fn ends_a_forward_transition_early() {
             hover,
         );
         let mut flight_loop = tailsitter_loop(&plant, commander);
-        let flight = trace(&mut flight_loop, FORWARD_AT_S + 25.0);
+        let flight = trace(
+            &mut flight_loop,
+            FORWARD_AT_S + FORWARD_TIMEOUT_S + HOVER_SETTLE_S,
+        );
 
-        let ramp_s = entered_s(&flight, FlightMode::ToPlane, 0.0, case);
+        let ramp_s = entered_s(&flight, FlightMode::ToPlane, FORWARD_AT_S, case);
         check!(
             flight.entered(FlightMode::Plane, ramp_s).is_none(),
             "{case}"
         );
         let ended = flight.entered(FlightMode::Copter, ramp_s);
-        let copter_s = entered_s(&flight, FlightMode::Copter, ramp_s, case);
-        check!(ended.and_then(|sample| sample.refusal) == refusal, "{case}");
+        check!(
+            ended.map(|sample| sample.refusal) == Some(refusal),
+            "{case}"
+        );
+        let copter_s = ended.map_or(f32::INFINITY, |sample| sample.time_s);
         if let Some(after_s) = hover_after_s {
-            // Within a tick.
             check!(
-                (copter_s - ramp_s - after_s).abs() < 0.01,
+                (copter_s - ramp_s - after_s).abs() < tolerance_s,
                 "{case}: {copter_s} s"
             );
         }
         check_altitude_loss(&flight, ramp_s, copter_s, case);
+
+        // Asked back, it hovers over the origin. Refused, it still wants `Plane` and flies its
+        // line as a copter, so only its height is checked.
+        if refusal.is_none() {
+            let hold_s = copter_s + HOVER_SETTLE_S;
+            let mut worst = HoverDeviation::default();
+            for sample in flight.window(hold_s, hold_s + HOLD_S) {
+                worst.observe(&sample.state, origin_m);
+            }
+            check_calm_hover(&worst, case);
+        }
     }
 }
 
@@ -220,10 +249,9 @@ fn waits_for_the_transition_height() {
     let airframe = airframes::tailsitter();
     let plant = TailsitterPlant::clean(airframe);
     let airspeed_mps = airframe.stabilizer.plane.trim_airspeed_mps;
-    const REQUESTED_S: f32 = 1.0;
     let commander = Interlude::new(
         hover_at(TRANSITION_ALTITUDE_M),
-        REQUESTED_S,
+        LOW_REQUEST_S,
         f32::INFINITY,
         north_line_command(TRANSITION_ALTITUDE_M, airspeed_mps),
     );
@@ -231,12 +259,12 @@ fn waits_for_the_transition_height() {
     let flight = trace(&mut flight_loop, 10.0);
 
     let min_height_m = airframe.guidance.transition.min_height_m;
-    let refused = flight.at(REQUESTED_S);
+    let refused = flight.at(LOW_REQUEST_S);
     check!(
         refused.map(|sample| (sample.mode, sample.refusal))
             == Some((FlightMode::Copter, Some(ModeRefusal::BelowMinAltitude)))
     );
-    let ramp = flight.entered(FlightMode::ToPlane, REQUESTED_S);
+    let ramp = flight.entered(FlightMode::ToPlane, LOW_REQUEST_S);
     check!(ramp.is_some_and(|sample| sample.state.position_m.z >= min_height_m));
     let to_plane_s = ramp.map_or(f32::INFINITY, |sample| sample.time_s);
     let plane_s = entered_s(&flight, FlightMode::Plane, to_plane_s, "forward");
