@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 pub mod plane;
+pub mod plane_spec;
 pub mod spec;
 
 use std::time::Duration;

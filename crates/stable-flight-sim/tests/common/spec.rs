@@ -27,7 +27,7 @@ use super::Plant;
 const AGGR: f32 = 0.1;
 
 /// Largest overshoot, as a fraction of the step (ArduPilot: `1 + AGGR/2`).
-const MAX_OVERSHOOT: f32 = AGGR / 2.0;
+pub const MAX_OVERSHOOT: f32 = AGGR / 2.0;
 
 /// Largest rate-loop bounce-back, as a fraction of the step (ArduPilot: `AGGR`).
 const MAX_RATE_BOUNCE_BACK: f32 = AGGR;

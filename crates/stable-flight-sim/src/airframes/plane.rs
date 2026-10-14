@@ -1,5 +1,6 @@
 //! The simulated airplane: see [`plane`].
 
+use stable_flight::controllers::{PlaneRateControllerConfig, RateGains};
 use stable_flight::guidance::plane::PlaneGuidanceConfig;
 use stable_flight::mixers::{MixerConfig, TableMixer};
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
@@ -38,8 +39,12 @@ pub struct PlaneAirframe {
 /// - Prop: static thrust-to-weight 1.2 with 50 ms lag; ArduPilot sizes its thrust from a hover
 ///   throttle that doesn't apply here.
 ///
-/// The stabilizer and guidance are core's defaults at a 15 m/s trim airspeed, with the
-/// cruise thrust worked out from the model's level-flight drag rather than measured.
+/// The stabilizer and guidance are core's defaults at a 15 m/s trim airspeed, except for
+/// what the model works out rather than a flight measures: each rate loop's feedforward (the
+/// surface command per rad/s that balances the model's rate damping at trim, so a commanded
+/// rate needs no feedback and a turn gets the rudder that coordinates it) and the cruise
+/// thrust from its level-flight drag. Pitch rate I is tuned to the plane step spec in
+/// `tests/` (#348).
 ///
 /// # Examples
 ///
@@ -64,6 +69,7 @@ pub struct PlaneAirframe {
 /// );
 /// ```
 pub fn plane() -> PlaneAirframe {
+    const PITCH_RATE_I: f32 = 1.5;
     const MASS_KG: f32 = 2.0;
     const SPAN_M: f32 = 1.88;
     const TRIM_AIRSPEED_MPS: f32 = 15.0;
@@ -104,7 +110,29 @@ pub fn plane() -> PlaneAirframe {
         max_step_s: 0.001,
     };
     let mixer = TableMixer::plane();
+    let feedforward = rate_feedforward(&model, TRIM_AIRSPEED_MPS);
+    let defaults = PlaneRateControllerConfig::default();
+    let rate = PlaneRateControllerConfig {
+        roll: RateGains {
+            ff: feedforward.x,
+            ..defaults.roll
+        },
+        // A held pitch at constant throttle trades airspeed for climb, so the elevator it
+        // needs keeps moving after the step: PX4's I lets the attitude droop back past the
+        // settle band; 1.5 settles a 10° step in 0.7 s (#348).
+        pitch: RateGains {
+            i: PITCH_RATE_I,
+            ff: feedforward.y,
+            ..defaults.pitch
+        },
+        yaw: RateGains {
+            ff: feedforward.z,
+            ..defaults.yaw
+        },
+        ..defaults
+    };
     let stabilizer = PlaneStabilizerConfig {
+        rate,
         trim_airspeed_mps: TRIM_AIRSPEED_MPS,
         ..PlaneStabilizerConfig::default()
     };
@@ -129,6 +157,22 @@ fn aerosonde_inertia(mass_kg: f32, span_m: f32) -> Vec3 {
     const SPAN_M: f32 = 2.8956;
     let scale = mass_kg / MASS_KG * (span_m / SPAN_M) * (span_m / SPAN_M);
     Vec3::new(0.8244, 1.135, 1.759) * scale
+}
+
+/// The surface command per rad/s that holds a steady roll, pitch, and yaw rate on `model` at
+/// `airspeed_mps`: each axis's rate damping (`c_roll_p`, `c_pitch_q`, `c_yaw_r`, over the
+/// 2V/length that nondimensionalizes the rate) balanced by its surface at full deflection.
+fn rate_feedforward(model: &FixedWingModel, airspeed_mps: f32) -> Vec3 {
+    let c = &model.aero;
+    let per_rate = |damping: f32, length_m: f32, control: f32, max_deflection_rad: f32| {
+        -damping * length_m / (2.0 * airspeed_mps * control * max_deflection_rad)
+    };
+    let max = model.max_deflection_rad;
+    Vec3::new(
+        per_rate(c.c_roll_p, model.span_m, c.c_roll_aileron, max.x),
+        per_rate(c.c_pitch_q, model.chord_m, c.c_pitch_elevator, max.y),
+        per_rate(c.c_yaw_r, model.span_m, c.c_yaw_rudder, max.z),
+    )
 }
 
 /// The throttle that holds `model` in level flight at `airspeed_mps`: the thrust that matches
