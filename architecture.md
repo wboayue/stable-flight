@@ -78,8 +78,9 @@ Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its depen
 RealFlight (and X-Plane, planned) can't run in `cargo test` or CI, so without another plant
 the pipeline's closed loop is only checked by hand. `stable-flight-sim` is that plant: a rigid
 body on a ground plane in deterministic wind, as a multirotor (motor lag, quadratic thrust,
-linear drag) or an airplane (stability-derivative aerodynamics, servo-driven surfaces, a
-tractor prop), stepped in lockstep with `FlightLoop` (no wall clock, only seeded noise), so a
+linear drag), an airplane (stability-derivative aerodynamics, servo-driven surfaces, a
+tractor prop), or a tailsitter (the airplane's aerodynamics with its motors along the wing and
+the elevons in their wash), stepped in lockstep with `FlightLoop` (no wall clock, only seeded noise), so a
 test flight repeats bit for bit and runs in milliseconds. It aims at plausible dynamics, not fidelity; RealFlight stays
 the check for realism.
 
@@ -93,12 +94,29 @@ the check for realism.
   factors, so elevons and separate surfaces read back alike). The sim and mixer can't
   disagree on motor order, spin, or surface slots, and there is no second table to keep in
   sync.
-* **Two vehicles over shared parts.** `SimCopter` and `SimPlane` are separate types over
-  crate-private components: lockstep timing, the actuator delay, wind, gyro noise, the rigid
-  body, and ground contact live once; each vehicle adds only its loads. A public generic
+* **Three vehicles over shared parts.** `SimCopter`, `SimPlane`, and `SimTailsitter` are
+  separate types over crate-private components: lockstep timing, the actuator delay, wind,
+  gyro noise, the rigid body, and ground contact live once; each vehicle adds only its loads,
+  and the airplane and tailsitter share one fixed-wing dynamics (the tailsitter's motor arm,
+  wash, and resting on its tail are off for the airplane). A public generic
   vehicle (`SimVehicle<P: Physics>`) was rejected: its trait would have to absorb what the
   two differ in (how each rests on the ground, plane-only flow angles) and stay stable as a
-  public API, for less duplication than the vehicles' thin builder glue.
+  public API, for less duplication than the vehicles' thin builder glue. A generic VTOL
+  (per-rotor position and thrust axis, tilt servos) waits for a quadplane or tiltrotor
+  guidance to fly it.
+* **Prop wash by momentum theory.** A tailsitter's elevons hold it in a hover only in the
+  props' wash, so the surface terms see the actuator disc's far-wake pressure (thrust over
+  disc area) on top of the free stream's; lift, drag, and damping see the free stream.
+  Sinking tail first, the air meets the wash head on and the surfaces see the static jet
+  less the sink, so authority fades with the sink, as the eXplora's did in RealFlight (#123).
+  ArduPilot's SITL instead adds 20 m/s × throttle to the airspeed of every moment
+  (`SIM_Plane.cpp:154-162`), which ties authority to throttle rather than thrust and damps
+  the body in a still hover.
+* **Bounded at any angle of attack.** A tailsitter flies broadside to the air in a hover and
+  backward when it sinks, so past the stall drag blends into a flat plate's (`2·sin²α`)
+  with the lift, and static pitch stability acts on `sin α`. The attached-flow formulas,
+  extrapolated, give a drag coefficient near 6 broadside and a pitch moment that flips sign
+  across reversed flow.
 * **Spec bands, not snapshots.** Step-response tests hold each loop to ArduPilot's and PX4's
   autotune targets (cited in `tests/step_response.rs`), not to whatever the sim measured, so
   a regression and a tuning gap both fail. Each airframe's roll and pitch gains come from

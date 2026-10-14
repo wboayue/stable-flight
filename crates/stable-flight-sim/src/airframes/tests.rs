@@ -1,11 +1,16 @@
 use approx::assert_relative_eq;
 use assert2::check;
+use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::CopterStabilizer;
+use stable_flight::stabilizers::vtol::TailsitterStabilizer;
 use stable_flight::{AttitudeSetpoint, ControlOutput, Mixer, Setpoint, Stabilizer, VehicleState};
 
 use super::*;
 use crate::aero;
+use crate::body::Body;
+use crate::lockstep::Dynamics;
 use crate::motors::Motors;
+use crate::wing::{FixedWing, Rotors};
 
 #[test]
 fn every_airframe_is_valid() {
@@ -82,13 +87,73 @@ fn rate_feedforward_cancels_rate_damping() {
     let airspeed_mps = 15.0;
     let feedforward = plane::rate_feedforward(&model, airspeed_mps);
     let air_mps = Vec3::new(airspeed_mps, 0.0, 0.0);
-    let still_nm = aero::wrench(&model, air_mps, Vec3::zeros(), Vec3::zeros()).torque_nm;
+    let still_nm = aero::wrench(&model, air_mps, Vec3::zeros(), Vec3::zeros(), 0.0).torque_nm;
     for axis in 0..3 {
         let rates_radps = Vec3::ith(axis, 0.5);
         let deflection_rad = rates_radps
             .component_mul(&feedforward)
             .component_mul(&model.max_deflection_rad);
-        let torque_nm = aero::wrench(&model, air_mps, rates_radps, deflection_rad).torque_nm;
+        let torque_nm = aero::wrench(&model, air_mps, rates_radps, deflection_rad, 0.0).torque_nm;
         assert_relative_eq!(torque_nm[axis], still_nm[axis], epsilon = 1e-4);
     }
+}
+
+#[test]
+fn tailsitter_is_valid() {
+    let airframe = tailsitter();
+    check!(airframe.model.validate() == Ok(()));
+    check!(airframe.guidance.validate() == Ok(()));
+    check!(airframe.stabilizer.validate() == Ok(()));
+}
+
+/// ArduPilot's tailsitter is its plane with 1.5× the thrust (`SIM_Plane.cpp:78-81`), here
+/// split over two motors.
+#[test]
+fn tailsitter_has_one_and_a_half_times_the_planes_thrust() {
+    let (tailsitter, plane) = (tailsitter().model, plane().model);
+    assert_relative_eq!(
+        2.0 * tailsitter.wing.max_thrust_n,
+        1.5 * plane.max_thrust_n,
+        max_relative = 1e-6
+    );
+}
+
+/// Nose up, the hover thrust, through the hover side's curve and the mixer, gives motors whose
+/// thrust carries the weight.
+#[test]
+fn tailsitter_hover_thrust_carries_the_weight() {
+    let airframe = tailsitter();
+    let mut stabilizer = TailsitterStabilizer::new(airframe.stabilizer);
+    let nose_up = VehicleState {
+        attitude: UnitQuaternion::from_euler_angles(0.0, core::f32::consts::FRAC_PI_2, 0.0),
+        ..Default::default()
+    };
+    let hover = airframe.guidance.hover.altitude.hover_thrust;
+    let setpoint = Setpoint::Attitude(AttitudeSetpoint {
+        thrust: hover,
+        ..Default::default()
+    });
+    let output = stabilizer.stabilize(0.004, &setpoint, &nose_up);
+    let mut mixer = airframe.mixer;
+    let command = mixer.mix(&output);
+
+    // Nose up in still air, after a step far longer than the motor lag.
+    let mut dynamics = FixedWing::new(
+        airframe.model.wing,
+        &airframe.mixer,
+        Rotors::tailsitter(&airframe.model),
+        UnitQuaternion::identity(),
+    );
+    dynamics.begin(100.0);
+    let body = Body {
+        attitude: nose_up.attitude,
+        ..Body::default()
+    };
+    dynamics.loads(&command, &body, Vec3::zeros());
+    assert_relative_eq!(
+        dynamics.lift_n(&body),
+        airframe.model.wing.mass_kg * GRAVITY,
+        max_relative = 1e-4
+    );
+    check!((0.5..0.95).contains(&hover), "hover thrust {hover}");
 }

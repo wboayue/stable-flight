@@ -8,6 +8,9 @@ const H: f32 = 0.001;
 const GROUND: Ground = Ground {
     mass_kg: 1.0,
     friction: 0.5,
+    rest: UnitQuaternion::new_unchecked(stable_flight::nalgebra::Quaternion::new(
+        1.0, 0.0, 0.0, 0.0,
+    )),
 };
 
 fn weight_n() -> f32 {

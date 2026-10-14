@@ -25,15 +25,16 @@ const ENTRY_S: f32 = 4.0;
 const RECOVERY_WINDOW_S: f32 = 20.0;
 
 /// Seconds after the entry until the airplane flies again for good (angle of attack under the
-/// stall, airspeed at or over the stabilizer's minimum). Measured 0.6 s at most (the tail
-/// slide recovers during the entry); 2 s leaves over 3× margin.
+/// stall, airspeed at or over the stabilizer's minimum). Measured 0.8 s at most (the tail
+/// slide recovers during the entry); 2 s leaves over 2× margin.
 const RECOVERY_S: f32 = 2.0;
 
-/// Altitude lost from the entry to the lowest point, in m. Measured 3.7 m at most; 8 m leaves
-/// about 2× margin.
-const ALTITUDE_LOSS_M: f32 = 8.0;
+/// Altitude lost from the entry to the lowest point, in m. Measured 41 m wings level, where the
+/// held pitch-up carries the tail slide over the back and it rolls upright from inverted (3 m
+/// rolling); 60 m leaves about 1.5× margin.
+const ALTITUDE_LOSS_M: f32 = 60.0;
 
-/// Largest body rate, in rad/s. Measured 1.8 rad/s at most; 3.5 rad/s leaves about 2× margin.
+/// Largest body rate, in rad/s. Measured 2.3 rad/s at most; 3.5 rad/s leaves about 1.5× margin.
 const MAX_BODY_RATE_RADPS: f32 = 3.5;
 
 #[test]

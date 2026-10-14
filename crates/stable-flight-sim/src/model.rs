@@ -53,7 +53,7 @@ pub struct MultirotorModel {
 }
 
 /// Why a [`MultirotorModel`], [`FixedWingModel`](crate::FixedWingModel),
-/// [`Perturbations`](crate::Perturbations), or a [`SimCopter`](crate::SimCopter)'s mixer was
+/// [`TailsitterModel`](crate::TailsitterModel), [`Perturbations`](crate::Perturbations), or a [`SimCopter`](crate::SimCopter)'s mixer was
 /// rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[non_exhaustive]
@@ -67,6 +67,9 @@ pub enum ModelError {
     /// A parameter that must be finite isn't.
     #[error("{0} must be finite")]
     NotFinite(&'static str),
+    /// A parameter that must be in `[0, 1]` isn't.
+    #[error("{0} must be in [0, 1]")]
+    NotFraction(&'static str),
     /// The mixer drives a servo, which the multirotor doesn't model.
     #[error("the mixer drives servo {0}, which the multirotor doesn't model")]
     Servo(u8),
@@ -140,6 +143,12 @@ pub(crate) fn check_positive(params: &[(&'static str, f32)]) -> Result<(), Model
 pub(crate) fn check_non_negative(params: &[(&'static str, f32)]) -> Result<(), ModelError> {
     first_failing(params, |value| value >= 0.0)
         .map_or(Ok(()), |name| Err(ModelError::Negative(name)))
+}
+
+/// [`ModelError::NotFraction`] naming the first of `params` outside `[0, 1]` or not finite.
+pub(crate) fn check_fraction(params: &[(&'static str, f32)]) -> Result<(), ModelError> {
+    first_failing(params, |value| (0.0..=1.0).contains(&value))
+        .map_or(Ok(()), |name| Err(ModelError::NotFraction(name)))
 }
 
 /// [`ModelError::NotFinite`] naming the first of `params` that isn't finite.

@@ -1,7 +1,7 @@
-//! A deterministic rigid-body multirotor and airplane simulator for Stable Flight's closed-loop
+//! A deterministic rigid-body multirotor, airplane, and tailsitter simulator for Stable Flight's closed-loop
 //! tests.
 //!
-//! [`SimCopter`] and [`SimPlane`] are [`Vehicle`](stable_flight::Vehicle)s a
+//! [`SimCopter`], [`SimPlane`], and [`SimTailsitter`] are [`Vehicle`](stable_flight::Vehicle)s a
 //! [`FlightLoop`](stable_flight::FlightLoop) flies in lockstep: each tick integrates the last
 //! actuator command over the tick's `dt`, with no wall clock and only seeded noise, so the same
 //! inputs give the same flight, bit for bit. They aim at plausible, repeatable dynamics for
@@ -11,12 +11,15 @@
 //!   the mixer's rows, so the simulated vehicle answers each moment the way the mixer expects.
 //! - [`FixedWingModel`]: mass, inertia, wing, [`AeroCoefficients`], surfaces, prop. The mixer's
 //!   servo rows say which surfaces each servo moves. [`Start`] puts it in flight.
+//! - [`TailsitterModel`]: the airplane's with its motors along the wing (differential thrust)
+//!   and the surfaces in their [`PropWash`]; it rests on its tail and hovers nose up.
 //! - [`Wind`]: steady wind plus an optional deterministic [`Gust`].
 //! - [`Perturbations`]: actuator delay, gyro noise and vibration, a disturbance moment, and
 //!   motor mismatch, all off by default. Ranges to sweep, so a method that passes on them
 //!   isn't fitted to one clean plant.
 //! - [`airframes`]: physics paired with the configs that fly it ([`airframes::quad_x`],
-//!   [`airframes::heavy_quad`], [`airframes::racer`]; [`airframes::plane`]).
+//!   [`airframes::heavy_quad`], [`airframes::racer`]; [`airframes::plane`];
+//!   [`airframes::tailsitter`]).
 //!
 //! `no_std` with fixed-size math, so it can later drive hardware-in-the-loop runs.
 //!
@@ -70,7 +73,10 @@ mod perturbations;
 mod plane;
 mod start;
 mod surfaces;
+mod tailsitter;
+mod tailsitter_model;
 mod wind;
+mod wing;
 
 pub use copter::SimCopter;
 pub use fixed_wing::{AeroCoefficients, FixedWingModel};
@@ -78,4 +84,6 @@ pub use model::{ModelError, MultirotorModel};
 pub use perturbations::{GyroNoise, MAX_ACTUATOR_DELAY_S, Perturbations, Vibration};
 pub use plane::SimPlane;
 pub use start::Start;
+pub use tailsitter::SimTailsitter;
+pub use tailsitter_model::{PropWash, TailsitterModel};
 pub use wind::{Gust, Wind};

@@ -3,6 +3,7 @@
 use core::time::Duration;
 
 use stable_flight::mixers::{Slot, TableMixer};
+use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{Actuator, ActuatorCommand, StateSource, Vec3, VehicleState};
 
 use crate::body::{Body, Loads, MassProperties};
@@ -149,6 +150,7 @@ impl Dynamics for Multirotor {
         Ground {
             mass_kg: self.model.mass_kg,
             friction: self.model.ground_friction,
+            rest: UnitQuaternion::identity(),
         }
     }
 

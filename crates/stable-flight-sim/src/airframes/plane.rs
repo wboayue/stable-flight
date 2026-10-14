@@ -10,6 +10,8 @@ use crate::aero;
 use crate::fixed_wing::{AeroCoefficients, FixedWingModel};
 use crate::start::Start;
 
+use super::{motor_count, thrust_for};
+
 /// A simulated airplane: its physics, the mixer that drives its prop and surfaces, the
 /// guidance and stabilizer configs tuned for it, and a start in flight.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -137,7 +139,13 @@ pub fn plane() -> PlaneAirframe {
         ..PlaneStabilizerConfig::default()
     };
     let guidance = PlaneGuidanceConfig {
-        cruise_thrust: cruise_thrust(&model, &MixerConfig::default(), TRIM_AIRSPEED_MPS),
+        cruise_thrust: cruise_thrust(
+            &model,
+            &mixer,
+            &MixerConfig::default(),
+            stabilizer.thrust_curve_exponent,
+            TRIM_AIRSPEED_MPS,
+        ),
         ..PlaneGuidanceConfig::default()
     };
     PlaneAirframe {
@@ -179,14 +187,24 @@ pub(super) fn rate_feedforward(model: &FixedWingModel, airspeed_mps: f32) -> Vec
     )
 }
 
-/// The throttle that holds `model` in level flight at `airspeed_mps`: the thrust that matches
-/// the drag at the angle of attack whose linear lift carries the weight, through the prop's
-/// `max_thrust_n · command²` and the mixer's thrust factor (`mixer_config`). Throttle passes
-/// through the stabilizer unchanged (thrust curve exponent 1).
-fn cruise_thrust(model: &FixedWingModel, mixer_config: &MixerConfig, airspeed_mps: f32) -> f32 {
+/// The throttle that holds `model` in level flight at `airspeed_mps` on `mixer`'s motors: the
+/// thrust that matches the drag at the angle of attack whose linear lift carries the weight,
+/// shared by the motors, through [`thrust_for`] with the mixer's thrust factor (`mixer_config`)
+/// and the stabilizer's `thrust_curve_exponent`.
+pub(super) fn cruise_thrust<const N: usize>(
+    model: &FixedWingModel,
+    mixer: &TableMixer<N>,
+    mixer_config: &MixerConfig,
+    thrust_curve_exponent: f32,
+    airspeed_mps: f32,
+) -> f32 {
     let pressure_area_n = aero::pressure_area_n(model, airspeed_mps);
     let lift = model.mass_kg * GRAVITY / pressure_area_n;
-    let drag = aero::drag_coefficient(model, lift);
-    let command = libm::sqrtf(pressure_area_n * drag / model.max_thrust_n);
-    command / mixer_config.thrust_factor
+    let drag_n = pressure_area_n * aero::drag_coefficient(model, lift);
+    thrust_for(
+        drag_n / motor_count(mixer),
+        model.max_thrust_n,
+        mixer_config,
+        thrust_curve_exponent,
+    )
 }
