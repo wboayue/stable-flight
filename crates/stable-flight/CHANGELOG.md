@@ -135,6 +135,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   them before anything else flies, so the vehicle settles on them and they stay if the stage
   keeps or fails; a gain above the ceiling could ring once disturbed and fail the stage
   `NotSettled` (#375).
+- **Breaking:** `AutotuneEvent` is `#[non_exhaustive]`: a `match` on it needs a wildcard arm,
+  and new events stop being breaking.
 - An autotune relay that can't settle starts at `Envelope::settle_timeout_s` instead of
   failing the stage: it replaces the loop's output, so a loop ringing on its own gains still
   measures (#375).

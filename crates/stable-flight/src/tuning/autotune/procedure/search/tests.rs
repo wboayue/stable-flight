@@ -419,8 +419,9 @@ fn invalid_steps_fail_a_point_not_the_stage() {
     check!(baseline_count(&everywhere) == 0);
 }
 
-/// A start the search would never pick (its term above `max`) flies no baseline: the search
-/// goes straight to its bracket, and the verify meets the criterion itself (#361).
+/// A start the search would never pick (its term above `max`) flies no baseline: it's lowered
+/// to `max` and committed, the search goes straight to its bracket, and the verify meets the
+/// criterion itself (#361).
 #[test]
 fn a_start_above_max_flies_no_baseline() {
     let plan = SearchPlan {
@@ -429,6 +430,14 @@ fn a_start_above_max_flies_no_baseline() {
     };
     let run = drive(plan, no_relays, damping(0.001));
 
+    // Without a relay, the seed is the start: lowered to `max` and committed.
+    check!(
+        run.committed
+            == [Gains {
+                d: plan.max,
+                ..START
+            }]
+    );
     check!(run.flown.iter().all(|gains| *gains != START));
     let (gains, outcome) = finished(&run);
     check!(outcome == Outcome::Tuned);
