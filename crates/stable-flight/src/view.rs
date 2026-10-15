@@ -26,8 +26,8 @@ use nalgebra::UnitQuaternion;
 use crate::controllers::InvalidConfig;
 use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
 use crate::{
-    Configurable, ControlInput, ControlOutput, FlightModeReport, FlightRegime, Guidance,
-    Saturation, Setpoint, Stabilizer, VehicleState,
+    Configurable, ControlInput, ControlOutput, CruiseOutput, FlightModeReport, FlightRegime,
+    Guidance, Saturation, Setpoint, Stabilizer, VehicleState,
 };
 
 #[cfg(test)]
@@ -139,12 +139,17 @@ impl<G: Guidance> Guidance for View<G> {
 }
 
 impl<S: Stabilizer> Stabilizer for View<S> {
-    /// Stabilizes in the view, then rotates the moments back into the body frame.
+    /// Stabilizes in the view, then rotates the moments (and any cruise moments) back into the
+    /// body frame.
     fn stabilize(&mut self, dt: f32, setpoint: &Setpoint, state: &VehicleState) -> ControlOutput {
         let state = self.view_state(state);
         let output = self.inner.stabilize(dt, setpoint, &state);
         ControlOutput {
             moments: self.rotation * output.moments,
+            cruise: output.cruise.map(|cruise| CruiseOutput {
+                moments: self.rotation * cruise.moments,
+                ..cruise
+            }),
             ..output
         }
     }

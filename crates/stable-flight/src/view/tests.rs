@@ -8,7 +8,7 @@ use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::params::Params;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
 use crate::tuning::autotune::COPTER_RATE_RELAY;
-use crate::{AttitudeCommand, AttitudeSetpoint, Vec3, euler_angles};
+use crate::{AttitudeCommand, AttitudeSetpoint, CruiseOutput, Vec3, euler_angles};
 
 const DT: f32 = 0.004;
 
@@ -98,8 +98,8 @@ fn body_rates_land_on_the_view_axes() {
     }
 }
 
-/// A stabilizer that answers every tick with fixed moments, and reports fixed per-axis
-/// saturation.
+/// A stabilizer that answers every tick with fixed moments, the same on its lift rotors and
+/// its cruise surfaces, and reports fixed per-axis saturation.
 struct FixedMoments(Vec3, [bool; 3]);
 
 impl Stabilizer for FixedMoments {
@@ -109,7 +109,13 @@ impl Stabilizer for FixedMoments {
         _setpoint: &Setpoint,
         _state: &VehicleState,
     ) -> ControlOutput {
-        ControlOutput::new(0.5, self.0)
+        ControlOutput {
+            cruise: Some(CruiseOutput {
+                thrust: 0.3,
+                moments: self.0,
+            }),
+            ..ControlOutput::new(0.5, self.0)
+        }
     }
 
     fn saturation(&self) -> Saturation {
@@ -121,8 +127,8 @@ impl Stabilizer for FixedMoments {
     }
 }
 
-/// View moments go back to the body's axes for the mixer: view roll is airplane yaw, view yaw
-/// is airplane −roll; thrust passes through.
+/// View moments go back to the body's axes for the mixer, cruise moments too: view roll is
+/// airplane yaw, view yaw is airplane −roll; thrusts pass through.
 #[test]
 fn moments_return_to_the_body_axes() {
     // (view moments, body moments)
@@ -144,6 +150,12 @@ fn moments_return_to_the_body_axes() {
             (output.moments - body_moments).norm() < 1e-6,
             "{view_moments:?} → {:?}",
             output.moments
+        );
+        let cruise = output.cruise.expect("cruise passes through");
+        check!(cruise.thrust == 0.3);
+        check!(
+            (cruise.moments - body_moments).norm() < 1e-6,
+            "{view_moments:?} → {cruise:?}"
         );
     }
 }

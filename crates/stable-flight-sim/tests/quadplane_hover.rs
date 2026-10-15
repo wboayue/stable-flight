@@ -51,7 +51,7 @@ fn holds_altitude_position_and_heading_in_calm_air() {
     check!(worst.horizontal_m < CALM_HORIZONTAL_M, "{worst:?}");
     check!(worst.tilt_deg < CALM_ANGLE_DEG, "{worst:?}");
     check!(worst.heading_deg < CALM_ANGLE_DEG, "{worst:?}");
-    let pusher = usize::from(plant.airframe.model.pusher_slot);
+    let pusher = usize::from(flight_loop.vehicle().pusher_slot());
     let (.., telemetry) = flight_loop.into_parts();
     check!(
         telemetry

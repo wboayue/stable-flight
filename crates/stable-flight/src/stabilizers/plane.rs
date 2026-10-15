@@ -246,6 +246,7 @@ impl PlaneStabilizer {
         ControlOutput {
             thrust: thrust_curve(thrust, config.thrust_curve_exponent),
             moments,
+            cruise: None,
         }
     }
 }

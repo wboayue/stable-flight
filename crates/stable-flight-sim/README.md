@@ -39,7 +39,8 @@ plus a `Start` in level flight (`SimPlane::with_start`); it doesn't take off fro
 `airframes::tailsitter()` pairs `SimTailsitter` with `TailsitterGuidance` and
 `TailsitterStabilizer`; it starts resting on its tail and takes off nose up.
 `airframes::quadplane()` pairs `SimQuadPlane` with its hover configs (`CopterGuidance`,
-`CopterStabilizer`) and a hover mixer that leaves the pusher stopped; it starts on its gear and
+`CopterStabilizer`) and `TableMixer::quadplane()`, whose pusher stays stopped without a cruise
+output; it starts on its gear and
 takes off on its lift rotors, or in cruise from its `start` (`SimQuadPlane::with_start`).
 
 ```bash
@@ -115,13 +116,13 @@ Shared by every vehicle:
 | Prop wash | `PropWash`: actuator-disc momentum theory along the thrust axis, `surface_fraction` of it over the surfaces only, so the elevons work in a hover. Nose first, the far wake's `thrust / disc area` of added dynamic pressure; sinking tail first, the static jet less the sink, so the elevons lose authority as it sinks (none at the jet's speed; no vortex-ring flow) |
 | Frame | Airplane FRD body: hovering nose up is 90° of pitch, level in `View::tailsitter`; it rests on its tail |
 
-`SimQuadPlane` (`QuadPlaneModel`: a `FixedWingModel` plus `LiftRotors` and the pusher's slot) is
+`SimQuadPlane` (`QuadPlaneModel`: a `FixedWingModel` plus `LiftRotors`; the pusher is the mixer's one `MixRow::pusher` row) is
 `SimPlane`'s physics with:
 
 | Part | Model |
 |---|---|
-| Lift rotors | `SimCopter`'s motors along body `−z`: lag, `max_thrust_n · command²`, roll, pitch, and yaw torque from the mixer's motor rows (all but the pusher's slot) |
-| Pusher | `pusher_slot`, whether or not a mixer row drives it: `SimPlane`'s prop along body `x` (the `FixedWingModel`'s thrust and lag) |
+| Lift rotors | `SimCopter`'s motors along body `−z`: lag, `max_thrust_n · command²`, roll, pitch, and yaw torque from the mixer's motor rows (all but the pusher) |
+| Pusher | The mixer's `MixRow::pusher` row (exactly one, else `ModelError::PusherCount`): `SimPlane`'s prop along body `x` (the `FixedWingModel`'s thrust and lag) |
 | Lift-rotor drag | In-plane H-force: linear drag on the air's velocity in the body `x`–`y` plane, `drag_n_per_mps` at full lift thrust, scaled by the thrust, so none with the rotors stopped. Booms and stopped rotors are in the wing's `c_drag_0` |
 | Frame | Airplane FRD body, which is also the hover's: it hovers level and rests level on its gear |
 
@@ -158,8 +159,9 @@ thrust from its level-flight drag; pitch rate I is tuned to the plane step spec 
 `airframes` rustdoc).
 
 `quadplane()` is ArduPilot SITL's quadplane (`plane()`'s wing and aerodynamics with an X quad,
-4.5 kg, lift rotors 350 mm apart across the diagonal) on a hover mixer: lift rotors on motors
-0–3 in `quad_x` order, the pusher on motor 4, the ailerons, elevator, and rudder on servos 0–2.
+4.5 kg, lift rotors 350 mm apart across the diagonal) on `TableMixer::quadplane()`: lift rotors
+on motors 0–3 in `quad_x` order, the pusher on motor 4, the ailerons, elevator, and rudder on
+servos 0–2.
 Inertia is `plane()`'s Aerosonde scaling at 4.5 kg; the lift rotors take `heavy_quad`'s
 thrust-to-weight 2, lag, and yaw torque, the pusher `plane()`'s thrust-to-weight 1.2. It hovers
 on core's copter configs with roll and pitch gains from the sim autotune; cruise configs come

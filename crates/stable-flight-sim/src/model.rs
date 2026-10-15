@@ -82,10 +82,10 @@ pub enum ModelError {
     /// [`MAX_ACTUATOR_DELAY_S`](crate::MAX_ACTUATOR_DELAY_S).
     #[error("actuator_delay_s must be at most {max_s} s", max_s = crate::MAX_ACTUATOR_DELAY_S)]
     DelayTooLong,
-    /// [`QuadPlaneModel::pusher_slot`](crate::QuadPlaneModel::pusher_slot) is past the last
-    /// motor slot.
-    #[error("pusher_slot {0} is past the last motor slot")]
-    PusherSlot(u8),
+    /// A quadplane's mixer has this many
+    /// [`pusher`](stable_flight::mixers::MixRow::pusher) rows instead of one.
+    #[error("a quadplane's mixer needs one pusher row, not {0}")]
+    PusherCount(usize),
 }
 
 impl MultirotorModel {

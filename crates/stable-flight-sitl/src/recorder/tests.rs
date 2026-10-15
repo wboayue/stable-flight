@@ -23,10 +23,7 @@ fn tick(setpoint: Setpoint, input: ControlInput) -> RecordedTick {
             position_m: Vec3::new(0.0, 0.0, 5.0),
             ..Default::default()
         },
-        control: ControlOutput {
-            thrust: 0.5,
-            moments: Vec3::new(0.01, 0.02, 0.03),
-        },
+        control: ControlOutput::new(0.5, Vec3::new(0.01, 0.02, 0.03)),
         actuators: ActuatorCommand::default(),
         saturation: Saturation::default(),
         failsafe: None,

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Lift+cruise mixing** (#391): `MixRow::pusher` (a forward motor flying the cruise thrust,
+  not desaturated with the lift motors; `MixRow::is_pusher`) and the `TableMixer::quadplane()`
+  preset (`quad_x` lift rotors on motors 0–3, pusher on 4, `plane` surfaces on servos 0–2).
+  With `ControlOutput::cruise` set, servo rows fly its moments; without it, they fly
+  `moments` as before and pushers stay stopped.
 - Tailsitter back-transition sink guard (#343): `TransitionConfig::back_sink_limit_mps` and
   `back_sink_gain` (`TRAN_VT_SINK_LIM`, `TRAN_VT_SINK_GN`; default 1 m/s and 0.4 per m/s)
   raise the back ramp's thrust while it sinks, so a ramp too weak to hold the nose up doesn't
@@ -137,6 +142,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `ControlOutput` has a `cruise` field (`Option<CruiseOutput>`, #391): a
+  lift+cruise VTOL's pusher thrust and control-surface moments, flown alongside the lift
+  rotors' `thrust` and `moments`. Struct literals add `cruise: None` or
+  `..Default::default()`; `ControlOutput::new` sets `None`. `View` rotates the cruise moments
+  with the others.
+- **Breaking:** `MixerError::PusherBeforeMotor` (the enum is `#[non_exhaustive]`).
 - **Breaking:** `guidance::copter::LAND_LEASH_M` is now `ALTITUDE_LEASH_M`: it leashes waypoint
   descents as well as lands (#400).
 - Tailsitter back transitions add thrust while sinking by default (the sink guard, #343): a

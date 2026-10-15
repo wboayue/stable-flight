@@ -1,7 +1,5 @@
 //! The physical parameters of a simulated lift+cruise VTOL: see [`QuadPlaneModel`].
 
-use stable_flight::ActuatorCommand;
-
 use crate::fixed_wing::FixedWingModel;
 use crate::model::{ModelError, check_non_negative, check_positive};
 use crate::motors::MotorLayout;
@@ -14,18 +12,19 @@ mod tests;
 ///
 /// The lift rotors are laid out like [`MultirotorModel`](crate::MultirotorModel)'s, from the
 /// mixer's motor rows: a roll or pitch factor of 1 sits [`LiftRotors::moment_arm_m`] from the
-/// axis, a yaw factor of ±1 gives [`LiftRotors::yaw_torque_per_thrust_m`]. The motor slot
-/// [`pusher_slot`](Self::pusher_slot) is the pusher, whether or not a mixer row drives it;
+/// axis, a yaw factor of ±1 gives [`LiftRotors::yaw_torque_per_thrust_m`]. The mixer's
+/// [`pusher`](stable_flight::mixers::MixRow::pusher) row is the pusher;
 /// [`wing`](Self::wing)'s `max_thrust_n` and motor lag are the pusher's.
 ///
 /// # Examples
 ///
 /// ```
-/// use stable_flight_sim::QuadPlaneModel;
+/// use stable_flight_sim::{LiftRotors, QuadPlaneModel};
 ///
 /// let model = stable_flight_sim::airframes::quadplane().model;
 /// assert!(model.validate().is_ok());
-/// assert!(QuadPlaneModel { pusher_slot: 8, ..model }.validate().is_err());
+/// let no_thrust = LiftRotors { max_thrust_n: 0.0, ..model.lift };
+/// assert!(QuadPlaneModel { lift: no_thrust, ..model }.validate().is_err());
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct QuadPlaneModel {
@@ -35,8 +34,6 @@ pub struct QuadPlaneModel {
     pub wing: FixedWingModel,
     /// The lift rotors.
     pub lift: LiftRotors,
-    /// The pusher's motor slot, below [`ActuatorCommand::SLOTS`].
-    pub pusher_slot: u8,
 }
 
 /// A quadplane's lift rotors: thrust along body `−z`, laid out by the mixer's motor rows.
@@ -77,8 +74,7 @@ impl QuadPlaneModel {
     ///
     /// [`FixedWingModel::validate`]'s errors; [`ModelError::NotPositive`] for a lift moment
     /// arm, max thrust, or time constant that isn't positive and finite;
-    /// [`ModelError::Negative`] for a yaw torque or drag that is negative or not finite;
-    /// [`ModelError::PusherSlot`] for a pusher slot past the last motor slot.
+    /// [`ModelError::Negative`] for a yaw torque or drag that is negative or not finite.
     pub fn validate(&self) -> Result<(), ModelError> {
         self.wing.validate()?;
         let lift = &self.lift;
@@ -90,10 +86,6 @@ impl QuadPlaneModel {
         check_non_negative(&[
             ("lift.yaw_torque_per_thrust_m", lift.yaw_torque_per_thrust_m),
             ("lift.drag_n_per_mps", lift.drag_n_per_mps),
-        ])?;
-        if usize::from(self.pusher_slot) >= ActuatorCommand::SLOTS {
-            return Err(ModelError::PusherSlot(self.pusher_slot));
-        }
-        Ok(())
+        ])
     }
 }

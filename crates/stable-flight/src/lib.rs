@@ -899,6 +899,11 @@ pub struct LandCommand {
 /// This struct encapsulates the desired thrust and moments to be applied to the
 /// vehicle, which are later translated to specific actuator commands by a `Mixer`.
 ///
+/// Most vehicles fly one set of actuators per output: `thrust` and `moments` reach every
+/// motor and servo the mixer drives. A lift+cruise VTOL (quadplane) flies two at once, its
+/// lift rotors on `thrust` and `moments` and its pusher and control surfaces on
+/// [`cruise`](Self::cruise).
+///
 /// # Examples
 ///
 /// Creating a control output for a simple hover command:
@@ -910,20 +915,38 @@ pub struct LandCommand {
 ///     Vec3::zeros() // No roll, pitch, or yaw moments
 /// );
 /// ```
+///
+/// A quadplane in cruise: lift rotors stopped, the pusher and surfaces flying.
+/// ```
+/// use stable_flight::{ControlOutput, CruiseOutput, Vec3};
+///
+/// let output = ControlOutput {
+///     cruise: Some(CruiseOutput { thrust: 0.6, moments: Vec3::new(0.1, 0.0, 0.0) }),
+///     ..Default::default()
+/// };
+/// ```
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ControlOutput {
     /// Normalized thrust value, typically ranging from 0.0 (no thrust) to 1.0 (maximum thrust).
+    /// On a lift+cruise VTOL, the lift rotors' collective.
     pub thrust: f32,
 
     /// Control moments in roll (x), pitch (y), and yaw (z) axes.
     /// Values are typically normalized between -1.0 and 1.0, where the magnitude
     /// represents the proportion of maximum control authority in each axis.
+    /// On a lift+cruise VTOL, the lift rotors' moments only.
     pub moments: Vec3,
+
+    /// A lift+cruise VTOL's cruise actuators, flown alongside the lift rotors: the pusher's
+    /// thrust and the control surfaces' moments. `None` for every other vehicle, whose servos
+    /// take [`moments`](Self::moments).
+    pub cruise: Option<CruiseOutput>,
 }
 
 impl ControlOutput {
-    /// Creates a new `ControlOutput` with the specified thrust and control moments.
+    /// Creates a new `ControlOutput` with the specified thrust and control moments, and no
+    /// [`cruise`](Self::cruise) output.
     ///
     /// # Parameters
     ///
@@ -934,8 +957,33 @@ impl ControlOutput {
     ///
     /// A new `ControlOutput` instance with the specified parameters.
     pub fn new(thrust: f32, moments: Vec3) -> ControlOutput {
-        ControlOutput { thrust, moments }
+        ControlOutput {
+            thrust,
+            moments,
+            cruise: None,
+        }
     }
+}
+
+/// A lift+cruise VTOL's cruise output ([`ControlOutput::cruise`]): what its pusher and
+/// control surfaces fly while the lift rotors fly [`ControlOutput::thrust`] and
+/// [`ControlOutput::moments`].
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::{CruiseOutput, Vec3};
+///
+/// // Pusher at 60%, ailerons rolling right.
+/// let cruise = CruiseOutput { thrust: 0.6, moments: Vec3::new(0.2, 0.0, 0.0) };
+/// ```
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct CruiseOutput {
+    /// The pusher's normalized thrust, in `[0, 1]`.
+    pub thrust: f32,
+    /// The control surfaces' roll (x), pitch (y), and yaw (z) moments, each in `[-1, 1]`.
+    pub moments: Vec3,
 }
 
 /// Represents the physical state of a vehicle in 3D space.
