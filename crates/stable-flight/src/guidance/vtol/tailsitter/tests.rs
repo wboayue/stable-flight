@@ -133,6 +133,34 @@ fn back_ramp_pitches_the_plane_up_and_land_asks_for_it() {
     }
 }
 
+/// The back ramp flies the back thrust, raised by the sink guard (0.4 per m/s past 1 m/s by
+/// default) while sinking past its limit, which also flags thrust saturation.
+#[test]
+fn back_ramp_thrust_rises_while_sinking() {
+    // (climb m/s, thrust, flagged)
+    let cases = [
+        (2.0, 0.5, false),
+        (-1.0, 0.5, false),
+        (-2.0, 0.9, true),
+        (-5.0, 1.0, true),
+    ];
+    for (climb_mps, thrust, flagged) in cases {
+        let mut guidance = in_plane();
+        for _ in 0..100 {
+            // Past the handoff blend into Plane.
+            guidance.guide(DT, FlightRegime::Plane, &sticks(0.7), &at(85.0, 0.0));
+        }
+        let state = VehicleState {
+            velocity_mps: Vec3::new(5.0, 0.0, climb_mps),
+            ..at(80.0, 0.0)
+        };
+        let setpoint = guidance.guide(DT, FlightRegime::Copter, &sticks(0.7), &state);
+        check!(mode(&guidance) == FlightMode::ToCopter);
+        assert_relative_eq!(setpoint.thrust(), thrust, epsilon = 1e-6);
+        check!(guidance.saturation().thrust == flagged, "{climb_mps} m/s");
+    }
+}
+
 /// At a handoff the thrust blends from the outgoing side's last value to the incoming side's
 /// demand over `handoff_s`, then follows the demand.
 #[test]

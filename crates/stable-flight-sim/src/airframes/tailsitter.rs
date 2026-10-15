@@ -148,6 +148,12 @@ pub fn tailsitter() -> TailsitterAirframe {
         transition: TransitionConfig {
             // The wing's own: handing over slower, it sinks while gaining speed (#124).
             min_airspeed_mps: plane_stabilizer.min_airspeed_mps,
+            // A slow nose-up at below-cruise thrust turns the plane leg's speed into a slowdown
+            // rather than a climb, handing over at about 2.5 m/s; the sink guard (default)
+            // catches a ramp that stalls (#343).
+            back_rate_radps: 25f32.to_radians(),
+            back_done_rad: 20f32.to_radians(),
+            back_thrust: 0.6,
             ..TransitionConfig::default()
         },
     };

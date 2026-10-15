@@ -513,3 +513,30 @@ fn bank_is_roll_about_the_nose() {
     let nan = UnitQuaternion::new_unchecked(nalgebra::Quaternion::new(f32::NAN, 0.0, 0.0, 0.0));
     assert!(bank_rad(&nan).is_nan());
 }
+
+#[test]
+fn guard_sink_adds_thrust_past_the_sink_limit() {
+    // (thrust, climb m/s, limit m/s, gain, expected)
+    let cases = [
+        (0.5, 2.0, 1.0, 0.4, None),            // climbing
+        (0.5, -1.0, 1.0, 0.4, None),           // at the limit
+        (0.5, -2.0, 1.0, 0.4, Some(0.9)),      // 1 m/s past it
+        (0.5, -5.0, 1.0, 0.4, Some(1.0)),      // saturated
+        (0.5, -2.0, 1.0, 0.0, Some(0.5)),      // acting, adding nothing
+        (0.5, -3.0, 0.0, 0.4, None),           // disabled
+        (0.5, f32::NAN, 1.0, 0.4, None),       // unknown climb
+        (f32::NAN, -2.0, 1.0, 0.4, Some(0.0)), // NaN thrust saturates to 0
+    ];
+    for (thrust, climb_mps, limit_mps, gain, expected) in cases {
+        let guarded = guard_sink(thrust, climb_mps, limit_mps, gain);
+        match (guarded, expected) {
+            (Some(guarded), Some(expected)) => {
+                assert_relative_eq!(guarded, expected, epsilon = 1e-6)
+            }
+            _ => assert!(
+                guarded == expected,
+                "{thrust}, {climb_mps}, {limit_mps}, {gain}"
+            ),
+        }
+    }
+}

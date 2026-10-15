@@ -7,6 +7,7 @@ mod common;
 use core::f32::consts::FRAC_PI_2;
 
 use assert2::check;
+use stable_flight::guidance::vtol::TransitionConfig;
 use stable_flight::{
     Command, ControlInput, FlightMode, ModeRefusal, TelemetryPublisher, TelemetryRecord, Vec3,
 };
@@ -42,8 +43,9 @@ const ALTITUDE_LOSS_AFTER_S: f32 = 5.0;
 const BACK_AT_S: f32 = 45.0;
 
 /// Where the hover after the back transition holds, m north on the line: about where it comes
-/// to a stop. The back transition begins at 349 m and hands over at 9 m/s (measured); the
-/// hover holds its heading belly north, since moving along the span departs (#387).
+/// to a stop. The back transition begins at 349 m and hands over at 380 m, at 2.5 m/s
+/// (measured); the hover holds its heading belly north, since moving along the span departs
+/// (#387).
 const BACK_HOVER_NORTH_M: f32 = 380.0;
 
 /// Seconds the plane flies after the forward transition before the hold is judged
@@ -51,8 +53,17 @@ const BACK_HOVER_NORTH_M: f32 = 380.0;
 const PLANE_SETTLE_S: f32 = 15.0;
 
 /// Seconds the hover settles after the back transition before the hold is judged. It arrives
-/// at 9 m/s, 30 m short: measured 0.14 m off after 15 s, 0.05 m after 20 s.
-const BACK_SETTLE_S: f32 = 20.0;
+/// at 2.5 m/s over the point: measured 0.07 m off after 10 s.
+const BACK_SETTLE_S: f32 = 10.0;
+
+/// Most the back transition climbs above the height it began at, in m, until
+/// [`ALTITUDE_LOSS_AFTER_S`] after it ends: no external band applies. Measured 9.5 m, under
+/// the 10–12 m the eXplora climbed at hover thrust (#343), with 1 m of margin.
+const BACK_CLIMB_M: f32 = 10.5;
+
+/// The back transition's ramp thrusts, below the airframe's, that stall it nose-high: without
+/// the sink guard both fall 30 m to the ground (measured, #343).
+const STALLING_BACK_THRUSTS: [f32; 2] = [0.3, 0.5];
 
 /// Seconds a level hold is judged over.
 const HOLD_S: f32 = 10.0;
@@ -88,12 +99,29 @@ fn check_altitude_loss(trace: &Trace, from_s: f32, ended_s: f32, what: &str) {
     );
 }
 
+/// Checks the highest height from `from_s` until `ALTITUDE_LOSS_AFTER_S` after `ended_s` is
+/// within [`BACK_CLIMB_M`] above the height at `from_s`.
+fn check_climb(trace: &Trace, from_s: f32, ended_s: f32, what: &str) {
+    let start_m = trace
+        .at(from_s)
+        .map_or(f32::NAN, |sample| sample.state.position_m.z);
+    let highest_m = trace
+        .window(from_s, ended_s + ALTITUDE_LOSS_AFTER_S)
+        .map(|sample| sample.state.position_m.z)
+        .fold(f32::NEG_INFINITY, f32::max);
+    check!(
+        highest_m - start_m <= BACK_CLIMB_M,
+        "{what}: climbed {} m above {start_m} m",
+        highest_m - start_m
+    );
+}
+
 /// Seconds after the back handoff that [`HANDOFF_STEP`] watches.
 const HANDOFF_WATCH_S: f32 = 2.0;
 
 /// Largest change in the moments (norm) between two ticks after the back handoff: no external
-/// band applies. Measured 0.022 with the integrals kept through the thrust handoff, 0.263 when
-/// its zero-thrust tick cleared them (#326).
+/// band applies. Measured 0.022 on the fast ramp with the integrals kept through the thrust
+/// handoff, 0.263 when its zero-thrust tick cleared them (#326).
 const HANDOFF_STEP: f32 = 0.05;
 
 /// The largest per-tick moment change in the [`HANDOFF_WATCH_S`] after the first switch from
@@ -179,8 +207,9 @@ fn transitions_forward_into_level_flight() {
 }
 
 /// From plane flight, `Copter` on a hover point ahead returns to a hover within PX4's back
-/// transition time and altitude loss, then holds it within the copter's calm-air bands
-/// (`hover.rs`). The climb on the way is #343's.
+/// transition time and altitude loss and within [`BACK_CLIMB_M`], handing over with the sink
+/// guard idle (not sinking past its limit), then holds it within the copter's calm-air bands
+/// (`hover.rs`).
 #[test]
 fn transitions_back_into_a_hover() {
     let airframe = airframes::tailsitter();
@@ -197,6 +226,16 @@ fn transitions_back_into_a_hover() {
     // Measured 1.3 s.
     check!(copter_s - BACK_AT_S <= BACK_DURATION_S);
     check_altitude_loss(&flight, BACK_AT_S, copter_s, "back");
+    check_climb(&flight, BACK_AT_S, copter_s, "back");
+    // Measured 0.8 m/s of sink.
+    let sink_limit_mps = airframe.guidance.transition.back_sink_limit_mps;
+    let handover_climb_mps = flight
+        .at(copter_s)
+        .map_or(f32::NAN, |sample| sample.state.velocity_mps.z);
+    check!(
+        handover_climb_mps >= -sink_limit_mps,
+        "sinking {handover_climb_mps} m/s"
+    );
 
     let point_m = Vec3::new(BACK_HOVER_NORTH_M, 0.0, TRANSITION_ALTITUDE_M);
     let hold_s = copter_s + BACK_SETTLE_S;
@@ -208,11 +247,19 @@ fn transitions_back_into_a_hover() {
 }
 
 /// Handing thrust back to the hover after a back transition doesn't step the moments: the
-/// altitude loop's zero thrust on the way (the transition arrives climbing, #343) isn't ground
-/// idle, so the stabilizer keeps its integrals (#326).
+/// altitude loop's zero thrust on the way isn't ground idle, so the stabilizer keeps its
+/// integrals (#326). Flown on the core default ramp (50°/s, done at 45°), which arrives
+/// climbing 6 m/s (#343) so the altitude loop cuts thrust to 0.
 #[test]
 fn back_handoff_keeps_the_hover_trim() {
-    let airframe = airframes::tailsitter();
+    let mut airframe = airframes::tailsitter();
+    let fast = TransitionConfig::default();
+    airframe.guidance.transition = TransitionConfig {
+        back_rate_radps: fast.back_rate_radps,
+        back_done_rad: fast.back_done_rad,
+        back_thrust: fast.back_thrust,
+        ..airframe.guidance.transition
+    };
     let plant = TailsitterPlant::clean(airframe);
     let commander = forward_and_back(&airframe, BACK_AT_S, BACK_HOVER_NORTH_M);
     let mut flight_loop = tailsitter_pipeline(&plant, commander, HandoffStep::default());
@@ -225,6 +272,94 @@ fn back_handoff_keeps_the_hover_trim() {
     let step = flight_loop.into_parts().5;
     check!(step.watched_s.is_some(), "never handed over: {step:?}");
     check!(step.largest <= HANDOFF_STEP, "{step:?}");
+}
+
+/// Thrust doesn't reach zero in the air from the back request until [`ALTITUDE_LOSS_AFTER_S`]
+/// after the handover: a tailsitter's elevons fly in the propwash, and an altitude loop cutting
+/// the motors to shed a climb leaves it without hover control (#343).
+#[test]
+fn back_transition_keeps_thrust_on() {
+    let airframe = airframes::tailsitter();
+    let plant = TailsitterPlant::clean(airframe);
+    let commander = forward_and_back(&airframe, BACK_AT_S, BACK_HOVER_NORTH_M);
+    let mut flight_loop = tailsitter_pipeline(&plant, commander, LeastThrust::default());
+    fly(
+        &mut flight_loop,
+        BACK_AT_S + BACK_DURATION_S + ALTITUDE_LOSS_AFTER_S,
+        |_, _| {},
+    );
+
+    let least = flight_loop.into_parts().5;
+    check!(
+        least.handed_over_s.is_some(),
+        "never handed over: {least:?}"
+    );
+    // Measured 0.6, the ramp's thrust.
+    check!(least.thrust > 0.0, "{least:?}");
+}
+
+/// The least setpoint thrust from the first `ToCopter` tick until [`ALTITUDE_LOSS_AFTER_S`]
+/// after the switch into `Copter`.
+#[derive(Debug)]
+struct LeastThrust {
+    watching: bool,
+    handed_over_s: Option<f32>,
+    thrust: f32,
+}
+
+impl Default for LeastThrust {
+    fn default() -> Self {
+        LeastThrust {
+            watching: false,
+            handed_over_s: None,
+            thrust: f32::INFINITY,
+        }
+    }
+}
+
+impl TelemetryPublisher for LeastThrust {
+    fn publish(&mut self, record: &TelemetryRecord) {
+        let mode = record.flight_mode.mode;
+        if mode == FlightMode::ToCopter && self.handed_over_s.is_none() {
+            self.watching = true;
+        }
+        if !self.watching {
+            return;
+        }
+        if mode == FlightMode::Copter {
+            let handed_over_s = self.handed_over_s.get_or_insert(0.0);
+            *handed_over_s += record.dt.as_secs_f32();
+            if *handed_over_s > ALTITUDE_LOSS_AFTER_S {
+                self.watching = false;
+                return;
+            }
+        }
+        self.thrust = self.thrust.min(record.setpoint.thrust());
+    }
+}
+
+/// A back ramp with too little thrust to hold the nose up stalls and sinks; the sink guard
+/// raises its thrust, so it still hands over within PX4's back transition time and altitude
+/// loss.
+#[test]
+fn sink_guard_catches_a_stalling_back_ramp() {
+    for back_thrust in STALLING_BACK_THRUSTS {
+        let mut airframe = airframes::tailsitter();
+        airframe.guidance.transition.back_thrust = back_thrust;
+        let plant = TailsitterPlant::clean(airframe);
+        let commander = forward_and_back(&airframe, BACK_AT_S, BACK_HOVER_NORTH_M);
+        let mut flight_loop = tailsitter_loop(&plant, commander);
+        let flight = trace(
+            &mut flight_loop,
+            BACK_AT_S + BACK_DURATION_S + HOVER_SETTLE_S,
+        );
+
+        let what = format!("back thrust {back_thrust}");
+        let copter_s = entered_s(&flight, FlightMode::Copter, BACK_AT_S, &what);
+        // Measured 3.3 s.
+        check!(copter_s - BACK_AT_S <= BACK_DURATION_S, "{what}");
+        check_altitude_loss(&flight, BACK_AT_S, copter_s, &what);
+    }
 }
 
 /// A forward transition that ends in a hover instead: asked to, timed out, or rolled past its
