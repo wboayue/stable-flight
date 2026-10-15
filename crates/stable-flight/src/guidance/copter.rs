@@ -10,6 +10,12 @@
 //! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading held; descents slewed at [`max_descent_mps`](CopterGuidanceConfig::max_descent_mps) |
 //! | [`ControlInput::Land`] | [`Setpoint::Attitude`]: as a waypoint at the land position, with an altitude target that keeps descending at [`land_speed_mps`](CopterGuidanceConfig::land_speed_mps), at most [`LAND_LEASH_M`] below the vehicle |
 //!
+//! Piloted inputs mark their setpoint [`idle`](crate::AttitudeSetpoint::idle) while the
+//! throttle is at or below [`IDLE_THROTTLE`] (or NaN), as ArduPilot spools to ground idle on
+//! `throttle_zero` in its piloted modes (`ArduCopter/mode_stabilize.cpp:19-40`). Waypoint and
+//! land setpoints never are: there's no land detector to tell a touchdown
+//! ([#395](https://github.com/wboayue/stable-flight/issues/395)).
+//!
 //! [`ThrustLimits`] bound the thrust while flying (all off by default): a floor, a sink guard
 //! for piloted flight, and a ceiling on the tilt boost. A tailsitter's control surfaces need
 //! the propwash, a sink turns the airflow against it, and differential thrust needs headroom.
@@ -66,7 +72,8 @@ pub const DEFAULT_LAND_SPEED_MPS: f32 = 0.7;
 
 /// A piloted throttle (stick, rate, or absolute-attitude thrust) at or below this is idle:
 /// [`ThrustLimits::min_thrust`] and the sink guard don't raise it, so the motors can idle on the ground
-/// and the pilot can still cut them.
+/// and the pilot can still cut them, and the setpoint is marked
+/// [`idle`](crate::AttitudeSetpoint::idle), so the stabilizer clears its integrals.
 pub const IDLE_THROTTLE: f32 = 0.05;
 
 /// How far, in meters, a land's altitude target may run below the vehicle. Once the ground
@@ -393,7 +400,7 @@ impl Guidance for CopterGuidance {
             ControlInput::Rate(rate_command) => {
                 self.follow_heading(estimated_state);
                 let mut setpoint: RateSetpoint = rate_command.into();
-                setpoint.thrust = self.hold_piloted(
+                (setpoint.thrust, setpoint.idle) = self.hold_piloted(
                     rate_command.throttle,
                     setpoint.thrust,
                     estimated_state.velocity_mps.z,
@@ -456,20 +463,21 @@ impl CopterGuidance {
         let max_stick = self.config.max_stick_angles_rad;
         self.set_heading_target(self.heading + yaw * HEADING_SLEW_RATE * dt, estimated_state);
 
+        // Angle boost: hold the vertical thrust the stick asks for while tilted, as the
+        // altitude loop does (at most 2× past 60°, none when inverted), up to
+        // `max_boost_thrust`. Saturated to [0, 1]; NaN means none.
+        let throttle = attitude_command.throttle;
+        let boosted = self.boost(throttle, &estimated_state.attitude);
+        let boosted = self.clip_thrust(boosted);
+        let (thrust, idle) = self.hold_piloted(throttle, boosted, estimated_state.velocity_mps.z);
+
         AttitudeSetpoint {
             roll_rad: saturate_unit(attitude_command.roll) * max_stick.x,
             pitch_rad: saturate_unit(attitude_command.pitch) * max_stick.y,
             heading_rad: self.heading,
-            // Angle boost: hold the vertical thrust the stick asks for while tilted, as the
-            // altitude loop does (at most 2× past 60°, none when inverted), up to
-            // `max_boost_thrust`. Saturated to [0, 1]; NaN means none.
-            thrust: {
-                let throttle = attitude_command.throttle;
-                let boosted = self.boost(throttle, &estimated_state.attitude);
-                let boosted = self.clip_thrust(boosted);
-                self.hold_piloted(throttle, boosted, estimated_state.velocity_mps.z)
-            },
+            thrust,
             transition: false,
+            idle,
         }
     }
 
@@ -489,8 +497,7 @@ impl CopterGuidance {
     ) -> BodyRateSetpoint {
         self.follow_heading(estimated_state);
         let mut setpoint = BodyRateSetpoint::from(command);
-        let thrust = self.clip_thrust(command.thrust);
-        setpoint.thrust = self.hold_piloted(command.thrust, thrust, estimated_state.velocity_mps.z);
+        (setpoint.thrust, setpoint.idle) = self.hold_absolute(command.thrust, estimated_state);
         setpoint
     }
 
@@ -508,15 +515,14 @@ impl CopterGuidance {
             self.heading
         };
         self.set_heading_target(target_rad, estimated_state);
+        let (thrust, idle) = self.hold_absolute(command.thrust, estimated_state);
         AttitudeSetpoint {
             roll_rad: command.roll_rad,
             pitch_rad: command.pitch_rad,
             heading_rad: self.heading,
-            thrust: {
-                let thrust = self.clip_thrust(command.thrust);
-                self.hold_piloted(command.thrust, thrust, estimated_state.velocity_mps.z)
-            },
+            thrust,
             transition: false,
+            idle,
         }
     }
 
@@ -647,6 +653,9 @@ impl CopterGuidance {
             heading_rad: self.heading,
             thrust: self.floor_thrust(linear_thrust),
             transition: false,
+            // Never ground idle: the altitude loop's zero is a vehicle in the air shedding
+            // climb. TODO(#395): idle once a land detector reports a touchdown.
+            idle: false,
         }
     }
 
@@ -672,15 +681,23 @@ impl CopterGuidance {
         }
     }
 
-    /// Raises a piloted `thrust` to `min_thrust`, then adds the sink guard for the vertical
-    /// speed `climb_mps` (up positive), unless the pilot's `throttle` is idle (at or below
-    /// [`IDLE_THROTTLE`], or NaN).
-    fn hold_piloted(&mut self, throttle: f32, thrust: f32, climb_mps: f32) -> f32 {
+    /// An absolute command's `thrust`, saturated to `[0, 1]` (not boosted), then held as a
+    /// piloted throttle ([`hold_piloted`](Self::hold_piloted)), and whether it is idle.
+    fn hold_absolute(&mut self, thrust: f32, estimated_state: &VehicleState) -> (f32, bool) {
+        let clipped = self.clip_thrust(thrust);
+        self.hold_piloted(thrust, clipped, estimated_state.velocity_mps.z)
+    }
+
+    /// The piloted `thrust` and whether the pilot's `throttle` is idle (at or below
+    /// [`IDLE_THROTTLE`], or NaN): an idle throttle passes `thrust` through; any other is
+    /// raised to `min_thrust`, then gets the sink guard for the vertical speed `climb_mps` (up
+    /// positive).
+    fn hold_piloted(&mut self, throttle: f32, thrust: f32, climb_mps: f32) -> (f32, bool) {
         if throttle > IDLE_THROTTLE {
             let floored = self.floor_thrust(thrust);
-            self.guard_sink(floored, climb_mps)
+            (self.guard_sink(floored, climb_mps), false)
         } else {
-            thrust
+            (thrust, true)
         }
     }
 

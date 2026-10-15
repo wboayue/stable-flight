@@ -133,6 +133,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `AttitudeSetpoint`, `RateSetpoint`, and `BodyRateSetpoint` have an `idle`
+  field, read through `Setpoint::idle()` (#326): struct literals add `idle: false` or
+  `..Default::default()`. `CopterGuidance` sets it while a piloted throttle is at or below
+  `IDLE_THROTTLE` (or NaN), and `CopterStabilizer` clears its integrals on it instead of on
+  zero thrust. A disarmed tick's telemetry setpoint is idle.
 - **Breaking:** `AttitudeSetpoint` and `PlaneSetpoint` have a `transition` field (#388):
   struct literals add `transition: false` or `..Default::default()`. A tailsitter ramp sets it,
   and the stabilizer saturates its pitch at ±π/2 instead of `max_angles_rad` or
@@ -200,6 +205,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `CopterStabilizer` keeps its integrals at zero thrust in flight (#326): the altitude loop
+  shooting up past a waypoint no longer drops the yaw trim, and a tailsitter's thrust handoff
+  after a back transition no longer steps the moments. A piloted throttle resting just above
+  zero (up to `IDLE_THROTTLE`) on the ground now clears them.
 - A tailsitter completes its transitions below its stabilizers' limits (#388): the back
   ramp no longer stops at the plane pitch cap (30° by default) and flies to the 15 s timeout,
   nor the forward ramp at the hover tilt cap.

@@ -122,6 +122,7 @@ fn commands_map_to_setpoints() {
                 pitch_rate: -0.2,
                 yaw_rate: 0.3,
                 thrust: 0.6,
+                idle: false,
             }),
         ),
         (
@@ -137,6 +138,7 @@ fn commands_map_to_setpoints() {
                 pitch_radps: -1.0,
                 yaw_radps: 0.5,
                 thrust: 1.0,
+                idle: false,
             }),
         ),
         (
@@ -153,6 +155,7 @@ fn commands_map_to_setpoints() {
                 heading_rad: wrap_angle(0.7),
                 thrust: 0.4,
                 transition: false,
+                idle: false,
             }),
         ),
         (
@@ -169,6 +172,7 @@ fn commands_map_to_setpoints() {
                 heading_rad: wrap_angle(0.7),
                 thrust: 1.0,
                 transition: false,
+                idle: false,
             }),
         ),
         (
@@ -176,8 +180,10 @@ fn commands_map_to_setpoints() {
                 yaw: 1.0,
                 ..Default::default()
             }),
+            // Throttle at 0 is idle.
             Setpoint::Attitude(AttitudeSetpoint {
                 heading_rad: wrap_angle(0.7 + HEADING_SLEW_RATE * 0.004),
+                idle: true,
                 ..Default::default()
             }),
         ),
@@ -196,6 +202,7 @@ fn commands_map_to_setpoints() {
                 heading_rad: -2.0,
                 thrust: 0.45,
                 transition: false,
+                idle: false,
             }),
         ),
         (
@@ -208,6 +215,7 @@ fn commands_map_to_setpoints() {
                 heading_rad: wrap_angle(0.7),
                 thrust: crate::controllers::DEFAULT_HOVER_THRUST,
                 transition: false,
+                idle: false,
             }),
         ),
     ];
@@ -1760,6 +1768,54 @@ fn limited(thrust: ThrustLimits, state: &VehicleState) -> CopterGuidance {
     });
     guidance.prime(state);
     guidance
+}
+
+/// Piloted inputs mark their setpoint idle while the throttle is at or below `IDLE_THROTTLE`
+/// (or NaN), whatever the thrust floor; waypoint and land setpoints never are, even at zero
+/// thrust (#326).
+#[test]
+fn idle_throttle_marks_the_setpoint_idle() {
+    let level = VehicleState::default();
+    let shooting_up = VehicleState {
+        velocity_mps: Vec3::new(0.0, 0.0, 30.0),
+        ..Default::default()
+    };
+    let absolute_rate = |thrust| {
+        ControlInput::AbsoluteRate(crate::AbsoluteRateCommand {
+            thrust,
+            ..Default::default()
+        })
+    };
+    let land = ControlInput::Land(LandCommand::default());
+    // (input, state, idle)
+    let cases = [
+        (stick(0.0), &level, true),
+        (stick(0.03), &level, true),
+        (stick(IDLE_THROTTLE), &level, true),
+        (stick(0.06), &level, false),
+        (stick(f32::NAN), &level, true),
+        (rate(0.03), &level, true),
+        (rate(0.06), &level, false),
+        (absolute(0.03), &level, true),
+        (absolute(0.06), &level, false),
+        (absolute_rate(0.03), &level, true),
+        (absolute_rate(0.06), &level, false),
+        (waypoint_at(0.0), &shooting_up, false), // thrust 0
+        (land, &level, false),
+    ];
+    for floor in [0.0, 0.6] {
+        for (input, state, idle) in &cases {
+            let limits = ThrustLimits {
+                min_thrust: floor,
+                ..Default::default()
+            };
+            let setpoint = limited(limits, state).guide(0.004, FlightRegime::Copter, input, state);
+            assert!(
+                setpoint.idle() == *idle,
+                "{input:?} at floor {floor}: {setpoint:?}"
+            );
+        }
+    }
 }
 
 /// `min_thrust` raises every thrust while flying: a piloted throttle above idle (after the

@@ -223,14 +223,17 @@ Each `FlightLoop::step` does the following; this section is the reference for ti
   `Guidance::prime` and `Stabilizer::prime` with that state.
 * **`Command::arm` gates the motors.** A disarmed tick still runs the commander, the estimator,
   `actuate`, and telemetry, but skips guidance, the stabilizer, and the mixer: it actuates
-  `ActuatorCommand::default()` (motors off) and records a neutral setpoint at the current heading
-  with zero control and a copter flight mode, so nothing winds up on the ground. Each disarmed → armed edge (including the
-  first armed tick) re-primes guidance, then the stabilizer, from the fresh estimate, so
-  integrals start from zero and the heading hold latches where the vehicle points. Armed at zero
-  thrust, `CopterStabilizer` clears its integrals each tick for the same reason
-  ([#326](https://github.com/wboayue/stable-flight/issues/326) tracks telling ground idle from a
-  zero-thrust tick in flight). `arm` is a level the commander returns every tick; arming checks
-  are commander-side policy ([#136](https://github.com/wboayue/stable-flight/issues/136),
+  `ActuatorCommand::default()` (motors off) and records a neutral, idle setpoint at the current
+  heading with zero control and a copter flight mode, so nothing winds up on the ground. Each
+  disarmed → armed edge (including the first armed tick) re-primes guidance, then the
+  stabilizer, from the fresh estimate, so integrals start from zero and the heading hold latches
+  where the vehicle points. Armed at ground idle, `CopterStabilizer` clears its integrals each
+  tick for the same reason. Guidance marks the setpoint `idle`, since only it knows the pilot's
+  throttle and the mode: thrust alone can't tell, because the altitude loop asks for zero thrust
+  in the air (shedding a climb) and a piloted idle throttle needn't be exactly zero. Waypoint and
+  land setpoints are never idle: core has no land detector to tell a touchdown
+  ([#395](https://github.com/wboayue/stable-flight/issues/395)). `arm` is a level the commander
+  returns every tick; arming checks are commander-side policy ([#136](https://github.com/wboayue/stable-flight/issues/136),
   [link failsafe](#link-failsafe)).
 * Telemetry is published after `actuate`, with the whole tick in one `TelemetryRecord`,
   including the limits it hit: guidance, the stabilizer, and the mixer each report a `Saturation`

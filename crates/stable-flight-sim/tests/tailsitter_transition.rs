@@ -7,7 +7,9 @@ mod common;
 use core::f32::consts::FRAC_PI_2;
 
 use assert2::check;
-use stable_flight::{Command, ControlInput, FlightMode, ModeRefusal, Vec3};
+use stable_flight::{
+    Command, ControlInput, FlightMode, ModeRefusal, TelemetryPublisher, TelemetryRecord, Vec3,
+};
 use stable_flight_sim::{Gust, Wind, airframes};
 
 use common::plane::{
@@ -15,10 +17,11 @@ use common::plane::{
 };
 use common::tailsitter::{
     FORWARD_AT_S, HoverDeviation, TRANSITION_ALTITUDE_M, TailsitterPlant, Trace, forward,
-    forward_and_back, tailsitter_loop, trace,
+    forward_and_back, tailsitter_loop, tailsitter_pipeline, trace,
 };
 use common::{
-    CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK, hover_at, waypoint,
+    CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK, fly, hover_at,
+    waypoint,
 };
 
 /// PX4's forward-transition timeout (`VT_TRANS_TIMEOUT`, `:92-97`): plane flight by then.
@@ -83,6 +86,49 @@ fn check_altitude_loss(trace: &Trace, from_s: f32, ended_s: f32, what: &str) {
         "{what}: fell {} m below {start_m} m",
         start_m - lowest_m
     );
+}
+
+/// Seconds after the back handoff that [`HANDOFF_STEP`] watches.
+const HANDOFF_WATCH_S: f32 = 2.0;
+
+/// Largest change in the moments (norm) between two ticks after the back handoff: no external
+/// band applies. Measured 0.022 with the integrals kept through the thrust handoff, 0.263 when
+/// its zero-thrust tick cleared them (#326).
+const HANDOFF_STEP: f32 = 0.05;
+
+/// The largest per-tick moment change in the [`HANDOFF_WATCH_S`] after the first switch from
+/// `ToCopter` into `Copter`.
+#[derive(Debug, Default)]
+struct HandoffStep {
+    previous_mode: Option<FlightMode>,
+    watched_s: Option<f32>,
+    previous_moments: Option<Vec3>,
+    largest: f32,
+}
+
+impl TelemetryPublisher for HandoffStep {
+    fn publish(&mut self, record: &TelemetryRecord) {
+        let mode = record.flight_mode.mode;
+        if self.watched_s.is_none()
+            && mode == FlightMode::Copter
+            && self.previous_mode == Some(FlightMode::ToCopter)
+        {
+            self.watched_s = Some(0.0);
+        }
+        self.previous_mode = Some(mode);
+        let Some(watched_s) = self.watched_s.as_mut() else {
+            return;
+        };
+        if *watched_s >= HANDOFF_WATCH_S {
+            return;
+        }
+        *watched_s += record.dt.as_secs_f32();
+        let moments = record.control.moments;
+        if let Some(previous) = self.previous_moments {
+            self.largest = self.largest.max((moments - previous).norm());
+        }
+        self.previous_moments = Some(moments);
+    }
 }
 
 /// Checks a hold against the copter's calm-air hover bands (`hover.rs`).
@@ -159,6 +205,26 @@ fn transitions_back_into_a_hover() {
         worst.observe(&sample.state, point_m);
     }
     check_calm_hover(&worst, "back");
+}
+
+/// Handing thrust back to the hover after a back transition doesn't step the moments: the
+/// altitude loop's zero thrust on the way (the transition arrives climbing, #343) isn't ground
+/// idle, so the stabilizer keeps its integrals (#326).
+#[test]
+fn back_handoff_keeps_the_hover_trim() {
+    let airframe = airframes::tailsitter();
+    let plant = TailsitterPlant::clean(airframe);
+    let commander = forward_and_back(&airframe, BACK_AT_S, BACK_HOVER_NORTH_M);
+    let mut flight_loop = tailsitter_pipeline(&plant, commander, HandoffStep::default());
+    fly(
+        &mut flight_loop,
+        BACK_AT_S + BACK_DURATION_S + HANDOFF_WATCH_S,
+        |_, _| {},
+    );
+
+    let step = flight_loop.into_parts().5;
+    check!(step.watched_s.is_some(), "never handed over: {step:?}");
+    check!(step.largest <= HANDOFF_STEP, "{step:?}");
 }
 
 /// A forward transition that ends in a hover instead: asked to, timed out, or rolled past its
