@@ -261,6 +261,15 @@ impl Columns for TailsitterColumns {
                 s.pitch_radps,
                 s.yaw_radps,
             ),
+            Setpoint::Blend(s) => (
+                "blend",
+                s.hover.roll_rad,
+                s.hover.pitch_rad,
+                s.hover.heading_rad,
+                nan,
+                nan,
+                nan,
+            ),
             _ => ("rate", nan, nan, nan, nan, nan, nan),
         };
         let mode = match record.flight_mode.mode {

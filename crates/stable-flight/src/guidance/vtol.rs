@@ -71,9 +71,11 @@ use crate::{Configurable, FlightMode, FlightModeReport, FlightRegime, ModeRefusa
 
 mod lift;
 mod params;
+mod quadplane;
 mod tailsitter;
 
 pub use lift::{LiftTransition, LiftTransitionConfig, LiftTransitionStep};
+pub use quadplane::{QuadPlaneGuidance, QuadPlaneGuidanceConfig};
 pub use tailsitter::{TailsitterGuidance, TailsitterGuidanceConfig};
 #[cfg(test)]
 mod tests;

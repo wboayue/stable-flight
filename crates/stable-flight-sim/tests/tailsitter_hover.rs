@@ -7,7 +7,8 @@ use assert2::check;
 use stable_flight::Vec3;
 use stable_flight_sim::{Gust, Wind, airframes};
 
-use common::tailsitter::{HoverDeviation, TailsitterPlant, tailsitter_loop};
+use common::tailsitter::{TailsitterPlant, tailsitter_loop};
+use common::transition::HoverDeviation;
 use common::{
     CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_ALTITUDE_M as ALTITUDE_M,
     HOVER_SETTLE_S as SETTLE_S, fly, hover_follower,

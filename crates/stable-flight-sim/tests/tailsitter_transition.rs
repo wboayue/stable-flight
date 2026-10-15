@@ -18,8 +18,10 @@ use common::plane::{
     AIRSPEED_BAND_MPS, ALTITUDE_BAND_M, Interlude, LineDeviation, north_line_command,
 };
 use common::tailsitter::{
-    FORWARD_AT_S, Heights, HoverDeviation, TRANSITION_ALTITUDE_M, TailsitterPlant, Trace, forward,
-    forward_and_back, tailsitter_loop, tailsitter_pipeline, trace,
+    TailsitterPlant, forward, forward_and_back, tailsitter_loop, tailsitter_pipeline,
+};
+use common::transition::{
+    FORWARD_AT_S, Heights, HoverDeviation, TRANSITION_ALTITUDE_M, Trace, trace,
 };
 use common::{
     CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK, fly, hover_at,

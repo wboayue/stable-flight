@@ -6,7 +6,7 @@
 [![Documentation](https://docs.rs/stable-flight/badge.svg)](https://docs.rs/stable-flight)
 [![Coverage Status](https://coveralls.io/repos/github/wboayue/stable-flight/badge.svg?branch=main)](https://coveralls.io/github/wboayue/stable-flight?branch=main)
 
-Flight-control core for [Stable Flight](https://github.com/wboayue/stable-flight): the pipeline traits, the data passed between them, guidance and cascaded-PID stabilizers for copters, planes, and tailsitters, mixers, and `FlightLoop`, which sequences one control tick. It is `no_std` and has no simulator, I/O, or timing dependencies, so the same code runs in software-in-the-loop simulation ([`stable-flight-sitl`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl)) and, later, on flight hardware. See [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md) for design rationale.
+Flight-control core for [Stable Flight](https://github.com/wboayue/stable-flight): the pipeline traits, the data passed between them, guidance and cascaded-PID stabilizers for copters, planes, tailsitters, and quadplanes, mixers, and `FlightLoop`, which sequences one control tick. It is `no_std` and has no simulator, I/O, or timing dependencies, so the same code runs in software-in-the-loop simulation ([`stable-flight-sitl`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl)) and, later, on flight hardware. See [architecture.md](https://github.com/wboayue/stable-flight/blob/main/architecture.md) for design rationale.
 
 ## Pipeline
 
@@ -72,11 +72,11 @@ Guidance is the outer loop: it turns the commander's `ControlInput` into a `Setp
 let guidance = CopterGuidance::new(CopterGuidanceConfig::default());
 ```
 
-`PlaneGuidance` flies a fixed wing: stabilized sticks (bank and pitch, coordinated turns) or acro rates, offboard attitudes and rates, and waypoints (L1 lines through each, a loiter at the last). `TailsitterGuidance` hovers on `CopterGuidance` in `View::tailsitter`, flies plane on `PlaneGuidance`, and moves between them under `guidance::vtol::Transition` when the commander requests the other regime; `guidance::vtol::LiftTransition` is the lift+cruise VTOL's (quadplane) transition, trading lift between its lift rotors and its wing ([flight regimes](https://github.com/wboayue/stable-flight/blob/main/architecture.md#flight-regimes)).
+`PlaneGuidance` flies a fixed wing: stabilized sticks (bank and pitch, coordinated turns) or acro rates, offboard attitudes and rates, and waypoints (L1 lines through each, a loiter at the last). `TailsitterGuidance` hovers on `CopterGuidance` in `View::tailsitter`, flies plane on `PlaneGuidance`, and moves between them under `guidance::vtol::Transition` when the commander requests the other regime; `QuadPlaneGuidance` flies a lift+cruise VTOL (quadplane) the same way under `guidance::vtol::LiftTransition`, which trades lift between its lift rotors and its wing, both flown at once through a transition (`Setpoint::Blend`) ([flight regimes](https://github.com/wboayue/stable-flight/blob/main/architecture.md#flight-regimes)).
 
 ### Stabilizer
 
-Stabilizers track the guidance `Setpoint`: they calculate the difference between the vehicle's current state and the desired state, generating `ControlOutput`s that the mixer then translates into actuator commands. This component contains the core flight stabilization logic. `CopterStabilizer` targets multirotors; `PlaneStabilizer` fixed wings (attitude with coordinated turns over an airspeed-scaled rate loop); `TailsitterStabilizer` flies each setpoint on its side, copter or plane. This is where you would start if you want to implement custom flight control logic.
+Stabilizers track the guidance `Setpoint`: they calculate the difference between the vehicle's current state and the desired state, generating `ControlOutput`s that the mixer then translates into actuator commands. This component contains the core flight stabilization logic. `CopterStabilizer` targets multirotors; `PlaneStabilizer` fixed wings (attitude with coordinated turns over an airspeed-scaled rate loop); `TailsitterStabilizer` flies each setpoint on its side, copter or plane; `QuadPlaneStabilizer` flies the lift rotors on the copter side and the surfaces and pusher on the plane side (`ControlOutput::cruise`), both at once through a blend. This is where you would start if you want to implement custom flight control logic.
 
 The simplest setup uses default gains:
 

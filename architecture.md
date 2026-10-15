@@ -388,6 +388,28 @@ stateDiagram-v2
     ToCopter --> Copter: forward speed < back_speed_mps, back_timeout_s, or roll limit (handoff)
 ```
 
+* **Blend for lift+cruise.** The lift rotors and the surfaces and pusher are separate
+  actuators, so a transition flies both controllers at once (as PX4's standard VTOL and
+  ArduPilot's SLT do): `QuadPlaneGuidance` emits `Setpoint::Blend` (a hover attitude, a plane
+  attitude, and the lift share) through a transition and either side's own setpoint outside
+  one; `QuadPlaneStabilizer` flies the lift rotors on `CopterStabilizer` (`thrust`,
+  `moments`), weighted by the share, and the surfaces and pusher on `PlaneStabilizer`
+  (`ControlOutput::cruise`), in full (PX4 `standard.cpp:294-368`), holding the surfaces
+  neutral in a hover (PX4's `VT_ELEV_MC_LOCK`). A side that starts flying is primed.
+* **Forward on the plane's thrust and pitch.** Through the forward transition the hover side
+  holds the altitude it began at (a waypoint that moves with the vehicle, its tilt replaced),
+  wings level; the pusher flies the plane guidance's thrust for the command, rising at most
+  `pusher_slew_per_s` (PX4's `VT_PSHER_SLEW`) up to `forward_thrust`, and both sides fly its
+  pitch within ArduPilot's transition limits (0 below 3 m/s, ±3° waiting, ±8° ramping,
+  `ArduPlane/quadplane.cpp:4747-4766`), as ArduPilot flies its throttle and pitch from the
+  plane controller. Measured on the sim quadplane (#391): forward 8.2 s, +0.6/−0.3 m.
+  Rejected, with their numbers on the same flight: PX4's fixed `VT_F_TRANS_THR` (1.0)
+  through ArduPilot's timed ramp, which overspeeds to 32 m/s, balloons 9 m, and dives 11 m
+  after the handoff, since PX4 ends its ramp on airspeed instead; and pitch 0 on both sides
+  (+1.0/−0.7 m), or the plane's pitch on the elevator alone with the lift rotors holding 0,
+  two controllers fighting over pitch (+0.6/−0.2 m). Going back the pusher is cut and drag
+  alone slows it, both sides level (7.3 s, −0.5 m).
+
 ## Link Failsafe
 
 A companion's link drops (late USB enumeration, brownouts, a crashed bridge), and the flight

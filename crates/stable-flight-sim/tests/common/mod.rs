@@ -9,6 +9,7 @@ pub mod plane_spec;
 pub mod quadplane;
 pub mod spec;
 pub mod tailsitter;
+pub mod transition;
 
 use std::time::Duration;
 

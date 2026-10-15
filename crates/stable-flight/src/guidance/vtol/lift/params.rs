@@ -14,6 +14,10 @@ impl ParamTable for LiftTransitionConfig {
         param!("TRAN_VT_RAMP", back_ramp_s),
         param!("TRAN_VT_SPD", back_speed_mps),
         param!("TRAN_VT_TIMEOUT", back_timeout_s),
+        param!("TRAN_FW_THR", forward_thrust),
+        param!("TRAN_PSH_SLEW", pusher_slew_per_s),
+        param!("TRAN_HANDOFF", handoff_s),
+        param!(deg "TRAN_ROLL_MAX", roll_limit_rad),
     ];
 }
 
@@ -71,6 +75,32 @@ mod metadata {
             )
             .with_units("s")
             .above(0.0),
+            FORWARD
+                .param(
+                    "TRAN_FW_THR",
+                    "Pusher thrust through the forward transition",
+                )
+                .at_least(0.0)
+                .at_most(1.0),
+            FORWARD
+                .param(
+                    "TRAN_PSH_SLEW",
+                    "Fastest the pusher's thrust rises going forward",
+                )
+                .with_units("1/s")
+                .above(0.0),
+            LIMITS
+                .param(
+                    "TRAN_HANDOFF",
+                    "Pusher thrust blend time at the handoff to plane",
+                )
+                .with_units("s")
+                .at_least(0.0),
+            LIMITS
+                .param("TRAN_ROLL_MAX", "Bank that cuts a transition short")
+                .with_units("deg")
+                .above(0.0)
+                .at_most(180.0),
         ];
     }
 }
