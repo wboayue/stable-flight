@@ -14,6 +14,8 @@ lives in `architecture.md`; each crate's README owns its usage.
   `fw-*` recipes; root `fmt`/`clippy` don't reach it.
 - Run every command from the repo root: examples and binaries resolve across the workspace, and
   `flights/*.csv` paths are root-relative.
+- `docs/tuning/` holds the tuning guides, one per airframe type. A tuning change to an
+  airframe updates its guide in the same PR.
 - Untracked: `target/`, `tarpaulin-report.html`, `firmware/*/*.bin`, `sandbox/` and `tasks/` (local notes).
 - `Cargo.lock` is committed and CI builds `--locked`: commit lockfile changes with the manifest
   change that causes them. A dependency that needs a newer compiler raises `rust-version` and the
@@ -181,6 +183,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   value with its margin stated beside the constant, never from the thresholds of the code under
   test. A band that only a tuning change can meet comes with that tuning, in `airframes`, from
   the sim autotune where it covers the loop.
+- When a band or a tuning trades climbing against sinking, bias toward climbing: a climb costs
+  height, a sink can end in the ground (#343).
 - Name tests after the behavior they protect (`maintains_pitch_hold`), not the function.
 - Table-driven tests are the default for control math, one row per scenario. Use `assert2`
   (`assert!`/`check!`) and `approx::assert_relative_eq!` for floats.
@@ -190,7 +194,9 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   `stable_flight_mavlink::testing::MockConnection`. Mock other traits by hand (e.g.
   `MockRealFlightBridge`); `mockall` isn't a dependency.
 - A test that guards a fix must fail without it: revert or mutate the fix locally, and say so
-  in the PR.
+  in the PR. A check whose threshold reads the mutated config can fail for the wrong reason
+  (a sink limit of 0 turns "not sinking past the limit" into "not sinking"): name the
+  failures that are the intended ones.
 - Keep time-based rows clear of `f32` rounding at thresholds (three 0.1 s ticks may not reach
   0.3 s: use a 0.35 s timeout).
 - A test that raises a process-wide signal gets its own `tests/*.rs` binary, one signal each.
@@ -215,8 +221,15 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 - **Signals:** the companion example logs each failsafe handover (failsafe timeout 1 s). QGC's
   throttle and `SAT_*` displays: the bridge README's `VFR_HUD` and `NAMED_VALUE_INT` rows.
   QGC → bridge traffic: `nettop -p <bridge pid> -J bytes_in` (heartbeat only ≈ 21 B/s, joystick
-  ≈ 600 B/s). `--record` on the tailsitter manual example logs setpoints, rates, moments, and
-  actuators per tick.
+  ≈ 600 B/s). `--record` on the tailsitter examples logs setpoints, rates, moments, and
+  actuators per tick (columns: `stable_flight_sitl::recorder::TailsitterColumns`).
+- **Comparable runs:** change one knob per run, fly the same script with `--record`
+  (transitions: `flights/explora_transition.csv --end land`), and report each run as a row
+  against the earlier ones. To tell whether a behavior predates a change, fly the parent
+  commit in a throwaway worktree. With `--end land` the example keeps running on the ground:
+  stop it (below) before the next run.
+- A setting that depends on a model gap listed in the `stable-flight-sim` README's **Limits**
+  needs a RealFlight flight; the sim passing it isn't enough.
 - **Stopping:** Ctrl-C or SIGTERM (`ShutdownSignal`), so `RealFlightVehicle` hands RC back to
   RealFlight. A kill leaves "Preexisting controller reference" on the next run and truncates
   capture CSVs.
@@ -260,6 +273,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   - `SECURITY.md`: supported versions and reporting;
   - `.github/` templates: what an issue or PR must include;
   - `architecture.md`: crate boundaries, dependency rules, and the rationale for the contracts;
+  - `docs/tuning/`: how to tune an airframe type (order, knobs and params, symptoms, a worked
+    example); the airframe code holds the values and the flights behind them;
   - core rustdoc: the frame contract (`VehicleState`) and timing contract (`Vehicle`).
 - **Status claims match what has flown.** When that changes (a new airframe, simulator, board,
   or published crate), update in the same PR: the root README **Status** and its tables, the
@@ -308,6 +323,9 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 5. Run `cargo fmt --all && just lint && cargo test --workspace --all-features` before a PR.
 6. Compare against `main` in a throwaway worktree (`git worktree add <dir> main`, own
    `CARGO_TARGET_DIR`), not a `git stash` round-trip.
+7. Before planning a fix to flight behavior, measure the candidates (settings and designs) on
+   the sim with a throwaway `#[ignore]` sweep test in a scratch worktree, and put the table in
+   the plan. Rejected designs go in the PR with their numbers.
 
 ## Pre-PR checklist
 
