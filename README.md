@@ -45,6 +45,7 @@ The repository is a Cargo workspace:
 | [`stable-flight-bridge`](crates/stable-flight-bridge) | Companion-computer binary translating the native link to MAVLink for ground stations (QGC): params, state, arming, joystick and offboard setpoints, land |
 | [`stable-flight-sitl`](crates/stable-flight-sitl) | Simulator-independent software-in-the-loop harness: commanders, the real-time `RealTimeRunner` + `ShutdownSignal`, and the per-tick `CsvRecorder` |
 | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | RealFlight backend: `RealFlightVehicle`, tuned `airframes`, and the RealFlight examples |
+| [`stable-flight-sitl-xplane`](crates/stable-flight-sitl-xplane) | X-Plane backend: `XPlaneVehicle` over UDP datarefs, frame conversion, local-origin tracking, and raw state captures |
 | [`stable-flight-sim`](crates/stable-flight-sim) | Deterministic rigid-body multirotor, airplane, tailsitter, and quadplane simulator (unpublished) for closed-loop tests in `cargo test` and CI. `no_std` |
 | [`stable-flight-tools`](crates/stable-flight-tools) | Developer binaries (unpublished): `plot_flight`, `generate_figure_eight`, `link_pilot`, and `check_frames` |
 
@@ -61,10 +62,11 @@ Each simulator backend is its own crate, so a backend's dependencies never reach
 | Simulator | Crate | Status |
 |---|---|---|
 | [RealFlight](https://www.realflight.com) | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | Flies QuadCopterX: manual (joystick or transmitter), scripted, and from the link (QGC via the bridge). Flies the eXplora VTOL tailsitter in hover and plane flight with transitions both ways: manual and scripted. Flies the Titan Cobra VTOL quadplane in hover and plane flight with transitions both ways: scripted |
+| [X-Plane 12](https://www.x-plane.com) | [`stable-flight-sitl-xplane`](crates/stable-flight-sitl-xplane) | Backend only: state conversion, origin tracking, and raw captures. The Alia 250 in copter mode is planned ([#351](https://github.com/wboayue/stable-flight/issues/351)) |
 
 For `cargo test` and CI, [`stable-flight-sim`](crates/stable-flight-sim) flies the pipeline closed loop on deterministic in-repo multirotor, airplane, tailsitter, and quadplane models: no realism, no setup, the same flight every run.
 
-RealFlight was chosen for its realistic physics model, API for external drone control, wide selection of RC aircraft, and ability to define custom aircraft models. Other simulators (Gazebo, JSBSim, X-Plane) can be added as `stable-flight-sitl-<simulator>` crates.
+RealFlight was chosen for its realistic physics model, API for external drone control, wide selection of RC aircraft, and ability to define custom aircraft models. X-Plane adds real-world scenery for mission demos ([#352](https://github.com/wboayue/stable-flight/issues/352)). Other simulators (Gazebo, JSBSim) can be added as `stable-flight-sitl-<simulator>` crates.
 
 ## Test Models
 

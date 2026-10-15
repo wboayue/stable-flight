@@ -1473,6 +1473,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
+name = "socket2"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "spin"
 version = "0.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1578,6 +1588,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "stable-flight-sitl-xplane"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "assert2",
+ "clap",
+ "env_logger",
+ "log",
+ "stable-flight",
+ "stable-flight-sitl",
+ "thiserror",
+ "xplane-bridge",
+]
+
+[[package]]
 name = "stable-flight-tools"
 version = "0.1.0"
 dependencies = [
@@ -1588,6 +1613,7 @@ dependencies = [
  "stable-flight-link",
  "stable-flight-sitl",
  "stable-flight-sitl-realflight",
+ "stable-flight-sitl-xplane",
 ]
 
 [[package]]
@@ -2004,6 +2030,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d129932f4644ac2396cb456385cbf9e63b5b30c6e8dc4820bdca4eb082037a5"
 dependencies = [
  "winapi",
+]
+
+[[package]]
+name = "xplane-bridge"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd2c875b58b03fc77988aaa56c31438b8efae800f03c624add5265ecf101e86d"
+dependencies = [
+ "log",
+ "socket2",
+ "thiserror",
 ]
 
 [[package]]

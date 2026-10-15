@@ -14,6 +14,7 @@ stable-flight = { path = "../stable-flight" }
 stable-flight-sitl = { path = "../stable-flight-sitl" }
 stable-flight-link = { path = "../stable-flight-link", features = ["std"] }
 stable-flight-sitl-realflight = { path = "../stable-flight-sitl-realflight" }
+stable-flight-sitl-xplane = { path = "../stable-flight-sitl-xplane" }
 clap.workspace = true
 plotters = { version = "0.3", default-features = false, features = [
     "bitmap_backend",   # BitMapBackend (in-memory raster)

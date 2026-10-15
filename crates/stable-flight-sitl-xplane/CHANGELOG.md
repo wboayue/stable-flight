@@ -1,0 +1,28 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+X-Plane 12 simulator backend over [xplane-bridge](https://crates.io/crates/xplane-bridge)
+0.1 (#351):
+
+- `XPlaneVehicle`: `StateSource` + `Actuator` over UDP datarefs. `connect` subscribes the
+  state, resubscribes until every dataref has a value (or `ConnectError::NotReady` names the
+  missing), and takes the throttles (and, with `neutral_wings`, the control surfaces). Each
+  tick polls without blocking and writes the mapped engines; a silence or a lost subscription
+  resubscribes, frames returning take control again, and dropping the vehicle hands control
+  back to X-Plane.
+- `vehicle_state`: an `XPlaneSample` in the core frame contract (quaternion and body rates as
+  reported, OpenGL local frame to north/east, elevation above sea level as up, true airspeed).
+- `LocalOrigin`: position relative to where the aircraft started (the bridge's `--origin`),
+  continuous when X-Plane moves its local origin, re-anchored when the aircraft relocates.
+- `ActuatorMapping`: motor slots to `ENGN_thro_use` elements, idle engines held at 0, and
+  wings whose surfaces are held at 0°.
+- `StateDatarefs`, `XPlaneSample`, `wait_ready`: the raw state subscriptions, for tools that
+  read X-Plane without flying it.
+- `capture`: raw samples to and from CSV; the `capture-state-xplane` example records them
+  read-only while X-Plane flies, for `check_frames --sim xplane`.

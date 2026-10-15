@@ -9,10 +9,12 @@ The repository is a Cargo workspace. Dependencies point one way:
 
 ```mermaid
 flowchart TB
-    tools["stable-flight-tools<br/>(unpublished)"] --> sitl & realflight & link
+    tools["stable-flight-tools<br/>(unpublished)"] --> sitl & realflight & xplane & link
     sitl["stable-flight-sitl"] --> core
     realflight["stable-flight-sitl-realflight"] --> core
     realflight -. dev .-> sitl & link
+    xplane["stable-flight-sitl-xplane"] --> core
+    xplane -. dev .-> sitl
     bridge["stable-flight-bridge"] --> link & mavlink & core
     link["stable-flight-link<br/>no_std"] --> core
     mavlink["stable-flight-mavlink"] --> core
@@ -38,8 +40,8 @@ Solid arrows are dependencies, dashed ones dev-dependencies (examples and tests)
   Never depends on the sitl harness, so it runs the same against SITL and a board.
 * **`stable-flight-sitl`**: the simulator-independent harness: joystick and scripted
   commanders, `RealTimeRunner`, and `ShutdownSignal`.
-* **`stable-flight-sitl-realflight`**: the RealFlight backend ([Simulator
-  Backends](#simulator-backends)).
+* **`stable-flight-sitl-realflight`**, **`stable-flight-sitl-xplane`**: the RealFlight and
+  X-Plane backends ([Simulator Backends](#simulator-backends)).
 * **`stable-flight-sim`**: the in-repo simulator for closed-loop tests ([In-Repo
   Simulator](#in-repo-simulator)). `no_std`; depends only on the core.
 * **`stable-flight-tools`**: unpublished developer binaries, so library consumers never compile
@@ -72,10 +74,26 @@ Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its depen
   without the harness.
 * **Airframes.** Tuned gains, the mixer, channel mapping, and body rotation live in the
   backend's `airframes` module, next to the simulated model they were tuned on.
+* **Per-backend mapping types.** Each backend has its own `ActuatorMapping` (and `Airframe`):
+  RealFlight maps slots to twelve 0–1 channels, X-Plane maps motors to engines and holds wing
+  surfaces in degrees. A shared type waits until a third backend shows a common shape.
+
+### X-Plane
+
+X-Plane runs free in real time and streams datarefs over UDP at most once per rendered frame
+(60–120 Hz), with no lockstep, so `XPlaneVehicle` runs under `RealTimeRunner`, holding each
+state for the ticks between frames, rather than a lockstep runner. Its local frame has a
+whole-degree origin that moves when the aircraft relocates or flies far from it;
+`LocalOrigin` keeps position relative to where the aircraft started (the bridge's
+`--origin`), absorbing a moved origin from the last position and velocity rather than by
+geodesy, which would mix X-Plane's projection with a flat-earth one at the jump. Up is the
+elevation above sea level, not `local_y`, which is height over the plane tangent at the local
+origin and drifts from the ground with distance. Rejected: horizontal position from latitude and
+longitude (`f32` on the wire: 0.4–0.8 m steps).
 
 ### In-Repo Simulator
 
-RealFlight (and X-Plane, planned) can't run in `cargo test` or CI, so without another plant
+RealFlight and X-Plane can't run in `cargo test` or CI, so without another plant
 the pipeline's closed loop is only checked by hand. `stable-flight-sim` is that plant: a rigid
 body on a ground plane in deterministic wind, as a multirotor (motor lag, quadratic thrust,
 linear drag), an airplane (stability-derivative aerodynamics, servo-driven surfaces, a
