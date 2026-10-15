@@ -262,6 +262,7 @@ pub fn alia250() -> Airframe {
         // the default 2.5, full yaw drove one diagonal to its ceiling and the other near zero,
         // and the desaturation gave up collective (X-Plane: a sink to the ground at full
         // throttle, #351).
+        // TODO(#440): a higher yaw ratio once yaw yields to collective in the mixer.
         MixerConfig {
             thrust_factor: 0.8,
             yaw_ratio: 1.0,
