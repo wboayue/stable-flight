@@ -42,7 +42,7 @@ mod metadata {
             LIMITS
                 .param(
                     "TRAN_TIMEOUT",
-                    "Longest forward transition before it reverts",
+                    "Longest wait on airspeed before the forward transition reverts",
                 )
                 .with_units("s")
                 .above(0.0),

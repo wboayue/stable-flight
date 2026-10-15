@@ -366,9 +366,11 @@ and wing share the lift through a transition, and `guidance::vtol::LiftTransitio
 mode and that lift share. Forward, the rotors hold the hover until a valid airspeed reaches
 `min_airspeed_mps`, then hand the lift to the wing linearly over `lift_ramp_s` (ArduPilot's
 SLT transition, `ArduPlane/quadplane.cpp:1480-1599`); without airspeed it never ramps and times
-out to copter, since the wing's speed is unknown. Back, the share ramps up over `back_ramp_s`
-and the transition completes once the forward ground speed (airspeed without a ground
-velocity) is below `back_speed_mps`, or after `back_timeout_s` (PX4,
+out to copter, since the wing's speed is unknown; the timeout bounds only that wait (as
+ArduPilot's `Q_TRANS_FAIL`, `:1488-1491`), so a started ramp never throws the weight back onto
+the rotors mid-way. Back, the share ramps up over `back_ramp_s`
+and the transition completes once the ground speed along the body `x` axis (airspeed without a
+ground velocity) is below `back_speed_mps`, or after `back_timeout_s` (PX4,
 `vtol_att_control/standard.cpp:98-115`, `:250-254`). Height and abandonment are
 `Transition`'s, through one shared gate. Rejected: generalizing `Transition` with a completion
 policy, which would leave its tilt ramp, rates, and done angles meaningless for a quadplane
@@ -380,7 +382,7 @@ stateDiagram-v2
     Copter --> ToPlane: plane requested, height ≥ min_height_m (lift share 1)
     ToPlane --> ToPlane: airspeed ≥ min_airspeed_mps starts the lift ramp (1 → 0 over lift_ramp_s)
     ToPlane --> Plane: lift ramp done (handoff)
-    ToPlane --> Copter: copter requested, timeout_s, or roll limit
+    ToPlane --> Copter: copter requested, timeout_s waiting on airspeed, or roll limit
     Plane --> ToCopter: copter requested (lift share 0 → 1 over back_ramp_s)
     ToCopter --> Plane: plane requested
     ToCopter --> Copter: forward speed < back_speed_mps, back_timeout_s, or roll limit (handoff)

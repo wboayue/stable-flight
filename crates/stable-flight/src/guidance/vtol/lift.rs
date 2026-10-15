@@ -13,16 +13,15 @@ mod params;
 #[cfg(test)]
 mod tests;
 
-/// [`LiftTransition`] settings. Each field is checked on its own: a `timeout_s` shorter than
-/// `lift_ramp_s` is accepted, and times every forward transition out.
+/// [`LiftTransition`] settings.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LiftTransitionConfig {
     /// The airspeed that starts the forward lift ramp, in m/s.
     pub min_airspeed_mps: f32,
     /// How long the forward ramp takes the lift share from 1 to 0, in seconds.
     pub lift_ramp_s: f32,
-    /// The longest a forward transition runs, waiting and ramping, before it falls back to
-    /// copter, in seconds.
+    /// The longest a forward transition waits on airspeed before it falls back to copter, in
+    /// seconds. A started lift ramp always runs to its end.
     pub timeout_s: f32,
     /// The height above the arming altitude a forward transition needs to start, in meters.
     pub min_height_m: f32,
@@ -100,8 +99,8 @@ pub struct LiftTransitionStep {
 /// | `Copter` | `Plane` requested below `min_height_m` (or NaN altitude) | `Copter` | 1 | | `BelowMinAltitude` |
 /// | `Copter` | `Plane` requested | `ToPlane`, waiting on airspeed | 1 | | |
 /// | `ToPlane` | `Copter` requested | `Copter` | 1 | | |
-/// | `ToPlane` | longer than `timeout_s` | `Copter` | 1 | | `TransitionTimeout` |
 /// | `ToPlane` | the lift ramp has run `lift_ramp_s` | `Plane` | 0 | yes | |
+/// | `ToPlane` | waiting longer than `timeout_s` | `Copter` | 1 | | `TransitionTimeout` |
 /// | `ToPlane` | waiting, and a valid airspeed ≥ `min_airspeed_mps` | `ToPlane`, the lift ramp starts | 1 | | |
 /// | `ToPlane` | otherwise | `ToPlane` | 1 waiting, then `1 − t / lift_ramp_s` | | |
 /// | `Plane` | `Copter` requested | `ToCopter` | 0 | | |
@@ -112,9 +111,11 @@ pub struct LiftTransitionStep {
 /// The lift share is the share of hover lift the lift rotors carry: the guidance flying this
 /// weights the lift rotors' thrust and moments by it. Without a valid airspeed the forward
 /// transition never starts its lift ramp and times out to `Copter`: the wing's speed is unknown,
-/// so handing it the weight could stall it. The forward speed is the horizontal ground velocity
-/// along the nose; when it isn't known (NaN velocity or attitude), a valid airspeed stands in,
-/// and without either the back transition completes on its timeout.
+/// so handing it the weight could stall it. Once started, the ramp isn't timed out: the wing
+/// has its speed, and abandoning mid-ramp would throw the weight back onto the rotors at once.
+/// The forward speed is the ground velocity along the body `x` axis; when it isn't known (NaN
+/// velocity or attitude), a valid airspeed stands in, and without either the back transition
+/// completes on its timeout.
 ///
 /// [`cut_short`](Self::cut_short) ends a transition early as
 /// [`Transition::cut_short`](super::Transition::cut_short) does. Height and abandonment follow
@@ -129,12 +130,12 @@ pub struct LiftTransitionStep {
 /// - Forward: ArduPilot holds hover on the lift rotors until airspeed passes `AIRSPEED_MIN`
 ///   (9 m/s, `ArduPlane/quadplane.cpp:1522`, `config.h:124`), then ramps their throttle down
 ///   linearly over `Q_TRANSITION_MS` (5 s, `quadplane.cpp:31`, `:1589-1599`); it needs an
-///   airspeed sensor to leave the wait. PX4 times a forward transition out after
-///   `VT_TRANS_TIMEOUT` (15 s, `vtol_type.cpp:327-341`) back to hover; ArduPilot has no timeout
-///   by default (`Q_TRANS_FAIL`, `quadplane.cpp:346`).
+///   airspeed sensor to leave the wait. Its optional timeout (`Q_TRANS_FAIL`, off by default,
+///   `quadplane.cpp:346`) covers only the wait (`:1488-1491`); the 15 s is PX4's
+///   `VT_TRANS_TIMEOUT` (`vtol_type.cpp:327-341`), which also covers the ramp.
 /// - Back: PX4 ramps the lift rotors' weight up over `VT_B_TRANS_RAMP` (3 s,
-///   `vtol_att_control/standard.cpp:250-254`) and completes once the forward ground speed is
-///   below `MPC_XY_CRUISE` (5 m/s; airspeed without a ground velocity) or after
+///   `vtol_att_control/standard.cpp:250-254`) and completes once the body-`x` ground speed
+///   is below `MPC_XY_CRUISE` (5 m/s; airspeed without a ground velocity) or after
 ///   `VT_B_TRANS_DUR` (10 s, `standard.cpp:98-115`).
 ///
 /// # Examples
@@ -228,13 +229,15 @@ impl LiftTransition {
                 self.elapsed_s += dt;
                 if requested != FlightRegime::Plane {
                     self.mode = FlightMode::Copter;
-                } else if self.elapsed_s > self.config.timeout_s {
-                    self.abandon(ModeRefusal::TransitionTimeout);
                 } else if self.lift_ramp_done() {
                     self.mode = FlightMode::Plane;
                     handoff = true;
-                } else if self.ramp_start_s.is_none() && self.fast_enough(state) {
-                    self.ramp_start_s = Some(self.elapsed_s);
+                } else if self.ramp_start_s.is_none() {
+                    if self.elapsed_s > self.config.timeout_s {
+                        self.abandon(ModeRefusal::TransitionTimeout);
+                    } else if self.fast_enough(state) {
+                        self.ramp_start_s = Some(self.elapsed_s);
+                    }
                 }
             }
             FlightMode::Plane => {
@@ -360,16 +363,10 @@ impl Configurable for LiftTransition {
     }
 }
 
-/// The horizontal ground velocity along the nose's heading, in m/s; NaN when the velocity or
-/// attitude is, or the nose points straight up or down.
+/// The ground velocity along the body `x` axis, in m/s; NaN when the velocity or attitude is.
 fn forward_speed_mps(state: &VehicleState) -> f32 {
-    // The body `x` axis in NED; its north and east components are the translation frame's too.
     let nose = state.attitude * Vec3::x();
-    let heading = nose.xy();
-    let length = heading.norm();
-    if length > 0.0 {
-        heading.dot(&state.velocity_mps.xy()) / length
-    } else {
-        f32::NAN
-    }
+    let velocity_mps = state.velocity_mps;
+    // `nose` is NED, the velocity `z` up: the `z` term flips.
+    nose.x * velocity_mps.x + nose.y * velocity_mps.y - nose.z * velocity_mps.z
 }

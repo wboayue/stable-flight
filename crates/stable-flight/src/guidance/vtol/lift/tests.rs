@@ -284,6 +284,20 @@ fn ramps_the_lift_share_over_the_configured_times() {
     check!(step.lift_share == 0.0, "not in a transition: plane");
 }
 
+/// A lift ramp started late in the wait runs to `Plane` past `timeout_s`, which bounds only the
+/// wait on airspeed.
+#[test]
+fn a_started_lift_ramp_outlasts_the_timeout() {
+    let mut transition = waiting();
+    fly(&mut transition, 12.0, FlightRegime::Plane, &hover());
+    let step = fly(&mut transition, 5.0, FlightRegime::Plane, &fast());
+    check!(step.mode == FlightMode::ToPlane);
+    check!(step.lift_share < 0.01);
+    let step = fly(&mut transition, 0.05, FlightRegime::Plane, &fast());
+    check!(step.mode == FlightMode::Plane);
+    check!(transition.report().refusal.is_none());
+}
+
 /// The forward lift ramp starts only on a valid airspeed at the gate: without one (none, NaN,
 /// negative) the transition waits and times out to copter.
 #[test]
@@ -312,7 +326,7 @@ fn forward_ramp_needs_a_valid_airspeed() {
 }
 
 /// The back transition completes on forward ground speed below `back_speed_mps`, reading the
-/// speed along the nose (not the ground track), falling back to a valid airspeed without a
+/// speed along the body `x` axis (not the ground track), falling back to a valid airspeed without a
 /// ground velocity, and on its timeout without either.
 #[test]
 fn back_completes_on_forward_speed_or_its_timeout() {
@@ -333,6 +347,15 @@ fn back_completes_on_forward_speed_or_its_timeout() {
         (
             "fast along the nose",
             along(heading_east, Vec3::new(0.0, 12.0, 0.0), Some(2.0)),
+            false,
+        ),
+        (
+            "climbing along a raised nose",
+            along(
+                UnitQuaternion::from_euler_angles(0.0, 30.0_f32.to_radians(), 0.0),
+                Vec3::new(4.0, 0.0, 4.0),
+                None,
+            ),
             false,
         ),
         (
