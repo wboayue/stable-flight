@@ -51,7 +51,7 @@ let mut fc_link = FcLink::<32, 16>::new();
 let (mut poller, telemetry) = fc_link.wire(link_rx, link_tx);
 ```
 
-To read a flight afterward, fan the link out with a `CsvRecorder` (`recorder` module). It writes one row per tick, `wall_s` then a `Columns` set: `CopterColumns` (body rates, attitude, altitude, moments, thrust, the attitude setpoint, and the stick yaw) or `TailsitterColumns` (adds the attitude in the tailsitter view, flight mode, actuators, airspeed, and guidance's setpoint). Without a path it records nothing, and a failed write never stops the flight:
+To read a flight afterward, fan the link out with a `CsvRecorder` (`recorder` module). It writes one row per tick, `wall_s` then a `Columns` set: `CopterColumns` (body rates, attitude, altitude, horizontal position and ground velocity, moments, thrust, the attitude setpoint, and the stick yaw) or `TailsitterColumns` (adds the attitude in the tailsitter view, flight mode, actuators, airspeed, and guidance's setpoint). Without a path it records nothing, and a failed write never stops the flight:
 
 ```rust
 // `--record <csv>`; `None` records nothing.

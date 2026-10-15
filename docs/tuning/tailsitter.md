@@ -45,11 +45,24 @@ end in the ground.
    |---|---|
    | `mode` | 0 copter, 1 plane, 2 to plane, 3 to copter |
    | `altitude`, `climb_mps`, `airspeed_mps` | m, m/s up, m/s |
-   | `view_roll`, `view_pitch` | hover attitude, rad (0 nose up) |
+   | `north_m`, `east_m`, `vel_north_mps`, `vel_east_mps` | horizontal position (m from the simulator's origin, not the arming point) and ground velocity (m/s): drift, wind, waypoint arrival |
+   | `view_roll`, `view_pitch`, `view_heading` | hover attitude, rad (0 nose up) |
    | `pitch`, `roll` | airplane attitude, rad |
    | `sp_thrust`, `stick_throttle` | commanded linear thrust, the pilot's throttle |
    | `motor_left`, `motor_right`, `elevon_left`, `elevon_right` | actuator outputs; an elevon near ±1 has no authority left |
    | `moment_x`, `_y`, `_z` | stabilizer moments, [-1, 1] |
+
+   Rates, moments, and the motors and elevons are in the airplane body frame, so the hover
+   axes are swapped (signs aside):
+
+   | Hover axis | Attitude | Rate | Moment | Actuator |
+   |---|---|---|---|---|
+   | roll (sideways tilt) | `view_roll` | `yaw_rate` | `moment_z` | differential thrust |
+   | pitch (fore-aft tilt) | `view_pitch` | `pitch_rate` | `moment_y` | elevons together |
+   | yaw (turn about the vertical) | `view_heading` | `roll_rate` | `moment_x` | elevons apart |
+
+   In plane flight the columns read as named: `roll`, `pitch`, `heading` with `roll_rate`,
+   `pitch_rate`, `yaw_rate`.
 
 4. **Repeatable missions.** For transitions, `flights/explora_transition.csv` flies the same
    climb, plane laps, and back transition every run, so heights compare across settings

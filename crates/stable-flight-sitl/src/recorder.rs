@@ -147,13 +147,14 @@ impl<C: Columns, W: Write> TelemetryPublisher for CsvRecorder<C, W> {
 
 /// A copter's attitude loops: body rates (rad/s), Euler angles (rad), altitude (m), moments,
 /// thrust (after the stabilizer's thrust curve), the attitude setpoint (rad; NaN for other
-/// setpoints), and the stick yaw (`yaw` of attitude sticks, `yaw_rate` of rate sticks; NaN for
-/// other inputs).
+/// setpoints), the stick yaw (`yaw` of attitude sticks, `yaw_rate` of rate sticks; NaN for
+/// other inputs), and the horizontal position and ground velocity (`north_m`, `east_m`,
+/// `vel_north_mps`, `vel_east_mps`; see [`TailsitterColumns`]).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CopterColumns;
 
 impl Columns for CopterColumns {
-    const HEADER: &'static str = "armed,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,altitude,moment_x,moment_y,moment_z,thrust,sp_roll,sp_pitch,sp_heading,stick_yaw";
+    const HEADER: &'static str = "armed,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,altitude,moment_x,moment_y,moment_z,thrust,sp_roll,sp_pitch,sp_heading,stick_yaw,north_m,east_m,vel_north_mps,vel_east_mps";
 
     fn write_row(&mut self, out: &mut impl Write, record: &TelemetryRecord) -> io::Result<()> {
         let state = record.state;
@@ -172,7 +173,7 @@ impl Columns for CopterColumns {
         };
         write!(
             out,
-            "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4}",
+            "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.3},{:.3}",
             u8::from(record.command.arm),
             rates.x,
             rates.y,
@@ -189,6 +190,10 @@ impl Columns for CopterColumns {
             sp_pitch,
             sp_heading,
             stick_yaw,
+            state.position_m.x,
+            state.position_m.y,
+            state.velocity_mps.x,
+            state.velocity_mps.y,
         )
     }
 }
@@ -206,7 +211,9 @@ impl Columns for CopterColumns {
 /// stabilizer's thrust curve; `thrust` is after it. `airspeed_mps` is NaN without air data,
 /// `climb_mps` the vertical speed, up positive, and `stick_throttle` the commander's throttle
 /// (or absolute thrust), before boost, floor, and sink guard. `motor_*` are motor slots 0 and
-/// 1, `elevon_*` servo slots 0 and 1.
+/// 1, `elevon_*` servo slots 0 and 1. `north_m`/`east_m` are the position, from the backend's
+/// origin (not the arming point), and `vel_north_mps`/`vel_east_mps` the ground velocity, on
+/// the frame contract's north and east axes.
 #[derive(Debug, Clone, Copy)]
 pub struct TailsitterColumns {
     /// The tailsitter view's rotation from the body frame
@@ -215,7 +222,7 @@ pub struct TailsitterColumns {
 }
 
 impl Columns for TailsitterColumns {
-    const HEADER: &'static str = "armed,mode,refused,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,view_roll,view_pitch,view_heading,altitude,airspeed_mps,moment_x,moment_y,moment_z,thrust,motor_left,motor_right,elevon_left,elevon_right,sp_kind,sp_roll,sp_pitch,sp_heading,sp_p,sp_q,sp_r,sp_thrust,climb_mps,stick_throttle";
+    const HEADER: &'static str = "armed,mode,refused,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,view_roll,view_pitch,view_heading,altitude,airspeed_mps,moment_x,moment_y,moment_z,thrust,motor_left,motor_right,elevon_left,elevon_right,sp_kind,sp_roll,sp_pitch,sp_heading,sp_p,sp_q,sp_r,sp_thrust,climb_mps,stick_throttle,north_m,east_m,vel_north_mps,vel_east_mps";
 
     fn write_row(&mut self, out: &mut impl Write, record: &TelemetryRecord) -> io::Result<()> {
         let state = record.state;
@@ -271,7 +278,7 @@ impl Columns for TailsitterColumns {
         };
         write!(
             out,
-            "{},{},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4}",
+            "{},{},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.3},{:.3},{:.3},{:.3}",
             u8::from(record.command.arm),
             mode,
             u8::from(record.flight_mode.refusal.is_some()),
@@ -304,6 +311,10 @@ impl Columns for TailsitterColumns {
             record.setpoint.thrust(),
             state.velocity_mps.z,
             stick_throttle,
+            state.position_m.x,
+            state.position_m.y,
+            state.velocity_mps.x,
+            state.velocity_mps.y,
         )
     }
 }
