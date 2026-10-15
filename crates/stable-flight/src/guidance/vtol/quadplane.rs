@@ -193,7 +193,8 @@ impl QuadPlaneGuidance {
     /// The hover side through a transition: the hover guidance holding
     /// [`hold_altitude_m`](Self::hold_altitude_m) where the vehicle is, wings level at
     /// `pitch_rad`. The waypoint moves with the vehicle at its own velocity, so the lateral loop
-    /// asks for nothing, and its tilt is replaced anyway.
+    /// asks for nothing, and its tilt is replaced anyway. Flying it as a waypoint keeps the
+    /// altitude loop's state continuous with waypoint flight on either side of a transition.
     fn hold_level(&mut self, dt: f32, pitch_rad: f32, state: &VehicleState) -> AttitudeSetpoint {
         let hold = ControlInput::Waypoint(WaypointCommand {
             position_m: state.position_m.xy(),
@@ -233,7 +234,7 @@ fn forward_pitch_rad(wing: &Setpoint, lift_share: f32, state: &VehicleState) -> 
     };
     let limit_rad = if lift_share < 1.0 {
         RAMP_PITCH_MAX_RAD
-    } else if state.velocity_mps.xy().norm() >= LEVEL_BELOW_MPS {
+    } else if state.velocity_mps.xy().norm_squared() >= LEVEL_BELOW_MPS * LEVEL_BELOW_MPS {
         WAIT_PITCH_MAX_RAD
     } else {
         0.0

@@ -1,6 +1,7 @@
 //! A VTOL transition flight sampled every tick: a [`Trace`] of modes and states, for asking
 //! when modes changed and how high or low it flew.
 
+use assert2::check;
 use stable_flight::{
     Command, Commander, ControlInput, FlightLoop, FlightMode, Guidance, Mixer, ModeRefusal,
     Stabilizer, TelemetryPublisher, Vec3, Vehicle, VehicleState,
@@ -18,6 +19,57 @@ pub const TRANSITION_ALTITUDE_M: f32 = 30.0;
 /// Seconds of hover, from resting on the ground, before `Plane` is requested: the climb to
 /// [`TRANSITION_ALTITUDE_M`] and settling.
 pub const FORWARD_AT_S: f32 = 20.0;
+
+/// PX4's forward-transition timeout (`VT_TRANS_TIMEOUT`, PX4 `c4e4ef98e9`,
+/// `src/modules/vtol_att_control/vtol_att_control_params.yaml:92-97`): plane flight by then.
+pub const FORWARD_TIMEOUT_S: f32 = 15.0;
+
+/// PX4's longest back transition (`VT_B_TRANS_DUR`, `:35-40`): hovering by then.
+pub const BACK_DURATION_S: f32 = 10.0;
+
+/// PX4's quad-chute altitude loss (`VT_QC_T_ALT_LOSS`, `:145-160`), in m below the height the
+/// transition began, watched until [`ALTITUDE_LOSS_AFTER_S`] after it ends. PX4 watches forward
+/// transitions; every transition is held to it here.
+pub const ALTITUDE_LOSS_M: f32 = 20.0;
+
+/// Seconds after a transition ends that [`ALTITUDE_LOSS_M`] still applies (PX4, as above).
+pub const ALTITUDE_LOSS_AFTER_S: f32 = 5.0;
+
+/// Seconds the plane flies after the forward transition before the hold is judged
+/// (`plane_level`'s settling time).
+pub const PLANE_SETTLE_S: f32 = 15.0;
+
+/// Seconds a plane hold is judged over (`plane_level`'s window).
+pub const PLANE_HOLD_S: f32 = 30.0;
+
+/// Seconds a level hold is judged over.
+pub const HOLD_S: f32 = 10.0;
+
+/// Distance off the line in plane flight, in m: no external band applies; the plane's 1 m
+/// (`plane_level`).
+pub const CROSS_TRACK_M: f32 = 1.0;
+
+/// The tick a flight entered `mode` at or after `from_s`, or a failed check naming `what`.
+pub fn entered_s(trace: &Trace, mode: FlightMode, from_s: f32, what: &str) -> f32 {
+    let entered = trace.entered(mode, from_s);
+    check!(entered.is_some(), "{what}: never flew {mode:?}");
+    entered.map_or(f32::INFINITY, |sample| sample.time_s)
+}
+
+/// The heights from `from_s`, when a transition was requested, until `ALTITUDE_LOSS_AFTER_S`
+/// after it ended at `ended_s`.
+pub fn transition_heights(trace: &Trace, from_s: f32, ended_s: f32) -> Heights {
+    trace.heights(from_s, ended_s + ALTITUDE_LOSS_AFTER_S)
+}
+
+/// Checks the lowest of `heights` is within [`ALTITUDE_LOSS_M`] below their start.
+pub fn check_altitude_loss(heights: Heights, what: &str) {
+    let fell_m = heights.start_m - heights.lowest_m;
+    check!(
+        fell_m <= ALTITUDE_LOSS_M,
+        "{what}: fell {fell_m} m, {heights:?}"
+    );
+}
 
 /// Hovers over the origin at [`TRANSITION_ALTITUDE_M`], then from [`FORWARD_AT_S`] flies the
 /// line north as a plane.

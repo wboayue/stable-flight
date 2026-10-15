@@ -14,33 +14,11 @@ use stable_flight_sim::airframes;
 use common::plane::{AIRSPEED_BAND_MPS, ALTITUDE_BAND_M, LineDeviation};
 use common::quadplane::{QuadPlanePlant, forward, forward_and_back, quadplane_loop};
 use common::transition::{
-    FORWARD_AT_S, Forward, Heights, HoverDeviation, TRANSITION_ALTITUDE_M, Trace, trace,
+    BACK_DURATION_S, CROSS_TRACK_M, FORWARD_AT_S, FORWARD_TIMEOUT_S, Forward, HOLD_S,
+    HoverDeviation, PLANE_HOLD_S, PLANE_SETTLE_S, TRANSITION_ALTITUDE_M, Trace,
+    check_altitude_loss, entered_s, trace, transition_heights,
 };
 use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK};
-
-/// PX4's forward-transition timeout (`VT_TRANS_TIMEOUT`, `:92-97`): plane flight by then.
-const FORWARD_TIMEOUT_S: f32 = 15.0;
-
-/// PX4's longest back transition (`VT_B_TRANS_DUR`, `:35-40`): hovering by then.
-const BACK_DURATION_S: f32 = 10.0;
-
-/// PX4's quad-chute altitude loss (`VT_QC_T_ALT_LOSS`, `:145-160`), in m below the height the
-/// transition began, watched until [`ALTITUDE_LOSS_AFTER_S`] after it ends.
-const ALTITUDE_LOSS_M: f32 = 20.0;
-
-/// Seconds after a transition ends that [`ALTITUDE_LOSS_M`] still applies (PX4, as above).
-const ALTITUDE_LOSS_AFTER_S: f32 = 5.0;
-
-/// Seconds the plane flies after the forward transition before the hold is judged
-/// (`plane_level`'s settling time).
-const PLANE_SETTLE_S: f32 = 15.0;
-
-/// Seconds a plane hold is judged over (`plane_level`'s window).
-const PLANE_HOLD_S: f32 = 30.0;
-
-/// Distance off the line in plane flight, in m: no external band applies; the plane's 1 m
-/// (`plane_level`).
-const CROSS_TRACK_M: f32 = 1.0;
 
 /// When the back transition is requested: 32 s into plane flight, settled on the line.
 const BACK_AT_S: f32 = 60.0;
@@ -54,36 +32,11 @@ const BACK_HOVER_NORTH_M: f32 = 640.0;
 /// at 5 m/s: measured 0.06 m off after 20 s, 0.09 after 15.
 const BACK_SETTLE_S: f32 = 20.0;
 
-/// Seconds a level hold is judged over.
-const HOLD_S: f32 = 10.0;
-
 /// A pusher thrust too low to reach the airspeed gate: measured 2.3 m/s at most.
 const WEAK_PUSHER_THRUST: f32 = 0.2;
 
 /// Seconds into the forward transition that the link goes silent.
 const SILENT_AFTER_S: f32 = 2.0;
-
-/// The tick a flight entered `mode` at or after `from_s`, or a failed check naming `what`.
-fn entered_s(trace: &Trace, mode: FlightMode, from_s: f32, what: &str) -> f32 {
-    let entered = trace.entered(mode, from_s);
-    check!(entered.is_some(), "{what}: never flew {mode:?}");
-    entered.map_or(f32::INFINITY, |sample| sample.time_s)
-}
-
-/// The heights from `from_s`, when a transition was requested, until `ALTITUDE_LOSS_AFTER_S`
-/// after it ended at `ended_s`.
-fn transition_heights(trace: &Trace, from_s: f32, ended_s: f32) -> Heights {
-    trace.heights(from_s, ended_s + ALTITUDE_LOSS_AFTER_S)
-}
-
-/// Checks the lowest of `heights` is within [`ALTITUDE_LOSS_M`] below their start.
-fn check_altitude_loss(heights: Heights, what: &str) {
-    let fell_m = heights.start_m - heights.lowest_m;
-    check!(
-        fell_m <= ALTITUDE_LOSS_M,
-        "{what}: fell {fell_m} m, {heights:?}"
-    );
-}
 
 /// Checks a hold over `point_m` against the copter's calm-air hover bands (`hover.rs`).
 fn check_calm_hover(trace: &Trace, from_s: f32, point_m: Vec3, what: &str) {

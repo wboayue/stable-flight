@@ -21,26 +21,14 @@ use common::tailsitter::{
     TailsitterPlant, forward, forward_and_back, tailsitter_loop, tailsitter_pipeline,
 };
 use common::transition::{
-    FORWARD_AT_S, Heights, HoverDeviation, TRANSITION_ALTITUDE_M, Trace, trace,
+    ALTITUDE_LOSS_AFTER_S, BACK_DURATION_S, CROSS_TRACK_M, FORWARD_AT_S, FORWARD_TIMEOUT_S, HOLD_S,
+    Heights, HoverDeviation, PLANE_HOLD_S, PLANE_SETTLE_S, TRANSITION_ALTITUDE_M,
+    check_altitude_loss, entered_s, trace, transition_heights,
 };
 use common::{
     CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK, fly, hover_at,
     waypoint,
 };
-
-/// PX4's forward-transition timeout (`VT_TRANS_TIMEOUT`, `:92-97`): plane flight by then.
-const FORWARD_TIMEOUT_S: f32 = 15.0;
-
-/// PX4's longest back transition (`VT_B_TRANS_DUR`, `:35-40`): hovering by then.
-const BACK_DURATION_S: f32 = 10.0;
-
-/// PX4's quad-chute altitude loss (`VT_QC_T_ALT_LOSS`, `:145-160`), in m below the height the
-/// transition began, watched until [`ALTITUDE_LOSS_AFTER_S`] after it ends. PX4 watches forward
-/// transitions; every transition is held to it here.
-const ALTITUDE_LOSS_M: f32 = 20.0;
-
-/// Seconds after a transition ends that [`ALTITUDE_LOSS_M`] still applies (PX4, as above).
-const ALTITUDE_LOSS_AFTER_S: f32 = 5.0;
 
 /// When the back transition is requested: 23 s into plane flight, settled on the line.
 const BACK_AT_S: f32 = 45.0;
@@ -50,10 +38,6 @@ const BACK_AT_S: f32 = 45.0;
 /// (measured); the hover holds its heading belly north, since moving along the span departs
 /// (#387).
 const BACK_HOVER_NORTH_M: f32 = 380.0;
-
-/// Seconds the plane flies after the forward transition before the hold is judged
-/// (`plane_level`'s settling time).
-const PLANE_SETTLE_S: f32 = 15.0;
 
 /// Seconds the hover settles after the back transition before the hold is judged. It arrives
 /// at 2.5 m/s over the point: measured 0.07 m off after 10 s.
@@ -82,40 +66,8 @@ const EXPLORA_FLOOR_SHARE: f32 = 0.77;
 /// hover point and its arrival (measured 4.2 s).
 const DESCENT_WATCH_S: f32 = 20.0;
 
-/// Seconds a level hold is judged over.
-const HOLD_S: f32 = 10.0;
-
-/// Seconds a plane hold is judged over (`plane_level`'s window).
-const PLANE_HOLD_S: f32 = 30.0;
-
 /// When `Plane` is requested on the way up, in s: below `min_height_m` (measured 1.6 m).
 const LOW_REQUEST_S: f32 = 1.0;
-
-/// Distance off the line in plane flight, in m: no external band applies. Measured under 1 mm
-/// in calm air; the plane's 1 m (`plane_level`).
-const CROSS_TRACK_M: f32 = 1.0;
-
-/// The tick a flight entered `mode` at or after `from_s`, or a failed check naming `what`.
-fn entered_s(trace: &Trace, mode: FlightMode, from_s: f32, what: &str) -> f32 {
-    let entered = trace.entered(mode, from_s);
-    check!(entered.is_some(), "{what}: never flew {mode:?}");
-    entered.map_or(f32::INFINITY, |sample| sample.time_s)
-}
-
-/// The heights from `from_s`, when a transition was requested, until `ALTITUDE_LOSS_AFTER_S`
-/// after it ended at `ended_s`.
-fn transition_heights(trace: &Trace, from_s: f32, ended_s: f32) -> Heights {
-    trace.heights(from_s, ended_s + ALTITUDE_LOSS_AFTER_S)
-}
-
-/// Checks the lowest of `heights` is within [`ALTITUDE_LOSS_M`] below their start.
-fn check_altitude_loss(heights: Heights, what: &str) {
-    let fell_m = heights.start_m - heights.lowest_m;
-    check!(
-        fell_m <= ALTITUDE_LOSS_M,
-        "{what}: fell {fell_m} m, {heights:?}"
-    );
-}
 
 /// Checks the highest of `heights` is within [`BACK_CLIMB_M`] above their start.
 fn check_climb(heights: Heights, what: &str) {
