@@ -472,10 +472,7 @@ fn waypoint_at_rest_on_target_yields_hover_thrust_and_no_moments() {
     let exponent = CopterStabilizerConfig::default().thrust_curve_exponent;
     assert_eq!(
         output,
-        ControlOutput {
-            thrust: hover.powf(exponent),
-            moments: Vec3::zeros(),
-        },
+        ControlOutput::new(hover.powf(exponent), Vec3::zeros()),
         "on target at rest: hover, no moments"
     );
 }

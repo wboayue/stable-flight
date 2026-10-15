@@ -39,7 +39,8 @@ plus a `Start` in level flight (`SimPlane::with_start`); it doesn't take off fro
 `airframes::tailsitter()` pairs `SimTailsitter` with `TailsitterGuidance` and
 `TailsitterStabilizer`; it starts resting on its tail and takes off nose up.
 `airframes::quadplane()` pairs `SimQuadPlane` with its hover configs (`CopterGuidance`,
-`CopterStabilizer`) and a hover mixer that leaves the pusher stopped; it starts on its gear and
+`CopterStabilizer`) and `TableMixer::quadplane()`, whose pusher stays stopped without a cruise
+output; it starts on its gear and
 takes off on its lift rotors, or in cruise from its `start` (`SimQuadPlane::with_start`).
 
 ```bash
@@ -158,8 +159,9 @@ thrust from its level-flight drag; pitch rate I is tuned to the plane step spec 
 `airframes` rustdoc).
 
 `quadplane()` is ArduPilot SITL's quadplane (`plane()`'s wing and aerodynamics with an X quad,
-4.5 kg, lift rotors 350 mm apart across the diagonal) on a hover mixer: lift rotors on motors
-0–3 in `quad_x` order, the pusher on motor 4, the ailerons, elevator, and rudder on servos 0–2.
+4.5 kg, lift rotors 350 mm apart across the diagonal) on `TableMixer::quadplane()`: lift rotors
+on motors 0–3 in `quad_x` order, the pusher on motor 4, the ailerons, elevator, and rudder on
+servos 0–2.
 Inertia is `plane()`'s Aerosonde scaling at 4.5 kg; the lift rotors take `heavy_quad`'s
 thrust-to-weight 2, lag, and yaw torque, the pusher `plane()`'s thrust-to-weight 1.2. It hovers
 on core's copter configs with roll and pitch gains from the sim autotune; cruise configs come

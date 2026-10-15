@@ -18,6 +18,13 @@
 //!   below zero are clipped.
 //! - **Servo rows** get `roll · r + pitch · p + yaw · y` over their full range, with no thrust
 //!   term, each clamped to `[-1, 1]` on its own.
+//! - **Pusher rows** (a lift+cruise VTOL's forward motor) get the cruise thrust times
+//!   `thrust_factor`, like [`plane`](TableMixer::plane)'s motor, and no moments; they aren't
+//!   desaturated with the lift motors.
+//!
+//! On a lift+cruise VTOL the stabilizer sets [`ControlOutput::cruise`]: motor rows then fly
+//! `thrust` and `moments`, and pusher and servo rows fly the cruise thrust and moments. Without
+//! it, servo rows take `moments` and pusher rows stay at 0.
 //!
 //! [`Mixer::saturation`] reports `mixer_thrust` when the motors were shifted down, and
 //! `mixer_moments` when the motor moments were scaled down or clipped, or a servo was clamped.
@@ -50,11 +57,12 @@
 //! | [`bi`](TableMixer::bi) | 0 L, 1 R | 0 left tilt, 1 right tilt |
 //! | [`tailsitter_2p`](TableMixer::tailsitter_2p) | 0 L, 1 R | 0 left elevon, 1 right elevon |
 //! | [`plane`](TableMixer::plane) | 0 nose | 0 ailerons, 1 elevator, 2 rudder |
+//! | [`quadplane`](TableMixer::quadplane) | lift 0 FL, 1 FR, 2 RL, 3 RR; 4 pusher | 0 ailerons, 1 elevator, 2 rudder |
 
 use thiserror::Error;
 
 use crate::math::{desaturate, saturate_throttle, saturate_unit};
-use crate::{ActuatorCommand, ControlOutput, Mixer, Saturation, Vec3};
+use crate::{ActuatorCommand, ControlOutput, CruiseOutput, Mixer, Saturation, Vec3};
 
 mod presets;
 #[cfg(test)]
@@ -87,6 +95,7 @@ pub struct MixRow {
     roll: f32,
     pitch: f32,
     yaw: f32,
+    pusher: bool,
 }
 
 impl MixRow {
@@ -98,6 +107,7 @@ impl MixRow {
             roll,
             pitch,
             yaw,
+            pusher: false,
         }
     }
 
@@ -108,6 +118,30 @@ impl MixRow {
             roll,
             pitch,
             yaw,
+            pusher: false,
+        }
+    }
+
+    /// A lift+cruise VTOL's pusher (forward motor) on `motors[index]`: the cruise thrust
+    /// ([`ControlOutput::cruise`]), no moments, not desaturated with the motor rows. Its slot
+    /// comes after every motor row's.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::mixers::{MixRow, Slot};
+    ///
+    /// let pusher = MixRow::pusher(4);
+    /// assert_eq!(pusher.slot(), Slot::Motor(4));
+    /// assert!(pusher.is_pusher());
+    /// ```
+    pub const fn pusher(index: u8) -> Self {
+        MixRow {
+            slot: Slot::Motor(index),
+            roll: 0.0,
+            pitch: 0.0,
+            yaw: 0.0,
+            pusher: true,
         }
     }
 
@@ -129,6 +163,11 @@ impl MixRow {
     /// How much a yaw moment moves this output.
     pub const fn yaw(&self) -> f32 {
         self.yaw
+    }
+
+    /// Whether this is a [`pusher`](Self::pusher) row.
+    pub const fn is_pusher(&self) -> bool {
+        self.pusher
     }
 
     fn moment(&self, moments: Vec3) -> f32 {
@@ -174,10 +213,13 @@ pub enum MixerError {
     /// Two rows drive the same slot.
     #[error("mixer slot {0:?} appears twice")]
     DuplicateSlot(Slot),
-    /// Motor slots skip an index: `m` motor rows must drive `motors[0..m]` (the backend's
-    /// mapping, not the table, picks each motor's channel).
+    /// Motor slots skip an index: `m` motor and pusher rows must drive `motors[0..m]` (the
+    /// backend's mapping, not the table, picks each motor's channel).
     #[error("mixer slot {0:?} leaves a gap in the motor slots")]
     MotorGap(Slot),
+    /// A pusher row's slot comes before a motor row's: pushers follow the motors.
+    #[error("mixer pusher slot {0:?} comes before a motor slot")]
+    PusherBeforeMotor(Slot),
     /// A row has a NaN or infinite factor.
     #[error("mixer slot {0:?} has a non-finite factor")]
     NonFiniteFactor(Slot),
@@ -239,7 +281,7 @@ pub enum MixerError {
 pub struct TableMixer<const N: usize> {
     rows: [MixRow; N],
     config: MixerConfig,
-    /// Motor rows, which drive slots `0..motor_count`.
+    /// Motor rows (not pushers), which drive slots `0..motor_count`.
     motor_count: usize,
     /// What the last [`mix`](Mixer::mix) gave up.
     saturation: Saturation,
@@ -251,8 +293,8 @@ impl<const N: usize> TableMixer<N> {
     /// # Errors
     ///
     /// [`MixerError`] when the table is empty, a slot index is 8 or more, two rows share a
-    /// slot, the motor slots skip an index, a factor is not finite, or `config` is out of
-    /// range.
+    /// slot, the motor slots skip an index, a pusher comes before a motor, a factor is not
+    /// finite, or `config` is out of range.
     pub fn new(rows: [MixRow; N], config: MixerConfig) -> Result<Self, MixerError> {
         validate_rows(&rows)?;
         validate_config(&config)?;
@@ -287,7 +329,7 @@ impl<const N: usize> TableMixer<N> {
 
     /// Rows and config already known valid (the presets; a test runs each through `new`).
     fn from_valid(rows: [MixRow; N], config: MixerConfig) -> Self {
-        let motor_count = motor_count(&rows);
+        let motor_count = motor_count(&rows, false);
         TableMixer {
             rows,
             config,
@@ -304,6 +346,13 @@ impl<const N: usize> Mixer for TableMixer<N> {
         // Out-of-range or NaN inputs saturate rather than panic (see `crate::math`).
         let thrust = saturate_throttle(command.thrust);
         let moments = command.moments.map(saturate_unit);
+        // Without a cruise output, servos fly the moments and pushers stay stopped.
+        let cruise = command.cruise.unwrap_or(CruiseOutput {
+            thrust: 0.0,
+            moments: command.moments,
+        });
+        let cruise_thrust = saturate_throttle(cruise.thrust);
+        let surface_moments = cruise.moments.map(saturate_unit);
 
         let MixerConfig {
             thrust_factor,
@@ -323,11 +372,15 @@ impl<const N: usize> Mixer for TableMixer<N> {
             match row.slot {
                 Slot::Motor(index) => {
                     if let Some(motor) = command.motors.get_mut(usize::from(index)) {
-                        *motor = collective + row.moment(motor_moments);
+                        *motor = if row.pusher {
+                            cruise_thrust * thrust_factor
+                        } else {
+                            collective + row.moment(motor_moments)
+                        };
                     }
                 }
                 Slot::Servo(index) => {
-                    let value = row.moment(moments);
+                    let value = row.moment(surface_moments);
                     servo_clamped |= value.abs() > 1.0;
                     if let Some(servo) = command.servos.get_mut(usize::from(index)) {
                         *servo = value.clamp(-1.0, 1.0);
@@ -335,7 +388,8 @@ impl<const N: usize> Mixer for TableMixer<N> {
                 }
             }
         }
-        // Motor slots are `0..motor_count` (validated), so the slice holds exactly the motors.
+        // Motor slots are `0..motor_count`, pushers after them (validated), so the slice holds
+        // exactly the motors.
         let desaturation = command
             .motors
             .get_mut(..self.motor_count)
@@ -357,9 +411,10 @@ impl<const N: usize> Mixer for TableMixer<N> {
     }
 }
 
-fn motor_count(rows: &[MixRow]) -> usize {
+/// Rows driving a motor slot, pushers included when `pushers`.
+fn motor_count(rows: &[MixRow], pushers: bool) -> usize {
     rows.iter()
-        .filter(|row| matches!(row.slot, Slot::Motor(_)))
+        .filter(|row| matches!(row.slot, Slot::Motor(_)) && (pushers || !row.pusher))
         .count()
 }
 
@@ -380,12 +435,19 @@ fn validate_rows(rows: &[MixRow]) -> Result<(), MixerError> {
         }
     }
     // With unique indices, the motors fill `0..count` exactly when none is `count` or above.
-    let motor_count = motor_count(rows);
+    let slot_count = motor_count(rows, true);
     if let Some(row) = rows
         .iter()
-        .find(|row| matches!(row.slot, Slot::Motor(index) if usize::from(index) >= motor_count))
+        .find(|row| matches!(row.slot, Slot::Motor(index) if usize::from(index) >= slot_count))
     {
         return Err(MixerError::MotorGap(row.slot));
+    }
+    // Pushers follow the motors, so the motors alone fill `0..motors` for desaturation.
+    let lift_count = motor_count(rows, false);
+    if let Some(row) = rows.iter().find(
+        |row| matches!(row.slot, Slot::Motor(index) if row.pusher && usize::from(index) < lift_count),
+    ) {
+        return Err(MixerError::PusherBeforeMotor(row.slot));
     }
     Ok(())
 }

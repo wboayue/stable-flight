@@ -13,10 +13,10 @@ mod tests;
 ///
 /// Postcard is not self-describing, so any change to a message's shape (a new variant, a
 /// reordered or retyped field) must bump this.
-pub const PROTOCOL_VERSION: u8 = 5;
+pub const PROTOCOL_VERSION: u8 = 6;
 
 /// Largest encoded frame in bytes, trailing `0x00` delimiter included. Every [`Message`] fits.
-pub const MAX_FRAME_LEN: usize = 256;
+pub const MAX_FRAME_LEN: usize = 384;
 
 const VERSION_LEN: usize = 1;
 const CRC_LEN: usize = 2;

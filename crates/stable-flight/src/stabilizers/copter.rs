@@ -418,6 +418,7 @@ impl CopterStabilizer {
         ControlOutput {
             thrust: self.fit_to_thrust_curve(setpoint.thrust),
             moments,
+            cruise: None,
         }
     }
 
@@ -451,6 +452,7 @@ impl CopterStabilizer {
         ControlOutput {
             thrust: self.fit_to_thrust_curve(thrust),
             moments,
+            cruise: None,
         }
     }
 

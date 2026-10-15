@@ -5,7 +5,7 @@ use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
 };
 use stable_flight::guidance::copter::CopterGuidanceConfig;
-use stable_flight::mixers::{MixRow, MixerConfig, TableMixer};
+use stable_flight::mixers::{MixerConfig, TableMixer};
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 
 use crate::fixed_wing::FixedWingModel;
@@ -15,16 +15,16 @@ use crate::start::Start;
 use super::plane::{aerosonde_inertia, plane};
 use super::{hover_thrust, max_thrust_n, x_moment_arm_m};
 
-/// A simulated quadplane: its physics, the hover mixer that drives its lift rotors and
+/// A simulated quadplane: its physics, the mixer that drives its lift rotors, pusher, and
 /// surfaces, the hover guidance and stabilizer configs tuned for it, and a start in cruise.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct QuadPlaneAirframe {
     /// Physical parameters.
     pub model: QuadPlaneModel,
-    /// The hover mixer: lift rotors on motors 0–3 in [`TableMixer::quad_x`]'s order, the
-    /// ailerons, elevator, and rudder on servos 0–2 as on [`TableMixer::plane`]. No row drives
-    /// the pusher (motor 4), so it stays stopped.
-    pub mixer: TableMixer<7>,
+    /// [`TableMixer::quadplane`]: lift rotors on motors 0–3 in [`TableMixer::quad_x`]'s order,
+    /// the pusher on motor 4, the ailerons, elevator, and rudder on servos 0–2 as on
+    /// [`TableMixer::plane`]. Hover configs set no cruise output, so the pusher stays stopped.
+    pub mixer: TableMixer<8>,
     /// Hover guidance configuration.
     pub guidance: CopterGuidanceConfig,
     /// Hover stabilizer configuration.
@@ -98,7 +98,7 @@ pub fn quadplane() -> QuadPlaneAirframe {
         },
         pusher_slot: PUSHER_SLOT,
     };
-    let mixer = hover_mixer();
+    let mixer = TableMixer::quadplane();
     let defaults = CopterStabilizerConfig::default();
     let angle = Gains {
         p: ANGLE_P,
@@ -151,20 +151,3 @@ pub fn quadplane() -> QuadPlaneAirframe {
 
 /// Roll and pitch angle P: the sim autotune's (#390).
 const ANGLE_P: f32 = 9.0;
-
-/// [`TableMixer::quad_x`]'s motor rows and [`TableMixer::plane`]'s servo rows.
-fn hover_mixer() -> TableMixer<7> {
-    let [front_left, front_right, back_left, back_right] = *TableMixer::quad_x().rows();
-    let rows = [
-        front_left,
-        front_right,
-        back_left,
-        back_right,
-        MixRow::servo(0, 1.0, 0.0, 0.0),
-        MixRow::servo(1, 0.0, 1.0, 0.0),
-        MixRow::servo(2, 0.0, 0.0, 1.0),
-    ];
-    TableMixer::new(rows, MixerConfig::default())
-        // Two valid presets' rows: motors 0–3 and servos 0–2, each slot once.
-        .unwrap_or_else(|error| unreachable!("quad_x's motors and plane's servos: {error}"))
-}

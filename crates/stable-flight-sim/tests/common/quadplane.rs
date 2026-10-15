@@ -17,7 +17,7 @@ pub type QuadPlaneLoop<C> = FlightLoop<
     SimQuadPlane,
     CopterGuidance,
     CopterStabilizer,
-    TableMixer<7>,
+    TableMixer<8>,
     RecordingTelemetry<RECORDED>,
 >;
 

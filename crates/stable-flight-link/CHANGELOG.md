@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `PROTOCOL_VERSION` 6 (#391): core `ControlOutput` gains `cruise`, which
+  changes the `Record` shape.
+- **Breaking:** `MAX_FRAME_LEN` is 384 bytes (was 256), so the largest `Record`, with a
+  lift+cruise VTOL's `cruise` output, fits (#391). Fixed-size buffers sized by hand grow with
+  it.
 - **Breaking:** `PROTOCOL_VERSION` 5 (#326): core `AttitudeSetpoint`, `RateSetpoint`, and
   `BodyRateSetpoint` gain `idle`, which changes the `Record` shape.
 - **Breaking:** `PROTOCOL_VERSION` 4 (#388): core `AttitudeSetpoint` and `PlaneSetpoint`

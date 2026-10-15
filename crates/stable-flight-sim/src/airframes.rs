@@ -342,11 +342,11 @@ fn thrust_for(
     )
 }
 
-/// How many motors `mixer` drives.
+/// How many motors `mixer` drives, not counting pushers.
 fn motor_count<const N: usize>(mixer: &TableMixer<N>) -> f32 {
     mixer
         .rows()
         .iter()
-        .filter(|row| matches!(row.slot(), Slot::Motor(_)))
+        .filter(|row| matches!(row.slot(), Slot::Motor(_)) && !row.is_pusher())
         .count() as f32
 }

@@ -4,9 +4,9 @@ use assert2::check;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{
     AbsoluteAttitudeCommand, ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command,
-    ControlInput, ControlMode, ControlOutput, FailsafeState, FlightMode, FlightModeReport,
-    FlightRegime, LandCommand, ModeRefusal, RateCommand, RateSetpoint, Saturation, Setpoint,
-    TelemetryRecord, Vec2, Vec3, VehicleState, WaypointCommand,
+    ControlInput, ControlMode, ControlOutput, CruiseOutput, FailsafeState, FlightMode,
+    FlightModeReport, FlightRegime, LandCommand, ModeRefusal, RateCommand, RateSetpoint,
+    Saturation, Setpoint, TelemetryRecord, Vec2, Vec3, VehicleState, WaypointCommand,
 };
 
 use super::*;
@@ -49,6 +49,10 @@ fn worst_case_record() -> Record {
         control: ControlOutput {
             thrust: 0.5,
             moments: Vec3::new(0.1, 0.2, 0.3),
+            cruise: Some(CruiseOutput {
+                thrust: 0.4,
+                moments: Vec3::new(-0.1, 0.0, 0.2),
+            }),
         },
         actuators: ActuatorCommand {
             motors: [0.5; 8],

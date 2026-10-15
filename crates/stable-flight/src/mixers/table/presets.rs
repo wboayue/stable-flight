@@ -93,6 +93,18 @@ const PLANE: [MixRow; 4] = [
     MixRow::servo(2, 0.0, 0.0, 1.0),
 ];
 
+/// [`QUAD_X`]'s lift rotors, a pusher after them, and [`PLANE`]'s surfaces.
+const QUADPLANE: [MixRow; 8] = [
+    QUAD_X[0],
+    QUAD_X[1],
+    QUAD_X[2],
+    QUAD_X[3],
+    MixRow::pusher(4),
+    PLANE[1],
+    PLANE[2],
+    PLANE[3],
+];
+
 const BI: [MixRow; 4] = [
     MixRow::motor(0, 1.0, 0.0, 0.0),
     MixRow::motor(1, -1.0, 0.0, 0.0),
@@ -265,5 +277,43 @@ impl TableMixer<8> {
     /// ```
     pub fn x8() -> Self {
         Self::from_valid(X8, MixerConfig::default())
+    }
+
+    /// Lift+cruise VTOL (quadplane): [`quad_x`](Self::quad_x)'s lift rotors on motors 0–3
+    /// (front-left, front-right, rear-left, rear-right), a pusher on motor 4, and
+    /// [`plane`](TableMixer::plane)'s surfaces on servos 0–2 (ailerons, elevator, rudder).
+    /// Seen from above:
+    ///
+    /// ```text
+    ///   0 cw    1 ccw
+    ///  =====+=====      wing: servo 0 ailerons
+    ///   2 ccw   3 cw
+    ///      -+-          tail: servo 1 elevator, servo 2 rudder
+    ///       4           pusher
+    /// ```
+    ///
+    /// The lift rotors fly [`ControlOutput::thrust`](crate::ControlOutput::thrust) and
+    /// [`moments`](crate::ControlOutput::moments); the pusher and surfaces fly
+    /// [`cruise`](crate::ControlOutput::cruise), and stay stopped and neutral without it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::mixers::TableMixer;
+    /// use stable_flight::{ControlOutput, CruiseOutput, Mixer, Vec3};
+    ///
+    /// let mut mixer = TableMixer::quadplane();
+    /// // Cruise: lift rotors stopped, pusher at 0.5 · 0.9, ailerons rolling right.
+    /// let cruise = ControlOutput {
+    ///     cruise: Some(CruiseOutput { thrust: 0.5, moments: Vec3::new(0.2, 0.0, 0.0) }),
+    ///     ..Default::default()
+    /// };
+    /// let output = mixer.mix(&cruise);
+    /// assert_eq!(output.motors[..4], [0.0; 4]);
+    /// assert_eq!(output.motors[4], 0.45);
+    /// assert_eq!(output.servos[0], 0.2);
+    /// ```
+    pub fn quadplane() -> Self {
+        Self::from_valid(QUADPLANE, MixerConfig::default())
     }
 }

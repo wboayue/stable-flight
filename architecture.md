@@ -148,7 +148,7 @@ translates to MAVLink in `std` code.
   message shape change bumps it. The CRC (CRC-16/IBM-3740, bitwise to save flash) is checked
   before the version, so a corrupted version byte reads as corruption.
 * **Sealed messages.** Only `Uplink` and `Downlink` implement `Message`.
-* **Fixed size.** Every message fits `MAX_FRAME_LEN` (256 bytes; a test checks the worst case),
+* **Fixed size.** Every message fits `MAX_FRAME_LEN` (384 bytes; a test checks the worst case),
   so both ends use stack buffers.
 * **One frame per decode.** `decode` rejects bytes after the delimiter, so a transport that hands
   over two frames at once fails loudly instead of losing the second.
@@ -204,7 +204,14 @@ supplies pacing.
 * **Mixer**: maps thrust and moments to `ActuatorCommand`'s generic motor and servo slots. The
   mixer sets what each slot means; the backend's mapping (e.g. `ActuatorMapping`) sets which
   channel it drives. `TableMixer` covers multirotors and thrust-and-servo frames with one table
-  per frame (a row per slot).
+  per frame (a row per slot). A lift+cruise VTOL flies two actuator sets at once, so
+  `ControlOutput::cruise` carries the pusher's thrust and the surfaces' moments beside the lift
+  rotors' `thrust` and `moments`, and the table's pusher and servo rows take it (PX4 splits
+  rotor and surface torque the same way, `vtol_att_control/standard.cpp:294-368`). It's an
+  `Option`, `None` for every other frame, so their stabilizers and tables don't change.
+  Rejected: PX4's body thrust vector (`thrust: Vec3`), which still needs a second moment set
+  and has no lateral-thrust consumer; and a composite mixer over two tables, which needs slot
+  offsets on `TableMixer` and a second overlap check.
 * **TelemetryPublisher**: receives each tick's `TelemetryRecord`. A tuple `(A, B)` fans out to
   both, and `()` is the no-op sink (`stable_flight::composition`).
 * **View**: `View<T>` runs any guidance or stabilizer in a body frame rotated by a constant: the

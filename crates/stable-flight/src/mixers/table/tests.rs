@@ -759,6 +759,99 @@ fn plane_preset_puts_each_moment_on_its_surface() {
     }
 }
 
+/// The quadplane preset flies its lift rotors on `thrust` and `moments` exactly as `quad_x`
+/// does, and its pusher and surfaces on `cruise`: lift rotors idle in cruise, surfaces neutral
+/// and the pusher stopped in a hover, and the pusher kept out of the lift rotors'
+/// desaturation.
+#[test]
+fn quadplane_preset_splits_lift_and_cruise() {
+    let cruise = |thrust, moments| Some(CruiseOutput { thrust, moments });
+    let saturation = |mixer_thrust, mixer_moments| Saturation {
+        mixer_thrust,
+        mixer_moments,
+        ..Saturation::default()
+    };
+    // (case, control, expected pusher, expected servos[..3], saturation)
+    let cases = [
+        (
+            "hover: surfaces neutral, pusher stopped",
+            ControlOutput {
+                cruise: cruise(0.0, Vec3::zeros()),
+                ..ControlOutput::new(0.5, Vec3::new(0.2, -0.1, 0.1))
+            },
+            0.0,
+            [0.0; 3],
+            saturation(false, false),
+        ),
+        (
+            "cruise: lift rotors idle",
+            ControlOutput {
+                cruise: cruise(0.6, Vec3::new(0.3, -0.2, 0.1)),
+                ..ControlOutput::default()
+            },
+            0.54,
+            [0.3, -0.2, 0.1],
+            saturation(false, false),
+        ),
+        (
+            "transition: both sides fly",
+            ControlOutput {
+                cruise: cruise(0.8, Vec3::new(0.0, 0.3, 0.0)),
+                ..ControlOutput::new(0.5, Vec3::new(0.1, 0.0, 0.0))
+            },
+            0.72,
+            [0.0, 0.3, 0.0],
+            saturation(false, false),
+        ),
+        (
+            "no cruise output: servos take the moments, pusher stopped",
+            ControlOutput::new(0.5, Vec3::new(0.1, 0.0, -0.2)),
+            0.0,
+            [0.1, 0.0, -0.2],
+            saturation(false, false),
+        ),
+        (
+            "lift saturated: collective gives way, pusher doesn't",
+            ControlOutput {
+                cruise: cruise(1.0, Vec3::zeros()),
+                ..ControlOutput::new(1.0, Vec3::new(1.0, 1.0, 0.0))
+            },
+            0.9,
+            [0.0; 3],
+            saturation(true, false),
+        ),
+        (
+            "out-of-range or NaN cruise saturates",
+            ControlOutput {
+                cruise: cruise(f32::NAN, Vec3::new(2.0, f32::NAN, -3.0)),
+                ..ControlOutput::default()
+            },
+            0.0,
+            [1.0, 0.0, -1.0],
+            saturation(false, false),
+        ),
+    ];
+    for (case, control, pusher, servos, saturation) in cases {
+        let mut mixer = TableMixer::quadplane();
+        let output = mixer.mix(&control);
+        let lift = TableMixer::quad_x()
+            .mix(&ControlOutput::new(control.thrust, control.moments))
+            .motors;
+        assert!(output.motors[..4] == lift[..4], "{case}: {output:?}");
+        assert!(approx_eq(output.motors[4], pusher), "{case}: {output:?}");
+        assert!(output.motors[5..] == [0.0; 3], "{case}: {output:?}");
+        for (servo, expected) in output.servos.iter().zip(servos) {
+            assert!(approx_eq(*servo, expected), "{case}: {output:?}");
+        }
+        assert!(output.servos[3..] == [0.0; 5], "{case}: {output:?}");
+        assert!(
+            mixer.saturation() == saturation,
+            "{case}: {:?}",
+            mixer.saturation()
+        );
+    }
+}
+
 /// A servo asked past its range clamps on its own and reports the lost moment; the other
 /// servo and the motors are untouched.
 #[test]
@@ -849,6 +942,7 @@ fn presets_are_valid_tables() {
     check("y6", TableMixer::y6());
     check("octo_x", TableMixer::octo_x());
     check("x8", TableMixer::x8());
+    check("quadplane", TableMixer::quadplane());
 }
 
 /// Invalid tables and configs are rejected at construction, naming the problem.
@@ -856,7 +950,7 @@ fn presets_are_valid_tables() {
 fn rejects_invalid_tables_and_configs() {
     let motor = |i| MixRow::motor(i, 1.0, 0.0, 0.0);
     let good = MixerConfig::default();
-    let cases: [([MixRow; 2], MixerConfig, MixerError); 8] = [
+    let cases: [([MixRow; 2], MixerConfig, MixerError); 10] = [
         (
             [motor(0), motor(2)],
             good,
@@ -866,6 +960,16 @@ fn rejects_invalid_tables_and_configs() {
             [motor(0), motor(8)],
             good,
             MixerError::SlotOutOfRange(Slot::Motor(8)),
+        ),
+        (
+            [motor(0), MixRow::pusher(2)],
+            good,
+            MixerError::MotorGap(Slot::Motor(2)),
+        ),
+        (
+            [MixRow::pusher(0), motor(1)],
+            good,
+            MixerError::PusherBeforeMotor(Slot::Motor(0)),
         ),
         (
             [motor(0), MixRow::servo(8, 0.0, 0.0, 1.0)],
@@ -914,6 +1018,9 @@ fn rejects_invalid_tables_and_configs() {
         );
     }
     assert!(TableMixer::<0>::new([], good) == Err(MixerError::Empty));
+    // A pusher alone, or after the motors, is a valid table.
+    assert!(TableMixer::new([MixRow::pusher(0)], good).is_ok());
+    assert!(TableMixer::new([motor(0), MixRow::pusher(1)], good).is_ok());
     // A motor and a servo may share an index: they are different slots.
     assert!(TableMixer::new([motor(0), MixRow::servo(0, 0.0, 0.0, 1.0)], good).is_ok());
     assert!(
