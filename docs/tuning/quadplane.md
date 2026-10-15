@@ -43,6 +43,28 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
    pusher thrust that holds level flight at trim airspeed.
 4. **Transitions.** Tune these last, from a settled hover at least `TRAN_MIN_HGT` up.
 
+**Worked example (Alia 250 in X-Plane, hover only, #351):** a full-size aircraft, so the
+small-copter defaults don't carry over; measure first, then tune on a sim model of it.
+- **Measure:** `just xplane-sweep` on the runway: the yaw sign of each diagonal (reversed
+  from `quad_x`: `TableMixer::with_reversed_yaw`), the liftoff throttle (0.648), the thrust
+  curve from the step after liftoff (X-Plane's electric throttle sets power, thrust goes as
+  its 2/3 power: `STAB_THR_EXPO` 1.5), the motor lag (0.17 s), and each axis's response to a
+  moment pulse (the effective inertias).
+- **Mixer headroom:** at thrust factor 0.9 a full moment moved each motor 0.1, too little to
+  follow a step; 0.8 doubles it with the hover still under the ceiling. At the default yaw
+  ratio 2.5, a full yaw clipped one diagonal and nearly stopped the other, and the mixer gave
+  up collective: the Alia sank 53 m at full throttle. Yaw ratio 1 stops it, at the cost of
+  holding heading at a few m/s sideways ([#440](https://github.com/wboayue/stable-flight/issues/440)).
+- **Rate and angle:** the sim autotune on a model sized from the sweep, with the probes
+  scaled to the aircraft (0.2 rad/s rate steps, 5° angle steps, a 30 s settle;
+  `stable-flight-sim` `tests/common/large.rs`): rate P 1.52 roll, 2.57 pitch, no D; angle P
+  1.03. Rate I 0.2 trims X-Plane's nose-up pitch at level thrust.
+- **Yaw and heading:** the quad values limit-cycled at ±1 moment; yaw rate P 5 without I and
+  heading P 0.8 step 29° with 2% overshoot.
+- **Position:** core's lateral loop swayed into the tilt cap after a 5° step;
+  `GUID_LAT_POS_P` 0.2 and `GUID_LAT_VEL_P` 0.4, `_I` 0.05 hold a hover through a gust and fly waypoint legs to within
+  lat/lon resolution.
+
 **Worked example (Titan Cobra in RealFlight):**
 - **Hover:** nose-heavy on its lift rotors, a level hover holds front motors at 0.60 and rear
   at 0.52, a 0.37 nose-up moment; pitch rate I 0.5 holds it. The autotune raised roll rate P

@@ -50,8 +50,8 @@ cargo test -p stable-flight-sim   # unit tests, conformance, and the closed-loop
 
 Each file in `tests/` flies the full pipeline on `airframes::quad_x()` unless noted (`plane_*`
 on `airframes::plane()`, `tailsitter_*` on `airframes::tailsitter()`, `quadplane_*` on
-`airframes::quadplane()`); wiring and the copter and plane step-response specs are in
-`tests/common`:
+`airframes::quadplane()`, `alia` on `airframes::alia250()`); wiring and the copter and plane
+step-response specs are in `tests/common`:
 
 | Test | Asserts |
 |---|---|
@@ -72,6 +72,7 @@ on `airframes::plane()`, `tailsitter_*` on `airframes::tailsitter()`, `quadplane
 | `quadplane_hover` | Takes off from its gear on the lift rotors and holds a hover within the copter's calm-air bands, the pusher stopped |
 | `quadplane_transition` | Against PX4's VTOL limits, as `tailsitter_transition`, calm air: from a hover at 30 m, forward to plane flight within 15 s (measured 8.2 s), then the line held within `plane_level`'s bands; back to a hover where it stops within 10 s (measured 7.3 s), then held within the copter's calm-air bands, and so are hover points 120 m ahead of and behind it, flown to after the handover; a pusher too weak for the airspeed gate times out (`TransitionTimeout`); the link going silent mid-transition hands over to `HoldCommander`, back on the lift rotors, which holds where it engaged. Each loses at most 20 m (`VT_QC_T_ALT_LOSS`, until 5 s after) |
 | `quadplane_waypoints` | Copter legs on the lift rotors from a hover at 30 m, each within PX4's 20 m altitude loss (`VT_QC_T_ALT_LOSS`) and then held within the copter's calm-air position and altitude bands: in calm air 100 m ahead, behind, and to the side, uncapped and at ArduPilot's 5 m/s `Q_WP_SPD`; in an 11 m/s headwind a takeoff and hold, and legs upwind and downwind at 5 m/s ([#427](https://github.com/wboayue/stable-flight/issues/427)) |
+| `alia` | The Alia 250, a full-size multirotor, on the autotune plan scaled to it (`tests/common/large.rs`: 0.2 rad/s rate and 5° angle steps, a 30 s settle): every stage `Tuned` from rate P 1 and 3 to the airframe's gains within 25%; every loop's steps (yaw rate 0.2 rad/s, heading 29°) within the step spec's overshoot, bounce-back, settling, and clipping bands (PX4's rise time aside: the motors alone lag 0.17 s); the calm-air hover bands; back after `hover`'s gust (measured + margin) |
 | `determinism` | A windy, gusty route twice gives bit-identical states, clean and with every perturbation on (one seed); the airplane's line, the tailsitter's takeoff, transition to plane flight, and back, and the quadplane's takeoff to a hover through the same wind too |
 
 ## Timing
@@ -96,7 +97,7 @@ Shared by every vehicle:
 
 | Part | Model |
 |---|---|
-| Motors | First-order lag on each command; thrust `max_thrust_n · command²`; yaw drag torque ∝ thrust |
+| Motors | First-order lag on each command; thrust `max_thrust_n · command^thrust_exponent` (2 when the command sets prop speed, 2/3 when it sets motor power); yaw drag torque ∝ thrust |
 | Geometry | From the mixer's rows: a roll or pitch factor of 1 acts at `moment_arm_m`, a yaw factor of ±1 gives `yaw_torque_per_thrust_m`, so torques always match what the mixer expects. Motor-only mixers (servo rows are rejected) |
 | Aerodynamics | Linear drag on the velocity through the air; linear rotational damping |
 
@@ -147,6 +148,7 @@ derived from the model; roll and pitch gains come from the sim autotune.
 | `quad_x()` | 1 kg | 250 mm | 2.4 | 30 ms | Plausible 5-inch with a camera; yaw and heading hand-tuned on the step responses |
 | `heavy_quad()` | 3 kg | 350 mm | 2 | 50 ms | Mass and diagonal from ArduPilot SITL's default frame; yaw and heading `quad_x`'s |
 | `racer()` | 0.8 kg | 250 mm | 8 | 15 ms | Mass and diagonal from ArduPilot SITL's freestyle model; yaw and heading `quad_x`'s |
+| `alia250()` | 2,857 kg | 5.2 m × 6.1 m | 1.34 | 170 ms | X-Plane's Alia 250 (`.acf`, `engine-sweep-xplane`); yaw and heading hand-tuned on its yaw steps; not in `all()` (below) |
 
 `heavy_quad` and `racer` take ArduPilot's ring inertia (half the mass on the motor ring); their
 thrust-to-weight and motor lag are chosen to span the range (sources in `airframes` rustdoc).
@@ -169,8 +171,14 @@ on core's copter configs with roll and pitch gains from the sim autotune, and fl
 `plane()`'s gains with the cruise thrust for its mass on the pusher. Transitions fly core's
 defaults. Copter flight hands nose-down pitch past 3° to the pusher (`ForwardThrust`, gain 1.2,
 as ArduPilot's `Q_FWD_THR_GAIN`), so the wing isn't flown at negative α.
-It stands in for the Alia 250 until the X-Plane backend reads its `.acf`
-([#351](https://github.com/wboayue/stable-flight/issues/351)).
+`alia250()` is the BETA Alia 250 as X-Plane 12 flies it in copter mode, 2,857 kg, sized from
+its `.acf` and an `engine-sweep-xplane` run rather than from the real aircraft
+([#351](https://github.com/wboayue/stable-flight/issues/351)): thrust going with
+command^(2/3) (X-Plane's electric throttle sets power), 0.17 s motor lag, the effective roll
+and pitch inertias the sweep's moment pulses measured, and `quad_x` with yaw reversed at
+thrust factor 0.8 and yaw ratio 1. Its roll and pitch gains come from the sim autotune on a
+plan scaled to it, its yaw and heading from its yaw steps, and its lateral loop is slowed for
+its slow tilt; `stable-flight-sitl-xplane`'s `airframes::alia250()` flies these in X-Plane.
 
 `tailsitter()` is ArduPilot SITL's tailsitter (`plane-tailsitter`: the default airplane with
 1.5× its thrust) on two motors 25 cm either side of the centerline and
@@ -182,6 +190,10 @@ limits sit below both handover angles, so the transition tests fly ramps past th
 defaults but for the airspeed gate, the wing's 10 m/s minimum.
 
 ## Limits
+
+The Alia leaves out X-Plane's nose-up pitch at level thrust (2.2 °/s², which X-Plane's rate
+I trims), its tail's weathervaning in sideways flight, and its wing in hover; its drag is a
+guess from its size.
 
 Out of scope: blade-element props, ground effect, battery sag, estimator and filter models
 (attitude, position, and velocity are exact; only the gyro is noisy), terrain, visuals,
