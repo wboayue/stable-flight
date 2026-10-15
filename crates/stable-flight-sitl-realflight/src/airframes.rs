@@ -304,8 +304,8 @@ pub fn explora_vtol()
 /// Fly it with [`QuadPlaneGuidance`](stable_flight::guidance::vtol::QuadPlaneGuidance) and
 /// [`QuadPlaneStabilizer`](stable_flight::stabilizers::vtol::QuadPlaneStabilizer).
 ///
-/// - **Hover:** roll rate P and D from a RealFlight autotune, the rest QuadCopterX's hand
-///   tune, with more pitch rate I; it flies a hover and a landing (#433). Pitch rate steps
+/// - **Hover:** roll rate P and D from a RealFlight autotune, the rest starting from
+///   QuadCopterX's hand tune, with more pitch rate I; it flies a hover and a landing (#433). Pitch rate steps
 ///   reach 0.90 of the step on any gains tried, and angle steps don't settle
 ///   (TODO(#433)).
 ///   The model is nose-heavy on its lift rotors: with
@@ -330,7 +330,6 @@ pub fn explora_vtol()
 pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig, TableMixer<8>>
 {
     let gains = |p, i, d| Gains { p, i, d };
-    let quadcopter_x = quadcopter_x();
     let defaults = QuadPlaneGuidanceConfig::default();
     Airframe {
         guidance: QuadPlaneGuidanceConfig {
@@ -366,9 +365,21 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                     // at 0.90 of the step (#433). The nose-heavy hover needs a steady 0.37
                     // nose-up moment; I · max_integral = 0.5 holds it with margin.
                     pitch_gains: gains(0.5, 0.5, 0.004),
-                    ..quadcopter_x.stabilizer.body_rate
+                    // QuadCopterX's hand tune: holds heading through the hover and landing
+                    // (#433).
+                    yaw_gains: gains(0.6, 0.6, 0.0),
+                    max_integral: 1.0,
                 },
-                ..quadcopter_x.stabilizer
+                // QuadCopterX's hand tune; the angle loops are untuned here: steps don't
+                // settle (#433).
+                attitude: AttitudeControllerConfig {
+                    roll_gains: gains(3.0, 0.0, 0.1),
+                    pitch_gains: gains(3.0, 0.0, 0.1),
+                    max_integral: 100.0,
+                    max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
+                    max_rate_radps: Vec2::new(3.0, 3.0),
+                },
+                ..Default::default()
             },
             plane: PlaneStabilizerConfig {
                 // `TRIM_ARSPD_CM` 1240, `ARSPD_FBW_MIN` 11, `ARSPD_FBW_MAX` 18.
