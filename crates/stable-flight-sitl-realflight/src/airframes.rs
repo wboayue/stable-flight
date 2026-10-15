@@ -135,7 +135,8 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 /// - **Thrust limits:** the elevons hold the nose up only in the propwash, and a sink turns
 ///   the airflow against it (flight data: #123). A floor (0.65, below the 0.84 hover) and a
 ///   sink guard (past 1 m/s) keep the propwash; the tilt boost stops at 0.9, leaving motor
-///   headroom for differential thrust.
+///   headroom for differential thrust. Waypoint descents are held to 1.5 m/s, where the nose
+///   stays steady (#414).
 ///
 /// Fly it with [`TailsitterGuidance`](stable_flight::guidance::vtol::TailsitterGuidance) and
 /// [`TailsitterStabilizer`](stable_flight::stabilizers::vtol::TailsitterStabilizer), as the
@@ -189,6 +190,11 @@ pub fn explora_vtol()
                 },
                 // Full stick at the stabilizer's 30° tilt.
                 max_stick_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
+                // Sinking tail first slows the airflow over the elevons: at 3 m/s the nose
+                // swings ±20° on a 2.5 s cycle, at 2 m/s −8…+1°, at 1.5 m/s within 2° (#414).
+                // ArduPilot's and PX4's default descent rate (`AC_WPNav.cpp:13`,
+                // `multicopter_autonomous_params.yaml:71-76` `MPC_Z_V_AUTO_DN`).
+                max_descent_mps: 1.5,
                 ..CopterGuidanceConfig::default()
             },
             plane: PlaneGuidanceConfig {

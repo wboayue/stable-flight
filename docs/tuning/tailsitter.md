@@ -19,7 +19,7 @@ with thrust 0.6. Most tailsitter-specific knobs exist because of this:
 - **Low thrust:** too little thrust in hover or on the back transition, and the elevons can't
   hold the nose.
 - **Sinking:** a sink of a few m/s turns the airflow against the prop wash and drops the nose,
-  whatever the thrust.
+  whatever the thrust, so descents are slower than a copter's.
 - **Roll in hover:** this is differential thrust, which is weak and needs motor headroom.
 
 When a knob trades climbing against sinking, choose climbing: a climb costs height; a sink can
@@ -78,9 +78,10 @@ Each step assumes the ones before it:
 2. Hover rate loops
 3. Hover attitude
 4. Hover thrust limits
-5. Plane cruise and airspeeds
-6. Forward transition
-7. Back transition
+5. Hover descent rate
+6. Plane cruise and airspeeds
+7. Forward transition
+8. Back transition
 
 Params in degrees are marked (deg); thrusts are linear (before the thrust curve), in [0, 1].
 
@@ -147,15 +148,59 @@ The axes are the hover view's:
   `GUID_ALT_HOVER`, or waypoint flight can't descend and a landing never touches down.
 - **Sink guard:** adds thrust to piloted flight past the sink limit:
   0.65 + 0.15 × 2 = 0.95 at 3 m/s. Waypoint flight limits its own descent
-  (`GUID_DESC_MAX`, 3 m/s), with its altitude target at most 1 m below the vehicle
+  ([step 5](#5-hover-descent-rate)), with its altitude target at most 1 m below the vehicle
   (`ALTITUDE_LEASH_M`), so a hover handed over still climbing doesn't sink past it.
 - **Boost ceiling:** caps the tilt boost, so the motors keep headroom for differential thrust.
   At full boost the motor pair saturates, and a roll can only be pushed one way.
 - **Symptoms:**
-  - The nose drops in a descent: raise the floor or tighten the sink guard.
+  - The nose drops in a piloted descent: raise the floor or tighten the sink guard. In a
+    waypoint descent, lower the descent rate first (step 5).
   - A roll in a tilted hover won't stop: lower the boost ceiling.
 
-## 5. Plane cruise and airspeeds
+## 5. Hover descent rate
+
+| Param | Field | eXplora |
+|---|---|---|
+| `GUID_DESC_MAX` | `hover.max_descent_mps` | 1.5 m/s (core default 3 m/s) |
+
+The fastest descent waypoint flight asks for, including the climb-down after a back
+transition. Sinking tail first, the air meets the prop wash head on, so the elevons lose
+authority as the descent speeds up. The pitch loop then lags, and the nose swings even with
+thrust near hover and the elevons short of full deflection. A sink guard can't help: thrust is
+already there. Landing has its own, slower descent (`GUID_LAND_SPD`, 0.7 m/s).
+
+Start at 1.5 m/s, the default descent rate of ArduPilot (`WP_SPD_DN`) and PX4
+(`MPC_Z_V_AUTO_DN`). The copter default of 3 m/s is too fast for a tailsitter until a flight
+shows otherwise.
+
+**Method.** Fly a hover-only script that climbs to a waypoint and descends 40 m to another
+over the same point (the #414 runs: 60 m to 20 m over the spawn point), with `--record`.
+Across the descent, from the peak `altitude` down to the lower waypoint, read:
+
+- `view_pitch` against `sp_pitch`: a swing on a steady setpoint is this limit;
+- `elevon_*`: the swing's moment, short of ±1 if it's lag rather than lost authority;
+- `climb_mps`: the descent actually flown (screen the tick rate, below).
+
+To descend faster, raise `GUID_DESC_MAX` in 0.5 m/s steps. Keep the fastest rate whose worst
+`view_pitch` error stays within about 3°, and drop back a step at any swing. Compare only
+seconds that ran at about 245 Hz or more: a slower tick rate slows the descent target too.
+
+eXplora (#414), 60 m to 20 m, calm air:
+
+| `GUID_DESC_MAX` | Sink, mean | `view_pitch` | Worst error | Elevon peak | Note |
+|---|---|---|---|---|---|
+| **1.5 m/s** | 1.5 m/s | −3.5…−1.5° | 1.5° | 0.16 | chosen |
+| 2 m/s | 1.9 m/s | −8…+1° | 6° | 0.31 | past 3°: back to 1.5 |
+| 3 m/s | 2.9 m/s | −23…+18°, 2.5 s cycle | 23° | 0.78 | thrust 0.82–0.94 at the nose-down peaks |
+
+Stiffer pitch rate gains (`STAB_RATE_PIT_P` 0.5, `_I` 0.2) at 3 m/s only cut the swing to
+about −12…+5°.
+
+- **Symptoms:**
+  - The nose swings in a waypoint descent while `sp_pitch` holds: lower `GUID_DESC_MAX`.
+  - Descents take too long: raise it in 0.5 m/s steps and check the swing again.
+
+## 6. Plane cruise and airspeeds
 
 | Param | Field | eXplora |
 |---|---|---|
@@ -168,7 +213,7 @@ The axes are the hover view's:
 - **Thrust curve:** match the hover side's, so a handoff keeps the motor commands continuous.
 - **Airspeeds:** still guesses until plane flights measure them.
 
-## 6. Forward transition
+## 7. Forward transition
 
 | Param | Field | eXplora |
 |---|---|---|
@@ -188,7 +233,7 @@ The axes are the hover view's:
   - Times out back to hover: raise `TRAN_FW_THR`, or check that `TRAN_FW_MAX` reaches
     `TRAN_FW_DONE`.
 
-## 7. Back transition
+## 8. Back transition
 
 | Param | Field | eXplora |
 |---|---|---|
@@ -246,6 +291,7 @@ hardware ([#399](https://github.com/wboayue/stable-flight/issues/399)).
 | Hover settles off its altitude, then creeps on | `GUID_ALT_HOVER` |
 | A roll in hover won't stop | `STAB_RATE_RLL_*`, `GUID_BOOST_MAX` |
 | Nose drops in a descent | `GUID_THR_MIN`, `GUID_SINK_LIM`/`_GAIN`, `STAB_RATE_PIT_I` |
+| Nose swings in a waypoint descent, `sp_pitch` steady | `GUID_DESC_MAX` down |
 | Wing sinks right after the forward transition | `TRAN_ASPD_MIN`, `TRAN_FW_THR` |
 | Large climb after the back request | `TRAN_VT_THR` down, `TRAN_VT_RATE` slower |
 | Back ramp wallows nose-high, elevons at full deflection, roll-limit cut | `TRAN_VT_THR` up |

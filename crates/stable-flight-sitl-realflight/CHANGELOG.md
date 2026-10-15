@@ -68,6 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `airframes::explora_vtol()`: waypoint descents are held to 1.5 m/s (`max_descent_mps`, was
+  the 3 m/s default). At 3 m/s the nose swung ±20° in hover descents (#414).
 - `airframes::explora_vtol()` flies the back transition at thrust 0.75, down from hover
   (0.84), with core's default sink guard: it climbs about 9 m after the back request, not 18 m
   (#343).
