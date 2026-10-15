@@ -161,7 +161,17 @@ pub fn failed(checks: &[(&'static str, bool)]) -> Vec<&'static str> {
 /// `target`'s response to `step` from a settled hover on `plant`; `None` if the probe didn't
 /// measure it.
 pub fn respond(plant: &Plant, target: TunedLoop, step: StepConfig) -> Option<StepMetrics> {
-    match super::probe(plant, target, ProbeConfig::Step(step), PROBE_TIMEOUT_S) {
+    respond_within(plant, target, step, PROBE_TIMEOUT_S)
+}
+
+/// As [`respond`], giving the probe up to `timeout_s` simulated seconds.
+pub fn respond_within(
+    plant: &Plant,
+    target: TunedLoop,
+    step: StepConfig,
+    timeout_s: f32,
+) -> Option<StepMetrics> {
+    match super::probe(plant, target, ProbeConfig::Step(step), timeout_s) {
         Some(ProbeStatus::Done(Measurement::Step(metrics))) => Some(metrics),
         _ => None,
     }

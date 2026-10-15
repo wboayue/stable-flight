@@ -53,15 +53,18 @@ const ALIA_THRUST_CURVE_EXPONENT: f32 = 1.5;
 ///   front-right and rear-left pair (engines 0 and 2) turn the aircraft nose left, on its
 ///   wheels and in the air, the reverse of `quad_x`'s matching pair. Thrust factor 0.8: at
 ///   0.9 a full moment moves each motor by 0.1 of command, about 0.8 rad/s² of roll, and the
-///   rate loops can't follow a step; the hover (0.648 per motor) stays under 0.8 (#351).
+///   rate loops can't follow a step; the hover (0.648 per motor) stays under 0.8. Yaw ratio 1:
+///   at the default 2.5, a full yaw drove one diagonal to its ceiling and the other near
+///   zero, the desaturation gave up collective, and the Alia sank 53 m at full throttle
+///   (#351).
 /// - **Mapping:** `quad_x`'s front-left, front-right, rear-left, rear-right on engines 1, 0,
 ///   2, 3 (the `.acf`'s engine positions); the pusher idle; the wings with ailerons (2–5),
 ///   elevators (8, 9), and rudders (10, 11) held at 0°.
 /// - **Gains:** roll and pitch rate and angle from the sim autotune of
 ///   `stable-flight-sim`'s `alia250()`, which is sized from the `.acf` and the sweep; its
-///   lateral loop, slowed for the aircraft's slow tilt; yaw and heading from that airframe
-///   (core's quad values). The rate I (0.2, the QuadCopterX's) trims X-Plane's nose-up pitch
-///   at level thrust (2.2 °/s², which the sim leaves out).
+///   lateral loop, slowed for the aircraft's slow tilt; yaw rate (P 5, no I) and heading (P
+///   0.8) from that airframe's yaw steps. The roll and pitch rate I (0.2, the QuadCopterX's)
+///   trims X-Plane's nose-up pitch at level thrust (2.2 °/s², which the sim leaves out).
 /// - **Hover thrust:** the liftoff throttle through the mixer's thrust factor and the thrust
 ///   curve.
 ///
@@ -105,8 +108,9 @@ pub fn alia250() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, Table
                 roll_gains: rate(1.52),
                 pitch_gains: rate(2.57),
                 yaw_gains: Gains {
-                    p: 1.5,
-                    ..defaults.body_rate.yaw_gains
+                    p: 5.0,
+                    i: 0.0,
+                    d: 0.0,
                 },
                 ..defaults.body_rate
             },
@@ -117,7 +121,7 @@ pub fn alia250() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, Table
             },
             yaw: YawControllerConfig {
                 gains: Gains {
-                    p: 3.5,
+                    p: 0.8,
                     i: 0.0,
                     d: 0.0,
                 },
@@ -130,7 +134,7 @@ pub fn alia250() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, Table
             .with_reversed_yaw()
             .with_config(MixerConfig {
                 thrust_factor: ALIA_THRUST_FACTOR,
-                ..MixerConfig::default()
+                yaw_ratio: 1.0,
             })
             .unwrap_or_else(|e| unreachable!("0.8 is a valid thrust factor: {e}")),
         mapping: ActuatorMapping {

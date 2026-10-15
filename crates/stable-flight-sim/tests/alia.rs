@@ -1,6 +1,6 @@
 //! The Alia 250 ([`airframes::alia250`]), a full-size multirotor: its autotune converges on
-//! the large-aircraft plan (`common::large`), its tuned loops meet the autotune's overshoot
-//! and bounce-back bands on that plan's steps, and it holds a hover through a gust.
+//! the large-aircraft plan (`common::large`), every loop meets the autotune's overshoot and
+//! bounce-back bands on that plan's steps, and it holds a hover through a gust.
 
 mod common;
 
@@ -11,7 +11,7 @@ use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight_sim::airframes::{self, Airframe};
 use stable_flight_sim::{Gust, Wind};
 
-use common::spec::{self, TUNED};
+use common::spec::{self, ALL, TUNED};
 use common::{AUTOTUNE_TIMEOUT_S, HOVER_ALTITUDE_M, HOVER_SETTLE_S, Plant, large};
 
 /// How far apart, as a fraction of the larger, a converged gain may be from the airframe's
@@ -56,16 +56,17 @@ fn autotune_converges_on_the_large_aircraft_plan() {
     }
 }
 
-/// Each tuned loop's steps, both ways, meet ArduPilot's overshoot and bounce-back bands and
-/// settle (`spec`). PX4's 0.14 s rate rise isn't held: the motors alone lag 0.17 s.
+/// Each loop's steps, both ways, meet ArduPilot's overshoot and bounce-back bands and settle
+/// (`spec`). PX4's 0.14 s rate rise isn't held: the motors alone lag 0.17 s.
 #[test]
-fn tuned_loops_meet_the_overshoot_bands() {
+fn every_loop_meets_the_overshoot_bands() {
     let plant = Plant::clean(airframes::alia250());
     let mut misses = Vec::new();
-    for target in TUNED {
+    for target in ALL {
         let (step, max_saturated_s) = large::step(target);
         for step in [step, step.reversed()] {
-            match spec::respond(&plant, target, step) {
+            // The step, and as long again to settle before it.
+            match spec::respond_within(&plant, target, step, 2.0 * step.duration_s + 5.0) {
                 None => misses.push(format!("{target:?} {}: no measurement", step.amplitude)),
                 Some(m) => {
                     let missed = spec::missed_bands(target, &m, max_saturated_s, None);
