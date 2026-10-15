@@ -1507,8 +1507,8 @@ fn waypoint_at(altitude_m: f32) -> ControlInput {
 }
 
 /// A waypoint below the vehicle is approached by an altitude target lowered at
-/// `max_descent_mps`, with that rate fed forward; one within a step, or above, is taken at
-/// once. The target starts from the vehicle's altitude, and a non-finite waypoint passes
+/// `max_descent_mps` (until the leash holds it), with that rate fed forward; one within a
+/// step, or above, is taken at once. The target starts from the vehicle's altitude, and a non-finite waypoint passes
 /// through without latching.
 #[test]
 fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
@@ -1517,10 +1517,11 @@ fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
     // (waypoint altitude, ticks, expected latched target) from 10 m
     let cases = [
         (0.0, 1, Some(10.0 - step)),
-        (0.0, 100, Some(10.0 - 100.0 * step)),
-        (0.0, 1_000, Some(0.0)), // reached: holds the waypoint
+        (0.0, 30, Some(10.0 - 30.0 * step)),
+        (0.0, 100, Some(10.0 - ALTITUDE_LEASH_M)), // the vehicle holds still: leashed
+        (9.5, 1_000, Some(9.5)),                   // reached: holds the waypoint
         (10.0 - 0.5 * step, 1, Some(10.0 - 0.5 * step)), // within a step
-        (25.0, 1, Some(25.0)),   // climbs aren't limited
+        (25.0, 1, Some(25.0)),                     // climbs aren't limited
         (f32::NAN, 1, None),
     ];
     for (waypoint_m, ticks, expected) in cases {
@@ -1534,6 +1535,47 @@ fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
             }
             (target, expected) => assert!(target == expected, "{waypoint_m}: {target:?}"),
         }
+    }
+}
+
+/// The vehicle's altitude on a tick, in m.
+type AltitudeAt = fn(usize) -> f32;
+
+/// A descent's target runs at most `ALTITUDE_LEASH_M` below the vehicle, still or climbing,
+/// so a vehicle climbing as the descent begins isn't pulled down past `max_descent_mps` (#400);
+/// a NaN altitude keeps lowering the latched target.
+#[test]
+fn descent_target_stays_on_a_leash_below_the_vehicle() {
+    const DT: f32 = 0.01;
+    let step = DEFAULT_MAX_DESCENT_MPS * DT;
+    // (case, vehicle altitude on each of 100 ticks, expected latched target), waypoint at 0 m
+    let cases: [(&str, AltitudeAt, f32); 4] = [
+        ("still", |_| 10.0, 10.0 - ALTITUDE_LEASH_M),
+        (
+            "climbing",
+            |tick| 10.0 + 0.02 * tick as f32,
+            12.0 - ALTITUDE_LEASH_M,
+        ),
+        (
+            "sinking past the target",
+            |tick| 10.0 - 0.05 * (tick - 1) as f32,
+            10.0 - 100.0 * step,
+        ),
+        (
+            "NaN after 10 ticks",
+            |tick| if tick <= 10 { 10.0 } else { f32::NAN },
+            10.0 - 100.0 * step,
+        ),
+    ];
+    for (case, altitude_m, expected) in cases {
+        let (mut guidance, mut state) = guidance_at(10.0);
+        for tick in 1..=100 {
+            state.position_m.z = altitude_m(tick);
+            guidance.guide(DT, FlightRegime::Copter, &waypoint_at(0.0), &state);
+        }
+        let target = guidance.altitude_target_m;
+        assert!(target.is_some(), "{case}: unlatched");
+        approx::assert_relative_eq!(target.unwrap_or(f32::NAN), expected, epsilon = 1e-3);
     }
 }
 
@@ -1629,7 +1671,7 @@ fn point_mass_descends_at_the_limit() {
 }
 
 /// A land holds its position and lowers the altitude target at `land_speed_mps`, never more
-/// than `LAND_LEASH_M` below the vehicle; leaving it (or priming) unlatches the target.
+/// than `ALTITUDE_LEASH_M` below the vehicle; leaving it (or priming) unlatches the target.
 #[test]
 fn land_descends_at_land_speed_on_a_leash() {
     const DT: f32 = 0.1;
@@ -1638,7 +1680,7 @@ fn land_descends_at_land_speed_on_a_leash() {
     });
     let speed = DEFAULT_LAND_SPEED_MPS;
     // (ticks, expected latched target) with the vehicle held at 10 m
-    let cases = [(1, 10.0 - speed * DT), (20, 10.0 - LAND_LEASH_M)];
+    let cases = [(1, 10.0 - speed * DT), (20, 10.0 - ALTITUDE_LEASH_M)];
     for (ticks, expected) in cases {
         let (mut guidance, state) = guidance_at(10.0);
         let mut setpoint = AttitudeSetpoint::default();

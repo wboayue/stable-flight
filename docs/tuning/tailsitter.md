@@ -145,15 +145,13 @@ The axes are the hover view's:
   `GUID_ALT_HOVER`, or waypoint flight can't descend and a landing never touches down.
 - **Sink guard:** adds thrust to piloted flight past the sink limit:
   0.65 + 0.15 × 2 = 0.95 at 3 m/s. Waypoint flight limits its own descent
-  (`GUID_DESC_MAX`, 3 m/s).
+  (`GUID_DESC_MAX`, 3 m/s), with its altitude target at most 1 m below the vehicle
+  (`ALTITUDE_LEASH_M`), so a hover handed over still climbing doesn't sink past it.
 - **Boost ceiling:** caps the tilt boost, so the motors keep headroom for differential thrust.
   At full boost the motor pair saturates, and a roll can only be pushed one way.
 - **Symptoms:**
   - The nose drops in a descent: raise the floor or tighten the sink guard.
   - A roll in a tilted hover won't stop: lower the boost ceiling.
-- **Known issue:** after a back transition that arrives climbing, the waypoint descent can run
-  past `GUID_DESC_MAX` with thrust at the floor
-  ([#400](https://github.com/wboayue/stable-flight/issues/400)).
 
 ## 5. Plane cruise and airspeeds
 
@@ -249,4 +247,4 @@ hardware ([#399](https://github.com/wboayue/stable-flight/issues/399)).
 | Wing sinks right after the forward transition | `TRAN_ASPD_MIN`, `TRAN_FW_THR` |
 | Large climb after the back request | `TRAN_VT_THR` down, `TRAN_VT_RATE` slower |
 | Back ramp wallows nose-high, elevons at full deflection, roll-limit cut | `TRAN_VT_THR` up |
-| Hover tumbles just after the back handover | arrives too fast: `TRAN_VT_RATE`, `TRAN_VT_DONE`; climbing: #400 |
+| Hover tumbles just after the back handover | arrives too fast: `TRAN_VT_RATE`, `TRAN_VT_DONE` |
