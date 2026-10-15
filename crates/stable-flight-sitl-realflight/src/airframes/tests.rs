@@ -285,3 +285,10 @@ fn titan_cobra_transitions_at_its_minimum_airspeed() {
     assert_eq!(airframe.guidance.transition.min_airspeed_mps, 11.0);
     assert_eq!(airframe.stabilizer.plane.min_airspeed_mps, 11.0);
 }
+
+/// The Cobra flies copter legs with forward thrust on: gain 1.2 held a 100 m leg within
+/// 0.5 m of altitude where 0 lost 4.7 m (#433).
+#[test]
+fn titan_cobra_flies_copter_legs_with_forward_thrust() {
+    assert_eq!(titan_cobra().guidance.forward.gain, 1.2);
+}
