@@ -13,7 +13,8 @@ use stable_flight::controllers::{
 use stable_flight::guidance::copter::{CopterGuidanceConfig, ThrustLimits};
 use stable_flight::guidance::plane::PlaneGuidanceConfig;
 use stable_flight::guidance::vtol::{
-    LiftTransitionConfig, QuadPlaneGuidanceConfig, TailsitterGuidanceConfig, TransitionConfig,
+    ForwardThrustConfig, LiftTransitionConfig, QuadPlaneGuidanceConfig, TailsitterGuidanceConfig,
+    TransitionConfig,
 };
 use stable_flight::mixers::TableMixer;
 use stable_flight::nalgebra::UnitQuaternion;
@@ -300,28 +301,33 @@ pub fn explora_vtol()
 ///
 ///   No surface is reversed: ArduPilot drives these channels unreversed through its V-tail
 ///   mixer, right panel (elevator + rudder)/2, left (elevator − rudder)/2
-///   (`ArduPlane/servos.cpp:192-193`, ArduPilot `b032bcbde3`), with positive aileron, elevator, and rudder outputs
-///   rolling right, raising the nose, and yawing right (`libraries/SITL/SIM_Plane.cpp:333-335`,
-///   `SIM_Plane.h:75-86`); the rows of [`TableMixer::quadplane_vtail`] match. In flight at
-///   12–16 m/s, a 0.3 cruise moment on each axis and sign pushed the way the mixer expects
-///   (`surface-probe-realflight`, #433). Both tail panels are trimmed +0.2
-///   (`SERVO2_TRIM`, `SERVO4_TRIM` 1600).
+///   (`ArduPlane/servos.cpp:192-193`, ArduPilot `b032bcbde3`), with positive aileron,
+///   elevator, and rudder outputs rolling right, raising the nose, and yawing right
+///   (`libraries/SITL/SIM_Plane.cpp:333-335`, `SIM_Plane.h:75-86`); the rows of
+///   [`TableMixer::quadplane_vtail`] match. In flight at 12–16 m/s, a 0.3 cruise moment on
+///   each axis and sign pushed the way the mixer expects (`surface-probe-realflight`, #433).
+///   Both tail panels are trimmed +0.2 (`SERVO2_TRIM`, `SERVO4_TRIM` 1600).
 /// - **Body rotation:** identity; RealFlight's frame for this model is the airplane's.
 ///
 /// Fly it with [`QuadPlaneGuidance`](stable_flight::guidance::vtol::QuadPlaneGuidance) and
 /// [`QuadPlaneStabilizer`](stable_flight::stabilizers::vtol::QuadPlaneStabilizer).
 ///
 /// - **Hover:** roll rate P and D from a RealFlight autotune, the rest starting from
-///   QuadCopterX's hand tune, with more pitch rate I; it flies a hover and a landing (#433). Pitch rate steps
-///   reach 0.90 of the step on any gains tried, and angle steps don't settle
-///   (TODO(#433)).
-///   The model is nose-heavy on its lift rotors: with
-///   equal front and rear thrust a hop pitched nose down at 155°/s, and a level hover holds
+///   QuadCopterX's hand tune, with more pitch rate I; it flies a hover and a landing (#433).
+///   Pitch rate steps reach 0.90 of the step on any gains tried, and angle steps don't
+///   settle (TODO(#438)). The model is nose-heavy on its lift rotors: with equal front and
+///   rear thrust a hop pitched nose down at 155°/s, and a level hover holds
 ///   front motors at 0.60 and rear at 0.52 (#433), so the pitch rate loop holds a steady
 ///   nose-up moment.
 /// - **Plane and transition:** core defaults, with the upstream ArduPilot parameter file's
 ///   airspeeds, trim pitch, and cruise throttle (`TitanCobraVTOL.param`); the forward
-///   transition hands over to the wing at its minimum airspeed, as ArduPilot does.
+///   transition hands over to the wing at its minimum airspeed, as ArduPilot does. A lap
+///   (`flights/cobra_transition_lap.csv`) transitions in 9 s gaining 2.6 m, holds 27–32 m
+///   at 13–15 m/s, and transitions back within 2.6 m (#433).
+/// - **Forward thrust:** on in copter flight (gain 1.2): on a 100 m copter leg ahead the
+///   pusher keeps the nose within 7° of level, and the leg loses 0.5 m and climbs 1.4 m at
+///   most; without it the nose goes 33° down and the leg loses 4.7 m and balloons 6.4 m
+///   (#433).
 ///
 /// # Examples
 ///
@@ -359,13 +365,18 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                 cruise_thrust: 0.52,
                 ..defaults.plane
             },
+            // Two runs each, 0 against 1.2: altitude loss 3.5/4.7 m vs 0.5/0.5 m, balloon
+            // 6.4/5.9 m vs 1.2/1.4 m (#433); PX4's limit is 20 m (`VT_QC_T_ALT_LOSS`).
+            forward: ForwardThrustConfig {
+                gain: 1.2,
+                ..defaults.forward
+            },
             transition: LiftTransitionConfig {
                 // ArduPilot starts the forward lift ramp past `ARSPD_FBW_MIN`, 11 for this
                 // model; core's 9 is ArduPilot's default (`ArduPlane/quadplane.cpp:1523`).
                 min_airspeed_mps: 11.0,
                 ..defaults.transition
             },
-            ..defaults
         },
         stabilizer: QuadPlaneStabilizerConfig {
             hover: CopterStabilizerConfig {
