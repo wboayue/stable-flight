@@ -24,5 +24,11 @@ X-Plane 12 simulator backend over [xplane-bridge](https://crates.io/crates/xplan
   wings whose surfaces are held at 0°.
 - `StateDatarefs`, `XPlaneSample`, `wait_ready`: the raw state subscriptions, for tools that
   read X-Plane without flying it.
-- `capture`: raw samples to and from CSV; the `capture-state-xplane` example records them
-  read-only while X-Plane flies, for `check_frames --sim xplane`.
+- `capture`: raw samples to and from CSV, with a writer's own columns after them; the
+  `capture-state-xplane` example records them read-only while X-Plane flies, for
+  `check_frames --sim xplane`.
+- `airframes::alia250()`: the Alia 250 in copter mode (mixer, engine mapping, gains), from an
+  engine sweep and a sim autotune, flown in X-Plane. `copter-manual-xplane` (joystick,
+  `--record`) and `copter-companion-xplane` (the link, QGC through the bridge) fly it.
+- `sweep::EngineSweep` and `engine-sweep-xplane`: a multirotor's yaw sign per diagonal,
+  liftoff throttle, motor lag, and moment response, measured on the runway.

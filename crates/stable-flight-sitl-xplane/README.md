@@ -10,12 +10,14 @@
 
 The crate builds on the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core and never on the sitl harness, so any runner can drive it; the examples pair it with [`stable-flight-sitl`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl).
 
-Status: the backend reads and converts X-Plane's state and drives engines; no airframe is tuned yet. The Alia 250 in copter mode is planned ([#351](https://github.com/wboayue/stable-flight/issues/351)), its transitions next ([#392](https://github.com/wboayue/stable-flight/issues/392)).
+Status: flies the Alia 250 in copter mode on its four lift rotors, from a joystick and from the link (QGC through the bridge, or `link_pilot`): takeoff, hover, waypoint legs, the link-loss hold, and landing. Its transitions and plane flight are planned ([#392](https://github.com/wboayue/stable-flight/issues/392)).
 
 ## Setup
 
 - X-Plane 12 on macOS, Windows, or Linux. Its UDP port is under **Settings → Network** (default `49000`); no data-output rows or network settings need changing, also for a controller on another machine on the LAN (replies go to the sender's address).
-- X-Plane ships no multirotors. The stock Alia 250 (lift+cruise eVTOL) flies on its four lift rotors.
+- X-Plane ships no multirotors. The stock BETA Technologies Alia 250 (lift+cruise eVTOL) flies on its four lift rotors: load it on a runway at X-Plane's default weight (6,299 lb in **Flight Configuration → Weight, Balance & Fuel**), which `airframes::alia250()` is tuned for.
+- The examples take X-Plane's throttles and control surfaces, so a joystick X-Plane also reads moves nothing; buttons bound to X-Plane commands still act.
+- After X-Plane relocates the aircraft (a new airport, a reset elsewhere), the vehicle re-anchors position there and logs the new `--origin`: restart the bridge with it, or QGC's map is off by the move.
 
 ## Usage
 
@@ -50,6 +52,21 @@ println!("bridge --origin {:?}", vehicle.anchor());
 ## Examples
 
 ```bash
+# Joystick (Logitech Extreme 3D; --commander spektrum) flying the Alia 250, params and
+# telemetry over the native link for `just bridge`; --record writes a CSV per tick.
+# Or: just fly-xplane --record flight.csv
+cargo run --release -p stable-flight-sitl-xplane --example copter-manual-xplane
+
+# The Alia flown from the link: QGC through the bridge, with the origin the example logs at
+# connect (QGC's map then matches X-Plane), or `just link-pilot`. A quiet link holds position.
+# Or: just fly-xplane-companion, then just bridge --origin <lat,lon,0>
+cargo run --release -p stable-flight-sitl-xplane --example copter-companion-xplane
+
+# A multirotor's lift engines on the runway, parking brake off: the yaw sign of each diagonal,
+# the liftoff throttle, the motor lag, and an airborne roll, pitch, and yaw pulse.
+# Or: just xplane-sweep --output sweep.csv
+cargo run --release -p stable-flight-sitl-xplane --example engine-sweep-xplane -- --output sweep.csv
+
 # Raw state to CSV while you fly with X-Plane's own controls (no override); stop with Ctrl-C.
 # Or: just capture-xplane --output capture.csv
 cargo run -p stable-flight-sitl-xplane --example capture-state-xplane -- --output capture.csv
@@ -60,3 +77,11 @@ cargo run --bin check_frames -- --sim xplane capture.csv
 ```
 
 Run examples with `RUST_LOG=info` to see connect, anchor, and liveness events.
+
+## Airframes
+
+`airframes::alia250()` is the Alia 250 in copter mode: `quad_x` with yaw reversed at thrust factor 0.8 and yaw ratio 1, its lift rotors on engines 1, 0, 2, 3, the pusher idle, the surfaces held neutral. The values and the measurements behind them (an `engine-sweep-xplane` run, the `stable-flight-sim` autotune of a model sized from it, two X-Plane flights) are in its rustdoc; how to tune one, in the [quadplane tuning guide](https://github.com/wboayue/stable-flight/blob/main/docs/tuning/quadplane.md). Its limits:
+
+- **Thrust:** thrust-to-weight is about 1.34 at the default load: climbs are slow, and a heavier load leaves less.
+- **Yaw:** at yaw ratio 1 (a higher ratio sank it, the mixer giving up collective for yaw), the tail turns it off heading at a few m/s sideways ([#440](https://github.com/wboayue/stable-flight/issues/440)).
+- **Forward drift:** the front rotors are canted 4° forward, so hands-off in attitude mode it creeps forward; position hold takes it out.
