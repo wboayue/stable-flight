@@ -59,12 +59,13 @@ impl Rotors {
         }
     }
 
-    /// `model`'s lift rotors and its pusher on the centerline, nothing in their wash.
-    pub(crate) fn quadplane(model: &QuadPlaneModel) -> Self {
+    /// `model`'s lift rotors and its pusher on `pusher_slot`, on the centerline, nothing in
+    /// their wash.
+    pub(crate) fn quadplane(model: &QuadPlaneModel, pusher_slot: u8) -> Self {
         Rotors {
             lift: Some(Lift {
                 rotors: model.lift,
-                pusher_slot: model.pusher_slot,
+                pusher_slot,
             }),
             ..Self::airplane()
         }

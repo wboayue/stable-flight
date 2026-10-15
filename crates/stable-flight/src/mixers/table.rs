@@ -62,7 +62,7 @@
 use thiserror::Error;
 
 use crate::math::{desaturate, saturate_throttle, saturate_unit};
-use crate::{ActuatorCommand, ControlOutput, CruiseOutput, Mixer, Saturation, Vec3};
+use crate::{ActuatorCommand, ControlOutput, Mixer, Saturation, Vec3};
 
 mod presets;
 #[cfg(test)]
@@ -347,12 +347,12 @@ impl<const N: usize> Mixer for TableMixer<N> {
         let thrust = saturate_throttle(command.thrust);
         let moments = command.moments.map(saturate_unit);
         // Without a cruise output, servos fly the moments and pushers stay stopped.
-        let cruise = command.cruise.unwrap_or(CruiseOutput {
-            thrust: 0.0,
-            moments: command.moments,
+        let (cruise_thrust, surface_moments) = command.cruise.map_or((0.0, moments), |cruise| {
+            (
+                saturate_throttle(cruise.thrust),
+                cruise.moments.map(saturate_unit),
+            )
         });
-        let cruise_thrust = saturate_throttle(cruise.thrust);
-        let surface_moments = cruise.moments.map(saturate_unit);
 
         let MixerConfig {
             thrust_factor,

@@ -2,7 +2,7 @@
 
 use core::time::Duration;
 
-use stable_flight::mixers::TableMixer;
+use stable_flight::mixers::{Slot, TableMixer};
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{Actuator, ActuatorCommand, StateSource, VehicleState};
 
@@ -51,29 +51,40 @@ mod tests;
 pub struct SimQuadPlane {
     lockstep: Lockstep,
     dynamics: FixedWing,
+    pusher_slot: u8,
 }
 
 impl SimQuadPlane {
     /// A quadplane with `model`'s physics whose lift rotors, pusher, and surfaces `mixer`'s
-    /// rows drive (see [`QuadPlaneModel`]), resting on the ground in calm air.
+    /// rows drive (see [`QuadPlaneModel`]), resting on the ground in calm air. The mixer's one
+    /// [`pusher`](stable_flight::mixers::MixRow::pusher) row is the pusher; its other motor
+    /// rows are the lift rotors.
     ///
     /// # Errors
     ///
-    /// [`QuadPlaneModel::validate`]'s errors.
+    /// [`QuadPlaneModel::validate`]'s errors; [`ModelError::PusherCount`] when `mixer` has no
+    /// pusher row, or more than one.
     pub fn new<const N: usize>(
         model: QuadPlaneModel,
         mixer: &TableMixer<N>,
     ) -> Result<Self, ModelError> {
         model.validate()?;
+        let pusher_slot = pusher_slot(mixer)?;
         Ok(SimQuadPlane {
             lockstep: Lockstep::new(),
             dynamics: FixedWing::new(
                 model.wing,
                 mixer,
-                Rotors::quadplane(&model),
+                Rotors::quadplane(&model, pusher_slot),
                 UnitQuaternion::identity(),
             ),
+            pusher_slot,
         })
+    }
+
+    /// The pusher's motor slot: the mixer's pusher row's.
+    pub fn pusher_slot(&self) -> u8 {
+        self.pusher_slot
     }
 
     /// This quadplane starting at `start`, e.g. in flight ([`Start::level`]).
@@ -136,5 +147,17 @@ impl Actuator for SimQuadPlane {
     /// after any [`actuator_delay_s`](Perturbations::actuator_delay_s).
     fn actuate(&mut self, actuator_command: &ActuatorCommand) {
         self.lockstep.push(actuator_command);
+    }
+}
+
+/// The motor slot of `mixer`'s one pusher row.
+fn pusher_slot<const N: usize>(mixer: &TableMixer<N>) -> Result<u8, ModelError> {
+    let mut slots = mixer.rows().iter().filter_map(|row| match row.slot() {
+        Slot::Motor(index) if row.is_pusher() => Some(index),
+        _ => None,
+    });
+    match (slots.next(), slots.count()) {
+        (Some(index), 0) => Ok(index),
+        (first, rest) => Err(ModelError::PusherCount(usize::from(first.is_some()) + rest)),
     }
 }

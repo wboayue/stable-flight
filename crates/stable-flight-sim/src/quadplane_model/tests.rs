@@ -72,14 +72,6 @@ fn rejects_out_of_range_parameters() {
             }),
             ModelError::Negative("lift.drag_n_per_mps"),
         ),
-        (
-            "pusher slot",
-            QuadPlaneModel {
-                pusher_slot: 8,
-                ..model()
-            },
-            ModelError::PusherSlot(8),
-        ),
     ];
     for (case, model, error) in cases {
         check!(model.validate() == Err(error), "{case}");

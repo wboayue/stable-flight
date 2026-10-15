@@ -116,13 +116,13 @@ Shared by every vehicle:
 | Prop wash | `PropWash`: actuator-disc momentum theory along the thrust axis, `surface_fraction` of it over the surfaces only, so the elevons work in a hover. Nose first, the far wake's `thrust / disc area` of added dynamic pressure; sinking tail first, the static jet less the sink, so the elevons lose authority as it sinks (none at the jet's speed; no vortex-ring flow) |
 | Frame | Airplane FRD body: hovering nose up is 90° of pitch, level in `View::tailsitter`; it rests on its tail |
 
-`SimQuadPlane` (`QuadPlaneModel`: a `FixedWingModel` plus `LiftRotors` and the pusher's slot) is
+`SimQuadPlane` (`QuadPlaneModel`: a `FixedWingModel` plus `LiftRotors`; the pusher is the mixer's one `MixRow::pusher` row) is
 `SimPlane`'s physics with:
 
 | Part | Model |
 |---|---|
-| Lift rotors | `SimCopter`'s motors along body `−z`: lag, `max_thrust_n · command²`, roll, pitch, and yaw torque from the mixer's motor rows (all but the pusher's slot) |
-| Pusher | `pusher_slot`, whether or not a mixer row drives it: `SimPlane`'s prop along body `x` (the `FixedWingModel`'s thrust and lag) |
+| Lift rotors | `SimCopter`'s motors along body `−z`: lag, `max_thrust_n · command²`, roll, pitch, and yaw torque from the mixer's motor rows (all but the pusher) |
+| Pusher | The mixer's `MixRow::pusher` row (exactly one, else `ModelError::PusherCount`): `SimPlane`'s prop along body `x` (the `FixedWingModel`'s thrust and lag) |
 | Lift-rotor drag | In-plane H-force: linear drag on the air's velocity in the body `x`–`y` plane, `drag_n_per_mps` at full lift thrust, scaled by the thrust, so none with the rotors stopped. Booms and stopped rotors are in the wing's `c_drag_0` |
 | Frame | Airplane FRD body, which is also the hover's: it hovers level and rests level on its gear |
 

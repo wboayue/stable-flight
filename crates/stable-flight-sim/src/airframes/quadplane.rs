@@ -33,9 +33,6 @@ pub struct QuadPlaneAirframe {
     pub start: Start,
 }
 
-/// The pusher's motor slot: after the lift rotors.
-const PUSHER_SLOT: u8 = 4;
-
 /// ArduPilot SITL's quadplane (`quadplane`: [`plane`]'s airframe with an X quad,
 /// `libraries/SITL/SIM_QuadPlane.cpp:29`, Plane-4.5): 4.5 kg, the quad frame's default 3 kg
 /// scaled by 1.5 for the plane's parts (`SIM_Frame.cpp:51,774`, `SIM_QuadPlane.cpp:103-104`),
@@ -96,7 +93,6 @@ pub fn quadplane() -> QuadPlaneAirframe {
             yaw_torque_per_thrust_m: 0.022,
             drag_n_per_mps: 1.2,
         },
-        pusher_slot: PUSHER_SLOT,
     };
     let mixer = TableMixer::quadplane();
     let defaults = CopterStabilizerConfig::default();

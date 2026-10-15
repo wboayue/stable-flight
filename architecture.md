@@ -99,9 +99,9 @@ the check for realism.
   actuator delay, wind, gyro noise, the rigid body, and ground contact live once; each vehicle
   adds only its loads. The airplane, tailsitter, and quadplane share one fixed-wing dynamics:
   the tailsitter adds its motor arm, wash, and resting on its tail; the quadplane adds lift
-  rotors along body `−z`, laid out by the mixer's motor rows as on the copter, and names its
-  pusher's slot, so a hover mixer that leaves the pusher out and a cruise mixer that drives it
-  fly the same model. A public generic
+  rotors along body `−z`, laid out by the mixer's motor rows as on the copter, and takes its
+  pusher from the mixer's one pusher row (`MixRow::pusher`), so the slot has one source. A
+  public generic
   vehicle (`SimVehicle<P: Physics>`) was rejected: its trait would have to absorb what the
   vehicles differ in (how each rests on the ground, plane-only flow angles) and stay stable as a
   public API, for less duplication than the vehicles' thin builder glue. A generic VTOL

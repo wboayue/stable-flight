@@ -1,5 +1,6 @@
 use approx::assert_relative_eq;
 use assert2::check;
+use stable_flight::mixers::{MixRow, MixerConfig};
 use stable_flight::{GRAVITY, Vec3};
 
 use super::*;
@@ -10,6 +11,7 @@ use crate::fixed_wing::FixedWingModel;
 use crate::lag;
 use crate::lockstep::Dynamics;
 use crate::plane::SimPlane;
+use crate::quadplane_model::LiftRotors;
 
 const TICK: Duration = Duration::from_millis(4);
 
@@ -25,7 +27,7 @@ fn quadplane() -> SimQuadPlane {
 fn command(lift: f32, pusher: f32, surfaces: [f32; 3]) -> ActuatorCommand {
     let mut command = ActuatorCommand::default();
     command.motors[LIFT].fill(lift);
-    command.motors[usize::from(airframes::quadplane().model.pusher_slot)] = pusher;
+    command.motors[usize::from(quadplane().pusher_slot())] = pusher;
     command.servos[..3].copy_from_slice(&surfaces);
     command
 }
@@ -261,22 +263,45 @@ fn motor_mismatch_scales_each_lift_rotor() {
 fn rejects_an_invalid_model() {
     let airframe = airframes::quadplane();
     let model = QuadPlaneModel {
-        pusher_slot: 9,
+        lift: LiftRotors {
+            max_thrust_n: 0.0,
+            ..airframe.model.lift
+        },
         ..airframe.model
     };
-    check!(SimQuadPlane::new(model, &airframe.mixer).err() == Some(ModelError::PusherSlot(9)));
+    check!(
+        SimQuadPlane::new(model, &airframe.mixer).err()
+            == Some(ModelError::NotPositive("lift.max_thrust_n"))
+    );
+}
+
+/// The mixer's one pusher row is the pusher: a mixer with none, or two, is rejected.
+#[test]
+fn takes_the_pusher_from_the_mixer() {
+    let model = airframes::quadplane().model;
+    check!(quadplane().pusher_slot() == 4);
+    let no_pusher = TableMixer::quad_x();
+    check!(SimQuadPlane::new(model, &no_pusher).err() == Some(ModelError::PusherCount(0)));
+    let [lift_0, lift_1, ..] = *TableMixer::quad_x().rows();
+    let two_pushers = TableMixer::new(
+        [lift_0, lift_1, MixRow::pusher(2), MixRow::pusher(3)],
+        MixerConfig::default(),
+    )
+    .expect("valid table");
+    check!(SimQuadPlane::new(model, &two_pushers).err() == Some(ModelError::PusherCount(2)));
 }
 
 /// A mixer with no lift-rotor rows (its one motor the pusher) flies as the airplane: the
 /// H-force has no lift thrust to scale by, and every load stays finite.
 #[test]
 fn flies_without_lift_rotors() {
-    let airframe = airframes::quadplane();
-    let model = QuadPlaneModel {
-        pusher_slot: 0,
-        ..airframe.model
-    };
-    let plane_mixer = stable_flight::mixers::TableMixer::plane();
+    let model = airframes::quadplane().model;
+    let [_, ailerons, elevator, rudder] = *TableMixer::plane().rows();
+    let plane_mixer = TableMixer::new(
+        [MixRow::pusher(0), ailerons, elevator, rudder],
+        MixerConfig::default(),
+    )
+    .expect("valid table");
     let mut vehicle = SimQuadPlane::new(model, &plane_mixer).expect("valid model");
     vehicle.dynamics.begin(1.0);
     let body = Body {

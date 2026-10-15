@@ -1,4 +1,4 @@
-use crate::Vec3;
+use crate::{CruiseOutput, Vec3};
 
 use super::*;
 
