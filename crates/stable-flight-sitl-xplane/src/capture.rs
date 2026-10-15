@@ -1,6 +1,8 @@
-//! Raw X-Plane captures: every [`XPlaneSample`], unconverted, as CSV. [`write_header`] and
-//! [`write_row`] write them (the `capture-state-xplane` example); [`read_capture`] reads them
-//! back for offline checks (e.g. the frame contract, `check_frames --sim xplane`).
+//! Raw X-Plane captures: every [`XPlaneSample`], unconverted, as CSV, optionally followed by a
+//! writer's own columns (e.g. the throttles `engine-sweep-xplane` sends). [`write_header`] and
+//! [`write_row`] write them (the `capture-state-xplane` and `engine-sweep-xplane` examples);
+//! [`read_capture`] reads the samples back for offline checks (e.g. the frame contract,
+//! `check_frames --sim xplane`).
 
 use std::io::{self, BufRead, Write};
 
@@ -65,25 +67,34 @@ const COLUMNS: &[Column] = &[
     column!("paused", bool paused),
 ];
 
-/// Writes the CSV header.
+/// Writes the CSV header: the sample's columns, then `extra` (the writer's own, in the order
+/// its rows pass them to [`write_row`]).
 ///
 /// # Errors
 ///
 /// When `out` fails.
-pub fn write_header(out: &mut impl Write) -> io::Result<()> {
-    let names: Vec<_> = COLUMNS.iter().map(|column| column.name).collect();
+pub fn write_header(out: &mut impl Write, extra: &[&str]) -> io::Result<()> {
+    let names: Vec<_> = COLUMNS
+        .iter()
+        .map(|column| column.name)
+        .chain(extra.iter().copied())
+        .collect();
     writeln!(out, "{}", names.join(","))
 }
 
-/// Writes one CSV row.
+/// Writes one CSV row: `sample`, then the `extra` values, one per extra column.
 ///
 /// # Errors
 ///
 /// When `out` fails.
-pub fn write_row(out: &mut impl Write, sample: &XPlaneSample) -> io::Result<()> {
-    for (i, column) in COLUMNS.iter().enumerate() {
+pub fn write_row(out: &mut impl Write, sample: &XPlaneSample, extra: &[f32]) -> io::Result<()> {
+    let values = COLUMNS
+        .iter()
+        .map(|column| (column.get)(sample))
+        .chain(extra.iter().copied());
+    for (i, value) in values.enumerate() {
         let separator = if i == 0 { "" } else { "," };
-        write!(out, "{separator}{}", (column.get)(sample))?;
+        write!(out, "{separator}{value}")?;
     }
     writeln!(out)
 }
@@ -112,8 +123,8 @@ pub enum CaptureError {
     },
 }
 
-/// Reads a capture written by [`write_header`] and [`write_row`], in order. Columns are found
-/// by name, so extra columns are ignored. A short last row (a capture cut off mid-write) is
+/// Reads the samples of a capture written by [`write_header`] and [`write_row`], in order.
+/// Columns are found by name, so extra columns are ignored. A short last row (a capture cut off mid-write) is
 /// dropped.
 ///
 /// # Errors
@@ -127,9 +138,9 @@ pub enum CaptureError {
 /// use stable_flight_sitl_xplane::capture::{read_capture, write_header, write_row};
 ///
 /// let mut csv = Vec::new();
-/// write_header(&mut csv).unwrap();
+/// write_header(&mut csv, &["throttle0"]).unwrap();
 /// let sample = XPlaneSample { body_rates_degps: [12.5, 0.0, 0.0], ..Default::default() };
-/// write_row(&mut csv, &sample).unwrap();
+/// write_row(&mut csv, &sample, &[0.4]).unwrap();
 ///
 /// let rows = read_capture(csv.as_slice()).unwrap();
 /// assert_eq!(rows[0].body_rates_degps[0], 12.5);

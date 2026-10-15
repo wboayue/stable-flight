@@ -29,6 +29,7 @@ mod mapping;
 mod origin;
 mod sample;
 mod state;
+pub mod sweep;
 mod vehicle;
 
 pub use mapping::{ActuatorMapping, ENGINE_COUNT, MappingError, WING_COUNT};
