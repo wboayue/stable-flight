@@ -150,7 +150,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   clamped at ±90°), angle wrapping via `stable_flight::wrap_angle`.
 - Firmware size: fixed-size math only (no dynamic matrices or decompositions), no
   `Display`/`Debug` formatting on target; measure with `just fw-size` rather than guess (`libm`
-  trig dominates).
+  trig dominates). CI's `embedded` job fails past `FLASH_BUDGET_BYTES` (`test.yaml`); a PR
+  that grows the firmware on purpose raises it.
 - **Comments and docs state the current code**, not how it got there:
   - Rustdoc is the contract: behavior, units, invariants.
   - Inline comments give the non-obvious *why* in present tense: physics, invariants, a
