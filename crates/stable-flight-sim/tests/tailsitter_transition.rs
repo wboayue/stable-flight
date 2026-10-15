@@ -11,6 +11,7 @@ use stable_flight::guidance::vtol::TransitionConfig;
 use stable_flight::{
     Command, ControlInput, FlightMode, ModeRefusal, TelemetryPublisher, TelemetryRecord, Vec3,
 };
+use stable_flight_sim::airframes::TailsitterAirframe;
 use stable_flight_sim::{Gust, Wind, airframes};
 
 use common::plane::{
@@ -64,6 +65,20 @@ const BACK_CLIMB_M: f32 = 10.5;
 /// The back transition's ramp thrusts, below the airframe's, that stall it nose-high: without
 /// the sink guard both fall 30 m to the ground (measured, #343).
 const STALLING_BACK_THRUSTS: [f32; 2] = [0.3, 0.5];
+
+/// Most the hover sinks after the back handover, in m/s, over `max_descent_mps` (3): no
+/// external band applies. A plain waypoint descent on `quad_x` peaks at 3.31 m/s (measured),
+/// so 0.5 leaves about 0.2 of margin. Without the altitude leash the fast ramp sank 3.89, and
+/// 4.31 with the thrust floor (#400).
+const DESCENT_MARGIN_MPS: f32 = 0.5;
+
+/// The eXplora's thrust floor as a share of its hover thrust (`explora_vtol`: 0.65 of 0.84),
+/// which held its thrust at the floor while it sank after the handover (#400).
+const EXPLORA_FLOOR_SHARE: f32 = 0.77;
+
+/// Seconds after the back handover that [`DESCENT_MARGIN_MPS`] is watched: the descent to the
+/// hover point and its arrival (measured 4.2 s).
+const DESCENT_WATCH_S: f32 = 20.0;
 
 /// Seconds a level hold is judged over.
 const HOLD_S: f32 = 10.0;
@@ -275,13 +290,9 @@ fn transitions_back_into_a_hover() {
     check_calm_hover(&worst, "back");
 }
 
-/// Handing thrust back to the hover after a back transition doesn't step the moments: the
-/// altitude loop's zero thrust on the way isn't ground idle, so the stabilizer keeps its
-/// integrals (#326). Flown on the core default ramp (50°/s, done at 45°), which arrives
-/// climbing 6 m/s (#343) so the altitude loop cuts thrust to 0.
-#[test]
-fn back_handoff_keeps_the_hover_trim() {
-    let mut airframe = airframes::tailsitter();
+/// The airframe on the core default back ramp (50°/s, done at 45°), which hands over to the
+/// hover climbing about 6 m/s (#343).
+fn on_fast_back_ramp(mut airframe: TailsitterAirframe) -> TailsitterAirframe {
     let fast = TransitionConfig::default();
     airframe.guidance.transition = TransitionConfig {
         back_rate_radps: fast.back_rate_radps,
@@ -289,6 +300,52 @@ fn back_handoff_keeps_the_hover_trim() {
         back_thrust: fast.back_thrust,
         ..airframe.guidance.transition
     };
+    airframe
+}
+
+/// A hover handed over still climbing, on the fast back ramp, descends to its point no faster
+/// than `max_descent_mps` plus [`DESCENT_MARGIN_MPS`]: its altitude target doesn't run ahead of
+/// the climb, with or without the eXplora's thrust floor (#400).
+#[test]
+fn hover_after_a_climbing_handover_descends_at_the_limit() {
+    let fast = on_fast_back_ramp(airframes::tailsitter());
+    let mut floored = fast;
+    let hover = &mut floored.guidance.hover;
+    hover.thrust.min_thrust = EXPLORA_FLOOR_SHARE * hover.altitude.hover_thrust;
+    for (case, airframe) in [("fast ramp", fast), ("fast ramp, thrust floor", floored)] {
+        let plant = TailsitterPlant::clean(airframe);
+        let commander = forward_and_back(&airframe, BACK_AT_S, BACK_HOVER_NORTH_M);
+        let mut flight_loop = tailsitter_loop(&plant, commander);
+        let flight = trace(
+            &mut flight_loop,
+            BACK_AT_S + BACK_DURATION_S + DESCENT_WATCH_S,
+        );
+
+        let handover = flight.entered(FlightMode::Copter, BACK_AT_S);
+        let climb_mps = handover.map_or(f32::NAN, |sample| sample.state.velocity_mps.z);
+        // Measured 5.9 m/s.
+        check!(climb_mps > 0.0, "{case}: handed over at {climb_mps} m/s");
+        let copter_s = handover.map_or(f32::INFINITY, |sample| sample.time_s);
+        let fastest_sink_mps = flight
+            .window(copter_s, copter_s + DESCENT_WATCH_S)
+            .map(|sample| -sample.state.velocity_mps.z)
+            .fold(f32::NEG_INFINITY, f32::max);
+        // Measured 3.35 m/s, 3.29 with the floor.
+        let limit_mps = airframe.guidance.hover.max_descent_mps + DESCENT_MARGIN_MPS;
+        check!(
+            fastest_sink_mps <= limit_mps,
+            "{case}: sank {fastest_sink_mps} m/s"
+        );
+    }
+}
+
+/// Handing thrust back to the hover after a back transition doesn't step the moments: the
+/// altitude loop's zero thrust on the way isn't ground idle, so the stabilizer keeps its
+/// integrals (#326). Flown on the core default ramp (50°/s, done at 45°), which arrives
+/// climbing 6 m/s (#343) so the altitude loop cuts thrust to 0.
+#[test]
+fn back_handoff_keeps_the_hover_trim() {
+    let airframe = on_fast_back_ramp(airframes::tailsitter());
     let plant = TailsitterPlant::clean(airframe);
     let commander = forward_and_back(&airframe, BACK_AT_S, BACK_HOVER_NORTH_M);
     let mut flight_loop = tailsitter_pipeline(&plant, commander, HandoffStep::default());

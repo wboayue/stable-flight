@@ -137,6 +137,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `guidance::copter::LAND_LEASH_M` is now `ALTITUDE_LEASH_M`: it leashes waypoint
+  descents as well as lands (#400).
 - Tailsitter back transitions add thrust while sinking by default (the sink guard, #343): a
   `TransitionConfig` built on `..Default::default()` gets it with no change.
   `back_sink_limit_mps: 0.0` restores the fixed `back_thrust`.
@@ -212,6 +214,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `CopterGuidance` waypoint descents keep their altitude target at most `ALTITUDE_LEASH_M`
+  (1 m) below the vehicle (#400). A hover that starts its descent still climbing, as a
+  tailsitter does after a back transition, no longer sinks past `max_descent_mps` once the
+  climb stops (sim fast ramp: 3.89 → 3.35 m/s against a 3 m/s limit; 4.31 → 3.29 with the
+  eXplora's thrust floor).
 - `CopterStabilizer` keeps its integrals at zero thrust in flight (#326): the altitude loop
   shooting up past a waypoint no longer drops the yaw trim, and a tailsitter's thrust handoff
   after a back transition no longer steps the moments. A piloted throttle resting just above
