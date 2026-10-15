@@ -222,15 +222,14 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   throttle and `SAT_*` displays: the bridge README's `VFR_HUD` and `NAMED_VALUE_INT` rows.
   QGC → bridge traffic: `nettop -p <bridge pid> -J bytes_in` (heartbeat only ≈ 21 B/s, joystick
   ≈ 600 B/s). `--record` on the tailsitter examples logs setpoints, rates, moments, and
-  actuators per tick (columns: `docs/tuning/tailsitter.md`).
+  actuators per tick (columns: `stable_flight_sitl::recorder::TailsitterColumns`).
 - **Comparable runs:** change one knob per run, fly the same script with `--record`
   (transitions: `flights/explora_transition.csv --end land`), and report each run as a row
   against the earlier ones. To tell whether a behavior predates a change, fly the parent
   commit in a throwaway worktree. With `--end land` the example keeps running on the ground:
   stop it (below) before the next run.
-- **Sim isn't enough for tailsitter transitions:** the sim's elevons keep low-speed
-  authority the eXplora lacks, so it passes back-transition thrusts RealFlight fails (#399).
-  A transition setting needs a RealFlight flight.
+- A setting that depends on a model gap listed in the `stable-flight-sim` README's **Limits**
+  needs a RealFlight flight; the sim passing it isn't enough.
 - **Stopping:** Ctrl-C or SIGTERM (`ShutdownSignal`), so `RealFlightVehicle` hands RC back to
   RealFlight. A kill leaves "Preexisting controller reference" on the next run and truncates
   capture CSVs.

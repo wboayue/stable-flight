@@ -12,9 +12,9 @@ the authority, with the flight behind each value cited beside it.
 
 ## What makes a tailsitter different
 
-The elevons are the only pitch control in hover, and they work only in the prop wash. Below
-about 5 m/s of airspeed, their authority comes from thrust. Most tailsitter-specific knobs exist
-because of this:
+The elevons are the only pitch control in hover, and they work only in the prop wash. At low
+airspeed their authority comes from thrust: in #343 the eXplora lost pitch authority at 3–4 m/s
+with thrust 0.6. Most tailsitter-specific knobs exist because of this:
 
 - **Low thrust:** too little thrust in hover or on the back transition, and the elevons can't
   hold the nose.
@@ -37,7 +37,9 @@ end in the ground.
    - **Params:** change them in QGC's parameter editor; they apply on the next tick. When a
      value works, copy it into the airframe, citing the flight.
    - **Restarts:** the examples start from the airframe's values on each run.
-3. **Recording.** Add `--record <csv>` to either example. These columns matter most:
+3. **Recording.** Add `--record <csv>` to either example. These columns matter most; the
+   [`TailsitterColumns`](../../crates/stable-flight-sitl/src/recorder.rs) rustdoc has the full
+   list:
 
    | Column | Meaning |
    |---|---|
