@@ -204,7 +204,8 @@ fn writes_engines_each_tick() {
 }
 
 /// A silence resubscribes every 0.25 s once it passes 0.5 s, and frames returning take control
-/// again (a restarted X-Plane has cleared the overrides).
+/// again (a restarted X-Plane has cleared the overrides) without zeroing the engines: those
+/// zeros could land a frame before the tick's throttles.
 #[test]
 fn resubscribes_through_a_silence_and_retakes_control() {
     let (mut vehicle, shared) = connected(alia());
@@ -228,11 +229,13 @@ fn resubscribes_through_a_silence_and_retakes_control() {
     check!((2..=3).contains(&during));
 
     let takeovers = shared.count_writes(&overrides::THROTTLES, true);
+    let zeros = shared.count_writes(&engine(0), 0.0);
     shared
         .fake()
         .push_frame(handles().frame(&hovering(), Instant::now(), &[]));
     vehicle.state(DT);
     check!(shared.count_writes(&overrides::THROTTLES, true) == takeovers + 1);
+    check!(shared.count_writes(&engine(0), 0.0) == zeros);
 }
 
 /// While frames flow, a dataref that stopped arriving triggers a resubscribe.

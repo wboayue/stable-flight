@@ -75,8 +75,8 @@ impl<B> XPlaneConfiguration<B> {
 /// A vehicle flown in X-Plane over [`xplane_bridge`].
 ///
 /// [`connect`](Self::connect) subscribes the state ([`StateDatarefs`]), waits until every
-/// dataref has a value, and takes control: `override_throttles`, every mapped and idle engine
-/// at 0.0, and, with [`ActuatorMapping::neutral_wings`], `override_control_surfaces` with those
+/// dataref has a value, zeroes every mapped and idle engine, and takes control:
+/// `override_throttles` and, with [`ActuatorMapping::neutral_wings`], `override_control_surfaces` with those
 /// wings' surfaces at 0°. Dropping the vehicle writes the overrides back to 0, handing control
 /// back to X-Plane, before the bridge unsubscribes.
 ///
@@ -98,7 +98,7 @@ impl<B> XPlaneConfiguration<B> {
 /// - **Silence:** no frame for 0.5 s (of the ticks' nominal `dt`) logs a warning and
 ///   resubscribes every 0.25 s until frames return, which covers an X-Plane restart (it forgets
 ///   every subscription). When frames return, it logs the silence's length and takes control
-///   again (a restarted X-Plane has also cleared the overrides). `state` keeps returning the
+///   again (a restarted X-Plane has also cleared the overrides), without zeroing the engines. `state` keeps returning the
 ///   last state meanwhile.
 /// - **Lost subscriptions:** X-Plane drops `RREF`s that arrive in a burst, so while frames flow,
 ///   a dataref that hasn't arrived for 0.5 s also triggers a resubscribe every 0.25 s.
@@ -145,6 +145,9 @@ pub struct XPlaneVehicle<B: DatarefSource + DatarefSink> {
     neutral_surfaces: Vec<Dataref<f32, Writable>>,
     /// Whether the last sample was paused.
     paused: bool,
+    /// As of the last frame, a dataref is missing or lagging the others (see
+    /// [`StateDatarefs::incomplete`]): only a frame can change it.
+    lagging: bool,
     liveness: Liveness,
 }
 
@@ -191,9 +194,11 @@ impl<B: DatarefSource + DatarefSink> XPlaneVehicle<B> {
             engines: engine::THRO_USE.iter().collect(),
             neutral_surfaces,
             paused: false,
+            lagging: false,
             liveness: Liveness::default(),
         };
         vehicle.take_control()?;
+        vehicle.zero_engines()?;
         vehicle.update(&sample);
         Ok(vehicle)
     }
@@ -208,18 +213,25 @@ impl<B: DatarefSource + DatarefSink> XPlaneVehicle<B> {
         &self.bridge
     }
 
-    /// Sets the overrides and zeroes every engine and neutral surface.
+    /// Sets the overrides and holds the neutral surfaces at 0°. Leaves the engines alone: on a
+    /// stall mid-flight, zeros sent here could land a frame before the tick's throttles.
     fn take_control(&mut self) -> Result<(), XPlaneError> {
         self.bridge.write(&overrides::THROTTLES, true)?;
-        for engine in self.mapping.engines() {
-            if let Some(dataref) = self.engines.get(engine) {
-                self.bridge.write(dataref, 0.0)?;
-            }
-        }
         if !self.neutral_surfaces.is_empty() {
             self.bridge.write(&overrides::CONTROL_SURFACES, true)?;
             for surface in &self.neutral_surfaces {
                 self.bridge.write(surface, 0.0)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Zeroes every engine the mapping writes, so none keeps X-Plane's last throttle before the
+    /// first tick.
+    fn zero_engines(&mut self) -> Result<(), XPlaneError> {
+        for engine in self.mapping.engines() {
+            if let Some(dataref) = self.engines.get(engine) {
+                self.bridge.write(dataref, 0.0)?;
             }
         }
         Ok(())
@@ -267,6 +279,9 @@ impl<B: DatarefSource + DatarefSink> XPlaneVehicle<B> {
         };
         if let Some(frame) = frame {
             self.latest.apply(&frame);
+            self.lagging = self
+                .datarefs
+                .incomplete(&self.latest, Duration::from_secs_f32(SILENCE_S));
             if let Some(silence_s) = self.liveness.frame_arrived() {
                 info!("X-Plane streaming again after {silence_s:.1} s; taking control");
                 if let Err(e) = self.take_control() {
@@ -300,10 +315,7 @@ impl<B: DatarefSource + DatarefSink> StateSource for XPlaneVehicle<B> {
         if self.liveness.silence_started() {
             warn!("No state from X-Plane for {SILENCE_S} s; resubscribing until it returns");
         }
-        let incomplete = self.liveness.is_silent()
-            || self
-                .datarefs
-                .incomplete(&self.latest, Duration::from_secs_f32(SILENCE_S));
+        let incomplete = self.liveness.is_silent() || self.lagging;
         if self.liveness.resubscribe_due(incomplete)
             && let Err(e) = self.bridge.resubscribe()
         {
