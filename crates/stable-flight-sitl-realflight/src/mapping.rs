@@ -18,8 +18,8 @@ pub const CHANNEL_COUNT: usize = 12;
 /// through, and servos (-1.0 to 1.0) are rescaled so 0.0 lands on center (0.5), after negating
 /// any slot in `reversed_servos` (a surface the model moves the other way from the mixer's
 /// convention) and adding its `servo_trims` offset (a surface whose neutral sits off the
-/// channel's center), clamped to the servo range. Channels no slot drives are sent as 0.0, which would hold a servo there at full
-/// deflection, so a mapping covers every surface and switch the model has; channels it leaves
+/// channel's center), clamped to the servo range. Channels no slot drives are sent as 0.0,
+/// which would hold a servo there at full deflection, so a mapping covers every surface and switch the model has; channels it leaves
 /// unmapped drive nothing on the model (check with `channel-sweep-realflight`; each airframe's
 /// docs say what its unmapped channels do).
 ///
@@ -61,14 +61,21 @@ pub enum MappingError {
         /// The offending channel.
         channel: usize,
     },
+    /// A servo trim is non-finite or outside the servo range, -1.0 to 1.0.
+    #[error("servo {slot}'s trim is not in -1.0 to 1.0")]
+    InvalidTrim {
+        /// The offending servo slot.
+        slot: usize,
+    },
 }
 
 impl ActuatorMapping {
-    /// Checks that every mapped channel exists and that no two slots share one.
+    /// Checks that every mapped channel exists, that no two slots share one, and that every
+    /// servo trim is finite and within -1.0 to 1.0.
     ///
     /// # Errors
     ///
-    /// The first [`MappingError`] found, motors before servos.
+    /// The first [`MappingError`] found: channels (motors before servos), then trims.
     pub fn validate(&self) -> Result<(), MappingError> {
         let mut used = [false; CHANNEL_COUNT];
         for &channel in self.motors.iter().chain(&self.servos).flatten() {
@@ -79,6 +86,13 @@ impl ActuatorMapping {
                 return Err(MappingError::DuplicateChannel { channel });
             }
             *slot = true;
+        }
+        if let Some(slot) = self
+            .servo_trims
+            .iter()
+            .position(|trim| !(-1.0..=1.0).contains(trim))
+        {
+            return Err(MappingError::InvalidTrim { slot });
         }
         Ok(())
     }

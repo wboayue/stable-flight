@@ -44,6 +44,48 @@ fn validate_rejects_missing_and_shared_channels() {
     }
 }
 
+/// A trim must be finite and within the servo range; it's checked after the channels.
+#[test]
+fn validate_rejects_invalid_trims() {
+    let with_trim = |slot: usize, trim: f32| {
+        let mut mapping = mapping(&[0], &[1, 2]);
+        mapping.servo_trims[slot] = trim;
+        mapping
+    };
+    // (case, mapping, expected)
+    let cases = [
+        ("in range", with_trim(1, 0.2), Ok(())),
+        ("at the limit", with_trim(0, -1.0), Ok(())),
+        (
+            "past the limit",
+            with_trim(2, 1.5),
+            Err(MappingError::InvalidTrim { slot: 2 }),
+        ),
+        (
+            "NaN",
+            with_trim(1, f32::NAN),
+            Err(MappingError::InvalidTrim { slot: 1 }),
+        ),
+        (
+            "infinite",
+            with_trim(7, f32::INFINITY),
+            Err(MappingError::InvalidTrim { slot: 7 }),
+        ),
+        (
+            "channels first",
+            {
+                let mut mapping = with_trim(1, f32::NAN);
+                mapping.motors[1] = Some(12);
+                mapping
+            },
+            Err(MappingError::ChannelOutOfRange { channel: 12 }),
+        ),
+    ];
+    for (case, mapping, expected) in cases {
+        check!(mapping.validate() == expected, "{case}");
+    }
+}
+
 #[test]
 fn motors_pass_through_and_servos_center_on_half() {
     let mapping = mapping(&[0, 1], &[2, 3, 4]);
