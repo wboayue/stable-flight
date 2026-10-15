@@ -69,7 +69,7 @@ RealFlight was chosen for its realistic physics model, API for external drone co
 ## Test Models
 
 * [QuadcopterX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX): A go-to for mastering control theory basics. The flight controller is tuned for and flies this model.
-* [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation): A tricky tail-sitter testing smooth copter-to-plane transitions. Flies in hover from a joystick or a waypoint script (takeoff, a small figure-eight, landing), and transitions to plane flight and back: stabilized from a joystick, or a scripted mission (climb, transition, plane laps on waypoint navigation, back transition, landing); aerobatics are planned ([`tailsitter-sitl`](https://github.com/wboayue/stable-flight/milestone/2)).
+* [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation): A tricky tail-sitter testing smooth copter-to-plane transitions. Flies in hover from a joystick or a waypoint script (takeoff, a small figure-eight, landing), and transitions to plane flight and back: stabilized from a joystick, or a scripted mission (climb, transition, plane laps on waypoint navigation, back transition, landing); aerobatics are planned ([`tailsitter-sitl`](https://github.com/wboayue/stable-flight/milestone/2)). Its tuning: [tailsitter tuning guide](docs/tuning/tailsitter.md).
 
 The ArduPilot repository also provides a helpful [collection of models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models).
 

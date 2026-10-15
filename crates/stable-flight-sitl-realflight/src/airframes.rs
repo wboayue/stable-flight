@@ -150,6 +150,9 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
 ///   plane flights measure them (#124). The plane side uses the hover thrust curve, so a
 ///   handoff keeps the motor commands continuous.
 ///
+/// How each value is tuned: the
+/// [tailsitter tuning guide](https://github.com/wboayue/stable-flight/blob/main/docs/tuning/tailsitter.md).
+///
 /// # Examples
 ///
 /// ```

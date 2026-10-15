@@ -14,6 +14,8 @@ lives in `architecture.md`; each crate's README owns its usage.
   `fw-*` recipes; root `fmt`/`clippy` don't reach it.
 - Run every command from the repo root: examples and binaries resolve across the workspace, and
   `flights/*.csv` paths are root-relative.
+- `docs/tuning/` holds the tuning guides, one per airframe type. A tuning change to an
+  airframe updates its guide in the same PR.
 - Untracked: `target/`, `tarpaulin-report.html`, `firmware/*/*.bin`, `sandbox/` and `tasks/` (local notes).
 - `Cargo.lock` is committed and CI builds `--locked`: commit lockfile changes with the manifest
   change that causes them. A dependency that needs a newer compiler raises `rust-version` and the
@@ -260,6 +262,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   - `SECURITY.md`: supported versions and reporting;
   - `.github/` templates: what an issue or PR must include;
   - `architecture.md`: crate boundaries, dependency rules, and the rationale for the contracts;
+  - `docs/tuning/`: how to tune an airframe type (order, knobs and params, symptoms, a worked
+    example); the airframe code holds the values and the flights behind them;
   - core rustdoc: the frame contract (`VehicleState`) and timing contract (`Vehicle`).
 - **Status claims match what has flown.** When that changes (a new airframe, simulator, board,
   or published crate), update in the same PR: the root README **Status** and its tables, the
