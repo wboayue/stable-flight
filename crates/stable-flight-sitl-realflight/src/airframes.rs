@@ -302,8 +302,9 @@ pub fn explora_vtol()
 ///   mixer, right panel (elevator + rudder)/2, left (elevator − rudder)/2
 ///   (`ArduPlane/servos.cpp:192-193`, ArduPilot `b032bcbde3`), with positive aileron, elevator, and rudder outputs
 ///   rolling right, raising the nose, and yawing right (`libraries/SITL/SIM_Plane.cpp:333-335`,
-///   `SIM_Plane.h:75-86`); the rows of [`TableMixer::quadplane_vtail`] match. Confirmed in
-///   flight by `surface-probe-realflight` (TODO(#433)). Both tail panels are trimmed +0.2
+///   `SIM_Plane.h:75-86`); the rows of [`TableMixer::quadplane_vtail`] match. In flight at
+///   12–16 m/s, a 0.3 cruise moment on each axis and sign pushed the way the mixer expects
+///   (`surface-probe-realflight`, #433). Both tail panels are trimmed +0.2
 ///   (`SERVO2_TRIM`, `SERVO4_TRIM` 1600).
 /// - **Body rotation:** identity; RealFlight's frame for this model is the airplane's.
 ///

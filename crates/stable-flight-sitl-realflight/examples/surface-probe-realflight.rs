@@ -3,7 +3,7 @@
 //!
 //! It flies a waypoint script in copter flight with forward thrust on (default
 //! `flights/cobra_probe.csv`: climb over the spawn point, a long leg ahead with no speed cap,
-//! back, land), so the pusher builds airspeed while the lift rotors hold attitude. Once the
+//! land at its end), so the pusher builds airspeed while the lift rotors hold attitude. Once the
 //! airspeed has held `--min-airspeed` for a second, it adds a cruise moment of `--pulse` for
 //! 0.5 s on one axis at a time, each sign in turn, with a second of quiet before each: roll
 //! (ailerons), pitch, and yaw (the tail). The hover stabilizer holds attitude against each
@@ -11,8 +11,9 @@
 //! as the mixer expects, and the same way when the servo is reversed. Each pulse's shift
 //! (the last 0.3 s of the pulse against the last 0.5 s of quiet) is logged with a verdict.
 //!
-//! Stop it with Ctrl-C (`RealFlightVehicle` hands RC back); `--end land` in the script lands
-//! and disarms. The RealFlight host defaults to `10.211.55.3:8080` via `--host`.
+//! It lands on the script's last waypoint and exits once disarmed; Ctrl-C stops it sooner
+//! (`RealFlightVehicle` hands RC back). Don't end a script with a fast leg flown tail-first:
+//! the Cobra pitches up past its lift rotors' authority (#433). The RealFlight host defaults to `10.211.55.3:8080` via `--host`.
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example surface-probe-realflight -- --record probe.csv

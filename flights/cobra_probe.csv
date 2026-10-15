@@ -1,7 +1,7 @@
 # Titan Cobra surface probe (surface-probe-realflight): climb to 30 m over the spawn point
-# (north -10.55 m, east 6.49 m, heading 38°), a 300 m copter leg ahead along the heading with no
-# speed cap (cruise_speed 0) for the pusher to build airspeed, then back over the spawn point.
+# (north -10.55 m, east 6.49 m, heading 38°), then a 300 m copter leg ahead along the heading
+# with no speed cap (cruise_speed 0) for the pusher to build airspeed; it lands at the far end.
+# Flying back tail-first at speed pitched it up past the lift rotors' authority (#433).
 x,y,altitude,cruise_speed
 -10.55,6.49,30.0,3.0
 225.85,191.19,30.0,0.0
--10.55,6.49,30.0,0.0
