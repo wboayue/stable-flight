@@ -14,11 +14,13 @@ use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use crate::model::MultirotorModel;
 
 mod plane;
+mod quadplane;
 mod tailsitter;
 #[cfg(test)]
 mod tests;
 
 pub use plane::{PlaneAirframe, plane};
+pub use quadplane::{QuadPlaneAirframe, quadplane};
 pub use tailsitter::{TailsitterAirframe, tailsitter};
 
 /// A simulated multirotor: its physics, the mixer that lays out its motors, and the guidance

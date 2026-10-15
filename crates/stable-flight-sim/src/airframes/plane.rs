@@ -160,7 +160,7 @@ pub fn plane() -> PlaneAirframe {
 /// The Aerosonde's principal inertia (Beard and McLain, *Small Unmanned Aircraft*, app. E:
 /// 0.8244, 1.135, 1.759 kg·m² at 13.5 kg and 2.8956 m span), scaled to `mass_kg` and
 /// `span_m` by mass × span².
-fn aerosonde_inertia(mass_kg: f32, span_m: f32) -> Vec3 {
+pub(super) fn aerosonde_inertia(mass_kg: f32, span_m: f32) -> Vec3 {
     const MASS_KG: f32 = 13.5;
     const SPAN_M: f32 = 2.8956;
     let scale = mass_kg / MASS_KG * (span_m / SPAN_M) * (span_m / SPAN_M);

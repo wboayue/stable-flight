@@ -94,16 +94,20 @@ the check for realism.
   factors, so elevons and separate surfaces read back alike). The sim and mixer can't
   disagree on motor order, spin, or surface slots, and there is no second table to keep in
   sync.
-* **Three vehicles over shared parts.** `SimCopter`, `SimPlane`, and `SimTailsitter` are
-  separate types over crate-private components: lockstep timing, the actuator delay, wind,
-  gyro noise, the rigid body, and ground contact live once; each vehicle adds only its loads,
-  and the airplane and tailsitter share one fixed-wing dynamics (the tailsitter's motor arm,
-  wash, and resting on its tail are off for the airplane). A public generic
+* **Four vehicles over shared parts.** `SimCopter`, `SimPlane`, `SimTailsitter`, and
+  `SimQuadPlane` are separate types over crate-private components: lockstep timing, the
+  actuator delay, wind, gyro noise, the rigid body, and ground contact live once; each vehicle
+  adds only its loads. The airplane, tailsitter, and quadplane share one fixed-wing dynamics:
+  the tailsitter adds its motor arm, wash, and resting on its tail; the quadplane adds lift
+  rotors along body `−z`, laid out by the mixer's motor rows as on the copter, and names its
+  pusher's slot, so a hover mixer that leaves the pusher out and a cruise mixer that drives it
+  fly the same model. A public generic
   vehicle (`SimVehicle<P: Physics>`) was rejected: its trait would have to absorb what the
-  two differ in (how each rests on the ground, plane-only flow angles) and stay stable as a
+  vehicles differ in (how each rests on the ground, plane-only flow angles) and stay stable as a
   public API, for less duplication than the vehicles' thin builder glue. A generic VTOL
-  (per-rotor position and thrust axis, tilt servos) waits for a quadplane or tiltrotor
-  guidance to fly it.
+  (per-rotor position and thrust axis, tilt servos) was rejected for the quadplane too: fixed
+  lift rotors need no axis per rotor, and taking geometry from the model instead of the mixer
+  would let the two disagree. It waits for a tiltrotor.
 * **Prop wash by momentum theory.** A tailsitter's elevons hold it in a hover only in the
   props' wash, so the surface terms see the actuator disc's far-wake pressure (thrust over
   disc area) on top of the free stream's; lift, drag, and damping see the free stream.

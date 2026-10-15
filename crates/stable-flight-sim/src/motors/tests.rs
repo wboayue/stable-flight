@@ -133,3 +133,27 @@ fn mismatched_motors_torque_at_hover() {
         check!(torque_nm.x.abs() > 0.0, "motor {slow}");
     }
 }
+
+/// `excluding` leaves one slot to another group, and `single` drives a slot no row names:
+/// each spins only its own slots.
+#[test]
+fn groups_spin_only_their_own_slots() {
+    let model = quad_x_motors().1;
+    let mut lift = Motors::excluding(TableMixer::quad_x().rows(), &model.motor_layout(), 3);
+    check!(lift.count() == 3);
+    let mut pusher = Motors::single(4, 10.0);
+    check!(pusher.count() == 1);
+    check!(Motors::single(8, 10.0).count() == 0);
+
+    let commands = [1.0; SLOTS];
+    settled(&mut lift, &commands);
+    settled(&mut pusher, &commands);
+    let lift_n = lift.thrusts_n();
+    check!(lift_n[..3].iter().all(|thrust_n| *thrust_n > 0.0));
+    check!(lift_n[3..] == [0.0; SLOTS - 3]);
+    let mut pusher_n = [0.0; SLOTS];
+    pusher_n[4] = 10.0;
+    check!(pusher.thrusts_n() == pusher_n);
+    check!(pusher.wrench() == (10.0, Vec3::zeros()));
+    assert_relative_eq!(pusher.max_total_thrust_n(), 10.0);
+}
