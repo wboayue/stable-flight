@@ -30,8 +30,9 @@ lives in `architecture.md`; each crate's README owns its usage.
 | `stable-flight-bridge` | Companion binary: native link ⇄ MAVLink v2 for ground stations (FC as sysid 1/compid 1). Pure `Bridge` over services (params, connect/metadata, commands, setpoints, state) queuing into an `Outbox`; `Pump` runs one I/O pass; `http` serves QGC param metadata; `main.rs` only sets up (`cli.rs`) | link (`std`), core (`param-metadata`), `stable-flight-mavlink`, `mavlink`, `crc`, `serde_json`, `clap` |
 | `stable-flight-sitl` | Simulator-independent SITL: `commanders` (joystick, Spektrum, `ScriptCommander`), `RealTimeRunner` (wall-clock pacing), `ShutdownSignal`, `recorder` (`CsvRecorder`: per-tick CSV, copter, tailsitter, and quadplane column sets) | core, `gilrs`, `signal-hook` |
 | `stable-flight-sitl-realflight` | RealFlight backend: `RealFlightVehicle`, `ActuatorMapping`, `airframes` (per-model gains, mixer, mapping, body rotation), `capture` (raw state CSV), and the RealFlight examples | core, `realflight-bridge`; sitl and link as dev-dependencies |
+| `stable-flight-sitl-xplane` | X-Plane backend: `XPlaneVehicle` (connect waits for every dataref, overrides, resubscribe on silence, hands control back on drop), `StateDatarefs`/`XPlaneSample`/`wait_ready`, `vehicle_state`, `LocalOrigin` (anchor, moved origin, relocation), `ActuatorMapping` (engines, idle engines, neutral wings), `capture` (raw sample CSV), and the X-Plane examples | core, `xplane-bridge`; sitl as a dev-dependency |
 | `stable-flight-sim` | Unpublished `no_std` deterministic simulator: `SimCopter`, `SimPlane`, `SimTailsitter`, and `SimQuadPlane` (lockstep `StateSource` + `Actuator`), `MultirotorModel`, `FixedWingModel`/`AeroCoefficients`, `TailsitterModel`/`PropWash`, `QuadPlaneModel`/`LiftRotors`, `Start`, `Wind`/`Gust`, `Perturbations` (delay, seeded gyro noise, disturbance moment, motor mismatch), `airframes` (`quad_x`, `heavy_quad`, `racer`; `plane`; `tailsitter`; `quadplane`); closed-loop tests in `tests/` (`Plant`, `plane::PlanePlant`, `tailsitter::TailsitterPlant`, `quadplane::QuadPlanePlant`, and the copter and plane step specs in `tests/common`) | core, `libm`, `thiserror` |
-| `stable-flight-tools` | Unpublished dev binaries: `plot_flight`, `generate_figure_eight`, `link_pilot`, `check_frames` | core, sitl, link, sitl-realflight, `plotters`, `clap` |
+| `stable-flight-tools` | Unpublished dev binaries: `plot_flight`, `generate_figure_eight`, `link_pilot`, `check_frames` | core, sitl, link, sitl-realflight, sitl-xplane, `plotters`, `clap` |
 
 - Other crates use core's `nalgebra` re-export (`stable_flight::nalgebra`) and `Vec2`/`Vec3`
   aliases. sitl re-exports only the core crate (`stable_flight_sitl::stable_flight`); import core
@@ -66,6 +67,7 @@ just fly-tailsitter                           # tailsitter-manual-realflight: eX
 just fly-quadplane-auto                       # quadplane-auto-realflight: Titan Cobra VTOL waypoint script (default flights/cobra_hover.csv; cobra_transition_lap.csv, cobra_legs.csv; --end, --record, --param NAME=VALUE)
 just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv; flights/explora_transition.csv flies plane legs, explora_transition_lap.csv one lap of them; --end, --record)
 just capture                                  # capture-state-realflight: joystick flight, raw SimulatorState → CSV
+just capture-xplane                           # capture-state-xplane: read-only, raw X-Plane samples → CSV while flown with X-Plane's controls (--host, --output)
 just plot <csv> <out> | just gen-figure-eight # plot_flight, generate_figure_eight
 just tag <crate> <version> | just versions    # push a <crate>-v<version> tag; list tags
 just todo-check                               # TODO(#n) markers whose issue is closed (needs gh)
@@ -73,7 +75,7 @@ cargo test -p stable-flight-sim               # closed-loop flights on the in-re
 cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight -- --motors 0,1 --servos 2,3  # drive raw channels, record a capture
 cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight                           # time RealFlight exchanges alone
 cargo run -p stable-flight-sitl-realflight --example surface-probe-realflight                             # quadplane surface directions in flight (Cobra)
-cargo run --bin check_frames -- capture.csv   # capture vs the frame contract (--pitch-deg: body rotation, 90 for the eXplora)
+cargo run --bin check_frames -- capture.csv   # capture vs the frame contract (--pitch-deg: body rotation, 90 for the eXplora; --sim xplane for X-Plane captures)
 cargo run --example extreme_3d_commander      # joystick smoke test (spektrum_commander: Spektrum mapping)
 ```
 
@@ -114,6 +116,7 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 | `Commander` | `LinkCommander` (a `LinkedCommander`, from `FcLink::wire_linked`) | link |
 | `StateSource` + `Actuator` | `ComposedVehicle<S, A>`; `testing::NullVehicle` | core |
 | `StateSource` + `Actuator` | `RealFlightVehicle<T: RealFlightBridge>` | sitl-realflight |
+| `StateSource` + `Actuator` | `XPlaneVehicle<B: DatarefSource + DatarefSink>` | sitl-xplane |
 | `Guidance` | `CopterGuidance` (altitude/lateral loops, heading hold, `ThrustLimits`); `PlaneGuidance` (FBWA sticks, acro, offboard); `TailsitterGuidance` (hover + plane under a `Transition`); `QuadPlaneGuidance` (hover + plane under a `LiftTransition`, blended through it); `View<G>` | core |
 | `Stabilizer` | `CopterStabilizer` (attitude, yaw, body-rate loops); `PlaneStabilizer` (attitude, turn coordination, airspeed-scaled rate loop); `TailsitterStabilizer` (each setpoint on its side); `QuadPlaneStabilizer` (lift rotors and cruise side, both in a `Setpoint::Blend`); `View<S>` | core |
 | `Mixer` | `TableMixer<N>` (presets `quad_x`, `hex_x`, `tri`, `tailsitter_2p`, …) | core |

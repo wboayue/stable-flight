@@ -109,6 +109,10 @@ bridge *ARGS:
 fly-auto *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- {{ARGS}}
 
+# Raw X-Plane state to CSV while flown with X-Plane's own controls (no override), e.g. `just capture-xplane --host oya.local:49000 --output roll.csv`
+capture-xplane *ARGS:
+    cargo run -p stable-flight-sitl-xplane --example capture-state-xplane -- {{ARGS}}
+
 # Joystick flight (as fly-manual) recording raw RealFlight state to CSV, e.g. `just capture --output roll.csv`
 capture *ARGS:
     cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- {{ARGS}}

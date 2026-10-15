@@ -1,0 +1,32 @@
+[package]
+name = "stable-flight-sitl-xplane"
+description = "X-Plane simulator backend for the Stable Flight flight controller"
+readme = "README.md"
+keywords = ["x-plane", "flight-simulator", "sitl", "drone", "robotics"]
+categories = ["aerospace::simulation", "aerospace::drones"]
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# Never the sitl harness: a backend must stay usable with any runner. sitl is a
+# dev-dependency for the examples; CI checks it never becomes a normal dependency.
+[dependencies]
+stable-flight = { path = "../stable-flight", version = "0.1.0" }
+xplane-bridge = "0.1"
+log.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+assert2.workspace = true
+approx.workspace = true
+stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["testing"] }
+# Tests drive the vehicle against a scripted X-Plane.
+xplane-bridge = { version = "0.1", features = ["testing"] }
+# Examples only: runner, shutdown signal.
+stable-flight-sitl = { path = "../stable-flight-sitl", version = "0.1.0" }
+env_logger = "0.11.6"
+# Examples parse their CLI args with clap.
+clap.workspace = true
