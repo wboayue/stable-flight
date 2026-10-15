@@ -304,8 +304,9 @@ pub fn explora_vtol()
 /// Fly it with [`QuadPlaneGuidance`](stable_flight::guidance::vtol::QuadPlaneGuidance) and
 /// [`QuadPlaneStabilizer`](stable_flight::stabilizers::vtol::QuadPlaneStabilizer).
 ///
-/// - **Hover:** QuadCopterX's hand tune, with more pitch rate I, flies a hover and a landing
-///   (#433); autotune pending (TODO(#433)). The model is nose-heavy on its lift rotors: with
+/// - **Hover:** roll and pitch rate P and D from a RealFlight autotune, the rest
+///   QuadCopterX's hand tune, with more pitch rate I; it flies a hover and a landing (#433).
+///   The model is nose-heavy on its lift rotors: with
 ///   equal front and rear thrust a hop pitched nose down at 155°/s, and a level hover holds
 ///   front motors at 0.60 and rear at 0.52 (#433), so the pitch rate loop holds a steady
 ///   nose-up moment.
@@ -354,9 +355,14 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
         stabilizer: QuadPlaneStabilizerConfig {
             hover: CopterStabilizerConfig {
                 body_rate: BodyRateControllerConfig {
+                    // Roll and pitch P and D: the RealFlight autotune (`copter-autotune-realflight
+                    // --airframe titan-cobra`), with the loop at 120 Hz for half the run;
+                    // TODO(#433): re-tune at 250 Hz. Roll rate steps reach 0.94 of the step
+                    // (0.84 on the hand tune), rising in 164 ms (#433).
+                    roll_gains: gains(1.08, 0.2, 0.027),
                     // The nose-heavy hover needs a steady 0.37 nose-up moment (#433);
                     // I · max_integral = 0.5 holds it with margin.
-                    pitch_gains: gains(0.5, 0.5, 0.004),
+                    pitch_gains: gains(0.68, 0.5, 0.025),
                     ..quadcopter_x.stabilizer.body_rate
                 },
                 ..quadcopter_x.stabilizer
