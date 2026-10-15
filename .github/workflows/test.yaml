@@ -145,15 +145,33 @@ jobs:
         cargo build -p stable-flight-sim --locked --target thumbv7em-none-eabihf
 
     # The firmware is a nested workspace; run from its dir so its .cargo/config.toml (target,
-    # linker script) applies. A core change that breaks the link fails here; flash size is printed
-    # to the log (not gated).
+    # linker script) applies. A core change that breaks the link fails here, and so does flash use
+    # (text + data) over FLASH_BUDGET_BYTES.
     - name: firmware (ARK FPV)
       working-directory: firmware/ark-fpv
+      env:
+        # The STM32H743 has 2 MB of flash and the linker fails past it; this budget catches
+        # unexpected growth (formatting, dynamic math, a stray dependency) long before that.
+        # 64 KiB is about 2x the 30,192 B release build; a PR that grows the firmware on purpose
+        # raises it with the measured size (`just fw-size`).
+        FLASH_BUDGET_BYTES: 65536
       run: |
+        set -euo pipefail
         cargo fmt --check
         cargo clippy --locked --release -- -D warnings
         cargo clippy --locked --release --features bench-armed -- -D warnings
         cargo build --locked --release
         # llvm-size from the llvm-tools component, so no cargo-binutils install is needed.
-        "$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/llvm-size" \
-          target/thumbv7em-none-eabihf/release/ark-fpv
+        sizes=$("$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/^host: //p')/bin/llvm-size" \
+          target/thumbv7em-none-eabihf/release/ark-fpv)
+        echo "$sizes"
+        flash=$(awk 'NR == 2 { print $1 + $2 }' <<< "$sizes")
+        if [ -z "$flash" ]; then
+          echo "::error::could not read flash use from llvm-size"
+          exit 1
+        fi
+        echo "flash: $flash of $FLASH_BUDGET_BYTES B budget"
+        if [ "$flash" -gt "$FLASH_BUDGET_BYTES" ]; then
+          echo "::error::firmware flash use $flash B exceeds the $FLASH_BUDGET_BYTES B budget"
+          exit 1
+        fi
