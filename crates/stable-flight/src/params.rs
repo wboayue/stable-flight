@@ -102,6 +102,7 @@
 //! | `TRAN_TIMEOUT` | `timeout_s` |
 //! | `TRAN_MIN_HGT` | `min_height_m` |
 //! | `TRAN_FW_THR`, `TRAN_VT_THR` | `forward_thrust`, `back_thrust` |
+//! | `TRAN_VT_SINK_LIM`, `TRAN_VT_SINK_GN` | `back_sink_limit_mps`, `back_sink_gain` |
 //! | `TRAN_HANDOFF` | `handoff_s` |
 //! | `TRAN_ROLL_MAX` | `roll_limit_rad` |
 //!

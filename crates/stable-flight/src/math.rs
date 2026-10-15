@@ -1,8 +1,8 @@
 //! Small numeric helpers shared by guidance, stabilizers, controllers, and mixers:
 //! [`saturate_unit`], [`saturate_symmetric`], [`saturate_throttle`], [`desaturate`],
 //! [`cap_magnitude`], [`clamp_symmetric`] and its per-component [`clamp_symmetric_each`],
-//! [`limit_or_zero`], [`all_finite`], [`assert_dt`], [`tilt_boost`], and [`wrap_angle`] and
-//! [`euler_angles`] (both public at the crate root).
+//! [`limit_or_zero`], [`all_finite`], [`assert_dt`], [`tilt_boost`], [`guard_sink`], and
+//! [`wrap_angle`] and [`euler_angles`] (both public at the crate root).
 //!
 //! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite
 //! error into controller state, wrap angles), which is specified in `architecture.md`,
@@ -335,6 +335,15 @@ pub(crate) fn saturate_throttle(value: f32) -> f32 {
     } else {
         value.clamp(0.0, 1.0)
     }
+}
+
+/// `thrust` raised by `gain` per m/s of sink past `limit_mps`, saturated to `[0, 1]`, or
+/// `None` when the guard doesn't act: not sinking past the limit, a NaN `climb_mps`, or a
+/// `limit_mps` of 0 (disabled). Keeps air over a tailsitter's elevons, which a sink turns
+/// against the propwash.
+pub(crate) fn guard_sink(thrust: f32, climb_mps: f32, limit_mps: f32, gain: f32) -> Option<f32> {
+    let excess_mps = -limit_mps - climb_mps;
+    (limit_mps > 0.0 && excess_mps > 0.0).then(|| saturate_throttle(thrust + gain * excess_mps))
 }
 
 /// Wraps an angle in radians to [-π, π); non-finite input gives NaN.

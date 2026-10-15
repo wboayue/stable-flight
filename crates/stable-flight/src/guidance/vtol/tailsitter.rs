@@ -6,7 +6,7 @@ use super::{ThrustHandoff, Transition, TransitionConfig, TransitionStep};
 use crate::controllers::InvalidConfig;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::guidance::plane::{PlaneGuidance, PlaneGuidanceConfig};
-use crate::math::bank_rad;
+use crate::math::{bank_rad, guard_sink};
 use crate::params::{ParamError, Params, locate};
 use crate::{
     AbsoluteAttitudeCommand, AttitudeSetpoint, Configurable, ControlInput, FlightMode,
@@ -63,7 +63,7 @@ impl TailsitterGuidanceConfig {
 ///    | `Copter` | hover guidance, on the command's input |
 ///    | `ToPlane` | hover guidance on an absolute attitude: wings level, view pitch −tilt, heading held, thrust the larger of [`forward_thrust`](TransitionConfig::forward_thrust) and the hover thrust when it began; a [`transition`](AttitudeSetpoint::transition) ramp |
 ///    | `Plane` | plane guidance, on the command's input |
-///    | `ToCopter` | plane guidance on an absolute attitude: wings level, pitch π/2 − tilt, [`back_thrust`](TransitionConfig::back_thrust); a [`transition`](PlaneSetpoint::transition) ramp |
+///    | `ToCopter` | plane guidance on an absolute attitude: wings level, pitch π/2 − tilt, [`back_thrust`](TransitionConfig::back_thrust) raised while sinking past [`back_sink_limit_mps`](TransitionConfig::back_sink_limit_mps); a [`transition`](PlaneSetpoint::transition) ramp |
 ///
 ///    A ramp's pitch isn't held to the stabilizer's limits (hover tilt, plane pitch), which
 ///    would stop it short of completing.
@@ -118,6 +118,8 @@ pub struct TailsitterGuidance {
     forward_thrust: f32,
     /// Least stick thrust after a handoff into `Plane`, until the stick reaches it.
     throttle_floor: Option<f32>,
+    /// The back ramp's sink guard raised its thrust on the last tick.
+    sink_guarded: bool,
 }
 
 impl TailsitterGuidance {
@@ -140,6 +142,7 @@ impl TailsitterGuidance {
             last_thrust: 0.0,
             forward_thrust: 0.0,
             throttle_floor: None,
+            sink_guarded: false,
         }
     }
 
@@ -191,6 +194,20 @@ impl TailsitterGuidance {
         setpoint.with_thrust(floor)
     }
 
+    /// The back ramp's thrust: [`back_thrust`](TransitionConfig::back_thrust), raised by the
+    /// sink guard while sinking past its limit.
+    fn back_thrust(&mut self, state: &VehicleState) -> f32 {
+        let transition = &self.config.transition;
+        let guarded = guard_sink(
+            transition.back_thrust,
+            state.velocity_mps.z,
+            transition.back_sink_limit_mps,
+            transition.back_sink_gain,
+        );
+        self.sink_guarded = guarded.is_some();
+        guarded.unwrap_or(transition.back_thrust)
+    }
+
     /// Copies the parts' configs back after a param write, so [`Configurable::config`] stays
     /// the one view of them.
     fn sync_config(&mut self) {
@@ -235,10 +252,10 @@ impl Guidance for TailsitterGuidance {
         if step.handoff {
             self.hand_off(step.mode, state);
         }
-        let transition = &self.config.transition;
         if step.mode == FlightMode::ToPlane && self.mode != FlightMode::ToPlane {
-            self.forward_thrust = self.last_thrust.max(transition.forward_thrust);
+            self.forward_thrust = self.last_thrust.max(self.config.transition.forward_thrust);
         }
+        self.sink_guarded = false;
         let tilt_rad = step.tilt_target_rad.unwrap_or(0.0);
 
         let setpoint = match step.mode {
@@ -260,7 +277,7 @@ impl Guidance for TailsitterGuidance {
                     roll_rad: 0.0,
                     pitch_rad: FRAC_PI_2 - tilt_rad,
                     heading_rad: f32::NAN,
-                    thrust: transition.back_thrust,
+                    thrust: self.back_thrust(state),
                 });
                 transition_ramp(self.plane.guide(dt, FlightRegime::Plane, &ramp, state))
             }
@@ -288,12 +305,21 @@ impl Guidance for TailsitterGuidance {
         self.mode = FlightMode::Copter;
         self.last_thrust = 0.0;
         self.throttle_floor = None;
+        self.sink_guarded = false;
     }
 
     /// The side that flew the last tick: hover in `Copter` and `ToPlane`, plane otherwise.
+    /// `thrust` is also set while the back ramp's sink guard raises its thrust.
     fn saturation(&self) -> Saturation {
         match self.mode {
-            FlightMode::Plane | FlightMode::ToCopter => self.plane.saturation(),
+            FlightMode::Plane => self.plane.saturation(),
+            FlightMode::ToCopter => {
+                let saturation = self.plane.saturation();
+                Saturation {
+                    thrust: saturation.thrust || self.sink_guarded,
+                    ..saturation
+                }
+            }
             _ => self.hover.saturation(),
         }
     }

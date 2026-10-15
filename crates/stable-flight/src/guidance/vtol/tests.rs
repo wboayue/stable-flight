@@ -406,7 +406,7 @@ fn prime_resets_mode_and_timeout() {
 #[test]
 fn validates_each_config_field() {
     type Break = fn(&mut TransitionConfig);
-    let cases: [(Break, &str); 14] = [
+    let cases: [(Break, &str); 16] = [
         (|c| c.forward_rate_radps = 0.0, "forward_rate_radps"),
         (|c| c.forward_done_rad = 0.0, "forward_done_rad"),
         (|c| c.forward_done_rad = FRAC_PI_2, "forward_done_rad"),
@@ -419,6 +419,8 @@ fn validates_each_config_field() {
         (|c| c.min_height_m = f32::INFINITY, "min_height_m"),
         (|c| c.forward_thrust = 1.1, "forward_thrust"),
         (|c| c.back_thrust = f32::NAN, "back_thrust"),
+        (|c| c.back_sink_limit_mps = -1.0, "back_sink_limit_mps"),
+        (|c| c.back_sink_gain = f32::INFINITY, "back_sink_gain"),
         (|c| c.handoff_s = -0.1, "handoff_s"),
         (|c| c.roll_limit_rad = 0.0, "roll_limit_rad"),
     ];

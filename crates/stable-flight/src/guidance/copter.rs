@@ -41,7 +41,8 @@ use crate::{
 
 use super::rate_divider::RateDivider;
 use crate::math::{
-    all_finite, assert_dt, cap_magnitude, saturate_throttle, saturate_unit, tilt_boost, wrap_angle,
+    all_finite, assert_dt, cap_magnitude, guard_sink, saturate_throttle, saturate_unit, tilt_boost,
+    wrap_angle,
 };
 
 mod params;
@@ -701,17 +702,15 @@ impl CopterGuidance {
         }
     }
 
-    /// Adds `sink_gain` per m/s of sink past `sink_limit_mps`, saturated to `[0, 1]` and
-    /// flagging `thrust`; a disabled guard (limit 0) or a NaN `climb_mps` adds nothing.
+    /// [`guard_sink`] with the configured limit and gain, flagging `thrust` when it acts.
     fn guard_sink(&mut self, thrust: f32, climb_mps: f32) -> f32 {
-        let limit_mps = self.config.thrust.sink_limit_mps;
-        let excess_mps = -limit_mps - climb_mps;
-        if limit_mps > 0.0 && excess_mps > 0.0 {
-            self.saturation.thrust = true;
-            saturate_throttle(thrust + self.config.thrust.sink_gain * excess_mps)
-        } else {
-            thrust
-        }
+        let limits = &self.config.thrust;
+        let Some(raised) = guard_sink(thrust, climb_mps, limits.sink_limit_mps, limits.sink_gain)
+        else {
+            return thrust;
+        };
+        self.saturation.thrust = true;
+        raised
     }
 
     /// Raises `thrust` to `min_thrust`, flagging `thrust` when it does.

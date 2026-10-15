@@ -53,6 +53,12 @@
 //!   (`tailsitter.cpp:546`); a back timeout completes in both (`tailsitter.cpp:586`).
 //! - PX4 blends thrust over 0.5 s when the back transition takes over from the plane
 //!   controller (`tailsitter.h:58`).
+//! - Through the back ramp ArduPilot flies a fixed throttle (`Q_TAILSIT_THR_VT`, by default
+//!   the hover throttle, at least cruise; `tailsitter.cpp:137-142`, `:306-341`) with no
+//!   altitude loop; PX4 flies its hover vertical-speed loop, its setpoint decaying to 0
+//!   (`FlightTaskTransition.cpp:50-86`, main `e146fe4`). Here the thrust is fixed and raised
+//!   only while sinking: one side of PX4's loop, since a climb costs height and a sink can
+//!   end in the ground.
 
 use core::f32::consts::FRAC_PI_2;
 
@@ -97,8 +103,17 @@ pub struct TransitionConfig {
     /// Least linear thrust through the forward transition, `[0, 1]`: the hover thrust when it
     /// began, if higher, holds.
     pub forward_thrust: f32,
-    /// Linear thrust through the back transition, `[0, 1]`.
+    /// Linear thrust through the back transition, `[0, 1]`, raised while sinking past
+    /// [`back_sink_limit_mps`](Self::back_sink_limit_mps).
     pub back_thrust: f32,
+    /// Sink rate past which the back transition gets more thrust than
+    /// [`back_thrust`](Self::back_thrust), in m/s: [`back_sink_gain`](Self::back_sink_gain)
+    /// per m/s of sink past it. Slowing nose-high with too little thrust, the wing stalls and
+    /// the vehicle falls; this catches it. Non-negative; `0` turns it off.
+    pub back_sink_limit_mps: f32,
+    /// Thrust added per m/s of sink past [`back_sink_limit_mps`](Self::back_sink_limit_mps),
+    /// in s/m. Non-negative.
+    pub back_sink_gain: f32,
     /// How long thrust blends from one controller to the other at a handoff, in seconds
     /// ([`ThrustHandoff`]); 0 switches at once.
     pub handoff_s: f32,
@@ -138,6 +153,8 @@ impl TransitionConfig {
         let unit = |value: f32| (0.0..=1.0).contains(&value);
         check("forward_thrust", unit(self.forward_thrust), "in [0, 1]")?;
         check("back_thrust", unit(self.back_thrust), "in [0, 1]")?;
+        check_limit("back_sink_limit_mps", self.back_sink_limit_mps)?;
+        check_limit("back_sink_gain", self.back_sink_gain)?;
         check_limit("handoff_s", self.handoff_s)?;
         check(
             "roll_limit_rad",
@@ -150,8 +167,9 @@ impl TransitionConfig {
 impl Default for TransitionConfig {
     /// ArduPilot's tailsitter rates and angles (50°/s each way, complete at 45° from vertical
     /// both ways) and roll limit (45°), the forward ramp stopping at 80°, PX4's 15 s timeout
-    /// and 0.5 s thrust blend, no airspeed gate, 5 m of height, and half thrust each way (an
-    /// airframe sets its own); see the [module sources](self#sources).
+    /// and 0.5 s thrust blend, no airspeed gate, 5 m of height, half thrust each way (an
+    /// airframe sets its own), and a back sink guard of 0.4 per m/s past 1 m/s; see the
+    /// [module sources](self#sources).
     fn default() -> Self {
         TransitionConfig {
             forward_rate_radps: 50.0_f32.to_radians(),
@@ -164,6 +182,10 @@ impl Default for TransitionConfig {
             min_height_m: 5.0,
             forward_thrust: 0.5,
             back_thrust: 0.5,
+            // Measured on the sim tailsitter (#343): a 25°/s ramp at thrust 0.3–0.5, which
+            // without it stalls nose-high and falls 30 m, hands over climbing at most 7 m.
+            back_sink_limit_mps: 1.0,
+            back_sink_gain: 0.4,
             handoff_s: 0.5,
             roll_limit_rad: 45.0_f32.to_radians(),
         }

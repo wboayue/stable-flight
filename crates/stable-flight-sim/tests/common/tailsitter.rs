@@ -220,10 +220,34 @@ impl Trace {
             .filter(move |sample| (from_s..until_s).contains(&sample.time_s))
     }
 
-    /// The lowest height from `from_s` until `until_s`, in m.
-    pub fn lowest_m(&self, from_s: f32, until_s: f32) -> f32 {
-        self.window(from_s, until_s)
-            .map(|sample| sample.state.position_m.z)
-            .fold(f32::INFINITY, f32::min)
+    /// The height at `from_s` and the lowest and highest from then until `until_s`.
+    pub fn heights(&self, from_s: f32, until_s: f32) -> Heights {
+        let start_m = self
+            .at(from_s)
+            .map_or(f32::NAN, |sample| sample.state.position_m.z);
+        self.window(from_s, until_s).fold(
+            Heights {
+                start_m,
+                lowest_m: f32::INFINITY,
+                highest_m: f32::NEG_INFINITY,
+            },
+            |heights, sample| {
+                let height_m = sample.state.position_m.z;
+                Heights {
+                    lowest_m: heights.lowest_m.min(height_m),
+                    highest_m: heights.highest_m.max(height_m),
+                    ..heights
+                }
+            },
+        )
     }
+}
+
+/// Heights over a window of a [`Trace`], in m.
+#[derive(Debug, Clone, Copy)]
+pub struct Heights {
+    /// At the window's start.
+    pub start_m: f32,
+    pub lowest_m: f32,
+    pub highest_m: f32,
 }
