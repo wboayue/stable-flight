@@ -24,6 +24,7 @@
 /// (`XPlaneUdpBridge::connect`) with the exact version it uses.
 pub use xplane_bridge;
 
+pub mod airframes;
 pub mod capture;
 mod mapping;
 mod origin;

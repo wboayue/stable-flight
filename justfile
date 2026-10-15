@@ -109,6 +109,18 @@ bridge *ARGS:
 fly-auto *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- {{ARGS}}
 
+# Joystick-flown Alia 250 in X-Plane (copter mode), params and telemetry over the native link for `just bridge`, e.g. `just fly-xplane --record flight.csv` or `just fly-xplane --host oya.local:49000`
+fly-xplane *ARGS:
+    cargo run --release -p stable-flight-sitl-xplane --example copter-manual-xplane -- {{ARGS}}
+
+# Alia 250 in X-Plane flown from the native link (QGC through `just bridge --origin <logged origin>`, or `just link-pilot`), holding when the link goes quiet
+fly-xplane-companion *ARGS:
+    cargo run --release -p stable-flight-sitl-xplane --example copter-companion-xplane -- {{ARGS}}
+
+# Lift-engine sweep of a multirotor on the X-Plane runway: yaw sign per diagonal, liftoff throttle, motor lag, moment response, e.g. `just xplane-sweep --output sweep.csv`
+xplane-sweep *ARGS:
+    cargo run --release -p stable-flight-sitl-xplane --example engine-sweep-xplane -- {{ARGS}}
+
 # Raw X-Plane state to CSV while flown with X-Plane's own controls (no override), e.g. `just capture-xplane --host oya.local:49000 --output roll.csv`
 capture-xplane *ARGS:
     cargo run -p stable-flight-sitl-xplane --example capture-state-xplane -- {{ARGS}}
