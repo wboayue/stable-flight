@@ -17,7 +17,8 @@ pub const CHANNEL_COUNT: usize = 12;
 /// mapping only fits its own mixer. RealFlight channels run from 0.0 to 1.0: motors pass
 /// through, and servos (-1.0 to 1.0) are rescaled so 0.0 lands on center (0.5), after negating
 /// any slot in `reversed_servos` (a surface the model moves the other way from the mixer's
-/// convention). Channels no slot drives are sent as 0.0, which would hold a servo there at full
+/// convention) and adding its `servo_trims` offset (a surface whose neutral sits off the
+/// channel's center), clamped to the servo range. Channels no slot drives are sent as 0.0, which would hold a servo there at full
 /// deflection, so a mapping covers every surface and switch the model has; channels it leaves
 /// unmapped drive nothing on the model (check with `channel-sweep-realflight`; each airframe's
 /// docs say what its unmapped channels do).
@@ -32,7 +33,7 @@ pub const CHANNEL_COUNT: usize = 12;
 /// mapping.servos[0] = Some(3); // Servo 0 (say, a tail tilt) to channel 3
 /// assert!(mapping.validate().is_ok());
 /// ```
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct ActuatorMapping {
     /// RealFlight channel for each motor slot.
     pub motors: [Option<usize>; ActuatorCommand::SLOTS],
@@ -40,6 +41,9 @@ pub struct ActuatorMapping {
     pub servos: [Option<usize>; ActuatorCommand::SLOTS],
     /// Servo slots whose command is negated before it reaches the channel.
     pub reversed_servos: [bool; ActuatorCommand::SLOTS],
+    /// Each servo slot's neutral, in servo units (-1.0 to 1.0, 0.0 the channel's center),
+    /// added after any reversal: ArduPilot's `SERVOn_TRIM`, `(trim_us − 1500) / 500`.
+    pub servo_trims: [f32; ActuatorCommand::SLOTS],
 }
 
 /// Why an [`ActuatorMapping`] is invalid.
@@ -85,11 +89,12 @@ impl ActuatorMapping {
         let mut input = ControlInputs::default();
         write(&mut input, &self.motors, &command.motors, |m| m);
         let servos: [f32; ActuatorCommand::SLOTS] = core::array::from_fn(|i| {
-            if self.reversed_servos[i] {
+            let servo = if self.reversed_servos[i] {
                 -command.servos[i]
             } else {
                 command.servos[i]
-            }
+            };
+            (servo + self.servo_trims[i]).clamp(-1.0, 1.0)
         });
         write(&mut input, &self.servos, &servos, servo_to_channel);
         input

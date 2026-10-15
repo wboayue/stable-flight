@@ -168,7 +168,7 @@ fn explora_vtol_transition_fits_both_sides() {
 }
 
 /// The Cobra's mapping drives each of its eight channels once: lift rotors, pusher, ailerons,
-/// and the two A-tail panels (#433).
+/// and the two A-tail panels (#433), none reversed, the tail panels trimmed +0.2.
 #[test]
 fn titan_cobra_maps_each_channel_once() {
     let mapping = titan_cobra().mapping;
@@ -189,6 +189,11 @@ fn titan_cobra_maps_each_channel_once() {
     );
     assert_eq!(mapping.servos[..3], [Some(0), Some(3), Some(1)]);
     assert!(mapping.servos[3..].iter().all(Option::is_none));
+    assert!(mapping.reversed_servos.iter().all(|&r| !r));
+    assert_eq!(
+        mapping.servo_trims,
+        [0.0, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0]
+    );
     let mut channels: Vec<usize> = mapping
         .motors
         .iter()
@@ -270,4 +275,13 @@ fn titan_cobra_hover_gains_are_the_flown_set() {
     };
     assert_eq!(titan_cobra().stabilizer.hover, stabilizer);
     assert_eq!(titan_cobra().guidance.hover.altitude.hover_thrust, 0.79);
+}
+
+/// The Cobra's forward lift ramp starts at its ArduPilot minimum airspeed, `ARSPD_FBW_MIN`
+/// 11, which is also its plane side's minimum.
+#[test]
+fn titan_cobra_transitions_at_its_minimum_airspeed() {
+    let airframe = titan_cobra();
+    assert_eq!(airframe.guidance.transition.min_airspeed_mps, 11.0);
+    assert_eq!(airframe.stabilizer.plane.min_airspeed_mps, 11.0);
 }
