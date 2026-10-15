@@ -17,9 +17,17 @@ fn sample() -> XPlaneSample {
 #[test]
 fn captures_round_trip() {
     let mut csv = Vec::new();
-    write_header(&mut csv).expect("header");
-    write_row(&mut csv, &sample()).expect("row");
-    write_row(&mut csv, &XPlaneSample::default()).expect("row");
+    write_header(&mut csv, &["throttle0", "phase"]).expect("header");
+    write_row(&mut csv, &sample(), &[0.4, 2.0]).expect("row");
+    write_row(&mut csv, &XPlaneSample::default(), &[0.0, 3.0]).expect("row");
+    let header = String::from_utf8(csv.clone()).expect("utf-8");
+    check!(
+        header
+            .lines()
+            .next()
+            .expect("header")
+            .ends_with(",throttle0,phase")
+    );
 
     let rows = read_capture(csv.as_slice()).expect("valid capture");
 
@@ -47,11 +55,11 @@ fn finds_columns_by_name() {
 #[test]
 fn reports_bad_captures() {
     let mut header = Vec::new();
-    write_header(&mut header).expect("header");
+    write_header(&mut header, &[]).expect("header");
     let header = String::from_utf8(header).expect("utf-8");
     let row = |sample: &XPlaneSample| {
         let mut out = Vec::new();
-        write_row(&mut out, sample).expect("row");
+        write_row(&mut out, sample, &[]).expect("row");
         String::from_utf8(out).expect("utf-8")
     };
 

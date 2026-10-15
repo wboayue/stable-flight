@@ -51,7 +51,7 @@ fn main() {
         .expect("X-Plane not ready");
 
     let mut out = BufWriter::new(File::create(&args.output).expect("failed to create the CSV"));
-    write_header(&mut out).expect("failed to write the header");
+    write_header(&mut out, &[]).expect("failed to write the header");
     info!("Capturing to {}; Ctrl-C to stop", args.output.display());
 
     let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");
@@ -61,7 +61,7 @@ fn main() {
             Ok(Some(frame)) => {
                 latest.apply(&frame);
                 if let Some(sample) = datarefs.sample(&latest) {
-                    write_row(&mut out, &sample).expect("failed to write a row");
+                    write_row(&mut out, &sample, &[]).expect("failed to write a row");
                     rows += 1;
                 }
             }
