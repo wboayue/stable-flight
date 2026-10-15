@@ -6,7 +6,9 @@ use stable_flight::controllers::{
 };
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::guidance::plane::PlaneGuidanceConfig;
-use stable_flight::guidance::vtol::{LiftTransitionConfig, QuadPlaneGuidanceConfig};
+use stable_flight::guidance::vtol::{
+    ForwardThrustConfig, LiftTransitionConfig, QuadPlaneGuidanceConfig,
+};
 use stable_flight::mixers::{MixerConfig, TableMixer};
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight::stabilizers::vtol::QuadPlaneStabilizerConfig;
@@ -58,7 +60,9 @@ pub struct QuadPlaneAirframe {
 /// defaults, and the hover thrust worked out from the model. The plane side is [`plane`]'s
 /// gains (the same wing and surfaces), with the cruise thrust worked out for this mass on the
 /// pusher. Transitions fly core's defaults; they meet PX4's limits in
-/// `tests/quadplane_transition.rs`.
+/// `tests/quadplane_transition.rs`. Copter flight hands its nose-down pitch past 3° to the
+/// pusher ([`ForwardThrustConfig`], gain 1.2), so the wing isn't flown at
+/// negative α (`tests/quadplane_waypoints.rs`).
 ///
 /// # Examples
 ///
@@ -160,6 +164,10 @@ pub fn quadplane() -> QuadPlaneAirframe {
             hover,
             plane: plane_guidance,
             transition: LiftTransitionConfig::default(),
+            forward: ForwardThrustConfig {
+                gain: FORWARD_THRUST_GAIN,
+                ..ForwardThrustConfig::default()
+            },
         },
         stabilizer: QuadPlaneStabilizerConfig {
             hover: hover_stabilizer,
@@ -171,3 +179,9 @@ pub fn quadplane() -> QuadPlaneAirframe {
 
 /// Roll and pitch angle P: the sim autotune's (#390).
 const ANGLE_P: f32 = 9.0;
+
+/// Forward thrust gain: 1.2 holds a hover and flies upwind at 5 m/s in an 11 m/s headwind and
+/// balloons 4 m at most on an uncapped 100 m leg; ArduPilot's weight-over-thrust rule (0.83,
+/// `ArduPlane/quadplane.cpp:512`) caps the pusher at 0.42 under the 27° tilt cap and stalls
+/// upwind at 0.6 m/s; its default 2 (`:516`) balloons 16 m (#427).
+const FORWARD_THRUST_GAIN: f32 = 1.2;

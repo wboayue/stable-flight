@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LiftTransitionConfig` gains the pusher's `forward_thrust` and `pusher_slew_per_s`,
   `handoff_s`, and `roll_limit_rad` (`TRAN_FW_THR`, `TRAN_PSH_SLEW`, `TRAN_HANDOFF`,
   `TRAN_ROLL_MAX`).
+- **Quadplane forward thrust** (#427): `guidance::vtol::ForwardThrust` (`ForwardThrustConfig`,
+  `ForwardSplit`), ArduPilot's `Q_FWD_THR_GAIN`/`Q_FWD_PIT_LIM`: in copter flight on a
+  waypoint or land, `QuadPlaneGuidance` holds nose-down pitch to the limit (default 3°) and
+  flies the pusher on `gain · tan(pitch)` the hover asked for, as a `Setpoint::Blend` at lift
+  share 1, so the wing isn't flown at negative α. `QuadPlaneGuidanceConfig::forward`; params
+  `FWD_THR_GAIN` (default 0: off) and `FWD_PIT_LIM`, with metadata.
 - **Lift+cruise transition** (#391): `guidance::vtol::LiftTransition` (`LiftTransitionConfig`,
   `LiftTransitionStep`), a quadplane's copter ⇄ plane state machine. Forward, the lift rotors
   hold hover until a valid airspeed reaches the gate (default 9 m/s), then their lift share

@@ -209,6 +209,15 @@ impl Trace {
             },
         )
     }
+
+    /// The largest deviations of a level VTOL from `point_m` over the [`HOLD_S`] from `from_s`.
+    pub fn level_hold(&self, from_s: f32, point_m: Vec3) -> HoverDeviation {
+        let mut worst = HoverDeviation::default();
+        for sample in self.window(from_s, from_s + HOLD_S) {
+            worst.observe_level(&sample.state, point_m);
+        }
+        worst
+    }
 }
 
 /// Heights over a window of a [`Trace`], in m.

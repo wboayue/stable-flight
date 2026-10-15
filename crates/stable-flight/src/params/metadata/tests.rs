@@ -3,7 +3,10 @@ use assert2::check;
 use super::*;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::guidance::plane::{PlaneGuidance, PlaneGuidanceConfig};
-use crate::guidance::vtol::{LiftTransition, LiftTransitionConfig, Transition, TransitionConfig};
+use crate::guidance::vtol::{
+    ForwardThrust, ForwardThrustConfig, LiftTransition, LiftTransitionConfig, Transition,
+    TransitionConfig,
+};
 use crate::params::Params;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use crate::stabilizers::plane::{PlaneStabilizer, PlaneStabilizerConfig};
@@ -20,7 +23,7 @@ fn names<T: ParamMetadata>() -> (Vec<&'static str>, Vec<&'static str>) {
 fn describes_every_param_in_table_order() {
     // (table, (metadata names, param names), metadata). Every `ParamMetadata` impl gets a row
     // here and in `ranges_match_what_validation_accepts`.
-    let cases: [(&str, _, &[ParamMeta]); 6] = [
+    let cases: [(&str, _, &[ParamMeta]); 7] = [
         (
             "stabilizer",
             names::<CopterStabilizerConfig>(),
@@ -50,6 +53,11 @@ fn describes_every_param_in_table_order() {
             "lift transition",
             names::<LiftTransitionConfig>(),
             LiftTransitionConfig::METADATA,
+        ),
+        (
+            "forward thrust",
+            names::<ForwardThrustConfig>(),
+            ForwardThrustConfig::METADATA,
         ),
     ];
     for (table, (described, params), metadata) in cases {
@@ -123,5 +131,8 @@ fn ranges_match_what_validation_accepts() {
     });
     check_ranges(LiftTransitionConfig::METADATA, || {
         LiftTransition::new(LiftTransitionConfig::default())
+    });
+    check_ranges(ForwardThrustConfig::METADATA, || {
+        ForwardThrust::new(ForwardThrustConfig::default())
     });
 }

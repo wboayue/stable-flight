@@ -1,6 +1,9 @@
 //! [`QuadPlaneGuidance`]: hover and plane guidance under one [`LiftTransition`].
 
-use super::{LiftTransition, LiftTransitionConfig, LiftTransitionStep, ThrustHandoff};
+use super::{
+    ForwardThrust, ForwardThrustConfig, LiftTransition, LiftTransitionConfig, LiftTransitionStep,
+    ThrustHandoff,
+};
 use crate::controllers::InvalidConfig;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::guidance::plane::{PlaneGuidance, PlaneGuidanceConfig};
@@ -15,7 +18,7 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
-/// [`QuadPlaneGuidance`] settings: its two guidances' and the transition's.
+/// [`QuadPlaneGuidance`] settings: its two guidances', the transition's, and forward thrust's.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct QuadPlaneGuidanceConfig {
     /// Hover guidance, on the lift rotors.
@@ -24,6 +27,8 @@ pub struct QuadPlaneGuidanceConfig {
     pub plane: PlaneGuidanceConfig,
     /// The transition between them, its pusher, handoff blend, and roll limit.
     pub transition: LiftTransitionConfig,
+    /// The pusher in copter flight; off by default.
+    pub forward: ForwardThrustConfig,
 }
 
 impl QuadPlaneGuidanceConfig {
@@ -31,13 +36,15 @@ impl QuadPlaneGuidanceConfig {
     ///
     /// # Errors
     ///
-    /// The first part's [`InvalidConfig`], in its section (`hover`, `plane`, `transition`).
+    /// The first part's [`InvalidConfig`], in its section (`hover`, `plane`, `transition`,
+    /// `forward`).
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         self.hover.validate().map_err(|e| e.in_section("hover"))?;
         self.plane.validate().map_err(|e| e.in_section("plane"))?;
         self.transition
             .validate()
-            .map_err(|e| e.in_section("transition"))
+            .map_err(|e| e.in_section("transition"))?;
+        self.forward.validate().map_err(|e| e.in_section("forward"))
     }
 }
 
@@ -57,7 +64,7 @@ impl QuadPlaneGuidanceConfig {
 ///
 ///    | Mode | Setpoint |
 ///    |---|---|
-///    | `Copter` | hover guidance, on the command's input |
+///    | `Copter` | hover guidance, on the command's input; on a waypoint or land with [`ForwardThrust`] on, [`Setpoint::Blend`] at lift share 1: the hover's attitude with its nose-down pitch held to the limit, the plane side at that roll and pitch, the pusher on the rest |
 ///    | `ToPlane` | [`Setpoint::Blend`]: both sides wings level at the plane guidance's pitch for the command, within ArduPilot's transition limits; hover holding the altitude the transition began at, heading held; the pusher on the plane guidance's thrust, rising at most [`pusher_slew_per_s`](LiftTransitionConfig::pusher_slew_per_s), up to [`forward_thrust`](LiftTransitionConfig::forward_thrust); the step's lift share |
 ///    | `Plane` | plane guidance, on the command's input |
 ///    | `ToCopter` | [`Setpoint::Blend`]: both sides wings level at pitch 0; hover holding the altitude the back transition began at, heading held; the pusher stopped; the step's lift share |
@@ -76,8 +83,11 @@ impl QuadPlaneGuidanceConfig {
 ///    pusher's thrust blends from where it was over
 ///    [`handoff_s`](LiftTransitionConfig::handoff_s) ([`ThrustHandoff`]).
 ///
+///    Forward thrust flies only position-controlled input, as ArduPilot's `Q_FWD_THR_USE` 1
+///    (`ArduPlane/quadplane.cpp:2897-2937`): sticks keep the pilot's tilt.
+///
 /// Pair it with a [`QuadPlaneStabilizer`](crate::stabilizers::vtol::QuadPlaneStabilizer).
-/// Params chain the parts' (`GUID_*`, `PGUID_*`, `TRAN_*`).
+/// Params chain the parts' (`GUID_*`, `PGUID_*`, `TRAN_*`, `FWD_*`).
 ///
 /// # Examples
 ///
@@ -103,6 +113,7 @@ pub struct QuadPlaneGuidance {
     hover: CopterGuidance,
     plane: PlaneGuidance,
     transition: LiftTransition,
+    forward: ForwardThrust,
     handoff: ThrustHandoff,
     /// The mode the last tick flew.
     mode: FlightMode,
@@ -139,6 +150,7 @@ impl QuadPlaneGuidance {
             hover: CopterGuidance::new(config.hover),
             plane: PlaneGuidance::new(config.plane),
             transition: LiftTransition::new(config.transition),
+            forward: ForwardThrust::new(config.forward),
             handoff: ThrustHandoff::new(config.transition.handoff_s),
             mode: FlightMode::Copter,
             pusher_thrust: 0.0,
@@ -212,6 +224,48 @@ impl QuadPlaneGuidance {
         }
     }
 
+    /// The parts whose params chain, in order.
+    fn parts(&self) -> [&dyn Params; 4] {
+        [&self.hover, &self.plane, &self.transition, &self.forward]
+    }
+
+    /// [`parts`](Self::parts), mutably, in the same order.
+    fn parts_mut(&mut self) -> [&mut dyn Params; 4] {
+        [
+            &mut self.hover,
+            &mut self.plane,
+            &mut self.transition,
+            &mut self.forward,
+        ]
+    }
+
+    /// Copter flight: the hover guidance on `input`, its nose-down pitch handed to the pusher
+    /// on a waypoint or land while [`ForwardThrust`] is on.
+    fn copter(&mut self, dt: f32, input: &ControlInput, state: &VehicleState) -> Setpoint {
+        let setpoint = self.hover.guide(dt, FlightRegime::Copter, input, state);
+        let positioned = matches!(input, ControlInput::Waypoint(_) | ControlInput::Land(_));
+        let (true, Setpoint::Attitude(hover)) = (positioned && self.forward.enabled(), setpoint)
+        else {
+            self.pusher_thrust = 0.0;
+            return setpoint;
+        };
+        let split = self.forward.split(hover.pitch_rad);
+        self.pusher_thrust = split.thrust;
+        Setpoint::Blend(BlendSetpoint {
+            hover: AttitudeSetpoint {
+                pitch_rad: split.pitch_rad,
+                ..hover
+            },
+            plane: PlaneSetpoint {
+                roll_rad: hover.roll_rad,
+                pitch_rad: split.pitch_rad,
+                thrust: split.thrust,
+                ..PlaneSetpoint::default()
+            },
+            lift_share: 1.0,
+        })
+    }
+
     /// Copies the parts' configs back after a param write, so [`Configurable::config`] stays
     /// the one view of them.
     fn sync_config(&mut self) {
@@ -219,6 +273,7 @@ impl QuadPlaneGuidance {
             hover: *self.hover.config(),
             plane: *self.plane.config(),
             transition: *self.transition.config(),
+            forward: *self.forward.config(),
         };
     }
 }
@@ -297,10 +352,7 @@ impl Guidance for QuadPlaneGuidance {
                     lift_share: step.lift_share,
                 })
             }
-            _ => {
-                self.pusher_thrust = 0.0;
-                self.hover.guide(dt, FlightRegime::Copter, input, state)
-            }
+            _ => self.copter(dt, input, state),
         };
         self.mode = step.mode;
         setpoint
@@ -345,40 +397,32 @@ impl Configurable for QuadPlaneGuidance {
         self.hover.set_config(config.hover)?;
         self.plane.set_config(config.plane)?;
         self.transition.set_config(config.transition)?;
+        self.forward.set_config(config.forward)?;
         self.config = config;
         Ok(())
     }
 }
 
-/// The parts' params, chained: hover (`GUID_*`), plane (`PGUID_*`), transition (`TRAN_*`).
+/// The parts' params, chained: hover (`GUID_*`), plane (`PGUID_*`), transition (`TRAN_*`),
+/// forward thrust (`FWD_*`).
 impl Params for QuadPlaneGuidance {
     fn param_count(&self) -> usize {
-        self.hover.param_count() + self.plane.param_count() + self.transition.param_count()
+        self.parts().iter().map(|part| part.param_count()).sum()
     }
 
     fn param_name(&self, index: usize) -> Option<&'static str> {
-        match locate(&[&self.hover, &self.plane, &self.transition], index)? {
-            (0, i) => self.hover.param_name(i),
-            (1, i) => self.plane.param_name(i),
-            (_, i) => self.transition.param_name(i),
-        }
+        let (part, i) = locate(&self.parts(), index)?;
+        self.parts()[part].param_name(i)
     }
 
     fn param_at(&self, index: usize) -> Option<f32> {
-        match locate(&[&self.hover, &self.plane, &self.transition], index)? {
-            (0, i) => self.hover.param_at(i),
-            (1, i) => self.plane.param_at(i),
-            (_, i) => self.transition.param_at(i),
-        }
+        let (part, i) = locate(&self.parts(), index)?;
+        self.parts()[part].param_at(i)
     }
 
     fn set_param_at(&mut self, index: usize, value: f32) -> Result<(), ParamError> {
-        let parts: [&dyn Params; 3] = [&self.hover, &self.plane, &self.transition];
-        let result = match locate(&parts, index).ok_or(ParamError::Unknown)? {
-            (0, i) => self.hover.set_param_at(i, value),
-            (1, i) => self.plane.set_param_at(i, value),
-            (_, i) => self.transition.set_param_at(i, value),
-        };
+        let (part, i) = locate(&self.parts(), index).ok_or(ParamError::Unknown)?;
+        let result = self.parts_mut()[part].set_param_at(i, value);
         self.sync_config();
         result
     }

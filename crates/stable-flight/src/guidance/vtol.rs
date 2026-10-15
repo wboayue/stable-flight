@@ -69,11 +69,13 @@ use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
 use crate::math::{assert_dt, nose_up_cosine, saturate_throttle};
 use crate::{Configurable, FlightMode, FlightModeReport, FlightRegime, ModeRefusal, VehicleState};
 
+mod forward;
 mod lift;
 mod params;
 mod quadplane;
 mod tailsitter;
 
+pub use forward::{ForwardSplit, ForwardThrust, ForwardThrustConfig};
 pub use lift::{LiftTransition, LiftTransitionConfig, LiftTransitionStep};
 pub use quadplane::{QuadPlaneGuidance, QuadPlaneGuidanceConfig};
 pub use tailsitter::{TailsitterGuidance, TailsitterGuidanceConfig};
