@@ -25,8 +25,8 @@ pub(crate) struct MotorLayout {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Motors {
     max_thrust_n: f32,
-    /// Motor slots in use (`0..count`).
-    count: usize,
+    /// Which motor slots this group drives.
+    used: [bool; SLOTS],
     /// FRD body torque per newton of each motor's thrust, in N·m/N (roll, pitch, yaw).
     torque_per_thrust_m: [Vec3; SLOTS],
     /// The command each motor runs at, after its lag, in `[0, 1]`.
@@ -43,26 +43,64 @@ impl Motors {
     /// The signs follow the mixer's: a row's positive roll factor means its thrust rolls right,
     /// so the simulated vehicle answers each moment the way the mixer expects.
     pub(crate) fn new<const N: usize>(rows: &[MixRow; N], layout: &MotorLayout) -> Self {
-        let mut motors = Motors {
-            max_thrust_n: layout.max_thrust_n,
-            count: 0,
+        Self::selected(rows, layout, |_| true)
+    }
+
+    /// As [`new`](Self::new), without motor slot `skipped` (another group drives it).
+    pub(crate) fn excluding<const N: usize>(
+        rows: &[MixRow; N],
+        layout: &MotorLayout,
+        skipped: u8,
+    ) -> Self {
+        Self::selected(rows, layout, |index| index != skipped)
+    }
+
+    /// One motor on slot `index`, `max_thrust_n` at full command, turning nothing: whether
+    /// or not a mixer row drives it. An index of [`SLOTS`] or more drives nothing.
+    pub(crate) fn single(index: u8, max_thrust_n: f32) -> Self {
+        let mut motors = Self::stopped(max_thrust_n);
+        if let Some(used) = motors.used.get_mut(usize::from(index)) {
+            *used = true;
+        }
+        motors
+    }
+
+    fn stopped(max_thrust_n: f32) -> Self {
+        Motors {
+            max_thrust_n,
+            used: [false; SLOTS],
             torque_per_thrust_m: [Vec3::zeros(); SLOTS],
             running: [0.0; SLOTS],
             thrust_scale: [1.0; SLOTS],
-        };
+        }
+    }
+
+    /// The motor rows of `rows` whose slot `include` accepts, laid out by `layout`.
+    fn selected<const N: usize>(
+        rows: &[MixRow; N],
+        layout: &MotorLayout,
+        include: impl Fn(u8) -> bool,
+    ) -> Self {
+        let mut motors = Self::stopped(layout.max_thrust_n);
         for row in rows {
             let Slot::Motor(index) = row.slot() else {
                 continue;
             };
+            if !include(index) {
+                continue;
+            }
             let index = usize::from(index);
-            // A valid `TableMixer` keeps motor slots below `SLOTS` and contiguous from 0.
-            if let Some(torque) = motors.torque_per_thrust_m.get_mut(index) {
+            // A valid `TableMixer` keeps motor slots below `SLOTS`.
+            if let (Some(torque), Some(used)) = (
+                motors.torque_per_thrust_m.get_mut(index),
+                motors.used.get_mut(index),
+            ) {
                 *torque = Vec3::new(
                     row.roll() * layout.moment_arm_m,
                     row.pitch() * layout.moment_arm_m,
                     row.yaw() * layout.yaw_torque_per_thrust_m,
                 );
-                motors.count = motors.count.max(index + 1);
+                *used = true;
             }
         }
         motors
@@ -71,8 +109,10 @@ impl Motors {
     /// Moves each motor toward its command by `alpha` ([`lag::factor`]). A command outside
     /// `[0, 1]` saturates; NaN stops the motor.
     pub(crate) fn spin(&mut self, commands: &[f32; SLOTS], alpha: f32) {
-        for (running, command) in self.running.iter_mut().zip(commands).take(self.count) {
-            lag::approach_saturated(running, *command, &(0.0..=1.0), 0.0, alpha);
+        for ((running, command), used) in self.running.iter_mut().zip(commands).zip(&self.used) {
+            if *used {
+                lag::approach_saturated(running, *command, &(0.0..=1.0), 0.0, alpha);
+            }
         }
     }
 
@@ -105,9 +145,13 @@ impl Motors {
         (thrusts_n.iter().sum(), torque_nm)
     }
 
+    /// Total thrust at full command on every motor, in N, before mismatch.
+    pub(crate) fn max_total_thrust_n(&self) -> f32 {
+        self.count() as f32 * self.max_thrust_n
+    }
+
     /// Motor slots in use.
-    #[cfg(test)]
     pub(crate) fn count(&self) -> usize {
-        self.count
+        self.used.iter().filter(|used| **used).count()
     }
 }

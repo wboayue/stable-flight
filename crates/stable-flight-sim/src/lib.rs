@@ -1,7 +1,7 @@
-//! A deterministic rigid-body multirotor, airplane, and tailsitter simulator for Stable Flight's closed-loop
-//! tests.
+//! A deterministic rigid-body multirotor, airplane, tailsitter, and quadplane simulator for
+//! Stable Flight's closed-loop tests.
 //!
-//! [`SimCopter`], [`SimPlane`], and [`SimTailsitter`] are [`Vehicle`](stable_flight::Vehicle)s a
+//! [`SimCopter`], [`SimPlane`], [`SimTailsitter`], and [`SimQuadPlane`] are [`Vehicle`](stable_flight::Vehicle)s a
 //! [`FlightLoop`](stable_flight::FlightLoop) flies in lockstep: each tick integrates the last
 //! actuator command over the tick's `dt`, with no wall clock and only seeded noise, so the same
 //! inputs give the same flight, bit for bit. They aim at plausible, repeatable dynamics for
@@ -13,13 +13,15 @@
 //!   servo rows say which surfaces each servo moves. [`Start`] puts it in flight.
 //! - [`TailsitterModel`]: the airplane's with its motors along the wing (differential thrust)
 //!   and the surfaces in their [`PropWash`]; it rests on its tail and hovers nose up.
+//! - [`QuadPlaneModel`]: the airplane's with [`LiftRotors`] along body `−z` and a pusher, a
+//!   lift+cruise VTOL; it rests on its gear and hovers level.
 //! - [`Wind`]: steady wind plus an optional deterministic [`Gust`].
 //! - [`Perturbations`]: actuator delay, gyro noise and vibration, a disturbance moment, and
 //!   motor mismatch, all off by default. Ranges to sweep, so a method that passes on them
 //!   isn't fitted to one clean plant.
 //! - [`airframes`]: physics paired with the configs that fly it ([`airframes::quad_x`],
 //!   [`airframes::heavy_quad`], [`airframes::racer`]; [`airframes::plane`];
-//!   [`airframes::tailsitter`]).
+//!   [`airframes::tailsitter`]; [`airframes::quadplane`]).
 //!
 //! `no_std` with fixed-size math, so it can later drive hardware-in-the-loop runs.
 //!
@@ -71,6 +73,8 @@ mod model;
 mod motors;
 mod perturbations;
 mod plane;
+mod quadplane;
+mod quadplane_model;
 mod start;
 mod surfaces;
 mod tailsitter;
@@ -83,6 +87,8 @@ pub use fixed_wing::{AeroCoefficients, FixedWingModel};
 pub use model::{ModelError, MultirotorModel};
 pub use perturbations::{GyroNoise, MAX_ACTUATOR_DELAY_S, Perturbations, Vibration};
 pub use plane::SimPlane;
+pub use quadplane::SimQuadPlane;
+pub use quadplane_model::{LiftRotors, QuadPlaneModel};
 pub use start::Start;
 pub use tailsitter::SimTailsitter;
 pub use tailsitter_model::{PropWash, TailsitterModel};

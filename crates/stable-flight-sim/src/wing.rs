@@ -1,5 +1,6 @@
-//! Fixed-wing physics shared by [`SimPlane`](crate::SimPlane) and
-//! [`SimTailsitter`](crate::SimTailsitter): see [`FixedWing`].
+//! Fixed-wing physics shared by [`SimPlane`](crate::SimPlane),
+//! [`SimTailsitter`](crate::SimTailsitter), and [`SimQuadPlane`](crate::SimQuadPlane): see
+//! [`FixedWing`].
 
 use stable_flight::mixers::TableMixer;
 use stable_flight::nalgebra::UnitQuaternion;
@@ -12,6 +13,7 @@ use crate::ground::Ground;
 use crate::lag;
 use crate::lockstep::Dynamics;
 use crate::motors::{MotorLayout, Motors};
+use crate::quadplane_model::{LiftRotors, QuadPlaneModel};
 use crate::surfaces::Surfaces;
 use crate::tailsitter_model::{PropWash, TailsitterModel};
 
@@ -26,6 +28,16 @@ pub(crate) struct Rotors {
     pub motor_arm_m: f32,
     /// The props' wash over the surfaces; `None` for surfaces out of it.
     pub wash: Option<PropWash>,
+    /// Lift rotors along body `−z` and the one motor slot thrusting along body `x`; `None`
+    /// for every motor along body `x`.
+    pub lift: Option<Lift>,
+}
+
+/// A quadplane's lift rotors, and the slot of its pusher, the one motor along body `x`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct Lift {
+    pub rotors: LiftRotors,
+    pub pusher_slot: u8,
 }
 
 impl Rotors {
@@ -34,6 +46,7 @@ impl Rotors {
         Rotors {
             motor_arm_m: 0.0,
             wash: None,
+            lift: None,
         }
     }
 
@@ -42,24 +55,62 @@ impl Rotors {
         Rotors {
             motor_arm_m: model.motor_arm_m,
             wash: Some(model.prop_wash),
+            lift: None,
+        }
+    }
+
+    /// `model`'s lift rotors and its pusher on the centerline, nothing in their wash.
+    pub(crate) fn quadplane(model: &QuadPlaneModel) -> Self {
+        Rotors {
+            lift: Some(Lift {
+                rotors: model.lift,
+                pusher_slot: model.pusher_slot,
+            }),
+            ..Self::airplane()
         }
     }
 }
 
+/// Lift rotors through their lag: thrust along body `−z`, their torque, and their in-plane
+/// drag ([`LiftRotors`]).
+#[derive(Debug, Clone)]
+struct LiftGroup {
+    rotors: LiftRotors,
+    motors: Motors,
+    /// The rotor lag's step factor for the current step length.
+    alpha: f32,
+}
+
+impl LiftGroup {
+    /// Runs the rotors one step on `commands` and returns their force and torque on the body
+    /// axes, moving through the air at `air_mps` (body axes), in N and N·m.
+    fn wrench(&mut self, commands: &[f32; ActuatorCommand::SLOTS], air_mps: Vec3) -> (Vec3, Vec3) {
+        self.motors.spin(commands, self.alpha);
+        let (thrust_n, torque_nm) = self.motors.wrench();
+        let in_plane_mps = Vec3::new(air_mps.x, air_mps.y, 0.0);
+        let drag_n = in_plane_mps
+            * (self.rotors.drag_n_per_mps * thrust_n / self.motors.max_total_thrust_n());
+        (Vec3::new(0.0, 0.0, -thrust_n) - drag_n, torque_nm)
+    }
+}
+
 /// A fixed wing's physics: the motors and surfaces through their lags, thrust along body `x`,
-/// and the aerodynamics, with the surfaces in the props' wash when [`Rotors::wash`] says so.
+/// and the aerodynamics, with the surfaces in the props' wash when [`Rotors::wash`] says so
+/// and lift rotors along body `−z` when [`Rotors::lift`] has them.
 #[derive(Debug, Clone)]
 pub(crate) struct FixedWing {
     model: FixedWingModel,
     rotors: Rotors,
     /// The attitude resting on the ground, relative to level ([`Ground::rest`]).
     rest: UnitQuaternion<f32>,
+    /// The motors along body `x`.
     motors: Motors,
+    lift: Option<LiftGroup>,
     surfaces: Surfaces,
     /// The motor and servo lags' step factors for the current step length.
     motor_alpha: f32,
     servo_alpha: f32,
-    /// Thrust plus aerodynamic force over the last step, on the body axes, in N.
+    /// Thrust, lift rotors', and aerodynamic force over the last step, on the body axes, in N.
     force_n: Vec3,
     /// The aerodynamics over the last step.
     aero: Aero,
@@ -81,8 +132,24 @@ impl FixedWing {
             yaw_torque_per_thrust_m: rotors.motor_arm_m,
             max_thrust_n: model.max_thrust_n,
         };
+        let (motors, lift) = match rotors.lift {
+            Some(lift) => (
+                Motors::single(lift.pusher_slot, model.max_thrust_n),
+                Some(LiftGroup {
+                    rotors: lift.rotors,
+                    motors: Motors::excluding(
+                        mixer.rows(),
+                        &lift.rotors.motor_layout(),
+                        lift.pusher_slot,
+                    ),
+                    alpha: 0.0,
+                }),
+            ),
+            None => (Motors::new(mixer.rows(), &layout), None),
+        };
         FixedWing {
-            motors: Motors::new(mixer.rows(), &layout),
+            motors,
+            lift,
             surfaces: Surfaces::new(mixer.rows()),
             model,
             rotors,
@@ -97,6 +164,18 @@ impl FixedWing {
     /// Scales each motor's thrust (mismatched motors).
     pub(crate) fn set_thrust_scale(&mut self, thrust_scale: [f32; ActuatorCommand::SLOTS]) {
         self.motors.set_thrust_scale(thrust_scale);
+        if let Some(lift) = &mut self.lift {
+            lift.motors.set_thrust_scale(thrust_scale);
+        }
+    }
+
+    /// Each lift rotor's thrust, in N, by motor slot; all zero without lift rotors.
+    pub(crate) fn lift_thrusts_n(&self) -> [f32; ActuatorCommand::SLOTS] {
+        self.lift
+            .as_ref()
+            .map_or([0.0; ActuatorCommand::SLOTS], |lift| {
+                lift.motors.thrusts_n()
+            })
     }
 
     /// The aerodynamics over the last step.
@@ -128,6 +207,9 @@ impl Dynamics for FixedWing {
     fn begin(&mut self, h: f32) {
         self.motor_alpha = lag::factor(h, self.model.motor_time_constant_s);
         self.servo_alpha = lag::factor(h, self.model.servo_time_constant_s);
+        if let Some(lift) = &mut self.lift {
+            lift.alpha = lag::factor(h, lift.rotors.motor_time_constant_s);
+        }
     }
 
     fn loads(&mut self, command: &ActuatorCommand, body: &Body, wind_ned_mps: Vec3) -> Loads {
@@ -149,10 +231,16 @@ impl Dynamics for FixedWing {
             self.surfaces.deflection_rad(&self.model.max_deflection_rad),
             wash_pa,
         );
-        self.force_n = self.aero.force_n + Vec3::new(thrust_n, 0.0, 0.0);
+        let (lift_force_n, lift_torque_nm) = self
+            .lift
+            .as_mut()
+            .map_or((Vec3::zeros(), Vec3::zeros()), |lift| {
+                lift.wrench(&command.motors, air_mps)
+            });
+        self.force_n = self.aero.force_n + Vec3::new(thrust_n, 0.0, 0.0) + lift_force_n;
         Loads {
             force_ned_n: body.attitude * self.force_n,
-            torque_nm: self.aero.torque_nm + motor_torque_nm,
+            torque_nm: self.aero.torque_nm + motor_torque_nm + lift_torque_nm,
             damping_nm: Vec3::zeros(),
         }
     }

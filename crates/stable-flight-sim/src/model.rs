@@ -53,7 +53,8 @@ pub struct MultirotorModel {
 }
 
 /// Why a [`MultirotorModel`], [`FixedWingModel`](crate::FixedWingModel),
-/// [`TailsitterModel`](crate::TailsitterModel), [`Perturbations`](crate::Perturbations), or a [`SimCopter`](crate::SimCopter)'s mixer was
+/// [`TailsitterModel`](crate::TailsitterModel), [`QuadPlaneModel`](crate::QuadPlaneModel),
+/// [`Perturbations`](crate::Perturbations), or a [`SimCopter`](crate::SimCopter)'s mixer was
 /// rejected.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[non_exhaustive]
@@ -81,6 +82,10 @@ pub enum ModelError {
     /// [`MAX_ACTUATOR_DELAY_S`](crate::MAX_ACTUATOR_DELAY_S).
     #[error("actuator_delay_s must be at most {max_s} s", max_s = crate::MAX_ACTUATOR_DELAY_S)]
     DelayTooLong,
+    /// [`QuadPlaneModel::pusher_slot`](crate::QuadPlaneModel::pusher_slot) is past the last
+    /// motor slot.
+    #[error("pusher_slot {0} is past the last motor slot")]
+    PusherSlot(u8),
 }
 
 impl MultirotorModel {

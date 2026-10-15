@@ -1,7 +1,7 @@
 # stable-flight-sim
 
-A deterministic rigid-body multirotor, airplane, and tailsitter simulator for closed-loop tests of the
-Stable Flight pipeline in `cargo test` and CI. Unpublished, `no_std`, fixed-size math only.
+A deterministic rigid-body multirotor, airplane, tailsitter, and quadplane simulator for closed-loop
+tests of the Stable Flight pipeline in `cargo test` and CI. Unpublished, `no_std`, fixed-size math only.
 
 The goal is plausible, repeatable dynamics, not fidelity:
 [RealFlight](../stable-flight-sitl-realflight) covers realism. The rationale is in
@@ -9,7 +9,7 @@ The goal is plausible, repeatable dynamics, not fidelity:
 
 ## Usage
 
-`SimCopter`, `SimPlane`, and `SimTailsitter` are `StateSource` + `Actuator`, so a `FlightLoop` flies them like
+`SimCopter`, `SimPlane`, `SimTailsitter`, and `SimQuadPlane` are `StateSource` + `Actuator`, so a `FlightLoop` flies them like
 any backend. `airframes::quad_x()` pairs a model with the mixer and configs that fly it:
 
 ```rust
@@ -38,6 +38,9 @@ flight_loop.step(Duration::from_millis(4));
 plus a `Start` in level flight (`SimPlane::with_start`); it doesn't take off from the ground.
 `airframes::tailsitter()` pairs `SimTailsitter` with `TailsitterGuidance` and
 `TailsitterStabilizer`; it starts resting on its tail and takes off nose up.
+`airframes::quadplane()` pairs `SimQuadPlane` with its hover configs (`CopterGuidance`,
+`CopterStabilizer`) and a hover mixer that leaves the pusher stopped; it starts on its gear and
+takes off on its lift rotors, or in cruise from its `start` (`SimQuadPlane::with_start`).
 
 ```bash
 cargo test -p stable-flight-sim   # unit tests, conformance, and the closed-loop flights below (~30 s)
@@ -46,7 +49,8 @@ cargo test -p stable-flight-sim   # unit tests, conformance, and the closed-loop
 ## Closed-loop tests
 
 Each file in `tests/` flies the full pipeline on `airframes::quad_x()` unless noted (`plane_*`
-on `airframes::plane()`, `tailsitter_*` on `airframes::tailsitter()`); wiring and the copter and plane step-response specs are in
+on `airframes::plane()`, `tailsitter_*` on `airframes::tailsitter()`, `quadplane_*` on
+`airframes::quadplane()`); wiring and the copter and plane step-response specs are in
 `tests/common`:
 
 | Test | Asserts |
@@ -65,7 +69,8 @@ on `airframes::plane()`, `tailsitter_*` on `airframes::tailsitter()`); wiring an
 | `plane_stall` | A zoom at zero throttle on a held pitch-up rate, wings level and rolling, until past the stall: every state finite, body rates bounded, flying again within 2 s of the entry's end, at most 60 m lost (wings level, the held pitch-up carries the tail slide over the back), off the ground (measured + margin) |
 | `tailsitter_hover` | Takes off from its tail and holds a nose-up hover: within the copter's calm-air bands; near the waypoint in a steady 3 m/s wind on the belly or along the span; back after a 5 m/s gust either way (measured + margin) |
 | `tailsitter_transition` | Against PX4's VTOL limits (`vtol_att_control_params.yaml`), calm air: from a hover at 30 m, forward to plane flight within 15 s (`VT_TRANS_TIMEOUT`), then the line held within `plane_level`'s bands; back to a hover ahead on the line within 10 s (`VT_B_TRANS_DUR`), then held within the copter's calm-air bands; a forward transition ended by a `Copter` request, the timeout (`TransitionTimeout`), or an 8 m/s span gust past the roll limit (`RollError`); `Plane` requested below `min_height_m` refused (`BelowMinAltitude`) until it climbs past. Each loses at most 20 m (`VT_QC_T_ALT_LOSS`, until 5 s after). The back transition climbs at most 10.5 m (measured 9.5 m), hands over not sinking past the sink guard's limit, and keeps thrust above zero until 5 s after the handover; ramps at thrust 0.3 and 0.5, which stall nose-high, still hand over within those limits on the sink guard ([#343](https://github.com/wboayue/stable-flight/issues/343)). A fast ramp that arrives climbing keeps the hover's integrals through the handoff ([#326](https://github.com/wboayue/stable-flight/issues/326)) |
-| `determinism` | A windy, gusty route twice gives bit-identical states, clean and with every perturbation on (one seed); the airplane's line and the tailsitter's takeoff, transition to plane flight, and back through the same wind too |
+| `quadplane_hover` | Takes off from its gear on the lift rotors and holds a hover within the copter's calm-air bands, the pusher stopped |
+| `determinism` | A windy, gusty route twice gives bit-identical states, clean and with every perturbation on (one seed); the airplane's line, the tailsitter's takeoff, transition to plane flight, and back, and the quadplane's takeoff to a hover through the same wind too |
 
 ## Timing
 
@@ -110,7 +115,17 @@ Shared by every vehicle:
 | Prop wash | `PropWash`: actuator-disc momentum theory along the thrust axis, `surface_fraction` of it over the surfaces only, so the elevons work in a hover. Nose first, the far wake's `thrust / disc area` of added dynamic pressure; sinking tail first, the static jet less the sink, so the elevons lose authority as it sinks (none at the jet's speed; no vortex-ring flow) |
 | Frame | Airplane FRD body: hovering nose up is 90° of pitch, level in `View::tailsitter`; it rests on its tail |
 
-`Perturbations` (`with_perturbations` on either vehicle, all off by default) bring the things that
+`SimQuadPlane` (`QuadPlaneModel`: a `FixedWingModel` plus `LiftRotors` and the pusher's slot) is
+`SimPlane`'s physics with:
+
+| Part | Model |
+|---|---|
+| Lift rotors | `SimCopter`'s motors along body `−z`: lag, `max_thrust_n · command²`, roll, pitch, and yaw torque from the mixer's motor rows (all but the pusher's slot) |
+| Pusher | `pusher_slot`, whether or not a mixer row drives it: `SimPlane`'s prop along body `x` (the `FixedWingModel`'s thrust and lag) |
+| Lift-rotor drag | In-plane H-force: linear drag on the air's velocity in the body `x`–`y` plane, `drag_n_per_mps` at full lift thrust, scaled by the thrust, so none with the rotors stopped. Booms and stopped rotors are in the wing's `c_drag_0` |
+| Frame | Airplane FRD body, which is also the hover's: it hovers level and rests level on its gear |
+
+`Perturbations` (`with_perturbations` on any vehicle, all off by default) bring the things that
 most often break a tune on hardware. Each is a range to sweep, so a method that passes on them
 isn't fitted to one clean plant:
 
@@ -141,6 +156,16 @@ It flies core's plane stabilizer and guidance defaults at a 15 m/s trim airspeed
 for what the model gives: each rate loop's feedforward from its rate damping and the cruise
 thrust from its level-flight drag; pitch rate I is tuned to the plane step spec (sources in
 `airframes` rustdoc).
+
+`quadplane()` is ArduPilot SITL's quadplane (`plane()`'s wing and aerodynamics with an X quad,
+4.5 kg, lift rotors 350 mm apart across the diagonal) on a hover mixer: lift rotors on motors
+0–3 in `quad_x` order, the pusher on motor 4, the ailerons, elevator, and rudder on servos 0–2.
+Inertia is `plane()`'s Aerosonde scaling at 4.5 kg; the lift rotors take `heavy_quad`'s
+thrust-to-weight 2, lag, and yaw torque, the pusher `plane()`'s thrust-to-weight 1.2. It hovers
+on core's copter configs with roll and pitch gains from the sim autotune; cruise configs come
+with the quadplane guidance ([#391](https://github.com/wboayue/stable-flight/issues/391)).
+It stands in for the Alia 250 until the X-Plane backend reads its `.acf`
+([#351](https://github.com/wboayue/stable-flight/issues/351)).
 
 `tailsitter()` is ArduPilot SITL's tailsitter (`plane-tailsitter`: the default airplane with
 1.5× its thrust) on two motors 25 cm either side of the centerline and
@@ -173,3 +198,8 @@ belly axis, and its transitions fly in calm air. Its elevons keep pitch authorit
 airspeed and low thrust that the RealFlight eXplora lacks: a back ramp at thrust 0.6 that the
 sim flies cleanly wallows nose-high on the eXplora
 ([#399](https://github.com/wboayue/stable-flight/issues/399)).
+
+The quadplane leaves out the lift rotors' thrust change in axial and edgewise flow, their
+wash over the wing and tail, interference between rotor and wing, and the pusher's wash over
+the tail. The air from above in a climb meets the wing and tail broadside (α −90°), so its
+pitch moment noses the quadplane up as it climbs out; core's default rate gains don't hold it.
