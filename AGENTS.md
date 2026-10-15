@@ -63,7 +63,7 @@ just fly-auto                                 # copter-auto-realflight: waypoint
 just fly-companion | just link-pilot          # copter-companion-realflight flown from the link; link_pilot plays the companion
 just fly-autotune                             # copter-autotune-realflight: step-response autotune of roll/pitch rate and angle, prints gains, lands (--airframe titan-cobra: its lift rotors)
 just fly-tailsitter                           # tailsitter-manual-realflight: eXplora hover, transitions, plane from a joystick (D-pad Right plane, Left copter, Up rate; --record CSV)
-just fly-quadplane-auto                       # quadplane-auto-realflight: Titan Cobra VTOL waypoint script (default flights/cobra_hover.csv; --end, --record)
+just fly-quadplane-auto                       # quadplane-auto-realflight: Titan Cobra VTOL waypoint script (default flights/cobra_hover.csv; cobra_transition_lap.csv, cobra_legs.csv; --end, --record, --param NAME=VALUE)
 just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv; flights/explora_transition.csv flies plane legs, explora_transition_lap.csv one lap of them; --end, --record)
 just capture                                  # capture-state-realflight: joystick flight, raw SimulatorState → CSV
 just plot <csv> <out> | just gen-figure-eight # plot_flight, generate_figure_eight
@@ -72,6 +72,7 @@ just todo-check                               # TODO(#n) markers whose issue is 
 cargo test -p stable-flight-sim               # closed-loop flights on the in-repo simulator (hover, steps, waypoints, land, failsafe, saturation, autotune, robustness, plane level flight, steps, turns, stall, tailsitter hover, transitions, quadplane hover, transitions, copter legs)
 cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight -- --motors 0,1 --servos 2,3  # drive raw channels, record a capture
 cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight                           # time RealFlight exchanges alone
+cargo run -p stable-flight-sitl-realflight --example surface-probe-realflight                             # quadplane surface directions in flight (Cobra)
 cargo run --bin check_frames -- capture.csv   # capture vs the frame contract (--pitch-deg: body rotation, 90 for the eXplora)
 cargo run --example extreme_3d_commander      # joystick smoke test (spektrum_commander: Spektrum mapping)
 ```
