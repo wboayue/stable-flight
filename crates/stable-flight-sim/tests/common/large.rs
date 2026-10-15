@@ -28,8 +28,26 @@ pub const ANGLE_STEP: StepConfig = StepConfig {
     ..COPTER_ANGLE_SEARCH_STEP
 };
 
+/// Yaw rate steps: 0.2 rad/s for 3 s, rising in about 0.9 s.
+pub const YAW_RATE_STEP: StepConfig = StepConfig {
+    amplitude: 0.2,
+    duration_s: 3.0,
+    ..COPTER_RATE_STEP
+};
+
+/// Heading steps: 0.5 rad (29°) for 8 s, rising in about 1.7 s.
+pub const HEADING_STEP: StepConfig = StepConfig {
+    amplitude: 0.5,
+    duration_s: 8.0,
+    ..COPTER_ANGLE_SEARCH_STEP
+};
+
 /// How long a step may clip, in s: a rate step's moment saturates for its first few ticks.
 const MAX_SATURATED_S: f32 = 0.2;
+
+/// How long a heading step may clip, in s: the yaw moment saturates while the heading turns
+/// (0.63 s measured on the Alia).
+const MAX_HEADING_SATURATED_S: f32 = 1.0;
 
 /// Core's rate and angle searches on [`RATE_STEP`] and [`ANGLE_STEP`]. The rate search runs
 /// without its relay seed: on this plant the relay's limit cycle tilts it past the envelope.
@@ -58,14 +76,15 @@ fn search(mut plan: SearchPlan, step: StepConfig) -> SearchPlan {
     plan
 }
 
-/// The steps and clip allowance `target` is held to on this plan.
+/// The steps and clip allowance `target` is held to on this plan (yaw and heading, which the
+/// plan doesn't tune, on their own steps).
 pub fn step(target: TunedLoop) -> (StepConfig, f32) {
-    let step = if target.is_rate() {
-        RATE_STEP
-    } else {
-        ANGLE_STEP
-    };
-    (step, MAX_SATURATED_S)
+    match target {
+        TunedLoop::RollRate | TunedLoop::PitchRate => (RATE_STEP, MAX_SATURATED_S),
+        TunedLoop::Roll | TunedLoop::Pitch => (ANGLE_STEP, MAX_SATURATED_S),
+        TunedLoop::YawRate => (YAW_RATE_STEP, MAX_SATURATED_S),
+        TunedLoop::Heading => (HEADING_STEP, MAX_HEADING_SATURATED_S),
+    }
 }
 
 /// Core's copter envelope, waiting 30 s to settle: the Alia brakes a step's sideways speed

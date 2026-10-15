@@ -258,10 +258,13 @@ pub fn alia250() -> Airframe {
         TableMixer::quad_x().with_reversed_yaw(),
         // Twice the default moment headroom: at 0.9 a full moment moves each motor by 0.1,
         // about 0.8 rad/s² of roll, and the rate loop can't follow the autotune's steps. The
-        // hover (0.648 per motor) stays under the 0.8 ceiling (#351).
+        // hover (0.648 per motor) stays under the 0.8 ceiling. Yaw at roll's motor factor: at
+        // the default 2.5, full yaw drove one diagonal to its ceiling and the other near zero,
+        // and the desaturation gave up collective (X-Plane: a sink to the ground at full
+        // throttle, #351).
         MixerConfig {
             thrust_factor: 0.8,
-            ..MixerConfig::default()
+            yaw_ratio: 1.0,
         },
         1.0 / THRUST_EXPONENT,
         Tune {
@@ -278,11 +281,14 @@ pub fn alia250() -> Airframe {
                 d: 0.0,
             },
             angle_p: 1.03,
-            // `quad_x`'s: the autotune doesn't tune them.
-            yaw_rate_p: YAW_RATE_P,
-            heading_p: HEADING_P,
+            // Hand-tuned on the yaw steps (`tests/alia.rs`): `quad_x`'s overshot a 29° heading
+            // step by 70% and limit-cycled in X-Plane (#351).
+            yaw_rate_p: 5.0,
+            heading_p: 0.8,
         },
     );
+    // No yaw rate I: on this slow axis it overshoots the heading steps by 25–50%.
+    airframe.stabilizer.body_rate.yaw_gains.i = 0.0;
     // The autotune ran on angle loops without D (core's default angle D 1.0 holds a 5° step
     // to three quarters of it after 2.5 s).
     airframe.stabilizer.attitude.roll_gains.d = 0.0;
