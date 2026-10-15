@@ -304,10 +304,11 @@ pub fn explora_vtol()
 /// Fly it with [`QuadPlaneGuidance`](stable_flight::guidance::vtol::QuadPlaneGuidance) and
 /// [`QuadPlaneStabilizer`](stable_flight::stabilizers::vtol::QuadPlaneStabilizer).
 ///
-/// - **Hover:** starting values (TODO(#433)): QuadCopterX's hand tune, with more pitch rate
-///   I. The model is nose-heavy on its lift rotors: with equal front and rear thrust a hop
-///   pitched nose down at 155°/s (#433), so the pitch rate loop holds a steady nose-up
-///   moment.
+/// - **Hover:** QuadCopterX's hand tune, with more pitch rate I, flies a hover and a landing
+///   (#433); autotune pending (TODO(#433)). The model is nose-heavy on its lift rotors: with
+///   equal front and rear thrust a hop pitched nose down at 155°/s, and a level hover holds
+///   front motors at 0.60 and rear at 0.52 (#433), so the pitch rate loop holds a steady
+///   nose-up moment.
 /// - **Plane and transition:** core defaults, with the upstream ArduPilot parameter file's
 ///   airspeeds, trim pitch, and cruise throttle (`TitanCobraVTOL.param`).
 ///
@@ -332,9 +333,10 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
         guidance: QuadPlaneGuidanceConfig {
             hover: CopterGuidanceConfig {
                 altitude: AltitudeControllerConfig {
-                    // ArduPilot's hover thrust, 0.322 of full (`Q_M_THST_HOVER`), is motor
-                    // √0.322 = 0.57 on RealFlight's squared prop thrust: 0.9 · 0.79² through
-                    // the thrust curve and the mixer's thrust factor.
+                    // Measured (#433): a steady 0.7 m/s descent holds at thrust 0.622 after
+                    // the curve, 0.79². ArduPilot's hover, 0.322 of full (`Q_M_THST_HOVER`),
+                    // agrees: motor √0.322 = 0.57 = 0.9 · 0.79² on RealFlight's squared
+                    // prop thrust.
                     hover_thrust: 0.79,
                     ..defaults.hover.altitude
                 },
@@ -352,7 +354,8 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
         stabilizer: QuadPlaneStabilizerConfig {
             hover: CopterStabilizerConfig {
                 body_rate: BodyRateControllerConfig {
-                    // I · max_integral = 0.5 of nose-up moment covers the nose-heavy trim.
+                    // The nose-heavy hover needs a steady 0.37 nose-up moment (#433);
+                    // I · max_integral = 0.5 holds it with margin.
                     pitch_gains: gains(0.5, 0.5, 0.004),
                     ..quadcopter_x.stabilizer.body_rate
                 },
