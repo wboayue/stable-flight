@@ -63,7 +63,7 @@ just fly-auto                                 # copter-auto-realflight: waypoint
 just fly-companion | just link-pilot          # copter-companion-realflight flown from the link; link_pilot plays the companion
 just fly-autotune                             # copter-autotune-realflight: step-response autotune of roll/pitch rate and angle, prints gains, lands
 just fly-tailsitter                           # tailsitter-manual-realflight: eXplora hover, transitions, plane from a joystick (D-pad Right plane, Left copter, Up rate; --record CSV)
-just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv; flights/explora_transition.csv flies plane legs; --end, --record)
+just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv; flights/explora_transition.csv flies plane legs, explora_transition_lap.csv one lap of them; --end, --record)
 just capture                                  # capture-state-realflight: joystick flight, raw SimulatorState → CSV
 just plot <csv> <out> | just gen-figure-eight # plot_flight, generate_figure_eight
 just tag <crate> <version> | just versions    # push a <crate>-v<version> tag; list tags
@@ -196,7 +196,9 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 - A test that guards a fix must fail without it: revert or mutate the fix locally, and say so
   in the PR. A check whose threshold reads the mutated config can fail for the wrong reason
   (a sink limit of 0 turns "not sinking past the limit" into "not sinking"): name the
-  failures that are the intended ones.
+  failures that are the intended ones. A `check!` inside a loop over rows panics at the end of
+  that iteration, so only the first failing row reports: confirm each row fails on its own
+  (e.g. run it first).
 - Keep time-based rows clear of `f32` rounding at thresholds (three 0.1 s ticks may not reach
   0.3 s: use a 0.35 s timeout).
 - A test that raises a process-wide signal gets its own `tests/*.rs` binary, one signal each.
@@ -218,16 +220,27 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   (close QGC first) and run with `uv run --no-project --with pymavlink python script.py`.
 - **Start order:** bridge and example first, then QGC. If the vehicle disappears and returns
   under an open QGC, its virtual joystick can go silent while Arm still works: restart QGC.
-- **Signals:** the companion example logs each failsafe handover (failsafe timeout 1 s). QGC's
+- **Signals:** examples log through `env_logger` from the environment, so run them with
+  `RUST_LOG=info` (without it they print nothing: no mode changes, no exit tick summary).
+  The companion example logs each failsafe handover (failsafe timeout 1 s). QGC's
   throttle and `SAT_*` displays: the bridge README's `VFR_HUD` and `NAMED_VALUE_INT` rows.
   QGC → bridge traffic: `nettop -p <bridge pid> -J bytes_in` (heartbeat only ≈ 21 B/s, joystick
   ≈ 600 B/s). `--record` on the tailsitter examples logs setpoints, rates, moments, and
   actuators per tick (columns: `stable_flight_sitl::recorder::TailsitterColumns`).
 - **Comparable runs:** change one knob per run, fly the same script with `--record`
-  (transitions: `flights/explora_transition.csv --end land`), and report each run as a row
+  (transitions: `flights/explora_transition_lap.csv --end land`), and report each run as a row
   against the earlier ones. To tell whether a behavior predates a change, fly the parent
   commit in a throwaway worktree. With `--end land` the example keeps running on the ground:
-  stop it (below) before the next run.
+  stop it (below) before the next run. The same settings can hand a back transition over
+  climbing or sinking (+1.7 vs −1.3 m/s, #404), so fly several runs and compare runs with a
+  matched handover.
+- **Tick rate:** count the `wall_s` rows per wall-clock second around the event a run measures,
+  and drop a run below about 245 Hz there: each tick advances every `dt`-based clock by the
+  nominal 4 ms, so at 170 Hz a 3 m/s descent target moves at 2 m/s (#405). A release build
+  (`cargo run --release ...`) skips less but doesn't stop it.
+- **Explaining a trace:** before suspecting a bug, replay the recorder CSV through the real
+  component (state rebuilt from the view angles, nominal `dt` per tick) and compare its output
+  with the recorded setpoint; the hover guidance reproduces it exactly (#405).
 - A setting that depends on a model gap listed in the `stable-flight-sim` README's **Limits**
   needs a RealFlight flight; the sim passing it isn't enough.
 - **Stopping:** Ctrl-C or SIGTERM (`ShutdownSignal`), so `RealFlightVehicle` hands RC back to
@@ -235,7 +248,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   capture CSVs.
 - **Disconnects:** flight examples reconnect on their own and log "Reconnected to RealFlight"
   (`capture-state-realflight` doesn't). The runner drops time lost to a stall over 100 ms, so
-  heavy skipping (`ticks skipped` in its exit log) slows every `dt`-based clock.
+  heavy skipping (`ticks skipped` in its exit log) slows every `dt`-based clock (**Tick
+  rate** above).
 
 ## Commits, PRs, and releases
 
