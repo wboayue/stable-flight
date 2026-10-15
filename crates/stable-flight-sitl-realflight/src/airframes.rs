@@ -208,7 +208,11 @@ pub fn explora_vtol()
                 // More than hover (0.84): lift drops as the nose tilts over, until the wing
                 // flies.
                 forward_thrust: 0.9,
-                back_thrust: 0.84,
+                // Below cruise (0.85), so the slow nose-up turns speed into a slowdown more than
+                // a climb: the lowest thrust that hands over without sinking, climbing 9 m
+                // (18 m at 0.84; at 0.6 the elevons lost the propwash and the nose wallowed,
+                // #343).
+                back_thrust: 0.75,
                 ..Default::default()
             },
         },

@@ -65,6 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `airframes::explora_vtol()` flies the back transition at thrust 0.75, down from hover
+  (0.84), with core's default sink guard: it climbs about 9 m after the back request, not 18 m
+  (#343).
 - `airframes::explora_vtol()` returns `TailsitterGuidanceConfig`/`TailsitterStabilizerConfig`
   (hover as before, with the view pitch cap raised to 85° for the forward ramp and sticks
   kept at 30°; plane and transition starting values), and the tailsitter examples fly
