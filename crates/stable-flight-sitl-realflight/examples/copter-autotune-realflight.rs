@@ -1,4 +1,4 @@
-//! Autotunes the quadcopter in RealFlight: climbs to the hover script's waypoint,
+//! Autotunes a multirotor in RealFlight: climbs to the hover script's waypoint,
 //! tunes roll and pitch rate, then roll and pitch angle, by step response, lands, and disarms
 //! (`StagePlan::copter_search`, `architecture.md#autotune`). Per rate loop a relay sets D and
 //! caps P; per loop P is searched by pairs of steps (each judgment logged with its steps),
@@ -23,11 +23,16 @@
 //! the native link for the bridge, so QGC shows the gains change. The RealFlight host defaults to
 //! `10.211.55.3:8080`; override it with `--host`.
 //!
+//! `--airframe` picks the model: `quadcopter-x` (the default) or `titan-cobra`, whose lift
+//! rotors fly on `TableMixer::quad_x` with its hover gains, the pusher stopped and the surfaces
+//! centered; the default script hovers over the chosen model's spawn point.
+//!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --step-test
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages rate --rate-p-scale 10
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages none --step-test
+//! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --airframe titan-cobra --step-test
 //! ```
 
 use std::cell::Cell;
@@ -41,7 +46,8 @@ use log::{debug, info, warn};
 
 use stable_flight::commanders::{RouteEnd, TouchdownDetector};
 use stable_flight::controllers::Gains;
-use stable_flight::guidance::copter::CopterGuidance;
+use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
 use stable_flight::tuning::autotune::{
     Autotune, AutotuneEvent, AutotuneStatus, Envelope, StagePlan,
@@ -55,9 +61,10 @@ use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::recorder::{CopterColumns, CsvRecorder};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
+use stable_flight_sitl_realflight::airframes::{self, Airframe};
 use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
 use stable_flight_sitl_realflight::{
-    REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, airframes,
+    REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle,
 };
 
 /// Connect timeout for the RealFlight proxy; a reconnect attempt blocks its tick.
@@ -81,12 +88,16 @@ const RATE_LOOPS: [TunedLoop; 3] = [
     TunedLoop::YawRate,
 ];
 
-/// Relay autotune of the quadcopter's PID loops in RealFlight.
+/// Relay autotune of a multirotor's PID loops in RealFlight.
 #[derive(Parser)]
 struct Args {
-    /// Waypoint CSV to climb to and hover at (columns: x,y,altitude,cruise_speed).
-    #[arg(default_value = "flights/hover.csv")]
-    script: String,
+    /// Waypoint CSV to climb to and hover at (columns: x,y,altitude,cruise_speed); defaults to
+    /// a hover over the airframe's spawn point.
+    script: Option<String>,
+
+    /// The RealFlight model.
+    #[arg(long, value_enum, default_value_t = Model::QuadcopterX)]
+    airframe: Model,
 
     /// RealFlight host to connect to (`host:port`).
     #[arg(long, default_value = "10.211.55.3:8080")]
@@ -116,6 +127,43 @@ struct Args {
     /// The bridge's link address.
     #[arg(long, default_value = DEFAULT_BRIDGE_ADDR)]
     link_peer: String,
+}
+
+/// `--airframe`.
+#[derive(Clone, Copy, ValueEnum)]
+enum Model {
+    /// ArduPilot SITL_Models QuadCopterX.
+    QuadcopterX,
+    /// Titan Cobra VTOL: its lift rotors only.
+    TitanCobra,
+}
+
+impl Model {
+    /// The model's copter airframe: for the Cobra, its hover side on `quad_x`, which mixes its
+    /// lift rotors as its quadplane mixer does, with its mapping.
+    fn airframe(self) -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, TableMixer<4>> {
+        match self {
+            Model::QuadcopterX => airframes::quadcopter_x(),
+            Model::TitanCobra => {
+                let cobra = airframes::titan_cobra();
+                Airframe {
+                    guidance: cobra.guidance.hover,
+                    stabilizer: cobra.stabilizer.hover,
+                    mixer: TableMixer::quad_x(),
+                    mapping: cobra.mapping,
+                    body_rotation: cobra.body_rotation,
+                }
+            }
+        }
+    }
+
+    /// The default script: a hover over the model's spawn point.
+    fn hover_script(self) -> &'static str {
+        match self {
+            Model::QuadcopterX => "flights/hover.csv",
+            Model::TitanCobra => "flights/cobra_hover.csv",
+        }
+    }
 }
 
 /// `--stages`.
@@ -206,16 +254,20 @@ fn main() {
     // Climbs to the script's waypoint and holds; `land` ends the flight after the autotune.
     let land = Rc::new(Cell::new(false));
     let commander = ThenLand {
-        script: ScriptCommander::new(&args.script)
-            .expect("failed to load flight script")
-            .with_route_end(RouteEnd::Hold),
+        script: ScriptCommander::new(
+            args.script
+                .as_deref()
+                .unwrap_or(args.airframe.hover_script()),
+        )
+        .expect("failed to load flight script")
+        .with_route_end(RouteEnd::Hold),
         land: land.clone(),
         landing: None,
         touchdown: TouchdownDetector::default(),
     };
 
-    // QuadCopterX model: hand-tuned gains (the baseline), mixer, and motor-to-channel mapping.
-    let airframe = airframes::quadcopter_x();
+    // The model: hand-tuned gains (the baseline), mixer, and motor-to-channel mapping.
+    let airframe = args.airframe.airframe();
     let mut stabilizer_config = airframe.stabilizer;
     for target in RATE_LOOPS {
         target.gains_mut(&mut stabilizer_config).p *= args.rate_p_scale;

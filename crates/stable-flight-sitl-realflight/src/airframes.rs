@@ -12,12 +12,14 @@ use stable_flight::controllers::{
 };
 use stable_flight::guidance::copter::{CopterGuidanceConfig, ThrustLimits};
 use stable_flight::guidance::plane::PlaneGuidanceConfig;
-use stable_flight::guidance::vtol::{TailsitterGuidanceConfig, TransitionConfig};
+use stable_flight::guidance::vtol::{
+    QuadPlaneGuidanceConfig, TailsitterGuidanceConfig, TransitionConfig,
+};
 use stable_flight::mixers::TableMixer;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
-use stable_flight::stabilizers::vtol::TailsitterStabilizerConfig;
+use stable_flight::stabilizers::vtol::{QuadPlaneStabilizerConfig, TailsitterStabilizerConfig};
 
 use crate::ActuatorMapping;
 
@@ -270,5 +272,115 @@ pub fn explora_vtol()
             reversed_servos: [true, false, false, false, false, false, false, false],
         },
         body_rotation: UnitQuaternion::from_euler_angles(0.0, PI / 2.0, 0.0),
+    }
+}
+
+/// The ArduPilot SITL_Models
+/// [Titan Cobra VTOL](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/QuadPlanes/Titan_Cobra_VTOL)
+/// in RealFlight: a lift+cruise quadplane, four fixed lift rotors, a pusher, ailerons, and an
+/// A-tail.
+///
+/// - **Mixer:** [`TableMixer::quadplane_vtail`]. Its lift rotors are in
+///   [`TableMixer::quad_x`]'s order, so a copter wiring (the autotune) flies them on `quad_x`
+///   with this mapping.
+/// - **Mapping** (channels 0-based; RealFlight numbering is one higher), from a channel sweep
+///   and hops on the ground (#433):
+///
+///   | Slot | Channel | Actuator |
+///   |---|---|---|
+///   | motor 0 | 6 | front-left lift rotor, clockwise from above |
+///   | motor 1 | 4 | front-right, counterclockwise |
+///   | motor 2 | 5 | rear-left, counterclockwise |
+///   | motor 3 | 7 | rear-right, clockwise |
+///   | motor 4 | 2 | pusher |
+///   | servo 0 | 0 | ailerons |
+///   | servo 1 | 3 | right A-tail panel (a V-tail's left ruddervator) |
+///   | servo 2 | 1 | left A-tail panel (a V-tail's right ruddervator) |
+///
+///   On the ground the surfaces move nothing, so their directions are unchecked until plane
+///   flight (TODO(#433)).
+/// - **Body rotation:** identity; RealFlight's frame for this model is the airplane's.
+///
+/// Fly it with [`QuadPlaneGuidance`](stable_flight::guidance::vtol::QuadPlaneGuidance) and
+/// [`QuadPlaneStabilizer`](stable_flight::stabilizers::vtol::QuadPlaneStabilizer).
+///
+/// - **Hover:** starting values (TODO(#433)): QuadCopterX's hand tune, with more pitch rate
+///   I. The model is nose-heavy on its lift rotors: with equal front and rear thrust a hop
+///   pitched nose down at 155°/s (#433), so the pitch rate loop holds a steady nose-up
+///   moment.
+/// - **Plane and transition:** core defaults, with the upstream ArduPilot parameter file's
+///   airspeeds, trim pitch, and cruise throttle (`TitanCobraVTOL.param`).
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::guidance::vtol::QuadPlaneGuidance;
+/// use stable_flight::stabilizers::vtol::QuadPlaneStabilizer;
+/// use stable_flight_sitl_realflight::airframes;
+///
+/// let airframe = airframes::titan_cobra();
+/// let guidance = QuadPlaneGuidance::new(airframe.guidance);
+/// let stabilizer = QuadPlaneStabilizer::new(airframe.stabilizer);
+/// assert_eq!(airframe.mapping.motors[4], Some(2)); // the pusher
+/// ```
+pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig, TableMixer<8>>
+{
+    let gains = |p, i, d| Gains { p, i, d };
+    let quadcopter_x = quadcopter_x();
+    let defaults = QuadPlaneGuidanceConfig::default();
+    Airframe {
+        guidance: QuadPlaneGuidanceConfig {
+            hover: CopterGuidanceConfig {
+                altitude: AltitudeControllerConfig {
+                    // ArduPilot's hover thrust, 0.322 of full (`Q_M_THST_HOVER`), is motor
+                    // √0.322 = 0.57 on RealFlight's squared prop thrust: 0.9 · 0.79² through
+                    // the thrust curve and the mixer's thrust factor.
+                    hover_thrust: 0.79,
+                    ..defaults.hover.altitude
+                },
+                ..defaults.hover
+            },
+            plane: PlaneGuidanceConfig {
+                // `TRIM_PITCH_CD` 420.
+                trim_pitch_rad: 4.2f32.to_radians(),
+                // `TRIM_THROTTLE` 47 on a linear pusher curve: 0.9 · 0.52.
+                cruise_thrust: 0.52,
+                ..defaults.plane
+            },
+            ..defaults
+        },
+        stabilizer: QuadPlaneStabilizerConfig {
+            hover: CopterStabilizerConfig {
+                body_rate: BodyRateControllerConfig {
+                    // I · max_integral = 0.5 of nose-up moment covers the nose-heavy trim.
+                    pitch_gains: gains(0.5, 0.5, 0.004),
+                    ..quadcopter_x.stabilizer.body_rate
+                },
+                ..quadcopter_x.stabilizer
+            },
+            plane: PlaneStabilizerConfig {
+                // `TRIM_ARSPD_CM` 1240, `ARSPD_FBW_MIN` 11, `ARSPD_FBW_MAX` 18.
+                trim_airspeed_mps: 12.4,
+                min_airspeed_mps: 11.0,
+                max_airspeed_mps: 18.0,
+                ..Default::default()
+            },
+        },
+        mixer: TableMixer::quadplane_vtail(),
+        mapping: ActuatorMapping {
+            motors: [
+                Some(6),
+                Some(4),
+                Some(5),
+                Some(7),
+                Some(2),
+                None,
+                None,
+                None,
+            ],
+            servos: [Some(0), Some(3), Some(1), None, None, None, None, None],
+            ..Default::default()
+        },
+        body_rotation: UnitQuaternion::identity(),
     }
 }

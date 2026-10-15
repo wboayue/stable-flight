@@ -12,7 +12,7 @@ The crate builds on the [`stable-flight`](https://github.com/wboayue/stable-flig
 
 ## Setup
 
-RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**. Tuned model: QuadCopterX (multirotor); eXplora VTOL (tailsitter) hovers from a joystick (`tailsitter-manual-realflight`) or a waypoint script (`tailsitter-auto-realflight`), and transitions to plane flight and back, stabilized from the joystick or navigating waypoints from a script (`flights/explora_transition.csv`); the ArduPilot [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models) repo has more.
+RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**. Tuned model: QuadCopterX (multirotor); eXplora VTOL (tailsitter) hovers from a joystick (`tailsitter-manual-realflight`) or a waypoint script (`tailsitter-auto-realflight`), and transitions to plane flight and back, stabilized from the joystick or navigating waypoints from a script (`flights/explora_transition.csv`). Being set up: the Titan Cobra VTOL (quadplane, [#433](https://github.com/wboayue/stable-flight/issues/433)); import the [upstream RFX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/QuadPlanes/Titan_Cobra_VTOL) unmodified, its channels already one per actuator. The ArduPilot [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models) repo has more.
 
 `RealFlightRemoteBridge` talks to the `realflight_bridge_proxy` running on the RealFlight host. Install it there with `cargo install realflight-bridge --features rt-tokio` (2.2 or later, to match this crate's error handling). Its default request timeout (150 ms) covers RealFlight's slower requests, and [`REMOTE_IO_TIMEOUT`](https://docs.rs/stable-flight-sitl-realflight/latest/stable_flight_sitl_realflight/constant.REMOTE_IO_TIMEOUT.html), which the examples use, stays above it.
 
@@ -64,10 +64,11 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration::from_airframe(
 |---|---|
 | `airframes::quadcopter_x()` | ArduPilot SITL_Models [QuadCopterX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX) |
 | `airframes::explora_vtol()` | [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) tailsitter, for `TailsitterGuidance`/`TailsitterStabilizer` (hover gains in the tailsitter `View`'s axes, hand-tuned, with thrust floor, sink guard, and boost ceiling; plane and transition starting values) |
+| `airframes::titan_cobra()` | ArduPilot SITL_Models [Titan Cobra VTOL](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/QuadPlanes/Titan_Cobra_VTOL) lift+cruise quadplane, for `QuadPlaneGuidance`/`QuadPlaneStabilizer` on `TableMixer::quadplane_vtail` (channel map in its rustdoc; hover, plane, and transition starting values) |
 
 ## Examples
 
-Run these from the repository root (`just fly-manual` / `just fly-tailsitter` / `just fly-auto` / `just fly-tailsitter-auto` / `just capture` / `just fly-companion` wrap them). Each serves params and telemetry over the native link (UDP; binds `127.0.0.1:14560`, peer `127.0.0.1:14561`, set with `--link-bind`/`--link-peer`) for [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) (`just bridge`), which QGC connects to; start the bridge once and leave it running:
+Run these from the repository root (`just fly-manual` / `just fly-tailsitter` / `just fly-auto` / `just fly-tailsitter-auto` / `just fly-quadplane-auto` / `just capture` / `just fly-companion` wrap them). Each serves params and telemetry over the native link (UDP; binds `127.0.0.1:14560`, peer `127.0.0.1:14561`, set with `--link-bind`/`--link-peer`) for [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) (`just bridge`), which QGC connects to; start the bridge once and leave it running:
 
 ```bash
 # Joystick (Logitech Extreme 3D); RealFlight host defaults to 10.211.55.3:8080
@@ -96,6 +97,11 @@ cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight 
 # back to hover and home; flights/explora_transition_lap.csv flies one lap, for transition checks
 cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- flights/explora_transition.csv --end land
 
+# Titan Cobra VTOL quadplane on QuadPlaneGuidance/QuadPlaneStabilizer: holds 5 m over its spawn
+# point by default (flights/cobra_hover.csv); a regime column flies transitions; --record writes
+# every tick (both sides, every lift rotor, the pusher, the surfaces). Or: just fly-quadplane-auto
+cargo run -p stable-flight-sitl-realflight --example quadplane-auto-realflight -- --end land --record hover.csv
+
 # Flown from the native link, holding position when it goes quiet; link_pilot plays the companion
 # (in place of the bridge). Stop the pilot mid-flight and the quad holds. Or: just fly-companion, just link-pilot
 cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight
@@ -115,6 +121,8 @@ cargo run --bin link_pilot
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --step-test
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages none --step-test
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages rate --rate-p-scale 10
+# The Titan Cobra's lift rotors (--airframe titan-cobra; pusher stopped, surfaces centered)
+cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --airframe titan-cobra --step-test
 
 # Joystick (or --script) flight recording raw SimulatorState and channels to CSV (frame checks)
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv

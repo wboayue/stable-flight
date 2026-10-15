@@ -105,6 +105,18 @@ const QUADPLANE: [MixRow; 8] = [
     PLANE[3],
 ];
 
+/// [`QUADPLANE`] with a V-tail: two ruddervators in place of the elevator and rudder.
+const QUADPLANE_VTAIL: [MixRow; 8] = [
+    QUAD_X[0],
+    QUAD_X[1],
+    QUAD_X[2],
+    QUAD_X[3],
+    MixRow::pusher(4),
+    PLANE[1],
+    MixRow::servo(1, 0.0, 1.0, 1.0),
+    MixRow::servo(2, 0.0, 1.0, -1.0),
+];
+
 const BI: [MixRow; 4] = [
     MixRow::motor(0, 1.0, 0.0, 0.0),
     MixRow::motor(1, -1.0, 0.0, 0.0),
@@ -315,5 +327,41 @@ impl TableMixer<8> {
     /// ```
     pub fn quadplane() -> Self {
         Self::from_valid(QUADPLANE, MixerConfig::default())
+    }
+
+    /// [`quadplane`](Self::quadplane) with a V-tail: servos 1 and 2 are the left and right
+    /// ruddervators in place of the elevator and rudder, seen from above:
+    ///
+    /// ```text
+    ///   0 cw    1 ccw
+    ///  =====+=====      wing: servo 0 ailerons
+    ///   2 ccw   3 cw
+    ///      \ /          tail: servo 1 left, servo 2 right ruddervator
+    ///       4           pusher
+    /// ```
+    ///
+    /// Positive servo raises its ruddervator's trailing edge (toward the tail's inside):
+    /// both together raise the nose; the left up and the right down push the tail left and
+    /// turn the nose right. Each ruddervator carries pitch and yaw over its full range, so
+    /// full pitch and full yaw together clamp it. An A-tail (inverted V) has the inside of
+    /// each panel on the other side: its right panel flies servo 1 and its left servo 2.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::mixers::TableMixer;
+    /// use stable_flight::{ControlOutput, CruiseOutput, Mixer, Vec3};
+    ///
+    /// let mut mixer = TableMixer::quadplane_vtail();
+    /// // Cruise, nose up and right: the left ruddervator takes both, the right cancels.
+    /// let cruise = ControlOutput {
+    ///     cruise: Some(CruiseOutput { thrust: 0.5, moments: Vec3::new(0.0, 0.3, 0.3) }),
+    ///     ..Default::default()
+    /// };
+    /// let output = mixer.mix(&cruise);
+    /// assert_eq!(output.servos[..3], [0.0, 0.6, 0.0]);
+    /// ```
+    pub fn quadplane_vtail() -> Self {
+        Self::from_valid(QUADPLANE_VTAIL, MixerConfig::default())
     }
 }

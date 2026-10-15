@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `TableMixer::quadplane_vtail()`: `quadplane` with two ruddervators in place of the elevator
+  and rudder (pitch alike, yaw opposite ways); an A-tail flies it with its panels swapped (#433).
 - **Lift+cruise guidance and stabilizer** (#391): `guidance::vtol::QuadPlaneGuidance`
   (`QuadPlaneGuidanceConfig`) flies a quadplane's hover on `CopterGuidance`, its plane flight
   on `PlaneGuidance`, and the transitions under a `LiftTransition` as a `Setpoint::Blend`

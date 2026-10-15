@@ -852,6 +852,71 @@ fn quadplane_preset_splits_lift_and_cruise() {
     }
 }
 
+/// The V-tail quadplane flies its lift rotors and pusher as the quadplane preset does, and
+/// mixes cruise pitch and yaw onto the two ruddervators: pitch moves both alike, yaw opposite
+/// ways (left trailing edge up turns the nose right), and a ruddervator asked past its range
+/// clamps on its own.
+#[test]
+fn quadplane_vtail_mixes_ruddervators() {
+    let cruise = |moments| ControlOutput {
+        cruise: Some(CruiseOutput {
+            thrust: 0.5,
+            moments,
+        }),
+        ..ControlOutput::new(0.4, Vec3::new(0.1, -0.2, 0.3))
+    };
+    // (case, cruise moments, expected servos[..3], mixer_moments)
+    let cases = [
+        ("neutral", Vec3::zeros(), [0.0, 0.0, 0.0], false),
+        (
+            "roll: ailerons only",
+            Vec3::new(0.4, 0.0, 0.0),
+            [0.4, 0.0, 0.0],
+            false,
+        ),
+        (
+            "pitch up: both up",
+            Vec3::new(0.0, 0.3, 0.0),
+            [0.0, 0.3, 0.3],
+            false,
+        ),
+        (
+            "yaw right: left up, right down",
+            Vec3::new(0.0, 0.0, 0.3),
+            [0.0, 0.3, -0.3],
+            false,
+        ),
+        (
+            "pitch and yaw",
+            Vec3::new(0.0, 0.5, -0.2),
+            [0.0, 0.3, 0.7],
+            false,
+        ),
+        (
+            "full pitch and yaw clamp",
+            Vec3::new(0.0, 0.8, 0.6),
+            [0.0, 1.0, 0.2],
+            true,
+        ),
+    ];
+    for (case, moments, servos, mixer_moments) in cases {
+        let control = cruise(moments);
+        let mut mixer = TableMixer::quadplane_vtail();
+        let output = mixer.mix(&control);
+        let reference = TableMixer::quadplane().mix(&control);
+        assert!(output.motors == reference.motors, "{case}: {output:?}");
+        for (servo, expected) in output.servos.iter().zip(servos) {
+            assert!(approx_eq(*servo, expected), "{case}: {output:?}");
+        }
+        assert!(output.servos[3..] == [0.0; 5], "{case}: {output:?}");
+        assert!(
+            mixer.saturation().mixer_moments == mixer_moments,
+            "{case}: {:?}",
+            mixer.saturation()
+        );
+    }
+}
+
 /// A servo asked past its range clamps on its own and reports the lost moment; the other
 /// servo and the motors are untouched.
 #[test]
@@ -943,6 +1008,7 @@ fn presets_are_valid_tables() {
     check("octo_x", TableMixer::octo_x());
     check("x8", TableMixer::x8());
     check("quadplane", TableMixer::quadplane());
+    check("quadplane_vtail", TableMixer::quadplane_vtail());
 }
 
 /// Invalid tables and configs are rejected at construction, naming the problem.

@@ -1,0 +1,4 @@
+# Hover 5 m above the RealFlight Titan Cobra VTOL spawn point (north -10.55 m, east 6.49 m,
+# from the #433 sweep; the eXplora's too). A single waypoint: the follower holds it.
+x,y,altitude,cruise_speed
+-10.55,6.49,5.0,2.0

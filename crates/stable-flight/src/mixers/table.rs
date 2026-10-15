@@ -58,6 +58,7 @@
 //! | [`tailsitter_2p`](TableMixer::tailsitter_2p) | 0 L, 1 R | 0 left elevon, 1 right elevon |
 //! | [`plane`](TableMixer::plane) | 0 nose | 0 ailerons, 1 elevator, 2 rudder |
 //! | [`quadplane`](TableMixer::quadplane) | lift 0 FL, 1 FR, 2 RL, 3 RR; 4 pusher | 0 ailerons, 1 elevator, 2 rudder |
+//! | [`quadplane_vtail`](TableMixer::quadplane_vtail) | lift 0 FL, 1 FR, 2 RL, 3 RR; 4 pusher | 0 ailerons, 1 left, 2 right ruddervator |
 
 use thiserror::Error;
 
