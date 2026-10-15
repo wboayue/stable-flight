@@ -45,7 +45,7 @@ end in the ground.
    |---|---|
    | `mode` | 0 copter, 1 plane, 2 to plane, 3 to copter |
    | `altitude`, `climb_mps`, `airspeed_mps` | m, m/s up, m/s |
-   | `north_m`, `east_m`, `vel_north_mps`, `vel_east_mps` | horizontal position and ground velocity: drift, wind, waypoint arrival |
+   | `north_m`, `east_m`, `vel_north_mps`, `vel_east_mps` | horizontal position (m from the simulator's origin, not the arming point) and ground velocity (m/s): drift, wind, waypoint arrival |
    | `view_roll`, `view_pitch`, `view_heading` | hover attitude, rad (0 nose up) |
    | `pitch`, `roll` | airplane attitude, rad |
    | `sp_thrust`, `stick_throttle` | commanded linear thrust, the pilot's throttle |

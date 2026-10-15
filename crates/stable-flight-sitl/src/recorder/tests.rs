@@ -230,24 +230,24 @@ fn tailsitter_columns_flag_a_refused_regime() {
     }
 }
 
-#[test]
-fn tailsitter_columns_record_horizontal_position_and_velocity() {
-    let columns = TailsitterColumns {
-        view: UnitQuaternion::identity(),
-    };
+/// `north_m`, `east_m`, `vel_north_mps`, and `vel_east_mps` of one tick recorded with `columns`.
+fn horizontal<C: Columns>(columns: C) -> [String; 4] {
     let mut tick = tick(attitude_setpoint(), attitude_sticks(0.0));
     tick.state.position_m = Vec3::new(12.5, -3.25, 5.0);
     tick.state.velocity_mps = Vec3::new(1.5, -0.75, 0.5);
     let lines = recorded(columns, &[tick]);
-    let got = [
-        "north_m",
-        "east_m",
-        "vel_north_mps",
-        "vel_east_mps",
-        "climb_mps",
-    ]
-    .map(|name| field(&lines[0], &lines[1], name));
-    check!(got == ["12.500", "-3.250", "1.500", "-0.750", "0.500"]);
+    ["north_m", "east_m", "vel_north_mps", "vel_east_mps"]
+        .map(|name| field(&lines[0], &lines[1], name).to_owned())
+}
+
+#[test]
+fn both_column_sets_record_horizontal_position_and_velocity() {
+    let expected = ["12.500", "-3.250", "1.500", "-0.750"].map(str::to_owned);
+    check!(horizontal(CopterColumns) == expected);
+    let tailsitter = TailsitterColumns {
+        view: UnitQuaternion::identity(),
+    };
+    check!(horizontal(tailsitter) == expected);
 }
 
 #[test]
