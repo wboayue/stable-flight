@@ -1259,10 +1259,14 @@ pub enum Setpoint {
     /// Hold absolute body rates (rad/s) on the wing, at any attitude: a plane stabilizer's acro
     /// and maneuvers (rolls, loops).
     PlaneRate(BodyRateSetpoint),
+    /// Fly a hover and a wing-borne attitude at once, the lift rotors carrying
+    /// [`lift_share`](BlendSetpoint::lift_share) of theirs: a lift+cruise VTOL's transitions.
+    Blend(BlendSetpoint),
 }
 
 impl Setpoint {
-    /// The linear thrust either variant carries.
+    /// The linear thrust the setpoint carries; a [`Blend`](Self::Blend)'s hover thrust (the
+    /// lift rotors', before their share).
     ///
     /// # Examples
     ///
@@ -1278,11 +1282,12 @@ impl Setpoint {
             Setpoint::Rate(rates) => rates.thrust,
             Setpoint::BodyRate(rates) | Setpoint::PlaneRate(rates) => rates.thrust,
             Setpoint::Plane(plane) => plane.thrust,
+            Setpoint::Blend(blend) => blend.hover.thrust,
         }
     }
 
     /// Whether guidance marked this setpoint ground idle (see
-    /// [`AttitudeSetpoint::idle`]); a plane attitude never is.
+    /// [`AttitudeSetpoint::idle`]); a plane attitude never is, a blend when its hover is.
     ///
     /// # Examples
     ///
@@ -1298,11 +1303,12 @@ impl Setpoint {
             Setpoint::Rate(rates) => rates.idle,
             Setpoint::BodyRate(rates) | Setpoint::PlaneRate(rates) => rates.idle,
             Setpoint::Plane(_) => false,
+            Setpoint::Blend(blend) => blend.hover.idle,
         }
     }
 
-    /// This setpoint with its thrust replaced by `thrust`, its other fields (the
-    /// [`idle`](Self::idle) mark included) kept.
+    /// This setpoint with its [`thrust`](Self::thrust) replaced by `thrust`, its other fields
+    /// (the [`idle`](Self::idle) mark included) kept.
     ///
     /// # Examples
     ///
@@ -1321,6 +1327,13 @@ impl Setpoint {
             Setpoint::BodyRate(rates) => Setpoint::BodyRate(BodyRateSetpoint { thrust, ..rates }),
             Setpoint::Plane(plane) => Setpoint::Plane(PlaneSetpoint { thrust, ..plane }),
             Setpoint::PlaneRate(rates) => Setpoint::PlaneRate(BodyRateSetpoint { thrust, ..rates }),
+            Setpoint::Blend(blend) => Setpoint::Blend(BlendSetpoint {
+                hover: AttitudeSetpoint {
+                    thrust,
+                    ..blend.hover
+                },
+                ..blend
+            }),
         }
     }
 }
@@ -1389,6 +1402,39 @@ pub struct PlaneSetpoint {
     /// the ramp reaches its handover whatever the cruise limit (ArduPilot's tailsitter ramps
     /// past its pitch limits, `tailsitter.cpp:957`).
     pub transition: bool,
+}
+
+/// A hover and a wing-borne target flown together, for [`Setpoint::Blend`]: a lift+cruise
+/// VTOL (quadplane) in transition, its lift rotors flying `hover` and its surfaces and pusher
+/// flying `plane`.
+///
+/// The stabilizer weights the lift rotors' thrust and moments by `lift_share` and flies the
+/// surfaces and pusher in full (PX4's standard VTOL,
+/// `src/modules/vtol_att_control/standard.cpp:294-368`). A NaN share counts as 1, the lift
+/// rotors carrying it all; others saturate to `[0, 1]`.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::{AttitudeSetpoint, BlendSetpoint, PlaneSetpoint, Setpoint};
+///
+/// // Halfway through handing the lift to the wing, the pusher at full throttle.
+/// let blend = Setpoint::Blend(BlendSetpoint {
+///     hover: AttitudeSetpoint { thrust: 0.5, ..Default::default() },
+///     plane: PlaneSetpoint { thrust: 1.0, ..Default::default() },
+///     lift_share: 0.5,
+/// });
+/// assert_eq!(blend.thrust(), 0.5);
+/// ```
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct BlendSetpoint {
+    /// The lift rotors' target, flown by the hover side.
+    pub hover: AttitudeSetpoint,
+    /// The surfaces' and pusher's target, flown by the plane side.
+    pub plane: PlaneSetpoint,
+    /// The share of hover lift the lift rotors carry, `0.0` to `1.0`.
+    pub lift_share: f32,
 }
 
 /// Attitude target for the [`Stabilizer`]; see [`Setpoint`].

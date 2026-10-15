@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `PROTOCOL_VERSION` 7 (#391): core `Setpoint::Blend` changes the `Record`
+  shape.
 - **Breaking:** `PROTOCOL_VERSION` 6 (#391): core `ControlOutput` gains `cruise`, which
   changes the `Record` shape.
 - **Breaking:** `MAX_FRAME_LEN` is 384 bytes (was 256), so the largest `Record`, with a

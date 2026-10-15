@@ -32,7 +32,8 @@
 //!   attitude and heading loops are cleared, so attitude flight resumes from fresh state.
 //! - [`Setpoint::BodyRate`]: the same, at absolute rates saturated to the full-scale rates
 //!   (maneuvers, offboard rates).
-//! - [`Setpoint::Plane`], [`Setpoint::PlaneRate`]: a plane stabilizer's; neutral output.
+//! - [`Setpoint::Plane`], [`Setpoint::PlaneRate`]: a plane stabilizer's; [`Setpoint::Blend`]: a
+//!   lift+cruise VTOL's; neutral output.
 //! - [`Setpoint::Attitude`]: attitude and heading loops feeding the rate loop. They act on the
 //!   body-frame error from the attitude quaternion: the shortest tilt of the thrust axis onto
 //!   the setpoint's (roll and pitch relative to the current heading), then the heading error,
@@ -298,7 +299,9 @@ impl Stabilizer for CopterStabilizer {
                 self.track_rates(dt, desired, rates.thrust, estimated_state)
             }
             // A plane stabilizer's setpoints: neutral (the trait's rule for unsupported ones).
-            Setpoint::Plane(_) | Setpoint::PlaneRate(_) => ControlOutput::default(),
+            Setpoint::Plane(_) | Setpoint::PlaneRate(_) | Setpoint::Blend(_) => {
+                ControlOutput::default()
+            }
         };
 
         // At ground idle the I terms can't act on anything and would wind up against a

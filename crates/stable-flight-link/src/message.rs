@@ -115,6 +115,10 @@ pub enum Uplink {
 /// ```
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "no heap to box a Record in no_std; a message lives on the stack for one encode"
+)]
 pub enum Downlink {
     /// Flight controller status.
     Heartbeat {

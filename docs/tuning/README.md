@@ -11,6 +11,7 @@ How to tune an airframe on Stable Flight. Each guide covers:
 | Guide | Airframe type | Reference airframe |
 |---|---|---|
 | [Tailsitter](tailsitter.md) | Two-motor, two-elevon tailsitter (`TailsitterGuidance` + `TailsitterStabilizer`) | RealFlight eXplora VTOL (`airframes::explora_vtol()`) |
+| [Quadplane](quadplane.md) | Lift+cruise VTOL: four lift rotors, a pusher, and plane surfaces (`QuadPlaneGuidance` + `QuadPlaneStabilizer`) | Simulator quadplane (`stable_flight_sim::airframes::quadplane()`) |
 
 Each guide quotes the reference airframe's values, but the airframe code is the authority: its
 comments hold the value in use and the flight (`#n`) that set it. A tuned value lands in the

@@ -1,7 +1,7 @@
 //! [`LiftTransition`]: the copter ⇄ plane transition of a lift+cruise VTOL (quadplane), which
 //! stays level and flies its lift rotors and its wing at once, trading lift between them.
 
-use crate::controllers::{InvalidConfig, check_limit, check_positive};
+use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
 use crate::math::assert_dt;
 use crate::{
     Configurable, FlightMode, FlightModeReport, FlightRegime, ModeRefusal, Vec3, VehicleState,
@@ -13,7 +13,8 @@ mod params;
 #[cfg(test)]
 mod tests;
 
-/// [`LiftTransition`] settings.
+/// [`LiftTransition`] settings, and the pusher, handoff, and roll limit a quadplane guidance
+/// flies the transitions with ([`QuadPlaneGuidance`](super::QuadPlaneGuidance)).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LiftTransitionConfig {
     /// The airspeed that starts the forward lift ramp, in m/s.
@@ -31,11 +32,23 @@ pub struct LiftTransitionConfig {
     pub back_speed_mps: f32,
     /// The longest a back transition runs before it completes, in seconds.
     pub back_timeout_s: f32,
+    /// The most linear thrust the pusher gets through the forward transition, `[0, 1]`.
+    pub forward_thrust: f32,
+    /// How fast the pusher's thrust may rise through the forward transition, in thrust per
+    /// second. Positive.
+    pub pusher_slew_per_s: f32,
+    /// How long the pusher's thrust blends to the plane guidance's at the handoff into plane
+    /// flight, in seconds ([`ThrustHandoff`](super::ThrustHandoff)); 0 switches at once.
+    pub handoff_s: f32,
+    /// Bank past which a transition is cut short, in radians, in `(0, π]`: forward aborts to
+    /// copter, back completes ([`LiftTransition::cut_short`]).
+    pub roll_limit_rad: f32,
 }
 
 impl LiftTransitionConfig {
-    /// `Ok` when every field is in range: times and ramps positive, airspeed, speed, and height
-    /// non-negative, all finite.
+    /// `Ok` when every field is in range: times, ramps, and the slew positive, airspeed, speed,
+    /// height, and handoff non-negative, all finite; the thrust in `[0, 1]` and the roll limit
+    /// in `(0, π]`.
     ///
     /// # Errors
     ///
@@ -47,13 +60,26 @@ impl LiftTransitionConfig {
         check_limit("min_height_m", self.min_height_m)?;
         check_positive("back_ramp_s", self.back_ramp_s)?;
         check_limit("back_speed_mps", self.back_speed_mps)?;
-        check_positive("back_timeout_s", self.back_timeout_s)
+        check_positive("back_timeout_s", self.back_timeout_s)?;
+        check(
+            "forward_thrust",
+            (0.0..=1.0).contains(&self.forward_thrust),
+            "in [0, 1]",
+        )?;
+        check_positive("pusher_slew_per_s", self.pusher_slew_per_s)?;
+        check_limit("handoff_s", self.handoff_s)?;
+        check(
+            "roll_limit_rad",
+            self.roll_limit_rad > 0.0 && self.roll_limit_rad <= core::f32::consts::PI,
+            "in (0, π] rad",
+        )
     }
 }
 
 impl Default for LiftTransitionConfig {
     /// ArduPilot's 9 m/s airspeed gate and 5 s lift ramp, PX4's 15 s forward timeout, 3 s back
-    /// ramp, 5 m/s back speed, and 10 s back timeout, and 5 m of height (as
+    /// ramp, 5 m/s back speed, 10 s back timeout, and pusher thrust up to full rising at 0.33/s, and
+    /// 5 m of height, a 0.5 s handoff, and a 45° roll limit (as
     /// [`TransitionConfig`](super::TransitionConfig)); see [`LiftTransition`]'s
     /// [sources](LiftTransition#sources).
     fn default() -> Self {
@@ -65,6 +91,10 @@ impl Default for LiftTransitionConfig {
             back_ramp_s: 3.0,
             back_speed_mps: 5.0,
             back_timeout_s: 10.0,
+            forward_thrust: 1.0,
+            pusher_slew_per_s: 0.33,
+            handoff_s: 0.5,
+            roll_limit_rad: 45.0_f32.to_radians(),
         }
     }
 }
@@ -137,6 +167,9 @@ pub struct LiftTransitionStep {
 ///   `vtol_att_control/standard.cpp:250-254`) and completes once the body-`x` ground speed
 ///   is below `MPC_XY_CRUISE` (5 m/s; airspeed without a ground velocity) or after
 ///   `VT_B_TRANS_DUR` (10 s, `standard.cpp:98-115`).
+/// - Pusher: PX4 slews it to `VT_F_TRANS_THR` (1.0) at `VT_PSHER_SLEW` (0.33/s,
+///   `standard.cpp:201-242`) going forward and cuts it going back (`:269`); ArduPilot flies
+///   it on the plane controller's throttle going forward (`servos.cpp:569-588`).
 ///
 /// # Examples
 ///

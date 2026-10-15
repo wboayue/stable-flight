@@ -3,8 +3,8 @@ use core::time::Duration;
 use assert2::check;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{
-    AbsoluteAttitudeCommand, ActuatorCommand, AttitudeCommand, AttitudeSetpoint, Command,
-    ControlInput, ControlMode, ControlOutput, CruiseOutput, FailsafeState, FlightMode,
+    AbsoluteAttitudeCommand, ActuatorCommand, AttitudeCommand, AttitudeSetpoint, BlendSetpoint,
+    Command, ControlInput, ControlMode, ControlOutput, CruiseOutput, FailsafeState, FlightMode,
     FlightModeReport, FlightRegime, LandCommand, ModeRefusal, RateCommand, RateSetpoint,
     Saturation, Setpoint, TelemetryRecord, Vec2, Vec3, VehicleState, WaypointCommand,
 };
@@ -37,13 +37,22 @@ fn worst_case_record() -> Record {
             cruise_speed_mps: 6.0,
         }))
         .with_regime(FlightRegime::Plane),
-        setpoint: Setpoint::Attitude(AttitudeSetpoint {
-            roll_rad: 0.1,
-            pitch_rad: 0.2,
-            heading_rad: 0.3,
-            thrust: 0.4,
-            transition: false,
-            idle: false,
+        setpoint: Setpoint::Blend(BlendSetpoint {
+            hover: AttitudeSetpoint {
+                roll_rad: 0.1,
+                pitch_rad: 0.2,
+                heading_rad: 0.3,
+                thrust: 0.4,
+                transition: false,
+                idle: false,
+            },
+            plane: stable_flight::PlaneSetpoint {
+                roll_rad: 0.1,
+                pitch_rad: 0.2,
+                thrust: 0.5,
+                transition: false,
+            },
+            lift_share: 0.6,
         }),
         state: sample_state(),
         control: ControlOutput {

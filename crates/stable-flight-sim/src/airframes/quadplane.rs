@@ -5,30 +5,33 @@ use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
 };
 use stable_flight::guidance::copter::CopterGuidanceConfig;
+use stable_flight::guidance::plane::PlaneGuidanceConfig;
+use stable_flight::guidance::vtol::{LiftTransitionConfig, QuadPlaneGuidanceConfig};
 use stable_flight::mixers::{MixerConfig, TableMixer};
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
+use stable_flight::stabilizers::vtol::QuadPlaneStabilizerConfig;
 
 use crate::fixed_wing::FixedWingModel;
 use crate::quadplane_model::{LiftRotors, QuadPlaneModel};
 use crate::start::Start;
 
-use super::plane::{aerosonde_inertia, plane};
+use super::plane::{aerosonde_inertia, cruise_thrust, plane};
 use super::{hover_thrust, max_thrust_n, x_moment_arm_m};
 
 /// A simulated quadplane: its physics, the mixer that drives its lift rotors, pusher, and
-/// surfaces, the hover guidance and stabilizer configs tuned for it, and a start in cruise.
+/// surfaces, the guidance and stabilizer configs tuned for it, and a start in cruise.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct QuadPlaneAirframe {
     /// Physical parameters.
     pub model: QuadPlaneModel,
     /// [`TableMixer::quadplane`]: lift rotors on motors 0–3 in [`TableMixer::quad_x`]'s order,
     /// the pusher on motor 4, the ailerons, elevator, and rudder on servos 0–2 as on
-    /// [`TableMixer::plane`]. Hover configs set no cruise output, so the pusher stays stopped.
+    /// [`TableMixer::plane`].
     pub mixer: TableMixer<8>,
-    /// Hover guidance configuration.
-    pub guidance: CopterGuidanceConfig,
-    /// Hover stabilizer configuration.
-    pub stabilizer: CopterStabilizerConfig,
+    /// Guidance configuration: hover, plane, and the transition between them.
+    pub guidance: QuadPlaneGuidanceConfig,
+    /// Stabilizer configuration: hover and plane.
+    pub stabilizer: QuadPlaneStabilizerConfig,
     /// Level at [`plane`]'s 15 m/s trim airspeed, 100 m up over the origin, heading north.
     pub start: Start,
 }
@@ -50,17 +53,19 @@ pub struct QuadPlaneAirframe {
 /// - Pusher: [`plane`]'s static thrust-to-weight of 1.2 at this mass (ArduPilot sizes the
 ///   prop from the mass too, `SIM_Plane.cpp:54`).
 ///
-/// It hovers on core's copter guidance and stabilizer: roll and pitch rate and angle gains
-/// from the sim autotune (`StagePlan::copter_search`), yaw and heading core's defaults, and
-/// the hover thrust worked out from the model. The cruise configs come with the quadplane
-/// guidance (#391).
+/// It flies core's quadplane guidance and stabilizer. The hover side has roll and pitch rate
+/// and angle gains from the sim autotune (`StagePlan::copter_search`), yaw and heading core's
+/// defaults, and the hover thrust worked out from the model. The plane side is [`plane`]'s
+/// gains (the same wing and surfaces), with the cruise thrust worked out for this mass on the
+/// pusher. Transitions fly core's defaults; they meet PX4's limits in
+/// `tests/quadplane_transition.rs`.
 ///
 /// # Examples
 ///
 /// ```
 /// use stable_flight::FlightLoop;
-/// use stable_flight::guidance::copter::CopterGuidance;
-/// use stable_flight::stabilizers::copter::CopterStabilizer;
+/// use stable_flight::guidance::vtol::QuadPlaneGuidance;
+/// use stable_flight::stabilizers::vtol::QuadPlaneStabilizer;
 /// use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
 /// use stable_flight_sim::{SimQuadPlane, airframes};
 ///
@@ -69,8 +74,8 @@ pub struct QuadPlaneAirframe {
 /// let flight_loop = FlightLoop::new(
 ///     ConstantCommander::default(),
 ///     vehicle,
-///     CopterGuidance::new(airframe.guidance),
-///     CopterStabilizer::new(airframe.stabilizer),
+///     QuadPlaneGuidance::new(airframe.guidance),
+///     QuadPlaneStabilizer::new(airframe.stabilizer),
 ///     airframe.mixer,
 ///     RecordingTelemetry::<16>::new(),
 /// );
@@ -100,7 +105,7 @@ pub fn quadplane() -> QuadPlaneAirframe {
         p: ANGLE_P,
         ..defaults.attitude.roll_gains
     };
-    let stabilizer = CopterStabilizerConfig {
+    let hover_stabilizer = CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
             // Sim autotune, from 3× and 10× core's rate P (from core's defaults the climb out
             // pitches the hover past settling), then rerun from its own result (#390).
@@ -123,24 +128,43 @@ pub fn quadplane() -> QuadPlaneAirframe {
         },
         ..defaults
     };
-    let guidance = CopterGuidanceConfig {
+    let mixer_config = MixerConfig::default();
+    let hover = CopterGuidanceConfig {
         altitude: AltitudeControllerConfig {
             hover_thrust: hover_thrust(
                 MASS_KG,
                 model.lift.max_thrust_n,
                 &mixer,
-                &MixerConfig::default(),
-                stabilizer.thrust_curve_exponent,
+                &mixer_config,
+                hover_stabilizer.thrust_curve_exponent,
             ),
             ..CopterGuidanceConfig::default().altitude
         },
         ..CopterGuidanceConfig::default()
     };
+    let plane_stabilizer = airplane.stabilizer;
+    let plane_guidance = PlaneGuidanceConfig {
+        cruise_thrust: cruise_thrust(
+            &model.wing,
+            &mixer,
+            &mixer_config,
+            plane_stabilizer.thrust_curve_exponent,
+            plane_stabilizer.trim_airspeed_mps,
+        ),
+        ..airplane.guidance
+    };
     QuadPlaneAirframe {
         model,
         mixer,
-        guidance,
-        stabilizer,
+        guidance: QuadPlaneGuidanceConfig {
+            hover,
+            plane: plane_guidance,
+            transition: LiftTransitionConfig::default(),
+        },
+        stabilizer: QuadPlaneStabilizerConfig {
+            hover: hover_stabilizer,
+            plane: plane_stabilizer,
+        },
         start: airplane.start,
     }
 }

@@ -1,5 +1,6 @@
 //! VTOL stabilization: [`TailsitterStabilizer`] flies each setpoint on the side it belongs to,
-//! hover or plane.
+//! hover or plane; [`QuadPlaneStabilizer`] flies a lift+cruise VTOL's lift rotors and surfaces,
+//! both at once through a transition.
 
 use crate::controllers::InvalidConfig;
 use crate::params::{ParamError, Params, locate};
@@ -8,8 +9,11 @@ use crate::stabilizers::plane::{PlaneStabilizer, PlaneStabilizerConfig};
 use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
 use crate::{Configurable, ControlOutput, Saturation, Setpoint, Stabilizer, VehicleState, View};
 
+mod quadplane;
 #[cfg(test)]
 mod tests;
+
+pub use quadplane::{QuadPlaneStabilizer, QuadPlaneStabilizerConfig};
 
 /// [`TailsitterStabilizer`] settings: its two stabilizers'.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

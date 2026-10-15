@@ -2,7 +2,7 @@
 
 use stable_flight::controllers::{PlaneRateControllerConfig, RateGains};
 use stable_flight::guidance::plane::PlaneGuidanceConfig;
-use stable_flight::mixers::{MixerConfig, TableMixer};
+use stable_flight::mixers::{MixerConfig, Slot, TableMixer};
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
 use stable_flight::{GRAVITY, Vec3};
 
@@ -187,9 +187,9 @@ pub(super) fn rate_feedforward(model: &FixedWingModel, airspeed_mps: f32) -> Vec
     )
 }
 
-/// The throttle that holds `model` in level flight at `airspeed_mps` on `mixer`'s motors: the
-/// thrust that matches the drag at the angle of attack whose linear lift carries the weight,
-/// shared by the motors, through [`thrust_for`] with the mixer's thrust factor (`mixer_config`)
+/// The throttle that holds `model` in level flight at `airspeed_mps` on `mixer`'s forward
+/// motors (its pushers, or with none its motors): the thrust that matches the drag at the angle
+/// of attack whose linear lift carries the weight, shared by those motors, through [`thrust_for`] with the mixer's thrust factor (`mixer_config`)
 /// and the stabilizer's `thrust_curve_exponent`.
 pub(super) fn cruise_thrust<const N: usize>(
     model: &FixedWingModel,
@@ -202,9 +202,24 @@ pub(super) fn cruise_thrust<const N: usize>(
     let lift = model.mass_kg * GRAVITY / pressure_area_n;
     let drag_n = pressure_area_n * aero::drag_coefficient(model, lift);
     thrust_for(
-        drag_n / motor_count(mixer),
+        drag_n / forward_motor_count(mixer),
         model.max_thrust_n,
         mixer_config,
         thrust_curve_exponent,
     )
+}
+
+/// How many of `mixer`'s motors push the airframe forward: its pushers, or with none (a plane,
+/// a tailsitter) its motors.
+fn forward_motor_count<const N: usize>(mixer: &TableMixer<N>) -> f32 {
+    let pushers = mixer
+        .rows()
+        .iter()
+        .filter(|row| matches!(row.slot(), Slot::Motor(_)) && row.is_pusher())
+        .count();
+    if pushers > 0 {
+        pushers as f32
+    } else {
+        motor_count(mixer)
+    }
 }

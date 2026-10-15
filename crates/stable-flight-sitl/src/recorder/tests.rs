@@ -5,9 +5,10 @@ use assert2::check;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::testing::RecordedTick;
 use stable_flight::{
-    ActuatorCommand, AttitudeCommand, AttitudeSetpoint, BodyRateSetpoint, Command, ControlInput,
-    ControlOutput, FlightMode, FlightModeReport, ModeRefusal, PlaneSetpoint, RateCommand,
-    RateSetpoint, Saturation, Setpoint, TelemetryPublisher, Vec3, VehicleState, WaypointCommand,
+    ActuatorCommand, AttitudeCommand, AttitudeSetpoint, BlendSetpoint, BodyRateSetpoint, Command,
+    ControlInput, ControlOutput, FlightMode, FlightModeReport, ModeRefusal, PlaneSetpoint,
+    RateCommand, RateSetpoint, Saturation, Setpoint, TelemetryPublisher, Vec3, VehicleState,
+    WaypointCommand,
 };
 
 use super::{Columns, CopterColumns, CsvRecorder, TailsitterColumns};
@@ -194,6 +195,17 @@ fn tailsitter_columns_name_the_setpoint_and_mode() {
             Setpoint::Rate(RateSetpoint::default()),
             FlightMode::Copter,
             ["rate", "NaN", "NaN", "0"],
+        ),
+        (
+            Setpoint::Blend(BlendSetpoint {
+                hover: AttitudeSetpoint {
+                    roll_rad: 0.25,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            FlightMode::ToPlane,
+            ["blend", "0.2500", "NaN", "2"],
         ),
     ];
     let columns = TailsitterColumns {

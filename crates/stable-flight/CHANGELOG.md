@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Lift+cruise guidance and stabilizer** (#391): `guidance::vtol::QuadPlaneGuidance`
+  (`QuadPlaneGuidanceConfig`) flies a quadplane's hover on `CopterGuidance`, its plane flight
+  on `PlaneGuidance`, and the transitions under a `LiftTransition` as a `Setpoint::Blend`
+  (`BlendSetpoint`: hover and plane attitudes and the lift share). Forward, the hover side
+  holds altitude while the pusher flies the plane guidance's thrust and both sides its pitch,
+  within ArduPilot's transition limits; back, the pusher is cut. `stabilizers::vtol::
+  QuadPlaneStabilizer` (`QuadPlaneStabilizerConfig`) flies hover setpoints on the lift
+  rotors with the surfaces neutral, plane setpoints on the surfaces and pusher
+  (`ControlOutput::cruise`), and a blend on both, the lift rotors weighted by their share.
+  `LiftTransitionConfig` gains the pusher's `forward_thrust` and `pusher_slew_per_s`,
+  `handoff_s`, and `roll_limit_rad` (`TRAN_FW_THR`, `TRAN_PSH_SLEW`, `TRAN_HANDOFF`,
+  `TRAN_ROLL_MAX`).
 - **Lift+cruise transition** (#391): `guidance::vtol::LiftTransition` (`LiftTransitionConfig`,
   `LiftTransitionStep`), a quadplane's copter ⇄ plane state machine. Forward, the lift rotors
   hold hover until a valid airspeed reaches the gate (default 9 m/s), then their lift share
