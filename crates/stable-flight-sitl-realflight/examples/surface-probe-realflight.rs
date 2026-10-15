@@ -13,7 +13,8 @@
 //!
 //! It lands on the script's last waypoint and exits once disarmed; Ctrl-C stops it sooner
 //! (`RealFlightVehicle` hands RC back). Don't end a script with a fast leg flown tail-first:
-//! the Cobra pitches up past its lift rotors' authority (#433). The RealFlight host defaults to `10.211.55.3:8080` via `--host`.
+//! the Cobra pitches up past its lift rotors' authority (#437). The RealFlight host defaults
+//! to `10.211.55.3:8080` via `--host`.
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example surface-probe-realflight -- --record probe.csv
