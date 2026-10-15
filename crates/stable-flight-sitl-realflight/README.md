@@ -93,7 +93,7 @@ cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- f
 cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- --end land
 
 # A transition mission: hover climb, two plane laps of a rectangle (the CSV's regime column),
-# back to hover and home
+# back to hover and home; flights/explora_transition_lap.csv flies one lap, for transition checks
 cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- flights/explora_transition.csv --end land
 
 # Flown from the native link, holding position when it goes quiet; link_pilot plays the companion

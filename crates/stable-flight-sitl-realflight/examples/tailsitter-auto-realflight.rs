@@ -9,8 +9,9 @@
 //! view, where nose-up hover reads level, and the plane controllers in the airplane frame. A
 //! script's optional `regime` column asks for plane or copter per leg, so
 //! `flights/explora_transition.csv` climbs in hover, transitions, flies two plane laps,
-//! transitions back, and comes home in hover; each mode change is logged, and `--record` writes
-//! one row per tick as `tailsitter-manual-realflight` does.
+//! transitions back, and comes home in hover (`flights/explora_transition_lap.csv` flies one
+//! lap); each mode change is logged, and `--record` writes one row per tick as
+//! `tailsitter-manual-realflight` does.
 //!
 //! [`TailsitterGuidance`]: stable_flight::guidance::vtol::TailsitterGuidance
 //! [`TailsitterStabilizer`]: stable_flight::stabilizers::vtol::TailsitterStabilizer

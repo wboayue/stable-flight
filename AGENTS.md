@@ -63,7 +63,7 @@ just fly-auto                                 # copter-auto-realflight: waypoint
 just fly-companion | just link-pilot          # copter-companion-realflight flown from the link; link_pilot plays the companion
 just fly-autotune                             # copter-autotune-realflight: step-response autotune of roll/pitch rate and angle, prints gains, lands
 just fly-tailsitter                           # tailsitter-manual-realflight: eXplora hover, transitions, plane from a joystick (D-pad Right plane, Left copter, Up rate; --record CSV)
-just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv; flights/explora_transition.csv flies plane legs; --end, --record)
+just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv; flights/explora_transition.csv flies plane legs, explora_transition_lap.csv one lap of them; --end, --record)
 just capture                                  # capture-state-realflight: joystick flight, raw SimulatorState → CSV
 just plot <csv> <out> | just gen-figure-eight # plot_flight, generate_figure_eight
 just tag <crate> <version> | just versions    # push a <crate>-v<version> tag; list tags
@@ -224,7 +224,7 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   ≈ 600 B/s). `--record` on the tailsitter examples logs setpoints, rates, moments, and
   actuators per tick (columns: `stable_flight_sitl::recorder::TailsitterColumns`).
 - **Comparable runs:** change one knob per run, fly the same script with `--record`
-  (transitions: `flights/explora_transition.csv --end land`), and report each run as a row
+  (transitions: `flights/explora_transition_lap.csv --end land`), and report each run as a row
   against the earlier ones. To tell whether a behavior predates a change, fly the parent
   commit in a throwaway worktree. With `--end land` the example keeps running on the ground:
   stop it (below) before the next run.

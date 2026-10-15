@@ -64,9 +64,11 @@ end in the ground.
    In plane flight the columns read as named: `roll`, `pitch`, `heading` with `roll_rate`,
    `pitch_rate`, `yaw_rate`.
 
-4. **Repeatable missions.** For transitions, `flights/explora_transition.csv` flies the same
-   climb, plane laps, and back transition every run, so heights compare across settings
-   (`just fly-tailsitter-auto flights/explora_transition.csv --end land --record <csv>`).
+4. **Repeatable missions.** For transitions, `flights/explora_transition_lap.csv` flies the
+   same climb, plane lap, and back transition every run, so heights compare across settings
+   (`just fly-tailsitter-auto flights/explora_transition_lap.csv --end land --record <csv>`).
+   Its back transition starts where the two-lap `flights/explora_transition.csv` starts its
+   own, so runs of either compare.
 
 ## Order
 

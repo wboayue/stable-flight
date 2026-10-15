@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `flights/explora_transition_lap.csv`: the eXplora transition mission with one plane lap,
+  for transition checks; its back transition starts where the two-lap mission's does.
+
 - `copter-manual-realflight --record <csv>` (`just fly-manual`): one row per tick of body
   rates, attitude, moments, the attitude setpoint, and the stick yaw (#337).
 
