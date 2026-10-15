@@ -2,8 +2,7 @@
 //! [`saturate_unit`], [`saturate_symmetric`], [`saturate_throttle`], [`desaturate`],
 //! [`cap_magnitude`], [`clamp_symmetric`] and its per-component [`clamp_symmetric_each`],
 //! [`limit_or_zero`], [`all_finite`], [`assert_dt`], [`tilt_boost`], [`guard_sink`], and
-//! [`wrap_angle`] and
-//! [`euler_angles`] (both public at the crate root).
+//! [`wrap_angle`] and [`euler_angles`] (both public at the crate root).
 //!
 //! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite
 //! error into controller state, wrap angles), which is specified in `architecture.md`,

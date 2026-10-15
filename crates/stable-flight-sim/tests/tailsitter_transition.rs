@@ -17,7 +17,7 @@ use common::plane::{
     AIRSPEED_BAND_MPS, ALTITUDE_BAND_M, Interlude, LineDeviation, north_line_command,
 };
 use common::tailsitter::{
-    FORWARD_AT_S, HoverDeviation, TRANSITION_ALTITUDE_M, TailsitterPlant, Trace, forward,
+    FORWARD_AT_S, Heights, HoverDeviation, TRANSITION_ALTITUDE_M, TailsitterPlant, Trace, forward,
     forward_and_back, tailsitter_loop, tailsitter_pipeline, trace,
 };
 use common::{
@@ -85,35 +85,70 @@ fn entered_s(trace: &Trace, mode: FlightMode, from_s: f32, what: &str) -> f32 {
     entered.map_or(f32::INFINITY, |sample| sample.time_s)
 }
 
-/// Checks the lowest height from `from_s` until `ALTITUDE_LOSS_AFTER_S` after `ended_s` is
-/// within [`ALTITUDE_LOSS_M`] of the height at `from_s`.
-fn check_altitude_loss(trace: &Trace, from_s: f32, ended_s: f32, what: &str) {
-    let start_m = trace
-        .at(from_s)
-        .map_or(f32::NAN, |sample| sample.state.position_m.z);
-    let lowest_m = trace.lowest_m(from_s, ended_s + ALTITUDE_LOSS_AFTER_S);
+/// The heights from `from_s`, when a transition was requested, until `ALTITUDE_LOSS_AFTER_S`
+/// after it ended at `ended_s`.
+fn transition_heights(trace: &Trace, from_s: f32, ended_s: f32) -> Heights {
+    trace.heights(from_s, ended_s + ALTITUDE_LOSS_AFTER_S)
+}
+
+/// Checks the lowest of `heights` is within [`ALTITUDE_LOSS_M`] below their start.
+fn check_altitude_loss(heights: Heights, what: &str) {
+    let fell_m = heights.start_m - heights.lowest_m;
     check!(
-        start_m - lowest_m <= ALTITUDE_LOSS_M,
-        "{what}: fell {} m below {start_m} m",
-        start_m - lowest_m
+        fell_m <= ALTITUDE_LOSS_M,
+        "{what}: fell {fell_m} m, {heights:?}"
     );
 }
 
-/// Checks the highest height from `from_s` until `ALTITUDE_LOSS_AFTER_S` after `ended_s` is
-/// within [`BACK_CLIMB_M`] above the height at `from_s`.
-fn check_climb(trace: &Trace, from_s: f32, ended_s: f32, what: &str) {
-    let start_m = trace
-        .at(from_s)
-        .map_or(f32::NAN, |sample| sample.state.position_m.z);
-    let highest_m = trace
-        .window(from_s, ended_s + ALTITUDE_LOSS_AFTER_S)
-        .map(|sample| sample.state.position_m.z)
-        .fold(f32::NEG_INFINITY, f32::max);
+/// Checks the highest of `heights` is within [`BACK_CLIMB_M`] above their start.
+fn check_climb(heights: Heights, what: &str) {
+    let climbed_m = heights.highest_m - heights.start_m;
     check!(
-        highest_m - start_m <= BACK_CLIMB_M,
-        "{what}: climbed {} m above {start_m} m",
-        highest_m - start_m
+        climbed_m <= BACK_CLIMB_M,
+        "{what}: climbed {climbed_m} m, {heights:?}"
     );
+}
+
+/// Where a tick falls around the first back transition: before it, on its ramp, or the given
+/// seconds after the switch from `ToCopter` into `Copter`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BackPhase {
+    Before,
+    Ramp,
+    HandedOver(f32),
+}
+
+/// Follows a flight's ticks into [`BackPhase`]s.
+#[derive(Debug, Default)]
+struct BackHandover {
+    on_ramp: bool,
+    handed_over_s: Option<f32>,
+}
+
+impl BackHandover {
+    /// The phase of `record`, the flight's next tick.
+    fn observe(&mut self, record: &TelemetryRecord) -> BackPhase {
+        if let Some(handed_over_s) = self.handed_over_s.as_mut() {
+            *handed_over_s += record.dt.as_secs_f32();
+            return BackPhase::HandedOver(*handed_over_s);
+        }
+        match record.flight_mode.mode {
+            FlightMode::ToCopter => {
+                self.on_ramp = true;
+                BackPhase::Ramp
+            }
+            FlightMode::Copter if self.on_ramp => {
+                self.handed_over_s = Some(0.0);
+                BackPhase::HandedOver(0.0)
+            }
+            _ => BackPhase::Before,
+        }
+    }
+
+    /// Whether the flight has handed over from `ToCopter` to `Copter`.
+    fn handed_over(&self) -> bool {
+        self.handed_over_s.is_some()
+    }
 }
 
 /// Seconds after the back handoff that [`HANDOFF_STEP`] watches.
@@ -128,29 +163,19 @@ const HANDOFF_STEP: f32 = 0.05;
 /// `ToCopter` into `Copter`.
 #[derive(Debug, Default)]
 struct HandoffStep {
-    previous_mode: Option<FlightMode>,
-    watched_s: Option<f32>,
+    handover: BackHandover,
     previous_moments: Option<Vec3>,
     largest: f32,
 }
 
 impl TelemetryPublisher for HandoffStep {
     fn publish(&mut self, record: &TelemetryRecord) {
-        let mode = record.flight_mode.mode;
-        if self.watched_s.is_none()
-            && mode == FlightMode::Copter
-            && self.previous_mode == Some(FlightMode::ToCopter)
-        {
-            self.watched_s = Some(0.0);
-        }
-        self.previous_mode = Some(mode);
-        let Some(watched_s) = self.watched_s.as_mut() else {
+        let BackPhase::HandedOver(after_s) = self.handover.observe(record) else {
             return;
         };
-        if *watched_s >= HANDOFF_WATCH_S {
+        if after_s >= HANDOFF_WATCH_S {
             return;
         }
-        *watched_s += record.dt.as_secs_f32();
         let moments = record.control.moments;
         if let Some(previous) = self.previous_moments {
             self.largest = self.largest.max((moments - previous).norm());
@@ -193,7 +218,10 @@ fn transitions_forward_into_level_flight() {
     let plane_s = entered_s(&flight, FlightMode::Plane, FORWARD_AT_S, "forward");
     // Measured 2.2 s, handing over at the 10 m/s airspeed gate.
     check!(plane_s - FORWARD_AT_S <= FORWARD_TIMEOUT_S);
-    check_altitude_loss(&flight, FORWARD_AT_S, plane_s, "forward");
+    check_altitude_loss(
+        transition_heights(&flight, FORWARD_AT_S, plane_s),
+        "forward",
+    );
 
     let airspeed_mps = airframe.stabilizer.plane.trim_airspeed_mps;
     let hold_s = plane_s + PLANE_SETTLE_S;
@@ -225,8 +253,9 @@ fn transitions_back_into_a_hover() {
     let copter_s = entered_s(&flight, FlightMode::Copter, BACK_AT_S, "back");
     // Measured 1.3 s.
     check!(copter_s - BACK_AT_S <= BACK_DURATION_S);
-    check_altitude_loss(&flight, BACK_AT_S, copter_s, "back");
-    check_climb(&flight, BACK_AT_S, copter_s, "back");
+    let heights = transition_heights(&flight, BACK_AT_S, copter_s);
+    check_altitude_loss(heights, "back");
+    check_climb(heights, "back");
     // Measured 0.8 m/s of sink.
     let sink_limit_mps = airframe.guidance.transition.back_sink_limit_mps;
     let handover_climb_mps = flight
@@ -270,7 +299,7 @@ fn back_handoff_keeps_the_hover_trim() {
     );
 
     let step = flight_loop.into_parts().5;
-    check!(step.watched_s.is_some(), "never handed over: {step:?}");
+    check!(step.handover.handed_over(), "never handed over: {step:?}");
     check!(step.largest <= HANDOFF_STEP, "{step:?}");
 }
 
@@ -290,10 +319,7 @@ fn back_transition_keeps_thrust_on() {
     );
 
     let least = flight_loop.into_parts().5;
-    check!(
-        least.handed_over_s.is_some(),
-        "never handed over: {least:?}"
-    );
+    check!(least.handover.handed_over(), "never handed over: {least:?}");
     // Measured 0.6, the ramp's thrust.
     check!(least.thrust > 0.0, "{least:?}");
 }
@@ -302,16 +328,14 @@ fn back_transition_keeps_thrust_on() {
 /// after the switch into `Copter`.
 #[derive(Debug)]
 struct LeastThrust {
-    watching: bool,
-    handed_over_s: Option<f32>,
+    handover: BackHandover,
     thrust: f32,
 }
 
 impl Default for LeastThrust {
     fn default() -> Self {
         LeastThrust {
-            watching: false,
-            handed_over_s: None,
+            handover: BackHandover::default(),
             thrust: f32::INFINITY,
         }
     }
@@ -319,22 +343,14 @@ impl Default for LeastThrust {
 
 impl TelemetryPublisher for LeastThrust {
     fn publish(&mut self, record: &TelemetryRecord) {
-        let mode = record.flight_mode.mode;
-        if mode == FlightMode::ToCopter && self.handed_over_s.is_none() {
-            self.watching = true;
+        let watched = match self.handover.observe(record) {
+            BackPhase::Before => false,
+            BackPhase::Ramp => true,
+            BackPhase::HandedOver(after_s) => after_s <= ALTITUDE_LOSS_AFTER_S,
+        };
+        if watched {
+            self.thrust = self.thrust.min(record.setpoint.thrust());
         }
-        if !self.watching {
-            return;
-        }
-        if mode == FlightMode::Copter {
-            let handed_over_s = self.handed_over_s.get_or_insert(0.0);
-            *handed_over_s += record.dt.as_secs_f32();
-            if *handed_over_s > ALTITUDE_LOSS_AFTER_S {
-                self.watching = false;
-                return;
-            }
-        }
-        self.thrust = self.thrust.min(record.setpoint.thrust());
     }
 }
 
@@ -358,7 +374,7 @@ fn sink_guard_catches_a_stalling_back_ramp() {
         let copter_s = entered_s(&flight, FlightMode::Copter, BACK_AT_S, &what);
         // Measured 3.3 s.
         check!(copter_s - BACK_AT_S <= BACK_DURATION_S, "{what}");
-        check_altitude_loss(&flight, BACK_AT_S, copter_s, &what);
+        check_altitude_loss(transition_heights(&flight, BACK_AT_S, copter_s), &what);
     }
 }
 
@@ -441,7 +457,7 @@ fn ends_a_forward_transition_early() {
                 "{case}: {copter_s} s"
             );
         }
-        check_altitude_loss(&flight, ramp_s, copter_s, case);
+        check_altitude_loss(transition_heights(&flight, ramp_s, copter_s), case);
 
         // Asked back, it hovers over the origin. Refused, it still wants `Plane` and flies its
         // line as a copter, so only its height is checked.
@@ -483,5 +499,5 @@ fn waits_for_the_transition_height() {
     let to_plane_s = ramp.map_or(f32::INFINITY, |sample| sample.time_s);
     let plane_s = entered_s(&flight, FlightMode::Plane, to_plane_s, "forward");
     check!(plane_s - to_plane_s <= FORWARD_TIMEOUT_S);
-    check_altitude_loss(&flight, to_plane_s, plane_s, "forward");
+    check_altitude_loss(transition_heights(&flight, to_plane_s, plane_s), "forward");
 }

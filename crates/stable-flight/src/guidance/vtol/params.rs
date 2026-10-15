@@ -15,8 +15,8 @@ impl ParamTable for TransitionConfig {
         param!("TRAN_MIN_HGT", min_height_m),
         param!("TRAN_FW_THR", forward_thrust),
         param!("TRAN_VT_THR", back_thrust),
-        param!("TRAN_VT_SINK", back_sink_limit_mps),
-        param!("TRAN_VT_SGAIN", back_sink_gain),
+        param!("TRAN_VT_SINK_LIM", back_sink_limit_mps),
+        param!("TRAN_VT_SINK_GN", back_sink_gain),
         param!("TRAN_HANDOFF", handoff_s),
         param!(deg "TRAN_ROLL_MAX", roll_limit_rad),
     ];
@@ -92,14 +92,14 @@ mod metadata {
                 .at_least(0.0)
                 .at_most(1.0),
             BACK.param(
-                "TRAN_VT_SINK",
+                "TRAN_VT_SINK_LIM",
                 "Sink past which the back transition adds thrust (0: off)",
             )
             .with_units("m/s")
             .at_least(0.0),
             BACK.param(
-                "TRAN_VT_SGAIN",
-                "Thrust added per m/s of sink past TRAN_VT_SINK",
+                "TRAN_VT_SINK_GN",
+                "Thrust added per m/s of sink past TRAN_VT_SINK_LIM",
             )
             .with_units("s/m")
             .at_least(0.0),

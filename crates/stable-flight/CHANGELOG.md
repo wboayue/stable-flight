@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Tailsitter back-transition sink guard (#343): `TransitionConfig::back_sink_limit_mps` and
-  `back_sink_gain` (`TRAN_VT_SINK`, `TRAN_VT_SGAIN`; default 1 m/s and 0.4 per m/s) raise the
-  back ramp's thrust while it sinks, so a ramp too weak to hold the nose up doesn't stall and
-  fall. Thrust saturation is flagged while it acts.
+  `back_sink_gain` (`TRAN_VT_SINK_LIM`, `TRAN_VT_SINK_GN`; default 1 m/s and 0.4 per m/s)
+  raise the back ramp's thrust while it sinks, so a ramp too weak to hold the nose up doesn't
+  stall and fall. Thrust saturation is flagged while it acts.
 - `FlightLoop::vehicle()`, beside `commander()`, `guidance()`, and `stabilizer()` (#348).
 - `TableMixer::plane()`: a conventional airplane preset (motor 0; servos 0 ailerons,
   1 elevator, 2 rudder), flown by the simulator's fixed-wing model (#348).
@@ -137,6 +137,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Tailsitter back transitions add thrust while sinking by default (the sink guard, #343): a
+  `TransitionConfig` built on `..Default::default()` gets it with no change.
+  `back_sink_limit_mps: 0.0` restores the fixed `back_thrust`.
 - **Breaking:** `AttitudeSetpoint`, `RateSetpoint`, and `BodyRateSetpoint` have an `idle`
   field, read through `Setpoint::idle()` (#326): struct literals add `idle: false` or
   `..Default::default()`. `CopterGuidance` sets it while a piloted throttle is at or below
