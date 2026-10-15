@@ -85,6 +85,10 @@ fly-tailsitter *ARGS:
 fly-tailsitter-auto *ARGS:
     cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- {{ARGS}}
 
+# Scripted Titan Cobra VTOL quadplane flight in RealFlight; args: [script.csv] [--host host:port] [--end hold|loop|land] [--record csv]
+fly-quadplane-auto *ARGS:
+    cargo run -p stable-flight-sitl-realflight --example quadplane-auto-realflight -- {{ARGS}}
+
 # Quadcopter in RealFlight flown from the native link, holding when the link goes quiet; drive it with `just link-pilot`
 fly-companion *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight -- {{ARGS}}

@@ -1,8 +1,8 @@
 //! Per-tick CSV recording of a flight, for reading a run after it lands.
 //!
 //! [`CsvRecorder`] is a [`TelemetryPublisher`] that writes one row per tick: `wall_s` (seconds
-//! since the recorder was made) followed by a [`Columns`] set's fields. Two sets ship:
-//! [`CopterColumns`] and [`TailsitterColumns`]. Fan it out with the link as the flight loop's
+//! since the recorder was made) followed by a [`Columns`] set's fields. Three sets ship:
+//! [`CopterColumns`], [`TailsitterColumns`], and [`QuadPlaneColumns`]. Fan it out with the link as the flight loop's
 //! telemetry, `(link, recorder)`.
 //!
 //! # Examples
@@ -22,7 +22,7 @@ use std::time::Instant;
 
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{
-    ControlInput, FlightMode, Setpoint, TelemetryPublisher, TelemetryRecord, euler_angles,
+    ControlInput, FlightMode, Setpoint, TelemetryPublisher, TelemetryRecord, Vec3, euler_angles,
 };
 
 /// The fields a [`CsvRecorder`] writes after `wall_s`.
@@ -232,53 +232,9 @@ impl Columns for TailsitterColumns {
         let moments = record.control.moments;
         let actuators = record.actuators;
         let nan = f32::NAN;
-        let (sp_kind, sp_roll, sp_pitch, sp_heading, sp_p, sp_q, sp_r) = match record.setpoint {
-            Setpoint::Attitude(s) => (
-                "attitude",
-                s.roll_rad,
-                s.pitch_rad,
-                s.heading_rad,
-                nan,
-                nan,
-                nan,
-            ),
-            Setpoint::Plane(s) => ("plane", s.roll_rad, s.pitch_rad, nan, nan, nan, nan),
-            Setpoint::BodyRate(s) => (
-                "body_rate",
-                nan,
-                nan,
-                nan,
-                s.roll_radps,
-                s.pitch_radps,
-                s.yaw_radps,
-            ),
-            Setpoint::PlaneRate(s) => (
-                "plane_rate",
-                nan,
-                nan,
-                nan,
-                s.roll_radps,
-                s.pitch_radps,
-                s.yaw_radps,
-            ),
-            Setpoint::Blend(s) => (
-                "blend",
-                s.hover.roll_rad,
-                s.hover.pitch_rad,
-                s.hover.heading_rad,
-                nan,
-                nan,
-                nan,
-            ),
-            _ => ("rate", nan, nan, nan, nan, nan, nan),
-        };
-        let mode = match record.flight_mode.mode {
-            FlightMode::Copter => 0,
-            FlightMode::Plane => 1,
-            FlightMode::ToPlane => 2,
-            FlightMode::ToCopter => 3,
-            _ => 9,
-        };
+        let (sp_kind, sp_roll, sp_pitch, sp_heading, sp_p, sp_q, sp_r) =
+            setpoint_fields(record.setpoint);
+        let mode = mode_code(record.flight_mode.mode);
         let stick_throttle = match &record.command.input {
             ControlInput::Attitude(c) => c.throttle,
             ControlInput::Rate(c) => c.throttle,
@@ -330,3 +286,145 @@ impl Columns for TailsitterColumns {
 
 #[cfg(test)]
 mod tests;
+
+/// A lift+cruise VTOL's (quadplane's) hover, transitions, and plane flight: both sides'
+/// outputs, for reading the lift trim, the pusher, and the handovers.
+///
+/// Rates, angles, and moments are in the body frame. `mode`, `refused`, `sp_kind`,
+/// `sp_roll`/`sp_pitch`/`sp_heading`, `sp_p`/`sp_q`/`sp_r`, `sp_thrust`, `airspeed_mps`,
+/// `climb_mps`, and the horizontal position and velocity are as in [`TailsitterColumns`]
+/// (a blend's angles are its hover side's). `lift_share` is a blend's share of hover lift on
+/// the lift rotors (NaN for other setpoints). `moment_*` and `thrust` are the lift rotors'
+/// (after the thrust curve); `cruise_thrust` and `cruise_moment_*` are the pusher's and the
+/// surfaces' (NaN without a cruise output). `motor_0`–`motor_3` are the lift rotor slots in
+/// [`TableMixer::quad_x`](stable_flight::mixers::TableMixer::quad_x)'s order, `pusher` motor
+/// slot 4, and `servo_0`–`servo_2` the surfaces (ailerons, then elevator and rudder or the
+/// two ruddervators).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct QuadPlaneColumns;
+
+impl Columns for QuadPlaneColumns {
+    const HEADER: &'static str = "armed,mode,refused,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,altitude,airspeed_mps,moment_x,moment_y,moment_z,thrust,cruise_thrust,cruise_moment_x,cruise_moment_y,cruise_moment_z,motor_0,motor_1,motor_2,motor_3,pusher,servo_0,servo_1,servo_2,sp_kind,sp_roll,sp_pitch,sp_heading,sp_p,sp_q,sp_r,sp_thrust,lift_share,climb_mps,north_m,east_m,vel_north_mps,vel_east_mps";
+
+    fn write_row(&mut self, out: &mut impl Write, record: &TelemetryRecord) -> io::Result<()> {
+        let state = record.state;
+        let rates = state.angular_velocity_radps;
+        let (roll, pitch, heading) = euler_angles(&state.attitude);
+        let control = record.control;
+        let nan = f32::NAN;
+        let (cruise_thrust, cruise_moments) = control
+            .cruise
+            .map_or((nan, Vec3::repeat(nan)), |c| (c.thrust, c.moments));
+        let motors = record.actuators.motors;
+        let servos = record.actuators.servos;
+        let (sp_kind, sp_roll, sp_pitch, sp_heading, sp_p, sp_q, sp_r) =
+            setpoint_fields(record.setpoint);
+        let lift_share = match record.setpoint {
+            Setpoint::Blend(s) => s.lift_share,
+            _ => nan,
+        };
+        write!(
+            out,
+            "{},{},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.3},{:.3},{:.3}",
+            u8::from(record.command.arm),
+            mode_code(record.flight_mode.mode),
+            u8::from(record.flight_mode.refusal.is_some()),
+            rates.x,
+            rates.y,
+            rates.z,
+            roll,
+            pitch,
+            heading,
+            state.position_m.z,
+            state.valid_airspeed_mps().unwrap_or(nan),
+            control.moments.x,
+            control.moments.y,
+            control.moments.z,
+            control.thrust,
+            cruise_thrust,
+            cruise_moments.x,
+            cruise_moments.y,
+            cruise_moments.z,
+            motors[0],
+            motors[1],
+            motors[2],
+            motors[3],
+            motors[4],
+            servos[0],
+            servos[1],
+            servos[2],
+            sp_kind,
+            sp_roll,
+            sp_pitch,
+            sp_heading,
+            sp_p,
+            sp_q,
+            sp_r,
+            record.setpoint.thrust(),
+            lift_share,
+            state.velocity_mps.z,
+            state.position_m.x,
+            state.position_m.y,
+            state.velocity_mps.x,
+            state.velocity_mps.y,
+        )
+    }
+}
+
+/// A setpoint's kind, its angles (rad), and its body rates (rad/s), NaN where it has none: a
+/// copter attitude's angles, a plane attitude's roll and pitch, a blend's hover side's angles,
+/// body and plane rates' rates.
+fn setpoint_fields(setpoint: &Setpoint) -> (&'static str, f32, f32, f32, f32, f32, f32) {
+    let nan = f32::NAN;
+    match *setpoint {
+        Setpoint::Attitude(s) => (
+            "attitude",
+            s.roll_rad,
+            s.pitch_rad,
+            s.heading_rad,
+            nan,
+            nan,
+            nan,
+        ),
+        Setpoint::Plane(s) => ("plane", s.roll_rad, s.pitch_rad, nan, nan, nan, nan),
+        Setpoint::BodyRate(s) => (
+            "body_rate",
+            nan,
+            nan,
+            nan,
+            s.roll_radps,
+            s.pitch_radps,
+            s.yaw_radps,
+        ),
+        Setpoint::PlaneRate(s) => (
+            "plane_rate",
+            nan,
+            nan,
+            nan,
+            s.roll_radps,
+            s.pitch_radps,
+            s.yaw_radps,
+        ),
+        Setpoint::Blend(s) => (
+            "blend",
+            s.hover.roll_rad,
+            s.hover.pitch_rad,
+            s.hover.heading_rad,
+            nan,
+            nan,
+            nan,
+        ),
+        _ => ("rate", nan, nan, nan, nan, nan, nan),
+    }
+}
+
+/// A flight mode as a number: 0 copter, 1 plane, 2 to plane, 3 to copter, 9 other.
+fn mode_code(mode: FlightMode) -> u8 {
+    match mode {
+        FlightMode::Copter => 0,
+        FlightMode::Plane => 1,
+        FlightMode::ToPlane => 2,
+        FlightMode::ToCopter => 3,
+        _ => 9,
+    }
+}

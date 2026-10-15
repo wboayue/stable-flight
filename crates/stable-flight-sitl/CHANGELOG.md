@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `recorder::QuadPlaneColumns`: a lift+cruise VTOL's hover, transitions, and plane flight:
+  both sides' moments and thrust, the cruise output, every lift rotor, the pusher, the
+  surfaces, the setpoint, a blend's lift share, and the flight mode (#433).
+
 - `recorder::CsvRecorder`: a `TelemetryPublisher` writing one CSV row per tick (`wall_s`, then a
   `Columns` set) to a file or any writer, or nothing without one; write failures are ignored.
   Column sets `CopterColumns` and `TailsitterColumns` (#337); both include horizontal position

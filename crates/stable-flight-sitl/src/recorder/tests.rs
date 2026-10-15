@@ -6,12 +6,12 @@ use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::testing::RecordedTick;
 use stable_flight::{
     ActuatorCommand, AttitudeCommand, AttitudeSetpoint, BlendSetpoint, BodyRateSetpoint, Command,
-    ControlInput, ControlOutput, FlightMode, FlightModeReport, ModeRefusal, PlaneSetpoint,
-    RateCommand, RateSetpoint, Saturation, Setpoint, TelemetryPublisher, Vec3, VehicleState,
-    WaypointCommand,
+    ControlInput, ControlOutput, CruiseOutput, FlightMode, FlightModeReport, ModeRefusal,
+    PlaneSetpoint, RateCommand, RateSetpoint, Saturation, Setpoint, TelemetryPublisher, Vec3,
+    VehicleState, WaypointCommand,
 };
 
-use super::{Columns, CopterColumns, CsvRecorder, TailsitterColumns};
+use super::{Columns, CopterColumns, CsvRecorder, QuadPlaneColumns, TailsitterColumns};
 
 /// A level, armed tick with `setpoint` and `input`.
 fn tick(setpoint: Setpoint, input: ControlInput) -> RecordedTick {
@@ -116,6 +116,11 @@ fn tailsitter_rows_match_the_header() {
     check_shape(TailsitterColumns {
         view: UnitQuaternion::identity(),
     });
+}
+
+#[test]
+fn quadplane_rows_match_the_header() {
+    check_shape(QuadPlaneColumns);
 }
 
 #[test]
@@ -250,13 +255,80 @@ fn horizontal<C: Columns>(columns: C) -> [String; 4] {
 }
 
 #[test]
-fn both_column_sets_record_horizontal_position_and_velocity() {
+fn every_column_set_records_horizontal_position_and_velocity() {
     let expected = ["12.500", "-3.250", "1.500", "-0.750"].map(str::to_owned);
     check!(horizontal(CopterColumns) == expected);
     let tailsitter = TailsitterColumns {
         view: UnitQuaternion::identity(),
     };
     check!(horizontal(tailsitter) == expected);
+    check!(horizontal(QuadPlaneColumns) == expected);
+}
+
+/// The quadplane set records both sides: the lift rotors, the pusher, and the surfaces, the
+/// cruise output (NaN without one), a blend's lift share (NaN for other setpoints), and the
+/// setpoint and mode as the tailsitter set does.
+#[test]
+fn quadplane_columns_carry_lift_and_cruise() {
+    let blend = Setpoint::Blend(BlendSetpoint {
+        hover: AttitudeSetpoint {
+            roll_rad: 0.25,
+            ..Default::default()
+        },
+        lift_share: 0.75,
+        ..Default::default()
+    });
+    let mut actuators = ActuatorCommand::default();
+    actuators.motors[..5].copy_from_slice(&[0.5, 0.25, 0.125, 0.75, 0.375]);
+    actuators.servos[..3].copy_from_slice(&[0.5, -0.25, 1.0]);
+    let names = [
+        "mode",
+        "sp_kind",
+        "sp_roll",
+        "lift_share",
+        "cruise_thrust",
+        "cruise_moment_y",
+        "motor_0",
+        "motor_3",
+        "pusher",
+        "servo_0",
+        "servo_2",
+    ];
+    // (scenario, setpoint, mode, cruise, expected fields in `names` order)
+    let cases = [
+        (
+            "transition: blend with cruise",
+            blend,
+            FlightMode::ToPlane,
+            Some(CruiseOutput {
+                thrust: 0.625,
+                moments: Vec3::new(0.0, -0.5, 0.0),
+            }),
+            [
+                "2", "blend", "0.2500", "0.7500", "0.6250", "-0.5000", "0.5000", "0.7500",
+                "0.3750", "0.5000", "1.0000",
+            ],
+        ),
+        (
+            "copter: no cruise output",
+            attitude_setpoint(),
+            FlightMode::Copter,
+            None,
+            [
+                "0", "attitude", "0.2500", "NaN", "NaN", "NaN", "0.5000", "0.7500", "0.3750",
+                "0.5000", "1.0000",
+            ],
+        ),
+    ];
+    for (scenario, setpoint, mode, cruise, expected) in cases {
+        let mut tick = tick(setpoint, attitude_sticks(0.0));
+        tick.flight_mode.mode = mode;
+        tick.control.cruise = cruise;
+        tick.actuators = actuators;
+        let lines = recorded(QuadPlaneColumns, &[tick]);
+        let got = names.map(|name| field(&lines[0], &lines[1], name));
+        check!(got == expected, "{scenario}");
+    }
 }
 
 #[test]

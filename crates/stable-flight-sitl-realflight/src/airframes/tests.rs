@@ -141,6 +141,7 @@ fn thrust_floor_stays_below_hover() {
     for (name, guidance) in [
         ("quadcopter_x", quadcopter_x().guidance),
         ("explora_vtol", explora_vtol().guidance.hover),
+        ("titan_cobra", titan_cobra().guidance.hover),
     ] {
         assert!(
             guidance.thrust.min_thrust < guidance.altitude.hover_thrust,
@@ -164,4 +165,63 @@ fn explora_vtol_transition_fits_both_sides() {
         stabilizer.hover.thrust_curve_exponent
     );
     assert!(transition.forward_max_tilt_rad >= transition.forward_done_rad);
+}
+
+/// The Cobra's mapping drives each of its eight channels once: lift rotors, pusher, ailerons,
+/// and the two A-tail panels (#433).
+#[test]
+fn titan_cobra_maps_each_channel_once() {
+    let mapping = titan_cobra().mapping;
+
+    assert_eq!(mapping.validate(), Ok(()));
+    assert_eq!(
+        mapping.motors,
+        [
+            Some(6),
+            Some(4),
+            Some(5),
+            Some(7),
+            Some(2),
+            None,
+            None,
+            None
+        ]
+    );
+    assert_eq!(mapping.servos[..3], [Some(0), Some(3), Some(1)]);
+    assert!(mapping.servos[3..].iter().all(Option::is_none));
+    let mut channels: Vec<usize> = mapping
+        .motors
+        .iter()
+        .chain(&mapping.servos)
+        .flatten()
+        .copied()
+        .collect();
+    channels.sort_unstable();
+    assert_eq!(channels, (0..8).collect::<Vec<_>>());
+}
+
+/// The Cobra's lift rotors mix as `quad_x` does, so the copter autotune flies them on
+/// `quad_x` with the Cobra's mapping; in a hover (the quadplane stabilizer's zero cruise
+/// output) the pusher is stopped and the surfaces centered.
+#[test]
+fn titan_cobra_lift_rotors_mix_as_quad_x() {
+    let lift_only = stable_flight::ControlOutput::new(0.6, Vec3::new(0.2, -0.3, 0.1));
+    let hover = stable_flight::ControlOutput {
+        cruise: Some(stable_flight::CruiseOutput::default()),
+        ..lift_only
+    };
+    let mut mixer = titan_cobra().mixer;
+    let output = mixer.mix(&hover);
+    let lift = TableMixer::quad_x().mix(&lift_only);
+    assert_eq!(output.motors[..4], lift.motors[..4]);
+    assert_eq!(output.motors[4], 0.0);
+    assert_eq!(output.servos[..3], [0.0; 3]);
+}
+
+/// The Cobra's quadplane configs validate.
+#[test]
+fn titan_cobra_configs_validate() {
+    let airframe = titan_cobra();
+    assert_eq!(airframe.guidance.validate(), Ok(()));
+    assert_eq!(airframe.stabilizer.validate(), Ok(()));
 }
