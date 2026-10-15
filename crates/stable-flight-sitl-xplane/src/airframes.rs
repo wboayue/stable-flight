@@ -56,7 +56,8 @@ const ALIA_THRUST_CURVE_EXPONENT: f32 = 1.5;
 ///   rate loops can't follow a step; the hover (0.648 per motor) stays under 0.8. Yaw ratio 1:
 ///   at the default 2.5, a full yaw drove one diagonal to its ceiling and the other near
 ///   zero, the desaturation gave up collective, and the Alia sank 53 m at full throttle
-///   (#351).
+///   (#351). At 1, the tail weathervanes it past what yaw can hold at a few m/s sideways:
+///   the heading ran 50° off for 6 s (#440).
 /// - **Mapping:** `quad_x`'s front-left, front-right, rear-left, rear-right on engines 1, 0,
 ///   2, 3 (the `.acf`'s engine positions); the pusher idle; the wings with ailerons (2–5),
 ///   elevators (8, 9), and rudders (10, 11) held at 0°.
@@ -132,6 +133,7 @@ pub fn alia250() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, Table
         },
         mixer: TableMixer::quad_x()
             .with_reversed_yaw()
+            // TODO(#440): a higher yaw ratio once yaw yields to collective in the mixer.
             .with_config(MixerConfig {
                 thrust_factor: ALIA_THRUST_FACTOR,
                 yaw_ratio: 1.0,
