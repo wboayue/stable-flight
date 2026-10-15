@@ -302,8 +302,7 @@ pub struct CopterGuidance {
     lateral: LateralController,
     /// Where the altitude loop is steered, in meters: the waypoint's altitude, or on the way
     /// down to it, slewed at the descent limit and leashed [`ALTITUDE_LEASH_M`] below the
-    /// vehicle. `None` until waypoint or land flight latches
-    /// it from the vehicle's altitude.
+    /// vehicle. `None` until waypoint or land flight latches it from the vehicle's altitude.
     altitude_target_m: Option<f32>,
 
     /// Heading-hold target for attitude, absolute-attitude, waypoint, and land commands.
