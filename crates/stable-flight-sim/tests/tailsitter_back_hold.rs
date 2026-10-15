@@ -832,7 +832,7 @@ fn sweeps_soft_floor_and_slew_cap() {
         "dip",
         "settled"
     );
-    for (back_thrust, standing) in [(0.75, 0.6), (0.6, 0.0)] {
+    for (back_thrust, standing) in [(0.75, 0.6), (0.75, 0.7), (0.75, 0.77)] {
         let mut airframe = base;
         airframe.guidance.transition.back_thrust = back_thrust;
         airframe.guidance.hover.thrust.min_thrust = standing;
