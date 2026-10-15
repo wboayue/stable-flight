@@ -259,12 +259,16 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 - A PR body states the scenario tested and how to reproduce it (commands, configs), with
   telemetry or screenshots when behavior is visible. It becomes the squash commit message:
   summary first.
-- Squash-merge by default (`<PR title> (#id)`). Rebase-merge only when every branch commit is a
-  self-contained step that builds and passes; merge commits only for long-lived branches.
+- Squash-merge a single-change PR (`<PR title> (#id)`). Rebase-merge a PR with follow-up commits
+  (fixes found during implementation or review) to keep that history: each commit a
+  self-contained step that builds and passes, subject referencing the issue. Merge commits only
+  for long-lived branches.
 - The PR that completes an issue says `Closes #n`; GitHub closes on that phrase anywhere in the
-  body, so don't use it for issues the PR doesn't finish. Every follow-up a review or
-  investigation raises that isn't fixed in the PR gets an issue; a pre-existing bug found along
-  the way gets a `bug` issue with repro steps.
+  body, so don't use it for issues the PR doesn't finish.
+- Problems found during implementation or review get follow-up commits in the same PR, not new
+  issues. File an issue instead when the fix significantly grows the PR's scope or needs a
+  flight the PR didn't already need; an unfixed pre-existing bug gets a `bug` issue with repro
+  steps.
 - `main` is protected by the repository ruleset `main` (`gh api repos/wboayue/stable-flight/rulesets`):
   PRs only, no force-push or deletion, and the `test`, `lint`, `msrv`, and `embedded` jobs of the `test`
   workflow must pass. Rewriting published history needs the ruleset off briefly, on the owner's
@@ -318,8 +322,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 ## Workflow
 
 1. Review every plan before implementing it, and include the review in the plan; review the
-   finished PR the same way before it merges. Fixes go in the same PR; deferred items get
-   issues. The lenses:
+   finished PR the same way before it merges. Fixes go in the same PR as follow-up commits;
+   deferred items get issues (**Commits, PRs, and releases**). The lenses:
    - **Duplication:** logic, constants, or helpers repeated in the change or already elsewhere
      (check core `math` and sibling crates first).
    - **Single responsibility:** one job per type or function; I/O, scheduling, and pure
