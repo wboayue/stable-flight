@@ -53,6 +53,16 @@ fn hover_thrust_carries_the_weight() {
     for (name, airframe) in all() {
         check_hover_thrust(name, airframe);
     }
+    // Power-commanded motors, a 0.8 thrust factor, and a 1.5 thrust curve.
+    check_hover_thrust("alia250", alia250());
+}
+
+#[test]
+fn alia250_is_valid() {
+    let airframe = alia250();
+    check!(airframe.model.validate() == Ok(()));
+    check!(airframe.guidance.validate() == Ok(()));
+    check!(airframe.stabilizer.validate() == Ok(()));
 }
 
 fn check_hover_thrust(name: &str, airframe: Airframe) {

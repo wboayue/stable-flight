@@ -12,7 +12,7 @@ use crate::fixed_wing::FixedWingModel;
 use crate::ground::Ground;
 use crate::lag;
 use crate::lockstep::Dynamics;
-use crate::motors::{MotorLayout, Motors};
+use crate::motors::{MotorLayout, Motors, QUADRATIC};
 use crate::quadplane_model::{LiftRotors, QuadPlaneModel};
 use crate::surfaces::Surfaces;
 use crate::tailsitter_model::{PropWash, TailsitterModel};
@@ -159,6 +159,7 @@ impl FixedWing {
                     moment_arm_m: 0.0,
                     yaw_torque_per_thrust_m: rotors.motor_arm_m,
                     max_thrust_n: model.max_thrust_n,
+                    thrust_exponent: QUADRATIC,
                 };
                 (Motors::new(mixer.rows(), &layout), None)
             }

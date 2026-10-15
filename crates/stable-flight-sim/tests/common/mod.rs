@@ -4,6 +4,7 @@
 // Each test binary compiles this module and uses only part of it.
 #![allow(dead_code)]
 
+pub mod large;
 pub mod plane;
 pub mod plane_spec;
 pub mod quadplane;
@@ -257,8 +258,18 @@ impl AutotuneRun {
 
 /// Runs `plan` on `plant` settled in a [`hover`], until it ends or `timeout_s` passes.
 pub fn autotune(plant: &Plant, plan: &[StagePlan], timeout_s: f32) -> AutotuneRun {
+    autotune_within(plant, plan, Envelope::default(), timeout_s)
+}
+
+/// As [`autotune`], within `envelope`.
+pub fn autotune_within(
+    plant: &Plant,
+    plan: &[StagePlan],
+    envelope: Envelope,
+    timeout_s: f32,
+) -> AutotuneRun {
     let mut flight_loop = hover(plant);
-    let mut autotune = Autotune::new(plan, Envelope::default()).expect("valid plan");
+    let mut autotune = Autotune::new(plan, envelope).expect("valid plan");
     autotune.start(&flight_loop).expect("armed, idle");
     let mut stages = Vec::new();
     let mut duration_s = 0.0;

@@ -1,0 +1,78 @@
+//! The autotune plan and envelope for a full-size multirotor ([`airframes::alia250`]): core's
+//! copter probes, scaled to an aircraft with a fraction of a quad's angular authority.
+//!
+//! Core's copter steps (a 1 rad/s rate step for 0.25 s, 10° angle steps) and its settle gate
+//! (level within 10 s) are sized for small quads. On the Alia a rate step never rises within
+//! its window, so the overshoot criterion passes on any gain, and a relay or an angle step
+//! builds sideways speed the hover can't brake within the settle timeout (#351).
+//!
+//! [`airframes::alia250`]: stable_flight_sim::airframes::alia250
+
+use stable_flight::stabilizers::copter::TunedLoop;
+use stable_flight::tuning::StepConfig;
+use stable_flight::tuning::autotune::{
+    COPTER_ANGLE_SEARCH_STEP, COPTER_RATE_STEP, Envelope, Method, SearchPlan, StagePlan,
+};
+
+/// Rate steps: 0.2 rad/s for 1.5 s, rising in about 0.6 s on the Alia.
+pub const RATE_STEP: StepConfig = StepConfig {
+    amplitude: 0.2,
+    duration_s: 1.5,
+    ..COPTER_RATE_STEP
+};
+
+/// Angle steps: 5° for 2.5 s, rising in about 1.2 s.
+pub const ANGLE_STEP: StepConfig = StepConfig {
+    amplitude: 0.087,
+    duration_s: 2.5,
+    ..COPTER_ANGLE_SEARCH_STEP
+};
+
+/// How long a step may clip, in s: a rate step's moment saturates for its first few ticks.
+const MAX_SATURATED_S: f32 = 0.2;
+
+/// Core's rate and angle searches on [`RATE_STEP`] and [`ANGLE_STEP`]. The rate search runs
+/// without its relay seed: on this plant the relay's limit cycle tilts it past the envelope.
+pub fn plan() -> [StagePlan; 4] {
+    let rate = SearchPlan {
+        relay: None,
+        ..search(SearchPlan::copter_rate(), RATE_STEP)
+    };
+    let angle = search(SearchPlan::copter_angle(), ANGLE_STEP);
+    let stage = |target: TunedLoop| StagePlan {
+        target,
+        method: Method::Search(if target.is_rate() { rate } else { angle }),
+    };
+    [
+        stage(TunedLoop::RollRate),
+        stage(TunedLoop::PitchRate),
+        stage(TunedLoop::Roll),
+        stage(TunedLoop::Pitch),
+    ]
+}
+
+/// `plan` stepping by `step`, clipping for up to [`MAX_SATURATED_S`].
+fn search(mut plan: SearchPlan, step: StepConfig) -> SearchPlan {
+    plan.test.step = step;
+    plan.test.max_saturated_s = MAX_SATURATED_S;
+    plan
+}
+
+/// The steps and clip allowance `target` is held to on this plan.
+pub fn step(target: TunedLoop) -> (StepConfig, f32) {
+    let step = if target.is_rate() {
+        RATE_STEP
+    } else {
+        ANGLE_STEP
+    };
+    (step, MAX_SATURATED_S)
+}
+
+/// Core's copter envelope, waiting 30 s to settle: the Alia brakes a step's sideways speed
+/// slowly.
+pub fn envelope() -> Envelope {
+    Envelope {
+        settle_timeout_s: 30.0,
+        ..Envelope::default()
+    }
+}

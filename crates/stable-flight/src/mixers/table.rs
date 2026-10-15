@@ -171,6 +171,14 @@ impl MixRow {
         self.pusher
     }
 
+    /// This row with its yaw factor negated: the same output, its prop spinning the other way.
+    pub const fn with_reversed_yaw(self) -> Self {
+        MixRow {
+            yaw: -self.yaw,
+            ..self
+        }
+    }
+
     fn moment(&self, moments: Vec3) -> f32 {
         self.roll * moments.x + self.pitch * moments.y + self.yaw * moments.z
     }
@@ -310,6 +318,26 @@ impl<const N: usize> TableMixer<N> {
     pub fn with_config(self, config: MixerConfig) -> Result<Self, MixerError> {
         validate_config(&config)?;
         Ok(Self { config, ..self })
+    }
+
+    /// This mixer with every row's yaw factor negated: the same frame with every prop spinning
+    /// the other way (a model whose props turn opposite to the preset's).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::mixers::TableMixer;
+    ///
+    /// // quad_x motor 0 spins clockwise (yaw -1); reversed, counterclockwise.
+    /// let reversed = TableMixer::quad_x().with_reversed_yaw();
+    /// assert_eq!(reversed.rows()[0].yaw(), 1.0);
+    /// assert_eq!(reversed.rows()[0].roll(), 1.0);
+    /// ```
+    pub fn with_reversed_yaw(self) -> Self {
+        Self {
+            rows: self.rows.map(MixRow::with_reversed_yaw),
+            ..self
+        }
     }
 
     /// The table's rows, e.g. for a simulator that derives each motor's torque from them.

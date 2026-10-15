@@ -33,9 +33,13 @@ pub struct MultirotorModel {
     /// Distance from the roll or pitch axis of a motor whose row factor is 1, in m (half the
     /// motor spacing on an X quad: arm length / √2).
     pub moment_arm_m: f32,
-    /// Thrust of one motor at full command, in N. Thrust is `max_thrust_n · command²` (prop
-    /// thrust goes with the square of its speed, and speed with the command).
+    /// Thrust of one motor at full command, in N. Thrust is
+    /// `max_thrust_n · command^thrust_exponent`.
     pub max_thrust_n: f32,
+    /// How thrust grows with the command: 2 when the command sets prop speed (thrust goes
+    /// with its square); about 2/3 when it sets motor power, as X-Plane's electric engines do
+    /// (static thrust goes with power^(2/3), momentum theory).
+    pub thrust_exponent: f32,
     /// First-order lag from a motor's command to the command it runs at, in s.
     pub motor_time_constant_s: f32,
     /// Prop drag torque about the yaw axis per newton of thrust, in N·m/N (m).
@@ -95,6 +99,7 @@ impl MultirotorModel {
             moment_arm_m: self.moment_arm_m,
             yaw_torque_per_thrust_m: self.yaw_torque_per_thrust_m,
             max_thrust_n: self.max_thrust_n,
+            thrust_exponent: self.thrust_exponent,
         }
     }
 
@@ -102,8 +107,8 @@ impl MultirotorModel {
     ///
     /// # Errors
     ///
-    /// [`ModelError::NotPositive`] for a mass, inertia, moment arm, max thrust, motor time
-    /// constant, or max step that isn't positive and finite; [`ModelError::Negative`] for a yaw
+    /// [`ModelError::NotPositive`] for a mass, inertia, moment arm, max thrust, thrust exponent,
+    /// motor time constant, or max step that isn't positive and finite; [`ModelError::Negative`] for a yaw
     /// torque, drag, damping, or friction that is negative or not finite.
     pub fn validate(&self) -> Result<(), ModelError> {
         let positive = [
@@ -113,6 +118,7 @@ impl MultirotorModel {
             ("inertia_kgm2.z", self.inertia_kgm2.z),
             ("moment_arm_m", self.moment_arm_m),
             ("max_thrust_n", self.max_thrust_n),
+            ("thrust_exponent", self.thrust_exponent),
             ("motor_time_constant_s", self.motor_time_constant_s),
             ("max_step_s", self.max_step_s),
         ];
