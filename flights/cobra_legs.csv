@@ -2,7 +2,7 @@
 # (north -10.55 m, east 6.49 m, heading 38°), 100 m ahead along the heading, back, 100 m behind,
 # back, all in copter flight: ahead with no speed cap (cruise_speed 0: the tilt cap bounds it),
 # back and behind at 5 m/s (ArduPilot's Q_WP_SPD; tail-first at speed pitches up past the lift
-# rotors' authority, #433). Fly with
+# rotors' authority, #437). Fly with
 # --param FWD_THR_GAIN=0 and =1.2 and --end land; the altitude loss is checked against PX4's
 # VT_QC_T_ALT_LOSS (20 m).
 x,y,altitude,cruise_speed
