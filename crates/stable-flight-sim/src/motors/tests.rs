@@ -56,6 +56,27 @@ fn thrust_is_quadratic_in_the_command() {
     }
 }
 
+/// A power-commanded motor (exponent 2/3, X-Plane's electric engines) gives more than half
+/// its thrust at half command.
+#[test]
+fn thrust_follows_the_model_exponent() {
+    let layout = MotorLayout {
+        thrust_exponent: 2.0 / 3.0,
+        ..quad_x_motors().1.motor_layout()
+    };
+    let mut motors = Motors::new(TableMixer::quad_x().rows(), &layout);
+    // (command, fraction of max thrust)
+    let cases = [(0.0, 0.0), (0.5, 0.629_960_5), (1.0, 1.0)];
+    for (command, fraction) in cases {
+        settled(&mut motors, &[command; SLOTS]);
+        assert_relative_eq!(
+            motors.thrusts_n()[0],
+            layout.max_thrust_n * fraction,
+            max_relative = 1e-5
+        );
+    }
+}
+
 #[test]
 fn lag_moves_by_alpha_each_step() {
     let (mut motors, model) = quad_x_motors();

@@ -18,7 +18,7 @@ type Change = fn(&mut MultirotorModel);
 #[test]
 fn rejects_each_out_of_range_parameter() {
     // (change to a valid model, expected error)
-    let cases: [(Change, ModelError); 11] = [
+    let cases: [(Change, ModelError); 12] = [
         (|m| m.mass_kg = 0.0, ModelError::NotPositive("mass_kg")),
         (|m| m.mass_kg = f32::NAN, ModelError::NotPositive("mass_kg")),
         (
@@ -32,6 +32,10 @@ fn rejects_each_out_of_range_parameter() {
         (
             |m| m.max_thrust_n = f32::INFINITY,
             ModelError::NotPositive("max_thrust_n"),
+        ),
+        (
+            |m| m.thrust_exponent = 0.0,
+            ModelError::NotPositive("thrust_exponent"),
         ),
         (
             |m| m.motor_time_constant_s = 0.0,

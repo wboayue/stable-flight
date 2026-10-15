@@ -19,6 +19,7 @@ use crate::tailsitter_model::{PropWash, TailsitterModel};
 
 use super::hover_thrust;
 use super::plane::{cruise_thrust, plane};
+use crate::motors::QUADRATIC;
 
 /// A simulated tailsitter: its physics, the mixer that drives its motors and elevons, and the
 /// guidance and stabilizer configs tuned for it.
@@ -129,6 +130,7 @@ pub fn tailsitter() -> TailsitterAirframe {
                     model.wing.max_thrust_n,
                     &mixer,
                     &mixer_config,
+                    QUADRATIC,
                     thrust_curve_exponent,
                 ),
                 ..CopterGuidanceConfig::default().altitude

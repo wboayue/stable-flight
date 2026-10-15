@@ -2,7 +2,7 @@
 
 use crate::fixed_wing::FixedWingModel;
 use crate::model::{ModelError, check_non_negative, check_positive};
-use crate::motors::MotorLayout;
+use crate::motors::{MotorLayout, QUADRATIC};
 
 #[cfg(test)]
 mod tests;
@@ -63,6 +63,7 @@ impl LiftRotors {
             moment_arm_m: self.moment_arm_m,
             yaw_torque_per_thrust_m: self.yaw_torque_per_thrust_m,
             max_thrust_n: self.max_thrust_n,
+            thrust_exponent: QUADRATIC,
         }
     }
 }

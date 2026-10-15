@@ -120,11 +120,23 @@ pub fn misses(plant: &Plant, loops: &[TunedLoop]) -> Vec<String> {
 
 /// The targets `m`, a step of `target`, misses; empty when it meets them all.
 pub fn missed_targets(target: TunedLoop, m: &StepMetrics) -> Vec<&'static str> {
-    let (max_rise_s, max_bounce_back) = rise_and_bounce_back(target);
+    let (max_rise_s, _) = rise_and_bounce_back(target);
+    missed_bands(target, m, plan(target).max_saturated_s, max_rise_s)
+}
+
+/// As [`missed_targets`], with the clip allowance `max_saturated_s` and the rise target
+/// `max_rise_s` (`None`: none) of another plan's steps.
+pub fn missed_bands(
+    target: TunedLoop,
+    m: &StepMetrics,
+    max_saturated_s: f32,
+    max_rise_s: Option<f32>,
+) -> Vec<&'static str> {
+    let (_, max_bounce_back) = rise_and_bounce_back(target);
     let checks = [
         ("overshoot", m.overshoot <= MAX_OVERSHOOT),
         ("unsettled", m.settling_time_s.is_some()),
-        ("clipped", m.saturated_s <= plan(target).max_saturated_s),
+        ("clipped", m.saturated_s <= max_saturated_s),
         (
             "rise",
             max_rise_s.is_none_or(|max_s| m.rise_time_s.is_some_and(|rise_s| rise_s <= max_s)),
@@ -148,7 +160,7 @@ pub fn failed(checks: &[(&'static str, bool)]) -> Vec<&'static str> {
 
 /// `target`'s response to `step` from a settled hover on `plant`; `None` if the probe didn't
 /// measure it.
-fn respond(plant: &Plant, target: TunedLoop, step: StepConfig) -> Option<StepMetrics> {
+pub fn respond(plant: &Plant, target: TunedLoop, step: StepConfig) -> Option<StepMetrics> {
     match super::probe(plant, target, ProbeConfig::Step(step), PROBE_TIMEOUT_S) {
         Some(ProbeStatus::Done(Measurement::Step(metrics))) => Some(metrics),
         _ => None,

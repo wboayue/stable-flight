@@ -11,6 +11,7 @@ use crate::fixed_wing::{AeroCoefficients, FixedWingModel};
 use crate::start::Start;
 
 use super::{motor_count, thrust_for};
+use crate::motors::QUADRATIC;
 
 /// A simulated airplane: its physics, the mixer that drives its prop and surfaces, the
 /// guidance and stabilizer configs tuned for it, and a start in flight.
@@ -205,6 +206,7 @@ pub(super) fn cruise_thrust<const N: usize>(
         drag_n / forward_motor_count(mixer),
         model.max_thrust_n,
         mixer_config,
+        QUADRATIC,
         thrust_curve_exponent,
     )
 }

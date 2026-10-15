@@ -1116,3 +1116,34 @@ fn config_sets_the_thrust_and_moment_split() {
             .all(|(&m, e)| approx_eq(m, e))
     );
 }
+
+/// Reversing yaw turns a yaw command the other way and leaves thrust, roll, and pitch as they
+/// were.
+#[test]
+fn reversed_yaw_mirrors_only_yaw() {
+    // (moments, motors expected to match the preset's (true) or swap with the opposite pair)
+    let cases = [
+        (Vec3::new(0.0, 0.0, 0.5), false),
+        (Vec3::new(0.3, -0.2, 0.0), true),
+    ];
+    for (moments, same) in cases {
+        let control = ControlOutput::new(0.5, moments);
+        let preset = TableMixer::quad_x().mix(&control).motors;
+        let reversed = TableMixer::quad_x()
+            .with_reversed_yaw()
+            .mix(&control)
+            .motors;
+        // quad_x's diagonals (0, 3) and (1, 2) spin the same way, so reversing yaw swaps them.
+        let expected = if same {
+            preset
+        } else {
+            let mut swapped = preset;
+            swapped[..4].copy_from_slice(&[preset[1], preset[0], preset[3], preset[2]]);
+            swapped
+        };
+        assert!(
+            reversed.iter().zip(expected).all(|(&m, e)| approx_eq(m, e)),
+            "{moments:?}: {reversed:?} vs {expected:?}"
+        );
+    }
+}

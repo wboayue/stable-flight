@@ -5,13 +5,14 @@ use stable_flight::GRAVITY;
 use stable_flight::Vec3;
 use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
-    YawControllerConfig,
+    LateralControllerConfig, YawControllerConfig,
 };
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::mixers::{MixerConfig, Slot, TableMixer};
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 
 use crate::model::MultirotorModel;
+use crate::motors::QUADRATIC;
 
 mod plane;
 mod quadplane;
@@ -72,6 +73,7 @@ pub fn quad_x() -> Airframe {
         // 250 mm motor to motor on the diagonal.
         moment_arm_m: x_moment_arm_m(0.25),
         max_thrust_n: 6.0,
+        thrust_exponent: QUADRATIC,
         motor_time_constant_s: 0.03,
         yaw_torque_per_thrust_m: 0.016,
         drag_n_per_mps: 0.3,
@@ -120,6 +122,7 @@ pub fn heavy_quad() -> Airframe {
         inertia_kgm2: ring_inertia(MASS_KG, DIAGONAL_M),
         moment_arm_m: x_moment_arm_m(DIAGONAL_M),
         max_thrust_n: max_thrust_n(MASS_KG, 2.0),
+        thrust_exponent: QUADRATIC,
         motor_time_constant_s: 0.05,
         // Prop drag torque per thrust grows with prop diameter: about 7-inch props against
         // `quad_x`'s 5-inch.
@@ -170,6 +173,7 @@ pub fn racer() -> Airframe {
         inertia_kgm2: ring_inertia(MASS_KG, DIAGONAL_M),
         moment_arm_m: x_moment_arm_m(DIAGONAL_M),
         max_thrust_n: max_thrust_n(MASS_KG, 8.0),
+        thrust_exponent: QUADRATIC,
         motor_time_constant_s: 0.015,
         yaw_torque_per_thrust_m: 0.016,
         drag_n_per_mps: 0.3,
@@ -198,6 +202,104 @@ pub fn racer() -> Airframe {
             heading_p: HEADING_P,
         },
     )
+}
+
+/// The BETA Technologies Alia 250 eVTOL in copter mode, as X-Plane 12 flies it (Laminar's
+/// stock model): four lift rotors on X-Plane's engines 0–3, the pusher idle, at X-Plane's
+/// default load (6,299 lb). The model is sized from the `.acf` and an `engine-sweep-xplane`
+/// run (`stable-flight-sitl-xplane`, #351) rather than from the real aircraft:
+///
+/// - **Thrust:** X-Plane's electric engine throttle sets motor power, and static prop thrust
+///   goes with power^(2/3), so `thrust_exponent` is 2/3. It fits both sweep steps from the
+///   liftoff throttle 0.648 (0.1 → 1.24 m/s², 0.2 → 1.9–2.1 m/s²; linear predicts 1.52 and
+///   3.04, quadratic 3.27 and 7.03). Full thrust is the liftoff thrust scaled by
+///   (1 / 0.648)^(2/3): thrust-to-weight 1.34. The stabilizer's `thrust_curve_exponent` 1.5
+///   undoes the 2/3.
+/// - **Motor lag:** 0.17 s, the step's time to 63% (0.16–0.20 s over two runs).
+/// - **Moments:** airborne ±0.05 throttle pulses gave 0.416 rad/s² of roll and 0.249 rad/s² of
+///   pitch, so with the roll arm (the rotors 2.59 m either side) the effective inertias are
+///   8,570 and 14,300 kg·m²; the pitch figure folds in the longer pitch arm (3.04 m), so one
+///   arm serves both axes. Yaw inertia takes the `.acf`'s yaw-to-roll ratio (4.99 / 6.84), and
+///   the yaw pulse's −0.087 rad/s² (the first diagonal up) gives the yaw torque per newton:
+///   0.39 m, prop drag plus the rotors' 3° toe.
+/// - **Spin:** each diagonal turns the aircraft the other way from `quad_x`'s on the ground
+///   and in the air, so the mixer is `quad_x` with yaw reversed.
+/// - **Not measured:** drag (a guess from the airframe's size) and damping (none).
+///
+/// X-Plane also pitches the Alia up at 2.2 °/s² with level thrust, which this model leaves
+/// out; in X-Plane the pitch rate I trims it.
+///
+/// The mixer runs at thrust factor 0.8, and the lateral loop is slowed for the aircraft's slow
+/// tilt (both below). Roll and pitch rate and angle gains are the sim autotune's on a plan
+/// scaled to the aircraft: core's copter probes ask for more than its authority gives.
+pub fn alia250() -> Airframe {
+    const MASS_KG: f32 = 2857.0;
+    /// Per-engine throttle at liftoff in the sweep.
+    const LIFTOFF_THROTTLE: f32 = 0.648;
+    const THRUST_EXPONENT: f32 = 2.0 / 3.0;
+    let hover_motor_n = MASS_KG * GRAVITY / 4.0;
+    let model = MultirotorModel {
+        mass_kg: MASS_KG,
+        inertia_kgm2: Vec3::new(8_570.0, 14_300.0, 8_570.0 * 4.99 / 6.84),
+        moment_arm_m: 2.59,
+        max_thrust_n: hover_motor_n / libm::powf(LIFTOFF_THROTTLE, THRUST_EXPONENT),
+        thrust_exponent: THRUST_EXPONENT,
+        motor_time_constant_s: 0.17,
+        yaw_torque_per_thrust_m: 0.39,
+        // About 100 N per m/s: side and top area of a 15 m wing and 12 m fuselage at a few
+        // m/s.
+        drag_n_per_mps: 100.0,
+        angular_damping_nm_per_radps: Vec3::zeros(),
+        ground_friction: 0.5,
+        max_step_s: 0.001,
+    };
+    let mut airframe = build_with(
+        model,
+        TableMixer::quad_x().with_reversed_yaw(),
+        // Twice the default moment headroom: at 0.9 a full moment moves each motor by 0.1,
+        // about 0.8 rad/s² of roll, and the rate loop can't follow the autotune's steps. The
+        // hover (0.648 per motor) stays under the 0.8 ceiling (#351).
+        MixerConfig {
+            thrust_factor: 0.8,
+            ..MixerConfig::default()
+        },
+        1.0 / THRUST_EXPONENT,
+        Tune {
+            // Sim autotune on the large-aircraft plan (`tests/alia.rs`), from rate P 1 and 3
+            // with angle P 1 (#351).
+            roll_rate: Gains {
+                p: 1.52,
+                i: 0.0,
+                d: 0.0,
+            },
+            pitch_rate: Gains {
+                p: 2.57,
+                i: 0.0,
+                d: 0.0,
+            },
+            angle_p: 1.03,
+            // `quad_x`'s: the autotune doesn't tune them.
+            yaw_rate_p: YAW_RATE_P,
+            heading_p: HEADING_P,
+        },
+    );
+    // The autotune ran on angle loops without D (core's default angle D 1.0 holds a 5° step
+    // to three quarters of it after 2.5 s).
+    airframe.stabilizer.attitude.roll_gains.d = 0.0;
+    airframe.stabilizer.attitude.pitch_gains.d = 0.0;
+    // A slower lateral loop for the slower tilt: on core's defaults the position loop sways
+    // into the 27° tilt cap after a 5° attitude step; at these, a 6 m/s gust moves the
+    // aircraft 0.9 m and it returns (#351).
+    airframe.guidance.lateral = LateralControllerConfig {
+        position_p: 0.2,
+        velocity: Gains {
+            p: 0.4,
+            i: 0.05,
+            d: 0.0,
+        },
+        ..LateralControllerConfig::default()
+    };
+    airframe
 }
 
 /// Every airframe, by its function's name: [`quad_x`], [`heavy_quad`], and [`racer`].
@@ -259,8 +361,31 @@ struct Tune {
 /// `model` on the X-quad mixer, flown by core's configs with `tune`'s gains and the hover
 /// thrust worked out from the model.
 fn build(model: MultirotorModel, tune: Tune) -> Airframe {
-    let mixer = TableMixer::quad_x();
-    let defaults = CopterStabilizerConfig::default();
+    build_with(
+        model,
+        TableMixer::quad_x(),
+        MixerConfig::default(),
+        CopterStabilizerConfig::default().thrust_curve_exponent,
+        tune,
+    )
+}
+
+/// As [`build`], on `mixer` with `mixer_config`, with the stabilizer's
+/// `thrust_curve_exponent`.
+fn build_with(
+    model: MultirotorModel,
+    mixer: TableMixer<4>,
+    mixer_config: MixerConfig,
+    thrust_curve_exponent: f32,
+    tune: Tune,
+) -> Airframe {
+    let mixer = mixer
+        .with_config(mixer_config)
+        .unwrap_or_else(|e| unreachable!("airframe mixer configs are in range: {e}"));
+    let defaults = CopterStabilizerConfig {
+        thrust_curve_exponent,
+        ..CopterStabilizerConfig::default()
+    };
     let angle = Gains {
         p: tune.angle_p,
         ..defaults.attitude.roll_gains
@@ -296,7 +421,8 @@ fn build(model: MultirotorModel, tune: Tune) -> Airframe {
                 model.mass_kg,
                 model.max_thrust_n,
                 &mixer,
-                &MixerConfig::default(),
+                &mixer_config,
+                model.thrust_exponent,
                 stabilizer.thrust_curve_exponent,
             ),
             ..CopterGuidanceConfig::default().altitude
@@ -313,29 +439,44 @@ fn build(model: MultirotorModel, tune: Tune) -> Airframe {
 
 /// The linear thrust setpoint that holds `mass_kg` level in a hover on `mixer`'s motors, each
 /// `max_thrust_n` at full command: the motor command whose thrust carries the weight
-/// (`max_thrust_n · command²`), undone through the mixer's thrust factor (`mixer_config`,
-/// which `TableMixer` doesn't expose) and the stabilizer's `thrust_curve_exponent`.
+/// (`max_thrust_n · command^thrust_exponent`), undone through the mixer's thrust factor
+/// (`mixer_config`, which `TableMixer` doesn't expose) and the stabilizer's
+/// `thrust_curve_exponent`.
 fn hover_thrust<const N: usize>(
     mass_kg: f32,
     max_thrust_n: f32,
     mixer: &TableMixer<N>,
     mixer_config: &MixerConfig,
+    thrust_exponent: f32,
     thrust_curve_exponent: f32,
 ) -> f32 {
     let motor_n = mass_kg * GRAVITY / motor_count(mixer);
-    thrust_for(motor_n, max_thrust_n, mixer_config, thrust_curve_exponent)
+    thrust_for(
+        motor_n,
+        max_thrust_n,
+        mixer_config,
+        thrust_exponent,
+        thrust_curve_exponent,
+    )
 }
 
 /// The linear thrust setpoint that runs each motor at `motor_n` of `max_thrust_n`, undoing
-/// `max_thrust_n · command²`, the mixer's thrust factor, and the stabilizer's
+/// `max_thrust_n · command^thrust_exponent`, the mixer's thrust factor, and the stabilizer's
 /// `thrust_curve_exponent`.
 fn thrust_for(
     motor_n: f32,
     max_thrust_n: f32,
     mixer_config: &MixerConfig,
+    thrust_exponent: f32,
     thrust_curve_exponent: f32,
 ) -> f32 {
-    let motor_command = libm::sqrtf(motor_n / max_thrust_n);
+    let fraction = motor_n / max_thrust_n;
+    // A square root exactly when quadratic, so the quadratic airframes keep their values.
+    let motor_command = if thrust_exponent == QUADRATIC {
+        libm::sqrtf(fraction)
+    } else {
+        libm::powf(fraction, 1.0 / thrust_exponent)
+    };
     libm::powf(
         motor_command / mixer_config.thrust_factor,
         1.0 / thrust_curve_exponent,

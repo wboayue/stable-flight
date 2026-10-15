@@ -10,6 +10,10 @@ mod tests;
 
 const SLOTS: usize = ActuatorCommand::SLOTS;
 
+/// Thrust exponent of a prop whose speed follows the command: thrust goes with the square of
+/// prop speed.
+pub(crate) const QUADRATIC: f32 = 2.0;
+
 /// How the motors' thrust turns into body torque, and how strong they are.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct MotorLayout {
@@ -19,12 +23,15 @@ pub(crate) struct MotorLayout {
     pub yaw_torque_per_thrust_m: f32,
     /// Thrust of one motor at full command, in N.
     pub max_thrust_n: f32,
+    /// Thrust is `max_thrust_n · command^thrust_exponent`.
+    pub thrust_exponent: f32,
 }
 
 /// The motors a mixer drives: each one's lagged command and the body torque its thrust makes.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Motors {
     max_thrust_n: f32,
+    thrust_exponent: f32,
     /// Which motor slots this group drives.
     used: [bool; SLOTS],
     /// FRD body torque per newton of each motor's thrust, in N·m/N (roll, pitch, yaw).
@@ -55,19 +62,20 @@ impl Motors {
         Self::selected(rows, layout, |index| index != skipped)
     }
 
-    /// One motor on slot `index`, `max_thrust_n` at full command, turning nothing: whether
-    /// or not a mixer row drives it. An index of [`SLOTS`] or more drives nothing.
+    /// One motor on slot `index`, `max_thrust_n` at full command (quadratic), turning nothing:
+    /// whether or not a mixer row drives it. An index of [`SLOTS`] or more drives nothing.
     pub(crate) fn single(index: u8, max_thrust_n: f32) -> Self {
-        let mut motors = Self::stopped(max_thrust_n);
+        let mut motors = Self::stopped(max_thrust_n, QUADRATIC);
         if let Some(used) = motors.used.get_mut(usize::from(index)) {
             *used = true;
         }
         motors
     }
 
-    fn stopped(max_thrust_n: f32) -> Self {
+    fn stopped(max_thrust_n: f32, thrust_exponent: f32) -> Self {
         Motors {
             max_thrust_n,
+            thrust_exponent,
             used: [false; SLOTS],
             torque_per_thrust_m: [Vec3::zeros(); SLOTS],
             running: [0.0; SLOTS],
@@ -81,7 +89,7 @@ impl Motors {
         layout: &MotorLayout,
         include: impl Fn(u8) -> bool,
     ) -> Self {
-        let mut motors = Self::stopped(layout.max_thrust_n);
+        let mut motors = Self::stopped(layout.max_thrust_n, layout.thrust_exponent);
         for row in rows {
             let Slot::Motor(index) = row.slot() else {
                 continue;
@@ -121,7 +129,7 @@ impl Motors {
         self.thrust_scale = thrust_scale;
     }
 
-    /// Each motor's thrust, in N: `thrust_scale · max_thrust_n · running²`.
+    /// Each motor's thrust, in N: `thrust_scale · max_thrust_n · running^thrust_exponent`.
     pub(crate) fn thrusts_n(&self) -> [f32; SLOTS] {
         let mut thrusts_n = [0.0; SLOTS];
         for ((thrust_n, running), scale) in thrusts_n
@@ -129,9 +137,19 @@ impl Motors {
             .zip(&self.running)
             .zip(&self.thrust_scale)
         {
-            *thrust_n = scale * self.max_thrust_n * running * running;
+            *thrust_n = scale * self.max_thrust_n * self.thrust_fraction(*running);
         }
         thrusts_n
+    }
+
+    /// The fraction of full thrust at `running`. Squares exactly when quadratic, so the
+    /// quadratic airframes stay bit for bit what they were.
+    fn thrust_fraction(&self, running: f32) -> f32 {
+        if self.thrust_exponent == QUADRATIC {
+            running * running
+        } else {
+            libm::powf(running, self.thrust_exponent)
+        }
     }
 
     /// Total thrust, in N, and the FRD body torque, in N·m.

@@ -19,6 +19,7 @@ use crate::start::Start;
 
 use super::plane::{aerosonde_inertia, cruise_thrust, plane};
 use super::{hover_thrust, max_thrust_n, x_moment_arm_m};
+use crate::motors::QUADRATIC;
 
 /// A simulated quadplane: its physics, the mixer that drives its lift rotors, pusher, and
 /// surfaces, the guidance and stabilizer configs tuned for it, and a start in cruise.
@@ -140,6 +141,7 @@ pub fn quadplane() -> QuadPlaneAirframe {
                 model.lift.max_thrust_n,
                 &mixer,
                 &mixer_config,
+                QUADRATIC,
                 hover_stabilizer.thrust_curve_exponent,
             ),
             ..CopterGuidanceConfig::default().altitude
