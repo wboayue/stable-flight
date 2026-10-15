@@ -2,8 +2,8 @@
 //!
 //! [`CsvRecorder`] is a [`TelemetryPublisher`] that writes one row per tick: `wall_s` (seconds
 //! since the recorder was made) followed by a [`Columns`] set's fields. Three sets ship:
-//! [`CopterColumns`], [`TailsitterColumns`], and [`QuadPlaneColumns`]. Fan it out with the link as the flight loop's
-//! telemetry, `(link, recorder)`.
+//! [`CopterColumns`], [`TailsitterColumns`], and [`QuadPlaneColumns`]. Fan it out with the
+//! link as the flight loop's telemetry, `(link, recorder)`.
 //!
 //! # Examples
 //!
@@ -284,9 +284,6 @@ impl Columns for TailsitterColumns {
     }
 }
 
-#[cfg(test)]
-mod tests;
-
 /// A lift+cruise VTOL's (quadplane's) hover, transitions, and plane flight: both sides'
 /// outputs, for reading the lift trim, the pusher, and the handovers.
 ///
@@ -428,3 +425,6 @@ fn mode_code(mode: FlightMode) -> u8 {
         _ => 9,
     }
 }
+
+#[cfg(test)]
+mod tests;
