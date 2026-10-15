@@ -4,7 +4,7 @@ use stable_flight::{GRAVITY, Vec3};
 
 use super::*;
 use crate::aero;
-use crate::airframes::{self, PUSHER_SLOT};
+use crate::airframes;
 use crate::body::Body;
 use crate::fixed_wing::FixedWingModel;
 use crate::lag;
@@ -25,7 +25,7 @@ fn quadplane() -> SimQuadPlane {
 fn command(lift: f32, pusher: f32, surfaces: [f32; 3]) -> ActuatorCommand {
     let mut command = ActuatorCommand::default();
     command.motors[LIFT].fill(lift);
-    command.motors[usize::from(PUSHER_SLOT)] = pusher;
+    command.motors[usize::from(airframes::quadplane().model.pusher_slot)] = pusher;
     command.servos[..3].copy_from_slice(&surfaces);
     command
 }
@@ -265,4 +265,28 @@ fn rejects_an_invalid_model() {
         ..airframe.model
     };
     check!(SimQuadPlane::new(model, &airframe.mixer).err() == Some(ModelError::PusherSlot(9)));
+}
+
+/// A mixer with no lift-rotor rows (its one motor the pusher) flies as the airplane: the
+/// H-force has no lift thrust to scale by, and every load stays finite.
+#[test]
+fn flies_without_lift_rotors() {
+    let airframe = airframes::quadplane();
+    let model = QuadPlaneModel {
+        pusher_slot: 0,
+        ..airframe.model
+    };
+    let plane_mixer = stable_flight::mixers::TableMixer::plane();
+    let mut vehicle = SimQuadPlane::new(model, &plane_mixer).expect("valid model");
+    vehicle.dynamics.begin(1.0);
+    let body = Body {
+        velocity_ned_mps: Vec3::new(15.0, 0.0, 0.0),
+        ..Body::default()
+    };
+    let mut full = ActuatorCommand::default();
+    full.motors.fill(1.0);
+    let loads = vehicle.dynamics.loads(&full, &body, Vec3::zeros());
+    check!(loads.force_ned_n.iter().all(|n| n.is_finite()));
+    check!(loads.torque_nm.iter().all(|nm| nm.is_finite()));
+    check!(vehicle.lift_thrusts_n() == [0.0; ActuatorCommand::SLOTS]);
 }

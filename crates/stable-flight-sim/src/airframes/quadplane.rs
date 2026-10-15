@@ -34,7 +34,7 @@ pub struct QuadPlaneAirframe {
 }
 
 /// The pusher's motor slot: after the lift rotors.
-pub const PUSHER_SLOT: u8 = 4;
+const PUSHER_SLOT: u8 = 4;
 
 /// ArduPilot SITL's quadplane (`quadplane`: [`plane`]'s airframe with an X quad,
 /// `libraries/SITL/SIM_QuadPlane.cpp:29`, Plane-4.5): 4.5 kg, the quad frame's default 3 kg

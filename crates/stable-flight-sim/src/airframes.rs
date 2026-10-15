@@ -20,7 +20,7 @@ mod tailsitter;
 mod tests;
 
 pub use plane::{PlaneAirframe, plane};
-pub use quadplane::{PUSHER_SLOT, QuadPlaneAirframe, quadplane};
+pub use quadplane::{QuadPlaneAirframe, quadplane};
 pub use tailsitter::{TailsitterAirframe, tailsitter};
 
 /// A simulated multirotor: its physics, the mixer that lays out its motors, and the guidance

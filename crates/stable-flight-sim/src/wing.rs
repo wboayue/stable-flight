@@ -77,19 +77,39 @@ impl Rotors {
 struct LiftGroup {
     rotors: LiftRotors,
     motors: Motors,
+    /// In-plane drag per m/s of air per newton of lift thrust, in 1/s: the rotors'
+    /// `drag_n_per_mps` over their total thrust at full command; 0 without rotors.
+    drag_per_thrust_n_per_mps: f32,
     /// The rotor lag's step factor for the current step length.
     alpha: f32,
 }
 
 impl LiftGroup {
+    /// `mixer`'s motor rows but the pusher's, laid out by `lift`'s rotors.
+    fn new<const N: usize>(mixer: &TableMixer<N>, lift: &Lift) -> Self {
+        let motors = Motors::excluding(mixer.rows(), &lift.rotors.motor_layout(), lift.pusher_slot);
+        let max_total_thrust_n = motors.max_total_thrust_n();
+        // A mixer without lift rotors has no thrust to scale the drag by.
+        let drag_per_thrust_n_per_mps = if max_total_thrust_n > 0.0 {
+            lift.rotors.drag_n_per_mps / max_total_thrust_n
+        } else {
+            0.0
+        };
+        LiftGroup {
+            rotors: lift.rotors,
+            motors,
+            drag_per_thrust_n_per_mps,
+            alpha: 0.0,
+        }
+    }
+
     /// Runs the rotors one step on `commands` and returns their force and torque on the body
     /// axes, moving through the air at `air_mps` (body axes), in N and N·m.
     fn wrench(&mut self, commands: &[f32; ActuatorCommand::SLOTS], air_mps: Vec3) -> (Vec3, Vec3) {
         self.motors.spin(commands, self.alpha);
         let (thrust_n, torque_nm) = self.motors.wrench();
         let in_plane_mps = Vec3::new(air_mps.x, air_mps.y, 0.0);
-        let drag_n = in_plane_mps
-            * (self.rotors.drag_n_per_mps * thrust_n / self.motors.max_total_thrust_n());
+        let drag_n = in_plane_mps * (self.drag_per_thrust_n_per_mps * thrust_n);
         (Vec3::new(0.0, 0.0, -thrust_n) - drag_n, torque_nm)
     }
 }
@@ -125,27 +145,22 @@ impl FixedWing {
         rotors: Rotors,
         rest: UnitQuaternion<f32>,
     ) -> Self {
-        // Each motor's thrust is along body `x`, so a roll or pitch factor turns nothing, and
-        // prop drag torque isn't modeled: a yaw factor acts through the motor's arm.
-        let layout = MotorLayout {
-            moment_arm_m: 0.0,
-            yaw_torque_per_thrust_m: rotors.motor_arm_m,
-            max_thrust_n: model.max_thrust_n,
-        };
         let (motors, lift) = match rotors.lift {
             Some(lift) => (
                 Motors::single(lift.pusher_slot, model.max_thrust_n),
-                Some(LiftGroup {
-                    rotors: lift.rotors,
-                    motors: Motors::excluding(
-                        mixer.rows(),
-                        &lift.rotors.motor_layout(),
-                        lift.pusher_slot,
-                    ),
-                    alpha: 0.0,
-                }),
+                Some(LiftGroup::new(mixer, &lift)),
             ),
-            None => (Motors::new(mixer.rows(), &layout), None),
+            None => {
+                // Each motor's thrust is along body `x`, so a roll or pitch factor turns
+                // nothing, and prop drag torque isn't modeled: a yaw factor acts through the
+                // motor's arm.
+                let layout = MotorLayout {
+                    moment_arm_m: 0.0,
+                    yaw_torque_per_thrust_m: rotors.motor_arm_m,
+                    max_thrust_n: model.max_thrust_n,
+                };
+                (Motors::new(mixer.rows(), &layout), None)
+            }
         };
         FixedWing {
             motors,
