@@ -19,8 +19,8 @@ lives in `architecture.md`; each crate's README owns its usage.
 - Untracked: `target/`, `tarpaulin-report.html`, `firmware/*/*.bin`, `sandbox/` and `tasks/` (local notes).
 - `Cargo.lock` is committed and CI builds `--locked`: commit lockfile changes with the manifest
   change that causes them. A dependency that needs a newer compiler raises `rust-version` and the
-  root README prerequisites in the same PR; check with
-  `cargo +<version> check --workspace --all-features --all-targets --locked`.
+  root README prerequisites in the same PR; CI's `msrv` job checks the workspace on that
+  toolchain (locally: `cargo +<version> check --workspace --all-features --all-targets --locked`).
 
 | Crate | Role | Key dependencies |
 |---|---|---|
@@ -265,7 +265,7 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   investigation raises that isn't fixed in the PR gets an issue; a pre-existing bug found along
   the way gets a `bug` issue with repro steps.
 - `main` is protected by the repository ruleset `main` (`gh api repos/wboayue/stable-flight/rulesets`):
-  PRs only, no force-push or deletion, and the `test`, `lint`, and `embedded` jobs of the `test`
+  PRs only, no force-push or deletion, and the `test`, `lint`, `msrv`, and `embedded` jobs of the `test`
   workflow must pass. Rewriting published history needs the ruleset off briefly, on the owner's
   explicit go only.
 - Before merging right after a push, confirm a completed run for the PR's head commit
