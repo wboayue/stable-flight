@@ -20,8 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `surface-probe-realflight`: checks which way a quadplane's surfaces push, in copter flight
   at speed, from the lift rotors' push-back against a cruise-moment pulse per axis (#433).
 - `ActuatorMapping::servo_trims`: each servo slot's neutral offset, ArduPilot's
-  `SERVOn_TRIM` (#433). **Breaking:** a struct literal needs the field (or
-  `..Default::default()`), and `ActuatorMapping` is no longer `Eq` or `Hash`.
+  `SERVOn_TRIM`, checked by `validate` (#433). **Breaking:** a struct literal needs the
+  field (or `..Default::default()`), `ActuatorMapping` is no longer `Eq` or `Hash`, and
+  `MappingError` gains `InvalidTrim`.
 
 - `flights/explora_transition_lap.csv`: the eXplora transition mission with one plane lap,
   for transition checks; its back transition starts where the two-lap mission's does.

@@ -31,6 +31,7 @@ use log::{info, warn};
 use stable_flight::commanders::RouteEnd;
 use stable_flight::guidance::vtol::QuadPlaneGuidance;
 use stable_flight::stabilizers::vtol::QuadPlaneStabilizer;
+use stable_flight::tuning::Stat;
 use stable_flight::{
     ActuatorCommand, ControlOutput, FlightLoop, Mixer, Saturation, TelemetryPublisher,
     TelemetryRecord, Vec3,
@@ -186,9 +187,9 @@ struct Probe {
     min_airspeed_mps: f32,
     injection: Rc<Cell<Vec3>>,
     phase: Phase,
-    baseline: Mean,
-    response: Mean,
-    airspeed: Mean,
+    baseline: Stat,
+    response: Stat,
+    airspeed: Stat,
 }
 
 impl Probe {
@@ -198,9 +199,9 @@ impl Probe {
             min_airspeed_mps,
             injection,
             phase: Phase::Waiting(0.0),
-            baseline: Mean::default(),
-            response: Mean::default(),
-            airspeed: Mean::default(),
+            baseline: Stat::default(),
+            response: Stat::default(),
+            airspeed: Stat::default(),
         }
     }
 
@@ -261,16 +262,17 @@ impl Probe {
     }
 
     fn start_quiet(&mut self, n: usize) -> Phase {
-        self.baseline = Mean::default();
-        self.response = Mean::default();
-        self.airspeed = Mean::default();
+        self.baseline = Stat::default();
+        self.response = Stat::default();
+        self.airspeed = Stat::default();
         Phase::Quiet(n, 0.0)
     }
 
     /// Logs pulse `n`'s lift-moment shift and what it says about the surfaces.
     fn judge(&self, n: usize) {
         let (axis, sign) = PULSES[n];
-        let shift = self.response.value() - self.baseline.value();
+        let mean = |stat: &Stat| stat.mean().unwrap_or(f32::NAN);
+        let shift = mean(&self.response) - mean(&self.baseline);
         let verdict = if shift.abs() < MIN_SHIFT {
             "no response"
         } else if shift * sign < 0.0 {
@@ -283,30 +285,8 @@ impl Probe {
             AXES[axis],
             sign * self.pulse,
             shift,
-            self.airspeed.value(),
+            mean(&self.airspeed),
         );
-    }
-}
-
-/// A running mean.
-#[derive(Default)]
-struct Mean {
-    sum: f32,
-    count: u32,
-}
-
-impl Mean {
-    fn add(&mut self, value: f32) {
-        self.sum += value;
-        self.count += 1;
-    }
-
-    fn value(&self) -> f32 {
-        if self.count == 0 {
-            f32::NAN
-        } else {
-            self.sum / self.count as f32
-        }
     }
 }
 

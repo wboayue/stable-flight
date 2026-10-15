@@ -365,8 +365,8 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                 cruise_thrust: 0.52,
                 ..defaults.plane
             },
-            // Two runs each, 0 against 1.2: altitude loss 3.5/4.7 m vs 0.5/0.5 m, balloon
-            // 6.4/5.9 m vs 1.2/1.4 m (#433); PX4's limit is 20 m (`VT_QC_T_ALT_LOSS`).
+            // Copter legs lose 0.5 m with it, 4.7 m without (rustdoc above, #433); PX4's limit
+            // is 20 m (`VT_QC_T_ALT_LOSS`).
             forward: ForwardThrustConfig {
                 gain: 1.2,
                 ..defaults.forward
