@@ -1,0 +1,11 @@
+# Titan Cobra copter legs (quadplane-auto-realflight, #427): climb to 30 m over the spawn point
+# (north -10.55 m, east 6.49 m, heading 38°), 100 m ahead along the heading, back, 100 m behind,
+# back, all in copter flight with no speed cap (cruise_speed 0: the tilt cap bounds it). Fly with
+# --param FWD_THR_GAIN=0 and =1.2 and --end land; the altitude loss is checked against PX4's
+# VT_QC_T_ALT_LOSS (20 m).
+x,y,altitude,cruise_speed
+-10.55,6.49,30.0,3.0
+68.25,68.06,30.0,0.0
+-10.55,6.49,30.0,0.0
+-89.35,-55.08,30.0,0.0
+-10.55,6.49,30.0,0.0

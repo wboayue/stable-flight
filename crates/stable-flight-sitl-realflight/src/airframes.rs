@@ -13,7 +13,7 @@ use stable_flight::controllers::{
 use stable_flight::guidance::copter::{CopterGuidanceConfig, ThrustLimits};
 use stable_flight::guidance::plane::PlaneGuidanceConfig;
 use stable_flight::guidance::vtol::{
-    QuadPlaneGuidanceConfig, TailsitterGuidanceConfig, TransitionConfig,
+    LiftTransitionConfig, QuadPlaneGuidanceConfig, TailsitterGuidanceConfig, TransitionConfig,
 };
 use stable_flight::mixers::TableMixer;
 use stable_flight::nalgebra::UnitQuaternion;
@@ -270,6 +270,7 @@ pub fn explora_vtol()
             servos: [Some(0), Some(1), None, None, None, None, None, None],
             // The elevon channels run opposite ways; the left one is reversed.
             reversed_servos: [true, false, false, false, false, false, false, false],
+            ..Default::default()
         },
         body_rotation: UnitQuaternion::from_euler_angles(0.0, PI / 2.0, 0.0),
     }
@@ -297,8 +298,13 @@ pub fn explora_vtol()
 ///   | servo 1 | 3 | right A-tail panel (a V-tail's left ruddervator) |
 ///   | servo 2 | 1 | left A-tail panel (a V-tail's right ruddervator) |
 ///
-///   On the ground the surfaces move nothing, so their directions are unchecked until plane
-///   flight (TODO(#433)).
+///   No surface is reversed: ArduPilot drives these channels unreversed through its V-tail
+///   mixer, right panel (elevator + rudder)/2, left (elevator − rudder)/2
+///   (`ArduPlane/servos.cpp:192-193`, ArduPilot `b032bcbde3`), with positive aileron, elevator, and rudder outputs
+///   rolling right, raising the nose, and yawing right (`libraries/SITL/SIM_Plane.cpp:333-335`,
+///   `SIM_Plane.h:75-86`); the rows of [`TableMixer::quadplane_vtail`] match. Confirmed in
+///   flight by `surface-probe-realflight` (TODO(#433)). Both tail panels are trimmed +0.2
+///   (`SERVO2_TRIM`, `SERVO4_TRIM` 1600).
 /// - **Body rotation:** identity; RealFlight's frame for this model is the airplane's.
 ///
 /// Fly it with [`QuadPlaneGuidance`](stable_flight::guidance::vtol::QuadPlaneGuidance) and
@@ -313,7 +319,8 @@ pub fn explora_vtol()
 ///   front motors at 0.60 and rear at 0.52 (#433), so the pitch rate loop holds a steady
 ///   nose-up moment.
 /// - **Plane and transition:** core defaults, with the upstream ArduPilot parameter file's
-///   airspeeds, trim pitch, and cruise throttle (`TitanCobraVTOL.param`).
+///   airspeeds, trim pitch, and cruise throttle (`TitanCobraVTOL.param`); the forward
+///   transition hands over to the wing at its minimum airspeed, as ArduPilot does.
 ///
 /// # Examples
 ///
@@ -350,6 +357,12 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                 // `TRIM_THROTTLE` 47 on a linear pusher curve: 0.9 · 0.52.
                 cruise_thrust: 0.52,
                 ..defaults.plane
+            },
+            transition: LiftTransitionConfig {
+                // ArduPilot starts the forward lift ramp past `ARSPD_FBW_MIN`, 11 for this
+                // model; core's 9 is ArduPilot's default (`ArduPlane/quadplane.cpp:1523`).
+                min_airspeed_mps: 11.0,
+                ..defaults.transition
             },
             ..defaults
         },
@@ -402,6 +415,8 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                 None,
             ],
             servos: [Some(0), Some(3), Some(1), None, None, None, None, None],
+            // `SERVO2_TRIM`, `SERVO4_TRIM` 1600: (1600 − 1500) / 500.
+            servo_trims: [0.0, 0.2, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0],
             ..Default::default()
         },
         body_rotation: UnitQuaternion::identity(),
