@@ -1,7 +1,7 @@
 //! [`ForwardThrust`]: a quadplane's pusher taking the nose-down part of copter flight, so the
 //! wing isn't flown at negative α.
 
-use core::f32::consts::FRAC_PI_4;
+use core::f32::consts::{FRAC_PI_2, FRAC_PI_4};
 
 use crate::Configurable;
 use crate::controllers::{InvalidConfig, check, check_limit};
@@ -34,7 +34,7 @@ impl ForwardThrustConfig {
         check_limit("gain", self.gain)?;
         check(
             "pitch_limit_rad",
-            (0.0..core::f32::consts::FRAC_PI_2).contains(&self.pitch_limit_rad),
+            (0.0..FRAC_PI_2).contains(&self.pitch_limit_rad),
             "in [0, π/2) rad",
         )
     }

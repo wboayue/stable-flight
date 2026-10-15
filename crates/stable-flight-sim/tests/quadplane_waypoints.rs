@@ -10,9 +10,7 @@ use stable_flight_sim::{Wind, airframes};
 use common::hover_at;
 use common::plane::Interlude;
 use common::quadplane::{QuadPlanePlant, quadplane_loop};
-use common::transition::{
-    ALTITUDE_LOSS_M, FORWARD_AT_S, HOLD_S, HoverDeviation, TRANSITION_ALTITUDE_M, trace,
-};
+use common::transition::{FORWARD_AT_S, HOLD_S, TRANSITION_ALTITUDE_M, check_altitude_loss, trace};
 use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M};
 
 /// Leg length, in m.
@@ -61,18 +59,10 @@ fn fly_leg(case: &str, wind_mps: Vec3, target_m: Vec2, cruise_mps: f32) {
     let mut flight_loop = quadplane_loop(&plant, leg(target_m, cruise_mps));
     let flight = trace(&mut flight_loop, FORWARD_AT_S + LEG_S + HOLD_S);
 
-    let heights = flight.heights(FORWARD_AT_S, f32::INFINITY);
-    let fell_m = heights.start_m - heights.lowest_m;
-    check!(
-        fell_m <= ALTITUDE_LOSS_M,
-        "{case}: fell {fell_m} m, {heights:?}"
-    );
+    check_altitude_loss(flight.heights(FORWARD_AT_S, f32::INFINITY), case);
 
     let point_m = Vec3::new(target_m.x, target_m.y, TRANSITION_ALTITUDE_M);
-    let mut worst = HoverDeviation::default();
-    for sample in flight.window(FORWARD_AT_S + LEG_S, f32::INFINITY) {
-        worst.observe_level(&sample.state, point_m);
-    }
+    let worst = flight.level_hold(FORWARD_AT_S + LEG_S, point_m);
     check!(worst.altitude_m < CALM_ALTITUDE_M, "{case}: {worst:?}");
     check!(worst.horizontal_m < CALM_HORIZONTAL_M, "{case}: {worst:?}");
     if wind_mps == Vec3::zeros() {

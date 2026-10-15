@@ -229,6 +229,16 @@ impl QuadPlaneGuidance {
         [&self.hover, &self.plane, &self.transition, &self.forward]
     }
 
+    /// [`parts`](Self::parts), mutably, in the same order.
+    fn parts_mut(&mut self) -> [&mut dyn Params; 4] {
+        [
+            &mut self.hover,
+            &mut self.plane,
+            &mut self.transition,
+            &mut self.forward,
+        ]
+    }
+
     /// Copter flight: the hover guidance on `input`, its nose-down pitch handed to the pusher
     /// on a waypoint or land while [`ForwardThrust`] is on.
     fn copter(&mut self, dt: f32, input: &ControlInput, state: &VehicleState) -> Setpoint {
@@ -411,12 +421,8 @@ impl Params for QuadPlaneGuidance {
     }
 
     fn set_param_at(&mut self, index: usize, value: f32) -> Result<(), ParamError> {
-        let result = match locate(&self.parts(), index).ok_or(ParamError::Unknown)? {
-            (0, i) => self.hover.set_param_at(i, value),
-            (1, i) => self.plane.set_param_at(i, value),
-            (2, i) => self.transition.set_param_at(i, value),
-            (_, i) => self.forward.set_param_at(i, value),
-        };
+        let (part, i) = locate(&self.parts(), index).ok_or(ParamError::Unknown)?;
+        let result = self.parts_mut()[part].set_param_at(i, value);
         self.sync_config();
         result
     }

@@ -14,9 +14,9 @@ use stable_flight_sim::airframes;
 use common::plane::{AIRSPEED_BAND_MPS, ALTITUDE_BAND_M, LineDeviation};
 use common::quadplane::{QuadPlanePlant, forward, forward_and_back, quadplane_loop};
 use common::transition::{
-    BACK_DURATION_S, CROSS_TRACK_M, FORWARD_AT_S, FORWARD_TIMEOUT_S, Forward, HOLD_S,
-    HoverDeviation, PLANE_HOLD_S, PLANE_SETTLE_S, TRANSITION_ALTITUDE_M, Trace,
-    check_altitude_loss, entered_s, trace, transition_heights,
+    BACK_DURATION_S, CROSS_TRACK_M, FORWARD_AT_S, FORWARD_TIMEOUT_S, Forward, HOLD_S, PLANE_HOLD_S,
+    PLANE_SETTLE_S, TRANSITION_ALTITUDE_M, Trace, check_altitude_loss, entered_s, trace,
+    transition_heights,
 };
 use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK};
 
@@ -42,10 +42,7 @@ const SILENT_AFTER_S: f32 = 2.0;
 
 /// Checks a hold over `point_m` against the copter's calm-air hover bands (`hover.rs`).
 fn check_calm_hover(trace: &Trace, from_s: f32, point_m: Vec3, what: &str) {
-    let mut worst = HoverDeviation::default();
-    for sample in trace.window(from_s, from_s + HOLD_S) {
-        worst.observe_level(&sample.state, point_m);
-    }
+    let worst = trace.level_hold(from_s, point_m);
     check!(worst.altitude_m < CALM_ALTITUDE_M, "{what}: {worst:?}");
     check!(worst.horizontal_m < CALM_HORIZONTAL_M, "{what}: {worst:?}");
     check!(worst.tilt_deg < CALM_ANGLE_DEG, "{what}: {worst:?}");
