@@ -7,7 +7,7 @@ use crate::controllers::InvalidConfig;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::guidance::plane::{PlaneGuidance, PlaneGuidanceConfig};
 use crate::math::{bank_rad, guard_sink};
-use crate::params::{ParamError, Params, locate};
+use crate::params::{ParamError, Params, chained_at, chained_count, chained_name, chained_set};
 use crate::{
     AbsoluteAttitudeCommand, AttitudeSetpoint, Configurable, ControlInput, FlightMode,
     FlightModeReport, FlightRegime, Guidance, ModeRefusal, PlaneSetpoint, Saturation, Setpoint,
@@ -351,32 +351,21 @@ impl Configurable for TailsitterGuidance {
 /// The parts' params, chained: hover (`GUID_*`), plane (`PGUID_*`), transition (`TRAN_*`).
 impl Params for TailsitterGuidance {
     fn param_count(&self) -> usize {
-        self.hover.param_count() + self.plane.param_count() + self.transition.param_count()
+        chained_count(&[&self.hover, &self.plane, &self.transition])
     }
 
     fn param_name(&self, index: usize) -> Option<&'static str> {
-        match locate(&[&self.hover, &self.plane, &self.transition], index)? {
-            (0, i) => self.hover.param_name(i),
-            (1, i) => self.plane.param_name(i),
-            (_, i) => self.transition.param_name(i),
-        }
+        chained_name(&[&self.hover, &self.plane, &self.transition], index)
     }
 
     fn param_at(&self, index: usize) -> Option<f32> {
-        match locate(&[&self.hover, &self.plane, &self.transition], index)? {
-            (0, i) => self.hover.param_at(i),
-            (1, i) => self.plane.param_at(i),
-            (_, i) => self.transition.param_at(i),
-        }
+        chained_at(&[&self.hover, &self.plane, &self.transition], index)
     }
 
     fn set_param_at(&mut self, index: usize, value: f32) -> Result<(), ParamError> {
-        let parts: [&dyn Params; 3] = [&self.hover, &self.plane, &self.transition];
-        let result = match locate(&parts, index).ok_or(ParamError::Unknown)? {
-            (0, i) => self.hover.set_param_at(i, value),
-            (1, i) => self.plane.set_param_at(i, value),
-            (_, i) => self.transition.set_param_at(i, value),
-        };
+        let parts: &mut [&mut dyn Params] =
+            &mut [&mut self.hover, &mut self.plane, &mut self.transition];
+        let result = chained_set(parts, index, value);
         self.sync_config();
         result
     }

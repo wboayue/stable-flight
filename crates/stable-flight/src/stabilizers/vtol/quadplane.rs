@@ -2,7 +2,7 @@
 //! surfaces and pusher on the plane stabilizer.
 
 use crate::controllers::InvalidConfig;
-use crate::params::{ParamError, Params, locate};
+use crate::params::{ParamError, Params, chained_at, chained_count, chained_name, chained_set};
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use crate::stabilizers::plane::{PlaneStabilizer, PlaneStabilizerConfig};
 use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
@@ -230,28 +230,19 @@ impl Configurable for QuadPlaneStabilizer {
 /// The parts' params, chained: hover (`STAB_*`), plane (`PSTAB_*`).
 impl Params for QuadPlaneStabilizer {
     fn param_count(&self) -> usize {
-        self.hover.param_count() + self.plane.param_count()
+        chained_count(&[&self.hover, &self.plane])
     }
 
     fn param_name(&self, index: usize) -> Option<&'static str> {
-        match locate(&[&self.hover, &self.plane], index)? {
-            (0, i) => self.hover.param_name(i),
-            (_, i) => self.plane.param_name(i),
-        }
+        chained_name(&[&self.hover, &self.plane], index)
     }
 
     fn param_at(&self, index: usize) -> Option<f32> {
-        match locate(&[&self.hover, &self.plane], index)? {
-            (0, i) => self.hover.param_at(i),
-            (_, i) => self.plane.param_at(i),
-        }
+        chained_at(&[&self.hover, &self.plane], index)
     }
 
     fn set_param_at(&mut self, index: usize, value: f32) -> Result<(), ParamError> {
-        let result = match locate(&[&self.hover, &self.plane], index).ok_or(ParamError::Unknown)? {
-            (0, i) => self.hover.set_param_at(i, value),
-            (_, i) => self.plane.set_param_at(i, value),
-        };
+        let result = chained_set(&mut [&mut self.hover, &mut self.plane], index, value);
         self.sync_config();
         result
     }

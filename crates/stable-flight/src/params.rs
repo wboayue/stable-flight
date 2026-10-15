@@ -306,15 +306,51 @@ where
 /// [`FlightLoop`](crate::FlightLoop): guidance, then stabilizer) presents its parts' params as
 /// one table.
 pub(crate) fn locate(parts: &[&dyn Params], index: usize) -> Option<(usize, usize)> {
+    locate_in(parts.iter().map(|params| params.param_count()), index)
+}
+
+/// [`locate`] over the parts' param counts.
+fn locate_in(counts: impl Iterator<Item = usize>, index: usize) -> Option<(usize, usize)> {
     let mut index = index;
-    for (part, params) in parts.iter().enumerate() {
-        let count = params.param_count();
+    for (part, count) in counts.enumerate() {
         if index < count {
             return Some((part, index));
         }
         index -= count;
     }
     None
+}
+
+/// The number of params in `parts` chained ([`locate`]).
+pub(crate) fn chained_count(parts: &[&dyn Params]) -> usize {
+    parts.iter().map(|params| params.param_count()).sum()
+}
+
+/// The name of the param at `index` in `parts` chained ([`locate`]).
+pub(crate) fn chained_name(parts: &[&dyn Params], index: usize) -> Option<&'static str> {
+    let (part, index) = locate(parts, index)?;
+    parts.get(part)?.param_name(index)
+}
+
+/// The value of the param at `index` in `parts` chained ([`locate`]).
+pub(crate) fn chained_at(parts: &[&dyn Params], index: usize) -> Option<f32> {
+    let (part, index) = locate(parts, index)?;
+    parts.get(part)?.param_at(index)
+}
+
+/// Sets the param at `index` in `parts` chained ([`locate`]) to `value`, in the part it falls
+/// in. Out of range is [`ParamError::Unknown`].
+pub(crate) fn chained_set(
+    parts: &mut [&mut dyn Params],
+    index: usize,
+    value: f32,
+) -> Result<(), ParamError> {
+    let (part, index) = locate_in(parts.iter().map(|params| params.param_count()), index)
+        .ok_or(ParamError::Unknown)?;
+    parts
+        .get_mut(part)
+        .ok_or(ParamError::Unknown)?
+        .set_param_at(index, value)
 }
 
 /// Why a param write ([`Params::set_param`], [`Params::set_param_at`]) was rejected.
