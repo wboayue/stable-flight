@@ -12,7 +12,7 @@ The crate builds on the [`stable-flight`](https://github.com/wboayue/stable-flig
 
 ## Setup
 
-RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**. Tuned model: QuadCopterX (multirotor); eXplora VTOL (tailsitter) hovers from a joystick (`tailsitter-manual-realflight`) or a waypoint script (`tailsitter-auto-realflight`), and transitions to plane flight and back, stabilized from the joystick or navigating waypoints from a script (`flights/explora_transition.csv`). Being set up: the Titan Cobra VTOL (quadplane, [#433](https://github.com/wboayue/stable-flight/issues/433)); import the [upstream RFX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/QuadPlanes/Titan_Cobra_VTOL) unmodified, its channels already one per actuator. The ArduPilot [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models) repo has more.
+RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**. Tuned model: QuadCopterX (multirotor); eXplora VTOL (tailsitter) hovers from a joystick (`tailsitter-manual-realflight`) or a waypoint script (`tailsitter-auto-realflight`), and transitions to plane flight and back, stabilized from the joystick or navigating waypoints from a script (`flights/explora_transition.csv`). Titan Cobra VTOL (quadplane) hovers, transitions to plane flight and back, and flies copter legs with forward thrust, from a waypoint script (`quadplane-auto-realflight`); import the [upstream RFX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/QuadPlanes/Titan_Cobra_VTOL) unmodified, its channels already one per actuator (table below). The ArduPilot [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models) repo has more.
 
 `RealFlightRemoteBridge` talks to the `realflight_bridge_proxy` running on the RealFlight host. Install it there with `cargo install realflight-bridge --features rt-tokio` (2.2 or later, to match this crate's error handling). Its default request timeout (150 ms) covers RealFlight's slower requests, and [`REMOTE_IO_TIMEOUT`](https://docs.rs/stable-flight-sitl-realflight/latest/stable_flight_sitl_realflight/constant.REMOTE_IO_TIMEOUT.html), which the examples use, stays above it.
 
@@ -34,7 +34,7 @@ let stabilizer = CopterStabilizer::new(airframe.stabilizer);
 let mixer = airframe.mixer;
 ```
 
-Use `RealFlightLocalBridge` when the controller runs on the same host as RealFlight, and `RealFlightRemoteBridge` otherwise. `realflight_bridge` is re-exported, so you don't need to depend on it yourself. `ActuatorMapping` maps the mixer's motor and servo slots to the model's RealFlight channels (servos rescaled from -1–1 to RealFlight's 0–1, and negated first for any slot in `reversed_servos`), so an airframe's mapping only fits its own mixer (the `ActuatorMapping` rustdoc covers unmapped channels). `RealFlightConfiguration::from_airframe` takes the mapping and body rotation from an airframe. `RealFlightVehicle::new` panics on an invalid mapping (a channel out of range or used twice); `try_new` returns a `MappingError` instead.
+Use `RealFlightLocalBridge` when the controller runs on the same host as RealFlight, and `RealFlightRemoteBridge` otherwise. `realflight_bridge` is re-exported, so you don't need to depend on it yourself. `ActuatorMapping` maps the mixer's motor and servo slots to the model's RealFlight channels (servos rescaled from -1–1 to RealFlight's 0–1, negated first for any slot in `reversed_servos`, and offset by its `servo_trims`), so an airframe's mapping only fits its own mixer (the `ActuatorMapping` rustdoc covers unmapped channels). `RealFlightConfiguration::from_airframe` takes the mapping and body rotation from an airframe. `RealFlightVehicle::new` panics on an invalid mapping (a channel out of range or used twice); `try_new` returns a `MappingError` instead.
 
 Each tick makes one RealFlight exchange, in `actuate`; `state` returns the cached result, so guidance and the stabilizer see state one tick old. The `RealFlightVehicle` rustdoc covers timing and frame conversion.
 
@@ -64,7 +64,7 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration::from_airframe(
 |---|---|
 | `airframes::quadcopter_x()` | ArduPilot SITL_Models [QuadCopterX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX) |
 | `airframes::explora_vtol()` | [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) tailsitter, for `TailsitterGuidance`/`TailsitterStabilizer` (hover gains in the tailsitter `View`'s axes, hand-tuned, with thrust floor, sink guard, and boost ceiling; plane and transition starting values) |
-| `airframes::titan_cobra()` | ArduPilot SITL_Models [Titan Cobra VTOL](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/QuadPlanes/Titan_Cobra_VTOL) lift+cruise quadplane, for `QuadPlaneGuidance`/`QuadPlaneStabilizer` on `TableMixer::quadplane_vtail` (channel map in its rustdoc; hover, plane, and transition starting values) |
+| `airframes::titan_cobra()` | ArduPilot SITL_Models [Titan Cobra VTOL](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/QuadPlanes/Titan_Cobra_VTOL) lift+cruise quadplane, for `QuadPlaneGuidance`/`QuadPlaneStabilizer` on `TableMixer::quadplane_vtail` (hover with measured trim and autotuned roll rate; surfaces checked in flight, tail trimmed +0.2; transitions at ArduPilot's 11 m/s; forward thrust 1.2) |
 
 ## Examples
 
@@ -101,6 +101,14 @@ cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight 
 # point by default (flights/cobra_hover.csv); a regime column flies transitions; --record writes
 # every tick (both sides, every lift rotor, the pusher, the surfaces). Or: just fly-quadplane-auto
 cargo run -p stable-flight-sitl-realflight --example quadplane-auto-realflight -- --end land --record hover.csv
+# One plane lap with transitions both ways; copter legs ahead and behind, --param sets a param
+# before takeoff (here forward thrust off, to compare)
+cargo run -p stable-flight-sitl-realflight --example quadplane-auto-realflight -- flights/cobra_transition_lap.csv --end land
+cargo run -p stable-flight-sitl-realflight --example quadplane-auto-realflight -- flights/cobra_legs.csv --end land --param FWD_THR_GAIN=0
+
+# Which way each surface pushes, in flight: a fast copter leg (pusher on) with a cruise-moment
+# pulse per axis and sign; logs the lift rotors' push-back and a verdict per pulse, lands ahead
+cargo run -p stable-flight-sitl-realflight --example surface-probe-realflight -- --record probe.csv
 
 # Flown from the native link, holding position when it goes quiet; link_pilot plays the companion
 # (in place of the bridge). Stop the pilot mid-flight and the quad holds. Or: just fly-companion, just link-pilot
@@ -138,6 +146,24 @@ steps instead. `check_frames` then compares the capture with the frame contract:
 rates against the quaternions, gravity at rest, and RealFlight's Euler angles near ±90° pitch.
 `--pitch-deg` converts with the model's body rotation (`--pitch-deg 90` for the eXplora, which
 then reads pitch +90° at rest on its tail).
+
+On the ground a sweep moves no surface (no airflow); `surface-probe-realflight` (above) checks
+their directions in flight.
+
+Titan Cobra VTOL, swept with `--motors 4,5,6,7,2 --servos 0,1,3` and hops (channels 0-based;
+`check_frames` passes with no body rotation;
+[#433](https://github.com/wboayue/stable-flight/issues/433)):
+
+| Channel | Actuator | Slot in `airframes::titan_cobra()` |
+|---|---|---|
+| 0 | ailerons | servo 0 |
+| 1 | left A-tail panel | servo 2 |
+| 2 | pusher | motor 4 |
+| 3 | right A-tail panel | servo 1 |
+| 4 | front-right lift rotor, counterclockwise from above | motor 1 |
+| 5 | rear-left, counterclockwise | motor 2 |
+| 6 | front-left, clockwise | motor 0 |
+| 7 | rear-right, clockwise | motor 3 |
 
 ```bash
 cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight -- --motors 0,1 --servos 2,3 --output sweep.csv
