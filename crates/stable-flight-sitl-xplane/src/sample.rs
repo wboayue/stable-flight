@@ -70,8 +70,8 @@ pub struct XPlaneSample {
     pub paused: bool,
 }
 
-/// Number of datarefs in an [`XPlaneSample`].
-const DATAREF_COUNT: usize = 25;
+/// Number of `f32` datarefs in an [`XPlaneSample`].
+const FLOAT_COUNT: usize = 23;
 
 /// The subscriptions behind an [`XPlaneSample`], one handle per dataref.
 ///
@@ -189,7 +189,6 @@ impl StateDatarefs {
     /// The datarefs with no value in `latest` yet.
     pub fn missing(&self, latest: &Latest) -> Vec<&'static str> {
         self.received(latest)
-            .into_iter()
             .filter(|(_, at)| at.is_none())
             .map(|(name, _)| name)
             .collect()
@@ -199,45 +198,63 @@ impl StateDatarefs {
     /// one: data flows, but not for every subscription (X-Plane dropped its `RREF`, or forgot
     /// it in a restart and a resubscribe burst lost it again).
     pub(crate) fn incomplete(&self, latest: &Latest, max_age: Duration) -> bool {
-        let received = self.received(latest);
-        let Some(newest) = received.iter().filter_map(|&(_, at)| at).max() else {
+        let Some(newest) = self.received(latest).filter_map(|(_, at)| at).max() else {
             return true;
         };
-        received
-            .iter()
-            .any(|&(_, at)| at.is_none_or(|at| newest.duration_since(at) > max_age))
+        self.received(latest)
+            .any(|(_, at)| at.is_none_or(|at| newest.duration_since(at) > max_age))
     }
 
     /// Each dataref's name and when its value arrived (`None`: never).
-    fn received(&self, latest: &Latest) -> [(&'static str, Option<Instant>); DATAREF_COUNT] {
-        let at = |sub| arrived(latest, sub);
+    fn received(&self, latest: &Latest) -> impl Iterator<Item = (&'static str, Option<Instant>)> {
+        let floats = self
+            .named_floats()
+            .map(|(name, sub)| (name, arrived(latest, sub)));
+        let bools = self
+            .named_bools()
+            .map(|(name, sub)| (name, arrived(latest, sub)));
+        floats.into_iter().chain(bools)
+    }
+
+    /// The `f32` datarefs with their names, in [`XPlaneSample`] field order: the one place
+    /// they are named.
+    fn named_floats(&self) -> [(&'static str, Sub<f32>); FLOAT_COUNT] {
+        let [q0, q1, q2, q3] = self.quaternion;
+        let [p, q, r] = self.body_rates;
+        let [x, y, z] = self.position;
+        let [vx, vy, vz] = self.velocity;
+        let [ax, ay, az] = self.acceleration;
+        let [lat_ref, lon_ref] = self.origin;
         [
-            ("total_running_time_sec", at(self.sim_time)),
-            ("q[0]", at(self.quaternion[0])),
-            ("q[1]", at(self.quaternion[1])),
-            ("q[2]", at(self.quaternion[2])),
-            ("q[3]", at(self.quaternion[3])),
-            ("P", at(self.body_rates[0])),
-            ("Q", at(self.body_rates[1])),
-            ("R", at(self.body_rates[2])),
-            ("local_x", at(self.position[0])),
-            ("local_y", at(self.position[1])),
-            ("local_z", at(self.position[2])),
-            ("local_vx", at(self.velocity[0])),
-            ("local_vy", at(self.velocity[1])),
-            ("local_vz", at(self.velocity[2])),
-            ("local_ax", at(self.acceleration[0])),
-            ("local_ay", at(self.acceleration[1])),
-            ("local_az", at(self.acceleration[2])),
-            ("latitude", at(self.latitude)),
-            ("longitude", at(self.longitude)),
-            ("elevation", at(self.elevation)),
-            ("lat_ref", at(self.origin[0])),
-            ("lon_ref", at(self.origin[1])),
-            ("true_airspeed", at(self.true_airspeed)),
-            ("onground_any", arrived(latest, self.on_ground)),
-            ("paused", arrived(latest, self.paused)),
+            ("total_running_time_sec", self.sim_time),
+            ("q[0]", q0),
+            ("q[1]", q1),
+            ("q[2]", q2),
+            ("q[3]", q3),
+            ("P", p),
+            ("Q", q),
+            ("R", r),
+            ("local_x", x),
+            ("local_y", y),
+            ("local_z", z),
+            ("local_vx", vx),
+            ("local_vy", vy),
+            ("local_vz", vz),
+            ("local_ax", ax),
+            ("local_ay", ay),
+            ("local_az", az),
+            ("latitude", self.latitude),
+            ("longitude", self.longitude),
+            ("elevation", self.elevation),
+            ("lat_ref", lat_ref),
+            ("lon_ref", lon_ref),
+            ("true_airspeed", self.true_airspeed),
         ]
+    }
+
+    /// The boolean datarefs with their names, in [`XPlaneSample`] field order.
+    fn named_bools(&self) -> [(&'static str, Sub<bool>); 2] {
+        [("onground_any", self.on_ground), ("paused", self.paused)]
     }
 }
 
@@ -250,58 +267,47 @@ impl StateDatarefs {
         at: Instant,
         skip: &[&str],
     ) -> xplane_bridge::Frame {
+        let [q0, q1, q2, q3] = sample.quaternion;
+        let [p, q, r] = sample.body_rates_degps;
+        let [x, y, z] = sample.local_position_m;
+        let [vx, vy, vz] = sample.local_velocity_mps;
+        let [ax, ay, az] = sample.local_acceleration_mps2;
+        let [lat_ref, lon_ref] = sample.origin_deg;
+        // Field order, as `named_floats`; `reads_a_complete_sample_and_names_the_missing`
+        // catches a mismatch (every field differs).
         let floats = [
-            ("total_running_time_sec", self.sim_time, sample.sim_time_s),
-            ("q[0]", self.quaternion[0], sample.quaternion[0]),
-            ("q[1]", self.quaternion[1], sample.quaternion[1]),
-            ("q[2]", self.quaternion[2], sample.quaternion[2]),
-            ("q[3]", self.quaternion[3], sample.quaternion[3]),
-            ("P", self.body_rates[0], sample.body_rates_degps[0]),
-            ("Q", self.body_rates[1], sample.body_rates_degps[1]),
-            ("R", self.body_rates[2], sample.body_rates_degps[2]),
-            ("local_x", self.position[0], sample.local_position_m[0]),
-            ("local_y", self.position[1], sample.local_position_m[1]),
-            ("local_z", self.position[2], sample.local_position_m[2]),
-            ("local_vx", self.velocity[0], sample.local_velocity_mps[0]),
-            ("local_vy", self.velocity[1], sample.local_velocity_mps[1]),
-            ("local_vz", self.velocity[2], sample.local_velocity_mps[2]),
-            (
-                "local_ax",
-                self.acceleration[0],
-                sample.local_acceleration_mps2[0],
-            ),
-            (
-                "local_ay",
-                self.acceleration[1],
-                sample.local_acceleration_mps2[1],
-            ),
-            (
-                "local_az",
-                self.acceleration[2],
-                sample.local_acceleration_mps2[2],
-            ),
-            ("latitude", self.latitude, sample.latitude_deg),
-            ("longitude", self.longitude, sample.longitude_deg),
-            ("elevation", self.elevation, sample.elevation_m),
-            ("lat_ref", self.origin[0], sample.origin_deg[0]),
-            ("lon_ref", self.origin[1], sample.origin_deg[1]),
-            (
-                "true_airspeed",
-                self.true_airspeed,
-                sample.true_airspeed_mps,
-            ),
+            sample.sim_time_s,
+            q0,
+            q1,
+            q2,
+            q3,
+            p,
+            q,
+            r,
+            x,
+            y,
+            z,
+            vx,
+            vy,
+            vz,
+            ax,
+            ay,
+            az,
+            sample.latitude_deg,
+            sample.longitude_deg,
+            sample.elevation_m,
+            lat_ref,
+            lon_ref,
+            sample.true_airspeed_mps,
         ];
-        let bools = [
-            ("onground_any", self.on_ground, sample.on_ground),
-            ("paused", self.paused, sample.paused),
-        ];
+        let bools = [sample.on_ground, sample.paused];
         let mut frame = xplane_bridge::Frame::empty(at);
-        for (name, sub, value) in floats {
+        for ((name, sub), value) in self.named_floats().into_iter().zip(floats) {
             if !skip.contains(&name) {
                 frame = frame.with(sub, value);
             }
         }
-        for (name, sub, value) in bools {
+        for ((name, sub), value) in self.named_bools().into_iter().zip(bools) {
             if !skip.contains(&name) {
                 frame = frame.with(sub, value);
             }
