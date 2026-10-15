@@ -85,6 +85,38 @@ jobs:
         cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
         cargo doc --workspace --no-deps --locked
 
+  msrv:
+    # Checks the workspace on the toolchain named by `rust-version` in the root Cargo.toml, so a
+    # change that needs a newer compiler fails here until it raises `rust-version`.
+    runs-on: ubuntu-22.04
+
+    steps:
+    - uses: actions/checkout@v7
+    - name: read rust-version
+      id: msrv
+      run: |
+        set -euo pipefail
+        version=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+        if [ -z "$version" ]; then
+          echo "::error::no rust-version in the root Cargo.toml"
+          exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ steps.msrv.outputs.version }}
+    - uses: Swatinem/rust-cache@v2
+
+    - name: prerequisites
+      # Skip `apt update` unless the runner image's package index is stale.
+      run: |
+        sudo apt-get install -y --no-install-recommends libudev-dev \
+          || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libudev-dev; }
+
+    - name: check
+      run: |
+        cargo check --workspace --all-features --all-targets --locked
+
   embedded:
     # Keeps the core, link, and sim no_std (a bare-metal target has no `std` to fall back on), and lints,
     # links, and sizes the board firmware.
