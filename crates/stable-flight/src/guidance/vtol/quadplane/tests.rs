@@ -3,7 +3,7 @@ use assert2::check;
 use nalgebra::UnitQuaternion;
 
 use super::*;
-use crate::{AttitudeCommand, LandCommand, Vec3};
+use crate::{AttitudeCommand, LandCommand, Vec2, Vec3, WaypointCommand};
 
 const DT: f32 = 0.01;
 const HIGH_M: f32 = 20.0;
@@ -358,7 +358,78 @@ fn prime_returns_to_copter() {
     check!(blend_of(setpoint).plane.thrust < 0.01);
 }
 
-/// Params chain hover, plane, transition; a write lands in its part and in `config()`, and an
+/// Forward thrust at `gain`, the default pitch limit.
+fn with_forward(gain: f32) -> QuadPlaneGuidance {
+    let config = QuadPlaneGuidanceConfig {
+        forward: ForwardThrustConfig {
+            gain,
+            ..ForwardThrustConfig::default()
+        },
+        ..QuadPlaneGuidanceConfig::default()
+    };
+    let mut guidance = QuadPlaneGuidance::new(config);
+    guidance.prime(&at(0.0, 0.0));
+    guidance
+}
+
+/// A waypoint 100 m ahead along the heading, at [`HIGH_M`]: the hover pitches nose down.
+fn far_ahead() -> ControlInput {
+    let (sin, cos) = libm::sincosf(HEADING_RAD);
+    ControlInput::Waypoint(WaypointCommand {
+        position_m: Vec2::new(cos, sin) * 100.0,
+        altitude_m: HIGH_M,
+        ..Default::default()
+    })
+}
+
+/// In `Copter` with forward thrust on, a waypoint or land flies a blend at full lift share:
+/// the hover's attitude with its nose-down pitch held to the limit, the plane side at that roll
+/// and pitch, the pusher on the rest. Sticks, and forward thrust off, fly the hover alone.
+#[test]
+fn copter_flight_hands_nose_down_pitch_to_the_pusher() {
+    let land = ControlInput::Land(LandCommand {
+        position_m: Vec2::new(100.0, 0.0),
+    });
+    let limit_rad = ForwardThrustConfig::default().pitch_limit_rad;
+    // (case, gain, input, blended)
+    let cases = [
+        ("waypoint", 1.2, far_ahead(), true),
+        ("land", 1.2, land, true),
+        ("sticks", 1.2, sticks(0.6), false),
+        ("off", 0.0, far_ahead(), false),
+    ];
+    for (case, gain, input, blended) in cases {
+        let mut guidance = with_forward(gain);
+        let setpoint = guidance.guide(DT, FlightRegime::Copter, &input, &hovering());
+        let alone = with_forward(0.0).guide(DT, FlightRegime::Copter, &input, &hovering());
+        check!(mode(&guidance) == FlightMode::Copter, "{case}");
+        if !blended {
+            check!(setpoint == alone, "{case}");
+            continue;
+        }
+        let Setpoint::Attitude(hover) = alone else {
+            panic!("{case}: {alone:?}");
+        };
+        check!(hover.pitch_rad < -limit_rad, "{case}: {hover:?}");
+        let split = ForwardThrust::new(guidance.config().forward).split(hover.pitch_rad);
+        let blend = blend_of(setpoint);
+        check!(blend.lift_share == 1.0, "{case}");
+        check!(
+            blend.hover
+                == AttitudeSetpoint {
+                    pitch_rad: -limit_rad,
+                    ..hover
+                },
+            "{case}"
+        );
+        check!(blend.plane.roll_rad == hover.roll_rad, "{case}");
+        check!(blend.plane.pitch_rad == -limit_rad, "{case}");
+        check!(blend.plane.thrust == split.thrust, "{case}");
+        check!(blend.plane.thrust > 0.0, "{case}");
+    }
+}
+
+/// Params chain hover, plane, transition, forward thrust; a write lands in its part and in `config()`, and an
 /// invalid config changes nothing.
 #[test]
 fn params_and_config_chain_the_parts() {
@@ -370,12 +441,19 @@ fn params_and_config_chain_the_parts() {
     check!(guidance.config().plane.cruise_thrust == 0.4);
     check!(guidance.param_at(guidance.param_count()).is_none());
     check!(guidance.set_param("TRAN_FW_THR", 2.0).is_err());
+    check!(guidance.set_param("FWD_THR_GAIN", 1.2).is_ok());
+    check!(guidance.config().forward.gain == 1.2);
+    check!(guidance.param("FWD_PIT_LIM").is_some());
+    check!(guidance.set_param("FWD_PIT_LIM", 90.0).is_err());
 
     let mut bad = *guidance.config();
     bad.transition.lift_ramp_s = 0.0;
     let error = guidance.set_config(bad).map_err(|e| e.section);
     check!(error == Err(Some("transition")));
     check!(guidance.config().transition.lift_ramp_s > 0.0);
+    let mut bad = *guidance.config();
+    bad.forward.gain = -1.0;
+    check!(guidance.set_config(bad).map_err(|e| e.section) == Err(Some("forward")));
     let mut good = *guidance.config();
     good.transition.handoff_s = 1.0;
     check!(guidance.set_config(good).is_ok());

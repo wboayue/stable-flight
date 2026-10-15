@@ -21,9 +21,9 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
 - **Forward:** the lift rotors hold the hover while the pusher builds airspeed, then hand
   the lift to the wing over a fixed time.
 - **Back:** the pusher is cut, and the lift rotors take the lift back while drag slows it.
-- **Copter flight at speed:** nose down, the wing pushes down and sinks it
-  ([#427](https://github.com/wboayue/stable-flight/issues/427)). Keep copter legs short and
-  slow.
+- **Copter flight at speed:** tilted nose down, the wing at negative α pushes it down, and
+  tail first it can flip ([#427](https://github.com/wboayue/stable-flight/issues/427)).
+  Forward thrust hands the nose-down pitch to the pusher (below).
 
 ## Order
 
@@ -55,3 +55,24 @@ so push the throttle up to transition. Pitch is the plane guidance's, held to Ar
 transition limits (0 below 3 m/s of ground speed, ±3° waiting, ±8° on the ramp).
 
 Without a valid airspeed the lift ramp never starts, and the transition times out to copter.
+
+## Forward thrust
+
+On a waypoint or land, copter flight holds nose-down pitch to `FWD_PIT_LIM` and gives the
+pusher `FWD_THR_GAIN · tan(pitch)` the hover asked for, as ArduPilot's `Q_FWD_THR_GAIN` and
+`Q_FWD_PIT_LIM`. Piloted sticks keep their tilt. It's off until `FWD_THR_GAIN` is set.
+
+| Param | What it does | Raise it when | Lower it when |
+|---|---|---|---|
+| `FWD_THR_GAIN` | Pusher thrust per tan of the hover's nose-down pitch (0: off) | It can't hold position or fly upwind in wind | Copter legs overspeed and balloon |
+| `FWD_PIT_LIM` | Most nose-down pitch with forward thrust on | | It sinks at speed on copter legs |
+
+Start `FWD_THR_GAIN` at the weight over the pusher's most thrust (ArduPilot's rule), then raise
+it until it holds in the strongest wind it must fly in. Under the 27° waypoint tilt cap the
+pusher reaches only `FWD_THR_GAIN · tan 27°`, so the rule alone can leave it short.
+
+**Worked example (sim quadplane):** the rule gives 0.83 (4.5 kg, pusher 1.2× weight): it
+holds in an 11 m/s headwind but flies upwind at 0.6 m/s instead of 5. ArduPilot's default 2
+gets there but balloons 16 m on an uncapped 100 m leg. 1.2 flies the 11 m/s leg at 5 m/s and
+balloons 4 m at most
+([#427](https://github.com/wboayue/stable-flight/issues/427)).

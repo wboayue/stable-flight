@@ -391,8 +391,8 @@ stateDiagram-v2
 * **Blend for lift+cruise.** The lift rotors and the surfaces and pusher are separate
   actuators, so a transition flies both controllers at once (as PX4's standard VTOL and
   ArduPilot's SLT do): `QuadPlaneGuidance` emits `Setpoint::Blend` (a hover attitude, a plane
-  attitude, and the lift share) through a transition and either side's own setpoint outside
-  one; `QuadPlaneStabilizer` flies the lift rotors on `CopterStabilizer` (`thrust`,
+  attitude, and the lift share) through a transition, and in copter flight while forward
+  thrust is on (below), and either side's own setpoint otherwise; `QuadPlaneStabilizer` flies the lift rotors on `CopterStabilizer` (`thrust`,
   `moments`), weighted by the share, and the surfaces and pusher on `PlaneStabilizer`
   (`ControlOutput::cruise`), in full (PX4 `standard.cpp:294-368`), holding the surfaces
   neutral in a hover (PX4's `VT_ELEV_MC_LOCK`). A side that starts flying is primed.
@@ -409,6 +409,19 @@ stateDiagram-v2
   (+1.0/−0.7 m), or the plane's pitch on the elevator alone with the lift rotors holding 0,
   two controllers fighting over pitch (+0.6/−0.2 m). Going back the pusher is cut and drag
   alone slows it, both sides level (7.3 s, −0.5 m).
+* **Forward thrust in copter flight.** Tilted nose down to move ahead or hold into wind,
+  the wing at negative α pushes a quadplane down: on the sim, 13 m lost on a 100 m leg, and
+  no climb off the ground in an 11 m/s headwind; tail first it flips (#427). On a waypoint or
+  land, `ForwardThrust` holds nose-down pitch to `pitch_limit_rad` and gives the pusher
+  `gain · tan(pitch)`, ArduPilot's `Q_FWD_THR_USE` 1 (`ArduPlane/quadplane.cpp:2942-3058`),
+  flown as a blend at lift share 1; with it every leg and back transition on the sim loses at
+  most 2 m. Off by default, as ArduPilot and PX4 ship it. Rejected, with their numbers:
+  PX4's `(sin(limit) − sin(pitch)) · VT_FWD_THRUST_SC` (`vtol_type.cpp:510-516`), too weak
+  under the 27° tilt cap to hold or fly upwind in 8 m/s of wind (blown 150–250 m); a lower
+  tilt cap (10–15°), which fixes calm legs but leaves less lean than the 18° an 11 m/s
+  headwind needs; a cruise-speed cap, which bounds ground speed, not airspeed, so a 5 m/s
+  upwind leg in 8 m/s still crashes; and yawing toward the waypoint, which avoids the flip
+  but not the sink.
 
 ## Link Failsafe
 

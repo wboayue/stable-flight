@@ -70,7 +70,8 @@ on `airframes::plane()`, `tailsitter_*` on `airframes::tailsitter()`, `quadplane
 | `tailsitter_hover` | Takes off from its tail and holds a nose-up hover: within the copter's calm-air bands; near the waypoint in a steady 3 m/s wind on the belly or along the span; back after a 5 m/s gust either way (measured + margin) |
 | `tailsitter_transition` | Against PX4's VTOL limits (`vtol_att_control_params.yaml`), calm air: from a hover at 30 m, forward to plane flight within 15 s (`VT_TRANS_TIMEOUT`), then the line held within `plane_level`'s bands; back to a hover ahead on the line within 10 s (`VT_B_TRANS_DUR`), then held within the copter's calm-air bands; a forward transition ended by a `Copter` request, the timeout (`TransitionTimeout`), or an 8 m/s span gust past the roll limit (`RollError`); `Plane` requested below `min_height_m` refused (`BelowMinAltitude`) until it climbs past. Each loses at most 20 m (`VT_QC_T_ALT_LOSS`, until 5 s after). The back transition climbs at most 10.5 m (measured 9.5 m), hands over not sinking past the sink guard's limit, and keeps thrust above zero until 5 s after the handover; ramps at thrust 0.3 and 0.5, which stall nose-high, still hand over within those limits on the sink guard ([#343](https://github.com/wboayue/stable-flight/issues/343)). A fast ramp that arrives climbing keeps the hover's integrals through the handoff ([#326](https://github.com/wboayue/stable-flight/issues/326)) |
 | `quadplane_hover` | Takes off from its gear on the lift rotors and holds a hover within the copter's calm-air bands, the pusher stopped |
-| `quadplane_transition` | Against PX4's VTOL limits, as `tailsitter_transition`, calm air: from a hover at 30 m, forward to plane flight within 15 s (measured 8.2 s), then the line held within `plane_level`'s bands; back to a hover where it stops within 10 s (measured 7.3 s), then held within the copter's calm-air bands; a pusher too weak for the airspeed gate times out (`TransitionTimeout`); the link going silent mid-transition hands over to `HoldCommander`, back on the lift rotors, which holds where it engaged. Each loses at most 20 m (`VT_QC_T_ALT_LOSS`, until 5 s after) |
+| `quadplane_transition` | Against PX4's VTOL limits, as `tailsitter_transition`, calm air: from a hover at 30 m, forward to plane flight within 15 s (measured 8.2 s), then the line held within `plane_level`'s bands; back to a hover where it stops within 10 s (measured 7.3 s), then held within the copter's calm-air bands, and so are hover points 120 m ahead of and behind it, flown to after the handover; a pusher too weak for the airspeed gate times out (`TransitionTimeout`); the link going silent mid-transition hands over to `HoldCommander`, back on the lift rotors, which holds where it engaged. Each loses at most 20 m (`VT_QC_T_ALT_LOSS`, until 5 s after) |
+| `quadplane_waypoints` | Copter legs on the lift rotors from a hover at 30 m, each within PX4's 20 m altitude loss (`VT_QC_T_ALT_LOSS`) and then held within the copter's calm-air position and altitude bands: in calm air 100 m ahead, behind, and to the side, uncapped and at ArduPilot's 5 m/s `Q_WP_SPD`; in an 11 m/s headwind a takeoff and hold, and legs upwind and downwind at 5 m/s ([#427](https://github.com/wboayue/stable-flight/issues/427)) |
 | `determinism` | A windy, gusty route twice gives bit-identical states, clean and with every perturbation on (one seed); the airplane's line, the tailsitter's takeoff, transition to plane flight, and back, and the quadplane's takeoff to a hover through the same wind too |
 
 ## Timing
@@ -166,7 +167,8 @@ Inertia is `plane()`'s Aerosonde scaling at 4.5 kg; the lift rotors take `heavy_
 thrust-to-weight 2, lag, and yaw torque, the pusher `plane()`'s thrust-to-weight 1.2. It hovers
 on core's copter configs with roll and pitch gains from the sim autotune, and flies plane on
 `plane()`'s gains with the cruise thrust for its mass on the pusher. Transitions fly core's
-defaults.
+defaults. Copter flight hands nose-down pitch past 3° to the pusher (`ForwardThrust`, gain 1.2,
+as ArduPilot's `Q_FWD_THR_GAIN`), so the wing isn't flown at negative α.
 It stands in for the Alia 250 until the X-Plane backend reads its `.acf`
 ([#351](https://github.com/wboayue/stable-flight/issues/351)).
 
@@ -206,6 +208,5 @@ The quadplane leaves out the lift rotors' thrust change in axial and edgewise fl
 wash over the wing and tail, interference between rotor and wing, and the pusher's wash over
 the tail. The air from above in a climb meets the wing and tail broadside (α −90°), so its
 pitch moment noses the quadplane up as it climbs out; core's default rate gains don't hold it.
-Copter flight at speed fights the wing: nose down it sinks, and tail first at 10 m/s it flips
-([#427](https://github.com/wboayue/stable-flight/issues/427)), so the transition tests hover
-where the back transition stops.
+Without forward thrust, copter flight at speed fights the wing: nose down it sinks, and tail
+first at 10 m/s it flips ([#427](https://github.com/wboayue/stable-flight/issues/427)).
