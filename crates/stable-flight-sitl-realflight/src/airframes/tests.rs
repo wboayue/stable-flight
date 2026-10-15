@@ -225,3 +225,18 @@ fn titan_cobra_configs_validate() {
     assert_eq!(airframe.guidance.validate(), Ok(()));
     assert_eq!(airframe.stabilizer.validate(), Ok(()));
 }
+
+/// Steady nose-up moment (normalized) the Cobra needs to hover level in RealFlight, measured
+/// (#433): front motors 0.60, rear 0.52, over `TableMixer::quad_x`'s 0.1 pitch scaling.
+const MEASURED_HOVER_PITCH_MOMENT: f32 = 0.37;
+
+/// The pitch rate integrator can hold the Cobra's nose-heavy trim with 25% margin.
+#[test]
+fn titan_cobra_pitch_integrator_covers_the_hover_trim() {
+    let body_rate = titan_cobra().stabilizer.hover.body_rate;
+    let authority = body_rate.pitch_gains.i * body_rate.max_integral;
+    assert!(
+        authority >= 1.25 * MEASURED_HOVER_PITCH_MOMENT,
+        "pitch I authority {authority}"
+    );
+}
