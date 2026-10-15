@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Lift+cruise transition** (#391): `guidance::vtol::LiftTransition` (`LiftTransitionConfig`,
+  `LiftTransitionStep`), a quadplane's copter ⇄ plane state machine. Forward, the lift rotors
+  hold hover until a valid airspeed reaches the gate (default 9 m/s), then their lift share
+  ramps to 0 (5 s); without airspeed it times out to copter (15 s). Back, the share ramps to 1
+  (3 s), completing below a forward speed (5 m/s) or after 10 s. Params `TRAN_ASPD_MIN`,
+  `TRAN_FW_RAMP`, `TRAN_TIMEOUT`, `TRAN_MIN_HGT`, `TRAN_VT_RAMP`, `TRAN_VT_SPD`,
+  `TRAN_VT_TIMEOUT`, with metadata.
 - **Lift+cruise mixing** (#391): `MixRow::pusher` (a forward motor flying the cruise thrust,
   not desaturated with the lift motors; `MixRow::is_pusher`) and the `TableMixer::quadplane()`
   preset (`quad_x` lift rotors on motors 0–3, pusher on 4, `plane` surfaces on servos 0–2).

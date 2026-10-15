@@ -9,6 +9,9 @@
 //! [`View`](crate::View), flies view pitch `−tilt`; its plane controller flies airplane pitch
 //! `π/2 − tilt`.
 //!
+//! A lift+cruise VTOL (quadplane) stays level and flies both sides at once, trading lift
+//! between its lift rotors and its wing: [`LiftTransition`] is its state machine.
+//!
 //! # Modes
 //!
 //! The request is a level, so a repeated request finds the same row and a running ramp
@@ -66,9 +69,11 @@ use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
 use crate::math::{assert_dt, nose_up_cosine, saturate_throttle};
 use crate::{Configurable, FlightMode, FlightModeReport, FlightRegime, ModeRefusal, VehicleState};
 
+mod lift;
 mod params;
 mod tailsitter;
 
+pub use lift::{LiftTransition, LiftTransitionConfig, LiftTransitionStep};
 pub use tailsitter::{TailsitterGuidance, TailsitterGuidanceConfig};
 #[cfg(test)]
 mod tests;
@@ -239,11 +244,9 @@ pub struct Transition {
     back_done_cosine: f32,
     mode: FlightMode,
     refusal: Option<ModeRefusal>,
-    /// Why the last forward transition was abandoned, held until `Copter` is requested.
-    abandoned: Option<ModeRefusal>,
+    gate: ForwardGate,
     elapsed_s: f32,
     start_tilt_rad: f32,
-    home_altitude_m: f32,
 }
 
 impl Transition {
@@ -264,10 +267,9 @@ impl Transition {
             back_done_cosine,
             mode: FlightMode::Copter,
             refusal: None,
-            abandoned: None,
+            gate: ForwardGate::new(),
             elapsed_s: 0.0,
             start_tilt_rad: 0.0,
-            home_altitude_m: f32::NAN,
         }
     }
 
@@ -276,9 +278,8 @@ impl Transition {
     pub fn prime(&mut self, state: &VehicleState) {
         self.mode = FlightMode::Copter;
         self.refusal = None;
-        self.abandoned = None;
         self.elapsed_s = 0.0;
-        self.home_altitude_m = state.position_m.z;
+        self.gate.prime(state);
     }
 
     /// Moves toward `requested` and returns this tick's mode and tilt target.
@@ -300,7 +301,7 @@ impl Transition {
         match self.mode {
             FlightMode::Copter => match requested {
                 FlightRegime::Plane => self.try_forward(state, nose_up),
-                FlightRegime::Copter => self.abandoned = None,
+                FlightRegime::Copter => self.gate.clear(),
             },
             FlightMode::ToPlane => {
                 self.elapsed_s += dt;
@@ -381,7 +382,7 @@ impl Transition {
     /// is requested.
     fn abandon(&mut self, refusal: ModeRefusal) {
         self.mode = FlightMode::Copter;
-        self.abandoned = Some(refusal);
+        self.gate.abandon(refusal);
         self.refusal = Some(refusal);
     }
 
@@ -397,16 +398,7 @@ impl Transition {
 
     /// Starts `ToPlane` from `Copter`, or reports why it can't.
     fn try_forward(&mut self, state: &VehicleState, nose_up: f32) {
-        let height_m = state.position_m.z - self.home_altitude_m;
-        // A NaN height isn't high enough.
-        let high_enough = height_m.is_finite() && height_m >= self.config.min_height_m;
-        self.refusal = if self.abandoned.is_some() {
-            self.abandoned
-        } else if !high_enough {
-            Some(ModeRefusal::BelowMinAltitude)
-        } else {
-            None
-        };
+        self.refusal = self.gate.refusal(state, self.config.min_height_m);
         if self.refusal.is_none() {
             self.start(FlightMode::ToPlane, nose_up);
         }
@@ -469,6 +461,57 @@ impl Configurable for Transition {
         self.config = config;
         (self.forward_done_cosine, self.back_done_cosine) = done_cosines(&config);
         Ok(())
+    }
+}
+
+/// What starts a forward transition, shared by [`Transition`] and [`LiftTransition`]: height
+/// above the arming altitude, and no abandoned forward transition waiting on a `Copter`
+/// request.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ForwardGate {
+    /// The altitude at [`prime`](Self::prime); NaN before it, which no height clears.
+    home_altitude_m: f32,
+    /// Why the last forward transition was abandoned, held until `Copter` is requested.
+    abandoned: Option<ModeRefusal>,
+}
+
+impl ForwardGate {
+    fn new() -> Self {
+        ForwardGate {
+            home_altitude_m: f32::NAN,
+            abandoned: None,
+        }
+    }
+
+    /// `state`'s altitude as the height reference, and no abandoned transition.
+    fn prime(&mut self, state: &VehicleState) {
+        self.home_altitude_m = state.position_m.z;
+        self.abandoned = None;
+    }
+
+    /// Why a forward transition can't start in `state`, needing `min_height_m`: the abandoned
+    /// transition's refusal first, then `BelowMinAltitude`; `None` when it can.
+    fn refusal(&self, state: &VehicleState, min_height_m: f32) -> Option<ModeRefusal> {
+        let height_m = state.position_m.z - self.home_altitude_m;
+        // A NaN height isn't high enough.
+        let high_enough = height_m.is_finite() && height_m >= min_height_m;
+        if self.abandoned.is_some() {
+            self.abandoned
+        } else if !high_enough {
+            Some(ModeRefusal::BelowMinAltitude)
+        } else {
+            None
+        }
+    }
+
+    /// Holds `refusal` against forward transitions until [`clear`](Self::clear).
+    fn abandon(&mut self, refusal: ModeRefusal) {
+        self.abandoned = Some(refusal);
+    }
+
+    /// `Copter` was requested: an abandoned transition no longer holds.
+    fn clear(&mut self) {
+        self.abandoned = None;
     }
 }
 

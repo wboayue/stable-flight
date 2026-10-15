@@ -72,7 +72,7 @@ Guidance is the outer loop: it turns the commander's `ControlInput` into a `Setp
 let guidance = CopterGuidance::new(CopterGuidanceConfig::default());
 ```
 
-`PlaneGuidance` flies a fixed wing: stabilized sticks (bank and pitch, coordinated turns) or acro rates, offboard attitudes and rates, and waypoints (L1 lines through each, a loiter at the last). `TailsitterGuidance` hovers on `CopterGuidance` in `View::tailsitter`, flies plane on `PlaneGuidance`, and moves between them under `guidance::vtol::Transition` when the commander requests the other regime ([flight regimes](https://github.com/wboayue/stable-flight/blob/main/architecture.md#flight-regimes)).
+`PlaneGuidance` flies a fixed wing: stabilized sticks (bank and pitch, coordinated turns) or acro rates, offboard attitudes and rates, and waypoints (L1 lines through each, a loiter at the last). `TailsitterGuidance` hovers on `CopterGuidance` in `View::tailsitter`, flies plane on `PlaneGuidance`, and moves between them under `guidance::vtol::Transition` when the commander requests the other regime; `guidance::vtol::LiftTransition` is the lift+cruise VTOL's (quadplane) transition, trading lift between its lift rotors and its wing ([flight regimes](https://github.com/wboayue/stable-flight/blob/main/architecture.md#flight-regimes)).
 
 ### Stabilizer
 

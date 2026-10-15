@@ -361,6 +361,31 @@ stateDiagram-v2
 
 At each handoff the incoming side is primed and `ThrustHandoff` blends thrust over `handoff_s`.
 
+A lift+cruise VTOL (quadplane) stays level, so tilt can't mark its progress: its lift rotors
+and wing share the lift through a transition, and `guidance::vtol::LiftTransition` owns the
+mode and that lift share. Forward, the rotors hold the hover until a valid airspeed reaches
+`min_airspeed_mps`, then hand the lift to the wing linearly over `lift_ramp_s` (ArduPilot's
+SLT transition, `ArduPlane/quadplane.cpp:1480-1599`); without airspeed it never ramps and times
+out to copter, since the wing's speed is unknown. Back, the share ramps up over `back_ramp_s`
+and the transition completes once the forward ground speed (airspeed without a ground
+velocity) is below `back_speed_mps`, or after `back_timeout_s` (PX4,
+`vtol_att_control/standard.cpp:98-115`, `:250-254`). Height and abandonment are
+`Transition`'s, through one shared gate. Rejected: generalizing `Transition` with a completion
+policy, which would leave its tilt ramp, rates, and done angles meaningless for a quadplane
+and its config validated per kind.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Copter: arm (prime)
+    Copter --> ToPlane: plane requested, height ≥ min_height_m (lift share 1)
+    ToPlane --> ToPlane: airspeed ≥ min_airspeed_mps starts the lift ramp (1 → 0 over lift_ramp_s)
+    ToPlane --> Plane: lift ramp done (handoff)
+    ToPlane --> Copter: copter requested, timeout_s, or roll limit
+    Plane --> ToCopter: copter requested (lift share 0 → 1 over back_ramp_s)
+    ToCopter --> Plane: plane requested
+    ToCopter --> Copter: forward speed < back_speed_mps, back_timeout_s, or roll limit (handoff)
+```
+
 ## Link Failsafe
 
 A companion's link drops (late USB enumeration, brownouts, a crashed bridge), and the flight

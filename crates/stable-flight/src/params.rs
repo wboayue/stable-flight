@@ -106,6 +106,18 @@
 //! | `TRAN_HANDOFF` | `handoff_s` |
 //! | `TRAN_ROLL_MAX` | `roll_limit_rad` |
 //!
+//! # Lift transition ([`LiftTransitionConfig`](crate::guidance::vtol::LiftTransitionConfig))
+//!
+//! A lift+cruise VTOL's; names shared with the tailsitter's table mean the same.
+//!
+//! | Name | Field |
+//! |---|---|
+//! | `TRAN_ASPD_MIN` | `min_airspeed_mps` |
+//! | `TRAN_FW_RAMP` | `lift_ramp_s` |
+//! | `TRAN_TIMEOUT` | `timeout_s` |
+//! | `TRAN_MIN_HGT` | `min_height_m` |
+//! | `TRAN_VT_RAMP`, `TRAN_VT_SPD`, `TRAN_VT_TIMEOUT` | `back_ramp_s`, `back_speed_mps`, `back_timeout_s` |
+//!
 //! # Examples
 //!
 //! ```
