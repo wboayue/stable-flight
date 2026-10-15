@@ -193,7 +193,7 @@ pub fn explora_vtol()
                 // Sinking tail first slows the airflow over the elevons: at 3 m/s the nose
                 // swings ±20° on a 2.5 s cycle, at 2 m/s −8…+1°, at 1.5 m/s within 2° (#414).
                 // ArduPilot's and PX4's default descent rate (`AC_WPNav.cpp:13`,
-                // `multicopter_autonomous_params.yaml` `MPC_Z_V_AUTO_DN`).
+                // `multicopter_autonomous_params.yaml:71-76` `MPC_Z_V_AUTO_DN`).
                 max_descent_mps: 1.5,
                 ..CopterGuidanceConfig::default()
             },

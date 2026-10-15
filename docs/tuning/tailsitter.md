@@ -181,17 +181,17 @@ Across the descent, from the peak `altitude` down to the lower waypoint, read:
 - `elevon_*`: the swing's moment, short of ±1 if it's lag rather than lost authority;
 - `climb_mps`: the descent actually flown (screen the tick rate, below).
 
-Step `GUID_DESC_MAX` down by 0.5 m/s until `view_pitch` stays within a few degrees of its
-setpoint, and keep the fastest rate that does. Compare only seconds that ran at about 245 Hz or
-more: a slower tick rate slows the descent target too.
+To descend faster, raise `GUID_DESC_MAX` in 0.5 m/s steps. Keep the fastest rate whose worst
+`view_pitch` error stays within about 3°, and drop back a step at any swing. Compare only
+seconds that ran at about 245 Hz or more: a slower tick rate slows the descent target too.
 
 eXplora (#414), 60 m to 20 m, calm air:
 
-| `GUID_DESC_MAX` | Sink, mean | `view_pitch` | Elevon peak | Note |
-|---|---|---|---|---|
-| 3 m/s | 2.9 m/s | −23…+18°, 2.5 s cycle | 0.78 | thrust 0.82–0.94 at the nose-down peaks |
-| 2 m/s | 1.9 m/s | −8…+1° | 0.31 | |
-| **1.5 m/s** | 1.5 m/s | −3.5…−1.5° | 0.16 | chosen |
+| `GUID_DESC_MAX` | Sink, mean | `view_pitch` | Worst error | Elevon peak | Note |
+|---|---|---|---|---|---|
+| **1.5 m/s** | 1.5 m/s | −3.5…−1.5° | 1.5° | 0.16 | chosen |
+| 2 m/s | 1.9 m/s | −8…+1° | 6° | 0.31 | past 3°: back to 1.5 |
+| 3 m/s | 2.9 m/s | −23…+18°, 2.5 s cycle | 23° | 0.78 | thrust 0.82–0.94 at the nose-down peaks |
 
 Stiffer pitch rate gains (`STAB_RATE_PIT_P` 0.5, `_I` 0.2) at 3 m/s only cut the swing to
 about −12…+5°.
