@@ -322,8 +322,9 @@ impl<const N: usize> TableMixer<N> {
         Ok(Self { config, ..self })
     }
 
-    /// This mixer with every row's yaw factor negated: the same frame with every prop spinning
-    /// the other way (a model whose props turn opposite to the preset's).
+    /// This mixer with every motor row's yaw factor negated: the same frame with every prop
+    /// spinning the other way (a model whose props turn opposite to the preset's). Servo rows
+    /// keep theirs: a rudder or a tilt servo turns the same way whichever way the props spin.
     ///
     /// # Examples
     ///
@@ -334,10 +335,17 @@ impl<const N: usize> TableMixer<N> {
     /// let reversed = TableMixer::quad_x().with_reversed_yaw();
     /// assert_eq!(reversed.rows()[0].yaw(), 1.0);
     /// assert_eq!(reversed.rows()[0].roll(), 1.0);
+    ///
+    /// // A quadplane's rudder (servo 2, row 7) still turns the nose right.
+    /// let quadplane = TableMixer::quadplane().with_reversed_yaw();
+    /// assert_eq!(quadplane.rows()[7].yaw(), 1.0);
     /// ```
     pub fn with_reversed_yaw(self) -> Self {
         Self {
-            rows: self.rows.map(MixRow::with_reversed_yaw),
+            rows: self.rows.map(|row| match row.slot {
+                Slot::Motor(_) => row.with_reversed_yaw(),
+                Slot::Servo(_) => row,
+            }),
             ..self
         }
     }

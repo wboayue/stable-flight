@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `TableMixer::with_reversed_yaw()` and `MixRow::with_reversed_yaw()`: a preset for a model
-  whose props spin the other way (the X-Plane Alia 250 on `quad_x`, #351).
+  whose props spin the other way (the X-Plane Alia 250 on `quad_x` and `quadplane`, #351,
+  #392); the mixer's servo rows keep their yaw.
 - `TableMixer::quadplane_vtail()`: `quadplane` with two ruddervators in place of the elevator
   and rudder (pitch alike, yaw opposite ways); an A-tail flies it with its panels swapped (#433).
 - **Lift+cruise guidance and stabilizer** (#391): `guidance::vtol::QuadPlaneGuidance`
