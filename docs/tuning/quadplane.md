@@ -68,6 +68,25 @@ small-copter defaults don't carry over; measure first, then tune on a sim model 
   `GUID_LAT_POS_P` 0.2 and `GUID_LAT_VEL_P` 0.4, `_I` 0.05 hold a hover through a gust and fly waypoint legs to within
   lat/lon resolution.
 
+**Worked example (Alia 250 plane side, on the sim, #392):** the same route for the wing: fit a
+sim model to X-Plane's level flight, pulses, roll holds (`plane-probe-xplane`), and full-power
+climb, then tune on the model and pin the X-Plane airframe to it.
+- **Pitch I against pitch stability:** a stable wing (`Cm_α` −1.48) pushes back on any pitch
+  off trim, so a small rate I can't hold an attitude: px4xplane's 0.045 left trim 2° short and
+  held a 5° step at 27%. TECS's integrators hid it in waypoint flight, as slow pitch behind
+  turn dips and descent overshoot. `PSTAB_PIT_I` 0.5 and `PSTAB_PIT_P` 1 rise a 5° step in
+  0.85 s; the rate feedforward comes from the model (`rate_feedforward`).
+- **The gate against the wing:** with a pitch loop that tracks, a transition handed over below
+  the speed the wing holds level at (37.5 against 40 m/s) let TECS pull it into a stall: 296 m
+  lost. `TRAN_ASPD_MIN` at `PGUID_ASPD_MIN` (40 m/s) enters within 10–14 m; a higher gate waits
+  longer on the lift rotors (drag-limited, more pusher doesn't help).
+- **Pitch up below the stall:** at 24° (`PGUID_PIT_UP`, px4xplane's) a sinking entry held full
+  elevator and fell into a stall cycle to the ground once TECS damping or pitch P rose 1.5×.
+  15° holds with twice either.
+- **Roll within the ailerons:** full aileron gives about 17°/s (`Cl_p` from the roll holds);
+  asking 70°/s clipped them and overshot 15%. `PSTAB_RMAX_X` 15°/s and `PSTAB_TC_X` 0.6 s rise
+  a 20° bank in 1.2 s.
+
 **Worked example (Titan Cobra in RealFlight):**
 - **Hover:** nose-heavy on its lift rotors, a level hover holds front motors at 0.60 and rear
   at 0.52, a 0.37 nose-up moment; pitch rate I 0.5 holds it. The autotune raised roll rate P

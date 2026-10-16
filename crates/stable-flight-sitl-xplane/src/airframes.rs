@@ -4,6 +4,7 @@
 //! [`Airframe`] with the guidance and stabilizer configurations, the mixer, and the actuator
 //! mapping for one model, so examples (and any other wiring) share one tuned set.
 
+use stable_flight::Vec2;
 use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
     LateralControllerConfig, PlaneRateControllerConfig, RateGains, YawControllerConfig,
@@ -98,7 +99,7 @@ const ALIA_SURFACES: [SurfaceLink; 8] = [
 ///   aircraft nose left, on its wheels and in the air, the reverse of `quad_x`'s matching
 ///   pair. Thrust factor 0.8: at 0.9 a full moment moves each motor by 0.1 of command, about
 ///   0.8 rad/s² of roll, and the rate loops can't follow a step; the hover (0.648 per motor)
-///   stays under 0.8. It also caps the pusher at 0.8. Yaw ratio 1: at the default 2.5, a
+///   stays under 0.8. The pusher spans its full range (#448). Yaw ratio 1: at the default 2.5, a
 ///   full yaw drove one diagonal to its ceiling and the other near zero, the desaturation
 ///   gave up collective, and the Alia sank 53 m at full throttle (#351). At 1, the tail
 ///   weathervanes it past what yaw can hold at a few m/s sideways: the heading ran 50° off
@@ -113,19 +114,18 @@ const ALIA_SURFACES: [SurfaceLink; 8] = [
 ///   trims X-Plane's nose-up pitch at level thrust (2.2 °/s², which the sim leaves out).
 /// - **Hover thrust:** the liftoff throttle through the mixer's thrust factor and the thrust
 ///   curve.
-/// - **Plane and transitions:** px4xplane's Alia (`config/px4_params/5020_xplane_alia250`):
-///   airspeeds 32/55/75 m/s (`FW_AIRSPD_MIN`/`_TRIM`/`_MAX`; the `.acf` stalls at 60 kt),
-///   20° bank (`FW_R_LIM`), 24° pitch up (`FW_P_LIM_MAX`), 2° trim pitch (`FW_PSP_OFF`),
-///   cruise throttle 0.65 (`FW_THR_TRIM`), rate P and I (`FW_RR_*`, `FW_PR_*`, `FW_YR_*`,
-///   the same normalization as core's PX4 defaults), the pusher slew (`VT_PSHER_SLEW`),
-///   the back ramp (`VT_B_TRANS_RAMP`), and the 20 m least height (`VT_FW_MIN_ALT`). The
-///   lift ramp starts at `FW_AIRSPD_MIN`. The forward wait and the back transition get
-///   PX4's 45 s and 28 s (`VT_F_TRANS_DUR`, `VT_B_TRANS_DUR`): the pusher speeds up 2.9 t
-///   slowly, and only drag slows it back. The loiter radius is a 20° turn at trim
+/// - **Plane and transitions:** `stable-flight-sim`'s `alia250()`, tuned on a model fitted to
+///   this aircraft's level flight, pulses, roll holds, and full-power climb (#392), pinned by a
+///   test: trim 45 m/s and airspeeds 40–60 m/s (the band X-Plane holds level), the transition
+///   gate at 40 m/s, 15° pitch up (below the stall), 7° trim pitch, the rate gains (pitch I 0.5
+///   and P 1 against the wing's pitch stability, feedforward from the model, roll asking at
+///   most 15°/s of the ailerons' 17°/s), and total energy control's climb, sink, and pitch
+///   damping. X-Plane's own: the cruise thrust, the pusher it held level at 45 m/s (0.72,
+///   `plane-probe-xplane`). Bank (20°, `FW_R_LIM`), the pusher slew (`VT_PSHER_SLEW`), the
+///   back ramp (`VT_B_TRANS_RAMP`), the 20 m least height (`VT_FW_MIN_ALT`), and PX4's 45 s
+///   and 28 s transition limits (`VT_F_TRANS_DUR`, `VT_B_TRANS_DUR`) are px4xplane's Alia
+///   (`config/px4_params/5020_xplane_alia250`). The loiter radius is a 20° turn at trim
 ///   airspeed, about 850 m.
-/// - **Total energy control:** ArduPilot's defaults, with the climb at full thrust and the
-///   sink at least thrust of `stable-flight-sim`'s `alia250()` (1.8 and 3.5 m/s), fitted to
-///   X-Plane's level flight and full-power climb.
 ///
 /// # Examples
 ///
@@ -134,7 +134,7 @@ const ALIA_SURFACES: [SurfaceLink; 8] = [
 ///
 /// let airframe = airframes::alia250();
 /// assert_eq!(airframe.mapping.motors[..5], [Some(1), Some(0), Some(2), Some(3), Some(4)]);
-/// assert_eq!(airframe.stabilizer.plane.trim_airspeed_mps, 55.0);
+/// assert_eq!(airframe.stabilizer.plane.trim_airspeed_mps, 45.0);
 /// ```
 pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig, TableMixer<8>> {
     let plane_rate = PlaneRateControllerConfig::default();
@@ -143,17 +143,16 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
             hover: alia250_hover_guidance(),
             plane: PlaneGuidanceConfig {
                 max_bank_rad: 20.0f32.to_radians(),
-                max_pitch_up_rad: 24.0f32.to_radians(),
-                trim_pitch_rad: 2.0f32.to_radians(),
+                max_pitch_up_rad: 15.0f32.to_radians(),
+                trim_pitch_rad: 7.0f32.to_radians(),
                 cruise_thrust: ALIA_CRUISE_THROTTLE,
                 // `NPFG_PERIOD` 40.
                 l1_period_s: 40.0,
                 loiter_radius_m: 850.0,
-                // Climb at full thrust and sink at least thrust from `stable-flight-sim`'s
-                // `alia250()`, fitted to X-Plane's (#392).
                 tecs: TecsConfig {
                     max_climb_mps: 1.8,
                     min_sink_mps: 3.5,
+                    pitch_damping: 0.5,
                     min_airspeed_mps: ALIA_MIN_AIRSPEED_MPS,
                     max_airspeed_mps: ALIA_MAX_AIRSPEED_MPS,
                     ..TecsConfig::default()
@@ -178,22 +177,24 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                     roll: RateGains {
                         p: 0.47,
                         i: 0.05,
-                        ..plane_rate.roll
+                        ff: 3.288,
                     },
                     pitch: RateGains {
-                        p: 0.52,
-                        i: 0.045,
-                        ..plane_rate.pitch
+                        p: 1.0,
+                        i: 0.5,
+                        ff: 0.9068,
                     },
                     yaw: RateGains {
                         p: 0.1,
                         i: 0.12,
-                        ..plane_rate.yaw
+                        ff: 3.570,
                     },
                     ..plane_rate
                 },
+                time_constant_s: Vec2::new(0.6, 0.4),
+                max_attitude_rate_radps: Vec2::new(15.0f32.to_radians(), 60.0f32.to_radians()),
                 max_bank_rad: 20.0f32.to_radians(),
-                trim_airspeed_mps: 55.0,
+                trim_airspeed_mps: 45.0,
                 min_airspeed_mps: ALIA_MIN_AIRSPEED_MPS,
                 max_airspeed_mps: ALIA_MAX_AIRSPEED_MPS,
                 ..PlaneStabilizerConfig::default()
@@ -207,14 +208,14 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
     }
 }
 
-/// px4xplane's `FW_AIRSPD_MIN`: the plane side's slowest, and where the lift ramp starts.
-const ALIA_MIN_AIRSPEED_MPS: f32 = 32.0;
+/// The plane side's slowest, and where the lift ramp starts: the sim `alia250()`'s.
+const ALIA_MIN_AIRSPEED_MPS: f32 = 40.0;
 
-/// px4xplane's `FW_AIRSPD_MAX`: the plane side's fastest.
-const ALIA_MAX_AIRSPEED_MPS: f32 = 75.0;
+/// The plane side's fastest: the sim `alia250()`'s.
+const ALIA_MAX_AIRSPEED_MPS: f32 = 60.0;
 
-/// px4xplane's `FW_THR_TRIM`: the pusher's engine throttle in level cruise at trim airspeed.
-const ALIA_CRUISE_THROTTLE: f32 = 0.65;
+/// The pusher X-Plane holds level at the 45 m/s trim (`plane-probe-xplane`, #392).
+const ALIA_CRUISE_THROTTLE: f32 = 0.72;
 
 /// The Alia's mixer: see [`alia250`].
 // TODO(#440): a higher yaw ratio once yaw yields to collective in the mixer.
