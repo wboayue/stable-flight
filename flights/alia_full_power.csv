@@ -1,0 +1,12 @@
+# Alia 250 at full power in X-Plane (`quadplane-auto-xplane --param PGUID_THR_MIN=1`), from
+# Oceano County Airport (L52), over the ocean: climb straight up to 250 m, transition, a leg west
+# climbing to 600 m (the full-power climb), a leg south level at 600 m (the top level speed), a
+# leg east descending to 300 m, a leg north that starts the back transition, and hover home.
+# Coordinates are m north and east of the anchor; altitudes are above sea level.
+x,y,altitude,cruise_speed,regime
+0.0,0.0,250.0,3.0,copter
+0.0,-8000.0,600.0,45.0,plane
+-5000.0,-8000.0,600.0,45.0,plane
+-5000.0,-3000.0,300.0,45.0,plane
+0.0,-3000.0,300.0,45.0,plane
+0.0,0.0,60.0,10.0,copter
