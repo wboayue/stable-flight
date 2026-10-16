@@ -467,3 +467,38 @@ fn rejects_an_invalid_config() {
     config.transition.forward_thrust = 2.0;
     QuadPlaneGuidance::new(config);
 }
+
+/// Entering `Plane` out of the forward transition, the plane guidance starts fresh: its first
+/// setpoint's pitch is a newly primed plane guidance's on the same input and state, not what
+/// its total energy control built flying the transition from no airspeed (#454: the X-Plane
+/// Alia entered at full nose-down and dove 90 m).
+#[test]
+fn plane_guidance_starts_fresh_entering_plane() {
+    let config = QuadPlaneGuidanceConfig::default();
+    let climb = ControlInput::Waypoint(WaypointCommand {
+        position_m: Vec2::new(500.0, 0.0),
+        velocity_mps: Some(Vec2::new(FAST_MPS, 0.0)),
+        altitude_m: HIGH_M + 10.0,
+        cruise_speed_mps: FAST_MPS + 3.0,
+    });
+    let mut guidance = primed();
+    // Slow first: the plane guidance flies the transition with no airspeed.
+    fly(&mut guidance, 2.0, FlightRegime::Plane, &climb, &hovering());
+    check!(mode(&guidance) == FlightMode::ToPlane);
+    let entry = (0..1000)
+        .find_map(|_| {
+            let setpoint = guidance.guide(DT, FlightRegime::Plane, &climb, &fast());
+            (mode(&guidance) == FlightMode::Plane).then_some(setpoint)
+        })
+        .expect("enters Plane");
+    let Setpoint::Plane(entry) = entry else {
+        panic!("plane flight gives a plane setpoint: {entry:?}");
+    };
+
+    let mut fresh = PlaneGuidance::new(config.plane);
+    fresh.prime(&fast());
+    let Setpoint::Plane(expected) = fresh.guide(DT, FlightRegime::Plane, &climb, &fast()) else {
+        panic!("waypoints give plane attitudes");
+    };
+    assert_relative_eq!(entry.pitch_rad, expected.pitch_rad, epsilon = 1e-6);
+}

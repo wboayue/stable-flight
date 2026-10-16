@@ -328,8 +328,8 @@ fn validates_config() {
     }
 }
 
-/// The airspeed rate comes from the airspeed itself: a spike in the backend's acceleration
-/// moves nothing (RealFlight's moved the eXplora's pitch 14° in a tick, #454).
+/// The airspeed rate comes from the airspeed itself: the backend's acceleration, however it
+/// reads, moves nothing.
 #[test]
 fn airspeed_rate_ignores_the_backends_acceleration() {
     let config = TecsConfig::default();
