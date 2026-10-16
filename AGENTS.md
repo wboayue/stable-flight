@@ -202,6 +202,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   The FC side of the link is `FcLink`, in tests and examples alike. A MAVLink connection is
   `stable_flight_mavlink::testing::MockConnection`. Mock other traits by hand (e.g.
   `MockRealFlightBridge`); `mockall` isn't a dependency.
+- A change that keeps existing airframes flying as before while changing a unit or a scale
+  (#448's pusher range) pins their old actuator commands in a test.
 - A test that guards a fix must fail without it: revert or mutate the fix locally, and say so
   in the PR. A check whose threshold reads the mutated config can fail for the wrong reason
   (a sink limit of 0 turns "not sinking past the limit" into "not sinking"): name the
@@ -242,11 +244,16 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   commit in a throwaway worktree. With `--end land` the example keeps running on the ground:
   stop it (below) before the next run. The same settings can hand a back transition over
   climbing or sinking (+1.7 vs −1.3 m/s, #404), so fly several runs and compare runs with a
-  matched handover.
+  matched handover. `--end land` starts the landing inside the follower's 0.8 m altitude
+  acceptance, so a dip below the last waypoint shows only with `--end hold` (#403). Tune from
+  scripts, not sticks: a stick's throttle flies a quadplane's pusher in plane and its lift
+  rotors in copter, so a back transition hands full throttle to the lift (#392).
 - **Tick rate:** count the `wall_s` rows per wall-clock second around the event a run measures,
   and drop a run below about 245 Hz there: each tick advances every `dt`-based clock by the
   nominal 4 ms, so at 170 Hz a 3 m/s descent target moves at 2 m/s (#405). A release build
-  (`cargo run --release ...`) skips less but doesn't stop it.
+  (`cargo run --release ...`) skips less but doesn't stop it. RealFlight flips between 250 and
+  about 120 Hz on its own, for either build (#447): alternate the builds being compared and
+  screen every run before blaming one.
 - **Explaining a trace:** before suspecting a bug, replay the recorder CSV through the real
   component (state rebuilt from the view angles, nominal `dt` per tick) and compare its output
   with the recorded setpoint; the hover guidance reproduces it exactly (#405).
@@ -255,6 +262,14 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 - **Stopping:** Ctrl-C or SIGTERM (`ShutdownSignal`), so `RealFlightVehicle` hands RC back to
   RealFlight. A kill leaves "Preexisting controller reference" on the next run and truncates
   capture CSVs.
+- **X-Plane:** a `CMND` of `sim/operation/reset_flight` to UDP 49000 puts the aircraft back at
+  its flight start, where scripts are anchored; `capture-state-xplane` reads where it is
+  without taking control. Fly plane legs over water (`flights/alia_transition_lap.csv` starts
+  at Oceano, L52): until #450 and #451, a sinking or missed plane leg flies on into terrain,
+  so watch scripted plane flight and stop it below a floor or past its last plane waypoint.
+  Copter legs keep the heading the vehicle armed with, sideways or tail first, so start a
+  route with a climb over the spawn. The D-pad doesn't hold a plane request under X-Plane
+  (#446): transition from a script.
 - **Disconnects:** flight examples reconnect on their own and log "Reconnected to RealFlight"
   (`capture-state-realflight` doesn't). The runner drops time lost to a stall over 100 ms, so
   heavy skipping (`ticks skipped` in its exit log) slows every `dt`-based clock (**Tick
@@ -353,6 +368,9 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 7. Before planning a fix to flight behavior, measure the candidates (settings and designs) on
    the sim with a throwaway `#[ignore]` sweep test in a scratch worktree, and put the table in
    the plan. Rejected designs go in the PR with their numbers.
+8. Tune a new airframe's loops on a sim model sized from it (the `.acf` or its measurements,
+   plus probe flights), then confirm in RealFlight or X-Plane: trial there confounds coupled
+   loops and ends in crashes (the Alia's hover from a model, #351; its plane side, #392).
 
 ## Pre-PR checklist
 
