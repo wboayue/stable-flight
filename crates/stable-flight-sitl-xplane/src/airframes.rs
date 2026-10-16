@@ -79,13 +79,14 @@ const ALIA_THRUST_CURVE_EXPONENT: f32 = 1.5;
 /// assert_eq!(airframe.mapping.idle_engines, &[4]);
 /// ```
 pub fn alia250() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, TableMixer<4>> {
+    let defaults = CopterStabilizerConfig::default();
     let rate = |p| Gains { p, i: 0.2, d: 0.0 };
+    // Core's angle I; no D, as the autotune ran.
     let angle = Gains {
         p: 1.03,
-        i: 0.0,
         d: 0.0,
+        ..defaults.attitude.roll_gains
     };
-    let defaults = CopterStabilizerConfig::default();
     Airframe {
         guidance: CopterGuidanceConfig {
             altitude: AltitudeControllerConfig {

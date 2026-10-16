@@ -14,6 +14,27 @@ fn engines(command: &ActuatorCommand) -> [f32; 5] {
     throttles
 }
 
+/// The gains, mixer, and thrust law are the sim Alia's, which the autotune tuned (`stable-flight-sim`
+/// `tests/alia.rs`); X-Plane's own addition is the roll and pitch rate I that trims its nose-up
+/// pitch, which the sim leaves out.
+#[test]
+fn alia250_flies_the_sim_alias_tune() {
+    let sim = stable_flight_sim::airframes::alia250();
+    let mut xplane = alia250();
+    check!(xplane.stabilizer.body_rate.roll_gains.i == 0.2);
+    check!(xplane.stabilizer.body_rate.pitch_gains.i == 0.2);
+    xplane.stabilizer.body_rate.roll_gains.i = 0.0;
+    xplane.stabilizer.body_rate.pitch_gains.i = 0.0;
+
+    check!(xplane.stabilizer == sim.stabilizer);
+    check!(xplane.mixer == sim.mixer);
+    // Worked out each its own way from the same liftoff throttle.
+    let hover = xplane.guidance.altitude.hover_thrust;
+    check!((hover - sim.guidance.altitude.hover_thrust).abs() < 1e-4);
+    xplane.guidance.altitude.hover_thrust = sim.guidance.altitude.hover_thrust;
+    check!(xplane.guidance == sim.guidance);
+}
+
 #[test]
 fn alia250_is_valid() {
     let airframe = alia250();
