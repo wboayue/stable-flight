@@ -13,9 +13,10 @@
 //!   moved pitch 14° in a tick on it, #454), and PX4 drops its acceleration term for bias
 //!   (`FwLateralLongitudinalControl.cpp:408-410`).
 //! - **Demands:** the height demand slews toward the target at the climb and sink limits, the
-//!   airspeed demand at half the climb's energy rate over `V` (AP:502-521, 550-580); each
-//!   demand's slope is its rate's feedforward, and each error over the time constant its
-//!   proportional term (AP:735). The airspeed demand stays within the least and most
+//!   airspeed demand at half the climb's energy rate over `V` (AP:502-521, 550-580). The
+//!   slewed height demand then runs through a 3 s lag (AP:577), whose slope is the height
+//!   rate's feedforward; the airspeed's rate demand is its error alone, as PX4's
+//!   (PX4:320-325). Each error over the time constant is a proportional term (AP:735). The airspeed demand stays within the least and most
 //!   airspeed, and starts there: seeded at a stalled speed it would hold the stall. The height
 //!   demand stays within one time constant's climb or sink of the aircraft, so a climb it can't
 //!   make doesn't run the demand away; ArduPilot instead stops advancing the demand while pitch
@@ -39,6 +40,12 @@ use crate::{GRAVITY, VehicleState};
 
 #[cfg(test)]
 mod tests;
+
+/// Time constant of the height demand's lag after its slew, in s: ArduPilot's
+/// `TECS_HDEM_TCONST` default (AP:292). The lag keeps the demand's rate continuous where the
+/// slew starts and stops; without it the rate steps by the whole climb limit in one tick, and
+/// the eXplora's pitch setpoint jumped 28° in RealFlight (#454).
+const HEIGHT_DEMAND_TC_S: f32 = 3.0;
 
 /// Time constant of the airspeed rate's low-pass, in s (AP:740-746 filters its damping at
 /// about 0.5 s).
@@ -189,6 +196,9 @@ pub(crate) struct Limits {
 /// Height and airspeed demands, slewed toward the targets.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Demand {
+    /// The height demand slewed at the climb and sink limits, in m.
+    slewed_height_m: f32,
+    /// The slewed demand through a [`HEIGHT_DEMAND_TC_S`] lag, in m: the demand flown.
     height_m: f32,
     airspeed_mps: f32,
 }
@@ -277,29 +287,35 @@ impl Tecs {
         let max_mps = config.max_airspeed_mps.max(min_mps);
         let tau = config.time_constant_s;
         let previous = *self.demand.get_or_insert(Demand {
+            slewed_height_m: height_m,
             height_m,
             // A demand below the least airspeed would hold a stall (AP clamps it the same way).
             airspeed_mps: airspeed_mps.clamp(min_mps, max_mps),
         });
 
-        // Height: slewed at the climb and sink limits, and kept within one time constant's
-        // climb or sink of the aircraft so an unreachable climb doesn't run away from it.
-        let slewed_m = previous.height_m
-            + (altitude_m - previous.height_m)
-                .clamp(-config.max_sink_mps * dt, config.max_climb_mps * dt);
-        let height_rate_mps = (slewed_m - previous.height_m) / dt;
-        let demand_height_m = slewed_m.clamp(
+        // Height: slewed at the climb and sink limits, kept within one time constant's climb
+        // or sink of the aircraft so an unreachable climb doesn't run away from it, then
+        // lagged; the lagged demand's slope is the height rate's feedforward.
+        let slewed_m = (previous.slewed_height_m
+            + (altitude_m - previous.slewed_height_m)
+                .clamp(-config.max_sink_mps * dt, config.max_climb_mps * dt))
+        .clamp(
             height_m - tau * config.max_sink_mps,
             height_m + tau * config.max_climb_mps,
         );
+        let demand_height_m =
+            previous.height_m + (slewed_m - previous.height_m) * (dt / HEIGHT_DEMAND_TC_S).min(1.0);
+        let height_rate_mps = (demand_height_m - previous.height_m) / dt;
 
-        // Airspeed: slewed at half the climb's energy rate over V (AP:502).
+        // Airspeed: slewed at half the climb's energy rate over V (AP:502). Its rate demand is
+        // the error over the time constant alone, as PX4's (PX4:320-325): the slew's slope
+        // would step where it stops.
         let max_accel_mps2 = 0.5 * config.max_energy_rate() / speed_mps;
         let target_mps = airspeed_target_mps.clamp(min_mps, max_mps);
         let demand_airspeed_mps = previous.airspeed_mps
             + (target_mps - previous.airspeed_mps).clamp(-max_accel_mps2 * dt, max_accel_mps2 * dt);
-        let accel_demand_mps2 = (demand_airspeed_mps - previous.airspeed_mps) / dt;
         self.demand = Some(Demand {
+            slewed_height_m: slewed_m,
             height_m: demand_height_m,
             airspeed_mps: demand_airspeed_mps,
         });
@@ -320,7 +336,7 @@ impl Tecs {
             potential_rate_demand: (GRAVITY * height_rate_mps + potential_error / tau)
                 .clamp(config.least_energy_rate(), config.max_energy_rate()),
             kinetic_rate_demand: clamp_symmetric(
-                speed_mps * accel_demand_mps2 + kinetic_error / tau,
+                kinetic_error / tau,
                 0.5 * config.max_energy_rate(),
             ),
             speed_mps,

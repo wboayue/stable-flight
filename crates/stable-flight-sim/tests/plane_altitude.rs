@@ -19,24 +19,23 @@ const STEP_WINDOW_S: f32 = 60.0;
 /// Step size, either way, in m.
 const STEP_M: f32 = 20.0;
 
-/// Most overshoot past the new altitude, in m. Measured 0.2 m up and 1.1 m down (a slow sag
-/// the integrals take back); 2 m leaves about 2× margin.
-const OVERSHOOT_M: f32 = 2.0;
+/// Most overshoot past the new altitude, in m. Measured 0.12 m up and 0.04 m down; 0.5 m
+/// leaves 4× margin. Separate altitude and airspeed loops overshot 1.6 and 1.3 m.
+const OVERSHOOT_M: f32 = 0.5;
 
 /// Seconds until the altitude stays within [`ALTITUDE_BAND_M`] of the new altitude. Measured
-/// 4.1 s up (the 5 m/s climb limit alone takes 4 s) and 14.8 s down, where the sag past the
-/// altitude just crosses the band and the integrals take it back; 20 s leaves about 1.35×
-/// margin.
-const SETTLE_S: f32 = 20.0;
+/// 9.5 s up and 8.3 s down (the 5 m/s climb limit alone takes 4 s; the height demand's lag
+/// rounds off the approach); 12 s leaves about 1.25× margin.
+const SETTLE_S: f32 = 12.0;
 
-/// Most the altitude moves the wrong way first, in m. Measured 0.1 m (climbing trades a little
-/// height for speed first); 1 m leaves 10× margin.
-const WRONG_WAY_M: f32 = 1.0;
+/// Most the altitude moves the wrong way first, in m. Measured 0.11 m (climbing trades a
+/// little height for speed first); 0.5 m leaves about 4× margin.
+const WRONG_WAY_M: f32 = 0.5;
 
 /// Largest airspeed error through the step, in m/s: the energy trade the separate loops
-/// couldn't make. Measured 1.5 m/s up and 1.3 m/s down; 2 m/s leaves about 1.35× margin. Separate altitude and
-/// airspeed loops lost 2.5 and 3.0 m/s.
-const AIRSPEED_ERROR_MPS: f32 = 2.0;
+/// couldn't make. Measured 0.83 m/s up and 1.03 m/s down; 1.5 m/s leaves about 1.45× margin.
+/// Separate altitude and airspeed loops lost 2.5 and 3.0 m/s.
+const AIRSPEED_ERROR_MPS: f32 = 1.5;
 
 /// What a step did: overshoot past the new altitude (m, in the step's direction), seconds
 /// until it stays within [`ALTITUDE_BAND_M`], the most it moved the wrong way (m), and the

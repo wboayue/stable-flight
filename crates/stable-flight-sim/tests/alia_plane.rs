@@ -66,7 +66,7 @@ fn line(altitude_m: f32, airspeed_mps: f32, seconds: f32) -> Vec<(f32, f32, f32)
 /// Level flight holds without a limit cycle: within #454's ±5 m and 1.5 m/s of climb rate over
 /// the last two minutes. Separate altitude and airspeed loops swung ±10–15 m and ±7–11 m/s at
 /// about 8 s in X-Plane (#392), 290–305 m and 5.6 m/s here; total energy control holds
-/// 299.6–300.3 m and 0.2 m/s.
+/// 299.7–300.1 m and 0.1 m/s.
 #[test]
 fn alia250_holds_level_flight() {
     let airframe = airframes::alia250();
@@ -93,7 +93,8 @@ fn alia250_holds_level_flight() {
 /// Asked to climb 150 m at 40 m/s, the pitch limit can't make the climb alone: thrust rises
 /// to full and it climbs, at least 1 m/s over the last minute (#454). Separate loops sank
 /// instead, the airspeed loop cutting the pusher (X-Plane 262 → 149 m; here into the ground);
-/// total energy control climbs 1.9 m/s, the model's full-power climb (X-Plane 2.4 m/s).
+/// total energy control climbs 1.7 m/s, near the model's full-power climb (1.9 m/s at
+/// 40.8 m/s; X-Plane 2.4 m/s).
 #[test]
 fn alia250_climbs_at_the_pitch_limit() {
     let ticks = line(450.0, 40.0, 90.0);
