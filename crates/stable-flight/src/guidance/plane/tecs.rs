@@ -8,6 +8,10 @@
 //! described, not copied:
 //!
 //! - **Energies:** potential `g·h`, kinetic `½V²`, and their rates `g·ḣ` and `V·V̇` (AP:681-695).
+//!   `V̇` is the airspeed's own derivative through a 0.5 s low-pass, about the filter ArduPilot
+//!   puts on its damping term (AP:740-746): a backend's acceleration spikes (RealFlight's eXplora
+//!   moved pitch 14° in a tick on it, #454), and PX4 drops its acceleration term for bias
+//!   (`FwLateralLongitudinalControl.cpp:408-410`).
 //! - **Demands:** the height demand slews toward the target at the climb and sink limits, the
 //!   airspeed demand at half the climb's energy rate over `V` (AP:502-521, 550-580); each
 //!   demand's slope is its rate's feedforward, and each error over the time constant its
@@ -35,6 +39,10 @@ use crate::{GRAVITY, VehicleState};
 
 #[cfg(test)]
 mod tests;
+
+/// Time constant of the airspeed rate's low-pass, in s (AP:740-746 filters its damping at
+/// about 0.5 s).
+const AIRSPEED_RATE_TC_S: f32 = 0.5;
 
 /// Below this airspeed, in m/s, `V·g` stops shrinking: the pitch terms stay finite at a stall.
 const MIN_GAIN_AIRSPEED_MPS: f32 = 3.0;
@@ -195,6 +203,8 @@ pub(crate) struct Tecs {
     /// Thrust integral, a thrust share.
     thrust_integral: f32,
     underspeed: bool,
+    /// Low-passed airspeed, in m/s: the airspeed rate is the gap to it over the time constant.
+    filtered_airspeed_mps: Option<f32>,
 }
 
 /// Energy rates and errors of one step, specific (per unit mass): m²/s² and m²/s³.
@@ -294,18 +304,12 @@ impl Tecs {
             airspeed_mps: demand_airspeed_mps,
         });
 
-        // The airspeed's rate, as the acceleration along the flight path (wind steady).
-        let ground_mps = state.velocity_mps.norm();
-        let accel_mps2 = if ground_mps > MIN_GAIN_AIRSPEED_MPS {
-            state.acceleration_mps2.dot(&state.velocity_mps) / ground_mps
-        } else {
-            0.0
-        };
-        let accel_mps2 = if accel_mps2.is_finite() {
-            accel_mps2
-        } else {
-            0.0
-        };
+        // The airspeed's rate: its gap to a low-pass of it over the time constant (a filtered
+        // derivative).
+        let filtered_mps = *self.filtered_airspeed_mps.get_or_insert(airspeed_mps);
+        let accel_mps2 = (airspeed_mps - filtered_mps) / AIRSPEED_RATE_TC_S;
+        self.filtered_airspeed_mps =
+            Some(filtered_mps + (airspeed_mps - filtered_mps) * (dt / AIRSPEED_RATE_TC_S).min(1.0));
 
         let potential_error = GRAVITY * (demand_height_m - height_m);
         let kinetic_error =
