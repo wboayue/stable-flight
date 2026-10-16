@@ -302,3 +302,44 @@ fn validates_config() {
         check!(error.field == field, "{error:?}");
     }
 }
+
+/// The airspeed rate comes from the airspeed itself: a spike in the backend's acceleration
+/// moves nothing (RealFlight's moved the eXplora's pitch 14° in a tick, #454).
+#[test]
+fn airspeed_rate_ignores_the_backends_acceleration() {
+    let config = TecsConfig::default();
+    let calm = level(30.0, 15.0, 0.0);
+    let spiking = VehicleState {
+        acceleration_mps2: Vec3::new(8.0, 0.0, -5.0),
+        ..calm
+    };
+    let (mut quiet, mut noisy) = (Tecs::default(), Tecs::default());
+    for _ in 0..50 {
+        let a = quiet.step(DT, &config, &limits(), (35.0, 16.0), 15.0, &calm);
+        let b = noisy.step(DT, &config, &limits(), (35.0, 16.0), 15.0, &spiking);
+        check!(a == b);
+    }
+}
+
+/// On an airspeed ramp, the rate settles on the ramp's slope within a few time constants.
+#[test]
+fn airspeed_rate_follows_a_ramp() {
+    let mut tecs = Tecs::default();
+    let slope_mps2 = 0.5;
+    let mut airspeed_mps = 15.0;
+    let steps = (5.0 * AIRSPEED_RATE_TC_S / DT) as usize;
+    for _ in 0..steps {
+        tecs.step(
+            DT,
+            &TecsConfig::default(),
+            &limits(),
+            (30.0, 15.0),
+            airspeed_mps,
+            &level(30.0, airspeed_mps, 0.0),
+        );
+        airspeed_mps += slope_mps2 * DT;
+    }
+    let filtered = tecs.filtered_airspeed_mps.expect("seeded");
+    let rate = (airspeed_mps - slope_mps2 * DT - filtered) / AIRSPEED_RATE_TC_S;
+    assert_relative_eq!(rate, slope_mps2, max_relative = 0.05);
+}
