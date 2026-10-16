@@ -1,4 +1,4 @@
-//! The Alia 250 ([`airframes::alia250`]), a full-size multirotor: its autotune converges on
+//! The Alia 250's hover ([`airframes::alia250_hover`]), a full-size multirotor: its autotune converges on
 //! the large-aircraft plan (`common::large`), every loop meets the autotune's overshoot and
 //! bounce-back bands on that plan's steps, and it holds a hover through a gust.
 
@@ -20,7 +20,7 @@ const AGREEMENT: f32 = 0.25;
 
 /// The Alia with every rate P at `rate_p`, every angle P at `angle_p`, and no rate D.
 fn started_from(rate_p: f32, angle_p: f32) -> Airframe {
-    common::retuned(airframes::alia250(), |target, gains| Gains {
+    common::retuned(airframes::alia250_hover(), |target, gains| Gains {
         p: if target.is_rate() { rate_p } else { angle_p },
         d: 0.0,
         ..gains
@@ -36,7 +36,7 @@ fn tuned_p(config: &CopterStabilizerConfig) -> [f32; 4] {
 /// the envelope's 35° before the search ends.
 #[test]
 fn autotune_converges_on_the_large_aircraft_plan() {
-    let reference = tuned_p(&airframes::alia250().stabilizer);
+    let reference = tuned_p(&airframes::alia250_hover().stabilizer);
     for rate_p in [1.0, 3.0] {
         let run = common::autotune_within(
             &Plant::clean(started_from(rate_p, 1.0)),
@@ -60,7 +60,7 @@ fn autotune_converges_on_the_large_aircraft_plan() {
 /// (`spec`). PX4's 0.14 s rate rise isn't held: the motors alone lag 0.17 s.
 #[test]
 fn every_loop_meets_the_overshoot_bands() {
-    let plant = Plant::clean(airframes::alia250());
+    let plant = Plant::clean(airframes::alia250_hover());
     let mut misses = Vec::new();
     for target in ALL {
         let (step, max_saturated_s) = large::step(target);
@@ -83,7 +83,7 @@ fn every_loop_meets_the_overshoot_bands() {
 /// Takes off to the hover point in `wind`, settles, and holds for `hold_s`: the largest
 /// altitude error and distance from the point, and the distance at the end.
 fn hold(wind: Wind, hold_s: f32) -> (f32, f32, f32) {
-    let mut flight_loop = common::hover(&Plant::in_wind(airframes::alia250(), wind));
+    let mut flight_loop = common::hover(&Plant::in_wind(airframes::alia250_hover(), wind));
     let (mut altitude_m, mut horizontal_m, mut final_m) = (0f32, 0f32, 0f32);
     common::fly(&mut flight_loop, hold_s, |flight_loop, _| {
         let position = flight_loop.state().position_m;
