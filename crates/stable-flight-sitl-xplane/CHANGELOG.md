@@ -33,6 +33,7 @@ X-Plane 12 simulator backend over [xplane-bridge](https://crates.io/crates/xplan
   gains): its hover from an engine sweep and a sim autotune, flown in X-Plane (#351); its
   plane side and transitions from px4xplane's Alia params (#392). `quadplane-manual-xplane`
   (joystick: hover, transitions, plane; `--record`, `--param`) and `copter-companion-xplane`
-  (the link in copter flight, QGC through the bridge) fly it.
+  (the link in copter flight, QGC through the bridge) and `quadplane-auto-xplane` (a waypoint
+  script with plane legs, `flights/alia_transition_lap.csv`) fly it.
 - `sweep::EngineSweep` and `engine-sweep-xplane`: a multirotor's yaw sign per diagonal,
   liftoff throttle, motor lag, and moment response, measured on the runway.
