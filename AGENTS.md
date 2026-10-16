@@ -226,6 +226,15 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   contracts and covers every conformance scenario with `stable_flight::conformance_tests!`;
   known gaps stay `#[ignore]`d with a reason linking an issue.
 - PRs that change flight behavior, the link, or the bridge end with a RealFlight check.
+- **Scripted over manual:** fly test and tuning flights from a waypoint script with
+  `--record` (the `*-auto-*` examples on `flights/*.csv`, `plane-probe-xplane`), started and
+  stopped from the command line; when no script covers the check, add one to `flights/` first.
+  A script flies the same route every run, so runs compare row against row, and it needs no
+  pilot at the sticks. Fly from a joystick only what needs one: stick modes (FBWA, acro), the
+  commanders themselves, and handling. Sticks also confound VTOL flights: a stick's throttle
+  flies a quadplane's pusher in plane and its lift rotors in copter, so a back transition hands
+  full throttle to the lift (#392), and the D-pad doesn't hold a plane request under X-Plane
+  (#446).
 - **Setups:** `just fly-companion` + `just bridge` + QGC, or `just fly-companion` +
   `just link-pilot` (instead of the bridge). Offboard MAVLink scripts use the bridge's UDP 14550
   (close QGC first) and run with `uv run --no-project --with pymavlink python script.py`.
@@ -245,9 +254,7 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   stop it (below) before the next run. The same settings can hand a back transition over
   climbing or sinking (+1.7 vs −1.3 m/s, #404), so fly several runs and compare runs with a
   matched handover. `--end land` starts the landing inside the follower's 0.8 m altitude
-  acceptance, so a dip below the last waypoint shows only with `--end hold` (#403). Tune from
-  scripts, not sticks: a stick's throttle flies a quadplane's pusher in plane and its lift
-  rotors in copter, so a back transition hands full throttle to the lift (#392).
+  acceptance, so a dip below the last waypoint shows only with `--end hold` (#403).
 - **Tick rate:** count the `wall_s` rows per wall-clock second around the event a run measures,
   and drop a run below about 245 Hz there: each tick advances every `dt`-based clock by the
   nominal 4 ms, so at 170 Hz a 3 m/s descent target moves at 2 m/s (#405). A release build
@@ -268,8 +275,7 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   at Oceano, L52): until #450 and #451, a sinking or missed plane leg flies on into terrain,
   so watch scripted plane flight and stop it below a floor or past its last plane waypoint.
   Copter legs keep the heading the vehicle armed with, sideways or tail first, so start a
-  route with a climb over the spawn. The D-pad doesn't hold a plane request under X-Plane
-  (#446): transition from a script.
+  route with a climb over the spawn.
 - **Disconnects:** flight examples reconnect on their own and log "Reconnected to RealFlight"
   (`capture-state-realflight` doesn't). The runner drops time lost to a stall over 100 ms, so
   heavy skipping (`ticks skipped` in its exit log) slows every `dt`-based clock (**Tick
