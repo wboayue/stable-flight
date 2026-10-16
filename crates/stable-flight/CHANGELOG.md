@@ -257,13 +257,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `CopterGuidance` waypoint descents brake onto the waypoint (#445, #403): the altitude
-  target descends at up to `max_descent_mps`, slowing as it nears the waypoint so the new
-  `CopterGuidanceConfig::descent_accel_mps2` (`GUID_DESC_ACC`, default 1.0 m/s², ArduPilot's
-  `WP_ACC_Z`) stops it there, the descent rate fed forward. The feedforward no longer steps
-  where the waypoint takes over: a hold pushed past the leash above its target (a
-  quadplane transition the wing lifts) stepped half of full thrust in a tick, and arrivals
-  sank past the waypoint (0.52 m from 30 m on the sim quad, 1.16 m after a tailsitter's back
-  transition; now 0.11 m and 0.06 m).
+  target descends at up to `max_descent_mps` and slows near the waypoint so
+  `descent_accel_mps2` (`GUID_DESC_ACC`, default 1.0 m/s², ArduPilot's `WP_ACC_Z`) stops it
+  there, its descent rate fed forward.
+- The descent feedforward no longer steps where the waypoint takes over (#445, #403). A hold
+  pushed past the leash above its target, as a quadplane transition the wing lifts, stepped
+  half of full thrust in one tick, and arrivals sank past the waypoint: 0.52 m from 30 m on
+  the sim quad and 1.16 m after a tailsitter's back transition, now 0.11 m and 0.06 m.
 - `CopterGuidance` waypoint descents keep their altitude target at most `ALTITUDE_LEASH_M`
   (1 m) below the vehicle (#400). A hover that starts its descent still climbing, as a
   tailsitter does after a back transition, no longer sinks past `max_descent_mps` once the
