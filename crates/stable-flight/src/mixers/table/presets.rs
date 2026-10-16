@@ -315,14 +315,14 @@ impl TableMixer<8> {
     /// use stable_flight::{ControlOutput, CruiseOutput, Mixer, Vec3};
     ///
     /// let mut mixer = TableMixer::quadplane();
-    /// // Cruise: lift rotors stopped, pusher at 0.5 · 0.9, ailerons rolling right.
+    /// // Cruise: lift rotors stopped, pusher at 0.5 (its full range), ailerons rolling right.
     /// let cruise = ControlOutput {
     ///     cruise: Some(CruiseOutput { thrust: 0.5, moments: Vec3::new(0.2, 0.0, 0.0) }),
     ///     ..Default::default()
     /// };
     /// let output = mixer.mix(&cruise);
     /// assert_eq!(output.motors[..4], [0.0; 4]);
-    /// assert_eq!(output.motors[4], 0.45);
+    /// assert_eq!(output.motors[4], 0.5);
     /// assert_eq!(output.servos[0], 0.2);
     /// ```
     pub fn quadplane() -> Self {

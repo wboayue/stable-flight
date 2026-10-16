@@ -62,7 +62,7 @@ pub struct QuadPlaneAirframe {
 /// gains (the same wing and surfaces), with the cruise thrust worked out for this mass on the
 /// pusher. Transitions fly core's defaults; they meet PX4's limits in
 /// `tests/quadplane_transition.rs`. Copter flight hands its nose-down pitch past 3° to the
-/// pusher ([`ForwardThrustConfig`], gain 1.2), so the wing isn't flown at
+/// pusher ([`ForwardThrustConfig`], gain 1.08), so the wing isn't flown at
 /// negative α (`tests/quadplane_waypoints.rs`).
 ///
 /// # Examples
@@ -165,7 +165,14 @@ pub fn quadplane() -> QuadPlaneAirframe {
         guidance: QuadPlaneGuidanceConfig {
             hover,
             plane: plane_guidance,
-            transition: LiftTransitionConfig::default(),
+            // A share of the full pusher, as the transitions' PX4 limits were met with
+            // (`tests/quadplane_transition.rs`, #391).
+            transition: LiftTransitionConfig {
+                forward_thrust: TRANSITION_PUSHER,
+                pusher_slew_per_s: TRANSITION_PUSHER
+                    * LiftTransitionConfig::default().pusher_slew_per_s,
+                ..LiftTransitionConfig::default()
+            },
             forward: ForwardThrustConfig {
                 gain: FORWARD_THRUST_GAIN,
                 ..ForwardThrustConfig::default()
@@ -182,8 +189,13 @@ pub fn quadplane() -> QuadPlaneAirframe {
 /// Roll and pitch angle P: the sim autotune's (#390).
 const ANGLE_P: f32 = 9.0;
 
-/// Forward thrust gain: 1.2 holds a hover and flies upwind at 5 m/s in an 11 m/s headwind and
-/// balloons 4 m at most on an uncapped 100 m leg; ArduPilot's weight-over-thrust rule (0.83,
-/// `ArduPlane/quadplane.cpp:512`) caps the pusher at 0.42 under the 27° tilt cap and stalls
-/// upwind at 0.6 m/s; its default 2 (`:516`) balloons 16 m (#427).
-const FORWARD_THRUST_GAIN: f32 = 1.2;
+/// The most of the full pusher the forward transition flies, and the share of core's slew it
+/// rises at: the pusher commands the transition tests are measured on (#391, #448).
+const TRANSITION_PUSHER: f32 = 0.9;
+
+/// Forward thrust gain, in shares of the full pusher per unit of `tan(pitch)`: 1.08 holds a
+/// hover and flies upwind at 5 m/s in an 11 m/s headwind and balloons 4 m at most on an
+/// uncapped 100 m leg. 0.75 (0.9 of ArduPilot's weight-over-thrust rule, 0.83,
+/// `ArduPlane/quadplane.cpp:512`) caps the pusher at 0.38 under the 27° tilt cap and stalls
+/// upwind at 0.6 m/s; 1.8 (0.9 of its default 2, `:516`) balloons 16 m (#427, #448).
+const FORWARD_THRUST_GAIN: f32 = 1.08;

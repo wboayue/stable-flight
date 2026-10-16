@@ -18,9 +18,10 @@
 //!   below zero are clipped.
 //! - **Servo rows** get `roll · r + pitch · p + yaw · y` over their full range, with no thrust
 //!   term, each clamped to `[-1, 1]` on its own.
-//! - **Pusher rows** (a lift+cruise VTOL's forward motor) get the cruise thrust times
-//!   `thrust_factor`, like [`plane`](TableMixer::plane)'s motor, and no moments; they aren't
-//!   desaturated with the lift motors.
+//! - **Pusher rows** (a lift+cruise VTOL's forward motor) get the cruise thrust over their
+//!   full range and no moments: `thrust_factor` is headroom for the lift motors' moments, which
+//!   a pusher doesn't carry, as ArduPlane's throttle spans 0–100% (`THR_MAX`,
+//!   `ArduPlane/config.h:148`). They aren't desaturated with the lift motors.
 //!
 //! On a lift+cruise VTOL the stabilizer sets [`ControlOutput::cruise`]: motor rows then fly
 //! `thrust` and `moments`, and pusher and servo rows fly the cruise thrust and moments. Without
@@ -192,7 +193,8 @@ impl MixRow {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct MixerConfig {
     /// Share of each motor's range given to collective thrust, in `(0, 1)`; the rest
-    /// (`1 − thrust_factor`) is headroom for roll and pitch.
+    /// (`1 − thrust_factor`) is headroom for roll and pitch. Pusher rows carry no moments and
+    /// use their full range.
     pub thrust_factor: f32,
     /// Yaw's motor factor relative to roll and pitch's (finite, `≥ 0`). Above 1 because prop
     /// drag gives far less yaw authority than differential thrust gives roll and pitch.
@@ -402,7 +404,7 @@ impl<const N: usize> Mixer for TableMixer<N> {
                 Slot::Motor(index) => {
                     if let Some(motor) = command.motors.get_mut(usize::from(index)) {
                         *motor = if row.pusher {
-                            cruise_thrust * thrust_factor
+                            cruise_thrust
                         } else {
                             collective + row.moment(motor_moments)
                         };

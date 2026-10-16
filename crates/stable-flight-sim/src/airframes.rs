@@ -461,19 +461,19 @@ fn hover_thrust<const N: usize>(
     thrust_for(
         motor_n,
         max_thrust_n,
-        mixer_config,
+        mixer_config.thrust_factor,
         thrust_exponent,
         thrust_curve_exponent,
     )
 }
 
 /// The linear thrust setpoint that runs each motor at `motor_n` of `max_thrust_n`, undoing
-/// `max_thrust_n · command^thrust_exponent`, the mixer's thrust factor, and the stabilizer's
-/// `thrust_curve_exponent`.
+/// `max_thrust_n · command^thrust_exponent`, the `thrust_factor` the mixer scales those
+/// motors by (1 for a pusher), and the stabilizer's `thrust_curve_exponent`.
 fn thrust_for(
     motor_n: f32,
     max_thrust_n: f32,
-    mixer_config: &MixerConfig,
+    thrust_factor: f32,
     thrust_exponent: f32,
     thrust_curve_exponent: f32,
 ) -> f32 {
@@ -484,10 +484,7 @@ fn thrust_for(
     } else {
         libm::powf(fraction, 1.0 / thrust_exponent)
     };
-    libm::powf(
-        motor_command / mixer_config.thrust_factor,
-        1.0 / thrust_curve_exponent,
-    )
+    libm::powf(motor_command / thrust_factor, 1.0 / thrust_curve_exponent)
 }
 
 /// How many motors `mixer` drives, not counting pushers.

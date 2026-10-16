@@ -167,3 +167,39 @@ fn tailsitter_hover_thrust_carries_the_weight() {
     );
     check!((0.5..0.95).contains(&hover), "hover thrust {hover}");
 }
+
+/// The quadplane's pusher commands are those its transition and waypoint tests were measured
+/// on: at cruise trim, at the forward transition's cap, and for forward thrust at
+/// `tan(pitch)` 0.2 (#448 gave the pusher its full range; the values above it keep these).
+#[test]
+fn quadplane_pusher_commands_are_as_measured() {
+    use stable_flight::{ControlOutput, CruiseOutput, Mixer, Vec3};
+    let airframe = super::quadplane();
+    let mut mixer = airframe.mixer;
+    let mut pusher = |thrust| {
+        let cruise = CruiseOutput {
+            thrust,
+            moments: Vec3::zeros(),
+        };
+        mixer
+            .mix(&ControlOutput {
+                cruise: Some(cruise),
+                ..Default::default()
+            })
+            .motors[4]
+    };
+    let guidance = airframe.guidance;
+    // (what, pusher command, as measured)
+    let cases = [
+        ("cruise", pusher(guidance.plane.cruise_thrust), 0.3792),
+        (
+            "transition",
+            pusher(guidance.transition.forward_thrust),
+            0.9,
+        ),
+        ("forward thrust", pusher(0.2 * guidance.forward.gain), 0.216),
+    ];
+    for (what, command, expected) in cases {
+        assert!((command - expected).abs() < 1e-4, "{what}: {command}");
+    }
+}

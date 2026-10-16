@@ -789,7 +789,7 @@ fn quadplane_preset_splits_lift_and_cruise() {
                 cruise: cruise(0.6, Vec3::new(0.3, -0.2, 0.1)),
                 ..ControlOutput::default()
             },
-            0.54,
+            0.6,
             [0.3, -0.2, 0.1],
             saturation(false, false),
         ),
@@ -799,7 +799,7 @@ fn quadplane_preset_splits_lift_and_cruise() {
                 cruise: cruise(0.8, Vec3::new(0.0, 0.3, 0.0)),
                 ..ControlOutput::new(0.5, Vec3::new(0.1, 0.0, 0.0))
             },
-            0.72,
+            0.8,
             [0.0, 0.3, 0.0],
             saturation(false, false),
         ),
@@ -816,7 +816,7 @@ fn quadplane_preset_splits_lift_and_cruise() {
                 cruise: cruise(1.0, Vec3::zeros()),
                 ..ControlOutput::new(1.0, Vec3::new(1.0, 1.0, 0.0))
             },
-            0.9,
+            1.0,
             [0.0; 3],
             saturation(true, false),
         ),
@@ -1144,6 +1144,48 @@ fn reversed_yaw_mirrors_only_yaw() {
         assert!(
             reversed.iter().zip(expected).all(|(&m, e)| approx_eq(m, e)),
             "{moments:?}: {reversed:?} vs {expected:?}"
+        );
+    }
+}
+
+/// A pusher carries no moments, so it flies the cruise thrust over its full range at any
+/// thrust factor, while the lift motors keep their headroom (#448: at 0.8 the Alia's pusher
+/// stopped at 0.8 and it couldn't climb on the wing).
+#[test]
+fn pusher_spans_its_full_range_at_any_thrust_factor() {
+    // (thrust factor, cruise thrust, expected pusher)
+    let cases = [
+        (0.9, 1.0, 1.0),
+        (0.8, 1.0, 1.0),
+        (0.5, 1.0, 1.0),
+        (0.8, 0.65, 0.65),
+        (0.8, 1.5, 1.0),
+        (0.8, f32::NAN, 0.0),
+    ];
+    for (thrust_factor, thrust, expected) in cases {
+        let config = MixerConfig {
+            thrust_factor,
+            ..MixerConfig::default()
+        };
+        let mut mixer = TableMixer::quadplane()
+            .with_config(config)
+            .expect("valid config");
+        let hover = ControlOutput::new(1.0, Vec3::zeros());
+        let output = mixer.mix(&ControlOutput {
+            cruise: Some(CruiseOutput {
+                thrust,
+                moments: Vec3::zeros(),
+            }),
+            ..hover
+        });
+        assert!(
+            approx_eq(output.motors[4], expected),
+            "{thrust_factor}, {thrust}: {output:?}"
+        );
+        // The lift motors keep the factor: full collective at `thrust_factor`.
+        assert!(
+            approx_eq(output.motors[0], thrust_factor),
+            "{thrust_factor}: {output:?}"
         );
     }
 }

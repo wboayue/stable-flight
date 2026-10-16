@@ -190,8 +190,9 @@ pub(super) fn rate_feedforward(model: &FixedWingModel, airspeed_mps: f32) -> Vec
 
 /// The throttle that holds `model` in level flight at `airspeed_mps` on `mixer`'s forward
 /// motors (its pushers, or with none its motors): the thrust that matches the drag at the angle
-/// of attack whose linear lift carries the weight, shared by those motors, through [`thrust_for`] with the mixer's thrust factor (`mixer_config`)
-/// and the stabilizer's `thrust_curve_exponent`.
+/// of attack whose linear lift carries the weight, shared by those motors, through
+/// [`thrust_for`] with the stabilizer's `thrust_curve_exponent` and the mixer's thrust factor
+/// (`mixer_config`) for motors; pushers span their full range.
 pub(super) fn cruise_thrust<const N: usize>(
     model: &FixedWingModel,
     mixer: &TableMixer<N>,
@@ -202,26 +203,28 @@ pub(super) fn cruise_thrust<const N: usize>(
     let pressure_area_n = aero::pressure_area_n(model, airspeed_mps);
     let lift = model.mass_kg * GRAVITY / pressure_area_n;
     let drag_n = pressure_area_n * aero::drag_coefficient(model, lift);
+    let (count, thrust_factor) = forward_motors(mixer, mixer_config);
     thrust_for(
-        drag_n / forward_motor_count(mixer),
+        drag_n / count,
         model.max_thrust_n,
-        mixer_config,
+        thrust_factor,
         QUADRATIC,
         thrust_curve_exponent,
     )
 }
 
-/// How many of `mixer`'s motors push the airframe forward: its pushers, or with none (a plane,
-/// a tailsitter) its motors.
-fn forward_motor_count<const N: usize>(mixer: &TableMixer<N>) -> f32 {
+/// How many of `mixer`'s motors push the airframe forward, and the factor the mixer scales
+/// them by: its pushers at full range, or with none (a plane, a tailsitter) its motors at
+/// the thrust factor.
+fn forward_motors<const N: usize>(mixer: &TableMixer<N>, mixer_config: &MixerConfig) -> (f32, f32) {
     let pushers = mixer
         .rows()
         .iter()
         .filter(|row| matches!(row.slot(), Slot::Motor(_)) && row.is_pusher())
         .count();
     if pushers > 0 {
-        pushers as f32
+        (pushers as f32, 1.0)
     } else {
-        motor_count(mixer)
+        (motor_count(mixer), mixer_config.thrust_factor)
     }
 }

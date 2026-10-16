@@ -40,7 +40,9 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
    (`surface-probe-realflight`). A reversed one is `reversed_servos` in the backend mapping;
    a surface whose neutral sits off center is a servo trim.
 3. **Plane.** Tune the wing as an airplane (`PSTAB_*`, `PGUID_*`). Set `PGUID_CRUISE` to the
-   pusher thrust that holds level flight at trim airspeed.
+   pusher thrust that holds level flight at trim airspeed, as a share of the full pusher: the
+   pusher spans its whole range, whatever the lift rotors' thrust factor
+   ([#448](https://github.com/wboayue/stable-flight/issues/448)).
 4. **Transitions.** Tune these last, from a settled hover at least `TRAN_MIN_HGT` up.
 
 **Worked example (Alia 250 in X-Plane, hover only, #351):** a full-size aircraft, so the
@@ -114,14 +116,14 @@ Start `FWD_THR_GAIN` at the weight over the pusher's most thrust (ArduPilot's ru
 it until it holds in the strongest wind it must fly in. Under the 27° waypoint tilt cap the
 pusher reaches only `FWD_THR_GAIN · tan 27°`, so the rule alone can leave it short.
 
-**Worked example (sim quadplane):** the rule gives 0.83 (4.5 kg, pusher 1.2× weight): it
-holds in an 11 m/s headwind but flies upwind at 0.6 m/s instead of 5. ArduPilot's default 2
-gets there but balloons 16 m on an uncapped 100 m leg. 1.2 flies the 11 m/s leg at 5 m/s and
-balloons 4 m at most
+**Worked example (sim quadplane):** the rule gives 0.83 (4.5 kg, pusher 1.2× weight); at 0.75
+it holds in an 11 m/s headwind but flies upwind at 0.6 m/s instead of 5. 1.8 (0.9 of
+ArduPilot's default 2) gets there but balloons 16 m on an uncapped 100 m leg. 1.08 flies the
+11 m/s leg at 5 m/s and balloons 4 m at most
 ([#427](https://github.com/wboayue/stable-flight/issues/427)).
 
 **Worked example (Titan Cobra in RealFlight):** on an uncapped 100 m copter leg ahead, gain 0
-pitched 31–33° nose down at 19 m/s, lost 3.5–4.7 m and ballooned 6 m braking; gain 1.2 held
+pitched 31–33° nose down at 19 m/s, lost 3.5–4.7 m and ballooned 6 m braking; gain 1.08 held
 the nose within 7°, lost 0.5 m and ballooned 1.2–1.4 m, at 13 m/s (two runs each,
 [#433](https://github.com/wboayue/stable-flight/issues/433)). PX4's limit is 20 m
 (`VT_QC_T_ALT_LOSS`).
