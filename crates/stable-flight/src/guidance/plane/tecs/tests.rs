@@ -75,9 +75,10 @@ fn errors_move_pitch_and_thrust_by_energy() {
     }
 }
 
-/// The height demand slews toward the target at the climb and sink limits, and the airspeed
-/// demand at half the climb's energy rate over V: (target altitude, target airspeed) →
-/// (demand height, demand airspeed) after one second, from 30 m at 15 m/s.
+/// The height demand slews toward the target at the climb and sink limits (the flown demand
+/// lags it, between the start and the slew), and the airspeed demand at half the climb's
+/// energy rate over V: (target altitude, target airspeed) → (slewed height, airspeed demand)
+/// after one second, from 30 m at 15 m/s.
 #[test]
 fn demands_slew_at_their_limits() {
     let config = TecsConfig::default();
@@ -97,8 +98,10 @@ fn demands_slew_at_their_limits() {
             tecs.step(DT, &config, &limits(), target, 15.0, &state);
         }
         let demand = tecs.demand.expect("seeded");
-        assert_relative_eq!(demand.height_m, height, epsilon = 1e-3);
+        assert_relative_eq!(demand.slewed_height_m, height, epsilon = 1e-3);
         assert_relative_eq!(demand.airspeed_mps, airspeed, epsilon = 1e-3);
+        let (low, high) = (height.min(30.0), height.max(30.0));
+        check!((low..=high).contains(&demand.height_m), "{demand:?}");
     }
 }
 
@@ -122,9 +125,8 @@ fn most_airspeed_below_the_least_reads_as_the_least() {
 }
 
 /// A climb the pitch limit can't make runs full thrust: the unmet height stays in the total
-/// energy error. Pitch stays at its limit, and its integral doesn't wind past it: once the
-/// target is reached, pitch leaves the limit at once (#454: the speed loop took the climb's
-/// power).
+/// energy error. Pitch stays at its limit, and its integral stops growing there (#454: the
+/// speed loop took the climb's power).
 #[test]
 fn pitch_limited_climb_takes_full_thrust() {
     let config = TecsConfig::default();
@@ -141,11 +143,34 @@ fn pitch_limited_climb_takes_full_thrust() {
     }
     check!(last.0 == limits.pitch_up_rad);
     check!(last.1 == limits.max_thrust);
-    check!(tecs.pitch_integral_rad <= limits.pitch_up_rad - (-limits.pitch_down_rad));
+    // Pinned from the first steps, the integral barely starts (unchecked, it winds to its
+    // bound, 0.49 rad here).
+    check!(
+        tecs.pitch_integral_rad.abs() < 0.01,
+        "{}",
+        tecs.pitch_integral_rad
+    );
+}
 
-    // At the height: the integral built while pinned would hold pitch at the limit.
-    let (pitch, _) = tecs.step(DT, &config, &limits, (30.0, 15.0), 15.0, &state);
-    check!(pitch < limits.pitch_up_rad, "{pitch}");
+/// Where the height demand's slew stops on the target, pitch moves smoothly: the lag keeps the
+/// demand's rate continuous. Unlagged, the rate stepped by the whole climb limit in one tick,
+/// 25° of pitch here, and the eXplora's setpoint jumped 28° in RealFlight (#454).
+#[test]
+fn pitch_moves_smoothly_where_the_height_slew_stops() {
+    let config = TecsConfig::default();
+    let state = level(30.0, 15.0, 0.0);
+    let mut tecs = Tecs::default();
+    let mut previous: Option<f32> = None;
+    let mut largest_deg = 0.0_f32;
+    // The slew reaches 32 m after 0.4 s; fly 2 s.
+    for _ in 0..200 {
+        let (pitch, _) = tecs.step(DT, &config, &limits(), (32.0, 15.0), 15.0, &state);
+        if let Some(last) = previous {
+            largest_deg = largest_deg.max((pitch - last).abs().to_degrees());
+        }
+        previous = Some(pitch);
+    }
+    check!(largest_deg < 1.0, "{largest_deg}°");
 }
 
 /// Below 0.9 of the least airspeed: full thrust, and pitch holds airspeed alone (nose down,
