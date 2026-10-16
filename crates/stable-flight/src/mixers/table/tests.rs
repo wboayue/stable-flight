@@ -1189,3 +1189,26 @@ fn pusher_spans_its_full_range_at_any_thrust_factor() {
         );
     }
 }
+
+/// Reversing a quadplane's props leaves its surfaces and pusher alone: the rudder turns the
+/// nose the same way, in cruise and with a hover's moments alike (#392).
+#[test]
+fn reversed_yaw_keeps_the_surfaces() {
+    let moments = Vec3::new(0.1, 0.2, 0.3);
+    let cases = [
+        ControlOutput::new(0.5, moments),
+        ControlOutput {
+            cruise: Some(CruiseOutput {
+                thrust: 0.5,
+                moments,
+            }),
+            ..Default::default()
+        },
+    ];
+    for control in cases {
+        let preset = TableMixer::quadplane().mix(&control);
+        let reversed = TableMixer::quadplane().with_reversed_yaw().mix(&control);
+        assert_eq!(reversed.servos, preset.servos, "{control:?}");
+        assert_eq!(reversed.motors[4], preset.motors[4], "{control:?}");
+    }
+}
