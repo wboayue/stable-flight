@@ -99,6 +99,7 @@ pub fn quadplane() -> QuadPlaneAirframe {
         lift: LiftRotors {
             moment_arm_m: x_moment_arm_m(DIAGONAL_M),
             max_thrust_n: max_thrust_n(MASS_KG, 2.0),
+            thrust_exponent: QUADRATIC,
             motor_time_constant_s: 0.05,
             yaw_torque_per_thrust_m: 0.022,
             drag_n_per_mps: 1.2,

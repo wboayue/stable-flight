@@ -162,9 +162,9 @@ fn groups_spin_only_their_own_slots() {
     let model = quad_x_motors().1;
     let mut lift = Motors::excluding(TableMixer::quad_x().rows(), &model.motor_layout(), 3);
     check!(lift.count() == 3);
-    let mut pusher = Motors::single(4, 10.0);
+    let mut pusher = Motors::single(4, 10.0, QUADRATIC);
     check!(pusher.count() == 1);
-    check!(Motors::single(8, 10.0).count() == 0);
+    check!(Motors::single(8, 10.0, QUADRATIC).count() == 0);
 
     let commands = [1.0; SLOTS];
     settled(&mut lift, &commands);

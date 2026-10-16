@@ -62,10 +62,11 @@ impl Motors {
         Self::selected(rows, layout, |index| index != skipped)
     }
 
-    /// One motor on slot `index`, `max_thrust_n` at full command (quadratic), turning nothing:
-    /// whether or not a mixer row drives it. An index of [`SLOTS`] or more drives nothing.
-    pub(crate) fn single(index: u8, max_thrust_n: f32) -> Self {
-        let mut motors = Self::stopped(max_thrust_n, QUADRATIC);
+    /// One motor on slot `index`, `max_thrust_n` at full command (`thrust_exponent`), turning
+    /// nothing: whether or not a mixer row drives it. An index of [`SLOTS`] or more drives
+    /// nothing.
+    pub(crate) fn single(index: u8, max_thrust_n: f32, thrust_exponent: f32) -> Self {
+        let mut motors = Self::stopped(max_thrust_n, thrust_exponent);
         if let Some(used) = motors.used.get_mut(usize::from(index)) {
             *used = true;
         }

@@ -12,7 +12,7 @@ use crate::fixed_wing::FixedWingModel;
 use crate::ground::Ground;
 use crate::lag;
 use crate::lockstep::Dynamics;
-use crate::motors::{MotorLayout, Motors, QUADRATIC};
+use crate::motors::{MotorLayout, Motors};
 use crate::quadplane_model::{LiftRotors, QuadPlaneModel};
 use crate::surfaces::Surfaces;
 use crate::tailsitter_model::{PropWash, TailsitterModel};
@@ -148,7 +148,7 @@ impl FixedWing {
     ) -> Self {
         let (motors, lift) = match rotors.lift {
             Some(lift) => (
-                Motors::single(lift.pusher_slot, model.max_thrust_n),
+                Motors::single(lift.pusher_slot, model.max_thrust_n, model.thrust_exponent),
                 Some(LiftGroup::new(mixer, &lift)),
             ),
             None => {
@@ -159,7 +159,7 @@ impl FixedWing {
                     moment_arm_m: 0.0,
                     yaw_torque_per_thrust_m: rotors.motor_arm_m,
                     max_thrust_n: model.max_thrust_n,
-                    thrust_exponent: QUADRATIC,
+                    thrust_exponent: model.thrust_exponent,
                 };
                 (Motors::new(mixer.rows(), &layout), None)
             }
@@ -232,10 +232,20 @@ impl Dynamics for FixedWing {
     fn loads(&mut self, command: &ActuatorCommand, body: &Body, wind_ned_mps: Vec3) -> Loads {
         self.motors.spin(&command.motors, self.motor_alpha);
         self.surfaces.move_to(&command.servos, self.servo_alpha);
-        let (thrust_n, motor_torque_nm) = self.motors.wrench();
         let air_mps = body
             .attitude
             .inverse_transform_vector(&body.air_relative_velocity_ned_mps(wind_ned_mps));
+        let (thrust_n, motor_torque_nm) = self.motors.wrench();
+        // Exactly 1 with no falloff, so airframes without it fly as they did.
+        let falloff = if self.model.thrust_falloff_n_per_mps == 0.0 {
+            1.0
+        } else {
+            (1.0 - self.model.thrust_falloff_n_per_mps * air_mps.x.max(0.0)
+                / self.model.max_thrust_n)
+                .max(0.0)
+        };
+        let (thrust_n, motor_torque_nm) = (thrust_n * falloff, motor_torque_nm * falloff);
+        let thrust_line_nm = Vec3::new(0.0, thrust_n * self.model.thrust_line_below_cg_m, 0.0);
         // The thrust axis is body `x`.
         let wash_pa = self
             .rotors
@@ -257,7 +267,7 @@ impl Dynamics for FixedWing {
         self.force_n = self.aero.force_n + Vec3::new(thrust_n, 0.0, 0.0) + lift_force_n;
         Loads {
             force_ned_n: body.attitude * self.force_n,
-            torque_nm: self.aero.torque_nm + motor_torque_nm + lift_torque_nm,
+            torque_nm: self.aero.torque_nm + motor_torque_nm + thrust_line_nm + lift_torque_nm,
             damping_nm: Vec3::zeros(),
         }
     }

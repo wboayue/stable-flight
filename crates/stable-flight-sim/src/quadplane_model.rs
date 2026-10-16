@@ -2,7 +2,7 @@
 
 use crate::fixed_wing::FixedWingModel;
 use crate::model::{ModelError, check_non_negative, check_positive};
-use crate::motors::{MotorLayout, QUADRATIC};
+use crate::motors::MotorLayout;
 
 #[cfg(test)]
 mod tests;
@@ -46,8 +46,12 @@ pub struct QuadPlaneModel {
 pub struct LiftRotors {
     /// Distance from the roll or pitch axis of a rotor whose row factor is 1, in m.
     pub moment_arm_m: f32,
-    /// Thrust of one rotor at full command, in N, `max_thrust_n · command²`.
+    /// Thrust of one rotor at full command, in N, `max_thrust_n · command^thrust_exponent`.
     pub max_thrust_n: f32,
+    /// How a rotor's thrust follows its command: 2 for a fixed-pitch prop at a set voltage;
+    /// 2/3 where the command sets the motor's power, as X-Plane's electric engines (thrust
+    /// goes with power^(2/3), #351). Positive.
+    pub thrust_exponent: f32,
     /// First-order lag from a rotor's command to the command it runs at, in s.
     pub motor_time_constant_s: f32,
     /// Prop drag torque about the yaw axis per newton of thrust, in N·m/N (m).
@@ -63,7 +67,7 @@ impl LiftRotors {
             moment_arm_m: self.moment_arm_m,
             yaw_torque_per_thrust_m: self.yaw_torque_per_thrust_m,
             max_thrust_n: self.max_thrust_n,
-            thrust_exponent: QUADRATIC,
+            thrust_exponent: self.thrust_exponent,
         }
     }
 }
@@ -74,7 +78,7 @@ impl QuadPlaneModel {
     /// # Errors
     ///
     /// [`FixedWingModel::validate`]'s errors; [`ModelError::NotPositive`] for a lift moment
-    /// arm, max thrust, or time constant that isn't positive and finite;
+    /// arm, max thrust, thrust exponent, or time constant that isn't positive and finite;
     /// [`ModelError::Negative`] for a yaw torque or drag that is negative or not finite.
     pub fn validate(&self) -> Result<(), ModelError> {
         self.wing.validate()?;
@@ -82,6 +86,7 @@ impl QuadPlaneModel {
         check_positive(&[
             ("lift.moment_arm_m", lift.moment_arm_m),
             ("lift.max_thrust_n", lift.max_thrust_n),
+            ("lift.thrust_exponent", lift.thrust_exponent),
             ("lift.motor_time_constant_s", lift.motor_time_constant_s),
         ])?;
         check_non_negative(&[
