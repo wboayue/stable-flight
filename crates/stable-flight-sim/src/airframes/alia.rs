@@ -34,12 +34,13 @@ const TRIM_AIRSPEED_MPS: f32 = 45.0;
 /// The plane side's least airspeed, in m/s: about where the wing holds level flight (X-Plane's
 /// slowest level leg, 41 m/s). The forward transition's gate too: handed over at 37.5 m/s it
 /// lost 37 m diving for speed, and 296 m once the pitch loop tracked (TECS pulled it into a
-/// stall); at 40 m/s it hands over at 43.7 m/s and loses 10 m (#392).
+/// stall); at 40 m/s it hands over at 43.7 m/s and loses 12 m (#392).
 const MIN_AIRSPEED_MPS: f32 = 40.0;
 
 /// Pitch up the plane side asks at most, in rad: below the stall. Full elevator trims the wing
 /// at 17° α, and at 18° of pitch a sinking entry held full elevator and fell into a stall cycle
-/// to the ground; 15° enters within 12 m at twice the pitch rate P and TECS damping (#392).
+/// to the ground; at 15° it enters within 21 m even at pitch rate P 1.5 and TECS pitch damping
+/// 1.0 (#392).
 const MAX_PITCH_UP_RAD: f32 = 15.0 * core::f32::consts::PI / 180.0;
 
 /// The BETA Technologies Alia 250 as X-Plane 12 flies it, hover and wing: its lift rotors as
@@ -58,9 +59,12 @@ const MAX_PITCH_UP_RAD: f32 = 15.0 * core::f32::consts::PI / 180.0;
 /// | Yaw | `Cn_δr = 0.014`/rad | yaw pulses, ~25 °/s² per unit command |
 ///
 /// **Not measured:** the other damping and sideslip terms take [`plane`](super::plane)'s (the
-/// Aerosonde's) coefficients, `c_pitch_q` set to a larger aircraft's. The stall is put past the elevator's reach (17°), which the
-/// probes never passed. The pusher's thrust line sits on the center of gravity (X-Plane hints
-/// at a nose-up moment at full power, unmeasured).
+/// Aerosonde's) coefficients, `c_pitch_q` set to a larger aircraft's (the lateral-directional
+/// ones, #458). The stall is put past the elevator's reach (17°), which the probes never
+/// passed. The pusher's thrust line sits on the center of gravity (X-Plane hints at a nose-up
+/// moment at full power, unmeasured). The forward transition accelerates through 30–40 m/s
+/// slower than X-Plane's: 42 s from a hover to the 40 m/s gate against X-Plane's 27 s, the lift
+/// rotors' drag in the airflow likely too high.
 ///
 /// **Controllers:** the hover side is [`alia250_hover`]'s. The plane side is tuned on this
 /// model (#392): px4xplane's rate P and I where they hold, the rate feedforward from the model,
