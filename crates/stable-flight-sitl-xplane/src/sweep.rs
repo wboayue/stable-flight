@@ -8,7 +8,8 @@ mod tests;
 /// Number of lift engines a sweep drives: engines 0–3.
 pub const LIFT_ENGINES: usize = 4;
 
-/// The sweep's timing and throttles. [`Default`] suits a large multirotor on a runway.
+/// The sweep's timing, throttles, and engine layout. [`Default`] suits a large multirotor on a
+/// runway, with the Alia 250's engines: 0 front right, 1 front left, 2 rear left, 3 rear right.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SweepConfig {
     /// Rest with every engine at 0 before, between, and after the yaw pulses, s.
@@ -26,6 +27,11 @@ pub struct SweepConfig {
     pub step_throttle: f32,
     /// Length of the step, s.
     pub step_s: f32,
+    /// The engines whose thrust rolls the aircraft right (its left side); the other two roll
+    /// it left.
+    pub roll_engines: [usize; 2],
+    /// The engines whose thrust pitches it up (its front); the other two pitch it down.
+    pub pitch_engines: [usize; 2],
     /// Throttle added to some engines and taken from the others in each airborne moment pulse
     /// (roll, pitch, yaw, in that order, after the step).
     pub moment_throttle: f32,
@@ -45,6 +51,8 @@ impl Default for SweepConfig {
             ramp_per_s: 0.05,
             step_throttle: 0.1,
             step_s: 0.5,
+            roll_engines: [1, 2],
+            pitch_engines: [0, 1],
             moment_throttle: 0.05,
             moment_pulse_s: 0.3,
             fall_s: 2.0,
@@ -99,9 +107,9 @@ impl Phase {
 ///    that throttle is the [`liftoff_throttle`](Self::liftoff_throttle). At full throttle
 ///    still on the ground, the sweep skips to the fall.
 /// 3. The step: the liftoff throttle plus `step_throttle` for `step_s`.
-/// 4. Moment pulses on the step's throttle, `moment_pulse_s` each: roll right (left engines 1
-///    and 2 up by `moment_throttle`, right engines 0 and 3 down), pitch up (front 0 and 1 up,
-///    rear 2 and 3 down), yaw (the first yaw pair up, the second down); then everything at 0
+/// 4. Moment pulses on the step's throttle, `moment_pulse_s` each: roll right
+///    (`roll_engines` up by `moment_throttle`, the others down), pitch up (`pitch_engines` up,
+///    the others down), yaw (the first yaw pair up, the second down); then everything at 0
 ///    for `fall_s`. A moment's angular acceleration over a known thrust difference gives the
 ///    inertia; the yaw pulse, the yaw torque.
 ///
@@ -212,11 +220,10 @@ impl EngineSweep {
             Phase::Ramp => [self.ramp_throttle; LIFT_ENGINES],
             Phase::Step => [self.step_throttle(); LIFT_ENGINES],
             Phase::MomentPulse(axis) => {
-                // Engines whose thrust makes the moment positive: left for roll right, front
-                // for pitch up, the first yaw pair for yaw.
-                let raised: [usize; 2] = match axis {
-                    0 => [1, 2],
-                    1 => [0, 1],
+                // Engines whose thrust makes the moment positive.
+                let raised = match axis {
+                    0 => c.roll_engines,
+                    1 => c.pitch_engines,
                     _ => c.yaw_pairs[0],
                 };
                 let base = self.step_throttle();

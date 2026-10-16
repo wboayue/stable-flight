@@ -112,3 +112,27 @@ fn codes_each_phase() {
         check!(phase.code() == i as f32);
     }
 }
+
+/// The moment pulses follow the configured layout: a frame numbered the other way round
+/// raises its own left and front engines.
+#[test]
+fn pulses_follow_the_engine_layout() {
+    let mut sweep = EngineSweep::new(SweepConfig {
+        roll_engines: [0, 3],
+        pitch_engines: [2, 3],
+        ..SweepConfig::default()
+    });
+    let ticks = run(&mut sweep, 26.0, |t| t < 22.0);
+    // (t, engines raised)
+    let pulses = [(22.65, [0, 3]), (22.95, [2, 3])];
+    for (t, raised) in pulses {
+        let (_, throttles) = phase_at(&ticks, t);
+        for (engine, throttle) in throttles.iter().enumerate() {
+            let up = *throttle > throttles.iter().copied().fold(f32::INFINITY, f32::min);
+            check!(
+                up == raised.contains(&engine),
+                "{t} engine {engine}: {throttles:?}"
+            );
+        }
+    }
+}
