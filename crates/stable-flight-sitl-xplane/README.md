@@ -16,7 +16,7 @@ Status: flies the Alia 250 in copter mode on its four lift rotors, from a joysti
 
 - X-Plane 12 on macOS, Windows, or Linux. Its UDP port is under **Settings → Network** (default `49000`); no data-output rows or network settings need changing, also for a controller on another machine on the LAN (replies go to the sender's address).
 - X-Plane ships no multirotors. The stock BETA Technologies Alia 250 (lift+cruise eVTOL) hovers on its four lift rotors and cruises on its wing and pusher: load it on a runway at X-Plane's default weight (6,299 lb in **Flight Configuration → Weight, Balance & Fuel**), which `airframes::alia250()` is tuned for, in calm weather.
-- The examples take X-Plane's throttles and control surfaces, so a joystick X-Plane also reads moves nothing; buttons bound to X-Plane commands still act.
+- The examples take X-Plane's throttles and control surfaces, so a joystick X-Plane also reads moves nothing; buttons bound to X-Plane commands still act. Clear the Extreme 3D's hat in X-Plane's joystick settings: bound to view panning, a hat press also moves the view, and a Left to pan it back asks for copter (the D-pad picks the regime; [#446](https://github.com/wboayue/stable-flight/issues/446)).
 - After X-Plane relocates the aircraft (a new airport, a reset elsewhere), the vehicle re-anchors position there and logs the new `--origin`: restart the bridge with it, or QGC's map is off by the move.
 
 ## Usage
