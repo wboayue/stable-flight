@@ -80,6 +80,7 @@ cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight
 cargo run -p stable-flight-sitl-realflight --example surface-probe-realflight                             # quadplane surface directions in flight (Cobra)
 cargo run --bin check_frames -- capture.csv   # capture vs the frame contract (--pitch-deg: body rotation, 90 for the eXplora; --sim xplane for X-Plane captures)
 cargo run --example extreme_3d_commander      # joystick smoke test (spektrum_commander: Spektrum mapping)
+cargo run --example joystick_events           # every gilrs event as CSV, gamepad codes (--raw: without gilrs's filters)
 ```
 
 Add `-p <crate>` to scope any command. The flight pipeline has no CLI and there is no `cargo
