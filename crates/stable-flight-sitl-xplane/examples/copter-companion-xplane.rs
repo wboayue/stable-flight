@@ -1,7 +1,8 @@
-//! Flies the Alia 250 in X-Plane in copter mode from the native link (`stable-flight-link`,
-//! UDP), as a companion computer would: the link's commands fly it, and a failsafe holds
-//! position when the link goes quiet (or finishes a land it was flying), handing control back
-//! once it has been back for a second.
+//! Flies the Alia 250 in X-Plane from the native link (`stable-flight-link`, UDP), as a
+//! companion computer would: the link's commands fly it, and a failsafe holds position when
+//! the link goes quiet (or finishes a land it was flying), handing control back once it has
+//! been back for a second. It flies the quadplane controllers of [`airframes::alia250`] in
+//! the copter regime: the bridge asks for no other yet (#333).
 //!
 //! The commander is `FailsafeCommander<LinkCommander, HoldCommander>`: the link arms and
 //! disarms (`Control::Arm`) and says what to fly (`Control::Command`); a hold never arms. Params
@@ -21,8 +22,8 @@ use env_logger::Builder;
 use log::{debug, info, warn};
 
 use stable_flight::commanders::{FailsafeCommander, FailsafeConfig, HoldCommander};
-use stable_flight::guidance::copter::CopterGuidance;
-use stable_flight::stabilizers::copter::CopterStabilizer;
+use stable_flight::guidance::vtol::QuadPlaneGuidance;
+use stable_flight::stabilizers::vtol::QuadPlaneStabilizer;
 use stable_flight::{Commander, FailsafeState, FlightLoop};
 use stable_flight_link::fc::{FcLink, FcLinkConfig};
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
@@ -49,7 +50,7 @@ fn main() {
 
     let args = Args::parse();
 
-    // Alia 250 in copter mode: tuned gains, mixer, and engine mapping.
+    // Alia 250: tuned gains, mixer, and engine and surface mapping.
     let airframe = airframes::alia250();
 
     let bridge = XPlaneUdpBridge::connect(&args.host).expect("failed to open the socket");
@@ -57,8 +58,8 @@ fn main() {
         .expect("X-Plane not ready");
 
     // Waypoint commands from the link become attitude setpoints here.
-    let guidance = CopterGuidance::new(airframe.guidance);
-    let stabilizer = CopterStabilizer::new(airframe.stabilizer);
+    let guidance = QuadPlaneGuidance::new(airframe.guidance);
+    let stabilizer = QuadPlaneStabilizer::new(airframe.stabilizer);
     let mixer = airframe.mixer;
 
     // The link: the publisher writes it each tick (the flight loop's telemetry), the poller

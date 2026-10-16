@@ -12,23 +12,27 @@ X-Plane 12 simulator backend over [xplane-bridge](https://crates.io/crates/xplan
 
 - `XPlaneVehicle`: `StateSource` + `Actuator` over UDP datarefs. `connect` subscribes the
   state, resubscribes until every dataref has a value (or `ConnectError::NotReady` names the
-  missing), and takes the throttles (and, with `neutral_wings`, the control surfaces). Each
-  tick polls without blocking and writes the mapped engines; a silence or a lost subscription
+  missing), and takes the throttles (and, with `surfaces` or `neutral_wings`, the control
+  surfaces). Each tick polls without blocking, and once per frame writes the mapped engines
+  and surfaces; a silence or a lost subscription
   resubscribes, frames returning take control again, and dropping the vehicle hands control
   back to X-Plane.
 - `vehicle_state`: an `XPlaneSample` in the core frame contract (quaternion and body rates as
   reported, OpenGL local frame to north/east, elevation above sea level as up, true airspeed).
 - `LocalOrigin`: position relative to where the aircraft started (the bridge's `--origin`),
   continuous when X-Plane moves its local origin, re-anchored when the aircraft relocates.
-- `ActuatorMapping`: motor slots to `ENGN_thro_use` elements, idle engines held at 0, and
-  wings whose surfaces are held at 0°.
+- `ActuatorMapping`: motor slots to `ENGN_thro_use` elements, idle engines held at 0, servo
+  slots to wing surfaces (`SurfaceLink`, `Surface`: degrees at each end of the servo's
+  range, #392), and wings whose surfaces are held at 0°.
 - `StateDatarefs`, `XPlaneSample`, `wait_ready`: the raw state subscriptions, for tools that
   read X-Plane without flying it.
 - `capture`: raw samples to and from CSV, with a writer's own columns after them; the
   `capture-state-xplane` example records them read-only while X-Plane flies, for
   `check_frames --sim xplane`.
-- `airframes::alia250()`: the Alia 250 in copter mode (mixer, engine mapping, gains), from an
-  engine sweep and a sim autotune, flown in X-Plane. `copter-manual-xplane` (joystick,
-  `--record`) and `copter-companion-xplane` (the link, QGC through the bridge) fly it.
+- `airframes::alia250()`: the Alia 250 as a quadplane (mixer, engine and surface mapping,
+  gains): its hover from an engine sweep and a sim autotune, flown in X-Plane (#351); its
+  plane side and transitions from px4xplane's Alia params (#392). `quadplane-manual-xplane`
+  (joystick: hover, transitions, plane; `--record`, `--param`) and `copter-companion-xplane`
+  (the link in copter flight, QGC through the bridge) fly it.
 - `sweep::EngineSweep` and `engine-sweep-xplane`: a multirotor's yaw sign per diagonal,
   liftoff throttle, motor lag, and moment response, measured on the runway.

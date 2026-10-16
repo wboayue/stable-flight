@@ -75,8 +75,9 @@ Each simulator gets its own `stable-flight-sitl-<simulator>` crate, so its depen
 * **Airframes.** Tuned gains, the mixer, channel mapping, and body rotation live in the
   backend's `airframes` module, next to the simulated model they were tuned on.
 * **Per-backend mapping types.** Each backend has its own `ActuatorMapping` (and `Airframe`):
-  RealFlight maps slots to twelve 0–1 channels, X-Plane maps motors to engines and holds wing
-  surfaces in degrees. A shared type waits until a third backend shows a common shape.
+  RealFlight maps slots to twelve 0–1 channels, X-Plane maps motors to engines and servos to
+  wing surfaces in degrees (`SurfaceLink`: each end of the servo's range its own deflection, so
+  a surface's sign and uneven travel are data). A shared type waits until a third backend shows a common shape.
 
 ### X-Plane
 
@@ -90,6 +91,12 @@ geodesy, which would mix X-Plane's projection with a flat-earth one at the jump.
 elevation above sea level, not `local_y`, which is height over the plane tangent at the local
 origin and drifts from the ground with distance. Rejected: horizontal position from latitude and
 longitude (`f32` on the wire: 0.4–0.8 m steps).
+
+`actuate` writes once per received frame: X-Plane applies only the last write before each
+frame, and between frames the state, so the commands, barely move (only `dt`-driven ramps and
+integrators). A quadplane writes 21 datarefs a frame; writing every tick would send five times
+that for nothing. Rejected: writing only changed values, which needs a periodic refresh to
+recover a lost datagram, where a write per frame refreshes everything anyway.
 
 ### In-Repo Simulator
 

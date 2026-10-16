@@ -1,6 +1,6 @@
 use assert2::check;
 use stable_flight::stabilizers::copter::CopterStabilizer;
-use stable_flight::{ActuatorCommand, ControlOutput};
+use stable_flight::{ActuatorCommand, ControlOutput, CruiseOutput};
 use stable_flight::{AttitudeSetpoint, Mixer, Setpoint, Stabilizer, Vec3, VehicleState};
 
 use super::*;
@@ -14,25 +14,52 @@ fn engines(command: &ActuatorCommand) -> [f32; 5] {
     throttles
 }
 
-/// The gains, mixer, and thrust law are the sim Alia's, which the autotune tuned (`stable-flight-sim`
-/// `tests/alia.rs`); X-Plane's own addition is the roll and pitch rate I that trims its nose-up
-/// pitch, which the sim leaves out.
+/// Each surface link's deflection for `command`, as (wing, degrees).
+fn deflections(command: &ActuatorCommand) -> Vec<(usize, f32)> {
+    alia250()
+        .mapping
+        .surfaces
+        .iter()
+        .map(|link| (link.wing, link.deflection_deg(command.servos[link.servo])))
+        .collect()
+}
+
+/// The hover gains, lift mixing, and thrust law are the sim Alia's, which the autotune tuned
+/// (`stable-flight-sim` `tests/alia.rs`); X-Plane's own addition is the roll and pitch rate I
+/// that trims its nose-up pitch, which the sim leaves out.
 #[test]
-fn alia250_flies_the_sim_alias_tune() {
+fn alia250_hovers_on_the_sim_alias_tune() {
     let sim = stable_flight_sim::airframes::alia250();
     let mut xplane = alia250();
-    check!(xplane.stabilizer.body_rate.roll_gains.i == 0.2);
-    check!(xplane.stabilizer.body_rate.pitch_gains.i == 0.2);
-    xplane.stabilizer.body_rate.roll_gains.i = 0.0;
-    xplane.stabilizer.body_rate.pitch_gains.i = 0.0;
+    let hover = &mut xplane.stabilizer.hover;
+    check!(hover.body_rate.roll_gains.i == 0.2);
+    check!(hover.body_rate.pitch_gains.i == 0.2);
+    hover.body_rate.roll_gains.i = 0.0;
+    hover.body_rate.pitch_gains.i = 0.0;
+    check!(*hover == sim.stabilizer);
 
-    check!(xplane.stabilizer == sim.stabilizer);
-    check!(xplane.mixer == sim.mixer);
     // Worked out each its own way from the same liftoff throttle.
-    let hover = xplane.guidance.altitude.hover_thrust;
-    check!((hover - sim.guidance.altitude.hover_thrust).abs() < 1e-4);
-    xplane.guidance.altitude.hover_thrust = sim.guidance.altitude.hover_thrust;
-    check!(xplane.guidance == sim.guidance);
+    let guidance = &mut xplane.guidance.hover;
+    check!((guidance.altitude.hover_thrust - sim.guidance.altitude.hover_thrust).abs() < 1e-4);
+    guidance.altitude.hover_thrust = sim.guidance.altitude.hover_thrust;
+    check!(*guidance == sim.guidance);
+
+    // The lift rotors mix as the sim's copter, with and without a cruise output.
+    for moments in [Vec3::new(0.3, -0.2, 0.5), Vec3::new(-0.6, 0.4, -0.9)] {
+        let hover = ControlOutput::new(0.6, moments);
+        let blended = ControlOutput {
+            cruise: Some(CruiseOutput {
+                thrust: 0.5,
+                moments,
+            }),
+            ..hover
+        };
+        let expected = sim.mixer.clone().mix(&hover).motors;
+        for control in [hover, blended] {
+            let lift = xplane.mixer.mix(&control).motors;
+            check!(lift[..4] == expected[..4], "{control:?}");
+        }
+    }
 }
 
 #[test]
@@ -70,14 +97,58 @@ fn alia250_moments_drive_the_engines_the_sweep_measured() {
     }
 }
 
-/// The hover thrust, through the stabilizer's curve and the mixer, runs each lift engine at
-/// the measured liftoff throttle.
+/// Full cruise moments deflect each surface as X-Plane's own yoke does at full travel
+/// (xplane-bridge `design.md`, Spike findings: Surfaces): right roll drops the left ailerons
+/// 10° and raises the right 20°, nose up raises both elevators 20° (X-Plane's −20), nose right
+/// reads −30° on the left fin and +30° on the right. The pusher flies the cruise thrust up to
+/// the mixer's 0.8.
 #[test]
-fn alia250_hover_thrust_runs_the_liftoff_throttle() {
+fn alia250_surfaces_move_as_xplanes_yoke() {
+    // (cruise moments, (wing, degrees) for every link)
+    let cases = [
+        (
+            Vec3::new(1.0, 0.0, 0.0),
+            [(2, 10.0), (4, 10.0), (3, -20.0), (5, -20.0)].as_slice(),
+        ),
+        (
+            Vec3::new(-1.0, 0.0, 0.0),
+            [(2, -20.0), (4, -20.0), (3, 10.0), (5, 10.0)].as_slice(),
+        ),
+        (
+            Vec3::new(0.0, 1.0, 0.0),
+            [(8, -20.0), (9, -20.0)].as_slice(),
+        ),
+        (
+            Vec3::new(0.0, 0.0, 1.0),
+            [(10, -30.0), (11, 30.0)].as_slice(),
+        ),
+    ];
+    for (moments, expected) in cases {
+        let mut mixer = alia250().mixer;
+        let command = mixer.mix(&ControlOutput {
+            cruise: Some(CruiseOutput {
+                thrust: 1.0,
+                moments,
+            }),
+            ..Default::default()
+        });
+        let moved: Vec<_> = deflections(&command)
+            .into_iter()
+            .filter(|&(_, deg)| deg != 0.0)
+            .collect();
+        check!(moved == expected, "{moments:?}");
+        check!(engines(&command) == [0.0, 0.0, 0.0, 0.0, ALIA_THRUST_FACTOR]);
+    }
+}
+
+/// The hover thrust, through the stabilizer's curve and the mixer, runs each lift engine at
+/// the measured liftoff throttle; the cruise thrust runs the pusher at the cruise throttle.
+#[test]
+fn alia250_trims_run_the_measured_throttles() {
     let airframe = alia250();
-    let mut stabilizer = CopterStabilizer::new(airframe.stabilizer);
+    let mut stabilizer = CopterStabilizer::new(airframe.stabilizer.hover);
     let setpoint = Setpoint::Attitude(AttitudeSetpoint {
-        thrust: airframe.guidance.altitude.hover_thrust,
+        thrust: airframe.guidance.hover.altitude.hover_thrust,
         ..Default::default()
     });
     let output = stabilizer.stabilize(0.004, &setpoint, &VehicleState::default());
@@ -89,4 +160,14 @@ fn alia250_hover_thrust_runs_the_liftoff_throttle() {
             "{throttles:?}"
         );
     }
+
+    let cruise = ControlOutput {
+        cruise: Some(CruiseOutput {
+            thrust: airframe.guidance.plane.cruise_thrust,
+            moments: Vec3::zeros(),
+        }),
+        ..Default::default()
+    };
+    let pusher = engines(&mixer.mix(&cruise))[4];
+    check!((pusher - ALIA_CRUISE_THROTTLE).abs() < 1e-6);
 }
