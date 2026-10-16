@@ -1517,6 +1517,7 @@ fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
         (0.0, 30, Some(10.0 - 30.0 * step)),
         (0.0, 100, Some(10.0 - ALTITUDE_LEASH_M)), // the vehicle holds still: leashed
         (9.5, 1_000, Some(9.5)),                   // reached: holds the waypoint
+        (9.5, 500, Some(9.5)),                     // eased within 1 mm in 5 s
         // Near the waypoint: lowered at P (1.5) times the 0.015 m gap.
         (10.0 - 0.5 * step, 1, Some(10.0 - 1.5 * 0.5 * step * DT)),
         (25.0, 1, Some(25.0)), // climbs aren't limited
