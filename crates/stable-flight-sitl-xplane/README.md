@@ -107,5 +107,5 @@ Run examples with `RUST_LOG=info` to see connect, anchor, and liveness events.
 - **Thrust:** thrust-to-weight is about 1.34 at the default load: climbs are slow, and a heavier load leaves less.
 - **Yaw:** at yaw ratio 1 (a higher ratio sank it, the mixer giving up collective for yaw), the tail turns it off heading at a few m/s sideways ([#440](https://github.com/wboayue/stable-flight/issues/440)).
 - **Forward drift:** the front rotors are canted 4° forward, so hands-off in attitude mode it creeps forward; position hold takes it out.
-- **Transitions:** forward waits on the lift rotors until 40 m/s, the speed the wing holds level at: about 40 s, drag-limited.
+- **Transitions:** forward waits on the lift rotors until 40 m/s, the speed the wing holds level at: about 27 s from a hover (the sim model, slower through 30–40 m/s, takes 42 s).
 - **Scale:** it cruises at 45 m/s and turns at 20° of bank, about 850 m across: plane legs span kilometers.
