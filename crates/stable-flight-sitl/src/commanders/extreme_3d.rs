@@ -55,6 +55,10 @@
 //! - D-Pad Left: Attitude mode, copter regime
 //! - D-Pad Right: Attitude mode, plane regime (a VTOL transitions; a copter refuses it)
 //!
+//! A simulator that also reads the joystick must leave the hat unbound: in X-Plane, the hat
+//! pans the view by default, and a Left to pan it back asks for copter (#446). The
+//! `joystick_events` example prints what gilrs delivers, to check a mapping.
+//!
 //! ```no_run
 //! use stable_flight_sitl::commanders::extreme_3d::Extreme3DCommander;
 //! use stable_flight::{Commander, VehicleState};
@@ -588,6 +592,31 @@ mod tests {
             }
             assert_eq!((state.mode, state.regime), expected, "{name}");
             assert_eq!(state.channels[5], state.mode.to_channel_value(), "{name}");
+        }
+    }
+
+    /// gilrs's events for one D-pad Right press and release, then the stick and throttle
+    /// extremes of a hard sweep, as `joystick_events` recorded them with X-Plane in front
+    /// (#446): the regime stays plane. Only a hat Left asks for copter; with the hat also bound
+    /// to X-Plane's view, a press to pan the view back is one.
+    #[test]
+    fn dpad_right_then_sticks_keeps_plane() {
+        let axis = |axis, value, code| JoystickInput::Axis { axis, value, code };
+        let recorded = [
+            button(Button::DPadRight, 1.0, DPAD_RIGHT), // 275479.1 ms
+            button(Button::DPadRight, 0.0, DPAD_RIGHT), // 275886.5 ms
+            axis(Axis::Unknown, 0.965_277_8, THROTTLE_CODE),
+            axis(Axis::Unknown, -0.583_333_3, THROTTLE_CODE),
+            axis(Axis::LeftStickX, -0.668_759_8, 65_584),
+            axis(Axis::LeftStickX, 0.793_836_8, 65_584),
+            axis(Axis::LeftStickY, 0.625_356_4, 65_585),
+            axis(Axis::LeftStickY, -0.769_331_2, 65_585),
+            axis(Axis::RightStickY, -0.010_416_665, 65_589),
+        ];
+        let mut state = JoystickState::new(Mode::Attitude);
+        for input in recorded {
+            state.apply(input);
+            assert_eq!(state.regime, FlightRegime::Plane, "{input:?}");
         }
     }
 

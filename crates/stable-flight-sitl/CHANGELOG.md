@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `joystick_events` example: every gilrs event as CSV, and each gamepad's mapping source and
+  native axis and button codes; `--raw` without gilrs's default filters (#446).
+
 - `recorder::QuadPlaneColumns`: a lift+cruise VTOL's hover, transitions, and plane flight:
   both sides' moments and thrust, the cruise output, every lift rotor, the pusher, the
   surfaces, the setpoint, a blend's lift share, and the flight mode (#433).
