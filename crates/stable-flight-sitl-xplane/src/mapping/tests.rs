@@ -12,17 +12,6 @@ fn alia() -> ActuatorMapping {
     }
 }
 
-/// A surface link on `wing`, ±10° (or `plus`, `minus`).
-const fn link(servo: usize, surface: Surface, wing: usize, plus: f32, minus: f32) -> SurfaceLink {
-    SurfaceLink {
-        servo,
-        surface,
-        wing,
-        at_plus_deg: plus,
-        at_minus_deg: minus,
-    }
-}
-
 /// Every out-of-range engine or wing, and every engine used twice, is reported.
 #[test]
 fn validates_engines_and_wings() {
@@ -72,28 +61,28 @@ fn validates_engines_and_wings() {
         ),
         (
             ActuatorMapping {
-                surfaces: const { &[link(0, Surface::Aileron, 4, 10.0, -20.0)] },
+                surfaces: const { &[SurfaceLink::new(0, Surface::Aileron, 4, 10.0, -20.0)] },
                 ..alia()
             },
             Ok(()),
         ),
         (
             ActuatorMapping {
-                surfaces: const { &[link(8, Surface::Aileron, 4, 10.0, -20.0)] },
+                surfaces: const { &[SurfaceLink::new(8, Surface::Aileron, 4, 10.0, -20.0)] },
                 ..alia()
             },
             Err(MappingError::ServoOutOfRange { servo: 8 }),
         ),
         (
             ActuatorMapping {
-                surfaces: const { &[link(0, Surface::Aileron, 48, 10.0, -20.0)] },
+                surfaces: const { &[SurfaceLink::new(0, Surface::Aileron, 48, 10.0, -20.0)] },
                 ..alia()
             },
             Err(MappingError::WingOutOfRange { wing: 48 }),
         ),
         (
             ActuatorMapping {
-                surfaces: const { &[link(0, Surface::Aileron, 4, f32::NAN, -20.0)] },
+                surfaces: const { &[SurfaceLink::new(0, Surface::Aileron, 4, f32::NAN, -20.0)] },
                 ..alia()
             },
             Err(MappingError::InvalidDeflection {
@@ -103,7 +92,15 @@ fn validates_engines_and_wings() {
         ),
         (
             ActuatorMapping {
-                surfaces: const { &[link(0, Surface::Aileron, 4, 10.0, f32::INFINITY)] },
+                surfaces: const {
+                    &[SurfaceLink::new(
+                        0,
+                        Surface::Aileron,
+                        4,
+                        10.0,
+                        f32::INFINITY,
+                    )]
+                },
                 ..alia()
             },
             Err(MappingError::InvalidDeflection {
@@ -115,9 +112,9 @@ fn validates_engines_and_wings() {
             ActuatorMapping {
                 surfaces: const {
                     &[
-                        link(0, Surface::Aileron, 4, 10.0, -20.0),
-                        link(2, Surface::Rudder, 4, 10.0, -10.0),
-                        link(1, Surface::Aileron, 4, 10.0, -20.0),
+                        SurfaceLink::new(0, Surface::Aileron, 4, 10.0, -20.0),
+                        SurfaceLink::new(2, Surface::Rudder, 4, 10.0, -10.0),
+                        SurfaceLink::new(1, Surface::Aileron, 4, 10.0, -20.0),
                     ]
                 },
                 ..alia()
@@ -129,7 +126,7 @@ fn validates_engines_and_wings() {
         ),
         (
             ActuatorMapping {
-                surfaces: const { &[link(1, Surface::Elevator, 8, -20.0, 20.0)] },
+                surfaces: const { &[SurfaceLink::new(1, Surface::Elevator, 8, -20.0, 20.0)] },
                 ..alia()
             },
             Err(MappingError::DuplicateSurface {
@@ -159,8 +156,8 @@ fn writes_throttles_for_mapped_and_idle_engines() {
 /// sign; out-of-range commands saturate and NaN holds it at 0°.
 #[test]
 fn deflects_each_side_to_its_own_travel() {
-    let aileron = link(0, Surface::Aileron, 2, 10.0, -20.0);
-    let rudder = link(2, Surface::Rudder, 10, -30.0, 30.0);
+    let aileron = SurfaceLink::new(0, Surface::Aileron, 2, 10.0, -20.0);
+    let rudder = SurfaceLink::new(2, Surface::Rudder, 10, -30.0, 30.0);
     // (link, servo, degrees)
     let rows = [
         (aileron, 0.0, 0.0),
@@ -190,7 +187,7 @@ fn overrides_surfaces_when_driving_or_holding_any() {
         ..alia()
     };
     let driven = ActuatorMapping {
-        surfaces: const { &[link(1, Surface::Elevator, 8, -20.0, 20.0)] },
+        surfaces: const { &[SurfaceLink::new(1, Surface::Elevator, 8, -20.0, 20.0)] },
         ..none
     };
     check!(alia().overrides_surfaces());

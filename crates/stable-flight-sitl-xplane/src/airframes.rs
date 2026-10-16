@@ -71,36 +71,19 @@ const ALIA_MAPPING: ActuatorMapping = ActuatorMapping {
 /// full right roll drops the left ailerons 10° and raises the right 20°, full back stick
 /// raises the elevators 20°, full right rudder reads −30° on the left fin and +30° on the
 /// right. The `.acf`'s left wings are 2, 4, 8, and 10 (`_is_right_mult` −1).
-const ALIA_SURFACES: [SurfaceLink; 8] = {
-    const fn link(
-        servo: usize,
-        surface: Surface,
-        wing: usize,
-        plus: f32,
-        minus: f32,
-    ) -> SurfaceLink {
-        SurfaceLink {
-            servo,
-            surface,
-            wing,
-            at_plus_deg: plus,
-            at_minus_deg: minus,
-        }
-    }
-    [
-        // Servo 0 rolls right: left ailerons down, right up, 20° up and 10° down.
-        link(0, Surface::Aileron, 2, 10.0, -20.0),
-        link(0, Surface::Aileron, 4, 10.0, -20.0),
-        link(0, Surface::Aileron, 3, -20.0, 10.0),
-        link(0, Surface::Aileron, 5, -20.0, 10.0),
-        // Servo 1 raises the nose: trailing edges up (X-Plane's negative).
-        link(1, Surface::Elevator, 8, -20.0, 20.0),
-        link(1, Surface::Elevator, 9, -20.0, 20.0),
-        // Servo 2 turns the nose right.
-        link(2, Surface::Rudder, 10, -30.0, 30.0),
-        link(2, Surface::Rudder, 11, 30.0, -30.0),
-    ]
-};
+const ALIA_SURFACES: [SurfaceLink; 8] = [
+    // Servo 0 rolls right: left ailerons down, right up, 20° up and 10° down.
+    SurfaceLink::new(0, Surface::Aileron, 2, 10.0, -20.0),
+    SurfaceLink::new(0, Surface::Aileron, 4, 10.0, -20.0),
+    SurfaceLink::new(0, Surface::Aileron, 3, -20.0, 10.0),
+    SurfaceLink::new(0, Surface::Aileron, 5, -20.0, 10.0),
+    // Servo 1 raises the nose: trailing edges up (X-Plane's negative).
+    SurfaceLink::new(1, Surface::Elevator, 8, -20.0, 20.0),
+    SurfaceLink::new(1, Surface::Elevator, 9, -20.0, 20.0),
+    // Servo 2 turns the nose right.
+    SurfaceLink::new(2, Surface::Rudder, 10, -30.0, 30.0),
+    SurfaceLink::new(2, Surface::Rudder, 11, 30.0, -30.0),
+];
 
 /// The BETA Technologies Alia 250 (Laminar's stock X-Plane 12 model), a lift+cruise VTOL: four
 /// lift rotors on X-Plane's engines 0–3, the pusher on engine 4, the ailerons, elevators, and
@@ -151,6 +134,7 @@ const ALIA_SURFACES: [SurfaceLink; 8] = {
 /// assert_eq!(airframe.stabilizer.plane.trim_airspeed_mps, 55.0);
 /// ```
 pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig, TableMixer<8>> {
+    let plane_rate = PlaneRateControllerConfig::default();
     Airframe {
         guidance: QuadPlaneGuidanceConfig {
             hover: alia250_hover_guidance(),
@@ -182,19 +166,19 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                     roll: RateGains {
                         p: 0.47,
                         i: 0.05,
-                        ..PlaneRateControllerConfig::default().roll
+                        ..plane_rate.roll
                     },
                     pitch: RateGains {
                         p: 0.52,
                         i: 0.045,
-                        ..PlaneRateControllerConfig::default().pitch
+                        ..plane_rate.pitch
                     },
                     yaw: RateGains {
                         p: 0.1,
                         i: 0.12,
-                        ..PlaneRateControllerConfig::default().yaw
+                        ..plane_rate.yaw
                     },
-                    ..PlaneRateControllerConfig::default()
+                    ..plane_rate
                 },
                 max_bank_rad: 20.0f32.to_radians(),
                 trim_airspeed_mps: 55.0,

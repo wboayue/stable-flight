@@ -86,21 +86,6 @@ fn alia() -> ActuatorMapping {
 
 /// The Alia's pusher on engine 4, an aileron pair, and the left elevator.
 fn alia_quadplane() -> ActuatorMapping {
-    const fn link(
-        servo: usize,
-        surface: Surface,
-        wing: usize,
-        plus: f32,
-        minus: f32,
-    ) -> SurfaceLink {
-        SurfaceLink {
-            servo,
-            surface,
-            wing,
-            at_plus_deg: plus,
-            at_minus_deg: minus,
-        }
-    }
     ActuatorMapping {
         motors: [
             Some(1),
@@ -116,9 +101,9 @@ fn alia_quadplane() -> ActuatorMapping {
         neutral_wings: &[],
         surfaces: const {
             &[
-                link(0, Surface::Aileron, 2, 10.0, -20.0),
-                link(0, Surface::Aileron, 3, -20.0, 10.0),
-                link(1, Surface::Elevator, 8, -20.0, 20.0),
+                SurfaceLink::new(0, Surface::Aileron, 2, 10.0, -20.0),
+                SurfaceLink::new(0, Surface::Aileron, 3, -20.0, 10.0),
+                SurfaceLink::new(1, Surface::Elevator, 8, -20.0, 20.0),
             ]
         },
     }
