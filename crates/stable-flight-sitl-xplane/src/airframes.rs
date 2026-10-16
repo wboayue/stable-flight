@@ -142,7 +142,7 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                 max_bank_rad: 20.0f32.to_radians(),
                 max_pitch_up_rad: 24.0f32.to_radians(),
                 trim_pitch_rad: 2.0f32.to_radians(),
-                cruise_thrust: ALIA_CRUISE_THROTTLE / ALIA_THRUST_FACTOR,
+                cruise_thrust: ALIA_CRUISE_THROTTLE,
                 // `NPFG_PERIOD` 40.
                 l1_period_s: 40.0,
                 loiter_radius_m: 850.0,
