@@ -108,6 +108,9 @@ pub fn plane() -> PlaneAirframe {
         max_deflection_rad: Vec3::repeat(0.3491),
         servo_time_constant_s: 0.14,
         max_thrust_n: 1.2 * MASS_KG * GRAVITY,
+        thrust_exponent: QUADRATIC,
+        thrust_falloff_n_per_mps: 0.0,
+        thrust_line_below_cg_m: 0.0,
         motor_time_constant_s: 0.05,
         ground_friction: 0.5,
         max_step_s: 0.001,
@@ -203,12 +206,14 @@ pub(super) fn cruise_thrust<const N: usize>(
     let pressure_area_n = aero::pressure_area_n(model, airspeed_mps);
     let lift = model.mass_kg * GRAVITY / pressure_area_n;
     let drag_n = pressure_area_n * aero::drag_coefficient(model, lift);
+    // Full command's thrust at this airspeed, after the falloff.
+    let full_n = model.max_thrust_n - model.thrust_falloff_n_per_mps * airspeed_mps;
     let (count, thrust_factor) = forward_motors(mixer, mixer_config);
     thrust_for(
         drag_n / count,
-        model.max_thrust_n,
+        full_n,
         thrust_factor,
-        QUADRATIC,
+        model.thrust_exponent,
         thrust_curve_exponent,
     )
 }

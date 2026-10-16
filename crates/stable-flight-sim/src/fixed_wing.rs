@@ -42,9 +42,21 @@ pub struct FixedWingModel {
     pub max_deflection_rad: Vec3,
     /// First-order lag from a servo's command to its position, in s.
     pub servo_time_constant_s: f32,
-    /// Each motor's thrust at full command, in N, along body `x`. Thrust is
-    /// `max_thrust_n · command²`, as on the multirotor, and doesn't fall off with airspeed.
+    /// Each motor's thrust at full command and no airspeed, in N, along body `x`. Thrust is
+    /// `command^thrust_exponent · (max_thrust_n − thrust_falloff_n_per_mps · u)`, `u` the
+    /// forward airspeed (body `x`, positive), and never below 0.
     pub max_thrust_n: f32,
+    /// How thrust follows the command: 2 for a fixed-pitch prop at a set voltage; 1 where the
+    /// command sets the motor's power and the prop runs near its design speed, as X-Plane's
+    /// Alia 250 pusher (#392). Positive.
+    pub thrust_exponent: f32,
+    /// Thrust lost per m/s of forward airspeed at full command, in N per m/s: 0 holds static
+    /// thrust at any speed; a power-limited prop loses thrust as the air speeds up through it.
+    /// Non-negative.
+    pub thrust_falloff_n_per_mps: f32,
+    /// How far below the center of gravity the thrust line runs, in m: thrust there pitches the
+    /// nose up by `thrust · thrust_line_below_cg_m`. Negative above the center of gravity.
+    pub thrust_line_below_cg_m: f32,
     /// First-order lag from the motor's command to the command it runs at, in s.
     pub motor_time_constant_s: f32,
     /// Friction coefficient against the ground while resting on it (Coulomb, unitless).
@@ -143,6 +155,7 @@ impl FixedWingModel {
             ("aero.oswald", aero.oswald),
             ("servo_time_constant_s", self.servo_time_constant_s),
             ("max_thrust_n", self.max_thrust_n),
+            ("thrust_exponent", self.thrust_exponent),
             ("motor_time_constant_s", self.motor_time_constant_s),
             ("max_step_s", self.max_step_s),
         ])?;
@@ -152,8 +165,10 @@ impl FixedWingModel {
             ("max_deflection_rad.z", self.max_deflection_rad.z),
             ("aero.c_drag_0", aero.c_drag_0),
             ("ground_friction", self.ground_friction),
+            ("thrust_falloff_n_per_mps", self.thrust_falloff_n_per_mps),
         ])?;
         check_finite(&[
+            ("thrust_line_below_cg_m", self.thrust_line_below_cg_m),
             ("aero.c_lift_0", aero.c_lift_0),
             ("aero.c_lift_alpha", aero.c_lift_alpha),
             ("aero.c_side_beta", aero.c_side_beta),
