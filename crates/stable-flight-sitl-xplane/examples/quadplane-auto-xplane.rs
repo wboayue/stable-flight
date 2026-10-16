@@ -1,6 +1,7 @@
 //! Flies the Alia 250 through a waypoint script in X-Plane, using a [`ScriptCommander`], on
-//! [`airframes::alia250`]: by default `flights/alia_transition_lap.csv`, a hover climb,
-//! a forward transition, plane legs out and back, a back transition, and a hover home.
+//! [`airframes::alia250`]: by default `flights/alia_transition_lap.csv`, from Oceano County
+//! Airport (L52) so the plane legs fly over the ocean: a hover climb, a forward transition,
+//! a box of plane legs offshore, a back transition, and a hover home.
 //!
 //! It flies on [`QuadPlaneGuidance`] and [`QuadPlaneStabilizer`]: the copter controllers on the
 //! lift rotors, the plane controllers on the surfaces and pusher, blended through each

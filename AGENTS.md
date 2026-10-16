@@ -68,7 +68,7 @@ just fly-quadplane-auto                       # quadplane-auto-realflight: Titan
 just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv; flights/explora_transition.csv flies plane legs, explora_transition_lap.csv one lap of them; --end, --record)
 just capture                                  # capture-state-realflight: joystick flight, raw SimulatorState → CSV
 just capture-xplane                           # capture-state-xplane: read-only, raw X-Plane samples → CSV while flown with X-Plane's controls (--host, --output)
-just fly-xplane-auto                          # quadplane-auto-xplane: the Alia through flights/alia_transition_lap.csv (transitions, plane legs out and back; --end, --record, --param NAME=VALUE)
+just fly-xplane-auto                          # quadplane-auto-xplane: the Alia through flights/alia_transition_lap.csv (from Oceano L52: transitions, plane legs offshore; --end, --record, --param NAME=VALUE)
 just fly-xplane | just fly-xplane-companion   # quadplane-manual-xplane (joystick: hover, D-pad Right plane, Left copter; --record, --param) / copter-companion-xplane (link, copter flight): the Alia 250 in X-Plane, --host for X-Plane elsewhere
 just xplane-sweep                             # engine-sweep-xplane: yaw sign per diagonal, liftoff throttle, motor lag, moment pulses on the runway
 just plot <csv> <out> | just gen-figure-eight # plot_flight (a waypoint script; --record: a recorder CSV as time series), generate_figure_eight
