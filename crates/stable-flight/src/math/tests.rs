@@ -540,3 +540,38 @@ fn guard_sink_adds_thrust_past_the_sink_limit() {
         }
     }
 }
+
+#[test]
+fn shaped_closing_speed_brakes_to_zero_at_the_target() {
+    // p 1.5, accel 1: the linear part ends at 1 / 2.25 = 0.444 m, at 0.667 m/s.
+    // (distance m, p, accel m/s², expected m/s)
+    let cases = [
+        (0.0, 1.5, 1.0, 0.0),
+        (-1.0, 1.5, 1.0, 0.0),
+        (f32::NAN, 1.5, 1.0, 0.0),
+        (0.2, 1.5, 1.0, 0.3),                                  // linear
+        (1.0 / 2.25, 1.5, 1.0, 1.0 / 1.5),                     // the joint
+        (2.0, 1.5, 1.0, libm::sqrtf(2.0 * (2.0 - 1.0 / 4.5))), // square root
+        (10.0, 1.5, 1.0, libm::sqrtf(2.0 * (10.0 - 1.0 / 4.5))),
+        (10.0, 1.5, 0.0, 15.0), // no deceleration limit: linear
+        (10.0, 1.5, f32::NAN, 15.0),
+        (2.0, 0.0, 1.0, 2.0), // no P: square root alone
+        (2.0, 0.0, -1.0, 0.0),
+    ];
+    for (distance_m, p, accel, expected) in cases {
+        assert_relative_eq!(
+            shaped_closing_speed(distance_m, p, accel),
+            expected,
+            epsilon = 1e-5
+        );
+    }
+}
+
+/// The speed is continuous where the linear part meets the square root.
+#[test]
+fn shaped_closing_speed_is_continuous_at_the_joint() {
+    let joint_m = 1.0 / 2.25;
+    let below = shaped_closing_speed(joint_m - 1e-4, 1.5, 1.0);
+    let above = shaped_closing_speed(joint_m + 1e-4, 1.5, 1.0);
+    assert!((above - below).abs() < 1e-3, "{below} → {above}");
+}

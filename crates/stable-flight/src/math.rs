@@ -1,7 +1,8 @@
 //! Small numeric helpers shared by guidance, stabilizers, controllers, and mixers:
 //! [`saturate_unit`], [`saturate_symmetric`], [`saturate_throttle`], [`desaturate`],
 //! [`cap_magnitude`], [`clamp_symmetric`] and its per-component [`clamp_symmetric_each`],
-//! [`limit_or_zero`], [`all_finite`], [`assert_dt`], [`tilt_boost`], [`guard_sink`], and
+//! [`limit_or_zero`], [`all_finite`], [`assert_dt`], [`tilt_boost`], [`guard_sink`],
+//! [`shaped_closing_speed`], and
 //! [`wrap_angle`] and [`euler_angles`] (both public at the crate root).
 //!
 //! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite
@@ -344,6 +345,28 @@ pub(crate) fn saturate_throttle(value: f32) -> f32 {
 pub(crate) fn guard_sink(thrust: f32, climb_mps: f32, limit_mps: f32, gain: f32) -> Option<f32> {
     let excess_mps = -limit_mps - climb_mps;
     (limit_mps > 0.0 && excess_mps > 0.0).then(|| saturate_throttle(thrust + gain * excess_mps))
+}
+
+/// The speed toward a target `distance_m` away that `accel_mps2` of deceleration can still
+/// bring to zero at the target: `p · distance` within `accel / p²` of it, `√(2 · accel ·
+/// (distance − accel / 2p²))` beyond, the two meeting with the same value and slope (the shape
+/// of ArduPilot's `sqrt_controller`, `libraries/AP_Math/control.cpp:575`). A non-positive or
+/// NaN distance gives 0; a non-positive `accel_mps2` gives the linear speed alone, and a
+/// non-positive `p` the square root alone.
+pub(crate) fn shaped_closing_speed(distance_m: f32, p: f32, accel_mps2: f32) -> f32 {
+    if distance_m.is_nan() || distance_m <= 0.0 {
+        return 0.0;
+    }
+    // NaN or non-positive: no deceleration limit.
+    let accel_mps2 = if accel_mps2 > 0.0 { accel_mps2 } else { 0.0 };
+    if p.is_nan() || p <= 0.0 {
+        return libm::sqrtf(2.0 * accel_mps2 * distance_m);
+    }
+    let linear_m = accel_mps2 / (p * p);
+    if accel_mps2 == 0.0 || distance_m <= linear_m {
+        return p * distance_m;
+    }
+    libm::sqrtf(2.0 * accel_mps2 * (distance_m - linear_m / 2.0))
 }
 
 /// Wraps an angle in radians to [-π, π); non-finite input gives NaN.

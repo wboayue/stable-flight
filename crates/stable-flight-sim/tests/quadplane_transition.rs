@@ -8,17 +8,23 @@ use assert2::check;
 use stable_flight::commanders::{
     FailsafeCommander, FailsafeConfig, HoldCommander, LinkedCommander,
 };
-use stable_flight::{Command, Commander, FlightMode, ModeRefusal, Vec3, VehicleState};
-use stable_flight_sim::airframes;
+use stable_flight::guidance::copter::ALTITUDE_LEASH_M;
+use stable_flight::{
+    Command, Commander, FlightMode, ModeRefusal, TelemetryPublisher, TelemetryRecord, Vec3,
+    VehicleState,
+};
+use stable_flight_sim::{Wind, airframes};
 
 use common::plane::{AIRSPEED_BAND_MPS, ALTITUDE_BAND_M, LineDeviation};
-use common::quadplane::{QuadPlanePlant, forward, forward_and_back, quadplane_loop};
+use common::quadplane::{
+    QuadPlanePlant, forward, forward_and_back, quadplane_loop, quadplane_pipeline,
+};
 use common::transition::{
     BACK_DURATION_S, CROSS_TRACK_M, FORWARD_AT_S, FORWARD_TIMEOUT_S, Forward, HOLD_S, PLANE_HOLD_S,
     PLANE_SETTLE_S, TRANSITION_ALTITUDE_M, Trace, check_altitude_loss, entered_s, trace,
     transition_heights,
 };
-use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK};
+use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK, fly};
 
 /// When the back transition is requested: 32 s into plane flight, settled on the line.
 const BACK_AT_S: f32 = 60.0;
@@ -199,4 +205,56 @@ fn link_loss_mid_transition_returns_to_a_hover() {
         .at(copter_s)
         .map_or(Vec3::repeat(f32::NAN), |sample| sample.state.position_m);
     check_calm_hover(&flight, copter_s + HOVER_SETTLE_S, point_m, "link loss");
+}
+
+/// The forward transition's hover thrust tick to tick, and how far above the altitude it holds
+/// the vehicle rose.
+#[derive(Debug, Default)]
+struct HoverThrust {
+    hold_m: Option<f32>,
+    previous: Option<f32>,
+    largest_step: f32,
+    above_hold_m: f32,
+}
+
+impl TelemetryPublisher for HoverThrust {
+    fn publish(&mut self, record: &TelemetryRecord) {
+        if record.flight_mode.mode != FlightMode::ToPlane {
+            self.previous = None;
+            return;
+        }
+        let altitude_m = record.state.position_m.z;
+        let hold_m = *self.hold_m.get_or_insert(altitude_m);
+        self.above_hold_m = self.above_hold_m.max(altitude_m - hold_m);
+        let thrust = record.setpoint.thrust();
+        if let Some(previous) = self.previous {
+            self.largest_step = self.largest_step.max((thrust - previous).abs());
+        }
+        self.previous = Some(thrust);
+    }
+}
+
+/// An updraft lifting a forward transition past the leash above the altitude it holds moves
+/// the lift rotors' thrust smoothly: the descent feedforward stepped in there, half of full
+/// thrust in one tick, and chattered the Alia's lift rotors in X-Plane (#445).
+#[test]
+fn updraft_in_a_transition_moves_the_hover_thrust_smoothly() {
+    let airframe = airframes::quadplane();
+    let updraft = Wind {
+        steady_mps: Vec3::new(0.0, 0.0, 1.0),
+        gust: None,
+    };
+    let plant = QuadPlanePlant::in_wind(airframe, updraft);
+    let mut flight_loop = quadplane_pipeline(&plant, forward(&airframe), HoverThrust::default());
+    fly(
+        &mut flight_loop,
+        FORWARD_AT_S + FORWARD_TIMEOUT_S,
+        |_, _| {},
+    );
+    let (.., hover) = flight_loop.into_parts();
+
+    // Measured 1.14 m: the transition crosses the leash.
+    check!(hover.above_hold_m > ALTITUDE_LEASH_M, "{hover:?}");
+    // Measured 0.001 (0.544 with the step).
+    check!(hover.largest_step < 0.05, "{hover:?}");
 }

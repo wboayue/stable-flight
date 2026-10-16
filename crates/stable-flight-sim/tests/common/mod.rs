@@ -45,6 +45,13 @@ pub type Pipeline<C, T> =
 /// The pipeline recording its last [`RECORDED`] ticks.
 pub type SimLoop<C> = Pipeline<C, RecordingTelemetry<RECORDED>>;
 
+/// Most a waypoint descent may sink below its waypoint arriving, in m. The descent target
+/// brakes at `descent_accel_mps2` to stop on the waypoint (ArduPilot's shaping, #445):
+/// measured 0.11 m on `quad_x` from 30 to 10 m and 0.06 m on the tailsitter after a back
+/// transition (0.52 m and 1.16 m when the target snapped onto the waypoint, #403), so 0.2 m
+/// leaves about twice the larger.
+pub const ARRIVAL_UNDERSHOOT_M: f32 = 0.2;
+
 /// Altitude of the [`hover`] point over the origin, in m.
 pub const HOVER_ALTITUDE_M: f32 = 5.0;
 

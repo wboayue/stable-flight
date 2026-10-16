@@ -1504,9 +1504,9 @@ fn waypoint_at(altitude_m: f32) -> ControlInput {
 }
 
 /// A waypoint below the vehicle is approached by an altitude target lowered at
-/// `max_descent_mps` (until the leash holds it), with that rate fed forward; one within a
-/// step, or above, is taken at once. The target starts from the vehicle's altitude, and a non-finite waypoint passes
-/// through without latching.
+/// `max_descent_mps` far from it (until the leash holds it) and at the altitude loop's P times
+/// the gap near it; one above is taken at once. The target starts from the vehicle's altitude,
+/// and a non-finite waypoint passes through without latching.
 #[test]
 fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
     const DT: f32 = 0.01;
@@ -1517,8 +1517,9 @@ fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
         (0.0, 30, Some(10.0 - 30.0 * step)),
         (0.0, 100, Some(10.0 - ALTITUDE_LEASH_M)), // the vehicle holds still: leashed
         (9.5, 1_000, Some(9.5)),                   // reached: holds the waypoint
-        (10.0 - 0.5 * step, 1, Some(10.0 - 0.5 * step)), // within a step
-        (25.0, 1, Some(25.0)),                     // climbs aren't limited
+        // Near the waypoint: lowered at P (1.5) times the 0.015 m gap.
+        (10.0 - 0.5 * step, 1, Some(10.0 - 1.5 * 0.5 * step * DT)),
+        (25.0, 1, Some(25.0)), // climbs aren't limited
         (f32::NAN, 1, None),
     ];
     for (waypoint_m, ticks, expected) in cases {
@@ -1532,6 +1533,49 @@ fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
             }
             (target, expected) => assert!(target == expected, "{waypoint_m}: {target:?}"),
         }
+    }
+}
+
+/// Where the leash puts the target on the waypoint, the feedforward is the same on both sides:
+/// a target latched on the waypoint with the vehicle pushed just past the leash above it gets
+/// no descent rate stepped in (#445: the lift rotors chattered through a transition).
+#[test]
+fn descent_feedforward_is_continuous_at_the_leash() {
+    const DT: f32 = 0.004;
+    let target = |above_m: f32| {
+        let (mut guidance, _) = guidance_at(10.0 + above_m);
+        guidance.altitude_target_m = Some(10.0);
+        guidance.descend_toward(DT, 10.0, 10.0 + above_m)
+    };
+    let below = target(ALTITUDE_LEASH_M - 1e-3);
+    let above = target(ALTITUDE_LEASH_M + 1e-3);
+    assert!(
+        (above.velocity_mps - below.velocity_mps).abs() < 0.01,
+        "{below:?} → {above:?}"
+    );
+    assert!(
+        (above.altitude_m - below.altitude_m).abs() < 0.01,
+        "{below:?} → {above:?}"
+    );
+}
+
+/// The descent rate fed forward shrinks toward the waypoint, so `descent_accel_mps2` (1 m/s²)
+/// stops it there: linear at P 1.5 within 0.44 m, a square root beyond, `max_descent_mps` far
+/// away.
+#[test]
+fn descent_feedforward_brakes_to_the_waypoint() {
+    // (latched target's height above the waypoint, expected feedforward m/s)
+    let cases = [
+        (0.0, 0.0),
+        (0.2, -0.3),
+        (2.0, -libm::sqrtf(2.0 * (2.0 - 1.0 / 4.5))),
+        (10.0, -DEFAULT_MAX_DESCENT_MPS),
+    ];
+    for (height_m, expected) in cases {
+        let (mut guidance, _) = guidance_at(10.0 + height_m);
+        guidance.altitude_target_m = Some(10.0 + height_m);
+        let target = guidance.descend_toward(1e-6, 10.0, 10.0 + height_m);
+        approx::assert_relative_eq!(target.velocity_mps, expected, epsilon = 1e-3);
     }
 }
 

@@ -18,6 +18,7 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_NAV_PERIOD", navigation_period_s),
         param!(deg "GUID_TILT_MAX", max_tilt_rad),
         param!("GUID_DESC_MAX", max_descent_mps),
+        param!("GUID_DESC_ACC", descent_accel_mps2),
         param!("GUID_LAND_SPD", land_speed_mps),
         param!("GUID_THR_MIN", thrust.min_thrust),
         param!("GUID_SINK_LIM", thrust.sink_limit_mps),
@@ -80,6 +81,13 @@ mod metadata {
             LIMITS
                 .param("GUID_DESC_MAX", "Fastest descent waypoint flight requests")
                 .with_units("m/s")
+                .above(0.0),
+            LIMITS
+                .param(
+                    "GUID_DESC_ACC",
+                    "Deceleration a waypoint descent stops on the waypoint with",
+                )
+                .with_units("m/s/s")
                 .above(0.0),
             LANDING
                 .param("GUID_LAND_SPD", "Descent rate while landing")
