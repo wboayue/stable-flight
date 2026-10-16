@@ -105,7 +105,10 @@ thrust and one at least, or read them off a fitted model (the Alia's
   that doesn't change with them is the pitch loop lagging its setpoint (`PSTAB_*`): on the sim
   Alia a 30 m descent overshoots 20 m while pitch trails by several degrees.
 - **Slow below `PGUID_ASPD_MIN` with full thrust:** underspeed has latched (below 0.9 of it);
-  it clears back at the speed demand.
+  it clears back at `PGUID_ASPD_MIN`.
+- **Dives entering plane flight:** the forward transition hands over below the speed the wing
+  holds level at, so it trades height for speed: the sim Alia hands over at 37.5 m/s against
+  its 40 and loses 41 m. Raise `TRAN_ASPD_MIN` toward `PGUID_ASPD_MIN`.
 
 ## Transition knobs
 

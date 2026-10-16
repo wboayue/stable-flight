@@ -241,7 +241,9 @@ impl TelemetryPublisher for HoverThrust {
 fn updraft_in_a_transition_moves_the_hover_thrust_smoothly() {
     let airframe = airframes::quadplane();
     let updraft = Wind {
-        steady_mps: Vec3::new(0.0, 0.0, 1.0),
+        // Strong enough to lift the transition past the leash under total energy control,
+        // which holds the plane side's height against 1 m/s (0.4 m above; #454).
+        steady_mps: Vec3::new(0.0, 0.0, 2.5),
         gust: None,
     };
     let plant = QuadPlanePlant::in_wind(airframe, updraft);
@@ -253,8 +255,8 @@ fn updraft_in_a_transition_moves_the_hover_thrust_smoothly() {
     );
     let (.., hover) = flight_loop.into_parts();
 
-    // Measured 1.14 m: the transition crosses the leash.
+    // Measured 2.0 m: the transition crosses the leash.
     check!(hover.above_hold_m > ALTITUDE_LEASH_M, "{hover:?}");
-    // Measured 0.001 (0.544 with the step).
+    // Measured 0.003 (0.544 with the step, in 1 m/s).
     check!(hover.largest_step < 0.05, "{hover:?}");
 }
