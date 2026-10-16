@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `airframes::explora_vtol()` and `titan_cobra()` fly plane waypoints by total energy control
+  (#454) on ArduPilot's defaults, with their plane airspeeds as its least and most.
+
 ### Added
 
 - `airframes::titan_cobra()`: the ArduPilot SITL_Models Titan Cobra VTOL quadplane on

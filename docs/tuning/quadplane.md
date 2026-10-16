@@ -42,7 +42,8 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
 3. **Plane.** Tune the wing as an airplane (`PSTAB_*`, `PGUID_*`). Set `PGUID_CRUISE` to the
    pusher thrust that holds level flight at trim airspeed, as a share of the full pusher: the
    pusher spans its whole range, whatever the lift rotors' thrust factor
-   ([#448](https://github.com/wboayue/stable-flight/issues/448)).
+   ([#448](https://github.com/wboayue/stable-flight/issues/448)). Then the total energy
+   control below.
 4. **Transitions.** Tune these last, from a settled hover at least `TRAN_MIN_HGT` up.
 
 **Worked example (Alia 250 in X-Plane, hover only, #351):** a full-size aircraft, so the
@@ -78,6 +79,33 @@ small-copter defaults don't carry over; measure first, then tune on a sim model 
   `TRAN_ASPD_MIN` 11 (its `ARSPD_FBW_MIN`), the first lap flew: forward in 9 s gaining
   2.6 m, the lap at 27–32 m and 13–15 m/s, back within 2.6 m. The back transition ended on
   `TRAN_VT_TIMEOUT` still at 6.7 m/s, slowed by drag only.
+
+## Plane altitude and airspeed (total energy control)
+
+Waypoint flight holds altitude and airspeed together
+([#454](https://github.com/wboayue/stable-flight/issues/454)): thrust for the total energy,
+pitch for its balance. Its knobs are ArduPilot's `TECS_*`, under `PGUID_`:
+
+| Param | Field | Set it to |
+|---|---|---|
+| `PGUID_CLMB_MAX` | `plane.tecs.max_climb_mps` | the steady climb at full thrust and trim airspeed |
+| `PGUID_SINK_MIN` | `plane.tecs.min_sink_mps` | the steady sink at least thrust (`PGUID_THR_MIN`) and trim airspeed |
+| `PGUID_ASPD_MIN`, `_MAX` | `plane.tecs.min_airspeed_mps`, … | the stabilizer's `PSTAB_ASPD_MIN`, `_MAX` |
+| `PGUID_TCONST` | `plane.tecs.time_constant_s` | 5 s; longer for a slow, heavy aircraft |
+| `PGUID_PTCH_DAMP`, `PGUID_THR_DAMP`, `PGUID_INTEG` | … | ArduPilot's 0.3, 0.5, 0.3 |
+| `PGUID_SPDWEIGHT` | `plane.tecs.speed_weight` | 1; toward 0 to hold height before speed, 2 the reverse |
+| `PGUID_RLL2THR` | `plane.tecs.roll_compensation` | 10; more if turns lose airspeed |
+
+The climb and sink set where full and least thrust sit, so measure them: fly a leg at full
+thrust and one at least, or read them off a fitted model (the Alia's
+`alia250_energy_limits_are_the_models`, 1.8 and 3.5 m/s at 45 m/s). Symptoms:
+
+- **Climbs stall short at full thrust:** `PGUID_CLMB_MAX` above what the aircraft makes.
+- **Overshoots altitude on steps:** raise `PGUID_PTCH_DAMP`, or `PGUID_TCONST`. A large one
+  that doesn't change with them is the pitch loop lagging its setpoint (`PSTAB_*`): on the sim
+  Alia a 30 m descent overshoots 20 m while pitch trails by several degrees.
+- **Slow below `PGUID_ASPD_MIN` with full thrust:** underspeed has latched (below 0.9 of it);
+  it clears back at the speed demand.
 
 ## Transition knobs
 

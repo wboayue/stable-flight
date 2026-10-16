@@ -19,9 +19,17 @@ impl ParamTable for PlaneGuidanceConfig {
         param!("PGUID_ALT_P", altitude_p),
         param!("PGUID_ALT_I", altitude_i),
         param!("PGUID_ALT_IMAX", altitude_max_integral),
-        param!("PGUID_SPD_P", speed_p),
-        param!("PGUID_SPD_I", speed_i),
-        param!("PGUID_SPD_IMAX", speed_max_integral),
+        param!("PGUID_TCONST", tecs.time_constant_s),
+        param!("PGUID_CLMB_MAX", tecs.max_climb_mps),
+        param!("PGUID_SINK_MIN", tecs.min_sink_mps),
+        param!("PGUID_SINK_MAX", tecs.max_sink_mps),
+        param!("PGUID_THR_DAMP", tecs.thrust_damping),
+        param!("PGUID_INTEG", tecs.integrator_gain),
+        param!("PGUID_PTCH_DAMP", tecs.pitch_damping),
+        param!("PGUID_SPDWEIGHT", tecs.speed_weight),
+        param!("PGUID_RLL2THR", tecs.roll_compensation),
+        param!("PGUID_ASPD_MIN", tecs.min_airspeed_mps),
+        param!("PGUID_ASPD_MAX", tecs.max_airspeed_mps),
         param!("PGUID_THR_MIN", min_thrust),
         param!("PGUID_THR_MAX", max_thrust),
         param!("PGUID_CLMB_THR", climb_thrust_per_rad),
@@ -36,6 +44,7 @@ mod metadata {
     const STICKS: ParamMeta = ParamMeta::in_group("Plane Guidance", "Sticks");
     const CRUISE: ParamMeta = ParamMeta::in_group("Plane Guidance", "Cruise");
     const NAVIGATION: ParamMeta = ParamMeta::in_group("Plane Guidance", "Navigation");
+    const TECS: ParamMeta = ParamMeta::in_group("Plane Guidance", "Total energy control");
 
     /// A non-negative gain or limit.
     const fn at_least_zero(meta: ParamMeta) -> ParamMeta {
@@ -79,7 +88,7 @@ mod metadata {
             CRUISE
                 .param(
                     "PGUID_CRUISE",
-                    "Throttle for cruise: the airspeed loop's feedforward",
+                    "Throttle for level cruise at the trim airspeed",
                 )
                 .at_least(0.0)
                 .at_most(1.0),
@@ -102,22 +111,77 @@ mod metadata {
                 .above(0.0),
             at_least_zero(
                 NAVIGATION
-                    .param("PGUID_ALT_P", "Pitch per meter of altitude error")
+                    .param(
+                        "PGUID_ALT_P",
+                        "Without airspeed: pitch per meter of altitude error",
+                    )
                     .with_units("rad/m"),
             ),
-            at_least_zero(NAVIGATION.param("PGUID_ALT_I", "Altitude loop integral gain")),
+            at_least_zero(NAVIGATION.param(
+                "PGUID_ALT_I",
+                "Without airspeed: altitude loop integral gain",
+            )),
             at_least_zero(
                 NAVIGATION
-                    .param("PGUID_ALT_IMAX", "Altitude loop integral limit")
+                    .param(
+                        "PGUID_ALT_IMAX",
+                        "Without airspeed: altitude loop integral limit",
+                    )
                     .with_units("m*s"),
             ),
-            at_least_zero(NAVIGATION.param("PGUID_SPD_P", "Thrust per m/s of airspeed error")),
-            at_least_zero(NAVIGATION.param("PGUID_SPD_I", "Airspeed loop integral gain")),
+            TECS.param(
+                "PGUID_TCONST",
+                "Time constant height and airspeed errors close in",
+            )
+            .with_units("s")
+            .above(0.0),
+            TECS.param(
+                "PGUID_CLMB_MAX",
+                "Climb rate at full throttle and trim airspeed",
+            )
+            .with_units("m/s")
+            .above(0.0),
+            TECS.param(
+                "PGUID_SINK_MIN",
+                "Sink rate at least throttle and trim airspeed",
+            )
+            .with_units("m/s")
+            .above(0.0),
             at_least_zero(
-                NAVIGATION
-                    .param("PGUID_SPD_IMAX", "Airspeed loop integral limit")
-                    .with_units("m"),
+                TECS.param("PGUID_SINK_MAX", "Most sink rate the height demand asks")
+                    .with_units("m/s"),
             ),
+            at_least_zero(TECS.param(
+                "PGUID_THR_DAMP",
+                "Throttle damping on the total energy rate",
+            )),
+            at_least_zero(TECS.param(
+                "PGUID_INTEG",
+                "Integrator gain of the throttle and pitch loops",
+            )),
+            at_least_zero(TECS.param(
+                "PGUID_PTCH_DAMP",
+                "Pitch damping on the energy balance rate",
+            )),
+            TECS.param(
+                "PGUID_SPDWEIGHT",
+                "Pitch weight on airspeed vs height: 0 height, 1 both, 2 airspeed",
+            )
+            .at_least(0.0)
+            .at_most(2.0),
+            at_least_zero(
+                TECS.param("PGUID_RLL2THR", "Energy rate added for a bank's drag")
+                    .with_units("m^2/s^3"),
+            ),
+            TECS.param(
+                "PGUID_ASPD_MIN",
+                "Least airspeed demanded; underspeed below",
+            )
+            .with_units("m/s")
+            .above(0.0),
+            TECS.param("PGUID_ASPD_MAX", "Most airspeed demanded")
+                .with_units("m/s")
+                .above(0.0),
             NAVIGATION
                 .param("PGUID_THR_MIN", "Least thrust in waypoint flight")
                 .at_least(0.0)

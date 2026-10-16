@@ -9,7 +9,7 @@ use stable_flight::controllers::{
     LateralControllerConfig, PlaneRateControllerConfig, RateGains, YawControllerConfig,
 };
 use stable_flight::guidance::copter::CopterGuidanceConfig;
-use stable_flight::guidance::plane::PlaneGuidanceConfig;
+use stable_flight::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
 use stable_flight::guidance::vtol::{LiftTransitionConfig, QuadPlaneGuidanceConfig};
 use stable_flight::mixers::{MixerConfig, TableMixer};
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
@@ -123,6 +123,9 @@ const ALIA_SURFACES: [SurfaceLink; 8] = [
 ///   PX4's 45 s and 28 s (`VT_F_TRANS_DUR`, `VT_B_TRANS_DUR`): the pusher speeds up 2.9 t
 ///   slowly, and only drag slows it back. The loiter radius is a 20° turn at trim
 ///   airspeed, about 850 m.
+/// - **Total energy control:** ArduPilot's defaults, with the climb at full thrust and the
+///   sink at least thrust of `stable-flight-sim`'s `alia250()` (1.8 and 3.5 m/s), fitted to
+///   X-Plane's level flight and full-power climb.
 ///
 /// # Examples
 ///
@@ -146,6 +149,15 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                 // `NPFG_PERIOD` 40.
                 l1_period_s: 40.0,
                 loiter_radius_m: 850.0,
+                // Climb at full thrust and sink at least thrust from `stable-flight-sim`'s
+                // `alia250()`, fitted to X-Plane's (#392).
+                tecs: TecsConfig {
+                    max_climb_mps: 1.8,
+                    min_sink_mps: 3.5,
+                    min_airspeed_mps: ALIA_MIN_AIRSPEED_MPS,
+                    max_airspeed_mps: ALIA_MAX_AIRSPEED_MPS,
+                    ..TecsConfig::default()
+                },
                 ..PlaneGuidanceConfig::default()
             },
             transition: LiftTransitionConfig {
@@ -183,7 +195,7 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                 max_bank_rad: 20.0f32.to_radians(),
                 trim_airspeed_mps: 55.0,
                 min_airspeed_mps: ALIA_MIN_AIRSPEED_MPS,
-                max_airspeed_mps: 75.0,
+                max_airspeed_mps: ALIA_MAX_AIRSPEED_MPS,
                 ..PlaneStabilizerConfig::default()
             },
         },
@@ -197,6 +209,9 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
 
 /// px4xplane's `FW_AIRSPD_MIN`: the plane side's slowest, and where the lift ramp starts.
 const ALIA_MIN_AIRSPEED_MPS: f32 = 32.0;
+
+/// px4xplane's `FW_AIRSPD_MAX`: the plane side's fastest.
+const ALIA_MAX_AIRSPEED_MPS: f32 = 75.0;
 
 /// px4xplane's `FW_THR_TRIM`: the pusher's engine throttle in level cruise at trim airspeed.
 const ALIA_CRUISE_THROTTLE: f32 = 0.65;

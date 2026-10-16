@@ -2,7 +2,7 @@
 
 use stable_flight::Vec3;
 use stable_flight::controllers::{PlaneRateControllerConfig, RateGains};
-use stable_flight::guidance::plane::PlaneGuidanceConfig;
+use stable_flight::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
 use stable_flight::guidance::vtol::{
     ForwardThrustConfig, LiftTransitionConfig, QuadPlaneGuidanceConfig,
 };
@@ -169,6 +169,15 @@ pub fn alia250() -> QuadPlaneAirframe {
         ),
         l1_period_s: 40.0,
         loiter_radius_m: 850.0,
+        // The model's steady climb at full thrust and sink at least thrust, at trim airspeed
+        // (1.78 and 3.56 m/s); the stabilizer's airspeed range.
+        tecs: TecsConfig {
+            max_climb_mps: 1.8,
+            min_sink_mps: 3.5,
+            min_airspeed_mps: plane_stabilizer.min_airspeed_mps,
+            max_airspeed_mps: plane_stabilizer.max_airspeed_mps,
+            ..TecsConfig::default()
+        },
         ..PlaneGuidanceConfig::default()
     };
     QuadPlaneAirframe {

@@ -102,3 +102,22 @@ fn alia250_full_elevator_reaches_xplanes_angle() {
     println!("full elevator trims at α {alpha_deg:.1}°");
     check!((13.0..=18.0).contains(&alpha_deg));
 }
+
+/// Total energy control's climb and sink limits are the model's at trim airspeed: the steady
+/// climb at full thrust and the steady sink at least thrust, within 10%.
+#[test]
+fn alia250_energy_limits_are_the_models() {
+    let airframe = alia250();
+    let model = airframe.model.wing;
+    let airspeed = airframe.stabilizer.plane.trim_airspeed_mps;
+    let tecs = airframe.guidance.plane.tecs;
+    let (_, _, level_thrust_n) = trim(&model, airspeed);
+    let full_n = model.full_thrust_n(airspeed);
+    let least_n = full_n * libm::powf(airframe.guidance.plane.min_thrust, model.thrust_exponent);
+    let weight_n = model.mass_kg * GRAVITY;
+    let climb_mps = (full_n - level_thrust_n) * airspeed / weight_n;
+    let sink_mps = (level_thrust_n - least_n) * airspeed / weight_n;
+    println!("at {airspeed} m/s: climb {climb_mps:.2} m/s, sink {sink_mps:.2} m/s");
+    check!((tecs.max_climb_mps - climb_mps).abs() <= 0.1 * climb_mps);
+    check!((tecs.min_sink_mps - sink_mps).abs() <= 0.1 * sink_mps);
+}

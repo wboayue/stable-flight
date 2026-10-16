@@ -89,7 +89,12 @@
 //! | `PGUID_L1_PERIOD`, `PGUID_L1_DAMP` | `l1_period_s`, `l1_damping` |
 //! | `PGUID_LOIT_RAD` | `loiter_radius_m` |
 //! | `PGUID_ALT_P`, `_I`, `_IMAX` | `altitude_p`, `altitude_i`, `altitude_max_integral` |
-//! | `PGUID_SPD_P`, `_I`, `_IMAX` | `speed_p`, `speed_i`, `speed_max_integral` |
+//! | `PGUID_TCONST` | `tecs.time_constant_s` |
+//! | `PGUID_CLMB_MAX`, `PGUID_SINK_MIN`, `PGUID_SINK_MAX` | `tecs.max_climb_mps`, `tecs.min_sink_mps`, `tecs.max_sink_mps` |
+//! | `PGUID_THR_DAMP`, `PGUID_INTEG`, `PGUID_PTCH_DAMP` | `tecs.thrust_damping`, `tecs.integrator_gain`, `tecs.pitch_damping` |
+//! | `PGUID_SPDWEIGHT` | `tecs.speed_weight` |
+//! | `PGUID_RLL2THR` | `tecs.roll_compensation` |
+//! | `PGUID_ASPD_MIN`, `PGUID_ASPD_MAX` | `tecs.min_airspeed_mps`, `tecs.max_airspeed_mps` |
 //! | `PGUID_THR_MIN`, `PGUID_THR_MAX` | `min_thrust`, `max_thrust` |
 //! | `PGUID_CLMB_THR` | `climb_thrust_per_rad` |
 //!

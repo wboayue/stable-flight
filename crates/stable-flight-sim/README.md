@@ -73,6 +73,7 @@ step-response specs are in `tests/common`:
 | `quadplane_transition` | Against PX4's VTOL limits, as `tailsitter_transition`, calm air: from a hover at 30 m, forward to plane flight within 15 s (measured 8.2 s), then the line held within `plane_level`'s bands; back to a hover where it stops within 10 s (measured 7.3 s), then held within the copter's calm-air bands, and so are hover points 120 m ahead of and behind it, flown to after the handover; a pusher too weak for the airspeed gate times out (`TransitionTimeout`); the link going silent mid-transition hands over to `HoldCommander`, back on the lift rotors, which holds where it engaged. Each loses at most 20 m (`VT_QC_T_ALT_LOSS`, until 5 s after) |
 | `quadplane_waypoints` | Copter legs on the lift rotors from a hover at 30 m, each within PX4's 20 m altitude loss (`VT_QC_T_ALT_LOSS`) and then held within the copter's calm-air position and altitude bands: in calm air 100 m ahead, behind, and to the side, uncapped and at ArduPilot's 5 m/s `Q_WP_SPD`; in an 11 m/s headwind a takeoff and hold, and legs upwind and downwind at 5 m/s ([#427](https://github.com/wboayue/stable-flight/issues/427)) |
 | `alia` | The Alia 250, a full-size multirotor, on the autotune plan scaled to it (`tests/common/large.rs`: 0.2 rad/s rate and 5° angle steps, a 30 s settle): every stage `Tuned` from rate P 1 and 3 to the airframe's gains within 25%; every loop's steps (yaw rate 0.2 rad/s, heading 29°) within the step spec's overshoot, bounce-back, settling, and clipping bands (PX4's rise time aside: the motors alone lag 0.17 s); the calm-air hover bands; back after `hover`'s gust (measured + margin) |
+| `alia_plane` | `alia250()` in plane flight from 300 m at 45 m/s: level flight within ±5 m and 1.5 m/s of climb rate for 2 minutes, and a climb asked for at 40 m/s that the pitch limit can't make alone climbing at least 1 m/s on full thrust ([#454](https://github.com/wboayue/stable-flight/issues/454)) |
 | `determinism` | A windy, gusty route twice gives bit-identical states, clean and with every perturbation on (one seed); the airplane's line, the tailsitter's takeoff, transition to plane flight, and back, and the quadplane's takeoff to a hover through the same wind too |
 
 ## Timing
@@ -185,9 +186,10 @@ gains, and a wing and pusher fitted to X-Plane's level flight, pulses, and full-
 ([#392](https://github.com/wboayue/stable-flight/issues/392); the fit table is in its rustdoc).
 Its pusher takes the model's thrust law for a power-set prop: linear in command, 21 N lost per
 m/s of airspeed. It trims as X-Plane flies within 1.1° of angle of attack, 0.11 of elevator,
-and 0.07 of pusher (41–48 m/s), and `tests/alia_plane.rs` reproduces X-Plane's altitude limit
-cycle and the sink at the pitch limit, `#[ignore]`d on TECS
-([#454](https://github.com/wboayue/stable-flight/issues/454)).
+and 0.07 of pusher (41–48 m/s). Its plane guidance flies total energy control with the
+model's full-thrust climb and least-thrust sink (1.8 and 3.5 m/s at 45 m/s); `tests/alia_plane.rs`
+holds level flight and the climb at the pitch limit that separate altitude and airspeed loops
+failed in X-Plane ([#454](https://github.com/wboayue/stable-flight/issues/454)).
 
 `tailsitter()` is ArduPilot SITL's tailsitter (`plane-tailsitter`: the default airplane with
 1.5× its thrust) on two motors 25 cm either side of the centerline and

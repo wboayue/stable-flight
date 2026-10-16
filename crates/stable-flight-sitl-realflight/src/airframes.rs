@@ -11,7 +11,7 @@ use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
 };
 use stable_flight::guidance::copter::{CopterGuidanceConfig, ThrustLimits};
-use stable_flight::guidance::plane::PlaneGuidanceConfig;
+use stable_flight::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
 use stable_flight::guidance::vtol::{
     ForwardThrustConfig, LiftTransitionConfig, QuadPlaneGuidanceConfig, TailsitterGuidanceConfig,
     TransitionConfig,
@@ -124,6 +124,11 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
     }
 }
 
+/// The eXplora's plane airspeeds, in m/s: least and most (guesses until plane flights measure
+/// them, #124).
+const EXPLORA_MIN_AIRSPEED_MPS: f32 = 9.0;
+const EXPLORA_MAX_AIRSPEED_MPS: f32 = 25.0;
+
 /// The [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) tailsitter
 /// in RealFlight: two motors on the wing and two elevons, hovering nose up.
 ///
@@ -203,6 +208,11 @@ pub fn explora_vtol()
             plane: PlaneGuidanceConfig {
                 // Level cruise held at 14–15 m/s with the stick at 0.85–0.89 (#124).
                 cruise_thrust: 0.85,
+                tecs: TecsConfig {
+                    min_airspeed_mps: EXPLORA_MIN_AIRSPEED_MPS,
+                    max_airspeed_mps: EXPLORA_MAX_AIRSPEED_MPS,
+                    ..TecsConfig::default()
+                },
                 ..Default::default()
             },
             transition: TransitionConfig {
@@ -216,7 +226,7 @@ pub fn explora_vtol()
                 back_done_rad: 20f32.to_radians(),
                 // The plane side's minimum airspeed: completing at 45° and 1.5 m/s, the wing
                 // sank 6 m while it gained speed (#124).
-                min_airspeed_mps: 9.0,
+                min_airspeed_mps: EXPLORA_MIN_AIRSPEED_MPS,
                 // More than hover (0.84): lift drops as the nose tilts over, until the wing
                 // flies.
                 forward_thrust: 0.9,
@@ -257,10 +267,10 @@ pub fn explora_vtol()
                 // The hover side's thrust curve, so a handoff keeps the motor commands
                 // continuous.
                 thrust_curve_exponent: 2.0,
-                // Guesses until plane flights measure them (#124).
+                // A guess until plane flights measure it (#124).
                 trim_airspeed_mps: 14.0,
-                min_airspeed_mps: 9.0,
-                max_airspeed_mps: 25.0,
+                min_airspeed_mps: EXPLORA_MIN_AIRSPEED_MPS,
+                max_airspeed_mps: EXPLORA_MAX_AIRSPEED_MPS,
                 ..Default::default()
             },
         },
@@ -280,6 +290,10 @@ pub fn explora_vtol()
 /// The share of the full pusher the Titan Cobra's forward thrust gain (1.2) and core's
 /// transition pusher defaults are flown at: the pusher commands of its flights (#433, #448).
 const COBRA_PUSHER_SHARE: f32 = 0.9;
+
+/// The Titan Cobra's plane airspeeds, in m/s: `ARSPD_FBW_MIN` 11 and `ARSPD_FBW_MAX` 18.
+const COBRA_MIN_AIRSPEED_MPS: f32 = 11.0;
+const COBRA_MAX_AIRSPEED_MPS: f32 = 18.0;
 
 /// The ArduPilot SITL_Models
 /// [Titan Cobra VTOL](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/QuadPlanes/Titan_Cobra_VTOL)
@@ -370,6 +384,12 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                 trim_pitch_rad: 4.2f32.to_radians(),
                 // `TRIM_THROTTLE` 47 on a linear pusher curve.
                 cruise_thrust: 0.47,
+                // ArduPilot's TECS defaults, as the model's params leave them.
+                tecs: TecsConfig {
+                    min_airspeed_mps: COBRA_MIN_AIRSPEED_MPS,
+                    max_airspeed_mps: COBRA_MAX_AIRSPEED_MPS,
+                    ..TecsConfig::default()
+                },
                 ..defaults.plane
             },
             // Copter legs lose 0.5 m with it, 4.7 m without (rustdoc above, #433); PX4's limit
@@ -381,7 +401,7 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
             transition: LiftTransitionConfig {
                 // ArduPilot starts the forward lift ramp past `ARSPD_FBW_MIN`, 11 for this
                 // model; core's 9 is ArduPilot's default (`ArduPlane/quadplane.cpp:1523`).
-                min_airspeed_mps: 11.0,
+                min_airspeed_mps: COBRA_MIN_AIRSPEED_MPS,
                 forward_thrust: COBRA_PUSHER_SHARE * defaults.transition.forward_thrust,
                 pusher_slew_per_s: COBRA_PUSHER_SHARE * defaults.transition.pusher_slew_per_s,
                 ..defaults.transition
@@ -416,10 +436,10 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                 ..Default::default()
             },
             plane: PlaneStabilizerConfig {
-                // `TRIM_ARSPD_CM` 1240, `ARSPD_FBW_MIN` 11, `ARSPD_FBW_MAX` 18.
+                // `TRIM_ARSPD_CM` 1240.
                 trim_airspeed_mps: 12.4,
-                min_airspeed_mps: 11.0,
-                max_airspeed_mps: 18.0,
+                min_airspeed_mps: COBRA_MIN_AIRSPEED_MPS,
+                max_airspeed_mps: COBRA_MAX_AIRSPEED_MPS,
                 ..Default::default()
             },
         },

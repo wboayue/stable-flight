@@ -1,5 +1,6 @@
 //! The Alia 250's plane side on its sim model ([`airframes::alia250`], fitted to X-Plane, #392):
-//! what X-Plane showed on the same controllers, here first so the fixes can be made on the sim.
+//! level flight and a pitch-limited climb, which separate altitude and airspeed loops failed in
+//! X-Plane and total energy control flies (#454).
 
 mod common;
 
@@ -62,10 +63,11 @@ fn line(altitude_m: f32, airspeed_mps: f32, seconds: f32) -> Vec<(f32, f32, f32)
     hold.0.take()
 }
 
-/// X-Plane's Alia limit-cycles in level flight on these controllers: ±10–15 m and ±7–11 m/s of
-/// climb at about 8 s (#392, #454). The sim model does the same.
+/// Level flight holds without a limit cycle: within #454's ±5 m and 1.5 m/s of climb rate over
+/// the last two minutes. Separate altitude and airspeed loops swung ±10–15 m and ±7–11 m/s at
+/// about 8 s in X-Plane (#392), 290–305 m and 5.6 m/s here; total energy control holds
+/// 299.6–300.3 m and 0.2 m/s.
 #[test]
-#[ignore = "the altitude and airspeed loops limit-cycle on the Alia; TECS (#454)"]
 fn alia250_holds_level_flight() {
     let airframe = airframes::alia250();
     let speed = airframe.stabilizer.plane.trim_airspeed_mps;
@@ -84,19 +86,17 @@ fn alia250_holds_level_flight() {
         "altitude {low:.1}..{high:.1} m, |climb| max {climb:.1} m/s, ticks {}",
         ticks.len()
     );
-    // #454's done-when band.
     check!(high - low < 10.0);
     check!(climb < 1.5);
 }
 
-/// Asked to climb 150 m at 40 m/s, X-Plane's Alia sank instead: pitch saturated at the
-/// elevator's reach and the airspeed loop held the speed by cutting the pusher (#454; it climbs
-/// 2.4 m/s at full power). The sim model does the same.
+/// Asked to climb 150 m at 40 m/s, the pitch limit can't make the climb alone: thrust rises
+/// to full and it climbs, at least 1 m/s over the last minute (#454). Separate loops sank
+/// instead, the airspeed loop cutting the pusher (X-Plane 262 → 149 m; here into the ground);
+/// total energy control climbs 1.9 m/s, the model's full-power climb (X-Plane 2.4 m/s).
 #[test]
-#[ignore = "the airspeed loop takes the climb's power at the pitch limit; TECS (#454)"]
 fn alia250_climbs_at_the_pitch_limit() {
     let ticks = line(450.0, 40.0, 90.0);
-    // Over the last minute: at least 1 m/s on average (2.4 m/s at full power, X-Plane).
     let tail = &ticks[ticks.len().saturating_sub(common::ticks(60.0))..];
     check!(!tail.is_empty());
     let mean_climb = tail.iter().map(|t| t.1).sum::<f32>() / tail.len() as f32;

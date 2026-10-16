@@ -1,7 +1,7 @@
 //! The simulated airplane: see [`plane`].
 
 use stable_flight::controllers::{PlaneRateControllerConfig, RateGains};
-use stable_flight::guidance::plane::PlaneGuidanceConfig;
+use stable_flight::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
 use stable_flight::mixers::{MixerConfig, Slot, TableMixer};
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
 use stable_flight::{GRAVITY, Vec3};
@@ -150,6 +150,12 @@ pub fn plane() -> PlaneAirframe {
             stabilizer.thrust_curve_exponent,
             TRIM_AIRSPEED_MPS,
         ),
+        // The stabilizer's airspeed range bounds the speed demand.
+        tecs: TecsConfig {
+            min_airspeed_mps: stabilizer.min_airspeed_mps,
+            max_airspeed_mps: stabilizer.max_airspeed_mps,
+            ..TecsConfig::default()
+        },
         ..PlaneGuidanceConfig::default()
     };
     PlaneAirframe {
