@@ -1,16 +1,22 @@
-//! `plot_flight` — render a waypoint script as a static 3D flight path.
+//! `plot_flight` — render a waypoint script as a static 3D flight path, or a recorded flight
+//! as time series.
 //!
 //! Reads any waypoint CSV in the `flights/` format (`x,y,altitude,cruise_speed`, meters and
 //! m/s) and draws it as a 3D path — horizontal `x`/`y` plane with altitude on the vertical
 //! axis. Path segments are colored by cruise speed; faint stems and a ground-projected
-//! outline give depth cues. Output format follows the file extension: `.svg` or `.png`.
+//! outline give depth cues. With `--record`, the input is an example's `--record` CSV
+//! (`stable_flight_sitl::recorder`) instead, drawn as time series and a ground track
+//! ([`record`]). Output format follows the file extension: `.svg` or `.png`.
 //!
 //! It lives in the unpublished `stable-flight-tools` crate so library consumers never compile
 //! `plotters`.
 //!
 //! ```bash
 //! cargo run --bin plot_flight -- flights/figure_eight.csv fig8.svg
+//! cargo run --bin plot_flight -- --record lap.csv lap.png --from 30 --to 120
 //! ```
+
+mod record;
 
 use std::error::Error;
 use std::process;
@@ -32,16 +38,17 @@ const AXIS_PADDING_FRACTION: f32 = 0.05;
 const DEGENERATE_AXIS_PADDING: f32 = 1.0;
 
 /// Font family used for all chart text (caption, axis labels, waypoint numbers).
-const FONT_FAMILY: &str = "sans-serif";
+pub(crate) const FONT_FAMILY: &str = "sans-serif";
 
 #[derive(Parser, Debug)]
 #[command(
-    about = "Render a waypoint script (flights/*.csv) as a static 3D flight path",
+    about = "Render a waypoint script (flights/*.csv) as a static 3D flight path, or a recorded flight (--record) as time series",
     // Let negative degree values (e.g. `--yaw -15`) parse as values, not flags.
     allow_negative_numbers = true
 )]
 struct Config {
-    /// Waypoint CSV to render (columns: x,y,altitude,cruise_speed).
+    /// Waypoint CSV to render (columns: x,y,altitude,cruise_speed), or with `--record` a
+    /// recorder CSV.
     input: String,
 
     /// Output image path; the `.svg` or `.png` extension selects the format.
@@ -54,7 +61,42 @@ struct Config {
     /// Camera rotation about the vertical axis, in degrees (default ~28.6).
     #[arg(long, value_name = "DEG")]
     yaw: Option<f64>,
+
+    /// The input is a recorder CSV (an example's `--record`): plot it as time series.
+    #[arg(long)]
+    record: bool,
+
+    /// With `--record`, the first second of the recording to plot (its `wall_s`).
+    #[arg(long, value_name = "S")]
+    from: Option<f32>,
+
+    /// With `--record`, the last second of the recording to plot.
+    #[arg(long, value_name = "S")]
+    to: Option<f32>,
 }
+
+/// Draws into an `.svg` or `.png` area of `$size` pixels for `$output`, by its extension:
+/// `$draw` runs with the drawing area as `$area`. An unknown extension is an error.
+macro_rules! draw_to {
+    ($output:expr, $size:expr, |$area:ident| $draw:expr) => {{
+        let output: &str = $output;
+        match $crate::extension(output).as_deref() {
+            Some("svg") => {
+                let $area = ::plotters::prelude::SVGBackend::new(output, $size).into_drawing_area();
+                $draw
+            }
+            Some("png") => {
+                let $area =
+                    ::plotters::prelude::BitMapBackend::new(output, $size).into_drawing_area();
+                $draw
+            }
+            _ => Err(
+                format!("unsupported output extension for '{output}' (use .svg or .png)").into(),
+            ),
+        }
+    }};
+}
+pub(crate) use draw_to;
 
 fn main() {
     let config = Config::parse();
@@ -74,6 +116,15 @@ struct View {
 /// Loads the input, renders it, and writes the image, dispatching on the output extension.
 /// Returns an error for an unknown extension or any load/render failure.
 fn run(config: &Config) -> Result<(), Box<dyn Error>> {
+    if config.record {
+        let window = (
+            config.from.unwrap_or(f32::NEG_INFINITY),
+            config.to.unwrap_or(f32::INFINITY),
+        );
+        record::render(&config.input, &config.output, window)?;
+        println!("wrote {}", config.output);
+        return Ok(());
+    }
     let waypoints = load_waypoints(&config.input)?;
     if waypoints.is_empty() {
         return Err(format!("{} contained no waypoints", config.input).into());
@@ -85,21 +136,9 @@ fn run(config: &Config) -> Result<(), Box<dyn Error>> {
     };
     let title = title_for(&config.input);
     let output = &config.output;
-    match extension(output).as_deref() {
-        Some("svg") => {
-            let area = SVGBackend::new(output, IMAGE_SIZE).into_drawing_area();
-            draw_chart(area, &waypoints, &title, view)?;
-        }
-        Some("png") => {
-            let area = BitMapBackend::new(output, IMAGE_SIZE).into_drawing_area();
-            draw_chart(area, &waypoints, &title, view)?;
-        }
-        _ => {
-            return Err(
-                format!("unsupported output extension for '{output}' (use .svg or .png)").into(),
-            );
-        }
-    }
+    draw_to!(output, IMAGE_SIZE, |area| draw_chart(
+        area, &waypoints, &title, view
+    ))?;
 
     println!("wrote {output}");
     Ok(())
