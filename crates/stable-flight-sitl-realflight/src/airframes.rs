@@ -277,6 +277,10 @@ pub fn explora_vtol()
     }
 }
 
+/// The share of the full pusher the Titan Cobra's forward thrust gain (1.2) and core's
+/// transition pusher defaults are flown at: the pusher commands of its flights (#433, #448).
+const COBRA_PUSHER_SHARE: f32 = 0.9;
+
 /// The ArduPilot SITL_Models
 /// [Titan Cobra VTOL](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/QuadPlanes/Titan_Cobra_VTOL)
 /// in RealFlight: a lift+cruise quadplane, four fixed lift rotors, a pusher, ailerons, and an
@@ -324,7 +328,10 @@ pub fn explora_vtol()
 ///   transition hands over to the wing at its minimum airspeed, as ArduPilot does. A lap
 ///   (`flights/cobra_transition_lap.csv`) transitions in 9 s gaining 2.6 m, holds 27–32 m
 ///   at 13–15 m/s, and transitions back within 2.6 m (#433).
-/// - **Forward thrust:** on in copter flight (gain 1.2): on a 100 m copter leg ahead the
+/// - **Pusher:** the forward thrust gain (1.08) and the transition's pusher cap (0.9) and slew
+///   (0.297/s) are the pusher commands the flights below ran, 0.9 of the gain 1.2 and of
+///   core's transition defaults (#433, #448).
+/// - **Forward thrust:** on in copter flight (gain 1.08): on a 100 m copter leg ahead the
 ///   pusher keeps the nose within 7° of level, and the leg loses 0.5 m and climbs 1.4 m at
 ///   most; without it the nose goes 33° down and the leg loses 4.7 m and balloons 6.4 m
 ///   (#433).
@@ -361,20 +368,22 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
             plane: PlaneGuidanceConfig {
                 // `TRIM_PITCH_CD` 420.
                 trim_pitch_rad: 4.2f32.to_radians(),
-                // `TRIM_THROTTLE` 47 on a linear pusher curve: 0.9 · 0.52.
-                cruise_thrust: 0.52,
+                // `TRIM_THROTTLE` 47 on a linear pusher curve.
+                cruise_thrust: 0.47,
                 ..defaults.plane
             },
             // Copter legs lose 0.5 m with it, 4.7 m without (rustdoc above, #433); PX4's limit
             // is 20 m (`VT_QC_T_ALT_LOSS`).
             forward: ForwardThrustConfig {
-                gain: 1.2,
+                gain: COBRA_PUSHER_SHARE * 1.2,
                 ..defaults.forward
             },
             transition: LiftTransitionConfig {
                 // ArduPilot starts the forward lift ramp past `ARSPD_FBW_MIN`, 11 for this
                 // model; core's 9 is ArduPilot's default (`ArduPlane/quadplane.cpp:1523`).
                 min_airspeed_mps: 11.0,
+                forward_thrust: COBRA_PUSHER_SHARE * defaults.transition.forward_thrust,
+                pusher_slew_per_s: COBRA_PUSHER_SHARE * defaults.transition.pusher_slew_per_s,
                 ..defaults.transition
             },
         },

@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `airframes::titan_cobra()`: the ArduPilot SITL_Models Titan Cobra VTOL quadplane on
   `TableMixer::quadplane_vtail`, its channels mapped from a sweep (#433). Flown in
   RealFlight: hover (measured trim, autotuned roll rate), surfaces checked in flight, tail
-  trimmed +0.2, transitions at ArduPilot's 11 m/s, forward thrust 1.2 in copter flight.
+  trimmed +0.2, transitions at ArduPilot's 11 m/s, forward thrust in copter flight; its
+  pusher values are shares of the full pusher (cruise 0.47, ArduPilot's `TRIM_THROTTLE`;
+  forward thrust gain 1.08; #448).
   `quadplane-auto-realflight` flies it from a waypoint script (`flights/cobra_hover.csv`,
   `cobra_transition_lap.csv`, `cobra_legs.csv`; `--end`, `--record` with
   `QuadPlaneColumns`, `--param NAME=VALUE`), and `copter-autotune-realflight --airframe

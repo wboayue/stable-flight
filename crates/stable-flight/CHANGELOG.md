@@ -171,6 +171,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `TableMixer` pusher rows fly the cruise thrust over their full range, no
+  longer scaled by `MixerConfig::thrust_factor` (the lift motors' moment headroom; a pusher
+  carries no moments, and ArduPlane's throttle spans 0–100%). For the same cruise thrust the
+  pusher runs `1 / thrust_factor` harder; an airframe tuned on the scaled pusher multiplies
+  its pusher values (`PGUID_CRUISE`, `TRAN_FW_THR`, `TRAN_PSH_SLEW`, `FWD_THR_GAIN`) by its
+  thrust factor to keep its commands (#448).
 - **Breaking:** `ControlOutput` has a `cruise` field (`Option<CruiseOutput>`, #391): a
   lift+cruise VTOL's pusher thrust and control-surface moments, flown alongside the lift
   rotors' `thrust` and `moments`. Struct literals add `cruise: None` or

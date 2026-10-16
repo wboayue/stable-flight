@@ -287,9 +287,38 @@ fn titan_cobra_transitions_at_its_minimum_airspeed() {
     assert_eq!(airframe.stabilizer.plane.min_airspeed_mps, 11.0);
 }
 
-/// The Cobra flies copter legs with forward thrust on: gain 1.2 held a 100 m leg within
-/// 0.5 m of altitude where 0 lost 4.7 m (#433).
+/// The Cobra's pusher commands are those of its flights (#433): `TRIM_THROTTLE` 47 at cruise,
+/// 0.9 at the forward transition's cap, and forward thrust 0.216 at `tan(pitch)` 0.2, the gain
+/// that held a 100 m copter leg within 0.5 m of altitude where 0 lost 4.7 m.
 #[test]
-fn titan_cobra_flies_copter_legs_with_forward_thrust() {
-    assert_eq!(titan_cobra().guidance.forward.gain, 1.2);
+fn titan_cobra_pusher_commands_are_as_flown() {
+    use stable_flight::{ControlOutput, CruiseOutput, Mixer, Vec3};
+    let airframe = titan_cobra();
+    let mut mixer = airframe.mixer;
+    let mut pusher = |thrust| {
+        let cruise = CruiseOutput {
+            thrust,
+            moments: Vec3::zeros(),
+        };
+        mixer
+            .mix(&ControlOutput {
+                cruise: Some(cruise),
+                ..Default::default()
+            })
+            .motors[4]
+    };
+    let guidance = airframe.guidance;
+    // (what, pusher command, as flown)
+    let cases = [
+        ("cruise", pusher(guidance.plane.cruise_thrust), 0.47),
+        (
+            "transition",
+            pusher(guidance.transition.forward_thrust),
+            0.9,
+        ),
+        ("forward thrust", pusher(0.2 * guidance.forward.gain), 0.216),
+    ];
+    for (what, command, expected) in cases {
+        assert!((command - expected).abs() < 1e-4, "{what}: {command}");
+    }
 }
