@@ -8,16 +8,17 @@
 //! described, not copied:
 //!
 //! - **Energies:** potential `g·h`, kinetic `½V²`, and their rates `g·ḣ` and `V·V̇` (AP:681-695).
-//!   `V̇` is the airspeed's own derivative through a 0.5 s low-pass, about the filter ArduPilot
-//!   puts on its damping term (AP:740-746): a backend's acceleration spikes (RealFlight's eXplora
-//!   moved pitch 14° in a tick on it, #454), and PX4 drops its acceleration term for bias
+//!   `V̇` is the airspeed's own derivative through a 0.5 s low-pass, about the filter
+//!   ArduPilot puts on its damping term (AP:740-746), so it doesn't hang on how a backend
+//!   measures acceleration; PX4 drops its acceleration term for bias
 //!   (`FwLateralLongitudinalControl.cpp:408-410`).
 //! - **Demands:** the height demand slews toward the target at the climb and sink limits, the
 //!   airspeed demand at half the climb's energy rate over `V` (AP:502-521, 550-580). The
 //!   slewed height demand then runs through a 3 s lag (AP:577), whose slope is the height
 //!   rate's feedforward; the airspeed's rate demand is its error alone, as PX4's
-//!   (PX4:320-325). Each error over the time constant is a proportional term (AP:735). The airspeed demand stays within the least and most
-//!   airspeed, and starts there: seeded at a stalled speed it would hold the stall. The height
+//!   (PX4:320-325). Each error over the time constant is a proportional term (AP:735). The
+//!   airspeed demand stays within the least and most airspeed, and starts there: seeded at a
+//!   stalled speed it would hold the stall. The height
 //!   demand stays within one time constant's climb or sink of the aircraft, so a climb it can't
 //!   make doesn't run the demand away; ArduPilot instead stops advancing the demand while pitch
 //!   or thrust is at its limit (AP:588-606), which needs the last tick's clipping.
@@ -50,6 +51,12 @@ const HEIGHT_DEMAND_TC_S: f32 = 3.0;
 /// Time constant of the airspeed rate's low-pass, in s (AP:740-746 filters its damping at
 /// about 0.5 s).
 const AIRSPEED_RATE_TC_S: f32 = 0.5;
+
+/// `value` moved toward `target` by a first-order lag of `time_constant_s` over `dt` (all the
+/// way when `dt` reaches the time constant).
+fn lagged(value: f32, target: f32, dt: f32, time_constant_s: f32) -> f32 {
+    value + (target - value) * (dt / time_constant_s).min(1.0)
+}
 
 /// Below this airspeed, in m/s, `V·g` stops shrinking: the pitch terms stay finite at a stall.
 const MIN_GAIN_AIRSPEED_MPS: f32 = 3.0;
@@ -303,8 +310,7 @@ impl Tecs {
             height_m - tau * config.max_sink_mps,
             height_m + tau * config.max_climb_mps,
         );
-        let demand_height_m =
-            previous.height_m + (slewed_m - previous.height_m) * (dt / HEIGHT_DEMAND_TC_S).min(1.0);
+        let demand_height_m = lagged(previous.height_m, slewed_m, dt, HEIGHT_DEMAND_TC_S);
         let height_rate_mps = (demand_height_m - previous.height_m) / dt;
 
         // Airspeed: slewed at half the climb's energy rate over V (AP:502). Its rate demand is
@@ -325,7 +331,7 @@ impl Tecs {
         let filtered_mps = *self.filtered_airspeed_mps.get_or_insert(airspeed_mps);
         let accel_mps2 = (airspeed_mps - filtered_mps) / AIRSPEED_RATE_TC_S;
         self.filtered_airspeed_mps =
-            Some(filtered_mps + (airspeed_mps - filtered_mps) * (dt / AIRSPEED_RATE_TC_S).min(1.0));
+            Some(lagged(filtered_mps, airspeed_mps, dt, AIRSPEED_RATE_TC_S));
 
         let potential_error = GRAVITY * (demand_height_m - height_m);
         let kinetic_error =

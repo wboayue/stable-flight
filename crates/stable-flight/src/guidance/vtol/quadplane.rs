@@ -78,8 +78,9 @@ impl QuadPlaneGuidanceConfig {
 ///    `standard.cpp:269`).
 ///
 /// 4. A side that starts flying is primed: the plane guidance as the forward transition
-///    begins (it flies the command from there on) or as `Plane` is taken back from the back
-///    transition, the hover guidance as the back transition begins. Entering `Plane`, the
+///    begins and again entering `Plane` (through the transition its total energy control flies
+///    from no airspeed, and only its thrust is used), the hover guidance as the back transition
+///    begins. Entering `Plane`, the
 ///    pusher's thrust blends from where it was over
 ///    [`handoff_s`](LiftTransitionConfig::handoff_s) ([`ThrustHandoff`]).
 ///
