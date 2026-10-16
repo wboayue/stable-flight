@@ -67,11 +67,11 @@ struct Config {
     record: bool,
 
     /// With `--record`, the first second of the recording to plot (its `wall_s`).
-    #[arg(long, value_name = "S")]
+    #[arg(long, value_name = "S", requires = "record")]
     from: Option<f32>,
 
     /// With `--record`, the last second of the recording to plot.
-    #[arg(long, value_name = "S")]
+    #[arg(long, value_name = "S", requires = "record")]
     to: Option<f32>,
 }
 
@@ -336,6 +336,18 @@ mod tests {
     use super::*;
     use assert2::check;
     use stable_flight::Vec2;
+
+    /// `--from` and `--to` apply to recordings only.
+    #[test]
+    fn window_needs_record() {
+        let parse = |args: &[&str]| {
+            Config::try_parse_from(["plot_flight", "in.csv", "out.png"].iter().chain(args))
+        };
+        check!(parse(&["--from", "3"]).is_err());
+        check!(parse(&["--to", "3"]).is_err());
+        check!(parse(&["--record", "--from", "3", "--to", "9"]).is_ok());
+        check!(parse(&[]).is_ok());
+    }
 
     fn wp(x: f32, y: f32, altitude: f32, cruise_speed: f32) -> WaypointCommand {
         WaypointCommand {

@@ -74,7 +74,8 @@ fn draws_only_panels_it_has_columns_for() {
     check!(titles == ["altitude (m)", "lift and thrust", "flight mode"]);
 }
 
-/// A recording renders to SVG; an empty window is an error.
+/// A recording renders to SVG; an empty window, an unknown extension, and a recording with no
+/// plottable column are errors.
 #[test]
 fn renders_a_recording() {
     let dir = std::env::temp_dir().join(format!("plot_flight_{}", std::process::id()));
@@ -91,5 +92,10 @@ fn renders_a_recording() {
     check!(svg.contains("ground track"));
     check!(render(input, output, (10.0, 20.0)).is_err());
     check!(render(input, &dir.join("lap.txt").to_string_lossy(), all).is_err());
+
+    // Time and an unknown column: nothing to plot.
+    let bare = dir.join("bare.csv");
+    std::fs::write(&bare, "wall_s,other\n0.0,1.0\n").expect("written");
+    check!(render(&bare.to_string_lossy(), output, all).is_err());
     std::fs::remove_dir_all(&dir).expect("cleaned up");
 }
