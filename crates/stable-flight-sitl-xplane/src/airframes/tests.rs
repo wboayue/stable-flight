@@ -29,7 +29,7 @@ fn deflections(command: &ActuatorCommand) -> Vec<(usize, f32)> {
 /// that trims its nose-up pitch, which the sim leaves out.
 #[test]
 fn alia250_hovers_on_the_sim_alias_tune() {
-    let sim = stable_flight_sim::airframes::alia250();
+    let sim = stable_flight_sim::airframes::alia250_hover();
     let mut xplane = alia250();
     let hover = &mut xplane.stabilizer.hover;
     check!(hover.body_rate.roll_gains.i == 0.2);

@@ -50,7 +50,7 @@ cargo test -p stable-flight-sim   # unit tests, conformance, and the closed-loop
 
 Each file in `tests/` flies the full pipeline on `airframes::quad_x()` unless noted (`plane_*`
 on `airframes::plane()`, `tailsitter_*` on `airframes::tailsitter()`, `quadplane_*` on
-`airframes::quadplane()`, `alia` on `airframes::alia250()`); wiring and the copter and plane
+`airframes::quadplane()`, `alia` on `airframes::alia250_hover()`); wiring and the copter and plane
 step-response specs are in `tests/common`:
 
 | Test | Asserts |
@@ -148,7 +148,7 @@ derived from the model; roll and pitch gains come from the sim autotune.
 | `quad_x()` | 1 kg | 250 mm | 2.4 | 30 ms | Plausible 5-inch with a camera; yaw and heading hand-tuned on the step responses |
 | `heavy_quad()` | 3 kg | 350 mm | 2 | 50 ms | Mass and diagonal from ArduPilot SITL's default frame; yaw and heading `quad_x`'s |
 | `racer()` | 0.8 kg | 250 mm | 8 | 15 ms | Mass and diagonal from ArduPilot SITL's freestyle model; yaw and heading `quad_x`'s |
-| `alia250()` | 2,857 kg | 5.2 m × 6.1 m | 1.34 | 170 ms | X-Plane's Alia 250 (`.acf`, `engine-sweep-xplane`); yaw and heading hand-tuned on its yaw steps; not in `all()` (below) |
+| `alia250_hover()` | 2,857 kg | 5.2 m × 6.1 m | 1.34 | 170 ms | X-Plane's Alia 250 (`.acf`, `engine-sweep-xplane`); yaw and heading hand-tuned on its yaw steps; not in `all()` (below) |
 
 `heavy_quad` and `racer` take ArduPilot's ring inertia (half the mass on the motor ring); their
 thrust-to-weight and motor lag are chosen to span the range (sources in `airframes` rustdoc).
@@ -171,7 +171,7 @@ on core's copter configs with roll and pitch gains from the sim autotune, and fl
 `plane()`'s gains with the cruise thrust for its mass on the pusher. Transitions fly core's
 defaults. Copter flight hands nose-down pitch past 3° to the pusher (`ForwardThrust`, gain 1.2,
 as ArduPilot's `Q_FWD_THR_GAIN`), so the wing isn't flown at negative α.
-`alia250()` is the BETA Alia 250 as X-Plane 12 flies it in copter mode, 2,857 kg, sized from
+`alia250_hover()` is the BETA Alia 250 as X-Plane 12 flies it in copter mode, 2,857 kg, sized from
 its `.acf` and an `engine-sweep-xplane` run rather than from the real aircraft
 ([#351](https://github.com/wboayue/stable-flight/issues/351)): thrust going with
 command^(2/3) (X-Plane's electric throttle sets power), 0.17 s motor lag, the effective roll
@@ -179,6 +179,15 @@ and pitch inertias the sweep's moment pulses measured, and `quad_x` with yaw rev
 thrust factor 0.8 and yaw ratio 1. Its roll and pitch gains come from the sim autotune on a
 plan scaled to it, its yaw and heading from its yaw steps, and its lateral loop is slowed for
 its slow tilt; `stable-flight-sitl-xplane`'s `airframes::alia250()` flies these in X-Plane.
+
+`alia250()` is the whole Alia 250, a `QuadPlaneAirframe`: `alia250_hover()`'s lift rotors and
+gains, and a wing and pusher fitted to X-Plane's level flight, pulses, and full-power climb
+([#392](https://github.com/wboayue/stable-flight/issues/392); the fit table is in its rustdoc).
+Its pusher takes the model's thrust law for a power-set prop: linear in command, 21 N lost per
+m/s of airspeed. It trims as X-Plane flies within 1.1° of angle of attack, 0.11 of elevator,
+and 0.07 of pusher (41–48 m/s), and `tests/alia_plane.rs` reproduces X-Plane's altitude limit
+cycle and the sink at the pitch limit, `#[ignore]`d on TECS
+([#454](https://github.com/wboayue/stable-flight/issues/454)).
 
 `tailsitter()` is ArduPilot SITL's tailsitter (`plane-tailsitter`: the default airplane with
 1.5× its thrust) on two motors 25 cm either side of the centerline and

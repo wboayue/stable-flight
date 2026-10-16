@@ -1,4 +1,4 @@
-//! The autotune plan and envelope for a full-size multirotor ([`airframes::alia250`]): core's
+//! The autotune plan and envelope for a full-size multirotor ([`airframes::alia250_hover`]): core's
 //! copter probes, scaled to an aircraft with a fraction of a quad's angular authority.
 //!
 //! Core's copter steps (a 1 rad/s rate step for 0.25 s, 10° angle steps) and its settle gate

@@ -14,12 +14,14 @@ use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use crate::model::MultirotorModel;
 use crate::motors::QUADRATIC;
 
+mod alia;
 mod plane;
 mod quadplane;
 mod tailsitter;
 #[cfg(test)]
 mod tests;
 
+pub use alia::alia250;
 pub use plane::{PlaneAirframe, plane};
 pub use quadplane::{QuadPlaneAirframe, quadplane};
 pub use tailsitter::{TailsitterAirframe, tailsitter};
@@ -204,6 +206,13 @@ pub fn racer() -> Airframe {
     )
 }
 
+/// The Alia's mixer: [`alia250_hover`]'s reasons.
+// TODO(#440): a higher yaw ratio once yaw yields to collective in the mixer.
+const ALIA_MIXER: MixerConfig = MixerConfig {
+    thrust_factor: 0.8,
+    yaw_ratio: 1.0,
+};
+
 /// The BETA Technologies Alia 250 eVTOL in copter mode, as X-Plane 12 flies it (Laminar's
 /// stock model): four lift rotors on X-Plane's engines 0–3, the pusher idle, at X-Plane's
 /// default load (6,299 lb). The model is sized from the `.acf` and an `engine-sweep-xplane`
@@ -232,7 +241,7 @@ pub fn racer() -> Airframe {
 /// The mixer runs at thrust factor 0.8, and the lateral loop is slowed for the aircraft's slow
 /// tilt (both below). Roll and pitch rate and angle gains are the sim autotune's on a plan
 /// scaled to the aircraft: core's copter probes ask for more than its authority gives.
-pub fn alia250() -> Airframe {
+pub fn alia250_hover() -> Airframe {
     const MASS_KG: f32 = 2857.0;
     /// Per-engine throttle at liftoff in the sweep.
     const LIFTOFF_THROTTLE: f32 = 0.648;
@@ -262,11 +271,7 @@ pub fn alia250() -> Airframe {
         // the default 2.5, full yaw drove one diagonal to its ceiling and the other near zero,
         // and the desaturation gave up collective (X-Plane: a sink to the ground at full
         // throttle, #351).
-        // TODO(#440): a higher yaw ratio once yaw yields to collective in the mixer.
-        MixerConfig {
-            thrust_factor: 0.8,
-            yaw_ratio: 1.0,
-        },
+        ALIA_MIXER,
         1.0 / THRUST_EXPONENT,
         Tune {
             // Sim autotune on the large-aircraft plan (`tests/alia.rs`), from rate P 1 and 3
