@@ -23,6 +23,8 @@ thiserror.workspace = true
 assert2.workspace = true
 approx.workspace = true
 stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["testing"] }
+# Tests only: the Alia's gains are the sim model's (path only, so publishing drops it).
+stable-flight-sim = { path = "../stable-flight-sim" }
 # Tests drive the vehicle against a scripted X-Plane.
 xplane-bridge = { version = "0.1", features = ["testing"] }
 # Examples only: runner, commanders, recorder, shutdown signal.
