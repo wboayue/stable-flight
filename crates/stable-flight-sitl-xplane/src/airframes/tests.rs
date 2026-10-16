@@ -137,7 +137,7 @@ fn alia250_surfaces_move_as_xplanes_yoke() {
             .filter(|&(_, deg)| deg != 0.0)
             .collect();
         check!(moved == expected, "{moments:?}");
-        check!(engines(&command) == [0.0, 0.0, 0.0, 0.0, ALIA_THRUST_FACTOR]);
+        check!(engines(&command) == [0.0, 0.0, 0.0, 0.0, 1.0]);
     }
 }
 
