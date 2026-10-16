@@ -3,12 +3,12 @@ use std::time::Duration;
 use log::{info, warn};
 use stable_flight::{Actuator, ActuatorCommand, StateSource, VehicleState};
 use thiserror::Error;
-use xplane_bridge::datarefs::{engine, overrides, wing};
+use xplane_bridge::datarefs::{engine, overrides};
 use xplane_bridge::{Dataref, DatarefSink, DatarefSource, Latest, Writable, XPlaneError};
 
 use crate::{
-    ActuatorMapping, Anchor, LocalOrigin, MappingError, OriginEvent, StateDatarefs, XPlaneSample,
-    vehicle_state, wait_ready,
+    ActuatorMapping, Anchor, LocalOrigin, MappingError, OriginEvent, StateDatarefs, Surface,
+    SurfaceLink, XPlaneSample, vehicle_state, wait_ready,
 };
 use health::{Liveness, SILENCE_S};
 
@@ -76,9 +76,10 @@ impl<B> XPlaneConfiguration<B> {
 ///
 /// [`connect`](Self::connect) subscribes the state ([`StateDatarefs`]), waits until every
 /// dataref has a value, zeroes every mapped and idle engine, and takes control:
-/// `override_throttles` and, with [`ActuatorMapping::neutral_wings`], `override_control_surfaces` with those
-/// wings' surfaces at 0°. Dropping the vehicle writes the overrides back to 0, handing control
-/// back to X-Plane, before the bridge unsubscribes.
+/// `override_throttles` and, with [`ActuatorMapping::surfaces`] or
+/// [`ActuatorMapping::neutral_wings`], `override_control_surfaces` with the neutral wings'
+/// surfaces at 0°. Dropping the vehicle writes the overrides back to 0, handing control back
+/// to X-Plane, before the bridge unsubscribes.
 ///
 /// # Timing
 ///
@@ -87,9 +88,12 @@ impl<B> XPlaneConfiguration<B> {
 /// polls the bridge without blocking: when a frame arrived since the last tick, it converts
 /// the newest values; otherwise it returns the last state again, so a 250 Hz loop sees each
 /// state for two to four ticks. State is one frame plus the UDP transit old (about 8–17 ms,
-/// plus Wi-Fi's few ms to a second host). [`Actuator::actuate`] writes each mapped engine
-/// every tick; X-Plane applies the last write before each frame, so actuator latency is also
-/// up to one frame. See the core `Vehicle` docs for the cross-backend contract.
+/// plus Wi-Fi's few ms to a second host). [`Actuator::actuate`] writes every mapped engine
+/// and surface once per frame, on the first tick after it arrives: X-Plane applies only the
+/// last write before each frame, and the ticks between frames see the same state, so the
+/// writes they would add (21 a tick for the Alia) change nothing but the load. Actuator
+/// latency is also up to one frame. See the core `Vehicle` docs for the cross-backend
+/// contract.
 ///
 /// # Liveness
 ///
@@ -143,6 +147,10 @@ pub struct XPlaneVehicle<B: DatarefSource + DatarefSink> {
     engines: Vec<Dataref<f32, Writable>>,
     /// The surfaces held at 0°.
     neutral_surfaces: Vec<Dataref<f32, Writable>>,
+    /// Each driven surface's dataref, with the link that deflects it.
+    driven_surfaces: Vec<(Dataref<f32, Writable>, SurfaceLink)>,
+    /// A frame arrived since the last [`Actuator::actuate`] write.
+    fresh: bool,
     /// Whether the last sample was paused.
     paused: bool,
     /// As of the last frame, a dataref is missing or lagging the others (see
@@ -171,18 +179,25 @@ impl<B: DatarefSource + DatarefSink> XPlaneVehicle<B> {
         let mut latest = Latest::default();
         let sample = wait_ready(&mut bridge, &datarefs, &mut latest, ready_timeout)?;
 
-        let surfaces = [
-            wing::AILERON1_DEG,
-            wing::AILERON2_DEG,
-            wing::ELEVATOR1_DEG,
-            wing::ELEVATOR2_DEG,
-            wing::RUDDER1_DEG,
-            wing::RUDDER2_DEG,
-        ];
         let neutral_surfaces = mapping
             .neutral_wings
             .iter()
-            .flat_map(|&w| surfaces.iter().filter_map(move |surface| surface.at(w)))
+            .flat_map(|&w| {
+                Surface::ALL
+                    .iter()
+                    .flat_map(|surface| surface.datarefs())
+                    .filter_map(move |array| array.at(w))
+            })
+            .collect();
+        let driven_surfaces = mapping
+            .surfaces
+            .iter()
+            .flat_map(|link| {
+                link.surface
+                    .datarefs()
+                    .into_iter()
+                    .filter_map(move |array| Some((array.at(link.wing)?, *link)))
+            })
             .collect();
         let mut vehicle = XPlaneVehicle {
             bridge,
@@ -193,6 +208,9 @@ impl<B: DatarefSource + DatarefSink> XPlaneVehicle<B> {
             mapping,
             engines: engine::THRO_USE.iter().collect(),
             neutral_surfaces,
+            driven_surfaces,
+            // The first tick writes: connect's sample is the frame it acts on.
+            fresh: true,
             paused: false,
             lagging: false,
             liveness: Liveness::default(),
@@ -213,11 +231,12 @@ impl<B: DatarefSource + DatarefSink> XPlaneVehicle<B> {
         &self.bridge
     }
 
-    /// Sets the overrides and holds the neutral surfaces at 0°. Leaves the engines alone: on a
-    /// stall mid-flight, zeros sent here could land a frame before the tick's throttles.
+    /// Sets the overrides and holds the neutral surfaces at 0°. Leaves the engines and driven
+    /// surfaces alone: on a stall mid-flight, zeros sent here could land a frame before the
+    /// tick's commands.
     fn take_control(&mut self) -> Result<(), XPlaneError> {
         self.bridge.write(&overrides::THROTTLES, true)?;
-        if !self.neutral_surfaces.is_empty() {
+        if self.mapping.overrides_surfaces() {
             self.bridge.write(&overrides::CONTROL_SURFACES, true)?;
             for surface in &self.neutral_surfaces {
                 self.bridge.write(surface, 0.0)?;
@@ -278,6 +297,7 @@ impl<B: DatarefSource + DatarefSink> XPlaneVehicle<B> {
             }
         };
         if let Some(frame) = frame {
+            self.fresh = true;
             self.latest.apply(&frame);
             self.lagging = self
                 .datarefs
@@ -328,18 +348,32 @@ impl<B: DatarefSource + DatarefSink> StateSource for XPlaneVehicle<B> {
 }
 
 impl<B: DatarefSource + DatarefSink> Actuator for XPlaneVehicle<B> {
-    /// Writes each mapped engine's throttle and zeroes each idle engine.
+    /// On the first tick after a frame: writes each mapped engine's throttle, zeroes each idle
+    /// engine, and deflects each driven surface (see [Timing](XPlaneVehicle#timing)).
     fn actuate(&mut self, command: &ActuatorCommand) {
+        if !std::mem::take(&mut self.fresh) {
+            return;
+        }
+        if let Err(e) = self.write_actuators(command) {
+            self.liveness
+                .report(format_args!("Failed to write to X-Plane: {e}"));
+        }
+    }
+}
+
+impl<B: DatarefSource + DatarefSink> XPlaneVehicle<B> {
+    /// Writes every engine and driven surface for `command`, stopping at the first failure.
+    fn write_actuators(&mut self, command: &ActuatorCommand) -> Result<(), XPlaneError> {
         for (engine, throttle) in self.mapping.throttles(command) {
-            let Some(dataref) = self.engines.get(engine) else {
-                continue;
-            };
-            if let Err(e) = self.bridge.write(dataref, throttle) {
-                self.liveness
-                    .report(format_args!("Failed to write to X-Plane: {e}"));
-                return;
+            if let Some(dataref) = self.engines.get(engine) {
+                self.bridge.write(dataref, throttle)?;
             }
         }
+        for (dataref, link) in &self.driven_surfaces {
+            let servo = command.servos.get(link.servo).copied().unwrap_or(0.0);
+            self.bridge.write(dataref, link.deflection_deg(servo))?;
+        }
+        Ok(())
     }
 }
 
@@ -350,7 +384,7 @@ impl<B: DatarefSource + DatarefSink> Drop for XPlaneVehicle<B> {
         if let Err(e) = self.bridge.write(&overrides::THROTTLES, false) {
             warn!("Failed to release X-Plane's throttles: {e}");
         }
-        if !self.neutral_surfaces.is_empty()
+        if self.mapping.overrides_surfaces()
             && let Err(e) = self.bridge.write(&overrides::CONTROL_SURFACES, false)
         {
             warn!("Failed to release X-Plane's control surfaces: {e}");

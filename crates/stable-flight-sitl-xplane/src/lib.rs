@@ -33,7 +33,7 @@ mod state;
 pub mod sweep;
 mod vehicle;
 
-pub use mapping::{ActuatorMapping, ENGINE_COUNT, MappingError, WING_COUNT};
+pub use mapping::{ActuatorMapping, ENGINE_COUNT, MappingError, Surface, SurfaceLink, WING_COUNT};
 pub use origin::{Anchor, LocalOrigin, OriginEvent};
 pub use sample::{STATE_RATE, StateDatarefs, XPlaneSample, wait_ready};
 pub use state::vehicle_state;

@@ -5,8 +5,9 @@ use std::time::Instant;
 
 use assert2::{assert, check};
 use stable_flight::{Vec2, Vec3};
+use xplane_bridge::datarefs::wing;
 use xplane_bridge::testing::FakeXPlane;
-use xplane_bridge::{Command, Frame, Rate, Stats, Sub, Value};
+use xplane_bridge::{Command, DatarefArray, Frame, Rate, Stats, Sub, Value};
 
 use super::*;
 use crate::sample::tests::hovering;
@@ -79,7 +80,52 @@ fn alia() -> ActuatorMapping {
         motors: [Some(1), Some(0), Some(2), Some(3), None, None, None, None],
         idle_engines: &[4],
         neutral_wings: &[2],
+        surfaces: &[],
     }
+}
+
+/// The Alia's pusher on engine 4, an aileron pair, and the left elevator.
+fn alia_quadplane() -> ActuatorMapping {
+    const fn link(
+        servo: usize,
+        surface: Surface,
+        wing: usize,
+        plus: f32,
+        minus: f32,
+    ) -> SurfaceLink {
+        SurfaceLink {
+            servo,
+            surface,
+            wing,
+            at_plus_deg: plus,
+            at_minus_deg: minus,
+        }
+    }
+    ActuatorMapping {
+        motors: [
+            Some(1),
+            Some(0),
+            Some(2),
+            Some(3),
+            Some(4),
+            None,
+            None,
+            None,
+        ],
+        idle_engines: &[],
+        neutral_wings: &[],
+        surfaces: const {
+            &[
+                link(0, Surface::Aileron, 2, 10.0, -20.0),
+                link(0, Surface::Aileron, 3, -20.0, 10.0),
+                link(1, Surface::Elevator, 8, -20.0, 20.0),
+            ]
+        },
+    }
+}
+
+fn surface(array: DatarefArray<f32, Writable, 48>, wing: usize) -> Dataref<f32, Writable> {
+    array.at(wing).expect("wing")
 }
 
 /// The handles the vehicle's subscriptions get: indices are allocated in order from the same
@@ -184,14 +230,15 @@ fn holds_state_between_frames() {
     check!((state.position_m.xy() - Vec2::new(0.0, 0.5)).norm() < 1e-3);
 }
 
-/// Each tick writes the mapped engines' throttles and zeroes the idle one.
+/// The first tick writes the mapped engines' throttles and zeroes the idle one.
 #[test]
-fn writes_engines_each_tick() {
+fn writes_engines() {
     let (mut vehicle, shared) = connected(alia());
     let command = ActuatorCommand {
         motors: [0.1, 0.2, 0.3, 0.4, 0.9, 0.9, 0.9, 0.9],
         ..Default::default()
     };
+    vehicle.state(DT);
     vehicle.actuate(&command);
 
     let fake = shared.fake();
@@ -201,6 +248,73 @@ fn writes_engines_each_tick() {
     check!(fake.last_write(&engine(3)) == Some(0.4));
     check!(fake.last_write(&engine(4)) == Some(0.0));
     check!(fake.last_write(&engine(5)) == None);
+}
+
+/// Each servo deflects its linked surfaces, both sets of each; surfaces are taken from X-Plane
+/// at connect and handed back on drop.
+#[test]
+fn deflects_linked_surfaces() {
+    let (mut vehicle, shared) = connected(alia_quadplane());
+    check!(shared.fake().last_write(&overrides::CONTROL_SURFACES) == Some(true));
+    // Connect writes no surface: the first tick does.
+    check!(shared.fake().last_write(&surface(wing::AILERON1_DEG, 2)) == None);
+
+    let command = ActuatorCommand {
+        motors: [0.5, 0.5, 0.5, 0.5, 0.7, 0.0, 0.0, 0.0],
+        servos: [0.5, -1.0, 0.3, 0.0, 0.0, 0.0, 0.0, 0.0],
+    };
+    vehicle.state(DT);
+    vehicle.actuate(&command);
+    {
+        let fake = shared.fake();
+        check!(fake.last_write(&engine(4)) == Some(0.7));
+        for set in [wing::AILERON1_DEG, wing::AILERON2_DEG] {
+            check!(fake.last_write(&surface(set.clone(), 2)) == Some(5.0));
+            check!(fake.last_write(&surface(set, 3)) == Some(-10.0));
+        }
+        check!(fake.last_write(&surface(wing::ELEVATOR1_DEG, 8)) == Some(20.0));
+        check!(fake.last_write(&surface(wing::ELEVATOR2_DEG, 8)) == Some(20.0));
+        // Servo 2 drives nothing here, and no other wing is touched.
+        check!(fake.last_write(&surface(wing::RUDDER1_DEG, 8)) == None);
+        check!(fake.last_write(&surface(wing::ELEVATOR1_DEG, 9)) == None);
+    }
+
+    drop(vehicle);
+    check!(shared.fake().last_write(&overrides::CONTROL_SURFACES) == Some(false));
+}
+
+/// Writes go out once per frame: ticks between frames write nothing, and the first tick
+/// after a frame writes everything with that tick's command.
+#[test]
+fn writes_once_per_frame() {
+    let (mut vehicle, shared) = connected(alia_quadplane());
+    let command = |motor| ActuatorCommand {
+        motors: [motor; 8],
+        servos: [0.5; 8],
+    };
+    let writes = || shared.fake().writes().len();
+
+    let before = writes();
+    vehicle.state(DT);
+    vehicle.actuate(&command(0.1));
+    let after_first = writes();
+    // 5 engines, 3 links × 2 sets.
+    check!(after_first - before == 11);
+
+    // Three ticks without a frame: nothing written.
+    for _ in 0..3 {
+        vehicle.state(DT);
+        vehicle.actuate(&command(0.2));
+    }
+    check!(writes() == after_first);
+
+    shared
+        .fake()
+        .push_frame(handles().frame(&hovering(), Instant::now(), &[]));
+    vehicle.state(DT);
+    vehicle.actuate(&command(0.3));
+    check!(writes() == after_first + 11);
+    check!(shared.fake().last_write(&engine(4)) == Some(0.3));
 }
 
 /// A silence resubscribes every 0.25 s once it passes 0.5 s, and frames returning take control

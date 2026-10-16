@@ -15,7 +15,7 @@ Status: flies the Alia 250 in copter mode on its four lift rotors, from a joysti
 ## Setup
 
 - X-Plane 12 on macOS, Windows, or Linux. Its UDP port is under **Settings → Network** (default `49000`); no data-output rows or network settings need changing, also for a controller on another machine on the LAN (replies go to the sender's address).
-- X-Plane ships no multirotors. The stock BETA Technologies Alia 250 (lift+cruise eVTOL) flies on its four lift rotors: load it on a runway at X-Plane's default weight (6,299 lb in **Flight Configuration → Weight, Balance & Fuel**), which `airframes::alia250()` is tuned for.
+- X-Plane ships no multirotors. The stock BETA Technologies Alia 250 (lift+cruise eVTOL) hovers on its four lift rotors and cruises on its wing and pusher: load it on a runway at X-Plane's default weight (6,299 lb in **Flight Configuration → Weight, Balance & Fuel**), which `airframes::alia250()` is tuned for, in calm weather.
 - The examples take X-Plane's throttles and control surfaces, so a joystick X-Plane also reads moves nothing; buttons bound to X-Plane commands still act.
 - After X-Plane relocates the aircraft (a new airport, a reset elsewhere), the vehicle re-anchors position there and logs the new `--origin`: restart the bridge with it, or QGC's map is off by the move.
 
@@ -31,6 +31,7 @@ let mapping = ActuatorMapping {
     motors: [Some(1), Some(0), Some(2), Some(3), None, None, None, None],
     idle_engines: &[4],
     neutral_wings: &[2],
+    ..Default::default()
 };
 let bridge = XPlaneUdpBridge::connect("127.0.0.1:49000").expect("Failed to open socket");
 let vehicle = XPlaneVehicle::connect(XPlaneConfiguration::new(bridge, mapping))
@@ -40,8 +41,10 @@ println!("bridge --origin {:?}", vehicle.anchor());
 
 `XPlaneUdpBridge::connect` takes a hostname too (`oya.local:49000`). `xplane_bridge` is re-exported, so you don't need to depend on it yourself.
 
-- **Connect** subscribes 25 datarefs and waits (10 s by default, `XPlaneConfiguration::ready_timeout`) until each has a value, resubscribing every 250 ms: X-Plane drops subscriptions that arrive in a burst. A timeout names the missing datarefs. It then sets `override_throttles`, zeroes every mapped and idle engine, and, with `neutral_wings`, sets `override_control_surfaces` and holds those wings' surfaces at 0°.
-- **Each tick**, `state` polls without blocking and converts the newest sample; X-Plane sends one per rendered frame (60–120 Hz), so a 250 Hz loop sees each state for a few ticks. `actuate` writes each mapped engine's throttle. The `XPlaneVehicle` rustdoc covers timing.
+Surfaces are `SurfaceLink`s: a servo slot deflects one wing's aileron, elevator, or rudder (the `.acf`'s wing number), linearly to its own degrees at servo +1 and −1, so a surface's sign and its travel each way (ailerons that rise further than they drop) are data. `airframes::alia250()` lists the Alia's.
+
+- **Connect** subscribes 25 datarefs and waits (10 s by default, `XPlaneConfiguration::ready_timeout`) until each has a value, resubscribing every 250 ms: X-Plane drops subscriptions that arrive in a burst. A timeout names the missing datarefs. It then sets `override_throttles`, zeroes every mapped and idle engine, and, with `surfaces` or `neutral_wings`, sets `override_control_surfaces` and holds the neutral wings' surfaces at 0°.
+- **Each tick**, `state` polls without blocking and converts the newest sample; X-Plane sends one per rendered frame (60–120 Hz), so a 250 Hz loop sees each state for a few ticks. `actuate` writes each mapped engine's throttle and each linked surface's deflection, once per frame: X-Plane applies only the last write before a frame. The `XPlaneVehicle` rustdoc covers timing.
 - **Liveness:** after 0.5 s without a frame (X-Plane restarted, reloading, or gone), and while any dataref stops arriving, it resubscribes every 0.25 s; when frames return it takes control again. Pauses are logged.
 - **Shutdown:** dropping the vehicle (Ctrl-C through `ShutdownSignal` in the examples) writes the overrides back to 0, so X-Plane flies the aircraft again.
 
@@ -52,13 +55,19 @@ println!("bridge --origin {:?}", vehicle.anchor());
 ## Examples
 
 ```bash
-# Joystick (Logitech Extreme 3D; --commander spektrum) flying the Alia 250, params and
-# telemetry over the native link for `just bridge`; --record writes a CSV per tick.
+# Joystick (Logitech Extreme 3D; --commander spektrum) flying the Alia 250: hover, D-pad
+# Right for the transition to plane, Left back to copter. Params and telemetry over the native
+# link for `just bridge`; --record writes a CSV per tick, --param NAME=VALUE sets a param.
 # Or: just fly-xplane --record flight.csv
-cargo run --release -p stable-flight-sitl-xplane --example copter-manual-xplane
+cargo run --release -p stable-flight-sitl-xplane --example quadplane-manual-xplane
 
-# The Alia flown from the link: QGC through the bridge, with the origin the example logs at
-# connect (QGC's map then matches X-Plane), or `just link-pilot`. A quiet link holds position.
+# Plot a recording: time series (altitude, airspeed, attitude vs setpoint, lift share, pusher,
+# surfaces, mode) and the ground track.
+cargo run --bin plot_flight -- --record flight.csv flight.png
+
+# The Alia flown from the link in copter flight: QGC through the bridge, with the origin the
+# example logs at connect (QGC's map then matches X-Plane), or `just link-pilot`. A quiet link
+# holds position.
 # Or: just fly-xplane-companion, then just bridge --origin <lat,lon,0>
 cargo run --release -p stable-flight-sitl-xplane --example copter-companion-xplane
 
@@ -80,8 +89,10 @@ Run examples with `RUST_LOG=info` to see connect, anchor, and liveness events.
 
 ## Airframes
 
-`airframes::alia250()` is the Alia 250 in copter mode: `quad_x` with yaw reversed at thrust factor 0.8 and yaw ratio 1, its lift rotors on engines 1, 0, 2, 3, the pusher idle, the surfaces held neutral. The values and the measurements behind them (an `engine-sweep-xplane` run, the `stable-flight-sim` autotune of a model sized from it, two X-Plane flights) are in its rustdoc; how to tune one, in the [quadplane tuning guide](https://github.com/wboayue/stable-flight/blob/main/docs/tuning/quadplane.md). Its limits:
+`airframes::alia250()` is the Alia 250 as a quadplane: `TableMixer::quadplane` with the lift rotors' yaw reversed at thrust factor 0.8 and yaw ratio 1, its lift rotors on engines 1, 0, 2, 3, the pusher on 4, the ailerons, elevators, and rudders as X-Plane's yoke moves them. The hover values and the measurements behind them (an `engine-sweep-xplane` run, the `stable-flight-sim` autotune of a model sized from it, two X-Plane flights) and the plane and transition values (px4xplane's Alia params) are in its rustdoc; how to tune one, in the [quadplane tuning guide](https://github.com/wboayue/stable-flight/blob/main/docs/tuning/quadplane.md). Its limits:
 
 - **Thrust:** thrust-to-weight is about 1.34 at the default load: climbs are slow, and a heavier load leaves less.
 - **Yaw:** at yaw ratio 1 (a higher ratio sank it, the mixer giving up collective for yaw), the tail turns it off heading at a few m/s sideways ([#440](https://github.com/wboayue/stable-flight/issues/440)).
 - **Forward drift:** the front rotors are canted 4° forward, so hands-off in attitude mode it creeps forward; position hold takes it out.
+- **Pusher:** the mixer's thrust factor caps it at 0.8 of engine 4's throttle.
+- **Scale:** it cruises at 55 m/s and turns at 20° of bank, about 850 m across: plane legs span kilometers.
