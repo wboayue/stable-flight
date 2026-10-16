@@ -162,7 +162,7 @@ fn validates_config() {
 }
 
 /// Waypoint flight, from a vehicle flying north at 15 m/s airspeed at 30 m: the setpoint's
-/// bank, pitch, and thrust against the waypoint. (waypoint, airspeed, expected signs of
+/// bank, pitch, and thrust against the waypoint (total energy control with an airspeed). (waypoint, airspeed, expected signs of
 /// (bank, pitch − trim, thrust − cruise))
 #[test]
 fn waypoint_flight_steers_climbs_and_holds_speed() {
@@ -179,12 +179,12 @@ fn waypoint_flight_steers_climbs_and_holds_speed() {
         // The line is east (right): bank right.
         (along_north(20.0, 30.0, 15.0), Some(15.0), (1, 0, 0)),
         (along_north(-20.0, 30.0, 15.0), Some(15.0), (-1, 0, 0)),
-        // Above the vehicle: pitch up; below: down.
-        (along_north(0.0, 40.0, 15.0), Some(15.0), (0, 1, 0)),
-        (along_north(0.0, 20.0, 15.0), Some(15.0), (0, -1, 0)),
-        // Slow: more thrust; fast: less.
-        (along_north(0.0, 30.0, 18.0), Some(15.0), (0, 0, 1)),
-        (along_north(0.0, 30.0, 12.0), Some(15.0), (0, 0, -1)),
+        // Above the vehicle: more energy, pitched toward the height; below: less, down.
+        (along_north(0.0, 40.0, 15.0), Some(15.0), (0, 1, 1)),
+        (along_north(0.0, 20.0, 15.0), Some(15.0), (0, -1, -1)),
+        // Slow: more energy, pitched down for speed; fast: less, up.
+        (along_north(0.0, 30.0, 18.0), Some(15.0), (0, -1, 1)),
+        (along_north(0.0, 30.0, 12.0), Some(15.0), (0, 1, -1)),
         // No airspeed: cruise, plus a climb's share when climbing.
         (along_north(0.0, 30.0, 15.0), None, (0, 0, 0)),
         (along_north(0.0, 40.0, 15.0), None, (0, 1, 1)),
@@ -249,10 +249,10 @@ fn waypoint_without_a_leg_loiters() {
     assert_relative_eq!(setpoint.roll_rad, expected, epsilon = 1e-4);
 }
 
-/// The navigation integrals build in waypoint flight and clear on `prime` or on any other
-/// input.
+/// The navigation state (total energy control's demands and integrals) builds in waypoint
+/// flight and clears on `prime` or on any other input: the next step matches a fresh one.
 #[test]
-fn navigation_integrals_clear_on_prime_and_other_inputs() {
+fn navigation_state_clears_on_prime_and_other_inputs() {
     let config = PlaneGuidanceConfig::default();
     let state = VehicleState {
         position_m: crate::Vec3::new(0.0, 0.0, 20.0),
@@ -288,7 +288,7 @@ fn navigation_integrals_clear_on_prime_and_other_inputs() {
         for _ in 0..50 {
             pitch(&mut guidance);
         }
-        check!(pitch(&mut guidance) > first, "{name}: the integral builds");
+        check!(pitch(&mut guidance) != first, "{name}: the state builds");
         reset(&mut guidance, &state);
         assert_relative_eq!(pitch(&mut guidance), first, epsilon = 1e-6);
     }

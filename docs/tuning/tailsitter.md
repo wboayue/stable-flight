@@ -216,7 +216,9 @@ about −12…+5°.
 - **Cruise thrust:** the throttle that holds level flight at trim airspeed. The eXplora held
   14–15 m/s with the stick at 0.85–0.89.
 - **Thrust curve:** match the hover side's, so a handoff keeps the motor commands continuous.
-- **Airspeeds:** still guesses until plane flights measure them.
+- **Airspeeds:** still guesses until plane flights measure them. `PGUID_ASPD_MIN` and `_MAX`
+  (`plane.tecs`) take the same values: waypoint flight's total energy control holds its speed
+  demand between them ([quadplane guide](quadplane.md#plane-altitude-and-airspeed-total-energy-control)).
 
 ## 7. Forward transition
 

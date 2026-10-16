@@ -224,6 +224,17 @@ supplies pacing.
   heading-hold target). `FlightLoop` calls guidance and the stabilizer every tick, and a guidance
   paces its own slow loops (`CopterGuidance`'s lateral loop); pacing inside guidance keeps pilot
   sticks read every tick, where a loop-level divider would add a guidance period of latency.
+  A plane's waypoint altitude and airspeed are one total energy loop (`guidance::plane`
+  `TecsConfig`, ArduPilot's and PX4's TECS): thrust sets the rate of total specific energy
+  (height and airspeed together), pitch the balance between them. Separate pitch→altitude and
+  thrust→airspeed loops each assume the other has margin: at the pitch limit the airspeed
+  loop holds speed by taking the power the climb needs, and the Alia 250 sank asked to climb
+  and limit-cycled ±10–15 m in level flight (#454). Rejected: keeping the pair and running
+  full thrust while pitch is pinned (on the sim Alia it climbed, but a 30 m descent ran 235 m
+  past its altitude); PX4's rates-only form with a trajectory generator (more state for the
+  same behavior on these airframes); a synthetic airspeed when none is measured (core has no
+  wind estimate, and ground speed reads fast in a tailwind: #456), so without an airspeed
+  pitch holds altitude and thrust follows pitch, as ArduPilot does.
 * **Stabilizer**: the inner loop, cascaded PIDs from setpoint error to `ControlOutput` (setpoint
   units: `Setpoint` rustdoc).
 * **Mixer**: maps thrust and moments to `ActuatorCommand`'s generic motor and servo slots. The

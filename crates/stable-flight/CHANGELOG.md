@@ -172,6 +172,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `PlaneGuidance` flies waypoint altitude and airspeed by total energy control
+  (#454), as ArduPilot's and PX4's TECS: thrust for the total energy (height and airspeed
+  together), pitch for the balance between them. A climb the pitch limit can't make now runs
+  full thrust, where the airspeed loop took its power and the aircraft sank; and the two
+  loops no longer limit-cycle through the airframe's coupling (the Alia 250: ±10–15 m in
+  X-Plane). New `PlaneGuidanceConfig::tecs` (`TecsConfig`, ArduPilot's defaults): time
+  constant, climb and sink limits, damping, integrator gain, speed weight, roll compensation,
+  and the least and most airspeed, which also latches underspeed (full thrust, pitch for
+  airspeed) below 0.9 of the least (`PGUID_TCONST`, `PGUID_CLMB_MAX`, `PGUID_SINK_MIN`,
+  `PGUID_SINK_MAX`, `PGUID_THR_DAMP`, `PGUID_INTEG`, `PGUID_PTCH_DAMP`, `PGUID_SPDWEIGHT`,
+  `PGUID_RLL2THR`, `PGUID_ASPD_MIN`, `PGUID_ASPD_MAX`). The airspeed loop's `speed_p`,
+  `speed_i`, and `speed_max_integral` (`PGUID_SPD_P`, `_I`, `_IMAX`) are gone; the altitude
+  loop (`PGUID_ALT_*`) and `climb_thrust_per_rad` fly only without an airspeed. An airframe
+  sets `max_climb_mps` and `min_sink_mps` to its climb at full thrust and sink at least
+  thrust, and the airspeeds to its stabilizer's.
 - **Breaking:** `TableMixer` pusher rows fly the cruise thrust over their full range, no
   longer scaled by `MixerConfig::thrust_factor` (the lift motors' moment headroom; a pusher
   carries no moments, and ArduPlane's throttle spans 0–100%). For the same cruise thrust the
