@@ -186,11 +186,12 @@ impl QuadPlaneGuidance {
                 self.pusher_thrust = 0.0;
             }
             FlightMode::Plane => {
-                // Out of the forward transition the plane guidance has been flying the
-                // command all along; out of the back one it hasn't.
-                if self.mode == FlightMode::ToCopter {
-                    self.plane.prime(state);
-                }
+                // Fresh either way: out of the back transition it hasn't flown, and out of the
+                // forward one its energy control flew from no airspeed, its demands and
+                // integrals filled by a transition that only took its pusher thrust (the
+                // X-Plane Alia dove 90 m at full nose-down on them, #454). The pusher's
+                // thrust carries over in the handoff below.
+                self.plane.prime(state);
                 self.handoff = ThrustHandoff::new(self.config.transition.handoff_s);
                 self.handoff.start(self.pusher_thrust);
             }

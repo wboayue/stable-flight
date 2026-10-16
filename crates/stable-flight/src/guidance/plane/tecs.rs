@@ -29,9 +29,9 @@
 //!   pitch, damping on the rate error (AP:1062), and an integral that stops at the pitch limits
 //!   (AP:1092-1102).
 //! - **Underspeed:** below 0.9 of the least airspeed (AP:660), full thrust and pitch holding
-//!   airspeed alone (speed weight 2). It clears once the airspeed is back to its demand.
-//!   ArduPilot clears at 1.15 of the least (AP:652-656), which for a heavy airframe can sit
-//!   above its trim airspeed (the Alia 250: 46 m/s against 45) and never clear.
+//!   airspeed alone (speed weight 2). It clears back at the least airspeed, where the wing
+//!   flies. ArduPilot clears at 1.15 of the least (AP:652-656), which for a heavy airframe can
+//!   sit above its trim airspeed (the sim Alia 250: 46 m/s against 45) and never clear.
 //! - **Turns:** thrust for a bank's extra drag, `k·(1/cos²φ − 1)` on the energy rate (AP:764).
 
 use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
@@ -425,15 +425,11 @@ impl Tecs {
         unclamped.clamp(low, high)
     }
 
-    /// Latches underspeed below 0.9 of the least airspeed, and clears it once the airspeed is
-    /// back to its demand.
+    /// Latches underspeed below 0.9 of the least airspeed, and clears it back at the least.
     fn update_underspeed(&mut self, config: &TecsConfig, airspeed_mps: f32) {
-        let demand_mps = self
-            .demand
-            .map_or(config.min_airspeed_mps, |demand| demand.airspeed_mps);
         if airspeed_mps < UNDERSPEED_SHARE * config.min_airspeed_mps {
             self.underspeed = true;
-        } else if airspeed_mps >= demand_mps {
+        } else if airspeed_mps >= config.min_airspeed_mps {
             self.underspeed = false;
         }
     }

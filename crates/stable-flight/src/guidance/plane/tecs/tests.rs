@@ -174,7 +174,7 @@ fn pitch_moves_smoothly_where_the_height_slew_stops() {
 }
 
 /// Below 0.9 of the least airspeed: full thrust, and pitch holds airspeed alone (nose down,
-/// even with a climb asked). It clears once the airspeed is back to its demand.
+/// even with a climb asked). It clears back at the least airspeed.
 #[test]
 fn underspeed_runs_full_thrust_and_pitches_for_airspeed() {
     let config = TecsConfig::default();
@@ -193,7 +193,7 @@ fn underspeed_runs_full_thrust_and_pitches_for_airspeed() {
     check!(thrust == limits.max_thrust);
     check!(pitch < limits.trim_pitch_rad, "{pitch}");
 
-    // Still under the demand: latched.
+    // Over the latch but under the least airspeed: still latched.
     let between_mps = config.min_airspeed_mps * 0.95;
     tecs.step(
         DT,
@@ -204,15 +204,15 @@ fn underspeed_runs_full_thrust_and_pitches_for_airspeed() {
         &level(30.0, between_mps, 0.0),
     );
     check!(tecs.underspeed);
-    // Back at the demand: cleared.
-    let demand_mps = tecs.demand.expect("seeded").airspeed_mps;
+    // Back at the least airspeed: cleared.
+    let least_mps = config.min_airspeed_mps;
     tecs.step(
         DT,
         &config,
         &limits,
         (60.0, 15.0),
-        demand_mps,
-        &level(30.0, demand_mps, 0.0),
+        least_mps,
+        &level(30.0, least_mps, 0.0),
     );
     check!(!tecs.underspeed);
 }

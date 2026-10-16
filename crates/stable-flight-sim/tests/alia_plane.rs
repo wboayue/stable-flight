@@ -11,7 +11,7 @@ use assert2::check;
 use stable_flight::guidance::vtol::{QuadPlaneGuidance, QuadPlaneGuidanceConfig};
 use stable_flight::stabilizers::vtol::QuadPlaneStabilizer;
 use stable_flight::{FlightLoop, FlightMode, TelemetryPublisher, TelemetryRecord};
-use stable_flight_sim::{SimQuadPlane, airframes};
+use stable_flight_sim::{SimQuadPlane, Start, airframes};
 
 use common::fly;
 use common::plane::north_line;
@@ -38,6 +38,21 @@ impl TelemetryPublisher for Hold {
 /// the airspeed already past its gate). Returns each plane tick's altitude, climb rate, and
 /// airspeed.
 fn line(altitude_m: f32, airspeed_mps: f32, seconds: f32) -> Vec<(f32, f32, f32)> {
+    line_from(
+        airframes::alia250().start,
+        altitude_m,
+        airspeed_mps,
+        seconds,
+    )
+}
+
+/// [`line`] from `start`.
+fn line_from(
+    start: Start,
+    altitude_m: f32,
+    airspeed_mps: f32,
+    seconds: f32,
+) -> Vec<(f32, f32, f32)> {
     let airframe = airframes::alia250();
     let guidance = QuadPlaneGuidanceConfig {
         transition: stable_flight::guidance::vtol::LiftTransitionConfig {
@@ -48,7 +63,7 @@ fn line(altitude_m: f32, airspeed_mps: f32, seconds: f32) -> Vec<(f32, f32, f32)
     };
     let vehicle = SimQuadPlane::new(airframe.model, &airframe.mixer)
         .expect("valid airframe")
-        .with_start(airframe.start);
+        .with_start(start);
     let hold = Hold::default();
     let mut flight_loop = FlightLoop::new(
         north_line(altitude_m, airspeed_mps),
@@ -104,4 +119,22 @@ fn alia250_climbs_at_the_pitch_limit() {
     let end = tail.last().map_or(f32::NAN, |t| t.0);
     println!("mean climb {mean_climb:.2} m/s, ends at {end:.0} m");
     check!(mean_climb > 1.0);
+}
+
+/// Most altitude lost from entering plane flight, in m, out of a forward transition from near
+/// a hover. Measured 41 m: the transition hands over at 37.5 m/s, below the 40 m/s the wing
+/// holds level at, so it dives for speed. 60 m leaves about 1.5× margin. Its energy control
+/// carried into plane flight from the transition lost 108 m (X-Plane: 90 m at full nose-down).
+// TODO(#392): PX4's 20 m (`VT_QC_T_ALT_LOSS`) once the transition hands over at a speed the
+// wing flies.
+const ENTRY_LOSS_M: f32 = 60.0;
+
+/// Entering plane flight out of the forward transition starts its energy control fresh: what
+/// it built flying from no airspeed doesn't pitch the Alia down at entry (#454).
+#[test]
+fn alia250_enters_plane_flight_without_the_transitions_energy_state() {
+    let ticks = line_from(Start::level(300.0, 5.0, 0.0), 300.0, 45.0, 120.0);
+    let entry_m = ticks.first().map_or(f32::NAN, |t| t.0);
+    let lowest_m = ticks.iter().map(|t| t.0).fold(f32::INFINITY, f32::min);
+    check!(entry_m - lowest_m <= ENTRY_LOSS_M, "{entry_m} → {lowest_m}");
 }
