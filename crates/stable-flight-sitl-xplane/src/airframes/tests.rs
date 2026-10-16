@@ -24,6 +24,16 @@ fn deflections(command: &ActuatorCommand) -> Vec<(usize, f32)> {
         .collect()
 }
 
+/// The total energy control's climb and sink limits are the sim Alia's, which its model pins
+/// (`stable-flight-sim` `alia250_energy_limits_are_the_models`); the airspeeds are px4xplane's.
+#[test]
+fn alia250_energy_limits_are_the_sim_alias() {
+    let sim = stable_flight_sim::airframes::alia250().guidance.plane.tecs;
+    let xplane = alia250().guidance.plane.tecs;
+    check!(xplane.max_climb_mps == sim.max_climb_mps);
+    check!(xplane.min_sink_mps == sim.min_sink_mps);
+}
+
 /// The hover gains, lift mixing, and thrust law are the sim Alia's, which the autotune tuned
 /// (`stable-flight-sim` `tests/alia.rs`); X-Plane's own addition is the roll and pitch rate I
 /// that trims its nose-up pitch, which the sim leaves out.

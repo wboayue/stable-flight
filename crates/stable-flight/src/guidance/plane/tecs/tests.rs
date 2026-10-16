@@ -102,6 +102,25 @@ fn demands_slew_at_their_limits() {
     }
 }
 
+/// A most airspeed below the least reads as the least: the demand holds there, whatever the
+/// target.
+#[test]
+fn most_airspeed_below_the_least_reads_as_the_least() {
+    let config = TecsConfig {
+        min_airspeed_mps: 12.0,
+        max_airspeed_mps: 8.0,
+        ..TecsConfig::default()
+    };
+    for target_mps in [5.0, 12.0, 20.0] {
+        let mut tecs = Tecs::default();
+        let state = level(30.0, 12.0, 0.0);
+        for _ in 0..100 {
+            tecs.step(DT, &config, &limits(), (30.0, target_mps), 12.0, &state);
+        }
+        assert_relative_eq!(tecs.demand.expect("seeded").airspeed_mps, 12.0);
+    }
+}
+
 /// A climb the pitch limit can't make runs full thrust: the unmet height stays in the total
 /// energy error. Pitch stays at its limit, and its integral doesn't wind past it: once the
 /// target is reached, pitch leaves the limit at once (#454: the speed loop took the climb's

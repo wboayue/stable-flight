@@ -249,6 +249,14 @@ fn waypoint_without_a_leg_loiters() {
     assert_relative_eq!(setpoint.roll_rad, expected, epsilon = 1e-4);
 }
 
+/// A climb along the line north, at 15 m/s.
+const CLIMB: ControlInput = ControlInput::Waypoint(WaypointCommand {
+    position_m: Vec2::new(500.0, 0.0),
+    velocity_mps: Some(Vec2::new(14.0, 0.0)),
+    altitude_m: 21.0,
+    cruise_speed_mps: 15.0,
+});
+
 /// The navigation state (total energy control's demands and integrals) builds in waypoint
 /// flight and clears on `prime` or on any other input: the next step matches a fresh one.
 #[test]
@@ -260,26 +268,28 @@ fn navigation_state_clears_on_prime_and_other_inputs() {
         airspeed_mps: Some(15.0),
         ..Default::default()
     };
-    let climb = ControlInput::Waypoint(WaypointCommand {
-        position_m: Vec2::new(500.0, 0.0),
-        velocity_mps: Some(Vec2::new(14.0, 0.0)),
-        altitude_m: 21.0,
-        cruise_speed_mps: 15.0,
-    });
     let pitch = |guidance: &mut PlaneGuidance| match guidance.guide(
         0.1,
         FlightRegime::Plane,
-        &climb,
+        &CLIMB,
         &state,
     ) {
         Setpoint::Plane(setpoint) => setpoint.pitch_rad,
         other => panic!("{other:?}"),
     };
     type Reset = fn(&mut PlaneGuidance, &VehicleState);
-    let resets: [(&str, Reset); 2] = [
+    let resets: [(&str, Reset); 3] = [
         ("prime", |g, s| g.prime(s)),
         ("sticks", |g, s| {
             g.guide(0.1, FlightRegime::Plane, &sticks(0.0, 0.0, 0.5), s);
+        }),
+        // A tick without an airspeed flies the altitude loop and drops the energy state.
+        ("airspeed lost", |g, s| {
+            let blind = VehicleState {
+                airspeed_mps: None,
+                ..*s
+            };
+            g.guide(0.1, FlightRegime::Plane, &CLIMB, &blind);
         }),
     ];
     for (name, reset) in resets {
