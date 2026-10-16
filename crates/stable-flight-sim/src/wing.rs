@@ -236,14 +236,8 @@ impl Dynamics for FixedWing {
             .attitude
             .inverse_transform_vector(&body.air_relative_velocity_ned_mps(wind_ned_mps));
         let (thrust_n, motor_torque_nm) = self.motors.wrench();
-        // Exactly 1 with no falloff, so airframes without it fly as they did.
-        let falloff = if self.model.thrust_falloff_n_per_mps == 0.0 {
-            1.0
-        } else {
-            (1.0 - self.model.thrust_falloff_n_per_mps * air_mps.x.max(0.0)
-                / self.model.max_thrust_n)
-                .max(0.0)
-        };
+        // Exactly 1 with no falloff (`x / x`), so airframes without it fly as they did.
+        let falloff = self.model.full_thrust_n(air_mps.x) / self.model.max_thrust_n;
         let (thrust_n, motor_torque_nm) = (thrust_n * falloff, motor_torque_nm * falloff);
         let thrust_line_nm = Vec3::new(0.0, thrust_n * self.model.thrust_line_below_cg_m, 0.0);
         // The thrust axis is body `x`.

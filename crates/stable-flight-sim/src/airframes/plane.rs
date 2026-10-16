@@ -206,12 +206,10 @@ pub(super) fn cruise_thrust<const N: usize>(
     let pressure_area_n = aero::pressure_area_n(model, airspeed_mps);
     let lift = model.mass_kg * GRAVITY / pressure_area_n;
     let drag_n = pressure_area_n * aero::drag_coefficient(model, lift);
-    // Full command's thrust at this airspeed, after the falloff.
-    let full_n = model.max_thrust_n - model.thrust_falloff_n_per_mps * airspeed_mps;
     let (count, thrust_factor) = forward_motors(mixer, mixer_config);
     thrust_for(
         drag_n / count,
-        full_n,
+        model.full_thrust_n(airspeed_mps),
         thrust_factor,
         model.thrust_exponent,
         thrust_curve_exponent,

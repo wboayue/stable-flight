@@ -15,7 +15,7 @@ use stable_flight_sim::{SimQuadPlane, airframes};
 use common::fly;
 use common::plane::north_line;
 
-/// Altitude and climb rate through level plane flight, after `from_s`.
+/// Altitude, climb rate, and airspeed on each plane-flight tick.
 #[derive(Clone, Default)]
 struct Hold(Rc<RefCell<Vec<(f32, f32, f32)>>>);
 
@@ -71,7 +71,9 @@ fn alia250_holds_level_flight() {
     let speed = airframe.stabilizer.plane.trim_airspeed_mps;
     let ticks = line(airframe.start.position_m.z, speed, 180.0);
     // The last two minutes.
-    let tail = &ticks[ticks.len().saturating_sub(30_000)..];
+    let tail = &ticks[ticks.len().saturating_sub(common::ticks(120.0))..];
+    // Plane flight reached: an empty tail would pass both checks.
+    check!(!tail.is_empty());
     let (low, high) = tail
         .iter()
         .fold((f32::INFINITY, f32::NEG_INFINITY), |(lo, hi), t| {
@@ -95,7 +97,8 @@ fn alia250_holds_level_flight() {
 fn alia250_climbs_at_the_pitch_limit() {
     let ticks = line(450.0, 40.0, 90.0);
     // Over the last minute: at least 1 m/s on average (2.4 m/s at full power, X-Plane).
-    let tail = &ticks[ticks.len().saturating_sub(15_000)..];
+    let tail = &ticks[ticks.len().saturating_sub(common::ticks(60.0))..];
+    check!(!tail.is_empty());
     let mean_climb = tail.iter().map(|t| t.1).sum::<f32>() / tail.len() as f32;
     let end = tail.last().map_or(f32::NAN, |t| t.0);
     println!("mean climb {mean_climb:.2} m/s, ends at {end:.0} m");

@@ -43,7 +43,7 @@ fn trim(model: &FixedWingModel, airspeed_mps: f32) -> (f32, f32, f32) {
 
 /// The pusher command that makes `thrust_n` at `airspeed_mps`.
 fn pusher_command(model: &FixedWingModel, airspeed_mps: f32, thrust_n: f32) -> f32 {
-    let full_n = model.max_thrust_n - model.thrust_falloff_n_per_mps * airspeed_mps;
+    let full_n = model.full_thrust_n(airspeed_mps);
     libm::powf(thrust_n / full_n, 1.0 / model.thrust_exponent)
 }
 
@@ -83,8 +83,8 @@ fn alia250_climbs_at_full_power_as_xplane() {
     let model = alia250().model.wing;
     let airspeed = 40.8;
     let (_, _, level_thrust_n) = trim(&model, airspeed);
-    let full_n = model.max_thrust_n - model.thrust_falloff_n_per_mps * airspeed;
-    let climb_mps = (full_n - level_thrust_n) * airspeed / (model.mass_kg * GRAVITY);
+    let climb_mps =
+        (model.full_thrust_n(airspeed) - level_thrust_n) * airspeed / (model.mass_kg * GRAVITY);
     println!("full-power climb at {airspeed} m/s: {climb_mps:.2} m/s");
     check!((climb_mps - 2.4).abs() < 0.6);
 }

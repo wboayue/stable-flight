@@ -131,6 +131,12 @@ impl FixedWingModel {
         self.span_m * self.span_m / self.wing_area_m2
     }
 
+    /// Each motor's thrust at full command and `airspeed_mps` forward (body `x`; none counted
+    /// below 0), in N: `max_thrust_n` less the falloff, never below 0.
+    pub(crate) fn full_thrust_n(&self, airspeed_mps: f32) -> f32 {
+        (self.max_thrust_n - self.thrust_falloff_n_per_mps * airspeed_mps.max(0.0)).max(0.0)
+    }
+
     /// Checks every parameter's range.
     ///
     /// # Errors
