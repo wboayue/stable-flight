@@ -7,7 +7,7 @@ use stable_flight::stabilizers::vtol::QuadPlaneStabilizer;
 use stable_flight::testing::RecordingTelemetry;
 use stable_flight::{Commander, FlightLoop, TelemetryPublisher};
 use stable_flight_sim::airframes::QuadPlaneAirframe;
-use stable_flight_sim::{Perturbations, SimQuadPlane, Wind};
+use stable_flight_sim::{Perturbations, SimQuadPlane, Start, Wind};
 
 use super::RECORDED;
 use super::transition::{Forward, ForwardAndBack, forward_and_back_at, forward_at};
@@ -67,10 +67,35 @@ pub fn quadplane_pipeline<C: Commander, T: TelemetryPublisher>(
     commander: C,
     telemetry: T,
 ) -> QuadPlanePipeline<C, T> {
+    pipeline_from(plant, plant.vehicle(), commander, telemetry)
+}
+
+/// [`quadplane_pipeline`] from `start` (in flight, say) instead of the gear.
+pub fn quadplane_pipeline_at<C: Commander, T: TelemetryPublisher>(
+    plant: &QuadPlanePlant,
+    start: Start,
+    commander: C,
+    telemetry: T,
+) -> QuadPlanePipeline<C, T> {
+    pipeline_from(
+        plant,
+        plant.vehicle().with_start(start),
+        commander,
+        telemetry,
+    )
+}
+
+/// `plant`'s pipeline on `vehicle`, primed.
+fn pipeline_from<C: Commander, T: TelemetryPublisher>(
+    plant: &QuadPlanePlant,
+    vehicle: SimQuadPlane,
+    commander: C,
+    telemetry: T,
+) -> QuadPlanePipeline<C, T> {
     let airframe = plant.airframe;
     let mut flight_loop = FlightLoop::new(
         commander,
-        plant.vehicle(),
+        vehicle,
         QuadPlaneGuidance::new(airframe.guidance),
         QuadPlaneStabilizer::new(airframe.stabilizer),
         airframe.mixer,
