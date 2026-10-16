@@ -55,13 +55,7 @@ impl Surface {
 /// use stable_flight_sitl_xplane::{Surface, SurfaceLink};
 ///
 /// // A left aileron: rolling right (servo +1) drops it 10°, rolling left raises it 20°.
-/// let left = SurfaceLink {
-///     servo: 0,
-///     surface: Surface::Aileron,
-///     wing: 2,
-///     at_plus_deg: 10.0,
-///     at_minus_deg: -20.0,
-/// };
+/// let left = SurfaceLink::new(0, Surface::Aileron, 2, 10.0, -20.0);
 /// assert_eq!(left.deflection_deg(0.5), 5.0);
 /// assert_eq!(left.deflection_deg(-0.5), -10.0);
 /// ```
@@ -80,6 +74,24 @@ pub struct SurfaceLink {
 }
 
 impl SurfaceLink {
+    /// `wing`'s `surface` on servo slot `servo`, deflected `at_plus_deg` at servo `+1` and
+    /// `at_minus_deg` at `-1`.
+    pub const fn new(
+        servo: usize,
+        surface: Surface,
+        wing: usize,
+        at_plus_deg: f32,
+        at_minus_deg: f32,
+    ) -> Self {
+        SurfaceLink {
+            servo,
+            surface,
+            wing,
+            at_plus_deg,
+            at_minus_deg,
+        }
+    }
+
     /// The deflection for a servo command: saturated to `[-1, 1]`, NaN as 0 (input policy).
     pub fn deflection_deg(&self, servo: f32) -> f32 {
         if servo.is_nan() {
@@ -111,15 +123,12 @@ impl SurfaceLink {
 /// ```
 /// use stable_flight_sitl_xplane::{ActuatorMapping, Surface, SurfaceLink};
 ///
+/// // An elevator: servo +1 raises its trailing edge 20° (X-Plane's negative).
+/// const SURFACES: &[SurfaceLink] = &[SurfaceLink::new(1, Surface::Elevator, 8, -20.0, 20.0)];
+///
 /// let mapping = ActuatorMapping {
 ///     motors: [Some(1), Some(0), Some(2), Some(3), Some(4), None, None, None],
-///     surfaces: &[SurfaceLink {
-///         servo: 1,
-///         surface: Surface::Elevator,
-///         wing: 8,
-///         at_plus_deg: -20.0,
-///         at_minus_deg: 20.0,
-///     }],
+///     surfaces: SURFACES,
 ///     ..Default::default()
 /// };
 /// assert!(mapping.validate().is_ok());
