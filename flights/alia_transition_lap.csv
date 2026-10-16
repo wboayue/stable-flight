@@ -1,12 +1,13 @@
 # Alia 250 transition check in X-Plane, from Oceano County Airport (L52), spawned on runway 11
-# (heading 123°), so every plane leg flies over the ocean: climb in hover to 250 m over the
-# beach 800 m west, transition (accelerating along the hover heading, then turning west), a
+# (heading 123°), so every plane leg flies over the ocean: climb straight up to 250 m (copter
+# legs keep the armed heading, #452), transition along the runway heading and turn west, a
 # box offshore at 300 m and 50 m/s (6 km west, 4 km south, back to 3 km west), a slow leg
 # north at 45 m/s abeam the airport that starts the back transition, and hover home to land.
+# Flown end to end on #444 with #449 (touchdown 0.1 m from the spawn).
 # Coordinates are m north and east of the anchor; altitudes are above sea level.
 # The regime is the leg's to that waypoint: the first plane leg starts the transition.
 x,y,altitude,cruise_speed,regime
-0.0,-800.0,250.0,8.0,copter
+0.0,0.0,250.0,3.0,copter
 0.0,-6000.0,300.0,50.0,plane
 -4000.0,-6000.0,300.0,50.0,plane
 -4000.0,-3000.0,300.0,50.0,plane
