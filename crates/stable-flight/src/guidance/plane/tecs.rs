@@ -11,7 +11,11 @@
 //! - **Demands:** the height demand slews toward the target at the climb and sink limits, the
 //!   airspeed demand at half the climb's energy rate over `V` (AP:502-521, 550-580); each
 //!   demand's slope is its rate's feedforward, and each error over the time constant its
-//!   proportional term (AP:735).
+//!   proportional term (AP:735). The airspeed demand stays within the least and most
+//!   airspeed, and starts there: seeded at a stalled speed it would hold the stall. The height
+//!   demand stays within one time constant's climb or sink of the aircraft, so a climb it can't
+//!   make doesn't run the demand away; ArduPilot instead stops advancing the demand while pitch
+//!   or thrust is at its limit (AP:588-606), which needs the last tick's clipping.
 //! - **Thrust:** the total energy rate demand, mapped around cruise thrust so that the climb
 //!   limit takes full thrust and the least sink least thrust (PX4:628-640), plus damping on the
 //!   rate error (AP:740-746) and an integral of the energy error (AP:785).
@@ -19,8 +23,10 @@
 //!   capped at 1; AP:1003-1033); its rate demand over `V·g` is a flight path angle, plus trim
 //!   pitch, damping on the rate error (AP:1062), and an integral that stops at the pitch limits
 //!   (AP:1092-1102).
-//! - **Underspeed:** below 0.9 of the least airspeed, full thrust and pitch holding airspeed
-//!   alone (speed weight 2) until the airspeed is back to its demand (AP:652-675).
+//! - **Underspeed:** below 0.9 of the least airspeed (AP:660), full thrust and pitch holding
+//!   airspeed alone (speed weight 2). It clears once the airspeed is back to its demand.
+//!   ArduPilot clears at 1.15 of the least (AP:652-656), which for a heavy airframe can sit
+//!   above its trim airspeed (the Alia 250: 46 m/s against 45) and never clear.
 //! - **Turns:** thrust for a bank's extra drag, `k·(1/cos²φ − 1)` on the energy rate (AP:764).
 
 use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
@@ -44,6 +50,27 @@ const MIN_COS2_BANK: f32 = 0.1;
 const THRUST_INTEGRAL_MARGIN: f32 = 0.1;
 
 /// [`PlaneGuidance`](super::PlaneGuidance)'s total energy control settings.
+///
+/// # Examples
+///
+/// An airframe sets its climb at full thrust, its sink at least thrust, and its airspeeds; the
+/// gains keep ArduPilot's defaults:
+///
+/// ```
+/// use stable_flight::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
+///
+/// let config = PlaneGuidanceConfig {
+///     tecs: TecsConfig {
+///         max_climb_mps: 1.8,
+///         min_sink_mps: 3.5,
+///         min_airspeed_mps: 40.0,
+///         max_airspeed_mps: 60.0,
+///         ..TecsConfig::default()
+///     },
+///     ..PlaneGuidanceConfig::default()
+/// };
+/// assert!(config.validate().is_ok());
+/// ```
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TecsConfig {
     /// How quickly height and airspeed errors close, in s: their energy errors over it are the
@@ -98,6 +125,17 @@ impl Default for TecsConfig {
 }
 
 impl TecsConfig {
+    /// The total energy rate at full thrust, `g · max_climb_mps`, in m²/s³: the most the
+    /// height's rate demand asks.
+    fn max_energy_rate(&self) -> f32 {
+        GRAVITY * self.max_climb_mps
+    }
+
+    /// The height's rate demand at the largest sink, `−g · max_sink_mps`, in m²/s³.
+    fn least_energy_rate(&self) -> f32 {
+        -GRAVITY * self.max_sink_mps
+    }
+
     /// `Ok` when the time constant, climb, least sink, and airspeeds are positive, the largest
     /// sink, gains, and roll compensation non-negative, and the speed weight in `[0, 2]`.
     ///
@@ -134,7 +172,7 @@ pub(crate) struct Limits {
     pub trim_pitch_rad: f32,
     /// Least thrust, `[0, 1]`.
     pub min_thrust: f32,
-    /// Most thrust, `[0, 1]`.
+    /// Most thrust, `[0, 1]`, at least `min_thrust`.
     pub max_thrust: f32,
     /// Thrust for level flight at trim airspeed.
     pub cruise_thrust: f32,
@@ -167,6 +205,8 @@ struct Energies {
     kinetic_rate_demand: f32,
     potential_rate: f32,
     kinetic_rate: f32,
+    /// The airspeed the rates divide by, floored at [`MIN_GAIN_AIRSPEED_MPS`], in m/s.
+    speed_mps: f32,
 }
 
 impl Tecs {
@@ -200,16 +240,16 @@ impl Tecs {
             return (limits.trim_pitch_rad, limits.cruise_thrust);
         }
         self.update_underspeed(config, airspeed_mps);
+        let speed_mps = airspeed_mps.max(MIN_GAIN_AIRSPEED_MPS);
         let energies = self.energies(
             dt,
             config,
             (altitude_m, airspeed_target_mps),
-            airspeed_mps,
+            (airspeed_mps, speed_mps),
             state,
         );
-        let speed_mps = airspeed_mps.max(MIN_GAIN_AIRSPEED_MPS);
-        let thrust = self.thrust(dt, config, limits, &energies, state);
-        let pitch_rad = self.pitch(dt, config, limits, &energies, speed_mps);
+        let thrust = self.thrust(dt, config, limits, &energies, state.roll_rad);
+        let pitch_rad = self.pitch(dt, config, limits, &energies);
         (pitch_rad, thrust)
     }
 
@@ -219,7 +259,7 @@ impl Tecs {
         dt: f32,
         config: &TecsConfig,
         (altitude_m, airspeed_target_mps): (f32, f32),
-        airspeed_mps: f32,
+        (airspeed_mps, speed_mps): (f32, f32),
         state: &VehicleState,
     ) -> Energies {
         let (height_m, climb_mps) = (state.position_m.z, state.velocity_mps.z);
@@ -244,8 +284,7 @@ impl Tecs {
         );
 
         // Airspeed: slewed at half the climb's energy rate over V (AP:502).
-        let speed_mps = airspeed_mps.max(MIN_GAIN_AIRSPEED_MPS);
-        let max_accel_mps2 = 0.5 * GRAVITY * config.max_climb_mps / speed_mps;
+        let max_accel_mps2 = 0.5 * config.max_energy_rate() / speed_mps;
         let target_mps = airspeed_target_mps.clamp(min_mps, max_mps);
         let demand_airspeed_mps = previous.airspeed_mps
             + (target_mps - previous.airspeed_mps).clamp(-max_accel_mps2 * dt, max_accel_mps2 * dt);
@@ -271,16 +310,16 @@ impl Tecs {
         let potential_error = GRAVITY * (demand_height_m - height_m);
         let kinetic_error =
             0.5 * (demand_airspeed_mps * demand_airspeed_mps - airspeed_mps * airspeed_mps);
-        let climb_limit = GRAVITY * config.max_climb_mps;
         Energies {
             potential_error,
             kinetic_error,
             potential_rate_demand: (GRAVITY * height_rate_mps + potential_error / tau)
-                .clamp(-GRAVITY * config.max_sink_mps, climb_limit),
+                .clamp(config.least_energy_rate(), config.max_energy_rate()),
             kinetic_rate_demand: clamp_symmetric(
                 speed_mps * accel_demand_mps2 + kinetic_error / tau,
-                0.5 * climb_limit,
+                0.5 * config.max_energy_rate(),
             ),
+            speed_mps,
             potential_rate: GRAVITY * climb_mps,
             kinetic_rate: speed_mps * accel_mps2,
         }
@@ -293,20 +332,20 @@ impl Tecs {
         config: &TecsConfig,
         limits: &Limits,
         energies: &Energies,
-        state: &VehicleState,
+        roll_rad: f32,
     ) -> f32 {
-        let (low, high) = (limits.min_thrust, limits.max_thrust.max(limits.min_thrust));
+        let (low, high) = (limits.min_thrust, limits.max_thrust);
         if self.underspeed {
             return high;
         }
-        let max_rate = GRAVITY * config.max_climb_mps;
+        let max_rate = config.max_energy_rate();
         let min_rate = -GRAVITY * config.min_sink_mps;
         let rate_demand = (energies.potential_rate_demand + energies.kinetic_rate_demand)
             .clamp(min_rate, max_rate);
         let rate = energies.potential_rate + energies.kinetic_rate;
 
         // A bank's extra drag, on the feedforward only (AP:764).
-        let cos_bank = libm::cosf(state.roll_rad);
+        let cos_bank = libm::cosf(roll_rad);
         let cos2 = (cos_bank * cos_bank).max(MIN_COS2_BANK);
         let turn = if cos2.is_finite() {
             config.roll_compensation * (1.0 / cos2 - 1.0)
@@ -334,14 +373,7 @@ impl Tecs {
     }
 
     /// Pitch from the energy balance's rate demand and error, and its integral.
-    fn pitch(
-        &mut self,
-        dt: f32,
-        config: &TecsConfig,
-        limits: &Limits,
-        energies: &Energies,
-        speed_mps: f32,
-    ) -> f32 {
+    fn pitch(&mut self, dt: f32, config: &TecsConfig, limits: &Limits, energies: &Energies) -> f32 {
         let (high, low) = (limits.pitch_up_rad, -limits.pitch_down_rad);
         let speed_weight = if self.underspeed {
             2.0
@@ -350,16 +382,15 @@ impl Tecs {
         };
         let kinetic_weight = speed_weight.min(1.0);
         let potential_weight = (2.0 - speed_weight).min(1.0);
-        let climb_limit = GRAVITY * config.max_climb_mps;
         let rate_demand = (potential_weight * energies.potential_rate_demand
             - kinetic_weight * energies.kinetic_rate_demand)
-            .clamp(-GRAVITY * config.max_sink_mps, climb_limit);
+            .clamp(config.least_energy_rate(), config.max_energy_rate());
         let rate =
             potential_weight * energies.potential_rate - kinetic_weight * energies.kinetic_rate;
         let error =
             potential_weight * energies.potential_error - kinetic_weight * energies.kinetic_error;
         // Energy balance rate over V·g is a flight path angle, in rad.
-        let per_rad = speed_mps * GRAVITY;
+        let per_rad = energies.speed_mps * GRAVITY;
         let integral = self.pitch_integral_rad
             + config.integrator_gain * error / (config.time_constant_s * per_rad) * dt;
         let unclamped = limits.trim_pitch_rad
