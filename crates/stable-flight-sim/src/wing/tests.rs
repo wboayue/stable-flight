@@ -61,6 +61,62 @@ fn loads_combine_prop_and_aero() {
     check!(dynamics.lift_n(&body) > 0.5 * dynamics.model.mass_kg * GRAVITY);
 }
 
+/// Thrust falls off with forward airspeed as `full_thrust_n` gives it, and a thrust line below
+/// the center of gravity pitches the nose up by thrust times its offset.
+#[test]
+fn thrust_falls_off_with_airspeed_and_pitches_from_its_line() {
+    // (falloff N per m/s, thrust line below the CG m)
+    for (falloff, below_m) in [(0.0, 0.0), (0.5, 0.0), (0.5, 0.1), (0.0, -0.1)] {
+        let airframe = airframes::plane();
+        let model = FixedWingModel {
+            thrust_falloff_n_per_mps: falloff,
+            thrust_line_below_cg_m: below_m,
+            ..airframe.model
+        };
+        let mut dynamics = FixedWing::new(
+            model,
+            &airframe.mixer,
+            Rotors::airplane(),
+            UnitQuaternion::identity(),
+        );
+        dynamics.begin(1.0);
+        let body = Body {
+            velocity_ned_mps: Vec3::new(15.0, 0.0, 0.0),
+            ..Body::default()
+        };
+        let mut full = ActuatorCommand::default();
+        full.motors[0] = 1.0;
+        let loads = dynamics.loads(&full, &body, Vec3::zeros());
+        let full_alpha = lag::factor(1.0, model.motor_time_constant_s);
+        let thrust_n = model.full_thrust_n(15.0) * full_alpha * full_alpha;
+        let aero = dynamics.aero;
+        let label = format!("falloff {falloff}, line {below_m}");
+        assert_relative_eq!(
+            loads.force_ned_n,
+            aero.force_n + Vec3::new(thrust_n, 0.0, 0.0)
+        );
+        assert_relative_eq!(
+            loads.torque_nm,
+            aero.torque_nm + Vec3::new(0.0, thrust_n * below_m, 0.0)
+        );
+        check!(
+            (thrust_n < model.max_thrust_n * full_alpha * full_alpha) == (falloff > 0.0),
+            "{label}"
+        );
+    }
+}
+
+/// The thrust at full command never goes negative, however fast the air.
+#[test]
+fn full_thrust_stops_at_zero() {
+    let model = FixedWingModel {
+        thrust_falloff_n_per_mps: 1.0,
+        ..airframes::plane().model
+    };
+    check!(model.full_thrust_n(-5.0) == model.max_thrust_n);
+    check!(model.full_thrust_n(1.0e6) == 0.0);
+}
+
 /// The tailsitter's torque moving at `velocity_mps` (body axes) through still air, after one
 /// step far longer than the lags, so every motor and servo runs at its command.
 fn torque_nm(command: &ActuatorCommand, velocity_mps: Vec3) -> Vec3 {

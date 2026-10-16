@@ -67,6 +67,12 @@ cargo run --release -p stable-flight-sitl-xplane --example quadplane-manual-xpla
 # Or: just fly-xplane-auto --end land --record lap.csv
 cargo run --release -p stable-flight-sitl-xplane --example quadplane-auto-xplane -- --end land --record lap.csv
 
+# The Alia's wing measured for the sim model (stable-flight-sim's alia250()): level legs at
+# 48, 46, 44, and 40 m/s from Oceano with roll, pitch, and yaw pulses on each
+# (flights/alia_plane_probe.csv). For the full-power climb, fly flights/alia_full_power.csv on
+# quadplane-auto-xplane with --param PGUID_THR_MIN=1.
+cargo run --release -p stable-flight-sitl-xplane --example plane-probe-xplane -- --record probe.csv
+
 # Plot a recording: time series (altitude, airspeed, attitude vs setpoint, lift share, pusher,
 # surfaces, mode) and the ground track.
 cargo run --bin plot_flight -- --record flight.csv flight.png
