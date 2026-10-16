@@ -27,6 +27,7 @@ use clap::Parser;
 use env_logger::Builder;
 use log::{info, warn};
 
+use stable_flight::Vec2;
 use stable_flight_sitl::ShutdownSignal;
 use stable_flight_sitl_xplane::capture::{write_header, write_row};
 use stable_flight_sitl_xplane::sweep::{EngineSweep, LIFT_ENGINES, Phase, SweepConfig};
@@ -34,7 +35,9 @@ use stable_flight_sitl_xplane::xplane_bridge::datarefs::{engine, overrides};
 use stable_flight_sitl_xplane::xplane_bridge::{
     DatarefSink, DatarefSource, Latest, XPlaneUdpBridge,
 };
-use stable_flight_sitl_xplane::{DEFAULT_READY_TIMEOUT, StateDatarefs, XPlaneSample, wait_ready};
+use stable_flight_sitl_xplane::{
+    DEFAULT_READY_TIMEOUT, StateDatarefs, XPlaneSample, vehicle_state, wait_ready,
+};
 
 /// Tick length: the flight loop's 250 Hz.
 const TICK: Duration = Duration::from_millis(4);
@@ -72,9 +75,8 @@ struct Pulse {
 
 impl Pulse {
     fn add(&mut self, sample: &XPlaneSample) {
-        let [w, x, y, z] = sample.quaternion;
-        let heading_deg = (2.0 * (w * z + x * y))
-            .atan2(1.0 - 2.0 * (y * y + z * z))
+        let heading_deg = vehicle_state(sample, Vec2::zeros())
+            .heading_rad
             .to_degrees();
         self.first_heading_deg.get_or_insert(heading_deg);
         self.last_heading_deg = heading_deg;
@@ -142,8 +144,8 @@ fn main() {
                 latest.apply(&frame);
                 if let Some(new) = datarefs.sample(&latest) {
                     sample = new;
-                    let mut extra = throttles.to_vec();
-                    extra.push(sweep.phase().code());
+                    let [t0, t1, t2, t3] = throttles;
+                    let extra = [t0, t1, t2, t3, sweep.phase().code()];
                     write_row(&mut out, &sample, &extra).expect("failed to write a row");
                     if let Phase::YawPulse(n) = sweep.phase() {
                         pulses[n].add(&sample);
