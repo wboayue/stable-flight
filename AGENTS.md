@@ -270,7 +270,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   RealFlight. A kill leaves "Preexisting controller reference" on the next run and truncates
   capture CSVs.
 - **X-Plane:** a `CMND` of `sim/operation/reset_flight` to UDP 49000 puts the aircraft back at
-  its flight start, where scripts are anchored; `capture-state-xplane` reads where it is
+  its flight start, where scripts are anchored; send it before every run, since a run left on
+  its last landing has drained batteries and leftover state; `capture-state-xplane` reads where it is
   without taking control. Fly plane legs over water (`flights/alia_transition_lap.csv` starts
   at Oceano, L52): until #450 and #451, a sinking or missed plane leg flies on into terrain,
   so watch scripted plane flight and stop it below a floor or past its last plane waypoint.
