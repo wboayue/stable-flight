@@ -1,0 +1,18 @@
+# Alia 250 plane-side measurements in X-Plane (`plane-probe-xplane`), from Oceano County Airport
+# (L52), runway 11, every plane leg over the ocean: climb straight up to 250 m, transition along
+# the runway heading and turn west, then level legs at 300 m and 48, 46, 44, and 40 m/s, the
+# speeds the Alia holds level (trim points; the probe pulses the surfaces on each), a second
+# lap at 44 m/s, a leg north at 44 m/s abeam the airport that starts the back transition, and
+# hover home to land. Coordinates are m north and east of the anchor; altitudes are above sea
+# level.
+x,y,altitude,cruise_speed,regime
+0.0,0.0,250.0,3.0,copter
+0.0,-6000.0,300.0,48.0,plane
+-4000.0,-6000.0,300.0,46.0,plane
+-4000.0,-3000.0,300.0,44.0,plane
+0.0,-3000.0,300.0,40.0,plane
+0.0,-7000.0,300.0,44.0,plane
+-4000.0,-7000.0,300.0,44.0,plane
+-4000.0,-3000.0,300.0,44.0,plane
+0.0,-3000.0,300.0,44.0,plane
+0.0,0.0,60.0,10.0,copter
