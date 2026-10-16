@@ -26,8 +26,8 @@ use common::transition::{
     check_altitude_loss, entered_s, trace, transition_heights,
 };
 use common::{
-    CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK, fly, hover_at,
-    waypoint,
+    ARRIVAL_UNDERSHOOT_M, CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK,
+    fly, hover_at, waypoint,
 };
 
 /// When the back transition is requested: 23 s into plane flight, settled on the line.
@@ -511,4 +511,34 @@ fn waits_for_the_transition_height() {
     let plane_s = entered_s(&flight, FlightMode::Plane, to_plane_s, "forward");
     check!(plane_s - to_plane_s <= FORWARD_TIMEOUT_S);
     check_altitude_loss(transition_heights(&flight, to_plane_s, plane_s), "forward");
+}
+
+/// The hover after a back transition descends to its point without sinking past it: the
+/// worst of #403's measurements (1.16 m) is this descent.
+#[test]
+fn hover_after_a_back_transition_stops_on_its_point() {
+    let airframe = airframes::tailsitter();
+    let plant = TailsitterPlant::clean(airframe);
+    let commander = forward_and_back(&airframe, BACK_AT_S, BACK_HOVER_NORTH_M);
+    let mut flight_loop = tailsitter_loop(&plant, commander);
+    let flight = trace(
+        &mut flight_loop,
+        BACK_AT_S + BACK_DURATION_S + DESCENT_WATCH_S,
+    );
+
+    let copter_s = entered_s(&flight, FlightMode::Copter, BACK_AT_S, "back");
+    let highest_m = flight
+        .window(copter_s, copter_s + DESCENT_WATCH_S)
+        .map(|sample| sample.state.position_m.z)
+        .fold(f32::NEG_INFINITY, f32::max);
+    // Measured 9.5 m above the point: there is a descent to judge.
+    check!(highest_m > TRANSITION_ALTITUDE_M + 5.0);
+    let lowest_m = flight
+        .window(copter_s, copter_s + DESCENT_WATCH_S)
+        .map(|sample| sample.state.position_m.z)
+        .fold(f32::INFINITY, f32::min);
+    check!(
+        TRANSITION_ALTITUDE_M - lowest_m < ARRIVAL_UNDERSHOOT_M,
+        "lowest {lowest_m} m"
+    );
 }

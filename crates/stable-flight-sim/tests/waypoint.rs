@@ -8,7 +8,7 @@ use stable_flight::commanders::{RouteEnd, WaypointFollower};
 use stable_flight::{Vec2, WaypointCommand};
 use stable_flight_sim::Wind;
 
-use common::{fly, sim_loop};
+use common::{ARRIVAL_UNDERSHOOT_M, fly, sim_loop};
 
 const ALTITUDE_M: f32 = 5.0;
 const SIDE_M: f32 = 20.0;
@@ -112,4 +112,38 @@ fn flies_a_square_on_its_legs_and_holds_the_last_corner() {
     let last = route[3].position_m;
     let held_m = (Vec2::new(state.position_m.x, state.position_m.y) - last).norm();
     check!(held_m < 0.1, "{held_m} m off the last corner");
+}
+
+/// A descent from 30 m to a waypoint at 10 m stops on it: the target brakes to the waypoint
+/// instead of snapping onto it at full descent rate (#403).
+#[test]
+fn descends_onto_a_lower_waypoint_without_sinking_past_it() {
+    let route = [
+        WaypointCommand {
+            altitude_m: 30.0,
+            ..Default::default()
+        },
+        WaypointCommand {
+            altitude_m: 10.0,
+            ..Default::default()
+        },
+    ];
+    let follower = WaypointFollower::new(route)
+        .expect("two waypoints")
+        .with_route_end(RouteEnd::Hold);
+    let mut flight_loop = sim_loop(follower, Wind::default());
+    let mut lowest_m = f32::INFINITY;
+    let mut descending = false;
+    fly(&mut flight_loop, 60.0, |flight_loop, _| {
+        let altitude_m = flight_loop.state().position_m.z;
+        descending |= altitude_m > 25.0 && flight_loop.state().velocity_mps.z < -1.0;
+        if descending {
+            lowest_m = lowest_m.min(altitude_m);
+        }
+    });
+    check!(descending);
+    check!(
+        10.0 - lowest_m < ARRIVAL_UNDERSHOOT_M,
+        "lowest {lowest_m} m"
+    );
 }

@@ -162,12 +162,17 @@ The axes are the hover view's:
 | Param | Field | eXplora |
 |---|---|---|
 | `GUID_DESC_MAX` | `hover.max_descent_mps` | 1.5 m/s (core default 3 m/s) |
+| `GUID_DESC_ACC` | `hover.descent_accel_mps2` | 1.0 m/s² (core default) |
 
 The fastest descent waypoint flight asks for, including the climb-down after a back
 transition. Sinking tail first, the air meets the prop wash head on, so the elevons lose
 authority as the descent speeds up. The pitch loop then lags, and the nose swings even with
 thrust near hover and the elevons short of full deflection. A sink guard can't help: thrust is
 already there. Landing has its own, slower descent (`GUID_LAND_SPD`, 0.7 m/s).
+
+`GUID_DESC_ACC` is how hard the descent brakes onto its waypoint: the target slows so this
+deceleration stops it there (ArduPilot's `WP_ACC_Z`, 1 m/s²). Lower it if the arrival still
+sinks past the waypoint; raise it to reach the waypoint sooner.
 
 Start at 1.5 m/s, the default descent rate of ArduPilot (`WP_SPD_DN`) and PX4
 (`MPC_Z_V_AUTO_DN`). The copter default of 3 m/s is too fast for a tailsitter until a flight

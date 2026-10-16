@@ -53,6 +53,7 @@
 //! | `GUID_NAV_PERIOD` | `navigation_period_s` |
 //! | `GUID_TILT_MAX` | `max_tilt_rad` |
 //! | `GUID_DESC_MAX` | `max_descent_mps` |
+//! | `GUID_DESC_ACC` | `descent_accel_mps2` |
 //! | `GUID_LAND_SPD` | `land_speed_mps` |
 //! | `GUID_THR_MIN` | `thrust.min_thrust` |
 //! | `GUID_SINK_LIM` | `thrust.sink_limit_mps` |
