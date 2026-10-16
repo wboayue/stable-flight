@@ -10,7 +10,7 @@ use std::error::Error;
 use plotters::coord::Shift;
 use plotters::prelude::*;
 
-use crate::{FONT_FAMILY, draw_to};
+use crate::{FONT_FAMILY, draw_to, pad_range};
 
 #[cfg(test)]
 mod tests;
@@ -195,10 +195,14 @@ impl Recording {
 ///
 /// # Errors
 ///
-/// The file can't be read or parsed, it has nothing in the window, or drawing fails.
+/// The file can't be read or parsed, no panel has a column in it, it has nothing in the
+/// window, or drawing fails.
 pub(super) fn render(input: &str, output: &str, window: (f32, f32)) -> Result<(), Box<dyn Error>> {
     let recording = Recording::parse(&std::fs::read_to_string(input)?)?;
     let panels = recording.panels();
+    if panels.is_empty() {
+        return Err(format!("{input} has no column to plot").into());
+    }
     let time = recording
         .series(TIME, 1.0, window)
         .and_then(|runs| range(runs.iter().flatten().map(|&(t, _)| t)))
@@ -264,7 +268,7 @@ where
     let values = traces
         .iter()
         .flat_map(|(_, runs)| runs.iter().flatten().map(|&(_, v)| v));
-    let (low, high) = pad(range(values).unwrap_or((0.0, 1.0)));
+    let (low, high) = pad_range(range(values).unwrap_or((0.0, 1.0)));
 
     let mut chart = ChartBuilder::on(area)
         .caption(panel.title, (FONT_FAMILY, 16))
@@ -366,10 +370,4 @@ fn range(values: impl Iterator<Item = f32>) -> Option<(f32, f32)> {
             None => Some((v, v)),
             Some((low, high)) => Some((low.min(v), high.max(v))),
         })
-}
-
-/// `(low, high)` widened by 5% each way, or by 0.5 when flat.
-fn pad((low, high): (f32, f32)) -> (f32, f32) {
-    let margin = if high > low { 0.05 * (high - low) } else { 0.5 };
-    (low - margin, high + margin)
 }
