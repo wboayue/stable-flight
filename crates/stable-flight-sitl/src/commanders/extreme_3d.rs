@@ -144,7 +144,7 @@ pub enum Mode {
 }
 
 impl Mode {
-    /// Converts mode to channel value for storage in channels[5].
+    /// The mode as `read_channels` reports it in channel 5.
     fn to_channel_value(self) -> f32 {
         match self {
             Self::Attitude => 0.0,
@@ -190,8 +190,9 @@ impl JoystickInput {
 /// requested regime.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct JoystickState {
-    /// `[throttle, roll, pitch, yaw, arm, mode]`, as [`Extreme3DCommander::read_channels`].
-    channels: [f32; 6],
+    /// `[throttle, roll, pitch, yaw, arm]`; [`Extreme3DCommander::read_channels`] appends the
+    /// mode.
+    channels: [f32; 5],
     /// Stick mode, set by D-pad Left and Right (attitude) and Up (rate).
     mode: Mode,
     /// Requested regime, set by D-pad Left (copter) and Right (plane).
@@ -201,10 +202,8 @@ struct JoystickState {
 impl JoystickState {
     /// Disarmed, centered, throttle at zero, in `mode` and the copter regime.
     fn new(mode: Mode) -> Self {
-        let mut channels = [0.0; 6];
-        channels[5] = mode.to_channel_value();
         Self {
-            channels,
+            channels: [0.0; 5],
             mode,
             regime: FlightRegime::Copter,
         }
@@ -236,7 +235,6 @@ impl JoystickState {
                 button, value: 1.0, ..
             } if is_dpad(button) => {
                 (self.mode, self.regime) = dpad(button, self.mode, self.regime);
-                self.channels[5] = self.mode.to_channel_value();
                 debug!("D-pad {button:?}: {:?}, {:?}", self.mode, self.regime);
             }
             _ => {}
@@ -381,7 +379,15 @@ impl Extreme3DCommander {
         // Advance the Gilrs internal counter to process next frame of events
         self.gilrs.inc();
 
-        self.state.channels
+        let [throttle, roll, pitch, yaw, arm] = self.state.channels;
+        [
+            throttle,
+            roll,
+            pitch,
+            yaw,
+            arm,
+            self.state.mode.to_channel_value(),
+        ]
     }
 }
 
@@ -555,6 +561,8 @@ mod tests {
     const DPAD_LEFT: u32 = 589_842;
     const DPAD_RIGHT: u32 = 589_843;
     const DPAD_UP: u32 = 589_840;
+    /// The arm button (`Button::North`), button 5.
+    const ARM_BUTTON: u32 = 589_829;
 
     /// Each sequence of inputs, applied from the initial state, leaves this mode and regime.
     /// Only a press (1.0) acts: a release, or another button, keeps what was requested.
@@ -581,7 +589,7 @@ mod tests {
             ),
             (
                 "right then arm",
-                &[right, button(Button::North, 1.0, 589_829)],
+                &[right, button(Button::North, 1.0, ARM_BUTTON)],
                 (Mode::Attitude, Plane),
             ),
         ];
@@ -591,7 +599,6 @@ mod tests {
                 state.apply(input);
             }
             assert_eq!((state.mode, state.regime), expected, "{name}");
-            assert_eq!(state.channels[5], state.mode.to_channel_value(), "{name}");
         }
     }
 
@@ -625,7 +632,7 @@ mod tests {
     #[test]
     fn inputs_set_arm_and_throttle() {
         let mut state = JoystickState::new(Mode::Attitude);
-        state.apply(button(Button::North, 1.0, 589_829));
+        state.apply(button(Button::North, 1.0, ARM_BUTTON));
         assert_eq!(state.channels[4], 1.0);
         state.apply(button(Button::Unknown, 1.0, DISARM_BUTTON_CODE + 1));
         assert_eq!(state.channels[4], 1.0, "another unknown button");
