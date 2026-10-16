@@ -72,6 +72,7 @@
 //! ```
 
 use gilrs::{Axis, Button, Event, EventType, GamepadId, Gilrs};
+use log::debug;
 
 use crate::commanders::{CommanderError, open_gilrs, scale_value};
 use stable_flight::{
@@ -146,19 +147,95 @@ impl Mode {
             Self::Rate => 1.0,
         }
     }
+}
 
-    /// Converts channel value to Mode.
-    ///
-    /// 0 is attitude (D-pad Left or Right), 1 rate (D-pad Up).
-    ///
-    /// # Preconditions
-    ///
-    /// `value` must be 0.0 or 1.0 (as set by the D-pad handlers).
-    fn from_channel_value(value: f32) -> Self {
-        if (value - 1.0).abs() < f32::EPSILON {
-            Self::Rate
-        } else {
-            Self::Attitude
+/// One joystick input the commander reads, decoded from a gilrs event: gilrs's name for the
+/// button or axis, its value, and the native code (stable across gilrs's mappings).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum JoystickInput {
+    /// A button's value changed (`ButtonChanged`).
+    Button {
+        button: Button,
+        value: f32,
+        code: u32,
+    },
+    /// An axis moved (`AxisChanged`).
+    Axis { axis: Axis, value: f32, code: u32 },
+}
+
+impl JoystickInput {
+    /// The input in `event`, or `None` for an event the commander doesn't read.
+    fn decode(event: EventType) -> Option<Self> {
+        match event {
+            EventType::ButtonChanged(button, value, code) => Some(Self::Button {
+                button,
+                value,
+                code: code.into_u32(),
+            }),
+            EventType::AxisChanged(axis, value, code) => Some(Self::Axis {
+                axis,
+                value,
+                code: code.into_u32(),
+            }),
+            _ => None,
+        }
+    }
+}
+
+/// The commander's state from joystick events: the channels, the stick mode, and the
+/// requested regime.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct JoystickState {
+    /// `[throttle, roll, pitch, yaw, arm, mode]`, as [`Extreme3DCommander::read_channels`].
+    channels: [f32; 6],
+    /// Stick mode, set by D-pad Left and Right (attitude) and Up (rate).
+    mode: Mode,
+    /// Requested regime, set by D-pad Left (copter) and Right (plane).
+    regime: FlightRegime,
+}
+
+impl JoystickState {
+    /// Disarmed, centered, throttle at zero, in `mode` and the copter regime.
+    fn new(mode: Mode) -> Self {
+        let mut channels = [0.0; 6];
+        channels[5] = mode.to_channel_value();
+        Self {
+            channels,
+            mode,
+            regime: FlightRegime::Copter,
+        }
+    }
+
+    /// Applies one event's input: the throttle axis, the arm and disarm buttons, and D-pad
+    /// presses. The stick axes are read from gilrs's state instead, each poll.
+    fn apply(&mut self, input: JoystickInput) {
+        match input {
+            JoystickInput::Axis { value, code, .. } if code == THROTTLE_CODE => {
+                // Throttle is inverted (1.0 at bottom, 0.0 at top) and scaled
+                self.channels[0] = 1.0 - scale_value(value, THROTTLE_MIN, THROTTLE_MAX);
+            }
+            JoystickInput::Button {
+                button: Button::North,
+                value: 1.0,
+                ..
+            } => {
+                self.channels[4] = 1.0;
+            }
+            JoystickInput::Button {
+                button: Button::Unknown,
+                value: 1.0,
+                code,
+            } if code == DISARM_BUTTON_CODE => {
+                self.channels[4] = 0.0;
+            }
+            JoystickInput::Button {
+                button, value: 1.0, ..
+            } if is_dpad(button) => {
+                (self.mode, self.regime) = dpad(button, self.mode, self.regime);
+                self.channels[5] = self.mode.to_channel_value();
+                debug!("D-pad {button:?}: {:?}, {:?}", self.mode, self.regime);
+            }
+            _ => {}
         }
     }
 }
@@ -182,15 +259,8 @@ pub struct Extreme3DCommander {
     /// Currently active gamepad ID (set when first event is received)
     active_gamepad: Option<GamepadId>,
 
-    /// Control channels storing normalized joystick values
-    /// [throttle, roll, pitch, yaw, arm, mode]
-    channels: [f32; 6],
-
-    /// Control mode (Attitude or Rate)
-    mode: Mode,
-
-    /// Requested regime, set by D-pad Left (copter) and Right (plane).
-    regime: FlightRegime,
+    /// Channels, stick mode, and requested regime from the joystick's events
+    state: JoystickState,
 }
 
 impl Extreme3DCommander {
@@ -249,18 +319,10 @@ impl Extreme3DCommander {
     /// # Ok::<(), stable_flight_sitl::commanders::CommanderError>(())
     /// ```
     pub fn with_mode(mode: Mode) -> Result<Self, CommanderError> {
-        let gilrs = open_gilrs()?;
-
-        // Initialize channels[5] to match the chosen mode so next_command() preserves it
-        let mut channels = [0.0; 6];
-        channels[5] = mode.to_channel_value();
-
         Ok(Self {
-            gilrs,
+            gilrs: open_gilrs()?,
             active_gamepad: None,
-            channels,
-            mode,
-            regime: FlightRegime::Copter,
+            state: JoystickState::new(mode),
         })
     }
 
@@ -288,54 +350,34 @@ impl Extreme3DCommander {
     pub fn read_channels(&mut self) -> [f32; 6] {
         while let Some(Event { id, event, .. }) = self.gilrs.next_event() {
             self.active_gamepad = Some(id);
-
-            match event {
-                EventType::AxisChanged(_, value, code) if code.into_u32() == THROTTLE_CODE => {
-                    // Throttle is inverted (1.0 at bottom, 0.0 at top) and scaled
-                    self.channels[0] = 1.0 - scale_value(value, THROTTLE_MIN, THROTTLE_MAX);
-                }
-                EventType::ButtonChanged(Button::North, 1.0, _) => {
-                    self.channels[4] = 1.0;
-                }
-                EventType::ButtonChanged(Button::Unknown, 1.0, code)
-                    if code.into_u32() == DISARM_BUTTON_CODE =>
-                {
-                    self.channels[4] = 0.0;
-                }
-                EventType::ButtonChanged(button, 1.0, _) if is_dpad(button) => {
-                    let (mode, regime) = dpad(
-                        button,
-                        Mode::from_channel_value(self.channels[5]),
-                        self.regime,
-                    );
-                    self.channels[5] = mode.to_channel_value();
-                    self.regime = regime;
-                }
-                _ => {}
+            if let Some(input) = JoystickInput::decode(event) {
+                self.state.apply(input);
             }
         }
 
         if let Some(id) = self.active_gamepad {
             let gamepad = self.gilrs.gamepad(id);
 
+            let channels = &mut self.state.channels;
+
             if let Some(data) = gamepad.axis_data(Axis::LeftStickX) {
-                self.channels[1] = data.value();
+                channels[1] = data.value();
             }
 
             // Pitch and yaw are negated to match flight control conventions
             if let Some(data) = gamepad.axis_data(Axis::LeftStickY) {
-                self.channels[2] = -data.value();
+                channels[2] = -data.value();
             }
 
             if let Some(data) = gamepad.axis_data(Axis::RightStickY) {
-                self.channels[3] = -data.value();
+                channels[3] = -data.value();
             }
         }
 
         // Advance the Gilrs internal counter to process next frame of events
         self.gilrs.inc();
 
-        self.channels
+        self.state.channels
     }
 }
 
@@ -345,23 +387,15 @@ impl Commander for Extreme3DCommander {
     /// This method reads all pending joystick events, updates internal state,
     /// and returns either an `AttitudeCommand` or `RateCommand` depending on
     /// the current mode selected via D-pad buttons:
-    /// - Mode 0 or 2 (D-Pad Left/Right): Returns `Command::Attitude`
-    /// - Mode 1 (D-Pad Up): Returns `Command::Rate`
+    /// - D-Pad Left/Right: `ControlInput::Attitude`
+    /// - D-Pad Up: `ControlInput::Rate`
     ///
     /// Dead zones are automatically applied to roll, pitch, and yaw inputs.
     fn next_command(&mut self, _dt: f32, _current_state: &VehicleState) -> Command {
         let channels = self.read_channels();
-
-        self.mode = Mode::from_channel_value(channels[5]);
-        let mode = channels[5] as u8;
-        match mode {
-            1 => self.mode = Mode::Rate,
-            _ => self.mode = Mode::Attitude,
-        }
-
         let arm = channels[4] > ARM_THRESHOLD;
 
-        let input = match &self.mode {
+        let input = match self.state.mode {
             Mode::Attitude => ControlInput::Attitude(AttitudeCommand {
                 throttle: channels[0],
                 roll: apply_dead_zone(channels[1], ROLL_PITCH_DEAD_ZONE),
@@ -375,7 +409,7 @@ impl Commander for Extreme3DCommander {
                 yaw_rate: apply_dead_zone(channels[3], YAW_DEAD_ZONE),
             }),
         };
-        Command::new(arm, input).with_regime(self.regime)
+        Command::new(arm, input).with_regime(self.state.regime)
     }
 }
 
@@ -503,6 +537,81 @@ mod tests {
             assert_eq!(dpad(button, mode, regime), expected, "{button:?}");
         }
         assert!(is_dpad(Button::DPadRight) && !is_dpad(Button::DPadDown));
+    }
+
+    fn button(button: Button, value: f32, code: u32) -> JoystickInput {
+        JoystickInput::Button {
+            button,
+            value,
+            code,
+        }
+    }
+
+    /// D-pad codes `axis_dpad_to_button` gives on macOS: button page, usages 16-19 (`gilrs-core` 0.6.8 `io_kit.rs:340`).
+    const DPAD_LEFT: u32 = 589_842;
+    const DPAD_RIGHT: u32 = 589_843;
+    const DPAD_UP: u32 = 589_840;
+
+    /// Each sequence of inputs, applied from the initial state, leaves this mode and regime.
+    /// Only a press (1.0) acts: a release, or another button, keeps what was requested.
+    #[test]
+    fn inputs_set_mode_and_regime() {
+        use FlightRegime::{Copter, Plane};
+        let right = button(Button::DPadRight, 1.0, DPAD_RIGHT);
+        let cases: [(&str, &[JoystickInput], (Mode, FlightRegime)); 5] = [
+            ("right", &[right], (Mode::Attitude, Plane)),
+            (
+                "right then release",
+                &[right, button(Button::DPadRight, 0.0, DPAD_RIGHT)],
+                (Mode::Attitude, Plane),
+            ),
+            (
+                "right then left",
+                &[right, button(Button::DPadLeft, 1.0, DPAD_LEFT)],
+                (Mode::Attitude, Copter),
+            ),
+            (
+                "right then up",
+                &[right, button(Button::DPadUp, 1.0, DPAD_UP)],
+                (Mode::Rate, Plane),
+            ),
+            (
+                "right then arm",
+                &[right, button(Button::North, 1.0, 589_829)],
+                (Mode::Attitude, Plane),
+            ),
+        ];
+        for (name, inputs, expected) in cases {
+            let mut state = JoystickState::new(Mode::Attitude);
+            for &input in inputs {
+                state.apply(input);
+            }
+            assert_eq!((state.mode, state.regime), expected, "{name}");
+            assert_eq!(state.channels[5], state.mode.to_channel_value(), "{name}");
+        }
+    }
+
+    /// The arm button arms, the disarm button (by code) disarms, and the throttle axis (by
+    /// code) sets channel 0, inverted.
+    #[test]
+    fn inputs_set_arm_and_throttle() {
+        let mut state = JoystickState::new(Mode::Attitude);
+        state.apply(button(Button::North, 1.0, 589_829));
+        assert_eq!(state.channels[4], 1.0);
+        state.apply(button(Button::Unknown, 1.0, DISARM_BUTTON_CODE + 1));
+        assert_eq!(state.channels[4], 1.0, "another unknown button");
+        state.apply(button(Button::Unknown, 1.0, DISARM_BUTTON_CODE));
+        assert_eq!(state.channels[4], 0.0);
+
+        let axis = |code| JoystickInput::Axis {
+            axis: Axis::Unknown,
+            value: THROTTLE_MIN,
+            code,
+        };
+        state.apply(axis(THROTTLE_CODE + 1));
+        assert_eq!(state.channels[0], 0.0, "another axis");
+        state.apply(axis(THROTTLE_CODE));
+        assert_eq!(state.channels[0], 1.0);
     }
 
     /// Tests that the scaled dead zone function correctly handles inputs within the dead zone.
@@ -719,39 +828,5 @@ mod tests {
     fn test_mode_to_channel_value() {
         assert_eq!(Mode::Attitude.to_channel_value(), 0.0);
         assert_eq!(Mode::Rate.to_channel_value(), 1.0);
-    }
-
-    /// Tests Mode::from_channel_value for D-pad positions.
-    #[test]
-    fn test_mode_from_channel_value_dpad_positions() {
-        // D-pad Left (0.0) -> Attitude
-        assert!(matches!(Mode::from_channel_value(0.0), Mode::Attitude));
-        // D-pad Up (1.0) -> Rate
-        assert!(matches!(Mode::from_channel_value(1.0), Mode::Rate));
-    }
-
-    /// Tests Mode::from_channel_value defaults to Attitude for unexpected values.
-    #[test]
-    fn test_mode_from_channel_value_defaults_to_attitude() {
-        for value in [3.0, 10.0, 100.0, 255.0] {
-            assert!(
-                matches!(Mode::from_channel_value(value), Mode::Attitude),
-                "Expected Attitude for value {}",
-                value
-            );
-        }
-    }
-
-    /// Tests round-trip conversion preserves mode.
-    #[test]
-    fn test_mode_conversion_round_trip() {
-        let attitude_value = Mode::Attitude.to_channel_value();
-        assert!(matches!(
-            Mode::from_channel_value(attitude_value),
-            Mode::Attitude
-        ));
-
-        let rate_value = Mode::Rate.to_channel_value();
-        assert!(matches!(Mode::from_channel_value(rate_value), Mode::Rate));
     }
 }
