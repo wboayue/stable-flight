@@ -62,8 +62,9 @@ Surfaces are `SurfaceLink`s: a servo slot deflects one wing's aileron, elevator,
 cargo run --release -p stable-flight-sitl-xplane --example quadplane-manual-xplane
 
 # The Alia through a waypoint script from Oceano County Airport (L52): hover climb, forward
-# transition, plane legs offshore, back transition, hover home (flights/alia_transition_lap.csv). --param NAME=VALUE
-# tunes a run, --record writes a CSV per tick.
+# transition, plane legs offshore, back transition, hover home (flights/alia_transition_lap.csv;
+# flights/alia_steps.csv steps altitude ±30 m on its legs). --param NAME=VALUE tunes a run,
+# --record writes a CSV per tick. Reset X-Plane's flight before each run.
 # Or: just fly-xplane-auto --end land --record lap.csv
 cargo run --release -p stable-flight-sitl-xplane --example quadplane-auto-xplane -- --end land --record lap.csv
 
@@ -101,10 +102,10 @@ Run examples with `RUST_LOG=info` to see connect, anchor, and liveness events.
 
 ## Airframes
 
-`airframes::alia250()` is the Alia 250 as a quadplane: `TableMixer::quadplane` with the lift rotors' yaw reversed at thrust factor 0.8 and yaw ratio 1, its lift rotors on engines 1, 0, 2, 3, the pusher on 4, the ailerons, elevators, and rudders as X-Plane's yoke moves them. The hover values and the measurements behind them (an `engine-sweep-xplane` run, the `stable-flight-sim` autotune of a model sized from it, two X-Plane flights) and the plane and transition values (px4xplane's Alia params) are in its rustdoc; how to tune one, in the [quadplane tuning guide](https://github.com/wboayue/stable-flight/blob/main/docs/tuning/quadplane.md). Its limits:
+`airframes::alia250()` is the Alia 250 as a quadplane: `TableMixer::quadplane` with the lift rotors' yaw reversed at thrust factor 0.8 and yaw ratio 1, its lift rotors on engines 1, 0, 2, 3, the pusher on 4, the ailerons, elevators, and rudders as X-Plane's yoke moves them. The hover values and the measurements behind them (an `engine-sweep-xplane` run, the `stable-flight-sim` autotune of a model sized from it, two X-Plane flights) and the plane and transition values (tuned on `stable-flight-sim`'s `alia250()`, a model fitted to X-Plane's, and pinned to it by a test) are in its rustdoc; how to tune one, in the [quadplane tuning guide](https://github.com/wboayue/stable-flight/blob/main/docs/tuning/quadplane.md). Its limits:
 
 - **Thrust:** thrust-to-weight is about 1.34 at the default load: climbs are slow, and a heavier load leaves less.
 - **Yaw:** at yaw ratio 1 (a higher ratio sank it, the mixer giving up collective for yaw), the tail turns it off heading at a few m/s sideways ([#440](https://github.com/wboayue/stable-flight/issues/440)).
 - **Forward drift:** the front rotors are canted 4° forward, so hands-off in attitude mode it creeps forward; position hold takes it out.
-- **Pusher:** the mixer's thrust factor caps it at 0.8 of engine 4's throttle.
-- **Scale:** it cruises at 55 m/s and turns at 20° of bank, about 850 m across: plane legs span kilometers.
+- **Transitions:** forward waits on the lift rotors until 40 m/s, the speed the wing holds level at: about 40 s, drag-limited.
+- **Scale:** it cruises at 45 m/s and turns at 20° of bank, about 850 m across: plane legs span kilometers.

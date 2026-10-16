@@ -24,14 +24,37 @@ fn deflections(command: &ActuatorCommand) -> Vec<(usize, f32)> {
         .collect()
 }
 
-/// The total energy control's climb and sink limits are the sim Alia's, which its model pins
-/// (`stable-flight-sim` `alia250_energy_limits_are_the_models`); the airspeeds are px4xplane's.
+/// The plane side and transitions are the sim Alia's, which #392 tuned on a model fitted to
+/// this aircraft: its gains (the rate feedforward to the 4th digit, worked out from the model
+/// there), limits, and total energy control. X-Plane's own is the cruise thrust, the pusher it
+/// held level at trim (the sim works its own out from the model).
 #[test]
-fn alia250_energy_limits_are_the_sim_alias() {
-    let sim = stable_flight_sim::airframes::alia250().guidance.plane.tecs;
-    let xplane = alia250().guidance.plane.tecs;
-    check!(xplane.max_climb_mps == sim.max_climb_mps);
-    check!(xplane.min_sink_mps == sim.min_sink_mps);
+fn alia250_flies_the_sim_alias_plane_side() {
+    let sim = stable_flight_sim::airframes::alia250();
+    let xplane = alia250();
+
+    let (mut ours, theirs) = (xplane.stabilizer.plane, sim.stabilizer.plane);
+    for (axis, (ff, sim_ff)) in [
+        (ours.rate.roll.ff, theirs.rate.roll.ff),
+        (ours.rate.pitch.ff, theirs.rate.pitch.ff),
+        (ours.rate.yaw.ff, theirs.rate.yaw.ff),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        check!((ff - sim_ff).abs() < 1e-3, "axis {axis}: {ff} vs {sim_ff}");
+    }
+    ours.rate.roll.ff = theirs.rate.roll.ff;
+    ours.rate.pitch.ff = theirs.rate.pitch.ff;
+    ours.rate.yaw.ff = theirs.rate.yaw.ff;
+    check!(ours == theirs);
+
+    let plane = PlaneGuidanceConfig {
+        cruise_thrust: sim.guidance.plane.cruise_thrust,
+        ..xplane.guidance.plane
+    };
+    check!(plane == sim.guidance.plane);
+    check!(xplane.guidance.transition == sim.guidance.transition);
 }
 
 /// The hover gains, lift mixing, and thrust law are the sim Alia's, which the autotune tuned

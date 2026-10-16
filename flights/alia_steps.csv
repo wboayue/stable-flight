@@ -1,0 +1,13 @@
+# Alia 250 plane-side check in X-Plane (`quadplane-auto-xplane`), from Oceano County Airport
+# (L52), runway 11, every plane leg over the ocean: climb straight up to 250 m, transition along
+# the runway heading and turn west, a level leg at 300 m, a leg south stepping up to 330 m, a leg
+# east stepping down to 300 m, a level leg north that starts the back transition, and hover home
+# to land. Each corner is a 20° turn entry. Coordinates are m north and east of the anchor;
+# altitudes are above sea level.
+x,y,altitude,cruise_speed,regime
+0.0,0.0,250.0,3.0,copter
+0.0,-6000.0,300.0,45.0,plane
+-4000.0,-6000.0,330.0,45.0,plane
+-4000.0,-2000.0,300.0,45.0,plane
+0.0,-2000.0,300.0,45.0,plane
+0.0,0.0,60.0,10.0,copter
