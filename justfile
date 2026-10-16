@@ -113,6 +113,10 @@ fly-auto *ARGS:
 fly-xplane *ARGS:
     cargo run --release -p stable-flight-sitl-xplane --example quadplane-manual-xplane -- {{ARGS}}
 
+# Alia 250 in X-Plane through a waypoint script with plane legs (default flights/alia_transition_lap.csv), e.g. `just fly-xplane-auto --end land --record lap.csv --param TRAN_ASPD_MIN=40`
+fly-xplane-auto *ARGS:
+    cargo run --release -p stable-flight-sitl-xplane --example quadplane-auto-xplane -- {{ARGS}}
+
 # Alia 250 in X-Plane (copter flight) flown from the native link (QGC through `just bridge --origin <logged origin>`, or `just link-pilot`), holding when the link goes quiet
 fly-xplane-companion *ARGS:
     cargo run --release -p stable-flight-sitl-xplane --example copter-companion-xplane -- {{ARGS}}

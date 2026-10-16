@@ -61,6 +61,12 @@ Surfaces are `SurfaceLink`s: a servo slot deflects one wing's aileron, elevator,
 # Or: just fly-xplane --record flight.csv
 cargo run --release -p stable-flight-sitl-xplane --example quadplane-manual-xplane
 
+# The Alia through a waypoint script: hover climb, forward transition, plane legs out and
+# back, back transition, hover home (flights/alia_transition_lap.csv). --param NAME=VALUE
+# tunes a run, --record writes a CSV per tick.
+# Or: just fly-xplane-auto --end land --record lap.csv
+cargo run --release -p stable-flight-sitl-xplane --example quadplane-auto-xplane -- --end land --record lap.csv
+
 # Plot a recording: time series (altitude, airspeed, attitude vs setpoint, lift share, pusher,
 # surfaces, mode) and the ground track.
 cargo run --bin plot_flight -- --record flight.csv flight.png
