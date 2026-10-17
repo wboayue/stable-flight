@@ -64,6 +64,7 @@ fn tables_cover_every_config_field() {
                 position_p: _,
                 velocity: Gains { p: _, i: _, d: _ },
                 max_integral: _,
+                max_accel_mps2: _,
             },
         navigation_period_s: _,
         max_tilt_rad: _,
@@ -81,7 +82,7 @@ fn tables_cover_every_config_field() {
     } = CopterGuidanceConfig::default();
     // one param per scalar, vector component, or gain term in the destructuring above
     check!(names::<CopterStabilizerConfig>().len() == 30);
-    check!(names::<CopterGuidanceConfig>().len() == 21);
+    check!(names::<CopterGuidanceConfig>().len() == 22);
 }
 
 #[test]

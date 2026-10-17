@@ -18,6 +18,15 @@ pub struct LateralControllerConfig {
     /// Maximum absolute value of the integrated velocity error, in m, per axis.
     /// Bounds the I term's authority at `velocity.i · max_integral` m/s².
     pub max_integral: f32,
+
+    /// Most the velocity target changes per second, in m/s²; 0 is off. When set, the target
+    /// starts at the measured velocity and moves toward the position loop's demand at this
+    /// rate, its change fed forward as acceleration (PX4 `MPC_ACC_HOR`,
+    /// `FlightTaskAuto.cpp:44-73`; ArduPilot `NE_init_controller`, `AC_PosControl.cpp:544-586`).
+    /// A new leg then asks for at most `atan(max_accel_mps2 / g)` of tilt at once, instead of
+    /// the tilt for its whole speed. It also limits braking: stopping from `v` takes
+    /// `v² / (2 · max_accel_mps2)`. Must be non-negative and finite.
+    pub max_accel_mps2: f32,
 }
 
 impl Default for LateralControllerConfig {
@@ -35,12 +44,14 @@ impl Default for LateralControllerConfig {
             },
             // 12.5 m at I 0.4 is ±5 m/s², the default 27° tilt cap (g · tan 27°).
             max_integral: 12.5,
+            max_accel_mps2: 0.0,
         }
     }
 }
 
 impl LateralControllerConfig {
-    /// Checks the config: `position_p` and `max_integral` must be non-negative and finite.
+    /// Checks the config: `position_p`, `max_integral`, and `max_accel_mps2` must be
+    /// non-negative and finite.
     ///
     /// # Examples
     ///
@@ -53,7 +64,8 @@ impl LateralControllerConfig {
     /// ```
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         check_limit("position_p", self.position_p)?;
-        check_limit("max_integral", self.max_integral)
+        check_limit("max_integral", self.max_integral)?;
+        check_limit("max_accel_mps2", self.max_accel_mps2)
     }
 }
 
@@ -114,12 +126,16 @@ pub struct LateralEstimate {
 ///
 /// The position loop asks for `position_p · error + target velocity`, capped in magnitude at
 /// the target's `max_speed_mps` (direction kept), and the velocity PID turns the velocity
-/// error into acceleration. Turning the acceleration into tilt is the guidance's job (it
+/// error into acceleration. With
+/// [`max_accel_mps2`](LateralControllerConfig::max_accel_mps2) set, the PID tracks a shaped
+/// velocity target instead: it starts at the measured velocity, moves toward the demand at
+/// that rate, and its change is fed forward. Turning the acceleration into tilt is the guidance's job (it
 /// depends on the airframe and its heading);
 /// [`CopterGuidance`](crate::guidance::copter::CopterGuidance) tilts by `atan(|a| / g)` toward
 /// it.
 ///
-/// It holds only state (the velocity integral and derivative history); gains and limits come
+/// It holds only state (the velocity integral, derivative history, and shaped velocity
+/// target); gains and limits come
 /// from the [`LateralControllerConfig`] passed to each [`control`](Self::control) call, so
 /// they can change between ticks without resetting the state.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -127,6 +143,8 @@ pub struct LateralController {
     integrated_error: Vec2, // Accumulated velocity error (x, y)
     /// Previous velocity error for the derivative term; empty on the first tick and after a gap.
     derivative: DerivativeState<Vec2>,
+    /// The shaped velocity target, in m/s; empty until the first run with shaping on.
+    shaped_velocity_mps: Option<Vec2>,
 }
 
 impl LateralController {
@@ -197,7 +215,13 @@ impl LateralController {
         };
         let desired_velocity =
             config.position_p * (target.position_m - estimate.position_m) + target.velocity_mps;
-        let velocity_error = cap_magnitude(desired_velocity, max_speed_mps) - estimate.velocity_mps;
+        let (commanded_velocity, feedforward_mps2) = self.shape(
+            config.max_accel_mps2,
+            dt,
+            cap_magnitude(desired_velocity, max_speed_mps),
+            estimate.velocity_mps,
+        );
+        let velocity_error = commanded_velocity - estimate.velocity_mps;
 
         // A non-finite target or estimate yields no acceleration and never enters the integral
         // or derivative history, where NaN would stick (it survives clamping). `cap_magnitude`
@@ -217,7 +241,38 @@ impl LateralController {
             ),
             config.max_integral,
         );
-        gains.p * velocity_error + gains.i * self.integrated_error + gains.d * error_derivative
+        feedforward_mps2
+            + gains.p * velocity_error
+            + gains.i * self.integrated_error
+            + gains.d * error_derivative
+    }
+
+    /// The velocity target to track and the acceleration to feed forward: `demand_mps` and
+    /// zero with shaping off (`max_accel_mps2` 0), which forgets the shaped target so turning
+    /// it on starts again from the measured velocity; else the shaped target moved toward the
+    /// demand by at most `max_accel_mps2 · dt`, starting from `measured_mps`, and its change
+    /// per second. A non-finite demand or measurement passes through unshaped (the caller
+    /// neutralizes it) and leaves the shaped target as it was.
+    fn shape(
+        &mut self,
+        max_accel_mps2: f32,
+        dt: f32,
+        demand_mps: Vec2,
+        measured_mps: Vec2,
+    ) -> (Vec2, Vec2) {
+        // `>` is false for NaN: an invalid limit acts as off.
+        let shaping = max_accel_mps2 > 0.0;
+        if !shaping {
+            self.shaped_velocity_mps = None;
+            return (demand_mps, Vec2::zeros());
+        }
+        if !(all_finite(&demand_mps) && all_finite(&measured_mps)) {
+            return (demand_mps, Vec2::zeros());
+        }
+        let from = self.shaped_velocity_mps.unwrap_or(measured_mps);
+        let to = from + cap_magnitude(demand_mps - from, max_accel_mps2 * dt);
+        self.shaped_velocity_mps = Some(to);
+        (to, (to - from) / dt)
     }
 
     /// The accumulated error, for tests of the composites' integrator policy.
@@ -255,6 +310,8 @@ fn hold_against_limit(integral: Vec2, step: Vec2, i: f32, limit_mps2: Vec2) -> V
 
 #[cfg(test)]
 mod tests {
+    use assert2::check;
+
     use crate::Vec2;
 
     use super::*;
@@ -622,6 +679,157 @@ mod tests {
             assert!(
                 controller.integrated_error == Vec2::zeros(),
                 "max_integral {max_integral}"
+            );
+        }
+    }
+
+    /// `p_only` with the velocity target shaped at `max_accel_mps2`.
+    fn shaped(max_accel_mps2: f32) -> LateralControllerConfig {
+        LateralControllerConfig {
+            max_accel_mps2,
+            ..p_only()
+        }
+    }
+
+    /// 30 m north at up to 3 m/s: a 3 m/s demand north.
+    fn leg() -> LateralTarget {
+        LateralTarget {
+            max_speed_mps: 3.0,
+            ..at(Vec2::new(30.0, 0.0))
+        }
+    }
+
+    /// The first run's shaped target starts at the measured velocity and moves at most
+    /// `max_accel_mps2 · dt` toward the demand, that change fed forward; 0 is off.
+    #[test]
+    fn shaped_target_starts_at_the_measured_velocity() {
+        let dt = 0.1;
+        // Sideways at 2 m/s east, toward a 3 m/s demand north: a 0.1 m/s step along (3, −2).
+        let turn = Vec2::new(3.0, -2.0).normalize();
+        // (max_accel_mps2, measured velocity, expected acceleration: feedforward + P 2 · error)
+        let cases = [
+            (0.0, Vec2::zeros(), Vec2::new(6.0, 0.0)), // off: the whole 3 m/s error
+            (1.0, Vec2::zeros(), Vec2::new(1.0 + 2.0 * 0.1, 0.0)),
+            (1.0, Vec2::new(3.0, 0.0), Vec2::zeros()), // already at the demand
+            (1.0, Vec2::new(0.0, 2.0), turn + 2.0 * 0.1 * turn),
+            // Within one step: the demand at once, its 3 m/s in 0.1 s fed forward.
+            (100.0, Vec2::zeros(), Vec2::new(30.0 + 2.0 * 3.0, 0.0)),
+        ];
+        for (max_accel_mps2, velocity, expected) in cases {
+            let accel = LateralController::default().control(
+                &shaped(max_accel_mps2),
+                dt,
+                leg(),
+                moving(velocity),
+                Vec2::zeros(),
+            );
+            check!(
+                (accel - expected).amax() < 1e-4,
+                "limit {max_accel_mps2}, velocity {velocity:?}: {accel:?}, expected {expected:?}"
+            );
+        }
+    }
+
+    /// From rest with the vehicle held still, the shaped target ramps to the demand at the
+    /// limit, then stops ramping: its feedforward ends and the PID sees the whole error.
+    #[test]
+    fn shaped_target_ramps_to_the_demand() {
+        let (dt, config) = (0.1, shaped(1.0));
+        let mut controller = LateralController::default();
+        let mut accels = Vec::new();
+        for _ in 0..32 {
+            accels.push(controller.control(
+                &config,
+                dt,
+                leg(),
+                moving(Vec2::zeros()),
+                Vec2::zeros(),
+            ));
+        }
+        // (tick, expected north acceleration: feedforward + P 2 · shaped speed)
+        let cases = [
+            (0, 1.0 + 2.0 * 0.1),
+            (14, 1.0 + 2.0 * 1.5),
+            (29, 1.0 + 2.0 * 3.0), // the last step reaches 3 m/s
+            (30, 2.0 * 3.0),
+            (31, 2.0 * 3.0),
+        ];
+        for (tick, expected) in cases {
+            let accel = accels[tick];
+            check!(
+                (accel - Vec2::new(expected, 0.0)).amax() < 1e-3,
+                "tick {tick}: {accel:?}, expected {expected}"
+            );
+        }
+    }
+
+    /// A non-finite velocity gives no acceleration and leaves the shaped target where it was:
+    /// the next finite tick moves on from it.
+    #[test]
+    fn non_finite_velocity_keeps_the_shaped_target() {
+        let (dt, config) = (0.1, shaped(1.0));
+        let mut controller = LateralController::default();
+        let mut run = |velocity: Vec2| {
+            controller.control(&config, dt, leg(), moving(velocity), Vec2::zeros())
+        };
+        run(Vec2::zeros()); // shaped 0.1 m/s
+        check!(run(Vec2::new(f32::NAN, 0.0)) == Vec2::zeros());
+        let accel = run(Vec2::zeros()); // shaped 0.2 m/s
+        check!((accel - Vec2::new(1.0 + 2.0 * 0.2, 0.0)).amax() < 1e-4);
+    }
+
+    /// Turning shaping off between runs forgets the shaped target: turned back on, it starts
+    /// again from the measured velocity, not from where it was.
+    #[test]
+    fn shaping_off_forgets_the_shaped_target() {
+        let dt = 0.1;
+        let mut controller = LateralController::default();
+        for _ in 0..10 {
+            controller.control(
+                &shaped(1.0),
+                dt,
+                leg(),
+                moving(Vec2::zeros()),
+                Vec2::zeros(),
+            );
+        }
+        controller.control(
+            &shaped(0.0),
+            dt,
+            leg(),
+            moving(Vec2::zeros()),
+            Vec2::zeros(),
+        );
+        let accel = controller.control(
+            &shaped(1.0),
+            dt,
+            leg(),
+            moving(Vec2::zeros()),
+            Vec2::zeros(),
+        );
+        // From rest again: 0.1 m/s, not 1.1.
+        check!(
+            (accel - Vec2::new(1.0 + 2.0 * 0.1, 0.0)).amax() < 1e-4,
+            "{accel:?}"
+        );
+    }
+
+    /// A negative or NaN acceleration limit fails validation, and in the tick shapes nothing.
+    #[test]
+    fn invalid_accel_limit_is_rejected_and_shapes_nothing() {
+        for max_accel_mps2 in [-1.0, f32::NAN] {
+            let config = shaped(max_accel_mps2);
+            check!(config.validate().map_err(|e| e.field) == Err("max_accel_mps2"));
+            let accel = LateralController::default().control(
+                &config,
+                0.1,
+                leg(),
+                moving(Vec2::zeros()),
+                Vec2::zeros(),
+            );
+            check!(
+                (accel - Vec2::new(6.0, 0.0)).amax() < 1e-4,
+                "limit {max_accel_mps2}: {accel:?}"
             );
         }
     }

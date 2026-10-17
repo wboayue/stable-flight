@@ -200,6 +200,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the others.
 - **Breaking:** `CopterGuidanceConfig` has a `descent_accel_mps2` field (`GUID_DESC_ACC`,
   #445); struct literals add it.
+- **Breaking:** `LateralControllerConfig` has a `max_accel_mps2` field (`GUID_LAT_ACC`,
+  #418), 0 (off) by default; struct literals add it. Set, the lateral loop's velocity target
+  starts at the measured velocity and moves toward the position loop's demand at that rate,
+  its change fed forward (PX4 `MPC_ACC_HOR`), so a new hover leg asks for
+  `atan(max_accel_mps2 / g)` of tilt at first rather than the tilt for its whole speed.
 - **Breaking:** `MixerError::PusherBeforeMotor` (the enum is `#[non_exhaustive]`).
 - **Breaking:** `guidance::copter::LAND_LEASH_M` is now `ALTITUDE_LEASH_M`: it leashes waypoint
   descents as well as lands (#400).

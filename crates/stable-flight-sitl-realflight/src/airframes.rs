@@ -9,6 +9,7 @@ use std::f32::consts::PI;
 use stable_flight::Vec2;
 use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
+    LateralControllerConfig,
 };
 use stable_flight::guidance::copter::{CopterGuidanceConfig, ThrustLimits};
 use stable_flight::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
@@ -195,6 +196,13 @@ pub fn explora_vtol()
                     // At full boost the motor pair saturates and differential thrust (view
                     // roll) can only push one way, so a roll can't be stopped (#123).
                     max_boost_thrust: 0.9,
+                },
+                // A new leg along the span asked for 20° of view roll in one tick, which
+                // differential thrust overshot to 35°; shaped at 1 m/s², the request starts at
+                // about 8° and the roll peaks at 11° (#418).
+                lateral: LateralControllerConfig {
+                    max_accel_mps2: 1.0,
+                    ..LateralControllerConfig::default()
                 },
                 // Full stick at the stabilizer's 30° tilt.
                 max_stick_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),

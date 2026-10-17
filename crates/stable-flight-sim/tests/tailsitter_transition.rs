@@ -10,6 +10,7 @@ use assert2::check;
 use stable_flight::guidance::vtol::TransitionConfig;
 use stable_flight::{
     Command, ControlInput, FlightMode, ModeRefusal, TelemetryPublisher, TelemetryRecord, Vec3,
+    WaypointCommand,
 };
 use stable_flight_sim::airframes::TailsitterAirframe;
 use stable_flight_sim::{Gust, Wind, airframes};
@@ -18,7 +19,7 @@ use common::plane::{
     AIRSPEED_BAND_MPS, ALTITUDE_BAND_M, Interlude, LineDeviation, north_line_command,
 };
 use common::tailsitter::{
-    TailsitterPlant, forward, forward_and_back, tailsitter_loop, tailsitter_pipeline,
+    TailsitterPlant, forward, forward_and_back, tailsitter_loop, tailsitter_pipeline, view_angles,
 };
 use common::transition::{
     ALTITUDE_LOSS_AFTER_S, BACK_DURATION_S, CROSS_TRACK_M, FORWARD_AT_S, FORWARD_TIMEOUT_S, HOLD_S,
@@ -34,14 +35,15 @@ use common::{
 const BACK_AT_S: f32 = 45.0;
 
 /// Where the hover after the back transition holds, m north on the line: about where it comes
-/// to a stop. The back transition begins at 340 m and hands over at 370.4 m, at 2.4 m/s, and
-/// the hover brakes to a stop about 1.6 m on (measured); it holds its heading belly north,
-/// since moving along the span departs (#387).
+/// to a stop. The back transition begins at 340 m and hands over at 370.8 m, at 2.4 m/s, and
+/// the hover, braking at its 1 m/s² velocity shaping, stops about 2.2 m on (measured); it
+/// holds its heading belly north, since moving along the span departs (#387).
 const BACK_HOVER_NORTH_M: f32 = 372.0;
 
 /// Seconds the hover settles after the back transition before the hold is judged. It arrives
-/// at 2.5 m/s over the point: measured 0.07 m off after 10 s.
-const BACK_SETTLE_S: f32 = 10.0;
+/// at 2.4 m/s and stops 1 m past the point: measured 0.06 m off after 12 s, 0.12 m after
+/// 10 s.
+const BACK_SETTLE_S: f32 = 12.0;
 
 /// Most the back transition climbs above the height it began at, in m, until
 /// [`ALTITUDE_LOSS_AFTER_S`] after it ends: no external band applies. Measured 9.5 m, under
@@ -312,6 +314,74 @@ fn back_handoff_keeps_the_hover_trim() {
     let step = flight_loop.into_parts().5;
     check!(step.handover.handed_over(), "never handed over: {step:?}");
     check!(step.largest <= HANDOFF_STEP, "{step:?}");
+}
+
+/// How far east of the line a hover leg after the back transition flies, in m: along the span, as `flights/explora_transition_lap.csv`'s
+/// last leg runs along the eXplora's (#418).
+const SPAN_LEG_EAST_M: f32 = 80.0;
+
+/// That leg's speed, in m/s: the lap's hover legs'.
+const SPAN_LEG_SPEED_MPS: f32 = 3.0;
+
+/// Seconds after the back handover that the leg's roll is watched: it reaches its speed and
+/// flies on along the span (measured 3 s to 3 m/s).
+const SPAN_LEG_WATCH_S: f32 = 20.0;
+
+/// The largest hover-view roll in the [`SPAN_LEG_WATCH_S`] after the first switch from
+/// `ToCopter` into `Copter`, in rad.
+#[derive(Debug, Default)]
+struct PeakRoll {
+    handover: BackHandover,
+    roll_rad: f32,
+}
+
+impl TelemetryPublisher for PeakRoll {
+    fn publish(&mut self, record: &TelemetryRecord) {
+        let BackPhase::HandedOver(after_s) = self.handover.observe(record) else {
+            return;
+        };
+        if after_s < SPAN_LEG_WATCH_S {
+            let (roll_rad, _, _) = view_angles(record.state);
+            self.roll_rad = self.roll_rad.max(roll_rad.abs());
+        }
+    }
+}
+
+/// A hover leg along the span from the back handover keeps the hover's roll within the
+/// stabilizer's tilt cap: its velocity target starts at the vehicle's and gains speed at the
+/// lateral loop's acceleration limit, rather than asking for the leg's whole speed at once.
+/// The eXplora rolled to 35° on that step (#418).
+#[test]
+fn hover_leg_along_the_span_keeps_its_roll() {
+    let airframe = airframes::tailsitter();
+    let leg = WaypointCommand {
+        cruise_speed_mps: SPAN_LEG_SPEED_MPS,
+        ..waypoint(BACK_HOVER_NORTH_M, SPAN_LEG_EAST_M, TRANSITION_ALTITUDE_M)
+    };
+    let commander = Interlude::new(
+        forward(&airframe),
+        BACK_AT_S,
+        f32::INFINITY,
+        Command::new(true, ControlInput::Waypoint(leg)),
+    );
+    let plant = TailsitterPlant::clean(airframe);
+    let mut flight_loop = tailsitter_pipeline(&plant, commander, PeakRoll::default());
+    fly(
+        &mut flight_loop,
+        BACK_AT_S + BACK_DURATION_S + SPAN_LEG_WATCH_S,
+        |_, _| {},
+    );
+
+    let peak = flight_loop.into_parts().5;
+    check!(peak.handover.handed_over(), "never handed over: {peak:?}");
+    // Measured 15.2°; unshaped, the leg overshoots its speed along the span and departs, past
+    // 100° (#418).
+    let cap_rad = airframe.stabilizer.hover.attitude.max_angles_rad.x;
+    check!(
+        peak.roll_rad <= cap_rad,
+        "rolled {}°",
+        peak.roll_rad.to_degrees()
+    );
 }
 
 /// Thrust doesn't reach zero in the air from the back request until [`ALTITUDE_LOSS_AFTER_S`]
