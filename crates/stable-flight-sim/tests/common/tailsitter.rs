@@ -5,12 +5,16 @@ use stable_flight::guidance::vtol::TailsitterGuidance;
 use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::vtol::TailsitterStabilizer;
 use stable_flight::testing::RecordingTelemetry;
-use stable_flight::{Commander, FlightLoop, TelemetryPublisher, VehicleState, View};
+use stable_flight::{
+    Commander, FlightLoop, TelemetryPublisher, VehicleState, View, WaypointCommand,
+};
 use stable_flight_sim::airframes::TailsitterAirframe;
 use stable_flight_sim::{Perturbations, SimTailsitter, Wind};
 
 use super::RECORDED;
-use super::transition::{Forward, ForwardAndBack, forward_and_back_at, forward_at};
+use super::transition::{
+    Forward, ForwardAndBack, forward_and_back_at, forward_and_back_to, forward_at,
+};
 
 /// The tailsitter pipeline on a [`SimTailsitter`], publishing to `T`.
 pub type TailsitterPipeline<C, T> =
@@ -102,5 +106,19 @@ pub fn forward_and_back(
         airframe.stabilizer.plane.trim_airspeed_mps,
         back_at_s,
         north_m,
+    )
+}
+
+/// [`ForwardAndBack`] at `airframe`'s trim airspeed: from `back_at_s` a `Copter` request to
+/// fly to `hover`.
+pub fn forward_and_back_onto(
+    airframe: &TailsitterAirframe,
+    back_at_s: f32,
+    hover: WaypointCommand,
+) -> ForwardAndBack {
+    forward_and_back_to(
+        airframe.stabilizer.plane.trim_airspeed_mps,
+        back_at_s,
+        hover,
     )
 }

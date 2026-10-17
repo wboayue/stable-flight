@@ -126,18 +126,17 @@ pub struct LateralEstimate {
 ///
 /// The position loop asks for `position_p · error + target velocity`, capped in magnitude at
 /// the target's `max_speed_mps` (direction kept), and the velocity PID turns the velocity
-/// error into acceleration. With
-/// [`max_accel_mps2`](LateralControllerConfig::max_accel_mps2) set, the PID tracks a shaped
-/// velocity target instead: it starts at the measured velocity, moves toward the demand at
-/// that rate, and its change is fed forward. Turning the acceleration into tilt is the guidance's job (it
-/// depends on the airframe and its heading);
+/// error into acceleration. With [`max_accel_mps2`](LateralControllerConfig::max_accel_mps2)
+/// set, the PID tracks a shaped velocity target instead: it starts at the measured velocity,
+/// moves toward the demand at that rate, and its change is fed forward. Turning the
+/// acceleration into tilt is the guidance's job (it depends on the airframe and its heading);
 /// [`CopterGuidance`](crate::guidance::copter::CopterGuidance) tilts by `atan(|a| / g)` toward
 /// it.
 ///
 /// It holds only state (the velocity integral, derivative history, and shaped velocity
-/// target); gains and limits come
-/// from the [`LateralControllerConfig`] passed to each [`control`](Self::control) call, so
-/// they can change between ticks without resetting the state.
+/// target); gains and limits come from the [`LateralControllerConfig`] passed to each
+/// [`control`](Self::control) call, so they can change between ticks without resetting the
+/// state.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LateralController {
     integrated_error: Vec2, // Accumulated velocity error (x, y)
