@@ -4,7 +4,8 @@ use core::f32::consts::PI;
 
 use stable_flight::Vec2;
 use stable_flight::controllers::{
-    AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains, RateGains,
+    AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
+    LateralControllerConfig, RateGains,
 };
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::guidance::plane::PlaneGuidanceConfig;
@@ -134,6 +135,12 @@ pub fn tailsitter() -> TailsitterAirframe {
                     thrust_curve_exponent,
                 ),
                 ..CopterGuidanceConfig::default().altitude
+            },
+            // The eXplora's: unshaped, a hover leg along the span at 3 m/s overshoots its speed
+            // past what differential thrust holds against the sideslip, and departs (#418).
+            lateral: LateralControllerConfig {
+                max_accel_mps2: 1.0,
+                ..LateralControllerConfig::default()
             },
             ..CopterGuidanceConfig::default()
         },

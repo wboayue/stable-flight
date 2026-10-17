@@ -15,6 +15,7 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_LAT_VEL_I", lateral.velocity.i),
         param!("GUID_LAT_VEL_D", lateral.velocity.d),
         param!("GUID_LAT_IMAX", lateral.max_integral),
+        param!("GUID_LAT_ACC", lateral.max_accel_mps2),
         param!("GUID_NAV_PERIOD", navigation_period_s),
         param!(deg "GUID_TILT_MAX", max_tilt_rad),
         param!("GUID_DESC_MAX", max_descent_mps),
@@ -65,6 +66,13 @@ mod metadata {
             LATERAL
                 .param("GUID_LAT_IMAX", "Velocity loop integral limit, per axis")
                 .with_units("m")
+                .at_least(0.0),
+            LATERAL
+                .param(
+                    "GUID_LAT_ACC",
+                    "Most the velocity target changes per second (0: off)",
+                )
+                .with_units("m/s/s")
                 .at_least(0.0),
             NAVIGATION
                 .param(

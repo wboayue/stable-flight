@@ -50,6 +50,7 @@
 //! | `GUID_LAT_POS_P` | `lateral.position_p` |
 //! | `GUID_LAT_VEL_P`, `_I`, `_D` | `lateral.velocity` |
 //! | `GUID_LAT_IMAX` | `lateral.max_integral` |
+//! | `GUID_LAT_ACC` | `lateral.max_accel_mps2` |
 //! | `GUID_NAV_PERIOD` | `navigation_period_s` |
 //! | `GUID_TILT_MAX` | `max_tilt_rad` |
 //! | `GUID_DESC_MAX` | `max_descent_mps` |

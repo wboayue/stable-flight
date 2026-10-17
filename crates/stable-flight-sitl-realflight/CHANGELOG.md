@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `airframes::explora_vtol()` and `titan_cobra()` fly plane waypoints by total energy control
   (#454) on ArduPilot's defaults, with their plane airspeeds as its least and most.
+- `airframes::explora_vtol()` shapes its hover legs at 1 m/s² (`GUID_LAT_ACC`): after the
+  back transition, a leg along the span peaked at 11° of roll instead of 35° (#418).
 
 ### Added
 

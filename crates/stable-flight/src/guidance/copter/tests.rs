@@ -2153,3 +2153,45 @@ fn rejects_thrust_limits_out_of_range() {
         );
     }
 }
+
+/// With `max_accel_mps2` set, a primed hover starting a leg asks for the tilt of the shaped
+/// acceleration, not of the leg's whole speed: the velocity target starts at the vehicle's.
+#[test]
+fn shaped_lateral_loop_starts_a_leg_gently() {
+    let leg = ControlInput::Waypoint(WaypointCommand {
+        position_m: Vec2::new(0.0, 100.0),
+        cruise_speed_mps: 3.0,
+        ..Default::default()
+    });
+    // The loop's first run covers the 0.004 s tick, from rest, heading north, I 0.4:
+    // (max_accel_mps2, expected right roll in degrees from the acceleration east)
+    let cases = [
+        // Off: P 1.26 on the whole 3 m/s, plus I on 0.004 s of it.
+        (
+            0.0,
+            libm::atanf((1.26 * 3.0 + 0.4 * 0.012) / GRAVITY).to_degrees(),
+        ),
+        // 1 m/s²: its feedforward, plus P and I on the 0.004 m/s step.
+        (
+            1.0,
+            libm::atanf((1.0 + 1.26 * 0.004 + 0.4 * 0.000016) / GRAVITY).to_degrees(),
+        ),
+    ];
+    for (max_accel_mps2, expected_deg) in cases {
+        let mut config = CopterGuidanceConfig::default();
+        config.lateral.max_accel_mps2 = max_accel_mps2;
+        let mut guidance = CopterGuidance::new(config);
+        let state = VehicleState::default();
+        guidance.prime(&state);
+        let Setpoint::Attitude(setpoint) =
+            guidance.guide(0.004, FlightRegime::Copter, &leg, &state)
+        else {
+            panic!("waypoint flight gives an attitude setpoint");
+        };
+        let roll_deg = setpoint.roll_rad.to_degrees();
+        assert!(
+            (roll_deg - expected_deg).abs() < 0.05,
+            "limit {max_accel_mps2}: roll {roll_deg}°, expected {expected_deg}°"
+        );
+    }
+}

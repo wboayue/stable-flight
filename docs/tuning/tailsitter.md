@@ -283,6 +283,29 @@ eXplora (#343), 25°/s to 20°, back request at about 29.5 m and 13.9 m/s:
 The in-repo sim flew 0.6 cleanly where the eXplora couldn't, so tune this on RealFlight or
 hardware ([#399](https://github.com/wboayue/stable-flight/issues/399)).
 
+**The hover leg after the handover.** The hover takes over at rest and flies on to its
+point. Unshaped, the lateral loop asks for the leg's whole speed in one tick: on the lap's
+last leg, which runs along the span, that was 20° of view roll at once. Differential thrust
+overshot it to 35°, past the 30° cap, with one motor at 1.00. `GUID_LAT_ACC` starts the
+velocity target at the vehicle's velocity and gains speed at that rate, so a leg asks for
+`atan(GUID_LAT_ACC / g)` of tilt at first.
+
+| Param | Field | eXplora |
+|---|---|---|
+| `GUID_LAT_ACC` | `hover.lateral.max_accel_mps2` | 1 m/s² (core default 0: off) |
+
+eXplora (#418), `explora_transition_lap.csv --end land`, runs at 250 Hz around the handover:
+
+| `GUID_LAT_ACC` | Peak view roll | Largest roll setpoint | Arrival at the point |
+|---|---|---|---|
+| 0 (off) | 35.1°, 29.5°, 34.5° | 22° | 29–33 s |
+| **1 m/s²** | 10.8°, 10.7° | 8° | 32–34 s |
+
+It also limits braking: stopping from 2.4 m/s at 1 m/s² takes 2.9 m, so the sim's hover
+stops about 2 m past a point straight ahead of the handover. A tilt slew in its place
+(15°/s) held the roll to 16°, but in the sim it didn't stop a 3 m/s leg along the span from
+overshooting its speed and departing.
+
 ## Transition limits
 
 | Param | Field | Default |
@@ -297,6 +320,7 @@ hardware ([#399](https://github.com/wboayue/stable-flight/issues/399)).
 |---|---|
 | Hover settles off its altitude, then creeps on | `GUID_ALT_HOVER` |
 | A roll in hover won't stop | `STAB_RATE_RLL_*`, `GUID_BOOST_MAX` |
+| Roll overshoots past the cap as a hover leg starts (after a back handover) | `GUID_LAT_ACC` |
 | Nose drops in a descent | `GUID_THR_MIN`, `GUID_SINK_LIM`/`_GAIN`, `STAB_RATE_PIT_I` |
 | Nose swings in a waypoint descent, `sp_pitch` steady | `GUID_DESC_MAX` down |
 | Wing sinks right after the forward transition | `TRAN_ASPD_MIN`, `TRAN_FW_THR` |
