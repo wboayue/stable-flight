@@ -19,7 +19,8 @@ use common::plane::{
     AIRSPEED_BAND_MPS, ALTITUDE_BAND_M, Interlude, LineDeviation, north_line_command,
 };
 use common::tailsitter::{
-    TailsitterPlant, forward, forward_and_back, tailsitter_loop, tailsitter_pipeline, view_angles,
+    TailsitterPlant, forward, forward_and_back, forward_and_back_onto, tailsitter_loop,
+    tailsitter_pipeline, view_angles,
 };
 use common::transition::{
     ALTITUDE_LOSS_AFTER_S, BACK_DURATION_S, CROSS_TRACK_M, FORWARD_AT_S, FORWARD_TIMEOUT_S, HOLD_S,
@@ -358,12 +359,7 @@ fn hover_leg_along_the_span_keeps_its_roll() {
         cruise_speed_mps: SPAN_LEG_SPEED_MPS,
         ..waypoint(BACK_HOVER_NORTH_M, SPAN_LEG_EAST_M, TRANSITION_ALTITUDE_M)
     };
-    let commander = Interlude::new(
-        forward(&airframe),
-        BACK_AT_S,
-        f32::INFINITY,
-        Command::new(true, ControlInput::Waypoint(leg)),
-    );
+    let commander = forward_and_back_onto(&airframe, BACK_AT_S, leg);
     let plant = TailsitterPlant::clean(airframe);
     let mut flight_loop = tailsitter_pipeline(&plant, commander, PeakRoll::default());
     fly(

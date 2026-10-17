@@ -4,7 +4,7 @@
 use assert2::check;
 use stable_flight::{
     Command, Commander, ControlInput, FlightLoop, FlightMode, Guidance, Mixer, ModeRefusal,
-    Stabilizer, TelemetryPublisher, Vec3, Vehicle, VehicleState,
+    Stabilizer, TelemetryPublisher, Vec3, Vehicle, VehicleState, WaypointCommand,
 };
 use stable_flight_sim::{SimQuadPlane, SimTailsitter};
 
@@ -92,6 +92,15 @@ pub fn forward_at(airspeed_mps: f32) -> Forward {
 /// [`TRANSITION_ALTITUDE_M`].
 pub fn forward_and_back_at(airspeed_mps: f32, back_at_s: f32, north_m: f32) -> ForwardAndBack {
     let hover = waypoint(north_m, 0.0, TRANSITION_ALTITUDE_M);
+    forward_and_back_to(airspeed_mps, back_at_s, hover)
+}
+
+/// [`forward_at`], then from `back_at_s` a `Copter` request to fly to `hover`.
+pub fn forward_and_back_to(
+    airspeed_mps: f32,
+    back_at_s: f32,
+    hover: WaypointCommand,
+) -> ForwardAndBack {
     Interlude::new(
         forward_at(airspeed_mps),
         back_at_s,
