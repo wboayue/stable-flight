@@ -2,7 +2,7 @@
 
 use super::{
     ForwardThrust, ForwardThrustConfig, LiftTransition, LiftTransitionConfig, LiftTransitionStep,
-    ThrustHandoff,
+    OffNoseSpeed, OffNoseSpeedConfig, ThrustHandoff,
 };
 use crate::controllers::InvalidConfig;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
@@ -18,7 +18,8 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
-/// [`QuadPlaneGuidance`] settings: its two guidances', the transition's, and forward thrust's.
+/// [`QuadPlaneGuidance`] settings: its two guidances', the transition's, forward thrust's, and
+/// the off-nose speed cut's.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct QuadPlaneGuidanceConfig {
     /// Hover guidance, on the lift rotors.
@@ -29,6 +30,9 @@ pub struct QuadPlaneGuidanceConfig {
     pub transition: LiftTransitionConfig,
     /// The pusher in copter flight; off by default.
     pub forward: ForwardThrustConfig,
+    /// The waypoint speed cut in copter flight while the nose is off the waypoint; on by
+    /// default.
+    pub off_nose: OffNoseSpeedConfig,
 }
 
 impl QuadPlaneGuidanceConfig {
@@ -37,14 +41,19 @@ impl QuadPlaneGuidanceConfig {
     /// # Errors
     ///
     /// The first part's [`InvalidConfig`], in its section (`hover`, `plane`, `transition`,
-    /// `forward`).
+    /// `forward`, `off_nose`).
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         self.hover.validate().map_err(|e| e.in_section("hover"))?;
         self.plane.validate().map_err(|e| e.in_section("plane"))?;
         self.transition
             .validate()
             .map_err(|e| e.in_section("transition"))?;
-        self.forward.validate().map_err(|e| e.in_section("forward"))
+        self.forward
+            .validate()
+            .map_err(|e| e.in_section("forward"))?;
+        self.off_nose
+            .validate()
+            .map_err(|e| e.in_section("off_nose"))
     }
 }
 
@@ -85,10 +94,12 @@ impl QuadPlaneGuidanceConfig {
 ///    [`handoff_s`](LiftTransitionConfig::handoff_s) ([`ThrustHandoff`]).
 ///
 ///    Forward thrust flies only position-controlled input, as ArduPilot's `Q_FWD_THR_USE` 1
-///    (`ArduPlane/quadplane.cpp:2897-2937`): sticks keep the pilot's tilt.
+///    (`ArduPlane/quadplane.cpp:2897-2937`): sticks keep the pilot's tilt. A waypoint in
+///    `Copter` reaches the hover guidance with its speed cut while the nose is off it
+///    ([`OffNoseSpeed`]); land flies uncut, since it lands where the vehicle already is.
 ///
 /// Pair it with a [`QuadPlaneStabilizer`](crate::stabilizers::vtol::QuadPlaneStabilizer).
-/// Params chain the parts' (`GUID_*`, `PGUID_*`, `TRAN_*`, `FWD_*`).
+/// Params chain the parts' (`GUID_*`, `PGUID_*`, `TRAN_*`, `FWD_*`, `OFFNOSE_*`).
 ///
 /// # Examples
 ///
@@ -115,6 +126,7 @@ pub struct QuadPlaneGuidance {
     plane: PlaneGuidance,
     transition: LiftTransition,
     forward: ForwardThrust,
+    off_nose: OffNoseSpeed,
     handoff: ThrustHandoff,
     /// The mode the last tick flew.
     mode: FlightMode,
@@ -152,6 +164,7 @@ impl QuadPlaneGuidance {
             plane: PlaneGuidance::new(config.plane),
             transition: LiftTransition::new(config.transition),
             forward: ForwardThrust::new(config.forward),
+            off_nose: OffNoseSpeed::new(config.off_nose),
             handoff: ThrustHandoff::new(config.transition.handoff_s),
             mode: FlightMode::Copter,
             pusher_thrust: 0.0,
@@ -227,24 +240,40 @@ impl QuadPlaneGuidance {
     }
 
     /// The parts whose params chain, in order.
-    fn parts(&self) -> [&dyn Params; 4] {
-        [&self.hover, &self.plane, &self.transition, &self.forward]
+    fn parts(&self) -> [&dyn Params; 5] {
+        [
+            &self.hover,
+            &self.plane,
+            &self.transition,
+            &self.forward,
+            &self.off_nose,
+        ]
     }
 
     /// [`parts`](Self::parts), mutably, in the same order.
-    fn parts_mut(&mut self) -> [&mut dyn Params; 4] {
+    fn parts_mut(&mut self) -> [&mut dyn Params; 5] {
         [
             &mut self.hover,
             &mut self.plane,
             &mut self.transition,
             &mut self.forward,
+            &mut self.off_nose,
         ]
     }
 
-    /// Copter flight: the hover guidance on `input`, its nose-down pitch handed to the pusher
-    /// on a waypoint or land while [`ForwardThrust`] is on.
+    /// Copter flight: the hover guidance on `input`, a waypoint's speed cut while the nose is
+    /// off it ([`OffNoseSpeed`]), its nose-down pitch handed to the pusher on a waypoint or
+    /// land while [`ForwardThrust`] is on.
     fn copter(&mut self, dt: f32, input: &ControlInput, state: &VehicleState) -> Setpoint {
-        let setpoint = self.hover.guide(dt, FlightRegime::Copter, input, state);
+        let cut;
+        let flown = match input {
+            ControlInput::Waypoint(waypoint) => {
+                cut = ControlInput::Waypoint(self.off_nose.cap(waypoint, state));
+                &cut
+            }
+            _ => input,
+        };
+        let setpoint = self.hover.guide(dt, FlightRegime::Copter, flown, state);
         let positioned = matches!(input, ControlInput::Waypoint(_) | ControlInput::Land(_));
         let (true, Setpoint::Attitude(hover)) = (positioned && self.forward.enabled(), setpoint)
         else {
@@ -276,6 +305,7 @@ impl QuadPlaneGuidance {
             plane: *self.plane.config(),
             transition: *self.transition.config(),
             forward: *self.forward.config(),
+            off_nose: *self.off_nose.config(),
         };
     }
 }
@@ -400,13 +430,14 @@ impl Configurable for QuadPlaneGuidance {
         self.plane.set_config(config.plane)?;
         self.transition.set_config(config.transition)?;
         self.forward.set_config(config.forward)?;
+        self.off_nose.set_config(config.off_nose)?;
         self.config = config;
         Ok(())
     }
 }
 
 /// The parts' params, chained: hover (`GUID_*`), plane (`PGUID_*`), transition (`TRAN_*`),
-/// forward thrust (`FWD_*`).
+/// forward thrust (`FWD_*`), off-nose speed (`OFFNOSE_*`).
 impl Params for QuadPlaneGuidance {
     fn param_count(&self) -> usize {
         self.parts().iter().map(|part| part.param_count()).sum()

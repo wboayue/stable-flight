@@ -420,6 +420,7 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                 pusher_slew_per_s: COBRA_PUSHER_SHARE * defaults.transition.pusher_slew_per_s,
                 ..defaults.transition
             },
+            ..defaults
         },
         stabilizer: QuadPlaneStabilizerConfig {
             hover: CopterStabilizerConfig {

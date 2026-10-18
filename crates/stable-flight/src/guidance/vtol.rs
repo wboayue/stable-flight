@@ -71,12 +71,14 @@ use crate::{Configurable, FlightMode, FlightModeReport, FlightRegime, ModeRefusa
 
 mod forward;
 mod lift;
+mod off_nose;
 mod params;
 mod quadplane;
 mod tailsitter;
 
 pub use forward::{ForwardSplit, ForwardThrust, ForwardThrustConfig};
 pub use lift::{LiftTransition, LiftTransitionConfig, LiftTransitionStep};
+pub use off_nose::{DEFAULT_OFF_NOSE_SPEED_MPS, OffNoseSpeed, OffNoseSpeedConfig};
 pub use quadplane::{QuadPlaneGuidance, QuadPlaneGuidanceConfig};
 pub use tailsitter::{TailsitterGuidance, TailsitterGuidanceConfig};
 #[cfg(test)]

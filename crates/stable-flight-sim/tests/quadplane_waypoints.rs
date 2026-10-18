@@ -1,11 +1,14 @@
 //! Copter waypoints on `airframes::quadplane()`: legs flown on the lift rotors, ahead, behind,
 //! and to the side, and into wind, with the pusher taking the nose-down pitch (#427), each
-//! turned to face its waypoint (#452).
+//! turned to face its waypoint (#452), slowed while the nose is off it (#437).
 
 mod common;
 
 use assert2::check;
-use stable_flight::{Command, ControlInput, Vec2, Vec3, WaypointCommand};
+use stable_flight::commanders::{RouteEnd, WaypointFollower};
+use stable_flight::params::Params;
+use stable_flight::{Command, ControlInput, Vec2, Vec3, WaypointCommand, euler_angles};
+use stable_flight_sim::airframes::QuadPlaneAirframe;
 use stable_flight_sim::{Wind, airframes};
 
 use common::hover_at;
@@ -119,5 +122,70 @@ fn holds_and_flies_legs_in_a_headwind() {
     ];
     for (case, target_m, cruise_mps) in rows {
         fly_leg(case, headwind_mps, target_m, cruise_mps);
+    }
+}
+
+/// Most the tilt may pass the tilt cap on an uncapped leg, in degrees (#437's bound).
+const TILT_OVER_CAP_DEG: f32 = 5.0;
+
+/// The length of the RealFlight probe's legs that flipped the Titan Cobra flying the second
+/// tail first (#437), in m.
+const PROBE_LEG_M: f32 = 260.0;
+
+/// Seconds of the probe flown after [`FORWARD_AT_S`]: past the turnaround (25 s measured) and
+/// well into the leg back, which the slowest row, the quadplane tail first at 5 m/s, ends at
+/// 83 s.
+const PROBE_S: f32 = 60.0;
+
+/// A waypoint at `north_m` over the line north, at [`TRANSITION_ALTITUDE_M`], uncapped.
+fn on_the_line(north_m: f32) -> WaypointCommand {
+    WaypointCommand {
+        position_m: Vec2::new(north_m, 0.0),
+        altitude_m: TRANSITION_ALTITUDE_M,
+        ..Default::default()
+    }
+}
+
+/// An uncapped leg out and back, the probe's, stays within 5° of the tilt cap and PX4's
+/// altitude loss, slowed while the nose is off the waypoint (#437): with the turn on, through
+/// the turnaround as the nose comes round; with it off, the whole way back tail first. Uncut,
+/// the quadplane tilts to 37° and 39°, and the Alia tail first to 39°, sinking 30 m; cut, all
+/// stay under 27°. The Alia with the turn on keeps within the bound uncut (28°), so it isn't
+/// a row.
+#[test]
+fn slows_uncapped_legs_the_nose_is_off() {
+    let route = [on_the_line(0.0), on_the_line(PROBE_LEG_M), on_the_line(0.0)];
+    let quadplane: fn() -> QuadPlaneAirframe = airframes::quadplane;
+    let alia: fn() -> QuadPlaneAirframe = airframes::alia250;
+    // (case, airframe, waypoint yaw in deg/s)
+    let rows = [
+        ("quadplane, turn on", quadplane, 60.0),
+        ("quadplane, turn off", quadplane, 0.0),
+        ("Alia, turn off", alia, 0.0),
+    ];
+    for (case, airframe, yaw_degps) in rows {
+        let airframe = airframe();
+        let cap_deg = airframe.guidance.hover.max_tilt_rad.to_degrees();
+        let follower = WaypointFollower::new(route)
+            .expect("waypoints")
+            .with_route_end(RouteEnd::Hold);
+        let mut flight_loop = quadplane_loop(&QuadPlanePlant::clean(airframe), follower);
+        flight_loop
+            .set_param("GUID_YAW_SLEW", yaw_degps)
+            .expect("a param");
+        let flight = trace(&mut flight_loop, FORWARD_AT_S + PROBE_S);
+
+        check_altitude_loss(flight.heights(FORWARD_AT_S, f32::INFINITY), case);
+        let tilt_deg = flight
+            .window(FORWARD_AT_S, f32::INFINITY)
+            .map(|sample| {
+                let (roll_rad, pitch_rad, _) = euler_angles(&sample.state.attitude);
+                roll_rad.abs().max(pitch_rad.abs()).to_degrees()
+            })
+            .fold(0.0, f32::max);
+        check!(
+            tilt_deg < cap_deg + TILT_OVER_CAP_DEG,
+            "{case}: {tilt_deg}° against a {cap_deg}° cap"
+        );
     }
 }

@@ -26,9 +26,12 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
   tail first it can flip ([#427](https://github.com/wboayue/stable-flight/issues/427)).
   Forward thrust hands the nose-down pitch to the pusher (below). Waypoint legs turn the nose
   along the leg first (`GUID_YAW_SLEW`, 60°/s; 0 holds the heading), so the pusher can help.
-  Tail first (sticks, offboard attitudes, the slew off), keep legs slow: the Cobra flipped at
-  11–16 m/s backward, pitching up past its lift rotors' authority
-  ([#437](https://github.com/wboayue/stable-flight/issues/437)).
+  Waypoint and offboard position flight slow while the nose is more than 20° off the
+  waypoint, as ArduPilot's quadplane does: `OFFNOSE_SPD` (15 m/s) just past 20°, a third of it
+  (5 m/s) from 160°, tail first. Uncut, the Cobra flipped at 11–16 m/s backward, pitching up
+  past its lift rotors' authority
+  ([#437](https://github.com/wboayue/stable-flight/issues/437)). Sticks and land flight
+  aren't cut: fly sticks slow tail first.
 - **Heading in wind:** the fin swings the nose into the wind, and the lift rotors' yaw can't
   hold it off: in the sim, 5 m/s from behind turned it around. When the heading stays more
   than `GUID_YAW_YLD_ERR` (30°) off its target without yawing toward it for `GUID_YAW_YLD_S`
