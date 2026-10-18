@@ -3,7 +3,7 @@
 use stable_flight::controllers::{PlaneRateControllerConfig, RateGains};
 use stable_flight::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
 use stable_flight::guidance::vtol::{
-    ForwardThrustConfig, LiftTransitionConfig, QuadPlaneGuidanceConfig,
+    ForwardThrustConfig, LiftTransitionConfig, OffNoseSpeedConfig, QuadPlaneGuidanceConfig,
 };
 use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
@@ -225,6 +225,7 @@ pub fn alia250() -> QuadPlaneAirframe {
                 ..LiftTransitionConfig::default()
             },
             forward: ForwardThrustConfig::default(),
+            off_nose: OffNoseSpeedConfig::default(),
         },
         stabilizer: QuadPlaneStabilizerConfig {
             hover: hover.stabilizer,

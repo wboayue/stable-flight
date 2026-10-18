@@ -7,7 +7,7 @@ use stable_flight::controllers::{
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::guidance::plane::PlaneGuidanceConfig;
 use stable_flight::guidance::vtol::{
-    ForwardThrustConfig, LiftTransitionConfig, QuadPlaneGuidanceConfig,
+    ForwardThrustConfig, LiftTransitionConfig, OffNoseSpeedConfig, QuadPlaneGuidanceConfig,
 };
 use stable_flight::mixers::{MixerConfig, TableMixer};
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
@@ -178,6 +178,7 @@ pub fn quadplane() -> QuadPlaneAirframe {
                 gain: FORWARD_THRUST_GAIN,
                 ..ForwardThrustConfig::default()
             },
+            off_nose: OffNoseSpeedConfig::default(),
         },
         stabilizer: QuadPlaneStabilizerConfig {
             hover: hover_stabilizer,

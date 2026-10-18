@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   quadplane's fin turning it into the wind isn't fought. **Breaking:** a
   `CopterGuidanceConfig` struct literal needs the four new fields (or
   `..Default::default()`).
+- **Off-nose speed** (#437): `guidance::vtol::OffNoseSpeed` (`OffNoseSpeedConfig`,
+  `DEFAULT_OFF_NOSE_SPEED_MPS`) caps a quadplane's waypoint speed in copter flight while the
+  nose is more than 20° off the bearing to the waypoint, as ArduPilot's quadplane
+  (`get_scaled_wp_speed`): `speed_mps` (`OFFNOSE_SPD`, default 15 m/s; 0: off) divided by 1
+  rising to 3 from 20° to 160°. `QuadPlaneGuidance` flies it on waypoints, so offboard
+  position targets too. **Breaking:** on by default, and a `QuadPlaneGuidanceConfig` struct
+  literal needs `off_nose` (or `..Default::default()`).
 - `TableMixer::with_reversed_yaw()` and `MixRow::with_reversed_yaw()`: a preset for a model
   whose props spin the other way (the X-Plane Alia 250 on `quad_x` and `quadplane`, #351,
   #392); the mixer's servo rows keep their yaw.

@@ -4,8 +4,8 @@ use super::*;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::guidance::plane::{PlaneGuidance, PlaneGuidanceConfig};
 use crate::guidance::vtol::{
-    ForwardThrust, ForwardThrustConfig, LiftTransition, LiftTransitionConfig, Transition,
-    TransitionConfig,
+    ForwardThrust, ForwardThrustConfig, LiftTransition, LiftTransitionConfig, OffNoseSpeed,
+    OffNoseSpeedConfig, Transition, TransitionConfig,
 };
 use crate::params::Params;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
@@ -23,7 +23,7 @@ fn names<T: ParamMetadata>() -> (Vec<&'static str>, Vec<&'static str>) {
 fn describes_every_param_in_table_order() {
     // (table, (metadata names, param names), metadata). Every `ParamMetadata` impl gets a row
     // here and in `ranges_match_what_validation_accepts`.
-    let cases: [(&str, _, &[ParamMeta]); 7] = [
+    let cases: [(&str, _, &[ParamMeta]); 8] = [
         (
             "stabilizer",
             names::<CopterStabilizerConfig>(),
@@ -58,6 +58,11 @@ fn describes_every_param_in_table_order() {
             "forward thrust",
             names::<ForwardThrustConfig>(),
             ForwardThrustConfig::METADATA,
+        ),
+        (
+            "off-nose speed",
+            names::<OffNoseSpeedConfig>(),
+            OffNoseSpeedConfig::METADATA,
         ),
     ];
     for (table, (described, params), metadata) in cases {
@@ -134,5 +139,8 @@ fn ranges_match_what_validation_accepts() {
     });
     check_ranges(ForwardThrustConfig::METADATA, || {
         ForwardThrust::new(ForwardThrustConfig::default())
+    });
+    check_ranges(OffNoseSpeedConfig::METADATA, || {
+        OffNoseSpeed::new(OffNoseSpeedConfig::default())
     });
 }
