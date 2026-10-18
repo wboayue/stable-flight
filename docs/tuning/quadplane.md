@@ -24,9 +24,17 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
 - **Back:** the pusher is cut, and the lift rotors take the lift back while drag slows it.
 - **Copter flight at speed:** tilted nose down, the wing at negative α pushes it down, and
   tail first it can flip ([#427](https://github.com/wboayue/stable-flight/issues/427)).
-  Forward thrust hands the nose-down pitch to the pusher (below). Tail first, keep legs slow:
-  the Cobra flipped at 11–16 m/s backward, pitching up past its lift rotors' authority
+  Forward thrust hands the nose-down pitch to the pusher (below). Waypoint legs turn the nose
+  along the leg first (`GUID_YAW_SLEW`, 60°/s; 0 holds the heading), so the pusher can help.
+  Tail first (sticks, offboard attitudes, the slew off), keep legs slow: the Cobra flipped at
+  11–16 m/s backward, pitching up past its lift rotors' authority
   ([#437](https://github.com/wboayue/stable-flight/issues/437)).
+- **Heading in wind:** the fin swings the nose into the wind, and the lift rotors' yaw can't
+  hold it off: in the sim, 5 m/s from behind turned it around. When the heading stays more
+  than `GUID_YAW_YLD_ERR` (30°) off its target without yawing toward it for `GUID_YAW_YLD_S`
+  (1 s), waypoint flight yields the heading to the nose until the next waypoint. A crosswind
+  takeoff then climbs as fast as into a headwind, within 1.4 s, instead of 8 s slower
+  ([#431](https://github.com/wboayue/stable-flight/issues/431)).
 
 ## Order
 

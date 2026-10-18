@@ -293,6 +293,8 @@ velocity target at the vehicle's velocity and gains speed at that rate, so a leg
 | Param | Field | eXplora |
 |---|---|---|
 | `GUID_LAT_ACC` | `hover.lateral.max_accel_mps2` | 1 m/s² (core default 0: off) |
+| `GUID_YAW_SLEW` | `hover.waypoint_yaw_radps` | 0: holds the heading (core default 60°/s): facing a leg flies it belly first |
+| `GUID_YAW_YLD_S` | `hover.heading_yield_s` | 0: never yields the heading (core default 1 s); wind along the span is [#387](https://github.com/wboayue/stable-flight/issues/387) |
 
 eXplora (#418), `explora_transition_lap.csv --end land`, runs at 250 Hz around the handover:
 

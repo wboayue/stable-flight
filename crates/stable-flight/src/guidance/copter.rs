@@ -7,8 +7,8 @@
 //! | [`ControlInput::AbsoluteRate`] | [`Setpoint::BodyRate`]: rates passed through (the stabilizer saturates them); the heading-hold target follows the vehicle; thrust saturated to `[0, 1]`, not boosted |
 //! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target; throttle boosted by 1/cos(tilt) so tilting doesn't sink (none when inverted) |
 //! | [`ControlInput::AbsoluteAttitude`] | [`Setpoint::Attitude`]: roll/pitch passed through (the stabilizer saturates them); the heading replaces the heading-hold target (NaN holds it); thrust saturated to `[0, 1]`, not boosted |
-//! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity (shaped at [`max_accel_mps2`](crate::controllers::LateralControllerConfig::max_accel_mps2) when set) → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading held; descents slewed at up to [`max_descent_mps`](CopterGuidanceConfig::max_descent_mps), braking at [`descent_accel_mps2`](CopterGuidanceConfig::descent_accel_mps2) to stop on the waypoint, at most [`ALTITUDE_LEASH_M`] below the vehicle |
-//! | [`ControlInput::Land`] | [`Setpoint::Attitude`]: as a waypoint at the land position, with an altitude target that keeps descending at [`land_speed_mps`](CopterGuidanceConfig::land_speed_mps), at most [`ALTITUDE_LEASH_M`] below the vehicle |
+//! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity (shaped at [`max_accel_mps2`](crate::controllers::LateralControllerConfig::max_accel_mps2) when set) → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading turned along the leg at [`waypoint_yaw_radps`](CopterGuidanceConfig::waypoint_yaw_radps) (held on a leg shorter than [`waypoint_yaw_min_leg_m`](CopterGuidanceConfig::waypoint_yaw_min_leg_m)); descents slewed at up to [`max_descent_mps`](CopterGuidanceConfig::max_descent_mps), braking at [`descent_accel_mps2`](CopterGuidanceConfig::descent_accel_mps2) to stop on the waypoint, at most [`ALTITUDE_LEASH_M`] below the vehicle |
+//! | [`ControlInput::Land`] | [`Setpoint::Attitude`]: as a waypoint at the land position, heading held, with an altitude target that keeps descending at [`land_speed_mps`](CopterGuidanceConfig::land_speed_mps), at most [`ALTITUDE_LEASH_M`] below the vehicle |
 //!
 //! Piloted inputs mark their setpoint [`idle`](crate::AttitudeSetpoint::idle) while the
 //! throttle is at or below [`IDLE_THROTTLE`] (or NaN), as ArduPilot spools to ground idle on
@@ -21,7 +21,13 @@
 //! the propwash, a sink turns the airflow against it, and differential thrust needs headroom.
 //!
 //! Switching modes doesn't jump the heading: attitude, absolute-attitude, waypoint, and land
-//! flight share one heading-hold target, and rate flight keeps it on the vehicle's heading. The
+//! flight share one heading-hold target, and rate flight keeps it on the vehicle's heading.
+//! Waypoint flight slews that target along the leg, from where the leg began to its waypoint,
+//! as ArduPilot's and PX4's defaults face the next waypoint (`WP_YAW_BEHAVIOR`,
+//! `ArduCopter/config.h:468`; `MPC_YAW_MODE`, PX4 `FlightTaskAuto.cpp:571-628`), so a leg
+//! behind the vehicle isn't flown tail first. The leg's direction, not the bearing from the
+//! vehicle, keeps a braking overshoot or a hold drifting in wind from turning the nose around.
+//! The
 //! altitude and lateral loops start fresh each time waypoint or land flight is entered, with
 //! the altitude target starting from the vehicle's altitude.
 
@@ -31,6 +37,7 @@ use crate::nalgebra::UnitQuaternion;
 use crate::{GRAVITY, Vec2};
 
 use crate::commanders::touchdown::DESCENDING_MPS;
+use crate::commanders::waypoint::DEFAULT_ACCEPTANCE_RADIUS_M;
 use crate::controllers::*;
 use crate::controllers::{check, check_limit, check_positive, check_tilt, check_unit_interval};
 use crate::{
@@ -71,6 +78,31 @@ pub const DEFAULT_MAX_DESCENT_MPS: f32 = 3.0;
 /// Default [`CopterGuidanceConfig::descent_accel_mps2`]: ArduPilot's waypoint vertical
 /// acceleration limit, `WP_ACC_Z` (`libraries/AC_WPNav/AC_WPNav.cpp:14`).
 pub const DEFAULT_DESCENT_ACCEL_MPS2: f32 = 1.0;
+
+/// Default [`CopterGuidanceConfig::waypoint_yaw_radps`]: 60°/s, ArduPilot's waypoint yaw slew
+/// (`ATC_RATE_WPY_MAX`, `libraries/AC_AttitudeControl/AC_AttitudeControl.h:21`) and PX4's
+/// (`MPC_YAWRAUTO_MAX`, `multicopter_autonomous_params.yaml:21-42`).
+pub const DEFAULT_WAYPOINT_YAW_RADPS: f32 = 60.0_f32.to_radians();
+
+/// Default [`CopterGuidanceConfig::waypoint_yaw_min_leg_m`]: the waypoint follower's
+/// [`DEFAULT_ACCEPTANCE_RADIUS_M`], since a shorter leg is reached as it begins; PX4 likewise
+/// holds its yaw inside the acceptance radius (`FlightTaskAuto.cpp:608-628`).
+pub const DEFAULT_WAYPOINT_YAW_MIN_LEG_M: f32 = DEFAULT_ACCEPTANCE_RADIUS_M;
+
+/// Default [`CopterGuidanceConfig::heading_yield_rad`]: 30°. On the sim quadplane, 20°–45°
+/// all yield to the fin in 5 and 11 m/s winds and none yields in a calm 180° turn (#452).
+pub const DEFAULT_HEADING_YIELD_RAD: f32 = 30.0_f32.to_radians();
+
+/// Default [`CopterGuidanceConfig::heading_yield_s`]: 1 s. On the sim quadplane taking off in
+/// an 8 m/s crosswind it reaches 29 m in 15.2 s (14.9 s at 0.5 s, 21.9 s never yielding; 13.8 s
+/// in a headwind) (#431).
+pub const DEFAULT_HEADING_YIELD_S: f32 = 1.0;
+
+/// Yaw rate toward the heading-hold target, in rad/s (about 6°/s), below which a heading off
+/// it by more than [`heading_yield_rad`](CopterGuidanceConfig::heading_yield_rad) is stuck. A
+/// vehicle turning to its target yaws toward it faster; one held off by its fin doesn't yaw,
+/// or yaws away (#452).
+const STUCK_YAW_RATE_RADPS: f32 = 0.1;
 
 /// Default [`CopterGuidanceConfig::land_speed_mps`], as PX4's `MPC_LAND_SPEED`.
 pub const DEFAULT_LAND_SPEED_MPS: f32 = 0.7;
@@ -148,6 +180,25 @@ pub struct CopterGuidanceConfig {
     /// touchdown detector's [`DESCENDING_MPS`] (0.2 m/s), so the detector sees the descent and
     /// the land ends in a disarm. Defaults to [`DEFAULT_LAND_SPEED_MPS`].
     pub land_speed_mps: f32,
+    /// Rate, in rad/s, at which waypoint flight turns the heading-hold target to the leg's
+    /// direction, the shorter way round; `0` holds the heading the leg began with. A leg runs
+    /// from where the vehicle was when waypoint flight began or the waypoint changed, to the
+    /// waypoint. The vehicle translates while it turns. Land flight always holds the heading.
+    /// Must be non-negative and finite. Defaults to [`DEFAULT_WAYPOINT_YAW_RADPS`].
+    pub waypoint_yaw_radps: f32,
+    /// Shortest leg, in meters horizontally, whose direction waypoint flight turns to; a shorter
+    /// one (a hold, a waypoint that moves with the vehicle) keeps the heading. Must be
+    /// non-negative and finite. Defaults to [`DEFAULT_WAYPOINT_YAW_MIN_LEG_M`].
+    pub waypoint_yaw_min_leg_m: f32,
+    /// Heading error, in radians, past which waypoint flight counts the heading as stuck while
+    /// the vehicle yaws toward the heading-hold target at under 0.1 rad/s. Must be
+    /// non-negative and finite. Defaults to [`DEFAULT_HEADING_YIELD_RAD`].
+    pub heading_yield_rad: f32,
+    /// Seconds the heading stays stuck before waypoint flight yields it: the heading-hold
+    /// target then follows the vehicle's heading until the waypoint changes, so a quadplane's
+    /// fin swinging the nose into the wind isn't fought for good (#431). `0` never yields.
+    /// Must be non-negative and finite. Defaults to [`DEFAULT_HEADING_YIELD_S`].
+    pub heading_yield_s: f32,
     /// Thrust floor, sink guard, and tilt-boost ceiling; all off by default.
     pub thrust: ThrustLimits,
 }
@@ -226,7 +277,8 @@ impl ThrustLimits {
 impl Default for CopterGuidanceConfig {
     /// The controller defaults (flight-checked on RealFlight's QuadCopterX), a 50 Hz lateral
     /// loop, a 27° waypoint tilt cap, 45° at full stick, a 3 m/s descent limit, a 0.7 m/s
-    /// land, no thrust floor or sink guard, and no boost ceiling.
+    /// land, waypoint legs over 3 m turned to face along them at 60°/s, the heading yielded
+    /// after 1 s stuck over 30° off, no thrust floor or sink guard, and no boost ceiling.
     fn default() -> Self {
         CopterGuidanceConfig {
             altitude: AltitudeControllerConfig::default(),
@@ -240,6 +292,10 @@ impl Default for CopterGuidanceConfig {
             max_descent_mps: DEFAULT_MAX_DESCENT_MPS,
             descent_accel_mps2: DEFAULT_DESCENT_ACCEL_MPS2,
             land_speed_mps: DEFAULT_LAND_SPEED_MPS,
+            waypoint_yaw_radps: DEFAULT_WAYPOINT_YAW_RADPS,
+            waypoint_yaw_min_leg_m: DEFAULT_WAYPOINT_YAW_MIN_LEG_M,
+            heading_yield_rad: DEFAULT_HEADING_YIELD_RAD,
+            heading_yield_s: DEFAULT_HEADING_YIELD_S,
             thrust: ThrustLimits::default(),
         }
     }
@@ -251,8 +307,9 @@ impl CopterGuidanceConfig {
     /// thrust limits ([`ThrustLimits::validate`], section `thrust`), that
     /// `navigation_period_s` and `max_stick_angles_rad` are non-negative and finite, that
     /// `max_tilt_rad` is in `(0, π/2)`, that `max_descent_mps` and `descent_accel_mps2` are
-    /// positive and finite,
-    /// and that `land_speed_mps` is finite and above [`DESCENDING_MPS`].
+    /// positive and finite, that `land_speed_mps` is finite and above [`DESCENDING_MPS`], and
+    /// that `waypoint_yaw_radps`, `waypoint_yaw_min_leg_m`, `heading_yield_rad`, and
+    /// `heading_yield_s` are non-negative and finite.
     ///
     /// # Examples
     ///
@@ -282,12 +339,16 @@ impl CopterGuidanceConfig {
             self.land_speed_mps > DESCENDING_MPS && self.land_speed_mps.is_finite(),
             "above the touchdown detector's DESCENDING_MPS and finite",
         )?;
+        check_limit("waypoint_yaw_radps", self.waypoint_yaw_radps)?;
+        check_limit("waypoint_yaw_min_leg_m", self.waypoint_yaw_min_leg_m)?;
+        check_limit("heading_yield_rad", self.heading_yield_rad)?;
+        check_limit("heading_yield_s", self.heading_yield_s)?;
         self.thrust.validate().map_err(|e| e.in_section("thrust"))
     }
 }
 
-/// Copter guidance: altitude and lateral position loops for waypoints, and heading hold for
-/// piloted attitude flight.
+/// Copter guidance: altitude and lateral position loops for waypoints, heading along the leg,
+/// and heading hold for piloted attitude flight.
 ///
 /// # Examples
 ///
@@ -321,6 +382,14 @@ pub struct CopterGuidance {
 
     /// Heading-hold target for attitude, absolute-attitude, waypoint, and land commands.
     heading: f32,
+    /// The waypoint leg being flown: where it began and its waypoint, in meters (north, east).
+    /// `None` outside waypoint flight, until a finite position starts one.
+    leg_m: Option<(Vec2, Vec2)>,
+    /// Seconds this leg's heading has been stuck off the heading-hold target.
+    stuck_s: f32,
+    /// This leg's heading-hold target follows the vehicle's heading
+    /// ([`heading_yield_s`](CopterGuidanceConfig::heading_yield_s)).
+    yielding: bool,
 
     /// Paces the lateral loop.
     lateral_rate: RateDivider,
@@ -353,6 +422,9 @@ impl CopterGuidance {
             altitude_target_m: None,
 
             heading: 0.0,
+            leg_m: None,
+            stuck_s: 0.0,
+            yielding: false,
 
             lateral_rate: RateDivider::default(),
             tilt_rad: Vec2::zeros(),
@@ -409,6 +481,9 @@ impl Guidance for CopterGuidance {
             self.altitude_target_m = None;
             self.lateral_rate.reset();
         }
+        if !matches!(input, ControlInput::Waypoint(_)) {
+            self.clear_leg();
+        }
 
         match input {
             ControlInput::Attitude(attitude_command) => {
@@ -439,13 +514,14 @@ impl Guidance for CopterGuidance {
         }
     }
 
-    /// Clears the altitude and lateral controller state, the altitude target, and any held
-    /// waypoint tilt, and latches the current heading as the yaw-hold target.
+    /// Clears the altitude and lateral controller state, the altitude target, the leg, and any
+    /// held waypoint tilt, and latches the current heading as the yaw-hold target.
     fn prime(&mut self, state: &VehicleState) {
         self.altitude = AltitudeController::default();
         self.lateral = LateralController::default();
         self.altitude_target_m = None;
         self.heading = state.heading_rad;
+        self.clear_leg();
         self.lateral_rate.reset();
         self.tilt_rad = Vec2::zeros();
         self.tilt_capped = false;
@@ -557,7 +633,7 @@ impl CopterGuidance {
         }
     }
 
-    /// Flies toward the waypoint, holding the heading-hold target: the lateral loop gives
+    /// Flies toward the waypoint, turning along the leg ([`face`](Self::face)): the lateral loop gives
     /// roll/pitch (once per navigation period, held in between) and the altitude loop gives
     /// thrust (every tick), toward an altitude target that descends no faster than
     /// `max_descent_mps`, braking to stop on the waypoint, and no further than
@@ -573,7 +649,78 @@ impl CopterGuidance {
             waypoint_command.altitude_m,
             estimated_state.position_m.z,
         );
+        self.face(dt, waypoint_command.position_m, estimated_state);
         self.fly_to(dt, waypoint_command, target, estimated_state)
+    }
+
+    /// Slews the heading-hold target toward the direction of the leg to `waypoint_m`, by at
+    /// most `waypoint_yaw_radps · dt` the shorter way round, unless the leg has yielded its
+    /// heading ([`yields_heading`](Self::yields_heading)). Holds the heading on a leg shorter
+    /// than `waypoint_yaw_min_leg_m`, with the slew off, and on a non-finite position or
+    /// waypoint (input policy).
+    fn face(&mut self, dt: f32, waypoint_m: Vec2, estimated_state: &VehicleState) {
+        let start_m = self.leg_start_m(waypoint_m, estimated_state);
+        if self.yields_heading(dt, estimated_state) {
+            return;
+        }
+        let rate_radps = self.config.waypoint_yaw_radps;
+        let leg_m = waypoint_m - start_m;
+        // `>` is false for NaN: a non-finite leg holds.
+        if !(rate_radps > 0.0 && leg_m.norm() > self.config.waypoint_yaw_min_leg_m) {
+            return;
+        }
+        let bearing_rad = libm::atan2f(leg_m.y, leg_m.x);
+        let step_rad = rate_radps * dt;
+        let turn_rad = wrap_angle(bearing_rad - self.heading).clamp(-step_rad, step_rad);
+        self.set_heading_target(self.heading + turn_rad, estimated_state);
+    }
+
+    /// Where the leg to `waypoint_m` began. A new waypoint starts a leg from the vehicle's
+    /// position, with nothing stuck; a non-finite position starts none, so the next tick
+    /// retries.
+    fn leg_start_m(&mut self, waypoint_m: Vec2, estimated_state: &VehicleState) -> Vec2 {
+        if let Some((start_m, to_m)) = self.leg_m
+            && to_m == waypoint_m
+        {
+            return start_m;
+        }
+        self.clear_leg();
+        let here_m = estimated_state.position_m.xy();
+        self.leg_m = all_finite(&here_m).then_some((here_m, waypoint_m));
+        here_m
+    }
+
+    /// Forgets the leg and its yield.
+    fn clear_leg(&mut self) {
+        self.leg_m = None;
+        self.stuck_s = 0.0;
+        self.yielding = false;
+    }
+
+    /// Whether this leg has yielded its heading, after the heading has been stuck (more than
+    /// `heading_yield_rad` off the target, yawing toward it at under
+    /// [`STUCK_YAW_RATE_RADPS`]) for `heading_yield_s`: the heading-hold target then follows
+    /// the vehicle's heading. The body yaw rate stands in for the heading's rate, as it does
+    /// near level. Never with `heading_yield_s` at 0 or a non-finite heading.
+    fn yields_heading(&mut self, dt: f32, estimated_state: &VehicleState) -> bool {
+        let heading_rad = estimated_state.heading_rad;
+        if !(self.config.heading_yield_s > 0.0 && heading_rad.is_finite()) {
+            return false;
+        }
+        if !self.yielding {
+            let error_rad = wrap_angle(self.heading - heading_rad);
+            let toward_radps = error_rad.signum() * estimated_state.angular_velocity_radps.z;
+            // False for a NaN error or rate: not stuck.
+            let stuck = error_rad.abs() > self.config.heading_yield_rad
+                && toward_radps < STUCK_YAW_RATE_RADPS;
+            self.stuck_s = if stuck { self.stuck_s + dt } else { 0.0 };
+            self.yielding = self.stuck_s > self.config.heading_yield_s;
+            if !self.yielding {
+                return false;
+            }
+        }
+        self.heading = wrap_angle(heading_rad);
+        true
     }
 
     /// Lands at the command's position: flies there as to a waypoint, with an altitude target

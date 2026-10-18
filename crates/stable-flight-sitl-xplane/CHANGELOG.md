@@ -34,6 +34,7 @@ X-Plane 12 simulator backend over [xplane-bridge](https://crates.io/crates/xplan
   plane side and transitions tuned on `stable-flight-sim`'s `alia250()` and pinned to it (#392). `quadplane-manual-xplane`
   (joystick: hover, transitions, plane; `--record`, `--param`) and `copter-companion-xplane`
   (the link in copter flight, QGC through the bridge) and `quadplane-auto-xplane` (a waypoint
-  script with plane legs, `flights/alia_transition_lap.csv`) fly it.
+  script with plane legs, `flights/alia_transition_lap.csv`) fly it. Its copter legs fly nose first,
+  yielding a heading the wind holds off (core's defaults, #452, #431).
 - `sweep::EngineSweep` and `engine-sweep-xplane`: a multirotor's yaw sign per diagonal,
   liftoff throttle, motor lag, and moment response, measured on the runway.

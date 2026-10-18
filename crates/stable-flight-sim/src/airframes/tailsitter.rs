@@ -142,6 +142,10 @@ pub fn tailsitter() -> TailsitterAirframe {
                 max_accel_mps2: 1.0,
                 ..LateralControllerConfig::default()
             },
+            // The eXplora's: legs hold the heading, since facing one flies it belly first, and
+            // never yield it.
+            waypoint_yaw_radps: 0.0,
+            heading_yield_s: 0.0,
             ..CopterGuidanceConfig::default()
         },
         plane: PlaneGuidanceConfig {

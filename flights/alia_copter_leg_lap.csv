@@ -1,0 +1,17 @@
+# Alia 250 in X-Plane: alia_transition_lap.csv with a copter leg before the transition, from
+# Oceano County Airport (L52), spawned on runway 11 (heading 123°). Climb straight up to
+# 250 m, then a copter leg 800 m west at 10 m/s, behind the spawn heading: the nose turns 147°
+# to face along it (#452), so the forward transition starts facing west. Then the lap's box
+# offshore at 300 m and 50 m/s, the slow leg north that starts the back transition, and hover
+# home to land. With the heading held, this leg flew tail first and the transition never
+# accelerated (#444, #449).
+# Coordinates are m north and east of the anchor; altitudes are above sea level.
+# The regime is the leg's to that waypoint: the first plane leg starts the transition.
+x,y,altitude,cruise_speed,regime
+0.0,0.0,250.0,3.0,copter
+0.0,-800.0,250.0,10.0,copter
+0.0,-6000.0,300.0,50.0,plane
+-4000.0,-6000.0,300.0,50.0,plane
+-4000.0,-3000.0,300.0,50.0,plane
+0.0,-3000.0,300.0,45.0,plane
+0.0,0.0,60.0,10.0,copter

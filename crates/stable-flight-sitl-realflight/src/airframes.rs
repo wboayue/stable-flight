@@ -211,6 +211,12 @@ pub fn explora_vtol()
                 // ArduPilot's and PX4's default descent rate (`AC_WPNav.cpp:13`,
                 // `multicopter_autonomous_params.yaml:71-76` `MPC_Z_V_AUTO_DN`).
                 max_descent_mps: 1.5,
+                // Holds the heading on waypoint legs, and never yields it to the wind: facing
+                // a leg flies it belly first, the wing's flat face into the airflow, and the
+                // hover legs above are flown with the heading held (#418). Wind along the span
+                // is #387.
+                waypoint_yaw_radps: 0.0,
+                heading_yield_s: 0.0,
                 ..CopterGuidanceConfig::default()
             },
             plane: PlaneGuidanceConfig {

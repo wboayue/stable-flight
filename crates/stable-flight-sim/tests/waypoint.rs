@@ -1,5 +1,5 @@
 //! Waypoint following: a square route flown at cruise speed, each leg on its line and at its
-//! altitude, ending in a hold on the last corner.
+//! altitude, ending in a hold on the last corner; a leg behind flown nose first.
 
 mod common;
 
@@ -8,7 +8,7 @@ use stable_flight::commanders::{RouteEnd, WaypointFollower};
 use stable_flight::{Vec2, WaypointCommand};
 use stable_flight_sim::Wind;
 
-use common::{ARRIVAL_UNDERSHOOT_M, fly, sim_loop};
+use common::{ARRIVAL_UNDERSHOOT_M, FACING_DEG, fly, heading_error_deg, sim_loop};
 
 const ALTITUDE_M: f32 = 5.0;
 const SIDE_M: f32 = 20.0;
@@ -112,6 +112,38 @@ fn flies_a_square_on_its_legs_and_holds_the_last_corner() {
     let last = route[3].position_m;
     let held_m = (Vec2::new(state.position_m.x, state.position_m.y) - last).norm();
     check!(held_m < 0.1, "{held_m} m off the last corner");
+}
+
+/// A leg behind the vehicle turns the nose toward it and flies it nose first, from a quarter of
+/// the way along to the hold on its end (#452), within the square's line and hold bands.
+#[test]
+fn turns_to_fly_a_leg_behind_nose_first() {
+    let behind = corner(-2.0 * SIDE_M, 0.0);
+    let follower = WaypointFollower::new([behind])
+        .expect("one waypoint")
+        .with_route_end(RouteEnd::Hold);
+    let mut flight_loop = sim_loop(follower, Wind::default());
+    let bearing_rad = core::f32::consts::PI;
+
+    let mut worst_deg: f32 = 0.0;
+    let mut cross_track_m: f32 = 0.0;
+    fly(&mut flight_loop, 40.0, |flight_loop, _| {
+        let state = flight_loop.state();
+        let position = Vec2::new(state.position_m.x, state.position_m.y);
+        let (fraction, off_m) = leg_position(position, Vec2::zeros(), behind.position_m);
+        if fraction >= 0.25 {
+            worst_deg = worst_deg.max(heading_error_deg(state.heading_rad, bearing_rad));
+        }
+        if (0.25..=0.75).contains(&fraction) {
+            cross_track_m = cross_track_m.max(off_m);
+        }
+    });
+
+    check!(worst_deg < FACING_DEG);
+    check!(cross_track_m < MAX_CROSS_TRACK_M);
+    let state = flight_loop.state();
+    let held_m = (Vec2::new(state.position_m.x, state.position_m.y) - behind.position_m).norm();
+    check!(held_m < 0.1, "{held_m} m off the waypoint");
 }
 
 /// A descent from 30 m to a waypoint at 10 m stops on it: the target brakes to the waypoint

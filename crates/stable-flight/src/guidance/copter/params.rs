@@ -21,6 +21,10 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_DESC_MAX", max_descent_mps),
         param!("GUID_DESC_ACC", descent_accel_mps2),
         param!("GUID_LAND_SPD", land_speed_mps),
+        param!(deg "GUID_YAW_SLEW", waypoint_yaw_radps),
+        param!("GUID_YAW_MIN_LEG", waypoint_yaw_min_leg_m),
+        param!(deg "GUID_YAW_YLD_ERR", heading_yield_rad),
+        param!("GUID_YAW_YLD_S", heading_yield_s),
         param!("GUID_THR_MIN", thrust.min_thrust),
         param!("GUID_SINK_LIM", thrust.sink_limit_mps),
         param!("GUID_SINK_GAIN", thrust.sink_gain),
@@ -101,6 +105,34 @@ mod metadata {
                 .param("GUID_LAND_SPD", "Descent rate while landing")
                 .with_units("m/s")
                 .above(DESCENDING_MPS),
+            NAVIGATION
+                .param(
+                    "GUID_YAW_SLEW",
+                    "Rate waypoint flight turns to face along the leg (0: holds heading)",
+                )
+                .with_units("deg/s")
+                .at_least(0.0),
+            NAVIGATION
+                .param(
+                    "GUID_YAW_MIN_LEG",
+                    "Shortest waypoint leg the heading turns along",
+                )
+                .with_units("m")
+                .at_least(0.0),
+            NAVIGATION
+                .param(
+                    "GUID_YAW_YLD_ERR",
+                    "Heading error past which a heading not turning is stuck",
+                )
+                .with_units("deg")
+                .at_least(0.0),
+            NAVIGATION
+                .param(
+                    "GUID_YAW_YLD_S",
+                    "Time stuck before waypoint flight yields the heading (0: never)",
+                )
+                .with_units("s")
+                .at_least(0.0),
             LIMITS
                 .param("GUID_THR_MIN", "Least thrust while flying (0: none)")
                 .at_least(0.0)

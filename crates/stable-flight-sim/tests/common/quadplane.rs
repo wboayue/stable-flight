@@ -5,7 +5,7 @@ use stable_flight::guidance::vtol::QuadPlaneGuidance;
 use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::vtol::QuadPlaneStabilizer;
 use stable_flight::testing::RecordingTelemetry;
-use stable_flight::{Commander, FlightLoop, TelemetryPublisher};
+use stable_flight::{Commander, FlightLoop, Setpoint, TelemetryPublisher};
 use stable_flight_sim::airframes::QuadPlaneAirframe;
 use stable_flight_sim::{Perturbations, SimQuadPlane, Start, Wind};
 
@@ -18,6 +18,20 @@ pub type QuadPlanePipeline<C, T> =
 
 /// The quadplane pipeline recording its last [`RECORDED`] ticks.
 pub type QuadPlaneLoop<C> = QuadPlanePipeline<C, RecordingTelemetry<RECORDED>>;
+
+/// How far the last recorded tick's nose was off its hover heading-hold target, in degrees: 0
+/// once the target follows a heading the lift rotors can't hold. NaN without a hover setpoint.
+pub fn hover_heading_error_deg(telemetry: &RecordingTelemetry<RECORDED>) -> f32 {
+    let Some(tick) = telemetry.last() else {
+        return f32::NAN;
+    };
+    let target_rad = match &tick.setpoint {
+        Setpoint::Attitude(attitude) => attitude.heading_rad,
+        Setpoint::Blend(blend) => blend.hover.heading_rad,
+        _ => f32::NAN,
+    };
+    super::heading_error_deg(tick.state.heading_rad, target_rad)
+}
 
 /// What a quadplane test flies: an airframe, the air it flies through, and how its plant
 /// departs from the clean model (the copter's [`Plant`](super::Plant) for the quadplane).

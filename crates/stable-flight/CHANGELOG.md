@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Waypoint yaw** (#452): copter waypoint flight turns the heading-hold target along each
+  leg, from where the vehicle was when the waypoint began to the waypoint, at
+  `CopterGuidanceConfig::waypoint_yaw_radps` (`GUID_YAW_SLEW`, default 60°/s, ArduPilot's
+  and PX4's; 0 holds the heading), on legs longer than `waypoint_yaw_min_leg_m`
+  (`GUID_YAW_MIN_LEG`, default 3 m), as ArduPilot's `WP_YAW_BEHAVIOR` and PX4's
+  `MPC_YAW_MODE` face the next waypoint by default. Offboard position targets, flown as
+  waypoints, turn too; land flight, sticks, and absolute attitudes' headings are unchanged.
+  **Breaking:** on by default.
+- **Heading yield** (#431): a waypoint heading stuck more than
+  `CopterGuidanceConfig::heading_yield_rad` (`GUID_YAW_YLD_ERR`, default 30°) off its target,
+  not yawing toward it, for `heading_yield_s` (`GUID_YAW_YLD_S`, default 1 s; 0: never) is
+  yielded: the target follows the vehicle's heading until the waypoint changes, so a
+  quadplane's fin turning it into the wind isn't fought. **Breaking:** a
+  `CopterGuidanceConfig` struct literal needs the four new fields (or
+  `..Default::default()`).
 - `TableMixer::with_reversed_yaw()` and `MixRow::with_reversed_yaw()`: a preset for a model
   whose props spin the other way (the X-Plane Alia 250 on `quad_x` and `quadplane`, #351,
   #392); the mixer's servo rows keep their yaw.
