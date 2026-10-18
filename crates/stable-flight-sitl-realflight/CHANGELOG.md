@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `copter-auto-realflight --record`: one CSV row per tick (`CopterColumns`).
 - `airframes::titan_cobra()`: the ArduPilot SITL_Models Titan Cobra VTOL quadplane on
   `TableMixer::quadplane_vtail`, its channels mapped from a sweep (#433). Flown in
   RealFlight: hover (measured trim, autotuned roll rate), surfaces checked in flight, tail
