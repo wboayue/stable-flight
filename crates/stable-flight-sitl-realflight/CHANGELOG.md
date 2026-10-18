@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `airframes::quadcopter_x()` and `titan_cobra()` fly copter waypoint legs nose first and
+  yield a heading the wind holds off (core's defaults, #452, #431); `explora_vtol()` holds
+  its heading on hover legs and never yields it: facing a leg flies it belly first.
 - `airframes::explora_vtol()` and `titan_cobra()` fly plane waypoints by total energy control
   (#454) on ArduPilot's defaults, with their plane airspeeds as its least and most.
 - `airframes::explora_vtol()` shapes its hover legs at 1 m/s² (`GUID_LAT_ACC`): after the

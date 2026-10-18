@@ -69,6 +69,18 @@ pub const CALM_HORIZONTAL_M: f32 = 0.1;
 /// degrees, over a whole hold.
 pub const CALM_ANGLE_DEG: f32 = 1.0;
 
+/// Most a waypoint leg's heading may be off the bearing to its waypoint once turned, in
+/// degrees: PX4's heading acceptance at a waypoint (`MIS_YAW_ERR`,
+/// `src/modules/navigator/mission_params.yaml:79-83`).
+pub const FACING_DEG: f32 = 12.0;
+
+/// How far `heading_rad` is off `bearing_rad` the shorter way round, in degrees.
+pub fn heading_error_deg(heading_rad: f32, bearing_rad: f32) -> f32 {
+    stable_flight::wrap_angle(heading_rad - bearing_rad)
+        .abs()
+        .to_degrees()
+}
+
 /// A commander that holds one waypoint.
 pub type Hover = WaypointFollower<[WaypointCommand; 1]>;
 

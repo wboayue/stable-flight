@@ -276,8 +276,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   without taking control. Fly plane legs over water (`flights/alia_transition_lap.csv` starts
   at Oceano, L52): until #450 and #451, a sinking or missed plane leg flies on into terrain,
   so watch scripted plane flight and stop it below a floor or past its last plane waypoint.
-  Copter legs keep the heading the vehicle armed with, sideways or tail first, so start a
-  route with a climb over the spawn.
+  Copter legs turn the nose along the leg as they fly it (`GUID_YAW_SLEW`), so start a route
+  with a climb over the spawn, which turns nothing on the ground.
 - **Disconnects:** flight examples reconnect on their own and log "Reconnected to RealFlight"
   (`capture-state-realflight` doesn't). The runner drops time lost to a stall over 100 ms, so
   heavy skipping (`ticks skipped` in its exit log) slows every `dt`-based clock (**Tick

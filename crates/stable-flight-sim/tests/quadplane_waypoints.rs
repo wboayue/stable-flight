@@ -1,5 +1,6 @@
 //! Copter waypoints on `airframes::quadplane()`: legs flown on the lift rotors, ahead, behind,
-//! and to the side, and into wind, with the pusher taking the nose-down pitch (#427).
+//! and to the side, and into wind, with the pusher taking the nose-down pitch (#427), each
+//! turned to face its waypoint (#452).
 
 mod common;
 
@@ -9,9 +10,9 @@ use stable_flight_sim::{Wind, airframes};
 
 use common::hover_at;
 use common::plane::Interlude;
-use common::quadplane::{QuadPlanePlant, quadplane_loop};
+use common::quadplane::{QuadPlanePlant, hover_heading_error_deg, quadplane_loop};
 use common::transition::{FORWARD_AT_S, HOLD_S, TRANSITION_ALTITUDE_M, check_altitude_loss, trace};
-use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M};
+use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, FACING_DEG, heading_error_deg};
 
 /// Leg length, in m.
 const LEG_M: f32 = 100.0;
@@ -49,7 +50,9 @@ fn leg(target_m: Vec2, cruise_mps: f32) -> Interlude<common::Hover> {
 
 /// Flies a leg to `target_m` at `cruise_mps` in a steady `wind_mps`, then checks it stayed
 /// within PX4's altitude loss throughout and holds the end of the leg within the calm-air
-/// altitude and position bands; the tilt band only in calm air, since a hold in wind leans.
+/// altitude and position bands. In calm air it holds within the tilt band, facing the way the
+/// leg went; in wind, which leans the hold and whose fin turns the nose into it, the heading
+/// target has yielded to the nose (#431).
 fn fly_leg(case: &str, wind_mps: Vec3, target_m: Vec2, cruise_mps: f32) {
     let wind = Wind {
         steady_mps: wind_mps,
@@ -65,14 +68,29 @@ fn fly_leg(case: &str, wind_mps: Vec3, target_m: Vec2, cruise_mps: f32) {
     let worst = flight.level_hold(FORWARD_AT_S + LEG_S, point_m);
     check!(worst.altitude_m < CALM_ALTITUDE_M, "{case}: {worst:?}");
     check!(worst.horizontal_m < CALM_HORIZONTAL_M, "{case}: {worst:?}");
-    if wind_mps == Vec3::zeros() {
-        check!(worst.tilt_deg < CALM_ANGLE_DEG, "{case}: {worst:?}");
+    if wind_mps != Vec3::zeros() {
+        let (.., telemetry) = flight_loop.into_parts();
+        let error_deg = hover_heading_error_deg(&telemetry);
+        check!(
+            error_deg < CALM_ANGLE_DEG,
+            "{case}: target {error_deg}° off the nose"
+        );
+        return;
+    }
+    check!(worst.tilt_deg < CALM_ANGLE_DEG, "{case}: {worst:?}");
+    if target_m != Vec2::zeros() {
+        let bearing_rad = target_m.y.atan2(target_m.x);
+        let facing_deg = flight
+            .window(FORWARD_AT_S + LEG_S, f32::INFINITY)
+            .map(|sample| heading_error_deg(sample.state.heading_rad, bearing_rad))
+            .fold(0.0, f32::max);
+        check!(facing_deg < FACING_DEG, "{case}: {facing_deg}°");
     }
 }
 
 /// In calm air, legs ahead, behind, and to the side, uncapped and at ArduPilot's waypoint
-/// speed, stay within PX4's altitude loss (`VT_QC_T_ALT_LOSS`) and settle on the point. Nose
-/// down the pusher takes the pitch past 3°; tail first it brakes.
+/// speed, stay within PX4's altitude loss (`VT_QC_T_ALT_LOSS`) and settle on the point, turned
+/// to fly each nose first. Nose down the pusher takes the pitch past 3°.
 #[test]
 fn flies_copter_legs_in_every_direction() {
     let rows = [
@@ -90,7 +108,7 @@ fn flies_copter_legs_in_every_direction() {
 
 /// In a headwind from the north the quadplane takes off, holds over the origin, and flies a
 /// leg upwind and one downwind at ArduPilot's waypoint speed: the pusher holds it against the
-/// wind, the wing level.
+/// wind, the wing level. Downwind, the fin holds the nose upwind, and the heading yields to it.
 #[test]
 fn holds_and_flies_legs_in_a_headwind() {
     let headwind_mps = Vec3::new(-HEADWIND_MPS, 0.0, 0.0);

@@ -234,8 +234,8 @@ fn heading_of(setpoint: Setpoint) -> f32 {
     }
 }
 
-/// A waypoint leg holds the heading-hold target instead of turning north, so attitude flight
-/// resumes the same heading after it.
+/// On the waypoint, a waypoint leg holds the heading-hold target instead of turning north,
+/// so attitude flight resumes the same heading after it.
 #[test]
 fn waypoint_leg_holds_the_heading_hold_target() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
@@ -267,6 +267,296 @@ fn waypoint_leg_holds_the_heading_hold_target() {
         0.7 + 10.0 * HEADING_SLEW_RATE * 0.004,
         epsilon = 1e-6
     );
+}
+
+/// The default config, never yielding the heading: for checks whose vehicle doesn't turn.
+fn never_yielding() -> CopterGuidanceConfig {
+    CopterGuidanceConfig {
+        heading_yield_s: 0.0,
+        ..Default::default()
+    }
+}
+
+/// A copter waypoint 100 m from the origin at `(north, east)`.
+fn waypoint_toward(north_m: f32, east_m: f32) -> ControlInput {
+    ControlInput::Waypoint(WaypointCommand {
+        position_m: Vec2::new(north_m, east_m),
+        ..Default::default()
+    })
+}
+
+/// One tick of a leg from the origin turns the heading-hold target toward the leg's direction,
+/// by at most the slew rate the shorter way round, and holds it on a leg shorter than
+/// `waypoint_yaw_min_leg_m`.
+#[test]
+fn waypoint_flight_turns_along_the_leg() {
+    let dt = 0.004;
+    let step = DEFAULT_WAYPOINT_YAW_RADPS * dt;
+    let near = 0.5 * step;
+    // (case, heading, waypoint (north, east), expected heading) from the origin
+    let cases = [
+        ("ahead", 0.0, (100.0, 0.0), 0.0),
+        ("right", 0.0, (0.0, 100.0), step),
+        ("left", 0.0, (0.0, -100.0), -step),
+        ("behind, right of the tail", 0.0, (-100.0, 1.0), step),
+        ("behind, left of the tail", 0.0, (-100.0, -1.0), -step),
+        ("across ±π", 3.0, (-100.0, -15.0), 3.0 + step),
+        (
+            "within a step",
+            0.0,
+            (100.0, 100.0 * libm::tanf(near)),
+            near,
+        ),
+        ("shorter than the least leg", 1.0, (2.0, -2.0), 1.0),
+        (
+            "the least leg",
+            1.0,
+            (0.0, -DEFAULT_WAYPOINT_YAW_MIN_LEG_M),
+            1.0,
+        ),
+        ("NaN waypoint", 1.0, (f32::NAN, 100.0), 1.0),
+    ];
+    for (case, heading, (north_m, east_m), expected) in cases {
+        let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+        let state = VehicleState {
+            heading_rad: heading,
+            ..Default::default()
+        };
+        guidance.prime(&state);
+        let setpoint = guidance.guide(
+            dt,
+            FlightRegime::Copter,
+            &waypoint_toward(north_m, east_m),
+            &state,
+        );
+        let heading = heading_of(setpoint);
+        assert!(
+            (heading - wrap_angle(expected)).abs() < 1e-5,
+            "{case}: {heading}, expected {expected}"
+        );
+    }
+}
+
+/// A leg keeps its direction from where it began: a vehicle that overshoots the waypoint or
+/// drifts off the line doesn't turn toward it. A new waypoint starts a leg from the vehicle,
+/// and so does re-entering waypoint flight; a NaN position waits to start one.
+#[test]
+fn a_leg_keeps_the_direction_it_began_with() {
+    let east = waypoint_toward(0.0, 100.0);
+    let north = waypoint_toward(100.0, 0.0);
+    let hover = ControlInput::Attitude(AttitudeCommand::default());
+    let nan = f32::NAN;
+    // (case, phases of (command, vehicle north, vehicle east), expected heading after them),
+    // heading north at first, 10 s per phase: long enough to finish any turn
+    let cases = [
+        (
+            "past the waypoint",
+            [(&east, 0.0, 0.0), (&east, 0.0, 110.0), (&east, 0.0, 110.0)],
+            FRAC_PI_2,
+        ),
+        (
+            "off the line",
+            [(&east, 0.0, 0.0), (&east, 50.0, 50.0), (&east, 50.0, 50.0)],
+            FRAC_PI_2,
+        ),
+        (
+            "a new waypoint",
+            [(&east, 0.0, 0.0), (&north, 0.0, 50.0), (&north, 0.0, 50.0)],
+            libm::atan2f(-50.0, 100.0),
+        ),
+        (
+            "waypoint flight re-entered",
+            [(&east, 0.0, 0.0), (&hover, 0.0, 0.0), (&east, 99.0, 100.0)],
+            PI,
+        ),
+        (
+            "a NaN position first",
+            [(&east, nan, 0.0), (&east, nan, 0.0), (&east, 0.0, -50.0)],
+            FRAC_PI_2,
+        ),
+    ];
+    for (case, phases, expected) in cases {
+        let mut guidance = CopterGuidance::new(never_yielding());
+        guidance.prime(&VehicleState::default());
+        let mut heading = f32::NAN;
+        for (command, north_m, east_m) in phases {
+            let state = state_at(north_m, east_m, 0.0);
+            for _ in 0..2500 {
+                heading = heading_of(guidance.guide(0.004, FlightRegime::Copter, command, &state));
+            }
+        }
+        let error = wrap_angle(heading - expected).abs();
+        assert!(error < 1e-5, "{case}: {heading}, expected {expected}");
+    }
+}
+
+/// Waypoint flight turns at the slew rate per second at any loop rate, and arrives on the
+/// bearing without overshooting it.
+#[test]
+fn waypoint_turn_depends_on_time_not_tick_count() {
+    // (dt, ticks): one second each, then another second to settle on the bearing
+    let cases = [(0.004, 250), (0.01, 100), (0.002, 500)];
+    let east = waypoint_toward(0.0, 100.0);
+    for (dt, ticks) in cases {
+        let mut guidance = CopterGuidance::new(never_yielding());
+        let state = VehicleState::default();
+        guidance.prime(&state);
+        for _ in 0..ticks {
+            guidance.guide(dt, FlightRegime::Copter, &east, &state);
+        }
+        approx::assert_relative_eq!(guidance.heading, DEFAULT_WAYPOINT_YAW_RADPS, epsilon = 1e-4);
+        for _ in 0..ticks {
+            guidance.guide(dt, FlightRegime::Copter, &east, &state);
+        }
+        approx::assert_relative_eq!(guidance.heading, FRAC_PI_2, epsilon = 1e-6);
+    }
+}
+
+/// A heading that stays over `heading_yield_rad` off the target, the vehicle yawing toward it
+/// under 0.1 rad/s, for `heading_yield_s` is yielded: the target returns to the vehicle's
+/// heading. A leg east from a vehicle held north: the target passes 30° at 0.5 s.
+#[test]
+fn a_stuck_heading_is_yielded() {
+    let east = waypoint_toward(0.0, 100.0);
+    let turned = |seconds: f32| (seconds * DEFAULT_WAYPOINT_YAW_RADPS).min(FRAC_PI_2);
+    let yielding = CopterGuidanceConfig::default();
+    // (case, config, body yaw rate (rad/s), seconds, expected heading target)
+    let cases = [
+        ("stuck", yielding, 0.0, 2.0, 0.0),
+        ("yawing away", yielding, -0.5, 2.0, 0.0),
+        ("yawing toward it too slowly", yielding, 0.09, 2.0, 0.0),
+        ("yawing toward it", yielding, 0.11, 2.0, turned(2.0)),
+        ("not stuck for long enough", yielding, 0.0, 1.4, turned(1.4)),
+        ("never yielding", never_yielding(), 0.0, 2.0, turned(2.0)),
+    ];
+    for (case, config, yaw_radps, seconds, expected) in cases {
+        let mut guidance = CopterGuidance::new(config);
+        let state = VehicleState {
+            angular_velocity_radps: Vec3::new(0.0, 0.0, yaw_radps),
+            ..Default::default()
+        };
+        guidance.prime(&state);
+        let mut heading = f32::NAN;
+        for _ in 0..ticks_for(seconds) {
+            heading = heading_of(guidance.guide(0.004, FlightRegime::Copter, &east, &state));
+        }
+        let error = wrap_angle(heading - expected).abs();
+        assert!(error < 1e-4, "{case}: {heading}, expected {expected}");
+    }
+}
+
+/// Once yielded, the heading-hold target follows the vehicle's heading for the rest of the
+/// leg; a new waypoint, or leaving waypoint flight, turns toward the leg again. A NaN heading
+/// never yields.
+#[test]
+fn a_yielded_heading_follows_the_vehicle_until_the_leg_changes() {
+    let east = waypoint_toward(0.0, 100.0);
+    let north = waypoint_toward(100.0, 0.0);
+    let hover = ControlInput::Attitude(AttitudeCommand::default());
+    let at = |heading_rad| VehicleState {
+        heading_rad,
+        ..Default::default()
+    };
+    let nan = f32::NAN;
+    // (case, phases of (command, vehicle heading, seconds), expected heading target) from a
+    // vehicle at the origin, primed north; 2 s on the leg east yields
+    let cases: [(&str, &[Phase], f32); 4] = [
+        ("follows", &[(&east, 0.0, 2.0), (&east, -1.0, 0.004)], -1.0),
+        (
+            "a new waypoint",
+            &[(&east, 0.0, 2.0), (&north, 0.3, 2.0)],
+            0.0,
+        ),
+        (
+            "waypoint flight re-entered",
+            &[(&east, 0.0, 2.0), (&hover, 0.0, 0.004), (&east, 0.0, 0.4)],
+            turned_by(0.4),
+        ),
+        (
+            "a NaN heading",
+            &[(&east, nan, 2.0), (&east, nan, 2.0)],
+            FRAC_PI_2,
+        ),
+    ];
+    for (case, phases, expected) in cases {
+        let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+        guidance.prime(&at(0.0));
+        let mut heading = f32::NAN;
+        for &(command, vehicle_rad, seconds) in phases {
+            for _ in 0..ticks_for(seconds) {
+                heading = heading_of(guidance.guide(
+                    0.004,
+                    FlightRegime::Copter,
+                    command,
+                    &at(vehicle_rad),
+                ));
+            }
+        }
+        let error = wrap_angle(heading - expected).abs();
+        assert!(error < 1e-4, "{case}: {heading}, expected {expected}");
+    }
+}
+
+/// A command flown for a time from a vehicle at a heading: (command, heading, seconds).
+type Phase<'a> = (&'a ControlInput, f32, f32);
+
+/// How far waypoint flight turns the heading-hold target in `seconds`, in radians.
+fn turned_by(seconds: f32) -> f32 {
+    seconds * DEFAULT_WAYPOINT_YAW_RADPS
+}
+
+/// 4 ms ticks in `seconds`.
+fn ticks_for(seconds: f32) -> usize {
+    (seconds / 0.004).round() as usize
+}
+
+/// With the waypoint slew off, and in land flight, a waypoint behind holds the heading.
+#[test]
+fn heading_holds_with_the_slew_off_and_in_land_flight() {
+    let behind = Vec2::new(-100.0, 10.0);
+    let land = ControlInput::Land(LandCommand { position_m: behind });
+    let slew_off = CopterGuidanceConfig {
+        waypoint_yaw_radps: 0.0,
+        ..Default::default()
+    };
+    // (case, config, command)
+    let cases = [
+        ("slew off", slew_off, waypoint_toward(behind.x, behind.y)),
+        ("land", CopterGuidanceConfig::default(), land),
+    ];
+    let state = VehicleState {
+        heading_rad: 0.7,
+        ..Default::default()
+    };
+    for (case, config, command) in cases {
+        let mut guidance = CopterGuidance::new(config);
+        guidance.prime(&state);
+        for _ in 0..100 {
+            let heading = heading_of(guidance.guide(0.004, FlightRegime::Copter, &command, &state));
+            assert!(heading == wrap_angle(0.7), "{case}: {heading}");
+        }
+    }
+}
+
+/// Stick flight after a waypoint leg resumes the heading the leg turned to.
+#[test]
+fn stick_flight_keeps_the_heading_a_leg_turned_to() {
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+    let state = VehicleState::default();
+    guidance.prime(&state);
+    let east = waypoint_toward(0.0, 100.0);
+    let mut turned = 0.0;
+    for _ in 0..10 {
+        turned = heading_of(guidance.guide(0.004, FlightRegime::Copter, &east, &state));
+    }
+    let centred = ControlInput::Attitude(AttitudeCommand::default());
+    let after = heading_of(guidance.guide(0.004, FlightRegime::Copter, &centred, &state));
+    approx::assert_relative_eq!(
+        turned,
+        10.0 * DEFAULT_WAYPOINT_YAW_RADPS * 0.004,
+        epsilon = 1e-6
+    );
+    assert!(after == turned);
 }
 
 /// After rate flight (sticks or absolute rates), attitude and waypoint flight hold the heading
