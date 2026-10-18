@@ -51,7 +51,9 @@ use crate::math::{
     all_finite, assert_dt, cap_magnitude, guard_sink, saturate_throttle, saturate_unit,
     shaped_closing_speed, tilt_boost, wrap_angle,
 };
+use leg_heading::LegHeading;
 
+mod leg_heading;
 mod params;
 #[cfg(test)]
 mod tests;
@@ -97,12 +99,6 @@ pub const DEFAULT_HEADING_YIELD_RAD: f32 = 30.0_f32.to_radians();
 /// an 8 m/s crosswind it reaches 29 m in 15.2 s (14.9 s at 0.5 s, 21.9 s never yielding; 13.8 s
 /// in a headwind) (#431).
 pub const DEFAULT_HEADING_YIELD_S: f32 = 1.0;
-
-/// Yaw rate toward the heading-hold target, in rad/s (about 6°/s), below which a heading off
-/// it by more than [`heading_yield_rad`](CopterGuidanceConfig::heading_yield_rad) is stuck. A
-/// vehicle turning to its target yaws toward it faster; one held off by its fin doesn't yaw,
-/// or yaws away (#452).
-const STUCK_YAW_RATE_RADPS: f32 = 0.1;
 
 /// Default [`CopterGuidanceConfig::land_speed_mps`], as PX4's `MPC_LAND_SPEED`.
 pub const DEFAULT_LAND_SPEED_MPS: f32 = 0.7;
@@ -181,13 +177,15 @@ pub struct CopterGuidanceConfig {
     /// the land ends in a disarm. Defaults to [`DEFAULT_LAND_SPEED_MPS`].
     pub land_speed_mps: f32,
     /// Rate, in rad/s, at which waypoint flight turns the heading-hold target to the leg's
-    /// direction, the shorter way round; `0` holds the heading the leg began with. A leg runs
+    /// direction, the shorter way round; `0` holds the heading the leg began with, unless
+    /// [yielded](Self::heading_yield_s). A leg runs
     /// from where the vehicle was when waypoint flight began or the waypoint changed, to the
     /// waypoint. The vehicle translates while it turns. Land flight always holds the heading.
     /// Must be non-negative and finite. Defaults to [`DEFAULT_WAYPOINT_YAW_RADPS`].
     pub waypoint_yaw_radps: f32,
-    /// Shortest leg, in meters horizontally, whose direction waypoint flight turns to; a shorter
-    /// one (a hold, a waypoint that moves with the vehicle) keeps the heading. Must be
+    /// Shortest leg, in meters horizontally when it begins, whose direction waypoint flight
+    /// turns to; a shorter one (a hold, a waypoint that moves with the vehicle) keeps the
+    /// heading. A change applies from the next leg. Must be
     /// non-negative and finite. Defaults to [`DEFAULT_WAYPOINT_YAW_MIN_LEG_M`].
     pub waypoint_yaw_min_leg_m: f32,
     /// Heading error, in radians, past which waypoint flight counts the heading as stuck while
@@ -382,14 +380,8 @@ pub struct CopterGuidance {
 
     /// Heading-hold target for attitude, absolute-attitude, waypoint, and land commands.
     heading: f32,
-    /// The waypoint leg being flown: where it began and its waypoint, in meters (north, east).
-    /// `None` outside waypoint flight, until a finite position starts one.
-    leg_m: Option<(Vec2, Vec2)>,
-    /// Seconds this leg's heading has been stuck off the heading-hold target.
-    stuck_s: f32,
-    /// This leg's heading-hold target follows the vehicle's heading
-    /// ([`heading_yield_s`](CopterGuidanceConfig::heading_yield_s)).
-    yielding: bool,
+    /// Turns the heading-hold target along the waypoint leg, or yields it.
+    leg_heading: LegHeading,
 
     /// Paces the lateral loop.
     lateral_rate: RateDivider,
@@ -422,9 +414,7 @@ impl CopterGuidance {
             altitude_target_m: None,
 
             heading: 0.0,
-            leg_m: None,
-            stuck_s: 0.0,
-            yielding: false,
+            leg_heading: LegHeading::default(),
 
             lateral_rate: RateDivider::default(),
             tilt_rad: Vec2::zeros(),
@@ -482,7 +472,7 @@ impl Guidance for CopterGuidance {
             self.lateral_rate.reset();
         }
         if !matches!(input, ControlInput::Waypoint(_)) {
-            self.clear_leg();
+            self.leg_heading.clear();
         }
 
         match input {
@@ -521,7 +511,7 @@ impl Guidance for CopterGuidance {
         self.lateral = LateralController::default();
         self.altitude_target_m = None;
         self.heading = state.heading_rad;
-        self.clear_leg();
+        self.leg_heading.clear();
         self.lateral_rate.reset();
         self.tilt_rad = Vec2::zeros();
         self.tilt_capped = false;
@@ -633,8 +623,8 @@ impl CopterGuidance {
         }
     }
 
-    /// Flies toward the waypoint, turning along the leg ([`face`](Self::face)): the lateral loop gives
-    /// roll/pitch (once per navigation period, held in between) and the altitude loop gives
+    /// Flies toward the waypoint, turning the heading-hold target along the leg
+    /// (`waypoint_yaw_radps`) or yielding it (`heading_yield_s`): the lateral loop gives roll/pitch (once per navigation period, held in between) and the altitude loop gives
     /// thrust (every tick), toward an altitude target that descends no faster than
     /// `max_descent_mps`, braking to stop on the waypoint, and no further than
     /// [`ALTITUDE_LEASH_M`] below the vehicle.
@@ -649,78 +639,15 @@ impl CopterGuidance {
             waypoint_command.altitude_m,
             estimated_state.position_m.z,
         );
-        self.face(dt, waypoint_command.position_m, estimated_state);
+        let heading_rad = self.leg_heading.target_rad(
+            dt,
+            &self.config,
+            self.heading,
+            waypoint_command.position_m,
+            estimated_state,
+        );
+        self.set_heading_target(heading_rad, estimated_state);
         self.fly_to(dt, waypoint_command, target, estimated_state)
-    }
-
-    /// Slews the heading-hold target toward the direction of the leg to `waypoint_m`, by at
-    /// most `waypoint_yaw_radps · dt` the shorter way round, unless the leg has yielded its
-    /// heading ([`yields_heading`](Self::yields_heading)). Holds the heading on a leg shorter
-    /// than `waypoint_yaw_min_leg_m`, with the slew off, and on a non-finite position or
-    /// waypoint (input policy).
-    fn face(&mut self, dt: f32, waypoint_m: Vec2, estimated_state: &VehicleState) {
-        let start_m = self.leg_start_m(waypoint_m, estimated_state);
-        if self.yields_heading(dt, estimated_state) {
-            return;
-        }
-        let rate_radps = self.config.waypoint_yaw_radps;
-        let leg_m = waypoint_m - start_m;
-        // `>` is false for NaN: a non-finite leg holds.
-        if !(rate_radps > 0.0 && leg_m.norm() > self.config.waypoint_yaw_min_leg_m) {
-            return;
-        }
-        let bearing_rad = libm::atan2f(leg_m.y, leg_m.x);
-        let step_rad = rate_radps * dt;
-        let turn_rad = wrap_angle(bearing_rad - self.heading).clamp(-step_rad, step_rad);
-        self.set_heading_target(self.heading + turn_rad, estimated_state);
-    }
-
-    /// Where the leg to `waypoint_m` began. A new waypoint starts a leg from the vehicle's
-    /// position, with nothing stuck; a non-finite position starts none, so the next tick
-    /// retries.
-    fn leg_start_m(&mut self, waypoint_m: Vec2, estimated_state: &VehicleState) -> Vec2 {
-        if let Some((start_m, to_m)) = self.leg_m
-            && to_m == waypoint_m
-        {
-            return start_m;
-        }
-        self.clear_leg();
-        let here_m = estimated_state.position_m.xy();
-        self.leg_m = all_finite(&here_m).then_some((here_m, waypoint_m));
-        here_m
-    }
-
-    /// Forgets the leg and its yield.
-    fn clear_leg(&mut self) {
-        self.leg_m = None;
-        self.stuck_s = 0.0;
-        self.yielding = false;
-    }
-
-    /// Whether this leg has yielded its heading, after the heading has been stuck (more than
-    /// `heading_yield_rad` off the target, yawing toward it at under
-    /// [`STUCK_YAW_RATE_RADPS`]) for `heading_yield_s`: the heading-hold target then follows
-    /// the vehicle's heading. The body yaw rate stands in for the heading's rate, as it does
-    /// near level. Never with `heading_yield_s` at 0 or a non-finite heading.
-    fn yields_heading(&mut self, dt: f32, estimated_state: &VehicleState) -> bool {
-        let heading_rad = estimated_state.heading_rad;
-        if !(self.config.heading_yield_s > 0.0 && heading_rad.is_finite()) {
-            return false;
-        }
-        if !self.yielding {
-            let error_rad = wrap_angle(self.heading - heading_rad);
-            let toward_radps = error_rad.signum() * estimated_state.angular_velocity_radps.z;
-            // False for a NaN error or rate: not stuck.
-            let stuck = error_rad.abs() > self.config.heading_yield_rad
-                && toward_radps < STUCK_YAW_RATE_RADPS;
-            self.stuck_s = if stuck { self.stuck_s + dt } else { 0.0 };
-            self.yielding = self.stuck_s > self.config.heading_yield_s;
-            if !self.yielding {
-                return false;
-            }
-        }
-        self.heading = wrap_angle(heading_rad);
-        true
     }
 
     /// Lands at the command's position: flies there as to a waypoint, with an altitude target
