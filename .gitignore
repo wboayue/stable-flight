@@ -35,4 +35,5 @@ firmware/*/*.bin
 /sandbox
 
 # RealFlight models (RFX) downloaded for setup; linked from their source, not redistributed
-/models
+/models-cache
+
