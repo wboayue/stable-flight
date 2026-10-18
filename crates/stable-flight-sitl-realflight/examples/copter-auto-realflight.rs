@@ -12,13 +12,13 @@
 //!
 //! The script path is the first argument (default `flights/figure_eight.csv`); the RealFlight
 //! host defaults to `10.211.55.3:8080` via `--host`; the link addresses are `--link-bind` and
-//! `--link-peer`.
+//! `--link-peer`. `--record` writes one row per tick (`CopterColumns`).
 //!
 //! ```text
 //! cargo run -p stable-flight-bridge   # once, in a second terminal
 //! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight
 //! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- --end loop
-//! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- --end land
+//! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- --end land --record fig8.csv
 //! cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/wide.csv --host 192.168.1.20:8080
 //! ```
 
@@ -35,6 +35,7 @@ use stable_flight::stabilizers::copter::CopterStabilizer;
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::ScriptCommander;
+use stable_flight_sitl::recorder::{CopterColumns, CsvRecorder};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
 use stable_flight_sitl_realflight::{
@@ -65,6 +66,9 @@ struct Args {
     /// The bridge's link address.
     #[arg(long, default_value = DEFAULT_BRIDGE_ADDR)]
     link_peer: String,
+    /// Write one CSV row per tick to this file.
+    #[arg(long)]
+    record: Option<String>,
 }
 
 /// `--end`: the core [`RouteEnd`], as a CLI value.
@@ -129,8 +133,17 @@ fn main() {
     let mut fc_link = FcLink::<32, 16>::new();
     let (mut poller, telemetry) = fc_link.wire(link_rx, link_tx);
 
-    let mut flight_loop =
-        FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
+    let recorder = CsvRecorder::create(args.record.as_deref(), CopterColumns)
+        .expect("failed to create the record CSV");
+
+    let mut flight_loop = FlightLoop::new(
+        commander,
+        vehicle,
+        guidance,
+        stabilizer,
+        mixer,
+        (telemetry, recorder),
+    );
 
     // Ctrl-C stops the loop cleanly (RealFlightVehicle re-enables RC control on drop).
     let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");
