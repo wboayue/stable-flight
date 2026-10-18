@@ -390,6 +390,45 @@ fn a_leg_keeps_the_direction_it_began_with() {
     }
 }
 
+/// A shortest-leg change applies from the next leg, since a leg's direction is set when it
+/// begins; a slew change applies at once.
+#[test]
+fn a_config_change_mid_leg_applies_as_documented() {
+    let east = waypoint_toward(0.0, 100.0);
+    let state = state_at(0.0, 0.0, 0.0);
+    // (case, config set after the first tick, expected heading after 1 s)
+    let cases = [
+        (
+            "longer shortest leg",
+            CopterGuidanceConfig {
+                waypoint_yaw_min_leg_m: 200.0,
+                ..never_yielding()
+            },
+            turned_by(1.0),
+        ),
+        (
+            "slew off",
+            CopterGuidanceConfig {
+                waypoint_yaw_radps: 0.0,
+                ..never_yielding()
+            },
+            turned_by(0.004),
+        ),
+    ];
+    for (case, config, expected) in cases {
+        let mut guidance = CopterGuidance::new(never_yielding());
+        guidance.prime(&VehicleState::default());
+        guidance.guide(0.004, FlightRegime::Copter, &east, &state);
+        guidance.set_config(config).expect("valid config");
+        let mut heading = f32::NAN;
+        for _ in 0..ticks_for(1.0) - 1 {
+            heading = heading_of(guidance.guide(0.004, FlightRegime::Copter, &east, &state));
+        }
+        let error = wrap_angle(heading - expected).abs();
+        assert!(error < 1e-4, "{case}: {heading}, expected {expected}");
+    }
+}
+
 /// Waypoint flight turns at the slew rate per second at any loop rate, and arrives on the
 /// bearing without overshooting it.
 #[test]
