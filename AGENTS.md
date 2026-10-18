@@ -376,9 +376,13 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 7. Before planning a fix to flight behavior, measure the candidates (settings and designs) on
    the sim with a throwaway `#[ignore]` sweep test in a scratch worktree, and put the table in
    the plan. Rejected designs go in the PR with their numbers.
-8. Tune a new airframe's loops on a sim model sized from it (the `.acf` or its measurements,
-   plus probe flights), then confirm in RealFlight or X-Plane: trial there confounds coupled
-   loops and ends in crashes (the Alia's hover from a model, #351; its plane side, #392).
+8. Tune a new airframe's loops on a sim model sized from it (X-Plane's `.acf`, RealFlight's
+   `.RFX`, or its measurements, plus probe flights), then confirm in RealFlight or X-Plane: trial
+   there confounds coupled loops and ends in crashes (the Alia's hover from a model, #351; its
+   plane side, #392). An `.RFX` is a zip; its `.rfvehicle` holds the mass, motors, props, and
+   surfaces. The RealFlight models' RFX files are available (ArduPilot
+   [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models)
+   for the Titan Cobra; the eXplora and QuadCopterX from the maintainer).
 
 ## Pre-PR checklist
 
