@@ -3,7 +3,9 @@ use mavlink::Message;
 use stable_flight_link::stable_flight::Saturation;
 
 use super::*;
-use crate::test_support::{at_altitude, earth, home_zs, landed_states, throttles};
+use crate::test_support::{
+    at_altitude, earth, home_zs, hovering, landed_states, throttles, vtol_states,
+};
 
 const STREAM: Duration = Duration::from_millis(100);
 const SLOW: Duration = Duration::from_secs(1);
@@ -11,7 +13,7 @@ const MS: Duration = Duration::from_millis(1);
 
 /// A service whose flight controller appeared at `t0`.
 fn service(earth: Option<FlatEarth>, t0: Instant) -> StateService {
-    let mut service = StateService::new(earth, STREAM, SLOW);
+    let mut service = StateService::new(earth, VehicleKind::Copter, STREAM, SLOW);
     service.fc_appeared(t0, &mut Outbox::default());
     service
 }
@@ -126,6 +128,89 @@ fn sends_home_and_landed_state_as_soon_as_they_change() {
             landed_states(&out.to_gcs) == Vec::from_iter(landed),
             "tick {i}"
         );
+    }
+}
+
+#[test]
+fn sends_the_vtol_state_as_soon_as_it_changes() {
+    use FlightMode::{Copter, Plane, ToCopter, ToPlane};
+    use MavVtolState::{
+        MAV_VTOL_STATE_FW as FW, MAV_VTOL_STATE_MC as MC, MAV_VTOL_STATE_TRANSITION_TO_FW as TO_FW,
+        MAV_VTOL_STATE_TRANSITION_TO_MC as TO_MC, MAV_VTOL_STATE_UNDEFINED as UNDEFINED,
+    };
+    // (vehicle, flown mode per poll, expected vtol state sent by each poll). Polls are 10 ms
+    // apart after the first, so the 1 Hz timer doesn't fire again.
+    let rows = [
+        (
+            VehicleKind::Quadplane,
+            vec![Copter, Copter, ToPlane, Plane, Plane, ToCopter, Copter],
+            vec![
+                Some(MC),
+                None,
+                Some(TO_FW),
+                Some(FW),
+                None,
+                Some(TO_MC),
+                Some(MC),
+            ],
+        ),
+        (
+            VehicleKind::Tailsitter,
+            vec![Plane, ToCopter],
+            vec![Some(FW), Some(TO_MC)],
+        ),
+        (
+            VehicleKind::Copter,
+            vec![Copter, Plane, Copter],
+            vec![Some(UNDEFINED), None, None],
+        ),
+    ];
+    for (vehicle, modes, expected) in rows {
+        let t0 = Instant::now();
+        let mut service = StateService::new(None, vehicle, STREAM, SLOW);
+        service.fc_appeared(t0, &mut Outbox::default());
+        service.on_state(&at_altitude(10.0), true, ControlMode::Attitude);
+        for (i, (mode, vtol)) in modes.into_iter().zip(expected).enumerate() {
+            service.on_flight_mode(mode);
+            let mut out = Outbox::default();
+            service.poll(t0 + i as u32 * 10 * MS, &mut out);
+            check!(
+                vtol_states(&out.to_gcs) == Vec::from_iter(vtol),
+                "{vehicle:?} poll {i}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_hovering_tailsitter_reports_a_steady_attitude_and_heading() {
+    let t0 = Instant::now();
+    let mut service = StateService::new(Some(earth()), VehicleKind::Tailsitter, STREAM, SLOW);
+    service.fc_appeared(t0, &mut Outbox::default());
+    for (i, pitch_deg) in [89.9_f32, 90.0, 90.1].into_iter().enumerate() {
+        let mut state = hovering(30.0, pitch_deg);
+        state.position_m = [0.0, 0.0, 10.0].into();
+        service.on_state(&state, true, ControlMode::Attitude);
+        let mut out = Outbox::default();
+        service.poll(t0 + i as u32 * STREAM, &mut out);
+        for msg in &out.to_gcs {
+            match msg {
+                MavMessage::ATTITUDE(d) => {
+                    check!(d.roll.abs() < 1e-3, "pitch {pitch_deg}°: roll {}", d.roll);
+                    check!(
+                        (d.yaw.to_degrees() - 30.0).abs() < 0.1,
+                        "pitch {pitch_deg}°"
+                    );
+                }
+                MavMessage::VFR_HUD(d) => {
+                    check!(d.heading == 30, "pitch {pitch_deg}°");
+                }
+                MavMessage::GLOBAL_POSITION_INT(d) => {
+                    check!(d.hdg.abs_diff(3000) <= 10, "pitch {pitch_deg}°: {}", d.hdg);
+                }
+                _ => {}
+            }
+        }
     }
 }
 

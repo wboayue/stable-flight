@@ -8,8 +8,8 @@ use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::{ConstantCommander, NullVehicle};
 use stable_flight::{
-    Command, ControlInput, FlightLoop, FlightModeReport, LandCommand, Saturation, Vec2,
-    VehicleState,
+    Command, ControlInput, FlightLoop, FlightMode, FlightModeReport, FlightRegime, LandCommand,
+    Saturation, Vec2, VehicleState,
 };
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::loopback::{Loopback, LoopbackLink};
@@ -19,7 +19,7 @@ use stable_flight_link::{MAX_FRAME_LEN, Output, ParamRequest, RecvMessage, SendM
 use super::*;
 use crate::test_support::{
     GCS, at_altitude, earth, heartbeat, home_zs, landed_states, param, param_value_of, read_index,
-    request_list, set, throttles,
+    request_list, set, throttles, vtol_states,
 };
 
 /// A bridge whose flight controller is up, with params `A` (index 0) = 1.0 and `B` = 2.0 cached.
@@ -569,6 +569,61 @@ fn lands_at_the_latest_position_and_reports_landing_while_the_heartbeat_shows_it
             if a.command == MavCmd::MAV_CMD_NAV_LAND && a.result == MavResult::MAV_RESULT_ACCEPTED
     )));
     check!(landed(&out) == [MavLandedState::MAV_LANDED_STATE_LANDING]);
+}
+
+#[test]
+fn a_vtol_reports_its_type_and_state_and_transitions_on_the_ground_stations_command() {
+    let t0 = Instant::now();
+    let ms = Duration::from_millis;
+    let mut bridge = Bridge::new(BridgeConfig {
+        vehicle: VehicleKind::Quadplane,
+        ..BridgeConfig::default()
+    });
+    let flying = |mode| Downlink::Heartbeat {
+        armed: true,
+        mode: ControlMode::Waypoint,
+        flight_mode: FlightModeReport {
+            mode,
+            refusal: None,
+        },
+        link_ok: true,
+    };
+    let mut out = Outbox::default();
+    bridge.on_downlink(&flying(FlightMode::Copter), t0, &mut out);
+    bridge.on_downlink(&Downlink::State(at_altitude(20.0)), t0, &mut out);
+    bridge.poll(t0, &mut out);
+    let heartbeat_types: Vec<_> = out
+        .to_gcs
+        .iter()
+        .filter_map(|m| match m {
+            MavMessage::HEARTBEAT(d) => Some(d.mavtype),
+            _ => None,
+        })
+        .collect();
+    check!(heartbeat_types == [MavType::MAV_TYPE_VTOL_FIXEDROTOR]);
+    check!(vtol_states(&out.to_gcs) == [MavVtolState::MAV_VTOL_STATE_MC]);
+
+    let mut out = Outbox::default();
+    let to_plane = MavMessage::COMMAND_LONG(COMMAND_LONG_DATA {
+        command: MavCmd::MAV_CMD_DO_VTOL_TRANSITION,
+        param1: MavVtolState::MAV_VTOL_STATE_FW as u8 as f32,
+        target_system: 1,
+        target_component: 1,
+        ..Default::default()
+    });
+    bridge.on_mavlink(&GCS, &to_plane, t0 + ms(10), &mut out);
+    check!(controls(&out) == [Control::Regime(FlightRegime::Plane)]);
+
+    let mut out = Outbox::default();
+    bridge.on_downlink(&flying(FlightMode::ToPlane), t0 + ms(200), &mut out);
+    bridge.poll(t0 + ms(200), &mut out);
+    check!(out.to_gcs.iter().any(|m| matches!(
+        m,
+        MavMessage::COMMAND_ACK(a)
+            if a.command == MavCmd::MAV_CMD_DO_VTOL_TRANSITION
+                && a.result == MavResult::MAV_RESULT_ACCEPTED
+    )));
+    check!(vtol_states(&out.to_gcs) == [MavVtolState::MAV_VTOL_STATE_TRANSITION_TO_FW]);
 }
 
 #[test]

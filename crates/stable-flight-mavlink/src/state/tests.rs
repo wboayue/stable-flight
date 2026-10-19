@@ -287,16 +287,34 @@ fn home_position_is_global_and_local_ned_with_unknown_orientation() {
 }
 
 #[test]
-fn extended_sys_state_reports_the_landed_state_and_no_vtol_mode() {
+fn extended_sys_state_reports_the_landed_and_vtol_states() {
     use MavLandedState as L;
+    use MavVtolState as V;
 
     for landed_state in [
         L::MAV_LANDED_STATE_UNDEFINED,
         L::MAV_LANDED_STATE_ON_GROUND,
         L::MAV_LANDED_STATE_IN_AIR,
     ] {
-        let data = extended_sys_state(landed_state);
-        check!(data.landed_state == landed_state);
-        check!(data.vtol_state == MavVtolState::MAV_VTOL_STATE_UNDEFINED);
+        for vtol_state in [V::MAV_VTOL_STATE_UNDEFINED, V::MAV_VTOL_STATE_FW] {
+            let data = extended_sys_state(landed_state, vtol_state);
+            check!(data.landed_state == landed_state);
+            check!(data.vtol_state == vtol_state);
+        }
+    }
+}
+
+#[test]
+fn each_flight_mode_maps_to_its_vtol_state() {
+    use MavVtolState as V;
+
+    let rows = [
+        (FlightMode::Copter, V::MAV_VTOL_STATE_MC),
+        (FlightMode::Plane, V::MAV_VTOL_STATE_FW),
+        (FlightMode::ToPlane, V::MAV_VTOL_STATE_TRANSITION_TO_FW),
+        (FlightMode::ToCopter, V::MAV_VTOL_STATE_TRANSITION_TO_MC),
+    ];
+    for (mode, expected) in rows {
+        check!(vtol_state(mode) == expected, "{mode:?}");
     }
 }

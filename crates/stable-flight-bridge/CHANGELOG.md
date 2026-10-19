@@ -7,9 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **VTOL** (#333): `--vehicle-type copter|tailsitter|quadplane` sets the `HEARTBEAT` type
+  (`QUADROTOR`, `VTOL_TAILSITTER_DUOROTOR`, `VTOL_FIXEDROTOR`). A VTOL reports its VTOL state
+  in `EXTENDED_SYS_STATE` and takes `MAV_CMD_DO_VTOL_TRANSITION` (QGC's transition button) as
+  a `Control::Regime` request, acked once the flight controller shows it and withdrawn when
+  refused. A tailsitter's attitude and heading are reported in its hover view while it
+  hovers.
+
 ### Changed
 
-- Speaks link `PROTOCOL_VERSION` 6 (#391); update the flight controller with it.
+- Speaks link `PROTOCOL_VERSION` 8 (#391, #333); update the flight controller with it.
 - `VFR_HUD` airspeed is the flight controller's airspeed when it reports one (RealFlight
   does), ground speed otherwise.
 
