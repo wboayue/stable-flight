@@ -3,6 +3,8 @@
 use assert2::check;
 use mavlink::MavHeader;
 use mavlink::common::*;
+use stable_flight_link::stable_flight::nalgebra::UnitQuaternion;
+use stable_flight_link::stable_flight::view::tailsitter_rotation;
 use stable_flight_link::stable_flight::{ControlMode, FlightModeReport, VehicleState};
 use stable_flight_link::{Downlink, ParamValue};
 use stable_flight_mavlink::{DEFAULT_ORIGIN, FlatEarth};
@@ -125,6 +127,32 @@ pub(crate) fn landed_states(msgs: &[MavMessage]) -> Vec<MavLandedState> {
     msgs.iter()
         .filter_map(|m| match m {
             MavMessage::EXTENDED_SYS_STATE(d) => Some(d.landed_state),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A tailsitter at body pitch `pitch_deg` (90 is nose-up hover), facing `heading_deg` in the
+/// hover view, with its body Euler angles filled in from that attitude.
+pub(crate) fn hovering(heading_deg: f32, pitch_deg: f32) -> VehicleState {
+    let view = UnitQuaternion::from_euler_angles(0.0, 0.0, heading_deg.to_radians());
+    // Body = view turned back +90° in pitch, then tipped `pitch_deg - 90` more.
+    let body = view
+        * UnitQuaternion::from_euler_angles(0.0, (pitch_deg - 90.0).to_radians(), 0.0)
+        * tailsitter_rotation().inverse();
+    VehicleState {
+        attitude: body,
+        angular_velocity_radps: [0.1, 0.2, 0.3].into(),
+        ..Default::default()
+    }
+    .rotate_body(&UnitQuaternion::identity())
+}
+
+/// The VTOL state of each `EXTENDED_SYS_STATE` in `msgs`.
+pub(crate) fn vtol_states(msgs: &[MavMessage]) -> Vec<MavVtolState> {
+    msgs.iter()
+        .filter_map(|m| match m {
+            MavMessage::EXTENDED_SYS_STATE(d) => Some(d.vtol_state),
             _ => None,
         })
         .collect()

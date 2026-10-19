@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `vtol_state(FlightMode)` (#333): a VTOL's `MAV_VTOL_STATE` (`MC`, `FW`, and the
+  transitions), as PX4 maps it.
+
 ### Changed
+
+- **Breaking:** `extended_sys_state` takes the `vtol_state` to report (#333);
+  `MAV_VTOL_STATE_UNDEFINED` for a vehicle that isn't a VTOL.
 
 - `heartbeat` maps `ControlMode::AbsoluteRate` to `GUIDED` (offboard rates, neither manual
   nor stabilized) (#124).

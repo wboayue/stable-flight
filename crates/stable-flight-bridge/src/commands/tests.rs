@@ -1,11 +1,17 @@
 use assert2::check;
 
 use super::*;
-use stable_flight_link::stable_flight::Command;
+use stable_flight_link::stable_flight::{Command, FlightMode, ModeRefusal};
 
 use crate::test_support::GCS;
 
 const TIMEOUT: Duration = Duration::from_secs(1);
+
+/// Flying copter, refusing nothing.
+const COPTER: FlightModeReport = FlightModeReport {
+    mode: FlightMode::Copter,
+    refusal: None,
+};
 
 fn arm_disarm(param1: f32, param2: f32) -> COMMAND_LONG_DATA {
     COMMAND_LONG_DATA {
@@ -32,6 +38,7 @@ fn fc(armed: bool) -> Option<FcView> {
     Some(FcView {
         armed,
         mode: ControlMode::Attitude,
+        flight_mode: FlightModeReport::default(),
         position_m: Some(Vec2::new(3.0, 4.0)),
     })
 }
@@ -93,7 +100,7 @@ fn answers_each_request_by_the_flight_controllers_state() {
         ),
     ];
     for (case, param1, param2, fc, uplink, ack) in cases {
-        let mut service = CommandService::new(TIMEOUT);
+        let mut service = CommandService::new(TIMEOUT, false);
         let mut out = Outbox::default();
         let handled = service.on_command_long(
             &GCS,
@@ -143,7 +150,7 @@ fn acks_once_the_heartbeat_confirms_or_fails_at_the_timeout() {
     for (case, heartbeats, poll_ms, expected) in cases {
         let t0 = Instant::now();
         let ms = Duration::from_millis;
-        let mut service = CommandService::new(TIMEOUT);
+        let mut service = CommandService::new(TIMEOUT, false);
         service.on_command_long(
             &GCS,
             &arm_disarm(1.0, 0.0),
@@ -155,7 +162,7 @@ fn acks_once_the_heartbeat_confirms_or_fails_at_the_timeout() {
         let mut out = Outbox::default();
         for &(at_ms, armed) in heartbeats {
             service.poll(t0 + ms(at_ms), &mut out);
-            service.on_fc_heartbeat(armed, ControlMode::Attitude, &mut out);
+            service.on_fc_heartbeat(armed, ControlMode::Attitude, COPTER, &mut out);
         }
         service.poll(t0 + ms(poll_ms), &mut out);
         check!(acks(&out) == expected, "{case}");
@@ -163,7 +170,7 @@ fn acks_once_the_heartbeat_confirms_or_fails_at_the_timeout() {
         // Settled or not, a later poll and heartbeat ack nothing more.
         let mut later = Outbox::default();
         service.poll(t0 + ms(5000), &mut later);
-        service.on_fc_heartbeat(true, ControlMode::Attitude, &mut later);
+        service.on_fc_heartbeat(true, ControlMode::Attitude, COPTER, &mut later);
         let settled = !expected.is_empty();
         check!(later.to_gcs.is_empty() == settled, "{case}: acked once");
     }
@@ -172,7 +179,7 @@ fn acks_once_the_heartbeat_confirms_or_fails_at_the_timeout() {
 #[test]
 fn rejects_a_second_request_while_one_is_pending() {
     let t0 = Instant::now();
-    let mut service = CommandService::new(TIMEOUT);
+    let mut service = CommandService::new(TIMEOUT, false);
     let mut out = Outbox::default();
     service.on_command_long(&GCS, &arm_disarm(1.0, 0.0), fc(false), t0, &mut out);
     service.on_command_long(&GCS, &arm_disarm(0.0, 0.0), fc(false), t0, &mut out);
@@ -186,7 +193,7 @@ fn rejects_a_second_request_while_one_is_pending() {
 
 #[test]
 fn leaves_other_commands_to_the_caller() {
-    let mut service = CommandService::new(TIMEOUT);
+    let mut service = CommandService::new(TIMEOUT, false);
     let mut out = Outbox::default();
     let data = COMMAND_LONG_DATA {
         command: MavCmd::MAV_CMD_NAV_TAKEOFF,
@@ -211,6 +218,7 @@ fn lands_at_the_latest_position_only_while_armed_in_the_air() {
         Some(FcView {
             armed,
             mode,
+            flight_mode: FlightModeReport::default(),
             position_m,
         })
     };
@@ -249,7 +257,7 @@ fn lands_at_the_latest_position_only_while_armed_in_the_air() {
         ),
     ];
     for (case, fc, uplink, ack) in cases {
-        let mut service = CommandService::new(TIMEOUT);
+        let mut service = CommandService::new(TIMEOUT, false);
         let mut out = Outbox::default();
         check!(
             service.on_command_long(&GCS, &nav_land(), fc, Instant::now(), &mut out),
@@ -267,12 +275,12 @@ fn lands_at_the_latest_position_only_while_armed_in_the_air() {
 fn acks_a_land_once_the_heartbeat_shows_the_land_mode() {
     let t0 = Instant::now();
     let ms = Duration::from_millis;
-    let mut service = CommandService::new(TIMEOUT);
+    let mut service = CommandService::new(TIMEOUT, false);
     let mut out = Outbox::default();
     service.on_command_long(&GCS, &nav_land(), fc(true), t0, &mut out);
     check!(out.to_gcs.is_empty(), "pending");
 
-    service.on_fc_heartbeat(true, ControlMode::Attitude, &mut out);
+    service.on_fc_heartbeat(true, ControlMode::Attitude, COPTER, &mut out);
     service.poll(t0 + ms(200), &mut out);
     check!(out.to_gcs.is_empty(), "not landing yet");
 
@@ -281,14 +289,204 @@ fn acks_a_land_once_the_heartbeat_shows_the_land_mode() {
     check!(acks(&out) == [MavResult::MAV_RESULT_TEMPORARILY_REJECTED]);
 
     let mut out = Outbox::default();
-    service.on_fc_heartbeat(true, ControlMode::Land, &mut out);
+    service.on_fc_heartbeat(true, ControlMode::Land, COPTER, &mut out);
     check!(acks_of(MavCmd::MAV_CMD_NAV_LAND, &out) == [MavResult::MAV_RESULT_ACCEPTED]);
 
     // A land that never shows fails at the timeout.
-    let mut service = CommandService::new(TIMEOUT);
+    let mut service = CommandService::new(TIMEOUT, false);
     let mut out = Outbox::default();
     service.on_command_long(&GCS, &nav_land(), fc(true), t0, &mut out);
-    service.on_fc_heartbeat(true, ControlMode::Attitude, &mut out);
+    service.on_fc_heartbeat(true, ControlMode::Attitude, COPTER, &mut out);
     service.poll(t0 + TIMEOUT, &mut out);
     check!(acks_of(MavCmd::MAV_CMD_NAV_LAND, &out) == [MavResult::MAV_RESULT_FAILED]);
+}
+
+fn transition(state: MavVtolState) -> COMMAND_LONG_DATA {
+    COMMAND_LONG_DATA {
+        command: MavCmd::MAV_CMD_DO_VTOL_TRANSITION,
+        param1: state as u8 as f32,
+        target_system: 1,
+        target_component: 1,
+        ..Default::default()
+    }
+}
+
+/// A live VTOL flight controller, `armed`, flying `mode`.
+fn vtol(armed: bool, mode: FlightMode) -> Option<FcView> {
+    Some(FcView {
+        armed,
+        mode: ControlMode::Waypoint,
+        flight_mode: FlightModeReport {
+            mode,
+            refusal: None,
+        },
+        position_m: Some(Vec2::new(3.0, 4.0)),
+    })
+}
+
+fn regime(regime: FlightRegime) -> Uplink {
+    Uplink::Control(Control::Regime(regime))
+}
+
+#[test]
+fn sends_a_transition_by_the_vehicle_and_its_regime() {
+    use FlightMode::{Copter, Plane, ToCopter, ToPlane};
+    use FlightRegime as R;
+    use MavResult::*;
+    use MavVtolState::{MAV_VTOL_STATE_FW as FW, MAV_VTOL_STATE_MC as MC};
+    // (case, VTOL vehicle, requested state, FC (None: not alive), expected uplink, immediate ack)
+    let cases = [
+        (
+            "to plane",
+            true,
+            FW,
+            vtol(true, Copter),
+            Some(R::Plane),
+            None,
+        ),
+        (
+            "to copter",
+            true,
+            MC,
+            vtol(true, Plane),
+            Some(R::Copter),
+            None,
+        ),
+        (
+            "back mid forward transition",
+            true,
+            MC,
+            vtol(true, ToPlane),
+            Some(R::Copter),
+            None,
+        ),
+        (
+            "already in plane",
+            true,
+            FW,
+            vtol(true, Plane),
+            None,
+            Some(MAV_RESULT_ACCEPTED),
+        ),
+        (
+            "already heading to copter",
+            true,
+            MC,
+            vtol(true, ToCopter),
+            None,
+            Some(MAV_RESULT_ACCEPTED),
+        ),
+        (
+            "not a VTOL state",
+            true,
+            MavVtolState::MAV_VTOL_STATE_TRANSITION_TO_FW,
+            vtol(true, Copter),
+            None,
+            Some(MAV_RESULT_DENIED),
+        ),
+        (
+            "disarmed",
+            true,
+            FW,
+            vtol(false, Copter),
+            None,
+            Some(MAV_RESULT_DENIED),
+        ),
+        (
+            "no flight controller",
+            true,
+            FW,
+            None,
+            None,
+            Some(MAV_RESULT_TEMPORARILY_REJECTED),
+        ),
+        (
+            "a copter",
+            false,
+            FW,
+            vtol(true, Copter),
+            None,
+            Some(MAV_RESULT_UNSUPPORTED),
+        ),
+    ];
+    for (case, is_vtol, state, fc, uplink, ack) in cases {
+        let mut service = CommandService::new(TIMEOUT, is_vtol);
+        let mut out = Outbox::default();
+        check!(
+            service.on_command_long(&GCS, &transition(state), fc, Instant::now(), &mut out),
+            "{case}"
+        );
+        check!(out.to_fc == Vec::from_iter(uplink.map(regime)), "{case}");
+        check!(
+            acks_of(MavCmd::MAV_CMD_DO_VTOL_TRANSITION, &out) == Vec::from_iter(ack),
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn acks_a_transition_once_shown_and_withdraws_one_refused_or_unconfirmed() {
+    use FlightMode::{Copter, ToPlane};
+    use MavResult::*;
+    let report = |mode, refusal| FlightModeReport { mode, refusal };
+    // (case, heartbeats (offset ms, report), then poll at ms, expected ack, withdrawn)
+    let cases = [
+        (
+            "shown by the forward transition",
+            vec![(100, report(Copter, None)), (300, report(ToPlane, None))],
+            400,
+            Some(MAV_RESULT_ACCEPTED),
+            false,
+        ),
+        (
+            "refused for height",
+            vec![(200, report(Copter, Some(ModeRefusal::BelowMinAltitude)))],
+            300,
+            Some(MAV_RESULT_FAILED),
+            true,
+        ),
+        (
+            "refused after an abandoned transition",
+            vec![(200, report(Copter, Some(ModeRefusal::TransitionTimeout)))],
+            300,
+            Some(MAV_RESULT_FAILED),
+            true,
+        ),
+        (
+            "not yet",
+            vec![(200, report(Copter, None))],
+            999,
+            None,
+            false,
+        ),
+        (
+            "times out",
+            vec![(200, report(Copter, None))],
+            1000,
+            Some(MAV_RESULT_FAILED),
+            true,
+        ),
+    ];
+    for (case, heartbeats, poll_ms, expected, withdrawn) in cases {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let mut service = CommandService::new(TIMEOUT, true);
+        let mut sent = Outbox::default();
+        let fw = transition(MavVtolState::MAV_VTOL_STATE_FW);
+        service.on_command_long(&GCS, &fw, vtol(true, Copter), t0, &mut sent);
+        check!(sent.to_fc == [regime(FlightRegime::Plane)], "{case}");
+
+        let mut out = Outbox::default();
+        for (at_ms, report) in heartbeats {
+            service.poll(t0 + ms(at_ms), &mut out);
+            service.on_fc_heartbeat(true, ControlMode::Waypoint, report, &mut out);
+        }
+        service.poll(t0 + ms(poll_ms), &mut out);
+        check!(
+            acks_of(MavCmd::MAV_CMD_DO_VTOL_TRANSITION, &out) == Vec::from_iter(expected),
+            "{case}"
+        );
+        let withdrawal = withdrawn.then(|| regime(FlightRegime::Copter));
+        check!(out.to_fc == Vec::from_iter(withdrawal), "{case}");
+    }
 }

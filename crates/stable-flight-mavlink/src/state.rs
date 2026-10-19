@@ -1,8 +1,8 @@
 //! Builders for the vehicle-state messages: attitude, local and global position, home, VFR_HUD,
-//! and the landed state.
+//! and the landed and VTOL states.
 
 use mavlink::common::*;
-use stable_flight::{Vec3, VehicleState, wrap_angle};
+use stable_flight::{FlightMode, Vec3, VehicleState, wrap_angle};
 
 use crate::geo::FlatEarth;
 
@@ -14,22 +14,56 @@ const DEG_E7: f64 = 1e7;
 const MM_PER_M: f64 = 1000.0;
 const CM_PER_M: f32 = 100.0;
 
-/// `EXTENDED_SYS_STATE` with `landed_state` (e.g. from a [`LandDetector`](crate::LandDetector)).
-/// No VTOL modes: the vehicle reports as a multicopter.
+/// `EXTENDED_SYS_STATE` with `landed_state` (e.g. from a [`LandDetector`](crate::LandDetector))
+/// and `vtol_state`: [`vtol_state`] of the flown mode for a VTOL, `MAV_VTOL_STATE_UNDEFINED`
+/// for any other vehicle, as PX4 reports a non-VTOL.
 ///
 /// # Examples
 ///
 /// ```
-/// use stable_flight_mavlink::extended_sys_state;
-/// use stable_flight_mavlink::mavlink::common::MavLandedState;
+/// use stable_flight::FlightMode;
+/// use stable_flight_mavlink::mavlink::common::{MavLandedState, MavVtolState};
+/// use stable_flight_mavlink::{extended_sys_state, vtol_state};
 ///
-/// let data = extended_sys_state(MavLandedState::MAV_LANDED_STATE_IN_AIR);
+/// let data = extended_sys_state(
+///     MavLandedState::MAV_LANDED_STATE_IN_AIR,
+///     vtol_state(FlightMode::Plane),
+/// );
 /// assert_eq!(data.landed_state, MavLandedState::MAV_LANDED_STATE_IN_AIR);
+/// assert_eq!(data.vtol_state, MavVtolState::MAV_VTOL_STATE_FW);
 /// ```
-pub fn extended_sys_state(landed_state: MavLandedState) -> EXTENDED_SYS_STATE_DATA {
+pub fn extended_sys_state(
+    landed_state: MavLandedState,
+    vtol_state: MavVtolState,
+) -> EXTENDED_SYS_STATE_DATA {
     EXTENDED_SYS_STATE_DATA {
-        vtol_state: MavVtolState::MAV_VTOL_STATE_UNDEFINED,
+        vtol_state,
         landed_state,
+    }
+}
+
+/// A VTOL's `MAV_VTOL_STATE` while it flies `mode`, as PX4 maps its VTOL status
+/// (`mavlink/streams/EXTENDED_SYS_STATE.hpp:79-92`): copter is MC, plane FW, and each
+/// transition is named for where it heads. QGC shows fixed-wing only for FW, so a transition
+/// reads as multirotor there (`Vehicle.cc:1062-1067`).
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::FlightMode;
+/// use stable_flight_mavlink::mavlink::common::MavVtolState;
+/// use stable_flight_mavlink::vtol_state;
+///
+/// assert_eq!(vtol_state(FlightMode::ToPlane), MavVtolState::MAV_VTOL_STATE_TRANSITION_TO_FW);
+/// ```
+pub fn vtol_state(mode: FlightMode) -> MavVtolState {
+    match mode {
+        FlightMode::Copter => MavVtolState::MAV_VTOL_STATE_MC,
+        FlightMode::Plane => MavVtolState::MAV_VTOL_STATE_FW,
+        FlightMode::ToPlane => MavVtolState::MAV_VTOL_STATE_TRANSITION_TO_FW,
+        FlightMode::ToCopter => MavVtolState::MAV_VTOL_STATE_TRANSITION_TO_MC,
+        // `FlightMode` is non-exhaustive: an unmapped mode reports none.
+        _ => MavVtolState::MAV_VTOL_STATE_UNDEFINED,
     }
 }
 

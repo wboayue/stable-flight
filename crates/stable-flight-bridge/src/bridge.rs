@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use mavlink::MavHeader;
 use mavlink::common::*;
-use stable_flight_link::stable_flight::ControlMode;
+use stable_flight_link::stable_flight::{ControlMode, FlightModeReport};
 use stable_flight_link::{Control, Downlink, Uplink};
 use stable_flight_mavlink::FlatEarth;
 
@@ -19,6 +19,7 @@ use crate::outbox::Outbox;
 use crate::params::ParamService;
 use crate::setpoints::SetpointService;
 use crate::state::StateService;
+use crate::vehicle::VehicleKind;
 
 #[cfg(test)]
 mod tests;
@@ -30,8 +31,9 @@ pub(crate) struct BridgeConfig {
     pub(crate) system_id: u8,
     /// MAVLink component id the flight controller appears as.
     pub(crate) component_id: u8,
-    /// The vehicle type the heartbeat reports.
-    pub(crate) vehicle_type: MavType,
+    /// The vehicle the ground station sees: its heartbeat type, VTOL state and transitions,
+    /// and the frame its attitude is shown in.
+    pub(crate) vehicle: VehicleKind,
     /// How long after its last heartbeat the flight controller counts as gone.
     pub(crate) fc_timeout: Duration,
     /// Interval between `HEARTBEAT`s to the ground station.
@@ -65,7 +67,7 @@ impl Default for BridgeConfig {
         Self {
             system_id: 1,
             component_id: 1,
-            vehicle_type: MavType::MAV_TYPE_QUADROTOR,
+            vehicle: VehicleKind::Copter,
             fc_timeout: Duration::from_secs(3),
             heartbeat_interval: Duration::from_secs(1),
             earth: None,
@@ -86,6 +88,7 @@ struct FcStatus {
     last_seen: Instant,
     armed: bool,
     mode: ControlMode,
+    flight_mode: FlightModeReport,
 }
 
 /// Presents a flight controller on the native link as a MAVLink autopilot. The message-by-message
@@ -132,13 +135,18 @@ impl Bridge {
             link_heartbeat: Interval::new(config.link_heartbeat_interval),
             params: ParamService::default(),
             connect: ConnectService::new(
-                config.vehicle_type,
+                config.vehicle.mav_type(),
                 config.heartbeat_interval,
                 config.metadata,
             ),
-            commands: CommandService::new(config.arm_ack_timeout),
+            commands: CommandService::new(config.arm_ack_timeout, config.vehicle.is_vtol()),
             setpoints: SetpointService::new(config.offboard_speed_mps),
-            state: StateService::new(config.earth, config.state_interval, config.slow_interval),
+            state: StateService::new(
+                config.earth,
+                config.vehicle,
+                config.state_interval,
+                config.slow_interval,
+            ),
         }
     }
 
@@ -162,7 +170,12 @@ impl Bridge {
     pub(crate) fn on_downlink(&mut self, msg: &Downlink, now: Instant, out: &mut Outbox) {
         let alive = self.alive_fc(now);
         match msg {
-            Downlink::Heartbeat { armed, mode, .. } => {
+            Downlink::Heartbeat {
+                armed,
+                mode,
+                flight_mode,
+                ..
+            } => {
                 if alive.is_none() {
                     self.params.fc_appeared(now, out);
                     self.connect.fc_appeared(now, out);
@@ -172,8 +185,11 @@ impl Bridge {
                     last_seen: now,
                     armed: *armed,
                     mode: *mode,
+                    flight_mode: *flight_mode,
                 });
-                self.commands.on_fc_heartbeat(*armed, *mode, out);
+                self.state.on_flight_mode(flight_mode.mode);
+                self.commands
+                    .on_fc_heartbeat(*armed, *mode, *flight_mode, out);
             }
             Downlink::Param(param) => self.params.on_param(param, out),
             Downlink::State(state) => {
@@ -225,6 +241,7 @@ impl Bridge {
                 let fc = self.alive_fc(now).map(|fc| FcView {
                     armed: fc.armed,
                     mode: fc.mode,
+                    flight_mode: fc.flight_mode,
                     position_m: self.state.position_m(),
                 });
                 let handled = self.connect.on_command_long(header, data, out)

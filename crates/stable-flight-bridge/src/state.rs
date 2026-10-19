@@ -4,11 +4,12 @@ use std::time::{Duration, Instant};
 
 use mavlink::common::*;
 use stable_flight_link::Output;
-use stable_flight_link::stable_flight::{ControlMode, Vec2, VehicleState};
+use stable_flight_link::stable_flight::{ControlMode, FlightMode, Vec2, VehicleState};
 use stable_flight_mavlink::{FlatEarth, GroundTracker};
 
 use crate::interval::Interval;
 use crate::outbox::Outbox;
+use crate::vehicle::VehicleKind;
 
 #[cfg(test)]
 mod tests;
@@ -19,7 +20,11 @@ mod tests;
 /// - every `state_interval`: `ATTITUDE`, `LOCAL_POSITION_NED`, `GLOBAL_POSITION_INT`, `VFR_HUD`,
 ///   and one `NAMED_VALUE_INT` per saturation flag (`SAT_*`, see
 ///   [`saturation`](stable_flight_mavlink::saturation));
-/// - every `slow_interval`, and as soon as either changes: `HOME_POSITION`, `EXTENDED_SYS_STATE`.
+/// - every `slow_interval`, and as soon as either changes: `HOME_POSITION`, `EXTENDED_SYS_STATE`
+///   (its VTOL state from the heartbeat's flown mode, for a VTOL [`VehicleKind`]).
+///
+/// Attitude and heading are shown as the [`VehicleKind`] shows them (a hovering tailsitter in
+/// its hover view: [`VehicleKind::shown`]).
 ///
 /// The flight controller streams state faster than this (50 Hz by default); only the latest is
 /// kept, but every one updates home and the landed state, with the arm state from its latest
@@ -34,6 +39,7 @@ mod tests;
 #[derive(Debug)]
 pub(crate) struct StateService {
     earth: Option<FlatEarth>,
+    vehicle: VehicleKind,
     /// When the flight controller first appeared: the zero of `time_boot_ms`.
     boot: Option<Instant>,
     session: Session,
@@ -53,18 +59,24 @@ struct Session {
     home_changed: bool,
     /// The landed state changed since the last poll: send `EXTENDED_SYS_STATE` now.
     landed_changed: bool,
+    /// The flown mode, per the latest heartbeat.
+    flight_mode: FlightMode,
+    /// The VTOL state changed since the last poll: send `EXTENDED_SYS_STATE` now.
+    vtol_changed: bool,
 }
 
 impl StateService {
-    /// Projects global position through `earth` (none sends no global position or home), with
-    /// streams every `state_interval` and the slow ones every `slow_interval`.
+    /// Projects global position through `earth` (none sends no global position or home) for a
+    /// `vehicle`, with streams every `state_interval` and the slow ones every `slow_interval`.
     pub(crate) fn new(
         earth: Option<FlatEarth>,
+        vehicle: VehicleKind,
         state_interval: Duration,
         slow_interval: Duration,
     ) -> Self {
         Self {
             earth,
+            vehicle,
             boot: None,
             session: Session::default(),
             stream: Interval::new(state_interval),
@@ -88,6 +100,14 @@ impl StateService {
         session.home_changed |= changes.home;
         session.landed_changed |= changes.landed;
         session.latest = Some(state.clone());
+    }
+
+    /// The flight controller's heartbeat reported flying `mode`.
+    pub(crate) fn on_flight_mode(&mut self, mode: FlightMode) {
+        let session = &mut self.session;
+        session.vtol_changed |=
+            self.vehicle.vtol_state(mode) != self.vehicle.vtol_state(session.flight_mode);
+        session.flight_mode = mode;
     }
 
     /// The latest state's horizontal position (north, east), if finite; none before a state
@@ -114,6 +134,8 @@ impl StateService {
         let Some(state) = &session.latest else {
             return;
         };
+        let shown = self.vehicle.shown(state, session.flight_mode);
+        let state = &*shown;
         // Truncates after about 49 days, like any `time_boot_ms`.
         let time_boot_ms = self.boot.map_or(0, |boot| {
             now.saturating_duration_since(boot).as_millis() as u32
@@ -158,9 +180,15 @@ impl StateService {
                 stable_flight_mavlink::home_position(earth, home_m),
             ));
         }
-        if slow_due | std::mem::take(&mut session.landed_changed) {
+        if slow_due
+            | std::mem::take(&mut session.landed_changed)
+            | std::mem::take(&mut session.vtol_changed)
+        {
             out.to_gcs.push(MavMessage::EXTENDED_SYS_STATE(
-                stable_flight_mavlink::extended_sys_state(session.ground.landed_state()),
+                stable_flight_mavlink::extended_sys_state(
+                    session.ground.landed_state(),
+                    self.vehicle.vtol_state(session.flight_mode),
+                ),
             ));
         }
     }

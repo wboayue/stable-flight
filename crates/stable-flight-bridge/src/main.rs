@@ -6,6 +6,7 @@
 //! cargo run -p stable-flight-bridge
 //! cargo run -p stable-flight-bridge -- --gcs udpout:192.168.1.20:14550
 //! cargo run -p stable-flight-bridge -- --origin 47.6,-122.3,56
+//! cargo run -p stable-flight-bridge -- --vehicle-type tailsitter
 //! cargo run -p stable-flight-bridge -- --http-bind 0.0.0.0:14580 --http-url http://192.168.1.30:14580
 //! ```
 
@@ -36,12 +37,14 @@ mod setpoints;
 mod state;
 #[cfg(test)]
 mod test_support;
+mod vehicle;
 
 use bridge::{Bridge, BridgeConfig};
 use cli::{parse_origin, parse_speed};
 use idle::IdleBackoff;
 use metadata::{ComponentMetadata, MetadataFiles, base_url, copter_params};
 use pump::Pump;
+use vehicle::VehicleKind;
 
 /// Bridges a flight controller's native link to a MAVLink ground station.
 #[derive(Parser)]
@@ -75,6 +78,10 @@ struct Args {
     /// carries none).
     #[arg(long, default_value = "5", value_parser = parse_speed)]
     offboard_speed: f32,
+    /// The airframe, as the ground station sees it: its type, a VTOL's state and transition
+    /// command, and a tailsitter's hover attitude.
+    #[arg(long, value_enum, default_value_t = VehicleKind::Copter)]
+    vehicle_type: VehicleKind,
     /// Serve no param metadata: QGC lists the params without descriptions, units, or ranges.
     #[arg(long, conflicts_with_all = ["http_url"])]
     no_metadata: bool,
@@ -122,6 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         link_tx,
         Box::new(gcs),
         Bridge::new(BridgeConfig {
+            vehicle: args.vehicle_type,
             earth,
             metadata,
             offboard_speed_mps: args.offboard_speed,

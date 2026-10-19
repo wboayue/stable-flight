@@ -55,6 +55,7 @@ pub use land_detector::LandDetector;
 pub use saturation::{SATURATION_FLAGS, saturation};
 pub use state::{
     attitude, extended_sys_state, global_position_int, home_position, local_position_ned, vfr_hud,
+    vtol_state,
 };
 
 /// `HEARTBEAT` for a `vehicle_type` (e.g. `MAV_TYPE_QUADROTOR`) with a generic autopilot: the arm state
