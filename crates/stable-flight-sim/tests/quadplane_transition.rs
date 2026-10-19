@@ -10,8 +10,8 @@ use stable_flight::commanders::{
 };
 use stable_flight::guidance::copter::ALTITUDE_LEASH_M;
 use stable_flight::{
-    Command, Commander, FlightMode, ModeRefusal, TelemetryPublisher, TelemetryRecord, Vec3,
-    VehicleState,
+    Command, Commander, FlightMode, FlightRegime, ModeRefusal, TelemetryPublisher, TelemetryRecord,
+    Vec3, VehicleState,
 };
 use stable_flight_sim::{Wind, airframes};
 
@@ -168,6 +168,8 @@ impl LinkedCommander for SilentLink {
     }
 
     fn sync_arm(&mut self, _armed: bool) {}
+
+    fn sync_regime(&mut self, _regime: FlightRegime) {}
 }
 
 /// The link going silent mid forward transition hands over to `HoldCommander`, which asks for

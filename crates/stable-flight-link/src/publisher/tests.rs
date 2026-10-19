@@ -2,7 +2,7 @@ use assert2::check;
 use heapless::spsc::Queue;
 use stable_flight::{
     ActuatorCommand, AttitudeSetpoint, Command, ControlInput, ControlMode, ControlOutput,
-    FlightModeReport, FlightRegime, Saturation, Setpoint, VehicleState,
+    FlightMode, FlightModeReport, FlightRegime, ModeRefusal, Saturation, Setpoint, VehicleState,
 };
 
 use super::*;
@@ -32,6 +32,17 @@ fn tick(dt: Duration, arm: bool) -> Record {
 fn received(companion: &mut LoopbackLink<'_, 64>) -> Vec<Downlink> {
     let mut buf = [0u8; MAX_FRAME_LEN];
     core::iter::from_fn(|| companion.recv_message::<Downlink>(&mut buf).unwrap()).collect()
+}
+
+/// The status texts among what `companion` received.
+fn status_texts(companion: &mut LoopbackLink<'_, 64>) -> Vec<String> {
+    received(companion)
+        .into_iter()
+        .filter_map(|msg| match msg {
+            Downlink::Status(text) => Some(text.as_str().to_string()),
+            _ => None,
+        })
+        .collect()
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -269,15 +280,41 @@ fn announces_each_failsafe_change_once() {
         record.command.input = input;
         publisher.publish(&record.telemetry());
 
-        let status: Vec<_> = received(&mut companion)
-            .into_iter()
-            .filter_map(|msg| match msg {
-                Downlink::Status(text) => Some(text),
-                _ => None,
-            })
-            .collect();
         check!(
-            status.iter().map(|t| t.as_str()).collect::<Vec<_>>() == Vec::from_iter(expected),
+            status_texts(&mut companion) == Vec::from_iter(expected),
+            "tick {i}"
+        );
+    }
+}
+
+#[test]
+fn announces_each_new_mode_refusal_once() {
+    use ModeRefusal::{BelowMinAltitude, OnGround, RollError, TransitionTimeout, Unsupported};
+    // (refusal this tick, expected status text sent)
+    let ticks = [
+        (None, None),
+        (Some(OnGround), Some("Transition refused: on the ground")),
+        (Some(OnGround), None), // unchanged: once
+        (Some(BelowMinAltitude), Some("Transition refused: too low")),
+        (None, None), // flown: nothing to announce
+        (Some(TransitionTimeout), Some("Transition timed out")),
+        (Some(RollError), Some("Transition aborted: roll error")),
+        (Some(Unsupported), Some("Transition refused: not a VTOL")),
+        (None, None),
+        (Some(OnGround), Some("Transition refused: on the ground")), // again after clearing
+    ];
+    let loopback = Loopback::<64>::new();
+    let (fc, mut companion) = loopback.split();
+    let mut publisher = LinkPublisher::new(fc, LinkPublisherConfig::default());
+    for (i, (refusal, expected)) in ticks.into_iter().enumerate() {
+        let mut record = tick(MS(4), false);
+        record.flight_mode = FlightModeReport {
+            mode: FlightMode::Copter,
+            refusal,
+        };
+        publisher.publish(&record.telemetry());
+        check!(
+            status_texts(&mut companion) == Vec::from_iter(expected),
             "tick {i}"
         );
     }

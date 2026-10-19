@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `view::tailsitter_rotation()` (#333): the tailsitter hover view's rotation, which
+  `View::tailsitter` flies in, for showing hover attitude elsewhere (the bridge).
+
 - **Waypoint yaw** (#452): copter waypoint flight turns the heading-hold target along each
   leg, from where the vehicle was when the waypoint began to the waypoint, at
   `CopterGuidanceConfig::waypoint_yaw_radps` (`GUID_YAW_SLEW`, default 60°/s, ArduPilot's
@@ -193,6 +196,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Setpoint::thrust`:** the linear thrust either variant carries.
 
 ### Changed
+
+- **Breaking:** `LinkedCommander::sync_regime` (#333): `FailsafeCommander` hands control back
+  in the regime the fallback flew (copter, for `HoldCommander`), syncing the primary to it, so
+  a plane request from before a link outage doesn't transition the vehicle on the link's
+  return. The handover tick also keeps that regime rather than dropping to the default.
 
 - **Breaking:** `PlaneGuidance` flies waypoint altitude and airspeed by total energy control
   (#454), as ArduPilot's and PX4's TECS: thrust for the total energy (height and airspeed

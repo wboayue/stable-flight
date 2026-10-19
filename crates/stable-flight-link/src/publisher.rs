@@ -4,7 +4,9 @@ use core::time::Duration;
 
 use heapless::spsc::Consumer;
 use stable_flight::timing::Every;
-use stable_flight::{ControlMode, FailsafeState, Saturation, TelemetryPublisher, TelemetryRecord};
+use stable_flight::{
+    ControlMode, FailsafeState, ModeRefusal, Saturation, TelemetryPublisher, TelemetryRecord,
+};
 
 use crate::{Downlink, LinkTx, MAX_FRAME_LEN, Output, ParamValue, Record, SendMessage, StatusText};
 
@@ -54,7 +56,9 @@ impl Default for LinkPublisherConfig {
 /// `link_ok` is `false` while a failsafe flies its fallback (the record's
 /// [`failsafe`](stable_flight::TelemetryRecord::failsafe)), and `true` otherwise. Each change
 /// of failsafe state is announced once as [`Downlink::Status`] text for the pilot ("Link quiet:
-/// holding position", "Link back: move the sticks to take control", "Flying from the link").
+/// holding position", "Link back: move the sticks to take control", "Flying from the link"),
+/// and each new [`ModeRefusal`] in the record's [`flight_mode`](TelemetryRecord::flight_mode)
+/// the same way ("Transition refused: too low").
 ///
 /// # Examples
 ///
@@ -79,6 +83,8 @@ pub struct LinkPublisher<'a, T> {
     send_errors: u32,
     /// The failsafe state last announced, to send [`Downlink::Status`] when it changes.
     failsafe: Option<FailsafeState>,
+    /// The mode refusal last seen, to send [`Downlink::Status`] when a new one appears.
+    refusal: Option<ModeRefusal>,
     /// Limits hit since the last [`Downlink::Output`].
     saturation: Saturation,
 }
@@ -97,6 +103,7 @@ impl<'a, T: LinkTx> LinkPublisher<'a, T> {
             max_params_per_tick: config.max_params_per_tick,
             send_errors: 0,
             failsafe: None,
+            refusal: None,
             saturation: Saturation::default(),
         }
     }
@@ -128,6 +135,13 @@ impl<T: LinkTx> TelemetryPublisher for LinkPublisher<'_, T> {
                 .failsafe
                 .and_then(|state| failsafe_status(state, record.command.input.mode()))
             {
+                self.send(&Downlink::Status(text));
+            }
+        }
+        let refusal = record.flight_mode.refusal;
+        if refusal != self.refusal {
+            self.refusal = refusal;
+            if let Some(text) = refusal.and_then(refusal_status) {
                 self.send(&Downlink::Status(text));
             }
         }
@@ -171,6 +185,22 @@ fn failsafe_status(state: FailsafeState, mode: ControlMode) -> Option<StatusText
         FailsafeState::AwaitingSticks => "Link back: move the sticks to take control",
         FailsafeState::Primary => "Flying from the link",
         // `FailsafeState` is non-exhaustive: a new state announces nothing until mapped here.
+        _ => return None,
+    };
+    // Each text is well under `MAX_STATUS_LEN`.
+    StatusText::try_from(text).ok()
+}
+
+/// What a ground station should tell the pilot when guidance starts refusing a regime for
+/// `refusal`.
+fn refusal_status(refusal: ModeRefusal) -> Option<StatusText> {
+    let text = match refusal {
+        ModeRefusal::Unsupported => "Transition refused: not a VTOL",
+        ModeRefusal::OnGround => "Transition refused: on the ground",
+        ModeRefusal::BelowMinAltitude => "Transition refused: too low",
+        ModeRefusal::TransitionTimeout => "Transition timed out",
+        ModeRefusal::RollError => "Transition aborted: roll error",
+        // `ModeRefusal` is non-exhaustive: a new refusal announces nothing until mapped here.
         _ => return None,
     };
     // Each text is well under `MAX_STATUS_LEN`.

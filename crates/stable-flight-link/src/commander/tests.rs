@@ -1,6 +1,8 @@
 use assert2::check;
 use heapless::spsc::Queue;
-use stable_flight::{AbsoluteAttitudeCommand, AttitudeCommand, RateCommand, WaypointCommand};
+use stable_flight::{
+    AbsoluteAttitudeCommand, AttitudeCommand, FlightRegime, RateCommand, WaypointCommand,
+};
 
 use super::*;
 
@@ -215,4 +217,64 @@ fn sync_arm_overwrites_a_latched_arm() {
         commander.next_command(DT, &VehicleState::default()).arm,
         "a new arm"
     );
+}
+
+fn plane_rate(roll: f32) -> Control {
+    let Control::Command(command) = rate(roll) else {
+        unreachable!("rate is a command");
+    };
+    Control::Command(command.with_regime(FlightRegime::Plane))
+}
+
+#[test]
+fn flies_the_latched_regime_ignoring_a_commands_own() {
+    use FlightRegime::{Copter, Plane};
+    // (case, messages before the tick, expected regime)
+    let ticks = [
+        ("starts copter", vec![], Copter),
+        (
+            "a command's regime is ignored",
+            vec![plane_rate(0.1)],
+            Copter,
+        ),
+        (
+            "a regime request latches",
+            vec![Control::Regime(Plane)],
+            Plane,
+        ),
+        ("and holds across commands", vec![rate(0.2)], Plane),
+        ("and silence", vec![], Plane),
+        (
+            "requests apply in order",
+            vec![Control::Regime(Copter), Control::Regime(Plane)],
+            Plane,
+        ),
+        ("back to copter", vec![Control::Regime(Copter)], Copter),
+    ];
+
+    let mut queue = Queue::<Control, 8>::new();
+    let (mut router, consumer) = queue.split();
+    let mut commander = LinkCommander::new(consumer);
+    for (i, (case, messages, regime)) in ticks.into_iter().enumerate() {
+        for message in messages {
+            router.enqueue(message).expect("room");
+        }
+        let command = commander.next_command(DT, &VehicleState::default());
+        check!(command.regime == regime, "tick {i}: {case}");
+    }
+}
+
+#[test]
+fn sync_regime_overwrites_a_latched_regime() {
+    let mut queue = Queue::<Control, 8>::new();
+    let (mut router, consumer) = queue.split();
+    let mut commander = LinkCommander::new(consumer);
+    router
+        .enqueue(Control::Regime(FlightRegime::Plane))
+        .expect("room");
+    commander.next_command(DT, &VehicleState::default());
+
+    commander.sync_regime(FlightRegime::Copter); // the fallback flew copter
+    let command = commander.next_command(DT, &VehicleState::default());
+    check!(command.regime == FlightRegime::Copter, "dropped");
 }

@@ -146,6 +146,8 @@ fn every_uplink_variant_round_trips() {
         Uplink::Control(Control::Command(worst_case_record().command)),
         Uplink::Control(Control::Arm(true)),
         Uplink::Control(Control::Arm(false)),
+        Uplink::Control(Control::Regime(FlightRegime::Plane)),
+        Uplink::Control(Control::Regime(FlightRegime::Copter)),
         Uplink::Param(ParamRequest::Set {
             name: name("STAB_RATE_RLL_P"),
             value: 0.15,

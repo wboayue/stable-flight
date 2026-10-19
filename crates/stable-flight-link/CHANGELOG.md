@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Control::Regime` (#333): a companion's regime request (e.g. a ground station's VTOL
+  transition). `LinkCommander` latches it like `Arm` and flies it in `Command::regime`.
+- `LinkPublisher` announces each new `ModeRefusal` as `Downlink::Status` text (#333), e.g.
+  "Transition refused: too low".
+
 ### Changed
+
+- **Breaking:** `PROTOCOL_VERSION` 8 (#333): `Control::Regime` changes the `Control` shape.
+- **Breaking:** `LinkCommander` ignores a `Command`'s `regime`, as it ignores its `arm` (#333);
+  request a regime with `Control::Regime`.
 
 - **Breaking:** `PROTOCOL_VERSION` 7 (#391): core `Setpoint::Blend` changes the `Record`
   shape.

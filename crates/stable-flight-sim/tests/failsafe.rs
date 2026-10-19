@@ -1,6 +1,7 @@
 //! Failsafe handover: a companion flies the vehicle over the link (`FcLink::wire_linked`), goes
 //! silent, and comes back. `FailsafeCommander` hands over to `HoldCommander`, which holds the
-//! vehicle where it was, armed, and back to the link once it's heard again.
+//! vehicle where it was, armed, and back to the link once it's heard again, in the regime the
+//! hold flew.
 
 mod common;
 
@@ -8,13 +9,14 @@ use std::time::Duration;
 
 use assert2::check;
 use stable_flight::commanders::{FailsafeCommander, FailsafeConfig, HoldCommander};
-use stable_flight::{Command, ControlInput, Vec3, WaypointCommand};
+use stable_flight::{Command, ControlInput, FlightMode, FlightRegime, Vec3, WaypointCommand};
 use stable_flight_link::fc::{FcLink, FcLinkConfig};
 use stable_flight_link::loopback::{Loopback, LoopbackLink};
 use stable_flight_link::publisher::LinkPublisherConfig;
 use stable_flight_link::{Control, Downlink, MAX_FRAME_LEN, RecvMessage, SendMessage, Uplink};
 use stable_flight_sim::airframes;
 
+use common::quadplane::{QuadPlanePlant, quadplane_pipeline};
 use common::{Plant, TICK};
 
 /// Loopback queue depth, in frames.
@@ -172,5 +174,119 @@ fn holds_position_through_a_link_outage_and_hands_back() {
     check!(
         (altitude_m - ALTITUDE_M).abs() < 0.1,
         "altitude {altitude_m}"
+    );
+}
+
+/// Each flight mode the vehicle's heartbeats have reported since the last call.
+fn flight_modes(
+    companion: &mut LoopbackLink<'_, DEPTH>,
+    buf: &mut [u8; MAX_FRAME_LEN],
+) -> Vec<FlightMode> {
+    std::iter::from_fn(|| {
+        companion
+            .recv_message::<Downlink>(buf)
+            .expect("valid frame")
+    })
+    .filter_map(|message| match message {
+        Downlink::Heartbeat { flight_mode, .. } => Some(flight_mode.mode),
+        _ => None,
+    })
+    .collect()
+}
+
+/// A quadplane the link sent toward plane, brought back to a hover by the hold when the link
+/// goes quiet, stays in the hover when the link returns: the plane request from before the
+/// outage is dropped at the handover, so it doesn't transition again without a new one.
+#[test]
+fn a_vtol_the_hold_brought_to_a_hover_stays_there_when_the_link_returns() {
+    let loopback = Loopback::<DEPTH>::new();
+    let (mut companion, fc_end) = loopback.split();
+    let (rx, tx) = fc_end.into_halves();
+    let mut fc_link = FcLink::<16, 8>::new();
+    let config = FcLinkConfig {
+        publisher: LinkPublisherConfig {
+            heartbeat_interval: HEARTBEAT,
+            ..LinkPublisherConfig::default()
+        },
+        ..FcLinkConfig::default()
+    };
+    let (mut poller, telemetry, link_commander) = fc_link.wire_linked(rx, tx, config);
+    let commander = FailsafeCommander::new(
+        link_commander,
+        HoldCommander::default(),
+        FailsafeConfig::default(),
+    )
+    .expect("valid config");
+    let plant = QuadPlanePlant::clean(airframes::quadplane());
+    let mut flight_loop = quadplane_pipeline(&plant, commander, telemetry);
+
+    let mut buf = [0u8; MAX_FRAME_LEN];
+    let mut recv = [0u8; MAX_FRAME_LEN];
+    // Above the transition's minimum height.
+    let climb = Command::new(
+        true,
+        ControlInput::Waypoint(WaypointCommand {
+            altitude_m: 40.0,
+            ..Default::default()
+        }),
+    );
+    let mut send = |companion: &mut LoopbackLink<'_, DEPTH>, control: Control| {
+        companion
+            .send_message(&Uplink::Control(control), &mut buf)
+            .expect("loopback has room");
+    };
+
+    // Connect, climb, ask for plane, go quiet through the hold's back transition, then talk
+    // again with no new request. (companion, seconds, controls sent at the phase's start)
+    let phases = [
+        (Companion::Talks, 2.0, vec![]),
+        (
+            Companion::Talks,
+            25.0,
+            vec![Control::Arm(true), Control::Command(climb)],
+        ),
+        (
+            Companion::Talks,
+            3.0,
+            vec![Control::Regime(FlightRegime::Plane)],
+        ),
+        (Companion::Silent, 20.0, vec![]),
+        (Companion::Talks, 10.0, vec![]),
+    ];
+    let heartbeat_ticks = common::ticks(HEARTBEAT.as_secs_f32());
+    let mut tick = 0;
+    let mut reports = Vec::new();
+    for (talking, seconds, controls) in phases {
+        for control in controls {
+            send(&mut companion, control);
+        }
+        let mut modes = Vec::new();
+        for _ in 0..common::ticks(seconds) {
+            if talking == Companion::Talks && tick % heartbeat_ticks == 0 {
+                send(&mut companion, Control::Heartbeat);
+            }
+            poller.poll(&mut flight_loop).expect("loopback receives");
+            flight_loop.step(TICK);
+            tick += 1;
+            modes.extend(flight_modes(&mut companion, &mut recv));
+        }
+        reports.push(modes);
+    }
+
+    let [_, climbed, to_plane, outage, back] = &reports[..] else {
+        unreachable!("five phases");
+    };
+    check!(climbed.last() == Some(&FlightMode::Copter));
+    check!(
+        to_plane.contains(&FlightMode::ToPlane),
+        "the plane request started a transition: {to_plane:?}"
+    );
+    check!(
+        outage.last() == Some(&FlightMode::Copter),
+        "the hold flew it back"
+    );
+    check!(
+        back.iter().all(|mode| *mode == FlightMode::Copter),
+        "no transition on the link's return: {back:?}"
     );
 }

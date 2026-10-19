@@ -37,6 +37,25 @@ mod tests;
 /// above float noise (a 90° rotation leaves ~1e-7 off-axis).
 const AXIS_SHARE: f32 = 1e-3;
 
+/// A tailsitter's hover view rotation: the airplane body frame turned −90° in pitch, so
+/// nose-up hover reads level (ArduPilot's `ROTATION_PITCH_90` view). [`View::tailsitter`]
+/// flies in it, and a ground station shows hover attitude in it.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::VehicleState;
+/// use stable_flight::nalgebra::UnitQuaternion;
+/// use stable_flight::view::tailsitter_rotation;
+///
+/// let nose_up = UnitQuaternion::from_euler_angles(0.0, core::f32::consts::FRAC_PI_2, 0.0);
+/// let hover = VehicleState { attitude: nose_up, ..Default::default() };
+/// assert!(hover.rotate_body(&tailsitter_rotation()).pitch_rad.abs() < 1e-6);
+/// ```
+pub fn tailsitter_rotation() -> UnitQuaternion<f32> {
+    UnitQuaternion::from_euler_angles(0.0, -core::f32::consts::FRAC_PI_2, 0.0)
+}
+
 /// A [`Guidance`] or [`Stabilizer`] run in a body frame rotated by a constant.
 ///
 /// `rotation` is the view's frame expressed in the vehicle's body frame. Each tick the inner
@@ -83,13 +102,9 @@ impl<T> View<T> {
         View { inner, rotation }
     }
 
-    /// `inner`, run in a tailsitter's hover view: the airplane body frame turned −90° in pitch,
-    /// so nose-up hover reads level (ArduPilot's `ROTATION_PITCH_90` view).
+    /// `inner`, run in a tailsitter's hover view ([`tailsitter_rotation`]).
     pub fn tailsitter(inner: T) -> Self {
-        Self::new(
-            inner,
-            UnitQuaternion::from_euler_angles(0.0, -core::f32::consts::FRAC_PI_2, 0.0),
-        )
+        Self::new(inner, tailsitter_rotation())
     }
 
     /// The view's frame expressed in the body frame.
