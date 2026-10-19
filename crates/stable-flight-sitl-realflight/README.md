@@ -68,7 +68,7 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration::from_airframe(
 
 ## Examples
 
-Run these from the repository root (`just fly-manual` / `just fly-tailsitter` / `just fly-auto` / `just fly-tailsitter-auto` / `just fly-quadplane-auto` / `just capture` / `just fly-companion` wrap them). Each serves params and telemetry over the native link (UDP; binds `127.0.0.1:14560`, peer `127.0.0.1:14561`, set with `--link-bind`/`--link-peer`) for [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) (`just bridge`), which QGC connects to; start the bridge once and leave it running:
+Run these from the repository root (`just fly-manual` / `just fly-tailsitter` / `just fly-auto` / `just fly-tailsitter-auto` / `just fly-quadplane-auto` / `just capture` / `just fly-companion` / `just fly-tailsitter-companion` wrap them). Each serves params and telemetry over the native link (UDP; binds `127.0.0.1:14560`, peer `127.0.0.1:14561`, set with `--link-bind`/`--link-peer`) for [`stable-flight-bridge`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-bridge) (`just bridge`), which QGC connects to; start the bridge once and leave it running:
 
 ```bash
 # Joystick (Logitech Extreme 3D); RealFlight host defaults to 10.211.55.3:8080
@@ -114,6 +114,11 @@ cargo run -p stable-flight-sitl-realflight --example surface-probe-realflight --
 # (in place of the bridge). Stop the pilot mid-flight and the quad holds. Or: just fly-companion, just link-pilot
 cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight
 cargo run --bin link_pilot
+
+# The eXplora flown from the native link, transitions included: with the bridge as a tailsitter,
+# QGC shows its VTOL state and its transition button flies it to plane and back
+cargo run -p stable-flight-sitl-realflight --example tailsitter-companion-realflight
+cargo run -p stable-flight-bridge -- --vehicle-type tailsitter
 
 # Autotune: climbs to the hover point, tunes roll and pitch rate, then roll and
 # pitch angle, by step response (per rate loop a relay sets D; P is searched, verified against

@@ -58,10 +58,11 @@ cargo fmt --all
 just embedded                                 # no_std check on thumbv7em-none-eabihf: core (plain, testing, serde, param-metadata), link (plain, testing), sim; then fw-build
 just fw-build | fw-size | fw-bin | fw-flash   # ARK FPV firmware: release build, flash/RAM size, raw binary, USB DFU flash
 just cover                                    # tarpaulin → tarpaulin-report.html (.tarpaulin.toml)
-just bridge                                   # native link ⇄ MAVLink for QGC (--link-bind/--link-peer/--gcs/--origin/--http-bind/--http-url/--offboard-speed)
+just bridge                                   # native link ⇄ MAVLink for QGC (--link-bind/--link-peer/--gcs/--origin/--http-bind/--http-url/--offboard-speed/--vehicle-type)
 just fly-manual                               # copter-manual-realflight: QuadCopterX from a joystick (--host, --commander extreme3d|spektrum, --record CSV)
 just fly-auto                                 # copter-auto-realflight: waypoint script (script arg, --end hold|loop|land, --record)
 just fly-companion | just link-pilot          # copter-companion-realflight flown from the link; link_pilot plays the companion
+just fly-tailsitter-companion                 # tailsitter-companion-realflight: the eXplora from the link (with just bridge --vehicle-type tailsitter + QGC: VTOL state, transition button)
 just fly-autotune                             # copter-autotune-realflight: step-response autotune of roll/pitch rate and angle, prints gains, lands (--airframe titan-cobra: its lift rotors)
 just fly-tailsitter                           # tailsitter-manual-realflight: eXplora hover, transitions, plane from a joystick (D-pad Right plane, Left copter, Up rate; --record CSV)
 just fly-quadplane-auto                       # quadplane-auto-realflight: Titan Cobra VTOL waypoint script (default flights/cobra_hover.csv; cobra_transition_lap.csv, cobra_legs.csv; --end, --record, --param NAME=VALUE)

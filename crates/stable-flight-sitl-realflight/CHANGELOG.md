@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tailsitter-companion-realflight` example (#333): the eXplora flown from the native link
+  under a hold failsafe, its regime requested over the link (QGC's transition button through
+  the bridge).
+
 - `copter-auto-realflight --record`: one CSV row per tick (`CopterColumns`).
 - `airframes::titan_cobra()`: the ArduPilot SITL_Models Titan Cobra VTOL quadplane on
   `TableMixer::quadplane_vtail`, its channels mapped from a sweep (#433). Flown in
