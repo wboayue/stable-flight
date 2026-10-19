@@ -299,7 +299,7 @@ fn announces_each_new_mode_refusal_once() {
         (None, None), // flown: nothing to announce
         (Some(TransitionTimeout), Some("Transition timed out")),
         (Some(RollError), Some("Transition aborted: roll error")),
-        (Some(Unsupported), Some("Transition refused: not a VTOL")),
+        (Some(Unsupported), None), // the airframe's (a plane refusing copter), not the pilot's
         (None, None),
         (Some(OnGround), Some("Transition refused: on the ground")), // again after clearing
     ];

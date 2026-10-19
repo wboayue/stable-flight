@@ -39,9 +39,8 @@ use log::{debug, info, warn};
 
 use stable_flight::guidance::vtol::TailsitterGuidance;
 use stable_flight::stabilizers::vtol::TailsitterStabilizer;
-use stable_flight::{
-    Commander, FlightLoop, FlightModeReport, TelemetryPublisher, TelemetryRecord, View,
-};
+use stable_flight::view::tailsitter_rotation;
+use stable_flight::{Commander, FlightLoop, FlightModeReport, TelemetryPublisher, TelemetryRecord};
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::{Extreme3DCommander, SpektrumCommander};
@@ -131,7 +130,7 @@ fn fly(commander: impl Commander, args: &Args) {
     let mut fc_link = FcLink::<32, 16>::new();
     let (mut poller, link) = fc_link.wire(link_rx, link_tx);
     let columns = TailsitterColumns {
-        view: *View::tailsitter(()).rotation(),
+        view: tailsitter_rotation(),
     };
     let recorder = CsvRecorder::create(args.record.as_deref(), columns)
         .expect("failed to create the record CSV");

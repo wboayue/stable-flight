@@ -4,7 +4,8 @@ use core::time::Duration;
 
 use stable_flight::mixers::TableMixer;
 use stable_flight::nalgebra::UnitQuaternion;
-use stable_flight::{Actuator, ActuatorCommand, StateSource, Vec3, VehicleState, View};
+use stable_flight::view::tailsitter_rotation;
+use stable_flight::{Actuator, ActuatorCommand, StateSource, Vec3, VehicleState};
 
 use crate::lockstep::Lockstep;
 use crate::model::ModelError;
@@ -23,7 +24,7 @@ mod tests;
 /// The physics: [`SimPlane`](crate::SimPlane)'s rigid body, aerodynamics, and surfaces, with
 /// [`TailsitterModel`]'s motors along the wing, each thrusting along body `x`, and the
 /// surfaces in their wash. It reports the airplane body frame, so hovering nose up is 90° of
-/// pitch, which [`View::tailsitter`] reads as level. It starts resting on its tail at the
+/// pitch, which [`View::tailsitter`](stable_flight::View::tailsitter) reads as level. It starts resting on its tail at the
 /// origin, nose up, belly north, and rests that way whenever it's back on the ground.
 ///
 /// # Examples
@@ -51,10 +52,10 @@ pub struct SimTailsitter {
     dynamics: FixedWing,
 }
 
-/// A tailsitter's attitude resting on its tail, relative to level: [`View::tailsitter`]'s
-/// rotation undone, so the hover view reads level there.
+/// A tailsitter's attitude resting on its tail, relative to level: the hover view's rotation
+/// ([`tailsitter_rotation`]) undone, so the hover view reads level there.
 fn resting_on_tail() -> UnitQuaternion<f32> {
-    View::tailsitter(()).rotation().inverse()
+    tailsitter_rotation().inverse()
 }
 
 impl SimTailsitter {

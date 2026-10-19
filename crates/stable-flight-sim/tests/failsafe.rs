@@ -49,18 +49,23 @@ struct Phase {
     moved_m: f32,
 }
 
-/// Each heartbeat the vehicle has sent since the last call: `(armed, link_ok)`.
+/// Each heartbeat the vehicle has sent since the last call: `(armed, link_ok, flight mode)`.
 fn heartbeats(
     companion: &mut LoopbackLink<'_, DEPTH>,
     buf: &mut [u8; MAX_FRAME_LEN],
-) -> Vec<(bool, bool)> {
+) -> Vec<(bool, bool, FlightMode)> {
     std::iter::from_fn(|| {
         companion
             .recv_message::<Downlink>(buf)
             .expect("valid frame")
     })
     .filter_map(|message| match message {
-        Downlink::Heartbeat { armed, link_ok, .. } => Some((armed, link_ok)),
+        Downlink::Heartbeat {
+            armed,
+            link_ok,
+            flight_mode,
+            ..
+        } => Some((armed, link_ok, flight_mode.mode)),
         _ => None,
     })
     .collect()
@@ -133,7 +138,7 @@ fn holds_position_through_a_link_outage_and_hands_back() {
 
             let moved: Vec3 = flight_loop.state().position_m - start;
             report.moved_m = report.moved_m.max(moved.norm());
-            for (armed, link_ok) in heartbeats(&mut companion, &mut recv) {
+            for (armed, link_ok, _) in heartbeats(&mut companion, &mut recv) {
                 report.armed &= armed;
                 report.link_flies = link_ok;
                 let first = *first_link_ok.get_or_insert(link_ok);
@@ -175,23 +180,6 @@ fn holds_position_through_a_link_outage_and_hands_back() {
         (altitude_m - ALTITUDE_M).abs() < 0.1,
         "altitude {altitude_m}"
     );
-}
-
-/// Each flight mode the vehicle's heartbeats have reported since the last call.
-fn flight_modes(
-    companion: &mut LoopbackLink<'_, DEPTH>,
-    buf: &mut [u8; MAX_FRAME_LEN],
-) -> Vec<FlightMode> {
-    std::iter::from_fn(|| {
-        companion
-            .recv_message::<Downlink>(buf)
-            .expect("valid frame")
-    })
-    .filter_map(|message| match message {
-        Downlink::Heartbeat { flight_mode, .. } => Some(flight_mode.mode),
-        _ => None,
-    })
-    .collect()
 }
 
 /// A quadplane the link sent toward plane, brought back to a hover by the hold when the link
@@ -268,7 +256,8 @@ fn a_vtol_the_hold_brought_to_a_hover_stays_there_when_the_link_returns() {
             poller.poll(&mut flight_loop).expect("loopback receives");
             flight_loop.step(TICK);
             tick += 1;
-            modes.extend(flight_modes(&mut companion, &mut recv));
+            let received = heartbeats(&mut companion, &mut recv);
+            modes.extend(received.into_iter().map(|(_, _, mode)| mode));
         }
         reports.push(modes);
     }

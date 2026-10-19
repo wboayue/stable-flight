@@ -58,7 +58,7 @@ impl Default for LinkPublisherConfig {
 /// of failsafe state is announced once as [`Downlink::Status`] text for the pilot ("Link quiet:
 /// holding position", "Link back: move the sticks to take control", "Flying from the link"),
 /// and each new [`ModeRefusal`] in the record's [`flight_mode`](TelemetryRecord::flight_mode)
-/// the same way ("Transition refused: too low").
+/// the same way ("Transition refused: too low"), except `Unsupported`, the airframe's own.
 ///
 /// # Examples
 ///
@@ -192,14 +192,15 @@ fn failsafe_status(state: FailsafeState, mode: ControlMode) -> Option<StatusText
 }
 
 /// What a ground station should tell the pilot when guidance starts refusing a regime for
-/// `refusal`.
+/// `refusal`. [`ModeRefusal::Unsupported`] announces nothing: it is the airframe's, not the
+/// pilot's (a plane's guidance refuses the default `Copter` request from its first tick).
 fn refusal_status(refusal: ModeRefusal) -> Option<StatusText> {
     let text = match refusal {
-        ModeRefusal::Unsupported => "Transition refused: not a VTOL",
         ModeRefusal::OnGround => "Transition refused: on the ground",
         ModeRefusal::BelowMinAltitude => "Transition refused: too low",
         ModeRefusal::TransitionTimeout => "Transition timed out",
         ModeRefusal::RollError => "Transition aborted: roll error",
+        ModeRefusal::Unsupported => return None,
         // `ModeRefusal` is non-exhaustive: a new refusal announces nothing until mapped here.
         _ => return None,
     };

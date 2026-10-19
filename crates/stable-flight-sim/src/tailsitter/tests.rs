@@ -33,7 +33,7 @@ fn fly(tailsitter: &mut SimTailsitter, command: &ActuatorCommand, ticks: usize) 
 
 /// The hover view's roll, pitch, and heading of `state`.
 fn view_angles(state: &VehicleState) -> (f32, f32, f32) {
-    euler_angles(&(state.attitude * View::tailsitter(()).rotation()))
+    euler_angles(&(state.attitude * tailsitter_rotation()))
 }
 
 /// It starts on its tail, nose up: 90° of airplane pitch, level in the hover view, heading
