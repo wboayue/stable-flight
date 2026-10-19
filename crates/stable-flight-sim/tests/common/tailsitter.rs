@@ -5,9 +5,8 @@ use stable_flight::guidance::vtol::TailsitterGuidance;
 use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::vtol::TailsitterStabilizer;
 use stable_flight::testing::RecordingTelemetry;
-use stable_flight::{
-    Commander, FlightLoop, TelemetryPublisher, VehicleState, View, WaypointCommand,
-};
+use stable_flight::view::tailsitter_rotation;
+use stable_flight::{Commander, FlightLoop, TelemetryPublisher, VehicleState, WaypointCommand};
 use stable_flight_sim::airframes::TailsitterAirframe;
 use stable_flight_sim::{Perturbations, SimTailsitter, Wind};
 
@@ -87,7 +86,7 @@ pub fn tailsitter_pipeline<C: Commander, T: TelemetryPublisher>(
 /// `state`'s roll, pitch, and heading in the hover view, in rad: all zero hovering nose up,
 /// belly north.
 pub fn view_angles(state: &VehicleState) -> (f32, f32, f32) {
-    stable_flight::euler_angles(&(state.attitude * View::tailsitter(()).rotation()))
+    stable_flight::euler_angles(&(state.attitude * tailsitter_rotation()))
 }
 
 /// [`Forward`] at `airframe`'s trim airspeed.
