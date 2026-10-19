@@ -1,6 +1,6 @@
 [package]
 name = "stable-flight-sim"
-description = "Deterministic rigid-body multirotor, airplane, and tailsitter simulator for Stable Flight's closed-loop tests"
+description = "Deterministic rigid-body multirotor, airplane, tailsitter, and quadplane simulator for Stable Flight's closed-loop tests"
 readme = "README.md"
 publish = false
 version.workspace = true
