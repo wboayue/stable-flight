@@ -196,8 +196,8 @@ On the companion, `stable-flight-bridge` presents the flight controller as MAVLi
 component 1, so MAVLink never runs on the board. It is a pure state machine (messages in,
 messages out, clock injected) behind a thin I/O loop, holding only what translation needs: the
 flight controller's last heartbeat (to send `HEARTBEAT` only while it is alive, and to confirm an
-arm or disarm before acking it), when the ground station was last heard (to send
-`Control::Heartbeat` only while it is), and a param cache (to answer `PARAM_REQUEST_READ`
+arm, disarm, land, or transition before acking it), when the ground station was last heard (to
+send `Control::Heartbeat` only while it is), and a param cache (to answer `PARAM_REQUEST_READ`
 without a round trip). Param listings and writes go to the flight controller, whose echo is
 forwarded unchanged, so the flight controller stays the only judge of a value. Staleness,
 failsafe, and arm decisions stay on the flight controller; the bridge translates and never
@@ -495,6 +495,11 @@ The fallback flies in `Fallback` and `AwaitingSticks`. The rules:
   latched arm is synced to the vehicle's (`LinkedCommander::sync_arm`), so an arm request made
   while the fallback flew, which a ground station has already seen fail, doesn't arm the vehicle
   later; a new request does.
+* **Regime:** a link requests a regime with `Control::Regime`, latched like `Arm`, not with each
+  command's `regime`: setpoint streams (a joystick, an offboard app) then can't transition the
+  vehicle as a side effect, and a ground station's transition needs no input to resend. At the
+  handover back, the primary's regime is synced to the fallback's (`sync_regime`; a hold flies
+  copter), so a VTOL the hold brought back to a hover stays there until a new request.
 * **Sticks after a hold:** to an armed vehicle, a stick input takes over only once an axis moves
   `takeover_stick_delta` from where it was at recovery, so a forgotten joystick at low throttle
   can't drop the vehicle out of a hold; a waypoint, or anything to a disarmed vehicle, takes over

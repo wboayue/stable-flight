@@ -2,7 +2,7 @@
 
 use heapless::spsc::Consumer;
 use stable_flight::commanders::LinkedCommander;
-use stable_flight::{Command, Commander, ControlInput, VehicleState};
+use stable_flight::{Command, Commander, ControlInput, FlightRegime, VehicleState};
 
 use crate::Control;
 
@@ -15,9 +15,12 @@ mod tests;
 ///
 /// Each tick it drains its queue in arrival order:
 ///
-/// - [`Control::Command`]: what to fly. The latest one wins; its `arm` field is ignored, so a
-///   stream of setpoints can't arm or disarm the vehicle as a side effect.
+/// - [`Control::Command`]: what to fly. The latest one wins; its `arm` and `regime` fields are
+///   ignored, so a stream of setpoints can't arm, disarm, or transition the vehicle as a side
+///   effect.
 /// - [`Control::Arm`]: arms (`true`) or disarms (`false`); latched until the next one.
+/// - [`Control::Regime`]: the regime to fly in, put in [`Command::regime`]; latched until the
+///   next one. It starts [`FlightRegime::Copter`].
 /// - [`Control::Heartbeat`]: only keeps the link fresh.
 ///
 /// Freshness ([`since_update_s`](LinkedCommander::since_update_s), 0 on a tick that drained a
@@ -61,6 +64,7 @@ pub struct LinkCommander<'a> {
     /// it fresh.
     flying_stream: bool,
     armed: bool,
+    regime: FlightRegime,
     /// Since any message.
     since_message_s: Option<f32>,
     /// Since a command.
@@ -75,6 +79,7 @@ impl<'a> LinkCommander<'a> {
             input: ControlInput::default(),
             flying_stream: false,
             armed: false,
+            regime: FlightRegime::Copter,
             since_message_s: None,
             since_command_s: None,
         }
@@ -93,12 +98,13 @@ impl Commander for LinkCommander<'_> {
                     self.flying_stream = c.input.is_stream();
                 }
                 Control::Arm(arm) => self.armed = arm,
+                Control::Regime(regime) => self.regime = regime,
                 Control::Heartbeat => {}
             }
         }
         self.since_message_s = since(message, self.since_message_s, dt);
         self.since_command_s = since(command, self.since_command_s, dt);
-        Command::new(self.armed, self.input)
+        Command::new(self.armed, self.input).with_regime(self.regime)
     }
 }
 
@@ -106,6 +112,11 @@ impl LinkedCommander for LinkCommander<'_> {
     /// Overwrites the latched arm state, dropping a stale `Arm` request.
     fn sync_arm(&mut self, armed: bool) {
         self.armed = armed;
+    }
+
+    /// Overwrites the latched regime, dropping a request from before the fallback flew.
+    fn sync_regime(&mut self, regime: FlightRegime) {
+        self.regime = regime;
     }
 
     fn since_update_s(&self) -> Option<f32> {

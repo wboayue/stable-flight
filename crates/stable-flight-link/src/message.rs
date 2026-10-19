@@ -5,7 +5,7 @@ use core::time::Duration;
 use serde::{Deserialize, Serialize};
 use stable_flight::{
     ActuatorCommand, Command, ControlMode, ControlOutput, FailsafeState, FlightModeReport,
-    Saturation, Setpoint, TelemetryRecord, VehicleState, params,
+    FlightRegime, Saturation, Setpoint, TelemetryRecord, VehicleState, params,
 };
 
 use crate::frame::{Message, sealed::Sealed};
@@ -27,6 +27,9 @@ pub enum Control {
     Command(Command),
     /// Arm (`true`) or disarm request, subject to the flight controller's arm policy.
     Arm(bool),
+    /// The regime to fly in, e.g. a ground station's VTOL transition; guidance decides whether
+    /// and when it is flown ([`FlightModeReport`]).
+    Regime(FlightRegime),
 }
 
 /// A parameter request from the companion: [`Uplink::Param`].

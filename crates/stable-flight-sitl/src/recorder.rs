@@ -217,7 +217,7 @@ impl Columns for CopterColumns {
 #[derive(Debug, Clone, Copy)]
 pub struct TailsitterColumns {
     /// The tailsitter view's rotation from the body frame
-    /// (`*stable_flight::View::tailsitter(()).rotation()`).
+    /// ([`stable_flight::view::tailsitter_rotation`]).
     pub view: UnitQuaternion<f32>,
 }
 

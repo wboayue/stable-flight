@@ -9,8 +9,8 @@
 use crate::commanders::TouchdownDetector;
 use crate::controllers::{InvalidConfig, check_limit, check_positive};
 use crate::{
-    Command, Commander, ControlInput, ControlMode, FailsafeState, LandCommand, Vec2, VehicleState,
-    WaypointCommand,
+    Command, Commander, ControlInput, ControlMode, FailsafeState, FlightRegime, LandCommand, Vec2,
+    VehicleState, WaypointCommand,
 };
 
 #[cfg(test)]
@@ -28,6 +28,12 @@ pub trait LinkedCommander: Commander {
     /// commander latched while the fallback flew (and that the vehicle never acted on) is
     /// dropped rather than arming the vehicle at the handover.
     fn sync_arm(&mut self, armed: bool);
+
+    /// Sets the regime this commander requests to `regime`. A [`FailsafeCommander`] calls it
+    /// when it hands control back, with the regime the fallback flew, so a regime request from
+    /// before the link went quiet (or latched while the fallback flew) is dropped rather than
+    /// transitioning the vehicle at the handover.
+    fn sync_regime(&mut self, regime: FlightRegime);
 }
 
 /// A [`Commander`] that flies while a [`FailsafeCommander`]'s primary is stale.
@@ -103,7 +109,10 @@ impl FailsafeConfig {
 ///   a waypoint, or anything to a disarmed vehicle, takes over at once.
 /// - **At the handover**, the primary's arm state is [synced](LinkedCommander::sync_arm) to the
 ///   vehicle's (disarmed if either the vehicle or the primary is), so an arm request made while
-///   the fallback flew doesn't arm the vehicle; a new one does.
+///   the fallback flew doesn't arm the vehicle; a new one does. Its regime is
+///   [synced](LinkedCommander::sync_regime) to the one the fallback flew (a [`HoldCommander`]
+///   flies [`FlightRegime::Copter`]), so a VTOL brought back to a hover stays there until the
+///   primary requests plane again.
 /// - **Arming:** the fallback may keep the vehicle armed or disarm it, but never arms it (a
 ///   [`HoldCommander`] keeps the arm state it was engaged with), and a fresh primary's disarm
 ///   is always honored, even while it waits to take over.
@@ -124,7 +133,7 @@ impl FailsafeConfig {
 /// use stable_flight::commanders::{
 ///     FailsafeCommander, FailsafeConfig, HoldCommander, LinkedCommander,
 /// };
-/// use stable_flight::{Command, Commander, FailsafeState, VehicleState};
+/// use stable_flight::{Command, Commander, FailsafeState, FlightRegime, VehicleState};
 ///
 /// /// A link that was last heard `since_s` ago.
 /// struct Link {
@@ -143,6 +152,8 @@ impl FailsafeConfig {
 ///     }
 ///
 ///     fn sync_arm(&mut self, _armed: bool) {}
+///
+///     fn sync_regime(&mut self, _regime: FlightRegime) {}
 /// }
 ///
 /// let link = Link { since_s: None };
@@ -229,7 +240,10 @@ impl<P: LinkedCommander, F: Fallback> FailsafeCommander<P, F> {
             return command;
         }
         self.primary.sync_arm(false);
-        Command::new(false, command.input)
+        Command {
+            arm: false,
+            ..command
+        }
     }
 
     /// Decides who flies this tick, given whether the primary is `fresh` and what it flies.
@@ -280,7 +294,9 @@ impl<P: LinkedCommander, F: Fallback> Commander for FailsafeCommander<P, F> {
                 // Drop an arm the primary latched while the fallback flew; keep its disarm.
                 let armed = self.last.arm && primary.arm;
                 self.primary.sync_arm(armed);
-                Command::new(armed, primary.input)
+                // Keep flying the fallback's regime until the primary asks for another.
+                self.primary.sync_regime(self.last.regime);
+                Command::new(armed, primary.input).with_regime(self.last.regime)
             } else {
                 primary
             }

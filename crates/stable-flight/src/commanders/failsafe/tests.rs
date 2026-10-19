@@ -18,6 +18,8 @@ struct LinkScript {
     input: Cell<Option<ControlInput>>,
     /// The last `sync_arm` call's argument.
     synced: Cell<Option<bool>>,
+    /// The latched regime: set by the test (a `Regime` message) or by `sync_regime`.
+    regime: Cell<FlightRegime>,
     ticks: Cell<u32>,
 }
 
@@ -32,7 +34,7 @@ impl Commander for Link {
             .input
             .get()
             .unwrap_or(ControlInput::Rate(RateCommand::default()));
-        Command::new(self.0.arm.get(), input)
+        Command::new(self.0.arm.get(), input).with_regime(self.0.regime.get())
     }
 }
 
@@ -44,6 +46,10 @@ impl LinkedCommander for Link {
     fn sync_arm(&mut self, armed: bool) {
         self.0.arm.set(armed);
         self.0.synced.set(Some(armed));
+    }
+
+    fn sync_regime(&mut self, regime: FlightRegime) {
+        self.0.regime.set(regime);
     }
 }
 
@@ -494,6 +500,42 @@ fn drops_an_arm_latched_while_the_fallback_flew() {
         check!(command.arm == armed, "{case}");
     }
     check!(link.synced.get() == Some(false), "synced to the vehicle");
+}
+
+#[test]
+fn hands_back_in_the_regime_the_fallback_flew() {
+    use FailsafeState::{Fallback as F, Primary as P};
+    use FlightRegime::{Copter, Plane};
+    let (mut commander, link) = armed_then_lost(hover_at(5.0));
+    let fresh = Some(0.0);
+    // (case, since, regime request, expected state, expected regime); the recorder flies copter.
+    let ticks = [
+        (
+            "plane requested before the loss",
+            fresh,
+            Some(Plane),
+            F,
+            Copter,
+        ),
+        ("recovering", fresh, None, F, Copter),
+        (
+            "handover: the old plane request is dropped",
+            fresh,
+            None,
+            P,
+            Copter,
+        ),
+        ("stays copter", fresh, None, P, Copter),
+        ("a new request flies plane", fresh, Some(Plane), P, Plane),
+    ];
+    for (case, since_s, request, state, regime) in ticks {
+        if let Some(request) = request {
+            link.regime.set(request);
+        }
+        let command = step(&mut commander, &link, since_s, None, None);
+        check!(commander.failsafe() == Some(state), "{case}");
+        check!(command.regime == regime, "{case}");
+    }
 }
 
 /// A failsafe whose link armed the vehicle and flew `input`, then went stale: the fallback
