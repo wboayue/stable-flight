@@ -93,6 +93,10 @@ fly-quadplane-auto *ARGS:
 fly-companion *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-companion-realflight -- {{ARGS}}
 
+# eXplora tailsitter in RealFlight flown from the link, transitions included; pair with `just bridge --vehicle-type tailsitter` and QGC
+fly-tailsitter-companion *ARGS:
+    cargo run -p stable-flight-sitl-realflight --example tailsitter-companion-realflight -- {{ARGS}}
+
 # Autotune of the rate and angle loops in RealFlight: climbs to the hover point, tunes, prints the gains, lands; e.g. `just fly-autotune --step-test`
 fly-autotune *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- {{ARGS}}
