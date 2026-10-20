@@ -209,6 +209,39 @@ about −12…+5°.
   - The nose swings in a waypoint descent while `sp_pitch` holds: lower `GUID_DESC_MAX`.
   - Descents take too long: raise it in 0.5 m/s steps and check the swing again.
 
+## Hover in wind
+
+A check after step 5, not a step of its own: fly `flights/explora_descent.csv` with
+`--record` in a steady wind, and read `north_m`/`east_m` against the waypoint, `view_pitch`
+against `sp_pitch`, `sp_thrust`, and `elevon_*`.
+
+- **Which way the wing faces decides whether it holds.** Broadside, the wing catches the wind
+  and the hold leans to the tilt cap (`GUID_TILT_MAX`) and drifts. With a wingtip into the
+  wind it needs little lean. The eXplora holds its heading, so it faces the wind the way it
+  faced at takeoff; turning it automatically is
+  [#470](https://github.com/wboayue/stable-flight/issues/470).
+- **Don't raise the tilt cap to hold broadside.** More lean takes the elevon margin that the
+  start of a descent needs. A 35° cap saturated the eXplora's elevons and threw its nose
+  through −25…−66° for 20 s.
+- **The descent start** cuts thrust as the target starts down: `GUID_DESC_ACC` sets how fast
+  (step 5). If thrust touches `GUID_THR_MIN` and the nose drops, lower it.
+
+eXplora (#417), 3 mph RealFlight wind (stronger at height), 60 m to 20 m:
+
+| Heading | `GUID_DESC_ACC` effect | Drift max | Worst `view_pitch` error | `sp_thrust` at the start | Elevon peak |
+|---|---|---|---|---|---|
+| Belly into the wind | stepped to 1.5 m/s | 41–43 m, at the 27° cap | 7.6–8.1° | 0.65 (floor)–0.92 | 0.45–0.50 |
+| Belly into the wind, `GUID_TILT_MAX` 35° | stepped | 12.5 m | 97° | 0.65–1.00 | 1.00 |
+| About 90° turned | stepped | 3–6 m | 12.0° | 0.65 (floor)–0.99 | 0.72 |
+| Belly into the wind | ramped at 1 m/s² | 47 m, at the 27° cap | 4.0° | 0.80–0.87 | 0.43 |
+| **About 90° turned** | **ramped at 1 m/s²** | **4.1–4.2 m** | **5.5–5.8°** | **0.80–0.90** | **0.55–0.56** |
+
+- **Symptoms:**
+  - The hold sits at `sp_pitch` = the tilt cap and drifts downwind: the wing is broadside; turn
+    a wingtip into the wind (a short leg with `GUID_YAW_SLEW`, until #470).
+  - `sp_thrust` drops to `GUID_THR_MIN` as a descent starts and the nose follows: lower
+    `GUID_DESC_ACC`.
+
 ## 6. Plane cruise and airspeeds
 
 | Param | Field | eXplora |
@@ -329,6 +362,8 @@ overshooting its speed and departing.
 | Roll overshoots past the cap as a hover leg starts (after a back handover) | `GUID_LAT_ACC` |
 | Nose drops in a descent | `GUID_THR_MIN`, `GUID_SINK_LIM`/`_GAIN`, `STAB_RATE_PIT_I` |
 | Nose swings in a waypoint descent, `sp_pitch` steady | `GUID_DESC_MAX` down |
+| Nose drops as a waypoint descent starts, `sp_thrust` at the floor | `GUID_DESC_ACC` down |
+| Hover in wind pinned at the tilt cap, drifting | heading: a wingtip into the wind ([hover in wind](#hover-in-wind)) |
 | Wing sinks right after the forward transition | `TRAN_ASPD_MIN`, `TRAN_FW_THR` |
 | Large climb after the back request | `TRAN_VT_THR` down, `TRAN_VT_RATE` slower |
 | Back ramp wallows nose-high, elevons at full deflection, roll-limit cut | `TRAN_VT_THR` up |
