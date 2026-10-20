@@ -90,7 +90,8 @@ cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- f
 
 # The same for the eXplora tailsitter, in the copter regime: a small, slow figure-eight
 # starting and ending over its spawn point by default (flights/explora_figure_eight.csv); flights/explora_hover.csv
-# holds 5 m over it. Or: just fly-tailsitter-auto
+# holds 5 m over it, flights/explora_descent.csv climbs to 60 m and descends to 20 m; --param
+# sets a param before takeoff. Or: just fly-tailsitter-auto
 cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- --end land
 
 # A transition mission: hover climb, two plane laps of a rectangle (the CSV's regime column),

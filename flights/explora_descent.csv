@@ -1,0 +1,5 @@
+# Hover descent over the RealFlight eXplora VTOL spawn point (north -10.55 m, east 6.49 m):
+# climb to 60 m, descend 40 m to 20 m, in hover throughout (#414, #417).
+x,y,altitude,cruise_speed,regime
+-10.55,6.49,60.0,3.0,copter
+-10.55,6.49,20.0,3.0,copter

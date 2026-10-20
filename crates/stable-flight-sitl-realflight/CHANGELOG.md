@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tailsitter-auto-realflight --param NAME=VALUE` sets a param before takeoff, and
+  `flights/explora_descent.csv` flies a 60 → 20 m hover descent over the eXplora's spawn
+  point (#417).
 - `tailsitter-companion-realflight` example (#333): the eXplora flown from the native link
   under a hold failsafe, its regime requested over the link (QGC's transition button through
   the bridge).
