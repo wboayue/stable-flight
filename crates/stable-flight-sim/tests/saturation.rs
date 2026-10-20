@@ -5,30 +5,11 @@ mod common;
 
 use assert2::check;
 use stable_flight::{
-    AbsoluteAttitudeCommand, AbsoluteRateCommand, Command, Commander, ControlInput, Saturation,
-    Vec2, VehicleState, WaypointCommand,
+    AbsoluteAttitudeCommand, AbsoluteRateCommand, ControlInput, Saturation, Vec2, WaypointCommand,
 };
 use stable_flight_sim::airframes;
 
-use common::{HOVER_ALTITUDE_M, Hover, Plant, fly, waypoint};
-
-/// Hovers, then flies `input` from `after_s` on.
-struct ThenFly {
-    hover: Hover,
-    elapsed_s: f32,
-    after_s: f32,
-    input: Option<ControlInput>,
-}
-
-impl Commander for ThenFly {
-    fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
-        self.elapsed_s += dt;
-        match self.input {
-            Some(input) if self.elapsed_s >= self.after_s => Command::new(true, input),
-            _ => self.hover.next_command(dt, state),
-        }
-    }
-}
+use common::{HOVER_ALTITUDE_M, Plant, ThenFly, fly, waypoint};
 
 /// Seconds each input flies before the flags are read: the onset, which is when limits clip,
 /// falls inside the telemetry the loop keeps (`common::RECORDED` ticks).
