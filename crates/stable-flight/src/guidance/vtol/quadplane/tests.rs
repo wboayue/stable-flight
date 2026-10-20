@@ -480,6 +480,7 @@ fn plane_guidance_starts_fresh_entering_plane() {
         velocity_mps: Some(Vec2::new(FAST_MPS, 0.0)),
         altitude_m: HIGH_M + 10.0,
         cruise_speed_mps: FAST_MPS + 3.0,
+        heading_rad: None,
     });
     let mut guidance = primed();
     // Slow first: the plane guidance flies the transition with no airspeed.

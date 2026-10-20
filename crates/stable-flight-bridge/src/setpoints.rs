@@ -27,6 +27,10 @@ const VELOCITY_IGNORE: PositionTargetTypemask =
     PositionTargetTypemask::POSITION_TARGET_TYPEMASK_VX_IGNORE
         .union(PositionTargetTypemask::POSITION_TARGET_TYPEMASK_VY_IGNORE);
 
+/// The ignore bit for the yaw, which is used when clear.
+const YAW_IGNORE: PositionTargetTypemask =
+    PositionTargetTypemask::POSITION_TARGET_TYPEMASK_YAW_IGNORE;
+
 /// `SET_ATTITUDE_TARGET` type-mask bits the flight controller can't fly without: the attitude
 /// and the throttle must be included, and thrust must be the scalar `thrust`, not a vector.
 const ATTITUDE_TARGET_UNSUPPORTED: AttitudeTargetTypemask =
@@ -48,8 +52,9 @@ const MIN_QUATERNION_NORM: f32 = 1e-6;
 ///   treats as neutral (its input policy). Buttons are ignored.
 /// - `SET_POSITION_TARGET_LOCAL_NED` in `MAV_FRAME_LOCAL_NED` → a waypoint: north and east from
 ///   x and y, altitude from −z, and the horizontal velocity as its fly-through velocity when
-///   the type mask includes it. The position must be included; acceleration, yaw, and yaw rate
-///   are ignored. The message has no speed, so the waypoint's cruise speed is
+///   the type mask includes it, and `yaw` (radians from north) as its heading when the mask
+///   includes it. The position must be included; acceleration and yaw rate are ignored. The
+///   message has no speed, so the waypoint's cruise speed is
 ///   `offboard_speed_mps`. Any other frame, or a mask without the position, is dropped (the
 ///   message has no ack) and logged at debug level.
 /// - `SET_ATTITUDE_TARGET` (offboard apps) → an absolute attitude: roll, pitch, and heading
@@ -123,12 +128,14 @@ impl SetpointService {
         }
         let velocity_mps =
             (!data.type_mask.intersects(VELOCITY_IGNORE)).then(|| Vec2::new(data.vx, data.vy));
+        let heading_rad = (!data.type_mask.intersects(YAW_IGNORE)).then_some(data.yaw);
         send(
             ControlInput::Waypoint(WaypointCommand {
                 position_m: Vec2::new(data.x, data.y),
                 velocity_mps,
                 altitude_m: -data.z,
                 cruise_speed_mps: self.offboard_speed_mps,
+                heading_rad,
             }),
             out,
         );

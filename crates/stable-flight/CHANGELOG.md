@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Waypoint heading** (#470): `WaypointCommand::heading_rad`, a heading for copter
+  waypoint flight to turn to at `CopterGuidanceConfig::heading_rate_radps` (`GUID_HDG_RATE`,
+  default 60°/s, ArduPilot's waypoint yaw rate) instead of along the leg, never yielded; on a
+  tailsitter it is the belly's direction. PX4 likewise flies a mission item's yaw over its yaw
+  mode. **Breaking:** a `WaypointCommand` struct literal needs `heading_rad` (`None` keeps
+  the old behavior), and a `CopterGuidanceConfig` literal `heading_rate_radps` (or
+  `..Default::default()`).
 - `view::tailsitter_rotation()` (#333): the tailsitter hover view's rotation, which
   `View::tailsitter` flies in, for showing hover attitude elsewhere (the bridge).
 

@@ -7,7 +7,7 @@
 //! | [`ControlInput::AbsoluteRate`] | [`Setpoint::BodyRate`]: rates passed through (the stabilizer saturates them); the heading-hold target follows the vehicle; thrust saturated to `[0, 1]`, not boosted |
 //! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target; throttle boosted by 1/cos(tilt) so tilting doesn't sink (none when inverted) |
 //! | [`ControlInput::AbsoluteAttitude`] | [`Setpoint::Attitude`]: roll/pitch passed through (the stabilizer saturates them); the heading replaces the heading-hold target (NaN holds it); thrust saturated to `[0, 1]`, not boosted |
-//! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity (shaped at [`max_accel_mps2`](crate::controllers::LateralControllerConfig::max_accel_mps2) when set) → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading turned along the leg at [`waypoint_yaw_radps`](CopterGuidanceConfig::waypoint_yaw_radps) (held on a leg shorter than [`waypoint_yaw_min_leg_m`](CopterGuidanceConfig::waypoint_yaw_min_leg_m)); descents slewed at up to [`max_descent_mps`](CopterGuidanceConfig::max_descent_mps), speeding up from hover and braking to stop on the waypoint at [`descent_accel_mps2`](CopterGuidanceConfig::descent_accel_mps2), at most [`ALTITUDE_LEASH_M`] below the vehicle |
+//! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity (shaped at [`max_accel_mps2`](crate::controllers::LateralControllerConfig::max_accel_mps2) when set) → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading turned to the waypoint's [`heading_rad`](WaypointCommand::heading_rad) at [`heading_rate_radps`](CopterGuidanceConfig::heading_rate_radps) when set, otherwise along the leg at [`waypoint_yaw_radps`](CopterGuidanceConfig::waypoint_yaw_radps) (held on a leg shorter than [`waypoint_yaw_min_leg_m`](CopterGuidanceConfig::waypoint_yaw_min_leg_m)); descents slewed at up to [`max_descent_mps`](CopterGuidanceConfig::max_descent_mps), speeding up from hover and braking to stop on the waypoint at [`descent_accel_mps2`](CopterGuidanceConfig::descent_accel_mps2), at most [`ALTITUDE_LEASH_M`] below the vehicle |
 //! | [`ControlInput::Land`] | [`Setpoint::Attitude`]: as a waypoint at the land position, heading held, with an altitude target that keeps descending at [`land_speed_mps`](CopterGuidanceConfig::land_speed_mps), at most [`ALTITUDE_LEASH_M`] below the vehicle |
 //!
 //! Piloted inputs mark their setpoint [`idle`](crate::AttitudeSetpoint::idle) while the
@@ -85,6 +85,10 @@ pub const DEFAULT_DESCENT_ACCEL_MPS2: f32 = 1.0;
 /// (`ATC_RATE_WPY_MAX`, `libraries/AC_AttitudeControl/AC_AttitudeControl.h:21`) and PX4's
 /// (`MPC_YAWRAUTO_MAX`, `multicopter_autonomous_params.yaml:21-42`).
 pub const DEFAULT_WAYPOINT_YAW_RADPS: f32 = 60.0_f32.to_radians();
+
+/// Default [`CopterGuidanceConfig::heading_rate_radps`]: the waypoint yaw slew, 60°/s, which
+/// ArduPilot also turns to a commanded yaw at (`ATC_RATE_WPY_MAX`).
+pub const DEFAULT_HEADING_RATE_RADPS: f32 = DEFAULT_WAYPOINT_YAW_RADPS;
 
 /// Default [`CopterGuidanceConfig::waypoint_yaw_min_leg_m`]: the waypoint follower's
 /// [`DEFAULT_ACCEPTANCE_RADIUS_M`], since a shorter leg is reached as it begins; PX4 likewise
@@ -184,6 +188,10 @@ pub struct CopterGuidanceConfig {
     /// waypoint. The vehicle translates while it turns. Land flight always holds the heading.
     /// Must be non-negative and finite. Defaults to [`DEFAULT_WAYPOINT_YAW_RADPS`].
     pub waypoint_yaw_radps: f32,
+    /// Rate, in rad/s, at which waypoint flight turns the heading-hold target to a waypoint's
+    /// [`heading_rad`](WaypointCommand::heading_rad), the shorter way round. Must be positive
+    /// and finite. Defaults to [`DEFAULT_HEADING_RATE_RADPS`].
+    pub heading_rate_radps: f32,
     /// Shortest leg, in meters horizontally when it begins, whose direction waypoint flight
     /// turns to; a shorter one (a hold, a waypoint that moves with the vehicle) keeps the
     /// heading. A change applies from the next leg. Must be
@@ -276,7 +284,8 @@ impl ThrustLimits {
 impl Default for CopterGuidanceConfig {
     /// The controller defaults (flight-checked on RealFlight's QuadCopterX), a 50 Hz lateral
     /// loop, a 27° waypoint tilt cap, 45° at full stick, a 3 m/s descent limit, a 0.7 m/s
-    /// land, waypoint legs over 3 m turned to face along them at 60°/s, the heading yielded
+    /// land, waypoint legs over 3 m turned to face along them at 60°/s, a waypoint's heading
+    /// turned to at 60°/s, the heading yielded
     /// after 1 s stuck over 30° off, no thrust floor or sink guard, and no boost ceiling.
     fn default() -> Self {
         CopterGuidanceConfig {
@@ -292,6 +301,7 @@ impl Default for CopterGuidanceConfig {
             descent_accel_mps2: DEFAULT_DESCENT_ACCEL_MPS2,
             land_speed_mps: DEFAULT_LAND_SPEED_MPS,
             waypoint_yaw_radps: DEFAULT_WAYPOINT_YAW_RADPS,
+            heading_rate_radps: DEFAULT_HEADING_RATE_RADPS,
             waypoint_yaw_min_leg_m: DEFAULT_WAYPOINT_YAW_MIN_LEG_M,
             heading_yield_rad: DEFAULT_HEADING_YIELD_RAD,
             heading_yield_s: DEFAULT_HEADING_YIELD_S,
@@ -306,7 +316,7 @@ impl CopterGuidanceConfig {
     /// thrust limits ([`ThrustLimits::validate`], section `thrust`), that
     /// `navigation_period_s` and `max_stick_angles_rad` are non-negative and finite, that
     /// `max_tilt_rad` is in `(0, π/2)`, that `max_descent_mps` and `descent_accel_mps2` are
-    /// positive and finite, that `land_speed_mps` is finite and above [`DESCENDING_MPS`], and
+    /// positive and finite, that `heading_rate_radps` is positive and finite, that `land_speed_mps` is finite and above [`DESCENDING_MPS`], and
     /// that `waypoint_yaw_radps`, `waypoint_yaw_min_leg_m`, `heading_yield_rad`, and
     /// `heading_yield_s` are non-negative and finite.
     ///
@@ -339,6 +349,7 @@ impl CopterGuidanceConfig {
             "above the touchdown detector's DESCENDING_MPS and finite",
         )?;
         check_limit("waypoint_yaw_radps", self.waypoint_yaw_radps)?;
+        check_positive("heading_rate_radps", self.heading_rate_radps)?;
         check_limit("waypoint_yaw_min_leg_m", self.waypoint_yaw_min_leg_m)?;
         check_limit("heading_yield_rad", self.heading_yield_rad)?;
         check_limit("heading_yield_s", self.heading_yield_s)?;
@@ -631,8 +642,9 @@ impl CopterGuidance {
         }
     }
 
-    /// Flies toward the waypoint, turning the heading-hold target along the leg
-    /// (`waypoint_yaw_radps`) or yielding it (`heading_yield_s`): the lateral loop gives roll/pitch (once per navigation period, held in between) and the altitude loop gives
+    /// Flies toward the waypoint, turning the heading-hold target to the waypoint's heading
+    /// (`heading_rate_radps`), along the leg (`waypoint_yaw_radps`), or yielding it
+    /// (`heading_yield_s`): the lateral loop gives roll/pitch (once per navigation period, held in between) and the altitude loop gives
     /// thrust (every tick), toward an altitude target that descends no faster than
     /// `max_descent_mps`, speeding up and braking at `descent_accel_mps2`, and no further than
     /// [`ALTITUDE_LEASH_M`] below the vehicle.
@@ -651,7 +663,7 @@ impl CopterGuidance {
             dt,
             &self.config,
             self.heading,
-            waypoint_command.position_m,
+            waypoint_command,
             estimated_state,
         );
         self.set_heading_target(heading_rad, estimated_state);

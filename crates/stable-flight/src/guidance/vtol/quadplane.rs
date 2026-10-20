@@ -228,6 +228,7 @@ impl QuadPlaneGuidance {
             velocity_mps: Some(state.velocity_mps.xy()),
             altitude_m: self.hold_altitude_m,
             cruise_speed_mps: 0.0,
+            heading_rad: None,
         });
         match self.hover.guide(dt, FlightRegime::Copter, &hold, state) {
             Setpoint::Attitude(setpoint) => AttitudeSetpoint {

@@ -91,12 +91,14 @@ fn works_with_static_slices_and_vecs() {
             velocity_mps: None,
             altitude_m: 5.0,
             cruise_speed_mps: 2.0,
+            heading_rad: None,
         },
         WaypointCommand {
             position_m: Vec2::new(30.0, 0.0),
             velocity_mps: None,
             altitude_m: 5.0,
             cruise_speed_mps: 2.0,
+            heading_rad: None,
         },
     ];
 

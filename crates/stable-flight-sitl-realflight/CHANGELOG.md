@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flipped.
 - `airframes::explora_vtol()` and `titan_cobra()` fly plane waypoints by total energy control
   (#454) on ArduPilot's defaults, with their plane airspeeds as its least and most.
+- `airframes::explora_vtol()` turns to a waypoint's heading at 30°/s (`GUID_HDG_RATE`), the
+  rate that turned it 90° in 3 mph wind without losing the hold (#417, #470).
 - `airframes::explora_vtol()` shapes its hover legs at 1 m/s² (`GUID_LAT_ACC`): after the
   back transition, a leg along the span peaked at 11° of roll instead of 35° (#418).
 
@@ -25,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tailsitter-auto-realflight --param NAME=VALUE` sets a param before takeoff, and
   `flights/explora_descent.csv` flies a 60 → 20 m hover descent over the eXplora's spawn
   point (#417).
+- `flights/explora_heading_box.csv`: the eXplora holds over its spawn point facing 8
+  headings 45° apart, 20 s each, at 40 m and 60 m (#470).
 - `tailsitter-companion-realflight` example (#333): the eXplora flown from the native link
   under a hold failsafe, its regime requested over the link (QGC's transition button through
   the bridge).

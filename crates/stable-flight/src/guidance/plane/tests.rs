@@ -171,6 +171,7 @@ fn waypoint_flight_steers_climbs_and_holds_speed() {
         velocity_mps: Some(Vec2::new(14.0, 0.0)),
         altitude_m: altitude,
         cruise_speed_mps: speed,
+        heading_rad: None,
     };
     let sign = |v: f32| if v.abs() < 1e-4 { 0 } else { v.signum() as i32 };
     let cases = [
@@ -255,6 +256,7 @@ const CLIMB: ControlInput = ControlInput::Waypoint(WaypointCommand {
     velocity_mps: Some(Vec2::new(14.0, 0.0)),
     altitude_m: 21.0,
     cruise_speed_mps: 15.0,
+    heading_rad: None,
 });
 
 /// The navigation state (total energy control's demands and integrals) builds in waypoint

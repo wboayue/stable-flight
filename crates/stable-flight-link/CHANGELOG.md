@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `PROTOCOL_VERSION` 9 (#470): core `WaypointCommand` gains `heading_rad`, which
+  changes the `Control` and `Record` shapes.
 - **Breaking:** `PROTOCOL_VERSION` 8 (#333): `Control::Regime` changes the `Control` shape.
 - **Breaking:** `LinkCommander` ignores a `Command`'s `regime`, as it ignores its `arm` (#333);
   request a regime with `Control::Regime`.

@@ -97,6 +97,7 @@ fn target(frame: MavFrame, ignore: PositionTargetTypemask) -> SET_POSITION_TARGE
         vx: 1.0,
         vy: 2.0,
         vz: 3.0,
+        yaw: 0.6,
         ..Default::default()
     }
 }
@@ -110,25 +111,31 @@ fn flies_local_ned_position_targets_as_waypoints() {
         | M::POSITION_TARGET_TYPEMASK_AZ_IGNORE
         | M::POSITION_TARGET_TYPEMASK_YAW_IGNORE
         | M::POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE;
-    // (case, frame, ignored, expected velocity (None: dropped entirely, Some(None): no velocity))
+    // (case, frame, ignored, expected (velocity, heading); None: dropped entirely)
     let cases = [
         (
             "position only",
             LOCAL,
             accel_yaw | VELOCITY_IGNORE,
-            Some(None),
+            Some((None, None)),
         ),
         (
             "position and velocity",
             LOCAL,
             accel_yaw,
-            Some(Some(Vec2::new(1.0, 2.0))),
+            Some((Some(Vec2::new(1.0, 2.0)), None)),
         ),
         (
-            "acceleration and yaw requested: ignored",
+            "acceleration, yaw, and yaw rate requested: yaw flown",
             LOCAL,
             VELOCITY_IGNORE,
-            Some(None),
+            Some((None, Some(0.6))),
+        ),
+        (
+            "acceleration and yaw rate requested: ignored",
+            LOCAL,
+            VELOCITY_IGNORE | M::POSITION_TARGET_TYPEMASK_YAW_IGNORE,
+            Some((None, None)),
         ),
         ("no position", LOCAL, POSITION_IGNORE, None),
         (
@@ -148,7 +155,7 @@ fn flies_local_ned_position_targets_as_waypoints() {
             None => {
                 check!(inputs.is_empty(), "{case}: dropped");
             }
-            Some(velocity_mps) => {
+            Some((velocity_mps, heading_rad)) => {
                 let [ControlInput::Waypoint(waypoint)] = inputs[..] else {
                     panic!("{case}: expected one waypoint, got {inputs:?}");
                 };
@@ -156,6 +163,7 @@ fn flies_local_ned_position_targets_as_waypoints() {
                 check!(waypoint.altitude_m == 5.0, "{case}: altitude is up");
                 check!(waypoint.velocity_mps == velocity_mps, "{case}");
                 check!(waypoint.cruise_speed_mps == 3.0, "{case}");
+                check!(waypoint.heading_rad == heading_rad, "{case}");
             }
         }
     }

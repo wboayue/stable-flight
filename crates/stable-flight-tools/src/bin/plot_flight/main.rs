@@ -355,6 +355,7 @@ mod tests {
             velocity_mps: None,
             altitude_m: altitude,
             cruise_speed_mps: cruise_speed,
+            heading_rad: None,
         }
     }
 

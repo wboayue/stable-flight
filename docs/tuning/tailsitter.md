@@ -238,7 +238,8 @@ eXplora (#417), 3 mph RealFlight wind (stronger at height), 60 m to 20 m:
 
 - **Symptoms:**
   - The hold sits at `sp_pitch` = the tilt cap and drifts downwind: the wing is broadside; turn
-    a wingtip into the wind (a short leg with `GUID_YAW_SLEW`, until #470).
+    a wingtip into the wind: a `heading` on the script's hold waypoints, turned to at
+    `GUID_HDG_RATE`.
   - `sp_thrust` drops to `GUID_THR_MIN` as a descent starts and the nose follows: lower
     `GUID_DESC_ACC`.
 
@@ -331,6 +332,7 @@ velocity target at the vehicle's velocity and gains speed at that rate, so a leg
 |---|---|---|
 | `GUID_LAT_ACC` | `hover.lateral.max_accel_mps2` | 1 m/s² (core default 0: off) |
 | `GUID_YAW_SLEW` | `hover.waypoint_yaw_radps` | 0: holds the heading (core default 60°/s): facing a leg flies it belly first |
+| `GUID_HDG_RATE` | `hover.heading_rate_radps` | 30°/s (core default 60°/s): turns to a waypoint's `heading`; turned 90° in 3 mph wind and held (#417) |
 | `GUID_YAW_YLD_S` | `hover.heading_yield_s` | 0: never yields the heading (core default 1 s); wind along the span is [#387](https://github.com/wboayue/stable-flight/issues/387) |
 
 eXplora (#418), `explora_transition_lap.csv --end land`, runs at 250 Hz around the handover:

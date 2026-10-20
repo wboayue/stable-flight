@@ -129,7 +129,8 @@ cargo run --bin generate_figure_eight
 ```
 
 Scripted flights are CSV waypoint files under `flights/` (`x,y,altitude,cruise_speed`,
-in meters and m/s); `ScriptCommander::new(path)` loads and loops them.
+in meters and m/s, then optional `regime`, `heading`, and `hold_s`); `ScriptCommander::new(path)`
+loads and loops them.
 
 To inspect a scripted path without flying it, render it as a static 3D image with the
 `plot_flight` binary (altitude on the vertical axis, path segments colored by cruise speed,

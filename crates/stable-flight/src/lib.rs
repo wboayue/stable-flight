@@ -447,6 +447,7 @@ impl FlightModeReport {
 ///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Optional velocity to fly through it with
 ///     altitude_m: 500.0,                        // Target altitude in meters
 ///     cruise_speed_mps: 25.0,                   // Speed cap on the way
+///     heading_rad: None,                        // Heading as guidance picks it
 /// });
 /// ```
 ///
@@ -742,6 +743,7 @@ pub struct RateCommand {
 /// - `velocity_mps`: Optional velocity vector in meters per second (north, east), fed forward while flying to the waypoint
 /// - `altitude_m`: Target altitude in meters (typically non-negative; negative values may be interpreted as ground level or cause undefined behavior)
 /// - `cruise_speed_mps`: Speed cap in meters per second while flying to the waypoint; zero, negative, or NaN means no cap
+/// - `heading_rad`: Optional heading in radians from north; any angle, wrapped by guidance
 ///
 /// Note: The specified ranges are conventional and recommended for typical use.
 /// Values outside these ranges may be clamped, ignored, or cause undefined behavior
@@ -758,6 +760,7 @@ pub struct RateCommand {
 ///     velocity_mps: Some(Vec2::new(15.0, 0.0)), // Fly through it northward at 15 m/s
 ///     altitude_m: 500.0,                        // Target altitude of 500 meters
 ///     cruise_speed_mps: 25.0,                   // At most 25 m/s on the way
+///     heading_rad: Some(0.5),                   // Face 0.5 rad east of north
 /// };
 /// ```
 ///
@@ -775,6 +778,7 @@ pub struct RateCommand {
 /// - `velocity_mps`: `None`
 /// - `altitude_m`: `0.0`
 /// - `cruise_speed_mps`: `0.0`
+/// - `heading_rad`: `None`
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WaypointCommand {
@@ -804,6 +808,15 @@ pub struct WaypointCommand {
     /// waypoint. Zero, negative, or NaN means no cap (the guidance's tilt limit still
     /// bounds the speed).
     pub cruise_speed_mps: f32,
+
+    /// Optional heading to hold, in radians from north.
+    ///
+    /// Copter guidance turns its heading-hold target to it at
+    /// [`heading_rate_radps`](crate::guidance::copter::CopterGuidanceConfig::heading_rate_radps),
+    /// instead of along the leg, and never yields it; on a tailsitter it is the hover frame's
+    /// heading, the direction the belly faces. `None` (or NaN) leaves the heading to guidance.
+    /// Plane guidance ignores it.
+    pub heading_rad: Option<f32>,
 }
 
 /// An absolute attitude and collective thrust, for [`ControlInput::AbsoluteAttitude`]: what

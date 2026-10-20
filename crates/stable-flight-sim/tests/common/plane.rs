@@ -133,6 +133,7 @@ pub fn north_line_command(altitude_m: f32, airspeed_mps: f32) -> Command {
         velocity_mps: Some(Vec2::new(airspeed_mps, 0.0)),
         altitude_m,
         cruise_speed_mps: airspeed_mps,
+        heading_rad: None,
     }))
 }
 
@@ -143,6 +144,7 @@ pub fn loiter(center_m: Vec2, altitude_m: f32, airspeed_mps: f32) -> ConstantCom
         velocity_mps: None,
         altitude_m,
         cruise_speed_mps: airspeed_mps,
+        heading_rad: None,
     })))
 }
 

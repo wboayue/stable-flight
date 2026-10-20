@@ -9,18 +9,28 @@
 //! # CSV format
 //!
 //! One waypoint per line, four comma-separated fields: `x,y,altitude,cruise_speed`
-//! (meters and meters-per-second), and an optional fifth, `regime`: `copter` (the default) or
-//! `plane`, the [`FlightRegime`] to fly the leg *to* that waypoint in (a VTOL transitions as
-//! the leg begins; a copter refuses `plane`). A route that holds on a final `plane` waypoint
-//! (`RouteEnd::Hold`) loiters around it; one that lands transitions back first, since a land
-//! asks for copter. Blank lines and lines starting with `#` are ignored, and an optional
-//! non-numeric header row is skipped.
+//! (meters and meters-per-second), then up to three optional ones, each left empty for its
+//! default:
+//!
+//! - `regime`: `copter` (the default) or `plane`, the [`FlightRegime`] to fly the leg *to*
+//!   that waypoint in (a VTOL transitions as the leg begins; a copter refuses `plane`). A
+//!   route that holds on a final `plane` waypoint (`RouteEnd::Hold`) loiters around it; one
+//!   that lands transitions back first, since a land asks for copter.
+//! - `heading`: degrees from north to face while flying to and holding the waypoint
+//!   ([`WaypointCommand::heading_rad`]); empty leaves the heading to guidance.
+//! - `hold_s`: seconds to keep flying to the waypoint once reached, before the next one (or
+//!   the route's land); empty or `0` moves on at once.
+//!
+//! Blank lines and lines starting with `#` are ignored, and an optional non-numeric header row
+//! is skipped.
 //!
 //! ```text
 //! # figure-eight, medium/park envelope
 //! x,y,altitude,cruise_speed
 //! 30.00,0.00,27.50,7.0
 //! 0.00,0.00,40.00,7.0
+//! # face east over the start for 20 s
+//! 0.00,0.00,40.00,7.0,,90,20
 //! ```
 
 use std::fs;
@@ -32,11 +42,17 @@ use stable_flight::commanders::waypoint::{
     DEFAULT_ALTITUDE_ACCEPTANCE_M, PLANE_ALTITUDE_ACCEPTANCE_M,
 };
 use stable_flight::commanders::{EmptyWaypoints, RouteEnd, WaypointFollower};
-use stable_flight::{Command, Commander, FlightRegime, VehicleState, WaypointCommand};
+use stable_flight::{
+    Command, Commander, ControlInput, FlightRegime, VehicleState, WaypointCommand,
+};
 
-/// Comma-separated fields on a waypoint row: four numbers, then an optional regime.
+/// Comma-separated fields on a waypoint row: four numbers, then an optional regime, heading,
+/// and hold.
 const NUMERIC_FIELDS: usize = 4;
-const MAX_FIELDS: usize = NUMERIC_FIELDS + 1;
+const REGIME_FIELD: usize = NUMERIC_FIELDS;
+const HEADING_FIELD: usize = 5;
+const HOLD_FIELD: usize = 6;
+const MAX_FIELDS: usize = HOLD_FIELD + 1;
 
 /// Errors that can occur while loading or parsing a waypoint script.
 #[derive(Debug, Error)]
@@ -73,7 +89,9 @@ impl From<EmptyWaypoints> for ScriptError {
 /// A thin wrapper over the core [`WaypointFollower`] (default acceptance radius
 /// [`DEFAULT_ACCEPTANCE_RADIUS_M`](stable_flight::commanders::waypoint::DEFAULT_ACCEPTANCE_RADIUS_M),
 /// default [`RouteEnd::Loop`]), with the altitude acceptance of each leg's regime
-/// ([`with_altitude_acceptance`](Self::with_altitude_acceptance)).
+/// ([`with_altitude_acceptance`](Self::with_altitude_acceptance)), and a script's holds: a
+/// waypoint with a hold keeps being commanded, without a fly-through velocity, for its
+/// `hold_s` once the follower has reached it, while the follower waits on the next one.
 ///
 /// # Examples
 ///
@@ -91,6 +109,29 @@ pub struct ScriptCommander {
     copter_altitude_acceptance_m: f32,
     /// Altitude acceptance on plane legs, in meters.
     plane_altitude_acceptance_m: f32,
+    /// Seconds to hold each waypoint once reached, by index.
+    holds_s: Vec<f32>,
+    /// The hold being flown.
+    hold: Option<Hold>,
+    /// The follower has started the route's land.
+    landing: bool,
+}
+
+/// A reached waypoint being held.
+#[derive(Debug, Clone, Copy)]
+struct Hold {
+    /// The held waypoint's index.
+    index: usize,
+    /// Seconds left to hold it.
+    remaining_s: f32,
+}
+
+/// A script row: a waypoint, the regime of the leg to it, and its hold.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Leg {
+    waypoint: WaypointCommand,
+    regime: FlightRegime,
+    hold_s: f32,
 }
 
 impl ScriptCommander {
@@ -101,7 +142,7 @@ impl ScriptCommander {
     /// Returns [`ScriptError::Io`] if the file cannot be read, [`ScriptError::Parse`] if a
     /// row is malformed, or [`ScriptError::Empty`] if the file contains no waypoints.
     pub fn new(path: &str) -> Result<Self, ScriptError> {
-        Self::from_route(load_route(path)?)
+        Self::from_legs(load_route(path)?)
     }
 
     /// Builds a commander from an already-constructed list of waypoints.
@@ -155,12 +196,28 @@ impl ScriptCommander {
     /// .expect("non-empty");
     /// ```
     pub fn from_route(route: Vec<(WaypointCommand, FlightRegime)>) -> Result<Self, ScriptError> {
-        let (waypoints, regimes) = route.into_iter().unzip();
+        Self::from_legs(
+            route
+                .into_iter()
+                .map(|(waypoint, regime)| Leg {
+                    waypoint,
+                    regime,
+                    hold_s: 0.0,
+                })
+                .collect(),
+        )
+    }
+
+    /// Builds a commander from script rows.
+    fn from_legs(legs: Vec<Leg>) -> Result<Self, ScriptError> {
         Ok(ScriptCommander {
-            follower: WaypointFollower::new(waypoints)?,
-            regimes,
+            follower: WaypointFollower::new(legs.iter().map(|leg| leg.waypoint).collect())?,
+            regimes: legs.iter().map(|leg| leg.regime).collect(),
             copter_altitude_acceptance_m: DEFAULT_ALTITUDE_ACCEPTANCE_M,
             plane_altitude_acceptance_m: PLANE_ALTITUDE_ACCEPTANCE_M,
+            holds_s: legs.iter().map(|leg| leg.hold_s).collect(),
+            hold: None,
+            landing: false,
         })
     }
 
@@ -255,10 +312,33 @@ impl ScriptCommander {
 
     /// The regime of the leg to the active waypoint.
     fn active_regime(&self) -> FlightRegime {
-        self.regimes
-            .get(self.follower.current_index())
-            .copied()
-            .unwrap_or_default()
+        self.regime(self.follower.current_index())
+    }
+
+    /// The regime of the leg to waypoint `index`.
+    fn regime(&self, index: usize) -> FlightRegime {
+        self.regimes.get(index).copied().unwrap_or_default()
+    }
+
+    /// The held waypoint's command this tick, after `dt` more of the hold; `None` once the
+    /// hold is over, or without one.
+    fn held_command(&mut self, dt: f32) -> Option<Command> {
+        let hold = self.hold.as_mut()?;
+        hold.remaining_s -= dt;
+        // A NaN `dt` ends the hold.
+        if hold.remaining_s.is_nan() || hold.remaining_s <= 0.0 {
+            self.hold = None;
+            return None;
+        }
+        let index = hold.index;
+        Some(self.hold_command(index))
+    }
+
+    /// Waypoint `index` as the follower would fly it with no leg ahead: without a fly-through
+    /// velocity unless it has its own, so the vehicle stops on it.
+    fn hold_command(&self, index: usize) -> Command {
+        let waypoint = self.follower.waypoints()[index];
+        Command::armed(ControlInput::Waypoint(waypoint)).with_regime(self.regime(index))
     }
 }
 
@@ -286,12 +366,12 @@ impl ScriptCommander {
 pub fn load_waypoints(path: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
     Ok(load_route(path)?
         .into_iter()
-        .map(|(waypoint, _)| waypoint)
+        .map(|leg| leg.waypoint)
         .collect())
 }
 
-/// Loads a script's waypoints with the regime of the leg to each.
-fn load_route(path: &str) -> Result<Vec<(WaypointCommand, FlightRegime)>, ScriptError> {
+/// Loads a script's rows.
+fn load_route(path: &str) -> Result<Vec<Leg>, ScriptError> {
     let contents = fs::read_to_string(path).map_err(|source| ScriptError::Io {
         path: path.to_string(),
         source,
@@ -303,26 +383,41 @@ impl Commander for ScriptCommander {
     /// Delegates to the core [`WaypointFollower`] (advances within the acceptance radius or
     /// once past a waypoint along its leg, and within the altitude acceptance of the active
     /// leg's regime; then loops, holds, or lands per its [`RouteEnd`]), asking for the regime
-    /// of the leg to the current waypoint.
+    /// of the leg to the current waypoint. A waypoint with a hold, once the follower moves on
+    /// from it (to the next waypoint or the route's land), is commanded instead for its
+    /// `hold_s`, the follower paused meanwhile.
     fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
+        if let Some(command) = self.held_command(dt) {
+            return command;
+        }
+        let reached = self.follower.current_index();
         let altitude_acceptance_m = *self.altitude_acceptance_m(self.active_regime());
         self.follower.set_altitude_acceptance(altitude_acceptance_m);
         let command = self.follower.next_command(dt, current_state);
+        let lands = matches!(command.input, ControlInput::Land(_));
+        let moved_on = self.follower.current_index() != reached || (lands && !self.landing);
+        self.landing = lands;
+        let hold_s = self.holds_s.get(reached).copied().unwrap_or(0.0);
+        if moved_on && hold_s > 0.0 {
+            self.hold = Some(Hold {
+                index: reached,
+                remaining_s: hold_s,
+            });
+            return self.hold_command(reached);
+        }
         command.with_regime(self.active_regime())
     }
 }
 
-/// Parses waypoint rows, with the regime of the leg to each, from CSV `contents`. `path` is
-/// used only to label parse errors.
+/// Parses script rows from CSV `contents`. `path` is used only to label parse errors.
 ///
 /// Blank lines and `#` comments are skipped, as is a leading non-numeric header row. Each
 /// remaining line must hold four comma-separated, finite floats
 /// (`x,y,altitude,cruise_speed`; non-finite values are rejected), then optionally a regime,
-/// `copter` or `plane` (any case; `copter` when absent).
-fn parse_route(
-    path: &str,
-    contents: &str,
-) -> Result<Vec<(WaypointCommand, FlightRegime)>, ScriptError> {
+/// `copter` or `plane` (any case; `copter` when absent or empty), a finite heading in degrees
+/// (none when absent or empty), and a finite, non-negative hold in seconds (0 when absent or
+/// empty).
+fn parse_route(path: &str, contents: &str) -> Result<Vec<Leg>, ScriptError> {
     let mut waypoints = Vec::new();
 
     for (index, raw) in contents.lines().enumerate() {
@@ -348,7 +443,7 @@ fn parse_route(
                 path: path.to_string(),
                 line: line_number,
                 message: format!(
-                    "expected {NUMERIC_FIELDS} or {MAX_FIELDS} fields, found {}",
+                    "expected {NUMERIC_FIELDS} to {MAX_FIELDS} fields, found {}",
                     fields.len()
                 ),
             });
@@ -372,7 +467,9 @@ fn parse_route(
             Ok(value)
         };
 
-        let regime = match fields.get(NUMERIC_FIELDS).map(|f| f.to_ascii_lowercase()) {
+        // An optional field: `None` when absent or empty.
+        let optional = |index: usize| fields.get(index).copied().filter(|f| !f.is_empty());
+        let regime = match optional(REGIME_FIELD).map(str::to_ascii_lowercase) {
             None => FlightRegime::Copter,
             Some(regime) if regime == "copter" => FlightRegime::Copter,
             Some(regime) if regime == "plane" => FlightRegime::Plane,
@@ -384,13 +481,29 @@ fn parse_route(
                 });
             }
         };
+        let heading_rad = optional(HEADING_FIELD)
+            .map(|field| parse(field, "heading").map(f32::to_radians))
+            .transpose()?;
+        let hold_s = optional(HOLD_FIELD).map_or(Ok(0.0), |field| parse(field, "hold_s"))?;
+        if hold_s < 0.0 {
+            return Err(ScriptError::Parse {
+                path: path.to_string(),
+                line: line_number,
+                message: format!("negative hold_s: {hold_s}"),
+            });
+        }
         let waypoint = WaypointCommand {
             position_m: Vec2::new(parse(fields[0], "x")?, parse(fields[1], "y")?),
             velocity_mps: None,
             altitude_m: parse(fields[2], "altitude")?,
             cruise_speed_mps: parse(fields[3], "cruise_speed")?,
+            heading_rad,
         };
-        waypoints.push((waypoint, regime));
+        waypoints.push(Leg {
+            waypoint,
+            regime,
+            hold_s,
+        });
     }
 
     Ok(waypoints)
