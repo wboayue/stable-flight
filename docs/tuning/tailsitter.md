@@ -228,7 +228,7 @@ against `sp_pitch`, `sp_thrust`, and `elevon_*`.
 
 eXplora (#417), 3 mph RealFlight wind (stronger at height), 60 m to 20 m:
 
-| Heading | `GUID_DESC_ACC` effect | Drift max | Worst `view_pitch` error | `sp_thrust` at the start | Elevon peak |
+| Heading | Descent start | Drift max | Worst `view_pitch` error | `sp_thrust` at the start | Elevon peak |
 |---|---|---|---|---|---|
 | Belly into the wind | stepped to 1.5 m/s | 41–43 m, at the 27° cap | 7.6–8.1° | 0.65 (floor)–0.92 | 0.45–0.50 |
 | Belly into the wind, `GUID_TILT_MAX` 35° | stepped | 12.5 m | 97° | 0.65–1.00 | 1.00 |
