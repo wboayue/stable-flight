@@ -1952,6 +1952,30 @@ fn descent_speeds_up_at_descent_accel() {
     }
 }
 
+/// A waypoint descent right after a land picks up the land's speed and keeps speeding up from
+/// it; after a land that latched nothing (a NaN altitude), it starts from rest.
+#[test]
+fn a_descent_after_a_land_starts_from_the_land_speed() {
+    const DT: f32 = 0.01;
+    let land = ControlInput::Land(LandCommand::default());
+    // (altitude the land saw, expected first descent feedforward m/s)
+    let cases = [
+        (
+            60.0,
+            -(DEFAULT_LAND_SPEED_MPS + DEFAULT_DESCENT_ACCEL_MPS2 * DT),
+        ),
+        (f32::NAN, -DEFAULT_DESCENT_ACCEL_MPS2 * DT),
+    ];
+    for (land_altitude_m, expected) in cases {
+        let (mut guidance, mut state) = guidance_at(60.0);
+        state.position_m.z = land_altitude_m;
+        guidance.guide(DT, FlightRegime::Copter, &land, &state);
+        guidance.altitude_target_m = None;
+        let target = guidance.descend_toward(DT, 10.0, 60.0);
+        approx::assert_relative_eq!(target.velocity_mps, expected, epsilon = 1e-4);
+    }
+}
+
 /// The vehicle's altitude on a tick, in m.
 type AltitudeAt = fn(usize) -> f32;
 

@@ -675,7 +675,12 @@ impl CopterGuidance {
                 lowered(start_m, speed_mps * dt, altitude_m)
             });
         self.altitude_target_m = Some(target_m).filter(|t| t.is_finite());
-        self.descent_speed_mps = speed_mps;
+        // With nothing latched nothing descends, so a waypoint descent next starts from rest.
+        self.descent_speed_mps = if self.altitude_target_m.is_some() {
+            speed_mps
+        } else {
+            0.0
+        };
         let waypoint = WaypointCommand {
             position_m: land_command.position_m,
             ..Default::default()
