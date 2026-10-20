@@ -179,7 +179,8 @@ Start at 1.5 m/s, the default descent rate of ArduPilot (`WP_SPD_DN`) and PX4
 shows otherwise.
 
 **Method.** Fly a hover-only script that climbs to a waypoint and descends 40 m to another
-over the same point (the #414 runs: 60 m to 20 m over the spawn point), with `--record`.
+over the same point (`flights/explora_descent.csv`: 60 m to 20 m over the spawn point), with
+`--record`; `--param GUID_DESC_MAX=2` sets each run's rate.
 Across the descent, from the peak `altitude` down to the lower waypoint, read:
 
 - `view_pitch` against `sp_pitch`: a swing on a steady setpoint is this limit;

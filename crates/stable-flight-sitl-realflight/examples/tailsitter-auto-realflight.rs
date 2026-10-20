@@ -29,13 +29,16 @@
 //!
 //! The script path is the first argument (default `flights/explora_figure_eight.csv`); the
 //! RealFlight host defaults to `10.211.55.3:8080` via `--host`; the link addresses are
-//! `--link-bind` and `--link-peer`.
+//! `--link-bind` and `--link-peer`. `--param NAME=VALUE` (repeatable) sets a param before
+//! takeoff, as the link would (e.g. `GUID_TILT_MAX=35`); an unknown name or a rejected value
+//! stops the example before it flies.
 //!
 //! ```text
 //! cargo run -p stable-flight-bridge   # once, in a second terminal
 //! cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight
 //! cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- flights/explora_hover.csv
 //! cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- --end land
+//! cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- flights/explora_descent.csv --param GUID_THR_MIN=0.75
 //! cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- --host 192.168.1.20:8080
 //! ```
 
@@ -47,6 +50,7 @@ use log::{debug, info, warn};
 
 use stable_flight::commanders::RouteEnd;
 use stable_flight::guidance::vtol::TailsitterGuidance;
+use stable_flight::params::Params;
 use stable_flight::stabilizers::vtol::TailsitterStabilizer;
 use stable_flight::view::tailsitter_rotation;
 use stable_flight::{FlightLoop, FlightModeReport, TelemetryPublisher, TelemetryRecord};
@@ -88,6 +92,16 @@ struct Args {
     /// Write one CSV row per tick to this file.
     #[arg(long)]
     record: Option<String>,
+    /// Set a param before takeoff, as `NAME=VALUE` (repeatable).
+    #[arg(long = "param", value_parser = parse_param)]
+    params: Vec<(String, f32)>,
+}
+
+/// `--param`'s `NAME=VALUE`.
+fn parse_param(arg: &str) -> Result<(String, f32), String> {
+    let (name, value) = arg.split_once('=').ok_or("expected NAME=VALUE")?;
+    let value = value.trim().parse::<f32>().map_err(|e| e.to_string())?;
+    Ok((name.trim().to_owned(), value))
 }
 
 /// `--end`: the core [`RouteEnd`], as a CLI value.
@@ -165,6 +179,14 @@ fn main() {
         mixer,
         (telemetry, (recorder, ModeLog::default())),
     );
+
+    for (name, value) in &args.params {
+        if let Err(e) = flight_loop.set_param(name, *value) {
+            eprintln!("--param {name}={value}: {e:?}");
+            std::process::exit(2);
+        }
+        info!("param {name} = {value}");
+    }
 
     // Ctrl-C stops the loop cleanly (RealFlightVehicle re-enables RC control on drop).
     let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");

@@ -66,7 +66,7 @@ just fly-tailsitter-companion                 # tailsitter-companion-realflight:
 just fly-autotune                             # copter-autotune-realflight: step-response autotune of roll/pitch rate and angle, prints gains, lands (--airframe titan-cobra: its lift rotors)
 just fly-tailsitter                           # tailsitter-manual-realflight: eXplora hover, transitions, plane from a joystick (D-pad Right plane, Left copter, Up rate; --record CSV)
 just fly-quadplane-auto                       # quadplane-auto-realflight: Titan Cobra VTOL waypoint script (default flights/cobra_hover.csv; cobra_transition_lap.csv, cobra_legs.csv; --end, --record, --param NAME=VALUE)
-just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv; flights/explora_transition.csv flies plane legs, explora_transition_lap.csv one lap of them; --end, --record)
+just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv; flights/explora_transition.csv flies plane legs, explora_transition_lap.csv one lap of them, explora_descent.csv a 60 → 20 m hover descent; --end, --record, --param NAME=VALUE)
 just capture                                  # capture-state-realflight: joystick flight, raw SimulatorState → CSV
 just capture-xplane                           # capture-state-xplane: read-only, raw X-Plane samples → CSV while flown with X-Plane's controls (--host, --output)
 just fly-xplane-auto                          # quadplane-auto-xplane: the Alia through flights/alia_transition_lap.csv (from Oceano L52: transitions, plane legs offshore; --end, --record, --param NAME=VALUE)
