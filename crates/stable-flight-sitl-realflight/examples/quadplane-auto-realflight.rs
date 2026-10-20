@@ -47,6 +47,7 @@ use stable_flight::stabilizers::vtol::QuadPlaneStabilizer;
 use stable_flight::{FlightLoop, FlightModeReport, TelemetryPublisher, TelemetryRecord};
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
+use stable_flight_sitl::cli::parse_param;
 use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::recorder::{CsvRecorder, QuadPlaneColumns};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
@@ -86,13 +87,6 @@ struct Args {
     /// Set a param before takeoff, as `NAME=VALUE` (repeatable).
     #[arg(long = "param", value_parser = parse_param)]
     params: Vec<(String, f32)>,
-}
-
-/// `--param`'s `NAME=VALUE`.
-fn parse_param(arg: &str) -> Result<(String, f32), String> {
-    let (name, value) = arg.split_once('=').ok_or("expected NAME=VALUE")?;
-    let value = value.trim().parse::<f32>().map_err(|e| e.to_string())?;
-    Ok((name.trim().to_owned(), value))
 }
 
 /// `--end`: the core [`RouteEnd`], as a CLI value.

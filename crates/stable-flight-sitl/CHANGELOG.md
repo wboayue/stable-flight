@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `cli::parse_param`: a `--param NAME=VALUE` argument as a name and value (a clap
+  `value_parser`; `ParamArgError` when it doesn't parse), shared by the simulator examples
+  that set params before takeoff (#417).
+
 - `joystick_events` example: every gilrs event as CSV, and each gamepad's mapping source and
   native axis and button codes; `--raw` without gilrs's default filters (#446).
 

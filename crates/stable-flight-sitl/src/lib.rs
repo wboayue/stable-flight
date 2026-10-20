@@ -25,6 +25,7 @@
 /// version it uses (`stable_flight_sitl::stable_flight::FlightLoop`) without a second copy.
 pub use stable_flight;
 
+pub mod cli;
 pub mod commanders;
 pub mod recorder;
 pub mod runner;
