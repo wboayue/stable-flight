@@ -26,8 +26,8 @@ use stable_flight::tuning::autotune::{
 };
 use stable_flight::tuning::{ProbeConfig, ProbeStatus};
 use stable_flight::{
-    Commander, Configurable, FlightLoop, Guidance, Mixer, Stabilizer, TelemetryPublisher, Vec2,
-    Vehicle, WaypointCommand,
+    Command, Commander, Configurable, ControlInput, FlightLoop, Guidance, Mixer, Stabilizer,
+    TelemetryPublisher, Vec2, Vehicle, VehicleState, WaypointCommand,
 };
 use stable_flight_sim::airframes::{self, Airframe};
 use stable_flight_sim::{Perturbations, SimCopter, Wind};
@@ -200,6 +200,24 @@ pub fn hover_at(altitude_m: f32) -> Hover {
     WaypointFollower::new([waypoint(0.0, 0.0, altitude_m)])
         .expect("one waypoint")
         .with_route_end(RouteEnd::Hold)
+}
+
+/// Hovers, then flies `input` (if any) from `after_s` on.
+pub struct ThenFly {
+    pub hover: Hover,
+    pub elapsed_s: f32,
+    pub after_s: f32,
+    pub input: Option<ControlInput>,
+}
+
+impl Commander for ThenFly {
+    fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
+        self.elapsed_s += dt;
+        match self.input {
+            Some(input) if self.elapsed_s >= self.after_s => Command::new(true, input),
+            _ => self.hover.next_command(dt, state),
+        }
+    }
 }
 
 /// `plant` taken off and settled for [`HOVER_SETTLE_S`] on [`hover_follower`]'s point.
