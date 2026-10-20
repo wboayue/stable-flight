@@ -1,8 +1,9 @@
-//! The heading along a waypoint leg, and its yield when the heading is stuck.
+//! The heading along a waypoint leg or to a waypoint's heading, and its yield when the heading
+//! is stuck.
 
 use super::CopterGuidanceConfig;
 use crate::math::all_finite;
-use crate::{Vec2, VehicleState, wrap_angle};
+use crate::{Vec2, VehicleState, WaypointCommand, wrap_angle};
 
 /// Yaw rate toward the heading-hold target, in rad/s (about 6°/s), below which a heading off
 /// it by more than [`heading_yield_rad`](CopterGuidanceConfig::heading_yield_rad) is stuck. A
@@ -10,8 +11,8 @@ use crate::{Vec2, VehicleState, wrap_angle};
 /// or yaws away (#452).
 const STUCK_YAW_RATE_RADPS: f32 = 0.1;
 
-/// Turns the heading-hold target along a waypoint leg, and yields it to the vehicle's heading
-/// once the heading is stuck off it. Allocation-free.
+/// Turns the heading-hold target to a waypoint's heading or along its leg, and yields a leg's
+/// to the vehicle's heading once the heading is stuck off it. Allocation-free.
 ///
 /// The config is passed to each call rather than stored, so the owner's config stays the
 /// single source of truth.
@@ -37,10 +38,13 @@ struct Leg {
 }
 
 impl LegHeading {
-    /// The heading-hold target for this tick of the leg to `waypoint_m`, from the current
-    /// `target_rad`: turned toward the leg's direction by at most `waypoint_yaw_radps · dt` the
-    /// shorter way round, unwrapped; the vehicle's heading once the leg has yielded
-    /// ([`yielded`](Self::yielded)); otherwise `target_rad`.
+    /// The heading-hold target for this tick of the leg to `waypoint`, from the current
+    /// `target_rad`: turned toward the waypoint's finite
+    /// [`heading_rad`](WaypointCommand::heading_rad) by at most `heading_rate_radps · dt`, never
+    /// yielded; without one, turned toward the leg's direction by at most
+    /// `waypoint_yaw_radps · dt`, or the vehicle's heading once the leg has yielded
+    /// ([`yielded`](Self::yielded)); otherwise `target_rad`. Turns go the shorter way round,
+    /// unwrapped.
     ///
     /// A new waypoint starts a leg from the vehicle's position, with nothing stuck; a
     /// non-finite position starts none, so the next tick retries. A waypoint that moves every
@@ -52,10 +56,13 @@ impl LegHeading {
         dt: f32,
         config: &CopterGuidanceConfig,
         target_rad: f32,
-        waypoint_m: Vec2,
+        waypoint: &WaypointCommand,
         estimated_state: &VehicleState,
     ) -> f32 {
-        let bearing_rad = self.bearing_rad(config, waypoint_m, estimated_state);
+        let bearing_rad = self.bearing_rad(config, waypoint.position_m, estimated_state);
+        if let Some(heading_rad) = waypoint.heading_rad.filter(|h| h.is_finite()) {
+            return turned_toward(target_rad, heading_rad, config.heading_rate_radps * dt);
+        }
         if self.yielded(dt, config, target_rad, estimated_state) {
             return estimated_state.heading_rad;
         }
@@ -63,8 +70,7 @@ impl LegHeading {
         let Some(bearing_rad) = bearing_rad.filter(|_| rate_radps > 0.0) else {
             return target_rad;
         };
-        let step_rad = rate_radps * dt;
-        target_rad + wrap_angle(bearing_rad - target_rad).clamp(-step_rad, step_rad)
+        turned_toward(target_rad, bearing_rad, rate_radps * dt)
     }
 
     /// Forgets the leg and its yield.
@@ -128,4 +134,9 @@ impl LegHeading {
         self.yielding = self.stuck_s > config.heading_yield_s;
         self.yielding
     }
+}
+
+/// `from_rad` turned toward `to_rad` the shorter way round by at most `step_rad`, unwrapped.
+fn turned_toward(from_rad: f32, to_rad: f32, step_rad: f32) -> f32 {
+    from_rad + wrap_angle(to_rad - from_rad).clamp(-step_rad, step_rad)
 }

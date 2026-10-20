@@ -16,9 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   refused. A tailsitter's attitude and heading are reported in its hover view while it
   hovers.
 
+- `SET_POSITION_TARGET_LOCAL_NED`'s `yaw`, when its mask includes it, is the waypoint's
+  heading (#470), as ArduPilot's guided mode and PX4's offboard mode fly it.
+
 ### Changed
 
-- Speaks link `PROTOCOL_VERSION` 8 (#391, #333); update the flight controller with it.
+- Speaks link `PROTOCOL_VERSION` 9 (#391, #333, #470); update the flight controller with it.
 - `VFR_HUD` airspeed is the flight controller's airspeed when it reports one (RealFlight
   does), ground speed otherwise.
 

@@ -1,8 +1,10 @@
 use approx::assert_relative_eq;
 use assert2::check;
 use stable_flight::{Vec2, Vec3};
+use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
 
-use super::{ScriptCommander, ScriptError, parse_route};
+use super::{Leg, ScriptCommander, ScriptError, parse_route};
+use stable_flight::commanders::RouteEnd;
 use stable_flight::{
     Command, Commander, ControlInput, FlightRegime, VehicleState, WaypointCommand,
 };
@@ -11,7 +13,7 @@ use stable_flight::{
 fn parse_waypoints(path: &str, contents: &str) -> Result<Vec<WaypointCommand>, ScriptError> {
     Ok(parse_route(path, contents)?
         .into_iter()
-        .map(|(waypoint, _)| waypoint)
+        .map(|leg| leg.waypoint)
         .collect())
 }
 
@@ -119,7 +121,7 @@ x,y,altitude,cruise_speed
     );
     check!(path == "test.csv");
     check!(line == 2);
-    check!(message.contains("expected 4 or 5 fields"));
+    check!(message.contains("expected 4 to 7 fields"));
 }
 
 #[test]
@@ -166,8 +168,8 @@ fn follows_loaded_waypoints_via_core_follower() {
     check!(commander.follower().waypoints().len() == 2);
 }
 
-/// The optional fifth field is the leg's regime, any case; absent is copter; anything else, or
-/// a sixth field, is a parse error.
+/// The optional fifth field is the leg's regime, any case; absent or empty is copter; anything
+/// else, or an eighth field, is a parse error.
 #[test]
 fn fifth_field_is_the_regime() {
     let csv = "\
@@ -176,9 +178,10 @@ x,y,altitude,cruise_speed,regime
 200,0,30,14,plane
 200,100,30,14, Plane
 0,0,20,3,copter
+0,0,20,3,,90
 ";
     assert2::assert!(let Ok(route) = parse_route("test.csv", csv));
-    let regimes: Vec<_> = route.iter().map(|(_, regime)| *regime).collect();
+    let regimes: Vec<_> = route.iter().map(|leg| leg.regime).collect();
     check!(
         regimes
             == [
@@ -186,10 +189,11 @@ x,y,altitude,cruise_speed,regime
                 FlightRegime::Plane,
                 FlightRegime::Plane,
                 FlightRegime::Copter,
+                FlightRegime::Copter,
             ]
     );
 
-    for bad in ["0,0,20,3,boat", "0,0,20,3,plane,extra"] {
+    for bad in ["0,0,20,3,boat", "0,0,20,3,plane,0,0,extra"] {
         assert2::assert!(let Err(ScriptError::Parse { line, .. }) = parse_route("test.csv", bad));
         check!(line == 1, "{bad}");
     }
@@ -271,4 +275,95 @@ fn altitude_acceptance_follows_each_legs_regime() {
         }
         check!(commander.follower().current_index() == expected, "{name}");
     }
+}
+
+/// The optional sixth field is the heading in degrees and the seventh the hold in seconds;
+/// absent or empty is no heading and no hold. A non-numeric or non-finite heading or hold, or
+/// a negative hold, is a parse error.
+#[test]
+fn sixth_and_seventh_fields_are_heading_and_hold() {
+    // (row, expected (heading, hold_s))
+    let cases = [
+        ("0,0,20,3", (None, 0.0)),
+        ("0,0,20,3,,90", (Some(FRAC_PI_2), 0.0)),
+        ("0,0,20,3,plane,-45,20", (Some(-FRAC_PI_4), 20.0)),
+        ("0,0,20,3,,,5", (None, 5.0)),
+        ("0,0,20,3,copter,,", (None, 0.0)),
+    ];
+    for (row, (heading_rad, hold_s)) in cases {
+        assert2::assert!(let Ok(route) = parse_route("test.csv", row));
+        let [leg] = route[..] else {
+            panic!("{row}: expected one row, got {route:?}");
+        };
+        check!(leg.waypoint.heading_rad == heading_rad, "{row}");
+        check!(leg.hold_s == hold_s, "{row}");
+    }
+
+    // (row, expected message)
+    let errors = [
+        ("0,0,20,3,,east", "invalid heading"),
+        ("0,0,20,3,,nan", "non-finite heading"),
+        ("0,0,20,3,,0,soon", "invalid hold_s"),
+        ("0,0,20,3,,0,inf", "non-finite hold_s"),
+        ("0,0,20,3,,0,-1", "negative hold_s"),
+    ];
+    for (row, expected) in errors {
+        assert2::assert!(let Err(ScriptError::Parse { message, .. }) = parse_route("test.csv", row));
+        check!(message.contains(expected), "{row}: {message}");
+    }
+}
+
+/// A route of waypoints along x, each with the given hold and heading, and a 5 m/s cruise.
+fn holding_route(holds: &[(f32, f32)]) -> Vec<Leg> {
+    holds
+        .iter()
+        .enumerate()
+        .map(|(index, &(hold_s, heading_rad))| Leg {
+            waypoint: WaypointCommand {
+                cruise_speed_mps: 5.0,
+                heading_rad: Some(heading_rad),
+                ..wp(50.0 * index as f32, 0.0)
+            },
+            regime: FlightRegime::Copter,
+            hold_s,
+        })
+        .collect()
+}
+
+/// A reached waypoint with a hold keeps being commanded for its hold, without the leg's
+/// fly-through velocity, while the follower waits on the next waypoint; then the next is
+/// flown. 0.35 s of 0.1 s ticks: the reaching tick and three more.
+#[test]
+fn holds_a_reached_waypoint_for_its_hold() {
+    let mut commander =
+        ScriptCommander::from_legs(holding_route(&[(0.0, 0.0), (0.35, 1.0), (0.0, 2.0)]))
+            .expect("non-empty");
+    // Reaches the first, then flies the leg to the second with its velocity.
+    commander.next_command(0.1, &state_at(0.0, 0.0));
+    let on_leg = waypoint(commander.next_command(0.1, &state_at(25.0, 0.0)));
+    check!(on_leg.velocity_mps == Some(Vec2::new(5.0, 0.0)));
+
+    let mut targets = Vec::new();
+    for _ in 0..5 {
+        let target = waypoint(commander.next_command(0.1, &state_at(50.0, 0.0)));
+        targets.push((target.position_m.x, target.velocity_mps, target.heading_rad));
+    }
+    let held = (50.0, None, Some(1.0));
+    let next = (100.0, Some(Vec2::new(5.0, 0.0)), Some(2.0));
+    check!(targets == [held, held, held, held, next]);
+    check!(commander.follower().current_index() == 2);
+}
+
+/// A hold on the last waypoint of a route that lands is flown before the land.
+#[test]
+fn holds_the_last_waypoint_before_the_land() {
+    let mut commander = ScriptCommander::from_legs(holding_route(&[(0.35, 1.0)]))
+        .expect("non-empty")
+        .with_route_end(RouteEnd::Land);
+    let inputs: Vec<_> = (0..5)
+        .map(|_| commander.next_command(0.1, &state_at(0.0, 0.0)).input)
+        .collect();
+    let held = ControlInput::Waypoint(holding_route(&[(0.35, 1.0)])[0].waypoint);
+    check!(inputs[..4] == [held; 4]);
+    assert2::assert!(let ControlInput::Land(_) = inputs[4]);
 }

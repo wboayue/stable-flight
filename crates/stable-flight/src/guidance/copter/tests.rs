@@ -3,7 +3,7 @@ use crate::{Vec2, Vec3};
 use super::*;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use crate::{ControlOutput, RateCommand, RateSetpoint, Stabilizer};
-use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
+use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
 
 /// Guidance and stabilizer run back to back, as `FlightLoop` does, for end-to-end checks of
 /// the whole copter controller.
@@ -530,6 +530,94 @@ fn a_yielded_heading_follows_the_vehicle_until_the_leg_changes() {
                     &at(vehicle_rad),
                 ));
             }
+        }
+        let error = wrap_angle(heading - expected).abs();
+        assert!(error < 1e-4, "{case}: {heading}, expected {expected}");
+    }
+}
+
+/// A waypoint's heading turns the heading-hold target to it at `heading_rate_radps`, the
+/// shorter way round and without overshooting, instead of along the leg, with the leg slew off
+/// too, and is never yielded; a NaN heading leaves the leg's turn.
+#[test]
+fn a_waypoint_heading_is_turned_to_at_the_heading_rate() {
+    let rate_radps = 30.0_f32.to_radians();
+    let config = CopterGuidanceConfig {
+        heading_rate_radps: rate_radps,
+        ..Default::default()
+    };
+    let slew_off = CopterGuidanceConfig {
+        waypoint_yaw_radps: 0.0,
+        ..config
+    };
+    let step = rate_radps * 0.004;
+    // (case, config, vehicle heading, waypoint (north, east), waypoint heading, seconds,
+    // expected heading target); the vehicle sits at the origin, not turning
+    let cases = [
+        ("one tick", config, 0.0, (0.0, 0.0), 1.0, 0.004, step),
+        (
+            "across ±π",
+            config,
+            3.0,
+            (0.0, 0.0),
+            -3.0,
+            0.004,
+            3.0 + step,
+        ),
+        ("arrives", config, 0.0, (0.0, 0.0), 1.0, 3.0, 1.0),
+        ("wrapped", config, 0.0, (0.0, 0.0), 1.0 + TAU, 3.0, 1.0),
+        (
+            "over the leg",
+            config,
+            0.0,
+            (0.0, 100.0),
+            -1.0,
+            1.0,
+            -rate_radps,
+        ),
+        (
+            "leg slew off",
+            slew_off,
+            0.0,
+            (0.0, 100.0),
+            1.0,
+            1.0,
+            rate_radps,
+        ),
+        (
+            "never yielded",
+            config,
+            0.0,
+            (0.0, 0.0),
+            FRAC_PI_2,
+            4.0,
+            FRAC_PI_2,
+        ),
+        (
+            "NaN",
+            config,
+            0.0,
+            (0.0, 100.0),
+            f32::NAN,
+            0.4,
+            turned_by(0.4),
+        ),
+    ];
+    for (case, config, vehicle_rad, (north_m, east_m), heading_rad, seconds, expected) in cases {
+        let mut guidance = CopterGuidance::new(config);
+        let state = VehicleState {
+            heading_rad: vehicle_rad,
+            ..Default::default()
+        };
+        guidance.prime(&state);
+        let waypoint = ControlInput::Waypoint(WaypointCommand {
+            position_m: Vec2::new(north_m, east_m),
+            heading_rad: Some(heading_rad),
+            ..Default::default()
+        });
+        let mut heading = f32::NAN;
+        for _ in 0..ticks_for(seconds) {
+            heading = heading_of(guidance.guide(0.004, FlightRegime::Copter, &waypoint, &state));
         }
         let error = wrap_angle(heading - expected).abs();
         assert!(error < 1e-4, "{case}: {heading}, expected {expected}");
@@ -2190,10 +2278,11 @@ fn point_mass_route_lands_softly_and_disarms() {
     assert!(follower.is_complete());
 }
 
-/// `max_descent_mps` must be positive and finite; `land_speed_mps` must also exceed the
-/// touchdown detector's `DESCENDING_MPS`, or a land would never be seen to descend and disarm.
+/// `max_descent_mps` and `heading_rate_radps` must be positive and finite; `land_speed_mps`
+/// must also exceed the touchdown detector's `DESCENDING_MPS`, or a land would never be seen
+/// to descend and disarm.
 #[test]
-fn rejects_descent_rates_out_of_range() {
+fn rejects_descent_and_heading_rates_out_of_range() {
     for value in [0.0, -1.0, f32::NAN, f32::INFINITY] {
         for (field, set) in [
             (
@@ -2201,6 +2290,7 @@ fn rejects_descent_rates_out_of_range() {
                 (|c: &mut CopterGuidanceConfig, v| c.max_descent_mps = v) as fn(&mut _, f32),
             ),
             ("land_speed_mps", |c, v| c.land_speed_mps = v),
+            ("heading_rate_radps", |c, v| c.heading_rate_radps = v),
         ] {
             let mut config = CopterGuidanceConfig::default();
             set(&mut config, value);

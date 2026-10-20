@@ -35,6 +35,7 @@ fn worst_case_record() -> Record {
             velocity_mps: Some(Vec2::new(3.0, 4.0)),
             altitude_m: 5.0,
             cruise_speed_mps: 6.0,
+            heading_rad: Some(7.0),
         }))
         .with_regime(FlightRegime::Plane),
         setpoint: Setpoint::Blend(BlendSetpoint {

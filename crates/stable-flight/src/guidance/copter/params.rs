@@ -22,6 +22,7 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_DESC_ACC", descent_accel_mps2),
         param!("GUID_LAND_SPD", land_speed_mps),
         param!(deg "GUID_YAW_SLEW", waypoint_yaw_radps),
+        param!(deg "GUID_HDG_RATE", heading_rate_radps),
         param!("GUID_YAW_MIN_LEG", waypoint_yaw_min_leg_m),
         param!(deg "GUID_YAW_YLD_ERR", heading_yield_rad),
         param!("GUID_YAW_YLD_S", heading_yield_s),
@@ -112,6 +113,13 @@ mod metadata {
                 )
                 .with_units("deg/s")
                 .at_least(0.0),
+            NAVIGATION
+                .param(
+                    "GUID_HDG_RATE",
+                    "Rate waypoint flight turns to a waypoint's heading",
+                )
+                .with_units("deg/s")
+                .above(0.0),
             NAVIGATION
                 .param(
                     "GUID_YAW_MIN_LEG",

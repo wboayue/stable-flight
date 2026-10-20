@@ -308,6 +308,7 @@ fn alia250_enters_a_turn_holding_altitude() {
         velocity_mps: None,
         altitude_m: 300.0,
         cruise_speed_mps: airspeed_mps,
+        heading_rad: None,
     }));
     let commander = Interlude::new(
         north_line(300.0, airspeed_mps),

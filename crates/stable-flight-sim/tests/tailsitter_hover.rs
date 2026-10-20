@@ -4,14 +4,15 @@
 mod common;
 
 use assert2::check;
-use stable_flight::Vec3;
+use stable_flight::{ControlInput, Vec3, WaypointCommand, wrap_angle};
 use stable_flight_sim::{Gust, Wind, airframes};
+use std::f32::consts::FRAC_PI_2;
 
-use common::tailsitter::{TailsitterPlant, tailsitter_loop};
+use common::tailsitter::{TailsitterPlant, tailsitter_loop, view_angles};
 use common::transition::HoverDeviation;
 use common::{
     CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_ALTITUDE_M as ALTITUDE_M,
-    HOVER_SETTLE_S as SETTLE_S, fly, hover_follower,
+    HOVER_SETTLE_S as SETTLE_S, ThenFly, fly, hover_follower,
 };
 
 /// Takes off to the hover point in `wind`, settles, then holds for `hold_s`, returning the
@@ -99,4 +100,81 @@ fn rides_out_a_gust_and_returns() {
         check!(worst.horizontal_m < 3.0, "{case}: {worst:?}");
         check!(worst.final_m < 0.5, "{case}: {worst:?}");
     }
+}
+
+/// The worst of a hold turning to a waypoint heading.
+#[derive(Debug)]
+struct Turn {
+    /// The largest deviations from the hold point.
+    worst: HoverDeviation,
+    /// Seconds from the command until the view heading is within 5° of it; NaN if never.
+    reached_s: f32,
+    /// View heading error at the end, in degrees.
+    final_error_deg: f32,
+}
+
+/// Settles on the hover point in `wind`, then holds it facing `heading_rad` for 6 s.
+fn turn_to(heading_rad: f32, wind: Wind) -> Turn {
+    let commander = ThenFly {
+        hover: hover_follower(),
+        elapsed_s: 0.0,
+        after_s: SETTLE_S,
+        input: Some(ControlInput::Waypoint(WaypointCommand {
+            altitude_m: ALTITUDE_M,
+            heading_rad: Some(heading_rad),
+            ..Default::default()
+        })),
+    };
+    let plant = TailsitterPlant::in_wind(airframes::tailsitter(), wind);
+    let mut flight_loop = tailsitter_loop(&plant, commander);
+    fly(&mut flight_loop, SETTLE_S, |_, _| {});
+
+    let point_m = Vec3::new(0.0, 0.0, ALTITUDE_M);
+    let mut turn = Turn {
+        worst: HoverDeviation::default(),
+        reached_s: f32::NAN,
+        final_error_deg: f32::NAN,
+    };
+    fly(&mut flight_loop, TURN_HOLD_S, |flight_loop, elapsed_s| {
+        let state = flight_loop.state();
+        turn.worst.observe(state, point_m);
+        let (_, _, heading) = view_angles(state);
+        turn.final_error_deg = wrap_angle(heading - heading_rad).to_degrees().abs();
+        if turn.reached_s.is_nan() && turn.final_error_deg < 5.0 {
+            turn.reached_s = elapsed_s;
+        }
+    });
+    turn
+}
+
+/// Seconds [`turn_to`] holds after the command.
+const TURN_HOLD_S: f32 = 6.0;
+
+/// A waypoint heading 90° off turns the hover view's heading, the belly, to it at
+/// `heading_rate_radps` (60°/s: 1.5 s) while the hold stays as tight as in calm air. Measured
+/// within 5° at 2.1 s; 3 s leaves the rate's 1.5 s plus 1 s for the yaw loop to settle.
+#[test]
+fn turns_the_belly_to_a_waypoint_heading() {
+    let turn = turn_to(FRAC_PI_2, Wind::default());
+    check!(turn.reached_s < 3.0, "{turn:?}");
+    check!(turn.final_error_deg < CALM_ANGLE_DEG, "{turn:?}");
+    check!(turn.worst.altitude_m < CALM_ALTITUDE_M, "{turn:?}");
+    check!(turn.worst.horizontal_m < CALM_HORIZONTAL_M, "{turn:?}");
+    check!(turn.worst.tilt_deg < CALM_ANGLE_DEG, "{turn:?}");
+}
+
+/// Turning a 3 m/s wind from the belly onto the span holds near the waypoint, as starting
+/// with it on the span does (1 m, above). The sim departs at 60°/s (23 m off, 87° of roll)
+/// and 30°/s (11 m, 66°), and holds at 15°/s (2.6 m, 15°); RealFlight's eXplora turned 90°
+/// at 30°/s in 3 mph wind and held within 6 m (#417).
+#[test]
+#[ignore = "the sim departs turning a span wind onto the wing at 60°/s (#387)"]
+fn turns_a_belly_wind_onto_the_span() {
+    let wind = Wind {
+        steady_mps: Vec3::new(3.0, 0.0, 0.0),
+        gust: None,
+    };
+    let turn = turn_to(FRAC_PI_2, wind);
+    check!(turn.worst.horizontal_m < 1.0, "{turn:?}");
+    check!(turn.final_error_deg < 5.0, "{turn:?}");
 }

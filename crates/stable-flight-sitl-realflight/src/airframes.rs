@@ -217,6 +217,9 @@ pub fn explora_vtol()
                 // is #387.
                 waypoint_yaw_radps: 0.0,
                 heading_yield_s: 0.0,
+                // The rate that turned the wing 90° in 3 mph wind without losing the hold
+                // (#417).
+                heading_rate_radps: 30.0_f32.to_radians(),
                 ..CopterGuidanceConfig::default()
             },
             plane: PlaneGuidanceConfig {
