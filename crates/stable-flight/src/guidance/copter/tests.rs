@@ -1832,23 +1832,35 @@ fn waypoint_at(altitude_m: f32) -> ControlInput {
     })
 }
 
-/// A waypoint below the vehicle is approached by an altitude target lowered at
-/// `max_descent_mps` far from it (until the leash holds it) and at the altitude loop's P times
-/// the gap near it; one above is taken at once. The target starts from the vehicle's altitude,
-/// and a non-finite waypoint passes through without latching.
+/// How far a descent's target has dropped after `ticks` ticks of `dt` from hover, far from
+/// its waypoint and off the leash: its rate rises by `DEFAULT_DESCENT_ACCEL_MPS2 · dt` a tick,
+/// up to `DEFAULT_MAX_DESCENT_MPS`.
+fn ramped_drop_m(ticks: usize, dt: f32) -> f32 {
+    (1..=ticks)
+        .map(|tick| {
+            (DEFAULT_DESCENT_ACCEL_MPS2 * tick as f32 * dt).min(DEFAULT_MAX_DESCENT_MPS) * dt
+        })
+        .sum()
+}
+
+/// A waypoint below the vehicle is approached by an altitude target lowered at a rate that
+/// rises at `descent_accel_mps2` to `max_descent_mps` far from it (until the leash holds it),
+/// and at the altitude loop's P times the gap near it; one above is taken at once. The target
+/// starts from the vehicle's altitude, and a non-finite waypoint passes through without
+/// latching.
 #[test]
 fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
     const DT: f32 = 0.01;
-    let step = DEFAULT_MAX_DESCENT_MPS * DT;
     // (waypoint altitude, ticks, expected latched target) from 10 m
     let cases = [
-        (0.0, 1, Some(10.0 - step)),
-        (0.0, 30, Some(10.0 - 30.0 * step)),
-        (0.0, 100, Some(10.0 - ALTITUDE_LEASH_M)), // the vehicle holds still: leashed
-        (9.5, 1_000, Some(9.5)),                   // reached: holds the waypoint
-        (9.5, 500, Some(9.5)),                     // eased within 1 mm in 5 s
-        // Near the waypoint: lowered at P (1.5) times the 0.015 m gap.
-        (10.0 - 0.5 * step, 1, Some(10.0 - 1.5 * 0.5 * step * DT)),
+        (-100.0, 1, Some(10.0 - ramped_drop_m(1, DT))),
+        (-100.0, 30, Some(10.0 - ramped_drop_m(30, DT))),
+        (-100.0, 400, Some(10.0 - ALTITUDE_LEASH_M)), // the vehicle holds still: leashed
+        (9.5, 1_000, Some(9.5)),                      // reached: holds the waypoint
+        (9.5, 500, Some(9.5)),                        // eased within 1 mm in 5 s
+        // Near the waypoint, the first tick: lowered at the ramp's 0.01 m/s, below P (1.5)
+        // times the 0.015 m gap.
+        (10.0 - 0.015, 1, Some(10.0 - ramped_drop_m(1, DT))),
         (25.0, 1, Some(25.0)), // climbs aren't limited
         (f32::NAN, 1, None),
     ];
@@ -1891,7 +1903,7 @@ fn descent_feedforward_is_continuous_at_the_leash() {
 
 /// The descent rate fed forward shrinks toward the waypoint, so `descent_accel_mps2` (1 m/s²)
 /// stops it there: linear at P 1.5 within 0.44 m, a square root beyond, `max_descent_mps` far
-/// away.
+/// away (descending at the limit already).
 #[test]
 fn descent_feedforward_brakes_to_the_waypoint() {
     // (latched target's height above the waypoint, expected feedforward m/s)
@@ -1904,7 +1916,38 @@ fn descent_feedforward_brakes_to_the_waypoint() {
     for (height_m, expected) in cases {
         let (mut guidance, _) = guidance_at(10.0 + height_m);
         guidance.altitude_target_m = Some(10.0 + height_m);
+        guidance.descent_speed_mps = DEFAULT_MAX_DESCENT_MPS;
         let target = guidance.descend_toward(1e-6, 10.0, 10.0 + height_m);
+        approx::assert_relative_eq!(target.velocity_mps, expected, epsilon = 1e-3);
+    }
+}
+
+/// A descent from hover speeds up at `descent_accel_mps2` (1 m/s²) to `max_descent_mps`
+/// rather than stepping to it, so its thrust doesn't drop at once (#417); one already under
+/// way keeps its rate.
+#[test]
+fn descent_speeds_up_at_descent_accel() {
+    const DT: f32 = 0.01;
+    // (descent speed on the last tick in m/s, ticks, expected feedforward m/s), waypoint 50 m down
+    let cases = [
+        (0.0, 1, -0.01),
+        (0.0, 150, -1.5),
+        (0.0, 400, -DEFAULT_MAX_DESCENT_MPS),
+        (1.0, 1, -1.01),
+        (DEFAULT_MAX_DESCENT_MPS, 1, -DEFAULT_MAX_DESCENT_MPS),
+    ];
+    for (speed_mps, ticks, expected) in cases {
+        let (mut guidance, _) = guidance_at(60.0);
+        guidance.descent_speed_mps = speed_mps;
+        let mut target = AltitudeTarget {
+            altitude_m: f32::NAN,
+            velocity_mps: f32::NAN,
+        };
+        for _ in 0..ticks {
+            // The vehicle keeps up with the target, so the leash never holds it.
+            let altitude_m = guidance.altitude_target_m.unwrap_or(60.0);
+            target = guidance.descend_toward(DT, 10.0, altitude_m);
+        }
         approx::assert_relative_eq!(target.velocity_mps, expected, epsilon = 1e-3);
     }
 }
@@ -1918,31 +1961,32 @@ type AltitudeAt = fn(usize) -> f32;
 #[test]
 fn descent_target_stays_on_a_leash_below_the_vehicle() {
     const DT: f32 = 0.01;
-    let step = DEFAULT_MAX_DESCENT_MPS * DT;
-    // (case, vehicle altitude on each of 100 ticks, expected latched target), waypoint at 0 m
+    const TICKS: usize = 400;
+    let drop_m = ramped_drop_m(TICKS, DT);
+    // (case, vehicle altitude on each tick, expected latched target), waypoint far below
     let cases: [(&str, AltitudeAt, f32); 4] = [
         ("still", |_| 10.0, 10.0 - ALTITUDE_LEASH_M),
         (
             "climbing",
             |tick| 10.0 + 0.02 * tick as f32,
-            12.0 - ALTITUDE_LEASH_M,
+            10.0 + 0.02 * TICKS as f32 - ALTITUDE_LEASH_M,
         ),
         (
             "sinking past the target",
             |tick| 10.0 - 0.05 * (tick - 1) as f32,
-            10.0 - 100.0 * step,
+            10.0 - drop_m,
         ),
         (
             "NaN after 10 ticks",
             |tick| if tick <= 10 { 10.0 } else { f32::NAN },
-            10.0 - 100.0 * step,
+            10.0 - drop_m,
         ),
     ];
     for (case, altitude_m, expected) in cases {
         let (mut guidance, mut state) = guidance_at(10.0);
-        for tick in 1..=100 {
+        for tick in 1..=TICKS {
             state.position_m.z = altitude_m(tick);
-            guidance.guide(DT, FlightRegime::Copter, &waypoint_at(0.0), &state);
+            guidance.guide(DT, FlightRegime::Copter, &waypoint_at(-100.0), &state);
         }
         let target = guidance.altitude_target_m;
         assert!(target.is_some(), "{case}: unlatched");
@@ -1951,17 +1995,20 @@ fn descent_target_stays_on_a_leash_below_the_vehicle() {
 }
 
 /// While the target slews down, the altitude loop sees it and the descent rate: the thrust is
-/// what a fresh controller gives for that target, not the cut-off a far-below waypoint gave.
+/// what a fresh controller gives for that target (on the first tick, the ramp's first step),
+/// not the cut-off a far-below waypoint gave.
 #[test]
 fn a_low_waypoint_descends_instead_of_cutting_thrust() {
+    const DT: f32 = 0.01;
     let (mut guidance, state) = guidance_at(10.0);
-    let setpoint = attitude(guidance.guide(0.01, FlightRegime::Copter, &waypoint_at(0.0), &state));
+    let setpoint = attitude(guidance.guide(DT, FlightRegime::Copter, &waypoint_at(0.0), &state));
+    let rate_mps = DEFAULT_DESCENT_ACCEL_MPS2 * DT;
     let expected = AltitudeController::default().control(
         &CopterGuidanceConfig::default().altitude,
-        0.01,
+        DT,
         AltitudeTarget {
-            altitude_m: 10.0 - DEFAULT_MAX_DESCENT_MPS * 0.01,
-            velocity_mps: -DEFAULT_MAX_DESCENT_MPS,
+            altitude_m: 10.0 - rate_mps * DT,
+            velocity_mps: -rate_mps,
         },
         AltitudeEstimate {
             altitude_m: 10.0,
@@ -2023,7 +2070,7 @@ fn point_mass_descends_at_the_limit() {
     let (mut guidance, _) = guidance_at(30.0);
     let mut vehicle = VerticalPointMass::at(30.0, false);
     let mut fastest_descent_mps: f32 = 0.0;
-    for _ in 0..(15.0 / DT) as usize {
+    for _ in 0..(20.0 / DT) as usize {
         let setpoint = attitude(guidance.guide(
             DT,
             FlightRegime::Copter,

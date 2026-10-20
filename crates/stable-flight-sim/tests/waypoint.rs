@@ -3,12 +3,21 @@
 
 mod common;
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use assert2::check;
 use stable_flight::commanders::{RouteEnd, WaypointFollower};
-use stable_flight::{Vec2, WaypointCommand};
-use stable_flight_sim::Wind;
+use stable_flight::{
+    Command, Commander, ControlInput, Setpoint, TelemetryPublisher, TelemetryRecord, Vec2,
+    VehicleState, WaypointCommand,
+};
+use stable_flight_sim::{Wind, airframes};
 
-use common::{ARRIVAL_UNDERSHOOT_M, FACING_DEG, fly, heading_error_deg, sim_loop};
+use common::{
+    ARRIVAL_UNDERSHOOT_M, FACING_DEG, Hover, Plant, fly, heading_error_deg, hover_at, pipeline,
+    sim_loop, ticks,
+};
 
 const ALTITUDE_M: f32 = 5.0;
 const SIDE_M: f32 = 20.0;
@@ -178,4 +187,67 @@ fn descends_onto_a_lower_waypoint_without_sinking_past_it() {
         10.0 - lowest_m < ARRIVAL_UNDERSHOOT_M,
         "lowest {lowest_m} m"
     );
+}
+
+/// Records each tick's attitude setpoint thrust.
+struct ThrustLog(Rc<RefCell<Vec<f32>>>);
+
+impl TelemetryPublisher for ThrustLog {
+    fn publish(&mut self, record: &TelemetryRecord) {
+        if let Setpoint::Attitude(setpoint) = record.setpoint {
+            self.0.borrow_mut().push(setpoint.thrust);
+        }
+    }
+}
+
+/// Hovers at 20 m, then flies a waypoint at 5 m from `after_s` on.
+struct HoverThenDescend {
+    hover: Hover,
+    elapsed_s: f32,
+    after_s: f32,
+}
+
+impl Commander for HoverThenDescend {
+    fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
+        self.elapsed_s += dt;
+        if self.elapsed_s < self.after_s {
+            return self.hover.next_command(dt, state);
+        }
+        Command::new(
+            true,
+            ControlInput::Waypoint(WaypointCommand {
+                altitude_m: 5.0,
+                ..Default::default()
+            }),
+        )
+    }
+}
+
+/// A descent from a settled hover speeds up at `descent_accel_mps2` rather than stepping to
+/// `max_descent_mps`, so thrust dips no more than that acceleration asks: hover · a / g, 0.086
+/// at ArduPilot's `WP_ACC_Z` of 1 m/s² (`libraries/AC_WPNav/AC_WPNav.cpp:14`). Measured 0.030
+/// on `quad_x`; stepping to 3 m/s dipped it 0.52, to 0.33 (#417: on the RealFlight eXplora, to
+/// its thrust floor, dropping the nose 10°).
+#[test]
+fn starts_a_descent_without_a_thrust_step() {
+    const DESCEND_AT_S: f32 = 15.0;
+    let airframe = airframes::quad_x();
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let commander = HoverThenDescend {
+        hover: hover_at(20.0),
+        elapsed_s: 0.0,
+        after_s: DESCEND_AT_S,
+    };
+    let mut flight_loop = pipeline(&Plant::clean(airframe), commander, ThrustLog(log.clone()));
+    fly(&mut flight_loop, DESCEND_AT_S + 1.0, |_, _| {});
+
+    let thrust = log.borrow();
+    let start = ticks(DESCEND_AT_S);
+    let hover = thrust[start - 2];
+    let lowest = thrust[start..]
+        .iter()
+        .copied()
+        .fold(f32::INFINITY, f32::min);
+    let allowed = hover * airframe.guidance.descent_accel_mps2 / stable_flight::GRAVITY;
+    check!(hover - lowest < allowed, "hover {hover}, lowest {lowest}");
 }
