@@ -170,9 +170,12 @@ authority as the descent speeds up. The pitch loop then lags, and the nose swing
 thrust near hover and the elevons short of full deflection. A sink guard can't help: thrust is
 already there. Landing has its own, slower descent (`GUID_LAND_SPD`, 0.7 m/s).
 
-`GUID_DESC_ACC` is how hard the descent brakes onto its waypoint: the target slows so this
-deceleration stops it there (ArduPilot's `WP_ACC_Z`, 1 m/s²). Lower it if the arrival still
-sinks past the waypoint; raise it to reach the waypoint sooner.
+`GUID_DESC_ACC` is how hard the descent speeds up and brakes onto its waypoint: the target's
+rate rises by at most this much per second from hover, and slows so this deceleration stops it
+there (ArduPilot's `WP_ACC_Z`, 1 m/s²). A faster start cuts thrust harder: stepping straight
+to 1.5 m/s took the eXplora's thrust to its floor in 0.25 s and dropped the nose 10° (#417).
+Lower it if the start drops the nose or the arrival sinks past the waypoint; raise it to reach
+the waypoint sooner.
 
 Start at 1.5 m/s, the default descent rate of ArduPilot (`WP_SPD_DN`) and PX4
 (`MPC_Z_V_AUTO_DN`). The copter default of 3 m/s is too fast for a tailsitter until a flight

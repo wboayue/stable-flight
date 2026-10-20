@@ -197,6 +197,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Copter waypoint descents speed up from hover at `CopterGuidanceConfig::descent_accel_mps2`
+  (`GUID_DESC_ACC`, default 1 m/s², ArduPilot's `WP_ACC_Z`) instead of stepping to
+  `max_descent_mps` (#417): the start no longer cuts thrust at once (on the sim quad, a 0.03
+  dip instead of 0.52). A descent reaches 3 m/s 3 s after it starts.
 - **Breaking:** `LinkedCommander::sync_regime` (#333): `FailsafeCommander` hands control back
   in the regime the fallback flew (copter, for `HoldCommander`), syncing the primary to it, so
   a plane request from before a link outage doesn't transition the vehicle on the link's
