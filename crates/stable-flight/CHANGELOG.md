@@ -340,6 +340,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `CopterGuidance` lands (`ControlInput::Land`) speed up to `land_speed_mps` at
+  `descent_accel_mps2`, as waypoint descents do, instead of stepping to it: the step cut the
+  RealFlight eXplora's thrust 0.89 → 0.76 in one tick and set off a ±15° roll cycle that
+  lasted to touchdown (#476).
+
 - `CopterGuidance` waypoint descents brake onto the waypoint (#445, #403): the altitude
   target descends at up to `max_descent_mps` and slows near the waypoint so
   `descent_accel_mps2` (`GUID_DESC_ACC`, default 1.0 m/s², ArduPilot's `WP_ACC_Z`) stops it

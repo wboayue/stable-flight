@@ -2087,7 +2087,10 @@ fn a_descent_after_a_land_starts_from_the_land_speed() {
     for (land_altitude_m, expected) in cases {
         let (mut guidance, mut state) = guidance_at(60.0);
         state.position_m.z = land_altitude_m;
-        guidance.guide(DT, FlightRegime::Copter, &land, &state);
+        // Long enough for the land to reach its speed.
+        for _ in 0..100 {
+            guidance.guide(DT, FlightRegime::Copter, &land, &state);
+        }
         guidance.altitude_target_m = None;
         let target = guidance.descend_toward(DT, 10.0, 60.0);
         approx::assert_relative_eq!(target.velocity_mps, expected, epsilon = 1e-4);
@@ -2230,17 +2233,28 @@ fn point_mass_descends_at_the_limit() {
     );
 }
 
-/// A land holds its position and lowers the altitude target at `land_speed_mps`, never more
-/// than `ALTITUDE_LEASH_M` below the vehicle; leaving it (or priming) unlatches the target.
+/// A land holds its position and lowers the altitude target at `land_speed_mps`, speeding up
+/// to it at `descent_accel_mps2` from hover, never more than `ALTITUDE_LEASH_M` below the
+/// vehicle; leaving it (or priming) unlatches the target.
 #[test]
 fn land_descends_at_land_speed_on_a_leash() {
     const DT: f32 = 0.1;
     let land = ControlInput::Land(LandCommand {
         position_m: Vec2::new(3.0, 0.0),
     });
-    let speed = DEFAULT_LAND_SPEED_MPS;
+    let accel = DEFAULT_DESCENT_ACCEL_MPS2;
+    // Speeds of 0.1, 0.2, ... m/s up to the land speed, each held for one tick.
+    let ramped_m = |ticks: usize| -> f32 {
+        (1..=ticks)
+            .map(|tick| (accel * tick as f32 * DT).min(DEFAULT_LAND_SPEED_MPS) * DT)
+            .sum()
+    };
     // (ticks, expected latched target) with the vehicle held at 10 m
-    let cases = [(1, 10.0 - speed * DT), (20, 10.0 - ALTITUDE_LEASH_M)];
+    let cases = [
+        (1, 10.0 - accel * DT * DT),
+        (9, 10.0 - ramped_m(9)),
+        (20, 10.0 - ALTITUDE_LEASH_M),
+    ];
     for (ticks, expected) in cases {
         let (mut guidance, state) = guidance_at(10.0);
         let mut setpoint = AttitudeSetpoint::default();
@@ -2269,6 +2283,19 @@ fn land_descends_at_land_speed_on_a_leash() {
     guidance.guide(DT, FlightRegime::Copter, &land, &state);
     guidance.prime(&state);
     assert!(guidance.altitude_target_m.is_none());
+}
+
+/// A land taking over a faster waypoint descent slows to `land_speed_mps` at once: that only
+/// adds thrust.
+#[test]
+fn a_land_after_a_faster_descent_slows_to_the_land_speed_at_once() {
+    const DT: f32 = 0.1;
+    let land = ControlInput::Land(LandCommand::default());
+    let (mut guidance, state) = guidance_at(10.0);
+    guidance.descent_speed_mps = DEFAULT_MAX_DESCENT_MPS;
+    guidance.guide(DT, FlightRegime::Copter, &land, &state);
+    let target = guidance.altitude_target_m.expect("latched");
+    approx::assert_relative_eq!(target, 10.0 - DEFAULT_LAND_SPEED_MPS * DT, epsilon = 1e-5);
 }
 
 /// Closed loop: a `WaypointFollower` ending in `Land` drives guidance on a
