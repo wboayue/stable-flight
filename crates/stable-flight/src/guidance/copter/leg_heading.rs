@@ -2,7 +2,7 @@
 //! is stuck.
 
 use super::CopterGuidanceConfig;
-use crate::math::all_finite;
+use crate::math::{all_finite, clamp_symmetric};
 use crate::{Vec2, VehicleState, WaypointCommand, wrap_angle};
 
 /// Yaw rate toward the heading-hold target, in rad/s (about 6°/s), below which a heading off
@@ -138,5 +138,5 @@ impl LegHeading {
 
 /// `from_rad` turned toward `to_rad` the shorter way round by at most `step_rad`, unwrapped.
 fn turned_toward(from_rad: f32, to_rad: f32, step_rad: f32) -> f32 {
-    from_rad + wrap_angle(to_rad - from_rad).clamp(-step_rad, step_rad)
+    from_rad + clamp_symmetric(wrap_angle(to_rad - from_rad), step_rad)
 }
