@@ -285,8 +285,8 @@ impl Default for CopterGuidanceConfig {
     /// The controller defaults (flight-checked on RealFlight's QuadCopterX), a 50 Hz lateral
     /// loop, a 27° waypoint tilt cap, 45° at full stick, a 3 m/s descent limit, a 0.7 m/s
     /// land, waypoint legs over 3 m turned to face along them at 60°/s, a waypoint's heading
-    /// turned to at 60°/s, the heading yielded
-    /// after 1 s stuck over 30° off, no thrust floor or sink guard, and no boost ceiling.
+    /// turned to at 60°/s, the heading yielded after 1 s stuck over 30° off, no thrust floor or
+    /// sink guard, and no boost ceiling.
     fn default() -> Self {
         CopterGuidanceConfig {
             altitude: AltitudeControllerConfig::default(),
@@ -315,10 +315,10 @@ impl CopterGuidanceConfig {
     /// [`LateralControllerConfig::validate`]; errors carry the loop as their `section`), the
     /// thrust limits ([`ThrustLimits::validate`], section `thrust`), that
     /// `navigation_period_s` and `max_stick_angles_rad` are non-negative and finite, that
-    /// `max_tilt_rad` is in `(0, π/2)`, that `max_descent_mps` and `descent_accel_mps2` are
-    /// positive and finite, that `heading_rate_radps` is positive and finite, that `land_speed_mps` is finite and above [`DESCENDING_MPS`], and
-    /// that `waypoint_yaw_radps`, `waypoint_yaw_min_leg_m`, `heading_yield_rad`, and
-    /// `heading_yield_s` are non-negative and finite.
+    /// `max_tilt_rad` is in `(0, π/2)`, that `max_descent_mps`, `descent_accel_mps2`, and
+    /// `heading_rate_radps` are positive and finite, that `land_speed_mps` is finite and above
+    /// [`DESCENDING_MPS`], and that `waypoint_yaw_radps`, `waypoint_yaw_min_leg_m`,
+    /// `heading_yield_rad`, and `heading_yield_s` are non-negative and finite.
     ///
     /// # Examples
     ///
@@ -644,10 +644,10 @@ impl CopterGuidance {
 
     /// Flies toward the waypoint, turning the heading-hold target to the waypoint's heading
     /// (`heading_rate_radps`), along the leg (`waypoint_yaw_radps`), or yielding it
-    /// (`heading_yield_s`): the lateral loop gives roll/pitch (once per navigation period, held in between) and the altitude loop gives
-    /// thrust (every tick), toward an altitude target that descends no faster than
-    /// `max_descent_mps`, speeding up and braking at `descent_accel_mps2`, and no further than
-    /// [`ALTITUDE_LEASH_M`] below the vehicle.
+    /// (`heading_yield_s`): the lateral loop gives roll/pitch (once per navigation period, held
+    /// in between) and the altitude loop gives thrust (every tick), toward an altitude target
+    /// that descends no faster than `max_descent_mps`, speeding up and braking at
+    /// `descent_accel_mps2`, and no further than [`ALTITUDE_LEASH_M`] below the vehicle.
     fn navigate(
         &mut self,
         dt: f32,
