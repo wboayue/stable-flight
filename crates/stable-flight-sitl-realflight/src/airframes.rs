@@ -221,8 +221,8 @@ pub fn explora_vtol()
                 // The rate that turned the wing 90° in 3 mph wind without losing the hold
                 // (#417).
                 heading_rate_radps: 30.0_f32.to_radians(),
-                // Fitted against RealFlight's own wind (1.7-2.3 m/s, 40 and 60 m, 8 headings,
-                // 0.2 s means): the push is linear in the air's speed, a wing in its propwash,
+                // Fitted against RealFlight's own wind (2.1-2.3 m/s, 8 headings at 40 m, 0.2 s
+                // means): the push is linear in the air's speed, a wing in its propwash,
                 // at 4.76/s across the belly (R² 0.98, residual 0.45 m/s²); a v² term fits no
                 // better. Along the span it is 0.22/s with a wingtip into the wind and 0.26-0.30
                 // elsewhere; 0.24 read both check flights within 4° and 22% of the truth, where
