@@ -73,6 +73,7 @@ fn tuple_publisher_fans_out_to_every_sink() {
             saturation: Saturation::default(),
             failsafe: None,
             flight_mode: Default::default(),
+            wind: None,
         });
     }
 

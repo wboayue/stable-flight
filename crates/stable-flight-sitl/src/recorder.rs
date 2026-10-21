@@ -15,6 +15,7 @@
 //! let recorder = CsvRecorder::create(path, CopterColumns).expect("failed to create the CSV");
 //! ```
 
+use std::borrow::Cow;
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
@@ -22,7 +23,8 @@ use std::time::Instant;
 
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{
-    ControlInput, FlightMode, Setpoint, TelemetryPublisher, TelemetryRecord, Vec3, euler_angles,
+    ControlInput, FlightMode, Setpoint, TelemetryPublisher, TelemetryRecord, Vec2, Vec3,
+    WindEstimate, euler_angles,
 };
 
 /// The fields a [`CsvRecorder`] writes after `wall_s`.
@@ -53,7 +55,14 @@ use stable_flight::{
 /// ```
 pub trait Columns {
     /// The header's names, comma-separated, matching [`write_row`](Columns::write_row)'s fields.
+    /// A set that wraps another names only the fields it adds here, and joins both in
+    /// [`header`](Columns::header).
     const HEADER: &'static str;
+
+    /// The full header, as [`CsvRecorder`] writes it: [`HEADER`](Columns::HEADER) by default.
+    fn header(&self) -> Cow<'static, str> {
+        Cow::Borrowed(Self::HEADER)
+    }
 
     /// Writes one tick's fields, comma-separated, without a leading comma or a line end.
     fn write_row(&mut self, out: &mut impl Write, record: &TelemetryRecord) -> io::Result<()>;
@@ -82,6 +91,7 @@ pub trait Columns {
 /// #     saturation: Saturation::default(),
 /// #     failsafe: None,
 /// #     flight_mode: FlightModeReport::default(),
+/// #     wind: None,
 /// # };
 ///
 /// let mut recorder = CsvRecorder::new(Some(Vec::new()), CopterColumns).expect("header written");
@@ -117,7 +127,7 @@ impl<C: Columns, W: Write> CsvRecorder<C, W> {
     /// If the header can't be written.
     pub fn new(mut out: Option<W>, columns: C) -> io::Result<Self> {
         if let Some(out) = &mut out {
-            writeln!(out, "wall_s,{}", C::HEADER)?;
+            writeln!(out, "wall_s,{}", columns.header())?;
         }
         Ok(Self {
             out,
@@ -149,15 +159,17 @@ impl<C: Columns, W: Write> TelemetryPublisher for CsvRecorder<C, W> {
 /// thrust (after the stabilizer's thrust curve), the attitude setpoint (rad; NaN for other
 /// setpoints), the stick yaw (`yaw` of attitude sticks, `yaw_rate` of rate sticks; NaN for
 /// other inputs), and the horizontal position and ground velocity (`north_m`, `east_m`,
-/// `vel_north_mps`, `vel_east_mps`; see [`TailsitterColumns`]).
+/// `vel_north_mps`, `vel_east_mps`), and the wind estimate (`wind_*`; see
+/// [`TailsitterColumns`]).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CopterColumns;
 
 impl Columns for CopterColumns {
-    const HEADER: &'static str = "armed,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,altitude,moment_x,moment_y,moment_z,thrust,sp_roll,sp_pitch,sp_heading,stick_yaw,north_m,east_m,vel_north_mps,vel_east_mps";
+    const HEADER: &'static str = "armed,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,altitude,moment_x,moment_y,moment_z,thrust,sp_roll,sp_pitch,sp_heading,stick_yaw,north_m,east_m,vel_north_mps,vel_east_mps,wind_north_mps,wind_east_mps,wind_sd_north_mps,wind_sd_east_mps";
 
     fn write_row(&mut self, out: &mut impl Write, record: &TelemetryRecord) -> io::Result<()> {
         let state = record.state;
+        let wind = wind_fields(record.wind);
         let rates = state.angular_velocity_radps;
         let (roll, pitch, heading) = euler_angles(&state.attitude);
         let moments = record.control.moments;
@@ -173,7 +185,7 @@ impl Columns for CopterColumns {
         };
         write!(
             out,
-            "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.3},{:.3}",
+            "{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
             u8::from(record.command.arm),
             rates.x,
             rates.y,
@@ -194,6 +206,10 @@ impl Columns for CopterColumns {
             state.position_m.y,
             state.velocity_mps.x,
             state.velocity_mps.y,
+            wind.0,
+            wind.1,
+            wind.2,
+            wind.3,
         )
     }
 }
@@ -214,6 +230,9 @@ impl Columns for CopterColumns {
 /// 1, `elevon_*` servo slots 0 and 1. `north_m`/`east_m` are the position, from the backend's
 /// origin (not the arming point), and `vel_north_mps`/`vel_east_mps` the ground velocity, on
 /// the frame contract's north and east axes.
+/// `wind_north_mps`/`wind_east_mps` are guidance's wind estimate (where the air moves) and
+/// `wind_sd_north_mps`/`wind_sd_east_mps` their standard deviations, NaN without one
+/// ([`TelemetryRecord::wind`]).
 #[derive(Debug, Clone, Copy)]
 pub struct TailsitterColumns {
     /// The tailsitter view's rotation from the body frame
@@ -222,10 +241,11 @@ pub struct TailsitterColumns {
 }
 
 impl Columns for TailsitterColumns {
-    const HEADER: &'static str = "armed,mode,refused,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,view_roll,view_pitch,view_heading,altitude,airspeed_mps,moment_x,moment_y,moment_z,thrust,motor_left,motor_right,elevon_left,elevon_right,sp_kind,sp_roll,sp_pitch,sp_heading,sp_p,sp_q,sp_r,sp_thrust,climb_mps,stick_throttle,north_m,east_m,vel_north_mps,vel_east_mps";
+    const HEADER: &'static str = "armed,mode,refused,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,view_roll,view_pitch,view_heading,altitude,airspeed_mps,moment_x,moment_y,moment_z,thrust,motor_left,motor_right,elevon_left,elevon_right,sp_kind,sp_roll,sp_pitch,sp_heading,sp_p,sp_q,sp_r,sp_thrust,climb_mps,stick_throttle,north_m,east_m,vel_north_mps,vel_east_mps,wind_north_mps,wind_east_mps,wind_sd_north_mps,wind_sd_east_mps";
 
     fn write_row(&mut self, out: &mut impl Write, record: &TelemetryRecord) -> io::Result<()> {
         let state = record.state;
+        let wind = wind_fields(record.wind);
         let rates = state.angular_velocity_radps;
         let (roll, pitch, heading) = euler_angles(&state.attitude);
         let view = state.rotate_body(&self.view);
@@ -243,7 +263,7 @@ impl Columns for TailsitterColumns {
         };
         write!(
             out,
-            "{},{},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.3},{:.3},{:.3},{:.3}",
+            "{},{},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.4},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
             u8::from(record.command.arm),
             mode,
             u8::from(record.flight_mode.refusal.is_some()),
@@ -280,6 +300,10 @@ impl Columns for TailsitterColumns {
             state.position_m.y,
             state.velocity_mps.x,
             state.velocity_mps.y,
+            wind.0,
+            wind.1,
+            wind.2,
+            wind.3,
         )
     }
 }
@@ -289,7 +313,8 @@ impl Columns for TailsitterColumns {
 ///
 /// Rates, angles, and moments are in the body frame. `mode`, `refused`, `sp_kind`,
 /// `sp_roll`/`sp_pitch`/`sp_heading`, `sp_p`/`sp_q`/`sp_r`, `sp_thrust`, `airspeed_mps`,
-/// `climb_mps`, and the horizontal position and velocity are as in [`TailsitterColumns`]
+/// `climb_mps`, the horizontal position and velocity, and `wind_*` are as in
+/// [`TailsitterColumns`]
 /// (a blend's angles are its hover side's). `lift_share` is a blend's share of hover lift on
 /// the lift rotors (NaN for other setpoints). `moment_*` and `thrust` are the lift rotors'
 /// (after the thrust curve); `cruise_thrust` and `cruise_moment_*` are the pusher's and the
@@ -301,10 +326,11 @@ impl Columns for TailsitterColumns {
 pub struct QuadPlaneColumns;
 
 impl Columns for QuadPlaneColumns {
-    const HEADER: &'static str = "armed,mode,refused,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,altitude,airspeed_mps,moment_x,moment_y,moment_z,thrust,cruise_thrust,cruise_moment_x,cruise_moment_y,cruise_moment_z,motor_0,motor_1,motor_2,motor_3,pusher,servo_0,servo_1,servo_2,sp_kind,sp_roll,sp_pitch,sp_heading,sp_p,sp_q,sp_r,sp_thrust,lift_share,climb_mps,north_m,east_m,vel_north_mps,vel_east_mps";
+    const HEADER: &'static str = "armed,mode,refused,roll_rate,pitch_rate,yaw_rate,roll,pitch,heading,altitude,airspeed_mps,moment_x,moment_y,moment_z,thrust,cruise_thrust,cruise_moment_x,cruise_moment_y,cruise_moment_z,motor_0,motor_1,motor_2,motor_3,pusher,servo_0,servo_1,servo_2,sp_kind,sp_roll,sp_pitch,sp_heading,sp_p,sp_q,sp_r,sp_thrust,lift_share,climb_mps,north_m,east_m,vel_north_mps,vel_east_mps,wind_north_mps,wind_east_mps,wind_sd_north_mps,wind_sd_east_mps";
 
     fn write_row(&mut self, out: &mut impl Write, record: &TelemetryRecord) -> io::Result<()> {
         let state = record.state;
+        let wind = wind_fields(record.wind);
         let rates = state.angular_velocity_radps;
         let (roll, pitch, heading) = euler_angles(&state.attitude);
         let control = record.control;
@@ -322,7 +348,7 @@ impl Columns for QuadPlaneColumns {
         };
         write!(
             out,
-            "{},{},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.3},{:.3},{:.3}",
+            "{},{},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3}",
             u8::from(record.command.arm),
             mode_code(record.flight_mode.mode),
             u8::from(record.flight_mode.refusal.is_some()),
@@ -364,6 +390,10 @@ impl Columns for QuadPlaneColumns {
             state.position_m.y,
             state.velocity_mps.x,
             state.velocity_mps.y,
+            wind.0,
+            wind.1,
+            wind.2,
+            wind.3,
         )
     }
 }
@@ -416,6 +446,20 @@ fn setpoint_fields(setpoint: &Setpoint) -> (&'static str, f32, f32, f32, f32, f3
 }
 
 /// A flight mode as a number: 0 copter, 1 plane, 2 to plane, 3 to copter, 9 other.
+/// The wind estimate's north and east velocity and their standard deviations, in m/s; NaN
+/// without one.
+fn wind_fields(wind: Option<WindEstimate>) -> (f32, f32, f32, f32) {
+    let Some(wind) = wind else {
+        return (f32::NAN, f32::NAN, f32::NAN, f32::NAN);
+    };
+    (
+        wind.velocity_mps.x,
+        wind.velocity_mps.y,
+        wind.sd_along_mps(Vec2::x()),
+        wind.sd_along_mps(Vec2::y()),
+    )
+}
+
 fn mode_code(mode: FlightMode) -> u8 {
     match mode {
         FlightMode::Copter => 0,

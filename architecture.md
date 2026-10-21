@@ -233,8 +233,20 @@ supplies pacing.
   full thrust while pitch is pinned (on the sim Alia it climbed, but a 30 m descent ran 235 m
   past its altitude); PX4's rates-only form with a trajectory generator (more state for the
   same behavior on these airframes); a synthetic airspeed when none is measured (core has no
-  wind estimate, and ground speed reads fast in a tailwind: #456), so without an airspeed
+  plane wind estimate, and ground speed reads fast in a tailwind: #456), so without an airspeed
   pitch holds altitude and thrust follows pitch, as ArduPilot does.
+* **Wind estimate**: `CopterGuidance` owns a `estimation::wind::WindEstimator` and feeds it
+  every airborne tick. Thrust acts along the thrust frame's `z`, so the specific force along
+  its `x` and `y` is the air's push alone. Each axis inverts its drag model (bluff-body plus
+  momentum, ArduPilot's and PX4's drag fusion) to air velocity, and a two-state linear Kalman
+  filter on world wind fuses each axis with noise scaled by the drag's slope. A tailsitter
+  hovers in `View::tailsitter`, so its thrust frame comes for free, and its span, with little
+  drag, counts for little. Rejected: a full EKF with drag fusion, as both stacks run inside
+  their navigation filters (the backends hand over a clean state, so inverting the model first
+  leaves a linear filter); one isotropic drag model (a flat plate's push follows its normal,
+  not the wind, which is what made the lean-chasing weathervane spin in #417); and estimating
+  from the lateral loop's integral (it carries the push, not the wind, with the loop's lag).
+  The estimate reaches telemetry through `Guidance::wind`, not the link yet.
 * **Stabilizer**: the inner loop, cascaded PIDs from setpoint error to `ControlOutput` (setpoint
   units: `Setpoint` rustdoc).
 * **Mixer**: maps thrust and moments to `ActuatorCommand`'s generic motor and servo slots. The

@@ -2,13 +2,13 @@ use std::io::{self, Write};
 use std::time::Duration;
 
 use assert2::check;
-use stable_flight::nalgebra::UnitQuaternion;
+use stable_flight::nalgebra::{Matrix2, UnitQuaternion};
 use stable_flight::testing::RecordedTick;
 use stable_flight::{
     ActuatorCommand, AttitudeCommand, AttitudeSetpoint, BlendSetpoint, BodyRateSetpoint, Command,
     ControlInput, ControlOutput, CruiseOutput, FlightMode, FlightModeReport, ModeRefusal,
-    PlaneSetpoint, RateCommand, RateSetpoint, Saturation, Setpoint, TelemetryPublisher, Vec3,
-    VehicleState, WaypointCommand,
+    PlaneSetpoint, RateCommand, RateSetpoint, Saturation, Setpoint, TelemetryPublisher, Vec2, Vec3,
+    VehicleState, WaypointCommand, WindEstimate,
 };
 
 use super::{Columns, CopterColumns, CsvRecorder, QuadPlaneColumns, TailsitterColumns};
@@ -29,6 +29,7 @@ fn tick(setpoint: Setpoint, input: ControlInput) -> RecordedTick {
         saturation: Saturation::default(),
         failsafe: None,
         flight_mode: FlightModeReport::default(),
+        wind: None,
     }
 }
 
@@ -263,6 +264,38 @@ fn every_column_set_records_horizontal_position_and_velocity() {
     };
     check!(horizontal(tailsitter) == expected);
     check!(horizontal(QuadPlaneColumns) == expected);
+}
+
+/// `columns`' wind fields for a tick with `wind`.
+fn wind_fields<C: Columns>(columns: C, wind: Option<WindEstimate>) -> [String; 4] {
+    let mut tick = tick(attitude_setpoint(), attitude_sticks(0.0));
+    tick.wind = wind;
+    let lines = recorded(columns, &[tick]);
+    [
+        "wind_north_mps",
+        "wind_east_mps",
+        "wind_sd_north_mps",
+        "wind_sd_east_mps",
+    ]
+    .map(|name| field(&lines[0], &lines[1], name).to_owned())
+}
+
+/// Every set records the wind estimate and its standard deviations, NaN without one.
+#[test]
+fn every_column_set_records_the_wind_estimate() {
+    let wind = WindEstimate {
+        velocity_mps: Vec2::new(1.5, -2.25),
+        covariance_m2ps2: Matrix2::new(0.25, 0.0, 0.0, 4.0),
+    };
+    let expected = ["1.500", "-2.250", "0.500", "2.000"].map(str::to_owned);
+    let none = ["NaN"; 4].map(str::to_owned);
+    let tailsitter = TailsitterColumns {
+        view: UnitQuaternion::identity(),
+    };
+    check!(wind_fields(CopterColumns, Some(wind)) == expected);
+    check!(wind_fields(tailsitter, Some(wind)) == expected);
+    check!(wind_fields(QuadPlaneColumns, Some(wind)) == expected);
+    check!(wind_fields(CopterColumns, None) == none);
 }
 
 /// The quadplane set records both sides: the lift rotors, the pusher, and the surfaces, the

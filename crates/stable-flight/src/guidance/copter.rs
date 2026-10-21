@@ -33,8 +33,9 @@
 
 use core::f32::consts::FRAC_PI_4;
 
+use crate::estimation::wind::{WindConfig, WindEstimator};
 use crate::nalgebra::UnitQuaternion;
-use crate::{GRAVITY, Vec2};
+use crate::{GRAVITY, Vec2, WindEstimate};
 
 use crate::commanders::touchdown::DESCENDING_MPS;
 use crate::commanders::waypoint::DEFAULT_ACCEPTANCE_RADIUS_M;
@@ -103,6 +104,11 @@ pub const DEFAULT_HEADING_YIELD_RAD: f32 = 30.0_f32.to_radians();
 /// an 8 m/s crosswind it reaches 29 m in 15.2 s (14.9 s at 0.5 s, 21.9 s never yielding; 13.8 s
 /// in a headwind) (#431).
 pub const DEFAULT_HEADING_YIELD_S: f32 = 1.0;
+
+/// Height, in meters, above the altitude primed on the ground past which the vehicle is
+/// airborne and the wind estimate updates: on the ground the air's push is lost in contact
+/// forces and would read as calm.
+pub const AIRBORNE_HEIGHT_M: f32 = 1.0;
 
 /// Default [`CopterGuidanceConfig::land_speed_mps`], as PX4's `MPC_LAND_SPEED`.
 pub const DEFAULT_LAND_SPEED_MPS: f32 = 0.7;
@@ -208,6 +214,8 @@ pub struct CopterGuidanceConfig {
     pub heading_yield_s: f32,
     /// Thrust floor, sink guard, and tilt-boost ceiling; all off by default.
     pub thrust: ThrustLimits,
+    /// The wind estimator's drag model and noises; off by default (no drag coefficients).
+    pub wind: WindConfig,
 }
 
 /// Bounds on [`CopterGuidance`]'s thrust while flying, for an airframe whose control comes
@@ -306,6 +314,7 @@ impl Default for CopterGuidanceConfig {
             heading_yield_rad: DEFAULT_HEADING_YIELD_RAD,
             heading_yield_s: DEFAULT_HEADING_YIELD_S,
             thrust: ThrustLimits::default(),
+            wind: WindConfig::default(),
         }
     }
 }
@@ -353,7 +362,8 @@ impl CopterGuidanceConfig {
         check_limit("waypoint_yaw_min_leg_m", self.waypoint_yaw_min_leg_m)?;
         check_limit("heading_yield_rad", self.heading_yield_rad)?;
         check_limit("heading_yield_s", self.heading_yield_s)?;
-        self.thrust.validate().map_err(|e| e.in_section("thrust"))
+        self.thrust.validate().map_err(|e| e.in_section("thrust"))?;
+        self.wind.validate().map_err(|e| e.in_section("wind"))
     }
 }
 
@@ -410,6 +420,12 @@ pub struct CopterGuidance {
 
     /// What the last `guide` call clipped.
     saturation: Saturation,
+
+    /// Estimates the wind while airborne.
+    wind: WindEstimator,
+    /// Altitude, in meters, the vehicle was primed at on the ground: above it by
+    /// [`AIRBORNE_HEIGHT_M`] it is airborne. `None` until primed.
+    ground_altitude_m: Option<f32>,
 }
 
 impl CopterGuidance {
@@ -437,7 +453,16 @@ impl CopterGuidance {
             tilt_capped: false,
             requested_accel_mps2: Vec2::zeros(),
             saturation: Saturation::default(),
+            wind: WindEstimator::default(),
+            ground_altitude_m: None,
         }
+    }
+
+    /// Whether `state` is more than [`AIRBORNE_HEIGHT_M`] above the altitude primed on the
+    /// ground.
+    fn airborne(&self, state: &VehicleState) -> bool {
+        self.ground_altitude_m
+            .is_some_and(|ground_m| state.position_m.z > ground_m + AIRBORNE_HEIGHT_M)
     }
 }
 
@@ -476,6 +501,9 @@ impl Guidance for CopterGuidance {
     ) -> Setpoint {
         assert_dt(dt);
         self.saturation = Saturation::default();
+        if self.airborne(estimated_state) {
+            self.wind.update(dt, &self.config.wind, estimated_state);
+        }
 
         if !matches!(input, ControlInput::Waypoint(_) | ControlInput::Land(_)) {
             // The position loops are idle: clear them so re-entering waypoint mode starts
@@ -523,8 +551,14 @@ impl Guidance for CopterGuidance {
 
     /// Clears the altitude and lateral controller state, the altitude target and its descent,
     /// the leg, and any held waypoint tilt, and latches the current heading as the yaw-hold
-    /// target.
+    /// target. Primed on the ground (no more than [`AIRBORNE_HEIGHT_M`] above the last
+    /// ground altitude, or never primed), it also latches the ground altitude and forgets the wind; primed in the air (a VTOL
+    /// back in hover), it keeps both.
     fn prime(&mut self, state: &VehicleState) {
+        if !self.airborne(state) {
+            self.ground_altitude_m = Some(state.position_m.z).filter(|z| z.is_finite());
+            self.wind.reset();
+        }
         self.altitude = AltitudeController::default();
         self.lateral = LateralController::default();
         self.altitude_target_m = None;
@@ -547,6 +581,15 @@ impl Guidance for CopterGuidance {
     /// beyond the stabilizer's limit in an absolute attitude is the stabilizer's to flag.
     fn saturation(&self) -> Saturation {
         self.saturation
+    }
+
+    /// The wind, estimated from the drag model in
+    /// [`wind`](CopterGuidanceConfig::wind) on every tick more than [`AIRBORNE_HEIGHT_M`]
+    /// above the altitude primed on the ground, the vehicle's frame taken as the thrust frame
+    /// (a tailsitter's hover view under [`View`](crate::View)); `None` before the first
+    /// update, or without drag coefficients.
+    fn wind(&self) -> Option<WindEstimate> {
+        self.wind.estimate()
     }
 }
 

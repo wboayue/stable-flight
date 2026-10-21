@@ -11,7 +11,7 @@ use crate::params::{ParamError, Params, locate};
 use crate::{
     AbsoluteAttitudeCommand, AttitudeSetpoint, Configurable, ControlInput, FlightMode,
     FlightModeReport, FlightRegime, Guidance, ModeRefusal, PlaneSetpoint, Saturation, Setpoint,
-    VehicleState, View,
+    VehicleState, View, WindEstimate,
 };
 
 #[cfg(test)]
@@ -327,6 +327,11 @@ impl Guidance for TailsitterGuidance {
     /// The transition's report.
     fn flight_mode(&self) -> Option<FlightModeReport> {
         Some(self.transition.report())
+    }
+
+    /// The hover guidance's, updated while it flies.
+    fn wind(&self) -> Option<WindEstimate> {
+        self.hover.wind()
     }
 }
 

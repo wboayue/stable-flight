@@ -1,0 +1,365 @@
+//! Wind from the air's push on a rotor-borne vehicle: drag inverted to air velocity, one axis
+//! at a time, and filtered on world wind.
+//!
+//! Thrust acts along the thrust frame's `z`, so the specific force along its `x` and `y` is
+//! the air's push alone. Each axis's drag model, a bluff-body term `½ρv²/B` plus rotor
+//! momentum drag `μv` (ArduPilot's and PX4's drag fusion: `AirDataFusion.cpp:380-445`,
+//! `drag_fusion.cpp:83-140`), is inverted to the air velocity along it; the wind along it is
+//! the ground velocity's component less that. A two-state Kalman filter on wind (north, east)
+//! takes each axis as a scalar measurement whose noise is the force noise over the drag's
+//! slope there, so an axis with little drag (a tailsitter's span in hover) counts for little,
+//! and the wind across it is learned once a turn puts more drag on it. Both stacks fit the
+//! drag frame to the body with thrust along `z` and treat X and Y alike apart from their
+//! coefficients; per-axis noise is what lets a flat-plate airframe use it.
+//!
+//! The measurement is averaged over [`UPDATE_PERIOD_S`], as both stacks do, before each
+//! update. Allocation-free and fixed-size.
+
+use nalgebra::{Matrix2, UnitQuaternion};
+
+use crate::controllers::{InvalidConfig, check_limit, check_positive};
+use crate::{GRAVITY, Vec2, Vec3, VehicleState};
+
+#[cfg(test)]
+mod tests;
+
+/// Sea-level air density, in kg/m³ (ISA).
+pub const AIR_DENSITY_KGPM3: f32 = 1.225;
+
+/// Seconds the measurement is averaged over before each update: about 5 Hz, as both stacks
+/// average their specific force (`Measurements.cpp:1492-1535`, `estimator_interface.cpp:518-570`).
+pub const UPDATE_PERIOD_S: f32 = 0.2;
+
+/// Default [`WindConfig::force_noise_mps2`]: ArduPilot's `EK3_DRAG_M_NSE` (`AP_NavEKF3.cpp:714`).
+pub const DEFAULT_FORCE_NOISE_MPS2: f32 = 0.5;
+
+/// Default [`WindConfig::process_noise_mps_per_rt_s`]: lets a steady wind's estimate move about
+/// 0.1 m/s a second, slow beside a hover's drift.
+pub const DEFAULT_PROCESS_NOISE_MPS_PER_RT_S: f32 = 0.1;
+
+/// Standard deviation of each wind component, in m/s, before any update.
+pub const INITIAL_SD_MPS: f32 = 10.0;
+
+/// Innovations past this many standard deviations are rejected, as both stacks gate drag
+/// (`AirDataFusion.cpp:595-599`, `drag_fusion.cpp:123`).
+const GATE_SIGMA: f32 = 5.0;
+
+/// Least drag slope, in 1/s, an axis's noise is divided by: below it the axis tells almost
+/// nothing about the wind, and the noise stays finite.
+const MIN_DRAG_SLOPE_PER_S: f32 = 1e-3;
+
+/// The drag model, per thrust-frame axis (`x`, `y`), and the filter's noise.
+///
+/// With every coefficient 0 (the default, as both stacks ship drag fusion off) the estimator
+/// never updates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct WindConfig {
+    /// Ballistic coefficient along `x` and `y`, in kg/m²: mass over drag coefficient times
+    /// area, so the bluff-body drag is `½ρv²/B` per kg. 0 leaves the term out. Must be
+    /// non-negative and finite.
+    pub ballistic_kgpm2: Vec2,
+    /// Momentum drag along `x` and `y`, in 1/s: drag acceleration per m/s of air velocity.
+    /// 0 leaves the term out. Must be non-negative and finite.
+    pub momentum_per_s: Vec2,
+    /// Specific-force noise on each averaged measurement, in m/s². Must be positive and
+    /// finite. Defaults to [`DEFAULT_FORCE_NOISE_MPS2`].
+    pub force_noise_mps2: f32,
+    /// How fast the wind may wander, in m/s per √s (process noise). Must be non-negative and
+    /// finite. Defaults to [`DEFAULT_PROCESS_NOISE_MPS_PER_RT_S`].
+    pub process_noise_mps_per_rt_s: f32,
+}
+
+impl Default for WindConfig {
+    /// No drag model (the estimator off), and the default noises.
+    fn default() -> Self {
+        WindConfig {
+            ballistic_kgpm2: Vec2::zeros(),
+            momentum_per_s: Vec2::zeros(),
+            force_noise_mps2: DEFAULT_FORCE_NOISE_MPS2,
+            process_noise_mps_per_rt_s: DEFAULT_PROCESS_NOISE_MPS_PER_RT_S,
+        }
+    }
+}
+
+impl WindConfig {
+    /// Checks that the coefficients and `process_noise_mps_per_rt_s` are non-negative and finite and
+    /// that `force_noise_mps2` is positive and finite.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::estimation::wind::WindConfig;
+    ///
+    /// let mut config = WindConfig::default();
+    /// assert!(config.validate().is_ok());
+    /// config.force_noise_mps2 = 0.0;
+    /// assert!(config.validate().is_err());
+    /// ```
+    pub fn validate(&self) -> Result<(), InvalidConfig> {
+        check_limit("ballistic_kgpm2.x", self.ballistic_kgpm2.x)?;
+        check_limit("ballistic_kgpm2.y", self.ballistic_kgpm2.y)?;
+        check_limit("momentum_per_s.x", self.momentum_per_s.x)?;
+        check_limit("momentum_per_s.y", self.momentum_per_s.y)?;
+        check_positive("force_noise_mps2", self.force_noise_mps2)?;
+        check_limit(
+            "process_noise_mps_per_rt_s",
+            self.process_noise_mps_per_rt_s,
+        )
+    }
+
+    /// Whether any drag coefficient is set, so the estimator can update.
+    pub fn is_on(&self) -> bool {
+        self.ballistic_kgpm2
+            .iter()
+            .chain(&self.momentum_per_s)
+            .any(|c| *c > 0.0)
+    }
+}
+
+/// The wind and its uncertainty.
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct WindEstimate {
+    /// The air mass's velocity (north, east), in m/s: where the wind blows toward.
+    pub velocity_mps: Vec2,
+    /// Covariance of `velocity_mps`, in m²/s².
+    pub covariance_m2ps2: Matrix2<f32>,
+}
+
+impl WindEstimate {
+    /// Standard deviation of the wind along the horizontal unit vector `direction`, in m/s.
+    pub fn sd_along_mps(&self, direction: Vec2) -> f32 {
+        libm::sqrtf(
+            (direction.transpose() * self.covariance_m2ps2 * direction)
+                .x
+                .max(0.0),
+        )
+    }
+}
+
+/// Estimates the wind from the vehicle state while the caller says it is airborne on rotors.
+///
+/// The config is passed to each call rather than stored, so the owner's config stays the
+/// single source of truth.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::estimation::wind::{WindConfig, WindEstimator};
+/// use stable_flight::{Vec2, Vec3, VehicleState};
+///
+/// // A level quad with momentum drag 0.3/s, not moving, pushed east at 0.6 m/s²: the air
+/// // moves east at 2 m/s.
+/// let config = WindConfig {
+///     momentum_per_s: Vec2::new(0.3, 0.3),
+///     ..Default::default()
+/// };
+/// let state = VehicleState {
+///     acceleration_mps2: Vec3::new(0.0, 0.6, 0.0),
+///     ..Default::default()
+/// };
+/// let mut estimator = WindEstimator::default();
+/// for _ in 0..2500 {
+///     estimator.update(0.004, &config, &state);
+/// }
+/// let wind = estimator.estimate().expect("updated").velocity_mps;
+/// assert!((wind - Vec2::new(0.0, 2.0)).norm() < 0.01);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WindEstimator {
+    /// Wind (north, east), in m/s.
+    wind_mps: Vec2,
+    /// Its covariance, in m²/s².
+    covariance_m2ps2: Matrix2<f32>,
+    /// A measurement has been taken.
+    updated: bool,
+    /// The measurement being averaged.
+    window: Window,
+}
+
+/// Sums over one averaging period.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct Window {
+    elapsed_s: f32,
+    ticks: u32,
+    /// Specific force along the thrust frame's `x` and `y`, in m/s².
+    specific_force_mps2: Vec2,
+    /// Ground velocity along each axis, in m/s.
+    ground_along_mps: Vec2,
+    /// Each axis's horizontal part (north, east).
+    axis_x: Vec2,
+    axis_y: Vec2,
+}
+
+impl Default for WindEstimator {
+    fn default() -> Self {
+        WindEstimator {
+            wind_mps: Vec2::zeros(),
+            covariance_m2ps2: Matrix2::identity() * (INITIAL_SD_MPS * INITIAL_SD_MPS),
+            updated: false,
+            window: Window::default(),
+        }
+    }
+}
+
+impl WindEstimator {
+    /// Adds this tick's state, `state.attitude` taken as the thrust frame (thrust along its
+    /// `z`), and once [`UPDATE_PERIOD_S`] has gathered, updates the wind from the period's
+    /// average. A tick with a non-finite attitude, velocity, or acceleration is skipped. Does
+    /// nothing while `config` has no drag coefficient.
+    pub fn update(&mut self, dt: f32, config: &WindConfig, state: &VehicleState) {
+        if !config.is_on() {
+            return;
+        }
+        let Some(sample) = Sample::from_state(state) else {
+            return;
+        };
+        let window = &mut self.window;
+        window.elapsed_s += dt;
+        window.ticks += 1;
+        window.specific_force_mps2 += sample.specific_force_mps2;
+        window.ground_along_mps += sample.ground_along_mps;
+        window.axis_x += sample.axis_x;
+        window.axis_y += sample.axis_y;
+        if window.elapsed_s < UPDATE_PERIOD_S {
+            return;
+        }
+        let window = core::mem::take(&mut self.window);
+        let n = window.ticks as f32;
+        self.predict(window.elapsed_s, config);
+        let force = window.specific_force_mps2 / n;
+        let ground = window.ground_along_mps / n;
+        let axes = [window.axis_x / n, window.axis_y / n];
+        for (i, axis) in axes.into_iter().enumerate() {
+            let drag = AxisDrag::new(config, i);
+            if let Some((air_mps, slope_per_s)) = drag.air_velocity(force[i]) {
+                let noise_mps = config.force_noise_mps2 / slope_per_s.max(MIN_DRAG_SLOPE_PER_S);
+                self.correct(axis, ground[i] - air_mps, noise_mps * noise_mps);
+            }
+        }
+        self.updated = true;
+    }
+
+    /// The wind, once a measurement has been taken.
+    pub fn estimate(&self) -> Option<WindEstimate> {
+        self.updated.then_some(WindEstimate {
+            velocity_mps: self.wind_mps,
+            covariance_m2ps2: self.covariance_m2ps2,
+        })
+    }
+
+    /// Forgets the wind and any partial average.
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Grows the covariance for `elapsed_s` of wandering wind.
+    fn predict(&mut self, elapsed_s: f32, config: &WindConfig) {
+        let q = config.process_noise_mps_per_rt_s;
+        self.covariance_m2ps2 += Matrix2::identity() * (q * q * elapsed_s);
+    }
+
+    /// Fuses `measured_mps`, the wind along `axis` (horizontal, not unit: a tilted axis
+    /// reaches less of it), with variance `variance_m2ps2`; rejected past the gate.
+    fn correct(&mut self, axis: Vec2, measured_mps: f32, variance_m2ps2: f32) {
+        let p_h = self.covariance_m2ps2 * axis;
+        let innovation_variance = axis.dot(&p_h) + variance_m2ps2;
+        let innovation = measured_mps - axis.dot(&self.wind_mps);
+        let gate = GATE_SIGMA * GATE_SIGMA * innovation_variance;
+        let within_gate = innovation * innovation <= gate;
+        // `<=` is false for a NaN innovation: rejected.
+        if !within_gate || !innovation_variance.is_finite() {
+            return;
+        }
+        let gain = p_h / innovation_variance;
+        self.wind_mps += gain * innovation;
+        self.covariance_m2ps2 -= gain * p_h.transpose();
+        // Symmetric against rounding.
+        let off = 0.5 * (self.covariance_m2ps2[(0, 1)] + self.covariance_m2ps2[(1, 0)]);
+        self.covariance_m2ps2[(0, 1)] = off;
+        self.covariance_m2ps2[(1, 0)] = off;
+    }
+}
+
+/// One tick's measurement.
+struct Sample {
+    specific_force_mps2: Vec2,
+    ground_along_mps: Vec2,
+    axis_x: Vec2,
+    axis_y: Vec2,
+}
+
+impl Sample {
+    /// From `state`, its attitude taken as the thrust frame; `None` if anything used is
+    /// non-finite.
+    fn from_state(state: &VehicleState) -> Option<Self> {
+        let attitude: &UnitQuaternion<f32> = &state.attitude;
+        let a = state.acceleration_mps2;
+        let v = state.velocity_mps;
+        // NED, as the attitude rotates the FRD body into it.
+        let specific_force_ned = Vec3::new(a.x, a.y, -a.z - GRAVITY);
+        let velocity_ned = Vec3::new(v.x, v.y, -v.z);
+        // One matrix serves all three: its columns are the body axes in NED.
+        let rotation = attitude.to_rotation_matrix();
+        let force = rotation.inverse_transform_vector(&specific_force_ned);
+        let axis_x: Vec3 = rotation.matrix().column(0).into();
+        let axis_y: Vec3 = rotation.matrix().column(1).into();
+        let sample = Sample {
+            specific_force_mps2: force.xy(),
+            ground_along_mps: Vec2::new(axis_x.dot(&velocity_ned), axis_y.dot(&velocity_ned)),
+            axis_x: axis_x.xy(),
+            axis_y: axis_y.xy(),
+        };
+        let finite = [
+            sample.specific_force_mps2,
+            sample.ground_along_mps,
+            sample.axis_x,
+            sample.axis_y,
+        ]
+        .iter()
+        .all(|v| v.iter().all(|c| c.is_finite()));
+        finite.then_some(sample)
+    }
+}
+
+/// One axis's drag per kg against air velocity `v`: `−(k|v| + μ)v`, `k = ½ρ/B`.
+struct AxisDrag {
+    /// Bluff-body term, in 1/m (0 without one).
+    k_per_m: f32,
+    /// Momentum term, in 1/s.
+    mu_per_s: f32,
+}
+
+impl AxisDrag {
+    /// Axis `i` (0 `x`, 1 `y`) of `config`.
+    fn new(config: &WindConfig, i: usize) -> Self {
+        let ballistic = config.ballistic_kgpm2[i];
+        AxisDrag {
+            k_per_m: if ballistic > 0.0 {
+                0.5 * AIR_DENSITY_KGPM3 / ballistic
+            } else {
+                0.0
+            },
+            mu_per_s: config.momentum_per_s[i],
+        }
+    }
+
+    /// The air velocity, in m/s, along the axis that the drag `force_mps2` comes from, and
+    /// the drag's slope there, in 1/s; `None` without a drag model on the axis.
+    fn air_velocity(&self, force_mps2: f32) -> Option<(f32, f32)> {
+        let (k, mu) = (self.k_per_m, self.mu_per_s);
+        let push = force_mps2.abs();
+        let speed = if k > 0.0 {
+            // k·s² + μ·s = |f|, the positive root.
+            (libm::sqrtf(mu * mu + 4.0 * k * push) - mu) / (2.0 * k)
+        } else if mu > 0.0 {
+            push / mu
+        } else {
+            return None;
+        };
+        // Drag opposes the air velocity.
+        let air = if force_mps2 > 0.0 { -speed } else { speed };
+        Some((air, 2.0 * k * speed + mu))
+    }
+}

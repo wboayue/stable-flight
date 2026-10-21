@@ -197,6 +197,7 @@ where
             saturation,
             failsafe: self.commander.failsafe(),
             flight_mode,
+            wind: self.guidance.wind(),
         });
     }
 }

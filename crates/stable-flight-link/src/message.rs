@@ -206,6 +206,7 @@ pub struct Output {
 ///     saturation: Saturation::default(),
 ///     failsafe: None,
 ///     flight_mode: FlightModeReport::default(),
+///     wind: None,
 /// };
 ///
 /// let record = Record::from(&telemetry);
@@ -247,6 +248,8 @@ impl Record {
             saturation: self.saturation,
             failsafe: self.failsafe,
             flight_mode: self.flight_mode,
+            // The link doesn't carry the wind estimate.
+            wind: None,
         }
     }
 }

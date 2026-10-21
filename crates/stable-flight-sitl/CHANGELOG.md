@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Every recorder column set records guidance's wind estimate (#473): `wind_north_mps`,
+  `wind_east_mps`, `wind_sd_north_mps`, `wind_sd_east_mps`, NaN without one.
+- `Columns::header` (#473): the full header `CsvRecorder` writes, `HEADER` by default, so a
+  set that wraps another can join both.
 - `cli::parse_param`: a `--param NAME=VALUE` argument as a name and value (a clap
   `value_parser`; `ParamArgError` when it doesn't parse), shared by the simulator examples
   that set params before takeoff (#417).
