@@ -27,7 +27,7 @@ use crate::controllers::InvalidConfig;
 use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
 use crate::{
     Configurable, ControlInput, ControlOutput, CruiseOutput, FlightModeReport, FlightRegime,
-    Guidance, Saturation, Setpoint, Stabilizer, VehicleState,
+    Guidance, Saturation, Setpoint, Stabilizer, VehicleState, WindEstimate,
 };
 
 #[cfg(test)]
@@ -150,6 +150,11 @@ impl<G: Guidance> Guidance for View<G> {
 
     fn flight_mode(&self) -> Option<FlightModeReport> {
         self.inner.flight_mode()
+    }
+
+    /// The inner guidance's: wind is a world quantity, so the view doesn't rotate it.
+    fn wind(&self) -> Option<WindEstimate> {
+        self.inner.wind()
     }
 }
 

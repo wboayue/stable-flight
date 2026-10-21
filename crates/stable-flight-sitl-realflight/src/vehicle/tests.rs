@@ -9,7 +9,7 @@ use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::testing::conformance::Scenario;
 use stable_flight::testing::{ConstantCommander, RecordingTelemetry};
-use stable_flight::{Vec3, wrap_angle};
+use stable_flight::{Vec2, Vec3, wrap_angle};
 use std::{
     cell::{Cell, RefCell},
     sync::{
@@ -256,6 +256,24 @@ fn test_actuate_failure() {
 
     // State should remain unchanged on failure
     assert_eq!(vehicle.state, initial_state);
+}
+
+/// Each exchange's wind reaches the true-wind handle, north/east from RealFlight's east/north;
+/// a failed exchange leaves the last one.
+#[test]
+fn reports_realflight_wind_through_the_true_wind_handle() {
+    let mut config = create_test_config(false);
+    config.bridge.state.wind_mps = [1.5, -2.0, 0.5].into();
+    let mut vehicle = RealFlightVehicle::new(config);
+    let wind = vehicle.true_wind();
+    assert_eq!(wind.get(), None);
+
+    vehicle.actuate(&ActuatorCommand::default());
+    assert_eq!(wind.get(), Some(Vec2::new(-2.0, 1.5)));
+
+    let mut failing = RealFlightVehicle::new(create_test_config(true));
+    failing.actuate(&ActuatorCommand::default());
+    assert_eq!(failing.true_wind().get(), None);
 }
 
 #[test]

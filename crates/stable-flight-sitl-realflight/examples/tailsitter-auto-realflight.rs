@@ -42,6 +42,8 @@
 //! cargo run -p stable-flight-sitl-realflight --example tailsitter-auto-realflight -- --host 192.168.1.20:8080
 //! ```
 
+use std::borrow::Cow;
+use std::io::{self, Write};
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
@@ -50,19 +52,22 @@ use log::{debug, info, warn};
 
 use stable_flight::commanders::RouteEnd;
 use stable_flight::guidance::vtol::TailsitterGuidance;
+use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::params::Params;
 use stable_flight::stabilizers::vtol::TailsitterStabilizer;
 use stable_flight::view::tailsitter_rotation;
-use stable_flight::{FlightLoop, FlightModeReport, TelemetryPublisher, TelemetryRecord};
+use stable_flight::{
+    FlightLoop, FlightModeReport, GRAVITY, TelemetryPublisher, TelemetryRecord, Vec2, Vec3,
+};
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::cli::parse_param;
 use stable_flight_sitl::commanders::ScriptCommander;
-use stable_flight_sitl::recorder::{CsvRecorder, TailsitterColumns};
+use stable_flight_sitl::recorder::{Columns, CsvRecorder, TailsitterColumns};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
 use stable_flight_sitl_realflight::{
-    REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, airframes,
+    REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, TrueWind, airframes,
 };
 
 /// Connect timeout for the RealFlight proxy; a reconnect attempt blocks its tick.
@@ -159,8 +164,12 @@ fn main() {
     let mut fc_link = FcLink::<32, 16>::new();
     let (mut poller, telemetry) = fc_link.wire(link_rx, link_tx);
 
-    let columns = TailsitterColumns {
+    let columns = WindColumns {
+        columns: TailsitterColumns {
+            view: tailsitter_rotation(),
+        },
         view: tailsitter_rotation(),
+        wind: vehicle.true_wind(),
     };
     let recorder = CsvRecorder::create(args.record.as_deref(), columns)
         .expect("failed to create the record CSV");
@@ -228,5 +237,40 @@ impl TelemetryPublisher for ModeLog {
             );
             self.last = Some(record.flight_mode);
         }
+    }
+}
+
+/// `columns`, then RealFlight's own wind (`true_wind_north_mps`, `true_wind_east_mps`; NaN
+/// before the first report) and the specific force along the hover view's `x` (belly) and `y`
+/// (span) (`view_force_x_mps2`, `view_force_y_mps2`): the air's push, to check guidance's wind
+/// estimate against and fit its drag coefficients from.
+struct WindColumns<C> {
+    columns: C,
+    /// The tailsitter view's rotation from the body frame.
+    view: UnitQuaternion<f32>,
+    wind: TrueWind,
+}
+
+impl<C: Columns> Columns for WindColumns<C> {
+    const HEADER: &'static str =
+        "true_wind_north_mps,true_wind_east_mps,view_force_x_mps2,view_force_y_mps2";
+
+    fn header(&self) -> Cow<'static, str> {
+        Cow::Owned(format!("{},{}", self.columns.header(), Self::HEADER))
+    }
+
+    fn write_row(&mut self, out: &mut impl Write, record: &TelemetryRecord) -> io::Result<()> {
+        self.columns.write_row(out, record)?;
+        let wind = self.wind.get().unwrap_or(Vec2::repeat(f32::NAN));
+        let a = record.state.acceleration_mps2;
+        // NED specific force, into the view (the attitude rotates the body into NED).
+        let specific_force_ned = Vec3::new(a.x, a.y, -a.z - GRAVITY);
+        let view_attitude = record.state.attitude * self.view;
+        let force = view_attitude.inverse_transform_vector(&specific_force_ned);
+        write!(
+            out,
+            ",{:.3},{:.3},{:.4},{:.4}",
+            wind.x, wind.y, force.x, force.y
+        )
     }
 }

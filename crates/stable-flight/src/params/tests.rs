@@ -8,6 +8,7 @@ use crate::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
     LateralControllerConfig, YawControllerConfig,
 };
+use crate::estimation::wind::WindConfig;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig, ThrustLimits};
 use crate::mixers::TableMixer;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
@@ -84,10 +85,17 @@ fn tables_cover_every_config_field() {
                 sink_gain: _,
                 max_boost_thrust: _,
             },
+        wind:
+            WindConfig {
+                ballistic_kgpm2: _,
+                momentum_per_s: _,
+                force_noise_mps2: _,
+                process_noise_mps_per_rt_s: _,
+            },
     } = CopterGuidanceConfig::default();
     // one param per scalar, vector component, or gain term in the destructuring above
     check!(names::<CopterStabilizerConfig>().len() == 30);
-    check!(names::<CopterGuidanceConfig>().len() == 27);
+    check!(names::<CopterGuidanceConfig>().len() == 33);
 }
 
 #[test]
@@ -296,7 +304,7 @@ fn flight_loop_indexes_guidance_then_stabilizer() {
     let mut flight_loop = flight_loop();
     let guidance_count = names::<CopterGuidanceConfig>().len();
     check!(flight_loop.param_count() == all_names().len());
-    check!(flight_loop.param_name(guidance_count - 1) == Some("GUID_STICK_Y"));
+    check!(flight_loop.param_name(guidance_count - 1) == Some("GUID_WND_P_NSE"));
     check!(flight_loop.param_name(guidance_count) == Some("STAB_RATE_RLL_P"));
     check!(flight_loop.param_index("STAB_RATE_RLL_P") == Some(guidance_count));
     check!(flight_loop.param_name(all_names().len()) == None);

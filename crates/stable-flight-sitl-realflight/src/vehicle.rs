@@ -11,7 +11,7 @@ use stable_flight::nalgebra::{Quaternion, UnitQuaternion};
 use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateSource, VehicleState};
 
 use crate::airframes::Airframe;
-use crate::{ActuatorMapping, MappingError};
+use crate::{ActuatorMapping, MappingError, TrueWind};
 use health::LinkHealth;
 
 mod health;
@@ -203,6 +203,8 @@ where
     reconnect: Option<Reconnect<T>>,
     /// Reconnect timing and failure-log rate limiting.
     health: LinkHealth,
+    /// RealFlight's own wind, from the last exchange.
+    true_wind: TrueWind,
 }
 
 /// Resets the aircraft, retrying a reset RealFlight didn't finish in time (`Simulator`) up to
@@ -318,7 +320,14 @@ where
             body_rotation: configuration.body_rotation,
             reconnect: None,
             health: LinkHealth::default(),
+            true_wind: TrueWind::default(),
         })
+    }
+
+    /// A handle onto the wind RealFlight reports, updated on each exchange: simulator truth to
+    /// log beside a wind estimate, never fed to the flight loop.
+    pub fn true_wind(&self) -> TrueWind {
+        self.true_wind.clone()
     }
 
     /// Rebuilds the bridge with `reconnect` after a connection error, with backoff (see
@@ -374,7 +383,11 @@ where
             debug!("Slow RealFlight exchange: {} ms", elapsed.as_millis());
         }
         match result {
-            Ok(state) => self.state = vehicle_state(&state, &self.body_rotation),
+            Ok(state) => {
+                self.state = vehicle_state(&state, &self.body_rotation);
+                self.true_wind
+                    .set_from_realflight(state.wind_mps.x, state.wind_mps.y);
+            }
             Err(e) => {
                 self.health
                     .report(format_args!("Failed to exchange data with RealFlight: {e}"));

@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `TrueWind` and `RealFlightVehicle::true_wind` (#473): the wind RealFlight reports, north and
+  east, as a handle updated on each exchange, to log beside a wind estimate.
+  `tailsitter-auto-realflight --record` adds it as `true_wind_north_mps` and
+  `true_wind_east_mps`, with the hover view's specific force (`view_force_x_mps2`,
+  `view_force_y_mps2`) to fit drag coefficients from.
 - `tailsitter-auto-realflight --param NAME=VALUE` sets a param before takeoff, and
   `flights/explora_descent.csv` flies a 60 → 20 m hover descent over the eXplora's spawn
   point (#417).

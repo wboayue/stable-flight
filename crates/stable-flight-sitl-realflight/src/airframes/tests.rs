@@ -2,6 +2,7 @@ use super::*;
 use stable_flight::Mixer;
 use stable_flight::Vec3;
 use stable_flight::controllers::{LateralControllerConfig, YawControllerConfig};
+use stable_flight::estimation::wind::WindConfig;
 
 #[test]
 fn quadcopter_x_maps_its_four_motors_validly() {
@@ -73,6 +74,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
             sink_gain: 0.0,
             max_boost_thrust: 1.0,
         },
+        wind: WindConfig::default(),
     };
     assert_eq!(airframe.guidance, guidance, "guidance");
 }

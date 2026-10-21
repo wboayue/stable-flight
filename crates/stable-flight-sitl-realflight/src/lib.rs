@@ -26,9 +26,11 @@ pub use realflight_bridge;
 pub mod airframes;
 pub mod capture;
 mod mapping;
+mod true_wind;
 mod vehicle;
 
 pub use mapping::{ActuatorMapping, CHANNEL_COUNT, MappingError};
+pub use true_wind::TrueWind;
 
 pub use vehicle::{
     REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, SLOW_EXCHANGE, vehicle_state,

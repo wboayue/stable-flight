@@ -1,6 +1,7 @@
 use crate::{Vec2, Vec3};
 
 use super::*;
+use crate::estimation::wind::WindConfig;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use crate::{ControlOutput, RateCommand, RateSetpoint, Stabilizer};
 use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
@@ -2713,4 +2714,99 @@ fn shaped_lateral_loop_starts_a_leg_gently() {
             "limit {max_accel_mps2}: roll {roll_deg}°, expected {expected_deg}°"
         );
     }
+}
+
+/// A level vehicle `altitude_m` up, not moving, pushed east at 0.6 m/s²: with 0.3/s momentum
+/// drag, a 2 m/s wind toward the east.
+fn pushed_east_at(altitude_m: f32) -> VehicleState {
+    VehicleState {
+        position_m: Vec3::new(0.0, 0.0, altitude_m),
+        acceleration_mps2: Vec3::new(0.0, 0.6, 0.0),
+        ..Default::default()
+    }
+}
+
+/// Guidance with 0.3/s momentum drag on both axes, primed on the ground at 0 m.
+fn wind_guidance() -> CopterGuidance {
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig {
+        wind: WindConfig {
+            momentum_per_s: Vec2::new(0.3, 0.3),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    guidance.prime(&pushed_east_at(0.0));
+    guidance
+}
+
+/// The wind estimate updates only more than `AIRBORNE_HEIGHT_M` above the altitude primed on
+/// the ground, under any input; without drag coefficients it never does.
+#[test]
+fn estimates_the_wind_only_when_airborne() {
+    let hover = ControlInput::Waypoint(WaypointCommand::default());
+    let sticks = ControlInput::Attitude(AttitudeCommand::default());
+    // (case, guidance, input, altitude, expected estimate)
+    let cases = [
+        ("on the ground", wind_guidance(), &hover, 0.0, None),
+        ("below the height", wind_guidance(), &hover, 0.9, None),
+        (
+            "airborne",
+            wind_guidance(),
+            &hover,
+            5.0,
+            Some(Vec2::new(0.0, 2.0)),
+        ),
+        (
+            "airborne on sticks",
+            wind_guidance(),
+            &sticks,
+            5.0,
+            Some(Vec2::new(0.0, 2.0)),
+        ),
+        (
+            "no drag coefficients",
+            CopterGuidance::new(CopterGuidanceConfig::default()),
+            &hover,
+            5.0,
+            None,
+        ),
+    ];
+    for (case, mut guidance, input, altitude_m, expected) in cases {
+        guidance.prime(&pushed_east_at(0.0));
+        for _ in 0..ticks_for(10.0) {
+            guidance.guide(
+                0.004,
+                FlightRegime::Copter,
+                input,
+                &pushed_east_at(altitude_m),
+            );
+        }
+        let wind = guidance.wind().map(|estimate| estimate.velocity_mps);
+        match expected {
+            None => assert!(wind.is_none(), "{case}: {wind:?}"),
+            Some(expected) => {
+                let error = (wind.expect("estimated") - expected).norm();
+                assert!(error < 0.01, "{case}: {wind:?}, expected {expected}");
+            }
+        }
+    }
+}
+
+/// Primed in the air (a VTOL back in hover) guidance keeps the wind and the ground altitude;
+/// primed back on the ground, it forgets the wind.
+#[test]
+fn priming_in_the_air_keeps_the_wind() {
+    let hover = ControlInput::Waypoint(WaypointCommand::default());
+    let mut guidance = wind_guidance();
+    for _ in 0..ticks_for(10.0) {
+        guidance.guide(0.004, FlightRegime::Copter, &hover, &pushed_east_at(5.0));
+    }
+    let before = guidance.wind();
+    guidance.prime(&pushed_east_at(5.0));
+    assert!(guidance.wind() == before);
+    guidance.guide(0.004, FlightRegime::Copter, &hover, &pushed_east_at(5.0));
+    assert!(guidance.wind().is_some());
+
+    guidance.prime(&pushed_east_at(0.5));
+    assert!(guidance.wind().is_none());
 }

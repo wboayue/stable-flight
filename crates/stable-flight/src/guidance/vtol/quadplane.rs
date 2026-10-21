@@ -12,7 +12,7 @@ use crate::params::{ParamError, Params, locate};
 use crate::{
     AttitudeSetpoint, BlendSetpoint, Configurable, ControlInput, FlightMode, FlightModeReport,
     FlightRegime, Guidance, ModeRefusal, PlaneSetpoint, Saturation, Setpoint, VehicleState,
-    WaypointCommand,
+    WaypointCommand, WindEstimate,
 };
 
 #[cfg(test)]
@@ -414,6 +414,11 @@ impl Guidance for QuadPlaneGuidance {
     /// The transition's report.
     fn flight_mode(&self) -> Option<FlightModeReport> {
         Some(self.transition.report())
+    }
+
+    /// The hover guidance's, updated while it flies.
+    fn wind(&self) -> Option<WindEstimate> {
+        self.hover.wind()
     }
 }
 

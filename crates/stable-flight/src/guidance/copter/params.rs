@@ -32,6 +32,12 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_BOOST_MAX", thrust.max_boost_thrust),
         param!(deg "GUID_STICK_X", max_stick_angles_rad.x),
         param!(deg "GUID_STICK_Y", max_stick_angles_rad.y),
+        param!("GUID_WND_BCOEF_X", wind.ballistic_kgpm2.x),
+        param!("GUID_WND_BCOEF_Y", wind.ballistic_kgpm2.y),
+        param!("GUID_WND_MCOEF_X", wind.momentum_per_s.x),
+        param!("GUID_WND_MCOEF_Y", wind.momentum_per_s.y),
+        param!("GUID_WND_F_NSE", wind.force_noise_mps2),
+        param!("GUID_WND_P_NSE", wind.process_noise_mps_per_rt_s),
     ];
 }
 
@@ -46,6 +52,7 @@ mod metadata {
     const NAVIGATION: ParamMeta = ParamMeta::in_group("Guidance", "Navigation");
     const LIMITS: ParamMeta = ParamMeta::in_group("Guidance", "Limits");
     const LANDING: ParamMeta = ParamMeta::in_group("Guidance", "Landing");
+    const WIND: ParamMeta = ParamMeta::in_group("Guidance", "Wind");
     const STICKS: ParamMeta = ParamMeta::in_group("Guidance", "Sticks");
 
     impl ParamMetadata for CopterGuidanceConfig {
@@ -173,6 +180,36 @@ mod metadata {
             STICKS
                 .param("GUID_STICK_Y", "Pitch angle at full stick in attitude mode")
                 .with_units("deg")
+                .at_least(0.0),
+            WIND.param(
+                "GUID_WND_BCOEF_X",
+                "Ballistic coefficient along x (belly on a tailsitter) for the wind estimate (0: off)",
+            )
+            .with_units("kg/m/m")
+            .at_least(0.0),
+            WIND.param(
+                "GUID_WND_BCOEF_Y",
+                "Ballistic coefficient along y for the wind estimate (0: off)",
+            )
+            .with_units("kg/m/m")
+            .at_least(0.0),
+            WIND.param(
+                "GUID_WND_MCOEF_X",
+                "Momentum drag along x for the wind estimate (0: off)",
+            )
+            .with_units("1/s")
+            .at_least(0.0),
+            WIND.param(
+                "GUID_WND_MCOEF_Y",
+                "Momentum drag along y for the wind estimate (0: off)",
+            )
+            .with_units("1/s")
+            .at_least(0.0),
+            WIND.param("GUID_WND_F_NSE", "Specific-force noise of the wind estimate")
+                .with_units("m/s/s")
+                .above(0.0),
+            WIND.param("GUID_WND_P_NSE", "How fast the estimated wind may change")
+                .with_units("m/s/s^0.5")
                 .at_least(0.0),
         ];
     }

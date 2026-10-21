@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Hover wind estimate** (#473): `estimation::wind::{WindEstimator, WindConfig,
+  WindEstimate}`.
+  - It inverts a per-axis drag model (bluff-body `½ρv²/B` plus momentum `μv`, as ArduPilot's
+    and PX4's drag fusion) to air velocity, and runs a two-state linear Kalman filter on world
+    wind, each axis's noise scaled by the drag's slope.
+  - `CopterGuidance` runs it while airborne, more than `AIRBORNE_HEIGHT_M` (1 m) above where
+    it was primed on the ground. A tailsitter's hover view is its thrust frame.
+  - `CopterGuidanceConfig::wind` sets it: `GUID_WND_BCOEF_X/_Y`, `GUID_WND_MCOEF_X/_Y`,
+    `GUID_WND_F_NSE`, `GUID_WND_P_NSE`. Off by default, as in both stacks.
+  - `Guidance::wind` reports it (default `None`). `View`, `TailsitterGuidance` and
+    `QuadPlaneGuidance` forward it, and `FlightLoop` puts it in `TelemetryRecord::wind`
+    (and `RecordedTick::wind`).
+  - **Breaking:** `TelemetryRecord` and `CopterGuidanceConfig` struct literals need `wind`.
 - **Waypoint heading** (#470): `WaypointCommand::heading_rad`, a heading for copter
   waypoint flight to turn to at `CopterGuidanceConfig::heading_rate_radps` (`GUID_HDG_RATE`,
   default 60°/s, ArduPilot's waypoint yaw rate) instead of along the leg, never yielded; on a

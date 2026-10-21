@@ -22,6 +22,7 @@
 pub mod commanders;
 pub mod composition;
 pub mod controllers;
+pub mod estimation;
 pub mod flight_loop;
 pub mod guidance;
 mod math;
@@ -44,6 +45,7 @@ pub use view::View;
 
 use nalgebra::UnitQuaternion;
 
+pub use estimation::wind::WindEstimate;
 pub use math::{euler_angles, wrap_angle};
 
 /// Re-export of the [`nalgebra`] version this crate's public types use; depend on it through
@@ -1629,6 +1631,13 @@ pub trait Guidance {
     fn flight_mode(&self) -> Option<FlightModeReport> {
         None
     }
+
+    /// The wind this guidance estimates, if it estimates one. [`FlightLoop`] puts it in each
+    /// tick's [`TelemetryRecord::wind`]. The default, `None`, estimates none. A guidance that
+    /// wraps another forwards this.
+    fn wind(&self) -> Option<WindEstimate> {
+        None
+    }
 }
 
 /// Component responsible for flight control and stabilization: the inner loop.
@@ -1867,6 +1876,7 @@ pub trait TelemetryPublisher {
 ///     saturation: Saturation::default(),
 ///     failsafe: None,
 ///     flight_mode: FlightModeReport::default(),
+///     wind: None,
 /// });
 /// ```
 #[derive(Debug, Clone, Copy)]
@@ -1893,6 +1903,8 @@ pub struct TelemetryRecord<'a> {
     /// the requested [`Command::regime`] when it can't be. A disarmed tick, where guidance
     /// doesn't run, records [`FlightModeReport::copter_only`].
     pub flight_mode: FlightModeReport,
+    /// Guidance's wind estimate ([`Guidance::wind`]); `None` without one.
+    pub wind: Option<WindEstimate>,
 }
 
 /// One tick's actuator outputs: motors and servos, as generic slots.
