@@ -33,7 +33,7 @@
 
 use core::f32::consts::FRAC_PI_4;
 
-use crate::estimation::wind::{WindConfig, WindEstimator};
+use crate::estimation::wind::WindConfig;
 use crate::nalgebra::UnitQuaternion;
 use crate::{GRAVITY, Vec2, WindEstimate};
 
@@ -52,8 +52,10 @@ use crate::math::{
     all_finite, assert_dt, cap_magnitude, guard_sink, saturate_throttle, saturate_unit,
     shaped_closing_speed, tilt_boost, wrap_angle,
 };
+use hover_wind::HoverWind;
 use leg_heading::LegHeading;
 
+mod hover_wind;
 mod leg_heading;
 mod params;
 #[cfg(test)]
@@ -421,11 +423,8 @@ pub struct CopterGuidance {
     /// What the last `guide` call clipped.
     saturation: Saturation,
 
-    /// Estimates the wind while airborne.
-    wind: WindEstimator,
-    /// Altitude, in meters, the vehicle was primed at on the ground: above it by
-    /// [`AIRBORNE_HEIGHT_M`] it is airborne. `None` until primed.
-    ground_altitude_m: Option<f32>,
+    /// Estimates the wind while airborne and not paused.
+    wind: HoverWind,
 }
 
 impl CopterGuidance {
@@ -453,16 +452,15 @@ impl CopterGuidance {
             tilt_capped: false,
             requested_accel_mps2: Vec2::zeros(),
             saturation: Saturation::default(),
-            wind: WindEstimator::default(),
-            ground_altitude_m: None,
+            wind: HoverWind::default(),
         }
     }
 
-    /// Whether `state` is more than [`AIRBORNE_HEIGHT_M`] above the altitude primed on the
-    /// ground.
-    fn airborne(&self, state: &VehicleState) -> bool {
-        self.ground_altitude_m
-            .is_some_and(|ground_m| state.position_m.z > ground_m + AIRBORNE_HEIGHT_M)
+    /// Pauses (or resumes) the wind estimate's updates, keeping the estimate: for a VTOL's
+    /// guidance while it flies outside hover (a transition, or pusher thrust along the body),
+    /// where the drag model doesn't hold.
+    pub(crate) fn set_wind_paused(&mut self, paused: bool) {
+        self.wind.set_paused(paused);
     }
 }
 
@@ -501,9 +499,7 @@ impl Guidance for CopterGuidance {
     ) -> Setpoint {
         assert_dt(dt);
         self.saturation = Saturation::default();
-        if self.airborne(estimated_state) {
-            self.wind.update(dt, &self.config.wind, estimated_state);
-        }
+        self.wind.update(dt, &self.config.wind, estimated_state);
 
         if !matches!(input, ControlInput::Waypoint(_) | ControlInput::Land(_)) {
             // The position loops are idle: clear them so re-entering waypoint mode starts
@@ -552,13 +548,12 @@ impl Guidance for CopterGuidance {
     /// Clears the altitude and lateral controller state, the altitude target and its descent,
     /// the leg, and any held waypoint tilt, and latches the current heading as the yaw-hold
     /// target. Primed on the ground (no more than [`AIRBORNE_HEIGHT_M`] above the last
-    /// ground altitude, or never primed), it also latches the ground altitude and forgets the wind; primed in the air (a VTOL
-    /// back in hover), it keeps both.
+    /// ground altitude, or never primed), it also latches the ground altitude and forgets the
+    /// wind; primed in the air (a VTOL back in hover), it keeps both. Re-armed on ground more
+    /// than [`AIRBORNE_HEIGHT_M`] above where it was last primed, it counts as airborne and
+    /// feeds the wind estimate from the ground until liftoff.
     fn prime(&mut self, state: &VehicleState) {
-        if !self.airborne(state) {
-            self.ground_altitude_m = Some(state.position_m.z).filter(|z| z.is_finite());
-            self.wind.reset();
-        }
+        self.wind.prime(state);
         self.altitude = AltitudeController::default();
         self.lateral = LateralController::default();
         self.altitude_target_m = None;
@@ -586,8 +581,8 @@ impl Guidance for CopterGuidance {
     /// The wind, estimated from the drag model in
     /// [`wind`](CopterGuidanceConfig::wind) on every tick more than [`AIRBORNE_HEIGHT_M`]
     /// above the altitude primed on the ground, the vehicle's frame taken as the thrust frame
-    /// (a tailsitter's hover view under [`View`](crate::View)); `None` before the first
-    /// update, or without drag coefficients.
+    /// (a tailsitter's hover view under [`View`](crate::View)), except while a VTOL's guidance
+    /// flies outside hover; `None` before the first update, or without drag coefficients.
     fn wind(&self) -> Option<WindEstimate> {
         self.wind.estimate()
     }

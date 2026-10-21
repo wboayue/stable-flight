@@ -252,6 +252,10 @@ impl Guidance for TailsitterGuidance {
         if step.handoff {
             self.hand_off(step.mode, state);
         }
+        // The drag model holds in hover only, not pitched over with the wing lifting.
+        self.hover
+            .inner_mut()
+            .set_wind_paused(step.mode != FlightMode::Copter);
         if step.mode == FlightMode::ToPlane && self.mode != FlightMode::ToPlane {
             self.forward_thrust = self.last_thrust.max(self.config.transition.forward_thrust);
         }

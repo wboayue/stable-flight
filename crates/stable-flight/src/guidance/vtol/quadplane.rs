@@ -347,6 +347,10 @@ impl Guidance for QuadPlaneGuidance {
         if step.mode != self.mode {
             self.enter(step.mode, state);
         }
+        // The drag model needs all thrust along the lift rotors' axis: no transition, and no
+        // pusher thrust on the last tick, which this tick's state still carries.
+        self.hover
+            .set_wind_paused(step.mode != FlightMode::Copter || self.pusher_thrust > 0.0);
         let transition = self.config.transition;
 
         let setpoint = match step.mode {

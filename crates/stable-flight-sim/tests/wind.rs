@@ -9,8 +9,12 @@ use stable_flight::{Guidance, Vec2, Vec3};
 use stable_flight_sim::airframes::TailsitterAirframe;
 use stable_flight_sim::{Wind, airframes};
 
-use common::tailsitter::{TailsitterPlant, tailsitter_loop};
-use common::{Plant, fly, hover_follower, sim_loop_with};
+use common::plane::Interlude;
+use common::quadplane::{QuadPlanePlant, quadplane_loop};
+use common::tailsitter::{TailsitterPlant, forward, tailsitter_loop};
+use common::transition::{FORWARD_AT_S, TRANSITION_ALTITUDE_M};
+use common::{Plant, fly, hover_at, hover_follower, sim_loop_with};
+use stable_flight::{Command, ControlInput, Setpoint, WaypointCommand};
 
 /// Seconds hovering before the estimate is read: the quad's settles within 0.3 m/s in 0.8 s.
 const HOVER_S: f32 = 10.0;
@@ -115,4 +119,62 @@ fn tailsitter_span_wind_stays_unknown() {
     let estimate = tailsitter_estimate(steady(0.0, 3.0));
     check!(estimate.velocity_mps.x.abs() < 0.3, "{estimate:?}");
     check!(estimate.sd_along_mps(Vec2::y()) > 5.0, "{estimate:?}");
+}
+
+/// Through the forward transition and plane flight the tailsitter's estimate is left as the
+/// hover had it: pitched over, the wing lifts and the drag model doesn't hold. Measured from
+/// the transition's start to 15 s on.
+#[test]
+fn tailsitter_keeps_its_estimate_through_a_transition() {
+    let airframe = tailsitter_with_its_plate();
+    let plant = TailsitterPlant::clean(airframe);
+    let mut flight_loop = tailsitter_loop(&plant, forward(&airframe));
+    fly(&mut flight_loop, FORWARD_AT_S, |_, _| {});
+    let hover = flight_loop
+        .guidance()
+        .wind()
+        .expect("estimated in the hover");
+    fly(&mut flight_loop, 15.0, |_, _| {});
+    check!(flight_loop.guidance().wind() == Some(hover));
+}
+
+/// On a copter leg the quadplane's pusher takes the pitch, and its thrust along the body
+/// isn't drag: the estimate is left as the hover had it while the pusher runs. The leg is
+/// 100 m north, uncapped; 5 s in, the pusher is on (#427).
+#[test]
+fn quadplane_keeps_its_estimate_while_the_pusher_runs() {
+    let mut airframe = airframes::quadplane();
+    let lift = airframe.model.lift.drag_n_per_mps / airframe.model.wing.mass_kg;
+    airframe.guidance.hover.wind = WindConfig {
+        momentum_per_s: Vec2::new(lift, lift),
+        ..Default::default()
+    };
+    let leg = WaypointCommand {
+        position_m: Vec2::new(100.0, 0.0),
+        altitude_m: TRANSITION_ALTITUDE_M,
+        ..Default::default()
+    };
+    let commander = Interlude::new(
+        hover_at(TRANSITION_ALTITUDE_M),
+        FORWARD_AT_S,
+        f32::INFINITY,
+        Command::new(true, ControlInput::Waypoint(leg)),
+    );
+    let mut flight_loop = quadplane_loop(&QuadPlanePlant::clean(airframe), commander);
+    fly(&mut flight_loop, FORWARD_AT_S, |_, _| {});
+    let hover = flight_loop
+        .guidance()
+        .wind()
+        .expect("estimated in the hover");
+    fly(&mut flight_loop, 5.0, |_, _| {});
+    check!(flight_loop.guidance().wind() == Some(hover));
+    let (.., telemetry) = flight_loop.into_parts();
+    let pusher = telemetry
+        .iter()
+        .last()
+        .and_then(|tick| match tick.setpoint {
+            Setpoint::Blend(blend) => Some(blend.plane.thrust),
+            _ => None,
+        });
+    check!(pusher.is_some_and(|thrust| thrust > 0.0), "{pusher:?}");
 }

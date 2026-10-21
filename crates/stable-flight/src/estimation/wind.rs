@@ -44,6 +44,11 @@ pub const INITIAL_SD_MPS: f32 = 10.0;
 /// (`AirDataFusion.cpp:595-599`, `drag_fusion.cpp:123`).
 const GATE_SIGMA: f32 = 5.0;
 
+/// Cosine of the most tilt, thrust axis from vertical, a tick is used at: 45°. The drag model
+/// is a hover's; tilted further (a tailsitter pitching over, a hard maneuver) the wing's lift
+/// and the thrust's own tilt dominate the push.
+const MIN_TILT_COSINE: f32 = core::f32::consts::FRAC_1_SQRT_2;
+
 /// Least drag slope, in 1/s, an axis's noise is divided by: below it the axis tells almost
 /// nothing about the wind, and the noise stays finite.
 const MIN_DRAG_SLOPE_PER_S: f32 = 1e-3;
@@ -206,8 +211,9 @@ impl Default for WindEstimator {
 impl WindEstimator {
     /// Adds this tick's state, `state.attitude` taken as the thrust frame (thrust along its
     /// `z`), and once [`UPDATE_PERIOD_S`] has gathered, updates the wind from the period's
-    /// average. A tick with a non-finite attitude, velocity, or acceleration is skipped. Does
-    /// nothing while `config` has no drag coefficient.
+    /// average. A tick with a non-finite attitude, velocity, or acceleration, or with the
+    /// thrust axis tilted more than 45° from vertical, is skipped. Does nothing while `config`
+    /// has no drag coefficient.
     pub fn update(&mut self, dt: f32, config: &WindConfig, state: &VehicleState) {
         if !config.is_on() {
             return;
@@ -318,6 +324,10 @@ impl Sample {
         let velocity_ned = Vec3::new(v.x, v.y, -v.z);
         // One matrix serves all three: its columns are the body axes in NED.
         let rotation = attitude.to_rotation_matrix();
+        // `<` is false for NaN; the finiteness check below catches it.
+        if rotation.matrix()[(2, 2)] < MIN_TILT_COSINE {
+            return None;
+        }
         let force = rotation.inverse_transform_vector(&specific_force_ned);
         let axis_x: Vec3 = rotation.matrix().column(0).into();
         let axis_y: Vec3 = rotation.matrix().column(1).into();

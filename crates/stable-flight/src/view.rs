@@ -117,6 +117,11 @@ impl<T> View<T> {
         &self.inner
     }
 
+    /// The wrapped component, mutably, for its owner's crate-internal calls.
+    pub(crate) fn inner_mut(&mut self) -> &mut T {
+        &mut self.inner
+    }
+
     /// Unwraps the component.
     pub fn into_inner(self) -> T {
         self.inner

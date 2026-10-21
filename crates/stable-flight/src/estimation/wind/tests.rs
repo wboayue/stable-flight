@@ -349,3 +349,16 @@ fn an_axis_with_little_drag_counts_for_little() {
     );
     check!(estimate.sd_along_mps(Vec2::y()) > 5.0, "{estimate:?}");
 }
+
+/// Ticks tilted past 45° (thrust axis from vertical) are skipped: the drag model is a hover's.
+#[test]
+fn skips_ticks_tilted_past_45_degrees() {
+    let config = momentum(0.3);
+    let wind = Vec2::new(0.0, 2.0);
+    // (pitch, updated)
+    for (pitch_rad, updated) in [(0.7, true), (0.9, false), (FRAC_PI_2, false)] {
+        let state = pushed(&config, 0.0, pitch_rad, Vec2::zeros(), wind);
+        let estimate = estimate_after(&config, &state, 1.0);
+        check!(estimate.is_some() == updated, "{pitch_rad}");
+    }
+}
