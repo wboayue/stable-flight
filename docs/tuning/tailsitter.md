@@ -243,6 +243,48 @@ eXplora (#417), 3 mph RealFlight wind (stronger at height), 60 m to 20 m:
   - `sp_thrust` drops to `GUID_THR_MIN` as a descent starts and the nose follows: lower
     `GUID_DESC_ACC`.
 
+### Wind estimate
+
+Hover guidance estimates the wind from the drag push it measures: the specific force across
+the belly and along the span, inverted per axis through f = −(k|v| + μ)v to the air's speed,
+then filtered (core `estimation::wind`). It reports the estimate in telemetry (`wind_*`
+recorder columns); nothing flies on it yet. It runs only in copter flight, more than 1 m above
+the takeoff height, and tilted less than 45°. Every coefficient 0 switches it off.
+
+| Param | Field | Meaning | eXplora |
+|---|---|---|---|
+| `GUID_WND_BCOEF_X`, `_Y` | `hover.wind.ballistic_kgpm2` | ballistic coefficient B, k = ½ρ/B (0: no v² term) | 0, 0 |
+| `GUID_WND_MCOEF_X`, `_Y` | `hover.wind.momentum_per_s` | momentum drag μ, belly (x) and span (y) | 4.76, 0.24 /s |
+| `GUID_WND_F_NSE` | `hover.wind.force_noise_mps2` | specific force noise of a 0.2 s mean | 0.45 m/s² |
+| `GUID_WND_P_NSE` | `hover.wind.process_noise_mps_per_rt_s` | how fast the wind may change | 0.1 m/s/√s |
+
+To fit them:
+
+1. Fly `flights/explora_wind_cal.csv` with `--record` in a steady RealFlight wind (5 km/h):
+   20 s holds at headings a wingtip or up to 45° off it can hold, at 40 m and 60 m. A
+   heading that pins the tilt cap never reaches its hold and stalls the script: stop it.
+2. Per axis, take 0.2 s means of `view_force_*_mps2` against the air's speed along that axis
+   (ground velocity minus `true_wind_*`, rotated by the heading), and fit k and μ by least
+   squares. `GUID_WND_F_NSE` is the fit's residual.
+3. Replay the CSVs through `WindEstimator` with the fitted values, then fly
+   `flights/explora_wind_check.csv` (60 s with a wingtip into the wind, 60 s 20° off it) and
+   compare `wind_*` with `true_wind_*` over seconds at ≥245 Hz.
+
+eXplora (#473), RealFlight wind 1.7–2.3 m/s at 40–60 m:
+
+- **Drag is linear in the air's speed** (a wing in its propwash): across the belly μ 4.76/s
+  (R² 0.98, residual 0.45 m/s²); a v² term fits a negative k.
+- **Along the span it isn't:** f/v is 0.22/s with a wingtip into the wind and 0.26–0.30
+  elsewhere. The overall fit, 0.27, read a wingtip wind 30% slow; 0.24 splits the error.
+
+| μ span | Run | Wingtip into the wind (125°) | 20° off (145°) |
+|---|---|---|---|
+| 0.27 | check 1, 2 | **fails**: speed 0.69–0.70 of the truth, 1/5 and 4/12 s in band | 16/16, 9/9 s; 1.5°, 0.87–0.89 |
+| **0.24** | **check 3, 4** | **38/38, 40/40 s**; 3.1°, 0.78–0.85 | **20/20, 37/37 s**; 3.3°, 0.97–1.01 |
+
+Each cell: seconds within 20° and 30% of RealFlight's wind over seconds at ≥245 Hz, worst
+direction error, speed ratio.
+
 ## 6. Plane cruise and airspeeds
 
 | Param | Field | eXplora |
