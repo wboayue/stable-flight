@@ -261,16 +261,18 @@ the takeoff height, and tilted less than 45°. Every coefficient 0 switches it o
 To fit them:
 
 1. Fly `flights/explora_wind_cal.csv` with `--record` in a steady RealFlight wind (5 km/h):
-   20 s holds at headings a wingtip or up to 45° off it can hold, at 40 m and 60 m. A
-   heading that pins the tilt cap never reaches its hold and stalls the script: stop it.
+   20 s holds at 40 m at headings up to 45° either side of a wingtip. A heading that pins
+   the tilt cap never reaches its hold and stalls the script: stop it, and retune the
+   headings to the wind.
 2. Per axis, take 0.2 s means of `view_force_*_mps2` against the air's speed along that axis
    (ground velocity minus `true_wind_*`, rotated by the heading), and fit k and μ by least
    squares. `GUID_WND_F_NSE` is the fit's residual.
-3. Replay the CSVs through `WindEstimator` with the fitted values, then fly
-   `flights/explora_wind_check.csv` (60 s with a wingtip into the wind, 60 s 20° off it) and
-   compare `wind_*` with `true_wind_*` over seconds at ≥245 Hz.
+3. Fly `flights/explora_wind_check.csv` (60 s with a wingtip into the wind, 60 s 20° off it)
+   with the fitted values as `--param GUID_WND_MCOEF_X=… --param GUID_WND_MCOEF_Y=…`, and
+   compare `wind_*` with `true_wind_*` over seconds at ≥245 Hz. Where the fit varies with
+   heading, try candidates the same way, without a rebuild.
 
-eXplora (#473), RealFlight wind 1.7–2.3 m/s at 40–60 m:
+eXplora (#473), RealFlight wind 2.1–2.3 m/s at 40 m:
 
 - **Drag is linear in the air's speed** (a wing in its propwash): across the belly μ 4.76/s
   (R² 0.98, residual 0.45 m/s²); a v² term fits a negative k.
