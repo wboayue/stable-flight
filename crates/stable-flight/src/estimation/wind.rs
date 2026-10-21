@@ -282,6 +282,23 @@ impl WindEstimator {
     }
 }
 
+/// The specific force on the vehicle (what an accelerometer reads: acceleration less gravity),
+/// in m/s², in NED, the frame `state.attitude` rotates the body into: `(0, 0, −g)` at rest.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight::estimation::wind::specific_force_ned;
+/// use stable_flight::{GRAVITY, Vec3, VehicleState};
+///
+/// let resting = specific_force_ned(&VehicleState::default());
+/// assert_eq!(resting, Vec3::new(0.0, 0.0, -GRAVITY));
+/// ```
+pub fn specific_force_ned(state: &VehicleState) -> Vec3 {
+    let a = state.acceleration_mps2;
+    Vec3::new(a.x, a.y, -a.z - GRAVITY)
+}
+
 /// One tick's measurement.
 struct Sample {
     specific_force_mps2: Vec2,
@@ -295,10 +312,9 @@ impl Sample {
     /// non-finite.
     fn from_state(state: &VehicleState) -> Option<Self> {
         let attitude: &UnitQuaternion<f32> = &state.attitude;
-        let a = state.acceleration_mps2;
         let v = state.velocity_mps;
         // NED, as the attitude rotates the FRD body into it.
-        let specific_force_ned = Vec3::new(a.x, a.y, -a.z - GRAVITY);
+        let specific_force_ned = specific_force_ned(state);
         let velocity_ned = Vec3::new(v.x, v.y, -v.z);
         // One matrix serves all three: its columns are the body axes in NED.
         let rotation = attitude.to_rotation_matrix();
