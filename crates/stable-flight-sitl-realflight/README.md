@@ -91,7 +91,9 @@ cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- f
 # The same for the eXplora tailsitter, in the copter regime: a small, slow figure-eight
 # starting and ending over its spawn point by default (flights/explora_figure_eight.csv); flights/explora_hover.csv
 # holds 5 m over it, flights/explora_descent.csv climbs to 60 m and descends to 20 m,
-# flights/explora_heading_box.csv holds 20 s at each of 8 headings at 40 m and 60 m; --record
+# flights/explora_heading_box.csv holds 20 s at each of 8 headings at 40 m and 60 m,
+# flights/explora_wind_cal.csv and explora_wind_check.csv fly the wind estimate's calibration
+# and check holds (docs/tuning/tailsitter.md); --record
 # also logs RealFlight's own wind and the hover view's specific force beside guidance's
 # wind estimate; --param
 # sets a param before takeoff. Or: just fly-tailsitter-auto

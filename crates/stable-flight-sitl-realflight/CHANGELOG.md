@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rate that turned it 90° in 3 mph wind without losing the hold (#417, #470).
 - `airframes::explora_vtol()` shapes its hover legs at 1 m/s² (`GUID_LAT_ACC`): after the
   back transition, a leg along the span peaked at 11° of roll instead of 35° (#418).
+- `airframes::explora_vtol()` estimates the hover wind (#473): drag linear in the air's
+  speed, 4.76/s across the belly and 0.24/s along the span, fitted to RealFlight's wind; it
+  reads it within 4° and 22% at 1.7–2.3 m/s.
 
 ### Added
 
@@ -34,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   point (#417).
 - `flights/explora_heading_box.csv`: the eXplora holds over its spawn point facing 8
   headings 45° apart, 20 s each, at 40 m and 60 m (#470).
+- `flights/explora_wind_cal.csv` and `flights/explora_wind_check.csv` (#473): eXplora hover
+  holds to fit the wind estimate's drag coefficients and check them.
 - `tailsitter-companion-realflight` example (#333): the eXplora flown from the native link
   under a hold failsafe, its regime requested over the link (QGC's transition button through
   the bridge).

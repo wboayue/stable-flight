@@ -45,6 +45,9 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
    with `just fly-autotune` or by hand, then altitude and position (`GUID_*`). The surfaces
    stay neutral in a hover. A CG off the lift rotors' center needs a steady pitch moment:
    give the pitch rate loop enough I to hold it (I · max integral above the trim).
+   The hover wind estimate (`GUID_WND_*`) is off until its drag coefficients are fitted:
+   the steps are the tailsitter guide's
+   [wind estimate](tailsitter.md#wind-estimate), flown with the pusher off.
 2. **Surface directions.** Before the first plane flight, check each surface pushes the way
    the mixer expects. On the ground with no airflow they move nothing; in copter flight at
    speed they do, while the lift rotors hold attitude against them
