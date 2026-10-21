@@ -109,10 +109,16 @@ pub struct ScriptCommander {
     copter_altitude_acceptance_m: f32,
     /// Altitude acceptance on plane legs, in meters.
     plane_altitude_acceptance_m: f32,
+    holds: Holds,
+}
+
+/// Times a script's holds: which reached waypoint, if any, to keep commanding each tick.
+#[derive(Debug, Clone, Default)]
+struct Holds {
     /// Seconds to hold each waypoint once reached, by index.
     holds_s: Vec<f32>,
     /// The hold being flown.
-    hold: Option<Hold>,
+    active: Option<Hold>,
     /// The follower has started the route's land.
     landing: bool,
 }
@@ -124,6 +130,46 @@ struct Hold {
     index: usize,
     /// Seconds left to hold it.
     remaining_s: f32,
+}
+
+impl Holds {
+    /// Holds waypoint `i` for `holds_s[i]` seconds once reached.
+    fn new(holds_s: Vec<f32>) -> Self {
+        Holds {
+            holds_s,
+            ..Default::default()
+        }
+    }
+
+    /// The index of the waypoint still held after `dt` more of its hold; `None` once the hold
+    /// is over, or without one.
+    fn held(&mut self, dt: f32) -> Option<usize> {
+        let hold = self.active.as_mut()?;
+        hold.remaining_s -= dt;
+        // A NaN `dt` ends the hold.
+        if hold.remaining_s.is_nan() || hold.remaining_s <= 0.0 {
+            self.active = None;
+            return None;
+        }
+        Some(hold.index)
+    }
+
+    /// After a follower tick that began on waypoint `reached` and ended on `current`, `lands`
+    /// when it commanded the route's land: starts `reached`'s hold if the follower moved on
+    /// from it (to another waypoint or into the land) and it has one, returning its index.
+    fn start(&mut self, reached: usize, current: usize, lands: bool) -> Option<usize> {
+        let moved_on = current != reached || (lands && !self.landing);
+        self.landing = lands;
+        let hold_s = self.holds_s.get(reached).copied().unwrap_or(0.0);
+        if !(moved_on && hold_s > 0.0) {
+            return None;
+        }
+        self.active = Some(Hold {
+            index: reached,
+            remaining_s: hold_s,
+        });
+        Some(reached)
+    }
 }
 
 /// A script row: a waypoint, the regime of the leg to it, and its hold.
@@ -215,9 +261,7 @@ impl ScriptCommander {
             regimes: legs.iter().map(|leg| leg.regime).collect(),
             copter_altitude_acceptance_m: DEFAULT_ALTITUDE_ACCEPTANCE_M,
             plane_altitude_acceptance_m: PLANE_ALTITUDE_ACCEPTANCE_M,
-            holds_s: legs.iter().map(|leg| leg.hold_s).collect(),
-            hold: None,
-            landing: false,
+            holds: Holds::new(legs.iter().map(|leg| leg.hold_s).collect()),
         })
     }
 
@@ -320,20 +364,6 @@ impl ScriptCommander {
         self.regimes.get(index).copied().unwrap_or_default()
     }
 
-    /// The held waypoint's command this tick, after `dt` more of the hold; `None` once the
-    /// hold is over, or without one.
-    fn held_command(&mut self, dt: f32) -> Option<Command> {
-        let hold = self.hold.as_mut()?;
-        hold.remaining_s -= dt;
-        // A NaN `dt` ends the hold.
-        if hold.remaining_s.is_nan() || hold.remaining_s <= 0.0 {
-            self.hold = None;
-            return None;
-        }
-        let index = hold.index;
-        Some(self.hold_command(index))
-    }
-
     /// Waypoint `index` as the follower would fly it with no leg ahead: without a fly-through
     /// velocity unless it has its own, so the vehicle stops on it.
     fn hold_command(&self, index: usize) -> Command {
@@ -387,23 +417,19 @@ impl Commander for ScriptCommander {
     /// from it (to the next waypoint or the route's land), is commanded instead for its
     /// `hold_s`, the follower paused meanwhile.
     fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
-        if let Some(command) = self.held_command(dt) {
-            return command;
+        if let Some(index) = self.holds.held(dt) {
+            return self.hold_command(index);
         }
         let reached = self.follower.current_index();
         let altitude_acceptance_m = *self.altitude_acceptance_m(self.active_regime());
         self.follower.set_altitude_acceptance(altitude_acceptance_m);
         let command = self.follower.next_command(dt, current_state);
         let lands = matches!(command.input, ControlInput::Land(_));
-        let moved_on = self.follower.current_index() != reached || (lands && !self.landing);
-        self.landing = lands;
-        let hold_s = self.holds_s.get(reached).copied().unwrap_or(0.0);
-        if moved_on && hold_s > 0.0 {
-            self.hold = Some(Hold {
-                index: reached,
-                remaining_s: hold_s,
-            });
-            return self.hold_command(reached);
+        if let Some(index) = self
+            .holds
+            .start(reached, self.follower.current_index(), lands)
+        {
+            return self.hold_command(index);
         }
         command.with_regime(self.active_regime())
     }

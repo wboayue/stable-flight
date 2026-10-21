@@ -3,7 +3,7 @@ use assert2::check;
 use stable_flight::{Vec2, Vec3};
 use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
 
-use super::{Leg, ScriptCommander, ScriptError, parse_route};
+use super::{Holds, Leg, ScriptCommander, ScriptError, parse_route};
 use stable_flight::commanders::RouteEnd;
 use stable_flight::{
     Command, Commander, ControlInput, FlightRegime, VehicleState, WaypointCommand,
@@ -366,4 +366,37 @@ fn holds_the_last_waypoint_before_the_land() {
     let held = ControlInput::Waypoint(holding_route(&[(0.35, 1.0)])[0].waypoint);
     check!(inputs[..4] == [held; 4]);
     assert2::assert!(let ControlInput::Land(_) = inputs[4]);
+}
+
+/// A follower tick for [`Holds::start`]: (waypoint it began on, waypoint it ended on, lands).
+type FollowerTick = (usize, usize, bool);
+
+/// A hold starts when the follower moves on from a waypoint with one, to another waypoint or
+/// into the land, and only on that tick; it lasts its seconds, and a NaN `dt` ends it.
+#[test]
+fn a_hold_starts_on_moving_on_and_lasts_its_seconds() {
+    // (case, follower ticks (reached, current, lands), expected start of the last)
+    let cases: [(&str, &[FollowerTick], Option<usize>); 6] = [
+        ("moved on", &[(1, 2, false)], Some(1)),
+        ("still on it", &[(1, 1, false)], None),
+        ("no hold", &[(0, 1, false)], None),
+        ("looped back", &[(2, 0, false)], Some(2)),
+        ("into the land", &[(1, 1, false), (1, 1, true)], Some(1)),
+        ("landing on", &[(1, 1, true), (1, 1, true)], None),
+    ];
+    for (case, ticks, expected) in cases {
+        let mut holds = Holds::new(vec![0.0, 0.35, 0.2]);
+        let mut started = None;
+        for &(reached, current, lands) in ticks {
+            started = holds.start(reached, current, lands);
+        }
+        check!(started == expected, "{case}");
+    }
+
+    let mut holds = Holds::new(vec![0.35]);
+    holds.start(0, 0, true);
+    let held: Vec<_> = (0..4).map(|_| holds.held(0.1)).collect();
+    check!(held == [Some(0), Some(0), Some(0), None]);
+    holds.start(0, 1, false);
+    check!(holds.held(f32::NAN) == None);
 }
