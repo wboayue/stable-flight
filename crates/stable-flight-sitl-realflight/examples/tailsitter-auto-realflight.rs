@@ -51,14 +51,13 @@ use env_logger::Builder;
 use log::{debug, info, warn};
 
 use stable_flight::commanders::RouteEnd;
+use stable_flight::estimation::wind::specific_force_ned;
 use stable_flight::guidance::vtol::TailsitterGuidance;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::params::Params;
 use stable_flight::stabilizers::vtol::TailsitterStabilizer;
 use stable_flight::view::tailsitter_rotation;
-use stable_flight::{
-    FlightLoop, FlightModeReport, GRAVITY, TelemetryPublisher, TelemetryRecord, Vec2, Vec3,
-};
+use stable_flight::{FlightLoop, FlightModeReport, TelemetryPublisher, TelemetryRecord, Vec2};
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::cli::parse_param;
@@ -262,11 +261,8 @@ impl<C: Columns> Columns for WindColumns<C> {
     fn write_row(&mut self, out: &mut impl Write, record: &TelemetryRecord) -> io::Result<()> {
         self.columns.write_row(out, record)?;
         let wind = self.wind.get().unwrap_or(Vec2::repeat(f32::NAN));
-        let a = record.state.acceleration_mps2;
-        // NED specific force, into the view (the attitude rotates the body into NED).
-        let specific_force_ned = Vec3::new(a.x, a.y, -a.z - GRAVITY);
         let view_attitude = record.state.attitude * self.view;
-        let force = view_attitude.inverse_transform_vector(&specific_force_ned);
+        let force = view_attitude.inverse_transform_vector(&specific_force_ned(record.state));
         write!(
             out,
             ",{:.3},{:.3},{:.4},{:.4}",

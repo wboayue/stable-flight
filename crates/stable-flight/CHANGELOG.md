@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `Guidance::wind` reports it (default `None`). `View`, `TailsitterGuidance` and
     `QuadPlaneGuidance` forward it, and `FlightLoop` puts it in `TelemetryRecord::wind`
     (and `RecordedTick::wind`).
+  - `estimation::wind::specific_force_ned`: what an accelerometer reads, from the state.
   - **Breaking:** `TelemetryRecord` and `CopterGuidanceConfig` struct literals need `wind`.
 - **Waypoint heading** (#470): `WaypointCommand::heading_rad`, a heading for copter
   waypoint flight to turn to at `CopterGuidanceConfig::heading_rate_radps` (`GUID_HDG_RATE`,
