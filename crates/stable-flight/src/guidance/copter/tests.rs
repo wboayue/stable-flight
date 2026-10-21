@@ -624,6 +624,35 @@ fn a_waypoint_heading_is_turned_to_at_the_heading_rate() {
     }
 }
 
+/// A commanded heading forgets the leg: once it is dropped, the same waypoint starts a fresh
+/// leg from the vehicle, turning along it, rather than resuming a yield from before. A vehicle
+/// at the origin held north; 2 s on the leg east yields.
+#[test]
+fn a_dropped_heading_starts_a_fresh_leg() {
+    let east = waypoint_toward(0.0, 100.0);
+    let ControlInput::Waypoint(east_command) = east else {
+        unreachable!("waypoint_toward gives a waypoint")
+    };
+    let facing = ControlInput::Waypoint(WaypointCommand {
+        heading_rad: Some(0.5),
+        ..east_command
+    });
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+    let state = VehicleState::default();
+    guidance.prime(&state);
+    let mut heading = f32::NAN;
+    for (command, seconds) in [(&east, 2.0), (&facing, 1.0), (&east, 0.4)] {
+        for _ in 0..ticks_for(seconds) {
+            heading = heading_of(guidance.guide(0.004, FlightRegime::Copter, command, &state));
+        }
+    }
+    let expected = 0.5 + turned_by(0.4);
+    assert!(
+        (heading - expected).abs() < 1e-4,
+        "{heading}, expected {expected}"
+    );
+}
+
 /// A command flown for a time from a vehicle at a heading: (command, heading, seconds).
 type Phase<'a> = (&'a ControlInput, f32, f32);
 

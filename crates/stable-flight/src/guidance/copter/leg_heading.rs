@@ -41,7 +41,7 @@ impl LegHeading {
     /// The heading-hold target for this tick of the leg to `waypoint`, from the current
     /// `target_rad`: turned toward the waypoint's finite
     /// [`heading_rad`](WaypointCommand::heading_rad) by at most `heading_rate_radps · dt`, never
-    /// yielded; without one, turned toward the leg's direction by at most
+    /// yielded, with no leg kept (dropping the heading starts a fresh one); without one, turned toward the leg's direction by at most
     /// `waypoint_yaw_radps · dt`, or the vehicle's heading once the leg has yielded
     /// ([`yielded`](Self::yielded)); otherwise `target_rad`. Turns go the shorter way round,
     /// unwrapped.
@@ -59,10 +59,11 @@ impl LegHeading {
         waypoint: &WaypointCommand,
         estimated_state: &VehicleState,
     ) -> f32 {
-        let bearing_rad = self.bearing_rad(config, waypoint.position_m, estimated_state);
         if let Some(heading_rad) = waypoint.heading_rad.filter(|h| h.is_finite()) {
+            self.clear();
             return turned_toward(target_rad, heading_rad, config.heading_rate_radps * dt);
         }
+        let bearing_rad = self.bearing_rad(config, waypoint.position_m, estimated_state);
         if self.yielded(dt, config, target_rad, estimated_state) {
             return estimated_state.heading_rad;
         }
