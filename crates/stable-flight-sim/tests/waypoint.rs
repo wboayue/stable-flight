@@ -9,7 +9,7 @@ use std::rc::Rc;
 use assert2::check;
 use stable_flight::commanders::{RouteEnd, WaypointFollower};
 use stable_flight::{
-    ControlInput, Setpoint, TelemetryPublisher, TelemetryRecord, Vec2, WaypointCommand,
+    ControlInput, LandCommand, Setpoint, TelemetryPublisher, TelemetryRecord, Vec2, WaypointCommand,
 };
 use stable_flight_sim::{Wind, airframes};
 
@@ -199,35 +199,49 @@ impl TelemetryPublisher for ThrustLog {
     }
 }
 
-/// A descent from a settled hover speeds up at `descent_accel_mps2` rather than stepping to
-/// `max_descent_mps`, so thrust dips no more than that acceleration asks: hover · a / g, 0.086
-/// at ArduPilot's `WP_ACC_Z` of 1 m/s² (`libraries/AC_WPNav/AC_WPNav.cpp:14`). Measured 0.030
-/// on `quad_x`; stepping to 3 m/s dipped it 0.52, to 0.33 (#417: on the RealFlight eXplora, to
-/// its thrust floor, dropping the nose 10°).
+/// A descent or a land from a settled hover speeds up at `descent_accel_mps2` rather than
+/// stepping to its speed, so thrust dips no more than that acceleration asks: hover · a / g,
+/// 0.086 at ArduPilot's `WP_ACC_Z` of 1 m/s² (`libraries/AC_WPNav/AC_WPNav.cpp:14`). Measured
+/// on `quad_x`: 0.030 for the descent, 0.028 for the land; stepping dipped them 0.52 (to
+/// 3 m/s) and 0.121 (to the 0.7 m/s land speed). #417: on the RealFlight eXplora, a descent
+/// step took thrust to its floor and dropped the nose 10°; #476: a land step set off a roll
+/// cycle.
 #[test]
 fn starts_a_descent_without_a_thrust_step() {
     const DESCEND_AT_S: f32 = 15.0;
     let airframe = airframes::quad_x();
-    let log = Rc::new(RefCell::new(Vec::new()));
-    let commander = ThenFly {
-        hover: hover_at(20.0),
-        elapsed_s: 0.0,
-        after_s: DESCEND_AT_S,
-        input: Some(ControlInput::Waypoint(WaypointCommand {
-            altitude_m: 5.0,
-            ..Default::default()
-        })),
-    };
-    let mut flight_loop = pipeline(&Plant::clean(airframe), commander, ThrustLog(log.clone()));
-    fly(&mut flight_loop, DESCEND_AT_S + 1.0, |_, _| {});
+    let cases = [
+        (
+            "waypoint",
+            ControlInput::Waypoint(WaypointCommand {
+                altitude_m: 5.0,
+                ..Default::default()
+            }),
+        ),
+        ("land", ControlInput::Land(LandCommand::default())),
+    ];
+    for (case, input) in cases {
+        let log = Rc::new(RefCell::new(Vec::new()));
+        let commander = ThenFly {
+            hover: hover_at(20.0),
+            elapsed_s: 0.0,
+            after_s: DESCEND_AT_S,
+            input: Some(input),
+        };
+        let mut flight_loop = pipeline(&Plant::clean(airframe), commander, ThrustLog(log.clone()));
+        fly(&mut flight_loop, DESCEND_AT_S + 1.0, |_, _| {});
 
-    let thrust = log.borrow();
-    let start = ticks(DESCEND_AT_S);
-    let hover = thrust[start - 2];
-    let lowest = thrust[start..]
-        .iter()
-        .copied()
-        .fold(f32::INFINITY, f32::min);
-    let allowed = hover * airframe.guidance.descent_accel_mps2 / stable_flight::GRAVITY;
-    check!(hover - lowest < allowed, "hover {hover}, lowest {lowest}");
+        let thrust = log.borrow();
+        let start = ticks(DESCEND_AT_S);
+        let hover = thrust[start - 2];
+        let lowest = thrust[start..]
+            .iter()
+            .copied()
+            .fold(f32::INFINITY, f32::min);
+        let allowed = hover * airframe.guidance.descent_accel_mps2 / stable_flight::GRAVITY;
+        check!(
+            hover - lowest < allowed,
+            "{case}: hover {hover}, lowest {lowest}"
+        );
+    }
 }

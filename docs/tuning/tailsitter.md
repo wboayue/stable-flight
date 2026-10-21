@@ -174,6 +174,8 @@ already there. Landing has its own, slower descent (`GUID_LAND_SPD`, 0.7 m/s).
 rate rises by at most this much per second from hover, and slows so this deceleration stops it
 there (ArduPilot's `WP_ACC_Z`, 1 m/s²). A faster start cuts thrust harder: stepping straight
 to 1.5 m/s took the eXplora's thrust to its floor in 0.25 s and dropped the nose 10° (#417).
+A land speeds up to `GUID_LAND_SPD` the same way: stepping to it cut thrust 0.89 → 0.76 in one
+tick and set off a ±15° roll cycle that lasted to touchdown (#476).
 Lower it if the start drops the nose or the arrival sinks past the waypoint; raise it to reach
 the waypoint sooner.
 

@@ -105,7 +105,7 @@ mod metadata {
             LIMITS
                 .param(
                     "GUID_DESC_ACC",
-                    "Deceleration a waypoint descent stops on the waypoint with",
+                    "Acceleration a descent or land starts with, and a waypoint descent stops with",
                 )
                 .with_units("m/s/s")
                 .above(0.0),
