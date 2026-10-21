@@ -2810,3 +2810,31 @@ fn priming_in_the_air_keeps_the_wind() {
     guidance.prime(&pushed_east_at(0.5));
     assert!(guidance.wind().is_none());
 }
+
+/// Paused (a VTOL outside hover), the wind estimate doesn't update and keeps what it had;
+/// resumed, it updates again.
+#[test]
+fn a_paused_wind_estimate_keeps_its_value() {
+    let hover = ControlInput::Waypoint(WaypointCommand::default());
+    let mut guidance = wind_guidance();
+    guidance.set_wind_paused(true);
+    for _ in 0..ticks_for(2.0) {
+        guidance.guide(0.004, FlightRegime::Copter, &hover, &pushed_east_at(5.0));
+    }
+    assert!(guidance.wind().is_none());
+
+    guidance.set_wind_paused(false);
+    for _ in 0..ticks_for(10.0) {
+        guidance.guide(0.004, FlightRegime::Copter, &hover, &pushed_east_at(5.0));
+    }
+    let settled = guidance.wind();
+    guidance.set_wind_paused(true);
+    let calm = VehicleState {
+        acceleration_mps2: Vec3::zeros(),
+        ..pushed_east_at(5.0)
+    };
+    for _ in 0..ticks_for(2.0) {
+        guidance.guide(0.004, FlightRegime::Copter, &hover, &calm);
+    }
+    assert!(guidance.wind() == settled);
+}

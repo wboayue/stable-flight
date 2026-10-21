@@ -246,7 +246,8 @@ supplies pacing.
   leaves a linear filter); one isotropic drag model (a flat plate's push follows its normal,
   not the wind, which is what made the lean-chasing weathervane spin in #417); and estimating
   from the lateral loop's integral (it carries the push, not the wind, with the loop's lag).
-  The estimate reaches telemetry through `Guidance::wind`, not the link yet.
+  VTOL guidances pause it outside copter flight, and a quadplane while its pusher thrusts
+  along the body. The estimate reaches telemetry through `Guidance::wind`, not the link yet.
 * **Stabilizer**: the inner loop, cascaded PIDs from setpoint error to `ControlOutput` (setpoint
   units: `Setpoint` rustdoc).
 * **Mixer**: maps thrust and moments to `ActuatorCommand`'s generic motor and servo slots. The
