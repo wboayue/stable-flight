@@ -119,7 +119,7 @@ impl PlaneRateControllerConfig {
 }
 
 /// The fixed-wing body-rate loop: per axis, `s²·(P·e + I·∫e + trim) + s·FF·setpoint`, clamped
-/// to `[-1, 1]`, where `s` is the airspeed scale (trim over current airspeed).
+/// to `[-1, 1]`, where `s` is the airspeed scale (trim airspeed over current airspeed).
 ///
 /// A surface's moment grows with dynamic pressure (airspeed squared), so the feedback terms
 /// and the trim shrink by `s²` as the wing speeds up; the feedforward, a deflection that holds
@@ -168,14 +168,15 @@ impl PlaneRateController {
         integrate: bool,
     ) -> Vec3 {
         assert_dt(dt);
+        if !scale.is_finite() {
+            return Vec3::zeros();
+        }
         let gains = config.axis_gains();
+        let scale_squared = scale * scale;
         Vec3::from_fn(|axis, _| {
             let (desired, current) = (desired_radps[axis], current_radps[axis]);
             let error = desired - current;
-            if !scale.is_finite() {
-                return 0.0;
-            }
-            let trim = scale * scale * config.trim[axis];
+            let trim = scale_squared * config.trim[axis];
             if !error.is_finite() {
                 return clamp_symmetric(trim, 1.0);
             }
@@ -187,7 +188,7 @@ impl PlaneRateController {
             }
             let RateGains { p, i, ff } = gains[axis];
             let feedback = p * error + i * self.integrated_error[axis];
-            clamp_symmetric(scale * scale * feedback + trim + scale * ff * desired, 1.0)
+            clamp_symmetric(scale_squared * feedback + trim + scale * ff * desired, 1.0)
         })
     }
 
