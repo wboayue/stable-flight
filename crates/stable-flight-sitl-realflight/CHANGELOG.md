@@ -30,8 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `airframes::explora_vtol()` estimates the hover wind (#473): drag linear in the air's
   speed, 4.76/s across the belly and 0.24/s along the span, fitted to RealFlight's wind; it
   reads it within 4° and 22% at 1.7–2.3 m/s.
+- `airframes::explora_vtol()`'s plane rate loop (#342): feedforward 0.1 roll and 0.05 pitch
+  (PX4's 0.5 overshot 30°/s doublets 3.2× and 3.4×), pitch I 0.8, and pitch trim 0.09 (its
+  level nose-up moment).
 
 ### Added
+
+- `airframes::explora_maneuvers()` (#342): scripted maneuvers on the eXplora, rolls and loops
+  at full thrust and doublets at its cruise thrust; `tailsitter-auto-realflight` flies it, and
+  `flights/explora_acro.csv` flies doublets, a roll, and a loop on plane legs.
 
 - `TrueWind` and `RealFlightVehicle::true_wind` (#473): the wind RealFlight reports, north and
   east, as a handle updated on each exchange, to log beside a wind estimate.

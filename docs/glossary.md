@@ -23,6 +23,10 @@ Code comments and docs link here instead of redefining a term.
   and the loops hold them; centered sticks fly level.
 - **Acro:** stick mode where the sticks command rotation rates; centered sticks hold the
   current attitude.
+- **Maneuver:** a scripted sequence of body-rate segments flown by `ManeuverRunner` (a roll,
+  a loop, a doublet), then a recovery to level.
+- **Prop wash:** the propeller's slipstream; on a tailsitter it flows over the elevons, so
+  their authority grows with thrust as well as airspeed.
 - **Offboard:** setpoints sent by a companion computer or ground station rather than sticks.
 - **Failsafe:** what the vehicle flies on its own when the link goes quiet: a fallback
   commander takes over ([architecture](../architecture.md#link-failsafe)).
@@ -75,6 +79,8 @@ Code comments and docs link here instead of redefining a term.
   sideslip (skidding sideways through the air).
 - **Step response:** how a loop answers a sudden setpoint change: **rise time** (how fast),
   **overshoot** (how far past), **settling time** (until it stays within a band).
+- **Doublet:** a rate step one way, then the same step the other way, then a pause: measures
+  a step response and ends near the starting attitude (`Maneuver::doublet`).
 - **Autotune:** flies step probes on each loop and picks gains from the measured response
   ([architecture](../architecture.md#autotune)).
 
