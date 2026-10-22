@@ -273,7 +273,7 @@ pub fn explora_vtol()
                     // Differential thrust (the mixer's airplane yaw, 0.25 per unit moment):
                     // weak authority, so it needs these gains to stop a roll (#123). Descending
                     // with the wind 20° behind a wingtip, D 0 rolled ±12-16° on a 1.2 s cycle
-                    // to touchdown (4 of 4 landings); D 0.03 held within 4° (3 of 3, #476).
+                    // to touchdown in 6 of 8 landings; D 0.03 held within 4° in 3 of 3 (#476).
                     roll_gains: gains(0.4, 0.2, 0.03),
                     // Elevons (full range per unit moment). Sinking, the airflow pushes the
                     // nose over; I · max_integral = 0.5 of moment holds it level (#123).

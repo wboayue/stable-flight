@@ -1952,12 +1952,10 @@ fn waypoint_at(altitude_m: f32) -> ControlInput {
 
 /// How far a descent's target has dropped after `ticks` ticks of `dt` from hover, far from
 /// its waypoint and off the leash: its rate rises by `DEFAULT_DESCENT_ACCEL_MPS2 · dt` a tick,
-/// up to `DEFAULT_MAX_DESCENT_MPS`.
-fn ramped_drop_m(ticks: usize, dt: f32) -> f32 {
+/// up to `limit_mps`.
+fn ramped_drop_m(ticks: usize, dt: f32, limit_mps: f32) -> f32 {
     (1..=ticks)
-        .map(|tick| {
-            (DEFAULT_DESCENT_ACCEL_MPS2 * tick as f32 * dt).min(DEFAULT_MAX_DESCENT_MPS) * dt
-        })
+        .map(|tick| (DEFAULT_DESCENT_ACCEL_MPS2 * tick as f32 * dt).min(limit_mps) * dt)
         .sum()
 }
 
@@ -1971,14 +1969,26 @@ fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
     const DT: f32 = 0.01;
     // (waypoint altitude, ticks, expected latched target) from 10 m
     let cases = [
-        (-100.0, 1, Some(10.0 - ramped_drop_m(1, DT))),
-        (-100.0, 30, Some(10.0 - ramped_drop_m(30, DT))),
+        (
+            -100.0,
+            1,
+            Some(10.0 - ramped_drop_m(1, DT, DEFAULT_MAX_DESCENT_MPS)),
+        ),
+        (
+            -100.0,
+            30,
+            Some(10.0 - ramped_drop_m(30, DT, DEFAULT_MAX_DESCENT_MPS)),
+        ),
         (-100.0, 400, Some(10.0 - ALTITUDE_LEASH_M)), // the vehicle holds still: leashed
         (9.5, 1_000, Some(9.5)),                      // reached: holds the waypoint
         (9.5, 500, Some(9.5)),                        // eased within 1 mm in 5 s
         // Near the waypoint, the first tick: lowered at the ramp's 0.01 m/s, below P (1.5)
         // times the 0.015 m gap.
-        (10.0 - 0.015, 1, Some(10.0 - ramped_drop_m(1, DT))),
+        (
+            10.0 - 0.015,
+            1,
+            Some(10.0 - ramped_drop_m(1, DT, DEFAULT_MAX_DESCENT_MPS)),
+        ),
         (25.0, 1, Some(25.0)), // climbs aren't limited
         (f32::NAN, 1, None),
     ];
@@ -2107,7 +2117,7 @@ type AltitudeAt = fn(usize) -> f32;
 fn descent_target_stays_on_a_leash_below_the_vehicle() {
     const DT: f32 = 0.01;
     const TICKS: usize = 400;
-    let drop_m = ramped_drop_m(TICKS, DT);
+    let drop_m = ramped_drop_m(TICKS, DT, DEFAULT_MAX_DESCENT_MPS);
     // (case, vehicle altitude on each tick, expected latched target), waypoint far below
     let cases: [(&str, AltitudeAt, f32); 4] = [
         ("still", |_| 10.0, 10.0 - ALTITUDE_LEASH_M),
@@ -2242,16 +2252,10 @@ fn land_descends_at_land_speed_on_a_leash() {
     let land = ControlInput::Land(LandCommand {
         position_m: Vec2::new(3.0, 0.0),
     });
-    let accel = DEFAULT_DESCENT_ACCEL_MPS2;
-    // Speeds of 0.1, 0.2, ... m/s up to the land speed, each held for one tick.
-    let ramped_m = |ticks: usize| -> f32 {
-        (1..=ticks)
-            .map(|tick| (accel * tick as f32 * DT).min(DEFAULT_LAND_SPEED_MPS) * DT)
-            .sum()
-    };
+    let ramped_m = |ticks| ramped_drop_m(ticks, DT, DEFAULT_LAND_SPEED_MPS);
     // (ticks, expected latched target) with the vehicle held at 10 m
     let cases = [
-        (1, 10.0 - accel * DT * DT),
+        (1, 10.0 - ramped_m(1)),
         (9, 10.0 - ramped_m(9)),
         (20, 10.0 - ALTITUDE_LEASH_M),
     ];
