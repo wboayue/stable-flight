@@ -82,6 +82,7 @@ Each step assumes the ones before it:
 6. Plane cruise and airspeeds
 7. Forward transition
 8. Back transition
+9. Plane rate loop (acro) and maneuvers
 
 Params in degrees are marked (deg); thrusts are linear (before the thrust curve), in [0, 1].
 
@@ -406,6 +407,51 @@ stops about 2 m past a point straight ahead of the handover. A tilt slew in its 
 (15°/s) held the roll to 16°, but in the sim it didn't stop a 3 m/s leg along the span from
 overshooting its speed and departing.
 
+## 9. Plane rate loop (acro) and maneuvers
+
+| Param | Field | eXplora |
+|---|---|---|
+| `PSTAB_RLL_FF` | `plane.rate.roll.ff` | 0.1 (PX4 default 0.5) |
+| `PSTAB_PIT_FF` | `plane.rate.pitch.ff` | 0.05 (0.5) |
+| `PSTAB_PIT_I` | `plane.rate.pitch.i` | 0.8 (0.1) |
+| `PSTAB_PIT_TRIM` | `plane.rate.trim.y` | 0.09 |
+
+Rate flight (rate sticks, scripted maneuvers) flies the plane rate loop with no attitude loop
+over it, so its feedforward and trim show directly; stabilized flight hides them behind the
+attitude loop. Tune them from doublets, then fly rolls and loops.
+
+- **Script:** `flights/explora_acro.csv` flies the transition lap's rectangle at 60 m with a
+  maneuver at the middle of each long leg: roll and pitch doublets at 60°/s, then a 180°/s
+  roll and a 25 m loop (`just fly-tailsitter-auto flights/explora_acro.csv --end land
+  --record <csv>`). A script row's eighth field names the maneuver (`roll:<deg/s>`,
+  `loop:<m>`, `doublet_roll:<deg/s>`, …; the `ScriptCommander` rustdoc lists them).
+- **Maneuver thrust:** `airframes::explora_maneuvers()`. Rolls and loops fly at full thrust;
+  doublets fly at cruise thrust (0.85), since the prop wash over the elevons makes the rate a
+  moment gives grow with thrust.
+- **Feedforward:** read each doublet's first half: its peak rate over the command. Divide the
+  feedforward by that ratio, then fly again. At PX4's 0.5 the eXplora's 30°/s doublets peaked
+  at 3.2× in roll and 3.4× in pitch: its 0.63 kg wing behind ±45° elevons turns a unit moment
+  into far more rate than PX4 expects.
+- **Pitch I:** carries the pitch rate through a loop as it speeds up coming down. Too low and
+  the loop's second half runs wide and ends low; too high and a doublet's second half
+  overshoots.
+- **Trim:** the mean `moment_y` on level plane legs at trim airspeed, times (airspeed / trim
+  airspeed)² off it (the loop scales trim by that factor squared). It holds the nose at zero
+  rate without waiting for the I term. The eXplora's: 0.09 at 14–15 m/s.
+- **Sim first:** `stable-flight-sim`'s `airframes::explora()` is sized from the eXplora's
+  `.RFX` and calibrated to its default-gain doublets, nose-up moment, and level thrust; tune
+  feedforward and I on it (`tests/maneuver.rs`), then confirm in RealFlight.
+- **eXplora in RealFlight** (3 runs of the script, alike within 1%): doublets peak at 0.91×
+  (roll) and 1.18× (pitch) in their first half; the roll turns at 168°/s and sinks 13 m, then
+  7 m more as it recovers from 21 m/s; the loop spans 28 m of radius and ends 16 m low (#342).
+- **Symptoms:**
+  - Doublet peaks well past its command: feedforward down.
+  - Doublet short of its command, rate creeping up through each half: feedforward up.
+  - Loop wide and low on its way down: `PSTAB_PIT_I` up.
+  - Nose drops at centered rate sticks: `PSTAB_PIT_TRIM` up.
+  - A roll loses height: pure roll rate tips the lift over
+    ([#481](https://github.com/wboayue/stable-flight/issues/481)); enter it higher.
+
 ## Transition limits
 
 | Param | Field | Default |
@@ -430,3 +476,4 @@ overshooting its speed and departing.
 | Large climb after the back request | `TRAN_VT_THR` down, `TRAN_VT_RATE` slower |
 | Back ramp wallows nose-high, elevons at full deflection, roll-limit cut | `TRAN_VT_THR` up |
 | Hover tumbles just after the back handover | arrives too fast: `TRAN_VT_RATE`, `TRAN_VT_DONE` |
+| Rate flight overshoots its commanded rate | `PSTAB_RLL_FF`, `PSTAB_PIT_FF` down ([acro](#9-plane-rate-loop-acro-and-maneuvers)) |

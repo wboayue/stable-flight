@@ -38,6 +38,8 @@ flight_loop.step(Duration::from_millis(4));
 plus a `Start` in level flight (`SimPlane::with_start`); it doesn't take off from the ground.
 `airframes::tailsitter()` pairs `SimTailsitter` with `TailsitterGuidance` and
 `TailsitterStabilizer`; it starts resting on its tail and takes off nose up.
+`airframes::explora()` is the same layout sized as the RealFlight eXplora, for tuning its
+plane side before RealFlight.
 `airframes::quadplane()` pairs `SimQuadPlane` with `QuadPlaneGuidance`, `QuadPlaneStabilizer`,
 and `TableMixer::quadplane()`; it starts on its gear and takes off on its lift rotors, or in
 cruise from its `start` (`SimQuadPlane::with_start`).
@@ -67,7 +69,7 @@ step-response specs are in `tests/common`:
 | `plane_step` | Roll ±30° and pitch ±10° steps in absolute attitude mode from level flight: rise within PX4's 2.2 × the attitude time constant (`fw_att_control_params.c:56,71`), overshoot within the copter spec's 5%, settled in 4 s, surfaces unclipped past the copter angle steps' allowance |
 | `plane_turn` | A loiter by guidance and a held 30° and 45° bank: sideslip within 2.5° (measured + margin); the loiter also within 5 m of its circle and ±1 m of its altitude (ArduPilot's band) |
 | `plane_stall` | A zoom at zero throttle on a held pitch-up rate, wings level and rolling, until past the stall: every state finite, body rates bounded, flying again within 2 s of the entry's end, at most 60 m lost (wings level, the held pitch-up carries the tail slide over the back), off the ground (measured + margin) |
-| `maneuver` | A `ManeuverRunner` from the line on `airframes::plane()` and the tailsitter's plane side: a 180°/s roll both ways turns a full turn before its timeout and loses at most the measured height (pure roll rate lets the lift tip over); a 10 m and 25 m loop spans its radius within 15%; a 1 rad/s roll and pitch doublet's first half peaks as a held step does at cruise thrust and settles by its pause's end; each recovers within 2 s and flies the line again (measured + margin) |
+| `maneuver` | A `ManeuverRunner` from the line on `airframes::plane()` and the plane sides of the tailsitter and `explora()`: a 180°/s roll both ways turns a full turn before its timeout and loses at most the measured height (pure roll rate lets the lift tip over); a 10 m and 25 m loop spans its radius within 15%; a 1 rad/s roll and pitch doublet's first half peaks as a held step does at cruise thrust and settles by its pause's end; each recovers within 2 s and flies the line again; the eXplora's 60°/s doublets peak within 1.3× of the command; centered rate sticks hold the pitch of level flight (measured + margin) |
 | `tailsitter_hover` | Takes off from its tail and holds a nose-up hover: within the copter's calm-air bands; near the waypoint in a steady 3 m/s wind on the belly or along the span; back after a 5 m/s gust either way (measured + margin) |
 | `tailsitter_transition` | Against PX4's VTOL limits (`vtol_att_control_params.yaml`), calm air: from a hover at 30 m, forward to plane flight within 15 s (`VT_TRANS_TIMEOUT`), then the line held within `plane_level`'s bands; back to a hover ahead on the line within 10 s (`VT_B_TRANS_DUR`), then held within the copter's calm-air bands; a forward transition ended by a `Copter` request, the timeout (`TransitionTimeout`), or an 8 m/s span gust past the roll limit (`RollError`); `Plane` requested below `min_height_m` refused (`BelowMinAltitude`) until it climbs past. Each loses at most 20 m (`VT_QC_T_ALT_LOSS`, until 5 s after). The back transition climbs at most 10.5 m (measured 9.5 m), hands over not sinking past the sink guard's limit, and keeps thrust above zero until 5 s after the handover; ramps at thrust 0.3 and 0.5, which stall nose-high, still hand over within those limits on the sink guard ([#343](https://github.com/wboayue/stable-flight/issues/343)). A fast ramp that arrives climbing keeps the hover's integrals through the handoff ([#326](https://github.com/wboayue/stable-flight/issues/326)) |
 | `quadplane_hover` | Takes off from its gear on the lift rotors and holds a hover within the copter's calm-air bands, the pusher stopped |
@@ -204,6 +206,14 @@ without rudder feedforward (yaw is differential thrust). Its 30° hover tilt and
 limits sit below both handover angles, so the transition tests fly ramps past them
 ([#388](https://github.com/wboayue/stable-flight/issues/388)). Transitions fly core's
 defaults but for the airspeed gate, the wing's 10 m/s minimum.
+
+`explora()` is `tailsitter()` sized from the RealFlight eXplora's `.RFX`: 0.63 kg, a 1.40 m
+uncambered wing of 0.43 m², ±45° elevons, roll inertia at RealFlight's 60%, and thrust that
+falls to zero at its props' 21 m/s pitch speed. Its hover thrust is RealFlight's (0.82); its
+drag, nose-down moment, and elevon effectiveness are calibrated to RealFlight flights (level
+thrust 0.76 and a 0.09 nose-up moment at 14 m/s; default-gain 30°/s doublets at 3.2× roll and
+3.4× pitch, [#342](https://github.com/wboayue/stable-flight/issues/342)). Its plane side flies
+`explora_vtol()`'s rate gains and trim.
 
 ## Limits
 
