@@ -132,7 +132,8 @@ fn main() {
     // Replays the waypoints from the CSV script, then holds the last, loops, or lands.
     let commander = ScriptCommander::new(&args.script)
         .expect("failed to load flight script")
-        .with_route_end(args.end.into());
+        .with_route_end(args.end.into())
+        .with_maneuver_config(airframes::explora_maneuvers());
 
     // eXplora VTOL model: gains (in the view's axes), mixer, channel mapping, and body rotation.
     let airframe = airframes::explora_vtol();

@@ -7,6 +7,7 @@
 use std::f32::consts::PI;
 
 use stable_flight::Vec2;
+use stable_flight::commanders::ManeuverConfig;
 use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
     LateralControllerConfig,
@@ -320,6 +321,28 @@ pub fn explora_vtol()
             ..Default::default()
         },
         body_rotation: UnitQuaternion::from_euler_angles(0.0, PI / 2.0, 0.0),
+    }
+}
+
+/// How the eXplora flies scripted maneuvers (stable-flight-sitl's
+/// `ScriptCommander::with_maneuver_config`): rolls and loops at full thrust, doublets at its plane cruise thrust, so a doublet measures
+/// the rate loop in the propwash the elevons see in level flight (#342).
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight_sitl_realflight::airframes;
+///
+/// let maneuvers = airframes::explora_maneuvers();
+/// assert_eq!(
+///     maneuvers.cruise_thrust,
+///     airframes::explora_vtol().guidance.plane.cruise_thrust
+/// );
+/// ```
+pub fn explora_maneuvers() -> ManeuverConfig {
+    ManeuverConfig {
+        cruise_thrust: explora_vtol().guidance.plane.cruise_thrust,
+        ..ManeuverConfig::default()
     }
 }
 
