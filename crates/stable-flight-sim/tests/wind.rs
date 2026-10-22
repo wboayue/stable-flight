@@ -179,16 +179,20 @@ fn quadplane_keeps_its_estimate_while_the_pusher_runs() {
     check!(pusher.is_some_and(|thrust| thrust > 0.0), "{pusher:?}");
 }
 
-/// Degrees from `heading_rad` to the nearer heading 90° off where `wind_mps` blows toward.
+/// Degrees from `heading_rad` to the nearer wingtip heading, 80° off where `wind_mps` comes
+/// from.
 fn off_wingtip_deg(heading_rad: f32, wind_mps: Vec2) -> f32 {
-    let toward_rad = libm::atan2f(wind_mps.y, wind_mps.x);
-    let off_rad = stable_flight::wrap_angle(heading_rad - toward_rad).abs();
-    (off_rad - core::f32::consts::FRAC_PI_2).abs().to_degrees()
+    let from_rad = libm::atan2f(-wind_mps.y, -wind_mps.x);
+    let off_deg = stable_flight::wrap_angle(heading_rad - from_rad)
+        .abs()
+        .to_degrees();
+    (off_deg - 80.0).abs()
 }
 
 /// With `wind_heading_min_mps` set, the quad holding its hover point in a 3 m/s wind turns a
-/// side square into it from any direction: measured within 2° by 3.5 s, and from 15 s on
-/// within 0.01° of it and 0.02 m of the point; 1° and 0.1 m leave margin.
+/// side into it (80° off where it comes from) from any direction: measured within 2° by
+/// 3.7 s, and from 15 s on within 0.02° of it and 0.02 m of the point; 1° and 0.1 m leave
+/// margin.
 #[test]
 fn quad_turns_a_side_into_a_steady_wind() {
     // (case, wind)

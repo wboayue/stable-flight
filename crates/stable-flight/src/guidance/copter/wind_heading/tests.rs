@@ -20,25 +20,25 @@ fn deg(rad: Option<f32>) -> Option<f32> {
 /// (case, min speed m/s, wind, vehicle heading deg, expected heading deg)
 type Row = (&'static str, f32, Option<WindEstimate>, f32, Option<f32>);
 
-/// The first heading picked: 90° off the wind on the side nearer the heading, or none for an
+/// The first heading picked: 80° off where the wind comes from, on the side nearer the heading, or none for an
 /// off switch, a missing, slow, uncertain, or non-finite wind.
 #[test]
 fn picks_the_wingtip_heading_nearer_the_vehicle() {
     let cases: [Row; 9] = [
-        // Blowing toward 217° (from 37°, RealFlight's): 127° or 307°.
+        // Blowing toward 217° (from 37°, RealFlight's): 117° or 317°, 80° off 37°.
         (
             "belly 3° off the wind",
             1.0,
             Some(wind(217.0, 2.0, 0.1)),
             40.0,
-            Some(127.0),
+            Some(117.0),
         ),
         (
             "nearer the other wingtip",
             1.0,
             Some(wind(217.0, 2.0, 0.1)),
             330.0,
-            Some(-53.0),
+            Some(-43.0),
         ),
         ("off", 0.0, Some(wind(217.0, 2.0, 0.1)), 40.0, None),
         ("no estimate", 1.0, None, 40.0, None),
@@ -55,7 +55,7 @@ fn picks_the_wingtip_heading_nearer_the_vehicle() {
             1.0,
             Some(wind(217.0, 2.0, 0.5)),
             40.0,
-            Some(127.0),
+            Some(117.0),
         ),
         (
             "direction uncertain",
@@ -79,7 +79,7 @@ fn picks_the_wingtip_heading_nearer_the_vehicle() {
             1.0,
             Some(wind(0.0, 2.0, 0.1)),
             f32::NAN,
-            Some(90.0),
+            Some(100.0),
         ),
     ];
     for (case, min_speed_mps, wind, heading_deg, expected) in cases {
@@ -100,19 +100,25 @@ fn picks_the_wingtip_heading_nearer_the_vehicle() {
 fn keeps_its_side_and_heading_through_small_changes() {
     let mut heading = WindHeading::default();
     let first = heading.target_rad(1.0, Some(&wind(0.0, 2.0, 0.1)), 0.3);
-    check!(deg(first) == Some(90.0));
+    check!(deg(first).is_some_and(|h| (h - 100.0).abs() < 1e-3));
 
     // (case, wind toward deg, sd, vehicle heading deg, expected heading deg)
     let steps: [(&str, f32, f32, f32, f32); 4] = [
-        ("vehicle now nearer the other side", 0.0, 0.1, -80.0, 90.0),
-        ("wind turned 9°: inside the deadband", 9.0, 0.1, 90.0, 90.0),
-        ("wind turned 11°: moves", 11.0, 0.1, 90.0, 101.0),
+        ("vehicle now nearer the other side", 0.0, 0.1, -80.0, 100.0),
+        (
+            "wind turned 9°: inside the deadband",
+            9.0,
+            0.1,
+            100.0,
+            100.0,
+        ),
+        ("wind turned 11°: moves", 11.0, 0.1, 100.0, 111.0),
         (
             "uncertain: keeps the latched heading",
             60.0,
             5.0,
-            90.0,
-            101.0,
+            100.0,
+            111.0,
         ),
     ];
     for (case, toward_deg, sd_mps, heading_deg, expected) in steps {

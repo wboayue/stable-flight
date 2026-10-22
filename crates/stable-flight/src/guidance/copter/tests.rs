@@ -2870,9 +2870,9 @@ fn a_paused_wind_estimate_keeps_its_value() {
     assert!(guidance.wind() == settled);
 }
 
-/// With `wind_heading_min_mps` set, a hold or a land turns the heading-hold target 90° off a
-/// steady 2 m/s wind blowing east (toward 90°) to the wingtip heading nearer the vehicle's
-/// (0° from 30°); a waypoint's heading wins, a long leg keeps its own heading until within
+/// With `wind_heading_min_mps` set, a hold or a land turns the heading-hold target 80° off
+/// where a steady 2 m/s wind blowing east (toward 90°) comes from, to the wingtip heading
+/// nearer the vehicle's (−10° from 30°); a waypoint's heading wins, a long leg keeps its own heading until within
 /// `waypoint_yaw_min_leg_m`, and 0 turns nothing.
 #[test]
 fn turns_a_wingtip_into_the_wind_while_holding_or_landing() {
@@ -2896,8 +2896,8 @@ fn turns_a_wingtip_into_the_wind_while_holding_or_landing() {
     let land = ControlInput::Land(LandCommand::default());
     // (case, min wind m/s, input, expected heading-hold target deg)
     let cases: [(&str, f32, &ControlInput, f32); 5] = [
-        ("hold", 1.0, &hold, 0.0),
-        ("land", 1.0, &land, 0.0),
+        ("hold", 1.0, &hold, -10.0),
+        ("land", 1.0, &land, -10.0),
         ("off", 0.0, &hold, 30.0),
         ("waypoint heading wins", 1.0, &facing, 45.0),
         ("long leg turns along it", 1.0, &east_leg, 90.0),
@@ -2966,7 +2966,7 @@ fn a_long_leg_turns_a_wingtip_into_the_wind_on_arrival() {
     };
     let mut setpoint = AttitudeSetpoint::default();
     // (vehicle east of the start m, expected target deg after 10 s there)
-    for (east_m, expected_deg) in [(0.0, 90.0), (48.0, 0.0)] {
+    for (east_m, expected_deg) in [(0.0, 90.0), (48.0, -10.0)] {
         state.position_m.y = east_m;
         for _ in 0..1000 {
             setpoint = attitude(guidance.guide(DT, FlightRegime::Copter, &east_leg, &state));
