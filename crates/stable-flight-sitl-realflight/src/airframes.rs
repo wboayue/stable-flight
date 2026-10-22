@@ -6,11 +6,10 @@
 
 use std::f32::consts::PI;
 
-use stable_flight::Vec2;
 use stable_flight::commanders::ManeuverConfig;
 use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
-    LateralControllerConfig,
+    LateralControllerConfig, PlaneRateControllerConfig, RateGains,
 };
 use stable_flight::estimation::wind::WindConfig;
 use stable_flight::guidance::copter::{CopterGuidanceConfig, ThrustLimits};
@@ -24,6 +23,7 @@ use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
 use stable_flight::stabilizers::vtol::{QuadPlaneStabilizerConfig, TailsitterStabilizerConfig};
+use stable_flight::{Vec2, Vec3};
 
 use crate::ActuatorMapping;
 
@@ -177,6 +177,7 @@ const EXPLORA_MAX_AIRSPEED_MPS: f32 = 25.0;
 pub fn explora_vtol()
 -> Airframe<TailsitterGuidanceConfig, TailsitterStabilizerConfig, TableMixer<4>> {
     let gains = |p, i, d| Gains { p, i, d };
+    let explora_rate = PlaneRateControllerConfig::default();
     Airframe {
         guidance: TailsitterGuidanceConfig {
             hover: CopterGuidanceConfig {
@@ -301,6 +302,28 @@ pub fn explora_vtol()
                 ..Default::default()
             },
             plane: PlaneStabilizerConfig {
+                rate: PlaneRateControllerConfig {
+                    // Its light wing (0.63 kg) behind ±45° elevons turns a unit moment into
+                    // several times the rate PX4's feedforward of 0.5 expects: 30°/s doublets
+                    // peaked at 3.2× in roll and 3.4× in pitch. Feedforward is tuned on the
+                    // sim eXplora (stable-flight-sim `airframes::explora`) for doublets at
+                    // their command; higher: overshoot (#342).
+                    roll: RateGains {
+                        ff: 0.1,
+                        ..explora_rate.roll
+                    },
+                    // Pitch I 0.8 holds a loop's rate as it speeds up coming down (0.3: a 25 m
+                    // loop ended 22 m low in the sim); higher overshoots the second half of a
+                    // doublet (#342).
+                    pitch: RateGains {
+                        i: 0.8,
+                        ff: 0.05,
+                        ..explora_rate.pitch
+                    },
+                    // The nose-up moment of level flight at 14 m/s (#342, run 0).
+                    trim: Vec3::new(0.0, 0.09, 0.0),
+                    ..explora_rate
+                },
                 // The hover side's thrust curve, so a handoff keeps the motor commands
                 // continuous.
                 thrust_curve_exponent: 2.0,
