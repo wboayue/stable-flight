@@ -219,9 +219,9 @@ pub struct CopterGuidanceConfig {
     pub heading_yield_s: f32,
     /// Least wind, in m/s, that turns the heading-hold target to put a wingtip into the wind
     /// (the vehicle's `x` axis, a tailsitter's belly, 80° off where it comes from, 10° short
-    /// of square) while holding a waypoint or landing, at `heading_rate_radps`. The side is the one nearer the heading
-    /// when first picked; the wind estimate ([`wind`](Self::wind)) turns it only when its
-    /// direction is known within 15°, and moves it only past 10°. A waypoint's
+    /// of square) while holding a waypoint or landing, at `heading_rate_radps`. The side is
+    /// the one nearer the heading when first picked; the wind estimate ([`wind`](Self::wind))
+    /// turns it only when its direction is known within 15°, and moves it only past 10°. A waypoint's
     /// [`heading_rad`](WaypointCommand::heading_rad) wins, and legs longer than
     /// `waypoint_yaw_min_leg_m` keep their own heading until within that of the waypoint.
     /// `0` turns nothing. Must be non-negative and finite. Defaults to `0`.

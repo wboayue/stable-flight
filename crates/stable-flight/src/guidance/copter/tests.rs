@@ -2870,10 +2870,37 @@ fn a_paused_wind_estimate_keeps_its_value() {
     assert!(guidance.wind() == settled);
 }
 
+/// Guidance primed on the ground with `wind_heading_min_mps` at `min_speed_mps`, no heading
+/// yield (the vehicle here never yaws), and momentum drag 0.3/s, and a vehicle at 10 m facing
+/// 30° pushed east at 0.6 m/s²: 2 m/s of wind blowing east (toward 90°).
+fn in_east_wind(min_speed_mps: f32) -> (CopterGuidance, VehicleState) {
+    let config = CopterGuidanceConfig {
+        wind_heading_min_mps: min_speed_mps,
+        heading_yield_s: 0.0,
+        wind: WindConfig {
+            momentum_per_s: Vec2::new(0.3, 0.3),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut guidance = CopterGuidance::new(config);
+    let state = VehicleState {
+        position_m: Vec3::new(0.0, 0.0, 10.0),
+        acceleration_mps2: Vec3::new(0.0, 0.6, 0.0),
+        heading_rad: 30.0_f32.to_radians(),
+        ..Default::default()
+    };
+    guidance.prime(&VehicleState {
+        position_m: Vec3::zeros(),
+        ..state
+    });
+    (guidance, state)
+}
+
 /// With `wind_heading_min_mps` set, a hold or a land turns the heading-hold target 80° off
 /// where a steady 2 m/s wind blowing east (toward 90°) comes from, to the wingtip heading
-/// nearer the vehicle's (−10° from 30°); a waypoint's heading wins, a long leg keeps its own heading until within
-/// `waypoint_yaw_min_leg_m`, and 0 turns nothing.
+/// nearer the vehicle's (−10° from 30°); a waypoint's heading wins, a long leg keeps its own
+/// heading until within `waypoint_yaw_min_leg_m`, and 0 turns nothing.
 #[test]
 fn turns_a_wingtip_into_the_wind_while_holding_or_landing() {
     const DT: f32 = 0.01;
@@ -2903,28 +2930,7 @@ fn turns_a_wingtip_into_the_wind_while_holding_or_landing() {
         ("long leg turns along it", 1.0, &east_leg, 90.0),
     ];
     for (case, min_speed_mps, input, expected_deg) in cases {
-        let config = CopterGuidanceConfig {
-            wind_heading_min_mps: min_speed_mps,
-            // The vehicle here never yaws: no yield.
-            heading_yield_s: 0.0,
-            // 0.6 m/s² of push at 0.3/s is 2 m/s of wind.
-            wind: WindConfig {
-                momentum_per_s: Vec2::new(0.3, 0.3),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        let mut guidance = CopterGuidance::new(config);
-        let state = VehicleState {
-            position_m: Vec3::new(0.0, 0.0, 10.0),
-            acceleration_mps2: Vec3::new(0.0, 0.6, 0.0),
-            heading_rad: 30.0_f32.to_radians(),
-            ..Default::default()
-        };
-        guidance.prime(&VehicleState {
-            position_m: Vec3::zeros(),
-            ..state
-        });
+        let (mut guidance, state) = in_east_wind(min_speed_mps);
         let mut setpoint = AttitudeSetpoint::default();
         for _ in 0..TICKS {
             setpoint = attitude(guidance.guide(DT, FlightRegime::Copter, input, &state));
@@ -2942,28 +2948,12 @@ fn turns_a_wingtip_into_the_wind_while_holding_or_landing() {
 #[test]
 fn a_long_leg_turns_a_wingtip_into_the_wind_on_arrival() {
     const DT: f32 = 0.01;
-    let config = CopterGuidanceConfig {
-        wind_heading_min_mps: 1.0,
-        heading_yield_s: 0.0,
-        wind: WindConfig {
-            momentum_per_s: Vec2::new(0.3, 0.3),
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    let mut guidance = CopterGuidance::new(config);
-    guidance.prime(&state_at(0.0, 0.0, 0.0));
+    let (mut guidance, mut state) = in_east_wind(1.0);
     let east_leg = ControlInput::Waypoint(WaypointCommand {
         position_m: Vec2::new(0.0, 50.0),
         altitude_m: 10.0,
         ..Default::default()
     });
-    let mut state = VehicleState {
-        position_m: Vec3::new(0.0, 0.0, 10.0),
-        acceleration_mps2: Vec3::new(0.0, 0.6, 0.0),
-        heading_rad: 30.0_f32.to_radians(),
-        ..Default::default()
-    };
     let mut setpoint = AttitudeSetpoint::default();
     // (vehicle east of the start m, expected target deg after 10 s there)
     for (east_m, expected_deg) in [(0.0, 90.0), (48.0, -10.0)] {

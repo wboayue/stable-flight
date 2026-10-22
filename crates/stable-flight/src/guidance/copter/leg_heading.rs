@@ -72,7 +72,7 @@ impl LegHeading {
     ) -> f32 {
         if let Some(heading_rad) = waypoint.heading_rad.filter(|h| h.is_finite()) {
             self.reset();
-            return turned_toward(target_rad, heading_rad, config.heading_rate_radps * dt);
+            return commanded_turn(dt, config, target_rad, heading_rad);
         }
         let bearing_rad = self.bearing_rad(config, waypoint.position_m, estimated_state);
         let to_m = waypoint.position_m - estimated_state.position_m.xy();
@@ -80,7 +80,7 @@ impl LegHeading {
         // leg.
         let on_station = bearing_rad.is_none() || to_m.norm() <= config.waypoint_yaw_min_leg_m;
         if on_station && let Some(heading_rad) = self.wind_rad(config, wind, estimated_state) {
-            return turned_toward(target_rad, heading_rad, config.heading_rate_radps * dt);
+            return commanded_turn(dt, config, target_rad, heading_rad);
         }
         if self.yielded(dt, config, target_rad, estimated_state) {
             return estimated_state.heading_rad;
@@ -106,7 +106,7 @@ impl LegHeading {
         self.clear();
         self.wind_rad(config, wind, estimated_state)
             .map_or(target_rad, |heading_rad| {
-                turned_toward(target_rad, heading_rad, config.heading_rate_radps * dt)
+                commanded_turn(dt, config, target_rad, heading_rad)
             })
     }
 
@@ -193,6 +193,11 @@ impl LegHeading {
         self.yielding = self.stuck_s > config.heading_yield_s;
         self.yielding
     }
+}
+
+/// `from_rad` turned toward a commanded or wind heading `to_rad` at `heading_rate_radps`.
+fn commanded_turn(dt: f32, config: &CopterGuidanceConfig, from_rad: f32, to_rad: f32) -> f32 {
+    turned_toward(from_rad, to_rad, config.heading_rate_radps * dt)
 }
 
 /// `from_rad` turned toward `to_rad` the shorter way round by at most `step_rad`, unwrapped.

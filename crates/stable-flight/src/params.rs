@@ -56,11 +56,21 @@
 //! | `GUID_DESC_MAX` | `max_descent_mps` |
 //! | `GUID_DESC_ACC` | `descent_accel_mps2` |
 //! | `GUID_LAND_SPD` | `land_speed_mps` |
+//! | `GUID_YAW_SLEW` | `waypoint_yaw_radps` |
+//! | `GUID_HDG_RATE` | `heading_rate_radps` |
+//! | `GUID_YAW_MIN_LEG` | `waypoint_yaw_min_leg_m` |
+//! | `GUID_YAW_YLD_ERR` | `heading_yield_rad` |
+//! | `GUID_YAW_YLD_S` | `heading_yield_s` |
+//! | `GUID_WND_HDG_SPD` | `wind_heading_min_mps` |
 //! | `GUID_THR_MIN` | `thrust.min_thrust` |
 //! | `GUID_SINK_LIM` | `thrust.sink_limit_mps` |
 //! | `GUID_SINK_GAIN` | `thrust.sink_gain` |
 //! | `GUID_BOOST_MAX` | `thrust.max_boost_thrust` |
 //! | `GUID_STICK_X`, `_Y` | `max_stick_angles_rad` |
+//! | `GUID_WND_BCOEF_X`, `_Y` | `wind.ballistic_kgpm2` |
+//! | `GUID_WND_MCOEF_X`, `_Y` | `wind.momentum_per_s` |
+//! | `GUID_WND_F_NSE` | `wind.force_noise_mps2` |
+//! | `GUID_WND_P_NSE` | `wind.process_noise_mps_per_rt_s` |
 //!
 //! # Plane stabilizer ([`PlaneStabilizerConfig`](crate::stabilizers::plane::PlaneStabilizerConfig))
 //!

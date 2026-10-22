@@ -179,14 +179,18 @@ fn quadplane_keeps_its_estimate_while_the_pusher_runs() {
     check!(pusher.is_some_and(|thrust| thrust > 0.0), "{pusher:?}");
 }
 
-/// Degrees from `heading_rad` to the nearer wingtip heading, 80° off where `wind_mps` comes
-/// from.
+/// Degrees between the wingtip heading and where the wind comes from, as core's wind heading
+/// targets (`wind_heading_min_mps`).
+const WINGTIP_FROM_WIND_DEG: f32 = 80.0;
+
+/// Degrees from `heading_rad` to the nearer wingtip heading, [`WINGTIP_FROM_WIND_DEG`] off
+/// where `wind_mps` comes from.
 fn off_wingtip_deg(heading_rad: f32, wind_mps: Vec2) -> f32 {
     let from_rad = libm::atan2f(-wind_mps.y, -wind_mps.x);
     let off_deg = stable_flight::wrap_angle(heading_rad - from_rad)
         .abs()
         .to_degrees();
-    (off_deg - 80.0).abs()
+    (off_deg - WINGTIP_FROM_WIND_DEG).abs()
 }
 
 /// With `wind_heading_min_mps` set, the quad holding its hover point in a 3 m/s wind turns a
