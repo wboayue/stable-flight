@@ -213,6 +213,86 @@ fn integrals_survive_zero_thrust_and_clear_on_prime() {
     check!(stabilizer.stabilize(DT, &hold, &state).moments.x == 0.0);
 }
 
+/// Rate flight leaves the attitude flight's rate integrals as it found them: after a
+/// `PlaneRate` stretch, the `Plane` setpoint that follows flies as if the stretch never
+/// happened, with a neutral tick between them or an integral gain changed during it.
+/// (case, the ticks after the stretch, roll I set during the stretch)
+#[test]
+fn rate_flight_restores_the_attitude_integrals() {
+    let mut config = PlaneStabilizerConfig::default();
+    config.rate.roll = crate::controllers::RateGains {
+        p: 0.0,
+        i: 1.0,
+        ff: 0.0,
+    };
+    let state = at(0.0, 0.0, Some(15.0));
+    let bank = plane(5.0, 0.0);
+    let roll = Setpoint::PlaneRate(BodyRateSetpoint {
+        roll_radps: -2.0,
+        ..Default::default()
+    });
+    let neutral = Setpoint::Attitude(AttitudeSetpoint::default());
+    let cases: [(&str, &[&Setpoint], f32); 3] = [
+        ("rate then attitude", &[&bank], 1.0),
+        ("a neutral tick between", &[&neutral, &bank], 1.0),
+        ("I doubled during the stretch", &[&bank], 2.0),
+    ];
+    for (case, after, rescaled_i) in cases {
+        let (mut flown, mut twin) = (PlaneStabilizer::new(config), PlaneStabilizer::new(config));
+        for _ in 0..50 {
+            flown.stabilize(DT, &bank, &state);
+            twin.stabilize(DT, &bank, &state);
+        }
+        let mut rolled = 0.0;
+        for _ in 0..50 {
+            rolled = flown.stabilize(DT, &roll, &state).moments.x;
+        }
+        check!(
+            rolled < 0.0,
+            "{case}: the stretch winds the integral the other way"
+        );
+        let rescaled = PlaneStabilizerConfig {
+            rate: PlaneRateControllerConfig {
+                roll: crate::controllers::RateGains {
+                    i: rescaled_i,
+                    ..config.rate.roll
+                },
+                ..config.rate
+            },
+            ..config
+        };
+        check!(flown.set_config(rescaled).is_ok());
+        check!(twin.set_config(rescaled).is_ok());
+        let (mut got, mut want) = (ControlOutput::default(), ControlOutput::default());
+        for setpoint in after {
+            got = flown.stabilize(DT, setpoint, &state);
+            want = twin.stabilize(DT, setpoint, &state);
+        }
+        check!(want.moments.x > 0.0, "{case}");
+        check!(got == want, "{case}");
+    }
+}
+
+/// `prime` drops integrals saved for attitude flight along with the running ones.
+#[test]
+fn prime_drops_the_saved_integrals() {
+    let mut config = PlaneStabilizerConfig::default();
+    config.rate.roll.i = 1.0;
+    let state = at(0.0, 0.0, Some(15.0));
+    let mut stabilizer = PlaneStabilizer::new(config);
+    for _ in 0..50 {
+        stabilizer.stabilize(DT, &plane(5.0, 0.0), &state);
+    }
+    stabilizer.stabilize(
+        DT,
+        &Setpoint::PlaneRate(BodyRateSetpoint::default()),
+        &state,
+    );
+    stabilizer.prime(&state);
+    check!(stabilizer.attitude_rate.is_none());
+    check!(stabilizer.rate == PlaneRateController::default());
+}
+
 /// Saturation flags: bank or pitch beyond the limit (`tilt`), thrust outside [0, 1], and a
 /// moment at ±1.
 #[test]
@@ -312,8 +392,9 @@ fn thrust_curve_and_neutral_for_copter_setpoints() {
 #[test]
 fn validates_config() {
     type Break = fn(&mut PlaneStabilizerConfig);
-    let cases: [(Break, &str); 7] = [
+    let cases: [(Break, &str); 8] = [
         (|c| c.rate.roll.p = -1.0, "roll.p"),
+        (|c| c.rate.trim.y = 2.0, "trim.y"),
         (|c| c.time_constant_s.y = 0.0, "time_constant_s.y"),
         (
             |c| c.max_body_rate_radps.z = f32::NAN,

@@ -80,6 +80,7 @@
 //! | `PSTAB_PIT_P`, `_I`, `_FF` | `rate.pitch` |
 //! | `PSTAB_YAW_P`, `_I`, `_FF` | `rate.yaw` |
 //! | `PSTAB_IMAX` | `rate.max_integral` |
+//! | `PSTAB_RLL_TRIM`, `PSTAB_PIT_TRIM`, `PSTAB_YAW_TRIM` | `rate.trim` |
 //! | `PSTAB_TC_X`, `_Y` | `time_constant_s` |
 //! | `PSTAB_RMAX_X`, `_Y` | `max_attitude_rate_radps` |
 //! | `PSTAB_BRATE_X`, `_Y`, `_Z` | `max_body_rate_radps` |
