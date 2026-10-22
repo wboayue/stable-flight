@@ -11,8 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `CopterGuidanceConfig::wind_heading_min_mps` (`GUID_WND_HDG_SPD`, default 0: off, #470):
   holding a waypoint or landing, a wind at least this fast, its direction known within 15° by
-  the hover wind estimate, turns the heading to put the wind square on the wingtip nearer the
-  heading (the vehicle's `x` axis 90° off it), at `heading_rate_radps`; a waypoint's
+  the hover wind estimate, turns the heading to put the wingtip nearer the heading into the
+  wind (the vehicle's `x` axis 80° off where it comes from, 10° short of square), at
+  `heading_rate_radps`; a waypoint's
   `heading_rad` wins, and longer legs keep their heading until within
   `waypoint_yaw_min_leg_m` of the waypoint. **Breaking:** a `CopterGuidanceConfig` struct
   literal needs `wind_heading_min_mps` (or `..Default::default()`).

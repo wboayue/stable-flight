@@ -224,11 +224,13 @@ against `sp_pitch`, `sp_thrust`, and `elevon_*`.
   and the hold leans to the tilt cap (`GUID_TILT_MAX`) and drifts. With a wingtip into the
   wind it needs little lean. `GUID_WND_HDG_SPD` turns it there: holding a waypoint or
   landing, a wind at least that fast, whose direction the [wind estimate](#wind-estimate)
-  knows within 15°, turns the heading at `GUID_HDG_RATE` to put the wind square on the
-  wingtip nearer the heading. A script's `heading` wins, and longer legs keep their heading
-  until within `GUID_YAW_MIN_LEG` of the waypoint. Square is the target: the eXplora held
-  with the wind 81–108° off its belly, pinned its cap at about 65°, and with the wind behind
-  the wing (108°) its landings rolled on a cycle until `STAB_RATE_RLL_D` damped them (#476).
+  knows within 15°, turns the heading at `GUID_HDG_RATE` to put the wingtip nearer the
+  heading into the wind, the belly 80° off where it comes from. A script's `heading` wins,
+  and longer legs keep their heading until within `GUID_YAW_MIN_LEG` of the waypoint. Why
+  80°: square on (88°), the eXplora's pitch swung 9.3–12.7° off its setpoint early in a
+  60 → 20 m descent, and 4.9–6.0° at 78–80°, where a little wind on the belly loads the
+  pitch loop; at about 65° it pinned its cap, and with the wind behind the wing (108°) its
+  landings rolled on a cycle until `STAB_RATE_RLL_D` damped them (#476).
 
   | Param | Field | eXplora |
   |---|---|---|
