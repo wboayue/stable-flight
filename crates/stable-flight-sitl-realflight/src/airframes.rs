@@ -221,6 +221,11 @@ pub fn explora_vtol()
                 // The rate that turned the wing 90° in 3 mph wind without losing the hold
                 // (#417).
                 heading_rate_radps: 30.0_f32.to_radians(),
+                // Holds and lands with the wind square on a wingtip: belly into RealFlight's
+                // 2 m/s wind it pinned the 27° tilt cap and drifted; 81-108° off the wind it
+                // held, and landed clean square to it (#470, #476). Belly-on, the estimate's
+                // direction settles within 10° of the 15° it needs by 4 s into the climb.
+                wind_heading_min_mps: 1.0,
                 // Fitted against RealFlight's own wind (2.1-2.3 m/s, 8 headings at 40 m, 0.2 s
                 // means): the push is linear in the air's speed, a wing in its propwash,
                 // at 4.76/s across the belly (R² 0.98, residual 0.45 m/s²); a v² term fits no

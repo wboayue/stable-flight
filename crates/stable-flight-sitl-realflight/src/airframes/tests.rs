@@ -68,6 +68,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         waypoint_yaw_min_leg_m: 3.0,
         heading_yield_rad: 30.0_f32.to_radians(),
         heading_yield_s: 1.0,
+        wind_heading_min_mps: 0.0,
         thrust: ThrustLimits {
             min_thrust: 0.0,
             sink_limit_mps: 0.0,

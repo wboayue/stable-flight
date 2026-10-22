@@ -222,9 +222,17 @@ against `sp_pitch`, `sp_thrust`, and `elevon_*`.
 
 - **Which way the wing faces decides whether it holds.** Broadside, the wing catches the wind
   and the hold leans to the tilt cap (`GUID_TILT_MAX`) and drifts. With a wingtip into the
-  wind it needs little lean. The eXplora holds its heading, so it faces the wind the way it
-  faced at takeoff; turning it automatically is
-  [#470](https://github.com/wboayue/stable-flight/issues/470).
+  wind it needs little lean. `GUID_WND_HDG_SPD` turns it there: holding a waypoint or
+  landing, a wind at least that fast, whose direction the [wind estimate](#wind-estimate)
+  knows within 15°, turns the heading at `GUID_HDG_RATE` to put the wind square on the
+  wingtip nearer the heading. A script's `heading` wins, and longer legs keep their heading
+  until within `GUID_YAW_MIN_LEG` of the waypoint. Square is the target: the eXplora held
+  with the wind 81–108° off its belly, pinned its cap at about 65°, and with the wind behind
+  the wing (108°) its landings rolled on a cycle until `STAB_RATE_RLL_D` damped them (#476).
+
+  | Param | Field | eXplora |
+  |---|---|---|
+  | `GUID_WND_HDG_SPD` | `hover.wind_heading_min_mps` | 1.0 m/s (core default 0: off) |
 - **Don't raise the tilt cap to hold broadside.** More lean takes the elevon margin that the
   start of a descent needs. A 35° cap saturated the eXplora's elevons and threw its nose
   through −25…−66° for 20 s.
@@ -242,9 +250,9 @@ eXplora (#417), 3 mph RealFlight wind (stronger at height), 60 m to 20 m:
 | **About 90° turned** | **ramped at 1 m/s²** | **4.1–4.2 m** | **5.5–5.8°** | **0.80–0.90** | **0.55–0.56** |
 
 - **Symptoms:**
-  - The hold sits at `sp_pitch` = the tilt cap and drifts downwind: the wing is broadside; turn
-    a wingtip into the wind: a `heading` on the script's hold waypoints, turned to at
-    `GUID_HDG_RATE`.
+  - The hold sits at `sp_pitch` = the tilt cap and drifts downwind: the wing is broadside;
+    turn a wingtip into the wind: `GUID_WND_HDG_SPD` (with the wind estimate's coefficients
+    set), or a `heading` on the script's hold waypoints, turned to at `GUID_HDG_RATE`.
   - `sp_thrust` drops to `GUID_THR_MIN` as a descent starts and the nose follows: lower
     `GUID_DESC_ACC`.
 
@@ -253,7 +261,7 @@ eXplora (#417), 3 mph RealFlight wind (stronger at height), 60 m to 20 m:
 Hover guidance estimates the wind from the drag push it measures: the specific force across
 the belly and along the span, inverted per axis through f = −(k|v| + μ)v to the air's speed,
 then filtered (core `estimation::wind`). It reports the estimate in telemetry (`wind_*`
-recorder columns); nothing flies on it yet. It runs only in copter flight, more than 1 m above
+recorder columns), and `GUID_WND_HDG_SPD` turns the heading from it (above). It runs only in copter flight, more than 1 m above
 the takeoff height, and tilted less than 45°. Every coefficient 0 switches it off.
 
 | Param | Field | Meaning | eXplora |
@@ -415,7 +423,7 @@ overshooting its speed and departing.
 | Nose drops in a descent | `GUID_THR_MIN`, `GUID_SINK_LIM`/`_GAIN`, `STAB_RATE_PIT_I` |
 | Nose swings in a waypoint descent, `sp_pitch` steady | `GUID_DESC_MAX` down |
 | Nose drops as a waypoint descent starts, `sp_thrust` at the floor | `GUID_DESC_ACC` down |
-| Hover in wind pinned at the tilt cap, drifting | heading: a wingtip into the wind ([hover in wind](#hover-in-wind)) |
+| Hover in wind pinned at the tilt cap, drifting | heading: a wingtip into the wind, `GUID_WND_HDG_SPD` ([hover in wind](#hover-in-wind)) |
 | Wing sinks right after the forward transition | `TRAN_ASPD_MIN`, `TRAN_FW_THR` |
 | Large climb after the back request | `TRAN_VT_THR` down, `TRAN_VT_RATE` slower |
 | Back ramp wallows nose-high, elevons at full deflection, roll-limit cut | `TRAN_VT_THR` up |

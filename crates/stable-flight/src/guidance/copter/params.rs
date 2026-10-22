@@ -26,6 +26,7 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_YAW_MIN_LEG", waypoint_yaw_min_leg_m),
         param!(deg "GUID_YAW_YLD_ERR", heading_yield_rad),
         param!("GUID_YAW_YLD_S", heading_yield_s),
+        param!("GUID_WND_HDG_SPD", wind_heading_min_mps),
         param!("GUID_THR_MIN", thrust.min_thrust),
         param!("GUID_SINK_LIM", thrust.sink_limit_mps),
         param!("GUID_SINK_GAIN", thrust.sink_gain),
@@ -147,6 +148,13 @@ mod metadata {
                     "Time stuck before waypoint flight yields the heading (0: never)",
                 )
                 .with_units("s")
+                .at_least(0.0),
+            NAVIGATION
+                .param(
+                    "GUID_WND_HDG_SPD",
+                    "Least wind that turns a wingtip into it while holding or landing (0: off)",
+                )
+                .with_units("m/s")
                 .at_least(0.0),
             LIMITS
                 .param("GUID_THR_MIN", "Least thrust while flying (0: none)")
