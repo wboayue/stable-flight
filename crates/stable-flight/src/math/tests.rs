@@ -575,3 +575,50 @@ fn shaped_closing_speed_is_continuous_at_the_joint() {
     let above = shaped_closing_speed(joint_m + 1e-4, 1.5, 1.0);
     assert!((above - below).abs() < 1e-3, "{below} → {above}");
 }
+
+/// The twist reads the turn about its axis, ignores turns about axes square to it, and a
+/// quaternion's negation reads 2π away, which `wrap_angle` folds back:
+/// (case, rotation, axis, twist in rad).
+#[test]
+fn twist_reads_the_turn_about_an_axis() {
+    let about = |axis: Vec3, angle: f32| UnitQuaternion::from_scaled_axis(axis * angle);
+    let cases = [
+        (
+            "a quarter roll",
+            about(Vec3::x(), PI / 2.0),
+            Vec3::x(),
+            PI / 2.0,
+        ),
+        ("a back roll", about(Vec3::x(), -2.0), Vec3::x(), -2.0),
+        (
+            "three quarters",
+            about(Vec3::y(), 1.5 * PI),
+            Vec3::y(),
+            -PI / 2.0,
+        ),
+        (
+            "a pitch, read about roll",
+            about(Vec3::y(), 1.0),
+            Vec3::x(),
+            0.0,
+        ),
+        (
+            "a roll after a pitch",
+            about(Vec3::y(), 0.3) * about(Vec3::x(), 0.8),
+            Vec3::x(),
+            0.8,
+        ),
+    ];
+    for (case, rotation, axis, expected) in cases {
+        let twist = twist_angle_rad(&rotation, &axis);
+        assert_relative_eq!(wrap_angle(twist - expected), 0.0, epsilon = 0.06);
+        let negated = UnitQuaternion::new_unchecked(-rotation.into_inner());
+        let twist_negated = twist_angle_rad(&negated, &axis);
+        assert!(
+            wrap_angle(twist_negated - twist).abs() < 1e-5,
+            "{case}: the negation reads the same turn"
+        );
+    }
+    let nan = UnitQuaternion::new_unchecked(nalgebra::Quaternion::new(f32::NAN, 0.0, 0.0, 0.0));
+    assert!(twist_angle_rad(&nan, &Vec3::x()).is_nan());
+}

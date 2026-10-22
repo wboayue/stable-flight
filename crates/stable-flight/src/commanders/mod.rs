@@ -4,6 +4,7 @@
 //! `stable-flight-sitl`; they build on the ones here.
 
 pub mod failsafe;
+pub mod maneuver;
 pub mod touchdown;
 pub mod waypoint;
 
@@ -12,6 +13,8 @@ pub use failsafe::{
     DEFAULT_HOLD_SPEED_MPS, FailsafeCommander, FailsafeConfig, Fallback, HoldCommander,
     LinkedCommander,
 };
+#[doc(inline)]
+pub use maneuver::{Maneuver, ManeuverConfig, ManeuverRunner};
 #[doc(inline)]
 pub use touchdown::TouchdownDetector;
 #[doc(inline)]

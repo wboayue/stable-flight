@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Scripted maneuvers** (#342): `commanders::maneuver`.
+  - A `Maneuver` is up to `MAX_SEGMENTS` (16) `Segment`s, `Copy` and fixed-size:
+    `Segment::Rotate` holds a signed body rate about one `Axis` (`RateLaw::Constant`, or
+    `RateLaw::Radius`, `V / R` each tick) until an angle has turned or a time has passed, at
+    the maneuver's or the cruise `Thrust`; `Segment::Pause` holds zero rate. The angle is the
+    attitude's twist about the axis, unwrapped, not Euler angles.
+  - Catalog: `Maneuver::roll`, `Maneuver::loop_` (negative radius: outside),
+    `Maneuver::doublet` (`+rate`, `−rate`, a `DOUBLET_PAUSE_S` pause, at cruise thrust: a step
+    response in flight). `Maneuver::new` refuses out-of-range segments with `ManeuverError`.
+  - `ManeuverRunner` flies one as `ControlInput::AbsoluteRate`, then a level
+    `AbsoluteAttitude` recovery (`RecoveryConfig`), then hands back; `ManeuverConfig` sets the
+    thrusts, the angle timeout, and the recovery. `abort` recovers at once.
+
 - `PlaneRateControllerConfig::trim` (`PSTAB_RLL_TRIM`, `PSTAB_PIT_TRIM`, `PSTAB_YAW_TRIM`,
   default 0, #342): a per-axis moment added to the plane rate loop's output, scaled by the
   airspeed scale squared like the feedback (PX4's `TRIM_ROLL`/`_PITCH`/`_YAW`), in attitude

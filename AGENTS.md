@@ -76,7 +76,7 @@ just xplane-sweep                             # engine-sweep-xplane: yaw sign pe
 just plot <csv> <out> | just gen-figure-eight # plot_flight (a waypoint script; --record: a recorder CSV as time series), generate_figure_eight
 just tag <crate> <version> | just versions    # push a <crate>-v<version> tag; list tags
 just todo-check                               # TODO(#n) markers whose issue is closed (needs gh)
-cargo test -p stable-flight-sim               # closed-loop flights on the in-repo simulator (hover, steps, waypoints, land, failsafe, saturation, autotune, robustness, plane level flight, steps, turns, stall, tailsitter hover, transitions, the hover wind estimate, quadplane hover, transitions, copter legs, the Alia's autotune, steps, and hover)
+cargo test -p stable-flight-sim               # closed-loop flights on the in-repo simulator (hover, steps, waypoints, land, failsafe, saturation, autotune, robustness, plane level flight, steps, turns, stall, maneuvers, tailsitter hover, transitions, the hover wind estimate, quadplane hover, transitions, copter legs, the Alia's autotune, steps, and hover)
 cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight -- --motors 0,1 --servos 2,3  # drive raw channels, record a capture
 cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight                           # time RealFlight exchanges alone
 cargo run -p stable-flight-sitl-realflight --example surface-probe-realflight                             # quadplane surface directions in flight (Cobra)

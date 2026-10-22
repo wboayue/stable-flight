@@ -1,8 +1,8 @@
-//! Small numeric helpers shared by guidance, stabilizers, controllers, and mixers:
+//! Small numeric helpers shared by guidance, stabilizers, controllers, commanders, and mixers:
 //! [`saturate_unit`], [`saturate_symmetric`], [`saturate_throttle`], [`desaturate`],
 //! [`cap_magnitude`], [`clamp_symmetric`] and its per-component [`clamp_symmetric_each`],
 //! [`limit_or_zero`], [`all_finite`], [`assert_dt`], [`tilt_boost`], [`guard_sink`],
-//! [`shaped_closing_speed`], and
+//! [`shaped_closing_speed`], [`twist_angle_rad`], and
 //! [`wrap_angle`] and [`euler_angles`] (both public at the crate root).
 //!
 //! They implement the per-tick input policy (saturate, NaN → neutral, never let a non-finite
@@ -327,6 +327,15 @@ pub(crate) fn thrust_curve(linear_thrust: f32, exponent: f32) -> f32 {
 pub(crate) fn bank_rad(attitude: &UnitQuaternion<f32>) -> f32 {
     let m = attitude.to_rotation_matrix();
     libm::atan2f(m[(2, 1)], m[(2, 2)])
+}
+
+/// The angle `rotation` turns about the unit `axis`: its twist in a swing-twist split,
+/// `2·atan2(v·axis, w)` for the quaternion `(w, v)`, in `(-2π, 2π]`. A quaternion and its
+/// negation (the same rotation) differ by 2π, so callers that track a turn compare
+/// consecutive readings through [`wrap_angle`]. NaN for a non-finite rotation; undefined (0) for
+/// a half turn about an axis square to `axis`.
+pub(crate) fn twist_angle_rad(rotation: &UnitQuaternion<f32>, axis: &Vec3) -> f32 {
+    2.0 * libm::atan2f(rotation.imag().dot(axis), rotation.w)
 }
 
 /// Saturates a throttle or thrust command to [0, 1]; NaN becomes 0 (no thrust).
