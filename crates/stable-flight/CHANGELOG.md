@@ -20,7 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     response in flight). `Maneuver::new` refuses out-of-range segments with `ManeuverError`.
   - `ManeuverRunner` flies one as `ControlInput::AbsoluteRate`, then a level
     `AbsoluteAttitude` recovery (`RecoveryConfig`), then hands back; `ManeuverConfig` sets the
-    thrusts, the angle timeout, and the recovery. `abort` recovers at once.
+    thrusts, the angle timeout, the path hold, and the recovery. `abort` recovers at once.
+  - Each `Segment::Rotate` holds a `Path` (#481): a roll its line, a loop its circle, a
+    doublet none (`Path::Free`). The runner steers back onto it with pitch and yaw rate, a PD
+    on the error across the path (ArduPilot's scripted aerobatics, gains 2 and 2.8), plus
+    half the lift a rolling wing loses on a line (`PathConfig`). On the sim, rolls lose at
+    most 3.5 m (rates alone: 37 m) and loops 1.1 m (6.4 m).
 
 - `PlaneRateControllerConfig::trim` (`PSTAB_RLL_TRIM`, `PSTAB_PIT_TRIM`, `PSTAB_YAW_TRIM`,
   default 0, #342): a per-axis moment added to the plane rate loop's output, scaled by the

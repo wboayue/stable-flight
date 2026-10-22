@@ -433,8 +433,12 @@ attitude loop. Tune them from doublets, then fly rolls and loops.
   at 3.2× in roll and 3.4× in pitch: its 0.63 kg wing behind ±45° elevons turns a unit moment
   into far more rate than PX4 expects.
 - **Pitch I:** carries the pitch rate through a loop as it speeds up coming down. Too low and
-  the loop's second half runs wide and ends low; too high and a doublet's second half
-  overshoots.
+  the rate lags the loop's second half; too high and a doublet's second half overshoots.
+- **Path hold:** `ManeuverConfig::path` (`maneuver::PathConfig`; the eXplora flies the
+  defaults). A roll holds its line and a loop its circle, steered back with pitch and yaw
+  rate: position gain 2/s² and velocity gain 2.8/s (ArduPilot's), and on a roll half the lift
+  the wing loses as it rolls, steered against up front. Gains at 0 fly the rates alone,
+  as doublets do.
 - **Trim:** the mean `moment_y` on level plane legs at trim airspeed, times (airspeed / trim
   airspeed)² off it (the loop scales trim by that factor squared). It holds the nose at zero
   rate without waiting for the I term. The eXplora's: 0.09 at 14–15 m/s.
@@ -447,10 +451,9 @@ attitude loop. Tune them from doublets, then fly rolls and loops.
 - **Symptoms:**
   - Doublet peaks well past its command: feedforward down.
   - Doublet short of its command, rate creeping up through each half: feedforward up.
-  - Loop wide and low on its way down: `PSTAB_PIT_I` up.
+  - Loop wide and low on its way down: path gains up, or `PSTAB_PIT_I` up if the rate lags.
+  - A roll climbs: `line_gravity_share` down; it sinks: up.
   - Nose drops at centered rate sticks: `PSTAB_PIT_TRIM` up.
-  - A roll loses height: pure roll rate tips the lift over
-    ([#481](https://github.com/wboayue/stable-flight/issues/481)); enter it higher.
 
 ## Transition limits
 
