@@ -1,6 +1,7 @@
 //! The plane pipeline on a `SimPlane`: a [`PlanePlant`] flown from its start in flight, and
 //! the commanders the plane tests fly it with.
 
+pub use stable_flight::commanders::maneuver::Axis;
 use stable_flight::guidance::plane::PlaneGuidance;
 use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::plane::PlaneStabilizer;
@@ -158,15 +159,8 @@ pub fn attitude_command(roll_rad: f32, pitch_rad: f32, thrust: f32) -> Command {
     }))
 }
 
-/// The attitude axis a [`StepCommander`] steps.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Axis {
-    Roll,
-    Pitch,
-}
-
-/// Flies `lead` for `lead_s`, then steps `axis` through a core [`StepProbe`] in absolute
-/// attitude mode, holding the other axis where the step found it, at `thrust`.
+/// Flies `lead` for `lead_s`, then steps `axis` (roll or pitch) through a core [`StepProbe`]
+/// in absolute attitude mode, holding the other axis where the step found it, at `thrust`.
 ///
 /// A commander doesn't see the surfaces, so the probe's `saturated_s` stays 0: [`ClipTimer`]
 /// measures clipping.
@@ -209,6 +203,7 @@ impl<C: Commander> Commander for StepCommander<C> {
         let command = match self.axis {
             Axis::Roll => (self.probe.step(dt, state.roll_rad, false), pitch_rad),
             Axis::Pitch => (roll_rad, self.probe.step(dt, state.pitch_rad, false)),
+            Axis::Yaw => unreachable!("an attitude step is roll or pitch"),
         };
         attitude_command(command.0, command.1, self.thrust)
     }

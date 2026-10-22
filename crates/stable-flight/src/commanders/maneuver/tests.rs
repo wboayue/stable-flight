@@ -4,6 +4,7 @@ use approx::assert_relative_eq;
 use assert2::check;
 
 use super::*;
+use crate::Vec3;
 
 /// A quarter-second tick: exact in binary, so time-based rows stay clear of `f32` rounding.
 const COARSE_DT: f32 = 0.25;
