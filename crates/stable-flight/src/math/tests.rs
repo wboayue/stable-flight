@@ -154,6 +154,14 @@ fn all_finite_rejects_any_nan_or_infinite_component() {
 }
 
 #[test]
+fn neu_to_ned_flips_only_up() {
+    assert_eq!(
+        neu_to_ned(Vec3::new(1.0, -2.0, 3.0)),
+        Vec3::new(1.0, -2.0, -3.0)
+    );
+}
+
+#[test]
 fn wrap_angle_maps_into_minus_pi_to_pi() {
     // (angle, wrapped)
     let cases = [

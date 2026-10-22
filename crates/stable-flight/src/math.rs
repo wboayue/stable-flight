@@ -1,7 +1,7 @@
 //! Small numeric helpers shared by guidance, stabilizers, controllers, commanders, and mixers:
 //! [`saturate_unit`], [`saturate_symmetric`], [`saturate_throttle`], [`desaturate`],
 //! [`cap_magnitude`], [`clamp_symmetric`] and its per-component [`clamp_symmetric_each`],
-//! [`limit_or_zero`], [`all_finite`], [`assert_dt`], [`tilt_boost`], [`guard_sink`],
+//! [`limit_or_zero`], [`all_finite`], [`neu_to_ned`], [`assert_dt`], [`tilt_boost`], [`guard_sink`],
 //! [`shaped_closing_speed`], [`twist_angle_rad`], and
 //! [`wrap_angle`] and [`euler_angles`] (both public at the crate root).
 //!
@@ -158,6 +158,12 @@ pub(crate) fn clamp_symmetric_each<const D: usize>(
 /// True when every component is finite.
 pub(crate) fn all_finite<const D: usize>(value: &SVector<f32, D>) -> bool {
     value.iter().all(|component| component.is_finite())
+}
+
+/// A position or velocity from the state's north-east-up frame into NED, the frame the
+/// attitude rotates the body into ([frame contract](crate::VehicleState#frame-contract)).
+pub(crate) fn neu_to_ned(v: Vec3) -> Vec3 {
+    Vec3::new(v.x, v.y, -v.z)
 }
 
 /// ZYX Euler angles `(roll, pitch, yaw)` in radians of an attitude quaternion, in the
