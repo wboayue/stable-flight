@@ -1,6 +1,6 @@
 //! Scripted maneuvers on `airframes::plane()` and the plane sides of the sim tailsitter and the
-//! eXplora: a roll, a loop, and roll and pitch doublets, each flown by a `ManeuverRunner` from level flight up the
-//! north line, then the line again.
+//! eXplora: a roll, a loop, and roll and pitch doublets, each flown by a `ManeuverRunner` from
+//! level flight up the north line, then the line again.
 
 mod common;
 
@@ -180,10 +180,9 @@ impl Vehicle {
                 });
             }
             Vehicle::Tailsitter | Vehicle::Explora => {
-                let airframe = if matches!(self, Vehicle::Explora) {
-                    airframes::explora()
-                } else {
-                    airframes::tailsitter()
+                let airframe = match self {
+                    Vehicle::Explora => airframes::explora(),
+                    _ => airframes::tailsitter(),
                 };
                 let plant = TailsitterPlant::clean(airframe);
                 let lead = Lead(Box::new(forward(&airframe)));

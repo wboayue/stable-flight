@@ -177,7 +177,7 @@ const EXPLORA_MAX_AIRSPEED_MPS: f32 = 25.0;
 pub fn explora_vtol()
 -> Airframe<TailsitterGuidanceConfig, TailsitterStabilizerConfig, TableMixer<4>> {
     let gains = |p, i, d| Gains { p, i, d };
-    let explora_rate = PlaneRateControllerConfig::default();
+    let rate_defaults = PlaneRateControllerConfig::default();
     Airframe {
         guidance: TailsitterGuidanceConfig {
             hover: CopterGuidanceConfig {
@@ -310,7 +310,7 @@ pub fn explora_vtol()
                     // their command; higher: overshoot (#342).
                     roll: RateGains {
                         ff: 0.1,
-                        ..explora_rate.roll
+                        ..rate_defaults.roll
                     },
                     // Pitch I 0.8 holds a loop's rate as it speeds up coming down (0.3: a 25 m
                     // loop ended 22 m low in the sim); higher overshoots the second half of a
@@ -318,11 +318,11 @@ pub fn explora_vtol()
                     pitch: RateGains {
                         i: 0.8,
                         ff: 0.05,
-                        ..explora_rate.pitch
+                        ..rate_defaults.pitch
                     },
                     // The nose-up moment of level flight at 14 m/s (#342, run 0).
                     trim: Vec3::new(0.0, 0.09, 0.0),
-                    ..explora_rate
+                    ..rate_defaults
                 },
                 // The hover side's thrust curve, so a handoff keeps the motor commands
                 // continuous.
@@ -348,8 +348,9 @@ pub fn explora_vtol()
 }
 
 /// How the eXplora flies scripted maneuvers (stable-flight-sitl's
-/// `ScriptCommander::with_maneuver_config`): rolls and loops at full thrust, doublets at its plane cruise thrust, so a doublet measures
-/// the rate loop in the propwash the elevons see in level flight (#342).
+/// `ScriptCommander::with_maneuver_config`): rolls and loops at full thrust, doublets at its
+/// plane cruise thrust, so a doublet measures the rate loop in the propwash the elevons see in
+/// level flight (#342).
 ///
 /// # Examples
 ///

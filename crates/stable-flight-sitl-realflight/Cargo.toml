@@ -22,6 +22,8 @@ thiserror.workspace = true
 [dev-dependencies]
 assert2.workspace = true
 stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["testing"] }
+# Tests only: the sim eXplora the plane side is tuned on.
+stable-flight-sim = { path = "../stable-flight-sim" }
 # Examples only: runner, commanders.
 stable-flight-sitl = { path = "../stable-flight-sitl", version = "0.1.0" }
 # Examples only: params and telemetry over the native link.
