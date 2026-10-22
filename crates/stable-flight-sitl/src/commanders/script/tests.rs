@@ -3,8 +3,10 @@ use assert2::check;
 use stable_flight::{Vec2, Vec3};
 use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
 
-use super::{Holds, Leg, ScriptCommander, ScriptError, parse_route};
+use super::actions::RowActions;
+use super::{Leg, ScriptCommander, ScriptError, parse_route};
 use stable_flight::commanders::RouteEnd;
+use stable_flight::commanders::maneuver::{Axis, DEFAULT_DOUBLET_HALF_S, Maneuver};
 use stable_flight::{
     Command, Commander, ControlInput, FlightRegime, VehicleState, WaypointCommand,
 };
@@ -121,7 +123,7 @@ x,y,altitude,cruise_speed
     );
     check!(path == "test.csv");
     check!(line == 2);
-    check!(message.contains("expected 4 to 7 fields"));
+    check!(message.contains("expected 4 to 8 fields"));
 }
 
 #[test]
@@ -296,7 +298,7 @@ fn sixth_and_seventh_fields_are_heading_and_hold() {
             panic!("{row}: expected one row, got {route:?}");
         };
         check!(leg.waypoint.heading_rad == heading_rad, "{row}");
-        check!(leg.hold_s == hold_s, "{row}");
+        check!(leg.actions.hold_s == hold_s, "{row}");
     }
 
     // (row, expected message)
@@ -325,7 +327,10 @@ fn holding_route(holds: &[(f32, f32)]) -> Vec<Leg> {
                 ..wp(50.0 * index as f32, 0.0)
             },
             regime: FlightRegime::Copter,
-            hold_s,
+            actions: RowActions {
+                maneuver: None,
+                hold_s,
+            },
         })
         .collect()
 }
@@ -368,35 +373,146 @@ fn holds_the_last_waypoint_before_the_land() {
     assert2::assert!(let ControlInput::Land(_) = inputs[4]);
 }
 
-/// A follower tick for [`Holds::start`]: (waypoint it began on, waypoint it ended on, lands).
-type FollowerTick = (usize, usize, bool);
-
-/// A hold starts when the follower moves on from a waypoint with one, to another waypoint or
-/// into the land, and only on that tick; it lasts its seconds, and a NaN `dt` ends it.
+/// The optional eighth field is the maneuver, `name:argument[:argument]`, on plane rows only;
+/// absent or empty is none. An unknown name, a wrong argument count, a malformed number, a
+/// maneuver that can't be flown, or a maneuver on a copter row is a parse error.
 #[test]
-fn a_hold_starts_on_moving_on_and_lasts_its_seconds() {
-    // (case, follower ticks (reached, current, lands), expected start of the last)
-    let cases: [(&str, &[FollowerTick], Option<usize>); 6] = [
-        ("moved on", &[(1, 2, false)], Some(1)),
-        ("still on it", &[(1, 1, false)], None),
-        ("no hold", &[(0, 1, false)], None),
-        ("looped back", &[(2, 0, false)], Some(2)),
-        ("into the land", &[(1, 1, false), (1, 1, true)], Some(1)),
-        ("landing on", &[(1, 1, true), (1, 1, true)], None),
+fn eighth_field_is_the_maneuver() {
+    let deg = f32::to_radians;
+    // (row, expected maneuver)
+    let cases = [
+        ("0,0,50,14,plane", None),
+        ("0,0,50,14,plane,,,", None),
+        ("0,0,50,14,plane,,,roll:90", Some(Maneuver::roll(deg(90.0)))),
+        (
+            "0,0,50,14,plane,,,Roll:-180",
+            Some(Maneuver::roll(deg(-180.0))),
+        ),
+        ("0,0,50,14,plane,,,loop:25", Some(Maneuver::loop_(25.0))),
+        ("0,0,50,14,plane,,,loop:-25", Some(Maneuver::loop_(-25.0))),
+        (
+            "0,0,50,14,plane,,,doublet_roll:60",
+            Some(Maneuver::doublet(
+                Axis::Roll,
+                deg(60.0),
+                DEFAULT_DOUBLET_HALF_S,
+            )),
+        ),
+        (
+            "0,0,50,14,plane,,,doublet_pitch:60:0.4",
+            Some(Maneuver::doublet(Axis::Pitch, deg(60.0), 0.4)),
+        ),
+        (
+            "0,0,50,14,plane,,2,doublet_yaw: 30",
+            Some(Maneuver::doublet(
+                Axis::Yaw,
+                deg(30.0),
+                DEFAULT_DOUBLET_HALF_S,
+            )),
+        ),
     ];
-    for (case, ticks, expected) in cases {
-        let mut holds = Holds::new(vec![0.0, 0.35, 0.2]);
-        let mut started = None;
-        for &(reached, current, lands) in ticks {
-            started = holds.start(reached, current, lands);
-        }
-        check!(started == expected, "{case}");
+    for (row, expected) in cases {
+        assert2::assert!(let Ok(route) = parse_route("test.csv", row));
+        let expected = expected.map(|maneuver| maneuver.expect("a valid maneuver"));
+        check!(route[0].actions.maneuver == expected, "{row}");
     }
 
-    let mut holds = Holds::new(vec![0.35]);
-    holds.start(0, 0, true);
-    let held: Vec<_> = (0..4).map(|_| holds.held(0.1)).collect();
-    check!(held == [Some(0), Some(0), Some(0), None]);
-    holds.start(0, 1, false);
-    check!(holds.held(f32::NAN) == None);
+    // (row, expected message)
+    let errors = [
+        ("0,0,50,14,plane,,,spin:90", "unknown maneuver \"spin\""),
+        ("0,0,50,14,plane,,,roll", "maneuver roll takes a rate"),
+        (
+            "0,0,50,14,plane,,,loop:25:2",
+            "maneuver loop takes a radius",
+        ),
+        (
+            "0,0,50,14,plane,,,doublet_yaw:30:0.5:1",
+            "maneuver doublet_yaw takes",
+        ),
+        ("0,0,50,14,plane,,,roll:fast", "invalid roll rate"),
+        ("0,0,50,14,plane,,,loop:inf", "non-finite loop radius"),
+        ("0,0,50,14,plane,,,roll:0", "rate not finite and nonzero"),
+        ("0,0,50,14,plane,,,loop:0", "radius not finite and nonzero"),
+        (
+            "0,0,50,14,plane,,,doublet_spin:30",
+            "unknown maneuver \"doublet_spin\"",
+        ),
+        (
+            "0,0,50,14,plane,,,doublet_roll:0",
+            "rate not finite and nonzero",
+        ),
+        (
+            "0,0,50,14,plane,,,doublet_roll:60:0",
+            "duration not positive",
+        ),
+        (
+            "0,0,50,14,plane,,,doublet_pitch:60:x",
+            "invalid doublet half width",
+        ),
+        ("0,0,50,14,,,,roll:90", "a maneuver needs a plane row"),
+        ("0,0,50,14,copter,,,loop:25", "a maneuver needs a plane row"),
+        ("0,0,50,14,plane,,,roll:90,extra", "expected 4 to 8 fields"),
+    ];
+    for (row, expected) in errors {
+        assert2::assert!(let Err(ScriptError::Parse { message, line, .. }) = parse_route("test.csv", row));
+        check!(message.contains(expected), "{row}: {message}");
+        check!(line == 1, "{row}");
+    }
+}
+
+/// On reaching a waypoint with a maneuver, the script flies it in the row's regime, recovers,
+/// holds the waypoint for its hold, then flies on to the next, the follower paused meanwhile.
+/// Quarter-second ticks: a doublet of 0.5 s halves is 2 + 2 ticks of rate and 4 of pause, a
+/// still, level vehicle recovers in one, and a 0.5 s hold is the starting tick and one more.
+#[test]
+fn flies_a_rows_maneuver_then_its_hold_then_the_next_leg() {
+    let doublet = Maneuver::doublet(Axis::Roll, 1.0, 0.5).expect("valid");
+    let leg = |north: f32, maneuver, hold_s| Leg {
+        waypoint: WaypointCommand {
+            cruise_speed_mps: 14.0,
+            ..wp(north, 0.0)
+        },
+        regime: FlightRegime::Plane,
+        actions: RowActions { maneuver, hold_s },
+    };
+    let mut commander = ScriptCommander::from_legs(vec![
+        leg(0.0, None, 0.0),
+        leg(100.0, Some(doublet), 0.5),
+        leg(200.0, None, 0.0),
+    ])
+    .expect("non-empty");
+    commander.next_command(0.25, &state_at(0.0, 0.0));
+    let commands: Vec<Command> = (0..12)
+        .map(|_| commander.next_command(0.25, &state_at(100.0, 0.0)))
+        .collect();
+    let roll_rate = |command: &Command| match command.input {
+        ControlInput::AbsoluteRate(rates) => Some(rates.roll_radps),
+        _ => None,
+    };
+    let rates: Vec<_> = commands[..8].iter().map(roll_rate).collect();
+    check!(
+        rates
+            == [
+                Some(1.0),
+                Some(1.0),
+                Some(-1.0),
+                Some(-1.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0),
+                Some(0.0)
+            ]
+    );
+    check!(
+        commands[..9]
+            .iter()
+            .all(|c| c.arm && c.regime == FlightRegime::Plane)
+    );
+    assert2::assert!(let ControlInput::AbsoluteAttitude(_) = commands[8].input);
+    let targets: Vec<_> = commands[9..]
+        .iter()
+        .map(|c| waypoint(*c).position_m.x)
+        .collect();
+    check!(targets == [100.0, 100.0, 200.0]);
+    check!(commander.follower().current_index() == 2);
 }
