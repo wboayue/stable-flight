@@ -18,6 +18,7 @@
 use nalgebra::{Matrix2, UnitQuaternion};
 
 use crate::controllers::{InvalidConfig, check_limit, check_positive};
+use crate::math::neu_to_ned;
 use crate::{GRAVITY, Vec2, Vec3, VehicleState};
 
 #[cfg(test)]
@@ -318,10 +319,9 @@ impl Sample {
     /// non-finite.
     fn from_state(state: &VehicleState) -> Option<Self> {
         let attitude: &UnitQuaternion<f32> = &state.attitude;
-        let v = state.velocity_mps;
         // NED, as the attitude rotates the FRD body into it.
         let specific_force_ned = specific_force_ned(state);
-        let velocity_ned = Vec3::new(v.x, v.y, -v.z);
+        let velocity_ned = neu_to_ned(state.velocity_mps);
         // One matrix serves all three: its columns are the body axes in NED.
         let rotation = attitude.to_rotation_matrix();
         // `<` is false for NaN; the finiteness check below catches it.
