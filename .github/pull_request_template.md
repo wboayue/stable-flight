@@ -8,6 +8,7 @@
 
 - [ ] `cargo fmt --all`, `just lint`, `cargo test --workspace --all-features`, `just embedded`
 - [ ] Owning docs and the crate's `CHANGELOG.md` updated, if affected
+- [ ] New or changed control terms in `docs/glossary.md`
 
 ## Flight check
 

@@ -15,7 +15,8 @@ lives in `architecture.md`; each crate's README owns its usage.
 - Run every command from the repo root: examples and binaries resolve across the workspace, and
   `flights/*.csv` paths are root-relative.
 - `docs/tuning/` holds the tuning guides, one per airframe type. A tuning change to an
-  airframe updates its guide in the same PR.
+  airframe updates its guide in the same PR. `docs/glossary.md` defines the control terms
+  code and docs use.
 - Untracked: `target/`, `tarpaulin-report.html`, `firmware/*/*.bin`, `sandbox/` and `tasks/` (local notes).
 - `Cargo.lock` is committed and CI builds `--locked`: commit lockfile changes with the manifest
   change that causes them. A dependency that needs a newer compiler raises `rust-version` and the
@@ -178,6 +179,41 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 - Hot path (anything `FlightLoop::step` calls, and firmware): no allocation per tick, no blocking
   I/O.
 
+### Readability
+
+Write for a competent Rust developer who isn't a controls expert, reviewing the diff by hand.
+
+- **Plain words before math.** A controller's or estimator's rustdoc says what it does
+  physically and why, then the law: "pushes the nose down harder the further airspeed falls
+  below trim", then the equation. Terms of art link the
+  [glossary](docs/glossary.md). A PR that adds a term, changes what one means in code, or
+  removes its last use updates the glossary in the same PR.
+- **Names over symbols.** `roll_error_rad`, `pitch_rate_integral`, not `e_phi`, `i_q`. Textbook
+  symbols only in an equation comment that maps them to the code's names.
+- **Signs and frames at the point of use.** Where a value is computed or crosses a boundary,
+  state its frame and positive direction (body or NED, nose up).
+- **Name the intermediate steps.** Flight math is a sequence of `let`s with unit suffixes, one
+  idea each; don't chain more than a few terms without naming the result.
+- **Tuned values explain themselves.** Each gain or limit says what raising it does
+  ("higher: tighter hold, oscillates past 0.3"), its unit, and its evidence `(#n)`.
+- **Plain over clever** in new code: a function before a generic, a generic before a macro; a
+  new trait only for a second impl or a test double.
+
+### Locality
+
+Related code sits together, so a reviewer reads one behavior in one place.
+
+- **One concept, one module.** A component's config, defaults, `ParamTable` and metadata,
+  constructor, tick method, and helpers live in its module. A change touching many files for one
+  behavior suggests the behavior is split across modules that should be one.
+- **Top-down order in a file:** public type and its rustdoc, config, `impl` (entry points
+  first), then private helpers in call order, each below its first caller.
+- **Constants next to their user.** A constant used once is defined beside that use; a shared one
+  goes in the module that owns the concept, never a catch-all `constants.rs`.
+- **Tests mirror the source:** in its order, with test helpers next to the tests using them.
+- **Reviewable diffs:** moves, renames, and reformatting in their own commit, apart from behavior
+  changes.
+
 ## Testing
 
 - Unit tests sit next to the code in `mod tests;` files (e.g. core `src/flight_loop/tests.rs`,
@@ -331,6 +367,7 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   - `SECURITY.md`: supported versions and reporting;
   - `.github/` templates: what an issue or PR must include;
   - `architecture.md`: crate boundaries, dependency rules, and the rationale for the contracts;
+  - `docs/glossary.md`: control and airframe terms, one definition each;
   - `docs/tuning/`: how to tune an airframe type (order, knobs and params, symptoms, a worked
     example); the airframe code holds the values and the flights behind them;
   - core rustdoc: the frame contract (`VehicleState`) and timing contract (`Vehicle`).
@@ -371,6 +408,9 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
      explicit, public surface no wider than callers need.
    - **Performance** in the hot path: per-tick allocation, blocking I/O, redundant trig or `libm`
      calls, flash size.
+   - **Readability:** could a developer who isn't a controls expert follow the change from its
+     rustdoc and names alone? Related code adjacent, terms in the glossary, signs and frames
+     stated (**Readability**, **Locality** under **Coding style**).
 2. Before designing around external software (QGC, MAVLink peers, simulator clients, other
    flight stacks), verify its behavior in its source, not from memory, and record file:line in
    the issue or PR. This repo is MIT: from GPL code (ArduPilot) cite and describe the behavior
@@ -403,3 +443,4 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 - [ ] Hot-path code allocates nothing per tick.
 - [ ] Coverage stays at or moves toward 90%+.
 - [ ] Owning docs, status claims, and affected changelogs reflect the change; comments state the current code.
+- [ ] New or changed control terms are in `docs/glossary.md`.
