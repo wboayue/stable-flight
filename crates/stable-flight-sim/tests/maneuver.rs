@@ -1,5 +1,5 @@
-//! Scripted maneuvers on `airframes::plane()` and the sim tailsitter's plane side: a roll, a
-//! loop, and roll and pitch doublets, each flown by a `ManeuverRunner` from level flight up the
+//! Scripted maneuvers on `airframes::plane()` and the plane sides of the sim tailsitter and the
+//! eXplora: a roll, a loop, and roll and pitch doublets, each flown by a `ManeuverRunner` from level flight up the
 //! north line, then the line again.
 
 mod common;
@@ -154,6 +154,8 @@ enum Vehicle {
     Plane,
     /// `airframes::tailsitter()`'s plane side.
     Tailsitter,
+    /// `airframes::explora()`'s plane side.
+    Explora,
 }
 
 impl Vehicle {
@@ -177,8 +179,12 @@ impl Vehicle {
                     each(flight_loop.commander(), flight_loop.state(), t);
                 });
             }
-            Vehicle::Tailsitter => {
-                let airframe = airframes::tailsitter();
+            Vehicle::Tailsitter | Vehicle::Explora => {
+                let airframe = if matches!(self, Vehicle::Explora) {
+                    airframes::explora()
+                } else {
+                    airframes::tailsitter()
+                };
                 let plant = TailsitterPlant::clean(airframe);
                 let lead = Lead(Box::new(forward(&airframe)));
                 let cruise_thrust = airframe.guidance.plane.cruise_thrust;
@@ -256,7 +262,8 @@ fn check_flies_on(case: &str, flown: &Flown) {
 /// rate), both ways, and loses no more height than measured: (vehicle, rate in deg/s, longest
 /// rotation in s, most altitude lost in m). Pure roll rate lets the lift tip over, so height
 /// goes: measured 3.06 s and 23.4 m on the plane (whose ailerons reach 2.8 rad/s at most),
-/// 1.81 s and 12.6 m on the tailsitter; each band is about 1.2× that.
+/// 1.81 s and 12.6 m on the tailsitter, 2.03 s and 6.8 m on the eXplora; each band is about
+/// 1.2× that.
 #[test]
 fn rolls_turn_a_full_turn_and_fly_on() {
     let cases = [
@@ -264,6 +271,8 @@ fn rolls_turn_a_full_turn_and_fly_on() {
         (Vehicle::Plane, -180.0, 3.6, 28.0),
         (Vehicle::Tailsitter, 180.0, 2.2, 15.0),
         (Vehicle::Tailsitter, -180.0, 2.2, 15.0),
+        (Vehicle::Explora, 180.0, 2.5, 8.0),
+        (Vehicle::Explora, -180.0, 2.5, 8.0),
     ];
     for (vehicle, rate_degps, rotation_s, loss_m) in cases {
         let case = format!("{vehicle:?} at {rate_degps}°/s");
@@ -279,17 +288,21 @@ fn rolls_turn_a_full_turn_and_fly_on() {
 }
 
 /// A loop flies a circle of its radius: half the height it spans is within 15% of the radius
-/// (measured 6–8% short: the open-loop rate lags the slowing climb), and it ends at the height
-/// it began within 3 m (measured 2.0 m at most): (vehicle, radius in m).
+/// (measured 6–8% short on the plane and tailsitter, where the open-loop rate lags the slowing
+/// climb; 8% wide on the eXplora, whose rate lags the speed it gains coming down), and it
+/// sinks below where it began by no more than measured: (vehicle, radius in m, most altitude
+/// lost in m). Measured 2.0 m at most on the plane and tailsitter (3 m band), 6.4 m on the
+/// eXplora (8 m).
 #[test]
 fn loops_fly_their_radius_and_fly_on() {
     let cases = [
-        (Vehicle::Plane, 10.0),
-        (Vehicle::Plane, 25.0),
-        (Vehicle::Tailsitter, 10.0),
-        (Vehicle::Tailsitter, 25.0),
+        (Vehicle::Plane, 10.0, 3.0),
+        (Vehicle::Plane, 25.0, 3.0),
+        (Vehicle::Tailsitter, 10.0, 3.0),
+        (Vehicle::Tailsitter, 25.0, 3.0),
+        (Vehicle::Explora, 25.0, 8.0),
     ];
-    for (vehicle, radius_m) in cases {
+    for (vehicle, radius_m, loss_m) in cases {
         let case = format!("{vehicle:?}, {radius_m} m");
         let flown = vehicle.fly(Maneuver::loop_(radius_m).expect("valid"), Axis::Pitch, 1.0);
         let flown_radius_m = (flown.top_m - flown.bottom_m) / 2.0;
@@ -297,7 +310,10 @@ fn loops_fly_their_radius_and_fly_on() {
             (flown_radius_m - radius_m).abs() <= 0.15 * radius_m,
             "{case}: {flown_radius_m} m"
         );
-        check!(flown.entry_m - flown.lowest_m <= 3.0, "{case}: {flown:?}");
+        check!(
+            flown.entry_m - flown.lowest_m <= loss_m,
+            "{case}: {flown:?}"
+        );
         check_flies_on(&case, &flown);
     }
 }
@@ -312,6 +328,8 @@ fn doublets_measure_the_step_response() {
         (Vehicle::Plane, Axis::Pitch),
         (Vehicle::Tailsitter, Axis::Roll),
         (Vehicle::Tailsitter, Axis::Pitch),
+        (Vehicle::Explora, Axis::Roll),
+        (Vehicle::Explora, Axis::Pitch),
     ];
     let radps = 1.0;
     for (vehicle, axis) in cases {
@@ -328,3 +346,54 @@ fn doublets_measure_the_step_response() {
         check_flies_on(&case, &flown);
     }
 }
+
+/// The eXplora's doublets at 60°/s peak within 1.3× of the command in their first half
+/// (measured 1.01 in roll, 1.13 in pitch), where PX4's default feedforward peaked at 3.2× and
+/// 3.4× in RealFlight (#342).
+#[test]
+fn explora_doublets_track_their_command() {
+    let radps = 60f32.to_radians();
+    for axis in [Axis::Roll, Axis::Pitch] {
+        let doublet = Maneuver::doublet(axis, radps, 0.5).expect("valid");
+        let flown = Vehicle::Explora.fly(doublet, axis, 1.0);
+        let peak = flown.segment_peaks_radps[0] / radps;
+        check!((0.8..=1.3).contains(&peak), "{axis:?}: {peak}");
+    }
+}
+
+/// Centered rate sticks at cruise thrust hold the pitch of level flight: over 10 s the pitch
+/// stays within 0.5° of where it began (measured 0.03° at most). The rate loop's integral
+/// carries the level-flight moment into rate flight, so this holds without trim too; the
+/// eXplora's trim is RealFlight's (#342).
+#[test]
+fn centered_rate_sticks_hold_pitch() {
+    for vehicle in [Vehicle::Plane, Vehicle::Tailsitter, Vehicle::Explora] {
+        let mut start_rad = None;
+        let mut drift_rad = 0.0_f32;
+        vehicle.run(
+            |lead, lead_s, cruise_thrust| {
+                let centered = AbsoluteRateCommand {
+                    roll_radps: 0.0,
+                    pitch_radps: 0.0,
+                    yaw_radps: 0.0,
+                    thrust: cruise_thrust,
+                };
+                let command = plane_command(ControlInput::AbsoluteRate(centered));
+                Interlude::new(lead, lead_s, lead_s + HOLD_S, command)
+            },
+            HOLD_S,
+            |_, state, _| {
+                let pitch_rad = stable_flight::euler_angles(&state.attitude).1;
+                let start_rad = *start_rad.get_or_insert(pitch_rad);
+                drift_rad = drift_rad.max((pitch_rad - start_rad).abs());
+            },
+        );
+        check!(
+            drift_rad <= 0.5f32.to_radians(),
+            "{vehicle:?}: {drift_rad} rad"
+        );
+    }
+}
+
+/// Seconds centered rate sticks are held.
+const HOLD_S: f32 = 10.0;
