@@ -206,12 +206,13 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   `MockRealFlightBridge`); `mockall` isn't a dependency.
 - A change that keeps existing airframes flying as before while changing a unit or a scale
   (#448's pusher range) pins their old actuator commands in a test.
-- A test that guards a fix must fail without it: revert or mutate the fix locally, and say so
-  in the PR. A check whose threshold reads the mutated config can fail for the wrong reason
-  (a sink limit of 0 turns "not sinking past the limit" into "not sinking"): name the
-  failures that are the intended ones. A `check!` inside a loop over rows panics at the end of
-  that iteration, so only the first failing row reports: confirm each row fails on its own
-  (e.g. run it first).
+- A test that guards a fix must fail without it: revert or mutate the fix locally, and say so in
+  the PR. Commit or `git add` the fix before mutating it: `git checkout -- <file>` restores the
+  index, so it wipes an unstaged fix along with the mutation. A check whose threshold reads the
+  mutated config can fail for the wrong reason (a sink limit of 0 turns "not sinking past the
+  limit" into "not sinking"): name the failures that are the intended ones. A `check!` inside a
+  loop over rows panics at the end of that iteration, so only the first failing row reports:
+  confirm each row fails on its own (e.g. run it first).
 - Keep time-based rows clear of `f32` rounding at thresholds (three 0.1 s ticks may not reach
   0.3 s: use a 0.35 s timeout).
 - A test that raises a process-wide signal gets its own `tests/*.rs` binary, one signal each.
@@ -228,15 +229,17 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   contracts and covers every conformance scenario with `stable_flight::conformance_tests!`;
   known gaps stay `#[ignore]`d with a reason linking an issue.
 - PRs that change flight behavior, the link, or the bridge end with a RealFlight check.
-- **Scripted over manual:** fly test and tuning flights from a waypoint script with
-  `--record` (the `*-auto-*` examples on `flights/*.csv`, `plane-probe-xplane`), started and
-  stopped from the command line; when no script covers the check, add one to `flights/` first.
-  A script flies the same route every run, so runs compare row against row, and it needs no
-  pilot at the sticks. Fly from a joystick only what needs one: stick modes (FBWA, acro), the
-  commanders themselves, and handling. Sticks also confound VTOL flights: a stick's throttle
-  flies a quadplane's pusher in plane and its lift rotors in copter, so a back transition hands
-  full throttle to the lift (#392), and the D-pad doesn't hold a plane request under X-Plane
-  (#446).
+- **Scripted over manual:** fly test and tuning flights from a waypoint script with `--record`
+  (the `*-auto-*` examples on `flights/*.csv`, `plane-probe-xplane`), started and stopped from the
+  command line; when no script covers the check, add one to `flights/` first. A script flies the
+  same route every run, so runs compare row against row, and it needs no pilot at the sticks. A
+  hold starts only once its waypoint is reached (within 3 m), so a waypoint the vehicle can't
+  reach (pinned at the tilt cap, belly into the wind) stalls the script: in wind, climb and hold
+  at headings that hold (eXplora: a wingtip into the wind), and stop runs from a watchdog (drift,
+  a floor, a timeout). Fly from a joystick only what needs one: stick modes (FBWA, acro), the
+  commanders themselves, and handling. Sticks also confound VTOL flights: a stick's throttle flies
+  a quadplane's pusher in plane and its lift rotors in copter, so a back transition hands full
+  throttle to the lift (#392), and the D-pad doesn't hold a plane request under X-Plane (#446).
 - **Setups:** `just fly-companion` + `just bridge` + QGC, or `just fly-companion` +
   `just link-pilot` (instead of the bridge). Offboard MAVLink scripts use the bridge's UDP 14550
   (close QGC first) and run with `uv run --no-project --with pymavlink python script.py`.
@@ -249,14 +252,18 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   QGC → bridge traffic: `nettop -p <bridge pid> -J bytes_in` (heartbeat only ≈ 21 B/s, joystick
   ≈ 600 B/s). `--record` on the tailsitter examples logs setpoints, rates, moments, and
   actuators per tick (columns: `stable_flight_sitl::recorder::TailsitterColumns`).
-- **Comparable runs:** change one knob per run, fly the same script with `--record`
-  (transitions: `flights/explora_transition_lap.csv --end land`), and report each run as a row
-  against the earlier ones. To tell whether a behavior predates a change, fly the parent
-  commit in a throwaway worktree. With `--end land` the example keeps running on the ground:
-  stop it (below) before the next run. The same settings can hand a back transition over
-  climbing or sinking (+1.7 vs −1.3 m/s, #404), so fly several runs and compare runs with a
-  matched handover. `--end land` starts the landing inside the follower's 0.8 m altitude
-  acceptance, so a dip below the last waypoint shows only with `--end hold` (#403).
+- **Comparable runs:** change one knob per run, fly the same script with `--record` (transitions:
+  `flights/explora_transition_lap.csv --end land`), and report each run as a row against the
+  earlier ones. To tell whether a behavior predates a change, fly the parent commit in a throwaway
+  worktree. With `--end land` the example keeps running on the ground: stop it (below) before the
+  next run. The same settings can hand a back transition over climbing or sinking (+1.7 vs −1.3
+  m/s, #404), so fly several runs and compare runs with a matched handover. Before crediting a fix
+  with a flight behavior, fly main on the same route too, with the heading relative to the wind
+  held and reported: #476's land thrust step looked like what set off a roll cycle, but main and
+  the fix cycled alike, and the heading decided it (145° cycled, 125° never). A behavior that
+  shows in only some runs needs 3 or more per arm. `--end land` starts the landing inside the
+  follower's 0.8 m altitude acceptance, so a dip below the last waypoint shows only with `--end
+  hold` (#403).
 - **Tick rate:** count the `wall_s` rows per wall-clock second around the event a run measures,
   and drop a run below about 245 Hz there: each tick advances every `dt`-based clock by the
   nominal 4 ms, so at 170 Hz a 3 m/s descent target moves at 2 m/s (#405). A release build
