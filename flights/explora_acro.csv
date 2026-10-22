@@ -1,0 +1,25 @@
+# eXplora VTOL acro check (#342): explora_transition_lap.csv's 240 x 120 m clockwise rectangle
+# at 60 m and 14 m/s airspeed, flown two and a half times with a maneuver at the middle of each
+# long leg: lap 1 roll and pitch doublets at 60 deg/s (the rate loop's step response), lap 2 a
+# 180 deg/s roll and a 25 m loop (top near 110 m). Climb in hover over the spawn point (north
+# -10.55 m, east 6.49 m), transition back at the end of the west leg, descending to 30 m, fly
+# home in hover. Run with --end land.
+x,y,altitude,cruise_speed,regime,heading,hold_s,maneuver
+-10.55,6.49,20.0,3.0,copter
+150.0,6.49,60.0,14.0,plane
+150.0,126.49,60.0,14.0,plane
+30.0,126.49,60.0,14.0,plane,,,doublet_roll:60
+-90.0,126.49,60.0,14.0,plane
+-90.0,6.49,60.0,14.0,plane
+30.0,6.49,60.0,14.0,plane,,,doublet_pitch:60
+150.0,6.49,60.0,14.0,plane
+150.0,126.49,60.0,14.0,plane
+30.0,126.49,60.0,14.0,plane,,,roll:180
+-90.0,126.49,60.0,14.0,plane
+-90.0,6.49,60.0,14.0,plane
+30.0,6.49,60.0,14.0,plane,,,loop:25
+150.0,6.49,60.0,14.0,plane
+150.0,126.49,60.0,14.0,plane
+-90.0,126.49,60.0,14.0,plane
+-90.0,6.49,30.0,14.0,plane
+-10.55,6.49,25.0,3.0,copter
