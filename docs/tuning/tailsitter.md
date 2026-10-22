@@ -445,9 +445,11 @@ attitude loop. Tune them from doublets, then fly rolls and loops.
 - **Sim first:** `stable-flight-sim`'s `airframes::explora()` is sized from the eXplora's
   `.RFX` and calibrated to its default-gain doublets, nose-up moment, and level thrust; tune
   feedforward and I on it (`tests/maneuver.rs`), then confirm in RealFlight.
-- **eXplora in RealFlight** (3 runs of the script, alike within 1%): doublets peak at 0.91×
-  (roll) and 1.18× (pitch) in their first half; the roll turns at 168°/s and sinks 13 m, then
-  7 m more as it recovers from 21 m/s; the loop spans 28 m of radius and ends 16 m low (#342).
+- **eXplora in RealFlight** (the script at 60 m, wind off): doublets peak at 0.91× (roll) and
+  1.18× (pitch) in their first half (#342). With the path hold the 180°/s roll turns at
+  168°/s and its lowest point is 1–2 m below its entry, either way; the 25 m loop spans
+  25.2 m of radius and ends 2 m low, a 10 m loop 10.4 m and 1.3 m low. On rates alone the roll
+  lost 20 m and the loops 16 m and 6 m (#481).
 - **Symptoms:**
   - Doublet peaks well past its command: feedforward down.
   - Doublet short of its command, rate creeping up through each half: feedforward up.
