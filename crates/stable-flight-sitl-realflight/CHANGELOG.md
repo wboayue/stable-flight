@@ -39,7 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `airframes::explora_maneuvers()` (#342): scripted maneuvers on the eXplora, rolls and loops
   at full thrust and doublets at its cruise thrust; `tailsitter-auto-realflight` flies it, and
   `flights/explora_acro.csv` flies doublets, a roll, and a loop on plane legs.
-
 - `TrueWind` and `RealFlightVehicle::true_wind` (#473): the wind RealFlight reports, north and
   east, as a handle updated on each exchange, to log beside a wind estimate.
   `tailsitter-auto-realflight --record` adds it as `true_wind_north_mps` and

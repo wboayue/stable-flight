@@ -8,12 +8,13 @@ use stable_flight::controllers::{PlaneRateControllerConfig, RateGains};
 use stable_flight::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
 use stable_flight::mixers::MixerConfig;
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
-
-use crate::fixed_wing::{AeroCoefficients, FixedWingModel};
+use stable_flight::stabilizers::vtol::TailsitterStabilizerConfig;
 
 use super::plane::aerosonde_inertia;
 use super::tailsitter::{TailsitterAirframe, tailsitter};
 use super::{hover_thrust, motor_count};
+use crate::TailsitterModel;
+use crate::fixed_wing::{AeroCoefficients, FixedWingModel};
 use crate::motors::QUADRATIC;
 
 /// The RealFlight eXplora VTOL (`eXplora_Tailsiter_VTOL.RFX`) as flown in RealFlight: the
@@ -95,7 +96,7 @@ pub fn explora() -> TailsitterAirframe {
         thrust_falloff_n_per_mps: max_thrust_n / PITCH_SPEED_MPS,
         ..base.model.wing
     };
-    let model = crate::TailsitterModel { wing, ..base.model };
+    let model = TailsitterModel { wing, ..base.model };
     let plane_stabilizer = PlaneStabilizerConfig {
         rate: explora_rate(),
         thrust_curve_exponent,
@@ -127,7 +128,7 @@ pub fn explora() -> TailsitterAirframe {
         model,
         mixer,
         guidance,
-        stabilizer: stable_flight::stabilizers::vtol::TailsitterStabilizerConfig {
+        stabilizer: TailsitterStabilizerConfig {
             hover: base.stabilizer.hover,
             plane: plane_stabilizer,
         },

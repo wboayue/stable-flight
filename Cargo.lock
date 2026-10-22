@@ -1583,6 +1583,7 @@ dependencies = [
  "realflight-bridge",
  "stable-flight",
  "stable-flight-link",
+ "stable-flight-sim",
  "stable-flight-sitl",
  "thiserror",
 ]
