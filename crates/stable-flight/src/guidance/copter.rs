@@ -179,8 +179,8 @@ pub struct CopterGuidanceConfig {
     pub max_descent_mps: f32,
     /// Acceleration a waypoint descent's target starts and ends with, in m/s², and a land's
     /// starts with: the target's descent rate rises by at most this much per second, and a
-    /// waypoint descent's shrinks toward the waypoint so
-    /// this much deceleration stops it there, and is 0 on it.
+    /// waypoint descent's shrinks toward the waypoint so this much deceleration stops it
+    /// there, and is 0 on it.
     /// Within `descent_accel_mps2 / P²` of the waypoint (P the altitude loop's, as ArduPilot
     /// shapes with its vertical position P) the rate is linear in the gap instead, so retuning
     /// that P moves where the braking changes shape. Must be positive and finite. Defaults to
@@ -713,8 +713,7 @@ impl CopterGuidance {
     /// that keeps descending at `land_speed_mps`, leashed [`ALTITUDE_LEASH_M`] below the vehicle.
     /// The descent speeds up to it as a waypoint descent does
     /// ([`ramped_descent_mps`](Self::ramped_descent_mps)): stepping to it cut the RealFlight
-    /// eXplora's thrust from 0.89 to 0.76 in one tick and set off a ±15° roll cycle that
-    /// lasted to touchdown (#476).
+    /// eXplora's thrust from 0.89 to 0.76 in one tick (#476).
     fn land(
         &mut self,
         dt: f32,
