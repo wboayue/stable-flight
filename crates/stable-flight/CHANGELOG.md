@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `PlaneRateControllerConfig::trim` (`PSTAB_RLL_TRIM`, `PSTAB_PIT_TRIM`, `PSTAB_YAW_TRIM`,
+  default 0, #342): a per-axis moment added to the plane rate loop's output, scaled by the
+  airspeed scale squared like the feedback (PX4's `TRIM_ROLL`/`_PITCH`/`_YAW`), in attitude
+  and rate flight alike, so rate flight at zero rate holds the wing's steady moment.
+  **Breaking:** a `PlaneRateControllerConfig` struct literal needs `trim` (or
+  `..Default::default()`).
+
 - `CopterGuidanceConfig::wind_heading_min_mps` (`GUID_WND_HDG_SPD`, default 0: off, #470):
   holding a waypoint or landing, a wind at least this fast, its direction known within 15° by
   the hover wind estimate, turns the heading to put the wingtip nearer the heading into the
@@ -229,6 +236,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `PlaneStabilizer` saves its rate integrals when a `Setpoint::PlaneRate` follows another
+  setpoint and restores them when a `Setpoint::Plane` follows (#342): what acro or a maneuver
+  winds up no longer carries into the attitude flight after it.
 - Copter waypoint descents speed up from hover at `CopterGuidanceConfig::descent_accel_mps2`
   (`GUID_DESC_ACC`, default 1 m/s², ArduPilot's `WP_ACC_Z`) instead of stepping to
   `max_descent_mps` (#417): the start no longer cuts thrust at once (on the sim quad, a 0.03

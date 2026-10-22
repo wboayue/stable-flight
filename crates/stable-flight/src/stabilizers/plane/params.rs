@@ -15,6 +15,9 @@ impl ParamTable for PlaneStabilizerConfig {
         param!("PSTAB_YAW_I", rate.yaw.i),
         param!("PSTAB_YAW_FF", rate.yaw.ff),
         param!("PSTAB_IMAX", rate.max_integral),
+        param!("PSTAB_RLL_TRIM", rate.trim.x),
+        param!("PSTAB_PIT_TRIM", rate.trim.y),
+        param!("PSTAB_YAW_TRIM", rate.trim.z),
         param!("PSTAB_TC_X", time_constant_s.x),
         param!("PSTAB_TC_Y", time_constant_s.y),
         param!(deg "PSTAB_RMAX_X", max_attitude_rate_radps.x),
@@ -46,6 +49,11 @@ mod metadata {
         RATE.param(name, description).at_least(0.0)
     }
 
+    /// A rate-loop trim: a normalized moment.
+    const fn trim(name: &'static str, description: &'static str) -> ParamMeta {
+        RATE.param(name, description).at_least(-1.0).at_most(1.0)
+    }
+
     impl ParamMetadata for PlaneStabilizerConfig {
         const METADATA: &'static [ParamMeta] = &[
             gain("PSTAB_RLL_P", "Roll rate proportional gain"),
@@ -60,6 +68,18 @@ mod metadata {
             RATE.param("PSTAB_IMAX", "Rate loop integral limit, per axis")
                 .with_units("rad")
                 .at_least(0.0),
+            trim(
+                "PSTAB_RLL_TRIM",
+                "Roll moment at trim airspeed and zero rate error",
+            ),
+            trim(
+                "PSTAB_PIT_TRIM",
+                "Pitch moment at trim airspeed and zero rate error",
+            ),
+            trim(
+                "PSTAB_YAW_TRIM",
+                "Yaw moment at trim airspeed and zero rate error",
+            ),
             ATTITUDE
                 .param("PSTAB_TC_X", "Roll attitude time constant")
                 .with_units("s")

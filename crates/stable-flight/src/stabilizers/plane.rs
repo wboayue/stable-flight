@@ -21,7 +21,14 @@
 //!   below [`min_airspeed_mps`](PlaneStabilizerConfig::min_airspeed_mps). Without an airspeed
 //!   it assumes trim airspeed (PX4).
 //!
+//! - Each axis adds its [`trim`](PlaneRateControllerConfig::trim), the moment the wing needs
+//!   in steady flight, scaled like the feedback (PX4's `TRIM_ROLL`/`_PITCH`/`_YAW`).
+//!
 //! Unlike the copter's, the integrals aren't cleared at zero thrust: gliding is normal flight.
+//! Rate flight (acro, a maneuver) leaves them as it found them: the rate integrals are saved
+//! when a [`Setpoint::PlaneRate`] follows any other setpoint and restored when a
+//! [`Setpoint::Plane`] follows it, so what a roll or loop winds up doesn't carry into the
+//! attitude flight after it.
 
 use crate::controllers::{
     InvalidConfig, PlaneRateController, PlaneRateControllerConfig, check, check_limit,
@@ -151,6 +158,8 @@ impl PlaneStabilizerConfig {
 pub struct PlaneStabilizer {
     config: PlaneStabilizerConfig,
     rate: PlaneRateController,
+    /// The rate loop as attitude flight left it, while flying a [`Setpoint::PlaneRate`].
+    attitude_rate: Option<PlaneRateController>,
     saturation: Saturation,
 }
 
@@ -167,6 +176,7 @@ impl PlaneStabilizer {
         PlaneStabilizer {
             config,
             rate: PlaneRateController::default(),
+            attitude_rate: None,
             saturation: Saturation::default(),
         }
     }
@@ -278,11 +288,14 @@ impl Configurable for PlaneStabilizer {
         &self.config
     }
 
-    /// Validates with [`PlaneStabilizerConfig::validate`]; the rate integrals are rescaled to
-    /// the new integral gains.
+    /// Validates with [`PlaneStabilizerConfig::validate`]; the rate integrals, and those saved
+    /// for attitude flight, are rescaled to the new integral gains.
     fn set_config(&mut self, config: PlaneStabilizerConfig) -> Result<(), InvalidConfig> {
         config.validate()?;
         self.rate.rescale_integral(&self.config.rate, &config.rate);
+        if let Some(saved) = &mut self.attitude_rate {
+            saved.rescale_integral(&self.config.rate, &config.rate);
+        }
         self.config = config;
         Ok(())
     }
@@ -295,10 +308,16 @@ impl Stabilizer for PlaneStabilizer {
         self.saturation = Saturation::default();
         let output = match setpoint {
             Setpoint::Plane(plane) => {
+                if let Some(saved) = self.attitude_rate.take() {
+                    self.rate = saved;
+                }
                 let rates = self.attitude_rates(plane, state);
                 self.track(dt, rates, plane.thrust, state)
             }
             Setpoint::PlaneRate(rates) => {
+                if self.attitude_rate.is_none() {
+                    self.attitude_rate = Some(self.rate.clone());
+                }
                 let rates_radps = self.body_rates(rates);
                 self.track(dt, rates_radps, rates.thrust, state)
             }
@@ -308,9 +327,10 @@ impl Stabilizer for PlaneStabilizer {
         output
     }
 
-    /// Clears the rate integrals and saturation.
+    /// Clears the rate integrals, those saved for attitude flight, and saturation.
     fn prime(&mut self, _state: &VehicleState) {
         self.rate.clear_integral();
+        self.attitude_rate = None;
         self.saturation = Saturation::default();
     }
 

@@ -1,9 +1,9 @@
-//! [`PlaneRateController`]: the fixed-wing body-rate loop, PI plus feedforward per axis with
-//! airspeed scaling.
+//! [`PlaneRateController`]: the fixed-wing body-rate loop, PI plus feedforward and trim per
+//! axis with airspeed scaling.
 
 use crate::Vec3;
 
-use super::{InvalidConfig, check_limit, rescale_integral};
+use super::{InvalidConfig, check, check_limit, rescale_integral};
 use crate::math::{assert_dt, clamp_symmetric};
 
 #[cfg(test)]
@@ -33,11 +33,17 @@ pub struct PlaneRateControllerConfig {
     pub yaw: RateGains,
     /// Largest accumulated rate error per axis, in rad.
     pub max_integral: f32,
+    /// The moment each axis holds at trim airspeed and zero rate error, roll (`x`), pitch
+    /// (`y`), and yaw (`z`), normalized: what the wing needs in steady level flight (a nose-up
+    /// pitch moment for a wing that pitches down), so neither the attitude loop's error nor the
+    /// rate integral has to hold it.
+    pub trim: Vec3,
 }
 
 impl Default for PlaneRateControllerConfig {
     /// PX4's fixed-wing rate defaults (`fw_rate_control_params.yaml`: roll P 0.05 I 0.1 FF 0.5,
-    /// pitch P 0.08 I 0.1 FF 0.5, yaw P 0.05 FF 0.3), a starting point for an airframe to tune.
+    /// pitch P 0.08 I 0.1 FF 0.5, yaw P 0.05 FF 0.3, no trim), a starting point for an airframe
+    /// to tune.
     fn default() -> Self {
         PlaneRateControllerConfig {
             roll: RateGains {
@@ -56,12 +62,14 @@ impl Default for PlaneRateControllerConfig {
                 ff: 0.3,
             },
             max_integral: 2.0,
+            trim: Vec3::zeros(),
         }
     }
 }
 
 impl PlaneRateControllerConfig {
-    /// `Ok` when every gain and `max_integral` is non-negative and finite.
+    /// `Ok` when every gain and `max_integral` is non-negative and finite, and each trim is in
+    /// `[-1, 1]`.
     ///
     /// # Errors
     ///
@@ -94,6 +102,14 @@ impl PlaneRateControllerConfig {
         for (field, value) in fields {
             check_limit(field, value)?;
         }
+        let trims = [
+            ("trim.x", self.trim.x),
+            ("trim.y", self.trim.y),
+            ("trim.z", self.trim.z),
+        ];
+        for (field, value) in trims {
+            check(field, (-1.0..=1.0).contains(&value), "in [-1, 1]")?;
+        }
         Ok(())
     }
 
@@ -102,14 +118,14 @@ impl PlaneRateControllerConfig {
     }
 }
 
-/// The fixed-wing body-rate loop: per axis, `s²·(P·e + I·∫e) + s·FF·setpoint`, clamped to
-/// `[-1, 1]`, where `s` is the airspeed scale (trim over current airspeed).
+/// The fixed-wing body-rate loop: per axis, `s²·(P·e + I·∫e + trim) + s·FF·setpoint`, clamped
+/// to `[-1, 1]`, where `s` is the airspeed scale (trim over current airspeed).
 ///
 /// A surface's moment grows with dynamic pressure (airspeed squared), so the feedback terms
-/// shrink by `s²` as the wing speeds up; the feedforward, a deflection that holds a rate
-/// against the wing's damping (itself proportional to airspeed), by `s` (PX4
-/// `FixedwingRateControl.cpp`, ArduPilot `AP_FW_Controller.cpp`). Holds only its integral;
-/// the config is passed to every call.
+/// and the trim shrink by `s²` as the wing speeds up; the feedforward, a deflection that holds
+/// a rate against the wing's damping (itself proportional to airspeed), by `s` (PX4
+/// `FixedwingRateControl.cpp:352-354,409-410` at `9368a98`, ArduPilot
+/// `AP_FW_Controller.cpp`). Holds only its integral; the config is passed to every call.
 ///
 /// # Examples
 ///
@@ -136,7 +152,8 @@ impl PlaneRateController {
     /// `scale` is the airspeed scale `s` (1 at trim airspeed). `integrate` is false below the
     /// wing's minimum airspeed, where the surfaces have little authority and the integral
     /// would only wind up: it is held. A non-finite setpoint or rate on an axis gives that
-    /// axis no moment and leaves its integral alone (input policy).
+    /// axis only its trim and leaves its integral alone (input policy); a non-finite scale
+    /// gives no moment.
     ///
     /// # Panics
     ///
@@ -155,8 +172,12 @@ impl PlaneRateController {
         Vec3::from_fn(|axis, _| {
             let (desired, current) = (desired_radps[axis], current_radps[axis]);
             let error = desired - current;
-            if !error.is_finite() || !scale.is_finite() {
+            if !scale.is_finite() {
                 return 0.0;
+            }
+            let trim = scale * scale * config.trim[axis];
+            if !error.is_finite() {
+                return clamp_symmetric(trim, 1.0);
             }
             if integrate {
                 self.integrated_error[axis] = clamp_symmetric(
@@ -166,7 +187,7 @@ impl PlaneRateController {
             }
             let RateGains { p, i, ff } = gains[axis];
             let feedback = p * error + i * self.integrated_error[axis];
-            clamp_symmetric(scale * scale * feedback + scale * ff * desired, 1.0)
+            clamp_symmetric(scale * scale * feedback + trim + scale * ff * desired, 1.0)
         })
     }
 

@@ -12,6 +12,47 @@ fn config(p: f32, i: f32, ff: f32) -> PlaneRateControllerConfig {
         pitch: gains,
         yaw: gains,
         max_integral: 2.0,
+        trim: Vec3::zeros(),
+    }
+}
+
+/// Trim adds to each axis, scaled by s² like the feedback, and clamps with the rest; a
+/// non-finite error leaves an axis its trim, a non-finite scale nothing:
+/// (P, trim, setpoint, rate, scale, expected).
+#[test]
+fn adds_trim_scaled_by_s_squared() {
+    let cases = [
+        // At zero error, the trim alone.
+        (0.0, 0.1, 0.0, 0.0, 1.0, 0.1),
+        (0.0, -0.1, 0.0, 0.0, 1.0, -0.1),
+        // Half the trim airspeed: four times the moment; twice: a quarter.
+        (0.0, 0.1, 0.0, 0.0, 2.0, 0.4),
+        (0.0, 0.1, 0.0, 0.0, 0.5, 0.025),
+        // With feedback: 0.1 · 1 rad/s + 0.1.
+        (0.1, 0.1, 1.0, 0.0, 1.0, 0.2),
+        // Clamped with the feedback: 0.4 · 4 + 0.5 · 4.
+        (0.4, 0.5, 1.0, 0.0, 2.0, 1.0),
+        (0.0, 0.5, f32::NAN, 0.0, 1.0, 0.5),
+        (0.0, 0.5, 0.0, f32::INFINITY, 2.0, 1.0),
+        (0.0, 0.5, 0.0, 0.0, f32::NAN, 0.0),
+    ];
+    for (p, trim, desired, current, scale, expected) in cases {
+        let config = PlaneRateControllerConfig {
+            trim: Vec3::repeat(trim),
+            ..config(p, 0.0, 0.0)
+        };
+        let mut controller = PlaneRateController::default();
+        let out = controller.control(
+            &config,
+            DT,
+            Vec3::repeat(desired),
+            Vec3::repeat(current),
+            scale,
+            true,
+        );
+        for axis in 0..3 {
+            assert_relative_eq!(out[axis], expected, epsilon = 1e-6);
+        }
     }
 }
 
@@ -121,11 +162,14 @@ fn non_finite_inputs_silence_their_axis() {
 #[test]
 fn validates_gains_and_limit() {
     type Break = fn(&mut PlaneRateControllerConfig);
-    let cases: [(Break, &str); 4] = [
+    let cases: [(Break, &str); 7] = [
         (|c| c.roll.p = -0.1, "roll.p"),
         (|c| c.pitch.i = f32::NAN, "pitch.i"),
         (|c| c.yaw.ff = f32::INFINITY, "yaw.ff"),
         (|c| c.max_integral = -1.0, "max_integral"),
+        (|c| c.trim.x = 1.1, "trim.x"),
+        (|c| c.trim.y = -1.1, "trim.y"),
+        (|c| c.trim.z = f32::NAN, "trim.z"),
     ];
     check!(PlaneRateControllerConfig::default().validate().is_ok());
     for (corrupt, field) in cases {
