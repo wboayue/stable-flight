@@ -15,6 +15,7 @@ use crate::model::MultirotorModel;
 use crate::motors::QUADRATIC;
 
 mod alia;
+mod explora;
 mod plane;
 mod quadplane;
 mod tailsitter;
@@ -22,6 +23,7 @@ mod tailsitter;
 mod tests;
 
 pub use alia::alia250;
+pub use explora::explora;
 pub use plane::{PlaneAirframe, plane};
 pub use quadplane::{QuadPlaneAirframe, quadplane};
 pub use tailsitter::{TailsitterAirframe, tailsitter};

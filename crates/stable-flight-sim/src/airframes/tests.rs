@@ -109,11 +109,22 @@ fn rate_feedforward_cancels_rate_damping() {
 }
 
 #[test]
-fn tailsitter_is_valid() {
-    let airframe = tailsitter();
-    check!(airframe.model.validate() == Ok(()));
-    check!(airframe.guidance.validate() == Ok(()));
-    check!(airframe.stabilizer.validate() == Ok(()));
+fn tailsitters_are_valid() {
+    for (name, airframe) in [("tailsitter", tailsitter()), ("explora", explora())] {
+        check!(airframe.model.validate() == Ok(()), "{name}");
+        check!(airframe.guidance.validate() == Ok(()), "{name}");
+        check!(airframe.stabilizer.validate() == Ok(()), "{name}");
+    }
+}
+
+/// The eXplora hovers on the thrust RealFlight's does (`explora_vtol()`'s 0.82, #124).
+#[test]
+fn explora_hovers_at_realflights_thrust() {
+    assert_relative_eq!(
+        explora().guidance.hover.altitude.hover_thrust,
+        0.82,
+        max_relative = 1e-5
+    );
 }
 
 /// ArduPilot's tailsitter is its plane with 1.5× the thrust (`SIM_Plane.cpp:78-81`), here
@@ -132,7 +143,12 @@ fn tailsitter_has_one_and_a_half_times_the_planes_thrust() {
 /// thrust carries the weight.
 #[test]
 fn tailsitter_hover_thrust_carries_the_weight() {
-    let airframe = tailsitter();
+    for airframe in [tailsitter(), explora()] {
+        check_tailsitter_hover_thrust(airframe);
+    }
+}
+
+fn check_tailsitter_hover_thrust(airframe: TailsitterAirframe) {
     let mut stabilizer = TailsitterStabilizer::new(airframe.stabilizer);
     let nose_up = VehicleState {
         attitude: UnitQuaternion::from_euler_angles(0.0, core::f32::consts::FRAC_PI_2, 0.0),
