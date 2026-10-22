@@ -20,7 +20,6 @@
 //! - The rate loop ([`PlaneRateController`]) scales by airspeed and freezes its integral
 //!   below [`min_airspeed_mps`](PlaneStabilizerConfig::min_airspeed_mps). Without an airspeed
 //!   it assumes trim airspeed (PX4).
-//!
 //! - Each axis adds its [`trim`](PlaneRateControllerConfig::trim), the moment the wing needs
 //!   in steady flight, scaled like the feedback (PX4's `TRIM_ROLL`/`_PITCH`/`_YAW`).
 //!
