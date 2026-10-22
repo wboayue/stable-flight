@@ -25,6 +25,9 @@ Code comments and docs link here instead of redefining a term.
   current attitude.
 - **Maneuver:** a scripted sequence of body-rate segments flown by `ManeuverRunner` (a roll,
   a loop, a doublet), then a recovery to level.
+- **Path hold:** a maneuver segment's steering back onto its path (a roll's line, a loop's
+  circle) with pitch and yaw rate on top of its own rate, harder the further off it
+  (`maneuver::PathConfig`). Without it a roll sinks as its lift tips over.
 - **Prop wash:** the propeller's slipstream; on a tailsitter it flows over the elevons, so
   their authority grows with thrust as well as airspeed.
 - **Offboard:** setpoints sent by a companion computer or ground station rather than sticks.

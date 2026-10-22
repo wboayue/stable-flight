@@ -5,6 +5,8 @@ use thiserror::Error;
 
 use crate::{Vec3, VehicleState};
 
+use super::Path;
+
 #[cfg(doc)]
 use super::{ManeuverConfig, ManeuverRunner};
 
@@ -128,6 +130,8 @@ pub enum Segment {
         end: SegmentEnd,
         /// The thrust it holds.
         thrust: Thrust,
+        /// The path it holds while it turns.
+        path: Path,
     },
     /// Zero body rate for a time: the free response after a doublet.
     Pause {
@@ -139,17 +143,32 @@ pub enum Segment {
 }
 
 impl Segment {
-    /// `Err` with what's wrong: a rate or radius that isn't finite and nonzero, or an angle
-    /// or duration that isn't positive and finite.
+    /// `Err` with what's wrong: a rate or radius that isn't finite and nonzero, an angle or
+    /// duration that isn't positive and finite, or a [`Path::Circle`] without a radius or
+    /// about the roll axis (whose circle has no center off the nose).
     fn check(&self) -> Result<(), &'static str> {
         match *self {
-            Segment::Rotate { rate, end, .. } => {
+            Segment::Rotate {
+                axis,
+                rate,
+                end,
+                path,
+                ..
+            } => {
                 let value = rate.value();
                 if !(value.is_finite() && value != 0.0) {
                     return Err(match rate {
                         RateLaw::Constant { .. } => "rate not finite and nonzero",
                         RateLaw::Radius { .. } => "radius not finite and nonzero",
                     });
+                }
+                if path == Path::Circle {
+                    if !matches!(rate, RateLaw::Radius { .. }) {
+                        return Err("circle without a radius");
+                    }
+                    if axis == Axis::Roll {
+                        return Err("circle about the roll axis");
+                    }
                 }
                 match end {
                     SegmentEnd::Angle { rad } if !positive(rad) => {
@@ -204,13 +223,13 @@ pub enum ManeuverError {
 ///
 /// ```
 /// use stable_flight::commanders::maneuver::{
-///     Axis, Maneuver, RateLaw, Segment, SegmentEnd, Thrust,
+///     Axis, Maneuver, Path, RateLaw, Segment, SegmentEnd, Thrust,
 /// };
 ///
 /// let roll = Maneuver::roll(90.0_f32.to_radians()).expect("a nonzero rate");
 /// assert_eq!(roll.segments().len(), 1);
 ///
-/// // An Immelmann: half a loop of 25 m, then half a roll at 90°/s.
+/// // An Immelmann: half a loop of 25 m, then half a roll at 90°/s on the line it ends on.
 /// let half_turn = SegmentEnd::Angle { rad: core::f32::consts::PI };
 /// let immelmann = Maneuver::new(&[
 ///     Segment::Rotate {
@@ -218,12 +237,14 @@ pub enum ManeuverError {
 ///         rate: RateLaw::Radius { radius_m: 25.0 },
 ///         end: half_turn,
 ///         thrust: Thrust::Maneuver,
+///         path: Path::Circle,
 ///     },
 ///     Segment::Rotate {
 ///         axis: Axis::Roll,
 ///         rate: RateLaw::Constant { radps: 90.0_f32.to_radians() },
 ///         end: half_turn,
 ///         thrust: Thrust::Maneuver,
+///         path: Path::Line,
 ///     },
 /// ])
 /// .expect("valid segments");
@@ -264,7 +285,7 @@ impl Maneuver {
         Ok(maneuver)
     }
 
-    /// One full roll at `rate_radps` (negative rolls left).
+    /// One full roll at `rate_radps` (negative rolls left), holding its line.
     ///
     /// # Errors
     ///
@@ -275,10 +296,11 @@ impl Maneuver {
             rate: RateLaw::Constant { radps: rate_radps },
             end: SegmentEnd::Angle { rad: FULL_TURN_RAD },
             thrust: Thrust::Maneuver,
+            path: Path::Line,
         }])
     }
 
-    /// One loop of `radius_m`: inside, or outside for a negative radius.
+    /// One loop of `radius_m`, holding its circle: inside, or outside for a negative radius.
     ///
     /// # Errors
     ///
@@ -289,12 +311,13 @@ impl Maneuver {
             rate: RateLaw::Radius { radius_m },
             end: SegmentEnd::Angle { rad: FULL_TURN_RAD },
             thrust: Thrust::Maneuver,
+            path: Path::Circle,
         }])
     }
 
     /// A doublet about `axis`: `rate_radps` for `half_s`, `-rate_radps` for `half_s`, then a
-    /// [`DOUBLET_PAUSE_S`] pause, all at cruise thrust. The two halves leave the attitude about
-    /// where it began.
+    /// [`DOUBLET_PAUSE_S`] pause, all at cruise thrust and on rates alone ([`Path::Free`]), so
+    /// it measures the rate loop. The two halves leave the attitude about where it began.
     ///
     /// # Errors
     ///
@@ -306,6 +329,7 @@ impl Maneuver {
             rate: RateLaw::Constant { radps },
             end: SegmentEnd::Duration { s: half_s },
             thrust: Thrust::Cruise,
+            path: Path::Free,
         };
         Maneuver::new(&[
             half(rate_radps),

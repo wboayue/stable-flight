@@ -5,16 +5,17 @@
 //!
 //! | Maneuver | Segments |
 //! |---|---|
-//! | [`Maneuver::roll`] | Roll 360° at a set rate (negative: left) |
-//! | [`Maneuver::loop_`] | Pitch 360° at `V / R`: a loop of radius `R` at speed `V` (negative: outside) |
-//! | [`Maneuver::doublet`] | `+rate` then `−rate` about one axis, a half width each, then a [`DOUBLET_PAUSE_S`] pause: a step response in flight |
+//! | [`Maneuver::roll`] | Roll 360° at a set rate (negative: left), holding its line |
+//! | [`Maneuver::loop_`] | Pitch 360° at `V / R`: a loop of radius `R` at speed `V` (negative: outside), holding its circle |
+//! | [`Maneuver::doublet`] | `+rate` then `−rate` about one axis, a half width each, then a [`DOUBLET_PAUSE_S`] pause, on rates alone: a step response in flight |
 //!
 //! A new maneuver is a new list of segments, up to [`MAX_SEGMENTS`]: an Immelmann is half a
 //! loop then half a roll, a split-S the reverse, a hammerhead's pivot a yaw. [`Segment`] is
-//! non-exhaustive, so segments that hold an attitude or a flight path (Aresti lines, point-roll
-//! hesitations) can join it.
+//! non-exhaustive, so segments that hold an attitude (Aresti lines, point-roll hesitations) can
+//! join it.
 //!
-//! The rates go out as [`ControlInput::AbsoluteRate`], open loop, each segment at its
+//! The rates go out as [`ControlInput::AbsoluteRate`], each segment's rate plus the pitch and
+//! yaw rate that steer it back onto its [`Path`] ([`PathConfig`]), each segment at its
 //! [`Thrust`]: rolls and loops at [`ManeuverConfig::thrust`], doublets and pauses at
 //! [`ManeuverConfig::cruise_thrust`], so a doublet measures the rate loop as it flies in
 //! cruise (on a tailsitter the propwash over the elevons grows its authority with thrust). The
@@ -22,9 +23,10 @@
 //! body rates small ([`RecoveryConfig`]). The shapes are ArduPilot's scripted aerobatics
 //! (`libraries/AP_Scripting/applets/Aerobatics/FixedWing/plane_aerobatics.lua` at `3d24375`):
 //! its loop is a vertical arc of a given radius (`:1456-1462`), its roll whole turns along a
-//! straight (`:1465-1469`). Unlike ArduPilot, the runner flies rates rather than tracking a
-//! path, and holds a fixed thrust where ArduPilot holds the speed by throttle (`:54`, `:561`).
-//! So a roll holds no height: its lift tips over with it.
+//! straight (`:1465-1469`), and both hold their path the way [`Path`] does. Unlike ArduPilot,
+//! each segment ends on the angle the attitude has turned rather than on a time along the
+//! path, and holds a fixed thrust where ArduPilot holds the speed by throttle (`:54`, `:561`;
+//! on the sim, neither less thrust down a loop nor a speed hold improved on the path hold, #481).
 //!
 //! The angle a segment has turned is read from the attitude, not Euler angles (which clamp at
 //! ±90° in a loop): the twist about the segment's axis of the rotation since it began,
@@ -37,10 +39,13 @@ use crate::controllers::{InvalidConfig, check, check_positive, check_unit_interv
 use crate::math::{DEG, assert_dt, euler_angles, twist_angle_rad, wrap_angle};
 use crate::{AbsoluteAttitudeCommand, AbsoluteRateCommand, ControlInput, VehicleState};
 
+mod path;
 mod segment;
 #[cfg(test)]
 mod tests;
 
+use path::PathHold;
+pub use path::{Path, PathConfig};
 pub use segment::{
     Axis, DEFAULT_DOUBLET_HALF_S, DOUBLET_PAUSE_S, MAX_SEGMENTS, Maneuver, ManeuverError, RateLaw,
     Segment, SegmentEnd, Thrust,
@@ -92,6 +97,8 @@ pub struct ManeuverConfig {
     /// takes at the rate it began with (at least 1): a turn the vehicle can't fly, or can't
     /// measure, ends anyway.
     pub timeout_factor: f32,
+    /// How hard each segment steers back onto its [`Path`].
+    pub path: PathConfig,
     /// The recovery after the last segment.
     pub recovery: RecoveryConfig,
 }
@@ -99,20 +106,23 @@ pub struct ManeuverConfig {
 impl Default for ManeuverConfig {
     /// Full thrust for aerobatics (a loop climbs on it, and on a tailsitter a roll needs the
     /// propwash's authority), [`PlaneGuidanceConfig`](crate::guidance::plane::PlaneGuidanceConfig)'s
-    /// default cruise thrust (0.5), a timeout at twice a segment's time, and the default recovery.
+    /// default cruise thrust (0.5), a timeout at twice a segment's time, and the default path
+    /// hold and recovery.
     fn default() -> Self {
         ManeuverConfig {
             thrust: 1.0,
             cruise_thrust: 0.5,
             timeout_factor: 2.0,
+            path: PathConfig::default(),
             recovery: RecoveryConfig::default(),
         }
     }
 }
 
 impl ManeuverConfig {
-    /// `Ok` when the thrusts are in `[0, 1]`, the timeout factor at least 1, the level pitch
-    /// in `[-π/2, π/2]`, and the band, rate, settle, and timeout positive and finite.
+    /// `Ok` when the thrusts are in `[0, 1]`, the timeout factor at least 1, the path hold
+    /// valid ([`PathConfig::validate`]), the level pitch in `[-π/2, π/2]`, and the band, rate,
+    /// settle, and timeout positive and finite.
     ///
     /// # Errors
     ///
@@ -125,6 +135,9 @@ impl ManeuverConfig {
             self.timeout_factor >= 1.0 && self.timeout_factor.is_finite(),
             "at least 1 and finite",
         )?;
+        self.path
+            .validate()
+            .map_err(|e: InvalidConfig| e.in_section("path"))?;
         let recovery = &self.recovery;
         let section = |e: InvalidConfig| e.in_section("recovery");
         check(
@@ -171,6 +184,8 @@ struct SegmentProgress {
     elapsed_s: f32,
     /// When it ends regardless of the attitude, in s: a duration, or an angle's timeout.
     limit_s: f32,
+    /// The path it holds, laid out where it began.
+    path: PathHold,
 }
 
 impl SegmentProgress {
@@ -202,6 +217,7 @@ impl SegmentProgress {
             turned_rad: 0.0,
             elapsed_s: 0.0,
             limit_s,
+            path: PathHold::new(segment, state),
         }
     }
 
@@ -408,7 +424,8 @@ impl ManeuverRunner {
         self.recovery = Recovery::default();
     }
 
-    /// `segment`'s body rate at `state`, the other axes at zero, and its thrust.
+    /// `segment`'s body rate at `state` plus the pitch and yaw rate back onto its path, and its
+    /// thrust.
     fn rates(&self, segment: &Segment, state: &VehicleState) -> ControlInput {
         let (axis, radps, thrust) = match *segment {
             Segment::Rotate {
@@ -416,7 +433,14 @@ impl ManeuverRunner {
             } => (Some(axis), rate.radps(state), thrust),
             Segment::Pause { thrust, .. } => (None, 0.0, thrust),
         };
-        let rate = |about| if axis == Some(about) { radps } else { 0.0 };
+        let correction_radps = self
+            .progress
+            .path
+            .correction_radps(&self.config.path, state);
+        let rate = |about: Axis| {
+            let own_radps = if axis == Some(about) { radps } else { 0.0 };
+            own_radps + correction_radps.dot(&about.unit())
+        };
         ControlInput::AbsoluteRate(AbsoluteRateCommand {
             roll_radps: rate(Axis::Roll),
             pitch_radps: rate(Axis::Pitch),

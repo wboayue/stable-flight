@@ -257,67 +257,86 @@ fn check_flies_on(case: &str, flown: &Flown) {
     );
 }
 
-/// A roll at 180°/s turns a full turn before its timeout (twice the 2 s it takes at that
-/// rate), both ways, and loses no more height than measured: (vehicle, rate in deg/s, longest
-/// rotation in s, most altitude lost in m). Pure roll rate lets the lift tip over, so height
-/// goes: measured 3.06 s and 23.4 m on the plane (whose ailerons reach 2.8 rad/s at most),
-/// 1.81 s and 12.6 m on the tailsitter, 2.03 s and 6.8 m on the eXplora; each band is about
-/// 1.2× that.
+/// A roll turns a full turn before its timeout, both ways, holding its line's height: it loses
+/// at most [`ROLL_LOSS_M`] and climbs at most [`ROLL_CLIMB_M`] (vehicle, rate in deg/s, longest
+/// rotation in s). Measured 3.99 and 3.25 s at 90 and 180°/s on the plane (whose ailerons reach
+/// 2.8 rad/s at most), 2.34 and 1.94 s on the tailsitter, 3.80 and 2.00 s on the eXplora; each
+/// band is about 1.2× that.
 #[test]
-fn rolls_turn_a_full_turn_and_fly_on() {
+fn rolls_turn_a_full_turn_holding_height_and_fly_on() {
     let cases = [
-        (Vehicle::Plane, 180.0, 3.6, 28.0),
-        (Vehicle::Plane, -180.0, 3.6, 28.0),
-        (Vehicle::Tailsitter, 180.0, 2.2, 15.0),
-        (Vehicle::Tailsitter, -180.0, 2.2, 15.0),
-        (Vehicle::Explora, 180.0, 2.5, 8.0),
-        (Vehicle::Explora, -180.0, 2.5, 8.0),
+        (Vehicle::Plane, 90.0, 4.8),
+        (Vehicle::Plane, -90.0, 4.8),
+        (Vehicle::Plane, 180.0, 3.9),
+        (Vehicle::Plane, -180.0, 3.9),
+        (Vehicle::Tailsitter, 90.0, 2.8),
+        (Vehicle::Tailsitter, -90.0, 2.8),
+        (Vehicle::Tailsitter, 180.0, 2.4),
+        (Vehicle::Tailsitter, -180.0, 2.4),
+        (Vehicle::Explora, 90.0, 4.6),
+        (Vehicle::Explora, -90.0, 4.6),
+        (Vehicle::Explora, 180.0, 2.4),
+        (Vehicle::Explora, -180.0, 2.4),
     ];
-    for (vehicle, rate_degps, rotation_s, loss_m) in cases {
+    for (vehicle, rate_degps, rotation_s) in cases {
         let case = format!("{vehicle:?} at {rate_degps}°/s");
         let maneuver = Maneuver::roll(f32::to_radians(rate_degps)).expect("valid");
         let flown = vehicle.fly(maneuver, Axis::Roll, rate_degps.signum());
         check!(flown.rotation_s <= rotation_s, "{case}: {flown:?}");
         check!(
-            flown.entry_m - flown.lowest_m <= loss_m,
+            flown.entry_m - flown.lowest_m <= ROLL_LOSS_M,
+            "{case}: {flown:?}"
+        );
+        check!(
+            flown.top_m - flown.entry_m <= ROLL_CLIMB_M,
             "{case}: {flown:?}"
         );
         check_flies_on(&case, &flown);
     }
 }
 
-/// A loop flies a circle of its radius: half the height it spans is within 15% of the radius
-/// (measured 6–8% short on the plane and tailsitter, where the open-loop rate lags the slowing
-/// climb; 8–12% wide on the eXplora, whose rate lags the speed it gains coming down), and it
-/// sinks below where it began by no more than measured: (vehicle, radius in m, most altitude
-/// lost in m). Measured 2.0 m at most on the plane and tailsitter (3 m band), 4.1 m and 6.4 m
-/// on the eXplora's 10 m and 25 m loops (5 m and 8 m). RealFlight's eXplora flew them 15% and
-/// 12% wide, losing 6 m and 16 m (#342).
+/// Most height a roll loses, in m. Measured 3.50 m (the plane at 90°/s; rates alone lost 36.8
+/// m there, the tailsitter 19.2 m, the eXplora 23.8 m); about 1.2× that.
+const ROLL_LOSS_M: f32 = 4.2;
+
+/// Most height a roll climbs, in m. Measured 2.57 m (the eXplora at 90°/s): the line's gravity
+/// share pulls up through the roll, a climb traded for a smaller sink (#343); about 1.2× that.
+const ROLL_CLIMB_M: f32 = 3.1;
+
+/// A loop flies a circle of its radius and ends where it began: half the height it spans is
+/// within 5% of the radius (measured 3.0% at most, the tailsitter's 10 m loop), and it sinks below
+/// where it began by at most [`LOOP_LOSS_M`]: (vehicle, radius in m). Flown on rates alone the
+/// eXplora's ran 8–12% wide and lost 4.1 and 6.4 m; RealFlight's eXplora flew them 15% and 12%
+/// wide, losing 6 m and 16 m (#342).
 #[test]
 fn loops_fly_their_radius_and_fly_on() {
     let cases = [
-        (Vehicle::Plane, 10.0, 3.0),
-        (Vehicle::Plane, 25.0, 3.0),
-        (Vehicle::Tailsitter, 10.0, 3.0),
-        (Vehicle::Tailsitter, 25.0, 3.0),
-        (Vehicle::Explora, 10.0, 5.0),
-        (Vehicle::Explora, 25.0, 8.0),
+        (Vehicle::Plane, 10.0),
+        (Vehicle::Plane, 25.0),
+        (Vehicle::Tailsitter, 10.0),
+        (Vehicle::Tailsitter, 25.0),
+        (Vehicle::Explora, 10.0),
+        (Vehicle::Explora, 25.0),
     ];
-    for (vehicle, radius_m, loss_m) in cases {
+    for (vehicle, radius_m) in cases {
         let case = format!("{vehicle:?}, {radius_m} m");
         let flown = vehicle.fly(Maneuver::loop_(radius_m).expect("valid"), Axis::Pitch, 1.0);
         let flown_radius_m = (flown.top_m - flown.bottom_m) / 2.0;
         check!(
-            (flown_radius_m - radius_m).abs() <= 0.15 * radius_m,
+            (flown_radius_m - radius_m).abs() <= 0.05 * radius_m,
             "{case}: {flown_radius_m} m"
         );
         check!(
-            flown.entry_m - flown.lowest_m <= loss_m,
+            flown.entry_m - flown.lowest_m <= LOOP_LOSS_M,
             "{case}: {flown:?}"
         );
         check_flies_on(&case, &flown);
     }
 }
+
+/// Most height a loop loses, in m. Measured 1.05 m (the eXplora's 10 m loop); 1.5 m leaves
+/// about 1.4× that.
+const LOOP_LOSS_M: f32 = 1.5;
 
 /// A doublet's first half peaks as a held step of its rate does, at cruise thrust (measured
 /// equal to 0.01 rad/s; 0.05 rad/s of margin), and by the end of its pause the body rate has

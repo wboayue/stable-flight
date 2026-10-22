@@ -116,6 +116,7 @@ fn refuses_maneuvers_it_cannot_fly() {
         rate,
         end,
         thrust: Thrust::Maneuver,
+        path: Path::Free,
     };
     let turn = SegmentEnd::Angle { rad: PI };
     let spin = RateLaw::Constant { radps: 1.0 };
@@ -174,6 +175,28 @@ fn refuses_maneuvers_it_cannot_fly() {
             Maneuver::new(&[pause(0.0)]),
             bad(0, duration_bad),
         ),
+        (
+            "a circle at a constant rate",
+            Maneuver::new(&[Segment::Rotate {
+                axis: Axis::Pitch,
+                rate: spin,
+                end: turn,
+                thrust: Thrust::Maneuver,
+                path: Path::Circle,
+            }]),
+            bad(0, "circle without a radius"),
+        ),
+        (
+            "a circle about the roll axis",
+            Maneuver::new(&[Segment::Rotate {
+                axis: Axis::Roll,
+                rate: RateLaw::Radius { radius_m: 10.0 },
+                end: turn,
+                thrust: Thrust::Maneuver,
+                path: Path::Circle,
+            }]),
+            bad(0, "circle about the roll axis"),
+        ),
     ];
     for (case, result, expected) in cases {
         check!(result.map(|_| ()) == expected, "{case}");
@@ -195,6 +218,7 @@ fn catalog_builds_its_segments() {
                 rate: RateLaw::Constant { radps: -2.0 },
                 end: full,
                 thrust: Thrust::Maneuver,
+                path: Path::Line,
             }]
     );
     check!(
@@ -204,6 +228,7 @@ fn catalog_builds_its_segments() {
                 rate: RateLaw::Radius { radius_m: -25.0 },
                 end: full,
                 thrust: Thrust::Maneuver,
+                path: Path::Circle,
             }]
     );
     let half = |radps| Segment::Rotate {
@@ -211,6 +236,7 @@ fn catalog_builds_its_segments() {
         rate: RateLaw::Constant { radps },
         end: SegmentEnd::Duration { s: 0.4 },
         thrust: Thrust::Cruise,
+        path: Path::Free,
     };
     check!(
         Maneuver::doublet(Axis::Yaw, 0.5, 0.4)
@@ -482,8 +508,13 @@ fn abort_recovers_and_start_restarts() {
 #[test]
 fn validates_config() {
     type Break = fn(&mut ManeuverConfig);
-    let cases: [(Break, Option<&str>, &str); 10] = [
+    let cases: [(Break, Option<&str>, &str); 11] = [
         (|c| c.thrust = 1.5, None, "thrust"),
+        (
+            |c| c.path.velocity_gain_per_s = -1.0,
+            Some("path"),
+            "velocity_gain_per_s",
+        ),
         (|c| c.cruise_thrust = f32::NAN, None, "cruise_thrust"),
         (|c| c.timeout_factor = 0.5, None, "timeout_factor"),
         (|c| c.timeout_factor = f32::INFINITY, None, "timeout_factor"),
@@ -569,4 +600,45 @@ fn segments_fly_their_thrust() {
     check!(!roll.is_empty() && roll.iter().all(|&thrust| thrust == 0.9));
     let doublet = thrusts(Maneuver::doublet(Axis::Roll, 1.0, 0.5).expect("valid"));
     check!(doublet == [0.4; 8]);
+}
+
+/// A roll below its line pitches up on top of its roll rate, and the same roll with the path
+/// hold at zero flies its roll rate alone, as a doublet always does: (case, maneuver, path
+/// gain, expected pitch rate in rad/s). 2 m below at 4/s² is 8 m/s², 8/15 rad/s at 15 m/s.
+#[test]
+fn rates_add_the_path_correction() {
+    let start = VehicleState {
+        velocity_mps: Vec3::new(15.0, 0.0, 0.0),
+        airspeed_mps: Some(15.0),
+        ..Default::default()
+    };
+    let below = VehicleState {
+        position_m: Vec3::new(0.0, 0.0, -2.0),
+        ..start.clone()
+    };
+    let cases = [
+        ("a roll", Maneuver::roll(1.0), 4.0, 8.0 / 15.0),
+        ("a roll, no hold", Maneuver::roll(1.0), 0.0, 0.0),
+        (
+            "a doublet",
+            Maneuver::doublet(Axis::Roll, 1.0, 0.5),
+            4.0,
+            0.0,
+        ),
+    ];
+    for (case, maneuver, gain, pitch_radps) in cases {
+        let mut runner = ManeuverRunner::new(ManeuverConfig {
+            path: PathConfig {
+                position_gain_per_s2: gain,
+                velocity_gain_per_s: gain,
+                line_gravity_share: 0.0,
+            },
+            ..ManeuverConfig::default()
+        });
+        runner.start(maneuver.expect("valid"), &start);
+        let command = runner.next(COARSE_DT, &below);
+        check!(rate_about(&command, Axis::Roll) == Some(1.0), "{case}");
+        let pitch = rate_about(&command, Axis::Pitch).expect("a rate command");
+        assert_relative_eq!(pitch, pitch_radps, epsilon = 1e-5);
+    }
 }
