@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `airframes::explora_vtol()` damps its hover roll rate loop (`STAB_RATE_RLL_D` 0.03, #476):
+  descending with the wind 20° behind a wingtip, it rolled ±12–16° on a 1.2 s cycle to
+  touchdown; with D it holds within 4°.
 - `airframes::quadcopter_x()` and `titan_cobra()` fly copter waypoint legs nose first and
   yield a heading the wind holds off (core's defaults, #452, #431); `explora_vtol()` holds
   its heading on hover legs and never yields it: facing a leg flies it belly first.
