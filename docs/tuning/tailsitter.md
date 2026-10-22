@@ -108,7 +108,7 @@ The axes are the hover view's:
 
 | Param | Field | eXplora |
 |---|---|---|
-| `STAB_RATE_RLL_P`, `_I`, `_D` | `hover.body_rate.roll_gains` | 0.4, 0.2, 0 |
+| `STAB_RATE_RLL_P`, `_I`, `_D` | `hover.body_rate.roll_gains` | 0.4, 0.2, 0.03 |
 | `STAB_RATE_PIT_P`, `_I`, `_D` | `hover.body_rate.pitch_gains` | 0.3, 0.5, 0 |
 | `STAB_RATE_YAW_P`, `_I`, `_D` | `hover.body_rate.yaw_gains` | 0.1, 0.05, 0 |
 | `STAB_RATE_IMAX` | `hover.body_rate.max_integral` | 1.0 |
@@ -117,6 +117,9 @@ The axes are the hover view's:
   moments.
 - **Roll needs high gains.** Differential thrust is weak: the mixer gives 0.25 per unit moment.
   Too low, and a roll can't be stopped.
+- **Roll needs some D in wind.** Descending with the wind a little behind a wingtip leaves
+  the roll loop barely damped: on the eXplora at D 0, roll swung 2.5× its request, ±12–16° on
+  a 1.2 s cycle, to touchdown; D 0.03 held it within 4° (#476).
 - **Pitch needs its I term.** When the vehicle sinks, the airflow pushes the nose over;
   I × `STAB_RATE_IMAX` = 0.5 of moment holds it level.
 
@@ -407,6 +410,7 @@ overshooting its speed and departing.
 |---|---|
 | Hover settles off its altitude, then creeps on | `GUID_ALT_HOVER` |
 | A roll in hover won't stop | `STAB_RATE_RLL_*`, `GUID_BOOST_MAX` |
+| Roll cycles about 1 s in a descent in wind, larger than its request | `STAB_RATE_RLL_D` up |
 | Roll overshoots past the cap as a hover leg starts (after a back handover) | `GUID_LAT_ACC` |
 | Nose drops in a descent | `GUID_THR_MIN`, `GUID_SINK_LIM`/`_GAIN`, `STAB_RATE_PIT_I` |
 | Nose swings in a waypoint descent, `sp_pitch` steady | `GUID_DESC_MAX` down |
