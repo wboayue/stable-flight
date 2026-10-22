@@ -288,10 +288,11 @@ fn rolls_turn_a_full_turn_and_fly_on() {
 
 /// A loop flies a circle of its radius: half the height it spans is within 15% of the radius
 /// (measured 6–8% short on the plane and tailsitter, where the open-loop rate lags the slowing
-/// climb; 8% wide on the eXplora, whose rate lags the speed it gains coming down), and it
+/// climb; 8–12% wide on the eXplora, whose rate lags the speed it gains coming down), and it
 /// sinks below where it began by no more than measured: (vehicle, radius in m, most altitude
-/// lost in m). Measured 2.0 m at most on the plane and tailsitter (3 m band), 6.4 m on the
-/// eXplora (8 m).
+/// lost in m). Measured 2.0 m at most on the plane and tailsitter (3 m band), 4.1 m and 6.4 m
+/// on the eXplora's 10 m and 25 m loops (5 m and 8 m). RealFlight's eXplora flew them 15% and
+/// 12% wide, losing 6 m and 16 m (#342).
 #[test]
 fn loops_fly_their_radius_and_fly_on() {
     let cases = [
@@ -299,6 +300,7 @@ fn loops_fly_their_radius_and_fly_on() {
         (Vehicle::Plane, 25.0, 3.0),
         (Vehicle::Tailsitter, 10.0, 3.0),
         (Vehicle::Tailsitter, 25.0, 3.0),
+        (Vehicle::Explora, 10.0, 5.0),
         (Vehicle::Explora, 25.0, 8.0),
     ];
     for (vehicle, radius_m, loss_m) in cases {
