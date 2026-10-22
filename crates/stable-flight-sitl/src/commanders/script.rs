@@ -309,7 +309,7 @@ impl ScriptCommander {
     }
 
     /// Sets how the script's maneuvers fly (default [`ManeuverConfig::default`]): their thrust,
-    /// timeout, and recovery, usually the airframe's.
+    /// timeout, path hold, and recovery, usually the airframe's.
     ///
     /// # Panics
     ///

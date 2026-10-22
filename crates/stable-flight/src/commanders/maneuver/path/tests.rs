@@ -135,6 +135,22 @@ fn a_line_damps_a_sink() {
     check!(radps.x == 0.0);
 }
 
+/// Into a headwind as strong as the airspeed there is no ground speed to read the direction of
+/// travel from: below the line it still pitches up, along the direction it began with.
+#[test]
+fn a_line_steers_back_into_a_headwind() {
+    let roll = segment(Axis::Roll, RateLaw::Constant { radps: PI }, Path::Line);
+    let hovering = VehicleState {
+        velocity_mps: Vec3::zeros(),
+        ..flying(0.0, Vec3::new(0.0, 0.0, -2.0), 0.0)
+    };
+    let radps = correction(roll, &PD, &hovering);
+    check!(
+        (radps - Vec3::new(0.0, 8.0 / SPEED_MPS, 0.0)).norm() < 1e-4,
+        "{radps:?}"
+    );
+}
+
 /// Off a loop's circle, it pulls harder outside and eases inside, and steers back into the
 /// circle's plane with yaw: (case, segment, offset north/east/up in m, expected body rates in
 /// rad/s). The circles start level heading north with a 10 m radius; 1 m off at 4/s² is 4/15

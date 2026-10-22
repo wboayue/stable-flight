@@ -4,7 +4,7 @@ use crate::controllers::{InvalidConfig, check_limit};
 use crate::math::{all_finite, neu_to_ned};
 use crate::{GRAVITY, Vec3, VehicleState};
 
-use super::segment::{RateLaw, Segment, positive};
+use super::segment::{RateLaw, Segment, positive, speed_mps};
 
 #[cfg(doc)]
 use super::ManeuverRunner;
@@ -90,55 +90,66 @@ const MIN_SPEED_MPS: f32 = 1.0;
 /// A segment's [`Path`], laid out in NED where it began.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct PathHold {
-    path: Path,
-    /// Where the segment began, in m.
-    start_m: Vec3,
-    /// The direction of travel there, a unit vector.
-    direction: Vec3,
-    /// A [`Path::Circle`]'s center, in m.
-    center_m: Vec3,
-    /// A [`Path::Circle`]'s axis (the segment's, at the start), a unit vector.
-    normal: Vec3,
-    /// A [`Path::Circle`]'s radius, in m (positive).
-    radius_m: f32,
+    laid: Laid,
+    /// The direction of travel where it began, a unit vector: a line's direction, and the
+    /// direction of travel without a ground speed to read it from.
+    entry_direction: Vec3,
+}
+
+/// A [`Path`] in place.
+#[derive(Clone, Copy, Debug)]
+enum Laid {
+    /// [`Path::Free`], or a [`Segment::Pause`].
+    Free,
+    /// [`Path::Line`] from `start_m` along the entry direction.
+    Line {
+        /// Where the segment began, in m.
+        start_m: Vec3,
+    },
+    /// [`Path::Circle`].
+    Circle {
+        /// Its center, in m.
+        center_m: Vec3,
+        /// Its axis (the segment's, at the start), a unit vector.
+        normal: Vec3,
+        /// Its radius, in m (positive).
+        radius_m: f32,
+    },
 }
 
 impl PathHold {
     /// `segment`'s path, beginning at `state`.
     pub(super) fn new(segment: &Segment, state: &VehicleState) -> Self {
         let start_m = neu_to_ned(state.position_m);
-        let velocity_mps = neu_to_ned(state.velocity_mps);
-        let nose = state.attitude * Vec3::x();
-        let direction = if velocity_mps.norm() >= MIN_SPEED_MPS {
-            velocity_mps.normalize()
-        } else {
-            nose
+        let entry_direction =
+            travel_direction(neu_to_ned(state.velocity_mps), state.attitude * Vec3::x());
+        let laid = match *segment {
+            Segment::Rotate {
+                path: Path::Line, ..
+            } => Laid::Line { start_m },
+            Segment::Rotate {
+                axis,
+                rate: RateLaw::Radius { radius_m },
+                path: Path::Circle,
+                ..
+            } => {
+                // The center sits off the nose, square to it and to the axis, on the side the
+                // rate turns toward: above the canopy for a loop (pitch: y × x = −z, body up),
+                // right of it for a yaw circle (z × x = y).
+                let toward_center = axis.unit().cross(&Vec3::x());
+                Laid::Circle {
+                    center_m: start_m + state.attitude * toward_center * radius_m,
+                    normal: state.attitude * axis.unit(),
+                    radius_m: radius_m.abs(),
+                }
+            }
+            // A circle without a radius is refused when the maneuver is built.
+            _ => Laid::Free,
         };
-        let mut hold = PathHold {
-            path: Path::Free,
-            start_m,
-            direction,
-            center_m: start_m,
-            normal: Vec3::zeros(),
-            radius_m: 0.0,
-        };
-        let Segment::Rotate {
-            axis, rate, path, ..
-        } = *segment
-        else {
-            return hold;
-        };
-        hold.path = path;
-        if let (Path::Circle, RateLaw::Radius { radius_m }) = (path, rate) {
-            // The center sits off the nose, square to it and to the axis, on the side the rate
-            // turns toward: above the canopy for a loop (pitch: y × x = −z, body up), right of
-            // it for a yaw circle (z × x = y).
-            let toward_center = axis.unit().cross(&Vec3::x());
-            hold.center_m = start_m + state.attitude * toward_center * radius_m;
-            hold.normal = state.attitude * axis.unit();
-            hold.radius_m = radius_m.abs();
+        PathHold {
+            laid,
+            entry_direction,
         }
-        hold
     }
 
     /// The body rates, in rad/s (FRD: `x` roll, always 0; `y` pitch, nose up; `z` yaw, nose
@@ -150,11 +161,9 @@ impl PathHold {
     /// up. Turning the velocity at that acceleration takes the rate `v̂ × a / V`, rotated into
     /// the body.
     pub(super) fn correction_radps(&self, config: &PathConfig, state: &VehicleState) -> Vec3 {
-        let speed_mps = state
-            .valid_airspeed_mps()
-            .unwrap_or_else(|| state.velocity_mps.norm());
+        let speed_mps = speed_mps(state);
         // An unknown speed corrects nothing.
-        if self.path == Path::Free || speed_mps.is_nan() || speed_mps < MIN_SPEED_MPS {
+        if speed_mps.is_nan() || speed_mps < MIN_SPEED_MPS {
             return Vec3::zeros();
         }
         let position_m = neu_to_ned(state.position_m);
@@ -164,18 +173,14 @@ impl PathHold {
         };
         let mut accel_mps2 =
             -(error_m * config.position_gain_per_s2 + error_rate_mps * config.velocity_gain_per_s);
-        if self.path == Path::Line {
+        if let Laid::Line { .. } = self.laid {
             // NED up; the body's up is its −z.
             let up = -Vec3::z();
             let body_up = state.attitude * -Vec3::z();
             let lift_lost = 1.0 - body_up.dot(&up);
             accel_mps2 += up * (config.line_gravity_share * lift_lost * GRAVITY);
         }
-        let travel = if velocity_mps.norm() >= MIN_SPEED_MPS {
-            velocity_mps.normalize()
-        } else {
-            self.direction
-        };
+        let travel = travel_direction(velocity_mps, self.entry_direction);
         let turn_radps = travel.cross(&accel_mps2) / speed_mps;
         let body_radps = state.attitude.inverse() * turn_radps;
         let correction = Vec3::new(0.0, body_radps.y, body_radps.z);
@@ -186,29 +191,44 @@ impl PathHold {
         }
     }
 
-    /// The position off the path across it, in m, and its rate, in m/s (NED); `None` at a
-    /// circle's center, which has no direction back to it.
+    /// The position off the path across it, in m, and its rate, in m/s (NED); `None` without a
+    /// path, or at a circle's center, which has no direction back to it.
     fn error(&self, position_m: Vec3, velocity_mps: Vec3) -> Option<(Vec3, Vec3)> {
-        match self.path {
-            Path::Free => None,
-            Path::Line => {
-                let across = |v: Vec3| v - self.direction * v.dot(&self.direction);
-                Some((across(position_m - self.start_m), across(velocity_mps)))
+        match self.laid {
+            Laid::Free => None,
+            Laid::Line { start_m } => {
+                let direction = self.entry_direction;
+                let across = |v: Vec3| v - direction * v.dot(&direction);
+                Some((across(position_m - start_m), across(velocity_mps)))
             }
-            Path::Circle => {
-                let offset_m = position_m - self.center_m;
-                let off_plane_m = self.normal * offset_m.dot(&self.normal);
+            Laid::Circle {
+                center_m,
+                normal,
+                radius_m,
+            } => {
+                let offset_m = position_m - center_m;
+                let off_plane_m = normal * offset_m.dot(&normal);
                 let in_plane_m = offset_m - off_plane_m;
                 let distance_m = in_plane_m.norm();
                 if !positive(distance_m) {
                     return None;
                 }
                 let outward = in_plane_m / distance_m;
-                let error_m = outward * (distance_m - self.radius_m) + off_plane_m;
-                let error_rate_mps = outward * velocity_mps.dot(&outward)
-                    + self.normal * velocity_mps.dot(&self.normal);
+                let error_m = outward * (distance_m - radius_m) + off_plane_m;
+                let error_rate_mps =
+                    outward * velocity_mps.dot(&outward) + normal * velocity_mps.dot(&normal);
                 Some((error_m, error_rate_mps))
             }
         }
+    }
+}
+
+/// The direction of `velocity_mps`, a unit vector, or `fallback` below [`MIN_SPEED_MPS`] (a
+/// headwind as strong as the airspeed leaves no ground speed to read it from).
+fn travel_direction(velocity_mps: Vec3, fallback: Vec3) -> Vec3 {
+    if velocity_mps.norm() >= MIN_SPEED_MPS {
+        velocity_mps.normalize()
+    } else {
+        fallback
     }
 }

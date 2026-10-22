@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A script's eighth field is a maneuver flown on reaching a `plane` row's waypoint, before its
   hold (#342): `roll:<deg/s>`, `loop:<m>` (negative: outside), and `doublet_roll`,
   `doublet_pitch`, `doublet_yaw` (`:<deg/s>[:<half width s>]`).
-  `ScriptCommander::with_maneuver_config` sets their thrusts and recovery.
+  `ScriptCommander::with_maneuver_config` sets their thrusts, path hold, and recovery.
 
 - Every recorder column set records guidance's wind estimate (#473): `wind_north_mps`,
   `wind_east_mps`, `wind_sd_north_mps`, `wind_sd_east_mps`, NaN without one.

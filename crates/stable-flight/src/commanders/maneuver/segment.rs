@@ -66,12 +66,7 @@ impl RateLaw {
     pub(super) fn radps(self, state: &VehicleState) -> f32 {
         match self {
             RateLaw::Constant { radps } => radps,
-            RateLaw::Radius { radius_m } => {
-                let speed_mps = state
-                    .valid_airspeed_mps()
-                    .unwrap_or_else(|| state.velocity_mps.norm());
-                speed_mps / radius_m
-            }
+            RateLaw::Radius { radius_m } => speed_mps(state) / radius_m,
         }
     }
 
@@ -90,6 +85,13 @@ impl RateLaw {
             RateLaw::Radius { radius_m } => radius_m,
         }
     }
+}
+
+/// The speed a maneuver turns at, in m/s: the airspeed, or the ground speed without one.
+pub(super) fn speed_mps(state: &VehicleState) -> f32 {
+    state
+        .valid_airspeed_mps()
+        .unwrap_or_else(|| state.velocity_mps.norm())
 }
 
 /// When a [`Segment::Rotate`] ends.
