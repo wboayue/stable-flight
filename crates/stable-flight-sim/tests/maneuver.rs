@@ -138,6 +138,15 @@ fn begun(state: &VehicleState) -> Flown {
     }
 }
 
+/// A vehicle's lead commander, boxed so either vehicle's fits one commander type.
+struct Lead(Box<dyn Commander>);
+
+impl Commander for Lead {
+    fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
+        self.0.next_command(dt, state)
+    }
+}
+
 /// The vehicles flown.
 #[derive(Clone, Copy, Debug)]
 enum Vehicle {
@@ -148,96 +157,75 @@ enum Vehicle {
 }
 
 impl Vehicle {
-    /// `maneuver` flown from the line, observed about `axis` its `sign`'s way.
-    fn fly(self, maneuver: Maneuver, axis: Axis, sign: f32) -> Flown {
+    /// Flies the commander `build` makes from the vehicle's lead (the line), the lead's seconds,
+    /// and its cruise thrust: through the lead, then `window_s` more, passing `each` the
+    /// commander, the state, and the seconds into the window each tick.
+    fn run<C: Commander>(
+        self,
+        build: impl FnOnce(Lead, f32, f32) -> C,
+        window_s: f32,
+        mut each: impl FnMut(&C, &VehicleState, f32),
+    ) {
         match self {
             Vehicle::Plane => {
                 let plant = PlanePlant::clean(airframes::plane());
-                let cruise_thrust = plant.airframe.guidance.cruise_thrust;
-                let commander =
-                    ManeuverAt::new(plant.line(), PLANE_LEAD_S, maneuver, cruise_thrust);
+                let lead = Lead(Box::new(plant.line()));
+                let commander = build(lead, PLANE_LEAD_S, plant.airframe.guidance.cruise_thrust);
                 let mut flight_loop = plane_loop(&plant, commander);
                 fly(&mut flight_loop, PLANE_LEAD_S, |_, _| {});
-                let mut flown = begun(flight_loop.state());
-                fly(&mut flight_loop, WINDOW_S, |flight_loop, t| {
-                    let phase = flight_loop.commander().phase();
-                    observe(&mut flown, phase, flight_loop.state(), t, axis, sign);
+                fly(&mut flight_loop, window_s, |flight_loop, t| {
+                    each(flight_loop.commander(), flight_loop.state(), t);
                 });
-                flown
             }
             Vehicle::Tailsitter => {
                 let airframe = airframes::tailsitter();
                 let plant = TailsitterPlant::clean(airframe);
+                let lead = Lead(Box::new(forward(&airframe)));
                 let cruise_thrust = airframe.guidance.plane.cruise_thrust;
-                let commander = ManeuverAt::new(
-                    forward(&airframe),
-                    TAILSITTER_LEAD_S,
-                    maneuver,
-                    cruise_thrust,
-                );
+                let commander = build(lead, TAILSITTER_LEAD_S, cruise_thrust);
                 let mut flight_loop = tailsitter_loop(&plant, commander);
                 fly(&mut flight_loop, TAILSITTER_LEAD_S, |_, _| {});
-                let mut flown = begun(flight_loop.state());
-                fly(&mut flight_loop, WINDOW_S, |flight_loop, t| {
-                    let phase = flight_loop.commander().phase();
-                    observe(&mut flown, phase, flight_loop.state(), t, axis, sign);
+                fly(&mut flight_loop, window_s, |flight_loop, t| {
+                    each(flight_loop.commander(), flight_loop.state(), t);
                 });
-                flown
             }
         }
     }
 
-    /// Peak rate about `axis` over a `radps` step held 1 s at cruise thrust from the line.
+    /// `maneuver` flown from the line, observed about `axis` its `sign`'s way.
+    fn fly(self, maneuver: Maneuver, axis: Axis, sign: f32) -> Flown {
+        let mut flown: Option<Flown> = None;
+        self.run(
+            |lead, lead_s, cruise_thrust| ManeuverAt::new(lead, lead_s, maneuver, cruise_thrust),
+            WINDOW_S,
+            |commander, state, t| {
+                let flown = flown.get_or_insert_with(|| begun(state));
+                observe(flown, commander.phase(), state, t, axis, sign);
+            },
+        );
+        flown.unwrap_or_default()
+    }
+
+    /// Peak rate about `axis` over a `radps` step held [`STEP_S`] at cruise thrust from the line.
     fn step_peak_radps(self, axis: Axis, radps: f32) -> f32 {
-        let rates = |radps| AbsoluteRateCommand {
-            roll_radps: if axis == Axis::Roll { radps } else { 0.0 },
-            pitch_radps: if axis == Axis::Pitch { radps } else { 0.0 },
-            yaw_radps: 0.0,
-            thrust: 0.0,
-        };
+        let rate = |about| if axis == about { radps } else { 0.0 };
         let mut peak_radps = 0.0_f32;
-        let mut observe = |state: &VehicleState| {
-            peak_radps = peak_radps.max(state.angular_velocity_radps[axis as usize]);
-        };
-        match self {
-            Vehicle::Plane => {
-                let plant = PlanePlant::clean(airframes::plane());
+        self.run(
+            |lead, lead_s, cruise_thrust| {
                 let step = AbsoluteRateCommand {
-                    thrust: plant.airframe.guidance.cruise_thrust,
-                    ..rates(radps)
+                    roll_radps: rate(Axis::Roll),
+                    pitch_radps: rate(Axis::Pitch),
+                    yaw_radps: rate(Axis::Yaw),
+                    thrust: cruise_thrust,
                 };
-                let commander = Interlude::new(
-                    plant.line(),
-                    PLANE_LEAD_S,
-                    PLANE_LEAD_S + STEP_S,
-                    plane_command(ControlInput::AbsoluteRate(step)),
-                );
-                let mut flight_loop = plane_loop(&plant, commander);
-                fly(&mut flight_loop, PLANE_LEAD_S, |_, _| {});
-                fly(&mut flight_loop, STEP_S, |flight_loop, _| {
-                    observe(flight_loop.state())
-                });
-            }
-            Vehicle::Tailsitter => {
-                let airframe = airframes::tailsitter();
-                let plant = TailsitterPlant::clean(airframe);
-                let step = AbsoluteRateCommand {
-                    thrust: airframe.guidance.plane.cruise_thrust,
-                    ..rates(radps)
-                };
-                let commander = Interlude::new(
-                    forward(&airframe),
-                    TAILSITTER_LEAD_S,
-                    TAILSITTER_LEAD_S + STEP_S,
-                    plane_command(ControlInput::AbsoluteRate(step)),
-                );
-                let mut flight_loop = tailsitter_loop(&plant, commander);
-                fly(&mut flight_loop, TAILSITTER_LEAD_S, |_, _| {});
-                fly(&mut flight_loop, STEP_S, |flight_loop, _| {
-                    observe(flight_loop.state())
-                });
-            }
-        }
+                let command = plane_command(ControlInput::AbsoluteRate(step));
+                Interlude::new(lead, lead_s, lead_s + STEP_S, command)
+            },
+            STEP_S,
+            |_, state, _| {
+                peak_radps = peak_radps.max(state.angular_velocity_radps[axis as usize]);
+            },
+        );
         peak_radps
     }
 }

@@ -148,6 +148,7 @@ fn time_constant_s(plant: &impl SpecPlant, axis: Axis) -> f32 {
     match axis {
         Axis::Roll => time_constant_s.x,
         Axis::Pitch => time_constant_s.y,
+        Axis::Yaw => unreachable!("an attitude step is roll or pitch"),
     }
 }
 
