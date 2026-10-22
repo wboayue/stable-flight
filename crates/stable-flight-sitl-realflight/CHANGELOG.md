@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `airframes::explora_vtol()` turns a wingtip into the wind while holding and landing
+  (`GUID_WND_HDG_SPD` 1 m/s, #470): belly into RealFlight's 2 m/s wind it pinned its tilt cap
+  and drifted.
 - `airframes::explora_vtol()` damps its hover roll rate loop (`STAB_RATE_RLL_D` 0.03, #476):
   descending with the wind 20° behind a wingtip, it rolled ±12–16° on a 1.2 s cycle to
   touchdown; with D it holds within 4°.

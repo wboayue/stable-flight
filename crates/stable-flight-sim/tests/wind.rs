@@ -178,3 +178,55 @@ fn quadplane_keeps_its_estimate_while_the_pusher_runs() {
         });
     check!(pusher.is_some_and(|thrust| thrust > 0.0), "{pusher:?}");
 }
+
+/// Degrees from `heading_rad` to the nearer heading 90° off where `wind_mps` blows toward.
+fn off_wingtip_deg(heading_rad: f32, wind_mps: Vec2) -> f32 {
+    let toward_rad = libm::atan2f(wind_mps.y, wind_mps.x);
+    let off_rad = stable_flight::wrap_angle(heading_rad - toward_rad).abs();
+    (off_rad - core::f32::consts::FRAC_PI_2).abs().to_degrees()
+}
+
+/// With `wind_heading_min_mps` set, the quad holding its hover point in a 3 m/s wind turns a
+/// side square into it from any direction: measured within 2° by 3.5 s, and from 15 s on
+/// within 0.01° of it and 0.02 m of the point; 1° and 0.1 m leave margin.
+#[test]
+fn quad_turns_a_side_into_a_steady_wind() {
+    // (case, wind)
+    let cases = [
+        ("toward the north", steady(3.0, 0.0)),
+        ("toward the east", steady(0.0, 3.0)),
+        ("toward the southwest", steady(-2.0, -2.0)),
+    ];
+    for (case, wind) in cases {
+        let mut airframe = quad_with_its_drag();
+        airframe.guidance.wind_heading_min_mps = 1.0;
+        let plant = Plant::in_wind(airframe, wind);
+        let mut flight_loop = sim_loop_with(&plant, hover_follower());
+        let (mut off_deg, mut away_m) = (0.0_f32, 0.0_f32);
+        fly(&mut flight_loop, 30.0, |flight_loop, elapsed_s| {
+            if elapsed_s > 15.0 {
+                let state = flight_loop.state();
+                off_deg = off_deg.max(off_wingtip_deg(state.heading_rad, wind.steady_mps.xy()));
+                away_m = away_m.max(state.position_m.xy().norm());
+            }
+        });
+        check!(off_deg < 1.0, "{case}: {off_deg}°");
+        check!(away_m < 0.1, "{case}: {away_m} m");
+    }
+}
+
+/// The tailsitter has no drag model along its span, so in a wind on its belly the wind's
+/// direction stays unknown and the heading holds: measured 0° for 30 s at 3 m/s.
+#[test]
+fn tailsitter_holds_its_heading_while_the_wind_direction_is_unknown() {
+    let mut airframe = tailsitter_with_its_plate();
+    airframe.guidance.hover.wind_heading_min_mps = 1.0;
+    let plant = TailsitterPlant::in_wind(airframe, steady(3.0, 0.0));
+    let mut flight_loop = tailsitter_loop(&plant, hover_follower());
+    let mut worst_deg = 0.0_f32;
+    fly(&mut flight_loop, 30.0, |flight_loop, _| {
+        let (_, _, heading_rad) = common::tailsitter::view_angles(flight_loop.state());
+        worst_deg = worst_deg.max(heading_rad.to_degrees().abs());
+    });
+    check!(worst_deg < 1.0, "{worst_deg}°");
+}

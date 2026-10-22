@@ -1,7 +1,9 @@
-//! The heading along a waypoint leg or to a waypoint's heading, and its yield when the heading
-//! is stuck.
+//! The heading along a waypoint leg, to a waypoint's heading, or with a wingtip into the wind
+//! on station, and its yield when the heading is stuck.
 
 use super::CopterGuidanceConfig;
+use super::wind_heading::WindHeading;
+use crate::estimation::wind::WindEstimate;
 use crate::math::{all_finite, clamp_symmetric};
 use crate::{Vec2, VehicleState, WaypointCommand, wrap_angle};
 
@@ -11,8 +13,9 @@ use crate::{Vec2, VehicleState, WaypointCommand, wrap_angle};
 /// or yaws away (#452).
 const STUCK_YAW_RATE_RADPS: f32 = 0.1;
 
-/// Turns the heading-hold target to a waypoint's heading or along its leg, and yields a leg's
-/// to the vehicle's heading once the heading is stuck off it. Allocation-free.
+/// Turns the heading-hold target to a waypoint's heading, to a wingtip into the wind on
+/// station, or along its leg, and yields a leg's to the vehicle's heading once the heading is
+/// stuck off it. Allocation-free.
 ///
 /// The config is passed to each call rather than stored, so the owner's config stays the
 /// single source of truth.
@@ -24,6 +27,8 @@ pub(crate) struct LegHeading {
     stuck_s: f32,
     /// This leg's heading-hold target follows the vehicle's heading.
     yielding: bool,
+    /// The wingtip heading, kept across legs and lands until [`reset`](Self::reset).
+    wind: WindHeading,
 }
 
 /// A waypoint leg, from where the vehicle was when it began to its waypoint.
@@ -41,7 +46,12 @@ impl LegHeading {
     /// The heading-hold target for this tick of the leg to `waypoint`, from the current
     /// `target_rad`: turned toward the waypoint's finite
     /// [`heading_rad`](WaypointCommand::heading_rad) by at most `heading_rate_radps · dt`, never
-    /// yielded, with no leg kept (dropping the heading starts a fresh one); without one, turned toward the leg's direction by at most
+    /// yielded, with no leg kept (dropping the heading starts a fresh one); without one and on
+    /// station (a leg no longer than
+    /// [`waypoint_yaw_min_leg_m`](CopterGuidanceConfig::waypoint_yaw_min_leg_m), or the
+    /// vehicle within it of the waypoint), toward the `wind`'s wingtip heading at the same
+    /// rate when [`wind_heading_min_mps`](CopterGuidanceConfig::wind_heading_min_mps) allows
+    /// one ([`WindHeading`]); otherwise turned toward the leg's direction by at most
     /// `waypoint_yaw_radps · dt`, or the vehicle's heading once the leg has yielded
     /// ([`yielded`](Self::yielded)); otherwise `target_rad`. Turns go the shorter way round,
     /// unwrapped.
@@ -57,13 +67,21 @@ impl LegHeading {
         config: &CopterGuidanceConfig,
         target_rad: f32,
         waypoint: &WaypointCommand,
+        wind: Option<&WindEstimate>,
         estimated_state: &VehicleState,
     ) -> f32 {
         if let Some(heading_rad) = waypoint.heading_rad.filter(|h| h.is_finite()) {
-            self.clear();
+            self.reset();
             return turned_toward(target_rad, heading_rad, config.heading_rate_radps * dt);
         }
         let bearing_rad = self.bearing_rad(config, waypoint.position_m, estimated_state);
+        let to_m = waypoint.position_m - estimated_state.position_m.xy();
+        // `<=` is false for NaN: a vehicle lost off its position is on station only on a short
+        // leg.
+        let on_station = bearing_rad.is_none() || to_m.norm() <= config.waypoint_yaw_min_leg_m;
+        if on_station && let Some(heading_rad) = self.wind_rad(config, wind, estimated_state) {
+            return turned_toward(target_rad, heading_rad, config.heading_rate_radps * dt);
+        }
         if self.yielded(dt, config, target_rad, estimated_state) {
             return estimated_state.heading_rad;
         }
@@ -74,9 +92,49 @@ impl LegHeading {
         turned_toward(target_rad, bearing_rad, rate_radps * dt)
     }
 
-    /// Forgets the leg and its yield.
+    /// The heading-hold target for this tick of a land, from the current `target_rad`: turned
+    /// toward the `wind`'s wingtip heading as on station, otherwise `target_rad`. Drops the
+    /// leg, keeping the wingtip heading.
+    pub(crate) fn land_target_rad(
+        &mut self,
+        dt: f32,
+        config: &CopterGuidanceConfig,
+        target_rad: f32,
+        wind: Option<&WindEstimate>,
+        estimated_state: &VehicleState,
+    ) -> f32 {
+        self.clear();
+        self.wind_rad(config, wind, estimated_state)
+            .map_or(target_rad, |heading_rad| {
+                turned_toward(target_rad, heading_rad, config.heading_rate_radps * dt)
+            })
+    }
+
+    /// Forgets the leg and its yield, keeping the wingtip heading.
     pub(crate) fn clear(&mut self) {
+        *self = Self {
+            wind: self.wind,
+            ..Self::default()
+        };
+    }
+
+    /// Forgets the leg, its yield, and the wingtip heading.
+    pub(crate) fn reset(&mut self) {
         *self = Self::default();
+    }
+
+    /// The wingtip heading, when the wind allows one.
+    fn wind_rad(
+        &mut self,
+        config: &CopterGuidanceConfig,
+        wind: Option<&WindEstimate>,
+        estimated_state: &VehicleState,
+    ) -> Option<f32> {
+        self.wind.target_rad(
+            config.wind_heading_min_mps,
+            wind,
+            estimated_state.heading_rad,
+        )
     }
 
     /// The direction of the leg to `waypoint_m`, starting a leg when the waypoint is new.

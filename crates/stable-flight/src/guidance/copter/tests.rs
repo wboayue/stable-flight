@@ -2869,3 +2869,112 @@ fn a_paused_wind_estimate_keeps_its_value() {
     }
     assert!(guidance.wind() == settled);
 }
+
+/// With `wind_heading_min_mps` set, a hold or a land turns the heading-hold target 90° off a
+/// steady 2 m/s wind blowing east (toward 90°) to the wingtip heading nearer the vehicle's
+/// (0° from 30°); a waypoint's heading wins, a long leg keeps its own heading until within
+/// `waypoint_yaw_min_leg_m`, and 0 turns nothing.
+#[test]
+fn turns_a_wingtip_into_the_wind_while_holding_or_landing() {
+    const DT: f32 = 0.01;
+    // Long enough for the estimate to settle and the target to turn 30° at 60°/s.
+    const TICKS: usize = 1000;
+    let hold = ControlInput::Waypoint(WaypointCommand {
+        altitude_m: 10.0,
+        ..Default::default()
+    });
+    let east_leg = ControlInput::Waypoint(WaypointCommand {
+        position_m: Vec2::new(0.0, 50.0),
+        altitude_m: 10.0,
+        ..Default::default()
+    });
+    let facing = ControlInput::Waypoint(WaypointCommand {
+        altitude_m: 10.0,
+        heading_rad: Some(FRAC_PI_4),
+        ..Default::default()
+    });
+    let land = ControlInput::Land(LandCommand::default());
+    // (case, min wind m/s, input, expected heading-hold target deg)
+    let cases: [(&str, f32, &ControlInput, f32); 5] = [
+        ("hold", 1.0, &hold, 0.0),
+        ("land", 1.0, &land, 0.0),
+        ("off", 0.0, &hold, 30.0),
+        ("waypoint heading wins", 1.0, &facing, 45.0),
+        ("long leg turns along it", 1.0, &east_leg, 90.0),
+    ];
+    for (case, min_speed_mps, input, expected_deg) in cases {
+        let config = CopterGuidanceConfig {
+            wind_heading_min_mps: min_speed_mps,
+            // The vehicle here never yaws: no yield.
+            heading_yield_s: 0.0,
+            // 0.6 m/s² of push at 0.3/s is 2 m/s of wind.
+            wind: WindConfig {
+                momentum_per_s: Vec2::new(0.3, 0.3),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut guidance = CopterGuidance::new(config);
+        let state = VehicleState {
+            position_m: Vec3::new(0.0, 0.0, 10.0),
+            acceleration_mps2: Vec3::new(0.0, 0.6, 0.0),
+            heading_rad: 30.0_f32.to_radians(),
+            ..Default::default()
+        };
+        guidance.prime(&VehicleState {
+            position_m: Vec3::zeros(),
+            ..state
+        });
+        let mut setpoint = AttitudeSetpoint::default();
+        for _ in 0..TICKS {
+            setpoint = attitude(guidance.guide(DT, FlightRegime::Copter, input, &state));
+        }
+        let heading_deg = wrap_angle(setpoint.heading_rad).to_degrees();
+        assert2::check!(
+            (heading_deg - expected_deg).abs() < 0.5,
+            "{case}: {heading_deg}°"
+        );
+    }
+}
+
+/// A long leg ends on station: within `waypoint_yaw_min_leg_m` of its waypoint the target
+/// turns from the leg's direction to the wingtip heading.
+#[test]
+fn a_long_leg_turns_a_wingtip_into_the_wind_on_arrival() {
+    const DT: f32 = 0.01;
+    let config = CopterGuidanceConfig {
+        wind_heading_min_mps: 1.0,
+        heading_yield_s: 0.0,
+        wind: WindConfig {
+            momentum_per_s: Vec2::new(0.3, 0.3),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut guidance = CopterGuidance::new(config);
+    guidance.prime(&state_at(0.0, 0.0, 0.0));
+    let east_leg = ControlInput::Waypoint(WaypointCommand {
+        position_m: Vec2::new(0.0, 50.0),
+        altitude_m: 10.0,
+        ..Default::default()
+    });
+    let mut state = VehicleState {
+        position_m: Vec3::new(0.0, 0.0, 10.0),
+        acceleration_mps2: Vec3::new(0.0, 0.6, 0.0),
+        heading_rad: 30.0_f32.to_radians(),
+        ..Default::default()
+    };
+    let mut setpoint = AttitudeSetpoint::default();
+    // (vehicle east of the start m, expected target deg after 10 s there)
+    for (east_m, expected_deg) in [(0.0, 90.0), (48.0, 0.0)] {
+        state.position_m.y = east_m;
+        for _ in 0..1000 {
+            setpoint = attitude(guidance.guide(DT, FlightRegime::Copter, &east_leg, &state));
+        }
+        let heading_deg = wrap_angle(setpoint.heading_rad).to_degrees();
+        assert2::check!(
+            (heading_deg - expected_deg).abs() < 0.5,
+            "{east_m} m: {heading_deg}°"
+        );
+    }
+}
