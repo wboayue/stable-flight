@@ -1,14 +1,14 @@
-# Wind-estimate calibration over the RealFlight eXplora VTOL spawn point (north -10.55 m,
-# east 6.49 m), for a wind from about 37 degrees: climb to 40 m and hold 20 s at headings either
+# Wind-estimate calibration over the start (eXplora VTOL), for a wind from about 37 degrees: climb to 40 m and hold 20 s at headings either
 # side of each wingtip, in hover (#473). A hold starts only once reached, so a heading that
 # can't hold stalls the script: retune the headings to the wind.
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
 x,y,altitude,cruise_speed,regime,heading,hold_s
--10.55,6.49,40.0,3.0,copter,,
--10.55,6.49,40.0,3.0,copter,95,20
--10.55,6.49,40.0,3.0,copter,115,20
--10.55,6.49,40.0,3.0,copter,135,20
--10.55,6.49,40.0,3.0,copter,155,20
--10.55,6.49,40.0,3.0,copter,275,20
--10.55,6.49,40.0,3.0,copter,295,20
--10.55,6.49,40.0,3.0,copter,315,20
--10.55,6.49,40.0,3.0,copter,335,20
+0.00,0.00,40.0,3.0,copter,,
+0.00,0.00,40.0,3.0,copter,95,20
+0.00,0.00,40.0,3.0,copter,115,20
+0.00,0.00,40.0,3.0,copter,135,20
+0.00,0.00,40.0,3.0,copter,155,20
+0.00,0.00,40.0,3.0,copter,275,20
+0.00,0.00,40.0,3.0,copter,295,20
+0.00,0.00,40.0,3.0,copter,315,20
+0.00,0.00,40.0,3.0,copter,335,20

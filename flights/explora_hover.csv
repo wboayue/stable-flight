@@ -1,4 +1,4 @@
-# Hover 5 m above the RealFlight eXplora VTOL spawn point (north -10.55 m, east 6.49 m, from
-# the #120 capture; ground ~0 m ASL). A single waypoint: the follower holds it.
+# Hover 5 m above the start (eXplora VTOL). A single waypoint: the follower holds it.
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
 x,y,altitude,cruise_speed
--10.55,6.49,5.0,2.0
+0.00,0.00,5.0,2.0

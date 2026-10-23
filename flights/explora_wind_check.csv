@@ -1,7 +1,7 @@
-# Wind-estimate check over the RealFlight eXplora VTOL spawn point (north -10.55 m, east
-# 6.49 m), for a wind from about 37 degrees: climb to 40 m, hold 60 s with a wingtip into the
+# Wind-estimate check over the start (eXplora VTOL), for a wind from about 37 degrees: climb to 40 m, hold 60 s with a wingtip into the
 # wind (125) and 60 s turned 20 degrees off it (145), in hover (#473).
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
 x,y,altitude,cruise_speed,regime,heading,hold_s
--10.55,6.49,40.0,3.0,copter,,
--10.55,6.49,40.0,3.0,copter,125,60
--10.55,6.49,40.0,3.0,copter,145,60
+0.00,0.00,40.0,3.0,copter,,
+0.00,0.00,40.0,3.0,copter,125,60
+0.00,0.00,40.0,3.0,copter,145,60
