@@ -385,6 +385,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `LateralController` with `max_accel_mps2` set (`GUID_LAT_ACC`) brakes onto its target along
+  a braking curve at `BRAKING_SHARE` (0.7) of the limit, instead of in proportion to the
+  distance under the rate limit (#466): a 260 m quadplane leg on the sim overshot by 193 m
+  uncapped and 37 m at 10 m/s at 1 m/s², now under 1 m.
+
 - `CopterGuidance` lands (`ControlInput::Land`) speed up to `land_speed_mps` at
   `descent_accel_mps2`, as waypoint descents do, instead of stepping to it: the step cut the
   RealFlight eXplora's thrust 0.89 → 0.76 in one tick (#476).

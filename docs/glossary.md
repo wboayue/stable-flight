@@ -72,6 +72,10 @@ Code comments and docs link here instead of redefining a term.
 - **Slew / slew rate:** a limit on how fast a value may change per second, so a step request
   becomes a ramp.
 - **Leash:** a limit on how far a moving target may run ahead of the vehicle.
+- **Braking curve:** the speed toward a target that a set deceleration can still bring to zero
+  on it, `√(2 · a · distance)` far out and proportional to distance close in (ArduPilot's
+  square-root controller). Waypoint descents and shaped lateral legs (`GUID_LAT_ACC`) slow
+  along one, so braking starts in time.
 - **Deadband:** a band around zero where small inputs are ignored, so noise doesn't cause
   constant small corrections.
 - **Low-pass filter:** smooths a noisy signal by attenuating fast changes, at the cost of lag.

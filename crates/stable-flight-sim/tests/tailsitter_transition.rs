@@ -434,7 +434,7 @@ fn hover_leg_along_the_span_keeps_its_roll() {
 
     let peak = flight_loop.into_parts().5;
     check!(peak.handover.handed_over(), "never handed over: {peak:?}");
-    // Measured 15.2°; unshaped, the leg overshoots its speed along the span and departs, past
+    // Measured 20.8°; unshaped, the leg overshoots its speed along the span and departs, past
     // 100° (#418).
     let cap_rad = airframe.stabilizer.hover.attitude.max_angles_rad.x;
     check!(

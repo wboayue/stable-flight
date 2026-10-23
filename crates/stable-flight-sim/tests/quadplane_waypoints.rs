@@ -1,6 +1,7 @@
 //! Copter waypoints on `airframes::quadplane()`: legs flown on the lift rotors, ahead, behind,
 //! and to the side, and into wind, with the pusher taking the nose-down pitch (#427), each
-//! turned to face its waypoint (#452), slowed while the nose is off it (#437).
+//! turned to face its waypoint (#452), slowed while the nose is off it (#437), and stopped on
+//! it with the velocity target shaped (#466).
 
 mod common;
 
@@ -187,5 +188,62 @@ fn slows_uncapped_legs_the_nose_is_off() {
             tilt_deg < cap_deg + TILT_OVER_CAP_DEG,
             "{case}: {tilt_deg}° against a {cap_deg}° cap"
         );
+    }
+}
+
+/// Most an uncapped probe leg passes its waypoint unshaped (`GUID_LAT_ACC` 0), in m: measured
+/// 13.9 m.
+const UNSHAPED_OVERSHOOT_UNCAPPED_M: f32 = 14.0;
+
+/// Most a probe leg at [`SHAPED_CRUISE_MPS`] passes its waypoint unshaped, in m: measured 2.0 m.
+const UNSHAPED_OVERSHOOT_CRUISE_M: f32 = 2.0;
+
+/// The capped row's leg speed, in m/s.
+const SHAPED_CRUISE_MPS: f32 = 10.0;
+
+/// Seconds of the shaped-leg flight from the start on the gear: the climb and the leg, and
+/// past its stop (the slowest row, 10 m/s at 1 m/s², measured 35 s from the leg's start to
+/// within 2 m of the waypoint).
+const SHAPED_FLIGHT_S: f32 = 120.0;
+
+/// With the velocity target shaped at `GUID_LAT_ACC`, the probe leg stops on its waypoint no
+/// further past it than unshaped: the position loop brakes along a curve the shaped target can
+/// follow, so braking starts in time (#466). Linear braking under a rate limit overshot by
+/// 193 m and 145 m uncapped, 37 m and 5.6 m at 10 m/s.
+#[test]
+fn stops_on_the_waypoint_with_acceleration_shaping() {
+    // (cruise speed in m/s, most it may pass the waypoint in m)
+    let legs = [
+        (UNCAPPED, UNSHAPED_OVERSHOOT_UNCAPPED_M),
+        (SHAPED_CRUISE_MPS, UNSHAPED_OVERSHOOT_CRUISE_M),
+    ];
+    for (cruise_mps, band_m) in legs {
+        for accel_mps2 in [1.0, 2.5] {
+            let route =
+                [on_the_line(0.0), on_the_line(PROBE_LEG_M)].map(|waypoint| WaypointCommand {
+                    cruise_speed_mps: cruise_mps,
+                    ..waypoint
+                });
+            let follower = WaypointFollower::new(route)
+                .expect("waypoints")
+                .with_route_end(RouteEnd::Hold);
+            let plant = QuadPlanePlant::clean(airframes::quadplane());
+            let mut flight_loop = quadplane_loop(&plant, follower);
+            flight_loop
+                .set_param("GUID_LAT_ACC", accel_mps2)
+                .expect("a param");
+            let flight = trace(&mut flight_loop, SHAPED_FLIGHT_S);
+
+            let past_m = flight
+                .samples
+                .iter()
+                .map(|sample| sample.state.position_m.x - PROBE_LEG_M)
+                .fold(f32::MIN, f32::max);
+            let last = flight.samples.last().expect("a flight");
+            let off_m = (last.state.position_m.xy() - Vec2::new(PROBE_LEG_M, 0.0)).norm();
+            let case = format!("{cruise_mps} m/s at {accel_mps2} m/s²");
+            check!(past_m <= band_m, "{case}: {past_m} m past");
+            check!(off_m < CALM_HORIZONTAL_M, "{case}: ends {off_m} m off");
+        }
     }
 }
