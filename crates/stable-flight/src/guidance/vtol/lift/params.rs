@@ -11,6 +11,7 @@ impl ParamTable for LiftTransitionConfig {
         param!("TRAN_FW_RAMP", lift_ramp_s),
         param!("TRAN_TIMEOUT", timeout_s),
         param!("TRAN_MIN_HGT", min_height_m),
+        param!("TRAN_FW_MIN_HGT", plane_min_height_m),
         param!("TRAN_VT_RAMP", back_ramp_s),
         param!("TRAN_VT_SPD", back_speed_mps),
         param!("TRAN_VT_TIMEOUT", back_timeout_s),
@@ -54,6 +55,13 @@ mod metadata {
                 .param(
                     "TRAN_MIN_HGT",
                     "Height above arming a forward transition needs",
+                )
+                .with_units("m")
+                .at_least(0.0),
+            LIMITS
+                .param(
+                    "TRAN_FW_MIN_HGT",
+                    "Height above arming plane flight falls back below (0: off)",
                 )
                 .with_units("m")
                 .at_least(0.0),

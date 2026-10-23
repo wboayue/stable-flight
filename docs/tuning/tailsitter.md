@@ -326,6 +326,7 @@ direction error, speed ratio.
 | Param | Field | eXplora |
 |---|---|---|
 | `TRAN_MIN_HGT` | `transition.min_height_m` | 20 m |
+| `TRAN_FW_MIN_HGT` | `transition.plane_min_height_m` | 15 m |
 | `TRAN_FW_THR` | `transition.forward_thrust` | 0.9 |
 | `TRAN_ASPD_MIN` | `transition.min_airspeed_mps` | 9 m/s |
 | `TRAN_FW_RATE`, `TRAN_FW_DONE`, `TRAN_FW_MAX` (deg) | `forward_rate_radps`, … | 50°/s, 45°, 80° (defaults) |

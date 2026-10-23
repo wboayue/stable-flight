@@ -255,6 +255,9 @@ pub fn explora_vtol()
                 // Above a script's hover climb: its first leg is reached on horizontal distance,
                 // before the climb ends (#124).
                 min_height_m: 20.0,
+                // Half the scripts' 30 m plane legs: room for the back transition's loss
+                // below it (3.9 m at a 4.6 m/s sink on the sim eXplora, #450).
+                plane_min_height_m: 15.0,
                 // A slower nose-up, handing over closer to vertical (PX4 hands over at 15°):
                 // at 50°/s and 45° it reached hover at 11 m/s and ballooned 10 m, and the hover
                 // side cut thrust to descend and tumbled for 8 s (#343).
@@ -487,6 +490,9 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                 min_airspeed_mps: COBRA_MIN_AIRSPEED_MPS,
                 forward_thrust: COBRA_PUSHER_SHARE * defaults.transition.forward_thrust,
                 pusher_slew_per_s: COBRA_PUSHER_SHARE * defaults.transition.pusher_slew_per_s,
+                // Half the scripts' 30 m plane legs: room for the back transition's loss
+                // below it (1.9 m at a 3.5 m/s sink on the sim quadplane, #450).
+                plane_min_height_m: 15.0,
                 ..defaults.transition
             },
             ..defaults

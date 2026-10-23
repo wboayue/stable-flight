@@ -20,22 +20,26 @@
 //! | Mode | Condition | Next | Handoff | Refusal reported |
 //! |---|---|---|---|---|
 //! | `Copter` | `Copter` requested | `Copter` | | none; clears a timeout |
-//! | `Copter` | `Plane` requested after a forward transition was abandoned | `Copter` | | why: `TransitionTimeout`, `RollError` |
-//! | `Copter` | `Plane` requested below `min_height_m` (or NaN altitude) | `Copter` | | `BelowMinAltitude` |
+//! | `Copter` | `Plane` requested after a fallback | `Copter` | | why: `TransitionTimeout`, `RollError`, `BelowPlaneMinAltitude` |
+//! | `Copter` | `Plane` requested below `min_height_m` or `plane_min_height_m` (or NaN altitude) | `Copter` | | `BelowMinAltitude` |
 //! | `Copter` | `Plane` requested | `ToPlane`, ramp from the current tilt | | |
 //! | `ToPlane` | `Copter` requested | `Copter` (same hover controller) | | |
 //! | `ToPlane` | tilt ≥ `forward_done_rad` and airspeed ≥ `min_airspeed_mps` (when valid) | `Plane` | yes | |
 //! | `ToPlane` | longer than `timeout_s` | `Copter` | | `TransitionTimeout` |
 //! | `Plane` | `Copter` requested | `ToCopter`, ramp from the current tilt | | |
-//! | `ToCopter` | `Plane` requested | `Plane` (same plane controller) | | |
+//! | `Plane` | below `plane_min_height_m` | `ToCopter`, a fallback | | `BelowPlaneMinAltitude` |
+//! | `ToCopter` | `Plane` requested, and no fallback | `Plane` (same plane controller) | | |
 //! | `ToCopter` | tilt ≤ `back_done_rad`, or longer than `timeout_s` | `Copter` | yes | |
 //!
 //! The caller can cut a transition short ([`Transition::cut_short`], e.g. on a roll error it
 //! measures): forward is abandoned like a timeout, back completes with a handoff.
 //!
-//! A standing `Plane` request refused for height starts the transition once the vehicle
-//! climbs past `min_height_m`; one refused by an abandoned transition waits for a `Copter`
-//! request first.
+//! A fallback is a forward transition abandoned (timed out or cut short) or plane flight
+//! below `plane_min_height_m` sent back to copter (a quadchute). After one, `Plane` is
+//! refused until `Copter` is requested (`ToCopter` completes as if it were, reporting the
+//! fallback), and the VTOL guidance hovers where copter flight took over instead of flying the
+//! command's input. A standing `Plane` request refused for height starts the transition once
+//! the vehicle climbs past both heights.
 //! Height is above the altitude at [`prime`](Transition::prime) (where the vehicle armed);
 //! before the first `prime` there is none, and `Plane` is refused.
 //! A `Land` input means `Copter`: the guidance driving this passes that as the request.
@@ -54,6 +58,13 @@
 //! - A forward timeout reverts to hover in PX4 (`VT_TRANS_TIMEOUT` 15 s,
 //!   `vtol_att_control_params.yaml:92-98`, then quadchute), where ArduPilot completes it
 //!   (`tailsitter.cpp:546`); a back timeout completes in both (`tailsitter.cpp:586`).
+//! - PX4 falls back to hover below `VT_FW_MIN_ALT` (off by default) in plane flight and the
+//!   transitions, latched until plane flight is requested again, then by default returns home
+//!   (`vtol_type.cpp:231-243`, `vtol_att_control_main.cpp:195-244`, commander `COM_QC_ACT`);
+//!   it switches to hover at once, where here the back transition flies, and only plane
+//!   flight is watched: a forward transition starts above the floor and holds height.
+//!   ArduPilot instead assists on the lift motors below `Q_ASSIST_ALT` and stays in plane
+//!   flight (`VTOL_Assist.cpp:16-45`, `:109`).
 //! - PX4 blends thrust over 0.5 s when the back transition takes over from the plane
 //!   controller (`tailsitter.h:58`).
 //! - Through the back ramp ArduPilot flies a fixed throttle (`Q_TAILSIT_THR_VT`, by default
@@ -67,7 +78,10 @@ use core::f32::consts::FRAC_PI_2;
 
 use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
 use crate::math::{assert_dt, nose_up_cosine, saturate_throttle};
-use crate::{Configurable, FlightMode, FlightModeReport, FlightRegime, ModeRefusal, VehicleState};
+use crate::{
+    Configurable, ControlInput, FlightMode, FlightModeReport, FlightRegime, ModeRefusal,
+    VehicleState, WaypointCommand,
+};
 
 mod forward;
 mod lift;
@@ -111,6 +125,11 @@ pub struct TransitionConfig {
     pub timeout_s: f32,
     /// The height above the arming altitude a forward transition needs to start, in meters.
     pub min_height_m: f32,
+    /// The height above the arming altitude plane flight falls back to copter below, in
+    /// meters; a forward transition also needs it to start. Higher: falls back sooner, with
+    /// more height to lose in the back transition (3.3 m at a 4.6 m/s sink on the sim
+    /// tailsitter). `0` turns it off.
+    pub plane_min_height_m: f32,
     /// Least linear thrust through the forward transition, `[0, 1]`: the hover thrust when it
     /// began, if higher, holds.
     pub forward_thrust: f32,
@@ -161,6 +180,7 @@ impl TransitionConfig {
         )?;
         check_positive("timeout_s", self.timeout_s)?;
         check_limit("min_height_m", self.min_height_m)?;
+        check_limit("plane_min_height_m", self.plane_min_height_m)?;
         let unit = |value: f32| (0.0..=1.0).contains(&value);
         check("forward_thrust", unit(self.forward_thrust), "in [0, 1]")?;
         check("back_thrust", unit(self.back_thrust), "in [0, 1]")?;
@@ -178,9 +198,9 @@ impl TransitionConfig {
 impl Default for TransitionConfig {
     /// ArduPilot's tailsitter rates and angles (50°/s each way, complete at 45° from vertical
     /// both ways) and roll limit (45°), the forward ramp stopping at 80°, PX4's 15 s timeout
-    /// and 0.5 s thrust blend, no airspeed gate, 5 m of height, half thrust each way (an
-    /// airframe sets its own), and a back sink guard of 0.4 per m/s past 1 m/s; see the
-    /// [module sources](self#sources).
+    /// and 0.5 s thrust blend, no airspeed gate, 5 m of height, no plane minimum height (PX4's
+    /// `VT_FW_MIN_ALT`), half thrust each way (an airframe sets its own), and a back sink guard
+    /// of 0.4 per m/s past 1 m/s; see the [module sources](self#sources).
     fn default() -> Self {
         TransitionConfig {
             forward_rate_radps: 50.0_f32.to_radians(),
@@ -191,6 +211,7 @@ impl Default for TransitionConfig {
             back_done_rad: 45.0_f32.to_radians(),
             timeout_s: 15.0,
             min_height_m: 5.0,
+            plane_min_height_m: 0.0,
             forward_thrust: 0.5,
             back_thrust: 0.5,
             // Measured on the sim tailsitter (#343): a 25°/s ramp at thrust 0.3–0.5, which
@@ -323,16 +344,24 @@ impl Transition {
             FlightMode::Plane => {
                 if requested != FlightRegime::Plane {
                     self.start(FlightMode::ToCopter, nose_up);
+                } else if self.gate.below(state, self.config.plane_min_height_m) {
+                    self.start(FlightMode::ToCopter, nose_up);
+                    self.gate.abandon(ModeRefusal::BelowPlaneMinAltitude);
+                    self.refusal = Some(ModeRefusal::BelowPlaneMinAltitude);
                 }
             }
             FlightMode::ToCopter => {
                 self.elapsed_s += dt;
-                if requested == FlightRegime::Plane {
+                let plane_requested = requested == FlightRegime::Plane;
+                if plane_requested && !self.gate.fallen_back() {
                     self.mode = FlightMode::Plane;
                 } else if nose_up >= self.back_done_cosine || self.elapsed_s > self.config.timeout_s
                 {
                     self.mode = FlightMode::Copter;
                     handoff = true;
+                }
+                if plane_requested {
+                    self.refusal = self.gate.fallback();
                 }
             }
         }
@@ -402,9 +431,15 @@ impl Transition {
         }
     }
 
+    /// Whether a fallback holds `Plane` refused until `Copter` is requested.
+    pub(super) fn fallen_back(&self) -> bool {
+        self.gate.fallen_back()
+    }
+
     /// Starts `ToPlane` from `Copter`, or reports why it can't.
     fn try_forward(&mut self, state: &VehicleState, nose_up: f32) {
-        self.refusal = self.gate.refusal(state, self.config.min_height_m);
+        let needed_m = self.config.min_height_m.max(self.config.plane_min_height_m);
+        self.refusal = self.gate.refusal(state, needed_m);
         if self.refusal.is_none() {
             self.start(FlightMode::ToPlane, nose_up);
         }
@@ -471,13 +506,13 @@ impl Configurable for Transition {
 }
 
 /// What starts a forward transition, shared by [`Transition`] and [`LiftTransition`]: height
-/// above the arming altitude, and no abandoned forward transition waiting on a `Copter`
-/// request.
+/// above the arming altitude, and no fallback waiting on a `Copter` request.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct ForwardGate {
     /// The altitude at [`prime`](Self::prime); NaN before it, which no height clears.
     home_altitude_m: f32,
-    /// Why the last forward transition was abandoned, held until `Copter` is requested.
+    /// Why the last forward transition was abandoned or plane flight fell back, held until
+    /// `Copter` is requested.
     abandoned: Option<ModeRefusal>,
 }
 
@@ -495,10 +530,10 @@ impl ForwardGate {
         self.abandoned = None;
     }
 
-    /// Why a forward transition can't start in `state`, needing `min_height_m`: the abandoned
-    /// transition's refusal first, then `BelowMinAltitude`; `None` when it can.
+    /// Why a forward transition can't start in `state`, needing `min_height_m`: the
+    /// fallback's refusal first, then `BelowMinAltitude`; `None` when it can.
     fn refusal(&self, state: &VehicleState, min_height_m: f32) -> Option<ModeRefusal> {
-        let height_m = state.position_m.z - self.home_altitude_m;
+        let height_m = self.height_m(state);
         // A NaN height isn't high enough.
         let high_enough = height_m.is_finite() && height_m >= min_height_m;
         if self.abandoned.is_some() {
@@ -510,14 +545,76 @@ impl ForwardGate {
         }
     }
 
+    /// Whether `state` is below `floor_m` above the arming altitude, with `floor_m` positive
+    /// (0 is off). A NaN height isn't: an unknown height falls back on nothing.
+    fn below(&self, state: &VehicleState, floor_m: f32) -> bool {
+        floor_m > 0.0 && self.height_m(state) < floor_m
+    }
+
+    /// `state`'s height above the arming altitude, in m; NaN before [`prime`](Self::prime).
+    fn height_m(&self, state: &VehicleState) -> f32 {
+        state.position_m.z - self.home_altitude_m
+    }
+
     /// Holds `refusal` against forward transitions until [`clear`](Self::clear).
     fn abandon(&mut self, refusal: ModeRefusal) {
         self.abandoned = Some(refusal);
     }
 
+    /// The fallback holding forward transitions refused, if any.
+    fn fallback(&self) -> Option<ModeRefusal> {
+        self.abandoned
+    }
+
+    /// Whether a fallback holds forward transitions refused.
+    fn fallen_back(&self) -> bool {
+        self.abandoned.is_some()
+    }
+
     /// `Copter` was requested: an abandoned transition no longer holds.
     fn clear(&mut self) {
         self.abandoned = None;
+    }
+}
+
+/// Where copter flight hovers after a fallback (see [Modes](self#modes)), shared by
+/// [`TailsitterGuidance`] and [`QuadPlaneGuidance`]: the point where it took over, latched on
+/// the fallback's first copter tick and held, the command's input set aside, until the
+/// fallback clears. The command may still be a distant plane waypoint, which the copter would
+/// otherwise chase at the plane leg's speed (#453). ArduPilot lands where a forward
+/// transition failed (`QLAND`, `ArduPlane/quadplane.cpp:1503-1506`); PX4 returns home by
+/// default (`COM_QC_ACT`, `commander_params.yaml:198-207`). Holding leaves that choice to the
+/// commander: `Land` or `Copter` clears the fallback.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct FallbackHold {
+    /// The latched hover point; `None` outside a fallback.
+    point: Option<WaypointCommand>,
+}
+
+impl FallbackHold {
+    /// What copter flight flies this tick: `input`, or while `fallen_back` the hold over
+    /// where `state` was on the fallback's first copter tick.
+    fn input(
+        &mut self,
+        fallen_back: bool,
+        input: &ControlInput,
+        state: &VehicleState,
+    ) -> ControlInput {
+        if !fallen_back {
+            self.point = None;
+            return *input;
+        }
+        let point = *self.point.get_or_insert_with(|| WaypointCommand {
+            position_m: state.position_m.xy(),
+            altitude_m: state.position_m.z,
+            ..WaypointCommand::default()
+        });
+        ControlInput::Waypoint(point)
+    }
+
+    /// No hold latched: call when the vehicle arms.
+    fn clear(&mut self) {
+        self.point = None;
     }
 }
 

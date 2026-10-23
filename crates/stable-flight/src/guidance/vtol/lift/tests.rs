@@ -425,6 +425,107 @@ fn refusals_hold_until_cleared() {
     check!(transition.update(DT, FlightRegime::Plane, &hover()).mode == FlightMode::ToPlane);
 }
 
+/// The plane minimum height in these tests, in m above the arming point.
+const FLOOR_M: f32 = 20.0;
+
+/// With a plane minimum height, a forward transition needs it to start; plane flight below it
+/// falls back to copter, completing the back transition however `Plane` is still requested,
+/// and `Plane` stays refused until `Copter` is requested.
+#[test]
+fn falls_back_below_the_plane_minimum_height() {
+    use FlightRegime::{Copter, Plane};
+    use ModeRefusal::{BelowMinAltitude, BelowPlaneMinAltitude};
+    let mut transition = primed_with(LiftTransitionConfig {
+        plane_min_height_m: FLOOR_M,
+        ..Default::default()
+    });
+    let at = |height_m, speed_mps| state(height_m, speed_mps, Some(speed_mps));
+    let step = transition.update(DT, Plane, &at(15.0, 0.0));
+    check!(
+        step.mode == FlightMode::Copter,
+        "past TRAN_MIN_HGT, below the floor"
+    );
+    check!(transition.report().refusal == Some(BelowMinAltitude));
+    check!(fly(&mut transition, 6.0, Plane, &at(30.0, FAST_MPS)).mode == FlightMode::Plane);
+
+    // (what, request, height, speed, mode, refusal, fallen back)
+    let ticks = [
+        (
+            "plane above the floor",
+            Plane,
+            21.0,
+            FAST_MPS,
+            FlightMode::Plane,
+            None,
+            false,
+        ),
+        (
+            "below it",
+            Plane,
+            19.0,
+            FAST_MPS,
+            FlightMode::ToCopter,
+            Some(BelowPlaneMinAltitude),
+            true,
+        ),
+        (
+            "still fast",
+            Plane,
+            19.0,
+            FAST_MPS,
+            FlightMode::ToCopter,
+            Some(BelowPlaneMinAltitude),
+            true,
+        ),
+        (
+            "slowed",
+            Plane,
+            19.0,
+            SLOW_MPS,
+            FlightMode::Copter,
+            Some(BelowPlaneMinAltitude),
+            true,
+        ),
+        (
+            "high again, still refused",
+            Plane,
+            30.0,
+            0.0,
+            FlightMode::Copter,
+            Some(BelowPlaneMinAltitude),
+            true,
+        ),
+        (
+            "cleared",
+            Copter,
+            30.0,
+            0.0,
+            FlightMode::Copter,
+            None,
+            false,
+        ),
+        (
+            "plane again",
+            Plane,
+            30.0,
+            0.0,
+            FlightMode::ToPlane,
+            None,
+            false,
+        ),
+    ];
+    for (what, request, height_m, speed_mps, mode, refusal, fallen_back) in ticks {
+        let step = transition.update(DT, request, &at(height_m, speed_mps));
+        check!(step.mode == mode, "{what}");
+        check!(transition.report().refusal == refusal, "{what}");
+        check!(transition.fallen_back() == fallen_back, "{what}");
+    }
+
+    let mut floorless = in_plane();
+    let underground = at(-100.0, FAST_MPS);
+    check!(floorless.update(DT, Plane, &underground).mode == FlightMode::Plane);
+}
+
 /// Cut short, a forward transition is abandoned (refused until `Copter`), a back transition
 /// completes with a handoff, and any other mode is unchanged.
 #[test]
@@ -502,7 +603,7 @@ fn validates_each_config_field() {
     check!(good.validate() == Ok(()));
     type Edit = fn(&mut LiftTransitionConfig, f32);
     // (field, edit, rejected values, accepted edge)
-    let cases: [(&str, Edit, &[f32], f32); 11] = [
+    let cases: [(&str, Edit, &[f32], f32); 12] = [
         (
             "min_airspeed_mps",
             |c, v| c.min_airspeed_mps = v,
@@ -519,6 +620,12 @@ fn validates_each_config_field() {
         (
             "min_height_m",
             |c, v| c.min_height_m = v,
+            &[-1.0, f32::NAN],
+            0.0,
+        ),
+        (
+            "plane_min_height_m",
+            |c, v| c.plane_min_height_m = v,
             &[-1.0, f32::NAN],
             0.0,
         ),

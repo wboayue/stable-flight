@@ -2,7 +2,7 @@
 
 use core::f32::consts::FRAC_PI_2;
 
-use super::{ThrustHandoff, Transition, TransitionConfig, TransitionStep};
+use super::{FallbackHold, ThrustHandoff, Transition, TransitionConfig, TransitionStep};
 use crate::controllers::InvalidConfig;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::guidance::plane::{PlaneGuidance, PlaneGuidanceConfig};
@@ -60,7 +60,7 @@ impl TailsitterGuidanceConfig {
 ///
 ///    | Mode | Setpoint |
 ///    |---|---|
-///    | `Copter` | hover guidance, on the command's input |
+///    | `Copter` | hover guidance, on the command's input, or after a fallback on a hold where copter flight took over (until `Copter` is requested) |
 ///    | `ToPlane` | hover guidance on an absolute attitude: wings level, view pitch −tilt, heading held, thrust the larger of [`forward_thrust`](TransitionConfig::forward_thrust) and the hover thrust when it began; a [`transition`](AttitudeSetpoint::transition) ramp |
 ///    | `Plane` | plane guidance, on the command's input |
 ///    | `ToCopter` | plane guidance on an absolute attitude: wings level, pitch π/2 − tilt, [`back_thrust`](TransitionConfig::back_thrust) raised while sinking past [`back_sink_limit_mps`](TransitionConfig::back_sink_limit_mps); a [`transition`](PlaneSetpoint::transition) ramp |
@@ -110,6 +110,7 @@ pub struct TailsitterGuidance {
     plane: PlaneGuidance,
     transition: Transition,
     handoff: ThrustHandoff,
+    fallback_hold: FallbackHold,
     /// The mode the last tick flew.
     mode: FlightMode,
     /// The last setpoint's thrust: where a handoff blend starts.
@@ -138,6 +139,7 @@ impl TailsitterGuidance {
             plane: PlaneGuidance::new(config.plane),
             transition: Transition::new(config.transition),
             handoff: ThrustHandoff::new(config.transition.handoff_s),
+            fallback_hold: FallbackHold::default(),
             mode: FlightMode::Copter,
             last_thrust: 0.0,
             forward_thrust: 0.0,
@@ -285,7 +287,11 @@ impl Guidance for TailsitterGuidance {
                 });
                 transition_ramp(self.plane.guide(dt, FlightRegime::Plane, &ramp, state))
             }
-            _ => self.hover.guide(dt, FlightRegime::Copter, input, state),
+            _ => {
+                let fallen_back = self.transition.fallen_back();
+                let flown = self.fallback_hold.input(fallen_back, input, state);
+                self.hover.guide(dt, FlightRegime::Copter, &flown, state)
+            }
         };
         let setpoint = if self.handoff.active() {
             setpoint.with_thrust(self.handoff.apply(dt, setpoint.thrust()))
@@ -306,6 +312,7 @@ impl Guidance for TailsitterGuidance {
         self.plane.prime(state);
         self.transition.prime(state);
         self.handoff = ThrustHandoff::new(self.config.transition.handoff_s);
+        self.fallback_hold.clear();
         self.mode = FlightMode::Copter;
         self.last_thrust = 0.0;
         self.throttle_floor = None;

@@ -109,6 +109,72 @@ pub fn forward_and_back_to(
     )
 }
 
+/// The plane minimum height the fallback tests set, in m above the arming point: PX4 sets
+/// none by default (`VT_FW_MIN_ALT` 0); px4xplane's Alia, 20 m.
+pub const PLANE_FLOOR_M: f32 = 20.0;
+
+/// How far below [`PLANE_FLOOR_M`] a fallback may sink before the hover holds, in m: no
+/// external band applies (PX4 switches to hover at once); measured 1.9 m on the quadplane
+/// at a 3.5 m/s sink and 3.3 m on the tailsitter at 4.6 m/s, with 1.7 m of margin.
+pub const FALLBACK_LOSS_M: f32 = 5.0;
+
+/// The hover a [`sinking_leg`] starts its plane leg from, in m: 40 m above the floor, room
+/// for the sink to build to the plane's limit.
+const SINK_FROM_M: f32 = 60.0;
+
+/// When a [`sinking_leg`] asks for `Plane`, in s: the climb to [`SINK_FROM_M`] and settling.
+pub const SINK_AT_S: f32 = 30.0;
+
+/// Seconds after [`SINK_AT_S`] by which the fallback has handed the hover over (measured
+/// 27.7 s on the quadplane, 16.9 s on the tailsitter).
+pub const SINK_WATCH_S: f32 = 40.0;
+
+/// Hovers over the origin at [`SINK_FROM_M`], then from [`SINK_AT_S`] flies the line north as
+/// a plane at `airspeed_mps`, toward an altitude under the ground: it sinks at the plane's
+/// limit until something stops it.
+pub fn sinking_leg(airspeed_mps: f32) -> Forward {
+    Interlude::new(
+        hover_at(SINK_FROM_M),
+        SINK_AT_S,
+        f32::INFINITY,
+        north_line_command(-100.0, airspeed_mps),
+    )
+}
+
+/// Checks a [`sinking_leg`] flown with the plane floor at [`PLANE_FLOOR_M`]: plane flight
+/// falls back below it (`BelowPlaneMinAltitude`), the back transition ends in copter flight
+/// within [`SINK_WATCH_S`], no more than [`FALLBACK_LOSS_M`] below the floor, and `Plane` stays
+/// refused. Returns the tick copter flight took over on, or `None` (a failed check).
+pub fn check_falls_back<'a>(trace: &'a Trace, what: &str) -> Option<&'a Sample> {
+    let plane_s = entered_s(trace, FlightMode::Plane, SINK_AT_S, what);
+    let fell_back = trace.entered(FlightMode::ToCopter, plane_s);
+    check!(
+        fell_back.map(|sample| sample.refusal) == Some(Some(ModeRefusal::BelowPlaneMinAltitude)),
+        "{what}"
+    );
+    check!(
+        fell_back.is_some_and(|sample| sample.state.position_m.z < PLANE_FLOOR_M),
+        "{what}"
+    );
+    let back_s = fell_back.map_or(f32::INFINITY, |sample| sample.time_s);
+    let hover = trace.entered(FlightMode::Copter, back_s);
+    let hover_s = hover.map_or(f32::INFINITY, |sample| sample.time_s);
+    check!(hover_s <= SINK_AT_S + SINK_WATCH_S, "{what}: {hover_s} s");
+    let heights = trace.heights(back_s, f32::INFINITY);
+    let below_m = PLANE_FLOOR_M - heights.lowest_m;
+    check!(
+        below_m <= FALLBACK_LOSS_M,
+        "{what}: {below_m} m below, {heights:?}"
+    );
+    let last = trace.samples.last();
+    check!(
+        last.map(|sample| (sample.mode, sample.refusal))
+            == Some((FlightMode::Copter, Some(ModeRefusal::BelowPlaneMinAltitude))),
+        "{what}"
+    );
+    hover
+}
+
 /// One tick of a transition flight.
 #[derive(Debug, Clone)]
 pub struct Sample {

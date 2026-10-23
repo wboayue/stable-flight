@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **VTOL fallback below a plane minimum height** (#450): `TransitionConfig` and
+  `LiftTransitionConfig` gain `plane_min_height_m` (`TRAN_FW_MIN_HGT`, off by default, as
+  PX4's `VT_FW_MIN_ALT`). Plane flight below it falls back to copter through the back
+  transition (a quadchute), reporting `ModeRefusal::BelowPlaneMinAltitude`, and a forward
+  transition needs it to start. On the sim a plane leg sinking through 20 m hovers at most
+  3.3 m below it; on `main` it flew into the ground.
+
 - **Scripted maneuvers** (#342): `commanders::maneuver`.
   - A `Maneuver` is up to `MAX_SEGMENTS` (16) `Segment`s, `Copy` and fixed-size:
     `Segment::Rotate` holds a signed body rate about one `Axis` (`RateLaw::Constant`, or
@@ -384,6 +391,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TableMixer::tailsitter_2p()`.
 
 ### Fixed
+
+- After a fallback (a forward transition timed out or cut short, or plane flight below its
+  minimum height), `TailsitterGuidance` and `QuadPlaneGuidance` hover where copter flight took
+  over until `Copter` is requested, instead of flying the command's input (#453): a quadplane
+  timing out toward a plane waypoint 100 km off chased it on its lift rotors at 15 m/s,
+  265 m in 20 s. `ToCopter` no longer returns to `Plane` after a fallback.
 
 - `LateralController` with `max_accel_mps2` set (`GUID_LAT_ACC`) brakes onto its target along
   a braking curve at `BRAKING_SHARE` (0.7) of the limit, instead of in proportion to the

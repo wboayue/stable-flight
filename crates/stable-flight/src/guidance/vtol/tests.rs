@@ -5,7 +5,7 @@ use assert2::check;
 use nalgebra::{Quaternion, UnitQuaternion};
 
 use super::*;
-use crate::Vec3;
+use crate::{Vec2, Vec3};
 
 const DT: f32 = 0.01;
 /// Height that clears the default `min_height_m`.
@@ -374,6 +374,139 @@ fn standing_request_starts_once_high_enough() {
     }
 }
 
+/// The plane minimum height in this module's tests, in m above the arming point.
+const FLOOR_M: f32 = 20.0;
+
+/// With a plane minimum height, a forward transition needs it to start; plane flight below it
+/// falls back to copter, completing the back transition however `Plane` is still requested,
+/// and `Plane` stays refused until `Copter` is requested.
+#[test]
+fn falls_back_below_the_plane_minimum_height() {
+    use FlightRegime::{Copter, Plane};
+    use ModeRefusal::{BelowMinAltitude, BelowPlaneMinAltitude};
+    let mut transition = primed_with(TransitionConfig {
+        plane_min_height_m: FLOOR_M,
+        ..Default::default()
+    });
+    // (what, request, tilt, height, mode, refusal, fallen back)
+    let ticks = [
+        (
+            "past TRAN_MIN_HGT, below the floor",
+            Plane,
+            0.0,
+            15.0,
+            FlightMode::Copter,
+            Some(BelowMinAltitude),
+            false,
+        ),
+        (
+            "above the floor",
+            Plane,
+            0.0,
+            30.0,
+            FlightMode::ToPlane,
+            None,
+            false,
+        ),
+        (
+            "completes",
+            Plane,
+            50.0,
+            30.0,
+            FlightMode::Plane,
+            None,
+            false,
+        ),
+        (
+            "plane above the floor",
+            Plane,
+            90.0,
+            21.0,
+            FlightMode::Plane,
+            None,
+            false,
+        ),
+        (
+            "below it",
+            Plane,
+            90.0,
+            19.0,
+            FlightMode::ToCopter,
+            Some(BelowPlaneMinAltitude),
+            true,
+        ),
+        (
+            "back ramp on",
+            Plane,
+            80.0,
+            19.0,
+            FlightMode::ToCopter,
+            Some(BelowPlaneMinAltitude),
+            true,
+        ),
+        (
+            "back completes",
+            Plane,
+            10.0,
+            19.0,
+            FlightMode::Copter,
+            Some(BelowPlaneMinAltitude),
+            true,
+        ),
+        (
+            "high again, still refused",
+            Plane,
+            0.0,
+            30.0,
+            FlightMode::Copter,
+            Some(BelowPlaneMinAltitude),
+            true,
+        ),
+        (
+            "cleared",
+            Copter,
+            0.0,
+            30.0,
+            FlightMode::Copter,
+            None,
+            false,
+        ),
+        (
+            "plane again",
+            Plane,
+            0.0,
+            30.0,
+            FlightMode::ToPlane,
+            None,
+            false,
+        ),
+    ];
+    for (what, request, tilt_deg, height_m, mode, refusal, fallen_back) in ticks {
+        let step = transition.update(DT, request, &state(tilt_deg, height_m, None));
+        check!(step.mode == mode, "{what}");
+        check!(transition.report().refusal == refusal, "{what}");
+        check!(transition.fallen_back() == fallen_back, "{what}");
+    }
+}
+
+/// Plane flight falls back on no height it doesn't know (NaN), and on none at all with the
+/// minimum at 0.
+#[test]
+fn plane_minimum_height_needs_a_known_height_and_a_floor() {
+    let mut floored = primed_with(TransitionConfig {
+        plane_min_height_m: FLOOR_M,
+        ..Default::default()
+    });
+    floored.update(DT, FlightRegime::Plane, &state(0.0, 30.0, None));
+    floored.update(DT, FlightRegime::Plane, &state(50.0, 30.0, None));
+    let unknown = state(90.0, f32::NAN, None);
+    check!(floored.update(DT, FlightRegime::Plane, &unknown).mode == FlightMode::Plane);
+
+    let mut floorless = in_plane();
+    let underground = state(90.0, -100.0, None);
+    check!(floorless.update(DT, FlightRegime::Plane, &underground).mode == FlightMode::Plane);
+}
+
 /// Without `prime` there is no arming altitude to measure height from: `Plane` is refused.
 #[test]
 fn unprimed_refuses_plane() {
@@ -406,7 +539,7 @@ fn prime_resets_mode_and_timeout() {
 #[test]
 fn validates_each_config_field() {
     type Break = fn(&mut TransitionConfig);
-    let cases: [(Break, &str); 16] = [
+    let cases: [(Break, &str); 17] = [
         (|c| c.forward_rate_radps = 0.0, "forward_rate_radps"),
         (|c| c.forward_done_rad = 0.0, "forward_done_rad"),
         (|c| c.forward_done_rad = FRAC_PI_2, "forward_done_rad"),
@@ -417,6 +550,7 @@ fn validates_each_config_field() {
         (|c| c.back_done_rad = -0.1, "back_done_rad"),
         (|c| c.timeout_s = 0.0, "timeout_s"),
         (|c| c.min_height_m = f32::INFINITY, "min_height_m"),
+        (|c| c.plane_min_height_m = -1.0, "plane_min_height_m"),
         (|c| c.forward_thrust = 1.1, "forward_thrust"),
         (|c| c.back_thrust = f32::NAN, "back_thrust"),
         (|c| c.back_sink_limit_mps = -1.0, "back_sink_limit_mps"),
@@ -444,6 +578,47 @@ fn new_panics_on_an_invalid_config() {
         timeout_s: -1.0,
         ..Default::default()
     });
+}
+
+/// A fallback hold passes the input through outside a fallback, latches where the vehicle is
+/// on its first tick in one, holds that point however the vehicle moves, and lets go when the
+/// fallback clears (or on `clear`).
+#[test]
+fn fallback_hold_latches_the_first_fallback_tick() {
+    let at = |north_m: f32, height_m: f32| VehicleState {
+        position_m: Vec3::new(north_m, 0.0, height_m),
+        ..Default::default()
+    };
+    let hold_over = |north_m: f32, altitude_m: f32| {
+        ControlInput::Waypoint(WaypointCommand {
+            position_m: Vec2::new(north_m, 0.0),
+            altitude_m,
+            ..Default::default()
+        })
+    };
+    let far = hold_over(6_000.0, 250.0);
+    let mut hold = FallbackHold::default();
+    // (what, fallen back, vehicle north and height, input flown)
+    let ticks = [
+        ("no fallback", false, (10.0, 30.0), far),
+        (
+            "first fallback tick",
+            true,
+            (20.0, 29.0),
+            hold_over(20.0, 29.0),
+        ),
+        ("held", true, (25.0, 28.0), hold_over(20.0, 29.0)),
+        ("cleared", false, (30.0, 30.0), far),
+        ("a new fallback", true, (40.0, 31.0), hold_over(40.0, 31.0)),
+    ];
+    for (what, fallen_back, (north_m, height_m), flown) in ticks {
+        check!(
+            hold.input(fallen_back, &far, &at(north_m, height_m)) == flown,
+            "{what}"
+        );
+    }
+    hold.clear();
+    check!(hold.input(true, &far, &at(50.0, 32.0)) == hold_over(50.0, 32.0));
 }
 
 /// The blend runs linearly from the start value to the demand over the duration, follows a

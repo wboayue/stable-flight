@@ -58,7 +58,10 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
    pusher spans its whole range, whatever the lift rotors' thrust factor
    ([#448](https://github.com/wboayue/stable-flight/issues/448)). Then the total energy
    control below.
-4. **Transitions.** Tune these last, from a settled hover at least `TRAN_MIN_HGT` up.
+4. **Transitions.** Tune these last, from a settled hover at least `TRAN_MIN_HGT` up. Set
+   `TRAN_FW_MIN_HGT` below the plane legs, with room under it for a back transition's loss
+   (1.9 m at a 3.5 m/s sink on the sim quadplane): plane flight below it falls back to a
+   hover where copter flight takes over.
 
 **Worked example (Alia 250 in X-Plane, hover only, #351):** a full-size aircraft, so the
 small-copter defaults don't carry over; measure first, then tune on a sim model of it.
