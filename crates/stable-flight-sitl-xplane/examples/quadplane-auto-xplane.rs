@@ -12,9 +12,8 @@
 //! [`QuadPlaneGuidance`]: stable_flight::guidance::vtol::QuadPlaneGuidance
 //! [`QuadPlaneStabilizer`]: stable_flight::stabilizers::vtol::QuadPlaneStabilizer
 //!
-//! Script coordinates are meters north and east of where the aircraft was at connect (the
-//! anchor the vehicle logs), and altitudes are above sea level, as `XPlaneVehicle` reports
-//! position. The commander replays the waypoints once, then follows `--end`: `hold` (the
+//! Script coordinates are meters north and east of where the aircraft starts, and altitudes
+//! meters above it (`ScriptCommander::anchored`). The commander replays the waypoints once, then follows `--end`: `hold` (the
 //! default) hovers on the last waypoint until interrupted, `loop` flies the path again and
 //! again, and `land` lands on the last waypoint and disarms on touchdown.
 //!
@@ -108,7 +107,8 @@ fn main() {
     // Replays the waypoints from the CSV script, then holds the last, loops, or lands.
     let commander = ScriptCommander::new(&args.script)
         .expect("failed to load flight script")
-        .with_route_end(args.end.into());
+        .with_route_end(args.end.into())
+        .anchored();
 
     // Alia 250: tuned gains, mixer, and engine and surface mapping.
     let airframe = airframes::alia250();
@@ -162,9 +162,10 @@ fn main() {
             complete = true;
             match args.end {
                 End::Land => {
-                    let position_m = flight_loop.state().position_m;
+                    let position_m =
+                        flight_loop.state().position_m - flight_loop.commander().origin_m();
                     info!(
-                        "touched down at north {:.2} m, east {:.2} m: disarmed",
+                        "touched down {:.2} m north, {:.2} m east of the start: disarmed",
                         position_m.x, position_m.y
                     );
                 }

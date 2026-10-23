@@ -3,8 +3,8 @@
 # the runway heading and turn west, then level legs at 300 m and 48, 46, 44, and 40 m/s, the
 # speeds the Alia holds level (trim points; the probe pulses the surfaces on each), a second
 # lap at 44 m/s, a leg north at 44 m/s abeam the airport that starts the back transition, and
-# hover home to land. Coordinates are m north and east of the anchor; altitudes are above sea
-# level.
+# hover home to land. Coordinates are m north and east of where the vehicle starts,
+# altitudes m above it.
 x,y,altitude,cruise_speed,regime
 0.0,0.0,250.0,3.0,copter
 0.0,-6000.0,300.0,48.0,plane

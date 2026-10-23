@@ -94,7 +94,8 @@ fn main() {
 
     let commander = ScriptCommander::new(&args.script)
         .expect("failed to load flight script")
-        .with_route_end(RouteEnd::Land);
+        .with_route_end(RouteEnd::Land)
+        .anchored();
 
     let airframe = airframes::alia250();
     let bridge = XPlaneUdpBridge::connect(&args.host).expect("failed to open the socket");
