@@ -2022,7 +2022,7 @@ fn descent_feedforward_is_continuous_at_the_leash() {
     let target = |above_m: f32| {
         let (mut guidance, _) = guidance_at(10.0 + above_m);
         guidance.altitude_target_m = Some(10.0);
-        guidance.descend_toward(DT, 10.0, 10.0 + above_m)
+        guidance.descend_toward(DT, 10.0, 10.0 + above_m, 0.0)
     };
     let below = target(ALTITUDE_LEASH_M - 1e-3);
     let above = target(ALTITUDE_LEASH_M + 1e-3);
@@ -2052,7 +2052,7 @@ fn descent_feedforward_brakes_to_the_waypoint() {
         let (mut guidance, _) = guidance_at(10.0 + height_m);
         guidance.altitude_target_m = Some(10.0 + height_m);
         guidance.descent_speed_mps = DEFAULT_MAX_DESCENT_MPS;
-        let target = guidance.descend_toward(1e-6, 10.0, 10.0 + height_m);
+        let target = guidance.descend_toward(1e-6, 10.0, 10.0 + height_m, 0.0);
         approx::assert_relative_eq!(target.velocity_mps, expected, epsilon = 1e-3);
     }
 }
@@ -2073,6 +2073,8 @@ fn descent_speeds_up_at_descent_accel() {
     ];
     for (speed_mps, ticks, expected) in cases {
         let (mut guidance, _) = guidance_at(60.0);
+        // A descent under way: its target latched, at the last tick's speed.
+        guidance.altitude_target_m = Some(60.0);
         guidance.descent_speed_mps = speed_mps;
         let mut target = AltitudeTarget {
             altitude_m: f32::NAN,
@@ -2081,7 +2083,7 @@ fn descent_speeds_up_at_descent_accel() {
         for _ in 0..ticks {
             // The vehicle keeps up with the target, so the leash never holds it.
             let altitude_m = guidance.altitude_target_m.unwrap_or(60.0);
-            target = guidance.descend_toward(DT, 10.0, altitude_m);
+            target = guidance.descend_toward(DT, 10.0, altitude_m, 0.0);
         }
         approx::assert_relative_eq!(target.velocity_mps, expected, epsilon = 1e-3);
     }
@@ -2165,8 +2167,7 @@ fn a_descent_after_a_land_starts_from_the_land_speed() {
         for _ in 0..100 {
             guidance.guide(DT, FlightRegime::Copter, &land, &state);
         }
-        guidance.altitude_target_m = None;
-        let target = guidance.descend_toward(DT, 10.0, 60.0);
+        let target = guidance.descend_toward(DT, 10.0, 60.0, 0.0);
         approx::assert_relative_eq!(target.velocity_mps, expected, epsilon = 1e-4);
     }
 }
