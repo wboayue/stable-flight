@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `airframes::explora_vtol()` and `airframes::titan_cobra()` fall back to a hover below 15 m
+  in plane flight (`TRAN_FW_MIN_HGT`, #450), half the scripts' 30 m plane legs.
+
 - `airframes::explora_vtol()` turns a wingtip into the wind while holding and landing
   (`GUID_WND_HDG_SPD` 1 m/s, #470): belly into RealFlight's 2 m/s wind it pinned its tilt cap
   and drifted.

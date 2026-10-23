@@ -388,16 +388,24 @@ deliberately. The pieces:
   vehicle may not be flying; a back timeout completes, as in both stacks.
 
 `Transition` moves through the modes as below (`TransitionConfig` names the limits). A forward
-transition that times out or hits the roll limit stays refused until copter is requested again.
+transition that times out or hits the roll limit, or plane flight below `plane_min_height_m`,
+is a fallback (a quadchute): plane flight stays refused until copter is requested again, and
+the guidance hovers where copter flight took over instead of flying the command. A mission's
+plane waypoint can be kilometers off; chasing it on the rotors at the plane leg's speed is
+what this stops (#453). PX4 switches straight to hover below `VT_FW_MIN_ALT` and returns home
+(`vtol_type.cpp:231-243`, `COM_QC_ACT`); here the back transition flies, losing 1.9–3.3 m
+on the sim (#450), and the commander picks what follows the hover. Rejected: ArduPilot's
+lift assist below `Q_ASSIST_ALT` (`VTOL_Assist.cpp:16-45`), which stays in plane flight but
+needs a new blend in `Plane` and has nothing to assist with on a tailsitter.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Copter: arm (prime)
-    Copter --> ToPlane: plane requested, height ≥ min_height_m
+    Copter --> ToPlane: plane requested, no fallback, height ≥ min_height_m and plane_min_height_m
     ToPlane --> Plane: tilt ≥ forward_done_rad and airspeed ≥ min if measured (handoff)
     ToPlane --> Copter: copter requested, timeout, or roll limit
-    Plane --> ToCopter: copter requested
-    ToCopter --> Plane: plane requested
+    Plane --> ToCopter: copter requested, or height < plane_min_height_m (fallback)
+    ToCopter --> Plane: plane requested, no fallback
     ToCopter --> Copter: tilt ≤ back_done_rad, timeout, or roll limit (handoff)
 ```
 
@@ -428,12 +436,12 @@ and its config validated per kind.
 ```mermaid
 stateDiagram-v2
     [*] --> Copter: arm (prime)
-    Copter --> ToPlane: plane requested, height ≥ min_height_m (lift share 1)
+    Copter --> ToPlane: plane requested, no fallback, height ≥ min_height_m and plane_min_height_m (lift share 1)
     ToPlane --> ToPlane: airspeed ≥ min_airspeed_mps starts the lift ramp (1 → 0 over lift_ramp_s)
     ToPlane --> Plane: lift ramp done (handoff)
     ToPlane --> Copter: copter requested, timeout_s waiting on airspeed, or roll limit
-    Plane --> ToCopter: copter requested (lift share 0 → 1 over back_ramp_s)
-    ToCopter --> Plane: plane requested
+    Plane --> ToCopter: copter requested, or height < plane_min_height_m (fallback; lift share 0 → 1 over back_ramp_s)
+    ToCopter --> Plane: plane requested, no fallback
     ToCopter --> Copter: forward speed < back_speed_mps, back_timeout_s, or roll limit (handoff)
 ```
 

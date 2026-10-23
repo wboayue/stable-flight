@@ -76,12 +76,14 @@ fn line_from(
     hold.0.take()
 }
 
-/// `airframe` with the transition's height floor off: plane flight asked for at any height.
+/// `airframe` with the transition's height floors off: plane flight asked for, and flown, at
+/// any height above where it was primed in the air.
 fn floorless(airframe: QuadPlaneAirframe) -> QuadPlaneAirframe {
     QuadPlaneAirframe {
         guidance: QuadPlaneGuidanceConfig {
             transition: LiftTransitionConfig {
                 min_height_m: 0.0,
+                plane_min_height_m: 0.0,
                 ..airframe.guidance.transition
             },
             ..airframe.guidance

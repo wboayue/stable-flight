@@ -119,7 +119,7 @@
 //! | `TRAN_ASPD_MIN` | `min_airspeed_mps` |
 //! | `TRAN_VT_RATE`, `TRAN_VT_DONE` | `back_rate_radps`, `back_done_rad` |
 //! | `TRAN_TIMEOUT` | `timeout_s` |
-//! | `TRAN_MIN_HGT` | `min_height_m` |
+//! | `TRAN_MIN_HGT`, `TRAN_FW_MIN_HGT` | `min_height_m`, `plane_min_height_m` |
 //! | `TRAN_FW_THR`, `TRAN_VT_THR` | `forward_thrust`, `back_thrust` |
 //! | `TRAN_VT_SINK_LIM`, `TRAN_VT_SINK_GN` | `back_sink_limit_mps`, `back_sink_gain` |
 //! | `TRAN_HANDOFF` | `handoff_s` |
@@ -134,7 +134,7 @@
 //! | `TRAN_ASPD_MIN` | `min_airspeed_mps` |
 //! | `TRAN_FW_RAMP` | `lift_ramp_s` |
 //! | `TRAN_TIMEOUT` | `timeout_s` |
-//! | `TRAN_MIN_HGT` | `min_height_m` |
+//! | `TRAN_MIN_HGT`, `TRAN_FW_MIN_HGT` | `min_height_m`, `plane_min_height_m` |
 //! | `TRAN_VT_RAMP`, `TRAN_VT_SPD`, `TRAN_VT_TIMEOUT` | `back_ramp_s`, `back_speed_mps`, `back_timeout_s` |
 //! | `TRAN_FW_THR`, `TRAN_PSH_SLEW` | `forward_thrust`, `pusher_slew_per_s` |
 //! | `TRAN_HANDOFF` | `handoff_s` |

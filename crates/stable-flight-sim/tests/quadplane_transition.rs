@@ -20,8 +20,9 @@ use common::quadplane::{
     QuadPlanePlant, forward, forward_and_back, quadplane_loop, quadplane_pipeline,
 };
 use common::transition::{
-    BACK_DURATION_S, CROSS_TRACK_M, FORWARD_AT_S, FORWARD_TIMEOUT_S, Forward, HOLD_S, PLANE_HOLD_S,
-    PLANE_SETTLE_S, TRANSITION_ALTITUDE_M, Trace, check_altitude_loss, entered_s, trace,
+    BACK_DURATION_S, CROSS_TRACK_M, FORWARD_AT_S, FORWARD_TIMEOUT_S, Forward, HOLD_S,
+    PLANE_FLOOR_M, PLANE_HOLD_S, PLANE_SETTLE_S, SINK_AT_S, SINK_WATCH_S, TRANSITION_ALTITUDE_M,
+    Trace, check_altitude_loss, check_falls_back, entered_s, sinking_leg, trace,
     transition_heights,
 };
 use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK, fly};
@@ -120,7 +121,9 @@ fn transitions_back_into_a_hover() {
 }
 
 /// With too little pusher thrust to reach the airspeed gate, the forward transition waits on
-/// the lift rotors and times out to `Copter` within PX4's altitude loss.
+/// the lift rotors and times out to `Copter` within PX4's altitude loss, then hovers where it
+/// timed out within the copter's calm-air bands, though `Plane` is still asked for toward a
+/// waypoint 100 km north (#453).
 #[test]
 fn times_out_short_of_the_airspeed_gate() {
     let mut airframe = airframes::quadplane();
@@ -129,7 +132,7 @@ fn times_out_short_of_the_airspeed_gate() {
     let mut flight_loop = quadplane_loop(&plant, forward(&airframe));
     let flight = trace(
         &mut flight_loop,
-        FORWARD_AT_S + FORWARD_TIMEOUT_S + HOVER_SETTLE_S,
+        FORWARD_AT_S + FORWARD_TIMEOUT_S + HOVER_SETTLE_S + HOLD_S,
     );
 
     let fastest_mps = flight
@@ -147,6 +150,31 @@ fn times_out_short_of_the_airspeed_gate() {
     check!((copter_s - ramp_s - FORWARD_TIMEOUT_S).abs() < tolerance_s);
     // Measured 0.01 m.
     check_altitude_loss(transition_heights(&flight, ramp_s, copter_s), "timeout");
+    if let Some(ended) = ended {
+        let hold_s = copter_s + HOVER_SETTLE_S;
+        check_calm_hover(&flight, hold_s, ended.state.position_m, "timeout");
+    }
+}
+
+/// A plane leg sinking through the plane minimum height falls back to copter flight no
+/// further than `FALLBACK_LOSS_M` below it, then hovers where the hover took over within the
+/// copter's calm-air bands, `Plane` still refused (#450).
+#[test]
+fn falls_back_below_the_plane_minimum_height() {
+    let mut airframe = airframes::quadplane();
+    airframe.guidance.transition.plane_min_height_m = PLANE_FLOOR_M;
+    let plant = QuadPlanePlant::clean(airframe);
+    let commander = sinking_leg(airframe.stabilizer.plane.trim_airspeed_mps);
+    let mut flight_loop = quadplane_loop(&plant, commander);
+    let flight = trace(
+        &mut flight_loop,
+        SINK_AT_S + SINK_WATCH_S + HOVER_SETTLE_S + HOLD_S,
+    );
+
+    if let Some(hover) = check_falls_back(&flight, "fallback") {
+        let hold_s = hover.time_s + HOVER_SETTLE_S;
+        check_calm_hover(&flight, hold_s, hover.state.position_m, "fallback");
+    }
 }
 
 /// A link flying [`Forward`] that goes silent [`SILENT_AFTER_S`] into the forward transition.

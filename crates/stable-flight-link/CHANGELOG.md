@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `Record::telemetry` leaves core's new `TelemetryRecord::wind` `None`: the link doesn't
   carry the wind estimate (#473).
+- **Breaking:** `PROTOCOL_VERSION` 10 (#450): core `ModeRefusal::BelowPlaneMinAltitude`
+  changes the `Downlink::Heartbeat` and `Record` shapes. `LinkPublisher` announces it as
+  "Quadchute: below plane minimum height".
 - **Breaking:** `PROTOCOL_VERSION` 9 (#470): core `WaypointCommand` gains `heading_rad`, which
   changes the `Control` and `Record` shapes.
 - **Breaking:** `PROTOCOL_VERSION` 8 (#333): `Control::Regime` changes the `Control` shape.

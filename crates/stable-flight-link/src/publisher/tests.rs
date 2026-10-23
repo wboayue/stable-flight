@@ -289,7 +289,10 @@ fn announces_each_failsafe_change_once() {
 
 #[test]
 fn announces_each_new_mode_refusal_once() {
-    use ModeRefusal::{BelowMinAltitude, OnGround, RollError, TransitionTimeout, Unsupported};
+    use ModeRefusal::{
+        BelowMinAltitude, BelowPlaneMinAltitude, OnGround, RollError, TransitionTimeout,
+        Unsupported,
+    };
     // (refusal this tick, expected status text sent)
     let ticks = [
         (None, None),
@@ -299,6 +302,10 @@ fn announces_each_new_mode_refusal_once() {
         (None, None), // flown: nothing to announce
         (Some(TransitionTimeout), Some("Transition timed out")),
         (Some(RollError), Some("Transition aborted: roll error")),
+        (
+            Some(BelowPlaneMinAltitude),
+            Some("Quadchute: below plane minimum height"),
+        ),
         (Some(Unsupported), None), // the airframe's (a plane refusing copter), not the pilot's
         (None, None),
         (Some(OnGround), Some("Transition refused: on the ground")), // again after clearing

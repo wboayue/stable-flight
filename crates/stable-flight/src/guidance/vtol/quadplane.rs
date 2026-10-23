@@ -1,8 +1,8 @@
 //! [`QuadPlaneGuidance`]: hover and plane guidance under one [`LiftTransition`].
 
 use super::{
-    ForwardThrust, ForwardThrustConfig, LiftTransition, LiftTransitionConfig, LiftTransitionStep,
-    OffNoseSpeed, OffNoseSpeedConfig, ThrustHandoff,
+    FallbackHold, ForwardThrust, ForwardThrustConfig, LiftTransition, LiftTransitionConfig,
+    LiftTransitionStep, OffNoseSpeed, OffNoseSpeedConfig, ThrustHandoff,
 };
 use crate::controllers::InvalidConfig;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
@@ -73,7 +73,7 @@ impl QuadPlaneGuidanceConfig {
 ///
 ///    | Mode | Setpoint |
 ///    |---|---|
-///    | `Copter` | hover guidance, on the command's input; on a waypoint or land with [`ForwardThrust`] on, [`Setpoint::Blend`] at lift share 1: the hover's attitude with its nose-down pitch held to the limit, the plane side at that roll and pitch, the pusher on the rest |
+///    | `Copter` | hover guidance, on the command's input, or after a fallback on a hold where copter flight took over (until `Copter` is requested); on a waypoint or land with [`ForwardThrust`] on, [`Setpoint::Blend`] at lift share 1: the hover's attitude with its nose-down pitch held to the limit, the plane side at that roll and pitch, the pusher on the rest |
 ///    | `ToPlane` | [`Setpoint::Blend`]: both sides wings level at the plane guidance's pitch for the command, within ArduPilot's transition limits; hover holding the altitude the transition began at, heading held; the pusher on the plane guidance's thrust, rising at most [`pusher_slew_per_s`](LiftTransitionConfig::pusher_slew_per_s), up to [`forward_thrust`](LiftTransitionConfig::forward_thrust); the step's lift share |
 ///    | `Plane` | plane guidance, on the command's input |
 ///    | `ToCopter` | [`Setpoint::Blend`]: both sides wings level at pitch 0; hover holding the altitude the back transition began at, heading held; the pusher stopped; the step's lift share |
@@ -128,6 +128,7 @@ pub struct QuadPlaneGuidance {
     forward: ForwardThrust,
     off_nose: OffNoseSpeed,
     handoff: ThrustHandoff,
+    fallback_hold: FallbackHold,
     /// The mode the last tick flew.
     mode: FlightMode,
     /// The pusher's linear thrust on the last tick.
@@ -166,6 +167,7 @@ impl QuadPlaneGuidance {
             forward: ForwardThrust::new(config.forward),
             off_nose: OffNoseSpeed::new(config.off_nose),
             handoff: ThrustHandoff::new(config.transition.handoff_s),
+            fallback_hold: FallbackHold::default(),
             mode: FlightMode::Copter,
             pusher_thrust: 0.0,
             hold_altitude_m: f32::NAN,
@@ -389,7 +391,11 @@ impl Guidance for QuadPlaneGuidance {
                     lift_share: step.lift_share,
                 })
             }
-            _ => self.copter(dt, input, state),
+            _ => {
+                let fallen_back = self.transition.fallen_back();
+                let flown = self.fallback_hold.input(fallen_back, input, state);
+                self.copter(dt, &flown, state)
+            }
         };
         self.mode = step.mode;
         setpoint
@@ -401,6 +407,7 @@ impl Guidance for QuadPlaneGuidance {
         self.plane.prime(state);
         self.transition.prime(state);
         self.handoff = ThrustHandoff::new(self.config.transition.handoff_s);
+        self.fallback_hold.clear();
         self.mode = FlightMode::Copter;
         self.pusher_thrust = 0.0;
         self.hold_altitude_m = f32::NAN;

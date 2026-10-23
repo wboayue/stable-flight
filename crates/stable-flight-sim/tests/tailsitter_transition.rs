@@ -24,8 +24,9 @@ use common::tailsitter::{
 };
 use common::transition::{
     ALTITUDE_LOSS_AFTER_S, BACK_DURATION_S, CROSS_TRACK_M, FORWARD_AT_S, FORWARD_TIMEOUT_S, HOLD_S,
-    Heights, HoverDeviation, PLANE_HOLD_S, PLANE_SETTLE_S, TRANSITION_ALTITUDE_M,
-    check_altitude_loss, entered_s, trace, transition_heights,
+    Heights, HoverDeviation, PLANE_FLOOR_M, PLANE_HOLD_S, PLANE_SETTLE_S, SINK_AT_S, SINK_WATCH_S,
+    TRANSITION_ALTITUDE_M, check_altitude_loss, check_falls_back, entered_s, sinking_leg, trace,
+    transition_heights,
 };
 use common::{
     ARRIVAL_UNDERSHOOT_M, CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK,
@@ -519,8 +520,15 @@ fn sink_guard_catches_a_stalling_back_ramp() {
     }
 }
 
+/// Seconds the hover settles after a forward transition ends early before the hold is judged:
+/// the timeout hands over at 7.4 m/s from its tilted ramp, measured 0.09 m off at most after
+/// 30 s.
+const REFUSED_SETTLE_S: f32 = 30.0;
+
 /// A forward transition that ends in a hover instead: asked to, timed out, or rolled past its
-/// limit. Each ends as the transition says, within PX4's altitude loss.
+/// limit. Each ends as the transition says, within PX4's altitude loss, and holds within the
+/// copter's calm-air bands: asked back, over the origin; refused, where the hover took over,
+/// though `Plane` is still asked for toward a waypoint 100 km north (#453).
 #[test]
 fn ends_a_forward_transition_early() {
     let airframe = airframes::tailsitter();
@@ -578,7 +586,7 @@ fn ends_a_forward_transition_early() {
         let mut flight_loop = tailsitter_loop(&plant, commander);
         let flight = trace(
             &mut flight_loop,
-            FORWARD_AT_S + FORWARD_TIMEOUT_S + HOVER_SETTLE_S,
+            FORWARD_AT_S + FORWARD_TIMEOUT_S + REFUSED_SETTLE_S + HOLD_S,
         );
 
         let ramp_s = entered_s(&flight, FlightMode::ToPlane, FORWARD_AT_S, case);
@@ -600,16 +608,41 @@ fn ends_a_forward_transition_early() {
         }
         check_altitude_loss(transition_heights(&flight, ramp_s, copter_s), case);
 
-        // Asked back, it hovers over the origin. Refused, it still wants `Plane` and flies its
-        // line as a copter, so only its height is checked.
-        if refusal.is_none() {
-            let hold_s = copter_s + HOVER_SETTLE_S;
-            let mut worst = HoverDeviation::default();
-            for sample in flight.window(hold_s, hold_s + HOLD_S) {
-                worst.observe(&sample.state, origin_m);
-            }
-            check_calm_hover(&worst, case);
+        let point_m = match (refusal, ended) {
+            (Some(_), Some(ended)) => ended.state.position_m,
+            _ => origin_m,
+        };
+        let hold_s = copter_s + REFUSED_SETTLE_S;
+        let mut worst = HoverDeviation::default();
+        for sample in flight.window(hold_s, hold_s + HOLD_S) {
+            worst.observe(&sample.state, point_m);
         }
+        check_calm_hover(&worst, case);
+    }
+}
+
+/// A plane leg sinking through the plane minimum height falls back to copter flight no
+/// further than `FALLBACK_LOSS_M` below it, then hovers where the hover took over within the
+/// copter's calm-air bands, `Plane` still refused (#450).
+#[test]
+fn falls_back_below_the_plane_minimum_height() {
+    let mut airframe = airframes::tailsitter();
+    airframe.guidance.transition.plane_min_height_m = PLANE_FLOOR_M;
+    let plant = TailsitterPlant::clean(airframe);
+    let commander = sinking_leg(airframe.stabilizer.plane.trim_airspeed_mps);
+    let mut flight_loop = tailsitter_loop(&plant, commander);
+    let flight = trace(
+        &mut flight_loop,
+        SINK_AT_S + SINK_WATCH_S + HOVER_SETTLE_S + HOLD_S,
+    );
+
+    if let Some(hover) = check_falls_back(&flight, "fallback") {
+        let hold_s = hover.time_s + HOVER_SETTLE_S;
+        let mut worst = HoverDeviation::default();
+        for sample in flight.window(hold_s, hold_s + HOLD_S) {
+            worst.observe(&sample.state, hover.state.position_m);
+        }
+        check_calm_hover(&worst, "fallback");
     }
 }
 

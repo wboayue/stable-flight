@@ -26,6 +26,11 @@ pub struct LiftTransitionConfig {
     pub timeout_s: f32,
     /// The height above the arming altitude a forward transition needs to start, in meters.
     pub min_height_m: f32,
+    /// The height above the arming altitude plane flight falls back to copter below, in
+    /// meters; a forward transition also needs it to start. Higher: falls back sooner, with
+    /// more height to lose in the back transition (1.9 m at a 3.5 m/s sink on the sim
+    /// quadplane). `0` turns it off.
+    pub plane_min_height_m: f32,
     /// How long the back ramp takes the lift share from 0 to 1, in seconds.
     pub back_ramp_s: f32,
     /// The forward speed below which the back transition completes, in m/s.
@@ -58,6 +63,7 @@ impl LiftTransitionConfig {
         check_positive("lift_ramp_s", self.lift_ramp_s)?;
         check_positive("timeout_s", self.timeout_s)?;
         check_limit("min_height_m", self.min_height_m)?;
+        check_limit("plane_min_height_m", self.plane_min_height_m)?;
         check_positive("back_ramp_s", self.back_ramp_s)?;
         check_limit("back_speed_mps", self.back_speed_mps)?;
         check_positive("back_timeout_s", self.back_timeout_s)?;
@@ -78,16 +84,17 @@ impl LiftTransitionConfig {
 
 impl Default for LiftTransitionConfig {
     /// ArduPilot's 9 m/s airspeed gate and 5 s lift ramp, PX4's 15 s forward timeout, 3 s back
-    /// ramp, 5 m/s back speed, 10 s back timeout, and pusher thrust up to full rising at 0.33/s, and
-    /// 5 m of height, a 0.5 s handoff, and a 45° roll limit (as
-    /// [`TransitionConfig`](super::TransitionConfig)); see [`LiftTransition`]'s
-    /// [sources](LiftTransition#sources).
+    /// ramp, 5 m/s back speed, 10 s back timeout, and pusher thrust up to full rising at
+    /// 0.33/s, and 5 m of height, no plane minimum height (PX4's `VT_FW_MIN_ALT`), a 0.5 s
+    /// handoff, and a 45° roll limit (as [`TransitionConfig`](super::TransitionConfig)); see
+    /// [`LiftTransition`]'s [sources](LiftTransition#sources).
     fn default() -> Self {
         LiftTransitionConfig {
             min_airspeed_mps: 9.0,
             lift_ramp_s: 5.0,
             timeout_s: 15.0,
             min_height_m: 5.0,
+            plane_min_height_m: 0.0,
             back_ramp_s: 3.0,
             back_speed_mps: 5.0,
             back_timeout_s: 10.0,
@@ -125,8 +132,8 @@ pub struct LiftTransitionStep {
 /// | Mode | Condition | Next | Lift share | Handoff | Refusal reported |
 /// |---|---|---|---|---|---|
 /// | `Copter` | `Copter` requested | `Copter` | 1 | | none; clears a timeout |
-/// | `Copter` | `Plane` requested after a forward transition was abandoned | `Copter` | 1 | | why: `TransitionTimeout`, `RollError` |
-/// | `Copter` | `Plane` requested below `min_height_m` (or NaN altitude) | `Copter` | 1 | | `BelowMinAltitude` |
+/// | `Copter` | `Plane` requested after a fallback | `Copter` | 1 | | why: `TransitionTimeout`, `RollError`, `BelowPlaneMinAltitude` |
+/// | `Copter` | `Plane` requested below `min_height_m` or `plane_min_height_m` (or NaN altitude) | `Copter` | 1 | | `BelowMinAltitude` |
 /// | `Copter` | `Plane` requested | `ToPlane`, waiting on airspeed | 1 | | |
 /// | `ToPlane` | `Copter` requested | `Copter` | 1 | | |
 /// | `ToPlane` | the lift ramp has run `lift_ramp_s` | `Plane` | 0 | yes | |
@@ -134,7 +141,8 @@ pub struct LiftTransitionStep {
 /// | `ToPlane` | waiting, and a valid airspeed ≥ `min_airspeed_mps` | `ToPlane`, the lift ramp starts | 1 | | |
 /// | `ToPlane` | otherwise | `ToPlane` | 1 waiting, then `1 − t / lift_ramp_s` | | |
 /// | `Plane` | `Copter` requested | `ToCopter` | 0 | | |
-/// | `ToCopter` | `Plane` requested | `Plane` | 0 | | |
+/// | `Plane` | below `plane_min_height_m` | `ToCopter`, a fallback | 0 | | `BelowPlaneMinAltitude` |
+/// | `ToCopter` | `Plane` requested, and no fallback | `Plane` | 0 | | |
 /// | `ToCopter` | forward speed below `back_speed_mps`, or longer than `back_timeout_s` | `Copter` | 1 | yes | |
 /// | `ToCopter` | otherwise | `ToCopter` | `t / back_ramp_s`, at most 1 | | |
 ///
@@ -150,8 +158,9 @@ pub struct LiftTransitionStep {
 /// [`cut_short`](Self::cut_short) ends a transition early as
 /// [`Transition::cut_short`](super::Transition::cut_short) does. Height and abandonment follow
 /// [`Transition`](super::Transition): above the altitude at [`prime`](Self::prime),
-/// refused until then, and an abandoned forward transition held refused until `Copter` is
-/// requested.
+/// refused until then, and after a fallback (a forward transition abandoned, or plane flight
+/// below `plane_min_height_m`) `Plane` held refused until `Copter` is requested: `ToCopter`
+/// completes as if `Copter` were requested, reporting the fallback.
 ///
 /// # Sources
 ///
@@ -251,7 +260,8 @@ impl LiftTransition {
         match self.mode {
             FlightMode::Copter => match requested {
                 FlightRegime::Plane => {
-                    self.refusal = self.gate.refusal(state, self.config.min_height_m);
+                    let needed_m = self.config.min_height_m.max(self.config.plane_min_height_m);
+                    self.refusal = self.gate.refusal(state, needed_m);
                     if self.refusal.is_none() {
                         self.start(FlightMode::ToPlane);
                     }
@@ -276,15 +286,23 @@ impl LiftTransition {
             FlightMode::Plane => {
                 if requested != FlightRegime::Plane {
                     self.start(FlightMode::ToCopter);
+                } else if self.gate.below(state, self.config.plane_min_height_m) {
+                    self.start(FlightMode::ToCopter);
+                    self.gate.abandon(ModeRefusal::BelowPlaneMinAltitude);
+                    self.refusal = Some(ModeRefusal::BelowPlaneMinAltitude);
                 }
             }
             FlightMode::ToCopter => {
                 self.elapsed_s += dt;
-                if requested == FlightRegime::Plane {
+                let plane_requested = requested == FlightRegime::Plane;
+                if plane_requested && !self.gate.fallen_back() {
                     self.mode = FlightMode::Plane;
                 } else if self.slowed(state) || self.elapsed_s > self.config.back_timeout_s {
                     self.mode = FlightMode::Copter;
                     handoff = true;
+                }
+                if plane_requested {
+                    self.refusal = self.gate.fallback();
                 }
             }
         }
@@ -328,6 +346,11 @@ impl LiftTransition {
             mode: self.mode,
             refusal: self.refusal,
         }
+    }
+
+    /// Whether a fallback holds `Plane` refused until `Copter` is requested.
+    pub(super) fn fallen_back(&self) -> bool {
+        self.gate.fallen_back()
     }
 
     /// Enters a transition `mode` from its start.

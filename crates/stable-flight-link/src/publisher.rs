@@ -200,6 +200,7 @@ fn refusal_status(refusal: ModeRefusal) -> Option<StatusText> {
         ModeRefusal::BelowMinAltitude => "Transition refused: too low",
         ModeRefusal::TransitionTimeout => "Transition timed out",
         ModeRefusal::RollError => "Transition aborted: roll error",
+        ModeRefusal::BelowPlaneMinAltitude => "Quadchute: below plane minimum height",
         ModeRefusal::Unsupported => return None,
         // `ModeRefusal` is non-exhaustive: a new refusal announces nothing until mapped here.
         _ => return None,

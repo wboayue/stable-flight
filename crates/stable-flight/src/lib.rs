@@ -325,6 +325,9 @@ pub enum ModeRefusal {
     TransitionTimeout,
     /// A transition rolled too far off its target and was abandoned or cut short.
     RollError,
+    /// Plane flight sank below its minimum height and fell back to copter flight (a
+    /// quadchute).
+    BelowPlaneMinAltitude,
 }
 
 /// The flight mode guidance is flying, and why it isn't the requested regime when it can't
