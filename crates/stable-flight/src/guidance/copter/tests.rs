@@ -1901,7 +1901,6 @@ fn reports_what_the_last_guide_clipped() {
         (waypoint(1000.0, 0.0), &level, (true, false)), // far: tilt capped
         (waypoint(0.0, 100.0), &level, (false, true)),  // far below: thrust at 1
         (waypoint(0.0, -100.0), &level, (false, false)), // far above: descends at the limit
-        (waypoint(0.0, -100.0), &shooting_up, (false, true)), // damped to thrust 0
         (stick(0.5), &banked, (false, false)),          // 0.5 · √2 fits
         (stick(0.9), &banked, (false, true)),           // 0.9 · √2 clipped
         (absolute(0.9, 1.0), &banked, (false, false)),  // not boosted; tilt is the stabilizer's
@@ -1923,6 +1922,14 @@ fn reports_what_the_last_guide_clipped() {
             "{input:?}: {saturation:?}"
         );
     }
+
+    // A target latched at rest, overtaken by a fast climb, damps thrust to 0.
+    let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
+    guidance.prime(&level);
+    let far_above = waypoint(0.0, -100.0);
+    guidance.guide(0.004, FlightRegime::Copter, &far_above, &level);
+    guidance.guide(0.004, FlightRegime::Copter, &far_above, &shooting_up);
+    assert!(guidance.saturation().thrust, "{:?}", guidance.saturation());
 
     // The capped tilt is held between lateral-loop runs, and priming clears it.
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
@@ -2077,6 +2084,63 @@ fn descent_speeds_up_at_descent_accel() {
             target = guidance.descend_toward(DT, 10.0, altitude_m);
         }
         approx::assert_relative_eq!(target.velocity_mps, expected, epsilon = 1e-3);
+    }
+}
+
+/// A descent or land latched while the vehicle climbs starts its target at that climb and
+/// sheds it at `climb_decel_mps2` (2.5 m/s²), then speeds up at `descent_accel_mps2`
+/// (1 m/s²), so the altitude loop doesn't cut thrust to stop the climb at once (#462). A sink
+/// or a NaN climb starts it at rest, and a target already latched isn't re-seeded.
+#[test]
+fn descent_starts_at_the_vehicles_climb() {
+    const DT: f32 = 0.01;
+    let descend = ControlInput::Waypoint(WaypointCommand {
+        altitude_m: 10.0,
+        ..Default::default()
+    });
+    let land = ControlInput::Land(LandCommand::default());
+    // (input, climb m/s, already latched, ticks, expected target climb m/s), from 60 m
+    let cases = [
+        (&descend, 3.0, false, 1, 3.0 - DEFAULT_CLIMB_DECEL_MPS2 * DT),
+        (&descend, 3.0, false, 100, 0.5),
+        // Shed in 119.6 ticks, then 80 at 1 m/s² from 0.01 m/s.
+        (&descend, 2.99, false, 200, -0.81),
+        (&descend, -2.0, false, 1, -DEFAULT_DESCENT_ACCEL_MPS2 * DT),
+        (
+            &descend,
+            f32::NAN,
+            false,
+            1,
+            -DEFAULT_DESCENT_ACCEL_MPS2 * DT,
+        ),
+        (&descend, 3.0, true, 1, -DEFAULT_DESCENT_ACCEL_MPS2 * DT),
+        (&land, 3.0, false, 1, 3.0 - DEFAULT_CLIMB_DECEL_MPS2 * DT),
+        (&land, -2.0, false, 1, -DEFAULT_DESCENT_ACCEL_MPS2 * DT),
+    ];
+    for (row, (input, climb_mps, latched, ticks, expected_mps)) in cases.into_iter().enumerate() {
+        let (mut guidance, mut state) = guidance_at(60.0);
+        state.velocity_mps.z = climb_mps;
+        if latched {
+            guidance.altitude_target_m = Some(60.0);
+        }
+        let mut start_m = 60.0;
+        for _ in 0..ticks {
+            start_m = guidance.altitude_target_m.unwrap_or(60.0);
+            // The vehicle keeps up with the target, so the leash never holds it.
+            state.position_m.z = start_m;
+            guidance.guide(DT, FlightRegime::Copter, input, &state);
+        }
+        let target_climb_mps = -guidance.descent_speed_mps;
+        assert!(
+            (target_climb_mps - expected_mps).abs() < 1e-3,
+            "row {row}: target climbs {target_climb_mps} m/s"
+        );
+        // The target moves by its fed-forward rate: up while it climbs.
+        let moved_m = guidance.altitude_target_m.expect("latched") - start_m;
+        assert!(
+            (moved_m - expected_mps * DT).abs() < 1e-4,
+            "row {row}: moved {moved_m} m"
+        );
     }
 }
 
@@ -2296,6 +2360,7 @@ fn a_land_after_a_faster_descent_slows_to_the_land_speed_at_once() {
     const DT: f32 = 0.1;
     let land = ControlInput::Land(LandCommand::default());
     let (mut guidance, state) = guidance_at(10.0);
+    guidance.altitude_target_m = Some(10.0);
     guidance.descent_speed_mps = DEFAULT_MAX_DESCENT_MPS;
     guidance.guide(DT, FlightRegime::Copter, &land, &state);
     let target = guidance.altitude_target_m.expect("latched");
@@ -2523,6 +2588,8 @@ fn no_thrust_limits_by_default() {
             .thrust()
             == 0.3
     );
+    // Latched at rest, then overtaken by the climb: the altitude loop damps it to zero.
+    guidance.guide(0.004, FlightRegime::Copter, &waypoint_at(0.0), &state);
     assert!(
         guidance
             .guide(0.004, FlightRegime::Copter, &waypoint_at(0.0), &shooting_up)

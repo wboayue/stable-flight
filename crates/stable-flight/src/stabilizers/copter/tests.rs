@@ -796,6 +796,13 @@ fn zero_thrust_in_flight_keeps_the_yaw_trim() {
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
     guidance.prime(&shooting_up);
     let level_off = ControlInput::Waypoint(WaypointCommand::default());
+    // Latched at rest, so the climb overtakes the target.
+    guidance.guide(
+        0.004,
+        FlightRegime::Copter,
+        &level_off,
+        &VehicleState::default(),
+    );
     let setpoint = guidance.guide(0.004, FlightRegime::Copter, &level_off, &shooting_up);
     assert!(setpoint.thrust() == 0.0 && !setpoint.idle(), "{setpoint:?}");
 

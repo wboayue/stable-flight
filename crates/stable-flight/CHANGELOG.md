@@ -261,6 +261,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`GUID_DESC_ACC`, default 1 m/s², ArduPilot's `WP_ACC_Z`) instead of stepping to
   `max_descent_mps` (#417): the start no longer cuts thrust at once (on the sim quad, a 0.03
   dip instead of 0.52). A descent reaches 3 m/s 3 s after it starts.
+- A copter waypoint descent or land latched while the vehicle climbs starts its altitude
+  target at that climb and sheds it at the new `CopterGuidanceConfig::climb_decel_mps2`
+  (`GUID_CLIMB_DEC`, default 2.5 m/s², ArduPilot's `Q_PILOT_ACCEL_Z`), instead of holding the
+  target while the vehicle climbs past it (#462). A sink still starts it at rest. A tailsitter
+  handed over from a back transition no longer cuts thrust to stop its climb: on the sim
+  tailsitter at +3.4 m/s with a 1.5 m/s descent limit, it sinks 1.61 m/s instead of 1.98 and
+  rises 2.6 m instead of 0.9. **Breaking:** a `CopterGuidanceConfig` struct literal needs
+  `climb_decel_mps2` (or `..Default::default()`).
 - **Breaking:** `LinkedCommander::sync_regime` (#333): `FailsafeCommander` hands control back
   in the regime the fallback flew (copter, for `HoldCommander`), syncing the primary to it, so
   a plane request from before a link outage doesn't transition the vehicle on the link's

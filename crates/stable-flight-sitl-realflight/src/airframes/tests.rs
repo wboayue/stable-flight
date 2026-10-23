@@ -62,6 +62,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         max_stick_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
         max_descent_mps: 3.0,
         descent_accel_mps2: 1.0,
+        climb_decel_mps2: 2.5,
         land_speed_mps: 0.7,
         waypoint_yaw_radps: 60.0_f32.to_radians(),
         heading_rate_radps: 60.0_f32.to_radians(),

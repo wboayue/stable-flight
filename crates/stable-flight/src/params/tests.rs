@@ -72,6 +72,7 @@ fn tables_cover_every_config_field() {
         max_stick_angles_rad: _,
         max_descent_mps: _,
         descent_accel_mps2: _,
+        climb_decel_mps2: _,
         land_speed_mps: _,
         waypoint_yaw_radps: _,
         heading_rate_radps: _,
@@ -96,7 +97,7 @@ fn tables_cover_every_config_field() {
     } = CopterGuidanceConfig::default();
     // one param per scalar, vector component, or gain term in the destructuring above
     check!(names::<CopterStabilizerConfig>().len() == 30);
-    check!(names::<CopterGuidanceConfig>().len() == 34);
+    check!(names::<CopterGuidanceConfig>().len() == 35);
 }
 
 #[test]

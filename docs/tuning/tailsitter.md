@@ -167,6 +167,7 @@ The axes are the hover view's:
 |---|---|---|
 | `GUID_DESC_MAX` | `hover.max_descent_mps` | 1.5 m/s (core default 3 m/s) |
 | `GUID_DESC_ACC` | `hover.descent_accel_mps2` | 1.0 m/s² (core default) |
+| `GUID_CLIMB_DEC` | `hover.climb_decel_mps2` | 2.5 m/s² (core default) |
 
 The fastest descent waypoint flight asks for, including the climb-down after a back
 transition. Sinking tail first, the air meets the prop wash head on, so the elevons lose
@@ -182,6 +183,10 @@ A land speeds up to `GUID_LAND_SPD` the same way: stepping to it cut thrust 0.89
 tick (#476).
 Lower it if the start drops the nose or the arrival sinks past the waypoint; raise it to reach
 the waypoint sooner.
+
+`GUID_CLIMB_DEC` covers a descent that starts while the vehicle still climbs, as the hover
+after a back transition does (step 8): the target starts rising at the vehicle's climb and
+slows at this rate before it starts down.
 
 Start at 1.5 m/s, the default descent rate of ArduPilot (`WP_SPD_DN`) and PX4
 (`MPC_Z_V_AUTO_DN`). The copter default of 3 m/s is too fast for a tailsitter until a flight
@@ -406,6 +411,31 @@ It also limits braking: stopping from 2.4 m/s at 1 m/s² takes 2.9 m, so the sim
 stops about 2 m past a point straight ahead of the handover. A tilt slew in its place
 (15°/s) held the roll to 16°, but in the sim it didn't stop a 3 m/s leg along the span from
 overshooting its speed and departing.
+
+**The hover's climb after the handover.** A ramp that hands over climbing leaves the hover
+above its point, so it starts a descent at once. A target latched at the vehicle's height and
+at rest makes the altitude loop stop the climb with thrust: the eXplora's thrust fell to
+`GUID_THR_MIN`, the climb died, and the hover sank at up to 2.75 m/s, past its 1.5 m/s
+`GUID_DESC_MAX` (#462). The target now starts rising at the handover's climb and sheds it at
+`GUID_CLIMB_DEC`, as ArduPilot starts a tailsitter's vertical controller
+(`AC_PosControl.cpp:849-863`, at `Q_PILOT_ACCEL_Z`). A handover that arrives sinking starts
+at rest. Shedding a climb v rises about v² / (2 · `GUID_CLIMB_DEC`) further.
+
+| Param | Field | eXplora |
+|---|---|---|
+| `GUID_CLIMB_DEC` | `hover.climb_decel_mps2` | 2.5 m/s² (core default) |
+
+Sim tailsitter, `GUID_DESC_MAX` 1.5 m/s, worst sink in the 3 s after the handover / rise
+above the handover height (#462):
+
+| `TRAN_VT_THR` | Climb at handover | Target at rest | 1 m/s² | **2.5 m/s²** | g |
+|---|---|---|---|---|---|
+| 0.7 | +3.4 m/s | 1.98 m/s / 0.9 m | climbing / 6.1 m | **1.61 / 2.6 m** | 1.75 / 1.1 m |
+| 0.8 | +8.1 m/s | 2.07 / 4.2 m | climbing / 33 m | **climbing / 13.5 m** | 1.94 / 5.0 m |
+
+Lower it if the hover still sinks fast after a climbing handover; raise it if it balloons
+too far above the point. A large climb at the handover is the back ramp's to fix (thrust and
+handover tilt above), not this one's.
 
 ## 9. Plane rate loop (acro) and maneuvers
 
