@@ -2,8 +2,11 @@
 
 Thanks for your interest in Stable Flight. Bug reports, questions, and pull requests are welcome.
 
-## Issues
+## Discussions and issues
 
+- **Questions, ideas, and flights to show:** start a thread in
+  [Discussions](https://github.com/wboayue/stable-flight/discussions) (Q&A, Ideas, Show and
+  tell). Issues are for actionable work; a discussion that turns into one gets converted.
 - **Bugs:** what you ran (command, simulator, airframe), what you expected, what happened, and
   logs or telemetry if you have them.
 - **Features and larger changes:** open an issue first to agree on the approach before writing
