@@ -133,10 +133,10 @@ pub struct LateralEstimate {
 /// error into acceleration. With [`max_accel_mps2`](LateralControllerConfig::max_accel_mps2)
 /// set, the position loop slows toward the target along a braking curve instead of in
 /// proportion to the distance, and the PID tracks a shaped velocity target: it starts at the
-/// measured velocity, moves toward the demand at that rate, and its change is fed forward. Turning the
-/// acceleration into tilt is the guidance's job (it depends on the airframe and its heading);
-/// [`CopterGuidance`](crate::guidance::copter::CopterGuidance) tilts by `atan(|a| / g)` toward
-/// it.
+/// measured velocity, moves toward the demand at that rate, and its change is fed forward.
+/// Turning the acceleration into tilt is the guidance's job (it depends on the airframe and its
+/// heading); [`CopterGuidance`](crate::guidance::copter::CopterGuidance) tilts by `atan(|a| /
+/// g)` toward it.
 ///
 /// It holds only state (the velocity integral, derivative history, and shaped velocity
 /// target); gains and limits come from the [`LateralControllerConfig`] passed to each
@@ -303,9 +303,10 @@ impl LateralController {
 }
 
 /// Share of [`max_accel_mps2`](LateralControllerConfig::max_accel_mps2) the position loop's
-/// braking curve slows at. The vehicle trails its shaped velocity target, so it runs ahead of
-/// the curve, whose speed then falls faster than the curve's own rate; braking below the
-/// shaping rate leaves the shaped target room to keep up. Higher: arrives sooner. On a 260 m
+/// braking curve slows at. The curve is read at the vehicle's distance, and the vehicle trails
+/// its shaped velocity target, so it runs ahead of the curve: there the curve's speed drops
+/// faster than its deceleration. Braking below the shaping rate leaves the rate-limited target
+/// room to follow. Higher: arrives sooner. On a 260 m
 /// quadplane leg from 0.5 to 4 m/s², 0.7 overshoots at most 0.7 m, 0.9 up to 3.5 m, and 1.0
 /// up to 6.4 m (#466).
 pub const BRAKING_SHARE: f32 = 0.7;
@@ -316,8 +317,12 @@ pub const BRAKING_SHARE: f32 = 0.7;
 /// A non-finite error passes through, so the caller's check sees it.
 fn closing_velocity(error_m: Vec2, position_p: f32, max_accel_mps2: f32) -> Vec2 {
     // `>` is false for NaN: an invalid limit acts as off.
+    let shaping = max_accel_mps2 > 0.0;
+    if !shaping {
+        return position_p * error_m;
+    }
     let distance_m = error_m.norm();
-    if !(max_accel_mps2 > 0.0 && distance_m > 0.0 && distance_m.is_finite()) {
+    if !(distance_m > 0.0 && distance_m.is_finite()) {
         return position_p * error_m;
     }
     let speed_mps = shaped_closing_speed(distance_m, position_p, BRAKING_SHARE * max_accel_mps2);
