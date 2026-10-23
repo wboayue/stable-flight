@@ -10,7 +10,7 @@
 
 The crate builds on the [`stable-flight`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight) core and never on the sitl harness, so any runner can drive it; the examples pair it with [`stable-flight-sitl`](https://github.com/wboayue/stable-flight/tree/main/crates/stable-flight-sitl).
 
-Status: flies the Alia 250 in copter mode on its four lift rotors, from a joystick and from the link (QGC through the bridge, or `link_pilot`): takeoff, hover, waypoint legs, the link-loss hold, and landing. Its transitions and plane flight are planned ([#392](https://github.com/wboayue/stable-flight/issues/392)).
+Status: flies the Alia 250 on its four lift rotors from a joystick and from the link (QGC through the bridge, or `link_pilot`): takeoff, hover, waypoint legs, the link-loss hold, and landing. From a waypoint script (`quadplane-auto-xplane`) it also transitions to plane flight and back: `flights/alia_transition_lap.csv` flies plane legs offshore from Oceano.
 
 ## Setup
 
