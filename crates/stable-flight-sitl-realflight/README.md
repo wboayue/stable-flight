@@ -84,6 +84,8 @@ cargo run -p stable-flight-sitl-realflight --example copter-manual-realflight --
 # Or: just fly-tailsitter
 cargo run -p stable-flight-sitl-realflight --example tailsitter-manual-realflight -- --record hover.csv
 
+# Scripts are meters north and east of where the vehicle starts and meters above it, so they fly
+# the same route at any field; routes keep their compass headings, and obstacles differ.
 # Scripted figure-eight (script path is the first argument): flies it once, then hovers; --end loop repeats it, --end land lands on the last waypoint and disarms
 # (flights/figure_eight.csv starts and ends over the QuadCopterX spawn point)
 cargo run -p stable-flight-sitl-realflight --example copter-auto-realflight -- flights/figure_eight.csv

@@ -8,7 +8,7 @@ use super::{Leg, ScriptCommander, ScriptError, parse_route};
 use stable_flight::commanders::RouteEnd;
 use stable_flight::commanders::maneuver::{Axis, DEFAULT_DOUBLET_HALF_S, Maneuver};
 use stable_flight::{
-    Command, Commander, ControlInput, FlightRegime, VehicleState, WaypointCommand,
+    Command, Commander, ControlInput, FlightRegime, LandCommand, VehicleState, WaypointCommand,
 };
 
 /// The waypoints of a parsed script, without their regimes.
@@ -515,4 +515,69 @@ fn flies_a_rows_maneuver_then_its_hold_then_the_next_leg() {
         .collect();
     check!(targets == [100.0, 100.0, 200.0]);
     check!(commander.follower().current_index() == 2);
+}
+
+/// Builds a waypoint at the given position and altitude, with defaults elsewhere.
+fn wp_at(x: f32, y: f32, altitude_m: f32) -> WaypointCommand {
+    WaypointCommand {
+        altitude_m,
+        ..wp(x, y)
+    }
+}
+
+/// An anchored script flies relative to the first position it sees: waypoints and the land
+/// move by it, and a waypoint is reached on the state seen from it.
+#[test]
+fn anchored_script_flies_relative_to_the_first_position() {
+    let spawn = Vec3::new(100.0, 200.0, 1186.0);
+    let at = |x: f32, y: f32, z: f32| VehicleState {
+        position_m: spawn + Vec3::new(x, y, z),
+        ..Default::default()
+    };
+    let mut commander =
+        ScriptCommander::from_waypoints(vec![wp_at(0.0, 0.0, 5.0), wp_at(20.0, 0.0, 5.0)])
+            .expect("non-empty")
+            .with_route_end(RouteEnd::Land)
+            .anchored();
+
+    let climb = waypoint(commander.next_command(0.1, &at(0.0, 0.0, 0.0)));
+    check!(commander.origin_m() == spawn);
+    check!(climb.position_m == Vec2::new(100.0, 200.0));
+    check!(climb.altitude_m == 1191.0);
+
+    let leg = waypoint(commander.next_command(0.1, &at(0.0, 0.0, 5.0)));
+    check!(leg.position_m == Vec2::new(120.0, 200.0));
+    check!(leg.altitude_m == 1191.0);
+
+    let land = commander.next_command(0.1, &at(20.0, 0.0, 5.0)).input;
+    check!(
+        land == ControlInput::Land(LandCommand {
+            position_m: Vec2::new(120.0, 200.0)
+        })
+    );
+}
+
+/// An anchored script holds the motors off until a finite position anchors it; an unanchored
+/// one flies the vehicle's frame, its origin zero.
+#[test]
+fn anchored_script_waits_for_a_finite_position() {
+    let route = || vec![wp_at(10.0, 0.0, 5.0)];
+    let mut anchored = ScriptCommander::from_waypoints(route())
+        .expect("non-empty")
+        .anchored();
+    let unknown = VehicleState {
+        position_m: Vec3::new(f32::NAN, 0.0, 0.0),
+        ..Default::default()
+    };
+    check!(!anchored.next_command(0.1, &unknown).arm);
+    check!(anchored.origin_m() == Vec3::zeros());
+
+    let target = waypoint(anchored.next_command(0.1, &state_at(50.0, 0.0)));
+    check!(anchored.origin_m() == Vec3::new(50.0, 0.0, 0.0));
+    check!(target.position_m == Vec2::new(60.0, 0.0));
+
+    let mut absolute = ScriptCommander::from_waypoints(route()).expect("non-empty");
+    let target = waypoint(absolute.next_command(0.1, &state_at(50.0, 0.0)));
+    check!(absolute.origin_m() == Vec3::zeros());
+    check!(target.position_m == Vec2::new(10.0, 0.0));
 }

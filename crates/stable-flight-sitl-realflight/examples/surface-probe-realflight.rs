@@ -96,7 +96,8 @@ fn main() {
 
     let commander = ScriptCommander::new(&args.script)
         .expect("failed to load flight script")
-        .with_route_end(RouteEnd::Land);
+        .with_route_end(RouteEnd::Land)
+        .anchored();
 
     let mut airframe = airframes::titan_cobra();
     airframe.guidance.forward.gain = FORWARD_THRUST_GAIN;

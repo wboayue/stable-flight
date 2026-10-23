@@ -32,6 +32,9 @@
 //!   The maneuver flies at [`ManeuverConfig`]'s thrust
 //!   ([`ScriptCommander::with_maneuver_config`]); the route resumes once it has recovered.
 //!
+//! Positions are meters north (`x`) and east (`y`) and altitude up, in the vehicle's frame, or
+//! of where the vehicle starts once [`ScriptCommander::anchored`].
+//!
 //! Blank lines and lines starting with `#` are ignored, and an optional non-numeric header row
 //! is skipped.
 //!
@@ -43,12 +46,12 @@
 //! # face east over the start for 20 s
 //! 0.00,0.00,40.00,7.0,,90,20
 //! # on a plane leg, a loop of 25 m at this waypoint
-//! 150.00,6.49,60.00,14.0,plane,,,loop:25
+//! 150.00,0.00,60.00,14.0,plane,,,loop:25
 //! ```
 
 use std::fs;
 
-use stable_flight::Vec2;
+use stable_flight::{Vec2, Vec3};
 use thiserror::Error;
 
 use stable_flight::commanders::maneuver::{Axis, DEFAULT_DOUBLET_HALF_S, Maneuver, ManeuverConfig};
@@ -57,7 +60,7 @@ use stable_flight::commanders::waypoint::{
 };
 use stable_flight::commanders::{EmptyWaypoints, RouteEnd, WaypointFollower};
 use stable_flight::{
-    Command, Commander, ControlInput, FlightRegime, VehicleState, WaypointCommand,
+    Command, Commander, ControlInput, FlightRegime, LandCommand, VehicleState, WaypointCommand,
 };
 
 mod actions;
@@ -130,6 +133,18 @@ pub struct ScriptCommander {
     /// Altitude acceptance on plane legs, in meters.
     plane_altitude_acceptance_m: f32,
     actions: Actions,
+    origin: Origin,
+}
+
+/// Where a script's coordinates are measured from.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Origin {
+    /// The vehicle's frame, as is.
+    Vehicle,
+    /// Where the vehicle is on the first tick with a finite position; not seen yet.
+    Start,
+    /// Anchored here, in the vehicle's frame (m: north, east, up).
+    At(Vec3),
 }
 
 /// A script row: a waypoint, the regime of the leg to it, and its actions.
@@ -225,6 +240,7 @@ impl ScriptCommander {
                 legs.iter().map(|leg| leg.actions).collect(),
                 ManeuverConfig::default(),
             ),
+            origin: Origin::Vehicle,
         })
     }
 
@@ -280,6 +296,51 @@ impl ScriptCommander {
     pub fn with_altitude_acceptance(mut self, regime: FlightRegime, altitude_m: f32) -> Self {
         *self.altitude_acceptance_m(regime) = altitude_m;
         self
+    }
+
+    /// Flies the script relative to where the vehicle is on its first tick: `x`, `y`, and
+    /// altitude become meters north, east, and up of that point, so one script flies the same
+    /// route from any spawn point or field. Build it before arming, with the vehicle on the
+    /// ground: it anchors wherever the vehicle is. Until a tick brings a finite position, the
+    /// commander holds the motors off.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::{Commander, ControlInput, Vec2, Vec3, VehicleState, WaypointCommand};
+    /// use stable_flight_sitl::commanders::ScriptCommander;
+    ///
+    /// let mut commander = ScriptCommander::from_waypoints(vec![WaypointCommand {
+    ///     position_m: Vec2::new(10.0, 0.0),
+    ///     altitude_m: 5.0,
+    ///     ..Default::default()
+    /// }])
+    /// .expect("non-empty")
+    /// .anchored();
+    ///
+    /// // On the ground 1186 m up, at north 100 m: the waypoint is 10 m north of there, 5 m up.
+    /// let spawn = VehicleState { position_m: Vec3::new(100.0, 0.0, 1186.0), ..Default::default() };
+    /// let ControlInput::Waypoint(target) = commander.next_command(0.004, &spawn).input else {
+    ///     unreachable!("a waypoint script flies waypoints");
+    /// };
+    /// assert_eq!(target.position_m, Vec2::new(110.0, 0.0));
+    /// assert_eq!(target.altitude_m, 1191.0);
+    /// ```
+    pub fn anchored(self) -> Self {
+        ScriptCommander {
+            origin: Origin::Start,
+            ..self
+        }
+    }
+
+    /// The point the script's coordinates are measured from, in the vehicle's frame (m:
+    /// north, east, up): zero unless [`anchored`](Self::anchored), and until it has anchored.
+    /// Add it to a [`follower`](Self::follower) waypoint to compare it with the vehicle's state.
+    pub fn origin_m(&self) -> Vec3 {
+        match self.origin {
+            Origin::At(origin_m) => origin_m,
+            Origin::Vehicle | Origin::Start => Vec3::zeros(),
+        }
     }
 
     /// Sets what happens after the last waypoint: loop the script (the default) or hold the
@@ -419,7 +480,40 @@ impl Commander for ScriptCommander {
     /// of the leg to the current waypoint. Once the follower moves on from a waypoint (to the
     /// next waypoint or the route's land), its actions fly instead, the follower paused
     /// meanwhile: its maneuver, in its leg's regime, then its hold for `hold_s`.
+    ///
+    /// An [`anchored`](Self::anchored) script sees the state relative to its origin and flies
+    /// its waypoints and lands shifted back by it.
     fn next_command(&mut self, dt: f32, current_state: &VehicleState) -> Command {
+        match self.origin {
+            Origin::Vehicle => self.fly(dt, current_state),
+            Origin::Start => {
+                let position_m = current_state.position_m;
+                if !position_m.iter().all(|value| value.is_finite()) {
+                    return Command::disarmed(ControlInput::default());
+                }
+                self.origin = Origin::At(position_m);
+                self.fly_from(position_m, dt, current_state)
+            }
+            Origin::At(origin_m) => self.fly_from(origin_m, dt, current_state),
+        }
+    }
+}
+
+impl ScriptCommander {
+    /// The script's command with the state seen from `origin_m`, and its positions shifted
+    /// back into the vehicle's frame.
+    fn fly_from(&mut self, origin_m: Vec3, dt: f32, current_state: &VehicleState) -> Command {
+        let local = VehicleState {
+            position_m: current_state.position_m - origin_m,
+            ..current_state.clone()
+        };
+        let mut command = self.fly(dt, &local);
+        command.input = shifted(command.input, origin_m);
+        command
+    }
+
+    /// The script's command for `current_state`, in the script's coordinates.
+    fn fly(&mut self, dt: f32, current_state: &VehicleState) -> Command {
         if let Some(step) = self.actions.step(dt, current_state) {
             return self.step_command(step);
         }
@@ -436,6 +530,22 @@ impl Commander for ScriptCommander {
             return self.step_command(step);
         }
         command.with_regime(self.active_regime())
+    }
+}
+
+/// `input` with its positions moved by `by_m` (m: north, east, up); inputs without one pass
+/// through.
+fn shifted(input: ControlInput, by_m: Vec3) -> ControlInput {
+    match input {
+        ControlInput::Waypoint(waypoint) => ControlInput::Waypoint(WaypointCommand {
+            position_m: waypoint.position_m + by_m.xy(),
+            altitude_m: waypoint.altitude_m + by_m.z,
+            ..waypoint
+        }),
+        ControlInput::Land(land) => ControlInput::Land(LandCommand {
+            position_m: land.position_m + by_m.xy(),
+        }),
+        other => other,
     }
 }
 

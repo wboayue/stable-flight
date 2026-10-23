@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ScriptCommander::anchored` flies a script relative to where the vehicle starts (#494): `x`,
+  `y`, and altitude become meters north, east, and up of its first position, so one script flies
+  the same route at any spawn point or field. `ScriptCommander::origin_m` reports the start.
+
 - A script's eighth field is a maneuver flown on reaching a `plane` row's waypoint, before its
   hold (#342): `roll:<deg/s>`, `loop:<m>` (negative: outside), and `doublet_roll`,
   `doublet_pitch`, `doublet_yaw` (`:<deg/s>[:<half width s>]`).

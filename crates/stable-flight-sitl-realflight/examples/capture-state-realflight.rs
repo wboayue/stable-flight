@@ -83,7 +83,9 @@ fn main() {
     info!("Recording to {}; Ctrl-C to stop", args.output.display());
     match &args.script {
         Some(script) => fly(
-            ScriptCommander::new(script).expect("failed to load flight script"),
+            ScriptCommander::new(script)
+                .expect("failed to load flight script")
+                .anchored(),
             bridge,
             link,
         ),

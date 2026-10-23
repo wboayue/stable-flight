@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** the script examples (`copter-auto-realflight`, `tailsitter-auto-realflight`,
+  `quadplane-auto-realflight`, `surface-probe-realflight`, `copter-autotune-realflight`,
+  `capture-state-realflight`) fly scripts relative to where the vehicle starts (#494), and
+  `flights/*.csv` start at 0,0 and height 0: the same route at any field. Touchdown logs
+  report where, from the start.
+
 - `airframes::explora_vtol()` and `airframes::titan_cobra()` fall back to a hover below 15 m
   in plane flight (`TRAN_FW_MIN_HGT`, #450), half the scripts' 30 m plane legs.
 
