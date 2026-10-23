@@ -440,8 +440,8 @@ eXplora (#462), `explora_transition_lap.csv --end land`, handovers that arrive c
 | **Shed at 2.5 m/s²** | +1.13, +0.36, +0.28 m/s | **1.64**, 1.67, 1.82 m/s | **−0.36 m/s** (+1.13 run) |
 
 The climb no longer turns into a sink at once; the sink builds over 2 s instead. Past the
-1.5 m/s target the hover overshoots to 1.6–1.8 m/s either way, with `sp_thrust` at
-`GUID_BOOST_MAX` (0.9).
+1.5 m/s target the hover overshoots to 1.6–1.8 m/s either way: the altitude loop's lag, as a
+`quad_x` waypoint descent in the sim peaks at 3.31 m/s against a 3 m/s limit.
 
 Lower it if the hover still sinks fast after a climbing handover; raise it if it balloons
 too far above the point. A large climb at the handover is the back ramp's to fix (thrust and
