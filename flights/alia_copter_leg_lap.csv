@@ -5,7 +5,7 @@
 # offshore at 300 m and 50 m/s, the slow leg north that starts the back transition, and hover
 # home to land. With the heading held, this leg flew tail first and the transition never
 # accelerated (#444, #449).
-# Coordinates are m north and east of the anchor; altitudes are above sea level.
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
 # The regime is the leg's to that waypoint: the first plane leg starts the transition.
 x,y,altitude,cruise_speed,regime
 0.0,0.0,250.0,3.0,copter
