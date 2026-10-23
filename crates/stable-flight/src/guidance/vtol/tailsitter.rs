@@ -60,7 +60,7 @@ impl TailsitterGuidanceConfig {
 ///
 ///    | Mode | Setpoint |
 ///    |---|---|
-///    | `Copter` | hover guidance, on the command's input, or after a fallback on a hold where copter flight took over (until `Copter` is requested) |
+///    | `Copter` | hover guidance, on the command's input; after a fallback, until `Copter` is requested, a waypoint as a hover where copter flight took over |
 ///    | `ToPlane` | hover guidance on an absolute attitude: wings level, view pitch −tilt, heading held, thrust the larger of [`forward_thrust`](TransitionConfig::forward_thrust) and the hover thrust when it began; a [`transition`](AttitudeSetpoint::transition) ramp |
 ///    | `Plane` | plane guidance, on the command's input |
 ///    | `ToCopter` | plane guidance on an absolute attitude: wings level, pitch π/2 − tilt, [`back_thrust`](TransitionConfig::back_thrust) raised while sinking past [`back_sink_limit_mps`](TransitionConfig::back_sink_limit_mps); a [`transition`](PlaneSetpoint::transition) ramp |

@@ -390,9 +390,9 @@ deliberately. The pieces:
 `Transition` moves through the modes as below (`TransitionConfig` names the limits). A forward
 transition that times out or hits the roll limit, or plane flight below `plane_min_height_m`,
 is a fallback (a quadchute): plane flight stays refused until copter is requested again, and
-the guidance hovers where copter flight took over instead of flying the command. A mission's
-plane waypoint can be kilometers off; chasing it on the rotors at the plane leg's speed is
-what this stops (#453). PX4 switches straight to hover below `VT_FW_MIN_ALT` and returns home
+the guidance flies a waypoint as a hover where copter flight took over. A mission's plane
+waypoint can be kilometers off; chasing it on the rotors at the plane leg's speed is what this
+stops (#453). Sticks keep flying, as PX4's manual modes do after a quadchute. PX4 switches straight to hover below `VT_FW_MIN_ALT` and returns home
 (`vtol_type.cpp:231-243`, `COM_QC_ACT`); here the back transition flies, losing 1.9–3.3 m
 on the sim (#450), and the commander picks what follows the hover. Rejected: ArduPilot's
 lift assist below `Q_ASSIST_ALT` (`VTOL_Assist.cpp:16-45`), which stays in plane flight but

@@ -73,7 +73,7 @@ impl QuadPlaneGuidanceConfig {
 ///
 ///    | Mode | Setpoint |
 ///    |---|---|
-///    | `Copter` | hover guidance, on the command's input, or after a fallback on a hold where copter flight took over (until `Copter` is requested); on a waypoint or land with [`ForwardThrust`] on, [`Setpoint::Blend`] at lift share 1: the hover's attitude with its nose-down pitch held to the limit, the plane side at that roll and pitch, the pusher on the rest |
+///    | `Copter` | hover guidance, on the command's input; after a fallback, until `Copter` is requested, a waypoint as a hover where copter flight took over; on a waypoint or land with [`ForwardThrust`] on, [`Setpoint::Blend`] at lift share 1: the hover's attitude with its nose-down pitch held to the limit, the plane side at that roll and pitch, the pusher on the rest |
 ///    | `ToPlane` | [`Setpoint::Blend`]: both sides wings level at the plane guidance's pitch for the command, within ArduPilot's transition limits; hover holding the altitude the transition began at, heading held; the pusher on the plane guidance's thrust, rising at most [`pusher_slew_per_s`](LiftTransitionConfig::pusher_slew_per_s), up to [`forward_thrust`](LiftTransitionConfig::forward_thrust); the step's lift share |
 ///    | `Plane` | plane guidance, on the command's input |
 ///    | `ToCopter` | [`Setpoint::Blend`]: both sides wings level at pitch 0; hover holding the altitude the back transition began at, heading held; the pusher stopped; the step's lift share |
