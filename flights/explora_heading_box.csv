@@ -1,21 +1,21 @@
-# Heading box over the RealFlight eXplora VTOL spawn point (north -10.55 m, east 6.49 m):
-# climb to 40 m, hold 20 s facing each of 8 headings 45° apart (the belly's direction),
+# Heading box over the start (eXplora VTOL): climb to 40 m, hold 20 s facing each of 8 headings 45° apart (the belly's direction),
 # then the same at 60 m, in hover throughout (#470).
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
 x,y,altitude,cruise_speed,regime,heading,hold_s
--10.55,6.49,40.0,3.0,copter,,
--10.55,6.49,40.0,3.0,copter,0,20
--10.55,6.49,40.0,3.0,copter,45,20
--10.55,6.49,40.0,3.0,copter,90,20
--10.55,6.49,40.0,3.0,copter,135,20
--10.55,6.49,40.0,3.0,copter,180,20
--10.55,6.49,40.0,3.0,copter,225,20
--10.55,6.49,40.0,3.0,copter,270,20
--10.55,6.49,40.0,3.0,copter,315,20
--10.55,6.49,60.0,3.0,copter,0,20
--10.55,6.49,60.0,3.0,copter,45,20
--10.55,6.49,60.0,3.0,copter,90,20
--10.55,6.49,60.0,3.0,copter,135,20
--10.55,6.49,60.0,3.0,copter,180,20
--10.55,6.49,60.0,3.0,copter,225,20
--10.55,6.49,60.0,3.0,copter,270,20
--10.55,6.49,60.0,3.0,copter,315,20
+0.00,0.00,40.0,3.0,copter,,
+0.00,0.00,40.0,3.0,copter,0,20
+0.00,0.00,40.0,3.0,copter,45,20
+0.00,0.00,40.0,3.0,copter,90,20
+0.00,0.00,40.0,3.0,copter,135,20
+0.00,0.00,40.0,3.0,copter,180,20
+0.00,0.00,40.0,3.0,copter,225,20
+0.00,0.00,40.0,3.0,copter,270,20
+0.00,0.00,40.0,3.0,copter,315,20
+0.00,0.00,60.0,3.0,copter,0,20
+0.00,0.00,60.0,3.0,copter,45,20
+0.00,0.00,60.0,3.0,copter,90,20
+0.00,0.00,60.0,3.0,copter,135,20
+0.00,0.00,60.0,3.0,copter,180,20
+0.00,0.00,60.0,3.0,copter,225,20
+0.00,0.00,60.0,3.0,copter,270,20
+0.00,0.00,60.0,3.0,copter,315,20

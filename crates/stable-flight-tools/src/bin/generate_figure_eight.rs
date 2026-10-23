@@ -1,9 +1,9 @@
 //! `generate_figure_eight` — write a figure-eight waypoint script to a `flights/*.csv`.
 //!
 //! The path is a Gerono lemniscate, by default sized for a consumer-drone ("medium/park")
-//! envelope around the RealFlight QuadCopterX spawn point, with the altitude sweeping smoothly
+//! envelope around the start (scripts are relative to where the vehicle starts), with the altitude sweeping smoothly
 //! across the loop. It starts and ends over its center, where the lobes cross: centered on the
-//! spawn, the vehicle climbs straight up from it, and `--end land` touches down on it. The
+//! start, the vehicle climbs straight up from it, and `--end land` touches down on it. The
 //! header records the command that reproduces the file. Re-run it whenever you want to retune the
 //! shape — the flown path lives in the committed CSV, and `ScriptCommander` stays
 //! geometry-agnostic. Every dimension is a flag, so you can resize without editing source.
@@ -14,7 +14,7 @@
 //! ```bash
 //! cargo run --bin generate_figure_eight
 //! cargo run --bin generate_figure_eight -- --half-width 40 -o flights/wide.csv
-//! cargo run --bin generate_figure_eight -- --center-north -10 --center-east 6 --half-width 10
+//! cargo run --bin generate_figure_eight -- --center-north 20 --half-width 10
 //! ```
 
 use std::error::Error;
@@ -62,12 +62,12 @@ struct Config {
     cruise: f32,
 
     /// North coordinate of the figure-eight's center, meters (the script's `x`). The default is
-    /// the RealFlight QuadCopterX spawn point (`flights/hover.csv`).
-    #[arg(long, default_value_t = -7.94)]
+    /// the start.
+    #[arg(long, default_value_t = 0.0)]
     center_north: f32,
 
     /// East coordinate of the figure-eight's center, meters (the script's `y`).
-    #[arg(long, default_value_t = 8.46)]
+    #[arg(long, default_value_t = 0.0)]
     center_east: f32,
 }
 
@@ -106,12 +106,15 @@ fn build_csv(config: &Config) -> String {
         "# y = center_east + height_scale*sin(t)*cos(t), altitude = alt_mid + alt_amp*sin(t).\n",
     );
     csv.push_str("# Starts and ends over the center (t = pi/2), where the lobes cross.\n");
+    csv.push_str(
+        "# Coordinates are m north and east of where the vehicle starts, altitudes m above it.\n",
+    );
     csv.push_str("x,y,altitude,cruise_speed\n");
 
     for i in 0..=config.legs {
         let t = PI / 2.0 + 2.0 * PI * (i as f32) / (config.legs as f32);
-        let x = config.center_north + config.half_width * t.cos();
-        let y = config.center_east + config.height_scale * t.sin() * t.cos();
+        let x = centimeters(config.center_north + config.half_width * t.cos());
+        let y = centimeters(config.center_east + config.height_scale * t.sin() * t.cos());
         let altitude = config.alt_mid + config.alt_amp * t.sin();
         csv.push_str(&format!(
             "{x:.2},{y:.2},{altitude:.2},{:.1}\n",
@@ -120,6 +123,13 @@ fn build_csv(config: &Config) -> String {
     }
 
     csv
+}
+
+/// `value_m` rounded to the centimeter the script writes, without a negative zero (`-0.00`
+/// from a cosine a hair below zero at the center).
+fn centimeters(value_m: f32) -> f32 {
+    // Adding positive zero turns -0.0 into 0.0.
+    (value_m * 100.0).round() / 100.0 + 0.0
 }
 
 /// The command that writes `config`'s script, every dimension spelled out.
@@ -145,7 +155,7 @@ mod tests {
     use assert2::check;
 
     /// Comment lines plus the column header, ahead of the first waypoint row.
-    const HEADER_LINES: usize = 6;
+    const HEADER_LINES: usize = 7;
 
     /// The waypoint rows of `csv`, header skipped.
     fn data_rows(csv: &str) -> Vec<&str> {
@@ -164,8 +174,8 @@ mod tests {
         check!(config.legs == 24);
         check!(config.half_width == 30.0);
         check!(config.cruise == 7.0);
-        check!(config.center_north == -7.94);
-        check!(config.center_east == 8.46);
+        check!(config.center_north == 0.0);
+        check!(config.center_east == 0.0);
     }
 
     #[test]
@@ -185,7 +195,7 @@ mod tests {
     }
 
     /// `--end land` touches down on the last row and the takeoff climbs to the first: both sit
-    /// over the center, the spawn point the scripts are centered on (#345).
+    /// over the center, the start the scripts are centered on (#345).
     #[test]
     fn starts_and_ends_over_the_center() {
         // The eXplora script's dimensions.
@@ -201,16 +211,12 @@ mod tests {
             "3",
             "--cruise",
             "3",
-            "--center-north",
-            "-10.55",
-            "--center-east",
-            "6.49",
         ]);
         let csv = build_csv(&config);
         let rows = data_rows(&csv);
-        // t = π/2 → the center, at the top of the altitude sweep.
-        check!(rows.first() == Some(&"-10.55,6.49,13.00,3.0"));
-        check!(rows.last() == Some(&"-10.55,6.49,13.00,3.0"));
+        // t = π/2 → the center, at the top of the altitude sweep, without a negative zero.
+        check!(rows.first() == Some(&"0.00,0.00,13.00,3.0"));
+        check!(rows.last() == Some(&"0.00,0.00,13.00,3.0"));
     }
 
     #[test]
@@ -219,8 +225,8 @@ mod tests {
         // t = 2π (row 18) → center_north + half_width, both at alt_mid.
         let csv = build_csv(&default_config());
         let rows = data_rows(&csv);
-        check!(rows[6] == "-37.94,8.46,27.50,7.0");
-        check!(rows[18] == "22.06,8.46,27.50,7.0");
+        check!(rows[6] == "-30.00,0.00,27.50,7.0");
+        check!(rows[18] == "30.00,0.00,27.50,7.0");
     }
 
     /// The header's command, parsed back, describes the same path.
@@ -273,6 +279,6 @@ mod tests {
         let rows = data_rows(&csv);
         check!(rows.len() == 9);
         // t = 2π (row 6 of 8 legs from π/2) → center_north + half_width.
-        check!(rows[6].starts_with("32.06,"));
+        check!(rows[6].starts_with("40.00,"));
     }
 }

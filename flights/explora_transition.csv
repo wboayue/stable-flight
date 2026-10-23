@@ -1,16 +1,17 @@
-# eXplora VTOL transition mission (#124): climb in hover over the spawn point
-# (north -10.55 m, east 6.49 m, from the #120 capture), transition to plane, two laps of a
+# eXplora VTOL transition mission (#124): climb in hover over the start,
+# transition to plane, two laps of a
 # 240 x 120 m clockwise rectangle at 30 m and 14 m/s airspeed (45-degree turns are ~20 m in
 # radius), transition back, fly home in hover. Run with --end land.
 # The regime is the leg's to that waypoint: the first plane leg starts the transition.
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
 x,y,altitude,cruise_speed,regime
--10.55,6.49,20.0,3.0,copter
-150.0,6.49,30.0,14.0,plane
-150.0,126.49,30.0,14.0,plane
--90.0,126.49,30.0,14.0,plane
--90.0,6.49,30.0,14.0,plane
-150.0,6.49,30.0,14.0,plane
-150.0,126.49,30.0,14.0,plane
--90.0,126.49,30.0,14.0,plane
--90.0,6.49,30.0,14.0,plane
--10.55,6.49,25.0,3.0,copter
+0.00,0.00,20.0,3.0,copter
+160.55,0.00,30.0,14.0,plane
+160.55,120.00,30.0,14.0,plane
+-79.45,120.00,30.0,14.0,plane
+-79.45,0.00,30.0,14.0,plane
+160.55,0.00,30.0,14.0,plane
+160.55,120.00,30.0,14.0,plane
+-79.45,120.00,30.0,14.0,plane
+-79.45,0.00,30.0,14.0,plane
+0.00,0.00,25.0,3.0,copter

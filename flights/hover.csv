@@ -1,4 +1,4 @@
-# Hover 5 m above the RealFlight QuadCopterX spawn point (north -7.94 m, east 8.46 m,
-# ground ~0 m ASL). A single waypoint: the follower holds it.
+# Hover 5 m above the start (QuadCopterX). A single waypoint: the follower holds it.
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
 x,y,altitude,cruise_speed
--7.94,8.46,5.0,2.0
+0.00,0.00,5.0,2.0
