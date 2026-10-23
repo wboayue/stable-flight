@@ -55,6 +55,7 @@
 //! | `GUID_TILT_MAX` | `max_tilt_rad` |
 //! | `GUID_DESC_MAX` | `max_descent_mps` |
 //! | `GUID_DESC_ACC` | `descent_accel_mps2` |
+//! | `GUID_CLIMB_DEC` | `climb_decel_mps2` |
 //! | `GUID_LAND_SPD` | `land_speed_mps` |
 //! | `GUID_YAW_SLEW` | `waypoint_yaw_radps` |
 //! | `GUID_HDG_RATE` | `heading_rate_radps` |

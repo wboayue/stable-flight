@@ -296,6 +296,74 @@ fn hover_after_a_climbing_handover_descends_at_the_limit() {
     }
 }
 
+/// The eXplora's descent limit (`explora_vtol`'s `max_descent_mps`), where a hover handed
+/// over climbing sank 2.75 m/s in RealFlight (#462).
+const EXPLORA_DESCENT_MPS: f32 = 1.5;
+
+/// A back ramp thrust that hands the sim tailsitter to the hover climbing (measured
+/// +3.4 m/s), as the RealFlight eXplora's 0.75 hands over at about +1.9 m/s (#462).
+const CLIMBING_BACK_THRUST: f32 = 0.7;
+
+/// Seconds after the back handover the sink is watched: where the RealFlight eXplora sank
+/// fastest (#462).
+const HANDOVER_SINK_WATCH_S: f32 = 3.0;
+
+/// Most the hover sinks in [`HANDOVER_SINK_WATCH_S`] after a climbing handover, in m/s, over
+/// [`EXPLORA_DESCENT_MPS`]: no external band applies. Measured 1.61 m/s with the climb shed;
+/// a target starting at rest sank 1.98 (#462).
+const HANDOVER_SINK_MARGIN_MPS: f32 = 0.25;
+
+/// Most the hover rises above its handover height, in m, beyond the v² / (2 · `climb_decel_mps2`)
+/// that shedding the handover's climb takes. Measured 2.6 m against 2.4 m to shed +3.4 m/s at
+/// 2.5 m/s² (#462).
+const HANDOVER_RISE_MARGIN_M: f32 = 1.0;
+
+/// A hover handed over climbing sheds the climb instead of cutting thrust to stop it: it sinks
+/// no faster than the eXplora's descent limit plus [`HANDOVER_SINK_MARGIN_MPS`] in the first
+/// [`HANDOVER_SINK_WATCH_S`], and rises no more than shedding the climb takes plus
+/// [`HANDOVER_RISE_MARGIN_M`] (#462).
+#[test]
+fn climbing_handover_sinks_within_the_descent_limit() {
+    let mut airframe = airframes::tailsitter();
+    airframe.guidance.transition.back_thrust = CLIMBING_BACK_THRUST;
+    let hover = &mut airframe.guidance.hover;
+    hover.max_descent_mps = EXPLORA_DESCENT_MPS;
+    let climb_decel_mps2 = hover.climb_decel_mps2;
+    let plant = TailsitterPlant::clean(airframe);
+    let commander = forward_and_back(&airframe, BACK_AT_S, BACK_HOVER_NORTH_M);
+    let mut flight_loop = tailsitter_loop(&plant, commander);
+    let flight = trace(
+        &mut flight_loop,
+        BACK_AT_S + BACK_DURATION_S + DESCENT_WATCH_S,
+    );
+
+    let copter_s = entered_s(&flight, FlightMode::Copter, BACK_AT_S, "back");
+    let handover = flight.window(copter_s, f32::INFINITY).next();
+    let (handover_m, climb_mps) = handover.map_or((f32::NAN, f32::NAN), |sample| {
+        (sample.state.position_m.z, sample.state.velocity_mps.z)
+    });
+    // Measured 3.44 m/s.
+    check!(climb_mps > 0.0, "handed over at {climb_mps} m/s");
+    let fastest_sink_mps = flight
+        .window(copter_s, copter_s + HANDOVER_SINK_WATCH_S)
+        .map(|sample| -sample.state.velocity_mps.z)
+        .fold(f32::NEG_INFINITY, f32::max);
+    check!(
+        fastest_sink_mps <= EXPLORA_DESCENT_MPS + HANDOVER_SINK_MARGIN_MPS,
+        "sank {fastest_sink_mps} m/s"
+    );
+    let highest_m = flight
+        .window(copter_s, copter_s + DESCENT_WATCH_S)
+        .map(|sample| sample.state.position_m.z)
+        .fold(f32::NEG_INFINITY, f32::max);
+    let shed_m = climb_mps * climb_mps / (2.0 * climb_decel_mps2);
+    let rise_m = highest_m - handover_m;
+    check!(
+        rise_m <= shed_m + HANDOVER_RISE_MARGIN_M,
+        "rose {rise_m} m, {shed_m} m to shed the climb"
+    );
+}
+
 /// Handing thrust back to the hover after a back transition doesn't step the moments: the
 /// altitude loop's zero thrust on the way isn't ground idle, so the stabilizer keeps its
 /// integrals (#326). Flown on the core default ramp (50°/s, done at 45°), which arrives

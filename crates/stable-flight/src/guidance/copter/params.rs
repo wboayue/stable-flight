@@ -20,6 +20,7 @@ impl ParamTable for CopterGuidanceConfig {
         param!(deg "GUID_TILT_MAX", max_tilt_rad),
         param!("GUID_DESC_MAX", max_descent_mps),
         param!("GUID_DESC_ACC", descent_accel_mps2),
+        param!("GUID_CLIMB_DEC", climb_decel_mps2),
         param!("GUID_LAND_SPD", land_speed_mps),
         param!(deg "GUID_YAW_SLEW", waypoint_yaw_radps),
         param!(deg "GUID_HDG_RATE", heading_rate_radps),
@@ -107,6 +108,13 @@ mod metadata {
                 .param(
                     "GUID_DESC_ACC",
                     "Acceleration a descent or land starts with, and a waypoint descent stops with",
+                )
+                .with_units("m/s/s")
+                .above(0.0),
+            LIMITS
+                .param(
+                    "GUID_CLIMB_DEC",
+                    "Deceleration a descent or land started while climbing sheds the climb at",
                 )
                 .with_units("m/s/s")
                 .above(0.0),
