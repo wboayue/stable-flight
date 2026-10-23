@@ -167,7 +167,6 @@ The axes are the hover view's:
 |---|---|---|
 | `GUID_DESC_MAX` | `hover.max_descent_mps` | 1.5 m/s (core default 3 m/s) |
 | `GUID_DESC_ACC` | `hover.descent_accel_mps2` | 1.0 m/s² (core default) |
-| `GUID_CLIMB_DEC` | `hover.climb_decel_mps2` | 2.5 m/s² (core default) |
 
 The fastest descent waypoint flight asks for, including the climb-down after a back
 transition. Sinking tail first, the air meets the prop wash head on, so the elevons lose
@@ -184,9 +183,8 @@ tick (#476).
 Lower it if the start drops the nose or the arrival sinks past the waypoint; raise it to reach
 the waypoint sooner.
 
-`GUID_CLIMB_DEC` covers a descent that starts while the vehicle still climbs, as the hover
-after a back transition does (step 8): the target starts rising at the vehicle's climb and
-slows at this rate before it starts down.
+A descent that starts while the vehicle still climbs, as the hover after a back transition
+does, first sheds the climb at `GUID_CLIMB_DEC` (step 8).
 
 Start at 1.5 m/s, the default descent rate of ArduPilot (`WP_SPD_DN`) and PX4
 (`MPC_Z_V_AUTO_DN`). The copter default of 3 m/s is too fast for a tailsitter until a flight
