@@ -431,6 +431,18 @@ above the handover height (#462):
 | 0.7 | +3.4 m/s | 1.98 m/s / 0.9 m | climbing / 6.1 m | **1.61 / 2.6 m** | 1.75 / 1.1 m |
 | 0.8 | +8.1 m/s | 2.07 / 4.2 m | climbing / 33 m | **climbing / 13.5 m** | 1.94 / 5.0 m |
 
+eXplora (#462), `explora_transition_lap.csv --end land`, handovers that arrive climbing, at
+249–251 Hz around the handover, worst sink in the 3 s after it:
+
+| Build | Climb at handover | Worst sink | Climb 0.6 s after the handover |
+|---|---|---|---|
+| Target at rest | +1.12, +1.19 m/s | 1.77, 1.78 m/s | −1.00 m/s (+1.12 run) |
+| **Shed at 2.5 m/s²** | +1.13, +0.36, +0.28 m/s | **1.64**, 1.67, 1.82 m/s | **−0.36 m/s** (+1.13 run) |
+
+The climb no longer turns into a sink at once; the sink builds over 2 s instead. Past the
+1.5 m/s target the hover overshoots to 1.6–1.8 m/s either way, with `sp_thrust` at
+`GUID_BOOST_MAX` (0.9).
+
 Lower it if the hover still sinks fast after a climbing handover; raise it if it balloons
 too far above the point. A large climb at the handover is the back ramp's to fix (thrust and
 handover tilt above), not this one's.
