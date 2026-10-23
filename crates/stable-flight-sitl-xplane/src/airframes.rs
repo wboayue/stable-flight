@@ -163,9 +163,10 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                 min_airspeed_mps: ALIA_MIN_AIRSPEED_MPS,
                 timeout_s: 45.0,
                 min_height_m: 20.0,
-                // px4xplane's `VT_FW_MIN_ALT` for this airframe
-                // (`config/px4_params/5020_xplane_alia250`).
-                plane_min_height_m: 20.0,
+                // Above px4xplane's `VT_FW_MIN_ALT` (20 m, `config/px4_params/5020_xplane_alia250`),
+                // which assumes PX4's instant hover: falling back from a 5 m/s sink at 50 m/s
+                // lost 11 m below the floor in X-Plane, while the lift rotors ramp in (#493).
+                plane_min_height_m: 30.0,
                 back_ramp_s: 10.0,
                 back_timeout_s: 28.0,
                 pusher_slew_per_s: 0.45,

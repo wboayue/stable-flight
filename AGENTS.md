@@ -320,7 +320,7 @@ Related code sits together, so a reviewer reads one behavior in one place.
   without taking control. Fly plane legs over water (`flights/alia_transition_lap.csv` starts
   at Oceano, L52): until #451 a missed plane leg flies on past its waypoint, so watch
   scripted plane flight and stop it past its last plane waypoint. A sinking one falls back to
-  a hover below the Alia's `TRAN_FW_MIN_HGT` (20 m above arming).
+  a hover below the Alia's `TRAN_FW_MIN_HGT` (30 m above arming).
   Copter legs turn the nose along the leg as they fly it (`GUID_YAW_SLEW`), so start a route
   with a climb over the spawn, which turns nothing on the ground.
 - **Disconnects:** flight examples reconnect on their own and log "Reconnected to RealFlight"
