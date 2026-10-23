@@ -37,8 +37,8 @@
 //! A fallback is a forward transition abandoned (timed out or cut short) or plane flight
 //! below `plane_min_height_m` sent back to copter (a quadchute). After one, `Plane` is
 //! refused until `Copter` is requested (`ToCopter` completes as if it were, reporting the
-//! fallback), and the VTOL guidance hovers where copter flight took over instead of flying the
-//! command's input. A standing `Plane` request refused for height starts the transition once
+//! fallback), and the VTOL guidance flies a waypoint as a hover where copter flight took
+//! over, so a plane leg's distant waypoint isn't chased on the rotors. A standing `Plane` request refused for height starts the transition once
 //! the vehicle climbs past both heights.
 //! Height is above the altitude at [`prime`](Transition::prime) (where the vehicle armed);
 //! before the first `prime` there is none, and `Plane` is refused.
@@ -578,12 +578,14 @@ impl ForwardGate {
 }
 
 /// Where copter flight hovers after a fallback (see [Modes](self#modes)), shared by
-/// [`TailsitterGuidance`] and [`QuadPlaneGuidance`]: the point where it took over, latched on
-/// the fallback's first copter tick and held, the command's input set aside, until the
-/// fallback clears. The command may still be a distant plane waypoint, which the copter would
-/// otherwise chase at the plane leg's speed (#453). ArduPilot lands where a forward
-/// transition failed (`QLAND`, `ArduPlane/quadplane.cpp:1503-1506`); PX4 returns home by
-/// default (`COM_QC_ACT`, `commander_params.yaml:198-207`). Holding leaves that choice to the
+/// [`TailsitterGuidance`] and [`QuadPlaneGuidance`]: in place of a waypoint, the point where
+/// the vehicle was on the fallback's first copter tick flying one, held until the fallback
+/// clears. The waypoint may be a distant plane leg's, which the copter would otherwise chase
+/// at the plane leg's speed (#453). Other input (sticks, offboard attitudes and rates, land)
+/// is flown as given, as PX4 keeps flying its manual modes after a quadchute (PX4
+/// `commander/failsafe/failsafe.cpp:619-625`). On a waypoint ArduPilot lands where a forward
+/// transition failed (`QLAND`, `ArduPlane/quadplane.cpp:1503-1506`) and PX4 returns home by
+/// default (`COM_QC_ACT`, `commander_params.yaml:198-207`); holding leaves that choice to the
 /// commander: `Land` or `Copter` clears the fallback.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct FallbackHold {
@@ -592,8 +594,8 @@ struct FallbackHold {
 }
 
 impl FallbackHold {
-    /// What copter flight flies this tick: `input`, or while `fallen_back` the hold over
-    /// where `state` was on the fallback's first copter tick.
+    /// What copter flight flies this tick: `input`, or while `fallen_back` and `input` is a
+    /// waypoint, the hold over where `state` was on the first such tick.
     fn input(
         &mut self,
         fallen_back: bool,
@@ -604,6 +606,9 @@ impl FallbackHold {
             self.point = None;
             return *input;
         }
+        let ControlInput::Waypoint(_) = input else {
+            return *input;
+        };
         let point = *self.point.get_or_insert_with(|| WaypointCommand {
             position_m: state.position_m.xy(),
             altitude_m: state.position_m.z,

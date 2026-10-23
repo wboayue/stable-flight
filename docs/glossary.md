@@ -19,8 +19,9 @@ Code comments and docs link here instead of redefining a term.
   until the wing carries the weight. Back: plane to copter.
 - **Quadchute / fallback:** a VTOL giving up plane flight for copter flight on its own: a
   forward transition that times out or rolls too far, or plane flight below its minimum
-  height (`TRAN_FW_MIN_HGT`). It then hovers where copter flight took over, refusing plane
-  flight until copter flight is asked for (PX4's name; `ModeRefusal` says why).
+  height (`TRAN_FW_MIN_HGT`). Plane flight is then refused until copter flight is asked for,
+  and a waypoint is flown as a hover where copter flight took over; sticks keep flying (PX4's
+  name; `ModeRefusal` says why).
 - **Blend:** during a quadplane transition, the hover and wing-borne setpoints flown together,
   each weighted by a lift share (`Setpoint::Blend`).
 - **FBWA (fly-by-wire A):** plane stick mode where the sticks command bank and pitch angles

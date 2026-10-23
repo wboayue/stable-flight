@@ -580,11 +580,11 @@ fn new_panics_on_an_invalid_config() {
     });
 }
 
-/// A fallback hold passes the input through outside a fallback, latches where the vehicle is
-/// on its first tick in one, holds that point however the vehicle moves, and lets go when the
-/// fallback clears (or on `clear`).
+/// A fallback hold passes the input through outside a fallback, and sticks through in one;
+/// in place of a waypoint it latches where the vehicle is on the first such tick, holds that
+/// point however the vehicle moves, and lets go when the fallback clears (or on `clear`).
 #[test]
-fn fallback_hold_latches_the_first_fallback_tick() {
+fn fallback_hold_latches_the_first_fallback_waypoint() {
     let at = |north_m: f32, height_m: f32| VehicleState {
         position_m: Vec3::new(north_m, 0.0, height_m),
         ..Default::default()
@@ -597,25 +597,32 @@ fn fallback_hold_latches_the_first_fallback_tick() {
         })
     };
     let far = hold_over(6_000.0, 250.0);
+    let sticks = ControlInput::Attitude(Default::default());
     let mut hold = FallbackHold::default();
-    // (what, fallen back, vehicle north and height, input flown)
+    // (what, fallen back, input, vehicle north and height, input flown)
     let ticks = [
-        ("no fallback", false, (10.0, 30.0), far),
+        ("no fallback", false, far, (10.0, 30.0), far),
+        ("sticks in a fallback", true, sticks, (15.0, 30.0), sticks),
         (
-            "first fallback tick",
+            "first waypoint",
             true,
+            far,
             (20.0, 29.0),
             hold_over(20.0, 29.0),
         ),
-        ("held", true, (25.0, 28.0), hold_over(20.0, 29.0)),
-        ("cleared", false, (30.0, 30.0), far),
-        ("a new fallback", true, (40.0, 31.0), hold_over(40.0, 31.0)),
+        ("held", true, far, (25.0, 28.0), hold_over(20.0, 29.0)),
+        ("cleared", false, far, (30.0, 30.0), far),
+        (
+            "a new fallback",
+            true,
+            far,
+            (40.0, 31.0),
+            hold_over(40.0, 31.0),
+        ),
     ];
-    for (what, fallen_back, (north_m, height_m), flown) in ticks {
-        check!(
-            hold.input(fallen_back, &far, &at(north_m, height_m)) == flown,
-            "{what}"
-        );
+    for (what, fallen_back, input, (north_m, height_m), flown) in ticks {
+        let state = at(north_m, height_m);
+        check!(hold.input(fallen_back, &input, &state) == flown, "{what}");
     }
     hold.clear();
     check!(hold.input(true, &far, &at(50.0, 32.0)) == hold_over(50.0, 32.0));

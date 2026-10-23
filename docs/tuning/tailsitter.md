@@ -337,6 +337,10 @@ direction error, speed ratio.
   the wing sank 6 m while it gained speed.
 - **Minimum height:** clear the script's hover climb. A script's first plane leg is reached on
   horizontal distance, before the climb ends.
+- **Plane minimum height:** below `TRAN_FW_MIN_HGT`, plane flight falls back to a hover
+  through the back transition (3.3 m lost at a 4.6 m/s sink on the sim), joystick flight
+  included. Keep plane legs and low passes above it. Plane stays refused until copter is
+  requested (D-pad Left); a script's waypoint is then held where the hover took over.
 - **Symptoms:**
   - Height lost right after `mode` turns 1: raise `TRAN_ASPD_MIN` or `TRAN_FW_THR`.
   - Times out back to hover: raise `TRAN_FW_THR`, or check that `TRAN_FW_MAX` reaches

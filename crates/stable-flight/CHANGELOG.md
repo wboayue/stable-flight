@@ -393,8 +393,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - After a fallback (a forward transition timed out or cut short, or plane flight below its
-  minimum height), `TailsitterGuidance` and `QuadPlaneGuidance` hover where copter flight took
-  over until `Copter` is requested, instead of flying the command's input (#453): a quadplane
+  minimum height), `TailsitterGuidance` and `QuadPlaneGuidance` fly a waypoint as a hover
+  where copter flight took over until `Copter` is requested, instead of chasing it (#453): a quadplane
   timing out toward a plane waypoint 100 km off chased it on its lift rotors at 15 m/s,
   265 m in 20 s. `ToCopter` no longer returns to `Plane` after a fallback.
 
