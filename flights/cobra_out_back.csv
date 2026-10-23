@@ -1,0 +1,8 @@
+# Titan Cobra copter leg out and back (#466): climb to 30 m over the spawn point (north
+# -10.55 m, east 6.49 m, heading 38°), a 300 m leg ahead along the heading with no speed cap
+# (cruise_speed 0), then the same leg back, each stopping on its waypoint. Fly with
+# `--param GUID_LAT_ACC=1` to check the shaped legs brake in time.
+x,y,altitude,cruise_speed
+-10.55,6.49,30.0,3.0
+225.85,191.19,30.0,0.0
+-10.55,6.49,30.0,0.0
