@@ -338,10 +338,9 @@ fn climbing_handover_sinks_within_the_descent_limit() {
     );
 
     let copter_s = entered_s(&flight, FlightMode::Copter, BACK_AT_S, "back");
-    let handover = flight.window(copter_s, f32::INFINITY).next();
-    let (handover_m, climb_mps) = handover.map_or((f32::NAN, f32::NAN), |sample| {
-        (sample.state.position_m.z, sample.state.velocity_mps.z)
-    });
+    let climb_mps = flight
+        .at(copter_s)
+        .map_or(f32::NAN, |sample| sample.state.velocity_mps.z);
     // Measured 3.44 m/s.
     check!(climb_mps > 0.0, "handed over at {climb_mps} m/s");
     let fastest_sink_mps = flight
@@ -352,12 +351,9 @@ fn climbing_handover_sinks_within_the_descent_limit() {
         fastest_sink_mps <= EXPLORA_DESCENT_MPS + HANDOVER_SINK_MARGIN_MPS,
         "sank {fastest_sink_mps} m/s"
     );
-    let highest_m = flight
-        .window(copter_s, copter_s + DESCENT_WATCH_S)
-        .map(|sample| sample.state.position_m.z)
-        .fold(f32::NEG_INFINITY, f32::max);
+    let heights = flight.heights(copter_s, copter_s + DESCENT_WATCH_S);
     let shed_m = climb_mps * climb_mps / (2.0 * climb_decel_mps2);
-    let rise_m = highest_m - handover_m;
+    let rise_m = heights.highest_m - heights.start_m;
     check!(
         rise_m <= shed_m + HANDOVER_RISE_MARGIN_M,
         "rose {rise_m} m, {shed_m} m to shed the climb"
