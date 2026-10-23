@@ -165,4 +165,4 @@ This project provides a solid foundation, but there is still work ahead to make 
 
 ## Getting Involved
 
-Feel free to [open an issue](https://github.com/wboayue/stable-flight/issues), submit a pull request, or reach out with questions or suggestions. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to send a change and [SECURITY.md](SECURITY.md) to report a vulnerability.
+Ask questions and share ideas or flights in [Discussions](https://github.com/wboayue/stable-flight/discussions), [open an issue](https://github.com/wboayue/stable-flight/issues) for a bug or planned work, or submit a pull request. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to send a change and [SECURITY.md](SECURITY.md) to report a vulnerability.
