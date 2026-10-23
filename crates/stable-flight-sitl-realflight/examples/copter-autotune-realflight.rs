@@ -260,7 +260,8 @@ fn main() {
                 .unwrap_or(args.airframe.hover_script()),
         )
         .expect("failed to load flight script")
-        .with_route_end(RouteEnd::Hold),
+        .with_route_end(RouteEnd::Hold)
+        .anchored(),
         land: land.clone(),
         landing: None,
         touchdown: TouchdownDetector::default(),
@@ -461,7 +462,8 @@ fn at_hover_point(commander: &ThenLand, state: &VehicleState) -> bool {
         return false;
     };
     follower.is_complete()
-        && (state.position_m.z - hover.altitude_m).abs() < START_ALTITUDE_TOLERANCE_M
+        && (state.position_m.z - commander.script.origin_m().z - hover.altitude_m).abs()
+            < START_ALTITUDE_TOLERANCE_M
 }
 
 /// One step's response: the step, then its metrics (normalized to the step).

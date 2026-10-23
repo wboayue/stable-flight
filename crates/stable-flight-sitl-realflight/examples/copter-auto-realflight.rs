@@ -101,7 +101,8 @@ fn main() {
     // Replays the waypoints from the CSV script, then holds the last, loops, or lands.
     let commander = ScriptCommander::new(&args.script)
         .expect("failed to load flight script")
-        .with_route_end(args.end.into());
+        .with_route_end(args.end.into())
+        .anchored();
 
     // QuadCopterX model: tuned gains, mixer, and motor-to-channel mapping.
     // Reference: https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX
@@ -155,9 +156,10 @@ fn main() {
             complete = true;
             match args.end {
                 End::Land => {
-                    let position_m = flight_loop.state().position_m;
+                    let position_m =
+                        flight_loop.state().position_m - flight_loop.commander().origin_m();
                     info!(
-                        "touched down at north {:.2} m, east {:.2} m: disarmed",
+                        "touched down {:.2} m north, {:.2} m east of the start: disarmed",
                         position_m.x, position_m.y
                     );
                 }

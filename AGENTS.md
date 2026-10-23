@@ -267,7 +267,9 @@ Related code sits together, so a reviewer reads one behavior in one place.
 - PRs that change flight behavior, the link, or the bridge end with a RealFlight check.
 - **Scripted over manual:** fly test and tuning flights from a waypoint script with `--record`
   (the `*-auto-*` examples on `flights/*.csv`, `plane-probe-xplane`), started and stopped from the
-  command line; when no script covers the check, add one to `flights/` first. A script flies the
+  command line; when no script covers the check, add one to `flights/` first. RealFlight scripts
+  are relative to where the vehicle starts (0,0 at height 0: the spawn), so they fly at any
+  field (#494). A script flies the
   same route every run, so runs compare row against row, and it needs no pilot at the sticks. A
   hold starts only once its waypoint is reached (within 3 m), so a waypoint the vehicle can't
   reach (pinned at the tilt cap, belly into the wind) stalls the script: in wind, climb and hold

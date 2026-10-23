@@ -133,7 +133,8 @@ fn main() {
     let commander = ScriptCommander::new(&args.script)
         .expect("failed to load flight script")
         .with_route_end(args.end.into())
-        .with_maneuver_config(airframes::explora_maneuvers());
+        .with_maneuver_config(airframes::explora_maneuvers())
+        .anchored();
 
     // eXplora VTOL model: gains (in the view's axes), mixer, channel mapping, and body rotation.
     let airframe = airframes::explora_vtol();
@@ -201,9 +202,10 @@ fn main() {
             complete = true;
             match args.end {
                 End::Land => {
-                    let position_m = flight_loop.state().position_m;
+                    let position_m =
+                        flight_loop.state().position_m - flight_loop.commander().origin_m();
                     info!(
-                        "touched down at north {:.2} m, east {:.2} m: disarmed",
+                        "touched down {:.2} m north, {:.2} m east of the start: disarmed",
                         position_m.x, position_m.y
                     );
                 }
