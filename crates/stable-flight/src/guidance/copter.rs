@@ -321,10 +321,11 @@ impl ThrustLimits {
 
 impl Default for CopterGuidanceConfig {
     /// The controller defaults (flight-checked on RealFlight's QuadCopterX), a 50 Hz lateral
-    /// loop, a 27° waypoint tilt cap, 45° at full stick, a 3 m/s descent limit, a climb at
-    /// the latch shed at 2.5 m/s², a 0.7 m/s land, waypoint legs over 3 m turned to face along them at 60°/s, a waypoint's heading
-    /// turned to at 60°/s, the heading yielded after 1 s stuck over 30° off, no thrust floor or
-    /// sink guard, and no boost ceiling.
+    /// loop, a 27° waypoint tilt cap, 45° at full stick, a 3 m/s descent limit, a climb under
+    /// way when a descent starts shed at 2.5 m/s², a 0.7 m/s land, waypoint legs over 3 m
+    /// turned to face along them at 60°/s, a waypoint's heading turned to at 60°/s, the
+    /// heading yielded after 1 s stuck over 30° off, no thrust floor or sink guard, and no
+    /// boost ceiling.
     fn default() -> Self {
         CopterGuidanceConfig {
             altitude: AltitudeControllerConfig::default(),
@@ -357,10 +358,10 @@ impl CopterGuidanceConfig {
     /// thrust limits ([`ThrustLimits::validate`], section `thrust`), that
     /// `navigation_period_s` and `max_stick_angles_rad` are non-negative and finite, that
     /// `max_tilt_rad` is in `(0, π/2)`, that `max_descent_mps`, `descent_accel_mps2`,
-    /// `climb_decel_mps2`, and `heading_rate_radps` are positive and finite, that `land_speed_mps` is finite and above
-    /// [`DESCENDING_MPS`], and that `waypoint_yaw_radps`, `waypoint_yaw_min_leg_m`,
-    /// `heading_yield_rad`, `heading_yield_s`, and `wind_heading_min_mps` are non-negative and
-    /// finite.
+    /// `climb_decel_mps2`, and `heading_rate_radps` are positive and finite, that
+    /// `land_speed_mps` is finite and above [`DESCENDING_MPS`], and that `waypoint_yaw_radps`,
+    /// `waypoint_yaw_min_leg_m`, `heading_yield_rad`, `heading_yield_s`, and
+    /// `wind_heading_min_mps` are non-negative and finite.
     ///
     /// # Examples
     ///
@@ -726,11 +727,11 @@ impl CopterGuidance {
         waypoint_command: &WaypointCommand,
         estimated_state: &VehicleState,
     ) -> AttitudeSetpoint {
-        self.latch_climb(estimated_state);
         let target = self.descend_toward(
             dt,
             waypoint_command.altitude_m,
             estimated_state.position_m.z,
+            estimated_state.velocity_mps.z,
         );
         let wind = self.wind.estimate();
         let heading_rad = self.leg_heading.target_rad(
@@ -749,8 +750,9 @@ impl CopterGuidance {
     /// a wingtip into the wind (`wind_heading_min_mps`), with an altitude target
     /// that keeps descending at `land_speed_mps`, leashed [`ALTITUDE_LEASH_M`] below the vehicle.
     /// The descent starts and speeds up to it as a waypoint descent does
-    /// ([`latch_climb`](Self::latch_climb), [`ramped_descent_mps`](Self::ramped_descent_mps)):
-    /// stepping to it cut the RealFlight eXplora's thrust from 0.89 to 0.76 in one tick (#476).
+    /// ([`descent_start_m`](Self::descent_start_m),
+    /// [`ramped_descent_mps`](Self::ramped_descent_mps)): stepping to it cut the RealFlight
+    /// eXplora's thrust from 0.89 to 0.76 in one tick (#476).
     fn land(
         &mut self,
         dt: f32,
@@ -758,14 +760,12 @@ impl CopterGuidance {
         estimated_state: &VehicleState,
     ) -> AttitudeSetpoint {
         let altitude_m = estimated_state.position_m.z;
-        self.latch_climb(estimated_state);
+        let start_m = self.descent_start_m(altitude_m, estimated_state.velocity_mps.z);
         let speed_mps = self.ramped_descent_mps(dt, self.config.land_speed_mps);
         // With nothing latched, the NaN target holds hover.
-        let target_m = self
-            .descent_start_m(altitude_m)
-            .map_or(f32::NAN, |start_m| {
-                lowered(start_m, speed_mps * dt, altitude_m)
-            });
+        let target_m = start_m.map_or(f32::NAN, |start_m| {
+            lowered(start_m, speed_mps * dt, altitude_m)
+        });
         self.altitude_target_m = Some(target_m).filter(|t| t.is_finite());
         // With nothing latched nothing descends, so a waypoint descent next starts from rest.
         self.descent_speed_mps = if self.altitude_target_m.is_some() {
@@ -797,18 +797,24 @@ impl CopterGuidance {
     /// above the latched target or the target reaches it, otherwise the latched target moved
     /// by [`descent_rate_mps`](Self::descent_rate_mps) of its height above the waypoint (and
     /// leashed), with the new target's rate fed forward. That rate starts at the vehicle's
-    /// climb ([`latch_climb`](Self::latch_climb)) and rises from the last tick's by at most
+    /// climb ([`descent_start_m`](Self::descent_start_m)) and rises from the last tick's by at most
     /// [`ramped_descent_mps`](Self::ramped_descent_mps)'s step, so a descent starts without a
     /// thrust step: an instant 1.5 m/s cut the RealFlight eXplora's thrust from 0.85 to its
     /// 0.65 floor in 0.25 s and dropped its nose 10° (#417). It falls to 0 at the waypoint, so
     /// the target, its feedforward, and the thrust stay continuous where the waypoint takes
     /// over: arriving, and where the leash puts the target on the waypoint (#445).
-    fn descend_toward(&mut self, dt: f32, waypoint_m: f32, altitude_m: f32) -> AltitudeTarget {
+    fn descend_toward(
+        &mut self,
+        dt: f32,
+        waypoint_m: f32,
+        altitude_m: f32,
+        climb_mps: f32,
+    ) -> AltitudeTarget {
         let level = AltitudeTarget {
             altitude_m: waypoint_m,
             velocity_mps: 0.0,
         };
-        let Some(start_m) = self.descent_start_m(altitude_m) else {
+        let Some(start_m) = self.descent_start_m(altitude_m, climb_mps) else {
             self.descent_speed_mps = 0.0;
             return level;
         };
@@ -829,16 +835,22 @@ impl CopterGuidance {
         target
     }
 
-    /// With no target latched, starts the target's vertical speed at the vehicle's climb
-    /// (the state's NEU z, up positive), so the target rises with the vehicle
-    /// instead of holding below it; a sink, or an unknown climb, starts it at rest.
-    fn latch_climb(&mut self, estimated_state: &VehicleState) {
+    /// Where a descent's target moves from: the latched altitude target, or with none latched
+    /// the vehicle's `altitude_m`, the target's speed then started at the vehicle's
+    /// `climb_mps` (up positive), so the target rises with the vehicle instead of holding below
+    /// it; a sink, or an unknown climb, starts it at rest. `None` until there is a finite
+    /// altitude to descend from; the altitude loop holds hover on a non-finite estimate
+    /// meanwhile (input policy).
+    fn descent_start_m(&mut self, altitude_m: f32, climb_mps: f32) -> Option<f32> {
         if self.altitude_target_m.is_some() {
-            return;
+            return self.altitude_target_m;
+        }
+        if !altitude_m.is_finite() {
+            return None;
         }
         // `max` drops a NaN climb: the target starts at rest.
-        let climb_mps = estimated_state.velocity_mps.z.max(0.0);
-        self.descent_speed_mps = -climb_mps;
+        self.descent_speed_mps = -climb_mps.max(0.0);
+        Some(altitude_m)
     }
 
     /// `limit_mps`, or less while the target sheds a climb or speeds up to it: at most the
@@ -862,14 +874,6 @@ impl CopterGuidance {
         let config = &self.config;
         shaped_closing_speed(height_m, config.altitude.gains.p, config.descent_accel_mps2)
             .min(config.max_descent_mps)
-    }
-
-    /// Where a descent's target moves from: the latched altitude target, or with none latched
-    /// the vehicle's `altitude_m`. `None` until there is a finite altitude to descend from; the
-    /// altitude loop holds hover on a non-finite estimate meanwhile (input policy).
-    fn descent_start_m(&self, altitude_m: f32) -> Option<f32> {
-        self.altitude_target_m
-            .or(Some(altitude_m).filter(|a| a.is_finite()))
     }
 
     /// Flies toward the waypoint's position and the altitude `target`, holding the heading-hold
