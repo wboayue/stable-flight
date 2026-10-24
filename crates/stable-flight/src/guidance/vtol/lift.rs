@@ -61,8 +61,8 @@ pub struct LiftTransitionConfig {
 
 impl LiftTransitionConfig {
     /// `Ok` when every field is in range: times, ramps, and the slew positive, airspeed, speed,
-    /// height, deceleration and its gain, and handoff non-negative, all finite; the thrust in `[0, 1]` and the roll limit
-    /// in `(0, π]`.
+    /// height, deceleration and its gain, and handoff non-negative, all finite; the thrust in
+    /// `[0, 1]` and the roll limit in `(0, π]`.
     ///
     /// # Errors
     ///
@@ -96,10 +96,10 @@ impl LiftTransitionConfig {
 impl Default for LiftTransitionConfig {
     /// ArduPilot's 9 m/s airspeed gate and 5 s lift ramp, PX4's 15 s forward timeout, 3 s back
     /// ramp, 5 m/s back speed, 10 s back timeout, 2 m/s² back deceleration at gain 0.1, and
-    /// pusher thrust up to full rising at
-    /// 0.33/s, and 5 m of height, no plane minimum height (PX4's `VT_FW_MIN_ALT`), a 0.5 s
-    /// handoff, and a 45° roll limit (as [`TransitionConfig`](super::TransitionConfig)); see
-    /// [`LiftTransition`]'s [sources](LiftTransition#sources).
+    /// pusher thrust up to full rising at 0.33/s, and 5 m of height, no plane minimum height
+    /// (PX4's `VT_FW_MIN_ALT`), a 0.5 s handoff, and a 45° roll limit (as
+    /// [`TransitionConfig`](super::TransitionConfig)); see [`LiftTransition`]'s
+    /// [sources](LiftTransition#sources).
     fn default() -> Self {
         LiftTransitionConfig {
             min_airspeed_mps: 9.0,

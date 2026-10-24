@@ -174,7 +174,8 @@ Going back the pusher stops and the nose comes up while it slows less than `TRAN
 (PX4's `VT_B_DEC_MSS`, 2 m/s², and `VT_B_DEC_I`, 0.1), at most about 17°. A clean wing barely
 slows on drag alone: at pitch 0 the X-Plane Alia reached its 28 s `TRAN_VT_TIMEOUT` at
 31 m/s, and the hover braking from there pitched it to 57° and sank 11 m (#496). With the
-pitch-up the sim Alia ends on speed after 21 s from 45 m/s, climbing 4.9 m.
+pitch-up it ends on speed after 22 s from 45 m/s, climbing 9 m, and hands over at 5 m/s
+(the sim Alia: 21 s, 4.9 m).
 
 ## Forward thrust
 
