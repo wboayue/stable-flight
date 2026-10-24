@@ -38,6 +38,17 @@ fn fast() -> VehicleState {
     at(HIGH_M, FAST_MPS)
 }
 
+/// As [`at`] at [`FAST_MPS`], slowing along its track at the default `back_decel_mps2`, so
+/// the back transition keeps the nose level.
+fn slowing(height_m: f32) -> VehicleState {
+    let state = at(height_m, FAST_MPS);
+    let decel_mps2 = LiftTransitionConfig::default().back_decel_mps2;
+    VehicleState {
+        acceleration_mps2: -state.velocity_mps.normalize() * decel_mps2,
+        ..state
+    }
+}
+
 fn sticks(throttle: f32) -> ControlInput {
     ControlInput::Attitude(AttitudeCommand {
         throttle,
@@ -235,21 +246,28 @@ fn forward_pitch_follows_the_plane_within_the_transition_limits() {
     }
 }
 
-/// The back transition flies a blend with the pusher stopped, both sides level, the hover
-/// side holding the height it began at as the lift share ramps up; a `Land` input asks for it.
+/// The back transition flies a blend with the pusher stopped, both sides level while it slows
+/// at `back_decel_mps2`, the hover side holding the height it began at as the lift share ramps
+/// up; a `Land` input asks for it.
 #[test]
 fn back_transition_cuts_the_pusher_and_takes_the_lift_back() {
     let config = QuadPlaneGuidanceConfig::default().transition;
     let land = ControlInput::Land(LandCommand::default());
     let mut guidance = in_plane_with(&sticks(0.6));
-    let first = blend_of(guidance.guide(DT, FlightRegime::Plane, &land, &fast()));
+    let first = blend_of(guidance.guide(DT, FlightRegime::Plane, &land, &slowing(HIGH_M)));
     check!(mode(&guidance) == FlightMode::ToCopter);
     check!(first.plane == PlaneSetpoint::default());
 
-    let blend = blend_of(fly(&mut guidance, 1.0, FlightRegime::Plane, &land, &fast()));
+    let blend = blend_of(fly(
+        &mut guidance,
+        1.0,
+        FlightRegime::Plane,
+        &land,
+        &slowing(HIGH_M),
+    ));
     assert_relative_eq!(blend.lift_share, 1.0 / config.back_ramp_s, epsilon = 1e-3);
     check!((blend.hover.roll_rad, blend.hover.pitch_rad) == (0.0, 0.0));
-    let low = blend_of(guidance.guide(DT, FlightRegime::Plane, &land, &at(HIGH_M - 3.0, FAST_MPS)));
+    let low = blend_of(guidance.guide(DT, FlightRegime::Plane, &land, &slowing(HIGH_M - 3.0)));
     check!(low.hover.thrust > blend.hover.thrust);
 
     // Slowed below the back speed: copter.
@@ -257,6 +275,40 @@ fn back_transition_cuts_the_pusher_and_takes_the_lift_back() {
     let setpoint = guidance.guide(DT, FlightRegime::Plane, &land, &slow);
     check!(mode(&guidance) == FlightMode::Copter);
     check!(matches!(setpoint, Setpoint::Attitude(_)));
+}
+
+/// A back transition that slows less than `back_decel_mps2` noses up on both sides by the
+/// integral of the shortfall, up to 0.3 rad (#496), and the next one starts level.
+#[test]
+fn back_transition_noses_up_while_it_glides() {
+    let config = QuadPlaneGuidanceConfig::default().transition;
+    let copter = sticks(0.6);
+    let mut guidance = in_plane_with(&copter);
+    // Not slowing at all: 2 m/s² short, 0.1 rad/s per m/s².
+    for (seconds, pitch_rad) in [(0.5, 0.1), (0.5, 0.2), (2.0, 0.3)] {
+        let blend = blend_of(fly(
+            &mut guidance,
+            seconds,
+            FlightRegime::Copter,
+            &copter,
+            &fast(),
+        ));
+        check!(mode(&guidance) == FlightMode::ToCopter);
+        assert_relative_eq!(blend.plane.pitch_rad, pitch_rad, epsilon = 2e-3);
+        check!(blend.hover.pitch_rad == blend.plane.pitch_rad);
+        check!(blend.hover.roll_rad == 0.0);
+    }
+
+    guidance.guide(DT, FlightRegime::Copter, &copter, &at(HIGH_M, 0.0));
+    check!(mode(&guidance) == FlightMode::Copter);
+    let entered = (0..1000).any(|_| {
+        guidance.guide(DT, FlightRegime::Plane, &copter, &fast());
+        mode(&guidance) == FlightMode::Plane
+    });
+    check!(entered);
+    let first = blend_of(guidance.guide(DT, FlightRegime::Copter, &copter, &fast()));
+    let one_tick_rad = config.back_decel_i * config.back_decel_mps2 * DT;
+    assert_relative_eq!(first.plane.pitch_rad, one_tick_rad, epsilon = 1e-6);
 }
 
 /// The back transition primes the hover guidance: it holds the heading the plane flew in on,

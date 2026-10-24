@@ -15,8 +15,11 @@ use crate::{
     WaypointCommand, WindEstimate,
 };
 
+mod deceleration;
 #[cfg(test)]
 mod tests;
+
+use deceleration::BackDeceleration;
 
 /// [`QuadPlaneGuidance`] settings: its two guidances', the transition's, forward thrust's, and
 /// the off-nose speed cut's.
@@ -76,15 +79,18 @@ impl QuadPlaneGuidanceConfig {
 ///    | `Copter` | hover guidance, on the command's input; after a fallback, until `Copter` is requested, a waypoint as a hover where copter flight took over; on a waypoint or land with [`ForwardThrust`] on, [`Setpoint::Blend`] at lift share 1: the hover's attitude with its nose-down pitch held to the limit, the plane side at that roll and pitch, the pusher on the rest |
 ///    | `ToPlane` | [`Setpoint::Blend`]: both sides wings level at the plane guidance's pitch for the command, within ArduPilot's transition limits; hover holding the altitude the transition began at, heading held; the pusher on the plane guidance's thrust, rising at most [`pusher_slew_per_s`](LiftTransitionConfig::pusher_slew_per_s), up to [`forward_thrust`](LiftTransitionConfig::forward_thrust); the step's lift share |
 ///    | `Plane` | plane guidance, on the command's input |
-///    | `ToCopter` | [`Setpoint::Blend`]: both sides wings level at pitch 0; hover holding the altitude the back transition began at, heading held; the pusher stopped; the step's lift share |
+///    | `ToCopter` | [`Setpoint::Blend`]: both sides wings level, the nose up to slow it ([`back_decel_mps2`](LiftTransitionConfig::back_decel_mps2)); hover holding the altitude the back transition began at, heading held; the pusher stopped; the step's lift share |
 ///
 ///    The hover side holds altitude with the copter's altitude loop (ArduPilot holds it through
 ///    its airspeed wait, `ArduPlane/quadplane.cpp:1535-1538`). Going forward the pusher and
 ///    pitch are the plane's, as ArduPilot flies its throttle and pitch from the plane
 ///    controller with pitch held to 0 below 3 m/s of ground speed, ±3° while waiting, and ±8°
 ///    on the ramp (`:4747-4766`): its airspeed loop keeps the lift ramp from overspeeding, and
-///    its altitude loop trims the wing. Going back drag alone slows it (PX4 cuts the pusher,
-///    `standard.cpp:269`).
+///    its altitude loop trims the wing. Going back the pusher stops (PX4, `standard.cpp:269`)
+///    and the nose comes up while it slows less than `back_decel_mps2`, at most about 17°
+///    (PX4's back-transition deceleration, `FlightTaskTransition.cpp:112-153`; ArduPilot
+///    decelerates at its `Q_TRANS_DECEL`, `ArduPlane/quadplane.cpp:304`): drag alone left the
+///    Alia at 31 m/s on its 28 s timeout (#496).
 ///
 /// 4. A side that starts flying is primed: the plane guidance as the forward transition
 ///    begins and again entering `Plane` (through the transition its total energy control flies
@@ -129,6 +135,7 @@ pub struct QuadPlaneGuidance {
     off_nose: OffNoseSpeed,
     handoff: ThrustHandoff,
     fallback_hold: FallbackHold,
+    deceleration: BackDeceleration,
     /// The mode the last tick flew.
     mode: FlightMode,
     /// The pusher's linear thrust on the last tick.
@@ -168,6 +175,7 @@ impl QuadPlaneGuidance {
             off_nose: OffNoseSpeed::new(config.off_nose),
             handoff: ThrustHandoff::new(config.transition.handoff_s),
             fallback_hold: FallbackHold::default(),
+            deceleration: BackDeceleration::default(),
             mode: FlightMode::Copter,
             pusher_thrust: 0.0,
             hold_altitude_m: f32::NAN,
@@ -214,6 +222,7 @@ impl QuadPlaneGuidance {
             FlightMode::ToCopter if self.mode == FlightMode::Plane => {
                 self.hover.prime(state);
                 self.hold_altitude_m = state.position_m.z;
+                self.deceleration.reset();
             }
             _ => {}
         }
@@ -385,9 +394,18 @@ impl Guidance for QuadPlaneGuidance {
             }
             FlightMode::ToCopter => {
                 self.pusher_thrust = 0.0;
+                let pitch_rad = self.deceleration.pitch_rad(
+                    dt,
+                    state,
+                    transition.back_decel_mps2,
+                    transition.back_decel_i,
+                );
                 Setpoint::Blend(BlendSetpoint {
-                    hover: self.hold_level(dt, 0.0, state),
-                    plane: PlaneSetpoint::default(),
+                    hover: self.hold_level(dt, pitch_rad, state),
+                    plane: PlaneSetpoint {
+                        pitch_rad,
+                        ..PlaneSetpoint::default()
+                    },
                     lift_share: step.lift_share,
                 })
             }
@@ -408,6 +426,7 @@ impl Guidance for QuadPlaneGuidance {
         self.transition.prime(state);
         self.handoff = ThrustHandoff::new(self.config.transition.handoff_s);
         self.fallback_hold.clear();
+        self.deceleration.reset();
         self.mode = FlightMode::Copter;
         self.pusher_thrust = 0.0;
         self.hold_altitude_m = f32::NAN;

@@ -16,7 +16,8 @@ Code comments and docs link here instead of redefining a term.
 - **Quadplane / lift+cruise:** a VTOL with separate lift rotors for hover and a pusher
   propeller for cruise (Titan Cobra, Alia 250).
 - **Transition:** the handover between regimes. Forward: copter to plane, gaining airspeed
-  until the wing carries the weight. Back: plane to copter.
+  until the wing carries the weight. Back: plane to copter; a quadplane's pitches the nose up
+  to slow it, as the pusher stops and the wing carries less and less.
 - **Quadchute / fallback:** a VTOL giving up plane flight for copter flight on its own: a
   forward transition that times out or rolls too far, or plane flight below its minimum
   height (`TRAN_FW_MIN_HGT`). Plane flight is then refused until copter flight is asked for,
