@@ -228,7 +228,7 @@ fn commander_requests_each_legs_regime() {
 
 /// Each leg's waypoint is reached within its regime's altitude acceptance: a plane leg's
 /// loose band takes it 5 m off, a copter leg's tight band doesn't, and either band can be
-/// overridden.
+/// overridden. The plane leg is followed by another, so no back transition waives its band.
 #[test]
 fn altitude_acceptance_follows_each_legs_regime() {
     let at = |x: f32, altitude_m: f32| WaypointCommand {
@@ -239,7 +239,7 @@ fn altitude_acceptance_follows_each_legs_regime() {
         vec![
             (at(0.0, 30.0), FlightRegime::Copter),
             (at(100.0, 30.0), FlightRegime::Plane),
-            (at(200.0, 30.0), FlightRegime::Copter),
+            (at(200.0, 30.0), FlightRegime::Plane),
         ]
     };
     let state = |x: f32, z: f32| VehicleState {
@@ -276,6 +276,60 @@ fn altitude_acceptance_follows_each_legs_regime() {
             commander.next_command(0.01, &state(x, z));
         }
         check!(commander.follower().current_index() == expected, "{name}");
+    }
+}
+
+/// A plane leg ending in a back transition (into a copter leg, or the route's land) takes
+/// its waypoint however far off altitude, and so does the wrap of a looping route into a
+/// copter leg; a plane leg into another plane leg, or held at the route's end, keeps its
+/// band (#451).
+#[test]
+fn back_transition_waypoint_takes_any_altitude() {
+    let at = |x: f32| WaypointCommand {
+        altitude_m: 300.0,
+        ..wp(x, 0.0)
+    };
+    let state = |x: f32, z: f32| VehicleState {
+        position_m: Vec3::new(x, 0.0, z),
+        ..Default::default()
+    };
+    // (name, regime of the leg after the plane leg (None: the plane leg is the last), route
+    // end, expected to move on from the plane leg's waypoint)
+    let cases = [
+        (
+            "into a copter leg",
+            Some(FlightRegime::Copter),
+            RouteEnd::Hold,
+            true,
+        ),
+        (
+            "into a plane leg",
+            Some(FlightRegime::Plane),
+            RouteEnd::Hold,
+            false,
+        ),
+        ("last, landing", None, RouteEnd::Land, true),
+        ("last, held", None, RouteEnd::Hold, false),
+        ("last, wrapping to a copter leg", None, RouteEnd::Loop, true),
+    ];
+    for (name, after, route_end, advances) in cases {
+        let mut route = vec![
+            (at(0.0), FlightRegime::Copter),
+            (at(1000.0), FlightRegime::Plane),
+        ];
+        if let Some(regime) = after {
+            route.push((at(2000.0), regime));
+        }
+        let mut commander = ScriptCommander::from_route(route)
+            .expect("non-empty")
+            .with_route_end(route_end);
+        commander.next_command(0.01, &state(0.0, 300.0));
+        check!(commander.follower().current_index() == 1, "{name}");
+        // Passed the plane leg's waypoint 95 m low.
+        let command = commander.next_command(0.01, &state(1010.0, 205.0));
+        let lands = matches!(command.input, ControlInput::Land(_));
+        let moved_on = commander.follower().current_index() != 1 || lands;
+        check!(moved_on == advances, "{name}");
     }
 }
 
