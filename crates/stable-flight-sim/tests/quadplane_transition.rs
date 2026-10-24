@@ -129,8 +129,10 @@ const ALIA_BACK_AT_S: f32 = 120.0;
 /// it; no external band applies (measured 4.9 m from 45 m/s).
 const ALIA_BACK_CLIMB_M: f32 = 7.0;
 
-/// Fastest a back transition that ends on speed hands over, in m/s: `back_speed_mps` (5 m/s)
-/// and one tick's slowing.
+/// Fastest horizontal speed a back transition that ends on speed hands over at, in m/s: it
+/// ends below `back_speed_mps` (5 m/s) along the nose, which pitched up reads a little under
+/// the horizontal speed; no external band applies (measured 5.1 m/s on the Alia, normal and
+/// fallback).
 const HANDOVER_SPEED_MPS: f32 = 5.2;
 
 /// The Alia's back transition from trim airspeed slows to `back_speed_mps` and hands over
