@@ -246,6 +246,40 @@ fn forward_pitch_follows_the_plane_within_the_transition_limits() {
     }
 }
 
+/// On a waypoint, the forward transition flies the wing toward the altitude it holds, not the
+/// waypoint's: a waypoint far below pitches and thrusts as a level one, waiting and on the
+/// ramp (#491).
+#[test]
+fn forward_transition_flies_the_wing_level_toward_a_lower_waypoint() {
+    let toward = |altitude_m: f32| {
+        ControlInput::Waypoint(WaypointCommand {
+            position_m: Vec2::new(1000.0, 0.0),
+            velocity_mps: None,
+            altitude_m,
+            cruise_speed_mps: FAST_MPS,
+            heading_rad: None,
+        })
+    };
+    // (case, state the transition flies in, ramping)
+    let cases = [
+        ("waiting", at(HIGH_M, 5.0), false),
+        ("ramping", fast(), true),
+    ];
+    for (case, state, ramping) in cases {
+        let [level, below] = [HIGH_M, HIGH_M - 200.0].map(|altitude_m| {
+            let input = toward(altitude_m);
+            let mut guidance = primed();
+            guidance.guide(DT, FlightRegime::Plane, &input, &hovering());
+            let blend = blend_of(fly(&mut guidance, 1.0, FlightRegime::Plane, &input, &state));
+            check!(mode(&guidance) == FlightMode::ToPlane, "{case}");
+            check!((blend.lift_share < 1.0) == ramping, "{case}");
+            blend.plane
+        });
+        check!(below.pitch_rad == level.pitch_rad, "{case}");
+        check!(below.thrust == level.thrust, "{case}");
+    }
+}
+
 /// The back transition flies a blend with the pusher stopped, both sides level while it slows
 /// at `back_decel_mps2`, the hover side holding the height it began at as the lift share ramps
 /// up; a `Land` input asks for it.

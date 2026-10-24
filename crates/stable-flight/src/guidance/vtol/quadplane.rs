@@ -251,6 +251,23 @@ impl QuadPlaneGuidance {
         }
     }
 
+    /// `input` for the wing through the forward transition: a waypoint's altitude replaced by
+    /// [`hold_altitude_m`](Self::hold_altitude_m), the one the lift rotors hold, so the wing
+    /// pitches for level flight and carries the weight as the lift ramps out. Toward a lower
+    /// altitude the wing would pitch nose down while the lift rotors hold, enter plane flight
+    /// sinking and unloaded, and stall pulling out: the sim Alia sank at 19 m/s (#491). PX4
+    /// flies the transition at the wing's trim pitch whatever the altitude
+    /// (`vtol_att_control/standard.cpp:240`). Other inputs pass through.
+    fn at_held_altitude(&self, input: &ControlInput) -> ControlInput {
+        match input {
+            ControlInput::Waypoint(waypoint) => ControlInput::Waypoint(WaypointCommand {
+                altitude_m: self.hold_altitude_m,
+                ..*waypoint
+            }),
+            _ => *input,
+        }
+    }
+
     /// The parts whose params chain, in order.
     fn parts(&self) -> [&dyn Params; 5] {
         [
@@ -323,10 +340,10 @@ impl QuadPlaneGuidance {
 }
 
 /// The forward transition's pitch: the plane guidance's for the command (its altitude loop on
-/// a waypoint, the stick in stabilized flight; 0 for rates), within ArduPilot's transition
-/// limits: 0 below [`LEVEL_BELOW_MPS`] of ground speed (or without one), then
-/// [`WAIT_PITCH_MAX_RAD`] while the lift rotors carry it all, [`RAMP_PITCH_MAX_RAD`] on the
-/// ramp (`ArduPlane/quadplane.cpp:4747-4766`).
+/// a waypoint, toward the altitude the transition holds; the stick in stabilized flight; 0 for
+/// rates), within ArduPilot's transition limits: 0 below [`LEVEL_BELOW_MPS`] of ground speed
+/// (or without one), then [`WAIT_PITCH_MAX_RAD`] while the lift rotors carry it all,
+/// [`RAMP_PITCH_MAX_RAD`] on the ramp (`ArduPlane/quadplane.cpp:4747-4766`).
 fn forward_pitch_rad(wing: &Setpoint, lift_share: f32, state: &VehicleState) -> f32 {
     let Setpoint::Plane(plane) = wing else {
         return 0.0;
@@ -366,7 +383,10 @@ impl Guidance for QuadPlaneGuidance {
 
         let setpoint = match step.mode {
             FlightMode::ToPlane => {
-                let wing = self.plane.guide(dt, FlightRegime::Plane, input, state);
+                let wing_input = self.at_held_altitude(input);
+                let wing = self
+                    .plane
+                    .guide(dt, FlightRegime::Plane, &wing_input, state);
                 let rising = self.pusher_thrust + transition.pusher_slew_per_s * dt;
                 self.pusher_thrust = saturate_throttle(wing.thrust())
                     .min(rising)

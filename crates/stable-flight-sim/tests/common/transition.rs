@@ -134,11 +134,17 @@ pub const SINK_WATCH_S: f32 = 40.0;
 /// a plane at `airspeed_mps`, toward an altitude under the ground: it sinks at the plane's
 /// limit until something stops it.
 pub fn sinking_leg(airspeed_mps: f32) -> Forward {
+    descending_leg(SINK_FROM_M, -100.0, airspeed_mps)
+}
+
+/// Hovers over the origin at `from_m`, then from [`SINK_AT_S`] flies the line north as a plane
+/// at `airspeed_mps` and `to_m`.
+pub fn descending_leg(from_m: f32, to_m: f32, airspeed_mps: f32) -> Forward {
     Interlude::new(
-        hover_at(SINK_FROM_M),
+        hover_at(from_m),
         SINK_AT_S,
         f32::INFINITY,
-        north_line_command(-100.0, airspeed_mps),
+        north_line_command(to_m, airspeed_mps),
     )
 }
 

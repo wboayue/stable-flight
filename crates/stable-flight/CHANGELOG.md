@@ -410,6 +410,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `QuadPlaneGuidance`'s forward transition flies the wing toward the altitude the transition
+  holds, not a waypoint's (#491). Toward a lower waypoint it pitched the wing nose down while
+  the lift rotors held, entered plane flight sinking and unloaded, and stalled pulling out:
+  the sim Alia 250 sank 19–23 m/s, past its 5 m/s `PGUID_SINK_MAX`, and through its 20 m
+  `TRAN_FW_MIN_HGT` to the ground. It now sinks at most 4.8 m/s and falls back above the
+  floor. PX4 likewise flies the transition at the wing's trim pitch whatever the altitude.
+
 - After a fallback (a forward transition timed out or cut short, or plane flight below its
   minimum height), `TailsitterGuidance` and `QuadPlaneGuidance` fly a waypoint as a hover
   where copter flight took over until `Copter` is requested, instead of chasing it (#453): a quadplane

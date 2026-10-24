@@ -1,7 +1,7 @@
 //! Transitions on `airframes::quadplane()`: forward from a hover to plane flight, back to a
 //! hover, and the ways a forward transition ends early, against PX4's VTOL transition limits
-//! (PX4 `c4e4ef98e9`, `src/modules/vtol_att_control/vtol_att_control_params.yaml`); and a
-//! fallback at cruise speed on `airframes::alia250()`.
+//! (PX4 `c4e4ef98e9`, `src/modules/vtol_att_control/vtol_att_control_params.yaml`); and on
+//! `airframes::alia250()`, descents out of a transition and fallbacks.
 
 mod common;
 
@@ -23,8 +23,8 @@ use common::quadplane::{
 use common::transition::{
     BACK_DURATION_S, CROSS_TRACK_M, DIVE_AT_S, DIVE_WATCH_S, DivingLeg, FORWARD_AT_S,
     FORWARD_TIMEOUT_S, Forward, HOLD_S, PLANE_FLOOR_M, PLANE_HOLD_S, PLANE_SETTLE_S, SINK_AT_S,
-    SINK_WATCH_S, TRANSITION_ALTITUDE_M, Trace, check_altitude_loss, check_falls_back, entered_s,
-    sinking_leg, trace, transition_heights,
+    SINK_WATCH_S, TRANSITION_ALTITUDE_M, Trace, check_altitude_loss, check_falls_back,
+    descending_leg, entered_s, sinking_leg, trace, transition_heights,
 };
 use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK, fly};
 
@@ -200,24 +200,68 @@ fn times_out_short_of_the_airspeed_gate() {
     }
 }
 
+/// Seconds after [`SINK_AT_S`] by which the Alia's fallback has handed the hover over: its
+/// forward transition alone takes 44 s (measured 76.4 s in all).
+const ALIA_SINK_WATCH_S: f32 = 85.0;
+
 /// A plane leg sinking through the plane minimum height falls back to copter flight no
 /// further than `FALLBACK_LOSS_M` below it, then hovers where the hover took over within the
-/// copter's calm-air bands, `Plane` still refused (#450).
+/// copter's calm-air bands, `Plane` still refused (#450). The Alia enters plane flight level,
+/// so it sinks at its limit, not past it (#491); it hands over at speed, and its hover after
+/// is the quadplane's to judge.
 #[test]
 fn falls_back_below_the_plane_minimum_height() {
-    let mut airframe = airframes::quadplane();
-    airframe.guidance.transition.plane_min_height_m = PLANE_FLOOR_M;
-    let plant = QuadPlanePlant::clean(airframe);
-    let commander = sinking_leg(airframe.stabilizer.plane.trim_airspeed_mps);
-    let mut flight_loop = quadplane_loop(&plant, commander);
-    let flight = trace(
-        &mut flight_loop,
-        SINK_AT_S + SINK_WATCH_S + HOVER_SETTLE_S + HOLD_S,
-    );
+    let cases = [
+        ("quadplane", airframes::quadplane(), SINK_WATCH_S, true),
+        ("alia250", airframes::alia250(), ALIA_SINK_WATCH_S, false),
+    ];
+    for (name, mut airframe, watch_s, judge_hover) in cases {
+        airframe.guidance.transition.plane_min_height_m = PLANE_FLOOR_M;
+        let plant = QuadPlanePlant::clean(airframe);
+        let commander = sinking_leg(airframe.stabilizer.plane.trim_airspeed_mps);
+        let mut flight_loop = quadplane_loop(&plant, commander);
+        let flight = trace(
+            &mut flight_loop,
+            SINK_AT_S + watch_s + HOVER_SETTLE_S + HOLD_S,
+        );
 
-    if let Some(hover) = check_falls_back(&flight, SINK_AT_S + SINK_WATCH_S, "fallback") {
-        let hold_s = hover.time_s + HOVER_SETTLE_S;
-        check_calm_hover(&flight, hold_s, hover.state.position_m, "fallback");
+        let hover = check_falls_back(&flight, SINK_AT_S + watch_s, name);
+        if let Some(hover) = hover.filter(|_| judge_hover) {
+            let hold_s = hover.time_s + HOVER_SETTLE_S;
+            check_calm_hover(&flight, hold_s, hover.state.position_m, name);
+        }
+    }
+}
+
+/// How far past `PGUID_SINK_MAX` a descending plane leg may sink, in m/s: no external band
+/// applies; measured 4.7–4.8 m/s at the Alia's 5 m/s limit (entering plane flight on a level
+/// leg alone sinks 4.7 m/s), 0.2 m/s of margin.
+const SINK_MARGIN_MPS: f32 = 0.5;
+
+/// The Alia transitioning into a descending plane leg sinks no faster than its
+/// `PGUID_SINK_MAX` (plus [`SINK_MARGIN_MPS`]) all the way down: the forward transition
+/// leaves the wing level, not pitched toward the lower altitude and unloaded (19–23 m/s, then
+/// a stall, #491). (hover m, leg altitude m): toward the ground, and a 30 m step down.
+#[test]
+fn alia_descends_out_of_a_transition_within_its_sink_limit() {
+    let mut airframe = airframes::alia250();
+    // The sink limit, not the fallback, is under test: the leg may sink to the ground.
+    airframe.guidance.transition.plane_min_height_m = 0.0;
+    let limit_mps = airframe.guidance.plane.tecs.max_sink_mps + SINK_MARGIN_MPS;
+    let plant = QuadPlanePlant::clean(airframe);
+    for (from_m, to_m) in [(60.0, -100.0), (100.0, 70.0)] {
+        let airspeed_mps = airframe.stabilizer.plane.trim_airspeed_mps;
+        let commander = descending_leg(from_m, to_m, airspeed_mps);
+        let mut flight_loop = quadplane_loop(&plant, commander);
+        let flight = trace(&mut flight_loop, SINK_AT_S + ALIA_SINK_WATCH_S);
+
+        let plane_s = entered_s(&flight, FlightMode::Plane, SINK_AT_S, "descent");
+        let sink_mps = flight
+            .window(plane_s, f32::INFINITY)
+            .filter(|sample| sample.mode == FlightMode::Plane)
+            .map(|sample| -sample.state.velocity_mps.z)
+            .fold(0.0, f32::max);
+        check!(sink_mps <= limit_mps, "{from_m} → {to_m} m: {sink_mps} m/s");
     }
 }
 
