@@ -565,12 +565,14 @@ fn anchored_script_waits_for_a_finite_position() {
     let mut anchored = ScriptCommander::from_waypoints(route())
         .expect("non-empty")
         .anchored();
-    let unknown = VehicleState {
-        position_m: Vec3::new(f32::NAN, 0.0, 0.0),
-        ..Default::default()
-    };
-    check!(!anchored.next_command(0.1, &unknown).arm);
-    check!(anchored.origin_m() == Vec3::zeros());
+    for unknown_m in [Vec3::new(f32::NAN, 0.0, 0.0), Vec3::new(0.0, 0.0, f32::NAN)] {
+        let unknown = VehicleState {
+            position_m: unknown_m,
+            ..Default::default()
+        };
+        check!(!anchored.next_command(0.1, &unknown).arm, "{unknown_m:?}");
+        check!(anchored.origin_m() == Vec3::zeros(), "{unknown_m:?}");
+    }
 
     let target = waypoint(anchored.next_command(0.1, &state_at(50.0, 0.0)));
     check!(anchored.origin_m() == Vec3::new(50.0, 0.0, 0.0));
@@ -580,4 +582,26 @@ fn anchored_script_waits_for_a_finite_position() {
     let target = waypoint(absolute.next_command(0.1, &state_at(50.0, 0.0)));
     check!(absolute.origin_m() == Vec3::zeros());
     check!(target.position_m == Vec2::new(10.0, 0.0));
+}
+
+/// An anchored script's hold keeps commanding the reached waypoint moved by the start.
+#[test]
+fn anchored_script_holds_the_moved_waypoint() {
+    let start = Vec3::new(-800.0, 1400.0, 1186.0);
+    let mut commander = ScriptCommander::from_legs(holding_route(&[(0.35, 1.0), (0.0, 0.0)]))
+        .expect("non-empty")
+        .anchored();
+    let on_start = VehicleState {
+        position_m: start,
+        ..Default::default()
+    };
+    let held = WaypointCommand {
+        position_m: start.xy(),
+        altitude_m: start.z,
+        ..holding_route(&[(0.35, 1.0)])[0].waypoint
+    };
+    let inputs: Vec<_> = (0..3)
+        .map(|_| commander.next_command(0.1, &on_start).input)
+        .collect();
+    check!(inputs == [ControlInput::Waypoint(held); 3]);
 }

@@ -172,8 +172,8 @@ fn test_vehicle_creation() {
     let config = create_test_config(false);
     let vehicle = RealFlightVehicle::new(config);
 
-    // Verify initial state
-    assert_eq!(vehicle.state.position_m, Vec3::zeros());
+    // Position is unknown until the first exchange
+    assert!(vehicle.state.position_m.iter().all(|value| value.is_nan()));
     assert_eq!(vehicle.mapping.motors[0], Some(0));
     assert_eq!(vehicle.mapping.servos[0], Some(1));
 }
@@ -183,8 +183,8 @@ fn test_vehicle_creation_with_bridge_failure() {
     let config = create_test_config(true);
     let vehicle = RealFlightVehicle::new(config);
 
-    // Should still create successfully despite bridge failures
-    assert_eq!(vehicle.state.position_m, Vec3::zeros());
+    // Should still create successfully despite bridge failures, position unknown
+    assert!(vehicle.state.position_m.iter().all(|value| value.is_nan()));
 }
 
 #[test]
@@ -254,8 +254,13 @@ fn test_actuate_failure() {
 
     vehicle.actuate(&command);
 
-    // State should remain unchanged on failure
-    assert_eq!(vehicle.state, initial_state);
+    // State should remain unchanged on failure (the unknown position is NaN, never equal)
+    assert!(vehicle.state.position_m.iter().all(|value| value.is_nan()));
+    let known = |state: &VehicleState| VehicleState {
+        position_m: Vec3::zeros(),
+        ..state.clone()
+    };
+    assert_eq!(known(&vehicle.state), known(&initial_state));
 }
 
 /// Each exchange's wind reaches the true-wind handle, north/east from RealFlight's east/north;
@@ -501,12 +506,19 @@ fn identity_body_rotation_is_a_no_op() {
 }
 
 #[test]
-fn priming_failure_returns_the_default_state() {
+fn priming_failure_leaves_the_position_unknown() {
     let mut vehicle = RealFlightVehicle::new(create_test_config(true));
 
     let state = vehicle.state(Duration::ZERO);
 
-    assert_eq!(state, VehicleState::default());
+    assert!(state.position_m.iter().all(|value| value.is_nan()));
+    assert_eq!(
+        VehicleState {
+            position_m: Vec3::zeros(),
+            ..state
+        },
+        VehicleState::default()
+    );
     assert_eq!(current_bridge(&vehicle).exchanges.get(), 1);
 }
 
@@ -658,7 +670,7 @@ fn reconnects_after_the_backoff_and_resumes_state_updates() {
     tick(&mut vehicle, 5);
     assert_eq!(calls.load(Ordering::Relaxed), 0);
     assert!(vehicle.bridge.is_none());
-    assert_eq!(vehicle.state, VehicleState::default());
+    assert!(vehicle.state.position_m.iter().all(|value| value.is_nan()));
 
     // Past 0.5 s: one attempt, and the new bridge's first exchange updates the state.
     tick(&mut vehicle, 2);

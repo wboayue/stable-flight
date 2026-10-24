@@ -116,8 +116,8 @@ impl<T: RealFlightBridge> RealFlightConfiguration<T> {
 /// the state cached from that exchange: guidance and the stabilizer on tick *n* see the state RealFlight
 /// reported when it received tick *n − 1*'s controls, one tick old. The one exception is the
 /// priming call (`dt == Duration::ZERO`), which makes an exchange with neutral inputs so the
-/// first state is real; if that exchange fails, it logs an error and returns
-/// `VehicleState::default()`. `exchange_data` is a blocking network round-trip, so a slow link
+/// first state is real; if that exchange fails, it logs an error and returns a default state
+/// with its position unknown (NaN), so nothing anchors to a position never read. `exchange_data` is a blocking network round-trip, so a slow link
 /// stalls the tick; an exchange over 20 ms is logged at `debug` with its duration. The bridge
 /// bounds the stall: `RealFlightRemoteBridge` times each call out ([`REMOTE_IO_TIMEOUT`]), its
 /// proxy each simulator request (150 ms by default), and `RealFlightLocalBridge` each simulator
@@ -224,6 +224,15 @@ fn reset_aircraft(bridge: &impl RealFlightBridge) {
     }
 }
 
+/// The state before any exchange: defaults, with the position unknown (NaN), as a script
+/// anchors only to a finite one (`ScriptCommander::anchored`).
+fn unread_state() -> VehicleState {
+    VehicleState {
+        position_m: Vec3::repeat(f32::NAN),
+        ..VehicleState::default()
+    }
+}
+
 impl<T> StateSource for RealFlightVehicle<T>
 where
     T: RealFlightBridge,
@@ -315,7 +324,7 @@ where
 
         Ok(RealFlightVehicle {
             bridge: Some(configuration.bridge),
-            state: VehicleState::default(),
+            state: unread_state(),
             mapping: configuration.mapping,
             body_rotation: configuration.body_rotation,
             reconnect: None,

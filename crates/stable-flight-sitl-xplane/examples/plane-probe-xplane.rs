@@ -252,7 +252,7 @@ impl Probe {
             Phase::Settling(held) if steady => {
                 if held + dt >= SETTLE_S {
                     info!(
-                        "t {:.1} s: leg at {:.0} m/s steady ({airspeed:.1} m/s, {:.0} m): pulsing",
+                        "t {:.1} s: leg at {:.0} m/s steady ({airspeed:.1} m/s, {:.0} m MSL): pulsing",
                         self.elapsed_s, waypoint.cruise_speed_mps, state.position_m.z
                     );
                     Phase::Quiet(0, 0.0)

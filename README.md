@@ -124,7 +124,7 @@ cargo run --example extreme_3d_commander
 # Spektrum transmitter (WS3000T dongle) check: raw dongle values next to the command
 cargo run --example spektrum_commander
 
-# Regenerate flights/figure_eight.csv, centered on the QuadCopterX spawn point (flags like --half-width resize the path)
+# Regenerate flights/figure_eight.csv, centered on the start (flags like --half-width resize the path)
 cargo run --bin generate_figure_eight
 ```
 

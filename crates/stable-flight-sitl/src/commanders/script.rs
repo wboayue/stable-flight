@@ -298,11 +298,13 @@ impl ScriptCommander {
         self
     }
 
-    /// Flies the script relative to where the vehicle is on its first tick: `x`, `y`, and
-    /// altitude become meters north, east, and up of that point, so one script flies the same
-    /// route from any spawn point or field. Build it before arming, with the vehicle on the
-    /// ground: it anchors wherever the vehicle is. Until a tick brings a finite position, the
-    /// commander holds the motors off.
+    /// Flies the script relative to where the vehicle is on its first tick with a finite
+    /// position: `x`, `y`, and altitude become meters north, east, and up of that point, so
+    /// one script flies the same route from any spawn point or field. Height 0 is the
+    /// vehicle's own position on the ground (its reference point's height above the surface),
+    /// not the surface. Build it before arming, with the vehicle on the ground: it anchors
+    /// wherever the vehicle is. Until a tick brings a finite position, the commander holds the
+    /// motors off. The anchor never moves afterwards, even if the backend relocates the vehicle.
     ///
     /// # Examples
     ///
@@ -334,7 +336,8 @@ impl ScriptCommander {
     }
 
     /// The point the script's coordinates are measured from, in the vehicle's frame (m:
-    /// north, east, up): zero unless [`anchored`](Self::anchored), and until it has anchored.
+    /// north, east, up): zero unless [`anchored`](Self::anchored), and until it has anchored
+    /// (an anchor at zero reads the same).
     /// Add it to a [`follower`](Self::follower) waypoint to compare it with the vehicle's state.
     pub fn origin_m(&self) -> Vec3 {
         match self.origin {
