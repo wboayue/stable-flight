@@ -127,7 +127,7 @@ const SINK_FROM_M: f32 = 60.0;
 pub const SINK_AT_S: f32 = 30.0;
 
 /// Seconds after [`SINK_AT_S`] by which the fallback has handed the hover over (measured
-/// 27.7 s on the quadplane, 16.9 s on the tailsitter).
+/// 25.8 s on the quadplane, 16.9 s on the tailsitter).
 pub const SINK_WATCH_S: f32 = 40.0;
 
 /// Hovers over the origin at [`SINK_FROM_M`], then from [`SINK_AT_S`] flies the line north as
@@ -150,7 +150,8 @@ const DIVE_FROM_M: f32 = 80.0;
 pub const DIVE_AT_S: f32 = 100.0;
 
 /// Seconds after [`DIVE_AT_S`] by which a [`DivingLeg`]'s fallback has handed the hover over:
-/// 10 s of dive and the Alia's 28 s `back_timeout_s` (it glides on past `back_speed_mps`).
+/// 10 s of dive and the Alia's back transition, within its 28 s `back_timeout_s` (measured
+/// 35.6 s in all).
 pub const DIVE_WATCH_S: f32 = 45.0;
 
 /// A plane leg north at [`DIVE_FROM_M`] and trim airspeed from [`SINK_AT_S`], then from

@@ -31,8 +31,8 @@ use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S,
 /// When the back transition is requested: 32 s into plane flight, settled on the line.
 const BACK_AT_S: f32 = 60.0;
 
-/// Where the back transition hands over, m north on the line: at 634 m, at 5.0 m/s (measured).
-const HANDOVER_NORTH_M: f32 = 634.0;
+/// Where the back transition hands over, m north on the line: at 610 m, at 5.1 m/s (measured).
+const HANDOVER_NORTH_M: f32 = 610.0;
 
 /// How far the hover point after the back transition sits from the handover, ahead or
 /// behind, in m: copter flight to it at speed, tail first behind (#427).
@@ -110,15 +110,55 @@ fn transitions_back_into_a_hover() {
         // The commander's clock sums `f32` ticks, so its switch runs a little early.
         let back_s = entered_s(&flight, FlightMode::ToCopter, BACK_AT_S - 1.0, case);
         let copter_s = entered_s(&flight, FlightMode::Copter, back_s, case);
-        // Measured 7.3 s.
+        // Measured 5.7 s.
         check!(copter_s - back_s <= BACK_DURATION_S, "{case}");
-        // Measured 0.5–0.6 m.
+        // Measured 0.3–0.6 m.
         let hold_s = copter_s + BACK_SETTLE_S;
         check_altitude_loss(flight.heights(back_s, hold_s), case);
 
         let point_m = Vec3::new(north_m, 0.0, TRANSITION_ALTITUDE_M);
         check_calm_hover(&flight, hold_s, point_m, case);
     }
+}
+
+/// Seconds into its plane leg the Alia's back transition is asked for: settled on the line at
+/// trim (plane flight from about 60 s).
+const ALIA_BACK_AT_S: f32 = 120.0;
+
+/// Most the Alia's back transition climbs, in m: the wing lifts as the nose comes up to slow
+/// it; no external band applies (measured 4.9 m from 45 m/s).
+const ALIA_BACK_CLIMB_M: f32 = 7.0;
+
+/// Fastest a back transition that ends on speed hands over, in m/s: `back_speed_mps` (5 m/s)
+/// and one tick's slowing.
+const HANDOVER_SPEED_MPS: f32 = 5.2;
+
+/// The Alia's back transition from trim airspeed slows to `back_speed_mps` and hands over
+/// before its 28 s `back_timeout_s`, the nose up while drag alone slows it less than
+/// `back_decel_mps2` (#496), within PX4's altitude loss and `ALIA_BACK_CLIMB_M`.
+#[test]
+fn alia_back_transition_ends_on_speed() {
+    let mut airframe = airframes::alia250();
+    // The leg flies at 30 m, at the Alia's floor.
+    airframe.guidance.transition.plane_min_height_m = 0.0;
+    let back_timeout_s = airframe.guidance.transition.back_timeout_s;
+    let plant = QuadPlanePlant::clean(airframe);
+    let commander = forward_and_back(&airframe, ALIA_BACK_AT_S, 100_000.0);
+    let mut flight_loop = quadplane_loop(&plant, commander);
+    let flight = trace(&mut flight_loop, ALIA_BACK_AT_S + back_timeout_s + 5.0);
+
+    let back_s = entered_s(&flight, FlightMode::ToCopter, ALIA_BACK_AT_S - 1.0, "back");
+    let handover = flight.entered(FlightMode::Copter, back_s);
+    let handover_mps = handover.map_or(f32::INFINITY, |s| s.state.velocity_mps.xy().norm());
+    let copter_s = handover.map_or(f32::INFINITY, |s| s.time_s);
+    check!(copter_s - back_s < back_timeout_s, "{copter_s}");
+    check!(handover_mps <= HANDOVER_SPEED_MPS);
+    let heights = transition_heights(&flight, back_s, copter_s);
+    check_altitude_loss(heights, "back");
+    check!(
+        heights.highest_m - heights.start_m <= ALIA_BACK_CLIMB_M,
+        "{heights:?}"
+    );
 }
 
 /// With too little pusher thrust to reach the airspeed gate, the forward transition waits on
@@ -202,7 +242,10 @@ fn falls_back_at_cruise_speed_on_full_lift() {
     let mut flight_loop = quadplane_loop(&plant, commander);
     let flight = trace(&mut flight_loop, DIVE_AT_S + DIVE_WATCH_S);
 
-    check_falls_back(&flight, DIVE_AT_S + DIVE_WATCH_S, "fallback");
+    if let Some(hover) = check_falls_back(&flight, DIVE_AT_S + DIVE_WATCH_S, "fallback") {
+        let handover_mps = hover.state.velocity_mps.xy().norm();
+        check!(handover_mps <= HANDOVER_SPEED_MPS, "on speed (#496)");
+    }
 }
 
 /// A link flying [`Forward`] that goes silent [`SILENT_AFTER_S`] into the forward transition.
