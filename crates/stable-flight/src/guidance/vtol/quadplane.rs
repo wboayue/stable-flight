@@ -255,9 +255,10 @@ impl QuadPlaneGuidance {
     /// [`hold_altitude_m`](Self::hold_altitude_m), the one the lift rotors hold, so the wing
     /// pitches for level flight and carries the weight as the lift ramps out. Toward a lower
     /// altitude the wing would pitch nose down while the lift rotors hold, enter plane flight
-    /// sinking and unloaded, and stall pulling out: the sim Alia sank at 19 m/s (#491). PX4
-    /// flies the transition at the wing's trim pitch whatever the altitude
-    /// (`vtol_att_control/standard.cpp:240`). Other inputs pass through.
+    /// sinking and unloaded, and stall pulling out: the sim Alia sank at 19 m/s (#491). A climb
+    /// or descent starts once the wing is flying. PX4 flies the transition at the wing's trim
+    /// pitch whatever the altitude (`vtol_att_control/standard.cpp:240`). Other inputs pass
+    /// through.
     fn at_held_altitude(&self, input: &ControlInput) -> ControlInput {
         match input {
             ControlInput::Waypoint(waypoint) => ControlInput::Waypoint(WaypointCommand {

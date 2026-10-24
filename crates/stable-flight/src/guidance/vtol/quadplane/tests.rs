@@ -254,10 +254,9 @@ fn forward_transition_flies_the_wing_level_toward_a_lower_waypoint() {
     let toward = |altitude_m: f32| {
         ControlInput::Waypoint(WaypointCommand {
             position_m: Vec2::new(1000.0, 0.0),
-            velocity_mps: None,
             altitude_m,
             cruise_speed_mps: FAST_MPS,
-            heading_rad: None,
+            ..Default::default()
         })
     };
     // (case, state the transition flies in, ramping)
