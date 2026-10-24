@@ -237,7 +237,7 @@ mod tests {
             "--half-width",
             "10.5",
             "--center-north",
-            "-10.55",
+            "20",
             "--alt-amp",
             "3",
             "-o",
