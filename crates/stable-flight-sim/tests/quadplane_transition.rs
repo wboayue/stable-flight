@@ -206,9 +206,9 @@ const ALIA_SINK_WATCH_S: f32 = 85.0;
 
 /// A plane leg sinking through the plane minimum height falls back to copter flight no
 /// further than `FALLBACK_LOSS_M` below it, then hovers where the hover took over within the
-/// copter's calm-air bands, `Plane` still refused (#450). The Alia enters plane flight level,
-/// so it sinks at its limit, not past it (#491); it hands over at speed, and its hover after
-/// is the quadplane's to judge.
+/// copter's calm-air bands, `Plane` still refused (#450). The Alia falls back above the floor
+/// because it enters plane flight level (#491); it hands over at speed, and its hover after is
+/// the quadplane's to judge.
 #[test]
 fn falls_back_below_the_plane_minimum_height() {
     let cases = [
@@ -235,8 +235,12 @@ fn falls_back_below_the_plane_minimum_height() {
 
 /// How far past `PGUID_SINK_MAX` a descending plane leg may sink, in m/s: no external band
 /// applies; measured 4.7–4.8 m/s at the Alia's 5 m/s limit (entering plane flight on a level
-/// leg alone sinks 4.7 m/s), 0.2 m/s of margin.
+/// leg alone sinks 4.7 m/s), 0.7 m/s of margin.
 const SINK_MARGIN_MPS: f32 = 0.5;
+
+/// Seconds after [`SINK_AT_S`] a descent out of a transition is watched: the Alia reaches the
+/// ground from 60 m at 60.4 s, and 70 m from 100 m at 68.7 s (measured).
+const DESCENT_WATCH_S: f32 = 75.0;
 
 /// The Alia transitioning into a descending plane leg sinks no faster than its
 /// `PGUID_SINK_MAX` (plus [`SINK_MARGIN_MPS`]) all the way down: the forward transition
@@ -249,11 +253,11 @@ fn alia_descends_out_of_a_transition_within_its_sink_limit() {
     airframe.guidance.transition.plane_min_height_m = 0.0;
     let limit_mps = airframe.guidance.plane.tecs.max_sink_mps + SINK_MARGIN_MPS;
     let plant = QuadPlanePlant::clean(airframe);
+    let airspeed_mps = airframe.stabilizer.plane.trim_airspeed_mps;
     for (from_m, to_m) in [(60.0, -100.0), (100.0, 70.0)] {
-        let airspeed_mps = airframe.stabilizer.plane.trim_airspeed_mps;
         let commander = descending_leg(from_m, to_m, airspeed_mps);
         let mut flight_loop = quadplane_loop(&plant, commander);
-        let flight = trace(&mut flight_loop, SINK_AT_S + ALIA_SINK_WATCH_S);
+        let flight = trace(&mut flight_loop, SINK_AT_S + DESCENT_WATCH_S);
 
         let plane_s = entered_s(&flight, FlightMode::Plane, SINK_AT_S, "descent");
         let sink_mps = flight
