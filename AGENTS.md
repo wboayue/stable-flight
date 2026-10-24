@@ -322,8 +322,9 @@ Related code sits together, so a reviewer reads one behavior in one place.
   its flight start, where scripts are anchored; send it before every run, since a run left on
   its last landing has drained batteries and leftover state; `capture-state-xplane` reads where it is
   without taking control. Fly plane legs over water (`flights/alia_transition_lap.csv` starts
-  at Oceano, L52): until #451 a missed plane leg flies on past its waypoint, so watch
-  scripted plane flight and stop it past its last plane waypoint. A sinking one falls back to
+  at Oceano, L52): a plane leg that passes its waypoint off altitude loiters on it until at
+  its altitude, which can add minutes to a lap (the Alia's 136 m short climb waited 193 s,
+  #451), so give a watchdog's timeout that margin. A sinking one falls back to
   a hover below the Alia's `TRAN_FW_MIN_HGT` (20 m above arming).
   Copter legs turn the nose along the leg as they fly it (`GUID_YAW_SLEW`), so start a route
   with a climb over the spawn, which turns nothing on the ground.
