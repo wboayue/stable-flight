@@ -166,7 +166,9 @@ thrust and one at least, or read them off a fitted model (the Alia's
 Going forward the pusher flies the plane guidance's thrust for the command, up to
 `TRAN_FW_THR`. On a waypoint that is the airspeed loop; on sticks it is the throttle stick,
 so push the throttle up to transition. Pitch is the plane guidance's, held to ArduPilot's
-transition limits (0 below 3 m/s of ground speed, ±3° waiting, ±8° on the ramp).
+transition limits (0 below 3 m/s of ground speed, ±3° waiting, ±8° on the ramp). On a
+waypoint it flies toward the altitude the transition holds, not the waypoint's: the wing
+enters plane flight level and loaded, and a climb or descent starts there (#491).
 
 Without a valid airspeed the lift ramp never starts, and the transition times out to copter.
 

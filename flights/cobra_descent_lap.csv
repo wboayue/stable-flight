@@ -1,0 +1,15 @@
+# Titan Cobra descent out of a transition (quadplane-auto-realflight, #491): climb in hover to
+# 60 m over the start, transition into a plane leg at 30 m, one lap of the 240 x 120 m
+# clockwise rectangle at 30 m and 14 m/s (flights/cobra_transition_lap.csv's), transition
+# back at the end of the west leg, fly home in hover. The forward transition holds 60 m and
+# the 30 m descent starts in plane flight, within PGUID_SINK_MAX (5 m/s). Run with --end land
+# and --record.
+# The regime is the leg's to that waypoint: the first plane leg starts the transition.
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
+x,y,altitude,cruise_speed,regime
+0.00,0.00,60.0,3.0,copter
+160.55,0.00,30.0,14.0,plane
+160.55,120.00,30.0,14.0,plane
+-79.45,120.00,30.0,14.0,plane
+-79.45,0.00,30.0,14.0,plane
+0.00,0.00,30.0,3.0,copter
