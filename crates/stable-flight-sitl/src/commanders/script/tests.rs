@@ -333,6 +333,38 @@ fn back_transition_waypoint_takes_any_altitude() {
     }
 }
 
+/// A plane leg into another plane leg waits on a waypoint passed low (no velocity: plane
+/// guidance loiters); a copter leg keeps flying through it with the leg velocity, since copter
+/// guidance flies back to it (#451).
+#[test]
+fn plane_legs_wait_on_a_waypoint_passed_low() {
+    let at = |x: f32| WaypointCommand {
+        altitude_m: 300.0,
+        cruise_speed_mps: 20.0,
+        ..wp(x, 0.0)
+    };
+    let state = |x: f32, z: f32| VehicleState {
+        position_m: Vec3::new(x, 0.0, z),
+        ..Default::default()
+    };
+    // (leg regime, expected velocity emitted once passed 95 m low)
+    let cases = [(FlightRegime::Plane, false), (FlightRegime::Copter, true)];
+    for (regime, has_velocity) in cases {
+        let mut commander = ScriptCommander::from_route(vec![
+            (at(0.0), FlightRegime::Copter),
+            (at(1000.0), regime),
+            (at(2000.0), regime),
+        ])
+        .expect("non-empty")
+        .with_route_end(RouteEnd::Hold);
+        commander.next_command(0.01, &state(0.0, 300.0));
+        let command = commander.next_command(0.01, &state(1010.0, 205.0));
+        assert2::assert!(let ControlInput::Waypoint(target) = command.input);
+        check!(commander.follower().current_index() == 1, "{regime:?}");
+        check!(target.velocity_mps.is_some() == has_velocity, "{regime:?}");
+    }
+}
+
 /// The optional sixth field is the heading in degrees and the seventh the hold in seconds;
 /// absent or empty is no heading and no hold. A non-numeric or non-finite heading or hold, or
 /// a negative hold, is a parse error.

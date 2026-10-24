@@ -509,8 +509,9 @@ fn load_route(path: &str) -> Result<Vec<Leg>, ScriptError> {
 impl Commander for ScriptCommander {
     /// Delegates to the core [`WaypointFollower`] (advances within the acceptance radius or
     /// once past a waypoint along its leg, and within the altitude acceptance of the active
-    /// leg's regime, any altitude on a plane leg ending in a back transition; then loops,
-    /// holds, or lands per its [`RouteEnd`]), asking for the regime
+    /// leg's regime, any altitude on a plane leg ending in a back transition; a plane leg
+    /// waits on its waypoint, loitering, for the altitude; then loops, holds, or lands per its
+    /// [`RouteEnd`]), asking for the regime
     /// of the leg to the current waypoint. Once the follower moves on from a waypoint (to the
     /// next waypoint or the route's land), its actions fly instead, the follower paused
     /// meanwhile: its maneuver, in its leg's regime, then its hold for `hold_s`.
@@ -554,6 +555,8 @@ impl ScriptCommander {
         let reached = self.follower.current_index();
         let altitude_acceptance_m = self.active_altitude_acceptance_m();
         self.follower.set_altitude_acceptance(altitude_acceptance_m);
+        let plane_leg = self.active_regime() == FlightRegime::Plane;
+        self.follower.set_wait_for_altitude(plane_leg);
         let command = self.follower.next_command(dt, current_state);
         let lands = matches!(command.input, ControlInput::Land(_));
         let current = self.follower.current_index();

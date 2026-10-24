@@ -101,10 +101,9 @@ Code comments and docs link here instead of redefining a term.
 **Navigation**
 
 - **Waypoint / acceptance:** a waypoint counts as reached inside its acceptance radius
-  (horizontal), or once passed along its leg, and inside its altitude band. Near or past it
-  but outside the band, the follower waits on it for the altitude (a copter stops on it, a
-  plane loiters around it). A plane leg ending in a back transition takes its waypoint at any
-  altitude.
+  (horizontal), or once passed along its leg, and inside its altitude band. On a plane leg,
+  near or past it but outside the band, the follower waits on it for the altitude, loitering
+  around it; a plane leg ending in a back transition takes its waypoint at any altitude.
 - **Wind estimate:** wind inferred in rotor-borne flight from the air's drag on the vehicle
   (`estimation::wind`); hover guidance uses it to hold a heading that copes with the wind
   (eXplora: a wingtip into it).

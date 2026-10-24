@@ -50,7 +50,8 @@ fn waits_on_a_waypoint_too_steep_to_climb_to_in_a_loiter() {
     let follower = WaypointFollower::new(route)
         .expect("non-empty")
         .with_route_end(RouteEnd::Hold)
-        .with_altitude_acceptance(PLANE_ALTITUDE_ACCEPTANCE_M);
+        .with_altitude_acceptance(PLANE_ALTITUDE_ACCEPTANCE_M)
+        .with_wait_for_altitude(true);
     let mut flight_loop = plane_loop(&plant, follower);
 
     let steep = Vec2::new(STEEP_NORTH_M, 0.0);
