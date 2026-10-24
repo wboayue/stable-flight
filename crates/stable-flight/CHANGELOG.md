@@ -401,6 +401,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `WaypointFollower` waits on a waypoint it reaches or passes outside the altitude
+  acceptance (#451): it emits the waypoint without its leg velocity until within the band,
+  then advances, so a plane loiters around it (PX4's fixed-wing behavior) and a copter stops
+  on it, where a plane flew the line through it on and away. On the sim, a leg climbing
+  steeper than `airframes::plane()` can stays within 52 m of its waypoint until at altitude,
+  where it flew 390 m past it. `WaypointFollower::route_end` reports the route's end.
+
 - After a fallback (a forward transition timed out or cut short, or plane flight below its
   minimum height), `TailsitterGuidance` and `QuadPlaneGuidance` fly a waypoint as a hover
   where copter flight took over until `Copter` is requested, instead of chasing it (#453): a quadplane

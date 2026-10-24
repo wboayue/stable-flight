@@ -64,7 +64,8 @@ cargo run --release -p stable-flight-sitl-xplane --example quadplane-manual-xpla
 # The Alia through a waypoint script from Oceano County Airport (L52): hover climb, forward
 # transition, plane legs offshore, back transition, hover home (flights/alia_transition_lap.csv;
 # flights/alia_copter_leg_lap.csv flies a copter leg west first, turning the nose along it;
-# flights/alia_steps.csv steps altitude ±30 m on its legs). --param NAME=VALUE tunes a run,
+# flights/alia_steps.csv steps altitude ±30 m on its legs; flights/alia_climb_lap.csv climbs one
+# leg steeper than the Alia can and loiters on its waypoint for the altitude). --param NAME=VALUE tunes a run,
 # --record writes a CSV per tick. Reset X-Plane's flight before each run.
 # Or: just fly-xplane-auto --end land --record lap.csv
 cargo run --release -p stable-flight-sitl-xplane --example quadplane-auto-xplane -- --end land --record lap.csv
