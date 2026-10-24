@@ -229,8 +229,8 @@ const ALIA_DIVE_PITCH_DEG: f32 = -7.0;
 const ALIA_DIVE_THRUST: f32 = 0.5;
 
 /// The Alia diving through the plane minimum height at cruise speed falls back no further than
-/// `FALLBACK_LOSS_M` below it: the lift rotors take all the lift at once (#493). The hover
-/// after is the quadplane's to judge: the Alia hands over on its back timeout, still at speed.
+/// `FALLBACK_LOSS_M` below it: the lift rotors take all the lift at once (#493). It hands over
+/// on speed (#496); the hover after is the quadplane's to judge.
 #[test]
 fn falls_back_at_cruise_speed_on_full_lift() {
     let mut airframe = airframes::alia250();
