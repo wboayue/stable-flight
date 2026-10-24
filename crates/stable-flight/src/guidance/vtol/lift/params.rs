@@ -15,6 +15,8 @@ impl ParamTable for LiftTransitionConfig {
         param!("TRAN_VT_RAMP", back_ramp_s),
         param!("TRAN_VT_SPD", back_speed_mps),
         param!("TRAN_VT_TIMEOUT", back_timeout_s),
+        param!("TRAN_VT_DEC", back_decel_mps2),
+        param!("TRAN_VT_DEC_I", back_decel_i),
         param!("TRAN_FW_THR", forward_thrust),
         param!("TRAN_PSH_SLEW", pusher_slew_per_s),
         param!("TRAN_HANDOFF", handoff_s),
@@ -83,6 +85,18 @@ mod metadata {
             )
             .with_units("s")
             .above(0.0),
+            BACK.param(
+                "TRAN_VT_DEC",
+                "Deceleration the back transition pitches up to hold",
+            )
+            .with_units("m/s/s")
+            .at_least(0.0),
+            BACK.param(
+                "TRAN_VT_DEC_I",
+                "How fast the back transition's pitch-up grows (0: off)",
+            )
+            .with_units("rad*s/m")
+            .at_least(0.0),
             FORWARD
                 .param(
                     "TRAN_FW_THR",

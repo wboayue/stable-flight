@@ -37,6 +37,15 @@ pub struct LiftTransitionConfig {
     pub back_speed_mps: f32,
     /// The longest a back transition runs before it completes, in seconds.
     pub back_timeout_s: f32,
+    /// The deceleration along the ground track a quadplane's back transition pitches the nose
+    /// up to hold, in m/s². Higher: slows sooner, the wing climbing more on the way. Finite,
+    /// non-negative.
+    pub back_decel_mps2: f32,
+    /// How fast the back transition's nose-up grows while it slows short of
+    /// `back_decel_mps2`, in rad/s per m/s² (rad·s/m); `0` turns the nose-up off, leaving
+    /// drag alone to slow it. Higher: reaches the pitch sooner, overshoots it more. Finite,
+    /// non-negative.
+    pub back_decel_i: f32,
     /// The most linear thrust the pusher gets through the forward transition, `[0, 1]`.
     pub forward_thrust: f32,
     /// How fast the pusher's thrust may rise through the forward transition, in thrust per
@@ -52,7 +61,7 @@ pub struct LiftTransitionConfig {
 
 impl LiftTransitionConfig {
     /// `Ok` when every field is in range: times, ramps, and the slew positive, airspeed, speed,
-    /// height, and handoff non-negative, all finite; the thrust in `[0, 1]` and the roll limit
+    /// height, deceleration and its gain, and handoff non-negative, all finite; the thrust in `[0, 1]` and the roll limit
     /// in `(0, π]`.
     ///
     /// # Errors
@@ -67,6 +76,8 @@ impl LiftTransitionConfig {
         check_positive("back_ramp_s", self.back_ramp_s)?;
         check_limit("back_speed_mps", self.back_speed_mps)?;
         check_positive("back_timeout_s", self.back_timeout_s)?;
+        check_limit("back_decel_mps2", self.back_decel_mps2)?;
+        check_limit("back_decel_i", self.back_decel_i)?;
         check(
             "forward_thrust",
             (0.0..=1.0).contains(&self.forward_thrust),
@@ -84,7 +95,8 @@ impl LiftTransitionConfig {
 
 impl Default for LiftTransitionConfig {
     /// ArduPilot's 9 m/s airspeed gate and 5 s lift ramp, PX4's 15 s forward timeout, 3 s back
-    /// ramp, 5 m/s back speed, 10 s back timeout, and pusher thrust up to full rising at
+    /// ramp, 5 m/s back speed, 10 s back timeout, 2 m/s² back deceleration at gain 0.1, and
+    /// pusher thrust up to full rising at
     /// 0.33/s, and 5 m of height, no plane minimum height (PX4's `VT_FW_MIN_ALT`), a 0.5 s
     /// handoff, and a 45° roll limit (as [`TransitionConfig`](super::TransitionConfig)); see
     /// [`LiftTransition`]'s [sources](LiftTransition#sources).
@@ -98,6 +110,8 @@ impl Default for LiftTransitionConfig {
             back_ramp_s: 3.0,
             back_speed_mps: 5.0,
             back_timeout_s: 10.0,
+            back_decel_mps2: 2.0,
+            back_decel_i: 0.1,
             forward_thrust: 1.0,
             pusher_slew_per_s: 0.33,
             handoff_s: 0.5,

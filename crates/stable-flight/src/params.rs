@@ -136,6 +136,7 @@
 //! | `TRAN_TIMEOUT` | `timeout_s` |
 //! | `TRAN_MIN_HGT`, `TRAN_FW_MIN_HGT` | `min_height_m`, `plane_min_height_m` |
 //! | `TRAN_VT_RAMP`, `TRAN_VT_SPD`, `TRAN_VT_TIMEOUT` | `back_ramp_s`, `back_speed_mps`, `back_timeout_s` |
+//! | `TRAN_VT_DEC`, `TRAN_VT_DEC_I` | `back_decel_mps2`, `back_decel_i` |
 //! | `TRAN_FW_THR`, `TRAN_PSH_SLEW` | `forward_thrust`, `pusher_slew_per_s` |
 //! | `TRAN_HANDOFF` | `handoff_s` |
 //! | `TRAN_ROLL_MAX` | `roll_limit_rad` |

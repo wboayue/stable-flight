@@ -607,7 +607,7 @@ fn validates_each_config_field() {
     check!(good.validate() == Ok(()));
     type Edit = fn(&mut LiftTransitionConfig, f32);
     // (field, edit, rejected values, accepted edge)
-    let cases: [(&str, Edit, &[f32], f32); 12] = [
+    let cases: [(&str, Edit, &[f32], f32); 14] = [
         (
             "min_airspeed_mps",
             |c, v| c.min_airspeed_mps = v,
@@ -650,6 +650,18 @@ fn validates_each_config_field() {
             |c, v| c.back_timeout_s = v,
             &[0.0, f32::NAN],
             0.1,
+        ),
+        (
+            "back_decel_mps2",
+            |c, v| c.back_decel_mps2 = v,
+            &[-0.1, f32::INFINITY],
+            0.0,
+        ),
+        (
+            "back_decel_i",
+            |c, v| c.back_decel_i = v,
+            &[-0.1, f32::NAN],
+            0.0,
         ),
         (
             "forward_thrust",

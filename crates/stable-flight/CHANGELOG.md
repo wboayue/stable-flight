@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Quadplane back transition deceleration** (#496): `LiftTransitionConfig` gains
+  `back_decel_mps2` (`TRAN_VT_DEC`, 2 m/s²) and `back_decel_i` (`TRAN_VT_DEC_I`, 0.1),
+  PX4's `VT_B_DEC_MSS` and `VT_B_DEC_I`. `QuadPlaneGuidance`'s back transition pitches the
+  nose up, on both sides, while it slows less than the target, at most 0.3 rad; gain 0 keeps
+  it level as before. On the sim the Alia's back transition from 45 m/s ends on speed in
+  21 s, where at pitch 0 it reached its 28 s timeout at 17.7 m/s.
+
 - **VTOL fallback below a plane minimum height** (#450): `TransitionConfig` and
   `LiftTransitionConfig` gain `plane_min_height_m` (`TRAN_FW_MIN_HGT`, off by default, as
   PX4's `VT_FW_MIN_ALT`). Plane flight below it falls back to copter through the back

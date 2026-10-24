@@ -158,6 +158,8 @@ thrust and one at least, or read them off a fitted model (the Alia's
 | `TRAN_VT_RAMP` | Seconds the lift rotors take the lift back | | It sinks as the wing slows |
 | `TRAN_VT_SPD` | Forward speed that ends the back transition | | The copter takes over still fast |
 | `TRAN_VT_TIMEOUT` | Longest back transition | Drag slows it slowly | |
+| `TRAN_VT_DEC` | Deceleration the back transition pitches up to hold | It ends on `TRAN_VT_TIMEOUT` still fast | The wing balloons as the nose comes up |
+| `TRAN_VT_DEC_I` | How fast that pitch-up grows (0: off) | It reaches its pitch late | The pitch overshoots and the climb surges |
 | `TRAN_ROLL_MAX` | Bank that cuts a transition short | Gusts end transitions | |
 | `TRAN_HANDOFF` | Seconds the pusher thrust blends at the handoff to plane | Thrust steps at the handoff | |
 
@@ -167,6 +169,12 @@ so push the throttle up to transition. Pitch is the plane guidance's, held to Ar
 transition limits (0 below 3 m/s of ground speed, ±3° waiting, ±8° on the ramp).
 
 Without a valid airspeed the lift ramp never starts, and the transition times out to copter.
+
+Going back the pusher stops and the nose comes up while it slows less than `TRAN_VT_DEC`
+(PX4's `VT_B_DEC_MSS`, 2 m/s², and `VT_B_DEC_I`, 0.1), at most about 17°. A clean wing barely
+slows on drag alone: at pitch 0 the X-Plane Alia reached its 28 s `TRAN_VT_TIMEOUT` at
+31 m/s, and the hover braking from there pitched it to 57° and sank 11 m (#496). With the
+pitch-up the sim Alia ends on speed after 21 s from 45 m/s, climbing 4.9 m.
 
 ## Forward thrust
 
