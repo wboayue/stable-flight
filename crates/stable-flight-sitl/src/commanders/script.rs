@@ -295,7 +295,10 @@ impl ScriptCommander {
     /// .with_altitude_acceptance(FlightRegime::Copter, 0.5);
     /// ```
     pub fn with_altitude_acceptance(mut self, regime: FlightRegime, altitude_m: f32) -> Self {
-        *self.altitude_acceptance_m(regime) = altitude_m;
+        match regime {
+            FlightRegime::Plane => self.plane_altitude_acceptance_m = altitude_m,
+            _ => self.copter_altitude_acceptance_m = altitude_m,
+        }
         self
     }
 
@@ -405,26 +408,25 @@ impl ScriptCommander {
 
     /// The altitude acceptance of a `regime` leg: plane legs have their own, and any other
     /// regime is rotor-borne and shares the copter one.
-    fn altitude_acceptance_m(&mut self, regime: FlightRegime) -> &mut f32 {
+    fn altitude_acceptance_m(&self, regime: FlightRegime) -> f32 {
         match regime {
-            FlightRegime::Plane => &mut self.plane_altitude_acceptance_m,
-            _ => &mut self.copter_altitude_acceptance_m,
+            FlightRegime::Plane => self.plane_altitude_acceptance_m,
+            _ => self.copter_altitude_acceptance_m,
         }
     }
 
-    /// The altitude acceptance of the leg to the active waypoint: its regime's, except that a
-    /// plane leg ending in a back transition (the next leg rotor-borne, or the route's land)
+    /// The altitude acceptance of the leg to the active waypoint, flown in `regime`: the
+    /// regime's, except that a plane leg ending in a back transition (the next leg rotor-borne, or the route's land)
     /// takes its waypoint at any altitude, so the back transition starts there instead of
     /// waiting on a loiter for an altitude it doesn't need. PX4 accepts that waypoint
     /// regardless of altitude too (`src/modules/navigator/mission_block.cpp:328-343`).
-    fn active_altitude_acceptance_m(&mut self) -> f32 {
-        let regime = self.active_regime();
+    fn active_altitude_acceptance_m(&self, regime: FlightRegime) -> f32 {
         let back_transition =
             regime == FlightRegime::Plane && self.next_regime() != FlightRegime::Plane;
         if back_transition {
             return f32::INFINITY;
         }
-        *self.altitude_acceptance_m(regime)
+        self.altitude_acceptance_m(regime)
     }
 
     /// The regime flown after the active waypoint: the next leg's, the first leg's on a
@@ -511,8 +513,7 @@ impl Commander for ScriptCommander {
     /// once past a waypoint along its leg, and within the altitude acceptance of the active
     /// leg's regime, any altitude on a plane leg ending in a back transition; a plane leg
     /// waits on its waypoint, loitering, for the altitude; then loops, holds, or lands per its
-    /// [`RouteEnd`]), asking for the regime
-    /// of the leg to the current waypoint. Once the follower moves on from a waypoint (to the
+    /// [`RouteEnd`]), asking for the regime of the leg to the current waypoint. Once the follower moves on from a waypoint (to the
     /// next waypoint or the route's land), its actions fly instead, the follower paused
     /// meanwhile: its maneuver, in its leg's regime, then its hold for `hold_s`.
     ///
@@ -553,10 +554,11 @@ impl ScriptCommander {
             return self.step_command(step);
         }
         let reached = self.follower.current_index();
-        let altitude_acceptance_m = self.active_altitude_acceptance_m();
+        let regime = self.active_regime();
+        let altitude_acceptance_m = self.active_altitude_acceptance_m(regime);
         self.follower.set_altitude_acceptance(altitude_acceptance_m);
-        let plane_leg = self.active_regime() == FlightRegime::Plane;
-        self.follower.set_wait_for_altitude(plane_leg);
+        self.follower
+            .set_wait_for_altitude(regime == FlightRegime::Plane);
         let command = self.follower.next_command(dt, current_state);
         let lands = matches!(command.input, ControlInput::Land(_));
         let current = self.follower.current_index();
