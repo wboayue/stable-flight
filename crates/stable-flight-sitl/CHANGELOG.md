@@ -63,6 +63,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`FnMut(&mut FlightLoop, &RunStats)`), so a caller can react to a stall between ticks
   (#298). Add a `_` parameter to existing closures.
 
+### Fixed
+
+- `ScriptCommander` plane legs wait on a waypoint reached off its altitude, loitering
+  around it until within the band, and a plane leg ending in a back transition (the next leg
+  rotor-borne, or the route's land) takes its waypoint at any altitude, as PX4 does (#451):
+  the Alia passed that waypoint 95 m low and flew the leg's line on into a hill.
+
 ## [0.1.0] - 2026-10-10
 
 First release.

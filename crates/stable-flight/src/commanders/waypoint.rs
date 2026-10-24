@@ -56,7 +56,19 @@ pub enum RouteEnd {
 /// the leg that leads to it (missed it wide), *and* is within the altitude acceptance of its
 /// altitude, it advances to the next: an acceptance cylinder, as in PX4
 /// (`src/modules/navigator/mission_block.cpp:380`). So a waypoint straight above the vehicle
-/// is reached at the end of the climb, not on the ground. After the last it
+/// is reached at the end of the climb, not on the ground.
+///
+/// With [`with_wait_for_altitude`](Self::with_wait_for_altitude) on, for wing-borne legs,
+/// the follower waits on a waypoint it reaches or passes outside the altitude acceptance: it
+/// emits the waypoint without a velocity until within the acceptance, wherever the vehicle
+/// is by then, and only then advances. Plane guidance loiters around it, where a velocity
+/// would fly the line through it on and away (#451). PX4's fixed-wing mode manager loiters
+/// the same way (`src/modules/fw_mode_manager/FixedWingModeManager.cpp:761-770`). It is off
+/// by default: copter guidance flies *to* the waypoint, so it can't run away, and waiting
+/// would stop it on every waypoint of a descending route its altitude loop trails (the
+/// figure eight slowed below 2 m/s on 6 of its legs).
+///
+/// After the last it
 /// follows its [`RouteEnd`]: wrap to the first ([`RouteEnd::Loop`], the default), hold the last
 /// ([`RouteEnd::Hold`]), or land on the last and disarm ([`RouteEnd::Land`]). It knows nothing
 /// about where the waypoints came from or what shape they trace.
@@ -116,6 +128,13 @@ pub struct WaypointFollower<W> {
     leg_velocity_mps: Option<Vec2>,
     /// The last waypoint has been reached under [`RouteEnd::Hold`] or [`RouteEnd::Land`].
     reached_end: bool,
+    /// Wait on a waypoint reached off its altitude, for wing-borne legs.
+    wait_for_altitude: bool,
+    /// The vehicle came near or past the active waypoint outside its altitude acceptance,
+    /// with `wait_for_altitude` on: it is emitted without a velocity until within it.
+    /// Latched, since circling the waypoint takes the vehicle back out of the radius and
+    /// before it along the leg.
+    waiting_for_altitude: bool,
     /// Watches the land under [`RouteEnd::Land`].
     touchdown: TouchdownDetector,
 }
@@ -140,6 +159,8 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
             leg_direction: None,
             leg_velocity_mps: None,
             reached_end: false,
+            wait_for_altitude: false,
+            waiting_for_altitude: false,
             touchdown: TouchdownDetector::default(),
         })
     }
@@ -178,6 +199,25 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
         self.altitude_acceptance_m = altitude_m;
     }
 
+    /// Turns on waiting on a waypoint reached or passed off its altitude, for wing-borne legs
+    /// (default off): see [`WaypointFollower`].
+    pub fn with_wait_for_altitude(mut self, wait: bool) -> Self {
+        self.set_wait_for_altitude(wait);
+        self
+    }
+
+    /// Turns waiting for a waypoint's altitude on or off from the next tick, e.g. per leg as
+    /// the regime flown changes. Turning it off ends a wait.
+    pub fn set_wait_for_altitude(&mut self, wait: bool) {
+        self.wait_for_altitude = wait;
+        self.waiting_for_altitude &= wait;
+    }
+
+    /// What the follower does after the last waypoint.
+    pub fn route_end(&self) -> RouteEnd {
+        self.route_end
+    }
+
     /// The waypoints being followed.
     pub fn waypoints(&self) -> &[WaypointCommand] {
         self.waypoints.as_ref()
@@ -202,6 +242,7 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
     /// Makes `next` the active waypoint, arriving from `previous`.
     fn advance(&mut self, previous: usize, next: usize) {
         self.current = next;
+        self.waiting_for_altitude = false;
         let waypoints = self.waypoints.as_ref();
         let to = &waypoints[next];
         // A zero-length or non-finite leg has no direction.
@@ -238,7 +279,11 @@ impl<W: AsRef<[WaypointCommand]>> Commander for WaypointFollower<W> {
         // `<=` is false for NaN: a non-finite altitude never reaches a waypoint.
         let at_altitude =
             (target.altitude_m - current_state.position_m.z).abs() <= self.altitude_acceptance_m;
-        if !self.reached_end && (within_radius || passed) && at_altitude {
+        if self.wait_for_altitude && (within_radius || passed) && !at_altitude {
+            self.waiting_for_altitude = true;
+        }
+        let arrived = within_radius || passed || self.waiting_for_altitude;
+        if !self.reached_end && arrived && at_altitude {
             let previous = self.current;
             let last = waypoints.len() - 1;
             match self.route_end {
@@ -256,7 +301,9 @@ impl<W: AsRef<[WaypointCommand]>> Commander for WaypointFollower<W> {
         }
 
         let mut target = self.waypoints.as_ref()[self.current];
-        if target.velocity_mps.is_none() {
+        if self.waiting_for_altitude {
+            target.velocity_mps = None;
+        } else if target.velocity_mps.is_none() {
             target.velocity_mps = self.leg_velocity_mps;
         }
         Command::armed(ControlInput::Waypoint(target))

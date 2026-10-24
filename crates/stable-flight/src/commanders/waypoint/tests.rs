@@ -450,6 +450,132 @@ fn reaching_a_waypoint_needs_its_altitude() {
     }
 }
 
+/// With waiting on, a waypoint reached or passed off its altitude keeps the follower on it
+/// without a velocity until within the altitude acceptance, wherever the vehicle has gone by
+/// then (a loiter takes it back before the waypoint and out of the radius), then advances
+/// with the next leg's velocity (#451). Off (the default), the leg velocity stays and only
+/// the radius or a pass at altitude advances.
+#[test]
+fn waits_on_a_waypoint_for_its_altitude() {
+    let route = [cruise_at_5m(0.0), cruise_at_5m(20.0), cruise_at_5m(40.0)];
+    // (name, vehicle (x, y, z), (index, velocity emitted) waiting, the same not waiting)
+    let steps = [
+        ("on the first", (0.0, 0.0, 5.0), (1, true), (1, true)),
+        ("mid-leg, low", (10.0, 0.0, 2.0), (1, true), (1, true)),
+        ("passed, low", (22.0, 0.0, 2.0), (1, false), (1, true)),
+        (
+            "circled back before it, low",
+            (15.0, 8.0, 2.0),
+            (1, false),
+            (1, true),
+        ),
+        (
+            "circled back, at altitude",
+            (15.0, 8.0, 5.0),
+            (2, true),
+            (1, true),
+        ),
+        (
+            "passed, at altitude",
+            (30.0, 0.0, 5.0),
+            (2, true),
+            (2, true),
+        ),
+    ];
+    for wait in [true, false] {
+        let mut follower = WaypointFollower::new(route)
+            .expect("non-empty")
+            .with_wait_for_altitude(wait);
+        for (name, (x, y, z), waiting, not_waiting) in steps {
+            let (index, has_velocity) = if wait { waiting } else { not_waiting };
+            let state = VehicleState {
+                position_m: Vec3::new(x, y, z),
+                ..Default::default()
+            };
+            let command = follower.next_command(0.1, &state);
+            assert2::assert!(let ControlInput::Waypoint(target) = command.input);
+            check!(follower.current_index() == index, "{name}, wait {wait}");
+            check!(
+                target.velocity_mps.is_some() == has_velocity,
+                "{name}, wait {wait}"
+            );
+        }
+    }
+}
+
+/// Within the radius off altitude waits the same way; a NaN altitude waits and never
+/// advances.
+#[test]
+fn waits_within_the_radius_and_on_a_nan_altitude() {
+    let route = [cruise_at_5m(0.0), cruise_at_5m(20.0), cruise_at_5m(40.0)];
+    // (name, altitude within the radius, expected active index)
+    let cases = [
+        ("low", 2.0, 1),
+        ("NaN", f32::NAN, 1),
+        ("at altitude", 5.0, 2),
+    ];
+    for (name, z, index) in cases {
+        let mut follower = WaypointFollower::new(route)
+            .expect("non-empty")
+            .with_wait_for_altitude(true);
+        follower.next_command(0.1, &at_xyz(0.0, 0.0, 5.0));
+        let command = follower.next_command(0.1, &at_xyz(19.0, 1.0, z));
+        assert2::assert!(let ControlInput::Waypoint(target) = command.input);
+        check!(follower.current_index() == index, "{name}");
+        check!(target.velocity_mps.is_some() == (index == 2), "{name}");
+    }
+}
+
+/// A wait drops a waypoint's own velocity too, and turning waiting off ends the wait: the
+/// velocity comes back.
+#[test]
+fn a_wait_drops_the_waypoints_own_velocity_until_turned_off() {
+    let own_mps = Vec2::new(10.0, 0.0);
+    let through = WaypointCommand {
+        velocity_mps: Some(own_mps),
+        ..cruise_at_5m(20.0)
+    };
+    let route = [cruise_at_5m(0.0), through, cruise_at_5m(40.0)];
+    let mut follower = WaypointFollower::new(route)
+        .expect("non-empty")
+        .with_wait_for_altitude(true);
+    follower.next_command(0.1, &at_xyz(0.0, 0.0, 5.0));
+    let velocity_at = |follower: &mut WaypointFollower<_>, x: f32| {
+        let command = follower.next_command(0.1, &at_xyz(x, 8.0, 2.0));
+        let ControlInput::Waypoint(target) = command.input else {
+            unreachable!("the follower emits waypoints until the route ends");
+        };
+        target.velocity_mps
+    };
+    check!(velocity_at(&mut follower, 22.0) == None, "passed, low");
+    check!(
+        velocity_at(&mut follower, 15.0) == None,
+        "circled back, low"
+    );
+    follower.set_wait_for_altitude(false);
+    check!(
+        velocity_at(&mut follower, 15.0) == Some(own_mps),
+        "waiting off"
+    );
+    check!(follower.current_index() == 1);
+}
+
+/// A vehicle state at `(x, y, z)`.
+fn at_xyz(x: f32, y: f32, z: f32) -> VehicleState {
+    VehicleState {
+        position_m: Vec3::new(x, y, z),
+        ..Default::default()
+    }
+}
+
+/// A waypoint at `x` north at 5 m, flown at 10 m/s.
+fn cruise_at_5m(x: f32) -> WaypointCommand {
+    WaypointCommand {
+        altitude_m: 5.0,
+        ..cruise(x, 0.0, 10.0)
+    }
+}
+
 /// The altitude acceptance is configurable: a looser band reaches the waypoint lower.
 #[test]
 fn altitude_acceptance_is_configurable() {
