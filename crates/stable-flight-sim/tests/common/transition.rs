@@ -146,8 +146,7 @@ pub fn sinking_leg(airspeed_mps: f32) -> Forward {
 /// the dive to build its sink.
 const DIVE_FROM_M: f32 = 80.0;
 
-/// When a [`DivingLeg`] dives, in s: plane flight settled at trim (`Plane` from about 60 s on
-/// the sim Alia).
+/// When a [`DivingLeg`] dives, in s: plane flight settled at trim on the sim Alia.
 pub const DIVE_AT_S: f32 = 100.0;
 
 /// Seconds after [`DIVE_AT_S`] by which a [`DivingLeg`]'s fallback has handed the hover over:
