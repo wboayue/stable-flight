@@ -31,7 +31,7 @@ X-Plane 12 simulator backend over [xplane-bridge](https://crates.io/crates/xplan
   `check_frames --sim xplane`.
 - `airframes::alia250()`: the Alia 250 as a quadplane (mixer, engine and surface mapping,
   gains): its hover from an engine sweep and a sim autotune, flown in X-Plane (#351); its
-  plane side and transitions tuned on `stable-flight-sim`'s `alia250()` and pinned to it (#392). Plane flight below 30 m falls back to a hover (`TRAN_FW_MIN_HGT`; px4xplane's `VT_FW_MIN_ALT` is 20 m, but the fallback loses 11 m at 50 m/s, #450, #493). `quadplane-manual-xplane`
+  plane side and transitions tuned on `stable-flight-sim`'s `alia250()` and pinned to it (#392). Plane flight below 30 m falls back to a hover (`TRAN_FW_MIN_HGT`; px4xplane's `VT_FW_MIN_ALT` is 20 m, but a fallback at 50 m/s hands the hover over at 30 m/s, which then drops up to 13 m, #450, #493, #496). `quadplane-manual-xplane`
   (joystick: hover, transitions, plane; `--record`, `--param`) and `copter-companion-xplane`
   (the link in copter flight, QGC through the bridge) and `quadplane-auto-xplane` (a waypoint
   script with plane legs, `flights/alia_transition_lap.csv`, its coordinates and altitudes
