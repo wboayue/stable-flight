@@ -28,10 +28,10 @@ pub struct LiftTransitionConfig {
     pub min_height_m: f32,
     /// The height above the arming altitude plane flight falls back to copter below, in
     /// meters; a forward transition also needs it to start. Higher: falls back sooner, with
-    /// more height to lose in the back transition (1.9 m at a 3.5 m/s sink on the sim
-    /// quadplane). `0` turns it off.
+    /// more height to lose in the back transition (0.7 m at a 3.5 m/s sink on the sim
+    /// quadplane, 2.4 m at 6.2 m/s and 53 m/s on the sim Alia). `0` turns it off.
     pub plane_min_height_m: f32,
-    /// How long the back ramp takes the lift share from 0 to 1, in seconds.
+    /// How long the back ramp takes the lift share from 0 to 1, in seconds; a fallback skips it.
     pub back_ramp_s: f32,
     /// The forward speed below which the back transition completes, in m/s.
     pub back_speed_mps: f32,
@@ -141,10 +141,10 @@ pub struct LiftTransitionStep {
 /// | `ToPlane` | waiting, and a valid airspeed ≥ `min_airspeed_mps` | `ToPlane`, the lift ramp starts | 1 | | |
 /// | `ToPlane` | otherwise | `ToPlane` | 1 waiting, then `1 − t / lift_ramp_s` | | |
 /// | `Plane` | `Copter` requested | `ToCopter` | 0 | | |
-/// | `Plane` | below `plane_min_height_m` | `ToCopter`, a fallback | 0 | | `BelowPlaneMinAltitude` |
+/// | `Plane` | below `plane_min_height_m` | `ToCopter`, a fallback | 1 | | `BelowPlaneMinAltitude` |
 /// | `ToCopter` | `Plane` requested, and no fallback | `Plane` | 0 | | |
 /// | `ToCopter` | forward speed below `back_speed_mps`, or longer than `back_timeout_s` | `Copter` | 1 | yes | |
-/// | `ToCopter` | otherwise | `ToCopter` | `t / back_ramp_s`, at most 1 | | |
+/// | `ToCopter` | otherwise | `ToCopter` | 1 after a fallback, else `t / back_ramp_s`, at most 1 | | |
 ///
 /// The lift share is the share of hover lift the lift rotors carry: the guidance flying this
 /// weights the lift rotors' thrust and moments by it. Without a valid airspeed the forward
@@ -160,7 +160,10 @@ pub struct LiftTransitionStep {
 /// [`Transition`](super::Transition): above the altitude at [`prime`](Self::prime),
 /// refused until then, and after a fallback (a forward transition abandoned, or plane flight
 /// below `plane_min_height_m`) `Plane` held refused until `Copter` is requested: `ToCopter`
-/// completes as if `Copter` were requested, reporting the fallback.
+/// completes as if `Copter` were requested, reporting the fallback. A fallback's back
+/// transition gives the lift rotors all the lift from its first tick: the sink that set it off
+/// keeps going while they ramp in, and a 10 s ramp let the X-Plane Alia sink 10 m below its
+/// floor at 50 m/s (#493).
 ///
 /// # Sources
 ///
@@ -176,6 +179,9 @@ pub struct LiftTransitionStep {
 ///   `vtol_att_control/standard.cpp:250-254`) and completes once the body-`x` ground speed
 ///   is below `MPC_XY_CRUISE` (5 m/s; airspeed without a ground velocity) or after
 ///   `VT_B_TRANS_DUR` (10 s, `standard.cpp:98-115`).
+/// - Fallback: PX4's quad-chute switches to the lift rotors at once and cuts the pusher
+///   (`standard.cpp:74-77`); ArduPilot entering a VTOL mode from forward flight runs its
+///   vertical controller with the throttle unlimited at once (`quadplane.cpp:995-1021`).
 /// - Pusher: PX4 slews it to `VT_F_TRANS_THR` (1.0) at `VT_PSHER_SLEW` (0.33/s,
 ///   `standard.cpp:201-242`) going forward and cuts it going back (`:269`); ArduPilot flies
 ///   it on the plane controller's throttle going forward (`servos.cpp:569-588`).
@@ -397,6 +403,7 @@ impl LiftTransition {
             FlightMode::ToPlane => self.ramp_start_s.map_or(1.0, |start_s| {
                 (1.0 - (self.elapsed_s - start_s) / self.config.lift_ramp_s).clamp(0.0, 1.0)
             }),
+            FlightMode::ToCopter if self.gate.fallen_back() => 1.0,
             FlightMode::ToCopter => (self.elapsed_s / self.config.back_ramp_s).min(1.0),
             _ => 1.0,
         }

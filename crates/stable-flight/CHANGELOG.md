@@ -13,8 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LiftTransitionConfig` gain `plane_min_height_m` (`TRAN_FW_MIN_HGT`, off by default, as
   PX4's `VT_FW_MIN_ALT`). Plane flight below it falls back to copter through the back
   transition (a quadchute), reporting `ModeRefusal::BelowPlaneMinAltitude`, and a forward
-  transition needs it to start. On the sim a plane leg sinking through 20 m hovers at most
-  3.3 m below it; on `main` it flew into the ground.
+  transition needs it to start. A quadplane's fallback gives its lift rotors all the lift at
+  once, skipping the back ramp (#493). On the sim a plane leg sinking through 20 m hovers at
+  most 3.3 m below it, and the Alia diving through it at 53 m/s 2.4 m below (7.0 m with the
+  ramp); on `main` it flew into the ground.
 
 - **Scripted maneuvers** (#342): `commanders::maneuver`.
   - A `Maneuver` is up to `MAX_SEGMENTS` (16) `Segment`s, `Copy` and fixed-size:

@@ -636,7 +636,7 @@ fn falls_back_below_the_plane_minimum_height() {
         SINK_AT_S + SINK_WATCH_S + HOVER_SETTLE_S + HOLD_S,
     );
 
-    if let Some(hover) = check_falls_back(&flight, "fallback") {
+    if let Some(hover) = check_falls_back(&flight, SINK_AT_S + SINK_WATCH_S, "fallback") {
         let hold_s = hover.time_s + HOVER_SETTLE_S;
         let mut worst = HoverDeviation::default();
         for sample in flight.window(hold_s, hold_s + HOLD_S) {

@@ -1,6 +1,7 @@
 //! Transitions on `airframes::quadplane()`: forward from a hover to plane flight, back to a
 //! hover, and the ways a forward transition ends early, against PX4's VTOL transition limits
-//! (PX4 `c4e4ef98e9`, `src/modules/vtol_att_control/vtol_att_control_params.yaml`).
+//! (PX4 `c4e4ef98e9`, `src/modules/vtol_att_control/vtol_att_control_params.yaml`); and a
+//! fallback at cruise speed on `airframes::alia250()`.
 
 mod common;
 
@@ -20,10 +21,10 @@ use common::quadplane::{
     QuadPlanePlant, forward, forward_and_back, quadplane_loop, quadplane_pipeline,
 };
 use common::transition::{
-    BACK_DURATION_S, CROSS_TRACK_M, FORWARD_AT_S, FORWARD_TIMEOUT_S, Forward, HOLD_S,
-    PLANE_FLOOR_M, PLANE_HOLD_S, PLANE_SETTLE_S, SINK_AT_S, SINK_WATCH_S, TRANSITION_ALTITUDE_M,
-    Trace, check_altitude_loss, check_falls_back, entered_s, sinking_leg, trace,
-    transition_heights,
+    BACK_DURATION_S, CROSS_TRACK_M, DIVE_AT_S, DIVE_WATCH_S, DivingLeg, FORWARD_AT_S,
+    FORWARD_TIMEOUT_S, Forward, HOLD_S, PLANE_FLOOR_M, PLANE_HOLD_S, PLANE_SETTLE_S, SINK_AT_S,
+    SINK_WATCH_S, TRANSITION_ALTITUDE_M, Trace, check_altitude_loss, check_falls_back, entered_s,
+    sinking_leg, trace, transition_heights,
 };
 use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK, fly};
 
@@ -171,10 +172,35 @@ fn falls_back_below_the_plane_minimum_height() {
         SINK_AT_S + SINK_WATCH_S + HOVER_SETTLE_S + HOLD_S,
     );
 
-    if let Some(hover) = check_falls_back(&flight, "fallback") {
+    if let Some(hover) = check_falls_back(&flight, SINK_AT_S + SINK_WATCH_S, "fallback") {
         let hold_s = hover.time_s + HOVER_SETTLE_S;
         check_calm_hover(&flight, hold_s, hover.state.position_m, "fallback");
     }
+}
+
+/// The Alia's dive: pitch and fixed thrust that sink 6.2 m/s at 53 m/s by the floor (measured),
+/// past its 5 m/s `PGUID_SINK_MAX`.
+const ALIA_DIVE_PITCH_DEG: f32 = -7.0;
+const ALIA_DIVE_THRUST: f32 = 0.5;
+
+/// The Alia diving through the plane minimum height at cruise speed falls back no further than
+/// `FALLBACK_LOSS_M` below it: the lift rotors take all the lift at once (#493). The hover
+/// after is the quadplane's to judge: the Alia hands over on its back timeout, still at speed.
+#[test]
+fn falls_back_at_cruise_speed_on_full_lift() {
+    let mut airframe = airframes::alia250();
+    airframe.guidance.transition.plane_min_height_m = PLANE_FLOOR_M;
+    let plant = QuadPlanePlant::clean(airframe);
+    let commander = DivingLeg::new(
+        airframe.stabilizer.plane.trim_airspeed_mps,
+        ALIA_DIVE_PITCH_DEG.to_radians(),
+        ALIA_DIVE_THRUST,
+        PLANE_FLOOR_M,
+    );
+    let mut flight_loop = quadplane_loop(&plant, commander);
+    let flight = trace(&mut flight_loop, DIVE_AT_S + DIVE_WATCH_S);
+
+    check_falls_back(&flight, DIVE_AT_S + DIVE_WATCH_S, "fallback");
 }
 
 /// A link flying [`Forward`] that goes silent [`SILENT_AFTER_S`] into the forward transition.

@@ -21,7 +21,8 @@ Code comments and docs link here instead of redefining a term.
   forward transition that times out or rolls too far, or plane flight below its minimum
   height (`TRAN_FW_MIN_HGT`). Plane flight is then refused until copter flight is asked for,
   and a waypoint is flown as a hover where copter flight took over; sticks keep flying (PX4's
-  name; `ModeRefusal` says why).
+  name; `ModeRefusal` says why). A quadplane's lift rotors take all the lift at once, without
+  the back transition's ramp.
 - **Blend:** during a quadplane transition, the hover and wing-borne setpoints flown together,
   each weighted by a lift share (`Setpoint::Blend`).
 - **FBWA (fly-by-wire A):** plane stick mode where the sticks command bank and pitch angles
