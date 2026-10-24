@@ -8,7 +8,7 @@ use stable_flight::{
 };
 use stable_flight_sim::{SimQuadPlane, SimTailsitter};
 
-use super::plane::{Interlude, north_line_command};
+use super::plane::{Interlude, attitude_command, north_line_command};
 use super::tailsitter::view_angles;
 use super::{Hover, fly, hover_at, waypoint};
 
@@ -114,8 +114,9 @@ pub fn forward_and_back_to(
 pub const PLANE_FLOOR_M: f32 = 20.0;
 
 /// How far below [`PLANE_FLOOR_M`] a fallback may sink before the hover holds, in m: no
-/// external band applies (PX4 switches to hover at once); measured 1.9 m on the quadplane
-/// at a 3.5 m/s sink and 3.3 m on the tailsitter at 4.6 m/s, with 1.7 m of margin.
+/// external band applies (PX4 switches to hover at once); measured 0.7 m on the quadplane
+/// at a 3.5 m/s sink, 2.4 m on the Alia at 6.2 m/s and 53 m/s (7.0 m with the back ramp,
+/// #493), and 3.3 m on the tailsitter at 4.6 m/s, with 1.7 m of margin.
 pub const FALLBACK_LOSS_M: f32 = 5.0;
 
 /// The hover a [`sinking_leg`] starts its plane leg from, in m: 40 m above the floor, room
@@ -141,11 +142,66 @@ pub fn sinking_leg(airspeed_mps: f32) -> Forward {
     )
 }
 
-/// Checks a [`sinking_leg`] flown with the plane floor at [`PLANE_FLOOR_M`]: plane flight
-/// falls back below it (`BelowPlaneMinAltitude`), the back transition ends in copter flight
-/// within [`SINK_WATCH_S`], no more than [`FALLBACK_LOSS_M`] below the floor, and `Plane` stays
-/// refused. Returns the tick copter flight took over on, or `None` (a failed check).
-pub fn check_falls_back<'a>(trace: &'a Trace, what: &str) -> Option<&'a Sample> {
+/// The plane leg a [`DivingLeg`] flies before it dives, in m: 60 m above the floor, room for
+/// the dive to build its sink.
+const DIVE_FROM_M: f32 = 80.0;
+
+/// When a [`DivingLeg`] dives, in s: plane flight settled at trim (`Plane` from about 60 s on
+/// the sim Alia).
+pub const DIVE_AT_S: f32 = 100.0;
+
+/// Seconds after [`DIVE_AT_S`] by which a [`DivingLeg`]'s fallback has handed the hover over:
+/// 10 s of dive and the Alia's 28 s `back_timeout_s` (it glides on past `back_speed_mps`).
+pub const DIVE_WATCH_S: f32 = 45.0;
+
+/// A plane leg north at [`DIVE_FROM_M`] and trim airspeed from [`SINK_AT_S`], then from
+/// [`DIVE_AT_S`] an attitude dive at a fixed thrust, which sinks faster than the plane guidance
+/// would fly, at speed. Below the floor it asks for the leg again: what a fallback refuses.
+pub struct DivingLeg {
+    leg: Forward,
+    dive: Command,
+    floor_m: f32,
+    elapsed_s: f32,
+    reached_floor: bool,
+}
+
+impl DivingLeg {
+    /// Dives at `pitch_rad` (nose up positive) and `thrust` until below `floor_m`.
+    pub fn new(trim_airspeed_mps: f32, pitch_rad: f32, thrust: f32, floor_m: f32) -> Self {
+        DivingLeg {
+            leg: Interlude::new(
+                hover_at(DIVE_FROM_M),
+                SINK_AT_S,
+                f32::INFINITY,
+                north_line_command(DIVE_FROM_M, trim_airspeed_mps),
+            ),
+            dive: attitude_command(0.0, pitch_rad, thrust),
+            floor_m,
+            elapsed_s: 0.0,
+            reached_floor: false,
+        }
+    }
+}
+
+impl Commander for DivingLeg {
+    fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
+        self.elapsed_s += dt;
+        // The leg keeps its own clock: tick it every time.
+        let leg = self.leg.next_command(dt, state);
+        if self.elapsed_s < DIVE_AT_S {
+            return leg;
+        }
+        self.reached_floor |= state.position_m.z < self.floor_m;
+        if self.reached_floor { leg } else { self.dive }
+    }
+}
+
+/// Checks a [`sinking_leg`] (or a [`DivingLeg`]) flown with the plane floor at
+/// [`PLANE_FLOOR_M`]: plane flight falls back below it (`BelowPlaneMinAltitude`), the back
+/// transition ends in copter flight by `hover_by_s`, no more than [`FALLBACK_LOSS_M`] below
+/// the floor, and `Plane` stays refused. Returns the tick copter flight took over on, or
+/// `None` (a failed check).
+pub fn check_falls_back<'a>(trace: &'a Trace, hover_by_s: f32, what: &str) -> Option<&'a Sample> {
     let plane_s = entered_s(trace, FlightMode::Plane, SINK_AT_S, what);
     let fell_back = trace.entered(FlightMode::ToCopter, plane_s);
     check!(
@@ -159,7 +215,7 @@ pub fn check_falls_back<'a>(trace: &'a Trace, what: &str) -> Option<&'a Sample> 
     let back_s = fell_back.map_or(f32::INFINITY, |sample| sample.time_s);
     let hover = trace.entered(FlightMode::Copter, back_s);
     let hover_s = hover.map_or(f32::INFINITY, |sample| sample.time_s);
-    check!(hover_s <= SINK_AT_S + SINK_WATCH_S, "{what}: {hover_s} s");
+    check!(hover_s <= hover_by_s, "{what}: {hover_s} s");
     let heights = trace.heights(back_s, f32::INFINITY);
     let below_m = PLANE_FLOOR_M - heights.lowest_m;
     check!(

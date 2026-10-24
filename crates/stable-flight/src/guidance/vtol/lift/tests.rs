@@ -429,8 +429,9 @@ fn refusals_hold_until_cleared() {
 const FLOOR_M: f32 = 20.0;
 
 /// With a plane minimum height, a forward transition needs it to start; plane flight below it
-/// falls back to copter, completing the back transition however `Plane` is still requested,
-/// and `Plane` stays refused until `Copter` is requested.
+/// falls back to copter, the lift rotors carrying all the lift at once, completing the back
+/// transition however `Plane` is still requested, and `Plane` stays refused until `Copter` is
+/// requested.
 #[test]
 fn falls_back_below_the_plane_minimum_height() {
     use FlightRegime::{Copter, Plane};
@@ -519,6 +520,9 @@ fn falls_back_below_the_plane_minimum_height() {
         check!(step.mode == mode, "{what}");
         check!(transition.report().refusal == refusal, "{what}");
         check!(transition.fallen_back() == fallen_back, "{what}");
+        if mode == FlightMode::ToCopter {
+            check!(step.lift_share == 1.0, "{what}: no back ramp (#493)");
+        }
     }
 
     let mut floorless = in_plane();
