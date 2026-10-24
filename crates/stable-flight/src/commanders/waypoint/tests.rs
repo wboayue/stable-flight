@@ -450,6 +450,68 @@ fn reaching_a_waypoint_needs_its_altitude() {
     }
 }
 
+/// Near or past a waypoint off its altitude, the follower drops the leg velocity and keeps
+/// the waypoint until within the altitude acceptance, wherever the vehicle has gone by then
+/// (a loiter takes it back before the waypoint and out of the radius), then advances with
+/// the next leg's velocity (#451).
+#[test]
+fn waits_on_a_waypoint_for_its_altitude() {
+    let route = [cruise_at_5m(0.0), cruise_at_5m(20.0), cruise_at_5m(40.0)];
+    // (name, vehicle (x, y, z), expected active index, expected leg velocity emitted)
+    let steps = [
+        ("on the first", (0.0, 0.0, 5.0), 1, true),
+        ("mid-leg, low", (10.0, 0.0, 2.0), 1, true),
+        ("passed, low", (22.0, 0.0, 2.0), 1, false),
+        ("circled back before it, low", (15.0, 8.0, 2.0), 1, false),
+        ("circled back, at altitude", (15.0, 8.0, 5.0), 2, true),
+        ("mid-leg to the third", (30.0, 0.0, 5.0), 2, true),
+    ];
+    let mut follower = WaypointFollower::new(route).expect("non-empty");
+    for (name, (x, y, z), index, has_velocity) in steps {
+        let state = VehicleState {
+            position_m: Vec3::new(x, y, z),
+            ..Default::default()
+        };
+        let command = follower.next_command(0.1, &state);
+        assert2::assert!(let ControlInput::Waypoint(target) = command.input);
+        check!(follower.current_index() == index, "{name}");
+        check!(target.velocity_mps.is_some() == has_velocity, "{name}");
+    }
+}
+
+/// Within the radius off altitude waits the same way; a NaN altitude waits and never
+/// advances.
+#[test]
+fn waits_within_the_radius_and_on_a_nan_altitude() {
+    let route = [cruise_at_5m(0.0), cruise_at_5m(20.0), cruise_at_5m(40.0)];
+    let at = |x: f32, y: f32, z: f32| VehicleState {
+        position_m: Vec3::new(x, y, z),
+        ..Default::default()
+    };
+    // (name, altitude within the radius, expected active index)
+    let cases = [
+        ("low", 2.0, 1),
+        ("NaN", f32::NAN, 1),
+        ("at altitude", 5.0, 2),
+    ];
+    for (name, z, index) in cases {
+        let mut follower = WaypointFollower::new(route).expect("non-empty");
+        follower.next_command(0.1, &at(0.0, 0.0, 5.0));
+        let command = follower.next_command(0.1, &at(19.0, 1.0, z));
+        assert2::assert!(let ControlInput::Waypoint(target) = command.input);
+        check!(follower.current_index() == index, "{name}");
+        check!(target.velocity_mps.is_some() == (index == 2), "{name}");
+    }
+}
+
+/// A waypoint at `x` north at 5 m, flown at 10 m/s.
+fn cruise_at_5m(x: f32) -> WaypointCommand {
+    WaypointCommand {
+        altitude_m: 5.0,
+        ..cruise(x, 0.0, 10.0)
+    }
+}
+
 /// The altitude acceptance is configurable: a looser band reaches the waypoint lower.
 #[test]
 fn altitude_acceptance_is_configurable() {
