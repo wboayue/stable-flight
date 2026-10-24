@@ -65,10 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `ScriptCommander` takes the waypoint of a plane leg ending in a back transition (the next
-  leg rotor-borne, or the route's land) at any altitude, as PX4 does (#451): the back
-  transition starts there, where the Alia passed it 95 m low and flew the leg's line on
-  into a hill.
+- `ScriptCommander` plane legs wait on a waypoint reached off its altitude, loitering
+  around it until within the band, and a plane leg ending in a back transition (the next leg
+  rotor-borne, or the route's land) takes its waypoint at any altitude, as PX4 does (#451):
+  the Alia passed that waypoint 95 m low and flew the leg's line on into a hill.
 
 ## [0.1.0] - 2026-10-10
 
