@@ -219,11 +219,10 @@ pub fn alia250() -> QuadPlaneAirframe {
                 min_airspeed_mps: MIN_AIRSPEED_MPS,
                 timeout_s: 45.0,
                 min_height_m: 20.0,
-                // Above px4xplane's `VT_FW_MIN_ALT` (20 m, `config/px4_params/5020_xplane_alia250`):
-                // falling back from a 4.5 m/s sink at 50 m/s, the back transition loses 3.7 m in
-                // X-Plane (#493), but it hands over still at 30 m/s and the hover's braking then
-                // drops up to 13 m (#496).
-                plane_min_height_m: 30.0,
+                // px4xplane's `VT_FW_MIN_ALT` (`config/px4_params/5020_xplane_alia250`): falling
+                // back from a 4.3 m/s sink at 50 m/s, X-Plane bottoms out 3.0–3.3 m below it, then
+                // slows to hover at 5 m/s and holds within 0.5 m (#493, #496).
+                plane_min_height_m: 20.0,
                 back_ramp_s: 10.0,
                 back_timeout_s: 28.0,
                 pusher_slew_per_s: 0.45,

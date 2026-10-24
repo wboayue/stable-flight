@@ -139,7 +139,8 @@ const HANDOVER_SPEED_MPS: f32 = 5.2;
 #[test]
 fn alia_back_transition_ends_on_speed() {
     let mut airframe = airframes::alia250();
-    // The leg flies at 30 m, at the Alia's floor.
+    // The leg flies at 30 m, and entering plane flight the sim Alia dives through its 20 m
+    // floor (`docs/tuning/quadplane.md`).
     airframe.guidance.transition.plane_min_height_m = 0.0;
     let back_timeout_s = airframe.guidance.transition.back_timeout_s;
     let plant = QuadPlanePlant::clean(airframe);
