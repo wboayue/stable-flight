@@ -269,7 +269,8 @@ Related code sits together, so a reviewer reads one behavior in one place.
   (the `*-auto-*` examples on `flights/*.csv`, `plane-probe-xplane`), started and stopped from the
   command line; when no script covers the check, add one to `flights/` first. Scripts are
   relative to where the vehicle starts (0,0 at height 0: the spawn), so they fly at any field
-  (#494). A script flies the
+  (#494); fly RealFlight checks at Eli Field, where the scripts' routes clear every obstacle
+  (Flight School held 245 Hz for a third of a lap, against three quarters there). A script flies the
   same route every run, so runs compare row against row, and it needs no pilot at the sticks. A
   hold starts only once its waypoint is reached (within 3 m), so a waypoint the vehicle can't
   reach (pinned at the tilt cap, belly into the wind) stalls the script: in wind, climb and hold
