@@ -162,8 +162,8 @@ pub struct LiftTransitionStep {
 /// below `plane_min_height_m`) `Plane` held refused until `Copter` is requested: `ToCopter`
 /// completes as if `Copter` were requested, reporting the fallback. A fallback's back
 /// transition gives the lift rotors all the lift from its first tick: the sink that set it off
-/// keeps going while they ramp in, and a 10 s ramp let the X-Plane Alia sink 10 m below its
-/// floor at 50 m/s (#493).
+/// keeps going while they ramp in (10 m below the floor at 50 m/s on the X-Plane Alia's 10 s
+/// ramp, #493).
 ///
 /// # Sources
 ///

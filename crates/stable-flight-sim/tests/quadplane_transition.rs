@@ -178,9 +178,11 @@ fn falls_back_below_the_plane_minimum_height() {
     }
 }
 
-/// The Alia's dive: pitch and fixed thrust that sink 6.2 m/s at 53 m/s by the floor (measured),
-/// past its 5 m/s `PGUID_SINK_MAX`.
+/// The Alia's dive pitch, nose up positive: with [`ALIA_DIVE_THRUST`], 6.2 m/s of sink at
+/// 53 m/s by the floor (measured), past its 5 m/s `PGUID_SINK_MAX`.
 const ALIA_DIVE_PITCH_DEG: f32 = -7.0;
+
+/// The Alia's pusher thrust through the dive, `[0, 1]`.
 const ALIA_DIVE_THRUST: f32 = 0.5;
 
 /// The Alia diving through the plane minimum height at cruise speed falls back no further than
