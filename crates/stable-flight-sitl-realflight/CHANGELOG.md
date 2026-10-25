@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `copter-autotune-realflight` waits out RealFlight's slow stretches (#438): under 225 Hz over
+  0.5 s (`TickRate`), the running step stops and runs again once the rate holds, and settling
+  waits. Stalled steps are logged as stalled, and the host turning slow and back at `info`.
+
 - The Titan Cobra's copter legs brake along a curve at 1.2 m/s² (`GUID_LAT_BRK`, #488):
   uncapped 300 m legs stop 3 m short to 0.1 m past their waypoints, where the linear position
   loop overshot 15–20 m.

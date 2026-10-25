@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Autotune::set_host_slow` (#438): while the host runs slow (its ticks further apart than
+  their `dt`), the running probe stops at once and runs again later, counted as stalled, and
+  settling waits without timing out. RealFlight runs at about 120 Hz for minute-long stretches,
+  where a 63-tick rate step held for its ticks tilted twice as far (an autotune failed on
+  `Tilt`) and settles timed out (`NotSettled`).
+- `AutotuneEvent::Stalled` reports a probe the host's timing spoiled: stopped by
+  `set_host_slow` (no measurement) or finished across a `note_stall` (its untimely
+  measurement).
+
 - `LateralControllerConfig::brake_mps2` (`GUID_LAT_BRK`, default 0: off): with shaping off
   (`GUID_LAT_ACC` 0), the position loop slows toward a waypoint along the braking curve at
   this deceleration instead of in proportion to the distance, which starts braking only
@@ -288,6 +297,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Setpoint::thrust`:** the linear thrust either variant carries.
 
 ### Changed
+
+- `AutotuneEvent::Measured` reports only probes the host kept time for; a stalled one comes as
+  `AutotuneEvent::Stalled` (#438).
 
 - **Breaking:** `TecsConfig::integrator_gain` (`PGUID_INTEG`) sets the thrust loop's integral
   gain only; the pitch loop's is `pitch_integrator_gain` (#503).
