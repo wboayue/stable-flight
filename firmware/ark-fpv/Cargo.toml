@@ -31,7 +31,7 @@ cortex-m = "0.7"
 cortex-m-rt = "0.7"
 
 rtic = { version = "2.2", features = ["thumbv7-backend"] }
-rtic-monotonics = { version = "2.0", features = ["cortex-m-systick"] }
+rtic-monotonics = { version = "3.0", features = ["cortex-m-systick"] }
 
 stm32h7xx-hal = { version = "0.16", features = ["stm32h743v", "rt"] }
 
