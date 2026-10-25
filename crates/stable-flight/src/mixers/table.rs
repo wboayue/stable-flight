@@ -312,6 +312,19 @@ impl<const N: usize> TableMixer<N> {
         Ok(Self::from_valid(rows, config))
     }
 
+    /// The thrust factor and yaw ratio this mixer scales by.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::mixers::{MixerConfig, TableMixer};
+    ///
+    /// assert_eq!(TableMixer::quad_x().config(), MixerConfig::default());
+    /// ```
+    pub fn config(&self) -> MixerConfig {
+        self.config
+    }
+
     /// This mixer with `config` instead (e.g. a preset with another thrust factor).
     ///
     /// # Errors

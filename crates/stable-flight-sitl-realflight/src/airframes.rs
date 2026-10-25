@@ -18,7 +18,7 @@ use stable_flight::guidance::vtol::{
     ForwardThrustConfig, LiftTransitionConfig, QuadPlaneGuidanceConfig, TailsitterGuidanceConfig,
     TransitionConfig,
 };
-use stable_flight::mixers::TableMixer;
+use stable_flight::mixers::{MixerConfig, TableMixer};
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
@@ -377,6 +377,24 @@ pub fn explora_maneuvers() -> ManeuverConfig {
 /// transition pusher defaults are flown at: the pusher commands of its flights (#433, #448).
 const COBRA_PUSHER_SHARE: f32 = 0.9;
 
+/// The Titan Cobra's lift-rotor mixer thrust factor: twice the default moment headroom, a
+/// unit moment moving each motor ±0.2. The nose-heavy hover holds a steady 0.38 nose-up
+/// moment; at the default 0.9 (±0.1 per unit) that left 0.62 for a step, and nose-up clipped
+/// 15× as often as nose-down in an autotune (#438). The Alia's mixer takes the same (#440).
+const COBRA_THRUST_FACTOR: f32 = 0.8;
+
+/// The Titan Cobra's mixer: its lift rotors at [`COBRA_THRUST_FACTOR`], with `MixerConfig`'s
+/// default yaw ratio (2.5), which holds its heading (#433).
+const COBRA_MIXER: MixerConfig = MixerConfig {
+    thrust_factor: COBRA_THRUST_FACTOR,
+    yaw_ratio: 2.5,
+};
+
+/// The motor command the Titan Cobra's lift rotors hover at: linear thrust 0.79 at the default
+/// thrust factor, 0.9 · 0.79², from a steady 0.7 m/s descent (#433). ArduPilot's hover, 0.322
+/// of full thrust (`Q_M_THST_HOVER`), agrees: √0.322 = 0.57 on RealFlight's squared props.
+const COBRA_HOVER_MOTOR: f32 = 0.9 * 0.79 * 0.79;
+
 /// The Titan Cobra's plane airspeeds, in m/s: `ARSPD_FBW_MIN` 11 and `ARSPD_FBW_MAX` 18.
 const COBRA_MIN_AIRSPEED_MPS: f32 = 11.0;
 const COBRA_MAX_AIRSPEED_MPS: f32 = 18.0;
@@ -386,9 +404,10 @@ const COBRA_MAX_AIRSPEED_MPS: f32 = 18.0;
 /// in RealFlight: a lift+cruise quadplane, four fixed lift rotors, a pusher, ailerons, and an
 /// A-tail.
 ///
-/// - **Mixer:** [`TableMixer::quadplane_vtail`]. Its lift rotors are in
-///   [`TableMixer::quad_x`]'s order, so a copter wiring (the autotune) flies them on `quad_x`
-///   with this mapping.
+/// - **Mixer:** [`TableMixer::quadplane_vtail`] at thrust factor 0.8, a unit moment moving
+///   each lift rotor ±0.2: twice the default's room for the nose-heavy trim (#438). Its lift
+///   rotors are in [`TableMixer::quad_x`]'s order, so a copter wiring (the autotune) flies them
+///   on `quad_x` at this config with this mapping.
 /// - **Mapping** (channels 0-based; RealFlight numbering is one higher), from a channel sweep
 ///   and hops on the ground (#433):
 ///
@@ -422,7 +441,7 @@ const COBRA_MAX_AIRSPEED_MPS: f32 = 18.0;
 ///   settle (TODO(#438)). The model is nose-heavy on its lift rotors: with equal front and
 ///   rear thrust a hop pitched nose down at 155°/s, and a level hover holds
 ///   front motors at 0.60 and rear at 0.52 (#433), so the pitch rate loop holds a steady
-///   nose-up moment.
+///   nose-up moment: 0.37 of the default mixer's range, 0.19 of this one's.
 /// - **Plane and transition:** core defaults, with the upstream ArduPilot parameter file's
 ///   airspeeds, trim pitch, and cruise throttle (`TitanCobraVTOL.param`); the forward
 ///   transition hands over to the wing at its minimum airspeed, as ArduPilot does. A lap
@@ -459,11 +478,9 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
         guidance: QuadPlaneGuidanceConfig {
             hover: CopterGuidanceConfig {
                 altitude: AltitudeControllerConfig {
-                    // Measured (#433): a steady 0.7 m/s descent holds at thrust 0.622 after
-                    // the curve, 0.79². ArduPilot's hover, 0.322 of full (`Q_M_THST_HOVER`),
-                    // agrees: motor √0.322 = 0.57 = 0.9 · 0.79² on RealFlight's squared
-                    // prop thrust.
-                    hover_thrust: 0.79,
+                    // The linear thrust that runs the lift rotors at the hover command through
+                    // the squared thrust curve and the mixer's thrust factor.
+                    hover_thrust: (COBRA_HOVER_MOTOR / COBRA_THRUST_FACTOR).sqrt(),
                     ..defaults.hover.altitude
                 },
                 lateral: LateralControllerConfig {
@@ -517,8 +534,9 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                     // rise (#433).
                     roll_gains: gains(1.08, 0.2, 0.027),
                     // Hand P and D: the autotune's (0.68, 0.025) step no better, both short
-                    // at 0.90 of the step (#433). The nose-heavy hover needs a steady 0.37
-                    // nose-up moment; I · max_integral = 0.5 holds it with margin.
+                    // at 0.90 of the step (#433). The nose-heavy hover needs a steady 0.19
+                    // nose-up moment (0.37 at the default thrust factor); I · max_integral =
+                    // 0.5 holds it with margin.
                     pitch_gains: gains(0.5, 0.5, 0.004),
                     // QuadCopterX's hand tune: holds heading through the hover and landing
                     // (#433).
@@ -544,7 +562,9 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                 ..Default::default()
             },
         },
-        mixer: TableMixer::quadplane_vtail(),
+        mixer: TableMixer::quadplane_vtail()
+            .with_config(COBRA_MIXER)
+            .unwrap_or_else(|e| unreachable!("0.8 is a valid thrust factor: {e}")),
         mapping: ActuatorMapping {
             motors: [
                 Some(6),
