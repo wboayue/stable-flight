@@ -390,6 +390,12 @@ const COBRA_MIXER: MixerConfig = MixerConfig {
     yaw_ratio: 2.5,
 };
 
+/// What the Titan Cobra's rate gains flown at the default thrust factor are scaled by:
+/// `(1 − 0.9) / (1 − COBRA_THRUST_FACTOR)`, so a rate error moves the motors as far as it did.
+/// Unscaled, the doubled moment range doubled the loops' gain and roll limit-cycled at about
+/// 6 Hz in a hover, its moment saturating (#438).
+const COBRA_RATE_SCALE: f32 = 0.5;
+
 /// The motor command the Titan Cobra's lift rotors hover at: linear thrust 0.79 at the default
 /// thrust factor, 0.9 · 0.79², from a steady 0.7 m/s descent (#433). ArduPilot's hover, 0.322
 /// of full thrust (`Q_M_THST_HOVER`), agrees: √0.322 = 0.57 on RealFlight's squared props.
@@ -473,6 +479,13 @@ const COBRA_MAX_AIRSPEED_MPS: f32 = 18.0;
 pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig, TableMixer<8>>
 {
     let gains = |p, i, d| Gains { p, i, d };
+    let rate_gains = |p, i, d| {
+        gains(
+            COBRA_RATE_SCALE * p,
+            COBRA_RATE_SCALE * i,
+            COBRA_RATE_SCALE * d,
+        )
+    };
     let defaults = QuadPlaneGuidanceConfig::default();
     Airframe {
         guidance: QuadPlaneGuidanceConfig {
@@ -527,20 +540,22 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
         },
         stabilizer: QuadPlaneStabilizerConfig {
             hover: CopterStabilizerConfig {
+                // Each loop's gains as flown at the default thrust factor, times
+                // `COBRA_RATE_SCALE`.
                 body_rate: BodyRateControllerConfig {
                     // Roll P and D: the RealFlight autotune (`copter-autotune-realflight
                     // --airframe titan-cobra`). At 250 Hz its rate steps reach 0.95 of the
                     // step, rising in 154 ms; the hand tune's reach 0.85 and 5 of 6 never
                     // rise (#433).
-                    roll_gains: gains(1.08, 0.2, 0.027),
+                    roll_gains: rate_gains(1.08, 0.2, 0.027),
                     // Hand P and D: the autotune's (0.68, 0.025) step no better, both short
                     // at 0.90 of the step (#433). The nose-heavy hover needs a steady 0.19
                     // nose-up moment (0.37 at the default thrust factor); I · max_integral =
-                    // 0.5 holds it with margin.
-                    pitch_gains: gains(0.5, 0.5, 0.004),
+                    // 0.25 holds it with margin.
+                    pitch_gains: rate_gains(0.5, 0.5, 0.004),
                     // QuadCopterX's hand tune: holds heading through the hover and landing
                     // (#433).
-                    yaw_gains: gains(0.6, 0.6, 0.0),
+                    yaw_gains: rate_gains(0.6, 0.6, 0.0),
                     max_integral: 1.0,
                 },
                 // QuadCopterX's hand tune; the angle loops are untuned here: steps don't
