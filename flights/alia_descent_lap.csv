@@ -1,9 +1,9 @@
 # Alia 250 descent out of a transition in X-Plane (#491), from Oceano County Airport (L52),
 # spawned on runway 11: alia_transition_lap.csv's lap with the hover at 400 m, so the first
 # plane leg descends 100 m to the 300 m box. The forward transition holds 400 m and the descent
-# starts in plane flight: it peaks at 6.0 m/s of sink 8 s after entry, past PGUID_SINK_MAX
-# (5 m/s), and reaches 300 m in 23 s. Then the slow leg north that starts the back transition,
-# and hover home to land.
+# starts in plane flight: it peaks at 5.0-5.1 m/s of sink 8-9 s after entry, at PGUID_SINK_MAX
+# (5 m/s), and reaches 300 m in 21 s (#503). Then the slow leg north that starts the back
+# transition, and hover home to land.
 # Coordinates are m north and east of where the vehicle starts, altitudes m above it.
 # The regime is the leg's to that waypoint: the first plane leg starts the transition.
 x,y,altitude,cruise_speed,regime
