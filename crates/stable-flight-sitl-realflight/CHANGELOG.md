@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Titan Cobra's copter legs brake along a curve at 1.5 m/s² (`GUID_LAT_BRK`, #488):
+  uncapped legs at 16.7 m/s overshot their waypoints 15–20 m on the linear position loop.
+
 - **Breaking:** the script examples (`copter-auto-realflight`, `tailsitter-auto-realflight`,
   `quadplane-auto-realflight`, `surface-probe-realflight`, `copter-autotune-realflight`,
   `capture-state-realflight`) fly scripts relative to where the vehicle starts (#494), and

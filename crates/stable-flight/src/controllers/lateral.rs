@@ -31,6 +31,14 @@ pub struct LateralControllerConfig {
     /// on the target, so stopping from `v` starts about `v² / (2 · BRAKING_SHARE ·
     /// max_accel_mps2)` out. Must be non-negative and finite.
     pub max_accel_mps2: f32,
+
+    /// Deceleration the position loop brakes at with shaping off, in m/s²; 0 is off. When set,
+    /// the speed toward the target follows the braking curve at this rate, instead of
+    /// `position_p · error`, which starts braking only `2 · v` meters out whatever the
+    /// vehicle's speed. Higher: brakes later, overshoots once past what the vehicle can
+    /// shed. Ignored with shaping on, which brakes at [`BRAKING_SHARE`] of
+    /// [`max_accel_mps2`](Self::max_accel_mps2). Must be non-negative and finite.
+    pub brake_mps2: f32,
 }
 
 impl Default for LateralControllerConfig {
@@ -49,13 +57,14 @@ impl Default for LateralControllerConfig {
             // 12.5 m at I 0.4 is ±5 m/s², the default 27° tilt cap (g · tan 27°).
             max_integral: 12.5,
             max_accel_mps2: 0.0,
+            brake_mps2: 0.0,
         }
     }
 }
 
 impl LateralControllerConfig {
-    /// Checks the config: `position_p`, `max_integral`, and `max_accel_mps2` must be
-    /// non-negative and finite.
+    /// Checks the config: `position_p`, `max_integral`, `max_accel_mps2`, and `brake_mps2`
+    /// must be non-negative and finite.
     ///
     /// # Examples
     ///
@@ -69,7 +78,8 @@ impl LateralControllerConfig {
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         check_limit("position_p", self.position_p)?;
         check_limit("max_integral", self.max_integral)?;
-        check_limit("max_accel_mps2", self.max_accel_mps2)
+        check_limit("max_accel_mps2", self.max_accel_mps2)?;
+        check_limit("brake_mps2", self.brake_mps2)
     }
 }
 
@@ -134,6 +144,8 @@ pub struct LateralEstimate {
 /// set, the position loop slows toward the target along a braking curve instead of in
 /// proportion to the distance, and the PID tracks a shaped velocity target: it starts at the
 /// measured velocity, moves toward the demand at that rate, and its change is fed forward.
+/// With shaping off, [`brake_mps2`](LateralControllerConfig::brake_mps2) sets the braking
+/// curve alone, so a fast leg starts slowing in time to stop.
 /// Turning the acceleration into tilt is the guidance's job (it depends on the airframe and its
 /// heading); [`CopterGuidance`](crate::guidance::copter::CopterGuidance) tilts by `atan(|a| /
 /// g)` toward it.
@@ -220,7 +232,7 @@ impl LateralController {
         let desired_velocity = closing_velocity(
             target.position_m - estimate.position_m,
             config.position_p,
-            config.max_accel_mps2,
+            braking_decel_mps2(config),
         ) + target.velocity_mps;
         let (commanded_velocity, feedforward_mps2) = self.shape(
             config.max_accel_mps2,
@@ -311,21 +323,33 @@ impl LateralController {
 /// up to 6.4 m (#466).
 pub const BRAKING_SHARE: f32 = 0.7;
 
-/// The position loop's velocity toward a target `error_m` away (north, east): `position_p ·
-/// error` with shaping off (`max_accel_mps2` 0 or invalid), else the braking curve's speed at
-/// [`BRAKING_SHARE`] of `max_accel_mps2` ([`shaped_closing_speed`]), pointed at the target.
-/// A non-finite error passes through, so the caller's check sees it.
-fn closing_velocity(error_m: Vec2, position_p: f32, max_accel_mps2: f32) -> Vec2 {
+/// The deceleration the position loop's braking curve slows at, in m/s²: [`BRAKING_SHARE`] of
+/// `max_accel_mps2` with shaping on, else `brake_mps2`; 0 when neither is set (or either is
+/// invalid where it applies), for the linear loop.
+fn braking_decel_mps2(config: &LateralControllerConfig) -> f32 {
     // `>` is false for NaN: an invalid limit acts as off.
-    let shaping = max_accel_mps2 > 0.0;
-    if !shaping {
+    if config.max_accel_mps2 > 0.0 {
+        BRAKING_SHARE * config.max_accel_mps2
+    } else if config.brake_mps2 > 0.0 {
+        config.brake_mps2
+    } else {
+        0.0
+    }
+}
+
+/// The position loop's velocity toward a target `error_m` away (north, east): `position_p ·
+/// error` with no braking deceleration (`decel_mps2` 0), else the braking curve's speed at
+/// `decel_mps2` ([`shaped_closing_speed`]), pointed at the target. A non-finite error passes
+/// through, so the caller's check sees it.
+fn closing_velocity(error_m: Vec2, position_p: f32, decel_mps2: f32) -> Vec2 {
+    if decel_mps2 <= 0.0 {
         return position_p * error_m;
     }
     let distance_m = error_m.norm();
     if !(distance_m > 0.0 && distance_m.is_finite()) {
         return position_p * error_m;
     }
-    let speed_mps = shaped_closing_speed(distance_m, position_p, BRAKING_SHARE * max_accel_mps2);
+    let speed_mps = shaped_closing_speed(distance_m, position_p, decel_mps2);
     error_m * (speed_mps / distance_m)
 }
 
@@ -797,33 +821,61 @@ mod tests {
         }
     }
 
-    /// With shaping on, the position loop's speed toward the target follows the braking curve
-    /// at `BRAKING_SHARE` of the limit, pointed at the target: linear within `0.7 · a / p²`
-    /// (2.8 m at 1 m/s² and P 0.5), the square root beyond; off or invalid, `p · error`.
+    /// The braking curve slows at `BRAKING_SHARE` of the shaping limit with shaping on, whatever
+    /// `brake_mps2`; at `brake_mps2` with it off; and not at all (linear) with neither, an
+    /// invalid value acting as unset.
+    #[test]
+    fn braking_decel_comes_from_shaping_then_brake() {
+        // (max_accel_mps2, brake_mps2, expected decel in m/s²)
+        let cases = [
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.7),
+            (1.0, 1.5, 0.7), // shaping wins
+            (0.0, 1.5, 1.5),
+            (f32::NAN, 1.5, 1.5),
+            (-1.0, 1.5, 1.5),
+            (0.0, f32::NAN, 0.0),
+            (0.0, -1.0, 0.0),
+        ];
+        for (max_accel_mps2, brake_mps2, expected) in cases {
+            let config = LateralControllerConfig {
+                max_accel_mps2,
+                brake_mps2,
+                ..LateralControllerConfig::default()
+            };
+            let decel = braking_decel_mps2(&config);
+            check!(
+                (decel - expected).abs() < 1e-6,
+                "shaping {max_accel_mps2}, brake {brake_mps2}: {decel}, expected {expected}"
+            );
+        }
+    }
+
+    /// The position loop's speed toward the target follows the braking curve at its
+    /// deceleration, pointed at the target: linear within `a / p²` (2.8 m at 0.7 m/s² and P
+    /// 0.5), the square root beyond; with none, `p · error`.
     #[test]
     fn closing_velocity_follows_the_braking_curve() {
         let p = 0.5;
-        // (error, max_accel_mps2, expected velocity)
+        // (error, decel_mps2, expected velocity)
         let cases = [
-            (Vec2::new(30.0, 0.0), 0.0, Vec2::new(15.0, 0.0)), // off: linear
-            (Vec2::new(30.0, 0.0), -1.0, Vec2::new(15.0, 0.0)), // invalid: off
-            (Vec2::new(30.0, 0.0), f32::NAN, Vec2::new(15.0, 0.0)),
-            (Vec2::new(2.0, 0.0), 1.0, Vec2::new(1.0, 0.0)), // inside the linear part
+            (Vec2::new(30.0, 0.0), 0.0, Vec2::new(15.0, 0.0)), // none: linear
+            (Vec2::new(2.0, 0.0), 0.7, Vec2::new(1.0, 0.0)),   // inside the linear part
             // √(2 · 0.7 · (30 − 1.4)) beyond it
-            (Vec2::new(30.0, 0.0), 1.0, Vec2::new(6.3277, 0.0)),
-            (Vec2::new(0.0, -30.0), 1.0, Vec2::new(0.0, -6.3277)),
-            (Vec2::new(18.0, 24.0), 1.0, Vec2::new(0.6, 0.8) * 6.3277),
-            (Vec2::zeros(), 1.0, Vec2::zeros()),
+            (Vec2::new(30.0, 0.0), 0.7, Vec2::new(6.3277, 0.0)),
+            (Vec2::new(0.0, -30.0), 0.7, Vec2::new(0.0, -6.3277)),
+            (Vec2::new(18.0, 24.0), 0.7, Vec2::new(0.6, 0.8) * 6.3277),
+            (Vec2::zeros(), 0.7, Vec2::zeros()),
         ];
-        for (error_m, max_accel_mps2, expected) in cases {
-            let velocity = closing_velocity(error_m, p, max_accel_mps2);
+        for (error_m, decel_mps2, expected) in cases {
+            let velocity = closing_velocity(error_m, p, decel_mps2);
             check!(
                 (velocity - expected).amax() < 1e-3,
-                "error {error_m:?}, limit {max_accel_mps2}: {velocity:?}, expected {expected:?}"
+                "error {error_m:?}, decel {decel_mps2}: {velocity:?}, expected {expected:?}"
             );
         }
         check!(
-            closing_velocity(Vec2::new(f32::NAN, 0.0), p, 1.0)
+            closing_velocity(Vec2::new(f32::NAN, 0.0), p, 0.7)
                 .x
                 .is_nan()
         );
@@ -842,6 +894,55 @@ mod tests {
             Vec2::zeros(),
         );
         check!(accel.amax() < 1e-4, "{accel:?}");
+    }
+
+    /// 30 m out with shaping off, `brake_mps2` 1.5 puts the braking curve at 9 m/s
+    /// (`√(2 · 1.5 · (30 − 3))`): a vehicle closing at it holds its speed, a faster one brakes,
+    /// and without it the linear loop's 15 m/s speeds the vehicle up (#488).
+    #[test]
+    fn unshaped_braking_slows_along_the_curve() {
+        // (brake_mps2, closing speed in m/s, expected acceleration in m/s² at velocity P 2)
+        let cases = [(1.5, 9.0, 0.0), (1.5, 12.0, -6.0), (0.0, 9.0, 12.0)];
+        for (brake_mps2, closing_mps, expected) in cases {
+            let config = LateralControllerConfig {
+                brake_mps2,
+                ..p_only()
+            };
+            let accel = LateralController::default().control(
+                &config,
+                0.1,
+                at(Vec2::new(30.0, 0.0)),
+                moving(Vec2::new(closing_mps, 0.0)),
+                Vec2::zeros(),
+            );
+            check!(
+                (accel - Vec2::new(expected, 0.0)).amax() < 1e-3,
+                "brake {brake_mps2} at {closing_mps} m/s: {accel:?}, expected {expected}"
+            );
+        }
+    }
+
+    /// A negative or NaN braking deceleration fails validation, and in the tick brakes linearly.
+    #[test]
+    fn invalid_brake_is_rejected_and_brakes_linearly() {
+        for brake_mps2 in [-1.0, f32::NAN] {
+            let config = LateralControllerConfig {
+                brake_mps2,
+                ..p_only()
+            };
+            check!(config.validate().map_err(|e| e.field) == Err("brake_mps2"));
+            let accel = LateralController::default().control(
+                &config,
+                0.1,
+                at(Vec2::new(30.0, 0.0)),
+                moving(Vec2::zeros()),
+                Vec2::zeros(),
+            );
+            check!(
+                (accel - Vec2::new(30.0, 0.0)).amax() < 1e-3,
+                "brake {brake_mps2}: {accel:?}"
+            );
+        }
     }
 
     /// A non-finite velocity gives no acceleration and leaves the shaped target where it was:

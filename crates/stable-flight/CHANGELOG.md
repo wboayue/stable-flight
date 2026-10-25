@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `LateralControllerConfig::brake_mps2` (`GUID_LAT_BRK`, default 0: off): with shaping off
+  (`GUID_LAT_ACC` 0), the position loop slows toward a waypoint along the braking curve at
+  this deceleration instead of in proportion to the distance, which starts braking only
+  `2 · v` out (#488). On the sim, uncapped 300 m quadplane legs that overshot 12–20 m stop
+  within 1.9 m at 1.5 m/s².
+
 - `WaypointFollower::with_wait_for_altitude`/`set_wait_for_altitude` (off by default), for
   wing-borne legs (#451): a waypoint reached or passed outside the altitude acceptance is
   emitted without a velocity until within it, then advanced past, so plane guidance loiters
