@@ -229,8 +229,8 @@ fn titan_cobra_maps_each_channel_once() {
 }
 
 /// The Cobra's lift rotors mix as `quad_x` does at the Cobra's mixer config, so the copter
-/// autotune flies them on `quad_x` with that config and the Cobra's mapping; in a hover (the quadplane stabilizer's zero cruise
-/// output) the pusher is stopped and the surfaces centered.
+/// autotune flies them on `quad_x` with that config and the Cobra's mapping; in a hover (the
+/// quadplane stabilizer's zero cruise output) the pusher is stopped and the surfaces centered.
 #[test]
 fn titan_cobra_lift_rotors_mix_as_quad_x() {
     let lift_only = stable_flight::ControlOutput::new(0.6, Vec3::new(0.2, -0.3, 0.1));
@@ -269,7 +269,8 @@ const MEASURED_HOVER_PITCH_MOMENT_AT_0_9: f32 = 0.37;
 fn titan_cobra_pitch_integrator_covers_the_hover_trim() {
     let airframe = titan_cobra();
     let headroom = 1.0 - airframe.mixer.config().thrust_factor;
-    let trim = MEASURED_HOVER_PITCH_MOMENT_AT_0_9 * (1.0 - 0.9) / headroom;
+    let default_headroom = 1.0 - MixerConfig::default().thrust_factor;
+    let trim = MEASURED_HOVER_PITCH_MOMENT_AT_0_9 * default_headroom / headroom;
     let body_rate = airframe.stabilizer.hover.body_rate;
     let authority = body_rate.pitch_gains.i * body_rate.max_integral;
     assert!(
@@ -308,9 +309,8 @@ fn titan_cobra_hover_gains_are_the_flown_set() {
     assert_eq!(titan_cobra().stabilizer.hover, stabilizer);
 }
 
-/// The Cobra's lift rotors hover on the motor command they flew at, 0.9 · 0.79² (#433), now
-/// with twice the pitch range: a unit pitch moment moves each lift rotor 0.2 where it moved
-/// 0.1 (#438).
+/// The Cobra's lift rotors hover on the motor command they flew at, 0.9 · 0.79² (#433), and a
+/// unit pitch moment moves each lift rotor 0.2, twice the default thrust factor's 0.1 (#438).
 #[test]
 fn titan_cobra_hovers_on_its_flown_command_with_twice_the_pitch_range() {
     use stable_flight::{ControlOutput, Mixer, Vec3};
