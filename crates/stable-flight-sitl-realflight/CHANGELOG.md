@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   range, with hover thrust rescaled so the hover holds the same motor command (#438). Its
   nose-heavy trim took 0.37 of the default's nose-up range; nose-up steps clipped 15× as often
   as nose-down. `copter-autotune-realflight --airframe titan-cobra` mixes at the same config.
+  Its rate gains are halved to match, and its hover gains come from the autotune at 250 Hz:
+  rate P 0.59 roll, 0.57 pitch, pitch angle P 7.2; every loop's steps rise and settle.
 - `copter-autotune-realflight` waits out RealFlight's slow stretches (#438): under 225 Hz over
   0.5 s (`TickRate`), the running step stops and runs again once the rate is back over 240 Hz,
   and settling waits. Stalled steps are logged as stalled, and the host turning slow and back at `info`.

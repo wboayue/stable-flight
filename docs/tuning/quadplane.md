@@ -109,9 +109,14 @@ climb, then tune on the model and pin the X-Plane airframe to it.
   a 20° bank in 1.2 s.
 
 **Worked example (Titan Cobra in RealFlight):**
-- **Hover:** nose-heavy on its lift rotors, a level hover holds front motors at 0.60 and rear
-  at 0.52, a 0.37 nose-up moment; pitch rate I 0.5 holds it. The autotune raised roll rate P
-  (steps 0.85 → 0.95 of the step); pitch rate steps stop near 0.90 on any gains
+- **Hover:** nose-heavy on its lift rotors, a level hover holds front motors at 0.61 and rear
+  at 0.54. At thrust factor 0.9 that trim took 0.37 of the nose-up range, and nose-up pitch
+  steps clipped; 0.8 doubles each motor's travel per unit moment, so the trim takes 0.19.
+  Doubling the travel doubles the rate loops' gain too: unscaled, roll limit-cycled at about
+  6 Hz, so rescale the rate gains by the old travel over the new (here half) before
+  autotuning. Pitch rate I 0.25 holds the trim. The autotune, at a steady 250 ticks/s
+  (`copter-autotune-realflight` waits out slower stretches), sets rate P 0.59 roll, 0.57
+  pitch and angle P 7.2 pitch; every loop's steps rise and settle
   ([#438](https://github.com/wboayue/stable-flight/issues/438)).
 - **Copter legs:** an uncapped 300 m leg (`flights/cobra_out_back.csv`) reaches 16.7 m/s;
   the linear loop overshot it 15–20 m. `GUID_LAT_BRK` 1.5, which stops a sim model fitted to
