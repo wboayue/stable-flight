@@ -285,9 +285,11 @@ fn titan_cobra_hover_gains_are_the_flown_set() {
     let gains = |p, i, d| Gains { p, i, d };
     let stabilizer = CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
-            roll_gains: gains(1.08, 0.2, 0.027),
-            pitch_gains: gains(0.5, 0.5, 0.004),
-            yaw_gains: gains(0.6, 0.6, 0.0),
+            // As flown at the default thrust factor (#433), halved for the doubled moment
+            // range (#438).
+            roll_gains: gains(0.54, 0.1, 0.0135),
+            pitch_gains: gains(0.25, 0.25, 0.002),
+            yaw_gains: gains(0.3, 0.3, 0.0),
             max_integral: 1.0,
         },
         attitude: AttitudeControllerConfig {
