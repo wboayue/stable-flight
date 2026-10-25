@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `TableMixer::config()`: the thrust factor and yaw ratio a mixer scales by, so a copter
+  wiring can mix a quadplane's lift rotors at its config (#438).
 - `Autotune::set_host_slow` (#438): while the host runs slow (its ticks further apart than
   their `dt`), the running probe stops at once and runs again later, counted as stalled, and
   settling waits without timing out. RealFlight runs at about 120 Hz for minute-long stretches,
