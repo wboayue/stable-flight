@@ -138,7 +138,7 @@ mod app {
     /// yields and a slow loop shows up as a low tick count.
     #[task(priority = 2, local = [flight])]
     async fn flight_step(cx: flight_step::Context) {
-        let period = LOOP_PERIOD_MS.millis();
+        let period = rtic_monotonics::fugit::ExtU32::millis(LOOP_PERIOD_MS);
         let dt = Duration::from_millis(u64::from(LOOP_PERIOD_MS));
         let mut next = Mono::now();
 
@@ -167,7 +167,7 @@ mod app {
         let mut next = Mono::now();
 
         loop {
-            next += 1_000.millis();
+            next += rtic_monotonics::fugit::ExtU32::millis(1_000);
             Mono::delay_until(next).await;
 
             let ticks = TICKS.load(Ordering::Relaxed);
