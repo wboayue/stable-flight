@@ -294,8 +294,9 @@ fn alia250_steps_altitude() {
     }
 }
 
-/// How much faster than its entry the Alia flies [`alia250_catches_up_a_faster_descent_within_its_sink_limit`]'s
-/// leg, in m/s: `flights/alia_descent_lap.csv`'s 50 m/s legs against its 45 m/s trim.
+/// How much faster than its entry the Alia flies the descending leg, in m/s:
+/// `flights/alia_descent_lap.csv`'s 50 m/s legs against its 45 m/s trim
+/// ([`alia250_catches_up_a_faster_descent_within_its_sink_limit`]).
 const FASTER_LEG_MPS: f32 = 5.0;
 
 /// A descending leg faster than the entry sinks no faster than `PGUID_SINK_MAX` (plus
