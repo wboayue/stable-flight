@@ -104,7 +104,7 @@
 //! | `PGUID_ALT_P`, `_I`, `_IMAX` | `altitude_p`, `altitude_i`, `altitude_max_integral` |
 //! | `PGUID_TCONST` | `tecs.time_constant_s` |
 //! | `PGUID_CLMB_MAX`, `PGUID_SINK_MIN`, `PGUID_SINK_MAX` | `tecs.max_climb_mps`, `tecs.min_sink_mps`, `tecs.max_sink_mps` |
-//! | `PGUID_THR_DAMP`, `PGUID_INTEG`, `PGUID_PTCH_DAMP` | `tecs.thrust_damping`, `tecs.integrator_gain`, `tecs.pitch_damping` |
+//! | `PGUID_THR_DAMP`, `PGUID_INTEG`, `PGUID_PTCH_DAMP`, `PGUID_PTCH_INTEG` | `tecs.thrust_damping`, `tecs.integrator_gain`, `tecs.pitch_damping`, `tecs.pitch_integrator_gain` |
 //! | `PGUID_SPDWEIGHT` | `tecs.speed_weight` |
 //! | `PGUID_RLL2THR` | `tecs.roll_compensation` |
 //! | `PGUID_ASPD_MIN`, `PGUID_ASPD_MAX` | `tecs.min_airspeed_mps`, `tecs.max_airspeed_mps` |

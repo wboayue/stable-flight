@@ -26,6 +26,7 @@ impl ParamTable for PlaneGuidanceConfig {
         param!("PGUID_THR_DAMP", tecs.thrust_damping),
         param!("PGUID_INTEG", tecs.integrator_gain),
         param!("PGUID_PTCH_DAMP", tecs.pitch_damping),
+        param!("PGUID_PTCH_INTEG", tecs.pitch_integrator_gain),
         param!("PGUID_SPDWEIGHT", tecs.speed_weight),
         param!("PGUID_RLL2THR", tecs.roll_compensation),
         param!("PGUID_ASPD_MIN", tecs.min_airspeed_mps),
@@ -155,14 +156,12 @@ mod metadata {
                 "PGUID_THR_DAMP",
                 "Throttle damping on the total energy rate",
             )),
-            at_least_zero(TECS.param(
-                "PGUID_INTEG",
-                "Integrator gain of the throttle and pitch loops",
-            )),
+            at_least_zero(TECS.param("PGUID_INTEG", "Integrator gain of the throttle loop")),
             at_least_zero(TECS.param(
                 "PGUID_PTCH_DAMP",
                 "Pitch damping on the energy balance rate",
             )),
+            at_least_zero(TECS.param("PGUID_PTCH_INTEG", "Integrator gain of the pitch loop")),
             TECS.param(
                 "PGUID_SPDWEIGHT",
                 "Pitch weight on airspeed vs height: 0 height, 1 both, 2 airspeed",

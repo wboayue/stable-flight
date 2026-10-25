@@ -24,6 +24,11 @@ pub const ALTITUDE_BAND_M: f32 = 1.0;
 /// (`arduplane.py:897`, 5 s minimum), held for a whole window.
 pub const AIRSPEED_BAND_MPS: f32 = 1.0;
 
+/// How far past `PGUID_SINK_MAX` a descending plane leg may sink, in m/s: no external band
+/// applies. At the Alia's 5 m/s limit, measured 4.94 m/s out of a transition and 4.74 m/s on a
+/// leg 5 m/s faster than its entry: 0.31 m/s of margin (#503).
+pub const SINK_MARGIN_MPS: f32 = 0.25;
+
 /// Largest deviations from level flight up the north line seen while holding it.
 #[derive(Debug, Default)]
 pub struct LineDeviation {
