@@ -228,8 +228,8 @@ fn titan_cobra_maps_each_channel_once() {
     assert_eq!(channels, (0..8).collect::<Vec<_>>());
 }
 
-/// The Cobra's lift rotors mix as `quad_x` does, so the copter autotune flies them on
-/// `quad_x` with the Cobra's mapping; in a hover (the quadplane stabilizer's zero cruise
+/// The Cobra's lift rotors mix as `quad_x` does at the Cobra's mixer config, so the copter
+/// autotune flies them on `quad_x` with that config and the Cobra's mapping; in a hover (the quadplane stabilizer's zero cruise
 /// output) the pusher is stopped and the surfaces centered.
 #[test]
 fn titan_cobra_lift_rotors_mix_as_quad_x() {
@@ -240,7 +240,10 @@ fn titan_cobra_lift_rotors_mix_as_quad_x() {
     };
     let mut mixer = titan_cobra().mixer;
     let output = mixer.mix(&hover);
-    let lift = TableMixer::quad_x().mix(&lift_only);
+    let lift = TableMixer::quad_x()
+        .with_config(mixer.config())
+        .expect("the Cobra's config")
+        .mix(&lift_only);
     assert_eq!(output.motors[..4], lift.motors[..4]);
     assert_eq!(output.motors[4], 0.0);
     assert_eq!(output.servos[..3], [0.0; 3]);
@@ -254,18 +257,24 @@ fn titan_cobra_configs_validate() {
     assert_eq!(airframe.stabilizer.validate(), Ok(()));
 }
 
-/// Steady nose-up moment (normalized) the Cobra needs to hover level in RealFlight, measured
-/// (#433): front motors 0.60, rear 0.52, over `TableMixer::quad_x`'s 0.1 pitch scaling.
-const MEASURED_HOVER_PITCH_MOMENT: f32 = 0.37;
+/// Steady nose-up moment (normalized) the Cobra needed to hover level in RealFlight at the
+/// default thrust factor 0.9, whose unit moment moves each motor 0.1: front motors 0.60, rear
+/// 0.52 (#433), and 0.376–0.378 over two autotunes (#438).
+const MEASURED_HOVER_PITCH_MOMENT_AT_0_9: f32 = 0.37;
 
-/// The pitch rate integrator can hold the Cobra's nose-heavy trim with 25% margin.
+/// The pitch rate integrator can hold the Cobra's nose-heavy trim with 25% margin, the trim
+/// rescaled to its mixer: the same motor split is a smaller moment where a unit moves the
+/// motors further.
 #[test]
 fn titan_cobra_pitch_integrator_covers_the_hover_trim() {
-    let body_rate = titan_cobra().stabilizer.hover.body_rate;
+    let airframe = titan_cobra();
+    let headroom = 1.0 - airframe.mixer.config().thrust_factor;
+    let trim = MEASURED_HOVER_PITCH_MOMENT_AT_0_9 * (1.0 - 0.9) / headroom;
+    let body_rate = airframe.stabilizer.hover.body_rate;
     let authority = body_rate.pitch_gains.i * body_rate.max_integral;
     assert!(
-        authority >= 1.25 * MEASURED_HOVER_PITCH_MOMENT,
-        "pitch I authority {authority}"
+        authority >= 1.25 * trim,
+        "pitch I authority {authority}, trim {trim}"
     );
 }
 
@@ -297,7 +306,44 @@ fn titan_cobra_hover_gains_are_the_flown_set() {
         thrust_curve_exponent: 2.0,
     };
     assert_eq!(titan_cobra().stabilizer.hover, stabilizer);
-    assert_eq!(titan_cobra().guidance.hover.altitude.hover_thrust, 0.79);
+}
+
+/// The Cobra's lift rotors hover on the motor command they flew at, 0.9 · 0.79² (#433), now
+/// with twice the pitch range: a unit pitch moment moves each lift rotor 0.2 where it moved
+/// 0.1 (#438).
+#[test]
+fn titan_cobra_hovers_on_its_flown_command_with_twice_the_pitch_range() {
+    use stable_flight::{ControlOutput, Mixer, Vec3};
+    let airframe = titan_cobra();
+    let mut mixer = airframe.mixer;
+    let collective = airframe
+        .guidance
+        .hover
+        .altitude
+        .hover_thrust
+        .powf(airframe.stabilizer.hover.thrust_curve_exponent);
+    let mut lift_rotors = |pitch| {
+        let motors = mixer
+            .mix(&ControlOutput {
+                thrust: collective,
+                moments: Vec3::new(0.0, pitch, 0.0),
+                ..Default::default()
+            })
+            .motors;
+        [motors[0], motors[1], motors[2], motors[3]]
+    };
+    let level = lift_rotors(0.0);
+    let nose_up = lift_rotors(1.0);
+    for (motor, (at_level, pitched)) in level.iter().zip(&nose_up).enumerate() {
+        assert!(
+            (at_level - 0.9 * 0.79 * 0.79).abs() < 1e-5,
+            "motor {motor}: {at_level}"
+        );
+        assert!(
+            ((pitched - at_level).abs() - 0.2).abs() < 1e-5,
+            "motor {motor}: {at_level} -> {pitched}"
+        );
+    }
 }
 
 /// The Cobra's forward lift ramp starts at its ArduPilot minimum airspeed, `ARSPD_FBW_MIN`

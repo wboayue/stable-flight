@@ -155,8 +155,8 @@ enum Model {
 }
 
 impl Model {
-    /// The model's copter airframe: for the Cobra, its hover side on `quad_x`, which mixes its
-    /// lift rotors as its quadplane mixer does, with its mapping.
+    /// The model's copter airframe: for the Cobra, its hover side on `quad_x` at its mixer
+    /// config, which mixes its lift rotors as its quadplane mixer does, with its mapping.
     fn airframe(self) -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, TableMixer<4>> {
         match self {
             Model::QuadcopterX => airframes::quadcopter_x(),
@@ -165,7 +165,9 @@ impl Model {
                 Airframe {
                     guidance: cobra.guidance.hover,
                     stabilizer: cobra.stabilizer.hover,
-                    mixer: TableMixer::quad_x(),
+                    mixer: TableMixer::quad_x()
+                        .with_config(cobra.mixer.config())
+                        .expect("the Cobra's mixer config is valid"),
                     mapping: cobra.mapping,
                     body_rotation: cobra.body_rotation,
                 }
