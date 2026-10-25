@@ -307,8 +307,10 @@ Related code sits together, so a reviewer reads one behavior in one place.
 - **Tick rate:** count the `wall_s` rows per wall-clock second around the event a run measures,
   and drop a run below about 245 Hz there: each tick advances every `dt`-based clock by the
   nominal 4 ms, so at 170 Hz a 3 m/s descent target moves at 2 m/s (#405). A release build
-  (`cargo run --release ...`) skips less but doesn't stop it. RealFlight flips between 250 and
-  about 120 Hz on its own, for either build (#447): alternate the builds being compared and
+  (`cargo run --release ...`) skips less but doesn't stop it. RealFlight flips between 250 Hz
+  and the Mac display's refresh rate (about 120 Hz on ProMotion) on its own, for either build
+  and any model, and stays there while its window is covered (#447, #438; sitl-realflight
+  README **Timing**): keep the window visible, alternate the builds being compared, and
   screen every run before blaming one.
 - **Explaining a trace:** before suspecting a bug, replay the recorder CSV through the real
   component (state rebuilt from the view angles, nominal `dt` per tick) and compare its output
