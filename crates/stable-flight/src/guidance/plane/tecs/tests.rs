@@ -105,6 +105,66 @@ fn demands_slew_at_their_limits() {
     }
 }
 
+/// The height demand starts moving at the aircraft's climb rate, within the climb and sink
+/// limits: entering plane flight sinking, it sinks along rather than pitching up to stop the
+/// sink (#503). Climb rate (m/s) → the first step's demand rate (m/s), holding the height it
+/// starts at.
+#[test]
+fn height_demand_starts_at_the_climb_rate() {
+    let config = TecsConfig::default();
+    let cases = [
+        (0.0, 0.0),
+        (-3.0, -3.0),
+        (2.0, 2.0),
+        // Past the sink and climb limits (5 m/s each).
+        (-8.0, -config.max_sink_mps),
+        (7.0, config.max_climb_mps),
+    ];
+    for (climb_mps, rate_mps) in cases {
+        let mut state = level(300.0, 15.0, 0.0);
+        state.velocity_mps.z = climb_mps;
+        let mut tecs = Tecs::default();
+        tecs.step(DT, &config, &limits(), (300.0, 15.0), 15.0, &state);
+        let demand = tecs.demand.expect("seeded");
+        let demand_rate_mps = (demand.height_m - 300.0) / DT;
+        check!(
+            (demand_rate_mps - rate_mps).abs() < 0.05,
+            "{climb_mps} m/s: {demand_rate_mps}"
+        );
+    }
+}
+
+/// Each loop integrates with its own gain: (thrust gain, pitch gain) → (thrust integral grows,
+/// pitch integral grows), flying 30 m low and 3 m/s slow, so both errors stay open.
+#[test]
+fn thrust_and_pitch_integrate_with_their_own_gains() {
+    let cases = [
+        ((0.3, 0.3), (true, true)),
+        ((0.0, 0.3), (false, true)),
+        ((0.3, 0.0), (true, false)),
+    ];
+    let state = level(30.0, 15.0, 0.0);
+    for ((integrator_gain, pitch_integrator_gain), (thrust_grows, pitch_grows)) in cases {
+        let config = TecsConfig {
+            integrator_gain,
+            pitch_integrator_gain,
+            ..TecsConfig::default()
+        };
+        let mut tecs = Tecs::default();
+        for _ in 0..100 {
+            tecs.step(DT, &config, &limits(), (60.0, 18.0), 15.0, &state);
+        }
+        check!(
+            (tecs.thrust_integral != 0.0) == thrust_grows,
+            "{integrator_gain}, {pitch_integrator_gain}: {tecs:?}"
+        );
+        check!(
+            (tecs.pitch_integral_rad != 0.0) == pitch_grows,
+            "{integrator_gain}, {pitch_integrator_gain}: {tecs:?}"
+        );
+    }
+}
+
 /// A most airspeed below the least reads as the least: the demand holds there, whatever the
 /// target.
 #[test]
@@ -307,7 +367,7 @@ fn reset_starts_fresh() {
 #[test]
 fn validates_config() {
     type Edit = fn(&mut TecsConfig);
-    let cases: [(&str, Edit); 10] = [
+    let cases: [(&str, Edit); 11] = [
         ("time_constant_s", |c| c.time_constant_s = 0.0),
         ("max_climb_mps", |c| c.max_climb_mps = -1.0),
         ("min_sink_mps", |c| c.min_sink_mps = 0.0),
@@ -315,6 +375,7 @@ fn validates_config() {
         ("thrust_damping", |c| c.thrust_damping = -0.1),
         ("integrator_gain", |c| c.integrator_gain = -0.1),
         ("pitch_damping", |c| c.pitch_damping = f32::INFINITY),
+        ("pitch_integrator_gain", |c| c.pitch_integrator_gain = -0.1),
         ("speed_weight", |c| c.speed_weight = 2.5),
         ("min_airspeed_mps", |c| c.min_airspeed_mps = 0.0),
         ("max_airspeed_mps", |c| c.max_airspeed_mps = -5.0),

@@ -16,7 +16,7 @@ use stable_flight::{
 };
 use stable_flight_sim::{Wind, airframes};
 
-use common::plane::{AIRSPEED_BAND_MPS, ALTITUDE_BAND_M, LineDeviation};
+use common::plane::{AIRSPEED_BAND_MPS, ALTITUDE_BAND_M, LineDeviation, SINK_MARGIN_MPS};
 use common::quadplane::{
     QuadPlanePlant, forward, forward_and_back, quadplane_loop, quadplane_pipeline,
 };
@@ -232,11 +232,6 @@ fn falls_back_below_the_plane_minimum_height() {
         }
     }
 }
-
-/// How far past `PGUID_SINK_MAX` a descending plane leg may sink, in m/s: no external band
-/// applies; measured 4.7–4.8 m/s at the Alia's 5 m/s limit (entering plane flight on a level
-/// leg alone sinks 4.7 m/s), 0.7 m/s of margin.
-const SINK_MARGIN_MPS: f32 = 0.5;
 
 /// Seconds after [`SINK_AT_S`] a descent out of a transition is watched: the Alia reaches the
 /// ground from 60 m at 60.4 s, and 70 m from 100 m at 68.7 s (measured).

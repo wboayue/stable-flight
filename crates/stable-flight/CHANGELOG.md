@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `WaypointFollower::route_end` reports what the follower does after the last waypoint.
 
+- `TecsConfig::pitch_integrator_gain` (`PGUID_PTCH_INTEG`, default 0.3): the pitch loop's
+  integral gain, apart from the thrust loop's, as PX4 splits `FW_T_I_GAIN_PIT` and
+  `FW_T_THR_INTEG` (#503).
+
 - **Quadplane back transition deceleration** (#496): `LiftTransitionConfig` gains
   `back_decel_mps2` (`TRAN_VT_DEC`, 2 m/s²) and `back_decel_i` (`TRAN_VT_DEC_I`, 0.1),
   PX4's `VT_B_DEC_MSS` and `VT_B_DEC_I`. `QuadPlaneGuidance`'s back transition pitches the
@@ -279,6 +283,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `TecsConfig::integrator_gain` (`PGUID_INTEG`) sets the thrust loop's integral
+  gain only; the pitch loop's is `pitch_integrator_gain` (#503).
+- The TECS height demand starts moving at the aircraft's climb rate, within the climb and sink
+  limits, as PX4's reference model does, instead of level (#503). Entering plane flight
+  sinking, it no longer pitches up to stop the sink and then sinks past `PGUID_SINK_MAX`
+  catching up. In X-Plane the Alia's first command went from 8.9° at 0.94 thrust to 3.2° at
+  0.28.
 - `PlaneStabilizer` saves its rate integrals when a `Setpoint::PlaneRate` follows another
   setpoint and restores them when a `Setpoint::Plane` follows (#342): what acro or a maneuver
   winds up no longer carries into the attitude flight after it.

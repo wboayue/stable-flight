@@ -129,6 +129,7 @@ pitch for its balance. Its knobs are ArduPilot's `TECS_*`, under `PGUID_`:
 | `PGUID_ASPD_MIN`, `_MAX` | `plane.tecs.min_airspeed_mps`, … | the stabilizer's `PSTAB_ASPD_MIN`, `_MAX` |
 | `PGUID_TCONST` | `plane.tecs.time_constant_s` | 5 s; longer for a slow, heavy aircraft |
 | `PGUID_PTCH_DAMP`, `PGUID_THR_DAMP`, `PGUID_INTEG` | … | ArduPilot's 0.3, 0.5, 0.3 |
+| `PGUID_PTCH_INTEG` | `plane.tecs.pitch_integrator_gain` | 0.3 (ArduPilot's `TECS_INTEG_GAIN`); lower if descents sink past `PGUID_SINK_MAX` |
 | `PGUID_SPDWEIGHT` | `plane.tecs.speed_weight` | 1; toward 0 to hold height before speed, 2 the reverse |
 | `PGUID_RLL2THR` | `plane.tecs.roll_compensation` | 10; more if turns lose airspeed |
 
@@ -142,6 +143,11 @@ thrust and one at least, or read them off a fitted model (the Alia's
   Alia a 30 m descent overshoots 20 m while pitch trails by several degrees.
 - **Slow below `PGUID_ASPD_MIN` with full thrust:** underspeed has latched (below 0.9 of it);
   it clears back at `PGUID_ASPD_MIN`.
+- **Sinks past `PGUID_SINK_MAX` on a descending leg:** catching up height and airspeed
+  together (a leg faster than the entry), the pitch integral winds the nose down past the
+  limit. Lower `PGUID_PTCH_INTEG`: the Alia's 0.15 sinks 4.7 m/s on a leg 5 m/s past its entry,
+  against 5.4 m/s at 0.3 (6 m/s in X-Plane); 0.1 starts to drift entering turns
+  ([#503](https://github.com/wboayue/stable-flight/issues/503)).
 - **Dives entering plane flight:** the forward transition hands over below the speed the wing
   holds level at, so it trades height for speed: the sim Alia hands over at 37.5 m/s against
   its 40 and loses 41 m. Raise `TRAN_ASPD_MIN` toward `PGUID_ASPD_MIN`.

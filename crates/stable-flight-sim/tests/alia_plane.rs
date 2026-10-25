@@ -22,7 +22,7 @@ use stable_flight_sim::airframes::QuadPlaneAirframe;
 use stable_flight_sim::{SimQuadPlane, Start, airframes};
 
 use common::fly;
-use common::plane::{Interlude, north_line, north_line_command, plane_command};
+use common::plane::{Interlude, SINK_MARGIN_MPS, north_line, north_line_command, plane_command};
 use common::plane_spec;
 use common::quadplane::QuadPlanePlant;
 
@@ -292,6 +292,26 @@ fn alia250_steps_altitude() {
         check!(settled <= settle_s, "{step_m}: {settled}");
         check!(error <= airspeed_mps, "{step_m}: {error}");
     }
+}
+
+/// How much faster than its entry the Alia flies [`alia250_catches_up_a_faster_descent_within_its_sink_limit`]'s
+/// leg, in m/s: `flights/alia_descent_lap.csv`'s 50 m/s legs against its 45 m/s trim.
+const FASTER_LEG_MPS: f32 = 5.0;
+
+/// A descending leg faster than the entry sinks no faster than `PGUID_SINK_MAX` (plus
+/// [`SINK_MARGIN_MPS`]): catching up height and airspeed together, the pitch integral doesn't
+/// wind the nose down past the limit. At ArduPilot's pitch integral gain it sank 5.4 m/s here,
+/// and 6 m/s in X-Plane (#503).
+#[test]
+fn alia250_catches_up_a_faster_descent_within_its_sink_limit() {
+    let airframe = airframes::alia250();
+    let limit_mps = airframe.guidance.plane.tecs.max_sink_mps + SINK_MARGIN_MPS;
+    let start_m = airframe.start.position_m.z;
+    let airspeed_mps = airframe.stabilizer.plane.trim_airspeed_mps + FASTER_LEG_MPS;
+    let ticks = line(start_m - 100.0, airspeed_mps, 60.0);
+    check!(!ticks.is_empty());
+    let sink_mps = ticks.iter().map(|t| -t.1).fold(0.0, f32::max);
+    check!(sink_mps <= limit_mps, "{sink_mps} m/s");
 }
 
 /// Most altitude lost or gained entering a loiter's 20° bank from the line, in m. Measured

@@ -16,7 +16,11 @@
 //!   airspeed demand at half the climb's energy rate over `V` (AP:502-521, 550-580). The
 //!   slewed height demand then runs through a 3 s lag (AP:577), whose slope is the height
 //!   rate's feedforward; the airspeed's rate demand is its error alone, as PX4's
-//!   (PX4:320-325). Each error over the time constant is a proportional term (AP:735). The
+//!   (PX4:320-325). The lag starts at the aircraft's own climb rate (within the climb and sink
+//!   limits), as PX4's reference model (PX4:212-218, 692-698): ArduPilot's starts level
+//!   (AP:1187-1190), which pitches an aircraft entering plane flight already sinking up to
+//!   stop the sink, and the height it then falls behind the demand by it makes up sinking past
+//!   the limit (#503). Each error over the time constant is a proportional term (AP:735). The
 //!   airspeed demand stays within the least and most airspeed, and starts there: seeded at a
 //!   stalled speed it would hold the stall. The height
 //!   demand stays within one time constant's climb or sink of the aircraft, so a climb it can't
@@ -24,11 +28,13 @@
 //!   or thrust is at its limit (AP:588-606), which needs the last tick's clipping.
 //! - **Thrust:** the total energy rate demand, mapped around cruise thrust so that the climb
 //!   limit takes full thrust and the least sink least thrust (PX4:628-640), plus damping on the
-//!   rate error (AP:740-746) and an integral of the energy error (AP:785).
+//!   rate error (AP:740-746) and an integral of the energy error (AP:785), with its own gain
+//!   as PX4's (`FW_T_THR_INTEG`, `fw_lat_long_params.yaml:68`).
 //! - **Pitch:** the balance `w_p·SPE − w_k·SKE` (`w_k` the speed weight, `w_p = 2 − w_k`, each
 //!   capped at 1; AP:1003-1033); its rate demand over `V·g` is a flight path angle, plus trim
-//!   pitch, damping on the rate error (AP:1062), and an integral that stops at the pitch limits
-//!   (AP:1092-1102).
+//!   pitch, damping on the rate error (AP:1062), and an integral of the balance error that stops
+//!   at the pitch limits (AP:1092-1102), with its own gain as PX4's (`FW_T_I_GAIN_PIT`,
+//!   `fw_lat_long_params.yaml:80`).
 //! - **Underspeed:** below 0.9 of the least airspeed (AP:660), full thrust and pitch holding
 //!   airspeed alone (speed weight 2). It clears back at the least airspeed, where the wing
 //!   flies. ArduPilot clears at 1.15 of the least (AP:652-656), which for a heavy airframe can
@@ -109,10 +115,15 @@ pub struct TecsConfig {
     /// Thrust per unit of energy rate error, as a share of the thrust range over the energy
     /// rate range.
     pub thrust_damping: f32,
-    /// Integral gain of both the thrust and the pitch loops.
+    /// Integral gain of the thrust loop: higher closes a steady total energy error (a leg
+    /// flown low or slow) sooner.
     pub integrator_gain: f32,
     /// Pitch per unit of energy balance rate error, over `V·g`.
     pub pitch_damping: f32,
+    /// Integral gain of the pitch loop: higher closes a steady balance error (height against
+    /// airspeed) sooner, and winds further nose-down through a descent's catch-up, sinking
+    /// past `max_sink_mps`.
+    pub pitch_integrator_gain: f32,
     /// How pitch splits height and airspeed, `[0, 2]`: 1 both alike, 0 height only (the speed
     /// left to thrust), 2 airspeed only.
     pub speed_weight: f32,
@@ -127,8 +138,9 @@ pub struct TecsConfig {
 
 impl Default for TecsConfig {
     /// ArduPilot's defaults (`AP_TECS.cpp:27-115`: `TECS_TIME_CONST` 5, `CLMB_MAX` 5,
-    /// `SINK_MIN` 2, `SINK_MAX` 5, `THR_DAMP` 0.5, `INTEG_GAIN` 0.3, `PTCH_DAMP` 0.3,
-    /// `SPDWEIGHT` 1, `RLL2THR` 10), with the plane stabilizer's default airspeeds (10–25 m/s).
+    /// `SINK_MIN` 2, `SINK_MAX` 5, `THR_DAMP` 0.5, `INTEG_GAIN` 0.3 for both integrals,
+    /// `PTCH_DAMP` 0.3, `SPDWEIGHT` 1, `RLL2THR` 10), with the plane stabilizer's default
+    /// airspeeds (10–25 m/s).
     fn default() -> Self {
         TecsConfig {
             time_constant_s: 5.0,
@@ -138,6 +150,7 @@ impl Default for TecsConfig {
             thrust_damping: 0.5,
             integrator_gain: 0.3,
             pitch_damping: 0.3,
+            pitch_integrator_gain: 0.3,
             speed_weight: 1.0,
             roll_compensation: 10.0,
             min_airspeed_mps: 10.0,
@@ -172,6 +185,7 @@ impl TecsConfig {
         check_limit("thrust_damping", self.thrust_damping)?;
         check_limit("integrator_gain", self.integrator_gain)?;
         check_limit("pitch_damping", self.pitch_damping)?;
+        check_limit("pitch_integrator_gain", self.pitch_integrator_gain)?;
         check(
             "speed_weight",
             (0.0..=2.0).contains(&self.speed_weight),
@@ -293,8 +307,12 @@ impl Tecs {
         let min_mps = config.min_airspeed_mps;
         let max_mps = config.max_airspeed_mps.max(min_mps);
         let tau = config.time_constant_s;
+        // The lag's rate starts at the aircraft's climb rate: its input sits one lag time
+        // constant of that climb away. Entering plane flight sinking, the demand sinks with it
+        // rather than pitching up to stop the sink (#503).
+        let entry_climb_mps = climb_mps.clamp(-config.max_sink_mps, config.max_climb_mps);
         let previous = *self.demand.get_or_insert(Demand {
-            slewed_height_m: height_m,
+            slewed_height_m: height_m + entry_climb_mps * HEIGHT_DEMAND_TC_S,
             height_m,
             // A demand below the least airspeed would hold a stall (AP clamps it the same way).
             airspeed_mps: airspeed_mps.clamp(min_mps, max_mps),
@@ -418,7 +436,7 @@ impl Tecs {
         // Energy balance rate over V·g is a flight path angle, in rad.
         let per_rad = energies.speed_mps * GRAVITY;
         let integral = self.pitch_integral_rad
-            + config.integrator_gain * error / (config.time_constant_s * per_rad) * dt;
+            + config.pitch_integrator_gain * error / (config.time_constant_s * per_rad) * dt;
         let unclamped = limits.trim_pitch_rad
             + (rate_demand + config.pitch_damping * (rate_demand - rate)) / per_rad
             + integral;
