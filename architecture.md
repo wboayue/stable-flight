@@ -676,7 +676,7 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
   probe, runs it, guards the envelope, and commits. A step clipped too long, or one during which
   the host stalled (`Autotune::note_stall`, e.g. on sitl's `RunStats::skipped_ticks`), runs
   again, within a budget of steps in a row (3 clipped, 10 stalled). While the host runs slow
-  for a stretch (`Autotune::set_host_slow`, e.g. sitl's `TickRate`), the running probe stops at
+  for a stretch (`Autotune::set_host_slow`, e.g. sitl's `RunStats::host_slow`), the running probe stops at
   once and counts as stalled, and settling waits without timing out: every tick gets the
   nominal `dt`, so at half rate a step held for its ticks tilts twice as far, and RealFlight's
   slow stretches outlast the settle timeout (#438). The core gets only the verdict, so it stays

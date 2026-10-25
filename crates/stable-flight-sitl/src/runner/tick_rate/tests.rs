@@ -21,6 +21,7 @@ fn run(rate: &mut TickRate, start_us: u64, gaps_us: &[u64], ticks: usize) -> (Ve
             elapsed: Duration::from_micros(elapsed_us),
             overruns: 0,
             skipped_ticks: 0,
+            host_slow: false,
         };
         verdicts.push(rate.observe(&stats));
     }
@@ -112,6 +113,47 @@ fn measures_the_rate_over_the_window() {
     run(&mut rate, 0, &[8_000], 200);
     let hz = rate.rate_hz().expect("full");
     check!((hz - 125.0).abs() < 1e-6, "{hz}");
+}
+
+/// Slow stretches are counted and timed from the tick that turned slow to the one keeping time
+/// again; the current stretch counts up to the last tick.
+#[test]
+fn counts_and_times_the_slow_stretches() {
+    let mut rate = watch();
+    check!(rate.slow_stretches() == 0);
+    check!(rate.slow_time() == Duration::ZERO);
+
+    let (_, at_us) = run(&mut rate, 0, &[4_000], 300);
+    let (slow, at_us) = run(&mut rate, at_us, &[8_333], 300);
+    let turned_slow_us =
+        at_us - 8_333 * (300 - slow.iter().position(|v| *v).expect("slow") as u64 - 1);
+    check!(rate.slow_since() == Some(Duration::from_micros(turned_slow_us)));
+    let (back, at_us) = run(&mut rate, at_us, &[4_000], 300);
+    let kept_time_us =
+        at_us - 4_000 * (300 - back.iter().position(|v| !v).expect("back") as u64 - 1);
+    let first = Duration::from_micros(kept_time_us - turned_slow_us);
+    check!(rate.slow_since().is_none());
+    check!(rate.slow_stretches() == 1);
+    check!(rate.last_slow_stretch() == first);
+    check!(rate.slow_time() == first);
+
+    let (slow, at_us) = run(&mut rate, at_us, &[8_333], 300);
+    let turned_slow_us =
+        at_us - 8_333 * (300 - slow.iter().position(|v| *v).expect("slow") as u64 - 1);
+    check!(rate.slow_stretches() == 2);
+    check!(
+        rate.last_slow_stretch() == first,
+        "the current stretch hasn't ended"
+    );
+    check!(rate.slow_time() == first + Duration::from_micros(at_us - turned_slow_us));
+}
+
+/// `standard` is the autotune's watch (#438); the window needs two ticks, so 3 Hz is the least.
+#[test]
+fn standard_watches_half_a_second_at_90_and_96_percent() {
+    check!(TickRate::standard(250.0) == Ok(watch()));
+    check!(TickRate::standard(3.0).is_ok());
+    check!(TickRate::standard(2.0).map_err(|e| e.field) == Err("window"));
 }
 
 /// Each setting out of range is named.
