@@ -304,8 +304,11 @@ Related code sits together, so a reviewer reads one behavior in one place.
   shows in only some runs needs 3 or more per arm. `--end land` starts the landing inside the
   follower's 0.8 m altitude acceptance, so a dip below the last waypoint shows only with `--end
   hold` (#403).
-- **Tick rate:** count the `wall_s` rows per wall-clock second around the event a run measures,
-  and drop a run below about 245 Hz there: each tick advances every `dt`-based clock by the
+- **Tick rate:** screen each run's `RUST_LOG=info` log with `grep "host slow"`: the runner
+  logs each stretch under 225 Hz (over 0.5 s, until back over 240 Hz) with its start, rate, and
+  length in seconds since priming, about the recorder's `wall_s`, and the stretches' total at
+  exit. Around the event a run measures, count the `wall_s` rows per wall-clock second too, and
+  drop a run below about 245 Hz there: each tick advances every `dt`-based clock by the
   nominal 4 ms, so at 170 Hz a 3 m/s descent target moves at 2 m/s (#405). A release build
   (`cargo run --release ...`) skips less but doesn't stop it. RealFlight flips between 250 Hz
   and the Mac display's refresh rate (about 120 Hz on ProMotion) on its own, for either build

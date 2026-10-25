@@ -234,3 +234,34 @@ fn catches_up_jitter_below_max_lag() {
     check!(stats.overruns == 0);
     check!(stats.skipped_ticks == 0);
 }
+
+/// A hook that holds each tick 8 ms halves a 250 Hz loop: once the rate window fills the runner
+/// reports the host slow, and once the hook stops holding it keeps time again.
+#[test]
+fn reports_the_host_slow_while_ticks_run_long() {
+    const HELD_TICKS: u64 = 200;
+    const FREE_TICKS: u64 = 200;
+    let mut flight_loop = hover_loop();
+    let shutdown = ShutdownSignal::new();
+    let trigger = shutdown.clone();
+    let mut verdicts = Vec::new();
+
+    let stats = RealTimeRunner::new(250.0)
+        .expect("valid frequency")
+        .run_with(&mut flight_loop, &shutdown, |_, stats| {
+            verdicts.push(stats.host_slow);
+            if stats.ticks < HELD_TICKS {
+                thread::sleep(Duration::from_millis(8));
+            }
+            if stats.ticks + 1 == HELD_TICKS + FREE_TICKS {
+                trigger.trigger();
+            }
+        });
+
+    check!(!verdicts[0], "the window not yet full");
+    check!(
+        verdicts[HELD_TICKS as usize],
+        "slow after 200 ticks at about 120 Hz"
+    );
+    check!(!stats.host_slow, "keeping time after 200 ticks at 250 Hz");
+}

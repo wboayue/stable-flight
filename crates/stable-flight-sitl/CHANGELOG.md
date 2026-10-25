@@ -12,7 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `runner::TickRate` (#438): the rate a `RealTimeRunner` achieves over a sliding window of
   ticks, fed `RunStats` from `run_with`'s hook. The host turns slow under one share of nominal
   and keeps time again over a higher one, so it doesn't flip at the threshold; until the
-  window fills, it keeps time. It allocates once, at construction.
+  window fills, it keeps time. It allocates once, at construction. `TickRate::standard` holds
+  the thresholds `RealTimeRunner` uses (#508).
+- `RealTimeRunner` logs each slow stretch at `info` (`host slow at <s> s (<Hz> Hz)`, `host
+  keeping time at <s> s (<Hz> Hz): slow <s> s`) and their count and total time at shutdown
+  (#508).
 
 - `ScriptCommander::anchored` flies a script relative to where the vehicle starts (#494): `x`,
   `y`, and altitude become meters north, east, and up of its first position, so one script flies
@@ -67,6 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `RealTimeRunner::run_with`'s hook also gets the `RunStats` so far
   (`FnMut(&mut FlightLoop, &RunStats)`), so a caller can react to a stall between ticks
   (#298). Add a `_` parameter to existing closures.
+
+- **Breaking:** `RunStats` has a `host_slow` field (#508): whether the host runs slow by
+  `TickRate::standard` at the runner's rate. Add `host_slow: false` to `RunStats` literals.
 
 ### Fixed
 

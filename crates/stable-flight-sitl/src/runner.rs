@@ -44,6 +44,10 @@ pub struct RunStats {
     pub overruns: u64,
     /// Deadlines dropped by those resyncs rather than replayed.
     pub skipped_ticks: u64,
+    /// Whether the host runs slow, by [`TickRate::standard`] at the runner's rate, as of this
+    /// tick: every tick gets the nominal `dt`, so `dt`-based clocks run slow in wall time.
+    /// Always `false` under 3 Hz, where that watch doesn't fit.
+    pub host_slow: bool,
 }
 
 impl RunStats {
@@ -63,6 +67,12 @@ impl RunStats {
 /// (e.g. a simulator reconnect), the missed deadlines are dropped, not replayed: the next tick
 /// runs at once and the schedule restarts from it. [`RunStats`] counts the overruns and
 /// skipped ticks.
+///
+/// It logs at `info` each time the host turns slow by [`TickRate::standard`] (`host slow at
+/// <elapsed> s (<rate> Hz)`) and keeps time again (`host keeping time at <elapsed> s (<rate>
+/// Hz): slow <duration> s`), with `elapsed` from priming, and the stretches' count and total time
+/// at shutdown; [`RunStats::host_slow`] carries the verdict.
+///
 /// Tick ordering is `FlightLoop`'s concern; see its docs.
 ///
 /// # Examples
@@ -168,16 +178,21 @@ impl RealTimeRunner {
         let mut overruns: u64 = 0;
         let mut skipped_ticks: u64 = 0;
         let max_lag = MAX_LAG.max(self.period);
+        let mut tick_rate = TickRate::standard(self.period.as_secs_f64().recip()).ok();
 
         flight_loop.prime();
 
         while !shutdown.is_set() {
-            let stats = RunStats {
+            let mut stats = RunStats {
                 ticks,
                 elapsed: start.elapsed(),
                 overruns,
                 skipped_ticks,
+                host_slow: false,
             };
+            if let Some(tick_rate) = &mut tick_rate {
+                stats.host_slow = watch_rate(tick_rate, &stats);
+            }
             before_step(flight_loop, &stats);
             flight_loop.step(self.period);
             ticks += 1;
@@ -204,6 +219,7 @@ impl RealTimeRunner {
             elapsed: start.elapsed(),
             overruns,
             skipped_ticks,
+            host_slow: tick_rate.as_ref().is_some_and(TickRate::is_slow),
         };
         info!("Shutdown requested; stopping flight loop");
         if let Some(hz) = stats.average_hz() {
@@ -212,8 +228,34 @@ impl RealTimeRunner {
         if overruns > 0 {
             info!("{overruns} overruns, {skipped_ticks} ticks skipped");
         }
+        if let Some(tick_rate) = tick_rate.filter(|watch| watch.slow_stretches() > 0) {
+            info!(
+                "{} host slow stretches, {:.1} s slow",
+                tick_rate.slow_stretches(),
+                tick_rate.slow_time().as_secs_f64()
+            );
+        }
         stats
     }
+}
+
+/// Feeds `stats` to `tick_rate`, logs when the host turns slow or keeps time again, and returns
+/// whether it runs slow.
+fn watch_rate(tick_rate: &mut TickRate, stats: &RunStats) -> bool {
+    let was_slow = tick_rate.is_slow();
+    let slow = tick_rate.observe(stats);
+    if slow == was_slow {
+        return slow;
+    }
+    let at_s = stats.elapsed.as_secs_f64();
+    let hz = tick_rate.rate_hz().unwrap_or(f64::NAN);
+    if slow {
+        info!("host slow at {at_s:.1} s ({hz:.0} Hz)");
+    } else {
+        let slow_s = tick_rate.last_slow_stretch().as_secs_f64();
+        info!("host keeping time at {at_s:.1} s ({hz:.0} Hz): slow {slow_s:.1} s");
+    }
+    slow
 }
 
 /// Advances `next_deadline` one `period`. If `now` is more than `max_lag` (at least `period`)
