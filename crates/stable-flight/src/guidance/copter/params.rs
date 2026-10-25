@@ -92,7 +92,7 @@ mod metadata {
             LATERAL
                 .param(
                     "GUID_LAT_BRK",
-                    "Deceleration legs brake toward a waypoint at with GUID_LAT_ACC 0 (0: linear)",
+                    "Braking deceleration toward a waypoint with GUID_LAT_ACC 0 (0: linear)",
                 )
                 .with_units("m/s/s")
                 .at_least(0.0),

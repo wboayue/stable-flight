@@ -324,8 +324,8 @@ impl LateralController {
 pub const BRAKING_SHARE: f32 = 0.7;
 
 /// The deceleration the position loop's braking curve slows at, in m/s²: [`BRAKING_SHARE`] of
-/// `max_accel_mps2` with shaping on, else `brake_mps2`; 0 when neither is set (or either is
-/// invalid where it applies), for the linear loop.
+/// `max_accel_mps2` with shaping on, else `brake_mps2`; 0 when neither is set, for the linear
+/// loop. An invalid value counts as unset.
 fn braking_decel_mps2(config: &LateralControllerConfig) -> f32 {
     // `>` is false for NaN: an invalid limit acts as off.
     if config.max_accel_mps2 > 0.0 {

@@ -24,7 +24,8 @@ const LEG_M: f32 = 100.0;
 /// ArduPilot's quadplane waypoint speed (`Q_WP_SPD`, `ArduPlane/quadplane.cpp:607`), in m/s.
 const WP_SPEED_MPS: f32 = 5.0;
 
-/// No cruise cap: the 27° tilt cap bounds the speed (measured up to 15 m/s).
+/// No cruise cap: the 27° tilt cap and the braking curve bound the speed (measured up to
+/// 11.8 m/s on a [`LEG_M`] leg).
 const UNCAPPED: f32 = 0.0;
 
 /// Headwind the quadplane holds and flies upwind into, in m/s: where copter flight without
@@ -133,9 +134,9 @@ const TILT_OVER_CAP_DEG: f32 = 5.0;
 /// tail first (#437), in m.
 const PROBE_LEG_M: f32 = 260.0;
 
-/// Seconds of the probe flown after [`FORWARD_AT_S`]: past the turnaround (25 s measured) and
+/// Seconds of the probe flown after [`FORWARD_AT_S`]: past the turnaround (29 s measured) and
 /// well into the leg back, which the slowest row, the quadplane tail first at 5 m/s, ends at
-/// 83 s.
+/// 81 s.
 const PROBE_S: f32 = 60.0;
 
 /// A waypoint at `north_m` over the line north, at [`TRANSITION_ALTITUDE_M`], uncapped.
@@ -150,9 +151,9 @@ fn on_the_line(north_m: f32) -> WaypointCommand {
 /// An uncapped leg out and back, the probe's, stays within 5° of the tilt cap and PX4's
 /// altitude loss, slowed while the nose is off the waypoint (#437): with the turn on, through
 /// the turnaround as the nose comes round; with it off, the whole way back tail first. Uncut,
-/// the quadplane tilts to 37° and 39°, and the Alia tail first to 39°, sinking 30 m; cut, all
-/// stay under 27°. The Alia with the turn on keeps within the bound uncut (28°), so it isn't
-/// a row.
+/// the quadplane tilts to 27° and 31° (37° and 39° braking linearly), and the Alia tail first
+/// to 39°, sinking 30 m; cut, all stay within 27.0°. The Alia with the turn on keeps within
+/// the bound uncut (28°), so it isn't a row.
 #[test]
 fn slows_uncapped_legs_the_nose_is_off() {
     let route = [on_the_line(0.0), on_the_line(PROBE_LEG_M), on_the_line(0.0)];
@@ -208,8 +209,9 @@ const SHAPED_CRUISE_MPS: f32 = 10.0;
 const SHAPED_FLIGHT_S: f32 = 120.0;
 
 /// With the velocity target shaped at `GUID_LAT_ACC`, the probe leg stops on its waypoint no
-/// further past it than the linear position loop (shaping ignores `GUID_LAT_BRK`): the position loop brakes along a curve the shaped target can
-/// follow, so braking starts in time (#466). Linear braking under a rate limit overshot by
+/// further past it than the linear position loop (shaping ignores `GUID_LAT_BRK`): the
+/// position loop brakes along a curve the shaped target can follow, so braking starts in time
+/// (#466). Linear braking under a rate limit overshot by
 /// 193 m and 145 m uncapped, 37 m and 5.6 m at 10 m/s.
 #[test]
 fn stops_on_the_waypoint_with_acceleration_shaping() {
