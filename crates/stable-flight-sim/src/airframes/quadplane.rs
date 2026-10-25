@@ -60,9 +60,9 @@ pub struct QuadPlaneAirframe {
 /// It flies core's quadplane guidance and stabilizer. The hover side has roll and pitch rate
 /// and angle gains from the sim autotune (`StagePlan::copter_search`), yaw and heading core's
 /// defaults, the hover thrust worked out from the model, and legs braking along a curve at
-/// 1.5 m/s² (`GUID_LAT_BRK`), so uncapped legs stop on their waypoints. The plane side is [`plane`]'s
-/// gains (the same wing and surfaces), with the cruise thrust worked out for this mass on the
-/// pusher. Transitions fly core's defaults; they meet PX4's limits in
+/// 1.5 m/s² (`GUID_LAT_BRK`), so uncapped legs stop on their waypoints. The plane side is
+/// [`plane`]'s gains (the same wing and surfaces), with the cruise thrust worked out for this
+/// mass on the pusher. Transitions fly core's defaults; they meet PX4's limits in
 /// `tests/quadplane_transition.rs`. Copter flight hands its nose-down pitch past 3° to the
 /// pusher ([`ForwardThrustConfig`], gain 1.08), so the wing isn't flown at
 /// negative α (`tests/quadplane_waypoints.rs`).
