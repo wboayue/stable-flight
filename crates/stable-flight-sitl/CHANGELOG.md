@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `runner::TickRate` (#438): the rate a `RealTimeRunner` achieves over a sliding window of
-  ticks, fed `RunStats` from `run_with`'s hook, slow while under a share of nominal (until the
-  window fills, not slow). It allocates once, at construction.
+  ticks, fed `RunStats` from `run_with`'s hook. The host turns slow under one share of nominal
+  and keeps time again over a higher one, so it doesn't flip at the threshold; until the
+  window fills, it keeps time. It allocates once, at construction.
 
 - `ScriptCommander::anchored` flies a script relative to where the vehicle starts (#494): `x`,
   `y`, and altitude become meters north, east, and up of its first position, so one script flies
