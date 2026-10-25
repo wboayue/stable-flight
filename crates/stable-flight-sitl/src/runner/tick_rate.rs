@@ -21,7 +21,9 @@ pub struct InvalidTickRate {
 }
 
 /// Watches the rate a [`RealTimeRunner`](super::RealTimeRunner) achieves, over the last
-/// `window` of ticks, and reports it slow while that rate stays under `min_share` of nominal.
+/// `window` of ticks: the host turns slow once that rate falls under `slow_share` of nominal,
+/// and keeps time again once it is back over `resume_share`, so a host hovering at the
+/// threshold doesn't flip on every tick.
 ///
 /// The runner gives every tick the nominal `dt`, so while the host runs slow (RealFlight
 /// dropping to about 120 Hz for stretches, #438) every `dt`-based clock runs slow in wall
@@ -36,7 +38,7 @@ pub struct InvalidTickRate {
 /// use std::time::Duration;
 /// use stable_flight_sitl::runner::{RunStats, TickRate};
 ///
-/// let mut rate = TickRate::new(250.0, Duration::from_millis(500), 0.9).expect("valid");
+/// let mut rate = TickRate::new(250.0, Duration::from_millis(500), 0.9, 0.96).expect("valid");
 /// // Ticks 8 ms apart: 125 Hz, half of nominal.
 /// for tick in 0..200u64 {
 ///     let stats = RunStats {
@@ -55,19 +57,27 @@ pub struct TickRate {
     elapsed: VecDeque<Duration>,
     /// Ticks the window spans: `nominal_hz · window`.
     span: usize,
-    /// The rate under which the host counts as slow, in Hz.
-    min_hz: f64,
+    /// The rate under which the host turns slow, in Hz.
+    slow_hz: f64,
+    /// The rate over which a slow host keeps time again, in Hz.
+    resume_hz: f64,
     slow: bool,
 }
 
 impl TickRate {
-    /// A watch over `window` of ticks at `nominal_hz`, slow under `min_share · nominal_hz`.
+    /// A watch over `window` of ticks at `nominal_hz`: slow under `slow_share · nominal_hz`,
+    /// keeping time again over `resume_share · nominal_hz`.
     ///
     /// # Errors
     ///
     /// [`InvalidTickRate`] unless `nominal_hz` is positive and finite, `window` spans at least
-    /// two ticks at it, and `min_share` is in `(0, 1]`.
-    pub fn new(nominal_hz: f64, window: Duration, min_share: f64) -> Result<Self, InvalidTickRate> {
+    /// two ticks at it, `slow_share` is in `(0, 1]`, and `resume_share` in `[slow_share, 1]`.
+    pub fn new(
+        nominal_hz: f64,
+        window: Duration,
+        slow_share: f64,
+        resume_share: f64,
+    ) -> Result<Self, InvalidTickRate> {
         if !(nominal_hz.is_finite() && nominal_hz > 0.0) {
             return Err(InvalidTickRate {
                 field: "nominal_hz",
@@ -81,17 +91,24 @@ impl TickRate {
                 requirement: "at least two ticks at nominal_hz",
             });
         }
-        if !(min_share > 0.0 && min_share <= 1.0) {
+        if !(slow_share > 0.0 && slow_share <= 1.0) {
             return Err(InvalidTickRate {
-                field: "min_share",
+                field: "slow_share",
                 requirement: "in (0, 1]",
+            });
+        }
+        if !(resume_share >= slow_share && resume_share <= 1.0) {
+            return Err(InvalidTickRate {
+                field: "resume_share",
+                requirement: "in [slow_share, 1]",
             });
         }
         let span = span as usize;
         Ok(TickRate {
             elapsed: VecDeque::with_capacity(span + 1),
             span,
-            min_hz: min_share * nominal_hz,
+            slow_hz: slow_share * nominal_hz,
+            resume_hz: resume_share * nominal_hz,
             slow: false,
         })
     }
@@ -102,7 +119,12 @@ impl TickRate {
             self.elapsed.pop_front();
         }
         self.elapsed.push_back(stats.elapsed);
-        self.slow = self.rate_hz().is_some_and(|hz| hz < self.min_hz);
+        let threshold_hz = if self.slow {
+            self.resume_hz
+        } else {
+            self.slow_hz
+        };
+        self.slow = self.rate_hz().is_some_and(|hz| hz < threshold_hz);
         self.slow
     }
 

@@ -737,12 +737,10 @@ fn a_slow_host_stops_the_step_and_settling_waits() {
 #[test]
 fn a_long_slow_stretch_stops_one_step() {
     let (events, status) = step_test_with_slow_host(600.0);
+    // Still waiting when the flight ends: neither failed nor done.
     check!(
-        status
-            != AutotuneStatus::Failed {
-                stage: 0,
-                reason: AutotuneAbort::Stalled,
-            }
+        matches!(status, AutotuneStatus::Settling { .. }),
+        "{status:?}"
     );
     let stopped = events
         .iter()
@@ -1020,6 +1018,59 @@ fn candidates_fly_only_during_their_step() {
             check!(*flight_loop.stabilizer().config() == start, "{gust_ticks}");
         }
     }
+}
+
+/// A host turning slow while a candidate flies stops it and puts the committed gains back on
+/// the same update; once the host keeps time, the same candidate flies again and the search
+/// completes (#438).
+#[test]
+fn a_slow_host_stops_a_candidate_and_it_flies_again() {
+    /// How long the host stays slow, in ticks (1 s).
+    const SLOW_TICKS: usize = 250;
+    let (mut flight_loop, _controls) = hovering_on(1.0, delayed_axis());
+    let start = *flight_loop.stabilizer().config();
+    let plan = [StagePlan::copter_rate_search()[0]];
+    let mut autotune = started(&flight_loop, &plan);
+
+    let mut stopped = None;
+    let mut slow_left = 0;
+    let mut flown_again = false;
+    let mut events = Vec::new();
+    for _ in 0..(300.0 / DT) as usize {
+        flight_loop.step(Duration::from_secs_f32(DT));
+        let config = *flight_loop.stabilizer().config();
+        if stopped.is_none() && config != start && flight_loop.probe().is_some() {
+            stopped = Some(config);
+            slow_left = SLOW_TICKS;
+        }
+        autotune.set_host_slow(slow_left > 0);
+        let event = autotune.update(&mut flight_loop, DT);
+        if slow_left == SLOW_TICKS {
+            check!(matches!(
+                event,
+                Some(AutotuneEvent::Stalled {
+                    measurement: None,
+                    ..
+                })
+            ));
+            check!(
+                *flight_loop.stabilizer().config() == start,
+                "committed gains back"
+            );
+        }
+        slow_left = slow_left.saturating_sub(1);
+        if slow_left == 0 && stopped.is_some_and(|candidate| config == candidate) {
+            flown_again = true;
+        }
+        events.extend(event);
+        if !autotune.is_running() {
+            break;
+        }
+    }
+
+    check!(stopped.is_some(), "a candidate flew");
+    check!(flown_again, "the stopped candidate flies again");
+    check!(events.last() == Some(&AutotuneEvent::Complete));
 }
 
 /// `SearchPlan::validate` rejects each bad field; the copter default is valid.

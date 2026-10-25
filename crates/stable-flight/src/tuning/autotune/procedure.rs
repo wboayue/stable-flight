@@ -10,6 +10,10 @@ mod search;
 #[cfg(test)]
 mod tests;
 
+/// Relays in a row a slow host may stop before a relay stage fails: the step tests' clip
+/// budget (`StepTestPlan::max_invalid`), as a search's relay leg retries.
+const MAX_RELAY_STOPS: usize = 3;
+
 /// What a procedure is told.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Input {
@@ -89,8 +93,9 @@ pub(super) struct Verdict {
 )]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Procedure {
-    /// One relay measurement, then the rule's gains.
-    Relay(RelayPlan),
+    /// One relay measurement, then the rule's gains; `stops` counts relays a slow host
+    /// stopped in a row.
+    Relay { plan: RelayPlan, stops: usize },
     /// Alternating steps, then the same gains.
     StepTest(Pairs),
     /// A gain search.
@@ -100,7 +105,7 @@ pub(super) enum Procedure {
 impl Procedure {
     pub(super) fn new(method: Method) -> Self {
         match method {
-            Method::Relay(plan) => Self::Relay(plan),
+            Method::Relay(plan) => Self::Relay { plan, stops: 0 },
             Method::StepTest(plan) => Self::StepTest(Pairs::new(plan, plan.pairs)),
             Method::Search(plan) => Self::Search(Search::new(plan)),
         }
@@ -108,7 +113,7 @@ impl Procedure {
 
     pub(super) fn next(&mut self, input: Input) -> Action {
         match self {
-            Self::Relay(plan) => match input {
+            Self::Relay { plan, stops } => match input {
                 Input::Start { .. } => Action::probe(ProbeConfig::Relay(plan.relay)),
                 Input::Measured {
                     measurement: Measurement::Relay(result),
@@ -120,8 +125,15 @@ impl Procedure {
                     steps: None,
                     baseline: None,
                 },
-                // Nothing was measured: measure again.
-                Input::Stalled { .. } => Action::probe(ProbeConfig::Relay(plan.relay)),
+                // Nothing was measured: measure again, at most `MAX_RELAY_STOPS` in a row.
+                Input::Stalled { .. } => {
+                    *stops += 1;
+                    if *stops >= MAX_RELAY_STOPS {
+                        Action::Fail(AutotuneAbort::Stalled)
+                    } else {
+                        Action::probe(ProbeConfig::Relay(plan.relay))
+                    }
+                }
                 Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
                 Input::Breached { reason, .. } => Action::Fail(reason),
                 Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
@@ -158,7 +170,7 @@ impl Procedure {
     pub(super) fn take_verdict(&mut self) -> Option<Verdict> {
         match self {
             Self::Search(search) => search.take_verdict(),
-            Self::Relay(_) | Self::StepTest(_) => None,
+            Self::Relay { .. } | Self::StepTest(_) => None,
         }
     }
 }
