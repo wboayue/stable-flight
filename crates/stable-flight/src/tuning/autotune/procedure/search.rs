@@ -90,6 +90,7 @@ impl Search {
                     stalled: true,
                     ..
                 }
+                | Input::Stalled { .. }
                 | Input::Aborted {
                     abort: ProbeAbort::Relay(_),
                     ..
@@ -111,6 +112,12 @@ impl Search {
                 Ok(()) if self.pairs.done() => self.judge(true),
                 Ok(()) => self.step(),
             },
+            (Leg::Baseline | Leg::Try { .. } | Leg::Verify(_), Input::Stalled { .. }) => {
+                match self.pairs.stall() {
+                    Err(abort) => Action::Fail(abort),
+                    Ok(()) => self.step(),
+                }
+            }
             (
                 Leg::Baseline | Leg::Try { .. } | Leg::Verify(_),
                 Input::Aborted {

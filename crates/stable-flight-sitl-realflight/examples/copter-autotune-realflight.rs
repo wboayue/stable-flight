@@ -19,7 +19,10 @@
 //! each one's response logged at `debug`, and a summary per loop at `info` (overshoot, rise,
 //! settling, bounce-back: mean and range). `--stages none --step-test` measures the hand tune;
 //! `--stages rate --step-test` the relay tune, in one flight. Steps during which the runner
-//! skipped ticks run again. Params and telemetry go over
+//! skipped ticks run again. While RealFlight runs slow (under 225 Hz over 0.5 s, `TickRate`;
+//! it drops to about 120 Hz for stretches, #438), the running step stops and the autotune
+//! waits: a step held for its ticks at half rate would tilt twice as far, and settles would
+//! time out. Params and telemetry go over
 //! the native link for the bridge, so QGC shows the gains change. The RealFlight host defaults to
 //! `10.211.55.3:8080`; override it with `--host`.
 //!
@@ -60,6 +63,7 @@ use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::recorder::{CopterColumns, CsvRecorder};
+use stable_flight_sitl::runner::TickRate;
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::airframes::{self, Airframe};
 use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
@@ -78,6 +82,12 @@ const START_ALTITUDE_TOLERANCE_M: f32 = 0.5;
 /// Ticks the runner may skip at once before a running step counts as stalled: a one- or
 /// two-tick slip is jitter the step's filter absorbs, a longer gap breaks its timing.
 const STALL_TICKS: u64 = 2;
+/// The window [`TickRate`] judges the loop's rate over: 125 ticks at 250 Hz, half a rate
+/// step's 63-tick window, so a slow stretch shows before a step held across it ends.
+const RATE_WINDOW: Duration = Duration::from_millis(500);
+/// The share of [`LOOP_HZ`] under which the host counts as slow: 225 Hz. RealFlight's slow
+/// mode runs at about 120 Hz; its jitter at full rate stays above 240 Hz per second (#438).
+const MIN_RATE_SHARE: f64 = 0.9;
 /// How often a running stage's status is logged at `debug`, in ticks (1 s).
 const STATUS_EVERY_TICKS: u32 = 250;
 /// The rate loops (the others are angle and heading loops); `--rate-p-scale` scales all
@@ -314,6 +324,7 @@ fn main() {
         args.rate_p_scale
     );
     let runner = RealTimeRunner::new(LOOP_HZ).expect("valid loop frequency");
+    let mut tick_rate = TickRate::new(LOOP_HZ, RATE_WINDOW, MIN_RATE_SHARE).expect("valid window");
     let mut ticks = 0u32;
     let mut skipped_ticks = 0;
     let mut searched = Vec::new();
@@ -324,6 +335,17 @@ fn main() {
             autotune.note_stall();
         }
         skipped_ticks = stats.skipped_ticks;
+        let was_slow = tick_rate.is_slow();
+        let slow = tick_rate.observe(stats);
+        if slow != was_slow {
+            let hz = tick_rate.rate_hz().unwrap_or(f64::NAN);
+            if slow {
+                info!("host slow ({hz:.0} Hz): autotune waits");
+            } else {
+                info!("host keeping time ({hz:.0} Hz): autotune goes on");
+            }
+        }
+        autotune.set_host_slow(slow);
         match poller.poll(flight_loop) {
             Ok(stats) if stats.decode_errors > 0 || stats.dropped > 0 => {
                 debug!("link: {stats:?}");
@@ -393,6 +415,16 @@ fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
             target,
             measurement: Measurement::Step(metrics),
         } => debug!("autotune: {target:?} step {}", format_step(metrics)),
+        AutotuneEvent::Stalled {
+            target,
+            measurement: Some(Measurement::Step(metrics)),
+        } => debug!(
+            "autotune: {target:?} step {} (stalled, runs again)",
+            format_step(metrics)
+        ),
+        AutotuneEvent::Stalled { target, .. } => {
+            debug!("autotune: {target:?} probe stopped (host slow), runs again");
+        }
         AutotuneEvent::Measured {
             target,
             measurement: Measurement::Relay(result),

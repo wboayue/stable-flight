@@ -864,6 +864,15 @@ pub enum AutotuneEvent {
         /// What the probe measured.
         measurement: Measurement,
     },
+    /// The host's timing spoiled a probe, which runs again: it was stopped as the host
+    /// turned slow ([`Autotune::set_host_slow`], no measurement), or it finished across a
+    /// stall ([`Autotune::note_stall`]).
+    Stalled {
+        /// The probed loop.
+        target: TunedLoop,
+        /// What the probe measured, if it finished; its timing can't be trusted.
+        measurement: Option<Measurement>,
+    },
     /// A search judged a pair of steps (or its baseline) on a gain.
     Tried {
         /// The searched loop.
@@ -1048,6 +1057,8 @@ enum Decide {
         measurement: Measurement,
         stalled: bool,
     },
+    /// A probe stopped because the host turned slow, with no measurement.
+    Stalled,
     /// A probe that gave up.
     Aborted { abort: ProbeAbort },
     /// A probe on candidate gains that took the vehicle past the envelope.
@@ -1081,7 +1092,10 @@ struct Request {
 ///   probe flies them. An envelope breach while they fly fails the candidate, not the stage;
 ///   the committed gains then have [`Envelope::recovery_s`] to bring the vehicle back.
 /// - **Stalls:** [`note_stall`](Self::note_stall) marks the running probe's measurement as
-///   untimely; a step test runs that step again.
+///   untimely; a step test runs that step again. While the host is slow
+///   ([`set_host_slow`](Self::set_host_slow)), the running probe stops at once (a step held
+///   for its ticks at half the tick rate would tilt twice as far) and counts as stalled, and
+///   settling waits: it gains no level time and doesn't time out.
 /// - **Fail:** an envelope breach, a probe abort the procedure can't use (a search counts a
 ///   step's abort against its gain), an interrupt, or a rejected config stops the stage, puts
 ///   back the last committed config (the earlier stages' gains stay), and ends the
@@ -1134,6 +1148,8 @@ pub struct Autotune {
     start_altitude_m: f32,
     /// The host stalled during the running probe ([`note_stall`](Self::note_stall)).
     stalled: bool,
+    /// The host runs slow ([`set_host_slow`](Self::set_host_slow)).
+    host_slow: bool,
     /// Time left, in s, for the vehicle to come back inside the envelope after a candidate
     /// ([`Envelope::recovery_s`]); breaches meanwhile don't fail the stage.
     recovering_s: f32,
@@ -1195,6 +1211,7 @@ impl Autotune {
             last_good: None,
             start_altitude_m: 0.0,
             stalled: false,
+            host_slow: false,
             recovering_s: 0.0,
         })
     }
@@ -1273,6 +1290,29 @@ impl Autotune {
         match self.phase {
             Phase::Starting { stage } => self.begin(stage),
             Phase::Deciding { stage, on } => self.decide(flight_loop, stage, on),
+            // A slow host holds the settle where it is, with no level time: the vehicle
+            // settles again once the host keeps time.
+            Phase::Settling {
+                stage,
+                request,
+                waited_s,
+                ..
+            } if self.host_slow => {
+                self.phase = Phase::Settling {
+                    stage,
+                    request,
+                    level_s: 0.0,
+                    waited_s,
+                };
+                None
+            }
+            Phase::Probing { stage, candidate } if self.host_slow => {
+                self.end_probe(flight_loop, stage, candidate, Decide::Stalled);
+                Some(AutotuneEvent::Stalled {
+                    target: self.target(stage),
+                    measurement: None,
+                })
+            }
             Phase::Settling {
                 stage,
                 request,
@@ -1292,6 +1332,14 @@ impl Autotune {
             | Phase::Failed { .. }
             | Phase::Reverted => None,
         }
+    }
+
+    /// Tells the supervisor whether the host runs slow: its ticks come further apart than
+    /// their `dt`, for a stretch (e.g. RealFlight at half its rate, sitl's `TickRate`). While
+    /// it does, a running probe stops and runs again later, and settling waits (see the
+    /// type's **Stalls**). Takes effect on the next [`update`](Self::update).
+    pub fn set_host_slow(&mut self, slow: bool) {
+        self.host_slow = slow;
     }
 
     /// Tells the supervisor the host fell behind (e.g. a stalled simulator exchange,
@@ -1316,7 +1364,11 @@ impl Autotune {
             Phase::Probing { stage, .. }
             | Phase::Deciding {
                 stage,
-                on: Decide::Measured { .. } | Decide::Aborted { .. } | Decide::Breached { .. },
+                on:
+                    Decide::Measured { .. }
+                    | Decide::Stalled
+                    | Decide::Aborted { .. }
+                    | Decide::Breached { .. },
             } => AutotuneStatus::Running {
                 stage,
                 target: self.target(stage),
@@ -1365,6 +1417,7 @@ impl Autotune {
                 gains,
                 stalled,
             },
+            Decide::Stalled => Input::Stalled { gains },
             Decide::Aborted { abort } => Input::Aborted { abort, gains },
             Decide::Breached { reason } => Input::Breached { reason, gains },
         };
@@ -1464,9 +1517,16 @@ impl Autotune {
                     measurement,
                     stalled: self.stalled,
                 },
-                Some(AutotuneEvent::Measured {
-                    target,
-                    measurement,
+                Some(if self.stalled {
+                    AutotuneEvent::Stalled {
+                        target,
+                        measurement: Some(measurement),
+                    }
+                } else {
+                    AutotuneEvent::Measured {
+                        target,
+                        measurement,
+                    }
                 }),
             ),
             Some((_, ProbeStatus::Aborted(abort))) => (Decide::Aborted { abort }, None),

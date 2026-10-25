@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `runner::TickRate` (#438): the rate a `RealTimeRunner` achieves over a sliding window of
+  ticks, fed `RunStats` from `run_with`'s hook, slow while under a share of nominal (until the
+  window fills, not slow). It allocates once, at construction.
+
 - `ScriptCommander::anchored` flies a script relative to where the vehicle starts (#494): `x`,
   `y`, and altitude become meters north, east, and up of its first position, so one script flies
   the same route at any spawn point or field. `ScriptCommander::origin_m` reports the start.

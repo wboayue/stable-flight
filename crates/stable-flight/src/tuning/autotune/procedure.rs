@@ -23,6 +23,10 @@ pub(super) enum Input {
         gains: Gains,
         stalled: bool,
     },
+    /// A probe stopped because the host turned slow
+    /// ([`Autotune::set_host_slow`](super::Autotune::set_host_slow)), with no measurement;
+    /// `gains` are the loop's committed gains.
+    Stalled { gains: Gains },
     /// A probe gave up; `gains` are the loop's committed gains.
     Aborted { abort: ProbeAbort, gains: Gains },
     /// A probe on candidate gains took the vehicle past the envelope; `gains` are the
@@ -116,6 +120,8 @@ impl Procedure {
                     steps: None,
                     baseline: None,
                 },
+                // Nothing was measured: measure again.
+                Input::Stalled { .. } => Action::probe(ProbeConfig::Relay(plan.relay)),
                 Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
                 Input::Breached { reason, .. } => Action::Fail(reason),
                 Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
@@ -134,6 +140,10 @@ impl Procedure {
                         steps: Some(pairs.summary),
                         baseline: None,
                     },
+                    Ok(()) => Action::probe(pairs.probe()),
+                },
+                Input::Stalled { .. } => match pairs.stall() {
+                    Err(abort) => Action::Fail(abort),
                     Ok(()) => Action::probe(pairs.probe()),
                 },
                 Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
@@ -204,11 +214,7 @@ impl Pairs {
     /// [`AutotuneAbort::Invalid`] at `max_invalid` clipped steps in a row.
     fn record(&mut self, metrics: &StepMetrics, stalled: bool) -> Result<(), AutotuneAbort> {
         if stalled {
-            self.stalled += 1;
-            if self.stalled >= self.plan.max_stalled {
-                return Err(AutotuneAbort::Stalled);
-            }
-            return Ok(());
+            return self.stall();
         }
         self.stalled = 0;
         if metrics.saturated_s > self.plan.max_saturated_s {
@@ -220,6 +226,19 @@ impl Pairs {
         }
         self.invalid = 0;
         self.summary.add(metrics);
+        Ok(())
+    }
+
+    /// Counts a stalled step, which runs again in the same direction.
+    ///
+    /// # Errors
+    ///
+    /// [`AutotuneAbort::Stalled`] at `max_stalled` stalled steps in a row.
+    fn stall(&mut self) -> Result<(), AutotuneAbort> {
+        self.stalled += 1;
+        if self.stalled >= self.plan.max_stalled {
+            return Err(AutotuneAbort::Stalled);
+        }
         Ok(())
     }
 

@@ -48,6 +48,11 @@ fn relay_input(point: UltimatePoint, stalled: bool) -> Input {
     }
 }
 
+/// A probe a slow host stopped, unmeasured.
+fn stopped() -> Input {
+    Input::Stalled { gains: START }
+}
+
 fn relay_abort() -> Input {
     Input::Aborted {
         abort: ProbeAbort::Relay(RelayAbort::Timeout),
@@ -323,8 +328,8 @@ fn the_relay_seeds_and_caps_the_search() {
     );
 }
 
-/// A relay that stalls or aborts runs again; after `max_invalid` failures the search goes on
-/// from the start gains, without a ceiling.
+/// A relay that stalls, is stopped by a slow host, or aborts runs again; after `max_invalid`
+/// failures the search goes on from the start gains, without a ceiling.
 #[test]
 fn a_failing_relay_is_retried_then_skipped() {
     let plan = SearchPlan::copter_rate();
@@ -332,10 +337,12 @@ fn a_failing_relay_is_retried_then_skipped() {
     let good = || relay_input(POINT, false);
     let stalled = || relay_input(POINT, true);
     // (relay replies in order, relay used)
-    let cases: [(&[Reply], bool); 3] = [
+    let cases: [(&[Reply], bool); 5] = [
         (&[stalled, good], true),
+        (&[stopped, good], true),
         (&[relay_abort, good], true),
         (&[stalled, relay_abort, stalled], false),
+        (&[stopped, stopped, stopped], false),
     ];
     check!(plan.test.max_invalid == 3);
     for (index, (replies, used)) in cases.into_iter().enumerate() {
@@ -662,4 +669,30 @@ fn stalls_rerun_and_never_fail_a_candidate() {
         search.next(stalled_step(true));
     }
     check!(search.next(stalled_step(true)) == Action::Fail(AutotuneAbort::Stalled));
+}
+
+/// A step a slow host stopped runs again on the same gains, and stops share the stall budget
+/// with stalled steps: `max_stalled` in a row fail the stage.
+#[test]
+fn a_stopped_step_runs_again_and_counts_as_stalled() {
+    let plan = d_plan();
+    let mut procedure = Procedure::new(Method::Search(plan));
+    let first = procedure.next(Input::Start { gains: START });
+    check!(matches!(
+        first,
+        Action::Probe {
+            probe: ProbeConfig::Step(_),
+            ..
+        }
+    ));
+    let stalled = Input::Measured {
+        measurement: Measurement::Step(metrics(0.0, 0.0)),
+        gains: START,
+        stalled: true,
+    };
+    for index in 1..plan.test.max_stalled {
+        let input = if index % 2 == 0 { stalled } else { stopped() };
+        check!(procedure.next(input) == first, "stall {index}");
+    }
+    check!(procedure.next(stopped()) == Action::Fail(AutotuneAbort::Stalled));
 }

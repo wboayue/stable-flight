@@ -178,6 +178,32 @@ fn step_test_repeats_invalid_steps_and_fails_on_too_many() {
     check!(procedure.next(stepped(0.0, true)) == Action::Fail(AutotuneAbort::Stalled));
 }
 
+/// A probe a slow host stopped, unmeasured: a relay runs again; a step test repeats the step
+/// in the same direction, counting it against `max_stalled` along with stalled steps.
+#[test]
+fn a_stopped_probe_runs_again() {
+    let plan = RelayPlan::copter(TunedLoop::RollRate);
+    let mut procedure = Procedure::new(Method::Relay(plan));
+    let relay = procedure.next(Input::Start { gains: CURRENT });
+    check!(procedure.next(Input::Stalled { gains: CURRENT }) == relay);
+    check!(matches!(
+        procedure.next(measured(2.0, 0.1)),
+        Action::Finish { .. }
+    ));
+
+    let (mut procedure, plan) = step_test(3);
+    let down = Action::probe(ProbeConfig::Step(plan.step.reversed()));
+    procedure.next(Input::Start { gains: CURRENT });
+    check!(procedure.next(stepped(0.0, false)) == down);
+    check!(procedure.next(Input::Stalled { gains: CURRENT }) == down);
+    for index in 2..plan.max_stalled {
+        check!(procedure.next(stepped(0.0, true)) == down, "stall {index}");
+    }
+    check!(
+        procedure.next(Input::Stalled { gains: CURRENT }) == Action::Fail(AutotuneAbort::Stalled)
+    );
+}
+
 /// A measurement the method didn't ask for fails the stage.
 #[test]
 fn a_mismatched_measurement_fails() {

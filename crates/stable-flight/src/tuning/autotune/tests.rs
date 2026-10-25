@@ -657,9 +657,99 @@ fn a_stalled_step_runs_again() {
 
     check!(autotune.status() == AutotuneStatus::Complete);
     let metrics = step_metrics(&events);
-    check!(metrics.len() == 2 * pairs + 1);
-    // The stalled first step and its rerun both go up.
-    check!(metrics[0].amplitude > 0.0 && metrics[1].amplitude > 0.0);
+    check!(metrics.len() == 2 * pairs);
+    // The stalled first step, reported as stalled with its untimely metrics, and its rerun
+    // both go up.
+    let stalled: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            AutotuneEvent::Stalled {
+                measurement: Some(Measurement::Step(metrics)),
+                ..
+            } => Some(*metrics),
+            _ => None,
+        })
+        .collect();
+    check!(stalled.len() == 1);
+    check!(stalled[0].amplitude > 0.0 && metrics[0].amplitude > 0.0);
+}
+
+/// A step test under a host that turns slow for `slow_s` from the first step's start:
+/// the events, and whether the run completed.
+fn step_test_with_slow_host(slow_s: f32) -> (Vec<AutotuneEvent>, AutotuneStatus) {
+    let (mut flight_loop, _controls) = hovering(1.0);
+    let plan = [StagePlan::copter_step_test(TunedLoop::RollRate)];
+    let mut autotune = started(&flight_loop, &plan);
+    let mut slow_from_s = None;
+    let mut events = Vec::new();
+    for tick in 0..(120.0 / DT) as usize {
+        let time_s = tick as f32 * DT;
+        flight_loop.step(Duration::from_secs_f32(DT));
+        if slow_from_s.is_none() && matches!(autotune.status(), AutotuneStatus::Running { .. }) {
+            slow_from_s = Some(time_s);
+        }
+        let slow = slow_from_s.is_some_and(|from_s| time_s - from_s < slow_s);
+        autotune.set_host_slow(slow);
+        if let Some(event) = autotune.update(&mut flight_loop, DT) {
+            events.push(event);
+        }
+        if !autotune.is_running() {
+            break;
+        }
+    }
+    (events, autotune.status())
+}
+
+/// A host that turns slow mid-step stops the step at once, unmeasured, and the step test
+/// waits out the slow stretch, longer than the settle timeout, without failing: it then
+/// measures every step, the stopped one again (#438).
+#[test]
+fn a_slow_host_stops_the_step_and_settling_waits() {
+    // Longer than the settle timeout, which would fail the stage if settling counted it.
+    let slow_s = Envelope::default().settle_timeout_s + 5.0;
+    let (events, status) = step_test_with_slow_host(slow_s);
+
+    check!(status == AutotuneStatus::Complete);
+    let stopped = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                AutotuneEvent::Stalled {
+                    measurement: None,
+                    ..
+                }
+            )
+        })
+        .count();
+    check!(stopped == 1);
+    let pairs = StepTestPlan::copter(TunedLoop::RollRate).pairs;
+    let metrics = step_metrics(&events);
+    check!(metrics.len() == 2 * pairs);
+    check!(
+        metrics[0].amplitude > 0.0,
+        "the stopped step runs again, up"
+    );
+}
+
+/// A host that stays slow stops only the step that was running: no step starts while it is
+/// slow, so a slow stretch of any length doesn't run into the stall budget (`max_stalled`).
+#[test]
+fn a_long_slow_stretch_stops_one_step() {
+    let (events, status) = step_test_with_slow_host(600.0);
+    check!(
+        status
+            != AutotuneStatus::Failed {
+                stage: 0,
+                reason: AutotuneAbort::Stalled,
+            }
+    );
+    let stopped = events
+        .iter()
+        .filter(|event| matches!(event, AutotuneEvent::Stalled { .. }))
+        .count();
+    check!(stopped == 1);
+    check!(step_metrics(&events).is_empty());
 }
 
 /// A step test settles to its own, tighter limits: held 3.4° off level (inside the envelope's

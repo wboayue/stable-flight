@@ -13,6 +13,9 @@ use crate::ShutdownSignal;
 
 #[cfg(test)]
 mod tests;
+mod tick_rate;
+
+pub use tick_rate::{InvalidTickRate, TickRate};
 
 /// Log the achieved loop rate every this many ticks (at `debug`).
 const RATE_LOG_INTERVAL: u64 = 100;
