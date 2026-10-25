@@ -178,7 +178,8 @@ fn step_test_repeats_invalid_steps_and_fails_on_too_many() {
     check!(procedure.next(stepped(0.0, true)) == Action::Fail(AutotuneAbort::Stalled));
 }
 
-/// A probe a slow host stopped, unmeasured: a relay runs again; a step test repeats the step
+/// A probe a slow host stopped, unmeasured: a relay runs again, `MAX_RELAY_STOPS` in a row
+/// failing the stage; a step test repeats the step
 /// in the same direction, counting it against `max_stalled` along with stalled steps.
 #[test]
 fn a_stopped_probe_runs_again() {
@@ -190,6 +191,18 @@ fn a_stopped_probe_runs_again() {
         procedure.next(measured(2.0, 0.1)),
         Action::Finish { .. }
     ));
+    // `MAX_RELAY_STOPS` in a row fail the stage: a host that keeps flapping mid-relay.
+    let mut procedure = Procedure::new(Method::Relay(plan));
+    procedure.next(Input::Start { gains: CURRENT });
+    for stop in 1..MAX_RELAY_STOPS {
+        check!(
+            procedure.next(Input::Stalled { gains: CURRENT }) == relay,
+            "stop {stop}"
+        );
+    }
+    check!(
+        procedure.next(Input::Stalled { gains: CURRENT }) == Action::Fail(AutotuneAbort::Stalled)
+    );
 
     let (mut procedure, plan) = step_test(3);
     let down = Action::probe(ProbeConfig::Step(plan.step.reversed()));
