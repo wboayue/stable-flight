@@ -48,7 +48,7 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
    Fast uncapped copter legs overshoot on the linear position loop, which starts braking
    only `2 · v` out: set `GUID_LAT_BRK` below the deceleration the airframe reaches nose up
    (fly an uncapped leg with `--record`, read the speed's fall after the stop starts), with
-   margin for the tilt to come round.
+   margin for the tilt to come round and for the velocity I to unwind its cruise trim.
    The hover wind estimate (`GUID_WND_*`) is off until its drag coefficients are fitted:
    the steps are the tailsitter guide's
    [wind estimate](tailsitter.md#wind-estimate), flown with the pusher off.
@@ -113,9 +113,11 @@ climb, then tune on the model and pin the X-Plane airframe to it.
   at 0.52, a 0.37 nose-up moment; pitch rate I 0.5 holds it. The autotune raised roll rate P
   (steps 0.85 → 0.95 of the step); pitch rate steps stop near 0.90 on any gains
   ([#438](https://github.com/wboayue/stable-flight/issues/438)).
-- **Copter legs:** an uncapped 300 m leg (`flights/cobra_out_back.csv`) reaches 16.7 m/s
-  and brakes at about 3 m/s² nose up; the linear loop overshot it 15–20 m.
-  `GUID_LAT_BRK` 1.5 stops a sim model fitted to its coast and top speed within 1.9 m
+- **Copter legs:** an uncapped 300 m leg (`flights/cobra_out_back.csv`) reaches 16.7 m/s;
+  the linear loop overshot it 15–20 m. `GUID_LAT_BRK` 1.5, which stops a sim model fitted to
+  its coast and top speed within 1.9 m, took one stop 5.5 m past: the velocity I kept the
+  pusher on until the Cobra ran 1.5 m/s over the curve, and its pitch trailed the setpoint by
+  8–10°. 1.2 stops every leg from 3 m short to 0.1 m past
   ([#488](https://github.com/wboayue/stable-flight/issues/488)). Judge such legs only on
   runs that hold 245 ticks/s while braking: at RealFlight's 120 the shaped legs
   (`GUID_LAT_ACC` 1) overshot 16–36 m, and at 250 stopped within 1.3 m.
