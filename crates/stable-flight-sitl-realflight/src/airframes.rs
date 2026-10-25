@@ -435,14 +435,13 @@ const COBRA_MAX_AIRSPEED_MPS: f32 = 18.0;
 /// Fly it with [`QuadPlaneGuidance`](stable_flight::guidance::vtol::QuadPlaneGuidance) and
 /// [`QuadPlaneStabilizer`](stable_flight::stabilizers::vtol::QuadPlaneStabilizer).
 ///
-/// - **Hover:** roll rate P and D from a RealFlight autotune, the rest starting from
-///   QuadCopterX's hand tune, with more pitch rate I; it flies a hover and a landing (#433).
-///   The gated autotune at thrust factor 0.8 sets roll and pitch rate P and D and pitch angle
-///   P; at 250 Hz every step test settles, pitch rate reaching 1.00 of the step (#438). The
-///   model is nose-heavy on its lift rotors: with equal front and
-///   rear thrust a hop pitched nose down at 155°/s, and a level hover holds
-///   front motors at 0.60 and rear at 0.52 (#433), so the pitch rate loop holds a steady
-///   nose-up moment: 0.37 of the default mixer's range, 0.19 of this one's.
+/// - **Hover:** roll and pitch rate P and D and pitch angle P from the gated RealFlight
+///   autotune at thrust factor 0.8: at 250 Hz every step test settles, pitch rate reaching
+///   1.00 of the step (#438). Rate I and yaw are the hand tune that flies a hover and a
+///   landing (#433), scaled to this mixer. The model is nose-heavy on its lift rotors: with
+///   equal front and rear thrust a hop pitched nose down at 155°/s (#433), and a level hover
+///   holds front motors at 0.61 and rear at 0.54 (#438), so the pitch rate loop holds a
+///   steady nose-up moment: 0.37 of the default mixer's range, 0.19 of this one's.
 /// - **Plane and transition:** core defaults, with the upstream ArduPilot parameter file's
 ///   airspeeds, trim pitch, and cruise throttle (`TitanCobraVTOL.param`); the forward
 ///   transition hands over to the wing at its minimum airspeed, as ArduPilot does. A lap
