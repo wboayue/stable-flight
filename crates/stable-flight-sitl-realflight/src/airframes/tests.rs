@@ -56,6 +56,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
             velocity: gains(1.26, 0.4, 0.0),
             max_integral: 12.5,
             max_accel_mps2: 0.0,
+            brake_mps2: 0.0,
         },
         navigation_period_s: 0.02,
         max_tilt_rad: 27.0_f32.to_radians(),

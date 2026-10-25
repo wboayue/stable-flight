@@ -3,6 +3,7 @@
 use stable_flight::GRAVITY;
 use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
+    LateralControllerConfig,
 };
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::guidance::plane::PlaneGuidanceConfig;
@@ -58,7 +59,8 @@ pub struct QuadPlaneAirframe {
 ///
 /// It flies core's quadplane guidance and stabilizer. The hover side has roll and pitch rate
 /// and angle gains from the sim autotune (`StagePlan::copter_search`), yaw and heading core's
-/// defaults, and the hover thrust worked out from the model. The plane side is [`plane`]'s
+/// defaults, the hover thrust worked out from the model, and legs braking along a curve at
+/// 1.5 m/s² (`GUID_LAT_BRK`), so uncapped legs stop on their waypoints. The plane side is [`plane`]'s
 /// gains (the same wing and surfaces), with the cruise thrust worked out for this mass on the
 /// pusher. Transitions fly core's defaults; they meet PX4's limits in
 /// `tests/quadplane_transition.rs`. Copter flight hands its nose-down pitch past 3° to the
@@ -146,6 +148,13 @@ pub fn quadplane() -> QuadPlaneAirframe {
                 hover_stabilizer.thrust_curve_exponent,
             ),
             ..CopterGuidanceConfig::default().altitude
+        },
+        lateral: LateralControllerConfig {
+            // Uncapped legs reach 20 m/s, which the linear position loop doesn't start braking
+            // for until 40 m out: a 300 m leg overshoots 14.3 m linear, stops 1.6 m short at
+            // 1.5 m/s², and overshoots 2.2 m at 2.5 (`tests/quadplane_waypoints.rs`, #488).
+            brake_mps2: 1.5,
+            ..CopterGuidanceConfig::default().lateral
         },
         ..CopterGuidanceConfig::default()
     };

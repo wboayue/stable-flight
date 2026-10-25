@@ -45,6 +45,10 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
    with `just fly-autotune` or by hand, then altitude and position (`GUID_*`). The surfaces
    stay neutral in a hover. A CG off the lift rotors' center needs a steady pitch moment:
    give the pitch rate loop enough I to hold it (I · max integral above the trim).
+   Fast uncapped copter legs overshoot on the linear position loop, which starts braking
+   only `2 · v` out: set `GUID_LAT_BRK` below the deceleration the airframe reaches nose up
+   (fly an uncapped leg with `--record`, read the speed's fall after the stop starts), with
+   margin for the tilt to come round.
    The hover wind estimate (`GUID_WND_*`) is off until its drag coefficients are fitted:
    the steps are the tailsitter guide's
    [wind estimate](tailsitter.md#wind-estimate), flown with the pusher off.
@@ -109,6 +113,12 @@ climb, then tune on the model and pin the X-Plane airframe to it.
   at 0.52, a 0.37 nose-up moment; pitch rate I 0.5 holds it. The autotune raised roll rate P
   (steps 0.85 → 0.95 of the step); pitch rate steps stop near 0.90 on any gains
   ([#438](https://github.com/wboayue/stable-flight/issues/438)).
+- **Copter legs:** an uncapped 300 m leg (`flights/cobra_out_back.csv`) reaches 16.7 m/s
+  and brakes at about 3 m/s² nose up; the linear loop overshot it 15–20 m.
+  `GUID_LAT_BRK` 1.5 stops a sim model fitted to its coast and top speed within 1.9 m
+  ([#488](https://github.com/wboayue/stable-flight/issues/488)). Judge such legs only on
+  runs that hold 245 ticks/s while braking: at RealFlight's 120 the shaped legs
+  (`GUID_LAT_ACC` 1) overshot 16–36 m, and at 250 stopped within 1.3 m.
 - **Surfaces:** ArduPilot's parameter file reverses none; the probe confirmed each axis at
   12–16 m/s. Both tail panels trim +0.2 (`SERVO2_TRIM`, `SERVO4_TRIM` 1600).
 - **Plane and transitions:** with ArduPilot's airspeeds, trim pitch, and cruise throttle, and

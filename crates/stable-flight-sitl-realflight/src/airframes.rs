@@ -431,6 +431,9 @@ const COBRA_MAX_AIRSPEED_MPS: f32 = 18.0;
 /// - **Pusher:** the forward thrust gain (1.08) and the transition's pusher cap (0.9) and slew
 ///   (0.297/s) are the pusher commands the flights below ran, 0.9 of the gain 1.2 and of
 ///   core's transition defaults (#433, #448).
+/// - **Copter legs:** brake along a curve at 1.5 m/s² (`GUID_LAT_BRK`). The linear position
+///   loop starts braking an uncapped leg at 16.7 m/s only 34 m out and overshoots it 15–20 m;
+///   the Cobra brakes at about 3 m/s² (#488).
 /// - **Forward thrust:** on in copter flight (gain 1.08): on a 100 m copter leg ahead the
 ///   pusher keeps the nose within 7° of level, and the leg loses 0.5 m and climbs 1.4 m at
 ///   most; without it the nose goes 33° down and the leg loses 4.7 m and balloons 6.4 m
@@ -462,6 +465,12 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                     // prop thrust.
                     hover_thrust: 0.79,
                     ..defaults.hover.altitude
+                },
+                lateral: LateralControllerConfig {
+                    // Uncapped legs reach 16.7 m/s, and the Cobra brakes at about 3 m/s²: the
+                    // linear position loop, braking from 34 m out, overshoots 15–20 m (#488).
+                    brake_mps2: 1.5,
+                    ..defaults.hover.lateral
                 },
                 ..defaults.hover
             },
