@@ -17,15 +17,15 @@
 //!   slewed height demand then runs through a 3 s lag (AP:577), whose slope is the height
 //!   rate's feedforward; the airspeed's rate demand is its error alone, as PX4's
 //!   (PX4:320-325). The lag starts at the aircraft's own climb rate (within the climb and sink
-//!   limits), as PX4's reference model (PX4:212-218, 692-698): ArduPilot's starts level
-//!   (AP:1187-1190), which pitches an aircraft entering plane flight already sinking up to
-//!   stop the sink, and the height it then falls behind the demand by it makes up sinking past
-//!   the limit (#503). Each error over the time constant is a proportional term (AP:735). The
-//!   airspeed demand stays within the least and most airspeed, and starts there: seeded at a
-//!   stalled speed it would hold the stall. The height
-//!   demand stays within one time constant's climb or sink of the aircraft, so a climb it can't
-//!   make doesn't run the demand away; ArduPilot instead stops advancing the demand while pitch
-//!   or thrust is at its limit (AP:588-606), which needs the last tick's clipping.
+//!   limits), as PX4's reference model does (PX4:212-218, 692-698). ArduPilot's starts level
+//!   (AP:1187-1190): an aircraft entering plane flight already sinking then pitches up to stop
+//!   the sink, falls behind the demand, and sinks past the limit catching up (#503). Each
+//!   error over the time constant is a proportional term (AP:735). The airspeed demand stays
+//!   within the least and most airspeed, and starts there: seeded at a stalled speed it would
+//!   hold the stall. The height demand stays within one time constant's climb or sink of the
+//!   aircraft, so a climb it can't make doesn't run the demand away; ArduPilot instead stops
+//!   advancing the demand while pitch or thrust is at its limit (AP:588-606), which needs the
+//!   last tick's clipping.
 //! - **Thrust:** the total energy rate demand, mapped around cruise thrust so that the climb
 //!   limit takes full thrust and the least sink least thrust (PX4:628-640), plus damping on the
 //!   rate error (AP:740-746) and an integral of the energy error (AP:785), with its own gain
@@ -307,15 +307,18 @@ impl Tecs {
         let min_mps = config.min_airspeed_mps;
         let max_mps = config.max_airspeed_mps.max(min_mps);
         let tau = config.time_constant_s;
-        // The lag's rate starts at the aircraft's climb rate: its input sits one lag time
-        // constant of that climb away. Entering plane flight sinking, the demand sinks with it
-        // rather than pitching up to stop the sink (#503).
-        let entry_climb_mps = climb_mps.clamp(-config.max_sink_mps, config.max_climb_mps);
-        let previous = *self.demand.get_or_insert(Demand {
-            slewed_height_m: height_m + entry_climb_mps * HEIGHT_DEMAND_TC_S,
-            height_m,
-            // A demand below the least airspeed would hold a stall (AP clamps it the same way).
-            airspeed_mps: airspeed_mps.clamp(min_mps, max_mps),
+        let previous = *self.demand.get_or_insert_with(|| {
+            // The slewed demand starts `HEIGHT_DEMAND_TC_S` of the aircraft's climb away, so
+            // the lag's slope starts at the climb rate. Entering plane flight sinking, the
+            // demand sinks with it rather than pitching up to stop the sink (#503).
+            let entry_climb_mps = climb_mps.clamp(-config.max_sink_mps, config.max_climb_mps);
+            Demand {
+                slewed_height_m: height_m + entry_climb_mps * HEIGHT_DEMAND_TC_S,
+                height_m,
+                // A demand below the least airspeed would hold a stall (AP clamps it the same
+                // way).
+                airspeed_mps: airspeed_mps.clamp(min_mps, max_mps),
+            }
         });
 
         // Height: slewed at the climb and sink limits, kept within one time constant's climb

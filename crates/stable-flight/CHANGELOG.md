@@ -288,8 +288,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The TECS height demand starts moving at the aircraft's climb rate, within the climb and sink
   limits, as PX4's reference model does, instead of level (#503). Entering plane flight
   sinking, it no longer pitches up to stop the sink and then sinks past `PGUID_SINK_MAX`
-  catching up. In X-Plane the Alia's first command went from 8.9° at 0.94 thrust to 3.2° at
-  0.28.
+  catching up. With `pitch_integrator_gain` 0.15, the X-Plane Alia's sink after a descending
+  entry peaks at 5.0–5.1 m/s, against 6.0–6.1 m/s before.
 - `PlaneStabilizer` saves its rate integrals when a `Setpoint::PlaneRate` follows another
   setpoint and restores them when a `Setpoint::Plane` follows (#342): what acro or a maneuver
   winds up no longer carries into the attitude flight after it.
