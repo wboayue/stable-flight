@@ -743,6 +743,42 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
   high start, each result held to the published step targets on its own plant
   ([`robustness`](crates/stable-flight-sim/README.md#closed-loop-tests)). Rows that fail stay
   ignored on the issue blocking them rather than loosening the targets.
+* **Planned: identification and loop shaping**
+  ([#312](https://github.com/wboayue/stable-flight/issues/312); the
+  [autotune milestone](https://github.com/wboayue/stable-flight/milestone/5)). The step search
+  spends most of each stage settling before each step: on the sim, a rate stage's 50 s holds
+  about 5 s of stepping, an angle stage's 61 s about 24 s (182–234 s per airframe); QuadCopterX
+  in RealFlight takes about 9 min. The planned method measures each rate axis once instead:
+  * *Identify* ([#516](https://github.com/wboayue/stable-flight/issues/516)): a shrinking
+    square wave on the attitude setpoint, every loop closed (PX4's excitation,
+    `mc_autotune_attitude_control.cpp:603-639`), and a least-squares fit of the axis's moment
+    command to its body rate: a second-order model with a delay (PX4's `ArxRls<2,2,1>`), the
+    delay chosen by least residual. On the sim, 3 s per axis fit the same model from the low,
+    own, and ×3 starts, recovered each airframe's motor lag (29.8, 49.1, 14.9 ms against 30,
+    50, 15), and found the actuator delay (1, 3, 7 ticks clean, at 10 ms, at 25 ms).
+  * *Design* ([#517](https://github.com/wboayue/stable-flight/issues/517)): rate D/P at the
+    fitted lag, so the PD's zero cancels the motor lag; rate P for a 65° phase margin on the
+    model's frequency response, its delay included; the start's rate I kept; angle P the
+    largest whose model steps on the designed rate loop meet the angle criterion, less 10%.
+    It met the step spec on every clean, 10 ms, and 25 ms row of `quad_x`, `heavy_quad`, and
+    `racer`, from both starts (60° and 55° each missed on some).
+  * *Verify and commit* ([#518](https://github.com/wboayue/stable-flight/issues/518)): two
+    step pairs per loop through `Acceptance`, about 50 s on the sim, against the identification's
+    8 s.
+  * Rejected, from the same sweep
+    ([`autotune_methods`](crates/stable-flight-sim/tests/autotune_methods.rs)): PX4's pole
+    placement (`pid_design.hpp:68-103`) assumes one tick of delay and found no design on any
+    10 or 25 ms row; a gain search on the model passes gains the model can't predict (4 misses,
+    or none found); ArduPilot's QuikTune ramp (`VTOL-quicktune.lua`) needs excitation the
+    clean sim lacks, then, at any slew threshold from 5 to 80, tuned some rows too soft (rate
+    P 0.1–0.3) and couldn't lower a ×3 start more than its 20%, taking 57–239 s for the rate
+    loops alone.
+  * Open: gyro noise biases the closed-loop fit, and neither prefiltering with decimation nor
+    instrumental variables fixed it without the loop's own gyro filter
+    ([#373](https://github.com/wboayue/stable-flight/issues/373)); CG offset and weak motor
+    rows miss as the search's do, on the rate I
+    ([#374](https://github.com/wboayue/stable-flight/issues/374)). The designed D is 3–5× the
+    airframes' (`quad_x` 0.139 against 0.029), so it flies only behind #373's filter.
 
 ## Real-Time Loop Management
 

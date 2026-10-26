@@ -97,6 +97,13 @@ Code comments and docs link here instead of redefining a term.
   a step response and ends near the starting attitude (`Maneuver::doublet`).
 - **Autotune:** flies step probes on each loop and picks gains from the measured response
   ([architecture](../architecture.md#autotune)).
+- **System identification:** fitting a model of how the vehicle responds (here, a rate axis's
+  body rate to its moment command, with a lag and a delay) from flight data recorded while a
+  known signal shakes it. The planned autotune designs gains from the model instead of
+  flying a step per candidate gain ([architecture](../architecture.md#autotune)).
+- **Phase margin:** how far a loop is from oscillating, as the phase short of −180° where its
+  open-loop gain crosses 1 (the crossover). More margin: less overshoot, a slower loop.
+  **Loop shaping** picks gains for a target margin from the model's frequency response.
 
 **Navigation**
 
