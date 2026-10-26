@@ -1304,7 +1304,7 @@ struct Request {
 /// them; the supervisor executes it.
 ///
 /// - **Start** ([`start`](Self::start)) when armed and hovering; the caller owns the trigger.
-///   The config and altitude at start are the baseline.
+///   The config and altitude at start are the run's start, what a disarm reverts to.
 /// - **Settle:** before each probe, the vehicle must hold the method's [`Settle`]
 ///   ([`Method::settle`]), or the [`Envelope`]'s.
 /// - **Probe and decide:** a finished probe's [`Measurement`] goes to the stage's procedure,
@@ -1371,7 +1371,7 @@ pub struct Autotune {
     /// The current stage's procedure.
     procedure: Procedure,
     /// The config at start: what a disarm reverts to.
-    baseline: Option<CopterStabilizerConfig>,
+    run_start: Option<CopterStabilizerConfig>,
     /// The config as of the last commit: what a failure reverts to.
     last_good: Option<CopterStabilizerConfig>,
     start_altitude_m: f32,
@@ -1436,7 +1436,7 @@ impl Autotune {
             envelope,
             phase: Phase::Idle,
             procedure: Procedure::new(first.method),
-            baseline: None,
+            run_start: None,
             last_good: None,
             start_altitude_m: 0.0,
             stalled: false,
@@ -1445,7 +1445,7 @@ impl Autotune {
         })
     }
 
-    /// Starts a run: records the stabilizer's config and the altitude as the baseline; the
+    /// Starts a run: records the stabilizer's config and the altitude as the run's start; the
     /// first stage starts on the next update. A finished run can be started again.
     ///
     /// # Errors
@@ -1463,7 +1463,7 @@ impl Autotune {
             return Err(StartError::NotArmed);
         }
         let config = *flight_loop.stabilizer().config();
-        self.baseline = Some(config);
+        self.run_start = Some(config);
         self.last_good = Some(config);
         self.start_altitude_m = flight_loop.state().position_m.z;
         self.recovering_s = 0.0;
@@ -1492,8 +1492,8 @@ impl Autotune {
         }
         if !flight_loop.armed() {
             flight_loop.stop_probe();
-            if let Some(baseline) = self.baseline {
-                restore(flight_loop, baseline);
+            if let Some(run_start) = self.run_start {
+                restore(flight_loop, run_start);
             }
             self.phase = Phase::Reverted;
             return Some(AutotuneEvent::Reverted);
@@ -1643,8 +1643,8 @@ impl Autotune {
                 gains,
                 inner: target.inner().map(|inner| inner.gains(config)),
                 run_start: self
-                    .baseline
-                    .map_or(gains, |baseline| target.gains(&baseline)),
+                    .run_start
+                    .map_or(gains, |run_start| target.gains(&run_start)),
             },
             Decide::Measured {
                 measurement,
