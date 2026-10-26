@@ -44,7 +44,7 @@
 //! - **Turns:** thrust for a bank's extra drag, `k·(1/cos²φ − 1)` on the energy rate (AP:764).
 
 use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
-use crate::math::clamp_symmetric;
+use crate::math::{clamp_symmetric, lagged};
 use crate::{GRAVITY, VehicleState};
 
 #[cfg(test)]
@@ -59,12 +59,6 @@ const HEIGHT_DEMAND_TC_S: f32 = 3.0;
 /// Time constant of the airspeed rate's low-pass, in s (AP:740-746 filters its damping at
 /// about 0.5 s).
 const AIRSPEED_RATE_TC_S: f32 = 0.5;
-
-/// `value` moved toward `target` by a first-order lag of `time_constant_s` over `dt` (all the
-/// way when `dt` reaches the time constant).
-fn lagged(value: f32, target: f32, dt: f32, time_constant_s: f32) -> f32 {
-    value + (target - value) * (dt / time_constant_s).min(1.0)
-}
 
 /// Below this airspeed, in m/s, `V·g` stops shrinking: the pitch terms stay finite at a stall.
 const MIN_GAIN_AIRSPEED_MPS: f32 = 3.0;
