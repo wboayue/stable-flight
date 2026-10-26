@@ -13,6 +13,7 @@
 //! - [`Probe`]: one loop's excitation and measurement, run inside the tick: the relay, a
 //!   [`StepProbe`] whose [`StepMetrics`] describe the loop's step response, or an
 //!   [`IdentifyProbe`] that fits its axis's [`RateModel`].
+//! - [`design_rate`] and [`design_angle_p`]: gains from a [`RateModel`] by loop shaping.
 //! - [`Tunable`]: a stabilizer that hosts a probe on one of its loops
 //!   ([`CopterStabilizer`](crate::stabilizers::copter::CopterStabilizer)).
 //! - [`autotune::Autotune`]: the copter supervisor, run between ticks: executes each stage's
@@ -33,6 +34,7 @@
 //! ```
 
 pub mod autotune;
+pub mod design;
 pub mod identify;
 pub mod probe;
 pub mod relay;
@@ -42,6 +44,7 @@ pub mod step;
 #[cfg(test)]
 pub(crate) mod plant;
 
+pub use design::{DesignError, LoopShapingConfig, design_angle_p, design_rate};
 pub use identify::{
     IdentifyAbort, IdentifyConfig, IdentifyProbe, IdentifyStatus, MAX_DELAY_TICKS, RateModel,
 };

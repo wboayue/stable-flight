@@ -10,40 +10,34 @@
 //! - **Identification:** core's `IdentifyProbe` on the roll and pitch angle loops
 //!   (`COPTER_IDENTIFY`): PX4's shrinking square wave on the setpoint, every loop closed, and a
 //!   least-squares fit of the axis's body rate to its moment command with a delay.
-//! - **Design** from the model: PX4's pole placement (`pid_design.hpp:68-103`), or loop
-//!   shaping (the rate PD's zero on the fitted lag, P for a phase margin). Angle P from the
-//!   model on the designed rate loop.
+//! - **Design** from the model: PX4's pole placement (`pid_design.hpp:68-103`, here only), or
+//!   core's loop shaping (`design_rate`: the rate PD's zero on the fitted lag, P for a phase
+//!   margin). Angle P from core's `design_angle_p` on the designed rate loop, for every row.
 //! - **Gain ramp:** ArduPilot's QuikTune (`AP_Scripting/applets/VTOL-quicktune.lua` at
 //!   `e96bd90`): D then P raised until the rate PID's output slew oscillates
 //!   (`Filter/SlewLimiter.cpp:31-81`), then backed off.
 //!
-//! Each is described from its source and implemented here from that description. The model
-//! steps fly core's attitude and body-rate controllers, so a design is judged on the law the
-//! vehicle flies.
-//!
-//! TODO(#517): design through core's loop-shaping function once it lands.
+//! Each is described from its source and implemented here from that description.
 
 mod common;
 
 use std::cell::{Cell, RefCell};
-use std::collections::VecDeque;
 use std::f32::consts::PI;
 use std::rc::Rc;
 
-use stable_flight::controllers::{AttitudeController, BodyRateController, Gains};
+use stable_flight::controllers::Gains;
 use stable_flight::guidance::copter::CopterGuidance;
-use stable_flight::nalgebra::{Complex, ComplexField};
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
 use stable_flight::tuning::autotune::{
-    Autotune, AutotuneEvent, COPTER_IDENTIFY, Envelope, SearchPlan, StagePlan,
+    Autotune, AutotuneEvent, COPTER_IDENTIFY, COPTER_LOOP_SHAPING, Envelope, StagePlan,
 };
 use stable_flight::tuning::{
-    Measurement, ProbeConfig, ProbeStatus, RateModel, StepConfig, StepProbe, StepStatus,
-    StepSummary,
+    LoopShapingConfig, Measurement, ProbeConfig, ProbeStatus, RateModel, design_angle_p,
+    design_rate,
 };
 use stable_flight::{
     ControlInput, FlightLoop, FlightModeReport, FlightRegime, Guidance, Saturation, Setpoint,
-    TelemetryPublisher, TelemetryRecord, Vec2, Vec3, VehicleState,
+    TelemetryPublisher, TelemetryRecord, Vec3, VehicleState,
 };
 use stable_flight_sim::Wind;
 use stable_flight_sim::airframes::{self, Airframe};
@@ -113,11 +107,6 @@ fn identify(plant: &Plant) -> [RateModel; 2] {
     })
 }
 
-/// `model`'s denominator `1 + a1·z⁻¹ + a2·z⁻²` coefficients: `a = −r`, `r` its rate weights.
-fn denominator(model: &RateModel) -> (f32, f32) {
-    (-model.rate_weights[0], -model.rate_weights[1])
-}
-
 // ---- Design --------------------------------------------------------------------------------
 
 /// PX4's design rise time, in s (`MC_AT_RISE_TIME`), and its detune.
@@ -142,7 +131,13 @@ enum Design {
 fn rate_gains(design: Design, model: &RateModel, start: Gains) -> Option<Gains> {
     match design {
         Design::PolePlacement => Some(pole_placement(model, start)),
-        Design::LoopShaping(margin_deg) => loop_shaping(model, start, margin_deg),
+        Design::LoopShaping(rate_margin_deg) => {
+            let config = LoopShapingConfig {
+                rate_margin_deg,
+                ..COPTER_LOOP_SHAPING
+            };
+            design_rate(model, start, &config).ok()
+        }
     }
 }
 
@@ -154,7 +149,8 @@ fn pole_placement(model: &RateModel, start: Gains) -> Gains {
     let rho = DT / POLE_PLACEMENT_RISE_S;
     // t1 = −2·e^(−2ρ) enters only f0, which sets I.
     let t2 = (-4.0 * rho).exp();
-    let (a1, a2) = denominator(model);
+    // The model's denominator 1 + a1·z⁻¹ + a2·z⁻² has a = −r, r its rate weights.
+    let (a1, a2) = (-model.rate_weights[0], -model.rate_weights[1]);
     let f1 = t2 - a2 + a1;
     let f2 = a2;
     let static_gain = model.moment_weights.iter().sum::<f32>();
@@ -163,180 +159,6 @@ fn pole_placement(model: &RateModel, start: Gains) -> Gains {
         p: scale * (-f1 - 2.0 * f2),
         i: start.i,
         d: (scale * f2 * DT).max(0.0),
-    }
-}
-
-/// D/P at the fitted lag; P puts the crossover where the phase of `C·G` is `margin_deg` above
-/// −180°, `C = 1 + (D/P)·(1 − z⁻¹)/dt`.
-fn loop_shaping(model: &RateModel, start: Gains, margin_deg: f32) -> Option<Gains> {
-    let ratio_s = model.lag_s()?;
-    let response = |w_radps: f32| {
-        let z1 = Complex::new(0.0, -w_radps * DT).exp();
-        let m = model.moment_weights;
-        let numerator =
-            (Complex::from(m[0]) + z1 * m[1] + z1 * z1 * m[2]) * z1.powu(model.delay_ticks as u32);
-        let (a1, a2) = denominator(model);
-        let denominator = Complex::from(1.0) + z1 * a1 + z1 * z1 * a2;
-        let controller = Complex::from(1.0) + (Complex::from(1.0) - z1) * (ratio_s / DT);
-        controller * numerator / denominator
-    };
-    // Walk up in frequency, unwrapping the phase, to the last point above the margin.
-    const POINTS: usize = 2000;
-    let nyquist_radps = PI / DT;
-    let (mut unwrapped, mut last, mut crossover_radps) = (0.0f32, 0.0f32, None);
-    for i in 1..POINTS {
-        let w_radps = nyquist_radps * i as f32 / POINTS as f32;
-        let mut phase = response(w_radps).argument() + unwrapped;
-        while phase - last > PI {
-            unwrapped -= 2.0 * PI;
-            phase -= 2.0 * PI;
-        }
-        while phase - last < -PI {
-            unwrapped += 2.0 * PI;
-            phase += 2.0 * PI;
-        }
-        last = phase;
-        if phase.to_degrees() < margin_deg - 180.0 {
-            break;
-        }
-        crossover_radps = Some(w_radps);
-    }
-    let p = 1.0 / response(crossover_radps?).modulus();
-    Some(Gains {
-        p,
-        i: start.i,
-        d: ratio_s * p,
-    })
-}
-
-/// The largest angle P in the angle search's range whose model steps, on `config`'s rate
-/// loop, meet the angle criterion within its clip allowance; backed off 10% as the search's.
-fn angle_p(
-    model: &RateModel,
-    config: &CopterStabilizerConfig,
-    angle_loop: TunedLoop,
-) -> Option<f32> {
-    let plan = SearchPlan::copter_angle();
-    let passes = |p: f32| {
-        let mut candidate = *config;
-        angle_loop.gains_mut(&mut candidate).p = p;
-        let (steps, clipped_s) = model_steps(model, &candidate, angle_loop, plan.test.step);
-        plan.criterion.passes(&steps) && clipped_s <= plan.test.max_saturated_s
-    };
-    largest(plan.min, plan.max, passes).map(|p| p * 0.9)
-}
-
-/// The largest value in `[low, high]` that passes, by geometric bisection; `None` if `low`
-/// fails.
-fn largest(low: f32, high: f32, passes: impl Fn(f32) -> bool) -> Option<f32> {
-    if !passes(low) {
-        return None;
-    }
-    if passes(high) {
-        return Some(high);
-    }
-    let (mut pass, mut fail) = (low, high);
-    for _ in 0..25 {
-        let mid = (pass * fail).sqrt();
-        if passes(mid) {
-            pass = mid;
-        } else {
-            fail = mid;
-        }
-    }
-    Some(pass)
-}
-
-/// Both-way steps of `target`, a roll or pitch rate or angle loop, on `model`: core's step
-/// probe on core's attitude and body-rate controllers with `config`, the other axes held at
-/// zero. The summary and the longest clipped time, in s.
-fn model_steps(
-    model: &RateModel,
-    config: &CopterStabilizerConfig,
-    target: TunedLoop,
-    step: StepConfig,
-) -> (StepSummary, f32) {
-    let axis = usize::from(matches!(target, TunedLoop::PitchRate | TunedLoop::Pitch));
-    let angle_loop = matches!(target, TunedLoop::Roll | TunedLoop::Pitch);
-    let on_axis2 = |value: f32| Vec2::from_fn(|i, _| if i == axis { value } else { 0.0 });
-    let on_axis3 = |value: f32| Vec3::from_fn(|i, _| if i == axis { value } else { 0.0 });
-    let mut summary = StepSummary::default();
-    let mut longest_clipped_s = 0f32;
-    for step in [step, step.reversed()] {
-        let mut plant = ModelPlant::new(*model);
-        let mut attitude = AttitudeController::default();
-        let mut body_rate = BodyRateController::default();
-        let mut probe = StepProbe::new(step);
-        let (mut rate_radps, mut angle_rad, mut clipped) = (0.0f32, 0.0f32, false);
-        loop {
-            let measured = if angle_loop { angle_rad } else { rate_radps };
-            let setpoint = probe.step(DT, measured, clipped);
-            match probe.status() {
-                StepStatus::Running { .. } => {}
-                StepStatus::Done(metrics) => {
-                    summary.add(&metrics);
-                    longest_clipped_s = longest_clipped_s.max(metrics.saturated_s);
-                    break;
-                }
-                StepStatus::Aborted(_) => break,
-            }
-            let rate_setpoint_radps = if angle_loop {
-                let rates = attitude.control(
-                    &config.attitude,
-                    DT,
-                    on_axis2(setpoint),
-                    on_axis2(angle_rad),
-                );
-                rates[axis]
-            } else {
-                setpoint
-            };
-            let moments = body_rate.control(
-                &config.body_rate,
-                DT,
-                on_axis3(rate_setpoint_radps),
-                on_axis3(rate_radps),
-            );
-            // Core saturates the moment at ±1: a step there is clipped.
-            clipped = moments[axis].abs() >= 1.0;
-            rate_radps = plant.step(moments[axis]);
-            angle_rad += rate_radps * DT;
-        }
-    }
-    (summary, longest_clipped_s)
-}
-
-/// A [`RateModel`] driven tick by tick.
-struct ModelPlant {
-    model: RateModel,
-    rates_radps: [f32; 2],
-    moments: VecDeque<f32>,
-}
-
-impl ModelPlant {
-    fn new(model: RateModel) -> Self {
-        ModelPlant {
-            model,
-            rates_radps: [0.0; 2],
-            moments: VecDeque::from(vec![0.0; model.delay_ticks + 2]),
-        }
-    }
-
-    /// Applies this tick's moment; the next tick's rate, in rad/s.
-    fn step(&mut self, moment: f32) -> f32 {
-        let d = self.model.delay_ticks;
-        self.moments.push_front(moment);
-        self.moments.truncate(d + 2);
-        let delayed = |i: usize| self.moments[d - 1 + i];
-        let [r0, r1] = self.model.rate_weights;
-        let [m0, m1, m2] = self.model.moment_weights;
-        let next_radps = r0 * self.rates_radps[0]
-            + r1 * self.rates_radps[1]
-            + m0 * delayed(0)
-            + m1 * delayed(1)
-            + m2 * delayed(2);
-        self.rates_radps = [next_radps, self.rates_radps[0]];
-        next_radps
     }
 }
 
@@ -427,7 +249,9 @@ fn design_config(
     for (model, (rate_loop, angle_loop)) in models.iter().zip(loops) {
         let rate = rate_gains(design, model, rate_loop.gains(&config)).ok_or("no rate design")?;
         *rate_loop.gains_mut(&mut config) = rate;
-        let p = angle_p(model, &config, angle_loop).ok_or("no angle design")?;
+        let angle = angle_loop.gains(&config);
+        let p = design_angle_p(model, rate, angle, &COPTER_LOOP_SHAPING)
+            .map_err(|_| "no angle design")?;
         angle_loop.gains_mut(&mut config).p = p;
     }
     Ok(config)

@@ -760,12 +760,16 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
     sim, 3 s per axis fit the same model from the low, own, and ×3 starts, recovered each
     airframe's motor lag (29.8, 49.1, 14.9 ms against 30, 50, 15), and found the actuator
     delay (1, 3, and 6–7 ticks clean, at 10 ms, at 25 ms).
-  * *Design* ([#517](https://github.com/wboayue/stable-flight/issues/517)): rate D/P at the
-    fitted lag, so the PD's zero cancels the motor lag; rate P for a 65° phase margin on the
-    model's frequency response, its delay included; the start's rate I kept; angle P the
-    largest whose model steps on the designed rate loop meet the angle criterion, less 10%.
-    It met the step spec on every clean, 10 ms, and 25 ms row of `quad_x`, `heavy_quad`, and
-    `racer`, from both starts (60° and 55° each missed on some).
+  * *Design* (`tuning::design_rate`, `design_angle_p`, `COPTER_LOOP_SHAPING`; in place, no
+    stage plan runs it yet): rate D/P at the fitted lag, so the PD's zero cancels the motor
+    lag; rate P for a 65° phase margin on the model's frequency response, its delay included;
+    the start's rate I kept; angle P the largest in the angle search's range that keeps a 65°
+    margin on the angle loop around the designed rate loop, less 10%. It met the step spec on
+    every clean, 10 ms, and 25 ms row of `quad_x`, `heavy_quad`, and `racer`, from both starts
+    (60° and 55° each missed on some). Angle P by margin rather than by model steps: both put
+    it at the range's top on every row, and the steps cost about 19k simulated controller ticks
+    between two flight ticks, the margin a few thousand frequency points (#517). The design
+    runs on a log-spaced grid from 0.1 rad/s to Nyquist, each crossing refined by bisection.
   * *Verify and commit* ([#518](https://github.com/wboayue/stable-flight/issues/518)): two
     step pairs per loop through `Acceptance`, estimated at about 50 s on the sim from the
     search's settle per probe, against the identification's 8 s.
