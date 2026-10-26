@@ -239,13 +239,14 @@ impl CopterStabilizer {
 
     /// Steps a probe on an angle or heading loop before the controllers run. `setpoints` are
     /// the saturated roll, pitch, and heading setpoints, `error` the body-frame attitude error
-    /// the loops act on: a step replaces one setpoint; a relay's rate output comes back as `(axis, rate)` (axis 2: heading) for the
+    /// the loops act on, `rates_radps` the body rates: a step replaces one setpoint; a relay's rate output comes back as `(axis, rate)` (axis 2: heading) for the
     /// caller to apply after the controllers.
     pub(super) fn probe_attitude(
         &mut self,
         dt: f32,
         setpoints: &mut Vec3,
         error: &Vec3,
+        rates_radps: &Vec3,
     ) -> Option<(usize, f32)> {
         let location = self.running_stage()?;
         let saturated = self.loop_saturated(location);
@@ -258,6 +259,8 @@ impl CopterStabilizer {
             setpoint: setpoints[axis],
             error: error[axis],
             saturated,
+            rate_radps: rates_radps[axis],
+            last_moment: self.last_moments[axis],
         };
         self.inject(dt, axis, &signals, setpoints)
     }
@@ -278,6 +281,8 @@ impl CopterStabilizer {
             setpoint: setpoints[axis],
             error: setpoints[axis] - current[axis],
             saturated: self.loop_saturated(location),
+            rate_radps: current[axis],
+            last_moment: self.last_moments[axis],
         };
         self.inject(dt, axis, &signals, setpoints)
     }

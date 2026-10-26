@@ -10,8 +10,9 @@
 //! The relay never uses the loop's own gains, so a bad starting tune doesn't matter for the axis
 //! under test.
 //!
-//! - [`Probe`]: one loop's excitation and measurement, run inside the tick: the relay, or a
-//!   [`StepProbe`] whose [`StepMetrics`] describe the loop's step response.
+//! - [`Probe`]: one loop's excitation and measurement, run inside the tick: the relay, a
+//!   [`StepProbe`] whose [`StepMetrics`] describe the loop's step response, or an
+//!   [`IdentifyProbe`] that fits its axis's [`RateModel`].
 //! - [`Tunable`]: a stabilizer that hosts a probe on one of its loops
 //!   ([`CopterStabilizer`](crate::stabilizers::copter::CopterStabilizer)).
 //! - [`autotune::Autotune`]: the copter supervisor, run between ticks: executes each stage's
@@ -32,6 +33,7 @@
 //! ```
 
 pub mod autotune;
+pub mod identify;
 pub mod probe;
 pub mod relay;
 pub mod rules;
@@ -40,6 +42,9 @@ pub mod step;
 #[cfg(test)]
 pub(crate) mod plant;
 
+pub use identify::{
+    IdentifyAbort, IdentifyConfig, IdentifyProbe, IdentifyStatus, MAX_DELAY_TICKS, RateModel,
+};
 pub use probe::{
     Injection, LoopSignals, Measurement, Probe, ProbeAbort, ProbeConfig, ProbeStatus, Progress,
 };

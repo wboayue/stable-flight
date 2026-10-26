@@ -656,9 +656,9 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
 * **Probe and host** (`tuning::Probe`; `Tunable`, implemented by `CopterStabilizer`): a probe
   excites and measures one loop *inside* the tick on the fresh estimate, since a between-ticks
   driver would add a tick of delay and bias `Ku`/`Tu`. Each tick the host hands the probe the
-  loop's setpoint, error, and whether its path clipped last tick (`LoopSignals`), before the
-  loop's controller runs; the probe answers with one `Injection`: a replaced output (relay) or a
-  replaced setpoint (step). Every controller keeps running. The host owns the loop and the
+  loop's setpoint, error, whether its path clipped last tick, and its axis's body rate and last
+  moment command (`LoopSignals`), before the loop's controller runs; the probe answers with one
+  `Injection`: a replaced output (relay) or a replaced setpoint (step, identification). Every controller keeps running. The host owns the loop and the
   handoff; the probe owns the signal and the measurement.
 * **Step response** (`tuning::StepProbe`): holds the setpoint at the starting measurement plus
   the step for a fixed window, so steps compare on equal terms, and reports `StepMetrics`
@@ -749,13 +749,17 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
   spends most of each stage settling before each step: on the sim, a rate stage's 50 s holds
   about 5 s of stepping, an angle stage's 61 s about 24 s (182–234 s per airframe); QuadCopterX
   in RealFlight takes about 9 min. The planned method measures each rate axis once instead:
-  * *Identify* ([#516](https://github.com/wboayue/stable-flight/issues/516)): a shrinking
-    square wave on the attitude setpoint, every loop closed (PX4's excitation,
-    `mc_autotune_attitude_control.cpp:603-639`), and a least-squares fit of the axis's moment
-    command to its body rate: a second-order model with a delay (PX4's `ArxRls<2,2,1>`), the
-    delay chosen by least residual. On the sim, 3 s per axis fit the same model from the low,
-    own, and ×3 starts, recovered each airframe's motor lag (29.8, 49.1, 14.9 ms against 30,
-    50, 15), and found the actuator delay (1, 3, and 6–7 ticks clean, at 10 ms, at 25 ms).
+  * *Identify* (`tuning::IdentifyProbe`, in place; no stage plan runs it yet): a shrinking
+    square wave on the angle setpoint, every loop closed (PX4's excitation,
+    `mc_autotune_attitude_control.cpp:603-639`), and a least-squares fit of the axis's body
+    rate to its moment command: a second-order model with a delay (PX4's `ArxRls<2,2,1>`), the
+    delay chosen by least residual. The probe keeps each delay's least-squares sums rather than
+    the record and solves them when the excitation ends; it fits the rate's change on the last
+    rate and the last change, since fitting the last two rates side by side loses the lag in
+    `f32` (up to 1.6 ms off, #516), and recursive least squares hadn't converged in 3 s. On the
+    sim, 3 s per axis fit the same model from the low, own, and ×3 starts, recovered each
+    airframe's motor lag (29.8, 49.1, 14.9 ms against 30, 50, 15), and found the actuator
+    delay (1, 3, and 6–7 ticks clean, at 10 ms, at 25 ms).
   * *Design* ([#517](https://github.com/wboayue/stable-flight/issues/517)): rate D/P at the
     fitted lag, so the PD's zero cancels the motor lag; rate P for a 65° phase margin on the
     model's frequency response, its delay included; the start's rate I kept; angle P the

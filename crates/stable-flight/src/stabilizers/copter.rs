@@ -199,6 +199,10 @@ pub struct CopterStabilizer {
     /// What the last `stabilize` call clipped per axis, for a probe's
     /// [`LoopSignals::saturated`](crate::tuning::LoopSignals::saturated).
     clipped: Clipped,
+
+    /// The moments the last `stabilize` call commanded (roll, pitch, yaw), for a probe's
+    /// [`LoopSignals::last_moment`](crate::tuning::LoopSignals::last_moment).
+    last_moments: Vec3,
 }
 
 /// Per-axis clips (roll, pitch, yaw) of one tick.
@@ -232,6 +236,7 @@ impl CopterStabilizer {
             saturation: Saturation::default(),
             stage: None,
             clipped: Clipped::default(),
+            last_moments: Vec3::zeros(),
         }
     }
 }
@@ -317,6 +322,7 @@ impl Stabilizer for CopterStabilizer {
         // The rate loop clamps each moment to [-1, 1]; landing on a bound means it clipped.
         self.saturation.moments = output.moments.map(|m| m.abs() >= 1.0).into();
         self.clipped.moments = self.saturation.moments;
+        self.last_moments = output.moments;
         self.finish_stage();
         output
     }
@@ -326,6 +332,7 @@ impl Stabilizer for CopterStabilizer {
     fn prime(&mut self, _state: &VehicleState) {
         self.stage = None;
         self.clipped = Clipped::default();
+        self.last_moments = Vec3::zeros();
         self.body_rate = BodyRateController::default();
         self.attitude = AttitudeController::default();
         self.yaw = YawController::default();
@@ -384,7 +391,12 @@ impl CopterStabilizer {
         let error_for = |angles: &Vec3| attitude_error(attitude, angles.x, angles.y, angles.z);
         let mut error = error_for(&desired);
         let probed = desired;
-        let replaced_rate = self.probe_attitude(dt, &mut desired, &error);
+        let replaced_rate = self.probe_attitude(
+            dt,
+            &mut desired,
+            &error,
+            &estimated_state.angular_velocity_radps,
+        );
         // `!=` is true for a NaN heading too; recomputing is harmless.
         if desired != probed {
             desired = saturate_tilt(desired.x, desired.y, desired.z);
