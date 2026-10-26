@@ -1,15 +1,18 @@
 //! Autotunes a multirotor in RealFlight: climbs to the hover script's waypoint,
-//! tunes roll and pitch rate, then roll and pitch angle, by step response, lands, and disarms
-//! (`StagePlan::copter_search`, `architecture.md#autotune`). Per rate loop a relay sets D and
-//! caps P; per loop P is searched by pairs of steps (each judgment logged with its steps),
-//! verified, and kept only if it flies no worse than a baseline on the start gains that met
-//! the criterion (or, without one, meets the criterion; a start above the relay's cap flies no
-//! baseline). On
-//! completion it logs baseline vs verify per loop and prints the tuned config as an
-//! `airframes.rs` snippet. A failed stage (envelope breach, too many invalid steps) keeps the
-//! stages before it.
+//! tunes roll and pitch rate, then roll and pitch angle, by loop shaping, lands, and disarms
+//! (`StagePlan::copter_loop_shaping`, `architecture.md#autotune`). Each loop's axis is fitted
+//! from a 3 s square wave on its angle loop (the fit logged: delay, motor lag, acceleration)
+//! and its gains designed from the fit; once every loop is designed, each is verified by pairs
+//! of steps and kept unless it flies worse than its gains at the start (each judgment logged
+//! with its steps). On completion it logs the verify (and any baseline) per loop and prints the
+//! tuned config as an `airframes.rs` snippet. A failed stage (envelope breach, too many invalid
+//! steps, a fit the design can't use) keeps the stages before it.
 //!
-//! `--stages rate` runs the relay autotune instead: each stage's relay measures the
+//! `--stages search` runs the step-response search instead (`StagePlan::copter_search`): per
+//! rate loop a relay sets D and caps P; per loop P is searched by pairs of steps, verified, and
+//! kept only if it flies no worse than a baseline on the start gains.
+//!
+//! `--stages rate` runs the relay autotune: each stage's relay measures the
 //! loop's ultimate point and the Tyreus–Luyben rule sets its gains; `--stages angle` or `all`
 //! adds relay stages for the angle and heading loops, whose gains flew badly on QuadCopterX
 //! (see `COPTER_SEQUENCE`). `--rate-p-scale` starts from deliberately bad rate gains (e.g. `0.1`
@@ -33,6 +36,7 @@
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --step-test
+//! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages search
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages rate --rate-p-scale 10
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages none --step-test
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --airframe titan-cobra --step-test
@@ -113,7 +117,7 @@ struct Args {
     rate_p_scale: f32,
 
     /// Which loops to tune.
-    #[arg(long, value_enum, default_value_t = Stages::Search)]
+    #[arg(long, value_enum, default_value_t = Stages::LoopShaping)]
     stages: Stages,
 
     /// After tuning, step-tests roll and pitch rate and angle and logs their responses.
@@ -175,6 +179,8 @@ impl Model {
 /// `--stages`.
 #[derive(Clone, Copy, ValueEnum)]
 enum Stages {
+    /// Roll and pitch rate, then angle, designed from a fit of each axis, then verified.
+    LoopShaping,
     /// Roll and pitch rate, then angle, by step-response search (relay D, searched P).
     Search,
     /// None: the hand tune (with `--step-test`, to measure it).
@@ -207,6 +213,7 @@ impl Stages {
             Stages::Rate => rate.collect(),
             Stages::Angle => angle.collect(),
             Stages::All => rate.chain(angle).collect(),
+            Stages::LoopShaping => StagePlan::copter_loop_shaping().into(),
             Stages::Search => StagePlan::copter_search().into(),
         }
     }
@@ -422,6 +429,17 @@ fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
         } => info!(
             "autotune: {target:?} Ku {:.3} Tu {:.3} s (relay {:.3}, cycle {:.4}, bias {:.3})",
             result.point.ku, result.point.tu_s, result.relay, result.cycle_amplitude, result.bias,
+        ),
+        AutotuneEvent::Measured {
+            target,
+            measurement: Measurement::Identify(model),
+        } => info!(
+            "autotune: {target:?} fit: delay {} ticks, lag {}, accel {} ({model:?})",
+            model.delay_ticks,
+            format_ms(model.lag_s()),
+            model
+                .accel_radps2()
+                .map_or("-".to_string(), |accel| format!("{accel:.0} rad/s²")),
         ),
         AutotuneEvent::Tried {
             target,

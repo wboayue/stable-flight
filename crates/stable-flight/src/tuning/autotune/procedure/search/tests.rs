@@ -94,7 +94,7 @@ fn drive(
     let mut flown = Vec::new();
     let mut verdicts = Vec::new();
     let mut committed = Vec::new();
-    let mut action = procedure.next(Input::Start { gains: START });
+    let mut action = procedure.next(Input::start(START));
     for _ in 0..MAX_PROBES {
         verdicts.extend(procedure.take_verdict());
         if let Action::Probe {
@@ -524,7 +524,7 @@ fn a_failing_baseline_judges_by_the_criterion() {
 #[test]
 fn a_mismatched_input_fails() {
     let mut search = Procedure::new(Method::Search(d_plan()));
-    search.next(Input::Start { gains: START });
+    search.next(Input::start(START));
     let relay = relay_input(POINT, false);
     check!(search.next(relay) == Action::Fail(AutotuneAbort::Interrupted));
 }
@@ -606,13 +606,13 @@ fn a_breach_fails_the_candidate_only() {
         gains,
     };
     let mut search = Procedure::new(Method::Search(d_plan()));
-    let Action::Probe { gains: None, .. } = search.next(Input::Start { gains: START }) else {
+    let Action::Probe { gains: None, .. } = search.next(Input::start(START)) else {
         panic!("the baseline flies the committed gains");
     };
     check!(search.next(breached(START)) == Action::Fail(AutotuneAbort::Rate));
 
     let mut search = Procedure::new(Method::Search(d_plan()));
-    let mut action = search.next(Input::Start { gains: START });
+    let mut action = search.next(Input::start(START));
     // The baseline passes; then the first bracket point breaches.
     for _ in 0..2 * d_plan().test.pairs {
         action = search.next(Input::Measured {
@@ -652,7 +652,7 @@ fn stalls_rerun_and_never_fail_a_candidate() {
         stalled,
     };
     let mut search = Procedure::new(Method::Search(plan));
-    search.next(Input::Start { gains: START });
+    search.next(Input::start(START));
     for _ in 0..2 * plan.test.pairs {
         search.next(stalled_step(false));
     }
@@ -677,7 +677,7 @@ fn stalls_rerun_and_never_fail_a_candidate() {
 fn a_stopped_step_runs_again_and_counts_as_stalled() {
     let plan = d_plan();
     let mut procedure = Procedure::new(Method::Search(plan));
-    let first = procedure.next(Input::Start { gains: START });
+    let first = procedure.next(Input::start(START));
     check!(matches!(
         first,
         Action::Probe {

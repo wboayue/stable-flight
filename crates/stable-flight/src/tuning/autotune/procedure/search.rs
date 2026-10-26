@@ -63,7 +63,7 @@ impl Search {
 
     pub(super) fn next(&mut self, input: Input) -> Action {
         match (self.leg, input) {
-            (_, Input::Start { gains }) => {
+            (_, Input::Start { gains, .. }) => {
                 self.start = gains;
                 self.seed = gains;
                 self.retry_relay(0)

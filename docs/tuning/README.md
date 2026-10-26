@@ -17,5 +17,5 @@ Each guide quotes the reference airframe's values, but the airframe code is the 
 comments hold the value in use and the flight (`#n`) that set it. A tuned value lands in the
 airframe with that flight cited.
 
-The copter rate and angle loops can also be tuned automatically: `just fly-autotune`
-([architecture.md](../../architecture.md#autotune)).
+The copter rate and angle loops can also be tuned automatically, by loop shaping:
+`just fly-autotune` ([architecture.md](../../architecture.md#autotune)).

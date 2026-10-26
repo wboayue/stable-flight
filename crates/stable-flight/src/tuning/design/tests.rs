@@ -101,6 +101,42 @@ fn rate_design_fails_without_a_lag_or_a_crossover() {
     }
 }
 
+/// A fitted integrator just past 1 designs as one held at 1, for rate and angle alike:
+/// `quad_x`'s fit from a start ringing with 25 ms of delay (#518), whose unstable pole alone
+/// meets no crossover; a damped fit (below 1) designs on its own weights.
+#[test]
+fn designs_hold_a_leaking_integrator_at_one() {
+    let fitted = RateModel {
+        rate_weights: [1.874_103_3, -0.873_977_84],
+        moment_weights: [1.057_819e-5, 0.005_188_625_3, 0.008_271_968],
+        delay_ticks: 6,
+        dt_s: DT,
+    };
+    let held = RateModel {
+        rate_weights: [1.0 + 0.873_977_84, -0.873_977_84],
+        ..fitted
+    };
+    let rate = design_rate(&fitted, START, &COPTER_LOOP_SHAPING);
+    check!(rate.is_ok());
+    check!(rate == design_rate(&held, START, &COPTER_LOOP_SHAPING));
+    let rate = rate.unwrap_or_default();
+    let angle = Gains {
+        p: 3.0,
+        i: 0.0,
+        d: 0.0,
+    };
+    check!(
+        design_angle_p(&fitted, rate, angle, &COPTER_LOOP_SHAPING)
+            == design_angle_p(&held, rate, angle, &COPTER_LOOP_SHAPING)
+    );
+
+    let damped = RateModel {
+        rate_weights: [1.85, -0.86],
+        ..fitted
+    };
+    check!(integrating(&damped) == damped);
+}
+
 /// Angle P stays in range (less the back-off), sits at the range's top on the designed rate
 /// loop (as on the sim's copters), and falls from it as the rate loop it rides on slows: rate
 /// P and D at 1, ¼, and ¹⁄₁₆ of the design.

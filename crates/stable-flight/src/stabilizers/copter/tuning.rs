@@ -82,6 +82,46 @@ impl TunedLoop {
         matches!(self.location(), Location::Rate(_))
     }
 
+    /// The rate loop under this angle or heading loop, which flies its rate setpoint; `None`
+    /// for a rate loop.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::TunedLoop;
+    ///
+    /// assert_eq!(TunedLoop::Roll.inner(), Some(TunedLoop::RollRate));
+    /// assert_eq!(TunedLoop::RollRate.inner(), None);
+    /// ```
+    pub fn inner(self) -> Option<Self> {
+        match self {
+            Self::Roll => Some(Self::RollRate),
+            Self::Pitch => Some(Self::PitchRate),
+            Self::Heading => Some(Self::YawRate),
+            Self::RollRate | Self::PitchRate | Self::YawRate => None,
+        }
+    }
+
+    /// The angle or heading loop over this rate loop, which sets its setpoint; `None` for an
+    /// angle or heading loop.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::TunedLoop;
+    ///
+    /// assert_eq!(TunedLoop::PitchRate.outer(), Some(TunedLoop::Pitch));
+    /// assert_eq!(TunedLoop::Pitch.outer(), None);
+    /// ```
+    pub fn outer(self) -> Option<Self> {
+        match self {
+            Self::RollRate => Some(Self::Roll),
+            Self::PitchRate => Some(Self::Pitch),
+            Self::YawRate => Some(Self::Heading),
+            Self::Roll | Self::Pitch | Self::Heading => None,
+        }
+    }
+
     pub(super) fn location(self) -> Location {
         match self {
             Self::RollRate => Location::Rate(0),

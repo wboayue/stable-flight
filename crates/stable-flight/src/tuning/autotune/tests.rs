@@ -1345,3 +1345,137 @@ fn search_step_presets() {
     check!(angle.validate() == Ok(()));
     check!(angle.relay.is_none());
 }
+
+/// The loop-shaping tune designs every loop, rate first, with each rate loop's fit run on the
+/// angle loop above it, then verifies each design in the same order and keeps it.
+#[test]
+fn copter_loop_shaping_designs_then_verifies_every_loop() {
+    let params = PlantParams {
+        delay_s: 0.008,
+        ..PlantParams::rate_axis()
+    };
+    let (mut flight_loop, _controls) = hovering_on(1.0, params);
+    let start = *flight_loop.stabilizer().config();
+    let plan = StagePlan::copter_loop_shaping();
+    let mut autotune = started(&flight_loop, &plan);
+
+    let events = run(&mut flight_loop, &mut autotune, 300.0, |_, _| {});
+
+    check!(events.last() == Some(&AutotuneEvent::Complete));
+    let fitted: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            AutotuneEvent::Measured {
+                target,
+                measurement: Measurement::Identify(_),
+            } => Some(*target),
+            _ => None,
+        })
+        .collect();
+    let angle_loops = [
+        TunedLoop::Roll,
+        TunedLoop::Pitch,
+        TunedLoop::Roll,
+        TunedLoop::Pitch,
+    ];
+    check!(fitted == angle_loops);
+    let done: Vec<_> = events
+        .iter()
+        .filter_map(|event| match *event {
+            AutotuneEvent::StageDone {
+                target,
+                gains,
+                outcome,
+                steps,
+                ..
+            } => Some((target, gains, outcome, steps.is_some())),
+            _ => None,
+        })
+        .collect();
+    let targets: Vec<_> = done.iter().map(|(target, ..)| *target).collect();
+    check!(targets == plan.map(|stage| stage.target));
+    let tuned = *flight_loop.stabilizer().config();
+    for (index, (target, gains, outcome, stepped)) in done.into_iter().enumerate() {
+        let verify = index >= 4;
+        let expected = if verify {
+            Outcome::Measured
+        } else {
+            Outcome::Tuned
+        };
+        check!(outcome == expected, "stage {index}: {target:?}");
+        check!(stepped == verify, "stage {index}: {target:?}");
+        check!(gains == target.gains(&tuned), "stage {index}: {target:?}");
+        check!(
+            gains != target.gains(&start),
+            "stage {index}: {target:?} designed"
+        );
+    }
+}
+
+/// A fit starts when the settle times out, as a relay does: a vehicle that can't get still
+/// still gets fitted (#356).
+#[test]
+fn an_identification_starts_when_the_settle_times_out() {
+    let (mut flight_loop, controls) = hovering(1.0);
+    hold_roll(&controls, 0.25);
+    let plan = StagePlan {
+        target: TunedLoop::PitchRate,
+        method: Method::Design(DesignPlan::copter()),
+    };
+    let mut autotune = started(&flight_loop, &[plan]);
+    let timeout_s = Envelope::default().settle_timeout_s;
+
+    run(&mut flight_loop, &mut autotune, timeout_s - 0.1, |_, _| {});
+    check!(matches!(autotune.status(), AutotuneStatus::Settling { .. }));
+    run(&mut flight_loop, &mut autotune, 0.2, |_, _| {});
+    check!(matches!(autotune.status(), AutotuneStatus::Running { .. }));
+    check!(matches!(
+        flight_loop.probe(),
+        Some((TunedLoop::Pitch, ProbeStatus::Running(_)))
+    ));
+}
+
+/// A settle holds on tilt and the roll and pitch rates; a yaw rate, from the untuned yaw loop
+/// ringing, doesn't hold it up (#518).
+#[test]
+fn a_settle_ignores_the_yaw_rate() {
+    let settle = COPTER_STEP_SETTLE;
+    let past = 2.0 * settle.rate_radps;
+    // (case, roll rate, pitch rate, yaw rate in rad/s, roll in rad, holds)
+    let rows = [
+        ("still", 0.0, 0.0, 0.0, 0.0, true),
+        ("yawing", 0.0, 0.0, past, 0.0, true),
+        ("rolling", past, 0.0, 0.0, 0.0, false),
+        ("pitching", 0.0, -past, 0.0, 0.0, false),
+        ("tilted", 0.0, 0.0, 0.0, 2.0 * settle.tilt_rad, false),
+    ];
+    for (case, roll_radps, pitch_radps, yaw_radps, roll_rad, holds) in rows {
+        let state = VehicleState {
+            angular_velocity_radps: Vec3::new(roll_radps, pitch_radps, yaw_radps),
+            attitude: nalgebra::UnitQuaternion::from_euler_angles(roll_rad, 0.0, 0.0),
+            ..Default::default()
+        };
+        check!(settle.holds(&Motion::of(&state)) == holds, "{case}");
+    }
+}
+
+/// `TunedLoop::outer` routes a fit on a rate stage to the angle loop above it; other probes
+/// and angle stages run on their own loop.
+#[test]
+fn fits_run_on_the_angle_loop_over_a_rate_stage() {
+    let identify = ProbeConfig::Identify(COPTER_IDENTIFY);
+    let step = ProbeConfig::Step(COPTER_RATE_STEP);
+    // (stage target, probe, probed loop)
+    let rows = [
+        (TunedLoop::RollRate, identify, TunedLoop::Roll),
+        (TunedLoop::PitchRate, identify, TunedLoop::Pitch),
+        (TunedLoop::Roll, identify, TunedLoop::Roll),
+        (TunedLoop::RollRate, step, TunedLoop::RollRate),
+    ];
+    for (target, probe, probed) in rows {
+        check!(
+            probed_loop(target, &probe) == probed,
+            "{target:?} {probe:?}"
+        );
+    }
+}
