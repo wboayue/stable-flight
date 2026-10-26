@@ -193,12 +193,6 @@ impl TickRate {
         self.slow
     }
 
-    /// When the current slow stretch began, as the runner's elapsed time; `None` while keeping
-    /// time.
-    pub fn slow_since(&self) -> Option<Duration> {
-        self.slow_since
-    }
-
     /// Slow stretches begun so far, the current one included.
     pub fn slow_stretches(&self) -> u64 {
         self.stretches

@@ -115,6 +115,13 @@ fn measures_the_rate_over_the_window() {
     check!((hz - 125.0).abs() < 1e-6, "{hz}");
 }
 
+/// When, in µs, the first tick reporting `slow` ran, among `verdicts` from ticks `gap_us` apart
+/// that ended at `end_us`.
+fn flipped_at_us(verdicts: &[bool], end_us: u64, gap_us: u64, slow: bool) -> u64 {
+    let flip = verdicts.iter().position(|v| *v == slow).expect("flipped");
+    end_us - gap_us * (verdicts.len() - 1 - flip) as u64
+}
+
 /// Slow stretches are counted and timed from the tick that turned slow to the one keeping time
 /// again; the current stretch counts up to the last tick.
 #[test]
@@ -125,21 +132,20 @@ fn counts_and_times_the_slow_stretches() {
 
     let (_, at_us) = run(&mut rate, 0, &[4_000], 300);
     let (slow, at_us) = run(&mut rate, at_us, &[8_333], 300);
-    let turned_slow_us =
-        at_us - 8_333 * (300 - slow.iter().position(|v| *v).expect("slow") as u64 - 1);
-    check!(rate.slow_since() == Some(Duration::from_micros(turned_slow_us)));
+    let turned_slow_us = flipped_at_us(&slow, at_us, 8_333, true);
+    check!(rate.slow_time() == Duration::from_micros(at_us - turned_slow_us));
     let (back, at_us) = run(&mut rate, at_us, &[4_000], 300);
-    let kept_time_us =
-        at_us - 4_000 * (300 - back.iter().position(|v| !v).expect("back") as u64 - 1);
+    let kept_time_us = flipped_at_us(&back, at_us, 4_000, false);
     let first = Duration::from_micros(kept_time_us - turned_slow_us);
-    check!(rate.slow_since().is_none());
     check!(rate.slow_stretches() == 1);
     check!(rate.last_slow_stretch() == first);
-    check!(rate.slow_time() == first);
+    check!(
+        rate.slow_time() == first,
+        "not counting on after keeping time"
+    );
 
     let (slow, at_us) = run(&mut rate, at_us, &[8_333], 300);
-    let turned_slow_us =
-        at_us - 8_333 * (300 - slow.iter().position(|v| *v).expect("slow") as u64 - 1);
+    let turned_slow_us = flipped_at_us(&slow, at_us, 8_333, true);
     check!(rate.slow_stretches() == 2);
     check!(
         rate.last_slow_stretch() == first,
