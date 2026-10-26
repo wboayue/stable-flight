@@ -5,13 +5,13 @@ use core::fmt;
 use crate::controllers::{
     Gains, InvalidConfig, check, check_limit, check_positive, check_unit_interval,
 };
-use crate::math::euler_angles;
+use crate::math::{DEG, euler_angles};
 use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use crate::{Configurable, FlightLoop, VehicleState};
 
 use super::{
-    ControllerForm, Measurement, ProbeAbort, ProbeConfig, ProbeStatus, RelayConfig, RelayResult,
-    StepConfig, StepSummary, Tunable, TuningRule, gains_from_ultimate,
+    ControllerForm, IdentifyConfig, Measurement, ProbeAbort, ProbeConfig, ProbeStatus, RelayConfig,
+    RelayResult, StepConfig, StepSummary, Tunable, TuningRule, gains_from_ultimate,
 };
 
 use procedure::{Action, Input, Procedure};
@@ -212,6 +212,15 @@ impl Method {
         }
     }
 }
+
+/// Identification of a copter rate axis through its angle loop: a 4° square wave on the angle
+/// setpoint for 3 s, washed out at 0.2 s (PX4's time constant). On the sim 3 s fit the same
+/// model as 20 s on every airframe, from any start (#312).
+pub const COPTER_IDENTIFY: IdentifyConfig = IdentifyConfig {
+    amplitude: 4.0 * DEG,
+    duration_s: 3.0,
+    washout_tc_s: 0.2,
+};
 
 /// Step response of a copter rate loop: 1 rad/s (57°/s) held for 0.25 s, about four of
 /// QuadCopterX's 67 ms ultimate periods (#295), which tilts it about 14°; filtered at 40 Hz.

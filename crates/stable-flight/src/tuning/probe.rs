@@ -1,8 +1,9 @@
 //! What an autotune stage runs inside the tick: see [`Probe`].
 
 use super::{
-    RelayAbort, RelayConfig, RelayResult, RelayStatus, RelayTuner, StepAbort, StepConfig,
-    StepMetrics, StepProbe, StepStatus,
+    IdentifyAbort, IdentifyConfig, IdentifyProbe, IdentifyStatus, RateModel, RelayAbort,
+    RelayConfig, RelayResult, RelayStatus, RelayTuner, StepAbort, StepConfig, StepMetrics,
+    StepProbe, StepStatus,
 };
 use crate::controllers::InvalidConfig;
 
@@ -13,10 +14,14 @@ pub enum ProbeConfig {
     Relay(RelayConfig),
     /// A step: the loop's setpoint is held at a step and its response measured.
     Step(StepConfig),
+    /// Identification: a square wave on the loop's setpoint while its axis's rate and moment
+    /// are recorded and fitted.
+    Identify(IdentifyConfig),
 }
 
 impl ProbeConfig {
-    /// Checks the probe's config ([`RelayConfig::validate`], [`StepConfig::validate`]).
+    /// Checks the probe's config ([`RelayConfig::validate`], [`StepConfig::validate`],
+    /// [`IdentifyConfig::validate`]).
     ///
     /// # Examples
     ///
@@ -32,6 +37,7 @@ impl ProbeConfig {
         match self {
             Self::Relay(config) => config.validate(),
             Self::Step(config) => config.validate(),
+            Self::Identify(config) => config.validate(),
         }
     }
 }
@@ -46,6 +52,10 @@ pub struct LoopSignals {
     pub error: f32,
     /// Whether the loop's output, or the loop under it, was clipped on the last tick.
     pub saturated: bool,
+    /// The loop's axis's body rate this tick, in rad/s: the measurement itself on a rate loop.
+    pub rate_radps: f32,
+    /// The loop's axis's moment command on the last tick, normalized to `[-1, 1]`.
+    pub last_moment: f32,
 }
 
 impl LoopSignals {
@@ -80,6 +90,11 @@ pub enum Progress {
         /// Seconds since the step.
         elapsed_s: f32,
     },
+    /// Time into the excitation.
+    Identify {
+        /// Seconds since the excitation began.
+        elapsed_s: f32,
+    },
 }
 
 /// What a finished probe measured.
@@ -89,6 +104,8 @@ pub enum Measurement {
     Relay(RelayResult),
     /// The step response.
     Step(StepMetrics),
+    /// The axis's fitted model.
+    Identify(RateModel),
 }
 
 /// Why a probe gave up.
@@ -98,6 +115,8 @@ pub enum ProbeAbort {
     Relay(RelayAbort),
     /// The step response ran the wrong way or away.
     Step(StepAbort),
+    /// The fit couldn't be solved.
+    Identify(IdentifyAbort),
 }
 
 /// Where a probe stands, as its host reports it ([`Tunable::probe`](super::Tunable::probe)).
@@ -145,6 +164,18 @@ impl From<StepStatus> for ProbeStatus {
     }
 }
 
+impl From<IdentifyStatus> for ProbeStatus {
+    fn from(status: IdentifyStatus) -> Self {
+        match status {
+            IdentifyStatus::Running { elapsed_s } => {
+                Self::Running(Progress::Identify { elapsed_s })
+            }
+            IdentifyStatus::Done(model) => Self::Done(Measurement::Identify(model)),
+            IdentifyStatus::Aborted(abort) => Self::Aborted(ProbeAbort::Identify(abort)),
+        }
+    }
+}
+
 /// One loop's excitation and measurement, stepped by its host inside the tick: the host feeds
 /// it the loop's [`LoopSignals`] before the loop's controller runs and applies the
 /// [`Injection`] it returns.
@@ -160,7 +191,7 @@ impl From<StepStatus> for ProbeStatus {
 ///
 /// let mut probe = Probe::new(ProbeConfig::Relay(COPTER_RATE_RELAY), 0.0);
 /// // Rolling right faster than wanted: the relay pushes left.
-/// let signals = LoopSignals { setpoint: 0.0, error: -0.5, saturated: false };
+/// let signals = LoopSignals { setpoint: 0.0, error: -0.5, ..LoopSignals::default() };
 /// assert_eq!(probe.step(0.004, &signals), Injection::Output(-COPTER_RATE_RELAY.initial_relay));
 /// assert!(probe.status().is_running());
 /// ```
@@ -169,10 +200,14 @@ pub struct Probe {
     kind: Kind,
 }
 
+// The identification's least-squares sums (about 1.7 KB) make its variant the largest; boxing
+// it would allocate, which core doesn't, and a host holds one probe at a time.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 enum Kind {
     Relay(RelayTuner),
     Step(StepProbe),
+    Identify(IdentifyProbe),
 }
 
 impl Probe {
@@ -186,6 +221,7 @@ impl Probe {
         let kind = match config {
             ProbeConfig::Relay(config) => Kind::Relay(RelayTuner::new(config, trim)),
             ProbeConfig::Step(config) => Kind::Step(StepProbe::new(config)),
+            ProbeConfig::Identify(config) => Kind::Identify(IdentifyProbe::new(config)),
         };
         Self { kind }
     }
@@ -202,6 +238,10 @@ impl Probe {
             Kind::Step(step) => {
                 Injection::Setpoint(step.step(dt, signals.measurement(), signals.saturated))
             }
+            Kind::Identify(identify) => {
+                let offset = identify.step(dt, signals.rate_radps, signals.last_moment);
+                Injection::Setpoint(signals.setpoint + offset)
+            }
         }
     }
 
@@ -210,15 +250,16 @@ impl Probe {
         match &self.kind {
             Kind::Relay(tuner) => tuner.status().into(),
             Kind::Step(step) => step.status().into(),
+            Kind::Identify(identify) => identify.status().into(),
         }
     }
 
     /// The trim to hand the loop back with, as its I term: the relay's bias. `None` for a
-    /// step, which leaves the loop's integral as it is.
+    /// step or an identification, which leave the loop's integral as it is.
     pub fn trim(&self) -> Option<f32> {
         match &self.kind {
             Kind::Relay(tuner) => Some(tuner.bias()),
-            Kind::Step(_) => None,
+            Kind::Step(_) | Kind::Identify(_) => None,
         }
     }
 }

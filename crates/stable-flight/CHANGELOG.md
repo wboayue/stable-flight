@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tuning::IdentifyProbe` (`ProbeConfig::Identify`, preset `autotune::COPTER_IDENTIFY`) (#516):
+  fits a rate axis's `RateModel` (motor lag, delay, angular acceleration per unit moment) from
+  a square wave on its angle loop's setpoint, every loop closed, in `f32` and fixed memory. On
+  the sim, 3 s per axis recovers each copter's motor lag within 1% and its actuator delay, from
+  low and ×3 starting gains. No autotune stage runs it yet (#518).
+
 - `TableMixer::config()`: the thrust factor and yaw ratio a mixer scales by, so a copter
   wiring can mix a quadplane's lift rotors at its config (#438).
 - `Autotune::set_host_slow` (#438): while the host runs slow (its ticks further apart than
@@ -299,6 +305,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Setpoint::thrust`:** the linear thrust either variant carries.
 
 ### Changed
+
+- **Breaking:** `LoopSignals` carries the probed axis's `rate_radps` and `last_moment`, which
+  a host fills for an identification probe (#516).
 
 - `AutotuneEvent::Measured` reports only probes the host kept time for; a stalled one comes as
   `AutotuneEvent::Stalled` (#438).

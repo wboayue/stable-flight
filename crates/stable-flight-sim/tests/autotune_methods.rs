@@ -7,10 +7,9 @@
 //! cargo test --release -p stable-flight-sim --test autotune_methods -- --ignored --nocapture --test-threads 1
 //! ```
 //!
-//! - **Identification:** a shrinking square wave on the attitude setpoint (PX4's excitation
-//!   shape, `mc_autotune_attitude_control.cpp:603-639` at `ae4fd97`), every loop closed; the
-//!   axis's moment command and body rate fitted by least squares to a second-order model with a
-//!   delay (PX4's `ArxRls<2,2,1>`, its delay chosen here by least residual).
+//! - **Identification:** core's `IdentifyProbe` on the roll and pitch angle loops
+//!   (`COPTER_IDENTIFY`): PX4's shrinking square wave on the setpoint, every loop closed, and a
+//!   least-squares fit of the axis's body rate to its moment command with a delay.
 //! - **Design** from the model: PX4's pole placement (`pid_design.hpp:68-103`), or loop
 //!   shaping (the rate PD's zero on the fitted lag, P for a phase margin). Angle P from the
 //!   model on the designed rate loop.
@@ -22,7 +21,6 @@
 //! steps fly core's attitude and body-rate controllers, so a design is judged on the law the
 //! vehicle flies.
 //!
-//! TODO(#516): excite and fit through core's identification probe once it lands.
 //! TODO(#517): design through core's loop-shaping function once it lands.
 
 mod common;
@@ -34,10 +32,15 @@ use std::rc::Rc;
 
 use stable_flight::controllers::{AttitudeController, BodyRateController, Gains};
 use stable_flight::guidance::copter::CopterGuidance;
-use stable_flight::nalgebra::{Complex, ComplexField, SMatrix, SVector};
+use stable_flight::nalgebra::{Complex, ComplexField};
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
-use stable_flight::tuning::autotune::{Autotune, AutotuneEvent, Envelope, SearchPlan, StagePlan};
-use stable_flight::tuning::{StepConfig, StepProbe, StepStatus, StepSummary};
+use stable_flight::tuning::autotune::{
+    Autotune, AutotuneEvent, COPTER_IDENTIFY, Envelope, SearchPlan, StagePlan,
+};
+use stable_flight::tuning::{
+    Measurement, ProbeConfig, ProbeStatus, RateModel, StepConfig, StepProbe, StepStatus,
+    StepSummary,
+};
 use stable_flight::{
     ControlInput, FlightLoop, FlightModeReport, FlightRegime, Guidance, Saturation, Setpoint,
     TelemetryPublisher, TelemetryRecord, Vec2, Vec3, VehicleState,
@@ -93,234 +96,26 @@ fn search_time_per_stage() {
     }
 }
 
-// ---- Excitation ----------------------------------------------------------------------------
-
-/// Peak of the identification's square wave on the attitude setpoint, in rad.
-const EXCITATION_RAD: f32 = 4.0 * PI / 180.0;
-
-/// Seconds of excitation per axis: 3, 5, 10, and 20 s fitted the same models.
-const EXCITATION_S: f32 = 3.0;
-
-/// Time constant of the square wave's washout, in s (PX4: 0.2 s).
-const WASHOUT_TC_S: f32 = 0.2;
-
-/// What the excitation adds to the attitude setpoint this run.
-#[derive(Clone, Copy, Debug, Default)]
-struct Drive {
-    /// 0 roll, 1 pitch; `None` off.
-    axis: Option<usize>,
-    amplitude_rad: f32,
-    /// A sine of this frequency (QuikTune's dither) instead of the square wave, in Hz.
-    sine_hz: Option<f32>,
-    elapsed_s: f32,
-}
-
-/// PX4's unipolar square: half-periods from 1.0 s down to 0.2 s by 0.1 s, then 0.6 s down to
-/// 0.2 s, repeating. 1 or 0 at `t_s`.
-fn square(t_s: f32) -> f32 {
-    let half_s = |i: usize| match i {
-        0..=8 => 1.0 - 0.1 * i as f32,
-        _ => 0.6 - 0.1 * ((i - 9) % 5) as f32,
-    };
-    let (mut edge_s, mut level, mut i) = (0.0, 1.0, 0);
-    loop {
-        edge_s += half_s(i);
-        if t_s < edge_s {
-            return level;
-        }
-        level = 1.0 - level;
-        i += 1;
-    }
-}
-
-/// Copter guidance with [`Drive`]'s signal added to the attitude setpoint's roll or pitch.
-struct Excited {
-    inner: CopterGuidance,
-    drive: Rc<Cell<Drive>>,
-    washout_rad: f32,
-}
-
-impl Guidance for Excited {
-    fn guide(
-        &mut self,
-        dt: f32,
-        regime: FlightRegime,
-        input: &ControlInput,
-        state: &VehicleState,
-    ) -> Setpoint {
-        let mut setpoint = self.inner.guide(dt, regime, input, state);
-        let mut drive = self.drive.get();
-        let (Some(axis), Setpoint::Attitude(attitude)) = (drive.axis, &mut setpoint) else {
-            self.washout_rad = 0.0;
-            return setpoint;
-        };
-        drive.elapsed_s += dt;
-        self.drive.set(drive);
-        let signal_rad = match drive.sine_hz {
-            Some(hz) => drive.amplitude_rad * (2.0 * PI * hz * drive.elapsed_s).sin(),
-            None => {
-                let raw_rad = drive.amplitude_rad * square(drive.elapsed_s);
-                self.washout_rad += (raw_rad - self.washout_rad) * (dt / WASHOUT_TC_S).min(1.0);
-                raw_rad - self.washout_rad
-            }
-        };
-        if axis == 0 {
-            attitude.roll_rad += signal_rad;
-        } else {
-            attitude.pitch_rad += signal_rad;
-        }
-        setpoint
-    }
-
-    fn prime(&mut self, state: &VehicleState) {
-        self.inner.prime(state);
-    }
-
-    fn saturation(&self) -> Saturation {
-        self.inner.saturation()
-    }
-
-    fn flight_mode(&self) -> Option<FlightModeReport> {
-        self.inner.flight_mode()
-    }
-}
-
-/// One tick's roll and pitch, each (moment command, body rate in rad/s).
-type AxisTick = [(f32, f32); 2];
-
-/// Each tick's roll and pitch (moment command, body rate in rad/s) while on.
-#[derive(Clone, Default)]
-struct Recorder {
-    on: Rc<Cell<bool>>,
-    ticks: Rc<RefCell<Vec<AxisTick>>>,
-}
-
-impl TelemetryPublisher for Recorder {
-    fn publish(&mut self, record: &TelemetryRecord) {
-        if self.on.get() {
-            let moment = record.control.moments;
-            let rate_radps = record.state.angular_velocity_radps;
-            self.ticks
-                .borrow_mut()
-                .push([(moment.x, rate_radps.x), (moment.y, rate_radps.y)]);
-        }
-    }
-}
-
-/// A copter pipeline on [`Excited`] guidance, recorded by a [`Recorder`].
-type ExcitedLoop = FlightLoop<
-    common::Hover,
-    stable_flight_sim::SimCopter,
-    Excited,
-    CopterStabilizer,
-    stable_flight::mixers::TableMixer<4>,
-    Recorder,
->;
-
-/// `plant` hovering on [`Excited`] guidance, recorded by `recorder`.
-fn excitable(plant: &Plant, drive: &Rc<Cell<Drive>>, recorder: &Recorder) -> ExcitedLoop {
-    let airframe = plant.airframe;
-    let mut flight_loop = FlightLoop::new(
-        hover_follower(),
-        plant.vehicle(),
-        Excited {
-            inner: CopterGuidance::new(airframe.guidance),
-            drive: drive.clone(),
-            washout_rad: 0.0,
-        },
-        CopterStabilizer::new(airframe.stabilizer),
-        airframe.mixer,
-        recorder.clone(),
-    );
-    flight_loop.prime();
-    fly(&mut flight_loop, HOVER_SETTLE_S, |_, _| {});
-    flight_loop
-}
-
 // ---- Identification ------------------------------------------------------------------------
 
-/// Longest delay tried, in ticks.
-const MAX_DELAY_TICKS: usize = 10;
+/// Simulated seconds an identification may run: its 3 s plus margin.
+const IDENTIFY_TIMEOUT_S: f32 = 5.0;
 
-/// A rate axis's model: `y[k] = −a1·y[k−1] − a2·y[k−2] + b0·u[k−d] + b1·u[k−d−1] +
-/// b2·u[k−d−2]`, `u` the moment command, `y` the body rate in rad/s, `d` the delay in ticks.
-/// An integrator and a lag fit it as `a1 = −(1 + p)`, `a2 = p`, `p` the lag's pole.
-#[derive(Clone, Copy, Debug)]
-struct RateModel {
-    a1: f32,
-    a2: f32,
-    b: [f32; 3],
-    delay_ticks: usize,
-}
-
-impl RateModel {
-    /// The lag's time constant, in s, from its pole `a2`; `None` unless `0 < a2 < 1`.
-    fn lag_s(&self) -> Option<f32> {
-        (self.a2 > 0.0 && self.a2 < 1.0).then(|| -DT / self.a2.ln())
-    }
-}
-
-/// Excites roll, then pitch, [`EXCITATION_S`] each, and fits each axis.
+/// Roll's then pitch's model, each from core's identification probe on its angle loop
+/// ([`COPTER_IDENTIFY`]) from a settled hover.
 fn identify(plant: &Plant) -> [RateModel; 2] {
-    let drive = Rc::new(Cell::new(Drive::default()));
-    let recorder = Recorder::default();
-    let mut flight_loop = excitable(plant, &drive, &recorder);
-    [0, 1].map(|axis| {
-        recorder.ticks.borrow_mut().clear();
-        recorder.on.set(true);
-        drive.set(Drive {
-            axis: Some(axis),
-            amplitude_rad: EXCITATION_RAD,
-            ..Drive::default()
-        });
-        fly(&mut flight_loop, EXCITATION_S, |_, _| {});
-        drive.set(Drive::default());
-        recorder.on.set(false);
-        fly(&mut flight_loop, 1.0, |_, _| {});
-        let ticks = recorder.ticks.borrow();
-        let (moment, rate_radps): (Vec<f32>, Vec<f32>) = ticks.iter().map(|t| t[axis]).unzip();
-        (1..=MAX_DELAY_TICKS)
-            .map(|delay| fit(&moment, &rate_radps, delay))
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .expect("delays to try")
-            .0
+    [TunedLoop::Roll, TunedLoop::Pitch].map(|target| {
+        let config = ProbeConfig::Identify(COPTER_IDENTIFY);
+        match common::probe(plant, target, config, IDENTIFY_TIMEOUT_S) {
+            Some(ProbeStatus::Done(Measurement::Identify(model))) => model,
+            other => panic!("{target:?}: {other:?}"),
+        }
     })
 }
 
-/// Least squares fit at `delay_ticks`, with a constant term for the trim moment; the model
-/// and its RMS residual in rad/s. Every delay fits the same ticks (from the longest delay's
-/// first), so residuals compare.
-fn fit(moment: &[f32], rate_radps: &[f32], delay_ticks: usize) -> (RateModel, f64) {
-    let regressors = |k: usize| {
-        SVector::<f64, 6>::from([
-            -rate_radps[k - 1] as f64,
-            -rate_radps[k - 2] as f64,
-            moment[k - delay_ticks] as f64,
-            moment[k - delay_ticks - 1] as f64,
-            moment[k - delay_ticks - 2] as f64,
-            1.0,
-        ])
-    };
-    let rows = MAX_DELAY_TICKS + 2..rate_radps.len();
-    let mut normal = SMatrix::<f64, 6, 6>::zeros();
-    let mut projected = SVector::<f64, 6>::zeros();
-    for k in rows.clone() {
-        let phi = regressors(k);
-        normal += phi * phi.transpose();
-        projected += phi * rate_radps[k] as f64;
-    }
-    let theta = normal.try_inverse().expect("excited") * projected;
-    let squared: f64 = rows
-        .clone()
-        .map(|k| (rate_radps[k] as f64 - regressors(k).dot(&theta)).powi(2))
-        .sum();
-    let model = RateModel {
-        a1: theta[0] as f32,
-        a2: theta[1] as f32,
-        b: [theta[2] as f32, theta[3] as f32, theta[4] as f32],
-        delay_ticks,
-    };
-    (model, (squared / rows.len() as f64).sqrt())
+/// `model`'s denominator `1 + a1·z⁻¹ + a2·z⁻²` coefficients: `a = −r`, `r` its rate weights.
+fn denominator(model: &RateModel) -> (f32, f32) {
+    (-model.rate_weights[0], -model.rate_weights[1])
 }
 
 // ---- Design --------------------------------------------------------------------------------
@@ -359,9 +154,10 @@ fn pole_placement(model: &RateModel, start: Gains) -> Gains {
     let rho = DT / POLE_PLACEMENT_RISE_S;
     // t1 = −2·e^(−2ρ) enters only f0, which sets I.
     let t2 = (-4.0 * rho).exp();
-    let f1 = t2 - model.a2 + model.a1;
-    let f2 = model.a2;
-    let static_gain = model.b.iter().sum::<f32>();
+    let (a1, a2) = denominator(model);
+    let f1 = t2 - a2 + a1;
+    let f2 = a2;
+    let static_gain = model.moment_weights.iter().sum::<f32>();
     let scale = POLE_PLACEMENT_DETUNE / static_gain;
     Gains {
         p: scale * (-f1 - 2.0 * f2),
@@ -376,9 +172,11 @@ fn loop_shaping(model: &RateModel, start: Gains, margin_deg: f32) -> Option<Gain
     let ratio_s = model.lag_s()?;
     let response = |w_radps: f32| {
         let z1 = Complex::new(0.0, -w_radps * DT).exp();
-        let numerator = (Complex::from(model.b[0]) + z1 * model.b[1] + z1 * z1 * model.b[2])
-            * z1.powu(model.delay_ticks as u32);
-        let denominator = Complex::from(1.0) + z1 * model.a1 + z1 * z1 * model.a2;
+        let m = model.moment_weights;
+        let numerator =
+            (Complex::from(m[0]) + z1 * m[1] + z1 * z1 * m[2]) * z1.powu(model.delay_ticks as u32);
+        let (a1, a2) = denominator(model);
+        let denominator = Complex::from(1.0) + z1 * a1 + z1 * z1 * a2;
         let controller = Complex::from(1.0) + (Complex::from(1.0) - z1) * (ratio_s / DT);
         controller * numerator / denominator
     };
@@ -530,10 +328,13 @@ impl ModelPlant {
         self.moments.push_front(moment);
         self.moments.truncate(d + 2);
         let delayed = |i: usize| self.moments[d - 1 + i];
-        let next_radps = -self.model.a1 * self.rates_radps[0] - self.model.a2 * self.rates_radps[1]
-            + self.model.b[0] * delayed(0)
-            + self.model.b[1] * delayed(1)
-            + self.model.b[2] * delayed(2);
+        let [r0, r1] = self.model.rate_weights;
+        let [m0, m1, m2] = self.model.moment_weights;
+        let next_radps = r0 * self.rates_radps[0]
+            + r1 * self.rates_radps[1]
+            + m0 * delayed(0)
+            + m1 * delayed(1)
+            + m2 * delayed(2);
         self.rates_radps = [next_radps, self.rates_radps[0]];
         next_radps
     }
@@ -696,23 +497,113 @@ impl Slew {
     }
 }
 
+/// The dither QuikTune's ramp oscillates on, added to the attitude setpoint this run.
+#[derive(Clone, Copy, Debug, Default)]
+struct Drive {
+    /// 0 roll, 1 pitch; `None` off.
+    axis: Option<usize>,
+    elapsed_s: f32,
+}
+
+/// Copter guidance with a [`DITHER_RAD`] sine at [`DITHER_HZ`] added to the attitude
+/// setpoint's roll or pitch while [`Drive`] names an axis.
+struct Dithered {
+    inner: CopterGuidance,
+    drive: Rc<Cell<Drive>>,
+}
+
+impl Guidance for Dithered {
+    fn guide(
+        &mut self,
+        dt: f32,
+        regime: FlightRegime,
+        input: &ControlInput,
+        state: &VehicleState,
+    ) -> Setpoint {
+        let mut setpoint = self.inner.guide(dt, regime, input, state);
+        let mut drive = self.drive.get();
+        let (Some(axis), Setpoint::Attitude(attitude)) = (drive.axis, &mut setpoint) else {
+            return setpoint;
+        };
+        drive.elapsed_s += dt;
+        self.drive.set(drive);
+        let signal_rad = DITHER_RAD * (2.0 * PI * DITHER_HZ * drive.elapsed_s).sin();
+        if axis == 0 {
+            attitude.roll_rad += signal_rad;
+        } else {
+            attitude.pitch_rad += signal_rad;
+        }
+        setpoint
+    }
+
+    fn prime(&mut self, state: &VehicleState) {
+        self.inner.prime(state);
+    }
+
+    fn saturation(&self) -> Saturation {
+        self.inner.saturation()
+    }
+
+    fn flight_mode(&self) -> Option<FlightModeReport> {
+        self.inner.flight_mode()
+    }
+}
+
+/// Each tick's roll and pitch moment command.
+#[derive(Clone, Default)]
+struct Recorder {
+    moments: Rc<RefCell<Vec<Vec3>>>,
+}
+
+impl TelemetryPublisher for Recorder {
+    fn publish(&mut self, record: &TelemetryRecord) {
+        self.moments.borrow_mut().push(record.control.moments);
+    }
+}
+
+/// A copter pipeline on [`Dithered`] guidance, recorded by a [`Recorder`].
+type DitheredLoop = FlightLoop<
+    common::Hover,
+    stable_flight_sim::SimCopter,
+    Dithered,
+    CopterStabilizer,
+    stable_flight::mixers::TableMixer<4>,
+    Recorder,
+>;
+
+/// `plant` hovering on [`Dithered`] guidance, recorded by `recorder`.
+fn dithered(plant: &Plant, drive: &Rc<Cell<Drive>>, recorder: &Recorder) -> DitheredLoop {
+    let airframe = plant.airframe;
+    let mut flight_loop = FlightLoop::new(
+        hover_follower(),
+        plant.vehicle(),
+        Dithered {
+            inner: CopterGuidance::new(airframe.guidance),
+            drive: drive.clone(),
+        },
+        CopterStabilizer::new(airframe.stabilizer),
+        airframe.mixer,
+        recorder.clone(),
+    );
+    flight_loop.prime();
+    fly(&mut flight_loop, HOVER_SETTLE_S, |_, _| {});
+    flight_loop
+}
+
 /// QuikTune on roll then pitch rate, D then P each, at `threshold`: the tuned config and the
 /// simulated seconds it took.
 fn quiktune(plant: &Plant, threshold: f32) -> (CopterStabilizerConfig, f32) {
     const STAGE_TIMEOUT_S: f32 = 600.0;
     let drive = Rc::new(Cell::new(Drive::default()));
     let recorder = Recorder::default();
-    let mut flight_loop = excitable(plant, &drive, &recorder);
+    let mut flight_loop = dithered(plant, &drive, &recorder);
     let mut config = plant.airframe.stabilizer;
     let mut elapsed_s = 0.0;
-    recorder.on.set(true);
     for (axis, target) in [(0, TunedLoop::RollRate), (1, TunedLoop::PitchRate)] {
         let start = target.gains(&config);
         for term_is_d in [true, false] {
             drive.set(Drive {
                 axis: Some(axis),
-                amplitude_rad: DITHER_RAD,
-                sine_hz: Some(DITHER_HZ),
                 elapsed_s: 0.0,
             });
             let start_value = if term_is_d { start.d } else { start.p };
@@ -736,7 +627,7 @@ fn quiktune(plant: &Plant, threshold: f32) -> (CopterStabilizerConfig, f32) {
                 flight_loop.step(TICK);
                 elapsed_s += DT;
                 stage_s += DT;
-                let moment = recorder.ticks.borrow().last().map_or(0.0, |t| t[axis].0);
+                let moment = recorder.moments.borrow().last().map_or(0.0, |m| m[axis]);
                 // A non-finite slew is an oscillation too.
                 let slew_now = slew.step(moment);
                 let oscillating = !slew_now.is_finite() || slew_now > threshold;
