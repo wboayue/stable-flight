@@ -1479,3 +1479,99 @@ fn fits_run_on_the_angle_loop_over_a_rate_stage() {
         );
     }
 }
+
+/// A design stage on `target` with the copter defaults.
+fn design_stage(target: TunedLoop) -> StagePlan {
+    StagePlan {
+        target,
+        method: Method::Design(DesignPlan::copter()),
+    }
+}
+
+/// A failure puts back every design its verify hasn't kept, and keeps the ones it has: roll
+/// rate designed and verified stays, pitch rate designed only goes back to its start.
+#[test]
+fn a_failure_puts_back_the_designs_not_yet_verified() {
+    let (mut flight_loop, _controls) = hovering(1.0);
+    let start = *flight_loop.stabilizer().config();
+    // No angle P in [500, 600] keeps the margin: the roll design fails.
+    let unreachable = DesignPlan {
+        design: LoopShapingConfig {
+            angle_p_min: 500.0,
+            angle_p_max: 600.0,
+            ..COPTER_LOOP_SHAPING
+        },
+        ..DesignPlan::copter()
+    };
+    let plan = [
+        design_stage(TunedLoop::RollRate),
+        design_stage(TunedLoop::PitchRate),
+        StagePlan {
+            target: TunedLoop::RollRate,
+            method: Method::Verify(VerifyPlan::copter(TunedLoop::RollRate)),
+        },
+        StagePlan {
+            target: TunedLoop::Roll,
+            method: Method::Design(unreachable),
+        },
+    ];
+    let mut autotune = started(&flight_loop, &plan);
+
+    let events = run(&mut flight_loop, &mut autotune, 120.0, |_, _| {});
+
+    let verified = events.iter().find_map(|event| match *event {
+        AutotuneEvent::StageDone {
+            target: TunedLoop::RollRate,
+            outcome: Outcome::Measured,
+            gains,
+            ..
+        } => Some(gains),
+        _ => None,
+    });
+    check!(
+        autotune.status()
+            == AutotuneStatus::Failed {
+                stage: 3,
+                reason: AutotuneAbort::Design(DesignError::AngleUnstable),
+            }
+    );
+    let config = *flight_loop.stabilizer().config();
+    check!(Some(TunedLoop::RollRate.gains(&config)) == verified);
+    check!(verified != Some(TunedLoop::RollRate.gains(&start)));
+    check!(TunedLoop::PitchRate.gains(&config) == TunedLoop::PitchRate.gains(&start));
+    check!(TunedLoop::Roll.gains(&config) == TunedLoop::Roll.gains(&start));
+}
+
+/// A design that breaches the envelope during its own verify fails the stage and goes back to
+/// the loop's start, rather than staying on: here a rate limit the verify's steps pass (they
+/// peak at 0.67 rad/s on this sim) and the fit doesn't.
+#[test]
+fn a_design_that_breaches_during_its_verify_goes_back_to_its_start() {
+    let (mut flight_loop, _controls) = hovering(1.0);
+    let start = *flight_loop.stabilizer().config();
+    let envelope = Envelope {
+        max_rate_radps: 0.5,
+        ..Envelope::default()
+    };
+    let plan = [
+        design_stage(TunedLoop::RollRate),
+        StagePlan {
+            target: TunedLoop::RollRate,
+            method: Method::Verify(VerifyPlan::copter(TunedLoop::RollRate)),
+        },
+    ];
+    let mut autotune = Autotune::new(&plan, envelope).expect("valid plan");
+    autotune.start(&flight_loop).expect("armed and idle");
+
+    let events = run(&mut flight_loop, &mut autotune, 60.0, |_, _| {});
+
+    check!(
+        autotune.status()
+            == AutotuneStatus::Failed {
+                stage: 1,
+                reason: AutotuneAbort::Rate,
+            },
+        "{events:?}"
+    );
+    check!(*flight_loop.stabilizer().config() == start);
+}

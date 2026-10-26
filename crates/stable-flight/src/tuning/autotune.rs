@@ -171,8 +171,8 @@ impl StagePlan {
     /// [`VerifyPlan::copter`] for each in the same order. Every loop is designed before any is
     /// verified: a loop still on its start gains can ring and keep a verify from settling
     /// (pitch on `racer`'s high start with 25 ms of delay; roll's start angle loop around
-    /// `heavy_quad`'s designed rate loop, #518). On the sim it takes 80–140 s against the
-    /// search's 180–630 s (#518).
+    /// `heavy_quad`'s designed rate loop, #518). On the sim it takes 61–75 s against the
+    /// search's 182–627 s (#518).
     ///
     /// # Examples
     ///
@@ -806,7 +806,8 @@ fn no_worse(base: Option<f32>, value: Option<f32>, limit: impl FnOnce(f32) -> f3
 ///    adds excitation (#356). A slow host may stop it 3 times in a row before the stage fails.
 /// 2. **Design:** a rate loop's gains by [`design_rate`]; an angle loop's P by
 ///    [`design_angle_p`] on the rate loop's committed gains, its I and D kept. A design error
-///    fails the stage ([`AutotuneAbort::Design`]).
+///    fails the stage ([`AutotuneAbort::Design`]). The design flies from then on, but a
+///    failure before its verify keeps it puts the loop's earlier gains back.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DesignPlan {
     /// The excitation and fit.
@@ -866,6 +867,10 @@ impl DesignPlan {
 ///    `test.pairs` pairs on the run's start gains, flown as a candidate. The committed gains
 ///    stay unless they fly worse ([`Acceptance`]); a baseline that aborts, keeps clipping, or
 ///    breaches the envelope shows nothing to be worse than.
+///
+/// A breach on the committed gains fails the stage, and with it every design not yet kept.
+/// Restoring a rate loop leaves the angle P designed around its design; that angle loop's own
+/// verify then judges it on the restored rate loop.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VerifyPlan {
     /// The steps, their settle, clip allowance, and invalid limit.
@@ -1131,8 +1136,8 @@ pub enum AutotuneEvent {
         /// The gains committed.
         gains: Gains,
     },
-    /// A stage failed: the config went back to the last committed one (earlier stages stay),
-    /// and the run ends.
+    /// A stage failed: the config went back to the last kept one (earlier stages stay, but
+    /// designs not yet verified), and the run ends.
     StageFailed {
         /// The loop the stage was for.
         target: TunedLoop,
@@ -1327,9 +1332,9 @@ struct Request {
 ///   settling waits: it gains no level time and doesn't time out.
 /// - **Fail:** an envelope breach, a probe abort the procedure can't use (a search counts a
 ///   step's abort against its gain), an interrupt, or a rejected config stops the stage, puts
-///   back the last committed config (the earlier stages' gains stay), and ends the
-///   run.
-/// - **Disarm** before completion reverts every stage to the baseline.
+///   back the config as of the last kept stage (the earlier stages' gains stay, but a design
+///   counts only once its verify keeps it), and ends the run.
+/// - **Disarm** before completion reverts every stage to the run's start.
 /// - **Complete:** the gains stay; read them from the stabilizer's config.
 ///
 /// The procedures are pure (they see measurements and gains, never the loop), so the
@@ -1372,8 +1377,12 @@ pub struct Autotune {
     procedure: Procedure,
     /// The config at start: what a disarm reverts to.
     run_start: Option<CopterStabilizerConfig>,
-    /// The config as of the last commit: what a failure reverts to.
+    /// The config as of the last kept stage: what a failure reverts to. A design isn't kept
+    /// until its verify keeps it.
     last_good: Option<CopterStabilizerConfig>,
+    /// The config flown between probes: `last_good` plus designs awaiting their verify. A
+    /// candidate goes back to it.
+    committed: Option<CopterStabilizerConfig>,
     start_altitude_m: f32,
     /// The host stalled during the running probe ([`note_stall`](Self::note_stall)).
     stalled: bool,
@@ -1438,6 +1447,7 @@ impl Autotune {
             procedure: Procedure::new(first.method),
             run_start: None,
             last_good: None,
+            committed: None,
             start_altitude_m: 0.0,
             stalled: false,
             host_slow: false,
@@ -1465,6 +1475,7 @@ impl Autotune {
         let config = *flight_loop.stabilizer().config();
         self.run_start = Some(config);
         self.last_good = Some(config);
+        self.committed = Some(config);
         self.start_altitude_m = flight_loop.state().position_m.z;
         self.recovering_s = 0.0;
         self.phase = Phase::Starting { stage: 0 };
@@ -1791,8 +1802,8 @@ impl Autotune {
         on: Decide,
     ) {
         flight_loop.stop_probe();
-        if candidate && let Some(last_good) = self.last_good {
-            restore(flight_loop, last_good);
+        if candidate && let Some(committed) = self.committed {
+            restore(flight_loop, committed);
             self.recovering_s = self.envelope.recovery_s;
         }
         self.phase = Phase::Deciding { stage, on };
@@ -1829,13 +1840,16 @@ impl Autotune {
             return self.fail(flight_loop, stage, AutotuneAbort::Rejected);
         };
         self.last_good = Some(config);
+        self.committed = Some(config);
         AutotuneEvent::Lowered {
             target: self.target(stage),
             gains,
         }
     }
 
-    /// Commits a finished stage's gains and moves on.
+    /// Commits a finished stage's gains and moves on. A design is flown but not yet kept: a
+    /// failure before its verify puts the loop's earlier gains back. A verify keeps its loop's
+    /// gains, and only those: other loops' designs still wait on their own.
     fn commit<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
@@ -1846,7 +1860,16 @@ impl Autotune {
         let Some(config) = self.set_gains(flight_loop, stage, gains) else {
             return self.fail(flight_loop, stage, AutotuneAbort::Rejected);
         };
-        self.last_good = Some(config);
+        self.committed = Some(config);
+        let target = self.target(stage);
+        self.last_good = match self.stage(stage).map(|plan| plan.method) {
+            Some(Method::Design(_)) => self.last_good,
+            Some(Method::Verify(_)) => self.last_good.map(|mut kept| {
+                *target.gains_mut(&mut kept) = gains;
+                kept
+            }),
+            _ => Some(config),
+        };
         self.phase = if stage + 1 < self.stages {
             Phase::Starting { stage: stage + 1 }
         } else {
@@ -1877,7 +1900,8 @@ impl Autotune {
             .map(|()| config)
     }
 
-    /// Ends the run at `stage`: stops its probe and puts back the last committed config.
+    /// Ends the run at `stage`: stops its probe and puts back the config as of the last kept
+    /// stage.
     fn fail<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
@@ -1888,6 +1912,7 @@ impl Autotune {
         if let Some(last_good) = self.last_good {
             restore(flight_loop, last_good);
         }
+        self.committed = self.last_good;
         self.phase = Phase::Failed { stage, reason };
         AutotuneEvent::StageFailed {
             target: self.target(stage),
