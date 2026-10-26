@@ -141,6 +141,12 @@ pub(crate) fn clamp_symmetric(value: f32, limit: f32) -> f32 {
     value.clamp(-limit, limit)
 }
 
+/// `value` moved toward `target` by a first-order lag of `time_constant_s` over `dt` (all the
+/// way when `dt` reaches the time constant).
+pub(crate) fn lagged(value: f32, target: f32, dt: f32, time_constant_s: f32) -> f32 {
+    value + (target - value) * (dt / time_constant_s).min(1.0)
+}
+
 /// A config limit as given when it is non-negative, else 0 (neutral); NaN also becomes 0.
 pub(crate) fn limit_or_zero(limit: f32) -> f32 {
     // `>=` is false for NaN.
