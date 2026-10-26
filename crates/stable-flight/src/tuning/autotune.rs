@@ -171,7 +171,7 @@ impl StagePlan {
     /// [`VerifyPlan::copter`] for each in the same order. Every loop is designed before any is
     /// verified: a loop still on its start gains can ring and keep a verify from settling
     /// (pitch on `racer`'s high start with 25 ms of delay; roll's start angle loop around
-    /// `heavy_quad`'s designed rate loop, #518). On the sim it takes 61–75 s against the
+    /// `heavy_quad`'s designed rate loop, #518). On the sim it takes 77–109 s against the
     /// search's 182–627 s (#518).
     ///
     /// # Examples
@@ -805,9 +805,14 @@ fn no_worse(base: Option<f32>, value: Option<f32>, limit: impl FnOnce(f32) -> f3
 ///    timeout even when the vehicle hasn't settled: a loop that rings on its start gains only
 ///    adds excitation (#356). A slow host may stop it 3 times in a row before the stage fails.
 /// 2. **Design:** a rate loop's gains by [`design_rate`]; an angle loop's P by
-///    [`design_angle_p`] on the rate loop's committed gains, its I and D kept. A design error
-///    fails the stage ([`AutotuneAbort::Design`]). The design flies from then on, but a
-///    failure before its verify keeps it puts the loop's earlier gains back.
+///    [`design_angle_p`] on the rate loop's committed gains, its I and D kept.
+/// 3. **Agree:** fit and design again until two designs' P are within 25% of each other, then
+///    keep the lower: one fit on real flight data can be off by half (#518). A fit the design
+///    can't use counts as one that disagrees. After 4 fits the stage fails, with the last
+///    fit's design error ([`AutotuneAbort::Design`]) or [`AutotuneAbort::FitsDisagree`].
+///
+/// The design flies from then on, but a failure before its verify keeps it puts the loop's
+/// earlier gains back.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DesignPlan {
     /// The excitation and fit.
@@ -1078,6 +1083,9 @@ pub enum AutotuneAbort {
     Rejected,
     /// The design found no gains for the fitted model.
     Design(DesignError),
+    /// No two fits of a design stage designed gains that agree: the fits are too noisy to
+    /// design from.
+    FitsDisagree,
 }
 
 /// What an [`Autotune::update`] did, for the caller to log.

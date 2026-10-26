@@ -756,7 +756,7 @@ feedback, Åström–Hägglund, for the ultimate point, then a search) stays sel
   [#312](https://github.com/wboayue/stable-flight/issues/312)). The step search spends most of
   each stage settling before each step: on the sim, a rate stage's 50 s holds about 5 s of
   stepping, an angle stage's 61 s about 24 s (182–627 s per row); QuadCopterX in RealFlight
-  takes about 9 min. Loop shaping measures each axis once instead, then checks the result:
+  takes about 9 min. Loop shaping fits a model of each axis instead, then checks the result:
   * *Identify* (`tuning::IdentifyProbe`, in each `Method::Design` stage): a shrinking square
     wave on the angle setpoint, every loop closed (PX4's excitation,
     `mc_autotune_attitude_control.cpp:603-639`), and a least-squares fit of the axis's body
@@ -781,6 +781,12 @@ feedback, Åström–Hägglund, for the ultimate point, then a search) stays sel
     two flight ticks, the margin up to 18 sweeps of the grid, about 7.5k frequency points
     (#517). The design runs on a log-spaced grid from 0.1 rad/s to Nyquist, each crossing
     refined by bisection. A design stage commits its gains without steps.
+  * *Agree*: each design stage fits and designs until two designs' P are within 25%, and
+    keeps the lower; a fit the design can't use runs again, and 4 fits without a pair fail the
+    stage. One fit on RealFlight data can be far off: over four QuadCopterX runs the roll rate
+    designs spread over P 0.41–1.04 (0.41 rose in 144 ms against 50–69 ms), and one pitch fit
+    read a negative acceleration (#518). Fits on the sim agree to 0.2%, so it costs one fit
+    per stage, plus a settle timeout on a start that rings.
   * *Verify* (`Method::Verify`, after every loop is designed): two step pairs per loop on the
     committed gains, kept if they meet the search's criterion; otherwise two pairs on the
     loop's gains at the run's start, as a candidate, and the design stays unless it flies worse
@@ -790,7 +796,7 @@ feedback, Åström–Hägglund, for the ultimate point, then a search) stays sel
     (±10°, #518). A designed rate loop is stiffer than a searched one (P 4.7 on clean `quad_x`),
     so angle steps get the rate steps' clip allowance.
   * On the sim, every clean, 10 ms, and 25 ms row of the three airframes from both starts
-    passes in 61–75 s, against the search's 182–627 s on the rows it passed (`robustness`).
+    passes in 77–109 s, against the search's 182–627 s on the rows it passed (`robustness`).
   * Rejected, from the same sweep
     ([`autotune_methods`](crates/stable-flight-sim/tests/autotune_methods.rs)): PX4's pole
     placement (`pid_design.hpp:68-103`) assumes one tick of delay and found no design on any
