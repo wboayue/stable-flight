@@ -223,6 +223,14 @@ pub const COPTER_IDENTIFY: IdentifyConfig = IdentifyConfig {
     washout_tc_s: 0.2,
 };
 
+/// Share of a search's largest pass it keeps, and of loop shaping's largest angle P: 10% off,
+/// as ArduPilot backs off its autotune result.
+const SEARCH_BACK_OFF: f32 = 0.9;
+
+/// The copter's angle P range, in rad/s of rate per rad of angle, searched or designed in.
+const COPTER_ANGLE_P_MIN: f32 = 1.0;
+const COPTER_ANGLE_P_MAX: f32 = 10.0;
+
 /// Loop shaping of a copter's roll and pitch: 65° of phase margin on the rate and angle loops,
 /// angle P within the angle search's range (1–10) less its 10% margin
 /// ([`SearchPlan::copter_angle`]). On the sim 65° met the step spec on every clean and delayed
@@ -231,9 +239,9 @@ pub const COPTER_IDENTIFY: IdentifyConfig = IdentifyConfig {
 pub const COPTER_LOOP_SHAPING: LoopShapingConfig = LoopShapingConfig {
     rate_margin_deg: 65.0,
     angle_margin_deg: 65.0,
-    angle_p_min: 1.0,
-    angle_p_max: 10.0,
-    angle_back_off: 0.9,
+    angle_p_min: COPTER_ANGLE_P_MIN,
+    angle_p_max: COPTER_ANGLE_P_MAX,
+    angle_back_off: SEARCH_BACK_OFF,
 };
 
 /// Step response of a copter rate loop: 1 rad/s (57°/s) held for 0.25 s, about four of
@@ -492,7 +500,7 @@ impl SearchPlan {
             confirm: 2,
             factor: 1.3,
             resolution: 1.1,
-            margin: 0.9,
+            margin: SEARCH_BACK_OFF,
             min: 0.1,
             max: 3.0,
             relay: Some(SearchRelay {
@@ -530,8 +538,8 @@ impl SearchPlan {
                 pairs: 2,
                 ..StepTestPlan::copter(TunedLoop::Roll)
             },
-            min: 1.0,
-            max: 10.0,
+            min: COPTER_ANGLE_P_MIN,
+            max: COPTER_ANGLE_P_MAX,
             relay: None,
             ..Self::copter_rate()
         }

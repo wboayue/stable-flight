@@ -2,7 +2,7 @@
 //! [`design_angle_p`].
 //!
 //! Both read the model's frequency response and set a gain for a target
-//! [phase margin](../../../docs/glossary.md): how far the loop is from oscillating where its
+//! [phase margin](https://github.com/wboayue/stable-flight/blob/main/docs/glossary.md): how far the loop is from oscillating where its
 //! open-loop gain crosses 1. The rule and its alternatives (PX4's pole placement, a step search
 //! on the model) are in `architecture.md#autotune`; the comparison behind them is the
 //! `autotune_methods` sweep in `stable-flight-sim` (#312).
@@ -37,8 +37,9 @@ pub struct LoopShapingConfig {
     pub rate_margin_deg: f32,
     /// The angle loop's phase margin around the designed rate loop, in degrees, in `(0, 90)`.
     pub angle_margin_deg: f32,
-    /// Least and most angle P (rate per angle), the angle search's range.
+    /// Least angle P, in rad/s of rate per rad of angle: the bottom of the angle search's range.
     pub angle_p_min: f32,
+    /// Most angle P, in rad/s per rad: the top of the angle search's range.
     pub angle_p_max: f32,
     /// Share of the largest angle P that meets the margin kept, in `(0, 1]`, as the search
     /// backs off its result.
@@ -107,6 +108,8 @@ pub enum DesignError {
 /// D/P is the fitted lag `τ`, so the PD's zero `1 + τ·s` cancels the lag's pole. P is
 /// `1/|C·G|` at the first frequency where the phase of `C·G` falls to `−180° + margin`, with
 /// `C = 1 + τ·(1 − z⁻¹)/dt` the PD at unit P and `G` the model's [`response`](RateModel::response).
+/// The kept I isn't in that loop: its lag at the crossover costs the flown loop a little margin
+/// (0.6° at I 0.2 over seven ticks of delay).
 ///
 /// # Errors
 ///
@@ -138,18 +141,18 @@ pub fn design_rate(
 ) -> Result<Gains, DesignError> {
     let lag_s = model.lag_s().ok_or(DesignError::NotALag)?;
     let dt_s = model.dt_s;
+    let unit_pd = Gains {
+        p: 1.0,
+        i: 0.0,
+        d: lag_s,
+    };
     let open_loop = |w_radps: f32| {
-        let z1 = unit_delay(w_radps, dt_s);
-        let pd = Complex::new(1.0, 0.0) + (Complex::new(1.0, 0.0) - z1) * (lag_s / dt_s);
-        pd * model.response(w_radps)
+        pid_response(unit_pd, unit_delay(w_radps, dt_s), dt_s) * model.response(w_radps)
     };
     let floor_deg = config.rate_margin_deg - 180.0;
-    let crossover_radps = first_crossing(dt_s, |w_radps| {
-        let response = open_loop(w_radps);
-        (response, phase_deg(response) > floor_deg)
-    })
-    .ok_or(DesignError::NoCrossover)?;
-    let p = 1.0 / magnitude(open_loop(crossover_radps));
+    let crossover = first_crossing(dt_s, open_loop, |point| point.phase_deg > floor_deg)
+        .ok_or(DesignError::NoCrossover)?;
+    let p = 1.0 / crossover.gain;
     Ok(Gains {
         p,
         i: start.i,
@@ -178,21 +181,24 @@ pub fn design_angle_p(
     let one = Complex::new(1.0, 0.0);
     let open_loop = |w_radps: f32, angle_p: f32| {
         let z1 = unit_delay(w_radps, dt_s);
-        let integrator = Complex::new(dt_s, 0.0) / (one - z1);
-        let derivative = (one - z1) / dt_s;
+        let rate_pid = pid_response(rate, z1, dt_s);
         let plant = model.response(w_radps);
-        let rate_pid = one * rate.p + integrator * rate.i + derivative * rate.d;
         let closed_rate = rate_pid * plant / (one + rate_pid * plant);
-        let angle_pid = one * angle_p + integrator * angle.i + derivative * angle.d;
-        angle_pid * closed_rate * integrator
+        let angle_pid = pid_response(
+            Gains {
+                p: angle_p,
+                ..angle
+            },
+            z1,
+            dt_s,
+        );
+        let to_angle = Complex::new(dt_s, 0.0) / (one - z1);
+        angle_pid * closed_rate * to_angle
     };
+    let floor_deg = config.angle_margin_deg - 180.0;
     let keeps_margin = |angle_p: f32| {
-        let floor_deg = config.angle_margin_deg - 180.0;
-        let crossing = first_crossing(dt_s, |w_radps| {
-            let response = open_loop(w_radps, angle_p);
-            (response, magnitude(response) > 1.0)
-        });
-        crossing.is_some_and(|w_radps| phase_deg(open_loop(w_radps, angle_p)) > floor_deg)
+        let crossover = first_crossing(dt_s, |w| open_loop(w, angle_p), |point| point.gain > 1.0);
+        crossover.is_some_and(|point| point.phase_deg > floor_deg)
     };
     let (low, high) = (config.angle_p_min, config.angle_p_max);
     if !keeps_margin(low) {
@@ -201,61 +207,77 @@ pub fn design_angle_p(
     if keeps_margin(high) {
         return Ok(high * config.angle_back_off);
     }
-    // Geometric bisection: angle P spans an order of magnitude.
-    let (mut keeps, mut misses) = (low, high);
+    Ok(bisect_geometric(low, high, keeps_margin) * config.angle_back_off)
+}
+
+/// A PID's frequency response at `z1 = e^(−jω·dt)`: `P + I·dt/(1 − z⁻¹) + D·(1 − z⁻¹)/dt`,
+/// core's law on the error (`BodyRateController`, `AttitudeController`: a running integral and
+/// a one-tick difference).
+fn pid_response(gains: Gains, z1: Complex<f32>, dt_s: f32) -> Complex<f32> {
+    let one = Complex::new(1.0, 0.0);
+    let integral = Complex::new(dt_s, 0.0) / (one - z1);
+    let difference = (one - z1) / dt_s;
+    one * gains.p + integral * gains.i + difference * gains.d
+}
+
+/// One frequency of an open loop's response: its gain and its phase in degrees, unwrapped from
+/// [`LOWEST_RADPS`] up, so a lag past −360° reads as such rather than wrapping back toward 0.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Point {
+    w_radps: f32,
+    gain: f32,
+    phase_deg: f32,
+}
+
+/// The last point where `above` holds before it first turns false, walking `open_loop` up the
+/// log grid from [`LOWEST_RADPS`] with its phase unwrapped, refined by bisection between that
+/// grid point and the next; `None` if `above` never turns false or is false from the start.
+fn first_crossing(
+    dt_s: f32,
+    open_loop: impl Fn(f32) -> Complex<f32>,
+    above: impl Fn(&Point) -> bool,
+) -> Option<Point> {
+    // The phase on the branch nearest `near_deg`, in degrees.
+    let point = |w_radps: f32, near_deg: f32| {
+        let response = open_loop(w_radps);
+        let raw_deg = libm::atan2f(response.im, response.re).to_degrees();
+        let turns = libm::roundf((near_deg - raw_deg) / 360.0);
+        Point {
+            w_radps,
+            gain: libm::hypotf(response.re, response.im),
+            phase_deg: raw_deg + 360.0 * turns,
+        }
+    };
+    let nyquist_radps = PI / dt_s;
+    let step = libm::powf(nyquist_radps / LOWEST_RADPS, 1.0 / (GRID_POINTS - 1) as f32);
+    // Open loops here start as an integrator: −90°.
+    let mut last = point(LOWEST_RADPS, -90.0);
+    if !above(&last) {
+        return None;
+    }
+    for i in 1..GRID_POINTS {
+        let next = point(LOWEST_RADPS * libm::powf(step, i as f32), last.phase_deg);
+        if !above(&next) {
+            let keeps = |w_radps: f32| above(&point(w_radps, last.phase_deg));
+            let w_radps = bisect_geometric(last.w_radps, next.w_radps, keeps);
+            return Some(point(w_radps, last.phase_deg));
+        }
+        last = next;
+    }
+    None
+}
+
+/// The largest value between `keeps`, where `holds` is true, and `misses`, where it's false,
+/// after [`BISECTIONS`] geometric halvings: the steps are even in ratio, for values that span
+/// orders of magnitude (frequency, angle P).
+fn bisect_geometric(mut keeps: f32, mut misses: f32, holds: impl Fn(f32) -> bool) -> f32 {
     for _ in 0..BISECTIONS {
         let middle = libm::sqrtf(keeps * misses);
-        if keeps_margin(middle) {
+        if holds(middle) {
             keeps = middle;
         } else {
             misses = middle;
         }
     }
-    Ok(keeps * config.angle_back_off)
-}
-
-/// The first frequency on the log grid (refined by bisection) where `above` turns false, in
-/// rad/s, walking up from [`LOWEST_RADPS`] with `response`'s phase unwrapped; `None` if it never
-/// does or is false from the start.
-///
-/// `probe(w)` returns the response at `w` and whether it is still above the threshold; the
-/// phase unwrap reads the response, so a threshold on phase sees it continuous.
-fn first_crossing(dt_s: f32, probe: impl Fn(f32) -> (Complex<f32>, bool)) -> Option<f32> {
-    let nyquist_radps = PI / dt_s;
-    let step = libm::powf(nyquist_radps / LOWEST_RADPS, 1.0 / (GRID_POINTS - 1) as f32);
-    let (_, above_at_start) = probe(LOWEST_RADPS);
-    if !above_at_start {
-        return None;
-    }
-    let mut below_radps = LOWEST_RADPS;
-    for i in 1..GRID_POINTS {
-        let w_radps = LOWEST_RADPS * libm::powf(step, i as f32);
-        if !probe(w_radps).1 {
-            // Bisect between the last point above and this one.
-            let (mut above, mut below) = (below_radps, w_radps);
-            for _ in 0..BISECTIONS {
-                let middle = libm::sqrtf(above * below);
-                if probe(middle).1 {
-                    above = middle;
-                } else {
-                    below = middle;
-                }
-            }
-            return Some(above);
-        }
-        below_radps = w_radps;
-    }
-    None
-}
-
-/// `|c|`.
-fn magnitude(c: Complex<f32>) -> f32 {
-    libm::hypotf(c.re, c.im)
-}
-
-/// The phase of `c`, in degrees, in `(−360, 0]`: open loops here lag (an integrator's −90°
-/// and more), so a phase past −180° reads as below it rather than wrapping to +180°.
-fn phase_deg(c: Complex<f32>) -> f32 {
-    let deg = libm::atan2f(c.im, c.re).to_degrees();
-    if deg > 0.0 { deg - 360.0 } else { deg }
+    keeps
 }
