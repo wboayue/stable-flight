@@ -193,11 +193,11 @@ rows! {
     quad_x_clean_low: quad_x, Clean, Low;
     quad_x_clean_high: quad_x, Clean, High;
     quad_x_delay_10ms_low: quad_x, Delay10Ms, Low;
-    #[ignore = "pitch rings on its start gains: NotSettled (#379)"]
+    #[ignore = "pitch rings on its start gains: NotSettled (#356)"]
     quad_x_delay_10ms_high: quad_x, Delay10Ms, High;
     #[ignore = "tuned rate loops miss rise and settle (#376)"]
     quad_x_delay_25ms_low: quad_x, Delay25Ms, Low;
-    #[ignore = "pitch rings on its start gains: NotSettled (#379)"]
+    #[ignore = "pitch rings on its start gains: NotSettled (#356)"]
     quad_x_delay_25ms_high: quad_x, Delay25Ms, High;
     #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
     quad_x_noise_low: quad_x, Noise, Low;
@@ -217,14 +217,14 @@ rows! {
     quad_x_combined_high: quad_x, Combined, High;
 
     heavy_quad_clean_low: heavy_quad, Clean, Low;
-    #[ignore = "pitch relay reads Ku 4.97 (roll 3.60): the start flies as baseline, kept over the search at its seeded D (#378)"]
+    #[ignore = "pitch relay reads Ku 4.97 (roll 3.60): the start flies as baseline, kept over the search at its seeded D (#356)"]
     heavy_quad_clean_high: heavy_quad, Clean, High;
     heavy_quad_delay_10ms_low: heavy_quad, Delay10Ms, Low;
-    #[ignore = "pitch rings on its start gains: NotSettled (#379)"]
+    #[ignore = "pitch rings on its start gains: NotSettled (#356)"]
     heavy_quad_delay_10ms_high: heavy_quad, Delay10Ms, High;
     #[ignore = "tuned rate loops miss rise and settle (#376)"]
     heavy_quad_delay_25ms_low: heavy_quad, Delay25Ms, Low;
-    #[ignore = "pitch rings on its start gains: NotSettled (#379)"]
+    #[ignore = "pitch rings on its start gains: NotSettled (#356)"]
     heavy_quad_delay_25ms_high: heavy_quad, Delay25Ms, High;
     #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
     heavy_quad_noise_low: heavy_quad, Noise, Low;
@@ -246,11 +246,11 @@ rows! {
     racer_clean_low: racer, Clean, Low;
     racer_clean_high: racer, Clean, High;
     racer_delay_10ms_low: racer, Delay10Ms, Low;
-    #[ignore = "pitch rings on its start gains: NotSettled (#379)"]
+    #[ignore = "pitch rings on its start gains: NotSettled (#356)"]
     racer_delay_10ms_high: racer, Delay10Ms, High;
     #[ignore = "tuned rate loops miss rise and settle (#376)"]
     racer_delay_25ms_low: racer, Delay25Ms, Low;
-    #[ignore = "pitch rings on its start gains: NotSettled (#379)"]
+    #[ignore = "pitch rings on its start gains: NotSettled (#356)"]
     racer_delay_25ms_high: racer, Delay25Ms, High;
     #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
     racer_noise_low: racer, Noise, Low;

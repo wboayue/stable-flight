@@ -723,7 +723,7 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
   that can't settle starts at the timeout instead of failing: it replaces the loop's output,
   so it measures a loop ringing on its own gains. A step can't, so a loop the run hasn't
   reached yet that rings on its start gains fails the stage
-  ([#379](https://github.com/wboayue/stable-flight/issues/379)). ArduPilot's level check also
+  ([#356](https://github.com/wboayue/stable-flight/issues/356)). ArduPilot's level check also
   covers every axis; it widens its limits up to twice as the wait grows
   (`AC_AutoTune.cpp:343`), which here started about half the probes before the vehicle was
   still and made angle steps clip. A finished stage commits its
