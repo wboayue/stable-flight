@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `tuning::design_rate` and `design_angle_p` (`LoopShapingConfig`, preset
+  `autotune::COPTER_LOOP_SHAPING`) (#517): rate and angle gains from an identified
+  `RateModel` by loop shaping. Rate D/P at the fitted motor lag and P for a 65° phase margin;
+  angle P for a 65° margin on the angle loop, within the angle search's range. On the sim the
+  designed gains meet the step spec on every copter airframe, clean and with 10 and 25 ms of
+  actuator delay. `RateModel::response` gives the model's frequency response. No autotune
+  stage runs the design yet (#518).
+
 - `tuning::IdentifyProbe` (`ProbeConfig::Identify`, preset `autotune::COPTER_IDENTIFY`) (#516):
   fits a rate axis's `RateModel` (motor lag, delay, angular acceleration per unit moment) from
   a square wave on its angle loop's setpoint, every loop closed, in `f32` and fixed memory. On

@@ -10,8 +10,9 @@ use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use crate::{Configurable, FlightLoop, VehicleState};
 
 use super::{
-    ControllerForm, IdentifyConfig, Measurement, ProbeAbort, ProbeConfig, ProbeStatus, RelayConfig,
-    RelayResult, StepConfig, StepSummary, Tunable, TuningRule, gains_from_ultimate,
+    ControllerForm, IdentifyConfig, LoopShapingConfig, Measurement, ProbeAbort, ProbeConfig,
+    ProbeStatus, RelayConfig, RelayResult, StepConfig, StepSummary, Tunable, TuningRule,
+    gains_from_ultimate,
 };
 
 use procedure::{Action, Input, Procedure};
@@ -220,6 +221,19 @@ pub const COPTER_IDENTIFY: IdentifyConfig = IdentifyConfig {
     amplitude: 4.0 * DEG,
     duration_s: 3.0,
     washout_tc_s: 0.2,
+};
+
+/// Loop shaping of a copter's roll and pitch: 65° of phase margin on the rate and angle loops,
+/// angle P within the angle search's range (1–10) less its 10% margin
+/// ([`SearchPlan::copter_angle`]). On the sim 65° met the step spec on every clean and delayed
+/// row of the three copter airframes, and put angle P at the range's top as the angle search
+/// does (#312, #517).
+pub const COPTER_LOOP_SHAPING: LoopShapingConfig = LoopShapingConfig {
+    rate_margin_deg: 65.0,
+    angle_margin_deg: 65.0,
+    angle_p_min: 1.0,
+    angle_p_max: 10.0,
+    angle_back_off: 0.9,
 };
 
 /// Step response of a copter rate loop: 1 rad/s (57°/s) held for 0.25 s, about four of

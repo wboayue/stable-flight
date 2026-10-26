@@ -7,7 +7,7 @@
 //! PX4 fits it by recursive least squares; this probe accumulates the least-squares sums
 //! instead and solves once at the end, in a form that holds its precision in `f32` (#516).
 
-use nalgebra::{SMatrix, SVector};
+use nalgebra::{Complex, SMatrix, SVector};
 
 use crate::controllers::{InvalidConfig, check, check_positive};
 use crate::math::{assert_dt, lagged};
@@ -125,6 +125,34 @@ impl RateModel {
         (pole > 0.0 && pole < 1.0).then(|| -self.dt_s / libm::logf(pole))
     }
 
+    /// The model's frequency response at `w_radps`: body rate per unit moment, delay included,
+    /// `(m₀ + m₁·z⁻¹ + m₂·z⁻²)·z⁻ᵈ / (1 − r₁·z⁻¹ − r₂·z⁻²)` at `z⁻¹ = e^(−jω·dt)`. Its phase
+    /// starts near −90° (the body integrates its moment) and falls with the lag and the delay.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::tuning::RateModel;
+    ///
+    /// // An integrator alone, one tick of delay: about 1/(jω) per unit gain.
+    /// let model = RateModel {
+    ///     rate_weights: [1.0, 0.0],
+    ///     moment_weights: [0.004, 0.0, 0.0],
+    ///     delay_ticks: 1,
+    ///     dt_s: 0.004,
+    /// };
+    /// let response = model.response(1.0);
+    /// assert!((response.norm_sqr() - 1.0).abs() < 0.02);
+    /// ```
+    pub fn response(&self, w_radps: f32) -> Complex<f32> {
+        let z1 = unit_delay(w_radps, self.dt_s);
+        let [m0, m1, m2] = self.moment_weights;
+        let [r1, r2] = self.rate_weights;
+        let one = Complex::new(1.0, 0.0);
+        let numerator = (one * m0 + z1 * m1 + z1 * z1 * m2) * z1.powu(self.delay_ticks as u32);
+        numerator / (one - z1 * r1 - z1 * z1 * r2)
+    }
+
     /// The axis's angular acceleration per unit moment once the lag has settled, in rad/s²:
     /// the moments' total weight over `(1 − p)·dt`. `None` without a lag ([`lag_s`](Self::lag_s)).
     pub fn accel_radps2(&self) -> Option<f32> {
@@ -133,6 +161,12 @@ impl RateModel {
         let total: f32 = self.moment_weights.iter().sum();
         Some(total / ((1.0 - pole) * self.dt_s))
     }
+}
+
+/// `z⁻¹ = e^(−jω·dt)`: one tick's delay at `w_radps`.
+pub(crate) fn unit_delay(w_radps: f32, dt_s: f32) -> Complex<f32> {
+    let angle = -w_radps * dt_s;
+    Complex::new(libm::cosf(angle), libm::sinf(angle))
 }
 
 /// Why an [`IdentifyProbe`] gave up.
