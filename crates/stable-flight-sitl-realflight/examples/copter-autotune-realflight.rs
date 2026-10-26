@@ -475,7 +475,7 @@ fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
             format_gains(gains)
         ),
         AutotuneEvent::StageFailed { target, reason } => {
-            warn!("autotune: {target:?} failed: {reason:?}; earlier stages kept");
+            warn!("autotune: {target:?} failed: {reason:?}; the last kept gains fly");
         }
         AutotuneEvent::Complete => {
             info!("autotune: complete");

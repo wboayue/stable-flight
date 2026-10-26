@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verified by two step pairs (`Method::Verify`, `VerifyPlan`) and kept unless it flies worse
   than the loop's gains at the run's start (`Outcome::Restored`). On the sim it tunes every
   copter airframe, clean and with 10 and 25 ms of actuator delay, from low and ×3 starts, in
-  61–75 s of simulated time, against the step search's 182–627 s.
-  `AutotuneAbort::Design` reports a fit the design can't use. `TunedLoop::inner` and
+  77–109 s of simulated time, against the step search's 182–627 s. Each design stage fits
+  until two designs agree (P within 25%) and keeps the lower; `AutotuneAbort::Design` reports
+  a last fit the design can't use, `AutotuneAbort::FitsDisagree` 4 fits with no pair. `TunedLoop::inner` and
   `outer` name the rate loop under an angle loop and the angle loop over a rate loop.
 - `tuning::design_rate` and `design_angle_p` (`LoopShapingConfig`, preset
   `autotune::COPTER_LOOP_SHAPING`) (#517): rate and angle gains from an identified
