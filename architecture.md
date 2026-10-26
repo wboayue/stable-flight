@@ -736,8 +736,11 @@ feedback, Åström–Hägglund, for the ultimate point, then a search) stays sel
   `set_stabilizer_config`.
 * **Envelope and outcomes:** tilt, body rate, or altitude loss past the `Envelope` limits, a
   probe abort, or a rate setpoint interrupting an angle stage fails the run, and the config goes
-  back to the last commit: earlier stages stay, and nothing the failing stage tried survives
-  except gains it lowered from above the relay's ceiling.
+  back to the last kept stage: earlier stages stay, and nothing the failing stage tried
+  survives except gains it lowered from above the relay's ceiling. A design isn't kept until
+  its verify keeps it, so a failure anywhere before then (a design error, a breach on the
+  design during its own verify) puts that loop's earlier gains back. Restoring a rate loop
+  leaves the angle P designed around its design, which the angle loop's verify then judges.
   Disarming before completion reverts to the config at start. The caller owns the trigger and the
   logging (`AutotuneEvent`s); the executor has no clock. The envelope measures tilt in the body
   frame, so autotune can't yet run on a viewed tailsitter
