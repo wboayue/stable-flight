@@ -18,7 +18,12 @@
 //!   `e96bd90`): D then P raised until the rate PID's output slew oscillates
 //!   (`Filter/SlewLimiter.cpp:31-81`), then backed off.
 //!
-//! Each is described from its source and implemented here from that description.
+//! Each is described from its source and implemented here from that description. The model
+//! steps fly core's attitude and body-rate controllers, so a design is judged on the law the
+//! vehicle flies.
+//!
+//! TODO(#516): excite and fit through core's identification probe once it lands.
+//! TODO(#517): design through core's loop-shaping function once it lands.
 
 mod common;
 
@@ -27,19 +32,20 @@ use std::collections::VecDeque;
 use std::f32::consts::PI;
 use std::rc::Rc;
 
-use stable_flight::controllers::Gains;
+use stable_flight::controllers::{AttitudeController, BodyRateController, Gains};
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::nalgebra::{Complex, ComplexField, SMatrix, SVector};
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
 use stable_flight::tuning::autotune::{Autotune, AutotuneEvent, Envelope, SearchPlan, StagePlan};
 use stable_flight::tuning::{StepConfig, StepProbe, StepStatus, StepSummary};
 use stable_flight::{
-    ActuatorCommand, ControlInput, FlightLoop, FlightModeReport, FlightRegime, GRAVITY, Guidance,
-    Saturation, Setpoint, TelemetryPublisher, TelemetryRecord, Vec3, VehicleState,
+    ControlInput, FlightLoop, FlightModeReport, FlightRegime, Guidance, Saturation, Setpoint,
+    TelemetryPublisher, TelemetryRecord, Vec2, Vec3, VehicleState,
 };
+use stable_flight_sim::Wind;
 use stable_flight_sim::airframes::{self, Airframe};
-use stable_flight_sim::{GyroNoise, Perturbations, Vibration, Wind};
 
+use common::robustness::{Set, Start, perturbations, starting};
 use common::{HOVER_SETTLE_S, Plant, TICK, fly, hover, hover_follower, seconds, spec, ticks};
 
 /// The control tick, in s.
@@ -282,7 +288,8 @@ fn identify(plant: &Plant) -> [RateModel; 2] {
 }
 
 /// Least squares fit at `delay_ticks`, with a constant term for the trim moment; the model
-/// and its RMS residual in rad/s.
+/// and its RMS residual in rad/s. Every delay fits the same ticks (from the longest delay's
+/// first), so residuals compare.
 fn fit(moment: &[f32], rate_radps: &[f32], delay_ticks: usize) -> (RateModel, f64) {
     let regressors = |k: usize| {
         SVector::<f64, 6>::from([
@@ -294,7 +301,7 @@ fn fit(moment: &[f32], rate_radps: &[f32], delay_ticks: usize) -> (RateModel, f6
             1.0,
         ])
     };
-    let rows = delay_ticks + 2..rate_radps.len();
+    let rows = MAX_DELAY_TICKS + 2..rate_radps.len();
     let mut normal = SMatrix::<f64, 6, 6>::zeros();
     let mut projected = SVector::<f64, 6>::zeros();
     for k in rows.clone() {
@@ -350,10 +357,8 @@ fn rate_gains(design: Design, model: &RateModel, start: Gains) -> Option<Gains> 
 /// `−f1 − 2·f2`, D `f2·dt` (I, `f0 + f1 + f2` over `dt`, gives way to the start's).
 fn pole_placement(model: &RateModel, start: Gains) -> Gains {
     let rho = DT / POLE_PLACEMENT_RISE_S;
-    let t1 = -2.0 * (-2.0 * rho).exp();
+    // t1 = −2·e^(−2ρ) enters only f0, which sets I.
     let t2 = (-4.0 * rho).exp();
-    // f0 = t1 − a1 + 1 sets I, which the start's replaces.
-    let _ = t1;
     let f1 = t2 - model.a2 + model.a1;
     let f2 = model.a2;
     let static_gain = model.b.iter().sum::<f32>();
@@ -406,31 +411,18 @@ fn loop_shaping(model: &RateModel, start: Gains, margin_deg: f32) -> Option<Gain
     })
 }
 
-/// The largest angle P in the angle search's range whose model steps, on the designed rate
+/// The largest angle P in the angle search's range whose model steps, on `config`'s rate
 /// loop, meet the angle criterion within its clip allowance; backed off 10% as the search's.
-fn angle_p(model: &RateModel, config: &CopterStabilizerConfig, axis: usize) -> Option<f32> {
+fn angle_p(
+    model: &RateModel,
+    config: &CopterStabilizerConfig,
+    angle_loop: TunedLoop,
+) -> Option<f32> {
     let plan = SearchPlan::copter_angle();
-    let rate = if axis == 0 {
-        config.body_rate.roll_gains
-    } else {
-        config.body_rate.pitch_gains
-    };
-    let angle = if axis == 0 {
-        config.attitude.roll_gains
-    } else {
-        config.attitude.pitch_gains
-    };
-    let max_rate_radps = config.attitude.max_rate_radps[axis];
     let passes = |p: f32| {
-        let loops = ModelLoops {
-            rate: (rate, config.body_rate.max_integral),
-            angle: Some((
-                Gains { p, ..angle },
-                config.attitude.max_integral,
-                max_rate_radps,
-            )),
-        };
-        let (steps, clipped_s) = loops.steps(model, plan.test.step);
+        let mut candidate = *config;
+        angle_loop.gains_mut(&mut candidate).p = p;
+        let (steps, clipped_s) = model_steps(model, &candidate, angle_loop, plan.test.step);
         plan.criterion.passes(&steps) && clipped_s <= plan.test.max_saturated_s
     };
     largest(plan.min, plan.max, passes).map(|p| p * 0.9)
@@ -457,56 +449,63 @@ fn largest(low: f32, high: f32, passes: impl Fn(f32) -> bool) -> Option<f32> {
     Some(pass)
 }
 
-/// The rate loop (gains, `max_integral`) and optionally the angle loop around it (gains,
-/// `max_integral`, rate cap in rad/s), flown on a [`RateModel`].
-struct ModelLoops {
-    rate: (Gains, f32),
-    angle: Option<(Gains, f32, f32)>,
-}
-
-impl ModelLoops {
-    /// Both-way steps through core's step probe: the summary and the longest clipped time, s.
-    fn steps(&self, model: &RateModel, step: StepConfig) -> (StepSummary, f32) {
-        let mut summary = StepSummary::default();
-        let mut longest_clipped_s = 0f32;
-        for config in [step, step.reversed()] {
-            let mut plant = ModelPlant::new(*model);
-            let mut rate_pid = Pid::new(self.rate);
-            let mut angle_pid = self.angle.map(|(gains, max_i, _)| Pid::new((gains, max_i)));
-            let max_rate_radps = self.angle.map_or(f32::INFINITY, |angle| angle.2);
-            let mut probe = StepProbe::new(config);
-            let (mut rate_radps, mut angle_rad, mut clipped) = (0.0f32, 0.0f32, false);
-            loop {
-                let measured = if self.angle.is_some() {
-                    angle_rad
-                } else {
-                    rate_radps
-                };
-                let setpoint = probe.step(DT, measured, clipped);
-                match probe.status() {
-                    StepStatus::Running { .. } => {}
-                    StepStatus::Done(metrics) => {
-                        summary.add(&metrics);
-                        longest_clipped_s = longest_clipped_s.max(metrics.saturated_s);
-                        break;
-                    }
-                    StepStatus::Aborted(_) => break,
+/// Both-way steps of `target`, a roll or pitch rate or angle loop, on `model`: core's step
+/// probe on core's attitude and body-rate controllers with `config`, the other axes held at
+/// zero. The summary and the longest clipped time, in s.
+fn model_steps(
+    model: &RateModel,
+    config: &CopterStabilizerConfig,
+    target: TunedLoop,
+    step: StepConfig,
+) -> (StepSummary, f32) {
+    let axis = usize::from(matches!(target, TunedLoop::PitchRate | TunedLoop::Pitch));
+    let angle_loop = matches!(target, TunedLoop::Roll | TunedLoop::Pitch);
+    let on_axis2 = |value: f32| Vec2::from_fn(|i, _| if i == axis { value } else { 0.0 });
+    let on_axis3 = |value: f32| Vec3::from_fn(|i, _| if i == axis { value } else { 0.0 });
+    let mut summary = StepSummary::default();
+    let mut longest_clipped_s = 0f32;
+    for step in [step, step.reversed()] {
+        let mut plant = ModelPlant::new(*model);
+        let mut attitude = AttitudeController::default();
+        let mut body_rate = BodyRateController::default();
+        let mut probe = StepProbe::new(step);
+        let (mut rate_radps, mut angle_rad, mut clipped) = (0.0f32, 0.0f32, false);
+        loop {
+            let measured = if angle_loop { angle_rad } else { rate_radps };
+            let setpoint = probe.step(DT, measured, clipped);
+            match probe.status() {
+                StepStatus::Running { .. } => {}
+                StepStatus::Done(metrics) => {
+                    summary.add(&metrics);
+                    longest_clipped_s = longest_clipped_s.max(metrics.saturated_s);
+                    break;
                 }
-                let rate_setpoint_radps = match angle_pid.as_mut() {
-                    Some(pid) => pid
-                        .step(setpoint - angle_rad)
-                        .clamp(-max_rate_radps, max_rate_radps),
-                    None => setpoint,
-                };
-                let demand = rate_pid.step(rate_setpoint_radps - rate_radps);
-                let moment = demand.clamp(-1.0, 1.0);
-                clipped = moment != demand;
-                rate_radps = plant.step(moment);
-                angle_rad += rate_radps * DT;
+                StepStatus::Aborted(_) => break,
             }
+            let rate_setpoint_radps = if angle_loop {
+                let rates = attitude.control(
+                    &config.attitude,
+                    DT,
+                    on_axis2(setpoint),
+                    on_axis2(angle_rad),
+                );
+                rates[axis]
+            } else {
+                setpoint
+            };
+            let moments = body_rate.control(
+                &config.body_rate,
+                DT,
+                on_axis3(rate_setpoint_radps),
+                on_axis3(rate_radps),
+            );
+            // Core saturates the moment at ±1: a step there is clipped.
+            clipped = moments[axis].abs() >= 1.0;
+            rate_radps = plant.step(moments[axis]);
+            angle_rad += rate_radps * DT;
         }
-        (summary, longest_clipped_s)
     }
+    (summary, longest_clipped_s)
 }
 
 /// A [`RateModel`] driven tick by tick.
@@ -540,105 +539,7 @@ impl ModelPlant {
     }
 }
 
-/// Core's PID form (P, I, D on the error; the integral clamped), at [`DT`].
-struct Pid {
-    gains: Gains,
-    max_integral: f32,
-    integral: f32,
-    previous_error: Option<f32>,
-}
-
-impl Pid {
-    fn new((gains, max_integral): (Gains, f32)) -> Self {
-        Pid {
-            gains,
-            max_integral,
-            integral: 0.0,
-            previous_error: None,
-        }
-    }
-
-    fn step(&mut self, error: f32) -> f32 {
-        self.integral = (self.integral + error * DT).clamp(-self.max_integral, self.max_integral);
-        let derivative = self
-            .previous_error
-            .map_or(0.0, |previous| (error - previous) / DT);
-        self.previous_error = Some(error);
-        self.gains.p * error + self.gains.i * self.integral + self.gains.d * derivative
-    }
-}
-
 // ---- Rows ----------------------------------------------------------------------------------
-
-/// A row's departure from the clean plant, as `robustness`'s sets.
-#[derive(Clone, Copy, Debug)]
-enum Set {
-    Clean,
-    Delay10Ms,
-    Delay25Ms,
-    Noise,
-    CgOffset,
-    WeakMotor,
-}
-
-fn perturbations(set: Set, airframe: &Airframe) -> Perturbations {
-    let delay = |actuator_delay_s| Perturbations {
-        actuator_delay_s,
-        ..Default::default()
-    };
-    match set {
-        Set::Clean => Perturbations::default(),
-        Set::Delay10Ms => delay(0.01),
-        Set::Delay25Ms => delay(0.025),
-        Set::Noise => Perturbations {
-            gyro: GyroNoise {
-                rms_radps: Vec3::repeat(0.02),
-                vibration: Some(Vibration {
-                    amplitude_radps: Vec3::repeat(0.1),
-                    frequency_hz: 90.0,
-                }),
-                seed: 1,
-            },
-            ..Default::default()
-        },
-        Set::CgOffset => {
-            let moment_nm = airframe.model.mass_kg * GRAVITY * 0.01;
-            Perturbations {
-                disturbance_moment_nm: Vec3::new(moment_nm, moment_nm, 0.0),
-                ..Default::default()
-            }
-        }
-        Set::WeakMotor => {
-            let mut motor_thrust_scale = [1.0; ActuatorCommand::SLOTS];
-            motor_thrust_scale[0] = 0.9;
-            Perturbations {
-                motor_thrust_scale,
-                ..Default::default()
-            }
-        }
-    }
-}
-
-/// The gains a row starts from, as `robustness`'s.
-#[derive(Clone, Copy, Debug)]
-enum Start {
-    /// Core's default gains on every tuned loop.
-    Low,
-    /// The airframe's rate P and D × 3; core's default angle gains.
-    High,
-}
-
-fn starting(airframe: Airframe, start: Start) -> Airframe {
-    let defaults = CopterStabilizerConfig::default();
-    common::retuned(airframe, |target, gains| match (start, target.is_rate()) {
-        (Start::High, true) => Gains {
-            p: gains.p * 3.0,
-            d: gains.d * 3.0,
-            ..gains
-        },
-        _ => target.gains(&defaults),
-    })
-}
 
 /// `airframe` under `set` from `start`.
 fn plant(airframe: Airframe, set: Set, start: Start) -> Plant {
@@ -664,7 +565,7 @@ fn misses(plant: &Plant, config: CopterStabilizerConfig, loops: &[TunedLoop]) ->
 /// Identified models, then each design's gains and spec misses, per row.
 #[test]
 #[ignore = "method sweep (#312)"]
-fn identified_designs_meet_the_spec() {
+fn designs_from_identified_models() {
     let designs = [Design::PolePlacement]
         .into_iter()
         .chain(PHASE_MARGINS_DEG.into_iter().map(Design::LoopShaping));
@@ -682,45 +583,53 @@ fn identified_designs_meet_the_spec() {
         for (set, start) in rows {
             let plant = plant(airframe, set, start);
             let models = identify(&plant);
-            let lag_ms = models[0].lag_s().map(|s| s * 1000.0);
-            print!(
-                "{name} {set:?} {start:?}: delay {} ticks, lag {lag_ms:.1?} ms |",
+            let lag = models[0]
+                .lag_s()
+                .map_or("no lag".into(), |s| format!("lag {:.1} ms", s * 1000.0));
+            let mut row = format!(
+                "{name} {set:?} {start:?}: delay {} ticks, {lag} |",
                 models[0].delay_ticks
             );
             for design in &designs {
-                print!(" {design:?}: {} |", designed(&plant, &models, *design));
+                let cell = match design_config(&plant, &models, *design) {
+                    Err(reason) => reason.to_string(),
+                    Ok(config) => {
+                        let rate = config.body_rate.roll_gains;
+                        format!(
+                            "rate P {:.2} D {:.4}, angle P {:.1}, {} misses",
+                            rate.p,
+                            rate.d,
+                            config.attitude.roll_gains.p,
+                            misses(&plant, config, &spec::TUNED)
+                        )
+                    }
+                };
+                row += &format!(" {design:?}: {cell} |");
             }
-            println!();
+            println!("{row}");
         }
     }
 }
 
-/// One design's rate and angle gains on `models`, and its spec misses, as a table cell.
-fn designed(plant: &Plant, models: &[RateModel; 2], design: Design) -> String {
+/// `plant`'s stabilizer with roll and pitch rate and angle gains designed from `models`, or
+/// which design failed.
+fn design_config(
+    plant: &Plant,
+    models: &[RateModel; 2],
+    design: Design,
+) -> Result<CopterStabilizerConfig, &'static str> {
     let mut config = plant.airframe.stabilizer;
-    for (axis, model) in models.iter().enumerate() {
-        let (rate_loop, angle_loop) = if axis == 0 {
-            (TunedLoop::RollRate, TunedLoop::Roll)
-        } else {
-            (TunedLoop::PitchRate, TunedLoop::Pitch)
-        };
-        let Some(rate) = rate_gains(design, model, rate_loop.gains(&config)) else {
-            return "no rate design".into();
-        };
+    let loops = [
+        (TunedLoop::RollRate, TunedLoop::Roll),
+        (TunedLoop::PitchRate, TunedLoop::Pitch),
+    ];
+    for (model, (rate_loop, angle_loop)) in models.iter().zip(loops) {
+        let rate = rate_gains(design, model, rate_loop.gains(&config)).ok_or("no rate design")?;
         *rate_loop.gains_mut(&mut config) = rate;
-        let Some(p) = angle_p(model, &config, axis) else {
-            return "no angle design".into();
-        };
+        let p = angle_p(model, &config, angle_loop).ok_or("no angle design")?;
         angle_loop.gains_mut(&mut config).p = p;
     }
-    let rate = config.body_rate.roll_gains;
-    format!(
-        "rate P {:.2} D {:.4}, angle P {:.1}, {} misses",
-        rate.p,
-        rate.d,
-        config.attitude.roll_gains.p,
-        misses(plant, config, &spec::TUNED)
-    )
+    Ok(config)
 }
 
 // ---- Gain ramp (QuikTune) ------------------------------------------------------------------
@@ -790,7 +699,7 @@ impl Slew {
 /// QuikTune on roll then pitch rate, D then P each, at `threshold`: the tuned config and the
 /// simulated seconds it took.
 fn quiktune(plant: &Plant, threshold: f32) -> (CopterStabilizerConfig, f32) {
-    const TIMEOUT_S: f32 = 600.0;
+    const STAGE_TIMEOUT_S: f32 = 600.0;
     let drive = Rc::new(Cell::new(Drive::default()));
     let recorder = Recorder::default();
     let mut flight_loop = excitable(plant, &drive, &recorder);
@@ -817,6 +726,7 @@ fn quiktune(plant: &Plant, threshold: f32) -> (CopterStabilizerConfig, f32) {
             };
             let mut slew = Slew::default();
             let mut value = start_value.max(0.001);
+            let mut stage_s = 0.0;
             loop {
                 value *= 2f32.powf(DT / DOUBLE_S);
                 set(&mut config, value);
@@ -825,11 +735,12 @@ fn quiktune(plant: &Plant, threshold: f32) -> (CopterStabilizerConfig, f32) {
                     .expect("valid gains");
                 flight_loop.step(TICK);
                 elapsed_s += DT;
+                stage_s += DT;
                 let moment = recorder.ticks.borrow().last().map_or(0.0, |t| t[axis].0);
                 // A non-finite slew is an oscillation too.
                 let slew_now = slew.step(moment);
                 let oscillating = !slew_now.is_finite() || slew_now > threshold;
-                if oscillating || elapsed_s > TIMEOUT_S {
+                if oscillating || stage_s > STAGE_TIMEOUT_S {
                     set(
                         &mut config,
                         (value * KEPT_SHARE).max(start_value * LEAST_SHARE),

@@ -755,7 +755,7 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
     command to its body rate: a second-order model with a delay (PX4's `ArxRls<2,2,1>`), the
     delay chosen by least residual. On the sim, 3 s per axis fit the same model from the low,
     own, and ×3 starts, recovered each airframe's motor lag (29.8, 49.1, 14.9 ms against 30,
-    50, 15), and found the actuator delay (1, 3, 7 ticks clean, at 10 ms, at 25 ms).
+    50, 15), and found the actuator delay (1, 3, and 6–7 ticks clean, at 10 ms, at 25 ms).
   * *Design* ([#517](https://github.com/wboayue/stable-flight/issues/517)): rate D/P at the
     fitted lag, so the PD's zero cancels the motor lag; rate P for a 65° phase margin on the
     model's frequency response, its delay included; the start's rate I kept; angle P the
@@ -763,18 +763,19 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
     It met the step spec on every clean, 10 ms, and 25 ms row of `quad_x`, `heavy_quad`, and
     `racer`, from both starts (60° and 55° each missed on some).
   * *Verify and commit* ([#518](https://github.com/wboayue/stable-flight/issues/518)): two
-    step pairs per loop through `Acceptance`, about 50 s on the sim, against the identification's
-    8 s.
+    step pairs per loop through `Acceptance`, estimated at about 50 s on the sim from the
+    search's settle per probe, against the identification's 8 s.
   * Rejected, from the same sweep
     ([`autotune_methods`](crates/stable-flight-sim/tests/autotune_methods.rs)): PX4's pole
     placement (`pid_design.hpp:68-103`) assumes one tick of delay and found no design on any
     10 or 25 ms row; a gain search on the model passes gains the model can't predict (4 misses,
     or none found); ArduPilot's QuikTune ramp (`VTOL-quicktune.lua`) needs excitation the
-    clean sim lacks, then, at any slew threshold from 5 to 80, tuned some rows too soft (rate
-    P 0.1–0.3) and couldn't lower a ×3 start more than its 20%, taking 57–239 s for the rate
-    loops alone.
+    clean sim lacks, then missed the spec on some rows at every slew threshold from 5 to 80
+    (too soft at 5, rate P 0.1–0.3; too stiff at 80, `quad_x` P 5.6), couldn't lower a ×3
+    start more than its 20%, and took 26–239 s for the rate loops alone.
   * Open: gyro noise biases the closed-loop fit, and neither prefiltering with decimation nor
-    instrumental variables fixed it without the loop's own gyro filter
+    instrumental variables (tried in a scratch prototype, not committed) fixed it without the
+    loop's own gyro filter
     ([#373](https://github.com/wboayue/stable-flight/issues/373)); CG offset and weak motor
     rows miss as the search's do, on the rate I
     ([#374](https://github.com/wboayue/stable-flight/issues/374)). The designed D is 3–5× the
