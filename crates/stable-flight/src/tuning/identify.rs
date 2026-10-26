@@ -10,7 +10,7 @@
 use nalgebra::{SMatrix, SVector};
 
 use crate::controllers::{InvalidConfig, check, check_positive};
-use crate::math::assert_dt;
+use crate::math::{assert_dt, lagged};
 
 #[cfg(test)]
 mod tests;
@@ -28,12 +28,18 @@ const TERMS: usize = 6;
 /// The square wave's half-periods, in s: 1.0 down to 0.2 by 0.1, then 0.6 down to 0.2,
 /// repeating (PX4's sweep, `mc_autotune_attitude_control.cpp:603-619`).
 fn half_period_s(index: usize) -> f32 {
-    const FIRST: usize = 9;
+    // The first sweep's nine halves, 1.0 down to 0.2 s; then sweeps of five, 0.6 down to 0.2.
+    const FIRST_SWEEP_HALVES: usize = 9;
     match index {
-        0..FIRST => 1.0 - 0.1 * index as f32,
-        _ => 0.6 - 0.1 * ((index - FIRST) % 5) as f32,
+        0..FIRST_SWEEP_HALVES => 1.0 - 0.1 * index as f32,
+        _ => 0.6 - 0.1 * ((index - FIRST_SWEEP_HALVES) % 5) as f32,
     }
 }
+
+/// Residuals within this share of the least count as tied, and the shortest such delay wins:
+/// `f32` cancellation in `Σt² − θ·Σφt` would otherwise pick between near-equal delays on
+/// rounding (a 25 ms delay fit at 6 or 7 ticks, #516).
+const TIE_SHARE: f32 = 0.01;
 
 /// Configures an [`IdentifyProbe`].
 ///
@@ -150,41 +156,21 @@ pub enum IdentifyStatus {
     Aborted(IdentifyAbort),
 }
 
-/// The least-squares sums at one delay.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct Sums {
-    /// `Σ φ·φᵀ` over the regressors.
-    normal: SMatrix<f32, TERMS, TERMS>,
-    /// `Σ φ·t` against the targets.
-    projected: SVector<f32, TERMS>,
-    /// `Σ t²`.
-    target_squared: f32,
-}
-
-impl Default for Sums {
-    fn default() -> Self {
-        Sums {
-            normal: SMatrix::zeros(),
-            projected: SVector::zeros(),
-            target_squared: 0.0,
-        }
-    }
-}
-
 /// Excites one loop with a square wave on its setpoint while recording its axis's body rate and
 /// moment command, then fits a [`RateModel`] to them.
 ///
 /// Each tick the host hands it the axis's body rate and the moment it commanded on the last
 /// tick; the probe returns the offset to add to the loop's setpoint. Every loop stays closed, so
 /// the fit sees the airframe through its own controllers. It fits each delay from 1 to
-/// [`MAX_DELAY_TICKS`] on the same ticks and keeps the one with the least residual.
+/// [`MAX_DELAY_TICKS`] on the same ticks and keeps the one with the least residual (the
+/// shortest of a near-tie).
 ///
 /// The fit takes the rate's change `y[k] − y[k−1]` as its target and `y[k−1]`, `y[k−1] −
 /// y[k−2]` as its rate terms: at 250 Hz the last two rates are nearly equal, and fitting them
 /// side by side loses the lag in `f32` (#516). It keeps only the sums of each delay's least
 /// squares (about 1.7 KB), not the record, and solves them when the excitation ends. A
 /// constant term takes up the trim moment. A non-finite rate or moment drops that tick and the
-/// [`MAX_DELAY_TICKS`]` + 2` after it, while the history refills.
+/// next `MAX_DELAY_TICKS + 2` ticks while the history refills.
 ///
 /// # Examples
 ///
@@ -200,25 +186,10 @@ impl Default for Sums {
 /// ```
 #[derive(Clone, Debug, PartialEq)]
 pub struct IdentifyProbe {
-    config: IdentifyConfig,
+    duration_s: f32,
     status: IdentifyStatus,
-    /// The square wave: the time of its next edge, in s, that edge's index, and its level.
-    next_edge_s: f32,
-    edge: usize,
-    high: bool,
-    /// The square wave through a low-pass at the washout's time constant, in setpoint units.
-    washout: f32,
-    /// The last two body rates, `y[k−1]` then `y[k−2]`, in rad/s.
-    rates_radps: [f32; 2],
-    /// The moments, newest first: `moments[0]` is `u[k−1]`.
-    moments: [f32; HISTORY],
-    /// Consecutive finite ticks recorded, up to [`HISTORY`].
-    filled: usize,
-    /// Each delay's sums, delay 1 first.
-    sums: [Sums; MAX_DELAY_TICKS],
-    /// Ticks the sums hold, and their total `dt`, in s.
-    rows: usize,
-    rows_dt_s: f32,
+    sweep: SquareSweep,
+    fits: DelayFits,
 }
 
 impl IdentifyProbe {
@@ -232,18 +203,10 @@ impl IdentifyProbe {
             panic!("invalid IdentifyConfig: {error}");
         }
         IdentifyProbe {
-            config,
+            duration_s: config.duration_s,
             status: IdentifyStatus::Running { elapsed_s: 0.0 },
-            next_edge_s: half_period_s(0),
-            edge: 0,
-            high: true,
-            washout: 0.0,
-            rates_radps: [0.0; 2],
-            moments: [0.0; HISTORY],
-            filled: 0,
-            sums: [Sums::default(); MAX_DELAY_TICKS],
-            rows: 0,
-            rows_dt_s: 0.0,
+            sweep: SquareSweep::new(config.amplitude, config.washout_tc_s),
+            fits: DelayFits::new(),
         }
     }
 
@@ -259,13 +222,16 @@ impl IdentifyProbe {
         let IdentifyStatus::Running { elapsed_s } = self.status else {
             return 0.0;
         };
-        self.record(dt, rate_radps, last_moment);
+        self.fits.record(dt, rate_radps, last_moment);
         let elapsed_s = elapsed_s + dt;
-        let offset = self.excitation(dt, elapsed_s);
-        self.status = if elapsed_s >= self.config.duration_s {
-            self.fit()
-        } else {
+        let offset = self.sweep.next(dt, elapsed_s);
+        self.status = if elapsed_s < self.duration_s {
             IdentifyStatus::Running { elapsed_s }
+        } else {
+            match self.fits.solve() {
+                Some(model) => IdentifyStatus::Done(model),
+                None => IdentifyStatus::Aborted(IdentifyAbort::Unexcited),
+            }
         };
         offset
     }
@@ -274,8 +240,78 @@ impl IdentifyProbe {
     pub fn status(&self) -> IdentifyStatus {
         self.status
     }
+}
 
-    /// Adds this tick to every delay's sums once the history is full, then shifts the history.
+/// PX4's shrinking square wave ([`half_period_s`]), less its washout: each edge a pulse that
+/// decays over the washout's time constant.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SquareSweep {
+    amplitude: f32,
+    washout_tc_s: f32,
+    /// When the next edge falls, in s since the start, and its index.
+    next_edge_s: f32,
+    edge: usize,
+    /// Whether the wave is at its amplitude (else 0).
+    high: bool,
+    /// The wave through a low-pass at the washout's time constant, in setpoint units.
+    washout: f32,
+}
+
+impl SquareSweep {
+    fn new(amplitude: f32, washout_tc_s: f32) -> Self {
+        SquareSweep {
+            amplitude,
+            washout_tc_s,
+            next_edge_s: half_period_s(0),
+            edge: 0,
+            high: true,
+            washout: 0.0,
+        }
+    }
+
+    /// The offset at `elapsed_s`, `dt` after the last call.
+    fn next(&mut self, dt: f32, elapsed_s: f32) -> f32 {
+        while elapsed_s >= self.next_edge_s {
+            self.edge += 1;
+            self.next_edge_s += half_period_s(self.edge);
+            self.high = !self.high;
+        }
+        let square = if self.high { self.amplitude } else { 0.0 };
+        self.washout = lagged(self.washout, square, dt, self.washout_tc_s);
+        square - self.washout
+    }
+}
+
+/// Each delay's least-squares sums, fed one tick at a time, and their solution.
+#[derive(Clone, Debug, PartialEq)]
+struct DelayFits {
+    /// The last two body rates, `y[k−1]` then `y[k−2]`, in rad/s.
+    rates_radps: [f32; 2],
+    /// The moments, newest first: `moments[0]` is `u[k−1]`.
+    moments: [f32; HISTORY],
+    /// Consecutive finite ticks recorded, up to [`HISTORY`].
+    filled: usize,
+    /// Each delay's sums, delay 1 first.
+    sums: [Sums; MAX_DELAY_TICKS],
+    /// Ticks the sums hold, and their total `dt`, in s.
+    rows: usize,
+    rows_dt_s: f32,
+}
+
+impl DelayFits {
+    fn new() -> Self {
+        DelayFits {
+            rates_radps: [0.0; 2],
+            moments: [0.0; HISTORY],
+            filled: 0,
+            sums: [Sums::default(); MAX_DELAY_TICKS],
+            rows: 0,
+            rows_dt_s: 0.0,
+        }
+    }
+
+    /// Adds this tick to every delay's sums once the history is full, then shifts the history;
+    /// a non-finite tick empties it instead.
     fn record(&mut self, dt: f32, rate_radps: f32, last_moment: f32) {
         if !(rate_radps.is_finite() && last_moment.is_finite()) {
             self.filled = 0;
@@ -297,9 +333,7 @@ impl IdentifyProbe {
                     self.moments[index + 2],
                     1.0,
                 ]);
-                sums.normal += regressors * regressors.transpose();
-                sums.projected += regressors * target;
-                sums.target_squared += target * target;
+                sums.add(&regressors, target);
             }
             self.rows += 1;
             self.rows_dt_s += dt;
@@ -307,49 +341,68 @@ impl IdentifyProbe {
         self.rates_radps = [rate_radps, self.rates_radps[0]];
     }
 
-    /// The setpoint offset at `elapsed_s`: the square wave less its washout.
-    fn excitation(&mut self, dt: f32, elapsed_s: f32) -> f32 {
-        while elapsed_s >= self.next_edge_s {
-            self.edge += 1;
-            self.next_edge_s += half_period_s(self.edge);
-            self.high = !self.high;
-        }
-        let square = if self.high {
-            self.config.amplitude
-        } else {
-            0.0
-        };
-        let share = (dt / self.config.washout_tc_s).min(1.0);
-        self.washout += (square - self.washout) * share;
-        square - self.washout
-    }
-
-    /// Solves each delay's sums and keeps the least residual: `Done`, or `Unexcited` when none
-    /// solves.
-    fn fit(&self) -> IdentifyStatus {
-        let dt_s = self.rows_dt_s / self.rows.max(1) as f32;
-        let best = self
-            .sums
-            .iter()
-            .enumerate()
-            .filter_map(|(index, sums)| {
-                let solution = sums.normal.cholesky()?.solve(&sums.projected);
-                // At the least-squares solution the residual is Σt² − θ·Σφt.
-                let residual = sums.target_squared - solution.dot(&sums.projected);
-                let finite = solution.iter().all(|x| x.is_finite()) && residual.is_finite();
-                finite.then_some((index + 1, solution, residual))
-            })
-            .min_by(|a, b| a.2.total_cmp(&b.2));
-        let Some((delay_ticks, solution, _)) = best else {
-            return IdentifyStatus::Aborted(IdentifyAbort::Unexcited);
-        };
+    /// The model at the delay [`shortest_tied`] picks; `None` when no delay's sums solve.
+    fn solve(&self) -> Option<RateModel> {
+        let solutions = self.sums.map(|sums| sums.solve());
+        let delay_ticks = shortest_tied(&solutions.map(|solution| solution.map(|s| s.1)))?;
+        let (solution, _) = solutions[delay_ticks - 1]?;
         // Δy[k] = c₀·y[k−1] + c₁·(y[k−1] − y[k−2]) + …, so y[k] = (1 + c₀ + c₁)·y[k−1] − c₁·y[k−2] + ….
         let (change, difference) = (solution[0], solution[1]);
-        IdentifyStatus::Done(RateModel {
+        Some(RateModel {
             rate_weights: [1.0 + change + difference, -difference],
             moment_weights: [solution[2], solution[3], solution[4]],
             delay_ticks,
-            dt_s,
+            dt_s: self.rows_dt_s / self.rows.max(1) as f32,
         })
     }
+}
+
+/// The least-squares sums at one delay. `normal` keeps the full symmetric matrix (21 entries
+/// would do) for a plain `φ·φᵀ` and nalgebra's solve; halving it saves about 0.6 KB.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Sums {
+    /// `Σ φ·φᵀ` over the regressors.
+    normal: SMatrix<f32, TERMS, TERMS>,
+    /// `Σ φ·t` against the targets.
+    projected: SVector<f32, TERMS>,
+    /// `Σ t²`.
+    target_squared: f32,
+}
+
+impl Default for Sums {
+    fn default() -> Self {
+        Sums {
+            normal: SMatrix::zeros(),
+            projected: SVector::zeros(),
+            target_squared: 0.0,
+        }
+    }
+}
+
+impl Sums {
+    fn add(&mut self, regressors: &SVector<f32, TERMS>, target: f32) {
+        self.normal += regressors * regressors.transpose();
+        self.projected += regressors * target;
+        self.target_squared += target * target;
+    }
+
+    /// The least-squares solution and its residual `Σt² − θ·Σφt` (at least 0); `None` when
+    /// the sums don't factor or solve to a non-finite value.
+    fn solve(&self) -> Option<(SVector<f32, TERMS>, f32)> {
+        let solution = self.normal.cholesky()?.solve(&self.projected);
+        let residual = (self.target_squared - solution.dot(&self.projected)).max(0.0);
+        let finite = solution.iter().all(|x| x.is_finite()) && residual.is_finite();
+        finite.then_some((solution, residual))
+    }
+}
+
+/// The shortest delay, in ticks (index + 1), whose residual is within [`TIE_SHARE`] of the
+/// least; `None` when no delay solved.
+fn shortest_tied(residuals: &[Option<f32>]) -> Option<usize> {
+    let least = residuals.iter().flatten().copied().reduce(f32::min)?;
+    let tied = least + TIE_SHARE * least;
+    residuals
+        .iter()
+        .position(|residual| residual.is_some_and(|r| r <= tied))
+        .map(|index| index + 1)
 }

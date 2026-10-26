@@ -15,7 +15,9 @@ pub enum ProbeConfig {
     /// A step: the loop's setpoint is held at a step and its response measured.
     Step(StepConfig),
     /// Identification: a square wave on the loop's setpoint while its axis's rate and moment
-    /// are recorded and fitted.
+    /// are recorded and fitted. Its amplitude is in the target loop's setpoint units;
+    /// [`COPTER_IDENTIFY`](crate::tuning::autotune::COPTER_IDENTIFY) is for the roll and pitch
+    /// angle loops.
     Identify(IdentifyConfig),
 }
 
@@ -54,7 +56,8 @@ pub struct LoopSignals {
     pub saturated: bool,
     /// The loop's axis's body rate this tick, in rad/s: the measurement itself on a rate loop.
     pub rate_radps: f32,
-    /// The loop's axis's moment command on the last tick, normalized to `[-1, 1]`.
+    /// The loop's axis's moment command on the last tick, normalized to `[-1, 1]`: as
+    /// commanded, before the mixer; a clip shows in [`saturated`](Self::saturated).
     pub last_moment: f32,
 }
 
