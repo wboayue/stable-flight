@@ -1,12 +1,14 @@
 //! A stage's decisions, apart from the flying: see [`Procedure`].
 
-use super::{AutotuneAbort, DesignPlan, Method, Outcome, RelayPlan, StepTestPlan};
+use super::{AutotuneAbort, Method, Outcome, RelayPlan, StepTestPlan};
 use crate::controllers::Gains;
 use crate::tuning::{Measurement, ProbeAbort, ProbeConfig, StepMetrics, StepSummary};
 
+use design::Design;
 use search::Search;
 use verify::Verify;
 
+mod design;
 mod search;
 #[cfg(test)]
 mod tests;
@@ -116,13 +118,8 @@ pub(super) enum Procedure {
     StepTest(Pairs),
     /// A gain search.
     Search(Search),
-    /// A fit, then the gains designed from it; `inner` is the rate loop's gains under an
-    /// angle loop, `stops` counts fits a slow host stopped in a row.
-    Design {
-        plan: DesignPlan,
-        inner: Option<Gains>,
-        stops: usize,
-    },
+    /// A fit, then the gains designed from it.
+    Design(Design),
     /// Steps on the committed gains, against the run's start when they miss.
     Verify(Verify),
 }
@@ -133,11 +130,7 @@ impl Procedure {
             Method::Relay(plan) => Self::Relay { plan, stops: 0 },
             Method::StepTest(plan) => Self::StepTest(Pairs::new(plan, plan.pairs)),
             Method::Search(plan) => Self::Search(Search::new(plan)),
-            Method::Design(plan) => Self::Design {
-                plan,
-                inner: None,
-                stops: 0,
-            },
+            Method::Design(plan) => Self::Design(Design::new(plan)),
             Method::Verify(plan) => Self::Verify(Verify::new(plan)),
         }
     }
@@ -186,40 +179,7 @@ impl Procedure {
                 Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
             },
             Self::Search(search) => search.next(input),
-            Self::Design { plan, inner, stops } => match input {
-                Input::Start {
-                    inner: inner_gains, ..
-                } => {
-                    *inner = inner_gains;
-                    Action::probe(ProbeConfig::Identify(plan.identify))
-                }
-                // A design stage commits nothing before it finishes: `gains` are its start.
-                Input::Measured {
-                    measurement: Measurement::Identify(model),
-                    gains,
-                    stalled: false,
-                } => match plan.gains(&model, gains, *inner) {
-                    Ok(gains) => Action::Finish {
-                        gains,
-                        outcome: Outcome::Tuned,
-                        steps: None,
-                        baseline: None,
-                    },
-                    Err(error) => Action::Fail(AutotuneAbort::Design(error)),
-                },
-                // The fit's timing can't be trusted, or nothing was fitted.
-                Input::Measured {
-                    measurement: Measurement::Identify(_),
-                    stalled: true,
-                    ..
-                }
-                | Input::Stalled { .. } => {
-                    measure_again(stops, ProbeConfig::Identify(plan.identify))
-                }
-                Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
-                Input::Breached { reason, .. } => Action::Fail(reason),
-                Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
-            },
+            Self::Design(design) => design.next(input),
             Self::Verify(verify) => verify.next(input),
         }
     }
@@ -229,7 +189,7 @@ impl Procedure {
         match self {
             Self::Search(search) => search.take_verdict(),
             Self::Verify(verify) => verify.take_verdict(),
-            Self::Relay { .. } | Self::StepTest(_) | Self::Design { .. } => None,
+            Self::Relay { .. } | Self::StepTest(_) | Self::Design(_) => None,
         }
     }
 }
