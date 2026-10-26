@@ -1,9 +1,9 @@
 //! The verify after a design: see [`Verify`].
 
-use super::{Action, Input, Pairs, Verdict};
+use super::{Action, Batch, Input, Pairs, Verdict};
 use crate::controllers::Gains;
+use crate::tuning::StepSummary;
 use crate::tuning::autotune::{AutotuneAbort, Outcome, VerifyPlan};
-use crate::tuning::{Measurement, ProbeAbort, StepSummary};
 
 #[cfg(test)]
 mod tests;
@@ -49,6 +49,13 @@ impl Verify {
     }
 
     pub(super) fn next(&mut self, input: Input) -> Action {
+        if let Some(batch) = self.pairs.take(&input) {
+            return match batch {
+                Batch::Next => self.step(),
+                Batch::Ended { complete } => self.judge(complete),
+                Batch::Fail(abort) => Action::Fail(abort),
+            };
+        }
         match (self.leg, input) {
             (
                 _,
@@ -60,32 +67,6 @@ impl Verify {
                 self.run_start = run_start;
                 self.step()
             }
-            (
-                _,
-                Input::Measured {
-                    measurement: Measurement::Step(metrics),
-                    stalled,
-                    ..
-                },
-            ) => match self.pairs.record(&metrics, stalled) {
-                // Nothing can be measured while the host keeps stalling.
-                Err(abort @ AutotuneAbort::Stalled) => Action::Fail(abort),
-                // Steps that keep clipping measure the limit, not the loop.
-                Err(_) => self.judge(false),
-                Ok(()) if self.pairs.done() => self.judge(true),
-                Ok(()) => self.step(),
-            },
-            (_, Input::Stalled { .. }) => match self.pairs.stall() {
-                Err(abort) => Action::Fail(abort),
-                Ok(()) => self.step(),
-            },
-            (
-                _,
-                Input::Aborted {
-                    abort: ProbeAbort::Step(_),
-                    ..
-                },
-            ) => self.judge(false),
             // The run's start gains, flown as a candidate, took the vehicle past the envelope.
             (Leg::Baseline, Input::Breached { .. }) => self.judge(false),
             (_, Input::Breached { reason, .. }) => Action::Fail(reason),
@@ -128,8 +109,9 @@ impl Verify {
                     passed,
                     steps,
                 });
-                // Gains the run never changed have nothing to be judged against.
-                if passed || (complete && self.committed == self.run_start) {
+                // Gains the run never changed have nothing to be judged against, nor to go
+                // back to.
+                if passed || self.committed == self.run_start {
                     return self.finish(self.committed, Outcome::Measured, steps, None);
                 }
                 if !complete {

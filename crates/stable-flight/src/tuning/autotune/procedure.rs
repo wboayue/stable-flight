@@ -116,11 +116,10 @@ pub(super) enum Procedure {
     StepTest(Pairs),
     /// A gain search.
     Search(Search),
-    /// A fit, then the gains designed from it; `stops` counts fits a slow host stopped in a
-    /// row.
+    /// A fit, then the gains designed from it; `inner` is the rate loop's gains under an
+    /// angle loop, `stops` counts fits a slow host stopped in a row.
     Design {
         plan: DesignPlan,
-        start: Gains,
         inner: Option<Gains>,
         stops: usize,
     },
@@ -136,7 +135,6 @@ impl Procedure {
             Method::Search(plan) => Self::Search(Search::new(plan)),
             Method::Design(plan) => Self::Design {
                 plan,
-                start: Gains::default(),
                 inner: None,
                 stops: 0,
             },
@@ -158,15 +156,7 @@ impl Procedure {
                     steps: None,
                     baseline: None,
                 },
-                // Nothing was measured: measure again, at most `MAX_MEASURE_STOPS` in a row.
-                Input::Stalled { .. } => {
-                    *stops += 1;
-                    if *stops >= MAX_MEASURE_STOPS {
-                        Action::Fail(AutotuneAbort::Stalled)
-                    } else {
-                        Action::probe(ProbeConfig::Relay(plan.relay))
-                    }
-                }
+                Input::Stalled { .. } => measure_again(stops, ProbeConfig::Relay(plan.relay)),
                 Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
                 Input::Breached { reason, .. } => Action::Fail(reason),
                 Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
@@ -196,26 +186,19 @@ impl Procedure {
                 Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
             },
             Self::Search(search) => search.next(input),
-            Self::Design {
-                plan,
-                start,
-                inner,
-                stops,
-            } => match input {
+            Self::Design { plan, inner, stops } => match input {
                 Input::Start {
-                    gains,
-                    inner: under,
-                    ..
+                    inner: inner_gains, ..
                 } => {
-                    *start = gains;
-                    *inner = under;
+                    *inner = inner_gains;
                     Action::probe(ProbeConfig::Identify(plan.identify))
                 }
+                // A design stage commits nothing before it finishes: `gains` are its start.
                 Input::Measured {
                     measurement: Measurement::Identify(model),
+                    gains,
                     stalled: false,
-                    ..
-                } => match plan.gains(&model, *start, *inner) {
+                } => match plan.gains(&model, gains, *inner) {
                     Ok(gains) => Action::Finish {
                         gains,
                         outcome: Outcome::Tuned,
@@ -224,20 +207,14 @@ impl Procedure {
                     },
                     Err(error) => Action::Fail(AutotuneAbort::Design(error)),
                 },
-                // The fit's timing can't be trusted, or nothing was fitted: fit again, at most
-                // `MAX_MEASURE_STOPS` in a row.
+                // The fit's timing can't be trusted, or nothing was fitted.
                 Input::Measured {
                     measurement: Measurement::Identify(_),
                     stalled: true,
                     ..
                 }
                 | Input::Stalled { .. } => {
-                    *stops += 1;
-                    if *stops >= MAX_MEASURE_STOPS {
-                        Action::Fail(AutotuneAbort::Stalled)
-                    } else {
-                        Action::probe(ProbeConfig::Identify(plan.identify))
-                    }
+                    measure_again(stops, ProbeConfig::Identify(plan.identify))
                 }
                 Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
                 Input::Breached { reason, .. } => Action::Fail(reason),
@@ -254,6 +231,17 @@ impl Procedure {
             Self::Verify(verify) => verify.take_verdict(),
             Self::Relay { .. } | Self::StepTest(_) | Self::Design { .. } => None,
         }
+    }
+}
+
+/// A measurement a slow host spoiled, the `stops`-th in a row: run `probe` again, or fail the
+/// stage at `MAX_MEASURE_STOPS`.
+fn measure_again(stops: &mut usize, probe: ProbeConfig) -> Action {
+    *stops += 1;
+    if *stops >= MAX_MEASURE_STOPS {
+        Action::Fail(AutotuneAbort::Stalled)
+    } else {
+        Action::probe(probe)
     }
 }
 
@@ -340,4 +328,44 @@ impl Pairs {
     fn done(&self) -> bool {
         self.summary.count() >= 2 * self.pairs
     }
+
+    /// What a step's `input` means for the batch: a measured step or a stall is counted, and
+    /// a step that aborts or keeps clipping ends the batch incomplete (it measures the limit,
+    /// not the loop). `None` for an input that isn't a step's.
+    fn take(&mut self, input: &Input) -> Option<Batch> {
+        let batch = match *input {
+            Input::Measured {
+                measurement: Measurement::Step(metrics),
+                stalled,
+                ..
+            } => match self.record(&metrics, stalled) {
+                // Nothing can be measured while the host keeps stalling.
+                Err(abort @ AutotuneAbort::Stalled) => Batch::Fail(abort),
+                Err(_) => Batch::Ended { complete: false },
+                Ok(()) if self.done() => Batch::Ended { complete: true },
+                Ok(()) => Batch::Next,
+            },
+            Input::Stalled { .. } => match self.stall() {
+                Err(abort) => Batch::Fail(abort),
+                Ok(()) => Batch::Next,
+            },
+            Input::Aborted {
+                abort: ProbeAbort::Step(_),
+                ..
+            } => Batch::Ended { complete: false },
+            _ => return None,
+        };
+        Some(batch)
+    }
+}
+
+/// Where a batch stands after a step ([`Pairs::take`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Batch {
+    /// Run the next step.
+    Next,
+    /// The batch is over: `complete` when every step ran.
+    Ended { complete: bool },
+    /// The stage can't go on.
+    Fail(AutotuneAbort),
 }

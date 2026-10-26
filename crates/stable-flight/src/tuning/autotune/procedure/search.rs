@@ -1,6 +1,6 @@
 //! The gain search: see [`Search`].
 
-use super::{Action, Input, Pairs, Verdict};
+use super::{Action, Batch, Input, Pairs, Verdict};
 use crate::controllers::Gains;
 use crate::tuning::autotune::{AutotuneAbort, KeepReason, Outcome, SearchPlan};
 use crate::tuning::{Measurement, ProbeAbort, ProbeConfig, StepSummary};
@@ -62,6 +62,15 @@ impl Search {
     }
 
     pub(super) fn next(&mut self, input: Input) -> Action {
+        if !matches!(self.leg, Leg::Relay { .. })
+            && let Some(batch) = self.pairs.take(&input)
+        {
+            return match batch {
+                Batch::Next => self.step(),
+                Batch::Ended { complete } => self.judge(complete),
+                Batch::Fail(abort) => Action::Fail(abort),
+            };
+        }
         match (self.leg, input) {
             (_, Input::Start { gains, .. }) => {
                 self.start = gains;
@@ -96,35 +105,6 @@ impl Search {
                     ..
                 },
             ) => self.retry_relay(tries + 1),
-            (
-                Leg::Baseline | Leg::Try { .. } | Leg::Verify(_),
-                Input::Measured {
-                    measurement: Measurement::Step(metrics),
-                    stalled,
-                    ..
-                },
-            ) => match self.pairs.record(&metrics, stalled) {
-                // Nothing can be measured while the host keeps stalling.
-                Err(abort @ AutotuneAbort::Stalled) => Action::Fail(abort),
-                // Steps that keep clipping measure the limit, not the loop: a candidate can't be
-                // shown to pass, and the start gains leave no baseline (#361).
-                Err(_) => self.judge(false),
-                Ok(()) if self.pairs.done() => self.judge(true),
-                Ok(()) => self.step(),
-            },
-            (Leg::Baseline | Leg::Try { .. } | Leg::Verify(_), Input::Stalled { .. }) => {
-                match self.pairs.stall() {
-                    Err(abort) => Action::Fail(abort),
-                    Ok(()) => self.step(),
-                }
-            }
-            (
-                Leg::Baseline | Leg::Try { .. } | Leg::Verify(_),
-                Input::Aborted {
-                    abort: ProbeAbort::Step(_),
-                    ..
-                },
-            ) => self.judge(false),
             // A candidate that took the vehicle past the envelope fails.
             (Leg::Try { .. } | Leg::Verify(_), Input::Breached { .. }) => self.judge(false),
             (_, Input::Breached { reason, .. }) => Action::Fail(reason),
