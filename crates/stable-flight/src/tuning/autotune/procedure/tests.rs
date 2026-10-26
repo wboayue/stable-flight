@@ -2,6 +2,7 @@ use assert2::check;
 
 use super::*;
 use crate::stabilizers::copter::TunedLoop;
+use crate::tuning::autotune::DesignPlan;
 use crate::tuning::{
     ControllerForm, DesignError, IdentifyAbort, RateModel, RelayResult, StepMetrics, UltimatePoint,
     design_angle_p, design_rate, gains_from_ultimate,
