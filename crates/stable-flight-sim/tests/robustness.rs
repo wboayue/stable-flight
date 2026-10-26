@@ -1,6 +1,7 @@
-//! Autotune robustness (#366): `StagePlan::copter_search` on every airframe, under each
-//! perturbation set, from a low and a high start, ends every stage `Tuned`, with gains that meet
-//! the step spec on that same plant, within [`BUDGET_S`] of simulated time.
+//! Autotune robustness (#366): `StagePlan::copter_loop_shaping` on every airframe, under each
+//! perturbation set, from a low and a high start, designs every loop and keeps each design
+//! through its verify, with gains that meet the step spec on that same plant, within
+//! [`BUDGET_S`] of simulated time.
 
 mod common;
 
@@ -13,9 +14,9 @@ use stable_flight_sim::airframes::{self, Airframe};
 use common::robustness::{Set, Start, perturbations, starting};
 use common::{AUTOTUNE_TIMEOUT_S, Plant, spec};
 
-/// Simulated seconds a row's autotune may take: the slowest passing clean row (`quad_x` from
-/// the high start, 627 s) plus 25%.
-const BUDGET_S: f32 = 784.0;
+/// Simulated seconds a row's autotune may take: the slowest passing row (`heavy_quad` with
+/// 25 ms of delay from the high start, 75 s) plus 25%.
+const BUDGET_S: f32 = 94.0;
 
 /// Autotunes `airframe` under `set` from `start` and checks the row's criteria.
 fn check_row(name: &str, airframe: Airframe, set: Set, start: Start) {
@@ -25,7 +26,11 @@ fn check_row(name: &str, airframe: Airframe, set: Set, start: Start) {
         wind: Wind::default(),
         perturbations,
     };
-    let run = common::autotune(&plant, &StagePlan::copter_search(), AUTOTUNE_TIMEOUT_S);
+    let run = common::autotune(
+        &plant,
+        &StagePlan::copter_loop_shaping(),
+        AUTOTUNE_TIMEOUT_S,
+    );
     let tuned = Plant {
         airframe: Airframe {
             stabilizer: run.config,
@@ -36,7 +41,7 @@ fn check_row(name: &str, airframe: Airframe, set: Set, start: Start) {
     let misses = spec::misses(&tuned, &spec::TUNED);
     let gains = spec::TUNED.map(|target: TunedLoop| (target, target.gains(&run.config)));
     check!(
-        run.all_tuned() && misses.is_empty() && run.duration_s <= BUDGET_S,
+        run.all_designed_and_kept() && misses.is_empty() && run.duration_s <= BUDGET_S,
         "{name} {set:?} from {start:?}: {:.0} s\noutcomes {:?}\ngains {gains:?}\nmisses {misses:#?}",
         run.duration_s,
         run.outcomes(),
@@ -65,79 +70,67 @@ rows! {
     quad_x_clean_low: quad_x, Clean, Low;
     quad_x_clean_high: quad_x, Clean, High;
     quad_x_delay_10ms_low: quad_x, Delay10Ms, Low;
-    #[ignore = "pitch rings on its start gains: NotSettled (#356)"]
     quad_x_delay_10ms_high: quad_x, Delay10Ms, High;
-    #[ignore = "tuned rate loops miss rise and settle (#376)"]
     quad_x_delay_25ms_low: quad_x, Delay25Ms, Low;
-    #[ignore = "pitch rings on its start gains: NotSettled (#356)"]
     quad_x_delay_25ms_high: quad_x, Delay25Ms, High;
-    #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
+    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     quad_x_noise_low: quad_x, Noise, Low;
-    #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
+    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     quad_x_noise_high: quad_x, Noise, High;
-    #[ignore = "trim moment held only by the slow angle I: tilt, asymmetric steps (#374)"]
+    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     quad_x_cg_offset_low: quad_x, CgOffset, Low;
-    #[ignore = "trim moment held only by the slow angle I: tilt, asymmetric steps (#374)"]
+    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     quad_x_cg_offset_high: quad_x, CgOffset, High;
-    #[ignore = "trim moment held only by the slow angle I: tilt, asymmetric steps (#374)"]
+    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     quad_x_weak_motor_low: quad_x, WeakMotor, Low;
-    #[ignore = "trim moment held only by the slow angle I: tilt, asymmetric steps (#374)"]
+    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     quad_x_weak_motor_high: quad_x, WeakMotor, High;
-    #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
+    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     quad_x_combined_low: quad_x, Combined, Low;
-    #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
+    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     quad_x_combined_high: quad_x, Combined, High;
 
     heavy_quad_clean_low: heavy_quad, Clean, Low;
-    #[ignore = "pitch relay reads Ku 4.97 (roll 3.60): the start flies as baseline, kept over the search at its seeded D (#356)"]
     heavy_quad_clean_high: heavy_quad, Clean, High;
     heavy_quad_delay_10ms_low: heavy_quad, Delay10Ms, Low;
-    #[ignore = "pitch rings on its start gains: NotSettled (#356)"]
     heavy_quad_delay_10ms_high: heavy_quad, Delay10Ms, High;
-    #[ignore = "tuned rate loops miss rise and settle (#376)"]
     heavy_quad_delay_25ms_low: heavy_quad, Delay25Ms, Low;
-    #[ignore = "pitch rings on its start gains: NotSettled (#356)"]
     heavy_quad_delay_25ms_high: heavy_quad, Delay25Ms, High;
-    #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
+    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     heavy_quad_noise_low: heavy_quad, Noise, Low;
-    #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
+    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     heavy_quad_noise_high: heavy_quad, Noise, High;
-    #[ignore = "trim moment held only by the slow angle I: tilt, asymmetric steps (#374)"]
+    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     heavy_quad_cg_offset_low: heavy_quad, CgOffset, Low;
-    #[ignore = "trim moment held only by the slow angle I: tilt, asymmetric steps (#374)"]
+    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     heavy_quad_cg_offset_high: heavy_quad, CgOffset, High;
-    #[ignore = "trim moment held only by the slow angle I: tilt, asymmetric steps (#374)"]
     heavy_quad_weak_motor_low: heavy_quad, WeakMotor, Low;
-    #[ignore = "trim moment held only by the slow angle I: tilt, asymmetric steps (#374)"]
     heavy_quad_weak_motor_high: heavy_quad, WeakMotor, High;
-    #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
+    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     heavy_quad_combined_low: heavy_quad, Combined, Low;
-    #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
+    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     heavy_quad_combined_high: heavy_quad, Combined, High;
 
     racer_clean_low: racer, Clean, Low;
     racer_clean_high: racer, Clean, High;
     racer_delay_10ms_low: racer, Delay10Ms, Low;
-    #[ignore = "pitch rings on its start gains: NotSettled (#356)"]
     racer_delay_10ms_high: racer, Delay10Ms, High;
-    #[ignore = "tuned rate loops miss rise and settle (#376)"]
     racer_delay_25ms_low: racer, Delay25Ms, Low;
-    #[ignore = "pitch rings on its start gains: NotSettled (#356)"]
     racer_delay_25ms_high: racer, Delay25Ms, High;
-    #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
+    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     racer_noise_low: racer, Noise, Low;
-    #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
+    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     racer_noise_high: racer, Noise, High;
-    #[ignore = "trim moment held only by the slow angle I: tilt, asymmetric steps (#374)"]
+    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     racer_cg_offset_low: racer, CgOffset, Low;
-    #[ignore = "trim moment held only by the slow angle I: tilt, asymmetric steps (#374)"]
+    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     racer_cg_offset_high: racer, CgOffset, High;
-    #[ignore = "trim moment held only by the slow angle I: tilt, asymmetric steps (#374)"]
+    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     racer_weak_motor_low: racer, WeakMotor, Low;
-    #[ignore = "trim moment held only by the slow angle I: tilt, asymmetric steps (#374)"]
+    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     racer_weak_motor_high: racer, WeakMotor, High;
-    #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
+    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     racer_combined_low: racer, Combined, Low;
-    #[ignore = "gyro noise keeps the raw rates above the settle gate: NotSettled (#373)"]
+    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     racer_combined_high: racer, Combined, High;
 }

@@ -292,6 +292,14 @@ impl AutotuneRun {
     pub fn all_tuned(&self) -> bool {
         self.outcomes() == spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)))
     }
+
+    /// Whether every stage of `StagePlan::copter_loop_shaping` ran: each loop designed
+    /// (`Tuned`), then verified and kept (`Measured`).
+    pub fn all_designed_and_kept(&self) -> bool {
+        let designed = spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)));
+        let kept = spec::TUNED.map(|target| (target, Ok(Outcome::Measured)));
+        self.outcomes() == [designed, kept].concat()
+    }
 }
 
 /// Runs `plan` on `plant` settled in a [`hover`], until it ends or `timeout_s` passes.

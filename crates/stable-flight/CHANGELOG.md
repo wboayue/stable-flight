@@ -9,19 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `StagePlan::copter_loop_shaping` (#518): the copter autotune by loop shaping. Roll and
+  pitch rate, then angle, each fitted and designed (`Method::Design`, `DesignPlan`), then each
+  verified by two step pairs (`Method::Verify`, `VerifyPlan`) and kept unless it flies worse
+  than the loop's gains at the run's start (`Outcome::Restored`). On the sim it tunes every
+  copter airframe, clean and with 10 and 25 ms of actuator delay, from low and ×3 starts, in
+  61–75 s of simulated time, against the step search's 182–627 s.
+  `AutotuneAbort::Design` reports a fit the design can't use. `TunedLoop::inner` and
+  `outer` name the rate loop under an angle loop and the angle loop over a rate loop.
 - `tuning::design_rate` and `design_angle_p` (`LoopShapingConfig`, preset
   `autotune::COPTER_LOOP_SHAPING`) (#517): rate and angle gains from an identified
   `RateModel` by loop shaping. Rate D/P at the fitted motor lag and P for a 65° phase margin;
   angle P for a 65° margin on the angle loop, within the angle search's range. On the sim the
   designed gains meet the step spec on every copter airframe, clean and with 10 and 25 ms of
-  actuator delay. `RateModel::response` gives the model's frequency response. No autotune
-  stage runs the design yet (#518).
+  actuator delay. `RateModel::response` gives the model's frequency response.
 
 - `tuning::IdentifyProbe` (`ProbeConfig::Identify`, preset `autotune::COPTER_IDENTIFY`) (#516):
   fits a rate axis's `RateModel` (motor lag, delay, angular acceleration per unit moment) from
   a square wave on its angle loop's setpoint, every loop closed, in `f32` and fixed memory. On
   the sim, 3 s per axis recovers each copter's motor lag within 1% and its actuator delay, from
-  low and ×3 starting gains. No autotune stage runs it yet (#518).
+  low and ×3 starting gains.
 
 - `TableMixer::config()`: the thrust factor and yaw ratio a mixer scales by, so a copter
   wiring can mix a quadplane's lift rotors at its config (#438).
@@ -313,6 +320,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`Setpoint::thrust`:** the linear thrust either variant carries.
 
 ### Changed
+
+- **Breaking:** the autotune settle (`Settle::rate_radps`) holds the roll and pitch rates
+  only: the untuned yaw loop can ring on its start gains without tilting the vehicle (#518).
+  A relay or an identification starts at the settle timeout instead of failing the stage.
+  New `AutotuneAbort::Design` and `Outcome::Restored` variants break exhaustive matches.
 
 - **Breaking:** `LoopSignals` carries the probed axis's `rate_radps` and `last_moment`, which
   a host fills for an identification probe (#516).

@@ -1,24 +1,32 @@
 //! A stage's decisions, apart from the flying: see [`Procedure`].
 
-use super::{AutotuneAbort, Method, Outcome, RelayPlan, StepTestPlan};
+use super::{AutotuneAbort, DesignPlan, Method, Outcome, RelayPlan, StepTestPlan};
 use crate::controllers::Gains;
 use crate::tuning::{Measurement, ProbeAbort, ProbeConfig, StepMetrics, StepSummary};
 
 use search::Search;
+use verify::Verify;
 
 mod search;
 #[cfg(test)]
 mod tests;
+mod verify;
 
-/// Relays in a row a slow host may stop before a relay stage fails: the step tests' clip
+/// Relays or fits in a row a slow host may stop before the stage fails: the step tests' clip
 /// budget (`StepTestPlan::max_invalid`), as a search's relay leg retries.
-const MAX_RELAY_STOPS: usize = 3;
+const MAX_MEASURE_STOPS: usize = 3;
 
 /// What a procedure is told.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Input {
-    /// The stage starts; `gains` are its loop's current gains.
-    Start { gains: Gains },
+    /// The stage starts; `gains` are its loop's current gains, `inner` those of the rate loop
+    /// under an angle or heading loop (`None` for a rate loop), `run_start` its loop's gains at
+    /// [`Autotune::start`](super::Autotune::start).
+    Start {
+        gains: Gains,
+        inner: Option<Gains>,
+        run_start: Gains,
+    },
     /// A probe finished; `gains` are the loop's committed gains. `stalled`: the host fell
     /// behind during it ([`Autotune::note_stall`](super::Autotune::note_stall)), so its timing
     /// can't be trusted.
@@ -36,6 +44,18 @@ pub(super) enum Input {
     /// A probe on candidate gains took the vehicle past the envelope; `gains` are the
     /// loop's committed gains, back in place.
     Breached { reason: AutotuneAbort, gains: Gains },
+}
+
+#[cfg(test)]
+impl Input {
+    /// The start of a stage on `gains`, which are also the run's start, on a rate loop.
+    fn start(gains: Gains) -> Self {
+        Self::Start {
+            gains,
+            inner: None,
+            run_start: gains,
+        }
+    }
 }
 
 /// What the supervisor does next for the stage.
@@ -87,10 +107,6 @@ pub(super) struct Verdict {
 /// A stage's method as a pure state machine: fed what happened, it returns what to do next.
 /// It never sees the flight loop; the supervisor settles, probes, guards the envelope, and
 /// commits, so a procedure is tested by feeding it inputs.
-#[expect(
-    clippy::large_enum_variant,
-    reason = "one per supervisor, never moved per tick; the core has no allocator to box with"
-)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Procedure {
     /// One relay measurement, then the rule's gains; `stops` counts relays a slow host
@@ -100,6 +116,16 @@ pub(super) enum Procedure {
     StepTest(Pairs),
     /// A gain search.
     Search(Search),
+    /// A fit, then the gains designed from it; `stops` counts fits a slow host stopped in a
+    /// row.
+    Design {
+        plan: DesignPlan,
+        start: Gains,
+        inner: Option<Gains>,
+        stops: usize,
+    },
+    /// Steps on the committed gains, against the run's start when they miss.
+    Verify(Verify),
 }
 
 impl Procedure {
@@ -108,6 +134,13 @@ impl Procedure {
             Method::Relay(plan) => Self::Relay { plan, stops: 0 },
             Method::StepTest(plan) => Self::StepTest(Pairs::new(plan, plan.pairs)),
             Method::Search(plan) => Self::Search(Search::new(plan)),
+            Method::Design(plan) => Self::Design {
+                plan,
+                start: Gains::default(),
+                inner: None,
+                stops: 0,
+            },
+            Method::Verify(plan) => Self::Verify(Verify::new(plan)),
         }
     }
 
@@ -125,10 +158,10 @@ impl Procedure {
                     steps: None,
                     baseline: None,
                 },
-                // Nothing was measured: measure again, at most `MAX_RELAY_STOPS` in a row.
+                // Nothing was measured: measure again, at most `MAX_MEASURE_STOPS` in a row.
                 Input::Stalled { .. } => {
                     *stops += 1;
-                    if *stops >= MAX_RELAY_STOPS {
+                    if *stops >= MAX_MEASURE_STOPS {
                         Action::Fail(AutotuneAbort::Stalled)
                     } else {
                         Action::probe(ProbeConfig::Relay(plan.relay))
@@ -163,6 +196,54 @@ impl Procedure {
                 Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
             },
             Self::Search(search) => search.next(input),
+            Self::Design {
+                plan,
+                start,
+                inner,
+                stops,
+            } => match input {
+                Input::Start {
+                    gains,
+                    inner: under,
+                    ..
+                } => {
+                    *start = gains;
+                    *inner = under;
+                    Action::probe(ProbeConfig::Identify(plan.identify))
+                }
+                Input::Measured {
+                    measurement: Measurement::Identify(model),
+                    stalled: false,
+                    ..
+                } => match plan.gains(&model, *start, *inner) {
+                    Ok(gains) => Action::Finish {
+                        gains,
+                        outcome: Outcome::Tuned,
+                        steps: None,
+                        baseline: None,
+                    },
+                    Err(error) => Action::Fail(AutotuneAbort::Design(error)),
+                },
+                // The fit's timing can't be trusted, or nothing was fitted: fit again, at most
+                // `MAX_MEASURE_STOPS` in a row.
+                Input::Measured {
+                    measurement: Measurement::Identify(_),
+                    stalled: true,
+                    ..
+                }
+                | Input::Stalled { .. } => {
+                    *stops += 1;
+                    if *stops >= MAX_MEASURE_STOPS {
+                        Action::Fail(AutotuneAbort::Stalled)
+                    } else {
+                        Action::probe(ProbeConfig::Identify(plan.identify))
+                    }
+                }
+                Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
+                Input::Breached { reason, .. } => Action::Fail(reason),
+                Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
+            },
+            Self::Verify(verify) => verify.next(input),
         }
     }
 
@@ -170,7 +251,8 @@ impl Procedure {
     pub(super) fn take_verdict(&mut self) -> Option<Verdict> {
         match self {
             Self::Search(search) => search.take_verdict(),
-            Self::Relay { .. } | Self::StepTest(_) => None,
+            Self::Verify(verify) => verify.take_verdict(),
+            Self::Relay { .. } | Self::StepTest(_) | Self::Design { .. } => None,
         }
     }
 }

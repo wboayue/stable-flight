@@ -641,8 +641,10 @@ stabilizer's params.
 
 ## Autotune
 
-PID autotune tunes a fresh airframe from a bad or unflyable start without a pilot nursing it:
-relay feedback (Åström–Hägglund) for the ultimate point, then step-response gain search in hover.
+PID autotune tunes a fresh airframe from a bad or unflyable start without a pilot nursing it.
+The copter default (`StagePlan::copter_loop_shaping`) fits each rate axis in hover, designs
+its gains from the fit, and verifies them with steps; the step-response gain search (relay
+feedback, Åström–Hägglund, for the ultimate point, then a search) stays selectable.
 
 * **Measure** (`tuning::RelayTuner`): the relay replaces one loop's controller output with
   `bias ± h`, switching on the error's sign with hysteresis. The limit cycle's period and
@@ -669,7 +671,7 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
   allows a few clipped ticks (`StepTestPlan::max_saturated_s`). `StepSummary` keeps means and
   ranges over steps, and overshoot per direction, whose difference shows a trim or CG offset.
 * **Procedures and executor** (`tuning::autotune`, between ticks): each stage's `Method`
-  (`Relay`, `StepTest`, `Search`) becomes a procedure, a pure state machine fed the stage's start
+  (`Relay`, `StepTest`, `Search`, `Design`, `Verify`) becomes a procedure, a pure state machine fed the stage's start
   and each probe's `Measurement` (or abort), which answers "run this probe" (optionally on
   candidate gains), "finish with these gains", or "fail". It never touches the flight loop, so its
   decisions are tested by feeding it inputs. `Autotune` executes it: it settles before each
@@ -696,7 +698,7 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
   committed at once, so the vehicle settles on them and they stay if nothing better passes or
   the stage fails, since a gain above the ceiling can ring once the relay disturbs it and never
   settle (#375). A start whose steps keep clipping leaves no baseline rather than ending the
-  stage. The copter plan (`StagePlan::copter_search`) tunes roll and pitch rate,
+  stage. The search plan (`StagePlan::copter_search`) tunes roll and pitch rate,
   then angle, so the angle search flies on the tuned rate loops:
   * Rate: D seeded from the relay's Tyreus–Luyben PD, P searched on overshoot ≤ 0.05 and
     bounce-back ≤ 0.1 (ArduPilot's default aggressiveness). Rate P has a sharp limit
@@ -718,16 +720,20 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
   the yaw authority the mixer leaves at hover
   ([#296](https://github.com/wboayue/stable-flight/issues/296)). The relay on roll and pitch angle
   measures a high ultimate gain (an integrator around a fast rate loop) whose rule P oscillates
-  once the rate setpoint saturates, so angles are tuned by step-response search. Before each
-  probe the vehicle must hold level and still (`Envelope::settle`) on every axis. A relay
-  that can't settle starts at the timeout instead of failing: it replaces the loop's output,
-  so it measures a loop ringing on its own gains. A step can't, so a loop the run hasn't
+  once the rate setpoint saturates, so angles are tuned by step-response search or loop
+  shaping. Before each probe the vehicle must hold level and still (`Envelope::settle`): roll
+  and pitch within the tilt, their rates within the rate. Yaw rate is left out: the yaw loop
+  isn't tuned, and on `racer` with 25 ms of delay it rings at ±0.18 rad/s on its start gains
+  without tilting the vehicle (#518); ArduPilot's level check covers every axis, and widens its
+  limits up to twice as the wait grows (`AC_AutoTune.cpp:343`), which here started about half
+  the probes before the vehicle was still and made angle steps clip. A relay or an
+  identification that can't settle starts at the timeout instead of failing: the relay
+  replaces the loop's output, so it measures a loop ringing on its own gains, and the fit only
+  gains excitation from the ringing. A step can't, so in the search a loop the run hasn't
   reached yet that rings on its start gains fails the stage
-  ([#356](https://github.com/wboayue/stable-flight/issues/356)). ArduPilot's level check also
-  covers every axis; it widens its limits up to twice as the wait grows
-  (`AC_AutoTune.cpp:343`), which here started about half the probes before the vehicle was
-  still and made angle steps clip. A finished stage commits its
-  gains through `set_stabilizer_config`.
+  ([#356](https://github.com/wboayue/stable-flight/issues/356)); loop shaping designs every
+  loop before it steps any. A finished stage commits its gains through
+  `set_stabilizer_config`.
 * **Envelope and outcomes:** tilt, body rate, or altitude loss past the `Envelope` limits, a
   probe abort, or a rate setpoint interrupting an angle stage fails the run, and the config goes
   back to the last commit: earlier stages stay, and nothing the failing stage tried survives
@@ -743,37 +749,45 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
   high start, each result held to the published step targets on its own plant
   ([`robustness`](crates/stable-flight-sim/README.md#closed-loop-tests)). Rows that fail stay
   ignored on the issue blocking them rather than loosening the targets.
-* **Planned: identification and loop shaping**
-  ([#312](https://github.com/wboayue/stable-flight/issues/312); the
-  [autotune milestone](https://github.com/wboayue/stable-flight/milestone/5)). The step search
-  spends most of each stage settling before each step: on the sim, a rate stage's 50 s holds
-  about 5 s of stepping, an angle stage's 61 s about 24 s (182–234 s per airframe); QuadCopterX
-  in RealFlight takes about 9 min. The planned method measures each rate axis once instead:
-  * *Identify* (`tuning::IdentifyProbe`, in place; no stage plan runs it yet): a shrinking
-    square wave on the angle setpoint, every loop closed (PX4's excitation,
+* **Loop shaping** (`StagePlan::copter_loop_shaping`, the copter default;
+  [#312](https://github.com/wboayue/stable-flight/issues/312)). The step search spends most of
+  each stage settling before each step: on the sim, a rate stage's 50 s holds about 5 s of
+  stepping, an angle stage's 61 s about 24 s (182–627 s per row); QuadCopterX in RealFlight
+  takes about 9 min. Loop shaping measures each axis once instead, then checks the result:
+  * *Identify* (`tuning::IdentifyProbe`, in each `Method::Design` stage): a shrinking square
+    wave on the angle setpoint, every loop closed (PX4's excitation,
     `mc_autotune_attitude_control.cpp:603-639`), and a least-squares fit of the axis's body
     rate to its moment command: a second-order model with a delay (PX4's `ArxRls<2,2,1>`), the
-    delay chosen by least residual. The probe keeps each delay's least-squares sums rather than
-    the record and solves them when the excitation ends; it fits the rate's change on the last
-    rate and the last change, since fitting the last two rates side by side loses the lag in
-    `f32` (up to 1.6 ms off, #516), and recursive least squares hadn't converged in 3 s. On the
-    sim, 3 s per axis fit the same model from the low, own, and ×3 starts, recovered each
-    airframe's motor lag (29.8, 49.1, 14.9 ms against 30, 50, 15), and found the actuator
-    delay (1, 3, and 6–7 ticks clean, at 10 ms, at 25 ms).
-  * *Design* (`tuning::design_rate`, `design_angle_p`, `COPTER_LOOP_SHAPING`; in place, no
-    stage plan runs it yet): rate D/P at the fitted lag, so the PD's zero cancels the motor
-    lag; rate P for a 65° phase margin on the model's frequency response, its delay included;
-    the start's rate I kept; angle P the largest in the angle search's range that keeps a 65°
-    margin on the angle loop around the designed rate loop, less 10%. It met the step spec on
-    every clean, 10 ms, and 25 ms row of `quad_x`, `heavy_quad`, and `racer`, from both starts
-    (60° and 55° each missed on some). Angle P by margin rather than by model steps: both put
-    it at the range's top on every row, and the steps cost about 19k simulated controller ticks
-    between two flight ticks, the margin up to 18 sweeps of the grid, about 7.5k frequency
-    points (#517). The design
-    runs on a log-spaced grid from 0.1 rad/s to Nyquist, each crossing refined by bisection.
-  * *Verify and commit* ([#518](https://github.com/wboayue/stable-flight/issues/518)): two
-    step pairs per loop through `Acceptance`, estimated at about 50 s on the sim from the
-    search's settle per probe, against the identification's 8 s.
+    delay chosen by least residual. A rate stage's fit runs on the angle loop above it. The
+    probe keeps each delay's least-squares sums rather than the record and solves them when
+    the excitation ends; it fits the rate's change on the last rate and the last change, since
+    fitting the last two rates side by side loses the lag in `f32` (up to 1.6 ms off, #516),
+    and recursive least squares hadn't converged in 3 s. On the sim, 3 s per axis fit the same
+    model from the low, own, and ×3 starts, recovered each airframe's motor lag (29.8, 49.1,
+    14.9 ms against 30, 50, 15), and found the actuator delay (1, 3, and 6–7 ticks clean, at
+    10 ms, at 25 ms).
+  * *Design* (`tuning::design_rate`, `design_angle_p`, `COPTER_LOOP_SHAPING`): rate D/P at the
+    fitted lag, so the PD's zero cancels the motor lag; rate P for a 65° phase margin on the
+    model's frequency response, its delay included; the start's rate I kept; angle P the
+    largest in the angle search's range that keeps a 65° margin on the angle loop around the
+    designed rate loop, less 10%. A fitted integrator past 1 (an unstable pole from a ringing
+    start, whose phase meets no crossover) is held at 1. It met the step spec on every clean,
+    10 ms, and 25 ms row of `quad_x`, `heavy_quad`, and `racer`, from both starts (60° and 55°
+    each missed on some). Angle P by margin rather than by model steps: both put it at the
+    range's top on every row, and the steps cost about 19k simulated controller ticks between
+    two flight ticks, the margin up to 18 sweeps of the grid, about 7.5k frequency points
+    (#517). The design runs on a log-spaced grid from 0.1 rad/s to Nyquist, each crossing
+    refined by bisection. A design stage commits its gains without steps.
+  * *Verify* (`Method::Verify`, after every loop is designed): two step pairs per loop on the
+    committed gains, kept if they meet the search's criterion; otherwise two pairs on the
+    loop's gains at the run's start, as a candidate, and the design stays unless it flies worse
+    (`Acceptance`). Designing everything first keeps a loop still on its start gains from
+    ringing through another's verify: `racer`'s pitch on its high start with 25 ms of delay
+    (±2.8 rad/s), and roll's start angle loop around `heavy_quad`'s slower designed rate loop
+    (±10°, #518). A designed rate loop is stiffer than a searched one (P 4.7 on clean `quad_x`),
+    so angle steps get the rate steps' clip allowance.
+  * On the sim, every clean, 10 ms, and 25 ms row of the three airframes from both starts
+    passes in 61–75 s, against the search's 182–627 s on the rows it passed (`robustness`).
   * Rejected, from the same sweep
     ([`autotune_methods`](crates/stable-flight-sim/tests/autotune_methods.rs)): PX4's pole
     placement (`pid_design.hpp:68-103`) assumes one tick of delay and found no design on any
@@ -781,14 +795,17 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
     or none found); ArduPilot's QuikTune ramp (`VTOL-quicktune.lua`) needs excitation the
     clean sim lacks, then missed the spec on some rows at every slew threshold from 5 to 80
     (too soft at 5, rate P 0.1–0.3; too stiff at 80, `quad_x` P 5.6), couldn't lower a ×3
-    start more than its 20%, and took 26–239 s for the rate loops alone.
+    start more than its 20%, and took 26–239 s for the rate loops alone. Verifying each loop
+    right after its design (four stages) left a loop not yet designed ringing through it: 3
+    of the 6 rows with 25 ms of delay failed to settle (#518).
   * Open: gyro noise biases the closed-loop fit, and neither prefiltering with decimation nor
     instrumental variables (tried in a scratch prototype, not committed) fixed it without the
     loop's own gyro filter
     ([#373](https://github.com/wboayue/stable-flight/issues/373)); CG offset and weak motor
-    rows miss as the search's do, on the rate I
+    rows (but `heavy_quad`'s weak motor) miss as the search's do, on the rate I
     ([#374](https://github.com/wboayue/stable-flight/issues/374)). The designed D is 3–5× the
-    airframes' (`quad_x` 0.139 against 0.029), so it flies only behind #373's filter.
+    airframes' (`quad_x` 0.139 against 0.029), so on hardware it waits on #373's filter;
+    RealFlight's state carries no sensor noise.
 
 ## Real-Time Loop Management
 

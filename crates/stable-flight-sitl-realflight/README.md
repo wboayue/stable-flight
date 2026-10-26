@@ -129,17 +129,20 @@ cargo run -p stable-flight-sitl-realflight --example tailsitter-companion-realfl
 cargo run -p stable-flight-bridge -- --vehicle-type tailsitter
 
 # Autotune: climbs to the hover point, tunes roll and pitch rate, then roll and
-# pitch angle, by step response (per rate loop a relay sets D; P is searched, verified against
-# the start, and kept only if no worse), logs each judgment and baseline vs verify, prints the
-# tuned gains as an airframes.rs snippet, lands, and disarms.
+# pitch angle, by loop shaping (each axis fitted from a 3 s square wave, its gains designed
+# from the fit; then each loop verified by steps and kept unless worse than its start), logs
+# each fit and judgment, prints the tuned gains as an airframes.rs snippet, lands, and disarms.
+# --stages search runs the step-response search instead (per rate loop a relay sets D; P is
+# searched, verified against the start, and kept only if no worse).
 # --step-test appends step tests of roll/pitch rate and angle and logs a response summary per
-# loop (--stages none --step-test: the hand tune). --stages rate runs the relay autotune instead
+# loop (--stages none --step-test: the hand tune). --stages rate runs the relay autotune
 # (--stages angle|all adds relay angle and heading stages, whose gains oscillated on
 # QuadCopterX); --rate-p-scale starts from bad rate gains; --record run.csv writes every tick
 # (rates, angles, moments, setpoint) for diagnosis.
 # RUST_LOG=info,copter_autotune_realflight=debug logs each stage's status every second and each step.
 # Or: just fly-autotune
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --step-test
+cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages search
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages none --step-test
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages rate --rate-p-scale 10
 # The Titan Cobra's lift rotors (--airframe titan-cobra; pusher stopped, surfaces centered)

@@ -109,7 +109,8 @@ pub enum DesignError {
 /// `1/|C·G|` at the first frequency where the phase of `C·G` falls to `−180° + margin`, with
 /// `C = 1 + τ·(1 − z⁻¹)/dt` the PD at unit P and `G` the model's [`response`](RateModel::response).
 /// The kept I isn't in that loop: its lag at the crossover costs the flown loop a little margin
-/// (0.6° at I 0.2 over seven ticks of delay).
+/// (0.6° at I 0.2 over seven ticks of delay). A fitted integrator past 1 (`r₁ + r₂ > 1`, an
+/// unstable pole from noise, whose phase meets no crossover) is held at 1, the lag kept.
 ///
 /// # Errors
 ///
@@ -139,6 +140,7 @@ pub fn design_rate(
     start: Gains,
     config: &LoopShapingConfig,
 ) -> Result<Gains, DesignError> {
+    let model = &integrating(model);
     let lag_s = model.lag_s().ok_or(DesignError::NotALag)?;
     let dt_s = model.dt_s;
     let unit_pd = Gains {
@@ -166,7 +168,7 @@ pub fn design_rate(
 /// The angle loop's open loop is `C_angle · T · dt/(1 − z⁻¹)`: the angle PID, the closed rate
 /// loop `T = C_rate·G/(1 + C_rate·G)` (core's PID on the error, `BodyRateController`), and the
 /// integration from rate to angle. Its margin is read where its gain falls to 1, and angle P is
-/// bisected on it.
+/// bisected on it. A fitted integrator past 1 is held at 1, as in [`design_rate`].
 ///
 /// # Errors
 ///
@@ -177,6 +179,7 @@ pub fn design_angle_p(
     angle: Gains,
     config: &LoopShapingConfig,
 ) -> Result<f32, DesignError> {
+    let model = &integrating(model);
     let dt_s = model.dt_s;
     let one = Complex::new(1.0, 0.0);
     let open_loop = |w_radps: f32, angle_p: f32| {
@@ -208,6 +211,21 @@ pub fn design_angle_p(
         return Ok(high * config.angle_back_off);
     }
     Ok(bisect_geometric(low, high, keeps_margin) * config.angle_back_off)
+}
+
+/// `model` with its integrator held at 1 (`r₁ + r₂ ≤ 1`, the lag's pole `−r₂` kept): a body
+/// integrates its moment exactly, less any rate damping, so a fit past 1 is an unstable pole
+/// from noise, whose phase starts near −180° and meets no crossover (`r₁ + r₂ = 1.00012` on
+/// `quad_x` from a start ringing with 25 ms of delay, #518). A fit at or below 1 stays.
+fn integrating(model: &RateModel) -> RateModel {
+    let [_, r2] = model.rate_weights;
+    if model.rate_weights.iter().sum::<f32>() <= 1.0 {
+        return *model;
+    }
+    RateModel {
+        rate_weights: [1.0 - r2, r2],
+        ..*model
+    }
 }
 
 /// A PID's frequency response at `z1 = e^(−jω·dt)`: `P + I·dt/(1 − z⁻¹) + D·(1 − z⁻¹)/dt`,
