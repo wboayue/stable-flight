@@ -3,7 +3,7 @@ use assert2::check;
 use super::*;
 use crate::stabilizers::copter::TunedLoop;
 use crate::tuning::autotune::{Method, Procedure};
-use crate::tuning::{StepAbort, StepMetrics};
+use crate::tuning::{Measurement, ProbeAbort, StepAbort, StepMetrics};
 
 /// A designed rate loop, committed.
 const DESIGNED: Gains = Gains {
