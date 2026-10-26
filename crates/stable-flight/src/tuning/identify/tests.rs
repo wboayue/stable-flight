@@ -20,19 +20,31 @@ const ANGLE_P: f32 = 4.0;
 const RATE_P: f32 = 0.3;
 
 /// Runs `probe` on `params`'s axis inside an angle loop and a rate loop, as a copter host
-/// flies it: the probe's offset on the angle setpoint, the axis's rate and last moment back.
-fn identify(params: PlantParams, mut probe: IdentifyProbe) -> IdentifyStatus {
+/// flies it: the probe's offset on the angle setpoint, the axis's rate (through `corrupt`,
+/// given the tick) and last moment back. Returns the finished probe.
+fn identify_with(
+    params: PlantParams,
+    mut probe: IdentifyProbe,
+    corrupt: impl Fn(usize, f32) -> f32,
+) -> IdentifyProbe {
     let mut plant = Plant::new(params, DT);
     let (mut angle_rad, mut last_moment) = (0.0f32, 0.0f32);
+    let mut tick = 0;
     while matches!(probe.status(), IdentifyStatus::Running { .. }) {
         let rate_radps = plant.measure();
-        let offset_rad = probe.step(DT, rate_radps, last_moment);
+        let offset_rad = probe.step(DT, corrupt(tick, rate_radps), last_moment);
         let rate_setpoint_radps = ANGLE_P * (offset_rad - angle_rad);
         last_moment = (RATE_P * (rate_setpoint_radps - rate_radps)).clamp(-1.0, 1.0);
         plant.step(last_moment);
         angle_rad += plant.output() * DT;
+        tick += 1;
     }
-    probe.status()
+    probe
+}
+
+/// [`identify_with`] on clean signals: the probe's final status.
+fn identify(params: PlantParams, probe: IdentifyProbe) -> IdentifyStatus {
+    identify_with(params, probe, |_, rate_radps| rate_radps).status()
 }
 
 fn model(status: IdentifyStatus) -> RateModel {
@@ -118,31 +130,33 @@ fn excites_with_a_washed_out_shrinking_square_wave() {
 #[test]
 fn drops_a_non_finite_tick_and_refills_its_history() {
     let params = single_lag(20.0, 0.02, 0.0);
-    let ticks = |nan_at: Option<usize>| {
-        let mut probe = IdentifyProbe::new(CONFIG);
-        let mut plant = Plant::new(params, DT);
-        let (mut angle_rad, mut last_moment) = (0.0f32, 0.0f32);
-        let mut tick = 0;
-        while matches!(probe.status(), IdentifyStatus::Running { .. }) {
-            let measured = plant.measure();
-            let rate_radps = if Some(tick) == nan_at {
-                f32::NAN
-            } else {
-                measured
-            };
-            let offset_rad = probe.step(DT, rate_radps, last_moment);
-            last_moment =
-                (RATE_P * (ANGLE_P * (offset_rad - angle_rad) - measured)).clamp(-1.0, 1.0);
-            plant.step(last_moment);
-            angle_rad += plant.output() * DT;
-            tick += 1;
-        }
-        (probe.rows, probe.status())
-    };
-    let (clean_rows, _) = ticks(None);
-    let (dropped_rows, status) = ticks(Some(300));
-    check!(clean_rows - dropped_rows == HISTORY);
-    check!(matches!(status, IdentifyStatus::Done(_)), "{status:?}");
+    let clean = identify_with(params, IdentifyProbe::new(CONFIG), |_, rate| rate);
+    let dropped = identify_with(params, IdentifyProbe::new(CONFIG), |tick, rate| {
+        if tick == 300 { f32::NAN } else { rate }
+    });
+    check!(clean.fits.rows - dropped.fits.rows == HISTORY);
+    check!(
+        matches!(dropped.status(), IdentifyStatus::Done(_)),
+        "{:?}",
+        dropped.status()
+    );
+}
+
+/// The delay is the shortest whose residual is within 1% of the least, so rounding doesn't pick
+/// between near-equal delays: (residuals per delay from 1, delay picked).
+#[test]
+fn picks_the_shortest_of_near_tied_delays() {
+    let rows: [(&[Option<f32>], Option<usize>); 6] = [
+        (&[Some(3.0), Some(1.0), Some(2.0)], Some(2)),
+        (&[Some(1.005), Some(1.0)], Some(1)),
+        (&[Some(1.02), Some(1.0)], Some(2)),
+        (&[None, Some(0.0), Some(0.0)], Some(2)),
+        (&[None, None], None),
+        (&[], None),
+    ];
+    for (residuals, delay) in rows {
+        check!(shortest_tied(residuals) == delay, "{residuals:?}");
+    }
 }
 
 /// An axis that never moves can't be fitted: no delay's sums solve.
