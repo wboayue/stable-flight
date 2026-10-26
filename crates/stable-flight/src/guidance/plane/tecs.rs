@@ -11,7 +11,9 @@
 //!   `V̇` is the airspeed's own derivative through a 0.5 s low-pass, about the filter
 //!   ArduPilot puts on its damping term (AP:740-746), so it doesn't hang on how a backend
 //!   measures acceleration; PX4 drops its acceleration term for bias
-//!   (`FwLateralLongitudinalControl.cpp:408-410`).
+//!   (`FwLateralLongitudinalControl.cpp:408-410`). ArduPilot also high-passes `V̇` at the
+//!   time constant (`V·(V̇ − lpf(V̇))`, AP:686, 695), so a steady acceleration isn't a rate
+//!   error; here it is one (#505).
 //! - **Demands:** the height demand slews toward the target at the climb and sink limits, the
 //!   airspeed demand at half the climb's energy rate over `V` (AP:502-521, 550-580). The
 //!   slewed height demand then runs through a 3 s lag (AP:577), whose slope is the height
