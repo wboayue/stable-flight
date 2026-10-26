@@ -768,7 +768,8 @@ relay feedback (Åström–Hägglund) for the ultimate point, then step-response
     every clean, 10 ms, and 25 ms row of `quad_x`, `heavy_quad`, and `racer`, from both starts
     (60° and 55° each missed on some). Angle P by margin rather than by model steps: both put
     it at the range's top on every row, and the steps cost about 19k simulated controller ticks
-    between two flight ticks, the margin a few thousand frequency points (#517). The design
+    between two flight ticks, the margin up to 18 sweeps of the grid, about 7.5k frequency
+    points (#517). The design
     runs on a log-spaced grid from 0.1 rad/s to Nyquist, each crossing refined by bisection.
   * *Verify and commit* ([#518](https://github.com/wboayue/stable-flight/issues/518)): two
     step pairs per loop through `Acceptance`, estimated at about 50 s on the sim from the

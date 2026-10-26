@@ -1,7 +1,7 @@
 use assert2::check;
 
 use super::*;
-use crate::tuning::autotune::{COPTER_LOOP_SHAPING, SearchPlan};
+use crate::tuning::autotune::COPTER_LOOP_SHAPING;
 
 /// The flight loop's tick: 250 Hz.
 const DT: f32 = 0.004;
@@ -25,25 +25,19 @@ const START: Gains = Gains {
     d: 0.002,
 };
 
-/// The phase of `gains`' rate loop on `model` where its open-loop gain falls to 1, in degrees.
+/// `gains`' rate loop's phase margin on `model`, in degrees: 180° plus its phase where its
+/// open-loop gain falls to 1.
 fn rate_margin_deg(model: &RateModel, gains: Gains) -> f32 {
-    let open_loop = |w_radps: f32| {
-        let z1 = unit_delay(w_radps, DT);
-        let one = Complex::new(1.0, 0.0);
-        let pd = one * gains.p + (one - z1) * (gains.d / DT);
-        pd * model.response(w_radps)
-    };
-    let crossover = first_crossing(DT, |w| {
-        let response = open_loop(w);
-        (response, magnitude(response) > 1.0)
-    })
-    .expect("a crossover");
-    180.0 + phase_deg(open_loop(crossover))
+    let open_loop =
+        |w_radps: f32| pid_response(gains, unit_delay(w_radps, DT), DT) * model.response(w_radps);
+    let crossover = first_crossing(DT, open_loop, |point| point.gain > 1.0).expect("a crossover");
+    180.0 + crossover.phase_deg
 }
 
 /// The rate design cancels the lag (D/P is the lag) and leaves the loop the margin, whatever
-/// the plant: (accel rad/s² per unit moment, lag s, delay ticks). The margin holds within 0.5°;
-/// I stays the start's.
+/// the plant: (accel rad/s² per unit moment, lag s, delay ticks). The flown loop, with the
+/// start's I that the design keeps but doesn't shape, holds the margin within 1° (the I costs
+/// 0.6° at seven ticks of delay).
 #[test]
 fn rate_design_cancels_the_lag_and_keeps_the_margin() {
     let rows = [
@@ -65,7 +59,7 @@ fn rate_design_cancels_the_lag_and_keeps_the_margin() {
         check!(gains.i == START.i, "{row}");
         let margin = rate_margin_deg(&model, gains);
         check!(
-            (margin - COPTER_LOOP_SHAPING.rate_margin_deg).abs() < 0.5,
+            (margin - COPTER_LOOP_SHAPING.rate_margin_deg).abs() < 1.0,
             "{row}: margin {margin}°"
         );
     }
@@ -239,27 +233,27 @@ fn validate_checks_each_field() {
     }
 }
 
-/// The copter preset's angle range and back-off are the angle search's.
+/// The walk unwraps phase, so a lag past −360° reads as such: on `(ωc/jω)·e^(−jω·τ)` the gain
+/// falls to 1 at `ωc`, where the phase is `−90° − ωc·τ` in closed form. (ωc rad/s, τ s) rows;
+/// the last two lag past −360°, where a wrapped phase would read a healthy margin.
 #[test]
-fn copter_preset_uses_the_angle_searchs_range() {
-    let search = SearchPlan::copter_angle();
-    check!(COPTER_LOOP_SHAPING.angle_p_min == search.min);
-    check!(COPTER_LOOP_SHAPING.angle_p_max == search.max);
-    check!(COPTER_LOOP_SHAPING.angle_back_off == search.margin);
-}
-
-/// Phase reads in (−360°, 0]: a lag past −180° stays below it. (re, im) → degrees.
-#[test]
-fn phase_reads_as_a_lag() {
-    let rows = [
-        ((1.0, 0.0), 0.0),
-        ((0.0, -1.0), -90.0),
-        ((-1.0, -1e-6), -180.0),
-        ((-1.0, 1e-6), -180.0),
-        ((0.0, 1.0), -270.0),
-    ];
-    for ((re, im), deg) in rows {
-        let phase = phase_deg(Complex::new(re, im));
-        check!((phase - deg).abs() < 0.01, "({re}, {im}): {phase}");
+fn crossings_read_the_unwrapped_phase() {
+    let rows = [(10.0, 0.01), (10.0, 0.1), (10.0, 0.5), (20.0, 0.4)];
+    for (crossover_radps, delay_s) in rows {
+        let open_loop = |w_radps: f32| {
+            let integrator = Complex::new(0.0, -crossover_radps / w_radps);
+            let angle = -w_radps * delay_s;
+            integrator * Complex::new(libm::cosf(angle), libm::sinf(angle))
+        };
+        let point = first_crossing(DT, open_loop, |point| point.gain > 1.0).expect("a crossing");
+        let expected_deg = -90.0 - (crossover_radps * delay_s).to_degrees();
+        check!(
+            (point.w_radps - crossover_radps).abs() < 0.01 * crossover_radps,
+            "{point:?}"
+        );
+        check!(
+            (point.phase_deg - expected_deg).abs() < 1.0,
+            "{point:?} against {expected_deg}"
+        );
     }
 }
