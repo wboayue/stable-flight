@@ -85,6 +85,7 @@ pub fn perturbations(set: Set, airframe: &Airframe) -> Perturbations {
             gyro: noise(),
             disturbance_moment_nm: cg_moment_nm(airframe),
             motor_thrust_scale: weak_motor(),
+            ..Default::default()
         },
     }
 }

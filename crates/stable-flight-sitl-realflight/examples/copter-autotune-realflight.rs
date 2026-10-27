@@ -23,11 +23,12 @@
 //! `--step-test` appends step tests of roll and pitch rate and angle: alternating steps,
 //! each one's response logged at `debug`, and a summary per loop at `info` (overshoot, rise,
 //! settling, bounce-back: mean and range). `--stages none --step-test` measures the hand tune;
-//! `--stages rate --step-test` the relay tune, in one flight. Steps during which the runner
-//! skipped ticks run again. While RealFlight runs slow (`RunStats::host_slow`: under 225 Hz
-//! over 0.5 s until it regains 240 Hz; it drops to about 120 Hz for stretches, #438), the running step stops and the autotune
-//! waits: a step held for its ticks at half rate would tilt twice as far, and settles would
-//! time out. Params and telemetry go over
+//! `--stages rate --step-test` the relay tune, in one flight. A freeze (a tick over 50 ms after
+//! the last) makes the running probe run again and excuses breaches for a second. While
+//! RealFlight runs slow (`RunStats::host_slow`: under 225 Hz over 0.5 s until it regains
+//! 240 Hz; it drops to about 120 Hz for stretches, #438), the running step stops and the
+//! autotune waits: a step held for its ticks at half rate would tilt twice as far, and settles
+//! would time out. Fits run on: a slow host only lowers their design. Params and telemetry go over
 //! the native link for the bridge, so QGC shows the gains change. The RealFlight host defaults to
 //! `10.211.55.3:8080`; override it with `--host`.
 //!
@@ -84,10 +85,11 @@ const LOOP_HZ: f64 = 250.0;
 const LOOP_DT_S: f32 = (1.0 / LOOP_HZ) as f32;
 /// How close to the hover altitude the vehicle must be before the autotune starts, in m.
 const START_ALTITUDE_TOLERANCE_M: f32 = 0.5;
-/// Ticks the runner may skip at once before a running step counts as stalled: a one- or
-/// two-tick slip is jitter the step's filter absorbs, a longer gap breaks its timing. It
-/// catches a one-off burst too short to pull the runner's rate window under its threshold.
-const STALL_TICKS: u64 = 2;
+/// The longest wall-clock gap between ticks that isn't a freeze: past the fit's 40 ms of delay
+/// and a rate step's 30 ms rise. The runner's resyncs aren't freezes: at about 223 Hz it falls
+/// 100 ms behind every few seconds with no tick late by much (QuadCopterX in RealFlight: 2,216
+/// resyncs in a run, 3 gaps over 100 ms, #524).
+const FREEZE_GAP: Duration = Duration::from_millis(50);
 /// How often a running stage's status is logged at `debug`, in ticks (1 s).
 const STATUS_EVERY_TICKS: u32 = 250;
 /// The rate loops (the others are angle and heading loops); `--rate-p-scale` scales all
@@ -332,15 +334,15 @@ fn main() {
     let runner = RealTimeRunner::new(LOOP_HZ).expect("valid loop frequency");
     let mut host_slow = false;
     let mut ticks = 0u32;
-    let mut skipped_ticks = 0;
+    let mut last_tick = Duration::ZERO;
     let mut searched = Vec::new();
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop, stats| {
-        // A stall (the runner dropped several ticks at once) spoils a running step's timing:
-        // it runs again.
-        if stats.skipped_ticks > skipped_ticks + STALL_TICKS {
+        // A freeze spoils a running probe's timing (it runs again), and the vehicle moved
+        // meanwhile.
+        if stats.elapsed.saturating_sub(last_tick) > FREEZE_GAP {
             autotune.note_stall();
         }
-        skipped_ticks = stats.skipped_ticks;
+        last_tick = stats.elapsed;
         // The runner logs the stretch itself, with its rate and time.
         if stats.host_slow != host_slow {
             host_slow = stats.host_slow;

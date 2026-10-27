@@ -10,7 +10,7 @@ mod tests;
 /// Longest [`Perturbations::actuator_delay_s`], in s.
 pub const MAX_ACTUATOR_DELAY_S: f32 = 0.05;
 
-/// Delay, gyro noise, a disturbance moment, and motor mismatch on a
+/// Delay, gyro noise, a disturbance moment, motor mismatch, and a slow host on a
 /// [`SimCopter`](crate::SimCopter) or [`SimPlane`](crate::SimPlane), each a value to sweep
 /// rather than a fit to one plant.
 ///
@@ -33,6 +33,7 @@ pub const MAX_ACTUATOR_DELAY_S: f32 = 0.05;
 ///     },
 ///     disturbance_moment_nm: Vec3::new(0.01, 0.0, 0.0),
 ///     motor_thrust_scale,
+///     time_scale: 1.12,
 /// };
 /// let airframe = airframes::quad_x();
 /// let vehicle = SimCopter::new(airframe.model, &airframe.mixer)
@@ -54,6 +55,11 @@ pub struct Perturbations {
     /// Each motor slot's thrust as a fraction of the model's (mismatched motors or props).
     /// Positive; yaw drag torque scales with it, since it goes with thrust.
     pub motor_thrust_scale: [f32; ActuatorCommand::SLOTS],
+    /// Simulated seconds per second of each [`state`](stable_flight::StateSource::state)
+    /// call's `dt`: above 1, the physics runs ahead of the ticks, as on a host that ticks
+    /// slower than the loop's rate while every tick passes the nominal `dt` (RealFlight at
+    /// about 223 Hz under a 250 Hz loop: 1.12). Positive.
+    pub time_scale: f32,
 }
 
 impl Default for Perturbations {
@@ -64,6 +70,7 @@ impl Default for Perturbations {
             gyro: GyroNoise::default(),
             disturbance_moment_nm: Vec3::zeros(),
             motor_thrust_scale: [1.0; ActuatorCommand::SLOTS],
+            time_scale: 1.0,
         }
     }
 }
@@ -101,8 +108,9 @@ impl Perturbations {
     /// [`ModelError::DelayTooLong`] for a delay over [`MAX_ACTUATOR_DELAY_S`];
     /// [`ModelError::Negative`] for a negative or non-finite delay, noise RMS, or vibration
     /// amplitude; [`ModelError::NotPositive`] for a vibration frequency that isn't positive and
-    /// finite; [`ModelError::NotFinite`] for a non-finite disturbance moment; and
-    /// [`ModelError::ThrustScale`] for a motor scale that isn't positive and finite.
+    /// finite; [`ModelError::NotFinite`] for a non-finite disturbance moment;
+    /// [`ModelError::ThrustScale`] for a motor scale that isn't positive and finite; and
+    /// [`ModelError::NotPositive`] for a time scale that isn't.
     pub fn validate(&self) -> Result<(), ModelError> {
         let vibration = self.gyro.vibration;
         let amplitude_radps = vibration.map_or(Vec3::zeros(), |v| v.amplitude_radps);
@@ -122,6 +130,7 @@ impl Perturbations {
         if let Some(vibration) = vibration {
             check_positive(&[("gyro.vibration.frequency_hz", vibration.frequency_hz)])?;
         }
+        check_positive(&[("time_scale", self.time_scale)])?;
         if !self.disturbance_moment_nm.iter().all(|m| m.is_finite()) {
             return Err(ModelError::NotFinite("disturbance_moment_nm"));
         }

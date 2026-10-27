@@ -187,6 +187,23 @@ fn perturbed(perturbations: Perturbations) -> SimCopter {
         .expect("valid perturbations")
 }
 
+/// Each `state` call advances `time_scale` times its `dt` of simulated time.
+#[test]
+fn time_scale_runs_the_physics_ahead_of_the_ticks() {
+    // (time scale, simulated s after 10 ticks of 4 ms)
+    let cases = [(1.0, 0.04), (1.12, 0.0448), (2.0, 0.08)];
+    for (time_scale, expected_s) in cases {
+        let mut vehicle = perturbed(Perturbations {
+            time_scale,
+            ..Default::default()
+        });
+        for _ in 0..10 {
+            vehicle.state(Duration::from_millis(4));
+        }
+        assert_relative_eq!(vehicle.time_s(), expected_s, epsilon = 1e-6);
+    }
+}
+
 #[test]
 fn rejects_invalid_perturbations() {
     let perturbations = Perturbations {

@@ -15,6 +15,7 @@ fn all_on() -> Perturbations {
         },
         disturbance_moment_nm: Vec3::new(-0.01, 0.02, 0.0),
         motor_thrust_scale: [0.9; ActuatorCommand::SLOTS],
+        time_scale: 1.12,
     }
 }
 
@@ -33,7 +34,7 @@ fn rejects_each_out_of_range_field() {
         p.gyro.vibration.as_mut().expect("all_on has a vibration")
     }
     // (change to valid perturbations, expected error)
-    let cases: [(Change, ModelError); 10] = [
+    let cases: [(Change, ModelError); 12] = [
         (
             |p| p.actuator_delay_s = -0.001,
             ModelError::Negative("actuator_delay_s"),
@@ -73,6 +74,14 @@ fn rejects_each_out_of_range_field() {
         (
             |p| p.motor_thrust_scale[0] = -1.0,
             ModelError::ThrustScale(0),
+        ),
+        (
+            |p| p.time_scale = 0.0,
+            ModelError::NotPositive("time_scale"),
+        ),
+        (
+            |p| p.time_scale = f32::INFINITY,
+            ModelError::NotPositive("time_scale"),
         ),
     ];
     for (change, error) in cases {

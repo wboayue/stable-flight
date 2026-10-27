@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A design stage's fit and hold run through a slow host (`Autotune::set_host_slow`) instead of
+  stopping (#524): on RealFlight they stopped at every dip to 222–225 Hz and failed the stage
+  `Stalled`; a fit 12% slow designs rate P 5–13% lower on the sim. `Autotune::note_stall`
+  marks a freeze: breaches for `Envelope::recovery_s` after it don't count, and a probe that
+  aborts across it runs again.
+
 ### Added
 
 - `StagePlan::copter_design_search` (#518): the copter autotune as a step search from a

@@ -52,6 +52,8 @@ pub(crate) struct Lockstep {
     commands: DelayLine,
     gyro: Gyro,
     disturbance_moment_nm: Vec3,
+    /// Simulated seconds per second of a step's `dt` ([`Perturbations::time_scale`]).
+    time_scale: f32,
     /// Simulated time, in s; `f64` so long runs keep sub-millisecond steps exact enough.
     time_s: f64,
     resting: bool,
@@ -66,6 +68,7 @@ impl Lockstep {
             commands: DelayLine::new(0.0),
             gyro: Gyro::new(Default::default()),
             disturbance_moment_nm: Vec3::zeros(),
+            time_scale: 1.0,
             time_s: 0.0,
             resting: true,
         }
@@ -87,12 +90,13 @@ impl Lockstep {
         self.wind = wind;
     }
 
-    /// Applies `perturbations`' delay, gyro noise, and disturbance moment; motor mismatch is
-    /// the vehicle's. `perturbations` must be valid.
+    /// Applies `perturbations`' delay, gyro noise, disturbance moment, and time scale; motor
+    /// mismatch is the vehicle's. `perturbations` must be valid.
     pub(crate) fn set_perturbations(&mut self, perturbations: &Perturbations) {
         self.commands.set_delay(perturbations.actuator_delay_s);
         self.gyro = Gyro::new(perturbations.gyro);
         self.disturbance_moment_nm = perturbations.disturbance_moment_nm;
+        self.time_scale = perturbations.time_scale;
     }
 
     /// Simulated time since construction, in s.
@@ -110,10 +114,10 @@ impl Lockstep {
         self.commands.push(self.time_s, *command);
     }
 
-    /// Steps `dynamics` `dt` (none for `Duration::ZERO`) and returns the state, as the
-    /// [`StateSource`](stable_flight::StateSource) contract asks.
+    /// Steps `dynamics` `dt` (none for `Duration::ZERO`), times the time scale, and returns
+    /// the state, as the [`StateSource`](stable_flight::StateSource) contract asks.
     pub(crate) fn state(&mut self, dynamics: &mut impl Dynamics, dt: Duration) -> VehicleState {
-        let dt_s = dt.as_secs_f32();
+        let dt_s = dt.as_secs_f32() * self.time_scale;
         if dt_s > 0.0 {
             self.advance(dynamics, dt_s);
         }

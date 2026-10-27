@@ -1073,6 +1073,96 @@ fn a_slow_host_stops_a_candidate_and_it_flies_again() {
     check!(events.last() == Some(&AutotuneEvent::Complete));
 }
 
+/// A design stage runs through a slow host: its fit and hold go on, and it finishes with its
+/// design while the host stays slow (#524).
+#[test]
+fn a_design_stage_runs_through_a_slow_host() {
+    let (mut flight_loop, _controls) = hovering(1.0);
+    let mut autotune = started(&flight_loop, &[design_stage(TunedLoop::RollRate)]);
+    autotune.set_host_slow(true);
+
+    let mut events = Vec::new();
+    for _ in 0..(30.0 / DT) as usize {
+        flight_loop.step(Duration::from_secs_f32(DT));
+        events.extend(autotune.update(&mut flight_loop, DT));
+        if !autotune.is_running() {
+            break;
+        }
+    }
+
+    let stalled = events
+        .iter()
+        .any(|event| matches!(event, AutotuneEvent::Stalled { .. }));
+    check!(!stalled, "{events:?}");
+    let designed = events.iter().any(|event| {
+        matches!(
+            event,
+            AutotuneEvent::StageDone {
+                outcome: Outcome::Designed,
+                ..
+            }
+        )
+    });
+    check!(designed, "{events:?}");
+    check!(autotune.status() == AutotuneStatus::Complete);
+}
+
+/// A breach in the second after a freeze ([`Autotune::note_stall`]) is the loop catching up
+/// with what the vehicle did unseen and doesn't fail the stage; one with no freeze, or lasting
+/// past `Envelope::recovery_s`, does (#524).
+#[test]
+fn a_breach_right_after_a_freeze_does_not_fail_the_stage() {
+    // (row, rate spike in ticks, freeze noted with it, what fails the stage)
+    let cases = [
+        ("spike after a freeze", 25, true, None),
+        ("spike, no freeze", 25, false, Some(AutotuneAbort::Rate)),
+        // The loop fights the spike and rolls the vehicle past the tilt limit.
+        (
+            "spike lasting past recovery_s",
+            400,
+            true,
+            Some(AutotuneAbort::Tilt),
+        ),
+    ];
+    for (row, spike_ticks, frozen, failure) in cases {
+        let (mut flight_loop, controls) = hovering(1.0);
+        let plan = [StagePlan::copter_step_test(TunedLoop::RollRate)];
+        let mut autotune = started(&flight_loop, &plan);
+
+        let mut spiked = false;
+        let mut spike_left: usize = 0;
+        let mut events = Vec::new();
+        for _ in 0..(60.0 / DT) as usize {
+            flight_loop.step(Duration::from_secs_f32(DT));
+            if !spiked && matches!(autotune.status(), AutotuneStatus::Running { .. }) {
+                spiked = true;
+                spike_left = spike_ticks;
+                if frozen {
+                    autotune.note_stall();
+                }
+            }
+            // Past the envelope's 4 rad/s.
+            controls
+                .rate_spike_radps
+                .set(if spike_left > 0 { 5.0 } else { 0.0 });
+            spike_left = spike_left.saturating_sub(1);
+            events.extend(autotune.update(&mut flight_loop, DT));
+            if !autotune.is_running() {
+                break;
+            }
+        }
+
+        check!(spiked, "{row}");
+        let expected = failure.map_or(AutotuneEvent::Complete, |reason| {
+            AutotuneEvent::StageFailed {
+                target: TunedLoop::RollRate,
+                reason,
+            }
+        });
+        check!(events.last() == Some(&expected), "{row}: {events:?}");
+    }
+}
+
 /// `SearchPlan::validate` rejects each bad field; the copter default is valid.
 #[test]
 fn search_plan_validation() {
