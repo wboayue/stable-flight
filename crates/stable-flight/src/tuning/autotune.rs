@@ -166,13 +166,16 @@ impl StagePlan {
         ]
     }
 
-    /// The copter loop-shaping tune: [`DesignPlan::copter`] for roll and pitch rate, then
-    /// roll and pitch angle (each angle design flies on its designed rate loop), then
-    /// [`VerifyPlan::copter`] for each in the same order. Every loop is designed before any is
-    /// verified: a loop still on its start gains can ring and keep a verify from settling
-    /// (pitch on `racer`'s high start with 25 ms of delay; roll's start angle loop around
-    /// `heavy_quad`'s designed rate loop, #518). On the sim it takes 61–75 s against the
-    /// search's 182–627 s (#518).
+    /// The copter design search: [`DesignPlan::copter`] for roll and pitch rate, then roll
+    /// and pitch angle (each angle design flies on its designed rate loop), then
+    /// [`SearchPlan::copter_seeded`] for each in the same order, starting from its design.
+    /// The design spares the search most of its climb from the start gains; the search keeps
+    /// only gains that passed steps, so a design from a bad fit doesn't outlive it (on
+    /// QuadCopterX in RealFlight one fit designed roll rate P 0.41 against 0.63–1.04, #518).
+    /// Every loop is designed before any is searched: a loop still on its start gains can
+    /// ring and keep another's steps from settling (pitch on `racer`'s high start with 25 ms
+    /// of delay, #518). On the sim it takes 148–379 s against the search's 308–693 s, and
+    /// tunes the high starts with delay the search can't (#518).
     ///
     /// # Examples
     ///
@@ -180,12 +183,12 @@ impl StagePlan {
     /// use stable_flight::stabilizers::copter::TunedLoop;
     /// use stable_flight::tuning::autotune::{Method, StagePlan};
     ///
-    /// let plan = StagePlan::copter_loop_shaping();
+    /// let plan = StagePlan::copter_design_search();
     /// assert!(matches!(plan[0].method, Method::Design(_)));
-    /// assert!(matches!(plan[4].method, Method::Verify(_)));
+    /// assert!(matches!(plan[4].method, Method::Search(_)));
     /// assert_eq!(plan[4].target, TunedLoop::RollRate);
     /// ```
-    pub fn copter_loop_shaping() -> [Self; 8] {
+    pub fn copter_design_search() -> [Self; 8] {
         let loops = [
             TunedLoop::RollRate,
             TunedLoop::PitchRate,
@@ -196,26 +199,26 @@ impl StagePlan {
             target,
             method: Method::Design(DesignPlan::copter()),
         });
-        let verify = loops.map(|target| Self {
+        let search = loops.map(|target| Self {
             target,
-            method: Method::Verify(VerifyPlan::copter(target)),
+            method: Method::Search(SearchPlan::copter_seeded(target)),
         });
         let [roll_rate, pitch_rate, roll, pitch] = design;
         let [
-            verify_roll_rate,
-            verify_pitch_rate,
-            verify_roll,
-            verify_pitch,
-        ] = verify;
+            search_roll_rate,
+            search_pitch_rate,
+            search_roll,
+            search_pitch,
+        ] = search;
         [
             roll_rate,
             pitch_rate,
             roll,
             pitch,
-            verify_roll_rate,
-            verify_pitch_rate,
-            verify_roll,
-            verify_pitch,
+            search_roll_rate,
+            search_pitch_rate,
+            search_roll,
+            search_pitch,
         ]
     }
 }
@@ -233,8 +236,6 @@ pub enum Method {
     Search(SearchPlan),
     /// Gains designed from a fitted model of the loop's axis, committed without steps.
     Design(DesignPlan),
-    /// Steps on the committed gains, which go back to the run's start if they fly worse.
-    Verify(VerifyPlan),
 }
 
 impl Method {
@@ -244,15 +245,14 @@ impl Method {
     /// # Errors
     ///
     /// When the relay is invalid ([`RelayConfig::validate`]), the step test is
-    /// ([`StepTestPlan::validate`]), the search is ([`SearchPlan::validate`]), the design is
-    /// ([`DesignPlan::validate`]), or the verify is ([`VerifyPlan::validate`]).
+    /// ([`StepTestPlan::validate`]), the search is ([`SearchPlan::validate`]), or the design
+    /// is ([`DesignPlan::validate`]).
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         match self {
             Self::Relay(plan) => plan.relay.validate(),
             Self::StepTest(plan) => plan.validate(),
             Self::Search(plan) => plan.validate(),
             Self::Design(plan) => plan.validate(),
-            Self::Verify(plan) => plan.validate(),
         }
     }
 
@@ -262,7 +262,6 @@ impl Method {
             Self::Relay(_) | Self::Design(_) => None,
             Self::StepTest(plan) => Some(plan.settle),
             Self::Search(plan) => Some(plan.test.settle),
-            Self::Verify(plan) => Some(plan.test.settle),
         }
     }
 
@@ -273,7 +272,6 @@ impl Method {
             Self::StepTest(_) => "plan.step_test",
             Self::Search(_) => "plan.search",
             Self::Design(_) => "plan.design",
-            Self::Verify(_) => "plan.verify",
         }
     }
 }
@@ -495,8 +493,8 @@ impl RelayPlan {
 ///
 /// A search that keeps no result keeps its start gains if their steps met the criterion, and
 /// otherwise puts back the loop's gains at the run's start ([`Autotune::start`]): a start the
-/// search was seeded with (a design) that never passed
-/// doesn't outlive it. A start lowered to `max` stays lowered.
+/// search was seeded with (a design, [`StagePlan::copter_design_search`]) that never passed
+/// doesn't outlive it. The run's start lowered to `max` stays lowered.
 ///
 /// A pair is judged on its two steps' means, so a trim offset doesn't bias it. A step that
 /// aborts (reversed or runaway) fails its pair, as do `test.max_invalid` clipped steps in a
@@ -611,6 +609,33 @@ impl SearchPlan {
             max: COPTER_ANGLE_P_MAX,
             relay: None,
             ..Self::copter_rate()
+        }
+    }
+
+    /// The copter search for `target` from a design ([`StagePlan::copter_design_search`]):
+    /// [`copter_rate`](Self::copter_rate) without its relay, since the design already set D and
+    /// seeds P, or [`copter_angle`](Self::copter_angle). The angle steps keep their own clip
+    /// allowance: with the rate steps', angle P stays at 9 over `quad_x`'s searched rate loop
+    /// with 10 ms of delay and its steps clip; with their own, the search lowers it to 7.6 and
+    /// meets the step spec (#518).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::TunedLoop;
+    /// use stable_flight::tuning::autotune::SearchPlan;
+    ///
+    /// assert!(SearchPlan::copter_seeded(TunedLoop::RollRate).relay.is_none());
+    /// assert_eq!(SearchPlan::copter_seeded(TunedLoop::Roll), SearchPlan::copter_angle());
+    /// ```
+    pub fn copter_seeded(target: TunedLoop) -> Self {
+        if target.is_rate() {
+            Self {
+                relay: None,
+                ..Self::copter_rate()
+            }
+        } else {
+            Self::copter_angle()
         }
     }
 
@@ -802,8 +827,8 @@ fn no_worse(base: Option<f32>, value: Option<f32>, limit: impl FnOnce(f32) -> f3
     }
 }
 
-/// Gains for one loop from a fitted model of its axis, committed without steps: verify them
-/// with a [`VerifyPlan`] stage once every loop is designed ([`StagePlan::copter_loop_shaping`]).
+/// Gains for one loop from a fitted model of its axis, committed without steps: search from
+/// them once every loop is designed ([`StagePlan::copter_design_search`]).
 ///
 /// 1. **Identify:** `identify` excites the axis through its angle loop (a rate loop's probe
 ///    runs on the angle loop above it) and fits a [`RateModel`]. The fit starts at the settle
@@ -812,7 +837,7 @@ fn no_worse(base: Option<f32>, value: Option<f32>, limit: impl FnOnce(f32) -> f3
 /// 2. **Design:** a rate loop's gains by [`design_rate`]; an angle loop's P by
 ///    [`design_angle_p`] on the rate loop's committed gains, its I and D kept. A design error
 ///    fails the stage ([`AutotuneAbort::Design`]). The design flies from then on, but a
-///    failure before its verify keeps it puts the loop's earlier gains back.
+///    failure before its loop's search finishes puts the loop's earlier gains back.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DesignPlan {
     /// The excitation and fit.
@@ -859,71 +884,6 @@ impl DesignPlan {
                 design_angle_p(model, rate, start, &self.design).map(|p| Gains { p, ..start })
             }
         }
-    }
-}
-
-/// Steps that check a loop's committed gains against its gains at the run's start
-/// ([`Autotune::start`]), after a [`DesignPlan`] stage.
-///
-/// 1. **Verify:** `test.pairs` pairs on the committed gains. If they meet `criterion`, the
-///    gains stay ([`Outcome::Measured`]); if a step aborts or they keep clipping, the run's
-///    start gains go back ([`Outcome::Restored`]).
-/// 2. **Baseline**, only when the verify misses the criterion on gains the run changed:
-///    `test.pairs` pairs on the run's start gains, flown as a candidate. The committed gains
-///    stay unless they fly worse ([`Acceptance`]); a baseline that aborts, keeps clipping, or
-///    breaches the envelope shows nothing to be worse than.
-///
-/// A breach on the committed gains fails the stage, and with it every design not yet kept.
-/// Restoring a rate loop leaves the angle P designed around its design; that angle loop's own
-/// verify then judges it on the restored rate loop.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct VerifyPlan {
-    /// The steps, their settle, clip allowance, and invalid limit.
-    pub test: StepTestPlan,
-    /// What the verify must meet to keep the gains without a baseline.
-    pub criterion: Criterion,
-    /// How much worse than the baseline the gains may fly.
-    pub acceptance: Acceptance,
-}
-
-impl VerifyPlan {
-    /// The copter defaults for `target`: the steps (two pairs), criterion, and acceptance of
-    /// the search for that loop ([`SearchPlan::copter_rate`], [`SearchPlan::copter_angle`]),
-    /// with the rate steps' clip allowance on angle steps too.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use stable_flight::stabilizers::copter::TunedLoop;
-    /// use stable_flight::tuning::autotune::{COPTER_ANGLE_SEARCH_STEP, VerifyPlan};
-    ///
-    /// let plan = VerifyPlan::copter(TunedLoop::Roll);
-    /// assert_eq!(plan.test.step, COPTER_ANGLE_SEARCH_STEP);
-    /// assert_eq!(plan.test.pairs, 2);
-    /// ```
-    pub fn copter(target: TunedLoop) -> Self {
-        let search = if target.is_rate() {
-            SearchPlan::copter_rate()
-        } else {
-            SearchPlan::copter_angle()
-        };
-        Self {
-            // A designed rate loop is stiffer than a searched one (P 4.7 on clean `quad_x`), so
-            // a 5° angle step clips its moment for the first 6 ticks (#518).
-            test: StepTestPlan {
-                max_saturated_s: StepTestPlan::copter(TunedLoop::RollRate).max_saturated_s,
-                ..search.test
-            },
-            criterion: search.criterion,
-            acceptance: search.acceptance,
-        }
-    }
-
-    /// Checks the steps ([`StepTestPlan::validate`]), the criterion, and the acceptance.
-    pub fn validate(&self) -> Result<(), InvalidConfig> {
-        self.test.validate()?;
-        self.criterion.validate()?;
-        self.acceptance.validate()
     }
 }
 
@@ -1107,7 +1067,7 @@ pub enum AutotuneEvent {
         /// What the probe measured, if it finished; its timing can't be trusted.
         measurement: Option<Measurement>,
     },
-    /// A search or a verify judged a pair of steps (or its baseline) on a gain.
+    /// A search judged a pair of steps (or its baseline) on a gain.
     Tried {
         /// The judged loop.
         target: TunedLoop,
@@ -1126,10 +1086,10 @@ pub enum AutotuneEvent {
         gains: Gains,
         /// What the stage did to them.
         outcome: Outcome,
-        /// A step test's valid steps, or a search's or verify's verify (invalid ones, which
-        /// ran again, left out).
+        /// A step test's valid steps, or a search's verify (invalid ones, which ran again, left
+        /// out).
         steps: Option<StepSummary>,
-        /// A search's or verify's baseline, when flown: its steps at the start gains.
+        /// A search's baseline, when flown: its steps at the start gains.
         baseline: Option<StepSummary>,
     },
     /// A search lowered its loop's gains, which started above its `max` (lowered by the
@@ -1142,7 +1102,7 @@ pub enum AutotuneEvent {
         gains: Gains,
     },
     /// A stage failed: the config went back to the last kept one (earlier stages stay, but
-    /// designs not yet verified), and the run ends.
+    /// designs not yet searched), and the run ends.
     StageFailed {
         /// The loop the stage was for.
         target: TunedLoop,
@@ -1163,11 +1123,8 @@ pub enum Outcome {
     Tuned,
     /// Measured only; they didn't change.
     Measured,
-    /// Kept the start gains.
+    /// Kept no result: the start gains, or the run's ([`SearchPlan`]).
     Kept(KeepReason),
-    /// Put back the loop's gains at the run's start: a verify's gains flew worse than them,
-    /// or their steps aborted or kept clipping.
-    Restored,
 }
 
 /// Why a search kept the start gains.
@@ -1324,8 +1281,7 @@ struct Request {
 ///   [`Method::StepTest`], alternating steps and the gains unchanged; with
 ///   [`Method::Search`], a gain search verified against a baseline
 ///   ([`AutotuneEvent::Tried`] per judgment, the [`Outcome`] in `StageDone`); with
-///   [`Method::Design`], one fit and the gains designed from it; with [`Method::Verify`],
-///   steps on the committed gains, judged against the loop's gains at the run's start.
+///   [`Method::Design`], one fit and the gains designed from it.
 /// - **Candidates:** a procedure may ask for a probe on other gains; they go in once the
 ///   vehicle has settled on the committed ones and come out when the probe ends, so only the
 ///   probe flies them. An envelope breach while they fly fails the candidate, not the stage;
@@ -1338,7 +1294,7 @@ struct Request {
 /// - **Fail:** an envelope breach, a probe abort the procedure can't use (a search counts a
 ///   step's abort against its gain), an interrupt, or a rejected config stops the stage, puts
 ///   back the config as of the last kept stage (the earlier stages' gains stay, but a design
-///   counts only once its verify keeps it), and ends the run.
+///   counts only once its loop's search finishes), and ends the run.
 /// - **Disarm** before completion reverts every stage to the run's start.
 /// - **Complete:** the gains stay; read them from the stabilizer's config.
 ///
@@ -1383,9 +1339,9 @@ pub struct Autotune {
     /// The config at start: what a disarm reverts to.
     run_start: Option<CopterStabilizerConfig>,
     /// The config as of the last kept stage: what a failure reverts to. A design isn't kept
-    /// until its verify keeps it.
+    /// until its loop's search finishes.
     last_good: Option<CopterStabilizerConfig>,
-    /// The config flown between probes: `last_good` plus designs awaiting their verify. A
+    /// The config flown between probes: `last_good` plus designs awaiting their search. A
     /// candidate goes back to it.
     committed: Option<CopterStabilizerConfig>,
     start_altitude_m: f32,
@@ -1844,8 +1800,8 @@ impl Autotune {
         let Some(config) = self.set_gains(flight_loop, stage, gains) else {
             return self.fail(flight_loop, stage, AutotuneAbort::Rejected);
         };
-        self.last_good = Some(config);
         self.committed = Some(config);
+        self.keep(self.target(stage), gains);
         AutotuneEvent::Lowered {
             target: self.target(stage),
             gains,
@@ -1853,8 +1809,8 @@ impl Autotune {
     }
 
     /// Commits a finished stage's gains and moves on. A design is flown but not yet kept: a
-    /// failure before its verify puts the loop's earlier gains back. A verify keeps its loop's
-    /// gains, and only those: other loops' designs still wait on their own.
+    /// failure before its loop's search puts the loop's earlier gains back. Any other stage
+    /// keeps its loop's gains, and only those: other loops' designs still wait on their own.
     fn commit<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
@@ -1867,14 +1823,12 @@ impl Autotune {
         };
         self.committed = Some(config);
         let target = self.target(stage);
-        self.last_good = match self.stage(stage).map(|plan| plan.method) {
-            Some(Method::Design(_)) => self.last_good,
-            Some(Method::Verify(_)) => self.last_good.map(|mut kept| {
-                *target.gains_mut(&mut kept) = gains;
-                kept
-            }),
-            _ => Some(config),
-        };
+        if !matches!(
+            self.stage(stage).map(|plan| plan.method),
+            Some(Method::Design(_))
+        ) {
+            self.keep(target, gains);
+        }
         self.phase = if stage + 1 < self.stages {
             Phase::Starting { stage: stage + 1 }
         } else {
@@ -1903,6 +1857,13 @@ impl Autotune {
             .set_stabilizer_config(config)
             .ok()
             .map(|()| config)
+    }
+
+    /// Keeps `target`'s `gains` in what a failure reverts to, leaving the other loops as kept.
+    fn keep(&mut self, target: TunedLoop, gains: Gains) {
+        if let Some(kept) = &mut self.last_good {
+            *target.gains_mut(kept) = gains;
+        }
     }
 
     /// Ends the run at `stage`: stops its probe and puts back the config as of the last kept

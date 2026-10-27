@@ -1346,20 +1346,20 @@ fn search_step_presets() {
     check!(angle.relay.is_none());
 }
 
-/// The loop-shaping tune designs every loop, rate first, with each rate loop's fit run on the
-/// angle loop above it, then verifies each design in the same order and keeps it.
+/// The design search designs every loop, rate first, with each rate loop's fit run on the
+/// angle loop above it, then searches each loop from its design in the same order.
 #[test]
-fn copter_loop_shaping_designs_then_verifies_every_loop() {
+fn copter_design_search_designs_then_searches_every_loop() {
     let params = PlantParams {
         delay_s: 0.008,
         ..PlantParams::rate_axis()
     };
     let (mut flight_loop, _controls) = hovering_on(1.0, params);
     let start = *flight_loop.stabilizer().config();
-    let plan = StagePlan::copter_loop_shaping();
+    let plan = StagePlan::copter_design_search();
     let mut autotune = started(&flight_loop, &plan);
 
-    let events = run(&mut flight_loop, &mut autotune, 300.0, |_, _| {});
+    let events = run(&mut flight_loop, &mut autotune, 900.0, |_, _| {});
 
     check!(events.last() == Some(&AutotuneEvent::Complete));
     let fitted: Vec<_> = events
@@ -1396,19 +1396,16 @@ fn copter_loop_shaping_designs_then_verifies_every_loop() {
     check!(targets == plan.map(|stage| stage.target));
     let tuned = *flight_loop.stabilizer().config();
     for (index, (target, gains, outcome, stepped)) in done.into_iter().enumerate() {
-        let verify = index >= 4;
-        let expected = if verify {
-            Outcome::Measured
-        } else {
-            Outcome::Tuned
-        };
-        check!(outcome == expected, "stage {index}: {target:?}");
-        check!(stepped == verify, "stage {index}: {target:?}");
-        check!(gains == target.gains(&tuned), "stage {index}: {target:?}");
+        let search = index >= 4;
+        check!(outcome == Outcome::Tuned, "stage {index}: {target:?}");
+        check!(stepped == search, "stage {index}: {target:?}");
         check!(
             gains != target.gains(&start),
-            "stage {index}: {target:?} designed"
+            "stage {index}: {target:?} tuned"
         );
+        if search {
+            check!(gains == target.gains(&tuned), "stage {index}: {target:?}");
+        }
     }
 }
 
@@ -1488,10 +1485,18 @@ fn design_stage(target: TunedLoop) -> StagePlan {
     }
 }
 
-/// A failure puts back every design its verify hasn't kept, and keeps the ones it has: roll
-/// rate designed and verified stays, pitch rate designed only goes back to its start.
+/// A search stage on `target` from its design, with the copter defaults.
+fn search_stage(target: TunedLoop) -> StagePlan {
+    StagePlan {
+        target,
+        method: Method::Search(SearchPlan::copter_seeded(target)),
+    }
+}
+
+/// A failure puts back every design its loop's search hasn't finished, and keeps the searched
+/// loops: roll rate searched stays, pitch rate designed only goes back to its start.
 #[test]
-fn a_failure_puts_back_the_designs_not_yet_verified() {
+fn a_failure_puts_back_the_designs_not_yet_searched() {
     let (mut flight_loop, _controls) = hovering(1.0);
     let start = *flight_loop.stabilizer().config();
     // No angle P in [500, 600] keeps the margin: the roll design fails.
@@ -1506,10 +1511,7 @@ fn a_failure_puts_back_the_designs_not_yet_verified() {
     let plan = [
         design_stage(TunedLoop::RollRate),
         design_stage(TunedLoop::PitchRate),
-        StagePlan {
-            target: TunedLoop::RollRate,
-            method: Method::Verify(VerifyPlan::copter(TunedLoop::RollRate)),
-        },
+        search_stage(TunedLoop::RollRate),
         StagePlan {
             target: TunedLoop::Roll,
             method: Method::Design(unreachable),
@@ -1517,12 +1519,12 @@ fn a_failure_puts_back_the_designs_not_yet_verified() {
     ];
     let mut autotune = started(&flight_loop, &plan);
 
-    let events = run(&mut flight_loop, &mut autotune, 120.0, |_, _| {});
+    let events = run(&mut flight_loop, &mut autotune, 600.0, |_, _| {});
 
-    let verified = events.iter().find_map(|event| match *event {
+    let searched = events.iter().find_map(|event| match *event {
         AutotuneEvent::StageDone {
             target: TunedLoop::RollRate,
-            outcome: Outcome::Measured,
+            steps: Some(_),
             gains,
             ..
         } => Some(gains),
@@ -1536,17 +1538,17 @@ fn a_failure_puts_back_the_designs_not_yet_verified() {
             }
     );
     let config = *flight_loop.stabilizer().config();
-    check!(Some(TunedLoop::RollRate.gains(&config)) == verified);
-    check!(verified != Some(TunedLoop::RollRate.gains(&start)));
+    check!(Some(TunedLoop::RollRate.gains(&config)) == searched);
+    check!(searched != Some(TunedLoop::RollRate.gains(&start)));
     check!(TunedLoop::PitchRate.gains(&config) == TunedLoop::PitchRate.gains(&start));
     check!(TunedLoop::Roll.gains(&config) == TunedLoop::Roll.gains(&start));
 }
 
-/// A design that breaches the envelope during its own verify fails the stage and goes back to
-/// the loop's start, rather than staying on: here a rate limit the verify's steps pass (they
-/// peak at 0.67 rad/s on this sim) and the fit doesn't.
+/// A design that breaches the envelope during its search's baseline fails the stage and goes
+/// back to the loop's start, rather than staying on: here a rate limit the baseline's steps
+/// pass (they peak at 0.67 rad/s on this sim) and the fit doesn't.
 #[test]
-fn a_design_that_breaches_during_its_verify_goes_back_to_its_start() {
+fn a_design_that_breaches_during_its_search_goes_back_to_its_start() {
     let (mut flight_loop, _controls) = hovering(1.0);
     let start = *flight_loop.stabilizer().config();
     let envelope = Envelope {
@@ -1555,10 +1557,7 @@ fn a_design_that_breaches_during_its_verify_goes_back_to_its_start() {
     };
     let plan = [
         design_stage(TunedLoop::RollRate),
-        StagePlan {
-            target: TunedLoop::RollRate,
-            method: Method::Verify(VerifyPlan::copter(TunedLoop::RollRate)),
-        },
+        search_stage(TunedLoop::RollRate),
     ];
     let mut autotune = Autotune::new(&plan, envelope).expect("valid plan");
     autotune.start(&flight_loop).expect("armed and idle");

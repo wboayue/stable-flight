@@ -9,12 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `StagePlan::copter_loop_shaping` (#518): the copter autotune by loop shaping. Roll and
-  pitch rate, then angle, each fitted and designed (`Method::Design`, `DesignPlan`), then each
-  verified by two step pairs (`Method::Verify`, `VerifyPlan`) and kept unless it flies worse
-  than the loop's gains at the run's start (`Outcome::Restored`). On the sim it tunes every
-  copter airframe, clean and with 10 and 25 ms of actuator delay, from low and ×3 starts, in
-  61–75 s of simulated time, against the step search's 182–627 s.
+- `StagePlan::copter_design_search` (#518): the copter autotune as a step search from a
+  loop-shaping design. Roll and pitch rate, then angle, each fitted and designed
+  (`Method::Design`, `DesignPlan`), then each loop's P searched by steps from its design
+  (`SearchPlan::copter_seeded`: no relay). On the sim it tunes every copter airframe, clean
+  and with 10 and 25 ms of actuator delay, from low and ×3 starts, in 148–379 s of simulated
+  time, against the step search's 308–693 s on the rows that search passes.
   `AutotuneAbort::Design` reports a fit the design can't use. `TunedLoop::inner` and
   `outer` name the rate loop under an angle loop and the angle loop over a rate loop.
 - `tuning::design_rate` and `design_angle_p` (`LoopShapingConfig`, preset
@@ -324,7 +324,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** the autotune settle (`Settle::rate_radps`) holds the roll and pitch rates
   only: the untuned yaw loop can ring on its start gains without tilting the vehicle (#518).
   A relay or an identification starts at the settle timeout instead of failing the stage.
-  New `AutotuneAbort::Design` and `Outcome::Restored` variants break exhaustive matches.
+  A new `AutotuneAbort::Design` variant breaks exhaustive matches.
+- **Breaking:** a search that keeps no result keeps its start gains only if their steps met
+  the criterion, and otherwise puts back the loop's gains at the run's start: a design it was
+  seeded with doesn't outlive it (#518).
 
 - **Breaking:** `LoopSignals` carries the probed axis's `rate_radps` and `last_moment`, which
   a host fills for an identification probe (#516).

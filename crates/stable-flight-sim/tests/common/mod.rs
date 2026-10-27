@@ -293,12 +293,11 @@ impl AutotuneRun {
         self.outcomes() == spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)))
     }
 
-    /// Whether every stage of `StagePlan::copter_loop_shaping` ran: each loop designed
-    /// (`Tuned`), then verified and kept (`Measured`).
-    pub fn all_designed_and_kept(&self) -> bool {
-        let designed = spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)));
-        let kept = spec::TUNED.map(|target| (target, Ok(Outcome::Measured)));
-        self.outcomes() == [designed, kept].concat()
+    /// Whether every stage of `StagePlan::copter_design_search` ran and ended `Tuned`: each
+    /// loop designed, then searched from its design.
+    pub fn all_designed_and_searched(&self) -> bool {
+        let tuned = spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)));
+        self.outcomes() == [tuned, tuned].concat()
     }
 }
 
