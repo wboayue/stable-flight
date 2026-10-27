@@ -305,119 +305,67 @@ fn fitted(model: RateModel, stalled: bool) -> Input {
     }
 }
 
-/// `QUAD_X_FIT` with its moment scaled by `scale`: a plant `scale` times as responsive, so
-/// its design's P is about `1 / scale` of `QUAD_X_FIT`'s.
-fn scaled(scale: f32) -> RateModel {
-    RateModel {
-        moment_weights: QUAD_X_FIT.moment_weights.map(|weight| weight * scale),
-        ..QUAD_X_FIT
-    }
-}
-
-/// A fit the design can't use: its pole is no lag.
-const NO_LAG: RateModel = RateModel {
-    rate_weights: [1.0, 0.0],
-    ..QUAD_X_FIT
-};
-
-/// Feeds a rate loop's design stage `fits` in turn, until it ends or runs out of them.
-fn design_with(fits: &[RateModel]) -> Action {
-    let plan = DesignPlan::copter();
-    let mut procedure = Procedure::new(Method::Design(plan));
-    let mut action = procedure.next(Input::start(CURRENT));
-    for model in fits {
-        check!(action == Action::probe(ProbeConfig::Identify(plan.identify)));
-        action = procedure.next(fitted(*model, false));
-    }
-    action
-}
-
-fn tuned(gains: Gains) -> Action {
-    Action::Finish {
-        gains,
-        outcome: Outcome::Tuned,
-        steps: None,
-        baseline: None,
-    }
-}
-
-/// A design stage finishes once two fits design P within 25% of each other, on the lower P;
-/// an unusable fit or one that agrees with no other fits again, and 4 fits without a pair
-/// fail the stage with the last fit's reason.
+/// A design stage fits once, then finishes with the designed gains: a rate loop's from the
+/// fit, an angle loop's P on the rate loop under it, with its own I and D.
 #[test]
-fn design_finishes_on_two_fits_that_agree() {
-    let design = DesignPlan::copter().design;
-    let rate = |model: RateModel| design_rate(&model, CURRENT, &design).expect("rate gains");
-    let (base, near, far) = (scaled(1.0), scaled(1.2), scaled(1.6));
-    check!(rate(near).p < rate(base).p);
-    let identify = Action::probe(ProbeConfig::Identify(DesignPlan::copter().identify));
-    // (case, fits, end)
-    let rows = [
-        ("one fit fits again", vec![base], identify),
-        ("two alike", vec![base, base], tuned(rate(base))),
-        (
-            "within 25%: the lower P, fitted last",
-            vec![base, near],
-            tuned(rate(near)),
-        ),
-        (
-            "within 25%: the lower P, fitted first",
-            vec![near, base],
-            tuned(rate(near)),
-        ),
-        (
-            "an outlier between",
-            vec![base, far, base],
-            tuned(rate(base)),
-        ),
-        (
-            "an unusable fit between",
-            vec![base, NO_LAG, base],
-            tuned(rate(base)),
-        ),
-        (
-            "no two agree",
-            vec![scaled(1.0), scaled(1.6), scaled(2.6), scaled(4.2)],
-            Action::Fail(AutotuneAbort::FitsDisagree),
-        ),
-        (
-            "out of fits on an unusable one",
-            vec![base, far, scaled(2.6), NO_LAG],
-            Action::Fail(AutotuneAbort::Design(DesignError::NotALag)),
-        ),
-    ];
-    for (case, fits, end) in rows {
-        check!(design_with(&fits) == end, "{case}");
-    }
-}
-
-/// An angle loop's design stage designs P on the rate gains under it, with its own I and D.
-#[test]
-fn design_designs_an_angle_p_on_the_rate_loop_under_it() {
+fn design_fits_then_finishes_with_the_designed_gains() {
     let plan = DesignPlan::copter();
     let rate = design_rate(&QUAD_X_FIT, CURRENT, &plan.design).expect("rate gains");
     let angle_p = design_angle_p(&QUAD_X_FIT, rate, CURRENT, &plan.design).expect("angle P");
-    let mut procedure = Procedure::new(Method::Design(plan));
-    procedure.next(Input::Start {
-        gains: CURRENT,
-        inner: Some(rate),
-        run_start: CURRENT,
-    });
-    procedure.next(fitted(QUAD_X_FIT, false));
-    check!(
-        procedure.next(fitted(QUAD_X_FIT, false))
-            == tuned(Gains {
+    // (case, inner gains, designed)
+    let rows = [
+        ("rate", None, rate),
+        (
+            "angle",
+            Some(rate),
+            Gains {
                 p: angle_p,
                 ..CURRENT
-            })
-    );
+            },
+        ),
+    ];
+    for (case, inner, designed) in rows {
+        let mut procedure = Procedure::new(Method::Design(plan));
+        let first = procedure.next(Input::Start {
+            gains: CURRENT,
+            inner,
+            run_start: CURRENT,
+        });
+        check!(
+            first == Action::probe(ProbeConfig::Identify(plan.identify)),
+            "{case}"
+        );
+        check!(
+            procedure.next(fitted(QUAD_X_FIT, false))
+                == Action::Finish {
+                    gains: designed,
+                    outcome: Outcome::Tuned,
+                    steps: None,
+                    baseline: None,
+                },
+            "{case}"
+        );
+    }
 }
 
-/// An aborted fit fails the stage with the probe's abort.
+/// A fit the design can't use fails the stage with the design's error; an aborted fit with
+/// the probe's.
 #[test]
-fn design_fails_on_an_aborted_fit() {
+fn design_fails_on_an_unusable_fit() {
+    let plan = DesignPlan::copter();
+    let no_lag = RateModel {
+        rate_weights: [1.0, 0.0],
+        ..QUAD_X_FIT
+    };
+    let mut procedure = Procedure::new(Method::Design(plan));
+    procedure.next(Input::start(CURRENT));
+    check!(
+        procedure.next(fitted(no_lag, false))
+            == Action::Fail(AutotuneAbort::Design(DesignError::NotALag))
+    );
+
     let abort = ProbeAbort::Identify(IdentifyAbort::Unexcited);
-    let mut procedure = Procedure::new(Method::Design(DesignPlan::copter()));
+    let mut procedure = Procedure::new(Method::Design(plan));
     procedure.next(Input::start(CURRENT));
     check!(
         procedure.next(Input::Aborted {
@@ -445,21 +393,4 @@ fn design_fits_again_after_a_stall() {
     check!(
         procedure.next(Input::Stalled { gains: CURRENT }) == Action::Fail(AutotuneAbort::Stalled)
     );
-}
-
-/// Stalls count neither as fits nor, once a fit the host kept time for ends them, toward the
-/// next run of stalls.
-#[test]
-fn a_kept_fit_ends_a_run_of_stalls() {
-    let plan = DesignPlan::copter();
-    let identify = Action::probe(ProbeConfig::Identify(plan.identify));
-    let mut procedure = Procedure::new(Method::Design(plan));
-    procedure.next(Input::start(CURRENT));
-    for fit in [scaled(1.0), scaled(1.6), scaled(2.6)] {
-        for _ in 1..MAX_MEASURE_STOPS {
-            check!(procedure.next(Input::Stalled { gains: CURRENT }) == identify);
-        }
-        check!(procedure.next(fitted(fit, false)) == identify);
-    }
-    check!(procedure.next(fitted(scaled(1.0), false)) != identify);
 }

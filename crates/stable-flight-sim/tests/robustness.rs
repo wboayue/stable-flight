@@ -15,9 +15,8 @@ use common::robustness::{Set, Start, perturbations, starting};
 use common::{AUTOTUNE_TIMEOUT_S, Plant, spec};
 
 /// Simulated seconds a row's autotune may take: the slowest passing row (`heavy_quad` with
-/// 25 ms of delay from the high start, 109 s) plus 25%. A high start rings on its gains, so
-/// each rate stage's second fit waits out the settle timeout: the low starts take 77–85 s.
-const BUDGET_S: f32 = 136.0;
+/// 25 ms of delay from the high start, 75 s) plus 25%.
+const BUDGET_S: f32 = 94.0;
 
 /// Autotunes `airframe` under `set` from `start` and checks the row's criteria.
 fn check_row(name: &str, airframe: Airframe, set: Set, start: Start) {
