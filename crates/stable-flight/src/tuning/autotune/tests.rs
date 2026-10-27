@@ -1108,51 +1108,54 @@ fn a_design_stage_runs_through_a_slow_host() {
 }
 
 /// A breach in the second after a freeze ([`Autotune::note_stall`]) is the loop catching up
-/// with what the vehicle did unseen and doesn't fail the stage; one with no freeze, or lasting
-/// past `Envelope::recovery_s`, does (#524).
+/// with what the vehicle did unseen and fails nothing; one with no freeze, or once
+/// `Envelope::recovery_s` has passed, fails the stage (#524).
 #[test]
 fn a_breach_right_after_a_freeze_does_not_fail_the_stage() {
-    // (row, rate spike in ticks, freeze noted with it, what fails the stage)
+    /// How long each spike lasts, in ticks (0.1 s).
+    const SPIKE_TICKS: usize = 25;
+    // (row, ticks from the freeze to the spike, freeze noted, what fails the stage)
     let cases = [
-        ("spike after a freeze", 25, true, None),
-        ("spike, no freeze", 25, false, Some(AutotuneAbort::Rate)),
-        // The loop fights the spike and rolls the vehicle past the tilt limit.
+        ("spike at a freeze", 0, true, None),
+        ("spike ending inside the window", 200, true, None),
         (
-            "spike lasting past recovery_s",
-            400,
+            "spike after the window",
+            300,
             true,
-            Some(AutotuneAbort::Tilt),
+            Some(AutotuneAbort::Rate),
         ),
+        ("spike, no freeze", 0, false, Some(AutotuneAbort::Rate)),
     ];
-    for (row, spike_ticks, frozen, failure) in cases {
+    for (row, delay_ticks, frozen, failure) in cases {
         let (mut flight_loop, controls) = hovering(1.0);
         let plan = [StagePlan::copter_step_test(TunedLoop::RollRate)];
         let mut autotune = started(&flight_loop, &plan);
 
-        let mut spiked = false;
-        let mut spike_left: usize = 0;
+        let mut since_freeze = None;
         let mut events = Vec::new();
         for _ in 0..(60.0 / DT) as usize {
             flight_loop.step(Duration::from_secs_f32(DT));
-            if !spiked && matches!(autotune.status(), AutotuneStatus::Running { .. }) {
-                spiked = true;
-                spike_left = spike_ticks;
+            if since_freeze.is_none() && matches!(autotune.status(), AutotuneStatus::Running { .. })
+            {
+                since_freeze = Some(0);
                 if frozen {
                     autotune.note_stall();
                 }
             }
+            let spiking = since_freeze
+                .is_some_and(|ticks| (delay_ticks..delay_ticks + SPIKE_TICKS).contains(&ticks));
             // Past the envelope's 4 rad/s.
             controls
                 .rate_spike_radps
-                .set(if spike_left > 0 { 5.0 } else { 0.0 });
-            spike_left = spike_left.saturating_sub(1);
+                .set(if spiking { 5.0 } else { 0.0 });
+            since_freeze = since_freeze.map(|ticks| ticks + 1);
             events.extend(autotune.update(&mut flight_loop, DT));
             if !autotune.is_running() {
                 break;
             }
         }
 
-        check!(spiked, "{row}");
+        check!(since_freeze.is_some(), "{row}");
         let expected = failure.map_or(AutotuneEvent::Complete, |reason| {
             AutotuneEvent::StageFailed {
                 target: TunedLoop::RollRate,
@@ -1161,6 +1164,63 @@ fn a_breach_right_after_a_freeze_does_not_fail_the_stage() {
         });
         check!(events.last() == Some(&expected), "{row}: {events:?}");
     }
+}
+
+/// A candidate that breaches right after a freeze comes out on that update as a stall, the
+/// committed gains back, and flies again later: the breach says nothing about it (#524).
+#[test]
+fn a_candidate_breaching_after_a_freeze_comes_out_unjudged() {
+    let (mut flight_loop, controls) = hovering_on(1.0, delayed_axis());
+    let start = *flight_loop.stabilizer().config();
+    let plan = [StagePlan::copter_rate_search()[0]];
+    let mut autotune = started(&flight_loop, &plan);
+
+    let mut frozen = None;
+    let mut spiked = false;
+    let mut flown_again = false;
+    let mut events = Vec::new();
+    for _ in 0..(300.0 / DT) as usize {
+        flight_loop.step(Duration::from_secs_f32(DT));
+        let config = *flight_loop.stabilizer().config();
+        // The tick after the freeze: its state carries the spike.
+        let checking = spiked;
+        spiked = frozen.is_none() && config != start && flight_loop.probe().is_some();
+        if spiked {
+            frozen = Some(config);
+            autotune.note_stall();
+        }
+        // Past the envelope's 4 rad/s, for the tick after the freeze only.
+        controls
+            .rate_spike_radps
+            .set(if spiked { 5.0 } else { 0.0 });
+        let event = autotune.update(&mut flight_loop, DT);
+        if checking {
+            check!(
+                matches!(
+                    event,
+                    Some(AutotuneEvent::Stalled {
+                        measurement: None,
+                        ..
+                    })
+                ),
+                "{event:?}"
+            );
+            check!(
+                *flight_loop.stabilizer().config() == start,
+                "committed gains back"
+            );
+        } else if !spiked && frozen.is_some_and(|candidate| config == candidate) {
+            flown_again = true;
+        }
+        events.extend(event);
+        if !autotune.is_running() {
+            break;
+        }
+    }
+
+    check!(frozen.is_some(), "a candidate flew");
+    check!(flown_again, "the candidate flies again");
+    check!(events.last() == Some(&AutotuneEvent::Complete));
 }
 
 /// `SearchPlan::validate` rejects each bad field; the copter default is valid.

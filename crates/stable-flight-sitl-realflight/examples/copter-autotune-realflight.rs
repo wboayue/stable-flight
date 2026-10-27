@@ -28,7 +28,7 @@
 //! RealFlight runs slow (`RunStats::host_slow`: under 225 Hz over 0.5 s until it regains
 //! 240 Hz; it drops to about 120 Hz for stretches, #438), the running step stops and the
 //! autotune waits: a step held for its ticks at half rate would tilt twice as far, and settles
-//! would time out. Fits run on: a slow host only lowers their design. Params and telemetry go over
+//! would time out. A design stage's fit and hold run on: a slow host only lowers the design. Params and telemetry go over
 //! the native link for the bridge, so QGC shows the gains change. The RealFlight host defaults to
 //! `10.211.55.3:8080`; override it with `--host`.
 //!
