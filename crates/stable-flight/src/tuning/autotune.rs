@@ -934,7 +934,8 @@ pub struct Envelope {
     pub settle_timeout_s: f32,
     /// After a probe on candidate gains ends, how long the vehicle has on the committed gains
     /// to come back inside the limits before a breach fails the stage, in s. A breach while
-    /// the candidate flies fails only the candidate. Non-negative.
+    /// the candidate flies fails only the candidate. After a freeze
+    /// ([`Autotune::note_stall`]), breaches don't count for as long. Non-negative.
     pub recovery_s: f32,
 }
 
@@ -1234,10 +1235,11 @@ enum Phase {
         waited_s: f32,
     },
     /// A probe runs; `candidate`: on gains the procedure asked for, which go back to the
-    /// committed ones when it ends.
+    /// committed ones when it ends; `fit`: an identification, which runs through a slow host.
     Probing {
         stage: usize,
         candidate: bool,
+        fit: bool,
     },
     /// Candidate `gains` fly until the stage's axis holds the settle on them, or the settle
     /// timeout.
@@ -1303,6 +1305,15 @@ struct Request {
     gains: Option<Gains>,
 }
 
+impl Request {
+    /// Whether the probe is a fit, which runs through a slow host: a fit at 223 Hz on the sim
+    /// (the physics 12% slower than the ticks claim) designs rate P 5–13% lower, and the
+    /// search climbs from the design (#524).
+    fn is_fit(&self) -> bool {
+        matches!(self.probe, ProbeConfig::Identify(_))
+    }
+}
+
 /// Runs a copter autotune between ticks: each [`StagePlan`]'s procedure decides
 /// which probes to run on its loop ([`Tunable::start_probe`]) and what gains follow from
 /// them; the supervisor executes it.
@@ -1325,11 +1336,13 @@ struct Request {
 ///   the committed gains then have [`Envelope::recovery_s`] to bring the vehicle back. A
 ///   design stage holds its design instead: it goes in at once and stays only if the vehicle
 ///   settles about the loop's axis on it.
-/// - **Stalls:** [`note_stall`](Self::note_stall) marks the running probe's measurement as
-///   untimely; a step test runs that step again. While the host is slow
-///   ([`set_host_slow`](Self::set_host_slow)), the running probe stops at once (a step held
-///   for its ticks at half the tick rate would tilt twice as far) and counts as stalled, and
-///   settling waits: it gains no level time and doesn't time out.
+/// - **Stalls:** [`note_stall`](Self::note_stall) (a freeze) marks the running probe's
+///   measurement as untimely, and breaches for [`Envelope::recovery_s`] after it don't count:
+///   the vehicle moved while the host saw nothing. A step test runs that step again. While the
+///   host is slow ([`set_host_slow`](Self::set_host_slow)), the running probe stops at once (a
+///   step held for its ticks at half the tick rate would tilt twice as far) and counts as
+///   stalled, and settling waits: it gains no level time and doesn't time out. A design
+///   stage's fit and hold run through a slow host: it only lowers the design.
 /// - **Fail:** an envelope breach, a probe abort the procedure can't use (a search counts a
 ///   step's abort against its gain), an interrupt, or a rejected config stops the stage, puts
 ///   back the config as of the last kept stage (the earlier stages' gains stay, but a design
@@ -1391,6 +1404,9 @@ pub struct Autotune {
     /// Time left, in s, for the vehicle to come back inside the envelope after a candidate
     /// ([`Envelope::recovery_s`]); breaches meanwhile don't fail the stage.
     recovering_s: f32,
+    /// Time left, in s, after a freeze ([`note_stall`](Self::note_stall)) during which
+    /// breaches don't count at all ([`Envelope::recovery_s`]).
+    frozen_s: f32,
 }
 
 /// What the supervisor needs from the stabilizer: copter probes and config.
@@ -1452,6 +1468,7 @@ impl Autotune {
             stalled: false,
             host_slow: false,
             recovering_s: 0.0,
+            frozen_s: 0.0,
         })
     }
 
@@ -1478,6 +1495,7 @@ impl Autotune {
         self.committed = Some(config);
         self.start_altitude_m = flight_loop.state().position_m.z;
         self.recovering_s = 0.0;
+        self.frozen_s = 0.0;
         self.phase = Phase::Starting { stage: 0 };
         Ok(())
     }
@@ -1511,7 +1529,12 @@ impl Autotune {
         }
         let motion = Motion::of(flight_loop.state());
         self.recovering_s = (self.recovering_s - dt).max(0.0);
-        if let Some(stage) = self.phase.active_stage()
+        self.frozen_s = (self.frozen_s - dt).max(0.0);
+        // A freeze's breach is the loop catching up with what the vehicle did unseen: on
+        // QuadCopterX in RealFlight, 0.47 s of the same state came back at −19° pitch, and the
+        // recovery peaked at 4.08 rad/s (#524).
+        if self.frozen_s <= 0.0
+            && let Some(stage) = self.phase.active_stage()
             && let Some(reason) = self.envelope.breach(&motion, self.start_altitude_m)
         {
             // A candidate's breach fails the candidate; the committed gains get time to
@@ -1534,14 +1557,14 @@ impl Autotune {
         match self.phase {
             Phase::Starting { stage } => self.begin(stage),
             Phase::Deciding { stage, on } => self.decide(flight_loop, stage, on),
-            // A slow host holds the settle where it is, with no level time: the vehicle
-            // settles again once the host keeps time.
+            // A slow host holds a probe's settle where it is, with no level time: the vehicle
+            // settles again once the host keeps time. A fit's goes on.
             Phase::Settling {
                 stage,
                 request,
                 waited_s,
                 ..
-            } if self.host_slow => {
+            } if self.host_slow && !request.is_fit() => {
                 self.phase = Phase::Settling {
                     stage,
                     request,
@@ -1550,21 +1573,11 @@ impl Autotune {
                 };
                 None
             }
-            Phase::Holding {
+            Phase::Probing {
                 stage,
-                gains,
-                waited_s,
-                ..
+                candidate,
+                fit: false,
             } if self.host_slow => {
-                self.phase = Phase::Holding {
-                    stage,
-                    gains,
-                    level_s: 0.0,
-                    waited_s,
-                };
-                None
-            }
-            Phase::Probing { stage, candidate } if self.host_slow => {
                 self.end_probe(flight_loop, stage, candidate, Decide::Stalled);
                 Some(AutotuneEvent::Stalled {
                     target: self.target(stage),
@@ -1583,7 +1596,9 @@ impl Autotune {
                 level_s + dt,
                 waited_s + dt,
             ),
-            Phase::Probing { stage, candidate } => self.poll_probe(flight_loop, stage, candidate),
+            Phase::Probing {
+                stage, candidate, ..
+            } => self.poll_probe(flight_loop, stage, candidate),
             Phase::Holding {
                 stage,
                 gains,
@@ -1612,12 +1627,16 @@ impl Autotune {
         self.host_slow = slow;
     }
 
-    /// Tells the supervisor the host fell behind (e.g. a stalled simulator exchange,
-    /// sitl's `RunStats::skipped_ticks` growing): the running probe's timing can't be trusted,
-    /// so its procedure treats the measurement as invalid. A no-op unless a probe runs.
+    /// Tells the supervisor the host froze (e.g. a stalled simulator exchange, a tick
+    /// much later than the last): the running probe's timing can't be trusted,
+    /// so its procedure treats the measurement as invalid, and for [`Envelope::recovery_s`]
+    /// breaches don't count, as the loop catches up with what the vehicle did meanwhile.
     pub fn note_stall(&mut self) {
         if matches!(self.phase, Phase::Probing { .. }) {
             self.stalled = true;
+        }
+        if self.is_running() {
+            self.frozen_s = self.envelope.recovery_s;
         }
     }
 
@@ -1783,6 +1802,7 @@ impl Autotune {
             self.phase = Phase::Probing {
                 stage,
                 candidate: request.gains.is_some(),
+                fit: request.is_fit(),
             };
             self.stalled = false;
             return None;
@@ -1800,7 +1820,7 @@ impl Autotune {
     }
 
     /// Checks the running probe: a measurement or an abort goes to the procedure on the next
-    /// update, after a candidate's gains go back to the committed ones; a stopped probe fails
+    /// update (a stalled probe's abort as a stall), after a candidate's gains go back to the committed ones; a stopped probe fails
     /// the run.
     fn poll_probe<C, V, G, S: CopterTunable, M, T>(
         &mut self,
@@ -1825,6 +1845,14 @@ impl Autotune {
                         target,
                         measurement,
                     }
+                }),
+            ),
+            // A stalled probe's abort is the host's, not the loop's: it runs again.
+            Some((target, ProbeStatus::Aborted(_))) if self.stalled => (
+                Decide::Stalled,
+                Some(AutotuneEvent::Stalled {
+                    target,
+                    measurement: None,
                 }),
             ),
             Some((_, ProbeStatus::Aborted(abort))) => (Decide::Aborted { abort }, None),

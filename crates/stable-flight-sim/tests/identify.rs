@@ -11,8 +11,8 @@ use stable_flight::tuning::autotune::{COPTER_IDENTIFY, COPTER_LOOP_SHAPING};
 use stable_flight::tuning::{
     Measurement, ProbeConfig, ProbeStatus, RateModel, design_angle_p, design_rate,
 };
-use stable_flight_sim::Wind;
 use stable_flight_sim::airframes::{self, Airframe};
+use stable_flight_sim::{Perturbations, Wind};
 
 use common::robustness::{Set, Start, perturbations, starting};
 use common::{Plant, spec};
@@ -123,6 +123,57 @@ fn designed_gains_meet_the_spec() {
             };
             let misses = spec::misses(&tuned, &spec::TUNED);
             check!(misses.is_empty(), "{row}: {misses:#?}");
+        }
+    }
+}
+
+/// Most a fit on a slow host may lower the designed rate P, as a share of the nominal design:
+/// with the physics 12% ahead of the ticks it came out 5–13% lower (#524), so 15% leaves a
+/// point or two.
+const SLOW_HOST_P_SHARE: f32 = 0.15;
+
+/// Physics per tick on RealFlight at about 223 Hz under the 250 Hz loop (#524).
+const SLOW_HOST_TIME_SCALE: f32 = 1.12;
+
+/// A fit on a host ticking slower than the loop's rate (every tick still passes the nominal
+/// `dt`) designs a rate P no higher than on a host that keeps time, and at most
+/// [`SLOW_HOST_P_SHARE`] lower: a slow host only makes the design cautious, so autotune fits
+/// through it (#524). Every copter airframe, clean and with 10 ms of delay.
+#[test]
+fn a_fit_on_a_slow_host_designs_a_cautious_rate_p() {
+    let airframes = [
+        ("quad_x", airframes::quad_x()),
+        ("heavy_quad", airframes::heavy_quad()),
+        ("racer", airframes::racer()),
+    ];
+    for (name, airframe) in airframes {
+        for set in [Set::Clean, Set::Delay10Ms] {
+            let row = format!("{name} {set:?}");
+            let plant = Plant {
+                airframe: starting(airframe, Start::Low),
+                wind: Wind::default(),
+                perturbations: perturbations(set, &airframe),
+            };
+            let slow = Plant {
+                perturbations: Perturbations {
+                    time_scale: SLOW_HOST_TIME_SCALE,
+                    ..plant.perturbations
+                },
+                ..plant
+            };
+            let start = TunedLoop::RollRate.gains(&plant.airframe.stabilizer);
+            let designed_p = |plant: &Plant| {
+                let model = identified(plant, TunedLoop::Roll);
+                design_rate(&model, start, &COPTER_LOOP_SHAPING)
+                    .expect("rate gains")
+                    .p
+            };
+            let (nominal_p, slow_p) = (designed_p(&plant), designed_p(&slow));
+            check!(slow_p <= nominal_p, "{row}: {slow_p} against {nominal_p}");
+            check!(
+                slow_p >= (1.0 - SLOW_HOST_P_SHARE) * nominal_p,
+                "{row}: {slow_p} against {nominal_p}"
+            );
         }
     }
 }

@@ -103,6 +103,7 @@ fn all_on(seed: u64) -> Perturbations {
         },
         disturbance_moment_nm: Vec3::new(0.005, -0.005, 0.0),
         motor_thrust_scale,
+        time_scale: 1.04,
     }
 }
 

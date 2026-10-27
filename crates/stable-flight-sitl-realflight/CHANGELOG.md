@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `copter-autotune-realflight` flags a freeze (`Autotune::note_stall`) on a tick over 50 ms
+  after the last, not on the runner's resyncs, which at about 223 Hz come every few seconds
+  with no tick late by much (#524).
+
 - The Titan Cobra's mixer runs its lift rotors at thrust factor 0.8, twice the default's moment
   range, with hover thrust rescaled so the hover holds the same motor command (#438). Its
   nose-heavy trim took 0.37 of the default's nose-up range; nose-up steps clipped 15× as often

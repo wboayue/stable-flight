@@ -677,13 +677,21 @@ ultimate point, then a search) stays selectable.
   candidate gains), "finish with these gains", or "fail". It never touches the flight loop, so its
   decisions are tested by feeding it inputs. `Autotune` executes it: it settles before each
   probe, runs it, guards the envelope, and commits. A step clipped too long, or one during which
-  the host stalled (`Autotune::note_stall`, e.g. on sitl's `RunStats::skipped_ticks`), runs
-  again, within a budget of steps in a row (3 clipped, 10 stalled). While the host runs slow
-  for a stretch (`Autotune::set_host_slow`, e.g. sitl's `RunStats::host_slow`), the running probe stops at
+  the host froze (`Autotune::note_stall`, e.g. a tick over 50 ms after the last by sitl's
+  `RunStats::elapsed`), runs again, within a budget of steps in a row (3 clipped, 10 stalled);
+  so does a frozen probe's abort, and for `Envelope::recovery_s` after a freeze breaches don't
+  count: the vehicle moved while the host saw nothing (RealFlight returned one state for
+  0.47 s and the vehicle came back at −19° pitch, #524). The runner's resyncs
+  (`RunStats::skipped_ticks`) aren't freezes: at about 223 Hz it falls 100 ms behind every few
+  seconds with no tick late by much. While the host runs slow for a stretch
+  (`Autotune::set_host_slow`, e.g. sitl's `RunStats::host_slow`), the running probe stops at
   once and counts as stalled, and settling waits without timing out: every tick gets the
   nominal `dt`, so at half rate a step held for its ticks tilts twice as far, and RealFlight's
-  slow stretches outlast the settle timeout (#438). The core gets only the verdict, so it stays
-  clock-free. Candidate gains go in once
+  slow stretches outlast the settle timeout (#438). A design stage's fit and hold run through
+  it instead: RealFlight's slow stretches at 222–225 Hz left 1.1–3.3 s between them, too short
+  for a settle and a 3 s fit, and a fit with the physics 12% ahead of the ticks designs rate P
+  5–13% lower on the sim, which the search climbs from (#524). The core gets only the verdict,
+  so it stays clock-free. Candidate gains go in once
   the vehicle has settled on the committed gains and come out when the probe ends, so a
   candidate flies only its step.
 * **Gain search** (`Method::Search`): the largest gain of one term whose step pairs meet a
