@@ -360,7 +360,7 @@ fn only_the_runs_own_start_stays_lowered() {
         d: plan.max,
         ..START
     };
-    let run_start = Gains { d: 0.002, ..START };
+    let run_start = Gains { d: 0.0015, ..START };
     // (case, run's start, kept)
     let rows = [
         ("the run's own start", START, lowered),
