@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`SearchPlan::copter_seeded`: no relay). On the sim it tunes every copter airframe, clean
   and with 10 and 25 ms of actuator delay, from low and ×3 starts, in 148–379 s of simulated
   time, against the step search's 308–693 s on the rows that search passes.
-  `AutotuneAbort::Design` reports a fit the design can't use. `TunedLoop::inner` and
+  `AutotuneAbort::Design` reports a fit the design can't use, and `Outcome::Designed` a
+  design stage's gains, which a failure puts back until the loop's search finishes.
+  `TunedLoop::inner` and
   `outer` name the rate loop under an angle loop and the angle loop over a rate loop.
 - `tuning::design_rate` and `design_angle_p` (`LoopShapingConfig`, preset
   `autotune::COPTER_LOOP_SHAPING`) (#517): rate and angle gains from an identified
@@ -324,7 +326,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** the autotune settle (`Settle::rate_radps`) holds the roll and pitch rates
   only: the untuned yaw loop can ring on its start gains without tilting the vehicle (#518).
   A relay or an identification starts at the settle timeout instead of failing the stage.
-  A new `AutotuneAbort::Design` variant breaks exhaustive matches.
+  New `AutotuneAbort::Design` and `Outcome::Designed` variants break exhaustive matches.
 - **Breaking:** a search that keeps no result keeps its start gains only if their steps met
   the criterion, and otherwise puts back the loop's gains at the run's start: a design it was
   seeded with doesn't outlive it (#518).

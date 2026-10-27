@@ -45,22 +45,26 @@ impl Design {
                 measurement: Measurement::Identify(model),
                 gains,
                 stalled: false,
-            } => match self.plan.gains(&model, gains, self.inner) {
-                Ok(gains) => Action::Finish {
-                    gains,
-                    outcome: Outcome::Tuned,
-                    steps: None,
-                    baseline: None,
-                },
-                Err(error) => {
-                    self.unusable += 1;
-                    if self.unusable >= MAX_UNUSABLE_FITS {
-                        Action::Fail(AutotuneAbort::Design(error))
-                    } else {
-                        Action::probe(identify)
+            } => {
+                // A fit that ran clears the slow host's count: only stalls in a row fail.
+                self.stops = 0;
+                match self.plan.gains(&model, gains, self.inner) {
+                    Ok(gains) => Action::Finish {
+                        gains,
+                        outcome: Outcome::Designed,
+                        steps: None,
+                        baseline: None,
+                    },
+                    Err(error) => {
+                        self.unusable += 1;
+                        if self.unusable >= MAX_UNUSABLE_FITS {
+                            Action::Fail(AutotuneAbort::Design(error))
+                        } else {
+                            Action::probe(identify)
+                        }
                     }
                 }
-            },
+            }
             // The fit's timing can't be trusted, or nothing was fitted.
             Input::Measured {
                 measurement: Measurement::Identify(_),

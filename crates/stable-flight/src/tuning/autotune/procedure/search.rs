@@ -234,9 +234,9 @@ impl Search {
     /// Keeps the verified `gain` if its steps (`complete`: none aborted or kept clipping) fly
     /// no worse than a baseline that met the criterion, or, with no such baseline (the start's
     /// steps weren't flown, aborted, clipped, or failed the criterion), meet the criterion
-    /// themselves; else the [`kept`](Self::kept) gains stay. A start that fails the criterion isn't a
-    /// standard to hold the result to: a too-high rate P settles fast because it overshoots
-    /// within the settle band (#361).
+    /// themselves; else the [`kept`](Self::kept) gains stay. A start that fails the criterion
+    /// isn't a standard to hold the result to: a too-high rate P settles fast because it
+    /// overshoots within the settle band (#361).
     fn verified(&self, gain: f32, complete: bool, steps: StepSummary) -> Action {
         let SearchPlan {
             criterion,
