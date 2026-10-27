@@ -1346,9 +1346,8 @@ fn search_step_presets() {
     check!(angle.relay.is_none());
 }
 
-/// The loop-shaping tune designs every loop, rate first, from two fits that agree, each rate
-/// loop's run on the angle loop above it, then verifies each design in the same order and keeps
-/// it.
+/// The loop-shaping tune designs every loop, rate first, with each rate loop's fit run on the
+/// angle loop above it, then verifies each design in the same order and keeps it.
 #[test]
 fn copter_loop_shaping_designs_then_verifies_every_loop() {
     let params = PlantParams {
@@ -1375,12 +1374,8 @@ fn copter_loop_shaping_designs_then_verifies_every_loop() {
         .collect();
     let angle_loops = [
         TunedLoop::Roll,
-        TunedLoop::Roll,
-        TunedLoop::Pitch,
         TunedLoop::Pitch,
         TunedLoop::Roll,
-        TunedLoop::Roll,
-        TunedLoop::Pitch,
         TunedLoop::Pitch,
     ];
     check!(fitted == angle_loops);
