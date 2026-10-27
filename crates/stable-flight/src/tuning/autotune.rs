@@ -1789,19 +1789,27 @@ impl Autotune {
     }
 
     /// Commits `gains` lowered mid-stage (a search's start above its `max`): the stage
-    /// settles on them and a failure restores them. `StageFailed` if the stabilizer rejected
-    /// them, else `Lowered`.
+    /// settles on them, and a failure restores them if the stage started on the loop's kept
+    /// gains. A lowered design is still a design: a failure puts the loop's kept gains back.
+    /// `StageFailed` if the stabilizer rejected them, else `Lowered`.
     fn lower<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
         gains: Gains,
     ) -> AutotuneEvent {
+        let target = self.target(stage);
+        let designed = self
+            .committed
+            .zip(self.last_good)
+            .is_some_and(|(flown, kept)| target.gains(&flown) != target.gains(&kept));
         let Some(config) = self.set_gains(flight_loop, stage, gains) else {
             return self.fail(flight_loop, stage, AutotuneAbort::Rejected);
         };
         self.committed = Some(config);
-        self.keep(self.target(stage), gains);
+        if !designed {
+            self.keep(target, gains);
+        }
         AutotuneEvent::Lowered {
             target: self.target(stage),
             gains,

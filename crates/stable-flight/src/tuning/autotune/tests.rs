@@ -1574,3 +1574,48 @@ fn a_design_that_breaches_during_its_search_goes_back_to_its_start() {
     );
     check!(*flight_loop.stabilizer().config() == start);
 }
+
+/// A design above its search's `max` is lowered to it, and still goes back to the loop's start
+/// when the search fails: the lowered design never passed a step. Here every step after the
+/// lower stalls, so the search fails `Stalled`.
+#[test]
+fn a_lowered_design_goes_back_to_its_start_when_its_search_fails() {
+    let (mut flight_loop, _controls) = hovering(1.0);
+    let start = *flight_loop.stabilizer().config();
+    let below_the_design = SearchPlan {
+        min: 0.01,
+        max: 0.05,
+        ..SearchPlan::copter_seeded(TunedLoop::RollRate)
+    };
+    let plan = [
+        design_stage(TunedLoop::RollRate),
+        StagePlan {
+            target: TunedLoop::RollRate,
+            method: Method::Search(below_the_design),
+        },
+    ];
+    let mut autotune = started(&flight_loop, &plan);
+
+    let mut lowered = false;
+    for _ in 0..(120.0 / DT) as usize {
+        if lowered {
+            autotune.note_stall();
+        }
+        flight_loop.step(Duration::from_secs_f32(DT));
+        let event = autotune.update(&mut flight_loop, DT);
+        lowered |= matches!(event, Some(AutotuneEvent::Lowered { .. }));
+        if matches!(autotune.status(), AutotuneStatus::Failed { .. }) {
+            break;
+        }
+    }
+
+    check!(lowered);
+    check!(
+        autotune.status()
+            == AutotuneStatus::Failed {
+                stage: 1,
+                reason: AutotuneAbort::Stalled,
+            }
+    );
+    check!(*flight_loop.stabilizer().config() == start);
+}
