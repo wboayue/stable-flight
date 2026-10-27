@@ -15,6 +15,9 @@ pub(in crate::tuning::autotune) struct Search {
     leg: Leg,
     /// The loop's gains at the stage's start.
     start: Gains,
+    /// What stays when the search keeps no result and the start's steps missed the criterion:
+    /// the loop's gains at the run's start, or a start lowered to `max`.
+    fallback: Gains,
     /// The gains candidates change one term of: the relay rule's, or `start`.
     seed: Gains,
     /// The largest gain to try: `plan.max`, lowered by the relay's ceiling.
@@ -51,6 +54,7 @@ impl Search {
             plan,
             leg: Leg::Baseline,
             start: Gains::default(),
+            fallback: Gains::default(),
             seed: Gains::default(),
             max: plan.max,
             pass: None,
@@ -72,8 +76,14 @@ impl Search {
             };
         }
         match (self.leg, input) {
-            (_, Input::Start { gains, .. }) => {
+            (
+                _,
+                Input::Start {
+                    gains, run_start, ..
+                },
+            ) => {
                 self.start = gains;
+                self.fallback = run_start;
                 self.seed = gains;
                 self.retry_relay(0)
             }
@@ -136,6 +146,7 @@ impl Search {
     fn baseline(&mut self) -> Action {
         if self.plan.term.get(self.start) > self.max {
             self.start = self.with(self.plan.term.get(self.seed).min(self.max));
+            self.fallback = self.start;
             return match self.advance() {
                 Action::Probe { probe, gains, .. } => Action::Probe {
                     probe,
@@ -219,7 +230,7 @@ impl Search {
     /// Keeps the verified `gain` if its steps (`complete`: none aborted or kept clipping) fly
     /// no worse than a baseline that met the criterion, or, with no such baseline (the start's
     /// steps weren't flown, aborted, clipped, or failed the criterion), meet the criterion
-    /// themselves; else the start gains stay. A start that fails the criterion isn't a
+    /// themselves; else the [`kept`](Self::kept) gains stay. A start that fails the criterion isn't a
     /// standard to hold the result to: a too-high rate P settles fast because it overshoots
     /// within the settle band (#361).
     fn verified(&self, gain: f32, complete: bool, steps: StepSummary) -> Action {
@@ -238,7 +249,7 @@ impl Search {
         if accepted {
             self.finish(self.with(gain), Outcome::Tuned, Some(steps))
         } else {
-            self.finish(self.start, Outcome::Kept(KeepReason::Worse), Some(steps))
+            self.finish(self.kept(), Outcome::Kept(KeepReason::Worse), Some(steps))
         }
     }
 
@@ -259,7 +270,7 @@ impl Search {
             (Some(pass), None) => (pass < self.max).then(|| (pass * factor).min(self.max)),
             (None, Some(fail)) if fail > min => Some((fail / factor).max(min)),
             (None, Some(_)) => {
-                return self.finish(self.start, Outcome::Kept(KeepReason::NoPass), None);
+                return self.finish(self.kept(), Outcome::Kept(KeepReason::NoPass), None);
             }
             // Nothing tried yet: the seed's gain.
             (None, None) => Some(self.plan.term.get(self.seed).clamp(min, self.max)),
@@ -275,6 +286,17 @@ impl Search {
         self.leg = leg;
         self.pairs.restart(pairs);
         self.step()
+    }
+
+    /// The gains that stay when the search keeps no result: the start, if its steps met the
+    /// criterion, else the fallback. A start the search was seeded with (a design) and never
+    /// saw pass doesn't outlive the search.
+    fn kept(&self) -> Gains {
+        if self.plan.criterion.passes(&self.baseline) {
+            self.start
+        } else {
+            self.fallback
+        }
     }
 
     fn finish(&self, gains: Gains, outcome: Outcome, steps: Option<StepSummary>) -> Action {

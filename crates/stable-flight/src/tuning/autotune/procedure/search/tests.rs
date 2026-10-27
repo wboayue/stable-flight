@@ -83,10 +83,20 @@ impl Run {
     }
 }
 
-/// Runs `plan` from [`START`]: relays get `relays` in turn, steps `step(gains flown)`
-/// (`None`: the step aborts).
+/// Runs `plan` from [`START`], also the run's start: relays get `relays` in turn, steps
+/// `step(gains flown)` (`None`: the step aborts).
 fn drive(
     plan: SearchPlan,
+    relays: impl FnMut() -> Input,
+    step: impl Fn(Gains) -> Option<StepMetrics>,
+) -> Run {
+    drive_from(plan, START, relays, step)
+}
+
+/// As [`drive`], with the loop's gains at the run's start `run_start`.
+fn drive_from(
+    plan: SearchPlan,
+    run_start: Gains,
     mut relays: impl FnMut() -> Input,
     step: impl Fn(Gains) -> Option<StepMetrics>,
 ) -> Run {
@@ -94,7 +104,11 @@ fn drive(
     let mut flown = Vec::new();
     let mut verdicts = Vec::new();
     let mut committed = Vec::new();
-    let mut action = procedure.next(Input::start(START));
+    let mut action = procedure.next(Input::Start {
+        gains: START,
+        inner: None,
+        run_start,
+    });
     for _ in 0..MAX_PROBES {
         verdicts.extend(procedure.take_verdict());
         if let Action::Probe {
@@ -291,6 +305,47 @@ fn a_worse_result_keeps_the_start() {
     };
     check!(verify.settling_time_s.mean() == Some(0.2));
     check!(baseline.settling_time_s.mean() == Some(0.1));
+}
+
+/// A scripted step reply per gains flown (`None`: the step aborts).
+type StepReply = fn(Gains) -> Option<StepMetrics>;
+
+/// A search that keeps no result keeps its start only if the start's steps met the criterion;
+/// a start that missed it, or whose steps aborted (a design the search was seeded with), gives
+/// way to the loop's gains at the run's start.
+#[test]
+fn a_start_that_never_passed_gives_way_to_the_run_start() {
+    let run_start = Gains { d: 0.002, ..START };
+    // (case, step reply per gains flown, kept, outcome)
+    let rows: [(&str, StepReply, Gains, Outcome); 3] = [
+        (
+            "nothing passes",
+            |_| Some(metrics(0.0, 1.0)),
+            run_start,
+            Outcome::Kept(KeepReason::NoPass),
+        ),
+        (
+            "the start aborts, nothing else passes",
+            |gains| (gains != START).then(|| metrics(0.0, 1.0)),
+            run_start,
+            Outcome::Kept(KeepReason::NoPass),
+        ),
+        (
+            "the start passes, the result flies worse",
+            |gains| {
+                Some(StepMetrics {
+                    settling_time_s: Some(if gains == START { 0.1 } else { 0.2 }),
+                    ..metrics(0.0, 0.0)
+                })
+            },
+            START,
+            Outcome::Kept(KeepReason::Worse),
+        ),
+    ];
+    for (case, step, kept, outcome) in rows {
+        let run = drive_from(d_plan(), run_start, no_relays, step);
+        check!(finished(&run) == (kept, outcome), "{case}");
+    }
 }
 
 /// The rate P search runs its relay first: the rule's D and P seed it (the bracket starts at
