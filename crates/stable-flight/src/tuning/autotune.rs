@@ -174,7 +174,7 @@ impl StagePlan {
     /// QuadCopterX in RealFlight one fit designed roll rate P 0.41 against 0.63–1.04, #518).
     /// Every loop is designed before any is searched: a loop still on its start gains can
     /// ring and keep another's steps from settling (pitch on `racer`'s high start with 25 ms
-    /// of delay, #518). On the sim it takes 148–379 s against the search's 308–693 s, and
+    /// of delay, #518). On the sim it takes 152–380 s against the search's 308–693 s, and
     /// tunes the high starts with delay the search can't (#518).
     ///
     /// # Examples
@@ -836,9 +836,12 @@ fn no_worse(base: Option<f32>, value: Option<f32>, limit: impl FnOnce(f32) -> f3
 ///    adds excitation (#356). A slow host may stop it 3 times in a row before the stage fails.
 /// 2. **Design:** a rate loop's gains by [`design_rate`]; an angle loop's P by
 ///    [`design_angle_p`] on the rate loop's committed gains, its I and D kept. A fit the design
-///    can't use runs again; the third fails the stage ([`AutotuneAbort::Design`]). The
-///    design flies from then on ([`Outcome::Designed`]), but a failure before its loop's
-///    search finishes puts the loop's earlier gains back.
+///    can't use runs again; the third fails the stage ([`AutotuneAbort::Design`]).
+/// 3. **Hold:** the design flies until the vehicle holds the settle about the loop's axis on
+///    it. One that doesn't within the settle timeout ([`AutotuneEvent::Unsettled`]), or
+///    breaches the envelope, goes back and counts as an unusable fit. The design flies from
+///    then on ([`Outcome::Designed`]), but a failure before its loop's search finishes puts
+///    the loop's earlier gains back.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DesignPlan {
     /// The excitation and fit.
@@ -905,6 +908,11 @@ impl Settle {
     /// Whether `motion` is level and still enough.
     fn holds(&self, motion: &Motion) -> bool {
         motion.tilt_rad < self.tilt_rad && motion.tilt_rate_radps < self.rate_radps
+    }
+
+    /// Whether `motion` is level and still enough about `axis` alone (0 roll, 1 pitch).
+    fn holds_axis(&self, motion: &Motion, axis: usize) -> bool {
+        motion.axis_tilt_rad[axis] < self.tilt_rad && motion.axis_rate_radps[axis] < self.rate_radps
     }
 }
 
@@ -1003,6 +1011,10 @@ struct Motion {
     rate_radps: f32,
     /// The larger of the |roll| and |pitch| rates, in rad/s.
     tilt_rate_radps: f32,
+    /// |roll| and |pitch|, in rad.
+    axis_tilt_rad: [f32; 2],
+    /// The |roll| and |pitch| rates, in rad/s.
+    axis_rate_radps: [f32; 2],
     altitude_m: f32,
 }
 
@@ -1014,6 +1026,8 @@ impl Motion {
             tilt_rad: roll.abs().max(pitch.abs()),
             rate_radps: rates_radps.amax(),
             tilt_rate_radps: rates_radps.xy().amax(),
+            axis_tilt_rad: [roll.abs(), pitch.abs()],
+            axis_rate_radps: [rates_radps.x.abs(), rates_radps.y.abs()],
             altitude_m: state.position_m.z,
         }
     }
@@ -1100,6 +1114,14 @@ pub enum AutotuneEvent {
         /// The searched loop.
         target: TunedLoop,
         /// The gains committed.
+        gains: Gains,
+    },
+    /// A design didn't hold the settle on its loop's axis within the settle timeout; the
+    /// committed gains are back, and the design stage fits again.
+    Unsettled {
+        /// The designed loop.
+        target: TunedLoop,
+        /// The gains that didn't hold.
         gains: Gains,
     },
     /// A stage failed: the config went back to the last kept one (earlier stages stay, except
@@ -1217,6 +1239,14 @@ enum Phase {
         stage: usize,
         candidate: bool,
     },
+    /// Candidate `gains` fly until the stage's axis holds the settle on them, or the settle
+    /// timeout.
+    Holding {
+        stage: usize,
+        gains: Gains,
+        level_s: f32,
+        waited_s: f32,
+    },
     /// The last stage committed; the next update reports `Complete`.
     Finishing,
     Complete,
@@ -1235,7 +1265,8 @@ impl Phase {
             Phase::Starting { stage }
             | Phase::Deciding { stage, .. }
             | Phase::Settling { stage, .. }
-            | Phase::Probing { stage, .. } => Some(stage),
+            | Phase::Probing { stage, .. }
+            | Phase::Holding { stage, .. } => Some(stage),
             Phase::Idle
             | Phase::Finishing
             | Phase::Complete
@@ -1259,8 +1290,10 @@ enum Decide {
     Stalled,
     /// A probe that gave up.
     Aborted { abort: ProbeAbort },
-    /// A probe on candidate gains that took the vehicle past the envelope.
+    /// A probe or a hold on candidate gains that took the vehicle past the envelope.
     Breached { reason: AutotuneAbort },
+    /// A hold ended, `settled` on its candidate or timed out.
+    Held { settled: bool },
 }
 
 /// A probe a procedure asked for, and the gains to fly it on (`None`: the committed ones).
@@ -1285,11 +1318,13 @@ struct Request {
 ///   [`Method::StepTest`], alternating steps and the gains unchanged; with
 ///   [`Method::Search`], a gain search verified against a baseline
 ///   ([`AutotuneEvent::Tried`] per judgment, the [`Outcome`] in `StageDone`); with
-///   [`Method::Design`], one fit and the gains designed from it.
+///   [`Method::Design`], one fit, the gains designed from it, and a hold on them.
 /// - **Candidates:** a procedure may ask for a probe on other gains; they go in once the
 ///   vehicle has settled on the committed ones and come out when the probe ends, so only the
 ///   probe flies them. An envelope breach while they fly fails the candidate, not the stage;
-///   the committed gains then have [`Envelope::recovery_s`] to bring the vehicle back.
+///   the committed gains then have [`Envelope::recovery_s`] to bring the vehicle back. A
+///   design stage holds its design instead: it goes in at once and stays only if the vehicle
+///   settles about the loop's axis on it.
 /// - **Stalls:** [`note_stall`](Self::note_stall) marks the running probe's measurement as
 ///   untimely; a step test runs that step again. While the host is slow
 ///   ([`set_host_slow`](Self::set_host_slow)), the running probe stops at once (a step held
@@ -1488,6 +1523,10 @@ impl Autotune {
                 self.end_probe(flight_loop, stage, true, Decide::Breached { reason });
                 return None;
             }
+            if let Phase::Holding { .. } = self.phase {
+                self.end_hold(flight_loop, stage, Decide::Breached { reason });
+                return None;
+            }
             if self.recovering_s <= 0.0 {
                 return Some(self.fail(flight_loop, stage, reason));
             }
@@ -1506,6 +1545,20 @@ impl Autotune {
                 self.phase = Phase::Settling {
                     stage,
                     request,
+                    level_s: 0.0,
+                    waited_s,
+                };
+                None
+            }
+            Phase::Holding {
+                stage,
+                gains,
+                waited_s,
+                ..
+            } if self.host_slow => {
+                self.phase = Phase::Holding {
+                    stage,
+                    gains,
                     level_s: 0.0,
                     waited_s,
                 };
@@ -1531,6 +1584,18 @@ impl Autotune {
                 waited_s + dt,
             ),
             Phase::Probing { stage, candidate } => self.poll_probe(flight_loop, stage, candidate),
+            Phase::Holding {
+                stage,
+                gains,
+                level_s,
+                waited_s,
+            } => self.hold(
+                flight_loop,
+                &motion,
+                (stage, gains),
+                level_s + dt,
+                waited_s + dt,
+            ),
             Phase::Idle
             | Phase::Finishing
             | Phase::Complete
@@ -1567,13 +1632,15 @@ impl Autotune {
                 on: Decide::Start,
             } => AutotuneStatus::Settling { stage },
             Phase::Probing { stage, .. }
+            | Phase::Holding { stage, .. }
             | Phase::Deciding {
                 stage,
                 on:
                     Decide::Measured { .. }
                     | Decide::Stalled
                     | Decide::Aborted { .. }
-                    | Decide::Breached { .. },
+                    | Decide::Breached { .. }
+                    | Decide::Held { .. },
             } => AutotuneStatus::Running {
                 stage,
                 target: self.target(stage),
@@ -1633,6 +1700,7 @@ impl Autotune {
             Decide::Stalled => Input::Stalled { gains },
             Decide::Aborted { abort } => Input::Aborted { abort, gains },
             Decide::Breached { reason } => Input::Breached { reason, gains },
+            Decide::Held { settled } => Input::Held { settled, gains },
         };
         match self.procedure.next(input) {
             Action::Probe {
@@ -1667,6 +1735,18 @@ impl Autotune {
                 steps,
                 baseline,
             } => Some(self.commit(flight_loop, stage, gains, (outcome, steps, baseline))),
+            Action::Hold { gains } => {
+                if self.set_gains(flight_loop, stage, gains).is_none() {
+                    return Some(self.fail(flight_loop, stage, AutotuneAbort::Rejected));
+                }
+                self.phase = Phase::Holding {
+                    stage,
+                    gains,
+                    level_s: 0.0,
+                    waited_s: 0.0,
+                };
+                None
+            }
             Action::Fail(reason) => Some(self.fail(flight_loop, stage, reason)),
         }
     }
@@ -1768,6 +1848,61 @@ impl Autotune {
     ) {
         flight_loop.stop_probe();
         if candidate && let Some(committed) = self.committed {
+            restore(flight_loop, committed);
+            self.recovering_s = self.envelope.recovery_s;
+        }
+        self.phase = Phase::Deciding { stage, on };
+    }
+
+    /// Waits for the vehicle to hold the stage's [`Settle`] about its loop's axis on the
+    /// candidate `gains` (`level_s` counts it): then they stay for the procedure to commit.
+    /// After `settle_timeout_s` the committed gains go back ([`AutotuneEvent::Unsettled`]).
+    /// Only the loop's axis counts: the other may still ring on its start gains (pitch on
+    /// `racer`'s high start with 25 ms of delay, #518).
+    fn hold<C, V, G, S: CopterTunable, M, T>(
+        &mut self,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+        motion: &Motion,
+        (stage, gains): (usize, Gains),
+        level_s: f32,
+        waited_s: f32,
+    ) -> Option<AutotuneEvent> {
+        let settle = self.settle_for(stage);
+        let target = self.target(stage);
+        let holds = tilt_axis(target).map_or_else(
+            || settle.holds(motion),
+            |axis| settle.holds_axis(motion, axis),
+        );
+        let level_s = if holds { level_s } else { 0.0 };
+        if level_s >= settle.hold_s {
+            self.phase = Phase::Deciding {
+                stage,
+                on: Decide::Held { settled: true },
+            };
+            return None;
+        }
+        if waited_s >= self.envelope.settle_timeout_s {
+            self.end_hold(flight_loop, stage, Decide::Held { settled: false });
+            return Some(AutotuneEvent::Unsettled { target, gains });
+        }
+        self.phase = Phase::Holding {
+            stage,
+            gains,
+            level_s,
+            waited_s,
+        };
+        None
+    }
+
+    /// Ends `stage`'s hold: the committed gains go back, with [`Envelope::recovery_s`] to
+    /// bring the vehicle inside the envelope, and `on` goes to the procedure.
+    fn end_hold<C, V, G, S: CopterTunable, M, T>(
+        &mut self,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+        stage: usize,
+        on: Decide,
+    ) {
+        if let Some(committed) = self.committed {
             restore(flight_loop, committed);
             self.recovering_s = self.envelope.recovery_s;
         }
@@ -1902,6 +2037,15 @@ fn probed_loop(target: TunedLoop, probe: &ProbeConfig) -> TunedLoop {
     match probe {
         ProbeConfig::Identify(_) => target.outer().unwrap_or(target),
         ProbeConfig::Relay(_) | ProbeConfig::Step(_) => target,
+    }
+}
+
+/// The tilt axis `target` holds (0 roll, 1 pitch); `None` for yaw and heading.
+fn tilt_axis(target: TunedLoop) -> Option<usize> {
+    match target {
+        TunedLoop::RollRate | TunedLoop::Roll => Some(0),
+        TunedLoop::PitchRate | TunedLoop::Pitch => Some(1),
+        TunedLoop::YawRate | TunedLoop::Heading => None,
     }
 }
 

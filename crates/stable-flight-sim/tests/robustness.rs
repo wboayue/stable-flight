@@ -15,8 +15,8 @@ use common::robustness::{Set, Start, perturbations, starting};
 use common::{AUTOTUNE_TIMEOUT_S, Plant, spec};
 
 /// Simulated seconds a row's autotune may take: the slowest passing row (`quad_x` with 10 ms
-/// of delay from the low start, 379 s) plus 25%.
-const BUDGET_S: f32 = 474.0;
+/// of delay, 380 s) plus 25%.
+const BUDGET_S: f32 = 475.0;
 
 /// Autotunes `airframe` under `set` from `start` and checks the row's criteria.
 fn check_row(name: &str, airframe: Airframe, set: Set, start: Start) {

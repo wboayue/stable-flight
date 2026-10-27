@@ -10,7 +10,10 @@ use common::{AUTOTUNE_TIMEOUT_S, Plant};
 use assert2::check;
 use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
-use stable_flight::tuning::autotune::StagePlan;
+use stable_flight::stabilizers::copter::TunedLoop;
+use stable_flight::tuning::autotune::{
+    AutotuneAbort, AutotuneEvent, DesignPlan, Method, StagePlan,
+};
 use stable_flight_sim::airframes::{self, Airframe};
 
 /// Rate P multiplier for the low start (the RealFlight example's `--rate-p-scale`).
@@ -96,4 +99,38 @@ fn converges_from_high_rate_gains() {
     let reference = tuned_p(&airframes::quad_x().stabilizer);
     let low = autotune_from(LOW_RATE_P_SCALE);
     check_agree(autotune_from(HIGH_RATE_P_SCALE), &[reference, low]);
+}
+
+/// Actuator delay past what the fit models (`MAX_DELAY_TICKS`, 40 ms), so its fit misreads
+/// the axis and the design rings.
+const MISREAD_DELAY_S: f32 = 0.05;
+
+/// A rate design that rings doesn't hold the settle, goes back, and its loop is fitted again;
+/// the third fails the stage and the loop flies its start. A delay the fit can't model stands
+/// in for RealFlight's fits that misread the axis (#518).
+#[test]
+fn a_design_that_rings_goes_back_to_its_start() {
+    let plant = Plant {
+        perturbations: common::robustness::delay(MISREAD_DELAY_S),
+        ..Plant::clean(airframes::quad_x())
+    };
+    let plan = [StagePlan {
+        target: TunedLoop::RollRate,
+        method: Method::Design(DesignPlan::copter()),
+    }];
+
+    let run = common::autotune(&plant, &plan, AUTOTUNE_TIMEOUT_S);
+
+    check!(
+        matches!(
+            run.stages[..],
+            [AutotuneEvent::StageFailed {
+                reason: AutotuneAbort::NotSettled,
+                ..
+            }]
+        ),
+        "{:?}",
+        run.stages
+    );
+    check!(run.config == plant.airframe.stabilizer);
 }

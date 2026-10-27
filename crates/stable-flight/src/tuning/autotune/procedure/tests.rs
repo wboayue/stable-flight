@@ -305,10 +305,10 @@ fn fitted(model: RateModel, stalled: bool) -> Input {
     }
 }
 
-/// A design stage fits once, then finishes with the designed gains: a rate loop's from the
-/// fit, an angle loop's P on the rate loop under it, with its own I and D.
+/// A design stage fits once, holds the designed gains, then finishes with them: a rate
+/// loop's from the fit, an angle loop's P on the rate loop under it, with its own I and D.
 #[test]
-fn design_fits_then_finishes_with_the_designed_gains() {
+fn design_fits_holds_then_finishes_with_the_designed_gains() {
     let plan = DesignPlan::copter();
     let rate = design_rate(&QUAD_X_FIT, CURRENT, &plan.design).expect("rate gains");
     let angle_p = design_angle_p(&QUAD_X_FIT, rate, CURRENT, &plan.design).expect("angle P");
@@ -336,7 +336,11 @@ fn design_fits_then_finishes_with_the_designed_gains() {
             "{case}"
         );
         check!(
-            procedure.next(fitted(QUAD_X_FIT, false))
+            procedure.next(fitted(QUAD_X_FIT, false)) == Action::Hold { gains: designed },
+            "{case}"
+        );
+        check!(
+            procedure.next(held(true))
                 == Action::Finish {
                     gains: designed,
                     outcome: Outcome::Designed,
@@ -348,22 +352,38 @@ fn design_fits_then_finishes_with_the_designed_gains() {
     }
 }
 
-/// A fit the design can't use runs again, the third failing the stage with the design's
-/// error; an aborted fit fails it with the probe's.
+fn held(settled: bool) -> Input {
+    Input::Held {
+        settled,
+        gains: CURRENT,
+    }
+}
+
+/// A fit the design can't use, or whose design doesn't hold the settle or breaches the
+/// envelope, runs again, the third failing the stage with its reason; an aborted fit fails it
+/// with the probe's.
 #[test]
-fn design_fails_on_an_unusable_fit() {
+fn design_fits_again_after_an_unusable_fit_or_design() {
     let plan = DesignPlan::copter();
     let identify = Action::probe(ProbeConfig::Identify(plan.identify));
-    let no_lag = RateModel {
-        rate_weights: [1.0, 0.0],
-        ..QUAD_X_FIT
+    let no_lag = fitted(
+        RateModel {
+            rate_weights: [1.0, 0.0],
+            ..QUAD_X_FIT
+        },
+        false,
+    );
+    let usable = fitted(QUAD_X_FIT, false);
+    let breached = Input::Breached {
+        reason: AutotuneAbort::Rate,
+        gains: CURRENT,
     };
     let rate = design_rate(&QUAD_X_FIT, CURRENT, &plan.design).expect("rate gains");
-    // (case, fits, end)
+    // (case, inputs after the start, end)
     let rows = [
         (
-            "an unusable fit, then a usable one",
-            vec![no_lag, QUAD_X_FIT],
+            "an unusable fit, then a design that holds",
+            vec![no_lag, usable, held(true)],
             Action::Finish {
                 gains: rate,
                 outcome: Outcome::Designed,
@@ -377,13 +397,35 @@ fn design_fails_on_an_unusable_fit() {
             vec![no_lag, no_lag, no_lag],
             Action::Fail(AutotuneAbort::Design(DesignError::NotALag)),
         ),
+        (
+            "a design that doesn't hold",
+            vec![usable, held(false)],
+            identify,
+        ),
+        (
+            "three designs that don't hold",
+            vec![
+                usable,
+                held(false),
+                usable,
+                held(false),
+                usable,
+                held(false),
+            ],
+            Action::Fail(AutotuneAbort::NotSettled),
+        ),
+        ("a design that breaches", vec![usable, breached], identify),
+        (
+            "a design that breaches, then two unusable fits",
+            vec![usable, breached, no_lag, no_lag],
+            Action::Fail(AutotuneAbort::Design(DesignError::NotALag)),
+        ),
     ];
-    for (case, fits, end) in rows {
+    for (case, inputs, end) in rows {
         let mut procedure = Procedure::new(Method::Design(plan));
         let mut action = procedure.next(Input::start(CURRENT));
-        for model in fits {
-            check!(action == identify, "{case}");
-            action = procedure.next(fitted(model, false));
+        for input in inputs {
+            action = procedure.next(input);
         }
         check!(action == end, "{case}");
     }

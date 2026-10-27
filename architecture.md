@@ -784,7 +784,14 @@ ultimate point, then a search) stays selectable.
     range's top on every row, and the steps cost about 19k simulated controller ticks between
     two flight ticks, the margin up to 18 sweeps of the grid, about 7.5k frequency points
     (#517). The design runs on a log-spaced grid from 0.1 rad/s to Nyquist, each crossing
-    refined by bisection. A design stage commits its gains without steps.
+    refined by bisection. A design stage commits its gains without steps, once the vehicle
+    holds the settle about the loop's axis on them (0.5 s within the settle timeout); a design
+    that doesn't, or breaches the envelope, goes back and the axis is fitted again, as an
+    unusable fit is. In RealFlight, fits reading 8 and 19 rad/s² against 25–71 designed pitch
+    rate P 3.93 and 2.30, which rang at 0.6 rad/s on pitch and kept the stages after them
+    from settling (#518). Only the loop's axis counts, since the other may still ring on its
+    start gains. A ceiling on the designed P can't tell those apart: healthy sim designs reach
+    P 4.66 (`quad_x` clean), and 31× a low start.
   * *Search* (`SearchPlan::copter_seeded`, after every loop is designed): the step search
     from the design, P bracketed from it in either direction; no relay, since the design set
     D. Designing everything first keeps a loop still on its start gains from ringing through
@@ -798,7 +805,7 @@ ultimate point, then a search) stays selectable.
     no more late ticks than the good ones. The search keeps only gains whose steps passed, so
     a bad fit costs bracket points rather than a bad tune.
   * On the sim, every clean, 10 ms, and 25 ms row of the three airframes from both starts
-    passes in 148–379 s (`robustness`); in the same sweep the search from the start gains took
+    passes in 152–380 s (`robustness`); in the same sweep the search from the start gains took
     308–693 s on the 12 rows it passes and failed the 6 high starts with delay to settle.
   * Rejected, from the same sweep
     ([`autotune_methods`](crates/stable-flight-sim/tests/autotune_methods.rs)): PX4's pole
