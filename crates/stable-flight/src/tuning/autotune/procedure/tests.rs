@@ -348,21 +348,45 @@ fn design_fits_then_finishes_with_the_designed_gains() {
     }
 }
 
-/// A fit the design can't use fails the stage with the design's error; an aborted fit with
-/// the probe's.
+/// A fit the design can't use runs again, the third failing the stage with the design's
+/// error; an aborted fit fails it with the probe's.
 #[test]
 fn design_fails_on_an_unusable_fit() {
     let plan = DesignPlan::copter();
+    let identify = Action::probe(ProbeConfig::Identify(plan.identify));
     let no_lag = RateModel {
         rate_weights: [1.0, 0.0],
         ..QUAD_X_FIT
     };
-    let mut procedure = Procedure::new(Method::Design(plan));
-    procedure.next(Input::start(CURRENT));
-    check!(
-        procedure.next(fitted(no_lag, false))
-            == Action::Fail(AutotuneAbort::Design(DesignError::NotALag))
-    );
+    let rate = design_rate(&QUAD_X_FIT, CURRENT, &plan.design).expect("rate gains");
+    // (case, fits, end)
+    let rows = [
+        (
+            "an unusable fit, then a usable one",
+            vec![no_lag, QUAD_X_FIT],
+            Action::Finish {
+                gains: rate,
+                outcome: Outcome::Tuned,
+                steps: None,
+                baseline: None,
+            },
+        ),
+        ("two unusable fits", vec![no_lag, no_lag], identify),
+        (
+            "three unusable fits",
+            vec![no_lag, no_lag, no_lag],
+            Action::Fail(AutotuneAbort::Design(DesignError::NotALag)),
+        ),
+    ];
+    for (case, fits, end) in rows {
+        let mut procedure = Procedure::new(Method::Design(plan));
+        let mut action = procedure.next(Input::start(CURRENT));
+        for model in fits {
+            check!(action == identify, "{case}");
+            action = procedure.next(fitted(model, false));
+        }
+        check!(action == end, "{case}");
+    }
 
     let abort = ProbeAbort::Identify(IdentifyAbort::Unexcited);
     let mut procedure = Procedure::new(Method::Design(plan));

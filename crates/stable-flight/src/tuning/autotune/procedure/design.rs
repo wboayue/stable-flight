@@ -5,7 +5,13 @@ use crate::controllers::Gains;
 use crate::tuning::autotune::{AutotuneAbort, DesignPlan, Outcome};
 use crate::tuning::{Measurement, ProbeConfig};
 
-/// A [`DesignPlan`] as a pure state machine: a fit, then the gains designed from it.
+/// Fits the design can't use a design stage may take before it fails: on QuadCopterX in
+/// RealFlight a fit with a negative acceleration came up in 4 of 10 runs, never twice in a
+/// stage (#518).
+const MAX_UNUSABLE_FITS: usize = 3;
+
+/// A [`DesignPlan`] as a pure state machine: a fit, then the gains designed from it. A fit
+/// the design can't use runs again, up to [`MAX_UNUSABLE_FITS`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::tuning::autotune) struct Design {
     plan: DesignPlan,
@@ -13,6 +19,8 @@ pub(in crate::tuning::autotune) struct Design {
     inner: Option<Gains>,
     /// Fits a slow host stopped in a row.
     stops: usize,
+    /// Fits the design couldn't use.
+    unusable: usize,
 }
 
 impl Design {
@@ -21,6 +29,7 @@ impl Design {
             plan,
             inner: None,
             stops: 0,
+            unusable: 0,
         }
     }
 
@@ -43,7 +52,14 @@ impl Design {
                     steps: None,
                     baseline: None,
                 },
-                Err(error) => Action::Fail(AutotuneAbort::Design(error)),
+                Err(error) => {
+                    self.unusable += 1;
+                    if self.unusable >= MAX_UNUSABLE_FITS {
+                        Action::Fail(AutotuneAbort::Design(error))
+                    } else {
+                        Action::probe(identify)
+                    }
+                }
             },
             // The fit's timing can't be trusted, or nothing was fitted.
             Input::Measured {
