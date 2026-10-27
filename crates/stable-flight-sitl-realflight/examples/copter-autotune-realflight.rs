@@ -477,6 +477,10 @@ fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
             "autotune: {target:?} start above the search's max, lowered to {}",
             format_gains(gains)
         ),
+        AutotuneEvent::Unsettled { target, gains } => warn!(
+            "autotune: {target:?} design {} didn't settle; fitting again",
+            format_gains(gains)
+        ),
         AutotuneEvent::StageFailed { target, reason } => {
             warn!("autotune: {target:?} failed: {reason:?}; the last kept gains fly");
         }

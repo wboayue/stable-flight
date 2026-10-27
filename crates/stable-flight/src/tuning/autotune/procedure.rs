@@ -41,9 +41,12 @@ pub(super) enum Input {
     Stalled { gains: Gains },
     /// A probe gave up; `gains` are the loop's committed gains.
     Aborted { abort: ProbeAbort, gains: Gains },
-    /// A probe on candidate gains took the vehicle past the envelope; `gains` are the
-    /// loop's committed gains, back in place.
+    /// A probe or a hold on candidate gains took the vehicle past the envelope; `gains` are
+    /// the loop's committed gains, back in place.
     Breached { reason: AutotuneAbort, gains: Gains },
+    /// A hold ended: `settled` when the vehicle held the settle on the candidate, which still
+    /// flies; else it timed out and the committed `gains` are back.
+    Held { settled: bool, gains: Gains },
 }
 
 #[cfg(test)]
@@ -81,6 +84,9 @@ pub(super) enum Action {
         steps: Option<StepSummary>,
         baseline: Option<StepSummary>,
     },
+    /// Fly `gains` until the stage's axis holds the settle on them, or the settle timeout;
+    /// [`Input::Held`] reports which.
+    Hold { gains: Gains },
     /// End the run: the stage can't go on.
     Fail(AutotuneAbort),
 }
@@ -151,7 +157,9 @@ impl Procedure {
                 Input::Stalled { .. } => measure_again(stops, ProbeConfig::Relay(plan.relay)),
                 Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
                 Input::Breached { reason, .. } => Action::Fail(reason),
-                Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
+                Input::Measured { .. } | Input::Held { .. } => {
+                    Action::Fail(AutotuneAbort::Interrupted)
+                }
             },
             Self::StepTest(pairs) => match input {
                 Input::Start { .. } => Action::probe(pairs.probe()),
@@ -175,7 +183,9 @@ impl Procedure {
                 },
                 Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
                 Input::Breached { reason, .. } => Action::Fail(reason),
-                Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
+                Input::Measured { .. } | Input::Held { .. } => {
+                    Action::Fail(AutotuneAbort::Interrupted)
+                }
             },
             Self::Search(search) => search.next(input),
             Self::Design(design) => design.next(input),

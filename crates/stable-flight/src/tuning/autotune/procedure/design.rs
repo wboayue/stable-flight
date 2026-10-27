@@ -10,16 +10,19 @@ use crate::tuning::{Measurement, ProbeConfig};
 /// stage (#518).
 const MAX_UNUSABLE_FITS: usize = 3;
 
-/// A [`DesignPlan`] as a pure state machine: a fit, then the gains designed from it. A fit
-/// the design can't use runs again, up to [`MAX_UNUSABLE_FITS`].
+/// A [`DesignPlan`] as a pure state machine: a fit, the gains designed from it, then a hold
+/// on them. A fit the design can't use, or whose design doesn't hold, runs again, up to
+/// [`MAX_UNUSABLE_FITS`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::tuning::autotune) struct Design {
     plan: DesignPlan,
     /// The rate loop's gains under an angle loop (`None` for a rate loop).
     inner: Option<Gains>,
+    /// The design on hold.
+    designed: Gains,
     /// Fits a slow host stopped in a row.
     stops: usize,
-    /// Fits the design couldn't use.
+    /// Fits the design couldn't use, or whose design didn't hold.
     unusable: usize,
 }
 
@@ -28,6 +31,7 @@ impl Design {
         Self {
             plan,
             inner: None,
+            designed: Gains::default(),
             stops: 0,
             unusable: 0,
         }
@@ -49,20 +53,11 @@ impl Design {
                 // A fit that ran clears the slow host's count: only stalls in a row fail.
                 self.stops = 0;
                 match self.plan.gains(&model, gains, self.inner) {
-                    Ok(gains) => Action::Finish {
-                        gains,
-                        outcome: Outcome::Designed,
-                        steps: None,
-                        baseline: None,
-                    },
-                    Err(error) => {
-                        self.unusable += 1;
-                        if self.unusable >= MAX_UNUSABLE_FITS {
-                            Action::Fail(AutotuneAbort::Design(error))
-                        } else {
-                            Action::probe(identify)
-                        }
+                    Ok(designed) => {
+                        self.designed = designed;
+                        Action::Hold { gains: designed }
                     }
+                    Err(error) => self.refit(AutotuneAbort::Design(error)),
                 }
             }
             // The fit's timing can't be trusted, or nothing was fitted.
@@ -72,9 +67,30 @@ impl Design {
                 ..
             }
             | Input::Stalled { .. } => measure_again(&mut self.stops, identify),
+            Input::Held { settled: true, .. } => Action::Finish {
+                gains: self.designed,
+                outcome: Outcome::Designed,
+                steps: None,
+                baseline: None,
+            },
+            // A design that rings or breaches came from a fit that misread the axis: on
+            // QuadCopterX in RealFlight, fits reading 8 and 19 rad/s² against 25–71 designed
+            // pitch rate P 3.93 and 2.30, which rang at 0.6 rad/s and kept the stages after
+            // them from settling (#518).
+            Input::Held { settled: false, .. } => self.refit(AutotuneAbort::NotSettled),
+            Input::Breached { reason, .. } => self.refit(reason),
             Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
-            Input::Breached { reason, .. } => Action::Fail(reason),
             Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
+        }
+    }
+
+    /// Counts an unusable fit: fit again, or fail with `abort` at [`MAX_UNUSABLE_FITS`].
+    fn refit(&mut self, abort: AutotuneAbort) -> Action {
+        self.unusable += 1;
+        if self.unusable >= MAX_UNUSABLE_FITS {
+            Action::Fail(abort)
+        } else {
+            Action::probe(ProbeConfig::Identify(self.plan.identify))
         }
     }
 }
