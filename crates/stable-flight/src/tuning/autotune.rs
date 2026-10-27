@@ -485,13 +485,18 @@ impl RelayPlan {
 ///    it stays if nothing better passes or the stage fails. A start whose steps abort or keep
 ///    clipping leaves no baseline.
 /// 3. **Bracket** from the seed's gain: `× factor` per point while points pass, up to `max`;
-///    `÷ factor` while they fail, down to `min` (nothing passing: the start gains stay). A
+///    `÷ factor` while they fail, down to `min` (nothing passing: see below). A
 ///    point passes when `confirm` pairs in a row pass, so one lucky pair near a sharp limit
 ///    doesn't (ArduPilot's `ignore_next`); the first failing pair fails it.
 /// 4. **Bisect** (geometric mean) until the bracket is within `resolution`.
 /// 5. **Verify** `margin ×` the largest pass with `test.pairs` pairs, and keep it only if it
 ///    passes [`Acceptance`] against a baseline that met the criterion, or, without one, meets
-///    the criterion itself; else the start gains stay.
+///    the criterion itself.
+///
+/// A search that keeps no result keeps its start gains if their steps met the criterion, and
+/// otherwise puts back the loop's gains at the run's start ([`Autotune::start`]): a start the
+/// search was seeded with (a design) that never passed
+/// doesn't outlive it. A start lowered to `max` stays lowered.
 ///
 /// A pair is judged on its two steps' means, so a trim offset doesn't bias it. A step that
 /// aborts (reversed or runaway) fails its pair, as do `test.max_invalid` clipped steps in a
