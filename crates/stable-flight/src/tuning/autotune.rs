@@ -1306,6 +1306,13 @@ struct Request {
 }
 
 impl Request {
+    /// Whether the probe starts at the settle timeout rather than fail the stage: a relay
+    /// replaces the loop's output (#375), and a fit only gains excitation from the ringing
+    /// (#356).
+    fn starts_anyway(&self) -> bool {
+        matches!(self.probe, ProbeConfig::Relay(_) | ProbeConfig::Identify(_))
+    }
+
     /// Whether the probe is a fit, which runs through a slow host: a fit at 223 Hz on the sim
     /// (the physics 12% slower than the ticks claim) designs rate P 5–13% lower, and the
     /// search climbs from the design (#524).
@@ -1337,8 +1344,9 @@ impl Request {
 ///   design stage holds its design instead: it goes in at once and stays only if the vehicle
 ///   settles about the loop's axis on it.
 /// - **Stalls:** [`note_stall`](Self::note_stall) (a freeze) marks the running probe's
-///   measurement as untimely, and breaches for [`Envelope::recovery_s`] after it don't count:
-///   the vehicle moved while the host saw nothing. A step test runs that step again. While the
+///   measurement as untimely, and breaches for [`Envelope::recovery_s`] after it fail nothing:
+///   the vehicle moved while the host saw nothing. A candidate or a held design still comes
+///   out on one, as a stall. A step test runs that step again. While the
 ///   host is slow ([`set_host_slow`](Self::set_host_slow)), the running probe stops at once (a
 ///   step held for its ticks at half the tick rate would tilt twice as far) and counts as
 ///   stalled, and settling waits: it gains no level time and doesn't time out. A design
@@ -1530,27 +1538,37 @@ impl Autotune {
         let motion = Motion::of(flight_loop.state());
         self.recovering_s = (self.recovering_s - dt).max(0.0);
         self.frozen_s = (self.frozen_s - dt).max(0.0);
-        // A freeze's breach is the loop catching up with what the vehicle did unseen: on
-        // QuadCopterX in RealFlight, 0.47 s of the same state came back at −19° pitch, and the
-        // recovery peaked at 4.08 rad/s (#524).
-        if self.frozen_s <= 0.0
-            && let Some(stage) = self.phase.active_stage()
+        if let Some(stage) = self.phase.active_stage()
             && let Some(reason) = self.envelope.breach(&motion, self.start_altitude_m)
         {
+            // A breach after a freeze is the loop catching up with what the vehicle did
+            // unseen: on QuadCopterX in RealFlight, 0.47 s of the same state came back at −19°
+            // pitch, and the recovery peaked at 4.08 rad/s (#524). It fails nothing, but a
+            // candidate or a held design still comes out, as a stall: unjudged, run again.
+            let frozen = self.frozen_s > 0.0;
+            let on = if frozen {
+                Decide::Stalled
+            } else {
+                Decide::Breached { reason }
+            };
+            let stalled = frozen.then(|| AutotuneEvent::Stalled {
+                target: self.target(stage),
+                measurement: None,
+            });
             // A candidate's breach fails the candidate; the committed gains get time to
             // recover from it before a breach fails the stage.
             if let Phase::Probing {
                 candidate: true, ..
             } = self.phase
             {
-                self.end_probe(flight_loop, stage, true, Decide::Breached { reason });
-                return None;
+                self.end_probe(flight_loop, stage, true, on);
+                return stalled;
             }
             if let Phase::Holding { .. } = self.phase {
-                self.end_hold(flight_loop, stage, Decide::Breached { reason });
-                return None;
+                self.end_hold(flight_loop, stage, on);
+                return stalled;
             }
-            if self.recovering_s <= 0.0 {
+            if !frozen && self.recovering_s <= 0.0 {
                 return Some(self.fail(flight_loop, stage, reason));
             }
         }
@@ -1785,13 +1803,9 @@ impl Autotune {
         waited_s: f32,
     ) -> Option<AutotuneEvent> {
         let settle = self.settle_for(stage);
-        let starts_anyway = matches!(
-            request.probe,
-            ProbeConfig::Relay(_) | ProbeConfig::Identify(_)
-        );
         let level_s = if settle.holds(motion) { level_s } else { 0.0 };
         let timed_out = waited_s >= self.envelope.settle_timeout_s;
-        if level_s >= settle.hold_s || (starts_anyway && timed_out) {
+        if level_s >= settle.hold_s || (request.starts_anyway() && timed_out) {
             if let Some(gains) = request.gains
                 && self.set_gains(flight_loop, stage, gains).is_none()
             {
@@ -1820,8 +1834,8 @@ impl Autotune {
     }
 
     /// Checks the running probe: a measurement or an abort goes to the procedure on the next
-    /// update (a stalled probe's abort as a stall), after a candidate's gains go back to the committed ones; a stopped probe fails
-    /// the run.
+    /// update (a stalled probe's abort as a stall), after a candidate's gains go back to the
+    /// committed ones; a stopped probe fails the run.
     fn poll_probe<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
