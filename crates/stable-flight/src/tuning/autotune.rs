@@ -835,8 +835,8 @@ fn no_worse(base: Option<f32>, value: Option<f32>, limit: impl FnOnce(f32) -> f3
 ///    timeout even when the vehicle hasn't settled: a loop that rings on its start gains only
 ///    adds excitation (#356). A slow host may stop it 3 times in a row before the stage fails.
 /// 2. **Design:** a rate loop's gains by [`design_rate`]; an angle loop's P by
-///    [`design_angle_p`] on the rate loop's committed gains, its I and D kept. A design error
-///    fails the stage ([`AutotuneAbort::Design`]). The design flies from then on, but a
+///    [`design_angle_p`] on the rate loop's committed gains, its I and D kept. A fit the design
+///    can't use runs again; the third fails the stage ([`AutotuneAbort::Design`]). The design flies from then on, but a
 ///    failure before its loop's search finishes puts the loop's earlier gains back.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DesignPlan {
