@@ -836,8 +836,9 @@ fn no_worse(base: Option<f32>, value: Option<f32>, limit: impl FnOnce(f32) -> f3
 ///    adds excitation (#356). A slow host may stop it 3 times in a row before the stage fails.
 /// 2. **Design:** a rate loop's gains by [`design_rate`]; an angle loop's P by
 ///    [`design_angle_p`] on the rate loop's committed gains, its I and D kept. A fit the design
-///    can't use runs again; the third fails the stage ([`AutotuneAbort::Design`]). The design flies from then on, but a
-///    failure before its loop's search finishes puts the loop's earlier gains back.
+///    can't use runs again; the third fails the stage ([`AutotuneAbort::Design`]). The
+///    design flies from then on ([`Outcome::Designed`]), but a failure before its loop's
+///    search finishes puts the loop's earlier gains back.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DesignPlan {
     /// The excitation and fit.
@@ -1101,7 +1102,7 @@ pub enum AutotuneEvent {
         /// The gains committed.
         gains: Gains,
     },
-    /// A stage failed: the config went back to the last kept one (earlier stages stay, but
+    /// A stage failed: the config went back to the last kept one (earlier stages stay, except
     /// designs not yet searched), and the run ends.
     StageFailed {
         /// The loop the stage was for.
@@ -1123,6 +1124,9 @@ pub enum Outcome {
     Tuned,
     /// Measured only; they didn't change.
     Measured,
+    /// Designed from a fit: they fly, but a failure puts the loop's kept gains back until its
+    /// search finishes ([`Method::Design`]).
+    Designed,
     /// Kept no result: the start gains, or the run's ([`SearchPlan`]).
     Kept(KeepReason),
 }
@@ -1830,12 +1834,8 @@ impl Autotune {
             return self.fail(flight_loop, stage, AutotuneAbort::Rejected);
         };
         self.committed = Some(config);
-        let target = self.target(stage);
-        if !matches!(
-            self.stage(stage).map(|plan| plan.method),
-            Some(Method::Design(_))
-        ) {
-            self.keep(target, gains);
+        if outcome != Outcome::Designed {
+            self.keep(self.target(stage), gains);
         }
         self.phase = if stage + 1 < self.stages {
             Phase::Starting { stage: stage + 1 }

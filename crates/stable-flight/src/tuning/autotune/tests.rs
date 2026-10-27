@@ -1397,7 +1397,12 @@ fn copter_design_search_designs_then_searches_every_loop() {
     let tuned = *flight_loop.stabilizer().config();
     for (index, (target, gains, outcome, stepped)) in done.into_iter().enumerate() {
         let search = index >= 4;
-        check!(outcome == Outcome::Tuned, "stage {index}: {target:?}");
+        let expected = if search {
+            Outcome::Tuned
+        } else {
+            Outcome::Designed
+        };
+        check!(outcome == expected, "stage {index}: {target:?}");
         check!(stepped == search, "stage {index}: {target:?}");
         check!(
             gains != target.gains(&start),

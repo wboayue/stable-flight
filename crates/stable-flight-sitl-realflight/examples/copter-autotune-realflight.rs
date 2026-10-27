@@ -4,7 +4,8 @@
 //! from a 3 s square wave on its angle loop (the fit logged: delay, motor lag, acceleration)
 //! and its gains designed from the fit; once every loop is designed, each loop's P is searched
 //! by pairs of steps from its design, verified, and kept only if no worse than the design
-//! (each judgment logged with its steps). On completion it logs baseline vs verify per loop and
+//! (each judgment logged with its steps); a design whose own steps miss the criterion gives
+//! way to the loop's start gains. On completion it logs baseline vs verify per loop and
 //! prints the tuned config as an `airframes.rs` snippet. A failed stage (envelope breach, too
 //! many invalid steps, a fit the design can't use) keeps the searched loops and puts back the
 //! rest.

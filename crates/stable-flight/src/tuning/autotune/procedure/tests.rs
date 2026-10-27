@@ -339,7 +339,7 @@ fn design_fits_then_finishes_with_the_designed_gains() {
             procedure.next(fitted(QUAD_X_FIT, false))
                 == Action::Finish {
                     gains: designed,
-                    outcome: Outcome::Tuned,
+                    outcome: Outcome::Designed,
                     steps: None,
                     baseline: None,
                 },
@@ -366,7 +366,7 @@ fn design_fails_on_an_unusable_fit() {
             vec![no_lag, QUAD_X_FIT],
             Action::Finish {
                 gains: rate,
-                outcome: Outcome::Tuned,
+                outcome: Outcome::Designed,
                 steps: None,
                 baseline: None,
             },
@@ -417,4 +417,31 @@ fn design_fits_again_after_a_stall() {
     check!(
         procedure.next(Input::Stalled { gains: CURRENT }) == Action::Fail(AutotuneAbort::Stalled)
     );
+}
+
+/// A fit that ran, even one the design can't use, clears the stall count: stalls fail the
+/// stage only in a row.
+#[test]
+fn design_counts_only_stalls_in_a_row() {
+    let plan = DesignPlan::copter();
+    let identify = Action::probe(ProbeConfig::Identify(plan.identify));
+    let no_lag = RateModel {
+        rate_weights: [1.0, 0.0],
+        ..QUAD_X_FIT
+    };
+    let mut procedure = Procedure::new(Method::Design(plan));
+    procedure.next(Input::start(CURRENT));
+    for stop in 1..MAX_MEASURE_STOPS {
+        check!(
+            procedure.next(Input::Stalled { gains: CURRENT }) == identify,
+            "stop {stop}"
+        );
+    }
+    check!(procedure.next(fitted(no_lag, false)) == identify);
+    for stop in 1..MAX_MEASURE_STOPS {
+        check!(
+            procedure.next(Input::Stalled { gains: CURRENT }) == identify,
+            "stop {stop} after the fit"
+        );
+    }
 }
