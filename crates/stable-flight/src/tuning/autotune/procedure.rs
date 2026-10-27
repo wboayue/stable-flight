@@ -6,13 +6,11 @@ use crate::tuning::{Measurement, ProbeAbort, ProbeConfig, StepMetrics, StepSumma
 
 use design::Design;
 use search::Search;
-use verify::Verify;
 
 mod design;
 mod search;
 #[cfg(test)]
 mod tests;
-mod verify;
 
 /// Relays or fits in a row a slow host may stop before the stage fails: the step tests' clip
 /// budget (`StepTestPlan::max_invalid`), as a search's relay leg retries.
@@ -109,6 +107,10 @@ pub(super) struct Verdict {
 /// A stage's method as a pure state machine: fed what happened, it returns what to do next.
 /// It never sees the flight loop; the supervisor settles, probes, guards the envelope, and
 /// commits, so a procedure is tested by feeding it inputs.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "one per run, replaced between stages; the core has no allocator to box with"
+)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Procedure {
     /// One relay measurement, then the rule's gains; `stops` counts relays a slow host
@@ -120,8 +122,6 @@ pub(super) enum Procedure {
     Search(Search),
     /// A fit, then the gains designed from it.
     Design(Design),
-    /// Steps on the committed gains, against the run's start when they miss.
-    Verify(Verify),
 }
 
 impl Procedure {
@@ -131,7 +131,6 @@ impl Procedure {
             Method::StepTest(plan) => Self::StepTest(Pairs::new(plan, plan.pairs)),
             Method::Search(plan) => Self::Search(Search::new(plan)),
             Method::Design(plan) => Self::Design(Design::new(plan)),
-            Method::Verify(plan) => Self::Verify(Verify::new(plan)),
         }
     }
 
@@ -180,7 +179,6 @@ impl Procedure {
             },
             Self::Search(search) => search.next(input),
             Self::Design(design) => design.next(input),
-            Self::Verify(verify) => verify.next(input),
         }
     }
 
@@ -188,7 +186,6 @@ impl Procedure {
     pub(super) fn take_verdict(&mut self) -> Option<Verdict> {
         match self {
             Self::Search(search) => search.take_verdict(),
-            Self::Verify(verify) => verify.take_verdict(),
             Self::Relay { .. } | Self::StepTest(_) | Self::Design(_) => None,
         }
     }

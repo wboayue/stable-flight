@@ -348,6 +348,34 @@ fn a_start_that_never_passed_gives_way_to_the_run_start() {
     }
 }
 
+/// A start above `max` is lowered and committed either way, but only the run's own start stays
+/// lowered when nothing passes; a seeded start (a design) gives way to the run's start.
+#[test]
+fn only_the_runs_own_start_stays_lowered() {
+    let plan = SearchPlan {
+        max: START.d / 2.0,
+        ..d_plan()
+    };
+    let lowered = Gains {
+        d: plan.max,
+        ..START
+    };
+    let run_start = Gains { d: 0.002, ..START };
+    // (case, run's start, kept)
+    let rows = [
+        ("the run's own start", START, lowered),
+        ("a seeded start", run_start, run_start),
+    ];
+    for (case, run_start, kept) in rows {
+        let run = drive_from(plan, run_start, no_relays, |_| Some(metrics(0.0, 1.0)));
+        check!(run.committed == [lowered], "{case}");
+        check!(
+            finished(&run) == (kept, Outcome::Kept(KeepReason::NoPass)),
+            "{case}"
+        );
+    }
+}
+
 /// The rate P search runs its relay first: the rule's D and P seed it (the bracket starts at
 /// the rule's P, the baseline flies the start gains and isn't a bracket point), and it never
 /// tries above `ceiling · Ku`.

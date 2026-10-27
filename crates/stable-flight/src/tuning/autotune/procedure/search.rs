@@ -16,7 +16,7 @@ pub(in crate::tuning::autotune) struct Search {
     /// The loop's gains at the stage's start.
     start: Gains,
     /// What stays when the search keeps no result and the start's steps missed the criterion:
-    /// the loop's gains at the run's start, or a start lowered to `max`.
+    /// the loop's gains at the run's start, lowered to `max` when the stage starts from them.
     fallback: Gains,
     /// The gains candidates change one term of: the relay rule's, or `start`.
     seed: Gains,
@@ -145,8 +145,12 @@ impl Search {
     /// and never settle (#375). Those gains are what stays if nothing better passes.
     fn baseline(&mut self) -> Action {
         if self.plan.term.get(self.start) > self.max {
-            self.start = self.with(self.plan.term.get(self.seed).min(self.max));
-            self.fallback = self.start;
+            let lowered = self.with(self.plan.term.get(self.seed).min(self.max));
+            // The run's own start too high to fly stays lowered; a seeded start goes back to it.
+            if self.fallback == self.start {
+                self.fallback = lowered;
+            }
+            self.start = lowered;
             return match self.advance() {
                 Action::Probe { probe, gains, .. } => Action::Probe {
                     probe,

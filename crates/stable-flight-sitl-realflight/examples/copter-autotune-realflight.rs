@@ -1,12 +1,13 @@
 //! Autotunes a multirotor in RealFlight: climbs to the hover script's waypoint,
-//! tunes roll and pitch rate, then roll and pitch angle, by loop shaping, lands, and disarms
-//! (`StagePlan::copter_loop_shaping`, `architecture.md#autotune`). Each loop's axis is fitted
+//! tunes roll and pitch rate, then roll and pitch angle, by design search, lands, and disarms
+//! (`StagePlan::copter_design_search`, `architecture.md#autotune`). Each loop's axis is fitted
 //! from a 3 s square wave on its angle loop (the fit logged: delay, motor lag, acceleration)
-//! and its gains designed from the fit; once every loop is designed, each is verified by pairs
-//! of steps and kept unless it flies worse than its gains at the start (each judgment logged
-//! with its steps). On completion it logs the verify (and any baseline) per loop and prints the
-//! tuned config as an `airframes.rs` snippet. A failed stage (envelope breach, too many invalid
-//! steps, a fit the design can't use) keeps the stages before it.
+//! and its gains designed from the fit; once every loop is designed, each loop's P is searched
+//! by pairs of steps from its design, verified, and kept only if no worse than the design
+//! (each judgment logged with its steps). On completion it logs baseline vs verify per loop and
+//! prints the tuned config as an `airframes.rs` snippet. A failed stage (envelope breach, too
+//! many invalid steps, a fit the design can't use) keeps the searched loops and puts back the
+//! rest.
 //!
 //! `--stages search` runs the step-response search instead (`StagePlan::copter_search`): per
 //! rate loop a relay sets D and caps P; per loop P is searched by pairs of steps, verified, and
@@ -117,7 +118,7 @@ struct Args {
     rate_p_scale: f32,
 
     /// Which loops to tune.
-    #[arg(long, value_enum, default_value_t = Stages::LoopShaping)]
+    #[arg(long, value_enum, default_value_t = Stages::DesignSearch)]
     stages: Stages,
 
     /// After tuning, step-tests roll and pitch rate and angle and logs their responses.
@@ -179,8 +180,9 @@ impl Model {
 /// `--stages`.
 #[derive(Clone, Copy, ValueEnum)]
 enum Stages {
-    /// Roll and pitch rate, then angle, designed from a fit of each axis, then verified.
-    LoopShaping,
+    /// Roll and pitch rate, then angle, designed from a fit of each axis, then searched from
+    /// the design.
+    DesignSearch,
     /// Roll and pitch rate, then angle, by step-response search (relay D, searched P).
     Search,
     /// None: the hand tune (with `--step-test`, to measure it).
@@ -213,7 +215,7 @@ impl Stages {
             Stages::Rate => rate.collect(),
             Stages::Angle => angle.collect(),
             Stages::All => rate.chain(angle).collect(),
-            Stages::LoopShaping => StagePlan::copter_loop_shaping().into(),
+            Stages::DesignSearch => StagePlan::copter_design_search().into(),
             Stages::Search => StagePlan::copter_search().into(),
         }
     }

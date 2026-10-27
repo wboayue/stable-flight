@@ -129,8 +129,8 @@ cargo run -p stable-flight-sitl-realflight --example tailsitter-companion-realfl
 cargo run -p stable-flight-bridge -- --vehicle-type tailsitter
 
 # Autotune: climbs to the hover point, tunes roll and pitch rate, then roll and
-# pitch angle, by loop shaping (each axis fitted from a 3 s square wave, its gains designed
-# from the fit; then each loop verified by steps and kept unless worse than its start), logs
+# pitch angle, by design search (each axis fitted from a 3 s square wave, its gains designed
+# from the fit; then each loop's P searched by steps from its design), logs
 # each fit and judgment, prints the tuned gains as an airframes.rs snippet, lands, and disarms.
 # --stages search runs the step-response search instead (per rate loop a relay sets D; P is
 # searched, verified against the start, and kept only if no worse).
