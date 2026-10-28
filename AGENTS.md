@@ -60,23 +60,16 @@ just embedded                                 # no_std check on thumbv7em-none-e
 just fw-build | fw-size | fw-bin | fw-flash   # ARK FPV firmware: release build, flash/RAM size, raw binary, USB DFU flash
 just cover                                    # tarpaulin → tarpaulin-report.html (.tarpaulin.toml)
 just bridge                                   # native link ⇄ MAVLink for QGC (--link-bind/--link-peer/--gcs/--origin/--http-bind/--http-url/--offboard-speed/--vehicle-type)
-just fly-manual                               # copter-manual-realflight: QuadCopterX from a joystick (--host, --commander extreme3d|spektrum, --record CSV)
-just fly-auto                                 # copter-auto-realflight: waypoint script (script arg, --end hold|loop|land, --record)
-just fly-companion | just link-pilot          # copter-companion-realflight flown from the link; link_pilot plays the companion
-just fly-tailsitter-companion                 # tailsitter-companion-realflight: the eXplora from the link (with just bridge --vehicle-type tailsitter + QGC: VTOL state, transition button)
-just fly-autotune                             # copter-autotune-realflight: design-search autotune of roll/pitch rate and angle, prints gains, lands (--airframe titan-cobra: its lift rotors)
-just fly-tailsitter                           # tailsitter-manual-realflight: eXplora hover, transitions, plane from a joystick (D-pad Right plane, Left copter, Up rate; --record CSV)
-just fly-quadplane-auto                       # quadplane-auto-realflight: Titan Cobra VTOL waypoint script (default flights/cobra_hover.csv; cobra_transition_lap.csv, cobra_descent_lap.csv its lap from a 60 m hover, cobra_legs.csv, cobra_out_back.csv an uncapped leg out and back; --end, --record, --param NAME=VALUE)
-just fly-tailsitter-auto                      # tailsitter-auto-realflight: eXplora waypoint script (default flights/explora_figure_eight.csv; flights/explora_transition.csv flies plane legs, explora_transition_lap.csv one lap of them, explora_descent.csv a 60 → 20 m hover descent, explora_heading_box.csv 20 s holds at 8 headings, explora_wind_cal.csv and explora_wind_check.csv wind-estimate calibration and check holds, explora_acro.csv doublets, a roll, and a loop on plane legs; --end, --record, --param NAME=VALUE)
-just capture                                  # capture-state-realflight: joystick flight, raw SimulatorState → CSV
-just capture-xplane                           # capture-state-xplane: read-only, raw X-Plane samples → CSV while flown with X-Plane's controls (--host, --output)
-just fly-xplane-auto                          # quadplane-auto-xplane: the Alia through flights/alia_transition_lap.csv (from Oceano L52: transitions, plane legs offshore; flights/alia_descent_lap.csv its lap from a 400 m hover; --end, --record, --param NAME=VALUE)
-just fly-xplane | just fly-xplane-companion   # quadplane-manual-xplane (joystick: hover, D-pad Right plane, Left copter; --record, --param) / copter-companion-xplane (link, copter flight): the Alia 250 in X-Plane, --host for X-Plane elsewhere
-just xplane-sweep                             # engine-sweep-xplane: yaw sign per diagonal, liftoff throttle, motor lag, moment pulses on the runway
+just fly-manual | fly-auto | fly-autotune      # RealFlight QuadCopterX: joystick, waypoint script, autotune (--airframe titan-cobra)
+just fly-companion | link-pilot                # copter flown from the link; link_pilot plays the companion (or just bridge + QGC)
+just fly-tailsitter | fly-tailsitter-auto | fly-tailsitter-companion  # RealFlight eXplora: joystick, script, link
+just fly-quadplane-auto                        # RealFlight Titan Cobra: script
+just fly-xplane | fly-xplane-auto | fly-xplane-companion  # X-Plane Alia 250: joystick, script, link
+just capture | capture-xplane | xplane-sweep   # raw state → CSV (RealFlight, X-Plane); X-Plane engine sweep
 just plot <csv> <out> | just gen-figure-eight # plot_flight (a waypoint script; --record: a recorder CSV as time series), generate_figure_eight
 just tag <crate> <version> | just versions    # push a <crate>-v<version> tag; list tags
 just todo-check                               # TODO(#n) markers whose issue is closed (needs gh)
-cargo test -p stable-flight-sim               # closed-loop flights on the in-repo simulator (hover, steps, waypoints, land, failsafe, saturation, autotune, robustness, plane level flight, steps, turns, stall, maneuvers, a waypoint too steep to climb to, tailsitter hover, transitions, the hover wind estimate, quadplane hover, transitions, copter legs, the Alia's autotune, steps, and hover)
+cargo test -p stable-flight-sim               # closed-loop flights on the in-repo simulator (crates/stable-flight-sim/tests)
 cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight -- --motors 0,1 --servos 2,3  # drive raw channels, record a capture
 cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight                           # time RealFlight exchanges alone
 cargo run -p stable-flight-sitl-realflight --example surface-probe-realflight                             # quadplane surface directions in flight (Cobra)
@@ -86,7 +79,8 @@ cargo run --example joystick_events           # every gilrs event as CSV, gamepa
 ```
 
 Add `-p <crate>` to scope any command. The flight pipeline has no CLI and there is no `cargo
-bench` target.
+bench` target. `just --list` shows each recipe's flags; flight scripts are `flights/*.csv`, each
+saying in its header what it flies; the backend READMEs give each example's usage.
 
 ## Architecture
 
@@ -265,79 +259,12 @@ Related code sits together, so a reviewer reads one behavior in one place.
   contracts and covers every conformance scenario with `stable_flight::conformance_tests!`;
   known gaps stay `#[ignore]`d with a reason linking an issue.
 - PRs that change flight behavior, the link, or the bridge end with a RealFlight check.
-- **Scripted over manual:** fly test and tuning flights from a waypoint script with `--record`
-  (the `*-auto-*` examples on `flights/*.csv`, `plane-probe-xplane`), started and stopped from the
-  command line; when no script covers the check, add one to `flights/` first. Scripts are
-  relative to where the vehicle starts (0,0 at height 0: the spawn), so they fly at any field
-  (#494). Eli Field is the RealFlight check field: near sea level, and its tick rate holds
-  (Flight School held 245 Hz for a third of a lap, against three quarters at Eli Field).
-  Flight School switches camera views, for watching a flight. A script flies the
-  same route every run, so runs compare row against row, and it needs no pilot at the sticks. A
-  hold starts only once its waypoint is reached (within 3 m), so a waypoint the vehicle can't
-  reach (pinned at the tilt cap, belly into the wind) stalls the script: in wind, climb and hold
-  at headings that hold (eXplora: a wingtip into the wind), and stop runs from a watchdog (drift,
-  a floor, a timeout). Fly from a joystick only what needs one: stick modes (FBWA, acro), the
-  commanders themselves, and handling. Sticks also confound VTOL flights: a stick's throttle flies
-  a quadplane's pusher in plane and its lift rotors in copter, so a back transition hands full
-  throttle to the lift (#392), and the D-pad doesn't hold a plane request under X-Plane (#446).
-- **Setups:** `just fly-companion` + `just bridge` + QGC, or `just fly-companion` +
-  `just link-pilot` (instead of the bridge). Offboard MAVLink scripts use the bridge's UDP 14550
-  (close QGC first) and run with `uv run --no-project --with pymavlink python script.py`.
-- **Start order:** bridge and example first, then QGC. If the vehicle disappears and returns
-  under an open QGC, its virtual joystick can go silent while Arm still works: restart QGC.
-- **Signals:** examples log through `env_logger` from the environment, so run them with
-  `RUST_LOG=info` (without it they print nothing: no mode changes, no exit tick summary).
-  The companion example logs each failsafe handover (failsafe timeout 1 s). QGC's
-  throttle and `SAT_*` displays: the bridge README's `VFR_HUD` and `NAMED_VALUE_INT` rows.
-  QGC → bridge traffic: `nettop -p <bridge pid> -J bytes_in` (heartbeat only ≈ 21 B/s, joystick
-  ≈ 600 B/s). `--record` on the tailsitter examples logs setpoints, rates, moments, and
-  actuators per tick (columns: `stable_flight_sitl::recorder::TailsitterColumns`).
-- **Comparable runs:** change one knob per run, fly the same script with `--record` (transitions:
-  `flights/explora_transition_lap.csv --end land`), and report each run as a row against the
-  earlier ones. To tell whether a behavior predates a change, fly the parent commit in a throwaway
-  worktree. With `--end land` the example keeps running on the ground: stop it (below) before the
-  next run. The same settings can hand a back transition over climbing or sinking (+1.7 vs −1.3
-  m/s, #404), so fly several runs and compare runs with a matched handover. Before crediting a fix
-  with a flight behavior, fly main on the same route too, with the heading relative to the wind
-  held and reported: #476's land thrust step looked like what set off a roll cycle, but main and
-  the fix cycled alike, and the heading decided it (145° cycled, 125° never). A behavior that
-  shows in only some runs needs 3 or more per arm. `--end land` starts the landing inside the
-  follower's 0.8 m altitude acceptance, so a dip below the last waypoint shows only with `--end
-  hold` (#403).
-- **Tick rate:** screen each run's `RUST_LOG=info` log with `grep "host slow"`: the runner
-  logs each stretch under 225 Hz (over 0.5 s, until back over 240 Hz) with its start, rate, and
-  length in seconds since priming, about the recorder's `wall_s`, and the stretches' total at
-  exit. Around the event a run measures, count the `wall_s` rows per wall-clock second too, and
-  drop a run below about 245 Hz there: each tick advances every `dt`-based clock by the
-  nominal 4 ms, so at 170 Hz a 3 m/s descent target moves at 2 m/s (#405). A release build
-  (`cargo run --release ...`) skips less but doesn't stop it. RealFlight flips between 250 Hz
-  and the Mac display's refresh rate (about 120 Hz on ProMotion) on its own, for either build
-  and any model, and stays there while its window is covered (#447, #438; sitl-realflight
-  README **Timing**). Minimized, it has nothing to render and holds 240–250 Hz: minimize it
-  for scripted runs (restore it only to watch), alternate the builds being compared, and
-  screen every run before blaming one.
-- **Explaining a trace:** before suspecting a bug, replay the recorder CSV through the real
-  component (state rebuilt from the view angles, nominal `dt` per tick) and compare its output
-  with the recorded setpoint; the hover guidance reproduces it exactly (#405).
+- **Before any simulator run, or reading one's CSV or log, follow
+  [`.claude/skills/flight-check`](.claude/skills/flight-check/SKILL.md):** scripted runs,
+  tick-rate screening, comparable runs, stopping, and per-simulator setup. The measured facts
+  behind it are in [`docs/findings/`](docs/findings/README.md).
 - A setting that depends on a model gap listed in the `stable-flight-sim` README's **Limits**
   needs a RealFlight flight; the sim passing it isn't enough.
-- **Stopping:** Ctrl-C or SIGTERM (`ShutdownSignal`), so `RealFlightVehicle` hands RC back to
-  RealFlight. A kill leaves "Preexisting controller reference" on the next run and truncates
-  capture CSVs.
-- **X-Plane:** a `CMND` of `sim/operation/reset_flight` to UDP 49000 puts the aircraft back at
-  its flight start, where scripts are anchored; send it before every run, since a run left on
-  its last landing has drained batteries and leftover state; `capture-state-xplane` reads where it is
-  without taking control. Fly plane legs over water (`flights/alia_transition_lap.csv` starts
-  at Oceano, L52): a plane leg that passes its waypoint off altitude loiters on it until at
-  its altitude, which can add minutes to a lap (the Alia's 136 m short climb waited 193 s,
-  #451), so give a watchdog's timeout that margin. A sinking one falls back to
-  a hover below the Alia's `TRAN_FW_MIN_HGT` (20 m above arming).
-  Copter legs turn the nose along the leg as they fly it (`GUID_YAW_SLEW`), so start a route
-  with a climb over the spawn, which turns nothing on the ground.
-- **Disconnects:** flight examples reconnect on their own and log "Reconnected to RealFlight"
-  (`capture-state-realflight` doesn't). The runner drops time lost to a stall over 100 ms, so
-  heavy skipping (`ticks skipped` in its exit log) slows every `dt`-based clock (**Tick
-  rate** above).
 
 ## Commits, PRs, and releases
 
@@ -363,15 +290,8 @@ Related code sits together, so a reviewer reads one behavior in one place.
   PRs only, no force-push or deletion, and the `test`, `lint`, `msrv`, and `embedded` jobs of the `test`
   workflow must pass. Rewriting published history needs the ruleset off briefly, on the owner's
   explicit go only.
-- Before merging right after a push, confirm a completed run for the PR's head commit
-  (`gh run list --commit $(gh pr view <n> --json headRefOid -q .headRefOid)`); `gh pr checks
-  --watch` returns at once if GitHub hasn't registered the checks yet.
-- CI runs only on PRs based on `main`, so only the bottom of a PR stack gets checks. To merge it:
-  record the parent's tip SHA; **retarget the child to `main` first** (`gh pr edit <child>
-  --base main`; merging with `--delete-branch` closes PRs still based on the parent, for good
-  once their head is force-pushed); merge the parent; then from the top of the stack
-  `git rebase --update-refs --onto main <old-parent-sha>` and `git push --force-with-lease`
-  each branch.
+- Merging, including the bottom of a PR stack (CI runs only on PRs based on `main`):
+  [`.claude/skills/merge-pr`](.claude/skills/merge-pr/SKILL.md).
 - Pass PR bodies to `gh pr create`/`edit` with `--body-file` (inline heredocs in `$(…)` break on
   apostrophes).
 - **Docs follow the code in the same PR.** Each fact has one home; others link to it:
@@ -385,6 +305,8 @@ Related code sits together, so a reviewer reads one behavior in one place.
   - `docs/glossary.md`: control and airframe terms, one definition each;
   - `docs/tuning/`: how to tune an airframe type (order, knobs and params, symptoms, a worked
     example); the airframe code holds the values and the flights behind them;
+  - `docs/findings/`: measured simulator and flight facts, one per file, with their data;
+  - `.claude/skills/`: procedures run on demand (flight checks, merging, releasing);
   - core rustdoc: the frame contract (`VehicleState`) and timing contract (`Vehicle`).
 - **Status claims match what has flown.** When that changes (a new airframe, simulator, board,
   or published crate), update in the same PR: the root README **Status** and its tables, the
@@ -399,16 +321,7 @@ Related code sits together, so a reviewer reads one behavior in one place.
 - **New published crate:** inherits `[workspace.package]`, has its own `README.md` (absolute
   GitHub links; crates.io doesn't resolve relative ones) and `CHANGELOG.md`, and symlinks
   `LICENSE` (`ln -s ../../LICENSE`). Check with `cargo package -p <crate> --list`.
-- **Releasing:**
-  1. `cargo publish --workspace --dry-run --locked`.
-  2. A `Release x.y.z` PR: each changelog's `[Unreleased]` becomes `## [x.y.z] - YYYY-MM-DD`
-     under a fresh `[Unreleased]`, with links (`compare/<crate>-vx.y.z...HEAD`,
-     `releases/tag/<crate>-vx.y.z`).
-  3. After it merges, annotated `<crate>-vx.y.z` tags on the merge commit, pushed.
-  4. One GitHub release per tag, notes from the changelog section; `stable-flight` is latest
-     (`--latest=false` for the rest).
-  5. `cargo publish --workspace --locked` (dependency order, waits for indexing). On a 429 for
-     a new crate name, publish the rest with `-p <crate>` after the given wait.
+- **Releasing:** [`.claude/skills/release`](.claude/skills/release/SKILL.md).
 
 ## Workflow
 
