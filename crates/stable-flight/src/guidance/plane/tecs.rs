@@ -17,7 +17,7 @@
 //!   airspeed demand at half the climb's energy rate over `V` (AP:502-521, 550-580). The
 //!   slewed height demand then runs through a 3 s lag (AP:577), whose slope is the height
 //!   rate's feedforward; the airspeed's rate demand is its error alone, as PX4's
-//!   (PX4:320-325). The lag starts at the aircraft's own climb rate (within the climb and sink
+//!   (PX4:320-325), held to half the climb's energy rate for thrust and unheld for pitch. The lag starts at the aircraft's own climb rate (within the climb and sink
 //!   limits), as PX4's reference model does (PX4:212-218, 692-698). ArduPilot's starts level
 //!   (AP:1187-1190): an aircraft entering plane flight already sinking then pitches up to stop
 //!   the sink, falls behind the demand, and sinks past the limit catching up (#503). Each
@@ -253,6 +253,8 @@ struct Energies {
     potential_error: f32,
     kinetic_error: f32,
     potential_rate_demand: f32,
+    /// Thrust's airspeed rate demand: the kinetic error over the time constant, within half
+    /// the climb's energy rate. Pitch takes the error unclamped.
     kinetic_rate_demand: f32,
     potential_rate: f32,
     kinetic_rate: f32,
@@ -467,21 +469,22 @@ impl Tecs {
         // The integral of the rate error: it closes a steady balance error through the rate
         // demand's error term, and pulls the nose back up as soon as the sink passes the limit
         // (AP:1086-1102, PX4:460-476).
-        let step_rad = config.pitch_integrator_gain * rate_error / per_rad * dt;
-        let unclamped = proportional_rad + self.pitch_integral_rad + step_rad;
-        let pinned = (unclamped > high && step_rad > 0.0) || (unclamped < low && step_rad < 0.0);
-        self.pitch_integral_rad = if pinned {
+        let integral_step_rad = config.pitch_integrator_gain * rate_error / per_rad * dt;
+        let unclamped = proportional_rad + self.pitch_integral_rad + integral_step_rad;
+        let pinned = (unclamped > high && integral_step_rad > 0.0)
+            || (unclamped < low && integral_step_rad < 0.0);
+        let integral_rad = if pinned {
             // Pinned against the limit it pushes toward, the integral fades over the time
             // constant rather than winding (AP:1097-1102).
-            self.pitch_integral_rad * (1.0 - dt / (dt + config.time_constant_s))
+            lagged(self.pitch_integral_rad, 0.0, dt, config.time_constant_s)
         } else {
-            self.pitch_integral_rad + step_rad
-        }
+            self.pitch_integral_rad + integral_step_rad
+        };
         // Within the pitch range, not within 5° past the limits of the proportional term as
         // ArduPilot's (AP:1078-1079, 1103): that bound follows a proportional term far past a
         // limit, which at the forward transition's first few m/s winds the integral 70° up
         // (#505).
-        .clamp(low - high, high - low);
+        self.pitch_integral_rad = integral_rad.clamp(low - high, high - low);
         (proportional_rad + self.pitch_integral_rad).clamp(low, high)
     }
 
