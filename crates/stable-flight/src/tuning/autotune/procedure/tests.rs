@@ -4,8 +4,7 @@ use super::*;
 use crate::stabilizers::copter::TunedLoop;
 use crate::tuning::autotune::DesignPlan;
 use crate::tuning::{
-    ControllerForm, DesignError, IdentifyAbort, RateModel, RelayResult, StepMetrics, UltimatePoint,
-    design_angle_p, design_rate, gains_from_ultimate,
+    DesignError, IdentifyAbort, RateModel, StepMetrics, design_angle_p, design_rate,
 };
 
 const CURRENT: Gains = Gains {
@@ -13,80 +12,6 @@ const CURRENT: Gains = Gains {
     i: 8.0,
     d: 7.0,
 };
-
-fn measured(ku: f32, tu_s: f32) -> Input {
-    Input::Measured {
-        measurement: Measurement::Relay(RelayResult {
-            point: UltimatePoint { ku, tu_s },
-            relay: 0.2,
-            cycle_amplitude: 0.1,
-            bias: 0.0,
-        }),
-        gains: CURRENT,
-        stalled: false,
-    }
-}
-
-/// A relay stage asks for its relay first, then finishes with the rule's gains for the
-/// measured point.
-#[test]
-fn relay_probes_once_then_finishes_with_the_rules_gains() {
-    let plan = RelayPlan::copter(TunedLoop::RollRate);
-    let mut procedure = Procedure::new(Method::Relay(plan));
-
-    let first = procedure.next(Input::start(CURRENT));
-    check!(first == Action::probe(ProbeConfig::Relay(plan.relay)));
-
-    let rule = gains_from_ultimate(&UltimatePoint { ku: 2.0, tu_s: 0.1 }, plan.rule, plan.form);
-    let last = procedure.next(measured(2.0, 0.1));
-    check!(
-        last == Action::Finish {
-            gains: Gains {
-                p: rule.p,
-                i: CURRENT.i,
-                d: rule.d,
-            },
-            outcome: Outcome::Tuned,
-            steps: None,
-            baseline: None,
-        }
-    );
-}
-
-/// A relay stage sets the rule's gains for the terms its form tunes and keeps the current
-/// gains for the rest.
-#[test]
-fn relay_tunes_only_its_forms_terms() {
-    // (form, tunes I, tunes D)
-    let cases = [
-        (ControllerForm::Pid, true, true),
-        (ControllerForm::Pi, true, false),
-        (ControllerForm::Pd, false, true),
-        (ControllerForm::P, false, false),
-    ];
-    for (form, tunes_i, tunes_d) in cases {
-        let plan = RelayPlan {
-            form,
-            ..RelayPlan::copter(TunedLoop::RollRate)
-        };
-        let rule = gains_from_ultimate(&UltimatePoint { ku: 2.0, tu_s: 0.1 }, plan.rule, form);
-        let mut procedure = Procedure::new(Method::Relay(plan));
-
-        let Action::Finish { gains, .. } = procedure.next(measured(2.0, 0.1)) else {
-            panic!("{form:?}: no gains");
-        };
-
-        check!(gains.p == rule.p, "{form:?}");
-        check!(
-            gains.i == if tunes_i { rule.i } else { CURRENT.i },
-            "{form:?}"
-        );
-        check!(
-            gains.d == if tunes_d { rule.d } else { CURRENT.d },
-            "{form:?}"
-        );
-    }
-}
 
 /// A step's measurement: `saturated_s` clipped, `stalled` or not; its overshoot tells steps
 /// apart.
@@ -182,32 +107,10 @@ fn step_test_repeats_invalid_steps_and_fails_on_too_many() {
     check!(procedure.next(stepped(0.0, true)) == Action::Fail(AutotuneAbort::Stalled));
 }
 
-/// A probe a slow host stopped, unmeasured: a relay runs again, `MAX_MEASURE_STOPS` in a row
-/// failing the stage; a step test repeats the step
-/// in the same direction, counting it against `max_stalled` along with stalled steps.
+/// A step a slow host stopped runs again in the same direction, counting against
+/// `max_stalled` along with stalled steps.
 #[test]
-fn a_stopped_probe_runs_again() {
-    let plan = RelayPlan::copter(TunedLoop::RollRate);
-    let mut procedure = Procedure::new(Method::Relay(plan));
-    let relay = procedure.next(Input::start(CURRENT));
-    check!(procedure.next(Input::Stalled { gains: CURRENT }) == relay);
-    check!(matches!(
-        procedure.next(measured(2.0, 0.1)),
-        Action::Finish { .. }
-    ));
-    // `MAX_MEASURE_STOPS` in a row fail the stage: a host that keeps flapping mid-relay.
-    let mut procedure = Procedure::new(Method::Relay(plan));
-    procedure.next(Input::start(CURRENT));
-    for stop in 1..MAX_MEASURE_STOPS {
-        check!(
-            procedure.next(Input::Stalled { gains: CURRENT }) == relay,
-            "stop {stop}"
-        );
-    }
-    check!(
-        procedure.next(Input::Stalled { gains: CURRENT }) == Action::Fail(AutotuneAbort::Stalled)
-    );
-
+fn a_stopped_step_runs_again() {
     let (mut procedure, plan) = step_test(3);
     let down = Action::probe(ProbeConfig::Step(plan.step.reversed()));
     procedure.next(Input::start(CURRENT));
@@ -225,18 +128,20 @@ fn a_stopped_probe_runs_again() {
 #[test]
 fn a_mismatched_measurement_fails() {
     let (mut step, _) = step_test(1);
-    check!(step.next(measured(2.0, 0.1)) == Action::Fail(AutotuneAbort::Interrupted));
-    let mut relay = Procedure::new(Method::Relay(RelayPlan::copter(TunedLoop::RollRate)));
-    check!(relay.next(stepped(0.0, false)) == Action::Fail(AutotuneAbort::Interrupted));
+    step.next(Input::start(CURRENT));
+    check!(step.next(fitted(QUAD_X_FIT, false)) == Action::Fail(AutotuneAbort::Interrupted));
+    let mut design = Procedure::new(Method::Design(DesignPlan::copter()));
+    design.next(Input::start(CURRENT));
+    check!(design.next(stepped(0.0, false)) == Action::Fail(AutotuneAbort::Interrupted));
 }
 
-/// A relay or a step test fails on a probe abort, and judges nothing (no verdicts).
+/// A step test or a design fails on a probe abort, and judges nothing (no verdicts).
 #[test]
-fn relay_and_step_test_fail_on_an_abort() {
+fn step_test_and_design_fail_on_an_abort() {
     let abort = ProbeAbort::Step(crate::tuning::StepAbort::Runaway);
     let (step, _) = step_test(1);
-    let relay = Procedure::new(Method::Relay(RelayPlan::copter(TunedLoop::RollRate)));
-    for mut procedure in [step, relay] {
+    let design = Procedure::new(Method::Design(DesignPlan::copter()));
+    for mut procedure in [step, design] {
         procedure.next(Input::start(CURRENT));
         let failed = procedure.next(Input::Aborted {
             abort,
@@ -274,19 +179,16 @@ fn clipped_ticks_within_the_allowance_stay_valid() {
     }
 }
 
-/// A relay or a step test never flies a candidate; a breach reported to one fails it.
+/// A step test never flies a candidate; a breach reported to one fails it.
 #[test]
-fn relay_and_step_test_fail_on_a_breach() {
-    let (step, _) = step_test(1);
-    let relay = Procedure::new(Method::Relay(RelayPlan::copter(TunedLoop::RollRate)));
-    for mut procedure in [step, relay] {
-        procedure.next(Input::start(CURRENT));
-        let failed = procedure.next(Input::Breached {
-            reason: AutotuneAbort::Tilt,
-            gains: CURRENT,
-        });
-        check!(failed == Action::Fail(AutotuneAbort::Tilt));
-    }
+fn step_test_fails_on_a_breach() {
+    let (mut procedure, _) = step_test(1);
+    procedure.next(Input::start(CURRENT));
+    let failed = procedure.next(Input::Breached {
+        reason: AutotuneAbort::Tilt,
+        gains: CURRENT,
+    });
+    check!(failed == Action::Fail(AutotuneAbort::Tilt));
 }
 
 /// `quad_x`'s roll fit on the sim: a 30 ms lag, one tick of delay.

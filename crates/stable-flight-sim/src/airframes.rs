@@ -45,8 +45,8 @@ pub struct Airframe {
 /// A 1 kg X quad, 250 mm motor to motor, thrust-to-weight about 2.4: roughly a 5-inch
 /// freestyle quad with a camera, chosen to be plausible, not to match a real one.
 ///
-/// Roll and pitch rate and angle gains are the sim autotune's (`StagePlan::copter_search`,
-/// `tests/autotune.rs`); yaw rate and heading are hand-tuned on the sim's step responses
+/// Roll and pitch rate and angle gains are a sim autotune's step search (#347); yaw rate and
+/// heading are hand-tuned on the sim's step responses
 /// (`tests/step_response.rs`). Guidance uses the core defaults, with the hover thrust worked
 /// out from the model rather than measured.
 ///

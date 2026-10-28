@@ -2,13 +2,13 @@
 
 use super::{Action, Batch, Input, Pairs, Verdict};
 use crate::controllers::Gains;
+use crate::tuning::StepSummary;
 use crate::tuning::autotune::{AutotuneAbort, KeepReason, Outcome, SearchPlan};
-use crate::tuning::{Measurement, ProbeAbort, ProbeConfig, StepSummary};
 
 #[cfg(test)]
 mod tests;
 
-/// A [`SearchPlan`] as a pure state machine: relay, baseline, bracket and bisect, verify.
+/// A [`SearchPlan`] as a pure state machine: baseline, bracket and bisect, verify.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::tuning::autotune) struct Search {
     plan: SearchPlan,
@@ -18,10 +18,6 @@ pub(in crate::tuning::autotune) struct Search {
     /// What stays when the search keeps no result and the start's steps missed the criterion:
     /// the loop's gains at the run's start, lowered to `max` when the stage starts from them.
     fallback: Gains,
-    /// The gains candidates change one term of: the relay rule's, or `start`.
-    seed: Gains,
-    /// The largest gain to try: `plan.max`, lowered by the relay's ceiling.
-    max: f32,
     /// The largest gain that passed.
     pass: Option<f32>,
     /// The smallest gain that failed.
@@ -38,8 +34,6 @@ pub(in crate::tuning::autotune) struct Search {
 /// Where a search is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Leg {
-    /// Measuring the ultimate point; `tries` relays failed so far.
-    Relay { tries: usize },
     /// Stepping on the start gains.
     Baseline,
     /// Stepping on a bracket point that has passed `passes` pairs in a row.
@@ -55,8 +49,6 @@ impl Search {
             leg: Leg::Baseline,
             start: Gains::default(),
             fallback: Gains::default(),
-            seed: Gains::default(),
-            max: plan.max,
             pass: None,
             fail: None,
             pairs: Pairs::new(plan.test, plan.test.pairs),
@@ -66,58 +58,26 @@ impl Search {
     }
 
     pub(super) fn next(&mut self, input: Input) -> Action {
-        if !matches!(self.leg, Leg::Relay { .. })
-            && let Some(batch) = self.pairs.take(&input)
-        {
+        if let Some(batch) = self.pairs.take(&input) {
             return match batch {
                 Batch::Next => self.step(),
                 Batch::Ended { complete } => self.judge(complete),
                 Batch::Fail(abort) => Action::Fail(abort),
             };
         }
-        match (self.leg, input) {
-            (
-                _,
-                Input::Start {
-                    gains, run_start, ..
-                },
-            ) => {
+        match input {
+            Input::Start {
+                gains, run_start, ..
+            } => {
                 self.start = gains;
                 self.fallback = run_start;
-                self.seed = gains;
-                self.retry_relay(0)
-            }
-            (
-                Leg::Relay { .. },
-                Input::Measured {
-                    measurement: Measurement::Relay(result),
-                    stalled: false,
-                    ..
-                },
-            ) => {
-                if let Some(relay) = self.plan.relay {
-                    self.seed = relay.plan.gains(&result, self.start);
-                    let cap = relay.ceiling * result.point.ku;
-                    self.max = self.max.min(cap).max(self.plan.min);
-                }
                 self.baseline()
             }
-            (
-                Leg::Relay { tries },
-                Input::Measured {
-                    measurement: Measurement::Relay(_),
-                    stalled: true,
-                    ..
-                }
-                | Input::Stalled { .. }
-                | Input::Aborted {
-                    abort: ProbeAbort::Relay(_),
-                    ..
-                },
-            ) => self.retry_relay(tries + 1),
             // A candidate that took the vehicle past the envelope fails.
-            (Leg::Try { .. } | Leg::Verify(_), Input::Breached { .. }) => self.judge(false),
-            (_, Input::Breached { reason, .. }) => Action::Fail(reason),
+            Input::Breached { .. } if matches!(self.leg, Leg::Try { .. } | Leg::Verify(_)) => {
+                self.judge(false)
+            }
+            Input::Breached { reason, .. } => Action::Fail(reason),
             _ => Action::Fail(AutotuneAbort::Interrupted),
         }
     }
@@ -126,26 +86,13 @@ impl Search {
         self.verdict.take()
     }
 
-    /// Runs the relay (again), or goes on without it: none planned, or `max_invalid`
-    /// failures.
-    fn retry_relay(&mut self, tries: usize) -> Action {
-        match self.plan.relay {
-            Some(relay) if tries < self.plan.test.max_invalid => {
-                self.leg = Leg::Relay { tries };
-                Action::probe(ProbeConfig::Relay(relay.plan.relay))
-            }
-            _ => self.baseline(),
-        }
-    }
-
     /// Steps on the start gains, or, when the searched term starts above `max` (a gain the
-    /// search would never pick, which the relay's ceiling may have shown is too high), goes on
-    /// without a baseline rather than fly it (#361) and commits the seed, its term at most
-    /// `max`, in the start's place: a start above the relay's ceiling can ring once disturbed
-    /// and never settle (#375). Those gains are what stays if nothing better passes.
+    /// search would never pick), goes on without a baseline rather than fly it (#361) and
+    /// commits the start with its term at `max` in its place: a start that high can ring once
+    /// disturbed and never settle (#375). Those gains are what stays if nothing better passes.
     fn baseline(&mut self) -> Action {
-        if self.plan.term.get(self.start) > self.max {
-            let lowered = self.with(self.plan.term.get(self.seed).min(self.max));
+        if self.plan.term.get(self.start) > self.plan.max {
+            let lowered = self.with(self.plan.max);
             // The run's own start too high to fly stays lowered; a seeded start goes back to it.
             if self.fallback == self.start {
                 self.fallback = lowered;
@@ -168,7 +115,7 @@ impl Search {
     fn step(&self) -> Action {
         let gains = match self.leg {
             Leg::Try { gain, .. } | Leg::Verify(gain) => Some(self.with(gain)),
-            Leg::Relay { .. } | Leg::Baseline => None,
+            Leg::Baseline => None,
         };
         Action::Probe {
             probe: self.pairs.probe(),
@@ -177,9 +124,9 @@ impl Search {
         }
     }
 
-    /// The seed gains with the searched term at `gain`.
+    /// The start gains with the searched term at `gain`.
     fn with(&self, gain: f32) -> Gains {
-        self.plan.term.with(self.seed, gain)
+        self.plan.term.with(self.start, gain)
     }
 
     /// Judges the batch on the gain under test (`complete`: every step ran; else one
@@ -189,19 +136,18 @@ impl Search {
         let steps = self.pairs.summary;
         let passed = complete && self.plan.criterion.passes(&steps);
         let (gains, bracketed) = match self.leg {
-            // The baseline is a bracket point only when the search starts from it. Incomplete,
-            // it's no baseline: the start gains aborted or clipped.
+            // The baseline is the first bracket point. Incomplete, it's no baseline: the start
+            // gains aborted or clipped.
             Leg::Baseline => {
                 self.baseline = if complete {
                     steps
                 } else {
                     StepSummary::default()
                 };
-                (self.start, self.seed == self.start)
+                (self.start, true)
             }
             Leg::Try { gain, .. } => (self.with(gain), true),
             Leg::Verify(gain) => return self.verified(gain, complete, steps),
-            Leg::Relay { .. } => return Action::Fail(AutotuneAbort::Interrupted),
         };
         self.verdict = Some(Verdict {
             gains,
@@ -265,25 +211,26 @@ impl Search {
             resolution,
             margin,
             min,
+            max,
             ..
         } = self.plan;
         let next = match (self.pass, self.fail) {
             (Some(pass), Some(fail)) => {
                 (fail > pass * resolution).then(|| libm::sqrtf(pass * fail))
             }
-            (Some(pass), None) => (pass < self.max).then(|| (pass * factor).min(self.max)),
+            (Some(pass), None) => (pass < max).then(|| (pass * factor).min(max)),
             (None, Some(fail)) if fail > min => Some((fail / factor).max(min)),
             (None, Some(_)) => {
                 return self.finish(self.kept(), Outcome::Kept(KeepReason::NoPass), None);
             }
-            // Nothing tried yet: the seed's gain.
-            (None, None) => Some(self.plan.term.get(self.seed).clamp(min, self.max)),
+            // Nothing tried yet: the start's gain.
+            (None, None) => Some(self.plan.term.get(self.start).clamp(min, max)),
         };
         let (leg, pairs) = match next {
             Some(gain) => (Leg::Try { gain, passes: 0 }, 1),
             None => {
                 let pass = self.pass.unwrap_or(min);
-                let result = (margin * pass).clamp(min, self.max);
+                let result = (margin * pass).clamp(min, max);
                 (Leg::Verify(result), self.plan.test.pairs)
             }
         };

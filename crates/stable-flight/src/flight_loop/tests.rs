@@ -340,7 +340,8 @@ fn probe_calls_reach_the_stabilizer_between_ticks() {
     use crate::mixers::TableMixer;
     use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
     use crate::testing::{ConstantCommander, NullVehicle};
-    use crate::tuning::{ProbeConfig, ProbeStatus, Progress, RelayConfig};
+    use crate::tuning::autotune::COPTER_RATE_STEP;
+    use crate::tuning::{ProbeConfig, ProbeStatus, Progress};
 
     let mut flight_loop = FlightLoop::new(
         ConstantCommander::new(Command::armed(ControlInput::default())),
@@ -353,29 +354,14 @@ fn probe_calls_reach_the_stabilizer_between_ticks() {
     flight_loop.prime();
     flight_loop.step(Duration::from_millis(4));
 
-    let relay = RelayConfig {
-        initial_relay: 0.05,
-        max_relay: 0.3,
-        relay_step: 1.5,
-        hysteresis: 0.002,
-        min_cycle_amplitude: 0.05,
-        max_cycle_amplitude: 2.0,
-        max_half_cycle_s: 0.3,
-        max_bias: 0.3,
-        bias_gain: 0.2,
-        cycles: 4,
-        tolerance: 0.1,
-        timeout_s: 20.0,
-    };
-    flight_loop.start_probe(TunedLoop::YawRate, ProbeConfig::Relay(relay));
+    flight_loop.start_probe(TunedLoop::YawRate, ProbeConfig::Step(COPTER_RATE_STEP));
+    // The step's first tick records where it starts; the second advances it.
+    flight_loop.step(Duration::from_millis(4));
     flight_loop.step(Duration::from_millis(4));
 
     let running = Some((
         TunedLoop::YawRate,
-        ProbeStatus::Running(Progress::Relay {
-            relay: 0.05,
-            cycles: 0,
-        }),
+        ProbeStatus::Running(Progress::Step { elapsed_s: 0.004 }),
     ));
     check!(flight_loop.probe() == running);
     check!(flight_loop.stop_probe() == running);

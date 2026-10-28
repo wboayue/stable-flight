@@ -10,9 +10,8 @@ use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use crate::{Configurable, FlightLoop, VehicleState};
 
 use super::{
-    ControllerForm, DesignError, IdentifyConfig, LoopShapingConfig, Measurement, ProbeAbort,
-    ProbeConfig, ProbeStatus, RateModel, RelayConfig, RelayResult, StepConfig, StepSummary,
-    Tunable, TuningRule, design_angle_p, design_rate, gains_from_ultimate,
+    DesignError, IdentifyConfig, LoopShapingConfig, Measurement, ProbeAbort, ProbeConfig,
+    ProbeStatus, RateModel, StepConfig, StepSummary, Tunable, design_angle_p, design_rate,
 };
 
 use procedure::{Action, Input, Procedure};
@@ -24,58 +23,6 @@ mod tests;
 /// The most stages a plan may hold: a tune and a step test of every [`TunedLoop`].
 pub const MAX_STAGES: usize = 12;
 
-/// Relay for a copter rate loop: normalized moment out, rad/s in. RealFlight's QuadCopterX
-/// cycles in about 70 ms (17 ticks) with cycle-to-cycle jitter, so it averages 8 cycles
-/// within 25% and moves the bias a fifth of the way per cycle.
-pub const COPTER_RATE_RELAY: RelayConfig = RelayConfig {
-    initial_relay: 0.05,
-    max_relay: 0.4,
-    relay_step: 1.5,
-    hysteresis: 0.005,
-    min_cycle_amplitude: 0.1,
-    max_cycle_amplitude: 2.0,
-    max_half_cycle_s: 0.3,
-    max_bias: 0.5,
-    bias_gain: 0.2,
-    cycles: 8,
-    tolerance: 0.25,
-    timeout_s: 20.0,
-};
-
-/// Relay for a copter angle or heading loop: rad/s out, rad in; averaging as
-/// [`COPTER_RATE_RELAY`]. The relay stays small (at most 0.6 rad/s) so the rate loop under it
-/// doesn't saturate its moment: a saturated inner loop doesn't grow its cycle with the relay,
-/// which reads `Ku` high (on QuadCopterX a 1.5 rad/s relay gave angle P 15, which oscillated).
-/// Cycles of half a degree count.
-pub const COPTER_ANGLE_RELAY: RelayConfig = RelayConfig {
-    initial_relay: 0.1,
-    max_relay: 0.6,
-    relay_step: 1.5,
-    hysteresis: 0.0005,
-    min_cycle_amplitude: 0.01,
-    max_cycle_amplitude: 0.35,
-    max_half_cycle_s: 1.0,
-    max_bias: 0.3,
-    bias_gain: 0.2,
-    cycles: 8,
-    tolerance: 0.25,
-    timeout_s: 30.0,
-};
-
-/// The loops [`StagePlan::copter_sequence`] tunes by relay: roll and pitch rate, the loops a
-/// bad start breaks. The rest stay out (measured on QuadCopterX, #295):
-///
-/// - Yaw rate: the relay can't measure it within the yaw authority the mixer leaves at hover:
-///   TODO(#296).
-/// - Roll and pitch angle: the relay measures a high ultimate gain (about 60: an integrator
-///   around a fast rate loop), and the rule's P oscillates once a few degrees of error saturate
-///   the rate setpoint and the moments. [`StagePlan::copter_search`] tunes them by step
-///   response instead, which sees the saturation.
-/// - Heading: both of the above.
-///
-/// Their relay stages still run when planned explicitly (`StagePlan::copter`).
-pub const COPTER_SEQUENCE: [TunedLoop; 2] = [TunedLoop::RollRate, TunedLoop::PitchRate];
-
 /// One stage of an autotune: which loop, and the method that tunes it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StagePlan {
@@ -86,29 +33,6 @@ pub struct StagePlan {
 }
 
 impl StagePlan {
-    /// The copter defaults for `target`: relay feedback, [`RelayPlan::copter`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use stable_flight::stabilizers::copter::TunedLoop;
-    /// use stable_flight::tuning::autotune::{Method, RelayPlan, StagePlan};
-    ///
-    /// let plan = StagePlan::copter(TunedLoop::RollRate);
-    /// assert_eq!(plan.method, Method::Relay(RelayPlan::copter(TunedLoop::RollRate)));
-    /// ```
-    pub fn copter(target: TunedLoop) -> Self {
-        Self {
-            target,
-            method: Method::Relay(RelayPlan::copter(target)),
-        }
-    }
-
-    /// The loops in [`COPTER_SEQUENCE`], in order, with the [`copter`](Self::copter) defaults.
-    pub fn copter_sequence() -> [Self; COPTER_SEQUENCE.len()] {
-        COPTER_SEQUENCE.map(Self::copter)
-    }
-
     /// A step test of `target` with the copter defaults ([`StepTestPlan::copter`]).
     pub fn copter_step_test(target: TunedLoop) -> Self {
         Self {
@@ -117,58 +41,9 @@ impl StagePlan {
         }
     }
 
-    /// The copter rate search: each of [`COPTER_SEQUENCE`]'s loops by
-    /// [`SearchPlan::copter_rate`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use stable_flight::stabilizers::copter::TunedLoop;
-    /// use stable_flight::tuning::autotune::StagePlan;
-    ///
-    /// let plan = StagePlan::copter_rate_search();
-    /// assert_eq!(plan.map(|stage| stage.target), [TunedLoop::RollRate, TunedLoop::PitchRate]);
-    /// ```
-    pub fn copter_rate_search() -> [Self; COPTER_SEQUENCE.len()] {
-        COPTER_SEQUENCE.map(|target| Self {
-            target,
-            method: Method::Search(SearchPlan::copter_rate()),
-        })
-    }
-
-    /// The copter step-response tune: [`copter_rate_search`](Self::copter_rate_search), then
-    /// roll and pitch angle by [`SearchPlan::copter_angle`], so the angle search flies on the
-    /// tuned rate loops.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use stable_flight::stabilizers::copter::TunedLoop;
-    /// use stable_flight::tuning::autotune::StagePlan;
-    ///
-    /// let targets = StagePlan::copter_search().map(|stage| stage.target);
-    /// assert_eq!(
-    ///     targets,
-    ///     [TunedLoop::RollRate, TunedLoop::PitchRate, TunedLoop::Roll, TunedLoop::Pitch]
-    /// );
-    /// ```
-    pub fn copter_search() -> [Self; 4] {
-        let [roll_rate, pitch_rate] = Self::copter_rate_search();
-        let angle = |target| Self {
-            target,
-            method: Method::Search(SearchPlan::copter_angle()),
-        };
-        [
-            roll_rate,
-            pitch_rate,
-            angle(TunedLoop::Roll),
-            angle(TunedLoop::Pitch),
-        ]
-    }
-
     /// The copter design search: [`DesignPlan::copter`] for roll and pitch rate, then roll
     /// and pitch angle (each angle design flies on its designed rate loop), then
-    /// [`SearchPlan::copter_seeded`] for each in the same order, starting from its design.
+    /// [`SearchPlan::copter`] for each in the same order, starting from its design.
     /// The design spares the search most of its climb from the start gains; the search keeps
     /// only gains that passed steps, so a design from a bad fit doesn't outlive it (on
     /// QuadCopterX in RealFlight one fit designed roll rate P 0.41 against 0.63–1.04, #518).
@@ -201,7 +76,7 @@ impl StagePlan {
         });
         let search = loops.map(|target| Self {
             target,
-            method: Method::Search(SearchPlan::copter_seeded(target)),
+            method: Method::Search(SearchPlan::copter(target)),
         });
         let [roll_rate, pitch_rate, roll, pitch] = design;
         let [
@@ -226,12 +101,10 @@ impl StagePlan {
 /// How a stage tunes its loop: which probes it runs and what gains follow from them.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Method {
-    /// One relay measurement, turned into gains by a tuning rule.
-    Relay(RelayPlan),
     /// Alternating step responses, measured and reported; the gains don't change.
     StepTest(StepTestPlan),
     /// A search for the largest gain of one term whose step responses meet a criterion, from
-    /// gains a relay may seed, kept only if it flies no worse than a start that met the
+    /// the stage's start gains, kept only if it flies no worse than a start that met the
     /// criterion.
     Search(SearchPlan),
     /// Gains designed from a fitted model of the loop's axis, committed without steps.
@@ -244,12 +117,10 @@ impl Method {
     ///
     /// # Errors
     ///
-    /// When the relay is invalid ([`RelayConfig::validate`]), the step test is
-    /// ([`StepTestPlan::validate`]), the search is ([`SearchPlan::validate`]), or the design
-    /// is ([`DesignPlan::validate`]).
+    /// When the step test is invalid ([`StepTestPlan::validate`]), the search is
+    /// ([`SearchPlan::validate`]), or the design is ([`DesignPlan::validate`]).
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         match self {
-            Self::Relay(plan) => plan.relay.validate(),
             Self::StepTest(plan) => plan.validate(),
             Self::Search(plan) => plan.validate(),
             Self::Design(plan) => plan.validate(),
@@ -259,7 +130,7 @@ impl Method {
     /// The settle this method asks for before each probe; `None` uses the envelope's.
     pub fn settle(&self) -> Option<Settle> {
         match self {
-            Self::Relay(_) | Self::Design(_) => None,
+            Self::Design(_) => None,
             Self::StepTest(plan) => Some(plan.settle),
             Self::Search(plan) => Some(plan.test.settle),
         }
@@ -268,7 +139,6 @@ impl Method {
     /// The section [`Autotune::new`] reports this method's errors in.
     fn plan_section(&self) -> &'static str {
         match self {
-            Self::Relay(_) => "plan.relay",
             Self::StepTest(_) => "plan.step_test",
             Self::Search(_) => "plan.search",
             Self::Design(_) => "plan.design",
@@ -307,7 +177,7 @@ pub const COPTER_LOOP_SHAPING: LoopShapingConfig = LoopShapingConfig {
 };
 
 /// Step response of a copter rate loop: 1 rad/s (57°/s) held for 0.25 s, about four of
-/// QuadCopterX's 67 ms ultimate periods (#295), which tilts it about 14°; filtered at 40 Hz.
+/// the 67 ms period QuadCopterX's rate loops oscillate at on the edge of stability (#295), which tilts it about 14°; filtered at 40 Hz.
 pub const COPTER_RATE_STEP: StepConfig = StepConfig {
     amplitude: 1.0,
     duration_s: 0.25,
@@ -408,86 +278,21 @@ impl StepTestPlan {
     }
 }
 
-/// Relay feedback: measure the loop's ultimate point, then set the gains for the terms `form`
-/// tunes by `rule`; the other terms keep their current gains.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct RelayPlan {
-    /// The relay that measures the loop.
-    pub relay: RelayConfig,
-    /// The tuning rule for its gains.
-    pub rule: TuningRule,
-    /// Which terms its gains set.
-    pub form: ControllerForm,
-}
-
-impl RelayPlan {
-    /// The copter defaults for `target`: Tyreus–Luyben PD throughout, so the integral keeps its
-    /// current gain. A rate loop's I holds trim against steady disturbances rather than
-    /// shaping its response, and the rule's integral time (`2.2·Tu`) is a fraction of a second
-    /// on these fast loops: about 30× a flown hand tune on QuadCopterX. Rate loops use
-    /// [`COPTER_RATE_RELAY`], angle and heading loops [`COPTER_ANGLE_RELAY`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use stable_flight::stabilizers::copter::TunedLoop;
-    /// use stable_flight::tuning::ControllerForm;
-    /// use stable_flight::tuning::autotune::RelayPlan;
-    ///
-    /// assert_eq!(RelayPlan::copter(TunedLoop::RollRate).form, ControllerForm::Pd);
-    /// ```
-    pub fn copter(target: TunedLoop) -> Self {
-        let relay = if target.is_rate() {
-            COPTER_RATE_RELAY
-        } else {
-            COPTER_ANGLE_RELAY
-        };
-        Self {
-            relay,
-            rule: TuningRule::TyreusLuyben,
-            form: ControllerForm::Pd,
-        }
-    }
-
-    /// The gains a measurement sets: the rule's for the terms the form tunes, `current` for
-    /// the rest.
-    fn gains(&self, result: &RelayResult, current: Gains) -> Gains {
-        let tuned = gains_from_ultimate(&result.point, self.rule, self.form);
-        Gains {
-            p: tuned.p,
-            i: if self.form.has_integral() {
-                tuned.i
-            } else {
-                current.i
-            },
-            d: if self.form.has_derivative() {
-                tuned.d
-            } else {
-                current.d
-            },
-        }
-    }
-}
-
 /// A gain search on one term of a loop: the largest gain whose step responses meet
 /// `criterion`, found by bracketing and bisection, then backed off by `margin` and verified.
 ///
-/// 1. **Relay** (optional): measures the loop's ultimate point. `ceiling · Ku` caps `max`,
-///    and the relay's rule seeds the gains the search starts from (e.g. a PD rule sets D,
-///    and P, the searched term, starts at the rule's). A relay that aborts or stalls
-///    `test.max_invalid` times leaves `max` and the start gains as they are.
-/// 2. **Baseline:** `test.pairs` pairs at the start gains; if they meet the criterion, their
+/// 1. **Baseline:** `test.pairs` pairs at the start gains; if they meet the criterion, their
 ///    summary is what the result must not be worse than. A start above `max` (a gain the
-///    search would never pick) isn't flown: it's lowered to the seed, its term at most
-///    `max`, and committed ([`AutotuneEvent::Lowered`]), so the vehicle settles on it and
-///    it stays if nothing better passes or the stage fails. A start whose steps abort or keep
-///    clipping leaves no baseline.
-/// 3. **Bracket** from the seed's gain: `× factor` per point while points pass, up to `max`;
+///    search would never pick) isn't flown: its term is lowered to `max` and committed
+///    ([`AutotuneEvent::Lowered`]), so the vehicle settles on it and it stays if nothing
+///    better passes or the stage fails. A start whose steps abort or keep clipping leaves no
+///    baseline.
+/// 2. **Bracket** from the start's gain: `× factor` per point while points pass, up to `max`;
 ///    `÷ factor` while they fail, down to `min` (nothing passing: see below). A
 ///    point passes when `confirm` pairs in a row pass, so one lucky pair near a sharp limit
 ///    doesn't (ArduPilot's `ignore_next`); the first failing pair fails it.
-/// 4. **Bisect** (geometric mean) until the bracket is within `resolution`.
-/// 5. **Verify** `margin ×` the largest pass with `test.pairs` pairs, and keep it only if it
+/// 3. **Bisect** (geometric mean) until the bracket is within `resolution`.
+/// 4. **Verify** `margin ×` the largest pass with `test.pairs` pairs, and keep it only if it
 ///    passes [`Acceptance`] against a baseline that met the criterion, or, without one, meets
 ///    the criterion itself.
 ///
@@ -524,16 +329,13 @@ pub struct SearchPlan {
     pub min: f32,
     /// The largest gain tried. Above `min`.
     pub max: f32,
-    /// A relay measurement that caps `max` and seeds the gains, if any.
-    pub relay: Option<SearchRelay>,
     /// How much worse than the baseline the result may fly.
     pub acceptance: Acceptance,
 }
 
 impl SearchPlan {
-    /// The copter defaults for a rate loop's P: a [`RelayPlan::copter`] relay (Tyreus–Luyben
-    /// PD, so it sets D and seeds P; I keeps its gain) capping P at `0.6 · Ku`; then
-    /// [`Criterion::Overshoot`] at ArduPilot's default aggressiveness (0.1: overshoot 0.05,
+    /// The copter defaults for a rate loop's P, with D and I as they start (a design sets
+    /// them, [`StagePlan::copter_design_search`]): [`Criterion::Overshoot`] at ArduPilot's default aggressiveness (0.1: overshoot 0.05,
     /// bounce-back 0.1) in [0.1, 3]. Steps of [`COPTER_RATE_STEP`], two pairs for the baseline
     /// and the verify; a bracket point passes on two pairs in a row; brackets of `× 1.3`
     /// bisected to 10%, a 0.9 margin. Steps clip for up to 10 ticks ([`StepTestPlan::copter`]):
@@ -542,7 +344,7 @@ impl SearchPlan {
     ///
     /// ArduPilot's D search (largest D before bounce-back) doesn't bound D on closed-loop
     /// steps: with the rate I, overshoot decays without falling back, so D climbs until the
-    /// response overdamps. The relay's D flies well on QuadCopterX (#295, #301).
+    /// response overdamps. The design's D comes from the fitted lag instead (#517).
     ///
     /// # Examples
     ///
@@ -551,7 +353,6 @@ impl SearchPlan {
     ///
     /// let plan = SearchPlan::copter_rate();
     /// assert_eq!(plan.term, Term::P);
-    /// assert!(plan.relay.is_some());
     /// ```
     pub fn copter_rate() -> Self {
         Self {
@@ -570,17 +371,12 @@ impl SearchPlan {
             margin: SEARCH_BACK_OFF,
             min: 0.1,
             max: 3.0,
-            relay: Some(SearchRelay {
-                plan: RelayPlan::copter(TunedLoop::RollRate),
-                ceiling: 0.6,
-            }),
             acceptance: Acceptance::default(),
         }
     }
 
-    /// The copter defaults for a roll or pitch angle loop's P (ArduPilot's angle-P stage): no
-    /// relay (an angle loop's `Ku` is high, about 60 on QuadCopterX, so `0.6 · Ku` caps
-    /// nothing), from the start gains in [1, 10] (above about 10, 5° steps clip the moment on
+    /// The copter defaults for a roll or pitch angle loop's P (ArduPilot's angle-P stage),
+    /// from the start gains in [1, 10] (above about 10, 5° steps clip the moment on
     /// QuadCopterX); overshoot and bounce-back at most 0.05
     /// (ArduPilot's aggressiveness halved, as for its angle P). Bounce-back is the overshoot
     /// above where the response levels off, so it counts even when a disturbance holds the
@@ -592,7 +388,7 @@ impl SearchPlan {
     /// ```
     /// use stable_flight::tuning::autotune::SearchPlan;
     ///
-    /// assert!(SearchPlan::copter_angle().relay.is_none());
+    /// assert_eq!(SearchPlan::copter_angle().max, 10.0);
     /// ```
     pub fn copter_angle() -> Self {
         Self {
@@ -607,14 +403,13 @@ impl SearchPlan {
             },
             min: COPTER_ANGLE_P_MIN,
             max: COPTER_ANGLE_P_MAX,
-            relay: None,
             ..Self::copter_rate()
         }
     }
 
     /// The copter search for `target` from a design ([`StagePlan::copter_design_search`]):
-    /// [`copter_rate`](Self::copter_rate) without its relay, since the design already set D and
-    /// seeds P, or [`copter_angle`](Self::copter_angle). The angle steps keep their own clip
+    /// [`copter_rate`](Self::copter_rate) for a rate loop, whose D the design set, or
+    /// [`copter_angle`](Self::copter_angle). The angle steps keep their own clip
     /// allowance: with the rate steps', angle P stays at 9 over `quad_x`'s searched rate loop
     /// with 10 ms of delay and its steps clip; with their own, the search lowers it to 7.6 and
     /// meets the step spec (#518).
@@ -625,22 +420,19 @@ impl SearchPlan {
     /// use stable_flight::stabilizers::copter::TunedLoop;
     /// use stable_flight::tuning::autotune::SearchPlan;
     ///
-    /// assert!(SearchPlan::copter_seeded(TunedLoop::RollRate).relay.is_none());
-    /// assert_eq!(SearchPlan::copter_seeded(TunedLoop::Roll), SearchPlan::copter_angle());
+    /// assert_eq!(SearchPlan::copter(TunedLoop::RollRate), SearchPlan::copter_rate());
+    /// assert_eq!(SearchPlan::copter(TunedLoop::Roll), SearchPlan::copter_angle());
     /// ```
-    pub fn copter_seeded(target: TunedLoop) -> Self {
+    pub fn copter(target: TunedLoop) -> Self {
         if target.is_rate() {
-            Self {
-                relay: None,
-                ..Self::copter_rate()
-            }
+            Self::copter_rate()
         } else {
             Self::copter_angle()
         }
     }
 
     /// Checks the steps ([`StepTestPlan::validate`]), the criterion, the bracket's factors and
-    /// bounds, the relay ([`RelayConfig::validate`]) and its ceiling, and the acceptance.
+    /// bounds, and the acceptance.
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         self.test.validate()?;
         self.criterion.validate()?;
@@ -662,21 +454,8 @@ impl SearchPlan {
             self.max > self.min && self.max.is_finite(),
             "above min and finite",
         )?;
-        if let Some(relay) = self.relay {
-            relay.plan.relay.validate()?;
-            check_positive("relay.ceiling", relay.ceiling)?;
-        }
         self.acceptance.validate()
     }
-}
-
-/// A relay measurement before a search: it caps the search and seeds its gains.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct SearchRelay {
-    /// The relay, and the rule whose gains seed the search.
-    pub plan: RelayPlan,
-    /// The fraction of `Ku` the searched gain may reach. Positive (0.6: Ziegler–Nichols P).
-    pub ceiling: f32,
 }
 
 /// A term of a PID loop's [`Gains`].
@@ -928,9 +707,8 @@ pub struct Envelope {
     /// Level and still enough to start a probe, unless the stage's method sets its own
     /// ([`Method::settle`]).
     pub settle: Settle,
-    /// How long to wait for a settle, in s. At the timeout a step fails the stage, and a relay
-    /// or an identification starts anyway: a relay replaces the loop's output, and a fit only
-    /// gains excitation from a ringing loop.
+    /// How long to wait for a settle, in s. At the timeout a step fails the stage, and an
+    /// identification starts anyway: a fit only gains excitation from a ringing loop.
     pub settle_timeout_s: f32,
     /// After a probe on candidate gains ends, how long the vehicle has on the committed gains
     /// to come back inside the limits before a breach fails the stage, in s. A breach while
@@ -1108,8 +886,7 @@ pub enum AutotuneEvent {
         /// A search's baseline, when flown: its steps at the start gains.
         baseline: Option<StepSummary>,
     },
-    /// A search lowered its loop's gains, which started above its `max` (lowered by the
-    /// relay's ceiling when it has a relay), and committed them: the stage settles on them, and
+    /// A search lowered its loop's gains, which started above its `max`, and committed them: the stage settles on them, and
     /// they stay if it fails or nothing better passes.
     Lowered {
         /// The searched loop.
@@ -1306,11 +1083,10 @@ struct Request {
 }
 
 impl Request {
-    /// Whether the probe starts at the settle timeout rather than fail the stage: a relay
-    /// replaces the loop's output (#375), and a fit only gains excitation from the ringing
-    /// (#356).
+    /// Whether the probe starts at the settle timeout rather than fail the stage: a fit only
+    /// gains excitation from the ringing.
     fn starts_anyway(&self) -> bool {
-        matches!(self.probe, ProbeConfig::Relay(_) | ProbeConfig::Identify(_))
+        matches!(self.probe, ProbeConfig::Identify(_))
     }
 
     /// Whether the probe is a fit, which runs through a slow host: a fit at 223 Hz on the sim
@@ -1332,8 +1108,7 @@ impl Request {
 /// - **Probe and decide:** a finished probe's [`Measurement`] goes to the stage's procedure,
 ///   which asks for another probe or finishes with gains for its loop, committed through
 ///   [`set_stabilizer_config`](FlightLoop::set_stabilizer_config); the next stage flies them.
-///   With [`Method::Relay`], one relay measurement and its rule's gains; with
-///   [`Method::StepTest`], alternating steps and the gains unchanged; with
+///   With [`Method::StepTest`], alternating steps and the gains unchanged; with
 ///   [`Method::Search`], a gain search verified against a baseline
 ///   ([`AutotuneEvent::Tried`] per judgment, the [`Outcome`] in `StageDone`); with
 ///   [`Method::Design`], one fit, the gains designed from it, and a hold on them.
@@ -1374,7 +1149,7 @@ impl Request {
 /// use stable_flight::tuning::autotune::{Autotune, AutotuneEvent, Envelope, StagePlan};
 ///
 /// # fn fly(flight_loop: &mut FlightLoop<ConstantCommander, NullVehicle, CopterGuidance, CopterStabilizer, TableMixer<4>, ()>) {
-/// let mut autotune = Autotune::new(&StagePlan::copter_sequence(), Envelope::default())
+/// let mut autotune = Autotune::new(&StagePlan::copter_design_search(), Envelope::default())
 ///     .expect("valid plan");
 /// autotune.start(flight_loop).expect("armed");
 /// loop {
@@ -1434,7 +1209,7 @@ impl Autotune {
     /// # Errors
     ///
     /// When the plan is empty or too long (`plan`), a stage's method is invalid
-    /// (`plan.<method>`, e.g. `plan.relay`; [`Method::validate`]), or the envelope is
+    /// (`plan.<method>`, e.g. `plan.search`; [`Method::validate`]), or the envelope is
     /// (`envelope`).
     pub fn new(plan: &[StagePlan], envelope: Envelope) -> Result<Self, InvalidConfig> {
         check(
@@ -1790,10 +1565,8 @@ impl Autotune {
 
     /// Waits for the vehicle to hold the stage's [`Settle`] (`level_s` counts it, restarting
     /// when it moves), then sets the request's gains, if any, and starts its probe for
-    /// `stage`; fails after `settle_timeout_s`, except a relay or an identification, which
-    /// starts then instead: a relay replaces the loop's output, so a loop that rings on its own
-    /// gains doesn't keep it from measuring (#375), and a fit only gains excitation from the
-    /// ringing (#356).
+    /// `stage`; fails after `settle_timeout_s`, except an identification, which starts then
+    /// instead: a fit only gains excitation from the ringing.
     fn settle<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
@@ -2078,7 +1851,7 @@ impl Autotune {
 fn probed_loop(target: TunedLoop, probe: &ProbeConfig) -> TunedLoop {
     match probe {
         ProbeConfig::Identify(_) => target.outer().unwrap_or(target),
-        ProbeConfig::Relay(_) | ProbeConfig::Step(_) => target,
+        ProbeConfig::Step(_) => target,
     }
 }
 

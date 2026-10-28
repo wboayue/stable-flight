@@ -3,7 +3,7 @@
 //!
 //! Core's copter steps (a 1 rad/s rate step for 0.25 s, 10° angle steps) and its settle gate
 //! (level within 10 s) are sized for small quads. On the Alia a rate step never rises within
-//! its window, so the overshoot criterion passes on any gain, and a relay or an angle step
+//! its window, so the overshoot criterion passes on any gain, and an angle step
 //! builds sideways speed the hover can't brake within the settle timeout (#351).
 //!
 //! [`airframes::alia250`]: stable_flight_sim::airframes::alia250
@@ -49,13 +49,9 @@ const MAX_SATURATED_S: f32 = 0.2;
 /// (0.63 s measured on the Alia).
 const MAX_HEADING_SATURATED_S: f32 = 1.0;
 
-/// Core's rate and angle searches on [`RATE_STEP`] and [`ANGLE_STEP`]. The rate search runs
-/// without its relay seed: on this plant the relay's limit cycle tilts it past the envelope.
+/// Core's rate and angle searches on [`RATE_STEP`] and [`ANGLE_STEP`].
 pub fn plan() -> [StagePlan; 4] {
-    let rate = SearchPlan {
-        relay: None,
-        ..search(SearchPlan::copter_rate(), RATE_STEP)
-    };
+    let rate = search(SearchPlan::copter_rate(), RATE_STEP);
     let angle = search(SearchPlan::copter_angle(), ANGLE_STEP);
     let stage = |target: TunedLoop| StagePlan {
         target,

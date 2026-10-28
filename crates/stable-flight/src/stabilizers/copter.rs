@@ -53,28 +53,26 @@
 //! An autotune stage ([`start_probe`](crate::tuning::Tunable::start_probe)) hands one loop to a
 //! [`Probe`](crate::tuning::Probe). Every controller still runs each tick; before
 //! the loop's controller runs, the probe sees its
-//! [`LoopSignals`](crate::tuning::LoopSignals) and replaces one value: the loop's output (relay)
-//! or its setpoint (step).
+//! [`LoopSignals`](crate::tuning::LoopSignals) and replaces the loop's setpoint (a step, or an
+//! identification's square wave).
 //!
-//! | [`TunedLoop`] | Setpoint, error | Output (relay replaces) |
-//! |---|---|---|
-//! | `RollRate`, `PitchRate`, `YawRate` | desired body rate; desired − measured | that axis's moment (±1) |
-//! | `Roll`, `Pitch` | saturated desired angle; that − estimated angle | that axis's rate setpoint (`max_rate_radps`) |
-//! | `Heading` | desired heading; wrapped heading error | the yaw rate setpoint (`yaw.max_rate_radps`) |
+//! | [`TunedLoop`] | Setpoint, error |
+//! |---|---|
+//! | `RollRate`, `PitchRate`, `YawRate` | desired body rate; desired − measured |
+//! | `Roll`, `Pitch` | saturated desired angle; that − estimated angle |
+//! | `Heading` | desired heading; wrapped heading error |
 //!
 //! The signals' `saturated` is the last tick's clip on the loop's path: the axis's moment, and
 //! for an angle or heading loop also its rate setpoint.
 //!
-//! - **Rate stages** keep the angle loop around the tested axis, which keeps it near level, so
-//!   the relay measures the rate loop with the angle loop's `(s + Kp)/s` wrapped around it: a
-//!   few degrees of phase at the rate loop's ultimate frequency.
+//! - **Rate stages** replace the rate setpoint the angle loop sets, so the angle loop around
+//!   the tested axis has no say while the probe runs.
 //! - **Handoff:** when the probe finishes, on [`stop_probe`](crate::tuning::Tunable::stop_probe),
 //!   or when a [`Setpoint::Rate`] tick idles the angle or heading loop under test
 //!   ([`ProbeStatus::Interrupted`](crate::tuning::ProbeStatus::Interrupted)), the loop
-//!   restarts with the probe's trim (the relay's bias) as its I term and no derivative
-//!   history: the measured trim carries over, and a retune with the tuned gains
-//!   rescales it like any other (`architecture.md#config-ownership`). On an interrupt the rate
-//!   tick then clears the idle angle loops, so that trim is dropped.
+//!   restarts with no derivative history and keeps its I term, which a retune with the tuned
+//!   gains rescales like any other (`architecture.md#config-ownership`). On an interrupt the
+//!   rate tick then clears the idle angle loops, so their I terms are dropped.
 //! - The stage is runtime state, not config; [`prime`](crate::Stabilizer::prime) ends it.
 
 use crate::{Vec2, Vec3};
@@ -86,8 +84,7 @@ use crate::{
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_positive};
 use crate::math::{
-    assert_dt, attitude_error, pitch_limit_rad, saturate_rates, saturate_symmetric, saturate_unit,
-    thrust_curve,
+    assert_dt, attitude_error, pitch_limit_rad, saturate_rates, saturate_unit, thrust_curve,
 };
 
 mod params;
@@ -391,7 +388,7 @@ impl CopterStabilizer {
         let error_for = |angles: &Vec3| attitude_error(attitude, angles.x, angles.y, angles.z);
         let mut error = error_for(&desired);
         let probed = desired;
-        let replaced_rate = self.probe_attitude(
+        self.probe_attitude(
             dt,
             &mut desired,
             &error,
@@ -406,20 +403,10 @@ impl CopterStabilizer {
         // The loops act on the body-frame rotation to the setpoint, so their outputs are body
         // rates at any attitude (a tailsitter's view pitches far over in transition).
         let config = &self.config;
-        let mut desired_rates = self
+        let desired_rates = self
             .attitude
             .control_error(&config.attitude, dt, error.xy());
-        let mut desired_yaw_rate = self.yaw.control_error(&config.yaw, dt, error.z);
-        match replaced_rate {
-            Some((2, rate)) => {
-                desired_yaw_rate = saturate_symmetric(rate, config.yaw.max_rate_radps);
-            }
-            Some((axis, rate)) => {
-                desired_rates[axis] =
-                    saturate_symmetric(rate, config.attitude.max_rate_radps[axis]);
-            }
-            None => {}
-        }
+        let desired_yaw_rate = self.yaw.control_error(&config.yaw, dt, error.z);
         // The controllers clamp their rate outputs; landing on a bound means they clipped.
         let max_rates = config.attitude.max_rate_radps;
         self.clipped.rates = [
@@ -473,7 +460,7 @@ impl CopterStabilizer {
     }
 
     /// Runs the body-rate loop toward `desired_rates_radps`; a stage on a rate loop replaces
-    /// that axis's moment.
+    /// that axis's rate setpoint.
     fn track_body_rates(
         &mut self,
         dt: f32,
@@ -482,17 +469,13 @@ impl CopterStabilizer {
     ) -> Vec3 {
         let current_rates = estimated_state.angular_velocity_radps;
         let mut desired_rates_radps = desired_rates_radps;
-        let replaced_moment = self.probe_rates(dt, &mut desired_rates_radps, &current_rates);
-        let mut moments = self.body_rate.control(
+        self.probe_rates(dt, &mut desired_rates_radps, &current_rates);
+        self.body_rate.control(
             &self.config.body_rate,
             dt,
             desired_rates_radps,
             current_rates,
-        );
-        if let Some((axis, moment)) = replaced_moment {
-            moments[axis] = saturate_unit(moment);
-        }
-        moments
+        )
     }
 
     /// Applies a nonlinear thrust curve to a linear thrust command.

@@ -227,7 +227,7 @@ fn autotune_probes_the_hover_side() {
     check!(stabilizer.probe().is_none());
     stabilizer.start_probe(
         TunedLoop::RollRate,
-        ProbeConfig::Relay(crate::tuning::autotune::COPTER_RATE_RELAY),
+        ProbeConfig::Step(crate::tuning::autotune::COPTER_RATE_STEP),
     );
     check!(stabilizer.probe().map(|(target, _)| target) == Some(TunedLoop::RollRate));
     check!(stabilizer.stop_probe().is_some());

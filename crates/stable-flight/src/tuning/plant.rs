@@ -6,7 +6,6 @@
 //! for link latency; the offset for a CG offset or yaw drag.
 
 use std::collections::VecDeque;
-use std::f32::consts::PI;
 
 use nalgebra::UnitQuaternion;
 
@@ -90,11 +89,6 @@ impl Plant {
         self.rng as f32 / u32::MAX as f32 * 2.0 - 1.0
     }
 
-    /// Reseeds the noise, for repeat runs.
-    pub(crate) fn seed(&mut self, seed: u32) {
-        self.rng = 0x2545_f491 ^ seed.wrapping_mul(0x9e37_79b9);
-    }
-
     /// The true output, without noise.
     pub(crate) fn output(&self) -> f32 {
         self.output
@@ -112,29 +106,6 @@ impl Plant {
             self.lag2 += h * (self.lag1 - self.lag2) / p.lag2_s;
             self.output += h * p.gain * self.lag2;
         }
-    }
-
-    /// The exact ultimate point `(Ku, Tu)` of the plant as a sampled loop: dead time plus one
-    /// half-tick (the zero-order hold).
-    pub(crate) fn ultimate_point(&self) -> (f32, f32) {
-        let p = &self.params;
-        let delay_s = (p.delay_s / self.dt).round() * self.dt + 0.5 * self.dt;
-        let phase =
-            |w: f32| -PI / 2.0 - (w * p.lag1_s).atan() - (w * p.lag2_s).atan() - w * delay_s;
-        // Phase falls monotonically from −90°: bisect for −180°.
-        let (mut low, mut high) = (1e-3_f32, 1e4_f32);
-        for _ in 0..200 {
-            let mid = 0.5 * (low + high);
-            if phase(mid) > -PI {
-                low = mid;
-            } else {
-                high = mid;
-            }
-        }
-        let w = 0.5 * (low + high);
-        let magnitude = p.gain
-            / (w * (1.0 + (w * p.lag1_s).powi(2)).sqrt() * (1.0 + (w * p.lag2_s).powi(2)).sqrt());
-        (1.0 / magnitude, 2.0 * PI / w)
     }
 }
 

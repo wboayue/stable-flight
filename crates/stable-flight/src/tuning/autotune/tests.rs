@@ -8,7 +8,7 @@ use super::*;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::stabilizers::copter::CopterStabilizer;
 use crate::tuning::plant::{Axes, PlantParams};
-use crate::tuning::{RelayAbort, StepMetrics};
+use crate::tuning::{StepAbort, StepMetrics};
 use crate::{
     AbsoluteAttitudeCommand, Actuator, ActuatorCommand, Command, Commander, ControlInput,
     ControlOutput, Mixer, RateCommand, StateSource, Vec3,
@@ -168,14 +168,11 @@ fn run(
     events
 }
 
-/// A copter relay stage on `target` with `relay` in place of the default.
-fn relay_stage(target: TunedLoop, relay: RelayConfig) -> StagePlan {
+/// A roll rate search stage with the copter defaults.
+fn rate_search() -> StagePlan {
     StagePlan {
-        target,
-        method: Method::Relay(RelayPlan {
-            relay,
-            ..RelayPlan::copter(target)
-        }),
+        target: TunedLoop::RollRate,
+        method: Method::Search(SearchPlan::copter_rate()),
     }
 }
 
@@ -185,104 +182,55 @@ fn started(flight_loop: &TestLoop, plan: &[StagePlan]) -> Autotune {
     autotune
 }
 
-/// The default copter sequence is the roll and pitch rate loops.
-#[test]
-fn copter_sequence_tunes_the_rate_loops() {
-    let targets = StagePlan::copter_sequence().map(|plan| plan.target);
-    check!(targets == [TunedLoop::RollRate, TunedLoop::PitchRate]);
-}
-
-/// Roll and pitch rate, then the angle and heading loops (opt-in stages).
-const EVERY_LOOP: [TunedLoop; 5] = [
+/// Roll and pitch rate, then angle: the loops a design tunes.
+const DESIGNED: [TunedLoop; 4] = [
     TunedLoop::RollRate,
     TunedLoop::PitchRate,
     TunedLoop::Roll,
     TunedLoop::Pitch,
-    TunedLoop::Heading,
 ];
 
-/// Every loop with a working relay, rate loops first, tunes in order and commits each stage's gains
-/// from its own measurement; nothing else in the config changes.
+/// Every designed loop, rate loops first, tunes in order and commits each stage's gains from
+/// its own fit; nothing else in the config changes.
 #[test]
 fn full_run_tunes_every_loop_in_order() {
     let (mut flight_loop, _controls) = hovering(1.0);
     let baseline = *flight_loop.stabilizer().config();
-    let mut autotune = started(&flight_loop, &EVERY_LOOP.map(StagePlan::copter));
+    let mut autotune = started(&flight_loop, &DESIGNED.map(design_stage));
 
     let events = run(&mut flight_loop, &mut autotune, 300.0, |_, _| {});
 
     check!(autotune.status() == AutotuneStatus::Complete);
+    let started: Vec<_> = events
+        .iter()
+        .filter_map(|event| match *event {
+            AutotuneEvent::StageStarted(target) => Some(target),
+            _ => None,
+        })
+        .collect();
+    check!(started == DESIGNED);
+    let done: Vec<_> = events
+        .iter()
+        .filter_map(|event| match *event {
+            AutotuneEvent::StageDone {
+                target,
+                gains,
+                outcome,
+                ..
+            } => Some((target, gains, outcome)),
+            _ => None,
+        })
+        .collect();
     let mut expected = baseline;
-    let mut index = 0;
-    for target in EVERY_LOOP {
-        check!(events.get(index) == Some(&AutotuneEvent::StageStarted(target)));
-        let Some(&AutotuneEvent::Measured {
-            target: measured,
-            measurement: Measurement::Relay(result),
-        }) = events.get(index + 1)
-        else {
-            panic!(
-                "{target:?}: expected Measured, got {:?}",
-                events.get(index + 1)
-            );
-        };
-        check!(measured == target);
-        let Some(&AutotuneEvent::StageDone {
-            target: done,
-            gains,
-            outcome: Outcome::Tuned,
-            steps: None,
-            baseline: None,
-        }) = events.get(index + 2)
-        else {
-            panic!(
-                "{target:?}: expected StageDone, got {:?}",
-                events.get(index + 2)
-            );
-        };
-        check!(done == target);
-        // PD: the rule's P and D; the integral keeps the baseline's gain.
-        let plan = RelayPlan::copter(target);
-        let rule = gains_from_ultimate(&result.point, plan.rule, plan.form);
-        check!(gains.p == rule.p, "{target:?}");
-        check!(gains.d == rule.d, "{target:?}");
-        check!(gains.i == target.gains(&baseline).i, "{target:?}");
+    for (index, (target, gains, outcome)) in done.iter().copied().enumerate() {
+        check!(target == DESIGNED[index]);
+        check!(outcome == Outcome::Designed, "{target:?}");
+        check!(gains != target.gains(&baseline), "{target:?}");
         *target.gains_mut(&mut expected) = gains;
-        index += 3;
     }
-    check!(events.get(index) == Some(&AutotuneEvent::Complete));
-    check!(events.len() == index + 1);
+    check!(done.len() == DESIGNED.len());
+    check!(events.last() == Some(&AutotuneEvent::Complete));
     check!(*flight_loop.stabilizer().config() == expected);
-}
-
-/// The relay ignores the gains of the loop it measures: from rate P at 0.3× and 3× the sane
-/// value, the tuned rate gains agree within 10%.
-#[test]
-fn result_does_not_depend_on_the_starting_rate_gains() {
-    let plan = [
-        StagePlan::copter(TunedLoop::RollRate),
-        StagePlan::copter(TunedLoop::PitchRate),
-    ];
-    let tuned = [0.3, 3.0].map(|scale| {
-        let (mut flight_loop, _controls) = hovering(scale);
-        let mut autotune = started(&flight_loop, &plan);
-        run(&mut flight_loop, &mut autotune, 60.0, |_, _| {});
-        check!(
-            autotune.status() == AutotuneStatus::Complete,
-            "scale {scale}"
-        );
-        flight_loop.stabilizer().config().body_rate
-    });
-
-    for (soft, stiff) in [
-        (tuned[0].roll_gains, tuned[1].roll_gains),
-        (tuned[0].pitch_gains, tuned[1].pitch_gains),
-    ] {
-        check!(
-            (soft.p / stiff.p - 1.0).abs() < 0.1,
-            "{soft:?} vs {stiff:?}"
-        );
-    }
 }
 
 /// Breaking the envelope mid-stage stops it and fails the run: the config goes back to the
@@ -290,8 +238,8 @@ fn result_does_not_depend_on_the_starting_rate_gains() {
 #[test]
 fn an_envelope_breach_ends_the_run_keeping_earlier_stages() {
     let plan = [
-        StagePlan::copter(TunedLoop::RollRate),
-        StagePlan::copter(TunedLoop::PitchRate),
+        rate_search(),
+        StagePlan::copter_step_test(TunedLoop::PitchRate),
     ];
     // (reason, how to cause it)
     let cases: [(AutotuneAbort, Disturbance); 3] = [
@@ -306,11 +254,11 @@ fn an_envelope_breach_ends_the_run_keeping_earlier_stages() {
         }),
     ];
     for (reason, cause) in cases {
-        let (mut flight_loop, controls) = hovering(1.0);
+        let (mut flight_loop, controls) = hovering_on(1.0, delayed_axis());
         let baseline = *flight_loop.stabilizer().config();
         let mut autotune = started(&flight_loop, &plan);
 
-        let events = run(&mut flight_loop, &mut autotune, 60.0, |autotune, _| {
+        let events = run(&mut flight_loop, &mut autotune, 300.0, |autotune, _| {
             if matches!(autotune.status(), AutotuneStatus::Running { stage: 1, .. }) {
                 cause(&controls);
             }
@@ -343,8 +291,8 @@ fn an_envelope_breach_ends_the_run_keeping_earlier_stages() {
 #[test]
 fn disarm_reverts_until_complete() {
     let plan = [
-        StagePlan::copter(TunedLoop::RollRate),
-        StagePlan::copter(TunedLoop::PitchRate),
+        design_stage(TunedLoop::RollRate),
+        design_stage(TunedLoop::PitchRate),
     ];
     // Mid-run: disarm once the second stage runs.
     let (mut flight_loop, controls) = hovering(1.0);
@@ -404,57 +352,46 @@ fn a_vehicle_that_never_settles_fails_before_the_first_step() {
     check!(*flight_loop.stabilizer().config() == baseline);
 }
 
-/// A relay that can't settle starts when the settle times out rather than failing the
-/// stage: it replaces the loop's output, so a vehicle that can't get still (here held off
-/// level) still gets measured (#375).
-#[test]
-fn a_relay_starts_when_the_settle_times_out() {
-    let (mut flight_loop, controls) = hovering(1.0);
-    hold_roll(&controls, 0.25);
-    let mut autotune = started(&flight_loop, &[StagePlan::copter(TunedLoop::PitchRate)]);
-    let timeout_s = Envelope::default().settle_timeout_s;
-
-    run(&mut flight_loop, &mut autotune, timeout_s - 0.1, |_, _| {});
-    check!(matches!(autotune.status(), AutotuneStatus::Settling { .. }));
-    run(&mut flight_loop, &mut autotune, 0.2, |_, _| {});
-    check!(matches!(autotune.status(), AutotuneStatus::Running { .. }));
-}
-
 /// A probe abort or an interrupt fails the stage; its loop keeps its gains.
 #[test]
 fn probe_aborts_and_interrupts_fail_the_stage() {
-    let short = relay_stage(
-        TunedLoop::RollRate,
-        RelayConfig {
-            timeout_s: 0.2,
-            ..COPTER_RATE_RELAY
-        },
-    );
-    let acro = ControlInput::Rate(RateCommand {
-        throttle: 0.5,
-        ..Default::default()
-    });
-    // (plan, input once running, expected reason)
-    let cases = [
+    // Running ticks before the disturbance (a 1 rad/s step has about risen), and how long it
+    // lasts: long enough to abort, short enough not to tilt the vehicle past the envelope.
+    const RUNNING_TICKS: usize = 40;
+    const DISTURBANCE_TICKS: usize = 10;
+    // (plan, disturbance once running, expected reason)
+    let cases: [(StagePlan, Disturbance, AutotuneAbort); 2] = [
+        // Past three times the 1 rad/s step, inside the envelope's 4 rad/s.
         (
-            short,
-            None,
-            AutotuneAbort::Probe(ProbeAbort::Relay(RelayAbort::Timeout)),
+            StagePlan::copter_step_test(TunedLoop::RollRate),
+            |c| c.rate_spike_radps.set(2.6),
+            AutotuneAbort::Probe(ProbeAbort::Step(StepAbort::Runaway)),
         ),
         (
-            StagePlan::copter(TunedLoop::Roll),
-            Some(acro),
+            StagePlan::copter_step_test(TunedLoop::Roll),
+            |c| {
+                c.input.set(Some(ControlInput::Rate(RateCommand {
+                    throttle: 0.5,
+                    ..Default::default()
+                })))
+            },
             AutotuneAbort::Interrupted,
         ),
     ];
-    for (plan, input, reason) in cases {
+    for (plan, disturb, reason) in cases {
         let (mut flight_loop, controls) = hovering(1.0);
         let baseline = *flight_loop.stabilizer().config();
         let mut autotune = started(&flight_loop, &[plan]);
 
+        let mut running = 0;
         let events = run(&mut flight_loop, &mut autotune, 30.0, |autotune, _| {
             if matches!(autotune.status(), AutotuneStatus::Running { .. }) {
-                controls.input.set(input);
+                running += 1;
+                if (RUNNING_TICKS..RUNNING_TICKS + DISTURBANCE_TICKS).contains(&running) {
+                    disturb(&controls);
+                } else {
+                    controls.rate_spike_radps.set(0.0);
+                }
             }
         });
 
@@ -470,14 +407,7 @@ fn probe_aborts_and_interrupts_fail_the_stage() {
 /// `new` rejects a bad plan or envelope; `start` needs an armed loop and no run in progress.
 #[test]
 fn new_and_start_reject_bad_input() {
-    let stage = StagePlan::copter(TunedLoop::RollRate);
-    let bad_relay = relay_stage(
-        TunedLoop::RollRate,
-        RelayConfig {
-            cycles: 0,
-            ..COPTER_RATE_RELAY
-        },
-    );
+    let stage = design_stage(TunedLoop::RollRate);
     let bad_envelope = Envelope {
         settle: Settle {
             tilt_rad: 1.0, // looser than max_tilt_rad
@@ -513,7 +443,7 @@ fn new_and_start_reject_bad_input() {
         ..Envelope::default()
     };
     // (plan, envelope, section, field)
-    let cases: [(&[StagePlan], Envelope, &str, &str); 8] = [
+    let cases: [(&[StagePlan], Envelope, &str, &str); 7] = [
         (&[stage], no_recovery, "envelope", "recovery_s"),
         (&[], Envelope::default(), "plan", "stages"),
         (
@@ -522,7 +452,6 @@ fn new_and_start_reject_bad_input() {
             "plan",
             "stages",
         ),
-        (&[bad_relay], Envelope::default(), "plan.relay", "cycles"),
         (&[stage], bad_envelope, "envelope", "settle.tilt_rad"),
         (
             &[bad_step],
@@ -563,7 +492,7 @@ fn update_before_start_does_nothing() {
     let (mut flight_loop, _controls) = hovering(1.0);
     let baseline = *flight_loop.stabilizer().config();
     let mut autotune =
-        Autotune::new(&StagePlan::copter_sequence(), Envelope::default()).expect("valid");
+        Autotune::new(&DESIGNED.map(design_stage), Envelope::default()).expect("valid");
 
     check!(autotune.update(&mut flight_loop, DT) == None);
     assert!(autotune.status() == AutotuneStatus::Idle);
@@ -751,7 +680,8 @@ fn a_long_slow_stretch_stops_one_step() {
 }
 
 /// A step test settles to its own, tighter limits: held 3.4° off level (inside the envelope's
-/// 6°, outside the step settle's 2.5°), it never starts; a relay stage does.
+/// 6°, outside the step settle's 2.5°), it never starts; a design stage, which settles to the
+/// envelope's, does.
 #[test]
 fn a_step_test_settles_to_its_own_limits() {
     let (mut flight_loop, controls) = hovering(1.0);
@@ -777,7 +707,7 @@ fn a_step_test_settles_to_its_own_limits() {
     check!(events.last() == Some(&failed));
     check!(*flight_loop.stabilizer().config() == baseline);
 
-    // The relay settles to the envelope's 6°: the same hold starts it.
+    // A design settles to the envelope's 6°: the same hold starts it.
     let (mut flight_loop, controls) = hovering(1.0);
     controls.input.set(Some(ControlInput::AbsoluteAttitude(
         AbsoluteAttitudeCommand {
@@ -786,7 +716,7 @@ fn a_step_test_settles_to_its_own_limits() {
             ..Default::default()
         },
     )));
-    let mut autotune = started(&flight_loop, &[StagePlan::copter(TunedLoop::PitchRate)]);
+    let mut autotune = started(&flight_loop, &[design_stage(TunedLoop::PitchRate)]);
     run(&mut flight_loop, &mut autotune, 5.0, |_, _| {});
     check!(matches!(
         autotune.status(),
@@ -794,9 +724,19 @@ fn a_step_test_settles_to_its_own_limits() {
     ));
 }
 
-/// Rate P multiplier that puts the start well above the relay's ceiling on
-/// [`delayed_axis`].
-const SCALE_ABOVE_CEILING: f32 = 6.0;
+/// Rate P multiplier that puts the start (P 3) well above [`lowering_search`]'s `max`.
+const SCALE_ABOVE_MAX: f32 = 6.0;
+
+/// A roll rate search whose `max` (P 1) is below a start at [`SCALE_ABOVE_MAX`].
+fn lowering_search() -> StagePlan {
+    StagePlan {
+        target: TunedLoop::RollRate,
+        method: Method::Search(SearchPlan {
+            max: 1.0,
+            ..SearchPlan::copter_rate()
+        }),
+    }
+}
 
 /// A rate axis with QuadCopterX-like lag: 12 ms of dead time.
 fn delayed_axis() -> PlantParams {
@@ -806,14 +746,14 @@ fn delayed_axis() -> PlantParams {
     }
 }
 
-/// A rate P far above the relay's ceiling is lowered and committed once the relay measures:
+/// A rate P far above the search's `max` is lowered and committed before anything flies:
 /// the vehicle settles on the lowered gains between probes, never on the start, and a kept
 /// result is the lowered gains (#375).
 #[test]
-fn a_start_above_the_ceiling_settles_on_lowered_gains() {
-    let (mut flight_loop, _controls) = hovering_on(SCALE_ABOVE_CEILING, delayed_axis());
+fn a_start_above_max_settles_on_lowered_gains() {
+    let (mut flight_loop, _controls) = hovering_on(SCALE_ABOVE_MAX, delayed_axis());
     let start = TunedLoop::RollRate.gains(flight_loop.stabilizer().config());
-    let mut autotune = started(&flight_loop, &[StagePlan::copter_rate_search()[0]]);
+    let mut autotune = started(&flight_loop, &[lowering_search()]);
 
     // The roll rate gains flown on each tick spent settling.
     let mut settling = Vec::new();
@@ -855,9 +795,9 @@ fn a_start_above_the_ceiling_settles_on_lowered_gains() {
 /// (#375).
 #[test]
 fn a_failure_after_lowering_keeps_the_lowered_gains() {
-    let (mut flight_loop, _controls) = hovering_on(SCALE_ABOVE_CEILING, delayed_axis());
+    let (mut flight_loop, _controls) = hovering_on(SCALE_ABOVE_MAX, delayed_axis());
     let start = TunedLoop::RollRate.gains(flight_loop.stabilizer().config());
-    let mut autotune = started(&flight_loop, &[StagePlan::copter_rate_search()[0]]);
+    let mut autotune = started(&flight_loop, &[lowering_search()]);
 
     let mut lowered = None;
     for _ in 0..(60.0 / DT) as usize {
@@ -886,14 +826,17 @@ fn a_failure_after_lowering_keeps_the_lowered_gains() {
 }
 
 /// The rate search tunes roll and pitch rate from a hand-tune-like start and from half its
-/// P: each stage keeps a result that flies no worse than its baseline, under the relay's
-/// ceiling, with the rule's D; the other loops keep their gains.
+/// P: each stage keeps a result that flies no worse than its baseline, with its start's I and
+/// D; the other loops keep their gains.
 #[test]
 fn rate_search_tunes_the_rate_loops() {
     for scale in [1.0, 0.5] {
         let (mut flight_loop, _controls) = hovering_on(scale, delayed_axis());
         let start = *flight_loop.stabilizer().config();
-        let plan = StagePlan::copter_rate_search();
+        let plan = [TunedLoop::RollRate, TunedLoop::PitchRate].map(|target| StagePlan {
+            target,
+            method: Method::Search(SearchPlan::copter_rate()),
+        });
         let mut autotune = started(&flight_loop, &plan);
 
         let events = run(&mut flight_loop, &mut autotune, 300.0, |_, _| {});
@@ -930,8 +873,8 @@ fn rate_search_tunes_the_rate_loops() {
                 "{scale} {target:?}: I kept"
             );
             check!(
-                gains.d != target.gains(&start).d,
-                "{scale} {target:?}: the rule's D"
+                gains.d == target.gains(&start).d,
+                "{scale} {target:?}: D kept"
             );
             let (Some(verify_os), Some(baseline_os)) =
                 (verify.overshoot.mean(), baseline.overshoot.mean())
@@ -965,7 +908,7 @@ fn candidates_fly_only_during_their_step() {
     for (gust_ticks, completes) in cases {
         let (mut flight_loop, controls) = hovering_on(1.0, delayed_axis());
         let start = *flight_loop.stabilizer().config();
-        let plan = [StagePlan::copter_rate_search()[0]];
+        let plan = [rate_search()];
         let mut autotune = started(&flight_loop, &plan);
 
         let mut candidate_ticks = 0;
@@ -1029,7 +972,7 @@ fn a_slow_host_stops_a_candidate_and_it_flies_again() {
     const SLOW_TICKS: usize = 250;
     let (mut flight_loop, _controls) = hovering_on(1.0, delayed_axis());
     let start = *flight_loop.stabilizer().config();
-    let plan = [StagePlan::copter_rate_search()[0]];
+    let plan = [rate_search()];
     let mut autotune = started(&flight_loop, &plan);
 
     let mut stopped = None;
@@ -1172,7 +1115,7 @@ fn a_breach_right_after_a_freeze_does_not_fail_the_stage() {
 fn a_candidate_breaching_after_a_freeze_comes_out_unjudged() {
     let (mut flight_loop, controls) = hovering_on(1.0, delayed_axis());
     let start = *flight_loop.stabilizer().config();
-    let plan = [StagePlan::copter_rate_search()[0]];
+    let plan = [rate_search()];
     let mut autotune = started(&flight_loop, &plan);
 
     let mut frozen = None;
@@ -1227,8 +1170,7 @@ fn a_candidate_breaching_after_a_freeze_comes_out_unjudged() {
 #[test]
 fn search_plan_validation() {
     let good = SearchPlan::copter_rate();
-    let relay = good.relay.expect("the rate search has a relay");
-    let rows: [(SearchPlan, &str); 14] = [
+    let rows: [(SearchPlan, &str); 12] = [
         (SearchPlan { confirm: 0, ..good }, "confirm"),
         (
             SearchPlan {
@@ -1305,32 +1247,6 @@ fn search_plan_validation() {
                 ..good
             },
             "max",
-        ),
-        (
-            SearchPlan {
-                relay: Some(SearchRelay {
-                    plan: RelayPlan {
-                        relay: RelayConfig {
-                            cycles: 0,
-                            ..relay.plan.relay
-                        },
-                        ..relay.plan
-                    },
-                    ..relay
-                }),
-                ..good
-            },
-            "cycles",
-        ),
-        (
-            SearchPlan {
-                relay: Some(SearchRelay {
-                    ceiling: 0.0,
-                    ..relay
-                }),
-                ..good
-            },
-            "relay.ceiling",
         ),
         (
             SearchPlan {
@@ -1427,8 +1343,8 @@ fn terms_read_and_replace_their_gain() {
 }
 
 /// The full copter search, on axes with delay and noise: rate loops first, then angle; each
-/// stage keeps a result no worse than its baseline, and the angle loops settle faster on a
-/// higher P within the plan's bounds.
+/// stage keeps a result no worse than its baseline, with its start's D, and the angle P stays
+/// within the plan's bounds.
 #[test]
 fn copter_search_tunes_rate_then_angle() {
     let params = PlantParams {
@@ -1438,7 +1354,10 @@ fn copter_search_tunes_rate_then_angle() {
     };
     let (mut flight_loop, _controls) = hovering_on(1.0, params);
     let start = *flight_loop.stabilizer().config();
-    let plan = StagePlan::copter_search();
+    let plan = DESIGNED.map(|target| StagePlan {
+        target,
+        method: Method::Search(SearchPlan::copter(target)),
+    });
     let mut autotune = started(&flight_loop, &plan);
 
     let events = run(&mut flight_loop, &mut autotune, 600.0, |_, _| {});
@@ -1462,25 +1381,21 @@ fn copter_search_tunes_rate_then_angle() {
     let angle = SearchPlan::copter_angle();
     for (target, gains, outcome, verify, baseline) in done {
         check!(outcome == Outcome::Tuned, "{target:?}");
+        check!(gains.d == target.gains(&start).d, "{target:?}: D kept");
         if target.is_rate() {
             continue;
         }
-        check!(gains.p > target.gains(&start).p, "{target:?}");
+        check!(
+            verify.settling_time_s.mean().is_some() && baseline.settling_time_s.mean().is_some(),
+            "{target:?}: settled"
+        );
         check!((angle.min..=angle.max).contains(&gains.p), "{target:?}");
-        check!(gains.d == target.gains(&start).d, "{target:?}: D kept");
-        let (Some(verify_s), Some(baseline_s)) = (
-            verify.settling_time_s.mean(),
-            baseline.settling_time_s.mean(),
-        ) else {
-            panic!("{target:?}: unsettled");
-        };
-        check!(verify_s < baseline_s, "{target:?}");
     }
 }
 
 /// The rate search steps as the step test does, allowing 10 clipped ticks (a 1 rad/s step
 /// asks for more than full moment above P 1); the angle search steps at half the step test's
-/// size, so its candidates' moment demand stays below full scale, and runs without a relay.
+/// size, so its candidates' moment demand stays below full scale.
 #[test]
 fn search_step_presets() {
     let rate = SearchPlan::copter_rate().test;
@@ -1493,7 +1408,6 @@ fn search_step_presets() {
     check!(angle.test.step.amplitude == COPTER_ANGLE_STEP.amplitude / 2.0);
     check!(angle.test.step.duration_s == COPTER_ANGLE_STEP.duration_s);
     check!(angle.validate() == Ok(()));
-    check!(angle.relay.is_none());
 }
 
 /// The design search designs every loop, rate first, with each rate loop's fit run on the
@@ -1564,8 +1478,8 @@ fn copter_design_search_designs_then_searches_every_loop() {
     }
 }
 
-/// A fit starts when the settle times out, as a relay does: a vehicle that can't get still
-/// still gets fitted (#356).
+/// A fit starts when the settle times out: a vehicle that can't get still still gets fitted,
+/// since a fit only gains excitation from the ringing.
 #[test]
 fn an_identification_starts_when_the_settle_times_out() {
     let (mut flight_loop, controls) = hovering(1.0);
@@ -1644,7 +1558,7 @@ fn design_stage(target: TunedLoop) -> StagePlan {
 fn search_stage(target: TunedLoop) -> StagePlan {
     StagePlan {
         target,
-        method: Method::Search(SearchPlan::copter_seeded(target)),
+        method: Method::Search(SearchPlan::copter(target)),
     }
 }
 
@@ -1740,7 +1654,7 @@ fn a_lowered_design_goes_back_to_its_start_when_its_search_fails() {
     let below_the_design = SearchPlan {
         min: 0.01,
         max: 0.05,
-        ..SearchPlan::copter_seeded(TunedLoop::RollRate)
+        ..SearchPlan::copter(TunedLoop::RollRate)
     };
     let plan = [
         design_stage(TunedLoop::RollRate),

@@ -1,5 +1,5 @@
 use crate::controllers::derivative::DerivativeState;
-use crate::controllers::{Gains, InvalidConfig, check_limit, rescale_integral, seed_integral};
+use crate::controllers::{Gains, InvalidConfig, check_limit, rescale_integral};
 use crate::math::{assert_dt, clamp_symmetric, wrap_angle};
 
 /// Configures the yaw controller with PID gains and operational limits.
@@ -183,18 +183,9 @@ impl YawController {
         self.integrated_error = rescale_integral(self.integrated_error, old.gains.i, new.gains.i);
     }
 
-    /// The I term (`i · integral`): the yaw rate the loop holds as trim.
-    pub(crate) fn integral_term(&self, config: &YawControllerConfig) -> f32 {
-        config.gains.i * self.integrated_error
-    }
-
-    /// Restarts from a trim: the I term becomes `i_term` (`seed_integral`) and the derivative
-    /// history is cleared.
-    pub(crate) fn hand_back(&mut self, config: &YawControllerConfig, i_term: f32) {
-        *self = Self {
-            derivative: DerivativeState::default(),
-            integrated_error: seed_integral(i_term, config.gains.i, config.max_integral),
-        };
+    /// Restarts with no derivative history, keeping the integral.
+    pub(crate) fn hand_back(&mut self) {
+        self.derivative = DerivativeState::default();
     }
 }
 

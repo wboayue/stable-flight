@@ -57,14 +57,15 @@ fn airframes() -> [(&'static str, Airframe); 3] {
     ]
 }
 
-/// Simulated seconds and probes per stage of `StagePlan::copter_search` from the airframes'
-/// own gains on the clean plant: the settle before each step takes most of each stage.
+/// Simulated seconds and probes per stage of `StagePlan::copter_design_search` from the
+/// airframes' own gains on the clean plant: the settle before each step takes most of each
+/// search stage.
 #[test]
 #[ignore = "method sweep (#312)"]
 fn search_time_per_stage() {
     for (name, airframe) in airframes() {
         let mut flight_loop = hover(&Plant::clean(airframe));
-        let plan = StagePlan::copter_search();
+        let plan = StagePlan::copter_design_search();
         let mut autotune = Autotune::new(&plan, Envelope::default()).expect("valid plan");
         autotune.start(&flight_loop).expect("armed, idle");
         let (mut start_s, mut probes) = (0.0, 0);

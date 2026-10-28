@@ -9,9 +9,7 @@ use stable_flight::{ActuatorCommand, GRAVITY};
 use stable_flight_sim::airframes::Airframe;
 use stable_flight_sim::{GyroNoise, Perturbations, Vibration};
 
-/// Rate P and D multiplier for the high start. At ×3, `quad_x`'s rate steps clip; `heavy_quad`'s
-/// and `racer`'s rate P sits above the relay's ceiling (0.6·Ku: 2.16 and 0.85 against 2.45 and
-/// 1.86), so the search doesn't fly it as a baseline.
+/// Rate P and D multiplier for the high start: at ×3, `quad_x`'s rate steps clip.
 pub const HIGH_RATE_SCALE: f32 = 3.0;
 
 /// Gyro white noise RMS per axis, in rad/s.
