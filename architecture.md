@@ -773,11 +773,12 @@ ultimate point, then a search) stays selectable.
     wave on the angle setpoint, every loop closed (PX4's excitation,
     `mc_autotune_attitude_control.cpp:603-639`), and a least-squares fit of the axis's body
     rate to its moment command: a second-order model with a delay (PX4's `ArxRls<2,2,1>`), the
-    delay the shortest within 5% of the least residual among those whose moment pushes the
+    delay the shortest within 1% of the least residual among those whose moment pushes the
     axis the right way (a positive moment-weight sum). In RealFlight the fits explain only
-    35–72% of the rate change, so noise picked among near-tied delays: 9 of 55 recorded
-    QuadCopterX fits took a long delay reading under 20 rad/s² (negative in 7), where a
-    shorter one fit within 1–3% and read 30–70; replayed with this choice, 1 of 55 did (#529).
+    35–72% of the rate change, so noise picks among near-tied delays: 10 of 67 recorded
+    QuadCopterX fits read under 20 rad/s² (negative in 7); replayed with the filter, 5 did
+    (#529). A wider tie (5%) left 1 but took 1-tick delays in 6, which design too hot a loop:
+    one rang and failed its stage.
     A rate stage's fit runs on the angle loop above it. The
     probe keeps each delay's least-squares sums rather than the record and solves them when
     the excitation ends; it fits the rate's change on the last rate and the last change, since

@@ -142,14 +142,14 @@ fn drops_a_non_finite_tick_and_refills_its_history() {
     );
 }
 
-/// The delay is the shortest whose residual is within 5% of the least, so noise or rounding
-/// doesn't pick between near-equal delays: (residuals per delay from 1, delay picked).
+/// The delay is the shortest whose residual is within 1% of the least, so rounding doesn't pick
+/// between near-equal delays: (residuals per delay from 1, delay picked).
 #[test]
 fn picks_the_shortest_of_near_tied_delays() {
     let rows: [(&[Option<f32>], Option<usize>); 6] = [
         (&[Some(3.0), Some(1.0), Some(2.0)], Some(2)),
-        (&[Some(1.04), Some(1.0)], Some(1)),
-        (&[Some(1.06), Some(1.0)], Some(2)),
+        (&[Some(1.005), Some(1.0)], Some(1)),
+        (&[Some(1.02), Some(1.0)], Some(2)),
         (&[None, Some(0.0), Some(0.0)], Some(2)),
         (&[None, None], None),
         (&[], None),

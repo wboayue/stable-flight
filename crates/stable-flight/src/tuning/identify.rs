@@ -36,13 +36,12 @@ fn half_period_s(index: usize) -> f32 {
     }
 }
 
-/// Residuals within this share of the least count as tied, and the shortest such delay wins.
-/// In flight, noise decides between delays the data can't tell apart: QuadCopterX's fits in
-/// RealFlight explain 35–72% of the rate change, and 9 of 55 picked a long delay that read
-/// under 20 rad/s², where a shorter one fit within 1–3% and read 30–70. With 5% (and only
-/// delays that push the right way) 1 of 55 did (#529). It also keeps `f32` cancellation in
-/// `Σt² − θ·Σφt` from picking between near-equal delays on rounding (#516).
-const TIE_SHARE: f32 = 0.05;
+/// Residuals within this share of the least count as tied, and the shortest such delay wins:
+/// `f32` cancellation in `Σt² − θ·Σφt` would otherwise pick between near-equal delays on
+/// rounding (a 25 ms delay fit at 6 or 7 ticks, #516). Wider favors delays too short, which
+/// design too hot a loop: on QuadCopterX in RealFlight, 5% took 1 tick in 6 of 67 fits
+/// against 1 at 1%, and one such design rang and failed its stage (#529).
+const TIE_SHARE: f32 = 0.01;
 
 /// Configures an [`IdentifyProbe`].
 ///
@@ -455,9 +454,9 @@ impl Sums {
 /// or among all when none has one (a reversed axis, which the design rejects as such). A
 /// negative effect pushes the axis against the moment commanded, which no design can use, and
 /// in flight it comes from noise favoring a wrong delay (#529). A pushing delay wins however
-/// far its residual is from a wrong-way least; on QuadCopterX in RealFlight the 7 fits it
-/// decided sat 1–13% above it and read 27–63 rad/s² (the axis's healthy fits read 30–70), and
-/// the design's hold catches a design that rings. `None` when no delay solved.
+/// far its residual is from a wrong-way least: on QuadCopterX in RealFlight the 7 fits it
+/// decided sat 1–9% above it, 5 read 37–63 rad/s² (the axis's healthy fits read 30–70), and
+/// the design rejects the other 2 (0 and 8) as it did before. `None` when no delay solved.
 fn delay_to_fit(fits: &[Option<(f32, f32)>]) -> Option<usize> {
     let pushing: [Option<f32>; MAX_DELAY_TICKS] = core::array::from_fn(|index| {
         let fit = fits.get(index).copied().flatten();
