@@ -15,5 +15,5 @@
 - Descending with the wind behind the wing cycles roll
   ([heading-decides-roll-cycle.md](heading-decides-roll-cycle.md)).
 
-**So:** reset RealFlight to 5 km/h for wind flights, expect the wind from about 37°, and
-script climbs and holds at wingtip headings.
+**So:** wind flights script climbs and holds at wingtip headings
+([flight-check](../../.claude/skills/flight-check/SKILL.md#rules)).
