@@ -778,8 +778,7 @@ ultimate point, then a search) stays selectable.
     35–72% of the rate change, so noise picks among near-tied delays: 10 of 67 recorded
     QuadCopterX fits read under 20 rad/s² (negative in 7); replayed with the filter, 5 did
     (#529). A wider tie (5%) left 1 but took 1-tick delays in 6, which design too hot a loop:
-    one rang and failed its stage.
-    A rate stage's fit runs on the angle loop above it. The
+    one rang and failed its stage. A rate stage's fit runs on the angle loop above it. The
     probe keeps each delay's least-squares sums rather than the record and solves them when
     the excitation ends; it fits the rate's change on the last rate and the last change, since
     fitting the last two rates side by side loses the lag in `f32` (up to 1.6 ms off, #516),

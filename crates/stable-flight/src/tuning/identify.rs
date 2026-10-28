@@ -40,7 +40,8 @@ fn half_period_s(index: usize) -> f32 {
 /// `f32` cancellation in `Σt² − θ·Σφt` would otherwise pick between near-equal delays on
 /// rounding (a 25 ms delay fit at 6 or 7 ticks, #516). Wider favors delays too short, which
 /// design too hot a loop: on QuadCopterX in RealFlight, 5% took 1 tick in 6 of 67 fits
-/// against 1 at 1%, and one such design rang and failed its stage (#529).
+/// against 1 at 1%, and in run 35 a 1-tick pick at 2.2% over the least designed roll rate
+/// P 1.79, which rang and failed its stage (#529).
 const TIE_SHARE: f32 = 0.01;
 
 /// Configures an [`IdentifyProbe`].
@@ -458,15 +459,14 @@ impl Sums {
 /// decided sat 1–9% above it, 5 read 37–63 rad/s² (the axis's healthy fits read 30–70), and
 /// the design rejects the other 2 (0 and 8) as it did before. `None` when no delay solved.
 fn delay_to_fit(fits: &[Option<(f32, f32)>]) -> Option<usize> {
+    let fit_at = |index: usize| fits.get(index).copied().flatten();
     let pushing: [Option<f32>; MAX_DELAY_TICKS] = core::array::from_fn(|index| {
-        let fit = fits.get(index).copied().flatten();
-        fit.filter(|(effect, _)| *effect > 0.0)
+        fit_at(index)
+            .filter(|(effect, _)| *effect > 0.0)
             .map(|(_, residual)| residual)
     });
-    let all: [Option<f32>; MAX_DELAY_TICKS] = core::array::from_fn(|index| {
-        let fit = fits.get(index).copied().flatten();
-        fit.map(|(_, residual)| residual)
-    });
+    let all: [Option<f32>; MAX_DELAY_TICKS] =
+        core::array::from_fn(|index| fit_at(index).map(|(_, residual)| residual));
     shortest_tied(&pushing).or_else(|| shortest_tied(&all))
 }
 
