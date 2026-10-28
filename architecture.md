@@ -606,10 +606,10 @@ contract:
   gain it resets the integral: one accumulated under `i = 0` was never applied. The per-tick
   `max_integral` clamp still applies, so a large cut in `i` can still bump the output.
 * **Tuning probes are runtime state, not config.** An autotune probe (`Tunable::start_probe`)
-  replaces one loop's output or setpoint inside the tick; it lives next to the controllers'
-  state, never in `CopterStabilizerConfig` or its params. Handing a relay-probed loop back seeds
-  its integral so the I term equals the measured trim (`seed_integral`); a following
-  `set_config` rescales it like any retune.
+  replaces one loop's setpoint inside the tick; it lives next to the controllers'
+  state, never in `CopterStabilizerConfig` or its params. Handing the loop back clears its
+  derivative history, so the setpoint's jump back doesn't kick it, and keeps its integral; a
+  following `set_config` rescales it like any retune.
 
 ### Params
 
@@ -643,25 +643,16 @@ stabilizer's params.
 
 PID autotune tunes a fresh airframe from a bad or unflyable start without a pilot nursing it.
 The copter default (`StagePlan::copter_design_search`) fits each rate axis in hover, designs
-its gains from the fit, then searches each loop's gain by steps from the design; the
-step-response gain search from the start gains (relay feedback, Åström–Hägglund, for the
-ultimate point, then a search) stays selectable.
+its gains from the fit, then searches each loop's gain by steps from the design. Relay
+feedback and a search from the start gains were rejected (**Design search**, below).
 
-* **Measure** (`tuning::RelayTuner`): the relay replaces one loop's controller output with
-  `bias ± h`, switching on the error's sign with hysteresis. The limit cycle's period and
-  amplitude give the ultimate point `Ku`, `Tu`. The relay ramps `h` until the cycle is large
-  enough, and moves the bias to each cycle's mean output so a steady offset (CG, yaw drag)
-  doesn't skew it. The describing function reads `Ku` a few percent low and `Tu` high: the
-  conservative direction.
-* **Rules** (`tuning::gains_from_ultimate`): Tyreus–Luyben (default) or no-overshoot
-  Ziegler–Nichols, as PID, PI, PD, or P. Classic Ziegler–Nichols overshoots too much for a
-  multirotor.
 * **Probe and host** (`tuning::Probe`; `Tunable`, implemented by `CopterStabilizer`): a probe
   excites and measures one loop *inside* the tick on the fresh estimate, since a between-ticks
-  driver would add a tick of delay and bias `Ku`/`Tu`. Each tick the host hands the probe the
+  driver would add a tick of delay to what it measures. Each tick the host hands the probe the
   loop's setpoint, error, whether its path clipped last tick, and its axis's body rate and last
-  moment command (`LoopSignals`), before the loop's controller runs; the probe answers with one
-  `Injection`: a replaced output (relay) or a replaced setpoint (step, identification). Every controller keeps running. The host owns the loop and the
+  moment command (`LoopSignals`), before the loop's controller runs; the probe answers with the
+  setpoint the controller runs on instead (a step, the identification's square wave). Every
+  controller keeps running. The host owns the loop and the
   handoff; the probe owns the signal and the measurement.
 * **Step response** (`tuning::StepProbe`): holds the setpoint at the starting measurement plus
   the step for a fixed window, so steps compare on equal terms, and reports `StepMetrics`
@@ -672,7 +663,7 @@ ultimate point, then a search) stays selectable.
   allows a few clipped ticks (`StepTestPlan::max_saturated_s`). `StepSummary` keeps means and
   ranges over steps, and overshoot per direction, whose difference shows a trim or CG offset.
 * **Procedures and executor** (`tuning::autotune`, between ticks): each stage's `Method`
-  (`Relay`, `StepTest`, `Search`, `Design`) becomes a procedure, a pure state machine fed the stage's start
+  (`StepTest`, `Search`, `Design`) becomes a procedure, a pure state machine fed the stage's start
   and each probe's `Measurement` (or abort), which answers "run this probe" (optionally on
   candidate gains), "finish with these gains", or "fail". It never touches the flight loop, so its
   decisions are tested by feeding it inputs. `Autotune` executes it: it settles before each
@@ -695,27 +686,24 @@ ultimate point, then a search) stays selectable.
   the vehicle has settled on the committed gains and come out when the probe ends, so a
   candidate flies only its step.
 * **Gain search** (`Method::Search`): the largest gain of one term whose step pairs meet a
-  criterion, assuming the response worsens as the gain grows. An optional relay first caps the
-  gain (`0.6·Ku`) and seeds the other terms from its rule. A baseline on the start gains, then a
+  criterion, assuming the response worsens as the gain grows. A baseline on the start gains, then a
   bracket (`×1.3` per pair) and bisection to 10%, each point one `±` pair judged on its means
   (trim doesn't bias it). The result, backed off 10% (as ArduPilot does), is verified with fresh
   pairs and kept only if it flies no worse than the baseline (`Acceptance`), when the baseline
   met the criterion; otherwise it need only meet the criterion. A too-high start fails the
   criterion yet settles fast, overshooting within the settle band, so holding the result to
-  it would keep the high gain (#361). A start above the search's maximum (the relay's
-  ceiling) isn't flown: it's lowered to the relay's rule gains, P at most the ceiling, and
-  committed at once, so the vehicle settles on them and they stay if nothing better passes or
-  the stage fails, since a gain above the ceiling can ring once the relay disturbs it and never
-  settle (#375). A start whose steps keep clipping leaves no baseline rather than ending the
-  stage. The search plan (`StagePlan::copter_search`) tunes roll and pitch rate,
-  then angle, so the angle search flies on the tuned rate loops:
-  * Rate: D seeded from the relay's Tyreus–Luyben PD, P searched on overshoot ≤ 0.05 and
+  it would keep the high gain (#361). A start above the search's maximum isn't flown: it's
+  lowered to the maximum and committed at once, so the vehicle settles on it and it stays if
+  nothing better passes or the stage fails, since a gain that high can ring once disturbed and
+  never settle (#375). A start whose steps keep clipping leaves no baseline rather than ending
+  the stage. Each loop's search starts from its design (`SearchPlan::copter`):
+  * Rate: D as designed, P searched on overshoot ≤ 0.05 and
     bounce-back ≤ 0.1 (ArduPilot's default aggressiveness). Rate P has a sharp limit
     (QuadCopterX: P 1.14 flew clean, 1.22 overshot 0.18; #298), so a bracket point passes only on
     two pairs in a row (ArduPilot's `ignore_next`). Above the start
     the candidates' moment demand clips before overshoot binds, so the search allows clipped
     ticks rather than treating clipping as failure.
-  * Angle: no relay (an angle loop's `Ku` caps nothing), P searched on overshoot and bounce-back
+  * Angle: P searched on overshoot and bounce-back
     ≤ 0.05 (ArduPilot's angle-P limit); bounce-back counts though a disturbance holds the angle
     short of the step (about 8% on QuadCopterX).
   * D isn't searched the way ArduPilot does (raise D until the response bounces back): with the
@@ -723,30 +711,22 @@ ultimate point, then a search) stays selectable.
   * An envelope breach while a candidate flies fails that candidate, not the run: the committed
     gains go back in and get `Envelope::recovery_s` to recover.
 * **Sequence:** innermost first, so each stage flies on the gains the earlier ones found. A stage
-  tunes only its form's terms; the rest keep their gains. That keeps the rate loops' I, which
-  holds trim rather than shaping the response: the rule's integral time (`2.2·Tu`) is a
-  fraction of a second, about 30× shorter than QuadCopterX's flown hand tune (#295). Yaw rate isn't relay-tuned: the relay can't measure it within
-  the yaw authority the mixer leaves at hover
-  ([#296](https://github.com/wboayue/stable-flight/issues/296)). The relay on roll and pitch angle
-  measures a high ultimate gain (an integrator around a fast rate loop) whose rule P oscillates
-  once the rate setpoint saturates, so angles are tuned by step-response search or loop
-  shaping. Before each probe the vehicle must hold level and still (`Envelope::settle`): roll
+  tunes only its own terms; the rest keep their gains. No stage tunes the rate loops' I, which
+  holds trim rather than shaping the response. Yaw rate and heading aren't tuned
+  ([#296](https://github.com/wboayue/stable-flight/issues/296)). Before each probe the vehicle must hold level and still (`Envelope::settle`): roll
   and pitch within the tilt, their rates within the rate. Yaw rate is left out: the yaw loop
   isn't tuned, and on `racer` with 25 ms of delay it rings at ±0.18 rad/s on its start gains
   without tilting the vehicle (#518); ArduPilot's level check covers every axis, and widens its
   limits up to twice as the wait grows (`AC_AutoTune.cpp:343`), which here started about half
-  the probes before the vehicle was still and made angle steps clip. A relay or an
-  identification that can't settle starts at the timeout instead of failing: the relay
-  replaces the loop's output, so it measures a loop ringing on its own gains, and the fit only
-  gains excitation from the ringing. A step can't, so in the search a loop the run hasn't
-  reached yet that rings on its start gains fails the stage
-  ([#356](https://github.com/wboayue/stable-flight/issues/356)); the design search designs
-  every loop before it steps any. A finished stage commits its gains through
+  the probes before the vehicle was still and made angle steps clip. An identification that
+  can't settle starts at the timeout instead of failing: the fit only gains excitation from
+  the ringing. A step can't, so a loop the run hasn't reached yet that rings on its start
+  gains would fail the stage; the design search designs every loop before it steps any. A finished stage commits its gains through
   `set_stabilizer_config`.
 * **Envelope and outcomes:** tilt, body rate, or altitude loss past the `Envelope` limits, a
   probe abort, or a rate setpoint interrupting an angle stage fails the run, and the config goes
   back to the last kept stage: earlier stages stay, and nothing the failing stage tried
-  survives except gains it lowered from above the relay's ceiling. A design isn't kept until
+  survives except gains it lowered from above its search's maximum. A design isn't kept until
   its loop's search finishes, so a failure anywhere before then (a design error, a breach on
   the design during its search's baseline) puts that loop's earlier gains back; each other
   stage keeps only its own loop's gains. A search that keeps no result keeps its start only
@@ -756,16 +736,14 @@ ultimate point, then a search) stays selectable.
   logging (`AutotuneEvent`s); the executor has no clock. The envelope measures tilt in the body
   frame, so autotune can't yet run on a viewed tailsitter
   ([#321](https://github.com/wboayue/stable-flight/issues/321)).
-* **Rate stages keep the angle loop**, which holds the vehicle near level; the relay then
-  measures the error the rate PID actually acts on, including the angle loop's D term.
 * **Robustness:** the claim is that the method, not one tune, transfers to hardware, so the sim
   checks it on a table of plants (airframes × delay, gyro noise, trim moments) from a low and a
   high start, each result held to the published step targets on its own plant
   ([`robustness`](crates/stable-flight-sim/README.md#closed-loop-tests)). Rows that fail stay
   ignored on the issue blocking them rather than loosening the targets.
 * **Design search** (`StagePlan::copter_design_search`, the copter default;
-  [#312](https://github.com/wboayue/stable-flight/issues/312)). The step search spends most of
-  each stage settling before each step: on the sim, a rate stage's 50 s holds about 5 s of
+  [#312](https://github.com/wboayue/stable-flight/issues/312)). A search from the start gains
+  spends most of each stage settling before each step: on the sim, a rate stage's 50 s holds about 5 s of
   stepping, an angle stage's 61 s about 24 s (182–627 s per row); QuadCopterX in RealFlight
   takes about 9 min. The design search fits each axis and designs its gains, then searches
   each loop from its design, so the search starts near its answer:
@@ -805,9 +783,8 @@ ultimate point, then a search) stays selectable.
     from settling (#518). Only the loop's axis counts, since the other may still ring on its
     start gains. A ceiling on the designed P can't tell those apart: healthy sim designs reach
     P 4.66 (`quad_x` clean), and 31× a low start.
-  * *Search* (`SearchPlan::copter_seeded`, after every loop is designed): the step search
-    from the design, P bracketed from it in either direction; no relay, since the design set
-    D. Designing everything first keeps a loop still on its start gains from ringing through
+  * *Search* (`SearchPlan::copter`, after every loop is designed): the step search from the
+    design, P bracketed from it in either direction, D as designed. Designing everything first keeps a loop still on its start gains from ringing through
     another's steps: `racer`'s pitch on its high start with 25 ms of delay (±2.8 rad/s, #518).
   * *Why search rather than trust the design:* on QuadCopterX in RealFlight the fits scatter
     (acceleration −74 to 98 rad/s² on one axis within a run, delay 1–10 ticks, against no
@@ -836,6 +813,12 @@ ultimate point, then a search) stays selectable.
     `AngleUnstable`, `NotSettled`); verifying the angle designs instead of searching them
     (angle P stayed at 9, and `quad_x`'s angle steps clipped with 10 ms of delay); and the
     angle search with the rate steps' clip allowance (the same clipping).
+  * Rejected: relay feedback (Åström–Hägglund) and its tuning rules, which seeded the search
+    from the start gains with D and a P cap (`0.6·Ku`). On QuadCopterX it couldn't measure yaw
+    rate within the yaw authority left at hover, and on the angle loops it read an ultimate
+    gain near 60 (an integrator around a fast rate loop) whose rule P oscillated once the rate
+    setpoint saturated (#295); its D held the rate search's P below what `heavy_quad` and
+    `racer` support (#378).
   * Open: gyro noise biases the closed-loop fit, and neither prefiltering with decimation nor
     instrumental variables (tried in a scratch prototype, not committed) fixed it without the
     loop's own gyro filter
@@ -843,7 +826,10 @@ ultimate point, then a search) stays selectable.
     rows miss as the search's do, on the rate I
     ([#374](https://github.com/wboayue/stable-flight/issues/374)). The designed D is 3–5× the
     airframes' (`quad_x` 0.139 against 0.029), so on hardware it waits on #373's filter;
-    RealFlight's state carries no sensor noise.
+    RealFlight's state carries no sensor noise. With that D the rate search ends at its
+    maximum (P 2.7, 0.9 × 3) on `quad_x` and `heavy_quad`, rising in 136 and 124 ms against
+    48 and 44 ms for the fastest pair that meets the spec (`racer`: 20 against 16 ms;
+    `autotune_methods`' `best_rate_pairs`).
 
 ## Real-Time Loop Management
 

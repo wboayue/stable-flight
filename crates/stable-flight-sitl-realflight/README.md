@@ -132,19 +132,14 @@ cargo run -p stable-flight-bridge -- --vehicle-type tailsitter
 # pitch angle, by design search (each axis fitted from a 3 s square wave, its gains designed
 # from the fit; then each loop's P searched by steps from its design), logs
 # each fit and judgment, prints the tuned gains as an airframes.rs snippet, lands, and disarms.
-# --stages search runs the step-response search instead (per rate loop a relay sets D; P is
-# searched, verified against the start, and kept only if no worse).
 # --step-test appends step tests of roll/pitch rate and angle and logs a response summary per
-# loop (--stages none --step-test: the hand tune). --stages rate runs the relay autotune
-# (--stages angle|all adds relay angle and heading stages, whose gains oscillated on
-# QuadCopterX); --rate-p-scale starts from bad rate gains; --record run.csv writes every tick
-# (rates, angles, moments, setpoint) for diagnosis.
+# loop (--stages none --step-test: the hand tune); --rate-p-scale starts from bad rate gains;
+# --record run.csv writes every tick (rates, angles, moments, setpoint) for diagnosis.
 # RUST_LOG=info,copter_autotune_realflight=debug logs each stage's status every second and each step.
 # Or: just fly-autotune
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --step-test
-cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages search
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages none --step-test
-cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages rate --rate-p-scale 10
+cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --rate-p-scale 10
 # The Titan Cobra's lift rotors (--airframe titan-cobra; pusher stopped, surfaces centered)
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --airframe titan-cobra --step-test
 
