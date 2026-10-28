@@ -313,7 +313,8 @@ Related code sits together, so a reviewer reads one behavior in one place.
   (`cargo run --release ...`) skips less but doesn't stop it. RealFlight flips between 250 Hz
   and the Mac display's refresh rate (about 120 Hz on ProMotion) on its own, for either build
   and any model, and stays there while its window is covered (#447, #438; sitl-realflight
-  README **Timing**): keep the window visible, alternate the builds being compared, and
+  README **Timing**). Minimized, it has nothing to render and holds 240–250 Hz: minimize it
+  for scripted runs (restore it only to watch), alternate the builds being compared, and
   screen every run before blaming one.
 - **Explaining a trace:** before suspecting a bug, replay the recorder CSV through the real
   component (state rebuilt from the view angles, nominal `dt` per tick) and compare its output
