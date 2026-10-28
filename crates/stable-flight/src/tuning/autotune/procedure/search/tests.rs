@@ -1,24 +1,16 @@
 use std::cell::RefCell;
 
-use assert2::{assert, check};
+use assert2::check;
 
 use super::*;
 use crate::tuning::autotune::{Criterion, Method, Procedure, Term};
-use crate::tuning::{
-    RelayAbort, RelayResult, StepAbort, StepMetrics, UltimatePoint, gains_from_ultimate,
-};
+use crate::tuning::{Measurement, ProbeAbort, ProbeConfig, StepAbort, StepMetrics};
 
 /// A hand-tune-like rate loop.
 const START: Gains = Gains {
     p: 0.5,
     i: 0.2,
     d: 0.004,
-};
-
-/// A rate loop's ultimate point (QuadCopterX's, about).
-const POINT: UltimatePoint = UltimatePoint {
-    ku: 2.0,
-    tu_s: 0.07,
 };
 
 /// The most probes a test lets a search ask for.
@@ -34,34 +26,10 @@ fn metrics(overshoot: f32, bounce_back: f32) -> StepMetrics {
     }
 }
 
-/// A relay measurement of `point`.
-fn relay_input(point: UltimatePoint, stalled: bool) -> Input {
-    Input::Measured {
-        measurement: Measurement::Relay(RelayResult {
-            point,
-            relay: 0.2,
-            cycle_amplitude: 0.1,
-            bias: 0.0,
-        }),
-        gains: START,
-        stalled,
-    }
-}
-
 /// A probe a slow host stopped, unmeasured.
 fn stopped() -> Input {
     Input::Stalled { gains: START }
 }
-
-fn relay_abort() -> Input {
-    Input::Aborted {
-        abort: ProbeAbort::Relay(RelayAbort::Timeout),
-        gains: START,
-    }
-}
-
-/// A scripted relay reply.
-type Reply = fn() -> Input;
 
 /// What a scripted search did.
 #[derive(Debug)]
@@ -83,21 +51,16 @@ impl Run {
     }
 }
 
-/// Runs `plan` from [`START`], also the run's start: relays get `relays` in turn, steps
-/// `step(gains flown)` (`None`: the step aborts).
-fn drive(
-    plan: SearchPlan,
-    relays: impl FnMut() -> Input,
-    step: impl Fn(Gains) -> Option<StepMetrics>,
-) -> Run {
-    drive_from(plan, START, relays, step)
+/// Runs `plan` from [`START`], also the run's start: steps get `step(gains flown)` (`None`:
+/// the step aborts).
+fn drive(plan: SearchPlan, step: impl Fn(Gains) -> Option<StepMetrics>) -> Run {
+    drive_from(plan, START, step)
 }
 
 /// As [`drive`], with the loop's gains at the run's start `run_start`.
 fn drive_from(
     plan: SearchPlan,
     run_start: Gains,
-    mut relays: impl FnMut() -> Input,
     step: impl Fn(Gains) -> Option<StepMetrics>,
 ) -> Run {
     let mut procedure = Procedure::new(Method::Search(plan));
@@ -120,14 +83,6 @@ fn drive_from(
         }
         let current = committed.last().copied().unwrap_or(START);
         let input = match action {
-            Action::Probe {
-                probe: ProbeConfig::Relay(_),
-                gains,
-                ..
-            } => {
-                assert!(gains.is_none());
-                relays()
-            }
             Action::Probe {
                 probe: ProbeConfig::Step(_),
                 gains,
@@ -161,7 +116,7 @@ fn drive_from(
     panic!("no end after {MAX_PROBES} probes");
 }
 
-/// A D search without a relay, judged on bounce-back alone: it starts from [`START`].
+/// A D search judged on bounce-back alone: it starts from [`START`].
 fn d_plan() -> SearchPlan {
     SearchPlan {
         term: Term::D,
@@ -171,7 +126,6 @@ fn d_plan() -> SearchPlan {
         },
         min: 0.001,
         max: 0.03,
-        relay: None,
         ..SearchPlan::copter_rate()
     }
 }
@@ -179,10 +133,6 @@ fn d_plan() -> SearchPlan {
 /// Bounce-back grows with D past `threshold` (0.1 at it).
 fn damping(threshold: f32) -> impl Fn(Gains) -> Option<StepMetrics> {
     move |gains| Some(metrics(0.0, 0.1 * gains.d / threshold))
-}
-
-fn no_relays() -> Input {
-    panic!("no ceiling planned")
 }
 
 /// The gains a run finished with, and how.
@@ -201,7 +151,7 @@ fn search_converges_below_the_threshold() {
     // (threshold, start passes)
     let cases = [(0.01, true), (0.02, true), (0.003, false), (0.0015, false)];
     for (threshold, start_passes) in cases {
-        let run = drive(plan, no_relays, damping(threshold));
+        let run = drive(plan, damping(threshold));
 
         let (gains, outcome) = finished(&run);
         check!(outcome == Outcome::Tuned, "{threshold}");
@@ -234,7 +184,7 @@ fn search_converges_below_the_threshold() {
 #[test]
 fn only_candidates_fly_new_gains() {
     let plan = d_plan();
-    let run = drive(plan, no_relays, damping(0.01));
+    let run = drive(plan, damping(0.01));
 
     let baseline = 2 * plan.test.pairs;
     check!(run.flown[..baseline].iter().all(|gains| *gains == START));
@@ -255,7 +205,7 @@ fn only_candidates_fly_new_gains() {
 #[test]
 fn no_pass_keeps_the_start() {
     let plan = d_plan();
-    let run = drive(plan, no_relays, |_| Some(metrics(0.0, 1.0)));
+    let run = drive(plan, |_| Some(metrics(0.0, 1.0)));
 
     check!(finished(&run) == (START, Outcome::Kept(KeepReason::NoPass)));
     let tried = run.tried(Term::D);
@@ -270,7 +220,7 @@ fn no_pass_keeps_the_start() {
 #[test]
 fn an_aborted_step_fails_its_pair() {
     let threshold = 0.01;
-    let run = drive(d_plan(), no_relays, |gains| {
+    let run = drive(d_plan(), |gains| {
         (gains.d <= threshold).then(|| metrics(0.0, 0.0))
     });
 
@@ -287,7 +237,7 @@ fn an_aborted_step_fails_its_pair() {
 /// A result that flies worse than the baseline (here: slower to settle) leaves the start.
 #[test]
 fn a_worse_result_keeps_the_start() {
-    let run = drive(d_plan(), no_relays, |gains| {
+    let run = drive(d_plan(), |gains| {
         Some(StepMetrics {
             settling_time_s: Some(if gains == START { 0.1 } else { 0.2 }),
             ..metrics(0.0, 0.0)
@@ -343,7 +293,7 @@ fn a_start_that_never_passed_gives_way_to_the_run_start() {
         ),
     ];
     for (case, step, kept, outcome) in rows {
-        let run = drive_from(d_plan(), run_start, no_relays, step);
+        let run = drive_from(d_plan(), run_start, step);
         check!(finished(&run) == (kept, outcome), "{case}");
     }
 }
@@ -367,7 +317,7 @@ fn only_the_runs_own_start_stays_lowered() {
         ("a seeded start", run_start, run_start),
     ];
     for (case, run_start, kept) in rows {
-        let run = drive_from(plan, run_start, no_relays, |_| Some(metrics(0.0, 1.0)));
+        let run = drive_from(plan, run_start, |_| Some(metrics(0.0, 1.0)));
         check!(run.committed == [lowered], "{case}");
         check!(
             finished(&run) == (kept, Outcome::Kept(KeepReason::NoPass)),
@@ -376,84 +326,12 @@ fn only_the_runs_own_start_stays_lowered() {
     }
 }
 
-/// The rate P search runs its relay first: the rule's D and P seed it (the bracket starts at
-/// the rule's P, the baseline flies the start gains and isn't a bracket point), and it never
-/// tries above `ceiling · Ku`.
-#[test]
-fn the_relay_seeds_and_caps_the_search() {
-    let plan = SearchPlan::copter_rate();
-    let Some(relay) = plan.relay else {
-        panic!("the rate search has a relay");
-    };
-    let point = POINT;
-    let rule = gains_from_ultimate(&point, relay.plan.rule, relay.plan.form);
-    let cap = relay.ceiling * point.ku;
-    let run = drive(
-        plan,
-        || relay_input(point, false),
-        |_| Some(metrics(0.0, 0.0)),
-    );
-
-    check!(run.verdicts[0].gains == START);
-    let tried = run.tried(Term::P);
-    check!(tried[1] == rule.p);
-    check!(tried.iter().all(|gain| *gain <= cap), "{tried:?}");
-    check!(tried.last() == Some(&cap));
-    let (gains, outcome) = finished(&run);
-    check!(outcome == Outcome::Tuned);
-    check!(
-        gains
-            == Gains {
-                p: plan.margin * cap,
-                i: START.i,
-                d: rule.d
-            }
-    );
-}
-
-/// A relay that stalls, is stopped by a slow host, or aborts runs again; after `max_invalid`
-/// failures the search goes on from the start gains, without a ceiling.
-#[test]
-fn a_failing_relay_is_retried_then_skipped() {
-    let plan = SearchPlan::copter_rate();
-    let point = POINT;
-    let good = || relay_input(POINT, false);
-    let stalled = || relay_input(POINT, true);
-    // (relay replies in order, relay used)
-    let cases: [(&[Reply], bool); 5] = [
-        (&[stalled, good], true),
-        (&[stopped, good], true),
-        (&[relay_abort, good], true),
-        (&[stalled, relay_abort, stalled], false),
-        (&[stopped, stopped, stopped], false),
-    ];
-    check!(plan.test.max_invalid == 3);
-    for (index, (replies, used)) in cases.into_iter().enumerate() {
-        let mut replies = replies.iter();
-        let run = drive(
-            plan,
-            || replies.next().expect("no more relays than scripted")(),
-            |_| Some(metrics(0.0, 0.0)),
-        );
-
-        let (gains, _) = finished(&run);
-        let top = run.tried(Term::P).into_iter().fold(0.0, f32::max);
-        if used {
-            check!(top == 0.6 * point.ku, "case {index}");
-            check!(gains.d != START.d, "case {index}: the rule's D");
-        } else {
-            check!(top == plan.max, "case {index}");
-            check!(gains.d == START.d, "case {index}: the start's D");
-        }
-    }
-}
-
 /// A gain that passes above one that failed (noise) can't widen the bracket: the search still
 /// ends, within the first bracket.
 #[test]
 fn a_non_monotone_response_stays_bounded() {
     // Fails only in a narrow band below a higher passing region.
-    let run = drive(d_plan(), no_relays, |gains| {
+    let run = drive(d_plan(), |gains| {
         let bad = (0.0065..0.007).contains(&gains.d) || gains.d > 0.02;
         Some(metrics(0.0, if bad { 1.0 } else { 0.0 }))
     });
@@ -485,7 +363,7 @@ fn invalid_steps_fail_a_point_not_the_stage() {
         baseline.count()
     };
 
-    let above_start = drive(plan, no_relays, |gains| clipped(gains.d > START.d));
+    let above_start = drive(plan, |gains| clipped(gains.d > START.d));
     let (gains, outcome) = finished(&above_start);
     check!(outcome == Outcome::Tuned);
     check!(gains.d == plan.margin * START.d);
@@ -497,14 +375,14 @@ fn invalid_steps_fail_a_point_not_the_stage() {
     );
 
     // Clipping from the start gains up: the start fails, the search finds a gain below.
-    let from_start = drive(plan, no_relays, |gains| clipped(gains.d >= START.d));
+    let from_start = drive(plan, |gains| clipped(gains.d >= START.d));
     let (gains, outcome) = finished(&from_start);
     check!(outcome == Outcome::Tuned, "clipped from the start up");
     check!(gains.d < START.d);
     check!(baseline_count(&from_start) == 0);
     check!(!from_start.verdicts[0].passed);
 
-    let everywhere = drive(plan, no_relays, |_| clipped(true));
+    let everywhere = drive(plan, |_| clipped(true));
     check!(finished(&everywhere) == (START, Outcome::Kept(KeepReason::NoPass)));
     check!(baseline_count(&everywhere) == 0);
 }
@@ -518,9 +396,8 @@ fn a_start_above_max_flies_no_baseline() {
         max: 0.5 * START.d,
         ..d_plan()
     };
-    let run = drive(plan, no_relays, damping(0.001));
+    let run = drive(plan, damping(0.001));
 
-    // Without a relay, the seed is the start: lowered to `max` and committed.
     check!(
         run.committed
             == [Gains {
@@ -534,34 +411,10 @@ fn a_start_above_max_flies_no_baseline() {
     check!(gains.d < plan.max);
 }
 
-/// A start above the relay's ceiling is lowered to the relay's rule gains, P at most the
-/// ceiling, and committed before anything flies: the stage settles on them, and they're what
-/// stays when nothing passes (#375).
-#[test]
-fn a_start_above_the_ceiling_is_lowered_and_kept() {
-    let plan = SearchPlan::copter_rate();
-    let Some(relay) = plan.relay else {
-        panic!("the rate search has a relay");
-    };
-    // The start's P 0.5 is above the ceiling, 0.6 · 0.5.
-    let point = UltimatePoint { ku: 0.5, ..POINT };
-    let rule = gains_from_ultimate(&point, relay.plan.rule, relay.plan.form);
-    let lowered = Gains {
-        p: rule.p.min(relay.ceiling * point.ku),
-        i: START.i,
-        d: rule.d,
-    };
-    let run = drive(plan, || relay_input(point, false), |_| None);
-
-    check!(run.committed == [lowered]);
-    check!(run.flown.iter().all(|gains| *gains != START));
-    check!(finished(&run) == (lowered, Outcome::Kept(KeepReason::NoPass)));
-}
-
 /// A start at or below `max` commits nothing.
 #[test]
 fn a_start_within_max_commits_nothing() {
-    let run = drive(d_plan(), no_relays, damping(0.01));
+    let run = drive(d_plan(), damping(0.01));
     check!(run.committed.is_empty());
 }
 
@@ -597,7 +450,7 @@ fn a_failing_baseline_judges_by_the_criterion() {
         (0.0, Outcome::Kept(KeepReason::Worse)),
     ];
     for (start_overshoot, expected) in cases {
-        let run = drive(plan, no_relays, respond(start_overshoot));
+        let run = drive(plan, respond(start_overshoot));
         let (_, outcome) = finished(&run);
         check!(outcome == expected, "start overshoot {start_overshoot}");
     }
@@ -608,8 +461,11 @@ fn a_failing_baseline_judges_by_the_criterion() {
 fn a_mismatched_input_fails() {
     let mut search = Procedure::new(Method::Search(d_plan()));
     search.next(Input::start(START));
-    let relay = relay_input(POINT, false);
-    check!(search.next(relay) == Action::Fail(AutotuneAbort::Interrupted));
+    let held = Input::Held {
+        settled: true,
+        gains: START,
+    };
+    check!(search.next(held) == Action::Fail(AutotuneAbort::Interrupted));
 }
 
 /// With no baseline to compare (the start's steps abort), the verify must meet the criterion
@@ -624,7 +480,7 @@ fn without_a_baseline_the_verify_meets_the_criterion() {
             (gains != START).then(|| metrics(0.0, bounce))
         }
     };
-    let clean = drive(plan, no_relays, respond(None));
+    let clean = drive(plan, respond(None));
     let (tuned, outcome) = finished(&clean);
     check!(outcome == Outcome::Tuned);
     let Action::Finish {
@@ -636,7 +492,7 @@ fn without_a_baseline_the_verify_meets_the_criterion() {
     };
     check!(baseline.count() == 0);
 
-    let bouncing = drive(plan, no_relays, respond(Some(tuned.d)));
+    let bouncing = drive(plan, respond(Some(tuned.d)));
     check!(finished(&bouncing) == (START, Outcome::Kept(KeepReason::Worse)));
 }
 
@@ -648,7 +504,7 @@ fn a_point_needs_confirming_pairs() {
     check!(plan.confirm == 2);
     // Above 0.0045, pairs alternate pass and fail on each gain.
     let steps_at = RefCell::new(Vec::<(f32, usize)>::new());
-    let run = drive(plan, no_relays, |gains| {
+    let run = drive(plan, |gains| {
         let mut steps_at = steps_at.borrow_mut();
         let count = match steps_at.iter_mut().find(|(gain, _)| *gain == gains.d) {
             Some((_, count)) => count,

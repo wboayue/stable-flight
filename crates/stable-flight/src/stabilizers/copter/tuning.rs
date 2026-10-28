@@ -1,8 +1,8 @@
-//! Autotune stages hosted by the [`CopterStabilizer`]: one loop's output replaced by a
+//! Autotune stages hosted by the [`CopterStabilizer`]: one loop's setpoint replaced by a
 //! [`Probe`]. See the "Tuning" section on [`CopterStabilizer`].
 
 use crate::Vec3;
-use crate::tuning::{Injection, LoopSignals, Probe, ProbeConfig, ProbeStatus, Tunable};
+use crate::tuning::{LoopSignals, Probe, ProbeConfig, ProbeStatus, Tunable};
 
 use super::{CopterStabilizer, CopterStabilizerConfig};
 use crate::controllers::Gains;
@@ -13,17 +13,17 @@ mod tests;
 /// A loop of the [`CopterStabilizer`] that a tuning stage can replace.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TunedLoop {
-    /// Roll rate loop: a probe sets the roll moment.
+    /// Roll rate loop: a probe sets the roll rate setpoint, in rad/s.
     RollRate,
-    /// Pitch rate loop: a probe sets the pitch moment.
+    /// Pitch rate loop: a probe sets the pitch rate setpoint, in rad/s.
     PitchRate,
-    /// Yaw rate loop: a probe sets the yaw moment.
+    /// Yaw rate loop: a probe sets the yaw rate setpoint, in rad/s.
     YawRate,
-    /// Roll angle loop: a probe sets the roll rate setpoint, in rad/s.
+    /// Roll angle loop: a probe sets the roll angle setpoint, in rad.
     Roll,
-    /// Pitch angle loop: a probe sets the pitch rate setpoint, in rad/s.
+    /// Pitch angle loop: a probe sets the pitch angle setpoint, in rad.
     Pitch,
-    /// Heading loop: a probe sets the yaw rate setpoint, in rad/s.
+    /// Heading loop: a probe sets the heading setpoint, in rad.
     Heading,
 }
 
@@ -163,8 +163,8 @@ impl Tunable for CopterStabilizer {
     type Target = TunedLoop;
 
     /// Starts a probe on `target`: from the next [`stabilize`](crate::Stabilizer::stabilize),
-    /// a [`Probe`] with `config` sets that loop's output or setpoint (see the "Tuning" section
-    /// on [`CopterStabilizer`]). A relay starts from the loop's current I term (its trim).
+    /// a [`Probe`] with `config` sets that loop's setpoint (see the "Tuning" section on
+    /// [`CopterStabilizer`]).
     ///
     /// # Examples
     ///
@@ -172,18 +172,18 @@ impl Tunable for CopterStabilizer {
     /// use stable_flight::stabilizers::copter::{
     ///     CopterStabilizer, CopterStabilizerConfig, TunedLoop,
     /// };
-    /// use stable_flight::tuning::autotune::COPTER_RATE_RELAY;
+    /// use stable_flight::tuning::autotune::COPTER_RATE_STEP;
     /// use stable_flight::tuning::{ProbeConfig, ProbeStatus, Tunable};
     /// use stable_flight::{RateSetpoint, Setpoint, Stabilizer, VehicleState};
     ///
     /// let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());
-    /// stabilizer.start_probe(TunedLoop::RollRate, ProbeConfig::Relay(COPTER_RATE_RELAY));
+    /// stabilizer.start_probe(TunedLoop::RollRate, ProbeConfig::Step(COPTER_RATE_STEP));
     ///
-    /// // Rolling right at 0.5 rad/s with a zero rate setpoint: the relay pushes left.
-    /// let mut state = VehicleState::default();
-    /// state.angular_velocity_radps.x = 0.5;
+    /// // At rest with a zero rate setpoint: the step asks for 1 rad/s of roll, so the loop
+    /// // pushes right.
+    /// let state = VehicleState::default();
     /// let output = stabilizer.stabilize(0.004, &Setpoint::Rate(RateSetpoint::default()), &state);
-    /// assert_eq!(output.moments.x, -COPTER_RATE_RELAY.initial_relay);
+    /// assert!(output.moments.x > 0.0);
     ///
     /// assert!(matches!(stabilizer.probe(), Some((TunedLoop::RollRate, ProbeStatus::Running(_)))));
     /// stabilizer.stop_probe(); // hands the roll rate loop back
@@ -191,10 +191,9 @@ impl Tunable for CopterStabilizer {
     /// ```
     fn start_probe(&mut self, target: TunedLoop, config: ProbeConfig) {
         self.stop_probe();
-        let trim = self.integral_term(target);
         self.stage = Some(Stage {
             target,
-            probe: Probe::new(config, trim),
+            probe: Probe::new(config),
             handed_back: false,
             interrupted: false,
         });
@@ -216,8 +215,8 @@ impl Tunable for CopterStabilizer {
 
 impl CopterStabilizer {
     /// Hands a running stage's loop back to its controller: the loop restarts with no
-    /// derivative history and the probe's trim as its I term (a step has none, so the I term
-    /// stays). A no-op when no stage is running.
+    /// derivative history, so the setpoint's jump back doesn't kick it, and keeps its I term.
+    /// A no-op when no stage is running.
     pub(super) fn hand_back(&mut self) {
         let Some(stage) = &mut self.stage else {
             return;
@@ -226,14 +225,10 @@ impl CopterStabilizer {
             return;
         }
         stage.handed_back = true;
-        let (target, trim) = (stage.target, stage.probe.trim());
-        let location = target.location();
-        let trim = trim.unwrap_or_else(|| self.integral_term(target));
-        let config = &self.config;
-        match location {
-            Location::Rate(axis) => self.body_rate.hand_back(&config.body_rate, axis, trim),
-            Location::Angle(axis) => self.attitude.hand_back(&config.attitude, axis, trim),
-            Location::Heading => self.yaw.hand_back(&config.yaw, trim),
+        match stage.target.location() {
+            Location::Rate(axis) => self.body_rate.hand_back(axis),
+            Location::Angle(axis) => self.attitude.hand_back(axis),
+            Location::Heading => self.yaw.hand_back(),
         }
     }
 
@@ -258,10 +253,10 @@ impl CopterStabilizer {
             .map(|stage| stage.target.location())
     }
 
-    /// Steps the running stage with its loop's `signals` and returns what to do with the loop
-    /// (`None` when no stage runs). The loop is handed back at the end of the tick
+    /// Steps the running stage with its loop's `signals` and returns the setpoint the loop
+    /// runs on (`None` when no stage runs). The loop is handed back at the end of the tick
     /// ([`finish_stage`](Self::finish_stage)), after its controller ran.
-    fn step_stage(&mut self, dt: f32, signals: &LoopSignals) -> Option<Injection> {
+    fn step_stage(&mut self, dt: f32, signals: &LoopSignals) -> Option<f32> {
         let stage = self.stage.as_mut().filter(|stage| stage.is_running())?;
         Some(stage.probe.step(dt, signals))
     }
@@ -279,21 +274,22 @@ impl CopterStabilizer {
 
     /// Steps a probe on an angle or heading loop before the controllers run. `setpoints` are
     /// the saturated roll, pitch, and heading setpoints, `error` the body-frame attitude error
-    /// the loops act on, `rates_radps` the body rates: a step replaces one setpoint; a relay's rate output comes back as `(axis, rate)` (axis 2: heading) for the
-    /// caller to apply after the controllers.
+    /// the loops act on, `rates_radps` the body rates: the probe replaces one setpoint.
     pub(super) fn probe_attitude(
         &mut self,
         dt: f32,
         setpoints: &mut Vec3,
         error: &Vec3,
         rates_radps: &Vec3,
-    ) -> Option<(usize, f32)> {
-        let location = self.running_stage()?;
+    ) {
+        let Some(location) = self.running_stage() else {
+            return;
+        };
         let saturated = self.loop_saturated(location);
         let axis = match location {
             Location::Angle(axis) => axis,
             Location::Heading => 2,
-            Location::Rate(_) => return None,
+            Location::Rate(_) => return,
         };
         let signals = LoopSignals {
             setpoint: setpoints[axis],
@@ -305,17 +301,11 @@ impl CopterStabilizer {
         self.inject(dt, axis, &signals, setpoints)
     }
 
-    /// Steps a probe on a rate loop before the rate controller runs: a step replaces that
-    /// axis's rate in `setpoints`; a relay's moment comes back as `(axis, moment)` for the
-    /// caller to apply after it.
-    pub(super) fn probe_rates(
-        &mut self,
-        dt: f32,
-        setpoints: &mut Vec3,
-        current: &Vec3,
-    ) -> Option<(usize, f32)> {
-        let location @ Location::Rate(axis) = self.running_stage()? else {
-            return None;
+    /// Steps a probe on a rate loop before the rate controller runs: the probe replaces that
+    /// axis's rate in `setpoints`.
+    pub(super) fn probe_rates(&mut self, dt: f32, setpoints: &mut Vec3, current: &Vec3) {
+        let Some(location @ Location::Rate(axis)) = self.running_stage() else {
+            return;
         };
         let signals = LoopSignals {
             setpoint: setpoints[axis],
@@ -327,21 +317,11 @@ impl CopterStabilizer {
         self.inject(dt, axis, &signals, setpoints)
     }
 
-    /// Steps the running probe with `signals` for `axis` of `setpoints`: a step's setpoint
-    /// replaces `setpoints[axis]`; a relay's output comes back as `(axis, output)`.
-    fn inject(
-        &mut self,
-        dt: f32,
-        axis: usize,
-        signals: &LoopSignals,
-        setpoints: &mut Vec3,
-    ) -> Option<(usize, f32)> {
-        match self.step_stage(dt, signals)? {
-            Injection::Setpoint(setpoint) => {
-                setpoints[axis] = setpoint;
-                None
-            }
-            Injection::Output(output) => Some((axis, output)),
+    /// Steps the running probe with `signals` for `axis` of `setpoints`: its setpoint
+    /// replaces `setpoints[axis]`.
+    fn inject(&mut self, dt: f32, axis: usize, signals: &LoopSignals, setpoints: &mut Vec3) {
+        if let Some(setpoint) = self.step_stage(dt, signals) {
+            setpoints[axis] = setpoint;
         }
     }
 
@@ -353,16 +333,6 @@ impl CopterStabilizer {
             Location::Rate(axis) => clipped.moments[axis],
             Location::Angle(axis) => clipped.rates[axis] || clipped.moments[axis],
             Location::Heading => clipped.rates[2] || clipped.moments[2],
-        }
-    }
-
-    /// The I term of `target`'s controller: its trim.
-    fn integral_term(&self, target: TunedLoop) -> f32 {
-        let config = &self.config;
-        match target.location() {
-            Location::Rate(axis) => self.body_rate.integral_term(&config.body_rate, axis),
-            Location::Angle(axis) => self.attitude.integral_term(&config.attitude, axis),
-            Location::Heading => self.yaw.integral_term(&config.yaw),
         }
     }
 }

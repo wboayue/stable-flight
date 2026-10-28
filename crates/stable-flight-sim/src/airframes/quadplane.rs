@@ -58,7 +58,7 @@ pub struct QuadPlaneAirframe {
 ///   prop from the mass too, `SIM_Plane.cpp:54`).
 ///
 /// It flies core's quadplane guidance and stabilizer. The hover side has roll and pitch rate
-/// and angle gains from the sim autotune (`StagePlan::copter_search`), yaw and heading core's
+/// and angle gains from a sim autotune's step search (#390), yaw and heading core's
 /// defaults, the hover thrust worked out from the model, and legs braking along a curve at
 /// 1.5 m/s² (`GUID_LAT_BRK`), so uncapped legs stop on their waypoints. The plane side is
 /// [`plane`]'s gains (the same wing and surfaces), with the cruise thrust worked out for this

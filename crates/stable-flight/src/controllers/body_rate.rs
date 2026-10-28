@@ -1,7 +1,7 @@
 use crate::Vec3;
 
 use super::derivative::DerivativeState;
-use super::{Gains, InvalidConfig, check_limit, rescale_integral, seed_integral};
+use super::{Gains, InvalidConfig, check_limit, rescale_integral};
 use crate::math::{assert_dt, clamp_symmetric};
 
 /// Default proportional gain, in normalized moment per rad/s of rate error.
@@ -206,23 +206,15 @@ impl BodyRateController {
 
     /// The I term (`i · integral`) of `axis` (0 roll, 1 pitch, 2 yaw): the moment the loop
     /// holds as trim.
+    #[cfg(test)]
     pub(crate) fn integral_term(&self, config: &BodyRateControllerConfig, axis: usize) -> f32 {
         config.axis_gains()[axis].i * self.axes[axis].integrated_error
     }
 
-    /// Restarts `axis` from a trim: its I term becomes `i_term` (`seed_integral`) and its
-    /// derivative history is cleared. The other axes are untouched.
-    pub(crate) fn hand_back(
-        &mut self,
-        config: &BodyRateControllerConfig,
-        axis: usize,
-        i_term: f32,
-    ) {
-        let i = config.axis_gains()[axis].i;
-        self.axes[axis] = RateAxis {
-            integrated_error: seed_integral(i_term, i, config.max_integral),
-            derivative: DerivativeState::default(),
-        };
+    /// Restarts `axis` with no derivative history, keeping its integral. The other axes are
+    /// untouched.
+    pub(crate) fn hand_back(&mut self, axis: usize) {
+        self.axes[axis].derivative = DerivativeState::default();
     }
 
     /// The integrated rate error per axis, in rad.

@@ -3,7 +3,7 @@ use core::f32::consts::FRAC_PI_4;
 use crate::Vec2;
 
 use super::derivative::DerivativeState;
-use super::{Gains, InvalidConfig, check_limit, rescale_integral, seed_integral};
+use super::{Gains, InvalidConfig, check_limit, rescale_integral};
 use crate::math::{assert_dt, clamp_symmetric, clamp_symmetric_each, saturate_symmetric};
 
 /// Configures the attitude controller for a vehicle.
@@ -207,22 +207,9 @@ impl AttitudeController {
         )
     }
 
-    /// The I term (`i · integral`) of `axis` (0 roll, 1 pitch): the rate the loop holds as
-    /// trim.
-    pub(crate) fn integral_term(&self, config: &AttitudeControllerConfig, axis: usize) -> f32 {
-        config.axis_gains()[axis].i * self.integrated_error[axis]
-    }
-
-    /// Restarts `axis` from a trim: its I term becomes `i_term` (`seed_integral`) and its
-    /// derivative history is cleared. The other axis is untouched.
-    pub(crate) fn hand_back(
-        &mut self,
-        config: &AttitudeControllerConfig,
-        axis: usize,
-        i_term: f32,
-    ) {
-        let i = config.axis_gains()[axis].i;
-        self.integrated_error[axis] = seed_integral(i_term, i, config.max_integral);
+    /// Restarts `axis` with no derivative history, keeping its integral. The other axis is
+    /// untouched.
+    pub(crate) fn hand_back(&mut self, axis: usize) {
         self.derivative[axis] = DerivativeState::default();
     }
 
@@ -389,19 +376,20 @@ mod tests {
         assert_eq!(controller.integrated_error.y, integral.y);
     }
 
-    /// Handing back one axis seeds its I term and clears its derivative history; the other
+    /// Handing back one axis clears its derivative history and keeps its integral; the other
     /// axis keeps both.
     #[test]
     fn hand_back_restarts_one_axis_only() {
         let config = gains(1.0, 2.0, 0.5);
         let mut controller = AttitudeController::default();
         controller.control(&config, 0.1, Vec2::new(0.5, 0.5), Vec2::zeros());
+        let roll_integral = controller.integrated_error.x;
         let pitch_integral = controller.integrated_error.y;
         let pitch_derivative = controller.derivative[1];
 
-        controller.hand_back(&config, 0, 0.3);
+        controller.hand_back(0);
 
-        approx::assert_relative_eq!(controller.integral_term(&config, 0), 0.3);
+        assert_eq!(controller.integrated_error.x, roll_integral);
         assert_eq!(controller.derivative[0], DerivativeState::default());
         assert_eq!(controller.integrated_error.y, pitch_integral);
         assert_eq!(controller.derivative[1], pitch_derivative);

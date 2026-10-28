@@ -258,8 +258,8 @@ pub fn retuned(mut airframe: Airframe, retune: impl Fn(TunedLoop, Gains) -> Gain
     airframe
 }
 
-/// Simulated seconds an autotune may run (`copter_search` takes about 430–620 s from core's
-/// default gains on the clean airframes).
+/// Simulated seconds an autotune may run (`copter_design_search` takes 152–380 s on the
+/// clean and delayed robustness rows, #518).
 pub const AUTOTUNE_TIMEOUT_S: f32 = 1200.0;
 
 /// How an [`autotune`] run ended.
@@ -288,7 +288,8 @@ impl AutotuneRun {
             .collect()
     }
 
-    /// Whether every stage of `StagePlan::copter_search` ran and ended `Tuned`.
+    /// Whether every stage of a search plan over [`spec::TUNED`] ran and ended `Tuned`
+    /// (`large::plan`).
     pub fn all_tuned(&self) -> bool {
         self.outcomes() == spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)))
     }

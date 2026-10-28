@@ -47,7 +47,7 @@ const YAW_RATE_STEP_RADPS: f32 = 0.5;
 /// Simulated seconds a probe may run before the check gives up on it.
 const PROBE_TIMEOUT_S: f32 = 5.0;
 
-/// The loops the autotune (`StagePlan::copter_search`) tunes.
+/// The loops the autotune (`StagePlan::copter_design_search`) tunes.
 pub const TUNED: [TunedLoop; 4] = [
     TunedLoop::RollRate,
     TunedLoop::PitchRate,

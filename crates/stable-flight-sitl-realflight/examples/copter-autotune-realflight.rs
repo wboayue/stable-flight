@@ -10,20 +10,13 @@
 //! many invalid steps, a fit the design can't use) keeps the searched loops and puts back the
 //! rest.
 //!
-//! `--stages search` runs the step-response search instead (`StagePlan::copter_search`): per
-//! rate loop a relay sets D and caps P; per loop P is searched by pairs of steps, verified, and
-//! kept only if it flies no worse than a baseline on the start gains.
-//!
-//! `--stages rate` runs the relay autotune: each stage's relay measures the
-//! loop's ultimate point and the Tyreus–Luyben rule sets its gains; `--stages angle` or `all`
-//! adds relay stages for the angle and heading loops, whose gains flew badly on QuadCopterX
-//! (see `COPTER_SEQUENCE`). `--rate-p-scale` starts from deliberately bad rate gains (e.g. `0.1`
-//! or `10`), to check the tune recovers from them.
+//! `--rate-p-scale` starts from deliberately bad rate gains (e.g. `0.1` or `10`), to check the
+//! tune recovers from them.
 //!
 //! `--step-test` appends step tests of roll and pitch rate and angle: alternating steps,
 //! each one's response logged at `debug`, and a summary per loop at `info` (overshoot, rise,
-//! settling, bounce-back: mean and range). `--stages none --step-test` measures the hand tune;
-//! `--stages rate --step-test` the relay tune, in one flight. A freeze (a tick over 50 ms after
+//! settling, bounce-back: mean and range). `--stages none --step-test` measures the hand tune.
+//! A freeze (a tick over 50 ms after
 //! the last) makes the running probe run again and excuses breaches for a second. While
 //! RealFlight runs slow (`RunStats::host_slow`: under 225 Hz over 0.5 s until it regains
 //! 240 Hz; it drops to about 120 Hz for stretches, #438), the running step stops and the
@@ -39,8 +32,7 @@
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --step-test
-//! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages search
-//! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages rate --rate-p-scale 10
+//! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --rate-p-scale 10
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages none --step-test
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --airframe titan-cobra --step-test
 //! ```
@@ -100,7 +92,7 @@ const RATE_LOOPS: [TunedLoop; 3] = [
     TunedLoop::YawRate,
 ];
 
-/// Relay autotune of a multirotor's PID loops in RealFlight.
+/// Autotune of a multirotor's roll and pitch loops in RealFlight.
 #[derive(Parser)]
 struct Args {
     /// Waypoint CSV to climb to and hover at (columns: x,y,altitude,cruise_speed); defaults to
@@ -186,20 +178,9 @@ enum Stages {
     /// Roll and pitch rate, then angle, designed from a fit of each axis, then searched from
     /// the design.
     DesignSearch,
-    /// Roll and pitch rate, then angle, by step-response search (relay D, searched P).
-    Search,
     /// None: the hand tune (with `--step-test`, to measure it).
     None,
-    /// Roll and pitch rate by relay: the core's relay sequence.
-    Rate,
-    /// Roll, pitch, and heading by relay (their relay gains oscillated on QuadCopterX).
-    Angle,
-    /// Relay rate, then relay angle and heading.
-    All,
 }
-
-/// The opt-in angle and heading stages.
-const ANGLE_LOOPS: [TunedLoop; 3] = [TunedLoop::Roll, TunedLoop::Pitch, TunedLoop::Heading];
 
 /// The loops `--step-test` measures, in order.
 const STEP_TESTED: [TunedLoop; 4] = [
@@ -211,15 +192,9 @@ const STEP_TESTED: [TunedLoop; 4] = [
 
 impl Stages {
     fn plan(self) -> Vec<StagePlan> {
-        let rate = StagePlan::copter_sequence().into_iter();
-        let angle = ANGLE_LOOPS.into_iter().map(StagePlan::copter);
         match self {
             Stages::None => Vec::new(),
-            Stages::Rate => rate.collect(),
-            Stages::Angle => angle.collect(),
-            Stages::All => rate.chain(angle).collect(),
             Stages::DesignSearch => StagePlan::copter_design_search().into(),
-            Stages::Search => StagePlan::copter_search().into(),
         }
     }
 }
@@ -428,13 +403,6 @@ fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
         AutotuneEvent::Stalled { target, .. } => {
             debug!("autotune: {target:?} probe stopped (host slow), runs again");
         }
-        AutotuneEvent::Measured {
-            target,
-            measurement: Measurement::Relay(result),
-        } => info!(
-            "autotune: {target:?} Ku {:.3} Tu {:.3} s (relay {:.3}, cycle {:.4}, bias {:.3})",
-            result.point.ku, result.point.tu_s, result.relay, result.cycle_amplitude, result.bias,
-        ),
         AutotuneEvent::Measured {
             target,
             measurement: Measurement::Identify(model),

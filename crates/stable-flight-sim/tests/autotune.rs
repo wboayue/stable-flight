@@ -1,6 +1,5 @@
-//! Autotune converges: `StagePlan::copter_search` from detuned starts, rate P too low, a little
-//! too high, and far too high, tunes every stage to gains that agree with each other and with
-//! `quad_x`'s (which came from this autotune).
+//! Autotune converges: `StagePlan::copter_design_search` from detuned starts, rate P too low,
+//! a little too high, and far too high, tunes every stage to gains that agree with each other.
 
 mod common;
 
@@ -53,52 +52,37 @@ fn tuned_p(config: &CopterStabilizerConfig) -> [f32; 4] {
     TUNED.map(|target| target.gains(config).p)
 }
 
-/// Autotunes `quad_x` from rate P × `rate_p_scale`, checks every stage ends `Tuned`, and
-/// returns each tuned loop's P.
+/// Autotunes `quad_x` from rate P × `rate_p_scale`, checks every loop is designed then
+/// searched, and returns each tuned loop's P.
 fn autotune_from(rate_p_scale: f32) -> [f32; 4] {
     let run = common::autotune(
         &Plant::clean(detuned(rate_p_scale)),
-        &StagePlan::copter_search(),
+        &StagePlan::copter_design_search(),
         AUTOTUNE_TIMEOUT_S,
     );
-    check!(run.all_tuned(), "rate P × {rate_p_scale}: {:?}", run.stages);
+    check!(
+        run.all_designed_and_searched(),
+        "rate P × {rate_p_scale}: {:?}",
+        run.stages
+    );
     tuned_p(&run.config)
 }
 
-/// Checks each of `p` agrees with `others`'.
-fn check_agree(p: [f32; 4], others: &[[f32; 4]]) {
-    for (index, target) in TUNED.iter().enumerate() {
-        for other in others {
+/// From rate P too low, a little too high (its steps overshoot past the criterion), and far
+/// too high (its steps clip), the tuned P agree: the fit reads the plant, not the gains it
+/// flies on, and each search keeps a result judged by the criterion (#361).
+#[test]
+fn converges_from_any_start() {
+    let low = autotune_from(LOW_RATE_P_SCALE);
+    for scale in [MODERATE_RATE_P_SCALE, HIGH_RATE_P_SCALE] {
+        let tuned = autotune_from(scale);
+        for (index, target) in TUNED.iter().enumerate() {
             check!(
-                agree(p[index], other[index]),
-                "{target:?}: {p:?} vs {other:?}"
+                agree(tuned[index], low[index]),
+                "{target:?} from × {scale}: {tuned:?} vs {low:?}"
             );
         }
     }
-}
-
-#[test]
-fn converges_from_low_rate_gains() {
-    let reference = tuned_p(&airframes::quad_x().stabilizer);
-    check_agree(autotune_from(LOW_RATE_P_SCALE), &[reference]);
-}
-
-/// From a rate P a little too high, the search comes down and its result is kept though it
-/// settles slower than the start, which settles fast by overshooting within the settle band
-/// (#361).
-#[test]
-fn converges_from_moderately_high_rate_gains() {
-    let reference = tuned_p(&airframes::quad_x().stabilizer);
-    check_agree(autotune_from(MODERATE_RATE_P_SCALE), &[reference]);
-}
-
-/// From a rate P too high to step cleanly (×3 clips its steps), the relay's ceiling brings the
-/// search down and the result is judged by the criterion, not by the start (#361).
-#[test]
-fn converges_from_high_rate_gains() {
-    let reference = tuned_p(&airframes::quad_x().stabilizer);
-    let low = autotune_from(LOW_RATE_P_SCALE);
-    check_agree(autotune_from(HIGH_RATE_P_SCALE), &[reference, low]);
 }
 
 /// Actuator delay past what the fit models (`MAX_DELAY_TICKS`, 40 ms), so its fit misreads

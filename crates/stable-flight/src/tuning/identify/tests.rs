@@ -2,7 +2,7 @@ use assert2::{assert, check};
 
 use super::*;
 use crate::tuning::plant::{Plant, PlantParams};
-use crate::tuning::{Injection, LoopSignals, Measurement, Probe, ProbeConfig, ProbeStatus};
+use crate::tuning::{LoopSignals, Measurement, Probe, ProbeConfig, ProbeStatus};
 
 /// The flight loop's tick: 250 Hz.
 const DT: f32 = 0.004;
@@ -239,16 +239,13 @@ fn a_finished_probe_offsets_nothing() {
 /// [`Measurement::Identify`] once done.
 #[test]
 fn probe_injects_the_offset_on_the_setpoint() {
-    let mut probe = Probe::new(ProbeConfig::Identify(CONFIG), 0.0);
+    let mut probe = Probe::new(ProbeConfig::Identify(CONFIG));
     let signals = LoopSignals {
         setpoint: 0.1,
         ..LoopSignals::default()
     };
-    let Injection::Setpoint(setpoint) = probe.step(DT, &signals) else {
-        panic!("identification replaces the setpoint");
-    };
+    let setpoint = probe.step(DT, &signals);
     check!(setpoint > 0.1 && setpoint <= 0.1 + CONFIG.amplitude);
-    check!(probe.trim() == None);
 
     let fitted = identify(single_lag(20.0, 0.02, 0.0), IdentifyProbe::new(CONFIG));
     let status = ProbeStatus::from(fitted);

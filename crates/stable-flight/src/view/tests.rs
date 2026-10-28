@@ -7,7 +7,7 @@ use super::*;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::params::Params;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
-use crate::tuning::autotune::COPTER_RATE_RELAY;
+use crate::tuning::autotune::COPTER_RATE_STEP;
 use crate::{AttitudeCommand, AttitudeSetpoint, CruiseOutput, Vec3, euler_angles};
 
 const DT: f32 = 0.004;
@@ -269,7 +269,7 @@ fn probes_pass_through_the_view() {
     let mut stabilizer = View::tailsitter(CopterStabilizer::new(CopterStabilizerConfig::default()));
     check!(stabilizer.probe().is_none());
 
-    stabilizer.start_probe(TunedLoop::YawRate, ProbeConfig::Relay(COPTER_RATE_RELAY));
+    stabilizer.start_probe(TunedLoop::YawRate, ProbeConfig::Step(COPTER_RATE_STEP));
     check!(stabilizer.inner().probe().map(|(target, _)| target) == Some(TunedLoop::YawRate));
     check!(stabilizer.stop_probe().map(|(target, _)| target) == Some(TunedLoop::YawRate));
     check!(stabilizer.probe().is_none());
