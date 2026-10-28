@@ -216,6 +216,27 @@ mod tests {
 
     const EPSILON: f32 = 1e-5;
 
+    /// Handing back clears the derivative history and keeps the integral.
+    #[test]
+    fn hand_back_keeps_the_integral() {
+        let config = YawControllerConfig {
+            gains: Gains {
+                p: 1.0,
+                i: 2.0,
+                d: 0.5,
+            },
+            ..p_only_config(1.0, 10.0)
+        };
+        let mut controller = YawController::default();
+        controller.control_error(&config, 0.1, 0.5);
+        let integral = controller.integrated_error;
+
+        controller.hand_back();
+
+        assert_eq!(controller.integrated_error, integral);
+        assert_eq!(controller.derivative, DerivativeState::default());
+    }
+
     // Helper functions for test setup
 
     /// A config with only proportional gain.

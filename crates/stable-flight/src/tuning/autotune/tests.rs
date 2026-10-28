@@ -168,11 +168,19 @@ fn run(
     events
 }
 
-/// A roll rate search stage with the copter defaults.
-fn rate_search() -> StagePlan {
+/// A design stage on `target` with the copter defaults.
+fn design_stage(target: TunedLoop) -> StagePlan {
     StagePlan {
-        target: TunedLoop::RollRate,
-        method: Method::Search(SearchPlan::copter_rate()),
+        target,
+        method: Method::Design(DesignPlan::copter()),
+    }
+}
+
+/// A search stage on `target` with the copter defaults (`SearchPlan::copter`).
+fn search_stage(target: TunedLoop) -> StagePlan {
+    StagePlan {
+        target,
+        method: Method::Search(SearchPlan::copter(target)),
     }
 }
 
@@ -238,7 +246,7 @@ fn full_run_tunes_every_loop_in_order() {
 #[test]
 fn an_envelope_breach_ends_the_run_keeping_earlier_stages() {
     let plan = [
-        rate_search(),
+        search_stage(TunedLoop::RollRate),
         StagePlan::copter_step_test(TunedLoop::PitchRate),
     ];
     // (reason, how to cause it)
@@ -833,10 +841,7 @@ fn rate_search_tunes_the_rate_loops() {
     for scale in [1.0, 0.5] {
         let (mut flight_loop, _controls) = hovering_on(scale, delayed_axis());
         let start = *flight_loop.stabilizer().config();
-        let plan = [TunedLoop::RollRate, TunedLoop::PitchRate].map(|target| StagePlan {
-            target,
-            method: Method::Search(SearchPlan::copter_rate()),
-        });
+        let plan = [TunedLoop::RollRate, TunedLoop::PitchRate].map(search_stage);
         let mut autotune = started(&flight_loop, &plan);
 
         let events = run(&mut flight_loop, &mut autotune, 300.0, |_, _| {});
@@ -908,7 +913,7 @@ fn candidates_fly_only_during_their_step() {
     for (gust_ticks, completes) in cases {
         let (mut flight_loop, controls) = hovering_on(1.0, delayed_axis());
         let start = *flight_loop.stabilizer().config();
-        let plan = [rate_search()];
+        let plan = [search_stage(TunedLoop::RollRate)];
         let mut autotune = started(&flight_loop, &plan);
 
         let mut candidate_ticks = 0;
@@ -972,7 +977,7 @@ fn a_slow_host_stops_a_candidate_and_it_flies_again() {
     const SLOW_TICKS: usize = 250;
     let (mut flight_loop, _controls) = hovering_on(1.0, delayed_axis());
     let start = *flight_loop.stabilizer().config();
-    let plan = [rate_search()];
+    let plan = [search_stage(TunedLoop::RollRate)];
     let mut autotune = started(&flight_loop, &plan);
 
     let mut stopped = None;
@@ -1115,7 +1120,7 @@ fn a_breach_right_after_a_freeze_does_not_fail_the_stage() {
 fn a_candidate_breaching_after_a_freeze_comes_out_unjudged() {
     let (mut flight_loop, controls) = hovering_on(1.0, delayed_axis());
     let start = *flight_loop.stabilizer().config();
-    let plan = [rate_search()];
+    let plan = [search_stage(TunedLoop::RollRate)];
     let mut autotune = started(&flight_loop, &plan);
 
     let mut frozen = None;
@@ -1346,7 +1351,7 @@ fn terms_read_and_replace_their_gain() {
 /// stage keeps a result no worse than its baseline, with its start's D, and the angle P stays
 /// within the plan's bounds.
 #[test]
-fn copter_search_tunes_rate_then_angle() {
+fn searches_tune_rate_then_angle() {
     let params = PlantParams {
         delay_s: 0.02,
         noise: 0.02,
@@ -1354,10 +1359,7 @@ fn copter_search_tunes_rate_then_angle() {
     };
     let (mut flight_loop, _controls) = hovering_on(1.0, params);
     let start = *flight_loop.stabilizer().config();
-    let plan = DESIGNED.map(|target| StagePlan {
-        target,
-        method: Method::Search(SearchPlan::copter(target)),
-    });
+    let plan = DESIGNED.map(search_stage);
     let mut autotune = started(&flight_loop, &plan);
 
     let events = run(&mut flight_loop, &mut autotune, 600.0, |_, _| {});
@@ -1543,22 +1545,6 @@ fn fits_run_on_the_angle_loop_over_a_rate_stage() {
             probed_loop(target, &probe) == probed,
             "{target:?} {probe:?}"
         );
-    }
-}
-
-/// A design stage on `target` with the copter defaults.
-fn design_stage(target: TunedLoop) -> StagePlan {
-    StagePlan {
-        target,
-        method: Method::Design(DesignPlan::copter()),
-    }
-}
-
-/// A search stage on `target` from its design, with the copter defaults.
-fn search_stage(target: TunedLoop) -> StagePlan {
-    StagePlan {
-        target,
-        method: Method::Search(SearchPlan::copter(target)),
     }
 }
 

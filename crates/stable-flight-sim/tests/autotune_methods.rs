@@ -520,16 +520,12 @@ fn swept_d() -> impl Iterator<Item = f32> {
 /// The mean rise of `target`'s steps both ways on `plant`, in s, if both meet the spec.
 fn spec_rise_s(plant: &Plant, target: TunedLoop) -> Option<f32> {
     let step = SearchPlan::copter_rate().test.step;
-    let mut rises = [step, step.reversed()].map(|step| {
+    let [up, down] = [step, step.reversed()].map(|step| {
         let metrics = spec::respond(plant, target, step)?;
-        spec::missed_targets(target, &metrics)
-            .is_empty()
-            .then_some(metrics.rise_time_s)?
+        let met = spec::missed_targets(target, &metrics).is_empty();
+        met.then_some(metrics.rise_time_s).flatten()
     });
-    let [Some(up), Some(down)] = rises.each_mut().map(|rise| rise.take()) else {
-        return None;
-    };
-    Some((up + down) / 2.0)
+    Some((up? + down?) / 2.0)
 }
 
 /// Per airframe on the clean plant: the design search's roll rate gains and rise, from core's

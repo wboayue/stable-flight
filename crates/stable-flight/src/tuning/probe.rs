@@ -109,7 +109,7 @@ pub enum ProbeStatus {
     /// The host idled the loop under test, e.g. a
     /// [`CopterStabilizer`](crate::stabilizers::copter::CopterStabilizer) angle or heading loop
     /// on a [`Setpoint::Rate`](crate::Setpoint::Rate) tick (the pilot switched to acro). The
-    /// loop is back with its controller; the measured trim may not carry over.
+    /// loop is back with its controller, and the rate tick clears the idle angle loops' I terms.
     Interrupted,
 }
 
