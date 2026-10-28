@@ -429,3 +429,80 @@ fn airspeed_rate_follows_a_ramp() {
     let rate = (airspeed_mps - slope_mps2 * DT - filtered) / AIRSPEED_RATE_TC_S;
     assert_relative_eq!(rate, slope_mps2, max_relative = 0.05);
 }
+
+/// On a steady airspeed ramp, the kinetic energy rate fades: a steady acceleration isn't a
+/// rate error, only its start is (AP:686, 695).
+#[test]
+fn steady_acceleration_fades_from_the_kinetic_rate() {
+    let config = TecsConfig::default();
+    let slope_mps2 = 0.5;
+    // (seconds on the ramp, least and most share of `V·slope` in the kinetic rate)
+    let cases = [(1.0, 0.2, 1.0), (10.0, -0.05, 0.05)];
+    for (seconds, least, most) in cases {
+        let mut tecs = Tecs::default();
+        let mut airspeed_mps = 15.0;
+        let mut kinetic_share = f32::NAN;
+        for _ in 0..(seconds / DT) as usize {
+            let state = level(30.0, airspeed_mps, 0.0);
+            let energies = tecs.energies(
+                DT,
+                &config,
+                (30.0, 20.0),
+                (airspeed_mps, airspeed_mps),
+                &state,
+            );
+            kinetic_share = energies.kinetic_rate / (airspeed_mps * slope_mps2);
+            airspeed_mps += slope_mps2 * DT;
+        }
+        check!(
+            (least..=most).contains(&kinetic_share),
+            "{seconds} s: {kinetic_share}"
+        );
+    }
+}
+
+/// Pinned at the pitch limit it pushes toward, the pitch integral fades over the time constant
+/// rather than winding (AP:1097-1102).
+#[test]
+fn pitch_integral_fades_while_pinned() {
+    let config = TecsConfig::default();
+    let limits = Limits {
+        pitch_up_rad: 1f32.to_radians(),
+        ..limits()
+    };
+    let seeded_rad = 0.05;
+    let mut tecs = Tecs {
+        pitch_integral_rad: seeded_rad,
+        ..Tecs::default()
+    };
+    let state = level(30.0, 15.0, 0.0);
+    let mut pitch_rad = 0.0;
+    for _ in 0..(config.time_constant_s / DT) as usize {
+        // A climb far above: pitch up past the 1° limit.
+        (pitch_rad, _) = tecs.step(DT, &config, &limits, (300.0, 15.0), 15.0, &state);
+    }
+    check!(pitch_rad == limits.pitch_up_rad);
+    assert_relative_eq!(
+        tecs.pitch_integral_rad,
+        seeded_rad * libm::expf(-1.0),
+        max_relative = 0.02
+    );
+}
+
+/// Sinking past the sink limit toward a height far below, the pitch integral pulls the nose up
+/// at once: it integrates the rate error against the clamped demand, as ArduPilot's and PX4's,
+/// where an integral of the energy error kept winding nose-down while the height error stayed
+/// open (#505).
+#[test]
+fn pitch_integral_pulls_up_sinking_past_the_limit() {
+    let config = TecsConfig::default();
+    let sinking = VehicleState {
+        velocity_mps: Vec3::new(15.0, 0.0, -(config.max_sink_mps + 3.0)),
+        ..level(300.0, 15.0, 0.0)
+    };
+    let mut tecs = Tecs::default();
+    for _ in 0..100 {
+        tecs.step(DT, &config, &limits(), (0.0, 15.0), 15.0, &sinking);
+    }
+    check!(tecs.pitch_integral_rad > 0.0, "{tecs:?}");
+}

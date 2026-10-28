@@ -149,11 +149,11 @@ pub struct QuadPlaneGuidance {
 const WAIT_PITCH_MAX_RAD: f32 = 3.0 * DEG;
 
 /// Largest pitch, up or down, on the forward lift ramp: ArduPilot's `2 (Q_TRAN_PIT_MAX + 1°)`
-/// (`quadplane.cpp:4761`).
+/// (`quadplane.cpp:4788`).
 const RAMP_PITCH_MAX_RAD: f32 = 8.0 * DEG;
 
 /// Below this ground speed the forward transition holds pitch at 0, in m/s (ArduPilot,
-/// `quadplane.cpp:4753-4755`).
+/// `quadplane.cpp:4781-4783`).
 const LEVEL_BELOW_MPS: f32 = 3.0;
 
 impl QuadPlaneGuidance {
@@ -340,21 +340,25 @@ impl QuadPlaneGuidance {
     }
 }
 
-/// The forward transition's pitch: the plane guidance's for the command (its altitude loop on
-/// a waypoint, toward the altitude the transition holds; the stick in stabilized flight; 0 for
-/// rates), within ArduPilot's transition limits: 0 below [`LEVEL_BELOW_MPS`] of ground speed
-/// (or without one), then [`WAIT_PITCH_MAX_RAD`] while the lift rotors carry it all,
-/// [`RAMP_PITCH_MAX_RAD`] on the ramp (`ArduPlane/quadplane.cpp:4747-4766`).
-fn forward_pitch_rad(wing: &Setpoint, lift_share: f32, state: &VehicleState) -> f32 {
-    let Setpoint::Plane(plane) = wing else {
-        return 0.0;
-    };
-    let limit_rad = if lift_share < 1.0 {
+/// The forward transition's pitch limit, up or down: ArduPilot's transition limits, 0 below
+/// [`LEVEL_BELOW_MPS`] of ground speed, then [`WAIT_PITCH_MAX_RAD`] while the lift rotors carry
+/// it all, [`RAMP_PITCH_MAX_RAD`] on the ramp (`ArduPlane/quadplane.cpp:4779-4789`).
+fn forward_pitch_limit_rad(lift_share: f32, state: &VehicleState) -> f32 {
+    if lift_share < 1.0 {
         RAMP_PITCH_MAX_RAD
     } else if state.velocity_mps.xy().norm_squared() >= LEVEL_BELOW_MPS * LEVEL_BELOW_MPS {
         WAIT_PITCH_MAX_RAD
     } else {
         0.0
+    }
+}
+
+/// The forward transition's pitch: the plane guidance's for the command (its altitude loop on
+/// a waypoint, toward the altitude the transition holds; the stick in stabilized flight; 0 for
+/// rates), within `limit_rad` either way.
+fn forward_pitch_rad(wing: &Setpoint, limit_rad: f32) -> f32 {
+    let Setpoint::Plane(plane) = wing else {
+        return 0.0;
     };
     saturate_symmetric(plane.pitch_rad, limit_rad)
 }
@@ -385,14 +389,21 @@ impl Guidance for QuadPlaneGuidance {
         let setpoint = match step.mode {
             FlightMode::ToPlane => {
                 let wing_input = self.at_held_altitude(input);
-                let wing = self
-                    .plane
-                    .guide(dt, FlightRegime::Plane, &wing_input, state);
+                // The plane guidance's energy control flies within the transition's limits, so
+                // its pitch integral stops where the pitch does (`quadplane.cpp:4791-4793`).
+                let limit_rad = forward_pitch_limit_rad(step.lift_share, state);
+                let wing = self.plane.guide_capped(
+                    dt,
+                    FlightRegime::Plane,
+                    &wing_input,
+                    state,
+                    Some(limit_rad),
+                );
                 let rising = self.pusher_thrust + transition.pusher_slew_per_s * dt;
                 self.pusher_thrust = saturate_throttle(wing.thrust())
                     .min(rising)
                     .min(transition.forward_thrust);
-                let pitch_rad = forward_pitch_rad(&wing, step.lift_share, state);
+                let pitch_rad = forward_pitch_rad(&wing, limit_rad);
                 Setpoint::Blend(BlendSetpoint {
                     hover: self.hold_level(dt, pitch_rad, state),
                     plane: PlaneSetpoint {

@@ -146,7 +146,7 @@ pitch for its balance. Its knobs are ArduPilot's `TECS_*`, under `PGUID_`:
 | `PGUID_ASPD_MIN`, `_MAX` | `plane.tecs.min_airspeed_mps`, … | the stabilizer's `PSTAB_ASPD_MIN`, `_MAX` |
 | `PGUID_TCONST` | `plane.tecs.time_constant_s` | 5 s; longer for a slow, heavy aircraft |
 | `PGUID_PTCH_DAMP`, `PGUID_THR_DAMP`, `PGUID_INTEG` | … | ArduPilot's 0.3, 0.5, 0.3 |
-| `PGUID_PTCH_INTEG` | `plane.tecs.pitch_integrator_gain` | 0.3 (ArduPilot's `TECS_INTEG_GAIN`); lower if descents sink past `PGUID_SINK_MAX` |
+| `PGUID_PTCH_INTEG` | `plane.tecs.pitch_integrator_gain` | 0.2: the middle of the 0.1–0.3 that passes the sim suite on every airframe ([#505](https://github.com/wboayue/stable-flight/issues/505)) |
 | `PGUID_SPDWEIGHT` | `plane.tecs.speed_weight` | 1; toward 0 to hold height before speed, 2 the reverse |
 | `PGUID_RLL2THR` | `plane.tecs.roll_compensation` | 10; more if turns lose airspeed |
 
@@ -160,11 +160,14 @@ thrust and one at least, or read them off a fitted model (the Alia's
   Alia a 30 m descent overshoots 20 m while pitch trails by several degrees.
 - **Slow below `PGUID_ASPD_MIN` with full thrust:** underspeed has latched (below 0.9 of it);
   it clears back at `PGUID_ASPD_MIN`.
-- **Sinks past `PGUID_SINK_MAX` on a descending leg:** catching up height and airspeed
-  together (a leg faster than the entry), the pitch integral winds the nose down past the
-  limit. Lower `PGUID_PTCH_INTEG`: the Alia's 0.15 sinks 4.7 m/s on a leg 5 m/s past its entry,
-  against 5.4 m/s at 0.3 (6 m/s in X-Plane); 0.1 starts to drift entering turns
-  ([#503](https://github.com/wboayue/stable-flight/issues/503)).
+- **Sinks past `PGUID_SINK_MAX` on a descending leg:** the pitch integral acts on the rate
+  error, so it pulls the nose up once the sink passes the limit. The sim Alia sinks 4.5 m/s
+  on a 100 m descent at 5 m/s past its entry airspeed
+  ([#505](https://github.com/wboayue/stable-flight/issues/505)).
+- **Forward transition times out short of `TRAN_ASPD_MIN`:** the plane guidance already
+  pitches for airspeed at the transition's limits (3°, 8° on the ramp), so what's left is
+  thrust and time: raise `TRAN_PSH_SLEW`, or `TRAN_TIMEOUT`. The sim Alia reaches its
+  40 m/s gate at 36 s of its 45 s timeout.
 - **Dives entering plane flight:** the forward transition hands over below the speed the wing
   holds level at, so it trades height for speed: the sim Alia hands over at 37.5 m/s against
   its 40 and loses 41 m. Raise `TRAN_ASPD_MIN` toward `PGUID_ASPD_MIN`.

@@ -246,6 +246,49 @@ fn forward_pitch_follows_the_plane_within_the_transition_limits() {
     }
 }
 
+/// The forward transition hands its pitch limits to the plane guidance's energy control:
+/// waiting on airspeed pinned nose-down at the 3° limit, its pitch integral doesn't wind, so
+/// the lift ramp's wider 8° limit isn't taken at once by the windup (#505).
+#[test]
+fn forward_transition_keeps_the_energy_control_within_its_limits() {
+    let config = QuadPlaneGuidanceConfig {
+        transition: LiftTransitionConfig {
+            min_airspeed_mps: 6.0,
+            ..LiftTransitionConfig::default()
+        },
+        ..QuadPlaneGuidanceConfig::default()
+    };
+    let toward = ControlInput::Waypoint(WaypointCommand {
+        position_m: Vec2::new(1000.0, 0.0),
+        altitude_m: HIGH_M,
+        // The least airspeed: the ramp's own pitch for it stays inside 8°.
+        cruise_speed_mps: PlaneGuidanceConfig::default().tecs.min_airspeed_mps,
+        ..Default::default()
+    });
+    let mut guidance = QuadPlaneGuidance::new(config);
+    guidance.prime(&at(0.0, 0.0));
+    // Below the gate, underspeed: the energy control pitches nose-down for airspeed, pinned.
+    let waiting = blend_of(fly(
+        &mut guidance,
+        10.0,
+        FlightRegime::Plane,
+        &toward,
+        &at(HIGH_M, 5.0),
+    ));
+    assert_relative_eq!(waiting.plane.pitch_rad, -WAIT_PITCH_MAX_RAD, epsilon = 1e-6);
+    // The gate starts the ramp a tick after it's reached.
+    let ramping = blend_of(fly(
+        &mut guidance,
+        2.0 * DT,
+        FlightRegime::Plane,
+        &toward,
+        &at(HIGH_M, 6.0),
+    ));
+    check!(ramping.lift_share < 1.0);
+    // Measured −2.6°; the integral wound against the plane's own limits takes all 8°.
+    check!(ramping.plane.pitch_rad.to_degrees() > -5.0, "{ramping:?}");
+}
+
 /// On a waypoint, the forward transition flies the wing toward the altitude it holds, not the
 /// waypoint's: a waypoint far below pitches and thrusts as a level one, waiting and on the
 /// ramp (#491).

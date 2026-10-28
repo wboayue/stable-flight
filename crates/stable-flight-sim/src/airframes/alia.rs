@@ -205,10 +205,6 @@ pub fn alia250() -> QuadPlaneAirframe {
             max_airspeed_mps: plane_stabilizer.max_airspeed_mps,
             // 2.1 m against 3.4 m past a 30 m descent at ArduPilot's 0.3 (#392).
             pitch_damping: 0.5,
-            // Higher winds the pitch further nose-down catching up a descent: at ArduPilot's
-            // 0.3, a 100 m descent at 50 m/s from a 45 m/s entry sinks 5.3–5.4 m/s against
-            // the 5 m/s limit, at 0.15 4.7 m/s; 0.1 loses 1.2 m entering a turn (#503).
-            pitch_integrator_gain: 0.15,
             ..TecsConfig::default()
         },
         ..PlaneGuidanceConfig::default()
