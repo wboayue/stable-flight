@@ -534,9 +534,9 @@ fn spec_rise_s(plant: &Plant, target: TunedLoop) -> Option<f32> {
 
 /// Per airframe on the clean plant: the design search's roll rate gains and rise, from core's
 /// default gains, against the P/D pair with the fastest rise whose steps meet the spec (the
-/// rest of the config as tuned) (#378).
+/// rest of the config as tuned) (#531).
 #[test]
-#[ignore = "method sweep (#378)"]
+#[ignore = "method sweep (#531)"]
 fn best_rate_pairs() {
     for (name, airframe) in airframes() {
         let clean = plant(airframe, Set::Clean, Start::Low);
