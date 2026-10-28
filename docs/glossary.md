@@ -65,7 +65,8 @@ Code comments and docs link here instead of redefining a term.
   commanded rate) rather than from the error, so the loop doesn't wait to fall behind.
 - **Integral windup / anti-windup:** while the output is pinned at a limit, the I term keeps
   growing and overshoots once the limit releases. Anti-windup stops it accumulating (a
-  `max_integral` clamp, or holding it while saturated in the error's direction).
+  `max_integral` clamp, holding it while saturated in the error's direction, or fading it
+  toward zero while saturated, as the TECS pitch integral does).
 - **Derivative kick:** a D-term spike when the setpoint jumps or a loop starts with no previous
   sample; the loops skip it on their first tick.
 - **Trim:** the steady output that holds the vehicle in balance with no error (a plane's
@@ -86,6 +87,9 @@ Code comments and docs link here instead of redefining a term.
 - **Deadband:** a band around zero where small inputs are ignored, so noise doesn't cause
   constant small corrections.
 - **Low-pass filter:** smooths a noisy signal by attenuating fast changes, at the cost of lag.
+- **High-pass filter:** the signal less its low-pass: passes changes, drops what holds
+  steady. The TECS high-passes the airspeed rate so a steady acceleration isn't a rate
+  error.
 - **Airspeed scaling:** a control surface's moment grows with dynamic pressure (airspeed
   squared), so plane rate gains are scaled by trim airspeed over current airspeed to keep the
   loop's response the same across speeds.
