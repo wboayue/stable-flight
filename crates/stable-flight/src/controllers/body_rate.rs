@@ -242,6 +242,22 @@ mod tests {
         }
     }
 
+    /// Handing back one axis clears its derivative history and keeps its integral; the other
+    /// axes keep both.
+    #[test]
+    fn hand_back_restarts_one_axis_only() {
+        let config = config(1.0, 2.0, 0.5);
+        let mut controller = BodyRateController::default();
+        controller.control(&config, DT, Vec3::new(0.5, 0.5, 0.5), Vec3::zeros());
+        let before = controller.axes;
+
+        controller.hand_back(0);
+
+        assert!(controller.axes[0].integrated_error == before[0].integrated_error);
+        assert!(controller.axes[0].derivative == DerivativeState::default());
+        assert!(controller.axes[1..] == before[1..]);
+    }
+
     /// One tick from a fresh controller is `P·e + I·e·dt` (no derivative history yet; see
     /// `first_tick_has_no_derivative_kick`), saturated to `[-1, 1]` per axis.
     #[test]
