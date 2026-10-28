@@ -829,7 +829,8 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     RealFlight's state carries no sensor noise. With that D the rate search ends at its
     maximum (P 2.7, 0.9 × 3) on `quad_x` and `heavy_quad`, rising in 136 and 124 ms against
     48 and 44 ms for the fastest pair that meets the spec (`racer`: 20 against 16 ms;
-    `autotune_methods`' `best_rate_pairs`).
+    `autotune_methods`' `best_rate_pairs`;
+    [#531](https://github.com/wboayue/stable-flight/issues/531)).
 
 ## Real-Time Loop Management
 
