@@ -192,8 +192,9 @@ fn fits_a_delay_whose_moment_pushes_the_right_way() {
 
 /// A fit on recorded flight data skips the delays whose model pushes the axis the wrong way:
 /// QuadCopterX's first roll fit in RealFlight run 33 (#518) fitted best at 5 ticks with a
-/// negative moment effect (−1 rad/s²), where 4 ticks fit within 1.2% and read 40 rad/s² (#529).
-/// Its delays from 2 to 4 ticks all read 37–47 rad/s², so the fit lands in them.
+/// negative moment effect (−1 rad/s², #529). Which pushing delay wins isn't pinned: the best
+/// is 6 ticks (11 rad/s²), and 4 (40 rad/s²) ties with it at 1% by 0.03%, under `f32`
+/// summation order.
 #[test]
 fn a_recorded_fit_reads_a_positive_acceleration() {
     let mut probe = IdentifyProbe::new(CONFIG);
@@ -207,9 +208,9 @@ fn a_recorded_fit_reads_a_positive_acceleration() {
         probe.step(DT, rate_radps, last_moment);
     }
     let model = model(probe.status());
+    check!(model.moment_effect() > 0.0, "{model:?}");
     let accel_radps2 = model.accel_radps2().unwrap_or(f32::NAN);
-    check!(accel_radps2 > 20.0, "{model:?}: {accel_radps2} rad/s²");
-    check!(model.delay_ticks <= 4, "{model:?}");
+    check!(accel_radps2 > 0.0, "{model:?}: {accel_radps2} rad/s²");
 }
 
 /// An axis that never moves can't be fitted: no delay's sums solve.
