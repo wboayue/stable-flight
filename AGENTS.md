@@ -346,6 +346,9 @@ Related code sits together, so a reviewer reads one behavior in one place.
 - A PR body states the scenario tested and how to reproduce it (commands, configs), with
   telemetry or screenshots when behavior is visible. It becomes the squash commit message:
   summary first.
+- PR bodies and issue comments name external software's behavior and file ("as ArduPilot's
+  `AP_TECS` does"), not line numbers: those date as upstream moves. Line citations go in the
+  code comment that relies on them.
 - Squash-merge a single-change PR (`<PR title> (#id)`). Rebase-merge a PR with follow-up commits
   (fixes found during implementation or review) to keep that history: each commit a
   self-contained step that builds and passes, subject referencing the issue. Merge commits only
@@ -424,9 +427,10 @@ Related code sits together, so a reviewer reads one behavior in one place.
      rustdoc and names alone? Related code adjacent, terms in the glossary, signs and frames
      stated (**Readability**, **Locality** under **Coding style**).
 2. Before designing around external software (QGC, MAVLink peers, simulator clients, other
-   flight stacks), verify its behavior in its source, not from memory, and record file:line in
-   the issue or PR. This repo is MIT: from GPL code (ArduPilot) cite and describe the behavior
-   in your own words, then implement from that description; never copy or translate its code.
+   flight stacks), verify its behavior in its source, not from memory, and cite file:line in the
+   code comment that relies on it (the issue or PR names the behavior and file). This repo is
+   MIT: from GPL code (ArduPilot) cite and describe the behavior in your own words, then
+   implement from that description; never copy or translate its code.
    Do the same by default with permissive code (PX4 BSD-3-Clause, QGC Apache-2.0).
 3. Read the relevant trait in core `src/lib.rs` and its existing impls before adding one.
 4. Add tests with the code, covering the boundary and error cases, not just the happy path.
