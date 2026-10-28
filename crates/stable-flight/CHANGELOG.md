@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `StagePlan::copter_design_search` (#518): the copter autotune as a step search from a
   loop-shaping design. Roll and pitch rate, then angle, each fitted and designed
   (`Method::Design`, `DesignPlan`), then each loop's P searched by steps from its design
-  (`SearchPlan::copter_seeded`: no relay). On the sim it tunes every copter airframe, clean
+  (`SearchPlan::copter`). On the sim it tunes every copter airframe, clean
   and with 10 and 25 ms of actuator delay, from low and ×3 starts, in 152–380 s of simulated
   time, against the step search's 308–693 s on the rows that search passes.
   `AutotuneAbort::Design` reports a fit the design can't use, and `Outcome::Designed` a
@@ -268,41 +268,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without air data; `valid_airspeed_mps` drops a NaN or negative reading. The conformance kit expects ground speed (still air) and passes a backend
   that reports `None`.
 
-- **`tuning`:** building blocks for PID autotune (#149). `RelayTuner` measures a loop's
-  ultimate gain and period by relay feedback (hysteresis, relay ramp, adaptive bias for a
-  steady offset, raising the relay when cycles stay inconsistent, timeout and amplitude
-  aborts); `gains_from_ultimate` turns the result into
-  `Gains` by Tyreus–Luyben or no-overshoot Ziegler–Nichols, as PID, PI, PD, or P
-  (`ControllerForm::has_integral`/`has_derivative`).
 - **Autotune probes** (#149, #298): `Probe` excites and measures one loop inside the tick,
-  fed the loop's `LoopSignals` and answering with an `Injection` (a replaced output or
-  setpoint): `ProbeConfig::Relay` (a `RelayTuner` seeded with the loop's trim) or
+  fed the loop's `LoopSignals` and answering with the setpoint the loop runs on:
   `ProbeConfig::Step` (a `StepProbe`: holds a step for a fixed window and reports
   `StepMetrics`: overshoot, rise, settling, bounce-back, final value, clipped time;
   `StepSummary` aggregates them). It reports `ProbeStatus` and, when done, a `Measurement`. The `Tunable` trait (`start_probe`, `probe`,
   `stop_probe`), implemented by `CopterStabilizer` on a `TunedLoop` (roll/pitch/yaw rate,
-  roll/pitch angle, or heading), hosts one; the loop is handed back with the measured trim as
-  its I term when the probe finishes, on `stop_probe`, or when a rate tick interrupts an angle
+  roll/pitch angle, or heading), hosts one; the loop is handed back, its I term kept and its
+  derivative history cleared, when the probe finishes, on `stop_probe`, or when a rate tick interrupts an angle
   or heading probe. `prime` ends a probe. `FlightLoop` forwards the three calls, and adds
   `armed()`. `TunedLoop::gains`/`gains_mut` read or retune a loop's gains in a
   `CopterStabilizerConfig`.
 - **`tuning::autotune::Autotune`** (#149, #298): executes a plan of stages between ticks
-  (`StagePlan`: a `TunedLoop` and a `Method`; `Method::Relay(RelayPlan)` measures once and
-  sets the rule's gains; `Method::StepTest(StepTestPlan)` measures alternating steps and
+  (`StagePlan`: a `TunedLoop` and a `Method`; `Method::StepTest(StepTestPlan)` measures alternating steps and
   keeps the gains, repeating clipped or stalled steps (`Autotune::note_stall`) up to
   `max_invalid` and `max_stalled` in a row (`AutotuneAbort::Invalid`, `Stalled`);
   `Method::Search(SearchPlan)` finds the largest gain of one `Term` whose ± step pairs meet a
-  `Criterion`, by bracketing and bisection from gains a relay may seed and cap
-  (`SearchRelay`), and keeps it only if its verify flies no worse than a baseline on the start
-  gains (`Acceptance`); `StagePlan::copter_search` tunes roll and pitch rate this way
-  (`copter_rate_search`: relay PD sets D, step overshoot sets P under `0.6·Ku`), then roll and
-  pitch angle P (`SearchPlan::copter_angle`, 5° steps: `COPTER_ANGLE_SEARCH_STEP`); a
+  `Criterion`, by bracketing and bisection from the start gains, and keeps it only if its
+  verify flies no worse than a baseline on the start gains (`Acceptance`); rate P
+  (`SearchPlan::copter_rate`, step overshoot) and angle P (`SearchPlan::copter_angle`, 5°
+  steps: `COPTER_ANGLE_SEARCH_STEP`); a
   bracket point passes on `SearchPlan::confirm` pairs in a row; candidate gains fly only
   during their step, and an `Envelope` breach while they fly fails only the candidate (the
   committed gains get `Envelope::recovery_s` to recover); presets
-  `COPTER_RATE_STEP`, `COPTER_ANGLE_STEP`, `COPTER_STEP_SETTLE`; copter defaults in `StagePlan::copter_sequence`: roll and pitch rate,
-  PD keeping each loop's I; the angle, heading, and yaw-rate stages are opt-in, see
-  `COPTER_SEQUENCE`). Each stage's decisions run as a pure procedure; the executor settles
+  `COPTER_RATE_STEP`, `COPTER_ANGLE_STEP`, `COPTER_STEP_SETTLE`). Each stage's decisions run as a pure procedure; the executor settles
   before each probe (`Envelope::settle`, or the method's `Settle`), aborts on an `Envelope` breach (back to the last committed config),
   commits each stage's gains through `set_stabilizer_config`, and reverts to the starting
   config on disarm; reports `AutotuneEvent`s for logging (`StageStarted`, `Measured`,
@@ -339,7 +328,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking:** the autotune settle (`Settle::rate_radps`) holds the roll and pitch rates
   only: the untuned yaw loop can ring on its start gains without tilting the vehicle (#518).
-  A relay or an identification starts at the settle timeout instead of failing the stage.
+  An identification starts at the settle timeout instead of failing the stage.
   New `AutotuneAbort::Design`, `Outcome::Designed`, and `AutotuneEvent::Unsettled` variants
   break exhaustive matches.
 - **Breaking:** a search that keeps no result keeps its start gains only if their steps met
@@ -427,16 +416,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   struct literals add `transition: false` or `..Default::default()`. A tailsitter ramp sets it,
   and the stabilizer saturates its pitch at ±π/2 instead of `max_angles_rad` or
   `max_pitch_rad` (ArduPilot ramps past its limits the same way).
-- **Breaking:** `AutotuneEvent::Lowered`. A search whose start is above its maximum (the
-  relay's ceiling) lowers it to the relay's rule gains, P at most the ceiling, and commits
-  them before anything else flies, so the vehicle settles on them and they stay if the stage
-  keeps or fails; a gain above the ceiling could ring once disturbed and fail the stage
-  `NotSettled` (#375).
+- **Breaking:** `AutotuneEvent::Lowered`. A search whose start is above its maximum lowers it
+  to the maximum and commits it before anything else flies, so the vehicle settles on it and
+  it stays if the stage keeps or fails; a gain that high could ring once disturbed and fail
+  the stage `NotSettled` (#375).
 - **Breaking:** `AutotuneEvent` is `#[non_exhaustive]`: a `match` on it needs a wildcard arm,
   and new events stop being breaking.
-- An autotune relay that can't settle starts at `Envelope::settle_timeout_s` instead of
-  failing the stage: it replaces the loop's output, so a loop ringing on its own gains still
-  measures (#375).
 - `WaypointFollower` reaches a waypoint only within an altitude band as well as the
   horizontal radius (or past it), as PX4 does: default `DEFAULT_ALTITUDE_ACCEPTANCE_M` 0.8 m,
   `with_altitude_acceptance`/`set_altitude_acceptance` to change it, and
