@@ -17,7 +17,7 @@ body:
     id: investigate
     attributes:
       label: Investigate first
-      description: Open questions about external software (QGC, MAVLink peers, simulators, other flight stacks). Answer here with file:line before designing.
+      description: Open questions about external software (QGC, MAVLink peers, simulators, other flight stacks). Answer here, citing module and function or parameter (no line numbers), before designing.
   - type: textarea
     id: scope
     attributes:

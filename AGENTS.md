@@ -162,7 +162,9 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   - Inline comments give the non-obvious *why* in present tense: physics, invariants, a
     measured fact.
   - Cite where evidence or a spec lives, one trailing reference: `(#n)` for flight data behind
-    a tuned value, ArduPilot `file:line`. No narrative ("raised from", "previously", "after
+    a tuned value; for ArduPilot or PX4, the module and method or parameter (ArduPilot's
+    `AP_TECS` and `Q_WP_SPD`, PX4's `VT_B_DEC_MSS`), never a line number: upstream lines
+    drift, names last. No narrative ("raised from", "previously", "after
     #n", "interim").
   - Open work is `TODO(#n)` in code comments (`just todo-check` flags ones whose issue
     closed); markdown links the issue.
@@ -220,7 +222,7 @@ Related code sits together, so a reviewer reads one behavior in one place.
   issue, and land the fix's regression test there. A behavior the sim shows but the fix waits on
   stays `#[ignore = "... (#n)"]`. `FlightLoop` exposes no telemetry mid-run: read per-tick
   values in `fly`'s callback, recorded ticks after `into_parts()`, or the link's downlink.
-- **Sim test bands** come from a cited external target (ArduPilot, PX4 `file:line`) or a measured
+- **Sim test bands** come from a cited external target (ArduPilot, PX4: module and method or parameter) or a measured
   value with its margin stated beside the constant, never from the thresholds of the code under
   test. A band that only a tuning change can meet comes with that tuning, in `airframes`, from
   the sim autotune where it covers the loop.
@@ -274,8 +276,8 @@ Related code sits together, so a reviewer reads one behavior in one place.
   telemetry or screenshots when behavior is visible. It becomes the squash commit message:
   summary first.
 - PR bodies and issue comments name external software's behavior and file ("as ArduPilot's
-  `AP_TECS` does"), not line numbers: those date as upstream moves. Line citations go in the
-  code comment that relies on them.
+  `AP_TECS` does"), not line numbers: those date as upstream moves. Code comments cite the
+  same way (**Coding style**).
 - Squash-merge a single-change PR (`<PR title> (#id)`). Rebase-merge a PR with follow-up commits
   (fixes found during implementation or review) to keep that history: each commit a
   self-contained step that builds and passes, subject referencing the issue. Merge commits only
@@ -340,8 +342,8 @@ Related code sits together, so a reviewer reads one behavior in one place.
      rustdoc and names alone? Related code adjacent, terms in the glossary, signs and frames
      stated (**Readability**, **Locality** under **Coding style**).
 2. Before designing around external software (QGC, MAVLink peers, simulator clients, other
-   flight stacks), verify its behavior in its source, not from memory, and cite file:line in the
-   code comment that relies on it (the issue or PR names the behavior and file). This repo is
+   flight stacks), verify its behavior in its source, not from memory, and record where it
+   lives (module and function or parameter, no line numbers) in the issue or PR. This repo is
    MIT: from GPL code (ArduPilot) cite and describe the behavior in your own words, then
    implement from that description; never copy or translate its code.
    Do the same by default with permissive code (PX4 BSD-3-Clause, QGC Apache-2.0).
