@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `IdentifyProbe` fits the shortest delay within 5% of the least residual (was 1%) among
+  those whose moment pushes the axis the right way, falling back to all when none does
+  (#529). In RealFlight, noise had picked long delays with negative moment effects that the
+  design can't use: 9 of 55 QuadCopterX fits read under 20 rad/s², 1 of 55 replayed with
+  this choice.
 - A design stage's fit and hold run through a slow host (`Autotune::set_host_slow`) instead of
   stopping (#524): on RealFlight they stopped at every dip to 222–225 Hz and failed the stage
   `Stalled`; a fit 12% slow designs rate P 5–13% lower on the sim. `Autotune::note_stall`
