@@ -161,8 +161,14 @@ impl RateModel {
     pub fn accel_radps2(&self) -> Option<f32> {
         self.lag_s()?;
         let pole = -self.rate_weights[1];
-        let total: f32 = self.moment_weights.iter().sum();
-        Some(total / ((1.0 - pole) * self.dt_s))
+        Some(self.moment_effect() / ((1.0 - pole) * self.dt_s))
+    }
+
+    /// The moments' total weight: its sign is the sign of the axis's response to a held moment
+    /// (`accel_radps2` divides it by a positive `(1 − p)·dt`, and the design holds a pole past
+    /// 1 at 1). Negative, the model pushes the axis against the moment commanded.
+    fn moment_effect(&self) -> f32 {
+        self.moment_weights.iter().sum()
     }
 }
 
@@ -200,8 +206,8 @@ pub enum IdentifyStatus {
 /// tick; the probe returns the offset to add to the loop's setpoint. Every loop stays closed, so
 /// the fit sees the airframe through its own controllers. It fits each delay from 1 to
 /// [`MAX_DELAY_TICKS`] on the same ticks and keeps the one with the least residual (the
-/// shortest of a near-tie) among those whose moment pushes the axis the way it was pushed: a
-/// fit with a negative moment effect can't be designed from.
+/// shortest of a near-tie) among those whose moment pushes the axis the way it was pushed (among
+/// all when none does): a fit with a negative moment effect can't be designed from.
 ///
 /// The fit takes the rate's change `y[k] − y[k−1]` as its target and `y[k−1]`, `y[k−1] −
 /// y[k−2]` as its rate terms: at 250 Hz the last two rates are nearly equal, and fitting them
@@ -381,21 +387,27 @@ impl DelayFits {
 
     /// The model at the delay [`delay_to_fit`] picks; `None` when no delay's sums solve.
     fn solve(&self) -> Option<RateModel> {
-        let solutions = self.sums.map(|sums| sums.solve());
-        // The moment weights sum to the axis's response to a held moment, less the lag's.
-        let fits = solutions.map(|solution| {
-            solution.map(|(solution, residual)| (solution[2] + solution[3] + solution[4], residual))
+        let dt_s = self.rows_dt_s / self.rows.max(1) as f32;
+        let fits: [Option<(RateModel, f32)>; MAX_DELAY_TICKS] = core::array::from_fn(|index| {
+            let (solution, residual) = self.sums[index].solve()?;
+            Some((model_at(index + 1, &solution, dt_s), residual))
         });
-        let delay_ticks = delay_to_fit(&fits)?;
-        let (solution, _) = solutions[delay_ticks - 1]?;
-        // Δy[k] = c₀·y[k−1] + c₁·(y[k−1] − y[k−2]) + …, so y[k] = (1 + c₀ + c₁)·y[k−1] − c₁·y[k−2] + ….
-        let (change, difference) = (solution[0], solution[1]);
-        Some(RateModel {
-            rate_weights: [1.0 + change + difference, -difference],
-            moment_weights: [solution[2], solution[3], solution[4]],
-            delay_ticks,
-            dt_s: self.rows_dt_s / self.rows.max(1) as f32,
-        })
+        let effects =
+            fits.map(|fit| fit.map(|(model, residual)| (model.moment_effect(), residual)));
+        let delay_ticks = delay_to_fit(&effects)?;
+        fits[delay_ticks - 1].map(|(model, _)| model)
+    }
+}
+
+/// The model a delay's least-squares `solution` gives, at `delay_ticks` and ticks of `dt_s`.
+fn model_at(delay_ticks: usize, solution: &SVector<f32, TERMS>, dt_s: f32) -> RateModel {
+    // Δy[k] = c₀·y[k−1] + c₁·(y[k−1] − y[k−2]) + …, so y[k] = (1 + c₀ + c₁)·y[k−1] − c₁·y[k−2] + ….
+    let (change, difference) = (solution[0], solution[1]);
+    RateModel {
+        rate_weights: [1.0 + change + difference, -difference],
+        moment_weights: [solution[2], solution[3], solution[4]],
+        delay_ticks,
+        dt_s,
     }
 }
 
@@ -442,16 +454,20 @@ impl Sums {
 /// moment weights) and residual: [`shortest_tied`] among those with a positive moment effect,
 /// or among all when none has one (a reversed axis, which the design rejects as such). A
 /// negative effect pushes the axis against the moment commanded, which no design can use, and
-/// in flight it comes from noise favoring a wrong delay (#529). `None` when no delay solved.
+/// in flight it comes from noise favoring a wrong delay (#529). A pushing delay wins however
+/// far its residual is from a wrong-way least; on QuadCopterX in RealFlight the 7 fits it
+/// decided sat 1–13% above it and read 27–63 rad/s² (the axis's healthy fits read 30–70), and
+/// the design's hold catches a design that rings. `None` when no delay solved.
 fn delay_to_fit(fits: &[Option<(f32, f32)>]) -> Option<usize> {
-    let residual = |fit: &Option<(f32, f32)>| fit.map(|(_, residual)| residual);
     let pushing: [Option<f32>; MAX_DELAY_TICKS] = core::array::from_fn(|index| {
-        fits.get(index)
-            .and_then(|fit| fit.filter(|(effect, _)| *effect > 0.0))
+        let fit = fits.get(index).copied().flatten();
+        fit.filter(|(effect, _)| *effect > 0.0)
             .map(|(_, residual)| residual)
     });
-    let all: [Option<f32>; MAX_DELAY_TICKS] =
-        core::array::from_fn(|index| fits.get(index).and_then(residual));
+    let all: [Option<f32>; MAX_DELAY_TICKS] = core::array::from_fn(|index| {
+        let fit = fits.get(index).copied().flatten();
+        fit.map(|(_, residual)| residual)
+    });
     shortest_tied(&pushing).or_else(|| shortest_tied(&all))
 }
 

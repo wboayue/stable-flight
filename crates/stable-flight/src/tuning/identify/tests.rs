@@ -193,6 +193,7 @@ fn fits_a_delay_whose_moment_pushes_the_right_way() {
 /// A fit on recorded flight data skips the delays whose model pushes the axis the wrong way:
 /// QuadCopterX's first roll fit in RealFlight run 33 (#518) fitted best at 5 ticks with a
 /// negative moment effect (−1 rad/s²), where 4 ticks fit within 1.2% and read 40 rad/s² (#529).
+/// Its delays from 2 to 4 ticks all read 37–47 rad/s², so the fit lands in them.
 #[test]
 fn a_recorded_fit_reads_a_positive_acceleration() {
     let mut probe = IdentifyProbe::new(CONFIG);
