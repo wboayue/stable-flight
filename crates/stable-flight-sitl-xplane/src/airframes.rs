@@ -153,8 +153,6 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                     max_climb_mps: 1.8,
                     min_sink_mps: 3.5,
                     pitch_damping: 0.5,
-                    // The sim model's: X-Plane sank 6 m/s against the 5 m/s limit at 0.3 (#503).
-                    pitch_integrator_gain: 0.15,
                     min_airspeed_mps: ALIA_MIN_AIRSPEED_MPS,
                     max_airspeed_mps: ALIA_MAX_AIRSPEED_MPS,
                     ..TecsConfig::default()

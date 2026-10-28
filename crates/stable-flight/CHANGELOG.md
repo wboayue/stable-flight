@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The TECS pitch integral acts on the energy balance rate error, as ArduPilot's and PX4's,
+  instead of the balance error (#505): it pulls the nose up once a sink passes
+  `PGUID_SINK_MAX`. The kinetic energy rate is high-passed (1 s), so a steady acceleration
+  isn't a rate error; the integral fades while pitch is pinned at a limit; the pitch demand's
+  airspeed part is no longer held to half the climb's energy rate. `QuadPlaneGuidance`'s
+  forward transition passes its pitch limits into the TECS. On the sim Alia, a 100 m descent
+  at 50 m/s from a 45 m/s entry sinks 4.5 m/s (4.7 before), the forward transition loses 7 m
+  entering plane flight (11 m), and reaches its airspeed gate at 36 s of its 45 s timeout,
+  where with the transition's limits passed to the old integral it timed out.
 - `IdentifyProbe` fits only delays whose moment pushes the axis the right way, falling back
   to all when none does (#529). In RealFlight, noise had picked delays with negative moment
   effects that the design can't use: 10 of 67 QuadCopterX fits read under 20 rad/s², 5
@@ -72,9 +81,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `WaypointFollower::route_end` reports what the follower does after the last waypoint.
 
-- `TecsConfig::pitch_integrator_gain` (`PGUID_PTCH_INTEG`, default 0.3): the pitch loop's
+- `TecsConfig::pitch_integrator_gain` (`PGUID_PTCH_INTEG`, default 0.2): the pitch loop's
   integral gain, apart from the thrust loop's, as PX4 splits `FW_T_I_GAIN_PIT` and
-  `FW_T_THR_INTEG` (#503).
+  `FW_T_THR_INTEG` (#503, #505).
 
 - **Quadplane back transition deceleration** (#496): `LiftTransitionConfig` gains
   `back_decel_mps2` (`TRAN_VT_DEC`, 2 m/s²) and `back_decel_i` (`TRAN_VT_DEC_I`, 0.1),

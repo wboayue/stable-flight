@@ -234,7 +234,17 @@ supplies pacing.
   past its altitude); PX4's rates-only form with a trajectory generator (more state for the
   same behavior on these airframes); a synthetic airspeed when none is measured (core has no
   plane wind estimate, and ground speed reads fast in a tailwind: #456), so without an airspeed
-  pitch holds altitude and thrust follows pitch, as ArduPilot does.
+  pitch holds altitude and thrust follows pitch, as ArduPilot does. The pitch integral acts
+  on the balance rate error, against a high-passed airspeed rate, within the limits a forward
+  transition passes in, and the pitch demand's airspeed part isn't held to half the climb's
+  energy rate as thrust's is (#505). Rejected: an integral of the energy error (it winds
+  nose-down through a descent's catch-up while the height error stays open, and the sim
+  Alia's forward transition reached its airspeed gate only by its windup against the
+  transition's pitch cap: with the cap passed in, it timed out); the held airspeed part (the
+  transition pitches up against its rotors' acceleration and reaches its gate 3 s inside the
+  timeout); ArduPilot's bound on the integral, 5° past the limits of the proportional term (at
+  the transition's first few m/s that term sits far past a limit, and the bound winds the
+  integral 70° up).
 * **Wind estimate**: `CopterGuidance` owns a `estimation::wind::WindEstimator` and feeds it
   every airborne tick. Thrust acts along the thrust frame's `z`, so the specific force along
   its `x` and `y` is the air's push alone. Each axis inverts its drag model (bluff-body plus

@@ -195,6 +195,45 @@ fn entry_loss_m(airframe: QuadPlaneAirframe) -> f32 {
     entry_m - lowest_m
 }
 
+/// Latest the forward transition from near a hover reaches its airspeed gate, in s: 5 s inside
+/// the Alia's 45 s timeout. Measured 36.1 s; with the pitch side's airspeed rate held to half
+/// the climb's energy rate, the pitch rode up against the rotors' and pusher's acceleration
+/// and reached it at 41.7 s (#505).
+const GATE_BY_S: f32 = 40.0;
+
+/// The forward transition reaches its airspeed gate well inside its timeout: the energy
+/// control pitches for airspeed at the transition's limit rather than against the
+/// acceleration.
+#[test]
+fn alia250_reaches_the_transition_gate_inside_its_timeout() {
+    let airframe = airframes::alia250();
+    let ramp_s = airframe.guidance.transition.lift_ramp_s;
+    let modes = Modes::default();
+    let line = north_line(300.0, airframe.stabilizer.plane.trim_airspeed_mps);
+    let start = Start::level(300.0, 5.0, 0.0);
+    flown(airframe, start, line, modes.clone(), 150.0, |_, _| {});
+    let modes = modes.0.take();
+    let plane_s = modes
+        .iter()
+        .position(|mode| *mode == FlightMode::Plane)
+        .map_or(f32::INFINITY, |tick| {
+            tick as f32 * common::TICK.as_secs_f32()
+        });
+    // The lift ramp runs from the gate to plane flight.
+    let gate_s = plane_s - ramp_s;
+    check!(gate_s <= GATE_BY_S, "{gate_s} s");
+}
+
+/// Each tick's flight mode.
+#[derive(Clone, Default)]
+struct Modes(Rc<RefCell<Vec<FlightMode>>>);
+
+impl TelemetryPublisher for Modes {
+    fn publish(&mut self, record: &TelemetryRecord) {
+        self.0.borrow_mut().push(record.flight_mode.mode);
+    }
+}
+
 /// Most altitude lost entering plane flight with the pitch side's gains raised (pitch rate P
 /// 1.5×, TECS pitch damping 2×), in m. Measured 21 m; 30 m leaves about 1.5× margin. With a
 /// pitch-up limit past the stall (24°, px4xplane's), damping 0.8 at P 0.52 already fell into a
@@ -301,8 +340,8 @@ const FASTER_LEG_MPS: f32 = 5.0;
 
 /// A descending leg faster than the entry sinks no faster than `PGUID_SINK_MAX` (plus
 /// [`SINK_MARGIN_MPS`]): catching up height and airspeed together, the pitch integral doesn't
-/// wind the nose down past the limit. At ArduPilot's pitch integral gain it sank 5.4 m/s here,
-/// and 6 m/s in X-Plane (#503).
+/// wind the nose down past the limit. Measured 4.5 m/s; an integral of the energy error at
+/// ArduPilot's gain sank 5.4 m/s here and 6 m/s in X-Plane (#503, #505).
 #[test]
 fn alia250_catches_up_a_faster_descent_within_its_sink_limit() {
     let airframe = airframes::alia250();

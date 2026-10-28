@@ -195,6 +195,54 @@ impl PlaneGuidance {
         }
     }
 
+    /// [`Guidance::guide`], with waypoint flight's pitch held within `pitch_cap_rad` either
+    /// way when given: the forward transition's limits, so the energy control's pitch integral
+    /// stops where the transition stops the pitch (`ArduPlane/quadplane.cpp:4791-4793`).
+    pub(crate) fn guide_capped(
+        &mut self,
+        dt: f32,
+        regime: FlightRegime,
+        input: &ControlInput,
+        state: &VehicleState,
+        pitch_cap_rad: Option<f32>,
+    ) -> Setpoint {
+        assert_dt(dt);
+        self.requested = regime;
+        if !matches!(input, ControlInput::Waypoint(_)) {
+            // The navigation loops are idle: clear them so waypoint flight starts fresh.
+            self.altitude = PiLoop::default();
+            self.tecs.reset();
+        }
+        let config = &self.config;
+        match input {
+            ControlInput::Attitude(sticks) => {
+                Setpoint::Plane(self.sticks(sticks.roll, sticks.pitch, sticks.throttle))
+            }
+            ControlInput::Rate(sticks) => Setpoint::PlaneRate(BodyRateSetpoint {
+                roll_radps: saturate_unit(sticks.roll_rate) * config.max_rate_radps.x,
+                pitch_radps: saturate_unit(sticks.pitch_rate) * config.max_rate_radps.y,
+                yaw_radps: saturate_unit(sticks.yaw_rate) * config.max_rate_radps.z,
+                thrust: saturate_throttle(sticks.throttle),
+                idle: false,
+            }),
+            ControlInput::AbsoluteAttitude(command) => Setpoint::Plane(PlaneSetpoint {
+                roll_rad: command.roll_rad,
+                pitch_rad: command.pitch_rad,
+                thrust: saturate_throttle(command.thrust),
+                transition: false,
+            }),
+            ControlInput::AbsoluteRate(command) => {
+                let mut rates = BodyRateSetpoint::from(command);
+                rates.thrust = saturate_throttle(command.thrust);
+                Setpoint::PlaneRate(rates)
+            }
+            ControlInput::Waypoint(waypoint) => {
+                Setpoint::Plane(self.navigate(dt, waypoint, state, pitch_cap_rad))
+            }
+            ControlInput::Land(_) => Setpoint::Plane(PlaneSetpoint::default()),
+        }
+    }
+
     /// Waypoint flight: bank from L1 along the leg (or a loiter without one); pitch and thrust
     /// from total energy control, or without an airspeed or a speed target, pitch from the
     /// altitude loop and thrust from cruise and the pitch.
@@ -203,8 +251,12 @@ impl PlaneGuidance {
         dt: f32,
         waypoint: &WaypointCommand,
         state: &VehicleState,
+        pitch_cap_rad: Option<f32>,
     ) -> PlaneSetpoint {
         let config = &self.config;
+        let cap = |limit_rad: f32| pitch_cap_rad.map_or(limit_rad, |cap| limit_rad.min(cap));
+        let (pitch_up_rad, pitch_down_rad) =
+            (cap(config.max_pitch_up_rad), cap(config.max_pitch_down_rad));
         let (position_m, velocity_mps) = (state.position_m.xy(), state.velocity_mps.xy());
         let (period_s, damping) = (config.l1_period_s, config.l1_damping);
         let leg = waypoint.velocity_mps.filter(all_finite);
@@ -235,8 +287,8 @@ impl PlaneGuidance {
             (Some(target_mps), Some(airspeed_mps)) => {
                 self.altitude = PiLoop::default();
                 let limits = Limits {
-                    pitch_up_rad: config.max_pitch_up_rad,
-                    pitch_down_rad: config.max_pitch_down_rad,
+                    pitch_up_rad,
+                    pitch_down_rad,
                     trim_pitch_rad: trim,
                     min_thrust: low,
                     max_thrust: high,
@@ -262,10 +314,7 @@ impl PlaneGuidance {
                         config.altitude_p,
                         config.altitude_i,
                         config.altitude_max_integral,
-                        (
-                            -config.max_pitch_down_rad - trim,
-                            config.max_pitch_up_rad - trim,
-                        ),
+                        (-pitch_down_rad - trim, pitch_up_rad - trim),
                         0.0,
                     );
                 let thrust = (config.cruise_thrust
@@ -323,39 +372,7 @@ impl Guidance for PlaneGuidance {
         input: &ControlInput,
         state: &VehicleState,
     ) -> Setpoint {
-        assert_dt(dt);
-        self.requested = regime;
-        if !matches!(input, ControlInput::Waypoint(_)) {
-            // The navigation loops are idle: clear them so waypoint flight starts fresh.
-            self.altitude = PiLoop::default();
-            self.tecs.reset();
-        }
-        let config = &self.config;
-        match input {
-            ControlInput::Attitude(sticks) => {
-                Setpoint::Plane(self.sticks(sticks.roll, sticks.pitch, sticks.throttle))
-            }
-            ControlInput::Rate(sticks) => Setpoint::PlaneRate(BodyRateSetpoint {
-                roll_radps: saturate_unit(sticks.roll_rate) * config.max_rate_radps.x,
-                pitch_radps: saturate_unit(sticks.pitch_rate) * config.max_rate_radps.y,
-                yaw_radps: saturate_unit(sticks.yaw_rate) * config.max_rate_radps.z,
-                thrust: saturate_throttle(sticks.throttle),
-                idle: false,
-            }),
-            ControlInput::AbsoluteAttitude(command) => Setpoint::Plane(PlaneSetpoint {
-                roll_rad: command.roll_rad,
-                pitch_rad: command.pitch_rad,
-                thrust: saturate_throttle(command.thrust),
-                transition: false,
-            }),
-            ControlInput::AbsoluteRate(command) => {
-                let mut rates = BodyRateSetpoint::from(command);
-                rates.thrust = saturate_throttle(command.thrust);
-                Setpoint::PlaneRate(rates)
-            }
-            ControlInput::Waypoint(waypoint) => Setpoint::Plane(self.navigate(dt, waypoint, state)),
-            ControlInput::Land(_) => Setpoint::Plane(PlaneSetpoint::default()),
-        }
+        self.guide_capped(dt, regime, input, state, None)
     }
 
     /// Clears the navigation loops: integrals, demands, and underspeed.
