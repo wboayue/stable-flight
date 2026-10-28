@@ -14,6 +14,7 @@ Read the file for the simulator before a run:
 - [realflight.md](realflight.md): fields, tick rate, stopping, disconnects.
 - [xplane.md](xplane.md): reset, Oceano, plane legs, watchdog.
 - [comparable-runs.md](comparable-runs.md): one knob per run, tick-rate screening, explaining a trace.
+- [link-setups.md](link-setups.md): flights through the link (bridge + QGC, `link_pilot`, offboard MAVLink).
 
 ## Rules
 
@@ -49,7 +50,8 @@ Read the file for the simulator before a run:
 3. **Watchdog** on the recorder CSV: stop on landing (disarmed below 0.5 m after the climb
    target, or after a back transition), drift past a radius, a floor on plane legs, or a timeout.
 4. **Stop with SIGTERM** (or Ctrl-C), never a kill: `ShutdownSignal` lets the vehicle hand
-   control back. Then read the exit lines (`Ran N ticks at X Hz`, `ticks skipped`, the
+   control back. `--record` columns are in `stable_flight_sitl::recorder` (e.g.
+   `TailsitterColumns`). Then read the exit lines (`Ran N ticks at X Hz`, `ticks skipped`, the
    `host slow` total).
 5. **Screen the tick rate** before reading anything else ([comparable-runs.md](comparable-runs.md#tick-rate)).
 6. **Report** each run as a row against the earlier ones; ask the person at the simulator to
@@ -57,15 +59,3 @@ Read the file for the simulator before a run:
 
 `--end land` keeps the example running on the ground: stop it before the next run.
 
-## Link setups
-
-- `just fly-companion` + `just bridge` + QGC, or `just fly-companion` + `just link-pilot`
-  (instead of the bridge). Offboard MAVLink scripts use the bridge's UDP 14550 (close QGC
-  first) and run with `uv run --no-project --with pymavlink python script.py`.
-- **Start order:** bridge and example first, then QGC. If the vehicle disappears and returns
-  under an open QGC, its virtual joystick can go silent while Arm still works: restart QGC.
-- **Signals:** the companion example logs each failsafe handover (failsafe timeout 1 s). QGC's
-  throttle and `SAT_*` displays: the bridge README's `VFR_HUD` and `NAMED_VALUE_INT` rows.
-  QGC → bridge traffic: `nettop -p <bridge pid> -J bytes_in` (heartbeat only ≈ 21 B/s, joystick
-  ≈ 600 B/s). `--record` on the tailsitter examples logs setpoints, rates, moments, and
-  actuators per tick (columns: `stable_flight_sitl::recorder::TailsitterColumns`).

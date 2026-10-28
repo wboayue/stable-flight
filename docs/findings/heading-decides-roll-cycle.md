@@ -8,5 +8,5 @@ Main and the fix cycled alike; the heading decided it: at 145°, the wind about 
 wingtip, it cycled, and at 125°, a wingtip square into the wind, it never did. Roll rate D 0.03
 stops it.
 
-**So:** before crediting a fix with a flight behavior, fly main on the same route with the
-heading relative to the wind held and reported.
+**So:** a flight behavior can come from the wind, not the change
+([flight-check](../../.claude/skills/flight-check/comparable-runs.md#one-knob-per-run)).

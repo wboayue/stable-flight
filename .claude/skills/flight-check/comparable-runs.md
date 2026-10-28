@@ -24,7 +24,8 @@
 - Around the event a run measures, count the `wall_s` rows per wall-clock second too, and drop
   a run below about 245 Hz there ([finding](../../../docs/findings/low-tick-rate-slows-clocks.md)).
 - A release build skips less but doesn't stop it; RealFlight's own pacing is the larger cause
-  ([realflight.md](realflight.md)).
+  ([realflight.md](realflight.md)). The runner drops time lost to a stall over 100 ms, so heavy
+  `ticks skipped` in the exit log slows the clocks the same way.
 
 ## Explaining a trace
 

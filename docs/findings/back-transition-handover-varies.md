@@ -6,5 +6,5 @@
 With the same build and settings, the back transition handed over to hover climbing at
 +1.7 m/s in one run and sinking at −1.3 m/s in another.
 
-**So:** one run says little about a back transition. Fly several runs per arm and compare runs
-with a matched handover; a behavior that shows in only some runs needs 3 or more per arm.
+**So:** one run says little about a back transition
+([flight-check](../../.claude/skills/flight-check/comparable-runs.md#one-knob-per-run)).
