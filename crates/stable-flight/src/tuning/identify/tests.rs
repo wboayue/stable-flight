@@ -142,14 +142,14 @@ fn drops_a_non_finite_tick_and_refills_its_history() {
     );
 }
 
-/// The delay is the shortest whose residual is within 1% of the least, so rounding doesn't pick
-/// between near-equal delays: (residuals per delay from 1, delay picked).
+/// The delay is the shortest whose residual is within 5% of the least, so noise or rounding
+/// doesn't pick between near-equal delays: (residuals per delay from 1, delay picked).
 #[test]
 fn picks_the_shortest_of_near_tied_delays() {
     let rows: [(&[Option<f32>], Option<usize>); 6] = [
         (&[Some(3.0), Some(1.0), Some(2.0)], Some(2)),
-        (&[Some(1.005), Some(1.0)], Some(1)),
-        (&[Some(1.02), Some(1.0)], Some(2)),
+        (&[Some(1.04), Some(1.0)], Some(1)),
+        (&[Some(1.06), Some(1.0)], Some(2)),
         (&[None, Some(0.0), Some(0.0)], Some(2)),
         (&[None, None], None),
         (&[], None),
@@ -157,6 +157,58 @@ fn picks_the_shortest_of_near_tied_delays() {
     for (residuals, delay) in rows {
         check!(shortest_tied(residuals) == delay, "{residuals:?}");
     }
+}
+
+/// A delay's moment effect and residual, as `delay_to_fit` takes them.
+type DelayFit = Option<(f32, f32)>;
+
+/// The fit takes the best of the delays whose moment pushes the axis the way it was pushed, and
+/// the best of all only when none does: (each delay's moment effect and residual from 1, delay
+/// picked).
+#[test]
+fn fits_a_delay_whose_moment_pushes_the_right_way() {
+    let rows: [(&str, &[DelayFit], Option<usize>); 4] = [
+        (
+            "all push: least residual",
+            &[Some((1.0, 2.0)), Some((1.0, 1.0))],
+            Some(2),
+        ),
+        (
+            "the least pushes back: the next",
+            &[Some((1.0, 1.5)), Some((-1.0, 1.0))],
+            Some(1),
+        ),
+        (
+            "none pushes: least of all",
+            &[Some((-1.0, 2.0)), Some((-1.0, 1.0))],
+            Some(2),
+        ),
+        ("none solved", &[None, None], None),
+    ];
+    for (row, fits, delay) in rows {
+        check!(delay_to_fit(fits) == delay, "{row}");
+    }
+}
+
+/// A fit on recorded flight data skips the delays whose model pushes the axis the wrong way:
+/// QuadCopterX's first roll fit in RealFlight run 33 (#518) fitted best at 5 ticks with a
+/// negative moment effect (−1 rad/s²), where 4 ticks fit within 1.2% and read 40 rad/s² (#529).
+#[test]
+fn a_recorded_fit_reads_a_positive_acceleration() {
+    let mut probe = IdentifyProbe::new(CONFIG);
+    for line in include_str!("realflight_roll_fit.csv").lines() {
+        if line.starts_with('#') {
+            continue;
+        }
+        let (rate, moment) = line.split_once(',').expect("rate,moment");
+        let rate_radps = rate.parse().expect("rate");
+        let last_moment = moment.parse().expect("moment");
+        probe.step(DT, rate_radps, last_moment);
+    }
+    let model = model(probe.status());
+    let accel_radps2 = model.accel_radps2().unwrap_or(f32::NAN);
+    check!(accel_radps2 > 20.0, "{model:?}: {accel_radps2} rad/s²");
+    check!(model.delay_ticks <= 4, "{model:?}");
 }
 
 /// An axis that never moves can't be fitted: no delay's sums solve.
