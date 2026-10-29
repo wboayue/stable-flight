@@ -800,9 +800,9 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     ticks in 2 of 12 rows: the smoothed moments let the fit spread a tick over their weights.
     Without it, a vibration tone's AR terms take the rate weights (`quad_x`'s noise rows designed
     rate P 13–63 against 4.7 clean). Its order and cutoff trade noise against fidelity: two
-    poles at 20–40 Hz left the fit to a 0.02 rad/s tone, four poles at 20 Hz smeared the
-    `racer`'s lag 69% from a ringing start, and four at 40 Hz passed 28 of 30 noise-row runs
-    over 5 noise seeds (#373).
+    poles at 40 Hz passed 6 of 30 noise-row runs over 5 noise seeds, four at 40 Hz 28 of 30,
+    and four at 20 Hz smeared the `racer`'s lag 69% from a ringing start. A 90 Hz tone of
+    0.02 rad/s on a clean rate still takes the fit through four poles at 40 Hz (#373).
   * *Design* (`tuning::design_rate`, `design_angle_p`, `COPTER_LOOP_SHAPING`): rate D/P at the
     fitted lag, so the PD's zero cancels the motor lag; rate P for a 65° phase margin on the
     model's frequency response, its delay and the stabilizer's gyro low-pass included (left

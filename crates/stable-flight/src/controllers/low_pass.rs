@@ -16,8 +16,9 @@ use nalgebra::Complex;
 pub(crate) struct LowPass {
     /// The coefficients and the `(cutoff_hz, dt)` they were computed for.
     coefficients: Option<(Coefficients, f32, f32)>,
-    /// The internal state `w[k−1]`, `w[k−2]` (direct form II); `None` before the first sample.
-    history: Option<[f32; 2]>,
+    /// The last two inputs and outputs (direct form I), so a new cutoff or tick reuses them
+    /// as they are; `None` before the first sample.
+    history: Option<History>,
 }
 
 impl LowPass {
@@ -32,12 +33,16 @@ impl LowPass {
             return value;
         };
         let Coefficients { b0, a1, a2 } = coefficients;
-        let [w1, w2] = *self
-            .history
-            .get_or_insert_with(|| [value / (1.0 + a1 + a2); 2]);
-        let w0 = value - a1 * w1 - a2 * w2;
-        self.history = Some([w0, w1]);
-        b0 * (w0 + 2.0 * w1 + w2)
+        let History { inputs, outputs } = *self.history.get_or_insert(History {
+            inputs: [value; 2],
+            outputs: [value; 2],
+        });
+        let output = b0 * (value + 2.0 * inputs[0] + inputs[1]) - a1 * outputs[0] - a2 * outputs[1];
+        self.history = Some(History {
+            inputs: [value, inputs[0]],
+            outputs: [output, outputs[0]],
+        });
+        output
     }
 
     /// The filter's response at `w_radps` for samples `dt_s` apart: gain and phase as a complex
@@ -66,6 +71,13 @@ impl LowPass {
             }
         }
     }
+}
+
+/// A [`LowPass`]'s past samples, newest first.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct History {
+    inputs: [f32; 2],
+    outputs: [f32; 2],
 }
 
 /// A [`LowPass`]'s weights; `b₁ = 2·b₀` and `b₂ = b₀`.

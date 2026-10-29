@@ -90,3 +90,21 @@ fn a_new_cutoff_or_tick_takes_effect() {
     check!(filter.apply(5.0, DT, 0.0) == 5.0);
     assert_relative_eq!(filter.apply(5.0, DT, 40.0), 5.0, epsilon = 1e-5);
 }
+
+#[test]
+fn a_new_cutoff_or_tick_keeps_a_held_signal() {
+    // (cutoff Hz then, tick s then): each switches to 40 Hz at 4 ms while holding 1.
+    for (cutoff_hz, dt) in [(20.0, DT), (10.0, DT), (40.0, 0.002), (40.0, 0.008)] {
+        let mut filter = LowPass::default();
+        for _ in 0..200 {
+            filter.apply(1.0, dt, cutoff_hz);
+        }
+        for _ in 0..5 {
+            let output = filter.apply(1.0, DT, 40.0);
+            check!(
+                (output - 1.0).abs() < 1e-4,
+                "from {cutoff_hz} Hz at {dt} s: {output}"
+            );
+        }
+    }
+}

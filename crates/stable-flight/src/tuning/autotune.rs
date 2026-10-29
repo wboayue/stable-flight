@@ -1241,7 +1241,9 @@ pub struct Autotune {
     /// breaches don't count at all ([`Envelope::recovery_s`]).
     frozen_s: f32,
     /// The body rates (roll, pitch, yaw) through the stabilizer's gyro low-pass, for the
-    /// settle ([`Motion`]).
+    /// settle ([`Motion`]): a copy of the stabilizer's filter, at its cutoff, since reading
+    /// the stabilizer's would take a frame rotation through every [`View`](crate::view::View)
+    /// host.
     rate_filters: [LowPass; 3],
 }
 
