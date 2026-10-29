@@ -65,10 +65,13 @@ pub fn plan() -> [StagePlan; 4] {
     ]
 }
 
-/// `plan` stepping by `step`, clipping for up to [`MAX_SATURATED_S`].
+/// `plan` stepping by `step`, clipping for up to [`MAX_SATURATED_S`], keeping the start's
+/// rate I: with I at core's share of P, the Alia's rate steps (no rate D, rising in 0.5 s)
+/// overshoot by 10%, and its pitch rate search tilts out of the envelope (#374).
 fn search(mut plan: SearchPlan, step: StepConfig) -> SearchPlan {
     plan.test.step = step;
     plan.test.max_saturated_s = MAX_SATURATED_S;
+    plan.i_per_p = None;
     plan
 }
 

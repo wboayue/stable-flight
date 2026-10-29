@@ -176,6 +176,51 @@ fn angle_p_stays_in_range_and_falls_with_a_slower_rate_loop() {
     check!(values[2] < high, "{values:?}");
 }
 
+/// The angle design leaves the rate loop's I out: on a fit with a pole just outside the unit
+/// circle (the delayed test axis, #374), rate I at 0.2·P flips the design between P 9 and
+/// `AngleUnstable` on fits a few parts in ten thousand apart.
+#[test]
+fn angle_design_ignores_the_rate_i() {
+    let fits = [
+        (
+            [2.012_705_6, -1.019_460_4],
+            [0.000_749_887, 0.000_659_920, 0.000_345_026],
+        ),
+        (
+            [2.013_502_6, -1.019_933_6],
+            [0.000_749_364, 0.000_658_991, 0.000_344_228],
+        ),
+    ];
+    let rate = Gains {
+        p: 1.026,
+        i: 0.0,
+        d: 0.2009,
+    };
+    let angle = Gains {
+        p: 3.0,
+        i: 0.0,
+        d: 0.1,
+    };
+    for (rate_weights, moment_weights) in fits {
+        let model = RateModel {
+            rate_weights,
+            moment_weights,
+            delay_ticks: 4,
+            dt_s: DT,
+        };
+        let without_i = design_angle_p(&model, rate, angle, &COPTER_LOOP_SHAPING);
+        let with_i = Gains {
+            i: 0.2 * rate.p,
+            ..rate
+        };
+        check!(without_i.is_ok(), "{rate_weights:?}");
+        check!(
+            design_angle_p(&model, with_i, angle, &COPTER_LOOP_SHAPING) == without_i,
+            "{rate_weights:?}"
+        );
+    }
+}
+
 /// An angle range whose least P misses the margin is a typed failure.
 #[test]
 fn angle_design_fails_when_the_least_p_misses_the_margin() {

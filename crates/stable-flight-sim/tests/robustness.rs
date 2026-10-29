@@ -77,13 +77,10 @@ rows! {
     quad_x_noise_low: quad_x, Noise, Low;
     #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     quad_x_noise_high: quad_x, Noise, High;
-    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
+    #[ignore = "core's default rate I (0.03) holds at most 0.03 of moment within max_integral 1: the low start tilts away from the settle (#374)"]
     quad_x_cg_offset_low: quad_x, CgOffset, Low;
-    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     quad_x_cg_offset_high: quad_x, CgOffset, High;
-    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     quad_x_weak_motor_low: quad_x, WeakMotor, Low;
-    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     quad_x_weak_motor_high: quad_x, WeakMotor, High;
     #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     quad_x_combined_low: quad_x, Combined, Low;
@@ -100,13 +97,13 @@ rows! {
     heavy_quad_noise_low: heavy_quad, Noise, Low;
     #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     heavy_quad_noise_high: heavy_quad, Noise, High;
-    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
+    #[ignore = "core's default rate I (0.03) holds at most 0.03 of moment within max_integral 1: the low start tilts away from the settle (#374)"]
     heavy_quad_cg_offset_low: heavy_quad, CgOffset, Low;
-    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
+    #[ignore = "rate searches keep the design (Kept(Worse)): their verify flies worse than it under the trim (#374)"]
     heavy_quad_cg_offset_high: heavy_quad, CgOffset, High;
-    #[ignore = "rate I 0 holds the weak motor's trim short: final 0.95, rate rise 148 ms at the search's P 2.7 (#374)"]
+    #[ignore = "a rate search keeps the design (Kept(Worse)): its verify flies worse than it under the trim (#374)"]
     heavy_quad_weak_motor_low: heavy_quad, WeakMotor, Low;
-    #[ignore = "rate I 0 holds the weak motor's trim short: final 0.95, rate rise 148 ms at the search's P 2.7 (#374)"]
+    #[ignore = "a rate search keeps the design (Kept(Worse)): its verify flies worse than it under the trim (#374)"]
     heavy_quad_weak_motor_high: heavy_quad, WeakMotor, High;
     #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     heavy_quad_combined_low: heavy_quad, Combined, Low;
@@ -123,13 +120,11 @@ rows! {
     racer_noise_low: racer, Noise, Low;
     #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     racer_noise_high: racer, Noise, High;
-    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
+    #[ignore = "the trim takes the moment headroom: 5° angle steps against it clip for 6 ticks, past the 5 allowed (#374)"]
     racer_cg_offset_low: racer, CgOffset, Low;
-    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
+    #[ignore = "the trim takes the moment headroom: 5° angle steps against it clip for 6 ticks, past the 5 allowed (#374)"]
     racer_cg_offset_high: racer, CgOffset, High;
-    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     racer_weak_motor_low: racer, WeakMotor, Low;
-    #[ignore = "trim moment held only by the slow angle I: misses the step spec (#374)"]
     racer_weak_motor_high: racer, WeakMotor, High;
     #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     racer_combined_low: racer, Combined, Low;

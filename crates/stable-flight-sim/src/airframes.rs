@@ -5,7 +5,7 @@ use stable_flight::GRAVITY;
 use stable_flight::Vec3;
 use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
-    LateralControllerConfig, YawControllerConfig,
+    LateralControllerConfig, RATE_I_PER_P, YawControllerConfig,
 };
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::mixers::{MixerConfig, Slot, TableMixer};
@@ -90,16 +90,8 @@ pub fn quad_x() -> Airframe {
         Tune {
             // Sim autotune (#347); the symmetric model's roll and pitch differ by the search's
             // step size.
-            roll_rate: Gains {
-                p: 1.95,
-                i: 0.0,
-                d: 0.0288,
-            },
-            pitch_rate: Gains {
-                p: 1.70,
-                i: 0.0,
-                d: 0.0258,
-            },
+            roll_rate: rate_gains(1.95, 0.0288),
+            pitch_rate: rate_gains(1.70, 0.0258),
             // Sim autotune (#347).
             angle_p: 9.0,
             yaw_rate_p: YAW_RATE_P,
@@ -142,16 +134,8 @@ pub fn heavy_quad() -> Airframe {
         model,
         Tune {
             // Sim autotune from core's defaults (#366).
-            roll_rate: Gains {
-                p: 0.816,
-                i: 0.0,
-                d: 0.0209,
-            },
-            pitch_rate: Gains {
-                p: 0.795,
-                i: 0.0,
-                d: 0.0200,
-            },
+            roll_rate: rate_gains(0.816, 0.0209),
+            pitch_rate: rate_gains(0.795, 0.0200),
             angle_p: 9.0,
             // `quad_x`'s: they hold heading in a hover; the autotune doesn't tune them.
             yaw_rate_p: YAW_RATE_P,
@@ -190,16 +174,8 @@ pub fn racer() -> Airframe {
         model,
         Tune {
             // Sim autotune from core's defaults (#366).
-            roll_rate: Gains {
-                p: 0.621,
-                i: 0.0,
-                d: 0.00446,
-            },
-            pitch_rate: Gains {
-                p: 0.598,
-                i: 0.0,
-                d: 0.00439,
-            },
+            roll_rate: rate_gains(0.621, 0.00446),
+            pitch_rate: rate_gains(0.598, 0.00439),
             angle_p: 9.0,
             // `quad_x`'s: they hold heading in a hover; the autotune doesn't tune them.
             yaw_rate_p: YAW_RATE_P,
@@ -277,7 +253,7 @@ pub fn alia250_hover() -> Airframe {
         1.0 / THRUST_EXPONENT,
         Tune {
             // Sim autotune on the large-aircraft plan (`tests/alia.rs`), from rate P 1 and 3
-            // with angle P 1 (#351).
+            // with angle P 1 (#351); that plan keeps rate I out (#374).
             roll_rate: Gains {
                 p: 1.52,
                 i: 0.0,
@@ -370,6 +346,16 @@ struct Tune {
     angle_p: f32,
     yaw_rate_p: f32,
     heading_p: f32,
+}
+
+/// Roll or pitch rate gains `p` and `d`, with I at the autotune's share of P
+/// ([`RATE_I_PER_P`]).
+const fn rate_gains(p: f32, d: f32) -> Gains {
+    Gains {
+        p,
+        i: RATE_I_PER_P * p,
+        d,
+    }
 }
 
 /// `model` on the X-quad mixer, flown by core's configs with `tune`'s gains and the hover

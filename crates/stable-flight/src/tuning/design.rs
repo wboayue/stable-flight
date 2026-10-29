@@ -166,8 +166,8 @@ pub fn design_rate(
 /// loop keeps the angle margin, times the back-off. `angle`'s I and D stay.
 ///
 /// The angle loop's open loop is `C_angle · T · dt/(1 − z⁻¹)`: the angle PID, the closed rate
-/// loop `T = C_rate·G/(1 + C_rate·G)` (core's PID on the error, `BodyRateController`), and the
-/// integration from rate to angle. Its margin is read where its gain falls to 1, and angle P is
+/// loop `T = C_rate·G/(1 + C_rate·G)` (core's PID on the error, `BodyRateController`, on the
+/// rate P and D: its I is left out), and the integration from rate to angle. Its margin is read where its gain falls to 1, and angle P is
 /// bisected on it. A fitted integrator past 1 is held at 1, as in [`design_rate`].
 ///
 /// # Errors
@@ -182,6 +182,11 @@ pub fn design_angle_p(
     let model = &integrating(model);
     let dt_s = model.dt_s;
     let one = Complex::new(1.0, 0.0);
+    // The rate loop's I acts well below the angle crossover (its zero at I/P = 0.2 rad/s
+    // under the autotune's `RATE_I_PER_P`, the crossover near 9 rad/s: about 1° of phase),
+    // and its integrator around a fit with a pole just outside the unit circle swings the
+    // margin from one near-identical fit to the next (#374), so the model leaves it out.
+    let rate = Gains { i: 0.0, ..rate };
     let open_loop = |w_radps: f32, angle_p: f32| {
         let z1 = unit_delay(w_radps, dt_s);
         let rate_pid = pid_response(rate, z1, dt_s);

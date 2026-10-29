@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** the copter roll and pitch rate loops have an I term by default, at
+  `RATE_I_PER_P` (0.2/s) of P (0.03), so a steady trim moment (a CG offset, a weak motor) is
+  held without waiting on the attitude loop's I (#374). Airframes that set their own rate
+  gains keep them.
+- `BodyRateController` holds its integral while the moment is clipped in the error's direction
+  (it may still shrink), as ArduPilot's `AC_PID` does at the mixer's limit (#374).
+- **Breaking:** `SearchPlan` has `i_per_p` and `DesignPlan` `rate_i_per_p`: the copter rate
+  search and design set I at `RATE_I_PER_P` of each P they set (`None` keeps the start's I).
+  `design_angle_p` models the rate loop without its I (#374). On the sim robustness table
+  `quad_x`'s weak-motor and high-start CG offset rows and `racer`'s weak-motor rows now pass.
+
 - The TECS pitch integral acts on the energy balance rate error, as ArduPilot's and PX4's,
   instead of the balance error (#505): it pulls the nose up once a sink passes
   `PGUID_SINK_MAX`. The kinetic energy rate is high-passed (1 s), so a steady acceleration
@@ -29,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aborts across it runs again.
 
 ### Added
+
+- `controllers::RATE_I_PER_P`: the copter rate I's share of P (#374).
 
 - `StagePlan::copter_design_search` (#518): the copter autotune as a step search from a
   loop-shaping design. Roll and pitch rate, then angle, each fitted and designed

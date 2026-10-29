@@ -1,6 +1,7 @@
 use assert2::check;
 
 use super::*;
+use crate::controllers::RATE_I_PER_P;
 use crate::stabilizers::copter::TunedLoop;
 use crate::tuning::autotune::DesignPlan;
 use crate::tuning::{
@@ -207,12 +208,23 @@ fn fitted(model: RateModel, stalled: bool) -> Input {
     }
 }
 
+/// The rate gains `plan` designs from [`QUAD_X_FIT`]: P and D by `design_rate`, I at
+/// [`RATE_I_PER_P`] of P.
+fn designed_rate(plan: &DesignPlan) -> Gains {
+    let rate = design_rate(&QUAD_X_FIT, CURRENT, &plan.design).expect("rate gains");
+    Gains {
+        i: RATE_I_PER_P * rate.p,
+        ..rate
+    }
+}
+
 /// A design stage fits once, holds the designed gains, then finishes with them: a rate
-/// loop's from the fit, an angle loop's P on the rate loop under it, with its own I and D.
+/// loop's P and D from the fit with I at [`RATE_I_PER_P`] of P, an angle loop's P on the rate
+/// loop under it, with its own I and D.
 #[test]
 fn design_fits_holds_then_finishes_with_the_designed_gains() {
     let plan = DesignPlan::copter();
-    let rate = design_rate(&QUAD_X_FIT, CURRENT, &plan.design).expect("rate gains");
+    let rate = designed_rate(&plan);
     let angle_p = design_angle_p(&QUAD_X_FIT, rate, CURRENT, &plan.design).expect("angle P");
     // (case, inner gains, designed)
     let rows = [
@@ -280,7 +292,7 @@ fn design_fits_again_after_an_unusable_fit_or_design() {
         reason: AutotuneAbort::Rate,
         gains: CURRENT,
     };
-    let rate = design_rate(&QUAD_X_FIT, CURRENT, &plan.design).expect("rate gains");
+    let rate = designed_rate(&plan);
     // (case, inputs after the start, end)
     let rows = [
         (

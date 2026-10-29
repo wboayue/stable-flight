@@ -834,8 +834,8 @@ fn a_failure_after_lowering_keeps_the_lowered_gains() {
 }
 
 /// The rate search tunes roll and pitch rate from a hand-tune-like start and from half its
-/// P: each stage keeps a result that flies no worse than its baseline, with its start's I and
-/// D; the other loops keep their gains.
+/// P: each stage keeps a result that flies no worse than its baseline, with its start's D and
+/// I at [`RATE_I_PER_P`] of a new P; the other loops keep their gains.
 #[test]
 fn rate_search_tunes_the_rate_loops() {
     for scale in [1.0, 0.5] {
@@ -873,10 +873,13 @@ fn rate_search_tunes_the_rate_loops() {
             };
             check!(outcome == Outcome::Tuned, "{scale} {target:?}");
             check!(target.gains(&config) == gains, "{scale} {target:?}");
-            check!(
-                gains.i == target.gains(&start).i,
-                "{scale} {target:?}: I kept"
-            );
+            let start_gains = target.gains(&start);
+            let expected_i = if gains.p == start_gains.p {
+                start_gains.i
+            } else {
+                RATE_I_PER_P * gains.p
+            };
+            check!(gains.i == expected_i, "{scale} {target:?}: I follows P");
             check!(
                 gains.d == target.gains(&start).d,
                 "{scale} {target:?}: D kept"
@@ -1171,12 +1174,47 @@ fn a_candidate_breaching_after_a_freeze_comes_out_unjudged() {
     check!(events.last() == Some(&AutotuneEvent::Complete));
 }
 
+/// `DesignPlan::validate` rejects a negative or non-finite `rate_i_per_p`; the copter default
+/// and `None` are valid.
+#[test]
+fn design_plan_rate_i_validation() {
+    let good = DesignPlan::copter();
+    check!(good.validate() == Ok(()));
+    let none = DesignPlan {
+        rate_i_per_p: None,
+        ..good
+    };
+    check!(none.validate() == Ok(()));
+    for ratio in [-0.1, f32::NAN, f32::INFINITY] {
+        let bad = DesignPlan {
+            rate_i_per_p: Some(ratio),
+            ..good
+        };
+        let error = bad.validate().expect_err("rejected");
+        check!(error.field == "rate_i_per_p", "{ratio}");
+    }
+}
+
 /// `SearchPlan::validate` rejects each bad field; the copter default is valid.
 #[test]
 fn search_plan_validation() {
     let good = SearchPlan::copter_rate();
-    let rows: [(SearchPlan, &str); 12] = [
+    let rows: [(SearchPlan, &str); 14] = [
         (SearchPlan { confirm: 0, ..good }, "confirm"),
+        (
+            SearchPlan {
+                i_per_p: Some(-0.1),
+                ..good
+            },
+            "i_per_p",
+        ),
+        (
+            SearchPlan {
+                term: Term::D,
+                ..good
+            },
+            "i_per_p",
+        ),
         (
             SearchPlan {
                 test: StepTestPlan {

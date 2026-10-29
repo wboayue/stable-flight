@@ -8,6 +8,12 @@ use crate::math::{assert_dt, clamp_symmetric};
 const DEFAULT_P: f32 = 0.15;
 /// Default derivative gain, in normalized moment per rad/s².
 const DEFAULT_D: f32 = 0.003;
+/// Roll and pitch rate I as a share of rate P, in 1/s: the autotune's rule for every gain it sets
+/// (`tuning::autotune`). The I term holds a steady trim moment (a CG offset, a weak motor)
+/// so the vehicle doesn't tilt while the attitude loop's slow I winds. Higher: trim held
+/// sooner; the sim autotune passed every clean and delayed robustness row at 0.1–0.3 and
+/// failed most at 1.0, ArduPilot's final ratio (`AUTOTUNE_PI_RATIO_FINAL`) (#374).
+pub const RATE_I_PER_P: f32 = 0.2;
 /// Default yaw proportional gain. Yaw authority comes only from differential prop drag, so
 /// yaw needs more gain than roll and pitch.
 const DEFAULT_YAW_P: f32 = 0.3;
@@ -40,7 +46,7 @@ impl Default for BodyRateControllerConfig {
     fn default() -> Self {
         let roll_pitch_gains = Gains {
             p: DEFAULT_P,
-            i: 0.0,
+            i: RATE_I_PER_P * DEFAULT_P,
             d: DEFAULT_D,
         };
         Self {
@@ -111,6 +117,10 @@ struct RateAxis {
 impl RateAxis {
     /// `P·e + I·∫e + D·ė` for one axis, saturated to `[-1, 1]`. A non-finite `error_radps`
     /// gives 0 and stays out of the integral and derivative state.
+    ///
+    /// While the moment is clipped, the integral may shrink but not grow: growing it can't
+    /// add moment, and it would wind up and overshoot once the clip ends (anti-windup, as
+    /// ArduPilot's `AC_PID::update_i` holds it at the mixer's limit).
     fn step(&mut self, gains: Gains, max_integral: f32, dt: f32, error_radps: f32) -> f32 {
         if !error_radps.is_finite() {
             self.derivative.forget();
@@ -118,12 +128,16 @@ impl RateAxis {
         }
 
         let error_derivative = self.derivative.step(error_radps, dt);
-        self.integrated_error =
+        let pd = gains.p * error_radps + gains.d * error_derivative;
+        let integrated_error =
             clamp_symmetric(self.integrated_error + dt * error_radps, max_integral);
+        let moment = pd + gains.i * integrated_error;
+        let clipped = moment.abs() > 1.0;
+        if !clipped || integrated_error.abs() < self.integrated_error.abs() {
+            self.integrated_error = integrated_error;
+        }
 
-        let moment =
-            gains.p * error_radps + gains.i * self.integrated_error + gains.d * error_derivative;
-        clamp_symmetric(moment, 1.0)
+        clamp_symmetric(pd + gains.i * self.integrated_error, 1.0)
     }
 }
 
@@ -395,6 +409,38 @@ mod tests {
             c.control(&cfg, 0.1, Vec3::new(2.0, -2.0, 0.0), Vec3::zeros());
         }
         assert!((c.integrated_error() - Vec3::new(1.0, -1.0, 0.0)).amax() < 1e-6);
+    }
+
+    /// While the moment is clipped, the integral shrinks but doesn't grow; unclipped, it
+    /// grows as usual.
+    #[test]
+    fn clipped_moment_stops_the_integral_growing() {
+        let start = 0.5;
+        // (case, p, error, expected integral after one 0.1 s tick)
+        let rows = [
+            ("unclipped grows", 0.1, 1.0, start + 0.1),
+            ("clipped toward the error holds", 2.0, 1.0, start),
+            (
+                "clipped against the integral shrinks",
+                2.0,
+                -1.0,
+                start - 0.1,
+            ),
+            (
+                "clipped, error crossing zero shrinks",
+                2.0,
+                -0.6,
+                start - 0.06,
+            ),
+        ];
+        for (case, p, error, expected) in rows {
+            let cfg = config(p, 0.1, 0.0);
+            let mut c = BodyRateController::default();
+            c.axes[0].integrated_error = start;
+            let out = c.control(&cfg, 0.1, Vec3::new(error, 0.0, 0.0), Vec3::zeros());
+            assert_abs_diff_eq!(c.integrated_error().x, expected, epsilon = 1e-6);
+            assert!(out.x.abs() <= 1.0, "{case}");
+        }
     }
 
     /// Each axis uses its own gains: roll `roll_gains`, pitch `pitch_gains`, yaw `yaw_gains`.
