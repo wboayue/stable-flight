@@ -29,7 +29,7 @@ use stable_flight::controllers::Gains;
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
 use stable_flight::tuning::autotune::{
-    Autotune, AutotuneEvent, COPTER_IDENTIFY, COPTER_LOOP_SHAPING, Envelope, SearchPlan, StagePlan,
+    Autotune, AutotuneEvent, COPTER_IDENTIFY, COPTER_LOOP_SHAPING, Envelope, StagePlan,
 };
 use stable_flight::tuning::{
     LoopShapingConfig, Measurement, ProbeConfig, ProbeStatus, RateModel, design_angle_p,
@@ -525,17 +525,6 @@ fn swept_d() -> impl Iterator<Item = f32> {
     (0..23).map(|index| 0.001 * 1.3_f32.powi(index))
 }
 
-/// The mean rise of `target`'s steps both ways on `plant`, in s, if both meet the spec.
-fn spec_rise_s(plant: &Plant, target: TunedLoop) -> Option<f32> {
-    let step = SearchPlan::copter_rate().test.step;
-    let [up, down] = [step, step.reversed()].map(|step| {
-        let metrics = spec::respond(plant, target, step)?;
-        let met = spec::missed_targets(target, &metrics).is_empty();
-        met.then_some(metrics.rise_time_s).flatten()
-    });
-    Some((up? + down?) / 2.0)
-}
-
 /// Per airframe on the clean plant: the design search's roll rate gains and rise, from core's
 /// default gains, against the P/D pair with the fastest rise whose steps meet the spec (the
 /// rest of the config as tuned) (#531).
@@ -550,35 +539,23 @@ fn best_rate_pairs() {
             common::AUTOTUNE_TIMEOUT_S,
         );
         let tuned = run.config;
-        let flown = |gains: Gains| {
-            let mut config = tuned;
-            config.body_rate.roll_gains = gains;
-            Plant {
-                airframe: Airframe {
-                    stabilizer: config,
-                    ..clean.airframe
-                },
-                ..clean
-            }
-        };
         let tuned_gains = tuned.body_rate.roll_gains;
-        let tuned_rise_s = spec_rise_s(&flown(tuned_gains), TunedLoop::RollRate);
-        let mut best: Option<(f32, Gains)> = None;
-        for p in swept_p() {
-            for d in swept_d() {
-                let gains = Gains {
-                    p,
-                    d,
-                    ..tuned_gains
-                };
-                let Some(rise_s) = spec_rise_s(&flown(gains), TunedLoop::RollRate) else {
-                    continue;
-                };
-                if best.is_none_or(|(best_s, _)| rise_s < best_s) {
-                    best = Some((rise_s, gains));
-                }
-            }
-        }
+        let flown = Plant {
+            airframe: Airframe {
+                stabilizer: tuned,
+                ..clean.airframe
+            },
+            ..clean
+        };
+        let tuned_rise_s = spec::rise_s(&flown, TunedLoop::RollRate);
+        let pairs = swept_p().flat_map(|p| {
+            swept_d().map(move |d| Gains {
+                p,
+                d,
+                ..tuned_gains
+            })
+        });
+        let best = spec::fastest(&flown, TunedLoop::RollRate, pairs);
         println!("{name}: tuned {tuned_gains:?} rise {tuned_rise_s:?}; best {best:?}");
     }
 }
