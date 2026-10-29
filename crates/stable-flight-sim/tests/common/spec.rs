@@ -17,6 +17,7 @@
 //! steps; heading, which isn't searched, `StepTestPlan::copter`), except yaw rate (see
 //! [`YAW_RATE_STEP_RADPS`]).
 
+use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::TunedLoop;
 use stable_flight::tuning::autotune::{SearchPlan, StepTestPlan};
 use stable_flight::tuning::{Measurement, ProbeConfig, ProbeStatus, StepConfig, StepMetrics};
@@ -175,4 +176,41 @@ pub fn respond_within(
         Some(ProbeStatus::Done(Measurement::Step(metrics))) => Some(metrics),
         _ => None,
     }
+}
+
+/// The mean rise of `target`'s steps both ways on `plant`, in s, if both meet the spec.
+pub fn rise_s(plant: &Plant, target: TunedLoop) -> Option<f32> {
+    let step = plan(target).step;
+    let [up, down] = [step, step.reversed()].map(|step| {
+        let metrics = respond(plant, target, step)?;
+        let met = missed_targets(target, &metrics).is_empty();
+        met.then_some(metrics.rise_time_s).flatten()
+    });
+    Some((up? + down?) / 2.0)
+}
+
+/// Of `candidates` flown as `target`'s gains on `plant`, the one with the fastest [`rise_s`],
+/// and that rise; `None` if none meets the spec.
+pub fn fastest(
+    plant: &Plant,
+    target: TunedLoop,
+    candidates: impl IntoIterator<Item = Gains>,
+) -> Option<(f32, Gains)> {
+    let mut best: Option<(f32, Gains)> = None;
+    for gains in candidates {
+        let Some(rise_s) = rise_s(&flying(plant, target, gains), target) else {
+            continue;
+        };
+        if best.is_none_or(|(best_s, _)| rise_s < best_s) {
+            best = Some((rise_s, gains));
+        }
+    }
+    best
+}
+
+/// `plant` with `target` flying `gains`.
+pub fn flying(plant: &Plant, target: TunedLoop, gains: Gains) -> Plant {
+    let mut flown = *plant;
+    *target.gains_mut(&mut flown.airframe.stabilizer) = gains;
+    flown
 }
