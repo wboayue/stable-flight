@@ -39,6 +39,7 @@
 //! | `STAB_YAW_RMAX` | `yaw.max_rate_radps` |
 //! | `STAB_FS_RATE_X`, `_Y`, `_Z` | `full_scale_rates_radps` |
 //! | `STAB_THR_EXPO` | `thrust_curve_exponent` |
+//! | `STAB_GYRO_FLT` | `gyro_cutoff_hz` |
 //!
 //! # Copter guidance ([`CopterGuidanceConfig`](crate::guidance::copter::CopterGuidanceConfig))
 //!
@@ -163,7 +164,7 @@
 //!
 //! let mut count = 0;
 //! stabilizer.visit_params(&mut |_name, _value| count += 1);
-//! assert_eq!(count, 30);
+//! assert_eq!(count, 31);
 //! ```
 
 use core::fmt;

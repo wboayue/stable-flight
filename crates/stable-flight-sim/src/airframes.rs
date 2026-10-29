@@ -88,11 +88,9 @@ pub fn quad_x() -> Airframe {
     build(
         model,
         Tune {
-            // Sim autotune (#347); the symmetric model's roll and pitch differ by the search's
-            // step size.
-            roll_rate: rate_gains(1.95, 0.0288),
-            pitch_rate: rate_gains(1.70, 0.0258),
-            // Sim autotune (#347).
+            // Sim autotune from core's defaults (#373); from rate P × 0.3 to × 3 alike.
+            roll_rate: rate_gains(2.70, 0.0567),
+            pitch_rate: rate_gains(2.70, 0.0567),
             angle_p: 9.0,
             yaw_rate_p: YAW_RATE_P,
             heading_p: HEADING_P,
@@ -133,10 +131,10 @@ pub fn heavy_quad() -> Airframe {
     build(
         model,
         Tune {
-            // Sim autotune from core's defaults (#366).
-            roll_rate: rate_gains(0.816, 0.0209),
-            pitch_rate: rate_gains(0.795, 0.0200),
-            angle_p: 9.0,
+            // Sim autotune from core's defaults (#373).
+            roll_rate: rate_gains(2.47, 0.0559),
+            pitch_rate: rate_gains(2.47, 0.0559),
+            angle_p: 8.54,
             // `quad_x`'s: they hold heading in a hover; the autotune doesn't tune them.
             yaw_rate_p: YAW_RATE_P,
             heading_p: HEADING_P,
@@ -173,9 +171,9 @@ pub fn racer() -> Airframe {
     build(
         model,
         Tune {
-            // Sim autotune from core's defaults (#366).
-            roll_rate: rate_gains(0.621, 0.00446),
-            pitch_rate: rate_gains(0.598, 0.00439),
+            // Sim autotune from core's defaults (#373).
+            roll_rate: rate_gains(0.550, 0.00655),
+            pitch_rate: rate_gains(0.550, 0.00655),
             angle_p: 9.0,
             // `quad_x`'s: they hold heading in a hover; the autotune doesn't tune them.
             yaw_rate_p: YAW_RATE_P,

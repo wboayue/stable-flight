@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The eXplora's hover loops fly without core's new gyro low-pass (`gyro_cutoff_hz: 0`): with
+  little rate D they lose the margin to its lag on the sim tailsitter (#373, #550). The
+  QuadCopterX and the Titan Cobra fly the 40 Hz default.
+
 - **Breaking:** `RealFlightVehicle::try_new` returns `StartError` and fails when RealFlight
   doesn't reset the aircraft, handing control back to RC; `new` panics on it. A failed reset
   was a warning, and the flight started from wherever the last one left the aircraft, upside

@@ -113,6 +113,7 @@ The axes are the hover view's:
 | `STAB_RATE_PIT_P`, `_I`, `_D` | `hover.body_rate.pitch_gains` | 0.3, 0.5, 0 |
 | `STAB_RATE_YAW_P`, `_I`, `_D` | `hover.body_rate.yaw_gains` | 0.1, 0.05, 0 |
 | `STAB_RATE_IMAX` | `hover.body_rate.max_integral` | 1.0 |
+| `STAB_GYRO_FLT` | `hover.gyro_cutoff_hz` | 0 (off) |
 
 - **Method:** stick pulses in each axis. Compare the rates with the setpoint and watch the
   moments.
@@ -123,6 +124,10 @@ The axes are the hover view's:
   a 1.2 s cycle, to touchdown; D 0.03 held it within 4° (#476).
 - **Pitch needs its I term.** When the vehicle sinks, the airflow pushes the nose over;
   I × `STAB_RATE_IMAX` = 0.5 of moment holds it level.
+- **The gyro low-pass is off.** Its lag (about 5.6 ms at core's 40 Hz) takes margin these
+  loops, with little D, don't have: on the sim tailsitter it tilted 13.8° through the back
+  transition against 1° unfiltered. Turn it on only with a retune
+  ([#550](https://github.com/wboayue/stable-flight/issues/550)).
 
 ## 3. Hover attitude
 

@@ -305,6 +305,17 @@ Each `FlightLoop::step` does the following; this section is the reference for ti
   ([#395](https://github.com/wboayue/stable-flight/issues/395)). `arm` is a level the commander
   returns every tick; arming checks are commander-side policy ([#136](https://github.com/wboayue/stable-flight/issues/136),
   [link failsafe](#link-failsafe)).
+* **The copter's rate path** (`CopterStabilizer`): the rate loop flies the body rates through
+  a two-pole Butterworth low-pass (`gyro_cutoff_hz`, 40 Hz, PX4's `IMU_GYRO_CUTOFF`), and its D
+  acts on the filtered measured rate, not the error, so a setpoint step has no derivative kick
+  (PX4's `RateControl`). The angle loop reads the attitude, so the filter sits in the rate loop
+  alone. The filter's lag is the price: at 40 Hz it costs `quad_x`'s designed rate loop most of
+  its margin unless the design models it (#373). On the sim's robustness noise (0.1 rad/s at
+  90 Hz), 40 Hz passed the most rows; 20 Hz (ArduPilot's `INS_GYRO_FILTER`), 30 Hz, and 50 Hz
+  and up lost clean ones. A D low-pass on the error, ArduPilot's `ATC_RAT_RLL_FLTD`, lost
+  rows at 20 and 40 Hz. Notch filters wait for hardware that needs them. Tailsitter hover
+  loops with little D fly unfiltered until retuned
+  ([#550](https://github.com/wboayue/stable-flight/issues/550)).
 * Telemetry is published after `actuate`, with the whole tick in one `TelemetryRecord`,
   including the limits it hit: guidance, the stabilizer, and the mixer each report a `Saturation`
   for their last call (only they know what they clipped), and the loop merges them (none while
@@ -669,8 +680,8 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   normalized to the step (overshoot, 10–90% rise, settling, bounce-back after the peak, final
   value) from the low-passed response, plus the time the loop's path was clipped: a clipped step
   measures the limit, not the loop. A rate step is short, since a held rate tilts the vehicle.
-  The rate PID's D acts on the error, so a step's first tick kicks the moment; a step test
-  allows a few clipped ticks (`StepTestPlan::max_saturated_s`). `StepSummary` keeps means and
+  The rate PID's D acts on the measured rate, so a step doesn't kick the moment; a step test
+  still allows a few clipped ticks (`StepTestPlan::max_saturated_s`). `StepSummary` keeps means and
   ranges over steps, and overshoot per direction, whose difference shows a trim or CG offset.
 * **Procedures and executor** (`tuning::autotune`, between ticks): each stage's `Method`
   (`StepTest`, `Search`, `Design`) becomes a procedure, a pure state machine fed the stage's start
@@ -732,7 +743,9 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   bumped the I term at each switch and lost the trim rows (#374). The large-aircraft plan keeps
   the start's I: on the Alia (no rate D) it overshot the rate steps by 10%. Yaw rate and heading aren't tuned
   ([#296](https://github.com/wboayue/stable-flight/issues/296)). Before each probe the vehicle must hold level and still (`Envelope::settle`): roll
-  and pitch within the tilt, their rates within the rate. Yaw rate is left out: the yaw loop
+  and pitch within the tilt, their rates within the rate, read through the stabilizer's gyro
+  low-pass (raw, the sim's gyro noise held them over the settle, so no stage started; the
+  envelope reads the raw rates, so a breach shows on its first tick). Yaw rate is left out: the yaw loop
   isn't tuned, and on `racer` with 25 ms of delay it rings at ±0.18 rad/s on its start gains
   without tilting the vehicle (#518); ArduPilot's level check covers every axis, and widens its
   limits up to twice as the wait grows (`AC_AutoTune.cpp:343`), which here started about half
@@ -768,7 +781,9 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   * *Identify* (`tuning::IdentifyProbe`, in each `Method::Design` stage): a shrinking square
     wave on the angle setpoint, every loop closed (PX4's excitation,
     `mc_autotune_attitude_control.cpp:603-639`), and a least-squares fit of the axis's body
-    rate to its moment command: a second-order model with a delay (PX4's `ArxRls<2,2,1>`), the
+    rate to its moment command, both through the same four-pole low-pass at the gyro cutoff
+    (`IdentifyConfig::prefilter_hz`, 40 Hz; PX4's autotune prefilters alike): a second-order
+    model with a delay (PX4's `ArxRls<2,2,1>`), the
     delay the shortest within 1% of the least residual among those whose moment pushes the
     axis the right way (a positive moment-weight sum). In RealFlight the fits explain only
     35–72% of the rate change, so noise picks among near-tied delays: 10 of 67 recorded
@@ -781,12 +796,22 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     and recursive least squares hadn't converged in 3 s. On the sim, 3 s per axis fit the same
     model from the low, own, and ×3 starts, recovered each airframe's motor lag (29.8, 49.1,
     14.9 ms against 30, 50, 15), and found the actuator delay (1, 3, and 6–7 ticks clean, at
-    10 ms, at 25 ms).
+    10 ms, at 25 ms). Through the prefilter the lags fit within 4.6% and a 10 ms delay fits 2
+    ticks in 2 of 12 rows: the smoothed moments let the fit spread a tick over their weights.
+    Without it, a vibration tone's AR terms take the rate weights (`quad_x`'s noise rows designed
+    rate P 13–63 against 4.7 clean). Its order and cutoff trade noise against fidelity: two
+    poles at 20–40 Hz left the fit to a 0.02 rad/s tone, four poles at 20 Hz smeared the
+    `racer`'s lag 69% from a ringing start, and four at 40 Hz passed 28 of 30 noise-row runs
+    over 5 noise seeds (#373).
   * *Design* (`tuning::design_rate`, `design_angle_p`, `COPTER_LOOP_SHAPING`): rate D/P at the
     fitted lag, so the PD's zero cancels the motor lag; rate P for a 65° phase margin on the
-    model's frequency response, its delay included; rate I at `rate_i_per_p` of P; angle P the
+    model's frequency response, its delay and the stabilizer's gyro low-pass included (left
+    out, the filter took all but 2° of `quad_x`'s margin, #373); rate I at `rate_i_per_p` of P;
+    angle P the
     largest in the angle search's range that keeps a 65° margin on the angle loop around the
-    designed rate loop, less 10%. The angle loop's model leaves the rate I out: its zero sits
+    designed rate loop, less 10%, the rate loop's D on its measurement and P alone on its
+    setpoint. A fit whose moment pushes the axis the wrong way has no design: through the
+    filter its phase would read a crossover. The angle loop's model leaves the rate I out: its zero sits
     about 45× below the angle crossover, and around a fit with a pole just outside the unit
     circle it flipped the design between P 9 and none on near-identical fits (#374). A fitted integrator past 1 (an unstable pole from a ringing
     start, whose phase meets no crossover) is held at 1. It met the step spec on every clean,
@@ -839,19 +864,17 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     gain near 60 (an integrator around a fast rate loop) whose rule P oscillated once the rate
     setpoint saturated (#295); its D held the rate search's P below what `heavy_quad` and
     `racer` support (#378).
-  * Open: gyro noise biases the closed-loop fit, and neither prefiltering with decimation nor
-    instrumental variables (tried in a scratch prototype, not committed) fixed it without the
-    loop's own gyro filter
-    ([#373](https://github.com/wboayue/stable-flight/issues/373)). Of the trim rows, the low
+  * Open: gyro noise still biases the closed-loop fit's gain low through the prefilter
+    (`quad_x`'s noise rows design rate P 0.87 against 2.7 clean), so the search carries the
+    noise rows ([#551](https://github.com/wboayue/stable-flight/issues/551)); the filter's lag
+    on top of 25 ms of delay fails `racer`'s rows
+    ([#552](https://github.com/wboayue/stable-flight/issues/552)). Of the trim rows, the low
     starts with a CG offset tilt away from the settle (core's default rate I holds at most 0.03
     of moment within its `max_integral`), `heavy_quad`'s rate searches keep the design as
     flying better than their result, and `racer`'s angle steps against the CG offset clip a
-    tick past the allowance ([#374](https://github.com/wboayue/stable-flight/issues/374)). The designed D is 3–5× the
-    airframes' (`quad_x` 0.139 against 0.029), so on hardware it waits on #373's filter;
-    RealFlight's state carries no sensor noise. With that D the rate search ends at its
-    maximum (P 2.7, 0.9 × 3) on `quad_x` and `heavy_quad`, rising in 136 and 124 ms against
-    48 and 44 ms for the fastest pair that meets the spec (`racer`: 20 against 16 ms;
-    `autotune_methods`' `best_rate_pairs`;
+    tick past the allowance ([#374](https://github.com/wboayue/stable-flight/issues/374)). The rate search ends at its
+    maximum (P 2.7, 0.9 × 3) on `quad_x`, below the fastest pair that meets the spec
+    (`autotune_methods`' `best_rate_pairs`;
     [#531](https://github.com/wboayue/stable-flight/issues/531)).
 
 ## Real-Time Loop Management

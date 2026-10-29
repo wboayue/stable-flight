@@ -81,6 +81,7 @@ use crate::{
     AttitudeSetpoint, Configurable, ControlOutput, Saturation, Setpoint, Stabilizer, VehicleState,
 };
 
+use crate::controllers::low_pass::LowPass;
 use crate::controllers::*;
 use crate::controllers::{check_limit, check_positive};
 use crate::math::{
@@ -114,7 +115,17 @@ pub struct CopterStabilizerConfig {
     /// Exponent of the thrust curve applied to the linear thrust setpoint. Must be positive
     /// and finite: a negative exponent maps zero throttle to full thrust.
     pub thrust_curve_exponent: f32,
+    /// Cutoff of the low-pass on the body rates the rate loop flies, in Hz; 0 turns it off,
+    /// and so does one at or past Nyquist. Non-negative and finite. Lower: less gyro noise
+    /// and vibration in the moments, more lag in the loop (about 5.6 ms at 40 Hz). The
+    /// default is PX4's `IMU_GYRO_CUTOFF`; on the sim's 0.1 rad/s vibration at 90 Hz, 40 Hz
+    /// passed the most robustness rows, 20 Hz (ArduPilot's `INS_GYRO_FILTER`) and 50 Hz and up
+    /// lost clean rows (#373).
+    pub gyro_cutoff_hz: f32,
 }
+
+/// [`CopterStabilizerConfig::gyro_cutoff_hz`]'s default, in Hz.
+pub const DEFAULT_GYRO_CUTOFF_HZ: f32 = 40.0;
 
 impl Default for CopterStabilizerConfig {
     /// Untuned starting values; airframes override them with flight-checked sets.
@@ -125,6 +136,7 @@ impl Default for CopterStabilizerConfig {
             yaw: YawControllerConfig::default(),
             full_scale_rates_radps: Vec3::new(3.0, 3.0, 3.0),
             thrust_curve_exponent: 2.0,
+            gyro_cutoff_hz: DEFAULT_GYRO_CUTOFF_HZ,
         }
     }
 }
@@ -133,7 +145,8 @@ impl CopterStabilizerConfig {
     /// Checks every controller config ([`BodyRateControllerConfig::validate`],
     /// [`AttitudeControllerConfig::validate`], [`YawControllerConfig::validate`]; errors carry
     /// the loop as their `section`), that each `full_scale_rates_radps` component is
-    /// non-negative and finite, and that `thrust_curve_exponent` is positive and finite.
+    /// non-negative and finite, that `thrust_curve_exponent` is positive and finite, and that
+    /// `gyro_cutoff_hz` is non-negative and finite.
     ///
     /// # Examples
     ///
@@ -157,7 +170,8 @@ impl CopterStabilizerConfig {
         check_limit("full_scale_rates_radps.x", scales.x)?;
         check_limit("full_scale_rates_radps.y", scales.y)?;
         check_limit("full_scale_rates_radps.z", scales.z)?;
-        check_positive("thrust_curve_exponent", self.thrust_curve_exponent)
+        check_positive("thrust_curve_exponent", self.thrust_curve_exponent)?;
+        check_limit("gyro_cutoff_hz", self.gyro_cutoff_hz)
     }
 }
 
@@ -200,6 +214,10 @@ pub struct CopterStabilizer {
     /// The moments the last `stabilize` call commanded (roll, pitch, yaw), for a probe's
     /// [`LoopSignals::last_moment`](crate::tuning::LoopSignals::last_moment).
     last_moments: Vec3,
+
+    /// The low-pass per body rate (roll, pitch, yaw) at
+    /// [`gyro_cutoff_hz`](CopterStabilizerConfig::gyro_cutoff_hz).
+    gyro_filters: [LowPass; 3],
 }
 
 /// Per-axis clips (roll, pitch, yaw) of one tick.
@@ -234,6 +252,7 @@ impl CopterStabilizer {
             stage: None,
             clipped: Clipped::default(),
             last_moments: Vec3::zeros(),
+            gyro_filters: Default::default(),
         }
     }
 }
@@ -325,11 +344,13 @@ impl Stabilizer for CopterStabilizer {
     }
 
     /// Clears the body-rate, attitude, and yaw controller state (integrals and derivative
-    /// history), so control after arming starts from zero, and ends any tuning stage.
+    /// history) and the gyro filters, so control after arming starts from zero, and ends any
+    /// tuning stage.
     fn prime(&mut self, _state: &VehicleState) {
         self.stage = None;
         self.clipped = Clipped::default();
         self.last_moments = Vec3::zeros();
+        self.gyro_filters = Default::default();
         self.body_rate = BodyRateController::default();
         self.attitude = AttitudeController::default();
         self.yaw = YawController::default();
@@ -459,15 +480,15 @@ impl CopterStabilizer {
         }
     }
 
-    /// Runs the body-rate loop toward `desired_rates_radps`; a stage on a rate loop replaces
-    /// that axis's rate setpoint.
+    /// Runs the body-rate loop toward `desired_rates_radps` on the gyro-filtered rates; a stage
+    /// on a rate loop replaces that axis's rate setpoint.
     fn track_body_rates(
         &mut self,
         dt: f32,
         desired_rates_radps: Vec3,
         estimated_state: &VehicleState,
     ) -> Vec3 {
-        let current_rates = estimated_state.angular_velocity_radps;
+        let current_rates = self.filter_rates(dt, estimated_state.angular_velocity_radps);
         let mut desired_rates_radps = desired_rates_radps;
         self.probe_rates(dt, &mut desired_rates_radps, &current_rates);
         self.body_rate.control(
@@ -476,6 +497,12 @@ impl CopterStabilizer {
             desired_rates_radps,
             current_rates,
         )
+    }
+
+    /// `rates_radps` (body frame, roll, pitch, yaw) through the gyro low-pass, per axis.
+    fn filter_rates(&mut self, dt: f32, rates_radps: Vec3) -> Vec3 {
+        let cutoff_hz = self.config.gyro_cutoff_hz;
+        Vec3::from_fn(|axis, _| self.gyro_filters[axis].apply(rates_radps[axis], dt, cutoff_hz))
     }
 
     /// Applies a nonlinear thrust curve to a linear thrust command.

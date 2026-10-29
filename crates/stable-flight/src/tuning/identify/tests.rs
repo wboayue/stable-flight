@@ -7,11 +7,12 @@ use crate::tuning::{LoopSignals, Measurement, Probe, ProbeConfig, ProbeStatus};
 /// The flight loop's tick: 250 Hz.
 const DT: f32 = 0.004;
 
-/// A 4° square wave for 3 s, as the copter's.
+/// A 4° square wave for 3 s, prefiltered at 40 Hz, as the copter's.
 const CONFIG: IdentifyConfig = IdentifyConfig {
     amplitude: 0.07,
     duration_s: 3.0,
     washout_tc_s: 0.2,
+    prefilter_hz: 40.0,
 };
 
 /// Angle P (rate per angle) and rate P (moment per rate) of the loops the tests close around
@@ -68,7 +69,8 @@ fn single_lag(gain: f32, lag_s: f32, delay_s: f32) -> PlantParams {
 /// The fit recovers each plant's lag and delay, and its gain, from 3 s of excitation in closed
 /// loop: (gain rad/s² per unit moment, lag s, dead time s) → delay ticks, the dead time's ticks
 /// plus the hold's one. The lag fits within 5% (the second lag adds about 1 ms), the gain
-/// within 10%.
+/// within 10%, the delay within a tick: the prefilter smooths the moments, so the fit can
+/// spread a tick of delay over the moment weights.
 #[test]
 fn recovers_lag_delay_and_gain() {
     let rows = [
@@ -84,7 +86,10 @@ fn recovers_lag_delay_and_gain() {
             single_lag(gain, lag_s, delay_s),
             IdentifyProbe::new(CONFIG),
         ));
-        check!(fitted.delay_ticks == delay_ticks, "{row}: {fitted:?}");
+        check!(
+            fitted.delay_ticks.abs_diff(delay_ticks) <= 1,
+            "{row}: {fitted:?}"
+        );
         let fitted_lag_s = fitted.lag_s().unwrap_or(f32::NAN);
         check!(
             (fitted_lag_s - lag_s).abs() <= 0.05 * lag_s,
@@ -93,6 +98,35 @@ fn recovers_lag_delay_and_gain() {
         let accel = fitted.accel_radps2().unwrap_or(f32::NAN);
         check!((accel - gain).abs() <= 0.1 * gain, "{row}: accel {accel}");
         check!((fitted.dt_s - DT).abs() < 1e-6);
+    }
+}
+
+/// A vibration tone on the gyro, 0.01 rad/s at 90 Hz, passes the fit only through its
+/// prefilter: with the copter's (four poles at 40 Hz), the lag fits within 15% and the gain
+/// within 10%; without, the rate terms fit the tone and the lag is lost (#373). Larger tones
+/// still spoil this harness's fit; on the sim, whose noise rows carry a 0.1 rad/s tone, the
+/// autotune's search recovers from them.
+#[test]
+fn the_prefilter_keeps_a_vibration_tone_out_of_the_fit() {
+    let tone = |tick: usize, rate_radps: f32| {
+        rate_radps + 0.01 * libm::sinf(2.0 * core::f32::consts::PI * 90.0 * tick as f32 * DT)
+    };
+    let params = single_lag(20.0, 0.03, 0.0);
+    // (prefilter Hz, fits the plant)
+    for (prefilter_hz, fits) in [(40.0, true), (0.0, false)] {
+        let config = IdentifyConfig {
+            prefilter_hz,
+            ..CONFIG
+        };
+        let probe = identify_with(params, IdentifyProbe::new(config), tone);
+        let fitted = model(probe.status());
+        let lag_s = fitted.lag_s().unwrap_or(f32::NAN);
+        let accel = fitted.accel_radps2().unwrap_or(f32::NAN);
+        let close = (lag_s - 0.03).abs() <= 0.15 * 0.03 && (accel - 20.0).abs() <= 0.1 * 20.0;
+        check!(
+            close == fits,
+            "prefilter {prefilter_hz} Hz: lag {lag_s} s, accel {accel}: {fitted:?}"
+        );
     }
 }
 
@@ -194,10 +228,14 @@ fn fits_a_delay_whose_moment_pushes_the_right_way() {
 /// QuadCopterX's first roll fit in RealFlight run 33 (#518) fitted best at 5 ticks with a
 /// negative moment effect (−1 rad/s², #529). Which pushing delay wins isn't pinned: the best
 /// is 6 ticks (11 rad/s²), and 4 (40 rad/s²) ties with it at 1% by 0.03%, under `f32`
-/// summation order.
+/// summation order. The record is fitted unfiltered, as it was: through the prefilter this
+/// window fits a pole past 1 at 40 Hz.
 #[test]
 fn a_recorded_fit_reads_a_positive_acceleration() {
-    let mut probe = IdentifyProbe::new(CONFIG);
+    let mut probe = IdentifyProbe::new(IdentifyConfig {
+        prefilter_hz: 0.0,
+        ..CONFIG
+    });
     for line in include_str!("realflight_roll_fit.csv").lines() {
         if line.starts_with('#') {
             continue;
@@ -298,6 +336,27 @@ fn validate_checks_each_field() {
         (
             IdentifyConfig {
                 washout_tc_s: 0.0,
+                ..CONFIG
+            },
+            false,
+        ),
+        (
+            IdentifyConfig {
+                prefilter_hz: 0.0,
+                ..CONFIG
+            },
+            true,
+        ),
+        (
+            IdentifyConfig {
+                prefilter_hz: -1.0,
+                ..CONFIG
+            },
+            false,
+        ),
+        (
+            IdentifyConfig {
+                prefilter_hz: f32::NAN,
                 ..CONFIG
             },
             false,

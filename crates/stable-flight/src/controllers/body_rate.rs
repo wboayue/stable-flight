@@ -96,8 +96,18 @@ impl BodyRateControllerConfig {
 /// # Units
 /// - Time (`dt`) is in seconds.
 /// - Desired and estimated rates are expected in rad/s.
-/// - Output moments are `P·e + I·∫e + D·ė`, saturated to `[-1, 1]` per axis; the mixer scales
+/// - Output moments are `P·e + I·∫e − D·ω̇`, saturated to `[-1, 1]` per axis; the mixer scales
 ///   them to motor commands.
+///
+/// # D on the measured rate
+///
+/// D damps the measured rate's change (`ω̇`, the angular acceleration), not the error's, so a
+/// setpoint step adds no derivative kick: on the error, a step of `A` rad/s would kick the
+/// moment by `D·A/dt` for one tick (35·A with a designed `d` of 0.139 at 250 Hz), clipping it
+/// and showing as overshoot. Inside the loop the two are the same, so stability and the
+/// response to a disturbance don't change; only a setpoint change is followed by P and I alone.
+/// PX4's `RateControl` takes D on the measured rate too; ArduPilot's `AC_PID` takes it on the
+/// error and low-passes it (`ATC_RAT_RLL_FLTD`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct BodyRateController {
     /// Roll, pitch, and yaw, each with its own PID state.
@@ -110,26 +120,35 @@ struct RateAxis {
     /// Integrated rate error, in rad.
     integrated_error: f32,
 
-    /// Previous error for the derivative term; empty on the first tick and after a gap.
+    /// Previous measured rate for the derivative term; empty on the first tick and after a gap.
     derivative: DerivativeState<f32>,
 }
 
 impl RateAxis {
-    /// `P·e + I·∫e + D·ė` for one axis, saturated to `[-1, 1]`. A non-finite `error_radps`
-    /// gives 0 and stays out of the integral and derivative state.
+    /// `P·e + I·∫e − D·ω̇` for one axis, with `e = desired − measured` and `ω̇` the measured
+    /// rate's change, saturated to `[-1, 1]`. A non-finite error gives 0 and stays out of the
+    /// integral and derivative state.
     ///
     /// While the moment is clipped, the integral may shrink but not grow: growing it can't
     /// add moment, and it would wind up and overshoot once the clip ends (anti-windup). The
     /// clip is this loop's own ±1; a mixer limit below it isn't seen, where ArduPilot's
     /// `AC_PID::update_i` holds the integral on the mixer's limit flags.
-    fn step(&mut self, gains: Gains, max_integral: f32, dt: f32, error_radps: f32) -> f32 {
+    fn step(
+        &mut self,
+        gains: Gains,
+        max_integral: f32,
+        dt: f32,
+        desired_radps: f32,
+        measured_radps: f32,
+    ) -> f32 {
+        let error_radps = desired_radps - measured_radps;
         if !error_radps.is_finite() {
             self.derivative.forget();
             return 0.0;
         }
 
-        let error_derivative = self.derivative.step(error_radps, dt);
-        let pd = gains.p * error_radps + gains.d * error_derivative;
+        let accel_radps2 = self.derivative.step(measured_radps, dt);
+        let pd = gains.p * error_radps - gains.d * accel_radps2;
         let integrated_error =
             clamp_symmetric(self.integrated_error + dt * error_radps, max_integral);
         let moment = pd + gains.i * integrated_error;
@@ -192,10 +211,15 @@ impl BodyRateController {
         estimated_rates_radps: Vec3,
     ) -> Vec3 {
         assert_dt(dt);
-        let error = desired_rates_radps - estimated_rates_radps;
         let gains = config.axis_gains();
         Vec3::from_fn(|axis, _| {
-            self.axes[axis].step(gains[axis], config.max_integral, dt, error[axis])
+            self.axes[axis].step(
+                gains[axis],
+                config.max_integral,
+                dt,
+                desired_rates_radps[axis],
+                estimated_rates_radps[axis],
+            )
         })
     }
 
@@ -372,20 +396,48 @@ mod tests {
         }
     }
 
-    /// The derivative term is `D·Δe/dt`; a falling error produces a negative contribution.
+    /// The derivative term is `−D·Δω/dt` on the measured rate: a rising rate is damped.
     #[test]
-    fn derivative_term_opposes_a_falling_error() {
+    fn derivative_term_opposes_a_rising_rate() {
         let cfg = config(0.0, 0.0, 0.003);
         let mut c = BodyRateController::default();
         c.control(&cfg, DT, Vec3::new(1.0, 0.0, 0.0), Vec3::zeros());
         let steady = c.control(&cfg, DT, Vec3::new(1.0, 0.0, 0.0), Vec3::zeros());
-        let falling = c.control(&cfg, DT, Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.5, 0.0, 0.0));
+        let rising = c.control(&cfg, DT, Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.5, 0.0, 0.0));
 
         assert_abs_diff_eq!(steady.x, 0.0, epsilon = 1e-6);
-        assert_abs_diff_eq!(falling.x, 0.003 * -0.5 / DT, epsilon = 1e-5);
+        assert_abs_diff_eq!(rising.x, 0.003 * -0.5 / DT, epsilon = 1e-5);
     }
 
-    /// A fresh controller has no previous error, so D alone gives nothing on the first tick.
+    /// A setpoint step on a held rate moves the moment by `P·A` alone: no `D·A/dt` kick, for
+    /// any step size or D (#373).
+    #[test]
+    fn a_setpoint_step_has_no_derivative_kick() {
+        // (step in rad/s, d): the d's span the hand tune (0.003) to a designed quad_x (0.139).
+        let rows = [
+            (1.0, 0.003),
+            (-1.0, 0.003),
+            (0.2, 0.139),
+            (1.0, 0.139),
+            (-3.0, 0.05),
+        ];
+        let p = 0.15;
+        for (step_radps, d) in rows {
+            let cfg = config(p, 0.0, d);
+            let mut c = BodyRateController::default();
+            let measured = Vec3::new(0.3, 0.3, 0.3);
+            c.control(&cfg, DT, measured, measured);
+            let stepped = measured + Vec3::repeat(step_radps);
+            let moments = c.control(&cfg, DT, stepped, measured);
+            let expected = clamp_symmetric(p * step_radps, 1.0);
+            assert!(
+                (moments - Vec3::repeat(expected)).amax() < 1e-6,
+                "step {step_radps} rad/s, d {d}: {moments:?}"
+            );
+        }
+    }
+
+    /// A fresh controller has no previous rate, so D alone gives nothing on the first tick.
     #[test]
     fn first_tick_has_no_derivative_kick() {
         let mut c = BodyRateController::default();

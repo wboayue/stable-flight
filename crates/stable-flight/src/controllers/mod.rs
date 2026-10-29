@@ -9,6 +9,7 @@ pub mod attitude;
 pub mod body_rate;
 mod derivative;
 pub mod lateral;
+pub(crate) mod low_pass;
 pub mod plane_rate;
 pub mod yaw;
 

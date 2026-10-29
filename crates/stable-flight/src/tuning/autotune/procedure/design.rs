@@ -18,6 +18,8 @@ pub(in crate::tuning::autotune) struct Design {
     plan: DesignPlan,
     /// The rate loop's gains under an angle loop (`None` for a rate loop).
     inner: Option<Gains>,
+    /// The stabilizer's gyro low-pass, in Hz, which the design models.
+    gyro_cutoff_hz: f32,
     /// The design on hold.
     designed: Gains,
     /// Fits a slow host stopped in a row.
@@ -31,6 +33,7 @@ impl Design {
         Self {
             plan,
             inner: None,
+            gyro_cutoff_hz: 0.0,
             designed: Gains::default(),
             stops: 0,
             unusable: 0,
@@ -40,8 +43,13 @@ impl Design {
     pub(super) fn next(&mut self, input: Input) -> Action {
         let identify = ProbeConfig::Identify(self.plan.identify);
         match input {
-            Input::Start { inner, .. } => {
+            Input::Start {
+                inner,
+                gyro_cutoff_hz,
+                ..
+            } => {
                 self.inner = inner;
+                self.gyro_cutoff_hz = gyro_cutoff_hz;
                 Action::probe(identify)
             }
             // A design stage commits nothing before it finishes: `gains` are its start.
@@ -52,7 +60,10 @@ impl Design {
             } => {
                 // A fit that ran clears the slow host's count: only stalls in a row fail.
                 self.stops = 0;
-                match self.plan.gains(&model, gains, self.inner) {
+                match self
+                    .plan
+                    .gains(&model, gains, self.inner, self.gyro_cutoff_hz)
+                {
                     Ok(designed) => {
                         self.designed = designed;
                         Action::Hold { gains: designed }

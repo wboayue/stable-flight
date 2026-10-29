@@ -10,8 +10,9 @@ use assert2::check;
 use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight::stabilizers::copter::TunedLoop;
+use stable_flight::tuning::LoopShapingConfig;
 use stable_flight::tuning::autotune::{
-    AutotuneAbort, AutotuneEvent, DesignPlan, Method, StagePlan,
+    AutotuneAbort, AutotuneEvent, COPTER_LOOP_SHAPING, DesignPlan, Method, StagePlan,
 };
 use stable_flight_sim::airframes::{self, Airframe};
 
@@ -89,6 +90,11 @@ fn converges_from_any_start() {
 /// the axis and the design rings.
 const MISREAD_DELAY_S: f32 = 0.05;
 
+/// The rate margin the misread is designed to, in degrees: with the gyro low-pass modeled and
+/// D on the measured rate, the copter's 65° holds even on the misread; 30° is the widest that
+/// rings (#373).
+const MISREAD_MARGIN_DEG: f32 = 30.0;
+
 /// A rate design that rings doesn't hold the settle, goes back, and its loop is fitted again;
 /// the third fails the stage and the loop flies its start. A delay the fit can't model stands
 /// in for RealFlight's fits that misread the axis (#518).
@@ -100,7 +106,13 @@ fn a_design_that_rings_goes_back_to_its_start() {
     };
     let plan = [StagePlan {
         target: TunedLoop::RollRate,
-        method: Method::Design(DesignPlan::copter()),
+        method: Method::Design(DesignPlan {
+            design: LoopShapingConfig {
+                rate_margin_deg: MISREAD_MARGIN_DEG,
+                ..COPTER_LOOP_SHAPING
+            },
+            ..DesignPlan::copter()
+        }),
     }];
 
     let run = common::autotune(&plant, &plan, AUTOTUNE_TIMEOUT_S);

@@ -42,6 +42,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         },
         full_scale_rates_radps: Vec3::new(3.0, 3.0, 3.0),
         thrust_curve_exponent: 2.0,
+        gyro_cutoff_hz: 40.0,
     };
     assert_eq!(airframe.stabilizer, stabilizer, "stabilizer");
 
@@ -305,6 +306,7 @@ fn titan_cobra_hover_gains_are_the_flown_set() {
         },
         full_scale_rates_radps: Vec3::new(3.0, 3.0, 3.0),
         thrust_curve_exponent: 2.0,
+        gyro_cutoff_hz: 40.0,
     };
     assert_eq!(titan_cobra().stabilizer.hover, stabilizer);
 }
