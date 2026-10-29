@@ -40,8 +40,12 @@ struct MockRealFlightBridge {
     simulator_timeout: bool,
     /// `reset_aircraft` fails with a `Simulator` error this many times, then succeeds.
     reset_timeouts: Cell<usize>,
+    /// `reset_aircraft` fails with a non-timeout error (after any `reset_timeouts`).
+    reset_fails: bool,
     /// Number of `reset_aircraft` calls.
-    resets: Cell<usize>,
+    resets: Arc<AtomicUsize>,
+    /// Number of `enable_rc` calls.
+    rc_enables: Arc<AtomicUsize>,
     /// Stands in for the bridge's open connection: a test holding a clone sees it close (the
     /// strong count drop) when the bridge is dropped.
     _connection: Option<Arc<()>>,
@@ -59,7 +63,9 @@ impl MockRealFlightBridge {
             disable_rc_fault: false,
             simulator_timeout: false,
             reset_timeouts: Cell::new(0),
-            resets: Cell::new(0),
+            reset_fails: false,
+            resets: Arc::new(AtomicUsize::new(0)),
+            rc_enables: Arc::new(AtomicUsize::new(0)),
             _connection: None,
         }
     }
@@ -134,6 +140,7 @@ impl RealFlightBridge for MockRealFlightBridge {
     }
 
     fn enable_rc(&self) -> Result<(), BridgeError> {
+        self.rc_enables.fetch_add(1, Ordering::Relaxed);
         if self.should_fail {
             Err(BridgeError::Initialization("RC enable failed".to_string()))
         } else {
@@ -142,11 +149,11 @@ impl RealFlightBridge for MockRealFlightBridge {
     }
 
     fn reset_aircraft(&self) -> Result<(), BridgeError> {
-        self.resets.set(self.resets.get() + 1);
+        self.resets.fetch_add(1, Ordering::Relaxed);
         if self.reset_timeouts.get() > 0 {
             self.reset_timeouts.set(self.reset_timeouts.get() - 1);
             Err(simulator_timeout())
-        } else if self.should_fail {
+        } else if self.reset_fails {
             Err(BridgeError::Initialization("Reset failed".to_string()))
         } else {
             Ok(())
@@ -218,7 +225,9 @@ fn try_new_rejects_invalid_mapping() {
 
     assert!(matches!(
         result,
-        Err(MappingError::DuplicateChannel { channel: 0 })
+        Err(StartError::Mapping(MappingError::DuplicateChannel {
+            channel: 0
+        }))
     ));
 }
 
@@ -912,33 +921,58 @@ fn a_new_bridge_whose_disable_rc_times_out_is_not_used() {
 }
 
 /// The startup reset is retried while RealFlight times out on it, up to three attempts; any
-/// other error isn't retried.
+/// other error isn't retried. A reset that still fails is a `StartError::Reset`, with control
+/// handed back to RC, so a flight never starts from where the last one left the aircraft (#523).
 #[test]
-fn startup_reset_retries_simulator_timeouts() {
-    // (timeouts before success, other error, expected reset calls)
+fn startup_reset_retries_timeouts_and_fails_the_start() {
+    // (timeouts before the outcome, outcome is a non-timeout error, expected reset calls, starts)
     let cases = [
-        (0, false, 1),
-        (1, false, 2),
-        (2, false, 3),
-        (3, false, 3), // gives up
-        (5, false, 3),
-        (0, true, 1), // not a timeout: not retried
+        (0, false, 1, true),
+        (1, false, 2, true),
+        (2, false, 3, true),
+        (3, false, 3, false), // gives up
+        (5, false, 3, false),
+        (0, true, 1, false), // not a timeout: not retried
+        (1, true, 2, false),
     ];
-    for (timeouts, other_error, expected) in cases {
-        let vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+    for (timeouts, reset_fails, expected_resets, starts) in cases {
+        let resets = Arc::new(AtomicUsize::new(0));
+        let rc_enables = Arc::new(AtomicUsize::new(0));
+        let result = RealFlightVehicle::try_new(RealFlightConfiguration {
             mapping: ActuatorMapping::default(),
             body_rotation: UnitQuaternion::identity(),
             bridge: MockRealFlightBridge {
                 reset_timeouts: Cell::new(timeouts),
-                ..MockRealFlightBridge::new(other_error)
+                reset_fails,
+                resets: resets.clone(),
+                rc_enables: rc_enables.clone(),
+                ..MockRealFlightBridge::new(false)
             },
         });
-        assert_eq!(
-            current_bridge(&vehicle).resets.get(),
-            expected,
-            "{timeouts} timeouts, other error {other_error}"
+        let row = format!("{timeouts} timeouts, then fails: {reset_fails}");
+        check!(resets.load(Ordering::Relaxed) == expected_resets, "{row}");
+        check!(result.is_ok() == starts, "{row}");
+        check!(matches!(result, Ok(_) | Err(StartError::Reset(_))), "{row}");
+        // Started: RC stays off until the vehicle drops. Failed: handed back at once.
+        let expected_enables = if starts { 0 } else { 1 };
+        check!(
+            rc_enables.load(Ordering::Relaxed) == expected_enables,
+            "{row}"
         );
     }
+}
+
+#[test]
+#[should_panic(expected = "failed to reset aircraft")]
+fn new_panics_on_failed_reset() {
+    RealFlightVehicle::new(RealFlightConfiguration {
+        mapping: ActuatorMapping::default(),
+        body_rotation: UnitQuaternion::identity(),
+        bridge: MockRealFlightBridge {
+            reset_fails: true,
+            ..MockRealFlightBridge::new(false)
+        },
+    });
 }
 
 /// `from_airframe` carries the airframe's mapping and body rotation.

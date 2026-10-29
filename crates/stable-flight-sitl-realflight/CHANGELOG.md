@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `RealFlightVehicle::try_new` returns `StartError` and fails when RealFlight
+  doesn't reset the aircraft, handing control back to RC; `new` panics on it. A failed reset
+  was a warning, and the flight started from wherever the last one left the aircraft, upside
+  down after a crash (#523).
+- `copter-autotune-realflight` exits with status 1, RC handed back, when the vehicle stays
+  inverted for 3 s or the aircraft reset fails, so unattended runs don't wait on a crash (#523).
+
 - `copter-autotune-realflight` flags a freeze (`Autotune::note_stall`) on a tick over 50 ms
   after the last, not on the runner's resyncs, which at about 223 Hz come every few seconds
   with no tick late by much (#524).
@@ -63,6 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `StartError`: why `RealFlightVehicle::try_new` couldn't start a flight, an invalid mapping or
+  a failed aircraft reset (#523).
 - `airframes::explora_maneuvers()` (#342): scripted maneuvers on the eXplora, rolls and loops
   at full thrust and doublets at its cruise thrust; `tailsitter-auto-realflight` flies it, and
   `flights/explora_acro.csv` flies doublets, a roll, and a loop on plane legs.
