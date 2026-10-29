@@ -332,14 +332,30 @@ pub struct SearchPlan {
     /// How much worse than the baseline the result may fly.
     pub acceptance: Acceptance,
     /// With [`Term::P`] only: I at this share of each P tried, in 1/s, so every P carries the
-    /// I that holds the trim moment ([`RATE_I_PER_P`]); `None` keeps the start's I.
-    /// Non-negative and finite.
+    /// I that holds the trim moment ([`RATE_I_PER_P`]); `None` keeps the start's I. The
+    /// baseline flies the start's gains as they are, so from a start whose I isn't at this
+    /// share, a candidate differs from the baseline in I as well as P. Non-negative and finite.
     pub i_per_p: Option<f32>,
+}
+
+/// `gains` with I at `i_per_p` of P, in 1/s; unchanged for `None`
+/// ([`SearchPlan::i_per_p`], [`DesignPlan::rate_i_per_p`]).
+pub(crate) fn with_i_per_p(gains: Gains, i_per_p: Option<f32>) -> Gains {
+    Gains {
+        i: i_per_p.map_or(gains.i, |ratio| ratio * gains.p),
+        ..gains
+    }
+}
+
+/// `Ok` when `i_per_p` is `None` or non-negative and finite.
+fn check_i_per_p(field: &'static str, i_per_p: Option<f32>) -> Result<(), InvalidConfig> {
+    i_per_p.map_or(Ok(()), |ratio| check_limit(field, ratio))
 }
 
 impl SearchPlan {
     /// The copter defaults for a rate loop's P, with I at [`RATE_I_PER_P`] of it and D as it
-    /// starts (a design sets it, [`StagePlan::copter_design_search`]): [`Criterion::Overshoot`] at ArduPilot's default aggressiveness (0.1: overshoot 0.05,
+    /// starts (a design sets it, [`StagePlan::copter_design_search`]):
+    /// [`Criterion::Overshoot`] at ArduPilot's default aggressiveness (0.1: overshoot 0.05,
     /// bounce-back 0.1) in [0.1, 3]. Steps of [`COPTER_RATE_STEP`], two pairs for the baseline
     /// and the verify; a bracket point passes on two pairs in a row; brackets of `× 1.3`
     /// bisected to 10%, a 0.9 margin. Steps clip for up to 10 ticks ([`StepTestPlan::copter`]):
@@ -440,10 +456,12 @@ impl SearchPlan {
     /// Checks the steps ([`StepTestPlan::validate`]), the criterion, the bracket's factors and
     /// bounds, the acceptance, and `i_per_p`.
     pub fn validate(&self) -> Result<(), InvalidConfig> {
-        if let Some(i_per_p) = self.i_per_p {
-            check("i_per_p", self.term == Term::P, "None unless term is P")?;
-            check_limit("i_per_p", i_per_p)?;
-        }
+        check(
+            "i_per_p",
+            self.i_per_p.is_none() || self.term == Term::P,
+            "None unless term is P",
+        )?;
+        check_i_per_p("i_per_p", self.i_per_p)?;
         self.test.validate()?;
         self.criterion.validate()?;
         check("confirm", self.confirm >= 1, "at least 1")?;
@@ -665,9 +683,7 @@ impl DesignPlan {
     /// Checks the fit ([`IdentifyConfig::validate`]), the design
     /// ([`LoopShapingConfig::validate`]), and `rate_i_per_p`.
     pub fn validate(&self) -> Result<(), InvalidConfig> {
-        if let Some(i_per_p) = self.rate_i_per_p {
-            check_limit("rate_i_per_p", i_per_p)?;
-        }
+        check_i_per_p("rate_i_per_p", self.rate_i_per_p)?;
         self.identify.validate()?;
         self.design.validate()
     }
@@ -681,10 +697,8 @@ impl DesignPlan {
         inner: Option<Gains>,
     ) -> Result<Gains, DesignError> {
         match inner {
-            None => design_rate(model, start, &self.design).map(|gains| Gains {
-                i: self.rate_i_per_p.map_or(gains.i, |ratio| ratio * gains.p),
-                ..gains
-            }),
+            None => design_rate(model, start, &self.design)
+                .map(|gains| with_i_per_p(gains, self.rate_i_per_p)),
             Some(rate) => {
                 design_angle_p(model, rate, start, &self.design).map(|p| Gains { p, ..start })
             }

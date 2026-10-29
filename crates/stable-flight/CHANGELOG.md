@@ -13,8 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RATE_I_PER_P` (0.2/s) of P (0.03), so a steady trim moment (a CG offset, a weak motor) is
   held without waiting on the attitude loop's I (#374). Airframes that set their own rate
   gains keep them.
-- `BodyRateController` holds its integral while the moment is clipped in the error's direction
-  (it may still shrink), as ArduPilot's `AC_PID` does at the mixer's limit (#374).
+- `BodyRateController` holds its integral while its moment is clipped in the error's
+  direction (it may still shrink), as ArduPilot's `AC_PID` does on the mixer's limit flags;
+  the controller sees only its own ±1 clip, not a mixer limit below it (#374).
 - **Breaking:** `SearchPlan` has `i_per_p` and `DesignPlan` `rate_i_per_p`: the copter rate
   search and design set I at `RATE_I_PER_P` of each P they set (`None` keeps the start's I).
   `design_angle_p` models the rate loop without its I (#374). On the sim robustness table

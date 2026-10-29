@@ -119,8 +119,9 @@ impl RateAxis {
     /// gives 0 and stays out of the integral and derivative state.
     ///
     /// While the moment is clipped, the integral may shrink but not grow: growing it can't
-    /// add moment, and it would wind up and overshoot once the clip ends (anti-windup, as
-    /// ArduPilot's `AC_PID::update_i` holds it at the mixer's limit).
+    /// add moment, and it would wind up and overshoot once the clip ends (anti-windup). The
+    /// clip is this loop's own ±1; a mixer limit below it isn't seen, where ArduPilot's
+    /// `AC_PID::update_i` holds the integral on the mixer's limit flags.
     fn step(&mut self, gains: Gains, max_integral: f32, dt: f32, error_radps: f32) -> f32 {
         if !error_radps.is_finite() {
             self.derivative.forget();
@@ -438,7 +439,8 @@ mod tests {
             let mut c = BodyRateController::default();
             c.axes[0].integrated_error = start;
             let out = c.control(&cfg, 0.1, Vec3::new(error, 0.0, 0.0), Vec3::zeros());
-            assert_abs_diff_eq!(c.integrated_error().x, expected, epsilon = 1e-6);
+            let integral = c.integrated_error().x;
+            assert!((integral - expected).abs() < 1e-6, "{case}: {integral}");
             assert!(out.x.abs() <= 1.0, "{case}");
         }
     }

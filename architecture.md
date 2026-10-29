@@ -724,7 +724,8 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   tunes only its own terms; the rest keep their gains. No stage searches the rate loops' I,
   which holds trim rather than shaping the response: it follows P, at `RATE_I_PER_P` (0.2/s)
   of every roll and pitch rate P a copter search or design sets (`SearchPlan::i_per_p`,
-  `DesignPlan::rate_i_per_p`), as ArduPilot's autotune sets I from P
+  `DesignPlan::rate_i_per_p`; a search's baseline flies the start's I, so from a start off
+  the ratio a candidate differs in I as well as P), as ArduPilot's autotune sets I from P
   (`AUTOTUNE_PI_RATIO_FINAL`, 1.0). On the sim robustness table 1.0 failed most rows, 0.1–0.3
   passed every clean and delayed row, and 0.2 the most trim rows; switching between a low I
   during probes and the final I between them (ArduPilot's `AUTOTUNE_PI_RATIO_FOR_TESTING`)
