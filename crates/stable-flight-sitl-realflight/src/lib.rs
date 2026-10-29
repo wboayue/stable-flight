@@ -33,5 +33,6 @@ pub use mapping::{ActuatorMapping, CHANNEL_COUNT, MappingError};
 pub use true_wind::TrueWind;
 
 pub use vehicle::{
-    REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, SLOW_EXCHANGE, vehicle_state,
+    REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, SLOW_EXCHANGE, StartError,
+    vehicle_state,
 };

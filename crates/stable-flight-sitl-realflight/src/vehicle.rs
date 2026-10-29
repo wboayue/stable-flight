@@ -13,6 +13,7 @@ use stable_flight::{Actuator, ActuatorCommand, GRAVITY, StateSource, VehicleStat
 use crate::airframes::Airframe;
 use crate::{ActuatorMapping, MappingError, TrueWind};
 use health::LinkHealth;
+use thiserror::Error;
 
 mod health;
 #[cfg(test)]
@@ -207,21 +208,30 @@ where
     true_wind: TrueWind,
 }
 
+/// Why [`RealFlightVehicle::try_new`] couldn't start a flight.
+#[derive(Debug, Error)]
+pub enum StartError {
+    /// The configuration's [`ActuatorMapping`] is invalid.
+    #[error("invalid ActuatorMapping: {0}")]
+    Mapping(#[from] MappingError),
+    /// RealFlight didn't reset the aircraft, so it would fly from wherever the last flight left
+    /// it (upside down after a crash).
+    #[error("failed to reset aircraft: {0}")]
+    Reset(#[source] BridgeError),
+}
+
 /// Resets the aircraft, retrying a reset RealFlight didn't finish in time (`Simulator`) up to
-/// [`RESET_ATTEMPTS`] in all; any failure left is logged, and the flight starts where it is.
-fn reset_aircraft(bridge: &impl RealFlightBridge) {
-    for attempt in 1..=RESET_ATTEMPTS {
+/// [`RESET_ATTEMPTS`] in all; returns the last failure.
+fn reset_aircraft(bridge: &impl RealFlightBridge) -> Result<(), BridgeError> {
+    for attempt in 1..RESET_ATTEMPTS {
         match bridge.reset_aircraft() {
-            Ok(()) => return,
-            Err(BridgeError::Simulator(e)) if attempt < RESET_ATTEMPTS => {
-                debug!("Aircraft reset not finished ({e}), retrying");
+            Err(BridgeError::Simulator(e)) => {
+                debug!("Aircraft reset not finished ({e}), retrying (attempt {attempt})");
             }
-            Err(e) => {
-                warn!("Failed to reset aircraft: {e}");
-                return;
-            }
+            result => return result,
         }
     }
+    bridge.reset_aircraft()
 }
 
 /// The state before any exchange: defaults, with the position unknown (NaN), as a script
@@ -275,30 +285,32 @@ where
     /// Creates a new RealFlight vehicle instance with the given configuration.
     ///
     /// Initializes the simulator connection by disabling RC mode and resetting the aircraft (a
-    /// reset RealFlight doesn't finish in time is retried, up to three attempts). Warnings are
-    /// logged if either fails; the vehicle is still created.
+    /// reset RealFlight doesn't finish in time is retried, up to three attempts). A warning is
+    /// logged if disabling RC fails; the vehicle is still created.
     ///
     /// # Panics
     ///
-    /// If `configuration.mapping` is invalid ([`ActuatorMapping::validate`]); use
-    /// [`try_new`](Self::try_new) to handle that as an error.
+    /// If `configuration.mapping` is invalid ([`ActuatorMapping::validate`]) or the aircraft
+    /// reset fails; use [`try_new`](Self::try_new) to handle those as errors.
     pub fn new(configuration: RealFlightConfiguration<T>) -> RealFlightVehicle<T> {
-        Self::try_new(configuration).unwrap_or_else(|e| panic!("invalid ActuatorMapping: {e}"))
+        Self::try_new(configuration).unwrap_or_else(|e| panic!("{e}"))
     }
 
-    /// Like [`new`](Self::new), but returns an invalid mapping as an error instead of
-    /// panicking. Validates before touching the simulator.
+    /// Like [`new`](Self::new), but returns an invalid mapping or a failed reset as an error
+    /// instead of panicking. Validates before touching the simulator; after a failed reset,
+    /// hands control back to RC, as dropping the vehicle would.
     ///
     /// # Errors
     ///
-    /// The mapping's first [`MappingError`].
+    /// [`StartError::Mapping`] with the mapping's first [`MappingError`], or
+    /// [`StartError::Reset`] with the reset's last failure.
     ///
     /// # Examples
     ///
     /// ```no_run
     /// use stable_flight_sitl_realflight::realflight_bridge::RealFlightLocalBridge;
     /// use stable_flight_sitl_realflight::{
-    ///     ActuatorMapping, MappingError, RealFlightConfiguration, RealFlightVehicle,
+    ///     ActuatorMapping, MappingError, RealFlightConfiguration, RealFlightVehicle, StartError,
     /// };
     /// use stable_flight::nalgebra::UnitQuaternion;
     ///
@@ -309,18 +321,26 @@ where
     ///     body_rotation: UnitQuaternion::identity(),
     ///     bridge: RealFlightLocalBridge::new().expect("Failed to create bridge"),
     /// });
-    /// assert!(matches!(result, Err(MappingError::ChannelOutOfRange { channel: 12 })));
+    /// assert!(matches!(
+    ///     result,
+    ///     Err(StartError::Mapping(MappingError::ChannelOutOfRange { channel: 12 }))
+    /// ));
     /// ```
     pub fn try_new(
         configuration: RealFlightConfiguration<T>,
-    ) -> Result<RealFlightVehicle<T>, MappingError> {
+    ) -> Result<RealFlightVehicle<T>, StartError> {
         configuration.mapping.validate()?;
 
         if let Err(e) = configuration.bridge.disable_rc() {
             warn!("Failed to disable RC: {}", e);
         }
 
-        reset_aircraft(&configuration.bridge);
+        if let Err(e) = reset_aircraft(&configuration.bridge) {
+            if let Err(e) = configuration.bridge.enable_rc() {
+                warn!("Failed to enable RC: {e}");
+            }
+            return Err(StartError::Reset(e));
+        }
 
         Ok(RealFlightVehicle {
             bridge: Some(configuration.bridge),

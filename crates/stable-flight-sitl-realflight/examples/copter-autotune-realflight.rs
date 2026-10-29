@@ -25,6 +25,10 @@
 //! the native link for the bridge, so QGC shows the gains change. The RealFlight host defaults to
 //! `10.211.55.3:8080`; override it with `--host`.
 //!
+//! The run ends with exit status 1 and RC handed back when the vehicle stays inverted for 3 s
+//! (in any phase: it never touches down to end the run) or RealFlight doesn't reset the aircraft
+//! before arming, so unattended back-to-back runs don't wait on a crash.
+//!
 //! `--airframe` picks the model: `quadcopter-x` (the default) or `titan-cobra`, whose lift
 //! rotors fly on `TableMixer::quad_x` with its hover gains, the pusher stopped and the surfaces
 //! centered; the default script hovers over the chosen model's spawn point.
@@ -38,13 +42,14 @@
 //! ```
 
 use std::cell::Cell;
+use std::process::ExitCode;
 use std::rc::Rc;
 use std::time::Duration;
 
 use clap::error::ErrorKind;
 use clap::{CommandFactory, Parser, ValueEnum};
 use env_logger::Builder;
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 
 use stable_flight::commanders::{RouteEnd, TouchdownDetector};
 use stable_flight::controllers::Gains;
@@ -82,6 +87,9 @@ const START_ALTITUDE_TOLERANCE_M: f32 = 0.5;
 /// 100 ms behind every few seconds with no tick late by much (QuadCopterX in RealFlight: 2,216
 /// resyncs in a run, 3 gaps over 100 ms, #524).
 const FREEZE_GAP: Duration = Duration::from_millis(50);
+/// How long the vehicle may stay inverted (tilted past 90°) before the run ends: past a tumble
+/// through inverted, well inside the 10 s an unattended batch waits on a crash (#523).
+const INVERTED_EXIT: Duration = Duration::from_secs(3);
 /// How often a running stage's status is logged at `debug`, in ticks (1 s).
 const STATUS_EVERY_TICKS: u32 = 250;
 /// The rate loops (the others are angle and heading loops); `--rate-p-scale` scales all
@@ -230,7 +238,7 @@ impl Commander for ThenLand {
     }
 }
 
-fn main() {
+fn main() -> ExitCode {
     Builder::from_default_env().format_timestamp_millis().init();
 
     let args = Args::parse();
@@ -272,11 +280,17 @@ fn main() {
     let host = args.host.clone();
     let connect =
         move || RealFlightRemoteBridge::with_timeouts(&host, CONNECT_TIMEOUT, REMOTE_IO_TIMEOUT);
-    let vehicle = RealFlightVehicle::new(RealFlightConfiguration::from_airframe(
+    // A failed reset would start the run from wherever the last one left the aircraft.
+    let vehicle = match RealFlightVehicle::try_new(RealFlightConfiguration::from_airframe(
         &airframe,
         connect().expect("Failed to create bridge"),
-    ))
-    .with_reconnect(move || connect().map_err(BridgeError::from));
+    )) {
+        Ok(vehicle) => vehicle.with_reconnect(move || connect().map_err(BridgeError::from)),
+        Err(e) => {
+            error!("can't start: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     let guidance = CopterGuidance::new(airframe.guidance);
     let stabilizer = CopterStabilizer::new(stabilizer_config);
@@ -298,8 +312,8 @@ fn main() {
 
     let mut autotune = Autotune::new(&plan, Envelope::default()).expect("valid autotune plan");
 
-    // Ctrl-C stops the loop cleanly (RealFlightVehicle re-enables RC control on drop); so does
-    // touchdown after the autotune.
+    // Ctrl-C stops the loop cleanly (RealFlightVehicle re-enables RC control on drop); so do
+    // touchdown after the autotune and staying inverted.
     let shutdown = ShutdownSignal::install().expect("failed to install Ctrl-C handler");
 
     info!(
@@ -310,8 +324,22 @@ fn main() {
     let mut host_slow = false;
     let mut ticks = 0u32;
     let mut last_tick = Duration::ZERO;
+    let mut inverted_since = None;
+    let mut crashed = false;
     let mut searched = Vec::new();
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop, stats| {
+        // Inverted, in any phase (climb, tune, landing), the vehicle never touches down to end
+        // the run.
+        inverted_since =
+            is_inverted(flight_loop.state()).then(|| inverted_since.unwrap_or(stats.elapsed));
+        if let Some(since) = inverted_since
+            && stats.elapsed.saturating_sub(since) >= INVERTED_EXIT
+        {
+            error!("inverted for {} s: stopping", INVERTED_EXIT.as_secs());
+            crashed = true;
+            shutdown.trigger();
+            return;
+        }
         // A freeze spoils a running probe's timing (it runs again), and the vehicle moved
         // meanwhile.
         if stats.elapsed.saturating_sub(last_tick) > FREEZE_GAP {
@@ -382,6 +410,19 @@ fn main() {
             land.set(true);
         }
     });
+    // Dropping the flight loop on return hands RC back.
+    if crashed {
+        ExitCode::FAILURE
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// Whether the vehicle is upside down: tilted past 90°, its body z axis (down when level)
+/// pointing above the horizon, i.e. that axis's NED-down component (the attitude matrix's
+/// bottom-right element, the cosine of the tilt) negative. False for a NaN attitude.
+fn is_inverted(state: &VehicleState) -> bool {
+    state.attitude.to_rotation_matrix()[(2, 2)] < 0.0
 }
 
 /// Logs an autotune event (lifecycle, so `info!`/`warn!`; each step, including ones that run
