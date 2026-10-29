@@ -2,7 +2,8 @@
 
 use core::ops::{Div, Sub};
 
-/// The previous tick's error, for a PID loop's `D·Δe/dt` term.
+/// The previous tick's error, or measurement, for a PID loop's `D·Δe/dt` term (the rate loop
+/// differences its measured rate).
 ///
 /// Starts empty, so the first tick after construction has no derivative kick (there is no
 /// previous error to difference against). [`forget`](Self::forget) empties it again after a

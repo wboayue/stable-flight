@@ -35,6 +35,7 @@ impl ParamTable for CopterStabilizerConfig {
         param!(deg "STAB_FS_RATE_Y", full_scale_rates_radps.y),
         param!(deg "STAB_FS_RATE_Z", full_scale_rates_radps.z),
         param!("STAB_THR_EXPO", thrust_curve_exponent),
+        param!("STAB_GYRO_FLT", gyro_cutoff_hz),
     ];
 }
 
@@ -48,6 +49,7 @@ mod metadata {
     const YAW: ParamMeta = ParamMeta::in_group("Stabilizer", "Yaw");
     const STICKS: ParamMeta = ParamMeta::in_group("Stabilizer", "Sticks");
     const THRUST: ParamMeta = ParamMeta::in_group("Stabilizer", "Thrust");
+    const GYRO: ParamMeta = ParamMeta::in_group("Stabilizer", "Gyro");
 
     impl ParamMetadata for CopterStabilizerConfig {
         const METADATA: &'static [ParamMeta] = &[
@@ -119,6 +121,9 @@ mod metadata {
             THRUST
                 .param("STAB_THR_EXPO", "Thrust curve exponent (1 is linear)")
                 .above(0.0),
+            GYRO.param("STAB_GYRO_FLT", "Body rate low-pass cutoff (0 is off)")
+                .with_units("Hz")
+                .at_least(0.0),
         ];
     }
 }

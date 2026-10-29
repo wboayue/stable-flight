@@ -71,6 +71,7 @@ fn drive_from(
         gains: START,
         inner: None,
         run_start,
+        gyro_cutoff_hz: 0.0,
     });
     for _ in 0..MAX_PROBES {
         verdicts.extend(procedure.take_verdict());

@@ -35,7 +35,8 @@ pub(crate) mod plant;
 
 pub use design::{DesignError, LoopShapingConfig, design_angle_p, design_rate};
 pub use identify::{
-    IdentifyAbort, IdentifyConfig, IdentifyProbe, IdentifyStatus, MAX_DELAY_TICKS, RateModel,
+    IdentifyAbort, IdentifyConfig, IdentifyProbe, IdentifyStatus, MAX_DELAY_TICKS,
+    PREFILTER_STAGES, RateModel,
 };
 pub use probe::{LoopSignals, Measurement, Probe, ProbeAbort, ProbeConfig, ProbeStatus, Progress};
 pub use step::{Stat, StepAbort, StepConfig, StepMetrics, StepProbe, StepStatus, StepSummary};

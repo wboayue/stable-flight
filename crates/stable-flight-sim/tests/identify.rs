@@ -17,18 +17,19 @@ use stable_flight_sim::{Perturbations, Wind};
 use common::robustness::{Set, Start, perturbations, starting};
 use common::{Plant, spec};
 
-/// Most the fitted lag may miss the model's motor lag, as a share of it: measured within 0.6%
-/// (#516), so 5% leaves about 8× margin.
+/// Most the fitted lag may miss the model's motor lag, as a share of it: measured within 4.6%
+/// through the fit's prefilter (#373), 0.6% without (#516).
 const LAG_SHARE: f32 = 0.05;
 
 /// Simulated seconds a probe may run: the excitation's 3 s plus margin.
 const TIMEOUT_S: f32 = 5.0;
 
 /// (set, delays it may fit, in ticks): the actuator delay's ticks plus the zero-order hold's
-/// one; 25 ms is 6.25 ticks, so 6 or 7.
+/// one; 25 ms is 6.25 ticks, so 6 or 7. 10 ms fits 2 ticks in 2 of 12 rows: the prefilter
+/// smooths the moments, and the fit spreads a tick of the delay over their weights (#373).
 const SETS: [(Set, &[usize]); 3] = [
     (Set::Clean, &[1]),
-    (Set::Delay10Ms, &[3]),
+    (Set::Delay10Ms, &[2, 3]),
     (Set::Delay25Ms, &[6, 7]),
 ];
 
@@ -108,10 +109,13 @@ fn designed_gains_meet_the_spec() {
             for (rate_loop, angle_loop) in loops {
                 let model = identified(&plant, angle_loop);
                 let start = rate_loop.gains(&config);
-                let rate = design_rate(&model, start, &COPTER_LOOP_SHAPING).expect("rate gains");
+                let gyro_hz = config.gyro_cutoff_hz;
+                let rate =
+                    design_rate(&model, start, gyro_hz, &COPTER_LOOP_SHAPING).expect("rate gains");
                 *rate_loop.gains_mut(&mut config) = rate;
                 let angle = angle_loop.gains(&config);
-                let p = design_angle_p(&model, rate, angle, &COPTER_LOOP_SHAPING).expect("angle P");
+                let p = design_angle_p(&model, rate, angle, gyro_hz, &COPTER_LOOP_SHAPING)
+                    .expect("angle P");
                 angle_loop.gains_mut(&mut config).p = p;
             }
             let tuned = Plant {
@@ -164,9 +168,14 @@ fn a_fit_on_a_slow_host_designs_a_cautious_rate_p() {
             let start = TunedLoop::RollRate.gains(&plant.airframe.stabilizer);
             let designed_p = |plant: &Plant| {
                 let model = identified(plant, TunedLoop::Roll);
-                design_rate(&model, start, &COPTER_LOOP_SHAPING)
-                    .expect("rate gains")
-                    .p
+                design_rate(
+                    &model,
+                    start,
+                    plant.airframe.stabilizer.gyro_cutoff_hz,
+                    &COPTER_LOOP_SHAPING,
+                )
+                .expect("rate gains")
+                .p
             };
             let (nominal_p, slow_p) = (designed_p(&plant), designed_p(&slow));
             check!(slow_p <= nominal_p, "{row}: {slow_p} against {nominal_p}");

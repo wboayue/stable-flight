@@ -1561,7 +1561,33 @@ fn a_settle_ignores_the_yaw_rate() {
             attitude: nalgebra::UnitQuaternion::from_euler_angles(roll_rad, 0.0, 0.0),
             ..Default::default()
         };
-        check!(settle.holds(&Motion::of(&state)) == holds, "{case}");
+        check!(
+            settle.holds(&Motion::of(&state, state.angular_velocity_radps)) == holds,
+            "{case}"
+        );
+    }
+}
+
+/// The settle reads the filtered rates, about every axis and each alone: a still vehicle whose
+/// raw gyro carries noise past the settle holds it (#373).
+#[test]
+fn a_settle_reads_the_filtered_rates() {
+    let settle = COPTER_STEP_SETTLE;
+    let noisy = Vec3::repeat(2.0 * settle.rate_radps);
+    let state = VehicleState {
+        angular_velocity_radps: noisy,
+        ..Default::default()
+    };
+    // (case, filtered rates, holds)
+    let rows = [
+        ("filtered still", Vec3::zeros(), true),
+        ("filtered noisy", noisy, false),
+    ];
+    for (case, filtered, holds) in rows {
+        let motion = Motion::of(&state, filtered);
+        check!(settle.holds(&motion) == holds, "{case}");
+        check!(settle.holds_axis(&motion, 0) == holds, "{case}: roll");
+        check!(settle.holds_axis(&motion, 1) == holds, "{case}: pitch");
     }
 }
 

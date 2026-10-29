@@ -21,11 +21,13 @@ const MAX_MEASURE_STOPS: usize = 3;
 pub(super) enum Input {
     /// The stage starts; `gains` are its loop's current gains, `inner` those of the rate loop
     /// under an angle or heading loop (`None` for a rate loop), `run_start` its loop's gains at
-    /// [`Autotune::start`](super::Autotune::start).
+    /// [`Autotune::start`](super::Autotune::start), and `gyro_cutoff_hz` the stabilizer's gyro
+    /// low-pass, which a design models.
     Start {
         gains: Gains,
         inner: Option<Gains>,
         run_start: Gains,
+        gyro_cutoff_hz: f32,
     },
     /// A probe finished; `gains` are the loop's committed gains. `stalled`: the host fell
     /// behind during it ([`Autotune::note_stall`](super::Autotune::note_stall)), so its timing
@@ -50,6 +52,9 @@ pub(super) enum Input {
 }
 
 #[cfg(test)]
+use crate::stabilizers::copter::DEFAULT_GYRO_CUTOFF_HZ;
+
+#[cfg(test)]
 impl Input {
     /// The start of a stage on `gains`, which are also the run's start, on a rate loop.
     fn start(gains: Gains) -> Self {
@@ -57,6 +62,7 @@ impl Input {
             gains,
             inner: None,
             run_start: gains,
+            gyro_cutoff_hz: DEFAULT_GYRO_CUTOFF_HZ,
         }
     }
 }

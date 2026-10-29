@@ -108,6 +108,9 @@ pub fn tailsitter() -> TailsitterAirframe {
             max_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
             max_rate_radps: Vec2::new(2.0, 2.0),
         },
+        // No gyro low-pass: these D-less rate loops lose the margin to its lag, tilting 13.8°
+        // through the back transition at 40 Hz (TODO(#550): retune with it).
+        gyro_cutoff_hz: 0.0,
         ..CopterStabilizerConfig::default()
     };
     let thrust_curve_exponent = hover_stabilizer.thrust_curve_exponent;

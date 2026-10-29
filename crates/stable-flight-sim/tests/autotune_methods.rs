@@ -128,8 +128,14 @@ enum Design {
     LoopShaping(f32),
 }
 
-/// Rate gains from `model`, keeping `start`'s I; `None` when the rule has no design.
-fn rate_gains(design: Design, model: &RateModel, start: Gains) -> Option<Gains> {
+/// Rate gains from `model`, keeping `start`'s I, for a loop through a gyro low-pass at
+/// `gyro_cutoff_hz`; `None` when the rule has no design.
+fn rate_gains(
+    design: Design,
+    model: &RateModel,
+    start: Gains,
+    gyro_cutoff_hz: f32,
+) -> Option<Gains> {
     match design {
         Design::PolePlacement => Some(pole_placement(model, start)),
         Design::LoopShaping(rate_margin_deg) => {
@@ -137,7 +143,7 @@ fn rate_gains(design: Design, model: &RateModel, start: Gains) -> Option<Gains> 
                 rate_margin_deg,
                 ..COPTER_LOOP_SHAPING
             };
-            design_rate(model, start, &config).ok()
+            design_rate(model, start, gyro_cutoff_hz, &config).ok()
         }
     }
 }
@@ -248,10 +254,12 @@ fn design_config(
         (TunedLoop::PitchRate, TunedLoop::Pitch),
     ];
     for (model, (rate_loop, angle_loop)) in models.iter().zip(loops) {
-        let rate = rate_gains(design, model, rate_loop.gains(&config)).ok_or("no rate design")?;
+        let gyro_cutoff_hz = config.gyro_cutoff_hz;
+        let rate = rate_gains(design, model, rate_loop.gains(&config), gyro_cutoff_hz)
+            .ok_or("no rate design")?;
         *rate_loop.gains_mut(&mut config) = rate;
         let angle = angle_loop.gains(&config);
-        let p = design_angle_p(model, rate, angle, &COPTER_LOOP_SHAPING)
+        let p = design_angle_p(model, rate, angle, gyro_cutoff_hz, &COPTER_LOOP_SHAPING)
             .map_err(|_| "no angle design")?;
         angle_loop.gains_mut(&mut config).p = p;
     }

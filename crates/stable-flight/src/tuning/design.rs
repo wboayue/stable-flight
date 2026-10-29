@@ -14,6 +14,7 @@ use thiserror::Error;
 
 use super::RateModel;
 use super::identify::unit_delay;
+use crate::controllers::low_pass::LowPass;
 use crate::controllers::{Gains, InvalidConfig, check, check_positive};
 
 #[cfg(test)]
@@ -92,8 +93,9 @@ pub enum DesignError {
     /// noise, not a motor.
     #[error("the fitted model has no motor lag")]
     NotALag,
-    /// The rate loop's phase never reaches the margin, or falls past it before any frequency:
-    /// the model has no usable crossover.
+    /// The rate loop's phase never reaches the margin, or falls past it before any frequency,
+    /// or the model's moment doesn't push the axis the way commanded: the model has no usable
+    /// crossover.
     #[error("no frequency meets the rate margin")]
     NoCrossover,
     /// Even the least angle P misses the angle margin around the designed rate loop.
@@ -106,16 +108,21 @@ pub enum DesignError {
 /// response.
 ///
 /// D/P is the fitted lag `τ`, so the PD's zero `1 + τ·s` cancels the lag's pole. P is
-/// `1/|C·G|` at the first frequency where the phase of `C·G` falls to `−180° + margin`, with
-/// `C = 1 + τ·(1 − z⁻¹)/dt` the PD at unit P and `G` the model's [`response`](RateModel::response).
+/// `1/|C·G·F|` at the first frequency where the phase of `C·G·F` falls to `−180° + margin`,
+/// with `C = 1 + τ·(1 − z⁻¹)/dt` the PD at unit P, `G` the model's
+/// [`response`](RateModel::response), and `F` the gyro low-pass at `gyro_cutoff_hz` (the
+/// stabilizer's [`gyro_cutoff_hz`](crate::stabilizers::copter::CopterStabilizerConfig::gyro_cutoff_hz);
+/// 0 for none) that the loop's P and D both act through. Its lag at the crossover takes about
+/// 30° of the margin on `quad_x` at 40 Hz, so leaving it out designs a loop near instability
+/// (#373).
 /// The kept I isn't in that loop: its lag at the crossover costs the flown loop a little margin
 /// (0.6° at I 0.2 over seven ticks of delay). A fitted integrator past 1 (`r₁ + r₂ > 1`, an
 /// unstable pole from noise, whose phase meets no crossover) is held at 1, the lag kept.
 ///
 /// # Errors
 ///
-/// [`DesignError::NotALag`] without a lag, [`DesignError::NoCrossover`] when no frequency on
-/// the grid meets the margin.
+/// [`DesignError::NotALag`] without a lag, [`DesignError::NoCrossover`] when the moment
+/// doesn't push the axis or no frequency on the grid meets the margin.
 ///
 /// # Examples
 ///
@@ -132,16 +139,22 @@ pub enum DesignError {
 ///     dt_s: 0.004,
 /// };
 /// let start = Gains { p: 0.1, i: 0.0, d: 0.002 };
-/// let gains = design_rate(&model, start, &COPTER_LOOP_SHAPING).unwrap();
+/// let gains = design_rate(&model, start, 40.0, &COPTER_LOOP_SHAPING).unwrap();
 /// assert!((gains.d / gains.p - model.lag_s().unwrap()).abs() < 1e-6);
 /// ```
 pub fn design_rate(
     model: &RateModel,
     start: Gains,
+    gyro_cutoff_hz: f32,
     config: &LoopShapingConfig,
 ) -> Result<Gains, DesignError> {
     let model = &integrating(model);
     let lag_s = model.lag_s().ok_or(DesignError::NotALag)?;
+    // A reversed axis's phase starts half a turn from an integrator's; through the gyro
+    // filter it then drifts across the margin, which would read as a crossover.
+    if model.moment_effect() <= 0.0 {
+        return Err(DesignError::NoCrossover);
+    }
     let dt_s = model.dt_s;
     let unit_pd = Gains {
         p: 1.0,
@@ -149,7 +162,10 @@ pub fn design_rate(
         d: lag_s,
     };
     let open_loop = |w_radps: f32| {
-        pid_response(unit_pd, unit_delay(w_radps, dt_s), dt_s) * model.response(w_radps)
+        let z1 = unit_delay(w_radps, dt_s);
+        pid_response(unit_pd, z1, dt_s)
+            * model.response(w_radps)
+            * LowPass::response(gyro_cutoff_hz, dt_s, z1)
     };
     let floor_deg = config.rate_margin_deg - 180.0;
     let crossover = first_crossing(dt_s, open_loop, |point| point.phase_deg > floor_deg)
@@ -166,10 +182,12 @@ pub fn design_rate(
 /// loop keeps the angle margin, times the back-off. `angle`'s I and D stay.
 ///
 /// The angle loop's open loop is `C_angle · T · dt/(1 − z⁻¹)`: the angle PID, the closed rate
-/// loop `T = C_rate·G/(1 + C_rate·G)` (core's PID on the error, `BodyRateController`, on the
-/// rate P and D: its I is left out), and the integration from rate to angle. Its margin is
-/// read where its gain falls to 1, and angle P is bisected on it. A fitted integrator past 1
-/// is held at 1, as in [`design_rate`].
+/// loop `T = P_rate·G/(1 + C_rate·G·F)`, and the integration from rate to angle. In `T`,
+/// `C_rate` is the rate P and D (`BodyRateController`; its I is left out) acting through the
+/// gyro low-pass `F` at `gyro_cutoff_hz`, and only P acts on the rate setpoint (D acts on the
+/// measured rate). The angle loop reads the attitude, not the filtered rates, so `F` is in the
+/// rate loop alone. Its margin is read where its gain falls to 1, and angle P is bisected on
+/// it. A fitted integrator past 1 is held at 1, as in [`design_rate`].
 ///
 /// # Errors
 ///
@@ -178,6 +196,7 @@ pub fn design_angle_p(
     model: &RateModel,
     rate: Gains,
     angle: Gains,
+    gyro_cutoff_hz: f32,
     config: &LoopShapingConfig,
 ) -> Result<f32, DesignError> {
     let model = &integrating(model);
@@ -192,7 +211,8 @@ pub fn design_angle_p(
         let z1 = unit_delay(w_radps, dt_s);
         let rate_pid = pid_response(rate, z1, dt_s);
         let plant = model.response(w_radps);
-        let closed_rate = rate_pid * plant / (one + rate_pid * plant);
+        let gyro = LowPass::response(gyro_cutoff_hz, dt_s, z1);
+        let closed_rate = plant * rate.p / (one + rate_pid * plant * gyro);
         let angle_pid = pid_response(
             Gains {
                 p: angle_p,
@@ -235,8 +255,8 @@ fn integrating(model: &RateModel) -> RateModel {
 }
 
 /// A PID's frequency response at `z1 = e^(−jω·dt)`: `P + I·dt/(1 − z⁻¹) + D·(1 − z⁻¹)/dt`,
-/// core's law on the error (`BodyRateController`, `AttitudeController`: a running integral and
-/// a one-tick difference).
+/// core's law in its feedback path (`BodyRateController`, `AttitudeController`: a running
+/// integral and a one-tick difference).
 fn pid_response(gains: Gains, z1: Complex<f32>, dt_s: f32) -> Complex<f32> {
     let one = Complex::new(1.0, 0.0);
     let integral = Complex::new(dt_s, 0.0) / (one - z1);

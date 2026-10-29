@@ -68,7 +68,10 @@ Code comments and docs link here instead of redefining a term.
   `max_integral` clamp, holding it while saturated in the error's direction, or fading it
   toward zero while saturated, as the TECS pitch integral does).
 - **Derivative kick:** a D-term spike when the setpoint jumps or a loop starts with no previous
-  sample; the loops skip it on their first tick.
+  sample; the loops skip it on their first tick, and the copter rate loop avoids the setpoint
+  jump's by taking D on the measurement.
+- **D on measurement:** a PID whose D term damps the measured value's change instead of the
+  error's: the same inside the loop, but a setpoint step moves the output through P and I only.
 - **Trim:** the steady output that holds the vehicle in balance with no error (a plane's
   elevator at cruise, a hover's thrust). A trim term carries it so the I term doesn't have to.
 - **Saturation:** a value pinned at its limit (tilt cap, thrust range, motor range). Reported
@@ -86,7 +89,11 @@ Code comments and docs link here instead of redefining a term.
   braked unshaped (`GUID_LAT_BRK`), slow along one, so braking starts in time.
 - **Deadband:** a band around zero where small inputs are ignored, so noise doesn't cause
   constant small corrections.
-- **Low-pass filter:** smooths a noisy signal by attenuating fast changes, at the cost of lag.
+- **Low-pass filter:** smooths a noisy signal by attenuating fast changes, at the cost of lag;
+  its cutoff frequency divides what passes from what's cut, and more poles cut harder past it.
+  The copter's rate loop flies its gyro rates through one (the gyro filter).
+- **Prefilter:** the same low-pass on a fit's input and output, which keeps noise out of the fit
+  without changing the model between them.
 - **High-pass filter:** the signal less its low-pass: passes changes, drops what holds
   steady. The TECS high-passes the airspeed rate so a steady acceleration isn't a rate
   error.

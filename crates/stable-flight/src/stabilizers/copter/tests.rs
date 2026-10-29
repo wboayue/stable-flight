@@ -931,3 +931,77 @@ fn transition_ramps_fly_pitch_past_the_tilt_limit() {
         check!(stabilizer.saturation().tilt == tilt, "{case:?}");
     }
 }
+
+/// The rate loop flies the body rates through the gyro low-pass: a 90 Hz vibration on the gyro
+/// (the sim's robustness tone) moves the moments about 12× less at 40 Hz than unfiltered, on
+/// every axis. Rows: (cutoff Hz, largest moment over the last second, as a share of the
+/// unfiltered P·amplitude).
+#[test]
+fn the_rate_loop_flies_gyro_filtered_rates() {
+    const DT: f32 = 0.004;
+    const AMPLITUDE_RADPS: f32 = 0.1;
+    let largest_moment = |cutoff_hz: f32| {
+        let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
+            body_rate: BodyRateControllerConfig {
+                roll_gains: Gains {
+                    p: 1.0,
+                    i: 0.0,
+                    d: 0.0,
+                },
+                pitch_gains: Gains {
+                    p: 1.0,
+                    i: 0.0,
+                    d: 0.0,
+                },
+                yaw_gains: Gains {
+                    p: 1.0,
+                    i: 0.0,
+                    d: 0.0,
+                },
+                max_integral: 1.0,
+            },
+            gyro_cutoff_hz: cutoff_hz,
+            ..Default::default()
+        });
+        let setpoint = Setpoint::BodyRate(BodyRateSetpoint::default());
+        (0..500)
+            .map(|tick| {
+                let tone = AMPLITUDE_RADPS * (2.0 * PI * 90.0 * tick as f32 * DT).sin();
+                let state = VehicleState {
+                    angular_velocity_radps: Vec3::repeat(tone),
+                    ..Default::default()
+                };
+                (tick, stabilizer.stabilize(DT, &setpoint, &state).moments)
+            })
+            .filter(|(tick, _)| *tick >= 250)
+            .map(|(_, moments)| moments.amax())
+            .fold(0.0, f32::max)
+    };
+    // (cutoff Hz, share of P·amplitude): 0 is off.
+    for (cutoff_hz, share) in [(0.0, 1.0), (40.0, 0.08)] {
+        let moment = largest_moment(cutoff_hz);
+        check!(
+            (moment / AMPLITUDE_RADPS - share).abs() < 0.02,
+            "{cutoff_hz} Hz: {moment}"
+        );
+    }
+}
+
+/// `gyro_cutoff_hz` must be non-negative and finite; 0 turns the filter off.
+#[test]
+fn validate_checks_the_gyro_cutoff() {
+    // (cutoff Hz, valid)
+    for (cutoff_hz, valid) in [
+        (0.0, true),
+        (40.0, true),
+        (-1.0, false),
+        (f32::NAN, false),
+        (f32::INFINITY, false),
+    ] {
+        let config = CopterStabilizerConfig {
+            gyro_cutoff_hz: cutoff_hz,
+            ..Default::default()
+        };
+        check!(config.validate().is_ok() == valid, "{cutoff_hz}");
+    }
+}

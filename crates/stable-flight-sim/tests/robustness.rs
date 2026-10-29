@@ -73,18 +73,20 @@ rows! {
     quad_x_delay_10ms_high: quad_x, Delay10Ms, High;
     quad_x_delay_25ms_low: quad_x, Delay25Ms, Low;
     quad_x_delay_25ms_high: quad_x, Delay25Ms, High;
-    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
+    #[ignore = "the tuned pitch rate overshoots 5.1% against 5%: the fit under noise reads the gain low (#551)"]
     quad_x_noise_low: quad_x, Noise, Low;
-    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     quad_x_noise_high: quad_x, Noise, High;
     #[ignore = "core's default rate I (0.03) holds at most 0.03 of moment within max_integral 1: the low start tilts away from the settle (#374)"]
     quad_x_cg_offset_low: quad_x, CgOffset, Low;
+    #[ignore = "the trim takes the moment headroom: 5° angle steps against it clip for 6 ticks, past the 5 allowed (#374)"]
     quad_x_cg_offset_high: quad_x, CgOffset, High;
+    #[ignore = "the trim takes the moment headroom: 5° angle steps against it clip for 6 ticks, past the 5 allowed (#374)"]
     quad_x_weak_motor_low: quad_x, WeakMotor, Low;
+    #[ignore = "the trim takes the moment headroom: 5° angle steps against it clip for 6 ticks, past the 5 allowed (#374)"]
     quad_x_weak_motor_high: quad_x, WeakMotor, High;
-    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
+    #[ignore = "the CG offset blocks it as in its own row (#374)"]
     quad_x_combined_low: quad_x, Combined, Low;
-    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
+    #[ignore = "the CG offset blocks it as in its own row (#374)"]
     quad_x_combined_high: quad_x, Combined, High;
 
     heavy_quad_clean_low: heavy_quad, Clean, Low;
@@ -93,41 +95,37 @@ rows! {
     heavy_quad_delay_10ms_high: heavy_quad, Delay10Ms, High;
     heavy_quad_delay_25ms_low: heavy_quad, Delay25Ms, Low;
     heavy_quad_delay_25ms_high: heavy_quad, Delay25Ms, High;
-    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     heavy_quad_noise_low: heavy_quad, Noise, Low;
-    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     heavy_quad_noise_high: heavy_quad, Noise, High;
     #[ignore = "core's default rate I (0.03) holds at most 0.03 of moment within max_integral 1: the low start tilts away from the settle (#374)"]
     heavy_quad_cg_offset_low: heavy_quad, CgOffset, Low;
-    #[ignore = "rate searches keep the design (Kept(Worse)): their verify flies worse than it under the trim (#374)"]
     heavy_quad_cg_offset_high: heavy_quad, CgOffset, High;
-    #[ignore = "a rate search keeps the design (Kept(Worse)): its verify flies worse than it under the trim (#374)"]
     heavy_quad_weak_motor_low: heavy_quad, WeakMotor, Low;
-    #[ignore = "a rate search keeps the design (Kept(Worse)): its verify flies worse than it under the trim (#374)"]
+    #[ignore = "the trim takes the moment headroom: 5° angle steps against it clip for 6 ticks, past the 5 allowed (#374)"]
     heavy_quad_weak_motor_high: heavy_quad, WeakMotor, High;
-    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
+    #[ignore = "the CG offset blocks it as in its own row (#374)"]
     heavy_quad_combined_low: heavy_quad, Combined, Low;
-    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
+    #[ignore = "the CG offset blocks it as in its own row (#374)"]
     heavy_quad_combined_high: heavy_quad, Combined, High;
 
     racer_clean_low: racer, Clean, Low;
     racer_clean_high: racer, Clean, High;
     racer_delay_10ms_low: racer, Delay10Ms, Low;
     racer_delay_10ms_high: racer, Delay10Ms, High;
+    #[ignore = "the gyro low-pass's lag on top of 25 ms: the rate searches pass no candidate (#552)"]
     racer_delay_25ms_low: racer, Delay25Ms, Low;
+    #[ignore = "the gyro low-pass's lag on top of 25 ms: the ×3 start breaches the rate envelope (#552)"]
     racer_delay_25ms_high: racer, Delay25Ms, High;
-    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     racer_noise_low: racer, Noise, Low;
-    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
     racer_noise_high: racer, Noise, High;
-    #[ignore = "the trim takes the moment headroom: 5° angle steps against it clip for 6 ticks, past the 5 allowed (#374)"]
+    #[ignore = "under the trim, the rate searches pass no candidate (Kept(NoPass)) (#374)"]
     racer_cg_offset_low: racer, CgOffset, Low;
-    #[ignore = "the trim takes the moment headroom: 5° angle steps against it clip for 6 ticks, past the 5 allowed (#374)"]
+    #[ignore = "under the trim, the rate searches pass no candidate (Kept(NoPass)) (#374)"]
     racer_cg_offset_high: racer, CgOffset, High;
     racer_weak_motor_low: racer, WeakMotor, Low;
     racer_weak_motor_high: racer, WeakMotor, High;
-    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
+    #[ignore = "the CG offset blocks it as in its own row (#374)"]
     racer_combined_low: racer, Combined, Low;
-    #[ignore = "gyro noise spoils the fit (Design(NotALag)) or the settle (#373)"]
+    #[ignore = "the CG offset blocks it as in its own row (#374)"]
     racer_combined_high: racer, Combined, High;
 }

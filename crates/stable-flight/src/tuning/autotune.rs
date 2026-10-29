@@ -2,12 +2,13 @@
 
 use core::fmt;
 
+use crate::controllers::low_pass::LowPass;
 use crate::controllers::{
     Gains, InvalidConfig, RATE_I_PER_P, check, check_limit, check_positive, check_unit_interval,
 };
 use crate::math::{DEG, euler_angles};
-use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
-use crate::{Configurable, FlightLoop, VehicleState};
+use crate::stabilizers::copter::{CopterStabilizerConfig, DEFAULT_GYRO_CUTOFF_HZ, TunedLoop};
+use crate::{Configurable, FlightLoop, Vec3, VehicleState};
 
 use super::{
     DesignError, IdentifyConfig, LoopShapingConfig, Measurement, ProbeAbort, ProbeConfig,
@@ -153,7 +154,14 @@ pub const COPTER_IDENTIFY: IdentifyConfig = IdentifyConfig {
     amplitude: 4.0 * DEG,
     duration_s: 3.0,
     washout_tc_s: 0.2,
+    prefilter_hz: COPTER_PREFILTER_HZ,
 };
+
+/// [`COPTER_IDENTIFY`]'s prefilter, in Hz: the default gyro cutoff, where PX4's autotune puts
+/// its own. On the sim, four poles at 40 Hz passed 28 of 30 noise-row runs (5 noise seeds) and
+/// fit every airframe's clean lag within 5%; at 20 Hz the racer's fits from a ringing start
+/// missed it by 69%, and two poles at 40 Hz passed 6 of 30 noise runs (#373).
+const COPTER_PREFILTER_HZ: f32 = DEFAULT_GYRO_CUTOFF_HZ;
 
 /// Share of a search's largest pass it keeps, and of loop shaping's largest angle P: 10% off,
 /// as ArduPilot backs off its autotune result.
@@ -689,19 +697,20 @@ impl DesignPlan {
     }
 
     /// The gains `model` designs from the loop's `start`: a rate loop's (`inner` `None`), or
-    /// an angle loop's P flown on the `inner` rate gains.
+    /// an angle loop's P flown on the `inner` rate gains, through a gyro low-pass at
+    /// `gyro_cutoff_hz`.
     fn gains(
         &self,
         model: &RateModel,
         start: Gains,
         inner: Option<Gains>,
+        gyro_cutoff_hz: f32,
     ) -> Result<Gains, DesignError> {
         match inner {
-            None => design_rate(model, start, &self.design)
+            None => design_rate(model, start, gyro_cutoff_hz, &self.design)
                 .map(|gains| with_i_per_p(gains, self.rate_i_per_p)),
-            Some(rate) => {
-                design_angle_p(model, rate, start, &self.design).map(|p| Gains { p, ..start })
-            }
+            Some(rate) => design_angle_p(model, rate, start, gyro_cutoff_hz, &self.design)
+                .map(|p| Gains { p, ..start }),
         }
     }
 }
@@ -711,7 +720,8 @@ impl DesignPlan {
 pub struct Settle {
     /// Roll and pitch within this, in rad.
     pub tilt_rad: f32,
-    /// Roll and pitch rates within this, in rad/s. Yaw is left out: its loop isn't tuned
+    /// Roll and pitch rates within this, in rad/s, read through the stabilizer's gyro
+    /// low-pass. Yaw is left out: its loop isn't tuned
     /// (#296), and with 25 ms of delay it rings on its start gains at ±0.18 rad/s on `racer`
     /// without tilting the vehicle (#518).
     pub rate_radps: f32,
@@ -818,31 +828,35 @@ impl Envelope {
     }
 }
 
-/// What the envelope checks, read once per update from the state.
+/// What the envelope and the settle check, read once per update from the state. The settle's
+/// rates are filtered through the stabilizer's gyro low-pass, the rates its loops fly on: read
+/// raw, a still vehicle's gyro noise and vibration hold them over the settle (0.2 rad/s on the
+/// sim's noise rows, the settle 0.1), so no stage starts (#373). The envelope reads the raw
+/// rate, so a breach shows on its first tick.
 struct Motion {
     /// The larger of |roll| and |pitch|, in rad.
     tilt_rad: f32,
-    /// The largest body rate magnitude, in rad/s.
+    /// The largest raw body rate magnitude, in rad/s.
     rate_radps: f32,
-    /// The larger of the |roll| and |pitch| rates, in rad/s.
+    /// The larger of the filtered |roll| and |pitch| rates, in rad/s.
     tilt_rate_radps: f32,
     /// |roll| and |pitch|, in rad.
     axis_tilt_rad: [f32; 2],
-    /// The |roll| and |pitch| rates, in rad/s.
+    /// The filtered |roll| and |pitch| rates, in rad/s.
     axis_rate_radps: [f32; 2],
     altitude_m: f32,
 }
 
 impl Motion {
-    fn of(state: &VehicleState) -> Self {
+    /// `state`'s motion, with `filtered_radps` its body rates through the gyro low-pass.
+    fn of(state: &VehicleState, filtered_radps: Vec3) -> Self {
         let (roll, pitch, _) = euler_angles(&state.attitude);
-        let rates_radps = state.angular_velocity_radps;
         Self {
             tilt_rad: roll.abs().max(pitch.abs()),
-            rate_radps: rates_radps.amax(),
-            tilt_rate_radps: rates_radps.xy().amax(),
+            rate_radps: state.angular_velocity_radps.amax(),
+            tilt_rate_radps: filtered_radps.xy().amax(),
             axis_tilt_rad: [roll.abs(), pitch.abs()],
-            axis_rate_radps: [rates_radps.x.abs(), rates_radps.y.abs()],
+            axis_rate_radps: [filtered_radps.x.abs(), filtered_radps.y.abs()],
             altitude_m: state.position_m.z,
         }
     }
@@ -1226,6 +1240,9 @@ pub struct Autotune {
     /// Time left, in s, after a freeze ([`note_stall`](Self::note_stall)) during which
     /// breaches don't count at all ([`Envelope::recovery_s`]).
     frozen_s: f32,
+    /// The body rates (roll, pitch, yaw) through the stabilizer's gyro low-pass, for the
+    /// settle ([`Motion`]).
+    rate_filters: [LowPass; 3],
 }
 
 /// What the supervisor needs from the stabilizer: copter probes and config.
@@ -1288,6 +1305,7 @@ impl Autotune {
             host_slow: false,
             recovering_s: 0.0,
             frozen_s: 0.0,
+            rate_filters: Default::default(),
         })
     }
 
@@ -1315,6 +1333,7 @@ impl Autotune {
         self.start_altitude_m = flight_loop.state().position_m.z;
         self.recovering_s = 0.0;
         self.frozen_s = 0.0;
+        self.rate_filters = Default::default();
         self.phase = Phase::Starting { stage: 0 };
         Ok(())
     }
@@ -1346,7 +1365,8 @@ impl Autotune {
             self.phase = Phase::Reverted;
             return Some(AutotuneEvent::Reverted);
         }
-        let motion = Motion::of(flight_loop.state());
+        let rates_radps = self.filter_rates(flight_loop, dt);
+        let motion = Motion::of(flight_loop.state(), rates_radps);
         self.recovering_s = (self.recovering_s - dt).max(0.0);
         self.frozen_s = (self.frozen_s - dt).max(0.0);
         if let Some(stage) = self.phase.active_stage()
@@ -1448,6 +1468,18 @@ impl Autotune {
         }
     }
 
+    /// The state's body rates through the stabilizer's gyro low-pass at its configured cutoff,
+    /// stepped `dt` on.
+    fn filter_rates<C, V, G, S: CopterTunable, M, T>(
+        &mut self,
+        flight_loop: &FlightLoop<C, V, G, S, M, T>,
+        dt: f32,
+    ) -> Vec3 {
+        let cutoff_hz = flight_loop.stabilizer().config().gyro_cutoff_hz;
+        let rates_radps = flight_loop.state().angular_velocity_radps;
+        Vec3::from_fn(|axis, _| self.rate_filters[axis].apply(rates_radps[axis], dt, cutoff_hz))
+    }
+
     /// Tells the supervisor whether the host runs slow: its ticks come further apart than
     /// their `dt`, for a stretch (e.g. RealFlight at half its rate, sitl's `TickRate`). While
     /// it does, a running probe stops and runs again later, and settling waits (see the
@@ -1536,6 +1568,7 @@ impl Autotune {
                 run_start: self
                     .run_start
                     .map_or(gains, |run_start| target.gains(&run_start)),
+                gyro_cutoff_hz: config.gyro_cutoff_hz,
             },
             Decide::Measured {
                 measurement,

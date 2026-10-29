@@ -302,6 +302,9 @@ pub fn explora_vtol()
                     max_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
                     max_rate_radps: Vec2::new(2.0, 2.0),
                 },
+                // No gyro low-pass, as the sim tailsitter, whose rate loops lose the margin to
+                // its lag (TODO(#550): retune with it).
+                gyro_cutoff_hz: 0.0,
                 ..Default::default()
             },
             plane: PlaneStabilizerConfig {

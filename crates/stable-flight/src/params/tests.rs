@@ -52,6 +52,7 @@ fn tables_cover_every_config_field() {
             },
         full_scale_rates_radps: _,
         thrust_curve_exponent: _,
+        gyro_cutoff_hz: _,
     } = CopterStabilizerConfig::default();
     let CopterGuidanceConfig {
         altitude:
@@ -97,7 +98,7 @@ fn tables_cover_every_config_field() {
             },
     } = CopterGuidanceConfig::default();
     // one param per scalar, vector component, or gain term in the destructuring above
-    check!(names::<CopterStabilizerConfig>().len() == 30);
+    check!(names::<CopterStabilizerConfig>().len() == 31);
     check!(names::<CopterGuidanceConfig>().len() == 36);
 }
 
