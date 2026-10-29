@@ -781,9 +781,7 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   * *Identify* (`tuning::IdentifyProbe`, in each `Method::Design` stage): a shrinking square
     wave on the angle setpoint, every loop closed (PX4's excitation,
     `mc_autotune_attitude_control.cpp:603-639`), and a least-squares fit of the axis's body
-    rate to its moment command, both through the same four-pole low-pass at the gyro cutoff
-    (`IdentifyConfig::prefilter_hz`, 40 Hz; PX4's autotune prefilters alike): a second-order
-    model with a delay (PX4's `ArxRls<2,2,1>`), the
+    rate to its moment command: a second-order model with a delay (PX4's `ArxRls<2,2,1>`), the
     delay the shortest within 1% of the least residual among those whose moment pushes the
     axis the right way (a positive moment-weight sum). In RealFlight the fits explain only
     35–72% of the rate change, so noise picks among near-tied delays: 10 of 67 recorded
@@ -796,13 +794,11 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     and recursive least squares hadn't converged in 3 s. On the sim, 3 s per axis fit the same
     model from the low, own, and ×3 starts, recovered each airframe's motor lag (29.8, 49.1,
     14.9 ms against 30, 50, 15), and found the actuator delay (1, 3, and 6–7 ticks clean, at
-    10 ms, at 25 ms). Through the prefilter the lags fit within 4.6% and a 10 ms delay fits 2
-    ticks in 2 of 12 rows: the smoothed moments let the fit spread a tick over their weights.
-    Without it, a vibration tone's AR terms take the rate weights (`quad_x`'s noise rows designed
-    rate P 13–63 against 4.7 clean). Its order and cutoff trade noise against fidelity: two
-    poles at 40 Hz passed 6 of 30 noise-row runs over 5 noise seeds, four at 40 Hz 28 of 30,
-    and four at 20 Hz smeared the `racer`'s lag 69% from a ringing start. A 90 Hz tone of
-    0.02 rad/s on a clean rate still takes the fit through four poles at 40 Hz (#373).
+    10 ms, at 25 ms). The fit reads the raw rate and moment: a low-pass on both (PX4's
+    autotune prefilters alike) kept the sim's gyro tone out of the rate terms, four poles at
+    40 Hz passing 28 of 30 noise-row runs over 5 noise seeds, but on RealFlight's QuadCopterX,
+    whose dynamics aren't the model's, every cutoff tried (40–80 Hz, two to eight poles) read
+    the 5–13 ms lag as 10–270 ms, and the designed rate P fell to half (#373).
   * *Design* (`tuning::design_rate`, `design_angle_p`, `COPTER_LOOP_SHAPING`): rate D/P at the
     fitted lag, so the PD's zero cancels the motor lag; rate P for a 65° phase margin on the
     model's frequency response, its delay and the stabilizer's gyro low-pass included (left
@@ -864,9 +860,10 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     gain near 60 (an integrator around a fast rate loop) whose rule P oscillated once the rate
     setpoint saturated (#295); its D held the rate search's P below what `heavy_quad` and
     `racer` support (#378).
-  * Open: gyro noise still biases the closed-loop fit's gain low through the prefilter
-    (`quad_x`'s noise rows design rate P 0.87 against 2.7 clean), so the search carries the
-    noise rows ([#551](https://github.com/wboayue/stable-flight/issues/551)); the filter's lag
+  * Open: gyro noise spoils the closed-loop fit: on the sim's noise rows `quad_x`'s and
+    `heavy_quad`'s roll rate fits read no lag from the ×3 start and the other rows' rate
+    search steps don't settle, while the prefilter that carried them misread RealFlight's lag (*Identify*,
+    [#551](https://github.com/wboayue/stable-flight/issues/551)); the gyro filter's lag
     on top of 25 ms of delay fails `racer`'s rows
     ([#552](https://github.com/wboayue/stable-flight/issues/552)). Of the trim rows, the low
     starts with a CG offset tilt away from the settle (core's default rate I holds at most 0.03

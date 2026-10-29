@@ -9,8 +9,7 @@
 
 use nalgebra::{Complex, SMatrix, SVector};
 
-use crate::controllers::low_pass::LowPass;
-use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
+use crate::controllers::{InvalidConfig, check, check_positive};
 use crate::math::{assert_dt, lagged};
 
 #[cfg(test)]
@@ -25,9 +24,6 @@ const HISTORY: usize = MAX_DELAY_TICKS + 2;
 
 /// Terms in the fit: two rates, three moments, a constant.
 const TERMS: usize = 6;
-
-/// Two-pole low-pass stages in the fit's prefilter ([`IdentifyConfig::prefilter_hz`]).
-pub const PREFILTER_STAGES: usize = 2;
 
 /// The square wave's half-periods, in s: 1.0 down to 0.2 by 0.1, then 0.6 down to 0.2,
 /// repeating (PX4's sweep, `mc_autotune_attitude_control.cpp:603-619`).
@@ -63,14 +59,6 @@ pub struct IdentifyConfig {
     /// becomes a pulse that decays, so the setpoint offset averages near zero. Positive and
     /// finite.
     pub washout_tc_s: f32,
-    /// Cutoff of the low-pass the fit puts on both the rate and the moment, in Hz; 0 turns it
-    /// off. Non-negative and finite. The same filter on both sides leaves the model between
-    /// them unchanged and keeps gyro noise and vibration out of the fit, whose rate terms
-    /// would otherwise fit a vibration tone instead of the airframe (PX4's autotune filters its
-    /// fit's input and output alike). Four poles ([`PREFILTER_STAGES`] two-pole stages) at 40 Hz
-    /// fitted 28 of 30 of the sim's noise-row runs, two poles 6 of 30 (#373). A 90 Hz tone of
-    /// 0.02 rad/s on a clean rate still takes the fit at 40 Hz; 0.01 rad/s doesn't.
-    pub prefilter_hz: f32,
 }
 
 impl IdentifyConfig {
@@ -93,8 +81,7 @@ impl IdentifyConfig {
             "non-zero and finite",
         )?;
         check_positive("duration_s", self.duration_s)?;
-        check_positive("washout_tc_s", self.washout_tc_s)?;
-        check_limit("prefilter_hz", self.prefilter_hz)
+        check_positive("washout_tc_s", self.washout_tc_s)
     }
 }
 
@@ -222,8 +209,7 @@ pub enum IdentifyStatus {
 /// shortest of a near-tie) among those whose moment pushes the axis the way it was pushed (among
 /// all when none does): a fit with a negative moment effect can't be designed from.
 ///
-/// Both signals pass the same low-pass first ([`IdentifyConfig::prefilter_hz`]). The fit takes
-/// the rate's change `y[k] − y[k−1]` as its target and `y[k−1]`, `y[k−1] −
+/// The fit takes the rate's change `y[k] − y[k−1]` as its target and `y[k−1]`, `y[k−1] −
 /// y[k−2]` as its rate terms: at 250 Hz the last two rates are nearly equal, and fitting them
 /// side by side loses the lag in `f32` (#516). It keeps only the sums of each delay's least
 /// squares (about 1.7 KB), not the record, and solves them when the excitation ends. A
@@ -264,7 +250,7 @@ impl IdentifyProbe {
             duration_s: config.duration_s,
             status: IdentifyStatus::Running { elapsed_s: 0.0 },
             sweep: SquareSweep::new(config.amplitude, config.washout_tc_s),
-            fits: DelayFits::new(config.prefilter_hz),
+            fits: DelayFits::new(),
         }
     }
 
@@ -354,14 +340,10 @@ struct DelayFits {
     /// Ticks the sums hold, and their total `dt`, in s.
     rows: usize,
     rows_dt_s: f32,
-    /// The prefilter's cutoff, in Hz, and its stages on the rate and the moment.
-    prefilter_hz: f32,
-    rate_filters: [LowPass; PREFILTER_STAGES],
-    moment_filters: [LowPass; PREFILTER_STAGES],
 }
 
 impl DelayFits {
-    fn new(prefilter_hz: f32) -> Self {
+    fn new() -> Self {
         DelayFits {
             rates_radps: [0.0; 2],
             moments: [0.0; HISTORY],
@@ -369,27 +351,16 @@ impl DelayFits {
             sums: [Sums::default(); MAX_DELAY_TICKS],
             rows: 0,
             rows_dt_s: 0.0,
-            prefilter_hz,
-            rate_filters: Default::default(),
-            moment_filters: Default::default(),
         }
     }
 
-    /// Adds this tick, prefiltered, to every delay's sums once the history is full, then
-    /// shifts the history; a non-finite tick empties it instead.
+    /// Adds this tick to every delay's sums once the history is full, then shifts the history;
+    /// a non-finite tick empties it instead.
     fn record(&mut self, dt: f32, rate_radps: f32, last_moment: f32) {
         if !(rate_radps.is_finite() && last_moment.is_finite()) {
             self.filled = 0;
             return;
         }
-        let cutoff_hz = self.prefilter_hz;
-        let prefilter = |filters: &mut [LowPass; PREFILTER_STAGES], value: f32| {
-            filters
-                .iter_mut()
-                .fold(value, |value, filter| filter.apply(value, dt, cutoff_hz))
-        };
-        let rate_radps = prefilter(&mut self.rate_filters, rate_radps);
-        let last_moment = prefilter(&mut self.moment_filters, last_moment);
         self.moments.rotate_right(1);
         self.moments[0] = last_moment;
         self.filled = (self.filled + 1).min(HISTORY);

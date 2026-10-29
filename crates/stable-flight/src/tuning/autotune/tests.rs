@@ -1696,7 +1696,8 @@ fn a_design_that_breaches_during_its_search_goes_back_to_its_start() {
 
 /// A design above its search's `max` is lowered to it, and still goes back to the loop's start
 /// when the search fails: the lowered design never passed a step. Here every step after the
-/// lower stalls, so the search fails `Stalled`.
+/// lower stalls, so the search fails, `Stalled`, or `NotSettled` once the lowered P can't
+/// level the vehicle between steps.
 #[test]
 fn a_lowered_design_goes_back_to_its_start_when_its_search_fails() {
     let (mut flight_loop, _controls) = hovering(1.0);
@@ -1729,12 +1730,16 @@ fn a_lowered_design_goes_back_to_its_start_when_its_search_fails() {
     }
 
     check!(lowered);
+    let status = autotune.status();
     check!(
-        autotune.status()
-            == AutotuneStatus::Failed {
+        matches!(
+            status,
+            AutotuneStatus::Failed {
                 stage: 1,
-                reason: AutotuneAbort::Stalled,
+                reason: AutotuneAbort::Stalled | AutotuneAbort::NotSettled,
             }
+        ),
+        "{status:?}"
     );
     check!(*flight_loop.stabilizer().config() == start);
 }

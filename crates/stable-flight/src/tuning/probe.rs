@@ -51,8 +51,7 @@ pub struct LoopSignals {
     pub saturated: bool,
     /// The loop's axis's body rate this tick, in rad/s: the measurement itself on a rate loop,
     /// so through the gyro low-pass on a copter; unfiltered on an angle or heading loop, where
-    /// the identify probe reads it and filters it itself
-    /// ([`prefilter_hz`](crate::tuning::IdentifyConfig::prefilter_hz)).
+    /// the identify probe fits the airframe from it.
     pub rate_radps: f32,
     /// The loop's axis's moment command on the last tick, normalized to `[-1, 1]`: as
     /// commanded, before the mixer; a clip shows in [`saturated`](Self::saturated).

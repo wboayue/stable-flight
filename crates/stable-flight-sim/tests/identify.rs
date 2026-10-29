@@ -17,19 +17,18 @@ use stable_flight_sim::{Perturbations, Wind};
 use common::robustness::{Set, Start, perturbations, starting};
 use common::{Plant, spec};
 
-/// Most the fitted lag may miss the model's motor lag, as a share of it: measured within 4.6%
-/// through the fit's prefilter (#373), 0.6% without (#516).
+/// Most the fitted lag may miss the model's motor lag, as a share of it: measured within 0.6%
+/// (#516), so 5% leaves about 8× margin.
 const LAG_SHARE: f32 = 0.05;
 
 /// Simulated seconds a probe may run: the excitation's 3 s plus margin.
 const TIMEOUT_S: f32 = 5.0;
 
 /// (set, delays it may fit, in ticks): the actuator delay's ticks plus the zero-order hold's
-/// one; 25 ms is 6.25 ticks, so 6 or 7. 10 ms fits 2 ticks in 2 of 12 rows: the prefilter
-/// smooths the moments, and the fit spreads a tick of the delay over their weights (#373).
+/// one; 25 ms is 6.25 ticks, so 6 or 7.
 const SETS: [(Set, &[usize]); 3] = [
     (Set::Clean, &[1]),
-    (Set::Delay10Ms, &[2, 3]),
+    (Set::Delay10Ms, &[3]),
     (Set::Delay25Ms, &[6, 7]),
 ];
 
