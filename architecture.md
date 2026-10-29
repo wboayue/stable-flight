@@ -860,6 +860,13 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     gain near 60 (an integrator around a fast rate loop) whose rule P oscillated once the rate
     setpoint saturated (#295); its D held the rate search's P below what `heavy_quad` and
     `racer` support (#378).
+  * The design's D (D/P at the fitted lag) holds: on the clean plant from core's defaults,
+    `quad_x` and `heavy_quad` rise in 52 and 48 ms against the fastest pairs' 48 and 44 ms
+    (`autotune`'s rise tests, within 25%; #531). Rejected (#531): the rate search scaling D
+    with P (`racer` 24 ms, but `quad_x` 76 ms and `heavy_quad` 112 ms, and 16 of 42
+    `robustness` rows against 21); a search maximum of 6 (16 rows); D at 0.5 or 0.7 of the
+    lag, with or without that scaling (12–20 rows, `quad_x` 52–72 ms, `heavy_quad` 64–92 ms);
+    and a 55° rate margin (18 rows, `quad_x` 72 ms).
   * Open: gyro noise spoils the closed-loop fit: on the sim's noise rows `quad_x`'s and
     `heavy_quad`'s roll rate fits read no lag from the ×3 start and the other rows' rate
     search steps don't settle, while the prefilter that carried them misread RealFlight's lag (*Identify*,
@@ -869,10 +876,11 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     starts with a CG offset tilt away from the settle (core's default rate I holds at most 0.03
     of moment within its `max_integral`), `heavy_quad`'s rate searches keep the design as
     flying better than their result, and `racer`'s angle steps against the CG offset clip a
-    tick past the allowance ([#374](https://github.com/wboayue/stable-flight/issues/374)). The rate search ends at its
-    maximum (P 2.7, 0.9 × 3) on `quad_x`, below the fastest pair that meets the spec
-    (`autotune_methods`' `best_rate_pairs`;
-    [#531](https://github.com/wboayue/stable-flight/issues/531)).
+    tick past the allowance ([#374](https://github.com/wboayue/stable-flight/issues/374)). On `racer`, the gyro
+    filter's lag is a large share of the loop's: its rate search stops at P 0.55 with the
+    design's D, rising in 28 ms against the 20 ms of the fastest pair that meets the spec
+    (`autotune`'s `racer_design_search_rises_near_the_fastest_rate_pair`,
+    [#552](https://github.com/wboayue/stable-flight/issues/552)).
 
 ## Real-Time Loop Management
 

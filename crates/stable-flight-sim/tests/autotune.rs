@@ -1,9 +1,11 @@
 //! Autotune converges: `StagePlan::copter_design_search` from detuned starts, rate P too low,
 //! a little too high, and far too high, tunes every stage to gains that agree with each other.
+//! Its rate loops rise close to the fastest P/D pair that meets the spec.
 
 mod common;
 
-use common::spec::TUNED;
+use common::robustness::Start;
+use common::spec::{self, TUNED};
 use common::{AUTOTUNE_TIMEOUT_S, Plant};
 
 use assert2::check;
@@ -129,4 +131,74 @@ fn a_design_that_rings_goes_back_to_its_start() {
         run.stages
     );
     check!(run.config == plant.airframe.stabilizer);
+}
+
+/// How much slower than the fastest pair the design search's rate loop may rise, as a
+/// fraction of the fastest pair's rise (#531).
+const MAX_RISE_EXCESS: f32 = 0.25;
+
+/// Multipliers on the tuned rate P and D, each, for the pairs the tuned loop is raced
+/// against: 0.5 to 2, 22% apart. They span the fastest pairs that a sweep of P 0.2–6 by D
+/// 0.001–0.4 finds (P × 0.92–1.47, D × 0.69–1.62 of the tuned, #531).
+fn pair_scales() -> impl Iterator<Item = f32> + Clone {
+    (0..8).map(|index| 0.5 * 1.219_f32.powi(index))
+}
+
+/// Autotunes `airframe` from core's default gains on the clean plant and checks its roll
+/// rate loop rises within [`MAX_RISE_EXCESS`] of the fastest pair whose steps meet the spec.
+fn rises_near_the_fastest_rate_pair(airframe: Airframe) {
+    let clean = Plant::clean(common::robustness::starting(airframe, Start::Low));
+    let run = common::autotune(
+        &clean,
+        &StagePlan::copter_design_search(),
+        AUTOTUNE_TIMEOUT_S,
+    );
+    let tuned = Plant {
+        airframe: Airframe {
+            stabilizer: run.config,
+            ..clean.airframe
+        },
+        ..clean
+    };
+    let target = TunedLoop::RollRate;
+    let tuned_gains = target.gains(&run.config);
+    let pairs = pair_scales().flat_map(|p_scale| {
+        pair_scales().map(move |d_scale| Gains {
+            p: tuned_gains.p * p_scale,
+            d: tuned_gains.d * d_scale,
+            ..tuned_gains
+        })
+    });
+
+    let tuned_rise_s = spec::rise_s(&tuned, target);
+    let fastest = spec::fastest(&tuned, target, pairs);
+
+    let Some((fastest_s, fastest_gains)) = fastest else {
+        panic!("no pair meets the spec around {tuned_gains:?}");
+    };
+    check!(
+        tuned_rise_s.is_some_and(|rise_s| rise_s <= (1.0 + MAX_RISE_EXCESS) * fastest_s),
+        "tuned {tuned_gains:?} rises in {tuned_rise_s:?} s; {fastest_gains:?} in {fastest_s} s"
+    );
+}
+
+/// On `quad_x`, the design search's rate loop rises within a quarter of the fastest pair
+/// that meets the spec: the design's D at the fitted lag doesn't hold P back (#531).
+#[test]
+fn quad_x_design_search_rises_near_the_fastest_rate_pair() {
+    rises_near_the_fastest_rate_pair(airframes::quad_x());
+}
+
+/// As [`quad_x_design_search_rises_near_the_fastest_rate_pair`], on `heavy_quad`.
+#[test]
+fn heavy_quad_design_search_rises_near_the_fastest_rate_pair() {
+    rises_near_the_fastest_rate_pair(airframes::heavy_quad());
+}
+
+/// On `racer`, the gyro filter's lag is a large share of the loop's and its rate search
+/// stops at P 0.55, rising in 28 ms against the fastest pair's 20 ms (#552).
+#[test]
+#[ignore = "racer rises 40% slower than its fastest pair under the gyro filter's lag (#552)"]
+fn racer_design_search_rises_near_the_fastest_rate_pair() {
+    rises_near_the_fastest_rate_pair(airframes::racer());
 }
