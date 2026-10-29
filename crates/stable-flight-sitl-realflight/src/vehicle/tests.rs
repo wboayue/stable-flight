@@ -951,8 +951,10 @@ fn startup_reset_retries_timeouts_and_fails_the_start() {
         });
         let row = format!("{timeouts} timeouts, then fails: {reset_fails}");
         check!(resets.load(Ordering::Relaxed) == expected_resets, "{row}");
-        check!(result.is_ok() == starts, "{row}");
-        check!(matches!(result, Ok(_) | Err(StartError::Reset(_))), "{row}");
+        check!(
+            matches!(result, Err(StartError::Reset(_))) == !starts,
+            "{row}"
+        );
         // Started: RC stays off until the vehicle drops. Failed: handed back at once.
         let expected_enables = if starts { 0 } else { 1 };
         check!(
