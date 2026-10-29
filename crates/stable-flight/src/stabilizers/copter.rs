@@ -11,6 +11,7 @@
 //!    - Controls angular rates (roll rate, pitch rate, yaw rate)
 //!    - Fast update frequency (typically 400-1000Hz)
 //!    - PID controllers with feed-forward terms for each axis
+//!    - Flies the gyro rates through a low-pass (`STAB_GYRO_FLT`), D on the measured rate
 //!    - Directly commands motor mixing algorithm
 //!    - Always active as the core control layer
 //!
@@ -409,6 +410,7 @@ impl CopterStabilizer {
         let error_for = |angles: &Vec3| attitude_error(attitude, angles.x, angles.y, angles.z);
         let mut error = error_for(&desired);
         let probed = desired;
+        // The raw rates: the identify probe prefilters rate and moment alike itself.
         self.probe_attitude(
             dt,
             &mut desired,

@@ -112,9 +112,8 @@ pub enum DesignError {
 /// with `C = 1 + τ·(1 − z⁻¹)/dt` the PD at unit P, `G` the model's
 /// [`response`](RateModel::response), and `F` the gyro low-pass at `gyro_cutoff_hz` (the
 /// stabilizer's [`gyro_cutoff_hz`](crate::stabilizers::copter::CopterStabilizerConfig::gyro_cutoff_hz);
-/// 0 for none) that the loop's P and D both act through. Its lag at the crossover takes about
-/// 30° of the margin on `quad_x` at 40 Hz, so leaving it out designs a loop near instability
-/// (#373).
+/// 0 for none) that the loop's P and D both act through. Its lag at the crossover is most of the
+/// margin: on `quad_x` at 40 Hz, a design that leaves it out keeps about 2° of its 65° (#373).
 /// The kept I isn't in that loop: its lag at the crossover costs the flown loop a little margin
 /// (0.6° at I 0.2 over seven ticks of delay). A fitted integrator past 1 (`r₁ + r₂ > 1`, an
 /// unstable pole from noise, whose phase meets no crossover) is held at 1, the lag kept.

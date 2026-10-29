@@ -49,7 +49,10 @@ pub struct LoopSignals {
     pub error: f32,
     /// Whether the loop's output, or the loop under it, was clipped on the last tick.
     pub saturated: bool,
-    /// The loop's axis's body rate this tick, in rad/s: the measurement itself on a rate loop.
+    /// The loop's axis's body rate this tick, in rad/s: the measurement itself on a rate loop,
+    /// so through the gyro low-pass on a copter; unfiltered on an angle or heading loop, where
+    /// the identify probe reads it and filters it itself
+    /// ([`prefilter_hz`](crate::tuning::IdentifyConfig::prefilter_hz)).
     pub rate_radps: f32,
     /// The loop's axis's moment command on the last tick, normalized to `[-1, 1]`: as
     /// commanded, before the mixer; a clip shows in [`saturated`](Self::saturated).

@@ -933,8 +933,8 @@ fn transition_ramps_fly_pitch_past_the_tilt_limit() {
 }
 
 /// The rate loop flies the body rates through the gyro low-pass: a 90 Hz vibration on the gyro
-/// (the sim's robustness tone) moves the moments about 12× less at 40 Hz than unfiltered, on
-/// every axis. Rows: (cutoff Hz, largest moment over the last second, as a share of the
+/// (the sim's robustness tone) moves the moments by 0.08 of the unfiltered P·amplitude at 40 Hz,
+/// on every axis. Rows: (cutoff Hz, largest moment over the last second, as a share of the
 /// unfiltered P·amplitude).
 #[test]
 fn the_rate_loop_flies_gyro_filtered_rates() {

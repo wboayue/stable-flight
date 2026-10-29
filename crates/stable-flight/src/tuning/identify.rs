@@ -67,9 +67,9 @@ pub struct IdentifyConfig {
     /// off. Non-negative and finite. The same filter on both sides leaves the model between
     /// them unchanged and keeps gyro noise and vibration out of the fit, whose rate terms
     /// would otherwise fit a vibration tone instead of the airframe (PX4's autotune filters its
-    /// fit's input and output alike). Four poles ([`PREFILTER_STAGES`] two-pole stages): one
-    /// stage still left a 0.02 rad/s tone at 90 Hz larger than the airframe's response in the
-    /// rate's change, which the fit targets (#373).
+    /// fit's input and output alike). Four poles ([`PREFILTER_STAGES`] two-pole stages) at 40 Hz
+    /// fitted 28 of 30 of the sim's noise-row runs, two poles 6 of 30 (#373). A 90 Hz tone of
+    /// 0.02 rad/s on a clean rate still takes the fit at 40 Hz; 0.01 rad/s doesn't.
     pub prefilter_hz: f32,
 }
 
