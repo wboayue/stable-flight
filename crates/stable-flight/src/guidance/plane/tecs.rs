@@ -17,8 +17,9 @@
 //!   airspeed demand at half the climb's energy rate over `V` (AP:502-521, 550-580). The
 //!   slewed height demand then runs through a 3 s lag (AP:577), whose slope is the height
 //!   rate's feedforward; the airspeed's rate demand is its error alone, as PX4's
-//!   (PX4:320-325), held to half the climb's energy rate for thrust and unheld for pitch. The lag starts at the aircraft's own climb rate (within the climb and sink
-//!   limits), as PX4's reference model does (PX4:212-218, 692-698). ArduPilot's starts level
+//!   (PX4:320-325), held to half the climb's energy rate for thrust and unheld for pitch. The
+//!   lag starts at the aircraft's own climb rate (within the climb and sink limits), as PX4's
+//!   reference model does (PX4:212-218, 692-698). ArduPilot's starts level
 //!   (AP:1187-1190): an aircraft entering plane flight already sinking then pitches up to stop
 //!   the sink, falls behind the demand, and sinks past the limit catching up (#503). Each
 //!   error over the time constant is a proportional term (AP:735). The airspeed demand stays
@@ -253,8 +254,8 @@ struct Energies {
     potential_error: f32,
     kinetic_error: f32,
     potential_rate_demand: f32,
-    /// Thrust's airspeed rate demand: the kinetic error over the time constant, within half
-    /// the climb's energy rate. Pitch takes the error unclamped.
+    /// The kinetic error over the time constant, unclamped: thrust holds it to half the climb's
+    /// energy rate, pitch takes it whole.
     kinetic_rate_demand: f32,
     potential_rate: f32,
     kinetic_rate: f32,
@@ -384,10 +385,7 @@ impl Tecs {
             kinetic_error,
             potential_rate_demand: (GRAVITY * height_rate_mps + potential_error / tau)
                 .clamp(config.least_energy_rate(), config.max_energy_rate()),
-            kinetic_rate_demand: clamp_symmetric(
-                kinetic_error / tau,
-                0.5 * config.max_energy_rate(),
-            ),
+            kinetic_rate_demand: kinetic_error / tau,
             speed_mps,
             potential_rate: GRAVITY * climb_mps,
             kinetic_rate: speed_mps * changing_accel_mps2,
@@ -409,8 +407,10 @@ impl Tecs {
         }
         let max_rate = config.max_energy_rate();
         let min_rate = -GRAVITY * config.min_sink_mps;
-        let rate_demand = (energies.potential_rate_demand + energies.kinetic_rate_demand)
-            .clamp(min_rate, max_rate);
+        // Speeding up takes no more than half the climb's energy rate.
+        let kinetic_rate_demand = clamp_symmetric(energies.kinetic_rate_demand, 0.5 * max_rate);
+        let rate_demand =
+            (energies.potential_rate_demand + kinetic_rate_demand).clamp(min_rate, max_rate);
         let rate = energies.potential_rate + energies.kinetic_rate;
 
         // A bank's extra drag, on the feedforward only (AP:764).
@@ -451,13 +451,12 @@ impl Tecs {
         };
         let kinetic_weight = speed_weight.min(1.0);
         let potential_weight = (2.0 - speed_weight).min(1.0);
-        // The airspeed's part is its error over the time constant, unclamped: only the balance
-        // as a whole stays within the climb and sink limits (AP:1036-1046). Held to half the
-        // climb's energy rate, as thrust's is, an underspeed transition asks 0.35 m/s² of the
-        // sim Alia and pitches up against its faster rotors and pusher (#505).
-        let kinetic_rate_demand = energies.kinetic_error / config.time_constant_s;
+        // The airspeed's part is unclamped: only the balance as a whole stays within the climb
+        // and sink limits (AP:1036-1046). Held to half the climb's energy rate, as thrust's is,
+        // an underspeed transition asks 0.35 m/s² of the sim Alia and pitches up against its
+        // faster rotors and pusher (#505).
         let rate_demand = (potential_weight * energies.potential_rate_demand
-            - kinetic_weight * kinetic_rate_demand)
+            - kinetic_weight * energies.kinetic_rate_demand)
             .clamp(config.least_energy_rate(), config.max_energy_rate());
         let rate =
             potential_weight * energies.potential_rate - kinetic_weight * energies.kinetic_rate;
