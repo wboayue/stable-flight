@@ -3,7 +3,7 @@
 use super::{Action, Batch, Input, Pairs, Verdict};
 use crate::controllers::Gains;
 use crate::tuning::StepSummary;
-use crate::tuning::autotune::{AutotuneAbort, KeepReason, Outcome, SearchPlan};
+use crate::tuning::autotune::{AutotuneAbort, KeepReason, Outcome, SearchPlan, with_i_per_p};
 
 #[cfg(test)]
 mod tests;
@@ -127,11 +127,7 @@ impl Search {
     /// The start gains with the searched term at `gain`, and I at the plan's
     /// [`i_per_p`](crate::tuning::autotune::SearchPlan::i_per_p) of P if it sets one.
     fn with(&self, gain: f32) -> Gains {
-        let gains = self.plan.term.with(self.start, gain);
-        Gains {
-            i: self.plan.i_per_p.map_or(gains.i, |ratio| ratio * gains.p),
-            ..gains
-        }
+        with_i_per_p(self.plan.term.with(self.start, gain), self.plan.i_per_p)
     }
 
     /// Judges the batch on the gain under test (`complete`: every step ran; else one
