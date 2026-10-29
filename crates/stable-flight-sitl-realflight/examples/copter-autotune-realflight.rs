@@ -325,18 +325,21 @@ fn main() -> ExitCode {
     let mut ticks = 0u32;
     let mut last_tick = Duration::ZERO;
     let mut inverted_since = None;
-    let mut crashed = false;
+    let mut stayed_inverted = false;
     let mut searched = Vec::new();
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop, stats| {
         // Inverted, in any phase (climb, tune, landing), the vehicle never touches down to end
         // the run.
-        inverted_since =
-            is_inverted(flight_loop.state()).then(|| inverted_since.unwrap_or(stats.elapsed));
+        if !is_inverted(flight_loop.state()) {
+            inverted_since = None;
+        } else if inverted_since.is_none() {
+            inverted_since = Some(stats.elapsed);
+        }
         if let Some(since) = inverted_since
             && stats.elapsed.saturating_sub(since) >= INVERTED_EXIT
         {
             error!("inverted for {} s: stopping", INVERTED_EXIT.as_secs());
-            crashed = true;
+            stayed_inverted = true;
             shutdown.trigger();
             return;
         }
@@ -411,16 +414,15 @@ fn main() -> ExitCode {
         }
     });
     // Dropping the flight loop on return hands RC back.
-    if crashed {
+    if stayed_inverted {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS
     }
 }
 
-/// Whether the vehicle is upside down: tilted past 90°, its body z axis (down when level)
-/// pointing above the horizon, i.e. that axis's NED-down component (the attitude matrix's
-/// bottom-right element, the cosine of the tilt) negative. False for a NaN attitude.
+/// Whether the vehicle is tilted past 90°: the cosine of the tilt (the attitude matrix's NED-down
+/// component of body z) is negative. False for a NaN attitude.
 fn is_inverted(state: &VehicleState) -> bool {
     state.attitude.to_rotation_matrix()[(2, 2)] < 0.0
 }

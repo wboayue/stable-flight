@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   down after a crash (#523).
 - `copter-autotune-realflight` exits with status 1, RC handed back, when the vehicle stays
   inverted for 3 s or the aircraft reset fails, so unattended runs don't wait on a crash (#523).
+- `channel-sweep-realflight` exits with status 1, RC handed back, when the aircraft reset fails,
+  instead of sweeping from wherever the last run left the aircraft (#523).
 
 - `copter-autotune-realflight` flags a freeze (`Autotune::note_stall`) on a tick over 50 ms
   after the last, not on the runner's resyncs, which at about 223 Hz come every few seconds

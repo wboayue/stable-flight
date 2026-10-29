@@ -31,7 +31,7 @@ use std::time::{Duration, Instant};
 
 use clap::Parser;
 use env_logger::Builder;
-use log::{info, warn};
+use log::{error, info, warn};
 
 use stable_flight_sitl::ShutdownSignal;
 use stable_flight_sitl_realflight::capture::RecordingBridge;
@@ -224,8 +224,14 @@ fn main() {
     bridge
         .disable_rc()
         .expect("failed to take control (disable RC)");
+    // A sweep from wherever the last run left the aircraft (upside down after a crash) measures
+    // nothing.
     if let Err(e) = bridge.reset_aircraft() {
-        warn!("failed to reset the aircraft: {e}");
+        error!("failed to reset the aircraft: {e}");
+        if let Err(e) = bridge.enable_rc() {
+            warn!("failed to hand RC back: {e}");
+        }
+        std::process::exit(1);
     }
 
     let shutdown = ShutdownSignal::install().expect("failed to install the Ctrl-C handler");

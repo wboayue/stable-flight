@@ -23,7 +23,8 @@ const WATCHDOG: Duration = Duration::from_secs(5);
 const BACKOFF_ELAPSED: Duration = Duration::from_millis(600);
 
 /// The proxy's reply to a call that returns nothing: a 4-byte big-endian length, then the
-/// postcard `Response { status: Success, payload: None }` (two variant indexes of 0).
+/// postcard `Response { status: Success, payload: None }` (two variant indexes of 0), as
+/// realflight-bridge's `bridge::wire` frames it (private there, so encoded by hand).
 const SUCCESS_FRAME: [u8; 6] = [0, 0, 0, 2, 0, 0];
 
 /// Accepts connections and holds them open. On the first, answers the first `answered`
@@ -60,11 +61,12 @@ fn stalled_proxy_times_out_instead_of_blocking_the_tick() {
     let attempts = Arc::clone(&reconnects);
     thread::spawn(move || {
         let host = address.clone();
-        let mut vehicle = RealFlightVehicle::new(RealFlightConfiguration {
+        let mut vehicle = RealFlightVehicle::try_new(RealFlightConfiguration {
             bridge: RealFlightRemoteBridge::new(&address).expect("connects"),
             mapping: ActuatorMapping::default(),
             body_rotation: UnitQuaternion::identity(),
         })
+        .expect("the proxy answers the startup calls (SUCCESS_FRAME matches the wire format)")
         .with_reconnect(move || {
             attempts.fetch_add(1, Ordering::SeqCst);
             RealFlightRemoteBridge::new(&host).map_err(BridgeError::from)
