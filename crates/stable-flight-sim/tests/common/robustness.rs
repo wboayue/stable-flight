@@ -9,7 +9,7 @@ use stable_flight::{ActuatorCommand, GRAVITY};
 use stable_flight_sim::airframes::Airframe;
 use stable_flight_sim::{GyroNoise, Perturbations, Vibration};
 
-/// Rate P and D multiplier for the high start: at ×3, `quad_x`'s rate steps clip.
+/// Rate gain multiplier for the high start: at ×3, `quad_x`'s rate steps clip.
 pub const HIGH_RATE_SCALE: f32 = 3.0;
 
 /// Gyro white noise RMS per axis, in rad/s.
@@ -56,7 +56,7 @@ pub enum Set {
 pub enum Start {
     /// Core's default gains on every tuned loop.
     Low,
-    /// The airframe's rate P and D × [`HIGH_RATE_SCALE`]; core's default angle gains.
+    /// The airframe's rate gains × [`HIGH_RATE_SCALE`]; core's default angle gains.
     High,
 }
 
@@ -127,8 +127,8 @@ pub fn starting(airframe: Airframe, start: Start) -> Airframe {
     super::retuned(airframe, |target, gains| match (start, target.is_rate()) {
         (Start::High, true) => Gains {
             p: gains.p * HIGH_RATE_SCALE,
+            i: gains.i * HIGH_RATE_SCALE,
             d: gains.d * HIGH_RATE_SCALE,
-            ..gains
         },
         _ => target.gains(&defaults),
     })

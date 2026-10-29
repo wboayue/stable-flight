@@ -126,6 +126,7 @@ fn d_plan() -> SearchPlan {
         },
         min: 0.001,
         max: 0.03,
+        i_per_p: None,
         ..SearchPlan::copter_rate()
     }
 }
@@ -295,6 +296,33 @@ fn a_start_that_never_passed_gives_way_to_the_run_start() {
     for (case, step, kept, outcome) in rows {
         let run = drive_from(d_plan(), run_start, step);
         check!(finished(&run) == (kept, outcome), "{case}");
+    }
+}
+
+/// A P search with `i_per_p` flies each candidate P with I at that share of it, and the
+/// result keeps it; without, every candidate keeps the start's I. The start flies as it is.
+#[test]
+fn candidates_carry_i_at_the_plans_share_of_p() {
+    // Overshoot grows with P, past the criterion's 0.05 above P 1.
+    let overshoot = |gains: Gains| Some(metrics(0.05 * gains.p, 0.0));
+    for i_per_p in [Some(0.2), None] {
+        let candidate_i = |p: f32| i_per_p.map_or(START.i, |ratio| ratio * p);
+        let plan = SearchPlan {
+            i_per_p,
+            ..SearchPlan::copter_rate()
+        };
+        let run = drive(plan, overshoot);
+        for gains in &run.flown {
+            let expected = if *gains == START {
+                START.i
+            } else {
+                candidate_i(gains.p)
+            };
+            check!(gains.i == expected, "{i_per_p:?}: {gains:?}");
+        }
+        let (kept, outcome) = finished(&run);
+        check!(outcome == Outcome::Tuned, "{i_per_p:?}");
+        check!(kept.i == candidate_i(kept.p), "{i_per_p:?}: {kept:?}");
     }
 }
 

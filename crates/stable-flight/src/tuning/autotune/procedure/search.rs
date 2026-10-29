@@ -124,9 +124,14 @@ impl Search {
         }
     }
 
-    /// The start gains with the searched term at `gain`.
+    /// The start gains with the searched term at `gain`, and I at the plan's
+    /// [`i_per_p`](crate::tuning::autotune::SearchPlan::i_per_p) of P if it sets one.
     fn with(&self, gain: f32) -> Gains {
-        self.plan.term.with(self.start, gain)
+        let gains = self.plan.term.with(self.start, gain);
+        Gains {
+            i: self.plan.i_per_p.map_or(gains.i, |ratio| ratio * gains.p),
+            ..gains
+        }
     }
 
     /// Judges the batch on the gain under test (`complete`: every step ran; else one

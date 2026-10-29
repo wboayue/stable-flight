@@ -3,7 +3,7 @@
 use core::fmt;
 
 use crate::controllers::{
-    Gains, InvalidConfig, check, check_limit, check_positive, check_unit_interval,
+    Gains, InvalidConfig, RATE_I_PER_P, check, check_limit, check_positive, check_unit_interval,
 };
 use crate::math::{DEG, euler_angles};
 use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
@@ -331,11 +331,15 @@ pub struct SearchPlan {
     pub max: f32,
     /// How much worse than the baseline the result may fly.
     pub acceptance: Acceptance,
+    /// With [`Term::P`] only: I at this share of each P tried, in 1/s, so every P carries the
+    /// I that holds the trim moment ([`RATE_I_PER_P`]); `None` keeps the start's I.
+    /// Non-negative and finite.
+    pub i_per_p: Option<f32>,
 }
 
 impl SearchPlan {
-    /// The copter defaults for a rate loop's P, with D and I as they start (a design sets
-    /// them, [`StagePlan::copter_design_search`]): [`Criterion::Overshoot`] at ArduPilot's default aggressiveness (0.1: overshoot 0.05,
+    /// The copter defaults for a rate loop's P, with I at [`RATE_I_PER_P`] of it and D as it
+    /// starts (a design sets it, [`StagePlan::copter_design_search`]): [`Criterion::Overshoot`] at ArduPilot's default aggressiveness (0.1: overshoot 0.05,
     /// bounce-back 0.1) in [0.1, 3]. Steps of [`COPTER_RATE_STEP`], two pairs for the baseline
     /// and the verify; a bracket point passes on two pairs in a row; brackets of `× 1.3`
     /// bisected to 10%, a 0.9 margin. Steps clip for up to 10 ticks ([`StepTestPlan::copter`]):
@@ -372,6 +376,7 @@ impl SearchPlan {
             min: 0.1,
             max: 3.0,
             acceptance: Acceptance::default(),
+            i_per_p: Some(RATE_I_PER_P),
         }
     }
 
@@ -403,6 +408,7 @@ impl SearchPlan {
             },
             min: COPTER_ANGLE_P_MIN,
             max: COPTER_ANGLE_P_MAX,
+            i_per_p: None,
             ..Self::copter_rate()
         }
     }
@@ -432,8 +438,12 @@ impl SearchPlan {
     }
 
     /// Checks the steps ([`StepTestPlan::validate`]), the criterion, the bracket's factors and
-    /// bounds, and the acceptance.
+    /// bounds, the acceptance, and `i_per_p`.
     pub fn validate(&self) -> Result<(), InvalidConfig> {
+        if let Some(i_per_p) = self.i_per_p {
+            check("i_per_p", self.term == Term::P, "None unless term is P")?;
+            check_limit("i_per_p", i_per_p)?;
+        }
         self.test.validate()?;
         self.criterion.validate()?;
         check("confirm", self.confirm >= 1, "at least 1")?;
@@ -613,9 +623,10 @@ fn no_worse(base: Option<f32>, value: Option<f32>, limit: impl FnOnce(f32) -> f3
 ///    runs on the angle loop above it) and fits a [`RateModel`]. The fit starts at the settle
 ///    timeout even when the vehicle hasn't settled: a loop that rings on its start gains only
 ///    adds excitation (#356). A slow host may stop it 3 times in a row before the stage fails.
-/// 2. **Design:** a rate loop's gains by [`design_rate`]; an angle loop's P by
-///    [`design_angle_p`] on the rate loop's committed gains, its I and D kept. A fit the design
-///    can't use runs again; the third fails the stage ([`AutotuneAbort::Design`]).
+/// 2. **Design:** a rate loop's P and D by [`design_rate`], its I at `rate_i_per_p` of P; an
+///    angle loop's P by [`design_angle_p`] on the rate loop's committed gains, its I and D
+///    kept. A fit the design can't use runs again; the third fails the stage
+///    ([`AutotuneAbort::Design`]).
 /// 3. **Hold:** the design flies until the vehicle holds the settle about the loop's axis on
 ///    it. One that doesn't within the settle timeout ([`AutotuneEvent::Unsettled`]), or
 ///    breaches the envelope, goes back and counts as an unusable fit. The design flies from
@@ -627,10 +638,14 @@ pub struct DesignPlan {
     pub identify: IdentifyConfig,
     /// The design's margins and angle P range.
     pub design: LoopShapingConfig,
+    /// A rate design's I at this share of its P, in 1/s ([`SearchPlan::i_per_p`]); `None`
+    /// keeps the start's I. Non-negative and finite.
+    pub rate_i_per_p: Option<f32>,
 }
 
 impl DesignPlan {
-    /// The copter defaults: [`COPTER_IDENTIFY`] and [`COPTER_LOOP_SHAPING`].
+    /// The copter defaults: [`COPTER_IDENTIFY`], [`COPTER_LOOP_SHAPING`], and rate I at
+    /// [`RATE_I_PER_P`].
     ///
     /// # Examples
     ///
@@ -643,12 +658,16 @@ impl DesignPlan {
         Self {
             identify: COPTER_IDENTIFY,
             design: COPTER_LOOP_SHAPING,
+            rate_i_per_p: Some(RATE_I_PER_P),
         }
     }
 
-    /// Checks the fit ([`IdentifyConfig::validate`]) and the design
-    /// ([`LoopShapingConfig::validate`]).
+    /// Checks the fit ([`IdentifyConfig::validate`]), the design
+    /// ([`LoopShapingConfig::validate`]), and `rate_i_per_p`.
     pub fn validate(&self) -> Result<(), InvalidConfig> {
+        if let Some(i_per_p) = self.rate_i_per_p {
+            check_limit("rate_i_per_p", i_per_p)?;
+        }
         self.identify.validate()?;
         self.design.validate()
     }
@@ -662,7 +681,10 @@ impl DesignPlan {
         inner: Option<Gains>,
     ) -> Result<Gains, DesignError> {
         match inner {
-            None => design_rate(model, start, &self.design),
+            None => design_rate(model, start, &self.design).map(|gains| Gains {
+                i: self.rate_i_per_p.map_or(gains.i, |ratio| ratio * gains.p),
+                ..gains
+            }),
             Some(rate) => {
                 design_angle_p(model, rate, start, &self.design).map(|p| Gains { p, ..start })
             }

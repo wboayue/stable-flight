@@ -721,8 +721,15 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   * An envelope breach while a candidate flies fails that candidate, not the run: the committed
     gains go back in and get `Envelope::recovery_s` to recover.
 * **Sequence:** innermost first, so each stage flies on the gains the earlier ones found. A stage
-  tunes only its own terms; the rest keep their gains. No stage tunes the rate loops' I, which
-  holds trim rather than shaping the response. Yaw rate and heading aren't tuned
+  tunes only its own terms; the rest keep their gains. No stage searches the rate loops' I,
+  which holds trim rather than shaping the response: it follows P, at `RATE_I_PER_P` (0.2/s)
+  of every roll and pitch rate P a copter search or design sets (`SearchPlan::i_per_p`,
+  `DesignPlan::rate_i_per_p`), as ArduPilot's autotune sets I from P
+  (`AUTOTUNE_PI_RATIO_FINAL`, 1.0). On the sim robustness table 1.0 failed most rows, 0.1–0.3
+  passed every clean and delayed row, and 0.2 the most trim rows; switching between a low I
+  during probes and the final I between them (ArduPilot's `AUTOTUNE_PI_RATIO_FOR_TESTING`)
+  bumped the I term at each switch and lost the trim rows (#374). The large-aircraft plan keeps
+  the start's I: on the Alia (no rate D) it overshot the rate steps by 10%. Yaw rate and heading aren't tuned
   ([#296](https://github.com/wboayue/stable-flight/issues/296)). Before each probe the vehicle must hold level and still (`Envelope::settle`): roll
   and pitch within the tilt, their rates within the rate. Yaw rate is left out: the yaw loop
   isn't tuned, and on `racer` with 25 ms of delay it rings at ±0.18 rad/s on its start gains
@@ -776,9 +783,11 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     10 ms, at 25 ms).
   * *Design* (`tuning::design_rate`, `design_angle_p`, `COPTER_LOOP_SHAPING`): rate D/P at the
     fitted lag, so the PD's zero cancels the motor lag; rate P for a 65° phase margin on the
-    model's frequency response, its delay included; the start's rate I kept; angle P the
+    model's frequency response, its delay included; rate I at `rate_i_per_p` of P; angle P the
     largest in the angle search's range that keeps a 65° margin on the angle loop around the
-    designed rate loop, less 10%. A fitted integrator past 1 (an unstable pole from a ringing
+    designed rate loop, less 10%. The angle loop's model leaves the rate I out: its zero sits
+    about 45× below the angle crossover, and around a fit with a pole just outside the unit
+    circle it flipped the design between P 9 and none on near-identical fits (#374). A fitted integrator past 1 (an unstable pole from a ringing
     start, whose phase meets no crossover) is held at 1. It met the step spec on every clean,
     10 ms, and 25 ms row of `quad_x`, `heavy_quad`, and `racer`, from both starts (60° and 55°
     each missed on some). Angle P by margin rather than by model steps: both put it at the
@@ -832,9 +841,11 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   * Open: gyro noise biases the closed-loop fit, and neither prefiltering with decimation nor
     instrumental variables (tried in a scratch prototype, not committed) fixed it without the
     loop's own gyro filter
-    ([#373](https://github.com/wboayue/stable-flight/issues/373)); CG offset and weak motor
-    rows miss as the search's do, on the rate I
-    ([#374](https://github.com/wboayue/stable-flight/issues/374)). The designed D is 3–5× the
+    ([#373](https://github.com/wboayue/stable-flight/issues/373)). Of the trim rows, the low
+    starts with a CG offset tilt away from the settle (core's default rate I holds at most 0.03
+    of moment within its `max_integral`), `heavy_quad`'s rate searches keep the design as
+    flying better than their result, and `racer`'s angle steps against the CG offset clip a
+    tick past the allowance ([#374](https://github.com/wboayue/stable-flight/issues/374)). The designed D is 3–5× the
     airframes' (`quad_x` 0.139 against 0.029), so on hardware it waits on #373's filter;
     RealFlight's state carries no sensor noise. With that D the rate search ends at its
     maximum (P 2.7, 0.9 × 3) on `quad_x` and `heavy_quad`, rising in 136 and 124 ms against
