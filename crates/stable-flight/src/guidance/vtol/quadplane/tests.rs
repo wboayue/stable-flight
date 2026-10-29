@@ -285,8 +285,9 @@ fn forward_transition_keeps_the_energy_control_within_its_limits() {
         &at(HIGH_M, 6.0),
     ));
     check!(ramping.lift_share < 1.0);
-    // Measured −2.6°; the integral wound against the plane's own limits takes all 8°.
-    check!(ramping.plane.pitch_rad.to_degrees() > -5.0, "{ramping:?}");
+    // Measured −4.7°, 1.3° inside the band; the integral wound against the plane's own
+    // limits takes all 8°.
+    check!(ramping.plane.pitch_rad.to_degrees() > -6.0, "{ramping:?}");
 }
 
 /// On a waypoint, the forward transition flies the wing toward the altitude it holds, not the

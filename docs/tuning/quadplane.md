@@ -162,7 +162,8 @@ thrust and one at least, or read them off a fitted model (the Alia's
   it clears back at `PGUID_ASPD_MIN`.
 - **Sinks past `PGUID_SINK_MAX` on a descending leg:** the pitch integral acts on the rate
   error, so it pulls the nose up once the sink passes the limit. The sim Alia sinks 4.5 m/s
-  on a 100 m descent at 5 m/s past its entry airspeed
+  on a 100 m descent at 5 m/s past its entry airspeed, but the X-Plane Alia peaks at
+  5.6–5.7 m/s on `flights/alia_descent_lap.csv`, and no knob is measured to lower it yet
   ([#505](https://github.com/wboayue/stable-flight/issues/505)).
 - **Forward transition times out short of `TRAN_ASPD_MIN`:** the plane guidance already
   pitches for airspeed at the transition's limits (3°, 8° on the ramp), so what's left is
