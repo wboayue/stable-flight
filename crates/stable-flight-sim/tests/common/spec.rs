@@ -198,7 +198,7 @@ pub fn fastest(
 ) -> Option<(f32, Gains)> {
     let mut best: Option<(f32, Gains)> = None;
     for gains in candidates {
-        let Some(rise_s) = rise_s(&flying(plant, target, gains), target) else {
+        let Some(rise_s) = rise_s(&plant.flying(target, gains), target) else {
             continue;
         };
         if best.is_none_or(|(best_s, _)| rise_s < best_s) {
@@ -206,11 +206,4 @@ pub fn fastest(
         }
     }
     best
-}
-
-/// `plant` with `target` flying `gains`.
-pub fn flying(plant: &Plant, target: TunedLoop, gains: Gains) -> Plant {
-    let mut flown = *plant;
-    *target.gains_mut(&mut flown.airframe.stabilizer) = gains;
-    flown
 }

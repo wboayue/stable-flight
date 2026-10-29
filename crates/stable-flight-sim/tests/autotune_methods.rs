@@ -182,14 +182,7 @@ fn plant(airframe: Airframe, set: Set, start: Start) -> Plant {
 
 /// Spec misses of `config` flown on `plant`'s airframe and perturbations.
 fn misses(plant: &Plant, config: CopterStabilizerConfig, loops: &[TunedLoop]) -> usize {
-    let tuned = Plant {
-        airframe: Airframe {
-            stabilizer: config,
-            ..plant.airframe
-        },
-        ..*plant
-    };
-    spec::misses(&tuned, loops).len()
+    spec::misses(&plant.with_config(config), loops).len()
 }
 
 /// Identified models, then each design's gains and spec misses, per row.
@@ -540,13 +533,7 @@ fn best_rate_pairs() {
         );
         let tuned = run.config;
         let tuned_gains = tuned.body_rate.roll_gains;
-        let flown = Plant {
-            airframe: Airframe {
-                stabilizer: tuned,
-                ..clean.airframe
-            },
-            ..clean
-        };
+        let flown = clean.with_config(tuned);
         let tuned_rise_s = spec::rise_s(&flown, TunedLoop::RollRate);
         let pairs = swept_p().flat_map(|p| {
             swept_d().map(move |d| Gains {

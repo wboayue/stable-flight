@@ -134,7 +134,8 @@ fn a_design_that_rings_goes_back_to_its_start() {
 }
 
 /// How much slower than the fastest pair the design search's rate loop may rise, as a
-/// fraction of the fastest pair's rise (#531).
+/// fraction of the fastest pair's rise (#531's target). Measured: +8% on `quad_x`, +9% on
+/// `heavy_quad`, each one 4 ms tick of rise.
 const MAX_RISE_EXCESS: f32 = 0.25;
 
 /// Multipliers on the tuned rate P and D, each, for the pairs the tuned loop is raced
@@ -146,6 +147,7 @@ fn pair_scales() -> impl Iterator<Item = f32> + Clone {
 
 /// Autotunes `airframe` from core's default gains on the clean plant and checks its roll
 /// rate loop rises within [`MAX_RISE_EXCESS`] of the fastest pair whose steps meet the spec.
+/// Pitch rate isn't checked: it shares the fit and the design, and tunes to the same gains.
 fn rises_near_the_fastest_rate_pair(airframe: Airframe) {
     let clean = Plant::clean(common::robustness::starting(airframe, Start::Low));
     let run = common::autotune(
@@ -153,13 +155,7 @@ fn rises_near_the_fastest_rate_pair(airframe: Airframe) {
         &StagePlan::copter_design_search(),
         AUTOTUNE_TIMEOUT_S,
     );
-    let tuned = Plant {
-        airframe: Airframe {
-            stabilizer: run.config,
-            ..clean.airframe
-        },
-        ..clean
-    };
+    let tuned = clean.with_config(run.config);
     let target = TunedLoop::RollRate;
     let tuned_gains = target.gains(&run.config);
     let pairs = pair_scales().flat_map(|p_scale| {

@@ -112,6 +112,20 @@ impl Plant {
         }
     }
 
+    /// This plant with its airframe flying `config`.
+    pub fn with_config(&self, config: CopterStabilizerConfig) -> Self {
+        let mut plant = *self;
+        plant.airframe.stabilizer = config;
+        plant
+    }
+
+    /// This plant with `target` flying `gains`, the rest of its config unchanged.
+    pub fn flying(&self, target: TunedLoop, gains: Gains) -> Self {
+        let mut plant = *self;
+        *target.gains_mut(&mut plant.airframe.stabilizer) = gains;
+        plant
+    }
+
     /// The vehicle, at rest on the ground at the origin.
     pub fn vehicle(&self) -> SimCopter {
         SimCopter::new(self.airframe.model, &self.airframe.mixer)

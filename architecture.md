@@ -876,10 +876,10 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     starts with a CG offset tilt away from the settle (core's default rate I holds at most 0.03
     of moment within its `max_integral`), `heavy_quad`'s rate searches keep the design as
     flying better than their result, and `racer`'s angle steps against the CG offset clip a
-    tick past the allowance ([#374](https://github.com/wboayue/stable-flight/issues/374)). On `racer`, the gyro
-    filter's lag is a large share of the loop's: its rate search stops at P 0.55 with the
-    design's D, rising in 28 ms against the 20 ms of the fastest pair that meets the spec
-    (`autotune`'s `racer_design_search_rises_near_the_fastest_rate_pair`,
+    tick past the allowance ([#374](https://github.com/wboayue/stable-flight/issues/374)).
+    On `racer`, the gyro filter's lag is a large share of the loop's: its rate search stops
+    at P 0.55 with the design's D, rising in 28 ms against the 20 ms of the fastest pair that
+    meets the spec (`autotune`'s `racer_design_search_rises_near_the_fastest_rate_pair`,
     [#552](https://github.com/wboayue/stable-flight/issues/552)).
 
 ## Real-Time Loop Management
