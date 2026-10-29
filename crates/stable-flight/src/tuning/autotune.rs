@@ -7,7 +7,7 @@ use crate::controllers::{
     Gains, InvalidConfig, RATE_I_PER_P, check, check_limit, check_positive, check_unit_interval,
 };
 use crate::math::{DEG, euler_angles};
-use crate::stabilizers::copter::{CopterStabilizerConfig, DEFAULT_GYRO_CUTOFF_HZ, TunedLoop};
+use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use crate::{Configurable, FlightLoop, Vec3, VehicleState};
 
 use super::{
@@ -154,14 +154,7 @@ pub const COPTER_IDENTIFY: IdentifyConfig = IdentifyConfig {
     amplitude: 4.0 * DEG,
     duration_s: 3.0,
     washout_tc_s: 0.2,
-    prefilter_hz: COPTER_PREFILTER_HZ,
 };
-
-/// [`COPTER_IDENTIFY`]'s prefilter, in Hz: the default gyro cutoff, where PX4's autotune puts
-/// its own. On the sim, four poles at 40 Hz passed 28 of 30 noise-row runs (5 noise seeds) and
-/// fit every airframe's clean lag within 5%; at 20 Hz the racer's fits from a ringing start
-/// missed it by 69%, and two poles at 40 Hz passed 6 of 30 noise runs (#373).
-const COPTER_PREFILTER_HZ: f32 = DEFAULT_GYRO_CUTOFF_HZ;
 
 /// Share of a search's largest pass it keeps, and of loop shaping's largest angle P: 10% off,
 /// as ArduPilot backs off its autotune result.

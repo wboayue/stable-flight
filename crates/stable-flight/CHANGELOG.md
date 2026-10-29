@@ -15,9 +15,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `CopterStabilizerConfig::gyro_cutoff_hz` (param `STAB_GYRO_FLT`, default 40 Hz,
   `DEFAULT_GYRO_CUTOFF_HZ`): the rate loop flies the body rates through a two-pole low-pass;
   0 turns it off (#373).
-- **Breaking:** `IdentifyConfig::prefilter_hz` (four poles, `PREFILTER_STAGES`; 40 Hz in
-  `COPTER_IDENTIFY`): the fit low-passes its rate and moment alike, so gyro noise and
-  vibration stay out of its rate terms (#373).
 - **Breaking:** `design_rate` and `design_angle_p` take the gyro cutoff and model the filter in
   the rate loop, and the rate loop's D on its measurement; a fit whose moment pushes the axis
   the wrong way is `DesignError::NoCrossover` (#373).

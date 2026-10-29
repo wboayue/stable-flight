@@ -92,8 +92,6 @@ Code comments and docs link here instead of redefining a term.
 - **Low-pass filter:** smooths a noisy signal by attenuating fast changes, at the cost of lag;
   its cutoff frequency divides what passes from what's cut, and more poles cut harder past it.
   The copter's rate loop flies its gyro rates through one (the gyro filter).
-- **Prefilter:** the same low-pass on a fit's input and output, which keeps noise out of the fit
-  without changing the model between them.
 - **High-pass filter:** the signal less its low-pass: passes changes, drops what holds
   steady. The TECS high-passes the airspeed rate so a steady acceleration isn't a rate
   error.

@@ -410,7 +410,7 @@ impl CopterStabilizer {
         let error_for = |angles: &Vec3| attitude_error(attitude, angles.x, angles.y, angles.z);
         let mut error = error_for(&desired);
         let probed = desired;
-        // The raw rates: the identify probe prefilters rate and moment alike itself.
+        // The raw rates: the identify fit models the airframe, without the gyro filter's lag.
         self.probe_attitude(
             dt,
             &mut desired,
