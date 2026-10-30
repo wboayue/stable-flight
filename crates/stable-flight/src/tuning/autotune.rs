@@ -244,9 +244,9 @@ pub struct StepTestPlan {
 /// 0.04). A step's first ticks ask for more than full moment until the loop catches up: a
 /// real limit, not a bad response. Above P 1, a 1 rad/s rate step does (tuned rate loops reach
 /// P 1.3 on QuadCopterX); so does a 5° angle step at the tuned angle P 9, for 5 ticks on the
-/// sim's `quad_x` and 6–10 under its trim rows. With 5 ticks for the angle steps, those trim
-/// rows failed, and in RealFlight angle searches kept only the start after points whose every
-/// step clipped (#310).
+/// sim's `quad_x` and 6–10 under its trim rows. A 5-tick allowance fails those rows, and in
+/// RealFlight left 3 of 16 angle searches on their start after points whose every step
+/// clipped (#310). Heading steps share it as one rule; it isn't measured on them.
 pub const COPTER_MAX_SATURATED_S: f32 = 0.042;
 
 impl StepTestPlan {

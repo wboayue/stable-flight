@@ -158,13 +158,8 @@ fn step_test_and_design_fail_on_an_abort() {
 /// tick is too many. An angle step at the tuned angle P clips for its first ticks (#310).
 #[test]
 fn clipped_ticks_within_the_allowance_stay_valid() {
-    // (loop, ticks allowed)
-    let cases = [
-        (TunedLoop::RollRate, 10),
-        (TunedLoop::Roll, 10),
-        (TunedLoop::Heading, 10),
-    ];
-    for (target, ticks) in cases {
+    let ticks = 10;
+    for target in [TunedLoop::RollRate, TunedLoop::Roll, TunedLoop::Heading] {
         let plan = StepTestPlan::copter(target);
         let clipped = |ticks| (0..ticks).fold(0.0_f32, |sum, _| sum + 0.004);
         let up = Action::probe(ProbeConfig::Step(plan.step));
