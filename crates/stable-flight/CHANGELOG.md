@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `StagePlan::copter_design_search` searches yaw rate as its ninth stage
+  (`SearchPlan::copter_yaw_rate`: P from the start, I a fifth of P, D kept, 0.5 rad/s steps,
+  `COPTER_YAW_RATE_STEP`), and `StepTestPlan::copter(YawRate)` steps 0.5 rad/s. A yaw stage
+  settles on the yaw rate too; other stages still leave it out. `MAX_STAGES` is 14 (#296).
+- **Breaking:** `BodyRateControllerConfig::yaw_max_integral` (param `STAB_RATE_IMAX_Z`,
+  default 5 rad) limits the yaw rate integral; `max_integral` limits roll and pitch only. A
+  yaw I of a fifth of P holds a large yaw trim (0.40 on QuadCopterX from P 0.5) (#296).
 - **Breaking:** copter step tests allow 10 clipped ticks on every loop
   (`COPTER_MAX_SATURATED_S`, 0.042 s; angle loops 0.022 s before), and `StepTestPlan::copter`
   steps roll and pitch by 5° instead of 10°: the angle step test measures a tuned angle loop

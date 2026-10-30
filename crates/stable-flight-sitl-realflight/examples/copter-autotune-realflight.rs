@@ -1,8 +1,10 @@
 //! Autotunes a multirotor in RealFlight: climbs to the hover script's waypoint,
-//! tunes roll and pitch rate, then roll and pitch angle, by design search, lands, and disarms
-//! (`StagePlan::copter_design_search`, `architecture.md#autotune`). Each loop's axis is fitted
-//! from a 3 s square wave on its angle loop (the fit logged: delay, motor lag, acceleration)
-//! and its gains designed from the fit; once every loop is designed, each loop's P is searched
+//! tunes roll and pitch rate, then roll and pitch angle, by design search, then yaw rate by a
+//! search from its start gains, lands, and disarms
+//! (`StagePlan::copter_design_search`, `architecture.md#autotune`). Each roll and pitch loop's
+//! axis is fitted from a 3 s square wave on its angle loop (the fit logged: delay, motor lag,
+//! acceleration) and its gains designed from the fit; once every loop is designed, each
+//! loop's P is searched
 //! by pairs of steps from its design, verified, and kept only if no worse than the design
 //! (each judgment logged with its steps); a design whose own steps miss the criterion gives
 //! way to the loop's start gains. On completion it logs baseline vs verify per loop and
@@ -13,7 +15,8 @@
 //! `--rate-p-scale` starts from deliberately bad rate gains (e.g. `0.1` or `10`), to check the
 //! tune recovers from them.
 //!
-//! `--step-test` appends step tests of roll and pitch rate and angle: alternating steps,
+//! `--step-test` appends step tests of roll, pitch, and yaw rate and roll and pitch angle:
+//! alternating steps,
 //! each one's response logged at `debug`, and a summary per loop at `info` (overshoot, rise,
 //! settling, bounce-back: mean and range). `--stages none --step-test` measures the hand tune.
 //! A freeze (a tick over 50 ms after
@@ -107,14 +110,14 @@ const INVERTED_EXIT: Duration = Duration::from_secs(3);
 /// How often a running stage's status is logged at `debug`, in ticks (1 s).
 const STATUS_EVERY_TICKS: u32 = 250;
 /// The rate loops (the others are angle and heading loops); `--rate-p-scale` scales all
-/// three, though the default sequence leaves yaw rate out.
+/// three.
 const RATE_LOOPS: [TunedLoop; 3] = [
     TunedLoop::RollRate,
     TunedLoop::PitchRate,
     TunedLoop::YawRate,
 ];
 
-/// Autotune of a multirotor's roll and pitch loops in RealFlight.
+/// Autotune of a multirotor's rate and angle loops in RealFlight.
 #[derive(Parser)]
 struct Args {
     /// Waypoint CSV to climb to and hover at (columns: x,y,altitude,cruise_speed); defaults to
@@ -138,7 +141,8 @@ struct Args {
     #[arg(long, value_enum, default_value_t = Stages::DesignSearch)]
     stages: Stages,
 
-    /// After tuning, step-tests roll and pitch rate and angle and logs their responses.
+    /// After tuning, step-tests roll, pitch, and yaw rate and roll and pitch angle and logs
+    /// their responses.
     #[arg(long)]
     step_test: bool,
 
@@ -283,9 +287,10 @@ enum Stages {
 }
 
 /// The loops `--step-test` measures, in order.
-const STEP_TESTED: [TunedLoop; 4] = [
+const STEP_TESTED: [TunedLoop; 5] = [
     TunedLoop::RollRate,
     TunedLoop::PitchRate,
+    TunedLoop::YawRate,
     TunedLoop::Roll,
     TunedLoop::Pitch,
 ];
