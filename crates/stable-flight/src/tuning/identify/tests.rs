@@ -308,13 +308,14 @@ fn validate_checks_each_field() {
     }
 }
 
-/// The lag exists only for a real pole in (0, 1): (pole, lag).
+/// A pole in (0, 1) is a lag; one at or below 0 a lag under a tick, so 0 (#563); one at or
+/// past 1 none: (pole, lag).
 #[test]
-fn lag_needs_a_pole_inside_the_unit_interval() {
+fn lag_needs_a_pole_below_one() {
     let rows = [
         (0.9, Some(-DT / 0.9f32.ln())),
-        (0.0, None),
-        (-0.3, None),
+        (0.0, Some(0.0)),
+        (-0.2, Some(0.0)),
         (1.0, None),
         (1.2, None),
     ];

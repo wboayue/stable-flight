@@ -290,7 +290,7 @@ fn design_fits_again_after_an_unusable_fit_or_design() {
     let identify = Action::probe(ProbeConfig::Identify(plan.identify));
     let no_lag = fitted(
         RateModel {
-            rate_weights: [1.0, 0.0],
+            rate_weights: [2.2, -1.2],
             ..QUAD_X_FIT
         },
         false,
@@ -390,7 +390,7 @@ fn design_counts_only_stalls_in_a_row() {
     let plan = DesignPlan::copter();
     let identify = Action::probe(ProbeConfig::Identify(plan.identify));
     let no_lag = RateModel {
-        rate_weights: [1.0, 0.0],
+        rate_weights: [2.2, -1.2],
         ..QUAD_X_FIT
     };
     let mut procedure = Procedure::new(Method::Design(plan));
