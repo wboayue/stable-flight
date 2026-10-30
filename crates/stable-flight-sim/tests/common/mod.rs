@@ -12,6 +12,7 @@ pub mod robustness;
 pub mod spec;
 pub mod tailsitter;
 pub mod transition;
+pub mod yaw;
 
 use std::time::Duration;
 
