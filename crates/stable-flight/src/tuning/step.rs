@@ -371,6 +371,12 @@ pub struct StepSummary {
     pub bounce_back: Stat,
     /// [`StepMetrics::final_value`].
     pub final_value: Stat,
+    /// How far each step's peak went past where it ended, or past the step when it ended short
+    /// of it: `peak − max(1, final_value)`, or 0. A step held past the step by a disturbance,
+    /// without ringing, reads 0 here though its [`overshoot`](StepMetrics::overshoot) reads how
+    /// far past it ended (#564). Meaningful when the window outlasts the rise, so the end is
+    /// where the response settled.
+    pub overshoot_past_end: Stat,
     /// Steps that never reached 90%.
     pub not_risen: usize,
     /// Steps that ended outside the settle band.
@@ -395,6 +401,9 @@ impl StepSummary {
             None => self.not_settled += 1,
         }
         self.bounce_back.add(metrics.bounce_back);
+        let settled_at = metrics.final_value.max(1.0);
+        self.overshoot_past_end
+            .add((metrics.peak - settled_at).max(0.0));
         self.final_value.add(metrics.final_value);
     }
 

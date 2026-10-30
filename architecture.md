@@ -733,7 +733,16 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     ticks rather than treating clipping as failure.
   * Angle: P searched on overshoot and bounce-back
     ≤ 0.05 (ArduPilot's angle-P limit); bounce-back counts though a disturbance holds the angle
-    short of the step (about 8% on QuadCopterX).
+    short of the step (about 8% on QuadCopterX). Overshoot counts from where each step ends
+    (`Criterion::Overshoot::settled_past`), and no step may end past the settle band (0.1),
+    so a disturbance holding the angle past the step doesn't count either. ArduPilot judges its
+    angle-P peak against the target (`AC_AutoTune_Multi::updating_angle_p_up`). Judged that way,
+    every Titan Cobra pitch P from 6.5 down to 1.7 failed: each ended 5–7% past the step without
+    ringing (bounce-back 0.00–0.01). The search walked P down to 1.3, the position loop then
+    swung pitch ±15°, and the next stage timed out (#564). Rate steps keep judging from the
+    step: their 0.25 s window can end mid-rise (yaw rises in about 0.6 s), where the end isn't a
+    settled value, and judged from it the sim's yaw search took a P that overshot its 1 s
+    test.
   * Yaw rate (`SearchPlan::copter_yaw_rate`): searched from the start, without a design, as
     rate is but on 0.5 rad/s steps, D 0 (ArduPilot's `ATC_RAT_YAW_D` and PX4's `MC_YAWRATE_D`
     default to 0). Prop drag gives a quad little yaw authority, so 1 rad/s steps clip at any P

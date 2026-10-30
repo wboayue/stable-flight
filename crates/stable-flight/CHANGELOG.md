@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `Criterion::Overshoot` has a `settled_past: Option<f32>`. When it's set,
+  overshoot counts from where each step ended (`StepSummary::overshoot_past_end`), and no step
+  may end more than that past the step. `SearchPlan::copter_angle` sets it to its settle band
+  (0.1), so a disturbance holding an angle past its step, without ringing, no longer walks the
+  angle search's P down: it walked the Titan Cobra's pitch P to 1.3 in RealFlight (#564). The
+  rate searches keep judging from the step (`None`).
 - **Breaking:** `StagePlan::copter_design_search` searches yaw rate as its ninth stage
   (`SearchPlan::copter_yaw_rate`: P from the start, I at `YAW_RATE_I_PER_P` of P, D kept,
   0.5 rad/s steps watched 0.25 s, `COPTER_YAW_RATE_STEP`), and `StepTestPlan::copter(YawRate)`
@@ -72,6 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   aborts across it runs again.
 
 ### Added
+
+- `StepSummary::overshoot_past_end`: each step's peak past where it ended, or past the step
+  when it ended short (#564).
 
 - `Autotune::set_state_stale`: while the host holds a stale vehicle state (a simulator link
   down), every tick is a freeze, probes stop as stalled, and settles and holds wait; past

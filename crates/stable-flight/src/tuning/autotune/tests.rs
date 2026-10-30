@@ -1438,6 +1438,7 @@ fn search_plan_validation() {
                 criterion: Criterion::Overshoot {
                     max_overshoot: -0.1,
                     max_bounce_back: 0.1,
+                    settled_past: None,
                 },
                 ..good
             },
@@ -1448,6 +1449,7 @@ fn search_plan_validation() {
                 criterion: Criterion::Overshoot {
                     max_overshoot: 0.05,
                     max_bounce_back: f32::NAN,
+                    settled_past: None,
                 },
                 ..good
             },
@@ -1514,6 +1516,52 @@ fn search_plan_validation() {
     };
     let error = Autotune::new(&[stage], Envelope::default()).expect_err("bad factor");
     check!(error.section == Some("plan.search"));
+}
+
+/// The angle criterion judges overshoot from where each step ended, and fails a step that
+/// ends further past the step than its settle band; the rate criterion judges from the step
+/// (#564).
+#[test]
+fn the_angle_criterion_judges_overshoot_from_where_the_step_ended() {
+    let angle = SearchPlan::copter_angle().criterion;
+    let rate = SearchPlan::copter_rate().criterion;
+    // (case, each step's peak and final value, angle passes, rate passes)
+    type Row = (&'static str, &'static [(f32, f32)], bool, bool);
+    let rows: [Row; 4] = [
+        (
+            "held past, no ringing",
+            &[(1.06, 1.06), (1.06, 1.06)],
+            true,
+            false,
+        ),
+        (
+            "rings past where it ends",
+            &[(1.1, 1.0), (1.1, 1.0)],
+            false,
+            false,
+        ),
+        (
+            "ends past the band",
+            &[(1.12, 1.12), (1.0, 1.0)],
+            false,
+            false,
+        ),
+        ("on the step", &[(1.02, 1.0), (1.0, 1.0)], true, true),
+    ];
+    for (case, steps, angle_passes, rate_passes) in rows {
+        let mut summary = StepSummary::default();
+        for &(peak, final_value) in steps {
+            summary.add(&StepMetrics {
+                amplitude: 1.0,
+                peak,
+                overshoot: (peak - 1.0).max(0.0),
+                final_value,
+                ..Default::default()
+            });
+        }
+        check!(angle.passes(&summary) == angle_passes, "{case}: angle");
+        check!(rate.passes(&summary) == rate_passes, "{case}: rate");
+    }
 }
 
 /// The criterion passes on its limits' means; acceptance compares the verify's means with the

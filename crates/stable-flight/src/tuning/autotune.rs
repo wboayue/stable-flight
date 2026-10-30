@@ -430,6 +430,7 @@ impl SearchPlan {
             criterion: Criterion::Overshoot {
                 max_overshoot: 0.05,
                 max_bounce_back: 0.1,
+                settled_past: None,
             },
             test: StepTestPlan {
                 pairs: 2,
@@ -451,8 +452,11 @@ impl SearchPlan {
     /// QuadCopterX); overshoot and bounce-back at most 0.05
     /// (ArduPilot's aggressiveness halved, as for its angle P). Bounce-back is the overshoot
     /// above where the response levels off, so it counts even when a disturbance holds the
-    /// response short of the step (about 8% on QuadCopterX). Steps of
-    /// [`COPTER_TILT_STEP`]; otherwise as [`copter_rate`](Self::copter_rate).
+    /// response short of the step (about 8% on QuadCopterX). Overshoot counts from where the
+    /// response ends, within the settle band past the step, so a disturbance holding it past
+    /// doesn't count either: on the Titan Cobra every P from 6.5 down to 1.7 ended 5–7% past
+    /// without ringing, and judged from the step the search walked P down to 1.3 (#564). Steps
+    /// of [`COPTER_TILT_STEP`]; otherwise as [`copter_rate`](Self::copter_rate).
     ///
     /// # Examples
     ///
@@ -466,6 +470,7 @@ impl SearchPlan {
             criterion: Criterion::Overshoot {
                 max_overshoot: 0.05,
                 max_bounce_back: 0.05,
+                settled_past: Some(COPTER_TILT_STEP.settle_band),
             },
             test: StepTestPlan {
                 pairs: 2,
@@ -597,23 +602,35 @@ pub enum Criterion {
         max_overshoot: f32,
         /// The most bounce-back. Non-negative.
         max_bounce_back: f32,
+        /// When set, overshoot counts from where each step ended
+        /// ([`StepSummary::overshoot_past_end`]) rather than from the step, and no step may
+        /// end more than this past the step. For a window that outlasts the rise, as an angle
+        /// step's does: a disturbance holding the response past the step, without ringing,
+        /// isn't overshoot that a lower P removes (#564). `None` judges from the step, for a
+        /// window that may end mid-rise (a 0.25 s yaw rate step). Non-negative.
+        settled_past: Option<f32>,
     },
 }
 
 impl Criterion {
     /// Whether `steps` meet it: their means within the limits. No steps don't.
     pub fn passes(&self, steps: &StepSummary) -> bool {
-        let (Some(overshoot), Some(bounce_back)) =
-            (steps.overshoot.mean(), steps.bounce_back.mean())
-        else {
+        let Self::Overshoot {
+            max_overshoot,
+            max_bounce_back,
+            settled_past,
+        } = *self;
+        let overshoot = match settled_past {
+            Some(_) => steps.overshoot_past_end.mean(),
+            None => steps.overshoot.mean(),
+        };
+        let (Some(overshoot), Some(bounce_back)) = (overshoot, steps.bounce_back.mean()) else {
             return false;
         };
-        match *self {
-            Self::Overshoot {
-                max_overshoot,
-                max_bounce_back,
-            } => overshoot <= max_overshoot && bounce_back <= max_bounce_back,
-        }
+        let ended_past = steps.final_value.max - 1.0;
+        overshoot <= max_overshoot
+            && bounce_back <= max_bounce_back
+            && settled_past.is_none_or(|limit| ended_past <= limit)
     }
 
     /// The most bounce-back it allows.
@@ -630,9 +647,11 @@ impl Criterion {
             Self::Overshoot {
                 max_overshoot,
                 max_bounce_back,
+                settled_past,
             } => {
                 check_limit("criterion.max_overshoot", max_overshoot)?;
-                check_limit("criterion.max_bounce_back", max_bounce_back)
+                check_limit("criterion.max_bounce_back", max_bounce_back)?;
+                settled_past.map_or(Ok(()), |limit| check_limit("criterion.settled_past", limit))
             }
         }
     }
@@ -987,6 +1006,9 @@ pub enum AutotuneAbort {
 }
 
 /// What an [`Autotune::update`] did, for the caller to log.
+// `StageDone` carries two step summaries (about 450 bytes); boxing them would allocate, which
+// core doesn't, and the caller handles one event per tick.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum AutotuneEvent {
