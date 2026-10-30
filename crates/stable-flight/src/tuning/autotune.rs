@@ -45,8 +45,9 @@ impl StagePlan {
     }
 
     /// A step test of `target` on a full-size multirotor's steps
-    /// ([`StepTestPlan::large_copter`]): the steps [`large_copter_search`](Self::large_copter_search)
-    /// judges, so a test compares with the search's.
+    /// ([`StepTestPlan::large_copter`]): the steps
+    /// [`large_copter_search`](Self::large_copter_search) judges, so its results read against
+    /// the search's.
     pub fn large_copter_step_test(target: TunedLoop) -> Self {
         Self {
             target,

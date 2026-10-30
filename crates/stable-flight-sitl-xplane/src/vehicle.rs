@@ -102,8 +102,9 @@ impl<B> XPlaneConfiguration<B> {
 /// - **Silence:** no frame for 0.5 s (of the ticks' nominal `dt`) logs a warning and
 ///   resubscribes every 0.25 s until frames return, which covers an X-Plane restart (it forgets
 ///   every subscription). When frames return, it logs the silence's length and takes control
-///   again (a restarted X-Plane has also cleared the overrides), without zeroing the engines. `state` keeps returning the
-///   last state meanwhile, and [`state_is_stale`](Self::state_is_stale) reads true.
+///   again (a restarted X-Plane has also cleared the overrides), without zeroing the engines.
+///   `state` keeps returning the last state meanwhile, and
+///   [`state_is_stale`](Self::state_is_stale) reads true.
 /// - **Lost subscriptions:** X-Plane drops `RREF`s that arrive in a burst, so while frames flow,
 ///   a dataref that hasn't arrived for 0.5 s also triggers a resubscribe every 0.25 s.
 /// - **Pause:** X-Plane keeps streaming frozen values while paused; the vehicle logs the pause
@@ -232,11 +233,17 @@ impl<B: DatarefSource + DatarefSink> XPlaneVehicle<B> {
     }
 
     /// Whether the state [`StateSource::state`] returns is old: no frame for 0.5 s, a dataref
-    /// lagging the others for as long, or X-Plane paused (it streams frozen values). The
-    /// vehicle resubscribes meanwhile ([Liveness](Self#liveness)); a caller timing the
+    /// missing for 0.5 s while the others arrive, or X-Plane paused (it streams frozen values).
+    /// The vehicle resubscribes meanwhile ([Liveness](Self#liveness)); a caller timing the
     /// aircraft's response, such as an autotune, waits.
     pub fn state_is_stale(&self) -> bool {
         self.liveness.is_silent() || self.lagging || self.paused
+    }
+
+    /// Whether X-Plane was paused as of the last frame: the aircraft is frozen, not flying on
+    /// unseen.
+    pub fn is_paused(&self) -> bool {
+        self.paused
     }
 
     /// Sets the overrides and holds the neutral surfaces at 0°. Leaves the engines and driven

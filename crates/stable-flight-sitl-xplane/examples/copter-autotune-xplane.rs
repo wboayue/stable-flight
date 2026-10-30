@@ -18,14 +18,16 @@
 //! on its steps (`StagePlan::large_copter_step_test`): alternating steps, each one's response
 //! logged at `debug`, and a summary per loop at `info` (overshoot, rise, settling,
 //! bounce-back: mean and range). Yaw rate isn't tested: a full yaw moment takes the Alia to
-//! about 0.2 rad/s in 1 s, so the copter's 0.5 rad/s steps clip throughout and fail the run. `--stages none --step-test` measures the committed gains.
+//! about 0.2 rad/s in 1 s, so the copter's 0.5 rad/s steps clip throughout and fail the run
+//! (#540). `--stages none --step-test` measures the committed gains.
 //! A freeze (a tick over 50 ms after the last) makes the running probe run again and excuses
 //! breaches for a second. While the host runs slow (`RunStats::host_slow`), the running step
 //! stops and the autotune waits. While the vehicle's state is stale
 //! (`XPlaneVehicle::state_is_stale`: no frame, a lagging dataref, or X-Plane paused), the
 //! autotune is told (`Autotune::set_state_stale`): the running probe runs again, and past 2 s
 //! (`Envelope::max_stale_s`) the run ends `HostFault`, keeping the finished stages; the landing
-//! waits for fresh state, and a state stale for 30 s ends the run with exit status 1. Params and
+//! waits for fresh state, and a state stale for 30 s, unpaused, ends the run with exit status 1.
+//! Params and
 //! telemetry go over the native link for the bridge, so QGC shows the gains change. X-Plane
 //! listens on UDP 49000; override it with `--host`.
 //!
@@ -68,11 +70,11 @@ use stable_flight_sitl_xplane::{XPlaneConfiguration, XPlaneVehicle, airframes};
 const LOOP_HZ: f64 = 250.0;
 /// The flight loop's period, in s: the supervisor's `dt`.
 const LOOP_DT_S: f32 = (1.0 / LOOP_HZ) as f32;
-/// The longest wall-clock gap between ticks that isn't a freeze: past a rate step's first
-/// ticks, as in `copter-autotune-realflight`.
+/// The longest wall-clock gap between ticks that isn't a freeze: `copter-autotune-realflight`'s,
+/// past several of X-Plane's frames (8–17 ms apart).
 const FREEZE_GAP: Duration = Duration::from_millis(50);
-/// How long the vehicle's state may stay stale before the run ends, exit status 1: X-Plane
-/// isn't coming back, and an unattended run shouldn't wait on it.
+/// How long the vehicle's state may stay stale, X-Plane unpaused, before the run ends, exit
+/// status 1: X-Plane isn't coming back, and an unattended run shouldn't wait on it.
 const STALE_EXIT: Duration = Duration::from_secs(30);
 /// How long the vehicle may stay inverted (tilted past 90°) before the run ends: past a tumble
 /// through inverted.
@@ -235,6 +237,7 @@ fn main() -> ExitCode {
     let mut inverted_since = None;
     let mut stayed_inverted = false;
     let mut stale_since = None;
+    let mut unseen_since = None;
     let mut state_lost = false;
     let mut finished = false;
     let mut searched = Vec::new();
@@ -267,19 +270,29 @@ fn main() -> ExitCode {
         }
         // A stale state is the aircraft flying on unseen; the vehicle logs why.
         let stale = flight_loop.vehicle().state_is_stale();
+        // Paused, the aircraft is frozen with its state: the run waits on it for good, since
+        // ending it would hand the throttles to X-Plane in the air.
+        let unseen = stale && !flight_loop.vehicle().is_paused();
+        unseen_since = if unseen {
+            unseen_since.or(Some(stats.elapsed))
+        } else {
+            None
+        };
+        if let Some(since) = unseen_since
+            && stats.elapsed.saturating_sub(since) >= STALE_EXIT
+        {
+            error!(
+                "X-Plane state stale for {} s: stopping",
+                STALE_EXIT.as_secs()
+            );
+            state_lost = true;
+            shutdown.trigger();
+            return;
+        }
         match (stale, stale_since) {
             (true, None) => {
                 info!("X-Plane state stale: autotune waits");
                 stale_since = Some(stats.elapsed);
-            }
-            (true, Some(since)) if stats.elapsed.saturating_sub(since) >= STALE_EXIT => {
-                error!(
-                    "X-Plane state stale for {} s: stopping",
-                    STALE_EXIT.as_secs()
-                );
-                state_lost = true;
-                shutdown.trigger();
-                return;
             }
             (false, Some(since)) => {
                 info!(
