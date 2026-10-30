@@ -132,6 +132,8 @@ impl<T: RealFlightBridge> RealFlightConfiguration<T> {
 /// between. `state` keeps returning the last state RealFlight reported until an exchange
 /// succeeds again: outputs computed meanwhile never reach the simulator, and the controllers
 /// only wind up against a frozen error, bounded by their `max_integral`.
+/// [`state_is_stale`](RealFlightVehicle::state_is_stale) tells the caller, e.g. so an autotune
+/// doesn't measure the frozen state, or judge the jump when the link comes back.
 ///
 /// A `BridgeError::Connection` can leave the bridge unusable (a remote bridge is then out of
 /// sync for good). With [`with_reconnect`](RealFlightVehicle::with_reconnect), the vehicle
@@ -206,6 +208,9 @@ where
     health: LinkHealth,
     /// RealFlight's own wind, from the last exchange.
     true_wind: TrueWind,
+    /// The last exchange didn't update `state`: it failed, the connection is lost, or none has
+    /// run yet.
+    stale: bool,
 }
 
 /// Why [`RealFlightVehicle::try_new`] couldn't start a flight.
@@ -350,6 +355,7 @@ where
             reconnect: None,
             health: LinkHealth::default(),
             true_wind: TrueWind::default(),
+            stale: true,
         })
     }
 
@@ -395,9 +401,18 @@ where
         self
     }
 
+    /// Whether the state is stale: the tick's exchange failed, or the connection is lost and
+    /// waiting for a reconnect, so [`state`](StateSource::state) returns the last state
+    /// RealFlight reported while the aircraft flies on unseen. The first state after it clears
+    /// can jump by however far the aircraft went meanwhile (#309).
+    pub fn state_is_stale(&self) -> bool {
+        self.stale
+    }
+
     /// Makes the tick's one exchange, updating the state on success. While the connection is
     /// lost, skips it, except to reconnect when an attempt is due.
     fn exchange(&mut self, input: &ControlInputs) {
+        self.stale = true;
         if self.health.is_down() && !(self.health.retry_due() && self.try_reconnect()) {
             return;
         }
@@ -413,6 +428,7 @@ where
         }
         match result {
             Ok(state) => {
+                self.stale = false;
                 self.state = vehicle_state(&state, &self.body_rotation);
                 self.true_wind
                     .set_from_realflight(state.wind_mps.x, state.wind_mps.y);

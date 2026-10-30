@@ -76,6 +76,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `RealFlightVehicle::state_is_stale`: the tick's exchange failed or the link is down, so
+  `state` holds the last report while the aircraft flies on unseen. `copter-autotune-realflight`
+  waits through a stale state, excuses the jump when it clears, ends the run `HostFault` past
+  2 s, and cuts the link on cue with `--drop-link SECS@AT` (#309).
 - `StartError`: why `RealFlightVehicle::try_new` couldn't start a flight, an invalid mapping or
   a failed aircraft reset (#523).
 - `airframes::explora_maneuvers()` (#342): scripted maneuvers on the eXplora, rolls and loops

@@ -28,7 +28,16 @@ struct Controls {
     altitude_m: Rc<Cell<f32>>,
     /// Added to the measured roll rate, in rad/s.
     rate_spike_radps: Rc<Cell<f32>>,
+    /// The host's link to the vehicle is down: the state holds at the last one seen, and the
+    /// sim flies on unseen under [`OUTAGE_MOMENT`] instead of the commands.
+    outage: Rc<Cell<bool>>,
+    /// The last state the vehicle reported.
+    seen: Rc<RefCell<Option<VehicleState>>>,
 }
+
+/// The roll moment the sim flies on during an outage, as a host link's last commands might
+/// leave it.
+const OUTAGE_MOMENT: f32 = 0.5;
 
 /// Arms (per `Controls::arm`) and holds level at heading 0, or flies `Controls::input`.
 struct TestCommander(Controls);
@@ -52,6 +61,11 @@ struct SimVehicle(Controls);
 
 impl StateSource for SimVehicle {
     fn state(&mut self, _dt: Duration) -> VehicleState {
+        if self.0.outage.get()
+            && let Some(seen) = self.0.seen.borrow().clone()
+        {
+            return seen;
+        }
         let mut axes = self.0.axes.borrow_mut();
         let Some(axes) = axes.as_mut() else {
             return VehicleState::default();
@@ -59,6 +73,7 @@ impl StateSource for SimVehicle {
         let mut state = axes.state();
         state.position_m.z = self.0.altitude_m.get();
         state.angular_velocity_radps.x += self.0.rate_spike_radps.get();
+        *self.0.seen.borrow_mut() = Some(state.clone());
         state
     }
 }
@@ -67,7 +82,12 @@ impl Actuator for SimVehicle {
     fn actuate(&mut self, command: &ActuatorCommand) {
         if let Some(axes) = self.0.axes.borrow_mut().as_mut() {
             let servos = command.servos;
-            axes.step(Vec3::new(servos[0], servos[1], servos[2]));
+            let moments = if self.0.outage.get() {
+                Vec3::new(OUTAGE_MOMENT, 0.0, 0.0)
+            } else {
+                Vec3::new(servos[0], servos[1], servos[2])
+            };
+            axes.step(moments);
         }
     }
 }
@@ -1172,6 +1192,116 @@ fn a_candidate_breaching_after_a_freeze_comes_out_unjudged() {
     check!(frozen.is_some(), "a candidate flew");
     check!(flown_again, "the candidate flies again");
     check!(events.last() == Some(&AutotuneEvent::Complete));
+}
+
+/// A host link outage, as a RealFlight reconnect takes (the first attempt waits 0.5 s): the
+/// state holds at the last one seen while the vehicle flies on unseen, then jumps. Noted as
+/// the host does it (slow and stalled on every tick of the outage, so the breach excuse runs
+/// from the link's return), the running step comes out unjudged and runs again, and the jump
+/// fails nothing; unnoted, the jump fails the stage (#309).
+#[test]
+fn a_noted_link_outage_rides_through_its_jump() {
+    /// The outage, in ticks (0.5 s).
+    const OUTAGE_TICKS: usize = 125;
+    // (row, outage noted)
+    let cases = [("noted", true), ("unnoted", false)];
+    for (row, noted) in cases {
+        let (mut flight_loop, controls) = hovering(1.0);
+        let plan = [StagePlan::copter_step_test(TunedLoop::RollRate)];
+        let mut autotune = started(&flight_loop, &plan);
+
+        let mut outage_ticks = None;
+        let mut events = Vec::new();
+        for _ in 0..(120.0 / DT) as usize {
+            if outage_ticks.is_none() && flight_loop.probe().is_some() {
+                outage_ticks = Some(0);
+            }
+            let down = outage_ticks.is_some_and(|ticks| ticks < OUTAGE_TICKS);
+            controls.outage.set(down);
+            flight_loop.step(Duration::from_secs_f32(DT));
+            if noted {
+                autotune.set_host_slow(down);
+                if down {
+                    autotune.note_stall();
+                }
+            }
+            outage_ticks = outage_ticks.map(|ticks| ticks + 1);
+            events.extend(autotune.update(&mut flight_loop, DT));
+            if !autotune.is_running() {
+                break;
+            }
+        }
+
+        check!(outage_ticks.is_some(), "{row}");
+        if noted {
+            check!(
+                events.iter().any(|event| matches!(
+                    event,
+                    AutotuneEvent::Stalled {
+                        measurement: None,
+                        ..
+                    }
+                )),
+                "{row}: {events:?}"
+            );
+            check!(
+                events.last() == Some(&AutotuneEvent::Complete),
+                "{row}: {events:?}"
+            );
+        } else {
+            check!(
+                matches!(
+                    events.last(),
+                    Some(AutotuneEvent::StageFailed {
+                        reason: AutotuneAbort::Tilt | AutotuneAbort::Rate,
+                        ..
+                    })
+                ),
+                "{row}: {events:?}"
+            );
+        }
+    }
+}
+
+/// Aborting a run with a candidate under test ends it there: the stage fails for the reason
+/// given, the probe stops, and the committed gains fly. Before the start and after the end,
+/// it does nothing (#309).
+#[test]
+fn an_abort_ends_the_run_on_the_kept_gains() {
+    let (mut flight_loop, _controls) = hovering_on(1.0, delayed_axis());
+    let start = *flight_loop.stabilizer().config();
+    let plan = [search_stage(TunedLoop::RollRate)];
+    let mut autotune = Autotune::new(&plan, Envelope::default()).expect("valid plan");
+    check!(autotune.abort(&mut flight_loop, AutotuneAbort::HostFault) == None);
+    autotune.start(&flight_loop).expect("armed and idle");
+
+    let mut aborted = None;
+    for _ in 0..(300.0 / DT) as usize {
+        flight_loop.step(Duration::from_secs_f32(DT));
+        autotune.update(&mut flight_loop, DT);
+        if *flight_loop.stabilizer().config() != start && flight_loop.probe().is_some() {
+            aborted = autotune.abort(&mut flight_loop, AutotuneAbort::HostFault);
+            break;
+        }
+    }
+
+    check!(
+        aborted
+            == Some(AutotuneEvent::StageFailed {
+                target: TunedLoop::RollRate,
+                reason: AutotuneAbort::HostFault,
+            })
+    );
+    check!(
+        autotune.status()
+            == AutotuneStatus::Failed {
+                stage: 0,
+                reason: AutotuneAbort::HostFault
+            }
+    );
+    check!(*flight_loop.stabilizer().config() == start);
+    check!(flight_loop.probe() == None);
+    check!(autotune.abort(&mut flight_loop, AutotuneAbort::HostFault) == None);
 }
 
 /// `DesignPlan::validate` rejects a negative or non-finite `rate_i_per_p`; the copter default
