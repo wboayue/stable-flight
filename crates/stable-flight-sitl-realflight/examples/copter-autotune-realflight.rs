@@ -51,9 +51,7 @@
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --airframe titan-cobra --step-test
 //! ```
 
-use std::cell::Cell;
 use std::process::ExitCode;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -323,7 +321,6 @@ fn main() -> ExitCode {
     }
 
     // Climbs to the script's waypoint and holds; `land` ends the flight after the autotune.
-    let land = Rc::new(Cell::new(false));
     let script = ScriptCommander::new(
         args.script
             .as_deref()
@@ -332,7 +329,7 @@ fn main() -> ExitCode {
     .expect("failed to load flight script")
     .with_route_end(RouteEnd::Hold)
     .anchored();
-    let commander = ThenLand::new(script, land.clone());
+    let (commander, land) = ThenLand::new(script);
 
     // The model: hand-tuned gains (the baseline), mixer, and motor-to-channel mapping.
     let airframe = args.airframe.airframe();
@@ -472,9 +469,9 @@ fn main() -> ExitCode {
         autotune.set_host_slow(host_slow);
         // The landing waits for a fresh state: on a stale one, the touchdown detector would
         // read the held vertical speed as a touchdown and disarm in the air.
-        if finished && !stale && !land.get() {
+        if finished && !stale && !land.is_landing() {
             info!("landing");
-            land.set(true);
+            land.land();
         }
         match poller.poll(flight_loop) {
             Ok(stats) if stats.decode_errors > 0 || stats.dropped > 0 => {
@@ -484,7 +481,7 @@ fn main() -> ExitCode {
             Err(e) => warn!("link receive failed: {e}"),
         }
 
-        if land.get() {
+        if land.is_landing() {
             if !flight_loop.armed() {
                 info!("touched down: disarmed");
                 shutdown.trigger();
