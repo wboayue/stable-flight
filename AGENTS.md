@@ -265,6 +265,8 @@ Related code sits together, so a reviewer reads one behavior in one place.
   [`.claude/skills/flight-check`](.claude/skills/flight-check/SKILL.md):** scripted runs,
   tick-rate screening, comparable runs, stopping, and per-simulator setup. The measured facts
   behind it are in [`docs/findings/`](docs/findings/README.md).
+- Confirm with whoever is at the simulator which model is loaded before every run; never
+  assume it from the last run or a go.
 - A setting that depends on a model gap listed in the `stable-flight-sim` README's **Limits**
   needs a RealFlight flight; the sim passing it isn't enough.
 
