@@ -591,17 +591,18 @@ impl SearchPlan {
         }
     }
 
-    /// [`copter`](Self::copter) on a full-size multirotor's steps ([`LARGE_COPTER_RATE_STEP`]
-    /// or [`LARGE_COPTER_TILT_STEP`]), clipping for up to [`LARGE_COPTER_MAX_SATURATED_S`],
-    /// keeping the start's rate I ([`StagePlan::large_copter_search`] says why). Yaw rate and
-    /// heading keep the copter steps: the large search doesn't tune them.
+    /// [`copter`](Self::copter) for roll or pitch, on a full-size multirotor's steps
+    /// ([`LARGE_COPTER_RATE_STEP`] or [`LARGE_COPTER_TILT_STEP`]), clipping for up to
+    /// [`LARGE_COPTER_MAX_SATURATED_S`], keeping the start's rate I
+    /// ([`StagePlan::large_copter_search`] says why). Yaw rate and heading, which the large
+    /// search doesn't tune, are [`copter`](Self::copter)'s unchanged.
     pub fn large_copter(target: TunedLoop) -> Self {
         let mut plan = Self::copter(target);
-        match target {
-            TunedLoop::RollRate | TunedLoop::PitchRate => plan.test.step = LARGE_COPTER_RATE_STEP,
-            TunedLoop::Roll | TunedLoop::Pitch => plan.test.step = LARGE_COPTER_TILT_STEP,
-            TunedLoop::YawRate | TunedLoop::Heading => {}
-        }
+        plan.test.step = match target {
+            TunedLoop::RollRate | TunedLoop::PitchRate => LARGE_COPTER_RATE_STEP,
+            TunedLoop::Roll | TunedLoop::Pitch => LARGE_COPTER_TILT_STEP,
+            TunedLoop::YawRate | TunedLoop::Heading => return plan,
+        };
         plan.test.max_saturated_s = LARGE_COPTER_MAX_SATURATED_S;
         plan.i_per_p = None;
         plan

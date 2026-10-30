@@ -26,26 +26,23 @@ const START_ALTITUDE_TOLERANCE_M: f32 = 0.5;
 
 /// Flies a script until told to land, then lands where it is and disarms on touchdown.
 ///
-/// The script climbs to a hover point and holds there while the autotune runs; setting the
-/// shared `land` flag (the host does, once the autotune ends and the state is fresh) starts the
-/// landing.
+/// The script climbs to a hover point and holds there while the autotune runs; its
+/// [`LandSwitch`] starts the landing (the host flips it once the autotune ends and the state
+/// is fresh).
 ///
 /// # Examples
 ///
 /// ```
-/// use std::cell::Cell;
-/// use std::rc::Rc;
-///
 /// use stable_flight_sitl::autotune::ThenLand;
 /// use stable_flight_sitl::commanders::ScriptCommander;
 /// use stable_flight_sitl::stable_flight::{Commander, ControlInput, VehicleState, WaypointCommand};
 ///
 /// let hover = WaypointCommand { altitude_m: 5.0, ..Default::default() };
 /// let script = ScriptCommander::from_waypoints(vec![hover]).unwrap();
-/// let land = Rc::new(Cell::new(false));
-/// let mut commander = ThenLand::new(script, land.clone());
+/// let (mut commander, switch) = ThenLand::new(script);
 ///
-/// land.set(true);
+/// switch.land();
+/// assert!(switch.is_landing());
 /// let command = commander.next_command(0.004, &VehicleState::default());
 /// assert!(matches!(command.input, ControlInput::Land(_)));
 /// ```
@@ -57,14 +54,16 @@ pub struct ThenLand {
 }
 
 impl ThenLand {
-    /// Flies `script` until `land` is set.
-    pub fn new(script: ScriptCommander, land: Rc<Cell<bool>>) -> Self {
-        Self {
+    /// Flies `script` until the returned switch says land.
+    pub fn new(script: ScriptCommander) -> (Self, LandSwitch) {
+        let land = Rc::new(Cell::new(false));
+        let commander = Self {
             script,
-            land,
+            land: Rc::clone(&land),
             landing: None,
             touchdown: TouchdownDetector::default(),
-        }
+        };
+        (commander, LandSwitch(land))
     }
 
     /// Whether the script has reached its last waypoint, the hover point, and the vehicle is
@@ -89,6 +88,21 @@ impl Commander for ThenLand {
         });
         let down = self.touchdown.update(dt, state.velocity_mps.z);
         Command::new(!down, ControlInput::Land(land))
+    }
+}
+
+/// Starts a [`ThenLand`]'s landing from outside the flight loop, which owns the commander.
+pub struct LandSwitch(Rc<Cell<bool>>);
+
+impl LandSwitch {
+    /// Lands: the commander's next command is a land where the vehicle is.
+    pub fn land(&self) {
+        self.0.set(true);
+    }
+
+    /// Whether the landing has started.
+    pub fn is_landing(&self) -> bool {
+        self.0.get()
     }
 }
 

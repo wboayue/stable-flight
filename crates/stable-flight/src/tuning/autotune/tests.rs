@@ -2020,7 +2020,8 @@ fn a_lowered_design_goes_back_to_its_start_when_its_search_fails() {
 }
 
 /// The large-copter search tunes roll and pitch rate, then angle, on the large steps, keeping
-/// the start's rate I, and validates within its envelope (#351).
+/// the start's rate I, and validates within its envelope (#351); yaw rate and heading, which it
+/// doesn't tune, keep the copter plan.
 #[test]
 fn large_copter_search_steps_each_loop_on_large_steps() {
     let plan = StagePlan::large_copter_search();
@@ -2044,4 +2045,10 @@ fn large_copter_search_steps_each_loop_on_large_steps() {
         check!(search.i_per_p == None, "{target:?}");
     }
     check!(Autotune::new(&plan, Envelope::large_copter()).is_ok());
+    for target in [TunedLoop::YawRate, TunedLoop::Heading] {
+        check!(
+            SearchPlan::large_copter(target) == SearchPlan::copter(target),
+            "{target:?}"
+        );
+    }
 }

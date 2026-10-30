@@ -1,6 +1,3 @@
-use std::cell::Cell;
-use std::rc::Rc;
-
 use assert2::check;
 use stable_flight::commanders::RouteEnd;
 use stable_flight::nalgebra::UnitQuaternion;
@@ -34,14 +31,14 @@ fn at_rest(altitude_m: f32) -> VehicleState {
 /// once the touchdown detector sees the vehicle down.
 #[test]
 fn then_land_flies_the_script_then_lands_and_disarms() {
-    let land = Rc::new(Cell::new(false));
-    let mut commander = ThenLand::new(hover_script(), land.clone());
+    let (mut commander, switch) = ThenLand::new(hover_script());
     let state = at_rest(5.0);
 
     let scripted = commander.next_command(0.004, &state);
     check!(!matches!(scripted.input, ControlInput::Land(_)));
 
-    land.set(true);
+    switch.land();
+    check!(switch.is_landing());
     let landing = commander.next_command(0.004, &state);
     check!(matches!(landing.input, ControlInput::Land(_)));
     check!(landing.arm);
@@ -59,7 +56,7 @@ fn then_land_flies_the_script_then_lands_and_disarms() {
 /// 0.5 m of its altitude: (altitude, at the hover point).
 #[test]
 fn the_hover_point_needs_the_last_waypoint_and_its_altitude() {
-    let mut commander = ThenLand::new(hover_script(), Rc::new(Cell::new(false)));
+    let (mut commander, _) = ThenLand::new(hover_script());
     check!(
         !commander.at_hover_point(&at_rest(5.0)),
         "before the script ran"
