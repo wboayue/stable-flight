@@ -448,13 +448,12 @@ const COBRA_MAX_AIRSPEED_MPS: f32 = 18.0;
 /// Fly it with [`QuadPlaneGuidance`](stable_flight::guidance::vtol::QuadPlaneGuidance) and
 /// [`QuadPlaneStabilizer`](stable_flight::stabilizers::vtol::QuadPlaneStabilizer).
 ///
-/// - **Hover:** roll and pitch rate P and D and pitch angle P from the gated RealFlight
-///   autotune at thrust factor 0.8: at 250 Hz every step test settles, pitch rate reaching
-///   1.00 of the step (#438). Rate I and yaw are the hand tune that flies a hover and a
-///   landing (#433), scaled to this mixer. The model is nose-heavy on its lift rotors: with
-///   equal front and rear thrust a hop pitched nose down at 155°/s (#433), and a level hover
-///   holds front motors at 0.61 and rear at 0.54 (#438), so the pitch rate loop holds a
-///   steady nose-up moment: 0.37 of the default mixer's range, 0.19 of this one's.
+/// - **Hover:** every rate and angle gain from the RealFlight design search at thrust factor
+///   0.8: at 250 Hz every loop's step test rises, and all but one roll angle step settle
+///   (#538). The model is nose-heavy on its lift rotors: with equal front and rear thrust a hop
+///   pitched nose down at 155°/s (#433), and a level hover holds front motors at 0.61 and
+///   rear at 0.54 (#438), so the pitch rate loop holds a steady nose-up moment: 0.37 of the
+///   default mixer's range, 0.18 of this one's (#538).
 /// - **Plane and transition:** core defaults, with the upstream ArduPilot parameter file's
 ///   airspeeds, trim pitch, and cruise throttle (`TitanCobraVTOL.param`); the forward
 ///   transition hands over to the wing at its minimum airspeed, as ArduPilot does. A lap
@@ -540,32 +539,26 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
         },
         stabilizer: QuadPlaneStabilizerConfig {
             hover: CopterStabilizerConfig {
-                // The rate loops' I and the yaw gains are the ones flown at the default
-                // thrust factor (#433) halved, so a rate error moves the motors as far as it
-                // did; unscaled, the doubled moment range doubled their gain and roll
-                // limit-cycled at about 6 Hz in a hover, its moment saturating (#438).
+                // Every gain below: the RealFlight design search (`copter-autotune-realflight
+                // --airframe titan-cobra`, 250 Hz). Its step tests against the hand tune
+                // before it: roll rate rises in 87 ms (113), yaw rate in 509 ms (never rose in
+                // 1 s), roll angle in 162 ms with overshoot 0.05 (611 ms, 0.10), pitch rate and
+                // angle as before (#538).
                 body_rate: BodyRateControllerConfig {
-                    // P and D: the gated RealFlight autotune (`copter-autotune-realflight
-                    // --airframe titan-cobra`), its search's verify at 250 Hz. Its step test:
-                    // final 0.95 (0.94–0.96), rising in 153 ms (#438).
-                    roll_gains: gains(0.5867, 0.1, 0.0131),
-                    // P and D: the same autotune. Its step test: final 1.00 (0.98–1.01),
-                    // rising in 113 ms, where at the default thrust factor P stopped at 0.68
-                    // with nose-up steps clipping (#438). The nose-heavy hover needs a steady
-                    // 0.19 nose-up moment (0.37 at the default thrust factor); I ·
-                    // max_integral = 0.25 holds it with margin.
-                    pitch_gains: gains(0.5711, 0.25, 0.0123),
-                    // Holds heading through the hover and landing (#433).
-                    yaw_gains: gains(0.3, 0.3, 0.0),
-                    max_integral: 1.0,
+                    // D 0: the fit puts the motor lag under a tick, inside the 36–40 ms delay
+                    // (#563); the hand tune's D 0.0123 on pitch slowed the rate loop's rise to
+                    // 175 ms (#538).
+                    roll_gains: gains(0.4847, 0.0969, 0.0),
+                    // The nose-heavy hover needs a steady 0.18 nose-up moment; I · max_integral
+                    // = 0.24 holds it with a 30% margin.
+                    pitch_gains: gains(0.3970, 0.0794, 0.0),
+                    yaw_gains: gains(1.8091, 0.5427, 0.0),
+                    max_integral: 3.0,
                     yaw_max_integral: 1.0,
                 },
-                // The same autotune's angle search: roll kept QuadCopterX's hand tune (its
-                // candidate flew worse), pitch P raised. Step tests at 250 Hz settle every
-                // step: roll in 873 ms, pitch in 303 ms, overshoot 0.04 each (#438).
                 attitude: AttitudeControllerConfig {
-                    roll_gains: gains(3.0, 0.0, 0.1),
-                    pitch_gains: gains(7.2219, 0.0, 0.1),
+                    roll_gains: gains(7.1338, 0.0, 0.1),
+                    pitch_gains: gains(6.5084, 0.0, 0.1),
                     max_integral: 100.0,
                     max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
                     max_rate_radps: Vec2::new(3.0, 3.0),

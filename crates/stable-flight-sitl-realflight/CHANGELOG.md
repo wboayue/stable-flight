@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The Titan Cobra flies the RealFlight design search's hover gains: rate P 0.4847 / 0.3970
+  (roll / pitch), D 0, I at 0.2 of P, `max_integral` 3; yaw rate 1.8091 / 0.5427; angle P
+  7.1338 / 6.5084 (were rate 0.5867 / 0.5711 with D 0.0131 / 0.0123, yaw 0.3 / 0.3, angle P
+  3 / 7.2219). Roll rate rises in 87 ms (113), yaw rate in 509 ms where it never rose in 1 s,
+  roll angle in 162 ms with overshoot 0.05 where 3 of 6 steps never settled (#538).
 - The QuadCopterX flies the RealFlight autotune's yaw rate gains, P 1.1532 and I 0.3460 (was
   P 0.6, I 0.6), which damp its heading loop: 30° heading turns overshoot 7% and settle within
   1° in 1.6 s, where they overshot 25% and rang for 4.2 s, and any kick swung the heading for
