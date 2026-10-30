@@ -752,6 +752,39 @@ fn a_step_test_settles_to_its_own_limits() {
     ));
 }
 
+/// A yaw stage waits for the yaw rate to settle too: turning level at 0.3 rad/s (past the
+/// step settle's 0.1), a yaw rate step test never starts, and a roll rate one, which leaves
+/// yaw out, does (#296).
+#[test]
+fn a_yaw_stage_waits_for_yaw_to_settle() {
+    const TURN_RADPS: f32 = 0.3;
+    // (target, whether it starts)
+    let rows = [(TunedLoop::YawRate, false), (TunedLoop::RollRate, true)];
+    for (target, starts) in rows {
+        let (mut flight_loop, controls) = hovering(1.0);
+        let mut heading_rad = 0.0;
+        let mut autotune = started(&flight_loop, &[StagePlan::copter_step_test(target)]);
+
+        let events = run(&mut flight_loop, &mut autotune, 30.0, |_, _| {
+            heading_rad += TURN_RADPS * DT;
+            controls.input.set(Some(ControlInput::AbsoluteAttitude(
+                AbsoluteAttitudeCommand {
+                    heading_rad,
+                    thrust: 0.5,
+                    ..Default::default()
+                },
+            )));
+        });
+
+        let failed = AutotuneEvent::StageFailed {
+            target,
+            reason: AutotuneAbort::NotSettled,
+        };
+        check!((events.last() == Some(&failed)) == !starts, "{target:?}");
+        check!(step_metrics(&events).is_empty() == !starts, "{target:?}");
+    }
+}
+
 /// Rate P multiplier that puts the start (P 3) well above [`lowering_search`]'s `max`.
 const SCALE_ABOVE_MAX: f32 = 6.0;
 
@@ -1557,23 +1590,38 @@ fn searches_tune_rate_then_angle() {
     }
 }
 
-/// The rate search steps as the step test does, allowing 10 clipped ticks (a 1 rad/s step
-/// asks for more than full moment above P 1); the angle search steps at half the step test's
-/// size, so its candidates' moment demand stays below full scale.
+/// Each loop's search steps as its step test does, allowing 10 clipped ticks (a step's
+/// first ticks ask for more than full moment at tuned gains): 1 rad/s on roll and pitch rate,
+/// 0.5 rad/s on yaw rate (prop drag's little yaw authority, #296), 5° on roll and pitch. Rate
+/// searches carry I at a fifth of P.
 #[test]
 fn search_step_presets() {
-    let rate = SearchPlan::copter_rate().test;
-    let angle = SearchPlan::copter_angle();
-    check!(rate.step == COPTER_RATE_STEP);
+    let rows = [
+        (TunedLoop::RollRate, COPTER_RATE_STEP),
+        (TunedLoop::PitchRate, COPTER_RATE_STEP),
+        (TunedLoop::YawRate, COPTER_YAW_RATE_STEP),
+        (TunedLoop::Roll, COPTER_TILT_STEP),
+        (TunedLoop::Pitch, COPTER_TILT_STEP),
+    ];
     let ten_ticks = (0..10).fold(0.0_f32, |sum, _| sum + 0.004);
-    check!(ten_ticks <= rate.max_saturated_s);
-    check!(ten_ticks + 0.004 > rate.max_saturated_s);
-    check!(angle.test.step == COPTER_TILT_STEP);
-    check!(angle.validate() == Ok(()));
+    for (target, step) in rows {
+        let search = SearchPlan::copter(target);
+        check!(search.test.step == step, "{target:?}");
+        check!(StepTestPlan::copter(target).step == step, "{target:?}");
+        check!(ten_ticks <= search.test.max_saturated_s, "{target:?}");
+        check!(
+            ten_ticks + 0.004 > search.test.max_saturated_s,
+            "{target:?}"
+        );
+        let i_per_p = target.is_rate().then_some(RATE_I_PER_P);
+        check!(search.i_per_p == i_per_p, "{target:?}");
+        check!(search.validate() == Ok(()), "{target:?}");
+    }
 }
 
-/// The design search designs every loop, rate first, with each rate loop's fit run on the
-/// angle loop above it, then searches each loop from its design in the same order.
+/// The design search designs every roll and pitch loop, rate first, with each rate loop's fit
+/// run on the angle loop above it, then searches each loop from its design in the same order,
+/// then searches yaw rate from its start.
 #[test]
 fn copter_design_search_designs_then_searches_every_loop() {
     let params = PlantParams {

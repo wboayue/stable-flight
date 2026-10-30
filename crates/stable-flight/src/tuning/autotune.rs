@@ -21,8 +21,9 @@ mod procedure;
 #[cfg(test)]
 mod tests;
 
-/// The most stages a plan may hold: a tune and a step test of every [`TunedLoop`].
-pub const MAX_STAGES: usize = 12;
+/// The most stages a plan may hold: [`StagePlan::copter_design_search`] and a step test of
+/// each loop it tunes.
+pub const MAX_STAGES: usize = 14;
 
 /// One stage of an autotune: which loop, and the method that tunes it.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -44,7 +45,8 @@ impl StagePlan {
 
     /// The copter design search: [`DesignPlan::copter`] for roll and pitch rate, then roll
     /// and pitch angle (each angle design flies on its designed rate loop), then
-    /// [`SearchPlan::copter`] for each in the same order, starting from its design.
+    /// [`SearchPlan::copter`] for each in the same order, starting from its design, then
+    /// [`SearchPlan::copter_yaw_rate`] from the start's yaw gains.
     /// The design spares the search most of its climb from the start gains; the search keeps
     /// only gains that passed steps, so a design from a bad fit doesn't outlive it (on
     /// QuadCopterX in RealFlight one fit designed roll rate P 0.41 against 0.63–1.04, #518).
@@ -52,6 +54,10 @@ impl StagePlan {
     /// ring and keep another's steps from settling (pitch on `racer`'s high start with 25 ms
     /// of delay, #518). On the sim it takes 152–380 s against the search's 308–693 s, and
     /// tunes the high starts with delay the search can't (#518).
+    ///
+    /// Yaw rate is searched without a design: the design's yaw P (5–8 on the sim's quads)
+    /// clips 0.5 rad/s steps for 44–116 ms, and the search from its D (0.22–0.25) left steps
+    /// short of 90% in the window (#296).
     ///
     /// # Examples
     ///
@@ -63,8 +69,9 @@ impl StagePlan {
     /// assert!(matches!(plan[0].method, Method::Design(_)));
     /// assert!(matches!(plan[4].method, Method::Search(_)));
     /// assert_eq!(plan[4].target, TunedLoop::RollRate);
+    /// assert_eq!(plan[8].target, TunedLoop::YawRate);
     /// ```
-    pub fn copter_design_search() -> [Self; 8] {
+    pub fn copter_design_search() -> [Self; 9] {
         let loops = [
             TunedLoop::RollRate,
             TunedLoop::PitchRate,
@@ -95,6 +102,10 @@ impl StagePlan {
             search_pitch_rate,
             search_roll,
             search_pitch,
+            Self {
+                target: TunedLoop::YawRate,
+                method: Method::Search(SearchPlan::copter_yaw_rate()),
+            },
         ]
     }
 }
@@ -186,6 +197,15 @@ pub const COPTER_RATE_STEP: StepConfig = StepConfig {
     filter_hz: 40.0,
 };
 
+/// Step response of a copter yaw rate loop: [`COPTER_RATE_STEP`] at half the size (0.5 rad/s).
+/// Prop drag gives a quad little yaw authority (about 7 rad/s² per unit moment on the sim's
+/// `quad_x`), so 1 rad/s steps clip at any P that rises within PX4's yaw target, 0.2 s; the
+/// sim yaw search clipped 4–10× as long at 1 rad/s and settled on a lower P (#296).
+pub const COPTER_YAW_RATE_STEP: StepConfig = StepConfig {
+    amplitude: 0.5,
+    ..COPTER_RATE_STEP
+};
+
 /// Step response of a copter roll or pitch loop, searched and step-tested: 5° held for 1.5 s,
 /// filtered at 20 Hz. QuadCopterX's hand-tuned angle loop (P 3) reaches only 89% of a step in
 /// 0.8 s (#298), so the window covers about four of its time constants; the vehicle drifts
@@ -249,7 +269,8 @@ pub struct StepTestPlan {
 pub const COPTER_MAX_SATURATED_S: f32 = 0.042;
 
 impl StepTestPlan {
-    /// The copter defaults for `target`: three pairs of [`COPTER_RATE_STEP`] (rate loops),
+    /// The copter defaults for `target`: three pairs of [`COPTER_RATE_STEP`] (roll and pitch
+    /// rate), [`COPTER_YAW_RATE_STEP`] (yaw rate),
     /// [`COPTER_TILT_STEP`] (roll and pitch), or [`COPTER_HEADING_STEP`] (heading), from
     /// [`COPTER_STEP_SETTLE`], each clipping for up to [`COPTER_MAX_SATURATED_S`], allowing
     /// 3 clipped steps in a row and 10 stalled steps in a row (RealFlight's proxy has frozen
@@ -265,7 +286,8 @@ impl StepTestPlan {
     /// ```
     pub fn copter(target: TunedLoop) -> Self {
         let step = match target {
-            TunedLoop::RollRate | TunedLoop::PitchRate | TunedLoop::YawRate => COPTER_RATE_STEP,
+            TunedLoop::RollRate | TunedLoop::PitchRate => COPTER_RATE_STEP,
+            TunedLoop::YawRate => COPTER_YAW_RATE_STEP,
             TunedLoop::Roll | TunedLoop::Pitch => COPTER_TILT_STEP,
             TunedLoop::Heading => COPTER_HEADING_STEP,
         };
@@ -439,9 +461,33 @@ impl SearchPlan {
         }
     }
 
+    /// The copter yaw rate search: [`copter_rate`](Self::copter_rate) on steps of
+    /// [`COPTER_YAW_RATE_STEP`], D as it starts (0 on yaw by default, as ArduPilot's
+    /// `ATC_RAT_YAW_D` and PX4's `MC_YAWRATE_D`). Its I at a fifth of P holds a yaw trim only
+    /// up to `yaw_max_integral` (`BodyRateControllerConfig`); with the start's I kept instead,
+    /// small P overshoots on the I alone, the bracket stops there, and the result depends on
+    /// the start: 0.35 against 0.91 on the sim's `racer` with a 0.40 yaw trim (#296).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::tuning::autotune::{COPTER_YAW_RATE_STEP, SearchPlan};
+    ///
+    /// assert_eq!(SearchPlan::copter_yaw_rate().test.step, COPTER_YAW_RATE_STEP);
+    /// ```
+    pub fn copter_yaw_rate() -> Self {
+        Self {
+            test: StepTestPlan {
+                pairs: 2,
+                ..StepTestPlan::copter(TunedLoop::YawRate)
+            },
+            ..Self::copter_rate()
+        }
+    }
+
     /// The copter search for `target` from a design ([`StagePlan::copter_design_search`]):
-    /// [`copter_rate`](Self::copter_rate) for a rate loop, whose D the design set, or
-    /// [`copter_angle`](Self::copter_angle).
+    /// [`copter_rate`](Self::copter_rate) for roll or pitch rate, whose D the design set,
+    /// [`copter_yaw_rate`](Self::copter_yaw_rate), or [`copter_angle`](Self::copter_angle).
     ///
     /// # Examples
     ///
@@ -453,10 +499,10 @@ impl SearchPlan {
     /// assert_eq!(SearchPlan::copter(TunedLoop::Roll), SearchPlan::copter_angle());
     /// ```
     pub fn copter(target: TunedLoop) -> Self {
-        if target.is_rate() {
-            Self::copter_rate()
-        } else {
-            Self::copter_angle()
+        match target {
+            TunedLoop::RollRate | TunedLoop::PitchRate => Self::copter_rate(),
+            TunedLoop::YawRate => Self::copter_yaw_rate(),
+            TunedLoop::Roll | TunedLoop::Pitch | TunedLoop::Heading => Self::copter_angle(),
         }
     }
 
@@ -720,9 +766,9 @@ pub struct Settle {
     /// Roll and pitch within this, in rad.
     pub tilt_rad: f32,
     /// Roll and pitch rates within this, in rad/s, read through the stabilizer's gyro
-    /// low-pass. Yaw is left out: its loop isn't tuned
-    /// (#296), and with 25 ms of delay it rings on its start gains at ±0.18 rad/s on `racer`
-    /// without tilting the vehicle (#518).
+    /// low-pass; the yaw rate too before a yaw stage's probes. Other stages leave yaw out:
+    /// with 25 ms of delay it rings on its start gains at ±0.18 rad/s on `racer` without
+    /// tilting the vehicle (#518).
     pub rate_radps: f32,
     /// For this long, in s.
     pub hold_s: f32,
@@ -737,6 +783,20 @@ impl Settle {
     /// Whether `motion` is level and still enough about `axis` alone (0 roll, 1 pitch).
     fn holds_axis(&self, motion: &Motion, axis: usize) -> bool {
         motion.axis_tilt_rad[axis] < self.tilt_rad && motion.axis_rate_radps[axis] < self.rate_radps
+    }
+
+    /// Whether `motion` is level and still enough, and turning slowly enough too.
+    fn holds_yaw(&self, motion: &Motion) -> bool {
+        self.holds(motion) && motion.yaw_rate_radps < self.rate_radps
+    }
+
+    /// Whether `motion` holds this settle for a probe on `target`: before a step on it the
+    /// vehicle is still about that loop's axis, so a yaw stage waits for yaw too.
+    fn holds_for(&self, motion: &Motion, target: TunedLoop) -> bool {
+        match tilt_axis(target) {
+            Some(_) => self.holds(motion),
+            None => self.holds_yaw(motion),
+        }
     }
 }
 
@@ -852,6 +912,8 @@ struct Motion {
     axis_tilt_rad: [f32; 2],
     /// The filtered |roll| and |pitch| rates, in rad/s.
     axis_rate_radps: [f32; 2],
+    /// The filtered |yaw| rate, in rad/s.
+    yaw_rate_radps: f32,
     altitude_m: f32,
 }
 
@@ -865,6 +927,7 @@ impl Motion {
             tilt_rate_radps: filtered_radps.xy().amax(),
             axis_tilt_rad: [roll.abs(), pitch.abs()],
             axis_rate_radps: [filtered_radps.x.abs(), filtered_radps.y.abs()],
+            yaw_rate_radps: filtered_radps.z.abs(),
             altitude_m: state.position_m.z,
         }
     }
@@ -1739,7 +1802,8 @@ impl Autotune {
         waited_s: f32,
     ) -> Option<AutotuneEvent> {
         let settle = self.settle_for(stage);
-        let level_s = if settle.holds(motion) { level_s } else { 0.0 };
+        let holds = settle.holds_for(motion, self.target(stage));
+        let level_s = if holds { level_s } else { 0.0 };
         let timed_out = waited_s >= self.envelope.settle_timeout_s;
         if level_s >= settle.hold_s || (request.starts_anyway() && timed_out) {
             if let Some(gains) = request.gains
@@ -1835,8 +1899,9 @@ impl Autotune {
     /// Waits for the vehicle to hold the stage's [`Settle`] about its loop's axis on the
     /// candidate `gains` (`level_s` counts it): then they stay for the procedure to commit.
     /// After `settle_timeout_s` the committed gains go back ([`AutotuneEvent::Unsettled`]).
-    /// Only the loop's axis counts: the other may still ring on its start gains (pitch on
-    /// `racer`'s high start with 25 ms of delay, #518).
+    /// For a roll or pitch loop only its axis counts: the other may still ring on its start
+    /// gains (pitch on `racer`'s high start with 25 ms of delay, #518). A yaw loop needs both
+    /// level and its own axis still.
     fn hold<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
@@ -1848,7 +1913,7 @@ impl Autotune {
         let settle = self.settle_for(stage);
         let target = self.target(stage);
         let holds = tilt_axis(target).map_or_else(
-            || settle.holds(motion),
+            || settle.holds_yaw(motion),
             |axis| settle.holds_axis(motion, axis),
         );
         let level_s = if holds { level_s } else { 0.0 };
