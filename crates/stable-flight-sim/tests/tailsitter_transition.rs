@@ -677,7 +677,7 @@ fn waits_for_the_transition_height() {
 }
 
 /// The hover after a back transition descends to its point without sinking past it: the
-/// worst measured case (1.16 m) is this descent (#403).
+/// deepest waypoint-descent dip measured (1.16 m) is this descent (#403).
 #[test]
 fn hover_after_a_back_transition_stops_on_its_point() {
     let airframe = airframes::tailsitter();
