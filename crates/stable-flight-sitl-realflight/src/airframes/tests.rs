@@ -281,22 +281,22 @@ fn titan_cobra_pitch_integrator_covers_the_hover_trim() {
     );
 }
 
-/// Pins the Cobra's flown hover set (#433), so a retune (or a core default change it
+/// Pins the Cobra's flown hover set (#538), so a retune (or a core default change it
 /// inherits) shows up in review.
 #[test]
 fn titan_cobra_hover_gains_are_the_flown_set() {
     let gains = |p, i, d| Gains { p, i, d };
     let stabilizer = CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
-            roll_gains: gains(0.5867, 0.1, 0.0131),
-            pitch_gains: gains(0.5711, 0.25, 0.0123),
-            yaw_gains: gains(0.3, 0.3, 0.0),
-            max_integral: 1.0,
+            roll_gains: gains(0.4847, 0.0969, 0.0),
+            pitch_gains: gains(0.3970, 0.0794, 0.0),
+            yaw_gains: gains(1.8091, 0.5427, 0.0),
+            max_integral: 3.0,
             yaw_max_integral: 1.0,
         },
         attitude: AttitudeControllerConfig {
-            roll_gains: gains(3.0, 0.0, 0.1),
-            pitch_gains: gains(7.2219, 0.0, 0.1),
+            roll_gains: gains(7.1338, 0.0, 0.1),
+            pitch_gains: gains(6.5084, 0.0, 0.1),
             max_integral: 100.0,
             max_angles_rad: Vec2::new(PI / 4.0, PI / 4.0),
             max_rate_radps: Vec2::new(3.0, 3.0),
