@@ -596,7 +596,10 @@ impl Term {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Criterion {
     /// The response overshoots at most `max_overshoot` and falls back at most
-    /// `max_bounce_back` after its peak: for a rate loop's P.
+    /// `max_bounce_back` after its peak: for a P search, a rate loop's judging overshoot from
+    /// the step and an angle loop's from where its steps end ([`settled_past`]).
+    ///
+    /// [`settled_past`]: Criterion::Overshoot::settled_past
     Overshoot {
         /// The most overshoot. Non-negative.
         max_overshoot: f32,
@@ -605,7 +608,8 @@ pub enum Criterion {
         /// When set, overshoot counts from where each step ended
         /// ([`StepSummary::overshoot_past_end`]) rather than from the step, and no step may
         /// end more than this past the step. For a window that outlasts the rise, as an angle
-        /// step's does: a disturbance holding the response past the step, without ringing,
+        /// step's 1.5 s does (the slowest pass on the Titan Cobra, P 1.43, rose in 812 ms,
+        /// #564): a disturbance holding the response past the step, without ringing,
         /// isn't overshoot that a lower P removes (#564). `None` judges from the step, for a
         /// window that may end mid-rise (a 0.25 s yaw rate step). Non-negative.
         settled_past: Option<f32>,
