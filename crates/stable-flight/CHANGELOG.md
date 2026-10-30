@@ -10,13 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Breaking:** `StagePlan::copter_design_search` searches yaw rate as its ninth stage
-  (`SearchPlan::copter_yaw_rate`: P from the start, I a fifth of P, D kept, 0.5 rad/s steps,
-  `COPTER_YAW_RATE_STEP`), and `StepTestPlan::copter(YawRate)` steps 0.5 rad/s. Yaw rate and
+  (`SearchPlan::copter_yaw_rate`: P from the start, I at `YAW_RATE_I_PER_P` of P, D kept,
+  0.5 rad/s steps watched 0.25 s, `COPTER_YAW_RATE_STEP`), and `StepTestPlan::copter(YawRate)`
+  steps 0.5 rad/s watched 1 s (`COPTER_YAW_RATE_TEST_STEP`), so a yaw as slow as QuadCopterX's
+  rises and settles in the step test (#296, #558). Yaw rate and
   heading stages settle on the yaw rate too; roll and pitch stages still leave it out.
   `MAX_STAGES` is 14 (#296).
 - **Breaking:** `BodyRateControllerConfig::yaw_max_integral` (param `STAB_RATE_IMAX_Z`,
   default 5 rad) limits the yaw rate integral; `max_integral` limits roll and pitch only. A
-  yaw I of a fifth of P holds a large yaw trim (0.40 on QuadCopterX from P 0.5) (#296).
+  yaw I of 0.3 of P holds a large yaw trim (0.40 on QuadCopterX from P 0.27) (#296, #558).
 - **Breaking:** copter step tests allow 10 clipped ticks on every loop
   (`COPTER_MAX_SATURATED_S`, 0.042 s; angle loops 0.022 s before), and `StepTestPlan::copter`
   steps roll and pitch by 5° instead of 10°: the angle step test measures a tuned angle loop
@@ -78,6 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Autotune::abort` ends a run from outside, as a breach would (the config as of the last
   kept stage, the probe stopped, `StageFailed`) (#309).
 - `controllers::RATE_I_PER_P`: the copter rate I's share of P (#374).
+- `controllers::YAW_RATE_I_PER_P`: the copter yaw rate I's share of P, 0.3 (#558).
 
 - `StagePlan::copter_design_search` (#518): the copter autotune as a step search from a
   loop-shaping design. Roll and pitch rate, then angle, each fitted and designed

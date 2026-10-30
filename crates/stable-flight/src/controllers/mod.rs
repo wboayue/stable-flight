@@ -18,7 +18,7 @@ pub use altitude::{
     DEFAULT_HOVER_THRUST,
 };
 pub use attitude::{AttitudeController, AttitudeControllerConfig};
-pub use body_rate::{BodyRateController, BodyRateControllerConfig, RATE_I_PER_P};
+pub use body_rate::{BodyRateController, BodyRateControllerConfig, RATE_I_PER_P, YAW_RATE_I_PER_P};
 pub use lateral::{LateralController, LateralControllerConfig, LateralEstimate, LateralTarget};
 pub use plane_rate::{PlaneRateController, PlaneRateControllerConfig, RateGains};
 pub use yaw::{YawController, YawControllerConfig};

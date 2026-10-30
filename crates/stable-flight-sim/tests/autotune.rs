@@ -6,7 +6,7 @@ mod common;
 
 use common::robustness::Start;
 use common::spec::{self, TUNED};
-use common::yaw::{YawWatch, watched_hover, yaw_trimmed};
+use common::yaw::{QUADCOPTER_X_YAW_RATE, YawWatch, quadcopter_x_yaw, watched_hover, yaw_trimmed};
 use common::{AUTOTUNE_TIMEOUT_S, Plant};
 
 use assert2::check;
@@ -17,7 +17,7 @@ use stable_flight::tuning::autotune::{
     AutotuneAbort, AutotuneEvent, COPTER_LOOP_SHAPING, DesignPlan, Envelope, Method, Outcome,
     SearchPlan, StagePlan, StepTestPlan,
 };
-use stable_flight::tuning::{LoopShapingConfig, StepConfig, StepMetrics};
+use stable_flight::tuning::{LoopShapingConfig, StepMetrics};
 use stable_flight_sim::airframes::{self, Airframe};
 
 /// Rate P multiplier for the low start (the RealFlight example's `--rate-p-scale`).
@@ -227,17 +227,15 @@ const HIGH_I_YAW: Gains = Gains {
     d: 0.0,
 };
 
-/// How long the tuned yaw loop's steps are watched, in s: twice the search's window, since
-/// the step against the trim levels off later.
-const YAW_WATCH_S: f32 = 0.5;
-
 /// Under a yaw trim as large as QuadCopterX's, the yaw rate search tunes from core's default
-/// yaw gains and from [`HIGH_I_YAW`] to gains that agree, and the mixer never clips
-/// the moments meanwhile. The tuned loop's steps clip within the allowance and settle, and judged
-/// as the search judges a pair, on the two steps' means, overshoot and bounce back within the
-/// spec. One at a time they don't: the trim spends 0.40 of the yaw moment in one direction,
-/// so the step against it rises in up to 244 ms (PX4's yaw target is 0.2 s) and the step
-/// with it overshoots by up to 0.08 (#296).
+/// yaw gains and from [`HIGH_I_YAW`] to gains that agree, and the mixer never clips the
+/// moments meanwhile; on QuadCopterX's yaw (`quadcopter_x_yaw`, half `quad_x`'s authority),
+/// from its own gains too. Watched over the yaw step test's 1 s, the tuned loop's steps clip
+/// within the allowance, rise, and settle, and judged as the search judges a pair, on the two
+/// steps' means, overshoot and bounce back within the spec. One at a time they don't: the
+/// trim spends 0.40 of the yaw moment in one direction, so the step against it rises slower
+/// (up to 0.50 s on QuadCopterX's yaw; PX4's yaw target is 0.2 s) and the step with it
+/// overshoots more (#296, #558).
 ///
 /// A start whose I builds the trim slowly can keep the search from passing anything:
 /// `racer`'s own yaw gains (P 1.5, I 0.1) settle with part of the trim on P, and each lower
@@ -251,45 +249,56 @@ fn yaw_rate_search_tunes_against_a_yaw_trim() {
         method: Method::Search(SearchPlan::copter_yaw_rate()),
     }];
     let test = StepTestPlan::copter(target);
-    let watched = StepConfig {
-        duration_s: YAW_WATCH_S,
-        ..test.step
-    };
-    for (name, airframe) in airframes::all() {
+    let default_yaw = target.gains(&CopterStabilizerConfig::default());
+    let mut rows: Vec<(&str, Airframe, Vec<Gains>)> = airframes::all()
+        .into_iter()
+        .map(|(name, airframe)| (name, airframe, vec![default_yaw, HIGH_I_YAW]))
+        .collect();
+    rows.push((
+        "QuadCopterX's yaw",
+        quadcopter_x_yaw(QUADCOPTER_X_YAW_RATE),
+        vec![default_yaw, HIGH_I_YAW, QUADCOPTER_X_YAW_RATE],
+    ));
+    for (name, airframe, starts) in rows {
         let trimmed = yaw_trimmed(airframe);
-        let starts = [target.gains(&CopterStabilizerConfig::default()), HIGH_I_YAW];
-        let tuned = starts.map(|start| {
-            let plant = trimmed.flying(target, start);
-            let watch = YawWatch::default();
-            let mut flight_loop = watched_hover(&plant, &watch);
-            let clipped_before = watch.mixer_clipped_ticks.get();
-            let run = common::autotune_on(
-                &mut flight_loop,
-                &plan,
-                Envelope::default(),
-                AUTOTUNE_TIMEOUT_S,
-            );
-            let row = format!("{name} from {start:?}");
-            check!(run.outcomes() == [(target, Ok(Outcome::Tuned))], "{row}");
-            check!(watch.mixer_clipped_ticks.get() == clipped_before, "{row}");
-            let tuned = trimmed.with_config(run.config);
-            let [up, down] = [watched, watched.reversed()]
-                .map(|step| spec::respond(&tuned, target, step).expect("measured"));
-            for m in [&up, &down] {
-                check!(m.saturated_s <= test.max_saturated_s, "{row}: {m:?}");
-                check!(m.settling_time_s.is_some(), "{row}: {m:?}");
-            }
-            let mean = |of: fn(&StepMetrics) -> f32| (of(&up) + of(&down)) / 2.0;
-            check!(
-                mean(|m| m.overshoot) <= spec::MAX_OVERSHOOT,
-                "{row}: {up:?} {down:?}"
-            );
-            check!(
-                mean(|m| m.bounce_back) <= spec::MAX_RATE_BOUNCE_BACK,
-                "{row}: {up:?} {down:?}"
-            );
-            target.gains(&run.config).p
-        });
-        check!(agree(tuned[0], tuned[1]), "{name}: {tuned:?}");
+        let tuned: Vec<f32> = starts
+            .into_iter()
+            .map(|start| {
+                let plant = trimmed.flying(target, start);
+                let watch = YawWatch::default();
+                let mut flight_loop = watched_hover(&plant, &watch);
+                let clipped_before = watch.mixer_clipped_ticks.get();
+                let run = common::autotune_on(
+                    &mut flight_loop,
+                    &plan,
+                    Envelope::default(),
+                    AUTOTUNE_TIMEOUT_S,
+                );
+                let row = format!("{name} from {start:?}");
+                check!(run.outcomes() == [(target, Ok(Outcome::Tuned))], "{row}");
+                check!(watch.mixer_clipped_ticks.get() == clipped_before, "{row}");
+                let tuned = trimmed.with_config(run.config);
+                let [up, down] = [test.step, test.step.reversed()]
+                    .map(|step| spec::respond(&tuned, target, step).expect("measured"));
+                for m in [&up, &down] {
+                    check!(m.saturated_s <= test.max_saturated_s, "{row}: {m:?}");
+                    check!(m.rise_time_s.is_some(), "{row}: {m:?}");
+                    check!(m.settling_time_s.is_some(), "{row}: {m:?}");
+                }
+                let mean = |of: fn(&StepMetrics) -> f32| (of(&up) + of(&down)) / 2.0;
+                check!(
+                    mean(|m| m.overshoot) <= spec::MAX_OVERSHOOT,
+                    "{row}: {up:?} {down:?}"
+                );
+                check!(
+                    mean(|m| m.bounce_back) <= spec::MAX_RATE_BOUNCE_BACK,
+                    "{row}: {up:?} {down:?}"
+                );
+                target.gains(&run.config).p
+            })
+            .collect();
+        let [least, most] =
+            [f32::min, f32::max].map(|pick| tuned.iter().copied().reduce(pick).unwrap_or(0.0));
+        check!(agree(least, most), "{name}: {tuned:?}");
     }
 }

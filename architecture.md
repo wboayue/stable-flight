@@ -742,14 +742,23 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     the search from its D (0.22–0.25) left steps short of 90% in the window. A yaw trim
     (QuadCopterX hovers on 0.40 of yaw moment, #192) takes authority from one direction, so
     the step against it rises slower and the one with it overshoots: the pair's means judge
-    it. The I follows P as on roll and pitch, so the yaw integral has its own, larger limit
-    (`BodyRateControllerConfig::yaw_max_integral`, 5 rad: a fifth of P 0.5 holds 0.40 with
-    25% margin); with the shared 1 rad the I held 0.40 only from P 2, and the search kept its
-    start on every 0.40-trim row. Keeping the start's I instead was rejected: a high I makes
+    it. The I follows P as on roll and pitch, at a larger share (`YAW_RATE_I_PER_P`, 0.3/s):
+    after liftoff it rebuilds the trim in 4.9 s on the sim's QuadCopterX yaw, against 7.3 s at
+    0.2, at the same tuned P; at 0.4–0.5 the tuned steps overshoot past the spec (#558). The
+    yaw integral has its own, larger limit (`BodyRateControllerConfig::yaw_max_integral`,
+    5 rad); with the shared 1 rad a fifth of P held 0.40 only from P 2, and the search kept
+    its start on every 0.40-trim row. Keeping the start's I instead was rejected: a high I makes
     small P overshoot on the I alone, the bracket stops there, and the result depends on the
     start (0.35 against 0.91 on `racer`). A start whose I builds the trim slowly fails the
     same way: `racer`'s own yaw gains (P 1.5, I 0.1) settle with part of a 0.40 trim on P, and
-    every lower candidate drifts with the trim (#296).
+    every lower candidate drifts with the trim (#296). QuadCopterX has half `quad_x`'s yaw
+    authority, so its steps reach only about half the step in the 0.25 s window and its
+    search stops on clipping, not on the criterion; on a sim plant fitted to it (RealFlight's
+    turns and steps alike) that bound lands on P 1.11–1.15 from every start, overshooting at
+    most 0.03. Longer search windows were rejected: at 1 s a start with I as high as P
+    overshoots on the I alone and the search falls to P 0.51 (0.5 s does the same on
+    `heavy_quad`). The yaw step test watches 1 s instead (`COPTER_YAW_RATE_TEST_STEP`), so
+    the slow rise and settle show (#558).
   * D isn't searched the way ArduPilot does (raise D until the response bounces back): with the
     rate I in the loop, overshoot decays without falling back, so bounce-back never bounds D.
   * An envelope breach while a candidate flies fails that candidate, not the run: the committed
