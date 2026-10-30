@@ -319,8 +319,8 @@ const STEP_BAND_M: f32 = 2.0;
 /// ±30 m altitude steps: overshoot, settle into [`STEP_BAND_M`], and airspeed error, each
 /// measured with margin (no external band applies): (step m, most overshoot m, settle s, most
 /// airspeed error m/s). Measured up 0.06 m / 18.6 s (the 1.8 m/s climb limit alone takes
-/// 16.7 s) / 0.21 m/s, down 2.3 m / 12.6 s / 0.78 m/s. Untuned pitch-loop gains
-/// overshoot the descent 7.4 m and take 23 s (#392).
+/// 16.7 s) / 0.21 m/s, down 2.3 m / 12.6 s / 0.78 m/s. The starting pitch-loop gains
+/// overshot the descent 7.4 m and took 23 s (#392).
 #[test]
 fn alia250_steps_altitude() {
     for (step_m, overshoot_m, settle_s, airspeed_mps) in
@@ -355,8 +355,8 @@ fn alia250_catches_up_a_faster_descent_within_its_sink_limit() {
 }
 
 /// Most altitude lost or gained entering a loiter's 20° bank from the line, in m. Measured
-/// 0.34 m low and 0.12 m high; 1 m leaves about 3× margin. Untuned pitch-loop gains
-/// dip 1.6 m (X-Plane, 2.6–4 m; #392).
+/// 0.34 m low and 0.12 m high; 1 m leaves about 3× margin. The starting pitch-loop gains
+/// dipped 1.6 m (X-Plane, 2.6–4 m; #392).
 const TURN_ALTITUDE_M: f32 = 1.0;
 
 /// Entering a turn holds altitude: the line north, then a loiter to its right.

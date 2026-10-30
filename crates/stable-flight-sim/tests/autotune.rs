@@ -136,8 +136,8 @@ fn a_design_that_rings_goes_back_to_its_start() {
 }
 
 /// How much slower than the fastest pair the design search's rate loop may rise, as a
-/// fraction of the fastest pair's rise (target: #531). Measured: +8% on `quad_x`, +9% on
-/// `heavy_quad`, each one 4 ms tick of rise.
+/// fraction of the fastest pair's rise: the search's target (#531). Measured: +8% on
+/// `quad_x`, +9% on `heavy_quad`, each one 4 ms tick of rise.
 const MAX_RISE_EXCESS: f32 = 0.25;
 
 /// Multipliers on the tuned rate P and D, each, for the pairs the tuned loop is raced

@@ -127,7 +127,7 @@ fn holds_and_flies_legs_in_a_headwind() {
     }
 }
 
-/// Most the tilt may pass the tilt cap on an uncapped leg, in degrees (bound: #437).
+/// Most the tilt may pass the tilt cap on an uncapped leg, in degrees (#437).
 const TILT_OVER_CAP_DEG: f32 = 5.0;
 
 /// The length of the RealFlight probe's legs that flipped the Titan Cobra flying the second
