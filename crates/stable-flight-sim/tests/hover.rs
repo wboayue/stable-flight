@@ -10,7 +10,7 @@ use stable_flight::{ControlInput, Vec2, Vec3, wrap_angle};
 use stable_flight_sim::airframes::{self, Airframe};
 use stable_flight_sim::{Gust, Wind};
 
-use common::yaw::{QUADCOPTER_X_YAW_RATE, YawWatch, quadcopter_x_yaw, yaw_trimmed};
+use common::yaw::{QUADCOPTER_X_YAW_RATE, quadcopter_x_yaw, yaw_trimmed};
 use common::{
     CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_ALTITUDE_M as ALTITUDE_M,
     HOVER_SETTLE_S as SETTLE_S, Plant, ThenFly, fly, waypoint,
@@ -128,6 +128,10 @@ const MAX_TURN_SETTLE_S: f32 = 2.0;
 /// How close to the target a turn's heading counts as settled, in degrees.
 const TURN_SETTLE_DEG: f32 = 1.0;
 
+/// How long a turn is watched, in s: twice RealFlight's 4.2 s settle at yaw rate P 0.6, so a
+/// ringing loop shows (#383).
+const TURN_WATCH_S: f32 = 8.0;
+
 /// How a heading turn on the hover point ends.
 #[derive(Debug)]
 struct Turn {
@@ -138,7 +142,7 @@ struct Turn {
 }
 
 /// Hovers `airframe` under QuadCopterX's yaw trim, then turns the waypoint's heading by
-/// `turn_deg` (positive turns right, from the spawn's north) and watches for 8 s.
+/// `turn_deg` (positive turns right, from the spawn's north) and watches for [`TURN_WATCH_S`].
 fn heading_turn(airframe: Airframe, turn_deg: f32) -> Turn {
     let target_rad = turn_deg.to_radians();
     let mut turn = waypoint(0.0, 0.0, ALTITUDE_M);
@@ -149,14 +153,14 @@ fn heading_turn(airframe: Airframe, turn_deg: f32) -> Turn {
         after_s: SETTLE_S,
         input: Some(ControlInput::Waypoint(turn)),
     };
-    let mut flight_loop = common::pipeline(&yaw_trimmed(airframe), commander, YawWatch::default());
+    let mut flight_loop = common::sim_loop_with(&yaw_trimmed(airframe), commander);
     fly(&mut flight_loop, SETTLE_S, |_, _| {});
 
     // Guidance slews the heading target to the turn at its default rate.
     let slew_s = turn_deg.abs().to_radians() / DEFAULT_HEADING_RATE_RADPS;
     let mut overshoot_deg: f32 = 0.0;
     let mut last_outside_s = 0.0;
-    fly(&mut flight_loop, 8.0, |flight_loop, elapsed_s| {
+    fly(&mut flight_loop, TURN_WATCH_S, |flight_loop, elapsed_s| {
         let error_deg = wrap_angle(flight_loop.state().heading_rad - target_rad).to_degrees();
         // Past the target in the turn's direction.
         overshoot_deg = overshoot_deg.max(error_deg * turn_deg.signum());
