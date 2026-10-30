@@ -15,6 +15,7 @@ impl ParamTable for CopterStabilizerConfig {
         param!("STAB_RATE_YAW_I", body_rate.yaw_gains.i),
         param!("STAB_RATE_YAW_D", body_rate.yaw_gains.d),
         param!("STAB_RATE_IMAX", body_rate.max_integral),
+        param!("STAB_RATE_IMAX_Z", body_rate.yaw_max_integral),
         param!("STAB_ATT_RLL_P", attitude.roll_gains.p),
         param!("STAB_ATT_RLL_I", attitude.roll_gains.i),
         param!("STAB_ATT_RLL_D", attitude.roll_gains.d),
@@ -62,7 +63,13 @@ mod metadata {
             RATE.param("STAB_RATE_YAW_P", "Yaw rate loop proportional gain"),
             RATE.param("STAB_RATE_YAW_I", "Yaw rate loop integral gain"),
             RATE.param("STAB_RATE_YAW_D", "Yaw rate loop derivative gain"),
-            RATE.param("STAB_RATE_IMAX", "Rate loop integral limit, per axis")
+            RATE.param(
+                "STAB_RATE_IMAX",
+                "Roll and pitch rate loop integral limit, each",
+            )
+            .with_units("rad")
+            .at_least(0.0),
+            RATE.param("STAB_RATE_IMAX_Z", "Yaw rate loop integral limit")
                 .with_units("rad")
                 .at_least(0.0),
             ATTITUDE.param("STAB_ATT_RLL_P", "Roll angle loop proportional gain"),

@@ -27,6 +27,7 @@ fn setup_controller() -> CopterStabilizer {
                 d: 0.05,
             },
             max_integral: 100.0,
+            yaw_max_integral: 100.0,
         },
         attitude: AttitudeControllerConfig {
             roll_gains: attitude_gains,
@@ -959,6 +960,7 @@ fn the_rate_loop_flies_gyro_filtered_rates() {
                     d: 0.0,
                 },
                 max_integral: 1.0,
+                yaw_max_integral: 1.0,
             },
             gyro_cutoff_hz: cutoff_hz,
             ..Default::default()

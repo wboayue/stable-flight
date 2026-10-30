@@ -35,6 +35,7 @@ fn tables_cover_every_config_field() {
                 pitch_gains: Gains { p: _, i: _, d: _ },
                 yaw_gains: Gains { p: _, i: _, d: _ },
                 max_integral: _,
+                yaw_max_integral: _,
             },
         attitude:
             AttitudeControllerConfig {
@@ -98,7 +99,7 @@ fn tables_cover_every_config_field() {
             },
     } = CopterGuidanceConfig::default();
     // one param per scalar, vector component, or gain term in the destructuring above
-    check!(names::<CopterStabilizerConfig>().len() == 31);
+    check!(names::<CopterStabilizerConfig>().len() == 32);
     check!(names::<CopterGuidanceConfig>().len() == 36);
 }
 
@@ -172,12 +173,18 @@ fn rejected_values_leave_the_config_unchanged() {
         field: "max_integral",
         requirement: "non-negative and finite",
     });
+    let body_rate_yaw_max_integral = ParamError::Invalid(InvalidConfig {
+        section: Some("body_rate"),
+        field: "yaw_max_integral",
+        requirement: "non-negative and finite",
+    });
     let cases = [
         ("NO_SUCH_PARAM", 1.0, ParamError::Unknown),
         ("GUID_ALT_P", 1.0, ParamError::Unknown), // the guidance's, not the stabilizer's
         ("STAB_RATE_RLL_P", f32::NAN, ParamError::NotFinite),
         ("STAB_RATE_RLL_P", f32::INFINITY, ParamError::NotFinite),
         ("STAB_RATE_IMAX", -1.0, body_rate_max_integral),
+        ("STAB_RATE_IMAX_Z", -1.0, body_rate_yaw_max_integral),
     ];
     for (name, value, error) in cases {
         let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());

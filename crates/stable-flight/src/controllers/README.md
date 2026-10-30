@@ -216,6 +216,7 @@ let body_rate_config = BodyRateControllerConfig {
     pitch_gains: gains,
     yaw_gains: Gains { p: 0.3, i: 0.1, d: 0.0 },
     max_integral: 1.0,
+    yaw_max_integral: 5.0,
 };
 
 // Attitude controller config  

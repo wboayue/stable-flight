@@ -98,14 +98,18 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
                 roll_gains: rate_roll_pitch,
                 pitch_gains: rate_roll_pitch,
                 // Yaw authority is differential prop drag only, so yaw needs its own, higher gains.
-                // The model needs a steady ~0.40 nose-right yaw moment to hover; I · max_integral
-                // = 0.6 cancels it with margin; with less, acro drifts in yaw (#192).
+                // The model needs a steady ~0.40 nose-right yaw moment to hover; I ·
+                // yaw_max_integral must cancel it with margin; with less, acro drifts in yaw
+                // (#192).
                 yaw_gains: Gains {
                     p: 0.6,
                     i: 0.6,
                     d: 0.0,
                 },
                 max_integral: 1.0,
+                // Core's default: the autotune's yaw I (a fifth of P) holds the 0.40 from P
+                // 0.5 up with 25% margin (#296).
+                yaw_max_integral: 5.0,
             },
             attitude: AttitudeControllerConfig {
                 roll_gains: attitude_roll_pitch,
@@ -290,6 +294,7 @@ pub fn explora_vtol()
                     pitch_gains: gains(0.3, 0.5, 0.0),
                     yaw_gains: gains(0.1, 0.05, 0.0),
                     max_integral: 1.0,
+                    yaw_max_integral: 1.0,
                 },
                 attitude: AttitudeControllerConfig {
                     // The rate loops track well; P 4 asks ~110°/s at 27° off, so recoveries
@@ -549,6 +554,7 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                     // landing (#433).
                     yaw_gains: gains(0.3, 0.3, 0.0),
                     max_integral: 1.0,
+                    yaw_max_integral: 1.0,
                 },
                 // The same autotune's angle search: roll kept QuadCopterX's hand tune (its
                 // candidate flew worse), pitch P raised. Step tests at 250 Hz settle every
