@@ -103,9 +103,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `tuning::IdentifyProbe` (`ProbeConfig::Identify`, preset `autotune::COPTER_IDENTIFY`) (#516):
   fits a rate axis's `RateModel` (motor lag, delay, angular acceleration per unit moment) from
-  a square wave on its angle loop's setpoint, every loop closed, in `f32` and fixed memory. On
-  the sim, 3 s per axis recovers each copter's motor lag within 1% and its actuator delay, from
-  low and ×3 starting gains.
+  a square wave added to its rate setpoint (0.7 rad/s, PX4's `MC_AT_SYSID_AMP`), every loop
+  closed, in `f32` and fixed memory; an angle stage's fit runs on the rate loop under it
+  (#561). On the sim, 3 s per axis recovers each copter's motor lag within 1% and its actuator
+  delay, from low and ×3 starting gains. On the Titan Cobra in RealFlight roll fits 23 rad/s²,
+  where a 4° wave on the angle setpoint fit 11 (#561).
 
 - `TableMixer::config()`: the thrust factor and yaw ratio a mixer scales by, so a copter
   wiring can mix a quadplane's lift rotors at its config (#438).

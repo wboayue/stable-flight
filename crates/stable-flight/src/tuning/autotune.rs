@@ -7,7 +7,7 @@ use crate::controllers::{
     Gains, InvalidConfig, RATE_I_PER_P, YAW_RATE_I_PER_P, check, check_limit, check_positive,
     check_unit_interval,
 };
-use crate::math::{DEG, euler_angles};
+use crate::math::euler_angles;
 use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use crate::{Configurable, FlightLoop, Vec3, VehicleState};
 
@@ -160,11 +160,13 @@ impl Method {
     }
 }
 
-/// Identification of a copter rate axis through its angle loop: a 4° square wave on the angle
-/// setpoint for 3 s, washed out at 0.2 s (PX4's time constant). On the sim 3 s fit the same
-/// model as 20 s on every airframe, from any start (#312).
+/// Identification of a copter rate axis: a 0.7 rad/s square wave added to its rate setpoint
+/// for 3 s, washed out at 0.2 s (PX4's `MC_AT_SYSID_AMP` and time constant). On the sim 3 s
+/// fit the same model as 20 s on every airframe, from any start (#312). On the rate setpoint
+/// the excitation doesn't scale with the angle P and no edge kicks the angle D, so the Titan
+/// Cobra's roll fits 23 rad/s² in RealFlight, near its pitch's 27 (#561).
 pub const COPTER_IDENTIFY: IdentifyConfig = IdentifyConfig {
-    amplitude: 4.0 * DEG,
+    amplitude: 0.7,
     duration_s: 3.0,
     washout_tc_s: 0.2,
 };
@@ -709,8 +711,8 @@ fn no_worse(base: Option<f32>, value: Option<f32>, limit: impl FnOnce(f32) -> f3
 /// Gains for one loop from a fitted model of its axis, committed without steps: search from
 /// them once every loop is designed ([`StagePlan::copter_design_search`]).
 ///
-/// 1. **Identify:** `identify` excites the axis through its angle loop (a rate loop's probe
-///    runs on the angle loop above it) and fits a [`RateModel`]. The fit starts at the settle
+/// 1. **Identify:** `identify` excites the axis on its rate loop's setpoint (an angle loop's
+///    probe runs on the rate loop under it) and fits a [`RateModel`]. The fit starts at the settle
 ///    timeout even when the vehicle hasn't settled: a loop that rings on its start gains only
 ///    adds excitation (#356). A slow host may stop it 3 times in a row before the stage fails.
 /// 2. **Design:** a rate loop's P and D by [`design_rate`], its I at `rate_i_per_p` of P; an
@@ -2094,12 +2096,12 @@ impl Autotune {
     }
 }
 
-/// The loop `probe` runs on for a stage on `target`: an identification excites a rate loop's
-/// axis through the angle loop above it ([`DesignPlan`]); every other probe runs on `target`
+/// The loop `probe` runs on for a stage on `target`: an identification excites an angle
+/// loop's axis on the rate loop under it ([`DesignPlan`]); every other probe runs on `target`
 /// itself.
 fn probed_loop(target: TunedLoop, probe: &ProbeConfig) -> TunedLoop {
     match probe {
-        ProbeConfig::Identify(_) => target.outer().unwrap_or(target),
+        ProbeConfig::Identify(_) => target.inner().unwrap_or(target),
         ProbeConfig::Step(_) => target,
     }
 }

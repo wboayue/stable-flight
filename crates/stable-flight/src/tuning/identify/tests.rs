@@ -7,7 +7,7 @@ use crate::tuning::{LoopSignals, Measurement, Probe, ProbeConfig, ProbeStatus};
 /// The flight loop's tick: 250 Hz.
 const DT: f32 = 0.004;
 
-/// A 4° square wave for 3 s, as the copter's.
+/// A 0.07 square wave for 3 s, washed out as the copter's.
 const CONFIG: IdentifyConfig = IdentifyConfig {
     amplitude: 0.07,
     duration_s: 3.0,

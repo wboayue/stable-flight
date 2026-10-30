@@ -7,7 +7,7 @@
 //! cargo test --release -p stable-flight-sim --test autotune_methods -- --ignored --nocapture --test-threads 1
 //! ```
 //!
-//! - **Identification:** core's `IdentifyProbe` on the roll and pitch angle loops
+//! - **Identification:** core's `IdentifyProbe` on the roll and pitch rate loops
 //!   (`COPTER_IDENTIFY`): PX4's shrinking square wave on the setpoint, every loop closed, and a
 //!   least-squares fit of the axis's body rate to its moment command with a delay.
 //! - **Design** from the model: PX4's pole placement (`pid_design.hpp:68-103`, here only), or
@@ -96,10 +96,10 @@ fn search_time_per_stage() {
 /// Simulated seconds an identification may run: its 3 s plus margin.
 const IDENTIFY_TIMEOUT_S: f32 = 5.0;
 
-/// Roll's then pitch's model, each from core's identification probe on its angle loop
+/// Roll's then pitch's model, each from core's identification probe on its rate loop
 /// ([`COPTER_IDENTIFY`]) from a settled hover.
 fn identify(plant: &Plant) -> [RateModel; 2] {
-    [TunedLoop::Roll, TunedLoop::Pitch].map(|target| {
+    [TunedLoop::RollRate, TunedLoop::PitchRate].map(|target| {
         let config = ProbeConfig::Identify(COPTER_IDENTIFY);
         match common::probe(plant, target, config, IDENTIFY_TIMEOUT_S) {
             Some(ProbeStatus::Done(Measurement::Identify(model))) => model,

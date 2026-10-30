@@ -67,7 +67,8 @@
 //! for an angle or heading loop also its rate setpoint.
 //!
 //! - **Rate stages** replace the rate setpoint the angle loop sets, so the angle loop around
-//!   the tested axis has no say while the probe runs.
+//!   the tested axis has no say while a step runs. An identification adds its square wave to
+//!   that setpoint instead, so the angle loop still holds the attitude.
 //! - **Handoff:** when the probe finishes, on [`stop_probe`](crate::tuning::Tunable::stop_probe),
 //!   or when a [`Setpoint::Rate`] tick idles the angle or heading loop under test
 //!   ([`ProbeStatus::Interrupted`](crate::tuning::ProbeStatus::Interrupted)), the loop
@@ -492,7 +493,12 @@ impl CopterStabilizer {
     ) -> Vec3 {
         let current_rates = self.filter_rates(dt, estimated_state.angular_velocity_radps);
         let mut desired_rates_radps = desired_rates_radps;
-        self.probe_rates(dt, &mut desired_rates_radps, &current_rates);
+        self.probe_rates(
+            dt,
+            &mut desired_rates_radps,
+            &current_rates,
+            &estimated_state.angular_velocity_radps,
+        );
         self.body_rate.control(
             &self.config.body_rate,
             dt,

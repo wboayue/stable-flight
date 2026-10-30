@@ -813,15 +813,22 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   takes about 9 min. The design search fits each axis and designs its gains, then searches
   each loop from its design, so the search starts near its answer:
   * *Identify* (`tuning::IdentifyProbe`, in each `Method::Design` stage): a shrinking square
-    wave on the angle setpoint, every loop closed (PX4's excitation,
-    `mc_autotune_attitude_control.cpp:603-639`), and a least-squares fit of the axis's body
+    wave of 0.7 rad/s added to the rate setpoint, every loop closed (PX4's excitation:
+    `mc_autotune_attitude_control`'s `getIdentificationSignal`, `MC_AT_SYSID_AMP`, added to
+    the rate setpoint by `mc_att_control`), and a least-squares fit of the axis's body
     rate to its moment command: a second-order model with a delay (PX4's `ArxRls<2,2,1>`), the
     delay the shortest within 1% of the least residual among those whose moment pushes the
     axis the right way (a positive moment-weight sum). In RealFlight the fits explain only
     35–72% of the rate change, so noise picks among near-tied delays: 10 of 67 recorded
     QuadCopterX fits read under 20 rad/s² (negative in 7); replayed with the filter, 5 did
     (#529). A wider tie (5%) left 1 but took 1-tick delays in 6, which design too hot a loop:
-    one rang and failed its stage. A rate stage's fit runs on the angle loop above it. The
+    one rang and failed its stage. An angle stage's fit runs on the rate loop under it. A 4°
+    wave on the angle setpoint was rejected: its sustained part scales with the start's angle
+    P, and each edge kicks the angle D into a one-tick moment spike clipped at 1, which
+    RealFlight delivers in part. On the Titan Cobra's start (angle P 3, rate P 0.59) the
+    spikes were most of roll's excitation and fit 11 rad/s² against pitch's 22–24, so the
+    design rang; without angle D, roll didn't fit at all. On the rate setpoint roll fits 23
+    against pitch's 27 (#561). The
     probe keeps each delay's least-squares sums rather than the record and solves them when
     the excitation ends; it fits the rate's change on the last rate and the last change, since
     fitting the last two rates side by side loses the lag in `f32` (up to 1.6 ms off, #516),

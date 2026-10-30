@@ -2,7 +2,7 @@
 //! tunes roll and pitch rate, then roll and pitch angle, by design search, then yaw rate by a
 //! search from its start gains, lands, and disarms
 //! (`StagePlan::copter_design_search`, `architecture.md#autotune`). Each roll and pitch loop's
-//! axis is fitted from a 3 s square wave on its angle loop (the fit logged: delay, motor lag,
+//! axis is fitted from a 3 s square wave on its rate loop (the fit logged: delay, motor lag,
 //! acceleration) and its gains designed from the fit; once every loop is designed, each
 //! loop's P is searched
 //! by pairs of steps from its design, verified, and kept only if no worse than the design
