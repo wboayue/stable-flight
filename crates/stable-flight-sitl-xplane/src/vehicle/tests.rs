@@ -399,7 +399,7 @@ fn follows_pause_and_relocation() {
         .fake()
         .push_frame(handles().frame(&paused, Instant::now(), &[]));
     vehicle.state(DT);
-    check!(vehicle.paused);
+    check!(vehicle.is_paused());
     check!(vehicle.state_is_stale());
 
     let relocated = XPlaneSample {
@@ -414,7 +414,7 @@ fn follows_pause_and_relocation() {
         .fake()
         .push_frame(handles().frame(&relocated, Instant::now(), &[]));
     let state = vehicle.state(DT);
-    check!(!vehicle.paused);
+    check!(!vehicle.is_paused());
     check!(!vehicle.state_is_stale());
     check!(state.position_m.xy().norm() < 1e-3);
     check!(vehicle.anchor().expect("anchored").latitude_deg == f64::from(37.62f32));

@@ -38,7 +38,8 @@ X-Plane 12 simulator backend over [xplane-bridge](https://crates.io/crates/xplan
   from where the aircraft starts, #494) fly it. Its copter legs fly nose first,
   yielding a heading the wind holds off, and slow while the nose is off them (core's defaults,
   #452, #431, #437).
-- `XPlaneVehicle::state_is_stale`: no frame for 0.5 s, a lagging dataref, or X-Plane paused.
+- `XPlaneVehicle::state_is_stale`: no frame for 0.5 s, a lagging dataref, or X-Plane paused;
+  `XPlaneVehicle::is_paused`.
   The `copter-autotune-xplane` example autotunes the Alia's hover on its lift rotors
   (`StagePlan::large_copter_search` from `flights/alia_hover.csv`, `--step-test`,
   `--stages none`), waiting while the state is stale (#540).

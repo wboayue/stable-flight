@@ -130,6 +130,40 @@ fn alia250_moments_drive_the_engines_the_sweep_measured() {
     }
 }
 
+/// The lift rotors alone on `quad_x`, yaw reversed, at the Alia's mixer config (how
+/// `copter-autotune-xplane` flies its hover) mix as its quadplane mixer does in copter flight,
+/// clipping included, so gains tuned on the one fly the other. The pusher and surfaces stay at
+/// 0.
+#[test]
+fn alia250_lift_rotors_mix_as_quad_x_with_reversed_yaw() {
+    let alia = alia250();
+    let mut lift_only = TableMixer::quad_x()
+        .with_reversed_yaw()
+        .with_config(alia.mixer.config())
+        .expect("the Alia's mixer config is valid");
+    // (thrust, moments)
+    let cases = [
+        (0.9, Vec3::zeros()),
+        (0.9, Vec3::new(0.3, 0.0, 0.0)),
+        (0.9, Vec3::new(0.0, -0.3, 0.0)),
+        (0.9, Vec3::new(0.0, 0.0, 0.3)),
+        (0.9, Vec3::new(-0.2, 0.3, -0.4)),
+        (0.95, Vec3::new(1.0, 1.0, 1.0)),
+        (0.05, Vec3::new(-1.0, 0.5, -1.0)),
+    ];
+    for (thrust, moments) in cases {
+        let control = ControlOutput::new(thrust, moments);
+        let quadplane = alia250().mixer.mix(&control);
+        let lift = lift_only.mix(&control);
+        check!(
+            lift.motors[..4] == quadplane.motors[..4],
+            "{thrust} {moments:?}"
+        );
+        check!(lift.motors[4..] == [0.0; 4], "{thrust} {moments:?}");
+        check!(lift.servos == [0.0; 8], "{thrust} {moments:?}");
+    }
+}
+
 /// Full cruise moments deflect each surface as X-Plane's own yoke does at full travel
 /// (xplane-bridge `design.md`, Spike findings: Surfaces): right roll drops the left ailerons
 /// 10° and raises the right 20°, nose up raises both elevators 20° (X-Plane's −20), nose right
