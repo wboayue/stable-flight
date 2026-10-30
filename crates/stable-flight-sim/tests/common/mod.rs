@@ -304,7 +304,7 @@ impl AutotuneRun {
     }
 
     /// Whether every stage of a search plan over [`spec::TUNED`] ran and ended `Tuned`
-    /// (`large::plan`).
+    /// (`StagePlan::large_copter_search`).
     pub fn all_tuned(&self) -> bool {
         self.outcomes() == spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)))
     }

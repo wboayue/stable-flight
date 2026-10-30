@@ -2018,3 +2018,30 @@ fn a_lowered_design_goes_back_to_its_start_when_its_search_fails() {
     );
     check!(*flight_loop.stabilizer().config() == start);
 }
+
+/// The large-copter search tunes roll and pitch rate, then angle, on the large steps, keeping
+/// the start's rate I, and validates within its envelope (#351).
+#[test]
+fn large_copter_search_steps_each_loop_on_large_steps() {
+    let plan = StagePlan::large_copter_search();
+    // (stage, target, step)
+    let rows = [
+        (0, TunedLoop::RollRate, LARGE_COPTER_RATE_STEP),
+        (1, TunedLoop::PitchRate, LARGE_COPTER_RATE_STEP),
+        (2, TunedLoop::Roll, LARGE_COPTER_TILT_STEP),
+        (3, TunedLoop::Pitch, LARGE_COPTER_TILT_STEP),
+    ];
+    for (stage, target, step) in rows {
+        check!(plan[stage].target == target);
+        let Method::Search(search) = plan[stage].method else {
+            panic!("stage {stage}: not a search");
+        };
+        check!(search.test.step == step, "{target:?}");
+        check!(
+            search.test.max_saturated_s == LARGE_COPTER_MAX_SATURATED_S,
+            "{target:?}"
+        );
+        check!(search.i_per_p == None, "{target:?}");
+    }
+    check!(Autotune::new(&plan, Envelope::large_copter()).is_ok());
+}
