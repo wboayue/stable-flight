@@ -765,8 +765,8 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     gains go back in and get `Envelope::recovery_s` to recover.
 * **Sequence:** innermost first, so each stage flies on the gains the earlier ones found. A stage
   tunes only its own terms; the rest keep their gains. No stage searches the rate loops' I,
-  which holds trim rather than shaping the response: it follows P, at `RATE_I_PER_P` (0.2/s)
-  of every rate P a copter search or design sets (`SearchPlan::i_per_p`,
+  which holds trim rather than shaping the response: it follows P, at `RATE_I_PER_P` (0.2/s;
+  yaw: `YAW_RATE_I_PER_P`, 0.3/s) of every rate P a copter search or design sets (`SearchPlan::i_per_p`,
   `DesignPlan::rate_i_per_p`; a search's baseline flies the start's I, so from a start off
   the ratio a candidate differs in I as well as P), as ArduPilot's autotune sets I from P
   (`AUTOTUNE_PI_RATIO_FINAL`, 1.0). On the sim robustness table 1.0 failed most rows, 0.1–0.3
