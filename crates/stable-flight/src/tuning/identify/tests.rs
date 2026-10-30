@@ -327,9 +327,8 @@ fn lag_needs_a_pole_below_one() {
             dt_s: DT,
         };
         check!(model.lag_s() == lag_s, "pole {pole}");
-        check!(
-            model.accel_radps2().is_some() == lag_s.is_some(),
-            "pole {pole}"
-        );
+        // 0.1 of moment per tick, over (1 − p)·dt with a pole at or below 0 taken as 0.
+        let accel = lag_s.map(|_| 0.1 / ((1.0 - pole.max(0.0)) * DT));
+        check!(model.accel_radps2() == accel, "pole {pole}");
     }
 }

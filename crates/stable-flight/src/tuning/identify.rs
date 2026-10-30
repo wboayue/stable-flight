@@ -106,10 +106,8 @@ pub struct RateModel {
 
 impl RateModel {
     /// The motor lag's time constant, in s, from its pole `p = −r₂`: `−dt / ln p` for a pole
-    /// in `(0, 1)`. A pole at or below 0 is a lag under a tick, which the delay absorbs, so 0:
-    /// in RealFlight both copters' poles scatter from −0.2 to 0.2 on noise, and half their
-    /// fits land at or below 0 (#563). `None` for a pole at or past 1, which grows rather than
-    /// lags.
+    /// in `(0, 1)`. A pole at or below 0 is a lag under a tick, which the delay absorbs, so 0
+    /// (#563). `None` for a pole at or past 1, which grows rather than lags.
     ///
     /// # Examples
     ///
