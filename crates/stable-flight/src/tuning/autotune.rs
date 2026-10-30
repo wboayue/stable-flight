@@ -163,8 +163,7 @@ impl Method {
 /// Identification of a copter rate axis: a 0.7 rad/s square wave added to its rate setpoint
 /// for 3 s, washed out at 0.2 s (PX4's `MC_AT_SYSID_AMP` and time constant). On the sim 3 s
 /// fit the same model as 20 s on every airframe, from any start (#312). On the rate setpoint
-/// the excitation doesn't scale with the angle P and no edge kicks the angle D, so the Titan
-/// Cobra's roll fits 23 rad/s² in RealFlight, near its pitch's 27 (#561).
+/// the excitation doesn't scale with the angle P and no edge kicks the angle D (#561).
 pub const COPTER_IDENTIFY: IdentifyConfig = IdentifyConfig {
     amplitude: 0.7,
     duration_s: 3.0,
@@ -712,8 +711,8 @@ fn no_worse(base: Option<f32>, value: Option<f32>, limit: impl FnOnce(f32) -> f3
 /// them once every loop is designed ([`StagePlan::copter_design_search`]).
 ///
 /// 1. **Identify:** `identify` excites the axis on its rate loop's setpoint (an angle loop's
-///    probe runs on the rate loop under it) and fits a [`RateModel`]. The fit starts at the settle
-///    timeout even when the vehicle hasn't settled: a loop that rings on its start gains only
+///    probe runs on the rate loop under it) and fits a [`RateModel`]. The fit starts at the
+///    settle timeout even when the vehicle hasn't settled: a loop that rings on its start gains only
 ///    adds excitation (#356). A slow host may stop it 3 times in a row before the stage fails.
 /// 2. **Design:** a rate loop's P and D by [`design_rate`], its I at `rate_i_per_p` of P; an
 ///    angle loop's P by [`design_angle_p`] on the rate loop's committed gains, its I and D
