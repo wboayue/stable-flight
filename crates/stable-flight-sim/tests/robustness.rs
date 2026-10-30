@@ -15,9 +15,9 @@ use stable_flight_sim::airframes::{self, Airframe};
 use common::robustness::{Set, Start, perturbations, starting};
 use common::{AUTOTUNE_TIMEOUT_S, Plant, spec};
 
-/// Simulated seconds a row's autotune may take: the slowest passing row (`quad_x` with 10 ms
-/// of delay, 380 s) plus 25%.
-const BUDGET_S: f32 = 475.0;
+/// Simulated seconds a row's autotune may take: the slowest passing row (`heavy_quad`'s CG
+/// offset from the high start, 280 s with the yaw search, #296) plus 25%.
+const BUDGET_S: f32 = 350.0;
 
 /// Autotunes `airframe` under `set` from `start` and checks the row's criteria.
 fn check_row(name: &str, airframe: Airframe, set: Set, start: Start) {

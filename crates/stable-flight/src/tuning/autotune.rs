@@ -52,8 +52,9 @@ impl StagePlan {
     /// QuadCopterX in RealFlight one fit designed roll rate P 0.41 against 0.63–1.04, #518).
     /// Every loop is designed before any is searched: a loop still on its start gains can
     /// ring and keep another's steps from settling (pitch on `racer`'s high start with 25 ms
-    /// of delay, #518). On the sim it takes 152–380 s against the search's 308–693 s, and
-    /// tunes the high starts with delay the search can't (#518).
+    /// of delay, #518). On the sim its roll and pitch stages took 152–380 s against the
+    /// search's 308–693 s, and tuned the high starts with delay the search can't (#518); with
+    /// the yaw search, the passing robustness rows take 202–280 s (#296).
     ///
     /// Yaw rate is searched without a design: the design's yaw P (5–8 on the sim's quads)
     /// clips 0.5 rad/s steps for 44–116 ms, and the search from its D (0.22–0.25) left steps
@@ -201,6 +202,8 @@ pub const COPTER_RATE_STEP: StepConfig = StepConfig {
 /// Prop drag gives a quad little yaw authority (about 7 rad/s² per unit moment on the sim's
 /// `quad_x`), so 1 rad/s steps clip at any P that rises within PX4's yaw target, 0.2 s; the
 /// sim yaw search clipped 4–10× as long at 1 rad/s and settled on a lower P (#296).
+// TODO(#558): QuadCopterX's yaw in RealFlight reaches only half a step in the 0.25 s window,
+// so its search stops on clipping rather than on the criterion.
 pub const COPTER_YAW_RATE_STEP: StepConfig = StepConfig {
     amplitude: 0.5,
     ..COPTER_RATE_STEP
@@ -766,9 +769,10 @@ pub struct Settle {
     /// Roll and pitch within this, in rad.
     pub tilt_rad: f32,
     /// Roll and pitch rates within this, in rad/s, read through the stabilizer's gyro
-    /// low-pass; the yaw rate too before a yaw stage's probes. Other stages leave yaw out:
-    /// with 25 ms of delay it rings on its start gains at ±0.18 rad/s on `racer` without
-    /// tilting the vehicle (#518).
+    /// low-pass; the yaw rate too for a yaw rate or heading stage, as ArduPilot's level check
+    /// does (`AC_AutoTune::currently_level`, `AUTOTUNE_LEVEL_RATE_Y_CD`, 7.5°/s). Roll and
+    /// pitch stages leave yaw out: with 25 ms of delay it rings on its start gains at ±0.18
+    /// rad/s on `racer` without tilting the vehicle (#518).
     pub rate_radps: f32,
     /// For this long, in s.
     pub hold_s: f32,
@@ -791,7 +795,8 @@ impl Settle {
     }
 
     /// Whether `motion` holds this settle for a probe on `target`: before a step on it the
-    /// vehicle is still about that loop's axis, so a yaw stage waits for yaw too.
+    /// vehicle is still about that loop's axis, so a yaw rate or heading stage waits for yaw
+    /// too.
     fn holds_for(&self, motion: &Motion, target: TunedLoop) -> bool {
         match tilt_axis(target) {
             Some(_) => self.holds(motion),
@@ -1900,8 +1905,8 @@ impl Autotune {
     /// candidate `gains` (`level_s` counts it): then they stay for the procedure to commit.
     /// After `settle_timeout_s` the committed gains go back ([`AutotuneEvent::Unsettled`]).
     /// For a roll or pitch loop only its axis counts: the other may still ring on its start
-    /// gains (pitch on `racer`'s high start with 25 ms of delay, #518). A yaw loop needs both
-    /// level and its own axis still.
+    /// gains (pitch on `racer`'s high start with 25 ms of delay, #518). A yaw rate or heading
+    /// loop needs both level and yaw still.
     fn hold<C, V, G, S: CopterTunable, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
