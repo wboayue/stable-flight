@@ -272,8 +272,8 @@ pub fn retuned(mut airframe: Airframe, retune: impl Fn(TunedLoop, Gains) -> Gain
     airframe
 }
 
-/// Simulated seconds an autotune may run (`copter_design_search` takes 152–380 s on the
-/// clean and delayed robustness rows, #518).
+/// Simulated seconds an autotune may run (`copter_design_search` takes 202–280 s on the
+/// passing robustness rows, #296).
 pub const AUTOTUNE_TIMEOUT_S: f32 = 1200.0;
 
 /// How an [`autotune`] run ended.

@@ -768,11 +768,12 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   tuned. Before each probe the vehicle must hold level and still (`Envelope::settle`): roll
   and pitch within the tilt, their rates within the rate, read through the stabilizer's gyro
   low-pass (raw, the sim's gyro noise held them over the settle, so no stage started; the
-  envelope reads the raw rates, so a breach shows on its first tick). Yaw rate counts only
-  before a yaw stage's probes: on `racer` with 25 ms of delay the yaw loop rings at ±0.18
+  envelope reads the raw rates, so a breach shows on its first tick). The yaw rate counts only
+  for yaw rate and heading stages: on `racer` with 25 ms of delay the yaw loop rings at ±0.18
   rad/s on its start gains without tilting the vehicle, which would hold up every roll and
-  pitch stage (#518); ArduPilot's level check covers every axis, and widens its
-  limits up to twice as the wait grows (`AC_AutoTune.cpp:343`), which here started about half
+  pitch stage (#518); ArduPilot's level check covers every axis (`AC_AutoTune::currently_level`,
+  yaw within `AUTOTUNE_LEVEL_RATE_Y_CD`, 7.5°/s), and widens its limits up to twice as the
+  wait grows, which here started about half
   the probes before the vehicle was still and made angle steps clip. An identification that
   can't settle starts at the timeout instead of failing: the fit only gains excitation from
   the ringing. A step can't, so a loop the run hasn't reached yet that rings on its start
@@ -859,9 +860,10 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     scatter isn't the host's timing: every fit's 3 s held all 750 ticks, and the bad fits had
     no more late ticks than the good ones. The search keeps only gains whose steps passed, so
     a bad fit costs bracket points rather than a bad tune.
-  * On the sim, every clean, 10 ms, and 25 ms row of the three airframes from both starts
-    passes in 152–380 s (`robustness`); in the same sweep the search from the start gains took
-    308–693 s on the 12 rows it passes and failed the 6 high starts with delay to settle.
+  * On the sim (#518's sweep), every clean, 10 ms, and 25 ms row of the three airframes from
+    both starts passed in 152–380 s (`robustness`); in the same sweep the search from the
+    start gains took 308–693 s on the 12 rows it passes and failed the 6 high starts with
+    delay to settle. With the yaw search the passing rows take 202–280 s (#296).
   * Rejected, from the same sweep
     ([`autotune_methods`](crates/stable-flight-sim/tests/autotune_methods.rs)): PX4's pole
     placement (`pid_design.hpp:68-103`) assumes one tick of delay and found no design on any

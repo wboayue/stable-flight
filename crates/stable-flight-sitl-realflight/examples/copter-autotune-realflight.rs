@@ -749,7 +749,8 @@ fn format_gains(gains: &Gains) -> String {
     )
 }
 
-/// The tuned gains, laid out like `airframes::quadcopter_x()` for pasting.
+/// The tuned gains, laid out like `airframes::quadcopter_x()` for pasting, with the yaw
+/// integral limit the yaw I was tuned on: it holds the yaw trim only up to that limit.
 fn airframe_snippet(config: &CopterStabilizerConfig) -> String {
     let gains = |target: TunedLoop| format_gains(&target.gains(config));
     format!(
@@ -758,6 +759,7 @@ fn airframe_snippet(config: &CopterStabilizerConfig) -> String {
              roll_gains: {},\n    \
              pitch_gains: {},\n    \
              yaw_gains: {},\n    \
+             yaw_max_integral: {:.1},\n    \
              ..\n\
          }},\n\
          attitude: AttitudeControllerConfig {{\n    \
@@ -772,6 +774,7 @@ fn airframe_snippet(config: &CopterStabilizerConfig) -> String {
         gains(TunedLoop::RollRate),
         gains(TunedLoop::PitchRate),
         gains(TunedLoop::YawRate),
+        config.body_rate.yaw_max_integral,
         gains(TunedLoop::Roll),
         gains(TunedLoop::Pitch),
         gains(TunedLoop::Heading),
