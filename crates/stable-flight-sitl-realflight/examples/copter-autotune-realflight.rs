@@ -21,7 +21,13 @@
 //! RealFlight runs slow (`RunStats::host_slow`: under 225 Hz over 0.5 s until it regains
 //! 240 Hz; it drops to about 120 Hz for stretches, #438), the running step stops and the
 //! autotune waits: a step held for its ticks at half rate would tilt twice as far, and settles
-//! would time out. A design stage's fit and hold run on: a slow host only lowers the design. Params and telemetry go over
+//! would time out. A design stage's fit and hold run on: a slow host only lowers the design.
+//! While the vehicle's state is stale (`RealFlightVehicle::state_is_stale`: an exchange failed,
+//! or the link is down awaiting a reconnect), the autotune waits as on a slow host and every
+//! tick counts as a freeze, so the running probe runs again and the jump when the link comes
+//! back fails nothing; a link down for over 2 s ends the run `HostFault`, keeping the
+//! finished stages (#309). `--drop-link SECS@AT` cuts the link for SECS seconds, AT seconds
+//! into the autotune, to check that. Params and telemetry go over
 //! the native link for the bridge, so QGC shows the gains change. The RealFlight host defaults to
 //! `10.211.55.3:8080`; override it with `--host`.
 //!
@@ -44,6 +50,8 @@
 use std::cell::Cell;
 use std::process::ExitCode;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use clap::error::ErrorKind;
@@ -57,7 +65,7 @@ use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
 use stable_flight::tuning::autotune::{
-    Autotune, AutotuneEvent, AutotuneStatus, Envelope, StagePlan,
+    Autotune, AutotuneAbort, AutotuneEvent, AutotuneStatus, Envelope, StagePlan,
 };
 use stable_flight::tuning::{Measurement, Stat, StepMetrics, StepSummary};
 use stable_flight::{
@@ -69,7 +77,9 @@ use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::recorder::{CopterColumns, CsvRecorder};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::airframes::{self, Airframe};
-use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
+use stable_flight_sitl_realflight::realflight_bridge::{
+    BridgeError, ControlInputs, RealFlightBridge, RealFlightRemoteBridge, SimulatorState,
+};
 use stable_flight_sitl_realflight::{
     REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle,
 };
@@ -87,6 +97,10 @@ const START_ALTITUDE_TOLERANCE_M: f32 = 0.5;
 /// 100 ms behind every few seconds with no tick late by much (QuadCopterX in RealFlight: 2,216
 /// resyncs in a run, 3 gaps over 100 ms, #524).
 const FREEZE_GAP: Duration = Duration::from_millis(50);
+/// How long the vehicle's state may stay stale before the run ends `HostFault`: RealFlight
+/// flies the aircraft on the link's last inputs meanwhile, unseen, and the first reconnect
+/// waits 0.5 s, then 1, 2, and 4 s (#309).
+const MAX_STALE: Duration = Duration::from_secs(2);
 /// How long the vehicle may stay inverted (tilted past 90°) before the run ends: past a tumble
 /// through inverted, well inside the 10 s an unattended batch waits on a crash (#523).
 const INVERTED_EXIT: Duration = Duration::from_secs(3);
@@ -133,6 +147,12 @@ struct Args {
     #[arg(long)]
     record: Option<String>,
 
+    /// Cuts the RealFlight link for SECS seconds, AT seconds after the autotune starts
+    /// (`SECS@AT`, e.g. `1@30`): every exchange and reconnect attempt fails as on a lost
+    /// connection, to check how the run handles it (#309).
+    #[arg(long, value_parser = drop_link, value_name = "SECS@AT")]
+    drop_link: Option<DropLink>,
+
     /// Local address the link listens on.
     #[arg(long, default_value = DEFAULT_FC_ADDR)]
     link_bind: String,
@@ -178,6 +198,78 @@ impl Model {
             Model::TitanCobra => "flights/cobra_hover.csv",
         }
     }
+}
+
+/// `--drop-link`: when the link goes down, after the autotune starts, and for how long.
+#[derive(Clone, Copy)]
+struct DropLink {
+    at: Duration,
+    lasting: Duration,
+}
+
+impl DropLink {
+    /// Whether the link is cut `since_start` after the autotune started.
+    fn is_cut(&self, since_start: Duration) -> bool {
+        (self.at..self.at + self.lasting).contains(&since_start)
+    }
+}
+
+/// Parses `--drop-link`'s `SECS@AT`, each a non-negative number of seconds.
+fn drop_link(value: &str) -> Result<DropLink, String> {
+    let (lasting, at) = value.split_once('@').ok_or("expected SECS@AT")?;
+    let seconds = |text: &str| {
+        text.parse::<f32>()
+            .ok()
+            .and_then(|secs| Duration::try_from_secs_f32(secs).ok())
+            .ok_or(format!("{text:?} isn't a number of seconds"))
+    };
+    Ok(DropLink {
+        at: seconds(at)?,
+        lasting: seconds(lasting)?,
+    })
+}
+
+/// A RealFlight bridge whose link `cut` takes down: every call fails as a lost connection
+/// does (`--drop-link`).
+struct Cuttable<B> {
+    bridge: B,
+    cut: Arc<AtomicBool>,
+}
+
+impl<B: RealFlightBridge> Cuttable<B> {
+    /// `Err` while the link is cut, else `call` on the bridge.
+    fn unless_cut<R>(
+        &self,
+        call: impl FnOnce(&B) -> Result<R, BridgeError>,
+    ) -> Result<R, BridgeError> {
+        if self.cut.load(Ordering::Relaxed) {
+            return Err(link_cut());
+        }
+        call(&self.bridge)
+    }
+}
+
+impl<B: RealFlightBridge> RealFlightBridge for Cuttable<B> {
+    fn exchange_data(&self, control: &ControlInputs) -> Result<SimulatorState, BridgeError> {
+        self.unless_cut(|bridge| bridge.exchange_data(control))
+    }
+
+    fn enable_rc(&self) -> Result<(), BridgeError> {
+        self.unless_cut(B::enable_rc)
+    }
+
+    fn disable_rc(&self) -> Result<(), BridgeError> {
+        self.unless_cut(B::disable_rc)
+    }
+
+    fn reset_aircraft(&self) -> Result<(), BridgeError> {
+        self.unless_cut(B::reset_aircraft)
+    }
+}
+
+/// The error a cut link fails with: a lost connection, which the vehicle reconnects.
+fn link_cut() -> BridgeError {
+    BridgeError::Connection(std::io::Error::other("link cut by --drop-link"))
 }
 
 /// `--stages`.
@@ -276,16 +368,29 @@ fn main() -> ExitCode {
     }
 
     // A lost or stalled RealFlight connection is dropped and rebuilt with backoff; short
-    // timeouts bound each attempt's stall.
+    // timeouts bound each attempt's stall. `cut` takes the link down for `--drop-link`.
     let host = args.host.clone();
-    let connect =
-        move || RealFlightRemoteBridge::with_timeouts(&host, CONNECT_TIMEOUT, REMOTE_IO_TIMEOUT);
+    let cut = Arc::new(AtomicBool::new(false));
+    let connect = {
+        let cut = Arc::clone(&cut);
+        move || -> Result<_, BridgeError> {
+            if cut.load(Ordering::Relaxed) {
+                return Err(link_cut());
+            }
+            let bridge =
+                RealFlightRemoteBridge::with_timeouts(&host, CONNECT_TIMEOUT, REMOTE_IO_TIMEOUT)?;
+            Ok(Cuttable {
+                bridge,
+                cut: Arc::clone(&cut),
+            })
+        }
+    };
     // A failed reset would start the run from wherever the last one left the aircraft.
     let vehicle = match RealFlightVehicle::try_new(RealFlightConfiguration::from_airframe(
         &airframe,
         connect().expect("Failed to create bridge"),
     )) {
-        Ok(vehicle) => vehicle.with_reconnect(move || connect().map_err(BridgeError::from)),
+        Ok(vehicle) => vehicle.with_reconnect(connect),
         Err(e) => {
             error!("can't start: {e}");
             return ExitCode::FAILURE;
@@ -326,6 +431,9 @@ fn main() -> ExitCode {
     let mut last_tick = Duration::ZERO;
     let mut inverted_since = None;
     let mut stayed_inverted = false;
+    let mut started_at = None;
+    let mut stale_for = Duration::ZERO;
+    let mut finished = false;
     let mut searched = Vec::new();
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop, stats| {
         // Inverted, in any phase (climb, tune, landing), the vehicle never touches down to end
@@ -354,7 +462,35 @@ fn main() -> ExitCode {
             host_slow = stats.host_slow;
             info!("autotune {}", if host_slow { "waits" } else { "goes on" });
         }
-        autotune.set_host_slow(host_slow);
+        if let (Some(drop), Some(started_at)) = (args.drop_link, started_at) {
+            cut.store(
+                drop.is_cut(stats.elapsed.saturating_sub(started_at)),
+                Ordering::Relaxed,
+            );
+        }
+        // A stale state is the aircraft flying on unseen: nothing measures it, and every tick
+        // of it is a freeze, so breaches stay excused until a second after it clears (#309).
+        let stale = flight_loop.vehicle().state_is_stale();
+        if stale {
+            if stale_for.is_zero() {
+                info!("RealFlight state stale: autotune waits");
+            }
+            stale_for += Duration::from_secs_f32(LOOP_DT_S);
+            autotune.note_stall();
+        } else if !stale_for.is_zero() {
+            info!(
+                "RealFlight state back after {:.2} s",
+                stale_for.as_secs_f32()
+            );
+            stale_for = Duration::ZERO;
+        }
+        autotune.set_host_slow(host_slow || stale);
+        // The landing waits for a fresh state: on a stale one, the touchdown detector would
+        // read the held vertical speed as a touchdown and disarm in the air.
+        if finished && !stale && !land.get() {
+            info!("landing");
+            land.set(true);
+        }
         match poller.poll(flight_loop) {
             Ok(stats) if stats.decode_errors > 0 || stats.dropped > 0 => {
                 debug!("link: {stats:?}");
@@ -374,7 +510,10 @@ fn main() -> ExitCode {
             && at_hover_point(flight_loop.commander(), flight_loop.state())
         {
             match autotune.start(flight_loop) {
-                Ok(()) => info!("autotune: started"),
+                Ok(()) => {
+                    info!("autotune: started");
+                    started_at = Some(stats.elapsed);
+                }
                 Err(e) => warn!("autotune: can't start: {e}"),
             }
         }
@@ -384,7 +523,10 @@ fn main() -> ExitCode {
         {
             debug!("autotune: {target:?} {status:?}");
         }
-        let Some(event) = autotune.update(flight_loop, LOOP_DT_S) else {
+        let host_fault = (stale_for > MAX_STALE)
+            .then(|| autotune.abort(flight_loop, AutotuneAbort::HostFault))
+            .flatten();
+        let Some(event) = host_fault.or_else(|| autotune.update(flight_loop, LOOP_DT_S)) else {
             return;
         };
         log_event(&event, flight_loop.stabilizer().config());
@@ -408,10 +550,7 @@ fn main() -> ExitCode {
                 );
             }
         }
-        if !autotune.is_running() {
-            info!("landing");
-            land.set(true);
-        }
+        finished = !autotune.is_running();
     });
     // Dropping the flight loop on return hands RC back.
     if stayed_inverted {

@@ -886,6 +886,9 @@ pub enum AutotuneAbort {
     Rejected,
     /// The design found no gains for the fitted model.
     Design(DesignError),
+    /// The host lost the vehicle for too long to go on (e.g. a simulator link down for
+    /// seconds): stopped from outside with [`Autotune::abort`].
+    HostFault,
 }
 
 /// What an [`Autotune::update`] did, for the caller to log.
@@ -1500,6 +1503,39 @@ impl Autotune {
         if self.is_running() {
             self.frozen_s = self.envelope.recovery_s;
         }
+    }
+
+    /// Ends the run from outside for `reason` (e.g. [`AutotuneAbort::HostFault`]), as a
+    /// breach would: stops the running probe, puts back the config as of the last kept stage,
+    /// and reports `StageFailed`. `None`, changing nothing, when no stage is active (idle,
+    /// finishing, or already ended).
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use stable_flight::FlightLoop;
+    /// # use stable_flight::stabilizers::copter::CopterStabilizer;
+    /// # use stable_flight::guidance::copter::CopterGuidance;
+    /// # use stable_flight::mixers::TableMixer;
+    /// # use stable_flight::testing::{ConstantCommander, NullVehicle};
+    /// use stable_flight::tuning::autotune::{Autotune, AutotuneAbort};
+    ///
+    /// # fn fly(flight_loop: &mut FlightLoop<ConstantCommander, NullVehicle, CopterGuidance, CopterStabilizer, TableMixer<4>, ()>, autotune: &mut Autotune, link_down_s: f32) {
+    /// // The host's link to the vehicle has been down for seconds: end the run.
+    /// if link_down_s > 2.0 {
+    ///     if let Some(event) = autotune.abort(flight_loop, AutotuneAbort::HostFault) {
+    ///         println!("{event:?}");
+    ///     }
+    /// }
+    /// # }
+    /// ```
+    pub fn abort<C, V, G, S: CopterTunable, M, T>(
+        &mut self,
+        flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+        reason: AutotuneAbort,
+    ) -> Option<AutotuneEvent> {
+        let stage = self.phase.active_stage()?;
+        Some(self.fail(flight_loop, stage, reason))
     }
 
     /// Where the run stands.

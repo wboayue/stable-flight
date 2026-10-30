@@ -40,7 +40,7 @@ Each tick makes one RealFlight exchange, in `actuate`; `state` returns the cache
 
 `body_rotation` is a constant rotation from RealFlight's body frame to the vehicle's, like a board's mounting; identity unless RealFlight's frame for the model differs (a tailsitter). The `RealFlightVehicle` rustdoc (Body rotation) covers it.
 
-A failed exchange is logged at most once a second. A remote bridge is unusable after a connection error, so give the vehicle a way to build a new one with `with_reconnect`: it retries with backoff and switches RealFlight to Link control on the new bridge, keeping the last state meanwhile. The flight examples do; the `RealFlightVehicle` rustdoc (Connection loss) has the backoff and the details.
+A failed exchange is logged at most once a second. A remote bridge is unusable after a connection error, so give the vehicle a way to build a new one with `with_reconnect`: it retries with backoff and switches RealFlight to Link control on the new bridge, keeping the last state meanwhile (`state_is_stale` says so, tick by tick). The flight examples do; the `RealFlightVehicle` rustdoc (Connection loss) has the backoff and the details.
 
 ```rust
 use std::time::Duration;

@@ -693,6 +693,47 @@ fn reconnects_after_the_backoff_and_resumes_state_updates() {
     assert_eq!(calls.load(Ordering::Relaxed), 1);
 }
 
+/// The state is stale from before the first exchange, on every tick whose exchange fails, and
+/// through a lost connection until a reconnect's first exchange (#309).
+#[test]
+fn reports_a_stale_state_until_an_exchange_succeeds() {
+    let (_, reconnect) = counting_reconnect(|| Ok(MockRealFlightBridge::new(false)));
+    // (row, vehicle, stale after one tick, stale after 0.7 s)
+    let cases = [
+        (
+            "exchanging",
+            RealFlightVehicle::new(RealFlightConfiguration {
+                mapping: ActuatorMapping::default(),
+                body_rotation: UnitQuaternion::identity(),
+                bridge: MockRealFlightBridge::new(false),
+            }),
+            false,
+            false,
+        ),
+        ("failing exchanges", failing_vehicle(false), true, true),
+        (
+            "connection lost, then reconnected",
+            failing_vehicle(true).with_reconnect(reconnect),
+            true,
+            false,
+        ),
+    ];
+    for (row, mut vehicle, after_one, after_reconnect) in cases {
+        assert!(vehicle.state_is_stale(), "{row}: before the first exchange");
+
+        tick(&mut vehicle, 1);
+        assert_eq!(vehicle.state_is_stale(), after_one, "{row}: after one tick");
+
+        // Past the first reconnect attempt, at 0.5 s.
+        tick(&mut vehicle, 6);
+        assert_eq!(
+            vehicle.state_is_stale(),
+            after_reconnect,
+            "{row}: after 0.7 s"
+        );
+    }
+}
+
 #[test]
 fn a_failed_reconnect_backs_off_before_the_next_attempt() {
     let (calls, reconnect) = counting_reconnect(|| {
