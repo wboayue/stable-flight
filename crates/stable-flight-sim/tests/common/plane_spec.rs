@@ -9,17 +9,19 @@
 //! - Overshoot: neither ArduPlane's autotune (it limits P and D by slew rate,
 //!   `AP_AutoTune.cpp`) nor PX4's (system identification) has a step target, so this borrows
 //!   the copter spec's ([`spec::MAX_OVERSHOOT`]).
-//! - Settling: inside the probe's 10% band before the window ends. Clipping: within the copter
-//!   angle steps' allowance ([`StepTestPlan::copter`]), beyond which a step measures the
-//!   surfaces' limit, not the loop.
+//! - Settling: inside the probe's 10% band before the window ends. Clipping: within
+//!   [`MAX_CLIPPED_S`], beyond which a step measures the surfaces' limit, not the loop.
 
-use stable_flight::stabilizers::copter::TunedLoop;
-use stable_flight::tuning::autotune::StepTestPlan;
 use stable_flight::tuning::{StepConfig, StepMetrics, StepStatus};
 
 use super::plane::{Axis, ClipTimer, PlanePlant, StepCommander, north_line, plane_pipeline};
 use super::quadplane::{QuadPlanePlant, quadplane_pipeline_at};
 use super::{fly, spec};
+
+/// How long a step's surfaces may clip, in s: 5 ticks at 250 Hz, half a tick clear of `f32`
+/// rounding. The airplane's and the Alia's plane steps don't clip (0 s measured, #310), so
+/// the band is margin.
+const MAX_CLIPPED_S: f32 = 0.022;
 
 /// 10–90% rise of a first-order response, in time constants.
 const RISE_PER_TIME_CONSTANT: f32 = 2.2;
@@ -129,11 +131,10 @@ fn missed_targets_within(
     max_overshoot: f32,
 ) -> Vec<&'static str> {
     let max_rise_s = RISE_PER_TIME_CONSTANT * time_constant_s;
-    let max_clipped_s = StepTestPlan::copter(TunedLoop::Roll).max_saturated_s;
     let checks = [
         ("overshoot", m.overshoot <= max_overshoot),
         ("unsettled", m.settling_time_s.is_some()),
-        ("clipped", m.saturated_s <= max_clipped_s),
+        ("clipped", m.saturated_s <= MAX_CLIPPED_S),
         (
             "rise",
             m.rise_time_s.is_some_and(|rise_s| rise_s <= max_rise_s),

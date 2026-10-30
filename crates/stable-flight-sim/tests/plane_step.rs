@@ -30,7 +30,7 @@ fn clean_step() -> StepMetrics {
 /// An edit to [`clean_step`].
 type Change = fn(&mut StepMetrics);
 
-/// Each target flags just past its band: overshoot 5%, the clip allowance (42 ms), and a rise
+/// Each target flags just past its band: overshoot 5%, the clip allowance (22 ms), and a rise
 /// of 2.2 time constants (0.88 s at 0.4 s).
 #[test]
 fn missed_targets_flags_each_band() {
@@ -40,8 +40,8 @@ fn missed_targets_flags_each_band() {
         (|m| m.overshoot = 0.05, &[]),
         (|m| m.overshoot = 0.051, &["overshoot"]),
         (|m| m.settling_time_s = None, &["unsettled"]),
-        (|m| m.saturated_s = 0.042, &[]),
-        (|m| m.saturated_s = 0.043, &["clipped"]),
+        (|m| m.saturated_s = 0.022, &[]),
+        (|m| m.saturated_s = 0.023, &["clipped"]),
         (|m| m.rise_time_s = Some(0.881), &["rise"]),
         (|m| m.rise_time_s = None, &["rise"]),
     ];
