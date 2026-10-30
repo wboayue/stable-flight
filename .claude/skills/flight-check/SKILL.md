@@ -20,6 +20,11 @@ Read the file for the simulator before a run:
 
 - **Launch only on the go** of whoever is at the simulator: a run takes over their sim. A
   batch go covers back-to-back runs.
+- **Confirm the loaded model before every run.** Name it when asking for the go ("Titan Cobra
+  loaded?") and wait for the answer, every run and always when the next run's airframe
+  differs from the last one's. A go, or the last run's model, doesn't say what's loaded:
+  a QuadCopterX run on a loaded Titan Cobra sits on the ground with its yaw moment winding up
+  until the watchdog stops it. Keep a watchdog on the run starting as a backstop.
 - **Scripted over manual.** Fly from a waypoint script with `--record` (the `*-auto-*`
   examples on `flights/*.csv`, `plane-probe-xplane`), started and stopped from the command line.
   When no script covers the check, add one to `flights/` first; each script's header comment says
