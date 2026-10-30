@@ -831,7 +831,15 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     35–72% of the rate change, so noise picks among near-tied delays: 10 of 67 recorded
     QuadCopterX fits read under 20 rad/s² (negative in 7); replayed with the filter, 5 did
     (#529). A wider tie (5%) left 1 but took 1-tick delays in 6, which design too hot a loop:
-    one rang and failed its stage. An angle stage's fit runs on the rate loop under it. A 4°
+    one rang and failed its stage. A fitted pole at or below 0 is a lag under a tick, which
+    the delay absorbs, and designs as zero lag (D 0): in RealFlight both copters' poles
+    scatter from −0.2 to 0.2 on noise (Titan Cobra delay 9–10 ticks, QuadCopterX 3–4), and
+    half the fits, failing as no lag, ended Cobra design searches after three in a row.
+    Replayed, all 26 recorded fits design rate P within 0.47–0.54 on the Cobra and 0.61–0.84
+    on QuadCopterX, against 0.48–0.54 and 0.69–1.10 from the 11 that had a lag (#563). PX4
+    designs from the fitted coefficients with no lag step (`pid_design::computePidGmvc`), so
+    a near-zero pole gives it a near-zero D the same way. An angle stage's fit runs on the
+    rate loop under it. A 4°
     wave on the angle setpoint was rejected: its sustained part scales with the start's angle
     P, and each edge kicks the angle D into a one-tick moment spike clipped at 1, which
     RealFlight delivers in part. On the Titan Cobra's start (angle P 3, rate P 0.59) the

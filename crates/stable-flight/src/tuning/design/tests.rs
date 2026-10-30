@@ -121,8 +121,6 @@ fn rate_design_fails_without_a_lag_or_a_crossover() {
         ..model(27.0, 0.03, 1)
     };
     let rows = [
-        (with_pole(0.0), DesignError::NotALag),
-        (with_pole(-0.2), DesignError::NotALag),
         (with_pole(1.0), DesignError::NotALag),
         (with_pole(1.3), DesignError::NotALag),
         // A moment that turns the rate the wrong way.
@@ -139,6 +137,23 @@ fn rate_design_fails_without_a_lag_or_a_crossover() {
         check!(
             design_rate(&model, START, GYRO_HZ, &COPTER_LOOP_SHAPING) == Err(error),
             "{model:?}"
+        );
+    }
+}
+
+/// A pole at or below 0, a lag under a tick, designs D 0 and a P from the model's response
+/// (#563): RealFlight's fits put the pole from −0.2 to 0.2.
+#[test]
+fn a_pole_at_or_below_zero_designs_d_zero() {
+    for pole in [0.0, -0.2] {
+        let model = RateModel {
+            rate_weights: [1.0 + pole, -pole],
+            ..model(27.0, 0.03, 1)
+        };
+        let gains = design_rate(&model, START, GYRO_HZ, &COPTER_LOOP_SHAPING);
+        check!(
+            gains.is_ok_and(|gains| gains.p > 0.0 && gains.d == 0.0),
+            "pole {pole}: {gains:?}"
         );
     }
 }

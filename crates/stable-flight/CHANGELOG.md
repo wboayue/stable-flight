@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `RateModel::lag_s` reads a fitted pole at or below 0 as a lag under a tick (0 s), and
+  `accel_radps2` takes the pole as 0. `design_rate` then designs D 0 rather than failing with
+  `DesignError::NotALag`, which now means only a pole at or past 1. In RealFlight half the
+  Titan Cobra's and QuadCopterX's fits landed at or below 0, and three in a row failed the
+  Cobra's design search (#563).
 - **Breaking:** `Criterion::Overshoot` has a `settled_past: Option<f32>`. When it's set,
   overshoot counts from where each step ended (`StepSummary::overshoot_past_end`), and no step
   may end more than that past the step. `SearchPlan::copter_angle` sets it to its settle band

@@ -89,8 +89,8 @@ impl LoopShapingConfig {
 /// Why a design found no gains.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Error)]
 pub enum DesignError {
-    /// The fitted pole isn't a lag ([`RateModel::lag_s`] is `None`): the fit saw overshoot or
-    /// noise, not a motor.
+    /// The fitted pole isn't a lag ([`RateModel::lag_s`] is `None`): at or past 1, the fit
+    /// grows rather than lags.
     #[error("the fitted model has no motor lag")]
     NotALag,
     /// The rate loop's phase never reaches the margin, or falls past it before any frequency,

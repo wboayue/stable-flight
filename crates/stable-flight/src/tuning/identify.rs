@@ -105,8 +105,11 @@ pub struct RateModel {
 }
 
 impl RateModel {
-    /// The motor lag's time constant, in s, from its pole `p = −r₂`; `None` unless the pole
-    /// is real and in `(0, 1)`, a lag rather than an overshoot or a fit to noise.
+    /// The motor lag's time constant, in s, from its pole `p = −r₂`: `−dt / ln p` for a pole
+    /// in `(0, 1)`. A pole at or below 0 is a lag under a tick, which the delay absorbs, so 0:
+    /// in RealFlight both copters' poles scatter from −0.2 to 0.2 on noise, and half their
+    /// fits land at or below 0 (#563). `None` for a pole at or past 1, which grows rather than
+    /// lags.
     ///
     /// # Examples
     ///
@@ -125,7 +128,14 @@ impl RateModel {
     /// ```
     pub fn lag_s(&self) -> Option<f32> {
         let pole = -self.rate_weights[1];
-        (pole > 0.0 && pole < 1.0).then(|| -self.dt_s / libm::logf(pole))
+        if pole >= 1.0 || pole.is_nan() {
+            return None;
+        }
+        Some(if pole > 0.0 {
+            -self.dt_s / libm::logf(pole)
+        } else {
+            0.0
+        })
     }
 
     /// The model's frequency response at `w_radps`: body rate per unit moment, delay included,
@@ -157,10 +167,11 @@ impl RateModel {
     }
 
     /// The axis's angular acceleration per unit moment once the lag has settled, in rad/s²:
-    /// the moments' total weight over `(1 − p)·dt`. `None` without a lag ([`lag_s`](Self::lag_s)).
+    /// the moments' total weight over `(1 − p)·dt`, a pole at or below 0 taken as 0, as
+    /// [`lag_s`](Self::lag_s) takes it. `None` without a lag.
     pub fn accel_radps2(&self) -> Option<f32> {
         self.lag_s()?;
-        let pole = -self.rate_weights[1];
+        let pole = (-self.rate_weights[1]).max(0.0);
         Some(self.moment_effect() / ((1.0 - pole) * self.dt_s))
     }
 
