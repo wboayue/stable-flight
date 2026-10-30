@@ -14,7 +14,7 @@ use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight::stabilizers::copter::TunedLoop;
 use stable_flight::tuning::LoopShapingConfig;
 use stable_flight::tuning::autotune::{
-    AutotuneAbort, AutotuneEvent, COPTER_LOOP_SHAPING, DesignPlan, Method, StagePlan,
+    AutotuneAbort, AutotuneEvent, COPTER_LOOP_SHAPING, DesignPlan, Method, Outcome, StagePlan,
 };
 use stable_flight_sim::airframes::{self, Airframe};
 
@@ -197,4 +197,22 @@ fn heavy_quad_design_search_rises_near_the_fastest_rate_pair() {
 #[ignore = "racer rises 40% slower than its fastest pair under the gyro filter's lag (#552)"]
 fn racer_design_search_rises_near_the_fastest_rate_pair() {
     rises_near_the_fastest_rate_pair(airframes::racer());
+}
+
+/// The copter angle step test measures the tuned angle loops of `quad_x` and `heavy_quad`
+/// (angle P 9 and 8.54): its 5° steps clip for 5 ticks. At 10° they clip for 13 and 15, past
+/// the allowance, so every step runs again until the stage fails `Invalid`, as after every
+/// RealFlight QuadCopterX autotune (#310).
+#[test]
+fn angle_step_test_measures_the_tuned_angle_loops() {
+    let plan = [TunedLoop::Roll, TunedLoop::Pitch].map(StagePlan::copter_step_test);
+    for (name, airframe) in [
+        ("quad_x", airframes::quad_x()),
+        ("heavy_quad", airframes::heavy_quad()),
+    ] {
+        let run = common::autotune(&Plant::clean(airframe), &plan, AUTOTUNE_TIMEOUT_S);
+        let measured =
+            [TunedLoop::Roll, TunedLoop::Pitch].map(|target| (target, Ok(Outcome::Measured)));
+        check!(run.outcomes() == measured, "{name}");
+    }
 }
