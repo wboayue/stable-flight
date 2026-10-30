@@ -62,10 +62,10 @@ pub fn yaw_trimmed(airframe: Airframe) -> Plant {
     plant
 }
 
-/// QuadCopterX's yaw rate gains (sitl-realflight's `airframes::quadcopter_x`, #383).
+/// QuadCopterX's yaw rate gains (sitl-realflight's `airframes::quadcopter_x`, #558).
 pub const QUADCOPTER_X_YAW_RATE: Gains = Gains {
-    p: 1.2,
-    i: 0.6,
+    p: 1.1532,
+    i: 0.3460,
     d: 0.0,
 };
 

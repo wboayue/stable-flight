@@ -100,18 +100,20 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
                 // Yaw authority is differential prop drag only, so yaw needs its own, higher gains.
                 // The model needs a steady ~0.40 nose-right yaw moment to hover; I ·
                 // yaw_max_integral must cancel it with margin; with less, acro drifts in yaw
-                // (#192). P damps the heading loop: 30° heading turns overshoot 7% and settle
-                // within 1° in 1.45 s; at P 0.6 they overshoot 25% and ring for 4.2 s, and
-                // any kick (a stall, a stick) swings the heading for seconds (#383). Higher P
-                // clips the yaw moment for longer in each turn.
+                // (#192). The RealFlight autotune's yaw search (I at 0.3 of P), at 250 Hz: 0.5
+                // rad/s steps overshoot 0.01 and rise in 0.50–0.89 s, one of six reaching only
+                // 0.89 in the 1 s window (#558). P damps the heading loop: 30° heading turns
+                // overshoot 7% and settle within 1° in 1.6 s; at P 0.6 they overshoot 25% and
+                // ring for 4.2 s, and any kick (a stall, a stick) swings the heading for
+                // seconds (#383).
                 yaw_gains: Gains {
-                    p: 1.2,
-                    i: 0.6,
+                    p: 1.1532,
+                    i: 0.3460,
                     d: 0.0,
                 },
                 max_integral: 1.0,
-                // Core's default: the autotune's yaw I (a fifth of P) holds the 0.40 from P
-                // 0.5 up with 25% margin (#296).
+                // Core's default: the yaw I holds the 0.40 with the tuned I's 0.35 · 5 = 1.73
+                // (#296).
                 yaw_max_integral: 5.0,
             },
             attitude: AttitudeControllerConfig {

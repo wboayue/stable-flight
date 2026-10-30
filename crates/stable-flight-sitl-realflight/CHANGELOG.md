@@ -9,9 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- The QuadCopterX's yaw rate P is 1.2 (was 0.6), damping its heading loop: 30° heading turns
-  overshoot 7% and settle within 1° in 1.45 s, where they overshot 25% and rang for 4.2 s, and
-  any kick swung the heading for seconds (#383). `flights/heading_steps.csv` flies the turns.
+- The QuadCopterX flies the RealFlight autotune's yaw rate gains, P 1.1532 and I 0.3460 (was
+  P 0.6, I 0.6), which damp its heading loop: 30° heading turns overshoot 7% and settle within
+  1° in 1.6 s, where they overshot 25% and rang for 4.2 s, and any kick swung the heading for
+  seconds (#383, #558). 0.5 rad/s yaw steps overshoot 0.01 and rise in 0.50–0.89 s.
+  `flights/heading_steps.csv` flies the turns.
 - `copter-autotune-realflight` tunes yaw rate after the roll and pitch loops, and `--step-test`
   step-tests it. The QuadCopterX flies a 5 rad yaw integral limit (core's default), so the
   autotune's yaw I holds its 0.40 hover yaw trim; the eXplora and the Titan Cobra keep 1 rad

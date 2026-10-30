@@ -122,7 +122,8 @@ fn hold_over_the_start_completes_at_its_altitude() {
 const MAX_TURN_OVERSHOOT: f32 = 0.10;
 
 /// Most seconds from the end of the turn's slew until the heading stays within
-/// [`TURN_SETTLE_DEG`] of the target on QuadCopterX's yaw: RealFlight's 1.45 s plus 0.55 s (#383).
+/// [`TURN_SETTLE_DEG`] of the target on QuadCopterX's yaw: RealFlight's 1.6 s plus 0.4 s (#383,
+/// #558).
 const MAX_TURN_SETTLE_S: f32 = 2.0;
 
 /// How close to the target a turn's heading counts as settled, in degrees.
