@@ -11,7 +11,7 @@
 use stable_flight::stabilizers::copter::TunedLoop;
 use stable_flight::tuning::StepConfig;
 use stable_flight::tuning::autotune::{
-    COPTER_ANGLE_SEARCH_STEP, COPTER_RATE_STEP, Envelope, Method, SearchPlan, StagePlan,
+    COPTER_RATE_STEP, COPTER_TILT_STEP, Envelope, Method, SearchPlan, StagePlan,
 };
 
 /// Rate steps: 0.2 rad/s for 1.5 s, rising in about 0.6 s on the Alia.
@@ -25,7 +25,7 @@ pub const RATE_STEP: StepConfig = StepConfig {
 pub const ANGLE_STEP: StepConfig = StepConfig {
     amplitude: 0.087,
     duration_s: 2.5,
-    ..COPTER_ANGLE_SEARCH_STEP
+    ..COPTER_TILT_STEP
 };
 
 /// Yaw rate steps: 0.2 rad/s for 3 s, rising in about 0.9 s.
@@ -39,7 +39,7 @@ pub const YAW_RATE_STEP: StepConfig = StepConfig {
 pub const HEADING_STEP: StepConfig = StepConfig {
     amplitude: 0.5,
     duration_s: 8.0,
-    ..COPTER_ANGLE_SEARCH_STEP
+    ..COPTER_TILT_STEP
 };
 
 /// How long a step may clip, in s: a rate step's moment saturates for its first few ticks.

@@ -186,25 +186,24 @@ pub const COPTER_RATE_STEP: StepConfig = StepConfig {
     filter_hz: 40.0,
 };
 
-/// Step response of a copter angle or heading loop: 10° held for 1.5 s, filtered at 20 Hz.
-/// QuadCopterX's hand-tuned angle loop (P 3) reaches only 89% of the step in 0.8 s (#298), so
-/// the window covers about four of its time constants; the vehicle drifts about 2 m meanwhile.
-/// Roll and pitch step by [`COPTER_ANGLE_SEARCH_STEP`].
-pub const COPTER_ANGLE_STEP: StepConfig = StepConfig {
-    amplitude: 0.175,
+/// Step response of a copter roll or pitch loop, searched and step-tested: 5° held for 1.5 s,
+/// filtered at 20 Hz. QuadCopterX's hand-tuned angle loop (P 3) reaches only 89% of a step in
+/// 0.8 s (#298), so the window covers about four of its time constants; the vehicle drifts
+/// about 1 m meanwhile. At 10°, an angle P of about 6 asks the tuned rate loop (P about 1) for
+/// a full moment; at 5°, about 12 (#304). At the tuned angle P 9 on the sim, `quad_x`'s 10°
+/// steps clip for 13 ticks and `heavy_quad`'s for 15, past [`COPTER_MAX_SATURATED_S`]; 5°
+/// steps clip for 5 (#310).
+pub const COPTER_TILT_STEP: StepConfig = StepConfig {
+    amplitude: 0.0875,
     duration_s: 1.5,
     settle_band: 0.1,
     filter_hz: 20.0,
 };
 
-/// A copter roll or pitch step, searched and step-tested: [`COPTER_ANGLE_STEP`] at half the
-/// size (5°). At 10°, an angle P of about 6 asks the tuned rate loop (P about 1) for a full
-/// moment; at 5°, about 12 (#304). At the tuned angle P 9 on the sim, `quad_x`'s 10° steps
-/// clip for 13 ticks and `heavy_quad`'s for 15, past [`COPTER_MAX_SATURATED_S`]; 5° steps
-/// clip for 5 (#310).
-pub const COPTER_ANGLE_SEARCH_STEP: StepConfig = StepConfig {
-    amplitude: COPTER_ANGLE_STEP.amplitude / 2.0,
-    ..COPTER_ANGLE_STEP
+/// Step response of a copter heading loop: [`COPTER_TILT_STEP`] at twice the size (10°).
+pub const COPTER_HEADING_STEP: StepConfig = StepConfig {
+    amplitude: 2.0 * COPTER_TILT_STEP.amplitude,
+    ..COPTER_TILT_STEP
 };
 
 /// Level before each copter step: within 2.5° and 0.1 rad/s for 0.5 s (ArduPilot's
@@ -251,7 +250,7 @@ pub const COPTER_MAX_SATURATED_S: f32 = 0.042;
 
 impl StepTestPlan {
     /// The copter defaults for `target`: three pairs of [`COPTER_RATE_STEP`] (rate loops),
-    /// [`COPTER_ANGLE_SEARCH_STEP`] (roll and pitch), or [`COPTER_ANGLE_STEP`] (heading), from
+    /// [`COPTER_TILT_STEP`] (roll and pitch), or [`COPTER_HEADING_STEP`] (heading), from
     /// [`COPTER_STEP_SETTLE`], each clipping for up to [`COPTER_MAX_SATURATED_S`], allowing
     /// 3 clipped steps in a row and 10 stalled steps in a row (RealFlight's proxy has frozen
     /// for 100 ms dozens of times a run).
@@ -260,15 +259,15 @@ impl StepTestPlan {
     ///
     /// ```
     /// use stable_flight::stabilizers::copter::TunedLoop;
-    /// use stable_flight::tuning::autotune::{COPTER_ANGLE_SEARCH_STEP, StepTestPlan};
+    /// use stable_flight::tuning::autotune::{COPTER_TILT_STEP, StepTestPlan};
     ///
-    /// assert_eq!(StepTestPlan::copter(TunedLoop::Roll).step, COPTER_ANGLE_SEARCH_STEP);
+    /// assert_eq!(StepTestPlan::copter(TunedLoop::Roll).step, COPTER_TILT_STEP);
     /// ```
     pub fn copter(target: TunedLoop) -> Self {
         let step = match target {
             TunedLoop::RollRate | TunedLoop::PitchRate | TunedLoop::YawRate => COPTER_RATE_STEP,
-            TunedLoop::Roll | TunedLoop::Pitch => COPTER_ANGLE_SEARCH_STEP,
-            TunedLoop::Heading => COPTER_ANGLE_STEP,
+            TunedLoop::Roll | TunedLoop::Pitch => COPTER_TILT_STEP,
+            TunedLoop::Heading => COPTER_HEADING_STEP,
         };
         Self {
             step,
@@ -414,7 +413,7 @@ impl SearchPlan {
     /// (ArduPilot's aggressiveness halved, as for its angle P). Bounce-back is the overshoot
     /// above where the response levels off, so it counts even when a disturbance holds the
     /// response short of the step (about 8% on QuadCopterX). Steps of
-    /// [`COPTER_ANGLE_SEARCH_STEP`]; otherwise as [`copter_rate`](Self::copter_rate).
+    /// [`COPTER_TILT_STEP`]; otherwise as [`copter_rate`](Self::copter_rate).
     ///
     /// # Examples
     ///

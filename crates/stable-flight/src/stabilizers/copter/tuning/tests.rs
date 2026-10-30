@@ -4,7 +4,7 @@ use super::*;
 use crate::controllers::Gains;
 use crate::stabilizers::copter::CopterStabilizerConfig;
 use crate::tuning::Measurement;
-use crate::tuning::autotune::{COPTER_ANGLE_STEP, COPTER_RATE_STEP};
+use crate::tuning::autotune::{COPTER_RATE_STEP, COPTER_TILT_STEP};
 use crate::tuning::plant::{Axes, PlantParams};
 use crate::tuning::{ProbeAbort, StepAbort, StepConfig};
 use crate::{AttitudeSetpoint, ControlOutput, RateSetpoint, Setpoint, Stabilizer, Vec2, Vec3};
@@ -191,7 +191,7 @@ fn rate_ticks_interrupt_angle_stages_only() {
 #[test]
 fn prime_ends_the_stage() {
     let mut stabilizer = CopterStabilizer::new(config());
-    stabilizer.start_probe(TunedLoop::Roll, ProbeConfig::Step(COPTER_ANGLE_STEP));
+    stabilizer.start_probe(TunedLoop::Roll, ProbeConfig::Step(COPTER_TILT_STEP));
     stabilizer.prime(&crate::VehicleState::default());
     assert!(stabilizer.probe() == None);
 }
@@ -226,7 +226,7 @@ fn step_for(target: TunedLoop) -> StepConfig {
     if target.is_rate() {
         COPTER_RATE_STEP
     } else {
-        COPTER_ANGLE_STEP
+        COPTER_TILT_STEP
     }
 }
 
@@ -247,7 +247,7 @@ fn a_step_replaces_the_loops_setpoint() {
         ..Default::default()
     };
     let rate = COPTER_RATE_STEP.amplitude;
-    let angle = COPTER_ANGLE_STEP.amplitude;
+    let angle = COPTER_TILT_STEP.amplitude;
     // The attitude as the angle loops measure it: setpoint minus their error.
     let error = crate::math::attitude_error(&state.attitude, 0.0, 0.0, 3.1);
     let (measured_pitch, measured_heading) = (-error.y, 3.1 - error.z);
@@ -384,7 +384,7 @@ fn a_step_counts_the_ticks_its_loop_clipped() {
     let mut stiff_rate = config();
     stiff_rate.body_rate.roll_gains.p = 50.0;
     let mut slow_angle = config();
-    slow_angle.attitude.max_rate_radps = Vec2::new(0.2, 0.2);
+    slow_angle.attitude.max_rate_radps = Vec2::new(0.1, 0.1);
     // (config, target, clipped for at least this long, in s)
     let cases = [
         (config(), TunedLoop::RollRate, 0.0),
