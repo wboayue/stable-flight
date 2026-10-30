@@ -785,6 +785,47 @@ fn a_yaw_stage_waits_for_yaw_to_settle() {
     }
 }
 
+/// A yaw rate design holds its gains only once yaw is still too: turning level at 0.6 rad/s
+/// (past the envelope settle's 0.3), the designed gains never hold and go back
+/// ([`AutotuneEvent::Unsettled`]); flying straight, they're committed (#296).
+#[test]
+fn a_yaw_design_holds_only_once_yaw_is_still() {
+    const TURN_RADPS: f32 = 0.6;
+    // (turn rate in rad/s, whether the design holds)
+    let rows = [(TURN_RADPS, false), (0.0, true)];
+    for (turn_radps, holds) in rows {
+        let (mut flight_loop, controls) = hovering(1.0);
+        let mut heading_rad = 0.0;
+        let mut autotune = started(&flight_loop, &[design_stage(TunedLoop::YawRate)]);
+
+        let events = run(&mut flight_loop, &mut autotune, 60.0, |_, _| {
+            heading_rad += turn_radps * DT;
+            controls.input.set(Some(ControlInput::AbsoluteAttitude(
+                AbsoluteAttitudeCommand {
+                    heading_rad,
+                    thrust: 0.5,
+                    ..Default::default()
+                },
+            )));
+        });
+
+        let unsettled = events
+            .iter()
+            .any(|event| matches!(event, AutotuneEvent::Unsettled { .. }));
+        let designed = events.iter().any(|event| {
+            matches!(
+                event,
+                AutotuneEvent::StageDone {
+                    outcome: Outcome::Designed,
+                    ..
+                }
+            )
+        });
+        check!(unsettled == !holds, "turning {turn_radps}: {events:?}");
+        check!(designed == holds, "turning {turn_radps}: {events:?}");
+    }
+}
+
 /// Rate P multiplier that puts the start (P 3) well above [`lowering_search`]'s `max`.
 const SCALE_ABOVE_MAX: f32 = 6.0;
 
