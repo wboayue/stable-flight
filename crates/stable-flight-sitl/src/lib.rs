@@ -10,7 +10,8 @@
 //! in simulation. Simulation allows safe refining of the flight control logic before real-world deployment.
 //! The flight-control core (traits, guidance, stabilizers, mixers, [`stable_flight::FlightLoop`]) lives in the
 //! `stable-flight` crate; this crate adds the simulator-independent software-in-the-loop harness
-//! around it: joystick and scripted commanders, and the real-time runner ([`RealTimeRunner`])
+//! around it: joystick and scripted commanders, an autotune flight's commander and log
+//! ([`autotune`]), and the real-time runner ([`RealTimeRunner`])
 //! with graceful shutdown ([`ShutdownSignal`]), and per-tick CSV recording ([`recorder`]). Telemetry goes over the native link
 //! (`stable-flight-link`'s `LinkPublisher`), and `stable-flight-bridge` speaks MAVLink for it. Each simulator backend is its own crate, e.g.
 //! [`stable-flight-sitl-realflight`](https://crates.io/crates/stable-flight-sitl-realflight).
@@ -25,6 +26,7 @@
 /// version it uses (`stable_flight_sitl::stable_flight::FlightLoop`) without a second copy.
 pub use stable_flight;
 
+pub mod autotune;
 pub mod cli;
 pub mod commanders;
 pub mod recorder;

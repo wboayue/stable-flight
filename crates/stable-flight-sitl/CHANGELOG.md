@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `autotune` (#540): an autotune flight's simulator-independent parts, shared by each
+  backend's autotune example. `ThenLand` hovers on a script, then lands and disarms on
+  touchdown, and reports `at_hover_point` for the autotune to start. `is_inverted` gives the
+  run's stop check, `log_event` logs each `AutotuneEvent` down to a pasteable airframe snippet
+  of the tuned gains, and `format_brief` gives a summary's means.
 - `runner::TickRate` (#438): the rate a `RealTimeRunner` achieves over a sliding window of
   ticks, fed `RunStats` from `run_with`'s hook. The host turns slow under one share of nominal
   and keeps time again over a higher one, so it doesn't flip at the threshold; until the

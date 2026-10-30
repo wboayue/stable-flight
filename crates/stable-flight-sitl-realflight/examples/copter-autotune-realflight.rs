@@ -63,20 +63,17 @@ use clap::{CommandFactory, Parser, ValueEnum};
 use env_logger::Builder;
 use log::{debug, error, info, warn};
 
-use stable_flight::commanders::{RouteEnd, TouchdownDetector};
-use stable_flight::controllers::Gains;
+use stable_flight::commanders::RouteEnd;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
 use stable_flight::tuning::autotune::{
     Autotune, AutotuneEvent, AutotuneStatus, Envelope, StagePlan,
 };
-use stable_flight::tuning::{Measurement, Stat, StepMetrics, StepSummary};
-use stable_flight::{
-    Command, Commander, Configurable, ControlInput, FlightLoop, LandCommand, VehicleState,
-};
+use stable_flight::{Configurable, FlightLoop};
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
+use stable_flight_sitl::autotune::{ThenLand, format_brief, is_inverted, log_event};
 use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::recorder::{CopterColumns, CsvRecorder};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
@@ -94,8 +91,6 @@ const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 const LOOP_HZ: f64 = 250.0;
 /// The flight loop's period, in s: the supervisor's `dt`.
 const LOOP_DT_S: f32 = (1.0 / LOOP_HZ) as f32;
-/// How close to the hover altitude the vehicle must be before the autotune starts, in m.
-const START_ALTITUDE_TOLERANCE_M: f32 = 0.5;
 /// The longest wall-clock gap between ticks that isn't a freeze: past the fit's 40 ms of delay
 /// and a rate step's 30 ms rise. The runner's resyncs aren't freezes: at about 223 Hz it falls
 /// 100 ms behind every few seconds with no tick late by much (QuadCopterX in RealFlight: 2,216
@@ -313,28 +308,6 @@ fn plan(args: &Args) -> Vec<StagePlan> {
     plan
 }
 
-/// Flies the script until told to land (`land`), then lands where it is and disarms on
-/// touchdown.
-struct ThenLand {
-    script: ScriptCommander,
-    land: Rc<Cell<bool>>,
-    landing: Option<LandCommand>,
-    touchdown: TouchdownDetector,
-}
-
-impl Commander for ThenLand {
-    fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
-        if !self.land.get() {
-            return self.script.next_command(dt, state);
-        }
-        let land = *self.landing.get_or_insert(LandCommand {
-            position_m: state.position_m.xy(),
-        });
-        let down = self.touchdown.update(dt, state.velocity_mps.z);
-        Command::new(!down, ControlInput::Land(land))
-    }
-}
-
 fn main() -> ExitCode {
     Builder::from_default_env().format_timestamp_millis().init();
 
@@ -351,19 +324,15 @@ fn main() -> ExitCode {
 
     // Climbs to the script's waypoint and holds; `land` ends the flight after the autotune.
     let land = Rc::new(Cell::new(false));
-    let commander = ThenLand {
-        script: ScriptCommander::new(
-            args.script
-                .as_deref()
-                .unwrap_or(args.airframe.hover_script()),
-        )
-        .expect("failed to load flight script")
-        .with_route_end(RouteEnd::Hold)
-        .anchored(),
-        land: land.clone(),
-        landing: None,
-        touchdown: TouchdownDetector::default(),
-    };
+    let script = ScriptCommander::new(
+        args.script
+            .as_deref()
+            .unwrap_or(args.airframe.hover_script()),
+    )
+    .expect("failed to load flight script")
+    .with_route_end(RouteEnd::Hold)
+    .anchored();
+    let commander = ThenLand::new(script, land.clone());
 
     // The model: hand-tuned gains (the baseline), mixer, and motor-to-channel mapping.
     let airframe = args.airframe.airframe();
@@ -523,7 +492,7 @@ fn main() -> ExitCode {
             return;
         }
         if autotune.status() == AutotuneStatus::Idle
-            && at_hover_point(flight_loop.commander(), flight_loop.state())
+            && flight_loop.commander().at_hover_point(flight_loop.state())
         {
             match autotune.start(flight_loop) {
                 Ok(()) => {
@@ -542,7 +511,11 @@ fn main() -> ExitCode {
         let Some(event) = autotune.update(flight_loop, LOOP_DT_S) else {
             return;
         };
-        log_event(&event, flight_loop.stabilizer().config());
+        log_event(
+            &event,
+            flight_loop.stabilizer().config(),
+            "copter-autotune-realflight",
+        );
         if let AutotuneEvent::StageDone {
             target,
             outcome,
@@ -573,91 +546,6 @@ fn main() -> ExitCode {
     }
 }
 
-/// Whether the vehicle is tilted past 90°: the cosine of the tilt (the attitude matrix's NED-down
-/// component of body z) is negative. False for a NaN attitude.
-fn is_inverted(state: &VehicleState) -> bool {
-    state.attitude.to_rotation_matrix()[(2, 2)] < 0.0
-}
-
-/// Logs an autotune event (lifecycle, so `info!`/`warn!`; each step, including ones that run
-/// again, at `debug!`); on completion, prints the tuned gains for pasting.
-fn log_event(event: &AutotuneEvent, config: &CopterStabilizerConfig) {
-    match event {
-        AutotuneEvent::StageStarted(target) => info!("autotune: stage {target:?}"),
-        AutotuneEvent::Measured {
-            target,
-            measurement: Measurement::Step(metrics),
-        } => debug!("autotune: {target:?} step {}", format_step(metrics)),
-        AutotuneEvent::Stalled {
-            target,
-            measurement: Some(Measurement::Step(metrics)),
-        } => debug!(
-            "autotune: {target:?} step {} (stalled, runs again)",
-            format_step(metrics)
-        ),
-        AutotuneEvent::Stalled { target, .. } => {
-            debug!("autotune: {target:?} probe stopped (host slow), runs again");
-        }
-        AutotuneEvent::Measured {
-            target,
-            measurement: Measurement::Identify(model),
-        } => info!(
-            "autotune: {target:?} fit: delay {} ticks, lag {}, accel {} ({model:?})",
-            model.delay_ticks,
-            format_ms(model.lag_s()),
-            model
-                .accel_radps2()
-                .map_or("-".to_string(), |accel| format!("{accel:.0} rad/s²")),
-        ),
-        AutotuneEvent::Tried {
-            target,
-            gains,
-            passed,
-            steps,
-        } => info!(
-            "autotune: {target:?} {} {}: {}",
-            format_gains(gains),
-            if *passed { "passed" } else { "failed" },
-            format_summary(steps),
-        ),
-        AutotuneEvent::StageDone {
-            target,
-            gains,
-            outcome,
-            steps,
-            baseline,
-        } => {
-            if let Some(baseline) = baseline {
-                info!("autotune: {target:?} baseline {}", format_summary(baseline));
-            }
-            if let Some(steps) = steps {
-                info!("autotune: {target:?} steps {}", format_summary(steps));
-            }
-            info!(
-                "autotune: {target:?} {outcome:?}: flies {}",
-                format_gains(gains)
-            );
-        }
-        AutotuneEvent::Lowered { target, gains } => warn!(
-            "autotune: {target:?} start above the search's max, lowered to {}",
-            format_gains(gains)
-        ),
-        AutotuneEvent::Unsettled { target, gains } => warn!(
-            "autotune: {target:?} design {} didn't settle; fitting again",
-            format_gains(gains)
-        ),
-        AutotuneEvent::StageFailed { target, reason } => {
-            warn!("autotune: {target:?} failed: {reason:?}; the last kept gains fly");
-        }
-        AutotuneEvent::Complete => {
-            info!("autotune: complete");
-            println!("{}", airframe_snippet(config));
-        }
-        AutotuneEvent::Reverted => warn!("autotune: disarmed, gains reverted"),
-        event => debug!("autotune: {event:?}"),
-    }
-}
-
 /// `--rate-p-scale`: a positive, finite factor (zero, negative, or NaN would invert or drop the
 /// rate loops' P).
 fn positive(value: &str) -> Result<f32, String> {
@@ -666,117 +554,4 @@ fn positive(value: &str) -> Result<f32, String> {
         Ok(_) => Err("must be positive and finite".into()),
         Err(e) => Err(e.to_string()),
     }
-}
-
-/// Whether the script has reached its hover waypoint and the vehicle is near its altitude.
-fn at_hover_point(commander: &ThenLand, state: &VehicleState) -> bool {
-    let follower = commander.script.follower();
-    let Some(hover) = follower.waypoints().last() else {
-        return false;
-    };
-    follower.is_complete()
-        && (state.position_m.z - commander.script.origin_m().z - hover.altitude_m).abs()
-            < START_ALTITUDE_TOLERANCE_M
-}
-
-/// One step's response: the step, then its metrics (normalized to the step).
-fn format_step(metrics: &StepMetrics) -> String {
-    format!(
-        "{:+.3}: overshoot {:.2}, rise {}, settle {}, bounce {:.2}, final {:.2}, clipped {:.0} ms",
-        metrics.amplitude,
-        metrics.overshoot,
-        format_ms(metrics.rise_time_s),
-        format_ms(metrics.settling_time_s),
-        metrics.bounce_back,
-        metrics.final_value,
-        metrics.saturated_s * 1e3,
-    )
-}
-
-fn format_ms(time_s: Option<f32>) -> String {
-    time_s.map_or("-".to_string(), |s| format!("{:.0} ms", s * 1e3))
-}
-
-/// A stage's steps: each metric's mean [min-max]; overshoot per direction; steps that never
-/// rose or settled.
-fn format_summary(summary: &StepSummary) -> String {
-    let stat = |stat: &Stat, scale: f32| match stat.mean() {
-        Some(mean) => format!(
-            "{:.2} [{:.2}-{:.2}]",
-            mean * scale,
-            stat.min * scale,
-            stat.max * scale
-        ),
-        None => "-".to_string(),
-    };
-    format!(
-        "n {}: overshoot {} (+ {}, - {}), rise {} ms, settle {} ms, bounce {}, final {}; \
-         not risen {}, not settled {}",
-        summary.count(),
-        stat(&summary.overshoot, 1.0),
-        format_mean(&summary.overshoot_positive, 1.0),
-        format_mean(&summary.overshoot_negative, 1.0),
-        stat(&summary.rise_time_s, 1e3),
-        stat(&summary.settling_time_s, 1e3),
-        stat(&summary.bounce_back, 1.0),
-        stat(&summary.final_value, 1.0),
-        summary.not_risen,
-        summary.not_settled,
-    )
-}
-
-/// A summary's means, for the baseline-vs-verify table.
-fn format_brief(summary: &StepSummary) -> String {
-    format!(
-        "rise {} ms, settle {} ms, overshoot {}, final {}",
-        format_mean(&summary.rise_time_s, 1e3),
-        format_mean(&summary.settling_time_s, 1e3),
-        format_mean(&summary.overshoot, 1.0),
-        format_mean(&summary.final_value, 1.0),
-    )
-}
-
-/// A metric's mean times `scale`, or `-` with no samples.
-fn format_mean(stat: &Stat, scale: f32) -> String {
-    stat.mean()
-        .map_or("-".to_string(), |mean| format!("{:.2}", mean * scale))
-}
-
-fn format_gains(gains: &Gains) -> String {
-    format!(
-        "Gains {{ p: {:.4}, i: {:.4}, d: {:.4} }}",
-        gains.p, gains.i, gains.d
-    )
-}
-
-/// The tuned gains, laid out like `airframes::quadcopter_x()` for pasting, with the yaw
-/// integral limit the yaw I was tuned on: it holds the yaw trim only up to that limit.
-fn airframe_snippet(config: &CopterStabilizerConfig) -> String {
-    let gains = |target: TunedLoop| format_gains(&target.gains(config));
-    format!(
-        "// copter-autotune-realflight\n\
-         body_rate: BodyRateControllerConfig {{\n    \
-             roll_gains: {},\n    \
-             pitch_gains: {},\n    \
-             yaw_gains: {},\n    \
-             yaw_max_integral: {:.1},\n    \
-             ..\n\
-         }},\n\
-         attitude: AttitudeControllerConfig {{\n    \
-             roll_gains: {},\n    \
-             pitch_gains: {},\n    \
-             ..\n\
-         }},\n\
-         yaw: YawControllerConfig {{\n    \
-             gains: {},\n    \
-             ..\n\
-         }},",
-        gains(TunedLoop::RollRate),
-        gains(TunedLoop::PitchRate),
-        gains(TunedLoop::YawRate),
-        config.body_rate.yaw_max_integral,
-        gains(TunedLoop::Roll),
-        gains(TunedLoop::Pitch),
-        gains(TunedLoop::Heading),
-    )
 }
