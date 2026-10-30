@@ -103,7 +103,7 @@ impl<B> XPlaneConfiguration<B> {
 ///   resubscribes every 0.25 s until frames return, which covers an X-Plane restart (it forgets
 ///   every subscription). When frames return, it logs the silence's length and takes control
 ///   again (a restarted X-Plane has also cleared the overrides), without zeroing the engines. `state` keeps returning the
-///   last state meanwhile.
+///   last state meanwhile, and [`state_is_stale`](Self::state_is_stale) reads true.
 /// - **Lost subscriptions:** X-Plane drops `RREF`s that arrive in a burst, so while frames flow,
 ///   a dataref that hasn't arrived for 0.5 s also triggers a resubscribe every 0.25 s.
 /// - **Pause:** X-Plane keeps streaming frozen values while paused; the vehicle logs the pause
@@ -229,6 +229,14 @@ impl<B: DatarefSource + DatarefSink> XPlaneVehicle<B> {
     /// The bridge, for its statistics.
     pub fn bridge(&self) -> &B {
         &self.bridge
+    }
+
+    /// Whether the state [`StateSource::state`] returns is old: no frame for 0.5 s, a dataref
+    /// lagging the others for as long, or X-Plane paused (it streams frozen values). The
+    /// vehicle resubscribes meanwhile ([Liveness](Self#liveness)); a caller timing the
+    /// aircraft's response, such as an autotune, waits.
+    pub fn state_is_stale(&self) -> bool {
+        self.liveness.is_silent() || self.lagging || self.paused
     }
 
     /// Sets the overrides and holds the neutral surfaces at 0°. Leaves the engines and driven

@@ -86,6 +86,13 @@ cargo run --bin plot_flight -- --record flight.csv flight.png
 # Or: just fly-xplane-companion, then just bridge --origin <lat,lon,0>
 cargo run --release -p stable-flight-sitl-xplane --example copter-companion-xplane
 
+# Autotune of the Alia's hover on its lift rotors (the copter controllers): climbs to 20 m over
+# the spawn (flights/alia_hover.csv), searches roll and pitch rate, then angle, on slow steps,
+# prints the gains as an airframes.rs snippet, and lands. --step-test appends step tests;
+# --stages none --step-test measures the committed gains. Reset X-Plane's flight before each run.
+# Or: just fly-xplane-autotune --step-test
+cargo run --release -p stable-flight-sitl-xplane --example copter-autotune-xplane -- --step-test
+
 # A multirotor's lift engines on the runway, parking brake off: the yaw sign of each diagonal,
 # the liftoff throttle, the motor lag, and an airborne roll, pitch, and yaw pulse.
 # Or: just xplane-sweep --output sweep.csv

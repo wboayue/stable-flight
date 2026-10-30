@@ -1,0 +1,5 @@
+# Hover 20 m above the start (Alia 250 in X-Plane, on its lift rotors), e.g. over Oceano (L52)
+# runway 11: room below for a tilt step's sink and drift. A single waypoint: the follower holds it.
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
+x,y,altitude,cruise_speed
+0.00,0.00,20.0,2.0

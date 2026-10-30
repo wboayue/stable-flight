@@ -302,9 +302,9 @@ fn writes_once_per_frame() {
     check!(shared.fake().last_write(&engine(4)) == Some(0.3));
 }
 
-/// A silence resubscribes every 0.25 s once it passes 0.5 s, and frames returning take control
-/// again (a restarted X-Plane has cleared the overrides) without zeroing the engines: those
-/// zeros could land a frame before the tick's throttles.
+/// A silence resubscribes every 0.25 s once it passes 0.5 s, the state reading stale, and frames
+/// returning take control again (a restarted X-Plane has cleared the overrides) without zeroing
+/// the engines: those zeros could land a frame before the tick's throttles.
 #[test]
 fn resubscribes_through_a_silence_and_retakes_control() {
     let (mut vehicle, shared) = connected(alia());
@@ -319,6 +319,7 @@ fn resubscribes_through_a_silence_and_retakes_control() {
     }
     let before = shared.stats().resubscribes;
     check!(before == 0);
+    check!(!vehicle.state_is_stale());
 
     // 1 s of silence: resubscribes from 0.5 s, every 0.25 s.
     for _ in 0..250 {
@@ -326,6 +327,7 @@ fn resubscribes_through_a_silence_and_retakes_control() {
     }
     let during = shared.stats().resubscribes;
     check!((2..=3).contains(&during));
+    check!(vehicle.state_is_stale());
 
     let takeovers = shared.count_writes(&overrides::THROTTLES, true);
     let zeros = shared.count_writes(&engine(0), 0.0);
@@ -335,9 +337,11 @@ fn resubscribes_through_a_silence_and_retakes_control() {
     vehicle.state(DT);
     check!(shared.count_writes(&overrides::THROTTLES, true) == takeovers + 1);
     check!(shared.count_writes(&engine(0), 0.0) == zeros);
+    check!(!vehicle.state_is_stale());
 }
 
-/// While frames flow, a dataref that stopped arriving triggers a resubscribe.
+/// While frames flow, a dataref that stopped arriving triggers a resubscribe, and the state
+/// reads stale.
 #[test]
 fn resubscribes_a_lost_dataref() {
     let (mut vehicle, shared) = connected(alia());
@@ -350,6 +354,7 @@ fn resubscribes_a_lost_dataref() {
         vehicle.state(DT);
     }
     check!(shared.stats().resubscribes >= 1);
+    check!(vehicle.state_is_stale());
 }
 
 /// Failed sends and receives are logged, not fatal: the tick goes on with the last state.
@@ -383,7 +388,8 @@ fn hands_control_back_on_drop() {
     check!(shared.fake().last_write(&overrides::CONTROL_SURFACES) == None);
 }
 
-/// A pause and a relocation are followed: the paused flag toggles, and a jump re-anchors.
+/// A pause and a relocation are followed: the paused flag toggles (the state stale while
+/// paused), and a jump re-anchors.
 #[test]
 fn follows_pause_and_relocation() {
     let (mut vehicle, shared) = connected(alia());
@@ -394,6 +400,7 @@ fn follows_pause_and_relocation() {
         .push_frame(handles().frame(&paused, Instant::now(), &[]));
     vehicle.state(DT);
     check!(vehicle.paused);
+    check!(vehicle.state_is_stale());
 
     let relocated = XPlaneSample {
         sim_time_s: 200.0,
@@ -408,6 +415,7 @@ fn follows_pause_and_relocation() {
         .push_frame(handles().frame(&relocated, Instant::now(), &[]));
     let state = vehicle.state(DT);
     check!(!vehicle.paused);
+    check!(!vehicle.state_is_stale());
     check!(state.position_m.xy().norm() < 1e-3);
     check!(vehicle.anchor().expect("anchored").latitude_deg == f64::from(37.62f32));
 }

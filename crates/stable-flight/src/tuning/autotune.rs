@@ -44,6 +44,16 @@ impl StagePlan {
         }
     }
 
+    /// A step test of `target` on a full-size multirotor's steps
+    /// ([`StepTestPlan::large_copter`]): the steps [`large_copter_search`](Self::large_copter_search)
+    /// judges, so a test compares with the search's.
+    pub fn large_copter_step_test(target: TunedLoop) -> Self {
+        Self {
+            target,
+            method: Method::StepTest(StepTestPlan::large_copter(target)),
+        }
+    }
+
     /// The copter design search: [`DesignPlan::copter`] for roll and pitch rate, then roll
     /// and pitch angle (each angle design flies on its designed rate loop), then
     /// [`SearchPlan::copter`] for each in the same order, starting from its design, then
@@ -377,6 +387,30 @@ impl StepTestPlan {
         }
     }
 
+    /// [`copter`](Self::copter) for roll or pitch, on a full-size multirotor's steps
+    /// ([`LARGE_COPTER_RATE_STEP`] or [`LARGE_COPTER_TILT_STEP`]), clipping for up to
+    /// [`LARGE_COPTER_MAX_SATURATED_S`]. Yaw rate and heading are [`copter`](Self::copter)'s
+    /// unchanged.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::TunedLoop;
+    /// use stable_flight::tuning::autotune::{LARGE_COPTER_TILT_STEP, StepTestPlan};
+    ///
+    /// assert_eq!(StepTestPlan::large_copter(TunedLoop::Roll).step, LARGE_COPTER_TILT_STEP);
+    /// ```
+    pub fn large_copter(target: TunedLoop) -> Self {
+        let mut plan = Self::copter(target);
+        plan.step = match target {
+            TunedLoop::RollRate | TunedLoop::PitchRate => LARGE_COPTER_RATE_STEP,
+            TunedLoop::Roll | TunedLoop::Pitch => LARGE_COPTER_TILT_STEP,
+            TunedLoop::YawRate | TunedLoop::Heading => return plan,
+        };
+        plan.max_saturated_s = LARGE_COPTER_MAX_SATURATED_S;
+        plan
+    }
+
     /// Checks the step ([`StepConfig::validate`]) and the counts and clip allowance.
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         self.step.validate()?;
@@ -592,20 +626,22 @@ impl SearchPlan {
     }
 
     /// [`copter`](Self::copter) for roll or pitch, on a full-size multirotor's steps
-    /// ([`LARGE_COPTER_RATE_STEP`] or [`LARGE_COPTER_TILT_STEP`]), clipping for up to
-    /// [`LARGE_COPTER_MAX_SATURATED_S`], keeping the start's rate I
-    /// ([`StagePlan::large_copter_search`] says why). Yaw rate and heading, which the large
-    /// search doesn't tune, are [`copter`](Self::copter)'s unchanged.
+    /// ([`StepTestPlan::large_copter`], in [`copter`](Self::copter)'s pairs), keeping the
+    /// start's rate I ([`StagePlan::large_copter_search`] says why). Yaw rate and heading,
+    /// which the large search doesn't tune, are [`copter`](Self::copter)'s unchanged.
     pub fn large_copter(target: TunedLoop) -> Self {
-        let mut plan = Self::copter(target);
-        plan.test.step = match target {
-            TunedLoop::RollRate | TunedLoop::PitchRate => LARGE_COPTER_RATE_STEP,
-            TunedLoop::Roll | TunedLoop::Pitch => LARGE_COPTER_TILT_STEP,
-            TunedLoop::YawRate | TunedLoop::Heading => return plan,
-        };
-        plan.test.max_saturated_s = LARGE_COPTER_MAX_SATURATED_S;
-        plan.i_per_p = None;
-        plan
+        let plan = Self::copter(target);
+        if matches!(target, TunedLoop::YawRate | TunedLoop::Heading) {
+            return plan;
+        }
+        Self {
+            test: StepTestPlan {
+                pairs: plan.test.pairs,
+                ..StepTestPlan::large_copter(target)
+            },
+            i_per_p: None,
+            ..plan
+        }
     }
 
     /// Checks the steps ([`StepTestPlan::validate`]), the criterion, the bracket's factors and
