@@ -110,6 +110,44 @@ impl StagePlan {
             },
         ]
     }
+
+    /// The step search for a full-size multirotor: [`SearchPlan::copter`] for roll and pitch
+    /// rate, then roll and pitch angle, each on the slower steps a large aircraft needs
+    /// ([`LARGE_COPTER_RATE_STEP`], [`LARGE_COPTER_TILT_STEP`]), clipping for up to
+    /// [`LARGE_COPTER_MAX_SATURATED_S`], and keeping the start's rate I: with I at
+    /// [`RATE_I_PER_P`] of P, the Alia 250's rate steps (no rate D, rising in 0.5 s) overshoot
+    /// by 10% and its pitch rate search tilts out of the envelope (#374). Fly it within
+    /// [`Envelope::large_copter`].
+    ///
+    /// The design search doesn't fit a full-size aircraft yet: on the sim's Alia it designs
+    /// rate P about 19× the step search's, and the search after it tilts out of the envelope
+    /// (#572). From rate P 1 and 3 this search tunes the Alia's sim model to within 25% of its
+    /// hand tune in 11–15 min of sim time (#572).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::TunedLoop;
+    /// use stable_flight::tuning::autotune::{LARGE_COPTER_RATE_STEP, Method, StagePlan};
+    ///
+    /// let plan = StagePlan::large_copter_search();
+    /// assert_eq!(plan[0].target, TunedLoop::RollRate);
+    /// let Method::Search(search) = plan[0].method else { unreachable!() };
+    /// assert_eq!(search.test.step, LARGE_COPTER_RATE_STEP);
+    /// assert_eq!(search.i_per_p, None);
+    /// ```
+    pub fn large_copter_search() -> [Self; 4] {
+        [
+            TunedLoop::RollRate,
+            TunedLoop::PitchRate,
+            TunedLoop::Roll,
+            TunedLoop::Pitch,
+        ]
+        .map(|target| Self {
+            target,
+            method: Method::Search(SearchPlan::large_copter(target)),
+        })
+    }
 }
 
 /// How a stage tunes its loop: which probes it runs and what gains follow from them.
@@ -251,6 +289,27 @@ pub const COPTER_STEP_SETTLE: Settle = Settle {
     rate_radps: 0.1,
     hold_s: 0.5,
 };
+
+/// Step response of a full-size multirotor's rate loop: 0.2 rad/s held for 1.5 s, rising in
+/// about 0.6 s on the Alia 250's sim model (motor lag 0.17 s). On [`COPTER_RATE_STEP`] the
+/// Alia's rate steps never rise within the window, so the overshoot criterion passes any gain
+/// (#351).
+pub const LARGE_COPTER_RATE_STEP: StepConfig = StepConfig {
+    amplitude: 0.2,
+    duration_s: 1.5,
+    ..COPTER_RATE_STEP
+};
+
+/// Step response of a full-size multirotor's roll or pitch loop: [`COPTER_TILT_STEP`] held for
+/// 2.5 s, rising in about 1.2 s on the Alia 250's sim model (#351).
+pub const LARGE_COPTER_TILT_STEP: StepConfig = StepConfig {
+    duration_s: 2.5,
+    ..COPTER_TILT_STEP
+};
+
+/// How long a full-size multirotor's step may clip, in s: its rate step's moment saturates for
+/// the first few ticks while the slow motors catch up (#351).
+pub const LARGE_COPTER_MAX_SATURATED_S: f32 = 0.2;
 
 /// A step test: `pairs` pairs of steps, alternating `+step` and `−step` so a trim or CG offset
 /// shows as asymmetry rather than bias, each from a [`Settle`]. A step clipped for longer than
@@ -530,6 +589,22 @@ impl SearchPlan {
             TunedLoop::YawRate => Self::copter_yaw_rate(),
             TunedLoop::Roll | TunedLoop::Pitch | TunedLoop::Heading => Self::copter_angle(),
         }
+    }
+
+    /// [`copter`](Self::copter) on a full-size multirotor's steps ([`LARGE_COPTER_RATE_STEP`]
+    /// or [`LARGE_COPTER_TILT_STEP`]), clipping for up to [`LARGE_COPTER_MAX_SATURATED_S`],
+    /// keeping the start's rate I ([`StagePlan::large_copter_search`] says why). Yaw rate and
+    /// heading keep the copter steps: the large search doesn't tune them.
+    pub fn large_copter(target: TunedLoop) -> Self {
+        let mut plan = Self::copter(target);
+        match target {
+            TunedLoop::RollRate | TunedLoop::PitchRate => plan.test.step = LARGE_COPTER_RATE_STEP,
+            TunedLoop::Roll | TunedLoop::Pitch => plan.test.step = LARGE_COPTER_TILT_STEP,
+            TunedLoop::YawRate | TunedLoop::Heading => {}
+        }
+        plan.test.max_saturated_s = LARGE_COPTER_MAX_SATURATED_S;
+        plan.i_per_p = None;
+        plan
     }
 
     /// Checks the steps ([`StepTestPlan::validate`]), the criterion, the bracket's factors and
@@ -896,6 +971,24 @@ impl Default for Envelope {
 }
 
 impl Envelope {
+    /// [`Default`]'s limits, waiting up to 30 s to settle: a full-size multirotor brakes a
+    /// step's sideways speed slowly, and the Alia 250's sim model doesn't level within the
+    /// default 10 s (#351).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::tuning::autotune::Envelope;
+    ///
+    /// assert_eq!(Envelope::large_copter().settle_timeout_s, 30.0);
+    /// ```
+    pub fn large_copter() -> Self {
+        Self {
+            settle_timeout_s: 30.0,
+            ..Self::default()
+        }
+    }
+
     /// Checks that every limit and time is positive and finite, and that settling
     /// ([`check_settle`](Self::check_settle)) is tighter than aborting.
     pub fn validate(&self) -> Result<(), InvalidConfig> {

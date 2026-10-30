@@ -1,5 +1,5 @@
 //! The Alia 250's hover ([`airframes::alia250_hover`]), a full-size multirotor: its autotune converges on
-//! the large-aircraft plan (`common::large`), every loop meets the autotune's overshoot and
+//! core's large-copter search (`StagePlan::large_copter_search`), every loop meets the autotune's overshoot and
 //! bounce-back bands on that plan's steps, and it holds a hover through a gust.
 
 mod common;
@@ -8,6 +8,7 @@ use assert2::check;
 use stable_flight::Vec3;
 use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
+use stable_flight::tuning::autotune::{Envelope, StagePlan};
 use stable_flight_sim::airframes::{self, Airframe};
 use stable_flight_sim::{Gust, Wind};
 
@@ -31,17 +32,17 @@ fn tuned_p(config: &CopterStabilizerConfig) -> [f32; 4] {
     TUNED.map(|target| target.gains(config).p)
 }
 
-/// From rate P 1 and 3 with angle P 1, the large-aircraft plan tunes every stage to the
+/// From rate P 1 and 3 with angle P 1, the large-copter search tunes every stage to the
 /// airframe's gains. A higher angle P on untuned rate loops (2–3), or rate P 0.5, tilts past
 /// the envelope's 35° before the search ends.
 #[test]
-fn autotune_converges_on_the_large_aircraft_plan() {
+fn autotune_converges_on_the_large_copter_search() {
     let reference = tuned_p(&airframes::alia250_hover().stabilizer);
     for rate_p in [1.0, 3.0] {
         let run = common::autotune_within(
             &Plant::clean(started_from(rate_p, 1.0)),
-            &large::plan(),
-            large::envelope(),
+            &StagePlan::large_copter_search(),
+            Envelope::large_copter(),
             4.0 * AUTOTUNE_TIMEOUT_S,
         );
         check!(run.all_tuned(), "rate P {rate_p}: {:?}", run.stages);

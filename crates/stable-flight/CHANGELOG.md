@@ -84,6 +84,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `StagePlan::large_copter_search`, `SearchPlan::large_copter`, `Envelope::large_copter`, and
+  `LARGE_COPTER_RATE_STEP`, `LARGE_COPTER_TILT_STEP`, `LARGE_COPTER_MAX_SATURATED_S`: the step
+  search for a full-size multirotor, on 0.2 rad/s rate steps over 1.5 s and 5° angle steps
+  over 2.5 s, keeping the start's rate I, waiting 30 s to settle. It tunes the Alia 250's sim
+  model, where the design search doesn't yet (#351, #572).
+
 - `StepSummary::overshoot_past_end`: each step's peak past where it ended, or past the step
   when it ended short (#564).
 
