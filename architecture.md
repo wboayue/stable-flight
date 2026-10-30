@@ -734,6 +734,22 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   * Angle: P searched on overshoot and bounce-back
     ≤ 0.05 (ArduPilot's angle-P limit); bounce-back counts though a disturbance holds the angle
     short of the step (about 8% on QuadCopterX).
+  * Yaw rate (`SearchPlan::copter_yaw_rate`): searched from the start, without a design, as
+    rate is but on 0.5 rad/s steps, D 0 (ArduPilot's `ATC_RAT_YAW_D` and PX4's `MC_YAWRATE_D`
+    default to 0). Prop drag gives a quad little yaw authority, so 1 rad/s steps clip at any P
+    that rises within PX4's 0.2 s; on the sim they clipped 4–10× as long and settled on lower
+    P. The design's yaw P (5–8 on the sim's quads) clipped 0.5 rad/s steps for 44–116 ms, and
+    the search from its D (0.22–0.25) left steps short of 90% in the window. A yaw trim
+    (QuadCopterX hovers on 0.40 of yaw moment, #192) takes authority from one direction, so
+    the step against it rises slower and the one with it overshoots: the pair's means judge
+    it. The I follows P as on roll and pitch, so the yaw integral has its own, larger limit
+    (`BodyRateControllerConfig::yaw_max_integral`, 5 rad: a fifth of P 0.5 holds 0.40 with
+    25% margin); with the shared 1 rad the I held 0.40 only from P 2, and the search kept its
+    start on every 0.40-trim row. Keeping the start's I instead was rejected: a high I makes
+    small P overshoot on the I alone, the bracket stops there, and the result depends on the
+    start (0.35 against 0.91 on `racer`). A start whose I builds the trim slowly fails the
+    same way: `racer`'s own yaw gains (P 1.5, I 0.1) settle with part of a 0.40 trim on P, and
+    every lower candidate drifts with the trim (#296).
   * D isn't searched the way ArduPilot does (raise D until the response bounces back): with the
     rate I in the loop, overshoot decays without falling back, so bounce-back never bounds D.
   * An envelope breach while a candidate flies fails that candidate, not the run: the committed
@@ -741,20 +757,21 @@ feedback and a search from the start gains were rejected (**Design search**, bel
 * **Sequence:** innermost first, so each stage flies on the gains the earlier ones found. A stage
   tunes only its own terms; the rest keep their gains. No stage searches the rate loops' I,
   which holds trim rather than shaping the response: it follows P, at `RATE_I_PER_P` (0.2/s)
-  of every roll and pitch rate P a copter search or design sets (`SearchPlan::i_per_p`,
+  of every rate P a copter search or design sets (`SearchPlan::i_per_p`,
   `DesignPlan::rate_i_per_p`; a search's baseline flies the start's I, so from a start off
   the ratio a candidate differs in I as well as P), as ArduPilot's autotune sets I from P
   (`AUTOTUNE_PI_RATIO_FINAL`, 1.0). On the sim robustness table 1.0 failed most rows, 0.1–0.3
   passed every clean and delayed row, and 0.2 the most trim rows; switching between a low I
   during probes and the final I between them (ArduPilot's `AUTOTUNE_PI_RATIO_FOR_TESTING`)
   bumped the I term at each switch and lost the trim rows (#374). The large-aircraft plan keeps
-  the start's I: on the Alia (no rate D) it overshot the rate steps by 10%. Yaw rate and heading aren't tuned
-  ([#296](https://github.com/wboayue/stable-flight/issues/296)). Before each probe the vehicle must hold level and still (`Envelope::settle`): roll
+  the start's I: on the Alia (no rate D) it overshot the rate steps by 10%. Heading isn't
+  tuned. Before each probe the vehicle must hold level and still (`Envelope::settle`): roll
   and pitch within the tilt, their rates within the rate, read through the stabilizer's gyro
   low-pass (raw, the sim's gyro noise held them over the settle, so no stage started; the
-  envelope reads the raw rates, so a breach shows on its first tick). Yaw rate is left out: the yaw loop
-  isn't tuned, and on `racer` with 25 ms of delay it rings at ±0.18 rad/s on its start gains
-  without tilting the vehicle (#518); ArduPilot's level check covers every axis, and widens its
+  envelope reads the raw rates, so a breach shows on its first tick). Yaw rate counts only
+  before a yaw stage's probes: on `racer` with 25 ms of delay the yaw loop rings at ±0.18
+  rad/s on its start gains without tilting the vehicle, which would hold up every roll and
+  pitch stage (#518); ArduPilot's level check covers every axis, and widens its
   limits up to twice as the wait grows (`AC_AutoTune.cpp:343`), which here started about half
   the probes before the vehicle was still and made angle steps clip. An identification that
   can't settle starts at the timeout instead of failing: the fit only gains excitation from

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `copter-autotune-realflight` tunes yaw rate after the roll and pitch loops, and `--step-test`
+  step-tests it. The QuadCopterX flies a 5 rad yaw integral limit (core's default), so the
+  autotune's yaw I holds its 0.40 hover yaw trim; the eXplora and the Titan Cobra keep 1 rad
+  (#296).
 - The eXplora's hover loops fly without core's new gyro low-pass (`gyro_cutoff_hz: 0`): with
   little rate D they lose the margin to its lag on the sim tailsitter (#373, #550). The
   QuadCopterX and the Titan Cobra fly the 40 Hz default.

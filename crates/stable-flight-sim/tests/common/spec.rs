@@ -50,6 +50,15 @@ pub const TUNED: [TunedLoop; 4] = [
     TunedLoop::Pitch,
 ];
 
+/// Every loop the autotune tunes: [`TUNED`], then yaw rate.
+pub const AUTOTUNED: [TunedLoop; 5] = [
+    TunedLoop::RollRate,
+    TunedLoop::PitchRate,
+    TunedLoop::Roll,
+    TunedLoop::Pitch,
+    TunedLoop::YawRate,
+];
+
 /// Every copter loop.
 pub const ALL: [TunedLoop; 6] = [
     TunedLoop::RollRate,

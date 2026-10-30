@@ -1,6 +1,7 @@
 //! Autotune robustness (#366): `StagePlan::copter_design_search` on every airframe, under each
-//! perturbation set, from a low and a high start, designs every loop and tunes each by a
-//! search from its design, with gains that meet the step spec on that same plant, within
+//! perturbation set, from a low and a high start, designs every roll and pitch loop and tunes
+//! each by a search from its design, then searches yaw rate, with gains that meet the step
+//! spec on that same plant, within
 //! [`BUDGET_S`] of simulated time.
 
 mod common;
@@ -38,8 +39,8 @@ fn check_row(name: &str, airframe: Airframe, set: Set, start: Start) {
         },
         ..plant
     };
-    let misses = spec::misses(&tuned, &spec::TUNED);
-    let gains = spec::TUNED.map(|target: TunedLoop| (target, target.gains(&run.config)));
+    let misses = spec::misses(&tuned, &spec::AUTOTUNED);
+    let gains = spec::AUTOTUNED.map(|target: TunedLoop| (target, target.gains(&run.config)));
     check!(
         run.all_designed_and_searched() && misses.is_empty() && run.duration_s <= BUDGET_S,
         "{name} {set:?} from {start:?}: {:.0} s\noutcomes {:?}\ngains {gains:?}\nmisses {misses:#?}",
