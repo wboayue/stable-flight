@@ -4,7 +4,8 @@ use core::fmt;
 
 use crate::controllers::low_pass::LowPass;
 use crate::controllers::{
-    Gains, InvalidConfig, RATE_I_PER_P, check, check_limit, check_positive, check_unit_interval,
+    Gains, InvalidConfig, RATE_I_PER_P, YAW_RATE_I_PER_P, check, check_limit, check_positive,
+    check_unit_interval,
 };
 use crate::math::{DEG, euler_angles};
 use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
@@ -198,15 +199,26 @@ pub const COPTER_RATE_STEP: StepConfig = StepConfig {
     filter_hz: 40.0,
 };
 
-/// Step response of a copter yaw rate loop: [`COPTER_RATE_STEP`] at half the size (0.5 rad/s).
-/// Prop drag gives a quad little yaw authority (about 7 rad/s² per unit moment on the sim's
-/// `quad_x`), so 1 rad/s steps clip at any P that rises within PX4's yaw target, 0.2 s; the
-/// sim yaw search clipped 4–10× as long at 1 rad/s and settled on a lower P (#296).
-// TODO(#558): QuadCopterX's yaw in RealFlight reaches only half a step in the 0.25 s window,
-// so its search stops on clipping rather than on the criterion.
+/// Step response of a copter yaw rate loop, searched: [`COPTER_RATE_STEP`] at half the size
+/// (0.5 rad/s). Prop drag gives a quad little yaw authority (about 7 rad/s² per unit moment on
+/// the sim's `quad_x`), so 1 rad/s steps clip at any P that rises within PX4's yaw target,
+/// 0.2 s; the sim yaw search clipped 4–10× as long at 1 rad/s and settled on a lower P (#296).
+/// QuadCopterX has half `quad_x`'s yaw authority, and its steps reach only about half the step
+/// in the 0.25 s window, so its search stops on clipping rather than on the criterion. On a
+/// sim plant fitted to it that bound lands on the same P from every start (1.11–1.15), whose
+/// steps overshoot at most 0.03 and settle within 0.56 s. Longer windows fail: at 1 s a start with
+/// I as high as P overshoots on the I alone, and the search falls to P 0.51 (#558).
 pub const COPTER_YAW_RATE_STEP: StepConfig = StepConfig {
     amplitude: 0.5,
     ..COPTER_RATE_STEP
+};
+
+/// Step response of a copter yaw rate loop, step-tested: [`COPTER_YAW_RATE_STEP`] held for
+/// 1 s, so a yaw as slow as QuadCopterX's rises and settles within it (within 0.50 and 0.56 s
+/// on the sim plant fitted to it, #558).
+pub const COPTER_YAW_RATE_TEST_STEP: StepConfig = StepConfig {
+    duration_s: 1.0,
+    ..COPTER_YAW_RATE_STEP
 };
 
 /// Step response of a copter roll or pitch loop, searched and step-tested: 5° held for 1.5 s,
@@ -273,7 +285,7 @@ pub const COPTER_MAX_SATURATED_S: f32 = 0.042;
 
 impl StepTestPlan {
     /// The copter defaults for `target`: three pairs of [`COPTER_RATE_STEP`] (roll and pitch
-    /// rate), [`COPTER_YAW_RATE_STEP`] (yaw rate),
+    /// rate), [`COPTER_YAW_RATE_TEST_STEP`] (yaw rate),
     /// [`COPTER_TILT_STEP`] (roll and pitch), or [`COPTER_HEADING_STEP`] (heading), from
     /// [`COPTER_STEP_SETTLE`], each clipping for up to [`COPTER_MAX_SATURATED_S`], allowing
     /// 3 clipped steps in a row and 10 stalled steps in a row (RealFlight's proxy has frozen
@@ -290,7 +302,7 @@ impl StepTestPlan {
     pub fn copter(target: TunedLoop) -> Self {
         let step = match target {
             TunedLoop::RollRate | TunedLoop::PitchRate => COPTER_RATE_STEP,
-            TunedLoop::YawRate => COPTER_YAW_RATE_STEP,
+            TunedLoop::YawRate => COPTER_YAW_RATE_TEST_STEP,
             TunedLoop::Roll | TunedLoop::Pitch => COPTER_TILT_STEP,
             TunedLoop::Heading => COPTER_HEADING_STEP,
         };
@@ -466,10 +478,11 @@ impl SearchPlan {
 
     /// The copter yaw rate search: [`copter_rate`](Self::copter_rate) on steps of
     /// [`COPTER_YAW_RATE_STEP`], D as it starts (0 on yaw by default, as ArduPilot's
-    /// `ATC_RAT_YAW_D` and PX4's `MC_YAWRATE_D`). Its I at a fifth of P holds a yaw trim only
-    /// up to `yaw_max_integral` (`BodyRateControllerConfig`); with the start's I kept instead,
-    /// small P overshoots on the I alone, the bracket stops there, and the result depends on
-    /// the start: 0.35 against 0.91 on the sim's `racer` with a 0.40 yaw trim (#296).
+    /// `ATC_RAT_YAW_D` and PX4's `MC_YAWRATE_D`), I at [`YAW_RATE_I_PER_P`] of P. That I holds
+    /// a yaw trim only up to `yaw_max_integral` (`BodyRateControllerConfig`); with the start's
+    /// I kept instead, small P overshoots on the I alone, the bracket stops there, and the
+    /// result depends on the start: 0.35 against 0.91 on the sim's `racer` with a 0.40 yaw
+    /// trim (#296).
     ///
     /// # Examples
     ///
@@ -481,9 +494,11 @@ impl SearchPlan {
     pub fn copter_yaw_rate() -> Self {
         Self {
             test: StepTestPlan {
+                step: COPTER_YAW_RATE_STEP,
                 pairs: 2,
                 ..StepTestPlan::copter(TunedLoop::YawRate)
             },
+            i_per_p: Some(YAW_RATE_I_PER_P),
             ..Self::copter_rate()
         }
     }

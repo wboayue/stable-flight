@@ -14,6 +14,13 @@ const DEFAULT_D: f32 = 0.003;
 /// sooner; the sim autotune passed every clean and delayed robustness row at 0.1–0.3 and
 /// failed most at 1.0, ArduPilot's final ratio (`AUTOTUNE_PI_RATIO_FINAL`) (#374).
 pub const RATE_I_PER_P: f32 = 0.2;
+/// Yaw rate I as a share of yaw rate P, in 1/s: the autotune's rule for the yaw I it sets. A
+/// multirotor's yaw trim is large (0.40 of the moment on QuadCopterX, #192), and after liftoff
+/// the I has to rebuild it. Higher: trim back sooner; on the sim's QuadCopterX yaw the
+/// liftoff heading is back within 2° in 4.9 s against 7.3 s at 0.2, with the same tuned P.
+/// Past 0.3 the tuned steps overshoot more: 0.05 at 0.4, past the step spec's 0.05 at 0.5
+/// (#558).
+pub const YAW_RATE_I_PER_P: f32 = 0.3;
 /// Default yaw proportional gain. Yaw authority comes only from differential prop drag, so
 /// yaw needs more gain than roll and pitch.
 const DEFAULT_YAW_P: f32 = 0.3;
@@ -23,9 +30,9 @@ const DEFAULT_YAW_I: f32 = 0.1;
 const DEFAULT_MAX_INTEGRAL: f32 = 1.0;
 /// Default yaw integral limit, in rad (accumulated rate error). The I term holds a moment of
 /// at most `i · yaw_max_integral`, and a multirotor's yaw trim can be large: QuadCopterX
-/// hovers on 0.40 of yaw moment in RealFlight (#192). At 5 rad the autotune's I (a fifth of
-/// P, [`RATE_I_PER_P`]) holds 0.40 from P 0.4 up; at 1 rad it would need P 2, and the sim
-/// yaw search kept its start on every 0.40-trim row (#296).
+/// hovers on 0.40 of yaw moment in RealFlight (#192). At 5 rad the autotune's I
+/// ([`YAW_RATE_I_PER_P`] of P) holds 0.40 from P 0.27 up; at 1 rad a fifth of P would need
+/// P 2, and the sim yaw search kept its start on every 0.40-trim row (#296).
 const DEFAULT_YAW_MAX_INTEGRAL: f32 = 5.0;
 
 /// Configures the [BodyRateController] with PID gains and operational limits.

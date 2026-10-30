@@ -1633,28 +1633,43 @@ fn searches_tune_rate_then_angle() {
 
 /// Each loop's search steps as its step test does, allowing 10 clipped ticks (a step's
 /// first ticks ask for more than full moment at tuned gains): 1 rad/s on roll and pitch rate,
-/// 0.5 rad/s on yaw rate (prop drag's little yaw authority, #296), 5° on roll and pitch. Rate
-/// searches carry I at a fifth of P.
+/// 0.5 rad/s on yaw rate (prop drag's little yaw authority, #296), 5° on roll and pitch. The
+/// yaw rate step test watches its step for 1 s, the search for 0.25 s (#558). Roll and pitch
+/// rate searches carry I at a fifth of P, yaw rate at 0.3 of P.
 #[test]
 fn search_step_presets() {
     let rows = [
-        (TunedLoop::RollRate, COPTER_RATE_STEP),
-        (TunedLoop::PitchRate, COPTER_RATE_STEP),
-        (TunedLoop::YawRate, COPTER_YAW_RATE_STEP),
-        (TunedLoop::Roll, COPTER_TILT_STEP),
-        (TunedLoop::Pitch, COPTER_TILT_STEP),
+        (
+            TunedLoop::RollRate,
+            COPTER_RATE_STEP,
+            COPTER_RATE_STEP,
+            Some(RATE_I_PER_P),
+        ),
+        (
+            TunedLoop::PitchRate,
+            COPTER_RATE_STEP,
+            COPTER_RATE_STEP,
+            Some(RATE_I_PER_P),
+        ),
+        (
+            TunedLoop::YawRate,
+            COPTER_YAW_RATE_STEP,
+            COPTER_YAW_RATE_TEST_STEP,
+            Some(YAW_RATE_I_PER_P),
+        ),
+        (TunedLoop::Roll, COPTER_TILT_STEP, COPTER_TILT_STEP, None),
+        (TunedLoop::Pitch, COPTER_TILT_STEP, COPTER_TILT_STEP, None),
     ];
     let ten_ticks = (0..10).fold(0.0_f32, |sum, _| sum + 0.004);
-    for (target, step) in rows {
+    for (target, search_step, test_step, i_per_p) in rows {
         let search = SearchPlan::copter(target);
-        check!(search.test.step == step, "{target:?}");
-        check!(StepTestPlan::copter(target).step == step, "{target:?}");
+        check!(search.test.step == search_step, "{target:?}");
+        check!(StepTestPlan::copter(target).step == test_step, "{target:?}");
         check!(ten_ticks <= search.test.max_saturated_s, "{target:?}");
         check!(
             ten_ticks + 0.004 > search.test.max_saturated_s,
             "{target:?}"
         );
-        let i_per_p = target.is_rate().then_some(RATE_I_PER_P);
         check!(search.i_per_p == i_per_p, "{target:?}");
         check!(search.validate() == Ok(()), "{target:?}");
     }
