@@ -449,11 +449,12 @@ const COBRA_MAX_AIRSPEED_MPS: f32 = 18.0;
 /// [`QuadPlaneStabilizer`](stable_flight::stabilizers::vtol::QuadPlaneStabilizer).
 ///
 /// - **Hover:** every rate and angle gain from the RealFlight design search at thrust factor
-///   0.8: at 250 Hz every loop's step test rises, and all but one roll angle step settle
-///   (#538). The model is nose-heavy on its lift rotors: with equal front and rear thrust a hop
-///   pitched nose down at 155°/s (#433), and a level hover holds front motors at 0.61 and
-///   rear at 0.54 (#438), so the pitch rate loop holds a steady nose-up moment: 0.37 of the
-///   default mixer's range, 0.18 of this one's (#538).
+///   0.8: at 250 Hz every loop's step test rises, and every rate and pitch step settles; roll
+///   angle leaves 1–2 of 6 steps past the band (#538, #569). The model is nose-heavy on its
+///   lift rotors: with equal front and rear thrust a hop pitched nose down at 155°/s (#433),
+///   and a level hover holds front motors at 0.61 and rear at 0.54 (#438), so the pitch rate
+///   loop holds a steady nose-up moment: 0.37 of the default mixer's range, 0.18–0.19 of this
+///   one's (#438, #538).
 /// - **Plane and transition:** core defaults, with the upstream ArduPilot parameter file's
 ///   airspeeds, trim pitch, and cruise throttle (`TitanCobraVTOL.param`); the forward
 ///   transition hands over to the wing at its minimum airspeed, as ArduPilot does. A lap
@@ -540,17 +541,16 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
         stabilizer: QuadPlaneStabilizerConfig {
             hover: CopterStabilizerConfig {
                 // Every gain below: the RealFlight design search (`copter-autotune-realflight
-                // --airframe titan-cobra`, 250 Hz). Its step tests against the hand tune
-                // before it: roll rate rises in 87 ms (113), yaw rate in 509 ms (never rose in
-                // 1 s), roll angle in 162 ms with overshoot 0.05 (611 ms, 0.10), pitch rate and
-                // angle as before (#538).
+                // --airframe titan-cobra`, 250 Hz). Step tests on this set rise in 76 ms (roll
+                // rate), 86 ms (pitch rate), 466 ms (yaw rate), 161 ms (roll angle, overshoot
+                // 0.05) and 198 ms (pitch angle, overshoot 0.04) (#538).
                 body_rate: BodyRateControllerConfig {
                     // D 0: the fit puts the motor lag under a tick, inside the 36–40 ms delay
                     // (#563); the hand tune's D 0.0123 on pitch slowed the rate loop's rise to
                     // 175 ms (#538).
                     roll_gains: gains(0.4847, 0.0969, 0.0),
-                    // The nose-heavy hover needs a steady 0.18 nose-up moment; I · max_integral
-                    // = 0.24 holds it with a 30% margin.
+                    // The nose-heavy hover needs a steady 0.18–0.19 nose-up moment;
+                    // I · max_integral = 0.24 holds it with about 30% margin.
                     pitch_gains: gains(0.3970, 0.0794, 0.0),
                     yaw_gains: gains(1.8091, 0.5427, 0.0),
                     max_integral: 3.0,
