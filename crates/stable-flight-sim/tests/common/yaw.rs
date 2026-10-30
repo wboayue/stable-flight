@@ -1,11 +1,12 @@
-//! A yaw trim as large as QuadCopterX's, and the telemetry that watches the yaw moment against
-//! it.
+//! QuadCopterX's yaw on the sim: its yaw trim, its yaw inertia and gains, and the telemetry
+//! that watches the yaw moment against the trim.
 
 use std::cell::Cell;
 use std::rc::Rc;
 
+use stable_flight::controllers::{Gains, YawControllerConfig};
 use stable_flight::{TelemetryPublisher, TelemetryRecord, Vec3};
-use stable_flight_sim::airframes::Airframe;
+use stable_flight_sim::airframes::{self, Airframe};
 
 use super::{Hover, Pipeline, Plant};
 
@@ -59,4 +60,28 @@ pub fn yaw_trimmed(airframe: Airframe) -> Plant {
     let mut plant = probe;
     plant.perturbations.disturbance_moment_nm.z = YAW_TRIM / moment_per_nm;
     plant
+}
+
+/// QuadCopterX's yaw rate gains (sitl-realflight's `airframes::quadcopter_x`, #383).
+pub const QUADCOPTER_X_YAW_RATE: Gains = Gains {
+    p: 1.2,
+    i: 0.6,
+    d: 0.0,
+};
+
+/// How many times `quad_x`'s yaw inertia QuadCopterX's yaw turns like: with it, a 30° heading
+/// turn overshoots and settles as RealFlight's QuadCopterX does on the same gains (yaw rate P
+/// 0.6, I 0.6: 28% and 4.1 s against 25% and 4.2 s; P 1.2: 7% and 1.3 s against 7% and 1.45 s;
+/// #383).
+const QUADCOPTER_X_YAW_INERTIA_SCALE: f32 = 2.0;
+
+/// `quad_x` yawing like QuadCopterX: its yaw inertia scaled by
+/// [`QUADCOPTER_X_YAW_INERTIA_SCALE`], and QuadCopterX's heading and yaw rate loops flying
+/// `yaw_rate` (core's heading loop, as sitl-realflight's `airframes::quadcopter_x`).
+pub fn quadcopter_x_yaw(yaw_rate: Gains) -> Airframe {
+    let mut airframe = airframes::quad_x();
+    airframe.model.inertia_kgm2.z *= QUADCOPTER_X_YAW_INERTIA_SCALE;
+    airframe.stabilizer.yaw = YawControllerConfig::default();
+    airframe.stabilizer.body_rate.yaw_gains = yaw_rate;
+    airframe
 }

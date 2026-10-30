@@ -100,9 +100,12 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
                 // Yaw authority is differential prop drag only, so yaw needs its own, higher gains.
                 // The model needs a steady ~0.40 nose-right yaw moment to hover; I ·
                 // yaw_max_integral must cancel it with margin; with less, acro drifts in yaw
-                // (#192).
+                // (#192). P damps the heading loop: 30° heading turns overshoot 7% and settle
+                // within 1° in 1.45 s; at P 0.6 they overshoot 25% and ring for 4.2 s, and
+                // any kick (a stall, a stick) swings the heading for seconds (#383). Higher P
+                // clips the yaw moment for longer in each turn.
                 yaw_gains: Gains {
-                    p: 0.6,
+                    p: 1.2,
                     i: 0.6,
                     d: 0.0,
                 },
@@ -550,8 +553,7 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                     // 0.19 nose-up moment (0.37 at the default thrust factor); I ·
                     // max_integral = 0.25 holds it with margin.
                     pitch_gains: gains(0.5711, 0.25, 0.0123),
-                    // QuadCopterX's hand tune, halved: holds heading through the hover and
-                    // landing (#433).
+                    // Holds heading through the hover and landing (#433).
                     yaw_gains: gains(0.3, 0.3, 0.0),
                     max_integral: 1.0,
                     yaw_max_integral: 1.0,
