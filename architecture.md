@@ -867,7 +867,7 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     lag, with or without that scaling (12–20 rows, `quad_x` 52–72 ms, `heavy_quad` 64–92 ms);
     and a 55° rate margin (18 rows, `quad_x` 72 ms).
   * Every copter step may clip for 10 ticks (`COPTER_MAX_SATURATED_S`), and roll and pitch
-    are searched and step-tested at 5° (`COPTER_ANGLE_SEARCH_STEP`): at the tuned angle P 9 a
+    are searched and step-tested at 5° (`COPTER_TILT_STEP`): at the tuned angle P 9 a
     step asks for more than full moment for its first ticks, a limit rather than a bad loop
     (#310). On the sim's tuned `quad_x`, 5° steps clip for 5 ticks (6–10 under its trim rows)
     and 10° steps for 13 (`heavy_quad` 15). After a QuadCopterX autotune in RealFlight, the

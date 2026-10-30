@@ -1444,9 +1444,7 @@ fn search_step_presets() {
     let ten_ticks = (0..10).fold(0.0_f32, |sum, _| sum + 0.004);
     check!(ten_ticks <= rate.max_saturated_s);
     check!(ten_ticks + 0.004 > rate.max_saturated_s);
-    check!(angle.test.step == COPTER_ANGLE_SEARCH_STEP);
-    check!(angle.test.step.amplitude == COPTER_ANGLE_STEP.amplitude / 2.0);
-    check!(angle.test.step.duration_s == COPTER_ANGLE_STEP.duration_s);
+    check!(angle.test.step == COPTER_TILT_STEP);
     check!(angle.validate() == Ok(()));
 }
 
