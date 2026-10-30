@@ -19,8 +19,14 @@ pub const RATE_I_PER_P: f32 = 0.2;
 const DEFAULT_YAW_P: f32 = 0.3;
 /// Default yaw integral gain, in normalized moment per rad of accumulated error.
 const DEFAULT_YAW_I: f32 = 0.1;
-/// Default integral limit, in rad (accumulated rate error).
+/// Default roll and pitch integral limit, in rad (accumulated rate error).
 const DEFAULT_MAX_INTEGRAL: f32 = 1.0;
+/// Default yaw integral limit, in rad (accumulated rate error). The I term holds a moment of
+/// at most `i · yaw_max_integral`, and a multirotor's yaw trim can be large: QuadCopterX
+/// hovers on 0.40 of yaw moment in RealFlight (#192). At 5 rad the autotune's I (a fifth of
+/// P, [`RATE_I_PER_P`]) holds 0.40 from P 0.4 up; at 1 rad it would need P 2, and the sim
+/// yaw search kept its start on every 0.40-trim row (#296).
+const DEFAULT_YAW_MAX_INTEGRAL: f32 = 5.0;
 
 /// Configures the [BodyRateController] with PID gains and operational limits.
 ///
@@ -37,9 +43,13 @@ pub struct BodyRateControllerConfig {
     /// PID gains for the yaw rate.
     pub yaw_gains: Gains,
 
-    /// Maximum absolute value of the integrated rate error, in rad, per axis.
+    /// Maximum absolute value of the integrated roll and pitch rate error, in rad, each.
     /// Prevents integral windup by limiting error accumulation.
     pub max_integral: f32,
+
+    /// Maximum absolute value of the integrated yaw rate error, in rad: the yaw I term holds
+    /// at most `yaw_gains.i · yaw_max_integral` of trim moment.
+    pub yaw_max_integral: f32,
 }
 
 impl Default for BodyRateControllerConfig {
@@ -58,12 +68,14 @@ impl Default for BodyRateControllerConfig {
                 d: 0.0,
             },
             max_integral: DEFAULT_MAX_INTEGRAL,
+            yaw_max_integral: DEFAULT_YAW_MAX_INTEGRAL,
         }
     }
 }
 
 impl BodyRateControllerConfig {
-    /// Checks the config: `max_integral` must be non-negative and finite.
+    /// Checks the config: `max_integral` and `yaw_max_integral` must be non-negative and
+    /// finite.
     ///
     /// # Examples
     ///
@@ -75,12 +87,18 @@ impl BodyRateControllerConfig {
     /// assert!(bad.validate().is_err());
     /// ```
     pub fn validate(&self) -> Result<(), InvalidConfig> {
-        check_limit("max_integral", self.max_integral)
+        check_limit("max_integral", self.max_integral)?;
+        check_limit("yaw_max_integral", self.yaw_max_integral)
     }
 
     /// Gains per axis: roll, pitch, yaw.
     fn axis_gains(&self) -> [Gains; 3] {
         [self.roll_gains, self.pitch_gains, self.yaw_gains]
+    }
+
+    /// Integral limits per axis, in rad: roll, pitch, yaw.
+    fn axis_max_integrals(&self) -> [f32; 3] {
+        [self.max_integral, self.max_integral, self.yaw_max_integral]
     }
 }
 
@@ -170,7 +188,7 @@ impl BodyRateController {
     /// # Arguments
     ///
     /// * `config` - Gains and limits; assumed valid ([`BodyRateControllerConfig::validate`]).
-    ///   An invalid limit does not panic: a negative or NaN `max_integral` acts as 0.
+    ///   An invalid limit does not panic: a negative or NaN integral limit acts as 0.
     /// * `dt` - Time step since the last update in seconds (must be positive and finite).
     /// * `desired_rates_radps` - Desired angular rates (roll, pitch, yaw) in rad/s.
     /// * `estimated_rates_radps` - Current measured angular rates (roll, pitch, yaw) in rad/s.
@@ -212,10 +230,11 @@ impl BodyRateController {
     ) -> Vec3 {
         assert_dt(dt);
         let gains = config.axis_gains();
+        let max_integrals = config.axis_max_integrals();
         Vec3::from_fn(|axis, _| {
             self.axes[axis].step(
                 gains[axis],
-                config.max_integral,
+                max_integrals[axis],
                 dt,
                 desired_rates_radps[axis],
                 estimated_rates_radps[axis],
@@ -278,6 +297,7 @@ mod tests {
             pitch_gains: Gains { p, i, d },
             yaw_gains: Gains { p, i, d },
             max_integral: 1.0,
+            yaw_max_integral: 1.0,
         }
     }
 
@@ -352,7 +372,8 @@ mod tests {
 
     /// Closed loop against a constant yaw disturbance torque (`testing::settled_yaw_rate`),
     /// commanding zero rate: the integral cancels it up to its authority
-    /// `I · max_integral`; past it, the rate settles at `−(D − I · max_integral) / P` (#192).
+    /// `I · yaw_max_integral`; past it, the rate settles at `−(D − I · yaw_max_integral) / P`
+    /// (#192).
     #[test]
     fn integral_cancels_a_constant_yaw_torque_up_to_its_authority() {
         let cfg = BodyRateControllerConfig {
@@ -361,7 +382,7 @@ mod tests {
                 i: 0.2,
                 d: 0.0,
             },
-            max_integral: 1.0,
+            yaw_max_integral: 1.0,
             ..config(0.0, 0.0, 0.0)
         };
         // (disturbance torque, expected settled yaw rate in rad/s)
@@ -450,18 +471,24 @@ mod tests {
         assert!(moments == Vec3::zeros());
     }
 
-    /// The accumulated error grows by `e·dt` per tick and stops at `max_integral`.
+    /// The accumulated error grows by `e·dt` per tick and stops at the axis's limit:
+    /// `max_integral` for roll and pitch, `yaw_max_integral` for yaw.
     #[test]
-    fn integral_accumulates_and_clamps() {
-        let cfg = config(0.0, 0.1, 0.0);
+    fn integral_accumulates_and_clamps_per_axis() {
+        let cfg = BodyRateControllerConfig {
+            max_integral: 1.0,
+            yaw_max_integral: 1.5,
+            ..config(0.0, 0.1, 0.0)
+        };
+        let error = Vec3::new(2.0, -2.0, 2.0);
         let mut c = BodyRateController::default();
-        c.control(&cfg, 0.1, Vec3::new(2.0, -2.0, 0.0), Vec3::zeros());
-        assert!((c.integrated_error() - Vec3::new(0.2, -0.2, 0.0)).amax() < 1e-6);
+        c.control(&cfg, 0.1, error, Vec3::zeros());
+        assert!((c.integrated_error() - Vec3::new(0.2, -0.2, 0.2)).amax() < 1e-6);
 
         for _ in 0..20 {
-            c.control(&cfg, 0.1, Vec3::new(2.0, -2.0, 0.0), Vec3::zeros());
+            c.control(&cfg, 0.1, error, Vec3::zeros());
         }
-        assert!((c.integrated_error() - Vec3::new(1.0, -1.0, 0.0)).amax() < 1e-6);
+        assert!((c.integrated_error() - Vec3::new(1.0, -1.0, 1.5)).amax() < 1e-6);
     }
 
     /// While the moment is clipped, the integral shrinks but doesn't grow; unclipped, it
@@ -506,6 +533,7 @@ mod tests {
             pitch_gains: p_only(0.25),
             yaw_gains: p_only(0.5),
             max_integral: 1.0,
+            yaw_max_integral: 1.0,
         };
         let out = BodyRateController::default().control(
             &cfg,
@@ -555,26 +583,26 @@ mod tests {
         assert_abs_diff_eq!(c.integrated_error().x, 0.25, epsilon = 1e-6);
     }
 
-    /// An invalid limit fails `validate` but does not panic `control`: it acts as 0.
+    /// An invalid limit fails `validate` but does not panic `control`: it acts as 0 on its
+    /// axes.
     #[test]
     fn invalid_max_integral_is_rejected_and_does_not_panic_the_tick() {
-        let invalid = BodyRateControllerConfig {
-            max_integral: -1.0,
-            ..config(0.0, 0.1, 0.0)
-        };
-        assert_eq!(invalid.validate().map_err(|e| e.field), Err("max_integral"));
-        for max_integral in [-1.0, f32::NAN] {
-            let cfg = BodyRateControllerConfig {
-                max_integral,
-                ..config(0.0, 0.1, 0.0)
-            };
-            let mut c = BodyRateController::default();
-            let out = c.control(&cfg, DT, Vec3::new(1.0, 0.0, 0.0), Vec3::zeros());
-            assert!(
-                c.integrated_error() == Vec3::zeros(),
-                "max_integral {max_integral}"
-            );
-            assert!(out == Vec3::zeros(), "max_integral {max_integral}");
+        type SetLimit = fn(&mut BodyRateControllerConfig, f32);
+        // (field, how to set it, the error axis it limits)
+        let rows: [(&str, SetLimit, Vec3); 2] = [
+            ("max_integral", |c, v| c.max_integral = v, Vec3::x()),
+            ("yaw_max_integral", |c, v| c.yaw_max_integral = v, Vec3::z()),
+        ];
+        for (field, set, error) in rows {
+            for limit in [-1.0, f32::NAN] {
+                let mut cfg = config(0.0, 0.1, 0.0);
+                set(&mut cfg, limit);
+                assert_eq!(cfg.validate().map_err(|e| e.field), Err(field));
+                let mut c = BodyRateController::default();
+                let out = c.control(&cfg, DT, error, Vec3::zeros());
+                assert!(c.integrated_error() == Vec3::zeros(), "{field} {limit}");
+                assert!(out == Vec3::zeros(), "{field} {limit}");
+            }
         }
     }
 

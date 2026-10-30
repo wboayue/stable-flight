@@ -298,9 +298,9 @@ const YAW_MODEL_DURATION_S: f32 = 60.0;
 ///
 /// It flies a first-order yaw model, `ω̇ = 20 · (moment − disturbance)`, from rest for 60 s at
 /// 250 Hz. The integral cancels the disturbance up to its authority `yaw_gains.i ·
-/// max_integral`, so the result is 0 below it and `−(disturbance − i · max_integral) / p` above
-/// (a steady acro drift). The model has no inertia beyond the integrator, so it checks
-/// authority and steady state, not tuning.
+/// yaw_max_integral`, so the result is 0 below it and `−(disturbance − i · yaw_max_integral) /
+/// p` above (a steady acro drift). The model has no inertia beyond the integrator, so it
+/// checks authority and steady state, not tuning.
 ///
 /// # Examples
 ///
@@ -310,7 +310,7 @@ const YAW_MODEL_DURATION_S: f32 = 60.0;
 ///
 /// let config = BodyRateControllerConfig {
 ///     yaw_gains: Gains { p: 0.6, i: 0.2, d: 0.0 },
-///     max_integral: 1.0,
+///     yaw_max_integral: 1.0,
 ///     ..Default::default()
 /// };
 /// // Within the integral's 0.2 authority: held at zero rate.

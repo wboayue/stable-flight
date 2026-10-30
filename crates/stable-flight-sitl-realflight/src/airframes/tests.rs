@@ -27,6 +27,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
             pitch_gains: gains(0.5, 0.2, 0.004),
             yaw_gains: gains(0.6, 0.6, 0.0),
             max_integral: 1.0,
+            yaw_max_integral: 5.0,
         },
         attitude: AttitudeControllerConfig {
             roll_gains: gains(3.0, 0.0, 0.1),
@@ -291,6 +292,7 @@ fn titan_cobra_hover_gains_are_the_flown_set() {
             pitch_gains: gains(0.5711, 0.25, 0.0123),
             yaw_gains: gains(0.3, 0.3, 0.0),
             max_integral: 1.0,
+            yaw_max_integral: 1.0,
         },
         attitude: AttitudeControllerConfig {
             roll_gains: gains(3.0, 0.0, 0.1),

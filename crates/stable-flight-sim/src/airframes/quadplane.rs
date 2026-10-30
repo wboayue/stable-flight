@@ -127,6 +127,10 @@ pub fn quadplane() -> QuadPlaneAirframe {
                 i: 0.0,
                 d: 0.0671,
             },
+            // The fin turns the nose into a crosswind, and heading hold yields to it; the
+            // yaw I at 5 rad fights the turn: the takeoff ran 2.03 s behind the headwind one,
+            // past the 2 s band (#431).
+            yaw_max_integral: 1.0,
             ..defaults.body_rate
         },
         attitude: AttitudeControllerConfig {

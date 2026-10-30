@@ -99,6 +99,7 @@ pub fn tailsitter() -> TailsitterAirframe {
             // View yaw: the elevons opposite ways.
             yaw_gains: gains(0.1, 0.05, 0.0),
             max_integral: 1.0,
+            yaw_max_integral: 1.0,
         },
         attitude: AttitudeControllerConfig {
             roll_gains: gains(4.0, 0.0, 0.0),

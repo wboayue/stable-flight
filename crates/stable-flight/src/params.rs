@@ -29,6 +29,7 @@
 //! | `STAB_RATE_PIT_P`, `_I`, `_D` | `body_rate.pitch_gains` |
 //! | `STAB_RATE_YAW_P`, `_I`, `_D` | `body_rate.yaw_gains` |
 //! | `STAB_RATE_IMAX` | `body_rate.max_integral` |
+//! | `STAB_RATE_IMAX_Z` | `body_rate.yaw_max_integral` |
 //! | `STAB_ATT_RLL_P`, `_I`, `_D` | `attitude.roll_gains` |
 //! | `STAB_ATT_PIT_P`, `_I`, `_D` | `attitude.pitch_gains` |
 //! | `STAB_ATT_AMAX_X`, `_Y` | `attitude.max_angles_rad` |
@@ -164,7 +165,7 @@
 //!
 //! let mut count = 0;
 //! stabilizer.visit_params(&mut |_name, _value| count += 1);
-//! assert_eq!(count, 31);
+//! assert_eq!(count, 32);
 //! ```
 
 use core::fmt;
