@@ -25,7 +25,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         body_rate: BodyRateControllerConfig {
             roll_gains: gains(0.5, 0.2, 0.004),
             pitch_gains: gains(0.5, 0.2, 0.004),
-            yaw_gains: gains(1.2, 0.6, 0.0),
+            yaw_gains: gains(1.1532, 0.3460, 0.0),
             max_integral: 1.0,
             yaw_max_integral: 5.0,
         },
