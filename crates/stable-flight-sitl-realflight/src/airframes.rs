@@ -457,8 +457,8 @@ const COBRA_MAX_AIRSPEED_MPS: f32 = 18.0;
 /// - **Plane and transition:** core defaults, with the upstream ArduPilot parameter file's
 ///   airspeeds, trim pitch, and cruise throttle (`TitanCobraVTOL.param`); the forward
 ///   transition hands over to the wing at its minimum airspeed, as ArduPilot does. A lap
-///   (`flights/cobra_transition_lap.csv`) transitions in 9 s gaining 2.6 m, holds 27–32 m
-///   at 13–15 m/s, and transitions back within 2.6 m (#433).
+///   (`flights/cobra_transition_lap.csv`) transitions in 8.9 s within 29.0–29.5 m, holds
+///   28.9–30.7 m in plane, and transitions back in 5.5 s within 29.9–30.9 m (#538).
 /// - **Pusher:** the forward thrust gain (1.08) and the transition's pusher cap (0.9) and slew
 ///   (0.297/s) are the pusher commands the flights below ran, 0.9 of the gain 1.2 and of
 ///   core's transition defaults (#433, #448).
