@@ -234,8 +234,7 @@ const HIGH_I_YAW: Gains = Gains {
 /// within the allowance, rise, and settle, and judged as the search judges a pair, on the two
 /// steps' means, overshoot and bounce back within the spec. One at a time they don't: the
 /// trim spends 0.40 of the yaw moment in one direction, so the step against it rises slower
-/// (up to 0.50 s on QuadCopterX's yaw; PX4's yaw target is 0.2 s) and the step with it
-/// overshoots more (#296, #558).
+/// and the step with it overshoots more (#296, #558).
 ///
 /// A start whose I builds the trim slowly can keep the search from passing anything:
 /// `racer`'s own yaw gains (P 1.5, I 0.1) settle with part of the trim on P, and each lower
@@ -297,8 +296,8 @@ fn yaw_rate_search_tunes_against_a_yaw_trim() {
                 target.gains(&run.config).p
             })
             .collect();
-        let [least, most] =
-            [f32::min, f32::max].map(|pick| tuned.iter().copied().reduce(pick).unwrap_or(0.0));
+        let least = tuned.iter().copied().fold(f32::INFINITY, f32::min);
+        let most = tuned.iter().copied().fold(f32::NEG_INFINITY, f32::max);
         check!(agree(least, most), "{name}: {tuned:?}");
     }
 }

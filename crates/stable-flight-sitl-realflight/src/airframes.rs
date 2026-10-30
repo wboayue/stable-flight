@@ -112,8 +112,8 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
                     d: 0.0,
                 },
                 max_integral: 1.0,
-                // Core's default: the yaw I holds the 0.40 with the tuned I's 0.35 · 5 = 1.73
-                // (#296).
+                // Core's default: the I term holds up to 0.35 · 5 = 1.73 of moment, well past
+                // the 0.40 trim (#296).
                 yaw_max_integral: 5.0,
             },
             attitude: AttitudeControllerConfig {

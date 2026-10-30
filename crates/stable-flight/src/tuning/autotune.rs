@@ -206,8 +206,8 @@ pub const COPTER_RATE_STEP: StepConfig = StepConfig {
 /// QuadCopterX has half `quad_x`'s yaw authority, and its steps reach only about half the step
 /// in the 0.25 s window, so its search stops on clipping rather than on the criterion. On a
 /// sim plant fitted to it that bound lands on the same P from every start (1.11–1.15), whose
-/// steps overshoot at most 0.03 and settle within 0.56 s. Longer windows fail: at 1 s a start with
-/// I as high as P overshoots on the I alone, and the search falls to P 0.51 (#558).
+/// steps overshoot at most 0.03 and settle within 0.56 s. Longer windows fail: at 1 s a start
+/// with I as high as P overshoots on the I alone, and the search falls to P 0.51 (#558).
 pub const COPTER_YAW_RATE_STEP: StepConfig = StepConfig {
     amplitude: 0.5,
     ..COPTER_RATE_STEP
@@ -380,7 +380,8 @@ pub struct SearchPlan {
     /// How much worse than the baseline the result may fly.
     pub acceptance: Acceptance,
     /// With [`Term::P`] only: I at this share of each P tried, in 1/s, so every P carries the
-    /// I that holds the trim moment ([`RATE_I_PER_P`]); `None` keeps the start's I. The
+    /// I that holds the trim moment ([`RATE_I_PER_P`] on roll and pitch, [`YAW_RATE_I_PER_P`]
+    /// on yaw); `None` keeps the start's I. The
     /// baseline flies the start's gains as they are, so from a start whose I isn't at this
     /// share, a candidate differs from the baseline in I as well as P. Non-negative and finite.
     pub i_per_p: Option<f32>,
