@@ -124,6 +124,7 @@ fn d_plan() -> SearchPlan {
         criterion: Criterion::Overshoot {
             max_overshoot: 1.0,
             max_bounce_back: 0.1,
+            settled_past: None,
         },
         min: 0.001,
         max: 0.03,
@@ -470,6 +471,7 @@ fn a_failing_baseline_judges_by_the_criterion() {
         criterion: Criterion::Overshoot {
             max_overshoot: 0.05,
             max_bounce_back: 0.1,
+            settled_past: None,
         },
         ..d_plan()
     };

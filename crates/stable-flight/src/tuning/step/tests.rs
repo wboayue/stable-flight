@@ -120,6 +120,30 @@ fn reads_each_metric_off_the_response() {
     check!(metrics.amplitude == 1.0);
 }
 
+/// The summary keeps each step's peak past where it ended, or past the step when it ended
+/// short: a step held past the step without ringing reads 0 (#564).
+#[test]
+fn the_summary_keeps_each_steps_peak_past_its_end() {
+    // (case, peak, final value, peak past the end)
+    let rows = [
+        ("held past", 1.06, 1.06, 0.0),
+        ("rings, ends on the step", 1.1, 1.0, 0.1),
+        ("rings, ends past", 1.2, 1.08, 0.12),
+        ("ends short", 0.95, 0.9, 0.0),
+        ("rings, ends short", 1.08, 0.92, 0.08),
+    ];
+    for (case, peak, final_value, past_end) in rows {
+        let mut summary = StepSummary::default();
+        summary.add(&StepMetrics {
+            peak,
+            final_value,
+            ..Default::default()
+        });
+        let read = summary.overshoot_past_end.mean().unwrap_or(f32::NAN);
+        check!((read - past_end).abs() < 1e-5, "{case}: {read}");
+    }
+}
+
 /// Normalized metrics don't depend on the step's direction, size, or starting point.
 #[test]
 fn metrics_are_normalized_to_the_step() {
