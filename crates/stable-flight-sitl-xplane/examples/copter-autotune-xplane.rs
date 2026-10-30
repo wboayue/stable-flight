@@ -14,10 +14,11 @@
 //! `--rate-p-scale` starts from deliberately bad rate gains (e.g. `0.5` or `2`), to check the
 //! tune recovers from them.
 //!
-//! `--step-test` appends step tests of roll, pitch, and yaw rate and roll and pitch angle on the
-//! search's steps (`StagePlan::large_copter_step_test`): alternating steps, each one's response
+//! `--step-test` appends step tests of the loops the search tunes, roll and pitch rate and angle,
+//! on its steps (`StagePlan::large_copter_step_test`): alternating steps, each one's response
 //! logged at `debug`, and a summary per loop at `info` (overshoot, rise, settling,
-//! bounce-back: mean and range). `--stages none --step-test` measures the committed gains.
+//! bounce-back: mean and range). Yaw rate isn't tested: a full yaw moment takes the Alia to
+//! about 0.2 rad/s in 1 s, so the copter's 0.5 rad/s steps clip throughout and fail the run. `--stages none --step-test` measures the committed gains.
 //! A freeze (a tick over 50 ms after the last) makes the running probe run again and excuses
 //! breaches for a second. While the host runs slow (`RunStats::host_slow`), the running step
 //! stops and the autotune waits. While the vehicle's state is stale
@@ -106,8 +107,7 @@ struct Args {
     #[arg(long, value_enum, default_value_t = Stages::LargeSearch)]
     stages: Stages,
 
-    /// After tuning, step-tests roll, pitch, and yaw rate and roll and pitch angle and logs
-    /// their responses.
+    /// After tuning, step-tests roll and pitch rate and angle and logs their responses.
     #[arg(long)]
     step_test: bool,
 
@@ -134,10 +134,9 @@ enum Stages {
 }
 
 /// The loops `--step-test` measures, in order.
-const STEP_TESTED: [TunedLoop; 5] = [
+const STEP_TESTED: [TunedLoop; 4] = [
     TunedLoop::RollRate,
     TunedLoop::PitchRate,
-    TunedLoop::YawRate,
     TunedLoop::Roll,
     TunedLoop::Pitch,
 ];
