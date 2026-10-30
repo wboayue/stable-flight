@@ -219,9 +219,9 @@ fn angle_step_test_measures_the_tuned_angle_loops() {
     }
 }
 
-/// QuadCopterX's hand-tuned yaw rate gains (sitl-realflight's `airframes::quadcopter_x`), a
-/// start the yaw search meets in RealFlight.
-const HAND_TUNED_YAW: Gains = Gains {
+/// A yaw rate start with I as high as P, the start QuadCopterX's yaw search met in RealFlight
+/// (#296).
+const HIGH_I_YAW: Gains = Gains {
     p: 0.6,
     i: 0.6,
     d: 0.0,
@@ -232,7 +232,7 @@ const HAND_TUNED_YAW: Gains = Gains {
 const YAW_WATCH_S: f32 = 0.5;
 
 /// Under a yaw trim as large as QuadCopterX's, the yaw rate search tunes from core's default
-/// yaw gains and from QuadCopterX's hand tune to gains that agree, and the mixer never clips
+/// yaw gains and from [`HIGH_I_YAW`] to gains that agree, and the mixer never clips
 /// the moments meanwhile. The tuned loop's steps clip within the allowance and settle, and judged
 /// as the search judges a pair, on the two steps' means, overshoot and bounce back within the
 /// spec. One at a time they don't: the trim spends 0.40 of the yaw moment in one direction,
@@ -257,10 +257,7 @@ fn yaw_rate_search_tunes_against_a_yaw_trim() {
     };
     for (name, airframe) in airframes::all() {
         let trimmed = yaw_trimmed(airframe);
-        let starts = [
-            target.gains(&CopterStabilizerConfig::default()),
-            HAND_TUNED_YAW,
-        ];
+        let starts = [target.gains(&CopterStabilizerConfig::default()), HIGH_I_YAW];
         let tuned = starts.map(|start| {
             let plant = trimmed.flying(target, start);
             let watch = YawWatch::default();

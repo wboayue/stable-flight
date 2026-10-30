@@ -1,0 +1,12 @@
+# QuadCopterX heading steps over the start (#383): climb to 5 m facing Eli Field's spawn heading
+# (132°) and hold 15 s, then turn 30° right, 30° left of the spawn, and back, holding 8 s on each;
+# the turns slew at 60°/s, quick against the heading loop's period, so each ends close to a step.
+# Headings are absolute: at another field, shift them by its spawn heading.
+x,y,altitude,cruise_speed,regime,heading,hold_s
+0.00,0.00,5.0,2.0,,132,15
+0.00,0.00,5.0,2.0,,162,8
+0.00,0.00,5.0,2.0,,102,8
+0.00,0.00,5.0,2.0,,132,8
+0.00,0.00,5.0,2.0,,162,8
+0.00,0.00,5.0,2.0,,102,8
+0.00,0.00,5.0,2.0,,132,8
