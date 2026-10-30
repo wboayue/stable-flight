@@ -79,11 +79,8 @@ rows! {
     quad_x_noise_high: quad_x, Noise, High;
     #[ignore = "core's default rate I (0.03) holds at most 0.03 of moment within max_integral 1: the low start tilts away from the settle (#374)"]
     quad_x_cg_offset_low: quad_x, CgOffset, Low;
-    #[ignore = "the trim takes the moment headroom: 5° angle steps against it clip for 6 ticks, past the 5 allowed (#374)"]
     quad_x_cg_offset_high: quad_x, CgOffset, High;
-    #[ignore = "the trim takes the moment headroom: 5° angle steps against it clip for 6 ticks, past the 5 allowed (#374)"]
     quad_x_weak_motor_low: quad_x, WeakMotor, Low;
-    #[ignore = "the trim takes the moment headroom: 5° angle steps against it clip for 6 ticks, past the 5 allowed (#374)"]
     quad_x_weak_motor_high: quad_x, WeakMotor, High;
     #[ignore = "the CG offset blocks it as in its own row (#374)"]
     quad_x_combined_low: quad_x, Combined, Low;

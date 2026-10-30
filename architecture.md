@@ -852,8 +852,7 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     right after its design (3 of the 6 rows with 25 ms of delay failed to settle); searching
     the rate loops before designing the angle loops on them (6 of 18 rows failed:
     `AngleUnstable`, `NotSettled`); verifying the angle designs instead of searching them
-    (angle P stayed at 9, and `quad_x`'s angle steps clipped with 10 ms of delay); and the
-    angle search with the rate steps' clip allowance (the same clipping).
+    (angle P stayed at 9, and `quad_x`'s angle steps clipped with 10 ms of delay).
   * Rejected: relay feedback (Åström–Hägglund) and its tuning rules, which seeded the search
     from the start gains with D and a P cap (`0.6·Ku`). On QuadCopterX it couldn't measure yaw
     rate within the yaw authority left at hover, and on the angle loops it read an ultimate
@@ -867,6 +866,19 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     `robustness` rows against 21); a search maximum of 6 (16 rows); D at 0.5 or 0.7 of the
     lag, with or without that scaling (12–20 rows, `quad_x` 52–72 ms, `heavy_quad` 64–92 ms);
     and a 55° rate margin (18 rows, `quad_x` 72 ms).
+  * Every copter step may clip for 10 ticks (`COPTER_MAX_SATURATED_S`), and roll and pitch
+    are searched and step-tested at 5° (`COPTER_ANGLE_SEARCH_STEP`): at the tuned angle P 9 a
+    step asks for more than full moment for its first ticks, a limit rather than a bad loop
+    (#310). On the sim's tuned `quad_x`, 5° steps clip for 5 ticks (6–10 under its trim rows)
+    and 10° steps for 13 (`heavy_quad` 15). After a QuadCopterX autotune in RealFlight, the
+    10° step test was `Invalid` on all 8 runs, and 3 of 16 angle searches kept their start
+    after points whose every step clipped. Swept over the angle allowance, the robustness
+    table passed 21 rows at 5 ticks, 22 at 6 and 8 (`quad_x`'s three trim rows gained,
+    `heavy_quad`'s weak motor or CG offset lost), and 24 at 10 and 15 (nothing lost). 15 ticks
+    would also pass 10° steps but spends 60 ms of a 200 ms rise at the limit. The sim spec's
+    clip band reads the same allowance, so the RealFlight check is what judges it. With the
+    rate allowance, #518 measured `quad_x`'s angle P held at 9 with 10 ms of delay and its
+    steps clipping; on the gyro-filtered rate loop with rate I, those rows pass.
   * Open: gyro noise spoils the closed-loop fit: on the sim's noise rows `quad_x`'s and
     `heavy_quad`'s roll rate fits read no lag from the ×3 start and the other rows' rate
     search steps don't settle, while the prefilter that carried them misread RealFlight's lag (*Identify*,
@@ -874,9 +886,8 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     on top of 25 ms of delay fails `racer`'s rows
     ([#552](https://github.com/wboayue/stable-flight/issues/552)). Of the trim rows, the low
     starts with a CG offset tilt away from the settle (core's default rate I holds at most 0.03
-    of moment within its `max_integral`), `heavy_quad`'s rate searches keep the design as
-    flying better than their result, and `racer`'s angle steps against the CG offset clip a
-    tick past the allowance ([#374](https://github.com/wboayue/stable-flight/issues/374)).
+    of moment within its `max_integral`), and `racer`'s rate searches under the CG offset
+    pass no candidate ([#374](https://github.com/wboayue/stable-flight/issues/374)).
     On `racer`, the gyro filter's lag is a large share of the loop's: its rate search stops
     at P 0.55 with the design's D, rising in 28 ms against the 20 ms of the fastest pair that
     meets the spec (`autotune`'s `racer_design_search_rises_near_the_fastest_rate_pair`,

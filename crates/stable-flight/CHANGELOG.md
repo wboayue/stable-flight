@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** copter step tests allow 10 clipped ticks on every loop
+  (`COPTER_MAX_SATURATED_S`, 0.042 s; angle loops 0.022 s before), and `StepTestPlan::copter`
+  steps roll and pitch by `COPTER_ANGLE_SEARCH_STEP` (5°) instead of `COPTER_ANGLE_STEP`
+  (10°, still heading's): the angle step test measures a tuned angle loop instead of failing
+  `Invalid` on clipping (#310).
+
 - **Breaking:** the copter rate loop's D acts on the measured rate instead of the error, so a
   rate setpoint step has no derivative kick (`D·A/dt` for one tick before); hand tunes keep
   their gains, and their setpoint steps follow P and I alone (#373).

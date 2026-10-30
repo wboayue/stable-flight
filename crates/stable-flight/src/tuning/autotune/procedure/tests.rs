@@ -153,13 +153,17 @@ fn step_test_and_design_fail_on_an_abort() {
     }
 }
 
-/// The copter step tests count a step clipped for their allowance in 250 Hz ticks as valid
-/// (rate loops 10, angle loops 5), summed in `f32` as the probe does (five 4 ms ticks come to
-/// slightly over 20 ms); one more tick is too many.
+/// The copter step tests count a step clipped for 10 ticks at 250 Hz as valid on every loop,
+/// summed in `f32` as the probe does (ten 4 ms ticks come to slightly over 40 ms); one more
+/// tick is too many. An angle step at the tuned angle P clips for its first ticks (#310).
 #[test]
 fn clipped_ticks_within_the_allowance_stay_valid() {
     // (loop, ticks allowed)
-    let cases = [(TunedLoop::RollRate, 10), (TunedLoop::Roll, 5)];
+    let cases = [
+        (TunedLoop::RollRate, 10),
+        (TunedLoop::Roll, 10),
+        (TunedLoop::Heading, 10),
+    ];
     for (target, ticks) in cases {
         let plan = StepTestPlan::copter(target);
         let clipped = |ticks| (0..ticks).fold(0.0_f32, |sum, _| sum + 0.004);

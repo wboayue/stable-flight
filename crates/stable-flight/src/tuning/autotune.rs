@@ -186,9 +186,10 @@ pub const COPTER_RATE_STEP: StepConfig = StepConfig {
     filter_hz: 40.0,
 };
 
-/// Step response of a copter angle loop: 10° held for 1.5 s, filtered at 20 Hz. QuadCopterX's
-/// hand-tuned angle loop (P 3) reaches only 89% of the step in 0.8 s (#298), so the window
-/// covers about four of its time constants; the vehicle drifts about 2 m meanwhile.
+/// Step response of a copter angle or heading loop: 10° held for 1.5 s, filtered at 20 Hz.
+/// QuadCopterX's hand-tuned angle loop (P 3) reaches only 89% of the step in 0.8 s (#298), so
+/// the window covers about four of its time constants; the vehicle drifts about 2 m meanwhile.
+/// Roll and pitch step by [`COPTER_ANGLE_SEARCH_STEP`].
 pub const COPTER_ANGLE_STEP: StepConfig = StepConfig {
     amplitude: 0.175,
     duration_s: 1.5,
@@ -196,8 +197,11 @@ pub const COPTER_ANGLE_STEP: StepConfig = StepConfig {
     filter_hz: 20.0,
 };
 
-/// A copter angle search's step: [`COPTER_ANGLE_STEP`] at half the size (5°). At 10°, an angle
-/// P of about 6 asks the tuned rate loop (P about 1) for a full moment; at 5°, about 12 (#304).
+/// A copter roll or pitch step, searched and step-tested: [`COPTER_ANGLE_STEP`] at half the
+/// size (5°). At 10°, an angle P of about 6 asks the tuned rate loop (P about 1) for a full
+/// moment; at 5°, about 12 (#304). At the tuned angle P 9 on the sim, `quad_x`'s 10° steps
+/// clip for 13 ticks and `heavy_quad`'s for 15, past [`COPTER_MAX_SATURATED_S`]; 5° steps
+/// clip for 5 (#310).
 pub const COPTER_ANGLE_SEARCH_STEP: StepConfig = StepConfig {
     amplitude: COPTER_ANGLE_STEP.amplitude / 2.0,
     ..COPTER_ANGLE_STEP
@@ -235,35 +239,42 @@ pub struct StepTestPlan {
     pub max_stalled: usize,
 }
 
+/// How long a copter step may clip and still count, in s: 10 ticks at 250 Hz, half a tick
+/// clear of `f32` rounding (clipped time sums `dt`; ten 4 ms ticks come to slightly over
+/// 0.04). A step's first ticks ask for more than full moment until the loop catches up: a
+/// real limit, not a bad response. Above P 1, a 1 rad/s rate step does (tuned rate loops reach
+/// P 1.3 on QuadCopterX); so does a 5° angle step at the tuned angle P 9, for 5 ticks on the
+/// sim's `quad_x` and 6–10 under its trim rows. With 5 ticks for the angle steps, those trim
+/// rows failed, and in RealFlight angle searches kept only the start after points whose every
+/// step clipped (#310).
+pub const COPTER_MAX_SATURATED_S: f32 = 0.042;
+
 impl StepTestPlan {
-    /// The copter defaults for `target`: three pairs of [`COPTER_RATE_STEP`] (rate loops) or
-    /// [`COPTER_ANGLE_STEP`] (angle and heading loops) from [`COPTER_STEP_SETTLE`], allowing
+    /// The copter defaults for `target`: three pairs of [`COPTER_RATE_STEP`] (rate loops),
+    /// [`COPTER_ANGLE_SEARCH_STEP`] (roll and pitch), or [`COPTER_ANGLE_STEP`] (heading), from
+    /// [`COPTER_STEP_SETTLE`], each clipping for up to [`COPTER_MAX_SATURATED_S`], allowing
     /// 3 clipped steps in a row and 10 stalled steps in a row (RealFlight's proxy has frozen
-    /// for 100 ms dozens of times a run). A step may clip for 10 ticks at 250 Hz on a rate loop
-    /// and 5 on an angle loop, each half a tick clear of `f32` rounding (clipped time sums `dt`;
-    /// five 4 ms ticks come to slightly over 0.02). Above P 1, a 1 rad/s rate step asks for
-    /// more than full moment until the rate catches up: a real limit, not a bad response, and
-    /// tuned rate loops reach P 1.3 on QuadCopterX.
+    /// for 100 ms dozens of times a run).
     ///
     /// # Examples
     ///
     /// ```
     /// use stable_flight::stabilizers::copter::TunedLoop;
-    /// use stable_flight::tuning::autotune::{COPTER_ANGLE_STEP, StepTestPlan};
+    /// use stable_flight::tuning::autotune::{COPTER_ANGLE_SEARCH_STEP, StepTestPlan};
     ///
-    /// assert_eq!(StepTestPlan::copter(TunedLoop::Roll).step, COPTER_ANGLE_STEP);
+    /// assert_eq!(StepTestPlan::copter(TunedLoop::Roll).step, COPTER_ANGLE_SEARCH_STEP);
     /// ```
     pub fn copter(target: TunedLoop) -> Self {
-        let (step, max_saturated_s) = if target.is_rate() {
-            (COPTER_RATE_STEP, 0.042)
-        } else {
-            (COPTER_ANGLE_STEP, 0.022)
+        let step = match target {
+            TunedLoop::RollRate | TunedLoop::PitchRate | TunedLoop::YawRate => COPTER_RATE_STEP,
+            TunedLoop::Roll | TunedLoop::Pitch => COPTER_ANGLE_SEARCH_STEP,
+            TunedLoop::Heading => COPTER_ANGLE_STEP,
         };
         Self {
             step,
             pairs: 3,
             settle: COPTER_STEP_SETTLE,
-            max_saturated_s,
+            max_saturated_s: COPTER_MAX_SATURATED_S,
             max_invalid: 3,
             max_stalled: 10,
         }
@@ -419,7 +430,6 @@ impl SearchPlan {
                 max_bounce_back: 0.05,
             },
             test: StepTestPlan {
-                step: COPTER_ANGLE_SEARCH_STEP,
                 pairs: 2,
                 ..StepTestPlan::copter(TunedLoop::Roll)
             },
@@ -432,10 +442,7 @@ impl SearchPlan {
 
     /// The copter search for `target` from a design ([`StagePlan::copter_design_search`]):
     /// [`copter_rate`](Self::copter_rate) for a rate loop, whose D the design set, or
-    /// [`copter_angle`](Self::copter_angle). The angle steps keep their own clip
-    /// allowance: with the rate steps', angle P stays at 9 over `quad_x`'s searched rate loop
-    /// with 10 ms of delay and its steps clip; with their own, the search lowers it to 7.6 and
-    /// meets the step spec (#518).
+    /// [`copter_angle`](Self::copter_angle).
     ///
     /// # Examples
     ///
