@@ -127,7 +127,7 @@ fn holds_and_flies_legs_in_a_headwind() {
     }
 }
 
-/// Most the tilt may pass the tilt cap on an uncapped leg, in degrees (#437's bound).
+/// Most the tilt may pass the tilt cap on an uncapped leg, in degrees (bound: #437).
 const TILT_OVER_CAP_DEG: f32 = 5.0;
 
 /// The length of the RealFlight probe's legs that flipped the Titan Cobra flying the second
@@ -254,7 +254,7 @@ fn stops_on_the_waypoint_with_acceleration_shaping() {
 /// The RealFlight Titan Cobra's copter leg out and back (`flights/cobra_out_back.csv`), in m.
 const COBRA_LEG_M: f32 = 300.0;
 
-/// Most an uncapped leg may pass its waypoint, in m: #488's RealFlight target for the Cobra.
+/// Most an uncapped leg may pass its waypoint, in m: the Cobra's RealFlight target (#488).
 const BRAKED_OVERSHOOT_M: f32 = 5.0;
 
 /// Seconds of the out-and-back flight from the start on the gear: the climb, both legs, and

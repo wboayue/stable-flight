@@ -124,8 +124,8 @@ fn flown<C: Commander, T: TelemetryPublisher>(
     });
 }
 
-/// Level flight holds without a limit cycle: within #454's ±5 m and 1.5 m/s of climb rate over
-/// the last two minutes. Separate altitude and airspeed loops swung ±10–15 m and ±7–11 m/s at
+/// Level flight holds without a limit cycle: within ±5 m and 1.5 m/s of climb rate over the
+/// last two minutes (#454). Separate altitude and airspeed loops swung ±10–15 m and ±7–11 m/s at
 /// about 8 s in X-Plane (#392), 290–305 m and 5.6 m/s here; total energy control holds
 /// 299.7–300.1 m and 0.1 m/s.
 #[test]
@@ -319,8 +319,8 @@ const STEP_BAND_M: f32 = 2.0;
 /// ±30 m altitude steps: overshoot, settle into [`STEP_BAND_M`], and airspeed error, each
 /// measured with margin (no external band applies): (step m, most overshoot m, settle s, most
 /// airspeed error m/s). Measured up 0.06 m / 18.6 s (the 1.8 m/s climb limit alone takes
-/// 16.7 s) / 0.21 m/s, down 2.3 m / 12.6 s / 0.78 m/s. The pitch loop before #392's tuning
-/// overshot the descent 7.4 m and took 23 s.
+/// 16.7 s) / 0.21 m/s, down 2.3 m / 12.6 s / 0.78 m/s. Untuned pitch-loop gains
+/// overshoot the descent 7.4 m and take 23 s (#392).
 #[test]
 fn alia250_steps_altitude() {
     for (step_m, overshoot_m, settle_s, airspeed_mps) in
@@ -355,8 +355,8 @@ fn alia250_catches_up_a_faster_descent_within_its_sink_limit() {
 }
 
 /// Most altitude lost or gained entering a loiter's 20° bank from the line, in m. Measured
-/// 0.34 m low and 0.12 m high; 1 m leaves about 3× margin. The pitch loop before #392's tuning
-/// dipped 1.6 m (X-Plane, 2.6–4 m).
+/// 0.34 m low and 0.12 m high; 1 m leaves about 3× margin. Untuned pitch-loop gains
+/// dip 1.6 m (X-Plane, 2.6–4 m; #392).
 const TURN_ALTITUDE_M: f32 = 1.0;
 
 /// Entering a turn holds altitude: the line north, then a loiter to its right.

@@ -161,15 +161,14 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   - Rustdoc is the contract: behavior, units, invariants.
   - Inline comments give the non-obvious *why* in present tense: physics, invariants, a
     measured fact.
-  - Cite where evidence or a spec lives, one trailing reference: `(#n)` for flight data behind
-    a tuned value. The comment states the claim and the reference backs it ("reads the 10 ms
-    lag as 30 ms (#551)", never a bare `(#n)`); rustdoc reads complete without it, since
-    docs.rs readers may never follow it. Cite the issue holding the measurements, not the PR
-    that landed them; a fact other code or docs lean on goes in `docs/findings/` and is cited
-    by path. For ArduPilot or PX4, the module and method or parameter (ArduPilot's
-    `AP_TECS` and `Q_WP_SPD`, PX4's `VT_B_DEC_MSS`), never a line number: upstream lines
-    drift, names last. No narrative ("raised from", "previously", "after
-    #n", "interim").
+  - Cite where evidence or a spec lives, one trailing reference: `(#n)` for flight data behind a
+    tuned value. The comment states the claim and the reference backs it ("reads the 10 ms lag as
+    30 ms (#551)", never a bare `(#n)`); rustdoc reads complete without it, since docs.rs readers
+    may never follow it. Cite the issue holding the measurements, not the PR that landed them (the
+    PR only when it alone holds them); a fact other code or docs lean on goes in `docs/findings/`
+    and is cited by path. For ArduPilot or PX4, the module and method or parameter (ArduPilot's
+    `AP_TECS` and `Q_WP_SPD`, PX4's `VT_B_DEC_MSS`), never a line number: upstream lines drift,
+    names last. No narrative ("raised from", "previously", "after #n", "interim").
   - Open work is `TODO(#n)` in code comments (`just todo-check` flags ones whose issue
     closed); markdown links the issue.
   - `architecture.md` gives rationale, including briefly why rejected alternatives were

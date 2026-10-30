@@ -191,8 +191,9 @@ pub const COPTER_LOOP_SHAPING: LoopShapingConfig = LoopShapingConfig {
     angle_back_off: SEARCH_BACK_OFF,
 };
 
-/// Step response of a copter rate loop: 1 rad/s (57°/s) held for 0.25 s, about four of
-/// the 67 ms period QuadCopterX's rate loops oscillate at on the edge of stability (#295), which tilts it about 14°; filtered at 40 Hz.
+/// Step response of a copter rate loop: 1 rad/s (57°/s) held for 0.25 s, about four of the
+/// 67 ms period QuadCopterX's rate loops oscillate at on the edge of stability (#295), which
+/// tilts it about 14°; filtered at 40 Hz.
 pub const COPTER_RATE_STEP: StepConfig = StepConfig {
     amplitude: 1.0,
     duration_s: 0.25,
