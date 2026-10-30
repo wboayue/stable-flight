@@ -1194,46 +1194,55 @@ fn a_candidate_breaching_after_a_freeze_comes_out_unjudged() {
     check!(events.last() == Some(&AutotuneEvent::Complete));
 }
 
-/// A host link outage, as a RealFlight reconnect takes (the first attempt waits 0.5 s): the
-/// state holds at the last one seen while the vehicle flies on unseen, then jumps. Noted as
-/// the host does it (slow and stalled on every tick of the outage, so the breach excuse runs
-/// from the link's return), the running step comes out unjudged and runs again, and the jump
-/// fails nothing; unnoted, the jump fails the stage (#309).
+/// A host link outage: the state holds at the last one seen while the vehicle flies on
+/// unseen, then jumps. Told the state is stale, the supervisor stops the running step
+/// unjudged, runs it again, and excuses the jump; untold, the jump fails the stage. Stale
+/// past `Envelope::max_stale_s`, the stage fails `HostFault` (#309).
 #[test]
-fn a_noted_link_outage_rides_through_its_jump() {
-    /// The outage, in ticks (0.5 s).
-    const OUTAGE_TICKS: usize = 125;
-    // (row, outage noted)
-    let cases = [("noted", true), ("unnoted", false)];
-    for (row, noted) in cases {
+fn a_stale_state_rides_through_its_jump_until_the_limit() {
+    // (row, outage in ticks, told it's stale, how the run ends)
+    let cases = [
+        // RealFlight's first reconnect attempt comes 0.5 s into an outage.
+        ("told, 0.5 s", 125, true, None),
+        ("untold, 0.5 s", 125, false, Some(AutotuneAbort::Tilt)),
+        (
+            "told, past the limit",
+            (2.1 / DT) as usize,
+            true,
+            Some(AutotuneAbort::HostFault),
+        ),
+    ];
+    for (row, outage_ticks, told, failure) in cases {
         let (mut flight_loop, controls) = hovering(1.0);
         let plan = [StagePlan::copter_step_test(TunedLoop::RollRate)];
         let mut autotune = started(&flight_loop, &plan);
 
-        let mut outage_ticks = None;
+        let mut since_outage = None;
         let mut events = Vec::new();
         for _ in 0..(120.0 / DT) as usize {
-            if outage_ticks.is_none() && flight_loop.probe().is_some() {
-                outage_ticks = Some(0);
+            if since_outage.is_none() && flight_loop.probe().is_some() {
+                since_outage = Some(0);
             }
-            let down = outage_ticks.is_some_and(|ticks| ticks < OUTAGE_TICKS);
-            controls.outage.set(down);
+            let stale = since_outage.is_some_and(|ticks| ticks < outage_ticks);
+            controls.outage.set(stale);
             flight_loop.step(Duration::from_secs_f32(DT));
-            if noted {
-                autotune.set_host_slow(down);
-                if down {
-                    autotune.note_stall();
-                }
-            }
-            outage_ticks = outage_ticks.map(|ticks| ticks + 1);
+            autotune.set_state_stale(told && stale);
+            since_outage = since_outage.map(|ticks| ticks + 1);
             events.extend(autotune.update(&mut flight_loop, DT));
             if !autotune.is_running() {
                 break;
             }
         }
 
-        check!(outage_ticks.is_some(), "{row}");
-        if noted {
+        check!(since_outage.is_some(), "{row}");
+        let expected = failure.map_or(AutotuneEvent::Complete, |reason| {
+            AutotuneEvent::StageFailed {
+                target: TunedLoop::RollRate,
+                reason,
+            }
+        });
+        check!(events.last() == Some(&expected), "{row}: {events:?}");
+        if told {
             check!(
                 events.iter().any(|event| matches!(
                     event,
@@ -1242,22 +1251,7 @@ fn a_noted_link_outage_rides_through_its_jump() {
                         ..
                     }
                 )),
-                "{row}: {events:?}"
-            );
-            check!(
-                events.last() == Some(&AutotuneEvent::Complete),
-                "{row}: {events:?}"
-            );
-        } else {
-            check!(
-                matches!(
-                    events.last(),
-                    Some(AutotuneEvent::StageFailed {
-                        reason: AutotuneAbort::Tilt | AutotuneAbort::Rate,
-                        ..
-                    })
-                ),
-                "{row}: {events:?}"
+                "{row}: the step under the outage runs again"
             );
         }
     }
