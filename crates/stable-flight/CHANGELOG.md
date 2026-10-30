@@ -63,9 +63,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Autotune::set_state_stale`: while the host holds a stale vehicle state (a simulator link
+  down), every tick is a freeze, probes stop as stalled, and settles and holds wait; past
+  `Envelope::max_stale_s` (2 s) the stage fails `AutotuneAbort::HostFault`. **Breaking:** the
+  new `Envelope` field and `AutotuneAbort` variant (#309).
 - `Autotune::abort` ends a run from outside, as a breach would (the config as of the last
-  kept stage, the probe stopped, `StageFailed`); **Breaking:** `AutotuneAbort::HostFault` for
-  a host that lost the vehicle, e.g. a simulator link down for seconds (#309).
+  kept stage, the probe stopped, `StageFailed`) (#309).
 - `controllers::RATE_I_PER_P`: the copter rate I's share of P (#374).
 
 - `StagePlan::copter_design_search` (#518): the copter autotune as a step search from a

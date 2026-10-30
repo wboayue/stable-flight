@@ -23,11 +23,12 @@
 //! autotune waits: a step held for its ticks at half rate would tilt twice as far, and settles
 //! would time out. A design stage's fit and hold run on: a slow host only lowers the design.
 //! While the vehicle's state is stale (`RealFlightVehicle::state_is_stale`: an exchange failed,
-//! or the link is down awaiting a reconnect), the autotune waits as on a slow host and every
-//! tick counts as a freeze, so the running probe runs again and the jump when the link comes
-//! back fails nothing; a link down for over 2 s ends the run `HostFault`, keeping the
-//! finished stages (#309). `--drop-link SECS@AT` cuts the link for SECS seconds, AT seconds
-//! into the autotune, to check that. Params and telemetry go over
+//! or the link is down awaiting a reconnect), the autotune is told (`Autotune::set_state_stale`):
+//! the running probe runs again, the jump when the link comes back fails nothing, and past
+//! 2 s (`Envelope::max_stale_s`) the run ends `HostFault`, keeping the finished stages; the
+//! landing waits for the link, and a link down for 30 s ends the run with exit status 1
+//! (#309). `--drop-link SECS@AT` cuts the link for SECS seconds, AT seconds into the
+//! autotune, to check that. Params and telemetry go over
 //! the native link for the bridge, so QGC shows the gains change. The RealFlight host defaults to
 //! `10.211.55.3:8080`; override it with `--host`.
 //!
@@ -65,7 +66,7 @@ use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::TableMixer;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
 use stable_flight::tuning::autotune::{
-    Autotune, AutotuneAbort, AutotuneEvent, AutotuneStatus, Envelope, StagePlan,
+    Autotune, AutotuneEvent, AutotuneStatus, Envelope, StagePlan,
 };
 use stable_flight::tuning::{Measurement, Stat, StepMetrics, StepSummary};
 use stable_flight::{
@@ -97,10 +98,9 @@ const START_ALTITUDE_TOLERANCE_M: f32 = 0.5;
 /// 100 ms behind every few seconds with no tick late by much (QuadCopterX in RealFlight: 2,216
 /// resyncs in a run, 3 gaps over 100 ms, #524).
 const FREEZE_GAP: Duration = Duration::from_millis(50);
-/// How long the vehicle's state may stay stale before the run ends `HostFault`: RealFlight
-/// flies the aircraft on the link's last inputs meanwhile, unseen, and the first reconnect
-/// waits 0.5 s, then 1, 2, and 4 s (#309).
-const MAX_STALE: Duration = Duration::from_secs(2);
+/// How long the vehicle's state may stay stale before the run ends, exit status 1: the link
+/// isn't coming back, and an unattended batch shouldn't wait on it (#309).
+const STALE_EXIT: Duration = Duration::from_secs(30);
 /// How long the vehicle may stay inverted (tilted past 90°) before the run ends: past a tumble
 /// through inverted, well inside the 10 s an unattended batch waits on a crash (#523).
 const INVERTED_EXIT: Duration = Duration::from_secs(3);
@@ -432,7 +432,8 @@ fn main() -> ExitCode {
     let mut inverted_since = None;
     let mut stayed_inverted = false;
     let mut started_at = None;
-    let mut stale_for = Duration::ZERO;
+    let mut stale_since = None;
+    let mut link_lost = false;
     let mut finished = false;
     let mut searched = Vec::new();
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop, stats| {
@@ -468,23 +469,33 @@ fn main() -> ExitCode {
                 Ordering::Relaxed,
             );
         }
-        // A stale state is the aircraft flying on unseen: nothing measures it, and every tick
-        // of it is a freeze, so breaches stay excused until a second after it clears (#309).
+        // A stale state is the aircraft flying on unseen (#309).
         let stale = flight_loop.vehicle().state_is_stale();
-        if stale {
-            if stale_for.is_zero() {
+        match (stale, stale_since) {
+            (true, None) => {
                 info!("RealFlight state stale: autotune waits");
+                stale_since = Some(stats.elapsed);
             }
-            stale_for += Duration::from_secs_f32(LOOP_DT_S);
-            autotune.note_stall();
-        } else if !stale_for.is_zero() {
-            info!(
-                "RealFlight state back after {:.2} s",
-                stale_for.as_secs_f32()
-            );
-            stale_for = Duration::ZERO;
+            (true, Some(since)) if stats.elapsed.saturating_sub(since) >= STALE_EXIT => {
+                error!(
+                    "RealFlight link down for {} s: stopping",
+                    STALE_EXIT.as_secs()
+                );
+                link_lost = true;
+                shutdown.trigger();
+                return;
+            }
+            (false, Some(since)) => {
+                info!(
+                    "RealFlight state back after {:.2} s",
+                    stats.elapsed.saturating_sub(since).as_secs_f32()
+                );
+                stale_since = None;
+            }
+            _ => {}
         }
-        autotune.set_host_slow(host_slow || stale);
+        autotune.set_state_stale(stale);
+        autotune.set_host_slow(host_slow);
         // The landing waits for a fresh state: on a stale one, the touchdown detector would
         // read the held vertical speed as a touchdown and disarm in the air.
         if finished && !stale && !land.get() {
@@ -523,10 +534,7 @@ fn main() -> ExitCode {
         {
             debug!("autotune: {target:?} {status:?}");
         }
-        let host_fault = (stale_for > MAX_STALE)
-            .then(|| autotune.abort(flight_loop, AutotuneAbort::HostFault))
-            .flatten();
-        let Some(event) = host_fault.or_else(|| autotune.update(flight_loop, LOOP_DT_S)) else {
+        let Some(event) = autotune.update(flight_loop, LOOP_DT_S) else {
             return;
         };
         log_event(&event, flight_loop.stabilizer().config());
@@ -553,7 +561,7 @@ fn main() -> ExitCode {
         finished = !autotune.is_running();
     });
     // Dropping the flight loop on return hands RC back.
-    if stayed_inverted {
+    if stayed_inverted || link_lost {
         ExitCode::FAILURE
     } else {
         ExitCode::SUCCESS

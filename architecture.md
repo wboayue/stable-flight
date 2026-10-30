@@ -702,13 +702,15 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   slow stretches outlast the settle timeout (#438). A design stage's fit and hold run through
   it instead: RealFlight's slow stretches at 222–225 Hz left 1.1–3.3 s between them, too short
   for a settle and a 3 s fit, and a fit with the physics 12% ahead of the ticks designs rate P
-  5–13% lower on the sim, which the search climbs from (#524). A host whose state is stale
-  (a simulator link down awaiting a reconnect: the state holds while the vehicle flies on
-  unseen) is slow and frozen on every tick of it: nothing measures the held state, settling
-  waits, and the jump when the link comes back is excused for `Envelope::recovery_s` from
-  there; past 2 s the RealFlight example ends the run with `Autotune::abort`
-  (`AutotuneAbort::HostFault`), since the aircraft has flown that long on the link's last
-  inputs (#309). The core gets only the verdict, so it stays clock-free. Candidate gains go in once
+  5–13% lower on the sim, which the search climbs from (#524). While the vehicle's state is
+  stale (`Autotune::set_state_stale`: a simulator link down awaiting a reconnect, the state
+  held while the vehicle flies on unseen), every tick is a freeze: any running probe, fit
+  included, stops as stalled, settles and holds wait, and the jump when the state clears is
+  excused for `Envelope::recovery_s` from there. Past `Envelope::max_stale_s` (2 s) the stage
+  fails `HostFault`: RealFlight's reconnects come 0.5, 1.5, and 3.5 s into an outage, and a
+  QuadCopterX unseen for 3.5 s mid-step rolled over on the link's last inputs (#309). Stale
+  time sums the nominal `dt`, so a reconnect attempt that blocks its tick (up to the 250 ms
+  connect timeout) reads short. The core gets only the verdict, so it stays clock-free. Candidate gains go in once
   the vehicle has settled on the committed gains and come out when the probe ends, so a
   candidate flies only its step.
 * **Gain search** (`Method::Search`): the largest gain of one term whose step pairs meet a

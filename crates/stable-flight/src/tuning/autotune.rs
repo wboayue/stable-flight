@@ -760,11 +760,18 @@ pub struct Envelope {
     /// the candidate flies fails only the candidate. After a freeze
     /// ([`Autotune::note_stall`]), breaches don't count for as long. Non-negative.
     pub recovery_s: f32,
+    /// How long the host may go without a fresh vehicle state
+    /// ([`Autotune::set_state_stale`]) before the run fails
+    /// [`HostFault`](AutotuneAbort::HostFault), in s: meanwhile the vehicle flies on unseen.
+    /// Positive.
+    pub max_stale_s: f32,
 }
 
 impl Default for Envelope {
     /// Copter limits: 35° tilt, 4 rad/s, 3 m sink; settle within 6° and 0.3 rad/s for 1 s,
-    /// waiting up to 10 s; 1 s to recover from a candidate.
+    /// waiting up to 10 s; 1 s to recover from a candidate; 2 s without a fresh state.
+    /// RealFlight's reconnects come 0.5, 1.5, and 3.5 s into an outage, so the run rides
+    /// through the first two; a QuadCopterX unseen for 3.5 s mid-step rolled over (#309).
     fn default() -> Self {
         Self {
             max_tilt_rad: 0.6,
@@ -777,6 +784,7 @@ impl Default for Envelope {
             },
             settle_timeout_s: 10.0,
             recovery_s: 1.0,
+            max_stale_s: 2.0,
         }
     }
 }
@@ -790,6 +798,7 @@ impl Envelope {
         check_positive("max_altitude_loss_m", self.max_altitude_loss_m)?;
         check_positive("settle_timeout_s", self.settle_timeout_s)?;
         check_limit("recovery_s", self.recovery_s)?;
+        check_positive("max_stale_s", self.max_stale_s)?;
         self.check_settle(&self.settle)
     }
 
@@ -886,8 +895,9 @@ pub enum AutotuneAbort {
     Rejected,
     /// The design found no gains for the fitted model.
     Design(DesignError),
-    /// The host lost the vehicle for too long to go on (e.g. a simulator link down for
-    /// seconds): stopped from outside with [`Autotune::abort`].
+    /// The host lost the vehicle for too long to go on: its state stayed stale past
+    /// [`Envelope::max_stale_s`] (e.g. a simulator link down for seconds), or the host ended
+    /// the run with [`Autotune::abort`].
     HostFault,
 }
 
@@ -1177,7 +1187,12 @@ impl Request {
 ///   host is slow ([`set_host_slow`](Self::set_host_slow)), the running probe stops at once (a
 ///   step held for its ticks at half the tick rate would tilt twice as far) and counts as
 ///   stalled, and settling waits: it gains no level time and doesn't time out. A design
-///   stage's fit and hold run through a slow host: it only lowers the design.
+///   stage's fit and hold run through a slow host: it only lowers the design. While the
+///   vehicle's state is stale ([`set_state_stale`](Self::set_state_stale): the host holds
+///   the last one it got while the vehicle flies on unseen), every tick is a freeze, so the
+///   breach excuse runs until [`Envelope::recovery_s`] after the state clears; any running
+///   probe, fit included, stops as stalled, and settling and holds wait. Stale past
+///   [`Envelope::max_stale_s`], the stage fails [`HostFault`](AutotuneAbort::HostFault).
 /// - **Fail:** an envelope breach, a probe abort the procedure can't use (a search counts a
 ///   step's abort against its gain), an interrupt, or a rejected config stops the stage, puts
 ///   back the config as of the last kept stage (the earlier stages' gains stay, but a design
@@ -1236,6 +1251,10 @@ pub struct Autotune {
     stalled: bool,
     /// The host runs slow ([`set_host_slow`](Self::set_host_slow)).
     host_slow: bool,
+    /// The vehicle's state is stale ([`set_state_stale`](Self::set_state_stale)).
+    state_stale: bool,
+    /// How long, in s, the state has been stale.
+    stale_s: f32,
     /// Time left, in s, for the vehicle to come back inside the envelope after a candidate
     /// ([`Envelope::recovery_s`]); breaches meanwhile don't fail the stage.
     recovering_s: f32,
@@ -1307,6 +1326,8 @@ impl Autotune {
             start_altitude_m: 0.0,
             stalled: false,
             host_slow: false,
+            state_stale: false,
+            stale_s: 0.0,
             recovering_s: 0.0,
             frozen_s: 0.0,
             rate_filters: Default::default(),
@@ -1369,6 +1390,17 @@ impl Autotune {
             self.phase = Phase::Reverted;
             return Some(AutotuneEvent::Reverted);
         }
+        if self.state_stale {
+            self.stale_s += dt;
+            self.note_stall();
+            if self.stale_s > self.envelope.max_stale_s
+                && let Some(stage) = self.phase.active_stage()
+            {
+                return Some(self.fail(flight_loop, stage, AutotuneAbort::HostFault));
+            }
+        } else {
+            self.stale_s = 0.0;
+        }
         let rates_radps = self.filter_rates(flight_loop, dt);
         let motion = Motion::of(flight_loop.state(), rates_radps);
         self.recovering_s = (self.recovering_s - dt).max(0.0);
@@ -1411,13 +1443,14 @@ impl Autotune {
             Phase::Starting { stage } => self.begin(stage),
             Phase::Deciding { stage, on } => self.decide(flight_loop, stage, on),
             // A slow host holds a probe's settle where it is, with no level time: the vehicle
-            // settles again once the host keeps time. A fit's goes on.
+            // settles again once the host keeps time. A fit's goes on, but not on a stale
+            // state, which shows a vehicle that isn't there.
             Phase::Settling {
                 stage,
                 request,
                 waited_s,
                 ..
-            } if self.host_slow && !request.is_fit() => {
+            } if (self.host_slow && !request.is_fit()) || self.state_stale => {
                 self.phase = Phase::Settling {
                     stage,
                     request,
@@ -1429,8 +1462,8 @@ impl Autotune {
             Phase::Probing {
                 stage,
                 candidate,
-                fit: false,
-            } if self.host_slow => {
+                fit,
+            } if (self.host_slow && !fit) || self.state_stale => {
                 self.end_probe(flight_loop, stage, candidate, Decide::Stalled);
                 Some(AutotuneEvent::Stalled {
                     target: self.target(stage),
@@ -1452,6 +1485,20 @@ impl Autotune {
             Phase::Probing {
                 stage, candidate, ..
             } => self.poll_probe(flight_loop, stage, candidate),
+            Phase::Holding {
+                stage,
+                gains,
+                waited_s,
+                ..
+            } if self.state_stale => {
+                self.phase = Phase::Holding {
+                    stage,
+                    gains,
+                    level_s: 0.0,
+                    waited_s,
+                };
+                None
+            }
             Phase::Holding {
                 stage,
                 gains,
@@ -1490,6 +1537,16 @@ impl Autotune {
     /// type's **Stalls**). Takes effect on the next [`update`](Self::update).
     pub fn set_host_slow(&mut self, slow: bool) {
         self.host_slow = slow;
+    }
+
+    /// Tells the supervisor whether the vehicle's state is stale: the host holds the last
+    /// state it got (e.g. a simulator link down awaiting a reconnect) while the vehicle flies
+    /// on unseen, so the first fresh state can jump. While it is, the run waits and every
+    /// tick is a freeze ([`note_stall`](Self::note_stall)); past
+    /// [`Envelope::max_stale_s`] the stage fails [`HostFault`](AutotuneAbort::HostFault) (see
+    /// the type's **Stalls**). Takes effect on the next [`update`](Self::update).
+    pub fn set_state_stale(&mut self, stale: bool) {
+        self.state_stale = stale;
     }
 
     /// Tells the supervisor the host froze (e.g. a stalled simulator exchange, a tick
