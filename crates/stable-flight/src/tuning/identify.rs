@@ -1,9 +1,9 @@
 //! Closed-loop identification of a rate axis: see [`IdentifyProbe`].
 //!
-//! Follows the excitation and model PX4's autotune flies
-//! (`src/modules/mc_autotune_attitude_control/mc_autotune_attitude_control.cpp:603-639`,
-//! `src/lib/system_identification/arx_rls.hpp` at `ae4fd97`), described, not copied: a
-//! washed-out square wave whose half-periods shrink, and a second-order model with a delay.
+//! Follows the excitation and model PX4's autotune flies (`mc_autotune_attitude_control`'s
+//! `getIdentificationSignal`, added to the rate setpoint by `mc_att_control`; `ArxRls` in
+//! `system_identification`), described, not copied: a washed-out square wave whose
+//! half-periods shrink, and a second-order model with a delay.
 //! PX4 fits it by recursive least squares; this probe accumulates the least-squares sums
 //! instead and solves once at the end, in a form that holds its precision in `f32` (#516).
 
@@ -26,7 +26,7 @@ const HISTORY: usize = MAX_DELAY_TICKS + 2;
 const TERMS: usize = 6;
 
 /// The square wave's half-periods, in s: 1.0 down to 0.2 by 0.1, then 0.6 down to 0.2,
-/// repeating (PX4's sweep, `mc_autotune_attitude_control.cpp:603-619`).
+/// repeating (PX4's sweep, `getIdentificationSignal`).
 fn half_period_s(index: usize) -> f32 {
     // The first sweep's nine halves, 1.0 down to 0.2 s; then sweeps of five, 0.6 down to 0.2.
     const FIRST_SWEEP_HALVES: usize = 9;
@@ -46,7 +46,7 @@ const TIE_SHARE: f32 = 0.01;
 
 /// Configures an [`IdentifyProbe`].
 ///
-/// The amplitude is in the probed loop's setpoint units (rad on an angle loop), so there is no
+/// The amplitude is in the probed loop's setpoint units (rad/s on a rate loop), so there is no
 /// `Default`; [`COPTER_IDENTIFY`](crate::tuning::autotune::COPTER_IDENTIFY) is the copter's.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct IdentifyConfig {

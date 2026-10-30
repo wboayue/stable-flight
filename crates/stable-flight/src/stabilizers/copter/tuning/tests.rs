@@ -4,9 +4,9 @@ use super::*;
 use crate::controllers::Gains;
 use crate::stabilizers::copter::CopterStabilizerConfig;
 use crate::tuning::Measurement;
-use crate::tuning::autotune::{COPTER_RATE_STEP, COPTER_TILT_STEP};
+use crate::tuning::autotune::{COPTER_IDENTIFY, COPTER_RATE_STEP, COPTER_TILT_STEP};
 use crate::tuning::plant::{Axes, PlantParams};
-use crate::tuning::{ProbeAbort, StepAbort, StepConfig};
+use crate::tuning::{IdentifyProbe, ProbeAbort, StepAbort, StepConfig};
 use crate::{AttitudeSetpoint, ControlOutput, RateSetpoint, Setpoint, Stabilizer, Vec2, Vec3};
 
 /// The flight loop's tick: 250 Hz.
@@ -412,4 +412,26 @@ fn a_step_counts_the_ticks_its_loop_clipped() {
             check!(saturated_s >= min_saturated_s, "{target:?}: {saturated_s}");
         }
     }
+}
+
+/// An identification on a rate loop adds its square wave to the rate setpoint the angle loop
+/// sets, so the angle loop still holds the attitude (#561): tilted, the roll moment moves from
+/// the unprobed one by the rate P and I on the wave's first offset alone.
+#[test]
+fn a_rate_identification_adds_to_the_angle_loops_rate_setpoint() {
+    let state = crate::VehicleState {
+        attitude: nalgebra::UnitQuaternion::from_euler_angles(OFFSET_RAD, 0.0, 0.0),
+        ..Default::default()
+    };
+    let mut unprobed = CopterStabilizer::new(config());
+    let mut probed = CopterStabilizer::new(config());
+    probed.start_probe(TunedLoop::RollRate, ProbeConfig::Identify(COPTER_IDENTIFY));
+
+    let held = unprobed.stabilize(DT, &level(), &state).moments.x;
+    let excited = probed.stabilize(DT, &level(), &state).moments.x;
+
+    let offset_radps = IdentifyProbe::new(COPTER_IDENTIFY).step(DT, 0.0, 0.0);
+    let gains = config().body_rate.roll_gains;
+    let expected = held + gains.p * offset_radps + gains.i * DT * offset_radps;
+    approx::assert_relative_eq!(excited, expected, max_relative = 1e-5);
 }

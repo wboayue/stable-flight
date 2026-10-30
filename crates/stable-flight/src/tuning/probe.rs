@@ -11,10 +11,10 @@ use crate::controllers::InvalidConfig;
 pub enum ProbeConfig {
     /// A step: the loop's setpoint is held at a step and its response measured.
     Step(StepConfig),
-    /// Identification: a square wave on the loop's setpoint while its axis's rate and moment
-    /// are recorded and fitted. Its amplitude is in the target loop's setpoint units;
+    /// Identification: a square wave added to the loop's setpoint while its axis's rate and
+    /// moment are recorded and fitted. Its amplitude is in the target loop's setpoint units;
     /// [`COPTER_IDENTIFY`](crate::tuning::autotune::COPTER_IDENTIFY) is for the roll and pitch
-    /// angle loops.
+    /// rate loops.
     Identify(IdentifyConfig),
 }
 
@@ -49,9 +49,9 @@ pub struct LoopSignals {
     pub error: f32,
     /// Whether the loop's output, or the loop under it, was clipped on the last tick.
     pub saturated: bool,
-    /// The loop's axis's body rate this tick, in rad/s: the measurement itself on a rate loop,
-    /// so through the gyro low-pass on a copter; unfiltered on an angle or heading loop, where
-    /// the identify probe fits the airframe from it.
+    /// The loop's axis's body rate this tick, unfiltered, in rad/s: the identify probe fits the
+    /// airframe from it. A copter's rate loop measures the rate through the gyro low-pass
+    /// instead ([`measurement`](Self::measurement)).
     pub rate_radps: f32,
     /// The loop's axis's moment command on the last tick, normalized to `[-1, 1]`: as
     /// commanded, before the mixer; a clip shows in [`saturated`](Self::saturated).

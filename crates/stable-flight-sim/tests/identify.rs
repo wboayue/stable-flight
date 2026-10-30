@@ -1,5 +1,5 @@
 //! Rate-axis identification (#516) through `CopterStabilizer`'s probe host, and the gains
-//! loop shaping designs from it (#517): excited on the roll and pitch angle loops, each copter
+//! loop shaping designs from it (#517): excited on the roll and pitch rate loops, each copter
 //! airframe's fitted model matches its own motor lag and the actuator delay from the low and
 //! high starts alike, and the designed gains meet the step spec on the same plant.
 
@@ -48,7 +48,7 @@ fn fits_each_airframes_motor_lag_and_delay() {
                     wind: Wind::default(),
                     perturbations: perturbations(set, &airframe),
                 };
-                for target in [TunedLoop::Roll, TunedLoop::Pitch] {
+                for target in [TunedLoop::RollRate, TunedLoop::PitchRate] {
                     let row = format!("{name} {set:?} {start:?} {target:?}");
                     let status = common::probe(
                         &plant,
@@ -106,7 +106,7 @@ fn designed_gains_meet_the_spec() {
                 (TunedLoop::PitchRate, TunedLoop::Pitch),
             ];
             for (rate_loop, angle_loop) in loops {
-                let model = identified(&plant, angle_loop);
+                let model = identified(&plant, rate_loop);
                 let start = rate_loop.gains(&config);
                 let gyro_hz = config.gyro_cutoff_hz;
                 let rate =
@@ -166,7 +166,7 @@ fn a_fit_on_a_slow_host_designs_a_cautious_rate_p() {
             };
             let start = TunedLoop::RollRate.gains(&plant.airframe.stabilizer);
             let designed_p = |plant: &Plant| {
-                let model = identified(plant, TunedLoop::Roll);
+                let model = identified(plant, TunedLoop::RollRate);
                 design_rate(
                     &model,
                     start,

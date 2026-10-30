@@ -1675,8 +1675,8 @@ fn search_step_presets() {
     }
 }
 
-/// The design search designs every roll and pitch loop, rate first, with each rate loop's fit
-/// run on the angle loop above it, then searches each loop from its design in the same order,
+/// The design search designs every roll and pitch loop, rate first, with every fit run on the
+/// axis's rate loop, then searches each loop from its design in the same order,
 /// then searches yaw rate from its start.
 #[test]
 fn copter_design_search_designs_then_searches_every_loop() {
@@ -1702,13 +1702,13 @@ fn copter_design_search_designs_then_searches_every_loop() {
             _ => None,
         })
         .collect();
-    let angle_loops = [
-        TunedLoop::Roll,
-        TunedLoop::Pitch,
-        TunedLoop::Roll,
-        TunedLoop::Pitch,
+    let rate_loops = [
+        TunedLoop::RollRate,
+        TunedLoop::PitchRate,
+        TunedLoop::RollRate,
+        TunedLoop::PitchRate,
     ];
-    check!(fitted == angle_loops);
+    check!(fitted == rate_loops);
     let done: Vec<_> = events
         .iter()
         .filter_map(|event| match *event {
@@ -1763,7 +1763,7 @@ fn an_identification_starts_when_the_settle_times_out() {
     check!(matches!(autotune.status(), AutotuneStatus::Running { .. }));
     check!(matches!(
         flight_loop.probe(),
-        Some((TunedLoop::Pitch, ProbeStatus::Running(_)))
+        Some((TunedLoop::PitchRate, ProbeStatus::Running(_)))
     ));
 }
 
@@ -1817,17 +1817,18 @@ fn a_settle_reads_the_filtered_rates() {
     }
 }
 
-/// `TunedLoop::outer` routes a fit on a rate stage to the angle loop above it; other probes
-/// and angle stages run on their own loop.
+/// `TunedLoop::inner` routes a fit on an angle stage to the rate loop under it, as PX4 adds its
+/// excitation to the rate setpoint; rate stages and other probes run on their own loop (#561).
 #[test]
-fn fits_run_on_the_angle_loop_over_a_rate_stage() {
+fn fits_run_on_the_rate_loop_under_an_angle_stage() {
     let identify = ProbeConfig::Identify(COPTER_IDENTIFY);
     let step = ProbeConfig::Step(COPTER_RATE_STEP);
     // (stage target, probe, probed loop)
     let rows = [
-        (TunedLoop::RollRate, identify, TunedLoop::Roll),
-        (TunedLoop::PitchRate, identify, TunedLoop::Pitch),
-        (TunedLoop::Roll, identify, TunedLoop::Roll),
+        (TunedLoop::Roll, identify, TunedLoop::RollRate),
+        (TunedLoop::Pitch, identify, TunedLoop::PitchRate),
+        (TunedLoop::RollRate, identify, TunedLoop::RollRate),
+        (TunedLoop::Roll, step, TunedLoop::Roll),
         (TunedLoop::RollRate, step, TunedLoop::RollRate),
     ];
     for (target, probe, probed) in rows {

@@ -302,8 +302,15 @@ impl CopterStabilizer {
     }
 
     /// Steps a probe on a rate loop before the rate controller runs: the probe replaces that
-    /// axis's rate in `setpoints`.
-    pub(super) fn probe_rates(&mut self, dt: f32, setpoints: &mut Vec3, current: &Vec3) {
+    /// axis's rate in `setpoints`. `current` holds the filtered rates the loop runs on,
+    /// `raw_rates_radps` the unfiltered ones the identify fit models the airframe from.
+    pub(super) fn probe_rates(
+        &mut self,
+        dt: f32,
+        setpoints: &mut Vec3,
+        current: &Vec3,
+        raw_rates_radps: &Vec3,
+    ) {
         let Some(location @ Location::Rate(axis)) = self.running_stage() else {
             return;
         };
@@ -311,7 +318,7 @@ impl CopterStabilizer {
             setpoint: setpoints[axis],
             error: setpoints[axis] - current[axis],
             saturated: self.loop_saturated(location),
-            rate_radps: current[axis],
+            rate_radps: raw_rates_radps[axis],
             last_moment: self.last_moments[axis],
         };
         self.inject(dt, axis, &signals, setpoints)
