@@ -13,9 +13,8 @@
 //! - Settling: inside the probe's 10% band before the window ends. Clipping: within the step
 //!   plan's allowance, beyond which a step measures the limit, not the loop.
 //!
-//! Each loop steps as the autotune judges it (`SearchPlan::copter_rate`/`copter_angle`'s
-//! steps; heading, which isn't searched, `StepTestPlan::copter`), except yaw rate (see
-//! [`YAW_RATE_STEP_RADPS`]).
+//! Each loop steps as the autotune judges it (`SearchPlan::copter`'s steps; heading, which
+//! isn't searched, `StepTestPlan::copter`).
 
 use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::TunedLoop;
@@ -31,7 +30,7 @@ const AGGR: f32 = 0.1;
 pub const MAX_OVERSHOOT: f32 = AGGR / 2.0;
 
 /// Largest rate-loop bounce-back, as a fraction of the step (ArduPilot: `AGGR`).
-const MAX_RATE_BOUNCE_BACK: f32 = AGGR;
+pub const MAX_RATE_BOUNCE_BACK: f32 = AGGR;
 
 /// Longest roll and pitch rate rise, in s (PX4 `MC_AT_RISE_TIME`).
 const MAX_RATE_RISE_S: f32 = 0.14;
@@ -39,16 +38,11 @@ const MAX_RATE_RISE_S: f32 = 0.14;
 /// Longest yaw rate rise, in s (PX4's yaw rise time).
 const MAX_YAW_RATE_RISE_S: f32 = 0.2;
 
-/// Yaw rate step, in rad/s, sized on `quad_x`: its yaw authority (prop drag, about 7 rad/s²
-/// per unit moment) clips the standard 1 rad/s step past the allowance at any P that meets
-/// the rise target, so its step is half that. Only `quad_x`'s yaw is held to the spec; the
-/// other airframes are checked on their tuned loops.
-const YAW_RATE_STEP_RADPS: f32 = 0.5;
-
 /// Simulated seconds a probe may run before the check gives up on it.
 const PROBE_TIMEOUT_S: f32 = 5.0;
 
-/// The loops the autotune (`StagePlan::copter_design_search`) tunes.
+/// The loops the autotune (`StagePlan::copter_design_search`) designs, then searches; it then
+/// searches yaw rate too.
 pub const TUNED: [TunedLoop; 4] = [
     TunedLoop::RollRate,
     TunedLoop::PitchRate,
@@ -69,19 +63,8 @@ pub const ALL: [TunedLoop; 6] = [
 /// The steps and clip allowance `target` is held to.
 fn plan(target: TunedLoop) -> StepTestPlan {
     match target {
-        TunedLoop::RollRate | TunedLoop::PitchRate => SearchPlan::copter_rate().test,
-        TunedLoop::Roll | TunedLoop::Pitch => SearchPlan::copter_angle().test,
         TunedLoop::Heading => StepTestPlan::copter(target),
-        TunedLoop::YawRate => {
-            let plan = StepTestPlan::copter(target);
-            StepTestPlan {
-                step: StepConfig {
-                    amplitude: YAW_RATE_STEP_RADPS,
-                    ..plan.step
-                },
-                ..plan
-            }
-        }
+        _ => SearchPlan::copter(target).test,
     }
 }
 

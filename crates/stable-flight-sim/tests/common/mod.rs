@@ -308,12 +308,14 @@ impl AutotuneRun {
         self.outcomes() == spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)))
     }
 
-    /// Whether every stage of `StagePlan::copter_design_search` ran and ended `Tuned`: each
-    /// loop designed, then searched from its design.
+    /// Whether every stage of `StagePlan::copter_design_search` ran and ended as planned:
+    /// each roll and pitch loop designed, then searched from its design, then yaw rate
+    /// searched, every search `Tuned`.
     pub fn all_designed_and_searched(&self) -> bool {
         let designed = spec::TUNED.map(|target| (target, Ok(Outcome::Designed)));
         let tuned = spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)));
-        self.outcomes() == [designed, tuned].concat()
+        let yaw = [(TunedLoop::YawRate, Ok(Outcome::Tuned))];
+        self.outcomes() == [&designed[..], &tuned, &yaw].concat()
     }
 }
 
@@ -329,15 +331,25 @@ pub fn autotune_within(
     envelope: Envelope,
     timeout_s: f32,
 ) -> AutotuneRun {
-    let mut flight_loop = hover(plant);
+    autotune_on(&mut hover(plant), plan, envelope, timeout_s)
+}
+
+/// Runs `plan` within `envelope` on `flight_loop`, armed and settled, until it ends or
+/// `timeout_s` passes.
+pub fn autotune_on<C: Commander, T: TelemetryPublisher>(
+    flight_loop: &mut Pipeline<C, T>,
+    plan: &[StagePlan],
+    envelope: Envelope,
+    timeout_s: f32,
+) -> AutotuneRun {
     let mut autotune = Autotune::new(plan, envelope).expect("valid plan");
-    autotune.start(&flight_loop).expect("armed, idle");
+    autotune.start(flight_loop).expect("armed, idle");
     let mut stages = Vec::new();
     let mut duration_s = 0.0;
     for tick in 1..=ticks(timeout_s) {
         flight_loop.step(TICK);
         duration_s = seconds(tick);
-        let event = autotune.update(&mut flight_loop, TICK.as_secs_f32());
+        let event = autotune.update(flight_loop, TICK.as_secs_f32());
         if let Some(event @ (AutotuneEvent::StageDone { .. } | AutotuneEvent::StageFailed { .. })) =
             event
         {
