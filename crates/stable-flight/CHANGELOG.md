@@ -25,9 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the rate loop, and the rate loop's D on its measurement; a fit whose moment pushes the axis
   the wrong way is `DesignError::NoCrossover` (#373).
 - The autotune's settle reads the body rates through the stabilizer's gyro low-pass; the
-  envelope still reads them raw (#373). On the sim robustness table 5 of the 6 gyro-noise
-  rows now pass, with `heavy_quad`'s CG offset from the high start and weak motor from the
-  low start.
+  envelope still reads them raw (#373). On the sim robustness table `heavy_quad`'s CG offset
+  from the high start and weak-motor rows now pass.
 
 - **Breaking:** the copter roll and pitch rate loops have an I term by default, at
   `RATE_I_PER_P` (0.2/s) of P (0.03), so a steady trim moment (a CG offset, a weak motor) is
