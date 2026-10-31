@@ -107,11 +107,14 @@ const ALIA_SURFACES: [SurfaceLink; 8] = [
 /// - **Mapping:** `quad_x`'s front-left, front-right, rear-left, rear-right on engines 1, 0,
 ///   2, 3 (the `.acf`'s engine positions); the pusher on 4; the surfaces as X-Plane's yoke
 ///   moves them (ailerons on wings 2–5, elevators 8 and 9, rudders 10 and 11).
-/// - **Hover gains:** roll and pitch rate and angle from the sim autotune of
+/// - **Hover gains:** roll rate and the roll and pitch angle from the sim autotune of
 ///   `stable-flight-sim`'s `alia250_hover()`, which is sized from the `.acf` and the sweep; its
 ///   lateral loop, slowed for the aircraft's slow tilt; yaw rate (P 5, no I) and heading (P
-///   0.8) from that airframe's yaw steps. The roll and pitch rate I (0.2, the QuadCopterX's)
-///   trims X-Plane's nose-up pitch at level thrust (2.2 °/s², which the sim leaves out).
+///   0.8) from that airframe's yaw steps. Pitch rate P from `copter-autotune-xplane`'s step
+///   search in X-Plane: 1.78 against the sim's 2.57. Roll rate and both angle loops keep the
+///   sim's values: the search's lower gains for them step-tested no better (#540). The roll and pitch rate I
+///   (0.2, the QuadCopterX's) trims X-Plane's nose-up pitch at level thrust (2.2 °/s², which
+///   the sim leaves out).
 /// - **Hover thrust:** the liftoff throttle through the mixer's thrust factor and the thrust
 ///   curve.
 /// - **Plane and transitions:** `stable-flight-sim`'s `alia250()`, tuned on a model fitted to
@@ -262,7 +265,9 @@ fn alia250_hover_stabilizer() -> CopterStabilizerConfig {
     CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
             roll_gains: rate(1.52),
-            pitch_gains: rate(2.57),
+            // Nose-up steps overshoot 12% at the sim tune's 2.57 and 4% at 1.78, which also
+            // settles in 0.8 s against 1.1 s (#540).
+            pitch_gains: rate(1.78),
             yaw_gains: Gains {
                 p: 5.0,
                 i: 0.0,
