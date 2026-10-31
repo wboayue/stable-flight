@@ -4,7 +4,7 @@ use stable_flight::mixers::{MixRow, MixerConfig};
 use stable_flight::{GRAVITY, Vec3};
 
 use super::*;
-use crate::aero;
+use crate::aero::{self, Wash};
 use crate::airframes;
 use crate::body::Body;
 use crate::fixed_wing::FixedWingModel;
@@ -158,7 +158,7 @@ fn cruise_trim(model: &FixedWingModel, airspeed_mps: f32) -> (f32, f32, f32) {
                 air_mps,
                 Vec3::zeros(),
                 Vec3::new(0.0, elevator_rad, 0.0),
-                0.0,
+                Wash::default(),
             )
         };
         let elevator_rad = -wrench(0.0).torque_nm.y / elevator_per_rad;

@@ -37,7 +37,7 @@ fn no_airspeed_no_aero() {
         Vec3::zeros(),
         Vec3::new(1.0, 1.0, 1.0),
         Vec3::repeat(0.3),
-        0.0,
+        Wash::default(),
     );
     check!(still == Aero::default());
 }
@@ -58,7 +58,7 @@ fn flow_angles_follow_the_air() {
             air(15.0, alpha_rad, beta_rad),
             Vec3::zeros(),
             Vec3::zeros(),
-            0.0,
+            Wash::default(),
         );
         assert_relative_eq!(aero.alpha_rad, alpha_rad, epsilon = 1e-5);
         assert_relative_eq!(aero.beta_rad, beta_rad, epsilon = 1e-5);
@@ -75,7 +75,7 @@ fn head_on_lift_and_drag() {
         air(15.0, 0.0, 0.0),
         Vec3::zeros(),
         Vec3::zeros(),
-        0.0,
+        Wash::default(),
     );
     let dynamic_n = 0.5 * AIR_DENSITY_KGPM3 * 225.0 * model.wing_area_m2;
     let aspect_ratio = model.span_m * model.span_m / model.wing_area_m2;
@@ -168,7 +168,7 @@ fn moments_point_the_contract_way() {
         air(15.0, 0.0, 0.0),
         Vec3::zeros(),
         Vec3::zeros(),
-        0.0,
+        Wash::default(),
     )
     .torque_nm;
     for (case, alpha_rad, beta_rad, rates_radps, deflection_rad, signs) in cases {
@@ -177,7 +177,7 @@ fn moments_point_the_contract_way() {
             air(15.0, alpha_rad, beta_rad),
             rates_radps,
             deflection_rad,
-            0.0,
+            Wash::default(),
         );
         let change_nm = aero.torque_nm - head_on;
         for (axis, sign) in signs.iter().enumerate() {
@@ -200,7 +200,7 @@ fn moments_scale_from_the_coefficients() {
         air(10.0, 0.0, 0.0),
         Vec3::zeros(),
         Vec3::zeros(),
-        0.0,
+        Wash::default(),
     );
     assert_relative_eq!(
         level.torque_nm.y,
@@ -213,7 +213,7 @@ fn moments_scale_from_the_coefficients() {
             air(speed_mps, 0.0, 0.0),
             Vec3::new(1.0, 0.0, 0.0),
             Vec3::zeros(),
-            0.0,
+            Wash::default(),
         )
         .torque_nm
         .x
@@ -272,7 +272,7 @@ fn broadside_drag_is_a_flat_plates() {
         air(10.0, FRAC_PI_2, 0.0),
         Vec3::zeros(),
         Vec3::zeros(),
-        0.0,
+        Wash::default(),
     );
     // Drag opposes the air's motion along body +z; lift (along body x here) vanishes.
     assert_relative_eq!(
@@ -299,7 +299,7 @@ fn forces_and_moments_stay_bounded_at_any_angle() {
             air(10.0, alpha_rad, 0.0),
             Vec3::zeros(),
             Vec3::zeros(),
-            0.0,
+            Wash::default(),
         )
     };
     let mut previous = at(-PI);
@@ -319,40 +319,56 @@ fn forces_and_moments_stay_bounded_at_any_angle() {
     }
 }
 
-/// The wash adds to the free stream's dynamic pressure over the surfaces only: in still air
-/// the surfaces act on it alone, and it doesn't touch lift, drag, or damping.
+/// The wash adds to the free stream's dynamic pressure over the surfaces and damps the turn
+/// rates as a flow at its damping speed would, `½ρ·v·S` per unit of airspeed; it doesn't touch
+/// lift or drag. In still air the surfaces and that damping act alone.
 #[test]
-fn wash_works_the_surfaces_only() {
+fn wash_works_the_surfaces_and_damps_the_rates() {
     let model = model();
     let c = &model.aero;
-    let wash_pa = 200.0;
+    let wash = Wash {
+        pressure_pa: 200.0,
+        damping_mps: 4.0,
+    };
+    let wash_scale = 0.5 * AIR_DENSITY_KGPM3 * wash.damping_mps * model.wing_area_m2;
     let elevator = Vec3::new(0.0, 0.2, 0.0);
-    let still = wrench(
-        &model,
-        Vec3::zeros(),
-        Vec3::new(1.0, 1.0, 1.0),
-        elevator,
-        wash_pa,
+    let rates_radps = Vec3::new(1.0, 1.0, 1.0);
+    let still = wrench(&model, Vec3::zeros(), rates_radps, elevator, wash);
+    let (span, chord) = (model.span_m, model.chord_m);
+    let damping_nm = Vec3::new(
+        wash_scale * span * span / 2.0 * (c.c_roll_p + c.c_roll_r),
+        wash_scale * chord * chord / 2.0 * c.c_pitch_q,
+        wash_scale * span * span / 2.0 * (c.c_yaw_p + c.c_yaw_r),
     );
+    let elevator_nm = wash.pressure_pa * model.wing_area_m2 * chord * c.c_pitch_elevator * 0.2;
     assert_relative_eq!(
-        still.torque_nm.y,
-        wash_pa * model.wing_area_m2 * model.chord_m * c.c_pitch_elevator * 0.2,
+        still.torque_nm,
+        damping_nm + Vec3::new(0.0, elevator_nm, 0.0),
         max_relative = 1e-5
     );
     check!(still.force_n == Vec3::zeros());
 
-    let flying = |wash_pa: f32, deflection_rad: Vec3| {
+    let flying = |wash: Wash, rates_radps: Vec3, deflection_rad: Vec3| {
         wrench(
             &model,
             air(15.0, 0.05, 0.0),
-            Vec3::new(0.3, 0.2, 0.1),
+            rates_radps,
             deflection_rad,
-            wash_pa,
+            wash,
         )
     };
-    // Undeflected surfaces: the wash changes nothing.
-    check!(flying(wash_pa, Vec3::zeros()) == flying(0.0, Vec3::zeros()));
-    // Deflected: the wash adds exactly what it adds in still air.
-    let added_nm = flying(wash_pa, elevator).torque_nm - flying(0.0, elevator).torque_nm;
-    assert_relative_eq!(added_nm.y, still.torque_nm.y, max_relative = 1e-4);
+    let calm = Wash::default();
+    let none = Vec3::zeros();
+    // Undeflected surfaces, not turning: the wash changes nothing.
+    check!(flying(wash, none, none) == flying(calm, none, none));
+    // Deflected and turning: the wash adds exactly what it adds in still air.
+    let added = flying(wash, rates_radps, elevator);
+    let added_nm = added.torque_nm - flying(calm, rates_radps, elevator).torque_nm;
+    assert_relative_eq!(
+        added_nm,
+        still.torque_nm,
+        max_relative = 1e-4,
+        epsilon = 1e-6
+    );
+    check!(added.force_n == flying(calm, rates_radps, elevator).force_n);
 }
