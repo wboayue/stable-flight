@@ -153,6 +153,19 @@ fn step_test_and_design_fail_on_an_abort() {
     }
 }
 
+/// A step test or a design whose committed gains won't settle before a probe fails
+/// `NotSettled`: only a search lowers its start.
+#[test]
+fn step_test_and_design_fail_when_unsettled() {
+    let (step, _) = step_test(1);
+    let design = Procedure::new(Method::Design(DesignPlan::copter()));
+    for mut procedure in [step, design] {
+        procedure.next(Input::start(CURRENT));
+        let failed = procedure.next(Input::Unsettled { gains: CURRENT });
+        check!(failed == Action::Fail(AutotuneAbort::NotSettled));
+    }
+}
+
 /// The copter step tests count a step clipped for 10 ticks at 250 Hz as valid on every loop,
 /// summed in `f32` as the probe does (ten 4 ms ticks come to slightly over 40 ms); one more
 /// tick is too many. An angle step at the tuned angle P clips for its first ticks (#310).

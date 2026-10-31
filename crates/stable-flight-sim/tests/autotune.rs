@@ -137,8 +137,13 @@ fn a_design_that_rings_goes_back_to_its_start() {
 
 /// How much slower than the fastest pair the design search's rate loop may rise, as a
 /// fraction of the fastest pair's rise: the search's target (#531). Measured: +8% on
-/// `quad_x`, +9% on `heavy_quad`, each one 4 ms tick of rise.
+/// `quad_x`, +9% on `heavy_quad`, +25% on `racer` (#552), each one 4 ms tick of rise.
 const MAX_RISE_EXCESS: f32 = 0.25;
+
+/// Slack on the rise band, in s: half a tick. Rises are whole ticks, so one tick past
+/// `racer`'s 16 ms is exactly [`MAX_RISE_EXCESS`], and the slack keeps it clear of `f32`
+/// rounding at the threshold.
+const RISE_SLACK_S: f32 = 0.5 * common::TICK.as_secs_f32();
 
 /// Multipliers on the tuned rate P and D, each, for the pairs the tuned loop is raced
 /// against: 0.5 to 2, 22% apart. They span the fastest pairs that a sweep of P 0.2–6 by D
@@ -175,7 +180,8 @@ fn rises_near_the_fastest_rate_pair(airframe: Airframe) {
         panic!("no pair meets the spec around {tuned_gains:?}");
     };
     check!(
-        tuned_rise_s.is_some_and(|rise_s| rise_s <= (1.0 + MAX_RISE_EXCESS) * fastest_s),
+        tuned_rise_s
+            .is_some_and(|rise_s| rise_s <= (1.0 + MAX_RISE_EXCESS) * fastest_s + RISE_SLACK_S),
         "tuned {tuned_gains:?} rises in {tuned_rise_s:?} s; {fastest_gains:?} in {fastest_s} s"
     );
 }
@@ -193,10 +199,9 @@ fn heavy_quad_design_search_rises_near_the_fastest_rate_pair() {
     rises_near_the_fastest_rate_pair(airframes::heavy_quad());
 }
 
-/// On `racer`, the gyro filter's lag is a large share of the loop's and its rate search
-/// stops at P 0.55, rising in 28 ms against the fastest pair's 20 ms (#552).
+/// As [`quad_x_design_search_rises_near_the_fastest_rate_pair`], on `racer` with its gyro
+/// low-pass at `RACER_GYRO_CUTOFF_HZ` (#552).
 #[test]
-#[ignore = "racer rises 40% slower than its fastest pair under the gyro filter's lag (#552)"]
 fn racer_design_search_rises_near_the_fastest_rate_pair() {
     rises_near_the_fastest_rate_pair(airframes::racer());
 }

@@ -1,6 +1,6 @@
 //! Autotunes a multirotor in RealFlight: climbs to the hover script's waypoint,
-//! tunes roll and pitch rate, then roll and pitch angle, by design search, then yaw rate by a
-//! search from its start gains, lands, and disarms
+//! tunes roll and pitch rate, then roll and pitch angle, by design search, with yaw rate
+//! searched from its start gains between the designs and the searches, lands, and disarms
 //! (`StagePlan::copter_design_search`, `architecture.md#autotune`). Each roll and pitch loop's
 //! axis is fitted from a 3 s square wave on its rate loop (the fit logged: delay, motor lag,
 //! acceleration) and its gains designed from the fit; once every loop is designed, each

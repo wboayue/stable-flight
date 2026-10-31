@@ -151,6 +151,8 @@ pub fn heavy_quad() -> Airframe {
 /// build (the model's hover throttle maps through a PWM curve that isn't comparable to the
 /// sim's `command²`), 15 ms motor lag for small high-kV motors, and drag, damping, and yaw
 /// torque from `quad_x`, the same size. Gains come from the sim autotune like `quad_x`'s.
+///
+/// The gyro low-pass is at [`RACER_GYRO_CUTOFF_HZ`] rather than core's 40 Hz default.
 pub fn racer() -> Airframe {
     const MASS_KG: f32 = 0.8;
     const DIAGONAL_M: f32 = 0.25;
@@ -168,19 +170,27 @@ pub fn racer() -> Airframe {
         ground_friction: 0.5,
         max_step_s: 0.001,
     };
-    build(
+    let mut airframe = build(
         model,
         Tune {
-            // Sim autotune from core's defaults (#373).
-            roll_rate: rate_gains(0.550, 0.00655),
-            pitch_rate: rate_gains(0.550, 0.00655),
+            // Sim autotune from core's defaults at RACER_GYRO_CUTOFF_HZ (#552).
+            roll_rate: rate_gains(1.162, 0.00998),
+            pitch_rate: rate_gains(1.162, 0.00998),
             angle_p: 9.0,
             // `quad_x`'s: they hold heading in a hover; the autotune doesn't tune them.
             yaw_rate_p: YAW_RATE_P,
             heading_p: HEADING_P,
         },
-    )
+    );
+    airframe.stabilizer.gyro_cutoff_hz = RACER_GYRO_CUTOFF_HZ;
+    airframe
 }
+
+/// [`racer`]'s gyro low-pass cutoff, in Hz: what Mission Planner's initial parameters set
+/// for 5-inch props (`ConfigInitialParams`, `INS_GYRO_FILTER` from prop size). Lower: more of
+/// the rate loop's lag is the filter's, and the design search's rate loop rises 40% slower
+/// than the fastest P/D pair at 40 Hz (#552).
+pub const RACER_GYRO_CUTOFF_HZ: f32 = 75.0;
 
 /// The Alia's mixer: [`alia250_hover`]'s reasons.
 // TODO(#440): a higher yaw ratio once yaw yields to collective in the mixer.

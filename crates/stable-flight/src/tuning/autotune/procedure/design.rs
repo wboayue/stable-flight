@@ -91,6 +91,7 @@ impl Design {
             Input::Held { settled: false, .. } => self.refit(AutotuneAbort::NotSettled),
             Input::Breached { reason, .. } => self.refit(reason),
             Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
+            Input::Unsettled { .. } => Action::Fail(AutotuneAbort::NotSettled),
             Input::Measured { .. } => Action::Fail(AutotuneAbort::Interrupted),
         }
     }

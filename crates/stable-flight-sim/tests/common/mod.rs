@@ -310,13 +310,13 @@ impl AutotuneRun {
     }
 
     /// Whether every stage of `StagePlan::copter_design_search` ran and ended as planned:
-    /// each roll and pitch loop designed, then searched from its design, then yaw rate
-    /// searched, every search `Tuned`.
+    /// each roll and pitch loop designed, then yaw rate searched, then each roll and pitch
+    /// loop searched from its design, every search `Tuned`.
     pub fn all_designed_and_searched(&self) -> bool {
         let designed = spec::TUNED.map(|target| (target, Ok(Outcome::Designed)));
-        let tuned = spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)));
         let yaw = [(TunedLoop::YawRate, Ok(Outcome::Tuned))];
-        self.outcomes() == [&designed[..], &tuned, &yaw].concat()
+        let tuned = spec::TUNED.map(|target| (target, Ok(Outcome::Tuned)));
+        self.outcomes() == [&designed[..], &yaw, &tuned].concat()
     }
 }
 

@@ -460,6 +460,53 @@ fn a_vehicle_that_never_settles_fails_before_the_first_step() {
     check!(*flight_loop.stabilizer().config() == baseline);
 }
 
+/// A search whose start never settles lowers it by the bracket's factor at each settle
+/// timeout, committing each, then fails `NotSettled` below `min`; the lowered run start stays
+/// (#552).
+#[test]
+fn a_search_lowers_a_start_that_never_settles() {
+    let (mut flight_loop, controls) = hovering(1.0);
+    let start = TunedLoop::RollRate.gains(flight_loop.stabilizer().config());
+    let plan = SearchPlan {
+        min: start.p / 2.0,
+        ..SearchPlan::copter_rate()
+    };
+    let mut autotune = started(
+        &flight_loop,
+        &[StagePlan {
+            target: TunedLoop::RollRate,
+            method: Method::Search(plan),
+        }],
+    );
+
+    let mut elapsed_s = 0.0;
+    let events = run(&mut flight_loop, &mut autotune, 60.0, |_, _| {
+        elapsed_s += DT;
+        rock_roll(&controls, elapsed_s, 4.0 * COPTER_STEP_SETTLE.rate_radps);
+    });
+
+    let lowered: Vec<f32> = events
+        .iter()
+        .filter_map(|event| match event {
+            AutotuneEvent::Lowered { gains, .. } => Some(gains.p),
+            _ => None,
+        })
+        .collect();
+    // start / 1.3 and / 1.69 are above `min`; / 2.197 is below.
+    let expected = [1, 2].map(|times| start.p / plan.factor.powi(times));
+    check!(lowered.len() == expected.len(), "{events:?}");
+    for (p, expected) in lowered.iter().zip(expected) {
+        assert_relative_eq!(*p, expected, max_relative = 1e-5);
+    }
+    let failed = AutotuneEvent::StageFailed {
+        target: TunedLoop::RollRate,
+        reason: AutotuneAbort::NotSettled,
+    };
+    check!(events.last() == Some(&failed));
+    let kept = TunedLoop::RollRate.gains(flight_loop.stabilizer().config());
+    assert_relative_eq!(kept.p, expected[1], max_relative = 1e-5);
+}
+
 /// A hover leaning to hold its position settles where it leans: held 0.12 rad off level in
 /// roll or pitch (past the step settle's 0.044 rad, inside the envelope), a step test runs to
 /// completion, bare and in a tailsitter's view (#539).
@@ -1903,8 +1950,8 @@ fn search_step_presets() {
 }
 
 /// The design search designs every roll and pitch loop, rate first, with every fit run on the
-/// axis's rate loop, then searches each loop from its design in the same order,
-/// then searches yaw rate from its start.
+/// axis's rate loop, then searches yaw rate from its start, then searches each roll and pitch
+/// loop from its design in the same order.
 #[test]
 fn copter_design_search_designs_then_searches_every_loop() {
     let params = PlantParams {
