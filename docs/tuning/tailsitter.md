@@ -139,7 +139,9 @@ The axes are the hover view's:
 - **Pitch while sinking:** the airflow pushes the nose over. The eXplora's integral holds 0.28
   of moment (I × `STAB_RATE_IMAX`) and P the rest; descents at 1.5 m/s hold the nose (#539).
 - **Gyro low-pass:** the autotune designs D around the filter's lag (about 5.6 ms at 40 Hz),
-  so tune with the filter you'll fly.
+  so tune with the filter you'll fly. A hand tune at D 0 can ring through the lag: on the
+  sim tailsitter, the elevons' pitch rang to 13.8° of tilt in a hover requested
+  mid-transition until pitch rate D 0.01 damped it (#550).
 
 ## 3. Hover attitude
 
