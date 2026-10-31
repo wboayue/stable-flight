@@ -210,7 +210,10 @@ fn rejects_invalid_perturbations() {
         actuator_delay_s: 1.0,
         ..Default::default()
     };
-    check!(vehicle().with_perturbations(perturbations).err() == Some(ModelError::DelayTooLong));
+    check!(
+        vehicle().with_perturbations(perturbations).err()
+            == Some(ModelError::DelayTooLong("actuator_delay_s"))
+    );
 }
 
 /// A command reaches the motors one tick (the hold) plus `actuator_delay_s` after `actuate`,

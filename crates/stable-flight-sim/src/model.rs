@@ -82,10 +82,11 @@ pub enum ModelError {
     /// isn't positive and finite.
     #[error("motor_thrust_scale[{0}] must be positive and finite")]
     ThrustScale(u8),
-    /// [`Perturbations::actuator_delay_s`](crate::Perturbations::actuator_delay_s) is over
+    /// This delay ([`Perturbations::actuator_delay_s`](crate::Perturbations::actuator_delay_s)
+    /// or [`FixedWingModel::motor_delay_s`](crate::FixedWingModel::motor_delay_s)) is over
     /// [`MAX_ACTUATOR_DELAY_S`](crate::MAX_ACTUATOR_DELAY_S).
-    #[error("actuator_delay_s must be at most {max_s} s", max_s = crate::MAX_ACTUATOR_DELAY_S)]
-    DelayTooLong,
+    #[error("{0} must be at most {max_s} s", max_s = crate::MAX_ACTUATOR_DELAY_S)]
+    DelayTooLong(&'static str),
     /// A quadplane's mixer has this many
     /// [`pusher`](stable_flight::mixers::MixRow::pusher) rows instead of one.
     #[error("a quadplane's mixer needs one pusher row, not {0}")]

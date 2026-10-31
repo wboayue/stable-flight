@@ -126,6 +126,7 @@ pub fn alia250() -> QuadPlaneAirframe {
         thrust_line_below_cg_m: 0.0,
         // The lift motors' measured lag (#351), for the pusher too.
         motor_time_constant_s: lift.motor_time_constant_s,
+        motor_delay_s: 0.0,
         ground_friction: lift.ground_friction,
         max_step_s: lift.max_step_s,
     };

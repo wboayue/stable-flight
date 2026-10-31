@@ -45,7 +45,7 @@ fn rejects_each_out_of_range_field() {
         ),
         (
             |p| p.actuator_delay_s = MAX_ACTUATOR_DELAY_S + 0.001,
-            ModelError::DelayTooLong,
+            ModelError::DelayTooLong("actuator_delay_s"),
         ),
         (
             |p| p.gyro.rms_radps.y = -0.1,
