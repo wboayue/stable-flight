@@ -11,7 +11,9 @@ Title `stable-flight x.y.z`. Sections in this order:
 1. **Lead:** one sentence on what a user can now fly or do, only what has flown (README
    **Status**). A first release says what the crate is.
 2. **Hero image** (optional): a `just plot` of a flight this release enables, captioned with
-   the airframe, simulator, and what was flown. Upload it to the release; no GIF per feature.
+   the airframe, simulator, and what was flown. Attach it in the release editor
+   (drag-and-drop) so it renders inline; a `gh release upload` asset may download instead. No
+   GIF per feature.
 3. **`[!WARNING]`**, only if any **Breaking (behavior):** bullets: those changes in plain words
    and what to do (re-run autotune, or pin a param to its old value). At most one more alert,
    a `[!NOTE]` for a new crate.
@@ -21,9 +23,10 @@ Title `stable-flight x.y.z`. Sections in this order:
    names, no evidence; those stay in the changelog.
 5. **Upgrading:** a table grouping the **Breaking** bullets by who they hit, then a task list
    of steps. No **Breaking** marks repeated elsewhere in the notes.
-6. **Crates:** one row per published crate, its version (**new** on a first release), role,
-   and links.
-7. **Full changelogs:** each crate's changelog section verbatim inside `<details>`.
+6. **Crates:** one row per crate released this time, its version (**new** on a first
+   release), role, and links.
+7. **Full changelogs:** each crate's changelog section verbatim inside `<details>`. GitHub caps
+   a release body at 125,000 characters: past about 120,000, link each changelog instead.
 
 No emoji headings, no badge rows, no headings below `###`.
 
@@ -47,6 +50,7 @@ No emoji headings, no badge rows, no headings below `###`.
 | fly a tuned copter | <…> | <…> |
 | implement a backend | <…> | <…> |
 | build configs with struct literals | <new fields> | add `..Default::default()` |
+| run the bridge against flashed firmware | `PROTOCOL_VERSION` <n> | upgrade both ends |
 
 - [ ] <step>
 
