@@ -31,7 +31,8 @@ X-Plane 12 simulator backend over [xplane-bridge](https://crates.io/crates/xplan
   `check_frames --sim xplane`.
 - `airframes::alia250()`: the Alia 250 as a quadplane (mixer, engine and surface mapping,
   gains): its hover from an engine sweep and a sim autotune, flown in X-Plane (#351), and its
-  pitch rate P from the X-Plane autotune (#540); its plane side and transitions tuned on
+  pitch rate P from the X-Plane autotune (#540), and its angle I from step tests there
+  (#576); its plane side and transitions tuned on
   `stable-flight-sim`'s `alia250()` (#392). Plane flight below 20 m falls back to a hover
   (`TRAN_FW_MIN_HGT`, #450).
 - Examples flying the Alia 250: `quadplane-manual-xplane` (joystick; `--record`, `--param`),

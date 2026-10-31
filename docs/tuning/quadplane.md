@@ -91,6 +91,14 @@ small-copter defaults don't carry over; measure first, then tune on a sim model 
   - The angle loops end short of their steps at every P tried (roll 21–26% at 1.0–1.34,
     pitch 13–18% at 1.0–1.03), so angle P isn't what limits them; they keep 1.03
     ([#540](https://github.com/wboayue/stable-flight/issues/540)).
+- **Angle I against the wing:** a held tilt drifts the Alia sideways (1–2.6 m/s within a 5°
+  step), and its wing pushes back with a roll moment that grows with that drift. At core's
+  angle I (0.001), only the P path holds it, so steps sit 0.7–1.1° short. Rate I doesn't fix
+  it: at rate I equal to P the rate steps overshoot 24–33%, and angle steps still peak and
+  sag. Sweep angle I on step tests (`--param STAB_ATT_RLL_I=…`) instead:
+  - Roll 0.25 and pitch 0.15 end within 7% of the step with every step rising.
+  - At 0.5 pitch overshoots 25%; at 0.25, nose-up steps overshoot 9%.
+  ([#576](https://github.com/wboayue/stable-flight/issues/576)).
 - **Yaw and heading:** the quad values limit-cycled at ±1 moment; yaw rate P 5 without I and
   heading P 0.8 step 29° with 2% overshoot.
 - **Position:** core's lateral loop swayed into the tilt cap after a 5° step;
