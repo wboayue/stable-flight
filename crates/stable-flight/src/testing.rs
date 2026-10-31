@@ -17,7 +17,7 @@
 //!
 //! ```toml
 //! [dev-dependencies]
-//! stable-flight = { version = "0.1", features = ["testing"] }
+//! stable-flight = { version = "0.2", features = ["testing"] }
 //! ```
 
 use core::time::Duration;

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
 ### Added
 
 - `vtol_state(FlightMode)` (#333): a VTOL's `MAV_VTOL_STATE` (`MC`, `FW`, and the
@@ -16,10 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking:** `extended_sys_state` takes the `vtol_state` to report (#333);
   `MAV_VTOL_STATE_UNDEFINED` for a vehicle that isn't a VTOL.
-
 - `heartbeat` maps `ControlMode::AbsoluteRate` to `GUIDED` (offboard rates, neither manual
   nor stabilized) (#124).
-
 - `vfr_hud` reports `VehicleState::airspeed_mps` as airspeed when present (#181); ground speed
   without it (`None`, NaN, or negative).
 
@@ -48,5 +48,6 @@ First release.
 - **`testing` feature:** `testing::MockConnection`, a scripted `MavConnection` (receives in
   order, then `WouldBlock`; sends recorded, optionally failing) for tests.
 
-[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-mavlink-v0.1.0...HEAD
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-mavlink-v0.2.0...HEAD
+[0.2.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-mavlink-v0.2.0
 [0.1.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-mavlink-v0.1.0

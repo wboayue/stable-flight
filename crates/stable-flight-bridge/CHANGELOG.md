@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
 ### Added
 
 - **VTOL** (#333): `--vehicle-type copter|tailsitter|quadplane` sets the `HEARTBEAT` type
@@ -15,7 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a `Control::Regime` request, acked once the flight controller shows it and withdrawn when
   refused. A tailsitter's attitude and heading are reported in its hover view while it
   hovers.
-
 - `SET_POSITION_TARGET_LOCAL_NED`'s `yaw`, when its mask includes it, is the waypoint's
   heading (#470), as ArduPilot's guided mode and PX4's offboard mode fly it.
 
@@ -65,5 +66,6 @@ First release.
   served to QGC as component metadata (plain JSON over HTTP at CRC-versioned paths;
   `--http-bind`, `--http-url`, `--no-metadata`).
 
-[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-bridge-v0.1.0...HEAD
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-bridge-v0.2.0...HEAD
+[0.2.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-bridge-v0.2.0
 [0.1.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-bridge-v0.1.0

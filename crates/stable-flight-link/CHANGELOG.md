@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
 ### Added
 
 - `Control::Regime` (#333): a companion's regime request (e.g. a ground station's VTOL
@@ -26,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `PROTOCOL_VERSION` 8 (#333): `Control::Regime` changes the `Control` shape.
 - **Breaking:** `LinkCommander` ignores a `Command`'s `regime`, as it ignores its `arm` (#333);
   request a regime with `Control::Regime`.
-
 - **Breaking:** `PROTOCOL_VERSION` 7 (#391): core `Setpoint::Blend` changes the `Record`
   shape.
 - **Breaking:** `PROTOCOL_VERSION` 6 (#391): core `ControlOutput` gains `cruise`, which
@@ -91,5 +92,6 @@ First release.
   `loopback::FailingLink` for error paths.
 - **`no_std`** (without `std`), allocation-free; builds for `thumbv7em-none-eabihf`.
 
-[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-link-v0.1.0...HEAD
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-link-v0.2.0...HEAD
+[0.2.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-link-v0.2.0
 [0.1.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-link-v0.1.0
