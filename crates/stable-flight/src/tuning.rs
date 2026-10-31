@@ -24,6 +24,8 @@
 //! assert_eq!(setpoint, COPTER_RATE_STEP.amplitude);
 //! ```
 
+use nalgebra::UnitQuaternion;
+
 pub mod autotune;
 pub mod design;
 pub mod identify;
@@ -65,4 +67,23 @@ pub trait Tunable {
     /// Ends the probe, handing the loop back to its controller if the probe still flies it,
     /// and returns its last status.
     fn stop_probe(&mut self) -> Option<(Self::Target, ProbeStatus)>;
+
+    /// The frame the probed loops fly in, expressed in the body frame: identity for loops that
+    /// fly the body frame, a [`View`](crate::view::View)'s rotation for loops run in it (nose-up
+    /// hover reads level in a tailsitter's view). The autotune supervisor reads tilt and
+    /// per-axis rates in this frame, so its envelope and settle judge the axes the loops fly.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+    /// use stable_flight::tuning::Tunable;
+    /// use stable_flight::view::{View, tailsitter_rotation};
+    ///
+    /// let hover = View::tailsitter(CopterStabilizer::new(CopterStabilizerConfig::default()));
+    /// assert_eq!(hover.probe_frame(), tailsitter_rotation());
+    /// ```
+    fn probe_frame(&self) -> UnitQuaternion<f32> {
+        UnitQuaternion::identity()
+    }
 }

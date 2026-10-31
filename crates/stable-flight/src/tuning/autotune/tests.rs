@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
+use approx::assert_relative_eq;
 use assert2::{assert, check};
 
 use super::*;
@@ -9,9 +10,10 @@ use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::stabilizers::copter::CopterStabilizer;
 use crate::tuning::plant::{Axes, PlantParams};
 use crate::tuning::{StepAbort, StepMetrics};
+use crate::view::{View, tailsitter_rotation};
 use crate::{
     AbsoluteAttitudeCommand, Actuator, ActuatorCommand, Command, Commander, ControlInput,
-    ControlOutput, Mixer, RateCommand, StateSource, Vec3,
+    ControlOutput, Guidance, Mixer, RateCommand, Stabilizer, StateSource, Vec3,
 };
 
 /// The flight loop's tick: 250 Hz.
@@ -33,6 +35,9 @@ struct Controls {
     outage: Rc<Cell<bool>>,
     /// The last state the vehicle reported.
     seen: Rc<RefCell<Option<VehicleState>>>,
+    /// The frame the sim's axes fly in, expressed in the body frame: the vehicle reports its
+    /// body state and takes body moments, so a tailsitter's view axes sit in a nose-up body.
+    frame: Rc<Cell<UnitQuaternion<f32>>>,
 }
 
 /// The roll moment the sim flies on during an outage, as a host link's last commands might
@@ -70,7 +75,7 @@ impl StateSource for SimVehicle {
         let Some(axes) = axes.as_mut() else {
             return VehicleState::default();
         };
-        let mut state = axes.state();
+        let mut state = axes.state().rotate_body(&self.0.frame.get().inverse());
         state.position_m.z = self.0.altitude_m.get();
         state.angular_velocity_radps.x += self.0.rate_spike_radps.get();
         *self.0.seen.borrow_mut() = Some(state.clone());
@@ -87,7 +92,7 @@ impl Actuator for SimVehicle {
             } else {
                 Vec3::new(servos[0], servos[1], servos[2])
             };
-            axes.step(moments);
+            axes.step(self.0.frame.get().inverse_transform_vector(&moments));
         }
     }
 }
@@ -107,8 +112,10 @@ impl Mixer for MomentMixer {
 /// Disturbs the sim through its controls.
 type Disturbance = fn(&Controls);
 
-type TestLoop =
-    FlightLoop<TestCommander, SimVehicle, CopterGuidance, CopterStabilizer, MomentMixer, ()>;
+type TestLoopOf<G, S> = FlightLoop<TestCommander, SimVehicle, G, S, MomentMixer, ()>;
+type TestLoop = TestLoopOf<CopterGuidance, CopterStabilizer>;
+/// A tailsitter's hover: the copter loops in its view.
+type ViewedLoop = TestLoopOf<View<CopterGuidance>, View<CopterStabilizer>>;
 
 /// Hand-tune-like gains that fly the sim, with the rate loops' P scaled by `rate_p_scale`.
 fn stabilizer_config(rate_p_scale: f32) -> CopterStabilizerConfig {
@@ -147,15 +154,42 @@ fn hovering(rate_p_scale: f32) -> (TestLoop, Controls) {
 
 /// [`hovering`] over axes with `params`.
 fn hovering_on(rate_p_scale: f32, params: PlantParams) -> (TestLoop, Controls) {
+    hovering_in(
+        CopterGuidance::new(CopterGuidanceConfig::default()),
+        CopterStabilizer::new(stabilizer_config(rate_p_scale)),
+        params,
+        UnitQuaternion::identity(),
+    )
+}
+
+/// [`hovering_on`] as a tailsitter: the loops fly in its hover view, and the sim's axes are the
+/// view's, so the vehicle reports nose-up hover.
+fn hovering_viewed(params: PlantParams) -> (ViewedLoop, Controls) {
+    hovering_in(
+        View::tailsitter(CopterGuidance::new(CopterGuidanceConfig::default())),
+        View::tailsitter(CopterStabilizer::new(stabilizer_config(1.0))),
+        params,
+        tailsitter_rotation(),
+    )
+}
+
+/// `guidance` and `stabilizer` hovering level over axes with `params`, flown in `frame`.
+fn hovering_in<G: Guidance, S: Stabilizer>(
+    guidance: G,
+    stabilizer: S,
+    params: PlantParams,
+    frame: UnitQuaternion<f32>,
+) -> (TestLoopOf<G, S>, Controls) {
     let controls = Controls::default();
     controls.arm.set(true);
     controls.altitude_m.set(ALTITUDE_M);
+    controls.frame.set(frame);
     *controls.axes.borrow_mut() = Some(Axes::new([params; 3], Vec3::zeros(), DT));
     let mut flight_loop = FlightLoop::new(
         TestCommander(controls.clone()),
         SimVehicle(controls.clone()),
-        CopterGuidance::new(CopterGuidanceConfig::default()),
-        CopterStabilizer::new(stabilizer_config(rate_p_scale)),
+        guidance,
+        stabilizer,
         MomentMixer,
         (),
     );
@@ -168,11 +202,11 @@ fn hovering_on(rate_p_scale: f32, params: PlantParams) -> (TestLoop, Controls) {
 
 /// Steps the loop and the supervisor until the run ends or `max_s` passes, calling `poke`
 /// before each tick; returns the events in order.
-fn run(
-    flight_loop: &mut TestLoop,
+fn run<G: Guidance, S: CopterTunable + Stabilizer>(
+    flight_loop: &mut TestLoopOf<G, S>,
     autotune: &mut Autotune,
     max_s: f32,
-    mut poke: impl FnMut(&Autotune, &TestLoop),
+    mut poke: impl FnMut(&Autotune, &TestLoopOf<G, S>),
 ) -> Vec<AutotuneEvent> {
     let mut events = Vec::new();
     for _ in 0..(max_s / DT) as usize {
@@ -204,7 +238,7 @@ fn search_stage(target: TunedLoop) -> StagePlan {
     }
 }
 
-fn started(flight_loop: &TestLoop, plan: &[StagePlan]) -> Autotune {
+fn started<G, S: CopterTunable>(flight_loop: &TestLoopOf<G, S>, plan: &[StagePlan]) -> Autotune {
     let mut autotune = Autotune::new(plan, Envelope::default()).expect("valid plan");
     autotune.start(flight_loop).expect("armed and idle");
     autotune
@@ -311,6 +345,37 @@ fn an_envelope_breach_ends_the_run_keeping_earlier_stages() {
             "{reason:?}"
         );
         check!(flight_loop.probe() == None, "{reason:?}");
+    }
+}
+
+/// A tailsitter hovering nose up in its view is level to the envelope, so a stage runs; a tilt
+/// past the limit in the view still fails it.
+#[test]
+fn viewed_tailsitter_hover_is_level_to_envelope() {
+    let failed = AutotuneEvent::StageFailed {
+        target: TunedLoop::PitchRate,
+        reason: AutotuneAbort::Tilt,
+    };
+    // (case, view pitch held during the stage, last event)
+    let rows = [
+        ("level", None, AutotuneEvent::Complete),
+        ("tilted", Some(0.8), failed),
+    ];
+    for (case, tilt_rad, last) in rows {
+        let (mut flight_loop, controls) = hovering_viewed(PlantParams::rate_axis());
+        let plan = [StagePlan::copter_step_test(TunedLoop::PitchRate)];
+        let mut autotune = started(&flight_loop, &plan);
+
+        let events = run(&mut flight_loop, &mut autotune, 300.0, |autotune, _| {
+            if let Some(tilt_rad) = tilt_rad
+                && matches!(autotune.status(), AutotuneStatus::Running { .. })
+                && let Some(axes) = controls.axes.borrow_mut().as_mut()
+            {
+                axes.tilt(1, tilt_rad);
+            }
+        });
+
+        check!(events.last() == Some(&last), "{case}: {events:?}");
     }
 }
 
@@ -785,6 +850,36 @@ fn a_yaw_stage_waits_for_yaw_to_settle() {
     }
 }
 
+/// A viewed stage waits on its own axes: turning the tailsitter's view heading (airplane roll)
+/// holds back a yaw stage, not a roll stage, as unviewed.
+#[test]
+fn a_viewed_stage_waits_on_its_view_axes() {
+    const TURN_RADPS: f32 = 0.3;
+    // (target, whether it starts)
+    let rows = [(TunedLoop::YawRate, false), (TunedLoop::RollRate, true)];
+    for (target, starts) in rows {
+        let (mut flight_loop, controls) = hovering_viewed(PlantParams::rate_axis());
+        let mut heading_rad = 0.0;
+        let mut autotune = started(&flight_loop, &[StagePlan::copter_step_test(target)]);
+
+        let events = run(&mut flight_loop, &mut autotune, 30.0, |_, _| {
+            heading_rad += TURN_RADPS * DT;
+            controls.input.set(Some(ControlInput::AbsoluteAttitude(
+                AbsoluteAttitudeCommand {
+                    heading_rad,
+                    thrust: 0.5,
+                    ..Default::default()
+                },
+            )));
+        });
+
+        check!(
+            step_metrics(&events).is_empty() == !starts,
+            "{target:?}: {events:?}"
+        );
+    }
+}
+
 /// A yaw rate design holds its gains only once yaw is still too: turning level at 0.6 rad/s
 /// (past the envelope settle's 0.3), the designed gains never hold and go back
 /// ([`AutotuneEvent::Unsettled`]); flying straight, they're committed (#296).
@@ -996,6 +1091,35 @@ fn rate_search_tunes_the_rate_loops() {
                 "{scale} {target:?}"
             );
         }
+    }
+}
+
+/// The rate search tunes a tailsitter's hover rate loops in its view to the gains it finds
+/// unviewed: the view changes the axes the supervisor reads, not what it measures.
+#[test]
+fn rate_search_tunes_a_viewed_tailsitter_as_unviewed() {
+    let plan = [TunedLoop::RollRate, TunedLoop::PitchRate].map(search_stage);
+    let (mut unviewed, _) = hovering_on(1.0, delayed_axis());
+    let mut autotune = started(&unviewed, &plan);
+    run(&mut unviewed, &mut autotune, 300.0, |_, _| {});
+    let (mut viewed, _) = hovering_viewed(delayed_axis());
+    let mut autotune = started(&viewed, &plan);
+
+    let events = run(&mut viewed, &mut autotune, 300.0, |_, _| {});
+
+    check!(
+        events.last() == Some(&AutotuneEvent::Complete),
+        "{events:?}"
+    );
+    for stage in plan {
+        let target = stage.target;
+        let tuned = target.gains(viewed.stabilizer().config());
+        let expected = target.gains(unviewed.stabilizer().config());
+        check!(
+            tuned.p != target.gains(&stabilizer_config(1.0)).p,
+            "{target:?}: tuned"
+        );
+        assert_relative_eq!(tuned.p, expected.p, max_relative = 0.01);
     }
 }
 
@@ -1832,11 +1956,15 @@ fn a_settle_ignores_the_yaw_rate() {
     for (case, roll_radps, pitch_radps, yaw_radps, roll_rad, holds) in rows {
         let state = VehicleState {
             angular_velocity_radps: Vec3::new(roll_radps, pitch_radps, yaw_radps),
-            attitude: nalgebra::UnitQuaternion::from_euler_angles(roll_rad, 0.0, 0.0),
+            attitude: UnitQuaternion::from_euler_angles(roll_rad, 0.0, 0.0),
             ..Default::default()
         };
         check!(
-            settle.holds(&Motion::of(&state, state.angular_velocity_radps)) == holds,
+            settle.holds(&Motion::of(
+                &state,
+                &UnitQuaternion::identity(),
+                state.angular_velocity_radps
+            )) == holds,
             "{case}"
         );
     }
@@ -1858,7 +1986,7 @@ fn a_settle_reads_the_filtered_rates() {
         ("filtered noisy", noisy, false),
     ];
     for (case, filtered, holds) in rows {
-        let motion = Motion::of(&state, filtered);
+        let motion = Motion::of(&state, &UnitQuaternion::identity(), filtered);
         check!(settle.holds(&motion) == holds, "{case}");
         check!(settle.holds_axis(&motion, 0) == holds, "{case}: roll");
         check!(settle.holds_axis(&motion, 1) == holds, "{case}: pitch");

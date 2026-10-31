@@ -10,6 +10,7 @@ use crate::controllers::{
 use crate::math::euler_angles;
 use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use crate::{Configurable, FlightLoop, Vec3, VehicleState};
+use nalgebra::UnitQuaternion;
 
 use super::{
     DesignError, IdentifyConfig, LoopShapingConfig, Measurement, ProbeAbort, ProbeConfig,
@@ -1077,7 +1078,8 @@ impl Envelope {
 /// rates are filtered through the stabilizer's gyro low-pass, the rates its loops fly on: read
 /// raw, a still vehicle's gyro noise and vibration hold them over the settle (0.2 rad/s on the
 /// sim's noise rows, the settle 0.1), so no stage starts (#373). The envelope reads the raw
-/// rate, so a breach shows on its first tick.
+/// rate, so a breach shows on its first tick. Angles and rates are in the probed loops' frame
+/// ([`Tunable::probe_frame`]): view axes for a tailsitter's hover, where nose-up reads level.
 struct Motion {
     /// The larger of |roll| and |pitch|, in rad.
     tilt_rad: f32,
@@ -1095,12 +1097,16 @@ struct Motion {
 }
 
 impl Motion {
-    /// `state`'s motion, with `filtered_radps` its body rates through the gyro low-pass.
-    fn of(state: &VehicleState, filtered_radps: Vec3) -> Self {
-        let (roll, pitch, _) = euler_angles(&state.attitude);
+    /// `state`'s motion in `frame` (the probed loops' frame, in the body frame), with
+    /// `filtered_radps` its body rates through the gyro low-pass.
+    fn of(state: &VehicleState, frame: &UnitQuaternion<f32>, filtered_radps: Vec3) -> Self {
+        // The view as `VehicleState::rotate_body` builds it, without cloning the state.
+        let (roll, pitch, _) = euler_angles(&(state.attitude * frame));
+        let raw_radps = frame.inverse_transform_vector(&state.angular_velocity_radps);
+        let filtered_radps = frame.inverse_transform_vector(&filtered_radps);
         Self {
             tilt_rad: roll.abs().max(pitch.abs()),
-            rate_radps: state.angular_velocity_radps.amax(),
+            rate_radps: raw_radps.amax(),
             tilt_rate_radps: filtered_radps.xy().amax(),
             axis_tilt_rad: [roll.abs(), pitch.abs()],
             axis_rate_radps: [filtered_radps.x.abs(), filtered_radps.y.abs()],
@@ -1409,7 +1415,9 @@ impl Request {
 /// - **Start** ([`start`](Self::start)) when armed and hovering; the caller owns the trigger.
 ///   The config and altitude at start are the run's start, what a disarm reverts to.
 /// - **Settle:** before each probe, the vehicle must hold the method's [`Settle`]
-///   ([`Method::settle`]), or the [`Envelope`]'s.
+///   ([`Method::settle`]), or the [`Envelope`]'s. The settle and the envelope read tilt and
+///   rates in the frame the probed loops fly ([`Tunable::probe_frame`]), so a tailsitter
+///   hovering nose up in its view reads level.
 /// - **Probe and decide:** a finished probe's [`Measurement`] goes to the stage's procedure,
 ///   which asks for another probe or finishes with gains for its loop, committed through
 ///   [`set_stabilizer_config`](FlightLoop::set_stabilizer_config); the next stage flies them.
@@ -1505,9 +1513,10 @@ pub struct Autotune {
     /// breaches don't count at all ([`Envelope::recovery_s`]).
     frozen_s: f32,
     /// The body rates (roll, pitch, yaw) through the stabilizer's gyro low-pass, for the
-    /// settle ([`Motion`]): a copy of the stabilizer's filter, at its cutoff, since reading
-    /// the stabilizer's would take a frame rotation through every [`View`](crate::view::View)
-    /// host.
+    /// settle ([`Motion`] turns them into the probed loops' frame): a copy of the stabilizer's
+    /// filter, at its cutoff, since the stabilizer's own sits behind every
+    /// [`View`](crate::view::View) and VTOL host. Filtering before the rotation is the same
+    /// as after: every axis has the same cutoff.
     rate_filters: [LowPass; 3],
 }
 
@@ -1645,7 +1654,8 @@ impl Autotune {
             self.stale_s = 0.0;
         }
         let rates_radps = self.filter_rates(flight_loop, dt);
-        let motion = Motion::of(flight_loop.state(), rates_radps);
+        let frame = flight_loop.stabilizer().probe_frame();
+        let motion = Motion::of(flight_loop.state(), &frame, rates_radps);
         self.recovering_s = (self.recovering_s - dt).max(0.0);
         self.frozen_s = (self.frozen_s - dt).max(0.0);
         if let Some(stage) = self.phase.active_stage()

@@ -109,6 +109,13 @@ fn params_chain_the_parts() {
     check!(stabilizer.config().plane.trim_airspeed_mps == 12.0);
 }
 
+/// Autotune probes the hover side in its view: nose-up hover is level to the supervisor.
+#[test]
+fn probes_run_in_the_hover_view() {
+    let stabilizer = TailsitterStabilizer::new(TailsitterStabilizerConfig::default());
+    check!(stabilizer.probe_frame() == crate::view::tailsitter_rotation());
+}
+
 /// Guidance and stabilizer param names are unique across the tailsitter's five tables, and
 /// fit MAVLink's 16 bytes.
 #[test]

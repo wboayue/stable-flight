@@ -62,9 +62,9 @@ pub fn tailsitter_rotation() -> UnitQuaternion<f32> {
 /// component sees the state in the view ([`VehicleState::rotate_body`]); a viewed stabilizer's
 /// moments are rotated back into the body frame for the mixer, and its per-axis saturation
 /// flags with them. Config ([`Configurable`], so params too) and autotune probes ([`Tunable`])
-/// pass through to the inner component, in view axes. The autotune supervisor
-/// ([`Autotune`](crate::tuning::autotune::Autotune)) still checks its envelope's tilt in the
-/// body frame, so it can't tune a tailsitter in its view yet: TODO(#321).
+/// pass through to the inner component, in view axes; the probes' frame
+/// ([`Tunable::probe_frame`]) is the view, so the autotune supervisor
+/// ([`Autotune`](crate::tuning::autotune::Autotune)) judges its envelope in view axes too.
 ///
 /// Wrap guidance and the stabilizer each in the same view, as ArduPilot builds each tailsitter
 /// controller on its view (see the [module docs](self)).
@@ -222,5 +222,10 @@ impl<S: Tunable> Tunable for View<S> {
 
     fn stop_probe(&mut self) -> Option<(S::Target, ProbeStatus)> {
         self.inner.stop_probe()
+    }
+
+    /// The inner component's probe frame, in this view.
+    fn probe_frame(&self) -> UnitQuaternion<f32> {
+        self.rotation * self.inner.probe_frame()
     }
 }
