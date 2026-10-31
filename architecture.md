@@ -968,7 +968,8 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     core's default yaw gains ring, the design's rate gains overshoot by 0–23% from one step
     to the next (0% from a still hover), and the rate searches passed nothing. A search's
     start that doesn't settle within the settle timeout is lowered by the bracket's factor
-    until it does; a tighter settle (0.05 or 0.03 rad/s) didn't help and cost the clean rows
+    until it does, at most three times (30 s on ringing gains; `racer` needs one, and capped
+    at 1–5 the robustness rows pass the same); a tighter settle (0.05 or 0.03 rad/s) didn't help and cost the clean rows
     their time budget (#552).
 
 ## Real-Time Loop Management

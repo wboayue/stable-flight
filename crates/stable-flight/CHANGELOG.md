@@ -25,8 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rings spoiled their steps (#552).
 - **Breaking (behavior):** a search whose start won't settle within
   `Envelope::settle_timeout_s` lowers it by its `factor` and commits it
-  (`AutotuneEvent::Lowered`) instead of failing `NotSettled`, again at each timeout, down to
-  its `min` (#552).
+  (`AutotuneEvent::Lowered`) instead of failing `NotSettled`, again at each timeout, up to
+  three times and down to its `min` (#552).
 
 ## [0.2.0] - 2026-10-30
 
