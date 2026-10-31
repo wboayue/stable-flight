@@ -12,7 +12,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-stable-flight = { path = "../stable-flight", version = "0.1.0" }
+stable-flight = { path = "../stable-flight", version = "0.2.0" }
 mavlink.workspace = true
 thiserror.workspace = true
 

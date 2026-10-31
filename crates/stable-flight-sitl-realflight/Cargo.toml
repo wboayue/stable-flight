@@ -14,20 +14,20 @@ repository.workspace = true
 # Never the sitl harness: a backend must stay usable with any runner. sitl is a
 # dev-dependency for the examples; CI checks it never becomes a normal dependency.
 [dependencies]
-stable-flight = { path = "../stable-flight", version = "0.1.0" }
+stable-flight = { path = "../stable-flight", version = "0.2.0" }
 realflight-bridge = "2.2.0"
 log.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
 assert2.workspace = true
-stable-flight = { path = "../stable-flight", version = "0.1.0", features = ["testing"] }
+stable-flight = { path = "../stable-flight", version = "0.2.0", features = ["testing"] }
 # Tests only: the sim eXplora the plane side is tuned on.
 stable-flight-sim = { path = "../stable-flight-sim" }
 # Examples only: runner, commanders.
-stable-flight-sitl = { path = "../stable-flight-sitl", version = "0.1.0" }
+stable-flight-sitl = { path = "../stable-flight-sitl", version = "0.2.0" }
 # Examples only: params and telemetry over the native link.
-stable-flight-link = { path = "../stable-flight-link", version = "0.1.0", features = ["std"] }
+stable-flight-link = { path = "../stable-flight-link", version = "0.2.0", features = ["std"] }
 env_logger = "0.11.6"
 # Examples parse their CLI args with clap.
 clap.workspace = true

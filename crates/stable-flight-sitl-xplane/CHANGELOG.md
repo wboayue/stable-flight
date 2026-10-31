@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
+First release.
+
+### Added
+
 X-Plane 12 simulator backend over [xplane-bridge](https://crates.io/crates/xplane-bridge)
 0.1 (#351):
 
@@ -30,19 +36,21 @@ X-Plane 12 simulator backend over [xplane-bridge](https://crates.io/crates/xplan
   `capture-state-xplane` example records them read-only while X-Plane flies, for
   `check_frames --sim xplane`.
 - `airframes::alia250()`: the Alia 250 as a quadplane (mixer, engine and surface mapping,
-  gains): its hover from an engine sweep and a sim autotune, flown in X-Plane (#351), and its
+  gains): its hover from an engine sweep and a sim autotune, flown in X-Plane (#351), its
   pitch rate P from the X-Plane autotune (#540), and its angle I from step tests there
-  (#576); its plane side and transitions tuned on
-  `stable-flight-sim`'s `alia250()` (#392). Plane flight below 20 m falls back to a hover
-  (`TRAN_FW_MIN_HGT`, #450).
+  (#576); its plane side and transitions tuned on `stable-flight-sim`'s `alia250()` (#392).
+  Plane flight below 20 m falls back to a hover (`TRAN_FW_MIN_HGT`, #450).
 - Examples flying the Alia 250: `quadplane-manual-xplane` (joystick; `--record`, `--param`),
   `quadplane-auto-xplane` (a waypoint script with plane legs,
   `flights/alia_transition_lap.csv`, #494), and `copter-companion-xplane` (the link in copter
   flight, QGC through the bridge).
 - `XPlaneVehicle::state_is_stale`: no frame for 0.5 s, a lagging dataref, or X-Plane paused;
   `XPlaneVehicle::is_paused`.
-  The `copter-autotune-xplane` example autotunes the Alia's hover on its lift rotors
+- The `copter-autotune-xplane` example autotunes the Alia's hover on its lift rotors
   (`StagePlan::large_copter_search` from `flights/alia_hover.csv`, `--step-test`,
   `--stages none`), waiting while the state is stale (#540).
 - `sweep::EngineSweep` and `engine-sweep-xplane`: a multirotor's yaw sign per diagonal,
   liftoff throttle, motor lag, and moment response, measured on the runway.
+
+[unreleased]: https://github.com/wboayue/stable-flight/compare/stable-flight-sitl-xplane-v0.2.0...HEAD
+[0.2.0]: https://github.com/wboayue/stable-flight/releases/tag/stable-flight-sitl-xplane-v0.2.0
