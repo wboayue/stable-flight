@@ -26,8 +26,9 @@ fn setup_controller() -> CopterStabilizer {
                 i: 0.1,
                 d: 0.05,
             },
-            max_integral: 100.0,
-            yaw_max_integral: 100.0,
+            // Full scale: no limit short of the output's clip.
+            max_integral: 1.0,
+            yaw_max_integral: 1.0,
         },
         attitude: AttitudeControllerConfig {
             roll_gains: attitude_gains,

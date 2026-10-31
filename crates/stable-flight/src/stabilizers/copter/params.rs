@@ -67,12 +67,14 @@ mod metadata {
                 "STAB_RATE_IMAX",
                 "Roll and pitch rate loop integral limit, each, in normalized moment",
             )
-            .at_least(0.0),
+            .at_least(0.0)
+            .at_most(1.0),
             RATE.param(
                 "STAB_RATE_IMAX_Z",
                 "Yaw rate loop integral limit, in normalized moment",
             )
-            .at_least(0.0),
+            .at_least(0.0)
+            .at_most(1.0),
             ATTITUDE.param("STAB_ATT_RLL_P", "Roll angle loop proportional gain"),
             ATTITUDE.param("STAB_ATT_RLL_I", "Roll angle loop integral gain"),
             ATTITUDE.param("STAB_ATT_RLL_D", "Roll angle loop derivative gain"),

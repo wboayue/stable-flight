@@ -1,7 +1,7 @@
 use crate::Vec3;
 
 use super::derivative::DerivativeState;
-use super::{Gains, InvalidConfig, check_limit};
+use super::{Gains, InvalidConfig, check};
 use crate::math::{assert_dt, clamp_symmetric};
 
 /// Default proportional gain, in normalized moment per rad/s of rate error.
@@ -83,8 +83,9 @@ impl Default for BodyRateControllerConfig {
 }
 
 impl BodyRateControllerConfig {
-    /// Checks the config: `max_integral` and `yaw_max_integral` must be non-negative and
-    /// finite.
+    /// Checks the config: `max_integral` and `yaw_max_integral` must be in `[0, 1]`. The output
+    /// clips at ±1, so a larger limit would only leave the I term free to wind up; rejecting it
+    /// also catches a value saved under the old unit, rad of error (1 and 5 by default).
     ///
     /// # Examples
     ///
@@ -94,10 +95,12 @@ impl BodyRateControllerConfig {
     /// assert!(BodyRateControllerConfig::default().validate().is_ok());
     /// let bad = BodyRateControllerConfig { max_integral: -1.0, ..Default::default() };
     /// assert!(bad.validate().is_err());
+    /// let rad = BodyRateControllerConfig { yaw_max_integral: 5.0, ..Default::default() };
+    /// assert!(rad.validate().is_err());
     /// ```
     pub fn validate(&self) -> Result<(), InvalidConfig> {
-        check_limit("max_integral", self.max_integral)?;
-        check_limit("yaw_max_integral", self.yaw_max_integral)
+        check_moment_limit("max_integral", self.max_integral)?;
+        check_moment_limit("yaw_max_integral", self.yaw_max_integral)
     }
 
     /// Gains per axis: roll, pitch, yaw.
@@ -109,6 +112,11 @@ impl BodyRateControllerConfig {
     fn axis_max_integrals(&self) -> [f32; 3] {
         [self.max_integral, self.max_integral, self.yaw_max_integral]
     }
+}
+
+/// `Ok` when an I term limit is in `[0, 1]` of normalized moment.
+fn check_moment_limit(field: &'static str, limit: f32) -> Result<(), InvalidConfig> {
+    check(field, (0.0..=1.0).contains(&limit), "in [0, 1]")
 }
 
 /// A PID-based controller for managing angular rates (roll, pitch, yaw) of a vehicle.
@@ -683,8 +691,8 @@ mod tests {
         assert_abs_diff_eq!(c.integral().x, 0.25, epsilon = 1e-6);
     }
 
-    /// An invalid limit fails `validate` but does not panic `control`: it acts as 0 on its
-    /// axes.
+    /// An invalid limit fails `validate` but does not panic `control`: a negative or NaN one
+    /// acts as 0 on its axes. Past 1 (a value in the old rad unit) fails too.
     #[test]
     fn invalid_max_integral_is_rejected_and_does_not_panic_the_tick() {
         type SetLimit = fn(&mut BodyRateControllerConfig, f32);
@@ -694,6 +702,11 @@ mod tests {
             ("yaw_max_integral", |c, v| c.yaw_max_integral = v, Vec3::z()),
         ];
         for (field, set, error) in rows {
+            for limit in [5.0, 1.01] {
+                let mut cfg = config(0.0, 0.1, 0.0);
+                set(&mut cfg, limit);
+                assert_eq!(cfg.validate().map_err(|e| e.field), Err(field));
+            }
             for limit in [-1.0, f32::NAN] {
                 let mut cfg = config(0.0, 0.1, 0.0);
                 set(&mut cfg, limit);
