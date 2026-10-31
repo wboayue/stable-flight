@@ -895,13 +895,16 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     projection drops it. Over RealFlight's eXplora roll window every delay from 1 to 10½ ticks
     fitted within 1.8% of the least, and it designed rate P 3.92 against RealFlight's 0.94
     (pitch 3.36 against 1.69; a QuadCopterX pitch window 2.06 against 0.77). So the probe
-    gates on the window's rate noise, the RMS of the raw rate's second difference: past
-    0.035 rad/s it fits in two stages, below it by least squares. RealFlight's windows read
-    0.003–0.020 (eXplora and QuadCopterX, 8 windows), the sim eXplora with 0.01 rad/s of
-    gyro noise 0.024–0.026, and the sim's noise rows 0.050 (white alone) to 0.255. A window
+    fits by least squares first and gates on what it leaves unexplained, the residual's RMS
+    per tick: past 0.017 rad/s it fits in two stages. RealFlight's windows leave 0.002–0.012
+    (eXplora and QuadCopterX, 8 windows), the sim eXplora with 0.01 rad/s of gyro noise 0.012,
+    and the sim's noise rows 0.024–0.100. A clean window leaves under 0.001 whatever its
+    gains: a gate on the rate's own noise (the RMS of its second difference) read a clean
+    `racer` at 1.75× its gains, ringing, as 0.074 against RealFlight's 0.020 at most. A window
     past 20% saturated takes the least-squares fit whatever its noise: the ×3 starts ring at
     the rate loop's ±1 for 510–629 of 750 ticks with no noise, the excitation explains little
-    of that moment, and the two-stage fit misread their lags (`racer` 7.6 ms against 15).
+    of that moment, and the two-stage fit misread their lags (`racer` 7.6 ms against 15). The two-stage fit costs
+    about 2 ms on a desktop in the window's last tick, against 0.06 ms for the least squares.
     Rejected (#551, over the sim's 30 noise-row fits and the RealFlight windows): two stages
     everywhere (above); within the two-stage fit, the longest delay of a near-tie (eXplora
     roll P 0.71, pitch 2.06–2.42), the delay from the least-squares fit (roll lag 97 ms), and

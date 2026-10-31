@@ -30,15 +30,17 @@ const SATURATED_SHARE: f32 = 0.2;
 /// A moment at or past this magnitude counts as at the rate loop's ±1 limit.
 const SATURATED_MOMENT: f32 = 0.999;
 
-/// Rate noise, in rad/s ([`rate_noise_radps`]), past which [`fit_window`] fits the explained
-/// moments rather than the recorded ones. On a quiet window the moment's fast part is the
+/// The least-squares fit's residual, RMS per tick in rad/s, past which [`fit_window`] fits the
+/// explained moments instead: the least squares then doesn't explain the window, which is
+/// gyro noise read through the closed loop. On a quiet window the moment's fast part is the
 /// controller answering the airframe, which is what tells a delay from a lag, and the
 /// projection drops it: on RealFlight's eXplora roll every delay from 1 to 10½ ticks fitted
-/// within 1.8% of the least, and the two-stage fit designed rate P 3.92 against the recorded
-/// fit's (and RealFlight's) 0.94. RealFlight's windows read 0.003–0.020 (eXplora and
-/// QuadCopterX, 8 windows), the sim eXplora's 0.01 rad/s of gyro noise 0.024–0.026, and the
-/// sim's noise rows 0.050 (white noise alone) to 0.255 (#551).
-const NOISY_RATE_RADPS: f32 = 0.035;
+/// within 1.8% of the least, and the two-stage fit designed rate P 3.92 against the least
+/// squares' (and RealFlight's) 0.94. RealFlight's windows leave 0.002–0.012 (eXplora and
+/// QuadCopterX, 8 windows), the sim eXplora with 0.01 rad/s of gyro noise 0.012, and the sim's
+/// noise rows 0.024–0.100. A clean sim window leaves under 0.001 whatever its gains, a loop
+/// that rings included (#551).
+const NOISY_RESIDUAL_RADPS: f32 = 0.017;
 
 /// Ticks of rate, moment, and excitation the probe records: 4 s at 250 Hz, past the copter's
 /// 3 s window. A longer window fits its first `WINDOW_CAPACITY` ticks.
@@ -259,26 +261,27 @@ pub enum IdentifyStatus {
 /// the fit sees the airframe through its own controllers.
 ///
 /// The fit asks how the moment commanded, through a motor lag and a delay, accelerates the
-/// axis. In closed loop the moment also carries the controller's answer to gyro noise, which
-/// would read as part of the airframe, so the fit first keeps only the part of the moment the
-/// excitation explains: the excitation is the probe's own, so no noise is in it.
-/// It then tries each lag on a grid and each delay from 1 to [`MAX_DELAY_TICKS`], filters that
-/// moment through them, and fits the rate's change per tick to it by least squares (a gain and
-/// a constant for the trim); each delay is also tried half a tick longer. It keeps the delay
-/// with the least residual (the shortest of a near-tie) among those whose moment pushes the
-/// axis the way it was pushed (among all when none does), at that delay's best lag. The
-/// measured rate is only ever the target, where its noise averages out.
+/// axis. It first fits the rate's change per tick by least squares to the last two rates and
+/// the recorded moments at each delay from 1 to [`MAX_DELAY_TICKS`], keeping the delay with
+/// the least residual (the shortest of a near-tie) among those whose moment pushes the axis
+/// the way it was pushed (among all when none does). That is exact without noise.
 ///
-/// That two-stage fit is for a noisy window. On a quiet one the moment's fast part is the
-/// controller answering the airframe, which is what tells a delay from a lag, and keeping only
-/// the explained part loses it; the probe then fits the recorded moments with the rates among
-/// the terms, exact without noise. It does the same when the moments mostly sit at the rate
-/// loop's limit (a start that rings), since the excitation explains too little of them.
+/// In closed loop, though, the moment also carries the controller's answer to gyro noise,
+/// which that fit reads as part of the airframe. When it leaves more than 0.017 rad/s of the
+/// rate's change per tick unexplained (RMS), the probe fits in two stages instead: it keeps only the part of
+/// the moment the excitation explains (the excitation is the probe's own, so no noise is in
+/// it), filters that through each lag on a grid and each delay, half ticks included, and
+/// fits the rate's change per tick to it (a gain and a constant for the trim), the measured
+/// rate only the target. On a quiet window the least squares stays: there the moment's fast
+/// part is the controller answering the airframe, which is what tells a delay from a lag, and
+/// the two-stage fit drops it. So does a window whose moments mostly sit at the rate loop's
+/// limit (a start that rings), whose moment the excitation explains too little of.
 ///
-/// The probe records the window (13 KB) and fits it on the tick the excitation ends. A
-/// non-finite rate or moment is recorded as the last finite one for the two-stage fit; the
-/// recorded-moment fit skips that tick and the next `MAX_DELAY_TICKS + 2` while its history
-/// refills.
+/// The probe records the window (13 KB) and fits it on the tick the excitation ends. The
+/// least squares costs about 0.06 ms there on a desktop, the two-stage fit about 2 ms (128
+/// lags × 20 delays over the window), so a noisy window's last tick runs long. A non-finite
+/// rate or moment is recorded as the last finite one for the two-stage fit; the least squares
+/// skips that tick and the next `MAX_DELAY_TICKS + 2` while its history refills.
 ///
 /// # Examples
 ///
@@ -439,38 +442,24 @@ impl Window {
     }
 }
 
-/// The [`RateModel`] fitted to `window`: on the explained moments ([`fit_explained`]) when its
-/// rate is noisy (past [`NOISY_RATE_RADPS`]) and no more than [`SATURATED_SHARE`] of its
-/// moments sit at the rate loop's limit; on the recorded ones ([`fit_recorded`]) otherwise.
-/// `None` when the fit doesn't solve.
+/// The [`RateModel`] fitted to `window`: by least squares on the recorded moments
+/// ([`fit_recorded`]), unless that fit leaves more than [`NOISY_RESIDUAL_RADPS`] unexplained
+/// and no more than [`SATURATED_SHARE`] of the moments sit at the rate loop's limit, when the
+/// explained moments are fitted instead ([`fit_explained`]). `None` when the fit doesn't
+/// solve.
 fn fit_window(window: &Window) -> Option<RateModel> {
+    let recorded = fit_recorded(window)?;
     let moments = &window.moments[..window.len];
     let saturated = moments
         .iter()
         .filter(|moment| moment.abs() >= SATURATED_MOMENT)
         .count();
     let saturates = saturated as f32 > SATURATED_SHARE * window.len as f32;
-    let noisy = rate_noise_radps(&window.rates_radps[..window.len]) > NOISY_RATE_RADPS;
-    if noisy && !saturates {
+    if recorded.residual_radps > NOISY_RESIDUAL_RADPS && !saturates {
         fit_explained(window)
     } else {
-        fit_recorded(window)
+        Some(recorded.model)
     }
-}
-
-/// The RMS of the rate's second difference, `y[k] − 2·y[k−1] + y[k−2]`, in rad/s: white gyro
-/// noise of RMS σ reads √6·σ, while a flown response changes too little per tick to show
-/// (a sim window without noise reads at most 0.010). 0 for under three ticks.
-fn rate_noise_radps(rates_radps: &[f32]) -> f32 {
-    let differences = rates_radps
-        .windows(3)
-        .map(|rates| rates[2] - 2.0 * rates[1] + rates[0]);
-    let count = rates_radps.len().saturating_sub(2);
-    if count == 0 {
-        return 0.0;
-    }
-    let squares: f32 = differences.map(|difference| difference * difference).sum();
-    libm::sqrtf(squares / count as f32)
 }
 
 /// The [`RateModel`] fitted to the part of the moment the excitation explains
@@ -657,7 +646,7 @@ fn lag_poles(dt_s: f32) -> impl Iterator<Item = f32> {
 /// every lag as 0, as the measured rate is among its terms (#551). Its rate terms are the
 /// change and the difference rather than the two rates: at 250 Hz the last two rates are
 /// nearly equal, and fitting them side by side loses the lag in `f32` (#516).
-fn fit_recorded(window: &Window) -> Option<RateModel> {
+fn fit_recorded(window: &Window) -> Option<RecordedFit> {
     let dt_s = window.duration_s / window.len.max(1) as f32;
     let mut fits = DelayFits::new();
     for tick in 0..window.len {
@@ -670,6 +659,14 @@ fn fit_recorded(window: &Window) -> Option<RateModel> {
         fits.record(dt_s, rate_radps, window.moments[tick]);
     }
     fits.solve()
+}
+
+/// [`fit_recorded`]'s model, and how much of the rate's change per tick it leaves unexplained.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct RecordedFit {
+    model: RateModel,
+    /// RMS of the residual per tick, in rad/s.
+    residual_radps: f32,
 }
 
 /// Moments [`fit_recorded`] keeps: the longest delay's oldest term, `u[k − d − 2]`.
@@ -738,8 +735,8 @@ impl DelayFits {
         self.rates_radps = [rate_radps, self.rates_radps[0]];
     }
 
-    /// The model at the delay [`delay_to_fit`] picks; `None` when no delay's sums solve.
-    fn solve(&self) -> Option<RateModel> {
+    /// The fit at the delay [`delay_to_fit`] picks; `None` when no delay's sums solve.
+    fn solve(&self) -> Option<RecordedFit> {
         let dt_s = self.rows_dt_s / self.rows.max(1) as f32;
         let fits: [Option<(RateModel, f32)>; MAX_DELAY_TICKS] = core::array::from_fn(|index| {
             let (solution, residual) = self.sums[index].solve()?;
@@ -748,7 +745,11 @@ impl DelayFits {
         let effects =
             fits.map(|fit| fit.map(|(model, residual)| (model.moment_effect(), residual)));
         let delay_ticks = delay_to_fit(&effects)?;
-        fits[delay_ticks - 1].map(|(model, _)| model)
+        let (model, residual) = fits[delay_ticks - 1]?;
+        Some(RecordedFit {
+            model,
+            residual_radps: libm::sqrtf(residual / self.rows.max(1) as f32),
+        })
     }
 }
 

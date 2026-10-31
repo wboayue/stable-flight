@@ -16,9 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking (behavior):** `IdentifyProbe` fits a noisy window in two stages: the moment
   projected on the probe's excitation, then a lag and half-tick delay grid on it, so gyro
   noise in the moment no longer reads as the airframe (the sim's noise rows read every lag as
-  0 before). A quiet window (rate noise up to 0.035 rad/s, as RealFlight's) or one whose
-  moments mostly sit at the rate loop's limit keeps the least-squares fit on the recorded
-  moments, unchanged. The probe records its window (13 KB) and fits once at the end (#551).
+  0 before). A quiet window (the least-squares fit leaving at most 0.017 rad/s
+  unexplained, as on RealFlight's) or one whose moments mostly sit at the rate loop's limit
+  keeps the least-squares fit on the recorded moments, unchanged. The probe records its window (13 KB) and fits once at the end (#551).
 - **Breaking:** `BodyRateControllerConfig::max_integral` and `yaw_max_integral` (params
   `STAB_RATE_IMAX`, `STAB_RATE_IMAX_Z`) are the most moment the rate I terms hold, in
   normalized moment, not a limit on the integrated error in rad: the rate loop integrates
