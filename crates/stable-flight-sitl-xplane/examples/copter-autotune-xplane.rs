@@ -12,7 +12,9 @@
 //! the surfaces centered.
 //!
 //! `--rate-p-scale` starts from deliberately bad rate gains (e.g. `0.5` or `2`), to check the
-//! tune recovers from them.
+//! tune recovers from them. `--param NAME=VALUE` (repeatable) sets a param before takeoff, as
+//! the link would (e.g. `STAB_RATE_RLL_I=0.5`), after the scale; an unknown name or a rejected
+//! value stops the example before it flies.
 //!
 //! `--step-test` appends step tests of the loops the search tunes, roll and pitch rate and angle,
 //! on its steps (`StagePlan::large_copter_step_test`): alternating steps, each one's response
@@ -39,6 +41,7 @@
 //! cargo run --release -p stable-flight-sitl-xplane --example copter-autotune-xplane
 //! cargo run --release -p stable-flight-sitl-xplane --example copter-autotune-xplane -- --step-test
 //! cargo run --release -p stable-flight-sitl-xplane --example copter-autotune-xplane -- --stages none --step-test
+//! cargo run --release -p stable-flight-sitl-xplane --example copter-autotune-xplane -- --stages none --step-test --param STAB_ATT_RLL_I=0.5
 //! ```
 
 use std::process::ExitCode;
@@ -52,6 +55,7 @@ use log::{debug, error, info, warn};
 use stable_flight::commanders::RouteEnd;
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::mixers::TableMixer;
+use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, TunedLoop};
 use stable_flight::tuning::autotune::{
     Autotune, AutotuneEvent, AutotuneStatus, Envelope, StagePlan,
@@ -60,6 +64,7 @@ use stable_flight::{Configurable, FlightLoop};
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::autotune::{ThenLand, format_brief, is_inverted, log_event};
+use stable_flight_sitl::cli::parse_param;
 use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::recorder::{CopterColumns, CsvRecorder};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
@@ -104,6 +109,10 @@ struct Args {
     /// Positive.
     #[arg(long, default_value_t = 1.0, value_parser = positive)]
     rate_p_scale: f32,
+
+    /// Set a param before takeoff, as `NAME=VALUE` (repeatable).
+    #[arg(long = "param", value_parser = parse_param)]
+    params: Vec<(String, f32)>,
 
     /// Which loops to tune.
     #[arg(long, value_enum, default_value_t = Stages::LargeSearch)]
@@ -219,6 +228,14 @@ fn main() -> ExitCode {
 
     let mut flight_loop =
         FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
+
+    for (name, value) in &args.params {
+        if let Err(e) = flight_loop.set_param(name, *value) {
+            eprintln!("--param {name}={value}: {e:?}");
+            return ExitCode::from(2);
+        }
+        info!("param {name} = {value}");
+    }
 
     let mut autotune = Autotune::new(&plan, Envelope::large_copter()).expect("valid autotune plan");
 
