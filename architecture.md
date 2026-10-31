@@ -784,7 +784,16 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   bumped the I term at each switch and lost the trim rows (#374). The large-aircraft plan keeps
   the start's I: on the Alia (no rate D) it overshot the rate steps by 10%. Heading isn't
   tuned. Before each probe the vehicle must hold level and still (`Envelope::settle`): roll
-  and pitch within the tilt, their rates within the rate, read through the stabilizer's gyro
+  and pitch within the tilt of the attitude target guidance holds (`FlightLoop::setpoint`),
+  as ArduPilot's level check compares with the desired attitude, a position hold's lean
+  included. Measured from level, a hover leaning to hold its position never settles: the
+  eXplora in RealFlight leans 3.4° in calm air, its elevons holding pitch in the propwash,
+  past the step settle's 2.5° (#539). The vehicle must also stand still over the ground
+  (0.2 m/s): our position hold leans further and faster than ArduPilot's (whose lean grows
+  0.5° per meter, capped at 10°), and a step started while it leans back toward its position
+  measures the return too; under a CG offset the sim `quad_x`'s rate searches kept nothing.
+  A lean cap alone (10°) still let those steps start. The envelope still reads tilt from
+  level, a safety limit whatever guidance asks. Their rates must be within the rate, read through the stabilizer's gyro
   low-pass (raw, the sim's gyro noise held them over the settle, so no stage started; the
   envelope reads the raw rates, so a breach shows on its first tick). The yaw rate counts only
   for yaw rate and heading stages: on `racer` with 25 ms of delay the yaw loop rings at ±0.18

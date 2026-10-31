@@ -89,6 +89,8 @@ pub struct FlightLoop<C, V, G, S, M, T> {
     state: VehicleState,
     /// Whether the previous tick was armed; a rising edge re-primes.
     armed: bool,
+    /// The setpoint the last tick flew (or recorded, disarmed).
+    setpoint: Setpoint,
 }
 
 impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T>
@@ -118,6 +120,10 @@ where
             telemetry,
             state: VehicleState::default(),
             armed: false,
+            setpoint: Setpoint::Attitude(AttitudeSetpoint {
+                idle: true,
+                ..Default::default()
+            }),
         }
     }
 
@@ -185,6 +191,7 @@ where
             )
         };
         self.armed = command.arm;
+        self.setpoint = setpoint;
         self.vehicle.actuate(&actuators);
 
         self.telemetry.publish(&TelemetryRecord {
@@ -208,6 +215,60 @@ impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T> {
     /// The most recent state estimate.
     pub fn state(&self) -> &VehicleState {
         &self.state
+    }
+
+    /// The setpoint guidance gave the stabilizer on the last tick, in the stabilizer's frame
+    /// (a [`View`](crate::view::View)'s for a viewed stabilizer): the neutral one a disarmed
+    /// tick records, and before the first tick a level, idle [`Setpoint::Attitude`]. An
+    /// autotune settles to its attitude target.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::time::Duration;
+    /// use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
+    /// use stable_flight::mixers::TableMixer;
+    /// use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+    /// use stable_flight::{
+    ///     AbsoluteAttitudeCommand, Actuator, ActuatorCommand, Command, Commander, ControlInput,
+    ///     FlightLoop, Setpoint, StateSource, VehicleState,
+    /// };
+    ///
+    /// struct Lean;
+    /// impl Commander for Lean {
+    ///     fn next_command(&mut self, _dt: f32, _state: &VehicleState) -> Command {
+    ///         Command::armed(ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+    ///             roll_rad: 0.1,
+    ///             thrust: 0.5,
+    ///             ..Default::default()
+    ///         }))
+    ///     }
+    /// }
+    ///
+    /// struct StillAir;
+    /// impl StateSource for StillAir {
+    ///     fn state(&mut self, _dt: Duration) -> VehicleState {
+    ///         VehicleState::default()
+    ///     }
+    /// }
+    /// impl Actuator for StillAir {
+    ///     fn actuate(&mut self, _command: &ActuatorCommand) {}
+    /// }
+    ///
+    /// let mut flight_loop = FlightLoop::new(
+    ///     Lean,
+    ///     StillAir,
+    ///     CopterGuidance::new(CopterGuidanceConfig::default()),
+    ///     CopterStabilizer::new(CopterStabilizerConfig::default()),
+    ///     TableMixer::quad_x(),
+    ///     (),
+    /// );
+    /// flight_loop.prime();
+    /// flight_loop.step(Duration::from_millis(4));
+    /// assert!(matches!(flight_loop.setpoint(), Setpoint::Attitude(a) if a.roll_rad == 0.1));
+    /// ```
+    pub fn setpoint(&self) -> &Setpoint {
+        &self.setpoint
     }
 
     /// The commander, e.g. to read its [`failsafe`](Commander::failsafe) state between ticks.
