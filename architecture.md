@@ -807,9 +807,11 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   if the start's steps met the criterion, else the run's start: a design that never passed
   doesn't outlive its search.
   Disarming before completion reverts to the config at start. The caller owns the trigger and the
-  logging (`AutotuneEvent`s); the executor has no clock. The envelope measures tilt in the body
-  frame, so autotune can't yet run on a viewed tailsitter
-  ([#321](https://github.com/wboayue/stable-flight/issues/321)).
+  logging (`AutotuneEvent`s); the executor has no clock. The envelope and settle read tilt and
+  per-axis rates in the frame the probed loops fly (`Tunable::probe_frame`): a `View`'s, so a
+  tailsitter hovering nose up reads level and a roll stage waits on view roll (airplane yaw).
+  The stabilizer reports its frame rather than the caller passing it to `Autotune`, so the
+  two can't disagree, and a VTOL routing probes to another side reports that side's.
 * **Robustness:** the claim is that the method, not one tune, transfers to hardware, so the sim
   checks it on a table of plants (airframes × delay, gyro noise, trim moments) from a low and a
   high start, each result held to the published step targets on its own plant

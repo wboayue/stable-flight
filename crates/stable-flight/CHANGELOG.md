@@ -84,6 +84,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Tunable::probe_frame`: the frame a stabilizer's probed loops fly in (identity by default;
+  `View` and `TailsitterStabilizer` report their view). `Autotune` reads its envelope and
+  settle in it, so it runs on a tailsitter hovering nose up in its view, where it used to
+  read 90° of pitch and fail every stage `Tilt` (#321).
 - `StagePlan::large_copter_search`, `SearchPlan::large_copter`, `Envelope::large_copter`, and
   `LARGE_COPTER_RATE_STEP`, `LARGE_COPTER_TILT_STEP`, `LARGE_COPTER_MAX_SATURATED_S`: the step
   search for a full-size multirotor, on 0.2 rad/s rate steps over 1.5 s and 5° angle steps

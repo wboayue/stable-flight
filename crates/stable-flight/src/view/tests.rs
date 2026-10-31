@@ -275,6 +275,31 @@ fn probes_pass_through_the_view() {
     check!(stabilizer.probe().is_none());
 }
 
+/// The probes' frame is the view, composed through nested views (the outer view's rotation
+/// first); an unviewed stabilizer's is the body frame.
+#[test]
+fn probe_frame_is_the_view() {
+    let copter = || CopterStabilizer::new(CopterStabilizerConfig::default());
+    let tilt = UnitQuaternion::from_euler_angles(0.2, 0.0, 0.0);
+    // (case, probe frame, expected)
+    let rows = [
+        ("body", copter().probe_frame(), UnitQuaternion::identity()),
+        (
+            "tailsitter",
+            View::tailsitter(copter()).probe_frame(),
+            tailsitter_rotation(),
+        ),
+        (
+            "nested",
+            View::new(View::tailsitter(copter()), tilt).probe_frame(),
+            tilt * tailsitter_rotation(),
+        ),
+    ];
+    for (case, frame, expected) in rows {
+        check!(frame.angle_to(&expected) < 1e-6, "{case}");
+    }
+}
+
 /// Per-axis saturation flags follow the moments into body axes (view roll is airplane yaw, view
 /// yaw is airplane roll); an identity view leaves them alone, and other flags pass through.
 #[test]

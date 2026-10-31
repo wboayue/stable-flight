@@ -8,6 +8,7 @@ use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use crate::stabilizers::plane::{PlaneStabilizer, PlaneStabilizerConfig};
 use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
 use crate::{Configurable, ControlOutput, Saturation, Setpoint, Stabilizer, VehicleState, View};
+use nalgebra::UnitQuaternion;
 
 mod quadplane;
 #[cfg(test)]
@@ -189,5 +190,10 @@ impl Tunable for TailsitterStabilizer {
 
     fn stop_probe(&mut self) -> Option<(Self::Target, ProbeStatus)> {
         self.hover.stop_probe()
+    }
+
+    /// The hover view's: autotune judges the hover in its view axes.
+    fn probe_frame(&self) -> UnitQuaternion<f32> {
+        self.hover.probe_frame()
     }
 }

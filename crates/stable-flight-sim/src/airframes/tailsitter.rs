@@ -49,8 +49,8 @@ pub struct TailsitterAirframe {
 ///
 /// The hover side flies the eXplora's RealFlight gains (#123, #328; the same layout of
 /// differential thrust and elevons), which hold the sim's nose-up hover within the copter's
-/// calm-air bands (`tests/tailsitter_hover.rs`); the autotune can't run in the tailsitter view
-/// (#321). The plane side is [`plane`]'s, without
+/// calm-air bands (`tests/tailsitter_hover.rs`); they aren't autotuned: TODO(#539). The plane
+/// side is [`plane`]'s, without
 /// the rudder feedforward (yaw is differential thrust here), on the hover side's thrust
 /// curve so a handoff keeps the motor commands continuous, and with room to pitch up for the
 /// back transition. Transitions fly core's defaults but for the airspeed gate, the wing's
