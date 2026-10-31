@@ -116,16 +116,17 @@ fn gyro_noise(tick: usize, amplitude: f32) -> f32 {
     amplitude * (2.0 * unit - 1.0)
 }
 
-/// Through white gyro noise of about the sim's (0.035 rad/s uniform, 0.02 RMS), the fit reads the
-/// plant's lag plus delay within 20% (measured 11% long, 2% on clean signals), where the
-/// recorded-moment fit, with the noisy rate among its terms, reads the lag as nothing (#551).
+/// Through white gyro noise of about the sim's (0.035 rad/s uniform, 0.02 RMS), the two-stage
+/// fit reads the plant's lag plus delay within 20% (measured 11% long, 2% on clean signals),
+/// where the least squares, with the noisy rate among its terms, reads the lag as nothing
+/// (#551).
 #[test]
-fn reads_the_lag_through_gyro_noise() {
+fn the_two_stage_fit_reads_the_lag_through_gyro_noise() {
     let params = single_lag(20.0, 0.03, 0.0);
     let probe = identify_with(params, IdentifyProbe::new(CONFIG), |tick, rate| {
         rate + gyro_noise(tick, 0.035)
     });
-    let fitted = model(probe.status());
+    let fitted = fit_explained(&probe.window).expect("two-stage fit");
     let [now, next, _] = fitted.moment_weights.map(f32::abs);
     let fitted_s =
         fitted.lag_s().unwrap_or(f32::NAN) + (fitted.delay_ticks as f32 + next / (now + next)) * DT;
@@ -134,20 +135,22 @@ fn reads_the_lag_through_gyro_noise() {
         (fitted_s - plant_s).abs() <= 0.2 * plant_s,
         "lag and delay {fitted_s} s against {plant_s} s: {fitted:?}"
     );
-    let recorded = fit_recorded(&probe.window).expect("recorded fit");
+    let recorded = fit_recorded(&probe.window).expect("recorded fit").model;
     check!(recorded.lag_s() < Some(0.01), "{recorded:?}");
 }
 
-/// A noisy window is fitted on the explained moments; a quiet one, or one whose moments
-/// mostly sit at the rate loop's limit, on the recorded moments: (case, rate P of the closed
-/// loop, gyro noise amplitude in rad/s, whether the explained fit is taken).
+/// A window the least squares leaves noisy is fitted on the explained moments; a quiet one,
+/// a stiff one that rings, or one whose moments mostly sit at the rate loop's limit, on the
+/// recorded moments: (case, rate P of the closed loop, gyro noise amplitude in rad/s, whether
+/// the explained fit is taken).
 #[test]
 fn a_noisy_unsaturated_window_takes_the_explained_fit() {
     let params = single_lag(20.0, 0.03, 0.0);
     let rows = [
         ("quiet", RATE_P, 0.0, false),
-        ("noisy", RATE_P, 0.035, true),
-        ("noisy and saturated", 40.0, 0.035, false),
+        ("quiet and stiff", 4.0 * RATE_P, 0.0, false),
+        ("noisy", RATE_P, 0.06, true),
+        ("noisy and saturated", 40.0, 0.06, false),
     ];
     for (case, rate_p, noise, explained) in rows {
         let mut plant = Plant::new(params, DT);
@@ -167,24 +170,9 @@ fn a_noisy_unsaturated_window_takes_the_explained_fit() {
         let expected = if explained {
             fit_explained(window)
         } else {
-            fit_recorded(window)
+            fit_recorded(window).map(|fit| fit.model)
         };
         check!(fit_window(window) == expected, "{case}");
-    }
-}
-
-/// Rate noise is the RMS of the rate's second difference: (case, rates, rad/s).
-#[test]
-fn rate_noise_reads_the_second_difference() {
-    let rows: [(&str, &[f32], f32); 4] = [
-        ("too short", &[1.0, 2.0], 0.0),
-        ("a steady rate", &[0.5; 10], 0.0),
-        ("a steady acceleration", &[0.0, 0.1, 0.2, 0.3, 0.4], 0.0),
-        // Each second difference is ±0.4.
-        ("alternating ±0.1", &[0.1, -0.1, 0.1, -0.1, 0.1], 0.4),
-    ];
-    for (case, rates, expected) in rows {
-        check!((rate_noise_radps(rates) - expected).abs() < 1e-6, "{case}");
     }
 }
 
@@ -341,14 +329,16 @@ fn realflight_windows<const N: usize>(fixture: &str) -> [Vec<(f32, f32)>; N] {
     windows
 }
 
-/// The probe's fit to a recorded window, and the window's rate noise.
+/// The probe's fit to a recorded window, and the least squares' residual on it, in rad/s.
 fn fit_recorded_window(window: &[(f32, f32)]) -> (RateModel, f32) {
     let mut probe = IdentifyProbe::new(crate::tuning::autotune::COPTER_IDENTIFY);
     for &(rate_radps, last_moment) in window {
         probe.step(DT, rate_radps, last_moment);
     }
-    let noise = rate_noise_radps(&probe.window.rates_radps[..probe.window.len]);
-    (model(probe.status()), noise)
+    let residual_radps = fit_recorded(&probe.window)
+        .expect("recorded fit")
+        .residual_radps;
+    (model(probe.status()), residual_radps)
 }
 
 /// Rate P designed from `fitted` at the copter's loop shaping and the 40 Hz gyro filter.
@@ -371,8 +361,11 @@ fn realflight_quadcopterx_windows_design_rate_p_in_range() {
     };
     let windows = realflight_windows::<4>(include_str!("realflight_quadcopterx_windows.csv"));
     for (index, window) in windows.iter().enumerate() {
-        let (fitted, noise) = fit_recorded_window(window);
-        check!(noise < NOISY_RATE_RADPS, "window {index}: noise {noise}");
+        let (fitted, residual) = fit_recorded_window(window);
+        check!(
+            residual < NOISY_RESIDUAL_RADPS,
+            "window {index}: residual {residual}"
+        );
         let p = designed_p(&fitted, start);
         check!(
             p.is_some_and(|p| (0.5..=1.0).contains(&p)),
@@ -396,8 +389,11 @@ fn realflight_explora_windows_design_realflights_rate_p() {
     let designs = [("roll", 0.94), ("pitch", 1.69)];
     let windows = realflight_windows::<2>(include_str!("realflight_explora_windows.csv"));
     for ((axis, realflight_p), window) in designs.into_iter().zip(&windows) {
-        let (fitted, noise) = fit_recorded_window(window);
-        check!(noise < NOISY_RATE_RADPS, "{axis}: noise {noise}");
+        let (fitted, residual) = fit_recorded_window(window);
+        check!(
+            residual < NOISY_RESIDUAL_RADPS,
+            "{axis}: residual {residual}"
+        );
         let p = designed_p(&fitted, start);
         check!(
             p.is_some_and(|p| (p - realflight_p).abs() <= 0.05 * realflight_p),
