@@ -293,9 +293,9 @@ pub const COPTER_HEADING_STEP: StepConfig = StepConfig {
     ..COPTER_TILT_STEP
 };
 
-/// Level before each copter step: within 2.5° of the attitude target and 0.1 rad/s for 0.5 s (ArduPilot's
-/// `AUTOTUNE_LEVEL_ANGLE_CD` and `AUTOTUNE_REQUIRED_LEVEL_TIME_MS`), so each step starts from
-/// rest.
+/// Level before each copter step: within 2.5° of the attitude target and 0.1 rad/s for 0.5 s
+/// (ArduPilot's `AUTOTUNE_LEVEL_ANGLE_CD` and `AUTOTUNE_REQUIRED_LEVEL_TIME_MS`), so each step
+/// starts from rest.
 pub const COPTER_STEP_SETTLE: Settle = Settle {
     tilt_rad: 0.044,
     rate_radps: 0.1,
@@ -918,7 +918,9 @@ impl DesignPlan {
     }
 }
 
-/// How level and still the vehicle must hold before a probe starts.
+/// How level and still the vehicle must hold before a probe starts. It must also stand still
+/// over the ground (under 0.2 m/s), whatever the limits: one leaning to fly back to its
+/// position after a step isn't settled.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Settle {
     /// Roll and pitch within this of the attitude target guidance holds
@@ -926,9 +928,7 @@ pub struct Settle {
     /// level check compares the attitude with the desired one (`AC_AutoTune::currently_level`):
     /// a hover leaning to hold its position against a trim settles where it leans. The
     /// eXplora in RealFlight leans 3.4° in calm air, its elevons holding pitch in the propwash
-    /// (#539). The vehicle must also stand still over the ground (under 0.2 m/s): one leaning
-    /// to fly back to its position after a step isn't settled. In the probed loops' frame
-    /// ([`Tunable::probe_frame`]), as are the rates.
+    /// (#539). In the probed loops' frame ([`Tunable::probe_frame`]), as are the rates.
     pub tilt_rad: f32,
     /// Roll and pitch rates within this, in rad/s, read through the stabilizer's gyro
     /// low-pass; the yaw rate too for a yaw rate or heading stage, as ArduPilot's level check
@@ -1005,10 +1005,10 @@ pub struct Envelope {
 }
 
 impl Default for Envelope {
-    /// Copter limits: 35° tilt, 4 rad/s, 3 m sink; settle within 6° of the attitude target and 0.3 rad/s for 1 s,
-    /// waiting up to 10 s; 1 s to recover from a candidate; 2 s without a fresh state.
-    /// RealFlight's reconnects come 0.5, 1.5, and 3.5 s into an outage, so the run rides
-    /// through the first two; a QuadCopterX unseen for 3.5 s mid-step rolled over (#309).
+    /// Copter limits: 35° tilt, 4 rad/s, 3 m sink; settle within 6° of the attitude target and
+    /// 0.3 rad/s for 1 s, waiting up to 10 s; 1 s to recover from a candidate; 2 s without a
+    /// fresh state. RealFlight's reconnects come 0.5, 1.5, and 3.5 s into an outage, so the run
+    /// rides through the first two; a QuadCopterX unseen for 3.5 s mid-step rolled over (#309).
     fn default() -> Self {
         Self {
             max_tilt_rad: 0.6,
@@ -1145,7 +1145,9 @@ impl Motion {
 
 /// The roll and pitch `setpoint` holds, in rad, in the stabilizer's frame: an attitude
 /// setpoint's (a NaN axis is level, as the stabilizer reads it), a blend's hover side's, and
-/// level for a rate or plane setpoint, which holds no hover attitude.
+/// level for a rate or plane setpoint, which holds no hover attitude. Guidance's target,
+/// before the stabilizer caps it at its maximum tilt: a target past the cap never settles, and
+/// the stage times out.
 fn attitude_target(setpoint: &Setpoint) -> Vec2 {
     let attitude = match setpoint {
         Setpoint::Attitude(attitude) => attitude,
