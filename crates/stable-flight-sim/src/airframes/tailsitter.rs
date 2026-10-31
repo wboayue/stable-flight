@@ -50,11 +50,10 @@ pub struct TailsitterAirframe {
 /// The hover side flies the eXplora's hand tune from RealFlight (#123, #328; the same layout
 /// of differential thrust and elevons), which holds the sim's nose-up hover within the
 /// copter's calm-air bands (`tests/tailsitter_hover.rs`). The plane side is [`plane`]'s,
-/// without
-/// the rudder feedforward (yaw is differential thrust here), on the hover side's thrust
-/// curve so a handoff keeps the motor commands continuous, and with room to pitch up for the
-/// back transition. Transitions fly core's defaults but for the airspeed gate, the wing's
-/// minimum airspeed; they meet PX4's limits in `tests/tailsitter_transition.rs`.
+/// without the rudder feedforward (yaw is differential thrust here), on the hover side's
+/// thrust curve so a handoff keeps the motor commands continuous, and with room to pitch up
+/// for the back transition. Transitions fly core's defaults but for the airspeed gate, the
+/// wing's minimum airspeed; they meet PX4's limits in `tests/tailsitter_transition.rs`.
 ///
 /// # Examples
 ///

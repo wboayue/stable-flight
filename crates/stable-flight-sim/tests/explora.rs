@@ -7,6 +7,7 @@ mod common;
 
 use assert2::check;
 use stable_flight::Vec3;
+use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::{
     CopterStabilizerConfig, DEFAULT_GYRO_CUTOFF_HZ, TunedLoop,
 };
@@ -35,14 +36,18 @@ fn realflight() -> TailsitterPlant {
     }
 }
 
-/// The hover's hand tune (`tailsitter()`'s gains with the differential thrust's D 0.03) on the
-/// default gyro low-pass, as RealFlight run 2 flew it (#539).
+/// The hover's hand tune on the default gyro low-pass, as RealFlight run 2 flew it (#539).
 fn hand_tune() -> CopterStabilizerConfig {
+    let gains = |p, i, d| Gains { p, i, d };
     let mut config = CopterStabilizerConfig {
         gyro_cutoff_hz: DEFAULT_GYRO_CUTOFF_HZ,
-        ..airframes::tailsitter().stabilizer.hover
+        ..airframes::explora().stabilizer.hover
     };
-    config.body_rate.roll_gains.d = 0.03;
+    config.body_rate.roll_gains = gains(0.4, 0.2, 0.03);
+    config.body_rate.pitch_gains = gains(0.3, 0.5, 0.0);
+    config.body_rate.yaw_gains = gains(0.1, 0.05, 0.0);
+    config.attitude.roll_gains = gains(4.0, 0.0, 0.0);
+    config.attitude.pitch_gains = gains(4.0, 0.0, 0.0);
     config
 }
 

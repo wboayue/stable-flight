@@ -294,11 +294,13 @@ pub fn explora_vtol()
                     // explora`, #539).
                     //
                     // Differential thrust (the mixer's airplane yaw, 0.25 per unit moment):
-                    // weak and slow, 10-11 rad/s² per unit moment after 36-40 ms. Descending
-                    // 40 m in RealFlight's 5 km/h wind, the hover rolls within ±3° of its lean
-                    // with no D to speak of: P carries what D 0.03 did on the hand tune (#539).
+                    // weak and slow, 10-11 rad/s² per unit moment after 36-40 ms. A 40 m
+                    // descent in RealFlight's 5 km/h wind held within ±3° of its lean, without
+                    // the roll cycle the hand tune showed at D 0 (#476, #539).
                     roll_gains: gains(0.6504, 0.1301, 0.0017),
-                    // Elevons (full range per unit moment): 19-20 rad/s² after 8-12 ms.
+                    // Elevons (full range per unit moment): 19-20 rad/s² after 8-12 ms. Sinking,
+                    // the airflow pushes the nose over; the integral holds 0.28 of moment, and
+                    // P the rest: descents at the 1.5 m/s limit hold the nose (#539).
                     pitch_gains: gains(1.4217, 0.2844, 0.0),
                     // The elevons apart (airplane roll).
                     yaw_gains: gains(1.0191, 0.3057, 0.0),
