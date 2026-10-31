@@ -115,9 +115,10 @@ const ALIA_SURFACES: [SurfaceLink; 8] = [
 ///   sim's values: the search's lower gains for them step-tested no better (#540). The roll
 ///   and pitch rate I (0.2, the QuadCopterX's) trims X-Plane's nose-up pitch at level thrust
 ///   (2.2 °/s², which the sim leaves out). The angle I (0.25 roll, 0.15 pitch) holds a tilt
-///   against the moment the airframe builds as it drifts sideways, which the sim's wingless
-///   model leaves out too: angle steps end within 7% of the step against 13–23% short at
-///   core's 0.001 (#576).
+///   against the moment X-Plane's airframe builds as a held tilt drifts it sideways, which
+///   the sim's multirotor model (drag only) leaves out too: angle steps end within 7% of the
+///   step against 13–23% short at core's 0.001. Nose-up pitch steps still overshoot 6–10%,
+///   the lean X-Plane's nose-up trim gives the pitch loops (#540, #576).
 /// - **Hover thrust:** the liftoff throttle through the mixer's thrust factor and the thrust
 ///   curve.
 /// - **Plane and transitions:** `stable-flight-sim`'s `alia250()`, tuned on a model fitted to
@@ -261,8 +262,8 @@ fn alia250_hover_stabilizer() -> CopterStabilizerConfig {
     let rate = |p| Gains { p, i: 0.2, d: 0.0 };
     // No D, as the autotune ran. The I holds a tilt against the moment X-Plane's airframe
     // builds as the tilt drifts it sideways (1–2.6 m/s within a 5° step): at core's 0.001,
-    // angle steps end 13–23% short. Higher: closer to the step, and past 0.25 on roll and 0.15
-    // on pitch, overshoot (pitch 25% at 0.5, #576).
+    // angle steps end 13–23% short. Higher: steps end closer, then overshoot: at 0.5, roll 6%
+    // and pitch 25% (#576).
     let angle = |i| Gains { p: 1.03, i, d: 0.0 };
     CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
