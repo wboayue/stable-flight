@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`AutotuneEvent::Lowered`) instead of failing `NotSettled`, again at each timeout, up to
   three times and down to its `min` (#552).
 
+### Fixed
+
+- A rate step stage holds the integral of the angle or heading loop over the stepped rate
+  loop: the step tilts the vehicle away from that loop's setpoint, and integrating it wound
+  the loop up for the handoff. On the sim's `quad_x` at angle P 2 and I 0.25, the vehicle
+  didn't settle within 10 s after a large rate step (#579).
+
 ## [0.2.0] - 2026-10-30
 
 ### Added

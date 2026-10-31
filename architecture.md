@@ -630,7 +630,10 @@ contract:
   replaces one loop's setpoint inside the tick; it lives next to the controllers'
   state, never in `CopterStabilizerConfig` or its params. Handing the loop back clears its
   derivative history, so the setpoint's jump back doesn't kick it, and keeps its integral; a
-  following `set_config` rescales it like any retune.
+  following `set_config` rescales it like any retune. While a step flies a rate loop, the
+  angle or heading loop over it holds its integral: the step tilts the vehicle away from that
+  loop's setpoint, an error it isn't flying. Clearing the integral instead would drop the trim
+  it holds.
 
 ### Params
 

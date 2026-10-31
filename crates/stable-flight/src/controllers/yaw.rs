@@ -130,12 +130,13 @@ impl YawController {
         estimated_yaw_rad: f32,
     ) -> f32 {
         let error = angle_diff(desired_yaw_rad, estimated_yaw_rad); // Use a helper to handle angle wrapping
-        self.control_error(config, dt, error)
+        self.control_error(config, dt, error, false)
     }
 
     /// The PID of [`control`](Self::control) on a yaw error already taken (radians, the short
     /// way round): for a caller that measures the error itself, e.g. from quaternions. The
-    /// output is clamped to `max_rate_radps`; a non-finite error gives zero.
+    /// output is clamped to `max_rate_radps`; a non-finite error gives zero. With
+    /// `hold_integral` the integral stays as it is this tick instead of adding the error.
     ///
     /// # Panics
     ///
@@ -145,6 +146,7 @@ impl YawController {
         config: &YawControllerConfig,
         dt: f32,
         error: f32,
+        hold_integral: bool,
     ) -> f32 {
         assert_dt(dt);
 
@@ -159,13 +161,21 @@ impl YawController {
         }
         let error_derivative = self.derivative.step(error, dt);
 
-        self.integrated_error =
-            clamp_symmetric(self.integrated_error + dt * error, config.max_integral);
+        if !hold_integral {
+            self.integrated_error =
+                clamp_symmetric(self.integrated_error + dt * error, config.max_integral);
+        }
 
         let yaw_rate =
             gains.p * error + gains.i * self.integrated_error + gains.d * error_derivative;
 
         clamp_symmetric(yaw_rate, config.max_rate_radps)
+    }
+
+    /// The integrated heading error, in rad·s.
+    #[cfg(test)]
+    pub(crate) fn integral(&self) -> f32 {
+        self.integrated_error
     }
 
     /// Zeroes the integral, keeping the derivative history.
@@ -228,7 +238,7 @@ mod tests {
             ..p_only_config(1.0, 10.0)
         };
         let mut controller = YawController::default();
-        controller.control_error(&config, 0.1, 0.5);
+        controller.control_error(&config, 0.1, 0.5, false);
         let integral = controller.integrated_error;
 
         controller.hand_back();
