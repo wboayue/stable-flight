@@ -146,6 +146,9 @@ cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight 
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --rate-p-scale 10
 # The Titan Cobra's lift rotors (--airframe titan-cobra; pusher stopped, surfaces centered)
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --airframe titan-cobra --step-test
+# The eXplora's hover side, nose up in its tailsitter view (--airframe explora; plane side not
+# flown); --param NAME=VALUE sets a param before takeoff (STAB_GYRO_FLT=40: the gyro low-pass)
+cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --airframe explora --stages none --step-test
 
 # Joystick (or --script) flight recording raw SimulatorState and channels to CSV (frame checks)
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv

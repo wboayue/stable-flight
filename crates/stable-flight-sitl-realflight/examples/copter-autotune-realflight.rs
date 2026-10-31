@@ -39,9 +39,14 @@
 //! (in any phase: it never touches down to end the run) or RealFlight doesn't reset the aircraft
 //! before arming, so unattended back-to-back runs don't wait on a crash.
 //!
-//! `--airframe` picks the model: `quadcopter-x` (the default) or `titan-cobra`, whose lift
+//! `--airframe` picks the model: `quadcopter-x` (the default), `titan-cobra`, whose lift
 //! rotors fly on `TableMixer::quad_x` with its hover gains, the pusher stopped and the surfaces
-//! centered; the default script hovers over the chosen model's spawn point.
+//! centered, or `explora`, the eXplora tailsitter's hover side on its own mixer, its hover
+//! gains and guidance flown nose up in `View::tailsitter`'s frame, where the autotune and the
+//! inverted check read its tilt and rates (`Tunable::probe_frame`); the plane side isn't
+//! flown. The default script hovers over the chosen model's spawn point. `--param NAME=VALUE`
+//! (repeatable) sets a param before takeoff, as the link would (`STAB_GYRO_FLT=40`: the gyro
+//! low-pass the eXplora flies without).
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight
@@ -49,6 +54,7 @@
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --rate-p-scale 10
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --stages none --step-test
 //! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --airframe titan-cobra --step-test
+//! cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --airframe explora --stages none --step-test --param STAB_GYRO_FLT=40
 //! ```
 
 use std::process::ExitCode;
@@ -64,14 +70,19 @@ use log::{debug, error, info, warn};
 use stable_flight::commanders::RouteEnd;
 use stable_flight::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use stable_flight::mixers::TableMixer;
+use stable_flight::nalgebra::UnitQuaternion;
+use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
+use stable_flight::tuning::Tunable;
 use stable_flight::tuning::autotune::{
     Autotune, AutotuneEvent, AutotuneStatus, Envelope, StagePlan,
 };
+use stable_flight::view::{View, tailsitter_rotation};
 use stable_flight::{Configurable, FlightLoop};
 use stable_flight_link::fc::FcLink;
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::autotune::{ThenLand, format_brief, is_inverted, log_event};
+use stable_flight_sitl::cli::parse_param;
 use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::recorder::{CopterColumns, CsvRecorder};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
@@ -150,6 +161,10 @@ struct Args {
     #[arg(long, value_parser = drop_link, value_name = "SECS@AT")]
     drop_link: Option<DropLink>,
 
+    /// Set a param before takeoff, as `NAME=VALUE` (repeatable).
+    #[arg(long = "param", value_parser = parse_param)]
+    params: Vec<(String, f32)>,
+
     /// Local address the link listens on.
     #[arg(long, default_value = DEFAULT_FC_ADDR)]
     link_bind: String,
@@ -165,11 +180,14 @@ enum Model {
     QuadcopterX,
     /// Titan Cobra VTOL: its lift rotors only.
     TitanCobra,
+    /// eXplora VTOL tailsitter: its hover side, nose up.
+    Explora,
 }
 
 impl Model {
     /// The model's copter airframe: for the Cobra, its hover side on `quad_x` at its mixer
-    /// config, which mixes its lift rotors as its quadplane mixer does, with its mapping.
+    /// config, which mixes its lift rotors as its quadplane mixer does, with its mapping; for
+    /// the eXplora, its hover side on its tailsitter mixer, flown in [`Model::view`].
     fn airframe(self) -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, TableMixer<4>> {
         match self {
             Model::QuadcopterX => airframes::quadcopter_x(),
@@ -185,6 +203,25 @@ impl Model {
                     body_rotation: cobra.body_rotation,
                 }
             }
+            Model::Explora => {
+                let explora = airframes::explora_vtol();
+                Airframe {
+                    guidance: explora.guidance.hover,
+                    stabilizer: explora.stabilizer.hover,
+                    mixer: explora.mixer,
+                    mapping: explora.mapping,
+                    body_rotation: explora.body_rotation,
+                }
+            }
+        }
+    }
+
+    /// The frame guidance and the stabilizer fly in, in the body frame: the eXplora's nose-up
+    /// view (as `TailsitterGuidance` and `TailsitterStabilizer` fly its hover), else the body.
+    fn view(self) -> UnitQuaternion<f32> {
+        match self {
+            Model::QuadcopterX | Model::TitanCobra => UnitQuaternion::identity(),
+            Model::Explora => tailsitter_rotation(),
         }
     }
 
@@ -193,6 +230,7 @@ impl Model {
         match self {
             Model::QuadcopterX => "flights/hover.csv",
             Model::TitanCobra => "flights/cobra_hover.csv",
+            Model::Explora => "flights/explora_hover.csv",
         }
     }
 }
@@ -368,8 +406,9 @@ fn main() -> ExitCode {
         }
     };
 
-    let guidance = CopterGuidance::new(airframe.guidance);
-    let stabilizer = CopterStabilizer::new(stabilizer_config);
+    let view = args.airframe.view();
+    let guidance = View::new(CopterGuidance::new(airframe.guidance), view);
+    let stabilizer = View::new(CopterStabilizer::new(stabilizer_config), view);
     let mixer = airframe.mixer;
 
     // The link: the publisher writes it each tick (the flight loop's telemetry), and the poller
@@ -385,6 +424,14 @@ fn main() -> ExitCode {
 
     let mut flight_loop =
         FlightLoop::new(commander, vehicle, guidance, stabilizer, mixer, telemetry);
+
+    for (name, value) in &args.params {
+        if let Err(e) = flight_loop.set_param(name, *value) {
+            eprintln!("--param {name}={value}: {e:?}");
+            return ExitCode::from(2);
+        }
+        info!("param {name} = {value}");
+    }
 
     let mut autotune = Autotune::new(&plan, Envelope::default()).expect("valid autotune plan");
 
@@ -410,7 +457,7 @@ fn main() -> ExitCode {
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop, stats| {
         // Inverted, in any phase (climb, tune, landing), the vehicle never touches down to end
         // the run.
-        if !is_inverted(flight_loop.state()) {
+        if !is_inverted(flight_loop.state(), &flight_loop.stabilizer().probe_frame()) {
             inverted_since = None;
         } else if inverted_since.is_none() {
             inverted_since = Some(stats.elapsed);

@@ -11,6 +11,7 @@ use log::{debug, info, warn};
 
 use stable_flight::commanders::TouchdownDetector;
 use stable_flight::controllers::Gains;
+use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use stable_flight::tuning::autotune::AutotuneEvent;
 use stable_flight::tuning::{Measurement, Stat, StepMetrics, StepSummary};
@@ -106,9 +107,11 @@ impl LandSwitch {
     }
 }
 
-/// Whether the vehicle is tilted past 90°: the cosine of the tilt (the attitude matrix's
-/// NED-down component of body z) is negative. False for a NaN attitude. A run stops when it
-/// stays inverted, since an inverted vehicle never touches down to end it.
+/// Whether the vehicle is tilted past 90° in `frame`, the frame its loops fly in (the
+/// stabilizer's `Tunable::probe_frame`: identity for a copter, the view for a tailsitter, where
+/// nose-up hover is level): the cosine of the tilt (the NED-down component of `frame`'s z axis)
+/// is negative. False for a NaN attitude. A run stops when it stays inverted, since an inverted
+/// vehicle never touches down to end it.
 ///
 /// # Examples
 ///
@@ -116,16 +119,26 @@ impl LandSwitch {
 /// use stable_flight_sitl::autotune::is_inverted;
 /// use stable_flight_sitl::stable_flight::VehicleState;
 /// use stable_flight_sitl::stable_flight::nalgebra::UnitQuaternion;
+/// use stable_flight_sitl::stable_flight::view::tailsitter_rotation;
 ///
+/// let body = UnitQuaternion::identity();
 /// let flipped = VehicleState {
 ///     attitude: UnitQuaternion::from_euler_angles(3.0, 0.0, 0.0),
 ///     ..Default::default()
 /// };
-/// assert!(is_inverted(&flipped));
-/// assert!(!is_inverted(&VehicleState::default()));
+/// assert!(is_inverted(&flipped, &body));
+/// assert!(!is_inverted(&VehicleState::default(), &body));
+///
+/// // A tailsitter hovering nose up is level in its view.
+/// let nose_up = VehicleState {
+///     attitude: tailsitter_rotation().inverse(),
+///     ..Default::default()
+/// };
+/// assert!(!is_inverted(&nose_up, &tailsitter_rotation()));
 /// ```
-pub fn is_inverted(state: &VehicleState) -> bool {
-    state.attitude.to_rotation_matrix()[(2, 2)] < 0.0
+pub fn is_inverted(state: &VehicleState, frame: &UnitQuaternion<f32>) -> bool {
+    // The frame's attitude as `VehicleState::rotate_body` builds it.
+    (state.attitude * frame).to_rotation_matrix()[(2, 2)] < 0.0
 }
 
 /// Logs an autotune event: lifecycle at `info!`/`warn!`, each step (including ones that run

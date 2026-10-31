@@ -4,6 +4,7 @@ use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use stable_flight::tuning::autotune::{AutotuneAbort, AutotuneEvent, Outcome};
 use stable_flight::tuning::{Measurement, RateModel, StepMetrics, StepSummary};
+use stable_flight::view::tailsitter_rotation;
 use stable_flight::{ControlInput, Vec3, VehicleState, WaypointCommand};
 
 use super::*;
@@ -72,15 +73,34 @@ fn the_hover_point_needs_the_last_waypoint_and_its_altitude() {
     }
 }
 
-/// Inverted is a tilt past 90°: (roll in rad, inverted).
+/// Inverted is a tilt past 90° in the probed frame: (frame, roll and pitch in rad of that
+/// frame, inverted). Nose-up hover reads level in a tailsitter's view, though its body frame
+/// sits at 90°, where a little pitch either way would flip a body-frame check.
 #[test]
-fn inverted_is_a_tilt_past_ninety_degrees() {
-    for (roll_rad, inverted) in [(0.0, false), (1.5, false), (1.7, true), (3.1, true)] {
+fn inverted_is_a_tilt_past_ninety_degrees_in_the_frame() {
+    let body = UnitQuaternion::identity();
+    let view = tailsitter_rotation();
+    for (name, frame, roll_rad, pitch_rad, inverted) in [
+        ("body", body, 0.0, 0.0, false),
+        ("body", body, 1.5, 0.0, false),
+        ("body", body, 1.7, 0.0, true),
+        ("body", body, 3.1, 0.0, true),
+        ("view", view, 0.0, 0.0, false),
+        ("view", view, 0.0, 0.05, false),
+        ("view", view, 0.0, -0.05, false),
+        ("view", view, 1.5, 0.0, false),
+        ("view", view, 1.7, 0.0, true),
+        ("view", view, 3.1, 0.0, true),
+    ] {
+        // The attitude whose `frame` is rolled and pitched by these angles.
         let state = VehicleState {
-            attitude: UnitQuaternion::from_euler_angles(roll_rad, 0.0, 0.0),
+            attitude: UnitQuaternion::from_euler_angles(roll_rad, pitch_rad, 0.0) * frame.inverse(),
             ..Default::default()
         };
-        check!(is_inverted(&state) == inverted, "roll {roll_rad}");
+        check!(
+            is_inverted(&state, &frame) == inverted,
+            "{name} roll {roll_rad} pitch {pitch_rad}"
+        );
     }
 }
 
