@@ -7,15 +7,16 @@ use stable_flight::Vec3;
 use stable_flight::controllers::{PlaneRateControllerConfig, RateGains};
 use stable_flight::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
 use stable_flight::mixers::MixerConfig;
+use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
 use stable_flight::stabilizers::vtol::TailsitterStabilizerConfig;
 
 use super::plane::aerosonde_inertia;
 use super::tailsitter::{TailsitterAirframe, tailsitter};
 use super::{hover_thrust, motor_count};
-use crate::TailsitterModel;
 use crate::fixed_wing::{AeroCoefficients, FixedWingModel};
 use crate::motors::QUADRATIC;
+use crate::{PropWash, TailsitterModel};
 
 /// The RealFlight eXplora VTOL (`eXplora_Tailsiter_VTOL.RFX`) as flown in RealFlight: the
 /// tailsitter's layout ([`tailsitter`]: two motors, elevons in their wash) sized from the
@@ -29,12 +30,24 @@ use crate::motors::QUADRATIC;
 /// - Mass: its components weigh 0.217 kg, the placeholder values the BOM variant replaces,
 ///   plus a 3S 4000 mAh pack and two 1.83 oz motors: about 0.63 kg. The light wing behind
 ///   ±45° elevons is why its rates run far past what PX4's default feedforward expects (#342).
-/// - Inertia: RealFlight's own from that mass, roll at its 60% modifier.
-/// - Props: two 10 × 4.5", kv1000 on 3S, about 21 m/s of pitch speed at full throttle.
+/// - Inertia: none listed, only modifiers (roll 60%); scaled from the Aerosonde's here, then
+///   calibrated per axis (below).
+/// - Props: two 10 × 4.5", kv1000 on 3S, about 21 m/s of pitch speed at full throttle, 0.325 m
+///   out each side, so the wash covers the elevons' inboard part.
+/// - Winglets: two small fins, which turn the wing into the air and damp its yaw far less than
+///   the Aerosonde's tail.
 ///
 /// Measured in RealFlight and matched here (#342, run 0): hover at thrust 0.82, cruise at 0.85
 /// and 14–15 m/s, a level nose-up moment of 0.09, and default-gain doublets at 30°/s peaking
 /// near 3.3× in roll and pitch.
+///
+/// Its hover is calibrated to RealFlight's autotune of it (#539), flown with RealFlight's 6 ms
+/// exchange as [`actuator_delay_s`](crate::Perturbations::actuator_delay_s) and 0.01 rad/s of
+/// gyro noise. The hand tune's and the autotuned gains' step tests end within 0.1 of their
+/// finals there and rise within a factor of 2 of their times (most within 20%), and the design
+/// search designs within 25% of RealFlight's gains (roll rate 0.83 against 0.94, pitch rate
+/// 1.33 against 1.69). Its rates fit as RealFlight's do, in the hover view: differential thrust
+/// (roll) on 9 ticks of pure delay and no lag, the elevons (pitch) on 2.
 ///
 /// # Examples
 ///
@@ -50,6 +63,9 @@ pub fn explora() -> TailsitterAirframe {
     const WING_AREA_M2: f32 = 0.43;
     /// RealFlight's roll inertia modifier, `RollIntertia` 60 (%).
     const ROLL_INERTIA_SHARE: f32 = 0.6;
+    /// Motors' distance from the centerline, from the `.rfvehicle`, in m.
+    const MOTOR_ARM_M: f32 = 0.325;
+    const PROP_DIAMETER_M: f32 = 0.254;
     /// Hover and cruise thrust setpoints measured in RealFlight (#124, #342).
     const HOVER_THRUST: f32 = 0.82;
     const CRUISE_THRUST: f32 = 0.85;
@@ -61,7 +77,15 @@ pub fn explora() -> TailsitterAirframe {
     let mixer = base.mixer;
     let mixer_config = MixerConfig::default();
     let thrust_curve_exponent = base.stabilizer.hover.thrust_curve_exponent;
-    let mut inertia_kgm2 = aerosonde_inertia(MASS_KG, SPAN_M);
+    // How much heavier than the Aerosonde's scaled inertia the hover answers its controls in
+    // RealFlight (roll, pitch, yaw in the airplane frame): its hand tune's rate steps there
+    // end at 0.24–0.36 (view yaw, the elevons apart), 0.80 (view pitch), and 0.55 (view roll,
+    // differential thrust) of their command, and here at 0.30–0.39, 0.76–0.78, and 0.60
+    // (#539). Scaling inertia keeps the controls' authority against the wing's own moments;
+    // less wash over the elevons in its place matched the rate steps, but a 5° tilt's drift
+    // then pushed the angle steps 10–20% past their target, which RealFlight's don't.
+    let hover_inertia_scale = Vec3::new(70.0, 11.1, 7.0);
+    let mut inertia_kgm2 = aerosonde_inertia(MASS_KG, SPAN_M).component_mul(&hover_inertia_scale);
     inertia_kgm2.x *= ROLL_INERTIA_SHARE;
     // Each motor's static thrust, so hover lands on the measured setpoint: the setpoint through
     // the stabilizer's curve and the mixer's thrust factor is the motor command, and the
@@ -84,19 +108,45 @@ pub fn explora() -> TailsitterAirframe {
             // 14 m/s.
             c_pitch_0: -0.25,
             // Calibrated to RealFlight (#342, run 0): default-gain 30°/s doublets peak at
-            // 3.2× (roll) and 3.4× (pitch) in their first half; the plane's derivatives at
-            // ±45° give 1.9× and 1.7×.
-            c_roll_aileron: 2.05 * base.model.wing.aero.c_roll_aileron,
-            c_pitch_elevator: 3.2 * base.model.wing.aero.c_pitch_elevator,
+            // 3.2× (roll) and 3.4× (pitch) in their first half, here 3.18× and 3.37×.
+            c_roll_aileron: 2.4 * base.model.wing.aero.c_roll_aileron,
+            c_pitch_elevator: 3.55 * base.model.wing.aero.c_pitch_elevator,
+            // The winglets alone: about 0.036 m² of fin 0.15 m behind the center on a 0.43 m²,
+            // 1.4 m wing, at a fin lift slope near 2/rad. The Aerosonde's tail turns the wing
+            // into a 5° tilt's drift hard enough to push its hover's angle steps 15% past
+            // their target, where RealFlight's settle on it (#539).
+            c_yaw_beta: 0.02,
+            // The same fins' damping and the wing's profile drag: with the Aerosonde's, the
+            // wash damped differential thrust's rate steps in a hover to two-thirds of
+            // RealFlight's (#539).
+            c_yaw_r: -0.02,
             ..base.model.wing.aero
         },
         max_deflection_rad: base.model.wing.max_deflection_rad.map(|_| PI / 4.0),
+        // The elevon servos' speed is 0.01 in the `.rfvehicle`, and RealFlight's fit reads no
+        // lag on them (#539).
+        servo_time_constant_s: 0.004,
+        // RealFlight's differential thrust fits as 9–10 ticks of pure delay and a 2 ms lag
+        // (#539): with its 6 ms exchange and the one-tick hold, 28 ms of spin-up.
+        motor_time_constant_s: 0.004,
+        motor_delay_s: 0.028,
         max_thrust_n,
         thrust_exponent: QUADRATIC,
         thrust_falloff_n_per_mps: max_thrust_n / PITCH_SPEED_MPS,
         ..base.model.wing
     };
-    let model = TailsitterModel { wing, ..base.model };
+    let model = TailsitterModel {
+        wing,
+        motor_arm_m: MOTOR_ARM_M,
+        // A fifth of the wake's pressure over the elevons, with the inertia above, flies the
+        // elevon rate steps as RealFlight does; the wash damps the span it covers.
+        prop_wash: PropWash::props(
+            2,
+            PROP_DIAMETER_M,
+            0.2,
+            PropWash::span_damping_share(MOTOR_ARM_M, PROP_DIAMETER_M, SPAN_M),
+        ),
+    };
     let plane_stabilizer = PlaneStabilizerConfig {
         rate: explora_rate(),
         thrust_curve_exponent,
@@ -129,10 +179,17 @@ pub fn explora() -> TailsitterAirframe {
         mixer,
         guidance,
         stabilizer: TailsitterStabilizerConfig {
-            hover: base.stabilizer.hover,
+            hover: explora_hover(base.stabilizer.hover),
             plane: plane_stabilizer,
         },
     }
+}
+
+/// The eXplora's hover gains, as `explora_vtol()` flies them: `tailsitter()`'s, which are
+/// those hand-tuned in RealFlight, with its differential thrust's D (#476).
+fn explora_hover(mut hover: CopterStabilizerConfig) -> CopterStabilizerConfig {
+    hover.body_rate.roll_gains.d = 0.03;
+    hover
 }
 
 /// The eXplora's plane rate loop, as `explora_vtol()` flies it (#342): feedforward sized to

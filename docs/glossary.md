@@ -36,7 +36,8 @@ Code comments and docs link here instead of redefining a term.
   circle) with pitch and yaw rate on top of its own rate, harder the further off it
   (`maneuver::PathConfig`). Without it a roll sinks as its lift tips over.
 - **Prop wash:** the propeller's slipstream; on a tailsitter it flows over the elevons, so
-  their authority grows with thrust as well as airspeed.
+  their authority grows with thrust as well as airspeed, and damps the wing's turns where it
+  covers the span, the only damping in a hover.
 - **Offboard:** setpoints sent by a companion computer or ground station rather than sticks.
 - **Failsafe:** what the vehicle flies on its own when the link goes quiet: a fallback
   commander takes over ([architecture](../architecture.md#link-failsafe)).
