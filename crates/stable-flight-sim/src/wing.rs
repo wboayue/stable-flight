@@ -6,7 +6,7 @@ use stable_flight::mixers::TableMixer;
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{ActuatorCommand, Vec3};
 
-use crate::aero::{self, Aero};
+use crate::aero::{self, Aero, Wash};
 use crate::body::{Body, Loads, MassProperties};
 use crate::delay::DelayLine;
 use crate::fixed_wing::FixedWingModel;
@@ -267,16 +267,16 @@ impl Dynamics for FixedWing {
         let (thrust_n, motor_torque_nm) = (thrust_n * falloff, motor_torque_nm * falloff);
         let thrust_line_nm = Vec3::new(0.0, thrust_n * self.model.thrust_line_below_cg_m, 0.0);
         // The thrust axis is body `x`.
-        let wash_pa = self
+        let wash = self
             .rotors
             .wash
-            .map_or(0.0, |wash| wash.pressure_pa(thrust_n, air_mps.x));
+            .map_or(Wash::default(), |wash| wash.wash(thrust_n, air_mps.x));
         self.aero = aero::wrench(
             &self.model,
             air_mps,
             body.angular_velocity_radps,
             self.surfaces.deflection_rad(&self.model.max_deflection_rad),
-            wash_pa,
+            wash,
         );
         let (lift_force_n, lift_torque_nm) = self
             .lift

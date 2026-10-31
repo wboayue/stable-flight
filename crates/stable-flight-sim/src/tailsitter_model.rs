@@ -1,6 +1,6 @@
 //! The physical parameters of a simulated tailsitter: see [`TailsitterModel`].
 
-use crate::aero::AIR_DENSITY_KGPM3;
+use crate::aero::{AIR_DENSITY_KGPM3, Wash};
 use crate::fixed_wing::FixedWingModel;
 use crate::model::{ModelError, check_fraction, check_positive};
 
@@ -45,17 +45,19 @@ pub struct TailsitterModel {
 /// m/s, #123). Vortex-ring flow isn't modeled.
 ///
 /// The surfaces see [`surface_fraction`](Self::surface_fraction) of it on top of the free
-/// stream's, so they keep authority in a hover; the wing's lift, drag, and damping see the
-/// free stream only. The total thrust over the total disc area washes every surface evenly.
+/// stream's, so they keep authority in a hover. The part of the span in the wash is damped by
+/// it as by the free stream, [`damping_fraction`](Self::damping_fraction) of the wing's rate
+/// damping; the wing's lift and drag see the free stream only. The total thrust over the total disc area washes every surface evenly.
 ///
 /// # Examples
 ///
 /// ```
 /// use stable_flight_sim::PropWash;
 ///
-/// // Two 10-inch props.
-/// let wash = PropWash::props(2, 0.254, 1.0);
+/// // Two 10-inch props, 0.325 m out on a 1.4 m wing.
+/// let wash = PropWash::props(2, 0.254, 1.0, PropWash::span_damping_share(0.325, 0.254, 1.4));
 /// assert!((wash.disc_area_m2 - 0.1013).abs() < 1e-4);
+/// assert!((wash.damping_fraction - 0.24).abs() < 0.01);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PropWash {
@@ -64,34 +66,65 @@ pub struct PropWash {
     /// Share of the wake's added dynamic pressure the surfaces see, in `[0, 1]`: 1 for surfaces
     /// wholly inside the wash.
     pub surface_fraction: f32,
+    /// Share of the wing's rate damping inside the wash, in `[0, 1]`: the wash damps that part
+    /// of the span at its jet's speed ([`span_damping_share`](Self::span_damping_share)).
+    pub damping_fraction: f32,
 }
 
 impl PropWash {
-    /// `count` props of `diameter_m`, with `surface_fraction` of their wake over the surfaces.
-    pub fn props(count: u8, diameter_m: f32, surface_fraction: f32) -> Self {
+    /// `count` props of `diameter_m`, with `surface_fraction` of their wake over the surfaces
+    /// and `damping_fraction` of the wing's rate damping in it.
+    pub fn props(count: u8, diameter_m: f32, surface_fraction: f32, damping_fraction: f32) -> Self {
         let radius_m = diameter_m / 2.0;
         PropWash {
             disc_area_m2: f32::from(count) * core::f32::consts::PI * radius_m * radius_m,
             surface_fraction,
+            damping_fraction,
         }
     }
 
-    /// Dynamic pressure the wash adds over the surfaces at `thrust_n` while moving through the
-    /// air at `axial_mps` along the thrust axis (negative sinking tail first), in Pa; negative
-    /// where it takes away from the free stream's.
+    /// The share of a wing's rate damping inside the wash of a prop `motor_arm_m` out each side,
+    /// `diameter_m` across, on a wing of `span_m`: by strip theory each strip of span damps a
+    /// roll as its distance from the center squared, so the share is `∫y²` over the washed
+    /// strip (the arm ± the radius, clipped to the half-span) over `∫y²` to the tip.
+    pub fn span_damping_share(motor_arm_m: f32, diameter_m: f32, span_m: f32) -> f32 {
+        let half_span_m = span_m / 2.0;
+        let radius_m = diameter_m / 2.0;
+        let inner_m = (motor_arm_m - radius_m).clamp(0.0, half_span_m);
+        let outer_m = (motor_arm_m + radius_m).clamp(0.0, half_span_m);
+        let cube = |y_m: f32| y_m * y_m * y_m;
+        (cube(outer_m) - cube(inner_m)) / cube(half_span_m)
+    }
+
+    /// The wash at `thrust_n` while moving through the air at `axial_mps` along the thrust
+    /// axis (negative sinking tail first): the pressure it adds over the surfaces, its
+    /// [`surface_fraction`](Self::surface_fraction) of [`added_pa`](Self::added_pa), and the speed it damps the wing at, its jet's
+    /// (less any sink) times [`damping_fraction`](Self::damping_fraction), 0 where it takes
+    /// from the free stream.
+    pub(crate) fn wash(&self, thrust_n: f32, axial_mps: f32) -> Wash {
+        let added_pa = self.added_pa(thrust_n, axial_mps);
+        let flow_mps = libm::sqrtf(2.0 * added_pa.max(0.0) / AIR_DENSITY_KGPM3);
+        Wash {
+            pressure_pa: self.surface_fraction * added_pa,
+            damping_mps: self.damping_fraction * flow_mps,
+        }
+    }
+
+    /// Dynamic pressure the wake adds where it flows, before the surfaces' share, at `thrust_n`
+    /// while moving through the air at `axial_mps`, in Pa; negative where it takes away from
+    /// the free stream's.
     ///
     /// Nose first, `T/A`. Tail first at speed `V` against a static jet of speed
     /// `v = √(2T/ρA)`, the surfaces see `½ρ(v − V)²` in place of the free stream's `½ρV²`:
     /// `T/A − ρ·v·V`.
-    pub(crate) fn pressure_pa(&self, thrust_n: f32, axial_mps: f32) -> f32 {
+    fn added_pa(&self, thrust_n: f32, axial_mps: f32) -> f32 {
         let disc_pa = thrust_n / self.disc_area_m2;
-        let added_pa = if axial_mps < 0.0 {
+        if axial_mps < 0.0 {
             let jet_mps = libm::sqrtf(2.0 * disc_pa / AIR_DENSITY_KGPM3);
             disc_pa - AIR_DENSITY_KGPM3 * jet_mps * -axial_mps
         } else {
             disc_pa
-        };
-        self.surface_fraction * added_pa
+        }
     }
 }
 
@@ -109,9 +142,15 @@ impl TailsitterModel {
             ("motor_arm_m", self.motor_arm_m),
             ("prop_wash.disc_area_m2", self.prop_wash.disc_area_m2),
         ])?;
-        check_fraction(&[(
-            "prop_wash.surface_fraction",
-            self.prop_wash.surface_fraction,
-        )])
+        check_fraction(&[
+            (
+                "prop_wash.surface_fraction",
+                self.prop_wash.surface_fraction,
+            ),
+            (
+                "prop_wash.damping_fraction",
+                self.prop_wash.damping_fraction,
+            ),
+        ])
     }
 }

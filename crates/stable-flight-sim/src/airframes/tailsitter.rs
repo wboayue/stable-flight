@@ -86,7 +86,9 @@ pub fn tailsitter() -> TailsitterAirframe {
             ..airplane.model
         },
         motor_arm_m: 0.25,
-        prop_wash: PropWash::props(MOTORS, PROP_DIAMETER_M, 1.0),
+        // Its props, 25 cm out on the airplane's 2.9 m wing, wash under 2% of the wing's rate
+        // damping (`PropWash::span_damping_share`): left out.
+        prop_wash: PropWash::props(MOTORS, PROP_DIAMETER_M, 1.0, 0.0),
     };
     let mixer = TableMixer::tailsitter_2p();
     let gains = |p, i, d| Gains { p, i, d };

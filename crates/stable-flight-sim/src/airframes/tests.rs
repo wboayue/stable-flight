@@ -6,7 +6,7 @@ use stable_flight::stabilizers::vtol::TailsitterStabilizer;
 use stable_flight::{AttitudeSetpoint, ControlOutput, Mixer, Setpoint, Stabilizer, VehicleState};
 
 use super::*;
-use crate::aero;
+use crate::aero::{self, Wash};
 use crate::body::Body;
 use crate::lockstep::Dynamics;
 use crate::motors::Motors;
@@ -97,13 +97,27 @@ fn rate_feedforward_cancels_rate_damping() {
     let airspeed_mps = 15.0;
     let feedforward = plane::rate_feedforward(&model, airspeed_mps);
     let air_mps = Vec3::new(airspeed_mps, 0.0, 0.0);
-    let still_nm = aero::wrench(&model, air_mps, Vec3::zeros(), Vec3::zeros(), 0.0).torque_nm;
+    let still_nm = aero::wrench(
+        &model,
+        air_mps,
+        Vec3::zeros(),
+        Vec3::zeros(),
+        Wash::default(),
+    )
+    .torque_nm;
     for axis in 0..3 {
         let rates_radps = Vec3::ith(axis, 0.5);
         let deflection_rad = rates_radps
             .component_mul(&feedforward)
             .component_mul(&model.max_deflection_rad);
-        let torque_nm = aero::wrench(&model, air_mps, rates_radps, deflection_rad, 0.0).torque_nm;
+        let torque_nm = aero::wrench(
+            &model,
+            air_mps,
+            rates_radps,
+            deflection_rad,
+            Wash::default(),
+        )
+        .torque_nm;
         assert_relative_eq!(torque_nm[axis], still_nm[axis], epsilon = 1e-4);
     }
 }

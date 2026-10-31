@@ -2,7 +2,7 @@ use assert2::check;
 use stable_flight::{GRAVITY, Vec3};
 
 use super::*;
-use crate::aero;
+use crate::aero::{self, Wash};
 
 /// The trim of level flight at `airspeed_mps`: angle of attack (rad, body pitch in level
 /// flight), elevator deflection (rad), and the pusher thrust that holds the speed (N). Found by
@@ -18,7 +18,7 @@ fn trim(model: &FixedWingModel, airspeed_mps: f32) -> (f32, f32, f32) {
                 air,
                 Vec3::zeros(),
                 Vec3::new(0.0, elevator, 0.0),
-                0.0,
+                Wash::default(),
             )
         };
         let (m0, m1) = (wrench(0.0).torque_nm.y, wrench(0.1).torque_nm.y);

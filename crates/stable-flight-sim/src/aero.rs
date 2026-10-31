@@ -29,21 +29,32 @@ pub(crate) struct Aero {
     pub beta_rad: f32,
 }
 
+/// Prop wash over a wing, as [`wrench`] takes it: what it adds over the surfaces and how hard it
+/// damps the wing's turn rates. The default is no wash.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) struct Wash {
+    /// Dynamic pressure added over the surfaces on top of the free stream's, in Pa; negative
+    /// where the wash opposes it (the sum is never below zero).
+    pub pressure_pa: f32,
+    /// The airspeed whose rate damping the wash adds, in m/s: a flow over the whole wing at it
+    /// damps as the wash does over its part of the span. Non-negative.
+    pub damping_mps: f32,
+}
+
 /// The aerodynamics of `model` moving through the air at `air_mps` (its velocity relative to
 /// the air, FRD body axes) while turning at `rates_radps`, with its aileron, elevator, and
-/// rudder axes deflected by `deflection_rad` (`x`, `y`, `z`), and `wash_pa` of prop-wash
-/// dynamic pressure over the surfaces on top of the free stream's (negative where the wash
-/// opposes it; the sum is never below zero).
+/// rudder axes deflected by `deflection_rad` (`x`, `y`, `z`), in `wash`.
 ///
 /// α is `atan2(w, u)` and β is `asin(v / V)`. Rate terms are written per unit of airspeed
-/// rather than divided by it, so they vanish smoothly as the airspeed goes to zero; at zero
-/// airspeed only the surfaces in the wash act.
+/// rather than divided by it, so they vanish smoothly as the airspeed goes to zero. The wash
+/// adds its damping on top ([`Wash::damping_mps`]), so at zero airspeed the surfaces in the wash
+/// act and the wash damps the turn rates.
 pub(crate) fn wrench(
     model: &FixedWingModel,
     air_mps: Vec3,
     rates_radps: Vec3,
     deflection_rad: Vec3,
-    wash_pa: f32,
+    wash: Wash,
 ) -> Aero {
     let c = &model.aero;
     let (span, chord) = (model.span_m, model.chord_m);
@@ -57,16 +68,21 @@ pub(crate) fn wrench(
     } else {
         0.0
     };
-    let surface_area_n = (pressure_area_n + wash_pa * model.wing_area_m2).max(0.0);
+    let surface_area_n = (pressure_area_n + wash.pressure_pa * model.wing_area_m2).max(0.0);
     let surfaces = surface_wrench(model, surface_area_n, deflection_rad);
+    // The wash's rate scale, as the free stream's below: `½ρ·V·S`.
+    let wash_rate_scale = 0.5 * AIR_DENSITY_KGPM3 * wash.damping_mps * model.wing_area_m2;
     if !moving {
-        return surfaces;
+        return Aero {
+            torque_nm: surfaces.torque_nm + rate_moments(model, wash_rate_scale, rates_radps),
+            ..surfaces
+        };
     }
 
     let alpha_rad = libm::atan2f(air_mps.z, air_mps.x);
     let beta_rad = libm::asinf((air_mps.y / speed_mps).clamp(-1.0, 1.0));
-    // The rate terms' per-unit-airspeed scale.
-    let rate_scale = pressure_area_n / speed_mps;
+    // The rate terms' per-unit-airspeed scale: the free stream's and the wash's.
+    let rate_scale = pressure_area_n / speed_mps + wash_rate_scale;
 
     let (sin_alpha, cos_alpha) = (libm::sinf(alpha_rad), libm::cosf(alpha_rad));
     let blend = stall_blend(c, alpha_rad);
@@ -82,22 +98,34 @@ pub(crate) fn wrench(
         -lift_n * cos_alpha - drag_n * sin_alpha,
     );
 
-    let (p, q, r) = (rates_radps.x, rates_radps.y, rates_radps.z);
-    let roll_nm = pressure_area_n * span * c.c_roll_beta * beta_rad
-        + rate_scale * span * span / 2.0 * (c.c_roll_p * p + c.c_roll_r * r);
-    // Static stability on sin α: the slope at small α, bounded at any α, and gone with the
-    // flow broadside (α ±90°: the wing's center of pressure near mid-chord) or reversed.
-    let pitch_nm = pressure_area_n * chord * (c.c_pitch_0 + c.c_pitch_alpha * sin_alpha)
-        + rate_scale * chord * chord / 2.0 * c.c_pitch_q * q;
-    let yaw_nm = pressure_area_n * span * c.c_yaw_beta * beta_rad
-        + rate_scale * span * span / 2.0 * (c.c_yaw_p * p + c.c_yaw_r * r);
+    let roll_nm = pressure_area_n * span * c.c_roll_beta * beta_rad;
+    // Static stability on sin α: the slope at small α, strongest broadside (α ±90°, where a
+    // flat plate's center of pressure near mid-chord gives a moment of the same size), and
+    // gone with the flow reversed.
+    let pitch_nm = pressure_area_n * chord * (c.c_pitch_0 + c.c_pitch_alpha * sin_alpha);
+    let yaw_nm = pressure_area_n * span * c.c_yaw_beta * beta_rad;
+    let static_nm = Vec3::new(roll_nm, pitch_nm, yaw_nm);
 
     Aero {
         force_n: force_n + surfaces.force_n,
-        torque_nm: Vec3::new(roll_nm, pitch_nm, yaw_nm) + surfaces.torque_nm,
+        torque_nm: static_nm + rate_moments(model, rate_scale, rates_radps) + surfaces.torque_nm,
         alpha_rad,
         beta_rad,
     }
+}
+
+/// The rate damping and cross terms of `model` turning at `rates_radps` under `rate_scale`
+/// (dynamic pressure times wing area per unit of airspeed, in N·s/m), in N·m on the FRD body
+/// axes.
+fn rate_moments(model: &FixedWingModel, rate_scale: f32, rates_radps: Vec3) -> Vec3 {
+    let c = &model.aero;
+    let (span, chord) = (model.span_m, model.chord_m);
+    let (p, q, r) = (rates_radps.x, rates_radps.y, rates_radps.z);
+    Vec3::new(
+        rate_scale * span * span / 2.0 * (c.c_roll_p * p + c.c_roll_r * r),
+        rate_scale * chord * chord / 2.0 * c.c_pitch_q * q,
+        rate_scale * span * span / 2.0 * (c.c_yaw_p * p + c.c_yaw_r * r),
+    )
 }
 
 /// The side force and moments of `model`'s surfaces deflected by `deflection_rad` (aileron,
