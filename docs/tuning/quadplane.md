@@ -80,9 +80,17 @@ small-copter defaults don't carry over; measure first, then tune on a sim model 
   up collective: the Alia sank 53 m at full throttle. Yaw ratio 1 stops it, at the cost of
   holding heading at a few m/s sideways ([#440](https://github.com/wboayue/stable-flight/issues/440)).
 - **Rate and angle:** the sim autotune on a model sized from the sweep, with the probes
-  scaled to the aircraft (0.2 rad/s rate steps, 5° angle steps, a 30 s settle;
-  `stable-flight-sim` `tests/common/large.rs`): rate P 1.52 roll, 2.57 pitch, no D; angle P
-  1.03. Rate I 0.2 trims X-Plane's nose-up pitch at level thrust.
+  scaled to the aircraft (`StagePlan::large_copter_search`: 0.2 rad/s rate steps, 5° angle
+  steps, a 30 s settle): rate P 1.52 roll, 2.57 pitch, no D; angle P 1.03. Rate I 0.2 trims
+  X-Plane's nose-up pitch at level thrust.
+- **Confirm in X-Plane:** the same search there (`just fly-xplane-autotune --step-test`,
+  13 min) judges both rate loops by bounce-back and overshoot, and lowers them. Keep a
+  lowered loop only if its step test beats the start's:
+  - Pitch rate P 1.78 cut nose-up overshoot from 12% to 4% and settled in 0.8 s against 1.1 s.
+  - Roll rate P 1.28 left 4 of 6 steps short of 90% where 1.52 left none, so roll keeps 1.52.
+  - The angle loops end short of their steps at every P tried (roll 21–26% at 1.0–1.34,
+    pitch 13–18% at 1.0–1.03), so angle P isn't what limits them; they keep 1.03
+    ([#540](https://github.com/wboayue/stable-flight/issues/540)).
 - **Yaw and heading:** the quad values limit-cycled at ±1 moment; yaw rate P 5 without I and
   heading P 0.8 step 29° with 2% overshoot.
 - **Position:** core's lateral loop swayed into the tilt cap after a 5° step;
