@@ -232,10 +232,11 @@ impl CopterStabilizer {
         }
     }
 
-    /// Which attitude loops keep their integral this tick (roll, pitch, heading): the one over
-    /// a rate loop a step flies. Integrating the error the step tilts the vehicle into would
-    /// wind that loop up and kick the vehicle on the handoff; at angle P 2 and I 0.25 the sim's
-    /// `quad_x` then didn't settle within 10 s after a large rate step (#579).
+    /// Which attitude loops keep their integral this tick (roll, pitch, heading): the loop over
+    /// the rate loop a step is flying, none otherwise. The step tilts or turns the vehicle away
+    /// from that loop's setpoint; integrating that error would wind the loop up and kick the
+    /// vehicle at the handoff. At angle P 2 and I 0.25, the sim's `quad_x` then didn't settle
+    /// within 10 s after a large rate step (#579).
     pub(super) fn held_integrals(&self) -> [bool; 3] {
         let stepped_axis = self
             .stage
