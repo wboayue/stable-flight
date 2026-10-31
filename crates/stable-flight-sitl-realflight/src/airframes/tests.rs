@@ -199,9 +199,7 @@ fn explora_vtol_hovers_on_the_sim_exploras_gains() {
     let sim = stable_flight_sim::airframes::explora().stabilizer.hover;
     let realflight = explora_vtol().stabilizer.hover;
 
-    assert_eq!(realflight.body_rate, sim.body_rate);
-    assert_eq!(realflight.attitude, sim.attitude);
-    assert_eq!(realflight.gyro_cutoff_hz, sim.gyro_cutoff_hz);
+    assert_eq!(realflight, sim);
 }
 
 /// The Cobra's mapping drives each of its eight channels once: lift rotors, pusher, ailerons,

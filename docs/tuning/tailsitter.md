@@ -129,14 +129,15 @@ The axes are the hover view's:
     and end within 0.06 of their target.
   - **Pitch** (the elevons): 8–12 ms, then 19–20 rad/s². Its steps rise in about 60 ms with 3%
     overshoot.
-  - **Yaw** (the elevons apart): its steps end at 0.84 of the request within the step's
-    window, as a copter's slow yaw does.
+  - **Yaw** (the elevons apart): its steps end at 0.84 of the request within the step's window.
 - **The hand tune it replaced** (P 0.4, 0.3, 0.1) never reached its rate steps: they ended at
   0.55 (roll), 0.80 (pitch), and 0.24–0.36 (yaw) of their request (#539).
 - **Roll in a wind descent:** descending with the wind behind a wingtip leaves a slow roll loop
   barely damped. On the hand tune at D 0, roll swung ±12–16° on a 1.2 s cycle to touchdown,
-  which D 0.03 fixed (#476). The autotuned roll loop holds within ±3° of its lean there without
-  D (#539).
+  which D 0.03 fixed (#476). On the autotuned gains, a 40 m descent in 5 km/h of wind held
+  within ±3° of its lean, with no cycle (#539).
+- **Pitch while sinking:** the airflow pushes the nose over. The eXplora's integral holds 0.28
+  of moment (I × `STAB_RATE_IMAX`) and P the rest; descents at 1.5 m/s hold the nose (#539).
 - **Gyro low-pass:** the autotune designs D around the filter's lag (about 5.6 ms at 40 Hz),
   so tune with the filter you'll fly.
 
