@@ -31,7 +31,7 @@ fn every_airframes_tuned_loops_meet_the_autotune_targets() {
 /// Rate I as a share of P that holds a CG offset's moment slowly enough for an angle step to
 /// end past its target toward the offset (6% at angle P 6) and short of it the other way; at
 /// 0.3 both end on it.
-const SLOW_RATE_I_PER_P: f32 = 0.1;
+const SLOW_RATE_I_PER_P: f32 = 0.08;
 
 /// Angle steps that a CG offset holds past their target and short of it, with no ringing,
 /// pass the angle search's criterion, which judges overshoot from where each step ended: the

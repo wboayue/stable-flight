@@ -215,8 +215,8 @@ let body_rate_config = BodyRateControllerConfig {
     roll_gains: gains,
     pitch_gains: gains,
     yaw_gains: Gains { p: 0.3, i: 0.1, d: 0.0 },
-    max_integral: 1.0,
-    yaw_max_integral: 5.0,
+    max_integral: 0.5,
+    yaw_max_integral: 0.5,
 };
 
 // Attitude controller config  
@@ -242,8 +242,10 @@ let moments = body_rate.control(&body_rate_config, 0.004, rates.push(0.0), Vec3:
 - **No panics in the tick:** outputs saturate, and a non-finite input gives neutral output
   without touching integral or derivative state
   ([input policy](https://github.com/wboayue/stable-flight/blob/main/architecture.md#input-policy-no-panics-in-the-tick)).
-- **Anti-windup:** the integral is clamped to `max_integral` every tick. On a retune, the
-  composite's `set_config` calls each controller's `rescale_integral`, so a new `i` is bumpless.
+- **Anti-windup:** the integral is clamped to `max_integral` every tick. The copter rate loop
+  integrates its I term in moment and clamps that, so a new `i` keeps the term; the other loops
+  integrate the error, and the composite's `set_config` calls their `rescale_integral`, so a new
+  `i` is bumpless there too.
 - **No allocation:** fixed-size `nalgebra` math, so the loops run on firmware.
 - **Validated config:** `validate()` rejects negative or non-finite limits; config fields
   document their units.
@@ -274,10 +276,12 @@ Where:
 - `dt` = time step
 
 ### Anti-Windup Protection
-Integral terms are clamped to prevent windup:
+Integral terms are clamped to prevent windup: the copter rate loop's I term in moment, the
+others' integrated error:
 
 ```rust,ignore
-integrated_error = clamp_symmetric(integrated_error + dt * error, config.max_integral);
+integral = clamp_symmetric(integral + gains.i * error * dt, config.max_integral); // rate loop
+integrated_error = clamp_symmetric(integrated_error + dt * error, config.max_integral); // others
 ```
 
 ### Angle Wrapping (Yaw Controller)

@@ -621,11 +621,18 @@ contract:
   lateral loop the acceleration it last cut to `max_tilt_rad`, and the integral doesn't grow
   along it (ArduPilot `libraries/AC_PID/AC_PID_2D.cpp:127-146`). Clamping to `max_integral`
   alone would let a long leg at the tilt limit wind it full and overshoot the waypoint.
-* **Retuning `i` is bumpless.** Controllers integrate the error, not the I term, so a new
-  integral gain would rescale `i · ∫e` and jump the output. `set_config` rescales each integral
-  by `old_i / new_i` so the term carries over (a hover trim survives a retune). Across a zero
-  gain it resets the integral: one accumulated under `i = 0` was never applied. The per-tick
-  `max_integral` clamp still applies, so a large cut in `i` can still bump the output.
+* **Retuning `i` is bumpless.** The copter rate loop integrates the I term itself, `∫i·e`, in
+  moment, and limits it in moment, as ArduPilot's `AC_PID::update_i` and PX4's
+  `RateControl::updateIntegral` do: a new `i` changes how fast the term grows, not what it
+  holds, and `i = 0` drops it. The other controllers integrate the error, so a new integral
+  gain would rescale `i · ∫e` and jump the output; `set_config` rescales each such integral by
+  `old_i / new_i` so the term carries over (a hover trim survives a retune). Across a zero gain
+  it resets the integral: one accumulated under `i = 0` was never applied. The per-tick
+  `max_integral` clamp still applies, so a large cut in `i` can still bump their output.
+  The rate loop's limit in moment is what lets a small `i` hold a trim: limited to `i` × 1 rad of
+  error, core's default rate gains held 0.03 of moment, and the sim autotune couldn't start
+  under a 1 cm CG offset (#374). The outer loops' integrals stay in error units: no row has
+  needed otherwise.
 * **Tuning probes are runtime state, not config.** An autotune probe (`Tunable::start_probe`)
   replaces one loop's setpoint inside the tick; it lives next to the controllers'
   state, never in `CopterStabilizerConfig` or its params. Handing the loop back clears its
@@ -757,9 +764,10 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     it. The I follows P as on roll and pitch, at a larger share (`YAW_RATE_I_PER_P`, 0.3/s):
     after liftoff it rebuilds the trim in 4.9 s on the sim's QuadCopterX yaw, against 7.3 s at
     0.2, at the same tuned P; at 0.4–0.5 the tuned steps overshoot past the spec (#558). The
-    yaw integral has its own, larger limit (`BodyRateControllerConfig::yaw_max_integral`,
-    5 rad); with the shared 1 rad a fifth of P held 0.40 only from P 2, and the search kept
-    its start on every 0.40-trim row. Keeping the start's I instead was rejected: a high I makes
+    yaw integral has its own limit (`BodyRateControllerConfig::yaw_max_integral`, 0.5 of
+    moment, ArduPilot's yaw IMAX; PX4's 0.3, `MC_YR_INT_LIM`, is short of 0.40); a limit of
+    the I × 1 rad held 0.40 only from P 2, and the search kept its start on every 0.40-trim
+    row. Keeping the start's I instead was rejected: a high I makes
     small P overshoot on the I alone, the bracket stops there, and the result depends on the
     start (0.35 against 0.91 on `racer`). A start whose I builds the trim slowly fails the
     same way: `racer`'s own yaw gains (P 1.5, I 0.1) settle with part of a 0.40 trim on P, and
@@ -955,10 +963,9 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   * Open: gyro noise spoils the closed-loop fit: on the sim's noise rows `quad_x`'s and
     `heavy_quad`'s roll rate fits read no lag from the ×3 start and the other rows' rate
     search steps don't settle, while the prefilter that carried them misread RealFlight's lag (*Identify*,
-    [#551](https://github.com/wboayue/stable-flight/issues/551)). Of the trim rows, the low
-    starts with a CG offset tilt away from the settle (core's default rate I holds at most 0.03
-    of moment within its `max_integral`), and `racer`'s rate searches under the CG offset
-    pass no candidate ([#374](https://github.com/wboayue/stable-flight/issues/374)).
+    [#551](https://github.com/wboayue/stable-flight/issues/551)). The trim rows pass, with
+    the rate I term limited in moment (*Retuning `i` is bumpless*, #374); the combined rows,
+    which add the noise, stop on it.
     `racer`'s ×3 start breaches the rate envelope in its first fit with 25 ms of delay: the
     abort is the safe outcome, and the row stays ignored.
   * `racer` flies its gyro low-pass at 75 Hz, Mission Planner's initial `INS_GYRO_FILTER`

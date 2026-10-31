@@ -78,14 +78,13 @@ rows! {
     quad_x_noise_low: quad_x, Noise, Low;
     #[ignore = "under gyro noise the rate search's first stage doesn't settle (NotSettled) (#551)"]
     quad_x_noise_high: quad_x, Noise, High;
-    #[ignore = "core's default rate I (0.03) holds at most 0.03 of moment within max_integral 1: the low start tilts away from the settle (#374)"]
     quad_x_cg_offset_low: quad_x, CgOffset, Low;
     quad_x_cg_offset_high: quad_x, CgOffset, High;
     quad_x_weak_motor_low: quad_x, WeakMotor, Low;
     quad_x_weak_motor_high: quad_x, WeakMotor, High;
-    #[ignore = "the CG offset blocks it as in its own row (#374)"]
+    #[ignore = "under gyro noise the pitch rate stage doesn't settle (NotSettled) (#551)"]
     quad_x_combined_low: quad_x, Combined, Low;
-    #[ignore = "the CG offset blocks it as in its own row (#374)"]
+    #[ignore = "under gyro noise the roll rate stage doesn't settle (NotSettled) (#551)"]
     quad_x_combined_high: quad_x, Combined, High;
 
     heavy_quad_clean_low: heavy_quad, Clean, Low;
@@ -98,14 +97,13 @@ rows! {
     heavy_quad_noise_low: heavy_quad, Noise, Low;
     #[ignore = "under gyro noise the roll rate design doesn't hold the settle (NotSettled) (#551)"]
     heavy_quad_noise_high: heavy_quad, Noise, High;
-    #[ignore = "core's default rate I (0.03) holds at most 0.03 of moment within max_integral 1: the low start tilts away from the settle (#374)"]
     heavy_quad_cg_offset_low: heavy_quad, CgOffset, Low;
     heavy_quad_cg_offset_high: heavy_quad, CgOffset, High;
     heavy_quad_weak_motor_low: heavy_quad, WeakMotor, Low;
     heavy_quad_weak_motor_high: heavy_quad, WeakMotor, High;
-    #[ignore = "the CG offset blocks it as in its own row (#374)"]
+    #[ignore = "under gyro noise the roll rate stage doesn't settle (NotSettled) (#551)"]
     heavy_quad_combined_low: heavy_quad, Combined, Low;
-    #[ignore = "the CG offset blocks it as in its own row (#374)"]
+    #[ignore = "under gyro noise the roll rate stage doesn't settle (NotSettled) (#551)"]
     heavy_quad_combined_high: heavy_quad, Combined, High;
 
     racer_clean_low: racer, Clean, Low;
@@ -118,14 +116,12 @@ rows! {
     racer_noise_low: racer, Noise, Low;
     #[ignore = "under gyro noise the rate search's first stage doesn't settle (NotSettled) (#551)"]
     racer_noise_high: racer, Noise, High;
-    #[ignore = "under the trim, the rate searches pass no candidate (Kept(NoPass)) (#374)"]
     racer_cg_offset_low: racer, CgOffset, Low;
-    #[ignore = "under the trim, the rate searches pass no candidate (Kept(NoPass)) (#374)"]
     racer_cg_offset_high: racer, CgOffset, High;
     racer_weak_motor_low: racer, WeakMotor, Low;
     racer_weak_motor_high: racer, WeakMotor, High;
-    #[ignore = "the CG offset blocks it as in its own row (#374)"]
+    #[ignore = "under gyro noise the pitch rate stage doesn't settle (NotSettled) (#551)"]
     racer_combined_low: racer, Combined, Low;
-    #[ignore = "the CG offset blocks it as in its own row (#374)"]
+    #[ignore = "under gyro noise every stage runs, but the tuned steps overshoot 0.06-0.07 against the spec's 0.05, in 366 s (#551)"]
     racer_combined_high: racer, Combined, High;
 }

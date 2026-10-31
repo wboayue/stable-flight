@@ -26,8 +26,8 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
             roll_gains: gains(0.5, 0.2, 0.004),
             pitch_gains: gains(0.5, 0.2, 0.004),
             yaw_gains: gains(1.1532, 0.3460, 0.0),
-            max_integral: 1.0,
-            yaw_max_integral: 5.0,
+            max_integral: 0.5,
+            yaw_max_integral: 0.5,
         },
         attitude: AttitudeControllerConfig {
             roll_gains: gains(3.0, 0.0, 0.1),
@@ -284,7 +284,7 @@ fn titan_cobra_pitch_integrator_covers_the_hover_trim() {
     let default_headroom = 1.0 - MixerConfig::default().thrust_factor;
     let trim = MEASURED_HOVER_PITCH_MOMENT_AT_0_9 * default_headroom / headroom;
     let body_rate = airframe.stabilizer.hover.body_rate;
-    let authority = body_rate.pitch_gains.i * body_rate.max_integral;
+    let authority = body_rate.max_integral;
     assert!(
         authority >= 1.25 * trim,
         "pitch I authority {authority}, trim {trim}"
@@ -301,8 +301,8 @@ fn titan_cobra_hover_gains_are_the_flown_set() {
             roll_gains: gains(0.4847, 0.0969, 0.0),
             pitch_gains: gains(0.3970, 0.0794, 0.0),
             yaw_gains: gains(1.8091, 0.5427, 0.0),
-            max_integral: 3.0,
-            yaw_max_integral: 1.0,
+            max_integral: 0.29,
+            yaw_max_integral: 0.54,
         },
         attitude: AttitudeControllerConfig {
             roll_gains: gains(7.1338, 0.0, 0.1),

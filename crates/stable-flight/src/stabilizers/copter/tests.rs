@@ -510,7 +510,6 @@ fn set_config_applies_next_tick_and_keeps_controller_state() {
     let mut new = old;
     new.body_rate.roll_gains.i = 5.0;
     stabilizer.set_config(new).expect("valid config");
-    reference.rescale_integral(&old.body_rate, &new.body_rate);
     let output = stabilizer.stabilize(0.004, &setpoint, &state);
 
     let expected = reference.control(&new.body_rate, 0.004, desired, Vec3::zeros());
@@ -789,9 +788,7 @@ fn zero_thrust_in_flight_keeps_the_yaw_trim() {
     for _ in 0..500 {
         stabilizer.stabilize(0.004, &yawing, &shooting_up);
     }
-    let trim = stabilizer
-        .body_rate
-        .integral_term(&stabilizer.config.body_rate, 2);
+    let trim = stabilizer.body_rate.integral_term(2);
     assert!(trim > 0.01, "trim {trim}");
 
     let mut guidance = CopterGuidance::new(CopterGuidanceConfig::default());
@@ -808,9 +805,7 @@ fn zero_thrust_in_flight_keeps_the_yaw_trim() {
     assert!(setpoint.thrust() == 0.0 && !setpoint.idle(), "{setpoint:?}");
 
     stabilizer.stabilize(0.004, &setpoint, &shooting_up);
-    let held = stabilizer
-        .body_rate
-        .integral_term(&stabilizer.config.body_rate, 2);
+    let held = stabilizer.body_rate.integral_term(2);
     // One tick's integration (the heading-hold rate replaces the 0.1 yaw rate) moves it a little.
     approx::assert_relative_eq!(held, trim, max_relative = 0.01);
 }

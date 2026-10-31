@@ -99,8 +99,10 @@ pub fn tailsitter() -> TailsitterAirframe {
             pitch_gains: gains(0.3, 0.5, 0.0),
             // View yaw: the elevons opposite ways.
             yaw_gains: gains(0.1, 0.05, 0.0),
-            max_integral: 1.0,
-            yaw_max_integral: 1.0,
+            // The trim the I terms held when they were tuned: pitch's I × 1 rad of error, and
+            // yaw's (#374).
+            max_integral: 0.5,
+            yaw_max_integral: 0.05,
         },
         attitude: AttitudeControllerConfig {
             roll_gains: gains(4.0, 0.0, 0.0),

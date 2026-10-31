@@ -72,8 +72,10 @@ fn alia250_hovers_on_the_sim_alias_tune() {
     check!(hover.body_rate.pitch_gains.p == 1.78);
     check!(hover.attitude.roll_gains.i == 0.25);
     check!(hover.attitude.pitch_gains.i == 0.15);
+    check!(hover.body_rate.max_integral == 0.2);
     hover.body_rate.roll_gains.i = 0.0;
     hover.body_rate.pitch_gains.i = 0.0;
+    hover.body_rate.max_integral = sim.stabilizer.body_rate.max_integral;
     hover.body_rate.pitch_gains.p = sim.stabilizer.body_rate.pitch_gains.p;
     hover.attitude.roll_gains.i = sim.stabilizer.attitude.roll_gains.i;
     hover.attitude.pitch_gains.i = sim.stabilizer.attitude.pitch_gains.i;

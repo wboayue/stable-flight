@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (behavior):** `airframes::quadcopter_x()`'s rate I terms take core's new limits,
+  0.5 of moment (#374): roll and pitch held 0.2 under the old limit, yaw 1.73. The eXplora
+  and Titan Cobra keep what theirs held, in the new unit.
 - **Breaking (behavior):** `airframes::explora_vtol()` hovers on RealFlight's autotune of it
   (#539): rate P 0.6504/1.4217/1.0191 (roll, pitch, yaw in the hover view), angle P
   2.3554/9, and the default 40 Hz gyro low-pass in place of none. The hand tune's rate steps

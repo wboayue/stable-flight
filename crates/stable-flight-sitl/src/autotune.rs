@@ -317,7 +317,7 @@ fn airframe_snippet(config: &CopterStabilizerConfig, source: &str) -> String {
              roll_gains: {},\n    \
              pitch_gains: {},\n    \
              yaw_gains: {},\n    \
-             yaw_max_integral: {:.1},\n    \
+             yaw_max_integral: {:.2},\n    \
              ..\n\
          }},\n\
          attitude: AttitudeControllerConfig {{\n    \

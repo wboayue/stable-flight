@@ -276,6 +276,8 @@ fn alia250_hover_stabilizer() -> CopterStabilizerConfig {
                 i: 0.0,
                 d: 0.0,
             },
+            // The trim the I terms held when they were tuned: I 0.2 × 1 rad of error (#374).
+            max_integral: 0.2,
             ..defaults.body_rate
         },
         attitude: AttitudeControllerConfig {

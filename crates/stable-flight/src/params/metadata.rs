@@ -14,13 +14,13 @@
 //! use stable_flight::params::metadata::ParamMetadata;
 //! use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 //!
-//! let rate_imax = CopterStabilizerConfig::METADATA
+//! let angle_imax = CopterStabilizerConfig::METADATA
 //!     .iter()
-//!     .find(|m| m.name() == "STAB_RATE_IMAX")
+//!     .find(|m| m.name() == "STAB_ATT_IMAX")
 //!     .expect("described");
-//! assert_eq!(rate_imax.units(), "rad");
-//! assert_eq!(rate_imax.min().map(|b| b.value()), Some(0.0));
-//! assert_eq!(rate_imax.max(), None);
+//! assert_eq!(angle_imax.units(), "rad*s");
+//! assert_eq!(angle_imax.min().map(|b| b.value()), Some(0.0));
+//! assert_eq!(angle_imax.max(), None);
 //! ```
 
 use super::ParamTable;

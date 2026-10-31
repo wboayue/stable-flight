@@ -199,6 +199,8 @@ fn explora_hover(hover: CopterStabilizerConfig) -> CopterStabilizerConfig {
     hover.body_rate.yaw_gains = gains(1.0191, 0.3057, 0.0);
     hover.attitude.roll_gains = gains(2.3554, 0.0, 0.0);
     hover.attitude.pitch_gains = gains(9.0, 0.0, 0.0);
+    hover.body_rate.max_integral = 0.28;
+    hover.body_rate.yaw_max_integral = 0.31;
     hover
 }
 

@@ -112,7 +112,7 @@ The axes are the hover view's:
 | `STAB_RATE_RLL_P`, `_I`, `_D` | `hover.body_rate.roll_gains` | 0.6504, 0.1301, 0.0017 |
 | `STAB_RATE_PIT_P`, `_I`, `_D` | `hover.body_rate.pitch_gains` | 1.4217, 0.2844, 0 |
 | `STAB_RATE_YAW_P`, `_I`, `_D` | `hover.body_rate.yaw_gains` | 1.0191, 0.3057, 0 |
-| `STAB_RATE_IMAX` | `hover.body_rate.max_integral` | 1.0 |
+| `STAB_RATE_IMAX` | `hover.body_rate.max_integral` | 0.28 |
 | `STAB_GYRO_FLT` | `hover.gyro_cutoff_hz` | 40 Hz (default) |
 
 - **Method: the autotune.** It flies the hover side alone, nose up in the tailsitter `View`,
@@ -137,7 +137,7 @@ The axes are the hover view's:
   which D 0.03 fixed (#476). On the autotuned gains, a 40 m descent in 5 km/h of wind held
   within ±3° of its lean, with no cycle (#539).
 - **Pitch while sinking:** the airflow pushes the nose over. The eXplora's integral holds 0.28
-  of moment (I × `STAB_RATE_IMAX`) and P the rest; descents at 1.5 m/s hold the nose (#539).
+  of moment (`STAB_RATE_IMAX`) and P the rest; descents at 1.5 m/s hold the nose (#539).
 - **Gyro low-pass:** the autotune designs D around the filter's lag (about 5.6 ms at 40 Hz),
   so tune with the filter you'll fly.
 
