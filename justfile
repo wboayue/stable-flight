@@ -97,7 +97,7 @@ fly-companion *ARGS:
 fly-tailsitter-companion *ARGS:
     cargo run -p stable-flight-sitl-realflight --example tailsitter-companion-realflight -- {{ARGS}}
 
-# Autotune of the rate and angle loops in RealFlight: climbs to the hover point, tunes, prints the gains, lands; e.g. `just fly-autotune --step-test`
+# Autotune of the rate and angle loops in RealFlight (--airframe quadcopter-x, titan-cobra, explora): climbs to the hover point, tunes, prints the gains, lands; e.g. `just fly-autotune --step-test`
 fly-autotune *ARGS:
     cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- {{ARGS}}
 

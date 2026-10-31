@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `copter-autotune-realflight --airframe explora` (#539): the eXplora tailsitter's hover side
+  on its own mixer, guidance and stabilizer flown in `View::tailsitter`'s nose-up frame, where
+  the autotune and the inverted check read its tilt and rates. `--param NAME=VALUE` sets a
+  param before takeoff.
+
 - `RealFlightVehicle::state_is_stale`: the tick's exchange failed or the link is down, so
   `state` holds the last report while the aircraft flies on unseen. `copter-autotune-realflight`
   tells its autotune (`Autotune::set_state_stale`), lands only on a fresh state, stops with

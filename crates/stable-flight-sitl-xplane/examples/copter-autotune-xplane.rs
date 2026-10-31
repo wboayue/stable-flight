@@ -57,6 +57,7 @@ use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::mixers::TableMixer;
 use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::{CopterStabilizer, TunedLoop};
+use stable_flight::tuning::Tunable;
 use stable_flight::tuning::autotune::{
     Autotune, AutotuneEvent, AutotuneStatus, Envelope, StagePlan,
 };
@@ -261,7 +262,7 @@ fn main() -> ExitCode {
     runner.run_with(&mut flight_loop, &shutdown, |flight_loop, stats| {
         // Inverted, in any phase (climb, tune, landing), the vehicle never touches down to end
         // the run.
-        if !is_inverted(flight_loop.state()) {
+        if !is_inverted(flight_loop.state(), &flight_loop.stabilizer().probe_frame()) {
             inverted_since = None;
         } else if inverted_since.is_none() {
             inverted_since = Some(stats.elapsed);
