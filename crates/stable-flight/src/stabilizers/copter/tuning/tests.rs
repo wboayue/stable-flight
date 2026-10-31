@@ -111,7 +111,7 @@ fn stop_hands_back_only_the_tested_loop() {
     }
     let attitude = stabilizer.attitude.clone();
     let yaw = stabilizer.yaw.clone();
-    let i_terms = [0, 1, 2].map(|axis| stabilizer.body_rate.integral_term(&config.body_rate, axis));
+    let i_terms = [0, 1, 2].map(|axis| stabilizer.body_rate.integral_term(axis));
 
     let stopped = stabilizer.stop_probe();
 
@@ -123,7 +123,7 @@ fn stop_hands_back_only_the_tested_loop() {
     check!(stabilizer.attitude == attitude);
     check!(stabilizer.yaw == yaw);
     for (axis, i_term) in i_terms.into_iter().enumerate() {
-        check!(stabilizer.body_rate.integral_term(&config.body_rate, axis) == i_term);
+        check!(stabilizer.body_rate.integral_term(axis) == i_term);
     }
 }
 
@@ -369,12 +369,12 @@ fn a_step_hands_back_keeping_the_integral() {
     for _ in 0..10 {
         tick(&mut stabilizer, &mut axes, &level());
     }
-    let i_term = stabilizer.body_rate.integral_term(&config.body_rate, 2);
+    let i_term = stabilizer.body_rate.integral_term(2);
     check!(i_term.abs() > 0.01, "yaw I term {i_term}");
 
     stabilizer.stop_probe();
 
-    check!(stabilizer.body_rate.integral_term(&config.body_rate, 2) == i_term);
+    check!(stabilizer.body_rate.integral_term(2) == i_term);
 }
 
 /// The angle and heading loops' integrals (roll, pitch, heading), in rad·s.

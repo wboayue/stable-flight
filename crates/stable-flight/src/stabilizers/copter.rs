@@ -274,8 +274,6 @@ impl Configurable for CopterStabilizer {
     fn set_config(&mut self, config: CopterStabilizerConfig) -> Result<(), InvalidConfig> {
         config.validate()?;
         let old = &self.config;
-        self.body_rate
-            .rescale_integral(&old.body_rate, &config.body_rate);
         self.attitude
             .rescale_integral(&old.attitude, &config.attitude);
         self.yaw.rescale_integral(&old.yaw, &config.yaw);

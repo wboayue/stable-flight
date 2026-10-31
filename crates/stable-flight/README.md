@@ -92,7 +92,7 @@ let stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
         roll_gains: Gains { p: 0.5, i: 0.2, d: 0.004 },
         pitch_gains: Gains { p: 0.5, i: 0.2, d: 0.004 },
         yaw_gains: Gains { p: 0.6, i: 0.2, d: 0.0 },
-        max_integral: 1.0,
+        max_integral: 0.5,
     },
     attitude: AttitudeControllerConfig {
         roll_gains: Gains { p: 3.0, i: 0.0, d: 0.1 },

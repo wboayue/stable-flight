@@ -66,7 +66,8 @@ Code comments and docs link here instead of redefining a term.
   commanded rate) rather than from the error, so the loop doesn't wait to fall behind.
 - **Integral windup / anti-windup:** while the output is pinned at a limit, the I term keeps
   growing and overshoots once the limit releases. Anti-windup stops it accumulating (a
-  `max_integral` clamp, holding it while saturated in the error's direction, or fading it
+  `max_integral` clamp (on the copter rate loop, the most moment the I term holds, as
+  ArduPilot's IMAX), holding it while saturated in the error's direction, or fading it
   toward zero while saturated, as the TECS pitch integral does).
 - **Derivative kick:** a D-term spike when the setpoint jumps or a loop starts with no previous
   sample; the loops skip it on their first tick, and the copter rate loop avoids the setpoint

@@ -59,7 +59,7 @@ fn writes_units_and_bounds_only_when_present() {
     // (name, expected units, min, max); `Null` is absent.
     let cases = [
         ("STAB_RATE_RLL_P", Value::Null, Value::Null, Value::Null), // gain: none
-        ("STAB_RATE_IMAX", json!("rad"), json!(0.0), Value::Null),
+        ("STAB_ATT_IMAX", json!("rad*s"), json!(0.0), Value::Null),
         ("GUID_ALT_HOVER", Value::Null, json!(0.0), json!(1.0)), // exclusive min as its value
         ("GUID_TILT_MAX", json!("deg"), json!(0.0), json!(90.0)),
     ];

@@ -13,6 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `BodyRateControllerConfig::max_integral` and `yaw_max_integral` (params
+  `STAB_RATE_IMAX`, `STAB_RATE_IMAX_Z`) are the most moment the rate I terms hold, in
+  normalized moment, not a limit on the integrated error in rad: the rate loop integrates
+  `I·e·dt`, as ArduPilot's `AC_PID` and PX4's `RateControl` do. To keep what a config held,
+  set the new value to its I gain × the old one (#374).
+- **Breaking (behavior):** the rate I limits default to 0.5 of moment (ArduPilot's
+  `ATC_RAT_*_IMAX`), not 1 rad and 5 rad: at the default gains the roll and pitch I terms
+  hold 0.5 of trim, not 0.03; the yaw term holds 0.5, as before at the default yaw I. A change
+  of rate I gain keeps the I term, as before, and an I gain of 0 drops it (#374).
 - **Breaking (behavior):** the autotune's settle (`Envelope::settle`, a step plan's
   `COPTER_STEP_SETTLE`) reads roll and pitch from the attitude target guidance holds, a
   position hold's lean included, as ArduPilot's level check does
