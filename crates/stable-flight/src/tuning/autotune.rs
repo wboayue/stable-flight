@@ -9,7 +9,7 @@ use crate::controllers::{
 };
 use crate::math::euler_angles;
 use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
-use crate::{Configurable, FlightLoop, Vec3, VehicleState};
+use crate::{Configurable, FlightLoop, Setpoint, Vec2, Vec3, VehicleState};
 use nalgebra::UnitQuaternion;
 
 use super::{
@@ -293,7 +293,7 @@ pub const COPTER_HEADING_STEP: StepConfig = StepConfig {
     ..COPTER_TILT_STEP
 };
 
-/// Level before each copter step: within 2.5° and 0.1 rad/s for 0.5 s (ArduPilot's
+/// Level before each copter step: within 2.5° of the attitude target and 0.1 rad/s for 0.5 s (ArduPilot's
 /// `AUTOTUNE_LEVEL_ANGLE_CD` and `AUTOTUNE_REQUIRED_LEVEL_TIME_MS`), so each step starts from
 /// rest.
 pub const COPTER_STEP_SETTLE: Settle = Settle {
@@ -921,7 +921,13 @@ impl DesignPlan {
 /// How level and still the vehicle must hold before a probe starts.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Settle {
-    /// Roll and pitch within this, in rad, in the probed loops' frame
+    /// Roll and pitch within this of the attitude target guidance holds
+    /// ([`FlightLoop::setpoint`]: a position hold's lean included), in rad, as ArduPilot's
+    /// level check compares the attitude with the desired one (`AC_AutoTune::currently_level`):
+    /// a hover leaning to hold its position against a trim settles where it leans. The
+    /// eXplora in RealFlight leans 3.4° in calm air, its elevons holding pitch in the propwash
+    /// (#539). The vehicle must also stand still over the ground (under 0.2 m/s): one leaning
+    /// to fly back to its position after a step isn't settled. In the probed loops' frame
     /// ([`Tunable::probe_frame`]), as are the rates.
     pub tilt_rad: f32,
     /// Roll and pitch rates within this, in rad/s, read through the stabilizer's gyro
@@ -934,15 +940,24 @@ pub struct Settle {
     pub hold_s: f32,
 }
 
+/// The fastest a settling vehicle may move over the ground, in m/s. A hover leaning on a trim
+/// stands still (the eXplora in RealFlight holds under 0.12 m/s, median 0.04, #539); one
+/// leaning to fly back to its position after a step moves (the sim `quad_x` under a CG offset
+/// returns at up to 0.37 m/s, leaning 5°), and a step started on that lean measures the return
+/// too: its rate searches kept no candidate (#539). A NaN velocity counts as still.
+const MAX_SETTLE_SPEED_MPS: f32 = 0.2;
+
 impl Settle {
     /// Whether `motion` is level and still enough.
     fn holds(&self, motion: &Motion) -> bool {
-        motion.tilt_rad < self.tilt_rad && motion.tilt_rate_radps < self.rate_radps
+        (0..2).all(|axis| self.holds_axis(motion, axis))
     }
 
     /// Whether `motion` is level and still enough about `axis` alone (0 roll, 1 pitch).
     fn holds_axis(&self, motion: &Motion, axis: usize) -> bool {
-        motion.axis_tilt_rad[axis] < self.tilt_rad && motion.axis_rate_radps[axis] < self.rate_radps
+        motion.axis_tilt_error_rad[axis] < self.tilt_rad
+            && motion.speed_mps < MAX_SETTLE_SPEED_MPS
+            && motion.axis_rate_radps[axis] < self.rate_radps
     }
 
     /// Whether `motion` is level and still enough, and turning slowly enough too.
@@ -964,7 +979,7 @@ impl Settle {
 /// Limits that end a stage, and how still the vehicle must be before a probe starts.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Envelope {
-    /// Roll or pitch beyond this aborts the stage, in rad, in the probed loops' frame
+    /// Roll or pitch from level beyond this aborts the stage, in rad, in the probed loops' frame
     /// ([`Tunable::probe_frame`]): a tailsitter's view, where nose-up hover is level.
     pub max_tilt_rad: f32,
     /// A rate about any of the probed loops' axes beyond this aborts the stage, in rad/s.
@@ -990,7 +1005,7 @@ pub struct Envelope {
 }
 
 impl Default for Envelope {
-    /// Copter limits: 35° tilt, 4 rad/s, 3 m sink; settle within 6° and 0.3 rad/s for 1 s,
+    /// Copter limits: 35° tilt, 4 rad/s, 3 m sink; settle within 6° of the attitude target and 0.3 rad/s for 1 s,
     /// waiting up to 10 s; 1 s to recover from a candidate; 2 s without a fresh state.
     /// RealFlight's reconnects come 0.5, 1.5, and 3.5 s into an outage, so the run rides
     /// through the first two; a QuadCopterX unseen for 3.5 s mid-step rolled over (#309).
@@ -1076,21 +1091,23 @@ impl Envelope {
     }
 }
 
-/// What the envelope and the settle check, read once per update from the state. The settle's
-/// rates are filtered through the stabilizer's gyro low-pass, the rates its loops fly on: read
-/// raw, a still vehicle's gyro noise and vibration hold them over the settle (0.2 rad/s on the
-/// sim's noise rows, the settle 0.1), so no stage starts (#373). The envelope reads the raw
-/// rate, so a breach shows on its first tick. Angles and rates are in the probed loops' frame
+/// What the envelope and the settle check, read once per update from the state. The envelope
+/// reads tilt from level and the settle from the attitude target, so a hover leaning to hold
+/// its position settles where it leans. The settle's rates are filtered through the
+/// stabilizer's gyro low-pass, the rates its loops fly on: read raw, a still vehicle's gyro
+/// noise and vibration hold them over the settle (0.2 rad/s on the sim's noise rows, the
+/// settle 0.1), so no stage starts (#373). The envelope reads the raw rate, so a breach shows
+/// on its first tick. Angles and rates are in the probed loops' frame
 /// ([`Tunable::probe_frame`]): view axes for a tailsitter's hover, where nose-up reads level.
 struct Motion {
-    /// The larger of |roll| and |pitch|, in rad.
+    /// The larger of |roll| and |pitch|, from level, in rad.
     tilt_rad: f32,
     /// The largest raw body rate magnitude, in rad/s.
     rate_radps: f32,
-    /// The larger of the filtered |roll| and |pitch| rates, in rad/s.
-    tilt_rate_radps: f32,
-    /// |roll| and |pitch|, in rad.
-    axis_tilt_rad: [f32; 2],
+    /// The |roll| and |pitch| errors from the attitude target, in rad.
+    axis_tilt_error_rad: [f32; 2],
+    /// The horizontal ground speed, in m/s; 0 for a NaN velocity.
+    speed_mps: f32,
     /// The filtered |roll| and |pitch| rates, in rad/s.
     axis_rate_radps: [f32; 2],
     /// The filtered |yaw| rate, in rad/s.
@@ -1100,22 +1117,50 @@ struct Motion {
 
 impl Motion {
     /// `state`'s motion in `frame` (the probed loops' frame, in the body frame), with
-    /// `filtered_radps` its body rates through the gyro low-pass.
-    fn of(state: &VehicleState, frame: &UnitQuaternion<f32>, filtered_radps: Vec3) -> Self {
+    /// `filtered_radps` its body rates through the gyro low-pass and `target_rad` the roll
+    /// and pitch the loops hold ([`attitude_target`]), in that frame.
+    fn of(
+        state: &VehicleState,
+        frame: &UnitQuaternion<f32>,
+        filtered_radps: Vec3,
+        target_rad: Vec2,
+    ) -> Self {
         // The view as `VehicleState::rotate_body` builds it, without cloning the state.
         let (roll, pitch, _) = euler_angles(&(state.attitude * frame));
         let raw_radps = frame.inverse_transform_vector(&state.angular_velocity_radps);
         let filtered_radps = frame.inverse_transform_vector(&filtered_radps);
+        let roll_error_rad = (roll - target_rad.x).abs();
+        let pitch_error_rad = (pitch - target_rad.y).abs();
         Self {
             tilt_rad: roll.abs().max(pitch.abs()),
             rate_radps: raw_radps.amax(),
-            tilt_rate_radps: filtered_radps.xy().amax(),
-            axis_tilt_rad: [roll.abs(), pitch.abs()],
+            axis_tilt_error_rad: [roll_error_rad, pitch_error_rad],
+            speed_mps: zero_if_nan(state.velocity_mps.xy().norm()),
             axis_rate_radps: [filtered_radps.x.abs(), filtered_radps.y.abs()],
             yaw_rate_radps: filtered_radps.z.abs(),
             altitude_m: state.position_m.z,
         }
     }
+}
+
+/// The roll and pitch `setpoint` holds, in rad, in the stabilizer's frame: an attitude
+/// setpoint's (a NaN axis is level, as the stabilizer reads it), a blend's hover side's, and
+/// level for a rate or plane setpoint, which holds no hover attitude.
+fn attitude_target(setpoint: &Setpoint) -> Vec2 {
+    let attitude = match setpoint {
+        Setpoint::Attitude(attitude) => attitude,
+        Setpoint::Blend(blend) => &blend.hover,
+        _ => return Vec2::zeros(),
+    };
+    Vec2::new(
+        zero_if_nan(attitude.roll_rad),
+        zero_if_nan(attitude.pitch_rad),
+    )
+}
+
+/// `value`, or 0 for NaN: the neutral reading of a missing angle or speed.
+fn zero_if_nan(value: f32) -> f32 {
+    if value.is_nan() { 0.0 } else { value }
 }
 
 /// Why a stage failed.
@@ -1657,7 +1702,8 @@ impl Autotune {
         }
         let rates_radps = self.filter_rates(flight_loop, dt);
         let frame = flight_loop.stabilizer().probe_frame();
-        let motion = Motion::of(flight_loop.state(), &frame, rates_radps);
+        let target_rad = attitude_target(flight_loop.setpoint());
+        let motion = Motion::of(flight_loop.state(), &frame, rates_radps, target_rad);
         self.recovering_s = (self.recovering_s - dt).max(0.0);
         self.frozen_s = (self.frozen_s - dt).max(0.0);
         if let Some(stage) = self.phase.active_stage()

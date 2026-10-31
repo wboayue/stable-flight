@@ -12,8 +12,9 @@ use crate::tuning::plant::{Axes, PlantParams};
 use crate::tuning::{StepAbort, StepMetrics};
 use crate::view::{View, tailsitter_rotation};
 use crate::{
-    AbsoluteAttitudeCommand, Actuator, ActuatorCommand, Command, Commander, ControlInput,
-    ControlOutput, Guidance, Mixer, RateCommand, Stabilizer, StateSource, Vec3,
+    AbsoluteAttitudeCommand, Actuator, ActuatorCommand, AttitudeSetpoint, BlendSetpoint, Command,
+    Commander, ControlInput, ControlOutput, Guidance, Mixer, RateCommand, RateSetpoint, Stabilizer,
+    StateSource, Vec3,
 };
 
 /// The flight loop's tick: 250 Hz.
@@ -422,20 +423,34 @@ fn hold_roll(controls: &Controls, roll_rad: f32) {
     )));
 }
 
-/// A vehicle held past the settle limits fails a step stage before its first probe, and its
-/// config stays.
+/// Rocks the roll target through the commander, once a second, its rate peaking at
+/// `peak_radps`: the roll rate stays under half its peak for about a third of each second,
+/// short of any settle's hold, so a settle whose rate limit is well under the peak never
+/// holds. The tilt stays within about `peak_radps / 2π` rad of level.
+fn rock_roll(controls: &Controls, elapsed_s: f32, peak_radps: f32) {
+    let amplitude_rad = peak_radps / core::f32::consts::TAU;
+    hold_roll(
+        controls,
+        amplitude_rad * (core::f32::consts::TAU * elapsed_s).sin(),
+    );
+}
+
+/// A vehicle that never holds still fails a step stage before its first probe, and its config
+/// stays.
 #[test]
 fn a_vehicle_that_never_settles_fails_before_the_first_step() {
     let (mut flight_loop, controls) = hovering(1.0);
     let baseline = *flight_loop.stabilizer().config();
-    // 0.12 rad: past the step settle's 0.044 rad, inside max_tilt_rad.
-    hold_roll(&controls, 0.12);
     let mut autotune = started(
         &flight_loop,
         &[StagePlan::copter_step_test(TunedLoop::RollRate)],
     );
 
-    let events = run(&mut flight_loop, &mut autotune, 30.0, |_, _| {});
+    let mut elapsed_s = 0.0;
+    let events = run(&mut flight_loop, &mut autotune, 30.0, |_, _| {
+        elapsed_s += DT;
+        rock_roll(&controls, elapsed_s, 4.0 * COPTER_STEP_SETTLE.rate_radps);
+    });
 
     let failed = AutotuneEvent::StageFailed {
         target: TunedLoop::RollRate,
@@ -443,6 +458,45 @@ fn a_vehicle_that_never_settles_fails_before_the_first_step() {
     };
     check!(events == [AutotuneEvent::StageStarted(TunedLoop::RollRate), failed]);
     check!(*flight_loop.stabilizer().config() == baseline);
+}
+
+/// A hover leaning to hold its position settles where it leans: held 0.12 rad off level in
+/// roll or pitch (past the step settle's 0.044 rad, inside the envelope), a step test runs to
+/// completion, bare and in a tailsitter's view (#539).
+#[test]
+fn a_leaning_hover_settles_on_its_lean() {
+    let lean = |roll_rad, pitch_rad| {
+        Some(ControlInput::AbsoluteAttitude(AbsoluteAttitudeCommand {
+            roll_rad,
+            pitch_rad,
+            thrust: 0.5,
+            ..Default::default()
+        }))
+    };
+    // (case, lean, viewed)
+    let rows = [
+        ("roll", lean(0.12, 0.0), false),
+        ("pitch", lean(0.0, -0.12), false),
+        ("viewed roll", lean(0.12, 0.0), true),
+    ];
+    for (case, input, viewed) in rows {
+        let plan = [StagePlan::copter_step_test(TunedLoop::RollRate)];
+        let (events, status) = if viewed {
+            let (mut flight_loop, controls) = hovering_viewed(PlantParams::rate_axis());
+            controls.input.set(input);
+            let mut autotune = started(&flight_loop, &plan);
+            let events = run(&mut flight_loop, &mut autotune, 60.0, |_, _| {});
+            (events, autotune.status())
+        } else {
+            let (mut flight_loop, controls) = hovering(1.0);
+            controls.input.set(input);
+            let mut autotune = started(&flight_loop, &plan);
+            let events = run(&mut flight_loop, &mut autotune, 60.0, |_, _| {});
+            (events, autotune.status())
+        };
+        check!(status == AutotuneStatus::Complete, "{case}: {events:?}");
+        check!(!step_metrics(&events).is_empty(), "{case}");
+    }
 }
 
 /// A probe abort or an interrupt fails the stage; its loop keeps its gains.
@@ -772,26 +826,24 @@ fn a_long_slow_stretch_stops_one_step() {
     check!(step_metrics(&events).is_empty());
 }
 
-/// A step test settles to its own, tighter limits: held 3.4° off level (inside the envelope's
-/// 6°, outside the step settle's 2.5°), it never starts; a design stage, which settles to the
-/// envelope's, does.
+/// A step test settles to its own, tighter limits: rocking at 0.2 rad/s (inside the
+/// envelope's 0.3, outside the step settle's 0.1), it never starts; a design stage, which
+/// settles to the envelope's, does.
 #[test]
 fn a_step_test_settles_to_its_own_limits() {
+    const PEAK_RADPS: f32 = 2.0 * COPTER_STEP_SETTLE.rate_radps;
     let (mut flight_loop, controls) = hovering(1.0);
     let baseline = *flight_loop.stabilizer().config();
-    controls.input.set(Some(ControlInput::AbsoluteAttitude(
-        AbsoluteAttitudeCommand {
-            roll_rad: 0.06,
-            thrust: 0.5,
-            ..Default::default()
-        },
-    )));
     let mut autotune = started(
         &flight_loop,
         &[StagePlan::copter_step_test(TunedLoop::RollRate)],
     );
 
-    let events = run(&mut flight_loop, &mut autotune, 30.0, |_, _| {});
+    let mut elapsed_s = 0.0;
+    let events = run(&mut flight_loop, &mut autotune, 30.0, |_, _| {
+        elapsed_s += DT;
+        rock_roll(&controls, elapsed_s, PEAK_RADPS);
+    });
 
     let failed = AutotuneEvent::StageFailed {
         target: TunedLoop::RollRate,
@@ -800,17 +852,14 @@ fn a_step_test_settles_to_its_own_limits() {
     check!(events.last() == Some(&failed));
     check!(*flight_loop.stabilizer().config() == baseline);
 
-    // A design settles to the envelope's 6°: the same hold starts it.
+    // A design settles to the envelope's 0.3 rad/s: the same rocking starts it.
     let (mut flight_loop, controls) = hovering(1.0);
-    controls.input.set(Some(ControlInput::AbsoluteAttitude(
-        AbsoluteAttitudeCommand {
-            roll_rad: 0.06,
-            thrust: 0.5,
-            ..Default::default()
-        },
-    )));
     let mut autotune = started(&flight_loop, &[design_stage(TunedLoop::PitchRate)]);
-    run(&mut flight_loop, &mut autotune, 5.0, |_, _| {});
+    let mut elapsed_s = 0.0;
+    run(&mut flight_loop, &mut autotune, 5.0, |_, _| {
+        elapsed_s += DT;
+        rock_roll(&controls, elapsed_s, PEAK_RADPS);
+    });
     check!(matches!(
         autotune.status(),
         AutotuneStatus::Running { .. } | AutotuneStatus::Complete
@@ -1923,17 +1972,27 @@ fn copter_design_search_designs_then_searches_every_loop() {
 #[test]
 fn an_identification_starts_when_the_settle_times_out() {
     let (mut flight_loop, controls) = hovering(1.0);
-    hold_roll(&controls, 0.25);
     let plan = StagePlan {
         target: TunedLoop::PitchRate,
         method: Method::Design(DesignPlan::copter()),
     };
     let mut autotune = started(&flight_loop, &[plan]);
-    let timeout_s = Envelope::default().settle_timeout_s;
+    let envelope = Envelope::default();
+    let peak_radps = 2.0 * envelope.settle.rate_radps;
+    let mut elapsed_s = 0.0;
+    let mut rock = |_: &Autotune, _: &TestLoop| {
+        elapsed_s += DT;
+        rock_roll(&controls, elapsed_s, peak_radps);
+    };
 
-    run(&mut flight_loop, &mut autotune, timeout_s - 0.1, |_, _| {});
+    run(
+        &mut flight_loop,
+        &mut autotune,
+        envelope.settle_timeout_s - 0.1,
+        &mut rock,
+    );
     check!(matches!(autotune.status(), AutotuneStatus::Settling { .. }));
-    run(&mut flight_loop, &mut autotune, 0.2, |_, _| {});
+    run(&mut flight_loop, &mut autotune, 0.2, &mut rock);
     check!(matches!(autotune.status(), AutotuneStatus::Running { .. }));
     check!(matches!(
         flight_loop.probe(),
@@ -1965,7 +2024,8 @@ fn a_settle_ignores_the_yaw_rate() {
             settle.holds(&Motion::of(
                 &state,
                 &UnitQuaternion::identity(),
-                state.angular_velocity_radps
+                state.angular_velocity_radps,
+                Vec2::zeros(),
             )) == holds,
             "{case}"
         );
@@ -1988,10 +2048,131 @@ fn a_settle_reads_the_filtered_rates() {
         ("filtered noisy", noisy, false),
     ];
     for (case, filtered, holds) in rows {
-        let motion = Motion::of(&state, &UnitQuaternion::identity(), filtered);
+        let motion = Motion::of(&state, &UnitQuaternion::identity(), filtered, Vec2::zeros());
         check!(settle.holds(&motion) == holds, "{case}");
         check!(settle.holds_axis(&motion, 0) == holds, "{case}: roll");
         check!(settle.holds_axis(&motion, 1) == holds, "{case}: pitch");
+    }
+}
+
+/// The settle reads tilt from the attitude target, standing still over the ground, and the
+/// envelope from level: (case, roll and pitch in rad, their target in rad, ground speed in
+/// m/s, holds the step settle).
+#[test]
+fn a_settle_reads_tilt_from_the_attitude_target() {
+    let settle = COPTER_STEP_SETTLE;
+    let lean = 3.0 * settle.tilt_rad;
+    let still = 0.0;
+    let moving = 2.0 * MAX_SETTLE_SPEED_MPS;
+    let rows = [
+        ("level on level", Vec2::zeros(), Vec2::zeros(), still, true),
+        (
+            "rolled on target",
+            Vec2::new(lean, 0.0),
+            Vec2::new(lean, 0.0),
+            still,
+            true,
+        ),
+        (
+            "pitched on target",
+            Vec2::new(0.0, -lean),
+            Vec2::new(0.0, -lean),
+            still,
+            true,
+        ),
+        (
+            "rolled off a level target",
+            Vec2::new(lean, 0.0),
+            Vec2::zeros(),
+            still,
+            false,
+        ),
+        (
+            "level off a pitched target",
+            Vec2::zeros(),
+            Vec2::new(0.0, lean),
+            still,
+            false,
+        ),
+        (
+            "on target, moving",
+            Vec2::new(lean, 0.0),
+            Vec2::new(lean, 0.0),
+            moving,
+            false,
+        ),
+        ("level, moving", Vec2::zeros(), Vec2::zeros(), moving, false),
+        (
+            "level, NaN speed",
+            Vec2::zeros(),
+            Vec2::zeros(),
+            f32::NAN,
+            true,
+        ),
+    ];
+    for (case, attitude_rad, target_rad, speed_mps, holds) in rows {
+        let state = VehicleState {
+            attitude: UnitQuaternion::from_euler_angles(attitude_rad.x, attitude_rad.y, 0.0),
+            velocity_mps: Vec3::new(speed_mps, 0.0, 0.0),
+            ..Default::default()
+        };
+        let motion = Motion::of(
+            &state,
+            &UnitQuaternion::identity(),
+            Vec3::zeros(),
+            target_rad,
+        );
+        check!(settle.holds(&motion) == holds, "{case}");
+        let each_axis = settle.holds_axis(&motion, 0) && settle.holds_axis(&motion, 1);
+        check!(each_axis == holds, "{case}: each axis");
+        let level_rad = attitude_rad.x.abs().max(attitude_rad.y.abs());
+        check!(
+            (motion.tilt_rad - level_rad).abs() < 1e-5,
+            "{case}: from level"
+        );
+    }
+}
+
+/// The settle's target is an attitude setpoint's roll and pitch (NaN level), a blend's hover
+/// side's, and level for a setpoint that holds no hover attitude.
+#[test]
+fn the_settle_target_is_the_hover_attitude() {
+    let leaning = AttitudeSetpoint {
+        roll_rad: 0.1,
+        pitch_rad: -0.2,
+        ..Default::default()
+    };
+    let rows = [
+        (
+            "attitude",
+            Setpoint::Attitude(leaning),
+            Vec2::new(0.1, -0.2),
+        ),
+        (
+            "NaN attitude",
+            Setpoint::Attitude(AttitudeSetpoint {
+                roll_rad: f32::NAN,
+                pitch_rad: f32::NAN,
+                ..Default::default()
+            }),
+            Vec2::zeros(),
+        ),
+        (
+            "blend",
+            Setpoint::Blend(BlendSetpoint {
+                hover: leaning,
+                ..Default::default()
+            }),
+            Vec2::new(0.1, -0.2),
+        ),
+        (
+            "rate",
+            Setpoint::Rate(RateSetpoint::default()),
+            Vec2::zeros(),
+        ),
+    ];
+    for (case, setpoint, target_rad) in rows {
+        check!(attitude_target(&setpoint) == target_rad, "{case}");
     }
 }
 
