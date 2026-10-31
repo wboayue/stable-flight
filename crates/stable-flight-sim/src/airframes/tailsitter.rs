@@ -48,7 +48,8 @@ pub struct TailsitterAirframe {
 ///   moments instead (`SIM_Plane.cpp:154-162`).
 ///
 /// The hover side flies the eXplora's hand tune from RealFlight (#123, #328; the same layout
-/// of differential thrust and elevons), which holds the sim's nose-up hover within the
+/// of differential thrust and elevons) with view pitch rate D added for the gyro low-pass,
+/// which holds the sim's nose-up hover within the
 /// copter's calm-air bands (`tests/tailsitter_hover.rs`). The plane side is [`plane`]'s,
 /// without the rudder feedforward (yaw is differential thrust here), on the hover side's
 /// thrust curve so a handoff keeps the motor commands continuous, and with room to pitch up
@@ -95,8 +96,10 @@ pub fn tailsitter() -> TailsitterAirframe {
         body_rate: BodyRateControllerConfig {
             // View roll: differential thrust.
             roll_gains: gains(0.4, 0.2, 0.0),
-            // View pitch: the elevons together.
-            pitch_gains: gains(0.3, 0.5, 0.0),
+            // View pitch: the elevons together. The D damps them against the gyro low-pass's
+            // lag: without it, a hover requested mid-transition rings to 13.8° of tilt at the
+            // default 40 Hz. D 0.001–0.04 holds the calm-air bands; 0.08 rings again (#550).
+            pitch_gains: gains(0.3, 0.5, 0.01),
             // View yaw: the elevons opposite ways.
             yaw_gains: gains(0.1, 0.05, 0.0),
             max_integral: 1.0,
@@ -110,9 +113,6 @@ pub fn tailsitter() -> TailsitterAirframe {
             max_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
             max_rate_radps: Vec2::new(2.0, 2.0),
         },
-        // No gyro low-pass: these D-less rate loops lose the margin to its lag, tilting 13.8°
-        // through the back transition at 40 Hz (TODO(#550): retune with it).
-        gyro_cutoff_hz: 0.0,
         ..CopterStabilizerConfig::default()
     };
     let thrust_curve_exponent = hover_stabilizer.thrust_curve_exponent;

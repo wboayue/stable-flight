@@ -313,9 +313,7 @@ Each `FlightLoop::step` does the following; this section is the reference for ti
   its margin unless the design models it (#373). On the sim's robustness noise (0.1 rad/s at
   90 Hz), 40 Hz passed the most rows; 20 Hz (ArduPilot's `INS_GYRO_FILTER`), 30 Hz, and 50 Hz
   and up lost clean ones. A D low-pass on the error, ArduPilot's `ATC_RAT_RLL_FLTD`, lost
-  rows at 20 and 40 Hz. Notch filters wait for hardware that needs them. Tailsitter hover
-  loops with little D fly unfiltered until retuned
-  ([#550](https://github.com/wboayue/stable-flight/issues/550)).
+  rows at 20 and 40 Hz. Notch filters wait for hardware that needs them.
 * Telemetry is published after `actuate`, with the whole tick in one `TelemetryRecord`,
   including the limits it hit: guidance, the stabilizer, and the mixer each report a `Saturation`
   for their last call (only they know what they clipped), and the loop merges them (none while
