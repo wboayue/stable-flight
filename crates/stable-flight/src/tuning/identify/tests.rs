@@ -139,20 +139,28 @@ fn the_two_stage_fit_reads_the_lag_through_gyro_noise() {
     check!(recorded.lag_s() < Some(0.01), "{recorded:?}");
 }
 
-/// A window the least squares leaves noisy is fitted on the explained moments; a quiet one,
-/// a stiff one that rings, or one whose moments mostly sit at the rate loop's limit, on the
-/// recorded moments: (case, rate P of the closed loop, gyro noise amplitude in rad/s, whether
-/// the explained fit is taken).
+/// The fit a window takes: by least squares when quiet (stiff and ringing, or saturated,
+/// included), in two stages when noisy, and none when noisy and saturated, which no fit reads
+/// (#551).
+#[derive(Clone, Copy, Debug)]
+enum Taken {
+    LeastSquares,
+    TwoStage,
+    Saturated,
+}
+
+/// (case, rate P of the closed loop, gyro noise amplitude in rad/s, the fit taken).
 #[test]
-fn a_noisy_unsaturated_window_takes_the_explained_fit() {
+fn a_window_takes_the_fit_its_noise_and_saturation_call_for() {
     let params = single_lag(20.0, 0.03, 0.0);
     let rows = [
-        ("quiet", RATE_P, 0.0, false),
-        ("quiet and stiff", 4.0 * RATE_P, 0.0, false),
-        ("noisy", RATE_P, 0.06, true),
-        ("noisy and saturated", 40.0, 0.06, false),
+        ("quiet", RATE_P, 0.0, Taken::LeastSquares),
+        ("quiet and stiff", 4.0 * RATE_P, 0.0, Taken::LeastSquares),
+        ("quiet and saturated", 40.0, 0.0, Taken::LeastSquares),
+        ("noisy", RATE_P, 0.06, Taken::TwoStage),
+        ("noisy and saturated", 40.0, 0.06, Taken::Saturated),
     ];
-    for (case, rate_p, noise, explained) in rows {
+    for (case, rate_p, noise, taken) in rows {
         let mut plant = Plant::new(params, DT);
         let (mut angle_rad, mut last_moment) = (0.0f32, 0.0f32);
         let mut probe = IdentifyProbe::new(CONFIG);
@@ -167,10 +175,12 @@ fn a_noisy_unsaturated_window_takes_the_explained_fit() {
             angle_rad += plant.output() * DT;
         }
         let window = &probe.window;
-        let expected = if explained {
-            fit_explained(window)
-        } else {
-            fit_recorded(window).map(|fit| fit.model)
+        let expected = match taken {
+            Taken::LeastSquares => fit_recorded(window)
+                .map(|fit| fit.model)
+                .ok_or(IdentifyAbort::Unexcited),
+            Taken::TwoStage => fit_explained(window).ok_or(IdentifyAbort::Unexcited),
+            Taken::Saturated => Err(IdentifyAbort::Saturated),
         };
         check!(fit_window(window) == expected, "{case}");
     }

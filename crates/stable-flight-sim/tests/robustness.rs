@@ -80,7 +80,6 @@ rows! {
     quad_x_delay_25ms_low: quad_x, Delay25Ms, Low;
     quad_x_delay_25ms_high: quad_x, Delay25Ms, High;
     quad_x_noise_low: quad_x, Noise, Low;
-    #[ignore = "the ×3 start rings at the rate limit, so the fit takes the recorded moments, which under gyro noise design roll rate P 8.1; the yaw stage then doesn't settle (NotSettled) (#551)"]
     quad_x_noise_high: quad_x, Noise, High;
     quad_x_cg_offset_low: quad_x, CgOffset, Low;
     quad_x_cg_offset_high: quad_x, CgOffset, High;
@@ -88,7 +87,7 @@ rows! {
     quad_x_weak_motor_high: quad_x, WeakMotor, High;
     #[ignore = "every design passes, but under gyro noise with the trim and delay the yaw stage doesn't settle (NotSettled) (#551)"]
     quad_x_combined_low: quad_x, Combined, Low;
-    #[ignore = "under gyro noise the ×3 start's roll rate stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "the ×3 start's D turns the 90 Hz gyro tone into moments at the rate loop's limit, so its fits saturate even lowered 3 times (6 didn't unclip them either) (#551)"]
     quad_x_combined_high: quad_x, Combined, High;
 
     heavy_quad_clean_low: heavy_quad, Clean, Low;
@@ -98,7 +97,6 @@ rows! {
     heavy_quad_delay_25ms_low: heavy_quad, Delay25Ms, Low;
     heavy_quad_delay_25ms_high: heavy_quad, Delay25Ms, High;
     heavy_quad_noise_low: heavy_quad, Noise, Low;
-    #[ignore = "under gyro noise the ×3 start's roll rate stage doesn't settle (NotSettled) (#551)"]
     heavy_quad_noise_high: heavy_quad, Noise, High;
     heavy_quad_cg_offset_low: heavy_quad, CgOffset, Low;
     heavy_quad_cg_offset_high: heavy_quad, CgOffset, High;
@@ -106,7 +104,7 @@ rows! {
     heavy_quad_weak_motor_high: heavy_quad, WeakMotor, High;
     #[ignore = "every design passes, but under gyro noise with the trim and delay the yaw stage doesn't settle (NotSettled) (#551)"]
     heavy_quad_combined_low: heavy_quad, Combined, Low;
-    #[ignore = "under gyro noise the ×3 start's roll rate stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "the ×3 start's D turns the 90 Hz gyro tone into moments at the rate loop's limit, so its fits saturate even lowered 3 times (6 didn't unclip them either) (#551)"]
     heavy_quad_combined_high: heavy_quad, Combined, High;
 
     racer_clean_low: racer, Clean, Low;
@@ -118,7 +116,7 @@ rows! {
     racer_delay_25ms_high: racer, Delay25Ms, High;
     #[ignore = "at racer's 75 Hz gyro low-pass, gyro noise alone peaks at 0.12–0.17 rad/s in a hover, past the 0.1 rad/s settle: a roll or pitch stage doesn't settle (NotSettled) (#551)"]
     racer_noise_low: racer, Noise, Low;
-    #[ignore = "under gyro noise the ×3 start's roll rate stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "at racer's 75 Hz gyro low-pass, gyro noise alone peaks at 0.12–0.17 rad/s in a hover, past the 0.1 rad/s settle: the roll angle stage doesn't settle (NotSettled) (#551)"]
     racer_noise_high: racer, Noise, High;
     racer_cg_offset_low: racer, CgOffset, Low;
     racer_cg_offset_high: racer, CgOffset, High;
@@ -126,27 +124,29 @@ rows! {
     racer_weak_motor_high: racer, WeakMotor, High;
     #[ignore = "under gyro noise the roll rate stage doesn't settle (NotSettled) (#551)"]
     racer_combined_low: racer, Combined, Low;
-    #[ignore = "under gyro noise every stage runs, but the tuned steps overshoot past the spec's 0.05, in 370 s (#551)"]
+    #[ignore = "the ×3 start's D turns the 90 Hz gyro tone into moments at the rate loop's limit, so its fits saturate even lowered 3 times (6 didn't unclip them either) (#551)"]
     racer_combined_high: racer, Combined, High;
 }
 
-/// The noise rows that pass hold on other noise seeds: `quad_x` and `heavy_quad` from the low
-/// start, on seeds 2–5 (the rows fly seed 1).
+/// The noise rows that pass hold on other noise seeds: `quad_x` and `heavy_quad` from both
+/// starts, on seeds 2–5 (the rows fly seed 1).
 #[test]
 fn noise_rows_pass_on_other_seeds() {
     for (name, airframe) in [
         ("quad_x", airframes::quad_x()),
         ("heavy_quad", airframes::heavy_quad()),
     ] {
-        for seed in 2..=5 {
-            let mut perturbations = perturbations(Set::Noise, &airframe);
-            perturbations.gyro.seed = seed;
-            check_plant(
-                &format!("{name} seed {seed}"),
-                airframe,
-                perturbations,
-                Start::Low,
-            );
+        for start in [Start::Low, Start::High] {
+            for seed in 2..=5 {
+                let mut perturbations = perturbations(Set::Noise, &airframe);
+                perturbations.gyro.seed = seed;
+                check_plant(
+                    &format!("{name} seed {seed}"),
+                    airframe,
+                    perturbations,
+                    start,
+                );
+            }
         }
     }
 }

@@ -237,6 +237,10 @@ pub enum IdentifyAbort {
     /// The fit couldn't be solved: the window was too short, or the excitation didn't move the
     /// moment enough to tell its terms apart.
     Unexcited,
+    /// Most of the window's moments sat at the rate loop's limit, and the least squares left
+    /// it noisy: the excitation explains too little of a clipped moment for the two-stage fit,
+    /// and the least squares reads the noise as the airframe. Lower gains unclip it.
+    Saturated,
 }
 
 /// Where an [`IdentifyProbe`] stands.
@@ -340,8 +344,8 @@ impl IdentifyProbe {
             IdentifyStatus::Running { elapsed_s }
         } else {
             match fit_window(&self.window) {
-                Some(model) => IdentifyStatus::Done(model),
-                None => IdentifyStatus::Aborted(IdentifyAbort::Unexcited),
+                Ok(model) => IdentifyStatus::Done(model),
+                Err(abort) => IdentifyStatus::Aborted(abort),
             }
         };
         offset
@@ -447,18 +451,19 @@ impl Window {
 /// and no more than [`SATURATED_SHARE`] of the moments sit at the rate loop's limit, when the
 /// explained moments are fitted instead ([`fit_explained`]). `None` when the fit doesn't
 /// solve.
-fn fit_window(window: &Window) -> Option<RateModel> {
-    let recorded = fit_recorded(window)?;
+fn fit_window(window: &Window) -> Result<RateModel, IdentifyAbort> {
+    let recorded = fit_recorded(window).ok_or(IdentifyAbort::Unexcited)?;
     let moments = &window.moments[..window.len];
     let saturated = moments
         .iter()
         .filter(|moment| moment.abs() >= SATURATED_MOMENT)
         .count();
     let saturates = saturated as f32 > SATURATED_SHARE * window.len as f32;
-    if recorded.residual_radps > NOISY_RESIDUAL_RADPS && !saturates {
-        fit_explained(window)
-    } else {
-        Some(recorded.model)
+    let noisy = recorded.residual_radps > NOISY_RESIDUAL_RADPS;
+    match (noisy, saturates) {
+        (true, true) => Err(IdentifyAbort::Saturated),
+        (true, false) => fit_explained(window).ok_or(IdentifyAbort::Unexcited),
+        (false, _) => Ok(recorded.model),
     }
 }
 

@@ -376,6 +376,40 @@ fn design_fits_again_after_an_unusable_fit_or_design() {
     );
 }
 
+/// A fit that saturates under noise lowers the start, every gain `÷ 1.3`, commits it, and fits
+/// again on it, three times; the fourth fails the stage (#551).
+#[test]
+fn design_lowers_a_start_whose_fit_saturates() {
+    let plan = DesignPlan::copter();
+    let saturated = ProbeAbort::Identify(IdentifyAbort::Saturated);
+    let mut procedure = Procedure::new(Method::Design(plan));
+    procedure.next(Input::start(CURRENT));
+    let mut gains = CURRENT;
+    for lowering in 1..=3 {
+        let lowered = Gains {
+            p: gains.p / 1.3,
+            i: gains.i / 1.3,
+            d: gains.d / 1.3,
+        };
+        let action = procedure.next(Input::Aborted {
+            abort: saturated,
+            gains,
+        });
+        let expected = Action::Probe {
+            probe: ProbeConfig::Identify(plan.identify),
+            gains: None,
+            commit: Some(lowered),
+        };
+        check!(action == expected, "lowering {lowering}");
+        gains = lowered;
+    }
+    let action = procedure.next(Input::Aborted {
+        abort: saturated,
+        gains,
+    });
+    check!(action == Action::Fail(AutotuneAbort::Probe(saturated)));
+}
+
 /// A fit a slow host stopped or spoiled runs again, `MAX_MEASURE_STOPS` in a row failing the
 /// stage.
 #[test]
