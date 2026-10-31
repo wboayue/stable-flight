@@ -171,12 +171,12 @@ fn rejected_values_leave_the_config_unchanged() {
     let body_rate_max_integral = ParamError::Invalid(InvalidConfig {
         section: Some("body_rate"),
         field: "max_integral",
-        requirement: "non-negative and finite",
+        requirement: "in [0, 1]",
     });
     let body_rate_yaw_max_integral = ParamError::Invalid(InvalidConfig {
         section: Some("body_rate"),
         field: "yaw_max_integral",
-        requirement: "non-negative and finite",
+        requirement: "in [0, 1]",
     });
     let cases = [
         ("NO_SUCH_PARAM", 1.0, ParamError::Unknown),
@@ -185,6 +185,8 @@ fn rejected_values_leave_the_config_unchanged() {
         ("STAB_RATE_RLL_P", f32::INFINITY, ParamError::NotFinite),
         ("STAB_RATE_IMAX", -1.0, body_rate_max_integral),
         ("STAB_RATE_IMAX_Z", -1.0, body_rate_yaw_max_integral),
+        // A value saved in the old unit, rad of error.
+        ("STAB_RATE_IMAX_Z", 5.0, body_rate_yaw_max_integral),
     ];
     for (name, value, error) in cases {
         let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig::default());

@@ -629,7 +629,8 @@ contract:
   `max_integral` clamp still applies, so a large cut in `i` can still bump their output.
   The rate loop's limit in moment is what lets a small `i` hold a trim: limited to `i` × 1 rad of
   error, core's default rate gains held 0.03 of moment, and the sim autotune couldn't start
-  under a 1 cm CG offset (#374). The outer loops' integrals stay in error units: no row has
+  under a 1 cm CG offset (#374). The attitude, heading, altitude, lateral, and plane rate
+  integrals stay in error units, so their I term's ceiling still scales with `i`; no row has
   needed otherwise.
 * **Tuning probes are runtime state, not config.** An autotune probe (`Tunable::start_probe`)
   replaces one loop's setpoint inside the tick; it lives next to the controllers'

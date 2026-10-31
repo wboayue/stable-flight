@@ -98,14 +98,13 @@ pub fn quadcopter_x() -> Airframe<CopterGuidanceConfig, CopterStabilizerConfig, 
                 roll_gains: rate_roll_pitch,
                 pitch_gains: rate_roll_pitch,
                 // Yaw authority is differential prop drag only, so yaw needs its own, higher gains.
-                // The model needs a steady ~0.40 nose-right yaw moment to hover; core's
-                // default yaw_max_integral (0.5) cancels it with margin; with less, acro
-                // drifts in yaw (#192). The RealFlight autotune's yaw search (I at 0.3 of P), at 250 Hz: 0.5
-                // rad/s steps overshoot 0.01 and rise in 0.50–0.89 s, one of six reaching only
-                // 0.89 in the 1 s window (#558). P damps the heading loop: 30° heading turns
-                // overshoot 7% and settle within 1° in 1.6 s; at P 0.6 they overshoot 25% and
-                // ring for 4.2 s, and any kick (a stall, a stick) swings the heading for
-                // seconds (#383).
+                // The model needs a steady ~0.40 nose-right yaw moment to hover; core's default
+                // yaw_max_integral (0.5) cancels it with margin; with less, acro drifts in yaw
+                // (#192). The RealFlight autotune's yaw search (I at 0.3 of P), at 250 Hz: 0.5
+                // rad/s steps overshoot 0.01 and rise in 0.50–0.89 s, one of six reaching only 0.89
+                // in the 1 s window (#558). P damps the heading loop: 30° heading turns overshoot
+                // 7% and settle within 1° in 1.6 s; at P 0.6 they overshoot 25% and ring for 4.2 s,
+                // and any kick (a stall, a stick) swings the heading for seconds (#383).
                 yaw_gains: Gains {
                     p: 1.1532,
                     i: 0.3460,
@@ -302,7 +301,7 @@ pub fn explora_vtol()
                     // The elevons apart (airplane roll).
                     yaw_gains: gains(1.0191, 0.3057, 0.0),
                     // The trim each I term held when it was tuned: its I gain × 1 rad of
-                    // error, pitch's for roll and pitch (#374).
+                    // error, the larger of roll's and pitch's (#374).
                     max_integral: 0.28,
                     yaw_max_integral: 0.31,
                 },
@@ -556,7 +555,7 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                     yaw_gains: gains(1.8091, 0.5427, 0.0),
                     // The nose-heavy hover needs a steady 0.18–0.19 nose-up moment; 0.29 holds
                     // it with about 50% margin. The trim each I term held when it was tuned:
-                    // its I gain × 3 rad of error, roll's for roll and pitch (#374).
+                    // its I gain × 3 rad of error, the larger of roll's and pitch's (#374).
                     max_integral: 0.29,
                     // Its I gain × 1 rad (#374).
                     yaw_max_integral: 0.54,
