@@ -94,17 +94,12 @@ impl Search {
     /// disturbed and never settle (#375). Those gains are what stays if nothing better passes.
     fn baseline(&mut self) -> Action {
         if self.plan.term.get(self.start) > self.plan.max {
-            let lowered = self.with(self.plan.max);
-            // The run's own start too high to fly stays lowered; a seeded start goes back to it.
-            if self.fallback == self.start {
-                self.fallback = lowered;
-            }
-            self.start = lowered;
+            let lowered = self.lower_start(self.plan.max);
             return match self.advance() {
                 Action::Probe { probe, gains, .. } => Action::Probe {
                     probe,
                     gains,
-                    commit: Some(self.start),
+                    commit: Some(lowered),
                 },
                 end => end,
             };
@@ -115,27 +110,32 @@ impl Search {
 
     /// Lowers a start the vehicle won't settle on by the bracket's `factor`, commits it, and
     /// steps the baseline again on it; fails `NotSettled` once the term would fall below
-    /// `min`. A start that rings stops every stage after it from settling, and the roll and
-    /// pitch settles leave yaw out, so a ringing yaw spoils their steps instead: core's
-    /// default yaw rate gains ring on `racer` with 25 ms of delay, and the rate steps flown
-    /// meanwhile overshoot by 0–23% from one step to the next on the same gains (#552).
+    /// `min`. A start that rings keeps every stage after it from settling, or, on an axis
+    /// another stage's settle leaves out, spoils its steps.
     fn lower_unsettled(&mut self) -> Action {
         let gain = self.plan.term.get(self.start) / self.plan.factor;
         if gain < self.plan.min {
             return Action::Fail(AutotuneAbort::NotSettled);
         }
-        let lowered = self.with(gain);
-        // The run's own start that won't settle stays lowered; a seeded start goes back to it.
-        if self.fallback == self.start {
-            self.fallback = lowered;
-        }
-        self.start = lowered;
+        let lowered = self.lower_start(gain);
         self.pairs.restart(self.plan.test.pairs);
         Action::Probe {
             probe: self.pairs.probe(),
             gains: None,
             commit: Some(lowered),
         }
+    }
+
+    /// Replaces the start with its searched term at `gain`, returning it for the caller to
+    /// commit. The run's own start lowered stays lowered if nothing better passes; a seeded
+    /// start (a design) goes back to the run's start.
+    fn lower_start(&mut self, gain: f32) -> Gains {
+        let lowered = self.with(gain);
+        if self.fallback == self.start {
+            self.fallback = lowered;
+        }
+        self.start = lowered;
+        lowered
     }
 
     /// The next step on the gain under test.

@@ -409,32 +409,8 @@ fn an_unsettled_start_is_lowered_until_it_settles() {
     check!(run.end == Action::Fail(AutotuneAbort::NotSettled));
 }
 
-/// A lowered start that never passes stays only if it's the run's own start; a seeded start
-/// (a design) gives way to the run's start, as above `max`.
-#[test]
-fn only_the_runs_own_unsettled_start_stays_lowered() {
-    let plan = d_plan();
-    let lowered = Gains {
-        d: START.d / plan.factor,
-        ..START
-    };
-    let run_start = Gains { d: 0.0015, ..START };
-    // (case, run's start, kept)
-    let rows = [
-        ("the run's own start", START, lowered),
-        ("a seeded start", run_start, run_start),
-    ];
-    for (case, run_start, kept) in rows {
-        let run = drive_unsettled(plan, run_start, 1, |_| Some(metrics(0.0, 1.0)));
-        check!(
-            finished(&run) == (kept, Outcome::Kept(KeepReason::NoPass)),
-            "{case}"
-        );
-    }
-}
-
-/// Past the baseline, committed gains that won't settle fail the search: they passed their
-/// steps, so lowering them isn't the search's call.
+/// Past the baseline, committed gains that won't settle fail the search: only the baseline
+/// lowers its start.
 #[test]
 fn an_unsettled_bracket_fails() {
     let plan = d_plan();

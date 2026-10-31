@@ -189,7 +189,8 @@ pub fn racer() -> Airframe {
 /// [`racer`]'s gyro low-pass cutoff, in Hz: what Mission Planner's initial parameters set
 /// for 5-inch props (`ConfigInitialParams`, `INS_GYRO_FILTER` from prop size). Lower: more of
 /// the rate loop's lag is the filter's, and the design search's rate loop rises 40% slower
-/// than the fastest P/D pair at 40 Hz (#552).
+/// than the fastest P/D pair at 40 Hz. Higher: less lag, more gyro noise in the moments; at
+/// 80 Hz the noise row's autotune runs 388 s, past its 350 s budget (#552).
 pub const RACER_GYRO_CUTOFF_HZ: f32 = 75.0;
 
 /// The Alia's mixer: [`alia250_hover`]'s reasons.
