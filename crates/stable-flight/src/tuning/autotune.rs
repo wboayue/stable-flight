@@ -921,7 +921,8 @@ impl DesignPlan {
 /// How level and still the vehicle must hold before a probe starts.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Settle {
-    /// Roll and pitch within this, in rad.
+    /// Roll and pitch within this, in rad, in the probed loops' frame
+    /// ([`Tunable::probe_frame`]), as are the rates.
     pub tilt_rad: f32,
     /// Roll and pitch rates within this, in rad/s, read through the stabilizer's gyro
     /// low-pass; the yaw rate too for a yaw rate or heading stage, as ArduPilot's level check
@@ -963,9 +964,10 @@ impl Settle {
 /// Limits that end a stage, and how still the vehicle must be before a probe starts.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Envelope {
-    /// Roll or pitch beyond this aborts the stage, in rad.
+    /// Roll or pitch beyond this aborts the stage, in rad, in the probed loops' frame
+    /// ([`Tunable::probe_frame`]): a tailsitter's view, where nose-up hover is level.
     pub max_tilt_rad: f32,
-    /// Any body rate beyond this aborts the stage, in rad/s.
+    /// A rate about any of the probed loops' axes beyond this aborts the stage, in rad/s.
     pub max_rate_radps: f32,
     /// Sinking more than this below the altitude at [`Autotune::start`] aborts, in m.
     pub max_altitude_loss_m: f32,
