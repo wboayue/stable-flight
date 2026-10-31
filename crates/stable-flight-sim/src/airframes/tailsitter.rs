@@ -49,8 +49,8 @@ pub struct TailsitterAirframe {
 ///
 /// The hover side flies the eXplora's hand tune from RealFlight (#123, #328; the same layout
 /// of differential thrust and elevons) with view pitch rate D added for the gyro low-pass,
-/// which holds the sim's nose-up hover within the
-/// copter's calm-air bands (`tests/tailsitter_hover.rs`). The plane side is [`plane`]'s,
+/// which holds the sim's nose-up hover within the copter's calm-air bands
+/// (`tests/tailsitter_hover.rs`). The plane side is [`plane`]'s,
 /// without the rudder feedforward (yaw is differential thrust here), on the hover side's
 /// thrust curve so a handoff keeps the motor commands continuous, and with room to pitch up
 /// for the back transition. Transitions fly core's defaults but for the airspeed gate, the
@@ -98,7 +98,9 @@ pub fn tailsitter() -> TailsitterAirframe {
             roll_gains: gains(0.4, 0.2, 0.0),
             // View pitch: the elevons together. The D damps them against the gyro low-pass's
             // lag: without it, a hover requested mid-transition rings to 13.8° of tilt at the
-            // default 40 Hz. D 0.001–0.04 holds the calm-air bands; 0.08 rings again (#550).
+            // default 40 Hz. D 0.001–0.04 holds the calm-air bands, and higher damps the angle
+            // steps more (overshoot 0.10 at 0.0025, 0.015 at 0.01); 0.08 rings again. 0.01
+            // sits 10× above the low end and 4× below the high one (#550).
             pitch_gains: gains(0.3, 0.5, 0.01),
             // View yaw: the elevons opposite ways.
             yaw_gains: gains(0.1, 0.05, 0.0),
