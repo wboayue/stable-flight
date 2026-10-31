@@ -901,10 +901,15 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     and the sim's noise rows 0.024–0.100. A clean window leaves under 0.001 whatever its
     gains: a gate on the rate's own noise (the RMS of its second difference) read a clean
     `racer` at 1.75× its gains, ringing, as 0.074 against RealFlight's 0.020 at most. A window
-    past 20% saturated takes the least-squares fit whatever its noise: the ×3 starts ring at
-    the rate loop's ±1 for 510–629 of 750 ticks with no noise, the excitation explains little
-    of that moment, and the two-stage fit misread their lags (`racer` 7.6 ms against 15). The two-stage fit costs
-    about 2 ms on a desktop in the window's last tick, against 0.06 ms for the least squares.
+    past 20% saturated never takes the two-stage fit: the ×3 starts ring at the rate loop's ±1
+    for 510–629 of 750 ticks with no noise, the excitation explains little of that moment, and
+    the two-stage fit misread their lags (`racer` 7.6 ms against 15). Quiet, it takes the
+    least squares, exact there. Noisy as well, no fit reads it (the least squares designed
+    `quad_x`'s rate P 8.1 against 1.9), so the probe aborts (`IdentifyAbort::Saturated`) and
+    the design stage lowers its start, every gain ÷ 1.3 as a search lowers an unsettled one,
+    and fits again, up to three times: `quad_x`'s and `heavy_quad`'s ×3 noise rows pass on 5
+    seeds. The two-stage fit costs about 2 ms on a desktop in the window's last tick, against
+    0.06 ms for the least squares.
     Rejected (#551, over the sim's 30 noise-row fits and the RealFlight windows): two stages
     everywhere (above); within the two-stage fit, the longest delay of a near-tie (eXplora
     roll P 0.71, pitch 2.06–2.42), the delay from the least-squares fit (roll lag 97 ms), and
@@ -996,10 +1001,10 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     clip band reads the same allowance, so the RealFlight check is what judges it. With the
     rate allowance, #518 measured `quad_x`'s angle P held at 9 with 10 ms of delay and its
     steps clipping; on the gyro-filtered rate loop with rate I, those rows pass.
-  * Open: under gyro noise the ×3 starts ring at the rate limit and take the least-squares
-    fit, which reads no lag or doesn't settle; at `racer`'s 75 Hz gyro low-pass the noise
-    alone peaks at 0.12–0.17 rad/s in a hover, past the 0.1 rad/s step settle; and with the
-    trim and delay added (the combined rows) the yaw stage doesn't settle
+  * Open: at `racer`'s 75 Hz gyro low-pass the noise alone peaks at 0.12–0.17 rad/s in a
+    hover, past the 0.1 rad/s step settle; with the trim and delay added (the combined rows)
+    the yaw stage doesn't settle from the low start, and from the ×3 start the D turns the
+    90 Hz tone into clipped moments, so its fits saturate even lowered six times
     ([#551](https://github.com/wboayue/stable-flight/issues/551)). The trim rows pass, with
     the rate I term limited in moment (*Retuning `i` is bumpless*, #374).
     `racer`'s ×3 start breaches the rate envelope in its first fit with 25 ms of delay: the
