@@ -98,7 +98,7 @@ small-copter defaults don't carry over; measure first, then tune on a sim model 
   it: at rate I equal to P the rate steps overshoot 24–33%, and angle steps still peak and
   sag. Sweep angle I on step tests (`--param STAB_ATT_RLL_I=…`) instead:
   - Roll 0.25 and pitch 0.15 end within 7% of the step with every step rising. Nose-up pitch
-    steps still overshoot 6–10%, the lean every pitch loop shows here.
+    steps still overshoot 6–10%, one-sided as the pitch rate steps' overshoot is.
   - Pitch at 0.25 overshoots its rate step tests (6%, #579), and at 0.5 its angle steps 25%.
   ([#576](https://github.com/wboayue/stable-flight/issues/576)).
 - **Yaw and heading:** the quad values limit-cycled at ±1 moment; yaw rate P 5 without I and
