@@ -3,6 +3,7 @@
 use stable_flight::Vec3;
 
 use crate::model::{ModelError, check_finite, check_non_negative, check_positive};
+use crate::perturbations::MAX_ACTUATOR_DELAY_S;
 
 #[cfg(test)]
 mod tests;
@@ -59,6 +60,12 @@ pub struct FixedWingModel {
     pub thrust_line_below_cg_m: f32,
     /// First-order lag from the motor's command to the command it runs at, in s.
     pub motor_time_constant_s: f32,
+    /// Pure delay from the command of a motor along body `x` to the start of its lag, in s, on
+    /// top of any [`actuator_delay_s`](crate::Perturbations::actuator_delay_s): a prop slow to
+    /// spin up, whose thrust holds still a while before following the command. The surfaces
+    /// and any lift rotors don't wait it out. At most
+    /// [`MAX_ACTUATOR_DELAY_S`](crate::MAX_ACTUATOR_DELAY_S).
+    pub motor_delay_s: f32,
     /// Friction coefficient against the ground while resting on it (Coulomb, unitless).
     pub ground_friction: f32,
     /// Longest integration step, in s (see [`MultirotorModel::max_step_s`](crate::MultirotorModel::max_step_s)).
@@ -143,8 +150,9 @@ impl FixedWingModel {
     ///
     /// [`ModelError::NotPositive`] for a mass, inertia, wing area, span, chord, stall angle,
     /// stall sharpness, Oswald efficiency, max thrust, time constant, or max step that isn't
-    /// positive and finite; [`ModelError::Negative`] for a max deflection, parasitic drag, or
-    /// friction that is negative or not finite; [`ModelError::NotFinite`] for any other
+    /// positive and finite; [`ModelError::Negative`] for a max deflection, parasitic drag,
+    /// friction, or motor delay that is negative or not finite; [`ModelError::DelayTooLong`] for
+    /// a motor delay over [`MAX_ACTUATOR_DELAY_S`]; [`ModelError::NotFinite`] for any other
     /// coefficient that isn't finite.
     pub fn validate(&self) -> Result<(), ModelError> {
         let aero = &self.aero;
@@ -172,7 +180,11 @@ impl FixedWingModel {
             ("aero.c_drag_0", aero.c_drag_0),
             ("ground_friction", self.ground_friction),
             ("thrust_falloff_n_per_mps", self.thrust_falloff_n_per_mps),
+            ("motor_delay_s", self.motor_delay_s),
         ])?;
+        if self.motor_delay_s > MAX_ACTUATOR_DELAY_S {
+            return Err(ModelError::DelayTooLong("motor_delay_s"));
+        }
         check_finite(&[
             ("thrust_line_below_cg_m", self.thrust_line_below_cg_m),
             ("aero.c_lift_0", aero.c_lift_0),

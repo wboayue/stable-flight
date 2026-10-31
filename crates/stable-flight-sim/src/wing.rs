@@ -8,6 +8,7 @@ use stable_flight::{ActuatorCommand, Vec3};
 
 use crate::aero::{self, Aero};
 use crate::body::{Body, Loads, MassProperties};
+use crate::delay::DelayLine;
 use crate::fixed_wing::FixedWingModel;
 use crate::ground::Ground;
 use crate::lag;
@@ -115,7 +116,7 @@ impl LiftGroup {
     }
 }
 
-/// A fixed wing's physics: the motors and surfaces through their lags, thrust along body `x`,
+/// A fixed wing's physics: the motors (after their delay) and surfaces through their lags, thrust along body `x`,
 /// and the aerodynamics, with the surfaces in the props' wash when [`Rotors::wash`] says so
 /// and lift rotors along body `−z` when [`Rotors::lift`] has them.
 #[derive(Debug, Clone)]
@@ -126,11 +127,19 @@ pub(crate) struct FixedWing {
     rest: UnitQuaternion<f32>,
     /// The motors along body `x`.
     motors: Motors,
+    /// Commands for the motors along body `x`, waiting out the model's `motor_delay_s`.
+    motor_commands: DelayLine,
+    /// The motor commands last queued on `motor_commands`.
+    queued_motors: [f32; ActuatorCommand::SLOTS],
     lift: Option<LiftGroup>,
     surfaces: Surfaces,
     /// The motor and servo lags' step factors for the current step length.
     motor_alpha: f32,
     servo_alpha: f32,
+    /// The current step length, in s.
+    step_s: f32,
+    /// Time over the steps run, in s: the motor delay's clock.
+    time_s: f64,
     /// Thrust, lift rotors', and aerodynamic force over the last step, on the body axes, in N.
     force_n: Vec3,
     /// The aerodynamics over the last step.
@@ -166,6 +175,8 @@ impl FixedWing {
         };
         FixedWing {
             motors,
+            motor_commands: DelayLine::new(model.motor_delay_s),
+            queued_motors: [0.0; ActuatorCommand::SLOTS],
             lift,
             surfaces: Surfaces::new(mixer.rows()),
             model,
@@ -173,6 +184,8 @@ impl FixedWing {
             rest,
             motor_alpha: 0.0,
             servo_alpha: 0.0,
+            step_s: 0.0,
+            time_s: 0.0,
             force_n: Vec3::zeros(),
             aero: Aero::default(),
         }
@@ -193,6 +206,17 @@ impl FixedWing {
             .map_or([0.0; ActuatorCommand::SLOTS], |lift| {
                 lift.motors.thrusts_n()
             })
+    }
+
+    /// The commands the motors along body `x` run on this step: `command`'s, `motor_delay_s`
+    /// late. Commands change once a tick, so only a change is queued, which keeps the line
+    /// short at any step length.
+    fn delayed_motors(&mut self, command: &ActuatorCommand) -> [f32; ActuatorCommand::SLOTS] {
+        if command.motors != self.queued_motors {
+            self.queued_motors = command.motors;
+            self.motor_commands.push(self.time_s, *command);
+        }
+        self.motor_commands.due_at(self.time_s).motors
     }
 
     /// The aerodynamics over the last step.
@@ -222,6 +246,7 @@ impl Dynamics for FixedWing {
     }
 
     fn begin(&mut self, h: f32) {
+        self.step_s = h;
         self.motor_alpha = lag::factor(h, self.model.motor_time_constant_s);
         self.servo_alpha = lag::factor(h, self.model.servo_time_constant_s);
         if let Some(lift) = &mut self.lift {
@@ -230,7 +255,8 @@ impl Dynamics for FixedWing {
     }
 
     fn loads(&mut self, command: &ActuatorCommand, body: &Body, wind_ned_mps: Vec3) -> Loads {
-        self.motors.spin(&command.motors, self.motor_alpha);
+        let motor_command = self.delayed_motors(command);
+        self.motors.spin(&motor_command, self.motor_alpha);
         self.surfaces.move_to(&command.servos, self.servo_alpha);
         let air_mps = body
             .attitude
@@ -259,6 +285,7 @@ impl Dynamics for FixedWing {
                 lift.wrench(&command.motors, air_mps)
             });
         self.force_n = self.aero.force_n + Vec3::new(thrust_n, 0.0, 0.0) + lift_force_n;
+        self.time_s += f64::from(self.step_s);
         Loads {
             force_ned_n: body.attitude * self.force_n,
             torque_nm: self.aero.torque_nm + motor_torque_nm + thrust_line_nm + lift_torque_nm,

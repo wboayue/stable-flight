@@ -125,7 +125,7 @@ impl Perturbations {
         ];
         check_non_negative(&non_negative)?;
         if self.actuator_delay_s > MAX_ACTUATOR_DELAY_S {
-            return Err(ModelError::DelayTooLong);
+            return Err(ModelError::DelayTooLong("actuator_delay_s"));
         }
         if let Some(vibration) = vibration {
             check_positive(&[("gyro.vibration.frequency_hz", vibration.frequency_hz)])?;

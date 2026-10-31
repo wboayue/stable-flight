@@ -117,6 +117,39 @@ fn full_thrust_stops_at_zero() {
     check!(model.full_thrust_n(1.0e6) == 0.0);
 }
 
+/// A motor delay holds the thrust at its last command for the delay, then the motor lags
+/// toward the new one; the surfaces start moving at once: (delay s, steps of 1 ms the thrust
+/// stays at zero).
+#[test]
+fn a_motor_delay_holds_the_thrust_and_spares_the_surfaces() {
+    for (delay_s, held_steps) in [(0.0, 0), (0.0105, 11)] {
+        let airframe = airframes::tailsitter();
+        let model = FixedWingModel {
+            motor_delay_s: delay_s,
+            ..airframe.model.wing
+        };
+        let mut dynamics = FixedWing::new(
+            model,
+            &airframe.mixer,
+            Rotors::tailsitter(&airframe.model),
+            UnitQuaternion::identity(),
+        );
+        dynamics.begin(0.001);
+        let full = command([1.0, 1.0], [1.0, 1.0]);
+        for step in 0..=held_steps {
+            let loads = dynamics.loads(&full, &Body::default(), Vec3::zeros());
+            let thrust_n = loads.force_ned_n.x - dynamics.aero.force_n.x;
+            let deflection_rad = dynamics.surfaces.deflection_rad(&model.max_deflection_rad);
+            let row = format!("delay {delay_s} s, step {step}");
+            check!(
+                (thrust_n > 0.0) == (step == held_steps),
+                "{row}: {thrust_n} N"
+            );
+            check!(deflection_rad.norm() > 0.0, "{row}");
+        }
+    }
+}
+
 /// The tailsitter's torque moving at `velocity_mps` (body axes) through still air, after one
 /// step far longer than the lags, so every motor and servo runs at its command.
 fn torque_nm(command: &ActuatorCommand, velocity_mps: Vec3) -> Vec3 {

@@ -8,13 +8,14 @@ fn the_plane_airframe_is_valid() {
     check!(airframes::plane().model.validate() == Ok(()));
 }
 
-/// Each class of parameter is checked: positive, non-negative, finite.
+/// Each class of parameter is checked: positive, non-negative, finite, and the motor delay's
+/// ceiling.
 #[test]
 fn rejects_each_out_of_range_parameter() {
     let model = airframes::plane().model;
     // (case, edit, error)
     type Edit = fn(&mut FixedWingModel);
-    let cases: [(&str, Edit, ModelError); 7] = [
+    let cases: [(&str, Edit, ModelError); 9] = [
         (
             "zero span",
             |m| m.span_m = 0.0,
@@ -44,6 +45,16 @@ fn rejects_each_out_of_range_parameter() {
             "negative drag",
             |m| m.aero.c_drag_0 = -0.1,
             ModelError::Negative("aero.c_drag_0"),
+        ),
+        (
+            "negative motor delay",
+            |m| m.motor_delay_s = -0.01,
+            ModelError::Negative("motor_delay_s"),
+        ),
+        (
+            "motor delay past the ceiling",
+            |m| m.motor_delay_s = 2.0 * MAX_ACTUATOR_DELAY_S,
+            ModelError::DelayTooLong("motor_delay_s"),
         ),
         (
             "infinite coefficient",

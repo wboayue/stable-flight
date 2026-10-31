@@ -112,6 +112,7 @@ pub fn plane() -> PlaneAirframe {
         thrust_falloff_n_per_mps: 0.0,
         thrust_line_below_cg_m: 0.0,
         motor_time_constant_s: 0.05,
+        motor_delay_s: 0.0,
         ground_friction: 0.5,
         max_step_s: 0.001,
     };

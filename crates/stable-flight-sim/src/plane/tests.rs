@@ -135,5 +135,8 @@ fn rejects_an_invalid_model_or_perturbations() {
         actuator_delay_s: 1.0,
         ..Default::default()
     };
-    check!(plane().with_perturbations(delay).err() == Some(ModelError::DelayTooLong));
+    check!(
+        plane().with_perturbations(delay).err()
+            == Some(ModelError::DelayTooLong("actuator_delay_s"))
+    );
 }
