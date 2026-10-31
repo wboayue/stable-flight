@@ -1,11 +1,13 @@
 //! The tailsitter pipeline on a `SimTailsitter`: a [`TailsitterPlant`] flown from resting on
-//! its tail at the origin.
+//! its tail at the origin, whole or its hover side alone in the nose-up view.
 
+use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::guidance::vtol::TailsitterGuidance;
 use stable_flight::mixers::TableMixer;
+use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use stable_flight::stabilizers::vtol::TailsitterStabilizer;
 use stable_flight::testing::RecordingTelemetry;
-use stable_flight::view::tailsitter_rotation;
+use stable_flight::view::{View, tailsitter_rotation};
 use stable_flight::{Commander, FlightLoop, TelemetryPublisher, VehicleState, WaypointCommand};
 use stable_flight_sim::airframes::TailsitterAirframe;
 use stable_flight_sim::{Perturbations, SimTailsitter, Wind};
@@ -78,6 +80,37 @@ pub fn tailsitter_pipeline<C: Commander, T: TelemetryPublisher>(
         TailsitterStabilizer::new(airframe.stabilizer),
         airframe.mixer,
         telemetry,
+    );
+    flight_loop.prime();
+    flight_loop
+}
+
+/// The tailsitter's hover side alone on a [`SimTailsitter`]: copter guidance and stabilizer
+/// in the nose-up [`View`], which hosts the autotune as `copter-autotune-realflight --airframe
+/// explora` flies it (`TailsitterStabilizer` doesn't).
+pub type HoverViewLoop<C> = FlightLoop<
+    C,
+    SimTailsitter,
+    View<CopterGuidance>,
+    View<CopterStabilizer>,
+    TableMixer<4>,
+    RecordingTelemetry<RECORDED>,
+>;
+
+/// `plant`'s hover side on `hover`'s gains, on its tail at the origin, flown by `commander`,
+/// primed.
+pub fn hover_view_loop<C: Commander>(
+    plant: &TailsitterPlant,
+    hover: CopterStabilizerConfig,
+    commander: C,
+) -> HoverViewLoop<C> {
+    let mut flight_loop = FlightLoop::new(
+        commander,
+        plant.vehicle(),
+        View::tailsitter(CopterGuidance::new(plant.airframe.guidance.hover)),
+        View::tailsitter(CopterStabilizer::new(hover)),
+        plant.airframe.mixer,
+        RecordingTelemetry::new(),
     );
     flight_loop.prime();
     flight_loop

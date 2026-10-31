@@ -260,8 +260,8 @@ fn check_flies_on(case: &str, flown: &Flown) {
 /// A roll turns a full turn before its timeout, both ways, holding its line's height: it loses
 /// at most [`ROLL_LOSS_M`] and climbs at most [`ROLL_CLIMB_M`] (vehicle, rate in deg/s, longest
 /// rotation in s). Measured 3.99 and 3.25 s at 90 and 180°/s on the plane (whose ailerons reach
-/// 2.8 rad/s at most), 2.34 and 1.94 s on the tailsitter, 3.80 and 2.00 s on the eXplora; each
-/// band is about 1.2× that.
+/// 2.8 rad/s at most), 2.34 and 1.94 s on the tailsitter, 4.05 and 2.08 s on the eXplora; each
+/// band is 1.15–1.2× that.
 #[test]
 fn rolls_turn_a_full_turn_holding_height_and_fly_on() {
     let cases = [
@@ -295,13 +295,13 @@ fn rolls_turn_a_full_turn_holding_height_and_fly_on() {
     }
 }
 
-/// Most height a roll loses, in m. Measured 3.50 m (the plane at 90°/s; rates alone lost 36.8
-/// m there, the tailsitter 19.2 m, the eXplora 23.8 m); about 1.2× that.
-const ROLL_LOSS_M: f32 = 4.2;
+/// Most height a roll loses, in m. Measured 4.02 m (the eXplora at 90°/s; the plane 3.56 m,
+/// where rates alone lost 36.8 m); about 1.2× that.
+const ROLL_LOSS_M: f32 = 4.8;
 
-/// Most height a roll climbs, in m. Measured 2.57 m (the eXplora at 90°/s): the line's gravity
+/// Most height a roll climbs, in m. Measured 2.09 m (the plane at 90°/s): the line's gravity
 /// share pulls up through the roll, a climb traded for a smaller sink (#343); about 1.2× that.
-const ROLL_CLIMB_M: f32 = 3.1;
+const ROLL_CLIMB_M: f32 = 2.5;
 
 /// A loop flies a circle of its radius and ends where it began: half the height it spans is
 /// within 5% of the radius (measured 3.0% at most, the tailsitter's 10 m loop), and it sinks below
@@ -334,8 +334,8 @@ fn loops_fly_their_radius_and_fly_on() {
     }
 }
 
-/// Most height a loop loses, in m. Measured 1.05 m (the eXplora's 10 m loop); 1.5 m leaves
-/// about 1.4× that.
+/// Most height a loop loses, in m. Measured 1.02 m (the eXplora's 10 m loop); 1.5 m leaves
+/// about 1.5× that.
 const LOOP_LOSS_M: f32 = 1.5;
 
 /// A doublet's first half peaks as a held step of its rate does, at cruise thrust (measured
@@ -368,7 +368,7 @@ fn doublets_measure_the_step_response() {
 }
 
 /// The eXplora's doublets at 60°/s peak within 1.3× of the command in their first half
-/// (measured 1.01 in roll, 1.13 in pitch), where PX4's default feedforward peaked at 3.2× and
+/// (measured 0.98 in roll, 1.04 in pitch), where PX4's default feedforward peaked at 3.2× and
 /// 3.4× in RealFlight (#342).
 #[test]
 fn explora_doublets_track_their_command() {

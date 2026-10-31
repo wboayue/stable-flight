@@ -24,12 +24,12 @@ use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight::stabilizers::copter::{CopterStabilizer, TunedLoop};
 use stable_flight::testing::RecordingTelemetry;
 use stable_flight::tuning::autotune::{
-    Autotune, AutotuneAbort, AutotuneEvent, Envelope, Outcome, StagePlan,
+    Autotune, AutotuneAbort, AutotuneEvent, CopterTunable, Envelope, Outcome, StagePlan,
 };
 use stable_flight::tuning::{ProbeConfig, ProbeStatus};
 use stable_flight::{
-    Command, Commander, Configurable, ControlInput, FlightLoop, Guidance, Mixer, Stabilizer,
-    TelemetryPublisher, Vec2, Vehicle, VehicleState, WaypointCommand,
+    Command, Commander, ControlInput, FlightLoop, Guidance, Mixer, Stabilizer, TelemetryPublisher,
+    Vec2, Vehicle, VehicleState, WaypointCommand,
 };
 use stable_flight_sim::airframes::{self, Airframe};
 use stable_flight_sim::{Perturbations, SimCopter, Wind};
@@ -337,12 +337,20 @@ pub fn autotune_within(
 
 /// Runs `plan` within `envelope` on `flight_loop`, armed and settled, until it ends or
 /// `timeout_s` passes.
-pub fn autotune_on<C: Commander, T: TelemetryPublisher>(
-    flight_loop: &mut Pipeline<C, T>,
+pub fn autotune_on<C, V, G, S, M, T>(
+    flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
     plan: &[StagePlan],
     envelope: Envelope,
     timeout_s: f32,
-) -> AutotuneRun {
+) -> AutotuneRun
+where
+    C: Commander,
+    V: Vehicle,
+    G: Guidance,
+    S: Stabilizer + CopterTunable,
+    M: Mixer,
+    T: TelemetryPublisher,
+{
     let mut autotune = Autotune::new(plan, envelope).expect("valid plan");
     autotune.start(flight_loop).expect("armed, idle");
     let mut stages = Vec::new();

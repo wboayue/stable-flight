@@ -177,7 +177,8 @@ fn check_tailsitter_hover_thrust(airframe: TailsitterAirframe) {
     let mut mixer = airframe.mixer;
     let command = mixer.mix(&output);
 
-    // Nose up in still air, after a step far longer than the motor lag.
+    // Nose up in still air, after two steps far longer than the motor delay and lag: the
+    // first starts the delay, the second runs on the command.
     let mut dynamics = FixedWing::new(
         airframe.model.wing,
         &airframe.mixer,
@@ -189,7 +190,9 @@ fn check_tailsitter_hover_thrust(airframe: TailsitterAirframe) {
         attitude: nose_up.attitude,
         ..Body::default()
     };
-    dynamics.loads(&command, &body, Vec3::zeros());
+    for _ in 0..2 {
+        dynamics.loads(&command, &body, Vec3::zeros());
+    }
     assert_relative_eq!(
         dynamics.lift_n(&body),
         airframe.model.wing.mass_kg * GRAVITY,
