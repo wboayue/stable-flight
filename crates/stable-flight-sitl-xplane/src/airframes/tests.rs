@@ -59,8 +59,8 @@ fn alia250_flies_the_sim_alias_plane_side() {
 
 /// The hover gains, lift mixing, and thrust law are the sim Alia's, which the autotune tuned
 /// (`stable-flight-sim` `tests/alia.rs`). X-Plane's own: the roll and pitch rate I that trims
-/// its nose-up pitch, which the sim leaves out, and the pitch rate P its step search tuned
-/// (#540).
+/// its nose-up pitch and the angle I that holds a tilt against its wing, both of which the sim
+/// leaves out, and the pitch rate P its step search tuned (#540, #576).
 #[test]
 fn alia250_hovers_on_the_sim_alias_tune() {
     let sim = stable_flight_sim::airframes::alia250_hover();
@@ -69,9 +69,13 @@ fn alia250_hovers_on_the_sim_alias_tune() {
     check!(hover.body_rate.roll_gains.i == 0.2);
     check!(hover.body_rate.pitch_gains.i == 0.2);
     check!(hover.body_rate.pitch_gains.p == 1.78);
+    check!(hover.attitude.roll_gains.i == 0.25);
+    check!(hover.attitude.pitch_gains.i == 0.15);
     hover.body_rate.roll_gains.i = 0.0;
     hover.body_rate.pitch_gains.i = 0.0;
     hover.body_rate.pitch_gains.p = sim.stabilizer.body_rate.pitch_gains.p;
+    hover.attitude.roll_gains.i = sim.stabilizer.attitude.roll_gains.i;
+    hover.attitude.pitch_gains.i = sim.stabilizer.attitude.pitch_gains.i;
     check!(*hover == sim.stabilizer);
 
     // Worked out each its own way from the same liftoff throttle.

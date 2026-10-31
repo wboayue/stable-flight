@@ -107,14 +107,17 @@ const ALIA_SURFACES: [SurfaceLink; 8] = [
 /// - **Mapping:** `quad_x`'s front-left, front-right, rear-left, rear-right on engines 1, 0,
 ///   2, 3 (the `.acf`'s engine positions); the pusher on 4; the surfaces as X-Plane's yoke
 ///   moves them (ailerons on wings 2–5, elevators 8 and 9, rudders 10 and 11).
-/// - **Hover gains:** roll rate and the roll and pitch angle from the sim autotune of
+/// - **Hover gains:** roll rate and the roll and pitch angle P from the sim autotune of
 ///   `stable-flight-sim`'s `alia250_hover()`, which is sized from the `.acf` and the sweep; its
 ///   lateral loop, slowed for the aircraft's slow tilt; yaw rate (P 5, no I) and heading (P
 ///   0.8) from that airframe's yaw steps. Pitch rate P from `copter-autotune-xplane`'s step
 ///   search in X-Plane: 1.78 against the sim's 2.57. Roll rate and both angle loops keep the
 ///   sim's values: the search's lower gains for them step-tested no better (#540). The roll
 ///   and pitch rate I (0.2, the QuadCopterX's) trims X-Plane's nose-up pitch at level thrust
-///   (2.2 °/s², which the sim leaves out).
+///   (2.2 °/s², which the sim leaves out). The angle I (0.25 roll, 0.15 pitch) holds a tilt
+///   against the moment the airframe builds as it drifts sideways, which the sim's wingless
+///   model leaves out too: angle steps end within 7% of the step against 13–23% short at
+///   core's 0.001 (#576).
 /// - **Hover thrust:** the liftoff throttle through the mixer's thrust factor and the thrust
 ///   curve.
 /// - **Plane and transitions:** `stable-flight-sim`'s `alia250()`, tuned on a model fitted to
@@ -256,12 +259,11 @@ fn alia250_hover_guidance() -> CopterGuidanceConfig {
 fn alia250_hover_stabilizer() -> CopterStabilizerConfig {
     let defaults = CopterStabilizerConfig::default();
     let rate = |p| Gains { p, i: 0.2, d: 0.0 };
-    // Core's angle I; no D, as the autotune ran.
-    let angle = Gains {
-        p: 1.03,
-        d: 0.0,
-        ..defaults.attitude.roll_gains
-    };
+    // No D, as the autotune ran. The I holds a tilt against the moment X-Plane's airframe
+    // builds as the tilt drifts it sideways (1–2.6 m/s within a 5° step): at core's 0.001,
+    // angle steps end 13–23% short. Higher: closer to the step, and past 0.25 on roll and 0.15
+    // on pitch, overshoot (pitch 25% at 0.5, #576).
+    let angle = |i| Gains { p: 1.03, i, d: 0.0 };
     CopterStabilizerConfig {
         body_rate: BodyRateControllerConfig {
             roll_gains: rate(1.52),
@@ -276,8 +278,8 @@ fn alia250_hover_stabilizer() -> CopterStabilizerConfig {
             ..defaults.body_rate
         },
         attitude: AttitudeControllerConfig {
-            roll_gains: angle,
-            pitch_gains: angle,
+            roll_gains: angle(0.25),
+            pitch_gains: angle(0.15),
             ..defaults.attitude
         },
         yaw: YawControllerConfig {
