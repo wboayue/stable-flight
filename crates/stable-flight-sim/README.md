@@ -223,7 +223,7 @@ RealFlight's autotune of it, flown with RealFlight's 6 ms exchange delay and 0.0
 noise: 28 ms of motor spin-up, a fifth of the wake over the elevons, and inertia 7–70× the
 scaled Aerosonde's put its rate fits, step tests, and designs near RealFlight's
 ([#539](https://github.com/wboayue/stable-flight/issues/539), `tests/explora.rs`). Its plane
-side flies `explora_vtol()`'s rate gains and trim, its hover `explora_vtol()`'s hand tune.
+side flies `explora_vtol()`'s rate gains and trim, its hover `explora_vtol()`'s gains, RealFlight's autotune.
 
 ## Limits
 

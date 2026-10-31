@@ -63,7 +63,7 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration::from_airframe(
 | Function | RealFlight model |
 |---|---|
 | `airframes::quadcopter_x()` | ArduPilot SITL_Models [QuadCopterX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/Multicopters/QuadCopterX) |
-| `airframes::explora_vtol()` | [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) tailsitter, for `TailsitterGuidance`/`TailsitterStabilizer` (hover gains in the tailsitter `View`'s axes, hand-tuned, with thrust floor, sink guard, and boost ceiling; plane and transition starting values) |
+| `airframes::explora_vtol()` | [eXplora VTOL](https://github.com/robustini/eXploraVTOL/tree/main/simulation) tailsitter, for `TailsitterGuidance`/`TailsitterStabilizer` (hover gains in the tailsitter `View`'s axes, autotuned in RealFlight, with thrust floor, sink guard, and boost ceiling; plane and transition starting values) |
 | `airframes::titan_cobra()` | ArduPilot SITL_Models [Titan Cobra VTOL](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/QuadPlanes/Titan_Cobra_VTOL) lift+cruise quadplane, for `QuadPlaneGuidance`/`QuadPlaneStabilizer` on `TableMixer::quadplane_vtail` (hover with measured trim and autotuned roll rate; surfaces checked in flight, tail trimmed +0.2; transitions at ArduPilot's 11 m/s; forward thrust 1.2) |
 
 ## Examples
@@ -136,7 +136,7 @@ cargo run -p stable-flight-bridge -- --vehicle-type tailsitter
 # steps from its design), logs each fit and judgment, prints the tuned gains as an
 # airframes.rs snippet, lands, and disarms.
 # --step-test appends step tests of roll/pitch/yaw rate and roll/pitch angle and logs a
-# response summary per loop (--stages none --step-test: the hand tune); --rate-p-scale starts
+# response summary per loop (--stages none --step-test: the airframe's gains); --rate-p-scale starts
 # from bad rate gains;
 # --record run.csv writes every tick (rates, angles, moments, setpoint) for diagnosis.
 # RUST_LOG=info,copter_autotune_realflight=debug logs each stage's status every second and each step.

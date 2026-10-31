@@ -181,8 +181,6 @@ fn explora_vtol_transition_fits_both_sides() {
     assert!(transition.forward_max_tilt_rad >= transition.forward_done_rad);
 }
 
-/// The Cobra's mapping drives each of its eight channels once: lift rotors, pusher, ailerons,
-/// and the two A-tail panels (#433), none reversed, the tail panels trimmed +0.2.
 /// The plane side is the sim eXplora's (stable-flight-sim `airframes::explora`), which #342
 /// tuned the rate loop on: its rate gains, trim, airspeeds, and cruise.
 #[test]
@@ -194,6 +192,20 @@ fn explora_vtol_flies_the_sim_exploras_plane_side() {
     assert_eq!(realflight.guidance.plane, sim.guidance.plane);
 }
 
+/// The sim eXplora hovers on the gains RealFlight's autotune gave the eXplora (#539), so its
+/// sim tests fly the hover RealFlight flies.
+#[test]
+fn explora_vtol_hovers_on_the_sim_exploras_gains() {
+    let sim = stable_flight_sim::airframes::explora().stabilizer.hover;
+    let realflight = explora_vtol().stabilizer.hover;
+
+    assert_eq!(realflight.body_rate, sim.body_rate);
+    assert_eq!(realflight.attitude, sim.attitude);
+    assert_eq!(realflight.gyro_cutoff_hz, sim.gyro_cutoff_hz);
+}
+
+/// The Cobra's mapping drives each of its eight channels once: lift rotors, pusher, ailerons,
+/// and the two A-tail panels (#433), none reversed, the tail panels trimmed +0.2.
 #[test]
 fn titan_cobra_maps_each_channel_once() {
     let mapping = titan_cobra().mapping;

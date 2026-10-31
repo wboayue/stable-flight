@@ -47,10 +47,10 @@ pub struct TailsitterAirframe {
 ///   as from 18 m/s of airspeed; ArduPilot adds 20 m/s × throttle to the airspeed of its
 ///   moments instead (`SIM_Plane.cpp:154-162`).
 ///
-/// The hover side flies the eXplora's RealFlight gains (#123, #328; the same layout of
-/// differential thrust and elevons), which hold the sim's nose-up hover within the copter's
-/// calm-air bands (`tests/tailsitter_hover.rs`); they aren't autotuned: TODO(#539). The plane
-/// side is [`plane`]'s, without
+/// The hover side flies the eXplora's hand tune from RealFlight (#123, #328; the same layout
+/// of differential thrust and elevons), which holds the sim's nose-up hover within the
+/// copter's calm-air bands (`tests/tailsitter_hover.rs`). The plane side is [`plane`]'s,
+/// without
 /// the rudder feedforward (yaw is differential thrust here), on the hover side's thrust
 /// curve so a handoff keeps the motor commands continuous, and with room to pitch up for the
 /// back transition. Transitions fly core's defaults but for the airspeed gate, the wing's
