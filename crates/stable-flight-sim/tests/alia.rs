@@ -1,14 +1,15 @@
 //! The Alia 250's hover ([`airframes::alia250_hover`]), a full-size multirotor: its autotune converges on
 //! core's large-copter search (`StagePlan::large_copter_search`), every loop meets the autotune's overshoot and
-//! bounce-back bands on that plan's steps, and it holds a hover through a gust.
+//! bounce-back bands on that plan's steps, its large rate step tests settle on its X-Plane angle I, and it
+//! holds a hover through a gust.
 
 mod common;
 
 use assert2::check;
 use stable_flight::Vec3;
 use stable_flight::controllers::Gains;
-use stable_flight::stabilizers::copter::CopterStabilizerConfig;
-use stable_flight::tuning::autotune::{Envelope, StagePlan};
+use stable_flight::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
+use stable_flight::tuning::autotune::{Envelope, Outcome, StagePlan};
 use stable_flight_sim::airframes::{self, Airframe};
 use stable_flight_sim::{Gust, Wind};
 
@@ -79,6 +80,36 @@ fn every_loop_meets_the_overshoot_bands() {
         }
     }
     check!(misses.is_empty(), "{misses:#?}");
+}
+
+/// The angle I the Alia flies in X-Plane, roll and pitch (#576).
+const XPLANE_ANGLE_I: [f32; 2] = [0.25, 0.15];
+
+/// On the angle I it flies in X-Plane, the Alia settles after each large roll and pitch rate
+/// step and measures both step tests: its lateral loop, slowed for its slow tilt, brakes the
+/// step's drift without swinging against the angle loop (#588).
+#[test]
+fn large_rate_step_tests_settle_on_the_xplane_angle_i() {
+    let mut airframe = airframes::alia250_hover();
+    for (target, i) in [TunedLoop::Roll, TunedLoop::Pitch]
+        .into_iter()
+        .zip(XPLANE_ANGLE_I)
+    {
+        target.gains_mut(&mut airframe.stabilizer).i = i;
+    }
+    for target in [TunedLoop::RollRate, TunedLoop::PitchRate] {
+        let run = common::autotune_within(
+            &Plant::clean(airframe),
+            &[StagePlan::large_copter_step_test(target)],
+            Envelope::large_copter(),
+            AUTOTUNE_TIMEOUT_S,
+        );
+        check!(
+            run.outcomes() == [(target, Ok(Outcome::Measured))],
+            "{:?}",
+            run.stages
+        );
+    }
 }
 
 /// Takes off to the hover point in `wind`, settles, and holds for `hold_s`: the largest

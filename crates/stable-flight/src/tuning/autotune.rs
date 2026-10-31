@@ -48,7 +48,8 @@ impl StagePlan {
     /// A step test of `target` on a full-size multirotor's steps
     /// ([`StepTestPlan::large_copter`]): the steps
     /// [`large_copter_search`](Self::large_copter_search) judges, so its results read against
-    /// the search's.
+    /// the search's. Run it within [`Envelope::large_copter`], whose rustdoc says what a slow
+    /// angle loop needs to settle between steps.
     pub fn large_copter_step_test(target: TunedLoop) -> Self {
         Self {
             target,
@@ -1038,6 +1039,12 @@ impl Envelope {
     /// [`Default`]'s limits, waiting up to 30 s to settle: a full-size multirotor brakes a
     /// step's sideways speed slowly, and the Alia 250's sim model doesn't level within the
     /// default 10 s (#351).
+    ///
+    /// The wait alone isn't enough on a slow angle loop: guidance's lateral loop must be slowed
+    /// to match it too, or after a large rate step the position hold and the angle loop swing
+    /// against each other past any wait. At the Alia's angle P (1.03), `quad_x` on core's
+    /// lateral loop swung back and forth at up to 4 m/s, on the Alia's slower one it settled
+    /// (#588).
     ///
     /// # Examples
     ///
