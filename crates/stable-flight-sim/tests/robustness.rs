@@ -9,8 +9,8 @@ mod common;
 use assert2::check;
 use stable_flight::stabilizers::copter::TunedLoop;
 use stable_flight::tuning::autotune::StagePlan;
-use stable_flight_sim::Wind;
 use stable_flight_sim::airframes::{self, Airframe};
+use stable_flight_sim::{Perturbations, Wind};
 
 use common::robustness::{Set, Start, perturbations, starting};
 use common::{AUTOTUNE_TIMEOUT_S, Plant, spec};
@@ -21,7 +21,12 @@ const BUDGET_S: f32 = 350.0;
 
 /// Autotunes `airframe` under `set` from `start` and checks the row's criteria.
 fn check_row(name: &str, airframe: Airframe, set: Set, start: Start) {
-    let perturbations = perturbations(set, &airframe);
+    let row = format!("{name} {set:?}");
+    check_plant(&row, airframe, perturbations(set, &airframe), start);
+}
+
+/// Autotunes `airframe` under `perturbations` from `start` and checks the row's criteria.
+fn check_plant(row: &str, airframe: Airframe, perturbations: Perturbations, start: Start) {
     let plant = Plant {
         airframe: starting(airframe, start),
         wind: Wind::default(),
@@ -43,7 +48,7 @@ fn check_row(name: &str, airframe: Airframe, set: Set, start: Start) {
     let gains = spec::AUTOTUNED.map(|target: TunedLoop| (target, target.gains(&run.config)));
     check!(
         run.all_designed_and_searched() && misses.is_empty() && run.duration_s <= BUDGET_S,
-        "{name} {set:?} from {start:?}: {:.0} s\noutcomes {:?}\ngains {gains:?}\nmisses {misses:#?}",
+        "{row} from {start:?}: {:.0} s\noutcomes {:?}\ngains {gains:?}\nmisses {misses:#?}",
         run.duration_s,
         run.outcomes(),
     );
@@ -74,17 +79,16 @@ rows! {
     quad_x_delay_10ms_high: quad_x, Delay10Ms, High;
     quad_x_delay_25ms_low: quad_x, Delay25Ms, Low;
     quad_x_delay_25ms_high: quad_x, Delay25Ms, High;
-    #[ignore = "under gyro noise the rate search's first stage doesn't settle (NotSettled) (#551)"]
     quad_x_noise_low: quad_x, Noise, Low;
-    #[ignore = "under gyro noise the rate search's first stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "the ×3 start rings at the rate limit, so the fit takes the recorded moments, which under gyro noise design roll rate P 8.1; the yaw stage then doesn't settle (NotSettled) (#551)"]
     quad_x_noise_high: quad_x, Noise, High;
     quad_x_cg_offset_low: quad_x, CgOffset, Low;
     quad_x_cg_offset_high: quad_x, CgOffset, High;
     quad_x_weak_motor_low: quad_x, WeakMotor, Low;
     quad_x_weak_motor_high: quad_x, WeakMotor, High;
-    #[ignore = "under gyro noise the pitch rate stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "every design passes, but under gyro noise with the trim and delay the yaw stage doesn't settle (NotSettled) (#551)"]
     quad_x_combined_low: quad_x, Combined, Low;
-    #[ignore = "under gyro noise the roll rate stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "under gyro noise the ×3 start's roll rate stage doesn't settle (NotSettled) (#551)"]
     quad_x_combined_high: quad_x, Combined, High;
 
     heavy_quad_clean_low: heavy_quad, Clean, Low;
@@ -93,17 +97,16 @@ rows! {
     heavy_quad_delay_10ms_high: heavy_quad, Delay10Ms, High;
     heavy_quad_delay_25ms_low: heavy_quad, Delay25Ms, Low;
     heavy_quad_delay_25ms_high: heavy_quad, Delay25Ms, High;
-    #[ignore = "under gyro noise the rate fit designs P 0.2, rising in 160 ms past the spec (#551)"]
     heavy_quad_noise_low: heavy_quad, Noise, Low;
-    #[ignore = "under gyro noise the roll rate design doesn't hold the settle (NotSettled) (#551)"]
+    #[ignore = "under gyro noise the ×3 start's roll rate stage doesn't settle (NotSettled) (#551)"]
     heavy_quad_noise_high: heavy_quad, Noise, High;
     heavy_quad_cg_offset_low: heavy_quad, CgOffset, Low;
     heavy_quad_cg_offset_high: heavy_quad, CgOffset, High;
     heavy_quad_weak_motor_low: heavy_quad, WeakMotor, Low;
     heavy_quad_weak_motor_high: heavy_quad, WeakMotor, High;
-    #[ignore = "under gyro noise the roll rate stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "every design passes, but under gyro noise with the trim and delay the yaw stage doesn't settle (NotSettled) (#551)"]
     heavy_quad_combined_low: heavy_quad, Combined, Low;
-    #[ignore = "under gyro noise the roll rate stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "under gyro noise the ×3 start's roll rate stage doesn't settle (NotSettled) (#551)"]
     heavy_quad_combined_high: heavy_quad, Combined, High;
 
     racer_clean_low: racer, Clean, Low;
@@ -113,15 +116,37 @@ rows! {
     racer_delay_25ms_low: racer, Delay25Ms, Low;
     #[ignore = "the ×3 start (rate P 3.49) breaches the rate envelope in the first fit at 25 ms; the abort is the safe outcome (#552)"]
     racer_delay_25ms_high: racer, Delay25Ms, High;
+    #[ignore = "at racer's 75 Hz gyro low-pass, gyro noise alone peaks at 0.12–0.17 rad/s in a hover, past the 0.1 rad/s settle: a roll or pitch stage doesn't settle (NotSettled) (#551)"]
     racer_noise_low: racer, Noise, Low;
-    #[ignore = "under gyro noise the rate search's first stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "under gyro noise the ×3 start's roll rate stage doesn't settle (NotSettled) (#551)"]
     racer_noise_high: racer, Noise, High;
     racer_cg_offset_low: racer, CgOffset, Low;
     racer_cg_offset_high: racer, CgOffset, High;
     racer_weak_motor_low: racer, WeakMotor, Low;
     racer_weak_motor_high: racer, WeakMotor, High;
-    #[ignore = "under gyro noise the pitch rate stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "under gyro noise the roll rate stage doesn't settle (NotSettled) (#551)"]
     racer_combined_low: racer, Combined, Low;
-    #[ignore = "under gyro noise every stage runs, but the tuned steps overshoot 0.06-0.07 against the spec's 0.05, in 366 s (#551)"]
+    #[ignore = "under gyro noise every stage runs, but the tuned steps overshoot past the spec's 0.05, in 370 s (#551)"]
     racer_combined_high: racer, Combined, High;
+}
+
+/// The noise rows that pass hold on other noise seeds: `quad_x` and `heavy_quad` from the low
+/// start, on seeds 2–5 (the rows fly seed 1).
+#[test]
+fn noise_rows_pass_on_other_seeds() {
+    for (name, airframe) in [
+        ("quad_x", airframes::quad_x()),
+        ("heavy_quad", airframes::heavy_quad()),
+    ] {
+        for seed in 2..=5 {
+            let mut perturbations = perturbations(Set::Noise, &airframe);
+            perturbations.gyro.seed = seed;
+            check_plant(
+                &format!("{name} seed {seed}"),
+                airframe,
+                perturbations,
+                Start::Low,
+            );
+        }
+    }
 }
