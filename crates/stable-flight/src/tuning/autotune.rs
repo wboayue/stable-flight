@@ -58,8 +58,8 @@ impl StagePlan {
 
     /// The copter design search: [`DesignPlan::copter`] for roll and pitch rate, then roll
     /// and pitch angle (each angle design flies on its designed rate loop), then
-    /// [`SearchPlan::copter`] for each in the same order, starting from its design, then
-    /// [`SearchPlan::copter_yaw_rate`] from the start's yaw gains.
+    /// [`SearchPlan::copter_yaw_rate`] from the start's yaw gains, then [`SearchPlan::copter`]
+    /// for roll and pitch rate and angle, starting from each loop's design.
     /// The design spares the search most of its climb from the start gains; the search keeps
     /// only gains that passed steps, so a design from a bad fit doesn't outlive it (on
     /// QuadCopterX in RealFlight one fit designed roll rate P 0.41 against 0.63–1.04, #518).
@@ -71,7 +71,12 @@ impl StagePlan {
     ///
     /// Yaw rate is searched without a design: the design's yaw P (5–8 on the sim's quads)
     /// clips 0.5 rad/s steps for 44–116 ms, and the search from its D (0.22–0.25) left steps
-    /// short of 90% in the window (#296).
+    /// short of 90% in the window (#296). It's searched before the roll and pitch searches:
+    /// their settles leave yaw out, so a yaw start that rings spoils their steps instead.
+    /// On `racer` with 25 ms of delay, core's default yaw gains ring, the same rate gains
+    /// overshoot by 0–23% from one step to the next, and the rate searches pass nothing;
+    /// the yaw search lowers that start until it settles ([`SearchPlan`]), and searched
+    /// first, the rate searches tune (#552).
     ///
     /// # Examples
     ///
@@ -82,8 +87,8 @@ impl StagePlan {
     /// let plan = StagePlan::copter_design_search();
     /// assert!(matches!(plan[0].method, Method::Design(_)));
     /// assert!(matches!(plan[4].method, Method::Search(_)));
-    /// assert_eq!(plan[4].target, TunedLoop::RollRate);
-    /// assert_eq!(plan[8].target, TunedLoop::YawRate);
+    /// assert_eq!(plan[4].target, TunedLoop::YawRate);
+    /// assert_eq!(plan[5].target, TunedLoop::RollRate);
     /// ```
     pub fn copter_design_search() -> [Self; 9] {
         let loops = [
@@ -112,14 +117,14 @@ impl StagePlan {
             pitch_rate,
             roll,
             pitch,
-            search_roll_rate,
-            search_pitch_rate,
-            search_roll,
-            search_pitch,
             Self {
                 target: TunedLoop::YawRate,
                 method: Method::Search(SearchPlan::copter_yaw_rate()),
             },
+            search_roll_rate,
+            search_pitch_rate,
+            search_roll,
+            search_pitch,
         ]
     }
 
@@ -430,8 +435,10 @@ impl StepTestPlan {
 ///    summary is what the result must not be worse than. A start above `max` (a gain the
 ///    search would never pick) isn't flown: its term is lowered to `max` and committed
 ///    ([`AutotuneEvent::Lowered`]), so the vehicle settles on it and it stays if nothing
-///    better passes or the stage fails. A start whose steps abort or keep clipping leaves no
-///    baseline.
+///    better passes or the stage fails. A start the vehicle doesn't settle on within
+///    [`Envelope::settle_timeout_s`] is lowered `÷ factor` and committed the same way, again
+///    at each timeout, failing the stage once the term would fall below `min`. A start whose
+///    steps abort or keep clipping leaves no baseline.
 /// 2. **Bracket** from the start's gain: `× factor` per point while points pass, up to `max`;
 ///    `÷ factor` while they fail, down to `min` (nothing passing: see below). A
 ///    point passes when `confirm` pairs in a row pass, so one lucky pair near a sharp limit
@@ -1246,8 +1253,9 @@ pub enum AutotuneEvent {
         /// A search's baseline, when flown: its steps at the start gains.
         baseline: Option<StepSummary>,
     },
-    /// A search lowered its loop's gains, which started above its `max`, and committed them: the stage settles on them, and
-    /// they stay if it fails or nothing better passes.
+    /// A search lowered its loop's gains, which started above its `max` or wouldn't settle,
+    /// and committed them: the stage settles on them, and they stay if it fails or nothing
+    /// better passes.
     Lowered {
         /// The searched loop.
         target: TunedLoop,
@@ -1433,6 +1441,8 @@ enum Decide {
     Breached { reason: AutotuneAbort },
     /// A hold ended, `settled` on its candidate or timed out.
     Held { settled: bool },
+    /// The settle before a probe timed out on the committed gains.
+    Unsettled,
 }
 
 /// A probe a procedure asked for, and the gains to fly it on (`None`: the committed ones).
@@ -1906,7 +1916,7 @@ impl Autotune {
             | Phase::Settling { stage, .. }
             | Phase::Deciding {
                 stage,
-                on: Decide::Start,
+                on: Decide::Start | Decide::Unsettled,
             } => AutotuneStatus::Settling { stage },
             Phase::Probing { stage, .. }
             | Phase::Holding { stage, .. }
@@ -1979,6 +1989,7 @@ impl Autotune {
             Decide::Aborted { abort } => Input::Aborted { abort, gains },
             Decide::Breached { reason } => Input::Breached { reason, gains },
             Decide::Held { settled } => Input::Held { settled, gains },
+            Decide::Unsettled => Input::Unsettled { gains },
         };
         match self.procedure.next(input) {
             Action::Probe {
@@ -2031,7 +2042,8 @@ impl Autotune {
 
     /// Waits for the vehicle to hold the stage's [`Settle`] (`level_s` counts it, restarting
     /// when it moves), then sets the request's gains, if any, and starts its probe for
-    /// `stage`; fails after `settle_timeout_s`, except an identification, which starts then
+    /// `stage`; after `settle_timeout_s` the procedure decides ([`Input::Unsettled`]: a search
+    /// lowers its start, anything else fails), except for an identification, which starts then
     /// instead: a fit only gains excitation from the ringing.
     fn settle<C, V, G, S: CopterTunable, M, T>(
         &mut self,
@@ -2062,7 +2074,11 @@ impl Autotune {
             return None;
         }
         if timed_out {
-            return Some(self.fail(flight_loop, stage, AutotuneAbort::NotSettled));
+            self.phase = Phase::Deciding {
+                stage,
+                on: Decide::Unsettled,
+            };
+            return None;
         }
         self.phase = Phase::Settling {
             stage,

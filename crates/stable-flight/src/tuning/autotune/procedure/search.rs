@@ -78,6 +78,8 @@ impl Search {
                 self.judge(false)
             }
             Input::Breached { reason, .. } => Action::Fail(reason),
+            Input::Unsettled { .. } if self.leg == Leg::Baseline => self.lower_unsettled(),
+            Input::Unsettled { .. } => Action::Fail(AutotuneAbort::NotSettled),
             _ => Action::Fail(AutotuneAbort::Interrupted),
         }
     }
@@ -109,6 +111,31 @@ impl Search {
         }
         self.leg = Leg::Baseline;
         self.step()
+    }
+
+    /// Lowers a start the vehicle won't settle on by the bracket's `factor`, commits it, and
+    /// steps the baseline again on it; fails `NotSettled` once the term would fall below
+    /// `min`. A start that rings stops every stage after it from settling, and the roll and
+    /// pitch settles leave yaw out, so a ringing yaw spoils their steps instead: core's
+    /// default yaw rate gains ring on `racer` with 25 ms of delay, and the rate steps flown
+    /// meanwhile overshoot by 0–23% from one step to the next on the same gains (#552).
+    fn lower_unsettled(&mut self) -> Action {
+        let gain = self.plan.term.get(self.start) / self.plan.factor;
+        if gain < self.plan.min {
+            return Action::Fail(AutotuneAbort::NotSettled);
+        }
+        let lowered = self.with(gain);
+        // The run's own start that won't settle stays lowered; a seeded start goes back to it.
+        if self.fallback == self.start {
+            self.fallback = lowered;
+        }
+        self.start = lowered;
+        self.pairs.restart(self.plan.test.pairs);
+        Action::Probe {
+            probe: self.pairs.probe(),
+            gains: None,
+            commit: Some(lowered),
+        }
     }
 
     /// The next step on the gain under test.

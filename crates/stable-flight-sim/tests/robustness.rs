@@ -1,6 +1,6 @@
 //! Autotune robustness (#366): `StagePlan::copter_design_search` on every airframe, under each
-//! perturbation set, from a low and a high start, designs every roll and pitch loop and tunes
-//! each by a search from its design, then searches yaw rate, with gains that meet the step
+//! perturbation set, from a low and a high start, designs every roll and pitch loop, searches
+//! yaw rate, and tunes each roll and pitch loop by a search from its design, with gains that meet the step
 //! spec on that same plant, within
 //! [`BUDGET_S`] of simulated time.
 
@@ -112,9 +112,8 @@ rows! {
     racer_clean_high: racer, Clean, High;
     racer_delay_10ms_low: racer, Delay10Ms, Low;
     racer_delay_10ms_high: racer, Delay10Ms, High;
-    #[ignore = "the gyro low-pass's lag on top of 25 ms: the rate searches pass no candidate (#552)"]
     racer_delay_25ms_low: racer, Delay25Ms, Low;
-    #[ignore = "the gyro low-pass's lag on top of 25 ms: the ×3 start breaches the rate envelope (#552)"]
+    #[ignore = "the ×3 start (rate P 3.49) breaches the rate envelope in the first fit at 25 ms; the abort is the safe outcome (#552)"]
     racer_delay_25ms_high: racer, Delay25Ms, High;
     racer_noise_low: racer, Noise, Low;
     #[ignore = "under gyro noise the rate search's first stage doesn't settle (NotSettled) (#551)"]

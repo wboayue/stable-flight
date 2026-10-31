@@ -952,16 +952,24 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   * Open: gyro noise spoils the closed-loop fit: on the sim's noise rows `quad_x`'s and
     `heavy_quad`'s roll rate fits read no lag from the ×3 start and the other rows' rate
     search steps don't settle, while the prefilter that carried them misread RealFlight's lag (*Identify*,
-    [#551](https://github.com/wboayue/stable-flight/issues/551)); the gyro filter's lag
-    on top of 25 ms of delay fails `racer`'s rows
-    ([#552](https://github.com/wboayue/stable-flight/issues/552)). Of the trim rows, the low
+    [#551](https://github.com/wboayue/stable-flight/issues/551)). Of the trim rows, the low
     starts with a CG offset tilt away from the settle (core's default rate I holds at most 0.03
     of moment within its `max_integral`), and `racer`'s rate searches under the CG offset
     pass no candidate ([#374](https://github.com/wboayue/stable-flight/issues/374)).
-    On `racer`, the gyro filter's lag is a large share of the loop's: its rate search stops
-    at P 0.55 with the design's D, rising in 28 ms against the 20 ms of the fastest pair that
-    meets the spec (`autotune`'s `racer_design_search_rises_near_the_fastest_rate_pair`,
-    [#552](https://github.com/wboayue/stable-flight/issues/552)).
+    `racer`'s ×3 start breaches the rate envelope in its first fit with 25 ms of delay: the
+    abort is the safe outcome, and the row stays ignored.
+  * `racer` flies its gyro low-pass at 75 Hz, Mission Planner's initial `INS_GYRO_FILTER`
+    for 5-inch props (`ConfigInitialParams`): at core's 40 Hz the filter's lag is a large
+    share of its loop's, and its rate search stopped at P 0.55, rising in 28 ms against the
+    fastest pair's 20 ms. At 75 Hz it rises within one 4 ms tick of the fastest pair; 80 Hz
+    and up loses its noise row's time budget (#552).
+  * The design search searches yaw rate before roll and pitch: their settles leave yaw out,
+    so a yaw start that rings spoils their steps instead. On `racer` with 25 ms of delay,
+    core's default yaw gains ring, the design's rate gains overshoot by 0–23% from one step
+    to the next (0% from a still hover), and the rate searches passed nothing. A search's
+    start that doesn't settle within the settle timeout is lowered by the bracket's factor
+    until it does; a tighter settle (0.05 or 0.03 rad/s) didn't help and cost the clean rows
+    their time budget (#552).
 
 ## Real-Time Loop Management
 

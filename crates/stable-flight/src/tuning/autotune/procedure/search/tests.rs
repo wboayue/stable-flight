@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use assert2::check;
 
 use super::*;
+use crate::controllers::RATE_I_PER_P;
 use crate::tuning::autotune::{Criterion, Method, Procedure, Term};
 use crate::tuning::{Measurement, ProbeAbort, ProbeConfig, StepAbort, StepMetrics};
 
@@ -63,6 +64,16 @@ fn drive_from(
     run_start: Gains,
     step: impl Fn(Gains) -> Option<StepMetrics>,
 ) -> Run {
+    drive_unsettled(plan, run_start, 0, step)
+}
+
+/// As [`drive_from`], the first `unsettled` probes timing out in the settle before them.
+fn drive_unsettled(
+    plan: SearchPlan,
+    run_start: Gains,
+    mut unsettled: usize,
+    step: impl Fn(Gains) -> Option<StepMetrics>,
+) -> Run {
     let mut procedure = Procedure::new(Method::Search(plan));
     let mut flown = Vec::new();
     let mut verdicts = Vec::new();
@@ -84,6 +95,10 @@ fn drive_from(
         }
         let current = committed.last().copied().unwrap_or(START);
         let input = match action {
+            Action::Probe { .. } if unsettled > 0 => {
+                unsettled -= 1;
+                Input::Unsettled { gains: current }
+            }
             Action::Probe {
                 probe: ProbeConfig::Step(_),
                 gains,
@@ -354,6 +369,88 @@ fn only_the_runs_own_start_stays_lowered() {
             "{case}"
         );
     }
+}
+
+/// A start the vehicle won't settle on is lowered by `factor` each time, with I at the plan's
+/// share of the lowered P, committed, and its baseline stepped on it; below `min` the search
+/// fails `NotSettled` (#552).
+#[test]
+fn an_unsettled_start_is_lowered_until_it_settles() {
+    let plan = SearchPlan {
+        min: 0.2,
+        ..SearchPlan::copter_rate()
+    };
+    // Divided once per lowering, as the search does.
+    let lowered = |times: usize| {
+        let p = (0..times).fold(START.p, |p, _| p / plan.factor);
+        Gains {
+            p,
+            i: RATE_I_PER_P * p,
+            ..START
+        }
+    };
+    let passing = |_| Some(metrics(0.0, 0.0));
+    // (unsettled settles, commits)
+    let rows = [
+        (1, vec![lowered(1)]),
+        (3, vec![lowered(1), lowered(2), lowered(3)]),
+    ];
+    for (unsettled, commits) in rows {
+        let run = drive_unsettled(plan, START, unsettled, passing);
+        check!(run.committed == commits, "{unsettled}");
+        check!(
+            run.flown.first() == commits.last(),
+            "{unsettled}: baseline on the lowered start"
+        );
+        check!(finished(&run).1 == Outcome::Tuned, "{unsettled}");
+    }
+    // 0.5 / 1.3⁴ is below `min`.
+    let run = drive_unsettled(plan, START, 4, passing);
+    check!(run.end == Action::Fail(AutotuneAbort::NotSettled));
+}
+
+/// A lowered start that never passes stays only if it's the run's own start; a seeded start
+/// (a design) gives way to the run's start, as above `max`.
+#[test]
+fn only_the_runs_own_unsettled_start_stays_lowered() {
+    let plan = d_plan();
+    let lowered = Gains {
+        d: START.d / plan.factor,
+        ..START
+    };
+    let run_start = Gains { d: 0.0015, ..START };
+    // (case, run's start, kept)
+    let rows = [
+        ("the run's own start", START, lowered),
+        ("a seeded start", run_start, run_start),
+    ];
+    for (case, run_start, kept) in rows {
+        let run = drive_unsettled(plan, run_start, 1, |_| Some(metrics(0.0, 1.0)));
+        check!(
+            finished(&run) == (kept, Outcome::Kept(KeepReason::NoPass)),
+            "{case}"
+        );
+    }
+}
+
+/// Past the baseline, committed gains that won't settle fail the search: they passed their
+/// steps, so lowering them isn't the search's call.
+#[test]
+fn an_unsettled_bracket_fails() {
+    let plan = d_plan();
+    let mut search = Procedure::new(Method::Search(plan));
+    let mut action = search.next(Input::start(START));
+    for _ in 0..2 * plan.test.pairs {
+        check!(matches!(action, Action::Probe { gains: None, .. }));
+        action = search.next(Input::Measured {
+            measurement: Measurement::Step(metrics(0.0, 0.0)),
+            gains: START,
+            stalled: false,
+        });
+    }
+    check!(matches!(action, Action::Probe { gains: Some(_), .. }));
+    let failed = search.next(Input::Unsettled { gains: START });
+    check!(failed == Action::Fail(AutotuneAbort::NotSettled));
 }
 
 /// A gain that passes above one that failed (noise) can't widen the bracket: the search still

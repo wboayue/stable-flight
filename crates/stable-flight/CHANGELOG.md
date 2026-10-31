@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (under 0.2 m/s); the envelope still reads tilt from level. The eXplora in RealFlight leans
   3.4° in calm air to hold its position, past the step settle's 2.5°, so no step started
   (#539).
+- **Breaking (behavior):** `StagePlan::copter_design_search` searches yaw rate right after
+  the designs, before the roll and pitch searches (index 4 of 9, not 8): a yaw start that
+  rings spoiled their steps (#552).
+- **Breaking (behavior):** a search whose start won't settle within
+  `Envelope::settle_timeout_s` lowers it by its `factor` and commits it
+  (`AutotuneEvent::Lowered`) instead of failing `NotSettled`, again at each timeout, down to
+  its `min` (#552).
 
 ## [0.2.0] - 2026-10-30
 

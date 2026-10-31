@@ -49,6 +49,9 @@ pub(super) enum Input {
     /// A hold ended: `settled` when the vehicle held the settle on the candidate, which still
     /// flies; else it timed out and the committed `gains` are back.
     Held { settled: bool, gains: Gains },
+    /// The vehicle didn't hold the settle on the committed `gains` within
+    /// [`Envelope::settle_timeout_s`](super::Envelope::settle_timeout_s), before a probe.
+    Unsettled { gains: Gains },
 }
 
 #[cfg(test)]
@@ -166,6 +169,7 @@ impl Procedure {
                 },
                 Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
                 Input::Breached { reason, .. } => Action::Fail(reason),
+                Input::Unsettled { .. } => Action::Fail(AutotuneAbort::NotSettled),
                 Input::Measured { .. } | Input::Held { .. } => {
                     Action::Fail(AutotuneAbort::Interrupted)
                 }

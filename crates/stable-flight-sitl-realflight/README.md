@@ -132,8 +132,8 @@ cargo run -p stable-flight-bridge -- --vehicle-type tailsitter
 
 # Autotune: climbs to the hover point, tunes roll and pitch rate, then roll and
 # pitch angle, by design search (each axis fitted from a 3 s square wave, its gains designed
-# from the fit; then each loop's P searched by steps from its design), then yaw rate by a
-# search from its start, logs each fit and judgment, prints the tuned gains as an
+# from the fit; then yaw rate by a search from its start; then each loop's P searched by
+# steps from its design), logs each fit and judgment, prints the tuned gains as an
 # airframes.rs snippet, lands, and disarms.
 # --step-test appends step tests of roll/pitch/yaw rate and roll/pitch angle and logs a
 # response summary per loop (--stages none --step-test: the hand tune); --rate-p-scale starts
