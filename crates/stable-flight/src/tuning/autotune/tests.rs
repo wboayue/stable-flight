@@ -856,6 +856,8 @@ fn a_yaw_stage_waits_for_yaw_to_settle() {
 fn a_viewed_stage_waits_on_its_view_axes() {
     const TURN_RADPS: f32 = 0.3;
     // (target, whether it starts)
+    // RollRate guards the frame: read in the body, the turn shows as roll rate. YawRate matches
+    // the unviewed test; the turn holds back the overall settle in either frame.
     let rows = [(TunedLoop::YawRate, false), (TunedLoop::RollRate, true)];
     for (target, starts) in rows {
         let (mut flight_loop, controls) = hovering_viewed(PlantParams::rate_axis());

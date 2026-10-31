@@ -811,7 +811,7 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   per-axis rates in the frame the probed loops fly (`Tunable::probe_frame`): a `View`'s, so a
   tailsitter hovering nose up reads level and a roll stage waits on view roll (airplane yaw).
   The stabilizer reports its frame rather than the caller passing it to `Autotune`, so the
-  two can't disagree, and a VTOL routing probes to another side reports that side's.
+  two can't disagree: the frame comes from whichever stabilizer hosts the probes.
 * **Robustness:** the claim is that the method, not one tune, transfers to hardware, so the sim
   checks it on a table of plants (airframes × delay, gyro noise, trim moments) from a low and a
   high start, each result held to the published step targets on its own plant
