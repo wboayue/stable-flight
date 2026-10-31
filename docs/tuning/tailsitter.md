@@ -109,37 +109,49 @@ The axes are the hover view's:
 
 | Param | Field | eXplora |
 |---|---|---|
-| `STAB_RATE_RLL_P`, `_I`, `_D` | `hover.body_rate.roll_gains` | 0.4, 0.2, 0.03 |
-| `STAB_RATE_PIT_P`, `_I`, `_D` | `hover.body_rate.pitch_gains` | 0.3, 0.5, 0 |
-| `STAB_RATE_YAW_P`, `_I`, `_D` | `hover.body_rate.yaw_gains` | 0.1, 0.05, 0 |
+| `STAB_RATE_RLL_P`, `_I`, `_D` | `hover.body_rate.roll_gains` | 0.6504, 0.1301, 0.0017 |
+| `STAB_RATE_PIT_P`, `_I`, `_D` | `hover.body_rate.pitch_gains` | 1.4217, 0.2844, 0 |
+| `STAB_RATE_YAW_P`, `_I`, `_D` | `hover.body_rate.yaw_gains` | 1.0191, 0.3057, 0 |
 | `STAB_RATE_IMAX` | `hover.body_rate.max_integral` | 1.0 |
-| `STAB_GYRO_FLT` | `hover.gyro_cutoff_hz` | 0 (off) |
+| `STAB_GYRO_FLT` | `hover.gyro_cutoff_hz` | 40 Hz (default) |
 
-- **Method:** stick pulses in each axis. Compare the rates with the setpoint and watch the
-  moments.
-- **Roll needs high gains.** Differential thrust is weak: the mixer gives 0.25 per unit moment.
-  Too low, and a roll can't be stopped.
-- **Roll needs some D in wind.** Descending with the wind a little behind a wingtip leaves
-  the roll loop barely damped: on the eXplora at D 0, roll swung 2.5× its request, ±12–16° on
-  a 1.2 s cycle, to touchdown; D 0.03 held it within 4° (#476).
-- **Pitch needs its I term.** When the vehicle sinks, the airflow pushes the nose over;
-  I × `STAB_RATE_IMAX` = 0.5 of moment holds it level.
-- **The gyro low-pass is off.** Its lag (about 5.6 ms at core's 40 Hz) takes margin these
-  loops, with little D, don't have: on the sim tailsitter it tilted 13.8° through the back
-  transition against 1° unfiltered. Turn it on only with a retune
-  ([#550](https://github.com/wboayue/stable-flight/issues/550)).
+- **Method: the autotune.** It flies the hover side alone, nose up in the tailsitter `View`,
+  and tunes the rate loops, then the angle loops (step 3):
+  `just fly-autotune --airframe explora --step-test --record <csv>`. Fly it in calm air, from
+  a script's hover point (`flights/explora_hover.csv`). It prints the gains to copy into the
+  airframe; `--stages none --step-test` measures the gains already there. Tune it first on a
+  sim model sized from the airframe (stable-flight-sim `airframes::explora`, `tests/explora.rs`),
+  then confirm in the simulator.
+- **The fits:** the identify step fits each axis's delay and acceleration per unit moment.
+  On the eXplora:
+  - **Roll** (differential thrust; the mixer gives 0.25 per unit moment): 36–40 ms of delay, the
+    props spinning up, then 10–11 rad/s². Weak and slow, so its rate steps rise in about 160 ms
+    and end within 0.06 of their target.
+  - **Pitch** (the elevons): 8–12 ms, then 19–20 rad/s². Its steps rise in about 60 ms with 3%
+    overshoot.
+  - **Yaw** (the elevons apart): its steps end at 0.84 of the request within the step's
+    window, as a copter's slow yaw does.
+- **The hand tune it replaced** (P 0.4, 0.3, 0.1) never reached its rate steps: they ended at
+  0.55 (roll), 0.80 (pitch), and 0.24–0.36 (yaw) of their request (#539).
+- **Roll in a wind descent:** descending with the wind behind a wingtip leaves a slow roll loop
+  barely damped. On the hand tune at D 0, roll swung ±12–16° on a 1.2 s cycle to touchdown,
+  which D 0.03 fixed (#476). The autotuned roll loop holds within ±3° of its lean there without
+  D (#539).
+- **Gyro low-pass:** the autotune designs D around the filter's lag (about 5.6 ms at 40 Hz),
+  so tune with the filter you'll fly.
 
 ## 3. Hover attitude
 
 | Param | Field | eXplora |
 |---|---|---|
-| `STAB_ATT_RLL_P`, `STAB_ATT_PIT_P` | `hover.attitude.*_gains.p` | 4, 4 |
+| `STAB_ATT_RLL_P`, `STAB_ATT_PIT_P` | `hover.attitude.*_gains.p` | 2.3554, 9 |
 | `STAB_ATT_AMAX_X`, `_Y` (deg) | `hover.attitude.max_angles_rad` | 30°, 30° |
 | `STAB_ATT_RMAX_X`, `_Y` (deg) | `hover.attitude.max_rate_radps` | 2 rad/s (115°/s) |
 | `GUID_STICK_X`, `_Y` (deg) | `hover.max_stick_angles_rad` | 30°, 30° |
 
-- **P:** P 4 asks about 110°/s at 27° off, so a recovery takes about half a second with no
-  lingering tail.
+- **P:** the autotune's, after the rate loops. 5° steps rise in 546 ms in roll and 164 ms in
+  pitch, with no overshoot and settled in 1.1 s and 0.2 s (#539). Roll is slow because its rate
+  loop is.
 - **Angle cap:** keep it modest. The transition ramps fly past it, so it doesn't limit
   transitions.
 
@@ -521,7 +533,7 @@ attitude loop. Tune them from doublets, then fly rolls and loops.
 |---|---|
 | Hover settles off its altitude, then creeps on | `GUID_ALT_HOVER` |
 | A roll in hover won't stop | `STAB_RATE_RLL_*`, `GUID_BOOST_MAX` |
-| Roll cycles about 1 s in a descent in wind, larger than its request | `STAB_RATE_RLL_D` up |
+| Roll cycles about 1 s in a descent in wind, larger than its request | `STAB_RATE_RLL_*`: autotune, or `_D` up |
 | Roll overshoots past the cap as a hover leg starts (after a back handover) | `GUID_LAT_ACC` |
 | Nose drops in a descent | `GUID_THR_MIN`, `GUID_SINK_LIM`/`_GAIN`, `STAB_RATE_PIT_I` |
 | Nose swings in a waypoint descent, `sp_pitch` steady | `GUID_DESC_MAX` down |

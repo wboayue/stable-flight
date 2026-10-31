@@ -289,32 +289,34 @@ pub fn explora_vtol()
         stabilizer: TailsitterStabilizerConfig {
             hover: CopterStabilizerConfig {
                 body_rate: BodyRateControllerConfig {
+                    // The rate and angle gains are RealFlight's autotune of the hover at the
+                    // default 40 Hz gyro filter (`copter-autotune-realflight --airframe
+                    // explora`, #539).
+                    //
                     // Differential thrust (the mixer's airplane yaw, 0.25 per unit moment):
-                    // weak authority, so it needs these gains to stop a roll (#123). Descending
-                    // with the wind 20° behind a wingtip, D 0 rolled ±12-16° on a 1.2 s cycle
-                    // to touchdown in 6 of 8 landings; D 0.03 held within 4° in 3 of 3 (#476).
-                    roll_gains: gains(0.4, 0.2, 0.03),
-                    // Elevons (full range per unit moment). Sinking, the airflow pushes the
-                    // nose over; I · max_integral = 0.5 of moment holds it level (#123).
-                    pitch_gains: gains(0.3, 0.5, 0.0),
-                    yaw_gains: gains(0.1, 0.05, 0.0),
+                    // weak and slow, 10-11 rad/s² per unit moment after 36-40 ms. Descending
+                    // 40 m in RealFlight's 5 km/h wind, the hover rolls within ±3° of its lean
+                    // with no D to speak of: P carries what D 0.03 did on the hand tune (#539).
+                    roll_gains: gains(0.6504, 0.1301, 0.0017),
+                    // Elevons (full range per unit moment): 19-20 rad/s² after 8-12 ms.
+                    pitch_gains: gains(1.4217, 0.2844, 0.0),
+                    // The elevons apart (airplane roll).
+                    yaw_gains: gains(1.0191, 0.3057, 0.0),
                     max_integral: 1.0,
                     yaw_max_integral: 1.0,
                 },
                 attitude: AttitudeControllerConfig {
-                    // The rate loops track well; P 4 asks ~110°/s at 27° off, so recoveries
-                    // take about half a second without a lingering tail (#328).
-                    roll_gains: gains(4.0, 0.0, 0.0),
-                    pitch_gains: gains(4.0, 0.0, 0.0),
+                    // 5° steps rise in 546 ms in roll, 164 ms in pitch, without overshoot
+                    // (#539).
+                    roll_gains: gains(2.3554, 0.0, 0.0),
+                    pitch_gains: gains(9.0, 0.0, 0.0),
                     max_integral: 100.0,
                     // 30° of view roll and pitch; the forward ramp flies past it, to 80°, which
                     // the quaternion attitude error flies cleanly (#124).
                     max_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
                     max_rate_radps: Vec2::new(2.0, 2.0),
                 },
-                // No gyro low-pass, as the sim tailsitter, whose rate loops lose the margin to
-                // its lag (TODO(#550): retune with it).
-                gyro_cutoff_hz: 0.0,
+                // The default 40 Hz gyro low-pass, which the autotune tuned on (#539).
                 ..Default::default()
             },
             plane: PlaneStabilizerConfig {

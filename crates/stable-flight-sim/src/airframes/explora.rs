@@ -4,10 +4,10 @@ use core::f32::consts::PI;
 
 use stable_flight::GRAVITY;
 use stable_flight::Vec3;
-use stable_flight::controllers::{PlaneRateControllerConfig, RateGains};
+use stable_flight::controllers::{Gains, PlaneRateControllerConfig, RateGains};
 use stable_flight::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
 use stable_flight::mixers::MixerConfig;
-use stable_flight::stabilizers::copter::CopterStabilizerConfig;
+use stable_flight::stabilizers::copter::{CopterStabilizerConfig, DEFAULT_GYRO_CUTOFF_HZ};
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
 use stable_flight::stabilizers::vtol::TailsitterStabilizerConfig;
 
@@ -186,10 +186,19 @@ pub fn explora() -> TailsitterAirframe {
     }
 }
 
-/// The eXplora's hover gains, as `explora_vtol()` flies them: `tailsitter()`'s, which are
-/// those hand-tuned in RealFlight, with its differential thrust's D (#476).
-fn explora_hover(mut hover: CopterStabilizerConfig) -> CopterStabilizerConfig {
-    hover.body_rate.roll_gains.d = 0.03;
+/// The eXplora's hover gains, as `explora_vtol()` flies them: RealFlight's autotune of its
+/// hover at the default 40 Hz gyro filter (#539).
+fn explora_hover(hover: CopterStabilizerConfig) -> CopterStabilizerConfig {
+    let gains = |p, i, d| Gains { p, i, d };
+    let mut hover = CopterStabilizerConfig {
+        gyro_cutoff_hz: DEFAULT_GYRO_CUTOFF_HZ,
+        ..hover
+    };
+    hover.body_rate.roll_gains = gains(0.6504, 0.1301, 0.0017);
+    hover.body_rate.pitch_gains = gains(1.4217, 0.2844, 0.0);
+    hover.body_rate.yaw_gains = gains(1.0191, 0.3057, 0.0);
+    hover.attitude.roll_gains = gains(2.3554, 0.0, 0.0);
+    hover.attitude.pitch_gains = gains(9.0, 0.0, 0.0);
     hover
 }
 

@@ -7,7 +7,6 @@ mod common;
 
 use assert2::check;
 use stable_flight::Vec3;
-use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::{
     CopterStabilizerConfig, DEFAULT_GYRO_CUTOFF_HZ, TunedLoop,
 };
@@ -36,25 +35,20 @@ fn realflight() -> TailsitterPlant {
     }
 }
 
-/// The hover's hand tune (`explora_vtol()`'s gains) on the default gyro low-pass, as RealFlight
-/// run 2 flew it (#539).
+/// The hover's hand tune (`tailsitter()`'s gains with the differential thrust's D 0.03) on the
+/// default gyro low-pass, as RealFlight run 2 flew it (#539).
 fn hand_tune() -> CopterStabilizerConfig {
-    CopterStabilizerConfig {
+    let mut config = CopterStabilizerConfig {
         gyro_cutoff_hz: DEFAULT_GYRO_CUTOFF_HZ,
-        ..airframes::explora().stabilizer.hover
-    }
+        ..airframes::tailsitter().stabilizer.hover
+    };
+    config.body_rate.roll_gains.d = 0.03;
+    config
 }
 
-/// RealFlight run 3's design search result (#539).
+/// RealFlight run 3's design search result, which `explora()` flies (#539).
 fn realflight_tune() -> CopterStabilizerConfig {
-    let gains = |p, i, d| Gains { p, i, d };
-    let mut config = hand_tune();
-    config.body_rate.roll_gains = gains(0.6504, 0.1301, 0.0017);
-    config.body_rate.pitch_gains = gains(1.4217, 0.2844, 0.0);
-    config.body_rate.yaw_gains = gains(1.0191, 0.3057, 0.0);
-    config.attitude.roll_gains = gains(2.3554, 0.0, 0.0);
-    config.attitude.pitch_gains = gains(9.0, 0.0, 0.0);
-    config
+    airframes::explora().stabilizer.hover
 }
 
 /// Runs `plan` on the [`realflight`] eXplora settled in a hover on `hover`.

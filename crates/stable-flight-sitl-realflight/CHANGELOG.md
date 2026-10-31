@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the autotune and the inverted check read its tilt and rates. `--param NAME=VALUE` sets a
   param before takeoff.
 
+### Changed
+
+- **Breaking (behavior):** `airframes::explora_vtol()` hovers on RealFlight's autotune of it
+  (#539): rate P 0.6504/1.4217/1.0191 (roll, pitch, yaw in the hover view), angle P
+  2.3554/9, and the default 40 Hz gyro low-pass in place of none. The hand tune's rate steps
+  ended at 0.55–0.80 of their request; the autotuned roll and pitch steps end within 0.07 of it.
+
 ## [0.2.0] - 2026-10-30
 
 ### Added
