@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `FlightLoop::setpoint`: the setpoint guidance gave the stabilizer on the last tick (#539).
+
+### Changed
+
+- **Breaking (behavior):** the autotune's settle (`Envelope::settle`, a step plan's
+  `COPTER_STEP_SETTLE`) reads roll and pitch from the attitude target guidance holds, a
+  position hold's lean included, as ArduPilot's level check does
+  (`AC_AutoTune::currently_level`), and waits for the vehicle to stand still over the ground
+  (under 0.2 m/s); the envelope still reads tilt from level. The eXplora in RealFlight leans
+  3.4° in calm air to hold its position, past the step settle's 2.5°, so no step started
+  (#539).
+
 ## [0.2.0] - 2026-10-30
 
 ### Added

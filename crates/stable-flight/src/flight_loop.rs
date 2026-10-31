@@ -89,7 +89,8 @@ pub struct FlightLoop<C, V, G, S, M, T> {
     state: VehicleState,
     /// Whether the previous tick was armed; a rising edge re-primes.
     armed: bool,
-    /// The setpoint the last tick flew (or recorded, disarmed).
+    /// The setpoint the last tick flew (or recorded, disarmed), for an autotune to settle to
+    /// between ticks ([`FlightLoop::setpoint`]).
     setpoint: Setpoint,
 }
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** `autotune::is_inverted` takes the frame the stabilizer probes in
+  (`Tunable::probe_frame`; pass `flight_loop.stabilizer().probe_frame()`) and reads the tilt
+  there, so a tailsitter's nose-up hover reads level, where the body frame sat at 90° and a
+  little pitch either way flipped the check (#539).
+
 ## [0.2.0] - 2026-10-30
 
 ### Added
@@ -15,8 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   backend's autotune example. `ThenLand` hovers on a script, then lands and disarms on
   touchdown once its `LandSwitch` says land, and reports `at_hover_point` for the autotune
   to start. `is_inverted` gives the
-  run's stop check, a tilt past 90° in the probed loops' frame (`Tunable::probe_frame`, so a
-  tailsitter's nose-up hover reads level, #539), `log_event` logs each `AutotuneEvent` down to a pasteable airframe snippet
+  run's stop check, `log_event` logs each `AutotuneEvent` down to a pasteable airframe snippet
   of the tuned gains, and `format_brief` gives a summary's means.
 - `runner::TickRate` (#438): the rate a `RealTimeRunner` achieves over a sliding window of
   ticks, fed `RunStats` from `run_with`'s hook. The host turns slow under one share of nominal

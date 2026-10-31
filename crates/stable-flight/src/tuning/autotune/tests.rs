@@ -482,21 +482,25 @@ fn a_leaning_hover_settles_on_its_lean() {
     for (case, input, viewed) in rows {
         let plan = [StagePlan::copter_step_test(TunedLoop::RollRate)];
         let (events, status) = if viewed {
-            let (mut flight_loop, controls) = hovering_viewed(PlantParams::rate_axis());
-            controls.input.set(input);
-            let mut autotune = started(&flight_loop, &plan);
-            let events = run(&mut flight_loop, &mut autotune, 60.0, |_, _| {});
-            (events, autotune.status())
+            run_flying(hovering_viewed(PlantParams::rate_axis()), input, &plan)
         } else {
-            let (mut flight_loop, controls) = hovering(1.0);
-            controls.input.set(input);
-            let mut autotune = started(&flight_loop, &plan);
-            let events = run(&mut flight_loop, &mut autotune, 60.0, |_, _| {});
-            (events, autotune.status())
+            run_flying(hovering(1.0), input, &plan)
         };
         check!(status == AutotuneStatus::Complete, "{case}: {events:?}");
         check!(!step_metrics(&events).is_empty(), "{case}");
     }
+}
+
+/// Runs `plan` for up to 60 s on a hover flying `input`: its events and how it ended.
+fn run_flying<G: Guidance, S: CopterTunable + Stabilizer>(
+    (mut flight_loop, controls): (TestLoopOf<G, S>, Controls),
+    input: Option<ControlInput>,
+    plan: &[StagePlan],
+) -> (Vec<AutotuneEvent>, AutotuneStatus) {
+    controls.input.set(input);
+    let mut autotune = started(&flight_loop, plan);
+    let events = run(&mut flight_loop, &mut autotune, 60.0, |_, _| {});
+    (events, autotune.status())
 }
 
 /// A probe abort or an interrupt fails the stage; its loop keeps its gains.
