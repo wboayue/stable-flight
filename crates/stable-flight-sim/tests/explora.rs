@@ -11,13 +11,13 @@ use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::{
     CopterStabilizerConfig, DEFAULT_GYRO_CUTOFF_HZ, TunedLoop,
 };
-use stable_flight::tuning::StepSummary;
 use stable_flight::tuning::autotune::{AutotuneEvent, Envelope, Outcome, StagePlan};
+use stable_flight::tuning::{Measurement, ProbeConfig, ProbeStatus, StepSummary};
 use stable_flight_sim::airframes;
 use stable_flight_sim::{GyroNoise, Perturbations};
 
 use common::tailsitter::{TailsitterPlant, hover_view_loop};
-use common::{AUTOTUNE_TIMEOUT_S, AutotuneRun, HOVER_SETTLE_S};
+use common::{AUTOTUNE_TIMEOUT_S, AutotuneRun, HOVER_SETTLE_S, spec};
 
 /// RealFlight as the autotune met it: the elevons' rates fit 2–3 ticks of delay, one of them
 /// the loop's hold, and the gyro reads about 0.01 rad/s of noise hovering (#539).
@@ -84,16 +84,25 @@ fn steps(hover: CopterStabilizerConfig, target: TunedLoop) -> StepSummary {
 }
 
 /// How a step test went in RealFlight (#539, runs 2 and 3), and how far the sim's may stray:
-/// the final value within [`FINAL_BAND`] of RealFlight's range, the rise time (when RealFlight's
-/// rose) within a factor of [`RISE_FACTOR`].
-struct Flown {
+/// the final value within [`FINAL_BAND`] of RealFlight's range, and its rise as [`Rise`] says.
+struct RealFlightSteps {
     final_min: f32,
     final_max: f32,
-    rise_s: Option<f32>,
+    rise: Rise,
+}
+
+/// What a row holds the sim's rise time to.
+enum Rise {
+    /// No step rose in RealFlight's window, nor may one here.
+    Never,
+    /// Not judged: no step rose in RealFlight's window, but the sim's may (the tuned yaw rate).
+    Unjudged,
+    /// Every step rose, in this many s; the sim's within a factor of [`RISE_FACTOR`].
+    Within(f32),
 }
 
 /// Most a final value may stray outside RealFlight's range: 0.1 of the step, about the spread of
-/// RealFlight's own finals across a test's steps (0.80–1.06 on the tuned pitch rate).
+/// RealFlight's own finals across a test's steps (0.13 on the tuned pitch rate, 0.93–1.06).
 const FINAL_BAND: f32 = 0.1;
 
 /// Most a rise time may stray from RealFlight's, as a factor either way: RealFlight's ticks run
@@ -106,10 +115,10 @@ const RISE_FACTOR: f32 = 2.0;
 /// time (yaw excepted: it didn't rise in RealFlight's window).
 #[test]
 fn realflights_gains_step_as_in_realflight() {
-    let flown = |final_min, final_max, rise_s| Flown {
+    let steps_were = |final_min, final_max, rise| RealFlightSteps {
         final_min,
         final_max,
-        rise_s,
+        rise,
     };
     // (gains, loop, RealFlight's steps)
     let cases = [
@@ -117,49 +126,49 @@ fn realflights_gains_step_as_in_realflight() {
             "hand",
             hand_tune(),
             TunedLoop::RollRate,
-            flown(0.54, 0.56, None),
+            steps_were(0.54, 0.56, Rise::Never),
         ),
         (
             "hand",
             hand_tune(),
             TunedLoop::PitchRate,
-            flown(0.80, 0.80, None),
+            steps_were(0.80, 0.80, Rise::Never),
         ),
         (
             "hand",
             hand_tune(),
             TunedLoop::YawRate,
-            flown(0.24, 0.36, None),
+            steps_were(0.24, 0.36, Rise::Never),
         ),
         (
             "tuned",
             realflight_tune(),
             TunedLoop::RollRate,
-            flown(0.88, 0.92, Some(0.173)),
+            steps_were(0.88, 0.92, Rise::Within(0.173)),
         ),
         (
             "tuned",
             realflight_tune(),
             TunedLoop::PitchRate,
-            flown(0.93, 1.06, Some(0.061)),
+            steps_were(0.93, 1.06, Rise::Within(0.061)),
         ),
         (
             "tuned",
             realflight_tune(),
             TunedLoop::YawRate,
-            flown(0.84, 0.84, None),
+            steps_were(0.84, 0.84, Rise::Unjudged),
         ),
         (
             "tuned",
             realflight_tune(),
             TunedLoop::Roll,
-            flown(0.99, 0.99, Some(0.546)),
+            steps_were(0.99, 0.99, Rise::Within(0.546)),
         ),
         (
             "tuned",
             realflight_tune(),
             TunedLoop::Pitch,
-            flown(1.01, 1.02, Some(0.164)),
+            steps_were(1.01, 1.02, Rise::Within(0.164)),
         ),
     ];
     for (gains, hover, target, realflight) in cases {
@@ -171,15 +180,15 @@ fn realflights_gains_step_as_in_realflight() {
                 && final_max <= realflight.final_max + FINAL_BAND,
             "{row}: final {final_min}–{final_max}"
         );
-        match realflight.rise_s {
-            None if gains == "hand" => {
+        match realflight.rise {
+            Rise::Never => {
                 check!(
                     steps.not_risen == steps.final_value.count,
                     "{row}: {steps:?}"
                 );
             }
-            None => {}
-            Some(rise_s) => {
+            Rise::Unjudged => {}
+            Rise::Within(rise_s) => {
                 let sim_s = steps.rise_time_s.max;
                 check!(
                     steps.not_risen == 0
@@ -204,12 +213,24 @@ const REALFLIGHT_DESIGNS: [(TunedLoop, f32); 4] = [
     (TunedLoop::Pitch, 9.0),
 ];
 
-/// From the hand tune, the design search runs every stage as planned, and each loop's design
-/// lands within [`AGREEMENT`] of RealFlight's.
+/// The loops the searched gains meet [`spec`] on: every loop the autotune tunes but pitch rate,
+/// which settles short ([`searched_pitch_rate_meets_the_spec`]).
+const SPEC_HELD: [TunedLoop; 4] = [
+    TunedLoop::RollRate,
+    TunedLoop::Roll,
+    TunedLoop::Pitch,
+    TunedLoop::YawRate,
+];
+
+/// From the hand tune, the design search runs every stage as planned, each loop's design lands
+/// within [`AGREEMENT`] of RealFlight's, and the gains it ends on meet ArduPilot's and PX4's
+/// step bands ([`spec`]) both ways on [`SPEC_HELD`].
 #[test]
 fn design_search_designs_realflights_gains() {
     let run = autotune(hand_tune(), &StagePlan::copter_design_search());
     check!(run.all_designed_and_searched(), "{:?}", run.stages);
+    let misses = spec_misses(run.config, &SPEC_HELD);
+    check!(misses.is_empty(), "{misses:#?}");
     for (target, realflight_p) in REALFLIGHT_DESIGNS {
         let designed_p = run.stages.iter().find_map(|event| match event {
             AutotuneEvent::StageDone {
@@ -230,3 +251,48 @@ fn design_search_designs_realflights_gains() {
         );
     }
 }
+
+/// The design search's pitch rate meets [`spec`] both ways. Its gains end the steps at
+/// 0.87–0.88 and never settle inside the band: the wash damps pitch on the Aerosonde's tail
+/// damping, which #342's cruise calibration rests on.
+#[test]
+#[ignore = "the searched pitch rate settles short on the Aerosonde's pitch damping (#587)"]
+fn searched_pitch_rate_meets_the_spec() {
+    let run = autotune(hand_tune(), &StagePlan::copter_design_search());
+    let misses = spec_misses(run.config, &[TunedLoop::PitchRate]);
+    check!(misses.is_empty(), "{misses:#?}");
+}
+
+/// Steps each of `loops`, both ways, on the [`realflight`] eXplora hovering on `hover`, and
+/// returns a line for each step that misses the spec (empty when all meet it).
+fn spec_misses(hover: CopterStabilizerConfig, loops: &[TunedLoop]) -> Vec<String> {
+    let mut misses = Vec::new();
+    for &target in loops {
+        let step = spec::plan(target).step;
+        for step in [step, step.reversed()] {
+            let row = format!("{target:?} step {}", step.amplitude);
+            let plant = realflight();
+            let mut flight_loop = hover_view_loop(&plant, hover, common::hover_follower());
+            common::fly(&mut flight_loop, HOVER_SETTLE_S, |_, _| {});
+            let status = common::probe_on(
+                &mut flight_loop,
+                target,
+                ProbeConfig::Step(step),
+                PROBE_TIMEOUT_S,
+            );
+            match status {
+                Some(ProbeStatus::Done(Measurement::Step(m))) => {
+                    let missed = spec::missed_targets(target, &m);
+                    if !missed.is_empty() {
+                        misses.push(format!("{row}: {} in {m:?}", missed.join(", ")));
+                    }
+                }
+                other => misses.push(format!("{row}: {other:?}")),
+            }
+        }
+    }
+    misses
+}
+
+/// Simulated seconds a spec step may run: the step's window plus margin (as `spec`'s).
+const PROBE_TIMEOUT_S: f32 = 5.0;

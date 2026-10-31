@@ -44,7 +44,7 @@ use crate::{PropWash, TailsitterModel};
 /// Its hover is calibrated to RealFlight's autotune of it (#539), flown with RealFlight's 6 ms
 /// exchange as [`actuator_delay_s`](crate::Perturbations::actuator_delay_s) and 0.01 rad/s of
 /// gyro noise. The hand tune's and the autotuned gains' step tests end within 0.1 of their
-/// finals there and rise within a factor of 2 of their times (most within 20%), and the design
+/// finals there and rise within a factor of 2 of their times (half within 20%), and the design
 /// search designs within 25% of RealFlight's gains (roll rate 0.83 against 0.94, pitch rate
 /// 1.33 against 1.69). Its rates fit as RealFlight's do, in the hover view: differential thrust
 /// (roll) on 9 ticks of pure delay and no lag, the elevons (pitch) on 2.
@@ -77,15 +77,16 @@ pub fn explora() -> TailsitterAirframe {
     let mixer = base.mixer;
     let mixer_config = MixerConfig::default();
     let thrust_curve_exponent = base.stabilizer.hover.thrust_curve_exponent;
-    // How much heavier than the Aerosonde's scaled inertia the hover answers its controls in
-    // RealFlight (roll, pitch, yaw in the airplane frame): its hand tune's rate steps there
+    // How much heavier than the Aerosonde's scaled inertia the eXplora answers its controls in
+    // RealFlight, fitted on its hover (roll, pitch, yaw in the airplane frame): its hand tune's rate steps there
     // end at 0.24–0.36 (view yaw, the elevons apart), 0.80 (view pitch), and 0.55 (view roll,
     // differential thrust) of their command, and here at 0.30–0.39, 0.76–0.78, and 0.60
     // (#539). Scaling inertia keeps the controls' authority against the wing's own moments;
     // less wash over the elevons in its place matched the rate steps, but a 5° tilt's drift
-    // then pushed the angle steps 10–20% past their target, which RealFlight's don't.
-    let hover_inertia_scale = Vec3::new(70.0, 11.1, 7.0);
-    let mut inertia_kgm2 = aerosonde_inertia(MASS_KG, SPAN_M).component_mul(&hover_inertia_scale);
+    // then pushed the angle steps 10–20% past their target, which RealFlight's don't. The plane
+    // side flies on it too; its surfaces are calibrated with it.
+    let inertia_scale = Vec3::new(70.0, 11.1, 7.0);
+    let mut inertia_kgm2 = aerosonde_inertia(MASS_KG, SPAN_M).component_mul(&inertia_scale);
     inertia_kgm2.x *= ROLL_INERTIA_SHARE;
     // Each motor's static thrust, so hover lands on the measured setpoint: the setpoint through
     // the stabilizer's curve and the mixer's thrust factor is the motor command, and the

@@ -47,7 +47,8 @@ pub struct TailsitterModel {
 /// The surfaces see [`surface_fraction`](Self::surface_fraction) of it on top of the free
 /// stream's, so they keep authority in a hover. The part of the span in the wash is damped by
 /// it as by the free stream, [`damping_fraction`](Self::damping_fraction) of the wing's rate
-/// damping; the wing's lift and drag see the free stream only. The total thrust over the total disc area washes every surface evenly.
+/// damping; the wing's lift and drag see the free stream only. The total thrust over the total
+/// disc area washes every surface evenly.
 ///
 /// # Examples
 ///
@@ -98,9 +99,9 @@ impl PropWash {
 
     /// The wash at `thrust_n` while moving through the air at `axial_mps` along the thrust
     /// axis (negative sinking tail first): the pressure it adds over the surfaces, its
-    /// [`surface_fraction`](Self::surface_fraction) of [`added_pa`](Self::added_pa), and the speed it damps the wing at, its jet's
-    /// (less any sink) times [`damping_fraction`](Self::damping_fraction), 0 where it takes
-    /// from the free stream.
+    /// [`surface_fraction`](Self::surface_fraction) of [`added_pa`](Self::added_pa), and the
+    /// speed it damps the wing at, its jet's (less any sink) times
+    /// [`damping_fraction`](Self::damping_fraction), 0 where it takes from the free stream.
     pub(crate) fn wash(&self, thrust_n: f32, axial_mps: f32) -> Wash {
         let added_pa = self.added_pa(thrust_n, axial_mps);
         let flow_mps = libm::sqrtf(2.0 * added_pa.max(0.0) / AIR_DENSITY_KGPM3);

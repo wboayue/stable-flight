@@ -251,7 +251,25 @@ pub fn probe(
     config: ProbeConfig,
     timeout_s: f32,
 ) -> Option<ProbeStatus> {
-    let mut flight_loop = hover(plant);
+    probe_on(&mut hover(plant), target, config, timeout_s)
+}
+
+/// Probes `target` with `config` on `flight_loop`, armed and settled, until the probe ends or
+/// `timeout_s` passes; `None` on the timeout.
+pub fn probe_on<C, V, G, S, M, T>(
+    flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
+    target: TunedLoop,
+    config: ProbeConfig,
+    timeout_s: f32,
+) -> Option<ProbeStatus>
+where
+    C: Commander,
+    V: Vehicle,
+    G: Guidance,
+    S: Stabilizer + CopterTunable,
+    M: Mixer,
+    T: TelemetryPublisher,
+{
     flight_loop.start_probe(target, config);
     for _ in 0..ticks(timeout_s) {
         flight_loop.step(TICK);

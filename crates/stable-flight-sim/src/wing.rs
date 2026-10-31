@@ -116,8 +116,8 @@ impl LiftGroup {
     }
 }
 
-/// A fixed wing's physics: the motors (after their delay) and surfaces through their lags, thrust along body `x`,
-/// and the aerodynamics, with the surfaces in the props' wash when [`Rotors::wash`] says so
+/// A fixed wing's physics: the motors (after their delay) and surfaces through their lags,
+/// thrust along body `x`, and the aerodynamics, with the surfaces in the props' wash when [`Rotors::wash`] says so
 /// and lift rotors along body `−z` when [`Rotors::lift`] has them.
 #[derive(Debug, Clone)]
 pub(crate) struct FixedWing {
@@ -210,9 +210,15 @@ impl FixedWing {
 
     /// The commands the motors along body `x` run on this step: `command`'s, `motor_delay_s`
     /// late. Commands change once a tick, so only a change is queued, which keeps the line
-    /// short at any step length.
+    /// short at any step length; compared bit for bit, so a NaN command is one change, not one
+    /// each step.
     fn delayed_motors(&mut self, command: &ActuatorCommand) -> [f32; ActuatorCommand::SLOTS] {
-        if command.motors != self.queued_motors {
+        let changed = command
+            .motors
+            .iter()
+            .zip(&self.queued_motors)
+            .any(|(new, queued)| new.to_bits() != queued.to_bits());
+        if changed {
             self.queued_motors = command.motors;
             self.motor_commands.push(self.time_s, *command);
         }

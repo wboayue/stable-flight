@@ -258,7 +258,7 @@ fn check_flies_on(case: &str, flown: &Flown) {
 }
 
 /// A roll turns a full turn before its timeout, both ways, holding its line's height: it loses
-/// at most [`ROLL_LOSS_M`] and climbs at most [`ROLL_CLIMB_M`] (vehicle, rate in deg/s, longest
+/// at most [`roll_loss_m`] and climbs at most [`ROLL_CLIMB_M`] (vehicle, rate in deg/s, longest
 /// rotation in s). Measured 3.99 and 3.25 s at 90 and 180°/s on the plane (whose ailerons reach
 /// 2.8 rad/s at most), 2.34 and 1.94 s on the tailsitter, 4.05 and 2.08 s on the eXplora; each
 /// band is 1.15–1.2× that.
@@ -284,7 +284,7 @@ fn rolls_turn_a_full_turn_holding_height_and_fly_on() {
         let flown = vehicle.fly(maneuver, Axis::Roll, rate_degps.signum());
         check!(flown.rotation_s <= rotation_s, "{case}: {flown:?}");
         check!(
-            flown.entry_m - flown.lowest_m <= ROLL_LOSS_M,
+            flown.entry_m - flown.lowest_m <= roll_loss_m(vehicle),
             "{case}: {flown:?}"
         );
         check!(
@@ -295,9 +295,16 @@ fn rolls_turn_a_full_turn_holding_height_and_fly_on() {
     }
 }
 
-/// Most height a roll loses, in m. Measured 4.02 m (the eXplora at 90°/s; the plane 3.56 m,
-/// where rates alone lost 36.8 m); about 1.2× that.
-const ROLL_LOSS_M: f32 = 4.8;
+/// Most height `vehicle`'s rolls lose, in m, about 1.2× its worst measured: the plane 3.56 m at
+/// 90°/s (where rates alone lost 36.8 m), the tailsitter 2.78 m at 180°/s, the eXplora 4.02 m
+/// at 90°/s.
+fn roll_loss_m(vehicle: Vehicle) -> f32 {
+    match vehicle {
+        Vehicle::Plane => 4.3,
+        Vehicle::Tailsitter => 3.4,
+        Vehicle::Explora => 4.8,
+    }
+}
 
 /// Most height a roll climbs, in m. Measured 2.09 m (the plane at 90°/s): the line's gravity
 /// share pulls up through the roll, a climb traded for a smaller sink (#343); about 1.2× that.
