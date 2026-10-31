@@ -322,7 +322,9 @@ Related code sits together, so a reviewer reads one behavior in one place.
 - **Changelogs:** each published crate has `CHANGELOG.md` ([Keep a
   Changelog](https://keepachangelog.com/en/1.1.0/); `stable-flight-tools` has none). Every
   user-facing change adds a bullet under `[Unreleased]` (`Added`/`Changed`/`Deprecated`/
-  `Removed`/`Fixed`/`Security`), breaking changes marked **Breaking**; skip internal churn. A new
+  `Removed`/`Fixed`/`Security`, each heading once: add to an existing one), breaking changes
+  marked **Breaking** (code stops compiling) or **Breaking (behavior):** (unchanged code and
+  params fly differently: a new default, filter, or control law); skip internal churn. A new
   crate's `[Unreleased]` is a feature summary until its first release, with no **Breaking**
   marks. Once a link release is out, any message shape change bumps `PROTOCOL_VERSION`.
 - **New published crate:** inherits `[workspace.package]`, has its own `README.md` (absolute
