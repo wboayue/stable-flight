@@ -70,7 +70,7 @@ pub const ALL: [TunedLoop; 6] = [
 ];
 
 /// The steps and clip allowance `target` is held to.
-fn plan(target: TunedLoop) -> StepTestPlan {
+pub fn plan(target: TunedLoop) -> StepTestPlan {
     match target {
         TunedLoop::Heading => StepTestPlan::copter(target),
         _ => SearchPlan::copter(target).test,
