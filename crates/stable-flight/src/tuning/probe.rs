@@ -191,6 +191,12 @@ impl Probe {
         Self { kind }
     }
 
+    /// Whether the probe replaces the loop's setpoint outright (a step) rather than adding to
+    /// it (an identification).
+    pub(crate) fn replaces_setpoint(&self) -> bool {
+        matches!(self.kind, Kind::Step(_))
+    }
+
     /// Advances the probe by `dt` seconds with the loop's `signals` and returns the setpoint
     /// the loop's controller runs on this tick, in place of its own.
     ///

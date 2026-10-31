@@ -142,12 +142,13 @@ impl AttitudeController {
         estimated_angles_rad: Vec2,
     ) -> Vec2 {
         let error = Self::angle_error(config, desired_angles_rad, estimated_angles_rad);
-        self.control_error(config, dt, error)
+        self.control_error(config, dt, error, [false; 2])
     }
 
     /// The PID of [`control`](Self::control) on an angle error already taken (roll, pitch, in
     /// radians): for a caller that measures the error itself, e.g. from quaternions. Output
-    /// rates are clamped to `max_rate_radps`; a non-finite error gives zero rates.
+    /// rates are clamped to `max_rate_radps`; a non-finite error gives zero rates. An axis set
+    /// in `hold_integral` keeps its integral this tick instead of adding its error.
     ///
     /// # Panics
     ///
@@ -157,6 +158,7 @@ impl AttitudeController {
         config: &AttitudeControllerConfig,
         dt: f32,
         error: Vec2,
+        hold_integral: [bool; 2],
     ) -> Vec2 {
         assert_dt(dt);
 
@@ -171,8 +173,15 @@ impl AttitudeController {
         let error_derivative = Vec2::from_fn(|axis, _| self.derivative[axis].step(error[axis], dt));
 
         // Integral term with anti-windup
-        self.integrated_error =
+        let integrated_error =
             clamp_symmetric_each(self.integrated_error + dt * error, config.max_integral);
+        self.integrated_error = Vec2::from_fn(|axis, _| {
+            if hold_integral[axis] {
+                self.integrated_error[axis]
+            } else {
+                integrated_error[axis]
+            }
+        });
 
         // PID calculation per axis: Kp×error + Ki×∫error + Kd×d(error)/dt
         let gains = config.axis_gains();
@@ -211,6 +220,12 @@ impl AttitudeController {
     /// untouched.
     pub(crate) fn hand_back(&mut self, axis: usize) {
         self.derivative[axis] = DerivativeState::default();
+    }
+
+    /// The integrated angle error per axis (roll, pitch), in rad·s.
+    #[cfg(test)]
+    pub(crate) fn integral(&self) -> Vec2 {
+        self.integrated_error
     }
 
     /// Zeroes the integral, keeping the derivative history.

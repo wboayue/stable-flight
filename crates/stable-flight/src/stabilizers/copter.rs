@@ -67,8 +67,10 @@
 //! for an angle or heading loop also its rate setpoint.
 //!
 //! - **Rate stages** replace the rate setpoint the angle loop sets, so the angle loop around
-//!   the tested axis has no say while a step runs. An identification adds its square wave to
-//!   that setpoint instead, so the angle loop still holds the attitude.
+//!   the tested axis has no say while a step runs, and its integral holds: the step tilts or
+//!   turns the vehicle away from that loop's setpoint, an error the loop isn't flying.
+//!   An identification adds its square wave to that setpoint instead, so the angle loop still
+//!   holds the attitude and integrates as usual.
 //! - **Handoff:** when the probe finishes, on [`stop_probe`](crate::tuning::Tunable::stop_probe),
 //!   or when a [`Setpoint::Rate`] tick idles the angle or heading loop under test
 //!   ([`ProbeStatus::Interrupted`](crate::tuning::ProbeStatus::Interrupted)), the loop
@@ -428,11 +430,14 @@ impl CopterStabilizer {
 
         // The loops act on the body-frame rotation to the setpoint, so their outputs are body
         // rates at any attitude (a tailsitter's view pitches far over in transition).
+        let [hold_roll, hold_pitch, hold_heading] = self.held_integrals();
         let config = &self.config;
-        let desired_rates = self
-            .attitude
-            .control_error(&config.attitude, dt, error.xy());
-        let desired_yaw_rate = self.yaw.control_error(&config.yaw, dt, error.z);
+        let desired_rates =
+            self.attitude
+                .control_error(&config.attitude, dt, error.xy(), [hold_roll, hold_pitch]);
+        let desired_yaw_rate = self
+            .yaw
+            .control_error(&config.yaw, dt, error.z, hold_heading);
         // The controllers clamp their rate outputs; landing on a bound means they clipped.
         let max_rates = config.attitude.max_rate_radps;
         self.clipped.rates = [

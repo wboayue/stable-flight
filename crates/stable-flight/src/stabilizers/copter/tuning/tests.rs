@@ -377,6 +377,65 @@ fn a_step_hands_back_keeping_the_integral() {
     check!(stabilizer.body_rate.integral_term(&config.body_rate, 2) == i_term);
 }
 
+/// The angle and heading loops' integrals (roll, pitch, heading), in rad·s.
+fn attitude_integrals(stabilizer: &CopterStabilizer) -> Vec3 {
+    let angles = stabilizer.attitude.integral();
+    Vec3::new(angles.x, angles.y, stabilizer.yaw.integral())
+}
+
+/// A rate step holds the integral of the angle or heading loop over it, which the step tilts
+/// or turns away from its setpoint (#579); an identification, which adds to that loop's output,
+/// leaves it integrating.
+#[test]
+fn a_rate_step_holds_the_integral_of_the_loop_over_it() {
+    let mut config = config();
+    for gains in [
+        &mut config.attitude.roll_gains,
+        &mut config.attitude.pitch_gains,
+        &mut config.yaw.gains,
+    ] {
+        gains.i = 0.5;
+    }
+    let step = ProbeConfig::Step(COPTER_RATE_STEP);
+    let identify = ProbeConfig::Identify(COPTER_IDENTIFY);
+    // (target, probe, whether the loop over it keeps its integral)
+    let cases = [
+        (TunedLoop::RollRate, step, true),
+        (TunedLoop::PitchRate, step, true),
+        (TunedLoop::YawRate, step, true),
+        (TunedLoop::RollRate, identify, false),
+    ];
+    for (target, probe, held) in cases {
+        let mut stabilizer = CopterStabilizer::new(config);
+        let mut axes = axes(0.0);
+        for _ in 0..(3.0 / DT) as usize {
+            tick(&mut stabilizer, &mut axes, &level());
+        }
+        let axis = match target.location() {
+            Location::Rate(axis) => axis,
+            other => unreachable!("rate targets only: {other:?}"),
+        };
+        let before = attitude_integrals(&stabilizer)[axis];
+        stabilizer.start_probe(target, probe);
+
+        // Inside both probes: the step lasts 0.25 s, the identification 3 s.
+        for _ in 0..(0.2 / DT) as usize {
+            tick(&mut stabilizer, &mut axes, &level());
+        }
+        check!(
+            stabilizer
+                .probe()
+                .is_some_and(|(_, status)| status.is_running())
+        );
+
+        let after = attitude_integrals(&stabilizer)[axis];
+        check!(
+            (after == before) == held,
+            "{target:?} {probe:?}: {before} → {after}"
+        );
+    }
+}
+
 /// A step's saturated time counts the ticks its loop's path clipped: a rate loop whose P pins
 /// the moment, an angle loop whose rate output sits at `max_rate_radps`.
 #[test]

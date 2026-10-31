@@ -232,6 +232,22 @@ impl CopterStabilizer {
         }
     }
 
+    /// Which attitude loops keep their integral this tick (roll, pitch, heading): the one over
+    /// a rate loop a step flies. Integrating the error the step tilts the vehicle into would
+    /// wind that loop up and kick the vehicle on the handoff; at angle P 2 and I 0.25 the sim's
+    /// `quad_x` then didn't settle within 10 s after a large rate step (#579).
+    pub(super) fn held_integrals(&self) -> [bool; 3] {
+        let stepped_axis = self
+            .stage
+            .as_ref()
+            .filter(|stage| stage.is_running() && stage.probe.replaces_setpoint())
+            .and_then(|stage| match stage.target.location() {
+                Location::Rate(axis) => Some(axis),
+                Location::Angle(_) | Location::Heading => None,
+            });
+        [0, 1, 2].map(|axis| stepped_axis == Some(axis))
+    }
+
     /// Ends a running angle or heading stage as interrupted (its loop is idle on a rate tick).
     pub(super) fn interrupt_attitude_stage(&mut self) {
         let Some(stage) = &mut self.stage else {

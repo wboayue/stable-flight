@@ -224,6 +224,53 @@ fn angle_step_test_measures_the_tuned_angle_loops() {
     }
 }
 
+/// Angle P for a slow angle loop: the Alia flies 1.03 in X-Plane (#576), where `quad_x`'s
+/// position hold doesn't settle after a large rate step even without angle I; at 2 it does.
+const SLOW_ANGLE_P: f32 = 2.0;
+
+/// Angle I against [`SLOW_ANGLE_P`] that, integrating the tilt a rate step leaves, kept
+/// `quad_x` from settling within 10 s after its first large pitch rate step (#579).
+const WINDING_ANGLE_I: f32 = 0.25;
+
+/// How far apart the mean overshoots of the two step tests may be: measured 0.001 apart
+/// (0.002 at I 0, 0.001 at [`WINDING_ANGLE_I`]), well inside the spec's 0.1.
+const OVERSHOOT_AGREEMENT: f32 = 0.005;
+
+/// On a slow angle loop, angle I doesn't change the large pitch rate step test: the angle loop
+/// holds its integral while a step flies its rate setpoint, so with I it settles after each
+/// step and measures the overshoot it measures without.
+#[test]
+fn rate_step_test_is_unchanged_by_angle_i() {
+    let target = TunedLoop::PitchRate;
+    let overshoot = |angle_i: f32| {
+        let mut airframe = airframes::quad_x();
+        for angle in [TunedLoop::Roll, TunedLoop::Pitch] {
+            let gains = angle.gains_mut(&mut airframe.stabilizer);
+            gains.p = SLOW_ANGLE_P;
+            gains.i = angle_i;
+        }
+        let plan = [StagePlan::large_copter_step_test(target)];
+        let run = common::autotune(&Plant::clean(airframe), &plan, AUTOTUNE_TIMEOUT_S);
+        check!(
+            run.outcomes() == [(target, Ok(Outcome::Measured))],
+            "I {angle_i}"
+        );
+        run.stages.iter().find_map(|event| match event {
+            AutotuneEvent::StageDone { steps, .. } => steps.and_then(|s| s.overshoot.mean()),
+            _ => None,
+        })
+    };
+
+    let (Some(without), Some(with)) = (overshoot(0.0), overshoot(WINDING_ANGLE_I)) else {
+        panic!("a step test measured nothing");
+    };
+
+    check!(
+        (with - without).abs() < OVERSHOOT_AGREEMENT,
+        "{without} vs {with}"
+    );
+}
+
 /// A yaw rate start with I as high as P, the start QuadCopterX's yaw search met in RealFlight
 /// (#296).
 const HIGH_I_YAW: Gains = Gains {
