@@ -118,7 +118,7 @@ const ALIA_SURFACES: [SurfaceLink; 8] = [
 ///   against the moment X-Plane's airframe builds as a held tilt drifts it sideways, which
 ///   the sim's multirotor model (drag only) leaves out too: angle steps end within 7% of the
 ///   step against 13–23% short at core's 0.001. Nose-up pitch steps still overshoot 6–10%,
-///   the lean X-Plane's nose-up trim gives the pitch loops (#540, #576).
+///   one-sided as the pitch rate steps' overshoot is (#540, #576).
 /// - **Hover thrust:** the liftoff throttle through the mixer's thrust factor and the thrust
 ///   curve.
 /// - **Plane and transitions:** `stable-flight-sim`'s `alia250()`, tuned on a model fitted to
