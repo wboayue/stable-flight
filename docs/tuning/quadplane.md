@@ -165,7 +165,7 @@ pitch for its balance. Its knobs are ArduPilot's `TECS_*`, under `PGUID_`:
 | `PGUID_CLMB_MAX` | `plane.tecs.max_climb_mps` | the steady climb at full thrust and trim airspeed |
 | `PGUID_SINK_MIN` | `plane.tecs.min_sink_mps` | the steady sink at least thrust (`PGUID_THR_MIN`) and trim airspeed |
 | `PGUID_ASPD_MIN`, `_MAX` | `plane.tecs.min_airspeed_mps`, … | the stabilizer's `PSTAB_ASPD_MIN`, `_MAX` |
-| `PGUID_TCONST` | `plane.tecs.time_constant_s` | 5 s; longer for a slow, heavy aircraft |
+| `PGUID_TCONST` | `plane.tecs.time_constant_s` | 5 s; the Alia 3 s, for descents in turns |
 | `PGUID_PTCH_DAMP`, `PGUID_THR_DAMP`, `PGUID_INTEG` | … | ArduPilot's 0.3, 0.5, 0.3 |
 | `PGUID_PTCH_INTEG` | `plane.tecs.pitch_integrator_gain` | 0.2: the middle of the 0.1–0.3 that passes the sim suite on every airframe ([#505](https://github.com/wboayue/stable-flight/issues/505)) |
 | `PGUID_SPDWEIGHT` | `plane.tecs.speed_weight` | 1; toward 0 to hold height before speed, 2 the reverse |
@@ -181,10 +181,14 @@ thrust and one at least, or read them off a fitted model (the Alia's
   Alia a 30 m descent overshoots 20 m while pitch trails by several degrees.
 - **Slow below `PGUID_ASPD_MIN` with full thrust:** underspeed has latched (below 0.9 of it);
   it clears back at `PGUID_ASPD_MIN`.
-- **Sinks past `PGUID_SINK_MAX` on a descending leg:** the pitch integral acts on the rate
-  error, so it pulls the nose up once the sink passes the limit. The sim Alia sinks 4.5 m/s
-  on a 100 m descent at 5 m/s past its entry airspeed, but the X-Plane Alia peaks at
-  5.6–5.7 m/s on `flights/alia_descent_lap.csv`, and no knob is measured to lower it yet
+- **Sinks past `PGUID_SINK_MAX` on a descending leg:** look for a turn. Banked at the
+  `PGUID_BANK_MAX` cap the wing's lift points less up (7% at 21°), and a descent flown
+  through the turn sinks past the limit before total energy control pitches back up. Lower
+  `PGUID_TCONST` to answer sooner; if pitch sits below its setpoint through the turn, raise
+  the pitch rate I (`PSTAB_PIT_I`) too. On `flights/alia_descent_lap.csv`, which turns 151°
+  into its 100 m descent, the X-Plane Alia peaked at 5.65 m/s on 5 s and pitch I 0.5, and
+  5.14–5.24 m/s on 3 s and pitch I 1; either alone left it at 5.40–5.44. The cost is the
+  forward transition's handoff, which sinks faster: 3.2 m/s against 2.1
   ([#547](https://github.com/wboayue/stable-flight/issues/547)).
 - **Forward transition times out short of `TRAN_ASPD_MIN`:** the plane guidance already
   pitches for airspeed at the transition's limits (3°, 8° on the ramp), so what's left is

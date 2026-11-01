@@ -24,7 +24,7 @@ use common::transition::{
     BACK_DURATION_S, CROSS_TRACK_M, DIVE_AT_S, DIVE_WATCH_S, DivingLeg, FORWARD_AT_S,
     FORWARD_TIMEOUT_S, Forward, HOLD_S, PLANE_FLOOR_M, PLANE_HOLD_S, PLANE_SETTLE_S, SINK_AT_S,
     SINK_WATCH_S, TRANSITION_ALTITUDE_M, Trace, check_altitude_loss, check_falls_back,
-    descending_leg, entered_s, sinking_leg, trace, transition_heights,
+    descending_leg, entered_s, sinking_leg, trace, transition_heights, turning_descent_leg,
 };
 use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, HOVER_SETTLE_S, TICK, fly};
 
@@ -262,6 +262,38 @@ fn alia_descends_out_of_a_transition_within_its_sink_limit() {
             .fold(0.0, f32::max);
         check!(sink_mps <= limit_mps, "{from_m} → {to_m} m: {sink_mps} m/s");
     }
+}
+
+/// How far right of the heading it transitions on `flights/alia_descent_lap.csv` turns the
+/// Alia onto its descending leg, in degrees: it enters plane flight along runway 11 (122°),
+/// and the leg runs west (#547).
+const LAP_TURN_DEG: f32 = 151.0;
+
+/// The lap's descending leg against the Alia's trim airspeed, in m/s: 50 m/s against 45.
+const LAP_FASTER_MPS: f32 = 5.0;
+
+/// The Alia descending 100 m out of a transition onto a leg that turns it 151°, at the lap's
+/// 50 m/s, sinks no faster than its `PGUID_SINK_MAX` (plus [`SINK_MARGIN_MPS`]): banked at
+/// its 20° cap through the turn, the wing's lift points 7% less up. Measured 4.96 m/s; on
+/// TECS's default 5 s time constant, 5.28 m/s here and 5.65 m/s in X-Plane (#547).
+#[test]
+fn alia_descends_through_a_turn_within_its_sink_limit() {
+    let mut airframe = airframes::alia250();
+    airframe.guidance.transition.plane_min_height_m = 0.0;
+    let limit_mps = airframe.guidance.plane.tecs.max_sink_mps + SINK_MARGIN_MPS;
+    let plant = QuadPlanePlant::clean(airframe);
+    let airspeed_mps = airframe.stabilizer.plane.trim_airspeed_mps + LAP_FASTER_MPS;
+    let commander = turning_descent_leg(100.0, 0.0, airspeed_mps, LAP_TURN_DEG.to_radians());
+    let mut flight_loop = quadplane_loop(&plant, commander);
+    let flight = trace(&mut flight_loop, SINK_AT_S + DESCENT_WATCH_S);
+
+    let plane_s = entered_s(&flight, FlightMode::Plane, SINK_AT_S, "descent");
+    let sink_mps = flight
+        .window(plane_s, f32::INFINITY)
+        .filter(|sample| sample.mode == FlightMode::Plane)
+        .map(|sample| -sample.state.velocity_mps.z)
+        .fold(0.0, f32::max);
+    check!(sink_mps <= limit_mps, "{sink_mps} m/s");
 }
 
 /// The Alia's dive pitch, nose up positive: with [`ALIA_DIVE_THRUST`], 6.2 m/s of sink at

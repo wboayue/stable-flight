@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking (behavior):** `airframes::alia250()`'s plane side answers altitude errors on a
+  3 s total energy time constant (`PGUID_TCONST`, was 5 s) and flies pitch rate I 1
+  (`PSTAB_PIT_I`, was 0.5) (#547). A descent turning at the 20° bank cap sank 5.65 m/s past
+  its 5 m/s limit on `flights/alia_descent_lap.csv`; it now peaks at 5.14–5.24 m/s over
+  three runs. The handoff out of a forward transition sinks faster, 3.2 m/s against 2.1, and
+  dips 4.2 m against 2.4 on `flights/alia_transition_lap.csv`.
+
 ## [0.2.0] - 2026-10-30
 
 First release.
