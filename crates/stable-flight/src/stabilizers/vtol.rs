@@ -4,7 +4,7 @@
 
 use crate::controllers::InvalidConfig;
 use crate::params::{ParamError, Params, locate};
-use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
+use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
 use crate::stabilizers::plane::{PlaneStabilizer, PlaneStabilizerConfig};
 use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
 use crate::{Configurable, ControlOutput, Saturation, Setpoint, Stabilizer, VehicleState, View};
@@ -177,18 +177,16 @@ impl Params for TailsitterStabilizer {
 }
 
 /// Autotune runs on the hover side.
-impl Tunable for TailsitterStabilizer {
-    type Target = <View<CopterStabilizer> as Tunable>::Target;
-
-    fn start_probe(&mut self, target: Self::Target, config: ProbeConfig) {
+impl Tunable<TunedLoop> for TailsitterStabilizer {
+    fn start_probe(&mut self, target: TunedLoop, config: ProbeConfig) {
         self.hover.start_probe(target, config);
     }
 
-    fn probe(&self) -> Option<(Self::Target, ProbeStatus)> {
+    fn probe(&self) -> Option<(TunedLoop, ProbeStatus)> {
         self.hover.probe()
     }
 
-    fn stop_probe(&mut self) -> Option<(Self::Target, ProbeStatus)> {
+    fn stop_probe(&mut self) -> Option<(TunedLoop, ProbeStatus)> {
         self.hover.stop_probe()
     }
 

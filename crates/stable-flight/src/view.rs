@@ -209,18 +209,16 @@ impl<T: Configurable> Configurable for View<T> {
     }
 }
 
-impl<S: Tunable> Tunable for View<S> {
-    type Target = S::Target;
-
-    fn start_probe(&mut self, target: S::Target, config: ProbeConfig) {
+impl<L: Copy, S: Tunable<L>> Tunable<L> for View<S> {
+    fn start_probe(&mut self, target: L, config: ProbeConfig) {
         self.inner.start_probe(target, config);
     }
 
-    fn probe(&self) -> Option<(S::Target, ProbeStatus)> {
+    fn probe(&self) -> Option<(L, ProbeStatus)> {
         self.inner.probe()
     }
 
-    fn stop_probe(&mut self) -> Option<(S::Target, ProbeStatus)> {
+    fn stop_probe(&mut self) -> Option<(L, ProbeStatus)> {
         self.inner.stop_probe()
     }
 

@@ -47,26 +47,26 @@ pub use step::{Stat, StepAbort, StepConfig, StepMetrics, StepProbe, StepStatus, 
 /// ([`FlightLoop::start_probe`](crate::FlightLoop::start_probe) and friends), so a supervisor
 /// never needs `&mut` access to the stabilizer itself.
 ///
-/// Implemented by [`CopterStabilizer`](crate::stabilizers::copter::CopterStabilizer), whose
-/// targets are [`TunedLoop`](crate::stabilizers::copter::TunedLoop)s.
-pub trait Tunable {
-    /// Names a loop a stage can replace.
-    type Target: Copy;
-
+/// `L` names the loops a stage can replace: a stabilizer with two sets of loops (a VTOL's
+/// hover and plane loops) implements it once for each.
+///
+/// Implemented by [`CopterStabilizer`](crate::stabilizers::copter::CopterStabilizer) for
+/// [`TunedLoop`](crate::stabilizers::copter::TunedLoop)s.
+pub trait Tunable<L: Copy> {
     /// Starts a probe on `target` with `config`, from the next tick. A running probe is handed
     /// back first.
     ///
     /// # Panics
     ///
     /// If `config` is invalid ([`ProbeConfig::validate`]).
-    fn start_probe(&mut self, target: Self::Target, config: ProbeConfig);
+    fn start_probe(&mut self, target: L, config: ProbeConfig);
 
     /// The current probe, if any: running, or finished and not yet stopped.
-    fn probe(&self) -> Option<(Self::Target, ProbeStatus)>;
+    fn probe(&self) -> Option<(L, ProbeStatus)>;
 
     /// Ends the probe, handing the loop back to its controller if the probe still flies it,
     /// and returns its last status.
-    fn stop_probe(&mut self) -> Option<(Self::Target, ProbeStatus)>;
+    fn stop_probe(&mut self) -> Option<(L, ProbeStatus)>;
 
     /// The frame the probed loops fly in, expressed in the body frame: identity for loops that
     /// fly the body frame, a [`View`](crate::view::View)'s rotation for loops run in it (nose-up

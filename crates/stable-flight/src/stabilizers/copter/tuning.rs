@@ -159,9 +159,7 @@ impl Stage {
     }
 }
 
-impl Tunable for CopterStabilizer {
-    type Target = TunedLoop;
-
+impl Tunable<TunedLoop> for CopterStabilizer {
     /// Starts a probe on `target`: from the next [`stabilize`](crate::Stabilizer::stabilize),
     /// a [`Probe`] with `config` sets that loop's setpoint (see the "Tuning" section on
     /// [`CopterStabilizer`]).

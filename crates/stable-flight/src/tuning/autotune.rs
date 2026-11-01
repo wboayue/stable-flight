@@ -1590,12 +1590,12 @@ pub struct Autotune {
 
 /// What the supervisor needs from the stabilizer: copter probes and config.
 pub trait CopterTunable:
-    Tunable<Target = TunedLoop> + Configurable<Config = CopterStabilizerConfig>
+    Tunable<TunedLoop> + Configurable<Config = CopterStabilizerConfig>
 {
 }
 
 impl<S> CopterTunable for S where
-    S: Tunable<Target = TunedLoop> + Configurable<Config = CopterStabilizerConfig>
+    S: Tunable<TunedLoop> + Configurable<Config = CopterStabilizerConfig>
 {
 }
 
