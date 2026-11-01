@@ -73,7 +73,7 @@ fn holds_near_the_waypoint_in_steady_wind() {
 
 /// A 5 m/s gust, on the belly or along the span, pushes the hold off and it comes back.
 /// Measured 1.33 m off at most, and 0.36 m from the waypoint 6 s after the gust, the lateral
-/// I's slow tail as on the copter (#357; TODO(#367)), both on the belly; 3 m and 0.5 m leave
+/// I's slow tail as on the copter (#357), both on the belly; 3 m and 0.5 m leave
 /// about 2× and 1.4× margin.
 #[test]
 fn rides_out_a_gust_and_returns() {
