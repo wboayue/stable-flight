@@ -5,9 +5,11 @@ use std::time::Duration;
 use approx::assert_relative_eq;
 use assert2::{assert, check};
 
+use super::side::attitude_target;
 use super::*;
+use crate::Configurable;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
-use crate::stabilizers::copter::CopterStabilizer;
+use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use crate::tuning::plant::{Axes, PlantParams};
 use crate::tuning::{StepAbort, StepMetrics};
 use crate::view::{View, tailsitter_rotation};
@@ -2244,7 +2246,7 @@ fn fits_run_on_the_rate_loop_under_an_angle_stage() {
     ];
     for (target, probe, probed) in rows {
         check!(
-            probed_loop(target, &probe) == probed,
+            CopterSide::probed_loop(target, &probe) == probed,
             "{target:?} {probe:?}"
         );
     }

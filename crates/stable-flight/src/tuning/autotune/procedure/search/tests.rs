@@ -5,7 +5,8 @@ use assert2::check;
 
 use super::*;
 use crate::controllers::RATE_I_PER_P;
-use crate::tuning::autotune::{Criterion, Method, Procedure, Term};
+use crate::tuning::autotune::procedure::Procedure;
+use crate::tuning::autotune::{Criterion, Method, Term};
 use crate::tuning::{Measurement, ProbeAbort, ProbeConfig, StepAbort, StepMetrics};
 
 /// A hand-tune-like rate loop.
