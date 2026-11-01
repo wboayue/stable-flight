@@ -1,7 +1,7 @@
 //! Autotunes a VTOL's plane side in RealFlight: flies a script into plane flight (by default a
-//! hover climb, a transition onto a climbing leg, and a level leg back over the start at
+//! hover climb, a transition onto a climbing leg, and a level leg back past the start at
 //! 100 m), hands over to the attitude hold a plane autotune flies in (`PlaneTuneHold`, at the
-//! thrust the level leg flew on), tunes roll, then pitch, by the plane design
+//! thrust the level leg flew on) once the last leg flies straight and level for 3 s, tunes roll, then pitch, by the plane design
 //! (`StagePlan::plane_design`, `architecture.md#autotune`), and flies home in plane, transitions
 //! back, and lands on the start (`stable_flight_sitl::autotune::PlaneTuneFlight`). Each axis is
 //! fitted from a square wave on its rate loop (the fit logged: stiffness, damping, control,
@@ -102,6 +102,15 @@ const STATUS_EVERY_TICKS: u32 = 250;
 /// Seconds of plane flight before the hold may take over: the transition's wake and the
 /// line's pitch settle, as the sim's plane autotune tests lead in.
 const PLANE_LEAD_S: f32 = 15.0;
+/// How long the last leg must fly straight and level before the hold takes over, in s: the
+/// level-flight thrust's lag three times over.
+const LEVEL_HOLD_S: f32 = 3.0;
+/// Straight and level: wings within this bank, in rad.
+const LEVEL_BANK_RAD: f32 = 3.0 * std::f32::consts::PI / 180.0;
+/// Straight and level: climbing or sinking under this, in m/s.
+const LEVEL_CLIMB_MPS: f32 = 0.5;
+/// Straight and level: airspeed within this of trim, in m/s (the autotune's settle band).
+const LEVEL_AIRSPEED_BAND_MPS: f32 = 1.0;
 /// Seconds on the hold before the run starts: its trims settle.
 const HOLD_LEAD_S: f32 = 5.0;
 /// How slowly the level-flight thrust follows the plane setpoint's, in s (a first-order time
@@ -335,6 +344,8 @@ struct RunState {
     stale_since: Option<Duration>,
     /// Seconds flown in plane mode before the hold.
     plane_s: f32,
+    /// Seconds flown straight and level on the last leg.
+    level_s: f32,
     /// The plane setpoint's thrust, lagged ([`LINE_THRUST_TIME_CONSTANT_S`]).
     line_thrust: Option<f32>,
     /// When the hold took over.
@@ -476,7 +487,9 @@ fn inverted_frame<S: Tunable<TunedLoop> + Tunable<PlaneLoop>>(
 }
 
 /// The lead: tracks plane time and the level-flight thrust, and hands over to the hold once
-/// the script is done and the plane has flown long enough.
+/// the plane has flown long enough and flies the last leg straight and level: a hold started
+/// in the loiter at the leg's end keeps its bank's nose-up pitch, climbs, and slows (a dry
+/// run started 2° high and settled 2 m/s slow, #535).
 fn lead<V, G, S, M, T, R>(
     flight_loop: &FlightLoop<PlaneTuneFlight, V, G, S, M, T>,
     flight: &mut Flight<'_, R>,
@@ -495,7 +508,15 @@ fn lead<V, G, S, M, T, R>(
         let lagged = run.line_thrust.get_or_insert(setpoint.thrust);
         *lagged += (setpoint.thrust - *lagged) * LOOP_DT_S / LINE_THRUST_TIME_CONSTANT_S;
     }
-    if run.plane_s < PLANE_LEAD_S || !flight_loop.commander().lead_complete() {
+    let state = flight_loop.state();
+    let level = flight_loop.commander().on_last_leg()
+        && state.roll_rad.abs() < LEVEL_BANK_RAD
+        && state.velocity_mps.z.abs() < LEVEL_CLIMB_MPS
+        && state.airspeed_mps.is_some_and(|airspeed_mps| {
+            (airspeed_mps - flight.hold.trim_airspeed_mps).abs() < LEVEL_AIRSPEED_BAND_MPS
+        });
+    run.level_s = if level { run.level_s + LOOP_DT_S } else { 0.0 };
+    if run.plane_s < PLANE_LEAD_S || run.level_s < LEVEL_HOLD_S {
         return;
     }
     let thrust = run.line_thrust.unwrap_or(flight.hold.thrust);

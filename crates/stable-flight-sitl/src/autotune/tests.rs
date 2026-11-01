@@ -117,7 +117,6 @@ fn the_plane_flight_flies_the_script_then_the_hold() {
 
     let scripted = commander.next_command(0.004, &state);
     check!(matches!(scripted.input, ControlInput::Waypoint(_)));
-    check!(commander.lead_complete());
     check!(!switch.is_holding());
 
     switch.hold(HOLD());
@@ -134,6 +133,26 @@ fn the_plane_flight_flies_the_script_then_the_hold() {
     };
     check!(attitude.thrust == 0.85);
     check!(!switch.is_finished());
+}
+
+/// The last leg is the one toward the last waypoint, until it is reached: (position north,
+/// on the last leg) after flying the first waypoint over the start.
+#[test]
+fn the_last_leg_ends_at_its_waypoint() {
+    let leg = |north_m| WaypointCommand {
+        position_m: Vec2::new(north_m, 0.0),
+        altitude_m: 100.0,
+        ..Default::default()
+    };
+    let script = ScriptCommander::from_waypoints(vec![leg(0.0), leg(1000.0)])
+        .expect("two waypoints")
+        .with_route_end(RouteEnd::Hold);
+    let (mut commander, _) = PlaneTuneFlight::new(script, HOME);
+    check!(!commander.on_last_leg(), "toward the first waypoint");
+    for (north_m, last) in [(0.0, true), (500.0, true), (1000.0, false)] {
+        commander.next_command(0.004, &cruising(north_m, 100.0));
+        check!(commander.on_last_leg() == last, "at {north_m} m");
+    }
 }
 
 /// Past the return radius, flying away, and allowed, the hold turns back, which the switch

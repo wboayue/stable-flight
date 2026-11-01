@@ -1,9 +1,10 @@
 # eXplora VTOL plane autotune lead (plane-autotune-realflight): climb in hover to 20 m over the
 # start, transition onto a 500 m leg north climbing to 100 m at 14 m/s airspeed, then fly level
-# back to over the start at 100 m, where the autotune's hold takes over: 60 m above the
-# envelope's 40 m sink limit (#535).
+# south past the start to 500 m beyond it. The autotune's hold takes over on that level leg
+# once it flies straight and level, near the start, 60 m above the envelope's 40 m sink
+# limit; past the leg's end the guidance would loiter, banked and nose up (#535).
 # Coordinates are m north and east of where the vehicle starts, altitudes m above it.
 x,y,altitude,cruise_speed,regime
 0.00,0.00,20.0,3.0,copter
 500.00,0.00,100.0,14.0,plane
-0.00,0.00,100.0,14.0,plane
+-500.00,0.00,100.0,14.0,plane
