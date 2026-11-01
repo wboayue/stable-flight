@@ -41,7 +41,8 @@ pub struct QuadPlaneAirframe {
 }
 
 /// ArduPilot SITL's quadplane (`quadplane`: [`plane`]'s airframe with an X quad,
-/// `libraries/SITL/SIM_QuadPlane.cpp`'s `QuadPlane::QuadPlane`, Plane-4.5): 4.5 kg, the quad
+/// `libraries/SITL/SIM_QuadPlane.cpp`'s `QuadPlane::QuadPlane`; values as in Plane-4.5, names
+/// as in master): 4.5 kg, the quad
 /// frame's default 3 kg scaled by 1.5 for the plane's parts (`SIM_Frame.cpp`'s `Frame`
 /// param `MASS` and `Frame::update_parameters`, `set_mass_scale` in `QuadPlane::QuadPlane`),
 /// its lift rotors 350 mm apart across the diagonal (`Frame` param `DIAG_SZ`). The wing,

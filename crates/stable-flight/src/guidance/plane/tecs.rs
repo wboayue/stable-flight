@@ -19,8 +19,8 @@
 //!   airspeed demand at half the climb's energy rate over `V` (`_update_height_demand`,
 //!   `_update_speed_demand`). The slewed height demand then runs through a 3 s lag
 //!   (`_update_height_demand`), whose slope is the height rate's feedforward; the airspeed's
-//!   rate demand is its error alone, as PX4's (`TECSControl::_calcAirspeedControlOutput`),
-//!   held to half the climb's energy rate for thrust and unheld for pitch. The lag starts at
+//!   rate demand is its error over the time constant alone, as PX4's over its own
+//!   (`FW_T_TAS_TC`, `TECSControl::_calcAirspeedControlOutput`), held to half the climb's energy rate for thrust and unheld for pitch. The lag starts at
 //!   the aircraft's own climb rate (within the climb and sink limits), as PX4's reference model
 //!   does (`TECSAltitudeReferenceModel::initialize`, from `TECS::initialize`). ArduPilot's
 //!   starts level (`_initialise_states`): an aircraft entering plane flight already sinking
@@ -48,9 +48,10 @@
 //!   `SLT_Transition::set_FW_roll_pitch`).
 //! - **Underspeed:** below 0.9 of the least airspeed (`_detect_underspeed`), full thrust and
 //!   pitch holding airspeed alone (speed weight 2). It clears back at the least airspeed,
-//!   where the wing flies. ArduPilot clears at 1.15 of the least (`_detect_underspeed`), which
-//!   for a heavy airframe can sit above its trim airspeed (the sim Alia 250: 46 m/s against 45)
-//!   and never clear.
+//!   where the wing flies. ArduPilot latches only at 95% throttle and clears at 1.15 of the
+//!   least after 3 s or once at the height demand (`_detect_underspeed`); for a heavy airframe
+//!   1.15 can sit above trim airspeed (the sim Alia 250: 46 m/s against 45), leaving only the
+//!   height to clear it.
 //! - **Turns:** thrust for a bank's extra drag, `k·(1/cos²φ − 1)` on the energy rate
 //!   (`_update_throttle_with_airspeed`, `TECS_RLL2THR`).
 
@@ -358,8 +359,8 @@ impl Tecs {
 
         // Airspeed: slewed at half the climb's energy rate over V
         // (`AP_TECS::_update_speed_demand`). Its rate demand is the error over the time constant
-        // alone, as PX4's (`TECSControl::_calcAirspeedControlOutput`): the slew's slope would
-        // step where it stops.
+        // alone, as PX4's over its own (`FW_T_TAS_TC`,
+        // `TECSControl::_calcAirspeedControlOutput`): the slew's slope would step where it stops.
         let max_accel_mps2 = 0.5 * config.max_energy_rate() / speed_mps;
         let target_mps = airspeed_target_mps.clamp(min_mps, max_mps);
         let demand_airspeed_mps = previous.airspeed_mps

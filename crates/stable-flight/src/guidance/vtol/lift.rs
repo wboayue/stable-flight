@@ -199,7 +199,8 @@ pub struct LiftTransitionStep {
 ///   `QuadPlane::run_z_controller`).
 /// - Pusher: PX4 slews it to `VT_F_TRANS_THR` (1.0) at `VT_PSHER_SLEW` (0.33/s) going forward
 ///   and cuts it going back (`Standard::update_transition_state`); ArduPilot flies it on the
-///   plane controller's throttle going forward (`Plane::apply_throttle_limits`).
+///   plane controller's throttle going forward, at least `TKOFF_THR_MIN` (cruise throttle when
+///   0) and at most `TKOFF_THR_MAX` (`Plane::apply_throttle_limits`).
 ///
 /// # Examples
 ///
