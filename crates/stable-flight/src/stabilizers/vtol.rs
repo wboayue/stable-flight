@@ -5,7 +5,7 @@
 use crate::controllers::InvalidConfig;
 use crate::params::{ParamError, Params, locate};
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
-use crate::stabilizers::plane::{PlaneStabilizer, PlaneStabilizerConfig};
+use crate::stabilizers::plane::{PlaneLoop, PlaneStabilizer, PlaneStabilizerConfig};
 use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
 use crate::{Configurable, ControlOutput, Saturation, Setpoint, Stabilizer, VehicleState, View};
 use nalgebra::UnitQuaternion;
@@ -105,9 +105,12 @@ impl Stabilizer for TailsitterStabilizer {
             }
             self.on_plane = on_plane;
         }
+        // A probe flies only while its side does.
         if on_plane {
+            self.hover.inner_mut().interrupt_stage();
             self.plane.stabilize(dt, setpoint, state)
         } else {
+            self.plane.interrupt_stage();
             self.hover.stabilize(dt, setpoint, state)
         }
     }
@@ -176,7 +179,7 @@ impl Params for TailsitterStabilizer {
     }
 }
 
-/// Autotune runs on the hover side.
+/// Hover probes, on the hover side in its view: they fly only while the hover side does.
 impl Tunable<TunedLoop> for TailsitterStabilizer {
     fn start_probe(&mut self, target: TunedLoop, config: ProbeConfig) {
         self.hover.start_probe(target, config);
@@ -193,5 +196,21 @@ impl Tunable<TunedLoop> for TailsitterStabilizer {
     /// The hover view's: autotune judges the hover in its view axes.
     fn probe_frame(&self) -> UnitQuaternion<f32> {
         self.hover.probe_frame()
+    }
+}
+
+/// Plane probes, on the plane side: they fly only while it does, and a transition ramp
+/// interrupts them.
+impl Tunable<PlaneLoop> for TailsitterStabilizer {
+    fn start_probe(&mut self, target: PlaneLoop, config: ProbeConfig) {
+        self.plane.start_probe(target, config);
+    }
+
+    fn probe(&self) -> Option<(PlaneLoop, ProbeStatus)> {
+        self.plane.probe()
+    }
+
+    fn stop_probe(&mut self) -> Option<(PlaneLoop, ProbeStatus)> {
+        self.plane.stop_probe()
     }
 }

@@ -4,7 +4,7 @@
 use crate::controllers::InvalidConfig;
 use crate::params::{ParamError, Params, locate};
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
-use crate::stabilizers::plane::{PlaneStabilizer, PlaneStabilizerConfig};
+use crate::stabilizers::plane::{PlaneLoop, PlaneStabilizer, PlaneStabilizerConfig};
 use crate::tuning::{ProbeConfig, ProbeStatus, Tunable};
 use crate::{
     Configurable, ControlOutput, CruiseOutput, Saturation, Setpoint, Stabilizer, Vec3, VehicleState,
@@ -149,7 +149,16 @@ impl QuadPlaneStabilizer {
 
 impl Stabilizer for QuadPlaneStabilizer {
     fn stabilize(&mut self, dt: f32, setpoint: &Setpoint, state: &VehicleState) -> ControlOutput {
-        self.prime_entering(Sides::of(setpoint), state);
+        let sides = Sides::of(setpoint);
+        self.prime_entering(sides, state);
+        // A probe flies only while its side flies alone: a blend is a transition, which no
+        // probe should disturb.
+        if sides != Sides::Hover {
+            self.hover.interrupt_stage();
+        }
+        if sides != Sides::Plane {
+            self.plane.interrupt_stage();
+        }
         match setpoint {
             Setpoint::Plane(_) | Setpoint::PlaneRate(_) => {
                 let cruise = self.plane.stabilize(dt, setpoint, state);
@@ -257,7 +266,7 @@ impl Params for QuadPlaneStabilizer {
     }
 }
 
-/// Autotune runs on the hover side.
+/// Hover probes, on the lift rotors: they fly only while the hover side flies alone.
 impl Tunable<TunedLoop> for QuadPlaneStabilizer {
     fn start_probe(&mut self, target: TunedLoop, config: ProbeConfig) {
         self.hover.start_probe(target, config);
@@ -269,5 +278,20 @@ impl Tunable<TunedLoop> for QuadPlaneStabilizer {
 
     fn stop_probe(&mut self) -> Option<(TunedLoop, ProbeStatus)> {
         self.hover.stop_probe()
+    }
+}
+
+/// Plane probes, on the surfaces: they fly only while the plane side flies alone.
+impl Tunable<PlaneLoop> for QuadPlaneStabilizer {
+    fn start_probe(&mut self, target: PlaneLoop, config: ProbeConfig) {
+        self.plane.start_probe(target, config);
+    }
+
+    fn probe(&self) -> Option<(PlaneLoop, ProbeStatus)> {
+        self.plane.probe()
+    }
+
+    fn stop_probe(&mut self) -> Option<(PlaneLoop, ProbeStatus)> {
+        self.plane.stop_probe()
     }
 }

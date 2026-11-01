@@ -5,6 +5,7 @@ use super::*;
 use crate::controllers::RateGains;
 use crate::guidance::vtol::{QuadPlaneGuidance, QuadPlaneGuidanceConfig};
 use crate::stabilizers::copter::TunedLoop;
+use crate::tuning::ProbeStatus;
 use crate::{AttitudeSetpoint, BlendSetpoint, BodyRateSetpoint, PlaneSetpoint};
 
 const DT: f32 = 0.004;
@@ -220,18 +221,55 @@ fn params_and_config_chain_the_parts() {
     check!(stabilizer.config().hover.thrust_curve_exponent != 3.0);
 }
 
-/// Autotune probes run on the hover side.
-#[test]
-fn autotune_probes_the_hover_side() {
+#[derive(Clone, Copy, Debug)]
+enum ProbedSide {
+    Hover,
+    Plane,
+}
+
+/// The probe's status after one tick on `then`, from a probe on `side` started while that
+/// side flew.
+fn probe_after(side: ProbedSide, then: &Setpoint) -> Option<ProbeStatus> {
     let mut stabilizer = QuadPlaneStabilizer::new(QuadPlaneStabilizerConfig::default());
-    check!(stabilizer.probe().is_none());
-    stabilizer.start_probe(
-        TunedLoop::RollRate,
-        ProbeConfig::Step(crate::tuning::autotune::COPTER_RATE_STEP),
-    );
-    check!(stabilizer.probe().map(|(target, _)| target) == Some(TunedLoop::RollRate));
-    check!(stabilizer.stop_probe().is_some());
-    check!(stabilizer.probe().is_none());
+    let state = VehicleState::default();
+    let step = ProbeConfig::Step(crate::tuning::autotune::COPTER_RATE_STEP);
+    match side {
+        ProbedSide::Hover => {
+            stabilizer.stabilize(DT, &Setpoint::Attitude(hover_attitude()), &state);
+            stabilizer.start_probe(TunedLoop::RollRate, step);
+            stabilizer.stabilize(DT, then, &state);
+            Tunable::<TunedLoop>::probe(&stabilizer).map(|(_, status)| status)
+        }
+        ProbedSide::Plane => {
+            stabilizer.stabilize(DT, &Setpoint::Plane(plane_attitude()), &state);
+            stabilizer.start_probe(PlaneLoop::RollRate, step);
+            stabilizer.stabilize(DT, then, &state);
+            Tunable::<PlaneLoop>::probe(&stabilizer).map(|(_, status)| status)
+        }
+    }
+}
+
+/// A probe flies only while its side flies alone: the other side's setpoint, or a
+/// transition's blend, interrupts it.
+#[test]
+fn probes_fly_only_on_their_side() {
+    let hover = Setpoint::Attitude(hover_attitude());
+    let plane = Setpoint::Plane(plane_attitude());
+    for (side, then, interrupted) in [
+        (ProbedSide::Hover, hover, false),
+        (ProbedSide::Hover, plane, true),
+        (ProbedSide::Hover, blend(0.5), true),
+        (ProbedSide::Plane, plane, false),
+        (ProbedSide::Plane, hover, true),
+        (ProbedSide::Plane, blend(0.5), true),
+    ] {
+        let status = probe_after(side, &then);
+        check!(
+            (status == Some(ProbeStatus::Interrupted)) == interrupted,
+            "{side:?} then {then:?}: {status:?}"
+        );
+        check!(status.is_some(), "{side:?} then {then:?}");
+    }
 }
 
 /// Guidance and stabilizer param names are unique across the quadplane's five tables, and
