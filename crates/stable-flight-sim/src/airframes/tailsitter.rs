@@ -7,6 +7,7 @@ use stable_flight::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
     LateralControllerConfig, RateGains,
 };
+use stable_flight::estimation::wind::WindConfig;
 use stable_flight::guidance::copter::CopterGuidanceConfig;
 use stable_flight::guidance::plane::PlaneGuidanceConfig;
 use stable_flight::guidance::vtol::{TailsitterGuidanceConfig, TransitionConfig};
@@ -167,6 +168,14 @@ pub fn tailsitter() -> TailsitterAirframe {
             // never yield it.
             waypoint_yaw_radps: 0.0,
             heading_yield_s: 0.0,
+            // The model's own drag in a hover, fitted on the steady lean in 0.5–3 m/s winds:
+            // bluff, k = ½ρ/B, 0.29/m across the belly and 0.016/m along the span. It feeds the
+            // drag of a leg's speed forward, so the lateral I doesn't learn it and carry it past
+            // the waypoint (#609), and drives the wind estimate.
+            wind: WindConfig {
+                ballistic_kgpm2: Vec2::new(2.1, 39.0),
+                ..WindConfig::default()
+            },
             ..CopterGuidanceConfig::default()
         },
         plane: PlaneGuidanceConfig {

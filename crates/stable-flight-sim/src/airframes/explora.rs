@@ -3,13 +3,13 @@
 use core::f32::consts::PI;
 
 use stable_flight::GRAVITY;
-use stable_flight::Vec3;
 use stable_flight::controllers::{Gains, PlaneRateControllerConfig, RateGains};
 use stable_flight::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
 use stable_flight::mixers::MixerConfig;
 use stable_flight::stabilizers::copter::{CopterStabilizerConfig, DEFAULT_GYRO_CUTOFF_HZ};
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
 use stable_flight::stabilizers::vtol::TailsitterStabilizerConfig;
+use stable_flight::{Vec2, Vec3};
 
 use super::plane::{aerosonde_inertia, plane};
 use super::tailsitter::{TailsitterAirframe, tailsitter};
@@ -163,6 +163,10 @@ pub fn explora() -> TailsitterAirframe {
         ..PlaneStabilizerConfig::default()
     };
     let mut guidance = base.guidance;
+    // The model's own drag in a hover, fitted on the steady lean in 0.5–2 m/s winds (past
+    // 2.5 m/s across the belly it leans on its tilt cap): bluff, k = ½ρ/B, 0.84/m across the
+    // belly and 0.56/m along the span (#609).
+    guidance.hover.wind.ballistic_kgpm2 = Vec2::new(0.73, 1.1);
     guidance.hover.altitude.hover_thrust = hover_thrust(
         MASS_KG,
         max_thrust_n,

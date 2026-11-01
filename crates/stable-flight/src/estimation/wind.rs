@@ -132,6 +132,28 @@ impl WindConfig {
             .chain(&self.momentum_per_s)
             .any(|c| *c > 0.0)
     }
+
+    /// The drag per kg, in m/s² along the thrust frame's `x` and `y`, on a vehicle moving
+    /// through the air at `air_mps` along those axes (its velocity less the wind's), level:
+    /// `−(k|v| + μ)v` per axis, opposing the air velocity. Zero on an axis without a
+    /// coefficient.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::Vec2;
+    /// use stable_flight::estimation::wind::WindConfig;
+    ///
+    /// // Momentum drag 0.3/s: 2 m/s forward through the air is pushed back at 0.6 m/s².
+    /// let config = WindConfig { momentum_per_s: Vec2::new(0.3, 0.3), ..Default::default() };
+    /// let drag = config.drag_mps2(Vec2::new(2.0, 0.0));
+    /// assert!((drag - Vec2::new(-0.6, 0.0)).norm() < 1e-6);
+    /// ```
+    pub fn drag_mps2(&self, air_mps: Vec2) -> Vec2 {
+        let along =
+            |i: usize| -AxisDrag::new(self, i).push_mps2(air_mps[i], 0.0) * air_mps[i].signum();
+        Vec2::new(along(0), along(1))
+    }
 }
 
 /// The wind and its uncertainty.
