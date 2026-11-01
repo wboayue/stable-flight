@@ -8,8 +8,10 @@ pub mod altitude;
 pub mod attitude;
 pub mod body_rate;
 mod derivative;
+pub mod gyro;
 pub mod lateral;
 pub(crate) mod low_pass;
+pub mod notch;
 pub mod plane_rate;
 pub mod yaw;
 
@@ -19,7 +21,9 @@ pub use altitude::{
 };
 pub use attitude::{AttitudeController, AttitudeControllerConfig};
 pub use body_rate::{BodyRateController, BodyRateControllerConfig, RATE_I_PER_P, YAW_RATE_I_PER_P};
+pub use gyro::GyroFilters;
 pub use lateral::{LateralController, LateralControllerConfig, LateralEstimate, LateralTarget};
+pub use notch::NotchConfig;
 pub use plane_rate::{PlaneRateController, PlaneRateControllerConfig, RateGains};
 pub use yaw::{YawController, YawControllerConfig};
 

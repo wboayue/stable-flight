@@ -1,3 +1,4 @@
+use crate::controllers::GyroFilters;
 use std::cell::RefCell;
 
 use assert2::check;
@@ -82,7 +83,7 @@ fn drive_unsettled(
         gains: START,
         inner: None,
         run_start,
-        gyro_cutoff_hz: 0.0,
+        gyro: GyroFilters::low_pass(0.0),
     });
     for _ in 0..MAX_PROBES {
         verdicts.extend(procedure.take_verdict());

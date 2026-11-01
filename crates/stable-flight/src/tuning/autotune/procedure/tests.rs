@@ -223,8 +223,13 @@ fn fitted(model: RateModel, stalled: bool) -> Input {
 /// The rate gains `plan` designs from [`QUAD_X_FIT`]: P and D by `design_rate`, I at
 /// [`RATE_I_PER_P`] of P.
 fn designed_rate(plan: &DesignPlan) -> Gains {
-    let rate = design_rate(&QUAD_X_FIT, CURRENT, DEFAULT_GYRO_CUTOFF_HZ, &plan.design)
-        .expect("rate gains");
+    let rate = design_rate(
+        &QUAD_X_FIT,
+        CURRENT,
+        GyroFilters::low_pass(DEFAULT_GYRO_CUTOFF_HZ),
+        &plan.design,
+    )
+    .expect("rate gains");
     Gains {
         i: RATE_I_PER_P * rate.p,
         ..rate
@@ -242,7 +247,7 @@ fn design_fits_holds_then_finishes_with_the_designed_gains() {
         &QUAD_X_FIT,
         rate,
         CURRENT,
-        DEFAULT_GYRO_CUTOFF_HZ,
+        GyroFilters::low_pass(DEFAULT_GYRO_CUTOFF_HZ),
         &plan.design,
     )
     .expect("angle P");
@@ -264,7 +269,7 @@ fn design_fits_holds_then_finishes_with_the_designed_gains() {
             gains: CURRENT,
             inner,
             run_start: CURRENT,
-            gyro_cutoff_hz: DEFAULT_GYRO_CUTOFF_HZ,
+            gyro: GyroFilters::low_pass(DEFAULT_GYRO_CUTOFF_HZ),
         });
         check!(
             first == Action::probe(ProbeConfig::Identify(plan.identify)),
@@ -416,7 +421,7 @@ fn design_lowers_a_start_whose_fit_saturates() {
         gains: CURRENT,
         inner: Some(CURRENT),
         run_start: CURRENT,
-        gyro_cutoff_hz: DEFAULT_GYRO_CUTOFF_HZ,
+        gyro: GyroFilters::low_pass(DEFAULT_GYRO_CUTOFF_HZ),
     });
     let action = angle.next(Input::Aborted {
         abort: saturated,

@@ -12,7 +12,7 @@ use stable_flight::tuning::autotune::StagePlan;
 use stable_flight_sim::airframes::{self, Airframe};
 use stable_flight_sim::{Perturbations, Wind};
 
-use common::robustness::{Set, Start, perturbations, starting};
+use common::robustness::{Set, Start, notch_for, perturbations, starting};
 use common::{AUTOTUNE_TIMEOUT_S, Plant, spec};
 
 /// Simulated seconds a row's autotune may take: the slowest passing row (`heavy_quad`'s CG
@@ -26,7 +26,8 @@ fn check_row(name: &str, airframe: Airframe, set: Set, start: Start) {
 }
 
 /// Autotunes `airframe` under `perturbations` from `start` and checks the row's criteria.
-fn check_plant(row: &str, airframe: Airframe, perturbations: Perturbations, start: Start) {
+fn check_plant(row: &str, mut airframe: Airframe, perturbations: Perturbations, start: Start) {
+    airframe.stabilizer.gyro_notch = notch_for(&perturbations);
     let plant = Plant {
         airframe: starting(airframe, start),
         wind: Wind::default(),
@@ -114,9 +115,8 @@ rows! {
     racer_delay_25ms_low: racer, Delay25Ms, Low;
     #[ignore = "the ×3 start (rate P 3.49) breaches the rate envelope in the first fit at 25 ms; the abort is the safe outcome (#552)"]
     racer_delay_25ms_high: racer, Delay25Ms, High;
-    #[ignore = "at racer's 75 Hz gyro low-pass, gyro noise alone peaks at 0.12–0.17 rad/s in a hover, past the 0.1 rad/s settle: a roll or pitch stage doesn't settle (NotSettled) (#597)"]
     racer_noise_low: racer, Noise, Low;
-    #[ignore = "at racer's 75 Hz gyro low-pass, gyro noise alone peaks at 0.12–0.17 rad/s in a hover, past the 0.1 rad/s settle: the roll angle stage doesn't settle (NotSettled) (#597)"]
+    #[ignore = "with the gyro notch at the tone the autotune overshoots the budget or misses the spec on 4 noise seeds of 5 (#598)"]
     racer_noise_high: racer, Noise, High;
     racer_cg_offset_low: racer, CgOffset, Low;
     racer_cg_offset_high: racer, CgOffset, High;
@@ -129,7 +129,8 @@ rows! {
 }
 
 /// The noise rows that pass hold on other noise seeds: `quad_x` and `heavy_quad` from both
-/// starts, on seeds 2–5 (the rows fly seed 1).
+/// starts, on seeds 2–5 (the rows fly seed 1). `racer`'s low start, which passes on seed 1,
+/// overshoots a yaw rate step on seed 5 (#598).
 #[test]
 fn noise_rows_pass_on_other_seeds() {
     for (name, airframe) in [

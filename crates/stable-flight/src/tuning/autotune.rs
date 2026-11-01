@@ -2,7 +2,8 @@
 
 use core::fmt;
 
-use crate::controllers::low_pass::LowPass;
+use crate::controllers::GyroFilters;
+use crate::controllers::gyro::GyroFilter;
 use crate::controllers::{
     Gains, InvalidConfig, RATE_I_PER_P, YAW_RATE_I_PER_P, check, check_limit, check_positive,
     check_unit_interval,
@@ -909,20 +910,20 @@ impl DesignPlan {
     }
 
     /// The gains `model` designs from the loop's `start`: a rate loop's (`inner` `None`), or
-    /// an angle loop's P flown on the `inner` rate gains, through a gyro low-pass at
-    /// `gyro_cutoff_hz`.
+    /// an angle loop's P flown on the `inner` rate gains, through the `gyro` filters.
     fn gains(
         &self,
         model: &RateModel,
         start: Gains,
         inner: Option<Gains>,
-        gyro_cutoff_hz: f32,
+        gyro: GyroFilters,
     ) -> Result<Gains, DesignError> {
         match inner {
-            None => design_rate(model, start, gyro_cutoff_hz, &self.design)
+            None => design_rate(model, start, gyro, &self.design)
                 .map(|gains| with_i_per_p(gains, self.rate_i_per_p)),
-            Some(rate) => design_angle_p(model, rate, start, gyro_cutoff_hz, &self.design)
-                .map(|p| Gains { p, ..start }),
+            Some(rate) => {
+                design_angle_p(model, rate, start, gyro, &self.design).map(|p| Gains { p, ..start })
+            }
         }
     }
 }
@@ -1584,7 +1585,7 @@ pub struct Autotune {
     /// filter, at its cutoff, since the stabilizer's own sits behind every
     /// [`View`](crate::view::View) and VTOL host. Filtering before the rotation is the same
     /// as after: every axis has the same cutoff.
-    rate_filters: [LowPass; 3],
+    rate_filters: [GyroFilter; 3],
 }
 
 /// What the supervisor needs from the stabilizer: copter probes and config.
@@ -1847,9 +1848,12 @@ impl Autotune {
         flight_loop: &FlightLoop<C, V, G, S, M, T>,
         dt: f32,
     ) -> Vec3 {
-        let cutoff_hz = flight_loop.stabilizer().config().gyro_cutoff_hz;
+        let config = flight_loop.stabilizer().config();
         let rates_radps = flight_loop.state().angular_velocity_radps;
-        Vec3::from_fn(|axis, _| self.rate_filters[axis].apply(rates_radps[axis], dt, cutoff_hz))
+        Vec3::from_fn(|axis, _| {
+            let filters = config.gyro_filters_on(axis);
+            self.rate_filters[axis].apply(rates_radps[axis], dt, &filters)
+        })
     }
 
     /// Tells the supervisor whether the host runs slow: its ticks come further apart than
@@ -1983,7 +1987,7 @@ impl Autotune {
                 run_start: self
                     .run_start
                     .map_or(gains, |run_start| target.gains(&run_start)),
-                gyro_cutoff_hz: config.gyro_cutoff_hz,
+                gyro: config.gyro_filters(),
             },
             Decide::Measured {
                 measurement,

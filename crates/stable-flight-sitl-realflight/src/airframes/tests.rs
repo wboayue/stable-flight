@@ -1,7 +1,7 @@
 use super::*;
 use stable_flight::Mixer;
 use stable_flight::Vec3;
-use stable_flight::controllers::{LateralControllerConfig, YawControllerConfig};
+use stable_flight::controllers::{LateralControllerConfig, NotchConfig, YawControllerConfig};
 use stable_flight::estimation::wind::WindConfig;
 
 #[test]
@@ -44,6 +44,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         full_scale_rates_radps: Vec3::new(3.0, 3.0, 3.0),
         thrust_curve_exponent: 2.0,
         gyro_cutoff_hz: 40.0,
+        gyro_notch: NotchConfig::default(),
     };
     assert_eq!(airframe.stabilizer, stabilizer, "stabilizer");
 
@@ -319,6 +320,7 @@ fn titan_cobra_hover_gains_are_the_flown_set() {
         full_scale_rates_radps: Vec3::new(3.0, 3.0, 3.0),
         thrust_curve_exponent: 2.0,
         gyro_cutoff_hz: 40.0,
+        gyro_notch: NotchConfig::default(),
     };
     assert_eq!(titan_cobra().stabilizer.hover, stabilizer);
 }

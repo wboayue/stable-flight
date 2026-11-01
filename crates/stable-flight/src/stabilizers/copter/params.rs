@@ -37,6 +37,9 @@ impl ParamTable for CopterStabilizerConfig {
         param!(deg "STAB_FS_RATE_Z", full_scale_rates_radps.z),
         param!("STAB_THR_EXPO", thrust_curve_exponent),
         param!("STAB_GYRO_FLT", gyro_cutoff_hz),
+        param!("STAB_NTCH_HZ", gyro_notch.center_hz),
+        param!("STAB_NTCH_BW", gyro_notch.bandwidth_hz),
+        param!("STAB_NTCH_ATT", gyro_notch.attenuation_db),
     ];
 }
 
@@ -134,6 +137,15 @@ mod metadata {
             GYRO.param("STAB_GYRO_FLT", "Body rate low-pass cutoff (0 is off)")
                 .with_units("Hz")
                 .at_least(0.0),
+            GYRO.param("STAB_NTCH_HZ", "Body rate notch center (0 is off)")
+                .with_units("Hz")
+                .at_least(0.0),
+            GYRO.param("STAB_NTCH_BW", "Body rate notch width (0 cuts nothing)")
+                .with_units("Hz")
+                .at_least(0.0),
+            GYRO.param("STAB_NTCH_ATT", "Body rate notch depth at its center")
+                .with_units("dB")
+                .above(0.0),
         ];
     }
 }

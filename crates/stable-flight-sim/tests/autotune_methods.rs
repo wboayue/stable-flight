@@ -25,7 +25,7 @@ use std::cell::{Cell, RefCell};
 use std::f32::consts::PI;
 use std::rc::Rc;
 
-use stable_flight::controllers::Gains;
+use stable_flight::controllers::{Gains, GyroFilters};
 use stable_flight::guidance::copter::CopterGuidance;
 use stable_flight::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig, TunedLoop};
 use stable_flight::tuning::autotune::{
@@ -143,7 +143,7 @@ fn rate_gains(
                 rate_margin_deg,
                 ..COPTER_LOOP_SHAPING
             };
-            design_rate(model, start, gyro_cutoff_hz, &config).ok()
+            design_rate(model, start, GyroFilters::low_pass(gyro_cutoff_hz), &config).ok()
         }
     }
 }
@@ -252,8 +252,14 @@ fn design_config(
             .ok_or("no rate design")?;
         *rate_loop.gains_mut(&mut config) = rate;
         let angle = angle_loop.gains(&config);
-        let p = design_angle_p(model, rate, angle, gyro_cutoff_hz, &COPTER_LOOP_SHAPING)
-            .map_err(|_| "no angle design")?;
+        let p = design_angle_p(
+            model,
+            rate,
+            angle,
+            GyroFilters::low_pass(gyro_cutoff_hz),
+            &COPTER_LOOP_SHAPING,
+        )
+        .map_err(|_| "no angle design")?;
         angle_loop.gains_mut(&mut config).p = p;
     }
     Ok(config)

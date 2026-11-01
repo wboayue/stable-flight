@@ -9,10 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `CopterStabilizerConfig::gyro_notch` (`controllers::NotchConfig`; params `STAB_NTCH_HZ`,
+  `STAB_NTCH_BW`, `STAB_NTCH_ATT`): a notch on the roll and pitch rates ahead of the gyro
+  low-pass, for one vibration tone, in ArduPilot's fixed harmonic notch form (center, width,
+  depth). Off by default. `controllers::GyroFilters` is the chain the rate loop flies, and
+  `CopterStabilizerConfig::gyro_filters`/`gyro_filters_on` give it (#597).
 - `FlightLoop::setpoint`: the setpoint guidance gave the stabilizer on the last tick (#539).
 
 ### Changed
 
+- **Breaking:** `tuning::design_rate` and `design_angle_p` take the stabilizer's
+  `GyroFilters` in place of the gyro cutoff (`GyroFilters::low_pass(cutoff_hz)` for the old
+  call), so a design models the notch too; `CopterStabilizerConfig` gains `gyro_notch` (#597).
 - **Breaking:** `IdentifyAbort::Saturated`: a window whose moments mostly sit at the rate
   loop's limit while the least squares leaves it noisy is no longer fitted. A design stage
   answers it on a rate loop by lowering its start, every gain ÷ 1.3, and fitting again, up to

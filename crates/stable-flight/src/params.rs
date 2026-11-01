@@ -41,6 +41,9 @@
 //! | `STAB_FS_RATE_X`, `_Y`, `_Z` | `full_scale_rates_radps` |
 //! | `STAB_THR_EXPO` | `thrust_curve_exponent` |
 //! | `STAB_GYRO_FLT` | `gyro_cutoff_hz` |
+//! | `STAB_NTCH_HZ` | `gyro_notch.center_hz` |
+//! | `STAB_NTCH_BW` | `gyro_notch.bandwidth_hz` |
+//! | `STAB_NTCH_ATT` | `gyro_notch.attenuation_db` |
 //!
 //! # Copter guidance ([`CopterGuidanceConfig`](crate::guidance::copter::CopterGuidanceConfig))
 //!
@@ -165,7 +168,7 @@
 //!
 //! let mut count = 0;
 //! stabilizer.visit_params(&mut |_name, _value| count += 1);
-//! assert_eq!(count, 32);
+//! assert_eq!(count, 35);
 //! ```
 
 use core::fmt;

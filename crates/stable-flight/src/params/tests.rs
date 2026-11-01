@@ -6,7 +6,7 @@ use assert2::check;
 use super::*;
 use crate::controllers::{
     AltitudeControllerConfig, AttitudeControllerConfig, BodyRateControllerConfig, Gains,
-    LateralControllerConfig, YawControllerConfig,
+    LateralControllerConfig, NotchConfig, YawControllerConfig,
 };
 use crate::estimation::wind::WindConfig;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig, ThrustLimits};
@@ -54,6 +54,12 @@ fn tables_cover_every_config_field() {
         full_scale_rates_radps: _,
         thrust_curve_exponent: _,
         gyro_cutoff_hz: _,
+        gyro_notch:
+            NotchConfig {
+                center_hz: _,
+                bandwidth_hz: _,
+                attenuation_db: _,
+            },
     } = CopterStabilizerConfig::default();
     let CopterGuidanceConfig {
         altitude:
@@ -99,7 +105,7 @@ fn tables_cover_every_config_field() {
             },
     } = CopterGuidanceConfig::default();
     // one param per scalar, vector component, or gain term in the destructuring above
-    check!(names::<CopterStabilizerConfig>().len() == 32);
+    check!(names::<CopterStabilizerConfig>().len() == 35);
     check!(names::<CopterGuidanceConfig>().len() == 36);
 }
 

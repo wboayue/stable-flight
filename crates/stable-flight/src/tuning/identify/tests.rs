@@ -354,9 +354,14 @@ fn fit_recorded_window(window: &[(f32, f32)]) -> (RateModel, f32) {
 /// Rate P designed from `fitted` at the copter's loop shaping and the 40 Hz gyro filter.
 fn designed_p(fitted: &RateModel, start: crate::controllers::Gains) -> Option<f32> {
     use crate::tuning::autotune::COPTER_LOOP_SHAPING;
-    crate::tuning::design_rate(fitted, start, 40.0, &COPTER_LOOP_SHAPING)
-        .ok()
-        .map(|gains| gains.p)
+    crate::tuning::design_rate(
+        fitted,
+        start,
+        crate::controllers::GyroFilters::low_pass(40.0),
+        &COPTER_LOOP_SHAPING,
+    )
+    .ok()
+    .map(|gains| gains.p)
 }
 
 /// RealFlight's QuadCopterX identify windows (PR #585's flight check) are quiet, so they take

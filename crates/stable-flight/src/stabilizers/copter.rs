@@ -87,8 +87,9 @@ use crate::{
     AttitudeSetpoint, Configurable, ControlOutput, Saturation, Setpoint, Stabilizer, VehicleState,
 };
 
-use crate::controllers::low_pass::LowPass;
+use crate::controllers::gyro::GyroFilter;
 use crate::controllers::*;
+use crate::controllers::{GyroFilters, NotchConfig};
 use crate::controllers::{check_limit, check_positive};
 use crate::math::{
     assert_dt, attitude_error, pitch_limit_rad, saturate_rates, saturate_unit, thrust_curve,
@@ -128,6 +129,15 @@ pub struct CopterStabilizerConfig {
     /// passed the most robustness rows, 20 Hz (ArduPilot's `INS_GYRO_FILTER`) and 50 Hz and up
     /// lost clean rows (#373).
     pub gyro_cutoff_hz: f32,
+    /// A notch on the roll and pitch rates before the low-pass, for one vibration tone (a
+    /// motor's); off by default. The autotune's design models it with the low-pass. On the
+    /// sim's 0.1 rad/s at 90 Hz under `racer`'s 75 Hz low-pass, a notch at the tone (90 Hz,
+    /// 45 Hz wide, 40 dB) passed the robustness noise row, and flown on every row it changed
+    /// none. The yaw rate stays unnotched, though ArduPilot and PX4 notch all three axes: with
+    /// yaw notched too, `quad_x`'s yaw search overshot the step spec on one noise seed of five
+    /// from both starts (peaks 1.052 and 1.066 against 1.05), which roll and pitch alone
+    /// pass (#597).
+    pub gyro_notch: NotchConfig,
 }
 
 /// [`CopterStabilizerConfig::gyro_cutoff_hz`]'s default, in Hz.
@@ -143,6 +153,7 @@ impl Default for CopterStabilizerConfig {
             full_scale_rates_radps: Vec3::new(3.0, 3.0, 3.0),
             thrust_curve_exponent: 2.0,
             gyro_cutoff_hz: DEFAULT_GYRO_CUTOFF_HZ,
+            gyro_notch: NotchConfig::default(),
         }
     }
 }
@@ -177,7 +188,30 @@ impl CopterStabilizerConfig {
         check_limit("full_scale_rates_radps.y", scales.y)?;
         check_limit("full_scale_rates_radps.z", scales.z)?;
         check_positive("thrust_curve_exponent", self.thrust_curve_exponent)?;
-        check_limit("gyro_cutoff_hz", self.gyro_cutoff_hz)
+        check_limit("gyro_cutoff_hz", self.gyro_cutoff_hz)?;
+        self.gyro_notch
+            .validate()
+            .map_err(|e| e.in_section("gyro_notch"))
+    }
+
+    /// The gyro filters the roll and pitch rate loops fly through:
+    /// [`gyro_notch`](Self::gyro_notch), then the low-pass at
+    /// [`gyro_cutoff_hz`](Self::gyro_cutoff_hz).
+    pub fn gyro_filters(&self) -> GyroFilters {
+        GyroFilters {
+            cutoff_hz: self.gyro_cutoff_hz,
+            notch: self.gyro_notch,
+        }
+    }
+
+    /// The gyro filters on body `axis` (0 roll, 1 pitch, 2 yaw): [`gyro_filters`](Self::gyro_filters)
+    /// on roll and pitch, the low-pass alone on yaw.
+    pub fn gyro_filters_on(&self, axis: usize) -> GyroFilters {
+        if axis < 2 {
+            self.gyro_filters()
+        } else {
+            GyroFilters::low_pass(self.gyro_cutoff_hz)
+        }
     }
 }
 
@@ -223,7 +257,7 @@ pub struct CopterStabilizer {
 
     /// The low-pass per body rate (roll, pitch, yaw) at
     /// [`gyro_cutoff_hz`](CopterStabilizerConfig::gyro_cutoff_hz).
-    gyro_filters: [LowPass; 3],
+    gyro_filters: [GyroFilter; 3],
 }
 
 /// Per-axis clips (roll, pitch, yaw) of one tick.
@@ -512,10 +546,14 @@ impl CopterStabilizer {
         )
     }
 
-    /// `rates_radps` (body frame, roll, pitch, yaw) through the gyro low-pass, per axis.
+    /// `rates_radps` (body frame, roll, pitch, yaw) through each axis's gyro filters
+    /// ([`CopterStabilizerConfig::gyro_filters_on`]).
     fn filter_rates(&mut self, dt: f32, rates_radps: Vec3) -> Vec3 {
-        let cutoff_hz = self.config.gyro_cutoff_hz;
-        Vec3::from_fn(|axis, _| self.gyro_filters[axis].apply(rates_radps[axis], dt, cutoff_hz))
+        let config = self.config;
+        Vec3::from_fn(|axis, _| {
+            let filters = config.gyro_filters_on(axis);
+            self.gyro_filters[axis].apply(rates_radps[axis], dt, &filters)
+        })
     }
 
     /// Applies a nonlinear thrust curve to a linear thrust command.

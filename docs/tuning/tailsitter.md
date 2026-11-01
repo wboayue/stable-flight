@@ -114,6 +114,7 @@ The axes are the hover view's:
 | `STAB_RATE_YAW_P`, `_I`, `_D` | `hover.body_rate.yaw_gains` | 1.0191, 0.3057, 0 |
 | `STAB_RATE_IMAX` | `hover.body_rate.max_integral` | 0.28 |
 | `STAB_GYRO_FLT` | `hover.gyro_cutoff_hz` | 40 Hz (default) |
+| `STAB_NTCH_HZ`, `_BW`, `_ATT` | `hover.gyro_notch` | off (default) |
 
 - **Method: the autotune.** It flies the hover side alone, nose up in the tailsitter `View`,
   and tunes the rate loops, then the angle loops (step 3):

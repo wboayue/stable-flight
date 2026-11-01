@@ -313,7 +313,19 @@ Each `FlightLoop::step` does the following; this section is the reference for ti
   its margin unless the design models it (#373). On the sim's robustness noise (0.1 rad/s at
   90 Hz), 40 Hz passed the most rows; 20 Hz (ArduPilot's `INS_GYRO_FILTER`), 30 Hz, and 50 Hz
   and up lost clean ones. A D low-pass on the error, ArduPilot's `ATC_RAT_RLL_FLTD`, lost
-  rows at 20 and 40 Hz. Notch filters wait for hardware that needs them.
+  rows at 20 and 40 Hz. Ahead of the low-pass sits an optional notch for one vibration tone
+  (`gyro_notch`, off by default), ArduPilot's fixed harmonic notch in form (`NotchFilter`,
+  `INS_HNTCH_FREQ`/`_BW`/`_ATT`: a biquad of finite depth, its band edges geometric about the
+  center) and in place (notch, then low-pass, as ArduPilot's `apply_gyro_filters` and PX4's
+  `FilterAngularVelocity` order them). A low-pass barely touches a tone just above its
+  cutoff: at `racer`'s 75 Hz the sim's 90 Hz tone kept the noise rows from settling. With a
+  notch at the tone (90 Hz, half that wide, 40 dB) `racer`'s low start passes, and flown on
+  every row it changes none; PX4's full notch (20 Hz wide) failed earlier. It notches roll
+  and pitch only, where ArduPilot and PX4 notch all three axes: with yaw notched too, `quad_x`
+  failed its yaw step spec on one seed of five from both starts (#597). The design models the
+  notch with the low-pass (`GyroFilters`), since the rate loop's P and D act through it: on a
+  `quad_x`-like axis a notch near the crossover (40 Hz) left out flies the loop 7.7° short of
+  its margin.
 * Telemetry is published after `actuate`, with the whole tick in one `TelemetryRecord`,
   including the limits it hit: guidance, the stabilizer, and the mixer each report a `Saturation`
   for their last call (only they know what they clipped), and the loop merges them (none while
@@ -922,8 +934,9 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     dominates (the eXplora's roll).
   * *Design* (`tuning::design_rate`, `design_angle_p`, `COPTER_LOOP_SHAPING`): rate D/P at the
     fitted lag, so the PD's zero cancels the motor lag; rate P for a 65° phase margin on the
-    model's frequency response, its delay and the stabilizer's gyro low-pass included (left
-    out, the filter took all but 2° of `quad_x`'s margin, #373); rate I at `rate_i_per_p` of P;
+    model's frequency response, its delay and the stabilizer's gyro filters included
+    (`GyroFilters`: the low-pass, and the notch when on; left out, the low-pass took all but
+    2° of `quad_x`'s margin, #373); rate I at `rate_i_per_p` of P;
     angle P the
     largest in the angle search's range that keeps a 65° margin on the angle loop around the
     designed rate loop, less 10%, the rate loop's D on its measurement and P alone on its
@@ -1001,11 +1014,9 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     clip band reads the same allowance, so the RealFlight check is what judges it. With the
     rate allowance, #518 measured `quad_x`'s angle P held at 9 with 10 ms of delay and its
     steps clipping; on the gyro-filtered rate loop with rate I, those rows pass.
-  * Open: at `racer`'s 75 Hz gyro low-pass the sim's 90 Hz tone passes, and the noise alone
-    peaks at 0.12–0.17 rad/s in a hover, past the 0.1 rad/s step settle; without the tone
-    `racer`'s low start passes, so its rows wait on a gyro notch
-    ([#597](https://github.com/wboayue/stable-flight/issues/597)). With the trim, weak motor,
-    and delay added (the combined rows) the yaw stage doesn't settle from the low start, and
+  * Open: `racer`'s ×3 noise row, with the notch, overshoots the time budget or misses the
+    step spec on 4 seeds of 5, and its low start, passing on the seed its row flies, misses a
+    yaw step on seed 5. With the trim, weak motor, and delay added (the combined rows) the yaw stage doesn't settle from the low start, and
     the ×3 starts' fits saturate even lowered six times, the tone removed or not
     ([#598](https://github.com/wboayue/stable-flight/issues/598)). The trim rows pass, with
     the rate I term limited in moment (*Retuning `i` is bumpless*, #374).

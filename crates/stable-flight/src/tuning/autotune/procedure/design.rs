@@ -1,7 +1,7 @@
 //! A design stage: see [`Design`].
 
 use super::{Action, Input, MAX_START_LOWERINGS, measure_again};
-use crate::controllers::Gains;
+use crate::controllers::{Gains, GyroFilters};
 use crate::tuning::autotune::{AutotuneAbort, DesignPlan, Outcome};
 use crate::tuning::{IdentifyAbort, Measurement, ProbeAbort, ProbeConfig};
 
@@ -22,8 +22,8 @@ pub(in crate::tuning::autotune) struct Design {
     plan: DesignPlan,
     /// The rate loop's gains under an angle loop (`None` for a rate loop).
     inner: Option<Gains>,
-    /// The stabilizer's gyro low-pass, in Hz, which the design models.
-    gyro_cutoff_hz: f32,
+    /// The stabilizer's gyro filters, which the design models.
+    gyro: GyroFilters,
     /// The design on hold.
     designed: Gains,
     /// Fits a slow host stopped in a row.
@@ -39,7 +39,7 @@ impl Design {
         Self {
             plan,
             inner: None,
-            gyro_cutoff_hz: 0.0,
+            gyro: GyroFilters::low_pass(0.0),
             designed: Gains::default(),
             stops: 0,
             unusable: 0,
@@ -50,13 +50,9 @@ impl Design {
     pub(super) fn next(&mut self, input: Input) -> Action {
         let identify = ProbeConfig::Identify(self.plan.identify);
         match input {
-            Input::Start {
-                inner,
-                gyro_cutoff_hz,
-                ..
-            } => {
+            Input::Start { inner, gyro, .. } => {
                 self.inner = inner;
-                self.gyro_cutoff_hz = gyro_cutoff_hz;
+                self.gyro = gyro;
                 Action::probe(identify)
             }
             // A design stage commits nothing before it finishes: `gains` are its start.
@@ -67,10 +63,7 @@ impl Design {
             } => {
                 // A fit that ran clears the slow host's count: only stalls in a row fail.
                 self.stops = 0;
-                match self
-                    .plan
-                    .gains(&model, gains, self.inner, self.gyro_cutoff_hz)
-                {
+                match self.plan.gains(&model, gains, self.inner, self.gyro) {
                     Ok(designed) => {
                         self.designed = designed;
                         Action::Hold { gains: designed }
