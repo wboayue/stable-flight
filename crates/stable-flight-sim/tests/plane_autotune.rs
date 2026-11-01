@@ -524,14 +524,7 @@ fn design_converges(subject: Subject) {
         if matches!(subject, Subject::Explora) && factor > 1.0 {
             continue;
         }
-        let start = scaled(subject.plane_config(), factor);
-        let hold = PlaneTuneHoldConfig {
-            return_radius_m: 1000.0,
-            ..subject.hold_config()
-        };
-        let plan = design_plan(subject, &start);
-        let envelope = PlaneEnvelope::for_plane(&start);
-        let run = tune_from(subject, hold, &plan, envelope, (0.0, Some(start)));
+        let run = design_run(subject, scaled(subject.plane_config(), factor));
         let tuned = run.config.0;
         check!(
             run.events.last() == Some(&AutotuneEvent::Complete),
@@ -548,6 +541,17 @@ fn design_converges(subject: Subject) {
             tuned.time_constant_s.y
         );
     }
+}
+
+/// The design of `subject`'s roll and pitch from `start`, its hold far from turning back.
+fn design_run(subject: Subject, start: PlaneStabilizerConfig) -> Run {
+    let hold = PlaneTuneHoldConfig {
+        return_radius_m: 1000.0,
+        ..subject.hold_config()
+    };
+    let plan = design_plan(subject, &start);
+    let envelope = PlaneEnvelope::for_plane(&start);
+    tune_from(subject, hold, &plan, envelope, (0.0, Some(start)))
 }
 
 #[test]
@@ -590,20 +594,7 @@ fn explora_pitch_fits_as_in_realflight() {
         ("trim moment", |m| m.trim_moment, 0.089, 0.089, 0.01),
     ];
     // TODO(#619): its elevons' control, 158 rad/s² against RealFlight's 80, isn't held.
-    let subject = Subject::Explora;
-    let start = subject.plane_config();
-    let hold = PlaneTuneHoldConfig {
-        return_radius_m: 1000.0,
-        ..subject.hold_config()
-    };
-    let plan = design_plan(subject, &start);
-    let run = tune_from(
-        subject,
-        hold,
-        &plan,
-        PlaneEnvelope::for_plane(&start),
-        (0.0, Some(start)),
-    );
+    let run = design_run(Subject::Explora, Subject::Explora.plane_config());
     let fit = run.events.iter().find_map(|event| match event {
         AutotuneEvent::Measured {
             target: PlaneLoop::PitchRate,
