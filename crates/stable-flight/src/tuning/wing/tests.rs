@@ -84,6 +84,7 @@ const PITCH: WingModel = WingModel {
     lag_s: 0.0,
     delay_s: 0.0,
     path_turn_per_s: 15.0,
+    trim_moment: 0.0,
 };
 
 /// A roll axis: no stiffness, no path turn.
@@ -94,6 +95,7 @@ const ROLL: WingModel = WingModel {
     lag_s: 0.0,
     delay_s: 0.0,
     path_turn_per_s: 0.0,
+    trim_moment: 0.0,
 };
 
 /// The body rate per unit moment `model` answers with at `w_radps`: the moment through the

@@ -9,6 +9,7 @@ const CONFIG: WingDesignConfig = WingDesignConfig {
     max_rate_radps: 1.2,
     max_moment: 0.8,
     max_integral: 2.0,
+    static_trim: 0.0,
     max_overshoot: 0.05,
     max_saturated_s: 0.042,
     time_constant_range_s: [0.2, 1.5],
@@ -23,6 +24,7 @@ const ROLL: WingModel = WingModel {
     lag_s: 0.0,
     delay_s: 0.0,
     path_turn_per_s: 0.0,
+    trim_moment: 0.0,
 };
 
 /// The sweep's airplane pitch fit (#533).
@@ -33,6 +35,7 @@ const PITCH: WingModel = WingModel {
     lag_s: 0.0,
     delay_s: 0.0,
     path_turn_per_s: 15.1,
+    trim_moment: 0.0,
 };
 
 /// Runs `design` to its end; the candidates it stepped and its status.
@@ -87,6 +90,7 @@ fn designs_gains_whose_model_step_meets_the_targets() {
                 lag_s: 0.06,
                 delay_s: 0.016,
                 path_turn_per_s: 0.56,
+                trim_moment: 0.0,
             },
             WingDesignConfig {
                 amplitude_rad: 0.087,
@@ -108,6 +112,34 @@ fn designs_gains_whose_model_step_meets_the_targets() {
         let [least_s, most_s] = config.time_constant_range_s;
         check!((least_s..=most_s).contains(&gains.time_constant_s), "{row}");
         check!(candidates <= 10 * CELLS, "{row}: {candidates} candidates");
+    }
+}
+
+/// The integral holds the trim beyond the static trim within half its limit: a model trimmed
+/// at 0.6 of the throw, with no static trim and a 2 rad limit, needs I of at least 0.6.
+#[test]
+fn designs_an_i_that_holds_the_trim() {
+    // (row, trim moment, static trim, least I)
+    let rows = [
+        ("no trim", 0.0, 0.0, 0.0),
+        ("trimmed by the integral", 0.6, 0.0, 0.6),
+        ("trimmed by the static trim", 0.6, 0.6, 0.0),
+        ("nose-down trim", -0.3, 0.0, 0.3),
+    ];
+    for (row, trim_moment, static_trim, least_i) in rows {
+        let model = WingModel {
+            trim_moment,
+            ..ROLL
+        };
+        let config = WingDesignConfig {
+            static_trim,
+            ..CONFIG
+        };
+        let (_, status) = run(WingDesign::new(model, config));
+        let WingDesignStatus::Done(gains) = status else {
+            panic!("{row}: {status:?}");
+        };
+        check!(gains.rate.i >= least_i, "{row}: {gains:?}");
     }
 }
 
@@ -266,6 +298,13 @@ fn validate_checks_each_field() {
             "max_integral",
             WingDesignConfig {
                 max_integral: 0.0,
+                ..CONFIG
+            },
+        ),
+        (
+            "static_trim",
+            WingDesignConfig {
+                static_trim: 1.5,
                 ..CONFIG
             },
         ),

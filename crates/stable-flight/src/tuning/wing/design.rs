@@ -44,6 +44,10 @@ pub struct WingDesignConfig {
     pub max_moment: f32,
     /// The rate loop's integral limit, in rad of accumulated rate error.
     pub max_integral: f32,
+    /// The trim the rate loop adds without its integral, normalized
+    /// ([`PlaneRateControllerConfig::trim`](crate::controllers::PlaneRateControllerConfig)):
+    /// the integral holds the rest of the model's [`trim_moment`](WingModel::trim_moment).
+    pub static_trim: f32,
     /// Largest overshoot, as a fraction of the step.
     pub max_overshoot: f32,
     /// Longest the moment may clip, in s.
@@ -69,6 +73,7 @@ impl WingDesignConfig {
     ///     max_rate_radps: 1.0,
     ///     max_moment: 0.8,
     ///     max_integral: 2.0,
+    ///     static_trim: 0.0,
     ///     max_overshoot: 0.05,
     ///     max_saturated_s: 0.042,
     ///     time_constant_range_s: [0.2, 1.5],
@@ -87,6 +92,7 @@ impl WingDesignConfig {
             "in (0, 1]",
         )?;
         check_positive("max_integral", self.max_integral)?;
+        check("static_trim", self.static_trim.abs() <= 1.0, "in [-1, 1]")?;
         check(
             "max_overshoot",
             self.max_overshoot >= 0.0 && self.max_overshoot.is_finite(),
@@ -131,7 +137,10 @@ pub enum WingDesignStatus {
 /// than allowed: the plane spec's targets. τ is bisected to the quickest at which some P and I
 /// on a coarse grid pass (16 × 12), then raised by 15% for margin; at that τ the design takes
 /// the passing P and I farthest from any failing one on the grid, the middle of what works,
-/// so a model a little off still flies.
+/// so a model a little off still flies. An I too small to hold the model's trim (beyond the
+/// static trim) within half the integral limit never passes: the integral would clip holding
+/// it. The airplane's pitch designed at I 0.25 against a 2 rad limit sat 1.75° off its held
+/// attitude, slowed 1.75 m/s, and its stage timed out settling (#534).
 ///
 /// Each candidate is a step of up to `step_duration_s` on the model at 250 Hz, a few thousand
 /// multiplies; a design takes up to about 1,350. [`advance`](Self::advance) runs a given number
@@ -149,6 +158,7 @@ pub enum WingDesignStatus {
 ///     lag_s: 0.02,
 ///     delay_s: 0.0,
 ///     path_turn_per_s: 0.0,
+///     trim_moment: 0.0,
 /// };
 /// let config = WingDesignConfig {
 ///     amplitude_rad: 0.5,
@@ -156,6 +166,7 @@ pub enum WingDesignStatus {
 ///     max_rate_radps: 1.2,
 ///     max_moment: 0.8,
 ///     max_integral: 2.0,
+///     static_trim: 0.0,
 ///     max_overshoot: 0.05,
 ///     max_saturated_s: 0.042,
 ///     time_constant_range_s: [0.2, 1.5],
@@ -170,8 +181,13 @@ pub enum WingDesignStatus {
 pub struct WingDesign {
     model: WingModel,
     config: WingDesignConfig,
+    /// The least I that holds the model's trim within [`TRIM_INTEGRAL_SHARE`] of the limit.
+    min_i: f32,
     phase: Phase,
 }
+
+/// The share of the integral limit the trim may take: the rest answers steps.
+const TRIM_INTEGRAL_SHARE: f32 = 0.5;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Phase {
@@ -217,9 +233,11 @@ impl WingDesign {
         } else {
             Phase::Done(WingDesignStatus::Failed)
         };
+        let integral_trim = (model.trim_moment - config.static_trim).abs();
         Self {
             model,
             config,
+            min_i: integral_trim / (TRIM_INTEGRAL_SHARE * config.max_integral),
             phase,
         }
     }
@@ -358,6 +376,9 @@ impl WingDesign {
     /// Whether the step on the model at grid `cell` and `tau_s` meets the targets.
     fn passes(&self, cell: usize, tau_s: f32) -> bool {
         let gains = self.gains(cell, tau_s);
+        if gains.rate.i < self.min_i {
+            return false;
+        }
         model_step(&self.model, gains, &self.config)
             .is_some_and(|metrics| meets_targets(&metrics, tau_s, &self.config))
     }
