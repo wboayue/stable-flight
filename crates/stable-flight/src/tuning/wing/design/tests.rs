@@ -38,6 +38,13 @@ const PITCH: WingModel = WingModel {
     trim_moment: 0.0,
 };
 
+/// The plane spec's targets on a 10° pitch step.
+const PITCH_STEP: WingDesignConfig = WingDesignConfig {
+    amplitude_rad: 0.17,
+    max_rate_radps: 1.0,
+    ..CONFIG
+};
+
 /// Runs `design` to its end; the candidates it stepped and its status.
 fn run(mut design: WingDesign) -> (usize, WingDesignStatus) {
     let mut candidates = 0;
@@ -53,11 +60,6 @@ fn run(mut design: WingDesign) -> (usize, WingDesignStatus) {
 #[test]
 fn designs_gains_whose_model_step_meets_the_targets() {
     // (row, model, config)
-    let pitch_step = WingDesignConfig {
-        amplitude_rad: 0.17,
-        max_rate_radps: 1.0,
-        ..CONFIG
-    };
     let rows = [
         ("roll", ROLL, CONFIG),
         (
@@ -69,7 +71,7 @@ fn designs_gains_whose_model_step_meets_the_targets() {
             },
             CONFIG,
         ),
-        ("airplane pitch", PITCH, pitch_step),
+        ("airplane pitch", PITCH, PITCH_STEP),
         (
             "eXplora pitch: stiff",
             WingModel {
@@ -79,7 +81,7 @@ fn designs_gains_whose_model_step_meets_the_targets() {
                 path_turn_per_s: 41.0,
                 ..PITCH
             },
-            pitch_step,
+            PITCH_STEP,
         ),
         (
             "Alia 250 pitch: slow, its surfaces lagged",
@@ -94,7 +96,7 @@ fn designs_gains_whose_model_step_meets_the_targets() {
             },
             WingDesignConfig {
                 amplitude_rad: 0.087,
-                ..pitch_step
+                ..PITCH_STEP
             },
         ),
     ];
@@ -144,6 +146,46 @@ fn designs_an_i_that_holds_the_trim() {
 }
 
 #[test]
+fn a_stiff_axis_fitted_without_damping_designs_with_no_feedforward() {
+    // The sim eXplora's pitch fitted from three times its gains (#618).
+    let explora = WingModel {
+        stiffness_per_s2: 95.7,
+        damping_per_s: -0.72,
+        control_radps2: 81.8,
+        path_turn_per_s: 18.4,
+        trim_moment: 0.091,
+        ..PITCH
+    };
+    // (row, model)
+    let rows = [
+        ("eXplora pitch, damping below 0", explora),
+        (
+            "eXplora pitch, no damping",
+            WingModel {
+                damping_per_s: 0.0,
+                ..explora
+            },
+        ),
+    ];
+    for (row, model) in rows {
+        let (_, status) = run(WingDesign::new(model, PITCH_STEP));
+        let WingDesignStatus::Done(gains) = status else {
+            panic!("{row}: {status:?}");
+        };
+        check!(gains.rate.ff == 0.0, "{row}");
+        let undamped = WingModel {
+            damping_per_s: 0.0,
+            ..model
+        };
+        let metrics = model_step(&undamped, gains, &PITCH_STEP);
+        check!(
+            metrics.is_some_and(|m| meets_targets(&m, gains.time_constant_s, &PITCH_STEP)),
+            "{row}: {gains:?} {metrics:?}"
+        );
+    }
+}
+
+#[test]
 fn a_model_it_cant_fly_fails() {
     // (row, model, config)
     let rows = [
@@ -167,6 +209,14 @@ fn a_model_it_cant_fly_fails() {
             "no damping",
             WingModel {
                 damping_per_s: 0.0,
+                ..ROLL
+            },
+            CONFIG,
+        ),
+        (
+            "damping below 0, not stiff",
+            WingModel {
+                damping_per_s: -0.7,
                 ..ROLL
             },
             CONFIG,

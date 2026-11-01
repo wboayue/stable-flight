@@ -101,6 +101,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `WingDesign` designs a stiff axis (a wing's pitch) fitted with damping at or below 0 as
+  undamped, with no feedforward, instead of failing: the sim eXplora's barely damped pitch
+  fitted −0.72/s from three times its gains and the plane autotune stopped on
+  `NoWingDesign` (#618).
 - **Breaking (behavior):** the wind estimator counts each measurement by the drag's slope at
   the air its estimate predicts (or the measured air, if steeper), takes bluff drag on the
   airspeed with the climb counted in, and skips ticks climbing or sinking faster than 1 m/s.
