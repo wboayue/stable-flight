@@ -170,6 +170,8 @@ pitch for its balance. Its knobs are ArduPilot's `TECS_*`, under `PGUID_`:
 | `PGUID_PTCH_INTEG` | `plane.tecs.pitch_integrator_gain` | 0.2: the middle of the 0.1–0.3 that passes the sim suite on every airframe ([#505](https://github.com/wboayue/stable-flight/issues/505)) |
 | `PGUID_SPDWEIGHT` | `plane.tecs.speed_weight` | 1; toward 0 to hold height before speed, 2 the reverse |
 | `PGUID_RLL2THR` | `plane.tecs.roll_compensation` | 10; more if turns lose airspeed |
+| `PGUID_HDEM_TC` | `plane.tecs.height_demand_time_constant_s` | ArduPilot's `TECS_HDEM_TCONST`, 3 s; higher for gentler pitch where climbs start and end, at most `PGUID_TCONST` |
+| `PGUID_KE_HPF_TC` | `plane.tecs.kinetic_rate_high_pass_s` | 1 s; 0.5–2 s passes the sim suite, 3 s or more misses regained altitude in rolls ([#505](https://github.com/wboayue/stable-flight/issues/505)) |
 
 The climb and sink set where full and least thrust sit, so measure them: fly a leg at full
 thrust and one at least, or read them off a fitted model (the Alia's
