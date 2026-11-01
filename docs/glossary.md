@@ -100,6 +100,12 @@ Code comments and docs link here instead of redefining a term.
 - **Airspeed scaling:** a control surface's moment grows with dynamic pressure (airspeed
   squared), so plane rate gains are scaled by trim airspeed over current airspeed to keep the
   loop's response the same across speeds.
+- **Angle of attack (α):** the angle between the wing and the air it meets: pitch less the
+  flight path's climb angle in wings-level flight. Lift grows with it up to the stall.
+- **Pitch stiffness / damping:** how a wing resists pitching. Stiffness is a nose-down moment
+  growing with the angle of attack (the tail weathervaning into the airflow); damping a moment
+  against the pitch rate. A held pitch rate needs the surface to beat both; a held roll rate
+  only the damping.
 - **Turn coordination:** adding yaw and pitch in a banked turn so the plane turns without
   sideslip (skidding sideways through the air).
 - **Step response:** how a loop answers a sudden setpoint change: **rise time** (how fast),

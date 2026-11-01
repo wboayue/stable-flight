@@ -1024,6 +1024,48 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     until it does, at most three times (30 s on ringing gains; `racer` needs one, and capped
     at 1–5 the robustness rows pass the same); a tighter settle (0.05 or 0.03 rad/s) didn't help and cost the clean rows
     their time budget (#552).
+* **Plane method** (planned, [#534](https://github.com/wboayue/stable-flight/issues/534)):
+  plane autotune fits each axis to a physical model, designs on the model, and checks the
+  result in flight. Each method in the comparison excited the aircraft itself, with no pilot.
+  Probes fly in attitude hold at cruise thrust, as ArduPilot's AUTOTUNE flies FBWA at the
+  pilot's throttle, with the hold trimming pitch for airspeed between probes. A breach puts
+  the committed gains back, and a VTOL recovers to a hover.
+  * **Model:** the identification's square wave on the rate setpoint, fitted to how the
+    surfaces turn the aircraft. In plain words: a roll rate dies away against the wing's
+    damping, and a pitch rate also meets the wing's stiffness, a nose-down moment growing
+    with the [angle of attack](docs/glossary.md). The fit is rate acceleration = stiffness × α
+    + damping × rate + control × moment, the moment through a fitted surface lag and delay.
+    FF is damping over control: the moment that holds a rate. On the sim it lands within 1–5%
+    of the hand-set FF for roll (19% on the eXplora), and within 4–18% for pitch on the
+    airplane and the Cobra (the eXplora's 26–34% low, the Alia's 42%).
+    The design simulates the spec's attitude steps on the fitted model over P, I, and τ and
+    keeps the fastest τ that passes, its moment 20% short of full throw. One attitude step
+    pair per axis then checks it in flight: a sag gets more I, an overshoot more τ. Over 4
+    airframes, 4 starts, and calm or gusty air it met the sim's plane step spec
+    (`tests/common/plane_spec.rs`) on 12 of 32 rows with no envelope breach, in 115 s
+    median (#533).
+  * Rejected (#533):
+    * The copter design search (rate P searched on rate steps). A plane's rate steps bound
+      nothing: roll passes at any P until a 30° attitude step clips the surfaces, and pitch
+      never reaches 90% because the stiffness holds the rate back. Judged on attitude steps
+      instead, it met the spec on 14 rows, but 8 of them only after its pitch search breached
+      the envelope and the eXplora recovered to a hover. Its FF, one over the fit's static
+      gain, folds the stiffness in (plane pitch 0.60 against 0.46).
+    * PX4's design (`fw_autotune_attitude_control`, `pid_design`'s `computePidGmvc`) gives
+      rate P 0.14–0.2 on every airframe, since it designs on the model scaled to unit gain
+      and applies the gain unscaled. Its attitude rule (60° of error gives full output) sets
+      τ at 0.9–1.0 s, which misses rise and settling: 4 rows, though in 11 s.
+    * ArduPilot's (`AP_AutoTune`, our own steps for the pilot's) raises P until its output's
+      slew rate swings past `RATE_SMAX`, then keeps 35%: still 3–11× the hand tunes, so
+      30° roll steps clip. Its `AUTOTUNE_LEVEL` pitch τ (0.75 s) misses rise: 4 rows, 4
+      recoveries.
+    * A step search from the start meets the spec only from the airframe's own gains (10
+      rows).
+  * Open, for #534: pitch. The model holds airspeed constant, so it under-asks for pitch I,
+    and the in-flight checks don't always make it up (the plane on 2 of 8 rows). The Alia's
+    pitch misses rise on every row, its pitch FF reads 42% low, and its roll τ runs to the
+    1.5 s bound. A speed term in the model (the phugoid), or I sized in flight, is the next
+    step.
 
 ## Real-Time Loop Management
 

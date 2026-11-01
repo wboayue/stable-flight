@@ -2,7 +2,7 @@
 //! absolute attitude mode from level flight on the line, through core's step probe.
 //!
 //! Sources (verified in source, #348):
-//! - Rise: PX4 v1.15.0 `fw_att_control_params.c:56,71` (`FW_R_TC`, `FW_P_TC`, 0.4 s). The
+//! - Rise: PX4's `FW_R_TC` and `FW_P_TC` (0.4 s, `fw_att_control_params`). The
 //!   attitude loop asks for the error over its time constant τ, as PX4's does, so the response
 //!   is first order in τ, whose 10–90% rise is 2.2τ: the configured τ, not a fixed number,
 //!   sets the target.
