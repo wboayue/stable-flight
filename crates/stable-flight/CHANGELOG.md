@@ -18,11 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Plane autotune (#534): `PlaneStabilizer` hosts probes on its roll and pitch rate and angle
   loops (`stabilizers::plane::PlaneLoop`, `PlaneAxisGains`), as do `TailsitterStabilizer` and
   `QuadPlaneStabilizer` on their plane side. `tuning::autotune::PlaneAutotune` runs plane
-  stages within a `PlaneEnvelope` (bank, pitch, rate, sink, airspeed band); its method so far
-  is the step test (`StagePlan::plane_step_test`, `StepTestPlan::plane`).
-  `commanders::PlaneTuneHold` flies the attitude hold the probes ride on, turns back between
-  probes, and recovers to a hover or wings level. `AutotuneAbort::is_breach`,
-  `Supervisor::set_maneuvering`.
+  stages within a `PlaneEnvelope` (bank, pitch, rate, sink, airspeed band, and a settle on a
+  steady airspeed near trim, `AirspeedSettle`): a step test (`StagePlan::plane_step_test`,
+  `StepTestPlan::plane`) or a design (`PlaneMethod::Design`, `PlaneDesignPlan`,
+  `StagePlan::plane_design`), which fits each axis in flight (`tuning::WingIdentifyProbe`,
+  `WingModel`, `ProbeConfig::IdentifyWing`, `Measurement::Wing`), designs its rate gains and
+  time constant on the fit (`tuning::WingDesign`, `WingDesignConfig`), and checks them on
+  attitude pairs. `commanders::PlaneTuneHold` flies the attitude hold the probes ride on,
+  trimming pitch for airspeed and thrust for height, turns back between probes, and recovers
+  to a hover or wings level. `AutotuneAbort::is_breach` and `Unverified`,
+  `DesignError::NoWingDesign`, `Supervisor::set_maneuvering`, `LoopSignals::alpha_rad`.
 
 ### Changed
 
@@ -33,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`Supervisor<CopterSide>`); `StagePlan`, `AutotuneEvent`, and `AutotuneStatus` take the
   side's types, defaulting to the copter's. `AutotuneAbort` gains `AirspeedLow` and
   `AirspeedHigh` (#534).
+- **Breaking:** `tuning::LoopSignals` gains `alpha_rad` (0 outside a wing's pitch axis);
+  `ProbeConfig`, `Measurement`, `AutotuneAbort`, and `DesignError` gain variants (#534).
 - **Breaking (behavior):** a VTOL stabilizer's hover probe is interrupted when the setpoint
   leaves the hover side (a plane setpoint or a transition's blend), where it flew on before
   (#534).

@@ -20,6 +20,7 @@ airframe with that flight cited.
 The copter rate and angle loops can also be tuned automatically, by a step search from a
 loop-shaping design:
 `just fly-autotune` ([architecture.md](../../architecture.md#autotune)). On the plane side,
-core measures the roll and pitch loops with step tests from a tune hold (`PlaneAutotune`,
-`PlaneTuneHold`) on the sim; the tuning method and the simulator runs are planned
-([#534](https://github.com/wboayue/stable-flight/issues/534), #535–#537).
+core designs the roll and pitch loops from a fit flown in a tune hold, then checks them on
+attitude steps (`PlaneAutotune` with `StagePlan::plane_design`, `PlaneTuneHold`); it meets
+the plane spec on the sim, and the simulator runs are planned
+([#535](https://github.com/wboayue/stable-flight/issues/535)–#537).

@@ -109,7 +109,7 @@ Code comments and docs link here instead of redefining a term.
 - **Pitch stiffness / damping:** how a wing resists pitching. Stiffness is a nose-down moment
   growing with the angle of attack (the tail weathervaning into the airflow); damping a moment
   against the pitch rate. A held pitch rate needs the surface to beat both; a held roll rate
-  only the damping.
+  only the damping. A plane autotune fits both in flight (`WingModel`).
 - **Plane of symmetry:** the plane through the nose and the belly that splits the airframe into
   mirror halves. A wing's lift and drag come from the air in it; air along the span (sideslip)
   pushes only sideways.
@@ -125,8 +125,12 @@ Code comments and docs link here instead of redefining a term.
   copter; bank, pitch, rate, sink, and an airspeed band for a plane (the **forward-flight
   envelope**, `PlaneEnvelope`). Leaving it fails the stage and puts the last kept gains back.
 - **Tune hold:** the steady attitude hold a plane autotune's probes ride on
-  (`PlaneTuneHold`): wings level at cruise thrust, the pitch trimmed slowly for airspeed, so
-  a step stands out against a hold that doesn't move.
+  (`PlaneTuneHold`): wings level, the pitch trimmed slowly for airspeed and the thrust for
+  height, so a step stands out against a hold that doesn't move.
+- **Phugoid:** a wing's slow trade of airspeed for height: nose held, it climbs and slows,
+  then sinks and speeds up, over several seconds per swing. The attitude and body rates stay
+  still through it, so a plane autotune's settle also waits for a steady airspeed
+  (`AirspeedSettle`).
 - **System identification:** fitting a model of how the vehicle responds (here, a rate axis's
   body rate to its moment command, with a lag and a delay) from flight data recorded while a
   known signal shakes it: here a square wave added to the rate setpoint, as PX4 does. The
