@@ -1,11 +1,12 @@
 use assert2::check;
-use stable_flight::commanders::RouteEnd;
+use stable_flight::commanders::{PlaneTuneHoldConfig, RouteEnd};
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
+use stable_flight::stabilizers::plane::{PlaneLoop, PlaneStabilizerConfig};
 use stable_flight::tuning::autotune::{AutotuneAbort, AutotuneEvent, Outcome};
-use stable_flight::tuning::{Measurement, RateModel, StepMetrics, StepSummary};
+use stable_flight::tuning::{Measurement, RateModel, StepMetrics, StepSummary, WingModel};
 use stable_flight::view::tailsitter_rotation;
-use stable_flight::{ControlInput, Vec3, VehicleState, WaypointCommand};
+use stable_flight::{ControlInput, FlightRegime, Vec2, Vec3, VehicleState, WaypointCommand};
 
 use super::*;
 
@@ -73,6 +74,148 @@ fn the_hover_point_needs_the_last_waypoint_and_its_altitude() {
     }
 }
 
+/// A plane flight's script: one leg at 100 m over its start, held there.
+fn plane_script() -> ScriptCommander {
+    let leg = WaypointCommand {
+        altitude_m: 100.0,
+        ..Default::default()
+    };
+    ScriptCommander::from_waypoints(vec![leg])
+        .expect("one waypoint")
+        .with_route_end(RouteEnd::Hold)
+}
+
+/// Cruising at `altitude_m`, `north_m` north of the origin.
+fn cruising(north_m: f32, altitude_m: f32) -> VehicleState {
+    VehicleState {
+        position_m: Vec3::new(north_m, 0.0, altitude_m),
+        airspeed_mps: Some(14.0),
+        ..Default::default()
+    }
+}
+
+const HOLD: fn() -> PlaneTuneHoldConfig = || PlaneTuneHoldConfig {
+    recover_to: FlightRegime::Copter,
+    ..PlaneTuneHoldConfig::new(0.85, 14.0)
+};
+
+/// The flight flies its script until handed over, then the hold, whose turns and recovery the
+/// switch reaches; outside the hold they do nothing.
+#[test]
+fn the_plane_flight_flies_the_script_then_the_hold() {
+    let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), 30.0);
+    let state = cruising(0.0, 100.0);
+    switch.allow_turn(true);
+    switch.recover();
+    check!(!switch.turning());
+
+    let scripted = commander.next_command(0.004, &state);
+    check!(matches!(scripted.input, ControlInput::Waypoint(_)));
+    check!(commander.lead_complete());
+    check!(!switch.is_holding());
+
+    switch.hold(HOLD());
+    check!(switch.is_holding());
+    let held = commander.next_command(0.004, &state);
+    check!(matches!(held.input, ControlInput::AbsoluteAttitude(_)));
+    check!(held.regime == FlightRegime::Plane);
+    check!(!switch.turning());
+    // A second handover keeps the running hold.
+    switch.hold(PlaneTuneHoldConfig::new(0.2, 14.0));
+    let ControlInput::AbsoluteAttitude(attitude) = commander.next_command(0.004, &state).input
+    else {
+        unreachable!("the hold flies attitudes");
+    };
+    check!(attitude.thrust == 0.85);
+    check!(!switch.is_finished());
+}
+
+/// Past the return radius, flying away, and allowed, the hold turns back, which the switch
+/// reports.
+#[test]
+fn the_switch_reports_the_holds_turn() {
+    let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), 30.0);
+    switch.hold(HOLD());
+    let flying_north = |north_m| VehicleState {
+        velocity_mps: Vec3::new(14.0, 0.0, 0.0),
+        ..cruising(north_m, 100.0)
+    };
+    commander.next_command(0.004, &flying_north(0.0));
+    switch.allow_turn(true);
+    commander.next_command(0.004, &flying_north(700.0));
+    check!(switch.turning());
+}
+
+/// Finished from a hold that flew on, the flight loiters home in plane at the home altitude
+/// and trim airspeed, and lands on the start once within reach: (north, altitude, landing).
+#[test]
+fn the_plane_flight_comes_home_in_plane_then_lands_on_the_start() {
+    for (north_m, altitude_m, landing) in [
+        (500.0, 100.0, false),
+        (90.0, 100.0, false),
+        (500.0, 30.0, false),
+        (110.0, 30.0, false),
+        (90.0, 35.0, true),
+        (0.0, 30.0, true),
+    ] {
+        let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), 30.0);
+        switch.hold(HOLD());
+        commander.next_command(0.004, &cruising(0.0, 100.0));
+        switch.finish();
+        check!(switch.is_finished());
+        let command = commander.next_command(0.004, &cruising(north_m, altitude_m));
+        check!(
+            switch.is_landing() == landing,
+            "{north_m} m, {altitude_m} m"
+        );
+        match command.input {
+            ControlInput::Waypoint(home) => {
+                check!(!landing);
+                check!(command.regime == FlightRegime::Plane);
+                check!(home.position_m == Vec2::zeros());
+                check!(home.altitude_m == 30.0);
+                check!(home.cruise_speed_mps == 14.0);
+                check!(home.velocity_mps.is_none(), "a loiter, not a leg");
+            }
+            ControlInput::Land(land) => {
+                check!(landing);
+                check!(land.position_m == Vec2::zeros());
+            }
+            input => panic!("{input:?}"),
+        }
+    }
+}
+
+/// Finished after a recovery, or before any hold, the flight lands where the vehicle is, and
+/// disarms on touchdown; a second finish changes nothing.
+#[test]
+fn the_plane_flight_lands_in_place_after_a_recovery_or_without_a_hold() {
+    for recovered in [true, false] {
+        let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), 30.0);
+        if recovered {
+            switch.hold(HOLD());
+            switch.recover();
+        }
+        let state = cruising(400.0, 60.0);
+        commander.next_command(0.004, &state);
+        switch.finish();
+        check!(switch.is_landing(), "recovered {recovered}");
+        let ControlInput::Land(land) = commander.next_command(0.004, &state).input else {
+            unreachable!("a land");
+        };
+        check!(land.position_m == Vec2::new(400.0, 0.0));
+        switch.finish();
+        check!(switch.is_landing());
+        let sinking = VehicleState {
+            velocity_mps: Vec3::new(0.0, 0.0, -0.5),
+            ..state.clone()
+        };
+        check!(commander.next_command(0.004, &sinking).arm);
+        let disarmed = (0..500).any(|_| !commander.next_command(0.004, &state).arm);
+        check!(disarmed, "still armed 2 s after stopping");
+    }
+}
+
 /// Inverted is a tilt past 90° in the probed frame: (frame, roll and pitch in rad of that
 /// frame, inverted). Nose-up hover reads level in a tailsitter's view, though its body frame
 /// sits at 90°, where a little pitch either way would flip a body-frame check.
@@ -137,7 +280,7 @@ fn the_snippet_carries_every_tuned_gain() {
     let mut config = CopterStabilizerConfig::default();
     TunedLoop::RollRate.gains_mut(&mut config).p = 0.1234;
     TunedLoop::Pitch.gains_mut(&mut config).p = 6.5;
-    let snippet = airframe_snippet(&config, "copter-autotune-test");
+    let snippet = config.airframe_snippet("copter-autotune-test");
     check!(snippet.starts_with("// copter-autotune-test\n"));
     check!(snippet.contains("roll_gains: Gains { p: 0.1234,"));
     check!(snippet.contains("pitch_gains: Gains { p: 6.5000,"));
@@ -145,6 +288,66 @@ fn the_snippet_carries_every_tuned_gain() {
         "yaw_max_integral: {:.1}",
         config.body_rate.yaw_max_integral
     )));
+}
+
+/// The plane snippet carries roll and pitch rate gains and both time constants, and its
+/// source.
+#[test]
+fn the_plane_snippet_carries_every_tuned_gain() {
+    let mut config = PlaneStabilizerConfig::default();
+    config.rate.roll.p = 0.1234;
+    config.rate.pitch.ff = 0.0567;
+    config.time_constant_s = Vec2::new(0.35, 0.5);
+    let snippet = config.airframe_snippet("plane-autotune-test");
+    check!(snippet.starts_with("// plane-autotune-test\n"));
+    check!(snippet.contains("roll: RateGains { p: 0.1234,"));
+    check!(snippet.contains("ff: 0.0567 }"));
+    check!(snippet.contains("time_constant_s: Vec2::new(0.350, 0.500),"));
+    check!(
+        PlaneStabilizerConfig::format_gains(&PlaneLoop::Pitch.gains(&config))
+            .ends_with("ff: 0.0567 }, time constant 0.500 s")
+    );
+}
+
+/// Every plane event logs without panicking, the wing fit and the snippet included.
+#[test]
+fn logs_every_plane_event() {
+    let config = PlaneStabilizerConfig::default();
+    let target = PlaneLoop::Pitch;
+    let gains = target.gains(&config);
+    let model = WingModel {
+        stiffness_per_s2: 40.0,
+        damping_per_s: 8.0,
+        control_radps2: 120.0,
+        lag_s: 0.02,
+        delay_s: 0.012,
+        path_turn_per_s: 1.2,
+        trim_moment: 0.09,
+    };
+    let events = [
+        AutotuneEvent::StageStarted(target),
+        AutotuneEvent::Measured {
+            target,
+            measurement: Measurement::Wing(model),
+        },
+        AutotuneEvent::Tried {
+            target,
+            gains,
+            passed: false,
+            steps: StepSummary::default(),
+        },
+        AutotuneEvent::StageDone {
+            target,
+            gains,
+            outcome: Outcome::Designed,
+            steps: None,
+            baseline: None,
+        },
+        AutotuneEvent::Complete,
+    ];
+    for event in &events {
+        log_event(event, &config, "plane-autotune-test");
+    }
 }
 
 /// Every event logs without panicking, including the completion's snippet.

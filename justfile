@@ -125,6 +125,10 @@ fly-xplane-auto *ARGS:
 fly-xplane-companion *ARGS:
     cargo run --release -p stable-flight-sitl-xplane --example copter-companion-xplane -- {{ARGS}}
 
+# Autotune of a VTOL's plane side in RealFlight (--airframe explora): flies into plane flight at 100 m, tunes roll and pitch from an attitude hold, flies home, lands; e.g. `just fly-plane-autotune --stages none --step-test`
+fly-plane-autotune *ARGS:
+    cargo run -p stable-flight-sitl-realflight --example plane-autotune-realflight -- {{ARGS}}
+
 # Autotune of the Alia 250's hover in X-Plane: climbs to 20 m over the spawn, tunes, prints the gains, lands; e.g. `just fly-xplane-autotune --stages none --step-test`
 fly-xplane-autotune *ARGS:
     cargo run --release -p stable-flight-sitl-xplane --example copter-autotune-xplane -- {{ARGS}}
