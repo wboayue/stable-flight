@@ -65,6 +65,41 @@ fn trims_pitch_toward_trim_airspeed() {
     }
 }
 
+/// Below where it started the hold adds thrust, above it takes some off, slowly and within
+/// its limit.
+#[test]
+fn trims_thrust_toward_the_starting_height() {
+    let config = config();
+    // (row, metres below the start, thrust after 60 s)
+    let rows = [
+        ("at the start", 0.0, config.thrust),
+        ("5 m low: 0.05 more", 5.0, config.thrust + 0.05),
+        ("5 m high: 0.05 less", -5.0, config.thrust - 0.05),
+        (
+            "50 m low: the limit",
+            50.0,
+            config.thrust + config.max_thrust_trim,
+        ),
+    ];
+    for (row, low_m, thrust) in rows {
+        let mut hold = PlaneTuneHold::new(config);
+        hold.next_command(DT, &flying(Vec2::zeros(), 0.0, Some(18.0)));
+        let mut state = flying(Vec2::zeros(), 0.0, Some(18.0));
+        state.position_m.z -= low_m;
+        let first = attitude(&hold.next_command(DT, &state)).thrust;
+        // Over one tick of a 10 s time constant it barely moves.
+        check!(
+            (first - config.thrust).abs() <= 0.01 * (thrust - config.thrust).abs() + 1e-6,
+            "{row}"
+        );
+        let mut last = first;
+        for _ in 0..(60.0 / DT) as usize {
+            last = attitude(&hold.next_command(DT, &state)).thrust;
+        }
+        check!((last - thrust).abs() < 1e-3, "{row}: {last}");
+    }
+}
+
 #[test]
 fn the_trim_moves_slowly() {
     let mut hold = PlaneTuneHold::new(config());
@@ -195,11 +230,32 @@ fn a_plane_recovers_wings_level() {
 
 #[test]
 fn rejects_an_invalid_config() {
-    let rows: [(&str, PlaneTuneHoldConfig); 4] = [
+    let rows: [(&str, PlaneTuneHoldConfig); 7] = [
         (
             "thrust",
             PlaneTuneHoldConfig {
                 thrust: 1.2,
+                ..config()
+            },
+        ),
+        (
+            "thrust_per_m",
+            PlaneTuneHoldConfig {
+                thrust_per_m: -0.01,
+                ..config()
+            },
+        ),
+        (
+            "max_thrust_trim",
+            PlaneTuneHoldConfig {
+                max_thrust_trim: f32::NAN,
+                ..config()
+            },
+        ),
+        (
+            "thrust_time_constant_s",
+            PlaneTuneHoldConfig {
+                thrust_time_constant_s: 0.0,
                 ..config()
             },
         ),
