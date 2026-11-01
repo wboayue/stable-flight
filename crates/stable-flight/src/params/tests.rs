@@ -79,9 +79,12 @@ fn tables_cover_every_config_field() {
         navigation_period_s: _,
         max_tilt_rad: _,
         max_stick_angles_rad: _,
+        stick_yaw_rate_radps: _,
+        idle_throttle: _,
         max_descent_mps: _,
         descent_accel_mps2: _,
         climb_decel_mps2: _,
+        altitude_leash_m: _,
         land_speed_mps: _,
         waypoint_yaw_radps: _,
         heading_rate_radps: _,
@@ -89,6 +92,11 @@ fn tables_cover_every_config_field() {
         heading_yield_rad: _,
         heading_yield_s: _,
         wind_heading_min_mps: _,
+        wind_heading_from_wind_rad: _,
+        wind_heading_max_sd_rad: _,
+        wind_heading_deadband_rad: _,
+        airborne_height_m: _,
+        feedforward_hold_band_mps: _,
         thrust:
             ThrustLimits {
                 min_thrust: _,
@@ -106,7 +114,7 @@ fn tables_cover_every_config_field() {
     } = CopterGuidanceConfig::default();
     // one param per scalar, vector component, or gain term in the destructuring above
     check!(names::<CopterStabilizerConfig>().len() == 35);
-    check!(names::<CopterGuidanceConfig>().len() == 36);
+    check!(names::<CopterGuidanceConfig>().len() == 44);
 }
 
 #[test]

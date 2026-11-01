@@ -35,6 +35,14 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_BOOST_MAX", thrust.max_boost_thrust),
         param!(deg "GUID_STICK_X", max_stick_angles_rad.x),
         param!(deg "GUID_STICK_Y", max_stick_angles_rad.y),
+        param!(deg "GUID_STICK_YAW", stick_yaw_rate_radps),
+        param!("GUID_THR_IDLE", idle_throttle),
+        param!("GUID_ALT_LEASH", altitude_leash_m),
+        param!(deg "GUID_WND_HDG_OFF", wind_heading_from_wind_rad),
+        param!(deg "GUID_WND_HDG_SD", wind_heading_max_sd_rad),
+        param!(deg "GUID_WND_HDG_DB", wind_heading_deadband_rad),
+        param!("GUID_WND_AIR_HT", airborne_height_m),
+        param!("GUID_WND_FF_BAND", feedforward_hold_band_mps),
         param!("GUID_WND_BCOEF_X", wind.ballistic_kgpm2.x),
         param!("GUID_WND_BCOEF_Y", wind.ballistic_kgpm2.y),
         param!("GUID_WND_MCOEF_X", wind.momentum_per_s.x),
@@ -205,6 +213,61 @@ mod metadata {
                 .param("GUID_STICK_Y", "Pitch angle at full stick in attitude mode")
                 .with_units("deg")
                 .at_least(0.0),
+            STICKS
+                .param(
+                    "GUID_STICK_YAW",
+                    "Heading slew rate at full yaw stick in attitude mode",
+                )
+                .with_units("deg/s")
+                .at_least(0.0),
+            STICKS
+                .param(
+                    "GUID_THR_IDLE",
+                    "Piloted throttle at or below which the motors idle, unfloored",
+                )
+                .at_least(0.0)
+                .below(1.0),
+            LIMITS
+                .param(
+                    "GUID_ALT_LEASH",
+                    "Furthest a descending altitude target runs below the vehicle",
+                )
+                .with_units("m")
+                .above(0.0),
+            NAVIGATION
+                .param(
+                    "GUID_WND_HDG_OFF",
+                    "Angle between the wind heading and where the wind comes from",
+                )
+                .with_units("deg")
+                .at_least(0.0)
+                .at_most(180.0),
+            NAVIGATION
+                .param(
+                    "GUID_WND_HDG_SD",
+                    "Most wind direction uncertainty that turns the heading",
+                )
+                .with_units("deg")
+                .at_least(0.0),
+            NAVIGATION
+                .param(
+                    "GUID_WND_HDG_DB",
+                    "Least wind heading change that moves a latched one",
+                )
+                .with_units("deg")
+                .at_least(0.0),
+            WIND.param(
+                "GUID_WND_AIR_HT",
+                "Height above the ground past which the wind estimate updates",
+            )
+            .with_units("m")
+            .at_least(0.0),
+            WIND.param(
+                "GUID_WND_FF_BAND",
+                "Commanded speed under which the drag feedforward leaves a hold to the loop",
+            )
+            .with_units("m/s")
+            .at_least(0.0),
             WIND.param(
                 "GUID_WND_BCOEF_X",
                 "Ballistic coefficient along x (belly on a tailsitter) for the wind estimate (0: off)",

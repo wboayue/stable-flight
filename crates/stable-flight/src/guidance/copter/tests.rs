@@ -183,7 +183,7 @@ fn commands_map_to_setpoints() {
             }),
             // Throttle at 0 is idle.
             Setpoint::Attitude(AttitudeSetpoint {
-                heading_rad: wrap_angle(0.7 + HEADING_SLEW_RATE * 0.004),
+                heading_rad: wrap_angle(0.7 + DEFAULT_STICK_YAW_RATE_RADPS * 0.004),
                 idle: true,
                 ..Default::default()
             }),
@@ -265,7 +265,7 @@ fn waypoint_leg_holds_the_heading_hold_target() {
     assert!(after == before);
     approx::assert_relative_eq!(
         before,
-        0.7 + 10.0 * HEADING_SLEW_RATE * 0.004,
+        0.7 + 10.0 * DEFAULT_STICK_YAW_RATE_RADPS * 0.004,
         epsilon = 1e-6
     );
 }
@@ -1202,7 +1202,11 @@ fn heading_slew_depends_on_time_not_tick_count() {
             guidance.guide(dt, FlightRegime::Copter, &yaw_right, &state);
         }
         // f32 accumulation of ~1e-4 steps drifts ~3e-5 over 500 ticks.
-        approx::assert_relative_eq!(guidance.heading, HEADING_SLEW_RATE, epsilon = 1e-4);
+        approx::assert_relative_eq!(
+            guidance.heading,
+            DEFAULT_STICK_YAW_RATE_RADPS,
+            epsilon = 1e-4
+        );
     }
 }
 
@@ -1557,6 +1561,28 @@ fn tilt_for_acceleration_points_thrust_along_the_demand() {
 
 /// The drag feedforward pushes against the drag model's drag on a leg's speed past the hold
 /// band, through the wind, in the thrust frame of the heading: none without a model, none for
+/// The hold band is the one passed: a 0.8 m/s correction in still air under a 1 m/s band gets
+/// no push, and under the default band one against it.
+#[test]
+fn drag_feedforward_leaves_corrections_under_the_band() {
+    let momentum = WindConfig {
+        momentum_per_s: Vec2::new(0.5, 0.5),
+        ..Default::default()
+    };
+    let commanded_mps = Vec2::new(0.8, 0.0);
+    let wide = drag_feedforward_mps2(&momentum, 1.0, commanded_mps, Vec2::zeros(), 0.0);
+    let default = drag_feedforward_mps2(
+        &momentum,
+        DEFAULT_FEEDFORWARD_HOLD_BAND_MPS,
+        commanded_mps,
+        Vec2::zeros(),
+        0.0,
+    );
+    assert!(wide.norm() < 1e-6, "{wide:?}");
+    // 0.5 m/s past the band, at 0.5 /s of momentum drag.
+    approx::assert_relative_eq!(default.x, 0.25, epsilon = 1e-5);
+}
+
 /// a hold's correction in still air, the wind's drag on a hold in wind, and nothing along an
 /// axis without a coefficient.
 #[test]
@@ -1569,7 +1595,7 @@ fn drag_feedforward_pushes_against_a_legs_drag() {
         ballistic_kgpm2: Vec2::new(2.0, 0.0),
         ..Default::default()
     };
-    let band = FEEDFORWARD_HOLD_BAND_MPS;
+    let band = DEFAULT_FEEDFORWARD_HOLD_BAND_MPS;
     let k = 0.5 * crate::estimation::wind::AIR_DENSITY_KGPM3 / 2.0;
     // (case, drag model, commanded north/east m/s, wind north/east m/s, heading, expected push)
     let cases = [
@@ -1623,7 +1649,7 @@ fn drag_feedforward_pushes_against_a_legs_drag() {
         ),
     ];
     for (case, wind, commanded_mps, wind_mps, heading_rad, expected) in cases {
-        let push = drag_feedforward_mps2(&wind, commanded_mps, wind_mps, heading_rad);
+        let push = drag_feedforward_mps2(&wind, band, commanded_mps, wind_mps, heading_rad);
         assert!(
             (push - expected).norm() < 1e-5,
             "{case}: {push:?}, expected {expected:?}"
@@ -2062,9 +2088,9 @@ fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
             30,
             Some(10.0 - ramped_drop_m(30, DT, DEFAULT_MAX_DESCENT_MPS)),
         ),
-        (-100.0, 400, Some(10.0 - ALTITUDE_LEASH_M)), // the vehicle holds still: leashed
-        (9.5, 1_000, Some(9.5)),                      // reached: holds the waypoint
-        (9.5, 500, Some(9.5)),                        // eased within 1 mm in 5 s
+        (-100.0, 400, Some(10.0 - DEFAULT_ALTITUDE_LEASH_M)), // the vehicle holds still: leashed
+        (9.5, 1_000, Some(9.5)),                              // reached: holds the waypoint
+        (9.5, 500, Some(9.5)),                                // eased within 1 mm in 5 s
         // Near the waypoint, the first tick: lowered at the ramp's 0.01 m/s, below P (1.5)
         // times the 0.015 m gap.
         (
@@ -2089,6 +2115,24 @@ fn altitude_target_descends_at_the_limit_and_climbs_at_once() {
     }
 }
 
+/// A descent toward a far waypoint, the vehicle holding still, runs its target out to the
+/// configured `altitude_leash_m` below it.
+#[test]
+fn descent_target_stops_at_the_configured_leash() {
+    for leash_m in [0.5, DEFAULT_ALTITUDE_LEASH_M, 3.0] {
+        let (mut guidance, state) = guidance_at(10.0);
+        guidance.config.altitude_leash_m = leash_m;
+        for _ in 0..1500 {
+            guidance.guide(0.004, FlightRegime::Copter, &waypoint_at(-100.0), &state);
+        }
+        let target_m = guidance.altitude_target_m.unwrap_or(f32::NAN);
+        assert!(
+            (target_m - (10.0 - leash_m)).abs() < 1e-3,
+            "{leash_m}: {target_m}"
+        );
+    }
+}
+
 /// Where the leash puts the target on the waypoint, the feedforward is the same on both sides:
 /// a target latched on the waypoint with the vehicle pushed just past the leash above it gets
 /// no descent rate stepped in (#445: the lift rotors chattered through a transition).
@@ -2100,8 +2144,8 @@ fn descent_feedforward_is_continuous_at_the_leash() {
         guidance.altitude_target_m = Some(10.0);
         guidance.descend_toward(DT, 10.0, 10.0 + above_m, 0.0)
     };
-    let below = target(ALTITUDE_LEASH_M - 1e-3);
-    let above = target(ALTITUDE_LEASH_M + 1e-3);
+    let below = target(DEFAULT_ALTITUDE_LEASH_M - 1e-3);
+    let above = target(DEFAULT_ALTITUDE_LEASH_M + 1e-3);
     assert!(
         (above.velocity_mps - below.velocity_mps).abs() < 0.01,
         "{below:?} → {above:?}"
@@ -2251,7 +2295,7 @@ fn a_descent_after_a_land_starts_from_the_land_speed() {
 /// The vehicle's altitude on a tick, in m.
 type AltitudeAt = fn(usize) -> f32;
 
-/// A descent's target runs at most `ALTITUDE_LEASH_M` below the vehicle, still or climbing,
+/// A descent's target runs at most `altitude_leash_m` below the vehicle, still or climbing,
 /// so a vehicle climbing as the descent begins isn't pulled down past `max_descent_mps` (#400);
 /// a NaN altitude keeps lowering the latched target.
 #[test]
@@ -2261,11 +2305,11 @@ fn descent_target_stays_on_a_leash_below_the_vehicle() {
     let drop_m = ramped_drop_m(TICKS, DT, DEFAULT_MAX_DESCENT_MPS);
     // (case, vehicle altitude on each tick, expected latched target), waypoint far below
     let cases: [(&str, AltitudeAt, f32); 4] = [
-        ("still", |_| 10.0, 10.0 - ALTITUDE_LEASH_M),
+        ("still", |_| 10.0, 10.0 - DEFAULT_ALTITUDE_LEASH_M),
         (
             "climbing",
             |tick| 10.0 + 0.02 * tick as f32,
-            10.0 + 0.02 * TICKS as f32 - ALTITUDE_LEASH_M,
+            10.0 + 0.02 * TICKS as f32 - DEFAULT_ALTITUDE_LEASH_M,
         ),
         (
             "sinking past the target",
@@ -2385,7 +2429,7 @@ fn point_mass_descends_at_the_limit() {
 }
 
 /// A land holds its position and lowers the altitude target at `land_speed_mps`, speeding up
-/// to it at `descent_accel_mps2` from hover, never more than `ALTITUDE_LEASH_M` below the
+/// to it at `descent_accel_mps2` from hover, never more than `altitude_leash_m` below the
 /// vehicle; leaving it (or priming) unlatches the target.
 #[test]
 fn land_descends_at_land_speed_on_a_leash() {
@@ -2398,7 +2442,7 @@ fn land_descends_at_land_speed_on_a_leash() {
     let cases = [
         (1, 10.0 - ramped_m(1)),
         (9, 10.0 - ramped_m(9)),
-        (20, 10.0 - ALTITUDE_LEASH_M),
+        (20, 10.0 - DEFAULT_ALTITUDE_LEASH_M),
     ];
     for (ticks, expected) in cases {
         let (mut guidance, state) = guidance_at(10.0);
@@ -2513,6 +2557,112 @@ fn rejects_descent_and_heading_rates_out_of_range() {
     }
 }
 
+/// Each field taken from the old module constants rejects a value out of its range, naming
+/// itself; its boundary values pass.
+#[test]
+fn rejects_moved_limits_out_of_range() {
+    type Set = fn(&mut CopterGuidanceConfig, f32);
+    // (field, setter, rejected values, accepted boundary values)
+    let rows: [(&str, Set, &[f32], &[f32]); 8] = [
+        (
+            "stick_yaw_rate_radps",
+            |c, v| c.stick_yaw_rate_radps = v,
+            &[-0.1, f32::NAN, f32::INFINITY],
+            &[0.0],
+        ),
+        (
+            "idle_throttle",
+            |c, v| c.idle_throttle = v,
+            &[-0.01, 1.0, f32::NAN],
+            &[0.0, 0.99],
+        ),
+        (
+            "altitude_leash_m",
+            |c, v| c.altitude_leash_m = v,
+            &[0.0, -1.0, f32::NAN, f32::INFINITY],
+            &[0.01],
+        ),
+        (
+            "wind_heading_from_wind_rad",
+            |c, v| c.wind_heading_from_wind_rad = v,
+            &[-0.01, PI + 0.01, f32::NAN],
+            &[0.0, PI],
+        ),
+        (
+            "wind_heading_max_sd_rad",
+            |c, v| c.wind_heading_max_sd_rad = v,
+            &[-0.01, f32::NAN, f32::INFINITY],
+            &[0.0],
+        ),
+        (
+            "wind_heading_deadband_rad",
+            |c, v| c.wind_heading_deadband_rad = v,
+            &[-0.01, f32::NAN, f32::INFINITY],
+            &[0.0],
+        ),
+        (
+            "airborne_height_m",
+            |c, v| c.airborne_height_m = v,
+            &[-0.01, f32::NAN, f32::INFINITY],
+            &[0.0],
+        ),
+        (
+            "feedforward_hold_band_mps",
+            |c, v| c.feedforward_hold_band_mps = v,
+            &[-0.01, f32::NAN, f32::INFINITY],
+            &[0.0],
+        ),
+    ];
+    for (field, set, rejected, accepted) in rows {
+        for &value in rejected {
+            let mut config = CopterGuidanceConfig::default();
+            set(&mut config, value);
+            assert!(
+                config.validate().map_err(|e| e.field) == Err(field),
+                "{field} {value}"
+            );
+        }
+        for &value in accepted {
+            let mut config = CopterGuidanceConfig::default();
+            set(&mut config, value);
+            assert!(config.validate().is_ok(), "{field} {value}");
+        }
+    }
+}
+
+/// Full yaw stick slews the heading-hold target at the configured `stick_yaw_rate_radps`, and
+/// a throttle at or below the configured `idle_throttle` passes the thrust floor.
+#[test]
+fn piloted_flight_follows_the_configured_stick_rate_and_idle() {
+    let config = CopterGuidanceConfig {
+        stick_yaw_rate_radps: 2.0,
+        idle_throttle: 0.2,
+        thrust: ThrustLimits {
+            min_thrust: 0.5,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut guidance = CopterGuidance::new(config);
+    guidance.prime(&VehicleState::default());
+    let full_yaw = ControlInput::Attitude(AttitudeCommand {
+        yaw: 1.0,
+        throttle: 0.15,
+        ..Default::default()
+    });
+    let Setpoint::Attitude(setpoint) = guidance.guide(
+        0.004,
+        FlightRegime::Copter,
+        &full_yaw,
+        &VehicleState::default(),
+    ) else {
+        unreachable!("attitude commands yield attitude setpoints");
+    };
+    approx::assert_relative_eq!(setpoint.heading_rad, 2.0 * 0.004, epsilon = 1e-6);
+    assert!(setpoint.idle);
+    approx::assert_relative_eq!(setpoint.thrust, 0.15, epsilon = 1e-6);
+}
+
 /// Attitude-mode sticks centered, at `throttle`.
 fn stick(throttle: f32) -> ControlInput {
     ControlInput::Attitude(AttitudeCommand {
@@ -2547,7 +2697,7 @@ fn limited(thrust: ThrustLimits, state: &VehicleState) -> CopterGuidance {
     guidance
 }
 
-/// Piloted inputs mark their setpoint idle while the throttle is at or below `IDLE_THROTTLE`
+/// Piloted inputs mark their setpoint idle while the throttle is at or below `idle_throttle`
 /// (or NaN), whatever the thrust floor; waypoint and land setpoints never are, even at zero
 /// thrust (#326).
 #[test]
@@ -2568,7 +2718,7 @@ fn idle_throttle_marks_the_setpoint_idle() {
     let cases = [
         (stick(0.0), &level, true),
         (stick(0.03), &level, true),
-        (stick(IDLE_THROTTLE), &level, true),
+        (stick(DEFAULT_IDLE_THROTTLE), &level, true),
         (stick(0.06), &level, false),
         (stick(f32::NAN), &level, true),
         (rate(0.03), &level, true),
@@ -2616,7 +2766,12 @@ fn min_thrust_floors_the_thrust_while_flying() {
     let cases = [
         (stick(0.3), &level, FLOOR, true),
         (stick(0.8), &level, 0.8, false),
-        (stick(IDLE_THROTTLE), &level, IDLE_THROTTLE, false), // idle: the pilot can cut
+        (
+            stick(DEFAULT_IDLE_THROTTLE),
+            &level,
+            DEFAULT_IDLE_THROTTLE,
+            false,
+        ), // idle: the pilot can cut
         (stick(0.0), &level, 0.0, false),
         (stick(f32::NAN), &level, 0.0, false),
         (stick(0.3), &inverted, FLOOR, true), // the boost gives none; the floor holds
@@ -2914,7 +3069,7 @@ fn wind_guidance() -> CopterGuidance {
     guidance
 }
 
-/// The wind estimate updates only more than `AIRBORNE_HEIGHT_M` above the altitude primed on
+/// The wind estimate updates only more than `airborne_height_m` above the altitude primed on
 /// the ground, under any input; without drag coefficients it never does.
 #[test]
 fn estimates_the_wind_only_when_airborne() {
@@ -2924,6 +3079,17 @@ fn estimates_the_wind_only_when_airborne() {
     let cases = [
         ("on the ground", wind_guidance(), &hover, 0.0, None),
         ("below the height", wind_guidance(), &hover, 0.9, None),
+        (
+            "above a lowered height",
+            {
+                let mut guidance = wind_guidance();
+                guidance.config.airborne_height_m = 0.5;
+                guidance
+            },
+            &hover,
+            0.9,
+            Some(Vec2::new(0.0, 2.0)),
+        ),
         (
             "airborne",
             wind_guidance(),

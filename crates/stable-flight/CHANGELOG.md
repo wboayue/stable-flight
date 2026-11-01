@@ -31,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `CopterGuidance`'s fixed limits are `CopterGuidanceConfig` fields, with params
+  and the old values as defaults (#621): `stick_yaw_rate_radps` (`GUID_STICK_YAW`, 1 rad/s),
+  `idle_throttle` (`GUID_THR_IDLE`, 0.05), `altitude_leash_m` (`GUID_ALT_LEASH`, 1 m),
+  `wind_heading_from_wind_rad` (`GUID_WND_HDG_OFF`, 80°), `wind_heading_max_sd_rad`
+  (`GUID_WND_HDG_SD`, 15°), `wind_heading_deadband_rad` (`GUID_WND_HDG_DB`, 10°),
+  `airborne_height_m` (`GUID_WND_AIR_HT`, 1 m), and `feedforward_hold_band_mps`
+  (`GUID_WND_FF_BAND`, 0.3 m/s). `guidance::copter::IDLE_THROTTLE`, `ALTITUDE_LEASH_M`, and
+  `AIRBORNE_HEIGHT_M` are now `DEFAULT_IDLE_THROTTLE`, `DEFAULT_ALTITUDE_LEASH_M`, and
+  `DEFAULT_AIRBORNE_HEIGHT_M`; a `CopterGuidanceConfig` struct literal needs the new fields
+  (or `..Default::default()`).
 - **Breaking (behavior):** hover guidance with a drag model (`GUID_WND_BCOEF`/`MCOEF`) feeds
   a leg's drag forward: the push the lateral loop's commanded velocity, past 0.3 m/s, takes
   through the estimated wind. The lateral I term then trims only the wind, and hover legs stop

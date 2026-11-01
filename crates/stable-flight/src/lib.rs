@@ -1476,7 +1476,7 @@ pub struct AttitudeSetpoint {
     /// ramps past its angle limit, `Tailsitter_Transition::update`).
     pub transition: bool,
     /// Ground idle: guidance sets it while a piloted throttle is at or below
-    /// [`IDLE_THROTTLE`](crate::guidance::copter::IDLE_THROTTLE) (or NaN), and a copter
+    /// [`idle_throttle`](crate::guidance::copter::CopterGuidanceConfig::idle_throttle) (or NaN), and a copter
     /// stabilizer then clears its integrals. A zero `thrust` alone (the altitude loop in
     /// flight) is not idle.
     pub idle: bool,

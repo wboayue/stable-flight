@@ -130,11 +130,8 @@ impl LegHeading {
         wind: Option<&WindEstimate>,
         estimated_state: &VehicleState,
     ) -> Option<f32> {
-        self.wind.target_rad(
-            config.wind_heading_min_mps,
-            wind,
-            estimated_state.heading_rad,
-        )
+        self.wind
+            .target_rad(config, wind, estimated_state.heading_rad)
     }
 
     /// The direction of the leg to `waypoint_m`, starting a leg when the waypoint is new.

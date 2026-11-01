@@ -5,13 +5,13 @@
 //! |---|---|
 //! | [`ControlInput::Rate`] | [`Setpoint::Rate`], sticks passed through; the heading-hold target follows the vehicle |
 //! | [`ControlInput::AbsoluteRate`] | [`Setpoint::BodyRate`]: rates passed through (the stabilizer saturates them); the heading-hold target follows the vehicle; thrust saturated to `[0, 1]`, not boosted |
-//! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target; throttle boosted by 1/cos(tilt) so tilting doesn't sink (none when inverted) |
+//! | [`ControlInput::Attitude`] | [`Setpoint::Attitude`]: roll/pitch sticks scaled to [`max_stick_angles_rad`](CopterGuidanceConfig::max_stick_angles_rad); yaw stick slews a heading-hold target at up to [`stick_yaw_rate_radps`](CopterGuidanceConfig::stick_yaw_rate_radps); throttle boosted by 1/cos(tilt) so tilting doesn't sink (none when inverted) |
 //! | [`ControlInput::AbsoluteAttitude`] | [`Setpoint::Attitude`]: roll/pitch passed through (the stabilizer saturates them); the heading replaces the heading-hold target (NaN holds it); thrust saturated to `[0, 1]`, not boosted |
-//! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity (shaped at [`max_accel_mps2`](crate::controllers::LateralControllerConfig::max_accel_mps2) when set, braking onto the waypoint along a braking curve) → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading turned to the waypoint's [`heading_rad`](WaypointCommand::heading_rad) at [`heading_rate_radps`](CopterGuidanceConfig::heading_rate_radps) when set, otherwise along the leg at [`waypoint_yaw_radps`](CopterGuidanceConfig::waypoint_yaw_radps) (held on a leg shorter than [`waypoint_yaw_min_leg_m`](CopterGuidanceConfig::waypoint_yaw_min_leg_m)), or on station turned to put a wingtip into the wind when [`wind_heading_min_mps`](CopterGuidanceConfig::wind_heading_min_mps) is set; descents slewed at up to [`max_descent_mps`](CopterGuidanceConfig::max_descent_mps), starting from the vehicle's climb (shed at [`climb_decel_mps2`](CopterGuidanceConfig::climb_decel_mps2)) or from hover, speeding up and braking to stop on the waypoint at [`descent_accel_mps2`](CopterGuidanceConfig::descent_accel_mps2), at most [`ALTITUDE_LEASH_M`] below the vehicle |
-//! | [`ControlInput::Land`] | [`Setpoint::Attitude`]: as a waypoint at the land position, heading held (or turned to a wingtip into the wind, as on station), with an altitude target that keeps descending at [`land_speed_mps`](CopterGuidanceConfig::land_speed_mps), starting as a waypoint descent does and speeding up to it at [`descent_accel_mps2`](CopterGuidanceConfig::descent_accel_mps2), at most [`ALTITUDE_LEASH_M`] below the vehicle |
+//! | [`ControlInput::Waypoint`] | [`Setpoint::Attitude`]: lateral position → velocity (shaped at [`max_accel_mps2`](crate::controllers::LateralControllerConfig::max_accel_mps2) when set, braking onto the waypoint along a braking curve) → acceleration → roll/pitch (every [`navigation_period_s`](CopterGuidanceConfig::navigation_period_s)), altitude loop → thrust (every tick), heading turned to the waypoint's [`heading_rad`](WaypointCommand::heading_rad) at [`heading_rate_radps`](CopterGuidanceConfig::heading_rate_radps) when set, otherwise along the leg at [`waypoint_yaw_radps`](CopterGuidanceConfig::waypoint_yaw_radps) (held on a leg shorter than [`waypoint_yaw_min_leg_m`](CopterGuidanceConfig::waypoint_yaw_min_leg_m)), or on station turned to put a wingtip into the wind when [`wind_heading_min_mps`](CopterGuidanceConfig::wind_heading_min_mps) is set; descents slewed at up to [`max_descent_mps`](CopterGuidanceConfig::max_descent_mps), starting from the vehicle's climb (shed at [`climb_decel_mps2`](CopterGuidanceConfig::climb_decel_mps2)) or from hover, speeding up and braking to stop on the waypoint at [`descent_accel_mps2`](CopterGuidanceConfig::descent_accel_mps2), at most [`altitude_leash_m`](CopterGuidanceConfig::altitude_leash_m) below the vehicle |
+//! | [`ControlInput::Land`] | [`Setpoint::Attitude`]: as a waypoint at the land position, heading held (or turned to a wingtip into the wind, as on station), with an altitude target that keeps descending at [`land_speed_mps`](CopterGuidanceConfig::land_speed_mps), starting as a waypoint descent does and speeding up to it at [`descent_accel_mps2`](CopterGuidanceConfig::descent_accel_mps2), at most [`altitude_leash_m`](CopterGuidanceConfig::altitude_leash_m) below the vehicle |
 //!
 //! Piloted inputs mark their setpoint [`idle`](crate::AttitudeSetpoint::idle) while the
-//! throttle is at or below [`IDLE_THROTTLE`] (or NaN), as ArduPilot spools to ground idle on
+//! throttle is at or below [`idle_throttle`](CopterGuidanceConfig::idle_throttle) (or NaN), as ArduPilot spools to ground idle on
 //! `throttle_zero` in its piloted modes (`ModeStabilize::run`). Waypoint and
 //! land setpoints never are: there's no land detector to tell a touchdown
 //! ([#395](https://github.com/wboayue/stable-flight/issues/395)).
@@ -31,7 +31,7 @@
 //! altitude and lateral loops start fresh each time waypoint or land flight is entered, with
 //! the altitude target starting from the vehicle's altitude.
 
-use core::f32::consts::FRAC_PI_4;
+use core::f32::consts::{FRAC_PI_4, PI};
 
 use crate::estimation::wind::WindConfig;
 use crate::nalgebra::UnitQuaternion;
@@ -62,8 +62,8 @@ mod params;
 mod tests;
 mod wind_heading;
 
-/// Heading-hold target slew rate at full yaw stick, in rad/s (~57°/s).
-const HEADING_SLEW_RATE: f32 = 1.0;
+/// Default [`CopterGuidanceConfig::stick_yaw_rate_radps`]: 1 rad/s (~57°/s).
+pub const DEFAULT_STICK_YAW_RATE_RADPS: f32 = 1.0;
 
 /// Default [`CopterGuidanceConfig::max_tilt_rad`]: 27°, leaving thrust headroom to climb while
 /// translating (60% of the default 45° stabilizer limit).
@@ -115,26 +115,39 @@ pub const DEFAULT_HEADING_YIELD_RAD: f32 = 30.0_f32.to_radians();
 /// in a headwind) (#431).
 pub const DEFAULT_HEADING_YIELD_S: f32 = 1.0;
 
-/// Height, in meters, above the altitude primed on the ground past which the vehicle is
-/// airborne and the wind estimate updates: on the ground the air's push is lost in contact
-/// forces and would read as calm.
-pub const AIRBORNE_HEIGHT_M: f32 = 1.0;
+/// Default [`CopterGuidanceConfig::airborne_height_m`]: 1 m.
+pub const DEFAULT_AIRBORNE_HEIGHT_M: f32 = 1.0;
 
 /// Default [`CopterGuidanceConfig::land_speed_mps`], as PX4's `MPC_LAND_SPEED`.
 pub const DEFAULT_LAND_SPEED_MPS: f32 = 0.7;
 
-/// A piloted throttle (stick, rate, or absolute-attitude thrust) at or below this is idle:
-/// [`ThrustLimits::min_thrust`] and the sink guard don't raise it, so the motors can idle on the ground
-/// and the pilot can still cut them, and the setpoint is marked
-/// [`idle`](crate::AttitudeSetpoint::idle), so the stabilizer clears its integrals.
-pub const IDLE_THROTTLE: f32 = 0.05;
+/// Default [`CopterGuidanceConfig::idle_throttle`]: 0.05.
+pub const DEFAULT_IDLE_THROTTLE: f32 = 0.05;
 
-/// How far, in meters, a descending altitude target (waypoint or land) may run below the
-/// vehicle. A vehicle still climbing when the descent begins, as a tailsitter handed over from
-/// a back transition, then gets at most `P · leash` of the loop's downward pull, so it sinks
-/// near `max_descent_mps` instead of past it (#400). Once the ground stops a landing vehicle,
-/// the altitude loop settles on a thrust below hover instead of winding down toward none.
-pub const ALTITUDE_LEASH_M: f32 = 1.0;
+/// Default [`CopterGuidanceConfig::altitude_leash_m`]: 1 m, which keeps a tailsitter handed
+/// over still climbing near `max_descent_mps` instead of sinking past it (#400).
+pub const DEFAULT_ALTITUDE_LEASH_M: f32 = 1.0;
+
+/// Default [`CopterGuidanceConfig::feedforward_hold_band_mps`]: 0.3 m/s. With no band, the sim
+/// eXplora's autotune designed its pitch rate 31% under RealFlight's; at 0.5 m/s the sim
+/// tailsitter's steady-wind hold left its band. The eXplora's worst 25 m leg at 1.5 or 3 m/s
+/// overshoots 0.25 m at 0.3, 0.46 m at 0.5, and 0.87 m at 1 m/s, and 2.5 m with no
+/// feedforward (#609).
+pub const DEFAULT_FEEDFORWARD_HOLD_BAND_MPS: f32 = 0.3;
+
+/// Default [`CopterGuidanceConfig::wind_heading_from_wind_rad`]: 80°, a wingtip into the wind
+/// 10° short of square. Descending 60 → 20 m in RealFlight's 2 m/s wind, the eXplora's pitch
+/// swung up to 9.3–12.7° off its setpoint square on, and 4.9–6.0° at 78–80°; at about 65° it
+/// pinned its tilt cap (#470).
+pub const DEFAULT_WIND_HEADING_FROM_WIND_RAD: f32 = 80.0_f32.to_radians();
+
+/// Default [`CopterGuidanceConfig::wind_heading_max_sd_rad`]: 15°, which off the 80° target
+/// reaches the 65° where the RealFlight eXplora pinned its tilt cap (#470).
+pub const DEFAULT_WIND_HEADING_MAX_SD_RAD: f32 = 15.0_f32.to_radians();
+
+/// Default [`CopterGuidanceConfig::wind_heading_deadband_rad`]: 10°; the estimate's direction
+/// wanders within 3.3° of RealFlight's wind (#473).
+pub const DEFAULT_WIND_HEADING_DEADBAND_RAD: f32 = 10.0_f32.to_radians();
 
 /// Configuration for [CopterGuidance]: the altitude and lateral position loops and the
 /// waypoint-flight limits.
@@ -179,6 +192,18 @@ pub struct CopterGuidanceConfig {
     /// larger value only reaches that limit sooner. Must be non-negative and finite. Defaults
     /// to [`DEFAULT_MAX_STICK_ANGLE_RAD`] on both axes.
     pub max_stick_angles_rad: Vec2,
+    /// Rate, in rad/s, at which full yaw stick (±1) slews the heading-hold target in piloted
+    /// attitude flight; the stick scales linearly. Higher: a quicker turn on the stick, the
+    /// yaw loop lagging further behind the target. Must be non-negative and finite. Defaults to
+    /// [`DEFAULT_STICK_YAW_RATE_RADPS`].
+    pub stick_yaw_rate_radps: f32,
+    /// A piloted throttle (stick, rate, or absolute-attitude thrust) at or below this is idle,
+    /// as is NaN: [`ThrustLimits::min_thrust`] and the sink guard don't raise it, so the motors
+    /// can idle on the ground and the pilot can still cut them, and the setpoint is marked
+    /// [`idle`](crate::AttitudeSetpoint::idle), so the stabilizer clears its integrals. Higher:
+    /// more of the stick's bottom left unfloored. In `[0, 1)`. Defaults to
+    /// [`DEFAULT_IDLE_THROTTLE`].
+    pub idle_throttle: f32,
     /// Fastest descent waypoint flight asks for, in m/s: a target below the vehicle is
     /// approached by an altitude target lowered at up to this rate, so a low waypoint descends
     /// instead of cutting thrust. Climbs aren't limited. It limits the target, not the achieved
@@ -207,6 +232,14 @@ pub struct CopterGuidanceConfig {
     /// climb lower, cuts more thrust doing it; a climb of v rises about v² / (2 · this) further.
     /// Must be positive and finite. Defaults to [`DEFAULT_CLIMB_DECEL_MPS2`].
     pub climb_decel_mps2: f32,
+    /// How far, in meters, a descending altitude target (waypoint or land) may run below the
+    /// vehicle. A vehicle still climbing when the descent begins, as a tailsitter handed over
+    /// from a back transition, then gets at most `P · leash` of the altitude loop's downward
+    /// pull, so it sinks near `max_descent_mps` instead of past it. Once the ground stops a
+    /// landing vehicle, the altitude loop settles on a thrust below hover instead of winding
+    /// down toward none. Higher: a harder pull down when the vehicle lags its target. Must be
+    /// positive and finite. Defaults to [`DEFAULT_ALTITUDE_LEASH_M`].
+    pub altitude_leash_m: f32,
     /// Rate, in rad/s, at which waypoint flight turns the heading-hold target to the leg's
     /// direction, the shorter way round; `0` holds the heading the leg began with, unless
     /// [yielded](Self::heading_yield_s). A leg runs
@@ -242,6 +275,32 @@ pub struct CopterGuidanceConfig {
     /// `waypoint_yaw_min_leg_m` keep their own heading until within that of the waypoint.
     /// `0` turns nothing. Must be non-negative and finite. Defaults to `0`.
     pub wind_heading_min_mps: f32,
+    /// Angle, in radians, between the heading [`wind_heading_min_mps`](Self::wind_heading_min_mps)
+    /// turns to and where the wind comes from: `π/2` puts a wingtip square into it, less keeps
+    /// some of the wind on the belly. In `[0, π]`. Defaults to
+    /// [`DEFAULT_WIND_HEADING_FROM_WIND_RAD`].
+    pub wind_heading_from_wind_rad: f32,
+    /// Most uncertainty in the wind estimate's direction, in radians, that still turns the
+    /// heading to it. Higher: turns on a less certain estimate, possibly to a heading off the
+    /// wind by this much. Must be non-negative and finite. Defaults to
+    /// [`DEFAULT_WIND_HEADING_MAX_SD_RAD`].
+    pub wind_heading_max_sd_rad: f32,
+    /// Least change, in radians, in the wind's wingtip heading that moves a latched one.
+    /// Higher: fewer turns chasing the estimate's wander, a heading further off the wind
+    /// before it moves. Must be non-negative and finite. Defaults to
+    /// [`DEFAULT_WIND_HEADING_DEADBAND_RAD`].
+    pub wind_heading_deadband_rad: f32,
+    /// Height, in meters, above the altitude primed on the ground past which the vehicle is
+    /// airborne and the wind estimate updates: on the ground the air's push is lost in contact
+    /// forces and would read as calm. Higher: the estimate starts later in the climb. Must be
+    /// non-negative and finite. Defaults to [`DEFAULT_AIRBORNE_HEIGHT_M`].
+    pub airborne_height_m: f32,
+    /// Commanded speed, in m/s, under which a hold's corrections stay, left to the lateral loop
+    /// by the drag feedforward: the feedforward models the drag of the commanded velocity past
+    /// it. Fed forward, those corrections stiffen the hold. Higher: more of a leg's drag left
+    /// to the loop's I term, which carries it past the waypoint when the vehicle stops. Must be
+    /// non-negative and finite. Defaults to [`DEFAULT_FEEDFORWARD_HOLD_BAND_MPS`].
+    pub feedforward_hold_band_mps: f32,
     /// Thrust floor, sink guard, and tilt-boost ceiling; all off by default.
     pub thrust: ThrustLimits,
     /// The wind estimator's drag model and noises; off by default (no drag coefficients).
@@ -270,12 +329,12 @@ pub struct ThrustLimits {
     /// the same way (`Q_TAILSIT_MIN_VO`, `ArduPlane/tailsitter.cpp`, applied by
     /// `AP_MotorsTailsitter` only once spooled up). Every setpoint's thrust is raised to it,
     /// after the tilt boost (so even inverted), except a piloted throttle at or below
-    /// [`IDLE_THROTTLE`], which passes through. Waypoint and land flight always get it. Set it
+    /// [`idle_throttle`](CopterGuidanceConfig::idle_throttle), which passes through. Waypoint and land flight always get it. Set it
     /// below the altitude loop's `hover_thrust`, or waypoint flight can't descend and a land
     /// never touches down.
     pub min_thrust: f32,
     /// Sink rate, in m/s, beyond which piloted flight (attitude, rate, or absolute attitude,
-    /// above [`IDLE_THROTTLE`]) gets more thrust: [`sink_gain`](Self::sink_gain) per m/s of
+    /// above [`idle_throttle`](CopterGuidanceConfig::idle_throttle)) gets more thrust: [`sink_gain`](Self::sink_gain) per m/s of
     /// sink past it, on top of the stick (and floor). Direct throttle can't hold a descent
     /// rate, and a tailsitter sinking a few m/s has air flowing up against its propwash, which
     /// takes the elevons' authority and drops the nose. Waypoint and land flight limit
@@ -324,8 +383,10 @@ impl Default for CopterGuidanceConfig {
     /// loop, a 27° waypoint tilt cap, 45° at full stick, a 3 m/s descent limit, a climb under
     /// way when a descent starts shed at 2.5 m/s², a 0.7 m/s land, waypoint legs over 3 m
     /// turned to face along them at 60°/s, a waypoint's heading turned to at 60°/s, the
-    /// heading yielded after 1 s stuck over 30° off, no thrust floor or sink guard, and no
-    /// boost ceiling.
+    /// heading yielded after 1 s stuck over 30° off, full yaw stick at 1 rad/s, an idle throttle
+    /// of 0.05, a 1 m altitude leash, no wind heading (80° off the wind when on), the wind
+    /// estimated from 1 m up, a 0.3 m/s feedforward hold band, no thrust floor or sink guard,
+    /// and no boost ceiling.
     fn default() -> Self {
         CopterGuidanceConfig {
             altitude: AltitudeControllerConfig::default(),
@@ -336,16 +397,24 @@ impl Default for CopterGuidanceConfig {
                 DEFAULT_MAX_STICK_ANGLE_RAD,
                 DEFAULT_MAX_STICK_ANGLE_RAD,
             ),
+            stick_yaw_rate_radps: DEFAULT_STICK_YAW_RATE_RADPS,
+            idle_throttle: DEFAULT_IDLE_THROTTLE,
             max_descent_mps: DEFAULT_MAX_DESCENT_MPS,
             descent_accel_mps2: DEFAULT_DESCENT_ACCEL_MPS2,
             land_speed_mps: DEFAULT_LAND_SPEED_MPS,
             climb_decel_mps2: DEFAULT_CLIMB_DECEL_MPS2,
+            altitude_leash_m: DEFAULT_ALTITUDE_LEASH_M,
             waypoint_yaw_radps: DEFAULT_WAYPOINT_YAW_RADPS,
             heading_rate_radps: DEFAULT_HEADING_RATE_RADPS,
             waypoint_yaw_min_leg_m: DEFAULT_WAYPOINT_YAW_MIN_LEG_M,
             heading_yield_rad: DEFAULT_HEADING_YIELD_RAD,
             heading_yield_s: DEFAULT_HEADING_YIELD_S,
             wind_heading_min_mps: 0.0,
+            wind_heading_from_wind_rad: DEFAULT_WIND_HEADING_FROM_WIND_RAD,
+            wind_heading_max_sd_rad: DEFAULT_WIND_HEADING_MAX_SD_RAD,
+            wind_heading_deadband_rad: DEFAULT_WIND_HEADING_DEADBAND_RAD,
+            airborne_height_m: DEFAULT_AIRBORNE_HEIGHT_M,
+            feedforward_hold_band_mps: DEFAULT_FEEDFORWARD_HOLD_BAND_MPS,
             thrust: ThrustLimits::default(),
             wind: WindConfig::default(),
         }
@@ -356,12 +425,15 @@ impl CopterGuidanceConfig {
     /// Checks both loop configs ([`AltitudeControllerConfig::validate`],
     /// [`LateralControllerConfig::validate`]; errors carry the loop as their `section`), the
     /// thrust limits ([`ThrustLimits::validate`], section `thrust`), that
-    /// `navigation_period_s` and `max_stick_angles_rad` are non-negative and finite, that
-    /// `max_tilt_rad` is in `(0, π/2)`, that `max_descent_mps`, `descent_accel_mps2`,
-    /// `climb_decel_mps2`, and `heading_rate_radps` are positive and finite, that
-    /// `land_speed_mps` is finite and above [`DESCENDING_MPS`], and that `waypoint_yaw_radps`,
-    /// `waypoint_yaw_min_leg_m`, `heading_yield_rad`, `heading_yield_s`, and
-    /// `wind_heading_min_mps` are non-negative and finite.
+    /// `navigation_period_s`, `max_stick_angles_rad`, and `stick_yaw_rate_radps` are
+    /// non-negative and finite, that `idle_throttle` is in `[0, 1)`, that `max_tilt_rad` is in
+    /// `(0, π/2)`, that `max_descent_mps`, `descent_accel_mps2`, `climb_decel_mps2`,
+    /// `altitude_leash_m`, and `heading_rate_radps` are positive and finite, that
+    /// `land_speed_mps` is finite and above [`DESCENDING_MPS`], that
+    /// `wind_heading_from_wind_rad` is in `[0, π]`, and that `waypoint_yaw_radps`,
+    /// `waypoint_yaw_min_leg_m`, `heading_yield_rad`, `heading_yield_s`,
+    /// `wind_heading_min_mps`, `wind_heading_max_sd_rad`, `wind_heading_deadband_rad`,
+    /// `airborne_height_m`, and `feedforward_hold_band_mps` are non-negative and finite.
     ///
     /// # Examples
     ///
@@ -383,10 +455,17 @@ impl CopterGuidanceConfig {
         check_limit("navigation_period_s", self.navigation_period_s)?;
         check_limit("max_stick_angles_rad.x", self.max_stick_angles_rad.x)?;
         check_limit("max_stick_angles_rad.y", self.max_stick_angles_rad.y)?;
+        check_limit("stick_yaw_rate_radps", self.stick_yaw_rate_radps)?;
+        check(
+            "idle_throttle",
+            (0.0..1.0).contains(&self.idle_throttle),
+            "in [0, 1)",
+        )?;
         check_tilt("max_tilt_rad", self.max_tilt_rad)?;
         check_positive("max_descent_mps", self.max_descent_mps)?;
         check_positive("descent_accel_mps2", self.descent_accel_mps2)?;
         check_positive("climb_decel_mps2", self.climb_decel_mps2)?;
+        check_positive("altitude_leash_m", self.altitude_leash_m)?;
         check(
             "land_speed_mps",
             self.land_speed_mps > DESCENDING_MPS && self.land_speed_mps.is_finite(),
@@ -398,6 +477,15 @@ impl CopterGuidanceConfig {
         check_limit("heading_yield_rad", self.heading_yield_rad)?;
         check_limit("heading_yield_s", self.heading_yield_s)?;
         check_limit("wind_heading_min_mps", self.wind_heading_min_mps)?;
+        check(
+            "wind_heading_from_wind_rad",
+            (0.0..=PI).contains(&self.wind_heading_from_wind_rad),
+            "in [0, π]",
+        )?;
+        check_limit("wind_heading_max_sd_rad", self.wind_heading_max_sd_rad)?;
+        check_limit("wind_heading_deadband_rad", self.wind_heading_deadband_rad)?;
+        check_limit("airborne_height_m", self.airborne_height_m)?;
+        check_limit("feedforward_hold_band_mps", self.feedforward_hold_band_mps)?;
         self.thrust.validate().map_err(|e| e.in_section("thrust"))?;
         self.wind.validate().map_err(|e| e.in_section("wind"))
     }
@@ -432,7 +520,7 @@ pub struct CopterGuidance {
     altitude: AltitudeController,
     lateral: LateralController,
     /// Where the altitude loop is steered, in meters: the waypoint's altitude, or on the way
-    /// down to it, slewed at the descent limit and leashed [`ALTITUDE_LEASH_M`] below the
+    /// down to it, slewed at the descent limit and leashed `altitude_leash_m` below the
     /// vehicle. `None` until waypoint or land flight latches it from the vehicle's altitude.
     altitude_target_m: Option<f32>,
     /// How fast the altitude target last descended, in m/s, negative while it climbs (0 when
@@ -534,7 +622,12 @@ impl Guidance for CopterGuidance {
     ) -> Setpoint {
         assert_dt(dt);
         self.saturation = Saturation::default();
-        self.wind.update(dt, &self.config.wind, estimated_state);
+        self.wind.update(
+            dt,
+            &self.config.wind,
+            self.config.airborne_height_m,
+            estimated_state,
+        );
 
         if !matches!(input, ControlInput::Waypoint(_) | ControlInput::Land(_)) {
             // The position loops are idle: clear them so re-entering waypoint mode starts
@@ -582,13 +675,14 @@ impl Guidance for CopterGuidance {
 
     /// Clears the altitude and lateral controller state, the altitude target and its descent,
     /// the leg, and any held waypoint tilt, and latches the current heading as the yaw-hold
-    /// target. Primed on the ground (no more than [`AIRBORNE_HEIGHT_M`] above the last
+    /// target. Primed on the ground (no more than
+    /// [`airborne_height_m`](CopterGuidanceConfig::airborne_height_m) above the last
     /// ground altitude, or never primed), it also latches the ground altitude and forgets the
     /// wind; primed in the air (a VTOL back in hover), it keeps both. Re-armed on ground more
-    /// than [`AIRBORNE_HEIGHT_M`] above where it was last primed, it counts as airborne and
+    /// than `airborne_height_m` above where it was last primed, it counts as airborne and
     /// feeds the wind estimate from the ground until liftoff.
     fn prime(&mut self, state: &VehicleState) {
-        self.wind.prime(state);
+        self.wind.prime(self.config.airborne_height_m, state);
         self.altitude = AltitudeController::default();
         self.lateral = LateralController::default();
         self.altitude_target_m = None;
@@ -614,7 +708,8 @@ impl Guidance for CopterGuidance {
     }
 
     /// The wind, estimated from the drag model in
-    /// [`wind`](CopterGuidanceConfig::wind) on every tick more than [`AIRBORNE_HEIGHT_M`]
+    /// [`wind`](CopterGuidanceConfig::wind) on every tick more than
+    /// [`airborne_height_m`](CopterGuidanceConfig::airborne_height_m)
     /// above the altitude primed on the ground, the vehicle's frame taken as the thrust frame
     /// (a tailsitter's hover view under [`View`](crate::View)), except while a VTOL's guidance
     /// flies outside hover; `None` before the first update, or without drag coefficients.
@@ -636,7 +731,10 @@ impl CopterGuidance {
         // (see `crate::math`).
         let yaw = saturate_unit(attitude_command.yaw);
         let max_stick = self.config.max_stick_angles_rad;
-        self.set_heading_target(self.heading + yaw * HEADING_SLEW_RATE * dt, estimated_state);
+        self.set_heading_target(
+            self.heading + yaw * self.config.stick_yaw_rate_radps * dt,
+            estimated_state,
+        );
 
         // Angle boost: hold the vertical thrust the stick asks for while tilted, as the
         // altitude loop does (at most 2× past 60°, none when inverted), up to
@@ -720,7 +818,7 @@ impl CopterGuidance {
     /// (`heading_yield_s`): the lateral loop gives roll/pitch (once per navigation period, held
     /// in between) and the altitude loop gives thrust (every tick), toward an altitude target
     /// that descends no faster than `max_descent_mps`, speeding up and braking at
-    /// `descent_accel_mps2`, and no further than [`ALTITUDE_LEASH_M`] below the vehicle.
+    /// `descent_accel_mps2`, and no further than `altitude_leash_m` below the vehicle.
     fn navigate(
         &mut self,
         dt: f32,
@@ -748,7 +846,7 @@ impl CopterGuidance {
 
     /// Lands at the command's position: flies there as to a waypoint, heading held or turned to
     /// a wingtip into the wind (`wind_heading_min_mps`), with an altitude target
-    /// that keeps descending at `land_speed_mps`, leashed [`ALTITUDE_LEASH_M`] below the vehicle.
+    /// that keeps descending at `land_speed_mps`, leashed `altitude_leash_m` below the vehicle.
     /// The descent starts and speeds up to it as a waypoint descent does
     /// ([`descent_start_m`](Self::descent_start_m),
     /// [`ramped_descent_mps`](Self::ramped_descent_mps)): stepping to it cut the RealFlight
@@ -764,7 +862,12 @@ impl CopterGuidance {
         let speed_mps = self.ramped_descent_mps(dt, self.config.land_speed_mps);
         // With nothing latched, the NaN target holds hover.
         let target_m = start_m.map_or(f32::NAN, |start_m| {
-            lowered(start_m, speed_mps * dt, altitude_m)
+            lowered(
+                start_m,
+                speed_mps * dt,
+                altitude_m,
+                self.config.altitude_leash_m,
+            )
         });
         self.altitude_target_m = Some(target_m).filter(|t| t.is_finite());
         // With nothing latched nothing descends, so a waypoint descent next starts from rest.
@@ -819,7 +922,12 @@ impl CopterGuidance {
             return level;
         };
         let rate_mps = self.ramped_descent_mps(dt, self.descent_rate_mps(start_m - waypoint_m));
-        let step_m = lowered(start_m, rate_mps * dt, altitude_m);
+        let step_m = lowered(
+            start_m,
+            rate_mps * dt,
+            altitude_m,
+            self.config.altitude_leash_m,
+        );
         // `<` is false for NaN: a non-finite waypoint passes through, and the altitude loop
         // holds hover on it.
         let target = if waypoint_m < step_m {
@@ -945,11 +1053,11 @@ impl CopterGuidance {
     }
 
     /// The piloted `thrust` and whether the pilot's `throttle` is idle (at or below
-    /// [`IDLE_THROTTLE`], or NaN): an idle throttle passes `thrust` through; any other is
+    /// `idle_throttle`, or NaN): an idle throttle passes `thrust` through; any other is
     /// raised to `min_thrust`, then gets the sink guard for the vertical speed `climb_mps` (up
     /// positive).
     fn hold_piloted(&mut self, throttle: f32, thrust: f32, climb_mps: f32) -> (f32, bool) {
-        if throttle > IDLE_THROTTLE {
+        if throttle > self.config.idle_throttle {
             let floored = self.floor_thrust(thrust);
             (self.guard_sink(floored, climb_mps), false)
         } else {
@@ -1029,6 +1137,7 @@ impl CopterGuidance {
                 .control(&self.config.lateral, step, target, estimate, limit_mps2)
                 + drag_feedforward_mps2(
                     &self.config.wind,
+                    self.config.feedforward_hold_band_mps,
                     self.lateral.commanded_velocity_mps(),
                     wind_mps,
                     heading_rad,
@@ -1062,20 +1171,21 @@ fn tilt_for_acceleration(accel_mps2: Vec2, heading_rad: f32) -> Vec2 {
 
 /// The acceleration, in m/s² (north, east), that holds off the drag `wind`'s model puts on a
 /// leg's speed: the lateral loop's commanded velocity `commanded_mps` past
-/// [`FEEDFORWARD_HOLD_BAND_MPS`], through air moving at `wind_mps` (both north, east), facing
+/// `hold_band_mps`, through air moving at `wind_mps` (both north, east), facing
 /// `heading_rad`; on a hold, that is the wind's drag alone. Fed forward, so the lateral loop's
 /// I term trims only what the model misses: learned by the I instead, a leg's drag stays wound
 /// up when the vehicle stops and carries it past the waypoint (#609). Zero without a drag
 /// model.
 fn drag_feedforward_mps2(
     wind: &WindConfig,
+    hold_band_mps: f32,
     commanded_mps: Vec2,
     wind_mps: Vec2,
     heading_rad: f32,
 ) -> Vec2 {
     let speed_mps = commanded_mps.norm();
-    let leg_mps = if speed_mps > FEEDFORWARD_HOLD_BAND_MPS {
-        commanded_mps * ((speed_mps - FEEDFORWARD_HOLD_BAND_MPS) / speed_mps)
+    let leg_mps = if speed_mps > hold_band_mps {
+        commanded_mps * ((speed_mps - hold_band_mps) / speed_mps)
     } else {
         Vec2::zeros()
     };
@@ -1094,17 +1204,9 @@ fn drag_feedforward_mps2(
     )
 }
 
-/// The commanded speed, in m/s, a hold's corrections stay under, which the drag feedforward
-/// leaves to the lateral loop. Fed forward, those corrections stiffen the hold: the sim
-/// eXplora's autotune then designed its pitch rate 31% under RealFlight's, and at 0.5 m/s
-/// the sim tailsitter's steady-wind hold left its band. Higher: more of a leg's drag left to
-/// the I, which overshoots by it: the eXplora's worst 25 m leg at 1.5 or 3 m/s overshoots
-/// 0.25 m at 0.3, 0.46 m at 0.5, and 0.87 m at 1 m/s, and 2.5 m with no feedforward (#609).
-const FEEDFORWARD_HOLD_BAND_MPS: f32 = 0.3;
-
-/// A descent target `start_m` lowered by `step_m`, but no further than [`ALTITUDE_LEASH_M`]
-/// below the vehicle's `altitude_m`. `f32::max` ignores a NaN side: a NaN altitude keeps
+/// A descent target `start_m` lowered by `step_m`, but no further than `leash_m` below the
+/// vehicle's `altitude_m`. `f32::max` ignores a NaN side: a NaN altitude keeps
 /// lowering a latched target.
-fn lowered(start_m: f32, step_m: f32, altitude_m: f32) -> f32 {
-    (start_m - step_m).max(altitude_m - ALTITUDE_LEASH_M)
+fn lowered(start_m: f32, step_m: f32, altitude_m: f32, leash_m: f32) -> f32 {
+    (start_m - step_m).max(altitude_m - leash_m)
 }

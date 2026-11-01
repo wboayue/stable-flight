@@ -9,7 +9,7 @@ use assert2::check;
 use stable_flight::commanders::{
     FailsafeCommander, FailsafeConfig, HoldCommander, LinkedCommander,
 };
-use stable_flight::guidance::copter::ALTITUDE_LEASH_M;
+use stable_flight::guidance::copter::DEFAULT_ALTITUDE_LEASH_M;
 use stable_flight::{
     Command, Commander, FlightMode, FlightRegime, ModeRefusal, TelemetryPublisher, TelemetryRecord,
     Vec3, VehicleState,
@@ -430,7 +430,7 @@ fn updraft_in_a_transition_moves_the_hover_thrust_smoothly() {
     let (.., hover) = flight_loop.into_parts();
 
     // Measured 2.0 m: the transition crosses the leash.
-    check!(hover.above_hold_m > ALTITUDE_LEASH_M, "{hover:?}");
+    check!(hover.above_hold_m > DEFAULT_ALTITUDE_LEASH_M, "{hover:?}");
     // Measured 0.003 (0.544 with the step, in 1 m/s).
     check!(hover.largest_step < 0.05, "{hover:?}");
 }
