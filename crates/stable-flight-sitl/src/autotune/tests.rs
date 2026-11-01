@@ -94,10 +94,12 @@ fn cruising(north_m: f32, altitude_m: f32) -> VehicleState {
     }
 }
 
-/// Home at 30 m over the start, hovering back from within 100 m of it.
+/// Home at 30 m over the start, hovering back from within 30 m of it, turning back 150 m past
+/// it.
 const HOME: PlaneHome = PlaneHome {
     altitude_m: 30.0,
-    radius_m: 100.0,
+    radius_m: 30.0,
+    overfly_m: 150.0,
 };
 
 const HOLD: fn() -> PlaneTuneHoldConfig = || PlaneTuneHoldConfig {
@@ -171,23 +173,23 @@ fn the_switch_reports_the_holds_turn() {
     check!(switch.turning());
 }
 
-/// Finished from a hold that flew on, the flight loiters home in plane at the home altitude
-/// and trim airspeed, hovers back over the start once within reach, and lands on it once
-/// within the waypoint acceptance radius: (north, altitude, phase).
+/// Finished from a hold that flew on, the flight flies a plane leg through the start at the
+/// home altitude and trim airspeed, hovers back over the start once within reach, and lands on
+/// it once within the waypoint acceptance radius: (north, altitude, phase).
 #[test]
 fn the_plane_flight_comes_home_in_plane_hovers_over_the_start_then_lands() {
     #[derive(Debug, PartialEq)]
     enum Home {
-        Loiter,
+        Leg,
         Hover,
         Land,
     }
     for (north_m, altitude_m, expected) in [
-        (500.0, 100.0, Home::Loiter),
-        (90.0, 100.0, Home::Loiter),
-        (500.0, 30.0, Home::Loiter),
-        (110.0, 30.0, Home::Loiter),
-        (90.0, 35.0, Home::Hover),
+        (500.0, 100.0, Home::Leg),
+        (20.0, 100.0, Home::Leg),
+        (500.0, 30.0, Home::Leg),
+        (35.0, 30.0, Home::Leg),
+        (25.0, 35.0, Home::Hover),
         (5.0, 30.0, Home::Hover),
         (2.0, 30.0, Home::Land),
     ] {
@@ -200,10 +202,13 @@ fn the_plane_flight_comes_home_in_plane_hovers_over_the_start_then_lands() {
         let phase = match command.input {
             ControlInput::Waypoint(home) if command.regime == FlightRegime::Plane => {
                 check!(home.cruise_speed_mps == 14.0);
-                check!(home.velocity_mps.is_none(), "a loiter, not a leg");
+                check!(
+                    home.velocity_mps == Some(Vec2::new(-14.0, 0.0)),
+                    "south, to the start"
+                );
                 check!(home.position_m == Vec2::zeros());
                 check!(home.altitude_m == 30.0);
-                Home::Loiter
+                Home::Leg
             }
             ControlInput::Waypoint(home) => {
                 check!(command.regime == FlightRegime::Copter);
@@ -222,7 +227,7 @@ fn the_plane_flight_comes_home_in_plane_hovers_over_the_start_then_lands() {
     }
 }
 
-/// The hover back lands once over the start, wherever the back transition ended: 60 m out it
+/// The hover back lands once over the start, wherever the back transition ended: 25 m out it
 /// hovers on, then lands on the start from 1 m.
 #[test]
 fn the_hover_back_lands_once_over_the_start() {
@@ -230,8 +235,8 @@ fn the_hover_back_lands_once_over_the_start() {
     switch.hold(HOLD());
     commander.next_command(0.004, &cruising(0.0, 100.0));
     switch.finish();
-    commander.next_command(0.004, &cruising(60.0, 30.0));
-    let hover = commander.next_command(0.004, &cruising(60.0, 20.0));
+    commander.next_command(0.004, &cruising(25.0, 30.0));
+    let hover = commander.next_command(0.004, &cruising(25.0, 20.0));
     check!(
         hover.regime == FlightRegime::Copter,
         "out of the plane altitude band"
@@ -243,8 +248,8 @@ fn the_hover_back_lands_once_over_the_start() {
     check!(land.position_m == Vec2::zeros());
 }
 
-/// The hover back waits on the caller's home radius, not the default loiter's: 150 m out
-/// hovers within a 200 m radius and loiters on within 100 m.
+/// The hover back waits on the caller's home radius: 150 m out hovers within a 200 m radius
+/// and flies the leg on within 100 m.
 #[test]
 fn the_flight_home_hovers_back_within_its_radius() {
     for (radius_m, hovering) in [(100.0, false), (200.0, true)] {
@@ -258,6 +263,36 @@ fn the_flight_home_hovers_back_within_its_radius() {
             (command.regime == FlightRegime::Copter) == hovering,
             "radius {radius_m} m"
         );
+    }
+}
+
+/// The home leg flies the line through the start back and forth: north of the start it heads
+/// south, keeps south past the start up to the overfly, then turns back north; over the start
+/// and still, it heads north: (north positions flown, leg direction after the last).
+#[test]
+fn the_home_leg_turns_back_past_the_start() {
+    for (norths_m, direction) in [
+        (vec![400.0], Vec2::new(-1.0, 0.0)),
+        (vec![400.0, -100.0], Vec2::new(-1.0, 0.0)),
+        (vec![400.0, -160.0], Vec2::new(1.0, 0.0)),
+        (vec![400.0, -160.0, -100.0], Vec2::new(1.0, 0.0)),
+        (vec![400.0, -160.0, 160.0], Vec2::new(-1.0, 0.0)),
+        (vec![0.0], Vec2::new(1.0, 0.0)),
+    ] {
+        let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), HOME);
+        switch.hold(HOLD());
+        commander.next_command(0.004, &cruising(0.0, 100.0));
+        switch.finish();
+        let mut leg = None;
+        for north_m in &norths_m {
+            if let ControlInput::Waypoint(home) = commander
+                .next_command(0.004, &cruising(*north_m, 100.0))
+                .input
+            {
+                leg = home.velocity_mps;
+            }
+        }
+        check!(leg == Some(direction * 14.0), "{norths_m:?}");
     }
 }
 
