@@ -183,9 +183,9 @@ pub const PLANE_PITCH_STEP: StepConfig = StepConfig {
 
 /// Level before each plane step: within 3° of the held attitude and 0.1 rad/s on each axis
 /// for 1 s. A wing in an attitude hold rides its phugoid, so the band is wider than a
-/// copter's (2.5°, [`COPTER_STEP_SETTLE`](super::COPTER_STEP_SETTLE)). On the sim's four
-/// planes a step settled in 1.5–4.5 s, up to 11 s on the Alia 250 with its turns back
-/// (#534), inside [`PlaneEnvelope::for_plane`]'s 20 s.
+/// copter's (2.5°, [`COPTER_STEP_SETTLE`](super::COPTER_STEP_SETTLE)); the airspeed has a
+/// settle of its own ([`AirspeedSettle`]). On the sim's four planes every step settled
+/// inside [`PlaneEnvelope::for_plane`]'s 20 s (#534).
 pub const PLANE_STEP_SETTLE: Settle = Settle {
     tilt_rad: 3.0 * DEG,
     rate_radps: 0.1,
@@ -342,7 +342,9 @@ impl PlaneEnvelope {
     /// Limits for a plane flying `config`: 60° of bank and 30° of pitch (a 30° roll step and
     /// a 10° pitch step from the hold, with room to overshoot), 4 rad/s, 40 m of sink, and
     /// airspeed between 0.9 × `config`'s minimum and its maximum; settle as
-    /// [`PLANE_STEP_SETTLE`], waiting up to 20 s, 2 s to recover, 2 s without a fresh state.
+    /// [`PLANE_STEP_SETTLE`] with the airspeed within 1 m/s of `config`'s trim and changing by
+    /// under 0.2 m/s² ([`AirspeedSettle`]), waiting up to 20 s, 2 s to recover, 2 s without a
+    /// fresh state.
     /// On the sim the airplane slowed past its minimum within a few steps unless the hold
     /// trimmed its pitch for airspeed; with the trim, these limits never tripped on a sound
     /// start (#533).

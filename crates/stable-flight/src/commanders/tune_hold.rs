@@ -3,7 +3,7 @@
 use core::f32::consts::{FRAC_PI_2, PI};
 
 use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
-use crate::math::{DEG, clamp_symmetric, wrap_angle};
+use crate::math::{DEG, clamp_symmetric, lagged, wrap_angle};
 use crate::{
     AbsoluteAttitudeCommand, Command, Commander, ControlInput, FlightRegime, Vec2, VehicleState,
     WaypointCommand,
@@ -238,8 +238,7 @@ impl PlaneTuneHold {
             start_pitch_rad - config.max_trim_rad,
             start_pitch_rad + config.max_trim_rad,
         );
-        let follow = (dt / config.trim_time_constant_s).min(1.0);
-        self.pitch_rad += follow * (target_rad - self.pitch_rad);
+        self.pitch_rad = lagged(self.pitch_rad, target_rad, dt, config.trim_time_constant_s);
     }
 
     /// Moves the thrust toward the trim for `state`'s altitude, `dt` on: more when below
@@ -252,8 +251,7 @@ impl PlaneTuneHold {
         }
         let trim = clamp_symmetric(low_m * config.thrust_per_m, config.max_thrust_trim);
         let target = (config.thrust + trim).clamp(0.0, 1.0);
-        let follow = (dt / config.thrust_time_constant_s).min(1.0);
-        self.thrust += follow * (target - self.thrust);
+        self.thrust = lagged(self.thrust, target, dt, config.thrust_time_constant_s);
     }
 
     /// The bank toward the start while turning back, 0 otherwise; starts a turn past the

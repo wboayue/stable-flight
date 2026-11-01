@@ -119,8 +119,8 @@ pub enum WingStatus {
 /// feedforward (0.53 against the Alia 250's 0.907 on the sim, #533).
 ///
 /// The window holds 750 samples (9 KB) and is fitted on the tick the excitation ends: 12 lags
-/// × 6 delays over it. A non-finite rate, moment, or angle of attack is recorded as the last
-/// finite one.
+/// × 6 delays over it, about 0.2 ms on a desktop, so that tick runs long. A non-finite rate,
+/// moment, or angle of attack is recorded as the last finite one.
 ///
 /// # Examples
 ///
@@ -363,21 +363,21 @@ fn fit_at(
     let first = delay + 1;
     let mut normal = SMatrix::<f64, TERMS, TERMS>::zeros();
     let mut moment = SVector::<f64, TERMS>::zeros();
+    let mut accel_squares = 0.0f64;
     for k in first..len {
-        let x = regressors(k);
+        let (x, y) = (regressors(k), accel(k));
         normal += x * x.transpose();
-        moment += x * accel(k);
+        moment += x * y;
+        accel_squares += y * y;
     }
     if !with_alpha {
         // No stiffness term: its row and column are empty, so pin its weight to 0.
         normal[(0, 0)] = 1.0;
     }
     let terms = normal.lu().solve(&moment)?;
-    let mut sum_squares = 0.0f64;
-    for k in first..len {
-        let error = accel(k) - terms.dot(&regressors(k));
-        sum_squares += error * error;
-    }
+    // The least squares' residual without a second pass: Σ(y − x·θ)² = Σy² − θ·Σxy at the
+    // solution, θ the terms. Rounding can take it a hair below 0.
+    let sum_squares = (accel_squares - terms.dot(&moment)).max(0.0);
     let count = (len - first) as f64;
     terms.iter().all(|term| term.is_finite()).then(|| Fit {
         terms,
