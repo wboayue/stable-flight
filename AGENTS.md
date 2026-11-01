@@ -103,8 +103,9 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
   `architecture.md#flight-stabilization-loop`. Timing: `architecture.md#real-time-loop-management`.
 - Components own one config each and implement `Configurable` (validated `set_config`), reached
   between ticks through `FlightLoop::set_guidance_config`/`set_stabilizer_config`
-  (`architecture.md#config-ownership`). `CopterStabilizer` hosts autotune probes
-  (`tuning::Tunable`), which `FlightLoop` forwards; `tuning::autotune::Autotune` runs them
+  (`architecture.md#config-ownership`). `CopterStabilizer` and `PlaneStabilizer` host
+  autotune probes (`tuning::Tunable`; a VTOL stabilizer hosts both sides'), which `FlightLoop`
+  forwards; `tuning::autotune::Autotune` (copter) and `PlaneAutotune` run them
   (`architecture.md#autotune`).
 - Trait methods don't return `Result`: invalid configuration panics at construction, and
   per-tick failures aren't modeled. A new fallible operation gets a `thiserror` type.
