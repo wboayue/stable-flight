@@ -154,7 +154,7 @@ cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight 
 # plane flight at 100 m, hands over to a tune hold (PlaneTuneHold) on the level leg once it flies
 # straight and level, at the thrust it flew on, fits and designs roll then pitch (StagePlan::plane_design), logs each
 # fit and verify pair, prints the tuned gains as an airframes.rs snippet, flies home in plane,
-# transitions back, and lands on the start; a breach hovers where it is and lands there.
+# transitions back, hovers over the start, and lands there; a breach hovers where it is and lands there.
 # --step-test appends roll/pitch rate and angle step tests (--stages none --step-test: the
 # airframe's gains); --rate-scale starts from scaled rate gains; --record writes TailsitterColumns.
 # Or: just fly-plane-autotune

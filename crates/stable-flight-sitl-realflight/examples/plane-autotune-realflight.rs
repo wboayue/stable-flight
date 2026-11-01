@@ -3,7 +3,7 @@
 //! 100 m), hands over to the attitude hold a plane autotune flies in (`PlaneTuneHold`, at the
 //! thrust the level leg flew on) once the last leg flies straight and level for 3 s, tunes roll, then pitch, by the plane design
 //! (`StagePlan::plane_design`, `architecture.md#autotune`), and flies home in plane, transitions
-//! back, and lands on the start (`stable_flight_sitl::autotune::PlaneTuneFlight`). Each axis is
+//! back, hovers over the start, and lands there (`stable_flight_sitl::autotune::PlaneTuneFlight`). Each axis is
 //! fitted from a square wave on its rate loop (the fit logged: stiffness, damping, control,
 //! lag, delay), its gains designed on the fit, and the design checked on attitude step pairs
 //! (each pair logged). Between probes, past 600 m from where the hold started, the hold turns
@@ -119,7 +119,7 @@ const LINE_THRUST_TIME_CONSTANT_S: f32 = 1.0;
 /// The plane loiter home flies at, and the back transition starts from, in m above the
 /// start: the transition scripts' plane legs' 30 m.
 const HOME_ALTITUDE_M: f32 = 30.0;
-/// How far outside the plane guidance's loiter radius the flight home may land, in m: room
+/// How far outside the plane guidance's loiter radius the flight home may hover back, in m: room
 /// for the turn onto the loiter.
 const HOME_TURN_MARGIN_M: f32 = 60.0;
 

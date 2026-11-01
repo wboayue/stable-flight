@@ -94,7 +94,7 @@ fn cruising(north_m: f32, altitude_m: f32) -> VehicleState {
     }
 }
 
-/// Home at 30 m over the start, landing within 100 m of it.
+/// Home at 30 m over the start, hovering back from within 100 m of it.
 const HOME: PlaneHome = PlaneHome {
     altitude_m: 30.0,
     radius_m: 100.0,
@@ -172,16 +172,24 @@ fn the_switch_reports_the_holds_turn() {
 }
 
 /// Finished from a hold that flew on, the flight loiters home in plane at the home altitude
-/// and trim airspeed, and lands on the start once within reach: (north, altitude, landing).
+/// and trim airspeed, hovers back over the start once within reach, and lands on it once
+/// within the waypoint acceptance radius: (north, altitude, phase).
 #[test]
-fn the_plane_flight_comes_home_in_plane_then_lands_on_the_start() {
-    for (north_m, altitude_m, landing) in [
-        (500.0, 100.0, false),
-        (90.0, 100.0, false),
-        (500.0, 30.0, false),
-        (110.0, 30.0, false),
-        (90.0, 35.0, true),
-        (0.0, 30.0, true),
+fn the_plane_flight_comes_home_in_plane_hovers_over_the_start_then_lands() {
+    #[derive(Debug, PartialEq)]
+    enum Home {
+        Loiter,
+        Hover,
+        Land,
+    }
+    for (north_m, altitude_m, expected) in [
+        (500.0, 100.0, Home::Loiter),
+        (90.0, 100.0, Home::Loiter),
+        (500.0, 30.0, Home::Loiter),
+        (110.0, 30.0, Home::Loiter),
+        (90.0, 35.0, Home::Hover),
+        (5.0, 30.0, Home::Hover),
+        (2.0, 30.0, Home::Land),
     ] {
         let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), HOME);
         switch.hold(HOLD());
@@ -189,40 +197,67 @@ fn the_plane_flight_comes_home_in_plane_then_lands_on_the_start() {
         switch.finish();
         check!(switch.is_finished());
         let command = commander.next_command(0.004, &cruising(north_m, altitude_m));
-        check!(
-            switch.is_landing() == landing,
-            "{north_m} m, {altitude_m} m"
-        );
-        match command.input {
-            ControlInput::Waypoint(home) => {
-                check!(!landing);
-                check!(command.regime == FlightRegime::Plane);
-                check!(home.position_m == Vec2::zeros());
-                check!(home.altitude_m == 30.0);
+        let phase = match command.input {
+            ControlInput::Waypoint(home) if command.regime == FlightRegime::Plane => {
                 check!(home.cruise_speed_mps == 14.0);
                 check!(home.velocity_mps.is_none(), "a loiter, not a leg");
+                check!(home.position_m == Vec2::zeros());
+                check!(home.altitude_m == 30.0);
+                Home::Loiter
+            }
+            ControlInput::Waypoint(home) => {
+                check!(command.regime == FlightRegime::Copter);
+                check!(home.position_m == Vec2::zeros());
+                check!(home.altitude_m == 30.0);
+                Home::Hover
             }
             ControlInput::Land(land) => {
-                check!(landing);
                 check!(land.position_m == Vec2::zeros());
+                Home::Land
             }
             input => panic!("{input:?}"),
-        }
+        };
+        check!(phase == expected, "{north_m} m, {altitude_m} m");
+        check!(switch.is_landing() == (phase == Home::Land));
     }
 }
 
-/// The land waits on the caller's home radius, not the default loiter's: 150 m out lands
-/// within a 200 m radius and loiters on within 100 m.
+/// The hover back lands once over the start, wherever the back transition ended: 60 m out it
+/// hovers on, then lands on the start from 1 m.
 #[test]
-fn the_flight_home_lands_within_its_radius() {
-    for (radius_m, landing) in [(100.0, false), (200.0, true)] {
+fn the_hover_back_lands_once_over_the_start() {
+    let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), HOME);
+    switch.hold(HOLD());
+    commander.next_command(0.004, &cruising(0.0, 100.0));
+    switch.finish();
+    commander.next_command(0.004, &cruising(60.0, 30.0));
+    let hover = commander.next_command(0.004, &cruising(60.0, 20.0));
+    check!(
+        hover.regime == FlightRegime::Copter,
+        "out of the plane altitude band"
+    );
+    check!(!switch.is_landing());
+    let ControlInput::Land(land) = commander.next_command(0.004, &cruising(1.0, 20.0)).input else {
+        panic!("a land over the start");
+    };
+    check!(land.position_m == Vec2::zeros());
+}
+
+/// The hover back waits on the caller's home radius, not the default loiter's: 150 m out
+/// hovers within a 200 m radius and loiters on within 100 m.
+#[test]
+fn the_flight_home_hovers_back_within_its_radius() {
+    for (radius_m, hovering) in [(100.0, false), (200.0, true)] {
         let home = PlaneHome { radius_m, ..HOME };
         let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), home);
         switch.hold(HOLD());
         commander.next_command(0.004, &cruising(0.0, 100.0));
         switch.finish();
-        commander.next_command(0.004, &cruising(150.0, 30.0));
-        check!(switch.is_landing() == landing, "radius {radius_m} m");
+        let command = commander.next_command(0.004, &cruising(150.0, 30.0));
+        check!(
+            (command.regime == FlightRegime::Copter) == hovering,
+            "radius {radius_m} m"
+        );
     }
 }
 
