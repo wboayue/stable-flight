@@ -58,6 +58,9 @@ pub struct WingModel {
     /// The flight path's turn per rad of angle of attack (lift over mass and speed), in 1/s; 0
     /// on a roll axis.
     pub path_turn_per_s: f32,
+    /// The moment that holds the axis in trim: the window's mean moment command (the square
+    /// wave, washed out, averages near 0). Normalized.
+    pub trim_moment: f32,
 }
 
 impl WingModel {
@@ -76,6 +79,7 @@ impl WingModel {
     ///     lag_s: 0.0,
     ///     delay_s: 0.0,
     ///     path_turn_per_s: 0.0,
+    ///     trim_moment: 0.0,
     /// };
     /// assert_eq!(model.feedforward(), 0.5);
     /// ```
@@ -296,6 +300,8 @@ fn fit(window: &Window) -> Option<WingModel> {
         }
     }
     let (fit, lag_s, delay) = best?;
+    let moments = &window.moments[..window.len];
+    let trim_moment = moments.iter().sum::<f32>() / moments.len() as f32;
     let path_turn_per_s = if with_alpha {
         fit_path_turn(window, sample_s)?
     } else {
@@ -308,6 +314,7 @@ fn fit(window: &Window) -> Option<WingModel> {
         lag_s,
         delay_s: delay as f32 * sample_s,
         path_turn_per_s,
+        trim_moment,
     })
 }
 
