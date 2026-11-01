@@ -1001,11 +1001,13 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     clip band reads the same allowance, so the RealFlight check is what judges it. With the
     rate allowance, #518 measured `quad_x`'s angle P held at 9 with 10 ms of delay and its
     steps clipping; on the gyro-filtered rate loop with rate I, those rows pass.
-  * Open: at `racer`'s 75 Hz gyro low-pass the noise alone peaks at 0.12–0.17 rad/s in a
-    hover, past the 0.1 rad/s step settle; with the trim and delay added (the combined rows)
-    the yaw stage doesn't settle from the low start, and from the ×3 start the D turns the
-    90 Hz tone into clipped moments, so its fits saturate even lowered six times
-    ([#551](https://github.com/wboayue/stable-flight/issues/551)). The trim rows pass, with
+  * Open: at `racer`'s 75 Hz gyro low-pass the sim's 90 Hz tone passes, and the noise alone
+    peaks at 0.12–0.17 rad/s in a hover, past the 0.1 rad/s step settle; without the tone
+    `racer`'s low start passes, so its rows wait on a gyro notch
+    ([#597](https://github.com/wboayue/stable-flight/issues/597)). With the trim, weak motor,
+    and delay added (the combined rows) the yaw stage doesn't settle from the low start, and
+    the ×3 starts' fits saturate even lowered six times, the tone removed or not
+    ([#598](https://github.com/wboayue/stable-flight/issues/598)). The trim rows pass, with
     the rate I term limited in moment (*Retuning `i` is bumpless*, #374).
     `racer`'s ×3 start breaches the rate envelope in its first fit with 25 ms of delay: the
     abort is the safe outcome, and the row stays ignored.
