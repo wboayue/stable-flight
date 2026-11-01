@@ -123,8 +123,9 @@ const HOME_ALTITUDE_M: f32 = 30.0;
 /// carries it about 25 m, and its hover, at its 27° tilt cap, flies about 1.3 m/s, slower than
 /// a 5 km/h (1.4 m/s) wind, so the hover is left only the last few meters (#535).
 const HOME_RADIUS_M: f32 = 30.0;
-/// How far past the start the leg home turns back, in m: a descent from the hold's 100 m to
-/// 30 m takes about 200 m, so a first pass high turns and comes back down the line.
+/// How far past the start the leg home turns back, in m: the eXplora comes down from the
+/// hold's 100 m at about 4 m/s, about 250 m of leg to 30 m, so a first pass high turns and
+/// comes back down the line (#535).
 const HOME_OVERFLY_M: f32 = 150.0;
 
 /// Autotune of a VTOL's plane side in RealFlight.

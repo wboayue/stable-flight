@@ -190,13 +190,13 @@ fn explora_vtol_transition_fits_both_sides() {
 fn explora_vtol_flies_the_sim_exploras_plane_side() {
     let sim = stable_flight_sim::airframes::explora();
     let realflight = explora_vtol();
-    let mut tuned_sim = sim.stabilizer.plane;
-    let tuned = realflight.stabilizer.plane;
-    tuned_sim.rate.roll = tuned.rate.roll;
-    tuned_sim.rate.pitch = tuned.rate.pitch;
-    tuned_sim.time_constant_s = tuned.time_constant_s;
+    let plane = realflight.stabilizer.plane;
+    let mut sim_with_realflight_tune = sim.stabilizer.plane;
+    sim_with_realflight_tune.rate.roll = plane.rate.roll;
+    sim_with_realflight_tune.rate.pitch = plane.rate.pitch;
+    sim_with_realflight_tune.time_constant_s = plane.time_constant_s;
 
-    assert_eq!(tuned, tuned_sim);
+    assert_eq!(plane, sim_with_realflight_tune);
     assert_eq!(realflight.guidance.plane, sim.guidance.plane);
 }
 
