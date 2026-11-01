@@ -1,6 +1,6 @@
 //! The gain search: see [`Search`].
 
-use super::{Action, Batch, Input, Pairs, Verdict};
+use super::{Action, Batch, Input, MAX_START_LOWERINGS, Pairs, Verdict};
 use crate::controllers::Gains;
 use crate::tuning::StepSummary;
 use crate::tuning::autotune::{AutotuneAbort, KeepReason, Outcome, SearchPlan, with_i_per_p};
@@ -113,16 +113,11 @@ impl Search {
 
     /// Lowers a start the vehicle won't settle on by the bracket's `factor`, commits it, and
     /// steps the baseline again on it; fails `NotSettled` once the term would fall below
-    /// `min` or after [`MAX_UNSETTLED_LOWERINGS`]. A start that rings keeps every stage after
+    /// `min` or after [`MAX_START_LOWERINGS`]. A start that rings keeps every stage after
     /// it from settling, or, on an axis another stage's settle leaves out, spoils its steps.
     fn lower_unsettled(&mut self) -> Action {
-        /// Most times a search lowers a start that won't settle, each after a settle timeout
-        /// flown on the ringing gains: three cuts of 1.3 halve the term (÷ 2.2) within 30 s
-        /// at the copter envelope's 10 s timeout. `racer`'s default yaw at 25 ms of delay
-        /// settles after one; capped at 1–5 the robustness rows pass the same (#552).
-        const MAX_UNSETTLED_LOWERINGS: usize = 3;
         let gain = self.plan.term.get(self.start) / self.plan.factor;
-        if gain < self.plan.min || self.lowerings >= MAX_UNSETTLED_LOWERINGS {
+        if gain < self.plan.min || self.lowerings >= MAX_START_LOWERINGS {
             return Action::Fail(AutotuneAbort::NotSettled);
         }
         self.lowerings += 1;

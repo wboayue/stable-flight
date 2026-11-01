@@ -1,6 +1,6 @@
 //! A design stage: see [`Design`].
 
-use super::{Action, Input, measure_again};
+use super::{Action, Input, MAX_START_LOWERINGS, measure_again};
 use crate::controllers::Gains;
 use crate::tuning::autotune::{AutotuneAbort, DesignPlan, Outcome};
 use crate::tuning::{IdentifyAbort, Measurement, ProbeAbort, ProbeConfig};
@@ -10,14 +10,9 @@ use crate::tuning::{IdentifyAbort, Measurement, ProbeAbort, ProbeConfig};
 /// stage (#518).
 const MAX_UNUSABLE_FITS: usize = 3;
 
-/// What a design stage divides its start's gains by when its fit saturates under noise, as a
-/// search lowers a start that won't settle (the copter brackets' factor, #552).
+/// What a rate design stage divides its start's gains by when its fit saturates under noise,
+/// as a search lowers a start that won't settle (the copter brackets' factor, #552).
 const SATURATED_FACTOR: f32 = 1.3;
-
-/// Most times a design stage lowers a start whose fit saturates: three cuts halve it (÷ 2.2),
-/// as a search's do (#552). Up to six didn't unclip the sim's combined rows from three times
-/// a quad's rate gains, where the D turns the 90 Hz gyro tone into clipped moments (#551).
-const MAX_SATURATED_LOWERINGS: usize = 3;
 
 /// A [`DesignPlan`] as a pure state machine: a fit, the gains designed from it, then a hold
 /// on them. A fit the design can't use, or whose design doesn't hold, runs again, up to
@@ -112,15 +107,16 @@ impl Design {
         }
     }
 
-    /// Lowers a start whose fit saturated under noise ([`IdentifyAbort::Saturated`]), every
-    /// gain `÷ SATURATED_FACTOR`, commits it, and fits again on it; fails after
-    /// [`MAX_SATURATED_LOWERINGS`]. Under gyro noise a start at three times a quad's rate gains
-    /// rings at the rate loop's limit, and its fit designed rate P 8.1 against 1.9 (#551).
+    /// Lowers a rate loop's start whose fit saturated under noise
+    /// ([`IdentifyAbort::Saturated`]), every gain `÷ SATURATED_FACTOR`, commits it, and fits
+    /// again on it; fails after [`MAX_START_LOWERINGS`]. Under gyro noise a start at three
+    /// times a quad's rate gains rings at the rate loop's limit, and its fit designed rate P
+    /// 8.1 against 1.9 (#551). An angle stage fails instead: the moment that clips is the rate
+    /// loop's under it, which lowering the angle gains wouldn't unclip.
     fn lower_saturated(&mut self, gains: Gains) -> Action {
-        if self.lowerings >= MAX_SATURATED_LOWERINGS {
-            return Action::Fail(AutotuneAbort::Probe(ProbeAbort::Identify(
-                IdentifyAbort::Saturated,
-            )));
+        let saturated = AutotuneAbort::Probe(ProbeAbort::Identify(IdentifyAbort::Saturated));
+        if self.inner.is_some() || self.lowerings >= MAX_START_LOWERINGS {
+            return Action::Fail(saturated);
         }
         self.lowerings += 1;
         let lowered = Gains {
