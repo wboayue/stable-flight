@@ -1,5 +1,7 @@
 //! The attitude hold a plane autotune flies in: [`PlaneTuneHold`].
 
+use core::f32::consts::{FRAC_PI_2, PI};
+
 use crate::controllers::{InvalidConfig, check, check_positive};
 use crate::math::{DEG, wrap_angle};
 use crate::{
@@ -88,8 +90,10 @@ impl PlaneTuneHoldConfig {
 /// - **Start:** the first command holds the attitude and position the vehicle has, wings
 ///   level; requests [`FlightRegime::Plane`].
 /// - **Return:** past [`return_radius_m`](PlaneTuneHoldConfig::return_radius_m) from the
-///   start, and only while the host allows it ([`allow_turn`](Self::allow_turn): between
-///   probes), the hold banks toward the start until it heads within 10° of it. The host
+///   start, flying away from it, and only while the host allows it
+///   ([`allow_turn`](Self::allow_turn): between probes), the hold banks toward the start
+///   until it heads within 10° of it, or has turned around (within 10° of reversing its
+///   heading): a start inside the turn's circle stays abeam however long it turns. The host
 ///   keeps the supervisor from starting a probe meanwhile
 ///   ([`Supervisor::set_maneuvering`](crate::tuning::autotune::Supervisor::set_maneuvering)
 ///   with [`turning`](Self::turning)).
@@ -117,8 +121,17 @@ pub struct PlaneTuneHold {
     /// The pitch the hold flies, in rad: the start's, trimmed for airspeed.
     pitch_rad: f32,
     turns_allowed: bool,
-    turning: bool,
+    turn: Option<Turn>,
     recovery: Recovery,
+}
+
+/// A turn back under way.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Turn {
+    /// The bank, signed (right positive), in rad: its side is fixed when the turn starts.
+    bank_rad: f32,
+    /// The heading the turn started on, in rad.
+    from_heading_rad: f32,
 }
 
 /// Where a [`PlaneTuneHold`]'s recovery stands.
@@ -150,7 +163,7 @@ impl PlaneTuneHold {
             start: None,
             pitch_rad: 0.0,
             turns_allowed: false,
-            turning: false,
+            turn: None,
             recovery: Recovery::Off,
         }
     }
@@ -164,7 +177,7 @@ impl PlaneTuneHold {
 
     /// Whether the hold is turning back toward its start.
     pub fn turning(&self) -> bool {
-        self.turning
+        self.turn.is_some()
     }
 
     /// Ends the hold: from the next command, a VTOL hovers where it is, on its rotors, and a
@@ -172,7 +185,7 @@ impl PlaneTuneHold {
     pub fn recover(&mut self) {
         if self.recovery == Recovery::Off {
             self.recovery = Recovery::Requested;
-            self.turning = false;
+            self.turn = None;
         }
     }
 
@@ -198,24 +211,32 @@ impl PlaneTuneHold {
     }
 
     /// The bank toward the start while turning back, 0 otherwise; starts a turn past the
-    /// return radius when turns are allowed, and ends it heading within `TURN_DONE_RAD` of
-    /// the start.
+    /// return radius, flying away from the start, when turns are allowed, and ends it heading
+    /// within `TURN_DONE_RAD` of the start or of reversing the heading it started on.
     fn bank_rad(&mut self, state: &VehicleState, start_m: Vec2) -> f32 {
         let to_start_m = start_m - state.position_m.xy();
-        if !self.turning && self.turns_allowed && to_start_m.norm() > self.config.return_radius_m {
-            self.turning = true;
-        }
-        if !self.turning {
-            return 0.0;
-        }
         // Bearing clockwise from north (x north, y east); right bank turns clockwise.
         let bearing_rad = libm::atan2f(to_start_m.y, to_start_m.x);
         let heading_error_rad = wrap_angle(bearing_rad - state.heading_rad);
-        if heading_error_rad.abs() < TURN_DONE_RAD || heading_error_rad.is_nan() {
-            self.turning = false;
+        let away = heading_error_rad.abs() > FRAC_PI_2;
+        let beyond = to_start_m.norm() > self.config.return_radius_m;
+        if self.turn.is_none() && self.turns_allowed && beyond && away {
+            self.turn = Some(Turn {
+                bank_rad: self.config.turn_bank_rad.copysign(heading_error_rad),
+                from_heading_rad: state.heading_rad,
+            });
+        }
+        let Some(turn) = self.turn else {
+            return 0.0;
+        };
+        let turned_rad = wrap_angle(state.heading_rad - turn.from_heading_rad).abs();
+        let homing = heading_error_rad.abs() < TURN_DONE_RAD;
+        let reversed = turned_rad > PI - TURN_DONE_RAD;
+        if homing || reversed || heading_error_rad.is_nan() || turned_rad.is_nan() {
+            self.turn = None;
             return 0.0;
         }
-        self.config.turn_bank_rad.copysign(heading_error_rad)
+        turn.bank_rad
     }
 
     /// The command a recovery flies, fixed where it began: a hover at the vehicle's position
