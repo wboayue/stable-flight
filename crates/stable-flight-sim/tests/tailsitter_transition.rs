@@ -39,7 +39,7 @@ const BACK_AT_S: f32 = 45.0;
 /// Where the hover after the back transition holds, m north on the line: about where it comes
 /// to a stop. The back transition begins at 340 m and hands over at 370.8 m, at 2.4 m/s, and
 /// the hover, braking at its 1 m/s² velocity shaping, stops about 2.2 m on (measured); it
-/// holds its heading belly north, since moving along the span departs (#387).
+/// holds its heading belly north.
 const BACK_HOVER_NORTH_M: f32 = 372.0;
 
 /// Seconds the hover settles after the back transition before the hold is judged. It arrives
