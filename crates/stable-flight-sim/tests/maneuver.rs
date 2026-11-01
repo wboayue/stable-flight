@@ -375,7 +375,7 @@ fn doublets_measure_the_step_response() {
 }
 
 /// The eXplora's doublets at 60°/s peak within 1.3× of the command in their first half
-/// (measured 0.98 in roll, 1.04 in pitch), where PX4's default feedforward peaked at 3.2× and
+/// (measured 0.98 in roll, 1.27 in pitch), where PX4's default feedforward peaked at 3.2× and
 /// 3.4× in RealFlight (#342).
 #[test]
 fn explora_doublets_track_their_command() {

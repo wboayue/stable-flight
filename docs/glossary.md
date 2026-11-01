@@ -115,6 +115,11 @@ Code comments and docs link here instead of redefining a term.
   growing with the angle of attack (the tail weathervaning into the airflow); damping a moment
   against the pitch rate. A held pitch rate needs the surface to beat both; a held roll rate
   only the damping. A plane autotune fits both in flight (`WingModel`).
+- **Static margin:** how far the center of gravity sits ahead of the point the wing's lift
+  pivots about, as a share of the chord. It sets the pitch stiffness: a tailed plane's is
+  large, a flying wing's a few percent.
+- **Lift slope:** how fast lift grows with the angle of attack, per rad. A short, wide wing
+  (low aspect ratio) has a lower one than a long, slender one.
 - **Plane of symmetry:** the plane through the nose and the belly that splits the airframe into
   mirror halves. A wing's lift and drag come from the air in it; air along the span (sideslip)
   pushes only sideways.
