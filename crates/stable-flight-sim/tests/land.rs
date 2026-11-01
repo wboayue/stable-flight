@@ -15,9 +15,9 @@ const ALTITUDE_M: f32 = 5.0;
 const NORTH_M: f32 = 20.0;
 const EAST_M: f32 = -15.0;
 
-/// Touchdown distance from the waypoint per axis, in m: 0.21 measured on the x axis, the lateral
+/// Touchdown distance from the waypoint per axis, in m: 0.19 measured on the x axis, the lateral
 /// I's slow tail after the 25 m leg (#357), which shaping the velocity target doesn't shorten
-/// (#367).
+/// (#367); 0.3 m leaves about 1.6× margin.
 const MAX_TOUCHDOWN_ERROR_M: f32 = 0.3;
 
 #[test]
