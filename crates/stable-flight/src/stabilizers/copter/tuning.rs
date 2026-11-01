@@ -247,6 +247,17 @@ impl CopterStabilizer {
         [0, 1, 2].map(|axis| stepped_axis == Some(axis))
     }
 
+    /// Ends a running stage as interrupted: a VTOL's setpoint stopped flying the hover side
+    /// (a plane setpoint, a transition's blend).
+    pub(crate) fn interrupt_stage(&mut self) {
+        if let Some(stage) = &mut self.stage
+            && stage.is_running()
+        {
+            stage.interrupted = true;
+            self.hand_back();
+        }
+    }
+
     /// Ends a running angle or heading stage as interrupted (its loop is idle on a rate tick).
     pub(super) fn interrupt_attitude_stage(&mut self) {
         let Some(stage) = &mut self.stage else {

@@ -2,6 +2,7 @@ use assert2::check;
 
 use super::*;
 use crate::guidance::vtol::{TailsitterGuidance, TailsitterGuidanceConfig};
+use crate::tuning::ProbeStatus;
 use crate::{AttitudeSetpoint, BodyRateSetpoint, PlaneSetpoint};
 
 const DT: f32 = 0.004;
@@ -109,11 +110,66 @@ fn params_chain_the_parts() {
     check!(stabilizer.config().plane.trim_airspeed_mps == 12.0);
 }
 
-/// Autotune probes the hover side in its view: nose-up hover is level to the supervisor.
+/// Autotune probes the hover side in its view, where nose-up hover is level to the
+/// supervisor, and the plane side in the airplane frame.
 #[test]
-fn probes_run_in_the_hover_view() {
+fn probes_run_in_their_sides_frame() {
     let stabilizer = TailsitterStabilizer::new(TailsitterStabilizerConfig::default());
-    check!(stabilizer.probe_frame() == crate::view::tailsitter_rotation());
+    check!(Tunable::<TunedLoop>::probe_frame(&stabilizer) == crate::view::tailsitter_rotation());
+    check!(Tunable::<PlaneLoop>::probe_frame(&stabilizer) == UnitQuaternion::identity());
+}
+
+/// The probe's status after one tick on `then`, from a probe on `side` started while that
+/// side flew.
+fn probe_after(side: ProbedSide, then: &Setpoint) -> Option<ProbeStatus> {
+    let mut stabilizer = TailsitterStabilizer::new(TailsitterStabilizerConfig::default());
+    let state = VehicleState::default();
+    let step = ProbeConfig::Step(crate::tuning::autotune::COPTER_RATE_STEP);
+    match side {
+        ProbedSide::Hover => {
+            stabilizer.stabilize(DT, &hover_setpoint(), &state);
+            stabilizer.start_probe(TunedLoop::RollRate, step);
+            stabilizer.stabilize(DT, then, &state);
+            Tunable::<TunedLoop>::probe(&stabilizer).map(|(_, status)| status)
+        }
+        ProbedSide::Plane => {
+            stabilizer.stabilize(DT, &plane_setpoint(), &state);
+            stabilizer.start_probe(PlaneLoop::RollRate, step);
+            stabilizer.stabilize(DT, then, &state);
+            Tunable::<PlaneLoop>::probe(&stabilizer).map(|(_, status)| status)
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ProbedSide {
+    Hover,
+    Plane,
+}
+
+/// A probe flies only while its side does: the other side's setpoint, or a transition ramp
+/// on the plane side, interrupts it.
+#[test]
+fn probes_fly_only_on_their_side() {
+    let transition = Setpoint::Plane(PlaneSetpoint {
+        transition: true,
+        thrust: 0.5,
+        ..Default::default()
+    });
+    for (side, then, interrupted) in [
+        (ProbedSide::Hover, hover_setpoint(), false),
+        (ProbedSide::Hover, plane_setpoint(), true),
+        (ProbedSide::Plane, plane_setpoint(), false),
+        (ProbedSide::Plane, hover_setpoint(), true),
+        (ProbedSide::Plane, transition, true),
+    ] {
+        let status = probe_after(side, &then);
+        check!(
+            (status == Some(ProbeStatus::Interrupted)) == interrupted,
+            "{side:?} then {then:?}: {status:?}"
+        );
+        check!(status.is_some(), "{side:?} then {then:?}");
+    }
 }
 
 /// Guidance and stabilizer param names are unique across the tailsitter's five tables, and
