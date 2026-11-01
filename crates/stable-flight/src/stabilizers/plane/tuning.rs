@@ -3,7 +3,7 @@
 
 use crate::VehicleState;
 use crate::controllers::RateGains;
-use crate::tuning::{LoopSignals, Probe, ProbeConfig, ProbeStatus, Tunable};
+use crate::tuning::{LoopSignals, Probe, ProbeConfig, ProbeStatus, Tunable, WingIdentifyProbe};
 
 use super::{PlaneStabilizer, PlaneStabilizerConfig};
 
@@ -120,10 +120,51 @@ impl PlaneLoop {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct Stage {
     target: PlaneLoop,
-    probe: Probe,
+    probe: StageProbe,
     /// The loop has been handed back (finished, interrupted, or stopped): no more override.
     handed_back: bool,
     interrupted: bool,
+}
+
+/// A stage's probe: a wing identification, which only a plane hosts, or any other.
+// The wing's window (9 KB) makes its variant the larger; a host holds one probe at a time.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug, PartialEq)]
+enum StageProbe {
+    Wing(WingIdentifyProbe),
+    Other(Probe),
+}
+
+impl StageProbe {
+    fn new(config: ProbeConfig) -> Self {
+        match config {
+            ProbeConfig::IdentifyWing(config) => Self::Wing(WingIdentifyProbe::new(config)),
+            config => Self::Other(Probe::new(config)),
+        }
+    }
+
+    /// The setpoint the loop flies this tick, `dt` on ([`Probe::step`]).
+    fn step(&mut self, dt: f32, signals: &LoopSignals) -> f32 {
+        match self {
+            Self::Wing(wing) => {
+                let offset = wing.step(
+                    dt,
+                    signals.rate_radps,
+                    signals.last_moment,
+                    signals.alpha_rad,
+                );
+                signals.setpoint + offset
+            }
+            Self::Other(probe) => probe.step(dt, signals),
+        }
+    }
+
+    fn status(&self) -> ProbeStatus {
+        match self {
+            Self::Wing(wing) => wing.status().into(),
+            Self::Other(probe) => probe.status(),
+        }
+    }
 }
 
 impl Stage {
@@ -165,7 +206,7 @@ impl Tunable<PlaneLoop> for PlaneStabilizer {
         self.stop_probe();
         self.stage = Some(Stage {
             target,
-            probe: Probe::new(config),
+            probe: StageProbe::new(config),
             handed_back: false,
             interrupted: false,
         });
