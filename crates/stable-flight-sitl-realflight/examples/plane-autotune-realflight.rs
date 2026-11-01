@@ -70,7 +70,7 @@ use stable_flight_link::LinkRx;
 use stable_flight_link::fc::{FcLink, FcPoller};
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::autotune::{
-    PlaneTuneFlight, PlaneTuneSwitch, format_brief, is_inverted, log_event,
+    PlaneHome, PlaneTuneFlight, PlaneTuneSwitch, format_brief, is_inverted, log_event,
 };
 use stable_flight_sitl::cli::parse_param;
 use stable_flight_sitl::commanders::ScriptCommander;
@@ -110,6 +110,9 @@ const LINE_THRUST_TIME_CONSTANT_S: f32 = 1.0;
 /// The plane loiter home flies at, and the back transition starts from, in m above the
 /// start: the transition scripts' plane legs' 30 m.
 const HOME_ALTITUDE_M: f32 = 30.0;
+/// How far outside the plane guidance's loiter radius the flight home may land, in m: room
+/// for the turn onto the loiter.
+const HOME_TURN_MARGIN_M: f32 = 60.0;
 
 /// Autotune of a VTOL's plane side in RealFlight.
 #[derive(Parser)]
@@ -233,10 +236,14 @@ fn main() -> ExitCode {
         .expect("failed to load flight script")
         .with_route_end(RouteEnd::Hold)
         .anchored();
-    let (commander, switch) = PlaneTuneFlight::new(script, HOME_ALTITUDE_M);
-
     let Model::Explora = args.airframe;
     let mut airframe = airframes::explora_vtol();
+    let home = PlaneHome {
+        altitude_m: HOME_ALTITUDE_M,
+        radius_m: airframe.guidance.plane.loiter_radius_m + HOME_TURN_MARGIN_M,
+    };
+    let (commander, switch) = PlaneTuneFlight::new(script, home);
+
     airframe.stabilizer.plane = scaled(airframe.stabilizer.plane, args.rate_scale);
     let plane = airframe.stabilizer.plane;
     let hold = PlaneTuneHoldConfig {

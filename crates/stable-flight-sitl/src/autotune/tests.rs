@@ -94,6 +94,12 @@ fn cruising(north_m: f32, altitude_m: f32) -> VehicleState {
     }
 }
 
+/// Home at 30 m over the start, landing within 100 m of it.
+const HOME: PlaneHome = PlaneHome {
+    altitude_m: 30.0,
+    radius_m: 100.0,
+};
+
 const HOLD: fn() -> PlaneTuneHoldConfig = || PlaneTuneHoldConfig {
     recover_to: FlightRegime::Copter,
     ..PlaneTuneHoldConfig::new(0.85, 14.0)
@@ -103,7 +109,7 @@ const HOLD: fn() -> PlaneTuneHoldConfig = || PlaneTuneHoldConfig {
 /// switch reaches; outside the hold they do nothing.
 #[test]
 fn the_plane_flight_flies_the_script_then_the_hold() {
-    let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), 30.0);
+    let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), HOME);
     let state = cruising(0.0, 100.0);
     switch.allow_turn(true);
     switch.recover();
@@ -134,7 +140,7 @@ fn the_plane_flight_flies_the_script_then_the_hold() {
 /// reports.
 #[test]
 fn the_switch_reports_the_holds_turn() {
-    let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), 30.0);
+    let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), HOME);
     switch.hold(HOLD());
     let flying_north = |north_m| VehicleState {
         velocity_mps: Vec3::new(14.0, 0.0, 0.0),
@@ -158,7 +164,7 @@ fn the_plane_flight_comes_home_in_plane_then_lands_on_the_start() {
         (90.0, 35.0, true),
         (0.0, 30.0, true),
     ] {
-        let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), 30.0);
+        let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), HOME);
         switch.hold(HOLD());
         commander.next_command(0.004, &cruising(0.0, 100.0));
         switch.finish();
@@ -186,12 +192,27 @@ fn the_plane_flight_comes_home_in_plane_then_lands_on_the_start() {
     }
 }
 
+/// The land waits on the caller's home radius, not the default loiter's: 150 m out lands
+/// within a 200 m radius and loiters on within 100 m.
+#[test]
+fn the_flight_home_lands_within_its_radius() {
+    for (radius_m, landing) in [(100.0, false), (200.0, true)] {
+        let home = PlaneHome { radius_m, ..HOME };
+        let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), home);
+        switch.hold(HOLD());
+        commander.next_command(0.004, &cruising(0.0, 100.0));
+        switch.finish();
+        commander.next_command(0.004, &cruising(150.0, 30.0));
+        check!(switch.is_landing() == landing, "radius {radius_m} m");
+    }
+}
+
 /// Finished after a recovery, or before any hold, the flight lands where the vehicle is, and
 /// disarms on touchdown; a second finish changes nothing.
 #[test]
 fn the_plane_flight_lands_in_place_after_a_recovery_or_without_a_hold() {
     for recovered in [true, false] {
-        let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), 30.0);
+        let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), HOME);
         if recovered {
             switch.hold(HOLD());
             switch.recover();
