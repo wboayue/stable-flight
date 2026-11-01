@@ -2,44 +2,12 @@ use assert2::{assert, check};
 
 use super::*;
 use crate::controllers::PlaneRateControllerConfig;
+use crate::tuning::plant::{CONTROL_RADPS2, DAMPING_PER_S, Wing};
 use crate::tuning::{Measurement, StepConfig};
-use crate::{BodyRateSetpoint, PlaneSetpoint, Setpoint, Stabilizer, Vec2, Vec3, VehicleState};
-use nalgebra::UnitQuaternion;
+use crate::{BodyRateSetpoint, PlaneSetpoint, Setpoint, Stabilizer, Vec3, VehicleState};
 
 /// The flight loop's tick: 250 Hz.
 const DT: f32 = 0.004;
-
-/// A wing's roll and pitch, each a rate driven by its moment against its damping: rate
-/// acceleration = control × moment − damping × rate, angles integrated from the rates (small
-/// angles). Gentle enough for the default gains to fly.
-#[derive(Default)]
-struct Wing {
-    angles_rad: Vec2,
-    rates_radps: Vec2,
-}
-
-/// Rate acceleration per unit moment, rad/s².
-const CONTROL_RADPS2: f32 = 40.0;
-/// Rate damping, 1/s.
-const DAMPING_PER_S: f32 = 8.0;
-
-impl Wing {
-    fn state(&self) -> VehicleState {
-        VehicleState {
-            attitude: UnitQuaternion::from_euler_angles(self.angles_rad.x, self.angles_rad.y, 0.0),
-            angular_velocity_radps: Vec3::new(self.rates_radps.x, self.rates_radps.y, 0.0),
-            ..Default::default()
-        }
-    }
-
-    fn step(&mut self, moments: Vec3) {
-        for axis in 0..2 {
-            let accel = CONTROL_RADPS2 * moments[axis] - DAMPING_PER_S * self.rates_radps[axis];
-            self.rates_radps[axis] += accel * DT;
-            self.angles_rad[axis] += self.rates_radps[axis] * DT;
-        }
-    }
-}
 
 /// Gains that fly the [`Wing`]: feedforward matching its damping, a little P and I.
 fn config() -> PlaneStabilizerConfig {
@@ -74,7 +42,7 @@ fn rates() -> Setpoint {
 
 fn tick(stabilizer: &mut PlaneStabilizer, wing: &mut Wing, setpoint: &Setpoint) -> Vec3 {
     let output = stabilizer.stabilize(DT, setpoint, &wing.state());
-    wing.step(output.moments);
+    wing.step(DT, output.moments);
     output.moments
 }
 

@@ -85,6 +85,7 @@ pub trait Side: sealed::Sealed + Copy + fmt::Debug + PartialEq {
 mod sealed {
     pub trait Sealed {}
     impl Sealed for super::CopterSide {}
+    impl Sealed for super::super::PlaneSide {}
 }
 
 /// A stabilizer config that holds a [`Side`]'s config: the copter's is its own.
@@ -288,6 +289,10 @@ impl Side for CopterSide {
 pub struct Motion {
     /// The larger of |roll| and |pitch|, from level, in rad.
     pub(super) tilt_rad: f32,
+    /// |roll| from level, in rad.
+    pub(super) bank_rad: f32,
+    /// |pitch| from level, in rad.
+    pub(super) pitch_rad: f32,
     /// The largest raw body rate magnitude, in rad/s.
     pub(super) rate_radps: f32,
     /// The |roll| and |pitch| errors from the attitude target, in rad.
@@ -299,6 +304,8 @@ pub struct Motion {
     /// The filtered |yaw| rate, in rad/s.
     pub(super) yaw_rate_radps: f32,
     pub(super) altitude_m: f32,
+    /// The airspeed, in m/s, when the state has a valid one.
+    pub(super) airspeed_mps: Option<f32>,
 }
 
 impl Motion {
@@ -319,12 +326,15 @@ impl Motion {
         let pitch_error_rad = (pitch - target_rad.y).abs();
         Self {
             tilt_rad: roll.abs().max(pitch.abs()),
+            bank_rad: roll.abs(),
+            pitch_rad: pitch.abs(),
             rate_radps: raw_radps.amax(),
             axis_tilt_error_rad: [roll_error_rad, pitch_error_rad],
             speed_mps: zero_if_nan(state.velocity_mps.xy().norm()),
             axis_rate_radps: [filtered_radps.x.abs(), filtered_radps.y.abs()],
             yaw_rate_radps: filtered_radps.z.abs(),
             altitude_m: state.position_m.z,
+            airspeed_mps: state.valid_airspeed_mps(),
         }
     }
 }
@@ -347,7 +357,7 @@ pub(super) fn attitude_target(setpoint: &Setpoint) -> Vec2 {
 }
 
 /// `value`, or 0 for NaN: the neutral reading of a missing angle or speed.
-fn zero_if_nan(value: f32) -> f32 {
+pub(super) fn zero_if_nan(value: f32) -> f32 {
     if value.is_nan() { 0.0 } else { value }
 }
 

@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 
 use nalgebra::UnitQuaternion;
 
-use crate::{Vec3, VehicleState};
+use crate::{Vec2, Vec3, VehicleState};
 
 /// Integration sub-steps per control tick.
 const SUBSTEPS: usize = 40;
@@ -156,6 +156,38 @@ impl Axes {
         for (axis, plant) in self.rates.iter_mut().enumerate() {
             plant.step(moments[axis]);
             self.angles_rad[axis] += self.dt * plant.output();
+        }
+    }
+}
+
+/// A wing's roll and pitch, each a rate driven by its moment against its damping: rate
+/// acceleration = control × moment − damping × rate, angles integrated from the rates (small
+/// angles). Gentle enough for the default gains to fly.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Wing {
+    pub(crate) angles_rad: Vec2,
+    pub(crate) rates_radps: Vec2,
+}
+
+/// Rate acceleration per unit moment, rad/s².
+pub(crate) const CONTROL_RADPS2: f32 = 40.0;
+/// Rate damping, 1/s.
+pub(crate) const DAMPING_PER_S: f32 = 8.0;
+
+impl Wing {
+    pub(crate) fn state(&self) -> VehicleState {
+        VehicleState {
+            attitude: UnitQuaternion::from_euler_angles(self.angles_rad.x, self.angles_rad.y, 0.0),
+            angular_velocity_radps: Vec3::new(self.rates_radps.x, self.rates_radps.y, 0.0),
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn step(&mut self, dt: f32, moments: Vec3) {
+        for axis in 0..2 {
+            let accel = CONTROL_RADPS2 * moments[axis] - DAMPING_PER_S * self.rates_radps[axis];
+            self.rates_radps[axis] += accel * dt;
+            self.angles_rad[axis] += self.rates_radps[axis] * dt;
         }
     }
 }
