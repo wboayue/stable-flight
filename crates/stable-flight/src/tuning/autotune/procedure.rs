@@ -7,9 +7,11 @@ use crate::stabilizers::plane::PlaneAxisGains;
 use crate::tuning::{Measurement, ProbeAbort, ProbeConfig, StepMetrics, StepSummary};
 
 use design::Design;
+use plane_design::PlaneDesign;
 use search::Search;
 
 mod design;
+mod plane_design;
 mod search;
 #[cfg(test)]
 mod tests;
@@ -134,6 +136,9 @@ pub enum Action<G = Gains> {
     /// Fly `gains` until the stage's axis holds the settle on them, or the settle timeout;
     /// [`Input::Held`] reports which.
     Hold { gains: G },
+    /// Decide again on the next update ([`Decide::Computing`]), the committed gains flying: a
+    /// design spread over updates.
+    Compute,
     /// End the run: the stage can't go on.
     Fail(AutotuneAbort),
 }
@@ -212,18 +217,22 @@ pub struct PlaneProcedure(PlaneSteps);
 enum PlaneSteps {
     /// Alternating steps, then the same gains.
     StepTest(Pairs),
+    /// A wing fit, gains designed on it, then attitude pairs on them.
+    Design(PlaneDesign),
 }
 
 impl PlaneProcedure {
     pub(super) fn new(method: PlaneMethod) -> Self {
         match method {
             PlaneMethod::StepTest(plan) => Self(PlaneSteps::StepTest(Pairs::new(plan, plan.pairs))),
+            PlaneMethod::Design(plan) => Self(PlaneSteps::Design(PlaneDesign::new(plan))),
         }
     }
 
     pub(super) fn next(&mut self, on: Decide, gains: PlaneAxisGains) -> Action<PlaneAxisGains> {
         match &mut self.0 {
             PlaneSteps::StepTest(pairs) => pairs.step_test(on, gains),
+            PlaneSteps::Design(design) => design.next(on),
         }
     }
 }
@@ -348,7 +357,7 @@ impl Pairs {
             Decide::Aborted { abort } => Action::Fail(AutotuneAbort::Probe(abort)),
             Decide::Breached { reason } => Action::Fail(reason),
             Decide::Unsettled => Action::Fail(AutotuneAbort::NotSettled),
-            Decide::Measured { .. } | Decide::Held { .. } => {
+            Decide::Measured { .. } | Decide::Held { .. } | Decide::Computing => {
                 Action::Fail(AutotuneAbort::Interrupted)
             }
         }

@@ -14,8 +14,13 @@
 
 use stable_flight::tuning::{StepConfig, StepMetrics, StepStatus};
 
-use super::plane::{Axis, ClipTimer, PlanePlant, StepCommander, north_line, plane_pipeline};
+use super::hover_at;
+use super::plane::{
+    Axis, ClipTimer, Interlude, PlanePlant, StepCommander, north_line, north_line_command,
+    plane_pipeline,
+};
 use super::quadplane::{QuadPlanePlant, quadplane_pipeline_at};
+use super::tailsitter::{TailsitterPlant, tailsitter_pipeline};
 use super::{fly, spec};
 
 /// How long a step's surfaces may clip, in s: 5 ticks at 250 Hz, half a tick clear of `f32`
@@ -61,7 +66,7 @@ impl SpecPlant for PlanePlant {
         let thrust = self.airframe.guidance.cruise_thrust;
         let commander = StepCommander::new(self.line(), LEAD_S, axis, step, thrust);
         let flight_loop = plane_pipeline(self, commander, ClipTimer::default());
-        measured(flight_loop, step)
+        measured(flight_loop, step, LEAD_S)
     }
 
     fn time_constants_s(&self) -> stable_flight::Vec2 {
@@ -83,7 +88,7 @@ impl SpecPlant for QuadPlanePlant {
         let commander = StepCommander::new(line, LEAD_S, axis, step, thrust);
         let flight_loop =
             quadplane_pipeline_at(self, airframe.start, commander, ClipTimer::default());
-        measured(flight_loop, step)
+        measured(flight_loop, step, LEAD_S)
     }
 
     fn time_constants_s(&self) -> stable_flight::Vec2 {
@@ -91,10 +96,39 @@ impl SpecPlant for QuadPlanePlant {
     }
 }
 
+/// The eXplora from a hover at [`EXPLORA_SPEC_ALTITUDE_M`], into plane flight on the line north
+/// at its trim airspeed: plane flight by the end of a longer lead than the others', since it
+/// climbs and transitions first.
+impl SpecPlant for TailsitterPlant {
+    fn respond(&self, axis: Axis, step: StepConfig) -> Option<StepMetrics> {
+        const EXPLORA_LEAD_S: f32 = 60.0;
+        let airframe = &self.airframe;
+        let trim_mps = airframe.stabilizer.plane.trim_airspeed_mps;
+        let lead = Interlude::new(
+            hover_at(EXPLORA_SPEC_ALTITUDE_M),
+            20.0,
+            f32::INFINITY,
+            north_line_command(EXPLORA_SPEC_ALTITUDE_M, trim_mps),
+        );
+        let thrust = airframe.guidance.plane.cruise_thrust;
+        let commander = StepCommander::new(lead, EXPLORA_LEAD_S, axis, step, thrust);
+        let flight_loop = tailsitter_pipeline(self, commander, ClipTimer::default());
+        measured(flight_loop, step, EXPLORA_LEAD_S)
+    }
+
+    fn time_constants_s(&self) -> stable_flight::Vec2 {
+        self.airframe.stabilizer.plane.time_constant_s
+    }
+}
+
+/// The eXplora's hover before its spec's transition, in m.
+pub const EXPLORA_SPEC_ALTITUDE_M: f32 = 120.0;
+
 /// Flies `flight_loop` through the lead and `step`'s window and reads the step's metrics.
 fn measured<C, V, G, S, M>(
     mut flight_loop: stable_flight::FlightLoop<StepCommander<C>, V, G, S, M, ClipTimer>,
     step: StepConfig,
+    lead_s: f32,
 ) -> Option<StepMetrics>
 where
     C: stable_flight::Commander,
@@ -105,7 +139,7 @@ where
 {
     fly(
         &mut flight_loop,
-        LEAD_S + step.duration_s + MARGIN_S,
+        lead_s + step.duration_s + MARGIN_S,
         |_, _| {},
     );
     let (commander, .., clips) = flight_loop.into_parts();
