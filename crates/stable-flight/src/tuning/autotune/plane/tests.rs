@@ -185,7 +185,7 @@ const LOOPS: [PlaneLoop; 4] = [
 #[test]
 fn a_step_test_measures_each_loop_and_keeps_its_gains() {
     let (mut flight_loop, _) = flying();
-    let plan = LOOPS.map(StagePlan::plane_step_test);
+    let plan = LOOPS.map(|target| StagePlan::plane_step_test(target, &config()));
     let mut autotune = started(&flight_loop, &plan);
     let events = run(&mut flight_loop, &mut autotune, 200.0, |_| {});
 
@@ -249,7 +249,10 @@ fn breaches_fail_the_stage() {
     ];
     for (case, poke, reason) in rows {
         let (mut flight_loop, controls) = flying();
-        let mut autotune = started(&flight_loop, &[StagePlan::plane_step_test(PlaneLoop::Roll)]);
+        let mut autotune = started(
+            &flight_loop,
+            &[StagePlan::plane_step_test(PlaneLoop::Roll, &config())],
+        );
         poke(&controls);
         let events = run(&mut flight_loop, &mut autotune, 1.0, |_| {});
         let failed = events.iter().find_map(|event| match event {
@@ -264,7 +267,10 @@ fn breaches_fail_the_stage() {
 #[test]
 fn a_transition_mid_stage_stops_it() {
     let (mut flight_loop, controls) = flying();
-    let mut autotune = started(&flight_loop, &[StagePlan::plane_step_test(PlaneLoop::Roll)]);
+    let mut autotune = started(
+        &flight_loop,
+        &[StagePlan::plane_step_test(PlaneLoop::Roll, &config())],
+    );
     let events = run(&mut flight_loop, &mut autotune, 30.0, |autotune| {
         if matches!(autotune.status(), AutotuneStatus::Running { .. }) {
             controls.transition.set(true);
@@ -350,7 +356,10 @@ fn vtol_configs_hold_their_plane_side() {
 #[test]
 fn maneuvering_holds_probes_off() {
     let (mut flight_loop, _) = flying();
-    let mut autotune = started(&flight_loop, &[StagePlan::plane_step_test(PlaneLoop::Roll)]);
+    let mut autotune = started(
+        &flight_loop,
+        &[StagePlan::plane_step_test(PlaneLoop::Roll, &config())],
+    );
     autotune.set_maneuvering(true);
     let timeout_s = PlaneEnvelope::for_plane(&config()).settle_timeout_s;
     let events = run(&mut flight_loop, &mut autotune, timeout_s + 5.0, |_| {});

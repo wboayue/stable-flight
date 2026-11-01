@@ -72,24 +72,34 @@ pub const PLANE_STEP_SETTLE: Settle = Settle {
 pub const PLANE_MAX_SATURATED_S: f32 = 0.042;
 
 impl StepTestPlan {
-    /// The plane defaults for `target`: three pairs of [`PLANE_RATE_STEP`] (roll and pitch
-    /// rate), [`PLANE_ROLL_STEP`] (roll), or [`PLANE_PITCH_STEP`] (pitch), from
+    /// The plane defaults for `target` on a plane flying `config`: three pairs of
+    /// [`PLANE_RATE_STEP`] (roll and pitch rate), [`PLANE_ROLL_STEP`] (roll), or
+    /// [`PLANE_PITCH_STEP`] (pitch), each no larger than `config`'s bank or pitch limit, from
     /// [`PLANE_STEP_SETTLE`], each clipping for up to [`PLANE_MAX_SATURATED_S`], allowing 3
-    /// clipped and 10 stalled steps in a row.
+    /// clipped and 10 stalled steps in a row. A step replaces the saturated setpoint, so a step
+    /// past the limit would fly an attitude the airframe's limit forbids: the Alia 250's 20°
+    /// bank limit holds its roll steps to 20°, and at 30° its roll stage sank past the
+    /// envelope's 40 m.
     ///
     /// # Examples
     ///
     /// ```
-    /// use stable_flight::stabilizers::plane::PlaneLoop;
+    /// use stable_flight::stabilizers::plane::{PlaneLoop, PlaneStabilizerConfig};
     /// use stable_flight::tuning::autotune::{PLANE_PITCH_STEP, StepTestPlan};
     ///
-    /// assert_eq!(StepTestPlan::plane(PlaneLoop::Pitch).step, PLANE_PITCH_STEP);
+    /// let config = PlaneStabilizerConfig { max_bank_rad: 0.2, ..Default::default() };
+    /// assert_eq!(StepTestPlan::plane(PlaneLoop::Pitch, &config).step, PLANE_PITCH_STEP);
+    /// assert_eq!(StepTestPlan::plane(PlaneLoop::Roll, &config).step.amplitude, 0.2);
     /// ```
-    pub fn plane(target: PlaneLoop) -> Self {
+    pub fn plane(target: PlaneLoop, config: &PlaneStabilizerConfig) -> Self {
+        let capped = |step: StepConfig, limit_rad: f32| StepConfig {
+            amplitude: step.amplitude.min(limit_rad),
+            ..step
+        };
         let step = match target {
             PlaneLoop::RollRate | PlaneLoop::PitchRate => PLANE_RATE_STEP,
-            PlaneLoop::Roll => PLANE_ROLL_STEP,
-            PlaneLoop::Pitch => PLANE_PITCH_STEP,
+            PlaneLoop::Roll => capped(PLANE_ROLL_STEP, config.max_bank_rad),
+            PlaneLoop::Pitch => capped(PLANE_PITCH_STEP, config.max_pitch_rad),
         };
         Self {
             step,
@@ -103,7 +113,8 @@ impl StepTestPlan {
 }
 
 impl StagePlan<PlaneSide> {
-    /// A step test of `target` with the plane defaults ([`StepTestPlan::plane`]).
+    /// A step test of `target` with the plane defaults for `config`
+    /// ([`StepTestPlan::plane`]).
     ///
     /// # Examples
     ///
@@ -111,14 +122,14 @@ impl StagePlan<PlaneSide> {
     /// use stable_flight::stabilizers::plane::{PlaneLoop, PlaneStabilizerConfig};
     /// use stable_flight::tuning::autotune::{PlaneAutotune, PlaneEnvelope, StagePlan};
     ///
-    /// let plan = [PlaneLoop::Roll, PlaneLoop::Pitch].map(StagePlan::plane_step_test);
-    /// let envelope = PlaneEnvelope::for_plane(&PlaneStabilizerConfig::default());
-    /// assert!(PlaneAutotune::new(&plan, envelope).is_ok());
+    /// let config = PlaneStabilizerConfig::default();
+    /// let plan = [PlaneLoop::Roll, PlaneLoop::Pitch].map(|t| StagePlan::plane_step_test(t, &config));
+    /// assert!(PlaneAutotune::new(&plan, PlaneEnvelope::for_plane(&config)).is_ok());
     /// ```
-    pub fn plane_step_test(target: PlaneLoop) -> Self {
+    pub fn plane_step_test(target: PlaneLoop, config: &PlaneStabilizerConfig) -> Self {
         Self {
             target,
-            method: PlaneMethod::StepTest(StepTestPlan::plane(target)),
+            method: PlaneMethod::StepTest(StepTestPlan::plane(target, config)),
         }
     }
 }
