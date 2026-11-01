@@ -3,7 +3,7 @@
 //! `autotune_methods` sweep.
 
 use stable_flight::Vec3;
-use stable_flight::controllers::Gains;
+use stable_flight::controllers::{Gains, NotchConfig};
 use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight::{ActuatorCommand, GRAVITY};
 use stable_flight_sim::airframes::Airframe;
@@ -58,6 +58,20 @@ pub enum Start {
     Low,
     /// The airframe's rate gains × [`HIGH_RATE_SCALE`]; core's default angle gains.
     High,
+}
+
+/// The gyro notch a row's airframe flies: at its gyro tone, half the tone wide, 40 dB deep
+/// (ArduPilot's form, suggested width, and default depth: `INS_HNTCH_BW`, `INS_HNTCH_ATT`), as
+/// a frame tuned for its vibration would; off without a tone (#597).
+pub fn notch_for(perturbations: &Perturbations) -> NotchConfig {
+    match perturbations.gyro.vibration {
+        Some(vibration) => NotchConfig {
+            center_hz: vibration.frequency_hz,
+            bandwidth_hz: 0.5 * vibration.frequency_hz,
+            attenuation_db: 40.0,
+        },
+        None => NotchConfig::default(),
+    }
 }
 
 /// `set`'s perturbations on `airframe`.

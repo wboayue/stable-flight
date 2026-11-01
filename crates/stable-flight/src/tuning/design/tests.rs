@@ -1,6 +1,8 @@
 use assert2::check;
 
 use super::*;
+use crate::controllers::NotchConfig;
+use crate::controllers::low_pass::LowPass;
 use crate::stabilizers::copter::DEFAULT_GYRO_CUTOFF_HZ;
 use crate::tuning::autotune::COPTER_LOOP_SHAPING;
 
@@ -29,12 +31,16 @@ const START: Gains = Gains {
     d: 0.002,
 };
 
-/// `gains`' rate loop's phase margin on `model` through a gyro low-pass at `gyro_hz`, in
-/// degrees: 180° plus its phase where its open-loop gain falls to 1.
-fn rate_margin_deg(model: &RateModel, gains: Gains, gyro_hz: f32) -> f32 {
+/// `gains`' rate loop's phase margin on `model` through the gyro `filters`, in degrees: 180°
+/// plus its phase where its open-loop gain falls to 1. The filters' response is built here
+/// from the notch's and the low-pass's, apart from [`GyroFilters::response`] the design uses.
+fn rate_margin_deg(model: &RateModel, gains: Gains, filters: GyroFilters) -> f32 {
     let open_loop = |w_radps: f32| {
         let z1 = unit_delay(w_radps, DT);
-        pid_response(gains, z1, DT) * model.response(w_radps) * LowPass::response(gyro_hz, DT, z1)
+        pid_response(gains, z1, DT)
+            * model.response(w_radps)
+            * filters.notch.response(DT, z1)
+            * LowPass::response(filters.cutoff_hz, DT, z1)
     };
     let crossover = first_crossing(DT, open_loop, |point| point.gain > 1.0).expect("a crossover");
     180.0 + crossover.phase_deg
@@ -57,13 +63,19 @@ fn rate_design_cancels_the_lag_and_keeps_the_margin() {
     for (accel, lag_s, delay) in rows {
         let row = format!("accel {accel}, lag {lag_s} s, delay {delay}");
         let model = model(accel, lag_s, delay);
-        let gains = design_rate(&model, START, GYRO_HZ, &COPTER_LOOP_SHAPING).expect("a design");
+        let gains = design_rate(
+            &model,
+            START,
+            GyroFilters::low_pass(GYRO_HZ),
+            &COPTER_LOOP_SHAPING,
+        )
+        .expect("a design");
         check!(
             (gains.d / gains.p - lag_s).abs() < 1e-4 * lag_s,
             "{row}: {gains:?}"
         );
         check!(gains.i == START.i, "{row}");
-        let margin = rate_margin_deg(&model, gains, GYRO_HZ);
+        let margin = rate_margin_deg(&model, gains, GyroFilters::low_pass(GYRO_HZ));
         check!(
             (margin - COPTER_LOOP_SHAPING.rate_margin_deg).abs() < 1.5,
             "{row}: margin {margin}°"
@@ -78,21 +90,66 @@ fn rate_design_cancels_the_lag_and_keeps_the_margin() {
 #[test]
 fn rate_design_spends_margin_on_the_gyro_filter() {
     let model = model(27.0, 0.03, 1);
-    let unfiltered = design_rate(&model, START, 0.0, &COPTER_LOOP_SHAPING).expect("a design");
-    let lost_deg = COPTER_LOOP_SHAPING.rate_margin_deg - rate_margin_deg(&model, unfiltered, 40.0);
+    let unfiltered = design_rate(
+        &model,
+        START,
+        GyroFilters::low_pass(0.0),
+        &COPTER_LOOP_SHAPING,
+    )
+    .expect("a design");
+    let lost_deg = COPTER_LOOP_SHAPING.rate_margin_deg
+        - rate_margin_deg(&model, unfiltered, GyroFilters::low_pass(40.0));
     check!(
         lost_deg > 60.0,
         "unfiltered design loses {lost_deg}° to the filter"
     );
     for cutoff_hz in [80.0, 40.0, 20.0] {
-        let gains = design_rate(&model, START, cutoff_hz, &COPTER_LOOP_SHAPING).expect("a design");
-        let margin = rate_margin_deg(&model, gains, cutoff_hz);
+        let gains = design_rate(
+            &model,
+            START,
+            GyroFilters::low_pass(cutoff_hz),
+            &COPTER_LOOP_SHAPING,
+        )
+        .expect("a design");
+        let margin = rate_margin_deg(&model, gains, GyroFilters::low_pass(cutoff_hz));
         check!(gains.p < unfiltered.p, "{cutoff_hz} Hz: {gains:?}");
         check!(
             (margin - COPTER_LOOP_SHAPING.rate_margin_deg).abs() < 1.0,
             "{cutoff_hz} Hz: margin {margin}°"
         );
     }
+}
+
+/// The design spends margin on the gyro notch too: with a notch near the crossover (40 Hz, 20
+/// wide, on a `quad_x`-like axis through the 40 Hz low-pass), the modeled design flies the
+/// margin asked, at lower P, while one that left the notch out flies it with 7.7° less (#597).
+#[test]
+fn rate_design_spends_margin_on_the_gyro_notch() {
+    let model = model(27.0, 0.03, 1);
+    let notched = GyroFilters {
+        cutoff_hz: GYRO_HZ,
+        notch: NotchConfig {
+            center_hz: 40.0,
+            bandwidth_hz: 20.0,
+            attenuation_db: 40.0,
+        },
+    };
+    let design =
+        |filters| design_rate(&model, START, filters, &COPTER_LOOP_SHAPING).expect("a design");
+    let modeled = design(notched);
+    let left_out = design(GyroFilters::low_pass(GYRO_HZ));
+    let modeled_deg = rate_margin_deg(&model, modeled, notched);
+    let left_out_deg = rate_margin_deg(&model, left_out, notched);
+    check!(
+        (modeled_deg - COPTER_LOOP_SHAPING.rate_margin_deg).abs() < 1.0,
+        "{modeled_deg}°"
+    );
+    check!(modeled.p < left_out.p, "{modeled:?} against {left_out:?}");
+    check!(
+        COPTER_LOOP_SHAPING.rate_margin_deg - left_out_deg > 5.0,
+        "left out, the notch takes {}°",
+        COPTER_LOOP_SHAPING.rate_margin_deg - left_out_deg
+    );
 }
 
 /// More delay leaves less phase to spend, so rate P falls with each tick of it.
@@ -103,7 +160,7 @@ fn rate_p_falls_as_the_delay_grows() {
             design_rate(
                 &model(27.0, 0.03, delay),
                 START,
-                GYRO_HZ,
+                GyroFilters::low_pass(GYRO_HZ),
                 &COPTER_LOOP_SHAPING,
             )
             .expect("a design")
@@ -135,7 +192,12 @@ fn rate_design_fails_without_a_lag_or_a_crossover() {
     ];
     for (model, error) in rows {
         check!(
-            design_rate(&model, START, GYRO_HZ, &COPTER_LOOP_SHAPING) == Err(error),
+            design_rate(
+                &model,
+                START,
+                GyroFilters::low_pass(GYRO_HZ),
+                &COPTER_LOOP_SHAPING
+            ) == Err(error),
             "{model:?}"
         );
     }
@@ -150,7 +212,12 @@ fn a_pole_at_or_below_zero_designs_d_zero() {
             rate_weights: [1.0 + pole, -pole],
             ..model(27.0, 0.03, 1)
         };
-        let gains = design_rate(&model, START, GYRO_HZ, &COPTER_LOOP_SHAPING);
+        let gains = design_rate(
+            &model,
+            START,
+            GyroFilters::low_pass(GYRO_HZ),
+            &COPTER_LOOP_SHAPING,
+        );
         check!(
             gains.is_ok_and(|gains| gains.p > 0.0 && gains.d == 0.0),
             "pole {pole}: {gains:?}"
@@ -173,9 +240,21 @@ fn designs_hold_a_leaking_integrator_at_one() {
         rate_weights: [1.0 + 0.873_977_84, -0.873_977_84],
         ..fitted
     };
-    let rate = design_rate(&fitted, START, GYRO_HZ, &COPTER_LOOP_SHAPING);
+    let rate = design_rate(
+        &fitted,
+        START,
+        GyroFilters::low_pass(GYRO_HZ),
+        &COPTER_LOOP_SHAPING,
+    );
     check!(rate.is_ok());
-    check!(rate == design_rate(&held, START, GYRO_HZ, &COPTER_LOOP_SHAPING));
+    check!(
+        rate == design_rate(
+            &held,
+            START,
+            GyroFilters::low_pass(GYRO_HZ),
+            &COPTER_LOOP_SHAPING
+        )
+    );
     let rate = rate.unwrap_or_default();
     let angle = Gains {
         p: 3.0,
@@ -183,8 +262,19 @@ fn designs_hold_a_leaking_integrator_at_one() {
         d: 0.0,
     };
     check!(
-        design_angle_p(&fitted, rate, angle, GYRO_HZ, &COPTER_LOOP_SHAPING)
-            == design_angle_p(&held, rate, angle, GYRO_HZ, &COPTER_LOOP_SHAPING)
+        design_angle_p(
+            &fitted,
+            rate,
+            angle,
+            GyroFilters::low_pass(GYRO_HZ),
+            &COPTER_LOOP_SHAPING
+        ) == design_angle_p(
+            &held,
+            rate,
+            angle,
+            GyroFilters::low_pass(GYRO_HZ),
+            &COPTER_LOOP_SHAPING
+        )
     );
 
     let damped = RateModel {
@@ -212,14 +302,16 @@ fn angle_p_stays_in_range_and_falls_with_a_slower_rate_loop() {
         d: 0.0,
     };
     let model = model(27.0, 0.03, 1);
-    let designed = design_rate(&model, START, GYRO_HZ, &config).expect("a rate design");
+    let designed =
+        design_rate(&model, START, GyroFilters::low_pass(GYRO_HZ), &config).expect("a rate design");
     let values = [1.0, 0.25, 0.0625].map(|share: f32| {
         let rate = Gains {
             p: designed.p * share,
             d: designed.d * share,
             ..designed
         };
-        design_angle_p(&model, rate, angle, GYRO_HZ, &config).expect("an angle design")
+        design_angle_p(&model, rate, angle, GyroFilters::low_pass(GYRO_HZ), &config)
+            .expect("an angle design")
     });
     check!(
         values.iter().all(|p| (low..=high).contains(p)),
@@ -248,7 +340,8 @@ fn angle_margin_deg(
     let open_loop = |w_radps: f32| {
         let z1 = unit_delay(w_radps, DT);
         let plant = model.response(w_radps);
-        let feedback = pid_response(rate, z1, DT) * plant * LowPass::response(gyro_hz, DT, z1);
+        let feedback =
+            pid_response(rate, z1, DT) * plant * GyroFilters::low_pass(gyro_hz).response(DT, z1);
         let closed_rate = plant * rate.p / (one + feedback);
         let angle_pid = pid_response(
             Gains {
@@ -278,14 +371,17 @@ fn angle_design_models_the_flown_rate_loop() {
     };
     let model = model(27.0, 0.03, 1);
     for gyro_hz in [40.0, 20.0] {
-        let designed = design_rate(&model, START, gyro_hz, &config).expect("a rate design");
+        let designed = design_rate(&model, START, GyroFilters::low_pass(gyro_hz), &config)
+            .expect("a rate design");
         for share in [0.25, 0.0625] {
             let rate = Gains {
                 p: designed.p * share,
                 d: designed.d * share,
                 ..designed
             };
-            let angle_p = design_angle_p(&model, rate, angle, gyro_hz, &config).expect("angle P");
+            let angle_p =
+                design_angle_p(&model, rate, angle, GyroFilters::low_pass(gyro_hz), &config)
+                    .expect("angle P");
             let limited = angle_p / config.angle_back_off;
             check!(
                 limited < config.angle_p_max,
@@ -332,14 +428,26 @@ fn angle_design_ignores_the_rate_i() {
             delay_ticks: 4,
             dt_s: DT,
         };
-        let without_i = design_angle_p(&model, rate, angle, GYRO_HZ, &COPTER_LOOP_SHAPING);
+        let without_i = design_angle_p(
+            &model,
+            rate,
+            angle,
+            GyroFilters::low_pass(GYRO_HZ),
+            &COPTER_LOOP_SHAPING,
+        );
         let with_i = Gains {
             i: 0.2 * rate.p,
             ..rate
         };
         check!(without_i.is_ok(), "{rate_weights:?}");
         check!(
-            design_angle_p(&model, with_i, angle, GYRO_HZ, &COPTER_LOOP_SHAPING) == without_i,
+            design_angle_p(
+                &model,
+                with_i,
+                angle,
+                GyroFilters::low_pass(GYRO_HZ),
+                &COPTER_LOOP_SHAPING
+            ) == without_i,
             "{rate_weights:?}"
         );
     }
@@ -354,14 +462,16 @@ fn angle_design_fails_when_the_least_p_misses_the_margin() {
         ..COPTER_LOOP_SHAPING
     };
     let model = model(27.0, 0.03, 1);
-    let rate = design_rate(&model, START, GYRO_HZ, &config).expect("a rate design");
+    let rate =
+        design_rate(&model, START, GyroFilters::low_pass(GYRO_HZ), &config).expect("a rate design");
     let angle = Gains {
         p: 3.0,
         i: 0.001,
         d: 1.0,
     };
     check!(
-        design_angle_p(&model, rate, angle, GYRO_HZ, &config) == Err(DesignError::AngleUnstable)
+        design_angle_p(&model, rate, angle, GyroFilters::low_pass(GYRO_HZ), &config)
+            == Err(DesignError::AngleUnstable)
     );
 }
 

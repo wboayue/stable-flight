@@ -929,15 +929,21 @@ fn transition_ramps_fly_pitch_past_the_tilt_limit() {
     }
 }
 
-/// The rate loop flies the body rates through the gyro low-pass: a 90 Hz vibration on the gyro
-/// (the sim's robustness tone) moves the moments by 0.08 of the unfiltered P·amplitude at 40 Hz,
-/// on every axis. Rows: (cutoff Hz, largest moment over the last second, as a share of the
-/// unfiltered P·amplitude).
+/// The rate loop flies the body rates through the gyro filters: a 90 Hz vibration on the gyro
+/// (the sim's robustness tone) moves the moments by 0.08 of the unfiltered P·amplitude through
+/// the 40 Hz low-pass, on every axis, and a notch at the tone cuts roll and pitch by its 40 dB
+/// and leaves yaw. Rows: (cutoff Hz, notch, largest moment over the last second per axis, as a
+/// share of the unfiltered P·amplitude).
 #[test]
 fn the_rate_loop_flies_gyro_filtered_rates() {
     const DT: f32 = 0.004;
     const AMPLITUDE_RADPS: f32 = 0.1;
-    let largest_moment = |cutoff_hz: f32| {
+    let notch = NotchConfig {
+        center_hz: 90.0,
+        bandwidth_hz: 45.0,
+        attenuation_db: 40.0,
+    };
+    let largest_moments = |cutoff_hz: f32, gyro_notch: NotchConfig| {
         let mut stabilizer = CopterStabilizer::new(CopterStabilizerConfig {
             body_rate: BodyRateControllerConfig {
                 roll_gains: Gains {
@@ -959,6 +965,7 @@ fn the_rate_loop_flies_gyro_filtered_rates() {
                 yaw_max_integral: 1.0,
             },
             gyro_cutoff_hz: cutoff_hz,
+            gyro_notch,
             ..Default::default()
         });
         let setpoint = Setpoint::BodyRate(BodyRateSetpoint::default());
@@ -972,15 +979,21 @@ fn the_rate_loop_flies_gyro_filtered_rates() {
                 (tick, stabilizer.stabilize(DT, &setpoint, &state).moments)
             })
             .filter(|(tick, _)| *tick >= 250)
-            .map(|(_, moments)| moments.amax())
-            .fold(0.0, f32::max)
+            .map(|(_, moments)| moments.abs())
+            .fold(Vec3::zeros(), |most, moments| most.sup(&moments))
     };
-    // (cutoff Hz, share of P·amplitude): 0 is off.
-    for (cutoff_hz, share) in [(0.0, 1.0), (40.0, 0.08)] {
-        let moment = largest_moment(cutoff_hz);
+    // (cutoff Hz, notch, share of P·amplitude per axis): a cutoff of 0 is off.
+    let off = NotchConfig::default();
+    let rows = [
+        (0.0, off, Vec3::repeat(1.0)),
+        (40.0, off, Vec3::repeat(0.08)),
+        (0.0, notch, Vec3::new(0.01, 0.01, 1.0)),
+    ];
+    for (cutoff_hz, gyro_notch, shares) in rows {
+        let moments = largest_moments(cutoff_hz, gyro_notch);
         check!(
-            (moment / AMPLITUDE_RADPS - share).abs() < 0.02,
-            "{cutoff_hz} Hz: {moment}"
+            (moments / AMPLITUDE_RADPS - shares).amax() < 0.02,
+            "{cutoff_hz} Hz, {gyro_notch:?}: {moments:?}"
         );
     }
 }

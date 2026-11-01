@@ -64,6 +64,10 @@ Code comments and docs link here instead of redefining a term.
   (damps overshoot). Gains `kp`, `ki`, `kd` scale each term.
 - **Feedforward:** output computed from the setpoint itself (e.g. the expected moment for a
   commanded rate) rather than from the error, so the loop doesn't wait to fall behind.
+- **Notch filter:** a filter that cuts one narrow band of frequencies and passes the rest,
+  for a vibration tone (a motor's) that a low-pass just below it would barely touch; here a
+  biquad on the roll and pitch rates ahead of the gyro low-pass
+  (`CopterStabilizerConfig::gyro_notch`).
 - **Integral windup / anti-windup:** while the output is pinned at a limit, the I term keeps
   growing and overshoots once the limit releases. Anti-windup stops it accumulating (a
   `max_integral` clamp (on the copter rate loop, the most moment the I term holds, as

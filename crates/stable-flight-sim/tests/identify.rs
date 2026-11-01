@@ -6,6 +6,7 @@
 mod common;
 
 use assert2::check;
+use stable_flight::controllers::GyroFilters;
 use stable_flight::stabilizers::copter::TunedLoop;
 use stable_flight::tuning::autotune::{COPTER_IDENTIFY, COPTER_LOOP_SHAPING};
 use stable_flight::tuning::{
@@ -109,12 +110,23 @@ fn designed_gains_meet_the_spec() {
                 let model = identified(&plant, rate_loop);
                 let start = rate_loop.gains(&config);
                 let gyro_hz = config.gyro_cutoff_hz;
-                let rate =
-                    design_rate(&model, start, gyro_hz, &COPTER_LOOP_SHAPING).expect("rate gains");
+                let rate = design_rate(
+                    &model,
+                    start,
+                    GyroFilters::low_pass(gyro_hz),
+                    &COPTER_LOOP_SHAPING,
+                )
+                .expect("rate gains");
                 *rate_loop.gains_mut(&mut config) = rate;
                 let angle = angle_loop.gains(&config);
-                let p = design_angle_p(&model, rate, angle, gyro_hz, &COPTER_LOOP_SHAPING)
-                    .expect("angle P");
+                let p = design_angle_p(
+                    &model,
+                    rate,
+                    angle,
+                    GyroFilters::low_pass(gyro_hz),
+                    &COPTER_LOOP_SHAPING,
+                )
+                .expect("angle P");
                 angle_loop.gains_mut(&mut config).p = p;
             }
             let tuned = Plant {
@@ -170,7 +182,7 @@ fn a_fit_on_a_slow_host_designs_a_cautious_rate_p() {
                 design_rate(
                     &model,
                     start,
-                    plant.airframe.stabilizer.gyro_cutoff_hz,
+                    plant.airframe.stabilizer.gyro_filters(),
                     &COPTER_LOOP_SHAPING,
                 )
                 .expect("rate gains")
