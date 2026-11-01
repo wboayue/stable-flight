@@ -24,7 +24,7 @@ pub struct LateralControllerConfig {
     /// Most the velocity target changes per second, in m/s²; 0 is off. When set, the target
     /// starts at the measured velocity and moves toward the position loop's demand at this
     /// rate, its change fed forward as acceleration (PX4 `MPC_ACC_HOR`,
-    /// `FlightTaskAuto.cpp:44-73`; ArduPilot `NE_init_controller`, `AC_PosControl.cpp:544-586`).
+    /// `FlightTaskAuto::activate`; ArduPilot `AC_PosControl::NE_init_controller`).
     /// A new leg then asks for at most `atan(max_accel_mps2 / g)` of tilt at once, instead of
     /// the tilt for its whole speed. The position loop then slows toward the target along a
     /// braking curve: the speed that decelerating at [`BRAKING_SHARE`] of this rate still stops

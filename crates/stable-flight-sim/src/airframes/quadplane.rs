@@ -41,12 +41,13 @@ pub struct QuadPlaneAirframe {
 }
 
 /// ArduPilot SITL's quadplane (`quadplane`: [`plane`]'s airframe with an X quad,
-/// `libraries/SITL/SIM_QuadPlane.cpp:29`, Plane-4.5): 4.5 kg, the quad frame's default 3 kg
-/// scaled by 1.5 for the plane's parts (`SIM_Frame.cpp:51,774`, `SIM_QuadPlane.cpp:103-104`),
-/// its lift rotors 350 mm apart across the diagonal (`SIM_Frame.cpp:57`). The wing,
+/// `libraries/SITL/SIM_QuadPlane.cpp`'s `QuadPlane::QuadPlane`, Plane-4.5): 4.5 kg, the quad
+/// frame's default 3 kg scaled by 1.5 for the plane's parts (`SIM_Frame.cpp`'s `Frame`
+/// param `MASS` and `Frame::update_parameters`, `set_mass_scale` in `QuadPlane::QuadPlane`),
+/// its lift rotors 350 mm apart across the diagonal (`Frame` param `DIAG_SZ`). The wing,
 /// aerodynamics, surfaces, and parasitic drag are [`plane`]'s: ArduPilot adds no drag for the
-/// quad frame in a plane build (`SIM_Frame.cpp:33-37`), so the booms and stopped rotors are in
-/// the plane's.
+/// quad frame in a plane build (`SIM_FRAME_BBDRAG_DEFAULT` and `SIM_FRAME_MDRAG_DEFAULT`), so
+/// the booms and stopped rotors are in the plane's.
 ///
 /// The rest isn't in ArduPilot's model and is chosen:
 /// - Inertia: the whole airframe's, [`plane`]'s Aerosonde scaling at 4.5 kg; ArduPilot's
@@ -55,7 +56,7 @@ pub struct QuadPlaneAirframe {
 ///   [`heavy_quad`](super::heavy_quad), the quad of ArduPilot's default frame; in-plane drag
 ///   of 1.2 N per m/s at full thrust, so about `heavy_quad`'s 0.6 in a hover.
 /// - Pusher: [`plane`]'s static thrust-to-weight of 1.2 at this mass (ArduPilot sizes the
-///   prop from the mass too, `SIM_Plane.cpp:54`).
+///   prop from the mass too, `thrust_scale` in `SIM_Plane.cpp`'s `Plane::Plane`).
 ///
 /// It flies core's quadplane guidance and stabilizer. The hover side has roll and pitch rate
 /// and angle gains from a sim autotune's step search (#390), yaw and heading core's
@@ -210,7 +211,7 @@ const TRANSITION_PUSHER: f32 = 0.9;
 
 /// Forward thrust gain, in shares of the full pusher per unit of `tan(pitch)`: 1.08 holds a
 /// hover and flies upwind at 5 m/s in an 11 m/s headwind and balloons 4 m at most on an
-/// uncapped 100 m leg. 0.75 (0.9 of ArduPilot's weight-over-thrust rule, 0.83,
-/// `ArduPlane/quadplane.cpp:512`) caps the pusher at 0.38 under the 27° tilt cap and stalls
-/// upwind at 0.6 m/s; 1.8 (0.9 of its default 2, `:516`) balloons 16 m (#427, #448).
+/// uncapped 100 m leg. 0.75 (0.9 of ArduPilot's weight-over-thrust rule, 0.83, in
+/// `Q_FWD_THR_GAIN`'s description) caps the pusher at 0.38 under the 27° tilt cap and stalls
+/// upwind at 0.6 m/s; 1.8 (0.9 of its default 2) balloons 16 m (#427, #448).
 const FORWARD_THRUST_GAIN: f32 = 1.08;

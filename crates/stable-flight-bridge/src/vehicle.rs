@@ -14,9 +14,10 @@ mod tests;
 /// attitude is shown in.
 ///
 /// QGC shows its VTOL UI (state, transition button) for any VTOL `MAV_TYPE`, 19–25, whatever
-/// the autopilot (`QGCMAVLink.cc:210-217`, `FlightModeIndicator.qml:136-146`). ArduPilot reports
-/// a plain quadplane as `FIXED_WING` (`quadplane.cpp:4116-4145`), which hides that UI, so the
-/// quadplane reports `VTOL_FIXEDROTOR` instead.
+/// the autopilot (`QGCMAVLink::vehicleClass`, `FlightModeIndicator.qml`'s
+/// `vtolTransitionButton`). ArduPilot reports a plain quadplane as `FIXED_WING`
+/// (`QuadPlane::get_mav_type`), which hides that UI, so the quadplane reports
+/// `VTOL_FIXEDROTOR` instead.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum VehicleKind {
     /// A multicopter: `QUADROTOR`, no VTOL state.
@@ -58,7 +59,8 @@ impl VehicleKind {
     /// ([`tailsitter_rotation`]): nose-up hover sits at body pitch 90°, where the Euler angles
     /// trade roll against heading and jump. ArduPilot reports a tailsitter's `ATTITUDE` the same
     /// way, in its VTOL modes and while waiting on the forward transition's angle
-    /// (`GCS_MAVLink_Plane.cpp:143-149`, `tailsitter.cpp:954-966`). Anything else is shown as is.
+    /// (`GCS_MAVLINK_Plane::send_attitude`, `Tailsitter_Transition::show_vtol_view`). Anything
+    /// else is shown as is.
     pub(crate) fn shown(self, state: &VehicleState, mode: FlightMode) -> Cow<'_, VehicleState> {
         let hover = matches!(mode, FlightMode::Copter | FlightMode::ToPlane);
         if self == VehicleKind::Tailsitter && hover {

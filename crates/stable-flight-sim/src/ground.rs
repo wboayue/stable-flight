@@ -26,8 +26,9 @@ pub(crate) struct Ground {
 /// Touching the ground stops any sinking. While `lift_n`, the upward force from thrust and
 /// lift, is less than the weight, the body rests: its landing gear (or tail) holds it at
 /// `ground.rest` (heading kept, as ArduPilot's tailsitter ground model does,
-/// `SIM_Aircraft.cpp:745-765`), it stops turning, and Coulomb friction (`ground.friction` times the weight the ground
-/// carries) slows its sliding over the step `h`. Once the lift carries the weight it lifts off.
+/// `Aircraft::update_dynamics`), it stops turning, and Coulomb friction (`ground.friction`
+/// times the weight the ground carries) slows its sliding over the step `h`. Once the lift
+/// carries the weight it lifts off.
 ///
 /// The leveling is instant, not a modeled tip-over: the simulator aims at plausible landings
 /// and takeoffs, not at gear dynamics.

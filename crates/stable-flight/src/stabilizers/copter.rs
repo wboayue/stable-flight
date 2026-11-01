@@ -361,8 +361,8 @@ impl Stabilizer for CopterStabilizer {
 
         // At ground idle the I terms can't act on anything and would wind up against a
         // resting attitude, to kick at liftoff; clear them every such tick. ArduPilot decays
-        // its rate I terms at GROUND_IDLE instead (`ArduCopter/mode_stabilize.cpp:36`); which
-        // to follow is #397.
+        // its rate I terms at GROUND_IDLE instead (`ModeStabilize::run`,
+        // `reset_rate_controller_I_terms_smoothly`); which to follow is #397.
         if setpoint.idle() {
             self.body_rate.clear_integral();
             self.attitude.clear_integral();

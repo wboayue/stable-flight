@@ -38,8 +38,8 @@ pub struct TailsitterAirframe {
 }
 
 /// ArduPilot SITL's tailsitter (`plane-tailsitter`: [`plane`]'s airframe with 1.5× its
-/// thrust, `libraries/SITL/SIM_Plane.cpp:78-81`, Plane-4.5), its thrust split over two motors
-/// on [`TableMixer::tailsitter_2p`], with the elevons in their wash.
+/// thrust, `libraries/SITL/SIM_Plane.cpp`'s `Plane::Plane`, Plane-4.5), its thrust split over
+/// two motors on [`TableMixer::tailsitter_2p`], with the elevons in their wash.
 ///
 /// The rest isn't in ArduPilot's model and is chosen:
 /// - A flying wing's sideslip terms in place of the airplane's, whose tail weathercocks a
@@ -47,7 +47,7 @@ pub struct TailsitterAirframe {
 /// - Motors 25 cm either side of the centerline, for the differential thrust that yaws it.
 /// - Two 10-inch props washing the elevons wholly. In a hover that is about 190 Pa over them,
 ///   as from 18 m/s of airspeed; ArduPilot adds 20 m/s × throttle to the airspeed of its
-///   moments instead (`SIM_Plane.cpp:154-162`).
+///   moments instead (`Plane::getTorque`).
 ///
 /// The hover side flies the eXplora's hand tune from RealFlight (#123, #328; the same layout
 /// of differential thrust and elevons) with view pitch rate D added for the gyro low-pass,

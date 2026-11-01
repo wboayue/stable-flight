@@ -184,21 +184,22 @@ pub struct LiftTransitionStep {
 /// ArduPilot (`368dc0c428`) and PX4 (`c4e4ef98e9`), described, not copied:
 ///
 /// - Forward: ArduPilot holds hover on the lift rotors until airspeed passes `AIRSPEED_MIN`
-///   (9 m/s, `ArduPlane/quadplane.cpp:1522`, `config.h:124`), then ramps their throttle down
-///   linearly over `Q_TRANSITION_MS` (5 s, `quadplane.cpp:31`, `:1589-1599`); it needs an
-///   airspeed sensor to leave the wait. Its optional timeout (`Q_TRANS_FAIL`, off by default,
-///   `quadplane.cpp:346`) covers only the wait (`:1488-1491`); the 15 s is PX4's
-///   `VT_TRANS_TIMEOUT` (`vtol_type.cpp:327-341`), which also covers the ramp.
+///   (9 m/s, `config.h`'s `AIRSPEED_FBW_MIN`), then ramps their throttle down linearly over
+///   `Q_TRANSITION_MS` (5 s, `SLT_Transition::update`); it needs an airspeed sensor
+///   to leave the wait. Its optional timeout (`Q_TRANS_FAIL`, off by default) covers only the
+///   wait (`SLT_Transition::update`); the 15 s is PX4's `VT_TRANS_TIMEOUT`
+///   (`VtolType::isFrontTransitionTimeout`), which also covers the ramp.
 /// - Back: PX4 ramps the lift rotors' weight up over `VT_B_TRANS_RAMP` (3 s,
-///   `vtol_att_control/standard.cpp:250-254`) and completes once the body-`x` ground speed
+///   `Standard::update_transition_state`) and completes once the body-`x` ground speed
 ///   is below `MPC_XY_CRUISE` (5 m/s; airspeed without a ground velocity) or after
-///   `VT_B_TRANS_DUR` (10 s, `standard.cpp:98-115`).
+///   `VT_B_TRANS_DUR` (10 s, `Standard::update_vtol_state`).
 /// - Fallback: PX4's quad-chute switches to the lift rotors at once and cuts the pusher
-///   (`standard.cpp:74-77`); ArduPilot entering a VTOL mode from forward flight runs its
-///   vertical controller with the throttle unlimited at once (`quadplane.cpp:995-1021`).
-/// - Pusher: PX4 slews it to `VT_F_TRANS_THR` (1.0) at `VT_PSHER_SLEW` (0.33/s,
-///   `standard.cpp:201-242`) going forward and cuts it going back (`:269`); ArduPilot flies
-///   it on the plane controller's throttle going forward (`servos.cpp:569-588`).
+///   (`Standard::update_vtol_state`); ArduPilot entering a VTOL mode from forward flight runs
+///   its vertical controller with the throttle unlimited at once (`QuadPlane::hold_hover`,
+///   `QuadPlane::run_z_controller`).
+/// - Pusher: PX4 slews it to `VT_F_TRANS_THR` (1.0) at `VT_PSHER_SLEW` (0.33/s) going forward
+///   and cuts it going back (`Standard::update_transition_state`); ArduPilot flies it on the
+///   plane controller's throttle going forward (`Plane::apply_throttle_limits`).
 ///
 /// # Examples
 ///

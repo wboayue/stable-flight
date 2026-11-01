@@ -2,13 +2,14 @@
 //! autotunes, each step both ways from a settled hover, through core's step probe.
 //!
 //! Sources (verified in source, #347):
-//! - ArduPilot Copter-4.5 `libraries/AC_AutoTune/AC_AutoTune_Multi.cpp`, `AUTOTUNE_AGGR` 0.1
-//!   (`:98`): rate P stops rising once the peak passes `1 + AGGR/2` of the target (`:918`); rate
-//!   D keeps the bounce-back under `AGGR` of the peak (`:833`, `:888`); angle P stops once the
-//!   angle passes `1 + AGGR/2` (`:997`).
+//! - ArduPilot Copter-4.5 `libraries/AC_AutoTune/AC_AutoTune_Multi.cpp`, `AUTOTUNE_AGGR` 0.1:
+//!   rate P stops rising once the peak passes `1 + AGGR/2` of the target
+//!   (`updating_rate_p_up_d_down`); rate D keeps the bounce-back under `AGGR` of the peak
+//!   (`updating_rate_d_up`, `updating_rate_d_down`); angle P stops once the angle passes
+//!   `1 + AGGR/2` (`updating_angle_p_up`).
 //! - PX4 v1.15.0 `mc_autotune_attitude_control`: closed-loop rise time `MC_AT_RISE_TIME` 0.14 s
-//!   (`mc_autotune_attitude_control_params.c:106`), 0.2 s on yaw
-//!   (`mc_autotune_attitude_control.cpp:184-185`). PX4's rise time is its pole-placement time
+//!   (`mc_autotune_attitude_control_params.c`), 0.2 s on yaw
+//!   (`McAutotuneAttitudeControl::Run`). PX4's rise time is its pole-placement time
 //!   constant; it is compared here to the 10–90% rise, which is longer for the same response.
 //! - Settling: inside the probe's 10% band before the window ends. Clipping: within the step
 //!   plan's allowance, beyond which a step measures the limit, not the loop.

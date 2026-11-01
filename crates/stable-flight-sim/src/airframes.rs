@@ -99,11 +99,11 @@ pub fn quad_x() -> Airframe {
 }
 
 /// A 3 kg X quad, 350 mm motor to motor, thrust-to-weight 2: ArduPilot SITL's default
-/// multicopter (`libraries/SITL/SIM_Frame.cpp:51,57`, mass and diagonal), heavier and slower
-/// to turn than [`quad_x`].
+/// multicopter (`libraries/SITL/SIM_Frame.cpp`, `Frame` params `MASS` and `DIAG_SZ`), heavier
+/// and slower to turn than [`quad_x`].
 ///
 /// Inertia follows ArduPilot's ring model: half the mass on the motor ring
-/// (`SIM_Frame.cpp:821-825`). The rest isn't in ArduPilot's model and is chosen:
+/// (`Frame::update_parameters`). The rest isn't in ArduPilot's model and is chosen:
 /// thrust-to-weight 2 at the low end of what flies well (ArduPilot's own hover throttle maps
 /// through a PWM curve that isn't comparable to the sim's `command²`), 50 ms motor lag for
 /// larger props, and drag, damping, and yaw torque scaled from `quad_x`. Gains come from the
@@ -147,7 +147,7 @@ pub fn heavy_quad() -> Airframe {
 /// far stronger than [`quad_x`].
 ///
 /// Inertia follows ArduPilot's ring model: half the mass on the motor ring
-/// (`SIM_Frame.cpp:821-825`). The rest is chosen: thrust-to-weight 8, typical of a freestyle
+/// (`Frame::update_parameters`). The rest is chosen: thrust-to-weight 8, typical of a freestyle
 /// build (the model's hover throttle maps through a PWM curve that isn't comparable to the
 /// sim's `command²`), 15 ms motor lag for small high-kV motors, and drag, damping, and yaw
 /// torque from `quad_x`, the same size. Gains come from the sim autotune like `quad_x`'s.
@@ -319,7 +319,7 @@ pub fn all() -> [(&'static str, Airframe); 3] {
 
 /// Principal inertia (roll, pitch, yaw) of a quad with half its mass on a ring through the
 /// motors, in kg·m²: ArduPilot SITL's model when a frame gives none
-/// (`libraries/SITL/SIM_Frame.cpp:821-825`).
+/// (`libraries/SITL/SIM_Frame.cpp`'s `Frame::update_parameters`).
 fn ring_inertia(mass_kg: f32, diagonal_m: f32) -> Vec3 {
     let radius_m = diagonal_m / 2.0;
     let roll_kgm2 = mass_kg * 0.25 * radius_m * radius_m;

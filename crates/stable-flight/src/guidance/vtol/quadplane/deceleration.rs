@@ -6,7 +6,7 @@ use crate::VehicleState;
 mod tests;
 
 /// The most nose-up the back transition flies, in radians: PX4's
-/// `kDecelerationIntegratorLimit` (`FlightTaskTransition.hpp:65`, PX4 `c4e4ef98e9`), about 17°.
+/// `FlightTaskTransition::kDecelerationIntegratorLimit` (PX4 `c4e4ef98e9`), about 17°.
 const PITCH_MAX_RAD: f32 = 0.3;
 
 /// Slows a quadplane's back transition by pitching the nose up: the less it slows than the
@@ -15,7 +15,7 @@ const PITCH_MAX_RAD: f32 = 0.3;
 /// little of: the Alia glided from 50 to 31 m/s in 28 s at pitch 0 (#496).
 ///
 /// The pitch is an integral of the shortfall, as PX4's back transition flies it
-/// (`FlightTaskTransition.cpp:112-153`):
+/// (`FlightTaskTransition::computeBackTransitionTiltSetpoint`):
 ///
 /// `pitch += gain · (target − deceleration) · dt`, clamped to `[0, PITCH_MAX_RAD]`,
 ///

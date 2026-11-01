@@ -26,7 +26,7 @@ const LEAD_S: f32 = 20.0;
 const SIDESLIP_RAD: f32 = 2.5 * core::f32::consts::PI / 180.0;
 
 /// Altitude band, either way, in m: ArduPilot's for a loiter altitude regained
-/// (Plane-4.5 `Tools/autotest/arduplane.py:2727`), held here for the whole window.
+/// (Plane-4.5 autotest `AutoTestPlane.LOITER`), held here for the whole window.
 const ALTITUDE_BAND_M: f32 = 1.0;
 
 /// Distance off the loiter circle, either way, in m: no external band applies. Measured 2.8 m;

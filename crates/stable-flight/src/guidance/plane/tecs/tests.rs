@@ -431,7 +431,7 @@ fn airspeed_rate_follows_a_ramp() {
 }
 
 /// On a steady airspeed ramp, the kinetic energy rate fades: a steady acceleration isn't a
-/// rate error, only its start is (AP:686, 695).
+/// rate error, only its start is (`AP_TECS::_update_energies`).
 #[test]
 fn steady_acceleration_fades_from_the_kinetic_rate() {
     let config = TecsConfig::default();
@@ -462,7 +462,7 @@ fn steady_acceleration_fades_from_the_kinetic_rate() {
 }
 
 /// Pinned at the pitch limit it pushes toward, the pitch integral fades over the time constant
-/// rather than winding (AP:1097-1102).
+/// rather than winding (`AP_TECS::_update_pitch`).
 #[test]
 fn pitch_integral_fades_while_pinned() {
     let config = TecsConfig::default();

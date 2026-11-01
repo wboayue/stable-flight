@@ -216,8 +216,8 @@ pub fn explora_vtol()
                 max_stick_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
                 // Sinking tail first slows the airflow over the elevons: at 3 m/s the nose
                 // swings ±20° on a 2.5 s cycle, at 2 m/s −8…+1°, at 1.5 m/s within 2° (#414).
-                // ArduPilot's and PX4's default descent rate (`AC_WPNav.cpp:13`,
-                // `multicopter_autonomous_params.yaml:71-76` `MPC_Z_V_AUTO_DN`).
+                // ArduPilot's and PX4's default descent rate (`WP_SPD_DN`,
+                // `MPC_Z_V_AUTO_DN`).
                 max_descent_mps: 1.5,
                 // Holds the heading on waypoint legs, and never yields it to the wind: facing
                 // a leg flies it belly first, the wing's flat face into the airflow, and the
@@ -439,11 +439,12 @@ const COBRA_MAX_AIRSPEED_MPS: f32 = 18.0;
 ///
 ///   No surface is reversed: ArduPilot drives these channels unreversed through its V-tail
 ///   mixer, right panel (elevator + rudder)/2, left (elevator − rudder)/2
-///   (`ArduPlane/servos.cpp:192-193`, ArduPilot `b032bcbde3`), with positive aileron,
+///   (`Plane::channel_function_mixer`, ArduPilot `b032bcbde3`), with positive aileron,
 ///   elevator, and rudder outputs rolling right, raising the nose, and yawing right
-///   (`libraries/SITL/SIM_Plane.cpp:333-335`, `SIM_Plane.h:75-86`); the rows of
-///   [`TableMixer::quadplane_vtail`] match. In flight at 12–16 m/s, a 0.3 cruise moment on
-///   each axis and sign pushed the way the mixer expects (`surface-probe-realflight`, #433).
+///   (SITL `Plane::getTorque` on its default `c_l_deltaa`, `c_m_deltae`, and `c_n_deltar`);
+///   the rows of [`TableMixer::quadplane_vtail`] match. In flight at 12–16 m/s, a 0.3 cruise
+///   moment on each axis and sign pushed the way the mixer expects (`surface-probe-realflight`,
+///   #433).
 ///   Both tail panels are trimmed +0.2 (`SERVO2_TRIM`, `SERVO4_TRIM` 1600).
 /// - **Body rotation:** identity; RealFlight's frame for this model is the airplane's.
 ///
@@ -528,8 +529,9 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                 ..defaults.forward
             },
             transition: LiftTransitionConfig {
-                // ArduPilot starts the forward lift ramp past `ARSPD_FBW_MIN`, 11 for this
-                // model; core's 9 is ArduPilot's default (`ArduPlane/quadplane.cpp:1523`).
+                // ArduPilot starts the forward lift ramp past `ARSPD_FBW_MIN`
+                // (`SLT_Transition::update`), 11 for this model; core's 9 is ArduPilot's default
+                // (`AIRSPEED_FBW_MIN`).
                 min_airspeed_mps: COBRA_MIN_AIRSPEED_MPS,
                 forward_thrust: COBRA_PUSHER_SHARE * defaults.transition.forward_thrust,
                 pusher_slew_per_s: COBRA_PUSHER_SHARE * defaults.transition.pusher_slew_per_s,

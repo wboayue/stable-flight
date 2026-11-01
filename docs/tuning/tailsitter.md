@@ -443,8 +443,8 @@ at rest makes the altitude loop stop the climb with thrust: the eXplora's thrust
 `GUID_THR_MIN`, the climb died, and the hover sank at up to 2.75 m/s, past its 1.5 m/s
 `GUID_DESC_MAX` (#462). The target now starts rising at the handover's climb and sheds it at
 `GUID_CLIMB_DEC`, as ArduPilot starts a tailsitter's vertical controller
-(`AC_PosControl.cpp:849-863`, at `Q_PILOT_ACCEL_Z`). A handover that arrives sinking starts
-at rest. Shedding a climb v rises about v² / (2 · `GUID_CLIMB_DEC`) further.
+(`AC_PosControl::D_init_controller_no_descent`, at `Q_PILOT_ACCEL_Z`). A handover that arrives
+sinking starts at rest. Shedding a climb v rises about v² / (2 · `GUID_CLIMB_DEC`) further.
 
 | Param | Field | eXplora |
 |---|---|---|

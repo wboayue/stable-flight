@@ -141,8 +141,8 @@ fn explora_hovers_at_realflights_thrust() {
     );
 }
 
-/// ArduPilot's tailsitter is its plane with 1.5× the thrust (`SIM_Plane.cpp:78-81`), here
-/// split over two motors.
+/// ArduPilot's tailsitter is its plane with 1.5× the thrust (`SIM_Plane.cpp`'s
+/// `Plane::Plane`), here split over two motors.
 #[test]
 fn tailsitter_has_one_and_a_half_times_the_planes_thrust() {
     let (tailsitter, plane) = (tailsitter().model, plane().model);

@@ -21,13 +21,13 @@ pub const TRANSITION_ALTITUDE_M: f32 = 30.0;
 pub const FORWARD_AT_S: f32 = 20.0;
 
 /// PX4's forward-transition timeout (`VT_TRANS_TIMEOUT`, PX4 `c4e4ef98e9`,
-/// `src/modules/vtol_att_control/vtol_att_control_params.yaml:92-97`): plane flight by then.
+/// `src/modules/vtol_att_control/vtol_att_control_params.yaml`): plane flight by then.
 pub const FORWARD_TIMEOUT_S: f32 = 15.0;
 
-/// PX4's longest back transition (`VT_B_TRANS_DUR`, `:35-40`): hovering by then.
+/// PX4's longest back transition (`VT_B_TRANS_DUR`): hovering by then.
 pub const BACK_DURATION_S: f32 = 10.0;
 
-/// PX4's quad-chute altitude loss (`VT_QC_T_ALT_LOSS`, `:145-160`), in m below the height the
+/// PX4's quad-chute altitude loss (`VT_QC_T_ALT_LOSS`), in m below the height the
 /// transition began, watched until [`ALTITUDE_LOSS_AFTER_S`] after it ends. PX4 watches forward
 /// transitions; every transition is held to it here.
 pub const ALTITUDE_LOSS_M: f32 = 20.0;

@@ -14,12 +14,12 @@ mod tests;
 pub const DEFAULT_ACCEPTANCE_RADIUS_M: f32 = 3.0;
 
 /// Default altitude error (meters, either way) within which a waypoint can be reached: PX4's
-/// multicopter `NAV_MC_ALT_RAD` (`src/modules/navigator/navigator_params.yaml:56-64`).
+/// multicopter `NAV_MC_ALT_RAD` (`src/modules/navigator/navigator_params.yaml`).
 pub const DEFAULT_ALTITUDE_ACCEPTANCE_M: f32 = 0.8;
 
 /// Altitude acceptance (meters, either way) for a wing-borne leg, which holds altitude loosely
 /// while it flies: PX4's fixed-wing `NAV_FW_ALT_RAD`
-/// (`src/modules/navigator/navigator_params.yaml:33-38`).
+/// (`src/modules/navigator/navigator_params.yaml`).
 pub const PLANE_ALTITUDE_ACCEPTANCE_M: f32 = 10.0;
 
 /// Returned by [`WaypointFollower::new`] when given no waypoints; there is nothing to fly.
@@ -55,15 +55,15 @@ pub enum RouteEnd {
 /// vehicle is within the acceptance radius of it (horizontal distance), or has passed it along
 /// the leg that leads to it (missed it wide), *and* is within the altitude acceptance of its
 /// altitude, it advances to the next: an acceptance cylinder, as in PX4
-/// (`src/modules/navigator/mission_block.cpp:380`). So a waypoint straight above the vehicle
-/// is reached at the end of the climb, not on the ground.
+/// (`MissionBlock::is_mission_item_reached_or_completed`). So a waypoint straight above the
+/// vehicle is reached at the end of the climb, not on the ground.
 ///
 /// With [`with_wait_for_altitude`](Self::with_wait_for_altitude) on, for wing-borne legs,
 /// the follower waits on a waypoint it reaches or passes outside the altitude acceptance: it
 /// emits the waypoint without a velocity until within the acceptance, wherever the vehicle
 /// is by then, and only then advances. Plane guidance loiters around it, where a velocity
 /// would fly the line through it on and away (#451). PX4's fixed-wing mode manager loiters
-/// the same way (`src/modules/fw_mode_manager/FixedWingModeManager.cpp:761-770`). It is off
+/// the same way (`FixedWingModeManager::handle_setpoint_type`). It is off
 /// by default: copter guidance flies *to* the waypoint, so it can't run away, and waiting
 /// would stop it on every waypoint of a descending route its altitude loop trails (the
 /// figure eight slowed below 2 m/s on 6 of its legs).

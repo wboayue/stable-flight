@@ -419,7 +419,7 @@ impl ScriptCommander {
     /// regime's, except that a plane leg ending in a back transition (the next leg rotor-borne, or the route's land)
     /// takes its waypoint at any altitude, so the back transition starts there instead of
     /// waiting on a loiter for an altitude it doesn't need. PX4 accepts that waypoint
-    /// regardless of altitude too (`src/modules/navigator/mission_block.cpp:328-343`).
+    /// regardless of altitude too (`MissionBlock::is_mission_item_reached_or_completed`).
     fn active_altitude_acceptance_m(&self, regime: FlightRegime) -> f32 {
         let back_transition =
             regime == FlightRegime::Plane && self.next_regime() != FlightRegime::Plane;

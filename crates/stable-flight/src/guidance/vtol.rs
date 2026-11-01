@@ -50,27 +50,28 @@
 //!
 //! - Both fly the forward transition on the hover controller, pitching the nose down at a
 //!   fixed rate, and complete on pitch: ArduPilot at `Q_TAILSIT_ANGLE` (45°) from vertical
-//!   (`ArduPlane/tailsitter.cpp:40`, `:537`), PX4 at −60° in its hover frame plus airspeed
-//!   when valid (`vtol_att_control/tailsitter.h:52`, `tailsitter.cpp:379-396`).
-//! - ArduPilot ramps at `Q_TAILSIT_RAT_FW`/`RAT_VT` (50°/s each, `tailsitter.cpp:128`,
-//!   `:135`) and hands back to hover at `Q_TAILSIT_ANG_VT`, which defaults to the forward
-//!   angle (`:47`).
-//! - A forward timeout reverts to hover in PX4 (`VT_TRANS_TIMEOUT` 15 s,
-//!   `vtol_att_control_params.yaml:92-98`, then quadchute), where ArduPilot completes it
-//!   (`tailsitter.cpp:546`); a back timeout completes in both (`tailsitter.cpp:586`).
+//!   (`Tailsitter::transition_fw_complete`), PX4 at −60° in its hover frame plus airspeed
+//!   when valid (`PITCH_THRESHOLD_AUTO_TRANSITION_TO_FW`,
+//!   `Tailsitter::isFrontTransitionCompletedBase`).
+//! - ArduPilot ramps at `Q_TAILSIT_RAT_FW`/`RAT_VT` (50°/s each) and hands back to hover at
+//!   `Q_TAILSIT_ANG_VT`, which defaults to the forward angle
+//!   (`Tailsitter::get_transition_angle_vtol`).
+//! - A forward timeout reverts to hover in PX4 (`VT_TRANS_TIMEOUT` 15 s, then quadchute),
+//!   where ArduPilot completes it (`Tailsitter::transition_fw_complete`); a back timeout
+//!   completes in both (`Tailsitter::transition_vtol_complete`).
 //! - PX4 falls back to hover below `VT_FW_MIN_ALT` (off by default) in plane flight and the
 //!   transitions, latched until plane flight is requested again, then by default returns home
-//!   (`vtol_type.cpp:231-243`, `vtol_att_control_main.cpp:195-244`, commander `COM_QC_ACT`);
+//!   (`VtolType::isMinAltBreached`, `VtolAttitudeControl::quadchute`, commander `COM_QC_ACT`);
 //!   it switches to hover at once, where here the back transition flies, and only plane
 //!   flight is watched: a forward transition starts above the floor and holds height.
 //!   ArduPilot instead assists on the lift motors below `Q_ASSIST_ALT` and stays in plane
-//!   flight (`VTOL_Assist.cpp:16-45`, `:109`).
+//!   flight (`VTOL_Assist::should_assist`).
 //! - PX4 blends thrust over 0.5 s when the back transition takes over from the plane
-//!   controller (`tailsitter.h:58`).
+//!   controller (tailsitter `B_TRANS_THRUST_BLENDING_DURATION`).
 //! - Through the back ramp ArduPilot flies a fixed throttle (`Q_TAILSIT_THR_VT`, by default
-//!   the hover throttle, at least cruise; `tailsitter.cpp:137-142`, `:306-341`) with no
-//!   altitude loop; PX4 flies its hover vertical-speed loop, its setpoint decaying to 0
-//!   (`FlightTaskTransition.cpp:50-86`, main `e146fe4`). Here the thrust is fixed and raised
+//!   the hover throttle, at least cruise; `Tailsitter::output`) with no altitude loop; PX4
+//!   flies its hover vertical-speed loop, its setpoint decaying to 0
+//!   (`FlightTaskTransition::update`, main `e146fe4`). Here the thrust is fixed and raised
 //!   only while sinking: one side of PX4's loop, since a climb costs height and a sink can
 //!   end in the ground.
 
@@ -582,11 +583,11 @@ impl ForwardGate {
 /// the vehicle was on the fallback's first copter tick flying one, held until the fallback
 /// clears. The waypoint may be a distant plane leg's, which the copter would otherwise chase
 /// at the plane leg's speed (#453). Other input (sticks, offboard attitudes and rates, land)
-/// is flown as given, as PX4 keeps flying its manual modes after a quadchute (PX4
-/// `commander/failsafe/failsafe.cpp:619-625`). On a waypoint ArduPilot lands where a forward
-/// transition failed (`QLAND`, `ArduPlane/quadplane.cpp:1503-1506`) and PX4 returns home by
-/// default (`COM_QC_ACT`, `commander_params.yaml:198-207`); holding leaves that choice to the
-/// commander: `Land` or `Copter` clears the fallback.
+/// is flown as given, as PX4 keeps flying its manual modes after a quadchute (PX4's
+/// `Failsafe::checkStateAndMode`). On a waypoint ArduPilot lands where a forward transition
+/// failed (`Q_TRANS_FAIL_ACT` `QLAND`, `SLT_Transition::update`) and PX4 returns home by
+/// default (`COM_QC_ACT`); holding leaves that choice to the commander: `Land` or `Copter`
+/// clears the fallback.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 struct FallbackHold {
     /// The latched hover point; `None` outside a fallback.

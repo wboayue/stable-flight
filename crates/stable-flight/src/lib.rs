@@ -1418,7 +1418,7 @@ pub struct PlaneSetpoint {
     pub thrust: f32,
     /// A tailsitter transition ramp: pitch saturates at ±π/2, not the stabilizer's limit, so
     /// the ramp reaches its handover whatever the cruise limit (ArduPilot's tailsitter ramps
-    /// past its pitch limits, `tailsitter.cpp:957`).
+    /// past its pitch limits, `Tailsitter_Transition::set_FW_roll_pitch`).
     pub transition: bool,
 }
 
@@ -1427,9 +1427,8 @@ pub struct PlaneSetpoint {
 /// flying `plane`.
 ///
 /// The stabilizer weights the lift rotors' thrust and moments by `lift_share` and flies the
-/// surfaces and pusher in full (PX4's standard VTOL,
-/// `src/modules/vtol_att_control/standard.cpp:294-368`). A NaN share counts as 1, the lift
-/// rotors carrying it all; others saturate to `[0, 1]`.
+/// surfaces and pusher in full (PX4's standard VTOL, `Standard::fill_actuator_outputs`). A NaN
+/// share counts as 1, the lift rotors carrying it all; others saturate to `[0, 1]`.
 ///
 /// # Examples
 ///
@@ -1474,7 +1473,7 @@ pub struct AttitudeSetpoint {
     pub thrust: f32,
     /// A tailsitter transition ramp: pitch saturates at ±π/2, not the stabilizer's maximum
     /// tilt, so the ramp reaches its handover whatever the hover limit (ArduPilot's tailsitter
-    /// ramps past its angle limit, `tailsitter.cpp:871`).
+    /// ramps past its angle limit, `Tailsitter_Transition::update`).
     pub transition: bool,
     /// Ground idle: guidance sets it while a piloted throttle is at or below
     /// [`IDLE_THROTTLE`](crate::guidance::copter::IDLE_THROTTLE) (or NaN), and a copter

@@ -197,7 +197,7 @@ impl PlaneGuidance {
 
     /// [`Guidance::guide`], with waypoint flight's pitch held within `pitch_cap_rad` either
     /// way when given: the forward transition's limits, so the energy control's pitch integral
-    /// stops where the transition stops the pitch (`ArduPlane/quadplane.cpp:4791-4793`).
+    /// stops where the transition stops the pitch (`SLT_Transition::set_FW_roll_pitch`).
     pub(crate) fn guide_capped(
         &mut self,
         dt: f32,

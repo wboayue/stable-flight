@@ -139,7 +139,7 @@ the check for realism.
   Sinking tail first, the air meets the wash head on and the surfaces see the static jet
   less the sink, so authority fades with the sink, as the eXplora's did in RealFlight (#123).
   ArduPilot's SITL instead adds 20 m/s × throttle to the airspeed of every moment
-  (`SIM_Plane.cpp:154-162`), which ties authority to throttle rather than thrust and damps
+  (`SITL::Plane::getTorque`), which ties authority to throttle rather than thrust and damps
   the body in a still hover.
 * **Bounded at any angle of attack.** A tailsitter flies broadside to the air in a hover and
   backward when it sinks, so past the stall drag blends into a flat plate's (`2·sin²α`)
@@ -273,7 +273,7 @@ supplies pacing.
   per frame (a row per slot). A lift+cruise VTOL flies two actuator sets at once, so
   `ControlOutput::cruise` carries the pusher's thrust and the surfaces' moments beside the lift
   rotors' `thrust` and `moments`, and the table's pusher and servo rows take it (PX4 splits
-  rotor and surface torque the same way, `vtol_att_control/standard.cpp:294-368`). It's an
+  rotor and surface torque the same way, `Standard::fill_actuator_outputs`). It's an
   `Option`, `None` for every other frame, so their stabilizers and tables don't change.
   Rejected: PX4's body thrust vector (`thrust: Vec3`), which still needs a second moment set
   and has no lateral-thrust consumer; and a composite mixer over two tables, which needs slot
@@ -413,9 +413,9 @@ deliberately. The pieces:
   stabilizer saturates its pitch at ±90° instead of the hover tilt or plane pitch limit, which
   sit below the handover angles (a plane's 30° cap against a 45° back handover): capped, a ramp
   stalls short of completing and flies to its timeout. ArduPilot's tailsitter ramps the same
-  way, limited only to ±85° on either side (`ArduPlane/tailsitter.cpp:871`, `:957`, applied
-  after the plane's pitch limit, `Attitude.cpp:429`); PX4 flies its back ramp on the
-  multicopter controller (`vtol_att_control/tailsitter.cpp:264-285`). Rejected: rejecting a cap
+  way, limited only to ±85° on either side (`Tailsitter_Transition::update` and
+  `set_FW_roll_pitch`, applied after the plane's pitch limit in `Plane::stabilize`); PX4 flies its back ramp on the
+  multicopter controller (`Tailsitter::update_transition_state`). Rejected: rejecting a cap
   below the handover when the configs are validated. The two values live in different
   components' configs and params, so it needs a cross-component check `FlightLoop` doesn't
   have, and it forces a high cap on all hover or plane flight.
@@ -431,9 +431,9 @@ is a fallback (a quadchute): plane flight stays refused until copter is requeste
 the guidance flies a waypoint as a hover where copter flight took over. A mission's plane
 waypoint can be kilometers off; chasing it on the rotors at the plane leg's speed is what this
 stops (#453). Sticks keep flying, as PX4's manual modes do after a quadchute. PX4 switches straight to hover below `VT_FW_MIN_ALT` and returns home
-(`vtol_type.cpp:231-243`, `COM_QC_ACT`); here the back transition flies, losing 1.9–3.3 m
+(`VtolType::isMinAltBreached`, `COM_QC_ACT`); here the back transition flies, losing 1.9–3.3 m
 on the sim (#450), and the commander picks what follows the hover. Rejected: ArduPilot's
-lift assist below `Q_ASSIST_ALT` (`VTOL_Assist.cpp:16-45`), which stays in plane flight but
+lift assist below `Q_ASSIST_ALT` (`VTOL_Assist::should_assist`), which stays in plane flight but
 needs a new blend in `Plane` and has nothing to assist with on a tailsitter.
 
 ```mermaid
@@ -460,13 +460,13 @@ A lift+cruise VTOL (quadplane) stays level, so tilt can't mark its progress: its
 and wing share the lift through a transition, and `guidance::vtol::LiftTransition` owns the
 mode and that lift share. Forward, the rotors hold the hover until a valid airspeed reaches
 `min_airspeed_mps`, then hand the lift to the wing linearly over `lift_ramp_s` (ArduPilot's
-SLT transition, `ArduPlane/quadplane.cpp:1480-1599`); without airspeed it never ramps and times
+SLT transition, `SLT_Transition::update`); without airspeed it never ramps and times
 out to copter, since the wing's speed is unknown; the timeout bounds only that wait (as
-ArduPilot's `Q_TRANS_FAIL`, `:1488-1491`), so a started ramp never throws the weight back onto
+ArduPilot's `Q_TRANS_FAIL`), so a started ramp never throws the weight back onto
 the rotors mid-way. Back, the share ramps up over `back_ramp_s`
 and the transition completes once the ground speed along the body `x` axis (airspeed without a
-ground velocity) is below `back_speed_mps`, or after `back_timeout_s` (PX4,
-`vtol_att_control/standard.cpp:98-115`, `:250-254`). Height and abandonment are
+ground velocity) is below `back_speed_mps`, or after `back_timeout_s` (PX4's
+`Standard::update_vtol_state` and `VT_B_TRANS_RAMP`). Height and abandonment are
 `Transition`'s, through one shared gate. Rejected: generalizing `Transition` with a completion
 policy, which would leave its tilt ramp, rates, and done angles meaningless for a quadplane
 and its config validated per kind.
@@ -489,14 +489,14 @@ stateDiagram-v2
   attitude, and the lift share) through a transition, and in copter flight while forward
   thrust is on (below), and either side's own setpoint otherwise; `QuadPlaneStabilizer` flies the lift rotors on `CopterStabilizer` (`thrust`,
   `moments`), weighted by the share, and the surfaces and pusher on `PlaneStabilizer`
-  (`ControlOutput::cruise`), in full (PX4 `standard.cpp:294-368`), holding the surfaces
+  (`ControlOutput::cruise`), in full (PX4's `Standard::fill_actuator_outputs`), holding the surfaces
   neutral in a hover (PX4's `VT_ELEV_MC_LOCK`). A side that starts flying is primed.
 * **Forward on the plane's thrust and pitch.** Through the forward transition the hover side
   holds the altitude it began at (a waypoint that moves with the vehicle, its tilt replaced),
   wings level; the pusher flies the plane guidance's thrust for the command, rising at most
   `pusher_slew_per_s` (PX4's `VT_PSHER_SLEW`) up to `forward_thrust`, and both sides fly its
   pitch within ArduPilot's transition limits (0 below 3 m/s, ±3° waiting, ±8° ramping,
-  `ArduPlane/quadplane.cpp:4747-4766`), as ArduPilot flies its throttle and pitch from the
+  `SLT_Transition::set_FW_roll_pitch`, `Q_TRAN_PIT_MAX`), as ArduPilot flies its throttle and pitch from the
   plane controller. Measured on the sim quadplane (#391): forward 8.2 s, +0.6/−0.3 m.
   Rejected, with their numbers on the same flight: PX4's fixed `VT_F_TRANS_THR` (1.0)
   through ArduPilot's timed ramp, which overspeeds to 32 m/s, balloons 9 m, and dives 11 m
@@ -508,10 +508,10 @@ stateDiagram-v2
   the wing at negative α pushes a quadplane down: on the sim, 13 m lost on a 100 m leg, and
   no climb off the ground in an 11 m/s headwind; tail first it flips (#427). On a waypoint or
   land, `ForwardThrust` holds nose-down pitch to `pitch_limit_rad` and gives the pusher
-  `gain · tan(pitch)`, ArduPilot's `Q_FWD_THR_USE` 1 (`ArduPlane/quadplane.cpp:2942-3058`),
+  `gain · tan(pitch)`, ArduPilot's `Q_FWD_THR_USE` 1 (`QuadPlane::assign_tilt_to_fwd_thr`),
   flown as a blend at lift share 1; with it every leg and back transition on the sim loses at
   most 2 m. Off by default, as ArduPilot and PX4 ship it. Rejected, with their numbers:
-  PX4's `(sin(limit) − sin(pitch)) · VT_FWD_THRUST_SC` (`vtol_type.cpp:510-516`), too weak
+  PX4's `(sin(limit) − sin(pitch)) · VT_FWD_THRUST_SC` (`VtolType::pusher_assist`), too weak
   under the 27° tilt cap to hold or fly upwind in 8 m/s of wind (blown 150–250 m); a lower
   tilt cap (10–15°), which fixes calm legs but leaves less lean than the 18° an 11 m/s
   headwind needs; a cruise-speed cap, which bounds ground speed, not airspeed, so a 5 m/s
@@ -636,7 +636,7 @@ contract:
   every tick, so shrinking it self-heals. Filter state needs the same treatment.
 * **The lateral integral doesn't wind against the tilt cap.** `CopterGuidance` passes the
   lateral loop the acceleration it last cut to `max_tilt_rad`, and the integral doesn't grow
-  along it (ArduPilot `libraries/AC_PID/AC_PID_2D.cpp:127-146`). Clamping to `max_integral`
+  along it (ArduPilot's `AC_PID_2D::update_i`). Clamping to `max_integral`
   alone would let a long leg at the tilt limit wind it full and overshoot the waypoint.
 * **Retuning `i` is bumpless.** The copter rate loop integrates the I term itself, `∫i·e`, in
   moment, and limits it in moment, as ArduPilot's `AC_PID::update_i` and PX4's
@@ -994,7 +994,7 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     delay to settle. With the yaw search the passing rows take 202–280 s (#296).
   * Rejected, from the same sweep
     ([`autotune_methods`](crates/stable-flight-sim/tests/autotune_methods.rs)): PX4's pole
-    placement (`pid_design.hpp:68-103`) assumes one tick of delay and found no design on any
+    placement (`pid_design::computePidGmvc`) assumes one tick of delay and found no design on any
     10 or 25 ms row; a gain search on the model passes gains the model can't predict (4 misses,
     or none found); ArduPilot's QuikTune ramp (`VTOL-quicktune.lua`) needs excitation the
     clean sim lacks, then missed the spec on some rows at every slew threshold from 5 to 80

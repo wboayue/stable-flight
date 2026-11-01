@@ -371,7 +371,7 @@ pub(crate) fn guard_sink(thrust: f32, climb_mps: f32, limit_mps: f32, gain: f32)
 /// The speed toward a target `distance_m` away that `accel_mps2` of deceleration can still
 /// bring to zero at the target: `p · distance` within `accel / p²` of it, `√(2 · accel ·
 /// (distance − accel / 2p²))` beyond, the two meeting with the same value and slope (the shape
-/// of ArduPilot's `sqrt_controller`, `libraries/AP_Math/control.cpp:575`). A non-positive or
+/// of ArduPilot's `sqrt_controller`, `libraries/AP_Math/control.cpp`). A non-positive or
 /// NaN distance gives 0; a non-positive `accel_mps2` gives the linear speed alone, and a
 /// non-positive `p` the square root alone.
 pub(crate) fn shaped_closing_speed(distance_m: f32, p: f32, accel_mps2: f32) -> f32 {
