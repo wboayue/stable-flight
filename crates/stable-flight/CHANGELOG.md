@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `STAB_NTCH_BW`, `STAB_NTCH_ATT`): a notch on the roll and pitch rates ahead of the gyro
   low-pass, for one vibration tone, in ArduPilot's fixed harmonic notch form (center, width,
   depth). Off by default. `controllers::GyroFilters` is the chain the rate loop flies, and
-  `CopterStabilizerConfig::gyro_filters`/`gyro_filters_on` give it (#597).
+  `CopterStabilizerConfig::gyro_filters_on` gives an axis's (#597).
 - `FlightLoop::setpoint`: the setpoint guidance gave the stabilizer on the last tick (#539).
 
 ### Changed
