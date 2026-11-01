@@ -325,14 +325,14 @@ pub fn explora_vtol()
                 rate: PlaneRateControllerConfig {
                     // Roll is all damping (23/s, no stiffness) on a strong elevon (183 rad/s²
                     // per unit moment), so feedforward carries a roll rate and P only trims
-                    // it: 1 rad/s steps rise in 55 ms, 6% over. Higher P or FF: more overshoot.
+                    // it: 8°/s steps rise in 55–60 ms, 6% over. Higher P or FF: more overshoot.
                     roll: RateGains {
                         p: 0.0229,
                         i: 0.08,
                         ff: 0.1279,
                     },
                     // Pitch is stiff (69–93/s² of weathercock) and barely damped (0–1.3/s), so
-                    // P does the work and FF almost none: steps rise in 70–85 ms, 4% over.
+                    // P does the work and FF almost none: steps rise in 70–90 ms, 4% over.
                     // I 0.63 (one run 1.26) holds the rate against that stiffness. Higher P:
                     // less damped.
                     pitch: RateGains {

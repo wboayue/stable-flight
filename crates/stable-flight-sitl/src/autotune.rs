@@ -231,7 +231,18 @@ enum TunePhase {
 impl PlaneTuneFlight {
     /// Flies `script` until the returned switch hands over to the hold; `home` is around the
     /// script's start.
+    ///
+    /// # Panics
+    ///
+    /// If `home`'s radius isn't positive or its overfly isn't past the radius: the leg would
+    /// never hover back, or would turn back before reaching it.
     pub fn new(script: ScriptCommander, home: PlaneHome) -> (Self, PlaneTuneSwitch) {
+        assert!(home.radius_m > 0.0, "home radius {} m", home.radius_m);
+        assert!(
+            home.overfly_m > home.radius_m,
+            "home overfly {} m within the radius",
+            home.overfly_m
+        );
         let phase = Rc::new(RefCell::new(TunePhase::Lead));
         let commander = Self {
             lead: script,
@@ -289,36 +300,32 @@ impl PlaneTuneFlight {
         direction: &mut Vec2,
         state: &VehicleState,
     ) -> Command {
-        let (position_m, altitude_m) = self.home_m();
-        let past_start_m = (state.position_m.xy() - position_m).dot(direction);
+        let past_start_m = (state.position_m.xy() - self.home_m().0).dot(direction);
         if past_start_m > self.home.overfly_m {
             *direction = -*direction;
         }
-        Command::new(
-            true,
-            ControlInput::Waypoint(WaypointCommand {
-                position_m,
-                velocity_mps: Some(*direction * airspeed_mps),
-                altitude_m,
-                cruise_speed_mps: airspeed_mps,
-                ..Default::default()
-            }),
-        )
-        .with_regime(FlightRegime::Plane)
+        let leg = WaypointCommand {
+            velocity_mps: Some(*direction * airspeed_mps),
+            cruise_speed_mps: airspeed_mps,
+            ..self.home_waypoint()
+        };
+        Command::new(true, ControlInput::Waypoint(leg)).with_regime(FlightRegime::Plane)
     }
 
     /// The hover back over the start: a copter waypoint there at the home altitude.
     fn return_command(&self) -> Command {
+        Command::new(true, ControlInput::Waypoint(self.home_waypoint()))
+            .with_regime(FlightRegime::Copter)
+    }
+
+    /// A waypoint over the start at the home altitude, which the leg and the hover back fly.
+    fn home_waypoint(&self) -> WaypointCommand {
         let (position_m, altitude_m) = self.home_m();
-        Command::new(
-            true,
-            ControlInput::Waypoint(WaypointCommand {
-                position_m,
-                altitude_m,
-                ..Default::default()
-            }),
-        )
-        .with_regime(FlightRegime::Copter)
+        WaypointCommand {
+            position_m,
+            altitude_m,
+            ..Default::default()
+        }
     }
 }
 

@@ -107,6 +107,21 @@ const HOLD: fn() -> PlaneTuneHoldConfig = || PlaneTuneHoldConfig {
     ..PlaneTuneHoldConfig::new(0.85, 14.0)
 };
 
+/// A home that would never hover back, or would turn back before reaching the start, is
+/// refused at construction: (radius, overfly).
+#[test]
+fn a_home_that_never_hovers_back_panics() {
+    for (radius_m, overfly_m) in [(0.0, 150.0), (-5.0, 150.0), (30.0, 30.0), (30.0, -10.0)] {
+        let home = PlaneHome {
+            radius_m,
+            overfly_m,
+            ..HOME
+        };
+        let built = std::panic::catch_unwind(|| PlaneTuneFlight::new(plane_script(), home));
+        check!(built.is_err(), "radius {radius_m} m, overfly {overfly_m} m");
+    }
+}
+
 /// The flight flies its script until handed over, then the hold, whose turns and recovery the
 /// switch reaches; outside the hold they do nothing.
 #[test]
@@ -253,7 +268,11 @@ fn the_hover_back_lands_once_over_the_start() {
 #[test]
 fn the_flight_home_hovers_back_within_its_radius() {
     for (radius_m, hovering) in [(100.0, false), (200.0, true)] {
-        let home = PlaneHome { radius_m, ..HOME };
+        let home = PlaneHome {
+            radius_m,
+            overfly_m: 300.0,
+            ..HOME
+        };
         let (mut commander, switch) = PlaneTuneFlight::new(plane_script(), home);
         switch.hold(HOLD());
         commander.next_command(0.004, &cruising(0.0, 100.0));
