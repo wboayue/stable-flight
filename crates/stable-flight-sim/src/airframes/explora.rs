@@ -20,8 +20,10 @@ use crate::{PropWash, TailsitterModel};
 
 /// The RealFlight eXplora VTOL (`eXplora_Tailsiter_VTOL.RFX`) as flown in RealFlight: the
 /// tailsitter's layout ([`tailsitter`]: two motors, elevons in their wash) sized from the
-/// model's `.rfvehicle`, with its plane side flown on `explora_vtol()`'s settings
-/// (stable-flight-sitl-realflight), so its rate gains are tuned here before RealFlight.
+/// model's `.rfvehicle`, with its hover flown on `explora_vtol()`'s gains
+/// (stable-flight-sitl-realflight) and its plane side on the hand tune `explora_vtol()` flew
+/// before RealFlight's plane autotune (#535), which the sim's pitch doesn't yet reproduce
+/// (#619).
 ///
 /// From the `.rfvehicle`:
 /// - Wing: 1.40 m span (0.105 m center section and 0.594 m panels each side), 0.43 m², a
@@ -236,8 +238,10 @@ fn explora_hover(hover: CopterStabilizerConfig) -> CopterStabilizerConfig {
     hover
 }
 
-/// The eXplora's plane rate loop, as `explora_vtol()` flies it (#342): feedforward sized to
-/// its elevons, which turn a unit moment into several times the rate PX4's defaults expect.
+/// The eXplora's hand-tuned plane rate loop (#342): feedforward sized to its elevons, which
+/// turn a unit moment into several times the rate PX4's defaults expect. `explora_vtol()`
+/// flies RealFlight's plane autotune instead (#535); the sim's pitch control reads 2× its
+/// RealFlight fit, so its design lands elsewhere (#619).
 fn explora_rate() -> PlaneRateControllerConfig {
     let defaults = PlaneRateControllerConfig::default();
     PlaneRateControllerConfig {

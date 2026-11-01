@@ -182,14 +182,21 @@ fn explora_vtol_transition_fits_both_sides() {
     assert!(transition.forward_max_tilt_rad >= transition.forward_done_rad);
 }
 
-/// The plane side is the sim eXplora's (stable-flight-sim `airframes::explora`), which #342
-/// tuned the rate loop on: its rate gains, trim, airspeeds, and cruise.
+/// The plane side is the sim eXplora's (stable-flight-sim `airframes::explora`): its trim,
+/// airspeeds, limits, and cruise. Only the roll and pitch rate gains and the time constants
+/// differ: RealFlight's plane autotune (#535), which the sim's pitch doesn't yet reproduce
+/// (#619).
 #[test]
 fn explora_vtol_flies_the_sim_exploras_plane_side() {
     let sim = stable_flight_sim::airframes::explora();
     let realflight = explora_vtol();
+    let mut tuned_sim = sim.stabilizer.plane;
+    let tuned = realflight.stabilizer.plane;
+    tuned_sim.rate.roll = tuned.rate.roll;
+    tuned_sim.rate.pitch = tuned.rate.pitch;
+    tuned_sim.time_constant_s = tuned.time_constant_s;
 
-    assert_eq!(realflight.stabilizer.plane, sim.stabilizer.plane);
+    assert_eq!(tuned, tuned_sim);
     assert_eq!(realflight.guidance.plane, sim.guidance.plane);
 }
 

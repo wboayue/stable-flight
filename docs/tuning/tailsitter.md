@@ -482,16 +482,47 @@ handover tilt above), not this one's.
 
 ## 9. Plane rate loop (acro) and maneuvers
 
-| Param | Field | eXplora |
+| Param | Field | eXplora (PX4 default) |
 |---|---|---|
-| `PSTAB_RLL_FF` | `plane.rate.roll.ff` | 0.1 (PX4 default 0.5) |
-| `PSTAB_PIT_FF` | `plane.rate.pitch.ff` | 0.05 (0.5) |
-| `PSTAB_PIT_I` | `plane.rate.pitch.i` | 0.8 (0.1) |
+| `PSTAB_RLL_P`, `_I`, `_FF` | `plane.rate.roll` | 0.0229, 0.08, 0.1279 (0.05, 0.1, 0.5) |
+| `PSTAB_PIT_P`, `_I`, `_FF` | `plane.rate.pitch` | 0.29, 0.63, 0.006 (0.08, 0.1, 0.5) |
+| `PSTAB_TC_X`, `_Y` | `plane.time_constant_s` | 0.226, 0.226 s (0.4) |
 | `PSTAB_PIT_TRIM` | `plane.rate.trim.y` | 0.09 |
 
-Rate flight (rate sticks, scripted maneuvers) flies the plane rate loop with no attitude loop
-over it, so its feedforward and trim show directly; stabilized flight hides them behind the
-attitude loop. Tune them from doublets, then fly rolls and loops.
+The eXplora's rate gains and time constants come from the plane autotune (below), and the
+doublets, rolls, and loops check them: rate flight (rate sticks, scripted maneuvers) flies the
+plane rate loop with no attitude loop over it, so its gains and trim show directly; stabilized
+flight hides them behind the attitude loop.
+
+### Plane autotune
+
+`just fly-plane-autotune` (`plane-autotune-realflight --airframe explora`) flies
+`flights/explora_plane_tune.csv` into plane flight at 100 m and hands over to a tune hold
+(`PlaneTuneHold`) on the level leg, at the thrust the leg flew level on. It fits roll, then
+pitch, from a square wave on each rate loop, designs P, I, FF, and the time constant from the
+fit (`StagePlan::plane_design`), and checks them on attitude steps. Then it flies home in
+plane, transitions back, hovers over the start, and lands there. It prints the gains as an
+`airframes.rs` snippet.
+
+- `--stages none --step-test` measures the airframe's gains without tuning; `--step-test`
+  after a design measures the designed ones (roll and pitch rate and angle steps).
+- `--rate-scale` starts from scaled rate gains, to check that the design converges from
+  either side.
+- Fly it three times and commit each gain's median: the fit of a barely damped loop spreads.
+- **eXplora in RealFlight** (Eli Field, calm, three runs at 13.9 m/s and thrust 0.854; #535):
+  - **Roll:** all damping (23/s) on a strong elevon (183 rad/s² per unit moment). It repeated
+    to 0.5%.
+  - **Pitch:** stiff (69–93/s²) and barely damped (0–1.3/s). P and the time constant repeated,
+    but I (0.63–1.26) and FF (0–0.016) spread with the damping.
+
+  | Loop | Hand tune: overshoot / rise / settle / final | Autotuned |
+  |---|---|---|
+  | Roll rate | 0.00 / 284 / 299 ms / 0.96 | 0.06 / 59 / 73 ms / 1.06 |
+  | Pitch rate | 0.21 / 101 / 495 ms / 1.06 | 0.04 / 90 / 106 ms / 1.04 |
+  | Roll angle | 0.03 / 785 / 867 ms / 1.02 | 0.01 / 439 / 521 ms / 1.01 |
+  | Pitch angle | 0.01 / 735 / 839 ms / 1.01 | 0.02 / 417 / 477 ms / 1.00 |
+
+### Maneuvers
 
 - **Script:** `flights/explora_acro.csv` flies the transition lap's rectangle at 60 m with a
   maneuver at the middle of each long leg: roll and pitch doublets at 60°/s, then a 180°/s
@@ -504,7 +535,8 @@ attitude loop. Tune them from doublets, then fly rolls and loops.
 - **Feedforward:** read each doublet's first half: its peak rate over the command. Divide the
   feedforward by that ratio, then fly again. At PX4's 0.5 the eXplora's 30°/s doublets peaked
   at 3.2× in roll and 3.4× in pitch: its 0.63 kg wing behind ±45° elevons turns a unit moment
-  into far more rate than PX4 expects.
+  into far more rate than PX4 expects. The autotune sizes feedforward from the fit; doublets
+  check it.
 - **Pitch I:** carries the pitch rate through a loop as it speeds up coming down. Too low and
   the rate lags the loop's second half; too high and a doublet's second half overshoots.
 - **Path hold:** `ManeuverConfig::path` (`maneuver::PathConfig`; the eXplora flies the
@@ -518,11 +550,10 @@ attitude loop. Tune them from doublets, then fly rolls and loops.
 - **Sim first:** `stable-flight-sim`'s `airframes::explora()` is sized from the eXplora's
   `.RFX` and calibrated to its default-gain doublets, nose-up moment, and level thrust; tune
   feedforward and I on it (`tests/maneuver.rs`), then confirm in RealFlight.
-- **eXplora in RealFlight** (the script at 60 m, wind off): doublets peak at 0.91× (roll) and
-  1.18× (pitch) in their first half (#342). With the path hold the 180°/s roll turns at
-  168°/s and its lowest point is 1–2 m below its entry, either way; the 25 m loop spans
-  25.2 m of radius and ends 2 m low, a 10 m loop 10.4 m and 1.3 m low. On rates alone the roll
-  lost 20 m and the loops 16 m and 6 m (#481).
+- **eXplora in RealFlight** (the script at 60 m, wind off): doublets peak at 1.03× (roll) and
+  0.99× (pitch) in their first half. With the path hold the 180°/s roll turns at 183°/s and
+  its lowest point is 1.8 m below its entry; the 25 m loop spans 25.5 m of radius and ends
+  2.2 m low (#535). On rates alone the roll lost 20 m and the loops 16 m and 6 m (#481).
 - **Symptoms:**
   - Doublet peaks well past its command: feedforward down.
   - Doublet short of its command, rate creeping up through each half: feedforward up.
