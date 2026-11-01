@@ -85,9 +85,9 @@ rows! {
     quad_x_cg_offset_high: quad_x, CgOffset, High;
     quad_x_weak_motor_low: quad_x, WeakMotor, Low;
     quad_x_weak_motor_high: quad_x, WeakMotor, High;
-    #[ignore = "every design passes, but under gyro noise with the trim and delay the yaw stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "every design passes, but under gyro noise with the trim and delay the yaw stage doesn't settle (NotSettled) (#598)"]
     quad_x_combined_low: quad_x, Combined, Low;
-    #[ignore = "the ×3 start's D turns the 90 Hz gyro tone into moments at the rate loop's limit, so its fits saturate even lowered 3 times (6 didn't unclip them either) (#551)"]
+    #[ignore = "the ×3 start's identify windows saturate even lowered 3 times (6, or the tone removed, didn't unclip them either) (#598)"]
     quad_x_combined_high: quad_x, Combined, High;
 
     heavy_quad_clean_low: heavy_quad, Clean, Low;
@@ -102,9 +102,9 @@ rows! {
     heavy_quad_cg_offset_high: heavy_quad, CgOffset, High;
     heavy_quad_weak_motor_low: heavy_quad, WeakMotor, Low;
     heavy_quad_weak_motor_high: heavy_quad, WeakMotor, High;
-    #[ignore = "every design passes, but under gyro noise with the trim and delay the yaw stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "every design passes, but under gyro noise with the trim and delay the yaw stage doesn't settle (NotSettled) (#598)"]
     heavy_quad_combined_low: heavy_quad, Combined, Low;
-    #[ignore = "the ×3 start's D turns the 90 Hz gyro tone into moments at the rate loop's limit, so its fits saturate even lowered 3 times (6 didn't unclip them either) (#551)"]
+    #[ignore = "the ×3 start's identify windows saturate even lowered 3 times (6, or the tone removed, didn't unclip them either) (#598)"]
     heavy_quad_combined_high: heavy_quad, Combined, High;
 
     racer_clean_low: racer, Clean, Low;
@@ -114,17 +114,17 @@ rows! {
     racer_delay_25ms_low: racer, Delay25Ms, Low;
     #[ignore = "the ×3 start (rate P 3.49) breaches the rate envelope in the first fit at 25 ms; the abort is the safe outcome (#552)"]
     racer_delay_25ms_high: racer, Delay25Ms, High;
-    #[ignore = "at racer's 75 Hz gyro low-pass, gyro noise alone peaks at 0.12–0.17 rad/s in a hover, past the 0.1 rad/s settle: a roll or pitch stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "at racer's 75 Hz gyro low-pass, gyro noise alone peaks at 0.12–0.17 rad/s in a hover, past the 0.1 rad/s settle: a roll or pitch stage doesn't settle (NotSettled) (#597)"]
     racer_noise_low: racer, Noise, Low;
-    #[ignore = "at racer's 75 Hz gyro low-pass, gyro noise alone peaks at 0.12–0.17 rad/s in a hover, past the 0.1 rad/s settle: the roll angle stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "at racer's 75 Hz gyro low-pass, gyro noise alone peaks at 0.12–0.17 rad/s in a hover, past the 0.1 rad/s settle: the roll angle stage doesn't settle (NotSettled) (#597)"]
     racer_noise_high: racer, Noise, High;
     racer_cg_offset_low: racer, CgOffset, Low;
     racer_cg_offset_high: racer, CgOffset, High;
     racer_weak_motor_low: racer, WeakMotor, Low;
     racer_weak_motor_high: racer, WeakMotor, High;
-    #[ignore = "under gyro noise the roll rate stage doesn't settle (NotSettled) (#551)"]
+    #[ignore = "under gyro noise with the trim and delay the roll rate stage doesn't settle (NotSettled) (#598)"]
     racer_combined_low: racer, Combined, Low;
-    #[ignore = "the ×3 start's D turns the 90 Hz gyro tone into moments at the rate loop's limit, so its fits saturate even lowered 3 times (6 didn't unclip them either) (#551)"]
+    #[ignore = "the ×3 start's identify windows saturate even lowered 3 times (6, or the tone removed, didn't unclip them either) (#598)"]
     racer_combined_high: racer, Combined, High;
 }
 
