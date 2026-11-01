@@ -88,11 +88,11 @@ rows! {
     quad_x_weak_motor_high: quad_x, WeakMotor, High;
     #[ignore = "under gyro noise the fit reads the 10 ms delay as 1 tick: the rate designs ring at the rate loop's limit and the angle stage's fit saturates (#603)"]
     quad_x_delay_noise_low: quad_x, DelayNoise, Low;
-    #[ignore = "lowered up to 8 times, the ×3 start designs both rate loops, then fails as the low start does (#603)"]
+    #[ignore = "lowered up to 8 times, the ×3 start designs both rate loops, then the angle stage's fit saturates (#603)"]
     quad_x_delay_noise_high: quad_x, DelayNoise, High;
     #[ignore = "under gyro noise the fit reads the 10 ms delay as 1 tick: the rate designs ring at the rate loop's limit and the angle stage's fit saturates (#603)"]
     quad_x_combined_low: quad_x, Combined, Low;
-    #[ignore = "lowered up to 8 times, the ×3 start designs both rate loops, then fails as the low start does (#603)"]
+    #[ignore = "lowered up to 8 times, the ×3 start designs both rate loops, then the angle stage's fit saturates (#603)"]
     quad_x_combined_high: quad_x, Combined, High;
 
     heavy_quad_clean_low: heavy_quad, Clean, Low;
@@ -109,11 +109,11 @@ rows! {
     heavy_quad_weak_motor_high: heavy_quad, WeakMotor, High;
     #[ignore = "under gyro noise the fit reads the 10 ms delay as 1 tick: the rate designs ring at the rate loop's limit and the yaw stage doesn't settle (NotSettled) (#603)"]
     heavy_quad_delay_noise_low: heavy_quad, DelayNoise, Low;
-    #[ignore = "lowered up to 8 times, the ×3 start designs both rate loops, then fails as the low start does (#603)"]
+    #[ignore = "lowered up to 8 times, the ×3 start designs both rate loops, then the angle stage's fit saturates (#603)"]
     heavy_quad_delay_noise_high: heavy_quad, DelayNoise, High;
     #[ignore = "under gyro noise the fit reads the 10 ms delay as 1 tick: the rate designs ring at the rate loop's limit and the angle stage's fit saturates (#603)"]
     heavy_quad_combined_low: heavy_quad, Combined, Low;
-    #[ignore = "lowered up to 8 times, the ×3 start designs both rate loops, then fails as the low start does (#603)"]
+    #[ignore = "lowered up to 8 times, the ×3 start designs both rate loops, then the angle stage's fit saturates (#603)"]
     heavy_quad_combined_high: heavy_quad, Combined, High;
 
     racer_clean_low: racer, Clean, Low;

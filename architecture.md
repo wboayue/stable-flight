@@ -1038,8 +1038,8 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     start that doesn't settle within the settle timeout is lowered by the bracket's factor
     until it does, at most eight times, as a rate design lowers a start whose fit saturates
     (80 s on ringing gains; `racer` needs one, and capped anywhere from 1 to 10 the robustness
-    rows that pass pass the same; the delay-noise rows' ×3 starts need 5–8 to design their
-    rate loops); a tighter settle (0.05 or 0.03 rad/s) didn't help and cost the clean rows
+    rows that pass pass the same; the delay-noise rows' ×3 starts design their rate loops
+    after 6 (`quad_x`) and 7 (`heavy_quad`), and `racer`'s roll rate after 8); a tighter settle (0.05 or 0.03 rad/s) didn't help and cost the clean rows
     their time budget (#552, #598).
 * **Plane method** (planned, [#534](https://github.com/wboayue/stable-flight/issues/534)):
   plane autotune fits each axis to a physical model, designs on the model, and checks the

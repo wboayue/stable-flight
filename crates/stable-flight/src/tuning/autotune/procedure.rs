@@ -18,10 +18,11 @@ const MAX_MEASURE_STOPS: usize = 3;
 
 /// Most times a stage lowers its start: a search's that won't settle, a rate design's whose fit
 /// saturates under noise. Each cut is 1.3 on the copter, so eight take the start to an eighth
-/// (÷ 8.2), within 80 s at the copter envelope's 10 s settle timeout, as ArduPilot's autotune
-/// shrinks its twitch ×0.9 per retry down to a fifth (`AC_AutoTune`'s `step_scaler`). Under
-/// gyro noise, 10 ms of delay, and trim, three times a quad's rate gains ring at the rate
-/// loop's limit until lowered 5–8 times (`quad_x`, `heavy_quad`). `racer`'s default yaw at
+/// (÷ 8.2): 80 s for a search at the copter envelope's 10 s settle timeout, about 104 s for a
+/// design (a settle and a 3 s fit each). The retry on a smaller start is ArduPilot's on a
+/// smaller twitch: `AC_AutoTune` shrinks its twitch (`step_scaler`) ×0.9 per retry, down to a
+/// fifth. Under gyro noise and 10 ms of delay, three times a quad's rate gains ring at the rate
+/// loop's limit until lowered 6 times (`quad_x`) or 7 (`heavy_quad`). `racer`'s default yaw at
 /// 25 ms of delay settles after one, and capped anywhere from 1 to 10 the robustness rows that
 /// pass passed the same (#552, #598).
 const MAX_START_LOWERINGS: usize = 8;
