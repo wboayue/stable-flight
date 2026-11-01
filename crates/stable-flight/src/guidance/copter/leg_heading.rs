@@ -7,12 +7,6 @@ use crate::estimation::wind::WindEstimate;
 use crate::math::{all_finite, clamp_symmetric};
 use crate::{Vec2, VehicleState, WaypointCommand, wrap_angle};
 
-/// Yaw rate toward the heading-hold target, in rad/s (about 6°/s), below which a heading off
-/// it by more than [`heading_yield_rad`](CopterGuidanceConfig::heading_yield_rad) is stuck. A
-/// vehicle turning to its target yaws toward it faster; one held off by its fin doesn't yaw,
-/// or yaws away (#452).
-const STUCK_YAW_RATE_RADPS: f32 = 0.1;
-
 /// Turns the heading-hold target to a waypoint's heading, to a wingtip into the wind on
 /// station, or along its leg, and yields a leg's to the vehicle's heading once the heading is
 /// stuck off it. Allocation-free.
@@ -164,7 +158,7 @@ impl LegHeading {
 
     /// Whether this leg has yielded its heading, after the heading has been stuck (more than
     /// `heading_yield_rad` off `target_rad`, yawing toward it at under
-    /// [`STUCK_YAW_RATE_RADPS`]) for `heading_yield_s`. The body yaw rate stands in for the
+    /// `heading_yield_rate_radps`) for `heading_yield_s`. The body yaw rate stands in for the
     /// heading's rate, as it does near level. Never with `heading_yield_s` at 0 or a
     /// non-finite heading.
     fn yielded(
@@ -184,8 +178,8 @@ impl LegHeading {
         let error_rad = wrap_angle(target_rad - heading_rad);
         let toward_radps = error_rad.signum() * estimated_state.angular_velocity_radps.z;
         // False for a NaN error or rate: not stuck.
-        let stuck =
-            error_rad.abs() > config.heading_yield_rad && toward_radps < STUCK_YAW_RATE_RADPS;
+        let stuck = error_rad.abs() > config.heading_yield_rad
+            && toward_radps < config.heading_yield_rate_radps;
         self.stuck_s = if stuck { self.stuck_s + dt } else { 0.0 };
         self.yielding = self.stuck_s > config.heading_yield_s;
         self.yielding

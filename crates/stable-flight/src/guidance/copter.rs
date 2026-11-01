@@ -110,6 +110,10 @@ pub const DEFAULT_WAYPOINT_YAW_MIN_LEG_M: f32 = DEFAULT_ACCEPTANCE_RADIUS_M;
 /// all yield to the fin in 5 and 11 m/s winds and none yields in a calm 180° turn (#452).
 pub const DEFAULT_HEADING_YIELD_RAD: f32 = 30.0_f32.to_radians();
 
+/// Default [`CopterGuidanceConfig::heading_yield_rate_radps`]: 0.1 rad/s (about 6°/s), under
+/// the turn rate toward the target and over a vehicle held off by its fin (#452).
+pub const DEFAULT_HEADING_YIELD_RATE_RADPS: f32 = 0.1;
+
 /// Default [`CopterGuidanceConfig::heading_yield_s`]: 1 s. On the sim quadplane taking off in
 /// an 8 m/s crosswind it reaches 29 m in 15.2 s (14.9 s at 0.5 s, 21.9 s never yielding; 13.8 s
 /// in a headwind) (#431).
@@ -258,19 +262,29 @@ pub struct CopterGuidanceConfig {
     /// non-negative and finite. Defaults to [`DEFAULT_WAYPOINT_YAW_MIN_LEG_M`].
     pub waypoint_yaw_min_leg_m: f32,
     /// Heading error, in radians, past which waypoint flight counts the heading as stuck while
-    /// the vehicle yaws toward the heading-hold target at under 0.1 rad/s. Must be
-    /// non-negative and finite. Defaults to [`DEFAULT_HEADING_YIELD_RAD`].
+    /// the vehicle yaws toward the heading-hold target at under
+    /// [`heading_yield_rate_radps`](Self::heading_yield_rate_radps). Must be non-negative and
+    /// finite. Defaults to [`DEFAULT_HEADING_YIELD_RAD`].
     pub heading_yield_rad: f32,
+    /// Yaw rate toward the heading-hold target, in rad/s, below which a heading off it by more
+    /// than [`heading_yield_rad`](Self::heading_yield_rad) is stuck. A vehicle turning to its
+    /// target yaws toward it faster; one held off by its fin doesn't yaw, or yaws away.
+    /// Higher: a slow turn can count as stuck and yield. Must be non-negative and finite.
+    /// Defaults to [`DEFAULT_HEADING_YIELD_RATE_RADPS`].
+    pub heading_yield_rate_radps: f32,
     /// Seconds the heading stays stuck before waypoint flight yields it: the heading-hold
     /// target then follows the vehicle's heading until the waypoint changes, so a quadplane's
     /// fin swinging the nose into the wind isn't fought for good (#431). `0` never yields.
     /// Must be non-negative and finite. Defaults to [`DEFAULT_HEADING_YIELD_S`].
     pub heading_yield_s: f32,
     /// Least wind, in m/s, that turns the heading-hold target to put a wingtip into the wind
-    /// (the vehicle's `x` axis, a tailsitter's belly, 80° off where it comes from, 10° short
-    /// of square) while holding a waypoint or landing, at `heading_rate_radps`. The side is
-    /// the one nearer the heading when first picked; the wind estimate ([`wind`](Self::wind))
-    /// turns it only when its direction is known within 15°, and moves it only past 10°. A waypoint's
+    /// (the vehicle's `x` axis, a tailsitter's belly,
+    /// [`wind_heading_from_wind_rad`](Self::wind_heading_from_wind_rad) off where it comes
+    /// from) while holding a waypoint or landing, at `heading_rate_radps`. The side is the one
+    /// nearer the heading when first picked; the wind estimate ([`wind`](Self::wind)) turns it
+    /// only when its direction is known within
+    /// [`wind_heading_max_sd_rad`](Self::wind_heading_max_sd_rad), and moves it only past
+    /// [`wind_heading_deadband_rad`](Self::wind_heading_deadband_rad). A waypoint's
     /// [`heading_rad`](WaypointCommand::heading_rad) wins, and legs longer than
     /// `waypoint_yaw_min_leg_m` keep their own heading until within that of the waypoint.
     /// `0` turns nothing. Must be non-negative and finite. Defaults to `0`.
@@ -290,6 +304,8 @@ pub struct CopterGuidanceConfig {
     /// before it moves. Must be non-negative and finite. Defaults to
     /// [`DEFAULT_WIND_HEADING_DEADBAND_RAD`].
     pub wind_heading_deadband_rad: f32,
+    /// Thrust floor, sink guard, and tilt-boost ceiling; all off by default.
+    pub thrust: ThrustLimits,
     /// Height, in meters, above the altitude primed on the ground past which the vehicle is
     /// airborne and the wind estimate updates: on the ground the air's push is lost in contact
     /// forces and would read as calm. Higher: the estimate starts later in the climb. Must be
@@ -301,8 +317,6 @@ pub struct CopterGuidanceConfig {
     /// to the loop's I term, which carries it past the waypoint when the vehicle stops. Must be
     /// non-negative and finite. Defaults to [`DEFAULT_FEEDFORWARD_HOLD_BAND_MPS`].
     pub feedforward_hold_band_mps: f32,
-    /// Thrust floor, sink guard, and tilt-boost ceiling; all off by default.
-    pub thrust: ThrustLimits,
     /// The wind estimator's drag model and noises; off by default (no drag coefficients).
     pub wind: WindConfig,
 }
@@ -383,7 +397,7 @@ impl Default for CopterGuidanceConfig {
     /// loop, a 27° waypoint tilt cap, 45° at full stick, a 3 m/s descent limit, a climb under
     /// way when a descent starts shed at 2.5 m/s², a 0.7 m/s land, waypoint legs over 3 m
     /// turned to face along them at 60°/s, a waypoint's heading turned to at 60°/s, the
-    /// heading yielded after 1 s stuck over 30° off, full yaw stick at 1 rad/s, an idle throttle
+    /// heading yielded after 1 s stuck over 30° off yawing toward it under 0.1 rad/s, full yaw stick at 1 rad/s, an idle throttle
     /// of 0.05, a 1 m altitude leash, no wind heading (80° off the wind when on), the wind
     /// estimated from 1 m up, a 0.3 m/s feedforward hold band, no thrust floor or sink guard,
     /// and no boost ceiling.
@@ -408,14 +422,15 @@ impl Default for CopterGuidanceConfig {
             heading_rate_radps: DEFAULT_HEADING_RATE_RADPS,
             waypoint_yaw_min_leg_m: DEFAULT_WAYPOINT_YAW_MIN_LEG_M,
             heading_yield_rad: DEFAULT_HEADING_YIELD_RAD,
+            heading_yield_rate_radps: DEFAULT_HEADING_YIELD_RATE_RADPS,
             heading_yield_s: DEFAULT_HEADING_YIELD_S,
             wind_heading_min_mps: 0.0,
             wind_heading_from_wind_rad: DEFAULT_WIND_HEADING_FROM_WIND_RAD,
             wind_heading_max_sd_rad: DEFAULT_WIND_HEADING_MAX_SD_RAD,
             wind_heading_deadband_rad: DEFAULT_WIND_HEADING_DEADBAND_RAD,
+            thrust: ThrustLimits::default(),
             airborne_height_m: DEFAULT_AIRBORNE_HEIGHT_M,
             feedforward_hold_band_mps: DEFAULT_FEEDFORWARD_HOLD_BAND_MPS,
-            thrust: ThrustLimits::default(),
             wind: WindConfig::default(),
         }
     }
@@ -431,7 +446,7 @@ impl CopterGuidanceConfig {
     /// `altitude_leash_m`, and `heading_rate_radps` are positive and finite, that
     /// `land_speed_mps` is finite and above [`DESCENDING_MPS`], that
     /// `wind_heading_from_wind_rad` is in `[0, π]`, and that `waypoint_yaw_radps`,
-    /// `waypoint_yaw_min_leg_m`, `heading_yield_rad`, `heading_yield_s`,
+    /// `waypoint_yaw_min_leg_m`, `heading_yield_rad`, `heading_yield_rate_radps`, `heading_yield_s`,
     /// `wind_heading_min_mps`, `wind_heading_max_sd_rad`, `wind_heading_deadband_rad`,
     /// `airborne_height_m`, and `feedforward_hold_band_mps` are non-negative and finite.
     ///
@@ -475,6 +490,7 @@ impl CopterGuidanceConfig {
         check_positive("heading_rate_radps", self.heading_rate_radps)?;
         check_limit("waypoint_yaw_min_leg_m", self.waypoint_yaw_min_leg_m)?;
         check_limit("heading_yield_rad", self.heading_yield_rad)?;
+        check_limit("heading_yield_rate_radps", self.heading_yield_rate_radps)?;
         check_limit("heading_yield_s", self.heading_yield_s)?;
         check_limit("wind_heading_min_mps", self.wind_heading_min_mps)?;
         check(

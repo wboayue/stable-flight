@@ -75,6 +75,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
         heading_rate_radps: 60.0_f32.to_radians(),
         waypoint_yaw_min_leg_m: 3.0,
         heading_yield_rad: 30.0_f32.to_radians(),
+        heading_yield_rate_radps: 0.1,
         heading_yield_s: 1.0,
         wind_heading_min_mps: 0.0,
         wind_heading_from_wind_rad: 80.0_f32.to_radians(),

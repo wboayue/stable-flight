@@ -33,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Breaking:** `CopterGuidance`'s fixed limits are `CopterGuidanceConfig` fields, with params
   and the old values as defaults (#621): `stick_yaw_rate_radps` (`GUID_STICK_YAW`, 1 rad/s),
-  `idle_throttle` (`GUID_THR_IDLE`, 0.05), `altitude_leash_m` (`GUID_ALT_LEASH`, 1 m),
+  `idle_throttle` (`GUID_THR_IDLE`, 0.05), `heading_yield_rate_radps` (`GUID_YAW_YLD_RT`,
+  0.1 rad/s), `altitude_leash_m` (`GUID_ALT_LEASH`, 1 m),
   `wind_heading_from_wind_rad` (`GUID_WND_HDG_OFF`, 80°), `wind_heading_max_sd_rad`
   (`GUID_WND_HDG_SD`, 15°), `wind_heading_deadband_rad` (`GUID_WND_HDG_DB`, 10°),
   `airborne_height_m` (`GUID_WND_AIR_HT`, 1 m), and `feedforward_hold_band_mps`
