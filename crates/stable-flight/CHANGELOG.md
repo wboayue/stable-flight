@@ -15,9 +15,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   depth). Off by default. `controllers::GyroFilters` is the chain the rate loop flies, and
   `CopterStabilizerConfig::gyro_filters_on` gives an axis's (#597).
 - `FlightLoop::setpoint`: the setpoint guidance gave the stabilizer on the last tick (#539).
+- Plane autotune (#534): `PlaneStabilizer` hosts probes on its roll and pitch rate and angle
+  loops (`stabilizers::plane::PlaneLoop`, `PlaneAxisGains`), as do `TailsitterStabilizer` and
+  `QuadPlaneStabilizer` on their plane side. `tuning::autotune::PlaneAutotune` runs plane
+  stages within a `PlaneEnvelope` (bank, pitch, rate, sink, airspeed band); its method so far
+  is the step test (`StagePlan::plane_step_test`, `StepTestPlan::plane`).
+  `commanders::PlaneTuneHold` flies the attitude hold the probes ride on, turns back between
+  probes, and recovers to a hover or wings level. `AutotuneAbort::is_breach`,
+  `Supervisor::set_maneuvering`.
 
 ### Changed
 
+- **Breaking:** `tuning::Tunable` is generic over the loop type (`Tunable<TunedLoop>` for a
+  copter's loops) instead of naming it as `Target`, so a VTOL stabilizer hosts both sides'
+  probes; on a VTOL, name the side (`Tunable::<TunedLoop>::probe(&stabilizer)`). The
+  supervisor is `Supervisor<K: Side>`, with `Autotune` the copter's
+  (`Supervisor<CopterSide>`); `StagePlan`, `AutotuneEvent`, and `AutotuneStatus` take the
+  side's types, defaulting to the copter's. `AutotuneAbort` gains `AirspeedLow` and
+  `AirspeedHigh` (#534).
+- **Breaking (behavior):** a VTOL stabilizer's hover probe is interrupted when the setpoint
+  leaves the hover side (a plane setpoint or a transition's blend), where it flew on before
+  (#534).
 - **Breaking:** `tuning::design_rate` and `design_angle_p` take the stabilizer's
   `GyroFilters` in place of the gyro cutoff (`GyroFilters::low_pass(cutoff_hz)` for the old
   call), so a design models the notch too; `CopterStabilizerConfig` gains `gyro_notch` (#597).

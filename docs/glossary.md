@@ -121,6 +121,12 @@ Code comments and docs link here instead of redefining a term.
   a step response and ends near the starting attitude (`Maneuver::doublet`).
 - **Autotune:** flies step probes on each loop and picks gains from the measured response
   ([architecture](../architecture.md#autotune)).
+- **Envelope (autotune):** the limits a stage must stay inside: tilt, rate, and sink for a
+  copter; bank, pitch, rate, sink, and an airspeed band for a plane (the **forward-flight
+  envelope**, `PlaneEnvelope`). Leaving it fails the stage and puts the last kept gains back.
+- **Tune hold:** the steady attitude hold a plane autotune's probes ride on
+  (`PlaneTuneHold`): wings level at cruise thrust, the pitch trimmed slowly for airspeed, so
+  a step stands out against a hold that doesn't move.
 - **System identification:** fitting a model of how the vehicle responds (here, a rate axis's
   body rate to its moment command, with a lag and a delay) from flight data recorded while a
   known signal shakes it: here a square wave added to the rate setpoint, as PX4 does. The

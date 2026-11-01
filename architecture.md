@@ -688,14 +688,19 @@ The copter default (`StagePlan::copter_design_search`) fits each rate axis in ho
 its gains from the fit, then searches each loop's gain by steps from the design. Relay
 feedback and a search from the start gains were rejected (**Design search**, below).
 
-* **Probe and host** (`tuning::Probe`; `Tunable`, implemented by `CopterStabilizer`): a probe
+* **Probe and host** (`tuning::Probe`; `Tunable<L>`, implemented by `CopterStabilizer` for
+  its `TunedLoop`s and `PlaneStabilizer` for its `PlaneLoop`s): a probe
   excites and measures one loop *inside* the tick on the fresh estimate, since a between-ticks
   driver would add a tick of delay to what it measures. Each tick the host hands the probe the
   loop's setpoint, error, whether its path clipped last tick, and its axis's body rate and last
   moment command (`LoopSignals`), before the loop's controller runs; the probe answers with the
   setpoint the controller runs on instead (a step, the identification's square wave). Every
   controller keeps running. The host owns the loop and the
-  handoff; the probe owns the signal and the measurement.
+  handoff; the probe owns the signal and the measurement. The trait is generic over the loop
+  type, so a VTOL stabilizer hosts both sides' probes through one contract
+  (`Tunable<TunedLoop>` and `Tunable<PlaneLoop>`). A probe flies only while its side flies
+  alone: the other side's setpoint or a transition (a quadplane's blend, a tailsitter's ramp)
+  interrupts it, since a handoff isn't a loop to measure.
 * **Step response** (`tuning::StepProbe`): holds the setpoint at the starting measurement plus
   the step for a fixed window, so steps compare on equal terms, and reports `StepMetrics`
   normalized to the step (overshoot, 10–90% rise, settling, bounce-back after the peak, final
@@ -704,6 +709,13 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   The rate PID's D acts on the measured rate, so a step doesn't kick the moment; a step test
   still allows a few clipped ticks (`StepTestPlan::max_saturated_s`). `StepSummary` keeps means and
   ranges over steps, and overshoot per direction, whose difference shows a trim or CG offset.
+* **Sides** (`Supervisor<K: Side>`): the executor below is one state machine for every set of
+  loops; a `Side` names its loops, gains, config, methods, envelope, and procedures.
+  `Autotune` is the copter's (`CopterSide`), `PlaneAutotune` the plane's (`PlaneSide`). A
+  stabilizer whose config holds a side's (`SideConfig`: a VTOL's two) is tuned through it, the
+  rest of its config untouched. Rejected: a separate plane supervisor, which would repeat the
+  settle, probe, candidate, stall, and recovery logic (about 600 lines) and let the two drift
+  on the subtle rules (a breach after a freeze, stale states).
 * **Procedures and executor** (`tuning::autotune`, between ticks): each stage's `Method`
   (`StepTest`, `Search`, `Design`) becomes a procedure, a pure state machine fed the stage's start
   and each probe's `Measurement` (or abort), which answers "run this probe" (optionally on
@@ -1041,12 +1053,26 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     rows that pass pass the same; the delay-noise rows' ×3 starts design their rate loops
     after 6 (`quad_x`) and 7 (`heavy_quad`), and `racer`'s roll rate after 8); a tighter settle (0.05 or 0.03 rad/s) didn't help and cost the clean rows
     their time budget (#552, #598).
+* **Plane side** (`PlaneAutotune`): probes on the plane's roll and pitch rate and angle loops,
+  within a `PlaneEnvelope` (bank, pitch, rate, sink, and an airspeed band from 0.9 × the
+  stabilizer's minimum to its maximum). A breach puts the committed gains back; the host then
+  recovers (`PlaneTuneHold::recover`): a VTOL hovers on its rotors, the airplane flies wings
+  level.
+  * **The hold** (`PlaneTuneHold`): probes fly in attitude hold at cruise thrust, as
+    ArduPilot's AUTOTUNE flies FBWA at the pilot's throttle, the pitch trimmed slowly toward
+    trim airspeed: without the trim the airplane slowed past its minimum within a few steps,
+    and steps from a line held by the energy control disagreed with the spec on pitch, since
+    the control answers a pitch step with its own (#533). Between probes, past a radius, the
+    hold turns back toward its start, and the host holds probes off meanwhile
+    (`Supervisor::set_maneuvering`), so no step starts mid-turn.
+  * **Steps** (`StepTestPlan::plane`): rate steps 8°/s for 1 s (8° of rotation), attitude
+    steps 30° of bank and 10° of pitch, each capped at the stabilizer's limit, since the probe
+    replaces the saturated setpoint (the Alia 250's 20° bank limit). Only the surfaces at full
+    throw count as a clip: an angle step's rate target at the attitude rate limit is part of
+    the loop it measures.
 * **Plane method** (planned, [#534](https://github.com/wboayue/stable-flight/issues/534)):
   plane autotune fits each axis to a physical model, designs on the model, and checks the
   result in flight. Each method in the comparison excited the aircraft itself, with no pilot.
-  Probes fly in attitude hold at cruise thrust, as ArduPilot's AUTOTUNE flies FBWA at the
-  pilot's throttle, with the hold trimming pitch for airspeed between probes. A breach puts
-  the committed gains back, and a VTOL recovers to a hover.
   * **Model:** the identification's square wave on the rate setpoint, fitted to how the
     surfaces turn the aircraft: a roll rate dies away against the wing's damping, and a pitch
     rate also meets its [stiffness](docs/glossary.md), which grows with the angle of attack
