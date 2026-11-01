@@ -95,7 +95,7 @@ fn rides_out_a_gust_and_returns() {
     check!(worst.horizontal_m < 1.0, "{worst:?}");
     check!(worst.altitude_m < 0.1, "{worst:?}");
     // Back near the waypoint 6 s after the gust: 0.17 m measured, the lateral I's slow tail
-    // (#357; TODO(#367)).
+    // (#357), which shaping the velocity target doesn't shorten (#367).
     check!(worst.final_m < 0.25, "{worst:?}");
 }
 
