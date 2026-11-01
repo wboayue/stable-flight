@@ -6,6 +6,7 @@ use super::identify::SquareSweep;
 use super::{IdentifyAbort, IdentifyConfig};
 use crate::math::assert_dt;
 
+pub mod design;
 #[cfg(test)]
 mod tests;
 

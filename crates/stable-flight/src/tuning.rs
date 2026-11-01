@@ -44,6 +44,7 @@ pub use identify::{
 };
 pub use probe::{LoopSignals, Measurement, Probe, ProbeAbort, ProbeConfig, ProbeStatus, Progress};
 pub use step::{Stat, StepAbort, StepConfig, StepMetrics, StepProbe, StepStatus, StepSummary};
+pub use wing::design::{WingDesign, WingDesignConfig, WingDesignStatus};
 pub use wing::{WingIdentifyProbe, WingModel, WingStatus};
 
 /// A stabilizer that hosts autotune stages: one of its loops handed to a [`Probe`] inside the
