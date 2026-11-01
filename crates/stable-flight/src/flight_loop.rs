@@ -453,27 +453,34 @@ impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T> {
 /// ```
 /// Autotune stages on a [`Tunable`] stabilizer, between ticks; forwarded so the loop hands out
 /// no `&mut` to its components.
-impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T>
-where
-    S: Tunable,
-{
+impl<C, V, G, S, M, T> FlightLoop<C, V, G, S, M, T> {
     /// Starts a probe on one of the stabilizer's loops, from the next tick
     /// ([`Tunable::start_probe`]).
     ///
     /// # Panics
     ///
     /// If `config` is invalid ([`ProbeConfig::validate`]).
-    pub fn start_probe(&mut self, target: S::Target, config: ProbeConfig) {
+    pub fn start_probe<L: Copy>(&mut self, target: L, config: ProbeConfig)
+    where
+        S: Tunable<L>,
+    {
         self.stabilizer.start_probe(target, config);
     }
 
-    /// The stabilizer's current probe, if any ([`Tunable::probe`]).
-    pub fn probe(&self) -> Option<(S::Target, ProbeStatus)> {
+    /// The stabilizer's current probe on its `L` loops, if any ([`Tunable::probe`]).
+    pub fn probe<L: Copy>(&self) -> Option<(L, ProbeStatus)>
+    where
+        S: Tunable<L>,
+    {
         self.stabilizer.probe()
     }
 
-    /// Ends the probe and hands its loop back ([`Tunable::stop_probe`]).
-    pub fn stop_probe(&mut self) -> Option<(S::Target, ProbeStatus)> {
+    /// Ends the probe on the stabilizer's `L` loops and hands its loop back
+    /// ([`Tunable::stop_probe`]).
+    pub fn stop_probe<L: Copy>(&mut self) -> Option<(L, ProbeStatus)>
+    where
+        S: Tunable<L>,
+    {
         self.stabilizer.stop_probe()
     }
 }
