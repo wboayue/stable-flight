@@ -286,10 +286,11 @@ eXplora (#417), 3 mph RealFlight wind (stronger at height), 60 m to 20 m:
 ### Wind estimate
 
 Hover guidance estimates the wind from the drag push it measures: the specific force across
-the belly and along the span, inverted per axis through f = −(k|v| + μ)v to the air's speed,
+the belly and along the span, inverted per axis through f = −(k|V| + μ)v to the air's speed
+(|V| the airspeed with the climb counted in),
 then filtered (core `estimation::wind`). It reports the estimate in telemetry (`wind_*`
 recorder columns), and `GUID_WND_HDG_SPD` turns the heading from it (above). It runs only in copter flight, more than 1 m above
-the takeoff height, and tilted less than 45°. Every coefficient 0 switches it off.
+the takeoff height, tilted less than 45°, and climbing or sinking slower than 1 m/s. Every coefficient 0 switches it off.
 
 | Param | Field | Meaning | eXplora |
 |---|---|---|---|
