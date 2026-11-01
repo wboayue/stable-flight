@@ -50,11 +50,11 @@ const GATE_SIGMA: f32 = 5.0;
 /// and the thrust's own tilt dominate the push.
 const MIN_TILT_COSINE: f32 = core::f32::consts::FRAC_1_SQRT_2;
 
-/// Most ground speed along the thrust axis, in m/s, a tick is used at. Climbing or sinking
-/// faster, the air along the thrust axis dominates the airflow and the drag model is a hover's:
-/// a cambered wing climbing nose first lifts toward its belly, which reads as wind (#608). A
-/// sim tailsitter's takeoff left its calm-air estimate 0.22 m/s off 10 s in without the skip,
-/// 0.14 m/s with it.
+/// Most ground speed along the thrust axis, in m/s, a tick is used at: the drag model is a
+/// hover's, and climbing or sinking a cambered wing lifts toward its belly, which reads as
+/// wind. Higher: uses more of a climb, and its lift; lower: holds the estimate through gentler
+/// climbs and descents. At 1 m/s a sim tailsitter's calm-air estimate is 0.14 m/s off 10 s
+/// after its takeoff, 0.22 m/s with no skip (#608).
 const MAX_AXIAL_SPEED_MPS: f32 = 1.0;
 
 /// Least drag slope, in 1/s, an axis's noise is divided by: below it the axis tells almost
@@ -226,14 +226,14 @@ impl WindEstimator {
     /// `z`), and once [`UPDATE_PERIOD_S`] has gathered, updates the wind from the period's
     /// average. A tick with a non-finite attitude, velocity, or acceleration, with the thrust
     /// axis tilted more than 45° from vertical, or moving along it faster than 1 m/s, is
-    /// skipped. Does nothing while `config`
-    /// has no drag coefficient.
+    /// skipped. Does nothing while `config` has no drag coefficient.
     ///
     /// Each axis's measurement counts by the drag's slope at the air velocity the estimate
     /// predicts, as both EKFs linearize their drag at the state (ArduPilot's
-    /// `NavEKF3_core::FuseDragForces`, PX4's `Ekf::fuseDrag`). Bluff-body drag has no slope in
-    /// still air, so a slope taken at a measured push near zero would leave a wrong estimate
-    /// there for good (#608).
+    /// `NavEKF3_core::FuseDragForces`, PX4's `Ekf::fuseDrag`), or at the measured one where
+    /// that is steeper. Bluff-body drag has no slope in still air: taken at a measured push near
+    /// zero alone, the slope would leave a wrong estimate there for good, and taken at the
+    /// prediction alone, a fresh estimate of no wind would discount a real wind's push (#608).
     pub fn update(&mut self, dt: f32, config: &WindConfig, state: &VehicleState) {
         if !config.is_on() {
             return;
@@ -394,7 +394,7 @@ struct AxisDrag {
 }
 
 /// Newton steps refining [`AxisDrag::air_velocity`]'s root: from the still-air root, above it,
-/// four reach `f32` precision across hover speeds and climbs (`axis_drag_round_trips`).
+/// four land within 1e-4 of it across hover speeds and climbs (`axis_drag_round_trips`).
 const AIR_VELOCITY_STEPS: usize = 4;
 
 impl AxisDrag {
@@ -423,7 +423,7 @@ impl AxisDrag {
             // Drag rises and curves up with speed, so Newton's steps from above stay above the
             // root and close on it.
             (0..AIR_VELOCITY_STEPS).fold(still_air, |s, _| {
-                let excess = k * s * libm::sqrtf(s * s + axial_mps * axial_mps) + mu * s - push;
+                let excess = self.push_mps2(s, axial_mps) - push;
                 let slope = self.slope_per_s(s, axial_mps);
                 if slope > 0.0 { s - excess / slope } else { s }
             })
@@ -434,6 +434,13 @@ impl AxisDrag {
         };
         // Drag opposes the air velocity.
         Some(if force_mps2 > 0.0 { -speed } else { speed })
+    }
+
+    /// The drag's push per kg, in m/s², against `air_mps` of air along the axis and
+    /// `axial_mps` along the thrust axis: `(k|V| + μ)|v|`, its size without its sign.
+    fn push_mps2(&self, air_mps: f32, axial_mps: f32) -> f32 {
+        let airspeed_mps = libm::sqrtf(air_mps * air_mps + axial_mps * axial_mps);
+        (self.k_per_m * airspeed_mps + self.mu_per_s) * air_mps.abs()
     }
 
     /// The drag's slope against the air velocity along the axis, at `air_mps` along it and
