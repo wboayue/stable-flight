@@ -20,7 +20,8 @@ use stable_flight::stabilizers::plane::{PlaneAxisGains, PlaneLoop, PlaneStabiliz
 use stable_flight::tuning::autotune::AutotuneEvent;
 use stable_flight::tuning::{Measurement, Stat, StepMetrics, StepSummary};
 use stable_flight::{
-    Command, Commander, ControlInput, FlightRegime, LandCommand, VehicleState, WaypointCommand,
+    Command, Commander, ControlInput, FlightRegime, LandCommand, Vec2, VehicleState,
+    WaypointCommand,
 };
 
 use crate::commanders::ScriptCommander;
@@ -56,8 +57,7 @@ const START_ALTITUDE_TOLERANCE_M: f32 = 0.5;
 pub struct ThenLand {
     script: ScriptCommander,
     land: Rc<Cell<bool>>,
-    landing: Option<LandCommand>,
-    touchdown: TouchdownDetector,
+    landing: Landing,
 }
 
 impl ThenLand {
@@ -67,8 +67,7 @@ impl ThenLand {
         let commander = Self {
             script,
             land: Rc::clone(&land),
-            landing: None,
-            touchdown: TouchdownDetector::default(),
+            landing: Landing::default(),
         };
         (commander, LandSwitch(land))
     }
@@ -90,7 +89,30 @@ impl Commander for ThenLand {
         if !self.land.get() {
             return self.script.next_command(dt, state);
         }
-        let land = *self.landing.get_or_insert(LandCommand {
+        self.landing.next_command(dt, state)
+    }
+}
+
+/// A land that disarms on touchdown, on a position given up front or where the vehicle is on
+/// its first command.
+#[derive(Default)]
+struct Landing {
+    at: Option<LandCommand>,
+    touchdown: TouchdownDetector,
+}
+
+impl Landing {
+    /// A land on `position_m`.
+    fn on(position_m: Vec2) -> Self {
+        Self {
+            at: Some(LandCommand { position_m }),
+            ..Self::default()
+        }
+    }
+
+    /// The land, disarmed once the touchdown detector sees the vehicle down.
+    fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
+        let land = *self.at.get_or_insert(LandCommand {
             position_m: state.position_m.xy(),
         });
         let down = self.touchdown.update(dt, state.velocity_mps.z);
@@ -113,9 +135,16 @@ impl LandSwitch {
     }
 }
 
-/// How close to home, horizontally, a [`PlaneTuneFlight`]'s flight home ends in a land, in m:
-/// outside the plane guidance's loiter around home (40 m by default), with room for its turn.
-const HOME_RADIUS_M: f32 = 100.0;
+/// Where a [`PlaneTuneFlight`] comes home to: the plane loiter around its script's start, and
+/// how close it must come before it lands there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlaneHome {
+    /// The loiter's altitude, in m above the start: where the back transition starts.
+    pub altitude_m: f32,
+    /// How close to the start, horizontally, the flight home ends in a land, in m: outside the
+    /// plane guidance's loiter radius, with room for its turn onto it, so the loiter reaches it.
+    pub radius_m: f32,
+}
 
 /// Flies a script into plane flight, then the [`PlaneTuneHold`] a plane autotune runs in, then
 /// home: a VTOL's plane autotune flight.
@@ -126,15 +155,15 @@ const HOME_RADIUS_M: f32 = 100.0;
 /// - **Hold:** the hold, its turns and recovery driven through the switch.
 /// - **Finish** ([`PlaneTuneSwitch::finish`]): after a hold that recovered (an envelope
 ///   breach: the vehicle hovers on its rotors), or before any hold, a land where the vehicle
-///   is. Otherwise a plane loiter around the script's start at `home_altitude_m` above it, at
-///   the hold's trim airspeed, then, within 100 m of the start and the plane altitude
+///   is. Otherwise a plane loiter around the script's start at the [`PlaneHome`] altitude, at
+///   the hold's trim airspeed, then, within its radius of the start and the plane altitude
 ///   acceptance of that altitude, a land on the start: a VTOL transitions back to land, and
 ///   disarms on touchdown.
 ///
 /// # Examples
 ///
 /// ```
-/// use stable_flight_sitl::autotune::PlaneTuneFlight;
+/// use stable_flight_sitl::autotune::{PlaneHome, PlaneTuneFlight};
 /// use stable_flight_sitl::commanders::ScriptCommander;
 /// use stable_flight_sitl::stable_flight::commanders::PlaneTuneHoldConfig;
 /// use stable_flight_sitl::stable_flight::{
@@ -143,7 +172,8 @@ const HOME_RADIUS_M: f32 = 100.0;
 ///
 /// let leg = WaypointCommand { altitude_m: 100.0, ..Default::default() };
 /// let script = ScriptCommander::from_waypoints(vec![leg]).unwrap();
-/// let (mut commander, switch) = PlaneTuneFlight::new(script, 30.0);
+/// let home = PlaneHome { altitude_m: 30.0, radius_m: 100.0 };
+/// let (mut commander, switch) = PlaneTuneFlight::new(script, home);
 ///
 /// let cruising = VehicleState {
 ///     position_m: Vec3::new(0.0, 0.0, 100.0),
@@ -163,35 +193,34 @@ const HOME_RADIUS_M: f32 = 100.0;
 /// ```
 pub struct PlaneTuneFlight {
     lead: ScriptCommander,
-    home_altitude_m: f32,
+    home: PlaneHome,
     phase: Rc<RefCell<TunePhase>>,
-    touchdown: TouchdownDetector,
 }
 
 /// Where a [`PlaneTuneFlight`] is.
 enum TunePhase {
     Lead,
-    /// The hold, and its trim airspeed in m/s.
-    Hold(PlaneTuneHold, f32),
+    Hold {
+        hold: PlaneTuneHold,
+        /// The hold's trim airspeed, which home flies, in m/s.
+        trim_airspeed_mps: f32,
+    },
     /// Flying home in plane at this airspeed, in m/s.
     Home {
         airspeed_mps: f32,
     },
-    /// Landing where the vehicle is once the next command sees it.
-    LandHere,
-    Landing(LandCommand),
+    Landing(Landing),
 }
 
 impl PlaneTuneFlight {
-    /// Flies `script` until the returned switch hands over to the hold; home is the script's
-    /// start, `home_altitude_m` above it.
-    pub fn new(script: ScriptCommander, home_altitude_m: f32) -> (Self, PlaneTuneSwitch) {
+    /// Flies `script` until the returned switch hands over to the hold; `home` is around the
+    /// script's start.
+    pub fn new(script: ScriptCommander, home: PlaneHome) -> (Self, PlaneTuneSwitch) {
         let phase = Rc::new(RefCell::new(TunePhase::Lead));
         let commander = Self {
             lead: script,
-            home_altitude_m,
+            home,
             phase: Rc::clone(&phase),
-            touchdown: TouchdownDetector::default(),
         };
         (commander, PlaneTuneSwitch(phase))
     }
@@ -201,28 +230,31 @@ impl PlaneTuneFlight {
         self.lead.follower().is_complete()
     }
 
-    /// The flight home: a plane loiter around the start until within reach, then a land on
-    /// it.
-    fn home(&self, airspeed_mps: f32, state: &VehicleState) -> TunePhase {
+    /// The home loiter's target: over the start at the home altitude, in the vehicle's frame
+    /// (m north, east, up).
+    fn home_m(&self) -> (Vec2, f32) {
         let origin_m = self.lead.origin_m();
-        let home_m = origin_m.xy();
-        let altitude_m = origin_m.z + self.home_altitude_m;
-        let near_m = (state.position_m.xy() - home_m).norm();
-        let height_off_m = (state.position_m.z - altitude_m).abs();
-        if near_m < HOME_RADIUS_M && height_off_m < PLANE_ALTITUDE_ACCEPTANCE_M {
-            return TunePhase::Landing(LandCommand { position_m: home_m });
-        }
-        TunePhase::Home { airspeed_mps }
+        (origin_m.xy(), origin_m.z + self.home.altitude_m)
     }
 
-    /// The home loiter's command.
+    /// Whether the flight home is within reach of the start: inside the home radius and the
+    /// plane altitude acceptance of the home altitude.
+    fn home_reached(&self, state: &VehicleState) -> bool {
+        let (position_m, altitude_m) = self.home_m();
+        let distance_m = (state.position_m.xy() - position_m).norm();
+        let height_off_m = (state.position_m.z - altitude_m).abs();
+        distance_m < self.home.radius_m && height_off_m < PLANE_ALTITUDE_ACCEPTANCE_M
+    }
+
+    /// The home loiter's command: a plane waypoint without a leg, which the plane guidance
+    /// loiters around.
     fn home_command(&self, airspeed_mps: f32) -> Command {
-        let origin_m = self.lead.origin_m();
+        let (position_m, altitude_m) = self.home_m();
         Command::new(
             true,
             ControlInput::Waypoint(WaypointCommand {
-                position_m: origin_m.xy(),
-                altitude_m: origin_m.z + self.home_altitude_m,
+                position_m,
+                altitude_m,
                 cruise_speed_mps: airspeed_mps,
                 ..Default::default()
             }),
@@ -233,25 +265,15 @@ impl PlaneTuneFlight {
 
 impl Commander for PlaneTuneFlight {
     fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
-        let next = match &*self.phase.borrow() {
-            TunePhase::Home { airspeed_mps } => Some(self.home(*airspeed_mps, state)),
-            TunePhase::LandHere => Some(TunePhase::Landing(LandCommand {
-                position_m: state.position_m.xy(),
-            })),
-            _ => None,
-        };
-        if let Some(next) = next {
-            *self.phase.borrow_mut() = next;
+        let mut phase = self.phase.borrow_mut();
+        if matches!(*phase, TunePhase::Home { .. }) && self.home_reached(state) {
+            *phase = TunePhase::Landing(Landing::on(self.home_m().0));
         }
-        match &mut *self.phase.borrow_mut() {
+        match &mut *phase {
             TunePhase::Lead => self.lead.next_command(dt, state),
-            TunePhase::Hold(hold, _) => hold.next_command(dt, state),
+            TunePhase::Hold { hold, .. } => hold.next_command(dt, state),
             TunePhase::Home { airspeed_mps } => self.home_command(*airspeed_mps),
-            TunePhase::Landing(land) => {
-                let down = self.touchdown.update(dt, state.velocity_mps.z);
-                Command::new(!down, ControlInput::Land(*land))
-            }
-            TunePhase::LandHere => unreachable!("resolved to a land above"),
+            TunePhase::Landing(landing) => landing.next_command(dt, state),
         }
     }
 }
@@ -266,30 +288,33 @@ impl PlaneTuneSwitch {
     pub fn hold(&self, config: PlaneTuneHoldConfig) {
         let mut phase = self.0.borrow_mut();
         if matches!(*phase, TunePhase::Lead) {
-            *phase = TunePhase::Hold(PlaneTuneHold::new(config), config.trim_airspeed_mps);
+            *phase = TunePhase::Hold {
+                hold: PlaneTuneHold::new(config),
+                trim_airspeed_mps: config.trim_airspeed_mps,
+            };
         }
     }
 
     /// Whether the hold flies.
     pub fn is_holding(&self) -> bool {
-        matches!(*self.0.borrow(), TunePhase::Hold(..))
+        matches!(*self.0.borrow(), TunePhase::Hold { .. })
     }
 
     /// [`PlaneTuneHold::allow_turn`], while the hold flies.
     pub fn allow_turn(&self, allowed: bool) {
-        if let TunePhase::Hold(hold, _) = &mut *self.0.borrow_mut() {
+        if let TunePhase::Hold { hold, .. } = &mut *self.0.borrow_mut() {
             hold.allow_turn(allowed);
         }
     }
 
     /// [`PlaneTuneHold::turning`]: false outside the hold.
     pub fn turning(&self) -> bool {
-        matches!(&*self.0.borrow(), TunePhase::Hold(hold, _) if hold.turning())
+        matches!(&*self.0.borrow(), TunePhase::Hold { hold, .. } if hold.turning())
     }
 
     /// [`PlaneTuneHold::recover`], while the hold flies.
     pub fn recover(&self) {
-        if let TunePhase::Hold(hold, _) = &mut *self.0.borrow_mut() {
+        if let TunePhase::Hold { hold, .. } = &mut *self.0.borrow_mut() {
             hold.recover();
         }
     }
@@ -299,10 +324,13 @@ impl PlaneTuneSwitch {
     pub fn finish(&self) {
         let mut phase = self.0.borrow_mut();
         let next = match &*phase {
-            TunePhase::Hold(hold, airspeed_mps) if !hold.is_recovering() => TunePhase::Home {
-                airspeed_mps: *airspeed_mps,
+            TunePhase::Hold {
+                hold,
+                trim_airspeed_mps,
+            } if !hold.is_recovering() => TunePhase::Home {
+                airspeed_mps: *trim_airspeed_mps,
             },
-            TunePhase::Lead | TunePhase::Hold(..) => TunePhase::LandHere,
+            TunePhase::Lead | TunePhase::Hold { .. } => TunePhase::Landing(Landing::default()),
             _ => return,
         };
         *phase = next;
@@ -310,15 +338,12 @@ impl PlaneTuneSwitch {
 
     /// Whether [`finish`](Self::finish) was called.
     pub fn is_finished(&self) -> bool {
-        !matches!(*self.0.borrow(), TunePhase::Lead | TunePhase::Hold(..))
+        !matches!(*self.0.borrow(), TunePhase::Lead | TunePhase::Hold { .. })
     }
 
     /// Whether the land has started.
     pub fn is_landing(&self) -> bool {
-        matches!(
-            *self.0.borrow(),
-            TunePhase::Landing(_) | TunePhase::LandHere
-        )
+        matches!(*self.0.borrow(), TunePhase::Landing(_))
     }
 }
 
@@ -560,7 +585,33 @@ impl TunedConfig for CopterStabilizerConfig {
     /// The tuned gains, laid out like an airframe's `CopterStabilizerConfig`, with the yaw
     /// integral limit the yaw I was tuned on: it holds the yaw trim only up to that limit.
     fn airframe_snippet(&self, source: &str) -> String {
-        copter_snippet(self, source)
+        let gains = |target: TunedLoop| Self::format_gains(&target.gains(self));
+        format!(
+            "// {source}\n\
+             body_rate: BodyRateControllerConfig {{\n    \
+                 roll_gains: {},\n    \
+                 pitch_gains: {},\n    \
+                 yaw_gains: {},\n    \
+                 yaw_max_integral: {:.2},\n    \
+                 ..\n\
+             }},\n\
+             attitude: AttitudeControllerConfig {{\n    \
+                 roll_gains: {},\n    \
+                 pitch_gains: {},\n    \
+                 ..\n\
+             }},\n\
+             yaw: YawControllerConfig {{\n    \
+                 gains: {},\n    \
+                 ..\n\
+             }},",
+            gains(TunedLoop::RollRate),
+            gains(TunedLoop::PitchRate),
+            gains(TunedLoop::YawRate),
+            self.body_rate.yaw_max_integral,
+            gains(TunedLoop::Roll),
+            gains(TunedLoop::Pitch),
+            gains(TunedLoop::Heading),
+        )
     }
 }
 
@@ -602,36 +653,5 @@ fn format_rate_gains(gains: &PlaneAxisGains) -> String {
     format!(
         "RateGains {{ p: {:.4}, i: {:.4}, ff: {:.4} }}",
         rate.p, rate.i, rate.ff
-    )
-}
-
-/// [`CopterStabilizerConfig`]'s snippet.
-fn copter_snippet(config: &CopterStabilizerConfig, source: &str) -> String {
-    let gains = |target: TunedLoop| CopterStabilizerConfig::format_gains(&target.gains(config));
-    format!(
-        "// {source}\n\
-         body_rate: BodyRateControllerConfig {{\n    \
-             roll_gains: {},\n    \
-             pitch_gains: {},\n    \
-             yaw_gains: {},\n    \
-             yaw_max_integral: {:.2},\n    \
-             ..\n\
-         }},\n\
-         attitude: AttitudeControllerConfig {{\n    \
-             roll_gains: {},\n    \
-             pitch_gains: {},\n    \
-             ..\n\
-         }},\n\
-         yaw: YawControllerConfig {{\n    \
-             gains: {},\n    \
-             ..\n\
-         }},",
-        gains(TunedLoop::RollRate),
-        gains(TunedLoop::PitchRate),
-        gains(TunedLoop::YawRate),
-        config.body_rate.yaw_max_integral,
-        gains(TunedLoop::Roll),
-        gains(TunedLoop::Pitch),
-        gains(TunedLoop::Heading),
     )
 }
