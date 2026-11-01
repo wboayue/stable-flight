@@ -93,7 +93,7 @@ fn quad_estimates_a_steady_wind() {
 }
 
 /// A 3 m/s wind on the tailsitter's belly (north, its hover heading) is estimated from the
-/// plate's drag: measured 3.05 m/s (1.6% over); 0.15 m/s leaves 3× margin. Its span has no
+/// plate's drag: measured 3.06 m/s (2% over); 0.15 m/s leaves 2.4× margin. Its span has no
 /// drag model, so the wind across it stays unknown.
 #[test]
 fn tailsitter_estimates_a_wind_on_the_belly() {
@@ -109,18 +109,23 @@ fn tailsitter_estimates_a_wind_on_the_belly() {
     );
 }
 
-/// A 3 m/s wind along the span leaves the belly's estimate where calm air does, and the
-/// span's unknown: the wing's lift and drag take only the air in its plane of symmetry. The
-/// belly reads −0.60 m/s in calm air, set during the takeoff and barely moving after, and
-/// −0.71 m/s in the span wind; 0.3 m/s leaves about 3× margin over the 0.11 m/s between them.
+/// In calm air the tailsitter's belly estimate comes back near 0 after the takeoff. Climbing
+/// off the ground nose first, its cambered wing lifts toward the belly, which reads as wind
+/// until the climb slows below the estimator's 1 m/s skip; in still air afterward the estimate
+/// returns. Measured −0.14 m/s; 0.2 m/s leaves 1.4× margin (#608).
+#[test]
+fn tailsitter_estimates_calm_air_after_its_takeoff() {
+    let estimate = tailsitter_estimate(steady(0.0, 0.0));
+    check!(estimate.velocity_mps.x.abs() < 0.2, "{estimate:?}");
+}
+
+/// A 3 m/s wind along the span leaves the belly's estimate near 0 and the span's unknown:
+/// the wing's lift and drag take only the air in its plane of symmetry. Measured −0.22 m/s
+/// across the belly; 0.3 m/s leaves 1.4× margin.
 #[test]
 fn tailsitter_span_wind_stays_unknown() {
-    let calm = tailsitter_estimate(steady(0.0, 0.0));
     let estimate = tailsitter_estimate(steady(0.0, 3.0));
-    check!(
-        (estimate.velocity_mps.x - calm.velocity_mps.x).abs() < 0.3,
-        "{estimate:?} against calm {calm:?}"
-    );
+    check!(estimate.velocity_mps.x.abs() < 0.3, "{estimate:?}");
     check!(estimate.sd_along_mps(Vec2::y()) > 5.0, "{estimate:?}");
 }
 

@@ -15,8 +15,21 @@ fn pushed(
     velocity_mps: Vec2,
     wind_mps: Vec2,
 ) -> VehicleState {
+    climbing(config, heading_rad, pitch_rad, velocity_mps, 0.0, wind_mps)
+}
+
+/// As [`pushed`], climbing at `climb_mps`: the air along the thrust axis adds to the bluff
+/// body's airspeed.
+fn climbing(
+    config: &WindConfig,
+    heading_rad: f32,
+    pitch_rad: f32,
+    velocity_mps: Vec2,
+    climb_mps: f32,
+    wind_mps: Vec2,
+) -> VehicleState {
     let attitude = UnitQuaternion::from_euler_angles(0.0, pitch_rad, heading_rad);
-    let velocity_ned = Vec3::new(velocity_mps.x, velocity_mps.y, 0.0);
+    let velocity_ned = Vec3::new(velocity_mps.x, velocity_mps.y, -climb_mps);
     let relative_body =
         attitude.inverse_transform_vector(&(velocity_ned - Vec3::new(wind_mps.x, wind_mps.y, 0.0)));
     let drag = |i: usize| {
@@ -26,7 +39,8 @@ fn pushed(
             0.0
         };
         let v = relative_body[i];
-        -(k * v.abs() + config.momentum_per_s[i]) * v
+        let airspeed_mps = libm::sqrtf(v * v + relative_body.z * relative_body.z);
+        -(k * airspeed_mps + config.momentum_per_s[i]) * v
     };
     // Thrust holds the vehicle up along body z; the drag is the rest.
     let force_body = Vec3::new(drag(0), drag(1), -GRAVITY / libm::cosf(pitch_rad));
@@ -34,7 +48,7 @@ fn pushed(
     let acceleration_ned = specific_ned + Vec3::new(0.0, 0.0, GRAVITY);
     VehicleState {
         attitude,
-        velocity_mps: Vec3::new(velocity_mps.x, velocity_mps.y, 0.0),
+        velocity_mps: Vec3::new(velocity_mps.x, velocity_mps.y, climb_mps),
         acceleration_mps2: Vec3::new(acceleration_ned.x, acceleration_ned.y, -acceleration_ned.z),
         ..Default::default()
     }
@@ -360,5 +374,108 @@ fn skips_ticks_tilted_past_45_degrees() {
         let state = pushed(&config, 0.0, pitch_rad, Vec2::zeros(), wind);
         let estimate = estimate_after(&config, &state, 1.0);
         check!(estimate.is_some() == updated, "{pitch_rad}");
+    }
+}
+
+/// Ticks moving along the thrust axis faster than 1 m/s are skipped: climbing or sinking, the
+/// air along the thrust axis dominates and the drag model is a hover's.
+#[test]
+fn skips_ticks_climbing_or_sinking_past_1_mps() {
+    let config = momentum(0.3);
+    let wind = Vec2::new(0.0, 2.0);
+    // (climb m/s, updated)
+    for (climb_mps, updated) in [(0.9, true), (-0.9, true), (1.1, false), (-1.1, false)] {
+        let state = climbing(&config, 0.0, 0.0, Vec2::zeros(), climb_mps, wind);
+        let estimate = estimate_after(&config, &state, 1.0);
+        check!(estimate.is_some() == updated, "{climb_mps}");
+    }
+}
+
+/// A climb adds to the bluff body's airspeed: climbing at 0.9 m/s, the push a 1 m/s wind
+/// gives reads as that wind, not as the faster one per-axis drag would need for it.
+#[test]
+fn a_climb_counts_in_the_bluff_drag_airspeed() {
+    let config = ballistic(2.0);
+    let wind = Vec2::new(1.0, 0.0);
+    // climb m/s
+    for climb_mps in [0.0, 0.5, 0.9] {
+        let state = climbing(&config, 0.0, 0.0, Vec2::zeros(), climb_mps, wind);
+        let estimate = estimate_after(&config, &state, 20.0).expect("updated");
+        check!(
+            (estimate.velocity_mps.x - wind.x).abs() < 0.01,
+            "climbing {climb_mps} m/s: {estimate:?}"
+        );
+    }
+}
+
+/// Still air corrects a wrong estimate on bluff drag alone: each measurement counts by the
+/// drag's slope at the air the estimate predicts, which is steep where the estimate is wrong,
+/// not at the near-zero push still air gives, where bluff drag has no slope. After 10 s of a
+/// 1 m/s wind then 30 s of still air, measured 0.14 m/s on bluff drag and 0.017 m/s on
+/// momentum drag, whose slope is the same everywhere; the bands leave 2× and 3× margin.
+#[test]
+fn still_air_corrects_a_wrong_estimate() {
+    // (case, config, band m/s)
+    let cases = [
+        ("ballistic", ballistic(2.0), 0.3),
+        ("momentum", momentum(0.3), 0.05),
+    ];
+    for (case, config, band_mps) in cases {
+        let windy = pushed(&config, 0.0, 0.0, Vec2::zeros(), Vec2::new(1.0, 0.0));
+        let still = pushed(&config, 0.0, 0.0, Vec2::zeros(), Vec2::zeros());
+        let mut estimator = WindEstimator::default();
+        for _ in 0..2500 {
+            estimator.update(0.004, &config, &windy);
+        }
+        for _ in 0..7500 {
+            estimator.update(0.004, &config, &still);
+        }
+        let estimate = estimator.estimate().expect("updated");
+        check!(
+            estimate.velocity_mps.norm() < band_mps,
+            "{case}: {estimate:?}"
+        );
+    }
+}
+
+/// `AxisDrag::air_velocity` inverts the drag law it states, `−(k|V| + μ)v` with
+/// `|V| = √(v² + w²)`, across bluff and momentum drag, both signs, and air along the thrust
+/// axis; and its slope matches the law's finite difference.
+#[test]
+fn axis_drag_round_trips() {
+    // (ballistic kg/m², momentum 1/s, air along the axis m/s, along the thrust axis m/s)
+    let cases = [
+        (2.0, 0.0, 0.5, 0.0),
+        (2.0, 0.0, -3.0, 0.0),
+        (2.0, 0.0, 0.05, 1.0),
+        (2.0, 0.0, 3.0, 1.0),
+        (2.0, 0.3, -1.0, 0.8),
+        (20.0, 0.2, 5.0, 0.0),
+        (0.0, 0.3, 2.0, 1.0),
+    ];
+    for (ballistic_kgpm2, momentum_per_s, air_mps, axial_mps) in cases {
+        let config = WindConfig {
+            ballistic_kgpm2: Vec2::new(ballistic_kgpm2, 0.0),
+            momentum_per_s: Vec2::new(momentum_per_s, 0.0),
+            ..Default::default()
+        };
+        let drag = AxisDrag::new(&config, 0);
+        let force_of = |v: f32| {
+            -(drag.k_per_m * libm::sqrtf(v * v + axial_mps * axial_mps) + drag.mu_per_s) * v
+        };
+        let row = format!("{ballistic_kgpm2}, {momentum_per_s}, {air_mps}, {axial_mps}");
+        let inverted = drag.air_velocity(force_of(air_mps), axial_mps);
+        check!(
+            inverted.is_some_and(|v| (v - air_mps).abs() < 1e-4 * air_mps.abs().max(1.0)),
+            "{row}: {inverted:?}"
+        );
+        let step = 1e-3;
+        let finite_difference =
+            -(force_of(air_mps + step) - force_of(air_mps - step)) / (2.0 * step);
+        let slope = drag.slope_per_s(air_mps, axial_mps);
+        check!(
+            (slope - finite_difference).abs() < 1e-2 * finite_difference.abs().max(0.1),
+            "{row}: slope {slope}, finite difference {finite_difference}"
+        );
     }
 }
