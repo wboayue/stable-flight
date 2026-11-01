@@ -15,7 +15,7 @@ use stable_flight::stabilizers::copter::CopterStabilizerConfig;
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
 use stable_flight::stabilizers::vtol::TailsitterStabilizerConfig;
 
-use crate::fixed_wing::FixedWingModel;
+use crate::fixed_wing::{AeroCoefficients, FixedWingModel};
 use crate::tailsitter_model::{PropWash, TailsitterModel};
 
 use super::hover_thrust;
@@ -42,6 +42,8 @@ pub struct TailsitterAirframe {
 /// on [`TableMixer::tailsitter_2p`], with the elevons in their wash.
 ///
 /// The rest isn't in ArduPilot's model and is chosen:
+/// - A flying wing's sideslip terms in place of the airplane's, whose tail weathercocks a
+///   hover in a wind along the span (90° of sideslip) past what differential thrust holds.
 /// - Motors 25 cm either side of the centerline, for the differential thrust that yaws it.
 /// - Two 10-inch props washing the elevons wholly. In a hover that is about 190 Pa over them,
 ///   as from 18 m/s of airspeed; ArduPilot adds 20 m/s × throttle to the airspeed of its
@@ -83,6 +85,16 @@ pub fn tailsitter() -> TailsitterAirframe {
     let model = TailsitterModel {
         wing: FixedWingModel {
             max_thrust_n: 1.5 * airplane.model.max_thrust_n / f32::from(MOTORS),
+            aero: AeroCoefficients {
+                // A flying wing's sideslip terms, the Zagi's (Beard and McLain, *Small Unmanned
+                // Aircraft*, App. E): no tail to weathercock it. In a nose-up hover, wind along
+                // the span is 90° of sideslip, and the airplane's tail turned 4 m/s of it into a
+                // yaw moment past differential thrust, departing (#387).
+                c_side_beta: -0.07359,
+                c_roll_beta: -0.02854,
+                c_yaw_beta: -0.0004,
+                ..airplane.model.aero
+            },
             ..airplane.model
         },
         motor_arm_m: 0.25,
