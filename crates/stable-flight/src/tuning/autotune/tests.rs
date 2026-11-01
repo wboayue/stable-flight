@@ -13,9 +13,10 @@ use crate::tuning::{StepAbort, StepMetrics};
 use crate::view::{View, tailsitter_rotation};
 use crate::{
     AbsoluteAttitudeCommand, Actuator, ActuatorCommand, AttitudeSetpoint, BlendSetpoint, Command,
-    Commander, ControlInput, ControlOutput, Guidance, Mixer, RateCommand, RateSetpoint, Stabilizer,
-    StateSource, Vec3,
+    Commander, ControlInput, ControlOutput, Guidance, Mixer, RateCommand, RateSetpoint, Setpoint,
+    Stabilizer, StateSource, Vec2, Vec3, VehicleState,
 };
+use nalgebra::UnitQuaternion;
 
 /// The flight loop's tick: 250 Hz.
 const DT: f32 = 0.004;
