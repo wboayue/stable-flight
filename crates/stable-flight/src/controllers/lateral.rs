@@ -161,6 +161,8 @@ pub struct LateralController {
     derivative: DerivativeState<Vec2>,
     /// The shaped velocity target, in m/s; empty until the first run with shaping on.
     shaped_velocity_mps: Option<Vec2>,
+    /// The velocity the last finite run asked the velocity PID for, in m/s.
+    commanded_velocity_mps: Vec2,
 }
 
 impl LateralController {
@@ -250,6 +252,7 @@ impl LateralController {
             return Vec2::zeros();
         }
         let error_derivative = self.derivative.step(velocity_error, dt);
+        self.commanded_velocity_mps = commanded_velocity;
 
         self.integrated_error = clamp_symmetric_each(
             hold_against_limit(
@@ -292,6 +295,13 @@ impl LateralController {
         let to = from + cap_magnitude(demand_mps - from, max_accel_mps2 * dt);
         self.shaped_velocity_mps = Some(to);
         (to, (to - from) / dt)
+    }
+
+    /// The velocity, in m/s (north, east), the last finite [`control`](Self::control) asked the
+    /// velocity PID to track: the position loop's demand, shaped when shaping is on. Zero
+    /// before the first.
+    pub(crate) fn commanded_velocity_mps(&self) -> Vec2 {
+        self.commanded_velocity_mps
     }
 
     /// The accumulated error, for tests of the composites' integrator policy.

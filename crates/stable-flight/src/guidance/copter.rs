@@ -1020,9 +1020,19 @@ impl CopterGuidance {
         } else {
             Vec2::zeros()
         };
+        let wind_mps = self
+            .wind
+            .estimate()
+            .map_or(Vec2::zeros(), |w| w.velocity_mps);
         let accel_mps2 =
             self.lateral
-                .control(&self.config.lateral, step, target, estimate, limit_mps2);
+                .control(&self.config.lateral, step, target, estimate, limit_mps2)
+                + drag_feedforward_mps2(
+                    &self.config.wind,
+                    self.lateral.commanded_velocity_mps(),
+                    wind_mps,
+                    heading_rad,
+                );
         self.requested_accel_mps2 = accel_mps2;
         let requested = tilt_for_acceleration(accel_mps2, heading_rad);
         self.tilt_capped = requested.norm() > self.config.max_tilt_rad;
@@ -1049,6 +1059,47 @@ fn tilt_for_acceleration(accel_mps2: Vec2, heading_rad: f32) -> Vec2 {
     let right = -accel_mps2.x * sin + accel_mps2.y * cos;
     Vec2::new(right, -ahead) * (tilt_rad / accel_norm)
 }
+
+/// The acceleration, in m/s² (north, east), that holds off the drag `wind`'s model puts on a
+/// leg's speed: the lateral loop's commanded velocity `commanded_mps` past
+/// [`FEEDFORWARD_HOLD_BAND_MPS`], through air moving at `wind_mps` (both north, east), facing
+/// `heading_rad`. Fed forward, so the lateral loop's I term trims only the wind and gusts:
+/// learned by the I instead, a leg's drag stays wound up when the vehicle stops and carries
+/// it past the waypoint (#609). Zero without a drag model.
+fn drag_feedforward_mps2(
+    wind: &WindConfig,
+    commanded_mps: Vec2,
+    wind_mps: Vec2,
+    heading_rad: f32,
+) -> Vec2 {
+    let speed_mps = commanded_mps.norm();
+    let leg_mps = if speed_mps > FEEDFORWARD_HOLD_BAND_MPS {
+        commanded_mps * ((speed_mps - FEEDFORWARD_HOLD_BAND_MPS) / speed_mps)
+    } else {
+        Vec2::zeros()
+    };
+    let air_mps = leg_mps - wind_mps;
+    // (north, east) into (ahead, right) of the heading, the thrust frame's `x` and `y` level.
+    let (sin, cos) = (libm::sinf(heading_rad), libm::cosf(heading_rad));
+    let air_body_mps = Vec2::new(
+        air_mps.x * cos + air_mps.y * sin,
+        -air_mps.x * sin + air_mps.y * cos,
+    );
+    let push_body_mps2 = -wind.drag_mps2(air_body_mps);
+    // And back.
+    Vec2::new(
+        push_body_mps2.x * cos - push_body_mps2.y * sin,
+        push_body_mps2.x * sin + push_body_mps2.y * cos,
+    )
+}
+
+/// The commanded speed, in m/s, a hold's corrections stay under, which the drag feedforward
+/// leaves to the lateral loop. Fed forward, those corrections stiffen the hold: the sim
+/// eXplora's autotune then designed its pitch rate 31% under RealFlight's, and at 0.5 m/s
+/// the sim tailsitter's steady-wind hold left its band. Higher: more of a leg's drag left to
+/// the I, which overshoots by it: the eXplora's worst 25 m leg at 1.5 or 3 m/s overshoots
+/// 0.25 m at 0.3, 0.46 m at 0.5, and 0.87 m at 1 m/s, and 2.5 m with no feedforward (#609).
+const FEEDFORWARD_HOLD_BAND_MPS: f32 = 0.3;
 
 /// A descent target `start_m` lowered by `step_m`, but no further than [`ALTITUDE_LEASH_M`]
 /// below the vehicle's `altitude_m`. `f32::max` ignores a NaN side: a NaN altitude keeps
