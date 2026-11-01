@@ -8,6 +8,7 @@ use crate::controllers::{
     Gains, InvalidConfig, RATE_I_PER_P, YAW_RATE_I_PER_P, check, check_limit, check_positive,
     check_unit_interval,
 };
+use crate::math::lagged;
 use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use crate::{Configurable, FlightLoop, Vec3};
 
@@ -17,8 +18,10 @@ use super::{
 };
 
 pub use plane::{
-    PLANE_MAX_SATURATED_S, PLANE_PITCH_STEP, PLANE_RATE_STEP, PLANE_ROLL_STEP, PLANE_STEP_SETTLE,
-    PlaneAutotune, PlaneEnvelope, PlaneMethod, PlaneSide,
+    AirspeedSettle, PLANE_IDENTIFY_S, PLANE_IDENTIFY_SHARE, PLANE_MAX_OVERSHOOT,
+    PLANE_MAX_SATURATED_S, PLANE_MOMENT_SHARE, PLANE_PITCH_STEP, PLANE_RATE_STEP,
+    PLANE_RISE_PER_TIME_CONSTANT, PLANE_ROLL_STEP, PLANE_STEP_SETTLE, PLANE_TIME_CONSTANT_RANGE_S,
+    PlaneAutotune, PlaneDesignPlan, PlaneEnvelope, PlaneMethod, PlaneSide,
 };
 use procedure::Action;
 pub use side::{CopterSide, Side, SideConfig, SideTunable};
@@ -1144,6 +1147,9 @@ pub enum AutotuneAbort {
     Rejected,
     /// The design found no gains for the fitted model.
     Design(DesignError),
+    /// A plane design's candidate missed the targets on every attitude pair the plan allows
+    /// ([`PlaneDesignPlan::max_verify_pairs`]).
+    Unverified,
     /// The host lost the vehicle for too long to go on: its state stayed stale past
     /// [`Envelope::max_stale_s`] (e.g. a simulator link down for seconds), or the host ended
     /// the run with [`Autotune::abort`].
@@ -1327,6 +1333,10 @@ impl fmt::Display for StartError {
 }
 
 impl core::error::Error for StartError {}
+
+/// The lag the airspeed's change is read through, in s: a tick's change is mostly the air
+/// data's noise, and a wing's phugoid swings over several seconds (#534).
+const AIRSPEED_CHANGE_TC_S: f32 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Phase<K: Side> {
@@ -1529,6 +1539,8 @@ pub struct Supervisor<K: Side> {
     /// [`View`](crate::view::View) and VTOL host. Filtering before the rotation is the same
     /// as after: every axis has the same cutoff.
     rate_filters: RateFilters,
+    /// The airspeed through a lag of [`AIRSPEED_CHANGE_TC_S`], for its change ([`Motion`]).
+    lagged_airspeed_mps: Option<f32>,
 }
 
 /// What [`Supervisor::update`] reports on side `K`.
@@ -1599,6 +1611,7 @@ impl<K: Side> Supervisor<K> {
             recovering_s: 0.0,
             frozen_s: 0.0,
             rate_filters: Default::default(),
+            lagged_airspeed_mps: None,
         })
     }
 
@@ -1627,6 +1640,7 @@ impl<K: Side> Supervisor<K> {
         self.recovering_s = 0.0;
         self.frozen_s = 0.0;
         self.rate_filters = Default::default();
+        self.lagged_airspeed_mps = None;
         self.phase = Phase::Starting { stage: 0 };
         Ok(())
     }
@@ -1672,7 +1686,8 @@ impl<K: Side> Supervisor<K> {
         let rates_radps = self.filter_rates(flight_loop, dt);
         let frame = Tunable::<K::Target>::probe_frame(flight_loop.stabilizer());
         let target_rad = K::attitude_target(flight_loop.setpoint());
-        let motion = Motion::of(flight_loop.state(), &frame, rates_radps, target_rad);
+        let mut motion = Motion::of(flight_loop.state(), &frame, rates_radps, target_rad);
+        motion.airspeed_change_mps2 = self.airspeed_change_mps2(motion.airspeed_mps, dt);
         self.recovering_s = (self.recovering_s - dt).max(0.0);
         self.frozen_s = (self.frozen_s - dt).max(0.0);
         if let Some(stage) = self.phase.active_stage()
@@ -1789,6 +1804,19 @@ impl<K: Side> Supervisor<K> {
         }
     }
 
+    /// How fast `airspeed_mps` changes, in m/s², stepped `dt` on: its gap to itself through a
+    /// lag of [`AIRSPEED_CHANGE_TC_S`], over the lag (the change, low-passed). 0 without an
+    /// airspeed, which restarts the lag.
+    fn airspeed_change_mps2(&mut self, airspeed_mps: Option<f32>, dt: f32) -> f32 {
+        let Some(airspeed_mps) = airspeed_mps else {
+            self.lagged_airspeed_mps = None;
+            return 0.0;
+        };
+        let lagged_mps = self.lagged_airspeed_mps.get_or_insert(airspeed_mps);
+        *lagged_mps = lagged(*lagged_mps, airspeed_mps, dt, AIRSPEED_CHANGE_TC_S);
+        (airspeed_mps - *lagged_mps) / AIRSPEED_CHANGE_TC_S
+    }
+
     /// The state's body rates through the stabilizer's gyro low-pass at its configured cutoff,
     /// stepped `dt` on.
     fn filter_rates<C, V, G, S: SideTunable<K>, M, T>(
@@ -1893,7 +1921,8 @@ impl<K: Side> Supervisor<K> {
                     | Decide::Stalled
                     | Decide::Aborted { .. }
                     | Decide::Breached { .. }
-                    | Decide::Held { .. },
+                    | Decide::Held { .. }
+                    | Decide::Computing,
             } => AutotuneStatus::Running {
                 stage,
                 target: self.target(stage),
@@ -1980,6 +2009,13 @@ impl<K: Side> Supervisor<K> {
                 };
                 None
             }
+            Action::Compute => {
+                self.phase = Phase::Deciding {
+                    stage,
+                    on: Decide::Computing,
+                };
+                None
+            }
             Action::Fail(reason) => Some(self.fail(flight_loop, stage, reason)),
         }
     }
@@ -1998,7 +2034,7 @@ impl<K: Side> Supervisor<K> {
         waited_s: f32,
     ) -> Option<Event<K>> {
         let settle = self.settle_for(stage);
-        let holds = K::settles(&settle, motion, self.target(stage));
+        let holds = K::settles(&self.envelope, &settle, motion, self.target(stage));
         let level_s = if holds { level_s } else { 0.0 };
         let timed_out = waited_s >= K::waits(&self.envelope).settle_timeout_s;
         if level_s >= settle.hold_s || (request.starts_anyway() && timed_out) {

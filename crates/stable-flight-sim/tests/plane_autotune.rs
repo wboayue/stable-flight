@@ -8,16 +8,19 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
 
+use assert2::check;
+
 use stable_flight::commanders::{PlaneTuneHold, PlaneTuneHoldConfig};
 use stable_flight::stabilizers::plane::{PlaneLoop, PlaneStabilizerConfig};
+use stable_flight::tuning::StepConfig;
 use stable_flight::tuning::StepSummary;
 use stable_flight::tuning::autotune::{
     AutotuneAbort, AutotuneEvent, AutotuneStatus, Outcome, PlaneAutotune, PlaneEnvelope,
-    PlaneMethod, PlaneSide, SideTunable, StagePlan,
+    PlaneMethod, PlaneSide, SideConfig, SideTunable, StagePlan,
 };
 use stable_flight::{
-    Command, Commander, FlightLoop, FlightMode, FlightRegime, Guidance, Mixer, Stabilizer,
-    TelemetryPublisher, Vehicle, VehicleState,
+    Command, Commander, FlightLoop, FlightMode, FlightRegime, Guidance, Mixer, Setpoint,
+    Stabilizer, TelemetryPublisher, Vehicle, VehicleState,
 };
 use stable_flight_sim::airframes;
 
@@ -120,13 +123,25 @@ struct Run {
 }
 
 /// Flies `subject` into plane flight on its lead, hands it to the hold, then runs `plan`
-/// within `envelope`, recovering per the hold's config on a breach and flying `after_s` more.
+/// within `envelope` from its plane side's own gains, recovering per the hold's config on a
+/// breach and flying `after_s` more.
 fn tune(
     subject: Subject,
     hold_config: PlaneTuneHoldConfig,
     plan: &[StagePlan<PlaneSide>],
     envelope: PlaneEnvelope,
     after_s: f32,
+) -> Run {
+    tune_from(subject, hold_config, plan, envelope, (after_s, None))
+}
+
+/// [`tune`], the run started on `start`'s plane gains when given.
+fn tune_from(
+    subject: Subject,
+    hold_config: PlaneTuneHoldConfig,
+    plan: &[StagePlan<PlaneSide>],
+    envelope: PlaneEnvelope,
+    (after_s, start): (f32, Option<PlaneStabilizerConfig>),
 ) -> Run {
     let hold = Rc::new(RefCell::new(PlaneTuneHold::new(hold_config)));
     let holding = Rc::new(RefCell::new(false));
@@ -140,7 +155,14 @@ fn tune(
             let plant = PlanePlant::clean(airframes::plane());
             let lead: Box<dyn Commander> = Box::new(plant.line());
             let mut flight_loop = plane_pipeline(&plant, commander(lead), ());
-            run(&mut flight_loop, &hold, &holding, plan, envelope, after_s)
+            run(
+                &mut flight_loop,
+                (&hold, hold_config),
+                &holding,
+                plan,
+                envelope,
+                (after_s, start),
+            )
         }
         Subject::Cobra | Subject::Alia => {
             // An in-flight start: height counts from there, so the transition's floors are off;
@@ -158,7 +180,14 @@ fn tune(
             ));
             let mut flight_loop =
                 quadplane_pipeline_at(&plant, airframe.start, commander(lead), ());
-            run(&mut flight_loop, &hold, &holding, plan, envelope, after_s)
+            run(
+                &mut flight_loop,
+                (&hold, hold_config),
+                &holding,
+                plan,
+                envelope,
+                (after_s, start),
+            )
         }
         Subject::Explora => {
             let airframe = airframes::explora();
@@ -171,7 +200,14 @@ fn tune(
                 north_line_command(EXPLORA_ALTITUDE_M, trim_mps),
             ));
             let mut flight_loop = tailsitter_pipeline(&plant, commander(lead), ());
-            run(&mut flight_loop, &hold, &holding, plan, envelope, after_s)
+            run(
+                &mut flight_loop,
+                (&hold, hold_config),
+                &holding,
+                plan,
+                envelope,
+                (after_s, start),
+            )
         }
     }
 }
@@ -183,13 +219,15 @@ fn mode<C, V, G: Guidance, S, M, T>(flight_loop: &FlightLoop<C, V, G, S, M, T>) 
         .map_or(FlightMode::Plane, |report| report.mode)
 }
 
+/// Flies the lead into plane flight, hands over to the hold at the thrust the line flew
+/// level on (a pilot's throttle for level flight), then runs `plan`.
 fn run<C, V, G, S, M, T>(
     flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
-    hold: &Rc<RefCell<PlaneTuneHold>>,
+    (hold, hold_config): (&Rc<RefCell<PlaneTuneHold>>, PlaneTuneHoldConfig),
     holding: &Rc<RefCell<bool>>,
     plan: &[StagePlan<PlaneSide>],
     envelope: PlaneEnvelope,
-    after_s: f32,
+    (after_s, start): (f32, Option<PlaneStabilizerConfig>),
 ) -> Run
 where
     C: Commander,
@@ -201,24 +239,38 @@ where
 {
     let tick = Duration::from_secs_f32(DT);
     let side = |flight_loop: &FlightLoop<C, V, G, S, M, T>| {
-        *stable_flight::tuning::autotune::SideConfig::<PlaneSide>::side(
-            flight_loop.stabilizer().config(),
-        )
+        *SideConfig::<PlaneSide>::side(flight_loop.stabilizer().config())
     };
     let (mut elapsed_s, mut plane_s) = (0.0, 0.0);
+    let mut line_thrust = 0.0;
     while plane_s < PLANE_LEAD_S {
         flight_loop.step(tick);
         elapsed_s += DT;
         if mode(flight_loop) == FlightMode::Plane {
             plane_s += DT;
         }
+        if let Setpoint::Plane(setpoint) = flight_loop.setpoint() {
+            // The last second's mean.
+            line_thrust += (setpoint.thrust - line_thrust) * DT;
+        }
         assert!(elapsed_s < MAX_LEAD_S, "no plane flight");
     }
+    *hold.borrow_mut() = PlaneTuneHold::new(PlaneTuneHoldConfig {
+        thrust: line_thrust,
+        ..hold_config
+    });
     *holding.borrow_mut() = true;
     for _ in 0..(HOLD_LEAD_S / DT) as usize {
         flight_loop.step(tick);
     }
 
+    if let Some(start) = start {
+        let mut config = *flight_loop.stabilizer().config();
+        *config.side_mut() = start;
+        flight_loop
+            .set_stabilizer_config(config)
+            .expect("valid start gains");
+    }
     let start = side(flight_loop);
     let start_altitude_m = flight_loop.state().position_m.z;
     let mut autotune = PlaneAutotune::new(plan, envelope).expect("valid plan");
@@ -278,7 +330,9 @@ fn step_test_plan(subject: Subject) -> [StagePlan<PlaneSide>; 4] {
     ]
     .map(|target| {
         let mut plan = StagePlan::plane_step_test(target, &config);
-        let PlaneMethod::StepTest(step_test) = &mut plan.method;
+        let PlaneMethod::StepTest(step_test) = &mut plan.method else {
+            unreachable!("a step test's plan");
+        };
         match (subject, target) {
             (Subject::Alia, PlaneLoop::Roll) => {
                 step_test.max_saturated_s = ALIA_ROLL_MAX_SATURATED_S;
@@ -378,4 +432,134 @@ fn a_breach_recovers_per_airframe() {
             run.max_sink_m
         );
     }
+}
+
+/// The Alia 250's largest roll overshoot, as a fraction of the step: its plane spec's
+/// (`alia_plane.rs`), where its 15°/s roll rate limit holds every roll step to a ramp.
+const ALIA_MAX_ROLL_OVERSHOOT: f32 = 0.15;
+
+/// `subject`'s design, roll then pitch: the plane defaults, with the Alia's own steps and roll
+/// overshoot.
+fn design_plan(subject: Subject, config: &PlaneStabilizerConfig) -> [StagePlan<PlaneSide>; 2] {
+    [PlaneLoop::Roll, PlaneLoop::Pitch].map(|target| {
+        let mut plan = StagePlan::plane_design(target, config);
+        let PlaneMethod::Design(design) = &mut plan.method else {
+            unreachable!("a design's plan");
+        };
+        match (subject, target) {
+            (Subject::Alia, PlaneLoop::Roll) => {
+                design.design.max_overshoot = ALIA_MAX_ROLL_OVERSHOOT;
+            }
+            (Subject::Alia, PlaneLoop::Pitch) => {
+                design.verify.amplitude = ALIA_PITCH_STEP_RAD;
+                design.design.amplitude_rad = ALIA_PITCH_STEP_RAD;
+            }
+            _ => {}
+        }
+        plan
+    })
+}
+
+/// `config`'s rate gains (P, I, and feedforward, both axes) times `factor`.
+fn scaled(config: PlaneStabilizerConfig, factor: f32) -> PlaneStabilizerConfig {
+    let mut scaled = config;
+    for gains in [&mut scaled.rate.roll, &mut scaled.rate.pitch] {
+        gains.p *= factor;
+        gains.i *= factor;
+        gains.ff *= factor;
+    }
+    scaled
+}
+
+/// The plane spec's misses on `subject` flying `config` (`common::plane_spec`): the roll step
+/// capped at its bank limit, the Alia's 5° pitch step and 15% roll overshoot.
+fn spec_misses(subject: Subject, config: PlaneStabilizerConfig) -> Vec<String> {
+    use common::plane_spec::{PITCH_STEP, ROLL_STEP, misses_on};
+    let roll = StepConfig {
+        amplitude: ROLL_STEP.amplitude.min(config.max_bank_rad),
+        ..ROLL_STEP
+    };
+    let (pitch, max_overshoot) = match subject {
+        Subject::Alia => (
+            StepConfig {
+                amplitude: ALIA_PITCH_STEP_RAD,
+                ..PITCH_STEP
+            },
+            [ALIA_MAX_ROLL_OVERSHOOT, common::spec::MAX_OVERSHOOT],
+        ),
+        _ => (PITCH_STEP, [common::spec::MAX_OVERSHOOT; 2]),
+    };
+    let steps = [roll, pitch];
+    match subject {
+        Subject::Plane => {
+            let mut airframe = airframes::plane();
+            airframe.stabilizer = config;
+            misses_on(&PlanePlant::clean(airframe), steps, max_overshoot)
+        }
+        Subject::Explora => {
+            let mut airframe = airframes::explora();
+            airframe.stabilizer.plane = config;
+            misses_on(&TailsitterPlant::clean(airframe), steps, max_overshoot)
+        }
+        Subject::Cobra | Subject::Alia => {
+            let mut airframe = match subject {
+                Subject::Cobra => airframes::quadplane(),
+                _ => airframes::alia250(),
+            };
+            airframe.guidance.transition.min_height_m = 0.0;
+            airframe.guidance.transition.plane_min_height_m = 0.0;
+            airframe.stabilizer.plane = config;
+            misses_on(&QuadPlanePlant::clean(airframe), steps, max_overshoot)
+        }
+    }
+}
+
+/// From its own gains, a third of them, or three times them, the design tunes `subject`'s roll
+/// and pitch to the plane spec.
+fn design_converges(subject: Subject) {
+    for (start_name, factor) in [("own", 1.0), ("x0.3", 0.3), ("x3", 3.0)] {
+        let start = scaled(subject.plane_config(), factor);
+        let hold = PlaneTuneHoldConfig {
+            return_radius_m: 1000.0,
+            ..subject.hold_config()
+        };
+        let plan = design_plan(subject, &start);
+        let envelope = PlaneEnvelope::for_plane(&start);
+        let run = tune_from(subject, hold, &plan, envelope, (0.0, Some(start)));
+        let tuned = run.config.0;
+        check!(
+            run.events.last() == Some(&AutotuneEvent::Complete),
+            "{subject:?} {start_name}: {:?}",
+            run.events.last()
+        );
+        let misses = spec_misses(subject, tuned);
+        check!(
+            misses.is_empty(),
+            "{subject:?} {start_name}: {misses:?} on roll {:?} τ {}, pitch {:?} τ {}",
+            tuned.rate.roll,
+            tuned.time_constant_s.x,
+            tuned.rate.pitch,
+            tuned.time_constant_s.y
+        );
+    }
+}
+
+#[test]
+fn the_design_tunes_the_airplane_to_the_spec() {
+    design_converges(Subject::Plane);
+}
+
+#[test]
+fn the_design_tunes_the_explora_to_the_spec() {
+    design_converges(Subject::Explora);
+}
+
+#[test]
+fn the_design_tunes_the_titan_cobra_to_the_spec() {
+    design_converges(Subject::Cobra);
+}
+
+#[test]
+fn the_design_tunes_the_alia_250_to_the_spec() {
+    design_converges(Subject::Alia);
 }

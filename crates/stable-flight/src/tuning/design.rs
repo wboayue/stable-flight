@@ -101,6 +101,11 @@ pub enum DesignError {
     /// Even the least angle P misses the angle margin around the designed rate loop.
     #[error("the least angle P misses the angle margin")]
     AngleUnstable,
+    /// No gains on the wing design's grid meet its targets on the fitted
+    /// [`WingModel`](crate::tuning::WingModel), even at the slowest time constant, or the
+    /// model's control or damping isn't positive ([`WingDesign`](crate::tuning::WingDesign)).
+    #[error("no gains meet the targets on the fitted wing")]
+    NoWingDesign,
 }
 
 /// Rate gains for `model`: D cancels the motor lag, and P puts the crossover where the loop

@@ -91,9 +91,14 @@ pub trait Side: sealed::Sealed + Copy + fmt::Debug + PartialEq {
     /// The roll and pitch `setpoint` holds on this side, in rad.
     #[doc(hidden)]
     fn attitude_target(setpoint: &Setpoint) -> Vec2;
-    /// Whether `motion` holds `settle` for a probe on `target` to start.
+    /// Whether `motion` holds `settle`, within `envelope`, for a probe on `target` to start.
     #[doc(hidden)]
-    fn settles(settle: &Settle, motion: &Motion, target: Self::Target) -> bool;
+    fn settles(
+        envelope: &Self::Envelope,
+        settle: &Settle,
+        motion: &Motion,
+        target: Self::Target,
+    ) -> bool;
     /// Whether `motion` holds `settle` about `target`'s axis on candidate gains.
     #[doc(hidden)]
     fn holds(settle: &Settle, motion: &Motion, target: Self::Target) -> bool;
@@ -212,6 +217,8 @@ impl Side for CopterSide {
         } = stage;
         let gains = target.gains(config);
         let input = match on {
+            // No copter method computes over updates.
+            Decide::Computing => return Action::Fail(AutotuneAbort::Interrupted),
             Decide::Start => Input::Start {
                 gains,
                 inner: target.inner().map(|inner| inner.gains(config)),
@@ -282,7 +289,7 @@ impl Side for CopterSide {
         attitude_target(setpoint)
     }
 
-    fn settles(settle: &Settle, motion: &Motion, target: TunedLoop) -> bool {
+    fn settles(_envelope: &Envelope, settle: &Settle, motion: &Motion, target: TunedLoop) -> bool {
         settle.holds_for(motion, target)
     }
 
@@ -325,6 +332,9 @@ pub struct Motion {
     pub(super) altitude_m: f32,
     /// The airspeed, in m/s, when the state has a valid one.
     pub(super) airspeed_mps: Option<f32>,
+    /// How fast the airspeed changed since the last update, in m/s²; 0 without an airspeed
+    /// then and now. The supervisor sets it: a single state has no change.
+    pub(super) airspeed_change_mps2: f32,
 }
 
 impl Motion {
@@ -354,6 +364,7 @@ impl Motion {
             yaw_rate_radps: filtered_radps.z.abs(),
             altitude_m: state.position_m.z,
             airspeed_mps: state.valid_airspeed_mps(),
+            airspeed_change_mps2: 0.0,
         }
     }
 }
@@ -400,4 +411,6 @@ pub enum Decide {
     Held { settled: bool },
     /// The settle before a probe timed out on the committed gains.
     Unsettled,
+    /// An update after the procedure asked to compute ([`Action::Compute`]).
+    Computing,
 }

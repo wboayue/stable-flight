@@ -414,3 +414,39 @@ fn validates_config() {
         check!(stabilizer.set_config(config).is_err());
     }
 }
+
+/// The angle of attack is the pitch less the climb angle through the air, the climb over
+/// airspeed: in a crosswind the ground track's speed reads it wrong (#534).
+#[test]
+fn reads_the_angle_of_attack_through_the_air() {
+    let stabilizer = PlaneStabilizer::new(PlaneStabilizerConfig::default());
+    // (row, pitch in rad, velocity north/east/up in m/s, airspeed in m/s, angle of attack)
+    let rows = [
+        ("level", 0.05, Vec3::new(15.0, 0.0, 0.0), Some(15.0), 0.05),
+        (
+            // The eXplora's: 6.9 m/s over the ground, 13.6 through the air.
+            "climbing in a crosswind",
+            0.05,
+            Vec3::new(5.0, -4.7, 0.5),
+            Some(13.6),
+            0.05 - libm::asinf(0.5 / 13.6),
+        ),
+        (
+            "no air data: the trim airspeed",
+            0.05,
+            Vec3::new(5.0, -4.7, 0.5),
+            None,
+            0.05 - libm::asinf(0.5 / PlaneStabilizerConfig::default().trim_airspeed_mps),
+        ),
+    ];
+    for (row, pitch_rad, velocity_mps, airspeed_mps, alpha_rad) in rows {
+        let state = VehicleState {
+            pitch_rad,
+            velocity_mps,
+            airspeed_mps,
+            ..Default::default()
+        };
+        let read_rad = stabilizer.angle_of_attack_rad(&state);
+        check!((read_rad - alpha_rad).abs() < 1e-6, "{row}: {read_rad}");
+    }
+}

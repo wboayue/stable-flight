@@ -8,7 +8,10 @@ use super::*;
 use crate::stabilizers::plane::PlaneStabilizer;
 use crate::tuning::Tunable;
 use crate::tuning::autotune::{AutotuneEvent, AutotuneStatus, Outcome};
-use crate::tuning::plant::{MomentMixer, Wing, wing_config as config};
+use crate::tuning::plant::{
+    CONTROL_RADPS2, DAMPING_PER_S, MomentMixer, Wing, wing_config as config,
+};
+use crate::tuning::{IdentifyConfig, StepConfig, WingDesignConfig};
 use crate::{
     AbsoluteAttitudeCommand, Actuator, ActuatorCommand, AttitudeSetpoint, Command, Commander,
     Configurable, ControlInput, FlightLoop, FlightRegime, Guidance, PlaneSetpoint, StateSource,
@@ -275,7 +278,7 @@ fn the_settle_reads_the_held_attitude() {
 #[test]
 fn rejects_an_invalid_envelope() {
     let good = PlaneEnvelope::for_plane(&config());
-    let rows: [(&str, PlaneEnvelope); 4] = [
+    let rows: [(&str, PlaneEnvelope); 6] = [
         (
             "max_airspeed_mps",
             PlaneEnvelope {
@@ -301,6 +304,26 @@ fn rejects_an_invalid_envelope() {
             "recovery_s",
             PlaneEnvelope {
                 recovery_s: -1.0,
+                ..good
+            },
+        ),
+        (
+            "settle_airspeed.band_mps",
+            PlaneEnvelope {
+                settle_airspeed: AirspeedSettle {
+                    band_mps: 0.0,
+                    ..good.settle_airspeed
+                },
+                ..good
+            },
+        ),
+        (
+            "settle_airspeed.max_change_mps2",
+            PlaneEnvelope {
+                settle_airspeed: AirspeedSettle {
+                    max_change_mps2: f32::NAN,
+                    ..good.settle_airspeed
+                },
                 ..good
             },
         ),
@@ -346,4 +369,171 @@ fn maneuvering_holds_probes_off() {
         events.last() == Some(&AutotuneEvent::Complete),
         "{events:?}"
     );
+}
+
+/// The design fits each axis of the wing, designs its gains on the fit over several updates,
+/// and verifies them in flight: each stage tuned, its feedforward the wing's damping over its
+/// control, committed.
+#[test]
+fn a_design_tunes_each_axis_of_the_wing() {
+    let (mut flight_loop, _) = flying();
+    let plan = [PlaneLoop::Roll, PlaneLoop::Pitch]
+        .map(|target| StagePlan::plane_design(target, &config()));
+    let mut autotune = started(&flight_loop, &plan);
+    let mut computed = false;
+    let events = run(&mut flight_loop, &mut autotune, 300.0, |autotune| {
+        computed |= matches!(autotune.status(), AutotuneStatus::Running { .. });
+    });
+    assert!(
+        events.last() == Some(&AutotuneEvent::Complete),
+        "{events:?}"
+    );
+    check!(computed);
+    let tuned: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            AutotuneEvent::StageDone {
+                target,
+                gains,
+                outcome,
+                ..
+            } => Some((*target, *gains, *outcome)),
+            _ => None,
+        })
+        .collect();
+    check!(tuned.len() == 2);
+    let flown = *flight_loop.stabilizer().config();
+    for (target, gains, outcome) in tuned {
+        check!(outcome == Outcome::Tuned, "{target:?}");
+        let ff = DAMPING_PER_S / CONTROL_RADPS2;
+        check!(
+            (gains.rate.ff / ff - 1.0).abs() < 0.05,
+            "{target:?}: {gains:?}"
+        );
+        check!(target.gains(&flown) == gains, "{target:?}");
+    }
+}
+
+/// A probe waits for the airspeed to hold steady near trim: off trim past the band, or
+/// swinging, the settle times out and the stage fails; steady, or without air data, it runs.
+#[test]
+fn the_settle_waits_for_steady_airspeed_near_trim() {
+    let trim_mps = config().trim_airspeed_mps;
+    let band_mps = PlaneEnvelope::for_plane(&config()).settle_airspeed.band_mps;
+    // (row, airspeed at time t in s, the last event)
+    let rows: [(&str, fn(f32, f32, f32) -> Option<f32>, Event); 4] = [
+        (
+            "steady at trim",
+            |trim, _, _| Some(trim),
+            AutotuneEvent::Complete,
+        ),
+        (
+            "off trim past the band",
+            |trim, band, _| Some(trim + 1.5 * band),
+            AutotuneEvent::StageFailed {
+                target: PlaneLoop::Roll,
+                reason: AutotuneAbort::NotSettled,
+            },
+        ),
+        (
+            // Inside the band but changing by up to 1.3 m/s²: a phugoid's swing.
+            "swinging inside the band",
+            |trim, band, t| Some(trim + 0.9 * band * (core::f32::consts::TAU * t / 4.0).sin()),
+            AutotuneEvent::StageFailed {
+                target: PlaneLoop::Roll,
+                reason: AutotuneAbort::NotSettled,
+            },
+        ),
+        ("no air data", |_, _, _| None, AutotuneEvent::Complete),
+    ];
+    for (row, airspeed, last) in rows {
+        let (mut flight_loop, controls) = flying();
+        let mut autotune = started(
+            &flight_loop,
+            &[StagePlan::plane_step_test(PlaneLoop::Roll, &config())],
+        );
+        let mut t = 0.0;
+        let events = run(&mut flight_loop, &mut autotune, 120.0, |_| {
+            t += DT;
+            controls.airspeed_mps.set(airspeed(trim_mps, band_mps, t));
+        });
+        check!(events.last() == Some(&last), "{row}: {events:?}");
+    }
+}
+
+#[test]
+fn rejects_an_invalid_design_plan() {
+    let good = PlaneDesignPlan::for_plane(PlaneLoop::Roll, &config());
+    let rows = [
+        (
+            "identify",
+            PlaneDesignPlan {
+                identify: IdentifyConfig {
+                    duration_s: 0.0,
+                    ..good.identify
+                },
+                ..good
+            },
+        ),
+        (
+            "design",
+            PlaneDesignPlan {
+                design: WingDesignConfig {
+                    max_moment: 0.0,
+                    ..good.design
+                },
+                ..good
+            },
+        ),
+        (
+            "verify",
+            PlaneDesignPlan {
+                verify: StepConfig {
+                    duration_s: 0.0,
+                    ..good.verify
+                },
+                ..good
+            },
+        ),
+        (
+            "max_verify_pairs",
+            PlaneDesignPlan {
+                max_verify_pairs: 0,
+                ..good
+            },
+        ),
+        (
+            "candidates_per_update",
+            PlaneDesignPlan {
+                candidates_per_update: 0,
+                ..good
+            },
+        ),
+    ];
+    check!(good.validate().is_ok());
+    // A section's error names the section; a count's, the field.
+    for (name, plan) in rows {
+        let error = plan.validate().expect_err(name);
+        check!(
+            error.section == Some(name) || error.field == name,
+            "{error:?}"
+        );
+    }
+}
+
+/// A design plan's targets come from the airframe's config: the axis's rate limit for the
+/// identification and the design, the throw left by its trim, its integral limit and trim.
+#[test]
+fn a_design_plan_reads_the_airframe() {
+    let mut airframe = config();
+    airframe.max_attitude_rate_radps = Vec2::new(1.0, 0.5);
+    airframe.rate.trim = Vec3::new(0.0, 0.25, 0.0);
+    let plan = PlaneDesignPlan::for_plane(PlaneLoop::Pitch, &airframe);
+    check!(plan.identify.amplitude == PLANE_IDENTIFY_SHARE * 0.5);
+    check!(plan.design.max_rate_radps == 0.5);
+    check!(plan.design.max_moment == PLANE_MOMENT_SHARE * 0.75);
+    check!(plan.design.static_trim == 0.25);
+    check!(plan.design.max_integral == airframe.rate.max_integral);
+    check!(plan.verify == StepTestPlan::plane(PlaneLoop::Pitch, &airframe).step);
+    check!(PlaneDesignPlan::for_plane(PlaneLoop::PitchRate, &airframe) == plan);
 }
