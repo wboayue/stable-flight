@@ -31,6 +31,10 @@ impl ParamTable for PlaneGuidanceConfig {
         param!("PGUID_RLL2THR", tecs.roll_compensation),
         param!("PGUID_ASPD_MIN", tecs.min_airspeed_mps),
         param!("PGUID_ASPD_MAX", tecs.max_airspeed_mps),
+        param!("PGUID_USPD_SHARE", tecs.underspeed_share),
+        param!("PGUID_HDEM_TC", tecs.height_demand_time_constant_s),
+        param!("PGUID_ASPD_RT_TC", tecs.airspeed_rate_time_constant_s),
+        param!("PGUID_KE_HPF_TC", tecs.kinetic_rate_high_pass_s),
         param!("PGUID_THR_MIN", min_thrust),
         param!("PGUID_THR_MAX", max_thrust),
         param!("PGUID_CLMB_THR", climb_thrust_per_rad),
@@ -181,6 +185,27 @@ mod metadata {
             TECS.param("PGUID_ASPD_MAX", "Most airspeed demanded")
                 .with_units("m/s")
                 .above(0.0),
+            TECS.param(
+                "PGUID_USPD_SHARE",
+                "Share of the least airspeed underspeed latches below",
+            )
+            .above(0.0)
+            .at_most(1.0),
+            TECS.param("PGUID_HDEM_TC", "Time constant of the height demand's lag")
+                .with_units("s")
+                .above(0.0),
+            TECS.param(
+                "PGUID_ASPD_RT_TC",
+                "Time constant of the airspeed rate's filter",
+            )
+            .with_units("s")
+            .above(0.0),
+            TECS.param(
+                "PGUID_KE_HPF_TC",
+                "Time constant of the kinetic energy rate's high-pass",
+            )
+            .with_units("s")
+            .above(0.0),
             NAVIGATION
                 .param("PGUID_THR_MIN", "Least thrust in waypoint flight")
                 .at_least(0.0)

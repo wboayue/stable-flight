@@ -30,7 +30,10 @@ mod tecs;
 mod tests;
 
 use navigation::{PiLoop, bank_for_accel_rad, loiter_accel_mps2, track_accel_mps2};
-pub use tecs::TecsConfig;
+pub use tecs::{
+    DEFAULT_AIRSPEED_RATE_TIME_CONSTANT_S, DEFAULT_HEIGHT_DEMAND_TIME_CONSTANT_S,
+    DEFAULT_KINETIC_RATE_HIGH_PASS_S, DEFAULT_UNDERSPEED_SHARE, TecsConfig,
+};
 use tecs::{Limits, Tecs};
 
 /// [`PlaneGuidance`] settings.

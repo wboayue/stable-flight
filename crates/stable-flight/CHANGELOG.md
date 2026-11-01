@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   low-pass, for one vibration tone, in ArduPilot's fixed harmonic notch form (center, width,
   depth). Off by default. `controllers::GyroFilters` is the chain the rate loop flies, and
   `CopterStabilizerConfig::gyro_filters_on` gives an axis's (#597).
+- `TecsConfig` fields for the total energy control's fixed time constants and underspeed
+  latch, with params and the old values as defaults (#622): `underspeed_share`
+  (`PGUID_USPD_SHARE`, 0.9), `height_demand_time_constant_s` (`PGUID_HDEM_TC`, 3 s),
+  `airspeed_rate_time_constant_s` (`PGUID_ASPD_RT_TC`, 0.5 s), `kinetic_rate_high_pass_s`
+  (`PGUID_KE_HPF_TC`, 1 s), and `guidance::plane::DEFAULT_*` consts for each.
 - `FlightLoop::setpoint`: the setpoint guidance gave the stabilizer on the last tick (#539).
 - Plane autotune (#534): `PlaneStabilizer` hosts probes on its roll and pitch rate and angle
   loops (`stabilizers::plane::PlaneLoop`, `PlaneAxisGains`), as do `TailsitterStabilizer` and

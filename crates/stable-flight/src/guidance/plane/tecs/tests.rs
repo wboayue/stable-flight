@@ -106,31 +106,55 @@ fn demands_slew_at_their_limits() {
 }
 
 /// The height demand starts moving at the aircraft's climb rate, within the climb and sink
-/// limits: entering plane flight sinking, it sinks along rather than pitching up to stop the
-/// sink (#503). Climb rate (m/s) → the first step's demand rate (m/s), holding the height it
-/// starts at.
+/// limits, whatever its lag: entering plane flight sinking, it sinks along rather than pitching
+/// up to stop the sink (#503). Climb rate (m/s) → the first step's demand rate (m/s), holding
+/// the height it starts at.
 #[test]
 fn height_demand_starts_at_the_climb_rate() {
-    let config = TecsConfig::default();
     let cases = [
         (0.0, 0.0),
         (-3.0, -3.0),
         (2.0, 2.0),
         // Past the sink and climb limits (5 m/s each).
-        (-8.0, -config.max_sink_mps),
-        (7.0, config.max_climb_mps),
+        (-8.0, -TecsConfig::default().max_sink_mps),
+        (7.0, TecsConfig::default().max_climb_mps),
     ];
-    for (climb_mps, rate_mps) in cases {
-        let mut state = level(300.0, 15.0, 0.0);
-        state.velocity_mps.z = climb_mps;
+    for lag_s in [1.5, DEFAULT_HEIGHT_DEMAND_TIME_CONSTANT_S, 4.5] {
+        let config = TecsConfig {
+            height_demand_time_constant_s: lag_s,
+            ..TecsConfig::default()
+        };
+        for (climb_mps, rate_mps) in cases {
+            let mut state = level(300.0, 15.0, 0.0);
+            state.velocity_mps.z = climb_mps;
+            let mut tecs = Tecs::default();
+            tecs.step(DT, &config, &limits(), (300.0, 15.0), 15.0, &state);
+            let demand = tecs.demand.expect("seeded");
+            let demand_rate_mps = (demand.height_m - 300.0) / DT;
+            check!(
+                (demand_rate_mps - rate_mps).abs() < 0.05,
+                "{lag_s} s, {climb_mps} m/s: {demand_rate_mps}"
+            );
+        }
+    }
+}
+
+/// The flown height demand follows a small step through the configured lag: about 63% of
+/// the way one time constant in (the slew takes 0.2 s of it).
+#[test]
+fn height_demand_lags_at_the_configured_time_constant() {
+    let state = level(30.0, 15.0, 0.0);
+    for lag_s in [1.5, DEFAULT_HEIGHT_DEMAND_TIME_CONSTANT_S, 4.5] {
+        let config = TecsConfig {
+            height_demand_time_constant_s: lag_s,
+            ..TecsConfig::default()
+        };
         let mut tecs = Tecs::default();
-        tecs.step(DT, &config, &limits(), (300.0, 15.0), 15.0, &state);
-        let demand = tecs.demand.expect("seeded");
-        let demand_rate_mps = (demand.height_m - 300.0) / DT;
-        check!(
-            (demand_rate_mps - rate_mps).abs() < 0.05,
-            "{climb_mps} m/s: {demand_rate_mps}"
-        );
+        for _ in 0..(lag_s / DT) as usize {
+            tecs.step(DT, &config, &limits(), (31.0, 15.0), 15.0, &state);
+        }
+        let covered = tecs.demand.expect("seeded").height_m - 30.0;
+        check!((0.55..=0.68).contains(&covered), "{lag_s} s: {covered} m");
     }
 }
 
@@ -233,7 +257,7 @@ fn pitch_moves_smoothly_where_the_height_slew_stops() {
     check!(largest_deg < 1.0, "{largest_deg}°");
 }
 
-/// Below 0.9 of the least airspeed: full thrust, and pitch holds airspeed alone (nose down,
+/// Below `underspeed_share` (0.9) of the least airspeed: full thrust, and pitch holds airspeed alone (nose down,
 /// even with a climb asked). It clears back at the least airspeed.
 #[test]
 fn underspeed_runs_full_thrust_and_pitches_for_airspeed() {
@@ -275,6 +299,35 @@ fn underspeed_runs_full_thrust_and_pitches_for_airspeed() {
         &level(30.0, least_mps, 0.0),
     );
     check!(!tecs.underspeed);
+}
+
+/// Underspeed latches below the configured share of the least airspeed:
+/// (`underspeed_share`, airspeed as a share of the least) → latched.
+#[test]
+fn underspeed_latches_below_the_configured_share() {
+    let cases = [
+        (0.9, 0.85, true),
+        (0.9, 0.92, false),
+        (0.95, 0.92, true),
+        (0.8, 0.85, false),
+    ];
+    for (share, airspeed_share, latched) in cases {
+        let config = TecsConfig {
+            underspeed_share: share,
+            ..TecsConfig::default()
+        };
+        let airspeed_mps = airspeed_share * config.min_airspeed_mps;
+        let mut tecs = Tecs::default();
+        tecs.step(
+            DT,
+            &config,
+            &limits(),
+            (30.0, 15.0),
+            airspeed_mps,
+            &level(30.0, airspeed_mps, 0.0),
+        );
+        check!(tecs.underspeed == latched, "{share}, {airspeed_share}");
+    }
 }
 
 /// The airspeed demand starts within the airspeed limits: from under the least airspeed but
@@ -367,7 +420,7 @@ fn reset_starts_fresh() {
 #[test]
 fn validates_config() {
     type Edit = fn(&mut TecsConfig);
-    let cases: [(&str, Edit); 11] = [
+    let cases: [(&str, Edit); 16] = [
         ("time_constant_s", |c| c.time_constant_s = 0.0),
         ("max_climb_mps", |c| c.max_climb_mps = -1.0),
         ("min_sink_mps", |c| c.min_sink_mps = 0.0),
@@ -379,6 +432,17 @@ fn validates_config() {
         ("speed_weight", |c| c.speed_weight = 2.5),
         ("min_airspeed_mps", |c| c.min_airspeed_mps = 0.0),
         ("max_airspeed_mps", |c| c.max_airspeed_mps = -5.0),
+        ("underspeed_share", |c| c.underspeed_share = 0.0),
+        ("underspeed_share", |c| c.underspeed_share = 1.5),
+        ("height_demand_time_constant_s", |c| {
+            c.height_demand_time_constant_s = 0.0
+        }),
+        ("airspeed_rate_time_constant_s", |c| {
+            c.airspeed_rate_time_constant_s = f32::NAN
+        }),
+        ("kinetic_rate_high_pass_s", |c| {
+            c.kinetic_rate_high_pass_s = -1.0
+        }),
     ];
     check!(TecsConfig::default().validate() == Ok(()));
     for (field, edit) in cases {
@@ -407,27 +471,36 @@ fn airspeed_rate_ignores_the_backends_acceleration() {
     }
 }
 
-/// On an airspeed ramp, the rate settles on the ramp's slope within a few time constants.
+/// On an airspeed ramp, the rate settles on the ramp's slope within a few of
+/// `airspeed_rate_time_constant_s`, whatever it is.
 #[test]
 fn airspeed_rate_follows_a_ramp() {
-    let mut tecs = Tecs::default();
     let slope_mps2 = 0.5;
-    let mut airspeed_mps = 15.0;
-    let steps = (5.0 * AIRSPEED_RATE_TC_S / DT) as usize;
-    for _ in 0..steps {
-        tecs.step(
-            DT,
-            &TecsConfig::default(),
-            &limits(),
-            (30.0, 15.0),
-            airspeed_mps,
-            &level(30.0, airspeed_mps, 0.0),
+    for time_constant_s in [0.25, DEFAULT_AIRSPEED_RATE_TIME_CONSTANT_S, 1.0] {
+        let config = TecsConfig {
+            airspeed_rate_time_constant_s: time_constant_s,
+            ..TecsConfig::default()
+        };
+        let mut tecs = Tecs::default();
+        let mut airspeed_mps = 15.0;
+        for _ in 0..(5.0 * time_constant_s / DT) as usize {
+            tecs.step(
+                DT,
+                &config,
+                &limits(),
+                (30.0, 15.0),
+                airspeed_mps,
+                &level(30.0, airspeed_mps, 0.0),
+            );
+            airspeed_mps += slope_mps2 * DT;
+        }
+        let filtered = tecs.filtered_airspeed_mps.expect("seeded");
+        let rate = (airspeed_mps - slope_mps2 * DT - filtered) / time_constant_s;
+        check!(
+            (rate / slope_mps2 - 1.0).abs() < 0.05,
+            "{time_constant_s} s: {rate}"
         );
-        airspeed_mps += slope_mps2 * DT;
     }
-    let filtered = tecs.filtered_airspeed_mps.expect("seeded");
-    let rate = (airspeed_mps - slope_mps2 * DT - filtered) / AIRSPEED_RATE_TC_S;
-    assert_relative_eq!(rate, slope_mps2, max_relative = 0.05);
 }
 
 /// On a steady airspeed ramp, the kinetic energy rate fades: a steady acceleration isn't a
@@ -505,4 +578,37 @@ fn pitch_integral_pulls_up_sinking_past_the_limit() {
         tecs.step(DT, &config, &limits(), (0.0, 15.0), 15.0, &sinking);
     }
     check!(tecs.pitch_integral_rad > 0.0, "{tecs:?}");
+}
+
+/// A steady acceleration fades from the kinetic rate at the configured high-pass:
+/// (`kinetic_rate_high_pass_s`, least and most share of `V·slope` left after 2 s on a ramp).
+#[test]
+fn kinetic_rate_fades_at_the_configured_high_pass() {
+    let slope_mps2 = 0.5;
+    let cases = [(0.5, 0.0, 0.12), (1.0, 0.15, 0.35), (4.0, 0.55, 0.8)];
+    for (high_pass_s, least, most) in cases {
+        let config = TecsConfig {
+            kinetic_rate_high_pass_s: high_pass_s,
+            ..TecsConfig::default()
+        };
+        let mut tecs = Tecs::default();
+        let mut airspeed_mps = 15.0;
+        let mut kinetic_share = f32::NAN;
+        for _ in 0..(2.0 / DT) as usize {
+            let state = level(30.0, airspeed_mps, 0.0);
+            let energies = tecs.energies(
+                DT,
+                &config,
+                (30.0, 20.0),
+                (airspeed_mps, airspeed_mps),
+                &state,
+            );
+            kinetic_share = energies.kinetic_rate / (airspeed_mps * slope_mps2);
+            airspeed_mps += slope_mps2 * DT;
+        }
+        check!(
+            (least..=most).contains(&kinetic_share),
+            "{high_pass_s} s: {kinetic_share}"
+        );
+    }
 }

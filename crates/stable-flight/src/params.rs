@@ -123,6 +123,8 @@
 //! | `PGUID_SPDWEIGHT` | `tecs.speed_weight` |
 //! | `PGUID_RLL2THR` | `tecs.roll_compensation` |
 //! | `PGUID_ASPD_MIN`, `PGUID_ASPD_MAX` | `tecs.min_airspeed_mps`, `tecs.max_airspeed_mps` |
+//! | `PGUID_USPD_SHARE` | `tecs.underspeed_share` |
+//! | `PGUID_HDEM_TC`, `PGUID_ASPD_RT_TC`, `PGUID_KE_HPF_TC` | `tecs.height_demand_time_constant_s`, `tecs.airspeed_rate_time_constant_s`, `tecs.kinetic_rate_high_pass_s` |
 //! | `PGUID_THR_MIN`, `PGUID_THR_MAX` | `min_thrust`, `max_thrust` |
 //! | `PGUID_CLMB_THR` | `climb_thrust_per_rad` |
 //!

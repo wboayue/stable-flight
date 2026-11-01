@@ -10,6 +10,7 @@ use crate::controllers::{
 };
 use crate::estimation::wind::WindConfig;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig, ThrustLimits};
+use crate::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
 use crate::mixers::TableMixer;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use crate::testing::{ConstantCommander, NullVehicle};
@@ -116,6 +117,50 @@ fn tables_cover_every_config_field() {
     // one param per scalar, vector component, or gain term in the destructuring above
     check!(names::<CopterStabilizerConfig>().len() == 35);
     check!(names::<CopterGuidanceConfig>().len() == 45);
+}
+
+/// Fails to compile when the plane guidance config gains a field, so its param table gets
+/// updated with it.
+#[test]
+fn plane_guidance_table_covers_every_config_field() {
+    let PlaneGuidanceConfig {
+        max_bank_rad: _,
+        max_pitch_up_rad: _,
+        max_pitch_down_rad: _,
+        max_rate_radps: _,
+        trim_pitch_rad: _,
+        cruise_thrust: _,
+        l1_period_s: _,
+        l1_damping: _,
+        loiter_radius_m: _,
+        altitude_p: _,
+        altitude_i: _,
+        altitude_max_integral: _,
+        tecs:
+            TecsConfig {
+                time_constant_s: _,
+                max_climb_mps: _,
+                min_sink_mps: _,
+                max_sink_mps: _,
+                thrust_damping: _,
+                integrator_gain: _,
+                pitch_damping: _,
+                pitch_integrator_gain: _,
+                speed_weight: _,
+                roll_compensation: _,
+                min_airspeed_mps: _,
+                max_airspeed_mps: _,
+                underspeed_share: _,
+                height_demand_time_constant_s: _,
+                airspeed_rate_time_constant_s: _,
+                kinetic_rate_high_pass_s: _,
+            },
+        min_thrust: _,
+        max_thrust: _,
+        climb_thrust_per_rad: _,
+    } = PlaneGuidanceConfig::default();
+    // one param per scalar or vector component in the destructuring above
+    check!(names::<PlaneGuidanceConfig>().len() == 33);
 }
 
 #[test]
