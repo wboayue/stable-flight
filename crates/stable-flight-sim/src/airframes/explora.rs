@@ -118,8 +118,9 @@ pub fn explora() -> TailsitterAirframe {
             c_lift_alpha: 3.0,
             // Level flight at 14 m/s takes thrust 0.76, as in RealFlight (#342, run 0).
             c_drag_0: 0.05,
-            // Calibrated to RealFlight: a level nose-up moment of 0.09 at 14 m/s (#342, run 0;
-            // #587's fits). Its share of the elevons' moment: halving them halves it.
+            // Calibrated to RealFlight: level flight at 14 m/s takes a nose-up moment command of
+            // 0.09 (#342, run 0; #587's fits). The command is this over the elevons'
+            // effectiveness, so the two scale together.
             c_pitch_0: -0.125,
             // Calibrated to RealFlight (#342, run 0): default-gain 30°/s roll doublets peak at
             // 3.2× in their first half, here 3.24×.
