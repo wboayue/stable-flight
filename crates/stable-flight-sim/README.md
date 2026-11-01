@@ -229,7 +229,10 @@ side flies `explora_vtol()`'s rate gains and trim, its hover `explora_vtol()`'s 
 
 The Alia leaves out X-Plane's nose-up pitch at level thrust (2.2 °/s², which X-Plane's rate
 I trims), its tail's weathervaning in sideways flight, and its wing in hover; its drag is a
-guess from its size.
+guess from its size. Banked at its 20° cap, X-Plane's Alia holds pitch 2° under the setpoint
+for seconds where the sim's tracks it, so a turning descent sinks about 0.4 m/s faster in
+X-Plane; the X-Plane Alia flies twice the sim's pitch rate I for it
+([#547](https://github.com/wboayue/stable-flight/issues/547)).
 
 Out of scope: blade-element props, ground effect, battery sag, estimator and filter models
 (attitude, position, and velocity are exact; only the gyro is noisy), terrain, visuals,

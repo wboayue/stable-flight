@@ -124,11 +124,12 @@ const ALIA_SURFACES: [SurfaceLink; 8] = [
 /// - **Plane and transitions:** `stable-flight-sim`'s `alia250()`, tuned on a model fitted to
 ///   this aircraft's level flight, pulses, roll holds, and full-power climb (#392), pinned by a
 ///   test: trim 45 m/s and airspeeds 40–60 m/s (the band X-Plane holds level), the transition
-///   gate at 40 m/s, 15° pitch up (below the stall), 7° trim pitch, the rate gains (pitch I 0.5
-///   and P 1 against the wing's pitch stability, feedforward from the model, roll asking at
-///   most 15°/s of the ailerons' 17°/s), and total energy control's climb, sink, and pitch
-///   damping. X-Plane's own: the cruise thrust, the pusher it held level at 45 m/s (0.72,
-///   `plane-probe-xplane`). Bank (20°, `FW_R_LIM`), the pusher slew (`VT_PSHER_SLEW`), the
+///   gate at 40 m/s, 15° pitch up (below the stall), 7° trim pitch, the rate gains (pitch P 1
+///   against the wing's pitch stability, feedforward from the model, roll asking at
+///   most 15°/s of the ailerons' 17°/s), and total energy control's climb, sink, pitch
+///   damping, and 3 s time constant. X-Plane's own: the cruise thrust, the pusher it held level
+///   at 45 m/s (0.72, `plane-probe-xplane`), and pitch rate I 1, which holds pitch in a turn
+///   that X-Plane's airframe holds 2° low on the sim's 0.5 (#547). Bank (20°, `FW_R_LIM`), the pusher slew (`VT_PSHER_SLEW`), the
 ///   back ramp (`VT_B_TRANS_RAMP`), the 20 m least height (`VT_FW_MIN_ALT`), and PX4's 45 s
 ///   and 28 s transition limits (`VT_F_TRANS_DUR`, `VT_B_TRANS_DUR`) are px4xplane's Alia
 ///   (`config/px4_params/5020_xplane_alia250`). The loiter radius is a 20° turn at trim
@@ -160,6 +161,7 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                     max_climb_mps: 1.8,
                     min_sink_mps: 3.5,
                     pitch_damping: 0.5,
+                    time_constant_s: 3.0,
                     min_airspeed_mps: ALIA_MIN_AIRSPEED_MPS,
                     max_airspeed_mps: ALIA_MAX_AIRSPEED_MPS,
                     ..TecsConfig::default()
@@ -190,9 +192,14 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                         i: 0.05,
                         ff: 3.288,
                     },
+                    // Twice the sim's I: banked at the 20° cap, X-Plane's Alia holds pitch 2° under
+                    // its setpoint for seconds where the sim's tracks it, and a turning descent
+                    // sinks past the limit. At I 1 it closes that gap twice as fast:
+                    // 5.14–5.24 m/s against 5.44 on `flights/alia_descent_lap.csv`. On the sim,
+                    // I 1 overshoots the pitch steps' 5% spec (6–8%, #547).
                     pitch: RateGains {
                         p: 1.0,
-                        i: 0.5,
+                        i: 1.0,
                         ff: 0.9068,
                     },
                     yaw: RateGains {

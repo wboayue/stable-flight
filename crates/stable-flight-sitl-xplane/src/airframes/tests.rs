@@ -27,13 +27,16 @@ fn deflections(command: &ActuatorCommand) -> Vec<(usize, f32)> {
 /// The plane side and transitions are the sim Alia's, which #392 tuned on a model fitted to
 /// this aircraft: its gains (the rate feedforward to the 4th digit, worked out from the model
 /// there), limits, and total energy control. X-Plane's own is the cruise thrust, the pusher it
-/// held level at trim (the sim works its own out from the model).
+/// held level at trim (the sim works its own out from the model), and the pitch rate I that
+/// holds pitch in a turn (#547).
 #[test]
 fn alia250_flies_the_sim_alias_plane_side() {
     let sim = stable_flight_sim::airframes::alia250();
     let xplane = alia250();
 
     let (mut ours, theirs) = (xplane.stabilizer.plane, sim.stabilizer.plane);
+    check!(ours.rate.pitch.i == 1.0);
+    ours.rate.pitch.i = theirs.rate.pitch.i;
     for (axis, (ff, sim_ff)) in [
         (ours.rate.roll.ff, theirs.rate.roll.ff),
         (ours.rate.pitch.ff, theirs.rate.pitch.ff),

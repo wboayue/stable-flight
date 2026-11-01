@@ -206,6 +206,12 @@ pub fn alia250() -> QuadPlaneAirframe {
             max_airspeed_mps: plane_stabilizer.max_airspeed_mps,
             // 2.1 m against 3.4 m past a 30 m descent at ArduPilot's 0.3 (#392).
             pitch_damping: 0.5,
+            // Quicker than ArduPilot's 5 s, so a descent turning at the bank cap (lift 7% less
+            // up) pitches back up before it sinks past the limit: 4.96 m/s against 5.28 out of
+            // a transition onto a leg turned 151°. It trades the handoff out of a forward
+            // transition, which sinks faster: X-Plane's peaks at 2.9 m/s against 2.1, still
+            // under the limit. Shorter, 2.5 s overshoots the pitch steps' spec (#547).
+            time_constant_s: 3.0,
             ..TecsConfig::default()
         },
         ..PlaneGuidanceConfig::default()
