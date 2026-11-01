@@ -136,6 +136,11 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 - Match surrounding code first; the rules below resolve ties. `cargo fmt --all`.
 - snake_case files/modules, PascalCase types, SCREAMING_SNAKE_CASE constants. Name a magic number
   when it repeats or carries units.
+- **Config fields over module constants for behavior.** A value an airframe or tuner might
+  change (a limit, threshold, time constant, gain) is a field of the component's config,
+  defaulted from a `DEFAULT_*` const beside it and exposed in its `ParamTable` where it has one.
+  Bare consts are for physical and math constants, compile-time capacities (`no_std` arrays),
+  algorithm internals, and numeric guards against division by zero or singularities.
 - Prefer early returns and small helpers; keep flight math readable, not arbitrarily short.
 - Core is `no_std`: `core::`, not `std::` (tests may use std); `f32` math core lacks (`powf`,
   `sin`, `sqrt`, …) goes through `libm`.
