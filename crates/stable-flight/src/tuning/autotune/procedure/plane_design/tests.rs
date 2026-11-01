@@ -105,17 +105,19 @@ fn computes_over_updates() {
     check!(updates > 1);
 }
 
+/// A pair's second step at a time constant, in s.
+type SecondStep = fn(f32) -> StepMetrics;
+
+/// How a miss changes the candidate.
+type Nudge = fn(PlaneAxisGains) -> PlaneAxisGains;
+
 /// A pair that misses nudges the candidate for the next: a sag (a step that doesn't settle)
 /// raises I by half, a settled step that rises slowly raises P a grid step, an overshoot or
 /// a clip raises the time constant by 15%.
 #[test]
 fn a_missed_pair_nudges_the_candidate() {
     // (row, the second step, the candidate change)
-    let rows: [(
-        &str,
-        fn(f32) -> StepMetrics,
-        fn(PlaneAxisGains) -> PlaneAxisGains,
-    ); 4] = [
+    let rows: [(&str, SecondStep, Nudge); 4] = [
         (
             "sags",
             |tau_s| StepMetrics {
