@@ -521,9 +521,9 @@ fn sink_guard_catches_a_stalling_back_ramp() {
 }
 
 /// Seconds the hover settles after a forward transition ends early before the hold is judged:
-/// the timeout hands over at 7.4 m/s from its tilted ramp, measured 0.09 m off at most after
-/// 30 s.
-const REFUSED_SETTLE_S: f32 = 30.0;
+/// the roll error cuts the ramp short with the span gust still blowing, measured 0.11 m off
+/// after 30 s and 0.013 m after 35 s, against the calm-air band's 0.1 m.
+const REFUSED_SETTLE_S: f32 = 35.0;
 
 /// A forward transition that ends in a hover instead: asked to, timed out, or rolled past its
 /// limit. Each ends as the transition says, within PX4's altitude loss, and holds within the
@@ -537,9 +537,12 @@ fn ends_a_forward_transition_early() {
     let mut tilted = airframe;
     // Short of the 45° that completes it: only the timeout ends it.
     tilted.guidance.transition.forward_max_tilt_rad = 40f32.to_radians();
+    // A flying wing banks little in a gust along the span: 8 m/s as the ramp begins measures
+    // 8.1° of the hover view's roll (5 m/s: 3.9°), so the limit drops to 5° for it to trip.
+    let mut low_roll_limit = airframe;
+    low_roll_limit.guidance.transition.roll_limit_rad = 5f32.to_radians();
     let span_gust = Wind {
         steady_mps: Vec3::zeros(),
-        // 8 m/s along the span as the ramp begins: measured 47° of roll (5 m/s: 23°).
         gust: Some(Gust {
             start_s: FORWARD_AT_S,
             duration_s: 2.0,
@@ -563,7 +566,7 @@ fn ends_a_forward_transition_early() {
         ),
         (
             "rolled past the limit",
-            TailsitterPlant::in_wind(airframe, span_gust),
+            TailsitterPlant::in_wind(low_roll_limit, span_gust),
             f32::INFINITY,
             Some(ModeRefusal::RollError),
             None,

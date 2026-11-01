@@ -11,7 +11,7 @@ use stable_flight::stabilizers::copter::{CopterStabilizerConfig, DEFAULT_GYRO_CU
 use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
 use stable_flight::stabilizers::vtol::TailsitterStabilizerConfig;
 
-use super::plane::aerosonde_inertia;
+use super::plane::{aerosonde_inertia, plane};
 use super::tailsitter::{TailsitterAirframe, tailsitter};
 use super::{hover_thrust, motor_count};
 use crate::fixed_wing::{AeroCoefficients, FixedWingModel};
@@ -74,6 +74,7 @@ pub fn explora() -> TailsitterAirframe {
     const PITCH_SPEED_MPS: f32 = 0.114 * 1000.0 * 11.1 / 60.0;
     const TRIM_AIRSPEED_MPS: f32 = 14.0;
     let base = tailsitter();
+    let airplane = plane().model.aero;
     let mixer = base.mixer;
     let mixer_config = MixerConfig::default();
     let thrust_curve_exponent = base.stabilizer.hover.thrust_curve_exponent;
@@ -117,6 +118,11 @@ pub fn explora() -> TailsitterAirframe {
             // into a 5° tilt's drift hard enough to push its hover's angle steps 15% past
             // their target, where RealFlight's settle on it (#539).
             c_yaw_beta: 0.02,
+            // The airplane's side force and dihedral, where its plane side was fitted (#539):
+            // the Zagi's from `tailsitter()` lose 6.1 m in a 90°/s roll, past
+            // `tests/maneuver.rs`'s 4.8 m band.
+            c_side_beta: airplane.c_side_beta,
+            c_roll_beta: airplane.c_roll_beta,
             // The same fins' damping and the wing's profile drag: with the Aerosonde's, the
             // wash damped differential thrust's rate steps in a hover to two-thirds of
             // RealFlight's (#539).
