@@ -91,6 +91,65 @@ fn head_on_lift_and_drag() {
     check!(aero.force_n.y == 0.0);
 }
 
+/// Sideslip leaves lift, drag, and the pitch moment the share of the dynamic pressure in the
+/// plane of symmetry, `cos²β` of it: air along the span (β 90°, a tailsitter's hover in a span
+/// wind) lifts and drags nothing. The sideslip terms take the whole airspeed's pressure.
+#[test]
+fn lift_and_drag_take_the_air_in_the_plane_of_symmetry() {
+    let model = model();
+    let c = &model.aero;
+    let dynamic_n = pressure_area_n(&model, 15.0);
+    let head_on = wrench(
+        &model,
+        air(15.0, 0.0, 0.0),
+        Vec3::zeros(),
+        Vec3::zeros(),
+        Wash::default(),
+    );
+    // beta rad
+    let cases = [0.0, 0.1, 0.5, 1.2, FRAC_PI_2];
+    for beta_rad in cases {
+        let aero = wrench(
+            &model,
+            air(15.0, 0.0, beta_rad),
+            Vec3::zeros(),
+            Vec3::zeros(),
+            Wash::default(),
+        );
+        let symmetric_share = libm::cosf(beta_rad) * libm::cosf(beta_rad);
+        let at = |value: f32| format!("{value} at β {beta_rad} rad");
+        assert_relative_eq!(
+            aero.force_n.x,
+            symmetric_share * head_on.force_n.x,
+            epsilon = 1e-4,
+            max_relative = 1e-3
+        );
+        assert_relative_eq!(
+            aero.force_n.z,
+            symmetric_share * head_on.force_n.z,
+            epsilon = 1e-4,
+            max_relative = 1e-3
+        );
+        assert_relative_eq!(
+            aero.torque_nm.y,
+            symmetric_share * head_on.torque_nm.y,
+            epsilon = 1e-4,
+            max_relative = 1e-3
+        );
+        check!(
+            (aero.force_n.y - dynamic_n * c.c_side_beta * beta_rad).abs() < 1e-3 * dynamic_n,
+            "{}",
+            at(aero.force_n.y)
+        );
+        check!(
+            (aero.torque_nm.z - dynamic_n * model.span_m * c.c_yaw_beta * beta_rad).abs()
+                < 1e-3 * dynamic_n,
+            "{}",
+            at(aero.torque_nm.z)
+        );
+    }
+}
+
 /// Each surface, flow angle, and rate pushes its moment the frame contract's way, through the
 /// coefficients' signs: the change from head-on air with nothing deflected or turning.
 #[test]

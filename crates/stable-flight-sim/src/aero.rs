@@ -45,7 +45,11 @@ pub(crate) struct Wash {
 /// the air, FRD body axes) while turning at `rates_radps`, with its aileron, elevator, and
 /// rudder axes deflected by `deflection_rad` (`x`, `y`, `z`), in `wash`.
 ///
-/// α is `atan2(w, u)` and β is `asin(v / V)`. Rate terms are written per unit of airspeed
+/// α is `atan2(w, u)` and β is `asin(v / V)`. Lift, drag, and the pitch moment take their
+/// dynamic pressure from the air in the wing's plane of symmetry (`u`, `w`) alone: air along
+/// the span (`v`) lifts and drags nothing, as Gazebo's `LiftDragPlugin` drops the spanwise
+/// velocity. So a tailsitter hovering in a wind along its span feels only the sideslip terms,
+/// which take the whole airspeed's pressure. Rate terms are written per unit of airspeed
 /// rather than divided by it, so they vanish smoothly as the airspeed goes to zero. The wash
 /// adds its damping on top ([`Wash::damping_mps`]), so at zero airspeed the surfaces in the wash
 /// act and the wash damps the turn rates.
@@ -79,6 +83,9 @@ pub(crate) fn wrench(
         };
     }
 
+    // The air in the plane of symmetry (body x–z), which lift and drag act in.
+    let symmetric_speed_mps = libm::sqrtf(air_mps.x * air_mps.x + air_mps.z * air_mps.z);
+    let symmetric_area_n = self::pressure_area_n(model, symmetric_speed_mps);
     let alpha_rad = libm::atan2f(air_mps.z, air_mps.x);
     let beta_rad = libm::asinf((air_mps.y / speed_mps).clamp(-1.0, 1.0));
     // The rate terms' per-unit-airspeed scale: the free stream's and the wash's.
@@ -86,12 +93,12 @@ pub(crate) fn wrench(
 
     let (sin_alpha, cos_alpha) = (libm::sinf(alpha_rad), libm::cosf(alpha_rad));
     let blend = stall_blend(c, alpha_rad);
-    let lift_n = pressure_area_n * lift_coefficient(c, alpha_rad, blend, sin_alpha, cos_alpha);
+    let lift_n = symmetric_area_n * lift_coefficient(c, alpha_rad, blend, sin_alpha, cos_alpha);
     let drag_n =
-        pressure_area_n * (1.0 - blend) * drag_coefficient(model, linear_lift(c, alpha_rad))
-            + pressure_area_n * blend * flat_plate_drag(c, sin_alpha);
+        symmetric_area_n * (1.0 - blend) * drag_coefficient(model, linear_lift(c, alpha_rad))
+            + symmetric_area_n * blend * flat_plate_drag(c, sin_alpha);
     let side_n = pressure_area_n * c.c_side_beta * beta_rad;
-    // Lift is normal to the airflow, toward body −z; drag along it.
+    // Lift is normal to the air in the plane of symmetry, toward body −z; drag along it.
     let force_n = Vec3::new(
         lift_n * sin_alpha - drag_n * cos_alpha,
         side_n,
@@ -102,7 +109,7 @@ pub(crate) fn wrench(
     // Static stability on sin α: the slope at small α, strongest broadside (α ±90°, where a
     // flat plate's center of pressure near mid-chord gives a moment of the same size), and
     // gone with the flow reversed.
-    let pitch_nm = pressure_area_n * chord * (c.c_pitch_0 + c.c_pitch_alpha * sin_alpha);
+    let pitch_nm = symmetric_area_n * chord * (c.c_pitch_0 + c.c_pitch_alpha * sin_alpha);
     let yaw_nm = pressure_area_n * span * c.c_yaw_beta * beta_rad;
     let static_nm = Vec3::new(roll_nm, pitch_nm, yaw_nm);
 
