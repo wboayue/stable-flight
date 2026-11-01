@@ -1150,6 +1150,27 @@ pub enum AutotuneAbort {
     HostFault,
 }
 
+impl AutotuneAbort {
+    /// Whether the vehicle left the envelope: tilt, rate, sink, or airspeed. A host flying a
+    /// VTOL recovers on its rotors after one
+    /// ([`PlaneTuneHold::recover`](crate::commanders::PlaneTuneHold::recover)).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::tuning::autotune::AutotuneAbort;
+    ///
+    /// assert!(AutotuneAbort::AirspeedLow.is_breach());
+    /// assert!(!AutotuneAbort::NotSettled.is_breach());
+    /// ```
+    pub fn is_breach(&self) -> bool {
+        matches!(
+            self,
+            Self::Tilt | Self::Rate | Self::AltitudeLoss | Self::AirspeedLow | Self::AirspeedHigh
+        )
+    }
+}
+
 /// What an [`Autotune::update`] did, for the caller to log.
 // `StageDone` carries two step summaries (about 450 bytes); boxing them would allocate, which
 // core doesn't, and the caller handles one event per tick.
@@ -1488,6 +1509,8 @@ pub struct Supervisor<K: Side> {
     host_slow: bool,
     /// The vehicle's state is stale ([`set_state_stale`](Self::set_state_stale)).
     state_stale: bool,
+    /// The commander is maneuvering ([`set_maneuvering`](Self::set_maneuvering)).
+    maneuvering: bool,
     /// How long, in s, the state has been stale.
     stale_s: f32,
     /// Time left, in s, for the vehicle to come back inside the envelope after a candidate
@@ -1567,6 +1590,7 @@ impl<K: Side> Supervisor<K> {
             stalled: false,
             host_slow: false,
             state_stale: false,
+            maneuvering: false,
             stale_s: 0.0,
             recovering_s: 0.0,
             frozen_s: 0.0,
@@ -1692,7 +1716,7 @@ impl<K: Side> Supervisor<K> {
                 request,
                 waited_s,
                 ..
-            } if (self.host_slow && !request.is_fit()) || self.state_stale => {
+            } if (self.host_slow && !request.is_fit()) || self.state_stale || self.maneuvering => {
                 self.phase = Phase::Settling {
                     stage,
                     request,
@@ -1779,6 +1803,15 @@ impl<K: Side> Supervisor<K> {
     /// type's **Stalls**). Takes effect on the next [`update`](Self::update).
     pub fn set_host_slow(&mut self, slow: bool) {
         self.host_slow = slow;
+    }
+
+    /// Tells the supervisor whether the commander is maneuvering between probes (e.g. a
+    /// [`PlaneTuneHold`](crate::commanders::PlaneTuneHold) turning back): meanwhile no probe
+    /// starts, and settling gains no level time and doesn't time out. A running probe isn't
+    /// affected: the commander maneuvers only between probes. Takes effect on the next
+    /// [`update`](Self::update).
+    pub fn set_maneuvering(&mut self, maneuvering: bool) {
+        self.maneuvering = maneuvering;
     }
 
     /// Tells the supervisor whether the vehicle's state is stale: the host holds the last
