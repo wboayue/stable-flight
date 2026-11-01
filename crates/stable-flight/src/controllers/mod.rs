@@ -6,6 +6,7 @@ use crate::Vec3;
 
 pub mod altitude;
 pub mod attitude;
+mod biquad;
 pub mod body_rate;
 mod derivative;
 pub mod gyro;
