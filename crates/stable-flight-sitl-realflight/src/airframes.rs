@@ -320,28 +320,35 @@ pub fn explora_vtol()
                 ..Default::default()
             },
             plane: PlaneStabilizerConfig {
+                // The plane design's (`StagePlan::plane_design`), each gain the median of
+                // three RealFlight runs at 14 m/s and cruise thrust (#535).
                 rate: PlaneRateControllerConfig {
-                    // Its light wing (0.63 kg) behind ±45° elevons turns a unit moment into
-                    // several times the rate PX4's feedforward of 0.5 expects: 30°/s doublets
-                    // peaked at 3.2× in roll and 3.4× in pitch. Feedforward is tuned on the
-                    // sim eXplora (stable-flight-sim `airframes::explora`) for doublets at
-                    // their command; higher: overshoot (#342).
+                    // Roll is all damping (23/s, no stiffness) on a strong elevon (183 rad/s²
+                    // per unit moment), so feedforward carries a roll rate and P only trims
+                    // it: 1 rad/s steps rise in 55 ms, 6% over. Higher P or FF: more overshoot.
                     roll: RateGains {
-                        ff: 0.1,
-                        ..rate_defaults.roll
+                        p: 0.0229,
+                        i: 0.08,
+                        ff: 0.1279,
                     },
-                    // Pitch I 0.8 holds a loop's rate as it speeds up coming down (0.3: a 25 m
-                    // loop ended 22 m low in the sim); higher overshoots the second half of a
-                    // doublet (#342).
+                    // Pitch is stiff (69–93/s² of weathercock) and barely damped (0–1.3/s), so
+                    // P does the work and FF almost none: steps rise in 70–85 ms, 4% over.
+                    // I 0.63 (one run 1.26) holds the rate against that stiffness. Higher P:
+                    // less damped.
                     pitch: RateGains {
-                        i: 0.8,
-                        ff: 0.05,
-                        ..rate_defaults.pitch
+                        p: 0.29,
+                        i: 0.63,
+                        ff: 0.006,
                     },
-                    // The nose-up moment of level flight at 14 m/s (#342, run 0).
+                    // The nose-up moment of level flight at 14 m/s (#342, run 0); the plane
+                    // design's fits read 0.089 (#535).
                     trim: Vec3::new(0.0, 0.09, 0.0),
                     ..rate_defaults
                 },
+                // How fast the attitude loops close an angle error, in s: 5° steps rise in
+                // 440 ms in roll, 420 ms in pitch, without overshoot (#535). Lower: faster,
+                // until the rate loop can't follow.
+                time_constant_s: Vec2::new(0.226, 0.226),
                 // The hover side's thrust curve, so a handoff keeps the motor commands
                 // continuous.
                 thrust_curve_exponent: 2.0,

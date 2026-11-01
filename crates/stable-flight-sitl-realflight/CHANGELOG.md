@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (behavior):** `airframes::explora_vtol()`'s plane side flies RealFlight's plane
+  autotune of it (#535): rate roll P 0.0229, I 0.08, FF 0.1279; pitch P 0.29, I 0.63, FF
+  0.006; time constants 0.226 s in place of 0.4. Rate steps rise in 59–90 ms in place of
+  101–284 ms, and pitch rate overshoots 4% in place of 21%; 60°/s doublets peak at 1.03× (roll)
+  and 0.99× (pitch) in place of 0.91× and 1.19×.
 - **Breaking (behavior):** `airframes::quadcopter_x()`'s rate I terms take core's new limits,
   0.5 of moment (#374): roll and pitch held 0.2 under the old limit, yaw 1.73. The eXplora
   and Titan Cobra keep what theirs held, in the new unit.
