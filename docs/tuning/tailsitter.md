@@ -291,7 +291,7 @@ the belly and along the span, inverted per axis through f = −(k|V| + μ)v to t
 (|V| the airspeed with the climb counted in),
 then filtered (core `estimation::wind`). It reports the estimate in telemetry (`wind_*`
 recorder columns), and `GUID_WND_HDG_SPD` turns the heading from it (above). It runs only in copter flight, more than 1 m above
-the takeoff height, tilted less than 45°, and climbing or sinking slower than 1 m/s. Every coefficient 0 switches it off.
+the takeoff height (`GUID_WND_AIR_HT`), tilted less than 45°, and climbing or sinking slower than 1 m/s. Every coefficient 0 switches it off.
 
 The same drag model is fed forward on hover legs: the guidance adds the push a leg's speed
 takes through the estimated wind, so the lateral I term doesn't learn a leg's drag and carry

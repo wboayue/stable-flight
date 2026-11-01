@@ -25,6 +25,14 @@ fn deg(rad: Option<f32>) -> Option<f32> {
     rad.map(|r| wrap_angle(r).to_degrees())
 }
 
+/// Both headings, in degrees, within 0.001° of each other, or both `None`.
+fn near(target: Option<f32>, expected: Option<f32>) -> bool {
+    match (target, expected) {
+        (Some(t), Some(e)) => (t - e).abs() < 1e-3,
+        _ => target == expected,
+    }
+}
+
 /// (case, min speed m/s, wind, vehicle heading deg, expected heading deg)
 type Row = (&'static str, f32, Option<WindEstimate>, f32, Option<f32>);
 
@@ -94,11 +102,7 @@ fn picks_the_wingtip_heading_nearer_the_vehicle() {
         let mut heading = WindHeading::default();
         let target =
             deg(heading.target_rad(&on(min_speed_mps), wind.as_ref(), heading_deg.to_radians()));
-        let close = match (target, expected) {
-            (Some(t), Some(e)) => (t - e).abs() < 1e-3,
-            _ => target == expected,
-        };
-        check!(close, "{case}: {target:?} vs {expected:?}");
+        check!(near(target, expected), "{case}: {target:?} vs {expected:?}");
     }
 }
 
@@ -196,10 +200,6 @@ fn follows_the_configured_angle_uncertainty_and_deadband() {
         } else {
             deg(heading.target_rad(&config, Some(&wind(toward_deg, 2.0, sd_mps)), 0.3))
         };
-        let close = match (target, expected) {
-            (Some(t), Some(e)) => (t - e).abs() < 1e-3,
-            _ => target == expected,
-        };
-        check!(close, "{case}: {target:?} vs {expected:?}");
+        check!(near(target, expected), "{case}: {target:?} vs {expected:?}");
     }
 }

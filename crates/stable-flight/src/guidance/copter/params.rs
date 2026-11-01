@@ -27,6 +27,7 @@ impl ParamTable for CopterGuidanceConfig {
         param!(deg "GUID_HDG_RATE", heading_rate_radps),
         param!("GUID_YAW_MIN_LEG", waypoint_yaw_min_leg_m),
         param!(deg "GUID_YAW_YLD_ERR", heading_yield_rad),
+        param!(deg "GUID_YAW_YLD_RT", heading_yield_rate_radps),
         param!("GUID_YAW_YLD_S", heading_yield_s),
         param!("GUID_WND_HDG_SPD", wind_heading_min_mps),
         param!("GUID_THR_MIN", thrust.min_thrust),
@@ -165,6 +166,13 @@ mod metadata {
                     "Heading error past which a heading not turning is stuck",
                 )
                 .with_units("deg")
+                .at_least(0.0),
+            NAVIGATION
+                .param(
+                    "GUID_YAW_YLD_RT",
+                    "Yaw rate toward the target under which a heading off it is stuck",
+                )
+                .with_units("deg/s")
                 .at_least(0.0),
             NAVIGATION
                 .param(

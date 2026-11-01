@@ -67,6 +67,7 @@
 //! | `GUID_HDG_RATE` | `heading_rate_radps` |
 //! | `GUID_YAW_MIN_LEG` | `waypoint_yaw_min_leg_m` |
 //! | `GUID_YAW_YLD_ERR` | `heading_yield_rad` |
+//! | `GUID_YAW_YLD_RT` | `heading_yield_rate_radps` |
 //! | `GUID_YAW_YLD_S` | `heading_yield_s` |
 //! | `GUID_WND_HDG_SPD` | `wind_heading_min_mps` |
 //! | `GUID_THR_MIN` | `thrust.min_thrust` |

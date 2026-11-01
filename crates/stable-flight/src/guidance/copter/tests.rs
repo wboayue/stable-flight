@@ -453,7 +453,7 @@ fn waypoint_turn_depends_on_time_not_tick_count() {
 }
 
 /// A heading that stays over `heading_yield_rad` off the target, the vehicle yawing toward it
-/// under 0.1 rad/s, for `heading_yield_s` is yielded: the target returns to the vehicle's
+/// under `heading_yield_rate_radps`, for `heading_yield_s` is yielded: the target returns to the vehicle's
 /// heading. A leg east from a vehicle held north: the target passes 30° at 0.5 s.
 #[test]
 fn a_stuck_heading_is_yielded() {
@@ -466,6 +466,16 @@ fn a_stuck_heading_is_yielded() {
         ("yawing away", yielding, -0.5, 2.0, 0.0),
         ("yawing toward it too slowly", yielding, 0.09, 2.0, 0.0),
         ("yawing toward it", yielding, 0.11, 2.0, turned(2.0)),
+        (
+            "yawing toward it under a raised stuck rate",
+            CopterGuidanceConfig {
+                heading_yield_rate_radps: 0.2,
+                ..yielding
+            },
+            0.11,
+            2.0,
+            0.0,
+        ),
         ("not stuck for long enough", yielding, 0.0, 1.4, turned(1.4)),
         ("never yielding", never_yielding(), 0.0, 2.0, turned(2.0)),
     ];
@@ -2557,13 +2567,13 @@ fn rejects_descent_and_heading_rates_out_of_range() {
     }
 }
 
-/// Each field taken from the old module constants rejects a value out of its range, naming
-/// itself; its boundary values pass.
+/// The stick, idle, leash, heading-yield, and wind limits each reject a value out of range,
+/// naming the field, and accept their boundary values.
 #[test]
-fn rejects_moved_limits_out_of_range() {
+fn rejects_stick_leash_and_wind_limits_out_of_range() {
     type Set = fn(&mut CopterGuidanceConfig, f32);
     // (field, setter, rejected values, accepted boundary values)
-    let rows: [(&str, Set, &[f32], &[f32]); 8] = [
+    let rows: [(&str, Set, &[f32], &[f32]); 9] = [
         (
             "stick_yaw_rate_radps",
             |c, v| c.stick_yaw_rate_radps = v,
@@ -2575,6 +2585,12 @@ fn rejects_moved_limits_out_of_range() {
             |c, v| c.idle_throttle = v,
             &[-0.01, 1.0, f32::NAN],
             &[0.0, 0.99],
+        ),
+        (
+            "heading_yield_rate_radps",
+            |c, v| c.heading_yield_rate_radps = v,
+            &[-0.01, f32::NAN, f32::INFINITY],
+            &[0.0],
         ),
         (
             "altitude_leash_m",
