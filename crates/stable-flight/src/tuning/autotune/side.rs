@@ -29,37 +29,50 @@ pub trait Side: sealed::Sealed + Copy + fmt::Debug + PartialEq {
     type Method: Copy + fmt::Debug + PartialEq;
     /// The limits that end a stage, and the settle before each probe.
     type Envelope: Copy + fmt::Debug + PartialEq;
+    /// A stage's method as a pure state machine (core's own).
     #[doc(hidden)]
     type Procedure: Copy + fmt::Debug + PartialEq;
 
+    /// `target`'s gains in `config`.
     #[doc(hidden)]
     fn gains(target: Self::Target, config: &Self::Config) -> Self::Gains;
+    /// Sets `target`'s gains in `config`.
     #[doc(hidden)]
     fn set_gains(target: Self::Target, config: &mut Self::Config, gains: Self::Gains);
+    /// The loop `probe` runs on for a stage on `target`.
     #[doc(hidden)]
     fn probed_loop(target: Self::Target, probe: &ProbeConfig) -> Self::Target;
 
+    /// Checks `method`, its error in the plan section it reports.
     #[doc(hidden)]
     fn validate_method(method: &Self::Method) -> Result<(), InvalidConfig>;
+    /// The settle `method` asks for before each probe; `None` uses the envelope's.
     #[doc(hidden)]
     fn method_settle(method: &Self::Method) -> Option<Settle>;
+    /// A fresh procedure for `method`, at a stage's start.
     #[doc(hidden)]
     fn procedure(method: Self::Method) -> Self::Procedure;
+    /// What `procedure` does next on `on`, for the stage `stage` describes.
     #[doc(hidden)]
     fn decide(
         procedure: &mut Self::Procedure,
         on: Decide,
         stage: StageView<'_, Self>,
     ) -> Action<Self::Gains>;
+    /// A search's verdict on the last decision, if any; taking it clears it.
     #[doc(hidden)]
     fn take_verdict(procedure: &mut Self::Procedure) -> Option<Verdict<Self::Gains>>;
 
+    /// Checks `envelope`.
     #[doc(hidden)]
     fn validate_envelope(envelope: &Self::Envelope) -> Result<(), InvalidConfig>;
+    /// Checks that `settle` is tighter than `envelope`'s limits.
     #[doc(hidden)]
     fn check_settle(envelope: &Self::Envelope, settle: &Settle) -> Result<(), InvalidConfig>;
+    /// The settle and times `envelope` gives every side's phases.
     #[doc(hidden)]
-    fn timing(envelope: &Self::Envelope) -> Timing;
+    fn waits(envelope: &Self::Envelope) -> Waits;
+    /// The limit `motion` breaks, if any, `start_altitude_m` the run's start.
     #[doc(hidden)]
     fn breach(
         envelope: &Self::Envelope,
@@ -67,6 +80,7 @@ pub trait Side: sealed::Sealed + Copy + fmt::Debug + PartialEq {
         start_altitude_m: f32,
     ) -> Option<AutotuneAbort>;
 
+    /// The body rates the settle reads, `dt` on: through the stabilizer's gyro filters, or raw.
     #[doc(hidden)]
     fn filter_rates(
         filters: &mut RateFilters,
@@ -74,10 +88,13 @@ pub trait Side: sealed::Sealed + Copy + fmt::Debug + PartialEq {
         rates_radps: Vec3,
         dt: f32,
     ) -> Vec3;
+    /// The roll and pitch `setpoint` holds on this side, in rad.
     #[doc(hidden)]
     fn attitude_target(setpoint: &Setpoint) -> Vec2;
+    /// Whether `motion` holds `settle` for a probe on `target` to start.
     #[doc(hidden)]
     fn settles(settle: &Settle, motion: &Motion, target: Self::Target) -> bool;
+    /// Whether `motion` holds `settle` about `target`'s axis on candidate gains.
     #[doc(hidden)]
     fn holds(settle: &Settle, motion: &Motion, target: Self::Target) -> bool;
 }
@@ -105,10 +122,10 @@ impl<K: Side, S> SideTunable<K> for S where
 {
 }
 
-/// The envelope's settle and times, which the supervisor keeps on every side: see
-/// [`Envelope`] for each.
+/// What every side's envelope gives the phases: the settle before a probe and how long the
+/// phases wait. See [`Envelope`] for each.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Timing {
+pub struct Waits {
     pub(super) settle: Settle,
     pub(super) settle_timeout_s: f32,
     pub(super) recovery_s: f32,
@@ -229,8 +246,8 @@ impl Side for CopterSide {
         envelope.check_settle(settle)
     }
 
-    fn timing(envelope: &Envelope) -> Timing {
-        Timing {
+    fn waits(envelope: &Envelope) -> Waits {
+        Waits {
             settle: envelope.settle,
             settle_timeout_s: envelope.settle_timeout_s,
             recovery_s: envelope.recovery_s,

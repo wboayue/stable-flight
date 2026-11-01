@@ -1,30 +1,12 @@
 use assert2::{assert, check};
 
 use super::*;
-use crate::controllers::PlaneRateControllerConfig;
-use crate::tuning::plant::{CONTROL_RADPS2, DAMPING_PER_S, Wing};
+use crate::tuning::plant::{Wing, wing_config};
 use crate::tuning::{Measurement, StepConfig};
 use crate::{BodyRateSetpoint, PlaneSetpoint, Setpoint, Stabilizer, Vec3, VehicleState};
 
 /// The flight loop's tick: 250 Hz.
 const DT: f32 = 0.004;
-
-/// Gains that fly the [`Wing`]: feedforward matching its damping, a little P and I.
-fn config() -> PlaneStabilizerConfig {
-    let rate = RateGains {
-        p: 0.1,
-        i: 0.1,
-        ff: DAMPING_PER_S / CONTROL_RADPS2,
-    };
-    PlaneStabilizerConfig {
-        rate: PlaneRateControllerConfig {
-            roll: rate,
-            pitch: rate,
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-}
 
 fn level() -> Setpoint {
     Setpoint::Plane(PlaneSetpoint {
@@ -69,7 +51,7 @@ fn a_step_replaces_its_loops_setpoint() {
         PlaneLoop::Roll,
         PlaneLoop::Pitch,
     ] {
-        let mut stabilizer = PlaneStabilizer::new(config());
+        let mut stabilizer = PlaneStabilizer::new(wing_config());
         let mut wing = Wing::default();
         stabilizer.start_probe(target, step_for(target));
         let moments = tick(&mut stabilizer, &mut wing, &level());
@@ -87,7 +69,7 @@ fn each_step_measures_its_loops_response() {
         PlaneLoop::Roll,
         PlaneLoop::Pitch,
     ] {
-        let mut stabilizer = PlaneStabilizer::new(config());
+        let mut stabilizer = PlaneStabilizer::new(wing_config());
         let mut wing = Wing::default();
         stabilizer.start_probe(target, step_for(target));
         for _ in 0..(2.5 / DT) as usize {
@@ -110,7 +92,7 @@ fn each_step_measures_its_loops_response() {
 
 #[test]
 fn a_finished_step_hands_its_loop_back() {
-    let mut stabilizer = PlaneStabilizer::new(config());
+    let mut stabilizer = PlaneStabilizer::new(wing_config());
     let mut wing = Wing::default();
     stabilizer.start_probe(PlaneLoop::Roll, step_for(PlaneLoop::Roll));
     for _ in 0..(2.5 / DT) as usize {
@@ -130,7 +112,7 @@ fn a_finished_step_hands_its_loop_back() {
 #[test]
 fn a_step_counts_the_ticks_its_loop_clipped() {
     // A 6 rad/s step: feedforward alone asks for more than full deflection.
-    let mut stabilizer = PlaneStabilizer::new(config());
+    let mut stabilizer = PlaneStabilizer::new(wing_config());
     let mut wing = Wing::default();
     let step = StepConfig {
         amplitude: 6.0,
@@ -156,7 +138,7 @@ fn rate_setpoints_interrupt_angle_stages_only() {
         (PlaneLoop::RollRate, false),
         (PlaneLoop::PitchRate, false),
     ] {
-        let mut stabilizer = PlaneStabilizer::new(config());
+        let mut stabilizer = PlaneStabilizer::new(wing_config());
         let mut wing = Wing::default();
         stabilizer.start_probe(target, step_for(target));
         tick(&mut stabilizer, &mut wing, &rates());
@@ -177,7 +159,7 @@ fn leaving_the_plane_side_interrupts_any_stage() {
     });
     let hover = Setpoint::Attitude(Default::default());
     for (case, setpoint) in [("transition", transition), ("hover", hover)] {
-        let mut stabilizer = PlaneStabilizer::new(config());
+        let mut stabilizer = PlaneStabilizer::new(wing_config());
         let mut wing = Wing::default();
         stabilizer.start_probe(PlaneLoop::RollRate, step_for(PlaneLoop::RollRate));
         tick(&mut stabilizer, &mut wing, &setpoint);
@@ -193,7 +175,7 @@ fn leaving_the_plane_side_interrupts_any_stage() {
 
 #[test]
 fn starting_a_stage_ends_the_running_one() {
-    let mut stabilizer = PlaneStabilizer::new(config());
+    let mut stabilizer = PlaneStabilizer::new(wing_config());
     let mut wing = Wing::default();
     stabilizer.start_probe(PlaneLoop::Roll, step_for(PlaneLoop::Roll));
     tick(&mut stabilizer, &mut wing, &level());
@@ -206,7 +188,7 @@ fn starting_a_stage_ends_the_running_one() {
 
 #[test]
 fn stop_reports_the_last_status_and_ends_the_stage() {
-    let mut stabilizer = PlaneStabilizer::new(config());
+    let mut stabilizer = PlaneStabilizer::new(wing_config());
     let mut wing = Wing::default();
     stabilizer.start_probe(PlaneLoop::Pitch, step_for(PlaneLoop::Pitch));
     tick(&mut stabilizer, &mut wing, &level());
@@ -221,7 +203,7 @@ fn stop_reports_the_last_status_and_ends_the_stage() {
 
 #[test]
 fn prime_ends_the_stage() {
-    let mut stabilizer = PlaneStabilizer::new(config());
+    let mut stabilizer = PlaneStabilizer::new(wing_config());
     stabilizer.start_probe(PlaneLoop::Roll, step_for(PlaneLoop::Roll));
     stabilizer.prime(&VehicleState::default());
     check!(status(&stabilizer).is_none());
@@ -229,7 +211,7 @@ fn prime_ends_the_stage() {
 
 #[test]
 fn gains_read_and_set_the_loops_axis() {
-    let mut config = config();
+    let mut config = wing_config();
     let gains = PlaneAxisGains {
         rate: RateGains {
             p: 0.3,

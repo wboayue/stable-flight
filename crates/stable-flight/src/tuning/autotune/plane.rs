@@ -2,7 +2,7 @@
 //! a [`PlaneMethod`] within a [`PlaneEnvelope`], as a [`PlaneAutotune`].
 
 use super::procedure::{Action, PlaneProcedure, Verdict};
-use super::side::{Decide, Motion, RateFilters, Side, SideConfig, StageView, Timing, zero_if_nan};
+use super::side::{Decide, Motion, RateFilters, Side, SideConfig, StageView, Waits, zero_if_nan};
 use super::{AutotuneAbort, Settle, StagePlan, StepTestPlan, Supervisor};
 use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
 use crate::math::DEG;
@@ -42,8 +42,8 @@ pub const PLANE_RATE_STEP: StepConfig = StepConfig {
     filter_hz: 0.0,
 };
 
-/// A plane roll step: 30°, a turn's bank, held 4 s: the sim's plane spec flies the same
-/// (PX4's `FW_R_TC` sets its rise).
+/// A plane roll step: 30°, a turn's bank, held 4 s: long enough to settle at the 0.4–0.6 s
+/// time constants the sim's planes fly.
 pub const PLANE_ROLL_STEP: StepConfig = StepConfig {
     amplitude: 30.0 * DEG,
     duration_s: 4.0,
@@ -59,7 +59,9 @@ pub const PLANE_PITCH_STEP: StepConfig = StepConfig {
 
 /// Level before each plane step: within 3° of the held attitude and 0.1 rad/s on each axis
 /// for 1 s. A wing in an attitude hold rides its phugoid, so the band is wider than a
-/// copter's (2.5°, [`COPTER_STEP_SETTLE`](super::COPTER_STEP_SETTLE)).
+/// copter's (2.5°, [`COPTER_STEP_SETTLE`](super::COPTER_STEP_SETTLE)). On the sim's four
+/// planes a step settled in 1.5–4.5 s, up to 11 s on the Alia 250 with its turns back
+/// (#534), inside [`PlaneEnvelope::for_plane`]'s 20 s.
 pub const PLANE_STEP_SETTLE: Settle = Settle {
     tilt_rad: 3.0 * DEG,
     rate_radps: 0.1,
@@ -348,8 +350,8 @@ impl Side for PlaneSide {
         envelope.check_settle(settle)
     }
 
-    fn timing(envelope: &PlaneEnvelope) -> Timing {
-        Timing {
+    fn waits(envelope: &PlaneEnvelope) -> Waits {
+        Waits {
             settle: envelope.settle,
             settle_timeout_s: envelope.settle_timeout_s,
             recovery_s: envelope.recovery_s,

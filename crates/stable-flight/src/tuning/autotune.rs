@@ -1456,6 +1456,10 @@ impl<K: Side> Request<K> {
 /// - **Disarm** before completion reverts every stage to the run's start.
 /// - **Complete:** the gains stay; read them from the stabilizer's config.
 ///
+/// The rules above name the copter's types; a plane run ([`PlaneAutotune`]) follows them on
+/// its own: a [`PlaneEnvelope`] in place of the [`Envelope`], a [`PlaneMethod`] in place of
+/// the [`Method`].
+///
 /// The procedures are pure (they see measurements and gains, never the loop), so the
 /// supervisor alone flies, guards, and commits. [`update`](Self::update) returns an
 /// [`AutotuneEvent`] when something happens, for the caller to log; the supervisor has no
@@ -1657,7 +1661,7 @@ impl<K: Side> Supervisor<K> {
         if self.state_stale {
             self.stale_s += dt;
             self.note_stall();
-            if self.stale_s > K::timing(&self.envelope).max_stale_s
+            if self.stale_s > K::waits(&self.envelope).max_stale_s
                 && let Some(stage) = self.phase.active_stage()
             {
                 return Some(self.fail(flight_loop, stage, AutotuneAbort::HostFault));
@@ -1833,7 +1837,7 @@ impl<K: Side> Supervisor<K> {
             self.stalled = true;
         }
         if self.is_running() {
-            self.frozen_s = K::timing(&self.envelope).recovery_s;
+            self.frozen_s = K::waits(&self.envelope).recovery_s;
         }
     }
 
@@ -1996,7 +2000,7 @@ impl<K: Side> Supervisor<K> {
         let settle = self.settle_for(stage);
         let holds = K::settles(&settle, motion, self.target(stage));
         let level_s = if holds { level_s } else { 0.0 };
-        let timed_out = waited_s >= K::timing(&self.envelope).settle_timeout_s;
+        let timed_out = waited_s >= K::waits(&self.envelope).settle_timeout_s;
         if level_s >= settle.hold_s || (request.starts_anyway() && timed_out) {
             if let Some(gains) = request.gains
                 && self.set_gains(flight_loop, stage, gains).is_none()
@@ -2087,7 +2091,7 @@ impl<K: Side> Supervisor<K> {
         flight_loop.stop_probe::<K::Target>();
         if candidate && let Some(committed) = self.committed {
             restore(flight_loop, committed);
-            self.recovering_s = K::timing(&self.envelope).recovery_s;
+            self.recovering_s = K::waits(&self.envelope).recovery_s;
         }
         self.phase = Phase::Deciding { stage, on };
     }
@@ -2117,7 +2121,7 @@ impl<K: Side> Supervisor<K> {
             };
             return None;
         }
-        if waited_s >= K::timing(&self.envelope).settle_timeout_s {
+        if waited_s >= K::waits(&self.envelope).settle_timeout_s {
             self.end_hold(flight_loop, stage, Decide::Held { settled: false });
             return Some(AutotuneEvent::Unsettled { target, gains });
         }
@@ -2140,7 +2144,7 @@ impl<K: Side> Supervisor<K> {
     ) {
         if let Some(committed) = self.committed {
             restore(flight_loop, committed);
-            self.recovering_s = K::timing(&self.envelope).recovery_s;
+            self.recovering_s = K::waits(&self.envelope).recovery_s;
         }
         self.phase = Phase::Deciding { stage, on };
     }
@@ -2149,7 +2153,7 @@ impl<K: Side> Supervisor<K> {
     fn settle_for(&self, stage: usize) -> Settle {
         self.stage(stage)
             .and_then(|plan| K::method_settle(&plan.method))
-            .unwrap_or(K::timing(&self.envelope).settle)
+            .unwrap_or(K::waits(&self.envelope).settle)
     }
 
     fn stage(&self, stage: usize) -> Option<StagePlan<K>> {

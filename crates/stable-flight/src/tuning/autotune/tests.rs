@@ -10,13 +10,13 @@ use super::*;
 use crate::Configurable;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
-use crate::tuning::plant::{Axes, PlantParams};
+use crate::tuning::plant::{Axes, MomentMixer, PlantParams};
 use crate::tuning::{StepAbort, StepMetrics};
 use crate::view::{View, tailsitter_rotation};
 use crate::{
     AbsoluteAttitudeCommand, Actuator, ActuatorCommand, AttitudeSetpoint, BlendSetpoint, Command,
-    Commander, ControlInput, ControlOutput, Guidance, Mixer, RateCommand, RateSetpoint, Setpoint,
-    Stabilizer, StateSource, Vec2, Vec3, VehicleState,
+    Commander, ControlInput, Guidance, RateCommand, RateSetpoint, Setpoint, Stabilizer,
+    StateSource, Vec2, Vec3, VehicleState,
 };
 use nalgebra::UnitQuaternion;
 
@@ -98,18 +98,6 @@ impl Actuator for SimVehicle {
             };
             axes.step(self.0.frame.get().inverse_transform_vector(&moments));
         }
-    }
-}
-
-/// Passes the stabilizer's moments straight to the sim, in `servos[0..3]`.
-struct MomentMixer;
-
-impl Mixer for MomentMixer {
-    fn mix(&mut self, controls: &ControlOutput) -> ActuatorCommand {
-        let mut command = ActuatorCommand::default();
-        command.servos[..3].copy_from_slice(controls.moments.as_slice());
-        command.motors[0] = controls.thrust;
-        command
     }
 }
 
