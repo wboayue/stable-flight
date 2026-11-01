@@ -117,7 +117,6 @@ fn lift_and_drag_take_the_air_in_the_plane_of_symmetry() {
             Wash::default(),
         );
         let symmetric_share = libm::cosf(beta_rad) * libm::cosf(beta_rad);
-        let at = |value: f32| format!("{value} at β {beta_rad} rad");
         assert_relative_eq!(
             aero.force_n.x,
             symmetric_share * head_on.force_n.x,
@@ -138,14 +137,12 @@ fn lift_and_drag_take_the_air_in_the_plane_of_symmetry() {
         );
         check!(
             (aero.force_n.y - dynamic_n * c.c_side_beta * beta_rad).abs() < 1e-3 * dynamic_n,
-            "{}",
-            at(aero.force_n.y)
+            "at β {beta_rad} rad"
         );
         check!(
             (aero.torque_nm.z - dynamic_n * model.span_m * c.c_yaw_beta * beta_rad).abs()
                 < 1e-3 * dynamic_n,
-            "{}",
-            at(aero.torque_nm.z)
+            "at β {beta_rad} rad"
         );
     }
 }
