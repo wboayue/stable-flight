@@ -57,13 +57,17 @@ Code comments and docs link here instead of redefining a term.
 - **Setpoint:** the target a loop drives toward (an angle, a rate, a velocity).
 - **Error:** setpoint minus measurement.
 - **Cascade:** loops nested outer to inner, each one's output the next one's setpoint. For a
-  copter: position → velocity → attitude angle → body rate → moment. Inner loops run faster
-  and are tuned first.
+  copter: position → velocity → attitude angle → body rate → moment. Inner loops run at least
+  as fast and are tuned first. Each loop's form:
+  [loop shapes](../crates/stable-flight/src/controllers/README.md#loop-shapes).
 - **PID:** a loop's output as the sum of three terms: **P** proportional to the error, **I**
   the accumulated error over time (removes steady offsets), **D** the error's rate of change
   (damps overshoot). Gains `kp`, `ki`, `kd` scale each term.
 - **Feedforward:** output computed from the setpoint itself (e.g. the expected moment for a
   commanded rate) rather than from the error, so the loop doesn't wait to fall behind.
+- **Time constant:** how long a first-order response takes to cover about 63% of a step. The
+  plane attitude loop's P is its inverse: rate target = error / time constant
+  (`PlaneStabilizerConfig::time_constant_s`).
 - **Notch filter:** a filter that cuts one narrow band of frequencies and passes the rest,
   for a vibration tone (a motor's) that a low-pass just below it would barely touch; here a
   biquad on the roll and pitch rates ahead of the gyro low-pass
@@ -74,8 +78,9 @@ Code comments and docs link here instead of redefining a term.
   ArduPilot's IMAX), holding it while saturated in the error's direction, or fading it
   toward zero while saturated, as the TECS pitch integral does).
 - **Derivative kick:** a D-term spike when the setpoint jumps or a loop starts with no previous
-  sample; the loops skip it on their first tick, and the copter rate loop avoids the setpoint
-  jump's by taking D on the measurement.
+  sample; the loops skip it on their first tick, and a loop taking D on the measurement skips
+  the setpoint jump's
+  ([loop shapes](../crates/stable-flight/src/controllers/README.md#loop-shapes)).
 - **D on measurement:** a PID whose D term damps the measured value's change instead of the
   error's: the same inside the loop, but a setpoint step moves the output through P and I only.
 - **Trim:** the steady output that holds the vehicle in balance with no error (a plane's
