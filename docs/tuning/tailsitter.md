@@ -292,6 +292,12 @@ then filtered (core `estimation::wind`). It reports the estimate in telemetry (`
 recorder columns), and `GUID_WND_HDG_SPD` turns the heading from it (above). It runs only in copter flight, more than 1 m above
 the takeoff height, tilted less than 45°, and climbing or sinking slower than 1 m/s. Every coefficient 0 switches it off.
 
+The same drag model is fed forward on hover legs: the guidance adds the push a leg's speed
+takes through the estimated wind, so the lateral I term doesn't learn a leg's drag and carry
+it past the waypoint (#609). The sim eXplora's 25 m legs overshoot at most 0.25 m on its
+fitted model, 0.17 m with the model's drag halved, and 0.32 m with it doubled, against 2.5 m
+with no feedforward.
+
 | Param | Field | Meaning | eXplora |
 |---|---|---|---|
 | `GUID_WND_BCOEF_X`, `_Y` | `hover.wind.ballistic_kgpm2` | ballistic coefficient B, k = ½ρ/B (0: no v² term) | 0, 0 |

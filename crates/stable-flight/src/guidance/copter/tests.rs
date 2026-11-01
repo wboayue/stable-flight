@@ -1590,9 +1590,9 @@ fn drag_feedforward_pushes_against_a_legs_drag() {
             Vec2::new(0.5 * (2.0 - band), 0.0),
         ),
         (
-            "hold correction",
+            "hold correction, 0.25 m/s",
             momentum,
-            Vec2::new(band * 0.9, 0.0),
+            Vec2::new(0.25, 0.0),
             Vec2::zeros(),
             0.0,
             Vec2::zeros(),
