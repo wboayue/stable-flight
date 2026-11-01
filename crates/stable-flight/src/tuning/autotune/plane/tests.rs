@@ -5,15 +5,14 @@ use std::time::Duration;
 use assert2::{assert, check};
 
 use super::*;
-use crate::controllers::{PlaneRateControllerConfig, RateGains};
 use crate::stabilizers::plane::PlaneStabilizer;
 use crate::tuning::Tunable;
 use crate::tuning::autotune::{AutotuneEvent, AutotuneStatus, Outcome};
-use crate::tuning::plant::{CONTROL_RADPS2, DAMPING_PER_S, Wing};
+use crate::tuning::plant::{MomentMixer, Wing, wing_config as config};
 use crate::{
     AbsoluteAttitudeCommand, Actuator, ActuatorCommand, AttitudeSetpoint, Command, Commander,
-    Configurable, ControlInput, ControlOutput, FlightLoop, FlightRegime, Guidance, Mixer,
-    PlaneSetpoint, StateSource, VehicleState,
+    Configurable, ControlInput, FlightLoop, FlightRegime, Guidance, PlaneSetpoint, StateSource,
+    VehicleState,
 };
 
 /// The flight loop's tick: 250 Hz.
@@ -96,35 +95,7 @@ impl Actuator for WingVehicle {
     }
 }
 
-/// Passes the stabilizer's moments straight to the wing.
-struct MomentMixer;
-
-impl Mixer for MomentMixer {
-    fn mix(&mut self, controls: &ControlOutput) -> ActuatorCommand {
-        let mut command = ActuatorCommand::default();
-        command.servos[..3].copy_from_slice(controls.moments.as_slice());
-        command
-    }
-}
-
 type WingLoop = FlightLoop<Hold, WingVehicle, LevelGuidance, PlaneStabilizer, MomentMixer, ()>;
-
-/// Gains that fly the [`Wing`]: feedforward matching its damping, a little P and I.
-fn config() -> PlaneStabilizerConfig {
-    let rate = RateGains {
-        p: 0.1,
-        i: 0.1,
-        ff: DAMPING_PER_S / CONTROL_RADPS2,
-    };
-    PlaneStabilizerConfig {
-        rate: PlaneRateControllerConfig {
-            roll: rate,
-            pitch: rate,
-            ..Default::default()
-        },
-        ..Default::default()
-    }
-}
 
 /// An armed loop flying the wing level for a second.
 fn flying() -> (WingLoop, Controls) {

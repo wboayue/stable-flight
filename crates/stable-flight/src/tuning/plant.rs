@@ -9,7 +9,9 @@ use std::collections::VecDeque;
 
 use nalgebra::UnitQuaternion;
 
-use crate::{Vec2, Vec3, VehicleState};
+use crate::controllers::{PlaneRateControllerConfig, RateGains};
+use crate::stabilizers::plane::PlaneStabilizerConfig;
+use crate::{ActuatorCommand, ControlOutput, Mixer, Vec2, Vec3, VehicleState};
 
 /// Integration sub-steps per control tick.
 const SUBSTEPS: usize = 40;
@@ -189,5 +191,35 @@ impl Wing {
             self.rates_radps[axis] += accel * dt;
             self.angles_rad[axis] += self.rates_radps[axis] * dt;
         }
+    }
+}
+
+/// Plane gains that fly the [`Wing`]: feedforward matching its damping, a little P and I.
+pub(crate) fn wing_config() -> PlaneStabilizerConfig {
+    let rate = RateGains {
+        p: 0.1,
+        i: 0.1,
+        ff: DAMPING_PER_S / CONTROL_RADPS2,
+    };
+    PlaneStabilizerConfig {
+        rate: PlaneRateControllerConfig {
+            roll: rate,
+            pitch: rate,
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+/// Passes the stabilizer's moments straight to a test plant, in `servos[0..3]`, and its thrust
+/// in `motors[0]`.
+pub(crate) struct MomentMixer;
+
+impl Mixer for MomentMixer {
+    fn mix(&mut self, controls: &ControlOutput) -> ActuatorCommand {
+        let mut command = ActuatorCommand::default();
+        command.servos[..3].copy_from_slice(controls.moments.as_slice());
+        command.motors[0] = controls.thrust;
+        command
     }
 }
