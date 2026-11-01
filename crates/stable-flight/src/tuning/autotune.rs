@@ -1,9 +1,9 @@
-//! The copter autotune supervisor: see [`Autotune`].
+//! The autotune supervisor ([`Supervisor`]), generic over the loops it tunes ([`Side`]); a
+//! copter's is [`Autotune`].
 
 use core::fmt;
 
 use crate::controllers::GyroFilters;
-use crate::controllers::gyro::GyroFilter;
 use crate::controllers::{
     Gains, InvalidConfig, RATE_I_PER_P, YAW_RATE_I_PER_P, check, check_limit, check_positive,
     check_unit_interval,
@@ -16,8 +16,9 @@ use super::{
     ProbeStatus, RateModel, StepConfig, StepSummary, Tunable, design_angle_p, design_rate,
 };
 
-use procedure::{Action, Input, Procedure};
-use side::{Decide, Motion, attitude_target};
+use procedure::Action;
+pub use side::{CopterSide, Side, SideConfig, SideTunable};
+use side::{Decide, Motion, RateFilters, StageView};
 
 mod procedure;
 mod side;
@@ -28,16 +29,16 @@ mod tests;
 /// each loop it tunes.
 pub const MAX_STAGES: usize = 14;
 
-/// One stage of an autotune: which loop, and the method that tunes it.
+/// One stage of an autotune: which loop, and the method that tunes it, on side `K`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct StagePlan {
+pub struct StagePlan<K: Side = CopterSide> {
     /// The loop to tune.
-    pub target: TunedLoop,
+    pub target: K::Target,
     /// How to tune it.
-    pub method: Method,
+    pub method: K::Method,
 }
 
-impl StagePlan {
+impl StagePlan<CopterSide> {
     /// A step test of `target` with the copter defaults ([`StepTestPlan::copter`]).
     pub fn copter_step_test(target: TunedLoop) -> Self {
         Self {
@@ -1144,13 +1145,13 @@ pub enum AutotuneAbort {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
-pub enum AutotuneEvent {
+pub enum AutotuneEvent<T = TunedLoop, G = Gains> {
     /// A stage started: it settles, then probes its loop.
-    StageStarted(TunedLoop),
+    StageStarted(T),
     /// A probe on the stage's loop finished.
     Measured {
         /// The probed loop.
-        target: TunedLoop,
+        target: T,
         /// What the probe measured.
         measurement: Measurement,
     },
@@ -1159,16 +1160,16 @@ pub enum AutotuneEvent {
     /// stall ([`Autotune::note_stall`]).
     Stalled {
         /// The probed loop.
-        target: TunedLoop,
+        target: T,
         /// What the probe measured, if it finished; its timing can't be trusted.
         measurement: Option<Measurement>,
     },
     /// A search judged a pair of steps (or its baseline) on a gain.
     Tried {
         /// The judged loop.
-        target: TunedLoop,
+        target: T,
         /// The gains the steps flew.
-        gains: Gains,
+        gains: G,
         /// Whether they met the criterion.
         passed: bool,
         /// The valid steps.
@@ -1177,9 +1178,9 @@ pub enum AutotuneEvent {
     /// A stage finished and committed its loop's gains.
     StageDone {
         /// The tuned loop.
-        target: TunedLoop,
+        target: T,
         /// The gains committed for it.
-        gains: Gains,
+        gains: G,
         /// What the stage did to them.
         outcome: Outcome,
         /// A step test's valid steps, or a search's verify (invalid ones, which ran again, left
@@ -1193,23 +1194,23 @@ pub enum AutotuneEvent {
     /// better passes.
     Lowered {
         /// The searched loop.
-        target: TunedLoop,
+        target: T,
         /// The gains committed.
-        gains: Gains,
+        gains: G,
     },
     /// A design didn't hold the settle on its loop's axis within the settle timeout; the
     /// committed gains are back, and the design stage fits again.
     Unsettled {
         /// The designed loop.
-        target: TunedLoop,
+        target: T,
         /// The gains that didn't hold.
-        gains: Gains,
+        gains: G,
     },
     /// A stage failed: the config went back to the last kept one (earlier stages stay, except
     /// designs not yet searched), and the run ends.
     StageFailed {
         /// The loop the stage was for.
-        target: TunedLoop,
+        target: T,
         /// Why.
         reason: AutotuneAbort,
     },
@@ -1246,7 +1247,7 @@ pub enum KeepReason {
 
 /// Where a run stands.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum AutotuneStatus {
+pub enum AutotuneStatus<T = TunedLoop> {
     /// Not started.
     Idle,
     /// Stage `stage` (an index into the plan) is waiting for the vehicle to settle before its
@@ -1260,7 +1261,7 @@ pub enum AutotuneStatus {
         /// The stage index.
         stage: usize,
         /// Its loop.
-        target: TunedLoop,
+        target: T,
     },
     /// Every stage committed.
     Complete,
@@ -1296,7 +1297,7 @@ impl fmt::Display for StartError {
 impl core::error::Error for StartError {}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Phase {
+enum Phase<K: Side> {
     Idle,
     /// Stage `stage` starts on the next update.
     Starting {
@@ -1310,7 +1311,7 @@ enum Phase {
     /// Waiting for the vehicle to settle before running `request`.
     Settling {
         stage: usize,
-        request: Request,
+        request: Request<K>,
         level_s: f32,
         waited_s: f32,
     },
@@ -1325,7 +1326,7 @@ enum Phase {
     /// timeout.
     Holding {
         stage: usize,
-        gains: Gains,
+        gains: K::Gains,
         level_s: f32,
         waited_s: f32,
     },
@@ -1339,7 +1340,7 @@ enum Phase {
     Reverted,
 }
 
-impl Phase {
+impl<K: Side> Phase<K> {
     /// The stage a run in progress is on; `None` before, between (`Finishing`), and after
     /// runs.
     fn active_stage(&self) -> Option<usize> {
@@ -1360,12 +1361,12 @@ impl Phase {
 
 /// A probe a procedure asked for, and the gains to fly it on (`None`: the committed ones).
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Request {
+struct Request<K: Side> {
     probe: ProbeConfig,
-    gains: Option<Gains>,
+    gains: Option<K::Gains>,
 }
 
-impl Request {
+impl<K: Side> Request<K> {
     /// Whether the probe starts at the settle timeout rather than fail the stage: a fit only
     /// gains excitation from the ringing.
     fn starts_anyway(&self) -> bool {
@@ -1380,7 +1381,7 @@ impl Request {
     }
 }
 
-/// Runs a copter autotune between ticks: each [`StagePlan`]'s procedure decides
+/// Runs an autotune of side `K`'s loops between ticks ([`Autotune`] on a copter's): each [`StagePlan`]'s procedure decides
 /// which probes to run on its loop ([`Tunable::start_probe`]) and what gains follow from
 /// them; the supervisor executes it.
 ///
@@ -1454,21 +1455,21 @@ impl Request {
 /// # }
 /// ```
 #[derive(Clone, Debug, PartialEq)]
-pub struct Autotune {
-    plan: [Option<StagePlan>; MAX_STAGES],
+pub struct Supervisor<K: Side> {
+    plan: [Option<StagePlan<K>>; MAX_STAGES],
     stages: usize,
-    envelope: Envelope,
-    phase: Phase,
+    envelope: K::Envelope,
+    phase: Phase<K>,
     /// The current stage's procedure.
-    procedure: Procedure,
-    /// The config at start: what a disarm reverts to.
-    run_start: Option<CopterStabilizerConfig>,
+    procedure: K::Procedure,
+    /// The side's config at start: what a disarm reverts to.
+    run_start: Option<K::Config>,
     /// The config as of the last kept stage: what a failure reverts to. A design isn't kept
     /// until its loop's search finishes.
-    last_good: Option<CopterStabilizerConfig>,
+    last_good: Option<K::Config>,
     /// The config flown between probes: `last_good` plus designs awaiting their search. A
     /// candidate goes back to it.
-    committed: Option<CopterStabilizerConfig>,
+    committed: Option<K::Config>,
     start_altitude_m: f32,
     /// The host stalled during the running probe ([`note_stall`](Self::note_stall)).
     stalled: bool,
@@ -1489,21 +1490,27 @@ pub struct Autotune {
     /// filter, at its cutoff, since the stabilizer's own sits behind every
     /// [`View`](crate::view::View) and VTOL host. Filtering before the rotation is the same
     /// as after: every axis has the same cutoff.
-    rate_filters: [GyroFilter; 3],
+    rate_filters: RateFilters,
 }
 
-/// What the supervisor needs from the stabilizer: copter probes and config.
+/// What [`Supervisor::update`] reports on side `K`.
+type Event<K> = AutotuneEvent<<K as Side>::Target, <K as Side>::Gains>;
+
+/// The copter autotune: a [`Supervisor`] of a copter's loops ([`CopterSide`]).
+pub type Autotune = Supervisor<CopterSide>;
+
+/// What the copter supervisor needs from the stabilizer: copter probes and config.
 pub trait CopterTunable:
-    Tunable<TunedLoop> + Configurable<Config = CopterStabilizerConfig>
+    SideTunable<CopterSide> + Configurable<Config = CopterStabilizerConfig>
 {
 }
 
 impl<S> CopterTunable for S where
-    S: Tunable<TunedLoop> + Configurable<Config = CopterStabilizerConfig>
+    S: SideTunable<CopterSide> + Configurable<Config = CopterStabilizerConfig>
 {
 }
 
-impl Autotune {
+impl<K: Side> Supervisor<K> {
     /// A supervisor for `plan` (1 to [`MAX_STAGES`] stages) within `envelope`.
     ///
     /// # Errors
@@ -1511,7 +1518,7 @@ impl Autotune {
     /// When the plan is empty or too long (`plan`), a stage's method is invalid
     /// (`plan.<method>`, e.g. `plan.search`; [`Method::validate`]), or the envelope is
     /// (`envelope`).
-    pub fn new(plan: &[StagePlan], envelope: Envelope) -> Result<Self, InvalidConfig> {
+    pub fn new(plan: &[StagePlan<K>], envelope: K::Envelope) -> Result<Self, InvalidConfig> {
         check(
             "stages",
             (1..=MAX_STAGES).contains(&plan.len()),
@@ -1522,16 +1529,14 @@ impl Autotune {
             unreachable!("the plan was checked non-empty above");
         };
         for stage in plan {
-            stage
-                .method
-                .validate()
-                .map_err(|e| e.in_section(stage.method.plan_section()))?;
+            K::validate_method(&stage.method)?;
         }
-        envelope.validate().map_err(|e| e.in_section("envelope"))?;
-        for settle in plan.iter().filter_map(|stage| stage.method.settle()) {
-            envelope
-                .check_settle(&settle)
-                .map_err(|e| e.in_section("plan"))?;
+        K::validate_envelope(&envelope).map_err(|e| e.in_section("envelope"))?;
+        for settle in plan
+            .iter()
+            .filter_map(|stage| K::method_settle(&stage.method))
+        {
+            K::check_settle(&envelope, &settle).map_err(|e| e.in_section("plan"))?;
         }
 
         let mut stages = [None; MAX_STAGES];
@@ -1543,7 +1548,7 @@ impl Autotune {
             stages: plan.len(),
             envelope,
             phase: Phase::Idle,
-            procedure: Procedure::new(first.method),
+            procedure: K::procedure(first.method),
             run_start: None,
             last_good: None,
             committed: None,
@@ -1565,7 +1570,7 @@ impl Autotune {
     ///
     /// [`StartError::NotArmed`] unless the last tick was armed; [`StartError::Running`]
     /// while a run is in progress.
-    pub fn start<C, V, G, S: CopterTunable, M, T>(
+    pub fn start<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &FlightLoop<C, V, G, S, M, T>,
     ) -> Result<(), StartError> {
@@ -1575,7 +1580,7 @@ impl Autotune {
         if !flight_loop.armed() {
             return Err(StartError::NotArmed);
         }
-        let config = *flight_loop.stabilizer().config();
+        let config = *flight_loop.stabilizer().config().side();
         self.run_start = Some(config);
         self.last_good = Some(config);
         self.committed = Some(config);
@@ -1594,11 +1599,11 @@ impl Autotune {
     /// In order: a finished run reports [`Complete`](AutotuneEvent::Complete); a disarm
     /// reverts everything; an envelope breach fails the stage; then the run starts a stage,
     /// lets its procedure decide, settles, or polls the running probe.
-    pub fn update<C, V, G, S: CopterTunable, M, T>(
+    pub fn update<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         dt: f32,
-    ) -> Option<AutotuneEvent> {
+    ) -> Option<Event<K>> {
         if !self.is_running() {
             return None;
         }
@@ -1607,7 +1612,7 @@ impl Autotune {
             return Some(AutotuneEvent::Complete);
         }
         if !flight_loop.armed() {
-            flight_loop.stop_probe();
+            flight_loop.stop_probe::<K::Target>();
             if let Some(run_start) = self.run_start {
                 restore(flight_loop, run_start);
             }
@@ -1617,7 +1622,7 @@ impl Autotune {
         if self.state_stale {
             self.stale_s += dt;
             self.note_stall();
-            if self.stale_s > self.envelope.max_stale_s
+            if self.stale_s > K::timing(&self.envelope).max_stale_s
                 && let Some(stage) = self.phase.active_stage()
             {
                 return Some(self.fail(flight_loop, stage, AutotuneAbort::HostFault));
@@ -1626,13 +1631,13 @@ impl Autotune {
             self.stale_s = 0.0;
         }
         let rates_radps = self.filter_rates(flight_loop, dt);
-        let frame = flight_loop.stabilizer().probe_frame();
-        let target_rad = attitude_target(flight_loop.setpoint());
+        let frame = Tunable::<K::Target>::probe_frame(flight_loop.stabilizer());
+        let target_rad = K::attitude_target(flight_loop.setpoint());
         let motion = Motion::of(flight_loop.state(), &frame, rates_radps, target_rad);
         self.recovering_s = (self.recovering_s - dt).max(0.0);
         self.frozen_s = (self.frozen_s - dt).max(0.0);
         if let Some(stage) = self.phase.active_stage()
-            && let Some(reason) = self.envelope.breach(&motion, self.start_altitude_m)
+            && let Some(reason) = K::breach(&self.envelope, &motion, self.start_altitude_m)
         {
             // A breach after a freeze is the loop catching up with what the vehicle did
             // unseen: on QuadCopterX in RealFlight, 0.47 s of the same state came back at −19°
@@ -1747,17 +1752,14 @@ impl Autotune {
 
     /// The state's body rates through the stabilizer's gyro low-pass at its configured cutoff,
     /// stepped `dt` on.
-    fn filter_rates<C, V, G, S: CopterTunable, M, T>(
+    fn filter_rates<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &FlightLoop<C, V, G, S, M, T>,
         dt: f32,
     ) -> Vec3 {
-        let config = flight_loop.stabilizer().config();
+        let config = flight_loop.stabilizer().config().side();
         let rates_radps = flight_loop.state().angular_velocity_radps;
-        Vec3::from_fn(|axis, _| {
-            let filters = config.gyro_filters_on(axis);
-            self.rate_filters[axis].apply(rates_radps[axis], dt, &filters)
-        })
+        K::filter_rates(&mut self.rate_filters, config, rates_radps, dt)
     }
 
     /// Tells the supervisor whether the host runs slow: its ticks come further apart than
@@ -1787,7 +1789,7 @@ impl Autotune {
             self.stalled = true;
         }
         if self.is_running() {
-            self.frozen_s = self.envelope.recovery_s;
+            self.frozen_s = K::timing(&self.envelope).recovery_s;
         }
     }
 
@@ -1815,17 +1817,17 @@ impl Autotune {
     /// }
     /// # }
     /// ```
-    pub fn abort<C, V, G, S: CopterTunable, M, T>(
+    pub fn abort<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         reason: AutotuneAbort,
-    ) -> Option<AutotuneEvent> {
+    ) -> Option<Event<K>> {
         let stage = self.phase.active_stage()?;
         Some(self.fail(flight_loop, stage, reason))
     }
 
     /// Where the run stands.
-    pub fn status(&self) -> AutotuneStatus {
+    pub fn status(&self) -> AutotuneStatus<K::Target> {
         match self.phase {
             Phase::Idle => AutotuneStatus::Idle,
             Phase::Starting { stage }
@@ -1863,9 +1865,9 @@ impl Autotune {
     }
 
     /// Starts `stage` with a fresh procedure, which decides on the next update.
-    fn begin(&mut self, stage: usize) -> Option<AutotuneEvent> {
+    fn begin(&mut self, stage: usize) -> Option<Event<K>> {
         let plan = self.stage(stage)?;
-        self.procedure = Procedure::new(plan.method);
+        self.procedure = K::procedure(plan.method);
         self.phase = Phase::Deciding {
             stage,
             on: Decide::Start,
@@ -1875,40 +1877,19 @@ impl Autotune {
 
     /// Hands the procedure the stage's start or its last probe's result, with the loop's
     /// committed gains, and carries out what it asks for; reports a search's verdict.
-    fn decide<C, V, G, S: CopterTunable, M, T>(
+    fn decide<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
         on: Decide,
-    ) -> Option<AutotuneEvent> {
-        let config = flight_loop.stabilizer().config();
-        let target = self.target(stage);
-        let gains = target.gains(config);
-        let input = match on {
-            Decide::Start => Input::Start {
-                gains,
-                inner: target.inner().map(|inner| inner.gains(config)),
-                run_start: self
-                    .run_start
-                    .map_or(gains, |run_start| target.gains(&run_start)),
-                // The stage's own axis: yaw flies no notch.
-                gyro: config.gyro_filters_on(tilt_axis(target).unwrap_or(YAW_AXIS)),
-            },
-            Decide::Measured {
-                measurement,
-                stalled,
-            } => Input::Measured {
-                measurement,
-                gains,
-                stalled,
-            },
-            Decide::Stalled => Input::Stalled { gains },
-            Decide::Aborted { abort } => Input::Aborted { abort, gains },
-            Decide::Breached { reason } => Input::Breached { reason, gains },
-            Decide::Held { settled } => Input::Held { settled, gains },
-            Decide::Unsettled => Input::Unsettled { gains },
+    ) -> Option<Event<K>> {
+        let config = flight_loop.stabilizer().config().side();
+        let view = StageView {
+            target: self.target(stage),
+            config,
+            run_start: self.run_start.as_ref(),
         };
-        match self.procedure.next(input) {
+        match K::decide(&mut self.procedure, on, view) {
             Action::Probe {
                 probe,
                 gains,
@@ -1924,10 +1905,8 @@ impl Autotune {
                     level_s: 0.0,
                     waited_s: 0.0,
                 };
-                let tried = self
-                    .procedure
-                    .take_verdict()
-                    .map(|verdict| AutotuneEvent::Tried {
+                let tried =
+                    K::take_verdict(&mut self.procedure).map(|verdict| AutotuneEvent::Tried {
                         target: self.target(stage),
                         gains: verdict.gains,
                         passed: verdict.passed,
@@ -1962,25 +1941,25 @@ impl Autotune {
     /// `stage`; after `settle_timeout_s` the procedure decides ([`Input::Unsettled`]: a search
     /// lowers its start, anything else fails), except for an identification, which starts then
     /// instead: a fit only gains excitation from the ringing.
-    fn settle<C, V, G, S: CopterTunable, M, T>(
+    fn settle<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         motion: &Motion,
-        (stage, request): (usize, Request),
+        (stage, request): (usize, Request<K>),
         level_s: f32,
         waited_s: f32,
-    ) -> Option<AutotuneEvent> {
+    ) -> Option<Event<K>> {
         let settle = self.settle_for(stage);
-        let holds = settle.holds_for(motion, self.target(stage));
+        let holds = K::settles(&settle, motion, self.target(stage));
         let level_s = if holds { level_s } else { 0.0 };
-        let timed_out = waited_s >= self.envelope.settle_timeout_s;
+        let timed_out = waited_s >= K::timing(&self.envelope).settle_timeout_s;
         if level_s >= settle.hold_s || (request.starts_anyway() && timed_out) {
             if let Some(gains) = request.gains
                 && self.set_gains(flight_loop, stage, gains).is_none()
             {
                 return Some(self.fail(flight_loop, stage, AutotuneAbort::Rejected));
             }
-            let probed = probed_loop(self.target(stage), &request.probe);
+            let probed = K::probed_loop(self.target(stage), &request.probe);
             flight_loop.start_probe(probed, request.probe);
             self.phase = Phase::Probing {
                 stage,
@@ -2009,13 +1988,13 @@ impl Autotune {
     /// Checks the running probe: a measurement or an abort goes to the procedure on the next
     /// update (a stalled probe's abort as a stall), after a candidate's gains go back to the
     /// committed ones; a stopped probe fails the run.
-    fn poll_probe<C, V, G, S: CopterTunable, M, T>(
+    fn poll_probe<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
         candidate: bool,
-    ) -> Option<AutotuneEvent> {
-        let (on, event) = match flight_loop.probe() {
+    ) -> Option<Event<K>> {
+        let (on, event) = match flight_loop.probe::<K::Target>() {
             Some((_, ProbeStatus::Running(_))) => return None,
             Some((target, ProbeStatus::Done(measurement))) => (
                 Decide::Measured {
@@ -2054,17 +2033,17 @@ impl Autotune {
     /// Stops `stage`'s probe and hands `on` to its procedure on the next update; a
     /// candidate's gains go back to the committed ones, which get [`Envelope::recovery_s`] to
     /// bring the vehicle back inside the envelope.
-    fn end_probe<C, V, G, S: CopterTunable, M, T>(
+    fn end_probe<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
         candidate: bool,
         on: Decide,
     ) {
-        flight_loop.stop_probe();
+        flight_loop.stop_probe::<K::Target>();
         if candidate && let Some(committed) = self.committed {
             restore(flight_loop, committed);
-            self.recovering_s = self.envelope.recovery_s;
+            self.recovering_s = K::timing(&self.envelope).recovery_s;
         }
         self.phase = Phase::Deciding { stage, on };
     }
@@ -2075,20 +2054,17 @@ impl Autotune {
     /// For a roll or pitch loop only its axis counts: the other may still ring on its start
     /// gains (pitch on `racer`'s high start with 25 ms of delay, #518). A yaw rate or heading
     /// loop needs both level and yaw still.
-    fn hold<C, V, G, S: CopterTunable, M, T>(
+    fn hold<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         motion: &Motion,
-        (stage, gains): (usize, Gains),
+        (stage, gains): (usize, K::Gains),
         level_s: f32,
         waited_s: f32,
-    ) -> Option<AutotuneEvent> {
+    ) -> Option<Event<K>> {
         let settle = self.settle_for(stage);
         let target = self.target(stage);
-        let holds = tilt_axis(target).map_or_else(
-            || settle.holds_yaw(motion),
-            |axis| settle.holds_axis(motion, axis),
-        );
+        let holds = K::holds(&settle, motion, target);
         let level_s = if holds { level_s } else { 0.0 };
         if level_s >= settle.hold_s {
             self.phase = Phase::Deciding {
@@ -2097,7 +2073,7 @@ impl Autotune {
             };
             return None;
         }
-        if waited_s >= self.envelope.settle_timeout_s {
+        if waited_s >= K::timing(&self.envelope).settle_timeout_s {
             self.end_hold(flight_loop, stage, Decide::Held { settled: false });
             return Some(AutotuneEvent::Unsettled { target, gains });
         }
@@ -2112,7 +2088,7 @@ impl Autotune {
 
     /// Ends `stage`'s hold: the committed gains go back, with [`Envelope::recovery_s`] to
     /// bring the vehicle inside the envelope, and `on` goes to the procedure.
-    fn end_hold<C, V, G, S: CopterTunable, M, T>(
+    fn end_hold<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
@@ -2120,7 +2096,7 @@ impl Autotune {
     ) {
         if let Some(committed) = self.committed {
             restore(flight_loop, committed);
-            self.recovering_s = self.envelope.recovery_s;
+            self.recovering_s = K::timing(&self.envelope).recovery_s;
         }
         self.phase = Phase::Deciding { stage, on };
     }
@@ -2128,36 +2104,37 @@ impl Autotune {
     /// The settle before `stage`'s probes: its method's, or the envelope's.
     fn settle_for(&self, stage: usize) -> Settle {
         self.stage(stage)
-            .and_then(|plan| plan.method.settle())
-            .unwrap_or(self.envelope.settle)
+            .and_then(|plan| K::method_settle(&plan.method))
+            .unwrap_or(K::timing(&self.envelope).settle)
     }
 
-    fn stage(&self, stage: usize) -> Option<StagePlan> {
+    fn stage(&self, stage: usize) -> Option<StagePlan<K>> {
         self.plan.get(stage).copied().flatten()
     }
 
     /// The target of `stage`; `stage` is always in the plan (the phases only hold indices
     /// below `stages`).
-    fn target(&self, stage: usize) -> TunedLoop {
+    fn target(&self, stage: usize) -> K::Target {
         self.stage(stage)
-            .map_or(TunedLoop::RollRate, |plan| plan.target)
+            .map(|plan| plan.target)
+            .unwrap_or_else(|| unreachable!("the phases only hold indices below `stages`"))
     }
 
     /// Commits `gains` lowered mid-stage (a search's start above its `max`): the stage
     /// settles on them, and a failure restores them if the stage started on the loop's kept
     /// gains. A lowered design is still a design: a failure puts the loop's kept gains back.
     /// `StageFailed` if the stabilizer rejected them, else `Lowered`.
-    fn lower<C, V, G, S: CopterTunable, M, T>(
+    fn lower<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
-        gains: Gains,
-    ) -> AutotuneEvent {
+        gains: K::Gains,
+    ) -> Event<K> {
         let target = self.target(stage);
         let designed = self
             .committed
             .zip(self.last_good)
-            .is_some_and(|(flown, kept)| target.gains(&flown) != target.gains(&kept));
+            .is_some_and(|(flown, kept)| K::gains(target, &flown) != K::gains(target, &kept));
         let Some(config) = self.set_gains(flight_loop, stage, gains) else {
             return self.fail(flight_loop, stage, AutotuneAbort::Rejected);
         };
@@ -2174,13 +2151,13 @@ impl Autotune {
     /// Commits a finished stage's gains and moves on. A design is flown but not yet kept: a
     /// failure before its loop's search puts the loop's earlier gains back. Any other stage
     /// keeps its loop's gains, and only those: other loops' designs still wait on their own.
-    fn commit<C, V, G, S: CopterTunable, M, T>(
+    fn commit<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
-        gains: Gains,
+        gains: K::Gains,
         (outcome, steps, baseline): (Outcome, Option<StepSummary>, Option<StepSummary>),
-    ) -> AutotuneEvent {
+    ) -> Event<K> {
         let Some(config) = self.set_gains(flight_loop, stage, gains) else {
             return self.fail(flight_loop, stage, AutotuneAbort::Rejected);
         };
@@ -2204,36 +2181,36 @@ impl Autotune {
 
     /// Sets `gains` on `stage`'s loop; the config flown, or `None` if the stabilizer
     /// rejected it.
-    fn set_gains<C, V, G, S: CopterTunable, M, T>(
+    fn set_gains<C, V, G, S: SideTunable<K>, M, T>(
         &self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
-        gains: Gains,
-    ) -> Option<CopterStabilizerConfig> {
+        gains: K::Gains,
+    ) -> Option<K::Config> {
         let mut config = *flight_loop.stabilizer().config();
-        *self.target(stage).gains_mut(&mut config) = gains;
+        K::set_gains(self.target(stage), config.side_mut(), gains);
         flight_loop
             .set_stabilizer_config(config)
             .ok()
-            .map(|()| config)
+            .map(|()| *config.side())
     }
 
     /// Keeps `target`'s `gains` in what a failure reverts to, leaving the other loops as kept.
-    fn keep(&mut self, target: TunedLoop, gains: Gains) {
+    fn keep(&mut self, target: K::Target, gains: K::Gains) {
         if let Some(kept) = &mut self.last_good {
-            *target.gains_mut(kept) = gains;
+            K::set_gains(target, kept, gains);
         }
     }
 
     /// Ends the run at `stage`: stops its probe and puts back the config as of the last kept
     /// stage.
-    fn fail<C, V, G, S: CopterTunable, M, T>(
+    fn fail<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
         stage: usize,
         reason: AutotuneAbort,
-    ) -> AutotuneEvent {
-        flight_loop.stop_probe();
+    ) -> Event<K> {
+        flight_loop.stop_probe::<K::Target>();
         if let Some(last_good) = self.last_good {
             restore(flight_loop, last_good);
         }
@@ -2243,16 +2220,6 @@ impl Autotune {
             target: self.target(stage),
             reason,
         }
-    }
-}
-
-/// The loop `probe` runs on for a stage on `target`: an identification excites an angle
-/// loop's axis on the rate loop under it ([`DesignPlan`]); every other probe runs on `target`
-/// itself.
-fn probed_loop(target: TunedLoop, probe: &ProbeConfig) -> TunedLoop {
-    match probe {
-        ProbeConfig::Identify(_) => target.inner().unwrap_or(target),
-        ProbeConfig::Step(_) => target,
     }
 }
 
@@ -2270,9 +2237,11 @@ fn tilt_axis(target: TunedLoop) -> Option<usize> {
 
 /// Puts back a config the stabilizer flew before. It was valid then and validation doesn't
 /// change between calls, so it can't be rejected.
-fn restore<C, V, G, S: CopterTunable, M, T>(
+fn restore<K: Side, C, V, G, S: SideTunable<K>, M, T>(
     flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
-    config: CopterStabilizerConfig,
+    side: K::Config,
 ) {
+    let mut config = *flight_loop.stabilizer().config();
+    *config.side_mut() = side;
     let _ = flight_loop.set_stabilizer_config(config);
 }

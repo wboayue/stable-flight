@@ -1,11 +1,281 @@
-//! What the supervisor reads from the vehicle each update ([`Motion`]), and what a stage's
-//! procedure decides on ([`Decide`]).
+//! The loops a [`Supervisor`](super::Supervisor) tunes ([`Side`]: a copter's or a plane's),
+//! what it reads from the vehicle each update ([`Motion`]), and what a stage's procedure
+//! decides on ([`Decide`]).
 
-use super::AutotuneAbort;
+use core::fmt;
+
+use super::procedure::{Action, Input, Procedure, Verdict};
+use super::{AutotuneAbort, Envelope, Method, Settle, YAW_AXIS, tilt_axis};
+use crate::controllers::gyro::GyroFilter;
+use crate::controllers::{Gains, InvalidConfig};
 use crate::math::euler_angles;
-use crate::tuning::{Measurement, ProbeAbort};
-use crate::{Setpoint, Vec2, Vec3, VehicleState};
+use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
+use crate::tuning::{Measurement, ProbeAbort, ProbeConfig, Tunable};
+use crate::{Configurable, Setpoint, Vec2, Vec3, VehicleState};
 use nalgebra::UnitQuaternion;
+
+/// One set of loops the [`Supervisor`](super::Supervisor) tunes, and how: a copter's
+/// ([`CopterSide`]). The supervisor's phases (settle, probe, decide, commit, revert) are the
+/// same on every side; a side names its loops, gains, config, methods, and envelope, and
+/// supplies the procedures that decide what each stage flies. Sealed: the sides are core's.
+pub trait Side: sealed::Sealed + Copy + fmt::Debug + PartialEq {
+    /// The loops a stage tunes, and the stabilizer hosts probes on ([`Tunable`]).
+    type Target: Copy + fmt::Debug + PartialEq;
+    /// One target's gains.
+    type Gains: Copy + fmt::Debug + PartialEq;
+    /// The config of the stabilizer flying this side ([`SideConfig`]).
+    type Config: Copy + fmt::Debug + PartialEq;
+    /// How a stage tunes its target.
+    type Method: Copy + fmt::Debug + PartialEq;
+    /// The limits that end a stage, and the settle before each probe.
+    type Envelope: Copy + fmt::Debug + PartialEq;
+    #[doc(hidden)]
+    type Procedure: Copy + fmt::Debug + PartialEq;
+
+    #[doc(hidden)]
+    fn gains(target: Self::Target, config: &Self::Config) -> Self::Gains;
+    #[doc(hidden)]
+    fn set_gains(target: Self::Target, config: &mut Self::Config, gains: Self::Gains);
+    #[doc(hidden)]
+    fn probed_loop(target: Self::Target, probe: &ProbeConfig) -> Self::Target;
+
+    #[doc(hidden)]
+    fn validate_method(method: &Self::Method) -> Result<(), InvalidConfig>;
+    #[doc(hidden)]
+    fn method_settle(method: &Self::Method) -> Option<Settle>;
+    #[doc(hidden)]
+    fn procedure(method: Self::Method) -> Self::Procedure;
+    #[doc(hidden)]
+    fn decide(
+        procedure: &mut Self::Procedure,
+        on: Decide,
+        stage: StageView<'_, Self>,
+    ) -> Action<Self::Gains>;
+    #[doc(hidden)]
+    fn take_verdict(procedure: &mut Self::Procedure) -> Option<Verdict<Self::Gains>>;
+
+    #[doc(hidden)]
+    fn validate_envelope(envelope: &Self::Envelope) -> Result<(), InvalidConfig>;
+    #[doc(hidden)]
+    fn check_settle(envelope: &Self::Envelope, settle: &Settle) -> Result<(), InvalidConfig>;
+    #[doc(hidden)]
+    fn timing(envelope: &Self::Envelope) -> Timing;
+    #[doc(hidden)]
+    fn breach(
+        envelope: &Self::Envelope,
+        motion: &Motion,
+        start_altitude_m: f32,
+    ) -> Option<AutotuneAbort>;
+
+    #[doc(hidden)]
+    fn filter_rates(
+        filters: &mut RateFilters,
+        config: &Self::Config,
+        rates_radps: Vec3,
+        dt: f32,
+    ) -> Vec3;
+    #[doc(hidden)]
+    fn attitude_target(setpoint: &Setpoint) -> Vec2;
+    #[doc(hidden)]
+    fn settles(settle: &Settle, motion: &Motion, target: Self::Target) -> bool;
+    #[doc(hidden)]
+    fn holds(settle: &Settle, motion: &Motion, target: Self::Target) -> bool;
+}
+
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for super::CopterSide {}
+}
+
+/// A stabilizer config that holds a [`Side`]'s config: the copter's is its own.
+pub trait SideConfig<K: Side> {
+    /// The side's config.
+    fn side(&self) -> &K::Config;
+    /// The side's config, to change it.
+    fn side_mut(&mut self) -> &mut K::Config;
+}
+
+/// What the [`Supervisor`](super::Supervisor) needs from a stabilizer to tune side `K`: probes
+/// on its loops, and a config holding the side's.
+pub trait SideTunable<K: Side>: Tunable<K::Target> + Configurable<Config: SideConfig<K>> {}
+
+impl<K: Side, S> SideTunable<K> for S where
+    S: Tunable<K::Target> + Configurable<Config: SideConfig<K>>
+{
+}
+
+/// The envelope's settle and times, which the supervisor keeps on every side: see
+/// [`Envelope`] for each.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Timing {
+    pub(super) settle: Settle,
+    pub(super) settle_timeout_s: f32,
+    pub(super) recovery_s: f32,
+    pub(super) max_stale_s: f32,
+}
+
+/// One gyro filter per body axis (roll, pitch, yaw), for the settle's rates.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RateFilters(pub(super) [GyroFilter; 3]);
+
+/// What a procedure deciding for a stage may read: its target, the side's config as flown,
+/// and as it was at the run's start.
+pub struct StageView<'a, K: Side> {
+    pub(super) target: K::Target,
+    pub(super) config: &'a K::Config,
+    pub(super) run_start: Option<&'a K::Config>,
+}
+
+/// A copter's loops ([`TunedLoop`]), tuned on a [`CopterStabilizerConfig`] by a [`Method`]
+/// within an [`Envelope`]: the [`Autotune`](super::Autotune).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CopterSide;
+
+impl SideConfig<CopterSide> for CopterStabilizerConfig {
+    fn side(&self) -> &CopterStabilizerConfig {
+        self
+    }
+
+    fn side_mut(&mut self) -> &mut CopterStabilizerConfig {
+        self
+    }
+}
+
+/// A copter [`Procedure`], behind a type the [`Side`] trait can name.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CopterProcedure(Procedure);
+
+impl Side for CopterSide {
+    type Target = TunedLoop;
+    type Gains = Gains;
+    type Config = CopterStabilizerConfig;
+    type Method = Method;
+    type Envelope = Envelope;
+    type Procedure = CopterProcedure;
+
+    fn gains(target: TunedLoop, config: &CopterStabilizerConfig) -> Gains {
+        target.gains(config)
+    }
+
+    fn set_gains(target: TunedLoop, config: &mut CopterStabilizerConfig, gains: Gains) {
+        *target.gains_mut(config) = gains;
+    }
+
+    /// An identification excites an angle loop's axis on the rate loop under it
+    /// ([`DesignPlan`](super::DesignPlan)); every other probe runs on `target` itself.
+    fn probed_loop(target: TunedLoop, probe: &ProbeConfig) -> TunedLoop {
+        match probe {
+            ProbeConfig::Identify(_) => target.inner().unwrap_or(target),
+            ProbeConfig::Step(_) => target,
+        }
+    }
+
+    fn validate_method(method: &Method) -> Result<(), InvalidConfig> {
+        method
+            .validate()
+            .map_err(|e| e.in_section(method.plan_section()))
+    }
+
+    fn method_settle(method: &Method) -> Option<Settle> {
+        method.settle()
+    }
+
+    fn procedure(method: Method) -> CopterProcedure {
+        CopterProcedure(Procedure::new(method))
+    }
+
+    fn decide(procedure: &mut CopterProcedure, on: Decide, stage: StageView<'_, Self>) -> Action {
+        let StageView {
+            target,
+            config,
+            run_start,
+        } = stage;
+        let gains = target.gains(config);
+        let input = match on {
+            Decide::Start => Input::Start {
+                gains,
+                inner: target.inner().map(|inner| inner.gains(config)),
+                run_start: run_start.map_or(gains, |run_start| target.gains(run_start)),
+                // The stage's own axis: yaw flies no notch.
+                gyro: config.gyro_filters_on(tilt_axis(target).unwrap_or(YAW_AXIS)),
+            },
+            Decide::Measured {
+                measurement,
+                stalled,
+            } => Input::Measured {
+                measurement,
+                gains,
+                stalled,
+            },
+            Decide::Stalled => Input::Stalled { gains },
+            Decide::Aborted { abort } => Input::Aborted { abort, gains },
+            Decide::Breached { reason } => Input::Breached { reason, gains },
+            Decide::Held { settled } => Input::Held { settled, gains },
+            Decide::Unsettled => Input::Unsettled { gains },
+        };
+        procedure.0.next(input)
+    }
+
+    fn take_verdict(procedure: &mut CopterProcedure) -> Option<Verdict> {
+        procedure.0.take_verdict()
+    }
+
+    fn validate_envelope(envelope: &Envelope) -> Result<(), InvalidConfig> {
+        envelope.validate()
+    }
+
+    fn check_settle(envelope: &Envelope, settle: &Settle) -> Result<(), InvalidConfig> {
+        envelope.check_settle(settle)
+    }
+
+    fn timing(envelope: &Envelope) -> Timing {
+        Timing {
+            settle: envelope.settle,
+            settle_timeout_s: envelope.settle_timeout_s,
+            recovery_s: envelope.recovery_s,
+            max_stale_s: envelope.max_stale_s,
+        }
+    }
+
+    fn breach(
+        envelope: &Envelope,
+        motion: &Motion,
+        start_altitude_m: f32,
+    ) -> Option<AutotuneAbort> {
+        envelope.breach(motion, start_altitude_m)
+    }
+
+    /// Through the stabilizer's gyro filters on each axis, at their configured cutoffs.
+    fn filter_rates(
+        filters: &mut RateFilters,
+        config: &CopterStabilizerConfig,
+        rates_radps: Vec3,
+        dt: f32,
+    ) -> Vec3 {
+        Vec3::from_fn(|axis, _| {
+            let gyro = config.gyro_filters_on(axis);
+            filters.0[axis].apply(rates_radps[axis], dt, &gyro)
+        })
+    }
+
+    fn attitude_target(setpoint: &Setpoint) -> Vec2 {
+        attitude_target(setpoint)
+    }
+
+    fn settles(settle: &Settle, motion: &Motion, target: TunedLoop) -> bool {
+        settle.holds_for(motion, target)
+    }
+
+    /// For a roll or pitch loop only its axis counts: the other may still ring on its start
+    /// gains (pitch on `racer`'s high start with 25 ms of delay, #518). A yaw rate or heading
+    /// loop needs both level and yaw still.
+    fn holds(settle: &Settle, motion: &Motion, target: TunedLoop) -> bool {
+        tilt_axis(target).map_or_else(
+            || settle.holds_yaw(motion),
+            |axis| settle.holds_axis(motion, axis),
+        )
+    }
+}
 
 /// What the envelope and the settle check, read once per update from the state. The envelope
 /// reads tilt from level and the settle from the attitude target, so a hover leaning to hold
@@ -15,7 +285,7 @@ use nalgebra::UnitQuaternion;
 /// settle 0.1), so no stage starts (#373). The envelope reads the raw rate, so a breach shows
 /// on its first tick. Angles and rates are in the probed loops' frame
 /// ([`Tunable::probe_frame`]): view axes for a tailsitter's hover, where nose-up reads level.
-pub(super) struct Motion {
+pub struct Motion {
     /// The larger of |roll| and |pitch|, from level, in rad.
     pub(super) tilt_rad: f32,
     /// The largest raw body rate magnitude, in rad/s.
@@ -83,7 +353,7 @@ fn zero_if_nan(value: f32) -> f32 {
 
 /// What a stage's procedure decides on.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) enum Decide {
+pub enum Decide {
     /// The stage's start.
     Start,
     /// A finished probe's measurement, and whether the host stalled during it.

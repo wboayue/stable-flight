@@ -87,33 +87,33 @@ impl Input {
     reason = "returned once per decision, between ticks; the core has no allocator to box with"
 )]
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) enum Action {
+pub enum Action<G = Gains> {
     /// Commit `commit` first when given (it stays if the stage fails), settle on the
     /// committed gains, then run `probe` on the stage's loop, flying `gains` for that probe
     /// only when given.
     Probe {
         probe: ProbeConfig,
-        gains: Option<Gains>,
-        commit: Option<Gains>,
+        gains: Option<G>,
+        commit: Option<G>,
     },
     /// Commit these gains for the stage's loop and end the stage; a step test reports its
     /// valid steps, a search its verify and baseline.
     Finish {
-        gains: Gains,
+        gains: G,
         outcome: Outcome,
         steps: Option<StepSummary>,
         baseline: Option<StepSummary>,
     },
     /// Fly `gains` until the stage's axis holds the settle on them, or the settle timeout;
     /// [`Input::Held`] reports which.
-    Hold { gains: Gains },
+    Hold { gains: G },
     /// End the run: the stage can't go on.
     Fail(AutotuneAbort),
 }
 
-impl Action {
+impl<G> Action<G> {
     /// Runs `probe` on the committed gains.
-    fn probe(probe: ProbeConfig) -> Self {
+    pub(super) fn probe(probe: ProbeConfig) -> Self {
         Self::Probe {
             probe,
             gains: None,
@@ -124,8 +124,8 @@ impl Action {
 
 /// A search's judgment of a pair of steps (or its baseline) on `gains`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Verdict {
-    pub(super) gains: Gains,
+pub struct Verdict<G = Gains> {
+    pub(super) gains: G,
     pub(super) passed: bool,
     pub(super) steps: StepSummary,
 }
