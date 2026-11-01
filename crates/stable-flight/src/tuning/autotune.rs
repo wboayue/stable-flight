@@ -1402,14 +1402,14 @@ impl<K: Side> Request<K> {
     /// Whether the probe starts at the settle timeout rather than fail the stage: a fit only
     /// gains excitation from the ringing.
     fn starts_anyway(&self) -> bool {
-        matches!(self.probe, ProbeConfig::Identify(_))
+        self.probe.is_identify()
     }
 
     /// Whether the probe is a fit, which runs through a slow host: a fit at 223 Hz on the sim
     /// (the physics 12% slower than the ticks claim) designs rate P 5–13% lower, and the
     /// search climbs from the design (#524).
     fn is_fit(&self) -> bool {
-        matches!(self.probe, ProbeConfig::Identify(_))
+        self.probe.is_identify()
     }
 }
 

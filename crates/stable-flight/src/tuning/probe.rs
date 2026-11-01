@@ -2,7 +2,7 @@
 
 use super::{
     IdentifyAbort, IdentifyConfig, IdentifyProbe, IdentifyStatus, RateModel, StepAbort, StepConfig,
-    StepMetrics, StepProbe, StepStatus,
+    StepMetrics, StepProbe, StepStatus, WingIdentifyProbe, WingModel, WingStatus,
 };
 use crate::controllers::InvalidConfig;
 
@@ -16,6 +16,9 @@ pub enum ProbeConfig {
     /// [`COPTER_IDENTIFY`](crate::tuning::autotune::COPTER_IDENTIFY) is for the roll and pitch
     /// rate loops.
     Identify(IdentifyConfig),
+    /// A wing's identification: the [`Identify`](Self::Identify) square wave on a plane's
+    /// rate loop, its axis fitted to a [`WingModel`] ([`WingIdentifyProbe`]).
+    IdentifyWing(IdentifyConfig),
 }
 
 impl ProbeConfig {
@@ -34,8 +37,13 @@ impl ProbeConfig {
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         match self {
             Self::Step(config) => config.validate(),
-            Self::Identify(config) => config.validate(),
+            Self::Identify(config) | Self::IdentifyWing(config) => config.validate(),
         }
+    }
+
+    /// Whether the probe is an identification (a copter's or a wing's).
+    pub fn is_identify(&self) -> bool {
+        matches!(self, Self::Identify(_) | Self::IdentifyWing(_))
     }
 }
 
@@ -56,6 +64,10 @@ pub struct LoopSignals {
     /// The loop's axis's moment command on the last tick, normalized to `[-1, 1]`: as
     /// commanded, before the mixer; a clip shows in [`saturated`](Self::saturated).
     pub last_moment: f32,
+    /// The angle of attack the axis's moment works against, in rad: a wing's pitch axis's,
+    /// nose up from the flight path; 0 on every other axis. A wing identification fits the
+    /// wing's stiffness on it ([`WingIdentifyProbe`]).
+    pub alpha_rad: f32,
 }
 
 impl LoopSignals {
@@ -88,6 +100,8 @@ pub enum Measurement {
     Step(StepMetrics),
     /// The axis's fitted model.
     Identify(RateModel),
+    /// The wing axis's fitted model.
+    Wing(WingModel),
 }
 
 /// Why a probe gave up.
@@ -132,6 +146,16 @@ impl From<StepStatus> for ProbeStatus {
     }
 }
 
+impl From<WingStatus> for ProbeStatus {
+    fn from(status: WingStatus) -> Self {
+        match status {
+            WingStatus::Running { elapsed_s } => Self::Running(Progress::Identify { elapsed_s }),
+            WingStatus::Done(model) => Self::Done(Measurement::Wing(model)),
+            WingStatus::Aborted(abort) => Self::Aborted(ProbeAbort::Identify(abort)),
+        }
+    }
+}
+
 impl From<IdentifyStatus> for ProbeStatus {
     fn from(status: IdentifyStatus) -> Self {
         match status {
@@ -168,13 +192,14 @@ pub struct Probe {
     kind: Kind,
 }
 
-// The identification's least-squares sums (about 1.7 KB) make its variant the largest; boxing
-// it would allocate, which core doesn't, and a host holds one probe at a time.
+// The identifications' windows (13 KB, 9 KB) make their variants the largest; boxing them
+// would allocate, which core doesn't, and a host holds one probe at a time.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 enum Kind {
     Step(StepProbe),
     Identify(IdentifyProbe),
+    Wing(WingIdentifyProbe),
 }
 
 impl Probe {
@@ -187,6 +212,7 @@ impl Probe {
         let kind = match config {
             ProbeConfig::Step(config) => Kind::Step(StepProbe::new(config)),
             ProbeConfig::Identify(config) => Kind::Identify(IdentifyProbe::new(config)),
+            ProbeConfig::IdentifyWing(config) => Kind::Wing(WingIdentifyProbe::new(config)),
         };
         Self { kind }
     }
@@ -210,6 +236,15 @@ impl Probe {
                 let offset = identify.step(dt, signals.rate_radps, signals.last_moment);
                 signals.setpoint + offset
             }
+            Kind::Wing(wing) => {
+                let offset = wing.step(
+                    dt,
+                    signals.rate_radps,
+                    signals.last_moment,
+                    signals.alpha_rad,
+                );
+                signals.setpoint + offset
+            }
         }
     }
 
@@ -218,6 +253,7 @@ impl Probe {
         match &self.kind {
             Kind::Step(step) => step.status().into(),
             Kind::Identify(identify) => identify.status().into(),
+            Kind::Wing(wing) => wing.status().into(),
         }
     }
 }

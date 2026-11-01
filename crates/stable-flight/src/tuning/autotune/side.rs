@@ -183,7 +183,9 @@ impl Side for CopterSide {
     /// ([`DesignPlan`](super::DesignPlan)); every other probe runs on `target` itself.
     fn probed_loop(target: TunedLoop, probe: &ProbeConfig) -> TunedLoop {
         match probe {
-            ProbeConfig::Identify(_) => target.inner().unwrap_or(target),
+            ProbeConfig::Identify(_) | ProbeConfig::IdentifyWing(_) => {
+                target.inner().unwrap_or(target)
+            }
             ProbeConfig::Step(_) => target,
         }
     }

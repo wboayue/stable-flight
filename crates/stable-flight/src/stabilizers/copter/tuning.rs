@@ -323,6 +323,7 @@ impl CopterStabilizer {
             saturated,
             rate_radps: rates_radps[axis],
             last_moment: self.last_moments[axis],
+            alpha_rad: 0.0,
         };
         self.inject(dt, axis, &signals, setpoints)
     }
@@ -346,6 +347,7 @@ impl CopterStabilizer {
             saturated: self.loop_saturated(location),
             rate_radps: raw_rates_radps[axis],
             last_moment: self.last_moments[axis],
+            alpha_rad: 0.0,
         };
         self.inject(dt, axis, &signals, setpoints)
     }

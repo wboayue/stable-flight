@@ -361,7 +361,7 @@ impl IdentifyProbe {
 /// PX4's shrinking square wave ([`half_period_s`]), less its washout: each edge a pulse that
 /// decays over the washout's time constant.
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct SquareSweep {
+pub(super) struct SquareSweep {
     amplitude: f32,
     washout_tc_s: f32,
     /// When the next edge falls, in s since the start, and its index.
@@ -374,7 +374,7 @@ struct SquareSweep {
 }
 
 impl SquareSweep {
-    fn new(amplitude: f32, washout_tc_s: f32) -> Self {
+    pub(super) fn new(amplitude: f32, washout_tc_s: f32) -> Self {
         SquareSweep {
             amplitude,
             washout_tc_s,
@@ -386,7 +386,7 @@ impl SquareSweep {
     }
 
     /// The offset at `elapsed_s`, `dt` after the last call.
-    fn next(&mut self, dt: f32, elapsed_s: f32) -> f32 {
+    pub(super) fn next(&mut self, dt: f32, elapsed_s: f32) -> f32 {
         while elapsed_s >= self.next_edge_s {
             self.edge += 1;
             self.next_edge_s += half_period_s(self.edge);

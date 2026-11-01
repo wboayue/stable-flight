@@ -1,6 +1,7 @@
 //! Autotune stages hosted by the [`PlaneStabilizer`]: one loop's setpoint replaced by a
 //! [`Probe`]. See the "Tuning" section on the [module docs](super).
 
+use crate::VehicleState;
 use crate::controllers::RateGains;
 use crate::tuning::{LoopSignals, Probe, ProbeConfig, ProbeStatus, Tunable};
 
@@ -229,6 +230,7 @@ impl PlaneStabilizer {
             saturated: self.moment_clipped(axis),
             rate_radps: rates_radps[axis],
             last_moment: self.last_moments[axis],
+            alpha_rad: 0.0,
         };
         if let Some(angle_rad) = self.step_stage(dt, &signals) {
             angles_rad[axis] = angle_rad;
@@ -236,23 +238,30 @@ impl PlaneStabilizer {
     }
 
     /// Steps a probe on a rate loop before the rate controller runs: the probe replaces its
-    /// axis's rate in `desired_radps`, read against the body rates `rates_radps`.
+    /// axis's rate in `desired_radps`, read against `state`'s body rates; a pitch probe also
+    /// reads the angle of attack.
     pub(super) fn probe_rates(
         &mut self,
         dt: f32,
         desired_radps: &mut crate::Vec3,
-        rates_radps: &crate::Vec3,
+        state: &VehicleState,
     ) {
         let Some(target) = self.running_stage().filter(|target| target.is_rate()) else {
             return;
         };
         let axis = target.axis();
+        let rates_radps = &state.angular_velocity_radps;
+        let alpha_rad = match target {
+            PlaneLoop::PitchRate => self.angle_of_attack_rad(state),
+            _ => 0.0,
+        };
         let signals = LoopSignals {
             setpoint: desired_radps[axis],
             error: desired_radps[axis] - rates_radps[axis],
             saturated: self.moment_clipped(axis),
             rate_radps: rates_radps[axis],
             last_moment: self.last_moments[axis],
+            alpha_rad,
         };
         if let Some(rate_radps) = self.step_stage(dt, &signals) {
             desired_radps[axis] = rate_radps;
