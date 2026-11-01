@@ -243,30 +243,18 @@ const DESCENT_WATCH_S: f32 = 75.0;
 /// a stall, #491). (hover m, leg altitude m): toward the ground, and a 30 m step down.
 #[test]
 fn alia_descends_out_of_a_transition_within_its_sink_limit() {
-    let mut airframe = airframes::alia250();
-    // The sink limit, not the fallback, is under test: the leg may sink to the ground.
-    airframe.guidance.transition.plane_min_height_m = 0.0;
+    let airframe = airframes::alia250();
     let limit_mps = airframe.guidance.plane.tecs.max_sink_mps + SINK_MARGIN_MPS;
-    let plant = QuadPlanePlant::clean(airframe);
     let airspeed_mps = airframe.stabilizer.plane.trim_airspeed_mps;
     for (from_m, to_m) in [(60.0, -100.0), (100.0, 70.0)] {
-        let commander = descending_leg(from_m, to_m, airspeed_mps);
-        let mut flight_loop = quadplane_loop(&plant, commander);
-        let flight = trace(&mut flight_loop, SINK_AT_S + DESCENT_WATCH_S);
-
-        let plane_s = entered_s(&flight, FlightMode::Plane, SINK_AT_S, "descent");
-        let sink_mps = flight
-            .window(plane_s, f32::INFINITY)
-            .filter(|sample| sample.mode == FlightMode::Plane)
-            .map(|sample| -sample.state.velocity_mps.z)
-            .fold(0.0, f32::max);
+        let sink_mps = alia_peak_descent_sink_mps(descending_leg(from_m, to_m, airspeed_mps));
         check!(sink_mps <= limit_mps, "{from_m} → {to_m} m: {sink_mps} m/s");
     }
 }
 
-/// How far right of the heading it transitions on `flights/alia_descent_lap.csv` turns the
-/// Alia onto its descending leg, in degrees: it enters plane flight along runway 11 (122°),
-/// and the leg runs west (#547).
+/// The turn onto the Alia's descending leg on `flights/alia_descent_lap.csv`, in degrees right
+/// of the heading it transitions on: it enters plane flight along runway 11 (122°), and the
+/// leg runs west (#547).
 const LAP_TURN_DEG: f32 = 151.0;
 
 /// The lap's descending leg against the Alia's trim airspeed, in m/s: 50 m/s against 45.
@@ -278,22 +266,29 @@ const LAP_FASTER_MPS: f32 = 5.0;
 /// TECS's default 5 s time constant, 5.28 m/s here and 5.65 m/s in X-Plane (#547).
 #[test]
 fn alia_descends_through_a_turn_within_its_sink_limit() {
-    let mut airframe = airframes::alia250();
-    airframe.guidance.transition.plane_min_height_m = 0.0;
+    let airframe = airframes::alia250();
     let limit_mps = airframe.guidance.plane.tecs.max_sink_mps + SINK_MARGIN_MPS;
-    let plant = QuadPlanePlant::clean(airframe);
     let airspeed_mps = airframe.stabilizer.plane.trim_airspeed_mps + LAP_FASTER_MPS;
     let commander = turning_descent_leg(100.0, 0.0, airspeed_mps, LAP_TURN_DEG.to_radians());
+    let sink_mps = alia_peak_descent_sink_mps(commander);
+    check!(sink_mps <= limit_mps, "{sink_mps} m/s");
+}
+
+/// The Alia's fastest sink in plane flight on `commander`'s descent out of a transition, in
+/// m/s. The sink limit, not the fallback, is under test: the leg may sink to the ground.
+fn alia_peak_descent_sink_mps(commander: Forward) -> f32 {
+    let mut airframe = airframes::alia250();
+    airframe.guidance.transition.plane_min_height_m = 0.0;
+    let plant = QuadPlanePlant::clean(airframe);
     let mut flight_loop = quadplane_loop(&plant, commander);
     let flight = trace(&mut flight_loop, SINK_AT_S + DESCENT_WATCH_S);
 
     let plane_s = entered_s(&flight, FlightMode::Plane, SINK_AT_S, "descent");
-    let sink_mps = flight
+    flight
         .window(plane_s, f32::INFINITY)
         .filter(|sample| sample.mode == FlightMode::Plane)
         .map(|sample| -sample.state.velocity_mps.z)
-        .fold(0.0, f32::max);
-    check!(sink_mps <= limit_mps, "{sink_mps} m/s");
+        .fold(0.0, f32::max)
 }
 
 /// The Alia's dive pitch, nose up positive: with [`ALIA_DIVE_THRUST`], 6.2 m/s of sink at
