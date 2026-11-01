@@ -16,10 +16,15 @@ use super::{
     ProbeStatus, RateModel, StepConfig, StepSummary, Tunable, design_angle_p, design_rate,
 };
 
+pub use plane::{
+    PLANE_MAX_SATURATED_S, PLANE_PITCH_STEP, PLANE_RATE_STEP, PLANE_ROLL_STEP, PLANE_STEP_SETTLE,
+    PlaneAutotune, PlaneEnvelope, PlaneMethod, PlaneSide,
+};
 use procedure::Action;
 pub use side::{CopterSide, Side, SideConfig, SideTunable};
 use side::{Decide, Motion, RateFilters, StageView};
 
+mod plane;
 mod procedure;
 mod side;
 #[cfg(test)]
@@ -1111,12 +1116,18 @@ impl Envelope {
 /// Why a stage failed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AutotuneAbort {
-    /// Roll or pitch passed [`Envelope::max_tilt_rad`].
+    /// Roll or pitch passed [`Envelope::max_tilt_rad`], or a plane's bank or pitch its
+    /// [`PlaneEnvelope`] limit.
     Tilt,
     /// A body rate passed [`Envelope::max_rate_radps`].
     Rate,
-    /// The vehicle sank more than [`Envelope::max_altitude_loss_m`].
+    /// The vehicle sank more than [`Envelope::max_altitude_loss_m`] (or
+    /// [`PlaneEnvelope::max_altitude_loss_m`]).
     AltitudeLoss,
+    /// A plane's airspeed fell below [`PlaneEnvelope::min_airspeed_mps`].
+    AirspeedLow,
+    /// A plane's airspeed rose above [`PlaneEnvelope::max_airspeed_mps`].
+    AirspeedHigh,
     /// The vehicle didn't settle within [`Envelope::settle_timeout_s`].
     NotSettled,
     /// Too many clipped steps in a row ([`StepTestPlan::max_invalid`]).

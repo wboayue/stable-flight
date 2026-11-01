@@ -1,7 +1,9 @@
 //! A stage's decisions, apart from the flying: see [`Procedure`].
 
-use super::{AutotuneAbort, Method, Outcome, StepTestPlan};
+use super::side::Decide;
+use super::{AutotuneAbort, Method, Outcome, PlaneMethod, StepTestPlan};
 use crate::controllers::{Gains, GyroFilters};
+use crate::stabilizers::plane::PlaneAxisGains;
 use crate::tuning::{Measurement, ProbeAbort, ProbeConfig, StepMetrics, StepSummary};
 
 use design::Design;
@@ -63,6 +65,31 @@ pub(super) enum Input {
     /// The vehicle didn't hold the settle on the committed `gains` within
     /// [`Envelope::settle_timeout_s`](super::Envelope::settle_timeout_s), before a probe.
     Unsettled { gains: Gains },
+}
+
+impl Input {
+    /// What happened, as the supervisor saw it, and the loop's gains.
+    fn split(self) -> (Decide, Gains) {
+        match self {
+            Self::Start { gains, .. } => (Decide::Start, gains),
+            Self::Measured {
+                measurement,
+                gains,
+                stalled,
+            } => (
+                Decide::Measured {
+                    measurement,
+                    stalled,
+                },
+                gains,
+            ),
+            Self::Stalled { gains } => (Decide::Stalled, gains),
+            Self::Aborted { abort, gains } => (Decide::Aborted { abort }, gains),
+            Self::Breached { reason, gains } => (Decide::Breached { reason }, gains),
+            Self::Held { settled, gains } => (Decide::Held { settled }, gains),
+            Self::Unsettled { gains } => (Decide::Unsettled, gains),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -158,33 +185,10 @@ impl Procedure {
 
     pub(super) fn next(&mut self, input: Input) -> Action {
         match self {
-            Self::StepTest(pairs) => match input {
-                Input::Start { .. } => Action::probe(pairs.probe()),
-                Input::Measured {
-                    measurement: Measurement::Step(metrics),
-                    gains,
-                    stalled,
-                } => match pairs.record(&metrics, stalled) {
-                    Err(abort) => Action::Fail(abort),
-                    Ok(()) if pairs.done() => Action::Finish {
-                        gains,
-                        outcome: Outcome::Measured,
-                        steps: Some(pairs.summary),
-                        baseline: None,
-                    },
-                    Ok(()) => Action::probe(pairs.probe()),
-                },
-                Input::Stalled { .. } => match pairs.stall() {
-                    Err(abort) => Action::Fail(abort),
-                    Ok(()) => Action::probe(pairs.probe()),
-                },
-                Input::Aborted { abort, .. } => Action::Fail(AutotuneAbort::Probe(abort)),
-                Input::Breached { reason, .. } => Action::Fail(reason),
-                Input::Unsettled { .. } => Action::Fail(AutotuneAbort::NotSettled),
-                Input::Measured { .. } | Input::Held { .. } => {
-                    Action::Fail(AutotuneAbort::Interrupted)
-                }
-            },
+            Self::StepTest(pairs) => {
+                let (on, gains) = input.split();
+                pairs.step_test(on, gains)
+            }
             Self::Search(search) => search.next(input),
             Self::Design(design) => design.next(input),
         }
@@ -195,6 +199,31 @@ impl Procedure {
         match self {
             Self::Search(search) => search.take_verdict(),
             Self::StepTest(_) | Self::Design(_) => None,
+        }
+    }
+}
+
+/// A plane [`Procedure`]: a plane stage's method as a pure state machine, on a plane axis's
+/// gains.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlaneProcedure(PlaneSteps);
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum PlaneSteps {
+    /// Alternating steps, then the same gains.
+    StepTest(Pairs),
+}
+
+impl PlaneProcedure {
+    pub(super) fn new(method: PlaneMethod) -> Self {
+        match method {
+            PlaneMethod::StepTest(plan) => Self(PlaneSteps::StepTest(Pairs::new(plan, plan.pairs))),
+        }
+    }
+
+    pub(super) fn next(&mut self, on: Decide, gains: PlaneAxisGains) -> Action<PlaneAxisGains> {
+        match &mut self.0 {
+            PlaneSteps::StepTest(pairs) => pairs.step_test(on, gains),
         }
     }
 }
@@ -292,6 +321,37 @@ impl Pairs {
     /// Whether the batch has all its valid steps.
     fn done(&self) -> bool {
         self.summary.count() >= 2 * self.pairs
+    }
+
+    /// A step test's next action on `on`, the loop's committed `gains` unchanged: the next
+    /// step, the batch's steps once it has them all, or a failure. Any side's gains.
+    fn step_test<G>(&mut self, on: Decide, gains: G) -> Action<G> {
+        match on {
+            Decide::Start => Action::probe(self.probe()),
+            Decide::Measured {
+                measurement: Measurement::Step(metrics),
+                stalled,
+            } => match self.record(&metrics, stalled) {
+                Err(abort) => Action::Fail(abort),
+                Ok(()) if self.done() => Action::Finish {
+                    gains,
+                    outcome: Outcome::Measured,
+                    steps: Some(self.summary),
+                    baseline: None,
+                },
+                Ok(()) => Action::probe(self.probe()),
+            },
+            Decide::Stalled => match self.stall() {
+                Err(abort) => Action::Fail(abort),
+                Ok(()) => Action::probe(self.probe()),
+            },
+            Decide::Aborted { abort } => Action::Fail(AutotuneAbort::Probe(abort)),
+            Decide::Breached { reason } => Action::Fail(reason),
+            Decide::Unsettled => Action::Fail(AutotuneAbort::NotSettled),
+            Decide::Measured { .. } | Decide::Held { .. } => {
+                Action::Fail(AutotuneAbort::Interrupted)
+            }
+        }
     }
 
     /// What a step's `input` means for the batch: a measured step or a stall is counted, and
