@@ -1063,9 +1063,10 @@ fn tilt_for_acceleration(accel_mps2: Vec2, heading_rad: f32) -> Vec2 {
 /// The acceleration, in m/s² (north, east), that holds off the drag `wind`'s model puts on a
 /// leg's speed: the lateral loop's commanded velocity `commanded_mps` past
 /// [`FEEDFORWARD_HOLD_BAND_MPS`], through air moving at `wind_mps` (both north, east), facing
-/// `heading_rad`. Fed forward, so the lateral loop's I term trims only the wind and gusts:
-/// learned by the I instead, a leg's drag stays wound up when the vehicle stops and carries
-/// it past the waypoint (#609). Zero without a drag model.
+/// `heading_rad`; on a hold, that is the wind's drag alone. Fed forward, so the lateral loop's
+/// I term trims only what the model misses: learned by the I instead, a leg's drag stays wound
+/// up when the vehicle stops and carries it past the waypoint (#609). Zero without a drag
+/// model.
 fn drag_feedforward_mps2(
     wind: &WindConfig,
     commanded_mps: Vec2,
@@ -1079,14 +1080,14 @@ fn drag_feedforward_mps2(
         Vec2::zeros()
     };
     let air_mps = leg_mps - wind_mps;
-    // (north, east) into (ahead, right) of the heading, the thrust frame's `x` and `y` level.
+    // (north, east) into (ahead, right) of the heading, the thrust frame's `x` and `y` level,
+    // and the push back out.
     let (sin, cos) = (libm::sinf(heading_rad), libm::cosf(heading_rad));
     let air_body_mps = Vec2::new(
         air_mps.x * cos + air_mps.y * sin,
         -air_mps.x * sin + air_mps.y * cos,
     );
     let push_body_mps2 = -wind.drag_mps2(air_body_mps);
-    // And back.
     Vec2::new(
         push_body_mps2.x * cos - push_body_mps2.y * sin,
         push_body_mps2.x * sin + push_body_mps2.y * cos,
