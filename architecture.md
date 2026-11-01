@@ -1042,10 +1042,10 @@ feedback and a search from the start gains were rejected (**Design search**, bel
   pilot's throttle, with the hold trimming pitch for airspeed between probes. A breach puts
   the committed gains back, and a VTOL recovers to a hover.
   * **Model:** the identification's square wave on the rate setpoint, fitted to how the
-    surfaces turn the aircraft. In plain words: a roll rate dies away against the wing's
-    damping, and a pitch rate also meets the wing's stiffness, a nose-down moment growing
-    with the [angle of attack](docs/glossary.md). The fit is rate acceleration = stiffness × α
-    + damping × rate + control × moment, the moment through a fitted surface lag and delay.
+    surfaces turn the aircraft: a roll rate dies away against the wing's damping, and a pitch
+    rate also meets its [stiffness](docs/glossary.md), which grows with the angle of attack
+    α. The fit is: rate acceleration = stiffness × α + damping × rate + control × moment,
+    the moment through a fitted surface lag and delay.
     FF is damping over control: the moment that holds a rate. On the sim it lands within 1–5%
     of the hand-set FF for roll (19% on the eXplora), and within 4–18% for pitch on the
     airplane and the Cobra (the eXplora's 26–34% low, the Alia's 42%).
@@ -1073,10 +1073,12 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     * A step search from the start meets the spec only from the airframe's own gains (10
       rows).
   * Open, for #534: pitch. The model holds airspeed constant, so it under-asks for pitch I,
-    and the in-flight checks don't always make it up (the plane on 2 of 8 rows). The Alia's
-    pitch misses rise on every row, its pitch FF reads 42% low, and its roll τ runs to the
-    1.5 s bound. A speed term in the model (the phugoid), or I sized in flight, is the next
-    step.
+    and the in-flight checks don't always make it up (the airplane on 2 of 8 rows). The
+    Alia's pitch misses rise on every row, its pitch FF reads 42% low, and its roll τ runs to
+    the 1.5 s bound. A speed term in the model (the phugoid), or I sized in flight, is the
+    next step. The sweep's design walked a full grid of P, I, and τ, about 10⁷ model ticks:
+    seconds on the host, too long between ticks on a flight controller, so #534 searches the
+    model instead (bisecting τ, then P and I).
 
 ## Real-Time Loop Management
 
