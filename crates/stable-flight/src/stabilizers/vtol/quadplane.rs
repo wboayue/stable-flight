@@ -76,9 +76,9 @@ impl Sides {
 ///
 /// In a hover the surfaces are held neutral (PX4's `VT_ELEV_MC_LOCK`,
 /// `vtol_att_control_params.yaml`), and in a blend the lift rotors' output is weighted and the
-/// surfaces' isn't (PX4 `standard.cpp:294-368`). A side that starts flying is primed, so it
-/// starts without the integrals of its last flight (PX4 resets the idle side's rate
-/// integrators, `FixedwingRateControl.cpp:266-269`); a side that keeps flying from a blend
+/// surfaces' isn't (PX4's `Standard::fill_actuator_outputs`). A side that starts flying is
+/// primed, so it starts without the integrals of its last flight (PX4 resets the idle side's
+/// rate integrators, `FixedwingRateControl::Run`); a side that keeps flying from a blend
 /// keeps them.
 ///
 /// Autotune probes go to the hover side. Params chain the parts' (`STAB_*`, `PSTAB_*`).

@@ -21,7 +21,7 @@
 //! - **Pusher rows** (a lift+cruise VTOL's forward motor) get the cruise thrust over their
 //!   full range and no moments: `thrust_factor` is headroom for the lift motors' moments, which
 //!   a pusher doesn't carry, as ArduPlane's throttle spans 0–100% (`THR_MAX`,
-//!   `ArduPlane/config.h:148`). They aren't desaturated with the lift motors.
+//!   `ArduPlane/config.h`). They aren't desaturated with the lift motors.
 //!
 //! On a lift+cruise VTOL the stabilizer sets [`ControlOutput::cruise`]: motor rows then fly
 //! `thrust` and `moments`, and pusher and servo rows fly the cruise thrust and moments. Without

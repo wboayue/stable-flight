@@ -201,7 +201,7 @@ impl TelemetryPublisher for ThrustLog {
 
 /// A descent or a land from a settled hover speeds up at `descent_accel_mps2` rather than
 /// stepping to its speed, so thrust dips no more than that acceleration asks: hover · a / g,
-/// 0.086 at ArduPilot's `WP_ACC_Z` of 1 m/s² (`libraries/AC_WPNav/AC_WPNav.cpp:14`). Measured
+/// 0.086 at ArduPilot's `WP_ACC_Z` of 1 m/s² (`libraries/AC_WPNav/AC_WPNav.cpp`). Measured
 /// on `quad_x`: 0.030 for the descent, 0.028 for the land; stepping dipped them 0.52 (to
 /// 3 m/s) and 0.121 (to the 0.7 m/s land speed). #417: on the RealFlight eXplora, a descent
 /// step took thrust to its floor and dropped the nose 10°; #476: a land step set off a roll

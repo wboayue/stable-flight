@@ -86,13 +86,14 @@ struct Pending {
 ///   are ignored. The flight controller disarms on touchdown. A land while disarmed is
 ///   `DENIED`, one before any position has arrived is `TEMPORARILY_REJECTED`, and one while
 ///   already landing is `ACCEPTED` at once.
-/// - `MAV_CMD_DO_VTOL_TRANSITION` (QGC's transition button, `Vehicle.cc:2524-2533`; param1
+/// - `MAV_CMD_DO_VTOL_TRANSITION` (QGC's transition button, `Vehicle::setVtolInFwdFlight`; param1
 ///   `MAV_VTOL_STATE_MC` or `_FW`) goes out as `Control::Regime` (`Copter` or `Plane`), for a
 ///   VTOL only (`UNSUPPORTED` otherwise). Any other param1, or one while disarmed, is `DENIED`;
 ///   one for the regime already flown or heading there is `ACCEPTED` at once. ArduPilot takes
-///   it only in AUTO (`quadplane.cpp:2029-2063`); here it flies in any mode. A transition the
-///   heartbeat reports refused (a [`ModeRefusal`](stable_flight_link::stable_flight::ModeRefusal),
-///   which the flight controller also announces as status text) is `FAILED` at once.
+///   it only in AUTO (`QuadPlane::handle_do_vtol_transition`); here it flies in any mode. A
+///   transition the heartbeat reports refused (a
+///   [`ModeRefusal`](stable_flight_link::stable_flight::ModeRefusal), which the flight
+///   controller also announces as status text) is `FAILED` at once.
 ///   A failed one is withdrawn, the regime flown requested again, so it neither starts later
 ///   on its own (a height refusal clears once the vehicle climbs) nor blocks a retry (an
 ///   abandoned transition waits for a `Copter` request, which QGC never sends while it shows

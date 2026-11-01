@@ -19,8 +19,8 @@ mod tests;
 /// ([`PathConfig`]).
 ///
 /// This is ArduPilot's scripted aerobatics' correction
-/// (`libraries/AP_Scripting/applets/Aerobatics/FixedWing/plane_aerobatics.lua:2615-2645` at
-/// `3d24375`): only the error across the path counts, a PD turns it into an acceleration, and
+/// (`do_path` in `libraries/AP_Scripting/applets/Aerobatics/FixedWing/plane_aerobatics.lua`
+/// at `3d24375`): only the error across the path counts, a PD turns it into an acceleration, and
 /// the acceleration divided by the speed is the turn rate, in pitch and yaw, never roll.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Path {
@@ -46,10 +46,10 @@ pub enum Path {
 pub struct PathConfig {
     /// Acceleration back toward the path per meter off it, in m/s² per m (1/s²). Higher holds
     /// the path tighter; 4 (with a velocity gain of 4) balloons a 90°/s roll 4.5 m on the sim
-    /// for no less sink (#481). ArduPilot's `AEROM_ERR_COR_P` (`plane_aerobatics.lua:91-95`).
+    /// for no less sink (#481). ArduPilot's `AEROM_ERR_COR_P` (`plane_aerobatics.lua`).
     pub position_gain_per_s2: f32,
     /// Acceleration against the speed away from the path, in m/s² per m/s (1/s): damps the
-    /// return. ArduPilot's `AEROM_ERR_COR_D` (`:98-102`).
+    /// return. ArduPilot's `AEROM_ERR_COR_D`.
     pub velocity_gain_per_s: f32,
     /// On a [`Path::Line`], the share of the weight the wing stops carrying as it rolls away
     /// from upright (none upright, all of it on knife edge, twice it inverted) steered against

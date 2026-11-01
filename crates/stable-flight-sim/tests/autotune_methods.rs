@@ -10,12 +10,12 @@
 //! - **Identification:** core's `IdentifyProbe` on the roll and pitch rate loops
 //!   (`COPTER_IDENTIFY`): PX4's shrinking square wave on the setpoint, every loop closed, and a
 //!   least-squares fit of the axis's body rate to its moment command with a delay.
-//! - **Design** from the model: PX4's pole placement (`pid_design.hpp:68-103`, here only), or
+//! - **Design** from the model: PX4's pole placement (`pid_design::computePidGmvc`, here only), or
 //!   core's loop shaping (`design_rate`: the rate PD's zero on the fitted lag, P for a phase
 //!   margin). Angle P from core's `design_angle_p` on the designed rate loop, for every row.
 //! - **Gain ramp:** ArduPilot's QuikTune (`AP_Scripting/applets/VTOL-quicktune.lua` at
 //!   `e96bd90`): D then P raised until the rate PID's output slew oscillates
-//!   (`Filter/SlewLimiter.cpp:31-81`), then backed off.
+//!   (`SlewLimiter::modifier`), then backed off.
 //!
 //! Each is described from its source and implemented here from that description.
 
@@ -287,7 +287,7 @@ const DITHER_HZ: f32 = 2.0;
 /// Slew thresholds swept, in moment per second (QuikTune's `OSC_SMAX` default is 5).
 const SLEW_THRESHOLDS: [f32; 4] = [5.0, 20.0, 40.0, 80.0];
 
-/// ArduPilot's slew measure of a PID output (`SlewLimiter.cpp:31-81`): its rate through a
+/// ArduPilot's slew measure of a PID output (`SlewLimiter::modifier`): its rate through a
 /// 25 Hz low-pass; positive and negative peaks each held 300 ms, then decaying over 1 s; their
 /// mean, risen into at `2·dt/τ` and capped at the raw mean.
 #[derive(Default)]

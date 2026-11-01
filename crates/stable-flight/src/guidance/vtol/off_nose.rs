@@ -10,14 +10,14 @@ mod params;
 mod tests;
 
 /// Default [`OffNoseSpeedConfig::speed_mps`], in m/s: its 5 m/s tail first is ArduPilot's
-/// quadplane waypoint speed (`Q_WP_SPD`, `ArduPlane/quadplane.cpp:609`) and the speed the
-/// RealFlight Titan Cobra flies legs behind it cleanly (#433). On the sim quadplanes it holds
-/// an uncapped leg's turnaround within 1° of the tilt cap, where uncapped it overshoots by up
-/// to 12° (#437).
+/// quadplane waypoint speed (`Q_WP_SPD`, in `ArduPlane/quadplane.cpp`'s `defaults_table`) and
+/// the speed the RealFlight Titan Cobra flies legs behind it cleanly (#433). On the sim
+/// quadplanes it holds an uncapped leg's turnaround within 1° of the tilt cap, where uncapped
+/// it overshoots by up to 12° (#437).
 pub const DEFAULT_OFF_NOSE_SPEED_MPS: f32 = 15.0;
 
 /// Heading error, from the nose to the bearing to the waypoint, up to which the speed isn't
-/// cut (ArduPilot, `ArduPlane/quadplane.cpp:3087-3105`).
+/// cut (ArduPilot's `QuadPlane::get_scaled_wp_speed`).
 const FREE_RAD: f32 = 20.0 * DEG;
 
 /// Heading error at and past which the speed is cut the most (ArduPilot, as above).
@@ -56,10 +56,10 @@ impl Default for OffNoseSpeedConfig {
 }
 
 /// Caps a quadplane's waypoint speed in copter flight by how far the nose is off the bearing to
-/// the waypoint, as ArduPilot's quadplane does (`get_scaled_wp_speed`,
-/// `ArduPlane/quadplane.cpp:3087-3105`): uncut within 20°, then
-/// [`speed_mps`](OffNoseSpeedConfig::speed_mps) divided by a factor rising linearly from 1 at
-/// 20° to 3 at 160° and past it. The waypoint's own cruise speed still applies when lower.
+/// the waypoint, as ArduPilot's quadplane does (`QuadPlane::get_scaled_wp_speed`): uncut
+/// within 20°, then [`speed_mps`](OffNoseSpeedConfig::speed_mps) divided by a factor rising
+/// linearly from 1 at 20° to 3 at 160° and past it. The waypoint's own cruise speed still
+/// applies when lower.
 ///
 /// A quadplane's wing and tail push it around flying sideways or tail first: tail first at
 /// 15 m/s the RealFlight Titan Cobra pitched past what its lift rotors hold and flipped (#437).

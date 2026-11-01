@@ -7,45 +7,52 @@
 //! (`libraries/AP_TECS/AP_TECS.cpp`) and PX4's `TECS` (`src/lib/tecs/TECS.cpp`) fly it,
 //! described, not copied:
 //!
-//! - **Energies:** potential `g·h`, kinetic `½V²`, and their rates `g·ḣ` and `V·V̇` (AP:681-695).
-//!   `V̇` is the airspeed's own derivative through a 0.5 s low-pass, about the filter
-//!   ArduPilot puts on its damping term (AP:740-746), so it doesn't hang on how a backend
-//!   measures acceleration; PX4 drops its acceleration term for bias
-//!   (`FwLateralLongitudinalControl.cpp:408-410`). The kinetic rate is `V·(V̇ − lpf(V̇))`, high
-//!   passed as ArduPilot's (AP:686, 695), so a steady acceleration isn't a rate error.
+//! - **Energies:** potential `g·h`, kinetic `½V²`, and their rates `g·ḣ` and `V·V̇`
+//!   (`AP_TECS::_update_energies`). `V̇` is the airspeed's own derivative through a 0.5 s
+//!   low-pass, about the filter ArduPilot puts on its damping term
+//!   (`_update_throttle_with_airspeed`), so it doesn't hang on how a backend measures
+//!   acceleration; PX4 drops its acceleration term for bias
+//!   (`FwLateralLongitudinalControl::tecs_update_pitch_throttle`). The kinetic rate is
+//!   `V·(V̇ − lpf(V̇))`, high passed as ArduPilot's (`_update_energies`), so a steady
+//!   acceleration isn't a rate error.
 //! - **Demands:** the height demand slews toward the target at the climb and sink limits, the
-//!   airspeed demand at half the climb's energy rate over `V` (AP:502-521, 550-580). The
-//!   slewed height demand then runs through a 3 s lag (AP:577), whose slope is the height
-//!   rate's feedforward; the airspeed's rate demand is its error alone, as PX4's
-//!   (PX4:320-325), held to half the climb's energy rate for thrust and unheld for pitch. The
-//!   lag starts at the aircraft's own climb rate (within the climb and sink limits), as PX4's
-//!   reference model does (PX4:212-218, 692-698). ArduPilot's starts level
-//!   (AP:1187-1190): an aircraft entering plane flight already sinking then pitches up to stop
-//!   the sink, falls behind the demand, and sinks past the limit catching up (#503). Each
-//!   error over the time constant is a proportional term (AP:735). The airspeed demand stays
-//!   within the least and most airspeed, and starts there: seeded at a stalled speed it would
-//!   hold the stall. The height demand stays within one time constant's climb or sink of the
-//!   aircraft, so a climb it can't make doesn't run the demand away; ArduPilot instead stops
-//!   advancing the demand while pitch or thrust is at its limit (AP:588-606), which needs the
-//!   last tick's clipping.
+//!   airspeed demand at half the climb's energy rate over `V` (`_update_height_demand`,
+//!   `_update_speed_demand`). The slewed height demand then runs through a 3 s lag
+//!   (`_update_height_demand`), whose slope is the height rate's feedforward; the airspeed's
+//!   rate demand is its error alone, as PX4's (`TECSControl::_calcAirspeedControlOutput`),
+//!   held to half the climb's energy rate for thrust and unheld for pitch. The lag starts at
+//!   the aircraft's own climb rate (within the climb and sink limits), as PX4's reference model
+//!   does (`TECSAltitudeReferenceModel::initialize`, from `TECS::initialize`). ArduPilot's
+//!   starts level (`_initialise_states`): an aircraft entering plane flight already sinking
+//!   then pitches up to stop the sink, falls behind the demand, and sinks past the limit
+//!   catching up (#503). Each error over the time constant is a proportional term
+//!   (`_update_throttle_with_airspeed`). The airspeed demand stays within the least and most
+//!   airspeed, and starts there: seeded at a stalled speed it would hold the stall. The height
+//!   demand stays within one time constant's climb or sink of the aircraft, so a climb it
+//!   can't make doesn't run the demand away; ArduPilot instead stops advancing the demand
+//!   while pitch or thrust is at its limit (`_update_height_demand`'s climb and sink scalers),
+//!   which needs the last tick's clipping.
 //! - **Thrust:** the total energy rate demand, mapped around cruise thrust so that the climb
-//!   limit takes full thrust and the least sink least thrust (PX4:628-640), plus damping on the
-//!   rate error (AP:740-746) and an integral of the energy error (AP:785), with its own gain
-//!   as PX4's (`FW_T_THR_INTEG`, `fw_lat_long_params.yaml:68`).
+//!   limit takes full thrust and the least sink least thrust
+//!   (`TECSControl::_calcThrottleControlOutput`), plus damping on the rate error and an
+//!   integral of the energy error (`_update_throttle_with_airspeed`), with its own gain as
+//!   PX4's (`FW_T_THR_INTEG`).
 //! - **Pitch:** the balance `w_p·SPE − w_k·SKE` (`w_k` the speed weight, `w_p = 2 − w_k`, each
-//!   capped at 1; AP:1003-1033); its rate demand over `V·g` is a flight path angle, plus trim
-//!   pitch, damping on the rate error (AP:1062), and an integral of the rate error that fades
-//!   while pinned at a pitch limit (AP:1086-1102), with its own gain as PX4's
-//!   (`FW_T_I_GAIN_PIT`, `fw_lat_long_params.yaml:80`). The rate error is taken against the
-//!   clamped demand, so the integral pulls the nose up as soon as a sink passes the sink limit.
-//!   ArduPilot adds a second integral, of the airspeed error alone (AP:1096); this has none.
-//!   A forward transition passes its pitch limits in, so the integral stops where the
-//!   transition stops the pitch (`ArduPlane/quadplane.cpp:4791-4793`).
-//! - **Underspeed:** below 0.9 of the least airspeed (AP:660), full thrust and pitch holding
-//!   airspeed alone (speed weight 2). It clears back at the least airspeed, where the wing
-//!   flies. ArduPilot clears at 1.15 of the least (AP:652-656), which for a heavy airframe can
-//!   sit above its trim airspeed (the sim Alia 250: 46 m/s against 45) and never clear.
-//! - **Turns:** thrust for a bank's extra drag, `k·(1/cos²φ − 1)` on the energy rate (AP:764).
+//!   capped at 1; `_update_pitch`); its rate demand over `V·g` is a flight path angle, plus
+//!   trim pitch, damping on the rate error, and an integral of the rate error that fades while
+//!   pinned at a pitch limit (`_update_pitch`), with its own gain as PX4's (`FW_T_I_GAIN_PIT`).
+//!   The rate error is taken against the clamped demand, so the integral pulls the nose up as
+//!   soon as a sink passes the sink limit. ArduPilot adds a second integral, of the airspeed
+//!   error alone (`_update_pitch`); this has none. A forward transition passes its pitch limits
+//!   in, so the integral stops where the transition stops the pitch (ArduPlane's
+//!   `SLT_Transition::set_FW_roll_pitch`).
+//! - **Underspeed:** below 0.9 of the least airspeed (`_detect_underspeed`), full thrust and
+//!   pitch holding airspeed alone (speed weight 2). It clears back at the least airspeed,
+//!   where the wing flies. ArduPilot clears at 1.15 of the least (`_detect_underspeed`), which
+//!   for a heavy airframe can sit above its trim airspeed (the sim Alia 250: 46 m/s against 45)
+//!   and never clear.
+//! - **Turns:** thrust for a bank's extra drag, `k·(1/cos²φ − 1)` on the energy rate
+//!   (`_update_throttle_with_airspeed`, `TECS_RLL2THR`).
 
 use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
 use crate::math::{clamp_symmetric, lagged};
@@ -55,33 +62,35 @@ use crate::{GRAVITY, VehicleState};
 mod tests;
 
 /// Time constant of the height demand's lag after its slew, in s: ArduPilot's
-/// `TECS_HDEM_TCONST` default (AP:292). The lag keeps the demand's rate continuous where the
-/// slew starts and stops; without it the rate steps by the whole climb limit in one tick, and
+/// `TECS_HDEM_TCONST` default. The lag keeps the demand's rate continuous where the slew
+/// starts and stops; without it the rate steps by the whole climb limit in one tick, and
 /// the eXplora's pitch setpoint jumped 28° in RealFlight (#454).
 const HEIGHT_DEMAND_TC_S: f32 = 3.0;
 
-/// Time constant of the airspeed rate's low-pass, in s (AP:740-746 filters its damping at
-/// about 0.5 s).
+/// Time constant of the airspeed rate's low-pass, in s (`AP_TECS::_update_throttle_with_airspeed`
+/// filters its damping at about 0.5 s).
 const AIRSPEED_RATE_TC_S: f32 = 0.5;
 
 /// Below this airspeed, in m/s, `V·g` stops shrinking: the pitch terms stay finite at a stall.
 const MIN_GAIN_AIRSPEED_MPS: f32 = 3.0;
 
-/// Underspeed latches below this share of the least airspeed (AP:660).
+/// Underspeed latches below this share of the least airspeed (`AP_TECS::_detect_underspeed`).
 const UNDERSPEED_SHARE: f32 = 0.9;
 
-/// Least `cos²φ` the turn term divides by: 72° of bank (AP:764).
+/// Least `cos²φ` the turn term divides by: 72° of bank
+/// (`AP_TECS::_update_throttle_with_airspeed`).
 const MIN_COS2_BANK: f32 = 0.1;
 
 /// Time constant of the low-pass whose gap to the airspeed rate is the kinetic energy rate, in
-/// s: what's steadier than it isn't a rate error. ArduPilot's is `TECS_TIME_CONST` (AP:397,
-/// 695) on an accelerometer's rate; on this filtered one 0.5–2 s passes the sim suite at
-/// pitch integral gains 0.1–0.3, and 3 s or more lets the plane's loop and the eXplora's
-/// rolls miss their regained altitude (1.0–1.4 m against 1 m) (#505).
+/// s: what's steadier than it isn't a rate error. ArduPilot's is `TECS_TIME_CONST`
+/// (`AP_TECS::_update_speed`, `_update_energies`) on an accelerometer's rate; on this filtered
+/// one 0.5–2 s passes the sim suite at pitch integral gains 0.1–0.3, and 3 s or more lets the
+/// plane's loop and the eXplora's rolls miss their regained altitude (1.0–1.4 m against 1 m)
+/// (#505).
 const KINETIC_RATE_HIGH_PASS_S: f32 = 1.0;
 
 /// How far past a thrust limit the thrust integral may push, so it can pull back from the
-/// limit at once (AP:779-781).
+/// limit at once (`AP_TECS::_update_throttle_with_airspeed`).
 const THRUST_INTEGRAL_MARGIN: f32 = 0.1;
 
 /// [`PlaneGuidance`](super::PlaneGuidance)'s total energy control settings.
@@ -144,7 +153,7 @@ pub struct TecsConfig {
 }
 
 impl Default for TecsConfig {
-    /// ArduPilot's defaults (`AP_TECS.cpp:27-115`: `TECS_TIME_CONST` 5, `CLMB_MAX` 5,
+    /// ArduPilot's defaults (`AP_TECS::var_info`: `TECS_TIME_CONST` 5, `CLMB_MAX` 5,
     /// `SINK_MIN` 2, `SINK_MAX` 5, `THR_DAMP` 0.5, `INTEG_GAIN` 0.3 for the thrust integral,
     /// `PTCH_DAMP` 0.3, `SPDWEIGHT` 1, `RLL2THR` 10), with the plane stabilizer's default
     /// airspeeds (10–25 m/s). The pitch integral's 0.2 is the middle of the gains that pass the
@@ -347,9 +356,10 @@ impl Tecs {
         let demand_height_m = lagged(previous.height_m, slewed_m, dt, HEIGHT_DEMAND_TC_S);
         let height_rate_mps = (demand_height_m - previous.height_m) / dt;
 
-        // Airspeed: slewed at half the climb's energy rate over V (AP:502). Its rate demand is
-        // the error over the time constant alone, as PX4's (PX4:320-325): the slew's slope
-        // would step where it stops.
+        // Airspeed: slewed at half the climb's energy rate over V
+        // (`AP_TECS::_update_speed_demand`). Its rate demand is the error over the time constant
+        // alone, as PX4's (`TECSControl::_calcAirspeedControlOutput`): the slew's slope would
+        // step where it stops.
         let max_accel_mps2 = 0.5 * config.max_energy_rate() / speed_mps;
         let target_mps = airspeed_target_mps.clamp(min_mps, max_mps);
         let demand_airspeed_mps = previous.airspeed_mps
@@ -367,7 +377,7 @@ impl Tecs {
         self.filtered_airspeed_mps =
             Some(lagged(filtered_mps, airspeed_mps, dt, AIRSPEED_RATE_TC_S));
         // High-passed: a steady acceleration (the forward transition's lift rotors and pusher)
-        // isn't a rate error, only its change is (AP:686, 695).
+        // isn't a rate error, only its change is (`AP_TECS::_update_energies`).
         let steady_mps2 = *self.steady_accel_mps2.get_or_insert(accel_mps2);
         self.steady_accel_mps2 = Some(lagged(
             steady_mps2,
@@ -413,7 +423,8 @@ impl Tecs {
             (energies.potential_rate_demand + kinetic_rate_demand).clamp(min_rate, max_rate);
         let rate = energies.potential_rate + energies.kinetic_rate;
 
-        // A bank's extra drag, on the feedforward only (AP:764).
+        // A bank's extra drag, on the feedforward only
+        // (`AP_TECS::_update_throttle_with_airspeed`).
         let cos_bank = libm::cosf(roll_rad);
         let cos2 = (cos_bank * cos_bank).max(MIN_COS2_BANK);
         let turn = if cos2.is_finite() {
@@ -452,9 +463,9 @@ impl Tecs {
         let kinetic_weight = speed_weight.min(1.0);
         let potential_weight = (2.0 - speed_weight).min(1.0);
         // The airspeed's part is unclamped: only the balance as a whole stays within the climb
-        // and sink limits (AP:1036-1046). Held to half the climb's energy rate, as thrust's is,
-        // an underspeed transition asks 0.35 m/s² of the sim Alia and pitches up against its
-        // faster rotors and pusher (#505).
+        // and sink limits (`AP_TECS::_update_pitch`). Held to half the climb's energy rate, as
+        // thrust's is, an underspeed transition asks 0.35 m/s² of the sim Alia and pitches up
+        // against its faster rotors and pusher (#505).
         let rate_demand = (potential_weight * energies.potential_rate_demand
             - kinetic_weight * energies.kinetic_rate_demand)
             .clamp(config.least_energy_rate(), config.max_energy_rate());
@@ -467,20 +478,20 @@ impl Tecs {
             limits.trim_pitch_rad + (rate_demand + config.pitch_damping * rate_error) / per_rad;
         // The integral of the rate error: it closes a steady balance error through the rate
         // demand's error term, and pulls the nose back up as soon as the sink passes the limit
-        // (AP:1086-1102, PX4:460-476).
+        // (`AP_TECS::_update_pitch`, PX4's `TECSControl::_calcPitchControlUpdate`).
         let integral_step_rad = config.pitch_integrator_gain * rate_error / per_rad * dt;
         let unclamped = proportional_rad + self.pitch_integral_rad + integral_step_rad;
         let pinned = (unclamped > high && integral_step_rad > 0.0)
             || (unclamped < low && integral_step_rad < 0.0);
         let integral_rad = if pinned {
             // Pinned against the limit it pushes toward, the integral fades over the time
-            // constant rather than winding (AP:1097-1102).
+            // constant rather than winding (`AP_TECS::_update_pitch`).
             lagged(self.pitch_integral_rad, 0.0, dt, config.time_constant_s)
         } else {
             self.pitch_integral_rad + integral_step_rad
         };
         // Within the pitch range, not within 5° past the limits of the proportional term as
-        // ArduPilot's (AP:1078-1079, 1103): that bound follows a proportional term far past a
+        // ArduPilot's `AP_TECS::_update_pitch`: that bound follows a proportional term far past a
         // limit, which at the forward transition's first few m/s winds the integral 70° up
         // (#505).
         self.pitch_integral_rad = integral_rad.clamp(low - high, high - low);

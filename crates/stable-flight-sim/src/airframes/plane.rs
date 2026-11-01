@@ -29,16 +29,16 @@ pub struct PlaneAirframe {
     pub start: Start,
 }
 
-/// ArduPilot SITL's default airplane (`libraries/SITL/SIM_Plane.h:44-88`,
-/// `SIM_Plane.cpp:30`, Plane-4.5): 2 kg, 1.88 m span, 0.45 m² wing, its aerodynamic
-/// coefficients and ±20° surfaces, on [`TableMixer::plane`].
+/// ArduPilot SITL's default airplane (`libraries/SITL/SIM_Plane.h`'s `Plane::coefficient`,
+/// `SIM_Plane.cpp`'s `Plane::Plane`, Plane-4.5): 2 kg, 1.88 m span, 0.45 m² wing, its
+/// aerodynamic coefficients and ±20° surfaces, on [`TableMixer::plane`].
 ///
 /// The rest isn't in ArduPilot's model and is chosen:
 /// - Inertia: ArduPilot applies the aero moment as the angular acceleration, so its model has
 ///   none; this one scales the Aerosonde's (Beard and McLain, *Small Unmanned Aircraft*,
 ///   app. E: 13.5 kg, 2.9 m span) by mass × span².
 /// - Servo lag: ArduPilot SITL's default `SIM_SERVO_SPEED` (0.14 s), which it applies as a
-///   first-order filter (`SITL.cpp:87`, `SIM_Aircraft.cpp:905-917`).
+///   first-order filter (`Aircraft::filtered_idx`).
 /// - Prop: static thrust-to-weight 1.2 with 50 ms lag; ArduPilot sizes its thrust from a hover
 ///   throttle that doesn't apply here.
 ///

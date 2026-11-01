@@ -17,11 +17,11 @@ use stable_flight_sim::{Perturbations, SimPlane, Wind};
 use super::RECORDED;
 
 /// Level-flight altitude band, either way, in m: ArduPilot's for a loiter altitude regained
-/// (Plane-4.5 `Tools/autotest/arduplane.py:2727`), held for a whole window.
+/// (Plane-4.5 autotest `AutoTestPlane.LOITER`), held for a whole window.
 pub const ALTITUDE_BAND_M: f32 = 1.0;
 
 /// Level-flight airspeed band, either way, in m/s: ArduPilot's for a commanded airspeed held
-/// (`arduplane.py:897`, 5 s minimum), held for a whole window.
+/// (`AutoTestPlane.DO_CHANGE_SPEED_mission`, 5 s minimum), held for a whole window.
 pub const AIRSPEED_BAND_MPS: f32 = 1.0;
 
 /// How far past `PGUID_SINK_MAX` a descending plane leg may sink, in m/s: no external band

@@ -3,8 +3,8 @@
 //!
 //! Thrust acts along the thrust frame's `z`, so the specific force along its `x` and `y` is
 //! the air's push alone. Each axis's drag model, a bluff-body term `½ρv²/B` plus rotor
-//! momentum drag `μv` (ArduPilot's and PX4's drag fusion: `AirDataFusion.cpp:380-445`,
-//! `drag_fusion.cpp:83-140`), is inverted to the air velocity along it; the wind along it is
+//! momentum drag `μv` (ArduPilot's and PX4's drag fusion: `NavEKF3_core::FuseDragForces`,
+//! `Ekf::fuseDrag`), is inverted to the air velocity along it; the wind along it is
 //! the ground velocity's component less that. A two-state Kalman filter on wind (north, east)
 //! takes each axis as a scalar measurement whose noise is the force noise over the drag's
 //! slope there, so an axis with little drag (a tailsitter's span in hover) counts for little,
@@ -28,10 +28,11 @@ mod tests;
 pub const AIR_DENSITY_KGPM3: f32 = 1.225;
 
 /// Seconds the measurement is averaged over before each update: about 5 Hz, as both stacks
-/// average their specific force (`Measurements.cpp:1492-1535`, `estimator_interface.cpp:518-570`).
+/// average their specific force (`NavEKF3_core::SampleDragData`,
+/// `EstimatorInterface::setDragData`).
 pub const UPDATE_PERIOD_S: f32 = 0.2;
 
-/// Default [`WindConfig::force_noise_mps2`]: ArduPilot's `EK3_DRAG_M_NSE` (`AP_NavEKF3.cpp:714`).
+/// Default [`WindConfig::force_noise_mps2`]: ArduPilot's `EK3_DRAG_M_NSE` (`AP_NavEKF3.cpp`).
 pub const DEFAULT_FORCE_NOISE_MPS2: f32 = 0.5;
 
 /// Default [`WindConfig::process_noise_mps_per_rt_s`]: lets a steady wind's estimate move about
@@ -42,7 +43,7 @@ pub const DEFAULT_PROCESS_NOISE_MPS_PER_RT_S: f32 = 0.1;
 pub const INITIAL_SD_MPS: f32 = 10.0;
 
 /// Innovations past this many standard deviations are rejected, as both stacks gate drag
-/// (`AirDataFusion.cpp:595-599`, `drag_fusion.cpp:123`).
+/// (`NavEKF3_core::FuseDragForces`, `Ekf::fuseDrag`).
 const GATE_SIGMA: f32 = 5.0;
 
 /// Cosine of the most tilt, thrust axis from vertical, a tick is used at: 45°. The drag model

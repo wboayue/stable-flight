@@ -12,7 +12,7 @@
 //!
 //! Piloted inputs mark their setpoint [`idle`](crate::AttitudeSetpoint::idle) while the
 //! throttle is at or below [`IDLE_THROTTLE`] (or NaN), as ArduPilot spools to ground idle on
-//! `throttle_zero` in its piloted modes (`ArduCopter/mode_stabilize.cpp:19-40`). Waypoint and
+//! `throttle_zero` in its piloted modes (`ModeStabilize::run`). Waypoint and
 //! land setpoints never are: there's no land detector to tell a touchdown
 //! ([#395](https://github.com/wboayue/stable-flight/issues/395)).
 //!
@@ -24,8 +24,8 @@
 //! flight share one heading-hold target, and rate flight keeps it on the vehicle's heading.
 //! Waypoint flight slews that target along the leg, from where the leg began to its waypoint,
 //! as ArduPilot's and PX4's defaults face the next waypoint (`WP_YAW_BEHAVIOR`,
-//! `ArduCopter/config.h:468`; `MPC_YAW_MODE`, PX4 `FlightTaskAuto.cpp:571-628`), so a leg
-//! behind the vehicle isn't flown tail first. The leg's direction, not the bearing from the
+//! `ArduCopter/config.h`; `MPC_YAW_MODE`, PX4 `FlightTaskAuto::_set_heading_from_mode`), so a
+//! leg behind the vehicle isn't flown tail first. The leg's direction, not the bearing from the
 //! vehicle, keeps a braking overshoot or a hold drifting in wind from turning the nose around.
 //! The
 //! altitude and lateral loops start fresh each time waypoint or land flight is entered, with
@@ -82,19 +82,19 @@ pub const DEFAULT_NAVIGATION_PERIOD_S: f32 = 0.02;
 pub const DEFAULT_MAX_DESCENT_MPS: f32 = 3.0;
 
 /// Default [`CopterGuidanceConfig::descent_accel_mps2`]: ArduPilot's waypoint vertical
-/// acceleration limit, `WP_ACC_Z` (`libraries/AC_WPNav/AC_WPNav.cpp:14`).
+/// acceleration limit, `WP_ACC_Z` (`libraries/AC_WPNav/AC_WPNav.cpp`).
 pub const DEFAULT_DESCENT_ACCEL_MPS2: f32 = 1.0;
 
 /// Default [`CopterGuidanceConfig::climb_decel_mps2`]: ArduPilot's quadplane vertical
 /// acceleration limit, `Q_PILOT_ACCEL_Z`, which it sheds a tailsitter's climb at after a
-/// handover (`ArduPlane/quadplane.cpp:64`, `:1008-1016`). On the sim tailsitter handed over
+/// handover (`QuadPlane::run_z_controller`). On the sim tailsitter handed over
 /// at +3.4 m/s with a 1.5 m/s descent limit, it sank 1.61 m/s and rose 2.6 m; 1 m/s² rose
 /// 6.1 m (33 m at +8.1 m/s), g sank 1.75 m/s, and a target starting at rest 1.98 m/s (#462).
 pub const DEFAULT_CLIMB_DECEL_MPS2: f32 = 2.5;
 
 /// Default [`CopterGuidanceConfig::waypoint_yaw_radps`]: 60°/s, ArduPilot's waypoint yaw slew
-/// (`ATC_RATE_WPY_MAX`, `libraries/AC_AttitudeControl/AC_AttitudeControl.h:21`) and PX4's
-/// (`MPC_YAWRAUTO_MAX`, `multicopter_autonomous_params.yaml:21-42`).
+/// (`ATC_RATE_WPY_MAX`, `libraries/AC_AttitudeControl/AC_AttitudeControl.h`) and PX4's
+/// (`MPC_YAWRAUTO_MAX`).
 pub const DEFAULT_WAYPOINT_YAW_RADPS: f32 = 60.0_f32.to_radians();
 
 /// Default [`CopterGuidanceConfig::heading_rate_radps`]: the waypoint yaw slew, 60°/s, which
@@ -103,7 +103,7 @@ pub const DEFAULT_HEADING_RATE_RADPS: f32 = DEFAULT_WAYPOINT_YAW_RADPS;
 
 /// Default [`CopterGuidanceConfig::waypoint_yaw_min_leg_m`]: the waypoint follower's
 /// [`DEFAULT_ACCEPTANCE_RADIUS_M`], since a shorter leg is reached as it begins; PX4 likewise
-/// holds its yaw inside the acceptance radius (`FlightTaskAuto.cpp:608-628`).
+/// holds its yaw inside the acceptance radius (`FlightTaskAuto::_set_heading_from_mode`).
 pub const DEFAULT_WAYPOINT_YAW_MIN_LEG_M: f32 = DEFAULT_ACCEPTANCE_RADIUS_M;
 
 /// Default [`CopterGuidanceConfig::heading_yield_rad`]: 30°. On the sim quadplane, 20°–45°
@@ -200,12 +200,12 @@ pub struct CopterGuidanceConfig {
     pub land_speed_mps: f32,
     /// Deceleration, in m/s², at which a waypoint or land target latched while the vehicle
     /// climbs sheds that climb. The target starts moving up at the vehicle's climb rate (a
-    /// sink starts it at rest, as ArduPilot's tailsitter does, `AC_PosControl.cpp:849-863`),
-    /// so the altitude loop doesn't cut thrust to stop the climb at once: on a tailsitter
-    /// handed over from a back transition, that cut let the climb die and the hover fall
-    /// past the descent limit (#462). Higher: stops the climb lower, cuts more thrust doing
-    /// it; a climb of v rises about v² / (2 · this) further. Must be positive and finite.
-    /// Defaults to [`DEFAULT_CLIMB_DECEL_MPS2`].
+    /// sink starts it at rest, as ArduPilot's tailsitter does,
+    /// `AC_PosControl::D_init_controller_no_descent`), so the altitude loop doesn't cut thrust
+    /// to stop the climb at once: on a tailsitter handed over from a back transition, that cut
+    /// let the climb die and the hover fall past the descent limit (#462). Higher: stops the
+    /// climb lower, cuts more thrust doing it; a climb of v rises about v² / (2 · this) further.
+    /// Must be positive and finite. Defaults to [`DEFAULT_CLIMB_DECEL_MPS2`].
     pub climb_decel_mps2: f32,
     /// Rate, in rad/s, at which waypoint flight turns the heading-hold target to the leg's
     /// direction, the shorter way round; `0` holds the heading the leg began with, unless

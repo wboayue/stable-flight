@@ -21,7 +21,7 @@ use common::{CALM_ALTITUDE_M, CALM_ANGLE_DEG, CALM_HORIZONTAL_M, FACING_DEG, hea
 /// Leg length, in m.
 const LEG_M: f32 = 100.0;
 
-/// ArduPilot's quadplane waypoint speed (`Q_WP_SPD`, `ArduPlane/quadplane.cpp:607`), in m/s.
+/// ArduPilot's quadplane waypoint speed (`Q_WP_SPD`, `QuadPlane`'s `defaults_table`), in m/s.
 const WP_SPEED_MPS: f32 = 5.0;
 
 /// No cruise cap: the 27° tilt cap and the braking curve bound the speed (measured up to

@@ -43,9 +43,9 @@ pub fn extended_sys_state(
 }
 
 /// A VTOL's `MAV_VTOL_STATE` while it flies `mode`, as PX4 maps its VTOL status
-/// (`mavlink/streams/EXTENDED_SYS_STATE.hpp:79-92`): copter is MC, plane FW, and each
+/// (`MavlinkStreamExtendedSysState::send`): copter is MC, plane FW, and each
 /// transition is named for where it heads. QGC shows fixed-wing only for FW, so a transition
-/// reads as multirotor there (`Vehicle.cc:1062-1067`).
+/// reads as multirotor there (`Vehicle::_handleExtendedSysState`).
 ///
 /// # Examples
 ///

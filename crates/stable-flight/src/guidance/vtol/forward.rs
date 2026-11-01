@@ -11,13 +11,12 @@ mod params;
 #[cfg(test)]
 mod tests;
 
-/// [`ForwardThrust`] settings: ArduPilot's `Q_FWD_THR_GAIN` and `Q_FWD_PIT_LIM`
-/// (`ArduPlane/quadplane.cpp:516`, `:525`).
+/// [`ForwardThrust`] settings: ArduPilot's `Q_FWD_THR_GAIN` and `Q_FWD_PIT_LIM`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ForwardThrustConfig {
     /// Pusher linear thrust per unit of `tan(pitch)` the hover asks for nose down; `0` (the
     /// default) is off. ArduPilot sets it to the weight over the pusher's most thrust
-    /// (`quadplane.cpp:512`). Non-negative and finite.
+    /// (`Q_FWD_THR_GAIN`'s description). Non-negative and finite.
     pub gain: f32,
     /// The most nose-down pitch copter flight keeps while forward thrust is on, in radians, in
     /// `[0, π/2)`.
@@ -41,8 +40,8 @@ impl ForwardThrustConfig {
 }
 
 impl Default for ForwardThrustConfig {
-    /// Off, as ArduPilot (`Q_FWD_THR_USE`, `quadplane.cpp:532`) and PX4 (`VT_FWD_THRUST_EN`,
-    /// `standard_params.yaml:5`) ship it, with ArduPilot's 3° pitch limit.
+    /// Off, as ArduPilot (`Q_FWD_THR_USE`) and PX4 (`VT_FWD_THRUST_EN`) ship it, with
+    /// ArduPilot's 3° pitch limit.
     fn default() -> Self {
         ForwardThrustConfig {
             gain: 0.0,
@@ -54,9 +53,9 @@ impl Default for ForwardThrustConfig {
 /// The pusher's share of copter flight on a quadplane: the hover's pitch held to
 /// [`pitch_limit_rad`](ForwardThrustConfig::pitch_limit_rad) nose down, and the pusher's
 /// thrust for what the hover asked, `gain · tan(nose-down pitch)` up to 1 with the pitch
-/// taken to at most 45° (ArduPilot's `assign_tilt_to_fwd_thr`, `ArduPlane/quadplane.cpp:2942-3058`,
-/// ArduPilot `368dc0c428`). Nose up is left alone: the pusher can't push back. A NaN pitch
-/// gives no thrust and stays NaN, which the stabilizer flies as level.
+/// taken to at most 45° (ArduPilot's `QuadPlane::assign_tilt_to_fwd_thr`, `368dc0c428`). Nose
+/// up is left alone: the pusher can't push back. A NaN pitch gives no thrust and stays NaN,
+/// which the stabilizer flies as level.
 ///
 /// Without it, a quadplane flying as a copter tilts nose down to move ahead or into wind, and
 /// at speed the wing at negative α pushes it down (#427).

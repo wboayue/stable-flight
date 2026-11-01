@@ -22,11 +22,12 @@
 //! recovery is a level [`ControlInput::AbsoluteAttitude`] until the wings stay level and the
 //! body rates small ([`RecoveryConfig`]). The shapes are ArduPilot's scripted aerobatics
 //! (`libraries/AP_Scripting/applets/Aerobatics/FixedWing/plane_aerobatics.lua` at `3d24375`):
-//! its loop is a vertical arc of a given radius (`:1456-1462`), its roll whole turns along a
-//! straight (`:1465-1469`), and both hold their path the way [`Path`] does. Unlike ArduPilot,
-//! each segment ends on the angle the attitude has turned rather than on a time along the
-//! path, and holds a fixed thrust where ArduPilot holds the speed by throttle (`:54`, `:561`;
-//! on the sim, neither less thrust down a loop nor a speed hold improved on the path hold, #481).
+//! its loop is a vertical arc of a given radius (`loop`), its roll whole turns along a
+//! straight (`straight_roll`), and both hold their path the way [`Path`] does. Unlike
+//! ArduPilot, each segment ends on the angle the attitude has turned rather than on a time
+//! along the path, and holds a fixed thrust where ArduPilot holds the speed by throttle
+//! (`speed_controller`, `AEROM_THR_PIT_FF`; on the sim, neither less thrust down a loop nor a
+//! speed hold improved on the path hold, #481).
 //!
 //! The angle a segment has turned is read from the attitude, not Euler angles (which clamp at
 //! ±90° in a loop): the twist about the segment's axis of the rotation since it began,
