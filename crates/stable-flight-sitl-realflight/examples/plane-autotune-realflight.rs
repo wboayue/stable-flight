@@ -116,12 +116,16 @@ const HOLD_LEAD_S: f32 = 5.0;
 /// How slowly the level-flight thrust follows the plane setpoint's, in s (a first-order time
 /// constant): the hold starts on the last second's mean, as the sim tests' does.
 const LINE_THRUST_TIME_CONSTANT_S: f32 = 1.0;
-/// The plane loiter home flies at, and the back transition starts from, in m above the
-/// start: the transition scripts' plane legs' 30 m.
+/// The plane leg home flies at, and the back transition starts from, in m above the start:
+/// the transition scripts' plane legs' 30 m.
 const HOME_ALTITUDE_M: f32 = 30.0;
-/// How far outside the plane guidance's loiter radius the flight home may hover back, in m: room
-/// for the turn onto the loiter.
-const HOME_TURN_MARGIN_M: f32 = 60.0;
+/// How close to the start the leg home transitions back, in m: the eXplora's back transition
+/// carries it about 25 m, and its hover, at its 27° tilt cap, flies about 1.3 m/s, under a
+/// 5 km/h wind (#535).
+const HOME_RADIUS_M: f32 = 30.0;
+/// How far past the start the leg home turns back, in m: a descent from the hold's 100 m to
+/// 30 m takes about 200 m, so a first pass high turns and comes back down the line.
+const HOME_OVERFLY_M: f32 = 150.0;
 
 /// Autotune of a VTOL's plane side in RealFlight.
 #[derive(Parser)]
@@ -249,7 +253,8 @@ fn main() -> ExitCode {
     let mut airframe = airframes::explora_vtol();
     let home = PlaneHome {
         altitude_m: HOME_ALTITUDE_M,
-        radius_m: airframe.guidance.plane.loiter_radius_m + HOME_TURN_MARGIN_M,
+        radius_m: HOME_RADIUS_M,
+        overfly_m: HOME_OVERFLY_M,
     };
     let (commander, switch) = PlaneTuneFlight::new(script, home);
 

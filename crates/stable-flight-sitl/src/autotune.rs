@@ -137,16 +137,20 @@ impl LandSwitch {
     }
 }
 
-/// Where a [`PlaneTuneFlight`] comes home to: the plane loiter around its script's start, and
-/// how close it must come before it hovers back over the start.
+/// How a [`PlaneTuneFlight`] comes home: a plane leg back and forth along a line through its
+/// script's start, until it passes close to the start at the home altitude and hovers back
+/// over it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlaneHome {
-    /// The loiter's altitude, in m above the start: where the back transition starts.
+    /// The leg's altitude, in m above the start: where the back transition starts.
     pub altitude_m: f32,
-    /// How close to the start, horizontally, the plane loiter hands over to the hover, in m:
-    /// outside the plane guidance's loiter radius, with room for its turn onto it, so the
-    /// loiter reaches it.
+    /// How close to the start, horizontally, the leg hands over to the hover, in m: about how
+    /// far a back transition carries the vehicle, so the hover is left only the rest. A hover
+    /// slower than the wind never closes a longer gap.
     pub radius_m: f32,
+    /// How far past the start the leg flies before it turns back along the line, in m: room
+    /// to come down to the home altitude and to line up after the turn.
+    pub overfly_m: f32,
 }
 
 /// Flies a script into plane flight, then the [`PlaneTuneHold`] a plane autotune runs in, then
@@ -160,11 +164,12 @@ pub struct PlaneHome {
 /// - **Hold:** the hold, its turns and recovery driven through the switch.
 /// - **Finish** ([`PlaneTuneSwitch::finish`]): after a hold that recovered (an envelope
 ///   breach: the vehicle hovers on its rotors), or before any hold, a land where the vehicle
-///   is. Otherwise a plane loiter around the script's start at the [`PlaneHome`] altitude, at
-///   the hold's trim airspeed; within its radius of the start and the plane altitude
-///   acceptance of that altitude, a copter waypoint over the start at that altitude (a VTOL
-///   transitions back and hovers there, from wherever the transition ends); within the
-///   waypoint acceptance radius of the start, a land on it, disarmed on touchdown.
+///   is. Otherwise a plane leg at the [`PlaneHome`] altitude and the hold's trim airspeed,
+///   along the line from where the vehicle is through the script's start, turning back along
+///   it once past the start by the home overfly; within the home radius of the start and the
+///   plane altitude acceptance of that altitude, a copter waypoint over the start at that
+///   altitude (a VTOL transitions back, which carries it most of the way, and hovers there);
+///   within the waypoint acceptance radius of the start, a land on it, disarmed on touchdown.
 ///
 /// # Examples
 ///
@@ -178,7 +183,7 @@ pub struct PlaneHome {
 ///
 /// let leg = WaypointCommand { altitude_m: 100.0, ..Default::default() };
 /// let script = ScriptCommander::from_waypoints(vec![leg]).unwrap();
-/// let home = PlaneHome { altitude_m: 30.0, radius_m: 100.0 };
+/// let home = PlaneHome { altitude_m: 30.0, radius_m: 30.0, overfly_m: 150.0 };
 /// let (mut commander, switch) = PlaneTuneFlight::new(script, home);
 ///
 /// let cruising = VehicleState {
@@ -190,12 +195,13 @@ pub struct PlaneHome {
 /// let held = commander.next_command(0.004, &cruising);
 /// assert!(matches!(held.input, ControlInput::AbsoluteAttitude(_)));
 ///
-/// // Home: a plane loiter around the start at 30 m.
+/// // Home: a plane leg through the start at 30 m.
 /// switch.finish();
 /// let home = commander.next_command(0.004, &cruising);
 /// assert_eq!(home.regime, FlightRegime::Plane);
 /// let ControlInput::Waypoint(target) = home.input else { unreachable!() };
 /// assert_eq!(target.altitude_m, 30.0);
+/// assert!(target.velocity_mps.is_some(), "a leg, not a loiter");
 /// ```
 pub struct PlaneTuneFlight {
     lead: ScriptCommander,
@@ -211,9 +217,11 @@ enum TunePhase {
         /// The hold's trim airspeed, which home flies, in m/s.
         trim_airspeed_mps: f32,
     },
-    /// Flying home in plane at this airspeed, in m/s.
+    /// Flying home in plane at this airspeed, in m/s, along the line through the start in
+    /// this direction (north/east, unit; set on the first command home).
     Home {
         airspeed_mps: f32,
+        direction: Option<Vec2>,
     },
     /// Hovering back over the start.
     Return,
@@ -240,14 +248,14 @@ impl PlaneTuneFlight {
         follower.current_index() + 1 >= follower.waypoints().len() && !follower.is_complete()
     }
 
-    /// The home loiter's target: over the start at the home altitude, in the vehicle's frame
-    /// (m north, east, up).
+    /// The home target: over the start at the home altitude, in the vehicle's frame (m north,
+    /// east, up).
     fn home_m(&self) -> (Vec2, f32) {
         let origin_m = self.lead.origin_m();
         (origin_m.xy(), origin_m.z + self.home.altitude_m)
     }
 
-    /// Whether the plane loiter is within reach of the start: inside the home radius and the
+    /// Whether the plane leg is within reach of the start: inside the home radius and the
     /// plane altitude acceptance of the home altitude.
     fn home_reached(&self, state: &VehicleState) -> bool {
         let (_, altitude_m) = self.home_m();
@@ -261,14 +269,36 @@ impl PlaneTuneFlight {
         (state.position_m.xy() - self.home_m().0).norm()
     }
 
-    /// The home loiter's command: a plane waypoint without a leg, which the plane guidance
-    /// loiters around.
-    fn home_command(&self, airspeed_mps: f32) -> Command {
+    /// The home leg's direction: toward the start from where the vehicle is, or along its
+    /// course when it is over the start, or north when it is also still.
+    fn home_direction(&self, state: &VehicleState) -> Vec2 {
+        // Closer than 1 m, or slower than 1 m/s, gives no direction.
+        const MIN_NORM: f32 = 1.0;
+        let to_start_m = self.home_m().0 - state.position_m.xy();
+        to_start_m
+            .try_normalize(MIN_NORM)
+            .or_else(|| state.velocity_mps.xy().try_normalize(MIN_NORM))
+            .unwrap_or_else(|| Vec2::new(1.0, 0.0))
+    }
+
+    /// The home leg's command: a plane waypoint on the start with a leg along `direction`,
+    /// reversed once the vehicle is past the start by the overfly, so it flies the line back.
+    fn home_command(
+        &self,
+        airspeed_mps: f32,
+        direction: &mut Vec2,
+        state: &VehicleState,
+    ) -> Command {
         let (position_m, altitude_m) = self.home_m();
+        let past_start_m = (state.position_m.xy() - position_m).dot(direction);
+        if past_start_m > self.home.overfly_m {
+            *direction = -*direction;
+        }
         Command::new(
             true,
             ControlInput::Waypoint(WaypointCommand {
                 position_m,
+                velocity_mps: Some(*direction * airspeed_mps),
                 altitude_m,
                 cruise_speed_mps: airspeed_mps,
                 ..Default::default()
@@ -307,7 +337,13 @@ impl Commander for PlaneTuneFlight {
         match &mut *phase {
             TunePhase::Lead => self.lead.next_command(dt, state),
             TunePhase::Hold { hold, .. } => hold.next_command(dt, state),
-            TunePhase::Home { airspeed_mps } => self.home_command(*airspeed_mps),
+            TunePhase::Home {
+                airspeed_mps,
+                direction,
+            } => {
+                let direction = direction.get_or_insert_with(|| self.home_direction(state));
+                self.home_command(*airspeed_mps, direction, state)
+            }
             TunePhase::Return => self.return_command(),
             TunePhase::Landing(landing) => landing.next_command(dt, state),
         }
@@ -365,6 +401,7 @@ impl PlaneTuneSwitch {
                 trim_airspeed_mps,
             } if !hold.is_recovering() => TunePhase::Home {
                 airspeed_mps: *trim_airspeed_mps,
+                direction: None,
             },
             TunePhase::Lead | TunePhase::Hold { .. } => TunePhase::Landing(Landing::default()),
             _ => return,
