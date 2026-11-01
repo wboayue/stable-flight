@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (behavior):** hover guidance with a drag model (`GUID_WND_BCOEF`/`MCOEF`) feeds
+  a leg's drag forward: the push the lateral loop's commanded velocity, past 0.3 m/s, takes
+  through the estimated wind. The lateral I term then trims only the wind, and hover legs stop
+  on their waypoint instead of overshooting by the drag the I learned on the way: the sim
+  eXplora's 25 m legs overshot 1.0–2.5 m, now at most 0.25 m (#609). The RealFlight eXplora
+  (`explora_vtol`) has a drag model, so it flies its legs differently.
+
 - **Breaking:** `tuning::Tunable` is generic over the loop type (`Tunable<TunedLoop>` for a
   copter's loops) instead of naming it as `Target`, so a VTOL stabilizer hosts both sides'
   probes; on a VTOL, name the side (`Tunable::<TunedLoop>::probe(&stabilizer)`). The

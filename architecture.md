@@ -638,6 +638,17 @@ contract:
   lateral loop the acceleration it last cut to `max_tilt_rad`, and the integral doesn't grow
   along it (ArduPilot's `AC_PID_2D::update_i`). Clamping to `max_integral`
   alone would let a long leg at the tilt limit wind it full and overshoot the waypoint.
+* **A leg's drag is fed forward, not integrated.** Under the tilt cap, the lateral integral
+  would learn the drag of a leg's speed as a disturbance and, still holding it when the
+  vehicle stops, carry it past the waypoint: 1–2.5 m on the sim tailsitters (#609).
+  `CopterGuidance` adds the drag its wind config's model puts on the lateral loop's commanded
+  velocity, past a 0.3 m/s hold band and through the estimated wind, so the integral trims
+  only the wind and gusts. The hold's own corrections stay under the band: fed forward, they
+  stiffen the hold against the angle loop, as #588 found for a slow angle loop. Rejected:
+  freezing or gating the integral in transit (it then can't trim a crosswind, and the leg
+  never settles); capping the error it integrates; braking earlier; a shaped position target
+  as ArduPilot's `AC_PosControl` and PX4's trajectory use (it removes the target's lag, not the
+  drag); the drag at the measured velocity (it feeds the vehicle's own speed back).
 * **Retuning `i` is bumpless.** The copter rate loop integrates the I term itself, `∫i·e`, in
   moment, and limits it in moment, as ArduPilot's `AC_PID::update_i` and PX4's
   `RateControl::updateIntegral` do: a new `i` changes how fast the term grows, not what it

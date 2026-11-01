@@ -153,6 +153,9 @@ Code comments and docs link here instead of redefining a term.
   (horizontal), or once passed along its leg, and inside its altitude band. On a plane leg,
   near or past it but outside the band, the follower waits on it for the altitude, loitering
   around it; a plane leg ending in a back transition takes its waypoint at any altitude.
+- **Drag feedforward:** the push a hover leg's speed takes against the air, from the drag
+  model, added to the lateral demand so the I term trims only the wind; learned by the I
+  instead, it stays wound up at the stop and carries the vehicle past the waypoint.
 - **Wind estimate:** wind inferred in rotor-borne flight from the air's drag on the vehicle
   (`estimation::wind`); hover guidance uses it to hold a heading that copes with the wind
   (eXplora: a wingtip into it).
