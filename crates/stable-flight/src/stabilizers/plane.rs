@@ -28,6 +28,33 @@
 //! when a [`Setpoint::PlaneRate`] follows any other setpoint and restored when a
 //! [`Setpoint::Plane`] follows it, so what a roll or loop winds up doesn't carry into the
 //! attitude flight after it.
+//!
+//! # Tuning
+//!
+//! An autotune stage ([`start_probe`](crate::tuning::Tunable::start_probe)) hands one loop to a
+//! [`Probe`](crate::tuning::Probe). Before the loop's controller runs, the probe sees its
+//! [`LoopSignals`](crate::tuning::LoopSignals) and replaces the loop's setpoint (a step, or an
+//! identification's square wave).
+//!
+//! | [`PlaneLoop`] | Setpoint, error |
+//! |---|---|
+//! | `RollRate`, `PitchRate` | desired body rate; desired − measured |
+//! | `Roll`, `Pitch` | saturated bank or pitch; the attitude error on that axis |
+//!
+//! The signals' `saturated` is the axis's moment at full deflection on the last tick: a step
+//! clipped there measures the surfaces' limit, not the loop. An angle step's rate target at the
+//! attitude rate limit isn't a clip: the limit is part of the loop the step measures, and a
+//! 30° roll step asks for more than the default 70°/s at τ 0.4 s.
+//!
+//! - A rate stage flies on attitude and rate setpoints alike; an angle stage only on attitude
+//!   setpoints: a [`Setpoint::PlaneRate`] idles the attitude loops and interrupts it
+//!   ([`ProbeStatus::Interrupted`](crate::tuning::ProbeStatus::Interrupted)).
+//! - Any other setpoint, or a [`transition`](PlaneSetpoint::transition) ramp, interrupts
+//!   either: the plane side isn't flying, or is flying a handoff no step should disturb.
+//! - **Handoff:** when the probe finishes, is stopped, or is interrupted, the loop takes its
+//!   setpoint back on the next tick. The loops have no derivative to reset, and the rate
+//!   integral stays.
+//! - The stage is runtime state, not config; [`prime`](crate::Stabilizer::prime) ends it.
 
 use crate::controllers::{
     InvalidConfig, PlaneRateController, PlaneRateControllerConfig, check, check_limit,
@@ -45,6 +72,9 @@ use crate::{
 mod params;
 #[cfg(test)]
 mod tests;
+mod tuning;
+
+pub use tuning::{PlaneAxisGains, PlaneLoop};
 
 /// Bank where turn coordination starts to fade, and where it's gone (PX4's 70°–75°).
 const COORDINATION_FADE_RAD: (f32, f32) = (70.0 * DEG, 75.0 * DEG);
@@ -160,6 +190,10 @@ pub struct PlaneStabilizer {
     /// The rate loop as attitude flight left it, while flying a [`Setpoint::PlaneRate`].
     attitude_rate: Option<PlaneRateController>,
     saturation: Saturation,
+    /// The autotune stage, if one was started and not yet stopped.
+    stage: Option<tuning::Stage>,
+    /// The last tick's moments, normalized: what a probe reads as the loop's output.
+    last_moments: Vec3,
 }
 
 impl PlaneStabilizer {
@@ -177,20 +211,30 @@ impl PlaneStabilizer {
             rate: PlaneRateController::default(),
             attitude_rate: None,
             saturation: Saturation::default(),
+            stage: None,
+            last_moments: Vec3::zeros(),
         }
     }
 
     /// Rate targets for an attitude setpoint: the error over the time constant, clamped, plus
-    /// the coordinated-turn rates.
-    fn attitude_rates(&mut self, setpoint: &PlaneSetpoint, state: &VehicleState) -> Vec3 {
+    /// the coordinated-turn rates. A probe on an angle loop replaces its angle first.
+    fn attitude_rates(&mut self, dt: f32, setpoint: &PlaneSetpoint, state: &VehicleState) -> Vec3 {
         let config = &self.config;
         let max_pitch_rad = pitch_limit_rad(config.max_pitch_rad, setpoint.transition);
         // `>` is false for NaN, which saturates to level.
         self.saturation.tilt = setpoint.roll_rad.abs() > config.max_bank_rad
             || setpoint.pitch_rad.abs() > max_pitch_rad;
-        let roll_rad = saturate_symmetric(setpoint.roll_rad, config.max_bank_rad);
-        let pitch_rad = saturate_symmetric(setpoint.pitch_rad, max_pitch_rad);
-        let error = attitude_error(&state.attitude, roll_rad, pitch_rad, f32::NAN);
+        let mut angles_rad = [
+            saturate_symmetric(setpoint.roll_rad, config.max_bank_rad),
+            saturate_symmetric(setpoint.pitch_rad, max_pitch_rad),
+        ];
+        let mut error = attitude_error(&state.attitude, angles_rad[0], angles_rad[1], f32::NAN);
+        if self.stage.is_some() {
+            let rates_radps = state.angular_velocity_radps;
+            self.probe_angles(dt, &mut angles_rad, [error.x, error.y], &rates_radps);
+            error = attitude_error(&state.attitude, angles_rad[0], angles_rad[1], f32::NAN);
+        }
+        let config = &self.config;
         let correction = Vec2::new(
             clamp_symmetric(
                 error.x / config.time_constant_s.x,
@@ -237,6 +281,8 @@ impl PlaneStabilizer {
         thrust: f32,
         state: &VehicleState,
     ) -> ControlOutput {
+        let mut desired_radps = desired_radps;
+        self.probe_rates(dt, &mut desired_radps, &state.angular_velocity_radps);
         let config = &self.config;
         let scale = config.trim_airspeed_mps / self.airspeed_mps(state);
         // Without an airspeed there's nothing to hold the integral for.
@@ -251,9 +297,12 @@ impl PlaneStabilizer {
             scale,
             integrate,
         );
+        let thrust_exponent = config.thrust_curve_exponent;
+        self.last_moments = moments;
+        self.finish_stage();
         self.saturation.thrust = !(0.0..=1.0).contains(&thrust) && !thrust.is_nan();
         ControlOutput {
-            thrust: thrust_curve(thrust, config.thrust_curve_exponent),
+            thrust: thrust_curve(thrust, thrust_exponent),
             moments,
             cruise: None,
         }
@@ -307,30 +356,41 @@ impl Stabilizer for PlaneStabilizer {
         self.saturation = Saturation::default();
         let output = match setpoint {
             Setpoint::Plane(plane) => {
+                if plane.transition {
+                    self.interrupt_stage();
+                }
                 if let Some(saved) = self.attitude_rate.take() {
                     self.rate = saved;
                 }
-                let rates = self.attitude_rates(plane, state);
+                let rates = self.attitude_rates(dt, plane, state);
                 self.track(dt, rates, plane.thrust, state)
             }
             Setpoint::PlaneRate(rates) => {
+                self.interrupt_angle_stage();
                 if self.attitude_rate.is_none() {
                     self.attitude_rate = Some(self.rate.clone());
                 }
                 let rates_radps = self.body_rates(rates);
                 self.track(dt, rates_radps, rates.thrust, state)
             }
-            _ => return ControlOutput::default(),
+            _ => {
+                self.interrupt_stage();
+                self.last_moments = Vec3::zeros();
+                return ControlOutput::default();
+            }
         };
         self.saturation.moments = output.moments.map(|m| m.abs() >= 1.0).into();
         output
     }
 
-    /// Clears the rate integrals, those saved for attitude flight, and saturation.
+    /// Clears the rate integrals, those saved for attitude flight, and saturation, and ends
+    /// any autotune stage.
     fn prime(&mut self, _state: &VehicleState) {
         self.rate.clear_integral();
         self.attitude_rate = None;
         self.saturation = Saturation::default();
+        self.stage = None;
+        self.last_moments = Vec3::zeros();
     }
 
     /// `tilt` when an attitude setpoint's bank or pitch was beyond its limit, `thrust` when

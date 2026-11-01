@@ -5,7 +5,8 @@
 //!   [`IdentifyProbe`] that fits its axis's [`RateModel`].
 //! - [`design_rate`] and [`design_angle_p`]: gains from a [`RateModel`] by loop shaping.
 //! - [`Tunable`]: a stabilizer that hosts a probe on one of its loops
-//!   ([`CopterStabilizer`](crate::stabilizers::copter::CopterStabilizer)).
+//!   ([`CopterStabilizer`](crate::stabilizers::copter::CopterStabilizer),
+//!   [`PlaneStabilizer`](crate::stabilizers::plane::PlaneStabilizer)).
 //! - [`autotune::Autotune`]: the copter supervisor, run between ticks: executes each stage's
 //!   procedure (which probes to run, what gains follow), guards the envelope, and commits or
 //!   reverts gains.
@@ -51,7 +52,9 @@ pub use step::{Stat, StepAbort, StepConfig, StepMetrics, StepProbe, StepStatus, 
 /// hover and plane loops) implements it once for each.
 ///
 /// Implemented by [`CopterStabilizer`](crate::stabilizers::copter::CopterStabilizer) for
-/// [`TunedLoop`](crate::stabilizers::copter::TunedLoop)s.
+/// [`TunedLoop`](crate::stabilizers::copter::TunedLoop)s and by
+/// [`PlaneStabilizer`](crate::stabilizers::plane::PlaneStabilizer) for
+/// [`PlaneLoop`](crate::stabilizers::plane::PlaneLoop)s.
 pub trait Tunable<L: Copy> {
     /// Starts a probe on `target` with `config`, from the next tick. A running probe is handed
     /// back first.
