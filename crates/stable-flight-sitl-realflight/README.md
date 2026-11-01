@@ -150,6 +150,17 @@ cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight 
 # flown); --param NAME=VALUE sets a param before takeoff (STAB_GYRO_FLT=40: the gyro low-pass)
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --airframe explora --stages none --step-test
 
+# The eXplora's plane side (--airframe explora): flies flights/explora_plane_tune.csv into
+# plane flight at 100 m over the start, hands over to a tune hold (PlaneTuneHold) at the thrust
+# the level leg flew on, fits and designs roll then pitch (StagePlan::plane_design), logs each
+# fit and verify pair, prints the tuned gains as an airframes.rs snippet, flies home in plane,
+# transitions back, and lands on the start; a breach hovers where it is and lands there.
+# --step-test appends roll/pitch rate and angle step tests (--stages none --step-test: the
+# airframe's gains); --rate-scale starts from scaled rate gains; --record writes TailsitterColumns.
+# Or: just fly-plane-autotune
+cargo run -p stable-flight-sitl-realflight --example plane-autotune-realflight -- --record tune.csv
+cargo run -p stable-flight-sitl-realflight --example plane-autotune-realflight -- --stages none --step-test
+
 # Joystick (or --script) flight recording raw SimulatorState and channels to CSV (frame checks)
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --script flights/hover.csv

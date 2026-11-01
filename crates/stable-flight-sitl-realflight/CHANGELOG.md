@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `plane-autotune-realflight` (#535): a VTOL's plane-side autotune, the eXplora's
+  (`--airframe explora`) from `flights/explora_plane_tune.csv`: into plane flight at 100 m, a
+  tune hold at the level leg's thrust, the plane design on roll and pitch, then home in plane
+  and a land on the start. `--stages none --step-test` measures the hand tune; `--rate-scale`
+  starts from scaled rate gains.
 - `copter-autotune-realflight --airframe explora` (#539): the eXplora tailsitter's hover side
   on its own mixer, guidance and stabilizer flown in `View::tailsitter`'s nose-up frame, where
   the autotune and the inverted check read its tilt and rates. `--param NAME=VALUE` sets a

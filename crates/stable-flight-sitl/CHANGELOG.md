@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `autotune::PlaneTuneFlight` and its `PlaneTuneSwitch` (#535): a VTOL's plane autotune
+  flight, a script into plane flight, then the `PlaneTuneHold`, then home in plane and a land
+  on the start (or a land in place after a recovery).
+- `autotune::log_event` logs plane runs too: `TunedConfig`, implemented for
+  `CopterStabilizerConfig` and `PlaneStabilizerConfig`, formats a stage's gains and prints the
+  tuned snippet; the wing fit (`Measurement::Wing`) logs its terms.
+
 ### Changed
 
 - **Breaking:** `autotune::is_inverted` takes the frame the stabilizer probes in
