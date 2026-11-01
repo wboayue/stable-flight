@@ -2,7 +2,8 @@
 //!
 //! - [`Probe`]: one loop's excitation and measurement, run inside the tick: a
 //!   [`StepProbe`] whose [`StepMetrics`] describe the loop's step response, or an
-//!   [`IdentifyProbe`] that fits its axis's [`RateModel`].
+//!   [`IdentifyProbe`] that fits its axis's [`RateModel`] (a wing's: a [`WingIdentifyProbe`]
+//!   and its [`WingModel`]).
 //! - [`design_rate`] and [`design_angle_p`]: gains from a [`RateModel`] by loop shaping.
 //! - [`Tunable`]: a stabilizer that hosts a probe on one of its loops
 //!   ([`CopterStabilizer`](crate::stabilizers::copter::CopterStabilizer),
@@ -32,6 +33,7 @@ pub mod design;
 pub mod identify;
 pub mod probe;
 pub mod step;
+pub mod wing;
 
 #[cfg(test)]
 pub(crate) mod plant;
@@ -42,6 +44,7 @@ pub use identify::{
 };
 pub use probe::{LoopSignals, Measurement, Probe, ProbeAbort, ProbeConfig, ProbeStatus, Progress};
 pub use step::{Stat, StepAbort, StepConfig, StepMetrics, StepProbe, StepStatus, StepSummary};
+pub use wing::{WingIdentifyProbe, WingModel, WingStatus};
 
 /// A stabilizer that hosts autotune stages: one of its loops handed to a [`Probe`] inside the
 /// tick, then handed back. [`FlightLoop`](crate::FlightLoop) forwards these between ticks

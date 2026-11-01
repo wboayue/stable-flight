@@ -307,7 +307,9 @@ impl Side for PlaneSide {
     /// probe runs on `target` itself.
     fn probed_loop(target: PlaneLoop, probe: &ProbeConfig) -> PlaneLoop {
         match probe {
-            ProbeConfig::Identify(_) => target.inner().unwrap_or(target),
+            ProbeConfig::Identify(_) | ProbeConfig::IdentifyWing(_) => {
+                target.inner().unwrap_or(target)
+            }
             ProbeConfig::Step(_) => target,
         }
     }

@@ -273,6 +273,16 @@ impl PlaneStabilizer {
             })
     }
 
+    /// The angle of attack, in rad: the pitch less the climb angle through the air, the climb
+    /// rate over [`airspeed_mps`](Self::airspeed_mps) (the air holds no vertical wind). A
+    /// climb angle from the ground track reads the angle of attack wrong in wind: in an 8 m/s
+    /// crosswind the eXplora's ground speed was 6.9 m/s against 13.6 m/s through the air, and
+    /// its pitch fit lost the wing's stiffness (#534).
+    pub(super) fn angle_of_attack_rad(&self, state: &VehicleState) -> f32 {
+        let climb_share = state.velocity_mps.z / self.airspeed_mps(state);
+        state.pitch_rad - libm::asinf(clamp_symmetric(climb_share, 1.0))
+    }
+
     /// The rate loop at `desired_radps`, scaled for airspeed, and the thrust.
     fn track(
         &mut self,
@@ -282,7 +292,7 @@ impl PlaneStabilizer {
         state: &VehicleState,
     ) -> ControlOutput {
         let mut desired_radps = desired_radps;
-        self.probe_rates(dt, &mut desired_radps, &state.angular_velocity_radps);
+        self.probe_rates(dt, &mut desired_radps, state);
         let config = &self.config;
         let scale = config.trim_airspeed_mps / self.airspeed_mps(state);
         // Without an airspeed there's nothing to hold the integral for.
