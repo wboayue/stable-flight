@@ -110,6 +110,9 @@ Code comments and docs link here instead of redefining a term.
   growing with the angle of attack (the tail weathervaning into the airflow); damping a moment
   against the pitch rate. A held pitch rate needs the surface to beat both; a held roll rate
   only the damping.
+- **Plane of symmetry:** the plane through the nose and the belly that splits the airframe into
+  mirror halves. A wing's lift and drag come from the air in it; air along the span (sideslip)
+  pushes only sideways.
 - **Turn coordination:** adding yaw and pitch in a banked turn so the plane turns without
   sideslip (skidding sideways through the air).
 - **Step response:** how a loop answers a sudden setpoint change: **rise time** (how fast),

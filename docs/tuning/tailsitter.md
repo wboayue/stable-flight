@@ -422,7 +422,7 @@ velocity target at the vehicle's velocity and gains speed at that rate, so a leg
 | `GUID_LAT_ACC` | `hover.lateral.max_accel_mps2` | 1 m/s² (core default 0: off) |
 | `GUID_YAW_SLEW` | `hover.waypoint_yaw_radps` | 0: holds the heading (core default 60°/s): facing a leg flies it belly first |
 | `GUID_HDG_RATE` | `hover.heading_rate_radps` | 30°/s (core default 60°/s): turns to a waypoint's `heading`; turned 90° in 3 mph wind and held (#417) |
-| `GUID_YAW_YLD_S` | `hover.heading_yield_s` | 0: never yields the heading (core default 1 s); wind along the span is [#387](https://github.com/wboayue/stable-flight/issues/387) |
+| `GUID_YAW_YLD_S` | `hover.heading_yield_s` | 0: never yields the heading (core default 1 s); `GUID_WND_HDG_SPD` turns a wingtip into the wind ([#470](https://github.com/wboayue/stable-flight/issues/470)) |
 
 eXplora (#418), `explora_transition_lap.csv --end land`, runs at 250 Hz around the handover:
 

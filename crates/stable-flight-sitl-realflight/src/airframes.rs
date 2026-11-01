@@ -221,8 +221,8 @@ pub fn explora_vtol()
                 max_descent_mps: 1.5,
                 // Holds the heading on waypoint legs, and never yields it to the wind: facing
                 // a leg flies it belly first, the wing's flat face into the airflow, and the
-                // hover legs above are flown with the heading held (#418). Wind along the span
-                // is #387.
+                // hover legs above are flown with the heading held (#418). Turning a wingtip
+                // into the wind is `wind_heading_min_mps`'s job (#470).
                 waypoint_yaw_radps: 0.0,
                 heading_yield_s: 0.0,
                 // The rate that turned the wing 90° in 3 mph wind without losing the hold

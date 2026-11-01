@@ -110,14 +110,19 @@ fn tailsitter_estimates_a_wind_on_the_belly() {
 }
 
 /// A 3 m/s wind along the span leaves the belly's estimate near 0 and the span's unknown.
-/// The sim's plate takes the whole airflow's pressure with its angle from the belly and chord
-/// alone, so a span wind pushes the belly as hard as a belly wind: measured −3.1 m/s across
-/// the belly.
+/// A wind along the span leaves the belly's estimate where calm air does, and the span's
+/// unknown: the wing's lift and drag take only the air in its plane of symmetry. The belly
+/// reads −0.60 m/s in calm air, set during the takeoff and barely moving after, and
+/// −0.71 m/s here (−3.1 m/s while lift and drag took the whole
+/// airspeed's pressure, #387); 0.3 m/s leaves about 3× margin.
 #[test]
-#[ignore = "the sim's plate pushes the belly in a span wind (#387)"]
 fn tailsitter_span_wind_stays_unknown() {
+    let calm = tailsitter_estimate(steady(0.0, 0.0));
     let estimate = tailsitter_estimate(steady(0.0, 3.0));
-    check!(estimate.velocity_mps.x.abs() < 0.3, "{estimate:?}");
+    check!(
+        (estimate.velocity_mps.x - calm.velocity_mps.x).abs() < 0.3,
+        "{estimate:?} against calm {calm:?}"
+    );
     check!(estimate.sd_along_mps(Vec2::y()) > 5.0, "{estimate:?}");
 }
 
