@@ -376,8 +376,9 @@ fn design_fits_again_after_an_unusable_fit_or_design() {
     );
 }
 
-/// A fit that saturates under noise lowers the start, every gain `÷ 1.3`, commits it, and fits
-/// again on it, three times; the fourth fails the stage (#551).
+/// A rate design whose fit saturates under noise lowers the start, every gain `÷ 1.3`, commits
+/// it, and fits again on it, three times; the fourth fails the stage, as does the first in an
+/// angle stage (#551).
 #[test]
 fn design_lowers_a_start_whose_fit_saturates() {
     let plan = DesignPlan::copter();
@@ -406,6 +407,20 @@ fn design_lowers_a_start_whose_fit_saturates() {
     let action = procedure.next(Input::Aborted {
         abort: saturated,
         gains,
+    });
+    check!(action == Action::Fail(AutotuneAbort::Probe(saturated)));
+
+    // An angle stage's clipped moment is its rate loop's: it fails rather than lower its own.
+    let mut angle = Procedure::new(Method::Design(plan));
+    angle.next(Input::Start {
+        gains: CURRENT,
+        inner: Some(CURRENT),
+        run_start: CURRENT,
+        gyro_cutoff_hz: DEFAULT_GYRO_CUTOFF_HZ,
+    });
+    let action = angle.next(Input::Aborted {
+        abort: saturated,
+        gains: CURRENT,
     });
     check!(action == Action::Fail(AutotuneAbort::Probe(saturated)));
 }

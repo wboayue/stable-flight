@@ -16,6 +16,13 @@ mod tests;
 /// (`StepTestPlan::max_invalid`).
 const MAX_MEASURE_STOPS: usize = 3;
 
+/// Most times a stage lowers its start: a search's that won't settle, a rate design's whose fit
+/// saturates under noise. Each cut is 1.3 on the copter, so three halve the start (÷ 2.2),
+/// within 30 s at the copter envelope's 10 s settle timeout. `racer`'s default yaw at 25 ms of
+/// delay settles after one, and capped at 1–5 the robustness rows passed the same (#552); six
+/// didn't unclip the combined rows' fits from three times a quad's rate gains (#551).
+const MAX_START_LOWERINGS: usize = 3;
+
 /// What a procedure is told.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Input {

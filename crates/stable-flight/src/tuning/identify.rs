@@ -233,6 +233,7 @@ pub(crate) fn unit_delay(w_radps: f32, dt_s: f32) -> Complex<f32> {
 
 /// Why an [`IdentifyProbe`] gave up.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum IdentifyAbort {
     /// The fit couldn't be solved: the window was too short, or the excitation didn't move the
     /// moment enough to tell its terms apart.
