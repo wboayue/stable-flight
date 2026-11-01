@@ -76,6 +76,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Breaking (behavior):** the wind estimator counts each measurement by the drag's slope at
+  the air its estimate predicts (or the measured air, if steeper), takes bluff drag on the
+  airspeed with the climb counted in, and skips ticks climbing or sinking faster than 1 m/s.
+  With a ballistic coefficient set, a wrong estimate in still air now comes back instead of
+  staying: the sim tailsitter read −0.60 m/s in calm air after its takeoff, now −0.14 m/s
+  (#608). Momentum drag alone estimates as before, apart from the climb skip.
 - A rate step stage holds the integral of the angle or heading loop over the stepped rate
   loop: the step tilts the vehicle away from that loop's setpoint, and integrating it wound
   the loop up for the handoff. On the sim's `quad_x` at angle P 2 and I 0.25, the vehicle
