@@ -212,10 +212,10 @@ const REALFLIGHT_DESIGNS: [(TunedLoop, f32); 4] = [
     (TunedLoop::Pitch, 9.0),
 ];
 
-/// The loops the searched gains meet [`spec`] on: every loop the autotune tunes but pitch rate,
-/// which settles short ([`searched_pitch_rate_meets_the_spec`]).
-const SPEC_HELD: [TunedLoop; 4] = [
+/// The loops the searched gains meet [`spec`] on: every loop the autotune tunes.
+const SPEC_HELD: [TunedLoop; 5] = [
     TunedLoop::RollRate,
+    TunedLoop::PitchRate,
     TunedLoop::Roll,
     TunedLoop::Pitch,
     TunedLoop::YawRate,
@@ -249,17 +249,6 @@ fn design_search_designs_realflights_gains() {
             "{target:?}: designed {designed_p} against RealFlight's {realflight_p}"
         );
     }
-}
-
-/// The design search's pitch rate meets [`spec`] both ways. Its gains end the steps at
-/// 0.87–0.88 and never settle inside the band: the wash damps pitch on the Aerosonde's tail
-/// damping, which #342's cruise calibration rests on.
-#[test]
-#[ignore = "the searched pitch rate settles short on the Aerosonde's pitch damping (#587)"]
-fn searched_pitch_rate_meets_the_spec() {
-    let run = autotune(hand_tune(), &StagePlan::copter_design_search());
-    let misses = spec_misses(run.config, &[TunedLoop::PitchRate]);
-    check!(misses.is_empty(), "{misses:#?}");
 }
 
 /// Steps each of `loops`, both ways, on the [`realflight`] eXplora hovering on `hover`, and
