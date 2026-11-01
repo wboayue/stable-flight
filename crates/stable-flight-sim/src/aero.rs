@@ -153,15 +153,19 @@ fn surface_wrench(
 ) -> Aero {
     let c = &model.aero;
     let (aileron, elevator, rudder) = (deflection_rad.x, deflection_rad.y, deflection_rad.z);
-    let aileron_nm = roll_area_n * model.span_m * c.c_roll_aileron * aileron;
+    let aileron_nm = Vec3::new(
+        roll_area_n * model.span_m * c.c_roll_aileron * aileron,
+        0.0,
+        0.0,
+    );
+    let elevator_and_rudder_nm = Vec3::new(
+        model.span_m * c.c_roll_rudder * rudder,
+        model.chord_m * c.c_pitch_elevator * elevator,
+        model.span_m * c.c_yaw_rudder * rudder,
+    ) * pressure_area_n;
     Aero {
         force_n: Vec3::new(0.0, pressure_area_n * c.c_side_rudder * rudder, 0.0),
-        torque_nm: Vec3::new(aileron_nm, 0.0, 0.0)
-            + Vec3::new(
-                model.span_m * c.c_roll_rudder * rudder,
-                model.chord_m * c.c_pitch_elevator * elevator,
-                model.span_m * c.c_yaw_rudder * rudder,
-            ) * pressure_area_n,
+        torque_nm: aileron_nm + elevator_and_rudder_nm,
         ..Aero::default()
     }
 }
