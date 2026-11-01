@@ -241,6 +241,7 @@ fn a_probe_identifies_a_wing_on_its_rate_setpoint() {
     check!(setpoint > 0.1 && setpoint <= 0.1 + CONFIG.amplitude);
     check!(matches!(probe.status(), ProbeStatus::Running(_)));
 
+    // A `Probe` (a copter's host) flies it as an identification; the plane hosts the wing fit.
     let status = ProbeStatus::from(identify(PITCH, true));
     check!(matches!(status, ProbeStatus::Done(Measurement::Wing(_))));
     let aborted = ProbeStatus::from(WingStatus::Aborted(IdentifyAbort::Unexcited));
