@@ -7,6 +7,7 @@ use assert2::{assert, check};
 use super::*;
 use crate::controllers::{PlaneRateControllerConfig, RateGains};
 use crate::stabilizers::plane::PlaneStabilizer;
+use crate::tuning::Tunable;
 use crate::tuning::autotune::{AutotuneEvent, AutotuneStatus, Outcome};
 use crate::tuning::plant::{CONTROL_RADPS2, DAMPING_PER_S, Wing};
 use crate::{
@@ -342,4 +343,27 @@ fn vtol_configs_hold_their_plane_side() {
     let mut tailsitter = TailsitterStabilizerConfig::default();
     SideConfig::<PlaneSide>::side_mut(&mut tailsitter).trim_airspeed_mps = 19.0;
     check!(SideConfig::<PlaneSide>::side(&tailsitter).trim_airspeed_mps == 19.0);
+}
+
+/// While the commander maneuvers no probe starts and the settle doesn't time out; once it
+/// stops, the stage runs.
+#[test]
+fn maneuvering_holds_probes_off() {
+    let (mut flight_loop, _) = flying();
+    let mut autotune = started(&flight_loop, &[StagePlan::plane_step_test(PlaneLoop::Roll)]);
+    autotune.set_maneuvering(true);
+    let timeout_s = PlaneEnvelope::for_plane(&config()).settle_timeout_s;
+    let events = run(&mut flight_loop, &mut autotune, timeout_s + 5.0, |_| {});
+    check!(
+        matches!(autotune.status(), AutotuneStatus::Settling { .. }),
+        "{events:?}"
+    );
+    check!(Tunable::<PlaneLoop>::probe(flight_loop.stabilizer()).is_none());
+
+    autotune.set_maneuvering(false);
+    let events = run(&mut flight_loop, &mut autotune, 60.0, |_| {});
+    check!(
+        events.last() == Some(&AutotuneEvent::Complete),
+        "{events:?}"
+    );
 }

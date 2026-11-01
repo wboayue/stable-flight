@@ -6,6 +6,7 @@
 pub mod failsafe;
 pub mod maneuver;
 pub mod touchdown;
+pub mod tune_hold;
 pub mod waypoint;
 
 #[doc(inline)]
@@ -17,5 +18,7 @@ pub use failsafe::{
 pub use maneuver::{Maneuver, ManeuverConfig, ManeuverRunner};
 #[doc(inline)]
 pub use touchdown::TouchdownDetector;
+#[doc(inline)]
+pub use tune_hold::{PlaneTuneHold, PlaneTuneHoldConfig};
 #[doc(inline)]
 pub use waypoint::{EmptyWaypoints, RouteEnd, WaypointFollower};
