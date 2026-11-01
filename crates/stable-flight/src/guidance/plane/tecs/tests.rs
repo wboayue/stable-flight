@@ -106,9 +106,9 @@ fn demands_slew_at_their_limits() {
 }
 
 /// The height demand starts moving at the aircraft's climb rate, within the climb and sink
-/// limits, whatever its lag: entering plane flight sinking, it sinks along rather than pitching
-/// up to stop the sink (#503). Climb rate (m/s) → the first step's demand rate (m/s), holding
-/// the height it starts at.
+/// limits, whatever its lag (longer than `time_constant_s` too): entering plane flight
+/// sinking, it sinks along rather than pitching up to stop the sink (#503). Climb rate (m/s) →
+/// the first step's demand rate (m/s), holding the height it starts at.
 #[test]
 fn height_demand_starts_at_the_climb_rate() {
     let cases = [
@@ -119,7 +119,8 @@ fn height_demand_starts_at_the_climb_rate() {
         (-8.0, -TecsConfig::default().max_sink_mps),
         (7.0, TecsConfig::default().max_climb_mps),
     ];
-    for lag_s in [1.5, DEFAULT_HEIGHT_DEMAND_TIME_CONSTANT_S, 4.5] {
+    // 8 s: longer than `time_constant_s` (5 s).
+    for lag_s in [1.5, DEFAULT_HEIGHT_DEMAND_TIME_CONSTANT_S, 8.0] {
         let config = TecsConfig {
             height_demand_time_constant_s: lag_s,
             ..TecsConfig::default()
@@ -257,8 +258,8 @@ fn pitch_moves_smoothly_where_the_height_slew_stops() {
     check!(largest_deg < 1.0, "{largest_deg}°");
 }
 
-/// Below `underspeed_share` (0.9) of the least airspeed: full thrust, and pitch holds airspeed alone (nose down,
-/// even with a climb asked). It clears back at the least airspeed.
+/// Below `underspeed_share` (0.9) of the least airspeed: full thrust, and pitch holds airspeed
+/// alone (nose down, even with a climb asked). It clears back at the least airspeed.
 #[test]
 fn underspeed_runs_full_thrust_and_pitches_for_airspeed() {
     let config = TecsConfig::default();

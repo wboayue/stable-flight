@@ -9,10 +9,10 @@
 //!
 //! - **Energies:** potential `g·h`, kinetic `½V²`, and their rates `g·ḣ` and `V·V̇`
 //!   (`AP_TECS::_update_energies`). `V̇` is the airspeed's own derivative through a low-pass
-//!   ([`airspeed_rate_time_constant_s`](TecsConfig::airspeed_rate_time_constant_s)), about the filter ArduPilot puts on its damping term
-//!   (`_update_throttle_with_airspeed`), so it doesn't hang on how a backend measures
-//!   acceleration; PX4 drops its acceleration term for bias
-//!   (`FwLateralLongitudinalControl::tecs_update_pitch_throttle`). The kinetic rate is
+//!   ([`airspeed_rate_time_constant_s`](TecsConfig::airspeed_rate_time_constant_s)), about
+//!   the filter ArduPilot puts on its damping term (`_update_throttle_with_airspeed`), so it
+//!   doesn't hang on how a backend measures acceleration; PX4 drops its acceleration term for
+//!   bias (`FwLateralLongitudinalControl::tecs_update_pitch_throttle`). The kinetic rate is
 //!   `V·(V̇ − lpf(V̇))`, high passed as ArduPilot's (`_update_energies`) at
 //!   [`kinetic_rate_high_pass_s`](TecsConfig::kinetic_rate_high_pass_s), so a steady
 //!   acceleration isn't a rate error.
@@ -30,10 +30,10 @@
 //!   catching up (#503). Each error over the time constant is a proportional term
 //!   (`_update_throttle_with_airspeed`). The airspeed demand stays within the least and most
 //!   airspeed, and starts there: seeded at a stalled speed it would hold the stall. The height
-//!   demand stays within one time constant's climb or sink of the aircraft, so a climb it
-//!   can't make doesn't run the demand away; ArduPilot instead stops advancing the demand
-//!   while pitch or thrust is at its limit (`_update_height_demand`'s climb and sink scalers),
-//!   which needs the last tick's clipping.
+//!   demand stays within one time constant's climb or sink of the aircraft (the longer of
+//!   `time_constant_s` and the lag's), so a climb it can't make doesn't run the demand away;
+//!   ArduPilot instead stops advancing the demand while pitch or thrust is at its limit
+//!   (`_update_height_demand`'s climb and sink scalers), which needs the last tick's clipping.
 //! - **Thrust:** the total energy rate demand, mapped around cruise thrust so that the climb
 //!   limit takes full thrust and the least sink least thrust
 //!   (`TECSControl::_calcThrottleControlOutput`), plus damping on the rate error and an
@@ -49,12 +49,11 @@
 //!   in, so the integral stops where the transition stops the pitch (ArduPlane's
 //!   `SLT_Transition::set_FW_roll_pitch`).
 //! - **Underspeed:** below [`underspeed_share`](TecsConfig::underspeed_share) of the least
-//!   airspeed (`_detect_underspeed`), full thrust and
-//!   pitch holding airspeed alone (speed weight 2). It clears back at the least airspeed,
-//!   where the wing flies. ArduPilot latches only at 95% throttle and clears at 1.15 of the
-//!   least after 3 s or once at the height demand (`_detect_underspeed`); for a heavy airframe
-//!   1.15 can sit above trim airspeed (the sim Alia 250: 46 m/s against 45), leaving only the
-//!   height to clear it.
+//!   airspeed (`_detect_underspeed`), full thrust and pitch holding airspeed alone (speed
+//!   weight 2). It clears back at the least airspeed, where the wing flies. ArduPilot latches
+//!   only at 95% throttle and clears at 1.15 of the least after 3 s or once at the height
+//!   demand (`_detect_underspeed`); for a heavy airframe 1.15 can sit above trim airspeed (the
+//!   sim Alia 250: 46 m/s against 45), leaving only the height to clear it.
 //! - **Turns:** thrust for a bank's extra drag, `k·(1/cos²φ − 1)` on the energy rate
 //!   (`_update_throttle_with_airspeed`, `TECS_RLL2THR`).
 
@@ -155,14 +154,12 @@ pub struct TecsConfig {
     /// Most airspeed the speed demand holds, in m/s; below `min_airspeed_mps` it reads as that.
     pub max_airspeed_mps: f32,
     /// Share of `min_airspeed_mps`, `(0, 1]`, below which underspeed latches: full thrust and
-    /// pitch for airspeed alone, until back at `min_airspeed_mps`. Higher: recovers sooner,
-    /// trading more height for it.
+    /// pitch for airspeed alone, until back at `min_airspeed_mps`. Higher: latches nearer the
+    /// least airspeed, trading height for margin above the stall.
     pub underspeed_share: f32,
     /// Time constant of the height demand's lag after its slew, in s: the lag keeps the
     /// demand's rate continuous where the slew starts and stops. Higher: gentler pitch at a
-    /// climb's start and end, reaching the target later. Past `time_constant_s`, a fast climb
-    /// or sink at entry starts the demand slower than the aircraft: the slewed demand stays
-    /// within one `time_constant_s` of climb or sink.
+    /// climb's start and end, reaching the target later.
     pub height_demand_time_constant_s: f32,
     /// Time constant of the low-pass the airspeed rate is taken against, in s. Higher: a
     /// steadier rate from a noisy airspeed, read later.
@@ -291,7 +288,8 @@ pub(crate) struct Tecs {
     /// Thrust integral, a thrust share.
     thrust_integral: f32,
     underspeed: bool,
-    /// Low-passed airspeed, in m/s: the airspeed rate is the gap to it over the time constant.
+    /// Low-passed airspeed, in m/s: the airspeed rate is the gap to it over
+    /// `airspeed_rate_time_constant_s`.
     filtered_airspeed_mps: Option<f32>,
     /// The airspeed rate low-passed at the kinetic rate's high-pass, in m/s²: the kinetic
     /// energy rate is the airspeed rate's gap to it.
@@ -386,13 +384,15 @@ impl Tecs {
 
         // Height: slewed at the climb and sink limits, kept within one time constant's climb
         // or sink of the aircraft so an unreachable climb doesn't run away from it, then
-        // lagged; the lagged demand's slope is the height rate's feedforward.
+        // lagged; the lagged demand's slope is the height rate's feedforward. The window is
+        // the longer of `tau` and the lag, so the entry seed (one lag of climb) fits in it.
+        let window_s = tau.max(height_lag_s);
         let slewed_m = (previous.slewed_height_m
             + (altitude_m - previous.slewed_height_m)
                 .clamp(-config.max_sink_mps * dt, config.max_climb_mps * dt))
         .clamp(
-            height_m - tau * config.max_sink_mps,
-            height_m + tau * config.max_climb_mps,
+            height_m - window_s * config.max_sink_mps,
+            height_m + window_s * config.max_climb_mps,
         );
         let demand_height_m = lagged(previous.height_m, slewed_m, dt, height_lag_s);
         let height_rate_mps = (demand_height_m - previous.height_m) / dt;
@@ -411,8 +411,8 @@ impl Tecs {
             airspeed_mps: demand_airspeed_mps,
         });
 
-        // The airspeed's rate: its gap to a low-pass of it over the time constant (a filtered
-        // derivative).
+        // The airspeed's rate: its gap to a low-pass of it over
+        // `airspeed_rate_time_constant_s` (a filtered derivative).
         let rate_lag_s = config.airspeed_rate_time_constant_s;
         let filtered_mps = *self.filtered_airspeed_mps.get_or_insert(airspeed_mps);
         let accel_mps2 = (airspeed_mps - filtered_mps) / rate_lag_s;
