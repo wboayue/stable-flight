@@ -919,8 +919,8 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     least squares, exact there. Noisy as well, no fit reads it (the least squares designed
     `quad_x`'s rate P 8.1 against 1.9), so the probe aborts (`IdentifyAbort::Saturated`) and
     the design stage lowers its start, every gain ÷ 1.3 as a search lowers an unsettled one,
-    and fits again, up to three times: `quad_x`'s and `heavy_quad`'s ×3 noise rows pass on 5
-    seeds. The two-stage fit costs about 2 ms on a desktop in the window's last tick, against
+    and fits again, up to eight times (the search's cap, below): `quad_x`'s and
+    `heavy_quad`'s ×3 noise rows pass on 5 seeds. The two-stage fit costs about 2 ms on a desktop in the window's last tick, against
     0.06 ms for the least squares.
     Rejected (#551, over the sim's 30 noise-row fits and the RealFlight windows): two stages
     everywhere (above); within the two-stage fit, the longest delay of a near-tie (eXplora
@@ -1016,9 +1016,13 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     steps clipping; on the gyro-filtered rate loop with rate I, those rows pass.
   * Open: `racer`'s ×3 noise row, with the notch, overshoots the time budget or misses the
     step spec on 4 seeds of 5, and its low start, passing on the seed its row flies, misses a
-    yaw step on seed 5. With the trim, weak motor, and delay added (the combined rows) the yaw stage doesn't settle from the low start, and
-    the ×3 starts' fits saturate even lowered six times, the tone removed or not
-    ([#598](https://github.com/wboayue/stable-flight/issues/598)). The trim rows pass, with
+    yaw step on seed 5 ([#604](https://github.com/wboayue/stable-flight/issues/604)). With
+    10 ms of delay under the same noise (the delay-noise and combined rows), the noisy fit
+    can't place the delay: every delay from half a tick to ten fits within 0.1% of the least,
+    the lag trading against it, so the shortest wins, the rate design rings at the rate loop's
+    limit, and a later stage's fit saturates or doesn't settle. Moment headroom isn't the
+    limit: the mixer never clips, and the trim holds under a third of the moment
+    ([#603](https://github.com/wboayue/stable-flight/issues/603)). The trim rows pass, with
     the rate I term limited in moment (*Retuning `i` is bumpless*, #374).
     `racer`'s ×3 start breaches the rate envelope in its first fit with 25 ms of delay: the
     abort is the safe outcome, and the row stays ignored.
@@ -1032,9 +1036,11 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     core's default yaw gains ring, the design's rate gains overshoot by 0–23% from one step
     to the next (0% from a still hover), and the rate searches passed nothing. A search's
     start that doesn't settle within the settle timeout is lowered by the bracket's factor
-    until it does, at most three times (30 s on ringing gains; `racer` needs one, and capped
-    at 1–5 the robustness rows pass the same); a tighter settle (0.05 or 0.03 rad/s) didn't help and cost the clean rows
-    their time budget (#552).
+    until it does, at most eight times, as a rate design lowers a start whose fit saturates
+    (80 s on ringing gains; `racer` needs one, and capped anywhere from 1 to 10 the robustness
+    rows that pass pass the same; the delay-noise rows' ×3 starts need 5–8 to design their
+    rate loops); a tighter settle (0.05 or 0.03 rad/s) didn't help and cost the clean rows
+    their time budget (#552, #598).
 * **Plane method** (planned, [#534](https://github.com/wboayue/stable-flight/issues/534)):
   plane autotune fits each axis to a physical model, designs on the model, and checks the
   result in flight. Each method in the comparison excited the aircraft itself, with no pilot.

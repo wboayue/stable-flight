@@ -374,7 +374,7 @@ fn only_the_runs_own_start_stays_lowered() {
 
 /// A start the vehicle won't settle on is lowered by `factor` each time, with I at the plan's
 /// share of the lowered P, committed, and its baseline stepped on it; below `min`, or past
-/// three lowerings, the search fails `NotSettled` (#552).
+/// `MAX_START_LOWERINGS`, the search fails `NotSettled` (#552).
 #[test]
 fn an_unsettled_start_is_lowered_until_it_settles() {
     let plan = SearchPlan {
@@ -405,10 +405,15 @@ fn an_unsettled_start_is_lowered_until_it_settles() {
         );
         check!(finished(&run).1 == Outcome::Tuned, "{unsettled}");
     }
-    // A fourth: 0.5 / 1.3⁴ is below `min` 0.2, and past the cap at `min` 0.01.
-    for min in [0.2, 0.01] {
-        let run = drive_unsettled(SearchPlan { min, ..plan }, START, 4, passing);
-        check!(run.committed.len() == 3, "min {min}");
+    // (min, unsettled settles, commits before the failure): a fourth lowering takes 0.5 below
+    // `min` 0.2 (0.5 / 1.3⁴); at `min` 0.01 the cap ends it.
+    let failing = [
+        (0.2, 4, 3),
+        (0.01, MAX_START_LOWERINGS + 1, MAX_START_LOWERINGS),
+    ];
+    for (min, unsettled, commits) in failing {
+        let run = drive_unsettled(SearchPlan { min, ..plan }, START, unsettled, passing);
+        check!(run.committed.len() == commits, "min {min}");
         check!(
             run.end == Action::Fail(AutotuneAbort::NotSettled),
             "min {min}"

@@ -86,9 +86,13 @@ rows! {
     quad_x_cg_offset_high: quad_x, CgOffset, High;
     quad_x_weak_motor_low: quad_x, WeakMotor, Low;
     quad_x_weak_motor_high: quad_x, WeakMotor, High;
-    #[ignore = "every design passes, but under gyro noise with the trim and delay the yaw stage doesn't settle (NotSettled) (#598)"]
+    #[ignore = "under gyro noise the fit reads the 10 ms delay as 1 tick: the rate designs ring at the rate loop's limit and the angle stage's fit saturates (#603)"]
+    quad_x_delay_noise_low: quad_x, DelayNoise, Low;
+    #[ignore = "lowered up to 8 times, the ×3 start designs both rate loops, then fails as the low start does (#603)"]
+    quad_x_delay_noise_high: quad_x, DelayNoise, High;
+    #[ignore = "under gyro noise the fit reads the 10 ms delay as 1 tick: the rate designs ring at the rate loop's limit and the angle stage's fit saturates (#603)"]
     quad_x_combined_low: quad_x, Combined, Low;
-    #[ignore = "the ×3 start's identify windows saturate even lowered 3 times (6, or the tone removed, didn't unclip them either) (#598)"]
+    #[ignore = "lowered up to 8 times, the ×3 start designs both rate loops, then fails as the low start does (#603)"]
     quad_x_combined_high: quad_x, Combined, High;
 
     heavy_quad_clean_low: heavy_quad, Clean, Low;
@@ -103,9 +107,13 @@ rows! {
     heavy_quad_cg_offset_high: heavy_quad, CgOffset, High;
     heavy_quad_weak_motor_low: heavy_quad, WeakMotor, Low;
     heavy_quad_weak_motor_high: heavy_quad, WeakMotor, High;
-    #[ignore = "every design passes, but under gyro noise with the trim and delay the yaw stage doesn't settle (NotSettled) (#598)"]
+    #[ignore = "under gyro noise the fit reads the 10 ms delay as 1 tick: the rate designs ring at the rate loop's limit and the yaw stage doesn't settle (NotSettled) (#603)"]
+    heavy_quad_delay_noise_low: heavy_quad, DelayNoise, Low;
+    #[ignore = "lowered up to 8 times, the ×3 start designs both rate loops, then fails as the low start does (#603)"]
+    heavy_quad_delay_noise_high: heavy_quad, DelayNoise, High;
+    #[ignore = "under gyro noise the fit reads the 10 ms delay as 1 tick: the rate designs ring at the rate loop's limit and the angle stage's fit saturates (#603)"]
     heavy_quad_combined_low: heavy_quad, Combined, Low;
-    #[ignore = "the ×3 start's identify windows saturate even lowered 3 times (6, or the tone removed, didn't unclip them either) (#598)"]
+    #[ignore = "lowered up to 8 times, the ×3 start designs both rate loops, then fails as the low start does (#603)"]
     heavy_quad_combined_high: heavy_quad, Combined, High;
 
     racer_clean_low: racer, Clean, Low;
@@ -116,21 +124,25 @@ rows! {
     #[ignore = "the ×3 start (rate P 3.49) breaches the rate envelope in the first fit at 25 ms; the abort is the safe outcome (#552)"]
     racer_delay_25ms_high: racer, Delay25Ms, High;
     racer_noise_low: racer, Noise, Low;
-    #[ignore = "with the gyro notch at the tone the autotune overshoots the budget or misses the spec on 4 noise seeds of 5 (#598)"]
+    #[ignore = "with the gyro notch at the tone the autotune overshoots the budget or misses the spec on 4 noise seeds of 5 (#604)"]
     racer_noise_high: racer, Noise, High;
     racer_cg_offset_low: racer, CgOffset, Low;
     racer_cg_offset_high: racer, CgOffset, High;
     racer_weak_motor_low: racer, WeakMotor, Low;
     racer_weak_motor_high: racer, WeakMotor, High;
-    #[ignore = "under gyro noise with the trim and delay the roll rate stage doesn't settle (NotSettled) (#598)"]
+    #[ignore = "under gyro noise the fit reads the 10 ms delay as 1 tick: the roll rate design rings and its stage doesn't settle (NotSettled) (#603)"]
+    racer_delay_noise_low: racer, DelayNoise, Low;
+    #[ignore = "lowered 8 times, the ×3 start designs roll rate; the pitch rate fit still saturates (#603)"]
+    racer_delay_noise_high: racer, DelayNoise, High;
+    #[ignore = "under gyro noise the fit reads the 10 ms delay as 1 tick: the roll rate design rings and its stage doesn't settle (NotSettled) (#603)"]
     racer_combined_low: racer, Combined, Low;
-    #[ignore = "the ×3 start's identify windows saturate even lowered 3 times (6, or the tone removed, didn't unclip them either) (#598)"]
+    #[ignore = "lowered 8 times, the ×3 start designs roll rate; the pitch rate fit still saturates (#603)"]
     racer_combined_high: racer, Combined, High;
 }
 
 /// The noise rows that pass hold on other noise seeds: `quad_x` and `heavy_quad` from both
 /// starts, on seeds 2–5 (the rows fly seed 1). `racer`'s low start, which passes on seed 1,
-/// overshoots a yaw rate step on seed 5 (#598).
+/// overshoots a yaw rate step on seed 5 (#604).
 #[test]
 fn noise_rows_pass_on_other_seeds() {
     for (name, airframe) in [
