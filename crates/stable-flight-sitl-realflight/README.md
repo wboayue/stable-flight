@@ -160,6 +160,9 @@ cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight 
 # Or: just fly-plane-autotune
 cargo run -p stable-flight-sitl-realflight --example plane-autotune-realflight -- --record tune.csv
 cargo run -p stable-flight-sitl-realflight --example plane-autotune-realflight -- --stages none --step-test
+# The Titan Cobra's cruise side (--airframe titan-cobra; lift rotors stopped in plane flight):
+# flights/cobra_plane_tune.csv, the hold at its 12.4 m/s trim; --record writes QuadPlaneColumns
+cargo run -p stable-flight-sitl-realflight --example plane-autotune-realflight -- --airframe titan-cobra --step-test
 
 # Joystick (or --script) flight recording raw SimulatorState and channels to CSV (frame checks)
 cargo run -p stable-flight-sitl-realflight --example capture-state-realflight -- --output capture.csv

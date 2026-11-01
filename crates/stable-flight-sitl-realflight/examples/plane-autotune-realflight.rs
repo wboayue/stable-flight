@@ -30,8 +30,9 @@
 //! gains change. The RealFlight host defaults to `10.211.55.3:8080`; override it with
 //! `--host`.
 //!
-//! `--airframe` picks the model: `explora` (the default, and the only one), the eXplora
-//! tailsitter on `TailsitterGuidance` and `TailsitterStabilizer`. `--param NAME=VALUE`
+//! `--airframe` picks the model: `explora` (the default), the eXplora tailsitter on
+//! `TailsitterGuidance` and `TailsitterStabilizer`, or `titan-cobra`, the Titan Cobra quadplane
+//! on `QuadPlaneGuidance` and `QuadPlaneStabilizer` (its lift rotors stopped in plane flight). `--param NAME=VALUE`
 //! (repeatable) sets a param before takeoff, as the link would.
 //!
 //! ```text
@@ -39,6 +40,7 @@
 //! cargo run -p stable-flight-sitl-realflight --example plane-autotune-realflight -- --step-test
 //! cargo run -p stable-flight-sitl-realflight --example plane-autotune-realflight -- --stages none --step-test
 //! cargo run -p stable-flight-sitl-realflight --example plane-autotune-realflight -- --rate-scale 3
+//! cargo run -p stable-flight-sitl-realflight --example plane-autotune-realflight -- --airframe titan-cobra
 //! ```
 
 use std::process::ExitCode;
@@ -50,12 +52,12 @@ use env_logger::Builder;
 use log::{debug, error, info, warn};
 
 use stable_flight::commanders::{PlaneTuneHoldConfig, RouteEnd};
-use stable_flight::guidance::vtol::TailsitterGuidance;
+use stable_flight::guidance::vtol::{QuadPlaneGuidance, TailsitterGuidance};
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::params::Params;
 use stable_flight::stabilizers::copter::TunedLoop;
 use stable_flight::stabilizers::plane::{PlaneLoop, PlaneStabilizerConfig};
-use stable_flight::stabilizers::vtol::TailsitterStabilizer;
+use stable_flight::stabilizers::vtol::{QuadPlaneStabilizer, TailsitterStabilizer};
 use stable_flight::tuning::autotune::{
     AutotuneEvent, AutotuneStatus, Outcome, PlaneAutotune, PlaneEnvelope, PlaneSide, SideConfig,
     SideTunable, StagePlan,
@@ -74,9 +76,9 @@ use stable_flight_sitl::autotune::{
 };
 use stable_flight_sitl::cli::parse_param;
 use stable_flight_sitl::commanders::ScriptCommander;
-use stable_flight_sitl::recorder::{CsvRecorder, TailsitterColumns};
+use stable_flight_sitl::recorder::{Columns, CsvRecorder, QuadPlaneColumns, TailsitterColumns};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
-use stable_flight_sitl_realflight::airframes;
+use stable_flight_sitl_realflight::airframes::{self, Airframe};
 use stable_flight_sitl_realflight::realflight_bridge::{
     BridgeError, RealFlightBridge, RealFlightRemoteBridge,
 };
@@ -157,7 +159,7 @@ struct Args {
     #[arg(long)]
     step_test: bool,
 
-    /// Writes every tick (`TailsitterColumns`) to this CSV, to diagnose a run.
+    /// Writes every tick (`TailsitterColumns`, or `QuadPlaneColumns` for the Cobra) to this CSV, to diagnose a run.
     #[arg(long)]
     record: Option<String>,
 
@@ -178,6 +180,8 @@ struct Args {
 enum Model {
     /// eXplora VTOL tailsitter: its plane side.
     Explora,
+    /// Titan Cobra VTOL quadplane: its cruise side (pusher and surfaces, lift rotors stopped).
+    TitanCobra,
 }
 
 impl Model {
@@ -185,6 +189,7 @@ impl Model {
     fn script(self) -> &'static str {
         match self {
             Model::Explora => "flights/explora_plane_tune.csv",
+            Model::TitanCobra => "flights/cobra_plane_tune.csv",
         }
     }
 }
@@ -245,13 +250,89 @@ fn main() -> ExitCode {
             .exit();
     }
 
+    match args.airframe {
+        Model::Explora => {
+            let mut airframe = airframes::explora_vtol();
+            airframe.stabilizer.plane = scaled(airframe.stabilizer.plane, args.rate_scale);
+            let Some(vehicle) = connect(&args.host, &airframe) else {
+                return ExitCode::FAILURE;
+            };
+            let pipeline = Pipeline {
+                vehicle,
+                guidance: TailsitterGuidance::new(airframe.guidance),
+                stabilizer: TailsitterStabilizer::new(airframe.stabilizer),
+                mixer: airframe.mixer,
+                columns: TailsitterColumns {
+                    view: tailsitter_rotation(),
+                },
+            };
+            run(&args, pipeline, airframe.guidance.plane.cruise_thrust)
+        }
+        Model::TitanCobra => {
+            let mut airframe = airframes::titan_cobra();
+            airframe.stabilizer.plane = scaled(airframe.stabilizer.plane, args.rate_scale);
+            let Some(vehicle) = connect(&args.host, &airframe) else {
+                return ExitCode::FAILURE;
+            };
+            let pipeline = Pipeline {
+                vehicle,
+                guidance: QuadPlaneGuidance::new(airframe.guidance),
+                stabilizer: QuadPlaneStabilizer::new(airframe.stabilizer),
+                mixer: airframe.mixer,
+                columns: QuadPlaneColumns,
+            };
+            run(&args, pipeline, airframe.guidance.plane.cruise_thrust)
+        }
+    }
+}
+
+/// The RealFlight vehicle for `airframe` at `host`, or `None` (logged) when it can't start. A
+/// lost or stalled connection is dropped and rebuilt with backoff; short timeouts bound each
+/// attempt's stall. A failed reset would start the run from wherever the last one left the
+/// aircraft.
+fn connect<G, S, M>(
+    host: &str,
+    airframe: &Airframe<G, S, M>,
+) -> Option<RealFlightVehicle<RealFlightRemoteBridge>> {
+    let host = host.to_owned();
+    let connect =
+        move || RealFlightRemoteBridge::with_timeouts(&host, CONNECT_TIMEOUT, REMOTE_IO_TIMEOUT);
+    match RealFlightVehicle::try_new(RealFlightConfiguration::from_airframe(
+        airframe,
+        connect().expect("Failed to create bridge"),
+    )) {
+        Ok(vehicle) => Some(vehicle.with_reconnect(move || connect().map_err(BridgeError::from))),
+        Err(e) => {
+            error!("can't start: {e}");
+            None
+        }
+    }
+}
+
+/// One airframe's pipeline, apart from the commander and telemetry every airframe shares.
+struct Pipeline<G, S, M, C> {
+    vehicle: RealFlightVehicle<RealFlightRemoteBridge>,
+    guidance: G,
+    stabilizer: S,
+    mixer: M,
+    /// The `--record` CSV's columns.
+    columns: C,
+}
+
+/// Wires `pipeline` to the script, the hold, and the link, and flies the run: the hold starts
+/// on `cruise_thrust` until the level leg measures its own.
+fn run<G, S, M, C>(args: &Args, pipeline: Pipeline<G, S, M, C>, cruise_thrust: f32) -> ExitCode
+where
+    G: Guidance + Params,
+    S: Stabilizer + Params + SideTunable<PlaneSide> + Tunable<TunedLoop>,
+    M: Mixer,
+    C: Columns,
+{
     // Flies into plane flight; the hold takes over at the last waypoint, and home ends it.
     let script = ScriptCommander::new(args.script.as_deref().unwrap_or(args.airframe.script()))
         .expect("failed to load flight script")
         .with_route_end(RouteEnd::Hold)
         .anchored();
-    let Model::Explora = args.airframe;
-    let mut airframe = airframes::explora_vtol();
     let home = PlaneHome {
         altitude_m: HOME_ALTITUDE_M,
         radius_m: HOME_RADIUS_M,
@@ -259,31 +340,10 @@ fn main() -> ExitCode {
     };
     let (commander, switch) = PlaneTuneFlight::new(script, home);
 
-    airframe.stabilizer.plane = scaled(airframe.stabilizer.plane, args.rate_scale);
-    let plane = airframe.stabilizer.plane;
+    let plane = *SideConfig::<PlaneSide>::side(pipeline.stabilizer.config());
     let hold = PlaneTuneHoldConfig {
         recover_to: FlightRegime::Copter,
-        ..PlaneTuneHoldConfig::new(
-            airframe.guidance.plane.cruise_thrust,
-            plane.trim_airspeed_mps,
-        )
-    };
-
-    // A lost or stalled RealFlight connection is dropped and rebuilt with backoff; short
-    // timeouts bound each attempt's stall. A failed reset would start the run from wherever
-    // the last one left the aircraft.
-    let host = args.host.clone();
-    let connect =
-        move || RealFlightRemoteBridge::with_timeouts(&host, CONNECT_TIMEOUT, REMOTE_IO_TIMEOUT);
-    let vehicle = match RealFlightVehicle::try_new(RealFlightConfiguration::from_airframe(
-        &airframe,
-        connect().expect("Failed to create bridge"),
-    )) {
-        Ok(vehicle) => vehicle.with_reconnect(move || connect().map_err(BridgeError::from)),
-        Err(e) => {
-            error!("can't start: {e}");
-            return ExitCode::FAILURE;
-        }
+        ..PlaneTuneHoldConfig::new(cruise_thrust, plane.trim_airspeed_mps)
     };
 
     // The link: the publisher writes it each tick (the flight loop's telemetry), and the poller
@@ -293,18 +353,15 @@ fn main() -> ExitCode {
         .into_halves();
     let mut fc_link = FcLink::<32, 16>::new();
     let (poller, link) = fc_link.wire(link_rx, link_tx);
-    let columns = TailsitterColumns {
-        view: tailsitter_rotation(),
-    };
-    let recorder = CsvRecorder::create(args.record.as_deref(), columns)
+    let recorder = CsvRecorder::create(args.record.as_deref(), pipeline.columns)
         .expect("failed to create the record CSV");
 
     let mut flight_loop = FlightLoop::new(
         commander,
-        vehicle,
-        TailsitterGuidance::new(airframe.guidance),
-        TailsitterStabilizer::new(airframe.stabilizer),
-        airframe.mixer,
+        pipeline.vehicle,
+        pipeline.guidance,
+        pipeline.stabilizer,
+        pipeline.mixer,
         (link, (recorder, ModeLog::default())),
     );
     for (name, value) in &args.params {
@@ -315,7 +372,7 @@ fn main() -> ExitCode {
         info!("param {name} = {value}");
     }
 
-    let plan = plan(&args, &plane);
+    let plan = plan(args, &plane);
     let autotune =
         PlaneAutotune::new(&plan, PlaneEnvelope::for_plane(&plane)).expect("valid autotune plan");
     info!(
