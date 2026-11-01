@@ -1555,6 +1555,82 @@ fn tilt_for_acceleration_points_thrust_along_the_demand() {
     }
 }
 
+/// The drag feedforward pushes against the drag model's drag on a leg's speed past the hold
+/// band, through the wind, in the thrust frame of the heading: none without a model, none for
+/// a hold's correction in still air, the wind's drag on a hold in wind, and nothing along an
+/// axis without a coefficient.
+#[test]
+fn drag_feedforward_pushes_against_a_legs_drag() {
+    let momentum = WindConfig {
+        momentum_per_s: Vec2::new(0.5, 0.5),
+        ..Default::default()
+    };
+    let belly_only = WindConfig {
+        ballistic_kgpm2: Vec2::new(2.0, 0.0),
+        ..Default::default()
+    };
+    let band = FEEDFORWARD_HOLD_BAND_MPS;
+    let k = 0.5 * crate::estimation::wind::AIR_DENSITY_KGPM3 / 2.0;
+    // (case, drag model, commanded north/east m/s, wind north/east m/s, heading, expected push)
+    let cases = [
+        (
+            "no model",
+            WindConfig::default(),
+            Vec2::new(3.0, 0.0),
+            Vec2::zeros(),
+            0.0,
+            Vec2::zeros(),
+        ),
+        (
+            "leg north",
+            momentum,
+            Vec2::new(2.0, 0.0),
+            Vec2::zeros(),
+            0.0,
+            Vec2::new(0.5 * (2.0 - band), 0.0),
+        ),
+        (
+            "hold correction",
+            momentum,
+            Vec2::new(band * 0.9, 0.0),
+            Vec2::zeros(),
+            0.0,
+            Vec2::zeros(),
+        ),
+        (
+            "hold in an east wind",
+            momentum,
+            Vec2::zeros(),
+            Vec2::new(0.0, 2.0),
+            0.0,
+            Vec2::new(0.0, -1.0),
+        ),
+        (
+            "belly-first leg east, facing east",
+            belly_only,
+            Vec2::new(0.0, 2.0),
+            Vec2::zeros(),
+            FRAC_PI_2,
+            Vec2::new(0.0, k * (2.0 - band).powi(2)),
+        ),
+        (
+            "leg north along the span, facing east",
+            belly_only,
+            Vec2::new(2.0, 0.0),
+            Vec2::zeros(),
+            FRAC_PI_2,
+            Vec2::zeros(),
+        ),
+    ];
+    for (case, wind, commanded_mps, wind_mps, heading_rad, expected) in cases {
+        let push = drag_feedforward_mps2(&wind, commanded_mps, wind_mps, heading_rad);
+        assert!(
+            (push - expected).norm() < 1e-5,
+            "{case}: {push:?}, expected {expected:?}"
+        );
+    }
+}
+
 #[test]
 fn rejects_hover_thrust_outside_zero_to_one() {
     for hover_thrust in [0.0, -0.1, 1.2, f32::NAN] {
