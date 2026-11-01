@@ -21,6 +21,54 @@ Plane (PlaneGuidance → PlaneStabilizer):
 Guidance runs the position loops; the stabilizers run the attitude and rate loops. A rate
 setpoint skips the attitude loop on either side.
 
+## Loop Shapes
+
+Each loop's form, outer to inner. `e` is setpoint − measured. *D acts on* names whose change
+the D term damps: the error's kicks for one tick when the setpoint steps, the measured value's
+doesn't ([D on measurement](https://github.com/wboayue/stable-flight/blob/main/docs/glossary.md)).
+
+**Copter** (`CopterGuidance` → `CopterStabilizer`)
+
+| Loop | Code | Input → output | Form | D acts on | Feedforward | I term |
+|---|---|---|---|---|---|---|
+| Lateral position | `lateral.rs` | position error (m) → velocity target (m/s) | P, or a braking curve | no D | target velocity | none |
+| Lateral velocity | `lateral.rs` | velocity error (m/s) → acceleration (m/s²) | PID (D 0 by default) | error | the velocity target's change, when shaped | ∫e, clamped; doesn't grow along the capped acceleration |
+| Altitude | `altitude.rs` | altitude error (m) → thrust [0, 1] | PID | climb-rate error | hover thrust | ∫e, clamped; grows only within 1 m of the target |
+| Attitude (roll, pitch) | `attitude.rs` | attitude error (rad) → body rate (rad/s) | PID | error | none | ∫e, clamped |
+| Heading | `yaw.rs` | wrapped heading error (rad) → yaw rate (rad/s) | PID (I 0 by default) | error | none | ∫e, clamped |
+| Body rate | `body_rate.rs` | rate error (rad/s) → moment [-1, 1] | PID | filtered measured rate | none | the moment ∫I·e, clamped (at most 1); doesn't grow while the output clips |
+
+**Plane** (`PlaneGuidance` → `PlaneStabilizer`)
+
+| Loop | Code | Input → output | Form | D acts on | Feedforward | I term |
+|---|---|---|---|---|---|---|
+| Attitude (bank, pitch) | `PlaneStabilizer` | attitude error (rad) → body rate (rad/s) | P: error / time constant | no D | coordinated-turn rates | none |
+| Plane rate | `plane_rate.rs` | rate error (rad/s) → moment [-1, 1] | PI, airspeed-scaled | no D | s · FF · rate setpoint | ∫e, clamped; held below the minimum airspeed, where the surfaces have little authority |
+
+- **Every loop** clamps its integral to its config's `max_integral` each tick, and takes no D
+  kick on its first tick or after a non-finite input. All run every tick except the lateral
+  loops, which `CopterGuidance` runs every `navigation_period_s`.
+- **Body rate:** `P·e + I term − D·ω̇` per axis, `ω̇` the change of the gyro rate after
+  `GyroFilters`: the low-pass (40 Hz by default) and an optional notch on roll and pitch.
+- **Attitude, heading:** `CopterStabilizer` feeds them the quaternion attitude error; outputs
+  are clamped to `max_rate_radps`.
+- **Altitude:** acceleration `a = P·e + I·∫e + D·(target climb rate − climb rate)`, thrust
+  `hover_thrust · (g + a) / g`, boosted for tilt. A target climb rate therefore also feeds
+  forward through D.
+- **Lateral:** the velocity target is the position term plus the target velocity, capped at
+  the speed limit; with `max_accel_mps2` set it moves toward that at most that fast, and its
+  change is fed forward. `CopterGuidance` turns the acceleration into a tilt, capped at
+  `max_tilt_rad`.
+- **Plane attitude:** the rate target is the error over `time_constant_s`, clamped to
+  `max_attitude_rate_radps`, plus the turn rates for the current bank.
+- **Plane rate:** `s²·(P·e + I·∫e + trim) + s·FF·setpoint`, `s` = trim airspeed ÷ airspeed.
+
+The plane and VTOL guidance loops above these are documented with their guidance: total
+energy control (`guidance::plane::TecsConfig`), L1 path following and the altitude loop
+without an airspeed (`guidance::plane::PlaneGuidanceConfig`), and a quadplane's forward
+thrust and back-transition nose-up (`guidance::vtol::ForwardThrustConfig`,
+`LiftTransitionConfig`).
+
 ## State and Config
 
 Each controller holds only its state (integral and derivative history) and is built with
@@ -32,6 +80,9 @@ as 0).
 
 ## Controllers
 
+Each controller's form is in [loop shapes](#loop-shapes); the sections below give its usage and
+what the table leaves out.
+
 ### Body Rate Controller (`body_rate.rs`)
 
 **Purpose**: Innermost control loop that directly controls angular rates (roll, pitch, yaw rates).
@@ -40,7 +91,6 @@ as 0).
 **Output**: Normalized moments [-1, 1] for motor mixing
 
 **Key Features**:
-- Plain PID per axis (`P·e + I·∫e + D·ė`, saturated to [-1, 1]), with anti-windup
 - Gains per axis (`roll_gains`, `pitch_gains`, `yaw_gains`): frames differ in roll and pitch inertia, and yaw authority (differential prop drag) is weaker than either
 - A non-finite rate on one axis zeroes that axis's moment only; the others keep their loop
 
@@ -66,7 +116,6 @@ let moments = controller.control(&config, dt, desired_rates, estimated_rates);
 **Output**: Desired angular rates (rad/s)
 
 **Key Features**:
-- PID per axis, output clamped to `max_rate_radps`, with anti-windup
 - `CopterStabilizer` feeds it the roll and pitch of a quaternion attitude error instead of Euler
   differences, so its rates are body rates at any attitude (a tailsitter in transition)
 
@@ -93,7 +142,6 @@ let angular_rates = controller.control(&config, dt, desired_angles, estimated_an
 
 **Key Features**:
 - Wraps the error to [-π, π), so it turns the short way across ±π
-- PID, output clamped to `max_rate_radps`
 - `CopterStabilizer` feeds it the heading part of the quaternion attitude error
 
 **Usage**:
@@ -118,10 +166,8 @@ let yaw_rate = controller.control(&config, dt, desired_yaw, estimated_yaw);
 **Output**: Normalized thrust command [0, 1]
 
 **Key Features**:
-- PID on altitude error (D on climb-rate error) gives a vertical acceleration
-- Gravity feedforward via `hover_thrust`; the integral only trims the residual, and only
-  accumulates within 1 m of the target
-- Tilt compensation (boost capped at 60°); output saturated to [0, 1]
+- With gravity fed forward through `hover_thrust`, the integral only trims the residual
+- Tilt compensation (at most 2× past 60°, none inverted); output saturated to [0, 1]
 - Non-finite inputs return hover thrust without touching the integral
 
 **Usage**:
@@ -155,11 +201,8 @@ let thrust = controller.control(&config, dt, target, estimate);
 tilt of `atan(|a| / g)` toward it, relative to the heading, capped at its `max_tilt_rad`.
 
 **Key Features**:
-- Cascade: position P → desired velocity (plus feedforward, capped at the speed limit) →
-  velocity PID → acceleration
 - Airframe-independent: tilt conversion and limits belong to the guidance
-- Velocity I trims a steady wind; the caller passes the acceleration it last capped, and the
-  integral doesn't grow along it
+- Velocity I trims a steady wind; the caller passes the acceleration it last capped
   ([integrator policy](https://github.com/wboayue/stable-flight/blob/main/architecture.md#config-ownership))
 
 **Usage**:
@@ -194,8 +237,7 @@ let accel_mps2 = controller.control(&config, dt, target, estimate, Vec2::zeros()
 **Output**: Normalized moments [-1, 1] for the control surfaces
 
 **Key Features**:
-- Per axis `s²·(P·e + I·∫e) + s·FF·setpoint`, clamped to [-1, 1]: a surface's moment grows with dynamic pressure, so feedback shrinks with `s²`, and the feedforward (the deflection that holds a rate against the wing's damping) with `s` (PX4 `FixedwingRateControl`)
-- The integral holds below the wing's minimum airspeed, where the surfaces have little authority
+- Airspeed scaling: a surface's moment grows with dynamic pressure, so feedback and trim shrink with `s²`, and the feedforward (the deflection that holds a rate against the wing's damping) with `s` (PX4 `FixedwingRateControl`)
 - A non-finite rate on one axis zeroes that axis's moment only
 
 ## Configuration
@@ -242,8 +284,8 @@ let moments = body_rate.control(&body_rate_config, 0.004, rates.push(0.0), Vec3:
 - **No panics in the tick:** outputs saturate, and a non-finite input gives neutral output
   without touching integral or derivative state
   ([input policy](https://github.com/wboayue/stable-flight/blob/main/architecture.md#input-policy-no-panics-in-the-tick)).
-- **Anti-windup:** the integral is clamped to `max_integral` every tick. The copter rate loop
-  integrates its I term in moment and clamps that, so a new `i` keeps the term; the other loops
+- **Anti-windup and retuning:** each loop's integral limit and hold are in
+  [loop shapes](#loop-shapes). The copter rate loop integrates its I term in moment and clamps that, so a new `i` keeps the term; the other loops
   integrate the error, and the composite's `set_config` calls their `rescale_integral`, so a new
   `i` is bumpless there too.
 - **No allocation:** fixed-size `nalgebra` math, so the loops run on firmware.
@@ -262,27 +304,16 @@ cargo test -p stable-flight --doc         # the snippets in this file and the co
 ## Mathematical Background
 
 ### PID Control
-The PID loops implement the discrete PID algorithm (the altitude loop takes D from the measured
-climb rate; the plane rate loop scales by airspeed, above):
+The loops are discrete PIDs in one of two forms:
 
 ```text
-u(k) = Kp×e(k) + Ki×∑e(k)×dt + Kd×(e(k)-e(k-1))/dt
+u(k) = Kp·e(k) + Ki·Σe·dt + Kd·(e(k) − e(k−1))/dt     D on the error
+u(k) = Kp·e(k) + Ki·Σe·dt − Kd·(y(k) − y(k−1))/dt     D on the measurement y
 ```
 
-Where:
-- `u(k)` = control output at time k
-- `e(k)` = error at time k  
-- `Kp, Ki, Kd` = proportional, integral, derivative gains
-- `dt` = time step
-
-### Anti-Windup Protection
-Integral terms are clamped to prevent windup: the copter rate loop's I term in moment, the
-others' integrated error:
-
-```rust,ignore
-integral = clamp_symmetric(integral + gains.i * error * dt, config.max_integral); // rate loop
-integrated_error = clamp_symmetric(integrated_error + dt * error, config.max_integral); // others
-```
+with `e = setpoint − y` and `dt` the tick. Which loop uses which, and the exceptions (the
+altitude loop's D on climb-rate error, the plane loops' airspeed scaling and time constant):
+[loop shapes](#loop-shapes).
 
 ### Angle Wrapping (Yaw Controller)
 Yaw errors are normalized to [-π, π) for shortest-path control with the core's

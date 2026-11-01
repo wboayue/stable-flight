@@ -9,18 +9,19 @@
 //!
 //! 1. **Inner Loop: Rate Control**
 //!    - Controls angular rates (roll rate, pitch rate, yaw rate)
-//!    - Fast update frequency (typically 400-1000Hz)
-//!    - PID controllers with feed-forward terms for each axis
-//!    - Flies the gyro rates through a low-pass (`STAB_GYRO_FLT`), D on the measured rate
+//!    - A PID per axis, no feedforward; D on the measured rate after the gyro low-pass
+//!      (`STAB_GYRO_FLT`) and the optional notch
 //!    - Directly commands motor mixing algorithm
 //!    - Always active as the core control layer
 //!
 //! 2. **Middle Loop: Attitude Control (Optional)**
 //!    - Controls orientation angles (roll angle, pitch angle, yaw angle)
-//!    - Moderate update frequency (typically 100-250Hz)
 //!    - Outputs desired angular rates to inner loop
 //!    - Implements angle limiting for safety
 //!    - Can be used without outer position loops for manual flight modes
+//!
+//! Both loops run every tick; each loop's form is in
+//! [`controllers`](crate::controllers#loop-shapes).
 //!
 //! The outer position loops (altitude and lateral position) are guidance, not stabilization:
 //! they live in [`CopterGuidance`](crate::guidance::copter::CopterGuidance), which turns

@@ -264,8 +264,9 @@ supplies pacing.
   stayed there, #608).
   VTOL guidances pause it outside copter flight, and a quadplane while its pusher thrusts
   along the body. The estimate reaches telemetry through `Guidance::wind`, not the link yet.
-* **Stabilizer**: the inner loop, cascaded PIDs from setpoint error to `ControlOutput` (setpoint
-  units: `Setpoint` rustdoc).
+* **Stabilizer**: the inner loops, attitude then body rate, from setpoint error to
+  `ControlOutput` (setpoint units: `Setpoint` rustdoc; each loop's form:
+  [loop shapes](crates/stable-flight/src/controllers/README.md#loop-shapes)).
 * **Mixer**: maps thrust and moments to `ActuatorCommand`'s generic motor and servo slots. The
   mixer sets what each slot means; the backend's mapping (e.g. `ActuatorMapping`) sets which
   channel it drives. `TableMixer` covers multirotors and thrust-and-servo frames with one table
