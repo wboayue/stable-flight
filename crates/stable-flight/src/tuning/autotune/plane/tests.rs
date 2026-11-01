@@ -414,6 +414,9 @@ fn a_design_tunes_each_axis_of_the_wing() {
     }
 }
 
+/// The airspeed at trim, band, and time, in m/s, m/s, and s.
+type Airspeed = fn(f32, f32, f32) -> Option<f32>;
+
 /// A probe waits for the airspeed to hold steady near trim: off trim past the band, or
 /// swinging, the settle times out and the stage fails; steady, or without air data, it runs.
 #[test]
@@ -421,7 +424,7 @@ fn the_settle_waits_for_steady_airspeed_near_trim() {
     let trim_mps = config().trim_airspeed_mps;
     let band_mps = PlaneEnvelope::for_plane(&config()).settle_airspeed.band_mps;
     // (row, airspeed at time t in s, the last event)
-    let rows: [(&str, fn(f32, f32, f32) -> Option<f32>, Event); 4] = [
+    let rows: [(&str, Airspeed, Event); 4] = [
         (
             "steady at trim",
             |trim, _, _| Some(trim),
