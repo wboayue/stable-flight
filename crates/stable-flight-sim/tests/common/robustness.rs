@@ -47,6 +47,8 @@ pub enum Set {
     Noise,
     CgOffset,
     WeakMotor,
+    /// 10 ms delay and noise together.
+    DelayNoise,
     /// 10 ms delay, noise, CG offset, and the weak motor together.
     Combined,
 }
@@ -90,6 +92,11 @@ pub fn perturbations(set: Set, airframe: &Airframe) -> Perturbations {
         },
         Set::WeakMotor => Perturbations {
             motor_thrust_scale: weak_motor(),
+            ..Default::default()
+        },
+        Set::DelayNoise => Perturbations {
+            actuator_delay_s: DELAY_S,
+            gyro: noise(),
             ..Default::default()
         },
         Set::Combined => Perturbations {

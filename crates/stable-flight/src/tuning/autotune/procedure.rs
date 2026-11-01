@@ -17,11 +17,14 @@ mod tests;
 const MAX_MEASURE_STOPS: usize = 3;
 
 /// Most times a stage lowers its start: a search's that won't settle, a rate design's whose fit
-/// saturates under noise. Each cut is 1.3 on the copter, so three halve the start (÷ 2.2),
-/// within 30 s at the copter envelope's 10 s settle timeout. `racer`'s default yaw at 25 ms of
-/// delay settles after one, and capped at 1–5 the robustness rows passed the same (#552); six
-/// didn't unclip the combined rows' fits from three times a quad's rate gains (#551).
-const MAX_START_LOWERINGS: usize = 3;
+/// saturates under noise. Each cut is 1.3 on the copter, so eight take the start to an eighth
+/// (÷ 8.2), within 80 s at the copter envelope's 10 s settle timeout, as ArduPilot's autotune
+/// shrinks its twitch ×0.9 per retry down to a fifth (`AC_AutoTune`'s `step_scaler`). Under
+/// gyro noise, 10 ms of delay, and trim, three times a quad's rate gains ring at the rate
+/// loop's limit until lowered 5–8 times (`quad_x`, `heavy_quad`). `racer`'s default yaw at
+/// 25 ms of delay settles after one, and capped anywhere from 1 to 10 the robustness rows that
+/// pass passed the same (#552, #598).
+const MAX_START_LOWERINGS: usize = 8;
 
 /// What a procedure is told.
 #[derive(Clone, Copy, Debug, PartialEq)]

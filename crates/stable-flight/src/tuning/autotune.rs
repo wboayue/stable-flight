@@ -439,7 +439,7 @@ impl StepTestPlan {
 ///    ([`AutotuneEvent::Lowered`]), so the vehicle settles on it and it stays if nothing
 ///    better passes or the stage fails. A start the vehicle doesn't settle on within
 ///    [`Envelope::settle_timeout_s`] is lowered `÷ factor` and committed the same way, again
-///    at each timeout up to three times, failing the stage once the term would fall below
+///    at each timeout up to eight times, failing the stage once the term would fall below
 ///    `min`. A start whose
 ///    steps abort or keep clipping leaves no baseline.
 /// 2. **Bracket** from the start's gain: `× factor` per point while points pass, up to `max`;

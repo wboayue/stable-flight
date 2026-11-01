@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `IdentifyAbort::Saturated`: a window whose moments mostly sit at the rate
   loop's limit while the least squares leaves it noisy is no longer fitted. A design stage
   answers it on a rate loop by lowering its start, every gain ÷ 1.3, and fitting again, up to
-  three times (#551). `IdentifyAbort` is now `#[non_exhaustive]`.
+  eight times (#551, #598). `IdentifyAbort` is now `#[non_exhaustive]`.
 - **Breaking (behavior):** `IdentifyProbe` fits a noisy window in two stages: the moment
   projected on the probe's excitation, then a lag and half-tick delay grid on it, so gyro
   noise in the moment no longer reads as the airframe (the sim's noise rows read every lag as
@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking (behavior):** a search whose start won't settle within
   `Envelope::settle_timeout_s` lowers it by its `factor` and commits it
   (`AutotuneEvent::Lowered`) instead of failing `NotSettled`, again at each timeout, up to
-  three times and down to its `min` (#552).
+  eight times and down to its `min` (#552, #598).
 
 ### Fixed
 
