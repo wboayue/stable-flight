@@ -174,7 +174,7 @@ The axes are the hover view's:
 - **Sink guard:** adds thrust to piloted flight past the sink limit:
   0.65 + 0.15 × 2 = 0.95 at 3 m/s. Waypoint flight limits its own descent
   ([step 5](#5-hover-descent-rate)), with its altitude target at most 1 m below the vehicle
-  (`ALTITUDE_LEASH_M`), so a hover handed over still climbing doesn't sink past it.
+  (`GUID_ALT_LEASH`), so a hover handed over still climbing doesn't sink past it.
 - **Boost ceiling:** caps the tilt boost, so the motors keep headroom for differential thrust.
   At full boost the motor pair saturates, and a roll can only be pushed one way.
 - **Symptoms:**
@@ -249,8 +249,9 @@ against `sp_pitch`, `sp_thrust`, and `elevon_*`.
   and the hold leans to the tilt cap (`GUID_TILT_MAX`) and drifts. With a wingtip into the
   wind it needs little lean. `GUID_WND_HDG_SPD` turns it there: holding a waypoint or
   landing, a wind at least that fast, whose direction the [wind estimate](#wind-estimate)
-  knows within 15°, turns the heading at `GUID_HDG_RATE` to put the wingtip nearer the
-  heading into the wind, the belly 80° off where it comes from. A script's `heading` wins,
+  knows within 15° (`GUID_WND_HDG_SD`), turns the heading at `GUID_HDG_RATE` to put the
+  wingtip nearer the heading into the wind, the belly 80° off where it comes from
+  (`GUID_WND_HDG_OFF`), moving it only past 10° (`GUID_WND_HDG_DB`). A script's `heading` wins,
   and longer legs keep their heading until within `GUID_YAW_MIN_LEG` of the waypoint. Why
   80°: square on (88°), the eXplora's pitch swung 9.3–12.7° off its setpoint early in a
   60 → 20 m descent, and 4.9–6.0° at 78–80°, where a little wind on the belly loads the

@@ -74,6 +74,14 @@
 //! | `GUID_SINK_GAIN` | `thrust.sink_gain` |
 //! | `GUID_BOOST_MAX` | `thrust.max_boost_thrust` |
 //! | `GUID_STICK_X`, `_Y` | `max_stick_angles_rad` |
+//! | `GUID_STICK_YAW` | `stick_yaw_rate_radps` |
+//! | `GUID_THR_IDLE` | `idle_throttle` |
+//! | `GUID_ALT_LEASH` | `altitude_leash_m` |
+//! | `GUID_WND_HDG_OFF` | `wind_heading_from_wind_rad` |
+//! | `GUID_WND_HDG_SD` | `wind_heading_max_sd_rad` |
+//! | `GUID_WND_HDG_DB` | `wind_heading_deadband_rad` |
+//! | `GUID_WND_AIR_HT` | `airborne_height_m` |
+//! | `GUID_WND_FF_BAND` | `feedforward_hold_band_mps` |
 //! | `GUID_WND_BCOEF_X`, `_Y` | `wind.ballistic_kgpm2` |
 //! | `GUID_WND_MCOEF_X`, `_Y` | `wind.momentum_per_s` |
 //! | `GUID_WND_F_NSE` | `wind.force_noise_mps2` |

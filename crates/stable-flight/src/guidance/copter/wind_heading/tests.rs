@@ -13,6 +13,14 @@ fn wind(toward_deg: f32, speed_mps: f32, sd_mps: f32) -> WindEstimate {
     }
 }
 
+/// The default config, with the wind heading on above `min_speed_mps`.
+fn on(min_speed_mps: f32) -> CopterGuidanceConfig {
+    CopterGuidanceConfig {
+        wind_heading_min_mps: min_speed_mps,
+        ..Default::default()
+    }
+}
+
 fn deg(rad: Option<f32>) -> Option<f32> {
     rad.map(|r| wrap_angle(r).to_degrees())
 }
@@ -85,7 +93,7 @@ fn picks_the_wingtip_heading_nearer_the_vehicle() {
     for (case, min_speed_mps, wind, heading_deg, expected) in cases {
         let mut heading = WindHeading::default();
         let target =
-            deg(heading.target_rad(min_speed_mps, wind.as_ref(), heading_deg.to_radians()));
+            deg(heading.target_rad(&on(min_speed_mps), wind.as_ref(), heading_deg.to_radians()));
         let close = match (target, expected) {
             (Some(t), Some(e)) => (t - e).abs() < 1e-3,
             _ => target == expected,
@@ -99,7 +107,7 @@ fn picks_the_wingtip_heading_nearer_the_vehicle() {
 #[test]
 fn keeps_its_side_and_heading_through_small_changes() {
     let mut heading = WindHeading::default();
-    let first = heading.target_rad(1.0, Some(&wind(0.0, 2.0, 0.1)), 0.3);
+    let first = heading.target_rad(&on(1.0), Some(&wind(0.0, 2.0, 0.1)), 0.3);
     check!(deg(first).is_some_and(|h| (h - 100.0).abs() < 1e-3));
 
     // (case, wind toward deg, sd, vehicle heading deg, expected heading deg)
@@ -123,7 +131,7 @@ fn keeps_its_side_and_heading_through_small_changes() {
     ];
     for (case, toward_deg, sd_mps, heading_deg, expected) in steps {
         let target = deg(heading.target_rad(
-            1.0,
+            &on(1.0),
             Some(&wind(toward_deg, 2.0, sd_mps)),
             heading_deg.to_radians(),
         ));
@@ -131,5 +139,67 @@ fn keeps_its_side_and_heading_through_small_changes() {
             (target.unwrap_or(f32::NAN) - expected).abs() < 1e-3,
             "{case}: {target:?}"
         );
+    }
+}
+
+/// The angle off the wind, the direction uncertainty, and the deadband come from the config.
+#[test]
+fn follows_the_configured_angle_uncertainty_and_deadband() {
+    // (case, config, wind toward deg after a first pick toward 0°, sd m/s, expected deg)
+    let rows: [(&str, CopterGuidanceConfig, f32, f32, Option<f32>); 4] = [
+        (
+            "square on at 90°",
+            CopterGuidanceConfig {
+                wind_heading_from_wind_rad: 90.0_f32.to_radians(),
+                ..on(1.0)
+            },
+            0.0,
+            0.1,
+            Some(90.0),
+        ),
+        (
+            "no deadband: 9° moves it",
+            CopterGuidanceConfig {
+                wind_heading_deadband_rad: 0.0,
+                ..on(1.0)
+            },
+            9.0,
+            0.1,
+            Some(109.0),
+        ),
+        (
+            "wider deadband: 11° doesn't",
+            CopterGuidanceConfig {
+                wind_heading_deadband_rad: 12.0_f32.to_radians(),
+                ..on(1.0)
+            },
+            11.0,
+            0.1,
+            Some(100.0),
+        ),
+        (
+            "looser uncertainty: a 1 m/s sd still turns it",
+            CopterGuidanceConfig {
+                wind_heading_max_sd_rad: 90.0_f32.to_radians(),
+                ..on(1.0)
+            },
+            0.0,
+            1.0,
+            Some(100.0),
+        ),
+    ];
+    for (case, config, toward_deg, sd_mps, expected) in rows {
+        let mut heading = WindHeading::default();
+        let first = deg(heading.target_rad(&config, Some(&wind(0.0, 2.0, sd_mps)), 0.3));
+        let target = if toward_deg == 0.0 {
+            first
+        } else {
+            deg(heading.target_rad(&config, Some(&wind(toward_deg, 2.0, sd_mps)), 0.3))
+        };
+        let close = match (target, expected) {
+            (Some(t), Some(e)) => (t - e).abs() < 1e-3,
+            _ => target == expected,
+        };
+        check!(close, "{case}: {target:?} vs {expected:?}");
     }
 }
