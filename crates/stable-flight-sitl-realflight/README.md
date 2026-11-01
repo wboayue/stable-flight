@@ -151,8 +151,8 @@ cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight 
 cargo run -p stable-flight-sitl-realflight --example copter-autotune-realflight -- --airframe explora --stages none --step-test
 
 # The eXplora's plane side (--airframe explora): flies flights/explora_plane_tune.csv into
-# plane flight at 100 m over the start, hands over to a tune hold (PlaneTuneHold) at the thrust
-# the level leg flew on, fits and designs roll then pitch (StagePlan::plane_design), logs each
+# plane flight at 100 m, hands over to a tune hold (PlaneTuneHold) on the level leg once it flies
+# straight and level, at the thrust it flew on, fits and designs roll then pitch (StagePlan::plane_design), logs each
 # fit and verify pair, prints the tuned gains as an airframes.rs snippet, flies home in plane,
 # transitions back, and lands on the start; a breach hovers where it is and lands there.
 # --step-test appends roll/pitch rate and angle step tests (--stages none --step-test: the

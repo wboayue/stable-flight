@@ -150,8 +150,10 @@ pub struct PlaneHome {
 /// home: a VTOL's plane autotune flight.
 ///
 /// - **Lead:** the script (a hover climb, a transition, a level plane leg) until the host
-///   hands over ([`PlaneTuneSwitch::hold`], once [`lead_complete`](Self::lead_complete) and the
-///   vehicle has flown plane long enough to read the thrust it flies level on).
+///   hands over ([`PlaneTuneSwitch::hold`]): on the last leg ([`on_last_leg`](Self::on_last_leg)),
+///   once the vehicle flies it straight and level, so the hold starts on a level attitude and
+///   the thrust the leg flew level on. At the leg's end the guidance loiters, banked and nose
+///   up: a hold started there keeps that pitch, climbs, and slows.
 /// - **Hold:** the hold, its turns and recovery driven through the switch.
 /// - **Finish** ([`PlaneTuneSwitch::finish`]): after a hold that recovered (an envelope
 ///   breach: the vehicle hovers on its rotors), or before any hold, a land where the vehicle
@@ -225,9 +227,11 @@ impl PlaneTuneFlight {
         (commander, PlaneTuneSwitch(phase))
     }
 
-    /// Whether the script has reached its last waypoint.
-    pub fn lead_complete(&self) -> bool {
-        self.lead.follower().is_complete()
+    /// Whether the script flies its last leg, toward its last waypoint, and hasn't reached
+    /// it.
+    pub fn on_last_leg(&self) -> bool {
+        let follower = self.lead.follower();
+        follower.current_index() + 1 >= follower.waypoints().len() && !follower.is_complete()
     }
 
     /// The home loiter's target: over the start at the home altitude, in the vehicle's frame
