@@ -11,13 +11,12 @@
 //!    - Controls angular rates (roll rate, pitch rate, yaw rate)
 //!    - A PID per axis, no feedforward; D on the measured rate after the gyro low-pass
 //!      (`STAB_GYRO_FLT`) and the optional notch
-//!    - Directly commands motor mixing algorithm
-//!    - Always active as the core control layer
+//!    - Outputs moments to the mixer
 //!
 //! 2. **Middle Loop: Attitude Control (Optional)**
 //!    - Controls orientation angles (roll angle, pitch angle, yaw angle)
 //!    - Outputs desired angular rates to inner loop
-//!    - Implements angle limiting for safety
+//!    - Saturates the angle setpoint to `max_angles_rad`
 //!    - Can be used without outer position loops for manual flight modes
 //!
 //! Both loops run every tick; each loop's form is in
