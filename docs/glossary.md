@@ -62,7 +62,7 @@ Code comments and docs link here instead of redefining a term.
   [loop shapes](../crates/stable-flight/src/controllers/README.md#loop-shapes).
 - **PID:** a loop's output as the sum of three terms: **P** proportional to the error, **I**
   the accumulated error over time (removes steady offsets), **D** the error's rate of change
-  (damps overshoot). Gains `kp`, `ki`, `kd` scale each term.
+  (damps overshoot). Gains `p`, `i`, `d` (`controllers::Gains`) scale each term.
 - **Feedforward:** output computed from the setpoint itself (e.g. the expected moment for a
   commanded rate) rather than from the error, so the loop doesn't wait to fall behind.
 - **Time constant:** how long a first-order response takes to cover about 63% of a step. The
@@ -78,8 +78,8 @@ Code comments and docs link here instead of redefining a term.
   ArduPilot's IMAX), holding it while saturated in the error's direction, or fading it
   toward zero while saturated, as the TECS pitch integral does).
 - **Derivative kick:** a D-term spike when the setpoint jumps or a loop starts with no previous
-  sample; the loops skip it on their first tick, and a loop taking D on the measurement skips
-  the setpoint jump's
+  sample; the loops skip it on their first tick, and a loop taking D on the measurement avoids
+  the kick a setpoint jump causes
   ([loop shapes](../crates/stable-flight/src/controllers/README.md#loop-shapes)).
 - **D on measurement:** a PID whose D term damps the measured value's change instead of the
   error's: the same inside the loop, but a setpoint step moves the output through P and I only.
