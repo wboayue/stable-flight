@@ -1,0 +1,9 @@
+# Hover legs that stop (eXplora VTOL), calm air: climb to 15 m facing north (belly north), then 25 m legs at 3 m/s holding 15 s at
+# each end: north and back (belly first), east and back (along the span). Overshoot past each end shows a leg's stop (#609).
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
+x,y,altitude,cruise_speed,regime,heading,hold_s
+0.00,0.00,15.0,3.0,copter,0,10
+25.00,0.00,15.0,3.0,copter,0,15
+0.00,0.00,15.0,3.0,copter,0,15
+0.00,25.00,15.0,3.0,copter,0,15
+0.00,0.00,15.0,3.0,copter,0,15
