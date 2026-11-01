@@ -128,9 +128,9 @@ const ALIA_SURFACES: [SurfaceLink; 8] = [
 ///   against the wing's pitch stability, feedforward from the model, roll asking at
 ///   most 15°/s of the ailerons' 17°/s), and total energy control's climb, sink, pitch
 ///   damping, and 3 s time constant. X-Plane's own: the cruise thrust, the pusher it held level
-///   at 45 m/s (0.72, `plane-probe-xplane`), and pitch rate I 1, which holds pitch in a turn
-///   that X-Plane's airframe holds 2° low on the sim's 0.5 (#547). Bank (20°, `FW_R_LIM`), the pusher slew (`VT_PSHER_SLEW`), the
-///   back ramp (`VT_B_TRANS_RAMP`), the 20 m least height (`VT_FW_MIN_ALT`), and PX4's 45 s
+///   at 45 m/s (0.72, `plane-probe-xplane`), and pitch rate I 1, twice the sim's, since banked
+///   at the cap X-Plane's airframe holds pitch 2° under its setpoint (#547). Bank (20°,
+///   `FW_R_LIM`), the pusher slew (`VT_PSHER_SLEW`), the back ramp (`VT_B_TRANS_RAMP`), the 20 m least height (`VT_FW_MIN_ALT`), and PX4's 45 s
 ///   and 28 s transition limits (`VT_F_TRANS_DUR`, `VT_B_TRANS_DUR`) are px4xplane's Alia
 ///   (`config/px4_params/5020_xplane_alia250`). The loiter radius is a 20° turn at trim
 ///   airspeed, about 850 m.

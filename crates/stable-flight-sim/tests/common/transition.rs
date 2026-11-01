@@ -4,11 +4,11 @@
 use assert2::check;
 use stable_flight::{
     Command, Commander, ControlInput, FlightLoop, FlightMode, Guidance, Mixer, ModeRefusal,
-    Stabilizer, TelemetryPublisher, Vec2, Vec3, Vehicle, VehicleState, WaypointCommand,
+    Stabilizer, TelemetryPublisher, Vec3, Vehicle, VehicleState, WaypointCommand,
 };
 use stable_flight_sim::{SimQuadPlane, SimTailsitter};
 
-use super::plane::{Interlude, attitude_command, north_line_command, plane_command};
+use super::plane::{Interlude, attitude_command, line_command, north_line_command};
 use super::tailsitter::view_angles;
 use super::{Hover, fly, hover_at, waypoint};
 
@@ -148,25 +148,15 @@ pub fn descending_leg(from_m: f32, to_m: f32, airspeed_mps: f32) -> Forward {
     )
 }
 
-/// How far out a [`turning_descent_leg`]'s waypoint sits, in m: past where any test watches.
-const TURNING_LEG_M: f32 = 6000.0;
-
 /// As [`descending_leg`], but the plane leg runs from the origin toward `bearing_rad`
 /// (clockwise from north) rather than north: the transition flies north, so the descent turns
 /// onto the leg.
 pub fn turning_descent_leg(from_m: f32, to_m: f32, airspeed_mps: f32, bearing_rad: f32) -> Forward {
-    let direction = Vec2::new(libm::cosf(bearing_rad), libm::sinf(bearing_rad));
     Interlude::new(
         hover_at(from_m),
         SINK_AT_S,
         f32::INFINITY,
-        plane_command(ControlInput::Waypoint(WaypointCommand {
-            position_m: TURNING_LEG_M * direction,
-            velocity_mps: Some(airspeed_mps * direction),
-            altitude_m: to_m,
-            cruise_speed_mps: airspeed_mps,
-            heading_rad: None,
-        })),
+        line_command(bearing_rad, to_m, airspeed_mps),
     )
 }
 

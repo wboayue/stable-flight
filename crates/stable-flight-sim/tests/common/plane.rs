@@ -134,9 +134,19 @@ pub fn north_line(altitude_m: f32, airspeed_mps: f32) -> ConstantCommander {
 
 /// [`north_line`]'s command.
 pub fn north_line_command(altitude_m: f32, airspeed_mps: f32) -> Command {
+    line_command(0.0, altitude_m, airspeed_mps)
+}
+
+/// How far out a [`line_command`]'s waypoint sits, in m: past where any test flies.
+const LINE_M: f32 = 100_000.0;
+
+/// Flies the line out of the origin toward `bearing_rad` (clockwise from north), at
+/// `altitude_m` and `airspeed_mps`.
+pub fn line_command(bearing_rad: f32, altitude_m: f32, airspeed_mps: f32) -> Command {
+    let direction = Vec2::new(libm::cosf(bearing_rad), libm::sinf(bearing_rad));
     plane_command(ControlInput::Waypoint(WaypointCommand {
-        position_m: Vec2::new(100_000.0, 0.0),
-        velocity_mps: Some(Vec2::new(airspeed_mps, 0.0)),
+        position_m: LINE_M * direction,
+        velocity_mps: Some(airspeed_mps * direction),
         altitude_m,
         cruise_speed_mps: airspeed_mps,
         heading_rad: None,
