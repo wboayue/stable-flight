@@ -123,9 +123,9 @@ impl PlaneRateControllerConfig {
 ///
 /// A surface's moment grows with dynamic pressure (airspeed squared), so the feedback terms
 /// and the trim shrink by `s²` as the wing speeds up; the feedforward, a deflection that holds
-/// a rate against the wing's damping (itself proportional to airspeed), by `s` (PX4
-/// `FixedwingRateControl.cpp:352-354,409-410` at `9368a98`, ArduPilot
-/// `AP_FW_Controller.cpp`). Holds only its integral; the config is passed to every call.
+/// a rate against the wing's damping (itself proportional to airspeed), by `s` (PX4's
+/// `FixedwingRateControl::Run`, ArduPilot's `AP_FW_Controller::run_rate_control`). Holds only
+/// its integral; the config is passed to every call.
 ///
 /// # Examples
 ///
