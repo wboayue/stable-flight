@@ -88,8 +88,8 @@ pub fn tailsitter() -> TailsitterAirframe {
             aero: AeroCoefficients {
                 // A flying wing's sideslip terms, the Zagi's (Beard and McLain, *Small Unmanned
                 // Aircraft*, App. E): no tail to weathercock it. In a nose-up hover, wind along
-                // the span is 90° of sideslip, and the airplane's tail turned 4 m/s of it into a
-                // yaw moment past differential thrust, departing (#387).
+                // the span is 90° of sideslip, and the airplane's tail turns 4 m/s of it into a
+                // yaw moment past differential thrust (#387).
                 c_side_beta: -0.07359,
                 c_roll_beta: -0.02854,
                 c_yaw_beta: -0.0004,

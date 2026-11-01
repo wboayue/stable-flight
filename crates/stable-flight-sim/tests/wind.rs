@@ -109,12 +109,10 @@ fn tailsitter_estimates_a_wind_on_the_belly() {
     );
 }
 
-/// A 3 m/s wind along the span leaves the belly's estimate near 0 and the span's unknown.
-/// A wind along the span leaves the belly's estimate where calm air does, and the span's
-/// unknown: the wing's lift and drag take only the air in its plane of symmetry. The belly
-/// reads −0.60 m/s in calm air, set during the takeoff and barely moving after, and
-/// −0.71 m/s here (−3.1 m/s while lift and drag took the whole
-/// airspeed's pressure, #387); 0.3 m/s leaves about 3× margin.
+/// A 3 m/s wind along the span leaves the belly's estimate where calm air does, and the
+/// span's unknown: the wing's lift and drag take only the air in its plane of symmetry. The
+/// belly reads −0.60 m/s in calm air, set during the takeoff and barely moving after, and
+/// −0.71 m/s in the span wind; 0.3 m/s leaves about 3× margin over the 0.11 m/s between them.
 #[test]
 fn tailsitter_span_wind_stays_unknown() {
     let calm = tailsitter_estimate(steady(0.0, 0.0));
