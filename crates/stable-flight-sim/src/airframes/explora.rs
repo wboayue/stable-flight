@@ -43,9 +43,9 @@ use crate::{PropWash, TailsitterModel};
 ///
 /// Its cruise pitch is a flying wing's, calibrated to RealFlight's plane autotune fit of it
 /// (#587): stiff in angle of attack and barely damped. At 14 m/s it fits stiffness 78/s²,
-/// damping 1.5/s, and a path turn of 18.5/s against RealFlight's 69, 1.3, and 18.3; its
-/// elevons' control, 158 rad/s², is twice RealFlight's 80: the hover's elevon authority
-/// (below) holds it there (#619).
+/// damping 1.5/s, and a path turn of 18.5/s against RealFlight's 69–93, 0–1.3, and 18.3
+/// over three runs; its elevons' control, 158 rad/s², is twice RealFlight's 80: the hover's
+/// elevon authority (below) holds it there (#619).
 ///
 /// Its hover is calibrated to RealFlight's autotune of it (#539), flown with RealFlight's 6 ms
 /// exchange as [`actuator_delay_s`](crate::Perturbations::actuator_delay_s) and 0.01 rad/s of
@@ -110,7 +110,7 @@ pub fn explora() -> TailsitterAirframe {
         chord_m: WING_AREA_M2 / SPAN_M,
         aero: AeroCoefficients {
             c_lift_0: 0.0,
-            // The lift slope behind RealFlight's fitted path turn, 18.3/s at 13.8 m/s (#587),
+            // The lift slope behind RealFlight's fitted path turn, 18.3/s at 14 m/s (#587),
             // below lifting-line theory's 4.4/rad for its 4.6 aspect ratio. Higher: the flight
             // path follows a pitch change faster.
             c_lift_alpha: 3.0,
@@ -127,11 +127,11 @@ pub fn explora() -> TailsitterAirframe {
             // tune's pitch rate steps rise, where RealFlight's end short at 0.80.
             c_pitch_elevator: 3.3 * base.model.wing.aero.c_pitch_elevator,
             // A flying wing's small static margin, about 3% of chord (this over the lift slope):
-            // RealFlight's fitted stiffness, 69/s² at 13.8 m/s (#587), where the Aerosonde's
+            // RealFlight's fitted stiffness, 69–93/s² at 14 m/s (#587), where the Aerosonde's
             // tail gives 600. More negative: stiffer in angle of attack.
             c_pitch_alpha: -0.10,
             // No tail: the wing's own pitch damping, near the Zagi's -1.4 (Beard and McLain,
-            // *Small Unmanned Aircraft*, app. E) and RealFlight's fitted 1.3/s (#587). More
+            // *Small Unmanned Aircraft*, app. E) and RealFlight's fitted 0–1.3/s (#587). More
             // negative: the wash damps the hover's pitch, and its searched pitch rate settles
             // short.
             c_pitch_q: -7.0,
