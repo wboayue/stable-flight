@@ -4,6 +4,7 @@ use core::f32::consts::PI;
 
 use nalgebra::Complex;
 
+use super::biquad::{Biquad, Section};
 use super::{InvalidConfig, check};
 
 /// Highest center a notch takes, as a share of the sample rate: past it the filter passes the
@@ -92,72 +93,44 @@ impl NotchConfig {
             return one;
         };
         let z1 = unit_delay;
-        (one * b[0] + z1 * b[1] + z1 * z1 * b[2]) / (one * a[0] + z1 * a[1] + z1 * z1 * a[2])
+        (one * b[0] + z1 * b[1] + z1 * z1 * b[2]) / (one + z1 * a[0] + z1 * z1 * a[1])
     }
 }
 
-/// Cuts one tone out of a signal ([`NotchConfig`]); the first sample fills the history, so the
-/// output starts at the input. A non-finite sample passes through and leaves the history as it
-/// was.
+/// Cuts one tone out of a signal ([`NotchConfig`]), on the shared two-pole state
+/// ([`Biquad`]): the first sample fills the history, so the output starts at the input, and a
+/// non-finite sample passes through and leaves the history as it was.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub(crate) struct Notch {
-    /// The coefficients and the config and `dt` they were computed for.
-    coefficients: Option<(Coefficients, NotchConfig, f32)>,
-    /// The last two inputs and outputs, newest first (direct form I); `None` before the first
-    /// sample.
-    history: Option<([f32; 2], [f32; 2])>,
-}
+pub(crate) struct Notch(Biquad<Coefficients>);
 
 impl Notch {
     /// Filters `value`, sampled `dt` s after the last, through `config`'s notch. The
     /// coefficients are recomputed only when `config` or `dt` changes.
     pub(crate) fn apply(&mut self, value: f32, dt: f32, config: &NotchConfig) -> f32 {
-        if !value.is_finite() {
-            return value;
-        }
-        let Some(Coefficients { b, a }) = self.coefficients(dt, config) else {
-            self.history = None;
-            return value;
-        };
-        let (inputs, outputs) = *self.history.get_or_insert(([value; 2], [value; 2]));
-        let output = (b[0] * value + b[1] * inputs[0] + b[2] * inputs[1]
-            - a[1] * outputs[0]
-            - a[2] * outputs[1])
-            / a[0];
-        self.history = Some(([value, inputs[0]], [output, outputs[0]]));
-        output
-    }
-
-    fn coefficients(&mut self, dt: f32, config: &NotchConfig) -> Option<Coefficients> {
-        match self.coefficients {
-            Some((coefficients, cached, cached_dt)) if cached == *config && cached_dt == dt => {
-                Some(coefficients)
-            }
-            _ => {
-                let coefficients = Coefficients::new(config, dt)?;
-                self.coefficients = Some((coefficients, *config, dt));
-                Some(coefficients)
-            }
-        }
+        self.0.apply(value, dt, config)
     }
 }
 
-/// A [`Notch`]'s weights: numerator `b` and denominator `a`, each for `z⁰`, `z⁻¹`, `z⁻²`.
+/// A [`Notch`]'s weights, normalized so `a₀` is 1: numerator `b` for `z⁰`, `z⁻¹`, `z⁻²`, and
+/// denominator `a` for `z⁻¹`, `z⁻²`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Coefficients {
     b: [f32; 3],
-    a: [f32; 3],
+    a: [f32; 2],
 }
 
-impl Coefficients {
+impl Section for Coefficients {
+    type Settings = NotchConfig;
+
     /// `None` when the notch passes the signal through: off, no width, at or past
     /// [`MAX_CENTER_SHARE`] of the sample rate, or not a valid config. A center under
     /// [`MIN_CENTER_PER_BANDWIDTH`] of the bandwidth is raised to it.
     ///
     /// The band's lower edge is `center − bandwidth/2`; its width in octaves, `n = 2·log₂(center
     /// / lower)`, gives `Q = √(2ⁿ) / (2ⁿ − 1)`, and with `ω = 2π·center·dt`, `α = sin ω / 2Q`
-    /// and the depth `g = 10^(−attenuation/20)`: `b = [1 + α·g, −2·cos ω, 1 − α·g]`,
-    /// `a = [1 + α, −2·cos ω, 1 − α]`. At the center the gain is `g`; far from it, 1.
+    /// and the depth `g = 10^(−attenuation/20)`: `b = [1 + α·g, −2·cos ω, 1 − α·g]` and
+    /// `a = [−2·cos ω, 1 − α]`, each over `a₀ = 1 + α`. At the center the gain is `g`; far from
+    /// it, 1.
     fn new(config: &NotchConfig, dt_s: f32) -> Option<Self> {
         let center_hz = config
             .center_hz
@@ -178,10 +151,16 @@ impl Coefficients {
         let alpha = libm::sinf(omega) / (2.0 * q);
         let depth = libm::powf(10.0, -config.attenuation_db / 20.0);
         let cos_omega = libm::cosf(omega);
+        let a0 = 1.0 + alpha;
         Some(Self {
-            b: [1.0 + alpha * depth, -2.0 * cos_omega, 1.0 - alpha * depth],
-            a: [1.0 + alpha, -2.0 * cos_omega, 1.0 - alpha],
+            b: [1.0 + alpha * depth, -2.0 * cos_omega, 1.0 - alpha * depth].map(|b| b / a0),
+            a: [-2.0 * cos_omega, 1.0 - alpha].map(|a| a / a0),
         })
+    }
+
+    fn step(&self, value: f32, inputs: [f32; 2], outputs: [f32; 2]) -> f32 {
+        let Self { b, a } = *self;
+        b[0] * value + b[1] * inputs[0] + b[2] * inputs[1] - a[0] * outputs[0] - a[1] * outputs[1]
     }
 }
 
