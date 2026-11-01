@@ -102,13 +102,50 @@ fn turns_back_between_probes_only() {
         heading_rad: core::f32::consts::FRAC_PI_2,
         ..far.clone()
     };
-    // Heading east, the start to the south: a right turn, still under way.
-    check!(attitude(&hold.next_command(DT, &east)).roll_rad == 20.0 * DEG);
+    // Heading east, the start to the south: the turn keeps its side, still under way.
+    check!(attitude(&hold.next_command(DT, &east)).roll_rad == bank_rad);
     let south = VehicleState {
         heading_rad: core::f32::consts::PI - 0.05,
         ..far
     };
     check!(attitude(&hold.next_command(DT, &south)).roll_rad == 0.0);
+    check!(!hold.turning());
+}
+
+/// A start inside the turn's circle stays abeam however long the hold turns toward it, so a
+/// turn also ends once it has turned around: the Alia 250's 567 m circle at 20° of bank
+/// held a 1000 m radius's start abeam, and it circled for minutes (#534).
+#[test]
+fn a_turn_ends_once_turned_around() {
+    let mut hold = PlaneTuneHold::new(config());
+    hold.allow_turn(true);
+    hold.next_command(DT, &flying(Vec2::zeros(), 0.0, Some(18.0)));
+    // 700 m north, heading north: a turn starts.
+    check!(
+        attitude(&hold.next_command(DT, &flying(Vec2::new(700.0, 0.0), 0.0, Some(18.0)))).roll_rad
+            != 0.0
+    );
+    // 171° around, 600 m east: the start is 50° off the nose, but the heading has reversed.
+    let around = VehicleState {
+        heading_rad: core::f32::consts::PI - 0.15,
+        ..flying(Vec2::new(700.0, 600.0), 0.0, Some(18.0))
+    };
+    check!(attitude(&hold.next_command(DT, &around)).roll_rad == 0.0);
+    check!(!hold.turning());
+}
+
+/// Past the return radius but flying back toward the start, the hold stays level: after a
+/// turn around ends, it flies on toward the start rather than turning again.
+#[test]
+fn flying_toward_the_start_turns_nothing() {
+    let mut hold = PlaneTuneHold::new(config());
+    hold.allow_turn(true);
+    hold.next_command(DT, &flying(Vec2::zeros(), 0.0, Some(18.0)));
+    let homing = VehicleState {
+        heading_rad: core::f32::consts::PI - 0.5,
+        ..flying(Vec2::new(700.0, 0.0), 0.0, Some(18.0))
+    };
+    check!(attitude(&hold.next_command(DT, &homing)).roll_rad == 0.0);
     check!(!hold.turning());
 }
 
