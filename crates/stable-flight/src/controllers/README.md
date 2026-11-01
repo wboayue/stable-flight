@@ -23,16 +23,16 @@ setpoint skips the attitude loop on either side.
 
 ## Loop Shapes
 
-Each loop's form, outer to inner. `e` is setpoint − measured. *D acts on* names whose change
-the D term damps: the error's kicks for one tick when the setpoint steps, the measured value's
-doesn't ([D on measurement](https://github.com/wboayue/stable-flight/blob/main/docs/glossary.md)).
+Each loop's form, outer to inner. `e` is setpoint − measured. *D acts on* says which signal's
+change the D term damps. D on the error kicks the output for one tick when the setpoint steps;
+D on the measured value doesn't ([D on measurement](https://github.com/wboayue/stable-flight/blob/main/docs/glossary.md)).
 
 **Copter** (`CopterGuidance` → `CopterStabilizer`)
 
 | Loop | Code | Input → output | Form | D acts on | Feedforward | I term |
 |---|---|---|---|---|---|---|
 | Lateral position | `lateral.rs` | position error (m) → velocity target (m/s) | P, or a braking curve | no D | target velocity | none |
-| Lateral velocity | `lateral.rs` | velocity error (m/s) → acceleration (m/s²) | PID (D 0 by default) | error | the velocity target's change, when shaped | ∫e, clamped; doesn't grow along the capped acceleration |
+| Lateral velocity | `lateral.rs` | velocity error (m/s) → acceleration (m/s²) | PID (D 0 by default) | error | the velocity target's change, with `max_accel_mps2` set | ∫e, clamped; doesn't grow along the capped acceleration |
 | Altitude | `altitude.rs` | altitude error (m) → thrust [0, 1] | PID | climb-rate error | hover thrust | ∫e, clamped; grows only within 1 m of the target |
 | Attitude (roll, pitch) | `attitude.rs` | attitude error (rad) → body rate (rad/s) | PID | error | none | ∫e, clamped |
 | Heading | `yaw.rs` | wrapped heading error (rad) → yaw rate (rad/s) | PID (I 0 by default) | error | none | ∫e, clamped |
@@ -45,8 +45,9 @@ doesn't ([D on measurement](https://github.com/wboayue/stable-flight/blob/main/d
 | Attitude (bank, pitch) | `PlaneStabilizer` | attitude error (rad) → body rate (rad/s) | P: error / time constant | no D | coordinated-turn rates | none |
 | Plane rate | `plane_rate.rs` | rate error (rad/s) → moment [-1, 1] | PI, airspeed-scaled | no D | s · FF · rate setpoint | ∫e, clamped; held below the minimum airspeed, where the surfaces have little authority |
 
-- **Every loop** clamps its integral to its config's `max_integral` each tick, and takes no D
-  kick on its first tick or after a non-finite input. All run every tick except the lateral
+- **Every loop with an I term** clamps its integral to its config's limit each tick
+  (`max_integral`; body-rate yaw, `yaw_max_integral`). **Every loop that differences a signal
+  for D** skips D on its first tick and after a non-finite input. All run every tick except the lateral
   loops, which `CopterGuidance` runs every `navigation_period_s`.
 - **Body rate:** `P·e + I term − D·ω̇` per axis, `ω̇` the change of the gyro rate after
   `GyroFilters`: the low-pass (40 Hz by default) and an optional notch on roll and pitch.
@@ -55,9 +56,11 @@ doesn't ([D on measurement](https://github.com/wboayue/stable-flight/blob/main/d
 - **Altitude:** acceleration `a = P·e + I·∫e + D·(target climb rate − climb rate)`, thrust
   `hover_thrust · (g + a) / g`, boosted for tilt. A target climb rate therefore also feeds
   forward through D.
-- **Lateral:** the velocity target is the position term plus the target velocity, capped at
-  the speed limit; with `max_accel_mps2` set it moves toward that at most that fast, and its
-  change is fed forward. `CopterGuidance` turns the acceleration into a tilt, capped at
+- **Lateral:** the position term is `P·e`, or, with `brake_mps2` or `max_accel_mps2` set, a
+  braking curve: `P·e` near the target and farther out the speed the vehicle can still stop
+  from in the distance left (`LateralControllerConfig::brake_mps2`). The velocity target is
+  the position term plus the target velocity, capped at the speed limit; with
+  `max_accel_mps2` set it moves toward that at most that fast, and its change is fed forward. `CopterGuidance` turns the acceleration into a tilt, capped at
   `max_tilt_rad`.
 - **Plane attitude:** the rate target is the error over `time_constant_s`, clamped to
   `max_attitude_rate_radps`, plus the turn rates for the current bank.
@@ -285,9 +288,9 @@ let moments = body_rate.control(&body_rate_config, 0.004, rates.push(0.0), Vec3:
   without touching integral or derivative state
   ([input policy](https://github.com/wboayue/stable-flight/blob/main/architecture.md#input-policy-no-panics-in-the-tick)).
 - **Anti-windup and retuning:** each loop's integral limit and hold are in
-  [loop shapes](#loop-shapes). The copter rate loop integrates its I term in moment and clamps that, so a new `i` keeps the term; the other loops
-  integrate the error, and the composite's `set_config` calls their `rescale_integral`, so a new
-  `i` is bumpless there too.
+  [loop shapes](#loop-shapes). The copter rate loop integrates its I term in moment and clamps
+  that, so a new `i` keeps the term; the other loops integrate the error, and the composite's
+  `set_config` calls their `rescale_integral`, so a new `i` is bumpless there too.
 - **No allocation:** fixed-size `nalgebra` math, so the loops run on firmware.
 - **Validated config:** `validate()` rejects negative or non-finite limits; config fields
   document their units.
@@ -307,8 +310,8 @@ cargo test -p stable-flight --doc         # the snippets in this file and the co
 The loops are discrete PIDs in one of two forms:
 
 ```text
-u(k) = Kp·e(k) + Ki·Σe·dt + Kd·(e(k) − e(k−1))/dt     D on the error
-u(k) = Kp·e(k) + Ki·Σe·dt − Kd·(y(k) − y(k−1))/dt     D on the measurement y
+u(k) = P·e(k) + I·Σe·dt + D·(e(k) − e(k−1))/dt     D on the error
+u(k) = P·e(k) + I·Σe·dt − D·(y(k) − y(k−1))/dt     D on the measurement y
 ```
 
 with `e = setpoint − y` and `dt` the tick. Which loop uses which, and the exceptions (the
