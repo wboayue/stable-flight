@@ -111,8 +111,8 @@ pub enum DesignError {
 /// `1/|C·G·F|` at the first frequency where the phase of `C·G·F` falls to `−180° + margin`,
 /// with `C = 1 + τ·(1 − z⁻¹)/dt` the PD at unit P, `G` the model's
 /// [`response`](RateModel::response), and `F` the `gyro` filters (the stabilizer's
-/// [`gyro_filters`](crate::stabilizers::copter::CopterStabilizerConfig::gyro_filters): its
-/// notch, if on, and its low-pass) that the loop's P and D both act through. Its lag at the crossover is most of the
+/// [`gyro_filters_on`](crate::stabilizers::copter::CopterStabilizerConfig::gyro_filters_on)
+/// the axis: its notch, if on, and its low-pass) that the loop's P and D both act through. Its lag at the crossover is most of the
 /// margin: on `quad_x` at 40 Hz, a design that leaves it out keeps about 2° of its 65° (#373).
 /// The kept I isn't in that loop: its lag at the crossover costs the flown loop a little margin
 /// (0.6° at I 0.2 over seven ticks of delay). A fitted integrator past 1 (`r₁ + r₂ > 1`, an

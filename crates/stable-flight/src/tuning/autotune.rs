@@ -1987,7 +1987,8 @@ impl Autotune {
                 run_start: self
                     .run_start
                     .map_or(gains, |run_start| target.gains(&run_start)),
-                gyro: config.gyro_filters(),
+                // The stage's own axis: yaw flies no notch.
+                gyro: config.gyro_filters_on(tilt_axis(target).unwrap_or(YAW_AXIS)),
             },
             Decide::Measured {
                 measurement,
@@ -2350,6 +2351,9 @@ fn probed_loop(target: TunedLoop, probe: &ProbeConfig) -> TunedLoop {
         ProbeConfig::Step(_) => target,
     }
 }
+
+/// The yaw axis's index in body-frame vectors (0 roll, 1 pitch, 2 yaw).
+const YAW_AXIS: usize = 2;
 
 /// The tilt axis `target` holds (0 roll, 1 pitch); `None` for yaw and heading.
 fn tilt_axis(target: TunedLoop) -> Option<usize> {

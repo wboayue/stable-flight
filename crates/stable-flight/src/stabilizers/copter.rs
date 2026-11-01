@@ -194,23 +194,18 @@ impl CopterStabilizerConfig {
             .map_err(|e| e.in_section("gyro_notch"))
     }
 
-    /// The gyro filters the roll and pitch rate loops fly through:
-    /// [`gyro_notch`](Self::gyro_notch), then the low-pass at
-    /// [`gyro_cutoff_hz`](Self::gyro_cutoff_hz).
-    pub fn gyro_filters(&self) -> GyroFilters {
+    /// The gyro filters body `axis` (0 roll, 1 pitch, 2 yaw) flies through: on roll and
+    /// pitch, [`gyro_notch`](Self::gyro_notch) then the low-pass at
+    /// [`gyro_cutoff_hz`](Self::gyro_cutoff_hz); on yaw, the low-pass alone.
+    pub fn gyro_filters_on(&self, axis: usize) -> GyroFilters {
+        let notch = if axis < 2 {
+            self.gyro_notch
+        } else {
+            NotchConfig::default()
+        };
         GyroFilters {
             cutoff_hz: self.gyro_cutoff_hz,
-            notch: self.gyro_notch,
-        }
-    }
-
-    /// The gyro filters on body `axis` (0 roll, 1 pitch, 2 yaw): [`gyro_filters`](Self::gyro_filters)
-    /// on roll and pitch, the low-pass alone on yaw.
-    pub fn gyro_filters_on(&self, axis: usize) -> GyroFilters {
-        if axis < 2 {
-            self.gyro_filters()
-        } else {
-            GyroFilters::low_pass(self.gyro_cutoff_hz)
+            notch,
         }
     }
 }

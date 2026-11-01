@@ -182,7 +182,7 @@ fn a_fit_on_a_slow_host_designs_a_cautious_rate_p() {
                 design_rate(
                     &model,
                     start,
-                    plant.airframe.stabilizer.gyro_filters(),
+                    plant.airframe.stabilizer.gyro_filters_on(0),
                     &COPTER_LOOP_SHAPING,
                 )
                 .expect("rate gains")
