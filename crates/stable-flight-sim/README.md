@@ -72,11 +72,11 @@ step-response specs are in `tests/common`:
 | `plane_route` | A leg climbing 200 m in 200 m, steeper than the airplane climbs: within 60 m of its waypoint (measured 52 m + margin) until within 10 m of its altitude (PX4's `NAV_FW_ALT_RAD`), then on to the route's end (#451) |
 | `plane_turn` | A loiter by guidance and a held 30° and 45° bank: sideslip within 2.5° (measured + margin); the loiter also within 5 m of its circle and ±1 m of its altitude (ArduPilot's band) |
 | `plane_stall` | A zoom at zero throttle on a held pitch-up rate, wings level and rolling, until past the stall: every state finite, body rates bounded, flying again within 2 s of the entry's end, at most 60 m lost (wings level, the held pitch-up carries the tail slide over the back), off the ground (measured + margin) |
-| `maneuver` | A `ManeuverRunner` from the line on `airframes::plane()` and the plane sides of the tailsitter and `explora()`: a 90 and 180°/s roll both ways turns a full turn before its timeout holding its height (loses at most 4.2 m, climbs at most 3.1 m); a 10 m and 25 m loop spans its radius within 5% and ends within 1.5 m of its entry height; a 1 rad/s roll and pitch doublet's first half peaks as a held step does at cruise thrust and settles by its pause's end; each recovers within 2 s and flies the line again; the eXplora's 60°/s doublets peak within 1.3× of the command; centered rate sticks hold the pitch of level flight (measured + margin) |
+| `maneuver` | A `ManeuverRunner` from the line on `airframes::plane()` and the plane sides of the tailsitter and `explora()`: a 90 and 180°/s roll both ways turns a full turn before its timeout holding its height (loses at most 4.3 m and climbs at most 2.5 m; the eXplora at most 5.8 m and 3.5 m, held to RealFlight's 5.1–5.2 m loss at 90°/s, [#619](https://github.com/wboayue/stable-flight/issues/619)); a 10 m and 25 m loop spans its radius within 5% and ends within 1.5 m of its entry height; a 1 rad/s roll and pitch doublet's first half peaks as a held step does at cruise thrust and settles by its pause's end; each recovers within 2 s and flies the line again; the eXplora's 60°/s doublets peak within 1.3× of the command; centered rate sticks hold the pitch of level flight (measured + margin) |
 | `hover_legs` | Hover legs on `tailsitter()` and `explora()`, belly first and along the span at 1.5 and 3 m/s and through a 1.5 m/s span wind, stop on their waypoint: overshoot within 0.5 m, settled within 0.2 m in 35 s (measured + margin; main overshot 1.0–2.5 m, [#609](https://github.com/wboayue/stable-flight/issues/609)) |
 | `tailsitter_hover` | Takes off from its tail and holds a nose-up hover: within the copter's calm-air bands; near the waypoint in a steady 3 m/s wind on the belly or along the span, and a 5 m/s one with 4 m/s along the span; back after a 5 m/s gust either way; turning a 3 m/s wind from the belly onto the span at 60°/s within 3 m (half RealFlight's 6 m, [#417](https://github.com/wboayue/stable-flight/issues/417)); 10 and 20 m hover legs along the span, then their ends held within the calm-air bands (measured + margin) |
 | `tailsitter_transition` | Against PX4's VTOL limits (`vtol_att_control_params.yaml`), calm air: from a hover at 30 m, forward to plane flight within 15 s (`VT_TRANS_TIMEOUT`), then the line held within `plane_level`'s bands; back to a hover ahead on the line within 10 s (`VT_B_TRANS_DUR`), then held within the copter's calm-air bands; a forward transition ended by a `Copter` request, the timeout (`TransitionTimeout`), or an 8 m/s span gust past a 5° roll limit (`RollError`); `Plane` requested below `min_height_m` refused (`BelowMinAltitude`) until it climbs past. Each loses at most 20 m (`VT_QC_T_ALT_LOSS`, until 5 s after). The back transition climbs at most 10.5 m (measured 9.5 m), hands over not sinking past the sink guard's limit, and keeps thrust above zero until 5 s after the handover; ramps at thrust 0.3 and 0.5, which stall nose-high, still hand over within those limits on the sink guard ([#343](https://github.com/wboayue/stable-flight/issues/343)). A fast ramp that arrives climbing keeps the hover's integrals through the handoff ([#326](https://github.com/wboayue/stable-flight/issues/326)). A forward transition ended by the timeout or the roll limit hovers where the hover took over, within the calm-air bands after 35 s ([#453](https://github.com/wboayue/stable-flight/issues/453)); a plane leg sinking through a 20 m `plane_min_height_m` falls back to a hover at most 5 m below it (measured 3.3 m at a 4.6 m/s sink), then holds there ([#450](https://github.com/wboayue/stable-flight/issues/450)) |
-| `explora` | `explora()`'s hover in its nose-up view, with RealFlight's exchange delay and gyro noise: the hand tune's and RealFlight's autotuned gains' step tests end within 0.1 of RealFlight's finals and rise within a factor of 2 of its times, and `StagePlan::copter_design_search` from the hand tune runs every stage, designs within 25% of RealFlight's gains ([#539](https://github.com/wboayue/stable-flight/issues/539)), and ends on gains that meet the step spec on every loop ([#587](https://github.com/wboayue/stable-flight/issues/587)) |
+| `explora` | `explora()`'s hover in its nose-up view, with RealFlight's exchange delay and gyro noise: the hand tune's and RealFlight's autotuned gains' step tests end within 0.1 of RealFlight's finals and rise within a factor of 2 of its times, and `StagePlan::copter_design_search` from the hand tune runs every stage, designs within 25% of RealFlight's gains ([#539](https://github.com/wboayue/stable-flight/issues/539)), and ends on gains that meet the step spec on every loop but yaw rate, which settles short as RealFlight's tuned yaw rate does ([#587](https://github.com/wboayue/stable-flight/issues/587), [#619](https://github.com/wboayue/stable-flight/issues/619)) |
 | `quadplane_hover` | Takes off from its gear on the lift rotors and holds a hover within the copter's calm-air bands, the pusher stopped |
 | `quadplane_transition` | Against PX4's VTOL limits, as `tailsitter_transition`, calm air: from a hover at 30 m, forward to plane flight within 15 s (measured 8.2 s), then the line held within `plane_level`'s bands; back to a hover where it stops within 10 s (measured 5.7 s), then held within the copter's calm-air bands, and so are hover points 120 m ahead of and behind it, flown to after the handover; a pusher too weak for the airspeed gate times out (`TransitionTimeout`) and hovers where it did within the calm-air bands, `Plane` still asked for toward a waypoint 100 km off ([#453](https://github.com/wboayue/stable-flight/issues/453)); the link going silent mid-transition hands over to `HoldCommander`, back on the lift rotors, which holds where it engaged. Each loses at most 20 m (`VT_QC_T_ALT_LOSS`, until 5 s after). A plane leg sinking through a 20 m `plane_min_height_m` falls back to a hover (`BelowPlaneMinAltitude`) at most 5 m below it (measured 0.7 m at a 3.5 m/s sink), then holds where the hover took over ([#450](https://github.com/wboayue/stable-flight/issues/450)). On `alia250()`: the back transition from 45 m/s ends on speed (5.2 m/s at most) before its 28 s timeout, the nose up to slow it, climbing at most 7 m (measured 21.2 s, 4.9 m, [#496](https://github.com/wboayue/stable-flight/issues/496)); a dive through a 20 m floor at 53 m/s and 6.2 m/s of sink falls back at most 5 m below it on full lift (measured 2.4 m, [#493](https://github.com/wboayue/stable-flight/issues/493)) and hands over on speed |
 | `quadplane_waypoints` | Copter legs on the lift rotors from a hover at 30 m, each within PX4's 20 m altitude loss (`VT_QC_T_ALT_LOSS`) and then held within the copter's calm-air position and altitude bands: in calm air 100 m ahead, behind, and to the side, uncapped and at ArduPilot's 5 m/s `Q_WP_SPD`; in an 11 m/s headwind a takeoff and hold, and legs upwind and downwind at 5 m/s ([#427](https://github.com/wboayue/stable-flight/issues/427)) |
@@ -219,17 +219,19 @@ falls to zero at its props' 21 m/s pitch speed, 0.325 m out each side, with wing
 of the airplane's tail. Its hover thrust is RealFlight's (0.82); its drag, nose-down moment,
 and roll effectiveness are calibrated to RealFlight flights (level thrust 0.76 and a 0.09
 nose-up moment at 14 m/s; default-gain 30°/s roll doublets at 3.2×,
-[#342](https://github.com/wboayue/stable-flight/issues/342)). Its cruise pitch is a flying
-wing's, fitted to RealFlight's plane autotune: a 3% static margin, a lift slope of 3.0/rad, and
-pitch damping near the Zagi's, so its fitted stiffness, damping, and path turn sit near
-RealFlight's ([#587](https://github.com/wboayue/stable-flight/issues/587)). Its hover is calibrated to
+[#342](https://github.com/wboayue/stable-flight/issues/342)). Its cruise is fitted to
+RealFlight's plane autotune: its pitch a flying wing's (a 3% static margin, a lift slope of
+3.0/rad, pitch damping near the Zagi's), its roll inertia and elevon effectiveness RealFlight's
+roll and pitch damping and control, so each fitted term sits near RealFlight's
+([#587](https://github.com/wboayue/stable-flight/issues/587),
+[#619](https://github.com/wboayue/stable-flight/issues/619)). Its hover is calibrated to
 RealFlight's autotune of it, flown with RealFlight's 6 ms exchange delay and 0.01 rad/s of gyro
-noise: 28 ms of motor spin-up, a fifth of the wake over the elevons, and inertia 7–70× the
-scaled Aerosonde's put its rate fits, step tests, and designs near RealFlight's
-([#539](https://github.com/wboayue/stable-flight/issues/539), `tests/explora.rs`). Its hover
-flies `explora_vtol()`'s gains, RealFlight's autotune; its plane side the hand tune's rate
-gains and trim, since the sim's pitch doesn't yet reproduce RealFlight's plane autotune
-([#619](https://github.com/wboayue/stable-flight/issues/619)).
+noise: 28 ms of motor spin-up, 0.4 of the wake over the elevons pitching them and 0.14 rolling
+them apart, and inertia 7–29× the scaled Aerosonde's put its rate fits, step tests, and designs
+near RealFlight's ([#539](https://github.com/wboayue/stable-flight/issues/539),
+`tests/explora.rs`). Its hover flies `explora_vtol()`'s gains, RealFlight's autotune; its plane
+side the hand tune's rate gains and trim: RealFlight's plane autotune fails its centered-sticks
+and loop tests ([#630](https://github.com/wboayue/stable-flight/issues/630)).
 
 ## Limits
 
@@ -261,10 +263,11 @@ pitch authority at low airspeed and low thrust that the RealFlight eXplora lacks
 at thrust 0.6 that the sim flies cleanly wallows nose-high on the eXplora
 ([#399](https://github.com/wboayue/stable-flight/issues/399)). `explora()`'s hover
 calibration is fitted, not measured: its inertia scale is what matches RealFlight's hover
-response, and its plane side flies on the same inertia
-([#539](https://github.com/wboayue/stable-flight/issues/539)). One elevon effectiveness serves
-the hover and cruise, so its cruise pitch control fits at twice RealFlight's, and its cruise
-roll fits 2.4× slower than RealFlight's in both damping and control
+response in pitch and yaw and its cruise roll fit, and both sides fly on it
+([#539](https://github.com/wboayue/stable-flight/issues/539)). The wash's roll share is fitted
+too: the washed strip covers a third of the elevons' span for roll and pitch alike, but
+RealFlight's hover answers the elevons' roll at a third of their pitch's share. Its rolls
+climb 2.9 m at 90°/s where RealFlight's climb 0.9 m
 ([#619](https://github.com/wboayue/stable-flight/issues/619)).
 
 The quadplane leaves out the lift rotors' thrust change in axial and edgewise flow, their

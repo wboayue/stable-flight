@@ -1,0 +1,26 @@
+# eXplora VTOL roll check (#619): explora_acro.csv's 240 x 120 m clockwise rectangle at 60 m and
+# 14 m/s airspeed, flown two and a half times with a roll at the middle of each long leg: lap 1
+# 90 deg/s right then left, lap 2 180 deg/s right then left. Each roll's height lost and gained
+# against its entry is what tests/maneuver.rs's eXplora roll rows hold the sim to. Climb in
+# hover over the start, transition back at the end of the west leg, descending to 30 m, fly
+# home in hover. Run with --end land.
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
+x,y,altitude,cruise_speed,regime,heading,hold_s,maneuver
+0.00,0.00,20.0,3.0,copter
+160.55,0.00,60.0,14.0,plane
+160.55,120.00,60.0,14.0,plane
+40.55,120.00,60.0,14.0,plane,,,roll:90
+-79.45,120.00,60.0,14.0,plane
+-79.45,0.00,60.0,14.0,plane
+40.55,0.00,60.0,14.0,plane,,,roll:-90
+160.55,0.00,60.0,14.0,plane
+160.55,120.00,60.0,14.0,plane
+40.55,120.00,60.0,14.0,plane,,,roll:180
+-79.45,120.00,60.0,14.0,plane
+-79.45,0.00,60.0,14.0,plane
+40.55,0.00,60.0,14.0,plane,,,roll:-180
+160.55,0.00,60.0,14.0,plane
+160.55,120.00,60.0,14.0,plane
+-79.45,120.00,60.0,14.0,plane
+-79.45,0.00,30.0,14.0,plane
+0.00,0.00,25.0,3.0,copter
