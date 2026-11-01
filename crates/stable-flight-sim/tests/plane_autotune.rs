@@ -519,11 +519,6 @@ fn spec_misses(subject: Subject, config: PlaneStabilizerConfig) -> Vec<String> {
 /// and pitch to the plane spec.
 fn design_converges(subject: Subject) {
     for (start_name, factor) in [("own", 1.0), ("x0.3", 0.3), ("x3", 3.0)] {
-        // TODO(#618): from three times its gains, the eXplora's barely damped pitch fits
-        // negative damping and the design finds no plant.
-        if matches!(subject, Subject::Explora) && factor > 1.0 {
-            continue;
-        }
         let run = design_run(subject, scaled(subject.plane_config(), factor));
         let tuned = run.config.0;
         check!(
