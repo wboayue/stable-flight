@@ -11,7 +11,9 @@ use std::rc::Rc;
 
 use log::{debug, info, warn};
 
-use stable_flight::commanders::waypoint::PLANE_ALTITUDE_ACCEPTANCE_M;
+use stable_flight::commanders::waypoint::{
+    DEFAULT_ACCEPTANCE_RADIUS_M, PLANE_ALTITUDE_ACCEPTANCE_M,
+};
 use stable_flight::commanders::{PlaneTuneHold, PlaneTuneHoldConfig, TouchdownDetector};
 use stable_flight::controllers::Gains;
 use stable_flight::nalgebra::UnitQuaternion;
@@ -136,13 +138,14 @@ impl LandSwitch {
 }
 
 /// Where a [`PlaneTuneFlight`] comes home to: the plane loiter around its script's start, and
-/// how close it must come before it lands there.
+/// how close it must come before it hovers back over the start.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlaneHome {
     /// The loiter's altitude, in m above the start: where the back transition starts.
     pub altitude_m: f32,
-    /// How close to the start, horizontally, the flight home ends in a land, in m: outside the
-    /// plane guidance's loiter radius, with room for its turn onto it, so the loiter reaches it.
+    /// How close to the start, horizontally, the plane loiter hands over to the hover, in m:
+    /// outside the plane guidance's loiter radius, with room for its turn onto it, so the
+    /// loiter reaches it.
     pub radius_m: f32,
 }
 
@@ -158,9 +161,10 @@ pub struct PlaneHome {
 /// - **Finish** ([`PlaneTuneSwitch::finish`]): after a hold that recovered (an envelope
 ///   breach: the vehicle hovers on its rotors), or before any hold, a land where the vehicle
 ///   is. Otherwise a plane loiter around the script's start at the [`PlaneHome`] altitude, at
-///   the hold's trim airspeed, then, within its radius of the start and the plane altitude
-///   acceptance of that altitude, a land on the start: a VTOL transitions back to land, and
-///   disarms on touchdown.
+///   the hold's trim airspeed; within its radius of the start and the plane altitude
+///   acceptance of that altitude, a copter waypoint over the start at that altitude (a VTOL
+///   transitions back and hovers there, from wherever the transition ends); within the
+///   waypoint acceptance radius of the start, a land on it, disarmed on touchdown.
 ///
 /// # Examples
 ///
@@ -211,6 +215,8 @@ enum TunePhase {
     Home {
         airspeed_mps: f32,
     },
+    /// Hovering back over the start.
+    Return,
     Landing(Landing),
 }
 
@@ -241,13 +247,18 @@ impl PlaneTuneFlight {
         (origin_m.xy(), origin_m.z + self.home.altitude_m)
     }
 
-    /// Whether the flight home is within reach of the start: inside the home radius and the
+    /// Whether the plane loiter is within reach of the start: inside the home radius and the
     /// plane altitude acceptance of the home altitude.
     fn home_reached(&self, state: &VehicleState) -> bool {
-        let (position_m, altitude_m) = self.home_m();
-        let distance_m = (state.position_m.xy() - position_m).norm();
+        let (_, altitude_m) = self.home_m();
         let height_off_m = (state.position_m.z - altitude_m).abs();
-        distance_m < self.home.radius_m && height_off_m < PLANE_ALTITUDE_ACCEPTANCE_M
+        self.distance_home_m(state) < self.home.radius_m
+            && height_off_m < PLANE_ALTITUDE_ACCEPTANCE_M
+    }
+
+    /// The horizontal distance from the start, in m.
+    fn distance_home_m(&self, state: &VehicleState) -> f32 {
+        (state.position_m.xy() - self.home_m().0).norm()
     }
 
     /// The home loiter's command: a plane waypoint without a leg, which the plane guidance
@@ -265,18 +276,39 @@ impl PlaneTuneFlight {
         )
         .with_regime(FlightRegime::Plane)
     }
+
+    /// The hover back over the start: a copter waypoint there at the home altitude.
+    fn return_command(&self) -> Command {
+        let (position_m, altitude_m) = self.home_m();
+        Command::new(
+            true,
+            ControlInput::Waypoint(WaypointCommand {
+                position_m,
+                altitude_m,
+                ..Default::default()
+            }),
+        )
+        .with_regime(FlightRegime::Copter)
+    }
 }
 
 impl Commander for PlaneTuneFlight {
     fn next_command(&mut self, dt: f32, state: &VehicleState) -> Command {
         let mut phase = self.phase.borrow_mut();
         if matches!(*phase, TunePhase::Home { .. }) && self.home_reached(state) {
+            *phase = TunePhase::Return;
+        }
+        // A land descends where it starts: on the start only once the hover is over it.
+        if matches!(*phase, TunePhase::Return)
+            && self.distance_home_m(state) < DEFAULT_ACCEPTANCE_RADIUS_M
+        {
             *phase = TunePhase::Landing(Landing::on(self.home_m().0));
         }
         match &mut *phase {
             TunePhase::Lead => self.lead.next_command(dt, state),
             TunePhase::Hold { hold, .. } => hold.next_command(dt, state),
             TunePhase::Home { airspeed_mps } => self.home_command(*airspeed_mps),
+            TunePhase::Return => self.return_command(),
             TunePhase::Landing(landing) => landing.next_command(dt, state),
         }
     }
@@ -323,8 +355,8 @@ impl PlaneTuneSwitch {
         }
     }
 
-    /// Ends the flight: home in plane after a hold that didn't recover, else a land where the
-    /// vehicle is. A no-op once finished.
+    /// Ends the flight: home in plane, then a hover over the start and a land there, after a
+    /// hold that didn't recover; else a land where the vehicle is. A no-op once finished.
     pub fn finish(&self) {
         let mut phase = self.0.borrow_mut();
         let next = match &*phase {
