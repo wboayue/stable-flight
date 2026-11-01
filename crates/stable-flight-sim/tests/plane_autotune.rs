@@ -574,42 +574,84 @@ fn the_design_tunes_the_alia_250_to_the_spec() {
     design_converges(Subject::Alia);
 }
 
-/// A fit term the sim eXplora's cruise pitch is held to: (name, the term in a fit,
+/// A fit term the sim eXplora's cruise is held to: (loop, name, the term in a fit,
 /// RealFlight's lowest and highest across its runs, most the sim's may fall outside them).
-type FitRow = (&'static str, fn(&WingModel) -> f32, f32, f32, f32);
+type FitRow = (
+    PlaneLoop,
+    &'static str,
+    fn(&WingModel) -> f32,
+    f32,
+    f32,
+    f32,
+);
 
-/// The eXplora's cruise pitch fits as RealFlight's did (#587, runs 1–3 at 13.8–13.9 m/s):
-/// stiff in angle of attack and barely damped, a flying wing's. Each margin is the sim's
-/// measured distance outside RealFlight's range, plus room.
+/// The eXplora's cruise fits as RealFlight's did (#587, #619; runs 1–3 at 13.8–13.9 m/s): its
+/// pitch stiff in angle of attack and barely damped, a flying wing's, and its roll's damping
+/// and control. Each margin is the sim's measured distance outside RealFlight's range, plus
+/// room.
 #[test]
-fn explora_pitch_fits_as_in_realflight() {
-    let rows: [FitRow; 4] = [
-        // Measured 78.3, inside.
-        ("stiffness", |m| m.stiffness_per_s2, 68.8, 93.4, 5.0),
-        // Measured 1.50, 0.2 above.
-        ("damping", |m| m.damping_per_s, 0.0, 1.3, 0.5),
+fn explora_fits_as_in_realflight() {
+    use PlaneLoop::{PitchRate, RollRate};
+    let rows: [FitRow; 7] = [
+        // Measured 22.1, 0.8 below.
+        (RollRate, "damping", |m| m.damping_per_s, 22.9, 23.5, 2.0),
+        // Measured 197, 13 above.
+        (
+            RollRate,
+            "control",
+            |m| m.control_radps2,
+            180.0,
+            184.0,
+            20.0,
+        ),
+        // Measured 61.5, 7.3 below: the stiffness barely follows `c_pitch_alpha` here.
+        (
+            PitchRate,
+            "stiffness",
+            |m| m.stiffness_per_s2,
+            68.8,
+            93.4,
+            10.0,
+        ),
+        // Measured 0.89, inside.
+        (PitchRate, "damping", |m| m.damping_per_s, 0.0, 1.3, 0.5),
+        // Measured 83.6, 1.6 above.
+        (PitchRate, "control", |m| m.control_radps2, 80.0, 82.0, 5.0),
         // Measured 18.5, 0.2 above.
-        ("path turn", |m| m.path_turn_per_s, 18.25, 18.29, 1.0),
-        // Measured 0.094, 0.005 above.
-        ("trim moment", |m| m.trim_moment, 0.089, 0.089, 0.01),
+        (
+            PitchRate,
+            "path turn",
+            |m| m.path_turn_per_s,
+            18.25,
+            18.29,
+            1.0,
+        ),
+        // Measured 0.091, 0.002 above.
+        (
+            PitchRate,
+            "trim moment",
+            |m| m.trim_moment,
+            0.089,
+            0.089,
+            0.01,
+        ),
     ];
-    // TODO(#619): its elevons' control, 158 rad/s² against RealFlight's 80, isn't held.
     let run = design_run(Subject::Explora, Subject::Explora.plane_config());
-    let fit = run.events.iter().find_map(|event| match event {
-        AutotuneEvent::Measured {
-            target: PlaneLoop::PitchRate,
-            measurement: Measurement::Wing(model),
-        } => Some(*model),
-        _ => None,
-    });
-    let Some(fit) = fit else {
-        panic!("no pitch rate fit in {:?}", run.events);
-    };
-    for (term, value, realflight_min, realflight_max, margin) in rows {
+    for (target, term, value, realflight_min, realflight_max, margin) in rows {
+        let fit = run.events.iter().find_map(|event| match event {
+            AutotuneEvent::Measured {
+                target: measured,
+                measurement: Measurement::Wing(model),
+            } if *measured == target => Some(*model),
+            _ => None,
+        });
+        let Some(fit) = fit else {
+            panic!("no {target:?} fit in {:?}", run.events);
+        };
         let sim = value(&fit);
         check!(
             sim >= realflight_min - margin && sim <= realflight_max + margin,
-            "{term}: {sim} against RealFlight's {realflight_min}–{realflight_max}"
+            "{target:?} {term}: {sim} against RealFlight's {realflight_min}–{realflight_max}"
         );
     }
 }

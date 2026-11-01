@@ -22,8 +22,8 @@ use crate::{PropWash, TailsitterModel};
 /// tailsitter's layout ([`tailsitter`]: two motors, elevons in their wash) sized from the
 /// model's `.rfvehicle`, with its hover flown on `explora_vtol()`'s gains
 /// (stable-flight-sitl-realflight) and its plane side on the hand tune `explora_vtol()` flew
-/// before RealFlight's plane autotune (#535), which the sim's pitch doesn't yet reproduce
-/// (#619).
+/// before RealFlight's plane autotune (#535), which fails the sim's centered-sticks and loop
+/// tests (#630).
 ///
 /// From the `.rfvehicle`:
 /// - Wing: 1.40 m span (0.105 m center section and 0.594 m panels each side), 0.43 m², a
@@ -43,18 +43,18 @@ use crate::{PropWash, TailsitterModel};
 /// and 14–15 m/s, a level nose-up moment of 0.09, and default-gain roll doublets at 30°/s
 /// peaking near 3.2×.
 ///
-/// Its cruise pitch is a flying wing's, calibrated to RealFlight's plane autotune fit of it
-/// (#587): stiff in angle of attack and barely damped. At 14 m/s it fits stiffness 78/s²,
-/// damping 1.5/s, and a path turn of 18.5/s against RealFlight's 69–93, 0–1.3, and 18.3
-/// over three runs; its elevons' control, 158 rad/s², is twice RealFlight's 80: the hover's
-/// elevon authority (below) holds it there (#619).
+/// Its cruise is calibrated to RealFlight's plane autotune fits of it (#587, #619), three
+/// runs at 14 m/s. Its pitch is a flying wing's, stiff in angle of attack and barely damped:
+/// stiffness 62/s², damping 0.9/s, control 84 rad/s², and a path turn of 18.5/s against
+/// RealFlight's 69–93, 0–1.3, 80–82, and 18.3. Its roll fits damping 22/s and control
+/// 197 rad/s² against RealFlight's 23–24 and 180–184.
 ///
 /// Its hover is calibrated to RealFlight's autotune of it (#539), flown with RealFlight's 6 ms
 /// exchange as [`actuator_delay_s`](crate::Perturbations::actuator_delay_s) and 0.01 rad/s of
 /// gyro noise. The hand tune's and the autotuned gains' step tests end within 0.1 of their
 /// finals there and rise within a factor of 2 of their times (half within 20%), and the design
 /// search designs within 25% of RealFlight's gains (roll rate 0.83 against 0.94, pitch rate
-/// 2.11 against 1.69). Its rates fit as RealFlight's do, in the hover view: differential thrust
+/// 2.09 against 1.69). Its rates fit as RealFlight's do, in the hover view: differential thrust
 /// (roll) on 9 ticks of pure delay and no lag, the elevons (pitch) on 2.
 ///
 /// # Examples
@@ -87,14 +87,14 @@ pub fn explora() -> TailsitterAirframe {
     let mixer_config = MixerConfig::default();
     let thrust_curve_exponent = base.stabilizer.hover.thrust_curve_exponent;
     // How much heavier than the Aerosonde's scaled inertia the eXplora answers its controls in
-    // RealFlight, fitted on its hover (roll, pitch, yaw in the airplane frame): its hand tune's
-    // rate steps there end at 0.24–0.36 (view yaw, the elevons apart), 0.80 (view pitch), and
-    // 0.55 (view roll, differential thrust) of their command, and here at 0.33–0.42, 0.78–0.80,
-    // and 0.60 (#539, #587). Scaling inertia keeps the controls' authority against the wing's
-    // own moments; less wash over the elevons in its place matched the rate steps, but a 5°
-    // tilt's drift then pushed the angle steps 10–20% past their target, which RealFlight's
-    // don't. The plane side flies on it too; its surfaces are calibrated with it.
-    let inertia_scale = Vec3::new(70.0, 19.0, 7.0);
+    // RealFlight (roll, pitch, yaw in the airplane frame). Roll: RealFlight's cruise roll fit,
+    // damping and control both (#619). Pitch and yaw: its hover, where its hand tune's rate
+    // steps end at 0.80 (view pitch) and 0.55 (view roll, differential thrust) of their
+    // command, and here at 0.80–0.82 and 0.60–0.62 (#539). Scaling inertia keeps the controls'
+    // authority against the wing's own moments; less wash over the elevons in its place matched
+    // the rate steps, but a 5° tilt's drift then pushed the angle steps 10–20% past their
+    // target, which RealFlight's don't.
+    let inertia_scale = Vec3::new(29.0, 19.0, 7.0);
     let mut inertia_kgm2 = aerosonde_inertia(MASS_KG, SPAN_M).component_mul(&inertia_scale);
     inertia_kgm2.x *= ROLL_INERTIA_SHARE;
     // Each motor's static thrust, so hover lands on the measured setpoint: the setpoint through
@@ -118,16 +118,15 @@ pub fn explora() -> TailsitterAirframe {
             c_lift_alpha: 3.0,
             // Level flight at 14 m/s takes thrust 0.76, as in RealFlight (#342, run 0).
             c_drag_0: 0.05,
-            // Calibrated to RealFlight (#342, run 0): a level nose-up moment of 0.09 at
-            // 14 m/s.
-            c_pitch_0: -0.25,
+            // Calibrated to RealFlight: a level nose-up moment of 0.09 at 14 m/s (#342, run 0;
+            // #587's fits). Its share of the elevons' moment: halving them halves it.
+            c_pitch_0: -0.125,
             // Calibrated to RealFlight (#342, run 0): default-gain 30°/s roll doublets peak at
-            // 3.2× in their first half, here 3.17×.
+            // 3.2× in their first half, here 3.24×.
             c_roll_aileron: 2.4 * base.model.wing.aero.c_roll_aileron,
-            // The elevons' authority in the hover's wash, with the pitch inertia above, flies
-            // the hover's pitch rate steps as RealFlight does (#539, #587). Higher: the hand
-            // tune's pitch rate steps rise, where RealFlight's end short at 0.80.
-            c_pitch_elevator: 3.3 * base.model.wing.aero.c_pitch_elevator,
+            // RealFlight's cruise pitch control, 80–82 rad/s² (#619). Higher: the cruise pitch
+            // answers its elevons faster, and the hover's (with the wash below) too.
+            c_pitch_elevator: 1.65 * base.model.wing.aero.c_pitch_elevator,
             // A flying wing's small static margin, about 3% of chord (this over the lift slope):
             // RealFlight's fitted stiffness, 69–93/s² at 14 m/s (#587), where the Aerosonde's
             // tail gives 600. More negative: stiffer in angle of attack.
@@ -136,15 +135,15 @@ pub fn explora() -> TailsitterAirframe {
             // *Small Unmanned Aircraft*, app. E) and RealFlight's fitted 0–1.3/s (#587). More
             // negative: the wash damps the hover's pitch, and its searched pitch rate settles
             // short.
-            c_pitch_q: -7.0,
+            c_pitch_q: -5.0,
             // The winglets alone: about 0.036 m² of fin 0.15 m behind the center on a 0.43 m²,
             // 1.4 m wing, at a fin lift slope near 2/rad. The Aerosonde's tail turns the wing
             // into a 5° tilt's drift hard enough to push its hover's angle steps 15% past
             // their target, where RealFlight's settle on it (#539).
             c_yaw_beta: 0.02,
             // The airplane's side force and dihedral, where its plane side was fitted (#539):
-            // the Zagi's from `tailsitter()` lose 6.1 m in a 90°/s roll, past
-            // `tests/maneuver.rs`'s 4.8 m band.
+            // the Zagi's from `tailsitter()` lose 6.35 m in a 90°/s roll, past
+            // `tests/maneuver.rs`'s 5.8 m band.
             c_side_beta: airplane.c_side_beta,
             c_roll_beta: airplane.c_roll_beta,
             // The same fins' damping and the wing's profile drag: with the Aerosonde's, the
@@ -169,14 +168,18 @@ pub fn explora() -> TailsitterAirframe {
     let model = TailsitterModel {
         wing,
         motor_arm_m: MOTOR_ARM_M,
-        // A fifth of the wake's pressure over the elevons, with the inertia above, flies the
-        // elevon rate steps as RealFlight does; the wash damps the span it covers.
+        // The wake's pressure over the elevons that, with the inertia and elevons above, flies
+        // the hover's elevon rate steps as RealFlight does (#539, #619): 0.4 of it pitching them,
+        // 0.14 rolling them apart (view yaw: the hand tune's steps end at 0.24–0.36, here too).
+        // The washed strip is a third of the elevons' span for roll and pitch alike (by `∫y`
+        // and `∫1`), so the split is fitted, not derived. The wash damps the span it covers.
         prop_wash: PropWash::props(
             2,
             PROP_DIAMETER_M,
-            0.2,
+            0.4,
             PropWash::span_damping_share(MOTOR_ARM_M, PROP_DIAMETER_M, SPAN_M),
-        ),
+        )
+        .with_roll_fraction(0.14),
     };
     let plane_stabilizer = PlaneStabilizerConfig {
         rate: explora_rate(),
@@ -240,8 +243,8 @@ fn explora_hover(hover: CopterStabilizerConfig) -> CopterStabilizerConfig {
 
 /// The eXplora's hand-tuned plane rate loop (#342): feedforward sized to its elevons, which
 /// turn a unit moment into several times the rate PX4's defaults expect. `explora_vtol()`
-/// flies RealFlight's plane autotune instead (#535); the sim's pitch control reads 2× its
-/// RealFlight fit, so its design lands elsewhere (#619).
+/// flies RealFlight's plane autotune instead (#535), which fails the sim's centered-sticks and
+/// loop tests (#630).
 fn explora_rate() -> PlaneRateControllerConfig {
     let defaults = PlaneRateControllerConfig::default();
     PlaneRateControllerConfig {

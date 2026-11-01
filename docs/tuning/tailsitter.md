@@ -533,6 +533,9 @@ plane, transitions back, hovers over the start, and lands there. It prints the g
   roll and a 25 m loop (`just fly-tailsitter-auto flights/explora_acro.csv --end land
   --record <csv>`). A script row's eighth field names the maneuver (`roll:<deg/s>`,
   `loop:<m>`, `doublet_roll:<deg/s>`, …; the `ScriptCommander` rustdoc lists them).
+  `flights/explora_rolls.csv` flies 90 and 180°/s rolls both ways on the same rectangle, for
+  each roll's height lost and gained against its entry (the eXplora lost 5.1–5.2 m at 90°/s,
+  1.6 m at 180°/s, [#619](https://github.com/wboayue/stable-flight/issues/619)).
 - **Maneuver thrust:** `airframes::explora_maneuvers()`. Rolls and loops fly at full thrust;
   doublets fly at cruise thrust (0.85), since the prop wash over the elevons makes the rate a
   moment gives grow with thrust.

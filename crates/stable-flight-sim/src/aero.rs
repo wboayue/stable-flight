@@ -36,6 +36,8 @@ pub(crate) struct Wash {
     /// Dynamic pressure added over the surfaces on top of the free stream's, in Pa; negative
     /// where the wash opposes it (the sum is never below zero).
     pub pressure_pa: f32,
+    /// The same for the surfaces' roll (aileron) action, in Pa.
+    pub roll_pressure_pa: f32,
     /// The airspeed whose rate damping the wash adds, in m/s: a flow over the whole wing at it
     /// damps as the wash does over its part of the span. Non-negative.
     pub damping_mps: f32,
@@ -72,8 +74,13 @@ pub(crate) fn wrench(
     } else {
         0.0
     };
-    let surface_area_n = (pressure_area_n + wash.pressure_pa * model.wing_area_m2).max(0.0);
-    let surfaces = surface_wrench(model, surface_area_n, deflection_rad);
+    let with_wash = |wash_pa: f32| (pressure_area_n + wash_pa * model.wing_area_m2).max(0.0);
+    let surfaces = surface_wrench(
+        model,
+        with_wash(wash.roll_pressure_pa),
+        with_wash(wash.pressure_pa),
+        deflection_rad,
+    );
     // The wash's rate scale, as the free stream's below: `½ρ·V·S`.
     let wash_rate_scale = 0.5 * AIR_DENSITY_KGPM3 * wash.damping_mps * model.wing_area_m2;
     if !moving {
@@ -136,17 +143,25 @@ fn rate_moments(model: &FixedWingModel, rate_scale: f32, rates_radps: Vec3) -> V
 }
 
 /// The side force and moments of `model`'s surfaces deflected by `deflection_rad` (aileron,
-/// elevator, rudder) under `pressure_area_n` (their dynamic pressure times wing area, in N).
-fn surface_wrench(model: &FixedWingModel, pressure_area_n: f32, deflection_rad: Vec3) -> Aero {
+/// elevator, rudder): the aileron's under `roll_area_n`, the others' under `pressure_area_n`
+/// (their dynamic pressure times wing area, in N).
+fn surface_wrench(
+    model: &FixedWingModel,
+    roll_area_n: f32,
+    pressure_area_n: f32,
+    deflection_rad: Vec3,
+) -> Aero {
     let c = &model.aero;
     let (aileron, elevator, rudder) = (deflection_rad.x, deflection_rad.y, deflection_rad.z);
+    let aileron_nm = roll_area_n * model.span_m * c.c_roll_aileron * aileron;
     Aero {
         force_n: Vec3::new(0.0, pressure_area_n * c.c_side_rudder * rudder, 0.0),
-        torque_nm: Vec3::new(
-            model.span_m * (c.c_roll_aileron * aileron + c.c_roll_rudder * rudder),
-            model.chord_m * c.c_pitch_elevator * elevator,
-            model.span_m * c.c_yaw_rudder * rudder,
-        ) * pressure_area_n,
+        torque_nm: Vec3::new(aileron_nm, 0.0, 0.0)
+            + Vec3::new(
+                model.span_m * c.c_roll_rudder * rudder,
+                model.chord_m * c.c_pitch_elevator * elevator,
+                model.span_m * c.c_yaw_rudder * rudder,
+            ) * pressure_area_n,
         ..Aero::default()
     }
 }

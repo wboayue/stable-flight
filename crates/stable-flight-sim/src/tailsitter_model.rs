@@ -45,7 +45,8 @@ pub struct TailsitterModel {
 /// m/s, #123). Vortex-ring flow isn't modeled.
 ///
 /// The surfaces see [`surface_fraction`](Self::surface_fraction) of it on top of the free
-/// stream's, so they keep authority in a hover. The part of the span in the wash is damped by
+/// stream's, so they keep authority in a hover; their roll action (elevons apart) sees
+/// [`roll_fraction`](Self::roll_fraction). The part of the span in the wash is damped by
 /// it as by the free stream, [`damping_fraction`](Self::damping_fraction) of the wing's rate
 /// damping; the wing's lift and drag see the free stream only. The total thrust over the total
 /// disc area washes every surface evenly.
@@ -67,20 +68,43 @@ pub struct PropWash {
     /// Share of the wake's added dynamic pressure the surfaces see, in `[0, 1]`: 1 for surfaces
     /// wholly inside the wash.
     pub surface_fraction: f32,
+    /// Share of the wake's added dynamic pressure the surfaces' roll action sees, in `[0, 1]`:
+    /// [`surface_fraction`](Self::surface_fraction) unless set apart
+    /// ([`with_roll_fraction`](Self::with_roll_fraction)).
+    pub roll_fraction: f32,
     /// Share of the wing's rate damping inside the wash, in `[0, 1]`: the wash damps that part
     /// of the span at its jet's speed ([`span_damping_share`](Self::span_damping_share)).
     pub damping_fraction: f32,
 }
 
 impl PropWash {
-    /// `count` props of `diameter_m`, with `surface_fraction` of their wake over the surfaces
-    /// and `damping_fraction` of the wing's rate damping in it.
+    /// `count` props of `diameter_m`, with `surface_fraction` of their wake over the surfaces,
+    /// roll and pitch alike, and `damping_fraction` of the wing's rate damping in it.
     pub fn props(count: u8, diameter_m: f32, surface_fraction: f32, damping_fraction: f32) -> Self {
         let radius_m = diameter_m / 2.0;
         PropWash {
             disc_area_m2: f32::from(count) * core::f32::consts::PI * radius_m * radius_m,
             surface_fraction,
+            roll_fraction: surface_fraction,
             damping_fraction,
+        }
+    }
+
+    /// This wash with `roll_fraction` of the wake's added pressure on the surfaces' roll
+    /// action, apart from their pitch.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight_sim::PropWash;
+    ///
+    /// let wash = PropWash::props(2, 0.254, 0.4, 0.24).with_roll_fraction(0.14);
+    /// assert_eq!((wash.surface_fraction, wash.roll_fraction), (0.4, 0.14));
+    /// ```
+    pub fn with_roll_fraction(self, roll_fraction: f32) -> Self {
+        PropWash {
+            roll_fraction,
+            ..self
         }
     }
 
@@ -102,11 +126,13 @@ impl PropWash {
     /// [`surface_fraction`](Self::surface_fraction) of [`added_pa`](Self::added_pa), and the
     /// speed it damps the wing at, its jet's (less any sink) times
     /// [`damping_fraction`](Self::damping_fraction), 0 where it takes from the free stream.
+    /// The roll action's pressure is [`roll_fraction`](Self::roll_fraction) of it.
     pub(crate) fn wash(&self, thrust_n: f32, axial_mps: f32) -> Wash {
         let added_pa = self.added_pa(thrust_n, axial_mps);
         let flow_mps = libm::sqrtf(2.0 * added_pa.max(0.0) / AIR_DENSITY_KGPM3);
         Wash {
             pressure_pa: self.surface_fraction * added_pa,
+            roll_pressure_pa: self.roll_fraction * added_pa,
             damping_mps: self.damping_fraction * flow_mps,
         }
     }
@@ -135,7 +161,7 @@ impl TailsitterModel {
     /// # Errors
     ///
     /// [`FixedWingModel::validate`]'s errors; [`ModelError::NotPositive`] for a motor arm or
-    /// disc area that isn't positive and finite; [`ModelError::NotFraction`] for a surface
+    /// disc area that isn't positive and finite; [`ModelError::NotFraction`] for a wash
     /// fraction outside `[0, 1]`.
     pub fn validate(&self) -> Result<(), ModelError> {
         self.wing.validate()?;
@@ -148,6 +174,7 @@ impl TailsitterModel {
                 "prop_wash.surface_fraction",
                 self.prop_wash.surface_fraction,
             ),
+            ("prop_wash.roll_fraction", self.prop_wash.roll_fraction),
             (
                 "prop_wash.damping_fraction",
                 self.prop_wash.damping_fraction,

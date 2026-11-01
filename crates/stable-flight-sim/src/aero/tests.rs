@@ -384,6 +384,7 @@ fn wash_works_the_surfaces_and_damps_the_rates() {
     let c = &model.aero;
     let wash = Wash {
         pressure_pa: 200.0,
+        roll_pressure_pa: 200.0,
         damping_mps: 4.0,
     };
     let wash_scale = 0.5 * AIR_DENSITY_KGPM3 * wash.damping_mps * model.wing_area_m2;
@@ -427,4 +428,27 @@ fn wash_works_the_surfaces_and_damps_the_rates() {
         epsilon = 1e-6
     );
     check!(added.force_n == flying(calm, rates_radps, elevator).force_n);
+}
+
+/// The roll pressure works the ailerons alone, the pressure the elevator: in still air, with
+/// each deflected, each moment follows its own pressure.
+#[test]
+fn roll_pressure_works_the_ailerons_alone() {
+    let model = model();
+    let c = &model.aero;
+    let wash = Wash {
+        pressure_pa: 200.0,
+        roll_pressure_pa: 50.0,
+        damping_mps: 0.0,
+    };
+    let deflection_rad = Vec3::new(0.1, 0.2, 0.0);
+    let still = wrench(&model, Vec3::zeros(), Vec3::zeros(), deflection_rad, wash);
+    let area_m2 = model.wing_area_m2;
+    let aileron_nm = wash.roll_pressure_pa * area_m2 * model.span_m * c.c_roll_aileron * 0.1;
+    let elevator_nm = wash.pressure_pa * area_m2 * model.chord_m * c.c_pitch_elevator * 0.2;
+    assert_relative_eq!(
+        still.torque_nm,
+        Vec3::new(aileron_nm, elevator_nm, 0.0),
+        max_relative = 1e-5
+    );
 }
