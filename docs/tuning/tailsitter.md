@@ -509,6 +509,9 @@ plane, transitions back, hovers over the start, and lands there. It prints the g
 - `--rate-scale` starts from scaled rate gains, to check that the design converges from
   either side.
 - Fly it three times and commit each gain's median: the fit of a barely damped loop spreads.
+- Fly it in calm air. The rate steps are 8°/s, and in RealFlight's 5 km/h wind gusts roll the
+  eXplora at up to 0.56 rad/s: the roll rate stage either never settles or reads a gust as a
+  runaway (#535).
 - **eXplora in RealFlight** (Eli Field, calm, three runs at 13.9 m/s and thrust 0.854; #535):
   - **Roll:** all damping (23/s) on a strong elevon (183 rad/s² per unit moment). It repeated
     to 0.5%.
