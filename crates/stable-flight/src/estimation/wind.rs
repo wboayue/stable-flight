@@ -50,6 +50,13 @@ const GATE_SIGMA: f32 = 5.0;
 /// and the thrust's own tilt dominate the push.
 const MIN_TILT_COSINE: f32 = core::f32::consts::FRAC_1_SQRT_2;
 
+/// Most ground speed along the thrust axis, in m/s, a tick is used at. Climbing or sinking
+/// faster, the air along the thrust axis dominates the airflow and the drag model is a hover's:
+/// a cambered wing climbing nose first lifts toward its belly, which reads as wind (#608). A
+/// sim tailsitter's takeoff left its calm-air estimate 0.22 m/s off 10 s in without the skip,
+/// 0.14 m/s with it.
+const MAX_AXIAL_SPEED_MPS: f32 = 1.0;
+
 /// Least drag slope, in 1/s, an axis's noise is divided by: below it the axis tells almost
 /// nothing about the wind, and the noise stays finite.
 const MIN_DRAG_SLOPE_PER_S: f32 = 1e-3;
@@ -62,8 +69,11 @@ const MIN_DRAG_SLOPE_PER_S: f32 = 1e-3;
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WindConfig {
     /// Ballistic coefficient along `x` and `y`, in kg/m²: mass over drag coefficient times
-    /// area, so the bluff-body drag is `½ρv²/B` per kg. 0 leaves the term out. Must be
-    /// non-negative and finite.
+    /// area, so the bluff-body drag along the axis is `½ρ·v·|V|/B` per kg, `v` the air along
+    /// the axis and `|V|` the airspeed with the air along the thrust axis counted in (the
+    /// vehicle's climb or sink, the wind taken as horizontal), as PX4's `Ekf::fuseDrag`
+    /// predicts it (PX4 counts the other axis's air too, which inverting one axis at a time
+    /// can't). 0 leaves the term out. Must be non-negative and finite.
     pub ballistic_kgpm2: Vec2,
     /// Momentum drag along `x` and `y`, in 1/s: drag acceleration per m/s of air velocity.
     /// 0 leaves the term out. Must be non-negative and finite.
@@ -196,6 +206,8 @@ struct Window {
     /// Each axis's horizontal part (north, east).
     axis_x: Vec2,
     axis_y: Vec2,
+    /// Ground velocity along the thrust axis, in m/s.
+    axial_mps: f32,
 }
 
 impl Default for WindEstimator {
@@ -212,9 +224,16 @@ impl Default for WindEstimator {
 impl WindEstimator {
     /// Adds this tick's state, `state.attitude` taken as the thrust frame (thrust along its
     /// `z`), and once [`UPDATE_PERIOD_S`] has gathered, updates the wind from the period's
-    /// average. A tick with a non-finite attitude, velocity, or acceleration, or with the
-    /// thrust axis tilted more than 45° from vertical, is skipped. Does nothing while `config`
+    /// average. A tick with a non-finite attitude, velocity, or acceleration, with the thrust
+    /// axis tilted more than 45° from vertical, or moving along it faster than 1 m/s, is
+    /// skipped. Does nothing while `config`
     /// has no drag coefficient.
+    ///
+    /// Each axis's measurement counts by the drag's slope at the air velocity the estimate
+    /// predicts, as both EKFs linearize their drag at the state (ArduPilot's
+    /// `NavEKF3_core::FuseDragForces`, PX4's `Ekf::fuseDrag`). Bluff-body drag has no slope in
+    /// still air, so a slope taken at a measured push near zero would leave a wrong estimate
+    /// there for good (#608).
     pub fn update(&mut self, dt: f32, config: &WindConfig, state: &VehicleState) {
         if !config.is_on() {
             return;
@@ -229,6 +248,7 @@ impl WindEstimator {
         window.ground_along_mps += sample.ground_along_mps;
         window.axis_x += sample.axis_x;
         window.axis_y += sample.axis_y;
+        window.axial_mps += sample.axial_mps;
         if window.elapsed_s < UPDATE_PERIOD_S {
             return;
         }
@@ -238,9 +258,14 @@ impl WindEstimator {
         let force = window.specific_force_mps2 / n;
         let ground = window.ground_along_mps / n;
         let axes = [window.axis_x / n, window.axis_y / n];
+        let axial_mps = window.axial_mps / n;
         for (i, axis) in axes.into_iter().enumerate() {
             let drag = AxisDrag::new(config, i);
-            if let Some((air_mps, slope_per_s)) = drag.air_velocity(force[i]) {
+            if let Some(air_mps) = drag.air_velocity(force[i], axial_mps) {
+                let predicted_air_mps = ground[i] - axis.dot(&self.wind_mps);
+                let slope_per_s = drag
+                    .slope_per_s(predicted_air_mps, axial_mps)
+                    .max(drag.slope_per_s(air_mps, axial_mps));
                 let noise_mps = config.force_noise_mps2 / slope_per_s.max(MIN_DRAG_SLOPE_PER_S);
                 self.correct(axis, ground[i] - air_mps, noise_mps * noise_mps);
             }
@@ -312,6 +337,7 @@ struct Sample {
     ground_along_mps: Vec2,
     axis_x: Vec2,
     axis_y: Vec2,
+    axial_mps: f32,
 }
 
 impl Sample {
@@ -322,7 +348,7 @@ impl Sample {
         // NED, as the attitude rotates the FRD body into it.
         let specific_force_ned = specific_force_ned(state);
         let velocity_ned = neu_to_ned(state.velocity_mps);
-        // One matrix serves all three: its columns are the body axes in NED.
+        // One matrix serves them all: its columns are the body axes in NED.
         let rotation = attitude.to_rotation_matrix();
         // `<` is false for NaN; the finiteness check below catches it.
         if rotation.matrix()[(2, 2)] < MIN_TILT_COSINE {
@@ -331,11 +357,18 @@ impl Sample {
         let force = rotation.inverse_transform_vector(&specific_force_ned);
         let axis_x: Vec3 = rotation.matrix().column(0).into();
         let axis_y: Vec3 = rotation.matrix().column(1).into();
+        let axis_z: Vec3 = rotation.matrix().column(2).into();
+        let axial_mps = axis_z.dot(&velocity_ned);
+        // `>` is false for NaN; the finiteness check below catches it.
+        if axial_mps.abs() > MAX_AXIAL_SPEED_MPS {
+            return None;
+        }
         let sample = Sample {
             specific_force_mps2: force.xy(),
             ground_along_mps: Vec2::new(axis_x.dot(&velocity_ned), axis_y.dot(&velocity_ned)),
             axis_x: axis_x.xy(),
             axis_y: axis_y.xy(),
+            axial_mps,
         };
         let finite = [
             sample.specific_force_mps2,
@@ -344,18 +377,25 @@ impl Sample {
             sample.axis_y,
         ]
         .iter()
-        .all(|v| v.iter().all(|c| c.is_finite()));
+        .all(|v| v.iter().all(|c| c.is_finite()))
+            && sample.axial_mps.is_finite();
         finite.then_some(sample)
     }
 }
 
-/// One axis's drag per kg against air velocity `v`: `−(k|v| + μ)v`, `k = ½ρ/B`.
+/// One axis's drag per kg against air velocity `v` along it, with `w` m/s of air along the
+/// thrust axis: `−(k|V| + μ)v`, `|V| = √(v² + w²)`, `k = ½ρ/B`. A climb or sink adds to the
+/// bluff body's airspeed, so the same push reads as less air along the axis.
 struct AxisDrag {
     /// Bluff-body term, in 1/m (0 without one).
     k_per_m: f32,
     /// Momentum term, in 1/s.
     mu_per_s: f32,
 }
+
+/// Newton steps refining [`AxisDrag::air_velocity`]'s root: from the still-air root, above it,
+/// four reach `f32` precision across hover speeds and climbs (`axis_drag_round_trips`).
+const AIR_VELOCITY_STEPS: usize = 4;
 
 impl AxisDrag {
     /// Axis `i` (0 `x`, 1 `y`) of `config`.
@@ -371,21 +411,40 @@ impl AxisDrag {
         }
     }
 
-    /// The air velocity, in m/s, along the axis that the drag `force_mps2` comes from, and
-    /// the drag's slope there, in 1/s; `None` without a drag model on the axis.
-    fn air_velocity(&self, force_mps2: f32) -> Option<(f32, f32)> {
+    /// The air velocity, in m/s, along the axis that the drag `force_mps2` comes from, with
+    /// `axial_mps` of air along the thrust axis; `None` without a drag model on the axis.
+    fn air_velocity(&self, force_mps2: f32, axial_mps: f32) -> Option<f32> {
         let (k, mu) = (self.k_per_m, self.mu_per_s);
         let push = force_mps2.abs();
         let speed = if k > 0.0 {
-            // k·s² + μ·s = |f|, the positive root.
-            (libm::sqrtf(mu * mu + 4.0 * k * push) - mu) / (2.0 * k)
+            // k·s² + μ·s = |f|, the positive root: the speed without air along the thrust
+            // axis, at or above the root with it.
+            let still_air = (libm::sqrtf(mu * mu + 4.0 * k * push) - mu) / (2.0 * k);
+            // Drag rises and curves up with speed, so Newton's steps from above stay above the
+            // root and close on it.
+            (0..AIR_VELOCITY_STEPS).fold(still_air, |s, _| {
+                let excess = k * s * libm::sqrtf(s * s + axial_mps * axial_mps) + mu * s - push;
+                let slope = self.slope_per_s(s, axial_mps);
+                if slope > 0.0 { s - excess / slope } else { s }
+            })
         } else if mu > 0.0 {
             push / mu
         } else {
             return None;
         };
         // Drag opposes the air velocity.
-        let air = if force_mps2 > 0.0 { -speed } else { speed };
-        Some((air, 2.0 * k * speed + mu))
+        Some(if force_mps2 > 0.0 { -speed } else { speed })
+    }
+
+    /// The drag's slope against the air velocity along the axis, at `air_mps` along it and
+    /// `axial_mps` along the thrust axis, in 1/s: `k(|V| + v²/|V|) + μ`.
+    fn slope_per_s(&self, air_mps: f32, axial_mps: f32) -> f32 {
+        let airspeed_mps = libm::sqrtf(air_mps * air_mps + axial_mps * axial_mps);
+        let bluff = if airspeed_mps > 0.0 {
+            self.k_per_m * (airspeed_mps + air_mps * air_mps / airspeed_mps)
+        } else {
+            0.0
+        };
+        bluff + self.mu_per_s
     }
 }
