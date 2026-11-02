@@ -74,6 +74,14 @@ fn cuts_the_speed_by_how_far_the_waypoint_is_off_the_nose() {
 #[test]
 fn cuts_by_the_configured_angles_and_divisor() {
     let cases = [
+        (
+            "no free angle: cut off the nose",
+            0.0,
+            160.0,
+            3.0,
+            80.0,
+            7.5,
+        ),
         ("inside a wider free angle", 45.0, 160.0, 3.0, 40.0, 0.0),
         (
             "halfway, wider free angle",

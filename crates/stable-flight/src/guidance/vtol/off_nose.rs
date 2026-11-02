@@ -24,8 +24,7 @@ pub const DEFAULT_OFF_NOSE_FREE_RAD: f32 = 20.0 * DEG;
 /// Default [`OffNoseSpeedConfig::full_rad`], in rad (ArduPilot, as above).
 pub const DEFAULT_OFF_NOSE_FULL_RAD: f32 = 160.0 * DEG;
 
-/// Default [`OffNoseSpeedConfig::tail_first_divisor`] (ArduPilot, as above): the Cobra's 5 m/s
-/// tail first at the default speed (#437).
+/// Default [`OffNoseSpeedConfig::tail_first_divisor`] (ArduPilot, as above).
 pub const DEFAULT_OFF_NOSE_TAIL_FIRST_DIVISOR: f32 = 3.0;
 
 /// [`OffNoseSpeed`] settings.
@@ -92,8 +91,8 @@ impl Default for OffNoseSpeedConfig {
 /// within [`free_rad`](OffNoseSpeedConfig::free_rad) (20°), then
 /// [`speed_mps`](OffNoseSpeedConfig::speed_mps) divided by a factor rising linearly from 1
 /// there to [`tail_first_divisor`](OffNoseSpeedConfig::tail_first_divisor) (3) at
-/// [`full_rad`](OffNoseSpeedConfig::full_rad) (160°) and past it. The waypoint's own cruise speed still
-/// applies when lower.
+/// [`full_rad`](OffNoseSpeedConfig::full_rad) (160°) and past it. The waypoint's own cruise
+/// speed still applies when lower.
 ///
 /// A quadplane's wing and tail push it around flying sideways or tail first: tail first at
 /// 15 m/s the RealFlight Titan Cobra pitched past what its lift rotors hold and flipped (#437).

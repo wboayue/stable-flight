@@ -19,9 +19,9 @@ impl ParamTable for LiftTransitionConfig {
         param!("TRAN_VT_DEC_I", back_decel_i),
         param!("TRAN_FW_THR", forward_thrust),
         param!("TRAN_PSH_SLEW", pusher_slew_per_s),
+        param!(deg "TRAN_FW_PIT_MAX", forward_pitch_max_rad),
         param!("TRAN_HANDOFF", handoff_s),
         param!(deg "TRAN_ROLL_MAX", roll_limit_rad),
-        param!(deg "TRAN_FW_PIT_MAX", forward_pitch_max_rad),
     ];
 }
 
@@ -112,6 +112,14 @@ mod metadata {
                 )
                 .with_units("1/s")
                 .above(0.0),
+            FORWARD
+                .param(
+                    "TRAN_FW_PIT_MAX",
+                    "Most pitch waiting on airspeed; twice it plus 2 deg on the ramp",
+                )
+                .with_units("deg")
+                .above(0.0)
+                .below(90.0),
             LIMITS
                 .param(
                     "TRAN_HANDOFF",
@@ -124,14 +132,6 @@ mod metadata {
                 .with_units("deg")
                 .above(0.0)
                 .at_most(180.0),
-            FORWARD
-                .param(
-                    "TRAN_FW_PIT_MAX",
-                    "Most pitch waiting on airspeed; twice it plus 2 deg on the ramp",
-                )
-                .with_units("deg")
-                .above(0.0)
-                .below(90.0),
         ];
     }
 }
