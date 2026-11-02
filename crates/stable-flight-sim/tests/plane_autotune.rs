@@ -70,6 +70,9 @@ enum Subject {
     /// doesn't see, as RealFlight's Titan Cobra does (#635).
     CobraRollingIn(f32),
     Alia,
+    /// The Alia 250 with this many times its yaw-rate roll moment: the X-Plane Alia's match
+    /// (#537).
+    AliaRollingIn(f32),
 }
 
 /// [`Subject::CobraRollingIn`]'s holding past: the design's first 30° roll pair ends 1.09 past
@@ -81,6 +84,12 @@ const HOLDS_PAST_C_ROLL_R_SCALE: f32 = 4.0;
 /// overshoot and end 1.03 past, as RealFlight's Cobra's did at 14 m/s (0.04–0.07 over, ending
 /// 1.02–1.04) (#635).
 const ENDS_PAST_C_ROLL_R_SCALE: f32 = 6.0;
+
+/// [`Subject::AliaRollingIn`]'s scale: in a held bank at its trim airspeed, the aileron the sim
+/// Alia holds against rolling in, 0.145 at 15°, matches X-Plane's Alia, 0.20 at 20° (its
+/// steady aileron banked each way, averaged); at 2.25 and up the design finds no gains for
+/// the fit (#537).
+const ALIA_ROLLING_IN_C_ROLL_R_SCALE: f32 = 2.0;
 
 const SUBJECTS: [Subject; 4] = [
     Subject::Plane,
@@ -95,7 +104,7 @@ impl Subject {
             Subject::Plane => airframes::plane().stabilizer,
             Subject::Explora => airframes::explora().stabilizer.plane,
             Subject::Cobra | Subject::CobraRollingIn(_) => airframes::quadplane().stabilizer.plane,
-            Subject::Alia => airframes::alia250().stabilizer.plane,
+            Subject::Alia | Subject::AliaRollingIn(_) => airframes::alia250().stabilizer.plane,
         }
     }
 
@@ -113,7 +122,7 @@ impl Subject {
                 airframes::quadplane().guidance.plane.cruise_thrust,
                 FlightRegime::Copter,
             ),
-            Subject::Alia => (
+            Subject::Alia | Subject::AliaRollingIn(_) => (
                 airframes::alia250().guidance.plane.cruise_thrust,
                 FlightRegime::Copter,
             ),
@@ -180,7 +189,7 @@ fn tune_from(
                 (after_s, start),
             )
         }
-        Subject::Cobra | Subject::CobraRollingIn(_) | Subject::Alia => {
+        Subject::Cobra | Subject::CobraRollingIn(_) | Subject::Alia | Subject::AliaRollingIn(_) => {
             let airframe = in_flight_quadplane(subject);
             let plant = QuadPlanePlant::clean(airframe);
             let lead: Box<dyn Commander> = Box::new(north_line(
@@ -343,10 +352,12 @@ fn step_test_plan(subject: Subject) -> [StagePlan<PlaneSide>; 4] {
             unreachable!("a step test's plan");
         };
         match (subject, target) {
-            (Subject::Alia, PlaneLoop::Roll) => {
+            (Subject::Alia | Subject::AliaRollingIn(_), PlaneLoop::Roll) => {
                 step_test.max_saturated_s = ALIA_ROLL_MAX_SATURATED_S;
             }
-            (Subject::Alia, PlaneLoop::Pitch) => step_test.step.amplitude = ALIA_PITCH_STEP_RAD,
+            (Subject::Alia | Subject::AliaRollingIn(_), PlaneLoop::Pitch) => {
+                step_test.step.amplitude = ALIA_PITCH_STEP_RAD
+            }
             _ => {}
         }
         plan
@@ -456,10 +467,10 @@ fn design_plan(subject: Subject, config: &PlaneStabilizerConfig) -> [StagePlan<P
             unreachable!("a design's plan");
         };
         match (subject, target) {
-            (Subject::Alia, PlaneLoop::Roll) => {
+            (Subject::Alia | Subject::AliaRollingIn(_), PlaneLoop::Roll) => {
                 design.design.max_overshoot = ALIA_MAX_ROLL_OVERSHOOT;
             }
-            (Subject::Alia, PlaneLoop::Pitch) => {
+            (Subject::Alia | Subject::AliaRollingIn(_), PlaneLoop::Pitch) => {
                 design.verify.amplitude = ALIA_PITCH_STEP_RAD;
                 design.design.amplitude_rad = ALIA_PITCH_STEP_RAD;
             }
@@ -489,7 +500,7 @@ fn spec_misses(subject: Subject, config: PlaneStabilizerConfig) -> Vec<String> {
         ..ROLL_STEP
     };
     let (pitch, max_overshoot) = match subject {
-        Subject::Alia => (
+        Subject::Alia | Subject::AliaRollingIn(_) => (
             StepConfig {
                 amplitude: ALIA_PITCH_STEP_RAD,
                 ..PITCH_STEP
@@ -510,7 +521,7 @@ fn spec_misses(subject: Subject, config: PlaneStabilizerConfig) -> Vec<String> {
             airframe.stabilizer.plane = config;
             misses_on(&TailsitterPlant::clean(airframe), steps, max_overshoot)
         }
-        Subject::Cobra | Subject::CobraRollingIn(_) | Subject::Alia => {
+        Subject::Cobra | Subject::CobraRollingIn(_) | Subject::Alia | Subject::AliaRollingIn(_) => {
             let mut airframe = in_flight_quadplane(subject);
             airframe.stabilizer.plane = config;
             misses_on(&QuadPlanePlant::clean(airframe), steps, max_overshoot)
@@ -522,10 +533,10 @@ fn spec_misses(subject: Subject, config: PlaneStabilizerConfig) -> Vec<String> {
 /// there, so the transition's floors are off; the envelope guards height instead.
 fn in_flight_quadplane(subject: Subject) -> airframes::QuadPlaneAirframe {
     let mut airframe = match subject {
-        Subject::Alia => airframes::alia250(),
+        Subject::Alia | Subject::AliaRollingIn(_) => airframes::alia250(),
         _ => airframes::quadplane(),
     };
-    if let Subject::CobraRollingIn(scale) = subject {
+    if let Subject::CobraRollingIn(scale) | Subject::AliaRollingIn(scale) = subject {
         airframe.model.wing.aero.c_roll_r *= scale;
     }
     airframe.guidance.transition.min_height_m = 0.0;
@@ -608,6 +619,14 @@ fn the_design_tunes_a_cobra_that_ends_past_its_bank_to_the_spec() {
 #[test]
 fn the_design_tunes_the_alia_250_to_the_spec() {
     design_converges(Subject::Alia);
+}
+
+/// An Alia that rolls into its banks as X-Plane's does holds its roll steps past the target
+/// until the rate loop's I supplies the aileron; the design doubles I on each such pair and
+/// reaches it within its eight (#537).
+#[test]
+fn the_design_tunes_an_alia_250_that_rolls_into_its_banks_to_the_spec() {
+    design_converges(Subject::AliaRollingIn(ALIA_ROLLING_IN_C_ROLL_R_SCALE));
 }
 
 /// A fit term the sim eXplora's cruise is held to: (loop, name, the term in a fit,

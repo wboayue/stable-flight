@@ -147,6 +147,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   I, as a sag does, instead of slowing the time constant; one that swings back but still ends
   more than half the overshoot limit past raises both. A wing that rolls into its turns held
   30° steps 2–13% past and failed `Unverified` (RealFlight's Titan Cobra).
+- Plane design (#537): a pair that holds or ends past its target doubles I, where a sag raises
+  it by half. The X-Plane Alia 250, which rolls into its banks, ended 20° roll steps 9–22%
+  past through all eight pairs as I climbed from 0.01 to 0.85, and failed `Unverified`.
 - **Breaking (behavior):** the wind estimator counts each measurement by the drag's slope at
   the air its estimate predicts (or the measured air, if steeper), takes bluff drag on the
   airspeed with the climb counted in, and skips ticks climbing or sinking faster than 1 m/s.
