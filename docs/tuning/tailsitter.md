@@ -243,8 +243,8 @@ about −12…+5°.
 
 A land disarms once the vehicle, after sinking faster than 0.2 m/s, has held its vertical speed
 within `stopped_mps` (0.1 m/s) for `hold_s` (1 s): `TouchdownConfig`, set in code on
-`FailsafeConfig::touchdown` for link flights and `WaypointFollower::with_touchdown` for
-routes; it has no params. PX4 waits the same 1 s (`LNDMC_Z_VEL_MAX` is its speed band).
+`FailsafeConfig::touchdown` for link flights, `ScriptCommander::with_touchdown` for scripts,
+and `WaypointFollower::with_touchdown` for routes in code; it has no params. PX4 waits the same 1 s (`LNDMC_Z_VEL_MAX` is its speed band).
 
 - **Symptoms:**
   - The motors keep running on the ground after a land: a bouncing gear or a noisy

@@ -78,8 +78,8 @@ impl TouchdownConfig {
 /// hold a vertical speed near zero for long: its thrust falls until it sinks. Once the vehicle
 /// has sunk faster than [`DESCENDING_MPS`], staying within
 /// ±[`stopped_mps`](TouchdownConfig::stopped_mps) for [`hold_s`](TouchdownConfig::hold_s) means
-/// the ground stopped it. Before the descent begins (the hover the
-/// land started from), nothing counts. Touchdown latches until [`reset`](Self::reset).
+/// the ground stopped it. Before the descent begins (the hover the land started from), nothing
+/// counts. Touchdown latches until [`reset`](Self::reset).
 ///
 /// It works only while a land is flown; hovering would read as touchdown. A non-finite speed
 /// restarts the stopped timer without clearing the descent.

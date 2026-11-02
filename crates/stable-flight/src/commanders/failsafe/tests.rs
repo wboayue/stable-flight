@@ -801,12 +801,12 @@ fn disarms_on_touchdown_only_while_the_primary_flies_the_land() {
     }
 }
 
-/// A touchdown config with a 3 s hold: a 2 s stop after the descent stays armed, 3.15 s
-/// disarms.
+/// A touchdown config with a 3 s hold: 20 ticks (2 s) stopped after the descent stay armed,
+/// 32 (3.2 s) disarm.
 #[test]
 fn disarms_after_the_configured_touchdown_hold() {
-    // (seconds stopped after the descent, armed)
-    for (stopped_s, armed) in [(2.05, true), (3.15, false)] {
+    // (0.1 s ticks stopped after the descent, armed)
+    for (stopped_ticks, armed) in [(20, true), (32, false)] {
         let (mut commander, link, _) = failsafe_with(FailsafeConfig {
             touchdown: TouchdownConfig {
                 hold_s: 3.0,
@@ -822,10 +822,10 @@ fn disarms_after_the_configured_touchdown_hold() {
         link.input.set(Some(land()));
         check!(commander.next_command(DT, &sinking(-0.7)).arm, "descending");
         let mut command = Command::default();
-        for _ in 0..(stopped_s / DT).round() as usize {
+        for _ in 0..stopped_ticks {
             command = commander.next_command(DT, &sinking(0.0));
         }
-        check!(command.arm == armed, "stopped {stopped_s} s");
+        check!(command.arm == armed, "stopped {stopped_ticks} ticks");
     }
 }
 
