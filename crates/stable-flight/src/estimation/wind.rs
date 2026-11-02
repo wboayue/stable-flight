@@ -43,7 +43,8 @@ pub const DEFAULT_PROCESS_NOISE_MPS_PER_RT_S: f32 = 0.1;
 /// in, so the first measurements set the estimate.
 pub const DEFAULT_INITIAL_SD_MPS: f32 = 10.0;
 
-/// Default [`WindConfig::gate_sigma`]: PX4's drag gate (`Ekf::fuseDrag`, 5).
+/// Default [`WindConfig::gate_sigma`]: both stacks gate drag at 5σ
+/// (`NavEKF3_core::FuseDragForces`, `Ekf::fuseDrag`).
 pub const DEFAULT_GATE_SIGMA: f32 = 5.0;
 
 /// Cosine of the most tilt, thrust axis from vertical, a tick is used at: 45°. The drag model
@@ -231,7 +232,7 @@ impl WindEstimate {
 pub struct WindEstimator {
     /// The wind and its covariance; `None` until the first measurement, which seeds the
     /// covariance from [`WindConfig::initial_sd_mps`].
-    estimate: Option<WindEstimate>,
+    filter: Option<WindEstimate>,
     /// The measurement being averaged.
     window: Window,
 }
@@ -287,7 +288,7 @@ impl WindEstimator {
         let window = core::mem::take(&mut self.window);
         let n = window.ticks as f32;
         let initial_variance_m2ps2 = config.initial_sd_mps * config.initial_sd_mps;
-        let estimate = self.estimate.get_or_insert(WindEstimate {
+        let estimate = self.filter.get_or_insert(WindEstimate {
             velocity_mps: Vec2::zeros(),
             covariance_m2ps2: Matrix2::identity() * initial_variance_m2ps2,
         });
@@ -316,7 +317,7 @@ impl WindEstimator {
 
     /// The wind, once a measurement has been taken.
     pub fn estimate(&self) -> Option<WindEstimate> {
-        self.estimate
+        self.filter
     }
 
     /// Forgets the wind and any partial average.
