@@ -256,11 +256,10 @@ impl PlaneDesign {
     /// next pair on it nudged: much more I for a step that holds past its target (overshoots
     /// and gives little of it back), more I for a sag (a step that doesn't settle), much more I
     /// and a slower time constant for an overshoot that swings back but still ends past the
-    /// target, more P
-    /// for a step that settles but rises too slowly (the rate loop lags its target), else (an
-    /// overshoot that swings back to it, or a clip) a slower time constant. A slower time constant doesn't speed a slow
-    /// rise: the airplane's roll rose in 2.0, 2.5, 3.0, and 3.5 time constants at 0.56, 0.64,
-    /// 0.74, and 0.85 s (#534).
+    /// target, more P for a step that settles but rises too slowly (the rate loop lags its
+    /// target), else (an overshoot that swings back to it, or a clip) a slower time constant.
+    /// A slower time constant doesn't speed a slow rise: the airplane's roll rose in 2.0, 2.5,
+    /// 3.0, and 3.5 time constants at 0.56, 0.64, 0.74, and 0.85 s (#534).
     fn judge(
         &mut self,
         candidate: PlaneAxisGains,

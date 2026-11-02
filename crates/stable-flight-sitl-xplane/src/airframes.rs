@@ -189,9 +189,9 @@ pub fn alia250() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerConfig,
                     // The plane design's in X-Plane, the median of three runs' gains
                     // (`plane-autotune-xplane`): its fits read a roll damped 3.7–6.8/s and a
                     // stiff, lightly damped pitch (5.7–7.3/s², 0.7–1.6/s), so the integrators
-                    // carry most of the hold. Roll rate steps settle in 0.40 s, 0.06 over;
-                    // pitch rate steps reach 0.82 of the step where the hand tune's held 0.50
-                    // (#537).
+                    // carry most of the hold. Roll rate steps settle in 0.40–0.54 s,
+                    // 0.06–0.15 over; pitch rate steps reach 0.74–0.82 of the step where the
+                    // hand tune's held 0.50 (#537).
                     roll: RateGains {
                         p: 0.0138,
                         i: 2.56,
