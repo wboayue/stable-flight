@@ -17,7 +17,9 @@ pub use failsafe::{
 #[doc(inline)]
 pub use maneuver::{Maneuver, ManeuverConfig, ManeuverRunner};
 #[doc(inline)]
-pub use touchdown::TouchdownDetector;
+pub use touchdown::{
+    DEFAULT_STOPPED_MPS, DEFAULT_TOUCHDOWN_HOLD_S, TouchdownConfig, TouchdownDetector,
+};
 #[doc(inline)]
 pub use tune_hold::{PlaneTuneHold, PlaneTuneHoldConfig};
 #[doc(inline)]

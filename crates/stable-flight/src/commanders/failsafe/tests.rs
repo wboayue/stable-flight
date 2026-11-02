@@ -4,6 +4,7 @@ use std::rc::Rc;
 use assert2::{assert, check};
 
 use super::*;
+use crate::commanders::{DEFAULT_STOPPED_MPS, DEFAULT_TOUCHDOWN_HOLD_S};
 use crate::{AbsoluteAttitudeCommand, AttitudeCommand, LandCommand, RateCommand, Vec3};
 
 const DT: f32 = 0.1;
@@ -93,10 +94,25 @@ const CONFIG: FailsafeConfig = FailsafeConfig {
     timeout_s: 0.5,
     recover_after_s: 0.3,
     takeover_stick_delta: 0.1,
+    touchdown: TouchdownConfig {
+        stopped_mps: DEFAULT_STOPPED_MPS,
+        hold_s: DEFAULT_TOUCHDOWN_HOLD_S,
+    },
 };
 
 /// A failsafe over the scripted link and recorder, per [`CONFIG`].
 fn failsafe() -> (
+    FailsafeCommander<Link, Recorder>,
+    Rc<LinkScript>,
+    Rc<FallbackScript>,
+) {
+    failsafe_with(CONFIG)
+}
+
+/// A failsafe over the scripted link and recorder, per `config`.
+fn failsafe_with(
+    config: FailsafeConfig,
+) -> (
     FailsafeCommander<Link, Recorder>,
     Rc<LinkScript>,
     Rc<FallbackScript>,
@@ -113,7 +129,7 @@ fn failsafe() -> (
             script: fallback.clone(),
             armed: false,
         },
-        CONFIG,
+        config,
     )
     .expect("valid config");
     (commander, link, fallback)
@@ -313,6 +329,16 @@ fn rejects_invalid_config() {
         (
             FailsafeConfig {
                 takeover_stick_delta: 0.0,
+                ..FailsafeConfig::default()
+            },
+            false,
+        ),
+        (
+            FailsafeConfig {
+                touchdown: TouchdownConfig {
+                    hold_s: 0.0,
+                    ..TouchdownConfig::default()
+                },
                 ..FailsafeConfig::default()
             },
             false,
@@ -772,6 +798,34 @@ fn disarms_on_touchdown_only_while_the_primary_flies_the_land() {
         if case.ends_with("down, disarmed") {
             check!(link.synced.get() == Some(false), "the primary synced");
         }
+    }
+}
+
+/// A touchdown config with a 3 s hold: a 2 s stop after the descent stays armed, 3.15 s
+/// disarms.
+#[test]
+fn disarms_after_the_configured_touchdown_hold() {
+    // (seconds stopped after the descent, armed)
+    for (stopped_s, armed) in [(2.05, true), (3.15, false)] {
+        let (mut commander, link, _) = failsafe_with(FailsafeConfig {
+            touchdown: TouchdownConfig {
+                hold_s: 3.0,
+                ..TouchdownConfig::default()
+            },
+            ..CONFIG
+        });
+        link.since_s.set(Some(0.0));
+        link.input.set(Some(hover_at(5.0)));
+        // Past the 0.3 s recovery: the primary flies.
+        commander.next_command(0.35, &sinking(0.0));
+        link.arm.set(true);
+        link.input.set(Some(land()));
+        check!(commander.next_command(DT, &sinking(-0.7)).arm, "descending");
+        let mut command = Command::default();
+        for _ in 0..(stopped_s / DT).round() as usize {
+            command = commander.next_command(DT, &sinking(0.0));
+        }
+        check!(command.arm == armed, "stopped {stopped_s} s");
     }
 }
 

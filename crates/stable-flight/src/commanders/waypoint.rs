@@ -2,7 +2,8 @@
 
 use core::fmt;
 
-use crate::commanders::TouchdownDetector;
+use crate::commanders::{TouchdownConfig, TouchdownDetector};
+use crate::controllers::InvalidConfig;
 use crate::math::all_finite;
 use crate::{Command, Commander, ControlInput, LandCommand, Vec2, VehicleState, WaypointCommand};
 
@@ -17,10 +18,10 @@ pub const DEFAULT_ACCEPTANCE_RADIUS_M: f32 = 3.0;
 /// multicopter `NAV_MC_ALT_RAD` (`src/modules/navigator/navigator_params.yaml`).
 pub const DEFAULT_ALTITUDE_ACCEPTANCE_M: f32 = 0.8;
 
-/// Altitude acceptance (meters, either way) for a wing-borne leg, which holds altitude loosely
-/// while it flies: PX4's fixed-wing `NAV_FW_ALT_RAD`
+/// Default altitude acceptance (meters, either way) for a wing-borne leg, which holds altitude
+/// loosely while it flies: PX4's fixed-wing `NAV_FW_ALT_RAD`
 /// (`src/modules/navigator/navigator_params.yaml`).
-pub const PLANE_ALTITUDE_ACCEPTANCE_M: f32 = 10.0;
+pub const DEFAULT_PLANE_ALTITUDE_ACCEPTANCE_M: f32 = 10.0;
 
 /// Returned by [`WaypointFollower::new`] when given no waypoints; there is nothing to fly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -183,7 +184,7 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
 
     /// Overrides the altitude acceptance (meters, either way; default
     /// [`DEFAULT_ALTITUDE_ACCEPTANCE_M`]). A wing-borne leg wants a looser band
-    /// ([`PLANE_ALTITUDE_ACCEPTANCE_M`]). `altitude_m` must be non-negative.
+    /// ([`DEFAULT_PLANE_ALTITUDE_ACCEPTANCE_M`]). `altitude_m` must be non-negative.
     pub fn with_altitude_acceptance(mut self, altitude_m: f32) -> Self {
         self.set_altitude_acceptance(altitude_m);
         self
@@ -197,6 +198,17 @@ impl<W: AsRef<[WaypointCommand]>> WaypointFollower<W> {
             "altitude acceptance must be non-negative, got {altitude_m}"
         );
         self.altitude_acceptance_m = altitude_m;
+    }
+
+    /// Sets when a land under [`RouteEnd::Land`] has touched down (default
+    /// [`TouchdownConfig::default`]).
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidConfig`] if `config` fails [`TouchdownConfig::validate`].
+    pub fn with_touchdown(mut self, config: TouchdownConfig) -> Result<Self, InvalidConfig> {
+        self.touchdown = TouchdownDetector::new(config)?;
+        Ok(self)
     }
 
     /// Turns on waiting on a waypoint reached or passed off its altitude, for wing-borne legs

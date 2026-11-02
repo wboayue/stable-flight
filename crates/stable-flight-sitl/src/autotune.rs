@@ -11,9 +11,7 @@ use std::rc::Rc;
 
 use log::{debug, info, warn};
 
-use stable_flight::commanders::waypoint::{
-    DEFAULT_ACCEPTANCE_RADIUS_M, PLANE_ALTITUDE_ACCEPTANCE_M,
-};
+use stable_flight::commanders::waypoint::DEFAULT_ACCEPTANCE_RADIUS_M;
 use stable_flight::commanders::{PlaneTuneHold, PlaneTuneHoldConfig, TouchdownDetector};
 use stable_flight::controllers::Gains;
 use stable_flight::nalgebra::UnitQuaternion;
@@ -267,12 +265,12 @@ impl PlaneTuneFlight {
     }
 
     /// Whether the plane leg is within reach of the start: inside the home radius and the
-    /// plane altitude acceptance of the home altitude.
+    /// script's plane altitude acceptance of the home altitude.
     fn home_reached(&self, state: &VehicleState) -> bool {
         let (_, altitude_m) = self.home_m();
         let height_off_m = (state.position_m.z - altitude_m).abs();
         self.distance_home_m(state) < self.home.radius_m
-            && height_off_m < PLANE_ALTITUDE_ACCEPTANCE_M
+            && height_off_m < self.lead.altitude_acceptance_m(FlightRegime::Plane)
     }
 
     /// The horizontal distance from the start, in m.

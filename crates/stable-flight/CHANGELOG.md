@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as defaults (#624): `initial_sd_mps` (`GUID_WND_INIT_SD`, 10 m/s), `gate_sigma`
   (`GUID_WND_GATE`, 5), and `max_axial_speed_mps` (`GUID_WND_AX_SPD`, 1 m/s), with
   `estimation::wind::DEFAULT_*` consts for each.
+- `commanders::TouchdownConfig` (#625): the touchdown detector's stopped band `stopped_mps`
+  (0.1 m/s, below `DESCENDING_MPS`) and hold `hold_s` (1 s), with `DEFAULT_STOPPED_MPS` and
+  `DEFAULT_TOUCHDOWN_HOLD_S`; `TouchdownDetector::new` takes one, `FailsafeConfig::touchdown`
+  and `WaypointFollower::with_touchdown` set it.
 - `FlightLoop::setpoint`: the setpoint guidance gave the stabilizer on the last tick (#539).
 - Plane autotune (#534): `PlaneStabilizer` hosts probes on its roll and pitch rate and angle
   loops (`stabilizers::plane::PlaneLoop`, `PlaneAxisGains`), as do `TailsitterStabilizer` and
@@ -46,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `FailsafeConfig` has a `touchdown` field (`TouchdownConfig`): struct literals
+  add it or end in `..FailsafeConfig::default()`. `touchdown::STOPPED_MPS` and
+  `TOUCHDOWN_HOLD_S` are `DEFAULT_STOPPED_MPS` and `DEFAULT_TOUCHDOWN_HOLD_S`, and
+  `waypoint::PLANE_ALTITUDE_ACCEPTANCE_M` is `DEFAULT_PLANE_ALTITUDE_ACCEPTANCE_M` (#625).
 - **Breaking:** `estimation::wind::INITIAL_SD_MPS` is `DEFAULT_INITIAL_SD_MPS`, the default of
   `WindConfig::initial_sd_mps` (#624).
 - **Breaking:** `CopterGuidance`'s fixed limits are `CopterGuidanceConfig` fields, with params

@@ -56,7 +56,7 @@ use thiserror::Error;
 
 use stable_flight::commanders::maneuver::{Axis, DEFAULT_DOUBLET_HALF_S, Maneuver, ManeuverConfig};
 use stable_flight::commanders::waypoint::{
-    DEFAULT_ALTITUDE_ACCEPTANCE_M, PLANE_ALTITUDE_ACCEPTANCE_M,
+    DEFAULT_ALTITUDE_ACCEPTANCE_M, DEFAULT_PLANE_ALTITUDE_ACCEPTANCE_M,
 };
 use stable_flight::commanders::{EmptyWaypoints, RouteEnd, WaypointFollower};
 use stable_flight::{
@@ -235,7 +235,7 @@ impl ScriptCommander {
             follower: WaypointFollower::new(legs.iter().map(|leg| leg.waypoint).collect())?,
             regimes: legs.iter().map(|leg| leg.regime).collect(),
             copter_altitude_acceptance_m: DEFAULT_ALTITUDE_ACCEPTANCE_M,
-            plane_altitude_acceptance_m: PLANE_ALTITUDE_ACCEPTANCE_M,
+            plane_altitude_acceptance_m: DEFAULT_PLANE_ALTITUDE_ACCEPTANCE_M,
             actions: Actions::new(
                 legs.iter().map(|leg| leg.actions).collect(),
                 ManeuverConfig::default(),
@@ -276,7 +276,7 @@ impl ScriptCommander {
 
     /// Overrides the altitude acceptance (meters, either way) a waypoint on a `regime` leg also
     /// needs to be reached (defaults [`DEFAULT_ALTITUDE_ACCEPTANCE_M`] for copter legs,
-    /// [`PLANE_ALTITUDE_ACCEPTANCE_M`] for plane legs; any other regime is rotor-borne and
+    /// [`DEFAULT_PLANE_ALTITUDE_ACCEPTANCE_M`] for plane legs; any other regime is rotor-borne and
     /// shares the copter band). A plane leg ending in a back transition takes its waypoint at
     /// any altitude. `altitude_m` must be non-negative.
     ///
@@ -408,7 +408,7 @@ impl ScriptCommander {
 
     /// The altitude acceptance of a `regime` leg: plane legs have their own, and any other
     /// regime is rotor-borne and shares the copter one.
-    fn altitude_acceptance_m(&self, regime: FlightRegime) -> f32 {
+    pub(crate) fn altitude_acceptance_m(&self, regime: FlightRegime) -> f32 {
         match regime {
             FlightRegime::Plane => self.plane_altitude_acceptance_m,
             _ => self.copter_altitude_acceptance_m,

@@ -6,7 +6,7 @@
 //! timeout, a [`Fallback`] such as [`HoldCommander`] flies until the link has been back long
 //! enough.
 
-use crate::commanders::TouchdownDetector;
+use crate::commanders::{TouchdownConfig, TouchdownDetector};
 use crate::controllers::{InvalidConfig, check_limit, check_positive};
 use crate::{
     Command, Commander, ControlInput, ControlMode, FailsafeState, FlightRegime, LandCommand, Vec2,
@@ -67,22 +67,26 @@ pub struct FailsafeConfig {
     /// armed vehicle from the fallback, so a forgotten joystick resending the same positions
     /// can't drop the vehicle out of a hold. Must be positive and finite.
     pub takeover_stick_delta: f32,
+    /// When a land the primary flies has touched down, and the vehicle disarms.
+    pub touchdown: TouchdownConfig,
 }
 
 impl Default for FailsafeConfig {
     /// Fall back after 1 s without a message; return after 1 s of messages, sticks once one axis
-    /// has moved 0.1.
+    /// has moved 0.1; touchdown per [`TouchdownConfig::default`].
     fn default() -> Self {
         Self {
             timeout_s: 1.0,
             recover_after_s: 1.0,
             takeover_stick_delta: 0.1,
+            touchdown: TouchdownConfig::default(),
         }
     }
 }
 
 impl FailsafeConfig {
-    /// Checks the documented requirements of every field.
+    /// Checks the documented requirements of every field, and the touchdown config
+    /// ([`TouchdownConfig::validate`], section `touchdown`).
     ///
     /// # Errors
     ///
@@ -90,7 +94,10 @@ impl FailsafeConfig {
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         check_positive("timeout_s", self.timeout_s)?;
         check_limit("recover_after_s", self.recover_after_s)?;
-        check_positive("takeover_stick_delta", self.takeover_stick_delta)
+        check_positive("takeover_stick_delta", self.takeover_stick_delta)?;
+        self.touchdown
+            .validate()
+            .map_err(|e| e.in_section("touchdown"))
     }
 }
 
@@ -189,6 +196,7 @@ impl<P: LinkedCommander, F: Fallback> FailsafeCommander<P, F> {
     /// [`InvalidConfig`] if `config` fails [`FailsafeConfig::validate`].
     pub fn new(primary: P, fallback: F, config: FailsafeConfig) -> Result<Self, InvalidConfig> {
         config.validate()?;
+        let touchdown = TouchdownDetector::new(config.touchdown)?;
         Ok(Self {
             primary,
             fallback,
@@ -197,7 +205,7 @@ impl<P: LinkedCommander, F: Fallback> FailsafeCommander<P, F> {
             fresh_for_s: 0.0,
             last: Command::default(),
             takeover_reference: None,
-            touchdown: TouchdownDetector::default(),
+            touchdown,
         })
     }
 
