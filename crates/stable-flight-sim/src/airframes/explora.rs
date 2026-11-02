@@ -182,7 +182,7 @@ pub fn explora() -> TailsitterAirframe {
     };
     let plane_stabilizer = PlaneStabilizerConfig {
         rate: explora_rate(),
-        // RealFlight's plane autotune, as the rate loop (#535).
+        // RealFlight's plane autotune's, like the rate gains: 5° steps rise in 420–440 ms (#535).
         time_constant_s: Vec2::new(0.226, 0.226),
         thrust_curve_exponent,
         trim_airspeed_mps: TRIM_AIRSPEED_MPS,
