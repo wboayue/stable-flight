@@ -579,8 +579,10 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                 ..Default::default()
             },
             plane: PlaneStabilizerConfig {
-                // `TRIM_ARSPD_CM` 1240.
-                trim_airspeed_mps: 12.4,
+                // The scripts' plane legs' cruise, and where the plane autotune's hold flies:
+                // at `TRIM_ARSPD_CM`'s 12.4 m/s its 10° nose-up steps bled to 10.0 m/s, under
+                // `ARSPD_FBW_MIN` 11, and sank back to 0.56–0.68 of the step (#536).
+                trim_airspeed_mps: 14.0,
                 min_airspeed_mps: COBRA_MIN_AIRSPEED_MPS,
                 max_airspeed_mps: COBRA_MAX_AIRSPEED_MPS,
                 ..Default::default()

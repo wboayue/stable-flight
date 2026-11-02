@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `plane-autotune-realflight --airframe titan-cobra` (#536): the Titan Cobra's cruise side,
-  from `flights/cobra_plane_tune.csv`, a level leg at its 12.4 m/s trim airspeed.
+  from `flights/cobra_plane_tune.csv`, a level leg at its 14 m/s trim airspeed.
 - `flights/explora_rolls.csv` (#619): 90 and 180°/s rolls both ways on the eXplora's plane
   legs, for each roll's height loss.
 - `plane-autotune-realflight` (#535): a VTOL's plane-side autotune, the eXplora's
@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (behavior):** `airframes::titan_cobra` plane trim airspeed (`PSTAB_ASPD_TRIM`)
+  14 m/s, the scripts' cruise, from `TRIM_ARSPD_CM`'s 12.4 (#536): the plane gains scale from
+  there, and the plane autotune's hold flies there.
 - **Breaking (behavior):** `airframes::explora_vtol()`'s plane side flies RealFlight's plane
   autotune of it (#535): rate roll P 0.0229, I 0.08, FF 0.1279; pitch P 0.29, I 0.63, FF
   0.006; time constants 0.226 s in place of 0.4. Rate steps rise in 59–90 ms in place of
