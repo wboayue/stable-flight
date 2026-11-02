@@ -316,6 +316,7 @@ pub const COPTER_STEP_SETTLE: Settle = Settle {
     tilt_rad: 0.044,
     rate_radps: 0.1,
     hold_s: 0.5,
+    max_speed_mps: DEFAULT_SETTLE_SPEED_MPS,
 };
 
 /// Step response of a full-size multirotor's rate loop: 0.2 rad/s held for 1.5 s, rising in
@@ -937,9 +938,7 @@ impl DesignPlan {
     }
 }
 
-/// How level and still the vehicle must hold before a probe starts. It must also stand still
-/// over the ground (under 0.2 m/s), whatever the limits: one leaning to fly back to its
-/// position after a step isn't settled.
+/// How level and still the vehicle must hold before a probe starts.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Settle {
     /// Roll and pitch within this of the attitude target guidance holds
@@ -957,14 +956,20 @@ pub struct Settle {
     pub rate_radps: f32,
     /// For this long, in s.
     pub hold_s: f32,
+    /// The fastest the vehicle may move over the ground, in m/s: one leaning to fly back to its
+    /// position after a step isn't settled, and a step started on that lean measures the
+    /// return too. Higher: a probe starts sooner after a drift, but may start on a lean back
+    /// to position. A NaN velocity counts as still. The plane autotune ignores it: a wing
+    /// moves over the ground ([`AirspeedSettle`] holds its speed instead). Defaults to
+    /// [`DEFAULT_SETTLE_SPEED_MPS`] in the presets.
+    pub max_speed_mps: f32,
 }
 
-/// The fastest a settling vehicle may move over the ground, in m/s. A hover leaning on a trim
-/// stands still (the eXplora in RealFlight holds under 0.12 m/s, median 0.04, #539); one
-/// leaning to fly back to its position after a step moves (the sim `quad_x` under a CG offset
-/// returns at up to 0.37 m/s, leaning 5°), and a step started on that lean measures the return
-/// too: its rate searches kept no candidate (#539). A NaN velocity counts as still.
-const MAX_SETTLE_SPEED_MPS: f32 = 0.2;
+/// Default [`Settle::max_speed_mps`]. A hover leaning on a trim stands still (the eXplora in
+/// RealFlight holds under 0.12 m/s, median 0.04); one leaning to fly back to its position after
+/// a step moves (the sim `quad_x` under a CG offset returns at up to 0.37 m/s, leaning 5°), and
+/// its rate searches, started on that lean, kept no candidate (#539).
+pub const DEFAULT_SETTLE_SPEED_MPS: f32 = 0.2;
 
 impl Settle {
     /// Whether `motion` is level and still enough.
@@ -975,7 +980,7 @@ impl Settle {
     /// Whether `motion` is level and still enough about `axis` alone (0 roll, 1 pitch).
     fn holds_axis(&self, motion: &Motion, axis: usize) -> bool {
         motion.axis_tilt_error_rad[axis] < self.tilt_rad
-            && motion.speed_mps < MAX_SETTLE_SPEED_MPS
+            && motion.speed_mps < self.max_speed_mps
             && motion.axis_rate_radps[axis] < self.rate_radps
     }
 
@@ -1037,6 +1042,7 @@ impl Default for Envelope {
                 tilt_rad: 0.1,
                 rate_radps: 0.3,
                 hold_s: 1.0,
+                max_speed_mps: DEFAULT_SETTLE_SPEED_MPS,
             },
             settle_timeout_s: 10.0,
             recovery_s: 1.0,
@@ -1082,8 +1088,8 @@ impl Envelope {
         self.check_settle(&self.settle)
     }
 
-    /// Checks that `settle` is positive and tighter than the abort limits, and that its hold
-    /// fits in `settle_timeout_s`.
+    /// Checks that `settle` is positive and tighter than the abort limits, that its hold fits
+    /// in `settle_timeout_s`, and that its speed is positive and finite.
     pub fn check_settle(&self, settle: &Settle) -> Result<(), InvalidConfig> {
         check(
             "settle.tilt_rad",
@@ -1099,7 +1105,8 @@ impl Envelope {
             "settle.hold_s",
             settle.hold_s > 0.0 && settle.hold_s < self.settle_timeout_s,
             "positive and below settle_timeout_s",
-        )
+        )?;
+        check_positive("settle.max_speed_mps", settle.max_speed_mps)
     }
 
     /// The limit `motion` breaks, if any. NaN never counts as a breach.

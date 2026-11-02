@@ -627,12 +627,19 @@ fn new_and_start_reject_bad_input() {
         },
         ..copter_step
     });
+    let no_speed = step_test(StepTestPlan {
+        settle: Settle {
+            max_speed_mps: 0.0,
+            ..COPTER_STEP_SETTLE
+        },
+        ..copter_step
+    });
     let no_recovery = Envelope {
         recovery_s: -1.0,
         ..Envelope::default()
     };
     // (plan, envelope, section, field)
-    let cases: [(&[StagePlan], Envelope, &str, &str); 7] = [
+    let cases: [(&[StagePlan], Envelope, &str, &str); 8] = [
         (&[stage], no_recovery, "envelope", "recovery_s"),
         (&[], Envelope::default(), "plan", "stages"),
         (
@@ -654,6 +661,12 @@ fn new_and_start_reject_bad_input() {
             Envelope::default(),
             "plan",
             "settle.hold_s",
+        ),
+        (
+            &[no_speed],
+            Envelope::default(),
+            "plan",
+            "settle.max_speed_mps",
         ),
     ];
     for (plan, envelope, section, field) in cases {
@@ -2105,7 +2118,7 @@ fn a_settle_reads_tilt_from_the_attitude_target() {
     let settle = COPTER_STEP_SETTLE;
     let lean = 3.0 * settle.tilt_rad;
     let still = 0.0;
-    let moving = 2.0 * MAX_SETTLE_SPEED_MPS;
+    let moving = 2.0 * DEFAULT_SETTLE_SPEED_MPS;
     let rows = [
         ("level on level", Vec2::zeros(), Vec2::zeros(), still, true),
         (
@@ -2172,6 +2185,30 @@ fn a_settle_reads_tilt_from_the_attitude_target() {
             (motion.tilt_rad - level_rad).abs() < 1e-5,
             "{case}: from level"
         );
+    }
+}
+
+/// The speed limit is the settle's: 0.3 m/s over the ground holds within a 0.5 m/s limit and
+/// not within the default 0.2 m/s.
+#[test]
+fn a_settle_holds_within_its_configured_speed() {
+    let state = VehicleState {
+        velocity_mps: Vec3::new(0.3, 0.0, 0.0),
+        ..Default::default()
+    };
+    let motion = Motion::of(
+        &state,
+        &UnitQuaternion::identity(),
+        Vec3::zeros(),
+        Vec2::zeros(),
+    );
+    // (speed limit m/s, holds)
+    for (max_speed_mps, holds) in [(DEFAULT_SETTLE_SPEED_MPS, false), (0.5, true)] {
+        let settle = Settle {
+            max_speed_mps,
+            ..COPTER_STEP_SETTLE
+        };
+        check!(settle.holds(&motion) == holds, "limit {max_speed_mps} m/s");
     }
 }
 

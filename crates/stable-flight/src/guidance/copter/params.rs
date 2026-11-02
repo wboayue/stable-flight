@@ -53,6 +53,8 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_WND_INIT_SD", wind.initial_sd_mps),
         param!("GUID_WND_GATE", wind.gate_sigma),
         param!("GUID_WND_AX_SPD", wind.max_axial_speed_mps),
+        param!("GUID_ALT_IBAND", altitude.integration_band_m),
+        param!("GUID_LAT_BRK_SHR", lateral.braking_share),
     ];
 }
 
@@ -326,6 +328,20 @@ mod metadata {
             )
             .with_units("m/s")
             .above(0.0),
+            ALTITUDE
+                .param(
+                    "GUID_ALT_IBAND",
+                    "Altitude error within which the altitude integral runs",
+                )
+                .with_units("m")
+                .above(0.0),
+            LATERAL
+                .param(
+                    "GUID_LAT_BRK_SHR",
+                    "Share of GUID_LAT_ACC the braking curve slows at",
+                )
+                .above(0.0)
+                .at_most(1.0),
         ];
     }
 }

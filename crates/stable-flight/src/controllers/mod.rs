@@ -18,12 +18,15 @@ pub mod yaw;
 
 pub use altitude::{
     AltitudeController, AltitudeControllerConfig, AltitudeEstimate, AltitudeTarget,
-    DEFAULT_HOVER_THRUST,
+    DEFAULT_HOVER_THRUST, DEFAULT_INTEGRATION_BAND_M,
 };
 pub use attitude::{AttitudeController, AttitudeControllerConfig};
 pub use body_rate::{BodyRateController, BodyRateControllerConfig, RATE_I_PER_P, YAW_RATE_I_PER_P};
 pub use gyro::GyroFilters;
-pub use lateral::{LateralController, LateralControllerConfig, LateralEstimate, LateralTarget};
+pub use lateral::{
+    DEFAULT_BRAKING_SHARE, LateralController, LateralControllerConfig, LateralEstimate,
+    LateralTarget,
+};
 pub use notch::NotchConfig;
 pub use plane_rate::{PlaneRateController, PlaneRateControllerConfig, RateGains};
 pub use yaw::{YawController, YawControllerConfig};

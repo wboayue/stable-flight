@@ -1,7 +1,9 @@
 use crate::Vec2;
 
 use super::derivative::DerivativeState;
-use crate::controllers::{Gains, InvalidConfig, check_limit, rescale_integral};
+use crate::controllers::{
+    Gains, InvalidConfig, check_limit, check_unit_interval, rescale_integral,
+};
 use crate::math::{
     all_finite, assert_dt, cap_magnitude, clamp_symmetric_each, shaped_closing_speed,
 };
@@ -27,18 +29,26 @@ pub struct LateralControllerConfig {
     /// `FlightTaskAuto::activate`; ArduPilot `AC_PosControl::NE_init_controller`).
     /// A new leg then asks for at most `atan(max_accel_mps2 / g)` of tilt at once, instead of
     /// the tilt for its whole speed. The position loop then slows toward the target along a
-    /// braking curve: the speed that decelerating at [`BRAKING_SHARE`] of this rate still stops
-    /// on the target, so stopping from `v` starts about `v² / (2 · BRAKING_SHARE ·
-    /// max_accel_mps2)` out. Must be non-negative and finite.
+    /// braking curve: the speed that decelerating at [`braking_share`](Self::braking_share) of
+    /// this rate still stops on the target, so stopping from `v` starts about
+    /// `v² / (2 · braking_share · max_accel_mps2)` out. Must be non-negative and finite.
     pub max_accel_mps2: f32,
 
     /// Deceleration the position loop brakes at with shaping off, in m/s²; 0 is off. When set,
     /// the speed toward the target follows the braking curve at this rate, instead of
     /// `position_p · error`, which starts braking only `2 · v` meters out whatever the
     /// vehicle's speed. Higher: brakes later, overshoots once past what the vehicle can
-    /// shed. Ignored with shaping on, which brakes at [`BRAKING_SHARE`] of
+    /// shed. Ignored with shaping on, which brakes at [`braking_share`](Self::braking_share) of
     /// [`max_accel_mps2`](Self::max_accel_mps2). Must be non-negative and finite.
     pub brake_mps2: f32,
+
+    /// Share of [`max_accel_mps2`](Self::max_accel_mps2) the braking curve slows at with
+    /// shaping on. The curve is read at the vehicle's distance, and the vehicle trails its
+    /// shaped velocity target, so it runs ahead of the curve: there the curve's speed drops
+    /// faster than its deceleration. Braking below the shaping rate leaves the rate-limited
+    /// target room to follow. Higher: arrives sooner, overshoots more. Must be in `(0, 1]`.
+    /// Defaults to [`DEFAULT_BRAKING_SHARE`].
+    pub braking_share: f32,
 }
 
 impl Default for LateralControllerConfig {
@@ -58,13 +68,14 @@ impl Default for LateralControllerConfig {
             max_integral: 12.5,
             max_accel_mps2: 0.0,
             brake_mps2: 0.0,
+            braking_share: DEFAULT_BRAKING_SHARE,
         }
     }
 }
 
 impl LateralControllerConfig {
     /// Checks the config: `position_p`, `max_integral`, `max_accel_mps2`, and `brake_mps2`
-    /// must be non-negative and finite.
+    /// must be non-negative and finite, and `braking_share` in `(0, 1]`.
     ///
     /// # Examples
     ///
@@ -79,7 +90,8 @@ impl LateralControllerConfig {
         check_limit("position_p", self.position_p)?;
         check_limit("max_integral", self.max_integral)?;
         check_limit("max_accel_mps2", self.max_accel_mps2)?;
-        check_limit("brake_mps2", self.brake_mps2)
+        check_limit("brake_mps2", self.brake_mps2)?;
+        check_unit_interval("braking_share", self.braking_share)
     }
 }
 
@@ -324,22 +336,17 @@ impl LateralController {
     }
 }
 
-/// Share of [`max_accel_mps2`](LateralControllerConfig::max_accel_mps2) the position loop's
-/// braking curve slows at. The curve is read at the vehicle's distance, and the vehicle trails
-/// its shaped velocity target, so it runs ahead of the curve: there the curve's speed drops
-/// faster than its deceleration. Braking below the shaping rate leaves the rate-limited target
-/// room to follow. Higher: arrives sooner. On a 260 m
-/// quadplane leg from 0.5 to 4 m/s², 0.7 overshoots at most 0.7 m, 0.9 up to 3.5 m, and 1.0
-/// up to 6.4 m (#466).
-pub const BRAKING_SHARE: f32 = 0.7;
+/// Default [`LateralControllerConfig::braking_share`]: on a 260 m quadplane leg from 0.5 to
+/// 4 m/s², 0.7 overshoots at most 0.7 m, 0.9 up to 3.5 m, and 1.0 up to 6.4 m (#466).
+pub const DEFAULT_BRAKING_SHARE: f32 = 0.7;
 
-/// The deceleration the position loop's braking curve slows at, in m/s²: [`BRAKING_SHARE`] of
+/// The deceleration the position loop's braking curve slows at, in m/s²: `braking_share` of
 /// `max_accel_mps2` with shaping on, else `brake_mps2`; 0 when neither is set, for the linear
 /// loop. An invalid value counts as unset.
 fn braking_decel_mps2(config: &LateralControllerConfig) -> f32 {
     // `>` is false for NaN: an invalid limit acts as off.
     if config.max_accel_mps2 > 0.0 {
-        BRAKING_SHARE * config.max_accel_mps2
+        config.braking_share * config.max_accel_mps2
     } else if config.brake_mps2 > 0.0 {
         config.brake_mps2
     } else {
@@ -831,32 +838,91 @@ mod tests {
         }
     }
 
-    /// The braking curve slows at `BRAKING_SHARE` of the shaping limit with shaping on, whatever
+    /// The braking curve slows at `braking_share` of the shaping limit with shaping on, whatever
     /// `brake_mps2`; at `brake_mps2` with it off; and not at all (linear) with neither, an
     /// invalid value acting as unset.
     #[test]
     fn braking_decel_comes_from_shaping_then_brake() {
-        // (max_accel_mps2, brake_mps2, expected decel in m/s²)
+        // (max_accel_mps2, brake_mps2, braking_share, expected decel in m/s²)
         let cases = [
-            (0.0, 0.0, 0.0),
-            (1.0, 0.0, 0.7),
-            (1.0, 1.5, 0.7), // shaping wins
-            (0.0, 1.5, 1.5),
-            (f32::NAN, 1.5, 1.5),
-            (-1.0, 1.5, 1.5),
-            (0.0, f32::NAN, 0.0),
-            (0.0, -1.0, 0.0),
+            (0.0, 0.0, 0.7, 0.0),
+            (1.0, 0.0, 0.7, 0.7),
+            (2.0, 0.0, 0.5, 1.0), // the configured share
+            (1.0, 1.5, 0.7, 0.7), // shaping wins
+            (0.0, 1.5, 0.5, 1.5), // the share is shaping's only
+            (f32::NAN, 1.5, 0.7, 1.5),
+            (-1.0, 1.5, 0.7, 1.5),
+            (0.0, f32::NAN, 0.7, 0.0),
+            (0.0, -1.0, 0.7, 0.0),
         ];
-        for (max_accel_mps2, brake_mps2, expected) in cases {
+        for (max_accel_mps2, brake_mps2, braking_share, expected) in cases {
             let config = LateralControllerConfig {
                 max_accel_mps2,
                 brake_mps2,
+                braking_share,
                 ..LateralControllerConfig::default()
             };
             let decel = braking_decel_mps2(&config);
             check!(
                 (decel - expected).abs() < 1e-6,
                 "shaping {max_accel_mps2}, brake {brake_mps2}: {decel}, expected {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_each_field_out_of_range() {
+        let base = LateralControllerConfig::default;
+        // (case, config, the field named)
+        let cases = [
+            (
+                "position_p",
+                LateralControllerConfig {
+                    position_p: -1.0,
+                    ..base()
+                },
+            ),
+            (
+                "max_integral",
+                LateralControllerConfig {
+                    max_integral: f32::NAN,
+                    ..base()
+                },
+            ),
+            (
+                "max_accel_mps2",
+                LateralControllerConfig {
+                    max_accel_mps2: -1.0,
+                    ..base()
+                },
+            ),
+            (
+                "brake_mps2",
+                LateralControllerConfig {
+                    brake_mps2: f32::INFINITY,
+                    ..base()
+                },
+            ),
+            (
+                "braking_share",
+                LateralControllerConfig {
+                    braking_share: 0.0,
+                    ..base()
+                },
+            ),
+            (
+                "braking_share",
+                LateralControllerConfig {
+                    braking_share: 1.1,
+                    ..base()
+                },
+            ),
+        ];
+        check!(base().validate().is_ok());
+        for (field, config) in cases {
+            check!(
+                config.validate().map_err(|e| e.field) == Err(field),
+                "{config:?}"
             );
         }
     }
