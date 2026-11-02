@@ -275,6 +275,8 @@ Related code sits together, so a reviewer reads one behavior in one place.
   [`.claude/skills/flight-check`](.claude/skills/flight-check/SKILL.md):** scripted runs,
   tick-rate screening, comparable runs, stopping, and per-simulator setup. The measured facts
   behind it are in [`docs/findings/`](docs/findings/README.md).
+- Tuning an airframe's loops with autotune (baseline, design runs, median gains, laps against
+  `main`, docs): [`.claude/skills/airframe-autotune`](.claude/skills/airframe-autotune/SKILL.md).
 - Confirm with whoever is at the simulator which model is loaded before every run; never
   assume it from the last run or a go.
 - A setting that depends on a model gap listed in the `stable-flight-sim` README's **Limits**
@@ -320,7 +322,7 @@ Related code sits together, so a reviewer reads one behavior in one place.
   - `docs/tuning/`: how to tune an airframe type (order, knobs and params, symptoms, a worked
     example); the airframe code holds the values and the flights behind them;
   - `docs/findings/`: measured simulator and flight facts, one per file, with their data;
-  - `.claude/skills/`: procedures run on demand (flight checks, merging, releasing);
+  - `.claude/skills/`: procedures run on demand (flight checks, airframe autotune, merging, releasing);
   - core rustdoc: the frame contract (`VehicleState`) and timing contract (`Vehicle`).
 - **Status claims match what has flown.** When that changes (a new airframe, simulator, board,
   or published crate), update in the same PR: the root README **Status** and its tables, the
