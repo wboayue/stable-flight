@@ -166,7 +166,9 @@ climb, then tune on the model and pin the X-Plane airframe to it.
     ([#635](https://github.com/wboayue/stable-flight/issues/635)). The design's FF 0.61 ran 8°/s rate steps 27% fast without settling;
     FF 0.48 ends them 9% fast in 0.29 s, at a roll angle overshoot of 7% (4% at 0.61).
   - **Pitch:** stiff (56–67/s²), lightly damped (3–4/s); I 5.01 every run, P 0.18–0.48 (median
-    0.29). The hand tune's pitch steps reached half the step.
+    0.29). The hand tune's pitch steps reached half the step. One `--step-test` run's 10°
+    nose-down step passed the Cobra's 18 m/s (`PSTAB_ASPD_MAX`) and ended the run on
+    `AirspeedHigh`, recovering to a hover; the next two held under it.
 
   | Loop | Hand tune (12.4 m/s): overshoot / rise / settle / final | Autotuned (14 m/s) |
   |---|---|---|
