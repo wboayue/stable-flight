@@ -86,12 +86,13 @@ impl QuadPlaneGuidanceConfig {
 ///    plane's, as ArduPilot flies its throttle and pitch from the plane controller with pitch
 ///    held to 0 below 3 m/s of ground speed,
 ///    ±[`forward_pitch_max_rad`](LiftTransitionConfig::forward_pitch_max_rad) while waiting,
-///    and twice it plus 2° on the ramp (`SLT_Transition::set_FW_roll_pitch`): its airspeed loop keeps the lift ramp from
-///    overspeeding, and its altitude loop trims the wing. Going back the pusher stops (PX4's
-///    `Standard::update_transition_state`) and the nose comes up while it slows less than
-///    `back_decel_mps2`, at most about 17° (PX4's back-transition deceleration,
-///    `FlightTaskTransition::computeBackTransitionTiltSetpoint`; ArduPilot decelerates at its
-///    `Q_TRANS_DECEL`): drag alone left the Alia at 31 m/s on its 28 s timeout (#496).
+///    and twice it plus 2° on the ramp (`SLT_Transition::set_FW_roll_pitch`): its airspeed
+///    loop keeps the lift ramp from overspeeding, and its altitude loop trims the wing. Going
+///    back the pusher stops (PX4's `Standard::update_transition_state`) and the nose comes up
+///    while it slows less than `back_decel_mps2`, at most about 17° (PX4's back-transition
+///    deceleration, `FlightTaskTransition::computeBackTransitionTiltSetpoint`; ArduPilot
+///    decelerates at its `Q_TRANS_DECEL`): drag alone left the Alia at 31 m/s on its 28 s
+///    timeout (#496).
 ///
 /// 4. A side that starts flying is primed: the plane guidance as the forward transition
 ///    begins and again entering `Plane` (through the transition its total energy control flies

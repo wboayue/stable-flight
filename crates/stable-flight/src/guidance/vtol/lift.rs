@@ -56,23 +56,24 @@ pub struct LiftTransitionConfig {
     /// How fast the pusher's thrust may rise through the forward transition, in thrust per
     /// second. Positive.
     pub pusher_slew_per_s: f32,
+    /// Most pitch, up or down, in rad, in `(0, π/2)`, while the forward transition waits on
+    /// airspeed at 3 m/s of ground speed or more (0 below); twice it plus 2° on the lift ramp,
+    /// as ArduPilot's `Q_TRAN_PIT_MAX` (`SLT_Transition::set_FW_roll_pitch`); always within
+    /// the plane guidance's own pitch limits. Higher: the wing's altitude and airspeed loops
+    /// get more pitch to work with while the lift rotors still carry it.
+    pub forward_pitch_max_rad: f32,
     /// How long the pusher's thrust blends to the plane guidance's at the handoff into plane
     /// flight, in seconds ([`ThrustHandoff`](super::ThrustHandoff)); 0 switches at once.
     pub handoff_s: f32,
     /// Bank past which a transition is cut short, in radians, in `(0, π]`: forward aborts to
     /// copter, back completes ([`LiftTransition::cut_short`]).
     pub roll_limit_rad: f32,
-    /// Most pitch, up or down, in rad, in `(0, π/2)`, while the forward transition waits on
-    /// airspeed with some ground speed; twice it plus 2° on the lift ramp, as ArduPilot's
-    /// `Q_TRAN_PIT_MAX` (`SLT_Transition::set_FW_roll_pitch`). Higher: the wing's altitude and
-    /// airspeed loops get more pitch to work with while the lift rotors still carry it.
-    pub forward_pitch_max_rad: f32,
 }
 
 impl LiftTransitionConfig {
     /// `Ok` when every field is in range: times, ramps, and the slew positive, airspeed, speed,
     /// height, deceleration and its gain, and handoff non-negative, all finite; the thrust in
-    /// `[0, 1]`, the roll limit in `(0, π]`, and the forward pitch limit in `(0, π/2)`.
+    /// `[0, 1]`, the forward pitch limit in `(0, π/2)`, and the roll limit in `(0, π]`.
     ///
     /// # Errors
     ///
@@ -94,16 +95,16 @@ impl LiftTransitionConfig {
             "in [0, 1]",
         )?;
         check_positive("pusher_slew_per_s", self.pusher_slew_per_s)?;
+        check(
+            "forward_pitch_max_rad",
+            self.forward_pitch_max_rad > 0.0 && self.forward_pitch_max_rad < FRAC_PI_2,
+            "in (0, π/2) rad",
+        )?;
         check_limit("handoff_s", self.handoff_s)?;
         check(
             "roll_limit_rad",
             self.roll_limit_rad > 0.0 && self.roll_limit_rad <= core::f32::consts::PI,
             "in (0, π] rad",
-        )?;
-        check(
-            "forward_pitch_max_rad",
-            self.forward_pitch_max_rad > 0.0 && self.forward_pitch_max_rad < FRAC_PI_2,
-            "in (0, π/2) rad",
         )
     }
 }
@@ -130,9 +131,9 @@ impl Default for LiftTransitionConfig {
             back_decel_i: 0.1,
             forward_thrust: 1.0,
             pusher_slew_per_s: 0.33,
+            forward_pitch_max_rad: DEFAULT_FORWARD_PITCH_MAX_RAD,
             handoff_s: 0.5,
             roll_limit_rad: 45.0_f32.to_radians(),
-            forward_pitch_max_rad: DEFAULT_FORWARD_PITCH_MAX_RAD,
         }
     }
 }

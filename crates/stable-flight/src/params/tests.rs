@@ -181,9 +181,9 @@ fn quadplane_tables_cover_every_config_field() {
         back_decel_i: _,
         forward_thrust: _,
         pusher_slew_per_s: _,
+        forward_pitch_max_rad: _,
         handoff_s: _,
         roll_limit_rad: _,
-        forward_pitch_max_rad: _,
     } = LiftTransitionConfig::default();
     let OffNoseSpeedConfig {
         speed_mps: _,
