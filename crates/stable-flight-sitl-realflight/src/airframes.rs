@@ -579,6 +579,37 @@ pub fn titan_cobra() -> Airframe<QuadPlaneGuidanceConfig, QuadPlaneStabilizerCon
                 ..Default::default()
             },
             plane: PlaneStabilizerConfig {
+                // The plane design's (`StagePlan::plane_design`), each gain the median of
+                // three RealFlight runs at 14 m/s and cruise thrust, roll FF apart (#536).
+                rate: PlaneRateControllerConfig {
+                    // Roll is all damping (15–19/s, no stiffness) on weak ailerons (25–31
+                    // rad/s² per unit moment), and in a bank the Cobra rolls further in, which
+                    // I holds. FF 0.48, not the design's 0.61: at 0.61 an 8°/s step ran 27%
+                    // fast and never settled, at 0.48 it rises in 260 ms and ends 9% fast;
+                    // 30° angle steps overshoot 7% (4% at 0.61). Higher FF: faster rate, more
+                    // overshoot in a rate step (#536).
+                    // TODO(#640): the design's FF, without the hand correction.
+                    roll: RateGains {
+                        p: 0.0138,
+                        i: 0.2025,
+                        ff: 0.48,
+                    },
+                    // Pitch is stiff (56–67/s² of weathercock), lightly damped (3–4/s), and
+                    // weak (16–18 rad/s²), so P and a large I hold it: rate steps rise in
+                    // 125 ms to 93%, 10° angle steps in 420 ms, 2% over (the hand tune's
+                    // reached half the step). Higher P: less damped; P spread 0.18–0.48
+                    // across the runs, I stayed 5.01 (#536).
+                    pitch: RateGains {
+                        p: 0.29,
+                        i: 5.01,
+                        ff: 0.1845,
+                    },
+                    ..PlaneRateControllerConfig::default()
+                },
+                // How fast the attitude loops close an angle error, in s: 30° roll steps rise
+                // in 640 ms, 10° pitch steps in 420 ms (#536). Lower: faster, until the rate
+                // loop can't follow.
+                time_constant_s: Vec2::new(0.396, 0.226),
                 // The scripts' plane legs' cruise, and where the plane autotune's hold flies:
                 // at `TRIM_ARSPD_CM`'s 12.4 m/s its 10° nose-up steps bled to 10.0 m/s, under
                 // `ARSPD_FBW_MIN` 11, and sank back to 0.56–0.68 of the step (#536).

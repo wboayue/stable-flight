@@ -23,7 +23,6 @@ loop-shaping design:
 core designs the roll and pitch loops from a fit flown in a tune hold, then checks them on
 attitude steps (`PlaneAutotune` with `StagePlan::plane_design`, `PlaneTuneHold`); it meets
 the plane spec on the sim. `just fly-plane-autotune` flies it in RealFlight and tuned the
-eXplora's plane side ([tailsitter.md](tailsitter.md#plane-autotune)); the Titan Cobra's and
-the X-Plane Alia's are planned
-([#536](https://github.com/wboayue/stable-flight/issues/536),
-[#537](https://github.com/wboayue/stable-flight/issues/537)).
+eXplora's plane side ([tailsitter.md](tailsitter.md#plane-autotune)) and the Titan Cobra's
+([quadplane.md](quadplane.md)); the X-Plane Alia's is planned
+([#537](https://github.com/wboayue/stable-flight/issues/537)).
