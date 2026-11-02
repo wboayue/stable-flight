@@ -87,6 +87,7 @@
 //! | `GUID_WND_MCOEF_X`, `_Y` | `wind.momentum_per_s` |
 //! | `GUID_WND_F_NSE` | `wind.force_noise_mps2` |
 //! | `GUID_WND_P_NSE` | `wind.process_noise_mps_per_rt_s` |
+//! | `GUID_WND_INIT_SD`, `GUID_WND_GATE`, `GUID_WND_AX_SPD` | `wind.initial_sd_mps`, `wind.gate_sigma`, `wind.max_axial_speed_mps` |
 //!
 //! # Plane stabilizer ([`PlaneStabilizerConfig`](crate::stabilizers::plane::PlaneStabilizerConfig))
 //!

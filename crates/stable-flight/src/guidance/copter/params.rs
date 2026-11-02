@@ -50,6 +50,9 @@ impl ParamTable for CopterGuidanceConfig {
         param!("GUID_WND_MCOEF_Y", wind.momentum_per_s.y),
         param!("GUID_WND_F_NSE", wind.force_noise_mps2),
         param!("GUID_WND_P_NSE", wind.process_noise_mps_per_rt_s),
+        param!("GUID_WND_INIT_SD", wind.initial_sd_mps),
+        param!("GUID_WND_GATE", wind.gate_sigma),
+        param!("GUID_WND_AX_SPD", wind.max_axial_speed_mps),
     ];
 }
 
@@ -306,6 +309,23 @@ mod metadata {
             WIND.param("GUID_WND_P_NSE", "How fast the estimated wind may change")
                 .with_units("m/s/s^0.5")
                 .at_least(0.0),
+            WIND.param(
+                "GUID_WND_INIT_SD",
+                "Wind estimate's uncertainty before its first measurement",
+            )
+            .with_units("m/s")
+            .above(0.0),
+            WIND.param(
+                "GUID_WND_GATE",
+                "Standard deviations past which a wind measurement is rejected",
+            )
+            .above(0.0),
+            WIND.param(
+                "GUID_WND_AX_SPD",
+                "Most climb or sink the wind estimate measures at",
+            )
+            .with_units("m/s")
+            .above(0.0),
         ];
     }
 }

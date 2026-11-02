@@ -182,7 +182,7 @@ fn an_axis_without_drag_leaves_its_wind_unknown_until_a_turn() {
     let unseen = estimator.estimate().expect("updated");
     check!(unseen.velocity_mps.norm() < 0.01, "{unseen:?}");
     check!(
-        unseen.sd_along_mps(Vec2::y()) > 0.9 * INITIAL_SD_MPS,
+        unseen.sd_along_mps(Vec2::y()) > 0.9 * DEFAULT_INITIAL_SD_MPS,
         "{unseen:?}"
     );
     check!(
@@ -242,25 +242,70 @@ fn needs_a_drag_model_and_skips_non_finite_ticks() {
     }
 }
 
-/// Once converged, one wild averaging period (past 5σ) is rejected.
+/// Once converged, one wild averaging period past `gate_sigma` is rejected; a gate wide
+/// enough takes it in. (gate in σ, rejected)
 #[test]
 fn rejects_an_outlier_past_the_gate() {
-    let config = momentum(0.3);
     let wind = Vec2::new(0.0, 2.0);
-    let mut estimator = WindEstimator::default();
-    for _ in 0..2500 {
-        estimator.update(
-            0.004,
-            &config,
-            &pushed(&config, 0.0, 0.0, Vec2::zeros(), wind),
+    for (gate_sigma, rejected) in [(DEFAULT_GATE_SIGMA, true), (1000.0, false)] {
+        let config = WindConfig {
+            gate_sigma,
+            ..momentum(0.3)
+        };
+        let mut estimator = WindEstimator::default();
+        for _ in 0..2500 {
+            estimator.update(
+                0.004,
+                &config,
+                &pushed(&config, 0.0, 0.0, Vec2::zeros(), wind),
+            );
+        }
+        let wild = pushed(&config, 0.0, 0.0, Vec2::zeros(), Vec2::new(0.0, 40.0));
+        for _ in 0..50 {
+            estimator.update(0.004, &config, &wild);
+        }
+        let estimate = estimator.estimate().expect("updated");
+        check!(
+            ((estimate.velocity_mps - wind).norm() < 0.01) == rejected,
+            "{gate_sigma}σ: {estimate:?}"
         );
     }
-    let wild = pushed(&config, 0.0, 0.0, Vec2::zeros(), Vec2::new(0.0, 40.0));
-    for _ in 0..50 {
-        estimator.update(0.004, &config, &wild);
+}
+
+/// The first measurement seeds the covariance from `initial_sd_mps`: along an axis with no
+/// drag, which no measurement reaches, the standard deviation after it is the initial one
+/// grown by one period's process noise. A reset seeds again from the config then given.
+#[test]
+fn the_first_measurement_seeds_the_configured_uncertainty() {
+    let along_x_only = |initial_sd_mps: f32| WindConfig {
+        momentum_per_s: Vec2::new(0.3, 0.0),
+        initial_sd_mps,
+        ..Default::default()
+    };
+    let one_period = |estimator: &mut WindEstimator, config: &WindConfig| {
+        let state = pushed(config, 0.0, 0.0, Vec2::zeros(), Vec2::zeros());
+        // 51 ticks: 50 of 4 ms sum just short of 0.2 s in f32.
+        for _ in 0..51 {
+            estimator.update(0.004, config, &state);
+        }
+        estimator
+            .estimate()
+            .expect("updated")
+            .sd_along_mps(Vec2::y())
+    };
+    let expected = |initial_sd_mps: f32| {
+        let q = DEFAULT_PROCESS_NOISE_MPS_PER_RT_S;
+        libm::sqrtf(initial_sd_mps * initial_sd_mps + q * q * 0.2)
+    };
+    let mut estimator = WindEstimator::default();
+    for initial_sd_mps in [2.0, DEFAULT_INITIAL_SD_MPS, 20.0] {
+        estimator.reset();
+        let sd_mps = one_period(&mut estimator, &along_x_only(initial_sd_mps));
+        check!(
+            (sd_mps - expected(initial_sd_mps)).abs() < 1e-3,
+            "{initial_sd_mps}: {sd_mps}"
+        );
     }
-    let estimate = estimator.estimate().expect("updated");
-    check!((estimate.velocity_mps - wind).norm() < 0.01, "{estimate:?}");
 }
 
 /// The update rate is a time, not a tick count: 2 ms and 10 ms ticks give the same estimate
@@ -287,9 +332,9 @@ fn updates_by_time_not_ticks_and_resets() {
     check!(reset.estimate() == None);
 }
 
-/// Every coefficient and noise is checked.
+/// Every coefficient, noise, and limit is checked.
 #[test]
-fn validate_rejects_bad_coefficients_and_noise() {
+fn validate_rejects_bad_coefficients_noise_and_limits() {
     // (field, config)
     let bad = [
         (
@@ -331,6 +376,27 @@ fn validate_rejects_bad_coefficients_and_noise() {
             "process_noise_mps_per_rt_s",
             WindConfig {
                 process_noise_mps_per_rt_s: -1.0,
+                ..Default::default()
+            },
+        ),
+        (
+            "initial_sd_mps",
+            WindConfig {
+                initial_sd_mps: 0.0,
+                ..Default::default()
+            },
+        ),
+        (
+            "gate_sigma",
+            WindConfig {
+                gate_sigma: f32::INFINITY,
+                ..Default::default()
+            },
+        ),
+        (
+            "max_axial_speed_mps",
+            WindConfig {
+                max_axial_speed_mps: f32::NAN,
                 ..Default::default()
             },
         ),
@@ -377,17 +443,34 @@ fn skips_ticks_tilted_past_45_degrees() {
     }
 }
 
-/// Ticks moving along the thrust axis faster than 1 m/s are skipped: climbing or sinking, the
-/// air along the thrust axis dominates and the drag model is a hover's.
+/// Ticks moving along the thrust axis faster than `max_axial_speed_mps` are skipped:
+/// climbing or sinking, the air along the thrust axis dominates and the drag model is a
+/// hover's.
 #[test]
-fn skips_ticks_climbing_or_sinking_past_1_mps() {
-    let config = momentum(0.3);
+fn skips_ticks_climbing_or_sinking_past_the_axial_limit() {
     let wind = Vec2::new(0.0, 2.0);
-    // (climb m/s, updated)
-    for (climb_mps, updated) in [(0.9, true), (-0.9, true), (1.1, false), (-1.1, false)] {
+    // (limit m/s, climb m/s, updated)
+    let cases = [
+        (DEFAULT_MAX_AXIAL_SPEED_MPS, 0.9, true),
+        (DEFAULT_MAX_AXIAL_SPEED_MPS, -0.9, true),
+        (DEFAULT_MAX_AXIAL_SPEED_MPS, 1.1, false),
+        (DEFAULT_MAX_AXIAL_SPEED_MPS, -1.1, false),
+        (0.5, 0.7, false),
+        (0.5, -0.4, true),
+        (2.0, 1.5, true),
+        (2.0, -2.1, false),
+    ];
+    for (max_axial_speed_mps, climb_mps, updated) in cases {
+        let config = WindConfig {
+            max_axial_speed_mps,
+            ..momentum(0.3)
+        };
         let state = climbing(&config, 0.0, 0.0, Vec2::zeros(), climb_mps, wind);
         let estimate = estimate_after(&config, &state, 1.0);
-        check!(estimate.is_some() == updated, "{climb_mps}");
+        check!(
+            estimate.is_some() == updated,
+            "{max_axial_speed_mps}: {climb_mps}"
+        );
     }
 }
 
