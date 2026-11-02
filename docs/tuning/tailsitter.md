@@ -460,9 +460,9 @@ eXplora (#418), `explora_transition_lap.csv --end land`, runs at 250 Hz around t
 | **1 m/s²** | 10.8°, 10.7° | 8° | 32–34 s |
 
 The leg brakes onto its point along a braking curve at `GUID_LAT_BRK_SHR` (0.7) of that rate,
-so the shaped target keeps up as the vehicle runs ahead of it (#466; higher arrives sooner but
-overshoots: 0.9 ran up to 3.5 m past on a sim quadplane leg): the sim's hover stops about 1 m past a point
-straight ahead of the handover. A tilt slew in its place (15°/s) held the roll to 16°, but in
+so the shaped target keeps up as the vehicle runs ahead of it (#466): the sim's hover stops
+about 1 m past a point straight ahead of the handover. A higher share arrives sooner but
+overshoots: 0.9 ran up to 3.5 m past on a sim quadplane leg. A tilt slew in its place (15°/s) held the roll to 16°, but in
 the sim it didn't stop a 3 m/s leg along the span from overshooting its speed and departing.
 
 **The hover's climb after the handover.** A ramp that hands over climbing leaves the hover
