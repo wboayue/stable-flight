@@ -117,8 +117,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fitted −0.72/s from three times its gains and the plane autotune stopped on
   `NoWingDesign` (#618).
 - Plane design (#635): an attitude pair that overshoots and keeps more than half of it raises
-  I, as a sag does, instead of slowing the time constant. A wing that rolls into its turns
-  held 30° steps 9–13% past and failed `Unverified` (RealFlight's Titan Cobra).
+  I, as a sag does, instead of slowing the time constant; one that swings back but still ends
+  more than half the overshoot limit past raises both. A wing that rolls into its turns held
+  30° steps 2–13% past and failed `Unverified` (RealFlight's Titan Cobra).
 - **Breaking (behavior):** the wind estimator counts each measurement by the drag's slope at
   the air its estimate predicts (or the measured air, if steeper), takes bluff drag on the
   airspeed with the climb counted in, and skips ticks climbing or sinking faster than 1 m/s.

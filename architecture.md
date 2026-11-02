@@ -1134,7 +1134,10 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     raises I as a sag does: a wing that rolls into its turns needs a steady aileron in a bank
     the fit from level flight doesn't see, and a slower τ only widens the error that holds it
     (RealFlight's Titan Cobra ended 30° steps 1.09–1.13 past; the sim quadplane at four times
-    its yaw-rate roll moment, 1.09, tunes in four pairs, #635).
+    its yaw-rate roll moment, 1.09, tunes in four pairs). An overshoot that swings back but
+    still ends more than half the limit past is part of each, and raises I and τ together: τ
+    alone took the swing out and left the offset (the Cobra at 14 m/s, 1.02–1.04; the sim at six
+    times, 1.03, #635).
   * On the sim it tunes the airplane, the eXplora, the Titan Cobra, and the Alia 250 to the
     plane spec (`tests/common/plane_spec.rs`) from their own gains, a third, and three times
     them: 42–60 s on the airplane and eXplora, 70–90 s on the Cobra, 540–575 s on the Alia,

@@ -64,17 +64,22 @@ enum Subject {
     Plane,
     Explora,
     Cobra,
-    /// The quadplane with [`ROLLING_IN_C_ROLL_R_SCALE`] times its yaw-rate roll moment: in a
-    /// bank it rolls further in, so holding the bank takes a steady aileron the fit from level
-    /// flight doesn't see, as RealFlight's Titan Cobra does (#635).
-    CobraRollingIn,
+    /// The quadplane with this many times its yaw-rate roll moment (`c_roll_r`): in a bank it
+    /// rolls further in, so holding the bank takes a steady aileron the fit from level flight
+    /// doesn't see, as RealFlight's Titan Cobra does (#635).
+    CobraRollingIn(f32),
     Alia,
 }
 
-/// What [`Subject::CobraRollingIn`] scales the quadplane's `c_roll_r` by: the design's first
-/// 30° roll pair then ends 1.09 past the step with 0.002 of it given back, where RealFlight's
-/// Cobra ended 1.09–1.13 and gave back 0.01–0.03 (#635).
-const ROLLING_IN_C_ROLL_R_SCALE: f32 = 4.0;
+/// [`Subject::CobraRollingIn`]'s holding past: the design's first 30° roll pair ends 1.09 past
+/// with 0.002 given back, as RealFlight's Cobra ended 1.09–1.13 at 12.4 m/s and gave back
+/// 0.01–0.03 (#635).
+const HOLDS_PAST_C_ROLL_R_SCALE: f32 = 4.0;
+
+/// [`Subject::CobraRollingIn`]'s swinging back but ending past: its pairs give back half their
+/// overshoot and end 1.03 past, as RealFlight's Cobra's did at 14 m/s (0.04–0.07 over, ending
+/// 1.02–1.04) (#635).
+const ENDS_PAST_C_ROLL_R_SCALE: f32 = 6.0;
 
 const SUBJECTS: [Subject; 4] = [
     Subject::Plane,
@@ -88,7 +93,7 @@ impl Subject {
         match self {
             Subject::Plane => airframes::plane().stabilizer,
             Subject::Explora => airframes::explora().stabilizer.plane,
-            Subject::Cobra | Subject::CobraRollingIn => airframes::quadplane().stabilizer.plane,
+            Subject::Cobra | Subject::CobraRollingIn(_) => airframes::quadplane().stabilizer.plane,
             Subject::Alia => airframes::alia250().stabilizer.plane,
         }
     }
@@ -103,7 +108,7 @@ impl Subject {
                 airframes::explora().guidance.plane.cruise_thrust,
                 FlightRegime::Copter,
             ),
-            Subject::Cobra | Subject::CobraRollingIn => (
+            Subject::Cobra | Subject::CobraRollingIn(_) => (
                 airframes::quadplane().guidance.plane.cruise_thrust,
                 FlightRegime::Copter,
             ),
@@ -174,7 +179,7 @@ fn tune_from(
                 (after_s, start),
             )
         }
-        Subject::Cobra | Subject::CobraRollingIn | Subject::Alia => {
+        Subject::Cobra | Subject::CobraRollingIn(_) | Subject::Alia => {
             let airframe = in_flight_quadplane(subject);
             let plant = QuadPlanePlant::clean(airframe);
             let lead: Box<dyn Commander> = Box::new(north_line(
@@ -504,7 +509,7 @@ fn spec_misses(subject: Subject, config: PlaneStabilizerConfig) -> Vec<String> {
             airframe.stabilizer.plane = config;
             misses_on(&TailsitterPlant::clean(airframe), steps, max_overshoot)
         }
-        Subject::Cobra | Subject::CobraRollingIn | Subject::Alia => {
+        Subject::Cobra | Subject::CobraRollingIn(_) | Subject::Alia => {
             let mut airframe = in_flight_quadplane(subject);
             airframe.stabilizer.plane = config;
             misses_on(&QuadPlanePlant::clean(airframe), steps, max_overshoot)
@@ -519,8 +524,8 @@ fn in_flight_quadplane(subject: Subject) -> airframes::QuadPlaneAirframe {
         Subject::Alia => airframes::alia250(),
         _ => airframes::quadplane(),
     };
-    if matches!(subject, Subject::CobraRollingIn) {
-        airframe.model.wing.aero.c_roll_r *= ROLLING_IN_C_ROLL_R_SCALE;
+    if let Subject::CobraRollingIn(scale) = subject {
+        airframe.model.wing.aero.c_roll_r *= scale;
     }
     airframe.guidance.transition.min_height_m = 0.0;
     airframe.guidance.transition.plane_min_height_m = 0.0;
@@ -576,11 +581,27 @@ fn the_design_tunes_the_titan_cobra_to_the_spec() {
     design_converges(Subject::Cobra);
 }
 
-/// A held bank that needs a steady aileron overshoots and stays there; the design raises I
-/// rather than slowing the time constant, which only widens the offset (#635).
+/// A held bank that needs a steady aileron overshoots and stays past the target; the design
+/// raises I rather than slowing the time constant, which only widens the offset (#635).
 #[test]
-fn the_design_tunes_a_cobra_that_rolls_into_its_turns_to_the_spec() {
-    design_converges(Subject::CobraRollingIn);
+fn the_design_tunes_a_cobra_that_holds_past_its_bank_to_the_spec() {
+    design_converges(Subject::CobraRollingIn(HOLDS_PAST_C_ROLL_R_SCALE));
+}
+
+/// An overshoot part swing, part offset: the design raises I and slows the time constant
+/// together, where a slower time constant alone left the offset. From a third of its gains it
+/// lands 0.057 over on the spec's step, so only its own are held (#635).
+#[test]
+fn the_design_tunes_a_cobra_that_ends_past_its_bank_to_the_spec() {
+    let subject = Subject::CobraRollingIn(ENDS_PAST_C_ROLL_R_SCALE);
+    let run = design_run(subject, subject.plane_config());
+    check!(
+        run.events.last() == Some(&AutotuneEvent::Complete),
+        "{:?}",
+        run.events.last()
+    );
+    let misses = spec_misses(subject, run.config.0);
+    check!(misses.is_empty(), "{misses:?}");
 }
 
 #[test]
