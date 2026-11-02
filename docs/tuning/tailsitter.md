@@ -308,7 +308,7 @@ with no feedforward.
 | `GUID_WND_F_NSE` | `hover.wind.force_noise_mps2` | specific force noise of a 0.2 s mean | 0.45 m/s² |
 | `GUID_WND_P_NSE` | `hover.wind.process_noise_mps_per_rt_s` | how fast the wind may change | 0.1 m/s/√s |
 | `GUID_WND_AX_SPD` | `hover.wind.max_axial_speed_mps` | most climb or sink measured at | 1 m/s |
-| `GUID_WND_INIT_SD`, `GUID_WND_GATE` | `hover.wind.initial_sd_mps`, `gate_sigma` | uncertainty before the first measurement; σ past which one is rejected | 10 m/s, 5 |
+| `GUID_WND_INIT_SD`, `GUID_WND_GATE` | `hover.wind.initial_sd_mps`, `gate_sigma` | uncertainty before the first measurement (applies from the next arming on the ground); σ past which one is rejected | 10 m/s, 5 |
 
 To fit them:
 

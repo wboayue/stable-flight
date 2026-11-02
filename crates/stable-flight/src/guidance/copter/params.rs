@@ -311,7 +311,7 @@ mod metadata {
                 .at_least(0.0),
             WIND.param(
                 "GUID_WND_INIT_SD",
-                "Wind estimate's uncertainty before its first measurement",
+                "Wind estimate's uncertainty before its first measurement; from next arming",
             )
             .with_units("m/s")
             .above(0.0),

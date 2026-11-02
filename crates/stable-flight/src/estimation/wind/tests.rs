@@ -274,7 +274,8 @@ fn rejects_an_outlier_past_the_gate() {
 
 /// The first measurement seeds the covariance from `initial_sd_mps`: along an axis with no
 /// drag, which no measurement reaches, the standard deviation after it is the initial one
-/// grown by one period's process noise. A reset seeds again from the config then given.
+/// grown by one period's process noise. A reset seeds again from the config then given; a
+/// changed config without one leaves the covariance to grow from where it is.
 #[test]
 fn the_first_measurement_seeds_the_configured_uncertainty() {
     let along_x_only = |initial_sd_mps: f32| WindConfig {
@@ -306,6 +307,12 @@ fn the_first_measurement_seeds_the_configured_uncertainty() {
             "{initial_sd_mps}: {sd_mps}"
         );
     }
+    // Seeded at 20 m/s; 2 m/s without a reset only adds a period's process noise.
+    let sd_mps = one_period(&mut estimator, &along_x_only(2.0));
+    check!(
+        (sd_mps - expected(expected(20.0))).abs() < 1e-3,
+        "unreset: {sd_mps}"
+    );
 }
 
 /// The update rate is a time, not a tick count: 2 ms and 10 ms ticks give the same estimate
