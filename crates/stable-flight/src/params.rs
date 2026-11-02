@@ -157,6 +157,7 @@
 //! | `TRAN_FW_THR`, `TRAN_PSH_SLEW` | `forward_thrust`, `pusher_slew_per_s` |
 //! | `TRAN_HANDOFF` | `handoff_s` |
 //! | `TRAN_ROLL_MAX` | `roll_limit_rad` |
+//! | `TRAN_FW_PIT_MAX` | `forward_pitch_max_rad` |
 //!
 //! # Examples
 //!

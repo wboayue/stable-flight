@@ -3,6 +3,7 @@ use assert2::check;
 use nalgebra::UnitQuaternion;
 
 use super::*;
+use crate::guidance::vtol::DEFAULT_FORWARD_PITCH_MAX_RAD;
 use crate::{AttitudeCommand, LandCommand, Vec2, Vec3, WaypointCommand};
 
 const DT: f32 = 0.01;
@@ -246,6 +247,48 @@ fn forward_pitch_follows_the_plane_within_the_transition_limits() {
     }
 }
 
+/// The forward transition's pitch limits follow the configured
+/// [`forward_pitch_max_rad`](LiftTransitionConfig::forward_pitch_max_rad): it waiting, twice it
+/// plus 2° on the ramp, still 0 below 3 m/s. (case, limit, state, ramping, expected pitch) in
+/// degrees, the pitch stick full up.
+#[test]
+fn forward_pitch_limits_follow_the_configured_max() {
+    let stick = ControlInput::Attitude(AttitudeCommand {
+        throttle: 0.6,
+        pitch: 1.0,
+        ..Default::default()
+    });
+    let cases = [
+        ("still", 5.0, hovering(), false, 0.0),
+        ("waiting", 5.0, at(HIGH_M, 5.0), false, 5.0),
+        ("ramping", 5.0, fast(), true, 12.0),
+        ("waiting, tighter", 1.5, at(HIGH_M, 5.0), false, 1.5),
+        ("ramping, tighter", 1.5, fast(), true, 5.0),
+    ];
+    for (case, max_deg, state, ramping, pitch_deg) in cases {
+        let config = QuadPlaneGuidanceConfig {
+            transition: LiftTransitionConfig {
+                forward_pitch_max_rad: f32::to_radians(max_deg),
+                ..LiftTransitionConfig::default()
+            },
+            ..QuadPlaneGuidanceConfig::default()
+        };
+        let mut guidance = QuadPlaneGuidance::new(config);
+        guidance.prime(&at(0.0, 0.0));
+        guidance.guide(DT, FlightRegime::Plane, &stick, &hovering());
+        if ramping {
+            guidance.guide(DT, FlightRegime::Plane, &stick, &fast());
+        }
+        let blend = blend_of(guidance.guide(DT, FlightRegime::Plane, &stick, &state));
+        check!((blend.lift_share < 1.0) == ramping, "{case}");
+        check!(
+            (blend.plane.pitch_rad.to_degrees() - pitch_deg).abs() < 1e-3,
+            "{case}: {}°",
+            blend.plane.pitch_rad.to_degrees()
+        );
+    }
+}
+
 /// The forward transition hands its pitch limits to the plane guidance's energy control:
 /// waiting on airspeed pinned nose-down at the 3° limit, its pitch integral doesn't wind, so
 /// the lift ramp's wider 8° limit isn't taken at once by the windup (#505).
@@ -275,7 +318,11 @@ fn forward_transition_keeps_the_energy_control_within_its_limits() {
         &toward,
         &at(HIGH_M, 5.0),
     ));
-    assert_relative_eq!(waiting.plane.pitch_rad, -WAIT_PITCH_MAX_RAD, epsilon = 1e-6);
+    assert_relative_eq!(
+        waiting.plane.pitch_rad,
+        -DEFAULT_FORWARD_PITCH_MAX_RAD,
+        epsilon = 1e-6
+    );
     // The gate starts the ramp a tick after it's reached.
     let ramping = blend_of(fly(
         &mut guidance,
