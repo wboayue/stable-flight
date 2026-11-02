@@ -239,6 +239,18 @@ about −12…+5°.
   - The nose swings in a waypoint descent while `sp_pitch` holds: lower `GUID_DESC_MAX`.
   - Descents take too long: raise it in 0.5 m/s steps and check the swing again.
 
+### Touchdown
+
+A land disarms once the vehicle, after sinking faster than 0.2 m/s, has held its vertical speed
+within `stopped_mps` (0.1 m/s) for `hold_s` (1 s): `TouchdownConfig`, set in code on
+`FailsafeConfig::touchdown` for link flights and `WaypointFollower::with_touchdown` for
+routes; it has no params. PX4 waits the same 1 s (`LNDMC_Z_VEL_MAX` is its speed band).
+
+- **Symptoms:**
+  - The motors keep running on the ground after a land: a bouncing gear or a noisy
+    `climb_mps` keeps leaving the band. Widen `stopped_mps` (it stays below 0.2 m/s).
+  - It disarms just above the ground, during a slow final sink or a pause: lengthen `hold_s`.
+
 ## Hover in wind
 
 A check after step 5, not a step of its own: fly `flights/explora_descent.csv` with
@@ -591,6 +603,7 @@ plane, transitions back, hovers over the start, and lands there. It prints the g
 | Nose drops in a descent | `GUID_THR_MIN`, `GUID_SINK_LIM`/`_GAIN`, `STAB_RATE_PIT_I` |
 | Nose swings in a waypoint descent, `sp_pitch` steady | `GUID_DESC_MAX` down |
 | Nose drops as a waypoint descent starts, `sp_thrust` at the floor | `GUID_DESC_ACC` down |
+| Motors run on after a land, or it disarms just above the ground | `TouchdownConfig` ([touchdown](#touchdown)) |
 | Hover in wind pinned at the tilt cap, drifting | heading: a wingtip into the wind, `GUID_WND_HDG_SPD` ([hover in wind](#hover-in-wind)) |
 | Wing sinks right after the forward transition | `TRAN_ASPD_MIN`, `TRAN_FW_THR` |
 | Large climb after the back request | `TRAN_VT_THR` down, `TRAN_VT_RATE` slower |

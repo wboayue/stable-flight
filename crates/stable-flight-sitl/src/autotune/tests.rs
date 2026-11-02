@@ -285,6 +285,27 @@ fn the_flight_home_hovers_back_within_its_radius() {
     }
 }
 
+/// The hover back waits on the script's plane altitude acceptance: 20 m off the home altitude
+/// hovers within a 25 m acceptance and flies the leg on within the default 10 m.
+#[test]
+fn the_flight_home_hovers_back_within_the_scripts_altitude_acceptance() {
+    for (acceptance_m, hovering) in [(None, false), (Some(25.0), true)] {
+        let mut script = plane_script();
+        if let Some(acceptance_m) = acceptance_m {
+            script = script.with_altitude_acceptance(FlightRegime::Plane, acceptance_m);
+        }
+        let (mut commander, switch) = PlaneTuneFlight::new(script, HOME);
+        switch.hold(HOLD());
+        commander.next_command(0.004, &cruising(0.0, 100.0));
+        switch.finish();
+        let command = commander.next_command(0.004, &cruising(0.0, 50.0));
+        check!(
+            (command.regime == FlightRegime::Copter) == hovering,
+            "acceptance {acceptance_m:?} m"
+        );
+    }
+}
+
 /// The home leg flies the line through the start back and forth: north of the start it heads
 /// south, keeps south past the start up to the overfly, then turns back north; over the start
 /// and still, it heads north: (north positions flown, leg direction after the last).

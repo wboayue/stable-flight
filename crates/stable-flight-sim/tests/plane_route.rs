@@ -4,7 +4,7 @@
 mod common;
 
 use assert2::check;
-use stable_flight::commanders::waypoint::PLANE_ALTITUDE_ACCEPTANCE_M;
+use stable_flight::commanders::waypoint::DEFAULT_PLANE_ALTITUDE_ACCEPTANCE_M;
 use stable_flight::commanders::{RouteEnd, WaypointFollower};
 use stable_flight::{Vec2, WaypointCommand};
 use stable_flight_sim::airframes;
@@ -50,7 +50,7 @@ fn waits_on_a_waypoint_too_steep_to_climb_to_in_a_loiter() {
     let follower = WaypointFollower::new(route)
         .expect("non-empty")
         .with_route_end(RouteEnd::Hold)
-        .with_altitude_acceptance(PLANE_ALTITUDE_ACCEPTANCE_M)
+        .with_altitude_acceptance(DEFAULT_PLANE_ALTITUDE_ACCEPTANCE_M)
         .with_wait_for_altitude(true);
     let mut flight_loop = plane_loop(&plant, follower);
 
@@ -76,7 +76,7 @@ fn waits_on_a_waypoint_too_steep_to_climb_to_in_a_loiter() {
         "{from_steep_m} m from the steep leg's waypoint while waiting on it"
     );
     check!(
-        advanced_off_m.abs() <= PLANE_ALTITUDE_ACCEPTANCE_M,
+        advanced_off_m.abs() <= DEFAULT_PLANE_ALTITUDE_ACCEPTANCE_M,
         "advanced {advanced_off_m} m off its altitude"
     );
     check!(flight_loop.commander().is_complete(), "route not complete");

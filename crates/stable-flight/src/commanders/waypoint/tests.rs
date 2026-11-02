@@ -253,6 +253,42 @@ fn land_descends_on_the_last_waypoint_and_disarms_on_touchdown() {
     }
 }
 
+/// A configured 2 s touchdown hold reaches the land's detector: 1.5 s stopped after the
+/// descent stays armed, 2.1 s disarms.
+#[test]
+fn land_disarms_after_the_configured_touchdown_hold() {
+    // (seconds stopped after the descent, armed)
+    for (stopped_s, armed) in [(1.5, true), (2.1, false)] {
+        let mut follower = WaypointFollower::new([wp(0.0, 0.0)])
+            .expect("non-empty")
+            .with_route_end(RouteEnd::Land)
+            .with_touchdown(TouchdownConfig {
+                hold_s: 2.0,
+                ..TouchdownConfig::default()
+            })
+            .expect("valid");
+        let sinking = |vertical_speed_mps| VehicleState {
+            velocity_mps: Vec3::new(0.0, 0.0, vertical_speed_mps),
+            ..Default::default()
+        };
+        follower.next_command(0.1, &sinking(0.0));
+        follower.next_command(0.1, &sinking(-0.7));
+        let command = follower.next_command(stopped_s, &sinking(0.0));
+        check!(command.arm == armed, "stopped {stopped_s} s");
+    }
+}
+
+#[test]
+fn with_touchdown_rejects_an_invalid_config() {
+    let follower = WaypointFollower::new([wp(0.0, 0.0)])
+        .expect("non-empty")
+        .with_touchdown(TouchdownConfig {
+            hold_s: 0.0,
+            ..TouchdownConfig::default()
+        });
+    check!(follower.is_err());
+}
+
 #[test]
 fn loop_never_completes() {
     let mut follower = WaypointFollower::new([wp(0.0, 0.0), wp(10.0, 0.0)]).expect("non-empty");

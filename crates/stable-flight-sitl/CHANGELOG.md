@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `autotune::PlaneTuneFlight` hovers back within the script's plane altitude acceptance
+  (`ScriptCommander::with_altitude_acceptance`), not always the 10 m default (#625).
 - **Breaking:** `autotune::is_inverted` takes the frame the stabilizer probes in
   (`Tunable::probe_frame`; pass `flight_loop.stabilizer().probe_frame()`) and reads the tilt
   there, so a tailsitter's nose-up hover reads level, where the body frame sat at 90° and a
