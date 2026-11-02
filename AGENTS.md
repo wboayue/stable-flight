@@ -65,7 +65,7 @@ just fly-companion | link-pilot                # copter flown from the link; lin
 just fly-tailsitter | fly-tailsitter-auto | fly-tailsitter-companion  # RealFlight eXplora: joystick, script, link
 just fly-quadplane-auto                        # RealFlight Titan Cobra: script
 just fly-plane-autotune                        # RealFlight eXplora (--airframe titan-cobra): plane-side autotune from a tune hold at 100 m, home, land
-just fly-xplane | fly-xplane-auto | fly-xplane-companion | fly-xplane-autotune  # X-Plane Alia 250: joystick, script, link, hover autotune
+just fly-xplane | fly-xplane-auto | fly-xplane-companion | fly-xplane-autotune | fly-xplane-plane-autotune  # X-Plane Alia 250: joystick, script, link, hover autotune, plane autotune
 just capture | capture-xplane | xplane-sweep   # raw state → CSV (RealFlight, X-Plane); X-Plane engine sweep
 just plot <csv> <out> | just gen-figure-eight # plot_flight (a waypoint script; --record: a recorder CSV as time series), generate_figure_eight
 just tag <crate> <version> | just versions    # push a <crate>-v<version> tag; list tags

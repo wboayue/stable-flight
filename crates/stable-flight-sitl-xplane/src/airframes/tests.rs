@@ -25,30 +25,42 @@ fn deflections(command: &ActuatorCommand) -> Vec<(usize, f32)> {
 }
 
 /// The plane side and transitions are the sim Alia's, which #392 tuned on a model fitted to
-/// this aircraft: its gains (the rate feedforward to the 4th digit, worked out from the model
-/// there), limits, and total energy control. X-Plane's own is the cruise thrust, the pusher it
-/// held level at trim (the sim works its own out from the model), and the pitch rate I that
-/// holds pitch in a turn (#547).
+/// this aircraft: its limits, yaw gains (the rate feedforward to the 4th digit, worked out from
+/// the model there), and total energy control. X-Plane's own is the cruise thrust, the pusher
+/// it held level at trim (the sim works its own out from the model), and the roll and pitch
+/// rate gains and attitude time constants its plane design tuned (#537).
 #[test]
 fn alia250_flies_the_sim_alias_plane_side() {
     let sim = stable_flight_sim::airframes::alia250();
     let xplane = alia250();
 
     let (mut ours, theirs) = (xplane.stabilizer.plane, sim.stabilizer.plane);
-    check!(ours.rate.pitch.i == 1.0);
-    ours.rate.pitch.i = theirs.rate.pitch.i;
-    for (axis, (ff, sim_ff)) in [
-        (ours.rate.roll.ff, theirs.rate.roll.ff),
-        (ours.rate.pitch.ff, theirs.rate.pitch.ff),
-        (ours.rate.yaw.ff, theirs.rate.yaw.ff),
-    ]
-    .into_iter()
-    .enumerate()
-    {
-        check!((ff - sim_ff).abs() < 1e-3, "axis {axis}: {ff} vs {sim_ff}");
-    }
-    ours.rate.roll.ff = theirs.rate.roll.ff;
-    ours.rate.pitch.ff = theirs.rate.pitch.ff;
+    check!(
+        ours.rate.roll
+            == RateGains {
+                p: 0.0138,
+                i: 2.56,
+                ff: 2.81
+            }
+    );
+    check!(
+        ours.rate.pitch
+            == RateGains {
+                p: 0.482,
+                i: 10.0,
+                ff: 0.859
+            }
+    );
+    check!(ours.time_constant_s == Vec2::new(0.707, 0.876));
+    ours.rate.roll = theirs.rate.roll;
+    ours.rate.pitch = theirs.rate.pitch;
+    ours.time_constant_s = theirs.time_constant_s;
+    check!(
+        (ours.rate.yaw.ff - theirs.rate.yaw.ff).abs() < 1e-3,
+        "{} vs {}",
+        ours.rate.yaw.ff,
+        theirs.rate.yaw.ff
+    );
     ours.rate.yaw.ff = theirs.rate.yaw.ff;
     check!(ours == theirs);
 

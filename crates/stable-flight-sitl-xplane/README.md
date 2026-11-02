@@ -93,6 +93,14 @@ cargo run --release -p stable-flight-sitl-xplane --example copter-companion-xpla
 # Or: just fly-xplane-autotune --step-test
 cargo run --release -p stable-flight-sitl-xplane --example copter-autotune-xplane -- --step-test
 
+# Autotune of the Alia's cruise side (the plane controllers): flies into plane flight 6 km
+# offshore from Oceano (flights/alia_plane_tune.csv), tunes roll, then pitch, from an attitude
+# hold by the plane design, prints the gains as an airframes.rs snippet, flies home, transitions
+# back, and lands on the spawn. --step-test appends step tests; --stages none --step-test
+# measures the committed gains. About 25 minutes a run. Reset X-Plane's flight before each run.
+# Or: just fly-xplane-plane-autotune --step-test
+cargo run --release -p stable-flight-sitl-xplane --example plane-autotune-xplane -- --step-test
+
 # A multirotor's lift engines on the runway, parking brake off: the yaw sign of each diagonal,
 # the liftoff throttle, the motor lag, and an airborne roll, pitch, and yaw pulse.
 # Or: just xplane-sweep --output sweep.csv
