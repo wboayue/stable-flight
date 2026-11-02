@@ -221,9 +221,9 @@ impl WingDesign {
         if let Err(error) = config.validate() {
             panic!("invalid WingDesignConfig: {error}");
         }
-        // A stiff axis flies on its stiffness whatever the damping: the eXplora's pitch fits
-        // 0.89/s of damping from its own gains and −0.72/s from three times them, its
-        // stiffness 62/s² and 96/s² (#618).
+        // On a stiff axis the fit trades damping for stiffness, so a damping at or below 0
+        // reads as none: the eXplora's pitch fits 0.89/s of damping from its own gains and
+        // −0.72/s from three times them, its stiffness 62/s² and 96/s² (#618).
         let stiff = model.stiffness_per_s2 > 0.0;
         let usable = model.control_radps2 > 0.0
             && (model.damping_per_s > 0.0 || stiff)
