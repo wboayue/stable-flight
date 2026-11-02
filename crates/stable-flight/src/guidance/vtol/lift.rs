@@ -2,10 +2,11 @@
 //! stays level and flies its lift rotors and its wing at once, trading lift between them.
 
 use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
-use crate::math::assert_dt;
+use crate::math::{DEG, assert_dt};
 use crate::{
     Configurable, FlightMode, FlightModeReport, FlightRegime, ModeRefusal, Vec3, VehicleState,
 };
+use core::f32::consts::FRAC_PI_2;
 
 use super::ForwardGate;
 
@@ -13,8 +14,12 @@ mod params;
 #[cfg(test)]
 mod tests;
 
-/// [`LiftTransition`] settings, and the pusher, handoff, and roll limit a quadplane guidance
-/// flies the transitions with ([`QuadPlaneGuidance`](super::QuadPlaneGuidance)).
+/// Default [`LiftTransitionConfig::forward_pitch_max_rad`], in rad: ArduPilot's
+/// `Q_TRAN_PIT_MAX` default.
+pub const DEFAULT_FORWARD_PITCH_MAX_RAD: f32 = 3.0 * DEG;
+
+/// [`LiftTransition`] settings, and the pusher, handoff, pitch, and roll limits a quadplane
+/// guidance flies the transitions with ([`QuadPlaneGuidance`](super::QuadPlaneGuidance)).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LiftTransitionConfig {
     /// The airspeed that starts the forward lift ramp, in m/s.
@@ -57,12 +62,17 @@ pub struct LiftTransitionConfig {
     /// Bank past which a transition is cut short, in radians, in `(0, π]`: forward aborts to
     /// copter, back completes ([`LiftTransition::cut_short`]).
     pub roll_limit_rad: f32,
+    /// Most pitch, up or down, in rad, in `(0, π/2)`, while the forward transition waits on
+    /// airspeed with some ground speed; twice it plus 2° on the lift ramp, as ArduPilot's
+    /// `Q_TRAN_PIT_MAX` (`SLT_Transition::set_FW_roll_pitch`). Higher: the wing's altitude and
+    /// airspeed loops get more pitch to work with while the lift rotors still carry it.
+    pub forward_pitch_max_rad: f32,
 }
 
 impl LiftTransitionConfig {
     /// `Ok` when every field is in range: times, ramps, and the slew positive, airspeed, speed,
     /// height, deceleration and its gain, and handoff non-negative, all finite; the thrust in
-    /// `[0, 1]` and the roll limit in `(0, π]`.
+    /// `[0, 1]`, the roll limit in `(0, π]`, and the forward pitch limit in `(0, π/2)`.
     ///
     /// # Errors
     ///
@@ -89,6 +99,11 @@ impl LiftTransitionConfig {
             "roll_limit_rad",
             self.roll_limit_rad > 0.0 && self.roll_limit_rad <= core::f32::consts::PI,
             "in (0, π] rad",
+        )?;
+        check(
+            "forward_pitch_max_rad",
+            self.forward_pitch_max_rad > 0.0 && self.forward_pitch_max_rad < FRAC_PI_2,
+            "in (0, π/2) rad",
         )
     }
 }
@@ -97,7 +112,8 @@ impl Default for LiftTransitionConfig {
     /// ArduPilot's 9 m/s airspeed gate and 5 s lift ramp, PX4's 15 s forward timeout, 3 s back
     /// ramp, 5 m/s back speed, 10 s back timeout, 2 m/s² back deceleration at gain 0.1, and
     /// pusher thrust up to full rising at 0.33/s, and 5 m of height, no plane minimum height
-    /// (PX4's `VT_FW_MIN_ALT`), a 0.5 s handoff, and a 45° roll limit (as
+    /// (PX4's `VT_FW_MIN_ALT`), a 0.5 s handoff, ArduPilot's 3° forward pitch limit, and a 45°
+    /// roll limit (as
     /// [`TransitionConfig`](super::TransitionConfig)); see [`LiftTransition`]'s
     /// [sources](LiftTransition#sources).
     fn default() -> Self {
@@ -116,6 +132,7 @@ impl Default for LiftTransitionConfig {
             pusher_slew_per_s: 0.33,
             handoff_s: 0.5,
             roll_limit_rad: 45.0_f32.to_radians(),
+            forward_pitch_max_rad: DEFAULT_FORWARD_PITCH_MAX_RAD,
         }
     }
 }

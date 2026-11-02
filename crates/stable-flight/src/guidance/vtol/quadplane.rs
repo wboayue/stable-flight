@@ -84,8 +84,9 @@ impl QuadPlaneGuidanceConfig {
 ///    The hover side holds altitude with the copter's altitude loop (ArduPilot holds it through
 ///    its airspeed wait, `SLT_Transition::update`). Going forward the pusher and pitch are the
 ///    plane's, as ArduPilot flies its throttle and pitch from the plane controller with pitch
-///    held to 0 below 3 m/s of ground speed, ±3° while waiting, and ±8° on the ramp
-///    (`SLT_Transition::set_FW_roll_pitch`): its airspeed loop keeps the lift ramp from
+///    held to 0 below 3 m/s of ground speed,
+///    ±[`forward_pitch_max_rad`](LiftTransitionConfig::forward_pitch_max_rad) while waiting,
+///    and twice it plus 2° on the ramp (`SLT_Transition::set_FW_roll_pitch`): its airspeed loop keeps the lift ramp from
 ///    overspeeding, and its altitude loop trims the wing. Going back the pusher stops (PX4's
 ///    `Standard::update_transition_state`) and the nose comes up while it slows less than
 ///    `back_decel_mps2`, at most about 17° (PX4's back-transition deceleration,
@@ -144,16 +145,12 @@ pub struct QuadPlaneGuidance {
     hold_altitude_m: f32,
 }
 
-/// Largest pitch, up or down, while the forward transition waits on airspeed: ArduPilot's
-/// `Q_TRAN_PIT_MAX`.
-const WAIT_PITCH_MAX_RAD: f32 = 3.0 * DEG;
+/// Added to the forward pitch limit before it doubles on the lift ramp, in rad: ArduPilot's
+/// `2 (Q_TRAN_PIT_MAX + 1°)` (`SLT_Transition::set_FW_roll_pitch`).
+const RAMP_PITCH_MARGIN_RAD: f32 = 1.0 * DEG;
 
-/// Largest pitch, up or down, on the forward lift ramp: ArduPilot's `2 (Q_TRAN_PIT_MAX + 1°)`
-/// (`SLT_Transition::set_FW_roll_pitch`).
-const RAMP_PITCH_MAX_RAD: f32 = 8.0 * DEG;
-
-/// Below this ground speed the forward transition holds pitch at 0, in m/s (ArduPilot's
-/// `SLT_Transition::set_FW_roll_pitch`).
+/// Below this ground speed the forward transition holds pitch at 0, in m/s: until then the
+/// ground speed is too small to fly from (ArduPilot's `SLT_Transition::set_FW_roll_pitch`).
 const LEVEL_BELOW_MPS: f32 = 3.0;
 
 impl QuadPlaneGuidance {
@@ -341,13 +338,13 @@ impl QuadPlaneGuidance {
 }
 
 /// The forward transition's pitch limit, up or down: ArduPilot's transition limits, 0 below
-/// [`LEVEL_BELOW_MPS`] of ground speed, then [`WAIT_PITCH_MAX_RAD`] while the lift rotors carry
-/// it all, [`RAMP_PITCH_MAX_RAD`] on the ramp (`SLT_Transition::set_FW_roll_pitch`).
-fn forward_pitch_limit_rad(lift_share: f32, state: &VehicleState) -> f32 {
+/// [`LEVEL_BELOW_MPS`] of ground speed, then `max_rad` while the lift rotors carry it all,
+/// `2 (max_rad + 1°)` on the ramp (`SLT_Transition::set_FW_roll_pitch`).
+fn forward_pitch_limit_rad(max_rad: f32, lift_share: f32, state: &VehicleState) -> f32 {
     if lift_share < 1.0 {
-        RAMP_PITCH_MAX_RAD
+        2.0 * (max_rad + RAMP_PITCH_MARGIN_RAD)
     } else if state.velocity_mps.xy().norm_squared() >= LEVEL_BELOW_MPS * LEVEL_BELOW_MPS {
-        WAIT_PITCH_MAX_RAD
+        max_rad
     } else {
         0.0
     }
@@ -392,7 +389,11 @@ impl Guidance for QuadPlaneGuidance {
                 // The plane guidance's energy control flies within the transition's limits, so
                 // its pitch integral stops where the pitch does
                 // (`SLT_Transition::set_FW_roll_pitch`).
-                let limit_rad = forward_pitch_limit_rad(step.lift_share, state);
+                let limit_rad = forward_pitch_limit_rad(
+                    transition.forward_pitch_max_rad,
+                    step.lift_share,
+                    state,
+                );
                 let wing = self.plane.guide_capped(
                     dt,
                     FlightRegime::Plane,

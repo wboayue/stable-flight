@@ -11,6 +11,7 @@ use crate::controllers::{
 use crate::estimation::wind::WindConfig;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig, ThrustLimits};
 use crate::guidance::plane::{PlaneGuidanceConfig, TecsConfig};
+use crate::guidance::vtol::{LiftTransitionConfig, OffNoseSpeedConfig};
 use crate::mixers::TableMixer;
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
 use crate::testing::{ConstantCommander, NullVehicle};
@@ -161,6 +162,38 @@ fn plane_guidance_table_covers_every_config_field() {
     } = PlaneGuidanceConfig::default();
     // one param per scalar or vector component in the destructuring above
     check!(names::<PlaneGuidanceConfig>().len() == 33);
+}
+
+/// Fails to compile when the lift transition or off-nose config gains a field, so its param
+/// table gets updated with it.
+#[test]
+fn quadplane_tables_cover_every_config_field() {
+    let LiftTransitionConfig {
+        min_airspeed_mps: _,
+        lift_ramp_s: _,
+        timeout_s: _,
+        min_height_m: _,
+        plane_min_height_m: _,
+        back_ramp_s: _,
+        back_speed_mps: _,
+        back_timeout_s: _,
+        back_decel_mps2: _,
+        back_decel_i: _,
+        forward_thrust: _,
+        pusher_slew_per_s: _,
+        handoff_s: _,
+        roll_limit_rad: _,
+        forward_pitch_max_rad: _,
+    } = LiftTransitionConfig::default();
+    let OffNoseSpeedConfig {
+        speed_mps: _,
+        free_rad: _,
+        full_rad: _,
+        tail_first_divisor: _,
+    } = OffNoseSpeedConfig::default();
+    // one param per field above
+    check!(names::<LiftTransitionConfig>().len() == 15);
+    check!(names::<OffNoseSpeedConfig>().len() == 4);
 }
 
 #[test]
