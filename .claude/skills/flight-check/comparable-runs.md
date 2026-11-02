@@ -26,6 +26,9 @@
 - A release build skips less but doesn't stop it; RealFlight's own pacing is the larger cause
   ([realflight.md](realflight.md)). The runner drops time lost to a stall over 100 ms, so heavy
   `ticks skipped` in the exit log slows the clocks the same way.
+- Don't build or test on the host while a simulator flies: a `cargo` build during an X-Plane
+  plane-autotune run dropped it under 225 Hz (#537). Build before the batch, and analyze logs
+  without compiling.
 
 ## Explaining a trace
 
