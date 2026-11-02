@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `ScriptCommander::with_touchdown`: when the script's land has touched down and disarms
   (`stable_flight::commanders::TouchdownConfig`) (#625).
+- A script's `pause:<s>` maneuver flies centered rate sticks that long (`Maneuver::pause`,
+  #630).
 - `autotune::PlaneTuneFlight` and its `PlaneTuneSwitch` (#535): a VTOL's plane autotune
   flight, a script into plane flight, then the `PlaneTuneHold`, then home in plane (`PlaneHome`: a leg back and forth through the start at
   its altitude, the hover-back radius, the overfly), a hover back over the start, and a land

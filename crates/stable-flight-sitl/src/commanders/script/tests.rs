@@ -521,6 +521,7 @@ fn eighth_field_is_the_maneuver() {
             "0,0,50,14,plane,,,doublet_pitch:60:0.4",
             Some(Maneuver::doublet(Axis::Pitch, deg(60.0), 0.4)),
         ),
+        ("0,0,50,14,plane,,,pause:10", Some(Maneuver::pause(10.0))),
         (
             "0,0,50,14,plane,,2,doublet_yaw: 30",
             Some(Maneuver::doublet(
@@ -568,6 +569,8 @@ fn eighth_field_is_the_maneuver() {
             "0,0,50,14,plane,,,doublet_pitch:60:x",
             "invalid doublet half width",
         ),
+        ("0,0,50,14,plane,,,pause", "maneuver pause takes a time"),
+        ("0,0,50,14,plane,,,pause:-1", "duration not positive"),
         ("0,0,50,14,,,,roll:90", "a maneuver needs a plane row"),
         ("0,0,50,14,copter,,,loop:25", "a maneuver needs a plane row"),
         ("0,0,50,14,plane,,,roll:90,extra", "expected 4 to 8 fields"),

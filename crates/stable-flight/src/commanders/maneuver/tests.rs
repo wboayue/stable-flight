@@ -160,6 +160,12 @@ fn refuses_maneuvers_it_cannot_fly() {
             Maneuver::doublet(Axis::Yaw, 1.0, f32::NAN),
             bad(0, duration_bad),
         ),
+        ("pause of 0 s", Maneuver::pause(0.0), bad(0, duration_bad)),
+        (
+            "pause of NaN s",
+            Maneuver::pause(f32::NAN),
+            bad(0, duration_bad),
+        ),
         (
             "a negative angle second",
             Maneuver::new(&[pause(1.0), rotate(spin, SegmentEnd::Angle { rad: -1.0 })]),
