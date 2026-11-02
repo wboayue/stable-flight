@@ -24,6 +24,15 @@ const SAG_I_FACTOR: f32 = 1.5;
 /// The I a sagging pair's raise starts from when the design had none.
 const MIN_SAG_I: f32 = 0.05;
 
+/// What a pair that holds or ends past its target multiplies I by, at least [`MIN_SAG_I`]:
+/// faster than a sag's raise, since the offset is a steady moment that only I supplies, and the
+/// fit from level flight sized I for none. Higher reaches it in fewer pairs; a sag's 1.5 left
+/// the X-Plane Alia 250, which rolls into its 20° banks against a 0.2 aileron moment, ending
+/// steps 1.09–1.22 past through all eight pairs as I climbed from 0.01 to 0.85. On the sim
+/// Alia at twice its yaw-rate roll moment, its match, 2 tunes from every start by the seventh
+/// pair; 2.5 and 3 fail it (#537).
+const HOLD_PAST_I_FACTOR: f32 = 2.0;
+
 /// The most of its overshoot a step that holds past its target gives back, as a share: one
 /// that ends this close to its peak isn't swinging past, it's short of a steady moment the
 /// fit didn't see, which I supplies. Higher reads more overshoots as offsets and raises I on
@@ -244,9 +253,10 @@ impl PlaneDesign {
     }
 
     /// Finishes on `candidate` when both of `pair`'s steps meet the targets; else flies the
-    /// next pair on it nudged: more I for a sag (a step that doesn't settle) or a step that
-    /// holds past its target (overshoots and gives little of it back), more I and a slower
-    /// time constant for an overshoot that swings back but still ends past the target, more P
+    /// next pair on it nudged: much more I for a step that holds past its target (overshoots
+    /// and gives little of it back), more I for a sag (a step that doesn't settle), much more I
+    /// and a slower time constant for an overshoot that swings back but still ends past the
+    /// target, more P
     /// for a step that settles but rises too slowly (the rate loop lags its target), else (an
     /// overshoot that swings back to it, or a clip) a slower time constant. A slower time constant doesn't speed a slow
     /// rise: the airplane's roll rose in 2.0, 2.5, 3.0, and 3.5 time constants at 0.56, 0.64,
@@ -280,10 +290,12 @@ impl PlaneDesign {
             .iter()
             .any(|m| m.overshoot > design.max_overshoot || m.saturated_s > design.max_saturated_s);
         let mut next = candidate;
-        if sags || holds {
+        if holds {
+            next.rate.i = (candidate.rate.i * HOLD_PAST_I_FACTOR).max(MIN_SAG_I);
+        } else if sags {
             next.rate.i = (candidate.rate.i * SAG_I_FACTOR).max(MIN_SAG_I);
         } else if ends_past {
-            next.rate.i = (candidate.rate.i * SAG_I_FACTOR).max(MIN_SAG_I);
+            next.rate.i = (candidate.rate.i * HOLD_PAST_I_FACTOR).max(MIN_SAG_I);
             next = slower(next, &self.plan);
         } else if slow && !wide {
             next.rate.p = candidate.rate.p * SLOW_P_FACTOR;

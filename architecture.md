@@ -1131,13 +1131,16 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     grid step (a slower τ rose slower still: 2.0τ to 3.5τ from 0.56 to 0.85 s), an overshoot
     or clip τ by 15%; eight pairs, then the stage fails. An overshoot that keeps more than
     half of itself to the step's end holds past the target rather than swinging past it, and
-    raises I as a sag does: a wing that rolls into its turns needs a steady aileron in a bank
+    raises I: a wing that rolls into its turns needs a steady aileron in a bank
     the fit from level flight doesn't see, and a slower τ only widens the error that holds it
     (RealFlight's Titan Cobra ended 30° steps 1.09–1.13 past; the sim quadplane at four times
-    its yaw-rate roll moment, 1.09, tunes in four pairs). An overshoot that swings back but
+    its yaw-rate roll moment, 1.09, tunes in three pairs). An overshoot that swings back but
     still ends more than half the limit past is part of each, and raises I and τ together: τ
     alone took the swing out and left the offset (the Cobra at 14 m/s, 1.02–1.04; the sim at six
-    times, 1.03, #635).
+    times, 1.03, #635). Holding or ending past doubles I where a sag raises it by half: the
+    offset is a moment only I supplies, and at a sag's rate the X-Plane Alia 250's I climbed
+    from 0.01 to 0.85 through all eight pairs and its 20° steps still ended 1.09–1.22 past;
+    the sim Alia at twice its yaw-rate roll moment tunes from every start by the seventh (#537).
   * On the sim it tunes the airplane, the eXplora, the Titan Cobra, and the Alia 250 to the
     plane spec (`tests/common/plane_spec.rs`) from their own gains, a third, and three times
     them: 42–60 s on the airplane and eXplora, 70–90 s on the Cobra, 540–575 s on the Alia,
