@@ -28,6 +28,7 @@
 //!   | `roll:<deg/s>` | [`Maneuver::roll`] at that rate (negative rolls left) |
 //!   | `loop:<m>` | [`Maneuver::loop_`] of that radius (negative: an outside loop) |
 //!   | `doublet_roll:<deg/s>[:<s>]`, `doublet_pitch:…`, `doublet_yaw:…` | [`Maneuver::doublet`] about that axis at that rate, each half that long ([`DEFAULT_DOUBLET_HALF_S`] when absent) |
+//!   | `pause:<s>` | [`Maneuver::pause`]: centered rate sticks that long |
 //!
 //!   The maneuver flies at [`ManeuverConfig`]'s thrust
 //!   ([`ScriptCommander::with_maneuver_config`]); the route resumes once it has recovered.
@@ -761,10 +762,14 @@ fn parse_maneuver(field: &str) -> Result<Maneuver, String> {
                 })?;
             Maneuver::doublet(axis, rate_radps, half_s)
         }
+        "pause" => {
+            takes(1, 1, "a time in s")?;
+            Maneuver::pause(parse_number(arguments[0], "pause time")?)
+        }
         other => {
             return Err(format!(
                 "unknown maneuver {other:?}: expected roll, loop, doublet_roll, doublet_pitch, \
-                 or doublet_yaw"
+                 doublet_yaw, or pause"
             ));
         }
     };

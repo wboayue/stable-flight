@@ -8,6 +8,7 @@
 //! | [`Maneuver::roll`] | Roll 360° at a set rate (negative: left), holding its line |
 //! | [`Maneuver::loop_`] | Pitch 360° at `V / R`: a loop of radius `R` at speed `V` (negative: outside), holding its circle |
 //! | [`Maneuver::doublet`] | `+rate` then `−rate` about one axis, a half width each, then a [`DOUBLET_PAUSE_S`] pause, on rates alone: a step response in flight |
+//! | [`Maneuver::pause`] | Zero body rate at cruise thrust for a time, on rates alone: centered rate sticks |
 //!
 //! A new maneuver is a new list of segments, up to [`MAX_SEGMENTS`]: an Immelmann is half a
 //! loop then half a roll, a split-S the reverse, a hammerhead's pivot a yaw. [`Segment`] is

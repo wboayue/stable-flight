@@ -343,6 +343,19 @@ impl Maneuver {
         ])
     }
 
+    /// Centered rate sticks for `duration_s` at cruise thrust: zero body rate on rates alone,
+    /// so the attitude drifts only as far as the rate loop lets it.
+    ///
+    /// # Errors
+    ///
+    /// [`ManeuverError::InvalidSegment`] for a duration that isn't positive and finite.
+    pub fn pause(duration_s: f32) -> Result<Self, ManeuverError> {
+        Maneuver::new(&[Segment::Pause {
+            duration_s,
+            thrust: Thrust::Cruise,
+        }])
+    }
+
     /// The segments, in order.
     pub fn segments(&self) -> &[Segment] {
         &self.segments[..self.len]

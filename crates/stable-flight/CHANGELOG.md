@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Maneuver::pause`: zero body rate at cruise thrust for a time, centered rate sticks on rates
+  alone (#630).
 - `CopterStabilizerConfig::gyro_notch` (`controllers::NotchConfig`; params `STAB_NTCH_HZ`,
   `STAB_NTCH_BW`, `STAB_NTCH_ATT`): a notch on the roll and pitch rates ahead of the gyro
   low-pass, for one vibration tone, in ArduPilot's fixed harmonic notch form (center, width,
