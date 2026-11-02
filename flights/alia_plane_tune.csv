@@ -1,0 +1,12 @@
+# Alia 250 plane autotune in X-Plane (`plane-autotune-xplane`), from Oceano County Airport
+# (L52), spawned on runway 11, every plane leg over the ocean: climb straight up to 250 m,
+# transition along the runway heading and turn west, a leg 6 km west at 300 m and 50 m/s
+# (alia_transition_lap.csv's), then a level leg south at the 45 m/s trim, the airspeed the
+# hold takes over at (within 1 m/s). The hold starts on that leg, about 6 km offshore, and
+# turns back within 1000 m of where it started.
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
+# The regime is the leg's to that waypoint: the first plane leg starts the transition.
+x,y,altitude,cruise_speed,regime
+0.0,0.0,250.0,3.0,copter
+0.0,-6000.0,300.0,50.0,plane
+-4000.0,-6000.0,300.0,45.0,plane
