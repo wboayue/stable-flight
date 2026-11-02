@@ -917,6 +917,13 @@ mod tests {
                     ..base()
                 },
             ),
+            (
+                "braking_share",
+                LateralControllerConfig {
+                    braking_share: f32::NAN,
+                    ..base()
+                },
+            ),
         ];
         check!(base().validate().is_ok());
         for (field, config) in cases {
