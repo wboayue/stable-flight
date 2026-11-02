@@ -62,7 +62,8 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
    pusher spans its whole range, whatever the lift rotors' thrust factor
    ([#448](https://github.com/wboayue/stable-flight/issues/448)). Then the total energy
    control below. The roll and pitch rate and angle loops can be autotuned in plane flight
-   (`just fly-plane-autotune --airframe titan-cobra`, as the tailsitter guide's
+   (`just fly-plane-autotune --airframe titan-cobra` in RealFlight, `just
+   fly-xplane-plane-autotune` for the X-Plane Alia, as the tailsitter guide's
    [plane autotune](tailsitter.md#plane-autotune)): fly the hold at least 25% above the
    wing's slowest airspeed, or its 10° nose-up steps bleed into a stall.
 4. **Transitions.** Tune these last, from a settled hover at least `TRAN_MIN_HGT` up. Set
@@ -128,6 +129,29 @@ climb, then tune on the model and pin the X-Plane airframe to it.
 - **Roll within the ailerons:** full aileron gives about 17°/s (`Cl_p` from the roll holds);
   asking 70°/s clipped them and overshot 15%. `PSTAB_RMAX_X` 15°/s and `PSTAB_TC_X` 0.6 s rise
   a 20° bank in 1.2 s.
+
+**Worked example (Alia 250 plane autotune in X-Plane, #537):** `plane-autotune-xplane`
+(Oceano, calm, `flights/alia_plane_tune.csv`) holds 6 km offshore at 300 m and trim 45 m/s,
+then flies home and lands on the spawn, about 25 min a run at a steady 250 ticks/s.
+- **Roll into the bank:** the X-Plane Alia rolls further in once banked, holding 0.13–0.27 of
+  opposite aileron at 20°, about twice the sim model's. Its roll steps held past the target
+  until the design doubled I on each such pair; the sim Alia with twice its roll moment
+  from yaw rate (`c_roll_r`) reproduces it.
+- **Spread over runs:** three design runs fit roll damping 3.7–6.8/s and a stiff, lightly
+  damped pitch (5.7–7.3/s², 0.7–1.6/s), so pitch I lands at 10–20 against the sim's 0.7. The
+  airframe flies each gain's median, which falls on one run's roll set and another's pitch
+  set: roll P 0.0138 I 2.56 FF 2.81, `PSTAB_TC_X` 0.707 s; pitch P 0.482 I 10 FF 0.859,
+  `PSTAB_TC_Y` 0.876 s. The run with pitch I 20 and P 0.008 overshot pitch rate steps 34%.
+- **Laps against the hand tune:** the descent lap's banked sink peaks at 4.63 m/s (5.15 on the
+  hand tune), and the transition lap's handoff into plane flight sinks 3.5 m/s and dips 4.0 m
+  (2.9 m/s, 2.5 m).
+
+  | Loop | Hand tune: overshoot / rise / settle / final | Autotuned (confirm run) |
+  |---|---|---|
+  | Roll rate | 0.10 / 219 / 593 ms / 1.02 | 0.15 / 256 / 541 ms / 1.07 |
+  | Pitch rate | 0.00 / — / — / 0.50 | 0.09 / 326 / 876 ms / 0.74 |
+  | Roll angle | 0.15 / 1241 / 1640 ms / 1.13 | 0.12 / 1301 / 3153 ms / 1.04 |
+  | Pitch angle | 0.01 / 2292 / 2515 ms / 0.98 | 0.04 / 1763 / 2194 ms / 1.01 |
 
 **Worked example (Titan Cobra in RealFlight):**
 - **Hover:** nose-heavy on its lift rotors, a level hover holds front motors at 0.61 and rear
@@ -214,7 +238,8 @@ thrust and one at least, or read them off a fitted model (the Alia's
   into its 100 m descent, the X-Plane Alia peaked at 5.65 m/s on 5 s and pitch I 0.5, and
   5.14–5.24 m/s on 3 s and pitch I 1; either alone left it at 5.40–5.44. The cost is the
   forward transition's handoff, which sinks faster: 3.2 m/s against 2.1
-  ([#547](https://github.com/wboayue/stable-flight/issues/547)).
+  ([#547](https://github.com/wboayue/stable-flight/issues/547)). The autotuned pitch I 10
+  peaks at 4.63 m/s ([#537](https://github.com/wboayue/stable-flight/issues/537)).
 - **Forward transition times out short of `TRAN_ASPD_MIN`:** the plane guidance already
   pitches for airspeed at the transition's limits (3°, 8° on the ramp), so what's left is
   thrust and time: raise `TRAN_PSH_SLEW`, or `TRAN_TIMEOUT`. The sim Alia reaches its
