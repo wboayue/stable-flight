@@ -26,9 +26,10 @@ const MIN_SAG_I: f32 = 0.05;
 
 /// The most of its overshoot a step that holds past its target gives back, as a share: one
 /// that ends this close to its peak isn't swinging past, it's short of a steady moment the
-/// fit didn't see, which I supplies. The Titan Cobra's 30° roll steps in RealFlight peak
-/// 0.10–0.15 past and give back 0.01–0.03, against a 0.08 aileron moment the 22 m turn needs
-/// (#635).
+/// fit didn't see, which I supplies. Higher reads more overshoots as offsets and raises I on
+/// them; at 0 every overshoot slows the time constant. The Titan Cobra's 30° roll steps in
+/// RealFlight peak 0.10–0.15 past and give back 0.01–0.03, against a 0.08 aileron moment the
+/// 22 m turn needs (#635).
 const HOLD_PAST_BOUNCE_SHARE: f32 = 0.5;
 
 /// What a pair that overshoots or clips multiplies the time constant by: a slower attitude loop
@@ -238,7 +239,7 @@ impl PlaneDesign {
     /// next pair on it nudged: more I for a sag (a step that doesn't settle) or a step that
     /// holds past its target (overshoots and gives little of it back), more P for a
     /// step that settles but rises too slowly (the rate loop lags its target), else (an
-    /// overshoot or clip) a slower time constant. A slower time constant doesn't speed a slow
+    /// overshoot that swings back, or a clip) a slower time constant. A slower time constant doesn't speed a slow
     /// rise: the airplane's roll rose in 2.0, 2.5, 3.0, and 3.5 time constants at 0.56, 0.64,
     /// 0.74, and 0.85 s (#534).
     fn judge(
@@ -259,9 +260,8 @@ impl PlaneDesign {
                 baseline: None,
             };
         }
-        let sags = steps
-            .iter()
-            .any(|m| m.settling_time_s.is_none() || holds_past(m, design));
+        let sags = steps.iter().any(|m| m.settling_time_s.is_none());
+        let holds = steps.iter().any(|m| holds_past(m, design));
         let max_rise_s = design.rise_per_time_constant * tau_s;
         let slow = steps
             .iter()
@@ -270,7 +270,7 @@ impl PlaneDesign {
             .iter()
             .any(|m| m.overshoot > design.max_overshoot || m.saturated_s > design.max_saturated_s);
         let mut next = candidate;
-        if sags {
+        if sags || holds {
             next.rate.i = (candidate.rate.i * SAG_I_FACTOR).max(MIN_SAG_I);
         } else if slow && !wide {
             next.rate.p = candidate.rate.p * SLOW_P_FACTOR;
