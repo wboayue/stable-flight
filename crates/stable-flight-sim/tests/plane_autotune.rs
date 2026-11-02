@@ -11,6 +11,7 @@ use std::time::Duration;
 use assert2::check;
 
 use stable_flight::commanders::{PlaneTuneHold, PlaneTuneHoldConfig};
+use stable_flight::controllers::RateGains;
 use stable_flight::stabilizers::plane::{PlaneLoop, PlaneStabilizerConfig};
 use stable_flight::tuning::StepConfig;
 use stable_flight::tuning::StepSummary;
@@ -21,7 +22,7 @@ use stable_flight::tuning::autotune::{
 use stable_flight::tuning::{Measurement, WingModel};
 use stable_flight::{
     Command, Commander, FlightLoop, FlightMode, FlightRegime, Guidance, Mixer, Setpoint,
-    Stabilizer, TelemetryPublisher, Vehicle, VehicleState,
+    Stabilizer, TelemetryPublisher, Vec2, Vehicle, VehicleState,
 };
 use stable_flight_sim::airframes;
 
@@ -623,7 +624,7 @@ type FitRow = (
 /// The eXplora's cruise fits as RealFlight's did (#587, #619; runs 1–3 at 13.8–13.9 m/s): its
 /// pitch stiff in angle of attack and barely damped, a flying wing's, and its roll's damping
 /// and control. Each margin is the sim's measured distance outside RealFlight's range, plus
-/// room.
+/// room. Both fit from [`realflight_fit_start`]'s gains.
 #[test]
 fn explora_fits_as_in_realflight() {
     use PlaneLoop::{PitchRate, RollRate};
@@ -671,7 +672,7 @@ fn explora_fits_as_in_realflight() {
             0.01,
         ),
     ];
-    let run = design_run(Subject::Explora, Subject::Explora.plane_config());
+    let run = design_run(Subject::Explora, realflight_fit_start());
     for (target, term, value, realflight_min, realflight_max, margin) in rows {
         let fit = run.events.iter().find_map(|event| match event {
             AutotuneEvent::Measured {
@@ -689,4 +690,23 @@ fn explora_fits_as_in_realflight() {
             "{target:?} {term}: {sim} against RealFlight's {realflight_min}–{realflight_max}"
         );
     }
+}
+
+/// The gains RealFlight's fit runs started from (#587): the eXplora's hand tune then, roll P
+/// 0.05, I 0.1, FF 0.1, pitch P 0.08, I 0.8, FF 0.05, τ 0.4 s. The pitch fit's damping and
+/// stiffness move with pitch P (#618), so the sim fits from the same gains.
+fn realflight_fit_start() -> PlaneStabilizerConfig {
+    let mut config = Subject::Explora.plane_config();
+    config.rate.roll = RateGains {
+        p: 0.05,
+        i: 0.1,
+        ff: 0.1,
+    };
+    config.rate.pitch = RateGains {
+        p: 0.08,
+        i: 0.8,
+        ff: 0.05,
+    };
+    config.time_constant_s = Vec2::new(0.4, 0.4);
+    config
 }
