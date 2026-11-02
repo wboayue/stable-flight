@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `plane-autotune-xplane` example (`just fly-xplane-plane-autotune`): plane autotune of the
+  Alia 250's cruise side from an attitude hold 6 km offshore (`flights/alia_plane_tune.csv`),
+  then home and a landing on the spawn (#537).
+
 ### Changed
 
 - **Breaking (behavior):** `airframes::alia250()`'s plane side answers altitude errors on a
@@ -15,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its 5 m/s limit on `flights/alia_descent_lap.csv`; it now peaks at 5.14–5.24 m/s over
   three runs. The handoff out of a forward transition sinks faster, 3.2 m/s against 2.1, and
   dips 4.2 m against 2.4 on `flights/alia_transition_lap.csv`.
+- **Breaking (behavior):** `airframes::alia250()`'s plane roll and pitch rate gains and
+  attitude time constants are the plane design's in X-Plane, the median of three runs: roll
+  P 0.0138 I 2.56 FF 2.81, τ 0.707 s; pitch P 0.482 I 10 FF 0.859, τ 0.876 s (#537). Pitch
+  rate steps reach 0.82 of the step, against 0.50 on the hand tune.
 
 ## [0.2.0] - 2026-10-30
 

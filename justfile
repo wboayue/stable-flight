@@ -133,6 +133,10 @@ fly-plane-autotune *ARGS:
 fly-xplane-autotune *ARGS:
     cargo run --release -p stable-flight-sitl-xplane --example copter-autotune-xplane -- {{ARGS}}
 
+# Autotune of the Alia 250's cruise side in X-Plane: plane flight 6 km offshore from Oceano, an attitude hold, roll then pitch by the plane design, home, land; e.g. `just fly-xplane-plane-autotune --stages none --step-test`
+fly-xplane-plane-autotune *ARGS:
+    cargo run --release -p stable-flight-sitl-xplane --example plane-autotune-xplane -- {{ARGS}}
+
 # Lift-engine sweep of a multirotor on the X-Plane runway: yaw sign per diagonal, liftoff throttle, motor lag, moment response, e.g. `just xplane-sweep --output sweep.csv`
 xplane-sweep *ARGS:
     cargo run --release -p stable-flight-sitl-xplane --example engine-sweep-xplane -- {{ARGS}}
