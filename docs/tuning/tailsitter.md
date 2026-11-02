@@ -582,6 +582,9 @@ plane, transitions back, hovers over the start, and lands there. It prints the g
   0.99× (pitch) in their first half. With the path hold the 180°/s roll turns at 183°/s and
   its lowest point is 1.8 m below its entry; the 25 m loop spans 25.5 m of radius and ends
   2.2 m low (#535). On rates alone the roll lost 20 m and the loops 16 m and 6 m (#481).
+  Its 10 m loops span 10.6 m of radius and end 2.1–2.2 m low, and 10 s of centered rate sticks
+  from level flight drift the pitch 0.18–0.21° (#630). The sim's eXplora flies these gains;
+  its pitch drifts 0.59° there (#642).
 - **Symptoms:**
   - Doublet peaks well past its command: feedforward down.
   - Doublet short of its command, rate creeping up through each half: feedforward up.
