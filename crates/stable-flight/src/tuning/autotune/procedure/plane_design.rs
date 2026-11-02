@@ -7,7 +7,7 @@ use crate::tuning::autotune::{AutotuneAbort, Outcome, PlaneDesignPlan};
 use crate::tuning::wing::design::meets_targets;
 use crate::tuning::{
     DesignError, Measurement, ProbeAbort, ProbeConfig, StepMetrics, StepSummary, WingDesign,
-    WingDesignStatus,
+    WingDesignConfig, WingDesignStatus,
 };
 
 #[cfg(test)]
@@ -24,6 +24,13 @@ const SAG_I_FACTOR: f32 = 1.5;
 /// The I a sagging pair's raise starts from when the design had none.
 const MIN_SAG_I: f32 = 0.05;
 
+/// The most of its overshoot a step that holds past its target gives back, as a share: one
+/// that ends this close to its peak isn't swinging past, it's short of a steady moment the
+/// fit didn't see, which I supplies. The Titan Cobra's 30° roll steps in RealFlight peak
+/// 0.10–0.15 past and give back 0.01–0.03, against a 0.08 aileron moment the 22 m turn needs
+/// (#635).
+const HOLD_PAST_BOUNCE_SHARE: f32 = 0.5;
+
 /// What a pair that overshoots or clips multiplies the time constant by: a slower attitude loop
 /// asks for less rate, so less overshoot and less deflection (#533).
 const OVERSHOOT_TAU_FACTOR: f32 = 1.15;
@@ -34,8 +41,8 @@ const SLOW_P_FACTOR: f32 = 1.66;
 
 /// A [`PlaneDesignPlan`] as a pure state machine: a wing fit of the stage's axis, gains
 /// designed on it over several updates, then attitude pairs flown on the candidate until one
-/// meets the targets, each miss nudging the candidate (a sag raises I, a slow rise P, an
-/// overshoot or clip the time constant).
+/// meets the targets, each miss nudging the candidate (a sag or a hold past the target raises
+/// I, a slow rise P, an overshoot or clip the time constant).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::tuning::autotune) struct PlaneDesign {
     plan: PlaneDesignPlan,
@@ -228,7 +235,8 @@ impl PlaneDesign {
     }
 
     /// Finishes on `candidate` when both of `pair`'s steps meet the targets; else flies the
-    /// next pair on it nudged: more I for a sag (a step that doesn't settle), more P for a
+    /// next pair on it nudged: more I for a sag (a step that doesn't settle) or a step that
+    /// holds past its target (overshoots and gives little of it back), more P for a
     /// step that settles but rises too slowly (the rate loop lags its target), else (an
     /// overshoot or clip) a slower time constant. A slower time constant doesn't speed a slow
     /// rise: the airplane's roll rose in 2.0, 2.5, 3.0, and 3.5 time constants at 0.56, 0.64,
@@ -251,7 +259,9 @@ impl PlaneDesign {
                 baseline: None,
             };
         }
-        let sags = steps.iter().any(|m| m.settling_time_s.is_none());
+        let sags = steps
+            .iter()
+            .any(|m| m.settling_time_s.is_none() || holds_past(m, design));
         let max_rise_s = design.rise_per_time_constant * tau_s;
         let slow = steps
             .iter()
@@ -269,6 +279,14 @@ impl PlaneDesign {
         }
         self.verify(next, pair + 1)
     }
+}
+
+/// Whether a step overshoots past `design`'s limit and keeps most of it: an offset a slower
+/// time constant only widens (the error then carries the moment), where a swing past the target
+/// gives most of its overshoot back.
+fn holds_past(metrics: &StepMetrics, design: &WingDesignConfig) -> bool {
+    metrics.overshoot > design.max_overshoot
+        && metrics.bounce_back < HOLD_PAST_BOUNCE_SHARE * metrics.overshoot
 }
 
 /// `candidate` with its time constant raised by [`OVERSHOOT_TAU_FACTOR`], up to the plan's

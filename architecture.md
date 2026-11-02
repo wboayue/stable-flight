@@ -1123,7 +1123,12 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     integral holds what it needs (from ×3 gains the committed loop's I term, carried over,
     slowed every second step 3.6 s against 1.1 s). A sag raises I by half, a slow rise P a
     grid step (a slower τ rose slower still: 2.0τ to 3.5τ from 0.56 to 0.85 s), an overshoot
-    or clip τ by 15%; eight pairs, then the stage fails.
+    or clip τ by 15%; eight pairs, then the stage fails. An overshoot that keeps more than
+    half of itself to the step's end holds past the target rather than swinging past it, and
+    raises I as a sag does: a wing that rolls into its turns needs a steady aileron in a bank
+    the fit from level flight doesn't see, and a slower τ only widens the error that holds it
+    (RealFlight's Titan Cobra ended 30° steps 1.09–1.13 past; the sim quadplane at four times
+    its yaw-rate roll moment, 1.09, tunes in four pairs, #635).
   * On the sim it tunes the airplane, the eXplora, the Titan Cobra, and the Alia 250 to the
     plane spec (`tests/common/plane_spec.rs`) from their own gains, a third, and three times
     them: 42–60 s on the airplane and eXplora, 70–90 s on the Cobra, 540–575 s on the Alia,

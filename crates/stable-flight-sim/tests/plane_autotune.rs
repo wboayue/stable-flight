@@ -64,8 +64,17 @@ enum Subject {
     Plane,
     Explora,
     Cobra,
+    /// The quadplane with [`ROLLING_IN_C_ROLL_R_SCALE`] times its yaw-rate roll moment: in a
+    /// bank it rolls further in, so holding the bank takes a steady aileron the fit from level
+    /// flight doesn't see, as RealFlight's Titan Cobra does (#635).
+    CobraRollingIn,
     Alia,
 }
+
+/// What [`Subject::CobraRollingIn`] scales the quadplane's `c_roll_r` by: the design's first
+/// 30° roll pair then ends 1.09 past the step with 0.002 of it given back, where RealFlight's
+/// Cobra ended 1.09–1.13 and gave back 0.01–0.03 (#635).
+const ROLLING_IN_C_ROLL_R_SCALE: f32 = 4.0;
 
 const SUBJECTS: [Subject; 4] = [
     Subject::Plane,
@@ -79,7 +88,7 @@ impl Subject {
         match self {
             Subject::Plane => airframes::plane().stabilizer,
             Subject::Explora => airframes::explora().stabilizer.plane,
-            Subject::Cobra => airframes::quadplane().stabilizer.plane,
+            Subject::Cobra | Subject::CobraRollingIn => airframes::quadplane().stabilizer.plane,
             Subject::Alia => airframes::alia250().stabilizer.plane,
         }
     }
@@ -94,7 +103,7 @@ impl Subject {
                 airframes::explora().guidance.plane.cruise_thrust,
                 FlightRegime::Copter,
             ),
-            Subject::Cobra => (
+            Subject::Cobra | Subject::CobraRollingIn => (
                 airframes::quadplane().guidance.plane.cruise_thrust,
                 FlightRegime::Copter,
             ),
@@ -165,15 +174,8 @@ fn tune_from(
                 (after_s, start),
             )
         }
-        Subject::Cobra | Subject::Alia => {
-            // An in-flight start: height counts from there, so the transition's floors are off;
-            // the envelope guards height instead.
-            let mut airframe = match subject {
-                Subject::Cobra => airframes::quadplane(),
-                _ => airframes::alia250(),
-            };
-            airframe.guidance.transition.min_height_m = 0.0;
-            airframe.guidance.transition.plane_min_height_m = 0.0;
+        Subject::Cobra | Subject::CobraRollingIn | Subject::Alia => {
+            let airframe = in_flight_quadplane(subject);
             let plant = QuadPlanePlant::clean(airframe);
             let lead: Box<dyn Commander> = Box::new(north_line(
                 airframe.start.position_m.z,
@@ -502,17 +504,27 @@ fn spec_misses(subject: Subject, config: PlaneStabilizerConfig) -> Vec<String> {
             airframe.stabilizer.plane = config;
             misses_on(&TailsitterPlant::clean(airframe), steps, max_overshoot)
         }
-        Subject::Cobra | Subject::Alia => {
-            let mut airframe = match subject {
-                Subject::Cobra => airframes::quadplane(),
-                _ => airframes::alia250(),
-            };
-            airframe.guidance.transition.min_height_m = 0.0;
-            airframe.guidance.transition.plane_min_height_m = 0.0;
+        Subject::Cobra | Subject::CobraRollingIn | Subject::Alia => {
+            let mut airframe = in_flight_quadplane(subject);
             airframe.stabilizer.plane = config;
             misses_on(&QuadPlanePlant::clean(airframe), steps, max_overshoot)
         }
     }
+}
+
+/// `subject`'s quadplane (the Cobra's, the Alia's), started in flight: height counts from
+/// there, so the transition's floors are off; the envelope guards height instead.
+fn in_flight_quadplane(subject: Subject) -> airframes::QuadPlaneAirframe {
+    let mut airframe = match subject {
+        Subject::Alia => airframes::alia250(),
+        _ => airframes::quadplane(),
+    };
+    if matches!(subject, Subject::CobraRollingIn) {
+        airframe.model.wing.aero.c_roll_r *= ROLLING_IN_C_ROLL_R_SCALE;
+    }
+    airframe.guidance.transition.min_height_m = 0.0;
+    airframe.guidance.transition.plane_min_height_m = 0.0;
+    airframe
 }
 
 /// From its own gains, a third of them, or three times them, the design tunes `subject`'s roll
@@ -567,6 +579,13 @@ fn the_design_tunes_the_explora_to_the_spec() {
 #[test]
 fn the_design_tunes_the_titan_cobra_to_the_spec() {
     design_converges(Subject::Cobra);
+}
+
+/// A held bank that needs a steady aileron overshoots and stays there; the design raises I
+/// rather than slowing the time constant, which only widens the offset (#635).
+#[test]
+fn the_design_tunes_a_cobra_that_rolls_into_its_turns_to_the_spec() {
+    design_converges(Subject::CobraRollingIn);
 }
 
 #[test]
