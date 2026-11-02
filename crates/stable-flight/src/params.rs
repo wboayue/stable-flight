@@ -52,11 +52,13 @@
 //! | `GUID_ALT_P`, `_I`, `_D` | `altitude.gains` |
 //! | `GUID_ALT_IMAX` | `altitude.max_integral` |
 //! | `GUID_ALT_HOVER` | `altitude.hover_thrust` |
+//! | `GUID_ALT_IBAND` | `altitude.integration_band_m` |
 //! | `GUID_LAT_POS_P` | `lateral.position_p` |
 //! | `GUID_LAT_VEL_P`, `_I`, `_D` | `lateral.velocity` |
 //! | `GUID_LAT_IMAX` | `lateral.max_integral` |
 //! | `GUID_LAT_ACC` | `lateral.max_accel_mps2` |
 //! | `GUID_LAT_BRK` | `lateral.brake_mps2` |
+//! | `GUID_LAT_BRK_SHR` | `lateral.braking_share` |
 //! | `GUID_NAV_PERIOD` | `navigation_period_s` |
 //! | `GUID_TILT_MAX` | `max_tilt_rad` |
 //! | `GUID_DESC_MAX` | `max_descent_mps` |

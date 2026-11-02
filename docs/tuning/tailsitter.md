@@ -99,6 +99,10 @@ Params in degrees are marked (deg); thrusts are linear (before the thrust curve)
   - eXplora: mean motor 0.63, *k* = 0.9, so √(0.63 / 0.9) = 0.84.
 - **Symptom when wrong:** waypoint holds settle off target at first, then creep onto it as the
   integral winds.
+- **The integral's band** (`GUID_ALT_IBAND`, `hover.altitude.integration_band_m`, 1 m): the
+  integral runs only this close to the target. Fix `GUID_ALT_HOVER` first; widen the band only
+  if a hold settles more than 1 m off, since a wider band winds up over a long climb and
+  overshoots.
 
 ## 2. Hover rate loops
 
@@ -455,8 +459,9 @@ eXplora (#418), `explora_transition_lap.csv --end land`, runs at 250 Hz around t
 | 0 (off) | 35.1°, 29.5°, 34.5° | 22° | 29–33 s |
 | **1 m/s²** | 10.8°, 10.7° | 8° | 32–34 s |
 
-The leg brakes onto its point along a braking curve at 0.7 of that rate, so the shaped target
-keeps up as the vehicle runs ahead of it (#466): the sim's hover stops about 1 m past a point
+The leg brakes onto its point along a braking curve at `GUID_LAT_BRK_SHR` (0.7) of that rate,
+so the shaped target keeps up as the vehicle runs ahead of it (#466; higher arrives sooner but
+overshoots: 0.9 ran up to 3.5 m past on a sim quadplane leg): the sim's hover stops about 1 m past a point
 straight ahead of the handover. A tilt slew in its place (15°/s) held the roll to 16°, but in
 the sim it didn't stop a 3 m/s leg along the span from overshooting its speed and departing.
 

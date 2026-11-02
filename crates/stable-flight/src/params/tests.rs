@@ -69,6 +69,7 @@ fn tables_cover_every_config_field() {
                 gains: Gains { p: _, i: _, d: _ },
                 max_integral: _,
                 hover_thrust: _,
+                integration_band_m: _,
             },
         lateral:
             LateralControllerConfig {
@@ -77,6 +78,7 @@ fn tables_cover_every_config_field() {
                 max_integral: _,
                 max_accel_mps2: _,
                 brake_mps2: _,
+                braking_share: _,
             },
         navigation_period_s: _,
         max_tilt_rad: _,
@@ -120,7 +122,7 @@ fn tables_cover_every_config_field() {
     } = CopterGuidanceConfig::default();
     // one param per scalar, vector component, or gain term in the destructuring above
     check!(names::<CopterStabilizerConfig>().len() == 35);
-    check!(names::<CopterGuidanceConfig>().len() == 48);
+    check!(names::<CopterGuidanceConfig>().len() == 50);
 }
 
 /// Fails to compile when the plane guidance config gains a field, so its param table gets
@@ -413,7 +415,7 @@ fn flight_loop_indexes_guidance_then_stabilizer() {
     let mut flight_loop = flight_loop();
     let guidance_count = names::<CopterGuidanceConfig>().len();
     check!(flight_loop.param_count() == all_names().len());
-    check!(flight_loop.param_name(guidance_count - 1) == Some("GUID_WND_AX_SPD"));
+    check!(flight_loop.param_name(guidance_count - 1) == Some("GUID_LAT_BRK_SHR"));
     check!(flight_loop.param_name(guidance_count) == Some("STAB_RATE_RLL_P"));
     check!(flight_loop.param_index("STAB_RATE_RLL_P") == Some(guidance_count));
     check!(flight_loop.param_name(all_names().len()) == None);
