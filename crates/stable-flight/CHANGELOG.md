@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `OffNoseSpeedConfig::free_rad` (`OFFNOSE_FREE`, 20°), `full_rad` (`OFFNOSE_FULL`, 160°;
   at or below `free_rad`, a step to the whole cut), and `tail_first_divisor` (`OFFNOSE_DIV`,
   3), with `guidance::vtol::DEFAULT_*` consts for each.
+- `WindConfig` fields for the wind estimator's fixed limits, with params and the old values
+  as defaults (#624): `initial_sd_mps` (`GUID_WND_INIT_SD`, 10 m/s), `gate_sigma`
+  (`GUID_WND_GATE`, 5), and `max_axial_speed_mps` (`GUID_WND_AX_SPD`, 1 m/s), with
+  `estimation::wind::DEFAULT_*` consts for each.
 - `FlightLoop::setpoint`: the setpoint guidance gave the stabilizer on the last tick (#539).
 - Plane autotune (#534): `PlaneStabilizer` hosts probes on its roll and pitch rate and angle
   loops (`stabilizers::plane::PlaneLoop`, `PlaneAxisGains`), as do `TailsitterStabilizer` and
@@ -42,6 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `estimation::wind::INITIAL_SD_MPS` is `DEFAULT_INITIAL_SD_MPS`, the default of
+  `WindConfig::initial_sd_mps` (#624).
 - **Breaking:** `CopterGuidance`'s fixed limits are `CopterGuidanceConfig` fields, with params
   and the old values as defaults (#621): `stick_yaw_rate_radps` (`GUID_STICK_YAW`, 1 rad/s),
   `idle_throttle` (`GUID_THR_IDLE`, 0.05), `heading_yield_rate_radps` (`GUID_YAW_YLD_RT`,

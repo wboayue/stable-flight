@@ -104,7 +104,8 @@ fn tailsitter_estimates_a_wind_on_the_belly() {
         "{estimate:?}"
     );
     check!(
-        estimate.sd_along_mps(Vec2::y()) > 0.9 * stable_flight::estimation::wind::INITIAL_SD_MPS,
+        estimate.sd_along_mps(Vec2::y())
+            > 0.9 * stable_flight::estimation::wind::DEFAULT_INITIAL_SD_MPS,
         "{estimate:?}"
     );
 }
