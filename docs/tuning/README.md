@@ -24,5 +24,5 @@ core designs the roll and pitch loops from a fit flown in a tune hold, then chec
 attitude steps (`PlaneAutotune` with `StagePlan::plane_design`, `PlaneTuneHold`); it meets
 the plane spec on the sim. `just fly-plane-autotune` flies it in RealFlight and tuned the
 eXplora's plane side ([tailsitter.md](tailsitter.md#plane-autotune)) and the Titan Cobra's
-([quadplane.md](quadplane.md)); the X-Plane Alia's is planned
-([#537](https://github.com/wboayue/stable-flight/issues/537)).
+([quadplane.md](quadplane.md)); `just fly-xplane-plane-autotune` tuned the X-Plane Alia's
+([quadplane.md](quadplane.md)).
