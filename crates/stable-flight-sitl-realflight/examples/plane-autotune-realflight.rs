@@ -32,8 +32,8 @@
 //!
 //! `--airframe` picks the model: `explora` (the default), the eXplora tailsitter on
 //! `TailsitterGuidance` and `TailsitterStabilizer`, or `titan-cobra`, the Titan Cobra quadplane
-//! on `QuadPlaneGuidance` and `QuadPlaneStabilizer` (its lift rotors stopped in plane flight). `--param NAME=VALUE`
-//! (repeatable) sets a param before takeoff, as the link would.
+//! on `QuadPlaneGuidance` and `QuadPlaneStabilizer` (its lift rotors stopped in plane flight).
+//! `--param NAME=VALUE` (repeatable) sets a param before takeoff, as the link would.
 //!
 //! ```text
 //! cargo run -p stable-flight-sitl-realflight --example plane-autotune-realflight -- --record tune.csv
@@ -159,7 +159,8 @@ struct Args {
     #[arg(long)]
     step_test: bool,
 
-    /// Writes every tick (`TailsitterColumns`, or `QuadPlaneColumns` for the Cobra) to this CSV, to diagnose a run.
+    /// Writes every tick (`TailsitterColumns`, or `QuadPlaneColumns` for the Cobra) to this CSV,
+    /// to diagnose a run.
     #[arg(long)]
     record: Option<String>,
 
