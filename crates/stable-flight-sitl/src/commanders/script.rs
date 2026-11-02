@@ -58,7 +58,8 @@ use stable_flight::commanders::maneuver::{Axis, DEFAULT_DOUBLET_HALF_S, Maneuver
 use stable_flight::commanders::waypoint::{
     DEFAULT_ALTITUDE_ACCEPTANCE_M, DEFAULT_PLANE_ALTITUDE_ACCEPTANCE_M,
 };
-use stable_flight::commanders::{EmptyWaypoints, RouteEnd, WaypointFollower};
+use stable_flight::commanders::{EmptyWaypoints, RouteEnd, TouchdownConfig, WaypointFollower};
+use stable_flight::controllers::InvalidConfig;
 use stable_flight::{
     Command, Commander, ControlInput, FlightRegime, LandCommand, VehicleState, WaypointCommand,
 };
@@ -374,6 +375,33 @@ impl ScriptCommander {
             follower: self.follower.with_route_end(route_end),
             ..self
         }
+    }
+
+    /// Sets when the land under [`RouteEnd::Land`] has touched down and disarms (default
+    /// [`TouchdownConfig::default`]): see [`WaypointFollower::with_touchdown`].
+    ///
+    /// # Errors
+    ///
+    /// [`InvalidConfig`] if `config` fails [`TouchdownConfig::validate`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight::WaypointCommand;
+    /// use stable_flight::commanders::{RouteEnd, TouchdownConfig};
+    /// use stable_flight_sitl::commanders::ScriptCommander;
+    ///
+    /// let commander = ScriptCommander::from_waypoints(vec![WaypointCommand::default()])
+    ///     .expect("non-empty")
+    ///     .with_route_end(RouteEnd::Land)
+    ///     .with_touchdown(TouchdownConfig { hold_s: 2.0, ..TouchdownConfig::default() })
+    ///     .expect("valid");
+    /// ```
+    pub fn with_touchdown(self, config: TouchdownConfig) -> Result<Self, InvalidConfig> {
+        Ok(ScriptCommander {
+            follower: self.follower.with_touchdown(config)?,
+            ..self
+        })
     }
 
     /// Sets how the script's maneuvers fly (default [`ManeuverConfig::default`]): their thrust,

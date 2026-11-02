@@ -5,8 +5,8 @@ use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
 
 use super::actions::RowActions;
 use super::{Leg, ScriptCommander, ScriptError, parse_route};
-use stable_flight::commanders::RouteEnd;
 use stable_flight::commanders::maneuver::{Axis, DEFAULT_DOUBLET_HALF_S, Maneuver};
+use stable_flight::commanders::{RouteEnd, TouchdownConfig};
 use stable_flight::{
     Command, Commander, ControlInput, FlightRegime, LandCommand, VehicleState, WaypointCommand,
 };
@@ -457,6 +457,39 @@ fn holds_the_last_waypoint_before_the_land() {
     let held = ControlInput::Waypoint(holding_route(&[(0.35, 1.0)])[0].waypoint);
     check!(inputs[..4] == [held; 4]);
     assert2::assert!(let ControlInput::Land(_) = inputs[4]);
+}
+
+/// A configured 2 s touchdown hold reaches the script's land: 1.5 s stopped after the descent
+/// stays armed, 2.1 s disarms; an invalid config is refused.
+#[test]
+fn the_land_disarms_after_the_configured_touchdown_hold() {
+    let script = || {
+        ScriptCommander::from_waypoints(vec![WaypointCommand::default()])
+            .expect("non-empty")
+            .with_route_end(RouteEnd::Land)
+    };
+    let sinking = |vertical_speed_mps| VehicleState {
+        velocity_mps: Vec3::new(0.0, 0.0, vertical_speed_mps),
+        ..Default::default()
+    };
+    // (seconds stopped after the descent, armed)
+    for (stopped_s, armed) in [(1.5, true), (2.1, false)] {
+        let mut commander = script()
+            .with_touchdown(TouchdownConfig {
+                hold_s: 2.0,
+                ..TouchdownConfig::default()
+            })
+            .expect("valid");
+        commander.next_command(0.1, &sinking(0.0));
+        commander.next_command(0.1, &sinking(-0.7));
+        let command = commander.next_command(stopped_s, &sinking(0.0));
+        check!(command.arm == armed, "stopped {stopped_s} s");
+    }
+    let invalid = script().with_touchdown(TouchdownConfig {
+        hold_s: 0.0,
+        ..TouchdownConfig::default()
+    });
+    check!(invalid.is_err());
 }
 
 /// The optional eighth field is the maneuver, `name:argument[:argument]`, on plane rows only;
