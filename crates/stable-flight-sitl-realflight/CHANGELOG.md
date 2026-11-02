@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from `flights/cobra_plane_tune.csv`, a level leg at its 14 m/s trim airspeed.
 - `flights/explora_rolls.csv` (#619): 90 and 180°/s rolls both ways on the eXplora's plane
   legs, for each roll's height loss.
+- `flights/explora_loops.csv` (#630): 10 m loops and 10 s of centered rate sticks on the
+  eXplora's plane legs, for each loop's radius and height loss and the pitch's drift.
 - `plane-autotune-realflight` (#535): a VTOL's plane-side autotune, the eXplora's
   (`--airframe explora`) from `flights/explora_plane_tune.csv`: into plane flight at 100 m, a
   tune hold at the level leg's thrust, the plane design on roll and pitch, then home in plane
