@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (behavior):** `airframes::titan_cobra()`'s plane side flies RealFlight's plane
+  autotune of it (#536): rate roll P 0.0138, I 0.2025, FF 0.48 (the design's 0.61 ran rate
+  steps 27% fast); pitch P 0.29, I 5.01, FF 0.1845; time constants 0.396 s roll, 0.226 s
+  pitch, from PX4's defaults. Pitch steps reach their target (the defaults reached half).
 - **Breaking (behavior):** `airframes::titan_cobra` plane trim airspeed (`PSTAB_ASPD_TRIM`)
   14 m/s, the scripts' cruise, from `TRIM_ARSPD_CM`'s 12.4 (#536): the plane gains scale from
   there, and the plane autotune's hold flies there.

@@ -61,7 +61,10 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
    pusher thrust that holds level flight at trim airspeed, as a share of the full pusher: the
    pusher spans its whole range, whatever the lift rotors' thrust factor
    ([#448](https://github.com/wboayue/stable-flight/issues/448)). Then the total energy
-   control below.
+   control below. The roll and pitch rate and angle loops can be autotuned in plane flight
+   (`just fly-plane-autotune --airframe titan-cobra`, as the tailsitter guide's
+   [plane autotune](tailsitter.md#plane-autotune)): fly the hold at least 25% above the
+   wing's slowest airspeed, or its 10° nose-up steps bleed into a stall.
 4. **Transitions.** Tune these last, from a settled hover at least `TRAN_MIN_HGT` up. Set
    `TRAN_FW_MIN_HGT` below the plane legs, with room under it for a back transition's loss
    (1.9 m at a 3.5 m/s sink on the sim quadplane): plane flight below it falls back to a
@@ -153,6 +156,24 @@ climb, then tune on the model and pin the X-Plane airframe to it.
   `TRAN_ASPD_MIN` 11 (its `ARSPD_FBW_MIN`), the first lap flew: forward in 9 s gaining
   2.6 m, the lap at 27–32 m and 13–15 m/s, back within 2.6 m. The back transition ended on
   `TRAN_VT_TIMEOUT` still at 6.7 m/s, slowed by drag only.
+- **Plane autotune** (`plane-autotune-realflight --airframe titan-cobra`, Eli Field, calm,
+  `flights/cobra_plane_tune.csv`; [#536](https://github.com/wboayue/stable-flight/issues/536)):
+  - **Trim airspeed:** at ArduPilot's `TRIM_ARSPD_CM` 12.4 m/s, 10° nose-up steps on the hold's
+    fixed thrust bled to 10.0 m/s, under `ARSPD_FBW_MIN` 11, and sank back to 0.56–0.68 of the
+    step. `PSTAB_ASPD_TRIM` 14, the scripts' cruise, holds them.
+  - **Roll:** all damping (15–19/s) on weak ailerons (25–31 rad/s²), and in a 30° bank the
+    Cobra rolls further in: steps held 2–13% past the target until the design raised I for it
+    ([#635](https://github.com/wboayue/stable-flight/issues/635)). The design's FF 0.61 ran 8°/s rate steps 27% fast without settling;
+    FF 0.48 ends them 9% fast in 0.29 s, at a roll angle overshoot of 7% (4% at 0.61).
+  - **Pitch:** stiff (56–67/s²), lightly damped (3–4/s); I 5.01 every run, P 0.18–0.48 (median
+    0.29). The hand tune's pitch steps reached half the step.
+
+  | Loop | Hand tune (12.4 m/s): overshoot / rise / settle / final | Autotuned (14 m/s) |
+  |---|---|---|
+  | Roll rate | 0.06 / 567 / 618 ms / 1.05 | 0.09 / 261 / 287 ms / 1.09 |
+  | Pitch rate | 0.00 / 149 ms / — / 0.46 | 0.03 / 125 / 600 ms / 0.93 |
+  | Roll angle | 0.14 / 657 / 2344 ms / 1.10 | 0.07 / 644 / 762 ms / 1.04 |
+  | Pitch angle | 0.00 / — / — / 0.51 | 0.02 / 423 / 517 ms / 0.98 |
 
 ## Plane altitude and airspeed (total energy control)
 
