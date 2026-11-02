@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`PGUID_USPD_SHARE`, 0.9), `height_demand_time_constant_s` (`PGUID_HDEM_TC`, 3 s),
   `airspeed_rate_time_constant_s` (`PGUID_ASPD_RT_TC`, 0.5 s), `kinetic_rate_high_pass_s`
   (`PGUID_KE_HPF_TC`, 1 s), and `guidance::plane::DEFAULT_*` consts for each.
+- Quadplane transition pitch and off-nose cut as config fields, with params and the old values
+  as defaults (#623): `LiftTransitionConfig::forward_pitch_max_rad` (`TRAN_FW_PIT_MAX`, 3°;
+  twice it plus 2° on the lift ramp, as ArduPilot's `Q_TRAN_PIT_MAX`), and
+  `OffNoseSpeedConfig::free_rad` (`OFFNOSE_FREE`, 20°), `full_rad` (`OFFNOSE_FULL`, 160°;
+  at or below `free_rad`, a step to the whole cut), and `tail_first_divisor` (`OFFNOSE_DIV`,
+  3), with `guidance::vtol::DEFAULT_*` consts for each.
 - `FlightLoop::setpoint`: the setpoint guidance gave the stabilizer on the last tick (#539).
 - Plane autotune (#534): `PlaneStabilizer` hosts probes on its roll and pitch rate and angle
   loops (`stabilizers::plane::PlaneLoop`, `PlaneAxisGains`), as do `TailsitterStabilizer` and
@@ -106,6 +112,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `WingDesign` designs a stiff axis (a wing's pitch) fitted with damping at or below 0 as
+  undamped, with no feedforward, instead of failing: the sim eXplora's barely damped pitch
+  fitted −0.72/s from three times its gains and the plane autotune stopped on
+  `NoWingDesign` (#618).
 - Plane design (#635): an attitude pair that overshoots and keeps more than half of it raises
   I, as a sag does, instead of slowing the time constant. A wing that rolls into its turns
   held 30° steps 9–13% past and failed `Unverified` (RealFlight's Titan Cobra).

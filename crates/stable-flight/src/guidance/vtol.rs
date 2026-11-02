@@ -92,8 +92,13 @@ mod quadplane;
 mod tailsitter;
 
 pub use forward::{ForwardSplit, ForwardThrust, ForwardThrustConfig};
-pub use lift::{LiftTransition, LiftTransitionConfig, LiftTransitionStep};
-pub use off_nose::{DEFAULT_OFF_NOSE_SPEED_MPS, OffNoseSpeed, OffNoseSpeedConfig};
+pub use lift::{
+    DEFAULT_FORWARD_PITCH_MAX_RAD, LiftTransition, LiftTransitionConfig, LiftTransitionStep,
+};
+pub use off_nose::{
+    DEFAULT_OFF_NOSE_FREE_RAD, DEFAULT_OFF_NOSE_FULL_RAD, DEFAULT_OFF_NOSE_SPEED_MPS,
+    DEFAULT_OFF_NOSE_TAIL_FIRST_DIVISOR, OffNoseSpeed, OffNoseSpeedConfig,
+};
 pub use quadplane::{QuadPlaneGuidance, QuadPlaneGuidanceConfig};
 pub use tailsitter::{TailsitterGuidance, TailsitterGuidanceConfig};
 #[cfg(test)]

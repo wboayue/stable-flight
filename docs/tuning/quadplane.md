@@ -27,9 +27,9 @@ rotors' thrust and moments are weighted by a lift share, and the wing flies in f
   Forward thrust hands the nose-down pitch to the pusher (below). Waypoint legs turn the nose
   along the leg first (`GUID_YAW_SLEW`, 60°/s; 0 holds the heading), so the pusher can help.
   Waypoint and offboard position flight slow while the nose is more than 20° off the
-  waypoint, as ArduPilot's quadplane does: `OFFNOSE_SPD` (15 m/s) just past 20°, a third of it
-  (5 m/s) from 160°, tail first. Uncut, the Cobra flipped at 11–16 m/s backward, pitching up
-  past its lift rotors' authority
+  waypoint, as ArduPilot's quadplane does: `OFFNOSE_SPD` (15 m/s) just past `OFFNOSE_FREE`
+  (20°), divided by `OFFNOSE_DIV` (3: 5 m/s) from `OFFNOSE_FULL` (160°), tail first. Uncut,
+  the Cobra flipped at 11–16 m/s backward, pitching up past its lift rotors' authority
   ([#437](https://github.com/wboayue/stable-flight/issues/437)). Sticks and land flight
   aren't cut: fly sticks slow tail first.
 - **Heading in wind:** the fin swings the nose into the wind, and the lift rotors' yaw can't
@@ -216,11 +216,13 @@ thrust and one at least, or read them off a fitted model (the Alia's
 | `TRAN_VT_DEC_I` | How fast that pitch-up grows (0: off) | It reaches its pitch late | The pitch overshoots and the climb surges |
 | `TRAN_ROLL_MAX` | Bank that cuts a transition short | Gusts end transitions | |
 | `TRAN_HANDOFF` | Seconds the pusher thrust blends at the handoff to plane | Thrust steps at the handoff | |
+| `TRAN_FW_PIT_MAX` | Most pitch waiting on airspeed; twice it plus 2° on the ramp | The wing can't hold altitude or airspeed on the wait | The pitch swings as the lift hands over |
 
 Going forward the pusher flies the plane guidance's thrust for the command, up to
 `TRAN_FW_THR`. On a waypoint that is the airspeed loop; on sticks it is the throttle stick,
 so push the throttle up to transition. Pitch is the plane guidance's, held to ArduPilot's
-transition limits (0 below 3 m/s of ground speed, ±3° waiting, ±8° on the ramp). On a
+transition limits (0 below 3 m/s of ground speed, ±`TRAN_FW_PIT_MAX` (3°) waiting, ±8° on
+the ramp). On a
 waypoint it flies toward the altitude the transition holds, not the waypoint's: the wing
 enters plane flight level and loaded, and a climb or descent starts there (#491).
 

@@ -607,7 +607,7 @@ fn validates_each_config_field() {
     check!(good.validate() == Ok(()));
     type Edit = fn(&mut LiftTransitionConfig, f32);
     // (field, edit, rejected values, accepted edge)
-    let cases: [(&str, Edit, &[f32], f32); 14] = [
+    let cases: [(&str, Edit, &[f32], f32); 15] = [
         (
             "min_airspeed_mps",
             |c, v| c.min_airspeed_mps = v,
@@ -673,6 +673,12 @@ fn validates_each_config_field() {
             "pusher_slew_per_s",
             |c, v| c.pusher_slew_per_s = v,
             &[0.0, f32::INFINITY],
+            0.01,
+        ),
+        (
+            "forward_pitch_max_rad",
+            |c, v| c.forward_pitch_max_rad = v,
+            &[0.0, core::f32::consts::FRAC_PI_2, f32::NAN],
             0.01,
         ),
         ("handoff_s", |c, v| c.handoff_s = v, &[-0.1, f32::NAN], 0.0),

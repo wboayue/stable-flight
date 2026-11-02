@@ -1118,7 +1118,13 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     grid pass, raised 15%, and the passing cell farthest from a failing one taken; the moment
     is held 20% short of full throw, and I must hold the fit's trim within half the integral
     limit (the airplane's pitch at I 0.25 couldn't, sat 1.75° off its hold, and its stage
-    timed out settling). About 1,350 candidates, four per update.
+    timed out settling). About 1,350 candidates, four per update. A stiff axis fitted with
+    damping at or below 0 is designed undamped, with no FF: the trade-off in the fit carries a
+    barely damped pitch past 0 under a high P (the sim eXplora's from 1.63/s at P 0.008 to
+    −0.62/s at 0.24; RealFlight's from ×3 gains to −7.6/s), and the design on the floored model
+    meets the spec from ×3 to ×5 gains on the sim and from ×3 in RealFlight. Identifying on
+    lowered gains was rejected: the bias is already there at the eXplora's own gains, and a
+    probe can't tell a start is too high (#618).
   * **Check:** attitude pairs on the candidate, each step held on it first so the rate loop's
     integral holds what it needs (from ×3 gains the committed loop's I term, carried over,
     slowed every second step 3.6 s against 1.1 s). A sag raises I by half, a slow rise P a

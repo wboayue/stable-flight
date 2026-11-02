@@ -129,7 +129,10 @@ pub enum WingDesignStatus {
 /// Designs one wing axis's rate gains and attitude time constant on its fitted
 /// [`WingModel`], by stepping the attitude loop on the model rather than in flight.
 ///
-/// The feedforward is the model's: the moment that holds a rate against the damping. For P, I,
+/// The feedforward is the model's: the moment that holds a rate against the damping. On a
+/// stiff axis (stiffness above 0, a wing's pitch) a damping fitted at or below 0 is read as
+/// none, so no feedforward: the angle of attack follows the rate, and the fit splits the
+/// damping loosely between the two. For P, I,
 /// and the time constant τ, each candidate flies an attitude step on the model through the
 /// plane's loops (the rate target the error over τ within the rate limit, the moment its P, I,
 /// and feedforward terms within the limit) and passes when the step overshoots by no more than
@@ -218,9 +221,17 @@ impl WingDesign {
         if let Err(error) = config.validate() {
             panic!("invalid WingDesignConfig: {error}");
         }
+        // On a stiff axis the fit trades damping for stiffness, so a damping at or below 0
+        // reads as none: the eXplora's pitch fits 0.89/s of damping from its own gains and
+        // −0.72/s from three times them, its stiffness 62/s² and 96/s² (#618).
+        let stiff = model.stiffness_per_s2 > 0.0;
         let usable = model.control_radps2 > 0.0
-            && model.damping_per_s > 0.0
+            && (model.damping_per_s > 0.0 || stiff)
             && model.feedforward().is_finite();
+        let model = WingModel {
+            damping_per_s: model.damping_per_s.max(0.0),
+            ..model
+        };
         let [least_s, most_s] = config.time_constant_range_s;
         let phase = if usable {
             // The slowest first: if nothing passes there, nothing will.
