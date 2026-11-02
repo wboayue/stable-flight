@@ -2,17 +2,17 @@ use nalgebra::UnitQuaternion;
 
 use crate::GRAVITY;
 use crate::controllers::{
-    Gains, InvalidConfig, check_limit, check_unit_interval, rescale_integral,
+    Gains, InvalidConfig, check_limit, check_positive, check_unit_interval, rescale_integral,
 };
 use crate::math::{assert_dt, clamp_symmetric, tilt_boost};
 
 /// Default [`AltitudeControllerConfig::hover_thrust`].
 pub const DEFAULT_HOVER_THRUST: f32 = 0.5;
 
-/// The integral only accumulates within this many meters of the target. With gravity fed
-/// forward it just trims a `hover_thrust` mismatch; winding it up over a long climb made the
+/// Default [`AltitudeControllerConfig::integration_band_m`]: with gravity fed forward the
+/// integral just trims a `hover_thrust` mismatch, and winding it up over a long climb made the
 /// vehicle overshoot and settle slowly.
-const INTEGRATION_BAND: f32 = 1.0;
+pub const DEFAULT_INTEGRATION_BAND_M: f32 = 1.0;
 
 /// Configures the [`AltitudeController`].
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -26,6 +26,11 @@ pub struct AltitudeControllerConfig {
     /// Linear thrust (before the stabilizer's thrust curve) that holds a level hover. The
     /// controller feeds it forward, so the integral only trims the residual. Airframe-specific.
     pub hover_thrust: f32,
+    /// The integral accumulates only within this many meters of the target altitude. Wider:
+    /// trims a `hover_thrust` mismatch from farther off, but winds up over a long climb or
+    /// descent and overshoots the target. Must be positive and finite. Defaults to
+    /// [`DEFAULT_INTEGRATION_BAND_M`].
+    pub integration_band_m: f32,
 }
 
 impl Default for AltitudeControllerConfig {
@@ -41,13 +46,14 @@ impl Default for AltitudeControllerConfig {
             // With feedforward the integral only trims hover; 5 m·s at I 0.2 is ±1 m/s².
             max_integral: 5.0,
             hover_thrust: DEFAULT_HOVER_THRUST,
+            integration_band_m: DEFAULT_INTEGRATION_BAND_M,
         }
     }
 }
 
 impl AltitudeControllerConfig {
-    /// Checks the config: `max_integral` must be non-negative and finite, and `hover_thrust`
-    /// in `(0, 1]`.
+    /// Checks the config: `max_integral` must be non-negative and finite, `hover_thrust` in
+    /// `(0, 1]`, and `integration_band_m` positive and finite.
     ///
     /// # Examples
     ///
@@ -60,7 +66,8 @@ impl AltitudeControllerConfig {
     /// ```
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         check_limit("max_integral", self.max_integral)?;
-        check_unit_interval("hover_thrust", self.hover_thrust)
+        check_unit_interval("hover_thrust", self.hover_thrust)?;
+        check_positive("integration_band_m", self.integration_band_m)
     }
 }
 
@@ -197,7 +204,7 @@ impl AltitudeController {
 
         // Accumulate only near the target, but clamp every tick so a shrunk `max_integral`
         // applies on the next tick even outside the band.
-        if altitude_error.abs() < INTEGRATION_BAND {
+        if altitude_error.abs() < config.integration_band_m {
             self.integrated_error += altitude_error * dt;
         }
         self.integrated_error = clamp_symmetric(self.integrated_error, config.max_integral);
@@ -348,7 +355,7 @@ mod tests {
         }
     }
 
-    /// The integral accumulates `error · dt` only within `INTEGRATION_BAND` of the target, stops
+    /// The integral accumulates `error · dt` only within `integration_band_m` of the target, stops
     /// at `max_integral`, and feeds into thrust as `I · ∫e`.
     #[test]
     fn integral_runs_near_target_only_and_is_clamped() {
@@ -360,6 +367,7 @@ mod tests {
             },
             max_integral: 2.0,
             hover_thrust: 0.5,
+            integration_band_m: DEFAULT_INTEGRATION_BAND_M,
         };
         // (altitude error m, expected integral after 1000 ticks of 0.01 s)
         let cases = [
@@ -387,6 +395,25 @@ mod tests {
         };
         let thrust = controller.control(&config, 0.01, target(10.0), estimate(10.0, 0.0, level()));
         approx::assert_relative_eq!(thrust, 0.5 * (GRAVITY + 2.0) / GRAVITY, epsilon = 1e-5);
+    }
+
+    /// The band is the config's: 2 m off the target integrates within a 3 m band and not
+    /// within the default 1 m.
+    #[test]
+    fn integral_runs_within_the_configured_band() {
+        // (band m, expected integral after 100 ticks of 0.01 s at 2 m off)
+        for (integration_band_m, expected) in [(DEFAULT_INTEGRATION_BAND_M, 0.0), (3.0, 2.0)] {
+            let config = AltitudeControllerConfig {
+                integration_band_m,
+                max_integral: 10.0,
+                ..Default::default()
+            };
+            let mut controller = AltitudeController::default();
+            for _ in 0..100 {
+                controller.control(&config, 0.01, target(12.0), estimate(10.0, 0.0, level()));
+            }
+            approx::assert_relative_eq!(controller.integrated_error(), expected, epsilon = 1e-4);
+        }
     }
 
     #[test]
@@ -433,12 +460,18 @@ mod tests {
 
     #[test]
     fn validate_rejects_invalid_config() {
-        // (max_integral, hover_thrust, offending field)
-        let cases = [(-1.0, 0.5, "max_integral"), (5.0, 1.5, "hover_thrust")];
-        for (max_integral, hover_thrust, field) in cases {
+        // (max_integral, hover_thrust, integration_band_m, offending field)
+        let cases = [
+            (-1.0, 0.5, 1.0, "max_integral"),
+            (5.0, 1.5, 1.0, "hover_thrust"),
+            (5.0, 0.5, 0.0, "integration_band_m"),
+            (5.0, 0.5, f32::INFINITY, "integration_band_m"),
+        ];
+        for (max_integral, hover_thrust, integration_band_m, field) in cases {
             let config = AltitudeControllerConfig {
                 max_integral,
                 hover_thrust,
+                integration_band_m,
                 ..Default::default()
             };
             assert_eq!(

@@ -3,7 +3,7 @@
 
 use super::procedure::{Action, PlaneProcedure, Verdict};
 use super::side::{Decide, Motion, RateFilters, Side, SideConfig, StageView, Waits, zero_if_nan};
-use super::{AutotuneAbort, Settle, StagePlan, StepTestPlan, Supervisor};
+use super::{AutotuneAbort, DEFAULT_SETTLE_SPEED_MPS, Settle, StagePlan, StepTestPlan, Supervisor};
 use crate::controllers::{InvalidConfig, check, check_limit, check_positive};
 use crate::math::DEG;
 use crate::stabilizers::plane::{PlaneAxisGains, PlaneLoop, PlaneStabilizerConfig};
@@ -190,6 +190,7 @@ pub const PLANE_STEP_SETTLE: Settle = Settle {
     tilt_rad: 3.0 * DEG,
     rate_radps: 0.1,
     hold_s: 1.0,
+    max_speed_mps: DEFAULT_SETTLE_SPEED_MPS,
 };
 
 /// How long a plane step may clip and still count, in s: 10 ticks at 250 Hz, as a copter's

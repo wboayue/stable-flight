@@ -53,6 +53,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
             gains: gains(1.5, 0.2, 2.0),
             max_integral: 5.0,
             hover_thrust: 0.82,
+            integration_band_m: 1.0,
         },
         lateral: LateralControllerConfig {
             position_p: 0.5,
@@ -60,6 +61,7 @@ fn quadcopter_x_gains_are_the_flight_checked_set() {
             max_integral: 12.5,
             max_accel_mps2: 0.0,
             brake_mps2: 0.0,
+            braking_share: 0.7,
         },
         navigation_period_s: 0.02,
         max_tilt_rad: 27.0_f32.to_radians(),

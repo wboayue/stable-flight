@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (0.1 m/s, below `DESCENDING_MPS`) and hold `hold_s` (1 s), with `DEFAULT_STOPPED_MPS` and
   `DEFAULT_TOUCHDOWN_HOLD_S`; `TouchdownDetector::new` takes one, `FailsafeConfig::touchdown`
   and `WaypointFollower::with_touchdown` set it.
+- Controller limits as config fields, the old values as defaults (#626):
+  `AltitudeControllerConfig::integration_band_m` (`GUID_ALT_IBAND`, 1 m),
+  `LateralControllerConfig::braking_share` (`GUID_LAT_BRK_SHR`, 0.7), and
+  `tuning::autotune::Settle::max_speed_mps` (0.2 m/s; the plane autotune ignores it), with
+  `controllers::DEFAULT_INTEGRATION_BAND_M` and `DEFAULT_BRAKING_SHARE`, and
+  `tuning::autotune::DEFAULT_SETTLE_SPEED_MPS`.
 - `FlightLoop::setpoint`: the setpoint guidance gave the stabilizer on the last tick (#539).
 - Plane autotune (#534): `PlaneStabilizer` hosts probes on its roll and pitch rate and angle
   loops (`stabilizers::plane::PlaneLoop`, `PlaneAxisGains`), as do `TailsitterStabilizer` and
@@ -50,6 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `controllers::lateral::BRAKING_SHARE` is `DEFAULT_BRAKING_SHARE`, the default
+  of `LateralControllerConfig::braking_share`; `AltitudeControllerConfig`,
+  `LateralControllerConfig`, and `tuning::autotune::Settle` have new fields, so struct
+  literals add them or end in `..Default::default()` (`Settle` has no default: add
+  `max_speed_mps`) (#626).
 - **Breaking:** `FailsafeConfig` has a `touchdown` field (`TouchdownConfig`): struct literals
   add it or end in `..FailsafeConfig::default()`. `touchdown::STOPPED_MPS` and
   `TOUCHDOWN_HOLD_S` are `DEFAULT_STOPPED_MPS` and `DEFAULT_TOUCHDOWN_HOLD_S`, and

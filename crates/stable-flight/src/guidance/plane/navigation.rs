@@ -20,8 +20,10 @@ mod tests;
 /// Below this ground speed the path has no course to compare against: wings level.
 const MIN_GROUND_SPEED_MPS: f32 = 1.0;
 
-/// The largest capture angle onto the path: the vehicle heads back at no more than 45°
-/// (ArduPilot caps it the same way).
+/// The largest capture angle onto the path: the vehicle heads back at no more than 45°. Part
+/// of the L1 law, not a tuning knob: ArduPilot fixes the same cap in code
+/// (`AP_L1_Control::update_waypoint`, no `NAVL1_*` param); toward 90° the capture turns into
+/// heading straight at the line, which overshoots it.
 const MAX_CAPTURE_RAD: f32 = core::f32::consts::FRAC_PI_4;
 
 /// The L1 distance and gain for a ground speed: `(L1, 4ζ²)`.
