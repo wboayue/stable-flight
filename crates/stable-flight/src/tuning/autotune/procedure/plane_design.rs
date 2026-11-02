@@ -7,7 +7,7 @@ use crate::tuning::autotune::{AutotuneAbort, Outcome, PlaneDesignPlan};
 use crate::tuning::wing::design::meets_targets;
 use crate::tuning::{
     DesignError, Measurement, ProbeAbort, ProbeConfig, StepMetrics, StepSummary, WingDesign,
-    WingDesignStatus,
+    WingDesignConfig, WingDesignStatus,
 };
 
 #[cfg(test)]
@@ -24,6 +24,21 @@ const SAG_I_FACTOR: f32 = 1.5;
 /// The I a sagging pair's raise starts from when the design had none.
 const MIN_SAG_I: f32 = 0.05;
 
+/// The most of its overshoot a step that holds past its target gives back, as a share: one
+/// that ends this close to its peak isn't swinging past, it's short of a steady moment the
+/// fit didn't see, which I supplies. Higher reads more overshoots as offsets and raises I on
+/// them; at 0 every overshoot slows the time constant. The Titan Cobra's 30° roll steps in
+/// RealFlight peak 0.10–0.15 past and give back 0.01–0.03, against a 0.08 aileron moment the
+/// 22 m turn needs (#635).
+const HOLD_PAST_BOUNCE_SHARE: f32 = 0.5;
+
+/// How far past its target, as a share of the overshoot limit, a step that swings back may end
+/// before the pair also raises I: its overshoot is then part swing, part a steady offset, and
+/// a slower time constant alone takes the swing out but leaves the offset. Lower raises I on
+/// smaller offsets. The Titan Cobra's 30° roll steps at 14 m/s in RealFlight overshot
+/// 0.04–0.07, gave back 0.02–0.05, and ended 1.02–1.04 (#635).
+const END_PAST_SHARE: f32 = 0.5;
+
 /// What a pair that overshoots or clips multiplies the time constant by: a slower attitude loop
 /// asks for less rate, so less overshoot and less deflection (#533).
 const OVERSHOOT_TAU_FACTOR: f32 = 1.15;
@@ -34,8 +49,9 @@ const SLOW_P_FACTOR: f32 = 1.66;
 
 /// A [`PlaneDesignPlan`] as a pure state machine: a wing fit of the stage's axis, gains
 /// designed on it over several updates, then attitude pairs flown on the candidate until one
-/// meets the targets, each miss nudging the candidate (a sag raises I, a slow rise P, an
-/// overshoot or clip the time constant).
+/// meets the targets, each miss nudging the candidate (a sag or a hold past the target raises
+/// I, a slow rise P, an overshoot or clip the time constant, both I and the time constant an
+/// overshoot that swings back but ends past the target).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(in crate::tuning::autotune) struct PlaneDesign {
     plan: PlaneDesignPlan,
@@ -228,9 +244,11 @@ impl PlaneDesign {
     }
 
     /// Finishes on `candidate` when both of `pair`'s steps meet the targets; else flies the
-    /// next pair on it nudged: more I for a sag (a step that doesn't settle), more P for a
-    /// step that settles but rises too slowly (the rate loop lags its target), else (an
-    /// overshoot or clip) a slower time constant. A slower time constant doesn't speed a slow
+    /// next pair on it nudged: more I for a sag (a step that doesn't settle) or a step that
+    /// holds past its target (overshoots and gives little of it back), more I and a slower
+    /// time constant for an overshoot that swings back but still ends past the target, more P
+    /// for a step that settles but rises too slowly (the rate loop lags its target), else (an
+    /// overshoot that swings back to it, or a clip) a slower time constant. A slower time constant doesn't speed a slow
     /// rise: the airplane's roll rose in 2.0, 2.5, 3.0, and 3.5 time constants at 0.56, 0.64,
     /// 0.74, and 0.85 s (#534).
     fn judge(
@@ -252,6 +270,8 @@ impl PlaneDesign {
             };
         }
         let sags = steps.iter().any(|m| m.settling_time_s.is_none());
+        let holds = steps.iter().any(|m| holds_past(m, design));
+        let ends_past = steps.iter().any(|m| swings_and_ends_past(m, design));
         let max_rise_s = design.rise_per_time_constant * tau_s;
         let slow = steps
             .iter()
@@ -260,8 +280,11 @@ impl PlaneDesign {
             .iter()
             .any(|m| m.overshoot > design.max_overshoot || m.saturated_s > design.max_saturated_s);
         let mut next = candidate;
-        if sags {
+        if sags || holds {
             next.rate.i = (candidate.rate.i * SAG_I_FACTOR).max(MIN_SAG_I);
+        } else if ends_past {
+            next.rate.i = (candidate.rate.i * SAG_I_FACTOR).max(MIN_SAG_I);
+            next = slower(next, &self.plan);
         } else if slow && !wide {
             next.rate.p = candidate.rate.p * SLOW_P_FACTOR;
         } else {
@@ -269,6 +292,21 @@ impl PlaneDesign {
         }
         self.verify(next, pair + 1)
     }
+}
+
+/// Whether a step overshoots past `design`'s limit and keeps most of it: an offset a slower
+/// time constant only widens (the error then carries the moment), where a swing past the target
+/// gives most of its overshoot back.
+fn holds_past(metrics: &StepMetrics, design: &WingDesignConfig) -> bool {
+    metrics.overshoot > design.max_overshoot
+        && metrics.bounce_back < HOLD_PAST_BOUNCE_SHARE * metrics.overshoot
+}
+
+/// Whether a step overshoots past `design`'s limit, swings back, and still ends past its
+/// target by more than [`END_PAST_SHARE`] of the limit.
+fn swings_and_ends_past(metrics: &StepMetrics, design: &WingDesignConfig) -> bool {
+    metrics.overshoot > design.max_overshoot
+        && metrics.final_value - 1.0 > END_PAST_SHARE * design.max_overshoot
 }
 
 /// `candidate` with its time constant raised by [`OVERSHOOT_TAU_FACTOR`], up to the plan's
