@@ -1,6 +1,7 @@
 # eXplora VTOL loops and centered sticks (#630): explora_acro.csv's 240 x 120 m clockwise
 # rectangle at 60 m and 14 m/s airspeed, flown twice with a 10 m loop at the middle of each west
-# leg and 10 s of centered rate sticks (pause) from the start of each east leg, as the sim's
+# leg and 10 s of centered rate sticks (pause) from the middle of each east leg, wings level
+# after the corner, then straight on to the next corner, as the sim's
 # maneuver tests fly them. Climb in hover over the start, transition back at the end of the
 # last west leg, descending to 30 m, fly home in hover. Run with --end land.
 # Coordinates are m north and east of where the vehicle starts, altitudes m above it.
@@ -11,14 +12,12 @@ x,y,altitude,cruise_speed,regime,heading,hold_s,maneuver
 40.55,120.00,60.0,14.0,plane,,,loop:10
 -79.45,120.00,60.0,14.0,plane
 -79.45,0.00,60.0,14.0,plane
--49.45,0.00,60.0,14.0,plane,,,pause:10
-160.55,0.00,60.0,14.0,plane
+40.55,0.00,60.0,14.0,plane,,,pause:10
 160.55,120.00,60.0,14.0,plane
 40.55,120.00,60.0,14.0,plane,,,loop:10
 -79.45,120.00,60.0,14.0,plane
 -79.45,0.00,60.0,14.0,plane
--49.45,0.00,60.0,14.0,plane,,,pause:10
-160.55,0.00,60.0,14.0,plane
+40.55,0.00,60.0,14.0,plane,,,pause:10
 160.55,120.00,60.0,14.0,plane
 -79.45,120.00,60.0,14.0,plane
 -79.45,0.00,30.0,14.0,plane
