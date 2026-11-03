@@ -35,6 +35,9 @@ pub enum RecordingError {
     /// The header's first column isn't [`TIME`].
     #[error("not a recording: the first column isn't `{TIME}`")]
     NoTime,
+    /// A column the reader needs isn't in the header.
+    #[error("no `{0}` column")]
+    MissingColumn(&'static str),
 }
 
 /// A recording's column names, from its header line.
@@ -76,6 +79,15 @@ impl Header {
         self.columns.iter().position(|c| c == name)
     }
 
+    /// `name`'s index in a row, for a column the reader can't do without.
+    ///
+    /// # Errors
+    ///
+    /// [`RecordingError::MissingColumn`] without the column.
+    pub fn require(&self, name: &'static str) -> Result<usize, RecordingError> {
+        self.column(name).ok_or(RecordingError::MissingColumn(name))
+    }
+
     /// One data line's cells, text as NaN; `None` when its width isn't the header's.
     pub fn row(&self, line: &str) -> Option<Vec<f32>> {
         let row: Vec<f32> = line
@@ -110,6 +122,15 @@ impl Recording {
     /// `name`'s index in a row, or `None` without the column.
     pub fn column(&self, name: &str) -> Option<usize> {
         self.header.column(name)
+    }
+
+    /// `name`'s index in a row, for a column the reader can't do without.
+    ///
+    /// # Errors
+    ///
+    /// [`RecordingError::MissingColumn`] without the column.
+    pub fn require(&self, name: &'static str) -> Result<usize, RecordingError> {
+        self.header.require(name)
     }
 
     /// The rows, in time order, [`TIME`] at index 0.

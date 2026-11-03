@@ -109,8 +109,6 @@ enum WatchError {
     Io(#[from] io::Error),
     #[error(transparent)]
     Recording(#[from] RecordingError),
-    #[error("no `{0}` column")]
-    MissingColumn(&'static str),
     #[error("the example exited before recording")]
     ExitedBeforeRecording,
     #[error("`kill` failed to signal pid {0}")]
@@ -258,7 +256,7 @@ struct Columns {
 
 impl Watchdog {
     fn new(limits: Limits, header: &Header) -> Result<Self, WatchError> {
-        let column = |name| header.column(name).ok_or(WatchError::MissingColumn(name));
+        let column = |name| header.require(name);
         let columns = Columns {
             armed: column("armed")?,
             mode: header.column("mode"),

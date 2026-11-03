@@ -44,6 +44,8 @@ fn reads_a_line_at_a_time() {
     let header = Header::parse("wall_s,mode,sp_kind\n").expect("a header");
     check!(header.column("sp_kind") == Some(2));
     check!(header.column("altitude").is_none());
+    check!(header.require("mode") == Ok(1));
+    check!(header.require("altitude") == Err(RecordingError::MissingColumn("altitude")));
     let row = header.row("0.5,1,plane\n").expect("a whole row");
     check!(row[..2] == [0.5, 1.0]);
     check!(row[2].is_nan());
