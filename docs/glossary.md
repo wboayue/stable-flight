@@ -38,6 +38,16 @@ Code comments and docs link here instead of redefining a term.
 - **Prop wash:** the propeller's slipstream; on a tailsitter it flows over the elevons, so
   their authority grows with thrust as well as airspeed, and damps the wing's turns where it
   covers the span, the only damping in a hover.
+- **Companion (computer):** the computer beside the flight controller that manages the
+  mission (plans, sequencing, replanning, later perception) and speaks to ground stations; the
+  flight controller flies and keeps the vehicle safe without it
+  ([design principles](../architecture.md#design-principles)).
+- **Target horizon:** the targets the flight controller is flying toward: the current one and
+  the next, so plane legs can turn before a waypoint. The companion replaces it as the mission
+  advances (planned, [#658](https://github.com/wboayue/stable-flight/issues/658)).
+- **Flight envelope:** limits the flight controller holds every command inside, whoever sent
+  it: geofence, altitude, and distance from home. Not the autotune envelope (planned,
+  [#657](https://github.com/wboayue/stable-flight/issues/657)).
 - **Offboard:** setpoints sent by a companion computer or ground station rather than sticks.
 - **Failsafe:** what the vehicle flies on its own when the link goes quiet: a fallback
   commander takes over ([architecture](../architecture.md#link-failsafe)).

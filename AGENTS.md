@@ -38,6 +38,13 @@ lives in `architecture.md`; each crate's README owns its usage.
 - Other crates use core's `nalgebra` re-export (`stable_flight::nalgebra`) and `Vec2`/`Vec3`
   aliases. sitl re-exports only the core crate (`stable_flight_sitl::stable_flight`); import core
   items from `stable_flight`.
+- **Flight controller or companion** first
+  ([`architecture.md#design-principles`](architecture.md#design-principles)): the flight
+  controller stabilizes and guides over a short target horizon, and owns safety (estimation,
+  arm gate, failsafes, flight envelope, return to launch); the companion owns missions,
+  perception, and the ground station protocol. Work goes on the flight controller only if it
+  runs at tick rate or the vehicle needs it with the companion gone. Nothing on the flight
+  controller depends on the companion to stay safe.
 - Hardware-reusable logic (control math, mixing, sequencing, sensor parsing, estimation) goes in
   core or another `no_std` crate, unit-tested on the host. Anything touching an OS, clock, file,
   or network goes in sitl; anything specific to one simulator goes in its
@@ -126,6 +133,9 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 | `Mixer` | `TableMixer<N>` (presets `quad_x`, `hex_x`, `tri`, `tailsitter_2p`, …) | core |
 | `TelemetryPublisher` | `(A, B)` fan-out; `testing::RecordingTelemetry<N>` | core |
 | `TelemetryPublisher` | `LinkPublisher` (from `FcLink`; MAVLink is the bridge's job) | link |
+
+`WaypointFollower` and `ScriptCommander` sequence whole routes on the flight controller for tests
+and SITL; real missions come from the companion (`LinkCommander`).
 
 - `View<T>` runs any guidance or stabilizer in a constant rotated body frame (state in, moments
   back out); `View::tailsitter` flies nose-up hover on the copter controllers.
@@ -349,6 +359,8 @@ Related code sits together, so a reviewer reads one behavior in one place.
 1. Review every plan before implementing it, and include the review in the plan; review the
    finished PR the same way before it merges. Fixes go in the same PR as follow-up commits;
    deferred items get issues (**Commits, PRs, and releases**). The lenses:
+   - **Boundary:** on the right side of the link (**Layout**)? Missions, perception, and
+     protocol on the companion; nothing the flight controller needs to stay safe waits on it.
    - **Duplication:** logic, constants, or helpers repeated in the change or already elsewhere
      (check core `math` and sibling crates first).
    - **Single responsibility:** one job per type or function; I/O, scheduling, and pure

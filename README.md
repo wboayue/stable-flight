@@ -6,17 +6,15 @@
 
 ## Overview
 
-Stable Flight provides the foundation for a Rust-powered flight controller designed for VTOL drones. It utilizes Software-in-the-Loop (SITL) simulation to safely refine flight control logic before real-world deployment. My goal is to create an easily extendable, robust, and approachable flight controller leveraging [Rust's advantages](https://wboayue.com/posts/flight-controller-why-rust/) in systems programming. See the following document for an [architecture overview](architecture.md).
+Stable Flight is an autonomous flight stack for VTOL drones, written in Rust. It splits the work across two computers: a `no_std` flight controller that stabilizes the vehicle, guides it to the targets it is given, and owns its safety (arming, failsafes, return to launch), and a companion computer that manages the mission: it plans, sequences, and replans the flight and streams targets to the flight controller, and later processes camera, lidar, and ADS-B data to update the mission as it flies. The flight controller never depends on the companion to stay safe: a quiet or misbehaving companion ends in a failsafe the flight controller chooses. The [design principles](architecture.md#design-principles) set out the split; the [architecture](architecture.md) the rest. Both sides are developed in Software-in-the-Loop (SITL) simulation before hardware, leveraging [Rust's advantages](https://wboayue.com/posts/flight-controller-why-rust/) in systems programming.
 
 **Status:** Stable Flight flies a quadcopter, a tailsitter that hovers and transitions to plane flight and back, from a joystick (stabilized plane), a waypoint script (plane waypoint navigation), or QGroundControl's transition button through the bridge, and a quadplane that hovers, transitions to plane flight and back, and flies copter legs with forward thrust from a waypoint script, in simulation only: RealFlight SITL, from a joystick, a waypoint script, or QGroundControl through the MAVLink bridge; and the X-Plane Alia 250 eVTOL, which hovers from a joystick or QGroundControl and transitions to plane flight and back from a waypoint script. The tailsitter also flies scripted aerobatics on its plane legs: doublets, rolls, and loops. It does not fly real hardware yet: the [ARK FPV firmware](firmware/ark-fpv) is a stub that reads no sensors and drives no motors.
 
-Starting with simulation allowed me to quickly iterate on flight stabilizer logic and test different airframes without worrying about building hardware. Simulated crashes cut costs and speed up testing compared to real-world failures.
-
-Perfect for anyone keen to explore flight controllers, tweak control logic, or script flights in simulation.
+**Planned:** the companion's mission service, flying a QGroundControl plan in X-Plane ([mission-demo](https://github.com/wboayue/stable-flight/milestone/7)); the first board ([ark-fpv](https://github.com/wboayue/stable-flight/milestone/3)); and, for autonomy, a target horizon ([#658](https://github.com/wboayue/stable-flight/issues/658)), a flight envelope on the flight controller ([#657](https://github.com/wboayue/stable-flight/issues/657)), and companion measurements and timestamps for perception ([#656](https://github.com/wboayue/stable-flight/issues/656), [#655](https://github.com/wboayue/stable-flight/issues/655)).
 
 ## How It Fits Together
 
-A RealFlight example is the flight controller: it runs `FlightLoop` against the simulator and serves telemetry, params, and link commands to a companion. The bridge turns that native link into MAVLink for a ground station.
+A RealFlight example is the flight controller: it runs `FlightLoop` against the simulator and serves telemetry, params, and link commands to a companion. On the companion, the bridge turns that native link into MAVLink for a ground station, and the mission service (planned) will sequence missions over it.
 
 ```mermaid
 flowchart LR
@@ -27,7 +25,12 @@ flowchart LR
         fclink["FcLink<br/>telemetry, params,<br/>link commands"]
         loop <--> fclink
     end
-    fclink <-->|"native link<br/>UDP"| bridge["stable-flight-bridge"]
+    subgraph companion ["Companion computer"]
+        bridge["stable-flight-bridge<br/>MAVLink translation"]
+        mission["Mission service (planned)<br/>plans, sequencing, replanning"]
+    end
+    fclink <-->|"native link<br/>UDP"| bridge
+    mission -.-> bridge
     bridge <-->|"MAVLink v2<br/>UDP 14550"| gcs["QGroundControl<br/>or offboard app"]
 ```
 
@@ -91,13 +94,15 @@ Runnable entrypoints are the crate examples (`crates/*/examples/`); run them fro
 
 | Flight | Pilot | Run |
 |---|---|---|
-| Quadcopter, manual | Joystick or Spektrum transmitter | `just fly-manual` |
-| Quadcopter, scripted | Waypoint CSV | `just fly-auto` |
 | Quadcopter, from a companion | QGC through the bridge, or `link_pilot` | `just fly-companion` + `just bridge` (or `just link-pilot`) |
+| Quadcopter, scripted | Waypoint CSV | `just fly-auto` |
 | Quadcopter autotune | None: tunes, prints gains, lands | `just fly-autotune` |
-| Tailsitter, manual | Joystick (D-pad picks copter or plane) | `just fly-tailsitter` |
-| Tailsitter, scripted | Waypoint CSV: hover, or a transition mission | `just fly-tailsitter-auto` |
+| Quadcopter, manual | Joystick or Spektrum transmitter | `just fly-manual` |
 | Tailsitter, from a companion | QGC through the bridge (transition button) | `just fly-tailsitter-companion` + `just bridge --vehicle-type tailsitter` |
+| Tailsitter, scripted | Waypoint CSV: hover, or a transition mission | `just fly-tailsitter-auto` |
+| Tailsitter, manual | Joystick (D-pad picks copter or plane) | `just fly-tailsitter` |
+
+Scripts and joysticks fly the flight controller directly, for development and tests; missions come from the companion.
 
 Every flight serves telemetry and params over the link, so `just bridge` + QGC can watch any of them. The tailsitter and autotune commands are in the [`stable-flight-sitl-realflight` README](crates/stable-flight-sitl-realflight/README.md#examples); the commands behind the copter recipes:
 
@@ -158,10 +163,6 @@ Options:
 ```
 
 Each example wires the same six-component pipeline. The [`stable-flight` README](crates/stable-flight/README.md) covers the pipeline, guidance, stabilizers, and mixers; the [`stable-flight-sitl` README](crates/stable-flight-sitl/README.md) covers the commanders and real-time runner; the [`stable-flight-sitl-realflight` README](crates/stable-flight-sitl-realflight/README.md) covers the RealFlight vehicle and airframes.
-
-## Conclusion
-
-This project provides a solid foundation, but there is still work ahead to make it fly on real hardware. The first board is the ARK FPV (STM32H743) running [RTIC 2](https://rtic.rs/2/book/en/); its [firmware](firmware/ark-fpv) runs the flight loop on target, with placeholder sensing and actuation. In simulation, state comes directly from the simulator; on real hardware, noisy sensor data needs to be read and filtered into reliable state estimates, and motor output, arming, and failsafes need to land. I'm excited to tackle these next steps and get a drone airborne with stable flight.
 
 ## Getting Involved
 

@@ -1,7 +1,49 @@
 ## Architecture
 
-Crate boundaries and the rationale behind the design. The [project README](README.md) is the
-overview; trait contracts are in core rustdoc.
+Design principles, crate boundaries, and the rationale behind the design. The
+[project README](README.md) is the overview; trait contracts are in core rustdoc.
+
+## Design Principles
+
+Stable Flight is an autonomous flight stack for VTOL aircraft, split across two computers: a
+`no_std` flight controller that keeps the vehicle flying, and a companion computer that decides
+where it goes. The [link](#link) between them is the boundary.
+
+* **The flight controller** owns everything that closes a loop at tick rate or that the vehicle
+  needs with the companion gone: state estimation, stabilization and mixing, guidance to the
+  targets it is given (hover, waypoint, land, transition, loiter), the arm gate, failsafes, home
+  and return to launch, and params. Guidance looks a short horizon ahead, the current target and
+  the next ([#658](https://github.com/wboayue/stable-flight/issues/658), planned), never a whole
+  mission.
+* **The companion** owns everything above that horizon: mission storage, sequencing, and
+  replanning ([#350](https://github.com/wboayue/stable-flight/issues/350), planned), and the
+  ground station protocol (the bridge translates MAVLink and never decides). Later, perception
+  too: camera, lidar, and ADS-B processed on the companion, which replans the mission and
+  streams new targets. Raw sensor data never crosses the link.
+* **The link carries** commands, target horizons, and companion measurements up, and
+  timestamped state, telemetry, and status down. Measurements (visual odometry, height above
+  ground) enter the flight controller's estimator as one more gated sensor
+  ([#656](https://github.com/wboayue/stable-flight/issues/656), planned); attitude and rates
+  stay onboard. Perception pairs its frames with state through flight-controller timestamps
+  and a timesync exchange ([#655](https://github.com/wboayue/stable-flight/issues/655),
+  planned), while freshness and failsafe timing stay on the flight controller's own `dt`.
+* **The flight controller trusts the companion for nothing that keeps the vehicle safe.** A
+  quiet or misbehaving companion ends in a failsafe the flight controller chooses
+  ([Link Failsafe](#link-failsafe)); the companion can't arm against the flight controller's
+  policy; and every command, whoever sends it, stays inside a flight envelope the flight
+  controller enforces: geofence, altitude, and distance limits
+  ([#657](https://github.com/wboayue/stable-flight/issues/657), planned). Avoidance decisions
+  are the companion's; the envelope is the backstop.
+
+Where new work goes: on the flight controller only if it runs at tick rate or the vehicle needs
+it with the companion gone; otherwise on the companion. Core's `WaypointFollower` and sitl's
+`ScriptCommander` sequence whole routes on the flight controller as test and SITL tools; real
+missions come from the companion.
+
+Missions stay off the flight controller. A companion that replans from its sensors would turn
+every change into a re-upload, and a flight controller flying on after the companion went quiet
+would fly a plan nobody can correct. The failsafe flies instead: a hold, or in plane a loiter
+then return to launch ([#468](https://github.com/wboayue/stable-flight/issues/468)).
 
 ## Crate Boundaries
 
