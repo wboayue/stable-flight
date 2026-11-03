@@ -147,13 +147,13 @@ fn watch(args: &Args, poll: Duration) -> Result<Outcome, WatchError> {
     }
     let mut file = File::open(&args.csv)?;
     let mut lines = PartialLines::default();
-    let mut watchdog: Option<Watchdog> = None;
+    let mut reader: Option<(Header, Watchdog)> = None;
     let mut chunk = Vec::new();
     loop {
         if !alive(args.pid) {
             return Ok(Outcome::Exited {
                 after_s: elapsed_s(),
-                max_height_m: watchdog.map_or(0.0, |w| w.max_height_m),
+                max_height_m: reader.map_or(0.0, |(_, watchdog)| watchdog.max_height_m),
             });
         }
         if let Some(stop) = args.limits.timed_out(elapsed_s()) {
@@ -162,11 +162,17 @@ fn watch(args: &Args, poll: Duration) -> Result<Outcome, WatchError> {
         chunk.clear();
         file.read_to_end(&mut chunk)?;
         for line in lines.feed(&chunk) {
-            let Some(watchdog) = &mut watchdog else {
-                watchdog = Some(Watchdog::new(args.limits, &Header::parse(&line)?)?);
+            let Some((header, watchdog)) = &mut reader else {
+                let header = Header::parse(&line)?;
+                let watchdog = Watchdog::new(args.limits, &header)?;
+                reader = Some((header, watchdog));
                 continue;
             };
-            if let Some(stop) = watchdog.observe(&line) {
+            // A short row is the last of a stopped recorder: nothing to check.
+            let Some(row) = header.row(&line) else {
+                continue;
+            };
+            if let Some(stop) = watchdog.observe(&row) {
                 return stop_run(args, stop);
             }
         }
@@ -236,8 +242,7 @@ impl PartialLines {
 #[derive(Debug, Clone)]
 struct Watchdog {
     limits: Limits,
-    header: Header,
-    columns: Columns,
+    columns: ColumnIndices,
     /// The first row's north, east, and altitude, in m.
     origin: Option<(f32, f32, f32)>,
     was_armed: bool,
@@ -246,7 +251,7 @@ struct Watchdog {
 
 /// The column indices a [`Watchdog`] reads.
 #[derive(Debug, Clone, Copy)]
-struct Columns {
+struct ColumnIndices {
     armed: usize,
     mode: Option<usize>,
     altitude: usize,
@@ -257,7 +262,7 @@ struct Columns {
 impl Watchdog {
     fn new(limits: Limits, header: &Header) -> Result<Self, WatchError> {
         let column = |name| header.require(name);
-        let columns = Columns {
+        let columns = ColumnIndices {
             armed: column("armed")?,
             mode: header.column("mode"),
             altitude: column("altitude")?,
@@ -266,7 +271,6 @@ impl Watchdog {
         };
         Ok(Self {
             limits,
-            header: header.clone(),
             columns,
             origin: None,
             was_armed: false,
@@ -274,9 +278,8 @@ impl Watchdog {
         })
     }
 
-    /// The limit `line` (a data row) trips, if any; a row of the wrong width is skipped.
-    fn observe(&mut self, line: &str) -> Option<Stop> {
-        let row = self.header.row(line)?;
+    /// The limit `row` (a data row under the header given to [`new`](Self::new)) trips, if any.
+    fn observe(&mut self, row: &[f32]) -> Option<Stop> {
         let c = self.columns;
         let (north_m, east_m, altitude_m) = (row[c.north], row[c.east], row[c.altitude]);
         let (origin_north_m, origin_east_m, origin_altitude_m) =
