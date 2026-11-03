@@ -17,6 +17,7 @@ change makes one wrong, re-measure and update it, or delete it.
 | [Heading in the wind decides the eXplora's roll cycle](heading-decides-roll-cycle.md) | 2026-10-21 | #476 |
 | [RealFlight wind: direction, speed, sign](realflight-wind.md) | 2026-10-20–21 | #473, #476 |
 | [The eXplora's elevon trim falls with airspeed as V^-0.74](explora-trim-vs-airspeed.md) | 2026-11-01 | #648 |
+| [The eXplora's hover descent swings on a soft pitch tune, not from a vortex ring](explora-descent-swing.md) | 2026-11-03 | #647 |
 
 ## Format
 
