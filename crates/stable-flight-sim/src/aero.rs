@@ -120,7 +120,8 @@ pub(crate) fn wrench(
     );
 
     let roll_nm = pressure_area_n * span * c.c_roll_beta * beta_rad;
-    let pitch_nm = symmetric_area_n * chord * pitch_coefficient(c, alpha_rad, blend);
+    let pitch_nm =
+        symmetric_area_n * chord * pitch_coefficient(c, alpha_rad, blend, sin_alpha, cos_alpha);
     let yaw_nm = pressure_area_n * span * c.c_yaw_beta * beta_rad;
     let static_nm = Vec3::new(roll_nm, pitch_nm, yaw_nm);
 
@@ -132,32 +133,37 @@ pub(crate) fn wrench(
     }
 }
 
-/// The static pitch moment coefficient at `alpha_rad` (with its [`stall_blend`]): static
+/// The static pitch moment coefficient at `alpha_rad` (with its [`stall_blend`], sine, and
+/// cosine): static
 /// stability on `sin α` (the slope at small α, strongest broadside, gone with the flow
 /// reversed), blended past the stall into a flat plate's by
 /// [`post_stall_pitch_share`](AeroCoefficients::post_stall_pitch_share).
-fn pitch_coefficient(c: &AeroCoefficients, alpha_rad: f32, blend: f32) -> f32 {
-    let sin_alpha = libm::sinf(alpha_rad);
+fn pitch_coefficient(
+    c: &AeroCoefficients,
+    alpha_rad: f32,
+    blend: f32,
+    sin_alpha: f32,
+    cos_alpha: f32,
+) -> f32 {
     let on_sin_alpha = c.c_pitch_0 + c.c_pitch_alpha * sin_alpha;
     let plate_share = c.post_stall_pitch_share * blend;
     if plate_share <= 0.0 {
         return on_sin_alpha;
     }
-    let plate = c.c_pitch_0 + flat_plate_pitch(c, alpha_rad, sin_alpha);
+    let plate = c.c_pitch_0 + flat_plate_pitch(c, alpha_rad, sin_alpha, cos_alpha);
     on_sin_alpha + plate_share * (plate - on_sin_alpha)
 }
 
-/// A flat plate's pitch moment coefficient about the center of gravity at `alpha_rad`: its
+/// A flat plate's pitch moment coefficient about the center of gravity at `alpha_rad` (with its
+/// sine and cosine): its
 /// normal force (the flat plate's lift and drag resolved onto body `−z`, `2·sin²α` broadside)
 /// at a center of pressure from the quarter chord at α 0 back to the three-quarter chord at
 /// ±180°, mid-chord broadside. The center of gravity sits ahead of the quarter chord by the
 /// static margin, `−c_pitch_alpha / c_lift_alpha` chords.
-fn flat_plate_pitch(c: &AeroCoefficients, alpha_rad: f32, sin_alpha: f32) -> f32 {
-    let cos_alpha = libm::cosf(alpha_rad);
-    let plate_lift = 2.0 * alpha_rad.signum() * sin_alpha * sin_alpha * cos_alpha;
-    let plate_drag = 2.0 * sin_alpha * sin_alpha;
+fn flat_plate_pitch(c: &AeroCoefficients, alpha_rad: f32, sin_alpha: f32, cos_alpha: f32) -> f32 {
     // Positive toward body −z (up in level flight).
-    let normal = plate_lift * cos_alpha + plate_drag * sin_alpha;
+    let normal = flat_plate_lift(alpha_rad, sin_alpha, cos_alpha) * cos_alpha
+        + flat_plate_pressure_drag(sin_alpha) * sin_alpha;
     let static_margin_chords = if c.c_lift_alpha > 0.0 {
         -c.c_pitch_alpha / c.c_lift_alpha
     } else {
@@ -172,6 +178,18 @@ fn flat_plate_pitch(c: &AeroCoefficients, alpha_rad: f32, sin_alpha: f32) -> f32
 
 /// Where attached flow's lift acts on a thin wing, in chords from the leading edge.
 const QUARTER_CHORD: f32 = 0.25;
+
+/// A flat plate's lift coefficient at `alpha_rad` (with its sine and cosine),
+/// `2·sign α·sin²α·cos α`: its normal force's share across the air.
+fn flat_plate_lift(alpha_rad: f32, sin_alpha: f32, cos_alpha: f32) -> f32 {
+    2.0 * alpha_rad.signum() * sin_alpha * sin_alpha * cos_alpha
+}
+
+/// A flat plate's pressure drag coefficient at `sin_alpha`, `2·sin²α`: its normal force's share
+/// along the air, without the parasitic drag.
+fn flat_plate_pressure_drag(sin_alpha: f32) -> f32 {
+    2.0 * sin_alpha * sin_alpha
+}
 
 /// The rate damping and cross terms of `model` turning at `rates_radps` under `rate_scale`
 /// (dynamic pressure times wing area per unit of airspeed, in N·s/m), in N·m on the FRD body
@@ -235,7 +253,7 @@ pub(crate) fn drag_coefficient(model: &FixedWingModel, linear_lift: f32) -> f32 
 /// Drag coefficient past the stall: parasitic plus a flat plate's `2·sin²α`, at most
 /// `c_drag_0 + 2` broadside.
 fn flat_plate_drag(c: &AeroCoefficients, sin_alpha: f32) -> f32 {
-    c.c_drag_0 + 2.0 * sin_alpha * sin_alpha
+    c.c_drag_0 + flat_plate_pressure_drag(sin_alpha)
 }
 
 /// How far past the stall `alpha_rad` is: a sigmoid that is 0 inside `±alpha_stall_rad` and 1
@@ -256,6 +274,6 @@ pub(crate) fn lift_coefficient(
     sin_alpha: f32,
     cos_alpha: f32,
 ) -> f32 {
-    let flat_plate = 2.0 * alpha_rad.signum() * sin_alpha * sin_alpha * cos_alpha;
-    (1.0 - blend) * linear_lift(c, alpha_rad) + blend * flat_plate
+    (1.0 - blend) * linear_lift(c, alpha_rad)
+        + blend * flat_plate_lift(alpha_rad, sin_alpha, cos_alpha)
 }
