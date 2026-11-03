@@ -1,0 +1,12 @@
+# eXplora VTOL back ramp and hover descent at height (#399): climb in hover to 80 m, transition, fly a
+# 250 x 80 m plane U at 14 m/s, transition back at 80 m heading south, descend in hover to 30 m
+# (at GUID_DESC_MAX), fly home in hover. Run with --end land and --record; vary TRAN_VT_THR per run.
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
+x,y,altitude,cruise_speed,regime
+0.00,0.00,80.0,3.0,copter
+250.00,0.00,80.0,14.0,plane
+250.00,80.00,80.0,14.0,plane
+40.00,80.00,80.0,14.0,plane
+0.00,80.00,80.0,3.0,copter
+0.00,80.00,30.0,3.0,copter
+0.00,0.00,30.0,3.0,copter
