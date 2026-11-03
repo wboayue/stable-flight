@@ -34,7 +34,7 @@ where it goes. The [link](#link) between them is the boundary.
   ([Link Failsafe](#link-failsafe)). A misbehaving one stays inside a flight envelope the flight
   controller enforces on every command, whoever sends it: geofence, altitude, and distance
   limits ([#657](https://github.com/wboayue/stable-flight/issues/657), planned), and arming
-  passes the flight controller's own checks. Avoiding traffic and obstacles is the companion's
+  will pass the flight controller's own checks. Avoiding traffic and obstacles is the companion's
   job; the envelope is the backstop.
 
 Where new work goes: on the flight controller only if it runs at tick rate or the vehicle needs
