@@ -8,7 +8,10 @@ use assert2::check;
 use stable_flight::commanders::maneuver::{
     Axis, Maneuver, ManeuverConfig, ManeuverPhase, ManeuverRunner,
 };
-use stable_flight::{AbsoluteRateCommand, Command, Commander, ControlInput, VehicleState};
+use stable_flight::{
+    AbsoluteRateCommand, Command, Commander, ControlInput, FlightLoop, Guidance, Mixer, Stabilizer,
+    TelemetryPublisher, VehicleState,
+};
 use stable_flight_sim::airframes;
 
 use common::fly;
@@ -179,12 +182,7 @@ impl Vehicle {
                 let lead = Lead(Box::new(plant.line()));
                 let commander = build(lead, PLANE_LEAD_S, plant.airframe.guidance.cruise_thrust);
                 let mut flight_loop = plane_loop(&plant, commander);
-                let mut lead_thrust = 0.0;
-                fly(&mut flight_loop, PLANE_LEAD_S, |flight_loop, t| {
-                    if t <= PLANE_LEAD_S - LEAD_THRUST_BEFORE_S {
-                        lead_thrust = flight_loop.setpoint().thrust();
-                    }
-                });
+                let lead_thrust = fly_lead(&mut flight_loop, PLANE_LEAD_S);
                 fly(&mut flight_loop, window_s, |flight_loop, t| {
                     each(flight_loop.commander(), flight_loop.state(), t);
                 });
@@ -200,12 +198,7 @@ impl Vehicle {
                 let cruise_thrust = airframe.guidance.plane.cruise_thrust;
                 let commander = build(lead, TAILSITTER_LEAD_S, cruise_thrust);
                 let mut flight_loop = tailsitter_loop(&plant, commander);
-                let mut lead_thrust = 0.0;
-                fly(&mut flight_loop, TAILSITTER_LEAD_S, |flight_loop, t| {
-                    if t <= TAILSITTER_LEAD_S - LEAD_THRUST_BEFORE_S {
-                        lead_thrust = flight_loop.setpoint().thrust();
-                    }
-                });
+                let lead_thrust = fly_lead(&mut flight_loop, TAILSITTER_LEAD_S);
                 fly(&mut flight_loop, window_s, |flight_loop, t| {
                     each(flight_loop.commander(), flight_loop.state(), t);
                 });
@@ -250,6 +243,26 @@ impl Vehicle {
         );
         peak_radps
     }
+}
+
+/// Flies `flight_loop` through its lead of `lead_s` seconds, returning the thrust setpoint
+/// [`LEAD_THRUST_BEFORE_S`] before the lead ends.
+fn fly_lead<C, V, G, S, M, T>(flight_loop: &mut FlightLoop<C, V, G, S, M, T>, lead_s: f32) -> f32
+where
+    C: Commander,
+    V: stable_flight::Vehicle,
+    G: Guidance,
+    S: Stabilizer,
+    M: Mixer,
+    T: TelemetryPublisher,
+{
+    let mut lead_thrust = 0.0;
+    fly(flight_loop, lead_s, |flight_loop, t| {
+        if t <= lead_s - LEAD_THRUST_BEFORE_S {
+            lead_thrust = flight_loop.setpoint().thrust();
+        }
+    });
+    lead_thrust
 }
 
 /// Seconds a step, and a doublet's half, are held.
@@ -446,20 +459,25 @@ fn centered_rate_sticks_hold_pitch() {
 const PITCH_DRIFT_RAD: f32 = 0.5 * core::f32::consts::PI / 180.0;
 
 /// The eXplora's pitch holds on centered rate sticks as RealFlight's does for the same thrust
-/// step: the drift per unit of thrust setpoint the switch to cruise thrust drops stays within
-/// [`EXPLORA_DRIFT_PER_THRUST_RAD`] (measured 22.6°). The drift comes from the step: the slower
+/// step: its pitch drift per unit of thrust setpoint stepped down at the switch to cruise
+/// thrust stays within [`EXPLORA_DRIFT_PER_THRUST_RAD`] (measured 22.6°), from a step of at
+/// least [`MIN_THRUST_STEP`]. The drift comes from the step: the slower
 /// airspeed it settles at needs a little less elevon than the rate loop's airspeed scaling
 /// gives, and its integral pitches the nose up while it unwinds the difference
 /// (`docs/findings/explora-trim-vs-airspeed.md`).
 #[test]
 fn explora_centered_rate_sticks_hold_pitch() {
     let flown = centered_sticks(Vehicle::Explora);
-    let drift_per_thrust_rad = flown.drift_rad / flown.thrust_step.abs();
+    check!(flown.thrust_step >= MIN_THRUST_STEP, "{flown:?}");
     check!(
-        drift_per_thrust_rad <= EXPLORA_DRIFT_PER_THRUST_RAD,
-        "{flown:?}: {drift_per_thrust_rad} rad per unit of thrust"
+        flown.drift_rad <= EXPLORA_DRIFT_PER_THRUST_RAD * flown.thrust_step,
+        "{flown:?}"
     );
 }
+
+/// Least thrust setpoint the eXplora's lead steps down into the hold: RealFlight's smaller
+/// step (#642). Below it the drift is too small to measure per unit of step.
+const MIN_THRUST_STEP: f32 = 0.01;
 
 /// Most pitch the eXplora's centered rate sticks drift per unit of thrust setpoint stepped
 /// down into them, in rad. RealFlight's eXplora drifts 0.21° from a 0.018 step in both runs'
@@ -483,15 +501,15 @@ struct CenteredSticks {
 fn centered_sticks(vehicle: Vehicle) -> CenteredSticks {
     let mut start_rad = None;
     let mut drift_rad = 0.0_f32;
-    let mut cruise = 0.0;
+    let mut cruise_thrust = 0.0;
     let lead_thrust = vehicle.run(
-        |lead, lead_s, cruise_thrust| {
-            cruise = cruise_thrust;
+        |lead, lead_s, cruise| {
+            cruise_thrust = cruise;
             let centered = AbsoluteRateCommand {
                 roll_radps: 0.0,
                 pitch_radps: 0.0,
                 yaw_radps: 0.0,
-                thrust: cruise_thrust,
+                thrust: cruise,
             };
             let command = plane_command(ControlInput::AbsoluteRate(centered));
             Interlude::new(lead, lead_s, lead_s + HOLD_S, command)
@@ -505,7 +523,7 @@ fn centered_sticks(vehicle: Vehicle) -> CenteredSticks {
     );
     CenteredSticks {
         drift_rad,
-        thrust_step: lead_thrust - cruise,
+        thrust_step: lead_thrust - cruise_thrust,
     }
 }
 
