@@ -73,10 +73,7 @@ struct LapStats {
 
 fn main() {
     let args = Args::parse();
-    println!(
-        "| Lap | Plane | Peak sink in plane | Handoff dip | Roll / pitch RMS | Peak bank | Touchdown |"
-    );
-    println!("|---|---|---|---|---|---|---|");
+    println!("{TABLE_HEADER}");
     let mut failed = false;
     for path in &args.csvs {
         match read(path) {
@@ -105,7 +102,12 @@ fn lap_name(path: &Path) -> String {
     )
 }
 
-/// One markdown table row, in the header's order.
+/// The markdown table's header and separator, one column per [`table_row`] cell.
+const TABLE_HEADER: &str =
+    "| Lap | Plane | Peak sink in plane | Handoff dip | Roll / pitch RMS | Peak bank | Touchdown |
+|---|---|---|---|---|---|---|";
+
+/// One markdown table row, in [`TABLE_HEADER`]'s order.
 fn table_row(name: &str, stats: &LapStats) -> String {
     let dip = stats
         .handoff_dip_m
