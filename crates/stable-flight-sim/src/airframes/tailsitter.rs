@@ -94,6 +94,12 @@ pub fn tailsitter() -> TailsitterAirframe {
                 c_side_beta: -0.07359,
                 c_roll_beta: -0.02854,
                 c_yaw_beta: -0.0004,
+                // A tailsitter flies its back transition broadside and sinks tail first: past
+                // the stall the wing pitches as a flat plate and its elevons work in the wash
+                // alone. Without them the sim eXplora flew back ramps cleanly at thrust it
+                // stalls at in RealFlight (#399).
+                post_stall_pitch_share: 1.0,
+                surface_stall_share: 1.0,
                 ..airplane.model.aero
             },
             ..airplane.model

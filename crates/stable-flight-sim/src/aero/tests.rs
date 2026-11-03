@@ -1,4 +1,4 @@
-use core::f32::consts::FRAC_PI_2;
+use core::f32::consts::{FRAC_PI_2, PI};
 
 use approx::assert_relative_eq;
 use assert2::check;
@@ -340,38 +340,101 @@ fn broadside_drag_is_a_flat_plates() {
 }
 
 /// All the way round in α, forces and the pitch moment stay within a flat plate's and the
-/// coefficients' reach, and change smoothly, through reversed flow at ±180° too.
+/// coefficients' reach, and change smoothly, through reversed flow at ±180° too, with or without
+/// the flat plate's pitch moment past the stall.
 #[test]
 fn forces_and_moments_stay_bounded_at_any_angle() {
-    let model = model();
-    let c = &model.aero;
-    let dynamic_n = pressure_area_n(&model, 10.0);
-    let linear_peak = (c.c_lift_0 + c.c_lift_alpha * c.alpha_stall_rad).abs();
-    let force_bound_n = dynamic_n * (linear_peak + c.c_drag_0 + 2.0);
-    let pitch_bound_nm = dynamic_n * model.chord_m * (c.c_pitch_0.abs() + c.c_pitch_alpha.abs());
-    let at = |alpha_rad: f32| {
-        wrench(
-            &model,
-            air(10.0, alpha_rad, 0.0),
-            Vec3::zeros(),
-            Vec3::zeros(),
-            Wash::default(),
-        )
-    };
-    let mut previous = at(-PI);
-    for step in 1..=3600 {
-        let alpha_rad = -PI + step as f32 * (2.0 * PI / 3600.0);
-        let aero = at(alpha_rad);
-        check!(aero.force_n.norm() <= force_bound_n, "at {alpha_rad} rad");
+    for plate_share in [0.0, 1.0] {
+        let mut model = model();
+        model.aero.post_stall_pitch_share = plate_share;
+        let c = &model.aero;
+        let dynamic_n = pressure_area_n(&model, 10.0);
+        let linear_peak = (c.c_lift_0 + c.c_lift_alpha * c.alpha_stall_rad).abs();
+        let force_bound_n = dynamic_n * (linear_peak + c.c_drag_0 + 2.0);
+        // The plate's normal force, at most 2, at most the three-quarter chord behind the
+        // center of gravity.
+        let plate_reach = 2.0 * (0.75 - (0.25 + c.c_pitch_alpha / c.c_lift_alpha));
+        let pitch_reach = c.c_pitch_0.abs() + c.c_pitch_alpha.abs() + plate_share * plate_reach;
+        let pitch_bound_nm = dynamic_n * model.chord_m * pitch_reach;
+        let at = |alpha_rad: f32| {
+            wrench(
+                &model,
+                air(10.0, alpha_rad, 0.0),
+                Vec3::zeros(),
+                Vec3::zeros(),
+                Wash::default(),
+            )
+        };
+        let mut previous = at(-PI);
+        for step in 1..=3600 {
+            let alpha_rad = -PI + step as f32 * (2.0 * PI / 3600.0);
+            let aero = at(alpha_rad);
+            let what = format!("plate share {plate_share}, at {alpha_rad} rad");
+            check!(aero.force_n.norm() <= force_bound_n, "{what}");
+            check!(aero.torque_nm.y.abs() <= pitch_bound_nm, "{what}");
+            check!(
+                (aero.torque_nm.y - previous.torque_nm.y).abs() < 0.05 * pitch_bound_nm,
+                "pitch moment jumps, {what}"
+            );
+            previous = aero;
+        }
+    }
+}
+
+/// Past the stall the pitch moment blends into a flat plate's: its normal force, `2·sin²α`
+/// broadside, at a center of pressure from mid-chord broadside to the three-quarter chord
+/// reversed, about a center of gravity the static margin ahead of the quarter chord. Below the
+/// stall, and with no plate share, it stays `c_pitch_alpha`'s `sin α`.
+#[test]
+fn post_stall_pitch_follows_a_flat_plate() {
+    let mut plate = model().aero;
+    plate.post_stall_pitch_share = 1.0;
+    let center_of_gravity = 0.25 + plate.c_pitch_alpha / plate.c_lift_alpha;
+    let on_sin_alpha =
+        |alpha_rad: f32| plate.c_pitch_0 + plate.c_pitch_alpha * libm::sinf(alpha_rad);
+    let reversed_rad = PI - 20f32.to_radians();
+    let reversed_normal = 2.0
+        * libm::sinf(reversed_rad).powi(2)
+        * (libm::cosf(reversed_rad).powi(2) + libm::sinf(reversed_rad));
+    let reversed_center = 0.25 + 0.5 * reversed_rad / PI;
+    // (case, α in rad, coefficient)
+    let cases = [
+        (
+            "attached, 5°",
+            5f32.to_radians(),
+            on_sin_alpha(5f32.to_radians()),
+        ),
+        (
+            "broadside, nose down at mid-chord",
+            FRAC_PI_2,
+            plate.c_pitch_0 - 2.0 * (0.5 - center_of_gravity),
+        ),
+        (
+            "reversed, 20° off: nose down, away from the flow",
+            reversed_rad,
+            plate.c_pitch_0 - reversed_normal * (reversed_center - center_of_gravity),
+        ),
+        (
+            "reversed the other way: nose up",
+            -reversed_rad,
+            plate.c_pitch_0 + reversed_normal * (reversed_center - center_of_gravity),
+        ),
+    ];
+    for (case, alpha_rad, expected) in cases {
+        let blend = stall_blend(&plate, alpha_rad);
+        let coefficient = pitch_coefficient(&plate, alpha_rad, blend);
         check!(
-            aero.torque_nm.y.abs() <= pitch_bound_nm,
-            "at {alpha_rad} rad"
+            (coefficient - expected).abs() < 1e-3,
+            "{case}: {coefficient} vs {expected}"
         );
+        let without = AeroCoefficients {
+            post_stall_pitch_share: 0.0,
+            ..plate
+        };
         check!(
-            (aero.torque_nm.y - previous.torque_nm.y).abs() < 0.05 * pitch_bound_nm,
-            "pitch moment jumps at {alpha_rad} rad"
+            pitch_coefficient(&without, alpha_rad, blend) == on_sin_alpha(alpha_rad),
+            "{case}, no plate"
         );
-        previous = aero;
     }
 }
 
@@ -451,4 +514,59 @@ fn roll_pressure_works_the_ailerons_alone() {
         Vec3::new(aileron_nm, elevator_nm, 0.0),
         max_relative = 1e-5
     );
+}
+
+/// With the surfaces' stall share at 1, past the stall (broadside, tail first) the surfaces
+/// work on the wash alone; in attached flow, and with no stall share, on the free stream too.
+#[test]
+fn stalled_surfaces_work_in_the_wash_alone() {
+    let mut stalling = model();
+    stalling.aero.surface_stall_share = 1.0;
+    let wash = Wash {
+        pressure_pa: 50.0,
+        roll_pressure_pa: 50.0,
+        damping_mps: 0.0,
+    };
+    let elevator_rad = 0.2;
+    let elevator = Vec3::new(0.0, elevator_rad, 0.0);
+    let surface_nm = |model: &FixedWingModel, alpha_rad: f32, wash: Wash| {
+        let deflected = wrench(
+            model,
+            air(5.0, alpha_rad, 0.0),
+            Vec3::zeros(),
+            elevator,
+            wash,
+        );
+        let neutral = wrench(
+            model,
+            air(5.0, alpha_rad, 0.0),
+            Vec3::zeros(),
+            Vec3::zeros(),
+            wash,
+        );
+        deflected.torque_nm.y - neutral.torque_nm.y
+    };
+    let per_pa_nm =
+        stalling.wing_area_m2 * stalling.chord_m * stalling.aero.c_pitch_elevator * elevator_rad;
+    let wash_nm = wash.pressure_pa * per_pa_nm;
+    let free_nm = pressure_area_n(&stalling, 5.0) / stalling.wing_area_m2 * per_pa_nm;
+    // (case, model, α in rad, moment)
+    let cases = [
+        ("attached", stalling, 5f32.to_radians(), free_nm + wash_nm),
+        ("broadside", stalling, FRAC_PI_2, wash_nm),
+        ("tail first", stalling, PI, wash_nm),
+        (
+            "broadside, no stall share",
+            model(),
+            FRAC_PI_2,
+            free_nm + wash_nm,
+        ),
+    ];
+    for (case, model, alpha_rad, expected_nm) in cases {
+        let moment_nm = surface_nm(&model, alpha_rad, wash);
+        check!(
+            (moment_nm - expected_nm).abs() < 0.02 * expected_nm,
+            "{case}: {moment_nm} vs {expected_nm}"
+        );
+    }
 }

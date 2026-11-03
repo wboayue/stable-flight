@@ -114,7 +114,7 @@ Shared by every vehicle:
 
 | Part | Model |
 |---|---|
-| Aerodynamics | Stability derivatives (Beard and McLain, *Small Unmanned Aircraft*, ch. 4) on the air-relative velocity: lift, drag, and the pitch moment on the air in the plane of symmetry alone (air along the span lifts and drags nothing, as Gazebo's `LiftDragPlugin`), lift linear in α, blended by a sigmoid at the stall into a flat plate's, so it falls off past it; parasitic plus induced drag, blended the same way into a flat plate's `2·sin²α`; side force from sideslip and rudder; roll, pitch (static stability on `sin α`), and yaw moments from α, β, the body rates (damping), and the surfaces. Bounded at any α, broadside and backward included |
+| Aerodynamics | Stability derivatives (Beard and McLain, *Small Unmanned Aircraft*, ch. 4) on the air-relative velocity: lift, drag, and the pitch moment on the air in the plane of symmetry alone (air along the span lifts and drags nothing, as Gazebo's `LiftDragPlugin`), lift linear in α, blended by a sigmoid at the stall into a flat plate's, so it falls off past it; parasitic plus induced drag, blended the same way into a flat plate's `2·sin²α`; side force from sideslip and rudder; roll, pitch (static stability on `sin α`), and yaw moments from α, β, the body rates (damping), and the surfaces. Past the stall, per airframe: the pitch moment blends into a flat plate's (its normal force at a center of pressure moving from mid-chord broadside to the three-quarter chord reversed), and the surfaces lose the free stream, working in the prop wash alone (the tailsitters'). Bounded at any α, broadside and backward included |
 | Surfaces | First-order lag on each servo; the mixer's servo rows say which of the aileron, elevator, and rudder axes each moves (an axis's deflection is the servos' least-squares fit to the row factors, so elevons work too), times `max_deflection_rad` |
 | Prop | The motor rows, after `motor_delay_s` (a prop slow to spin up; 0 but on the eXplora) and through the motor lag, thrust `max_thrust_n · command²` along body `x`; no torque, no falloff with airspeed |
 
@@ -260,10 +260,14 @@ its own elevon, and ground effect. `tailsitter()` flies a flying wing's sideslip
 keeps the airplane's side force and dihedral, which its plane side was fitted on. The
 sideslip terms stay linear in β out to the 90° a hover in a wind along the span flies, not
 checked against RealFlight there
-([#387](https://github.com/wboayue/stable-flight/issues/387)). The tailsitter's elevons keep
-pitch authority at low airspeed and low thrust that the RealFlight eXplora lacks: a back ramp
-at thrust 0.6 that the sim flies cleanly wallows nose-high on the eXplora
-([#399](https://github.com/wboayue/stable-flight/issues/399)). `explora()`'s hover
+([#387](https://github.com/wboayue/stable-flight/issues/387)). `explora()`'s back ramp stalls
+nose-high at 0.66 of its hover thrust, as the RealFlight eXplora's does
+([#399](https://github.com/wboayue/stable-flight/issues/399)), but flies 0.71 cleanly where
+RealFlight's stalls: it climbs faster on the ramp at the same share of hover thrust, and
+RealFlight's eXplora hovers at 0.91 and cruises at 0.86 where `explora()` takes 0.82 and 0.76
+([#651](https://github.com/wboayue/stable-flight/issues/651)). Its hover descents hold level
+where RealFlight's swing the nose 30–40° with the elevons at full deflection, from 1.5 m/s of
+sink up ([#647](https://github.com/wboayue/stable-flight/issues/647)). `explora()`'s hover
 calibration is fitted, not measured: its inertia scale is what matches RealFlight's hover
 response in pitch and yaw and its cruise roll fit, and both sides fly on it
 ([#539](https://github.com/wboayue/stable-flight/issues/539)). The wash's roll share is fitted

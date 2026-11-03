@@ -213,6 +213,10 @@ pub fn explora() -> TailsitterAirframe {
         ..PlaneGuidanceConfig::default()
     };
     guidance.transition.min_airspeed_mps = plane_stabilizer.min_airspeed_mps;
+    // `explora_vtol`'s back ramp thrust, 0.75, as a share of RealFlight's in-flight hover
+    // thrust, 0.91: a clean ramp there (elevons at most 0.23) and here, where 0.66 of hover
+    // stalls as RealFlight's 0.60 did (#399). Lower: less zoom climb, nearer the stall.
+    guidance.transition.back_thrust = 0.75 / 0.91 * guidance.hover.altitude.hover_thrust;
     TailsitterAirframe {
         model,
         mixer,
