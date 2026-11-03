@@ -14,7 +14,7 @@ Stable Flight is an autonomous flight stack for VTOL drones, written in Rust, sp
 
 ## How It Fits Together
 
-A RealFlight example is the flight controller: it runs `FlightLoop` against the simulator and serves telemetry, params, and link commands to a companion. On the companion, the bridge turns that native link into MAVLink for a ground station, and the mission service (planned) will sequence missions over it.
+A RealFlight example is the flight controller: it runs `FlightLoop` against the simulator and serves telemetry, params, and link commands to a companion. On the companion, the bridge turns that native link into MAVLink for a ground station, and the mission service (planned) will store missions and stream targets over the link.
 
 ```mermaid
 flowchart LR
@@ -30,7 +30,8 @@ flowchart LR
         mission["Mission service (planned)<br/>plans, sequencing, replanning"]
     end
     fclink <-->|"native link<br/>UDP"| bridge
-    mission -.-> bridge
+    mission -.->|"targets"| fclink
+    bridge -.->|"plans from QGC"| mission
     bridge <-->|"MAVLink v2<br/>UDP 14550"| gcs["QGroundControl<br/>or offboard app"]
 ```
 
