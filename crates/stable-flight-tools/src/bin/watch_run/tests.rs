@@ -233,6 +233,51 @@ fn signals_the_run_on_each_trigger() {
     std::fs::remove_dir_all(&dir).expect("cleaned up");
 }
 
+/// A timeout trips while the example hasn't written its CSV yet.
+#[test]
+fn times_out_before_the_recording_appears() {
+    let dir = temp_dir("no_csv");
+    let csv = dir.join("never.csv");
+    let limits = Limits {
+        timeout_s: Some(0.05),
+        ..Limits::default()
+    };
+    let mut run = Command::new("sleep").arg("30").spawn().expect("sleep runs");
+    let outcome = watch(&args(run.id(), &csv, limits), Duration::from_millis(10));
+    let status = run.wait().expect("sleep reaped");
+    check!(outcome.ok() == Some(Outcome::Stopped(Stop::Timeout { timeout_s: 0.05 })));
+    check!(status.signal() == Some(15));
+    std::fs::remove_dir_all(&dir).expect("cleaned up");
+}
+
+/// An example that exits by itself during the disarm grace still reports the landing.
+#[test]
+fn reports_a_landing_whose_example_exits_in_the_grace() {
+    let dir = temp_dir("grace");
+    let csv = dir.join("run.csv");
+    std::fs::write(
+        &csv,
+        format!("{HEADER}\n{}\n{}\n3.0,0,0,10,0,0\n", CLIMB[0], CLIMB[1]),
+    )
+    .expect("written");
+    let mut run = Command::new("sleep")
+        .arg("0.2")
+        .spawn()
+        .expect("sleep runs");
+    let pid = run.id();
+    // Reaped as it exits, so `kill` finds no process when the grace ends.
+    let reaper = thread::spawn(move || run.wait());
+    let args = Args {
+        disarm_grace_s: 0.6,
+        ..args(pid, &csv, Limits::default())
+    };
+    let outcome = watch(&args, Duration::from_millis(10));
+    check!(outcome.ok() == Some(Outcome::Stopped(Stop::Disarmed { distance_m: 0.0 })));
+    let status = reaper.join().expect("reaper joined").expect("sleep reaped");
+    check!(status.success());
+    std::fs::remove_dir_all(&dir).expect("cleaned up");
+}
+
 /// A run that ends by itself is reported, and one that ends before its CSV appears is an
 /// error.
 #[test]

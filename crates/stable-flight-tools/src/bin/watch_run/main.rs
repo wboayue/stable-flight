@@ -180,12 +180,13 @@ fn watch(args: &Args, poll: Duration) -> Result<Outcome, WatchError> {
     }
 }
 
-/// SIGTERMs the example for `stop`, after the disarm grace when it landed.
+/// SIGTERMs the example for `stop`, after the disarm grace when it landed. An example that
+/// exits by itself in the grace is stopped all the same.
 fn stop_run(args: &Args, stop: Stop) -> Result<Outcome, WatchError> {
     if let Stop::Disarmed { .. } = stop {
         thread::sleep(Duration::from_secs_f32(args.disarm_grace_s.max(0.0)));
     }
-    if !kill(&["-TERM", &args.pid.to_string()]) {
+    if !kill(&["-TERM", &args.pid.to_string()]) && alive(args.pid) {
         return Err(WatchError::Signal(args.pid));
     }
     Ok(Outcome::Stopped(stop))
