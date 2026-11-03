@@ -46,21 +46,27 @@ Read the file for the simulator before a run:
 ## A run
 
 1. **Build release once** in the worktree under test:
-   `cargo build --release -p stable-flight-sitl-<sim> --example <example>`.
+   `cargo build --release -p stable-flight-sitl-<sim> --example <example>` and
+   `cargo build --release --bin watch_run --bin lap_stats`.
 2. **Launch the binary itself in the background**, one run per command, logging from the
    environment (without `RUST_LOG` the examples print nothing: no mode changes, no exit
    summary):
    `RUST_LOG=info ./target/release/examples/<example> <script> --end land --record <scratch>/run-N.csv > <scratch>/run-N.log 2>&1 &`.
    Don't chain `cd … &&` before the `&`: `$!` becomes a subshell and SIGTERM misses the example.
-3. **Watchdog** on the recorder CSV: stop on landing (disarmed below 0.5 m after the climb
-   target, or after a back transition), drift past a radius, a floor on plane legs, or a timeout.
+3. **Watchdog** in the same command as the launch, so `$!` is the example:
+   `./target/release/watch_run --pid $! --csv <scratch>/run-N.csv --floor-m … --radius-m … --timeout-s … > <scratch>/run-N.watch 2>&1 &`.
+   It SIGTERMs the example on landing (disarmed after arming), drift past the radius, plane
+   flight under the floor (height above the first row), or the timeout, and prints why; each
+   limit is off unless given. Per-simulator values are in [realflight.md](realflight.md) and
+   [xplane.md](xplane.md).
 4. **Stop with SIGTERM** (or Ctrl-C), never a kill: `ShutdownSignal` lets the vehicle hand
    control back. `--record` columns are in `stable_flight_sitl::recorder` (e.g.
    `TailsitterColumns`). Then read the exit lines (`Ran N ticks at X Hz`, `ticks skipped`, the
    `host slow` total).
 5. **Screen the tick rate** before reading anything else ([comparable-runs.md](comparable-runs.md#tick-rate)).
-6. **Report** each run as a row against the earlier ones; ask the person at the simulator to
-   confirm what only they can see (the sim view, QGC).
+6. **Report** each run as a row against the earlier ones (plane laps:
+   `./target/release/lap_stats <scratch>/run-*.csv` prints the table); ask the person at the
+   simulator to confirm what only they can see (the sim view, QGC).
 
 `--end land` keeps the example running on the ground: stop it before the next run.
 

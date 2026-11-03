@@ -11,6 +11,8 @@
   37°; [finding](../../../docs/findings/realflight-wind.md)).
 - **Not connected:** "Failed to create bridge: connection timed out" means RealFlight isn't
   running or its link isn't enabled: ask the person at the simulator.
+- **Watchdog limits** (`watch_run`): eXplora and Titan Cobra plane autotune, `--floor-m 12
+  --radius-m 1500 --timeout-s 720`.
 - **Stopping:** a kill instead of SIGTERM leaves RC with the example, so the next run fails on
   "Preexisting controller reference", and truncates capture CSVs.
 - **Disconnects:** flight examples reconnect on their own and log "Reconnected to RealFlight"

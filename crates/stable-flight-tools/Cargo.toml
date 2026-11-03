@@ -1,6 +1,6 @@
 [package]
 name = "stable-flight-tools"
-description = "Developer tools for Stable Flight: flight-path plotting, waypoint-script generation, a native-link pilot, and a RealFlight frame checker"
+description = "Developer tools for Stable Flight: flight-path plotting, waypoint-script generation, a native-link pilot, a simulator frame checker, a run watchdog, and lap metrics"
 publish = false
 version.workspace = true
 edition.workspace = true
