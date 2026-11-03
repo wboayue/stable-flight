@@ -28,13 +28,11 @@ use std::time::{Duration, Instant};
 use clap::Parser;
 use thiserror::Error;
 
-use stable_flight_tools::recording::{Header, RecordingError};
+use stable_flight_tools::recording::{Header, PLANE_MODE, RecordingError};
 
 #[cfg(test)]
 mod tests;
 
-/// `mode` of a row in plane flight (`stable_flight_sitl::recorder::QuadPlaneColumns`).
-const PLANE_MODE: f32 = 1.0;
 /// How often the example and its CSV are checked.
 const POLL: Duration = Duration::from_millis(500);
 

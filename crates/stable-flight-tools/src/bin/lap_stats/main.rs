@@ -25,13 +25,11 @@ use std::process;
 use clap::Parser;
 use thiserror::Error;
 
-use stable_flight_tools::recording::{Recording, RecordingError};
+use stable_flight_tools::recording::{PLANE_MODE, Recording, RecordingError};
 
 #[cfg(test)]
 mod tests;
 
-/// `mode` of a row in plane flight (`stable_flight_sitl::recorder::QuadPlaneColumns`).
-const PLANE_MODE: f32 = 1.0;
 /// Peak sink's trailing window, in s.
 const SINK_WINDOW_S: f32 = 0.5;
 /// Shortest span a sink is measured over, in s: shorter ones (a gap in the plane rows, the
