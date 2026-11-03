@@ -1,12 +1,14 @@
 //! The eXplora's hover ([`airframes::explora`]) in its nose-up view, calibrated to RealFlight's
 //! autotune of it (#539): RealFlight's gains step here as they did there, and the design search
-//! designs the gains RealFlight's did. Flown as RealFlight flew it: its exchange delay and gyro
-//! noise, and the gyro low-pass at its 40 Hz default.
+//! designs the gains RealFlight's did; its hover descents hold or swing the nose as RealFlight's
+//! do (#647). Flown as RealFlight flew it: its exchange delay and gyro noise, and the gyro
+//! low-pass at its 40 Hz default.
 
 mod common;
 
 use assert2::check;
 use stable_flight::Vec3;
+use stable_flight::commanders::{RouteEnd, WaypointFollower};
 use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::{
     CopterStabilizerConfig, DEFAULT_GYRO_CUTOFF_HZ, TunedLoop,
@@ -16,7 +18,7 @@ use stable_flight::tuning::{Measurement, ProbeConfig, ProbeStatus, StepSummary};
 use stable_flight_sim::airframes;
 use stable_flight_sim::{GyroNoise, Perturbations};
 
-use common::tailsitter::{TailsitterPlant, hover_view_loop};
+use common::tailsitter::{TailsitterPlant, hover_view_loop, view_angles};
 use common::{AUTOTUNE_TIMEOUT_S, AutotuneRun, HOVER_SETTLE_S, spec};
 
 /// RealFlight as the autotune met it: the elevons' rates fit 2–3 ticks of delay, one of them
@@ -286,3 +288,105 @@ fn spec_misses(hover: CopterStabilizerConfig, loops: &[TunedLoop]) -> Vec<String
 
 /// Simulated seconds a spec step may run: the step's window plus margin (as `spec`'s).
 const PROBE_TIMEOUT_S: f32 = 5.0;
+
+/// Hover descents as RealFlight's eXplora flies them, 60 → 20 m over the start (`flights/explora_descent.csv`
+/// at `GUID_DESC_MAX`): the autotuned hover holds its nose at 3 m/s of sink, and a soft pitch
+/// tune swings it from 2.5 m/s, the elevons losing the wash as it sinks
+/// (`docs/findings/explora-descent-swing.md`). Rows: (case, hover, sink limit m/s, view pitch
+/// standard deviation RealFlight flew, `None` for holding).
+#[test]
+fn hover_descents_swing_as_in_realflight() {
+    let cases = [
+        ("tune, 1.5 m/s", realflight_tune(), 1.5, None),
+        ("tune, 3 m/s", realflight_tune(), 3.0, None),
+        ("soft pitch, 1.5 m/s", soft_pitch_tune(), 1.5, None),
+        ("soft pitch, 2.5 m/s", soft_pitch_tune(), 2.5, Some(6.2)),
+        ("soft pitch, 3 m/s", soft_pitch_tune(), 3.0, Some(8.4)),
+    ];
+    for (case, hover, sink_mps, realflight_sd_deg) in cases {
+        let sd_deg = descent_pitch_sd_deg(hover, sink_mps);
+        match realflight_sd_deg {
+            None => {
+                check!(sd_deg <= HOLD_SD_DEG, "{case}: view pitch sd {sd_deg}°");
+            }
+            Some(expected_deg) => {
+                check!(
+                    (sd_deg - expected_deg).abs() <= SWING_AGREEMENT * expected_deg,
+                    "{case}: view pitch sd {sd_deg}° against RealFlight's {expected_deg}°"
+                );
+            }
+        }
+    }
+}
+
+/// Most a held descent's view pitch spreads, standard deviation in °: RealFlight's autotuned
+/// hover spread 0.4–0.9° at 3 m/s (measured 0.2° here).
+const HOLD_SD_DEG: f32 = 1.0;
+
+/// Share of RealFlight's swing a swinging descent's spread is held to (measured 5.3° against
+/// 6.2° at 2.5 m/s, 7.9° against 8.4° at 3 m/s).
+const SWING_AGREEMENT: f32 = 1.0 / 3.0;
+
+/// The autotuned hover with the hand tune's pitch loops: rate P 0.3, I 0.5 and angle P 4,
+/// as RealFlight flew it with `--param` on the same descents.
+fn soft_pitch_tune() -> CopterStabilizerConfig {
+    let mut config = realflight_tune();
+    config.body_rate.pitch_gains = Gains {
+        p: 0.3,
+        i: 0.5,
+        d: 0.0,
+    };
+    config.attitude.pitch_gains = Gains {
+        p: 4.0,
+        i: 0.0,
+        d: 0.0,
+    };
+    config
+}
+
+/// Height of the descent's top, in m.
+const DESCENT_TOP_M: f32 = 60.0;
+/// Height the descent ends at, in m.
+const DESCENT_BOTTOM_M: f32 = 20.0;
+/// Height clear of each end, in m, where the descent is read: past the start's push over and
+/// before the bottom's flare.
+const DESCENT_END_CLEAR_M: f32 = 2.5;
+/// Simulated seconds the climb and descent take, at 1.5 m/s and margin.
+const DESCENT_FLIGHT_S: f32 = 70.0;
+
+/// The [`realflight`] eXplora on `hover` climbs over the start and descends from
+/// [`DESCENT_TOP_M`] to [`DESCENT_BOTTOM_M`] sinking at most `sink_mps`; returns its view
+/// pitch's standard deviation through the descent, in °.
+fn descent_pitch_sd_deg(hover: CopterStabilizerConfig, sink_mps: f32) -> f32 {
+    let mut plant = realflight();
+    plant.airframe.guidance.hover.max_descent_mps = sink_mps;
+    let follower = WaypointFollower::new([
+        common::waypoint(0.0, 0.0, DESCENT_TOP_M),
+        common::waypoint(0.0, 0.0, DESCENT_BOTTOM_M),
+    ])
+    .expect("two waypoints")
+    .with_route_end(RouteEnd::Hold);
+    let mut flight_loop = hover_view_loop(&plant, hover, follower);
+    let mut reached_top = false;
+    let mut pitches_deg = Vec::new();
+    common::fly(&mut flight_loop, DESCENT_FLIGHT_S, |flight_loop, _| {
+        let state = flight_loop.state();
+        let height_m = state.position_m.z;
+        reached_top |= height_m >= DESCENT_TOP_M - DESCENT_END_CLEAR_M;
+        let descending = height_m < DESCENT_TOP_M - DESCENT_END_CLEAR_M
+            && height_m > DESCENT_BOTTOM_M + DESCENT_END_CLEAR_M;
+        if reached_top && descending {
+            let (_, pitch_rad, _) = view_angles(state);
+            pitches_deg.push(pitch_rad.to_degrees());
+        }
+    });
+    assert!(!pitches_deg.is_empty(), "never descended");
+    let count = pitches_deg.len() as f32;
+    let mean_deg = pitches_deg.iter().sum::<f32>() / count;
+    let variance = pitches_deg
+        .iter()
+        .map(|pitch_deg| (pitch_deg - mean_deg).powi(2))
+        .sum::<f32>()
+        / count;
+    variance.sqrt()
+}

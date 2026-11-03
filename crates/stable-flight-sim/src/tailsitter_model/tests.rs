@@ -86,6 +86,17 @@ fn rejects_out_of_range_parameters() {
             },
             ModelError::NotFraction("prop_wash.damping_fraction"),
         ),
+        (
+            "sink loss zero",
+            TailsitterModel {
+                prop_wash: PropWash {
+                    sink_loss: 0.0,
+                    ..model().prop_wash
+                },
+                ..model()
+            },
+            ModelError::NotPositive("prop_wash.sink_loss"),
+        ),
     ];
     for (case, model, error) in cases {
         check!(model.validate() == Err(error), "{case}");
@@ -103,6 +114,7 @@ fn wash_pressure_follows_momentum_theory() {
         surface_fraction: 1.0,
         roll_fraction: 1.0,
         damping_fraction: 1.0,
+        sink_loss: DEFAULT_SINK_LOSS,
     };
     // 20 N over 0.1 m²: 200 Pa, a static jet of √(400/ρ) m/s.
     let jet_mps = libm::sqrtf(400.0 / AIR_DENSITY_KGPM3);
@@ -143,6 +155,19 @@ fn wash_pressure_follows_momentum_theory() {
         max_relative = 1e-4
     );
     check!(sinking_pa < wash.wash(20.0, 0.0).pressure_pa);
+    // A sink loss of 2 takes twice the sink's share off the jet's pressure.
+    let doubled = PropWash {
+        sink_loss: 2.0,
+        ..wash
+    };
+    let doubled_pa = doubled.wash(20.0, -2.0).pressure_pa;
+    assert_relative_eq!(
+        200.0 - doubled_pa,
+        2.0 * (200.0 - sinking_pa),
+        max_relative = 1e-4
+    );
+    // Climbing, the sink loss takes nothing.
+    check!(doubled.wash(20.0, 5.0).pressure_pa == 200.0);
     // The surface fraction scales the pressure, the roll fraction the roll action's, the
     // damping fraction the damping speed.
     let half = PropWash {

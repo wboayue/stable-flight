@@ -172,13 +172,18 @@ pub fn explora() -> TailsitterAirframe {
         // 0.14 rolling them apart (view yaw: the hand tune's steps end at 0.24–0.36, here too).
         // The washed strip is a third of the elevons' span for roll and pitch alike (by `∫y`
         // and `∫1`), so the split is fitted, not derived. The wash damps the span it covers.
+        // Sinking, the wash leaves the elevons 1.4 times as fast as momentum theory has it:
+        // fitted on RealFlight's hover descents, where a soft pitch tune swings the nose from
+        // 2.5 m/s of sink and the autotuned one holds at 3 m/s. Higher: from 1.6 the autotuned
+        // tune swings at 3 m/s too (`docs/findings/explora-descent-swing.md`).
         prop_wash: PropWash::props(
             2,
             PROP_DIAMETER_M,
             0.4,
             PropWash::span_damping_share(MOTOR_ARM_M, PROP_DIAMETER_M, SPAN_M),
         )
-        .with_roll_fraction(0.14),
+        .with_roll_fraction(0.14)
+        .with_sink_loss(1.4),
     };
     let plane_stabilizer = PlaneStabilizerConfig {
         rate: explora_rate(),
