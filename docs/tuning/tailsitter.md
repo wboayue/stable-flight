@@ -197,7 +197,10 @@ The fastest descent waypoint flight asks for, including the climb-down after a b
 transition. Sinking tail first, the air meets the prop wash head on, so the elevons lose
 authority as the descent speeds up. The pitch loop then lags, and the nose swings even with
 thrust near hover and the elevons short of full deflection. A sink guard can't help: thrust is
-already there. Landing has its own, slower descent (`GUID_LAND_SPD`, 0.7 m/s).
+already there. How fast that starts is the pitch tune's: the eXplora's hand tune swung from
+2.5 m/s, its autotuned hover holds 3 m/s in calm air
+([finding](../findings/explora-descent-swing.md)), so re-check this limit after a hover retune
+([#653](https://github.com/wboayue/stable-flight/issues/653)). Landing has its own, slower descent (`GUID_LAND_SPD`, 0.7 m/s).
 
 `GUID_DESC_ACC` is how hard the descent speeds up and brakes onto its waypoint: the target's
 rate rises by at most this much per second from hover, and slows so this deceleration stops it
@@ -228,7 +231,7 @@ To descend faster, raise `GUID_DESC_MAX` in 0.5 m/s steps. Keep the fastest rate
 `view_pitch` error stays within about 3°, and drop back a step at any swing. Compare only
 seconds that ran at about 245 Hz or more: a slower tick rate slows the descent target too.
 
-eXplora (#414), 60 m to 20 m, calm air:
+eXplora (#414, hand tune), 60 m to 20 m, calm air:
 
 | `GUID_DESC_MAX` | Sink, mean | `view_pitch` | Worst error | Elevon peak | Note |
 |---|---|---|---|---|---|

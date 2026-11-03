@@ -214,10 +214,11 @@ pub fn explora_vtol()
                 },
                 // Full stick at the stabilizer's 30° tilt.
                 max_stick_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
-                // Sinking tail first slows the airflow over the elevons: at 3 m/s the nose
-                // swings ±20° on a 2.5 s cycle, at 2 m/s −8…+1°, at 1.5 m/s within 2° (#414).
                 // ArduPilot's and PX4's default descent rate (`WP_SPD_DN`,
-                // `MPC_Z_V_AUTO_DN`).
+                // `MPC_Z_V_AUTO_DN`). Sinking tail first slows the airflow over the elevons:
+                // on the hand tune's pitch loops the nose swings ±20° at 3 m/s (#414); the
+                // autotuned hover holds it to 3 m/s in calm air
+                // (`docs/findings/explora-descent-swing.md`). TODO(#653): re-pick in wind.
                 max_descent_mps: 1.5,
                 // Holds the heading on waypoint legs, and never yields it to the wind: facing
                 // a leg flies it belly first, the wing's flat face into the airflow, and the
