@@ -10,6 +10,8 @@ use std::error::Error;
 use plotters::coord::Shift;
 use plotters::prelude::*;
 
+use stable_flight_tools::recording::{Recording, TIME};
+
 use crate::{FONT_FAMILY, draw_to, pad_range};
 
 #[cfg(test)]
@@ -20,9 +22,6 @@ const IMAGE_WIDTH: u32 = 1800;
 
 /// Each time-series panel's height in pixels.
 const PANEL_HEIGHT: u32 = 220;
-
-/// The time column every recorder writes first.
-const TIME: &str = "wall_s";
 
 /// One column drawn in a panel, scaled (radians to degrees) and labeled.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -115,79 +114,18 @@ pub(super) const PANELS: &[Panel] = &[
     },
 ];
 
-/// A parsed recorder CSV: its column names and numeric rows.
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct Recording {
-    columns: Vec<String>,
-    rows: Vec<Vec<f32>>,
-}
-
-impl Recording {
-    /// Parses a recorder CSV. Text cells (`sp_kind`) read as NaN; a row with the wrong number
-    /// of cells (the last one of a killed run) is dropped.
-    ///
-    /// # Errors
-    ///
-    /// No header, or no `wall_s` column.
-    pub(super) fn parse(text: &str) -> Result<Self, String> {
-        let mut lines = text.lines();
-        let header = lines.next().ok_or("empty recording")?;
-        let columns: Vec<String> = header.split(',').map(str::to_owned).collect();
-        if columns.first().map(String::as_str) != Some(TIME) {
-            return Err(format!("not a recording: the first column isn't `{TIME}`"));
-        }
-        let rows = lines
-            .map(|line| {
-                line.split(',')
-                    .map(|cell| cell.trim().parse().unwrap_or(f32::NAN))
-                    .collect::<Vec<f32>>()
-            })
-            .filter(|row| row.len() == columns.len())
-            .collect();
-        Ok(Recording { columns, rows })
-    }
-
-    fn column(&self, name: &str) -> Option<usize> {
-        self.columns.iter().position(|c| c == name)
-    }
-
-    /// The panels with at least one of their columns in this recording.
-    pub(super) fn panels(&self) -> Vec<Panel> {
-        PANELS
-            .iter()
-            .filter(|panel| panel.traces.iter().any(|t| self.column(t.column).is_some()))
-            .copied()
-            .collect()
-    }
-
-    /// `name`'s (time, value · scale) points within `window` (seconds, inclusive), split at
-    /// NaN cells into runs; `None` without the column.
-    pub(super) fn series(
-        &self,
-        name: &str,
-        scale: f32,
-        (from_s, to_s): (f32, f32),
-    ) -> Option<Vec<Vec<(f32, f32)>>> {
-        let index = self.column(name)?;
-        let mut runs = vec![Vec::new()];
-        for row in &self.rows {
-            let (time, value) = (row[0], row[index]);
-            if !(from_s..=to_s).contains(&time) {
-                continue;
-            }
-            if value.is_nan() {
-                if runs.last().is_some_and(|run| !run.is_empty()) {
-                    runs.push(Vec::new());
-                }
-                continue;
-            }
-            if let Some(run) = runs.last_mut() {
-                run.push((time, value * scale));
-            }
-        }
-        runs.retain(|run| !run.is_empty());
-        Some(runs)
-    }
+/// The panels with at least one of their columns in `recording`.
+pub(super) fn panels(recording: &Recording) -> Vec<Panel> {
+    PANELS
+        .iter()
+        .filter(|panel| {
+            panel
+                .traces
+                .iter()
+                .any(|t| recording.column(t.column).is_some())
+        })
+        .copied()
+        .collect()
 }
 
 /// Reads `input`, a recorder CSV, and draws it to `output` (`.svg` or `.png`) over `window`
@@ -199,7 +137,7 @@ impl Recording {
 /// window, or drawing fails.
 pub(super) fn render(input: &str, output: &str, window: (f32, f32)) -> Result<(), Box<dyn Error>> {
     let recording = Recording::parse(&std::fs::read_to_string(input)?)?;
-    let panels = recording.panels();
+    let panels = panels(&recording);
     if panels.is_empty() {
         return Err(format!("{input} has no column to plot").into());
     }
@@ -318,7 +256,7 @@ where
         return Ok(());
     };
     let points: Vec<(f32, f32)> = recording
-        .rows
+        .rows()
         .iter()
         .filter(|row| (time.0..=time.1).contains(&row[0]))
         .map(|row| (row[east], row[north]))

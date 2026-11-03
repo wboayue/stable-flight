@@ -1617,6 +1617,7 @@ dependencies = [
  "stable-flight-sitl",
  "stable-flight-sitl-realflight",
  "stable-flight-sitl-xplane",
+ "thiserror",
 ]
 
 [[package]]
