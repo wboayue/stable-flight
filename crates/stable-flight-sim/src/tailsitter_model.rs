@@ -76,9 +76,11 @@ pub struct PropWash {
     /// Share of the wing's rate damping inside the wash, in `[0, 1]`: the wash damps that part
     /// of the span at its jet's speed ([`span_damping_share`](Self::span_damping_share)).
     pub damping_fraction: f32,
-    /// How many times momentum theory's share of the wash a tail-first sink takes off the
-    /// surfaces, positive: 1 ([`DEFAULT_SINK_LOSS`]) is momentum theory; higher, the elevons
-    /// lose the wash at a slower sink, and a soft pitch loop starts to swing sinking sooner.
+    /// Scales the wash pressure a tail-first sink takes off the surfaces, momentum theory's
+    /// `ρ·v·V` at sink `V` against a static jet `v`, positive: 1 ([`DEFAULT_SINK_LOSS`]) is
+    /// momentum theory; higher, the wash is gone sooner, at `1/k` of the sink, and a soft pitch loop
+    /// swings sinking sooner. An empirical fit for the flow momentum theory misses near the
+    /// disc, not a model of it.
     pub sink_loss: f32,
 }
 
@@ -166,7 +168,7 @@ impl PropWash {
     ///
     /// Nose first, `T/A`. Tail first at speed `V` against a static jet of speed
     /// `v = √(2T/ρA)`, the surfaces see `½ρ(v − V)²` in place of the free stream's `½ρV²`:
-    /// `T/A − ρ·v·V`, the sink's loss `ρ·v·V` times [`sink_loss`](Self::sink_loss) `k`:
+    /// `T/A − ρ·v·V`; with the sink's loss scaled by [`sink_loss`](Self::sink_loss) `k`,
     /// `T/A − k·ρ·v·V`.
     fn added_pa(&self, thrust_n: f32, axial_mps: f32) -> f32 {
         let disc_pa = thrust_n / self.disc_area_m2;
@@ -184,9 +186,9 @@ impl TailsitterModel {
     ///
     /// # Errors
     ///
-    /// [`FixedWingModel::validate`]'s errors; [`ModelError::NotPositive`] for a motor arm or
-    /// disc area or sink loss that isn't positive and finite; [`ModelError::NotFraction`] for a wash
-    /// fraction outside `[0, 1]`.
+    /// [`FixedWingModel::validate`]'s errors; [`ModelError::NotPositive`] for a motor arm, disc
+    /// area, or sink loss that isn't positive and finite; [`ModelError::NotFraction`] for a
+    /// wash fraction outside `[0, 1]`.
     pub fn validate(&self) -> Result<(), ModelError> {
         self.wing.validate()?;
         check_positive(&[
