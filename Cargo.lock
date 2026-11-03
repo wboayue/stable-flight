@@ -1609,6 +1609,7 @@ dependencies = [
 name = "stable-flight-tools"
 version = "0.2.0"
 dependencies = [
+ "approx",
  "assert2",
  "clap",
  "plotters",

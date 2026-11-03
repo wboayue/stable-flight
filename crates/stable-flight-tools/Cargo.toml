@@ -26,4 +26,5 @@ plotters = { version = "0.3", default-features = false, features = [
 ] }
 
 [dev-dependencies]
+approx.workspace = true
 assert2.workspace = true
