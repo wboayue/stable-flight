@@ -224,7 +224,7 @@ fn rejects_laps_without_plane_flight() {
     check!(let Err(LapError::NeverArmed) = LapStats::from_recording(&disarmed));
 }
 
-/// A table row has every metric in the header's order, a missing dip as "—", and the file's
+/// A table row has a cell per header column, every metric in the header's order, a missing dip as "—", and the file's
 /// stem as its name.
 #[test]
 fn formats_a_table_row() {
@@ -246,4 +246,7 @@ fn formats_a_table_row() {
         ..stats
     };
     check!(table_row("d", &descent).contains("| — |"));
+    for line in TABLE_HEADER.lines() {
+        check!(line.matches('|').count() == table_row("d", &stats).matches('|').count());
+    }
 }
