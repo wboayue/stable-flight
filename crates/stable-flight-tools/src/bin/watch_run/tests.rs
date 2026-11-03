@@ -16,34 +16,26 @@ const ALL_LIMITS: Limits = Limits {
     timeout_s: None,
 };
 
-/// A row-limit case: name, header, limits, rows after the climb, expected stop.
-type RowCase = (
-    &'static str,
-    &'static str,
-    Limits,
-    &'static [&'static str],
-    Option<Stop>,
-);
+/// A row-limit case: name, limits, rows after the climb, expected stop.
+type RowCase = (&'static str, Limits, &'static [&'static str], Option<Stop>);
 
-/// The first stop `rows` trip after [`CLIMB`], read under `header` with `limits`.
-fn first_stop(header: &str, limits: Limits, rows: &[&str]) -> Option<Stop> {
-    let header = Header::parse(header).expect("a header");
+/// The first stop `rows` trip after [`CLIMB`], read under [`HEADER`] with `limits`.
+fn first_stop(limits: Limits, rows: &[&str]) -> Option<Stop> {
+    let header = Header::parse(HEADER).expect("a header");
     let mut watchdog = Watchdog::new(limits, &header).expect("a watchdog");
     CLIMB
         .iter()
         .chain(rows)
-        .find_map(|line| watchdog.observe(line))
+        .find_map(|line| watchdog.observe(&header.row(line).expect("a whole row")))
 }
 
-/// The floor holds only in plane flight and only with a mode column; the radius from the
+/// The floor holds only in plane flight; the radius from the
 /// start; disarming only after an armed row; a limit not given never trips.
 #[test]
 fn stops_on_each_row_limit() {
-    let no_mode = "wall_s,armed,altitude,north_m,east_m";
-    let rows: [RowCase; 9] = [
+    let rows: [RowCase; 7] = [
         (
             "plane under the floor",
-            HEADER,
             ALL_LIMITS,
             &["2.0,1,1,100,0,0"],
             Some(Stop::Floor {
@@ -53,35 +45,24 @@ fn stops_on_each_row_limit() {
         ),
         (
             "copter under the floor",
-            HEADER,
             ALL_LIMITS,
             &["2.0,1,0,100,0,0"],
             None,
         ),
         (
             "transition under the floor",
-            HEADER,
             ALL_LIMITS,
             &["2.0,1,2,100,0,0"],
             None,
         ),
         (
-            "no mode column",
-            no_mode,
-            ALL_LIMITS,
-            &["2.0,1,100,0,0"],
-            None,
-        ),
-        (
             "no floor given",
-            HEADER,
             Limits::default(),
             &["2.0,1,1,100,0,0"],
             None,
         ),
         (
             "past the radius",
-            HEADER,
             ALL_LIMITS,
             &["2.0,1,0,210,300,400"],
             Some(Stop::Radius {
@@ -91,22 +72,33 @@ fn stops_on_each_row_limit() {
         ),
         (
             "no radius given",
-            HEADER,
             Limits::default(),
             &["2.0,1,0,210,300,400"],
             None,
         ),
         (
             "disarmed after landing",
-            HEADER,
             Limits::default(),
             &["2.0,1,0,10,3,4", "3.0,0,0,10,3,4"],
             Some(Stop::Disarmed { distance_m: 5.0 }),
         ),
-        ("a short row", HEADER, ALL_LIMITS, &["2.0,1,1,100"], None),
     ];
-    for (name, header, limits, rows, expected) in rows {
-        check!(first_stop(header, limits, rows) == expected, "{name}");
+    for (name, limits, rows, expected) in rows {
+        check!(first_stop(limits, rows) == expected, "{name}");
+    }
+}
+
+/// Without a mode column (`CopterColumns`) there's no plane flight to hold above the floor.
+#[test]
+fn skips_the_floor_without_a_mode_column() {
+    let header = Header::parse("wall_s,armed,altitude,north_m,east_m").expect("a header");
+    let mut watchdog = Watchdog::new(ALL_LIMITS, &header).expect("a watchdog");
+    for line in ["0.0,1,10,0,0", "1.0,1,210,0,0", "2.0,1,100,0,0"] {
+        check!(
+            watchdog
+                .observe(&header.row(line).expect("a whole row"))
+                .is_none()
+        );
     }
 }
 
@@ -115,8 +107,13 @@ fn stops_on_each_row_limit() {
 fn waits_for_arming_before_watching_for_a_disarm() {
     let header = Header::parse(HEADER).expect("a header");
     let mut watchdog = Watchdog::new(Limits::default(), &header).expect("a watchdog");
-    check!(watchdog.observe("0.0,0,0,10,0,0").is_none());
-    check!(watchdog.observe("0.1,0,0,10,0,0").is_none());
+    for line in ["0.0,0,0,10,0,0", "0.1,0,0,10,0,0"] {
+        check!(
+            watchdog
+                .observe(&header.row(line).expect("a whole row"))
+                .is_none()
+        );
+    }
 }
 
 /// A recording without the columns the limits read isn't watchable.
