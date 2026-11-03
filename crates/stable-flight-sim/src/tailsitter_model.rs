@@ -42,7 +42,8 @@ pub struct TailsitterModel {
 /// pressure than the free stream. Sinking tail first, the air meets the wash head on: the
 /// flow over the surfaces is the static jet's speed less the sink, so the wash's share shrinks
 /// and, sinking as fast as the jet, is gone (the eXplora's elevons lose the nose sinking a few
-/// m/s, #123). Vortex-ring flow isn't modeled.
+/// m/s, #123). [`sink_loss`](Self::sink_loss) scales how fast the sink takes it away. Vortex-ring
+/// flow (thrust lost or buffeting near the disc) isn't modeled.
 ///
 /// The surfaces see [`surface_fraction`](Self::surface_fraction) of it on top of the free
 /// stream's, so they keep authority in a hover; their roll action (elevons apart) sees
@@ -75,7 +76,14 @@ pub struct PropWash {
     /// Share of the wing's rate damping inside the wash, in `[0, 1]`: the wash damps that part
     /// of the span at its jet's speed ([`span_damping_share`](Self::span_damping_share)).
     pub damping_fraction: f32,
+    /// How many times momentum theory's share of the wash a tail-first sink takes off the
+    /// surfaces, positive: 1 ([`DEFAULT_SINK_LOSS`]) is momentum theory; higher, the elevons
+    /// lose the wash at a slower sink, and a soft pitch loop starts to swing sinking sooner.
+    pub sink_loss: f32,
 }
+
+/// [`PropWash::sink_loss`] by momentum theory alone.
+pub const DEFAULT_SINK_LOSS: f32 = 1.0;
 
 impl PropWash {
     /// `count` props of `diameter_m`, with `surface_fraction` of their wake over the surfaces,
@@ -87,6 +95,7 @@ impl PropWash {
             surface_fraction,
             roll_fraction: surface_fraction,
             damping_fraction,
+            sink_loss: DEFAULT_SINK_LOSS,
         }
     }
 
@@ -106,6 +115,20 @@ impl PropWash {
             roll_fraction,
             ..self
         }
+    }
+
+    /// This wash with a tail-first sink taking `sink_loss` times momentum theory's share of it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight_sim::PropWash;
+    ///
+    /// let wash = PropWash::props(2, 0.254, 0.4, 0.24).with_sink_loss(1.4);
+    /// assert_eq!(wash.sink_loss, 1.4);
+    /// ```
+    pub fn with_sink_loss(self, sink_loss: f32) -> Self {
+        PropWash { sink_loss, ..self }
     }
 
     /// The share of a wing's rate damping inside the wash of a prop `motor_arm_m` out each side,
@@ -143,12 +166,13 @@ impl PropWash {
     ///
     /// Nose first, `T/A`. Tail first at speed `V` against a static jet of speed
     /// `v = √(2T/ρA)`, the surfaces see `½ρ(v − V)²` in place of the free stream's `½ρV²`:
-    /// `T/A − ρ·v·V`.
+    /// `T/A − ρ·v·V`, the sink's loss `ρ·v·V` times [`sink_loss`](Self::sink_loss) `k`:
+    /// `T/A − k·ρ·v·V`.
     fn added_pa(&self, thrust_n: f32, axial_mps: f32) -> f32 {
         let disc_pa = thrust_n / self.disc_area_m2;
         if axial_mps < 0.0 {
             let jet_mps = libm::sqrtf(2.0 * disc_pa / AIR_DENSITY_KGPM3);
-            disc_pa - AIR_DENSITY_KGPM3 * jet_mps * -axial_mps
+            disc_pa - self.sink_loss * AIR_DENSITY_KGPM3 * jet_mps * -axial_mps
         } else {
             disc_pa
         }
@@ -161,13 +185,14 @@ impl TailsitterModel {
     /// # Errors
     ///
     /// [`FixedWingModel::validate`]'s errors; [`ModelError::NotPositive`] for a motor arm or
-    /// disc area that isn't positive and finite; [`ModelError::NotFraction`] for a wash
+    /// disc area or sink loss that isn't positive and finite; [`ModelError::NotFraction`] for a wash
     /// fraction outside `[0, 1]`.
     pub fn validate(&self) -> Result<(), ModelError> {
         self.wing.validate()?;
         check_positive(&[
             ("motor_arm_m", self.motor_arm_m),
             ("prop_wash.disc_area_m2", self.prop_wash.disc_area_m2),
+            ("prop_wash.sink_loss", self.prop_wash.sink_loss),
         ])?;
         check_fraction(&[
             (

@@ -92,5 +92,5 @@ pub use quadplane::SimQuadPlane;
 pub use quadplane_model::{LiftRotors, QuadPlaneModel};
 pub use start::Start;
 pub use tailsitter::SimTailsitter;
-pub use tailsitter_model::{PropWash, TailsitterModel};
+pub use tailsitter_model::{DEFAULT_SINK_LOSS, PropWash, TailsitterModel};
 pub use wind::{Gust, Wind};
