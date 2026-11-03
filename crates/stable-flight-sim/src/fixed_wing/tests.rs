@@ -8,14 +8,14 @@ fn the_plane_airframe_is_valid() {
     check!(airframes::plane().model.validate() == Ok(()));
 }
 
-/// Each class of parameter is checked: positive, non-negative, finite, and the motor delay's
-/// ceiling.
+/// Each class of parameter is checked: positive, non-negative, a fraction, finite, and the motor
+/// delay's ceiling.
 #[test]
 fn rejects_each_out_of_range_parameter() {
     let model = airframes::plane().model;
     // (case, edit, error)
     type Edit = fn(&mut FixedWingModel);
-    let cases: [(&str, Edit, ModelError); 9] = [
+    let cases: [(&str, Edit, ModelError); 11] = [
         (
             "zero span",
             |m| m.span_m = 0.0,
@@ -55,6 +55,16 @@ fn rejects_each_out_of_range_parameter() {
             "motor delay past the ceiling",
             |m| m.motor_delay_s = 2.0 * MAX_ACTUATOR_DELAY_S,
             ModelError::DelayTooLong("motor_delay_s"),
+        ),
+        (
+            "post-stall pitch share past 1",
+            |m| m.aero.post_stall_pitch_share = 1.5,
+            ModelError::NotFraction("aero.post_stall_pitch_share"),
+        ),
+        (
+            "NaN surface stall share",
+            |m| m.aero.surface_stall_share = f32::NAN,
+            ModelError::NotFraction("aero.surface_stall_share"),
         ),
         (
             "infinite coefficient",

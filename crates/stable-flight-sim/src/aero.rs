@@ -74,7 +74,16 @@ pub(crate) fn wrench(
     } else {
         0.0
     };
-    let with_wash = |wash_pa: f32| (pressure_area_n + wash_pa * model.wing_area_m2).max(0.0);
+    // The flow angle in the plane of symmetry: lift, drag, the pitch moment, and whether the
+    // flow over the surfaces is attached.
+    let alpha_rad = libm::atan2f(air_mps.z, air_mps.x);
+    let blend = stall_blend(c, alpha_rad);
+    let surface_free_n = if moving {
+        pressure_area_n * (1.0 - c.surface_stall_share * blend)
+    } else {
+        0.0
+    };
+    let with_wash = |wash_pa: f32| (surface_free_n + wash_pa * model.wing_area_m2).max(0.0);
     let surfaces = surface_wrench(
         model,
         with_wash(wash.roll_pressure_pa),
@@ -93,13 +102,11 @@ pub(crate) fn wrench(
     // The air in the plane of symmetry (body x–z), which lift and drag act in.
     let symmetric_speed_mps = libm::sqrtf(air_mps.x * air_mps.x + air_mps.z * air_mps.z);
     let symmetric_area_n = self::pressure_area_n(model, symmetric_speed_mps);
-    let alpha_rad = libm::atan2f(air_mps.z, air_mps.x);
     let beta_rad = libm::asinf((air_mps.y / speed_mps).clamp(-1.0, 1.0));
     // The rate terms' per-unit-airspeed scale: the free stream's and the wash's.
     let rate_scale = pressure_area_n / speed_mps + wash_rate_scale;
 
     let (sin_alpha, cos_alpha) = (libm::sinf(alpha_rad), libm::cosf(alpha_rad));
-    let blend = stall_blend(c, alpha_rad);
     let lift_n = symmetric_area_n * lift_coefficient(c, alpha_rad, blend, sin_alpha, cos_alpha);
     let drag_n =
         symmetric_area_n * (1.0 - blend) * drag_coefficient(model, linear_lift(c, alpha_rad))
@@ -113,10 +120,7 @@ pub(crate) fn wrench(
     );
 
     let roll_nm = pressure_area_n * span * c.c_roll_beta * beta_rad;
-    // Static stability on sin α: the slope at small α, strongest broadside (α ±90°, where a
-    // flat plate's center of pressure near mid-chord gives a moment of the same size), and
-    // gone with the flow reversed.
-    let pitch_nm = symmetric_area_n * chord * (c.c_pitch_0 + c.c_pitch_alpha * sin_alpha);
+    let pitch_nm = symmetric_area_n * chord * pitch_coefficient(c, alpha_rad, blend);
     let yaw_nm = pressure_area_n * span * c.c_yaw_beta * beta_rad;
     let static_nm = Vec3::new(roll_nm, pitch_nm, yaw_nm);
 
@@ -127,6 +131,47 @@ pub(crate) fn wrench(
         beta_rad,
     }
 }
+
+/// The static pitch moment coefficient at `alpha_rad` (with its [`stall_blend`]): static
+/// stability on `sin α` (the slope at small α, strongest broadside, gone with the flow
+/// reversed), blended past the stall into a flat plate's by
+/// [`post_stall_pitch_share`](AeroCoefficients::post_stall_pitch_share).
+fn pitch_coefficient(c: &AeroCoefficients, alpha_rad: f32, blend: f32) -> f32 {
+    let sin_alpha = libm::sinf(alpha_rad);
+    let on_sin_alpha = c.c_pitch_0 + c.c_pitch_alpha * sin_alpha;
+    let plate_share = c.post_stall_pitch_share * blend;
+    if plate_share <= 0.0 {
+        return on_sin_alpha;
+    }
+    let plate = c.c_pitch_0 + flat_plate_pitch(c, alpha_rad, sin_alpha);
+    on_sin_alpha + plate_share * (plate - on_sin_alpha)
+}
+
+/// A flat plate's pitch moment coefficient about the center of gravity at `alpha_rad`: its
+/// normal force (the flat plate's lift and drag resolved onto body `−z`, `2·sin²α` broadside)
+/// at a center of pressure from the quarter chord at α 0 back to the three-quarter chord at
+/// ±180°, mid-chord broadside. The center of gravity sits ahead of the quarter chord by the
+/// static margin, `−c_pitch_alpha / c_lift_alpha` chords.
+fn flat_plate_pitch(c: &AeroCoefficients, alpha_rad: f32, sin_alpha: f32) -> f32 {
+    let cos_alpha = libm::cosf(alpha_rad);
+    let plate_lift = 2.0 * alpha_rad.signum() * sin_alpha * sin_alpha * cos_alpha;
+    let plate_drag = 2.0 * sin_alpha * sin_alpha;
+    // Positive toward body −z (up in level flight).
+    let normal = plate_lift * cos_alpha + plate_drag * sin_alpha;
+    let static_margin_chords = if c.c_lift_alpha > 0.0 {
+        -c.c_pitch_alpha / c.c_lift_alpha
+    } else {
+        0.0
+    };
+    // Both from the leading edge, in chords.
+    let center_of_gravity = QUARTER_CHORD - static_margin_chords;
+    let center_of_pressure = QUARTER_CHORD + 0.5 * alpha_rad.abs() / PI;
+    // A normal force behind the center of gravity pushes the nose down.
+    -normal * (center_of_pressure - center_of_gravity)
+}
+
+/// Where attached flow's lift acts on a thin wing, in chords from the leading edge.
+const QUARTER_CHORD: f32 = 0.25;
 
 /// The rate damping and cross terms of `model` turning at `rates_radps` under `rate_scale`
 /// (dynamic pressure times wing area per unit of airspeed, in N·s/m), in N·m on the FRD body

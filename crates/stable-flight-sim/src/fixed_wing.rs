@@ -2,7 +2,7 @@
 
 use stable_flight::Vec3;
 
-use crate::model::{ModelError, check_finite, check_non_negative, check_positive};
+use crate::model::{ModelError, check_finite, check_fraction, check_non_negative, check_positive};
 use crate::perturbations::MAX_ACTUATOR_DELAY_S;
 
 #[cfg(test)]
@@ -83,7 +83,10 @@ pub struct FixedWingModel {
 /// sigmoid of [`stall_sharpness`](Self::stall_sharpness) into a flat plate's
 /// (`2·sign α·sin²α·cos α`), so it falls off past the stall. Drag is parasitic plus induced,
 /// `c_drag_0 + CL²/(π·e·AR)` with the linear lift, blended by the same sigmoid into a flat
-/// plate's `c_drag_0 + 2·sin²α`. Static pitch stability acts on `sin α`. So forces and moments
+/// plate's `c_drag_0 + 2·sin²α`. Static pitch stability acts on `sin α`; past the stall the
+/// pitch moment can blend into a flat plate's
+/// ([`post_stall_pitch_share`](Self::post_stall_pitch_share)) and the surfaces can lose the
+/// free stream ([`surface_stall_share`](Self::surface_stall_share)). So forces and moments
 /// stay bounded all the way round, broadside (α ±90°, a tailsitter's hover) and backward alike.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AeroCoefficients {
@@ -118,10 +121,25 @@ pub struct AeroCoefficients {
     /// Pitch moment per unit of `sin α`, per rad at small α (static stability; negative is
     /// stable).
     pub c_pitch_alpha: f32,
+    /// Share of a flat plate's pitch moment past the stall, in `[0, 1]`; the rest stays
+    /// [`c_pitch_alpha`](Self::c_pitch_alpha)'s `sin α`. A flat plate's normal force (its lift
+    /// and drag past the stall, `2·sin²α` broadside) acts at a center of pressure that moves
+    /// back from the quarter chord at α 0 to mid-chord broadside and the three-quarter chord
+    /// with the flow reversed, about a center of gravity ahead of the quarter chord by the
+    /// static margin (`−c_pitch_alpha / c_lift_alpha` chords). So broadside it pushes the nose
+    /// down far harder than a small static margin's `sin α` does, and tail first it turns the
+    /// nose away from the flow (unstable). 0 for a wing whose stall moment the sim doesn't
+    /// claim.
+    pub post_stall_pitch_share: f32,
     /// Pitch moment per normalized pitch rate (pitch damping).
     pub c_pitch_q: f32,
     /// Pitch moment per rad of elevator.
     pub c_pitch_elevator: f32,
+    /// Share of the free stream's dynamic pressure the surfaces lose past the stall, in
+    /// `[0, 1]`: blended by the stall sigmoid, so 1 leaves them working on the free stream only
+    /// in attached flow from ahead (broadside and tail first it separates or reverses over
+    /// them). Prop wash over them ([`PropWash`](crate::PropWash)) still works them.
+    pub surface_stall_share: f32,
     /// Yaw moment per rad of β (weathercock stability).
     pub c_yaw_beta: f32,
     /// Yaw moment per normalized roll rate.
@@ -152,8 +170,9 @@ impl FixedWingModel {
     /// stall sharpness, Oswald efficiency, max thrust, time constant, or max step that isn't
     /// positive and finite; [`ModelError::Negative`] for a max deflection, parasitic drag,
     /// friction, or motor delay that is negative or not finite; [`ModelError::DelayTooLong`] for
-    /// a motor delay over [`MAX_ACTUATOR_DELAY_S`]; [`ModelError::NotFinite`] for any other
-    /// coefficient that isn't finite.
+    /// a motor delay over [`MAX_ACTUATOR_DELAY_S`]; [`ModelError::NotFraction`] for a stall
+    /// share outside `[0, 1]`; [`ModelError::NotFinite`] for any other coefficient that isn't
+    /// finite.
     pub fn validate(&self) -> Result<(), ModelError> {
         let aero = &self.aero;
         check_positive(&[
@@ -185,6 +204,10 @@ impl FixedWingModel {
         if self.motor_delay_s > MAX_ACTUATOR_DELAY_S {
             return Err(ModelError::DelayTooLong("motor_delay_s"));
         }
+        check_fraction(&[
+            ("aero.post_stall_pitch_share", aero.post_stall_pitch_share),
+            ("aero.surface_stall_share", aero.surface_stall_share),
+        ])?;
         check_finite(&[
             ("thrust_line_below_cg_m", self.thrust_line_below_cg_m),
             ("aero.c_lift_0", aero.c_lift_0),

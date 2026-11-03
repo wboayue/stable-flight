@@ -1,5 +1,6 @@
 //! Transitions on `airframes::tailsitter()`: forward from a hover to plane flight, back to a
-//! hover, and the ways a forward transition ends early, against PX4's VTOL transition limits
+//! hover, and the ways a forward transition ends early (and `airframes::explora()`'s back ramp
+//! against RealFlight's), against PX4's VTOL transition limits
 //! (PX4 main `edeba2f`, `src/modules/vtol_att_control/vtol_att_control_params.yaml`).
 
 mod common;
@@ -518,6 +519,107 @@ fn sink_guard_catches_a_stalling_back_ramp() {
         check!(copter_s - BACK_AT_S <= BACK_DURATION_S, "{what}");
         check_altitude_loss(transition_heights(&flight, BACK_AT_S, copter_s), &what);
     }
+}
+
+/// The RealFlight eXplora's hover thrust on #399's back-ramp runs: the median setpoint over each
+/// run's level hover leg. Its back ramps' thrusts are shares of it.
+const EXPLORA_HOVER_THRUST: f32 = 0.91;
+
+/// Sink past which a back ramp has stalled, in m/s: the eXplora's sink guard limit
+/// (`TRAN_VT_SINK_LIM`, `explora_vtol`), which its stalling ramps tripped and its clean ones
+/// didn't (#399).
+const STALLED_SINK_MPS: f32 = 1.0;
+
+/// Most elevon a clean back ramp takes: the RealFlight eXplora's 0.53 at 0.77 × hover, its
+/// most on a clean ramp, with 0.1 of margin (#399).
+const CLEAN_ELEVON: f32 = 0.63;
+
+/// Least elevon a stalling back ramp reaches: full deflection, as the RealFlight eXplora's
+/// stalling ramps (#399).
+const STALLED_ELEVON: f32 = 0.99;
+
+/// The RealFlight eXplora's back ramps (#399), each `TRAN_VT_THR` as a share of its hover
+/// thrust, and whether it stalled nose-high with the elevons at full deflection.
+const EXPLORA_BACK_RAMPS: [(&str, f32, bool); 3] = [
+    // 0.60: stuck at 54° for 9.4 s, the guard raising thrust to full.
+    ("run 4", 0.60 / EXPLORA_HOVER_THRUST, true),
+    // 0.70: handed over sinking 0.4 m/s, elevons at most 0.53.
+    ("run 2", 0.70 / EXPLORA_HOVER_THRUST, false),
+    // 0.75, `explora_vtol`'s: handed over climbing 1.9 m/s, elevons at most 0.23.
+    ("run 1", 0.75 / EXPLORA_HOVER_THRUST, false),
+];
+
+/// The most elevon and the fastest sink on the back ramp, from the first `ToCopter` tick to the
+/// handover.
+#[derive(Debug, Default)]
+struct RampWorst {
+    handover: BackHandover,
+    elevon: f32,
+    sink_mps: f32,
+}
+
+impl RampWorst {
+    /// `Some(true)` stalled: sank past [`STALLED_SINK_MPS`] at full elevon. `Some(false)`
+    /// clean: neither sank past it nor took more than [`CLEAN_ELEVON`]. `None` in between.
+    fn stalled(&self) -> Option<bool> {
+        let sank = self.sink_mps > STALLED_SINK_MPS;
+        if sank && self.elevon >= STALLED_ELEVON {
+            Some(true)
+        } else if !sank && self.elevon <= CLEAN_ELEVON {
+            Some(false)
+        } else {
+            None
+        }
+    }
+}
+
+impl TelemetryPublisher for RampWorst {
+    fn publish(&mut self, record: &TelemetryRecord) {
+        if !matches!(self.handover.observe(record), BackPhase::Ramp) {
+            return;
+        }
+        let [left, right, ..] = record.actuators.servos;
+        self.elevon = self.elevon.max(left.abs()).max(right.abs());
+        self.sink_mps = self.sink_mps.max(-record.state.velocity_mps.z);
+    }
+}
+
+/// `explora()`'s back ramp at `share` of its hover thrust, with the sink guard off.
+fn fly_explora_back_ramp(share: f32) -> RampWorst {
+    let mut airframe = airframes::explora();
+    let hover_thrust = airframe.guidance.hover.altitude.hover_thrust;
+    let transition = &mut airframe.guidance.transition;
+    transition.back_thrust = share * hover_thrust;
+    transition.back_sink_limit_mps = 0.0;
+    let plant = TailsitterPlant::clean(airframe);
+    let commander = forward_and_back(&airframe, BACK_AT_S, BACK_HOVER_NORTH_M);
+    let mut flight_loop = tailsitter_pipeline(&plant, commander, RampWorst::default());
+    fly(
+        &mut flight_loop,
+        BACK_AT_S + BACK_DURATION_S + ALTITUDE_LOSS_AFTER_S,
+        |_, _| {},
+    );
+    flight_loop.into_parts().5
+}
+
+/// With the sink guard off, the eXplora's back ramp stalls at the share of hover thrust that
+/// stalled RealFlight's, and flies cleanly where RealFlight's did (#399): past the stall its
+/// wing pitches nose-down as a flat plate, and its elevons work in the wash alone.
+#[test]
+fn explora_back_ramp_stalls_where_realflights_does() {
+    for (run, share, stalls) in EXPLORA_BACK_RAMPS {
+        let worst = fly_explora_back_ramp(share);
+        check!(worst.stalled() == Some(stalls), "{run}: {worst:?}");
+    }
+}
+
+/// RealFlight's eXplora also stalled at 0.65 (run 3: 60°, elevons full); the sim's ramp carries
+/// more energy at the same share of hover thrust and flies it.
+#[test]
+#[ignore = "sim eXplora thrust and drag behind RealFlight's (#651)"]
+fn explora_back_ramp_stalls_at_realflights_run_3_share() {
+    let worst = fly_explora_back_ramp(0.65 / EXPLORA_HOVER_THRUST);
+    check!(worst.stalled() == Some(true), "{worst:?}");
 }
 
 /// Seconds the hover settles after a forward transition ends early before the hold is judged:
