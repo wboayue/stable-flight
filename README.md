@@ -47,7 +47,7 @@ The repository is a Cargo workspace:
 | [`stable-flight-sitl-realflight`](crates/stable-flight-sitl-realflight) | RealFlight backend: `RealFlightVehicle`, tuned `airframes`, and the RealFlight examples |
 | [`stable-flight-sitl-xplane`](crates/stable-flight-sitl-xplane) | X-Plane backend: `XPlaneVehicle` over UDP datarefs, frame conversion, local-origin tracking, raw state captures, the tuned Alia 250, and the X-Plane examples |
 | [`stable-flight-sim`](crates/stable-flight-sim) | Deterministic rigid-body multirotor, airplane, tailsitter, and quadplane simulator (unpublished) for closed-loop tests in `cargo test` and CI. `no_std` |
-| [`stable-flight-tools`](crates/stable-flight-tools) | Developer binaries (unpublished): `plot_flight`, `generate_figure_eight`, `link_pilot`, and `check_frames` |
+| [`stable-flight-tools`](crates/stable-flight-tools) | Developer binaries (unpublished): `plot_flight`, `generate_figure_eight`, `link_pilot`, `check_frames`, and the flight-check tools `watch_run` and `lap_stats` |
 
 Board firmware lives outside the workspace, one nested workspace per board:
 

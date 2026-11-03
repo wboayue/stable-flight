@@ -33,7 +33,7 @@ lives in `architecture.md`; each crate's README owns its usage.
 | `stable-flight-sitl-realflight` | RealFlight backend: `RealFlightVehicle`, `ActuatorMapping`, `airframes`, `capture`, and the RealFlight examples | core, `realflight-bridge`; sitl and link as dev-dependencies |
 | `stable-flight-sitl-xplane` | X-Plane backend: `XPlaneVehicle`, `LocalOrigin`, `ActuatorMapping`, `airframes`, `sweep`, `capture`, and the X-Plane examples | core, `xplane-bridge`; sitl as a dev-dependency |
 | `stable-flight-sim` | Unpublished `no_std` deterministic simulator: copter, plane, tailsitter, and quadplane models (lockstep `StateSource` + `Actuator`), wind, perturbations, `airframes`; closed-loop tests in `tests/` (wiring in `tests/common`) | core, `libm`, `thiserror` |
-| `stable-flight-tools` | Unpublished dev binaries: `plot_flight`, `generate_figure_eight`, `link_pilot`, `check_frames` | core, sitl, link, sitl-realflight, sitl-xplane, `plotters`, `clap` |
+| `stable-flight-tools` | Unpublished dev binaries: `plot_flight`, `generate_figure_eight`, `link_pilot`, `check_frames`, `watch_run`, `lap_stats`; `recording` (recorder CSV reader) | core, sitl, link, sitl-realflight, sitl-xplane, `plotters`, `clap` |
 
 - Other crates use core's `nalgebra` re-export (`stable_flight::nalgebra`) and `Vec2`/`Vec3`
   aliases. sitl re-exports only the core crate (`stable_flight_sitl::stable_flight`); import core
@@ -75,6 +75,8 @@ cargo run -p stable-flight-sitl-realflight --example channel-sweep-realflight --
 cargo run -p stable-flight-sitl-realflight --example exchange-latency-realflight                           # time RealFlight exchanges alone
 cargo run -p stable-flight-sitl-realflight --example surface-probe-realflight                             # quadplane surface directions in flight (Cobra)
 cargo run --bin check_frames -- capture.csv   # capture vs the frame contract (--pitch-deg: body rotation, 90 for the eXplora; --sim xplane for X-Plane captures)
+cargo run --release --bin watch_run -- --pid <pid> --csv run.csv --floor-m 100 --radius-m 9000 --timeout-s 1800  # SIGTERM a run on a plane floor, radius, timeout, or disarm
+cargo run --release --bin lap_stats -- run.csv...  # plane lap metrics (peak sink, handoff dip, tracking RMS, bank, touchdown) as a markdown table
 cargo run --example extreme_3d_commander      # joystick smoke test (spektrum_commander: Spektrum mapping)
 cargo run --example joystick_events           # every gilrs event as CSV, gamepad codes (--raw: without gilrs's filters)
 ```

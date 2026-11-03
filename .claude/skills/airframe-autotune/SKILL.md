@@ -39,9 +39,10 @@ Cobra), #537 (X-Plane Alia), #540 (Alia hover).
 5. **Confirm:** `--stages none --step-test` on the committed gains. Runs vary: report this
    run, not only the design run's own step tests.
 6. **Laps:** the airframe's waypoint laps (`flights/<airframe>_*lap*.csv`) on the branch and
-   on `main` (build `main` in a throwaway worktree with its own `CARGO_TARGET_DIR`). Compare
-   peak sink in plane against `PGUID_SINK_MAX` + 0.25, the dip after the handoff into plane,
-   tracking error, and touchdown distance. A lap limit an earlier issue set (#547's descent)
+   on `main` (build `main` in a throwaway worktree with its own `CARGO_TARGET_DIR`).
+   `lap_stats` on their CSVs prints the lap table. Compare peak sink in plane against
+   `PGUID_SINK_MAX` + 0.25, the dip after the handoff into plane, tracking error, and
+   touchdown distance. A lap limit an earlier issue set (#547's descent)
    must still hold.
 
 A batch go covers the batch: baseline, three design runs, or the confirm run plus laps.
@@ -74,6 +75,3 @@ A failed stage ends the run; read the judge's pairs in the log (`RUST_LOG=info,s
 - The crate CHANGELOG: **Breaking (behavior):** for the gains; core's for any design fix.
 - Post the design, step-test, and lap tables on the issue; the PR body links the comment.
 - The PR closes the issue; tick it on its umbrella after merge.
-
-The watchdog and lap metrics are session scripts until
-[#645](https://github.com/wboayue/stable-flight/issues/645).

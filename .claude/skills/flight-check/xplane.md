@@ -13,10 +13,11 @@
   plane legs fly offshore.
 - **Off-altitude loiter:** a plane leg that passes its waypoint off altitude loiters on it
   until at its altitude, which can add minutes to a lap (the Alia's 136 m short climb waited
-  193 s, #451): give a watchdog's timeout that margin. A sinking one falls back to a hover
+  193 s, #451): give `watch_run`'s timeout that margin. Alia laps and plane autotune:
+  `--floor-m 100 --radius-m 9000 --timeout-s 1800`. A sinking one falls back to a hover
   below the Alia's `TRAN_FW_MIN_HGT` (20 m above arming).
-- **Recorder altitude is MSL** (spawn reads about 4.6 m at L52): offset altitude floors, and
-  detect landing by `armed == 0` after a back transition.
+- **Recorder altitude is MSL** (spawn reads about 4.6 m at L52): `watch_run` and `lap_stats`
+  measure from the first row; anything else reading `altitude` offsets it.
 - **Copter legs turn the nose along the leg** as they fly it (`GUID_YAW_SLEW`), so start a
   route with a climb over the spawn, which turns nothing on the ground.
 - **Manual runs:** unbind the Extreme 3D's hat in X-Plane's joystick settings (bound to view
