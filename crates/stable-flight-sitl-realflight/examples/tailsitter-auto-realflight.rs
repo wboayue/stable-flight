@@ -243,9 +243,10 @@ impl TelemetryPublisher for ModeLog {
 }
 
 /// `columns`, then RealFlight's own wind (`true_wind_north_mps`, `true_wind_east_mps`; NaN
-/// before the first report) and the specific force along the hover view's `x` (belly) and `y`
-/// (span) (`view_force_x_mps2`, `view_force_y_mps2`): the air's push, to check guidance's wind
-/// estimate against and fit its drag coefficients from.
+/// before the first report) and the specific force along the hover view's `x` (belly), `y`
+/// (span), and `z` (tail, so thrust reads negative) (`view_force_x_mps2`, `view_force_y_mps2`,
+/// `view_force_z_mps2`): the air's push, to check guidance's wind estimate against and fit its
+/// drag coefficients from, and the thrust delivered against the thrust commanded.
 struct WindColumns<C> {
     columns: C,
     /// The tailsitter view's rotation from the body frame.
@@ -254,8 +255,7 @@ struct WindColumns<C> {
 }
 
 impl<C: Columns> Columns for WindColumns<C> {
-    const HEADER: &'static str =
-        "true_wind_north_mps,true_wind_east_mps,view_force_x_mps2,view_force_y_mps2";
+    const HEADER: &'static str = "true_wind_north_mps,true_wind_east_mps,view_force_x_mps2,view_force_y_mps2,view_force_z_mps2";
 
     fn header(&self) -> Cow<'static, str> {
         Cow::Owned(format!("{},{}", self.columns.header(), Self::HEADER))
@@ -268,8 +268,8 @@ impl<C: Columns> Columns for WindColumns<C> {
         let force = view_attitude.inverse_transform_vector(&specific_force_ned(record.state));
         write!(
             out,
-            ",{:.3},{:.3},{:.4},{:.4}",
-            wind.x, wind.y, force.x, force.y
+            ",{:.3},{:.3},{:.4},{:.4},{:.4}",
+            wind.x, wind.y, force.x, force.y, force.z
         )
     }
 }
