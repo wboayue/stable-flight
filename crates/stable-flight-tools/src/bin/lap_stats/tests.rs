@@ -214,7 +214,7 @@ fn rejects_laps_without_plane_flight() {
         "wall_s,armed,roll,pitch,altitude,sp_roll,sp_pitch,north_m,east_m\n0,1,0,0,1,0,0,0,0",
     )
     .expect("a recording");
-    check!(let Err(LapError::MissingColumn("mode")) = LapStats::from_recording(&copter));
+    check!(let Err(LapError::Recording(RecordingError::MissingColumn("mode"))) = LapStats::from_recording(&copter));
     let hover = lap(&[Tick { mode: 0, ..PLANE }]);
     check!(let Err(LapError::NoPlaneFlight) = LapStats::from_recording(&hover));
     let disarmed = lap(&[Tick {

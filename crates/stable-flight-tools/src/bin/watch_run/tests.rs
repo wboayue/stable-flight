@@ -123,7 +123,7 @@ fn waits_for_arming_before_watching_for_a_disarm() {
 #[test]
 fn needs_position_and_arming_columns() {
     let header = Header::parse("wall_s,armed,altitude").expect("a header");
-    check!(let Err(WatchError::MissingColumn("north_m")) = Watchdog::new(ALL_LIMITS, &header));
+    check!(let Err(WatchError::Recording(RecordingError::MissingColumn("north_m"))) = Watchdog::new(ALL_LIMITS, &header));
 }
 
 /// The timeout trips once the elapsed time passes it, and never without one.

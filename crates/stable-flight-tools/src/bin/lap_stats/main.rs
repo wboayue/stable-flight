@@ -53,8 +53,6 @@ enum LapError {
     Read(#[from] std::io::Error),
     #[error(transparent)]
     Recording(#[from] RecordingError),
-    #[error("no `{0}` column")]
-    MissingColumn(&'static str),
     #[error("no plane flight")]
     NoPlaneFlight,
     #[error("never armed")]
@@ -173,7 +171,7 @@ impl LapStats {
 
 /// Each row's metric columns, in time order.
 fn samples(recording: &Recording) -> Result<Vec<Sample>, LapError> {
-    let column = |name| recording.column(name).ok_or(LapError::MissingColumn(name));
+    let column = |name| recording.require(name);
     let armed = column("armed")?;
     let mode = column("mode")?;
     let altitude = column("altitude")?;
