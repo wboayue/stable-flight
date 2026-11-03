@@ -38,13 +38,9 @@ lives in `architecture.md`; each crate's README owns its usage.
 - Other crates use core's `nalgebra` re-export (`stable_flight::nalgebra`) and `Vec2`/`Vec3`
   aliases. sitl re-exports only the core crate (`stable_flight_sitl::stable_flight`); import core
   items from `stable_flight`.
-- **Flight controller or companion** first
-  ([`architecture.md#design-principles`](architecture.md#design-principles)): the flight
-  controller stabilizes and guides over a short target horizon, and owns safety (estimation,
-  arm gate, failsafes, flight envelope, return to launch); the companion owns missions,
-  perception, and the ground station protocol. Work goes on the flight controller only if it
-  runs at tick rate or the vehicle needs it with the companion gone. Nothing on the flight
-  controller depends on the companion to stay safe.
+- **Flight controller or companion** first: work goes on the flight controller only if it
+  runs at tick rate or the vehicle needs it with the companion gone; otherwise on the
+  companion ([design principles](architecture.md#design-principles)).
 - Hardware-reusable logic (control math, mixing, sequencing, sensor parsing, estimation) goes in
   core or another `no_std` crate, unit-tested on the host. Anything touching an OS, clock, file,
   or network goes in sitl; anything specific to one simulator goes in its
@@ -134,8 +130,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 | `TelemetryPublisher` | `(A, B)` fan-out; `testing::RecordingTelemetry<N>` | core |
 | `TelemetryPublisher` | `LinkPublisher` (from `FcLink`; MAVLink is the bridge's job) | link |
 
-`WaypointFollower` and `ScriptCommander` sequence whole routes on the flight controller for tests
-and SITL; real missions come from the companion (`LinkCommander`).
+`WaypointFollower` and `ScriptCommander` are test and SITL tools
+([design principles](architecture.md#design-principles)).
 
 - `View<T>` runs any guidance or stabilizer in a constant rotated body frame (state in, moments
   back out); `View::tailsitter` flies nose-up hover on the copter controllers.

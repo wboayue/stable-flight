@@ -12,7 +12,9 @@ where it goes. The [link](#link) between them is the boundary.
 * **The flight controller** owns everything that closes a loop at tick rate or that the vehicle
   needs with the companion gone: state estimation, stabilization and mixing, guidance to the
   targets it is given (hover, waypoint, land, transition, loiter), the arm gate, failsafes, home
-  and return to launch, and params. Guidance looks a short horizon ahead, the current target and
+  and return to launch, and params. Home lives in the bridge today; it moves to the flight
+  controller with return to launch ([#468](https://github.com/wboayue/stable-flight/issues/468),
+  planned). Guidance looks a short horizon ahead, the current target and
   the next ([#658](https://github.com/wboayue/stable-flight/issues/658), planned), never a whole
   mission.
 * **The companion** owns everything above that horizon: mission storage, sequencing, and
@@ -28,11 +30,12 @@ where it goes. The [link](#link) between them is the boundary.
   and a timesync exchange ([#655](https://github.com/wboayue/stable-flight/issues/655),
   planned), while freshness and failsafe timing stay on the flight controller's own `dt`.
 * **The flight controller trusts the companion for nothing that keeps the vehicle safe.** A
-  quiet or misbehaving companion ends in a failsafe the flight controller chooses
-  ([Link Failsafe](#link-failsafe)); the companion can't arm against the flight controller's
-  policy; and every command, whoever sends it, stays inside a flight envelope the flight
-  controller enforces: geofence, altitude, and distance limits
-  ([#657](https://github.com/wboayue/stable-flight/issues/657), planned). Avoidance decisions
+  quiet companion ends in a failsafe the flight controller chooses
+  ([Link Failsafe](#link-failsafe)). A misbehaving one stays inside a flight envelope the flight
+  controller enforces on every command, whoever sends it: geofence, altitude, and distance
+  limits ([#657](https://github.com/wboayue/stable-flight/issues/657), planned). Arming passes
+  the flight controller's own checks
+  ([#136](https://github.com/wboayue/stable-flight/issues/136), planned). Avoidance decisions
   are the companion's; the envelope is the backstop.
 
 Where new work goes: on the flight controller only if it runs at tick rate or the vehicle needs
