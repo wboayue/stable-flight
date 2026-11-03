@@ -422,7 +422,8 @@ fn post_stall_pitch_follows_a_flat_plate() {
     ];
     for (case, alpha_rad, expected) in cases {
         let blend = stall_blend(&plate, alpha_rad);
-        let coefficient = pitch_coefficient(&plate, alpha_rad, blend);
+        let (sin_alpha, cos_alpha) = (libm::sinf(alpha_rad), libm::cosf(alpha_rad));
+        let coefficient = pitch_coefficient(&plate, alpha_rad, blend, sin_alpha, cos_alpha);
         check!(
             (coefficient - expected).abs() < 1e-3,
             "{case}: {coefficient} vs {expected}"
@@ -432,7 +433,8 @@ fn post_stall_pitch_follows_a_flat_plate() {
             ..plate
         };
         check!(
-            pitch_coefficient(&without, alpha_rad, blend) == on_sin_alpha(alpha_rad),
+            pitch_coefficient(&without, alpha_rad, blend, sin_alpha, cos_alpha)
+                == on_sin_alpha(alpha_rad),
             "{case}, no plate"
         );
     }
