@@ -22,6 +22,10 @@ mod tests;
 /// The time column every recorder writes first, seconds since the recorder was made.
 pub const TIME: &str = "wall_s";
 
+/// `mode` in plane flight (`TailsitterColumns`, `QuadPlaneColumns`: 0 copter, 1 plane, 2 to
+/// plane, 3 to copter, 9 other).
+pub const PLANE_MODE: f32 = 1.0;
+
 /// Why a CSV isn't a recording.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum RecordingError {
