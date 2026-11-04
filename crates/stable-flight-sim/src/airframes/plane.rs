@@ -7,7 +7,7 @@ use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
 use stable_flight::{GRAVITY, Vec3};
 
 use crate::aero;
-use crate::fixed_wing::{AeroCoefficients, FixedWingModel};
+use crate::fixed_wing::{AeroCoefficients, FixedWingModel, ThrustFalloff};
 use crate::start::Start;
 
 use super::{motor_count, thrust_for};
@@ -111,7 +111,7 @@ pub fn plane() -> PlaneAirframe {
         servo_time_constant_s: 0.14,
         max_thrust_n: 1.2 * MASS_KG * GRAVITY,
         thrust_exponent: QUADRATIC,
-        thrust_falloff_n_per_mps: 0.0,
+        thrust_falloff: ThrustFalloff::Linear { n_per_mps: 0.0 },
         thrust_line_below_cg_m: 0.0,
         motor_time_constant_s: 0.05,
         motor_delay_s: 0.0,

@@ -132,13 +132,20 @@ impl Motors {
 
     /// Each motor's thrust, in N: `thrust_scale · max_thrust_n · running^thrust_exponent`.
     pub(crate) fn thrusts_n(&self) -> [f32; SLOTS] {
+        self.thrusts_n_with(|_| 1.0)
+    }
+
+    /// As [`thrusts_n`](Self::thrusts_n), each motor's thrust times `falloff` of its share of
+    /// full thrust (`running^thrust_exponent`, before mismatch).
+    fn thrusts_n_with(&self, falloff: impl Fn(f32) -> f32) -> [f32; SLOTS] {
         let mut thrusts_n = [0.0; SLOTS];
         for ((thrust_n, running), scale) in thrusts_n
             .iter_mut()
             .zip(&self.running)
             .zip(&self.thrust_scale)
         {
-            *thrust_n = scale * self.max_thrust_n * self.thrust_fraction(*running);
+            let share = self.thrust_fraction(*running);
+            *thrust_n = scale * self.max_thrust_n * share * falloff(share);
         }
         thrusts_n
     }
@@ -155,7 +162,13 @@ impl Motors {
 
     /// Total thrust, in N, and the FRD body torque, in N·m.
     pub(crate) fn wrench(&self) -> (f32, Vec3) {
-        let thrusts_n = self.thrusts_n();
+        self.wrench_with(|_| 1.0)
+    }
+
+    /// As [`wrench`](Self::wrench), each motor's thrust times `falloff` of its share of full
+    /// thrust: what airspeed leaves of it ([`FixedWingModel::falloff_share`](crate::FixedWingModel)).
+    pub(crate) fn wrench_with(&self, falloff: impl Fn(f32) -> f32) -> (f32, Vec3) {
+        let thrusts_n = self.thrusts_n_with(falloff);
         let torque_nm = thrusts_n
             .iter()
             .zip(&self.torque_per_thrust_m)

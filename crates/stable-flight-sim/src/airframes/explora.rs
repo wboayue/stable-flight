@@ -14,7 +14,7 @@ use stable_flight::{Vec2, Vec3};
 use super::plane::{aerosonde_inertia, plane};
 use super::tailsitter::{TailsitterAirframe, tailsitter};
 use super::{hover_thrust, motor_count};
-use crate::fixed_wing::{AeroCoefficients, FixedWingModel};
+use crate::fixed_wing::{AeroCoefficients, FixedWingModel, ThrustFalloff};
 use crate::motors::QUADRATIC;
 use crate::{PropWash, TailsitterModel};
 
@@ -161,7 +161,9 @@ pub fn explora() -> TailsitterAirframe {
         motor_delay_s: 0.028,
         max_thrust_n,
         thrust_exponent: QUADRATIC,
-        thrust_falloff_n_per_mps: max_thrust_n / PITCH_SPEED_MPS,
+        thrust_falloff: ThrustFalloff::Linear {
+            n_per_mps: max_thrust_n / PITCH_SPEED_MPS,
+        },
         ..base.model.wing
     };
     let model = TailsitterModel {

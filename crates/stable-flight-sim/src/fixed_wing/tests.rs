@@ -1,3 +1,4 @@
+use approx::assert_relative_eq;
 use assert2::check;
 
 use super::*;
@@ -15,7 +16,7 @@ fn rejects_each_out_of_range_parameter() {
     let model = airframes::plane().model;
     // (case, edit, error)
     type Edit = fn(&mut FixedWingModel);
-    let cases: [(&str, Edit, ModelError); 11] = [
+    let cases: [(&str, Edit, ModelError); 13] = [
         (
             "zero span",
             |m| m.span_m = 0.0,
@@ -45,6 +46,16 @@ fn rejects_each_out_of_range_parameter() {
             "negative drag",
             |m| m.aero.c_drag_0 = -0.1,
             ModelError::Negative("aero.c_drag_0"),
+        ),
+        (
+            "negative linear falloff",
+            |m| m.thrust_falloff = ThrustFalloff::Linear { n_per_mps: -1.0 },
+            ModelError::Negative("thrust_falloff.n_per_mps"),
+        ),
+        (
+            "zero pitch speed",
+            |m| m.thrust_falloff = ThrustFalloff::PitchSpeed { full_mps: 0.0 },
+            ModelError::NotPositive("thrust_falloff.full_mps"),
         ),
         (
             "negative motor delay",
@@ -77,4 +88,68 @@ fn rejects_each_out_of_range_parameter() {
         edit(&mut edited);
         check!(edited.validate() == Err(error), "{case}");
     }
+}
+
+/// A prop's thrust falls to zero at its pitch speed, which slows with the motor: at a quarter
+/// of full thrust (half the rpm) it stops pushing at half the full-command speed. Linear falloff
+/// stops at the same speed at any command.
+#[test]
+fn thrust_falls_off_with_airspeed_by_the_falloff_law() {
+    let pitch_speed = FixedWingModel {
+        thrust_falloff: ThrustFalloff::PitchSpeed { full_mps: 30.0 },
+        ..airframes::plane().model
+    };
+    let linear = FixedWingModel {
+        thrust_falloff: ThrustFalloff::Linear {
+            n_per_mps: pitch_speed.max_thrust_n / 30.0,
+        },
+        ..pitch_speed
+    };
+    // (case, model, thrust share, airspeed m/s, share of static thrust left)
+    let cases = [
+        ("pitch speed, still air", pitch_speed, 0.25, 0.0, 1.0),
+        ("pitch speed, flying backward", pitch_speed, 0.25, -5.0, 1.0),
+        ("pitch speed, full, halfway", pitch_speed, 1.0, 15.0, 0.5),
+        (
+            "pitch speed, quarter, a quarter",
+            pitch_speed,
+            0.25,
+            3.75,
+            0.75,
+        ),
+        (
+            "pitch speed, quarter, at its speed",
+            pitch_speed,
+            0.25,
+            15.0,
+            0.0,
+        ),
+        (
+            "pitch speed, quarter, past it",
+            pitch_speed,
+            0.25,
+            20.0,
+            0.0,
+        ),
+        ("pitch speed, stopped", pitch_speed, 0.0, 5.0, 0.0),
+        (
+            "pitch speed, stopped, still air",
+            pitch_speed,
+            0.0,
+            0.0,
+            1.0,
+        ),
+        ("linear, full, halfway", linear, 1.0, 15.0, 0.5),
+        ("linear, quarter, halfway", linear, 0.25, 15.0, 0.5),
+        ("linear, past its speed", linear, 0.25, 40.0, 0.0),
+    ];
+    for (case, model, thrust_share, airspeed_mps, left) in cases {
+        let share = model.falloff_share(thrust_share, airspeed_mps);
+        check!(!share.is_nan(), "{case}");
+        assert_relative_eq!(share, left, epsilon = 1e-6);
+    }
+    assert_relative_eq!(
+        pitch_speed.full_thrust_n(15.0),
+        0.5 * pitch_speed.max_thrust_n
+    );
 }

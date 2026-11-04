@@ -10,7 +10,7 @@ use stable_flight::stabilizers::plane::PlaneStabilizerConfig;
 use stable_flight::stabilizers::vtol::QuadPlaneStabilizerConfig;
 use stable_flight::{Vec2, Vec3};
 
-use crate::fixed_wing::{AeroCoefficients, FixedWingModel};
+use crate::fixed_wing::{AeroCoefficients, FixedWingModel, ThrustFalloff};
 use crate::quadplane_model::{LiftRotors, QuadPlaneModel};
 use crate::start::Start;
 
@@ -124,7 +124,7 @@ pub fn alia250() -> QuadPlaneAirframe {
         servo_time_constant_s: 0.1,
         max_thrust_n: 5_100.0,
         thrust_exponent: 1.0,
-        thrust_falloff_n_per_mps: 21.0,
+        thrust_falloff: ThrustFalloff::Linear { n_per_mps: 21.0 },
         thrust_line_below_cg_m: 0.0,
         // The lift motors' measured lag (#351), for the pusher too.
         motor_time_constant_s: lift.motor_time_constant_s,
