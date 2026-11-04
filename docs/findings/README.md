@@ -18,6 +18,7 @@ change makes one wrong, re-measure and update it, or delete it.
 | [RealFlight wind: direction, speed, sign](realflight-wind.md) | 2026-10-20–21 | #473, #476 |
 | [The eXplora's elevon trim falls with airspeed as V^-0.74](explora-trim-vs-airspeed.md) | 2026-11-01 | #648 |
 | [The eXplora's hover descent swings on a soft pitch tune, not from a vortex ring](explora-descent-swing.md) | 2026-11-03 | #647 |
+| [The eXplora's autotuned hover descends at 2 m/s as cleanly as at 1.5; at 2.5 its arrival lags](explora-descent-limit.md) | 2026-11-03 | #653 |
 
 ## Format
 

@@ -190,7 +190,7 @@ The axes are the hover view's:
 
 | Param | Field | eXplora |
 |---|---|---|
-| `GUID_DESC_MAX` | `hover.max_descent_mps` | 1.5 m/s (core default 3 m/s) |
+| `GUID_DESC_MAX` | `hover.max_descent_mps` | 2 m/s (core default 3 m/s) |
 | `GUID_DESC_ACC` | `hover.descent_accel_mps2` | 1.0 m/s² (core default) |
 
 The fastest descent waypoint flight asks for, including the climb-down after a back
@@ -199,8 +199,8 @@ authority as the descent speeds up. The pitch loop then lags, and the nose swing
 thrust near hover and the elevons short of full deflection. A sink guard can't help: thrust is
 already there. How fast that starts is the pitch tune's: the eXplora's hand tune swung from
 2.5 m/s, its autotuned hover holds 3 m/s in calm air
-([finding](../findings/explora-descent-swing.md)), so re-check this limit after a hover retune
-([#653](https://github.com/wboayue/stable-flight/issues/653)). Landing has its own, slower descent (`GUID_LAND_SPD`, 0.7 m/s).
+([finding](../findings/explora-descent-swing.md)), so re-check this limit after a hover retune.
+Landing has its own, slower descent (`GUID_LAND_SPD`, 0.7 m/s).
 
 `GUID_DESC_ACC` is how hard the descent speeds up and brakes onto its waypoint: the target's
 rate rises by at most this much per second from hover, and slows so this deceleration stops it
@@ -218,29 +218,43 @@ Start at 1.5 m/s, the default descent rate of ArduPilot (`WP_SPD_DN`) and PX4
 (`MPC_Z_V_AUTO_DN`). The copter default of 3 m/s is too fast for a tailsitter until a flight
 shows otherwise.
 
-**Method.** Fly a hover-only script that climbs to a waypoint and descends 40 m to another
-over the same point (`flights/explora_descent.csv`: 60 m to 20 m over the spawn point), with
-`--record`; `--param GUID_DESC_MAX=2` sets each run's rate.
-Across the descent, from the peak `altitude` down to the lower waypoint, read:
+**Method.** Fly hover-only scripts that descend 40 m or more over one point, with
+`--record`; `--param GUID_DESC_MAX=2` sets each run's rate. Three routes, three runs each:
 
-- `view_pitch` against `sp_pitch`: a swing on a steady setpoint is this limit;
-- `elevon_*`: the swing's moment, short of ±1 if it's lag rather than lost authority;
-- `climb_mps`: the descent actually flown (screen the tick rate, below).
+- calm: `flights/explora_descent.csv`, 60 m to 20 m over the spawn point;
+- in wind: `flights/explora_descent_wind.csv`, the same with a 20 s hold at 60 m. The wind
+  estimate learns nothing climbing or sinking faster than 1 m/s, so without the hold it may
+  not turn a wingtip into the wind before the descent, and the hover drifts belly first;
+- after a back transition: `flights/explora_back_ramp.csv`, 80 m to 30 m.
 
-To descend faster, raise `GUID_DESC_MAX` in 0.5 m/s steps. Keep the fastest rate whose worst
-`view_pitch` error stays within about 3°, and drop back a step at any swing. Compare only
-seconds that ran at about 245 Hz or more: a slower tick rate slows the descent target too.
+Fly 1.5 m/s on each route beside the candidate. Read `view_pitch` against `sp_pitch` by phase:
 
-eXplora (#414, hand tune), 60 m to 20 m, calm air:
+- **mid**, sinking at the limit: a swing on a steady setpoint is this limit; `elevon_*` short
+  of ±1 says lag rather than lost authority;
+- **start** and **arrive** (the first and last 3 m, or seconds): setpoint steps, as the climb
+  reverses, a gust lets go of the tilt cap, the brake onto the waypoint, or the next leg
+  starts. They lag at any rate, so compare them with 1.5 m/s's on the same route.
 
-| `GUID_DESC_MAX` | Sink, mean | `view_pitch` | Worst error | Elevon peak | Note |
+To descend faster, raise `GUID_DESC_MAX` in 0.5 m/s steps. Keep the fastest rate whose mid
+error stays within about 3° and whose start and arrive are no worse than 1.5 m/s's; drop back
+a step at any swing. Compare only seconds that ran at about 245 Hz or more: a slower tick rate
+slows the descent target too.
+
+eXplora (#653, autotuned hover), worst error by phase, three runs per row
+([finding](../findings/explora-descent-limit.md)):
+
+| Route | `GUID_DESC_MAX` | Start | Mid | Arrive | Note |
 |---|---|---|---|---|---|
-| **1.5 m/s** | 1.5 m/s | −3.5…−1.5° | 1.5° | 0.16 | chosen |
-| 2 m/s | 1.9 m/s | −8…+1° | 6° | 0.31 | past 3°: back to 1.5 |
-| 3 m/s | 2.9 m/s | −23…+18°, 2.5 s cycle | 23° | 0.78 | thrust 0.82–0.94 at the nose-down peaks |
+| calm | 1.5 m/s | 3.9–8.0° | 0.3–0.4° | 0.3–1.6° | |
+| calm | **2 m/s** | 2.2–2.9° | 0.3–0.7° | 0.5–0.7° | chosen |
+| calm | 2.5 m/s | 2.3–6.6° | 0.6–1.1° | 0.9–2.5° | arrive past 1.5's: back to 2 |
+| 5 km/h wind | 1.5 m/s | 1.1–3.5° | 1.3–2.0° | 0.4–4.8° | |
+| 5 km/h wind | **2 m/s** | 0.6–1.1° | 1.3–1.8° | 1.2–6.4° | gusts off the tilt cap at both |
+| back transition | 1.5 m/s (1 run) | 7.7° | 0.2° | 6.5° | |
+| back transition | **2 m/s** | 7.1–7.5° | 0.2° | 3.2–6.7° | |
 
-Stiffer pitch rate gains (`STAB_RATE_PIT_P` 0.5, `_I` 0.2) at 3 m/s only cut the swing to
-about −12…+5°.
+A swing looks different: on the hand tune's pitch loops (#414) 3 m/s threw the nose through
+−23…+18° on a 2.5 s cycle with `sp_pitch` steady, elevons 0.78.
 
 - **Symptoms:**
   - The nose swings in a waypoint descent while `sp_pitch` holds: lower `GUID_DESC_MAX`.
@@ -260,7 +274,7 @@ and `WaypointFollower::with_touchdown` for routes in code; it has no params. PX4
 
 ## Hover in wind
 
-A check after step 5, not a step of its own: fly `flights/explora_descent.csv` with
+A check after step 5, not a step of its own: fly `flights/explora_descent_wind.csv` with
 `--record` in a steady wind, and read `north_m`/`east_m` against the waypoint, `view_pitch`
 against `sp_pitch`, `sp_thrust`, and `elevon_*`.
 
@@ -471,8 +485,8 @@ the sim it didn't stop a 3 m/s leg along the span from overshooting its speed an
 **The hover's climb after the handover.** A ramp that hands over climbing leaves the hover
 above its point, so it starts a descent at once. A target latched at the vehicle's height and
 at rest makes the altitude loop stop the climb with thrust: the eXplora's thrust fell to
-`GUID_THR_MIN`, the climb died, and the hover sank at up to 2.75 m/s, past its 1.5 m/s
-`GUID_DESC_MAX` (#462). The target now starts rising at the handover's climb and sheds it at
+`GUID_THR_MIN`, the climb died, and the hover sank at up to 2.75 m/s, past the 1.5 m/s
+`GUID_DESC_MAX` it flew (#462). The target now starts rising at the handover's climb and sheds it at
 `GUID_CLIMB_DEC`, as ArduPilot starts a tailsitter's vertical controller
 (`AC_PosControl::D_init_controller_no_descent`, at `Q_PILOT_ACCEL_Z`). A handover that arrives
 sinking starts at rest. Shedding a climb v rises about v² / (2 · `GUID_CLIMB_DEC`) further.
