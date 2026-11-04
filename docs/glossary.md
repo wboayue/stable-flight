@@ -38,6 +38,9 @@ Code comments and docs link here instead of redefining a term.
 - **Prop wash:** the propeller's slipstream; on a tailsitter it flows over the elevons, so
   their authority grows with thrust as well as airspeed, and damps the wing's turns where it
   covers the span, the only damping in a hover.
+- **Pitch speed:** the airspeed at which a fixed-pitch prop stops pushing, about how far its
+  blades screw forward per second; it falls with the motor's rpm, so at part throttle each m/s
+  of airspeed takes more of the thrust (the sim's `ThrustFalloff::PitchSpeed`).
 - **Companion (computer):** the computer beside the flight controller that manages the
   mission (plans, sequencing, replanning, later perception) and speaks to ground stations; the
   flight controller flies and keeps the vehicle safe without it

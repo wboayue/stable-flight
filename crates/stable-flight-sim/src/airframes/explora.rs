@@ -32,20 +32,22 @@ use crate::{PropWash, TailsitterModel};
 ///   ±45° elevons is why its rates run far past what PX4's default feedforward expects (#342).
 /// - Inertia: none listed, only modifiers (roll 60%); scaled from the Aerosonde's here, then
 ///   calibrated per axis (below).
-/// - Props: two 10 × 4.5", kv1000 on 3S, about 21 m/s of pitch speed at full throttle, 0.325 m
-///   out each side, so the wash covers the elevons' inboard part.
+/// - Props: two 10 × 4.5", kv1000 on 3S, 0.325 m out each side, so the wash covers the
+///   elevons' inboard part.
 /// - Winglets: two small fins, which turn the wing into the air and damp its yaw far less than
 ///   the Aerosonde's tail.
 ///
-/// Measured in RealFlight and matched here (#342, run 0): hover at thrust 0.82, cruise at 0.85
-/// and 14–15 m/s, a level nose-up moment of 0.09, and default-gain roll doublets at 30°/s
-/// peaking near 3.2×.
+/// Its thrust is RealFlight's (`docs/findings/explora-thrust.md`): it hovers at setpoint 0.88
+/// and flies level at 14 m/s on 0.86, and its prop loses thrust with airspeed faster at part
+/// throttle, so its back ramps climb as RealFlight's do. Also matched to RealFlight (#342,
+/// run 0): a level nose-up moment of 0.09, and default-gain roll doublets at 30°/s peaking near
+/// 3.2×.
 ///
 /// Its cruise is calibrated to RealFlight's plane autotune fits of it (#587, #619), three
 /// runs at 14 m/s. Its pitch is a flying wing's, stiff in angle of attack and barely damped:
-/// stiffness 62/s², damping 0.9/s, control 84 rad/s², and a path turn of 18.5/s against
+/// stiffness 63/s², damping 0.9/s, control 87 rad/s², and a path turn of 18.8/s against
 /// RealFlight's 69–93, 0–1.3, 80–82, and 18.3. Its roll fits damping 22/s and control
-/// 197 rad/s² against RealFlight's 23–24 and 180–184.
+/// 194 rad/s² against RealFlight's 23–24 and 180–184.
 ///
 /// Its hover is calibrated to RealFlight's autotune of it (#539), flown with RealFlight's 6 ms
 /// exchange as [`actuator_delay_s`](crate::Perturbations::actuator_delay_s) and 0.01 rad/s of
@@ -72,12 +74,15 @@ pub fn explora() -> TailsitterAirframe {
     /// Motors' distance from the centerline, from the `.rfvehicle`, in m.
     const MOTOR_ARM_M: f32 = 0.325;
     const PROP_DIAMETER_M: f32 = 0.254;
-    /// Hover and cruise thrust setpoints measured in RealFlight (#124, #342).
-    const HOVER_THRUST: f32 = 0.82;
+    /// Hover thrust setpoint measured in RealFlight, near still (`docs/findings/explora-thrust.md`).
+    const HOVER_THRUST: f32 = 0.88;
+    /// `explora_vtol()`'s cruise thrust (#124).
     const CRUISE_THRUST: f32 = 0.85;
-    /// Full-throttle pitch speed of a 4.5" pitch prop at 1000 rpm/V on 11.1 V, in m/s: thrust
-    /// falls to zero there.
-    const PITCH_SPEED_MPS: f32 = 0.114 * 1000.0 * 11.1 / 60.0;
+    /// Airspeed at which full-command thrust reaches 0, in m/s: fitted to RealFlight's back
+    /// ramps and cruise thrust (`docs/findings/explora-thrust.md`), past the 21 m/s a 4.5"
+    /// pitch at 1000 rpm/V on 11.1 V screws forward unloaded. Lower: less zoom climb on the
+    /// back ramp, more cruise thrust.
+    const PITCH_SPEED_MPS: f32 = 35.0;
     const TRIM_AIRSPEED_MPS: f32 = 14.0;
     let base = tailsitter();
     let airplane = plane().model.aero;
@@ -88,11 +93,13 @@ pub fn explora() -> TailsitterAirframe {
     // RealFlight (roll, pitch, yaw in the airplane frame). Roll: RealFlight's cruise roll fit,
     // damping and control both (#619). Pitch and yaw: its hover, where its hand tune's rate
     // steps end at 0.80 (view pitch) and 0.55 (view roll, differential thrust) of their
-    // command, and here at 0.80–0.82 and 0.60–0.62 (#539). Scaling inertia keeps the controls'
+    // command, and here at 0.80–0.82 and 0.60–0.62 (#539). Yaw scales with the differential
+    // thrust's authority, which falls as the hover's motor command rises: higher, its hover's
+    // roll rate steps end shorter. Scaling inertia keeps the controls'
     // authority against the wing's own moments; less wash over the elevons in its place matched
     // the rate steps, but a 5° tilt's drift then pushed the angle steps 10–20% past their
     // target, which RealFlight's don't.
-    let inertia_scale = Vec3::new(29.0, 19.0, 7.0);
+    let inertia_scale = Vec3::new(29.0, 19.0, 6.1);
     let mut inertia_kgm2 = aerosonde_inertia(MASS_KG, SPAN_M).component_mul(&inertia_scale);
     inertia_kgm2.x *= ROLL_INERTIA_SHARE;
     // Each motor's static thrust, so hover lands on the measured setpoint: the setpoint through
@@ -114,8 +121,9 @@ pub fn explora() -> TailsitterAirframe {
             // below lifting-line theory's 4.4/rad for its 4.6 aspect ratio. Higher: the flight
             // path follows a pitch change faster.
             c_lift_alpha: 3.0,
-            // Level flight at 14 m/s takes thrust 0.76, as in RealFlight (#342, run 0).
-            c_drag_0: 0.05,
+            // Level flight at 14 m/s takes thrust setpoint 0.86, as in RealFlight
+            // (`docs/findings/explora-thrust.md`).
+            c_drag_0: 0.043,
             // Calibrated to RealFlight: level flight at 14 m/s takes a nose-up moment command of
             // 0.09 (#342, run 0; #587's fits). The command is this over the elevons'
             // effectiveness, so the two scale together.
@@ -161,8 +169,8 @@ pub fn explora() -> TailsitterAirframe {
         motor_delay_s: 0.028,
         max_thrust_n,
         thrust_exponent: QUADRATIC,
-        thrust_falloff: ThrustFalloff::Linear {
-            n_per_mps: max_thrust_n / PITCH_SPEED_MPS,
+        thrust_falloff: ThrustFalloff::PitchSpeed {
+            full_mps: PITCH_SPEED_MPS,
         },
         ..base.model.wing
     };
@@ -220,10 +228,9 @@ pub fn explora() -> TailsitterAirframe {
         ..PlaneGuidanceConfig::default()
     };
     guidance.transition.min_airspeed_mps = plane_stabilizer.min_airspeed_mps;
-    // `explora_vtol`'s back ramp thrust, 0.75, as a share of RealFlight's in-flight hover
-    // thrust, 0.91: a clean ramp there (elevons at most 0.23) and here, where 0.66 of hover
-    // stalls as RealFlight's 0.60 did (#399). Lower: less zoom climb, nearer the stall.
-    guidance.transition.back_thrust = 0.75 / 0.91 * guidance.hover.altitude.hover_thrust;
+    // `explora_vtol`'s back ramp thrust: a clean ramp in RealFlight (elevons at most 0.23,
+    // #399) and here. Lower: less zoom climb, nearer the stall.
+    guidance.transition.back_thrust = 0.75;
     TailsitterAirframe {
         model,
         mixer,

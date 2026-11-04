@@ -522,9 +522,56 @@ fn sink_guard_catches_a_stalling_back_ramp() {
     }
 }
 
-/// The RealFlight eXplora's hover thrust on #399's back-ramp runs: the median setpoint over each
-/// run's level hover leg. Its back ramps' thrusts are shares of it.
-const EXPLORA_HOVER_THRUST: f32 = 0.91;
+/// The RealFlight eXplora's thrust setpoints on #399's back-ramp runs, the median over each
+/// steady leg: hovering near still, and level at 14 m/s (`docs/findings/explora-thrust.md`).
+const EXPLORA_HOVER_THRUST: f32 = 0.88;
+const EXPLORA_CRUISE_THRUST: f32 = 0.863;
+
+/// How far the sim's setpoints may stray from RealFlight's: the cruise setpoint's own drift over
+/// a RealFlight leg, 0.875 to 0.859, about half of it either way.
+const EXPLORA_THRUST_BAND: f32 = 0.01;
+
+/// Seconds of each steady leg the setpoints are read over: the hover's last before the forward
+/// transition, and the line's last before [`BACK_AT_S`].
+const EXPLORA_LEG_S: f32 = 5.0;
+
+/// The eXplora hovers and cruises on the thrust setpoints RealFlight's does: the median over its
+/// hover at the transition height, and over its level line at trim airspeed, 14 m/s. Its hover
+/// thrust is the model's (it carries the weight), and its cruise is its drag against its
+/// prop's falloff with airspeed.
+#[test]
+fn explora_hovers_and_cruises_on_realflights_thrust() {
+    let airframe = airframes::explora();
+    let plant = TailsitterPlant::clean(airframe);
+    let mut flight_loop = tailsitter_loop(&plant, forward(&airframe));
+    let (mut hover, mut cruise) = (Vec::new(), Vec::new());
+    fly(&mut flight_loop, BACK_AT_S, |flight_loop, t| {
+        let thrust = flight_loop.setpoint().thrust();
+        if (FORWARD_AT_S - EXPLORA_LEG_S..FORWARD_AT_S).contains(&t) {
+            hover.push(thrust);
+        } else if t >= BACK_AT_S - EXPLORA_LEG_S {
+            cruise.push(thrust);
+        }
+    });
+
+    // Measured 0.880 and 0.865.
+    for (leg, thrusts, realflight) in [
+        ("hover", hover, EXPLORA_HOVER_THRUST),
+        ("cruise", cruise, EXPLORA_CRUISE_THRUST),
+    ] {
+        let median = median(thrusts);
+        check!(
+            (median - realflight).abs() <= EXPLORA_THRUST_BAND,
+            "{leg}: {median} against RealFlight's {realflight}"
+        );
+    }
+}
+
+/// The middle value of `values` (the upper one of an even count).
+fn median(mut values: Vec<f32>) -> f32 {
+    values.sort_by(f32::total_cmp);
+    values[values.len() / 2]
+}
 
 /// Sink past which a back ramp has stalled, in m/s: the eXplora's sink guard limit
 /// (`TRAN_VT_SINK_LIM`, `explora_vtol`), which its stalling ramps tripped and its clean ones
@@ -539,15 +586,16 @@ const CLEAN_ELEVON: f32 = 0.63;
 /// stalling ramps (#399).
 const STALLED_ELEVON: f32 = 0.99;
 
-/// The RealFlight eXplora's back ramps (#399), each `TRAN_VT_THR` as a share of its hover
-/// thrust, and whether it stalled nose-high with the elevons at full deflection.
+/// The RealFlight eXplora's back ramps (#399), each `TRAN_VT_THR`, and whether it stalled
+/// nose-high with the elevons at full deflection. The sim hovers and cruises on RealFlight's
+/// thrust ([`explora_hovers_and_cruises_on_realflights_thrust`]), so the setpoints carry over.
 const EXPLORA_BACK_RAMPS: [(&str, f32, bool); 3] = [
-    // 0.60: stuck at 54° for 9.4 s, the guard raising thrust to full.
-    ("run 4", 0.60 / EXPLORA_HOVER_THRUST, true),
-    // 0.70: handed over sinking 0.4 m/s, elevons at most 0.53.
-    ("run 2", 0.70 / EXPLORA_HOVER_THRUST, false),
-    // 0.75, `explora_vtol`'s: handed over climbing 1.9 m/s, elevons at most 0.23.
-    ("run 1", 0.75 / EXPLORA_HOVER_THRUST, false),
+    // Stuck at 54° for 9.4 s, the guard raising thrust to full.
+    ("run 4", 0.60, true),
+    // Handed over sinking 0.4 m/s, elevons at most 0.53.
+    ("run 2", 0.70, false),
+    // `explora_vtol`'s: handed over climbing 1.9 m/s, elevons at most 0.23.
+    ("run 1", 0.75, false),
 ];
 
 /// The most elevon and the fastest sink on the back ramp, from the first `ToCopter` tick to the
@@ -585,12 +633,11 @@ impl TelemetryPublisher for RampWorst {
     }
 }
 
-/// `explora()`'s back ramp at `share` of its hover thrust, with the sink guard off.
-fn fly_explora_back_ramp(share: f32) -> RampWorst {
+/// `explora()`'s back ramp at `back_thrust`, with the sink guard off.
+fn fly_explora_back_ramp(back_thrust: f32) -> RampWorst {
     let mut airframe = airframes::explora();
-    let hover_thrust = airframe.guidance.hover.altitude.hover_thrust;
     let transition = &mut airframe.guidance.transition;
-    transition.back_thrust = share * hover_thrust;
+    transition.back_thrust = back_thrust;
     transition.back_sink_limit_mps = 0.0;
     let plant = TailsitterPlant::clean(airframe);
     let commander = forward_and_back(&airframe, BACK_AT_S, BACK_HOVER_NORTH_M);
@@ -603,23 +650,26 @@ fn fly_explora_back_ramp(share: f32) -> RampWorst {
     flight_loop.into_parts().5
 }
 
-/// With the sink guard off, the eXplora's back ramp stalls at the share of hover thrust that
-/// stalled RealFlight's, and flies cleanly where RealFlight's did (#399): past the stall its
-/// wing pitches nose-down as a flat plate, and its elevons work in the wash alone.
+/// With the sink guard off, the eXplora's back ramp stalls at the thrust that stalled
+/// RealFlight's, and flies cleanly where RealFlight's did (#399): past the stall its wing
+/// pitches nose-down as a flat plate, and its elevons work in the wash alone. Its prop loses
+/// thrust with airspeed as RealFlight's does at part throttle, so the ramp's zoom climb matches
+/// (`docs/findings/explora-thrust.md`).
 #[test]
 fn explora_back_ramp_stalls_where_realflights_does() {
-    for (run, share, stalls) in EXPLORA_BACK_RAMPS {
-        let worst = fly_explora_back_ramp(share);
+    for (run, back_thrust, stalls) in EXPLORA_BACK_RAMPS {
+        let worst = fly_explora_back_ramp(back_thrust);
         check!(worst.stalled() == Some(stalls), "{run}: {worst:?}");
     }
 }
 
-/// RealFlight's eXplora also stalled at 0.65 (run 3: 60°, elevons full); the sim's ramp carries
-/// more energy at the same share of hover thrust and flies it.
+/// RealFlight's eXplora also stalled at 0.65 (run 3): its nose stopped at 59° short of the
+/// ramp's 70° and fell back to 45° with the elevons full. The sim's reaches 70° on 0.28 of
+/// elevon, sinking 1.2 m/s.
 #[test]
-#[ignore = "sim eXplora thrust and drag behind RealFlight's (#651)"]
-fn explora_back_ramp_stalls_at_realflights_run_3_share() {
-    let worst = fly_explora_back_ramp(0.65 / EXPLORA_HOVER_THRUST);
+#[ignore = "sim eXplora's elevons hold the nose up past the stall where RealFlight's can't (#661)"]
+fn explora_back_ramp_stalls_at_realflights_run_3_thrust() {
+    let worst = fly_explora_back_ramp(0.65);
     check!(worst.stalled() == Some(true), "{worst:?}");
 }
 

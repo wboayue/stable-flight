@@ -9,13 +9,14 @@ thrust term (−0.08 per unit). In the four 10 s pauses, at constant thrust, it 
 The rate loop's airspeed scaling assumes V^-2, so a speed loss leaves its integral to unwind the
 difference, pitching the nose up.
 
-How far depends on the thrust step into the pause. Stepping down 0.018 of thrust setpoint, the
-pitch rose 0.21° in both runs (11.7° per unit). Stepping down 0.010, it rose 0.06–0.07°, then
-fell 0.18° from the 2° bank the pause began in. RealFlight's pauses start 6 s after a corner,
+How far depends on the airspeed the pause loses to its thrust step. Stepping down 0.018 of
+thrust setpoint, it lost 0.58 m/s and the pitch rose 0.21° in both runs (0.36° per m/s).
+Stepping down 0.010, it lost 0.30 m/s and rose 0.06–0.07°, then fell 0.18° from the 2° bank the
+pause began in. RealFlight's pauses start 6 s after a corner,
 with thrust still settling, so they step down less than a settled line does.
 
 The sim eXplora's trim command stays flat with airspeed: its trim moment, like its elevons'
-authority, grows as V². On the same gains it drifts 22.6° per unit of thrust step.
+authority, grows as V². On the same gains it drifts 1.16° per m/s lost.
 
-**So:** compare centered-sticks drift per unit of thrust step, not in degrees
+**So:** compare centered-sticks drift per m/s of airspeed lost, not in degrees
 (`explora_centered_rate_sticks_hold_pitch`, `crates/stable-flight-sim/tests/maneuver.rs`).
