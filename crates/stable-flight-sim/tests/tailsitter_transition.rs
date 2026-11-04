@@ -298,9 +298,9 @@ fn hover_after_a_climbing_handover_descends_at_the_limit() {
     }
 }
 
-/// Descent limit the climbing handover flies at, in m/s: the one the RealFlight eXplora's
-/// hover, handed over climbing, sank 2.75 m/s past (#462), and where a target starting at rest
-/// sinks past [`HANDOVER_SINK_MARGIN_MPS`].
+/// Descent limit, in m/s, the climbing handover is flown at: the eXplora's when its hover,
+/// handed over climbing, sank 2.75 m/s in RealFlight (#462). At it a target starting at rest
+/// sinks past [`HANDOVER_SINK_MARGIN_MPS`], so the test catches one.
 const HANDOVER_DESCENT_MPS: f32 = 1.5;
 
 /// A back ramp thrust that hands the sim tailsitter to the hover climbing (measured
