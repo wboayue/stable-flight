@@ -648,9 +648,9 @@ type FitRow = (
 fn explora_fits_as_in_realflight() {
     use PlaneLoop::{PitchRate, RollRate};
     let rows: [FitRow; 7] = [
-        // Measured 22.1, 0.8 below.
+        // Measured 21.9, 1.0 below.
         (RollRate, "damping", |m| m.damping_per_s, 22.9, 23.5, 2.0),
-        // Measured 197, 13 above.
+        // Measured 194, 10 above.
         (
             RollRate,
             "control",
@@ -659,7 +659,7 @@ fn explora_fits_as_in_realflight() {
             184.0,
             20.0,
         ),
-        // Measured 61.5, 7.3 below: the stiffness barely follows `c_pitch_alpha` here.
+        // Measured 62.6, 6.2 below: the stiffness barely follows `c_pitch_alpha` here.
         (
             PitchRate,
             "stiffness",
@@ -668,11 +668,11 @@ fn explora_fits_as_in_realflight() {
             93.4,
             10.0,
         ),
-        // Measured 0.89, inside.
+        // Measured 0.94, inside.
         (PitchRate, "damping", |m| m.damping_per_s, 0.0, 1.3, 0.5),
-        // Measured 83.6, 1.6 above.
+        // Measured 86.5, 4.5 above: the cruise wash over the elevons.
         (PitchRate, "control", |m| m.control_radps2, 80.0, 82.0, 5.0),
-        // Measured 18.5, 0.2 above.
+        // Measured 18.8, 0.5 above.
         (
             PitchRate,
             "path turn",
@@ -681,7 +681,7 @@ fn explora_fits_as_in_realflight() {
             18.29,
             1.0,
         ),
-        // Measured 0.091, 0.002 above.
+        // Measured 0.092, 0.003 above.
         (
             PitchRate,
             "trim moment",

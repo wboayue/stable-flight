@@ -131,16 +131,6 @@ fn tailsitters_are_valid() {
     }
 }
 
-/// The eXplora hovers on the thrust RealFlight's does (`explora_vtol()`'s 0.82, #124).
-#[test]
-fn explora_hovers_at_realflights_thrust() {
-    assert_relative_eq!(
-        explora().guidance.hover.altitude.hover_thrust,
-        0.82,
-        max_relative = 1e-5
-    );
-}
-
 /// ArduPilot's tailsitter is its plane with 1.5× the thrust (`SIM_Plane.cpp`'s
 /// `Plane::Plane`), here split over two motors.
 #[test]

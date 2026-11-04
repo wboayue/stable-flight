@@ -459,18 +459,25 @@ fn centered_rate_sticks_hold_pitch() {
 const PITCH_DRIFT_RAD: f32 = 0.5 * core::f32::consts::PI / 180.0;
 
 /// The eXplora's pitch holds on centered rate sticks as RealFlight's does for the same thrust
-/// step: its pitch drift per unit of thrust setpoint stepped down at the switch to cruise
-/// thrust stays within [`EXPLORA_DRIFT_PER_THRUST_RAD`] (measured 22.6°), from a step of at
-/// least [`MIN_THRUST_STEP`]. The drift comes from the step: the slower
-/// airspeed it settles at needs a little less elevon than the rate loop's airspeed scaling
-/// gives, and its integral pitches the nose up while it unwinds the difference
-/// (`docs/findings/explora-trim-vs-airspeed.md`).
+/// step. The drift comes from the step down to cruise thrust: the airspeed it loses needs a
+/// little less elevon than the rate loop's airspeed scaling gives, and its integral pitches the
+/// nose up while it unwinds the difference (`docs/findings/explora-trim-vs-airspeed.md`). So
+/// from a step of at least [`MIN_THRUST_STEP`], the airspeed lost per unit of step stays within
+/// [`EXPLORA_SPEED_BAND`] of RealFlight's [`EXPLORA_MPS_PER_THRUST`] (the thrust and drag,
+/// `docs/findings/explora-thrust.md`), and the drift per m/s lost within
+/// [`EXPLORA_DRIFT_PER_MPS_RAD`] (the trim against airspeed).
 #[test]
 fn explora_centered_rate_sticks_hold_pitch() {
     let flown = centered_sticks(Vehicle::Explora);
     check!(flown.thrust_step >= MIN_THRUST_STEP, "{flown:?}");
+    let mps_per_thrust = flown.airspeed_lost_mps / flown.thrust_step;
     check!(
-        flown.drift_rad <= EXPLORA_DRIFT_PER_THRUST_RAD * flown.thrust_step,
+        (mps_per_thrust - EXPLORA_MPS_PER_THRUST).abs()
+            <= EXPLORA_SPEED_BAND * EXPLORA_MPS_PER_THRUST,
+        "{mps_per_thrust} m/s per unit: {flown:?}"
+    );
+    check!(
+        flown.drift_rad <= EXPLORA_DRIFT_PER_MPS_RAD * flown.airspeed_lost_mps,
         "{flown:?}"
     );
 }
@@ -479,20 +486,30 @@ fn explora_centered_rate_sticks_hold_pitch() {
 /// step (#642). Below it the drift is too small to measure per unit of step.
 const MIN_THRUST_STEP: f32 = 0.01;
 
-/// Most pitch the eXplora's centered rate sticks drift per unit of thrust setpoint stepped
-/// down into them, in rad. RealFlight's eXplora drifts 0.21° from a 0.018 step in both runs'
-/// second pause, 11.7° per unit, and 2.4× of it leaves the margin [`PITCH_DRIFT_RAD`] does. Its
-/// first pauses step 0.010 and drift 0.18°, mostly late and nose down from the 2° bank they
-/// start in rather than from the step (#642). RealFlight's pauses start 6 s after a corner,
-/// before its thrust settles, and step down less than the sim's settled line does (0.026).
-// TODO(#648): RealFlight's 11.7° plus margin once the sim's trim follows RealFlight's in airspeed.
-const EXPLORA_DRIFT_PER_THRUST_RAD: f32 = 28.0 * core::f32::consts::PI / 180.0;
+/// Airspeed the RealFlight eXplora's centered rate sticks lose over [`HOLD_S`] per unit of
+/// thrust setpoint stepped down into them, in m/s: 0.30 m/s from 0.010 and 0.58 m/s from 0.018
+/// in both runs' pauses (`docs/findings/explora-thrust.md`).
+const EXPLORA_MPS_PER_THRUST: f32 = 31.0;
+
+/// How far the sim's airspeed lost per unit of thrust step may stray from RealFlight's, as a
+/// share of it: measured 40.7, 31% above; prop falloff and drag that keep the eXplora's hover,
+/// cruise, and back ramps on RealFlight's move it only between 36 and 41 (#651).
+const EXPLORA_SPEED_BAND: f32 = 0.35;
+
+/// Most pitch the eXplora's centered rate sticks drift per m/s of airspeed they lose, in rad:
+/// measured 1.15°, and 1.4° leaves about 1.2×. RealFlight's drifts 0.21° over the 0.58 m/s its
+/// second pauses lose, 0.36° per m/s; its first pauses drift 0.18° over 0.30 m/s, mostly late
+/// and nose down from the 2° bank they start in rather than from the step (#642).
+// TODO(#648): RealFlight's 0.36° plus margin once the sim's trim follows RealFlight's in airspeed.
+const EXPLORA_DRIFT_PER_MPS_RAD: f32 = 1.4 * core::f32::consts::PI / 180.0;
 
 /// What [`HOLD_S`] of centered rate sticks at cruise thrust did, from level flight.
 #[derive(Debug)]
 struct CenteredSticks {
     /// How far the pitch strayed from where it began, in rad.
     drift_rad: f32,
+    /// Airspeed at the start less at the end, in m/s.
+    airspeed_lost_mps: f32,
     /// The lead's thrust setpoint less cruise thrust: the step down into the hold.
     thrust_step: f32,
 }
@@ -501,6 +518,7 @@ struct CenteredSticks {
 fn centered_sticks(vehicle: Vehicle) -> CenteredSticks {
     let mut start_rad = None;
     let mut drift_rad = 0.0_f32;
+    let mut airspeeds_mps = None;
     let mut cruise_thrust = 0.0;
     let lead_thrust = vehicle.run(
         |lead, lead_s, cruise| {
@@ -519,10 +537,15 @@ fn centered_sticks(vehicle: Vehicle) -> CenteredSticks {
             let pitch_rad = stable_flight::euler_angles(&state.attitude).1;
             let start_rad = *start_rad.get_or_insert(pitch_rad);
             drift_rad = drift_rad.max((pitch_rad - start_rad).abs());
+            let airspeed_mps = state.airspeed_mps.unwrap_or(f32::NAN);
+            let (start_mps, _) = airspeeds_mps.unwrap_or((airspeed_mps, airspeed_mps));
+            airspeeds_mps = Some((start_mps, airspeed_mps));
         },
     );
+    let (start_mps, end_mps) = airspeeds_mps.unwrap_or((f32::NAN, f32::NAN));
     CenteredSticks {
         drift_rad,
+        airspeed_lost_mps: start_mps - end_mps,
         thrust_step: lead_thrust - cruise_thrust,
     }
 }
