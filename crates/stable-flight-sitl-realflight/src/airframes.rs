@@ -151,8 +151,8 @@ const EXPLORA_MAX_AIRSPEED_MPS: f32 = 25.0;
 /// - **Thrust limits:** the elevons hold the nose up only in the propwash, and a sink turns
 ///   the airflow against it (flight data: #123). A floor (0.65, below the 0.84 hover) and a
 ///   sink guard (past 1 m/s) keep the propwash; the tilt boost stops at 0.9, leaving motor
-///   headroom for differential thrust. Waypoint descents are held to 1.5 m/s, where the nose
-///   stays steady (#414).
+///   headroom for differential thrust. Waypoint descents are held to 2 m/s, where the nose
+///   tracks its setpoint as at 1.5 m/s (#653).
 ///
 /// Fly it with [`TailsitterGuidance`](stable_flight::guidance::vtol::TailsitterGuidance) and
 /// [`TailsitterStabilizer`](stable_flight::stabilizers::vtol::TailsitterStabilizer), as the
@@ -214,12 +214,13 @@ pub fn explora_vtol()
                 },
                 // Full stick at the stabilizer's 30° tilt.
                 max_stick_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
-                // ArduPilot's and PX4's default descent rate (`WP_SPD_DN`,
-                // `MPC_Z_V_AUTO_DN`). Sinking tail first slows the airflow over the elevons:
-                // on the hand tune's pitch loops the nose swings ±20° at 3 m/s (#414); the
-                // autotuned hover holds it to 3 m/s in calm air
-                // (`docs/findings/explora-descent-swing.md`). TODO(#653): re-pick in wind.
-                max_descent_mps: 1.5,
+                // Higher: faster descents, a harder brake onto the waypoint. At 2 m/s the
+                // nose tracks as at ArduPilot's and PX4's 1.5 (`WP_SPD_DN`,
+                // `MPC_Z_V_AUTO_DN`) in calm air, 5 km/h wind and after a back transition;
+                // at 2.5 the calm arrival lags further (`docs/findings/explora-descent-limit.md`).
+                // A limit of the pitch tune: the hand tune's swung from 2.5
+                // (`docs/findings/explora-descent-swing.md`).
+                max_descent_mps: 2.0,
                 // Holds the heading on waypoint legs, and never yields it to the wind: facing
                 // a leg flies it belly first, the wing's flat face into the airflow, and the
                 // hover legs above are flown with the heading held (#418). Turning a wingtip
@@ -297,7 +298,7 @@ pub fn explora_vtol()
                     roll_gains: gains(0.6504, 0.1301, 0.0017),
                     // Elevons (full range per unit moment): 19-20 rad/s² after 8-12 ms. Sinking,
                     // the airflow pushes the nose over; the integral holds 0.28 of moment, and
-                    // P the rest: descents at the 1.5 m/s limit hold the nose (#539).
+                    // P the rest: descents at 1.5 m/s hold the nose (#539).
                     pitch_gains: gains(1.4217, 0.2844, 0.0),
                     // The elevons apart (airplane roll).
                     yaw_gains: gains(1.0191, 0.3057, 0.0),

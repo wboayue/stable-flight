@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (behavior):** `airframes::explora_vtol()` descends in hover at up to 2 m/s
+  (`GUID_DESC_MAX`, from 1.5): on the autotuned hover the nose tracks as at 1.5 m/s in calm
+  air, 5 km/h wind and after a back transition (#653).
 - **Breaking (behavior):** `airframes::titan_cobra()`'s plane side flies RealFlight's plane
   autotune of it (#536): rate roll P 0.0138, I 0.2025, FF 0.48 (the design's 0.61 ran rate
   steps 27% fast); pitch P 0.29, I 5.01, FF 0.1845; time constants 0.396 s roll, 0.226 s
