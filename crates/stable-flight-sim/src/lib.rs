@@ -84,7 +84,7 @@ mod wind;
 mod wing;
 
 pub use copter::SimCopter;
-pub use fixed_wing::{AeroCoefficients, FixedWingModel};
+pub use fixed_wing::{AeroCoefficients, FixedWingModel, ThrustFalloff};
 pub use model::{ModelError, MultirotorModel};
 pub use perturbations::{GyroNoise, MAX_ACTUATOR_DELAY_S, Perturbations, Vibration};
 pub use plane::SimPlane;

@@ -3,6 +3,7 @@ use assert2::check;
 use stable_flight::GRAVITY;
 
 use super::*;
+use crate::ThrustFalloff;
 use crate::airframes;
 
 /// The first two motors at `motors` and the first two servos (the elevons) at `elevons`.
@@ -69,7 +70,7 @@ fn thrust_falls_off_with_airspeed_and_pitches_from_its_line() {
     for (falloff, below_m) in [(0.0, 0.0), (0.5, 0.0), (0.5, 0.1), (0.0, -0.1)] {
         let airframe = airframes::plane();
         let model = FixedWingModel {
-            thrust_falloff_n_per_mps: falloff,
+            thrust_falloff: ThrustFalloff::Linear { n_per_mps: falloff },
             thrust_line_below_cg_m: below_m,
             ..airframe.model
         };
@@ -110,7 +111,7 @@ fn thrust_falls_off_with_airspeed_and_pitches_from_its_line() {
 #[test]
 fn full_thrust_stops_at_zero() {
     let model = FixedWingModel {
-        thrust_falloff_n_per_mps: 1.0,
+        thrust_falloff: ThrustFalloff::Linear { n_per_mps: 1.0 },
         ..airframes::plane().model
     };
     check!(model.full_thrust_n(-5.0) == model.max_thrust_n);

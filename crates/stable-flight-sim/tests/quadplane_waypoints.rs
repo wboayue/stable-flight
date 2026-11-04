@@ -10,7 +10,7 @@ use stable_flight::commanders::{RouteEnd, WaypointFollower};
 use stable_flight::params::Params;
 use stable_flight::{Command, ControlInput, Vec2, Vec3, WaypointCommand, euler_angles};
 use stable_flight_sim::airframes::QuadPlaneAirframe;
-use stable_flight_sim::{Wind, airframes};
+use stable_flight_sim::{ThrustFalloff, Wind, airframes};
 
 use common::hover_at;
 use common::plane::Interlude;
@@ -270,7 +270,7 @@ fn cobra_like() -> QuadPlaneAirframe {
     let mut airframe = airframes::quadplane();
     airframe.model.wing.aero.c_drag_0 *= 0.2;
     airframe.model.lift.drag_n_per_mps *= 0.2;
-    airframe.model.wing.thrust_falloff_n_per_mps = 2.8;
+    airframe.model.wing.thrust_falloff = ThrustFalloff::Linear { n_per_mps: 2.8 };
     airframe
 }
 

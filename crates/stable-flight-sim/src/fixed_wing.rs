@@ -8,6 +8,40 @@ use crate::perturbations::MAX_ACTUATOR_DELAY_S;
 #[cfg(test)]
 mod tests;
 
+/// How a prop's thrust falls as the air comes through it faster ([`FixedWingModel`]'s
+/// motors along body `x`), by forward airspeed `u` (body `x`, positive).
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight_sim::{FixedWingModel, ThrustFalloff};
+///
+/// let model = FixedWingModel {
+///     thrust_falloff: ThrustFalloff::PitchSpeed { full_mps: 30.0 },
+///     ..stable_flight_sim::airframes::plane().model
+/// };
+/// assert!(model.validate().is_ok());
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ThrustFalloff {
+    /// Each m/s takes `n_per_mps` N off the full-command thrust, scaled by the command as the
+    /// thrust is: a power-limited prop that stops pushing at the same speed at any throttle.
+    /// 0 holds static thrust at any speed. Non-negative.
+    Linear {
+        /// Thrust lost per m/s at full command, in N per m/s.
+        n_per_mps: f32,
+    },
+    /// A fixed-pitch prop stops pushing once the air comes through it at the speed its blades
+    /// screw forward, and that speed falls with the motor's: thrust is
+    /// `static · (1 − u / (full_mps · √thrust_share))`, `thrust_share` the motor's static
+    /// thrust over full (thrust goes with rpm²). So at part throttle each m/s takes a larger
+    /// share of the thrust than at full.
+    PitchSpeed {
+        /// Airspeed at which full-command thrust reaches 0, in m/s. Positive.
+        full_mps: f32,
+    },
+}
+
 /// Physical parameters of a simulated airplane: a rigid body with a wing, three control
 /// surfaces, and a tractor prop along body `x`.
 ///
@@ -44,17 +78,15 @@ pub struct FixedWingModel {
     /// First-order lag from a servo's command to its position, in s.
     pub servo_time_constant_s: f32,
     /// Each motor's thrust at full command and no airspeed, in N, along body `x`. Thrust is
-    /// `command^thrust_exponent · (max_thrust_n − thrust_falloff_n_per_mps · u)`, `u` the
-    /// forward airspeed (body `x`, positive), and never below 0.
+    /// `max_thrust_n · command^thrust_exponent`, less what
+    /// [`thrust_falloff`](Self::thrust_falloff) takes at forward airspeed, and never below 0.
     pub max_thrust_n: f32,
     /// How thrust follows the command: 2 for a fixed-pitch prop at a set voltage; 1 where the
     /// command sets the motor's power and the prop runs near its design speed, as X-Plane's
     /// Alia 250 pusher (#392). Positive.
     pub thrust_exponent: f32,
-    /// Thrust lost per m/s of forward airspeed at full command, in N per m/s: 0 holds static
-    /// thrust at any speed; a power-limited prop loses thrust as the air speeds up through it.
-    /// Non-negative.
-    pub thrust_falloff_n_per_mps: f32,
+    /// How the thrust falls as the air comes through the prop faster.
+    pub thrust_falloff: ThrustFalloff,
     /// How far below the center of gravity the thrust line runs, in m: thrust there pitches the
     /// nose up by `thrust · thrust_line_below_cg_m`. Negative above the center of gravity.
     pub thrust_line_below_cg_m: f32,
@@ -159,7 +191,28 @@ impl FixedWingModel {
     /// Each motor's thrust at full command and `airspeed_mps` forward (body `x`; none counted
     /// below 0), in N: `max_thrust_n` less the falloff, never below 0.
     pub(crate) fn full_thrust_n(&self, airspeed_mps: f32) -> f32 {
-        (self.max_thrust_n - self.thrust_falloff_n_per_mps * airspeed_mps.max(0.0)).max(0.0)
+        self.max_thrust_n * self.falloff_share(1.0, airspeed_mps)
+    }
+
+    /// The share of a motor's static thrust left at `airspeed_mps` forward (body `x`; none
+    /// counted below 0), in `[0, 1]`, for a motor at `thrust_share` of full static thrust.
+    pub(crate) fn falloff_share(&self, thrust_share: f32, airspeed_mps: f32) -> f32 {
+        let airspeed_mps = airspeed_mps.max(0.0);
+        match self.thrust_falloff {
+            ThrustFalloff::Linear { n_per_mps } => {
+                // Exactly 1 with no falloff (`x / x`), so airframes without it fly unchanged.
+                (self.max_thrust_n - n_per_mps * airspeed_mps).max(0.0) / self.max_thrust_n
+            }
+            ThrustFalloff::PitchSpeed { full_mps } => {
+                if airspeed_mps == 0.0 {
+                    return 1.0;
+                }
+                // Thrust goes with rpm², so the motor runs at the root of its thrust share.
+                let zero_thrust_mps = full_mps * libm::sqrtf(thrust_share.max(0.0));
+                // A stopped motor (`zero_thrust_mps` 0) divides to −∞ and clamps to 0.
+                (1.0 - airspeed_mps / zero_thrust_mps).max(0.0)
+            }
+        }
     }
 
     /// Checks every parameter's range.
@@ -198,9 +251,16 @@ impl FixedWingModel {
             ("max_deflection_rad.z", self.max_deflection_rad.z),
             ("aero.c_drag_0", aero.c_drag_0),
             ("ground_friction", self.ground_friction),
-            ("thrust_falloff_n_per_mps", self.thrust_falloff_n_per_mps),
             ("motor_delay_s", self.motor_delay_s),
         ])?;
+        match self.thrust_falloff {
+            ThrustFalloff::Linear { n_per_mps } => {
+                check_non_negative(&[("thrust_falloff.n_per_mps", n_per_mps)])?
+            }
+            ThrustFalloff::PitchSpeed { full_mps } => {
+                check_positive(&[("thrust_falloff.full_mps", full_mps)])?
+            }
+        }
         if self.motor_delay_s > MAX_ACTUATOR_DELAY_S {
             return Err(ModelError::DelayTooLong("motor_delay_s"));
         }
