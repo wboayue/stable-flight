@@ -1,0 +1,6 @@
+# Hover descent over the start in wind (eXplora VTOL): climb to 60 m, hold 20 s while the wind estimate settles and turns a
+# wingtip into the wind, descend 40 m to 20 m, in hover throughout (#653).
+# Coordinates are m north and east of where the vehicle starts, altitudes m above it.
+x,y,altitude,cruise_speed,regime,heading,hold_s
+0.00,0.00,60.0,3.0,copter,,20
+0.00,0.00,20.0,3.0,copter,,
