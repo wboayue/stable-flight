@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `flights/explora_descent_wind.csv` (#653): the eXplora's 60 → 20 m hover descent with a 20 s
+  hold at 60 m, so the wind estimate turns a wingtip into the wind before the descent.
 - `tailsitter-auto-realflight --record` adds `view_force_z_mps2` (#647): the specific
   force along the hover view's `z` (tail; thrust reads negative), the thrust delivered beside
   the thrust commanded.
