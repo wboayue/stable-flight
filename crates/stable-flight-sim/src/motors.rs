@@ -166,7 +166,7 @@ impl Motors {
     }
 
     /// As [`wrench`](Self::wrench), each motor's thrust times `falloff` of its share of full
-    /// thrust: what airspeed leaves of it ([`FixedWingModel::falloff_share`](crate::FixedWingModel)).
+    /// thrust: the share of its static thrust that airspeed leaves.
     pub(crate) fn wrench_with(&self, falloff: impl Fn(f32) -> f32) -> (f32, Vec3) {
         let thrusts_n = self.thrusts_n_with(falloff);
         let torque_nm = thrusts_n
