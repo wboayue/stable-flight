@@ -298,9 +298,10 @@ fn hover_after_a_climbing_handover_descends_at_the_limit() {
     }
 }
 
-/// The eXplora's descent limit (`explora_vtol`'s `max_descent_mps`), where a hover handed
-/// over climbing sank 2.75 m/s in RealFlight (#462).
-const EXPLORA_DESCENT_MPS: f32 = 1.5;
+/// Descent limit the climbing handover flies at, in m/s: the one the RealFlight eXplora's
+/// hover, handed over climbing, sank 2.75 m/s past (#462), and where a target starting at rest
+/// sinks past [`HANDOVER_SINK_MARGIN_MPS`].
+const HANDOVER_DESCENT_MPS: f32 = 1.5;
 
 /// A back ramp thrust that hands the sim tailsitter to the hover climbing (measured
 /// +3.4 m/s), as the RealFlight eXplora's 0.75 hands over at about +1.9 m/s (#462).
@@ -311,7 +312,7 @@ const CLIMBING_BACK_THRUST: f32 = 0.7;
 const HANDOVER_SINK_WATCH_S: f32 = 3.0;
 
 /// Most the hover sinks in [`HANDOVER_SINK_WATCH_S`] after a climbing handover, in m/s, over
-/// [`EXPLORA_DESCENT_MPS`]: no external band applies. Measured 1.61 m/s with the climb shed;
+/// [`HANDOVER_DESCENT_MPS`]: no external band applies. Measured 1.61 m/s with the climb shed;
 /// a target starting at rest sank 1.98 (#462).
 const HANDOVER_SINK_MARGIN_MPS: f32 = 0.25;
 
@@ -321,7 +322,7 @@ const HANDOVER_SINK_MARGIN_MPS: f32 = 0.25;
 const HANDOVER_RISE_MARGIN_M: f32 = 1.0;
 
 /// A hover handed over climbing sheds the climb instead of cutting thrust to stop it: it sinks
-/// no faster than the eXplora's descent limit plus [`HANDOVER_SINK_MARGIN_MPS`] in the first
+/// no faster than [`HANDOVER_DESCENT_MPS`] plus [`HANDOVER_SINK_MARGIN_MPS`] in the first
 /// [`HANDOVER_SINK_WATCH_S`], and rises no more than shedding the climb takes plus
 /// [`HANDOVER_RISE_MARGIN_M`] (#462).
 #[test]
@@ -329,7 +330,7 @@ fn climbing_handover_sinks_within_the_descent_limit() {
     let mut airframe = airframes::tailsitter();
     airframe.guidance.transition.back_thrust = CLIMBING_BACK_THRUST;
     let hover = &mut airframe.guidance.hover;
-    hover.max_descent_mps = EXPLORA_DESCENT_MPS;
+    hover.max_descent_mps = HANDOVER_DESCENT_MPS;
     let climb_decel_mps2 = hover.climb_decel_mps2;
     let plant = TailsitterPlant::clean(airframe);
     let commander = forward_and_back(&airframe, BACK_AT_S, BACK_HOVER_NORTH_M);
@@ -350,7 +351,7 @@ fn climbing_handover_sinks_within_the_descent_limit() {
         .map(|sample| -sample.state.velocity_mps.z)
         .fold(f32::NEG_INFINITY, f32::max);
     check!(
-        fastest_sink_mps <= EXPLORA_DESCENT_MPS + HANDOVER_SINK_MARGIN_MPS,
+        fastest_sink_mps <= HANDOVER_DESCENT_MPS + HANDOVER_SINK_MARGIN_MPS,
         "sank {fastest_sink_mps} m/s"
     );
     let heights = flight.heights(copter_s, copter_s + DESCENT_WATCH_S);
