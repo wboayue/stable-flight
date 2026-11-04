@@ -222,18 +222,19 @@ shows otherwise.
 `--record`; `--param GUID_DESC_MAX=2` sets each run's rate. Three routes, three runs each:
 
 - calm: `flights/explora_descent.csv`, 60 m to 20 m over the spawn point;
-- in wind: `flights/explora_descent_wind.csv`, the same with a 20 s hold at 60 m. The wind
-  estimate learns nothing climbing or sinking faster than 1 m/s, so without the hold it may
-  not turn a wingtip into the wind before the descent, and the hover drifts belly first;
+- in wind: `flights/explora_descent_wind.csv`, the same with a 20 s hold at 60 m, so the wind
+  estimate turns a wingtip into the wind before the descent
+  ([finding](../findings/explora-descent-limit.md));
 - after a back transition: `flights/explora_back_ramp.csv`, 80 m to 30 m.
 
 Fly 1.5 m/s on each route beside the candidate. Read `view_pitch` against `sp_pitch` by phase:
 
 - **mid**, sinking at the limit: a swing on a steady setpoint is this limit; `elevon_*` short
   of ±1 says lag rather than lost authority;
-- **start** and **arrive** (the first and last 3 m, or seconds): setpoint steps, as the climb
-  reverses, a gust lets go of the tilt cap, the brake onto the waypoint, or the next leg
-  starts. They lag at any rate, so compare them with 1.5 m/s's on the same route.
+- **start** and **arrive** (the first and last 3 m; after a back transition, the first 5 s):
+  setpoint steps, as the climb reverses, a gust lets go of the tilt cap, the brake onto the
+  waypoint, or the next leg starts. They lag at any rate, so compare them with 1.5 m/s's on
+  the same route.
 
 To descend faster, raise `GUID_DESC_MAX` in 0.5 m/s steps. Keep the fastest rate whose mid
 error stays within about 3° and whose start and arrive are no worse than 1.5 m/s's; drop back
@@ -249,7 +250,7 @@ eXplora (#653, autotuned hover), worst error by phase, three runs per row
 | calm | **2 m/s** | 2.2–2.9° | 0.3–0.7° | 0.5–0.7° | chosen |
 | calm | 2.5 m/s | 2.3–6.6° | 0.6–1.1° | 0.9–2.5° | arrive past 1.5's: back to 2 |
 | 5 km/h wind | 1.5 m/s | 1.1–3.5° | 1.3–2.0° | 0.4–4.8° | |
-| 5 km/h wind | **2 m/s** | 0.6–1.1° | 1.3–1.8° | 1.2–6.4° | gusts off the tilt cap at both |
+| 5 km/h wind | **2 m/s** | 0.6–1.1° | 1.3–1.8° | 1.2–6.4° | arrive peaks: a gust letting go of the tilt cap, at both rates |
 | back transition | 1.5 m/s (1 run) | 7.7° | 0.2° | 6.5° | |
 | back transition | **2 m/s** | 7.1–7.5° | 0.2° | 3.2–6.7° | |
 

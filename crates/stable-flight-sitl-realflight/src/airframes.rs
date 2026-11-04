@@ -214,8 +214,9 @@ pub fn explora_vtol()
                 },
                 // Full stick at the stabilizer's 30° tilt.
                 max_stick_angles_rad: Vec2::new(PI / 6.0, PI / 6.0),
-                // Higher: faster descents, a harder brake onto the waypoint. At 2 m/s the
-                // nose tracks as at ArduPilot's and PX4's 1.5 (`WP_SPD_DN`,
+                // Higher: faster descents, and a longer brake onto the waypoint at
+                // `descent_accel_mps2`, where the nose lags. At 2 m/s the nose tracks as at
+                // ArduPilot's and PX4's 1.5 (`WP_SPD_DN`,
                 // `MPC_Z_V_AUTO_DN`) in calm air, 5 km/h wind and after a back transition;
                 // at 2.5 the calm arrival lags further (`docs/findings/explora-descent-limit.md`).
                 // A limit of the pitch tune: the hand tune's swung from 2.5
