@@ -93,12 +93,12 @@ pub fn explora() -> TailsitterAirframe {
     // RealFlight (roll, pitch, yaw in the airplane frame). Roll: RealFlight's cruise roll fit,
     // damping and control both (#619). Pitch and yaw: its hover, where its hand tune's rate
     // steps end at 0.80 (view pitch) and 0.55 (view roll, differential thrust) of their
-    // command, and here at 0.80–0.82 and 0.60–0.62 (#539). Yaw scales with the differential
-    // thrust's authority, which falls as the hover's motor command rises: higher, its hover's
-    // roll rate steps end shorter. Scaling inertia keeps the controls'
-    // authority against the wing's own moments; less wash over the elevons in its place matched
-    // the rate steps, but a 5° tilt's drift then pushed the angle steps 10–20% past their
-    // target, which RealFlight's don't.
+    // command, and here at 0.80–0.82 and 0.60–0.62 (#539). Yaw follows differential thrust's
+    // authority, the thrust per unit of motor command, which falls as the hover's command
+    // rises: 6.1 at hover 0.88 answers as 7.0 did at 0.82 (#651). Higher: the hover's roll rate
+    // steps end shorter. Scaling inertia keeps the controls' authority against the wing's own
+    // moments; less wash over the elevons in its place matched the rate steps, but a 5° tilt's
+    // drift then pushed the angle steps 10–20% past their target, which RealFlight's don't.
     let inertia_scale = Vec3::new(29.0, 19.0, 6.1);
     let mut inertia_kgm2 = aerosonde_inertia(MASS_KG, SPAN_M).component_mul(&inertia_scale);
     inertia_kgm2.x *= ROLL_INERTIA_SHARE;

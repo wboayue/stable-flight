@@ -204,6 +204,46 @@ fn differential_thrust_yaws_through_the_arm() {
     assert_relative_eq!(torque_nm.z, expected_nm, max_relative = 1e-4);
 }
 
+/// Each motor loses its own share of thrust with airspeed: at 10 m/s forward the slower motor,
+/// nearer its pitch speed, loses more, so differential thrust yaws harder than one factor on the
+/// total would give.
+#[test]
+fn each_motor_loses_its_own_share_of_thrust() {
+    let airframe = airframes::tailsitter();
+    let model = FixedWingModel {
+        thrust_falloff: ThrustFalloff::PitchSpeed { full_mps: 30.0 },
+        ..airframe.model.wing
+    };
+    let mut dynamics = FixedWing::new(
+        model,
+        &airframe.mixer,
+        Rotors::tailsitter(&airframe.model),
+        UnitQuaternion::identity(),
+    );
+    dynamics.begin(100.0);
+    let body = Body {
+        velocity_ned_mps: Vec3::new(10.0, 0.0, 0.0),
+        ..Body::default()
+    };
+    let loads = dynamics.loads(&command([0.9, 0.5], [0.0, 0.0]), &body, Vec3::zeros());
+    let thrust_n = |running: f32| {
+        let share = running * running;
+        model.max_thrust_n * share * model.falloff_share(share, 10.0)
+    };
+    let expected_nm = airframe.model.motor_arm_m * (thrust_n(0.9) - thrust_n(0.5));
+    assert_relative_eq!(
+        loads.torque_nm.z - dynamics.aero.torque_nm.z,
+        expected_nm,
+        max_relative = 1e-4
+    );
+    let total_n = thrust_n(0.9) + thrust_n(0.5);
+    assert_relative_eq!(
+        loads.force_ned_n.x - dynamics.aero.force_n.x,
+        total_n,
+        max_relative = 1e-4
+    );
+}
+
 /// The wash gives the elevons authority in still air, growing with thrust; without thrust, or
 /// on the airplane (no wash), they have none.
 #[test]
