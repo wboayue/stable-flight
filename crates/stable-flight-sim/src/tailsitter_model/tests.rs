@@ -97,6 +97,17 @@ fn rejects_out_of_range_parameters() {
             },
             ModelError::NotPositive("prop_wash.sink_loss"),
         ),
+        (
+            "pitch moment not finite",
+            TailsitterModel {
+                prop_wash: PropWash {
+                    pitch_moment: f32::INFINITY,
+                    ..model().prop_wash
+                },
+                ..model()
+            },
+            ModelError::NotFinite("prop_wash.pitch_moment"),
+        ),
     ];
     for (case, model, error) in cases {
         check!(model.validate() == Err(error), "{case}");
@@ -115,6 +126,7 @@ fn wash_pressure_follows_momentum_theory() {
         roll_fraction: 1.0,
         damping_fraction: 1.0,
         sink_loss: DEFAULT_SINK_LOSS,
+        pitch_moment: 0.0,
     };
     // 20 N over 0.1 m²: 200 Pa, a static jet of √(400/ρ) m/s.
     let jet_mps = libm::sqrtf(400.0 / AIR_DENSITY_KGPM3);
@@ -179,6 +191,16 @@ fn wash_pressure_follows_momentum_theory() {
     check!(half.wash(20.0, 0.0).pressure_pa == 100.0);
     check!(half.wash(20.0, 0.0).roll_pressure_pa == 20.0);
     assert_relative_eq!(half.wash(20.0, 0.0).damping_mps, 0.25 * jet_mps);
+    // The pitch moment is its share of the surfaces' pressure, and nothing once a sink has
+    // taken the wash away.
+    let pitching = half.with_pitch_moment(-0.3);
+    assert_relative_eq!(
+        pitching.wash(20.0, 0.0).pitch_moment_pa,
+        -30.0,
+        max_relative = 1e-6
+    );
+    check!(half.wash(20.0, 0.0).pitch_moment_pa == 0.0);
+    check!(pitching.wash(20.0, -2.0 * jet_mps).pitch_moment_pa == 0.0);
 }
 
 /// The damping share is `∫y²` over the washed strip over `∫y²` to the tip: (arm m, diameter m,
