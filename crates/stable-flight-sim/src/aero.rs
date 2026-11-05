@@ -38,6 +38,9 @@ pub(crate) struct Wash {
     pub pressure_pa: f32,
     /// The same for the surfaces' roll (aileron) action, in Pa.
     pub roll_pressure_pa: f32,
+    /// Pitch moment the wash puts on the wing undeflected, over wing area times chord, in Pa:
+    /// positive nose up.
+    pub pitch_moment_pa: f32,
     /// The airspeed whose rate damping the wash adds, in m/s: a flow over the whole wing at it
     /// damps as the wash does over its part of the span. Non-negative.
     pub damping_mps: f32,
@@ -54,7 +57,8 @@ pub(crate) struct Wash {
 /// which take the whole airspeed's pressure. Rate terms are written per unit of airspeed
 /// rather than divided by it, so they vanish smoothly as the airspeed goes to zero. The wash
 /// adds its damping on top ([`Wash::damping_mps`]), so at zero airspeed the surfaces in the wash
-/// act and the wash damps the turn rates.
+/// act, the wash damps the turn rates, and it pitches the wing by
+/// [`Wash::pitch_moment_pa`].
 pub(crate) fn wrench(
     model: &FixedWingModel,
     air_mps: Vec3,
@@ -90,11 +94,14 @@ pub(crate) fn wrench(
         with_wash(wash.pressure_pa),
         deflection_rad,
     );
+    let wash_pitch_nm = Vec3::new(0.0, wash.pitch_moment_pa * model.wing_area_m2 * chord, 0.0);
     // The wash's rate scale, as the free stream's below: `½ρ·V·S`.
     let wash_rate_scale = 0.5 * AIR_DENSITY_KGPM3 * wash.damping_mps * model.wing_area_m2;
     if !moving {
         return Aero {
-            torque_nm: surfaces.torque_nm + rate_moments(model, wash_rate_scale, rates_radps),
+            torque_nm: surfaces.torque_nm
+                + wash_pitch_nm
+                + rate_moments(model, wash_rate_scale, rates_radps),
             ..surfaces
         };
     }
@@ -127,7 +134,10 @@ pub(crate) fn wrench(
 
     Aero {
         force_n: force_n + surfaces.force_n,
-        torque_nm: static_nm + rate_moments(model, rate_scale, rates_radps) + surfaces.torque_nm,
+        torque_nm: static_nm
+            + wash_pitch_nm
+            + rate_moments(model, rate_scale, rates_radps)
+            + surfaces.torque_nm,
         alpha_rad,
         beta_rad,
     }

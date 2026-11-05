@@ -2,7 +2,7 @@
 
 use crate::aero::{AIR_DENSITY_KGPM3, Wash};
 use crate::fixed_wing::FixedWingModel;
-use crate::model::{ModelError, check_fraction, check_positive};
+use crate::model::{ModelError, check_finite, check_fraction, check_positive};
 
 #[cfg(test)]
 mod tests;
@@ -50,7 +50,9 @@ pub struct TailsitterModel {
 /// [`roll_fraction`](Self::roll_fraction). The part of the span in the wash is damped by
 /// it as by the free stream, [`damping_fraction`](Self::damping_fraction) of the wing's rate
 /// damping; the wing's lift and drag see the free stream only. The total thrust over the total
-/// disc area washes every surface evenly.
+/// disc area washes every surface evenly. The wash can also pitch the wing on its own,
+/// [`pitch_moment`](Self::pitch_moment) per unit of the pressure the surfaces see, so a hover
+/// holds its elevons off center in still air.
 ///
 /// # Examples
 ///
@@ -82,6 +84,12 @@ pub struct PropWash {
     /// swings sinking sooner. An empirical fit for the flow momentum theory misses near the
     /// disc, not a model of it.
     pub sink_loss: f32,
+    /// Pitch moment coefficient the wash puts on the wing, on the pressure the surfaces see
+    /// (as [`AeroCoefficients::c_pitch_0`](crate::AeroCoefficients::c_pitch_0) on the free
+    /// stream's, times wing area and chord), positive nose up. 0 ([`props`](Self::props)): the
+    /// wash pitches nothing undeflected. An empirical fit, as `sink_loss`: it fades as a sink
+    /// takes the wash away, and pushes nothing once the sink has taken it all.
+    pub pitch_moment: f32,
 }
 
 /// [`PropWash::sink_loss`] by momentum theory alone.
@@ -98,6 +106,7 @@ impl PropWash {
             roll_fraction: surface_fraction,
             damping_fraction,
             sink_loss: DEFAULT_SINK_LOSS,
+            pitch_moment: 0.0,
         }
     }
 
@@ -133,6 +142,24 @@ impl PropWash {
         PropWash { sink_loss, ..self }
     }
 
+    /// This wash pitching the wing by `pitch_moment` on its pressure over the surfaces,
+    /// positive nose up.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight_sim::PropWash;
+    ///
+    /// let wash = PropWash::props(2, 0.254, 0.4, 0.24).with_pitch_moment(-0.3);
+    /// assert_eq!(wash.pitch_moment, -0.3);
+    /// ```
+    pub fn with_pitch_moment(self, pitch_moment: f32) -> Self {
+        PropWash {
+            pitch_moment,
+            ..self
+        }
+    }
+
     /// The share of a wing's rate damping inside the wash of a prop `motor_arm_m` out each side,
     /// `diameter_m` across, on a wing of `span_m`: by strip theory each strip of span damps a
     /// roll as its distance from the center squared, so the share is `∫y²` over the washed
@@ -151,12 +178,15 @@ impl PropWash {
     /// [`surface_fraction`](Self::surface_fraction) of [`added_pa`](Self::added_pa), and the
     /// speed it damps the wing at, its jet's (less any sink) times
     /// [`damping_fraction`](Self::damping_fraction), 0 where it takes from the free stream.
-    /// The roll action's pressure is [`roll_fraction`](Self::roll_fraction) of it.
+    /// The roll action's pressure is [`roll_fraction`](Self::roll_fraction) of it, and its pitch
+    /// moment [`pitch_moment`](Self::pitch_moment) of it while it adds to the free stream.
     pub(crate) fn wash(&self, thrust_n: f32, axial_mps: f32) -> Wash {
         let added_pa = self.added_pa(thrust_n, axial_mps);
         let flow_mps = libm::sqrtf(2.0 * added_pa.max(0.0) / AIR_DENSITY_KGPM3);
+        let pressure_pa = self.surface_fraction * added_pa;
         Wash {
-            pressure_pa: self.surface_fraction * added_pa,
+            pressure_pa,
+            pitch_moment_pa: self.pitch_moment * pressure_pa.max(0.0),
             roll_pressure_pa: self.roll_fraction * added_pa,
             damping_mps: self.damping_fraction * flow_mps,
         }
@@ -188,7 +218,8 @@ impl TailsitterModel {
     ///
     /// [`FixedWingModel::validate`]'s errors; [`ModelError::NotPositive`] for a motor arm, disc
     /// area, or sink loss that isn't positive and finite; [`ModelError::NotFraction`] for a
-    /// wash fraction outside `[0, 1]`.
+    /// wash fraction outside `[0, 1]`; [`ModelError::NotFinite`] for a wash pitch moment that
+    /// isn't finite.
     pub fn validate(&self) -> Result<(), ModelError> {
         self.wing.validate()?;
         check_positive(&[
@@ -196,6 +227,7 @@ impl TailsitterModel {
             ("prop_wash.disc_area_m2", self.prop_wash.disc_area_m2),
             ("prop_wash.sink_loss", self.prop_wash.sink_loss),
         ])?;
+        check_finite(&[("prop_wash.pitch_moment", self.prop_wash.pitch_moment)])?;
         check_fraction(&[
             (
                 "prop_wash.surface_fraction",

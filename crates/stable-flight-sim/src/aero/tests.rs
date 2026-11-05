@@ -451,6 +451,7 @@ fn wash_works_the_surfaces_and_damps_the_rates() {
         pressure_pa: 200.0,
         roll_pressure_pa: 200.0,
         damping_mps: 4.0,
+        pitch_moment_pa: 0.0,
     };
     let wash_scale = 0.5 * AIR_DENSITY_KGPM3 * wash.damping_mps * model.wing_area_m2;
     let elevator = Vec3::new(0.0, 0.2, 0.0);
@@ -495,6 +496,31 @@ fn wash_works_the_surfaces_and_damps_the_rates() {
     check!(added.force_n == flying(calm, rates_radps, elevator).force_n);
 }
 
+/// The wash's own pitch moment adds its pressure times wing area and chord, flying or still,
+/// and nothing else.
+#[test]
+fn wash_pitch_moment_adds_its_pressure_times_area_and_chord() {
+    let model = model();
+    let pitching = Wash {
+        pitch_moment_pa: -10.0,
+        ..Wash::default()
+    };
+    let expected_nm = Vec3::new(0.0, -10.0 * model.wing_area_m2 * model.chord_m, 0.0);
+    // (case, air m/s)
+    let cases = [("still", Vec3::zeros()), ("flying", air(15.0, 0.05, 0.0))];
+    for (case, air_mps) in cases {
+        let none = Vec3::zeros();
+        let with = wrench(&model, air_mps, none, none, pitching);
+        let without = wrench(&model, air_mps, none, none, Wash::default());
+        assert_relative_eq!(
+            with.torque_nm - without.torque_nm,
+            expected_nm,
+            epsilon = 1e-5
+        );
+        check!(with.force_n == without.force_n, "{case}");
+    }
+}
+
 /// The roll pressure works the ailerons alone, the pressure the elevator: in still air, with
 /// each deflected, each moment follows its own pressure.
 #[test]
@@ -505,6 +531,7 @@ fn roll_pressure_works_the_ailerons_alone() {
         pressure_pa: 200.0,
         roll_pressure_pa: 50.0,
         damping_mps: 0.0,
+        pitch_moment_pa: 0.0,
     };
     let deflection_rad = Vec3::new(0.1, 0.2, 0.0);
     let still = wrench(&model, Vec3::zeros(), Vec3::zeros(), deflection_rad, wash);
@@ -528,6 +555,7 @@ fn stalled_surfaces_work_in_the_wash_alone() {
         pressure_pa: 50.0,
         roll_pressure_pa: 50.0,
         damping_mps: 0.0,
+        pitch_moment_pa: 0.0,
     };
     let elevator_rad = 0.2;
     let elevator = Vec3::new(0.0, elevator_rad, 0.0);
