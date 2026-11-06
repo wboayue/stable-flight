@@ -22,9 +22,25 @@ control grows from 80–82 to 123 rad/s² (V^1.65, slower than dynamic pressure)
 the elevons hold grows only about as V^0.9: the trim moment, not the elevons' authority, departs
 from V².
 
-The sim eXplora's trim moment grows as V² below trim airspeed and as V¹ above it
-(`c_pitch_0_knee`): its fitted trim falls from 0.090 to 0.073 (V^-0.82). Its centered sticks,
-losing speed below trim, drift 1.04° per m/s lost (#666).
+Below 14 m/s the trim moment keeps growing as about V¹ (#666). Replaying RealFlight's back
+transitions (`flights/explora_back_ramp.csv`, runs 1–5) through the sim's aerodynamics with a
+V² trim moment, RealFlight's moment runs nose down of it by `c_pitch_0·(14/V − 1)` of `q·S·c`,
+in cruise and on the ramp's attached phase alike, at any α there. Median gap coefficient (ticks):
+
+| Airspeed (m/s) | Cruise | Ramp, attached | V¹ below 14 m/s |
+|---|---|---|---|
+| 14–16 | +0.005 (9566) | | 0 |
+| 12.5–14 | +0.003 (6584) | −0.014 (151) | −0.007 |
+| 11–12.5 | −0.014 to −0.020 (403) | −0.026 (160) | −0.022 |
+| 9–11 | −0.037 (431) | −0.042 to −0.056 (183) | −0.046 |
+| 7–9 | | −0.081 to −0.117 (214) | −0.086 |
+| 4–7 | | −0.13 to −0.21 (247) | −0.178 |
+
+The sim eXplora's trim moment grows as V¹ above trim airspeed and as V^0.5 below it, down to
+7 m/s, and with dynamic pressure below that (`c_pitch_0_knee`): its fitted trim falls from
+0.090 at 14 m/s to 0.073 at 18 (V^-0.82), and its centered sticks drift 0.38° per m/s lost. V¹
+below 14 m/s, as RealFlight's replay has it, drifts 0.60°, so the sim's low side is fitted to
+the pauses, not the replay.
 
 **So:** compare centered-sticks drift per m/s of airspeed lost, not in degrees
 (`explora_centered_rate_sticks_hold_pitch`, `crates/stable-flight-sim/tests/maneuver.rs`).

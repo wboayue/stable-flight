@@ -246,12 +246,15 @@ fn moments_point_the_contract_way() {
 }
 
 /// Past its knee the zero-α pitch moment grows as `V^exponent` rather than with dynamic
-/// pressure; at and below the knee, and without one, it is the coefficient's.
+/// pressure, below it down to the floor as `V^low_exponent`, and below the floor with dynamic
+/// pressure again; at the knee, and without one, it is the coefficient's.
 #[test]
-fn pitch_trim_moment_grows_slower_past_its_knee() {
+fn pitch_trim_moment_leaves_dynamic_pressure_either_side_of_its_knee() {
     let knee = PitchTrimKnee {
         knee_mps: 10.0,
         exponent: 1.0,
+        low_exponent: 0.0,
+        floor_mps: 5.0,
     };
     let zero_alpha_pitch_nm = |model: &FixedWingModel, speed_mps: f32| {
         wrench(
@@ -274,7 +277,9 @@ fn pitch_trim_moment_grows_slower_past_its_knee() {
     };
     // (case, airspeed in m/s, kneed moment over the plain one)
     let cases = [
-        ("below the knee", 5.0, 1.0),
+        ("below the floor, V^2 from the floor's V^0", 2.5, 4.0),
+        ("at the floor", 5.0, 4.0),
+        ("below the knee, V^0 against V^2", 8.0, 1.5625),
         ("at the knee", 10.0, 1.0),
         ("past the knee, V^1 against V^2", 20.0, 0.5),
         ("far past it", 40.0, 0.25),

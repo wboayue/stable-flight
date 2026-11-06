@@ -16,7 +16,7 @@ fn rejects_each_out_of_range_parameter() {
     let model = airframes::plane().model;
     // (case, edit, error)
     type Edit = fn(&mut FixedWingModel);
-    let cases: [(&str, Edit, ModelError); 15] = [
+    let cases: [(&str, Edit, ModelError); 17] = [
         (
             "zero span",
             |m| m.span_m = 0.0,
@@ -82,20 +82,40 @@ fn rejects_each_out_of_range_parameter() {
             |m| {
                 m.aero.c_pitch_0_knee = Some(PitchTrimKnee {
                     knee_mps: 0.0,
-                    exponent: 1.0,
+                    ..TRIM_KNEE
                 })
             },
             ModelError::NotPositive("aero.c_pitch_0_knee.knee_mps"),
         ),
         (
+            "zero pitch trim floor",
+            |m| {
+                m.aero.c_pitch_0_knee = Some(PitchTrimKnee {
+                    floor_mps: 0.0,
+                    ..TRIM_KNEE
+                })
+            },
+            ModelError::NotPositive("aero.c_pitch_0_knee.floor_mps"),
+        ),
+        (
             "NaN pitch trim exponent",
             |m| {
                 m.aero.c_pitch_0_knee = Some(PitchTrimKnee {
-                    knee_mps: 14.0,
                     exponent: f32::NAN,
+                    ..TRIM_KNEE
                 })
             },
             ModelError::NotFinite("aero.c_pitch_0_knee.exponent"),
+        ),
+        (
+            "NaN pitch trim low exponent",
+            |m| {
+                m.aero.c_pitch_0_knee = Some(PitchTrimKnee {
+                    low_exponent: f32::NAN,
+                    ..TRIM_KNEE
+                })
+            },
+            ModelError::NotFinite("aero.c_pitch_0_knee.low_exponent"),
         ),
         (
             "infinite coefficient",
@@ -113,6 +133,14 @@ fn rejects_each_out_of_range_parameter() {
 /// A prop's thrust falls to zero at its pitch speed, which slows with the motor: at a quarter
 /// of full thrust (half the rpm) it stops pushing at half the full-command speed. Linear falloff
 /// stops at the same speed at any command.
+/// A valid knee for [`rejects_each_out_of_range_parameter`] to break one field of.
+const TRIM_KNEE: PitchTrimKnee = PitchTrimKnee {
+    knee_mps: 14.0,
+    exponent: 1.0,
+    low_exponent: 0.5,
+    floor_mps: 7.0,
+};
+
 #[test]
 fn thrust_falls_off_with_airspeed_by_the_falloff_law() {
     let pitch_speed = FixedWingModel {

@@ -43,9 +43,12 @@ pub enum ThrustFalloff {
 }
 
 /// Where a wing's zero-α pitch moment ([`c_pitch_0`](AeroCoefficients::c_pitch_0)) leaves
-/// dynamic pressure: below `knee_mps` it grows as `V²`, past it as `V^exponent`. With an
-/// exponent under 2 the elevator that trims it (its authority still growing as `V²`) holds less
-/// the faster the wing flies; over 2, more.
+/// dynamic pressure. At `knee_mps` it is the coefficient's; past it the moment grows as
+/// `V^exponent`; below it, down to `floor_mps`, it shrinks as `V^low_exponent`; below the floor
+/// it shrinks with dynamic pressure again, from the floor's moment. With exponents under 2 the
+/// elevator that trims it (its authority still growing as `V²`) holds less the faster the wing
+/// flies; over 2, more. A low exponent of 2, or a floor at or above the knee, keeps the moment on
+/// dynamic pressure below the knee.
 ///
 /// # Examples
 ///
@@ -55,7 +58,12 @@ pub enum ThrustFalloff {
 /// let plane = stable_flight_sim::airframes::plane().model;
 /// let model = FixedWingModel {
 ///     aero: AeroCoefficients {
-///         c_pitch_0_knee: Some(PitchTrimKnee { knee_mps: 14.0, exponent: 1.0 }),
+///         c_pitch_0_knee: Some(PitchTrimKnee {
+///             knee_mps: 14.0,
+///             exponent: 1.0,
+///             low_exponent: 0.5,
+///             floor_mps: 7.0,
+///         }),
 ///         ..plane.aero
 ///     },
 ///     ..plane
@@ -64,11 +72,17 @@ pub enum ThrustFalloff {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PitchTrimKnee {
-    /// Airspeed past which the moment grows as `V^exponent`, in m/s. Positive.
+    /// Airspeed at which the moment is the coefficient's, and past which it grows as
+    /// `V^exponent`, in m/s. Positive.
     pub knee_mps: f32,
     /// How the moment grows with airspeed past the knee: as `V^exponent` (2 is dynamic
     /// pressure's). Finite.
     pub exponent: f32,
+    /// How the moment grows with airspeed from the floor to the knee: as `V^low_exponent`.
+    /// Finite.
+    pub low_exponent: f32,
+    /// Airspeed below which the moment follows dynamic pressure again, in m/s. Positive.
+    pub floor_mps: f32,
 }
 
 /// Physical parameters of a simulated airplane: a rigid body with a wing, three control
@@ -257,7 +271,7 @@ impl FixedWingModel {
     /// friction, or motor delay that is negative or not finite; [`ModelError::DelayTooLong`] for
     /// a motor delay over [`MAX_ACTUATOR_DELAY_S`]; [`ModelError::NotFraction`] for a stall
     /// share outside `[0, 1]`; [`ModelError::NotFinite`] for any other coefficient that isn't
-    /// finite (a [`PitchTrimKnee`]'s knee must be positive).
+    /// finite (a [`PitchTrimKnee`]'s knee and floor must be positive).
     pub fn validate(&self) -> Result<(), ModelError> {
         let aero = &self.aero;
         check_positive(&[
@@ -294,8 +308,14 @@ impl FixedWingModel {
             }
         }
         if let Some(knee) = aero.c_pitch_0_knee {
-            check_positive(&[("aero.c_pitch_0_knee.knee_mps", knee.knee_mps)])?;
-            check_finite(&[("aero.c_pitch_0_knee.exponent", knee.exponent)])?;
+            check_positive(&[
+                ("aero.c_pitch_0_knee.knee_mps", knee.knee_mps),
+                ("aero.c_pitch_0_knee.floor_mps", knee.floor_mps),
+            ])?;
+            check_finite(&[
+                ("aero.c_pitch_0_knee.exponent", knee.exponent),
+                ("aero.c_pitch_0_knee.low_exponent", knee.low_exponent),
+            ])?;
         }
         if self.motor_delay_s > MAX_ACTUATOR_DELAY_S {
             return Err(ModelError::DelayTooLong("motor_delay_s"));

@@ -87,8 +87,8 @@ pub fn explora() -> TailsitterAirframe {
     /// back ramp, more cruise thrust.
     const PITCH_SPEED_MPS: f32 = 35.0;
     const TRIM_AIRSPEED_MPS: f32 = 14.0;
-    /// Airspeed above which the trim moment leaves dynamic pressure, in m/s: the slowest of
-    /// RealFlight's fits (#648). Lower: the trim at 14 m/s falls below RealFlight's (13: 0.085
+    /// Airspeed at which the trim moment is `c_pitch_0`'s, leaving dynamic pressure on either
+    /// side, in m/s: the slowest of RealFlight's fits (#648). Lower: the trim at 14 m/s falls below RealFlight's (13: 0.085
     /// against 0.089), and a stronger `c_pitch_0` to make it up hands #661's 0.65 back ramp
     /// over instead of stalling it.
     const TRIM_KNEE_MPS: f32 = 14.0;
@@ -135,7 +135,7 @@ pub fn explora() -> TailsitterAirframe {
             // Calibrated to RealFlight: level flight at 14 m/s takes a nose-up moment command of
             // 0.09 (#342, run 0; #587's fits), this and the wash's own pitch below at cruise
             // thrust (worth −0.01) together. The command is the two over the elevons'
-            // effectiveness, so below the knee they scale together.
+            // effectiveness.
             c_pitch_0: -0.115,
             // Past the knee RealFlight's trim moment grows as about V^0.9, so the command that
             // holds it falls as V^-0.73: 0.089 at 14 m/s, 0.074 at 18 (#648); here 0.090 and
@@ -143,6 +143,16 @@ pub fn explora() -> TailsitterAirframe {
             c_pitch_0_knee: Some(PitchTrimKnee {
                 knee_mps: TRIM_KNEE_MPS,
                 exponent: 1.0,
+                // Below the knee the trim moment shrinks slower than dynamic pressure too, so
+                // centered rate sticks losing speed drift 0.38° per m/s lost, RealFlight's 0.36°
+                // (`tests/maneuver.rs`). RealFlight's own replayed moment there follows V¹
+                // (#666), but V¹ here drifts 0.60°. Higher: more drift (1.04° at 2).
+                low_exponent: 0.5,
+                // Below it the moment follows dynamic pressure again, so the back ramp's attached
+                // phase holds RealFlight's elevons (0.70: 0.62 against 0.53; 0.75: 0.26 against
+                // 0.23) and 0.65 still stalls. Lower: more nose-down moment slowing down, 0.70 no
+                // longer clean from 6; higher: less, 0.75 at 0.23 from 8 (#666).
+                floor_mps: 7.0,
             }),
             // Calibrated to RealFlight (#342, run 0): default-gain 30°/s roll doublets peak at
             // 3.2× in their first half, here 3.24×.
