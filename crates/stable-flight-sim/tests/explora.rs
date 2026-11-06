@@ -202,6 +202,32 @@ fn realflights_gains_step_as_in_realflight() {
     }
 }
 
+/// The elevons, nose up, that RealFlight's eXplora held settled in a hover on its autotuned
+/// gains: the middle half of #399's five runs' hover ticks (below 1.5 m/s of airspeed and
+/// 0.3 m/s of climb, 0.1 rad/s of pitch rate, at 0.83–0.95 thrust, above 20 m; median 0.14),
+/// about #539's calm hover's 0.11 (#661).
+const REALFLIGHT_HOVER_ELEVON: (f32, f32) = (0.04, 0.26);
+
+/// The hover holds the elevons nose up as RealFlight's does: the wash pitches the wing nose down
+/// on its own, and the elevons trim it out.
+#[test]
+fn hovers_on_realflights_elevon_trim() {
+    let plant = realflight();
+    let mut flight_loop = hover_view_loop(&plant, realflight_tune(), common::hover_follower());
+    common::fly(&mut flight_loop, HOVER_SETTLE_S, |_, _| {});
+    let telemetry = flight_loop.into_parts().5;
+    let elevons: Vec<f32> = telemetry
+        .iter()
+        .map(|tick| {
+            let [left, right, ..] = tick.actuators.servos;
+            0.5 * (left + right)
+        })
+        .collect();
+    let mean = elevons.iter().sum::<f32>() / elevons.len() as f32;
+    let (low, high) = REALFLIGHT_HOVER_ELEVON;
+    check!((low..=high).contains(&mean), "elevons {mean}");
+}
+
 /// How far apart, as a fraction of the larger, a design may be from RealFlight's (as
 /// `alia.rs`'s agreement).
 const AGREEMENT: f32 = 0.25;

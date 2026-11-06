@@ -664,10 +664,9 @@ fn explora_back_ramp_stalls_where_realflights_does() {
 }
 
 /// RealFlight's eXplora also stalled at 0.65 (run 3): its nose stopped at 59° short of the
-/// ramp's 70° and fell back to 45° with the elevons full. The sim's reaches 70° on 0.28 of
-/// elevon, sinking 1.2 m/s.
+/// ramp's 70° and fell back to 45° with the elevons full. The sim's stalls with them full too:
+/// past the stall the wash pitches its nose down harder than they can hold (#661).
 #[test]
-#[ignore = "sim eXplora's elevons hold the nose up past the stall where RealFlight's can't (#661)"]
 fn explora_back_ramp_stalls_at_realflights_run_3_thrust() {
     let worst = fly_explora_back_ramp(0.65);
     check!(worst.stalled() == Some(true), "{worst:?}");
