@@ -124,7 +124,7 @@ Shared by every vehicle:
 | Part | Model |
 |---|---|
 | Motors | Each motor's thrust along body `x`; a mixer yaw factor of ±1 acts at `motor_arm_m` from the centerline (differential thrust); `max_thrust_n` per motor |
-| Prop wash | `PropWash`: actuator-disc momentum theory along the thrust axis, `surface_fraction` of it over the surfaces, so the elevons work in a hover. Nose first, the far wake's `thrust / disc area` of added dynamic pressure; sinking tail first, the static jet less the sink, `sink_loss` times momentum theory's loss (`explora()` 1.4, fitted on RealFlight's descents), so the elevons lose authority as it sinks (no vortex-ring flow: RealFlight's eXplora shows no thrust lost sinking at 3 m/s). The jet damps the wing's turn rates over the span it covers, `damping_fraction` of the wing's damping (`span_damping_share`: strip theory), the only damping in a hover |
+| Prop wash | `PropWash`: actuator-disc momentum theory along the thrust axis, `surface_fraction` of it over the surfaces, so the elevons work in a hover. Nose first, the far wake's `thrust / disc area` of added dynamic pressure; sinking tail first, the static jet less the sink, `sink_loss` times momentum theory's loss (`explora()` 1.4, fitted on RealFlight's descents), so the elevons lose authority as it sinks (no vortex-ring flow: RealFlight's eXplora shows no thrust lost sinking at 3 m/s). The jet damps the wing's turn rates over the span it covers, `damping_fraction` of the wing's damping (`span_damping_share`: strip theory), the only damping in a hover. The wash pitches the wing on its own, `pitch_moment` of its pressure over the surfaces, and `stall_pitch_moment` more past the stall nose first as the free stream takes over (`explora()`: fitted on RealFlight's hover trim and back ramps) |
 | Frame | Airplane FRD body: hovering nose up is 90° of pitch, level in `View::tailsitter`; it rests on its tail |
 
 `SimQuadPlane` (`QuadPlaneModel`: a `FixedWingModel` plus `LiftRotors`; the pusher is the mixer's one `MixRow::pusher` row) is
@@ -266,10 +266,11 @@ keeps the airplane's side force and dihedral, which its plane side was fitted on
 sideslip terms stay linear in β out to the 90° a hover in a wind along the span flies, not
 checked against RealFlight there
 ([#387](https://github.com/wboayue/stable-flight/issues/387)). `explora()`'s back ramp stalls
-nose-high at `TRAN_VT_THR` 0.60, as the RealFlight eXplora's does
-([#399](https://github.com/wboayue/stable-flight/issues/399)), but flies 0.65 where
-RealFlight's stalls: its elevons hold the nose up past the stall on 0.28 of deflection where
-RealFlight's saturate ([#661](https://github.com/wboayue/stable-flight/issues/661)). Its
+nose-high at `TRAN_VT_THR` 0.60 and 0.65 and flies 0.70 and 0.75, as the RealFlight eXplora's
+does ([#399](https://github.com/wboayue/stable-flight/issues/399)), on a wash pitch moment
+fitted to RealFlight's hover trim and stalled ramps; its attached high-α pitch moment still
+runs nose up of RealFlight's
+([explora-wash-pitch](../../docs/findings/explora-wash-pitch.md)). Its
 static thrust goes with the motor command squared, where RealFlight's goes about linearly (a
 full-thrust takeoff at 3.0 m/s², against about 6.5 here), and a hover leg at 3 m/s costs it
 1% less thrust than still, where RealFlight's costs 3% more. Its hover descents hold

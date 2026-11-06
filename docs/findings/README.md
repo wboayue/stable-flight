@@ -20,6 +20,7 @@ change makes one wrong, re-measure and update it, or delete it.
 | [The eXplora's hover descent swings on a soft pitch tune, not from a vortex ring](explora-descent-swing.md) | 2026-11-03 | #647 |
 | [The eXplora's autotuned hover descends at 2 m/s as cleanly as at 1.5; at 2.5 its arrival lags](explora-descent-limit.md) | 2026-11-03 | #653 |
 | [The eXplora hovers at thrust 0.88 and cruises at 0.86; its prop loses thrust faster at part throttle](explora-thrust.md) | 2026-11-03 | #651 |
+| [The eXplora's wash pitches it nose down, harder past the stall nose first](explora-wash-pitch.md) | 2026-11-05 | #399, #661 |
 
 ## Format
 

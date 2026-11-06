@@ -125,9 +125,10 @@ pub fn explora() -> TailsitterAirframe {
             // (`docs/findings/explora-thrust.md`).
             c_drag_0: 0.043,
             // Calibrated to RealFlight: level flight at 14 m/s takes a nose-up moment command of
-            // 0.09 (#342, run 0; #587's fits). The command is this over the elevons'
-            // effectiveness, so the two scale together.
-            c_pitch_0: -0.125,
+            // 0.09 (#342, run 0; #587's fits), this and the wash's own pitch below at cruise
+            // thrust (worth −0.01) together. The command is the two over the elevons'
+            // effectiveness, so they scale together.
+            c_pitch_0: -0.115,
             // Calibrated to RealFlight (#342, run 0): default-gain 30°/s roll doublets peak at
             // 3.2× in their first half, here 3.24×.
             c_roll_aileron: 2.4 * base.model.wing.aero.c_roll_aileron,
@@ -186,6 +187,12 @@ pub fn explora() -> TailsitterAirframe {
         // fitted on RealFlight's hover descents, where a soft pitch tune swings the nose from
         // 2.5 m/s of sink and the autotuned one holds at 3 m/s. Higher: from 1.6 the autotuned
         // tune swings at 3 m/s too (`docs/findings/explora-descent-swing.md`).
+        // The wash pitches the wing nose down, so the hover holds about 0.1 of nose-up elevon
+        // as RealFlight's does, and harder past the stall nose first, so the back ramp at 0.65
+        // thrust stalls at full elevon where 0.70 holds on half
+        // (`docs/findings/explora-wash-pitch.md`). More nose down in the hover: the soft
+        // tune's descents stop swinging (its rate I pins at `max_integral`); past the stall:
+        // 0.70 stalls too.
         prop_wash: PropWash::props(
             2,
             PROP_DIAMETER_M,
@@ -193,7 +200,9 @@ pub fn explora() -> TailsitterAirframe {
             PropWash::span_damping_share(MOTOR_ARM_M, PROP_DIAMETER_M, SPAN_M),
         )
         .with_roll_fraction(0.14)
-        .with_sink_loss(1.4),
+        .with_sink_loss(1.4)
+        .with_pitch_moment(-0.13)
+        .with_stall_pitch_moment(-2.0),
     };
     let plane_stabilizer = PlaneStabilizerConfig {
         rate: explora_rate(),
