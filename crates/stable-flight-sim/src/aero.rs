@@ -43,7 +43,7 @@ pub(crate) struct Wash {
     pub pitch_moment_pa: f32,
     /// Pitch moment the wash adds past the stall flying nose first, as `pitch_moment_pa`, before
     /// [`wrench`] scales it by how far past the stall, how nose first, and the free stream's
-    /// share of the flow over the surfaces, in Pa: positive nose up.
+    /// share of the pressure over the surfaces, in Pa: positive nose up.
     pub stall_pitch_moment_pa: f32,
     /// The airspeed whose rate damping the wash adds, in m/s: a flow over the whole wing at it
     /// damps as the wash does over its part of the span. Non-negative.
@@ -141,7 +141,13 @@ pub(crate) fn wrench(
     // takes over the flow on the surfaces: a hover's wash alone, an attached wing, or a
     // tail-first sink adds nothing (#661).
     let free_pa = pressure_area_n / model.wing_area_m2;
-    let free_share = free_pa / (free_pa + wash.pressure_pa.max(0.0));
+    let total_pa = free_pa + wash.pressure_pa.max(0.0);
+    // Barely moving with no wash, both round to 0: nothing to share.
+    let free_share = if total_pa > 0.0 {
+        free_pa / total_pa
+    } else {
+        0.0
+    };
     let stall_share = blend * free_share * cos_alpha.max(0.0);
     let stall_wash_nm = Vec3::new(
         0.0,
