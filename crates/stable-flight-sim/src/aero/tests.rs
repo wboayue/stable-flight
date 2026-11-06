@@ -452,6 +452,7 @@ fn wash_works_the_surfaces_and_damps_the_rates() {
         roll_pressure_pa: 200.0,
         damping_mps: 4.0,
         pitch_moment_pa: 0.0,
+        stall_pitch_moment_pa: 0.0,
     };
     let wash_scale = 0.5 * AIR_DENSITY_KGPM3 * wash.damping_mps * model.wing_area_m2;
     let elevator = Vec3::new(0.0, 0.2, 0.0);
@@ -521,6 +522,55 @@ fn wash_pitch_moment_adds_its_pressure_times_area_and_chord() {
     }
 }
 
+/// The wash's stall pitch moment acts past the stall nose first, as far past the stall, as
+/// `cos α`, and as the free stream's share of the pressure over the surfaces: nothing still,
+/// attached, broadside, or tail first.
+#[test]
+fn wash_stall_pitch_moment_acts_past_the_stall_nose_first() {
+    let model = model();
+    let c = &model.aero;
+    let pressure_pa = 50.0;
+    let plain = Wash {
+        pressure_pa,
+        roll_pressure_pa: pressure_pa,
+        ..Wash::default()
+    };
+    let pitching = Wash {
+        stall_pitch_moment_pa: -10.0,
+        ..plain
+    };
+    let area_chord_m3 = model.wing_area_m2 * model.chord_m;
+    let stalled_rad = 60.0f32.to_radians();
+    let stalled_share = {
+        let free_pa = pressure_area_n(&model, 10.0) / model.wing_area_m2;
+        stall_blend(c, stalled_rad) * libm::cosf(stalled_rad) * free_pa / (free_pa + pressure_pa)
+    };
+    // (case, air m/s, share of the moment)
+    let cases = [
+        ("still", Vec3::zeros(), 0.0),
+        ("attached", air(15.0, 0.05, 0.0), 0.0),
+        (
+            "stalled nose first",
+            air(10.0, stalled_rad, 0.0),
+            stalled_share,
+        ),
+        ("broadside", air(10.0, FRAC_PI_2, 0.0), 0.0),
+        ("tail first", air(10.0, PI - 0.3, 0.0), 0.0),
+    ];
+    for (case, air_mps, share) in cases {
+        let none = Vec3::zeros();
+        let with = wrench(&model, air_mps, none, none, pitching);
+        let without = wrench(&model, air_mps, none, none, plain);
+        let added_nm = with.torque_nm - without.torque_nm;
+        check!(
+            (added_nm.y - share * -10.0 * area_chord_m3).abs() < 1e-4,
+            "{case}: {added_nm:?}"
+        );
+        check!(added_nm.x == 0.0 && added_nm.z == 0.0, "{case}");
+    }
+    check!(stalled_share > 0.1, "{stalled_share}");
+}
+
 /// The roll pressure works the ailerons alone, the pressure the elevator: in still air, with
 /// each deflected, each moment follows its own pressure.
 #[test]
@@ -532,6 +582,7 @@ fn roll_pressure_works_the_ailerons_alone() {
         roll_pressure_pa: 50.0,
         damping_mps: 0.0,
         pitch_moment_pa: 0.0,
+        stall_pitch_moment_pa: 0.0,
     };
     let deflection_rad = Vec3::new(0.1, 0.2, 0.0);
     let still = wrench(&model, Vec3::zeros(), Vec3::zeros(), deflection_rad, wash);
@@ -556,6 +607,7 @@ fn stalled_surfaces_work_in_the_wash_alone() {
         roll_pressure_pa: 50.0,
         damping_mps: 0.0,
         pitch_moment_pa: 0.0,
+        stall_pitch_moment_pa: 0.0,
     };
     let elevator_rad = 0.2;
     let elevator = Vec3::new(0.0, elevator_rad, 0.0);

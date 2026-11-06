@@ -52,7 +52,8 @@ pub struct TailsitterModel {
 /// damping; the wing's lift and drag see the free stream only. The total thrust over the total
 /// disc area washes every surface evenly. The wash can also pitch the wing on its own,
 /// [`pitch_moment`](Self::pitch_moment) per unit of the pressure the surfaces see, so a hover
-/// holds its elevons off center in still air.
+/// holds its elevons off center in still air, and [`stall_pitch_moment`](Self::stall_pitch_moment)
+/// more past the stall flying nose first.
 ///
 /// # Examples
 ///
@@ -90,6 +91,12 @@ pub struct PropWash {
     /// wash pitches nothing undeflected. An empirical fit, as `sink_loss`: it fades as a sink
     /// takes the wash away, and pushes nothing once the sink has taken it all.
     pub pitch_moment: f32,
+    /// Pitch moment coefficient the wash adds past the stall, on the pressure the surfaces
+    /// see, as [`pitch_moment`](Self::pitch_moment), positive nose up. It acts as far as the
+    /// wing is past the stall, as `cos α` (nose first only), and as the free stream's share of
+    /// the pressure over the surfaces, so neither a hover, an attached cruise, nor a tail-first
+    /// sink feels it. 0 ([`props`](Self::props)). An empirical fit, as `pitch_moment`.
+    pub stall_pitch_moment: f32,
 }
 
 /// [`PropWash::sink_loss`] by momentum theory alone.
@@ -107,6 +114,7 @@ impl PropWash {
             damping_fraction,
             sink_loss: DEFAULT_SINK_LOSS,
             pitch_moment: 0.0,
+            stall_pitch_moment: 0.0,
         }
     }
 
@@ -160,6 +168,24 @@ impl PropWash {
         }
     }
 
+    /// This wash pitching the wing past the stall by `stall_pitch_moment` on its pressure over
+    /// the surfaces, positive nose up.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use stable_flight_sim::PropWash;
+    ///
+    /// let wash = PropWash::props(2, 0.254, 0.4, 0.24).with_stall_pitch_moment(-3.0);
+    /// assert_eq!(wash.stall_pitch_moment, -3.0);
+    /// ```
+    pub fn with_stall_pitch_moment(self, stall_pitch_moment: f32) -> Self {
+        PropWash {
+            stall_pitch_moment,
+            ..self
+        }
+    }
+
     /// The share of a wing's rate damping inside the wash of a prop `motor_arm_m` out each side,
     /// `diameter_m` across, on a wing of `span_m`: by strip theory each strip of span damps a
     /// roll as its distance from the center squared, so the share is `∫y²` over the washed
@@ -187,6 +213,7 @@ impl PropWash {
         Wash {
             pressure_pa,
             pitch_moment_pa: self.pitch_moment * pressure_pa.max(0.0),
+            stall_pitch_moment_pa: self.stall_pitch_moment * pressure_pa.max(0.0),
             roll_pressure_pa: self.roll_fraction * added_pa,
             damping_mps: self.damping_fraction * flow_mps,
         }
@@ -227,7 +254,13 @@ impl TailsitterModel {
             ("prop_wash.disc_area_m2", self.prop_wash.disc_area_m2),
             ("prop_wash.sink_loss", self.prop_wash.sink_loss),
         ])?;
-        check_finite(&[("prop_wash.pitch_moment", self.prop_wash.pitch_moment)])?;
+        check_finite(&[
+            ("prop_wash.pitch_moment", self.prop_wash.pitch_moment),
+            (
+                "prop_wash.stall_pitch_moment",
+                self.prop_wash.stall_pitch_moment,
+            ),
+        ])?;
         check_fraction(&[
             (
                 "prop_wash.surface_fraction",
