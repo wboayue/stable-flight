@@ -69,6 +69,10 @@ Code comments and docs link here instead of redefining a term.
 
 - **Setpoint:** the target a loop drives toward (an angle, a rate, a velocity).
 - **Error:** setpoint minus measurement.
+- **Control law:** the equation a loop applies to its error (and setpoint) to produce its
+  command: a PID, the plane's path following (L1) or its height and airspeed (TECS). Changing
+  one flies the same params differently. The sim's thrust law and the wind estimator's drag
+  law aren't control laws: they model the vehicle and the air, not a controller.
 - **Cascade:** loops nested outer to inner, each one's output the next one's setpoint. For a
   copter: position → velocity → attitude angle → body rate → moment. Inner loops run at least
   as fast and are tuned first. Each loop's form:
