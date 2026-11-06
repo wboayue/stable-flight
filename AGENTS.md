@@ -198,8 +198,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
 Write for a competent Rust developer who isn't a controls expert, reviewing the diff by hand.
 
 - **Plain words before math.** A controller's or estimator's rustdoc says what it does
-  physically and why, then the law: "pushes the nose down harder the further airspeed falls
-  below trim", then the equation. Terms of art link the
+  physically and why ("pushes the nose down harder the further airspeed falls below trim"),
+  then the equation. Terms of art link the
   [glossary](docs/glossary.md). A PR that adds a term, changes what one means in code, or
   removes its last use updates the glossary in the same PR.
 - **Names over symbols.** `roll_error_rad`, `pitch_rate_integral`, not `e_phi`, `i_q`. Textbook
@@ -341,8 +341,8 @@ Related code sits together, so a reviewer reads one behavior in one place.
   user-facing change adds a bullet under `[Unreleased]` (`Added`/`Changed`/`Deprecated`/
   `Removed`/`Fixed`/`Security`, each heading once: add to an existing one), breaking changes
   marked **Breaking** (an API, CLI, or wire change users must act on) or **Breaking
-  (behavior):** (unchanged code and params fly differently: a new default, filter, or control
-  law); skip internal churn. A new
+  (behavior):** (unchanged code and params fly differently: a new default, filter, or
+  [control law](docs/glossary.md)); skip internal churn. A new
   crate's `[Unreleased]` is a feature summary until its first release, with no **Breaking**
   marks. Once a link release is out, any message shape change bumps `PROTOCOL_VERSION`.
 - **New published crate:** inherits `[workspace.package]`, has its own `README.md` (absolute
