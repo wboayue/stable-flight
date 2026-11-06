@@ -88,9 +88,9 @@ pub fn explora() -> TailsitterAirframe {
     const PITCH_SPEED_MPS: f32 = 35.0;
     const TRIM_AIRSPEED_MPS: f32 = 14.0;
     /// Airspeed at which the trim moment is `c_pitch_0`'s, leaving dynamic pressure on either
-    /// side, in m/s: the slowest of RealFlight's fits (#648). Lower: the trim at 14 m/s falls below RealFlight's (13: 0.085
-    /// against 0.089), and a stronger `c_pitch_0` to make it up hands #661's 0.65 back ramp
-    /// over instead of stalling it.
+    /// side, in m/s: the slowest of RealFlight's fits (#648). Lower: the trim at 14 m/s falls
+    /// below RealFlight's (13: 0.085 against 0.089), and a stronger `c_pitch_0` to make it up
+    /// hands #661's 0.65 back ramp over instead of stalling it.
     const TRIM_KNEE_MPS: f32 = 14.0;
     let base = tailsitter();
     let airplane = plane().model.aero;
@@ -150,8 +150,9 @@ pub fn explora() -> TailsitterAirframe {
                 low_exponent: 0.5,
                 // Below it the moment follows dynamic pressure again, so the back ramp's attached
                 // phase holds RealFlight's elevons (0.70: 0.62 against 0.53; 0.75: 0.26 against
-                // 0.23) and 0.65 still stalls. Lower: more nose-down moment slowing down, 0.70 no
-                // longer clean from 6; higher: less, 0.75 at 0.23 from 8 (#666).
+                // 0.23) and 0.65 still stalls. Lower: more nose-down moment at low airspeed, and
+                // from 6 the 0.70 ramp is no longer clean; higher: less, 0.75 at 0.23 from 8
+                // (#666).
                 floor_mps: 7.0,
             }),
             // Calibrated to RealFlight (#342, run 0): default-gain 30°/s roll doublets peak at
