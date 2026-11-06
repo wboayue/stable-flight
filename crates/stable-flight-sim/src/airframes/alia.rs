@@ -104,6 +104,7 @@ pub fn alia250() -> QuadPlaneAirframe {
             c_roll_aileron: 0.077,
             c_roll_rudder: -0.004,
             c_pitch_0: 0.068,
+            c_pitch_0_knee: None,
             c_pitch_alpha: -1.48,
             post_stall_pitch_share: 0.0,
             c_pitch_q: -25.0,
