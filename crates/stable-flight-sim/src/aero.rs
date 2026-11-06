@@ -41,6 +41,10 @@ pub(crate) struct Wash {
     /// Pitch moment the wash puts on the wing undeflected, over wing area times chord, in Pa:
     /// positive nose up.
     pub pitch_moment_pa: f32,
+    /// Pitch moment the wash adds past the stall flying nose first, as `pitch_moment_pa`, before
+    /// [`wrench`] scales it by how far past the stall, how nose first, and the free stream's
+    /// share of the flow over the surfaces, in Pa: positive nose up.
+    pub stall_pitch_moment_pa: f32,
     /// The airspeed whose rate damping the wash adds, in m/s: a flow over the whole wing at it
     /// damps as the wash does over its part of the span. Non-negative.
     pub damping_mps: f32,
@@ -58,7 +62,9 @@ pub(crate) struct Wash {
 /// rather than divided by it, so they vanish smoothly as the airspeed goes to zero. The wash
 /// adds its damping on top ([`Wash::damping_mps`]), so at zero airspeed the surfaces in the wash
 /// act, the wash damps the turn rates, and it pitches the wing by
-/// [`Wash::pitch_moment_pa`].
+/// [`Wash::pitch_moment_pa`]. Moving past the stall nose first, it also pitches the wing by
+/// [`Wash::stall_pitch_moment_pa`], scaled by the stall's blend, `cos α`, and the free stream's
+/// share of the pressure over the surfaces, `q / (q + wash)`.
 pub(crate) fn wrench(
     model: &FixedWingModel,
     air_mps: Vec3,
@@ -131,11 +137,23 @@ pub(crate) fn wrench(
         symmetric_area_n * chord * pitch_coefficient(c, alpha_rad, blend, sin_alpha, cos_alpha);
     let yaw_nm = pressure_area_n * span * c.c_yaw_beta * beta_rad;
     let static_nm = Vec3::new(roll_nm, pitch_nm, yaw_nm);
+    // Past the stall, flying nose first, the wash pitches the wing harder as the free stream
+    // takes over the flow on the surfaces: a hover's wash alone, an attached wing, or a
+    // tail-first sink adds nothing (#661).
+    let free_pa = pressure_area_n / model.wing_area_m2;
+    let free_share = free_pa / (free_pa + wash.pressure_pa.max(0.0));
+    let stall_share = blend * free_share * cos_alpha.max(0.0);
+    let stall_wash_nm = Vec3::new(
+        0.0,
+        stall_share * wash.stall_pitch_moment_pa * model.wing_area_m2 * chord,
+        0.0,
+    );
 
     Aero {
         force_n: force_n + surfaces.force_n,
         torque_nm: static_nm
             + wash_pitch_nm
+            + stall_wash_nm
             + rate_moments(model, rate_scale, rates_radps)
             + surfaces.torque_nm,
         alpha_rad,
