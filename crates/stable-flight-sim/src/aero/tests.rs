@@ -571,6 +571,29 @@ fn wash_stall_pitch_moment_acts_past_the_stall_nose_first() {
     check!(stalled_share > 0.1, "{stalled_share}");
 }
 
+/// Barely moving, with no wash, the free stream's pressure rounds to 0: the stall pitch moment
+/// adds nothing rather than dividing 0 by 0.
+#[test]
+fn wash_stall_pitch_moment_is_finite_barely_moving() {
+    let model = model();
+    let none = Vec3::zeros();
+    // Speeds whose square still counts but whose dynamic pressure rounds to 0 in f32.
+    for step in 0..40 {
+        let speed_mps = 2e-23 + step as f32 * 1e-24;
+        let barely = wrench(
+            &model,
+            air(speed_mps, 1.0, 0.0),
+            none,
+            none,
+            Wash::default(),
+        );
+        check!(
+            barely.torque_nm.iter().all(|nm| nm.is_finite()),
+            "{speed_mps}: {barely:?}"
+        );
+    }
+}
+
 /// The roll pressure works the ailerons alone, the pressure the elevator: in still air, with
 /// each deflected, each moment follows its own pressure.
 #[test]
