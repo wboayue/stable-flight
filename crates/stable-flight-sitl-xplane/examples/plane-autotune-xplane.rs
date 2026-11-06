@@ -281,15 +281,7 @@ fn main() -> ExitCode {
 
     let mut airframe = airframes::alia250();
     airframe.stabilizer.plane = scaled(airframe.stabilizer.plane, args.rate_scale);
-    let plane = airframe.stabilizer.plane;
-    let hold = PlaneTuneHoldConfig {
-        recover_to: FlightRegime::Copter,
-        return_radius_m: HOLD_RETURN_RADIUS_M,
-        ..PlaneTuneHoldConfig::new(
-            airframe.guidance.plane.cruise_thrust,
-            plane.trim_airspeed_mps,
-        )
-    };
+    let cruise_thrust = airframe.guidance.plane.cruise_thrust;
 
     let bridge = XPlaneUdpBridge::connect(&args.host).expect("failed to open the socket");
     let vehicle = match XPlaneVehicle::connect(XPlaneConfiguration::new(bridge, airframe.mapping)) {
@@ -326,8 +318,13 @@ fn main() -> ExitCode {
         info!("param {name} = {value}");
     }
 
-    // The plan and envelope read the plane side as the params left it.
+    // The hold, plan, and envelope read the plane side as the params left it.
     let plane = *SideConfig::<PlaneSide>::side(flight_loop.stabilizer().config());
+    let hold = PlaneTuneHoldConfig {
+        recover_to: FlightRegime::Copter,
+        return_radius_m: HOLD_RETURN_RADIUS_M,
+        ..PlaneTuneHoldConfig::new(cruise_thrust, plane.trim_airspeed_mps)
+    };
     let plan = plan(&args, &plane);
     let autotune =
         PlaneAutotune::new(&plan, PlaneEnvelope::for_plane(&plane)).expect("valid autotune plan");

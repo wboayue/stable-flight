@@ -341,12 +341,6 @@ where
     };
     let (commander, switch) = PlaneTuneFlight::new(script, home);
 
-    let plane = *SideConfig::<PlaneSide>::side(pipeline.stabilizer.config());
-    let hold = PlaneTuneHoldConfig {
-        recover_to: FlightRegime::Copter,
-        ..PlaneTuneHoldConfig::new(cruise_thrust, plane.trim_airspeed_mps)
-    };
-
     // The link: the publisher writes it each tick (the flight loop's telemetry), and the poller
     // reads it and serves params between ticks. Queue sizes: 32 param requests, 16 replies.
     let (link_rx, link_tx) = UdpLink::bind(&args.link_bind, &args.link_peer)
@@ -373,6 +367,12 @@ where
         info!("param {name} = {value}");
     }
 
+    // The hold, plan, and envelope read the plane side as the params left it.
+    let plane = *SideConfig::<PlaneSide>::side(flight_loop.stabilizer().config());
+    let hold = PlaneTuneHoldConfig {
+        recover_to: FlightRegime::Copter,
+        ..PlaneTuneHoldConfig::new(cruise_thrust, plane.trim_airspeed_mps)
+    };
     let plan = plan(args, &plane);
     let autotune =
         PlaneAutotune::new(&plan, PlaneEnvelope::for_plane(&plane)).expect("valid autotune plan");
