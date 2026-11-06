@@ -87,6 +87,11 @@ pub fn explora() -> TailsitterAirframe {
     /// back ramp, more cruise thrust.
     const PITCH_SPEED_MPS: f32 = 35.0;
     const TRIM_AIRSPEED_MPS: f32 = 14.0;
+    /// Airspeed above which the trim moment leaves dynamic pressure, in m/s: the slowest of
+    /// RealFlight's fits (#648). Lower: the trim at 14 m/s falls below RealFlight's (13: 0.085
+    /// against 0.089), and a stronger `c_pitch_0` to make it up hands #661's 0.65 back ramp
+    /// over instead of stalling it.
+    const TRIM_KNEE_MPS: f32 = 14.0;
     let base = tailsitter();
     let airplane = plane().model.aero;
     let mixer = base.mixer;
@@ -130,15 +135,13 @@ pub fn explora() -> TailsitterAirframe {
             // Calibrated to RealFlight: level flight at 14 m/s takes a nose-up moment command of
             // 0.09 (#342, run 0; #587's fits), this and the wash's own pitch below at cruise
             // thrust (worth −0.01) together. The command is the two over the elevons'
-            // effectiveness, so below trim airspeed they scale together.
+            // effectiveness, so below the knee they scale together.
             c_pitch_0: -0.115,
-            // Above trim airspeed RealFlight's trim moment grows as about V^0.9, so the command
-            // that holds it falls as V^-0.73: 0.089 at 14 m/s, 0.074 at 18 (#648); here 0.090
-            // and 0.073. Below trim it stays on V², where #661's back ramps are fitted: any
-            // stronger nose-down moment there hands the 0.65 ramp over instead of stalling it.
-            // Higher: the trim command holds up at speed.
+            // Past the knee RealFlight's trim moment grows as about V^0.9, so the command that
+            // holds it falls as V^-0.73: 0.089 at 14 m/s, 0.074 at 18 (#648); here 0.090 and
+            // 0.073. Higher: the trim command holds up at speed.
             c_pitch_0_knee: Some(PitchTrimKnee {
-                knee_mps: TRIM_AIRSPEED_MPS,
+                knee_mps: TRIM_KNEE_MPS,
                 exponent: 1.0,
             }),
             // Calibrated to RealFlight (#342, run 0): default-gain 30°/s roll doublets peak at

@@ -191,14 +191,14 @@ fn pitch_coefficient(
 }
 
 /// What [`c_pitch_0_knee`](AeroCoefficients::c_pitch_0_knee) adds to the zero-α pitch moment
-/// coefficient at `speed_mps`: past the knee the coefficient falls as `(knee / V)^(2 − exponent)`,
-/// so the moment grows as `V^exponent`; 0 at or below it, or without one.
+/// coefficient at `speed_mps` (finite: [`wrench`] returns before it for unknown air): past the
+/// knee the coefficient scales by `(knee / V)^(2 − exponent)`, so the moment grows as
+/// `V^exponent`; 0 at or below it, or without one.
 fn pitch_0_past_knee(c: &AeroCoefficients, speed_mps: f32) -> f32 {
     let Some(knee) = c.c_pitch_0_knee else {
         return 0.0;
     };
-    // An unknown speed takes no correction.
-    if speed_mps.is_nan() || speed_mps <= knee.knee_mps {
+    if speed_mps <= knee.knee_mps {
         return 0.0;
     }
     let share = libm::powf(knee.knee_mps / speed_mps, 2.0 - knee.exponent);

@@ -42,10 +42,10 @@ pub enum ThrustFalloff {
     },
 }
 
-/// Where a wing's zero-α pitch moment ([`c_pitch_0`](AeroCoefficients::c_pitch_0)) stops
-/// growing with dynamic pressure: past `knee_mps` it grows as `V^exponent` instead of `V²`, so
-/// the elevator that trims it (its authority still growing as `V²`) holds less the faster the
-/// wing flies. Below the knee it grows as `V²`.
+/// Where a wing's zero-α pitch moment ([`c_pitch_0`](AeroCoefficients::c_pitch_0)) leaves
+/// dynamic pressure: below `knee_mps` it grows as `V²`, past it as `V^exponent`. With an
+/// exponent under 2 the elevator that trims it (its authority still growing as `V²`) holds less
+/// the faster the wing flies; over 2, more.
 ///
 /// # Examples
 ///
@@ -64,7 +64,7 @@ pub enum ThrustFalloff {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PitchTrimKnee {
-    /// Airspeed past which the moment grows slower than dynamic pressure, in m/s. Positive.
+    /// Airspeed past which the moment grows as `V^exponent`, in m/s. Positive.
     pub knee_mps: f32,
     /// How the moment grows with airspeed past the knee: as `V^exponent` (2 is dynamic
     /// pressure's). Finite.
@@ -179,8 +179,8 @@ pub struct AeroCoefficients {
     pub c_roll_rudder: f32,
     /// Pitch moment at zero α.
     pub c_pitch_0: f32,
-    /// Where [`c_pitch_0`](Self::c_pitch_0)'s moment stops growing with dynamic pressure; `None`
-    /// grows with it at every airspeed.
+    /// Where [`c_pitch_0`](Self::c_pitch_0)'s moment leaves dynamic pressure; `None` grows with
+    /// it at every airspeed.
     pub c_pitch_0_knee: Option<PitchTrimKnee>,
     /// Pitch moment per unit of `sin α`, per rad at small α (static stability; negative is
     /// stable).
