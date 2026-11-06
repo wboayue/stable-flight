@@ -5,6 +5,7 @@ use assert2::check;
 
 use super::*;
 use crate::airframes;
+use crate::fixed_wing::PitchTrimKnee;
 
 fn model() -> FixedWingModel {
     airframes::plane().model
@@ -241,6 +242,46 @@ fn moments_point_the_contract_way() {
                 check!(change_nm[axis] * sign > 0.0, "{case}: {change_nm:?}");
             }
         }
+    }
+}
+
+/// Past its knee the zero-α pitch moment grows as `V^exponent` rather than with dynamic
+/// pressure; at and below the knee, and without one, it is the coefficient's.
+#[test]
+fn pitch_trim_moment_grows_slower_past_its_knee() {
+    let knee = PitchTrimKnee {
+        knee_mps: 10.0,
+        exponent: 1.0,
+    };
+    let zero_alpha_pitch_nm = |model: &FixedWingModel, speed_mps: f32| {
+        wrench(
+            model,
+            air(speed_mps, 0.0, 0.0),
+            Vec3::zeros(),
+            Vec3::zeros(),
+            Wash::default(),
+        )
+        .torque_nm
+        .y
+    };
+    let plain = model();
+    let kneed = FixedWingModel {
+        aero: AeroCoefficients {
+            c_pitch_0_knee: Some(knee),
+            ..plain.aero
+        },
+        ..plain
+    };
+    // (case, airspeed in m/s, kneed moment over the plain one)
+    let cases = [
+        ("below the knee", 5.0, 1.0),
+        ("at the knee", 10.0, 1.0),
+        ("past the knee, V^1 against V^2", 20.0, 0.5),
+        ("far past it", 40.0, 0.25),
+    ];
+    for (case, speed_mps, share) in cases {
+        let ratio = zero_alpha_pitch_nm(&kneed, speed_mps) / zero_alpha_pitch_nm(&plain, speed_mps);
+        check!((ratio - share).abs() < 1e-4, "{case}: {ratio}");
     }
 }
 

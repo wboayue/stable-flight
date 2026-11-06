@@ -42,6 +42,35 @@ pub enum ThrustFalloff {
     },
 }
 
+/// Where a wing's zero-α pitch moment ([`c_pitch_0`](AeroCoefficients::c_pitch_0)) stops
+/// growing with dynamic pressure: past `knee_mps` it grows as `V^exponent` instead of `V²`, so
+/// the elevator that trims it (its authority still growing as `V²`) holds less the faster the
+/// wing flies. Below the knee it grows as `V²`.
+///
+/// # Examples
+///
+/// ```
+/// use stable_flight_sim::{AeroCoefficients, FixedWingModel, PitchTrimKnee};
+///
+/// let plane = stable_flight_sim::airframes::plane().model;
+/// let model = FixedWingModel {
+///     aero: AeroCoefficients {
+///         c_pitch_0_knee: Some(PitchTrimKnee { knee_mps: 14.0, exponent: 1.0 }),
+///         ..plane.aero
+///     },
+///     ..plane
+/// };
+/// assert!(model.validate().is_ok());
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PitchTrimKnee {
+    /// Airspeed past which the moment grows slower than dynamic pressure, in m/s. Positive.
+    pub knee_mps: f32,
+    /// How the moment grows with airspeed past the knee: as `V^exponent` (2 is dynamic
+    /// pressure's). Finite.
+    pub exponent: f32,
+}
+
 /// Physical parameters of a simulated airplane: a rigid body with a wing, three control
 /// surfaces, and a tractor prop along body `x`.
 ///
@@ -150,6 +179,9 @@ pub struct AeroCoefficients {
     pub c_roll_rudder: f32,
     /// Pitch moment at zero α.
     pub c_pitch_0: f32,
+    /// Where [`c_pitch_0`](Self::c_pitch_0)'s moment stops growing with dynamic pressure; `None`
+    /// grows with it at every airspeed.
+    pub c_pitch_0_knee: Option<PitchTrimKnee>,
     /// Pitch moment per unit of `sin α`, per rad at small α (static stability; negative is
     /// stable).
     pub c_pitch_alpha: f32,
@@ -225,7 +257,7 @@ impl FixedWingModel {
     /// friction, or motor delay that is negative or not finite; [`ModelError::DelayTooLong`] for
     /// a motor delay over [`MAX_ACTUATOR_DELAY_S`]; [`ModelError::NotFraction`] for a stall
     /// share outside `[0, 1]`; [`ModelError::NotFinite`] for any other coefficient that isn't
-    /// finite.
+    /// finite (a [`PitchTrimKnee`]'s knee must be positive).
     pub fn validate(&self) -> Result<(), ModelError> {
         let aero = &self.aero;
         check_positive(&[
@@ -260,6 +292,10 @@ impl FixedWingModel {
             ThrustFalloff::PitchSpeed { full_mps } => {
                 check_positive(&[("thrust_falloff.full_mps", full_mps)])?
             }
+        }
+        if let Some(knee) = aero.c_pitch_0_knee {
+            check_positive(&[("aero.c_pitch_0_knee.knee_mps", knee.knee_mps)])?;
+            check_finite(&[("aero.c_pitch_0_knee.exponent", knee.exponent)])?;
         }
         if self.motor_delay_s > MAX_ACTUATOR_DELAY_S {
             return Err(ModelError::DelayTooLong("motor_delay_s"));

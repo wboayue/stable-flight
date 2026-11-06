@@ -97,6 +97,7 @@ pub fn plane() -> PlaneAirframe {
             c_roll_aileron: 0.25,
             c_roll_rudder: -0.037,
             c_pitch_0: 0.045,
+            c_pitch_0_knee: None,
             c_pitch_alpha: -0.7,
             post_stall_pitch_share: 0.0,
             c_pitch_q: -20.0,

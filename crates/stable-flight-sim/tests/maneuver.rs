@@ -492,15 +492,16 @@ const MIN_THRUST_STEP: f32 = 0.01;
 const EXPLORA_MPS_PER_THRUST: f32 = 31.0;
 
 /// How far the sim's airspeed lost per unit of thrust step may stray from RealFlight's, as a
-/// share of it: measured 40.7, 31% above; prop falloff and drag that keep the eXplora's hover,
+/// share of it: measured 39.6, 28% above; prop falloff and drag that keep the eXplora's hover,
 /// cruise, and back ramps on RealFlight's move it only between 36 and 41 (#651).
 const EXPLORA_SPEED_BAND: f32 = 0.35;
 
 /// Most pitch the eXplora's centered rate sticks drift per m/s of airspeed they lose, in rad:
-/// measured 1.15°, and 1.4° leaves about 1.2×. RealFlight's drifts 0.21° over the 0.58 m/s its
+/// measured 1.04°, and 1.4° leaves about 1.35×. RealFlight's drifts 0.21° over the 0.58 m/s its
 /// second pauses lose, 0.36° per m/s; its first pauses drift 0.18° over 0.30 m/s, mostly late
-/// and nose down from the 2° bank they start in rather than from the step (#642).
-// TODO(#648): RealFlight's 0.36° plus margin once the sim's trim follows RealFlight's in airspeed.
+/// and nose down from the 2° bank they start in rather than from the step (#642). The sim's
+/// trim follows RealFlight's in airspeed above trim (#648), but the pause loses speed below it.
+// TODO(#666): RealFlight's 0.36° plus margin once the sim's trim follows RealFlight's below trim.
 const EXPLORA_DRIFT_PER_MPS_RAD: f32 = 1.4 * core::f32::consts::PI / 180.0;
 
 /// What [`HOLD_S`] of centered rate sticks at cruise thrust did, from level flight.

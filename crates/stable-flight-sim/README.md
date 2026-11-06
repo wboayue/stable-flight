@@ -114,7 +114,7 @@ Shared by every vehicle:
 
 | Part | Model |
 |---|---|
-| Aerodynamics | Stability derivatives (Beard and McLain, *Small Unmanned Aircraft*, ch. 4) on the air-relative velocity: lift, drag, and the pitch moment on the air in the plane of symmetry alone (air along the span lifts and drags nothing, as Gazebo's `LiftDragPlugin`), lift linear in α, blended by a sigmoid at the stall into a flat plate's, so it falls off past it; parasitic plus induced drag, blended the same way into a flat plate's `2·sin²α`; side force from sideslip and rudder; roll, pitch (static stability on `sin α`), and yaw moments from α, β, the body rates (damping), and the surfaces. Past the stall, per airframe: the pitch moment blends into a flat plate's (its normal force at a center of pressure moving from mid-chord broadside to the three-quarter chord reversed), and the surfaces lose the free stream, working in the prop wash alone (the tailsitters'). Bounded at any α, broadside and backward included |
+| Aerodynamics | Stability derivatives (Beard and McLain, *Small Unmanned Aircraft*, ch. 4) on the air-relative velocity: lift, drag, and the pitch moment on the air in the plane of symmetry alone (air along the span lifts and drags nothing, as Gazebo's `LiftDragPlugin`), lift linear in α, blended by a sigmoid at the stall into a flat plate's, so it falls off past it; parasitic plus induced drag, blended the same way into a flat plate's `2·sin²α`; side force from sideslip and rudder; roll, pitch (static stability on `sin α`), and yaw moments from α, β, the body rates (damping), and the surfaces; per airframe, the zero-α pitch moment grows slower than dynamic pressure past a knee airspeed (`explora()`'s, fitted on RealFlight's trim at 14 and 18 m/s). Past the stall, per airframe: the pitch moment blends into a flat plate's (its normal force at a center of pressure moving from mid-chord broadside to the three-quarter chord reversed), and the surfaces lose the free stream, working in the prop wash alone (the tailsitters'). Bounded at any α, broadside and backward included |
 | Surfaces | First-order lag on each servo; the mixer's servo rows say which of the aileron, elevator, and rudder axes each moves (an axis's deflection is the servos' least-squares fit to the row factors, so elevons work too), times `max_deflection_rad` |
 | Prop | The motor rows, after `motor_delay_s` (a prop slow to spin up; 0 but on the eXplora) and through the motor lag, thrust `max_thrust_n · command²` along body `x`; no torque, no falloff with airspeed |
 
@@ -234,10 +234,10 @@ them apart, and inertia 6–29× the scaled Aerosonde's put its rate fits, step 
 near RealFlight's ([#539](https://github.com/wboayue/stable-flight/issues/539),
 `tests/explora.rs`). Its hover and plane side fly `explora_vtol()`'s gains, RealFlight's autotunes; on them
 its 10 m loops meet RealFlight's bands
-([#630](https://github.com/wboayue/stable-flight/issues/630)). On centered rate sticks its pitch
-drifts 1.16° per m/s of airspeed lost to RealFlight's 0.36°
-([#642](https://github.com/wboayue/stable-flight/issues/642)): its elevon trim holds steady as
-airspeed changes, where RealFlight's goes as V^-0.74
+([#630](https://github.com/wboayue/stable-flight/issues/630)). Above trim airspeed its trim
+moment grows slower than dynamic pressure (`c_pitch_0_knee`), so its elevon trim falls with
+airspeed as RealFlight's does (V^-0.82 against V^-0.74 between 14 and 18 m/s), and its pitch
+control and path turn fit RealFlight's at 18 m/s too
 ([#648](https://github.com/wboayue/stable-flight/issues/648)).
 
 ## Limits
@@ -270,7 +270,10 @@ nose-high at `TRAN_VT_THR` 0.60 and 0.65 and flies 0.70 and 0.75, as the RealFli
 does ([#399](https://github.com/wboayue/stable-flight/issues/399)), on a wash pitch moment
 fitted to RealFlight's hover trim and stalled ramps; its attached high-α pitch moment still
 runs nose up of RealFlight's
-([explora-wash-pitch](../../docs/findings/explora-wash-pitch.md)). Its
+([explora-wash-pitch](../../docs/findings/explora-wash-pitch.md)). Below trim airspeed its trim
+moment still grows as V², so on centered rate sticks its pitch drifts 1.04° per m/s of airspeed
+lost to RealFlight's 0.36°
+([#666](https://github.com/wboayue/stable-flight/issues/666)). Its
 static thrust goes with the motor command squared, where RealFlight's goes about linearly (a
 full-thrust takeoff at 3.0 m/s², against about 6.5 here), and a hover leg at 3 m/s costs it
 1% less thrust than still, where RealFlight's costs 3% more. Its hover descents hold

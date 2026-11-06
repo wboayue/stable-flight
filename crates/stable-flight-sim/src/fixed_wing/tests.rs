@@ -16,7 +16,7 @@ fn rejects_each_out_of_range_parameter() {
     let model = airframes::plane().model;
     // (case, edit, error)
     type Edit = fn(&mut FixedWingModel);
-    let cases: [(&str, Edit, ModelError); 13] = [
+    let cases: [(&str, Edit, ModelError); 15] = [
         (
             "zero span",
             |m| m.span_m = 0.0,
@@ -76,6 +76,26 @@ fn rejects_each_out_of_range_parameter() {
             "NaN surface stall share",
             |m| m.aero.surface_stall_share = f32::NAN,
             ModelError::NotFraction("aero.surface_stall_share"),
+        ),
+        (
+            "zero pitch trim knee",
+            |m| {
+                m.aero.c_pitch_0_knee = Some(PitchTrimKnee {
+                    knee_mps: 0.0,
+                    exponent: 1.0,
+                })
+            },
+            ModelError::NotPositive("aero.c_pitch_0_knee.knee_mps"),
+        ),
+        (
+            "NaN pitch trim exponent",
+            |m| {
+                m.aero.c_pitch_0_knee = Some(PitchTrimKnee {
+                    knee_mps: 14.0,
+                    exponent: f32::NAN,
+                })
+            },
+            ModelError::NotFinite("aero.c_pitch_0_knee.exponent"),
         ),
         (
             "infinite coefficient",

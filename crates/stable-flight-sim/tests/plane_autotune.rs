@@ -64,6 +64,9 @@ impl Commander for LeadThenHold {
 enum Subject {
     Plane,
     Explora,
+    /// The eXplora with its plane side trimmed at this airspeed, in m/s, as RealFlight's fit
+    /// runs at 18 m/s flew it (`PSTAB_ASPD_TRIM`, #648).
+    ExploraTrimmedAt(f32),
     Cobra,
     /// The quadplane with this many times its yaw-rate roll moment (`c_roll_r`): in a bank it
     /// rolls further in, so holding the bank takes a steady aileron the fit from level flight
@@ -102,7 +105,7 @@ impl Subject {
     fn plane_config(self) -> PlaneStabilizerConfig {
         match self {
             Subject::Plane => airframes::plane().stabilizer,
-            Subject::Explora => airframes::explora().stabilizer.plane,
+            Subject::Explora | Subject::ExploraTrimmedAt(_) => self.explora().stabilizer.plane,
             Subject::Cobra | Subject::CobraRollingIn(_) => airframes::quadplane().stabilizer.plane,
             Subject::Alia | Subject::AliaRollingIn(_) => airframes::alia250().stabilizer.plane,
         }
@@ -114,7 +117,7 @@ impl Subject {
                 airframes::plane().guidance.cruise_thrust,
                 FlightRegime::Plane,
             ),
-            Subject::Explora => (
+            Subject::Explora | Subject::ExploraTrimmedAt(_) => (
                 airframes::explora().guidance.plane.cruise_thrust,
                 FlightRegime::Copter,
             ),
@@ -131,6 +134,15 @@ impl Subject {
             recover_to,
             ..PlaneTuneHoldConfig::new(thrust, self.plane_config().trim_airspeed_mps)
         }
+    }
+
+    /// The eXplora as this subject flies it: trimmed at its airspeed if it has one.
+    fn explora(self) -> airframes::TailsitterAirframe {
+        let mut airframe = airframes::explora();
+        if let Subject::ExploraTrimmedAt(trim_mps) = self {
+            airframe.stabilizer.plane.trim_airspeed_mps = trim_mps;
+        }
+        airframe
     }
 }
 
@@ -207,8 +219,8 @@ fn tune_from(
                 (after_s, start),
             )
         }
-        Subject::Explora => {
-            let airframe = airframes::explora();
+        Subject::Explora | Subject::ExploraTrimmedAt(_) => {
+            let airframe = subject.explora();
             let plant = TailsitterPlant::clean(airframe);
             let trim_mps = airframe.stabilizer.plane.trim_airspeed_mps;
             let lead: Box<dyn Commander> = Box::new(Interlude::new(
@@ -516,8 +528,8 @@ fn spec_misses(subject: Subject, config: PlaneStabilizerConfig) -> Vec<String> {
             airframe.stabilizer = config;
             misses_on(&PlanePlant::clean(airframe), steps, max_overshoot)
         }
-        Subject::Explora => {
-            let mut airframe = airframes::explora();
+        Subject::Explora | Subject::ExploraTrimmedAt(_) => {
+            let mut airframe = subject.explora();
             airframe.stabilizer.plane = config;
             misses_on(&TailsitterPlant::clean(airframe), steps, max_overshoot)
         }
@@ -659,7 +671,7 @@ fn explora_fits_as_in_realflight() {
             184.0,
             20.0,
         ),
-        // Measured 62.6, 6.2 below: the stiffness barely follows `c_pitch_alpha` here.
+        // Measured 61.3, 7.5 below: the stiffness barely follows `c_pitch_alpha` here.
         (
             PitchRate,
             "stiffness",
@@ -668,9 +680,9 @@ fn explora_fits_as_in_realflight() {
             93.4,
             10.0,
         ),
-        // Measured 0.94, inside.
+        // Measured 0.83, inside.
         (PitchRate, "damping", |m| m.damping_per_s, 0.0, 1.3, 0.5),
-        // Measured 86.5, 4.5 above: the cruise wash over the elevons.
+        // Measured 86.8, 4.8 above: the cruise wash over the elevons.
         (PitchRate, "control", |m| m.control_radps2, 80.0, 82.0, 5.0),
         // Measured 18.8, 0.5 above.
         (
@@ -681,7 +693,7 @@ fn explora_fits_as_in_realflight() {
             18.29,
             1.0,
         ),
-        // Measured 0.092, 0.003 above.
+        // Measured 0.090, 0.001 above.
         (
             PitchRate,
             "trim moment",
@@ -692,24 +704,121 @@ fn explora_fits_as_in_realflight() {
         ),
     ];
     let run = design_run(Subject::Explora, realflight_fit_start());
-    for (target, term, value, realflight_min, realflight_max, margin) in rows {
-        let fit = run.events.iter().find_map(|event| match event {
-            AutotuneEvent::Measured {
-                target: measured,
-                measurement: Measurement::Wing(model),
-            } if *measured == target => Some(*model),
-            _ => None,
-        });
-        let Some(fit) = fit else {
-            panic!("no {target:?} fit in {:?}", run.events);
-        };
-        let sim = value(&fit);
+    check_fits(&run, &rows);
+}
+
+/// Checks each of `rows` against `run`'s fit of its loop.
+fn check_fits(run: &Run, rows: &[FitRow]) {
+    for &(target, term, value, realflight_min, realflight_max, margin) in rows {
+        let sim = value(&wing_fit(run, target));
         check!(
             sim >= realflight_min - margin && sim <= realflight_max + margin,
             "{target:?} {term}: {sim} against RealFlight's {realflight_min}–{realflight_max}"
         );
     }
 }
+
+/// `run`'s fit of `target`.
+fn wing_fit(run: &Run, target: PlaneLoop) -> WingModel {
+    let fit = run.events.iter().find_map(|event| match event {
+        AutotuneEvent::Measured {
+            target: measured,
+            measurement: Measurement::Wing(model),
+        } if *measured == target => Some(*model),
+        _ => None,
+    });
+    fit.unwrap_or_else(|| panic!("no {target:?} fit in {:?}", run.events))
+}
+
+/// The eXplora's cruise at 18 m/s fits as RealFlight's did there (#648; runs 1–2 at 17.9 m/s,
+/// trimmed at 18 and started on [`realflight_fast_fit_start`]'s gains): the elevons' pitch
+/// authority and the flight path's turn grown with airspeed as RealFlight's, and the trim
+/// command fallen. Margins as [`explora_fits_as_in_realflight`]'s. The pitch stiffness and
+/// damping aren't held: they move with the start gains (#618), and RealFlight's two runs fit
+/// 364 and 586/s².
+#[test]
+fn explora_fits_at_18_mps_as_in_realflight() {
+    use PlaneLoop::{PitchRate, RollRate};
+    let rows: [FitRow; 5] = [
+        // Measured 26.9, 3.8 below: the sim's roll damping grows as V^0.8, RealFlight's V^1.1.
+        (RollRate, "damping", |m| m.damping_per_s, 30.7, 31.1, 5.0),
+        // Measured 305, 11 below.
+        (
+            RollRate,
+            "control",
+            |m| m.control_radps2,
+            316.0,
+            319.0,
+            20.0,
+        ),
+        // Measured 126, 3 above: the cruise wash over the elevons, which keeps their authority
+        // growing slower than V² as RealFlight's does (V^1.65).
+        (
+            PitchRate,
+            "control",
+            |m| m.control_radps2,
+            123.0,
+            123.0,
+            5.0,
+        ),
+        // Measured 23.14, inside.
+        (
+            PitchRate,
+            "path turn",
+            |m| m.path_turn_per_s,
+            23.14,
+            23.15,
+            1.0,
+        ),
+        // Measured 0.073, 0.001 below.
+        (
+            PitchRate,
+            "trim moment",
+            |m| m.trim_moment,
+            0.074,
+            0.074,
+            0.01,
+        ),
+    ];
+    let run = design_run(
+        Subject::ExploraTrimmedAt(FAST_FIT_MPS),
+        realflight_fast_fit_start(),
+    );
+    check_fits(&run, &rows);
+}
+
+/// The eXplora's pitch trim command falls with airspeed as RealFlight's does: as V^-0.74 on
+/// its level legs at 13.4–19 m/s, and V^-0.73 between its fits at 14 and 18 m/s
+/// (`docs/findings/explora-trim-vs-airspeed.md`). The rate loop's airspeed scaling assumes
+/// V^-2, so a trim that falls slower leaves its integral to unwind the difference.
+#[test]
+fn explora_trim_falls_with_airspeed_as_in_realflight() {
+    let slow = design_run(Subject::Explora, realflight_fit_start());
+    let fast = design_run(
+        Subject::ExploraTrimmedAt(FAST_FIT_MPS),
+        realflight_fast_fit_start(),
+    );
+    let trim = |run: &Run| wing_fit(run, PlaneLoop::PitchRate).trim_moment;
+    let slow_mps = Subject::Explora.plane_config().trim_airspeed_mps;
+    let exponent = (trim(&fast) / trim(&slow)).ln() / (FAST_FIT_MPS / slow_mps).ln();
+    check!(
+        (exponent - REALFLIGHT_TRIM_EXPONENT).abs() <= TRIM_EXPONENT_BAND,
+        "V^{exponent}: {} at {slow_mps} m/s, {} at {FAST_FIT_MPS}",
+        trim(&slow),
+        trim(&fast)
+    );
+}
+
+/// The airspeed RealFlight's second fit runs trimmed at, in m/s (#648).
+const FAST_FIT_MPS: f32 = 18.0;
+
+/// How the RealFlight eXplora's level trim command goes with airspeed: V^-0.74 over about 20k
+/// steady rows at 13.4–19 m/s (`docs/findings/explora-trim-vs-airspeed.md`).
+const REALFLIGHT_TRIM_EXPONENT: f32 = -0.74;
+
+/// How far the sim's trim exponent may stray from RealFlight's: RealFlight's own pauses, at
+/// constant thrust, fit V^-1.0, 0.26 off its level legs' (#648). Measured V^-0.82.
+const TRIM_EXPONENT_BAND: f32 = 0.25;
 
 /// The gains RealFlight's fit runs started from (#587): the eXplora's hand tune then, roll P
 /// 0.05, I 0.1, FF 0.1, pitch P 0.08, I 0.8, FF 0.05, τ 0.4 s. The pitch fit's damping and
@@ -729,3 +838,15 @@ fn realflight_fit_start() -> PlaneStabilizerConfig {
     config.time_constant_s = Vec2::new(0.4, 0.4);
     config
 }
+
+/// The gains RealFlight's 18 m/s fit runs started from (#648): `explora_vtol`'s, scaled by
+/// (14/18)² to fly at 18 m/s as they do trimmed at 14 (`--rate-scale 0.605`).
+fn realflight_fast_fit_start() -> PlaneStabilizerConfig {
+    scaled(
+        Subject::ExploraTrimmedAt(FAST_FIT_MPS).plane_config(),
+        REALFLIGHT_FAST_RATE_SCALE,
+    )
+}
+
+/// `--rate-scale` on RealFlight's 18 m/s fit runs: (14/18)², rounded as flown (#648).
+const REALFLIGHT_FAST_RATE_SCALE: f32 = 0.605;

@@ -14,7 +14,7 @@ use stable_flight::{Vec2, Vec3};
 use super::plane::{aerosonde_inertia, plane};
 use super::tailsitter::{TailsitterAirframe, tailsitter};
 use super::{hover_thrust, motor_count};
-use crate::fixed_wing::{AeroCoefficients, FixedWingModel, ThrustFalloff};
+use crate::fixed_wing::{AeroCoefficients, FixedWingModel, PitchTrimKnee, ThrustFalloff};
 use crate::motors::QUADRATIC;
 use crate::{PropWash, TailsitterModel};
 
@@ -45,9 +45,12 @@ use crate::{PropWash, TailsitterModel};
 ///
 /// Its cruise is calibrated to RealFlight's plane autotune fits of it (#587, #619), three
 /// runs at 14 m/s. Its pitch is a flying wing's, stiff in angle of attack and barely damped:
-/// stiffness 63/s², damping 0.9/s, control 87 rad/s², and a path turn of 18.8/s against
+/// stiffness 61/s², damping 0.8/s, control 87 rad/s², and a path turn of 18.8/s against
 /// RealFlight's 69–93, 0–1.3, 80–82, and 18.3. Its roll fits damping 22/s and control
-/// 194 rad/s² against RealFlight's 23–24 and 180–184.
+/// 194 rad/s² against RealFlight's 23–24 and 180–184. At 18 m/s (#648) its pitch control fits
+/// 126 rad/s² and its path turn 23.1/s against RealFlight's 123 and 23.1, and its trim command
+/// falls from 0.090 to 0.073 against RealFlight's 0.089 to 0.074: above trim airspeed its trim
+/// moment grows slower than dynamic pressure, as RealFlight's does.
 ///
 /// Its hover is calibrated to RealFlight's autotune of it (#539), flown with RealFlight's 6 ms
 /// exchange as [`actuator_delay_s`](crate::Perturbations::actuator_delay_s) and 0.01 rad/s of
@@ -127,8 +130,17 @@ pub fn explora() -> TailsitterAirframe {
             // Calibrated to RealFlight: level flight at 14 m/s takes a nose-up moment command of
             // 0.09 (#342, run 0; #587's fits), this and the wash's own pitch below at cruise
             // thrust (worth −0.01) together. The command is the two over the elevons'
-            // effectiveness, so they scale together.
+            // effectiveness, so below trim airspeed they scale together.
             c_pitch_0: -0.115,
+            // Above trim airspeed RealFlight's trim moment grows as about V^0.9, so the command
+            // that holds it falls as V^-0.73: 0.089 at 14 m/s, 0.074 at 18 (#648); here 0.090
+            // and 0.073. Below trim it stays on V², where #661's back ramps are fitted: any
+            // stronger nose-down moment there hands the 0.65 ramp over instead of stalling it.
+            // Higher: the trim command holds up at speed.
+            c_pitch_0_knee: Some(PitchTrimKnee {
+                knee_mps: TRIM_AIRSPEED_MPS,
+                exponent: 1.0,
+            }),
             // Calibrated to RealFlight (#342, run 0): default-gain 30°/s roll doublets peak at
             // 3.2× in their first half, here 3.24×.
             c_roll_aileron: 2.4 * base.model.wing.aero.c_roll_aileron,
