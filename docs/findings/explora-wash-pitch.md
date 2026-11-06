@@ -24,21 +24,24 @@ The gap (RealFlight's moment less the sim's, at the sim's inertia), by phase:
   pressure over the surfaces, `q / (q + wash)`, fits every stalled phase (−0.145 and −3.3 of the
   surfaces' wash pressure). A moment on the hover's share alone fits neither the hover nor the
   stall.
-- **Attached:** the gap grows with α on the free stream, not the wash (the same `gap / q·S·c` at
-  low and high thrust): −0.03 at 3–6°, −0.09 at 6–9°, −0.16 at 9–15°, 0 at cruise's 0–3°. Neither
-  wash term covers it, and a nose-down pitch break from 2° lifts the cruise pitch stiffness past
-  RealFlight's (114/s² against 68.8–93.4, #587).
+- **Attached:** the gap rides the free stream, not the wash (the same `gap / q·S·c` at low and
+  high thrust), and grows as airspeed falls rather than with α: it is the trim moment shrinking
+  slower than dynamic pressure below 14 m/s, as it does in cruise at the same airspeed
+  ([trim against airspeed](explora-trim-vs-airspeed.md), #666). Neither wash term covers it,
+  and a nose-down pitch break from 2° lifts the cruise pitch stiffness past RealFlight's
+  (114/s² against 68.8–93.4, #587).
 
 In the sim, `PropWash::pitch_moment` −0.13 and `stall_pitch_moment` −2.0 (nose first only:
 tail-first sinks are past the stall too, and the stall term there stopped the soft tune's
-descent swing) fly the back ramps as RealFlight's did (`tests/tailsitter_transition.rs`):
+descent swing), with the trim moment below trim airspeed, fly the back ramps as RealFlight's
+did (`tests/tailsitter_transition.rs`):
 
 | `TRAN_VT_THR` | RealFlight | Sim: elevons, most | Sim: sink, most |
 |---|---|---|---|
-| 0.60 | stalled, elevons full | 1.00 | 6.1 m/s |
-| 0.65 | stalled, elevons full | 1.00 | 5.7 m/s |
-| 0.70 | clean, elevons 0.53, sinking 0.4 m/s | 0.55 | 0.40 m/s |
-| 0.75 | clean, elevons 0.23 | 0.15 | 0 |
+| 0.60 | stalled, elevons full | 1.00 | 6.8 m/s |
+| 0.65 | stalled, elevons full | 1.00 | 6.5 m/s |
+| 0.70 | clean, elevons 0.53, sinking 0.4 m/s | 0.62 | 0.34 m/s |
+| 0.75 | clean, elevons 0.23 | 0.26 | 0 |
 
 The hover holds 0.10 of elevon. A wash moment on the hover's share large enough to stall the
 0.65 ramp alone (−0.3) holds 0.23, clips the tuned pitch rate steps past the autotune's limit,
@@ -46,6 +49,5 @@ and stops the soft tune's descent swing ([descent swing](explora-descent-swing.m
 trim near `explora_vtol`'s `max_integral` 0.28 the rate I pins there, where RealFlight's
 0.14 leaves it room.
 
-**So:** the sim eXplora's hover trim and back-ramp stall come from the wash's pitch; its
-attached high-α pitch moment still runs nose up of RealFlight's, so a back ramp's attached
-phase holds less elevon than RealFlight's.
+**So:** the sim eXplora's hover trim and back-ramp stall come from the wash's pitch, and a back
+ramp's attached phase from the trim moment below trim airspeed.

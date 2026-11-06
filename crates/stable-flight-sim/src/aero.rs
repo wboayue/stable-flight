@@ -136,7 +136,7 @@ pub(crate) fn wrench(
     let pitch_nm = symmetric_area_n
         * chord
         * (pitch_coefficient(c, alpha_rad, blend, sin_alpha, cos_alpha)
-            + pitch_0_past_knee(c, symmetric_speed_mps));
+            + pitch_0_off_knee(c, symmetric_speed_mps));
     let yaw_nm = pressure_area_n * span * c.c_yaw_beta * beta_rad;
     let static_nm = Vec3::new(roll_nm, pitch_nm, yaw_nm);
     // Past the stall, flying nose first, the wash pitches the wing harder as the free stream
@@ -193,15 +193,18 @@ fn pitch_coefficient(
 /// What [`c_pitch_0_knee`](AeroCoefficients::c_pitch_0_knee) adds to the zero-α pitch moment
 /// coefficient at `speed_mps` (finite: [`wrench`] returns before it for unknown air): past the
 /// knee the coefficient scales by `(knee / V)^(2 − exponent)`, so the moment grows as
-/// `V^exponent`; 0 at or below it, or without one.
-fn pitch_0_past_knee(c: &AeroCoefficients, speed_mps: f32) -> f32 {
+/// `V^exponent`; below it by `(knee / V)^(2 − low_exponent)`, with `V` no lower than the floor
+/// (or the knee, if the floor is above it); 0 at the knee, or without one.
+fn pitch_0_off_knee(c: &AeroCoefficients, speed_mps: f32) -> f32 {
     let Some(knee) = c.c_pitch_0_knee else {
         return 0.0;
     };
-    if speed_mps <= knee.knee_mps {
-        return 0.0;
-    }
-    let share = libm::powf(knee.knee_mps / speed_mps, 2.0 - knee.exponent);
+    let share = if speed_mps > knee.knee_mps {
+        libm::powf(knee.knee_mps / speed_mps, 2.0 - knee.exponent)
+    } else {
+        let low_speed_mps = speed_mps.max(knee.floor_mps.min(knee.knee_mps));
+        libm::powf(knee.knee_mps / low_speed_mps, 2.0 - knee.low_exponent)
+    };
     c.c_pitch_0 * (share - 1.0)
 }
 
