@@ -148,11 +148,11 @@ pub fn explora() -> TailsitterAirframe {
                 // (`tests/maneuver.rs`). RealFlight's own replayed moment there follows V¹
                 // (#666), but V¹ here drifts 0.60°. Higher: more drift (1.04° at 2).
                 low_exponent: 0.5,
-                // Below it the moment follows dynamic pressure again, so the back ramp's attached
-                // phase holds RealFlight's elevons (0.70: 0.62 against 0.53; 0.75: 0.26 against
-                // 0.23) and 0.65 still stalls. Lower: more nose-down moment at low airspeed, and
-                // from 6 the 0.70 ramp is no longer clean; higher: less, 0.75 at 0.23 from 8
-                // (#666).
+                // Below it the moment follows dynamic pressure again, so the back ramps hold
+                // RealFlight's elevons and 0.65 still stalls
+                // (`docs/findings/explora-wash-pitch.md`). Lower: more nose-down moment at low
+                // airspeed, and from 6 the 0.70 ramp is no longer clean; higher: less, the 0.75
+                // ramp's elevons 0.23 from 8 (#666).
                 floor_mps: 7.0,
             }),
             // Calibrated to RealFlight (#342, run 0): default-gain 30°/s roll doublets peak at
