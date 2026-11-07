@@ -199,12 +199,13 @@ fn pitch_0_off_knee(c: &AeroCoefficients, speed_mps: f32) -> f32 {
     let Some(knee) = c.c_pitch_0_knee else {
         return 0.0;
     };
-    let share = if speed_mps > knee.knee_mps {
-        libm::powf(knee.knee_mps / speed_mps, 2.0 - knee.exponent)
+    let (speed_mps, exponent) = if speed_mps > knee.knee_mps {
+        (speed_mps, knee.exponent)
     } else {
-        let low_speed_mps = speed_mps.max(knee.floor_mps.min(knee.knee_mps));
-        libm::powf(knee.knee_mps / low_speed_mps, 2.0 - knee.low_exponent)
+        let floor_mps = knee.floor_mps.min(knee.knee_mps);
+        (speed_mps.max(floor_mps), knee.low_exponent)
     };
+    let share = libm::powf(knee.knee_mps / speed_mps, 2.0 - exponent);
     c.c_pitch_0 * (share - 1.0)
 }
 
