@@ -14,7 +14,7 @@ The crate builds on the [`stable-flight`](https://github.com/wboayue/stable-flig
 
 RealFlight runs on Windows; on macOS, run it in a Windows VM (e.g. Parallels). Enable **Settings → Physics → Quality → RealFlight Link Enabled**. Tuned model: QuadCopterX (multirotor); eXplora VTOL (tailsitter) hovers from a joystick (`tailsitter-manual-realflight`) or a waypoint script (`tailsitter-auto-realflight`), and transitions to plane flight and back, stabilized from the joystick or navigating waypoints from a script (`flights/explora_transition.csv`). Titan Cobra VTOL (quadplane) hovers, transitions to plane flight and back, and flies copter legs with forward thrust, from a waypoint script (`quadplane-auto-realflight`); import the [upstream RFX](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models/QuadPlanes/Titan_Cobra_VTOL) unmodified, its channels already one per actuator (table below). The ArduPilot [SITL_Models](https://github.com/ArduPilot/SITL_Models/tree/master/RealFlight/Released_Models) repo has more.
 
-`RealFlightRemoteBridge` talks to the `realflight_bridge_proxy` running on the RealFlight host. Install it there with `cargo install realflight-bridge --features rt-tokio` (2.2 or later, to match this crate's error handling). Its default request timeout (150 ms) covers RealFlight's slower requests, and [`REMOTE_IO_TIMEOUT`](https://docs.rs/stable-flight-sitl-realflight/latest/stable_flight_sitl_realflight/constant.REMOTE_IO_TIMEOUT.html), which the examples use, stays above it.
+`RealFlightRemoteBridge` talks to the `realflight_bridge_proxy` running on the RealFlight host. Install it there with `cargo install realflight-bridge --features rt-tokio` (version 3.x; the proxy and client use the same wire protocol). Its default request timeout (150 ms) covers RealFlight's slower requests, and [`REMOTE_IO_TIMEOUT`](https://docs.rs/stable-flight-sitl-realflight/latest/stable_flight_sitl_realflight/constant.REMOTE_IO_TIMEOUT.html), which the examples use, stays above it.
 
 ## Usage
 
@@ -45,7 +45,7 @@ A failed exchange is logged at most once a second. A remote bridge is unusable a
 ```rust
 use std::time::Duration;
 use stable_flight_sitl_realflight::REMOTE_IO_TIMEOUT;
-use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
+use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 
 let host = String::from("10.211.55.3:8080");
 // Each reconnect attempt blocks its tick, so keep the timeouts short.
@@ -55,7 +55,7 @@ let vehicle = RealFlightVehicle::new(RealFlightConfiguration::from_airframe(
     &airframe,
     connect().expect("Failed to create bridge"),
 ))
-.with_reconnect(move || connect().map_err(BridgeError::from));
+.with_reconnect(connect);
 ```
 
 ## Airframes

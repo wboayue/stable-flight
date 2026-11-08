@@ -29,7 +29,7 @@ use stable_flight::{Commander, FailsafeState, FlightLoop};
 use stable_flight_link::fc::{FcLink, FcLinkConfig};
 use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
-use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
+use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{
     REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, airframes,
 };
@@ -68,7 +68,7 @@ fn main() {
         &airframe,
         connect().expect("Failed to create bridge"),
     ))
-    .with_reconnect(move || connect().map_err(BridgeError::from));
+    .with_reconnect(connect);
 
     // Waypoint commands from the link become attitude setpoints here.
     let guidance = CopterGuidance::new(airframe.guidance);

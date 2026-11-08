@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use stable_flight::nalgebra::UnitQuaternion;
 use stable_flight::{Actuator, ActuatorCommand, StateSource};
-use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
+use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{
     ActuatorMapping, RealFlightConfiguration, RealFlightVehicle, StartError,
 };
@@ -69,7 +69,7 @@ fn stalled_proxy_times_out_instead_of_blocking_the_tick() {
         .expect("the proxy answers the startup calls (SUCCESS_FRAME matches the wire format)")
         .with_reconnect(move || {
             attempts.fetch_add(1, Ordering::SeqCst);
-            RealFlightRemoteBridge::new(&host).map_err(BridgeError::from)
+            RealFlightRemoteBridge::new(&host)
         });
 
         // The exchange times out, so the connection is down; once the backoff has passed, the

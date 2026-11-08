@@ -73,7 +73,10 @@ impl MockRealFlightBridge {
 
 /// The proxy's reply when RealFlight doesn't answer within its request timeout.
 fn simulator_timeout() -> BridgeError {
-    BridgeError::Simulator("no response from simulator within 150ms".to_string())
+    BridgeError::Simulator(std::io::Error::new(
+        std::io::ErrorKind::TimedOut,
+        "no response from simulator within 150ms",
+    ))
 }
 
 fn sample_state() -> SimulatorState {

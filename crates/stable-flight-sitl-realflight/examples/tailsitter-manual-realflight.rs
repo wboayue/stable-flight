@@ -46,7 +46,7 @@ use stable_flight_link::udp::{DEFAULT_BRIDGE_ADDR, DEFAULT_FC_ADDR, UdpLink};
 use stable_flight_sitl::commanders::{Extreme3DCommander, SpektrumCommander};
 use stable_flight_sitl::recorder::{CsvRecorder, TailsitterColumns};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
-use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
+use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{
     REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, airframes,
 };
@@ -114,7 +114,7 @@ fn fly(commander: impl Commander, args: &Args) {
         &airframe,
         connect().expect("Failed to create bridge"),
     ))
-    .with_reconnect(move || connect().map_err(BridgeError::from));
+    .with_reconnect(connect);
 
     // Hover (copter controllers in the tailsitter view) and plane controllers, under one
     // transition.

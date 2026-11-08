@@ -376,7 +376,7 @@ where
     ///
     /// ```no_run
     /// use std::time::Duration;
-    /// use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
+    /// use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
     /// use stable_flight_sitl_realflight::{
     ///     ActuatorMapping, REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle,
     /// };
@@ -391,7 +391,7 @@ where
     ///     body_rotation: UnitQuaternion::identity(),
     ///     bridge: connect().expect("Failed to create bridge"),
     /// })
-    /// .with_reconnect(move || connect().map_err(BridgeError::from));
+    /// .with_reconnect(connect);
     /// ```
     pub fn with_reconnect(
         mut self,
