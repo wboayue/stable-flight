@@ -39,7 +39,7 @@ use stable_flight::{
 use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::recorder::{CsvRecorder, QuadPlaneColumns};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
-use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
+use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{
     REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, airframes,
 };
@@ -109,7 +109,7 @@ fn main() {
         &airframe,
         connect().expect("Failed to create bridge"),
     ))
-    .with_reconnect(move || connect().map_err(BridgeError::from));
+    .with_reconnect(connect);
 
     let injection = Rc::new(Cell::new(Vec3::zeros()));
     let probe = Rc::new(RefCell::new(Probe::new(

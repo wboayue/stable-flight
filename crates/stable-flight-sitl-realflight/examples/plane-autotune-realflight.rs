@@ -79,9 +79,7 @@ use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::recorder::{Columns, CsvRecorder, QuadPlaneColumns, TailsitterColumns};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
 use stable_flight_sitl_realflight::airframes::{self, Airframe};
-use stable_flight_sitl_realflight::realflight_bridge::{
-    BridgeError, RealFlightBridge, RealFlightRemoteBridge,
-};
+use stable_flight_sitl_realflight::realflight_bridge::{RealFlightBridge, RealFlightRemoteBridge};
 use stable_flight_sitl_realflight::{
     REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle,
 };
@@ -302,7 +300,7 @@ fn connect<G, S, M>(
         airframe,
         connect().expect("Failed to create bridge"),
     )) {
-        Ok(vehicle) => Some(vehicle.with_reconnect(move || connect().map_err(BridgeError::from))),
+        Ok(vehicle) => Some(vehicle.with_reconnect(connect)),
         Err(e) => {
             error!("can't start: {e}");
             None

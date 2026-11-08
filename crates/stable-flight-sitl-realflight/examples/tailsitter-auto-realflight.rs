@@ -64,7 +64,7 @@ use stable_flight_sitl::cli::parse_param;
 use stable_flight_sitl::commanders::ScriptCommander;
 use stable_flight_sitl::recorder::{Columns, CsvRecorder, TailsitterColumns};
 use stable_flight_sitl::{RealTimeRunner, ShutdownSignal};
-use stable_flight_sitl_realflight::realflight_bridge::{BridgeError, RealFlightRemoteBridge};
+use stable_flight_sitl_realflight::realflight_bridge::RealFlightRemoteBridge;
 use stable_flight_sitl_realflight::{
     REMOTE_IO_TIMEOUT, RealFlightConfiguration, RealFlightVehicle, TrueWind, airframes,
 };
@@ -148,7 +148,7 @@ fn main() {
         &airframe,
         connect().expect("Failed to create bridge"),
     ))
-    .with_reconnect(move || connect().map_err(BridgeError::from));
+    .with_reconnect(connect);
 
     // Hover and plane controllers under one transition; in the copter regime the position
     // loops turn each waypoint into an attitude setpoint in the tailsitter view.

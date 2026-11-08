@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `realflight-bridge` 3.0 requires a 3.x proxy on the RealFlight host; reinstall it
+  with `cargo install realflight-bridge --features rt-tokio`. Simulator I/O failures now use
+  `BridgeError::Simulator(std::io::Error)` on local and remote bridges.
 - **Breaking (behavior):** `airframes::explora_vtol()` descends in hover at up to 2 m/s
   (`GUID_DESC_MAX`, from 1.5): on the autotuned hover the nose tracks as at 1.5 m/s in calm
   air, 5 km/h wind and after a back transition (#653).
