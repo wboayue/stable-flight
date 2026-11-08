@@ -1252,9 +1252,9 @@ dependencies = [
 
 [[package]]
 name = "realflight-bridge"
-version = "2.2.0"
+version = "3.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da9454e62fecc4c07b0b4ec48067a873cc65526004df134834eae48997cc205d"
+checksum = "50f5d80e196b113a8f47327d26235cd36b4454622cceff7275a2e1d6a3c07112"
 dependencies = [
  "clap",
  "crossbeam-channel",
