@@ -45,12 +45,12 @@ const NOISY_RESIDUAL_RADPS: f32 = 0.017;
 const WINDOW_CAPACITY: usize = 2048;
 
 /// Time constant, in s, of the leaky integrator [`fit_integrated`] runs both sides of its fit
-/// through. Integrated, the target's gyro noise is the current tick's, which no moment
-/// commanded before it carries; per tick, the rate's change holds the last tick's noise, which
-/// the moment one tick on answered, and every noisy fit read a 1-tick delay. Longer integrates
-/// more of the slow rate drift into the target: at 0.1 and 0.2 s the sim's 10 ms delay read
-/// 3–4 ticks on every copter, 5 seeds, at 0.4 s some read 2 and designed rate P 1.6× the
-/// noise-free design's (#603).
+/// through. Integrated, the target's gyro noise is mostly the current tick's, which no moment
+/// commanded before it carries; per tick, the rate's change holds the last tick's noise too,
+/// which the moment one tick on answered, and that fit read `quad_x`'s 10 ms delay as 1 to 8
+/// ticks (rate P up to 2.3× the noise-free design's). Longer integrates more of the slow rate
+/// drift into the target: at 0.1 and 0.2 s the delay read 3–4 ticks on every copter over 5
+/// seeds, at 0.4 s some read 2, with rate P to 1.6× (#603).
 const INTEGRATION_TC_S: f32 = 0.1;
 
 /// The lag grid [`fit_integrated`] searches, in s: 0, then `MIN_LAG_S` up to `MAX_LAG_S` in
@@ -303,8 +303,8 @@ pub enum IdentifyStatus {
 /// length and amplitude, then fits it another way. It filters the recorded moment through each
 /// lag on a grid and each delay, half ticks included, and fits the rate to it (a gain and a
 /// constant for the trim), with both sides integrated: the measured rate only the target, so
-/// the noise in it doesn't bend the airframe's terms, and the integration keeps the target's
-/// noise out of every moment it's fitted to. Gyro noise still fills that fit's residual, so
+/// the noise in it doesn't bend the airframe's terms, and the integration keeps most of the
+/// target's noise out of the moments it's fitted to. Gyro noise still fills that fit's residual, so
 /// the delay with the least residual wins outright. A noisy window whose moments mostly sit at
 /// the rate loop's limit (a start that rings) aborts, as no fit reads a clipped moment
 /// through noise.
