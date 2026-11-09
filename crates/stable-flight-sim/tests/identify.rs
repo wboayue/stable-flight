@@ -15,7 +15,7 @@ use stable_flight::tuning::{
 use stable_flight_sim::airframes::{self, Airframe};
 use stable_flight_sim::{Perturbations, Wind};
 
-use common::robustness::{Set, Start, perturbations, starting};
+use common::robustness::{Set, Start, notch_for, perturbations, starting};
 use common::{Plant, spec};
 
 /// Most the fitted lag may miss the model's motor lag, as a share of it: measured within 0.6%
@@ -66,6 +66,51 @@ fn fits_each_airframes_motor_lag_and_delay() {
                     check!(
                         (fitted_s - lag_s).abs() <= LAG_SHARE * lag_s,
                         "{row}: lag {fitted_s} s against {lag_s} s"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Simulated seconds a probe of a noisy window may run: its extension's 8 s plus margin.
+const NOISY_TIMEOUT_S: f32 = 10.0;
+
+/// Under the robustness rows' gyro noise, with the gyro notch at its tone, the fit reads the
+/// actuator delay within a tick of the quiet least squares' (1 tick clean, 3 at 10 ms), on roll
+/// and pitch, every copter airframe, from the low start, over noise seeds 1–5. The per-tick fit
+/// read `quad_x`'s 10 ms as 1 tick on 2 of 10 fits, and before #603 every noisy fit read 1.
+#[test]
+fn fits_the_delay_through_gyro_noise() {
+    let airframes = [
+        ("quad_x", airframes::quad_x()),
+        ("heavy_quad", airframes::heavy_quad()),
+        ("racer", airframes::racer()),
+    ];
+    let sets: [(Set, usize); 2] = [(Set::Noise, 1), (Set::DelayNoise, 3)];
+    for (name, airframe) in airframes {
+        for (set, quiet_ticks) in sets {
+            for seed in 1..=5 {
+                let mut perturbations = perturbations(set, &airframe);
+                perturbations.gyro.seed = seed;
+                let mut tuned = starting(airframe, Start::Low);
+                tuned.stabilizer.gyro_notch = notch_for(&perturbations);
+                let plant = Plant {
+                    airframe: tuned,
+                    wind: Wind::default(),
+                    perturbations,
+                };
+                for target in [TunedLoop::RollRate, TunedLoop::PitchRate] {
+                    let row = format!("{name} {set:?} seed {seed} {target:?}");
+                    let config = ProbeConfig::Identify(COPTER_IDENTIFY);
+                    let status = common::probe(&plant, target, config, NOISY_TIMEOUT_S);
+                    let Some(ProbeStatus::Done(Measurement::Identify(model))) = status else {
+                        check!(false, "{row}: {status:?}");
+                        continue;
+                    };
+                    check!(
+                        model.delay_ticks.abs_diff(quiet_ticks) <= 1,
+                        "{row}: {model:?}"
                     );
                 }
             }

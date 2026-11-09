@@ -980,11 +980,10 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     neighbors) and each delay in half ticks (the zero-order hold leaves a moment's first tick
     partly felt), and the rate is fitted to it with a gain and a constant, both sides through a
     0.1 s leaky integrator, the measured rate only the target. Integrated, the target's noise
-    is the current tick's, which no moment commanded before it carries. In the per-tick form
-    the rate's change holds the last tick's noise, which the moment one tick on answered, and
-    every noisy fit read a 1-tick delay. Gyro noise fills the residual, every delay within
-    0.05% of the least, so the least wins outright, where the least squares' 1% tie took the
-    shortest. Under the sim's noise with 10 ms of delay (true 3 ticks; quiet least squares
+    is mostly the current tick's, which no moment commanded before it carries. In the per-tick
+    form the rate's change holds the last tick's noise too, which the moment one tick on
+    answered (table). Gyro noise fills the residual, every delay within 0.05% of the least, so
+    the least wins outright, where the least squares' 1% tie took the shortest. Under the sim's noise with 10 ms of delay (true 3 ticks; quiet least squares
     reads 3), over 5 seeds on roll and pitch, the read delay, and the rate P designed against
     the noise-free plant's:
 
@@ -995,6 +994,7 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     | integrated, 0.7 rad/s, 3 s | 4–8 | 4–7 | 3–4 | 0.51–1.29× |
     | integrated, 1.4 rad/s, 3 s | 3–5 | 4–5 | 3–4 | 0.75–1.40× |
     | integrated, 0.7 rad/s, 8 s | 3–5 | 4–5 | 3–4 | 0.81–1.57× |
+    | recorded moment per tick, extended to 1.4 rad/s, 8 s | 1–8 | 3–5 | 3 | 0.57–2.29× |
     | integrated, extended to 1.4 rad/s, 8 s | 3–4 | 4 | 3–4 | 0.88–1.08× |
 
     Noise-only rows (true 1 tick) read 1–2. The extension costs 5 s per noisy fit, and the
@@ -1016,7 +1016,9 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     lags of it, and a constant), which drops the noise-driven moment, most of the window's
     fast content, so its residual didn't tell the delays apart (table); fitting the projected
     rate as the target too (`quad_x` 2–10 ticks at 3 s, 1–10 at 8 s); both sides prefiltered
-    at 20–200 ms on the projected moment (1 tick); the integrated fit at 0.4 s (some 2 ticks,
+    at 20–200 ms on the projected moment (1 tick); the recorded moment per tick, not integrated
+    (table; `quad_x`'s noise row on seed 2 then fails its roll angle design); the integrated
+    fit at 0.4 s (some 2 ticks,
     P to 1.58×) or 1 s; a design for the lowest P among the tied delays (0.3–0.6× the
     noise-free P); the longest delay of a near-tie (eXplora roll P 0.71, pitch 2.06–2.42); the
     delay from the least-squares fit (roll lag 97 ms); a low-pass on both sides of the
