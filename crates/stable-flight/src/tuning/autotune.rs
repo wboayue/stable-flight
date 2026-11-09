@@ -13,8 +13,9 @@ use crate::stabilizers::copter::{CopterStabilizerConfig, TunedLoop};
 use crate::{Configurable, FlightLoop, Vec3};
 
 use super::{
-    DesignError, IdentifyConfig, LoopShapingConfig, Measurement, ProbeAbort, ProbeConfig,
-    ProbeStatus, RateModel, StepConfig, StepSummary, Tunable, design_angle_p, design_rate,
+    DesignError, IdentifyConfig, IdentifyExtension, LoopShapingConfig, Measurement, ProbeAbort,
+    ProbeConfig, ProbeStatus, RateModel, StepConfig, StepSummary, Tunable, design_angle_p,
+    design_rate,
 };
 
 pub use plane::{
@@ -230,10 +231,19 @@ impl Method {
 /// for 3 s, washed out at 0.2 s (PX4's `MC_AT_SYSID_AMP` and time constant). On the sim 3 s
 /// fit the same model as 20 s on every airframe, from any start (#312). On the rate setpoint
 /// the excitation doesn't scale with the angle P and no edge kicks the angle D (#561).
+///
+/// A window that reads noisy at 3 s goes on to 8 s at 1.4 rad/s: under the sim's gyro noise
+/// the 10 ms delay read 3–4 ticks on every copter, 5 seeds, where 3 s read up to 8 at
+/// 0.7 rad/s and 5 at 1.4, and 8 s up to 5 at 0.7 (#603). Quiet windows, RealFlight's among
+/// them, stop at 3 s.
 pub const COPTER_IDENTIFY: IdentifyConfig = IdentifyConfig {
     amplitude: 0.7,
     duration_s: 3.0,
     washout_tc_s: 0.2,
+    noisy: Some(IdentifyExtension {
+        amplitude: 1.4,
+        duration_s: 8.0,
+    }),
 };
 
 /// Share of a search's largest pass it keeps, and of loop shaping's largest angle P: 10% off,

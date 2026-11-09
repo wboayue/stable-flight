@@ -58,6 +58,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking:** `IdentifyConfig` has a `noisy: Option<IdentifyExtension>` field, how a
+  window that reads noisy goes on exciting (amplitude and whole length); struct literals add
+  it (`None` keeps the old behavior). `COPTER_IDENTIFY` extends a noisy window to 8 s at
+  1.4 rad/s (#603).
+- **Breaking (behavior):** `IdentifyProbe` fits a noisy window on the recorded moment, both
+  sides integrated, at the delay with the least residual, rather than on the part of the
+  moment the excitation explains at the shortest near-tied delay: under the sim's gyro noise
+  with 10 ms of delay the fit reads 3–4 ticks where it read 1, and designs rate P within
+  0.88–1.08× the noise-free design's, against 2–2.9×. Quiet windows, RealFlight's among them,
+  keep the least-squares fit and the 3 s window unchanged. The window holds 8.2 s (26 KB)
+  (#603).
 - **Breaking:** `controllers::lateral::BRAKING_SHARE` is `DEFAULT_BRAKING_SHARE`, the default
   of `LateralControllerConfig::braking_share`; `AltitudeControllerConfig`,
   `LateralControllerConfig`, and `tuning::autotune::Settle` have new fields, so struct

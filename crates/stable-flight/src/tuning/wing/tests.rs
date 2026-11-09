@@ -15,6 +15,7 @@ const CONFIG: IdentifyConfig = IdentifyConfig {
     amplitude: 0.3,
     duration_s: 6.0,
     washout_tc_s: 0.2,
+    noisy: None,
 };
 
 /// The rate loop the tests close around the wing: moment per rad/s of rate error.

@@ -7,11 +7,21 @@ use crate::tuning::{LoopSignals, Measurement, Probe, ProbeConfig, ProbeStatus};
 /// The flight loop's tick: 250 Hz.
 const DT: f32 = 0.004;
 
-/// A 0.07 square wave for 3 s, washed out as the copter's.
+/// A 0.07 square wave for 3 s, washed out as the copter's, and not extended.
 const CONFIG: IdentifyConfig = IdentifyConfig {
     amplitude: 0.07,
     duration_s: 3.0,
     washout_tc_s: 0.2,
+    noisy: None,
+};
+
+/// [`CONFIG`], a noisy window extended to 8 s at twice the amplitude, as the copter's.
+const EXTENDED: IdentifyConfig = IdentifyConfig {
+    noisy: Some(IdentifyExtension {
+        amplitude: 0.14,
+        duration_s: 8.0,
+    }),
+    ..CONFIG
 };
 
 /// Angle P (rate per angle) and rate P (moment per rate) of the loops the tests close around
@@ -116,36 +126,93 @@ fn gyro_noise(tick: usize, amplitude: f32) -> f32 {
     amplitude * (2.0 * unit - 1.0)
 }
 
-/// Through white gyro noise of about the sim's (0.035 rad/s uniform, 0.02 RMS), the two-stage
-/// fit reads the plant's lag plus delay within 20% (measured 11% long, 2% on clean signals),
-/// where the least squares, with the noisy rate among its terms, reads the lag as nothing
-/// (#551).
-#[test]
-fn the_two_stage_fit_reads_the_lag_through_gyro_noise() {
-    let params = single_lag(20.0, 0.03, 0.0);
-    let probe = identify_with(params, IdentifyProbe::new(CONFIG), |tick, rate| {
-        rate + gyro_noise(tick, 0.035)
-    });
-    let fitted = fit_explained(&probe.window).expect("two-stage fit");
+/// The delay a fit reads in ticks, its half tick included.
+fn fitted_ticks(fitted: &RateModel) -> f32 {
     let [now, next, _] = fitted.moment_weights.map(f32::abs);
-    let fitted_s =
-        fitted.lag_s().unwrap_or(f32::NAN) + (fitted.delay_ticks as f32 + next / (now + next)) * DT;
-    let plant_s = 0.03 + 0.001 + 1.5 * DT;
-    check!(
-        (fitted_s - plant_s).abs() <= 0.2 * plant_s,
-        "lag and delay {fitted_s} s against {plant_s} s: {fitted:?}"
-    );
-    let recorded = fit_recorded(&probe.window).expect("recorded fit").model;
-    check!(recorded.lag_s() < Some(0.01), "{recorded:?}");
+    fitted.delay_ticks as f32 + next / (now + next)
+}
+
+/// Through white gyro noise of about the sim's (0.035 rad/s uniform, 0.02 RMS), the extended
+/// window's integrated fit reads each plant's delay within a tick and its lag plus delay within
+/// 20%, where the least squares, with the noisy rate among its terms, reads the lag as nothing
+/// (#551), and the per-tick fit took the shortest delay (#603): (lag s, dead time s) → delay
+/// ticks, as in [`recovers_lag_delay_and_gain`].
+#[test]
+fn the_integrated_fit_reads_the_delay_through_gyro_noise() {
+    let rows = [
+        ((0.03, 0.0), 1.5),
+        ((0.03, 0.008), 3.5),
+        ((0.05, 0.008), 3.5),
+        ((0.03, 0.02), 6.5),
+    ];
+    for ((lag_s, delay_s), delay_ticks) in rows {
+        let row = format!("lag {lag_s} s, delay {delay_s} s");
+        let params = single_lag(20.0, lag_s, delay_s);
+        let probe = identify_with(params, IdentifyProbe::new(EXTENDED), |tick, rate| {
+            rate + gyro_noise(tick, 0.035)
+        });
+        check!(probe.window.len > 1900, "{row}: not extended");
+        let fitted = model(probe.status());
+        let ticks = fitted_ticks(&fitted);
+        check!((ticks - delay_ticks).abs() <= 1.0, "{row}: {fitted:?}");
+        let fitted_s = fitted.lag_s().unwrap_or(f32::NAN) + ticks * DT;
+        let plant_s = lag_s + 0.001 + delay_ticks * DT;
+        check!(
+            (fitted_s - plant_s).abs() <= 0.2 * plant_s,
+            "{row}: lag and delay {fitted_s} s against {plant_s} s: {fitted:?}"
+        );
+        let recorded = fit_recorded(&probe.window).expect("recorded fit").model;
+        check!(recorded.lag_s() < Some(0.01), "{row}: {recorded:?}");
+    }
+}
+
+/// A window that reads noisy at `duration_s` goes on to the extension's length at its
+/// amplitude; a quiet one, or a config without one, stops: (case, config, gyro noise in rad/s,
+/// ticks recorded, largest offset from 0.1 s past `duration_s`).
+#[test]
+fn a_noisy_window_is_extended() {
+    let params = single_lag(20.0, 0.03, 0.0);
+    let rows = [
+        ("noisy", EXTENDED, 0.06, 2000, 0.14),
+        ("quiet", EXTENDED, 0.0, 750, 0.0),
+        ("noisy, no extension", CONFIG, 0.06, 750, 0.0),
+    ];
+    for (case, config, noise, ticks, peak) in rows {
+        let mut offsets = Vec::new();
+        let probe = identify_with(params, IdentifyProbe::new(config), |tick, rate| {
+            rate + gyro_noise(tick, noise)
+        });
+        let mut replay = IdentifyProbe::new(config);
+        for tick in 0..probe.window.len {
+            let offset = replay.step(
+                DT,
+                probe.window.rates_radps[tick],
+                probe.window.moments[tick],
+            );
+            if tick >= 775 {
+                offsets.push(offset.abs());
+            }
+        }
+        let largest = offsets.iter().copied().fold(0.0f32, f32::max);
+        check!(
+            probe.window.len.abs_diff(ticks) <= 1,
+            "{case}: {} ticks",
+            probe.window.len
+        );
+        check!(
+            (largest - peak).abs() <= 0.01,
+            "{case}: largest offset {largest}"
+        );
+    }
 }
 
 /// The fit a window takes: by least squares when quiet (stiff and ringing, or saturated,
-/// included), in two stages when noisy, and none when noisy and saturated, which no fit reads
+/// included), integrated when noisy, and none when noisy and saturated, which no fit reads
 /// (#551).
 #[derive(Clone, Copy, Debug)]
 enum Taken {
     LeastSquares,
-    TwoStage,
+    Integrated,
     Saturated,
 }
 
@@ -157,7 +224,7 @@ fn a_window_takes_the_fit_its_noise_and_saturation_call_for() {
         ("quiet", RATE_P, 0.0, Taken::LeastSquares),
         ("quiet and stiff", 4.0 * RATE_P, 0.0, Taken::LeastSquares),
         ("quiet and saturated", 40.0, 0.0, Taken::LeastSquares),
-        ("noisy", RATE_P, 0.06, Taken::TwoStage),
+        ("noisy", RATE_P, 0.06, Taken::Integrated),
         ("noisy and saturated", 40.0, 0.06, Taken::Saturated),
     ];
     for (case, rate_p, noise, taken) in rows {
@@ -179,7 +246,7 @@ fn a_window_takes_the_fit_its_noise_and_saturation_call_for() {
             Taken::LeastSquares => fit_recorded(window)
                 .map(|fit| fit.model)
                 .ok_or(IdentifyAbort::Unexcited),
-            Taken::TwoStage => fit_explained(window).ok_or(IdentifyAbort::Unexcited),
+            Taken::Integrated => fit_integrated(window).ok_or(IdentifyAbort::Unexcited),
             Taken::Saturated => Err(IdentifyAbort::Saturated),
         };
         check!(fit_window(window) == expected, "{case}");
@@ -190,7 +257,7 @@ fn a_window_takes_the_fit_its_noise_and_saturation_call_for() {
 #[test]
 fn a_long_window_fits_its_first_ticks() {
     let config = IdentifyConfig {
-        duration_s: 6.0,
+        duration_s: 10.0,
         ..CONFIG
     };
     let probe = identify_with(
@@ -255,20 +322,27 @@ fn holds_a_non_finite_tick_at_the_last_value() {
     );
 }
 
-/// The delay is the shortest whose residual is within 1% of the least, so rounding doesn't pick
-/// between near-equal delays: (residuals per delay from 1, delay picked).
+/// The delay is the shortest whose residual is within the tie share of the least, so rounding
+/// doesn't pick between near-equal delays, and the least alone at a share of 0: (residuals per
+/// delay from 1, tie share, delay picked).
 #[test]
 fn picks_the_shortest_of_near_tied_delays() {
-    let rows: [(&[Option<f32>], Option<usize>); 6] = [
-        (&[Some(3.0), Some(1.0), Some(2.0)], Some(2)),
-        (&[Some(1.005), Some(1.0)], Some(1)),
-        (&[Some(1.02), Some(1.0)], Some(2)),
-        (&[None, Some(0.0), Some(0.0)], Some(2)),
-        (&[None, None], None),
-        (&[], None),
+    type Row<'a> = (&'a [Option<f32>], f32, Option<usize>);
+    let rows: [Row; 8] = [
+        (&[Some(3.0), Some(1.0), Some(2.0)], TIE_SHARE, Some(2)),
+        (&[Some(1.005), Some(1.0)], TIE_SHARE, Some(1)),
+        (&[Some(1.02), Some(1.0)], TIE_SHARE, Some(2)),
+        (&[Some(1.0005), Some(1.0)], 0.0, Some(2)),
+        (&[Some(1.0), Some(1.0)], 0.0, Some(1)),
+        (&[None, Some(0.0), Some(0.0)], TIE_SHARE, Some(2)),
+        (&[None, None], TIE_SHARE, None),
+        (&[], TIE_SHARE, None),
     ];
-    for (residuals, delay) in rows {
-        check!(shortest_tied(residuals) == delay, "{residuals:?}");
+    for (residuals, tie_share, delay) in rows {
+        check!(
+            shortest_tied(residuals, tie_share) == delay,
+            "{residuals:?} at {tie_share}"
+        );
     }
 }
 
@@ -299,7 +373,7 @@ fn fits_a_delay_whose_moment_pushes_the_right_way() {
         ("none solved", &[None, None], None),
     ];
     for (row, fits, delay) in rows {
-        check!(delay_to_fit(fits) == delay, "{row}");
+        check!(delay_to_fit(fits, TIE_SHARE) == delay, "{row}");
     }
 }
 
@@ -391,8 +465,7 @@ fn realflight_quadcopterx_windows_design_rate_p_in_range() {
 
 /// RealFlight's eXplora roll and pitch rate windows (#539's run 3) are quiet, and design the
 /// rate P RealFlight's autotune designed from them, within 5% (the replay reproduced it to two
-/// places): the two-stage fit read the roll's 36–40 ms delay as 136 ms of lag and designed P
-/// 3.92, and the pitch 3.36 (#551).
+/// places, #551).
 #[test]
 fn realflight_explora_windows_design_realflights_rate_p() {
     let start = crate::controllers::Gains {
@@ -506,9 +579,27 @@ fn validate_checks_each_field() {
             },
             false,
         ),
+        (EXTENDED, true),
+        (extended(-0.14, 8.0), true),
+        (extended(0.0, 8.0), false),
+        (extended(f32::NAN, 8.0), false),
+        (extended(0.14, 3.0), true),
+        (extended(0.14, 2.9), false),
+        (extended(0.14, f32::INFINITY), false),
     ];
     for (config, valid) in rows {
         check!(config.validate().is_ok() == valid, "{config:?}");
+    }
+}
+
+/// [`CONFIG`] extended to `duration_s` at `amplitude`.
+fn extended(amplitude: f32, duration_s: f32) -> IdentifyConfig {
+    IdentifyConfig {
+        noisy: Some(IdentifyExtension {
+            amplitude,
+            duration_s,
+        }),
+        ..CONFIG
     }
 }
 

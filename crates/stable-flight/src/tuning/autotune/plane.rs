@@ -121,6 +121,7 @@ impl PlaneDesignPlan {
                 amplitude: PLANE_IDENTIFY_SHARE * max_rate_radps,
                 duration_s: PLANE_IDENTIFY_S,
                 washout_tc_s: 0.2,
+                noisy: None,
             },
             design: WingDesignConfig {
                 amplitude_rad: verify.amplitude,

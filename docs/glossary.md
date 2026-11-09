@@ -163,8 +163,8 @@ Code comments and docs link here instead of redefining a term.
   known signal shakes it: here a square wave added to the rate setpoint, as PX4 does. The
   autotune's design search designs gains from the model instead of flying a step per
   candidate gain ([architecture](../architecture.md#autotune)). On a noisy window the fit
-  keeps only the part of the moment the known signal explains (a *projection*), since in
-  closed loop the rest carries the controller's answer to gyro noise.
+  runs both sides through a leaky integrator, so the gyro noise in the measured rate stays
+  out of the moments it's fitted to, which the controller made from earlier noise.
 - **Phase margin:** how far a loop is from oscillating, as the phase short of −180° where its
   open-loop gain crosses 1 (the crossover). More margin: less overshoot, a slower loop.
   **Loop shaping** picks gains for a target margin from the model's frequency response.

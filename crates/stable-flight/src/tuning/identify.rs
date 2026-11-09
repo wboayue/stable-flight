@@ -6,7 +6,8 @@
 //! recursive least squares on the measured rate (`ArxRls` in `system_identification`); in
 //! closed loop the controller feeds gyro noise into the moment, and that fit reads every lag as
 //! 0 under the sim's noise. This probe keeps a least-squares fit on the recorded moments for a
-//! quiet window and fits a noisy one in two stages instead (`architecture.md#autotune`, #551).
+//! quiet window, and fits a noisy one, excited longer and harder, with both sides integrated
+//! instead (`architecture.md#autotune`, #551, #603).
 
 use nalgebra::{Complex, SMatrix, SVector};
 
@@ -20,49 +21,39 @@ mod tests;
 /// (7 ticks with the hold).
 pub const MAX_DELAY_TICKS: usize = 10;
 
-/// Share of the window's moments at the rate loop's limit past which [`fit_window`] fits the
-/// recorded moments rather than the explained ones: the copter's ×3 starts ring at ±1 for
-/// 510–629 of 750 ticks with no noise, and the excitation then explains little of the moment,
-/// so [`fit_explained`] misread their lags (racer 7.6 ms against 15) where [`fit_recorded`] is
-/// exact; the low starts and RealFlight's QuadCopterX don't saturate at all (#551).
+/// Share of the window's moments at the rate loop's limit past which a noisy window aborts
+/// rather than taking [`fit_integrated`]: a moment clipped at ±1 isn't the moment the airframe
+/// felt, and the copter's ×3 starts ring there for 510–629 of 750 ticks; the low starts and
+/// RealFlight's QuadCopterX don't saturate at all (#551). A quiet window keeps
+/// [`fit_recorded`], which is exact on a clipped moment too.
 const SATURATED_SHARE: f32 = 0.2;
 
 /// A moment at or past this magnitude counts as at the rate loop's ±1 limit.
 const SATURATED_MOMENT: f32 = 0.999;
 
-/// The least-squares fit's residual, RMS per tick in rad/s, past which [`fit_window`] fits the
-/// explained moments instead: the least squares then doesn't explain the window, which is
-/// gyro noise read through the closed loop. On a quiet window the moment's fast part is the
-/// controller answering the airframe, which is what tells a delay from a lag, and the
-/// projection drops it: on RealFlight's eXplora roll every delay from 1 to 10½ ticks fitted
-/// within 1.8% of the least, and the two-stage fit designed rate P 3.92 against the least
-/// squares' (and RealFlight's) 0.94. RealFlight's windows leave 0.002–0.012 (eXplora and
-/// QuadCopterX, 8 windows), the sim eXplora with 0.01 rad/s of gyro noise 0.012, and the sim's
-/// noise rows 0.024–0.100. A clean sim window leaves under 0.001 whatever its gains, a loop
-/// that rings included (#551).
+/// The least-squares fit's residual, RMS per tick in rad/s, past which the window counts as
+/// noisy: the least squares then doesn't explain it, which is gyro noise read through the
+/// closed loop, and the probe extends the window ([`IdentifyConfig::noisy`]) and fits it with
+/// [`fit_integrated`]. Below it the least squares is exact and stays. RealFlight's windows
+/// leave 0.002–0.012 (eXplora and QuadCopterX, 8 windows), the sim eXplora with 0.01 rad/s of
+/// gyro noise 0.012, and the sim's noise rows 0.024–0.100. A clean sim window leaves under
+/// 0.001 whatever its gains, a loop that rings included (#551).
 const NOISY_RESIDUAL_RADPS: f32 = 0.017;
 
-/// Ticks of rate, moment, and excitation the probe records: 4 s at 250 Hz, past the copter's
-/// 3 s window. A longer window fits its first `WINDOW_CAPACITY` ticks.
-const WINDOW_CAPACITY: usize = 1000;
+/// Ticks of rate, moment, and excitation the probe records: 8.2 s at 250 Hz, past the copter's
+/// 8 s noisy window. A longer window fits its first `WINDOW_CAPACITY` ticks.
+const WINDOW_CAPACITY: usize = 2048;
 
-/// Past excitation ticks the moment is projected on ([`project`]): 40 ms at 250 Hz, the
-/// moment's first answer to an edge. More terms fit more of the noise in the window by chance,
-/// and that part moved the airframe too, so it reads as a lag of 0: at 40 taps `racer`'s fits
-/// under gyro noise at its 75 Hz low-pass read 0 on 8 of 10 roll and pitch fits, at 10 on none
-/// (#551).
-const PROJECTION_TAPS: usize = 10;
+/// Time constant, in s, of the leaky integrator [`fit_integrated`] runs both sides of its fit
+/// through. Integrated, the target's gyro noise is the current tick's, which no moment
+/// commanded before it carries; per tick, the rate's change holds the last tick's noise, which
+/// the moment one tick on answered, and every noisy fit read a 1-tick delay. Longer integrates
+/// more of the slow rate drift into the target: at 0.1 and 0.2 s the sim's 10 ms delay read
+/// 3–4 ticks on every copter, 5 seeds, at 0.4 s some read 2 and designed rate P 1.6× the
+/// noise-free design's (#603).
+const INTEGRATION_TC_S: f32 = 0.1;
 
-/// Time constants, in s, of the slow terms the projection adds past the taps: the excitation
-/// through first-order lags, for the rest of the moment's answer to an edge (an angle loop
-/// around the rate loop answers over about a second). With the taps alone a 20 ms lag read
-/// 43 ms with the excitation on an angle loop (#551).
-const SLOW_TCS_S: [f32; 6] = [0.02, 0.05, 0.1, 0.2, 0.5, 1.0];
-
-/// Terms of the projection: the taps, the slow terms, and a constant.
-const PROJECTION_TERMS: usize = PROJECTION_TAPS + SLOW_TCS_S.len() + 1;
-
-/// The lag grid [`fit_explained`] searches, in s: 0, then `MIN_LAG_S` up to `MAX_LAG_S` in
+/// The lag grid [`fit_integrated`] searches, in s: 0, then `MIN_LAG_S` up to `MAX_LAG_S` in
 /// steps of `LAG_RATIO`, then [`refine`]s between the best point's neighbors. The top is past
 /// the Alia 250's 0.17 s motors on the sim.
 const MIN_LAG_S: f32 = 0.001;
@@ -80,11 +71,13 @@ fn half_period_s(index: usize) -> f32 {
     }
 }
 
-/// Residuals within this share of the least count as tied, and the shortest such delay wins,
-/// so rounding doesn't pick between near-equal delays (a 25 ms delay fit at 6 or 7 ticks, #516). Wider favors delays too short, which
-/// design too hot a loop: on QuadCopterX in RealFlight, 5% took 1 tick in 6 of 67 fits
-/// against 1 at 1%, and in run 35 a 1-tick pick at 2.2% over the least designed roll rate
-/// P 1.79, which rang and failed its stage (#529).
+/// Residuals within this share of the least count as tied in [`fit_recorded`], and the
+/// shortest such delay wins, so rounding doesn't pick between near-equal delays (a 25 ms delay
+/// fit at 6 or 7 ticks, #516). Wider favors delays too short, which design too hot a loop: on
+/// QuadCopterX in RealFlight, 5% took 1 tick in 6 of 67 fits against 1 at 1%, and in run 35 a
+/// 1-tick pick at 2.2% over the least designed roll rate P 1.79, which rang and failed its
+/// stage (#529). [`fit_integrated`] takes the least alone: gyro noise fills its residual, every
+/// delay sits within 0.05% of the least, and any tie share took the shortest (#603).
 const TIE_SHARE: f32 = 0.01;
 
 /// Configures an [`IdentifyProbe`].
@@ -102,6 +95,21 @@ pub struct IdentifyConfig {
     /// becomes a pulse that decays, so the setpoint offset averages near zero. Positive and
     /// finite.
     pub washout_tc_s: f32,
+    /// How an [`IdentifyProbe`] goes on exciting a window that reads noisy at `duration_s`;
+    /// `None` fits it as it stands. A [`WingIdentifyProbe`](crate::tuning::WingIdentifyProbe)
+    /// doesn't extend.
+    pub noisy: Option<IdentifyExtension>,
+}
+
+/// More excitation for a window gyro noise fills: an axis whose noise hides its delay shows it
+/// over a longer window at a larger amplitude.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct IdentifyExtension {
+    /// Height of the square wave from `duration_s` on, in setpoint units. Non-zero and finite.
+    pub amplitude: f32,
+    /// The window's whole length once extended, in s. Finite and at least the config's
+    /// `duration_s`; the probe records 8.2 s at 250 Hz and fits the first ticks of a longer one.
+    pub duration_s: f32,
 }
 
 impl IdentifyConfig {
@@ -120,12 +128,29 @@ impl IdentifyConfig {
     pub fn validate(&self) -> Result<(), InvalidConfig> {
         check(
             "amplitude",
-            self.amplitude != 0.0 && self.amplitude.is_finite(),
+            non_zero_finite(self.amplitude),
             "non-zero and finite",
         )?;
         check_positive("duration_s", self.duration_s)?;
-        check_positive("washout_tc_s", self.washout_tc_s)
+        check_positive("washout_tc_s", self.washout_tc_s)?;
+        let Some(noisy) = self.noisy else {
+            return Ok(());
+        };
+        check(
+            "noisy.amplitude",
+            non_zero_finite(noisy.amplitude),
+            "non-zero and finite",
+        )?;
+        check(
+            "noisy.duration_s",
+            noisy.duration_s.is_finite() && noisy.duration_s >= self.duration_s,
+            "finite and at least duration_s",
+        )
     }
+}
+
+fn non_zero_finite(value: f32) -> bool {
+    value != 0.0 && value.is_finite()
 }
 
 /// A rate axis's response to its moment command, fitted in flight: the body rate one tick on
@@ -239,8 +264,8 @@ pub enum IdentifyAbort {
     /// moment enough to tell its terms apart.
     Unexcited,
     /// Most of the window's moments sat at the rate loop's limit, and the least squares left
-    /// it noisy: the excitation explains too little of a clipped moment for the two-stage fit,
-    /// and the least squares reads the noise as the airframe. Lower gains unclip it.
+    /// it noisy: a clipped moment isn't the one the airframe felt, so the integrated fit can't
+    /// read it, and the least squares reads the noise as the airframe. Lower gains unclip it.
     Saturated,
 }
 
@@ -271,21 +296,23 @@ pub enum IdentifyStatus {
 /// the least residual (the shortest of a near-tie) among those whose moment pushes the axis
 /// the way it was pushed (among all when none does). That is exact without noise.
 ///
-/// In closed loop, though, the moment also carries the controller's answer to gyro noise,
-/// which that fit reads as part of the airframe. When it leaves more than 0.017 rad/s of the
-/// rate's change per tick unexplained (RMS), the probe fits in two stages instead: it keeps only the part of
-/// the moment the excitation explains (the excitation is the probe's own, so no noise is in
-/// it), filters that through each lag on a grid and each delay, half ticks included, and
-/// fits the rate's change per tick to it (a gain and a constant for the trim), the measured
-/// rate only the target. On a quiet window the least squares stays: there the moment's fast
-/// part is the controller answering the airframe, which is what tells a delay from a lag, and
-/// the two-stage fit drops it. So does a window whose moments mostly sit at the rate loop's
-/// limit (a start that rings), whose moment the excitation explains too little of.
+/// In closed loop, though, the gyro noise is in the measured rate, and the moment carries the
+/// controller's answer to it, so that fit reads the noise as part of the airframe. When it
+/// leaves more than 0.017 rad/s of the rate's change per tick unexplained (RMS), the window is
+/// noisy: the probe goes on exciting it to the config's [`noisy`](IdentifyConfig::noisy)
+/// length and amplitude, then fits it another way. It filters the recorded moment through each
+/// lag on a grid and each delay, half ticks included, and fits the rate to it (a gain and a
+/// constant for the trim), with both sides integrated: the measured rate only the target, so
+/// the noise in it doesn't bend the airframe's terms, and the integration keeps the target's
+/// noise out of every moment it's fitted to. Gyro noise still fills that fit's residual, so
+/// the delay with the least residual wins outright. A noisy window whose moments mostly sit at
+/// the rate loop's limit (a start that rings) aborts, as no fit reads a clipped moment
+/// through noise.
 ///
-/// The probe records the window (13 KB) and fits it on the tick the excitation ends. The
-/// least squares costs about 0.06 ms there on a desktop, the two-stage fit about 2 ms (128
-/// lags × 20 delays over the window), so a noisy window's last tick runs long. A non-finite
-/// rate or moment is recorded as the last finite one for the two-stage fit; the least squares
+/// The probe records the window (26 KB) and fits it on the tick the excitation ends. The
+/// least squares costs about 0.1 ms there on a desktop, the integrated fit about 11 ms (128
+/// lags × 20 delays over an 8 s window), so a noisy window's last tick runs long. A non-finite
+/// rate or moment is recorded as the last finite one for the integrated fit; the least squares
 /// skips that tick and the next `MAX_DELAY_TICKS + 2` while its history refills.
 ///
 /// # Examples
@@ -303,6 +330,8 @@ pub enum IdentifyStatus {
 #[derive(Clone, Debug, PartialEq)]
 pub struct IdentifyProbe {
     duration_s: f32,
+    /// The extension still to come; `None` once taken or when there's none.
+    noisy: Option<IdentifyExtension>,
     status: IdentifyStatus,
     sweep: SquareSweep,
     window: Window,
@@ -320,6 +349,7 @@ impl IdentifyProbe {
         }
         IdentifyProbe {
             duration_s: config.duration_s,
+            noisy: config.noisy,
             status: IdentifyStatus::Running { elapsed_s: 0.0 },
             sweep: SquareSweep::new(config.amplitude, config.washout_tc_s),
             window: Window::new(),
@@ -328,7 +358,8 @@ impl IdentifyProbe {
 
     /// Advances the probe by `dt` seconds with the axis's body rate this tick (rad/s) and its
     /// moment command on the last tick, and returns the offset to add to the loop's setpoint
-    /// (0 once it has finished). Fits the model on the tick the excitation ends.
+    /// (0 once it has finished). Fits the model on the tick the excitation ends, past the
+    /// config's `duration_s` when the window reads noisy there.
     ///
     /// # Panics
     ///
@@ -341,6 +372,9 @@ impl IdentifyProbe {
         let elapsed_s = elapsed_s + dt;
         let offset = self.sweep.next(dt, elapsed_s);
         self.window.record(dt, rate_radps, last_moment, offset);
+        if elapsed_s >= self.duration_s {
+            self.extend_if_noisy();
+        }
         self.status = if elapsed_s < self.duration_s {
             IdentifyStatus::Running { elapsed_s }
         } else {
@@ -355,6 +389,18 @@ impl IdentifyProbe {
     /// Where the probe stands.
     pub fn status(&self) -> IdentifyStatus {
         self.status
+    }
+
+    /// Takes the extension, if one is still to come and the window so far fits as noisy.
+    fn extend_if_noisy(&mut self) {
+        let Some(noisy) = self.noisy else {
+            return;
+        };
+        self.noisy = None;
+        if classify(&self.window) == Ok(Fit::Integrated) {
+            self.duration_s = noisy.duration_s;
+            self.sweep.amplitude = noisy.amplitude;
+        }
     }
 }
 
@@ -447,48 +493,65 @@ impl Window {
     }
 }
 
-/// The [`RateModel`] fitted to `window`: by least squares on the recorded moments
-/// ([`fit_recorded`]), unless that fit leaves more than [`NOISY_RESIDUAL_RADPS`] unexplained
-/// and no more than [`SATURATED_SHARE`] of the moments sit at the rate loop's limit, when the
-/// explained moments are fitted instead ([`fit_explained`]). `None` when the fit doesn't
-/// solve.
+/// The [`RateModel`] fitted to `window`, by the fit [`classify`] picks.
 fn fit_window(window: &Window) -> Result<RateModel, IdentifyAbort> {
+    match classify(window)? {
+        Fit::Recorded(model) => Ok(model),
+        Fit::Integrated => fit_integrated(window).ok_or(IdentifyAbort::Unexcited),
+    }
+}
+
+/// The fit a window takes.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Fit {
+    /// Quiet: [`fit_recorded`]'s model.
+    Recorded(RateModel),
+    /// Noisy: [`fit_integrated`].
+    Integrated,
+}
+
+/// By least squares on the recorded moments ([`fit_recorded`]), unless that fit leaves more
+/// than [`NOISY_RESIDUAL_RADPS`] unexplained, when [`fit_integrated`] fits it instead, or the
+/// window aborts as saturated if more than [`SATURATED_SHARE`] of its moments sit at the rate
+/// loop's limit. Unexcited when the least squares doesn't solve.
+fn classify(window: &Window) -> Result<Fit, IdentifyAbort> {
     let recorded = fit_recorded(window).ok_or(IdentifyAbort::Unexcited)?;
+    if recorded.residual_radps <= NOISY_RESIDUAL_RADPS {
+        return Ok(Fit::Recorded(recorded.model));
+    }
     let moments = &window.moments[..window.len];
     let saturated = moments
         .iter()
         .filter(|moment| moment.abs() >= SATURATED_MOMENT)
         .count();
-    let saturates = saturated as f32 > SATURATED_SHARE * window.len as f32;
-    let noisy = recorded.residual_radps > NOISY_RESIDUAL_RADPS;
-    match (noisy, saturates) {
-        (true, true) => Err(IdentifyAbort::Saturated),
-        (true, false) => fit_explained(window).ok_or(IdentifyAbort::Unexcited),
-        (false, _) => Ok(recorded.model),
+    if saturated as f32 > SATURATED_SHARE * window.len as f32 {
+        return Err(IdentifyAbort::Saturated);
     }
+    Ok(Fit::Integrated)
 }
 
-/// The [`RateModel`] fitted to the part of the moment the excitation explains
-/// ([`IdentifyProbe`] says how), at the delay [`delay_to_fit`] picks; `None` when the
-/// projection doesn't solve or the window is too short to fit any delay.
-fn fit_explained(window: &Window) -> Option<RateModel> {
+/// The [`RateModel`] fitted to the recorded moments through each lag and delay, both sides
+/// integrated ([`IdentifyProbe`] says how), at the delay with the least residual among those
+/// pushing the right way ([`delay_to_fit`]); `None` when the window is too short to fit any
+/// delay or no delay solves.
+fn fit_integrated(window: &Window) -> Option<RateModel> {
     let len = window.len;
     let dt_s = window.duration_s / len.max(1) as f32;
-    let explained = project(window)?;
-    // The first tick every delay's two regressors and the projection reach.
-    let first = PROJECTION_TAPS + MAX_DELAY_TICKS + 1;
+    // The first tick every delay's two moment terms and the rate's last tick reach.
+    let first = MAX_DELAY_TICKS + 1;
     if len <= first + 1 {
         return None;
     }
+    let integrator = Integrator::new(dt_s);
     let mut best: [Option<LagFit>; DELAY_STEPS] = [None; DELAY_STEPS];
     let mut accel = [0.0f32; WINDOW_CAPACITY];
     let mut previous_pole = 0.0;
     let mut poles = lag_poles(dt_s).peekable();
     while let Some(pole) = poles.next() {
-        lag_through(&explained, pole, len, &mut accel);
+        lag_through(&window.moments, pole, len, &mut accel);
         let next_pole = poles.peek().copied().unwrap_or(pole);
         for (step, best) in best.iter_mut().enumerate() {
-            let fit = fit_gain(window, &accel, Delay::at(step), first, len);
+            let fit = fit_gain(window, &accel, Delay::at(step), first, integrator);
             if fit.is_some_and(|fit| best.is_none_or(|kept| fit.residual < kept.residual)) {
                 *best = fit.map(|fit| LagFit {
                     pole,
@@ -500,9 +563,9 @@ fn fit_explained(window: &Window) -> Option<RateModel> {
         previous_pole = pole;
     }
     let effects = best.map(|fit| fit.map(|fit| (fit.gain, fit.residual)));
-    let step = delay_to_fit(&effects)? - 1;
+    let step = delay_to_fit(&effects, 0.0)? - 1;
     let delay = Delay::at(step);
-    let LagFit { pole, gain, .. } = refine(window, &explained, delay, best[step]?, first);
+    let LagFit { pole, gain, .. } = refine(window, delay, best[step]?, first, integrator);
     let [now, next] = delay.split().map(|share| share * gain * (1.0 - pole));
     Some(RateModel {
         rate_weights: [1.0 + pole, -pole],
@@ -512,16 +575,16 @@ fn fit_explained(window: &Window) -> Option<RateModel> {
     })
 }
 
-/// `explained` through a lag of pole `pole` into `accel`, over the first `len` ticks:
+/// `moments` through a lag of pole `pole` into `accel`, over the first `len` ticks:
 /// `a[k] = p·a[k−1] + (1 − p)·u[k]`.
 fn lag_through(
-    explained: &[f32; WINDOW_CAPACITY],
+    moments: &[f32; WINDOW_CAPACITY],
     pole: f32,
     len: usize,
     accel: &mut [f32; WINDOW_CAPACITY],
 ) {
     let mut lagged = 0.0;
-    for (accel, moment) in accel.iter_mut().zip(explained).take(len) {
+    for (accel, moment) in accel.iter_mut().zip(moments).take(len) {
         lagged = pole * lagged + (1.0 - pole) * moment;
         *accel = lagged;
     }
@@ -536,17 +599,16 @@ const REFINE_STEPS: usize = 12;
 /// residual; the grid's own fit if no refined pole beats it.
 fn refine(
     window: &Window,
-    explained: &[f32; WINDOW_CAPACITY],
     delay: Delay,
     grid_fit: LagFit,
     first: usize,
+    integrator: Integrator,
 ) -> LagFit {
     const GOLDEN: f32 = 0.618_034;
-    let len = window.len;
     let mut accel = [0.0f32; WINDOW_CAPACITY];
     let mut fit_at = |pole: f32| {
-        lag_through(explained, pole, len, &mut accel);
-        fit_gain(window, &accel, delay, first, len).map(|fit| LagFit { pole, ..fit })
+        lag_through(&window.moments, pole, window.len, &mut accel);
+        fit_gain(window, &accel, delay, first, integrator).map(|fit| LagFit { pole, ..fit })
     };
     let [mut low, mut high] = grid_fit.bracket;
     let mut best = grid_fit;
@@ -568,73 +630,6 @@ fn refine(
         }
     }
     best
-}
-
-/// The part of each recorded moment the excitation explains: the moment regressed by least
-/// squares on the last [`PROJECTION_TAPS`] offsets, the offset through lags of
-/// [`SLOW_TCS_S`], and a constant, then predicted from them (0 before the taps fill). Gyro noise drives the rest of the moment through the controller;
-/// the offsets are the probe's own, so their prediction carries none of it. `None` when the
-/// regression doesn't solve.
-fn project(window: &Window) -> Option<[f32; WINDOW_CAPACITY]> {
-    let dt_s = window.duration_s / window.len.max(1) as f32;
-    let mut normal = SMatrix::<f32, PROJECTION_TERMS, PROJECTION_TERMS>::zeros();
-    let mut projected = SVector::<f32, PROJECTION_TERMS>::zeros();
-    let mut terms = ProjectionTerms::new(dt_s);
-    for tick in 0..window.len {
-        if let Some(terms) = terms.next(window, tick) {
-            normal += terms * terms.transpose();
-            projected += terms * window.moments[tick];
-        }
-    }
-    let weights = normal.cholesky()?.solve(&projected);
-    if !weights.iter().all(|weight| weight.is_finite()) {
-        return None;
-    }
-    let mut explained = [0.0; WINDOW_CAPACITY];
-    let mut terms = ProjectionTerms::new(dt_s);
-    for (tick, moment) in explained.iter_mut().enumerate().take(window.len) {
-        if let Some(terms) = terms.next(window, tick) {
-            *moment = weights.dot(&terms);
-        }
-    }
-    Some(explained)
-}
-
-/// The projection's terms tick by tick: the moment recorded on tick k was commanded on tick
-/// k − 1, after that tick's offset, so its terms are the offsets from tick k − 1 back, the slow
-/// lags of the offset up to tick k − 1, and 1.
-struct ProjectionTerms {
-    dt_s: f32,
-    slow: [f32; SLOW_TCS_S.len()],
-}
-
-impl ProjectionTerms {
-    fn new(dt_s: f32) -> Self {
-        ProjectionTerms {
-            dt_s,
-            slow: [0.0; SLOW_TCS_S.len()],
-        }
-    }
-
-    /// Tick `tick`'s terms, `None` until the taps fill; call once per tick, in order.
-    fn next(&mut self, window: &Window, tick: usize) -> Option<SVector<f32, PROJECTION_TERMS>> {
-        let last_offset = window.offsets[tick.checked_sub(1)?];
-        for (slow, tc_s) in self.slow.iter_mut().zip(SLOW_TCS_S) {
-            *slow = lagged(*slow, last_offset, self.dt_s, tc_s);
-        }
-        if tick < PROJECTION_TAPS {
-            return None;
-        }
-        let mut terms = SVector::<f32, PROJECTION_TERMS>::zeros();
-        for (tap, term) in terms.iter_mut().take(PROJECTION_TAPS).enumerate() {
-            *term = window.offsets[tick - 1 - tap];
-        }
-        for (index, slow) in self.slow.iter().enumerate() {
-            terms[PROJECTION_TAPS + index] = *slow;
-        }
-        terms[PROJECTION_TERMS - 1] = 1.0;
-        Some(terms)
-    }
 }
 
 /// The lag grid's poles at ticks of `dt_s`: a lag of 0 (pole 0), then `e^(−dt/τ)` for each
@@ -750,7 +745,7 @@ impl DelayFits {
         });
         let effects =
             fits.map(|fit| fit.map(|(model, residual)| (model.moment_effect(), residual)));
-        let delay_ticks = delay_to_fit(&effects)?;
+        let delay_ticks = delay_to_fit(&effects, TIE_SHARE)?;
         let (model, residual) = fits[delay_ticks - 1]?;
         Some(RecordedFit {
             model,
@@ -851,39 +846,60 @@ struct LagFit {
     residual: f32,
 }
 
-/// Fits `y[k] − y[k−1] ≈ gain·x[k] + constant` over ticks `first..len` by least squares, `x`
-/// the lagged moment at `delay` (`a[k − d + 1]`, or its mean with `a[k − d]` at a half tick);
-/// `None` when it doesn't vary. Sums in `f64`: the residual, `Σt² − gain·Σxt − constant·Σt`,
-/// cancels to a small share of `Σt²`, and delays are told apart by 1% of it ([`TIE_SHARE`]).
+/// A leaky integrator, `f[k] = c·f[k−1] + v[k]`, at [`INTEGRATION_TC_S`]: `c = e^(−dt/τ)`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Integrator {
+    carry: f64,
+}
+
+impl Integrator {
+    fn new(dt_s: f32) -> Self {
+        Integrator {
+            carry: f64::from(libm::expf(-dt_s / INTEGRATION_TC_S)),
+        }
+    }
+}
+
+/// Fits `y[k] − y[k−1] ≈ gain·x[k] + constant`, both sides through `integrator`, over ticks
+/// `first..` of the window by least squares, `x` the lagged moment at `delay` (`a[k − d + 1]`,
+/// or its mean with `a[k − d]` at a half tick); `None` when it doesn't vary. Integrated, the
+/// constant is a ramp, so it's a regressor like the moment. Sums in `f64`: the residual cancels
+/// to a small share of the target's, and delays differ by a smaller one still.
 fn fit_gain(
     window: &Window,
     accel: &[f32; WINDOW_CAPACITY],
     delay: Delay,
     first: usize,
-    len: usize,
+    integrator: Integrator,
 ) -> Option<LagFit> {
     let [now, next] = delay.split().map(f64::from);
-    let (mut sxx, mut sx, mut sxt, mut st, mut stt) = (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
-    for tick in first..len {
+    let carry = integrator.carry;
+    let (mut moment, mut constant, mut target) = (0.0f64, 0.0f64, 0.0f64);
+    let (mut smm, mut smc, mut scc, mut smt, mut sct, mut stt) = (0.0f64, 0.0, 0.0, 0.0, 0.0, 0.0);
+    for tick in first..window.len {
         let felt = tick + 1 - delay.ticks;
         let x = now * f64::from(accel[felt]) + next * f64::from(accel[felt - 1]);
-        let target = f64::from(window.rates_radps[tick] - window.rates_radps[tick - 1]);
-        sxx += x * x;
-        sx += x;
-        sxt += x * target;
-        st += target;
+        let change = f64::from(window.rates_radps[tick] - window.rates_radps[tick - 1]);
+        moment = carry * moment + x;
+        constant = carry * constant + 1.0;
+        target = carry * target + change;
+        smm += moment * moment;
+        smc += moment * constant;
+        scc += constant * constant;
+        smt += moment * target;
+        sct += constant * target;
         stt += target * target;
     }
-    let count = (len - first) as f64;
-    let det = sxx * count - sx * sx;
-    // A lagged moment that doesn't vary (or a NaN) leaves the gain and the constant unsolved.
-    let varies = det > f64::EPSILON * sxx * count;
+    let det = smm * scc - smc * smc;
+    // A lagged moment that doesn't vary apart from the constant (or a NaN) leaves the gain
+    // and the constant unsolved.
+    let varies = det > f64::EPSILON * smm * scc;
     if !varies {
         return None;
     }
-    let gain = (sxt * count - sx * st) / det;
-    let constant = (sxx * st - sx * sxt) / det;
-    let residual = (stt - gain * sxt - constant * st).max(0.0);
+    let gain = (smt * scc - smc * sct) / det;
+    let trim = (smm * sct - smc * smt) / det;
+    let residual = (stt - gain * smt - trim * sct).max(0.0);
     Some(LagFit {
         pole: 0.0,
         bracket: [0.0; 2],
@@ -893,15 +909,14 @@ fn fit_gain(
 }
 
 /// The delay to fit, as its index in `fits` + 1 (shortest first, at most [`DELAY_STEPS`]), from
-/// each delay's moment effect and residual: [`shortest_tied`] among those with a positive
-/// moment effect,
-/// or among all when none has one (a reversed axis, which the design rejects as such). A
+/// each delay's moment effect and residual: [`shortest_tied`] at `tie_share` among those with a
+/// positive moment effect, or among all when none has one (a reversed axis, which the design rejects as such). A
 /// negative effect pushes the axis against the moment commanded, which no design can use, and
 /// in flight it comes from noise favoring a wrong delay (#529). A pushing delay wins however
 /// far its residual is from a wrong-way least: on QuadCopterX in RealFlight the 7 fits it
 /// decided sat 1–9% above it, 5 read 37–63 rad/s² (the axis's healthy fits read 30–70), and
 /// the design rejects the other 2 (0 and 8) as it did before. `None` when no delay solved.
-fn delay_to_fit(fits: &[Option<(f32, f32)>]) -> Option<usize> {
+fn delay_to_fit(fits: &[Option<(f32, f32)>], tie_share: f32) -> Option<usize> {
     let fit_at = |index: usize| fits.get(index).copied().flatten();
     let pushing: [Option<f32>; DELAY_STEPS] = core::array::from_fn(|index| {
         fit_at(index)
@@ -910,14 +925,14 @@ fn delay_to_fit(fits: &[Option<(f32, f32)>]) -> Option<usize> {
     });
     let all: [Option<f32>; DELAY_STEPS] =
         core::array::from_fn(|index| fit_at(index).map(|(_, residual)| residual));
-    shortest_tied(&pushing).or_else(|| shortest_tied(&all))
+    shortest_tied(&pushing, tie_share).or_else(|| shortest_tied(&all, tie_share))
 }
 
-/// The shortest delay, as its index + 1, whose residual is within [`TIE_SHARE`] of the least;
+/// The shortest delay, as its index + 1, whose residual is within `tie_share` of the least;
 /// `None` when no delay solved.
-fn shortest_tied(residuals: &[Option<f32>]) -> Option<usize> {
+fn shortest_tied(residuals: &[Option<f32>], tie_share: f32) -> Option<usize> {
     let least = residuals.iter().flatten().copied().reduce(f32::min)?;
-    let tied = least + TIE_SHARE * least;
+    let tied = least + tie_share * least;
     residuals
         .iter()
         .position(|residual| residual.is_some_and(|r| r <= tied))
