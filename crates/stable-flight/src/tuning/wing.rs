@@ -127,7 +127,7 @@ pub enum WingStatus {
 /// ```
 /// use stable_flight::tuning::{IdentifyConfig, WingIdentifyProbe, WingStatus};
 ///
-/// let config = IdentifyConfig { amplitude: 0.3, duration_s: 6.0, washout_tc_s: 0.2 };
+/// let config = IdentifyConfig { amplitude: 0.3, duration_s: 6.0, washout_tc_s: 0.2, noisy: None };
 /// let mut probe = WingIdentifyProbe::new(config);
 /// let offset = probe.step(0.004, 0.0, 0.0, 0.0);
 /// assert!(offset > 0.0 && offset <= config.amplitude);

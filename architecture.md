@@ -952,7 +952,7 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     spikes were most of roll's excitation and fit 11 rad/s² against pitch's 22–24, so the
     design rang; without angle D, roll didn't fit at all. On the rate setpoint roll fits 23
     against pitch's 27 (#561). The
-    probe records the window (13 KB) and fits it when the excitation ends; the least-squares
+    probe records the window and fits it when the excitation ends; the least-squares
     fit takes the rate's change on the last rate and the last change, since fitting the last
     two rates side by side loses the lag in `f32` (up to 1.6 ms off, #516), and recursive least
     squares hadn't converged in 3 s. On the sim, 3 s per axis fit the same
@@ -963,48 +963,68 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     40 Hz passing 28 of 30 noise-row runs over 5 noise seeds, but on RealFlight's QuadCopterX,
     whose dynamics aren't the model's, every cutoff tried (40–80 Hz, two to eight poles) read
     the 5–13 ms lag as 10–270 ms, and the designed rate P fell to half (#373).
-  * *Noisy windows* (`IdentifyProbe`, #551): in closed loop the controller feeds gyro noise
-    into the moment, so the least-squares fit reads that noise as the airframe: with the
+  * *Noisy windows* (`IdentifyProbe`, #551, #603): in closed loop the controller feeds gyro
+    noise into the moment, so the least-squares fit reads that noise as the airframe: with the
     sim's 0.02 rad/s of white noise alone it read every airframe's lag as 0, and with its
-    90 Hz tone it designed rate P from 0.23 to 16 against 0.67–1.90. A noisy window is fitted
-    in two stages instead. The moment is projected on the excitation (10 past offsets, six
-    slow lags of it, and a constant), keeping the part the probe's own square wave explains,
-    which carries no noise; that part goes through each lag on a grid (0, then 1–500 ms in 5%
-    steps, refined between the best point's neighbors) and each delay in half ticks (the
-    zero-order hold leaves a moment's first tick partly felt), and the rate's change per tick
-    is fitted to it with a gain and a constant, the measured rate only the target. On the
-    sim's low starts it reads each airframe's lag through the noise (`quad_x` 25–33 ms against
-    28–30 clean, `heavy_quad` 47–52 against 43–49) and passes `quad_x`'s and `heavy_quad`'s
-    noise rows on 5 seeds. On a quiet window it is wrong: the moment's fast part is then the
-    controller answering the airframe, which is what tells a delay from a lag, and the
-    projection drops it. Over RealFlight's eXplora roll window every delay from 1 to 10½ ticks
-    fitted within 1.8% of the least, and it designed rate P 3.92 against RealFlight's 0.94
-    (pitch 3.36 against 1.69; a QuadCopterX pitch window 2.06 against 0.77). So the probe
-    fits by least squares first and gates on what it leaves unexplained, the residual's RMS
-    per tick: past 0.017 rad/s it fits in two stages. RealFlight's windows leave 0.002–0.012
-    (eXplora and QuadCopterX, 8 windows), the sim eXplora with 0.01 rad/s of gyro noise 0.012,
-    and the sim's noise rows 0.024–0.100. A clean window leaves under 0.001 whatever its
-    gains: a gate on the rate's own noise (the RMS of its second difference) read a clean
-    `racer` at 1.75× its gains, ringing, as 0.074 against RealFlight's 0.020 at most. A window
-    past 20% saturated never takes the two-stage fit: the ×3 starts ring at the rate loop's ±1
-    for 510–629 of 750 ticks with no noise, the excitation explains little of that moment, and
-    the two-stage fit misread their lags (`racer` 7.6 ms against 15). Quiet, it takes the
-    least squares, exact there. Noisy as well, no fit reads it (the least squares designed
-    `quad_x`'s rate P 8.1 against 1.9), so the probe aborts (`IdentifyAbort::Saturated`) and
-    the design stage lowers its start, every gain ÷ 1.3 as a search lowers an unsettled one,
-    and fits again, up to eight times (the search's cap, below): `quad_x`'s and
-    `heavy_quad`'s ×3 noise rows pass on 5 seeds. The two-stage fit costs about 2 ms on a desktop in the window's last tick, against
-    0.06 ms for the least squares.
-    Rejected (#551, over the sim's 30 noise-row fits and the RealFlight windows): two stages
-    everywhere (above); within the two-stage fit, the longest delay of a near-tie (eXplora
-    roll P 0.71, pitch 2.06–2.42), the delay from the least-squares fit (roll lag 97 ms), and
-    20 or 40 projection taps (no better; 40 doesn't solve in `f32`); a low-pass on both sides
-    of the least-squares fit (PX4's prefilter, above); instrumental variables on the lagged
-    excitation (erratic, P 0.2–23); one moment term (worse); a lag grid on the recorded
-    moment (biased once the tone is in: lag 0, P 0.03–0.13); and a free weight on each of two
+    90 Hz tone it designed rate P from 0.23 to 16 against 0.67–1.90. So the probe fits by least
+    squares first and gates on what it leaves unexplained, the residual's RMS per tick: past
+    0.017 rad/s the window is noisy. RealFlight's windows leave 0.002–0.012 (eXplora and
+    QuadCopterX, 8 windows), the sim eXplora with 0.01 rad/s of gyro noise 0.012, and the sim's
+    noise rows 0.024–0.100. A clean window leaves under 0.001 whatever its gains: a gate on the
+    rate's own noise (the RMS of its second difference) read a clean `racer` at 1.75× its
+    gains, ringing, as 0.074 against RealFlight's 0.020 at most.
+
+    A noisy window goes on to 8 s at twice the amplitude (`IdentifyConfig::noisy`,
+    1.4 rad/s for the copter), then takes the integrated fit. The recorded moment goes through
+    each lag on a grid (0, then 1–500 ms in 5% steps, refined between the best point's
+    neighbors) and each delay in half ticks (the zero-order hold leaves a moment's first tick
+    partly felt), and the rate is fitted to it with a gain and a constant, both sides through a
+    0.1 s leaky integrator, the measured rate only the target. Integrated, the target's noise
+    is the current tick's, which no moment commanded before it carries. In the per-tick form
+    the rate's change holds the last tick's noise, which the moment one tick on answered, and
+    every noisy fit read a 1-tick delay. Gyro noise fills the residual, every delay within
+    0.05% of the least, so the least wins outright, where the least squares' 1% tie took the
+    shortest. Under the sim's noise with 10 ms of delay (true 3 ticks; quiet least squares
+    reads 3), over 5 seeds on roll and pitch, the read delay, and the rate P designed against
+    the noise-free plant's:
+
+    | fit, window | `quad_x` | `heavy_quad` | `racer` | rate P against noise-free |
+    |---|---|---|---|---|
+    | projected moment, per tick, 1% tie (rejected) | 1 | 1 | 1 | 2.0–2.9× |
+    | the same, least residual | 2–10 | 8–10 | 3–7 | 0.33–1.39× |
+    | integrated, 0.7 rad/s, 3 s | 4–8 | 4–7 | 3–4 | 0.51–1.29× |
+    | integrated, 1.4 rad/s, 3 s | 3–5 | 4–5 | 3–4 | 0.75–1.40× |
+    | integrated, 0.7 rad/s, 8 s | 3–5 | 4–5 | 3–4 | 0.81–1.57× |
+    | integrated, extended to 1.4 rad/s, 8 s | 3–4 | 4 | 3–4 | 0.88–1.08× |
+
+    Noise-only rows (true 1 tick) read 1–2. The extension costs 5 s per noisy fit, and the
+    fit about 11 ms on a desktop in the window's last tick, against 0.1 ms for the least
+    squares; the window (26 KB) holds 8.2 s.
+
+    The gate stays: on a quiet window the least squares is exact, and the integrated fit reads
+    a delay-dominated axis short. On RealFlight's eXplora roll window it read 4½ ticks and
+    98 ms of lag against the least squares' 9 and 2 ms, and designed rate P 1.48 against
+    RealFlight's 0.94 (pitch 3.16 against 1.69, QuadCopterX 15–35% over). A window past 20%
+    saturated never takes it: the ×3 starts ring at the rate loop's ±1 for 510–629 of 750
+    ticks, and a clipped moment isn't the one the airframe felt. Quiet, it takes the least
+    squares, exact there. Noisy as well, no fit reads it (the least squares designed `quad_x`'s
+    rate P 8.1 against 1.9), so the probe aborts (`IdentifyAbort::Saturated`) and the design
+    stage lowers its start, every gain ÷ 1.3 as a search lowers an unsettled one, and fits
+    again, up to eight times (the search's cap, below).
+
+    Rejected (#551, #603): the moment projected on the excitation (10 past offsets, six slow
+    lags of it, and a constant), which drops the noise-driven moment, most of the window's
+    fast content, so its residual didn't tell the delays apart (table); fitting the projected
+    rate as the target too (`quad_x` 2–10 ticks at 3 s, 1–10 at 8 s); both sides prefiltered
+    at 20–200 ms on the projected moment (1 tick); the integrated fit at 0.4 s (some 2 ticks,
+    P to 1.58×) or 1 s; a design for the lowest P among the tied delays (0.3–0.6× the
+    noise-free P); the longest delay of a near-tie (eXplora roll P 0.71, pitch 2.06–2.42); the
+    delay from the least-squares fit (roll lag 97 ms); a low-pass on both sides of the
+    least-squares fit (PX4's prefilter, above); instrumental variables on the lagged
+    excitation (erratic, P 0.2–23); one moment term (worse); and a free weight on each of two
     ticks instead of half-tick delays (fitted noise, opposite in sign). A real airframe whose
-    vibration crosses the gate takes the two-stage fit, which misreads an axis whose delay
-    dominates (the eXplora's roll).
+    vibration crosses the gate takes the integrated fit, which reads a delay-dominated axis
+    short (the eXplora's roll, above).
   * *Design* (`tuning::design_rate`, `design_angle_p`, `COPTER_LOOP_SHAPING`): rate D/P at the
     fitted lag, so the PD's zero cancels the motor lag; rate P for a 65° phase margin on the
     model's frequency response, its delay and the stabilizer's gyro filters included
@@ -1089,13 +1109,14 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     steps clipping; on the gyro-filtered rate loop with rate I, those rows pass.
   * Open: `racer`'s ×3 noise row, with the notch, overshoots the time budget or misses the
     step spec on 4 seeds of 5, and its low start, passing on the seed its row flies, misses a
-    yaw step on seed 5 ([#604](https://github.com/wboayue/stable-flight/issues/604)). With
-    10 ms of delay under the same noise (the delay-noise and combined rows), the noisy fit
-    can't place the delay: every delay from half a tick to ten fits within 0.1% of the least,
-    the lag trading against it, so the shortest wins, the rate design rings at the rate loop's
-    limit, and a later stage's fit saturates or doesn't settle. Moment headroom isn't the
-    limit: the mixer never clips, and the trim holds under a third of the moment
-    ([#603](https://github.com/wboayue/stable-flight/issues/603)). The trim rows pass, with
+    yaw step on seed 5 ([#604](https://github.com/wboayue/stable-flight/issues/604)); with
+    10 ms of delay too, its ×3 pitch rate fit still saturates. With 10 ms of delay under the
+    same noise, `heavy_quad`'s and `racer`'s low starts pass; `quad_x`'s yaw and pitch rate
+    searches keep their start as worse, or pass a step the spec then misses by under 2% of
+    overshoot, as `quad_x`'s noise row does on seed 3 from ×3
+    ([#672](https://github.com/wboayue/stable-flight/issues/672)); and the ×3 starts tune
+    every loop but take 378–510 s against the 350 s budget
+    ([#673](https://github.com/wboayue/stable-flight/issues/673)). The trim rows pass, with
     the rate I term limited in moment (*Retuning `i` is bumpless*, #374).
     `racer`'s ×3 start breaches the rate envelope in its first fit with 25 ms of delay: the
     abort is the safe outcome, and the row stays ignored.
