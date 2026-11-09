@@ -117,6 +117,10 @@ Code comments and docs link here instead of redefining a term.
   braked unshaped (`GUID_LAT_BRK`), slow along one, so braking starts in time.
 - **Deadband:** a band around zero where small inputs are ignored, so noise doesn't cause
   constant small corrections.
+- **Leaky integrator:** a running sum that forgets: each tick it keeps a share of its last
+  value (`e^(−dt/τ)` for time constant `τ`) and adds the new sample. Over times shorter than
+  `τ` it integrates; past `τ` old samples fade, so a constant input settles rather than
+  growing without bound. The identify fit's noisy windows run both sides through one.
 - **Low-pass filter:** smooths a noisy signal by attenuating fast changes, at the cost of lag;
   its cutoff frequency divides what passes from what's cut, and more poles cut harder past it.
   The copter's rate loop flies its gyro rates through one (the gyro filter).

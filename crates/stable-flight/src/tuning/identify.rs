@@ -304,8 +304,10 @@ pub enum IdentifyStatus {
 /// lag on a grid and each delay, half ticks included, and fits the rate to it (a gain and a
 /// constant for the trim), with both sides integrated: the measured rate only the target, so
 /// the noise in it doesn't bend the airframe's terms, and the integration keeps most of the
-/// target's noise out of the moments it's fitted to. Gyro noise still fills that fit's residual, so
-/// the delay with the least residual wins outright. A noisy window whose moments mostly sit at
+/// target's noise out of the moments it's fitted to (a
+/// [leaky integrator](https://github.com/wboayue/stable-flight/blob/main/docs/glossary.md)).
+/// Gyro noise still fills that fit's residual, so the delay with the least residual wins
+/// outright. A noisy window whose moments mostly sit at
 /// the rate loop's limit (a start that rings) aborts, as no fit reads a clipped moment
 /// through noise.
 ///
@@ -372,16 +374,22 @@ impl IdentifyProbe {
         let elapsed_s = elapsed_s + dt;
         let offset = self.sweep.next(dt, elapsed_s);
         self.window.record(dt, rate_radps, last_moment, offset);
-        if elapsed_s >= self.duration_s {
-            self.extend_if_noisy();
+        self.status = IdentifyStatus::Running { elapsed_s };
+        if elapsed_s < self.duration_s {
+            return offset;
         }
-        self.status = if elapsed_s < self.duration_s {
-            IdentifyStatus::Running { elapsed_s }
-        } else {
-            match fit_window(&self.window) {
-                Ok(model) => IdentifyStatus::Done(model),
-                Err(abort) => IdentifyStatus::Aborted(abort),
+        let fit = classify(&self.window);
+        // A noisy window takes the extension, once, before it's fitted.
+        if let (Some(noisy), Ok(Fit::Integrated)) = (self.noisy.take(), fit) {
+            self.duration_s = noisy.duration_s;
+            self.sweep.amplitude = noisy.amplitude;
+            if elapsed_s < self.duration_s {
+                return offset;
             }
+        }
+        self.status = match fit_classified(&self.window, fit) {
+            Ok(model) => IdentifyStatus::Done(model),
+            Err(abort) => IdentifyStatus::Aborted(abort),
         };
         offset
     }
@@ -389,18 +397,6 @@ impl IdentifyProbe {
     /// Where the probe stands.
     pub fn status(&self) -> IdentifyStatus {
         self.status
-    }
-
-    /// Takes the extension, if one is still to come and the window so far fits as noisy.
-    fn extend_if_noisy(&mut self) {
-        let Some(noisy) = self.noisy else {
-            return;
-        };
-        self.noisy = None;
-        if classify(&self.window) == Ok(Fit::Integrated) {
-            self.duration_s = noisy.duration_s;
-            self.sweep.amplitude = noisy.amplitude;
-        }
     }
 }
 
@@ -494,8 +490,17 @@ impl Window {
 }
 
 /// The [`RateModel`] fitted to `window`, by the fit [`classify`] picks.
+#[cfg(test)]
 fn fit_window(window: &Window) -> Result<RateModel, IdentifyAbort> {
-    match classify(window)? {
+    fit_classified(window, classify(window))
+}
+
+/// The [`RateModel`] fitted to `window` by `fit`, the fit [`classify`] picked for it.
+fn fit_classified(
+    window: &Window,
+    fit: Result<Fit, IdentifyAbort>,
+) -> Result<RateModel, IdentifyAbort> {
+    match fit? {
         Fit::Recorded(model) => Ok(model),
         Fit::Integrated => fit_integrated(window).ok_or(IdentifyAbort::Unexcited),
     }
@@ -565,7 +570,8 @@ fn fit_integrated(window: &Window) -> Option<RateModel> {
     let effects = best.map(|fit| fit.map(|fit| (fit.gain, fit.residual)));
     let step = delay_to_fit(&effects, 0.0)? - 1;
     let delay = Delay::at(step);
-    let LagFit { pole, gain, .. } = refine(window, delay, best[step]?, first, integrator);
+    let grid_fit = best[step]?;
+    let LagFit { pole, gain, .. } = refine(window, delay, grid_fit, first, integrator, &mut accel);
     let [now, next] = delay.split().map(|share| share * gain * (1.0 - pole));
     Some(RateModel {
         rate_weights: [1.0 + pole, -pole],
@@ -596,19 +602,20 @@ fn lag_through(
 const REFINE_STEPS: usize = 12;
 
 /// `grid_fit` at `delay`, its pole refined by golden section within its bracket on the
-/// residual; the grid's own fit if no refined pole beats it.
+/// residual; the grid's own fit if no refined pole beats it. `accel` is scratch for each
+/// pole's lagged moment.
 fn refine(
     window: &Window,
     delay: Delay,
     grid_fit: LagFit,
     first: usize,
     integrator: Integrator,
+    accel: &mut [f32; WINDOW_CAPACITY],
 ) -> LagFit {
     const GOLDEN: f32 = 0.618_034;
-    let mut accel = [0.0f32; WINDOW_CAPACITY];
     let mut fit_at = |pole: f32| {
-        lag_through(&window.moments, pole, window.len, &mut accel);
-        fit_gain(window, &accel, delay, first, integrator).map(|fit| LagFit { pole, ..fit })
+        lag_through(&window.moments, pole, window.len, accel);
+        fit_gain(window, accel, delay, first, integrator).map(|fit| LagFit { pole, ..fit })
     };
     let [mut low, mut high] = grid_fit.bracket;
     let mut best = grid_fit;
@@ -910,12 +917,13 @@ fn fit_gain(
 
 /// The delay to fit, as its index in `fits` + 1 (shortest first, at most [`DELAY_STEPS`]), from
 /// each delay's moment effect and residual: [`shortest_tied`] at `tie_share` among those with a
-/// positive moment effect, or among all when none has one (a reversed axis, which the design rejects as such). A
-/// negative effect pushes the axis against the moment commanded, which no design can use, and
-/// in flight it comes from noise favoring a wrong delay (#529). A pushing delay wins however
-/// far its residual is from a wrong-way least: on QuadCopterX in RealFlight the 7 fits it
-/// decided sat 1–9% above it, 5 read 37–63 rad/s² (the axis's healthy fits read 30–70), and
-/// the design rejects the other 2 (0 and 8) as it did before. `None` when no delay solved.
+/// positive moment effect, or among all when none has one (a reversed axis, which the design
+/// rejects as such). A negative effect pushes the axis against the moment commanded, which no
+/// design can use, and in flight it comes from noise favoring a wrong delay (#529). A pushing
+/// delay wins however far its residual is from a wrong-way least: on QuadCopterX in
+/// RealFlight the 7 fits it decided sat 1–9% above it, 5 read 37–63 rad/s² (the axis's
+/// healthy fits read 30–70), and the design rejects the other 2 (0 and 8). `None` when no
+/// delay solved.
 fn delay_to_fit(fits: &[Option<(f32, f32)>], tie_share: f32) -> Option<usize> {
     let fit_at = |index: usize| fits.get(index).copied().flatten();
     let pushing: [Option<f32>; DELAY_STEPS] = core::array::from_fn(|index| {
