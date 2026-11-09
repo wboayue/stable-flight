@@ -983,7 +983,8 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     is mostly the current tick's, which no moment commanded before it carries. In the per-tick
     form the rate's change holds the last tick's noise too, which the moment one tick on
     answered (table). Gyro noise fills the residual, every delay within 0.05% of the least, so
-    the least wins outright, where the least squares' 1% tie took the shortest. Under the sim's noise with 10 ms of delay (true 3 ticks; quiet least squares
+    the least wins outright, where the least squares' 1% tie took the shortest.
+    Under the sim's noise with 10 ms of delay (true 3 ticks; quiet least squares
     reads 3), over 5 seeds on roll and pitch, the read delay, and the rate P designed against
     the noise-free plant's:
 

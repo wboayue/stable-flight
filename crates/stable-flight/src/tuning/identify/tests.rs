@@ -178,22 +178,12 @@ fn a_noisy_window_is_extended() {
         ("noisy, no extension", CONFIG, 0.06, 750, 0.0),
     ];
     for (case, config, noise, ticks, peak) in rows {
-        let mut offsets = Vec::new();
         let probe = identify_with(params, IdentifyProbe::new(config), |tick, rate| {
             rate + gyro_noise(tick, noise)
         });
-        let mut replay = IdentifyProbe::new(config);
-        for tick in 0..probe.window.len {
-            let offset = replay.step(
-                DT,
-                probe.window.rates_radps[tick],
-                probe.window.moments[tick],
-            );
-            if tick >= 775 {
-                offsets.push(offset.abs());
-            }
-        }
-        let largest = offsets.iter().copied().fold(0.0f32, f32::max);
+        let window = &probe.window;
+        let after = window.offsets[..window.len].iter().skip(775);
+        let largest = after.map(|offset| offset.abs()).fold(0.0f32, f32::max);
         check!(
             probe.window.len.abs_diff(ticks) <= 1,
             "{case}: {} ticks",
