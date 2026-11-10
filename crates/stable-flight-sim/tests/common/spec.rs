@@ -13,10 +13,14 @@
 //!   constant; it is compared here to the 10–90% rise, which is longer for the same response.
 //! - Settling: inside the probe's 10% band before the window ends. Clipping: within the step
 //!   plan's allowance, beyond which a step measures the limit, not the loop.
+//! - Under gyro white noise, each step is judged on the mean of [`NOISY_STEPS`] steps, each on
+//!   its own noise, as ArduPilot freezes a gain only after `AUTOTUNE_SUCCESS_COUNT` (4)
+//!   passing twitches (`AC_AutoTune`) rather than on one.
 //!
 //! Each loop steps as the autotune judges it (`SearchPlan::copter`'s steps; heading, which
 //! isn't searched, `StepTestPlan::copter`).
 
+use stable_flight::Vec3;
 use stable_flight::controllers::Gains;
 use stable_flight::stabilizers::copter::TunedLoop;
 use stable_flight::tuning::autotune::{SearchPlan, StepTestPlan};
@@ -158,8 +162,33 @@ pub fn respond(plant: &Plant, target: TunedLoop, step: StepConfig) -> Option<Ste
     respond_within(plant, target, step, PROBE_TIMEOUT_S)
 }
 
-/// As [`respond`], giving the probe up to `timeout_s` simulated seconds.
+/// As [`respond`], giving each probe up to `timeout_s` simulated seconds. On a plant with gyro
+/// white noise, the [`mean`] of [`NOISY_STEPS`] steps, each on its own noise seed; `None` if
+/// any probe didn't measure.
 pub fn respond_within(
+    plant: &Plant,
+    target: TunedLoop,
+    step: StepConfig,
+    timeout_s: f32,
+) -> Option<StepMetrics> {
+    let noisy = plant.perturbations.gyro.rms_radps != Vec3::zeros();
+    let steps = if noisy { NOISY_STEPS } else { 1 };
+    let mut metrics = Vec::with_capacity(steps);
+    for offset in 0..steps as u64 {
+        let mut reseeded = *plant;
+        reseeded.perturbations.gyro.seed = plant.perturbations.gyro.seed.wrapping_add(offset);
+        metrics.push(probe_step(&reseeded, target, step, timeout_s)?);
+    }
+    Some(mean(&metrics))
+}
+
+/// Steps judged together under gyro noise: ArduPilot's `AUTOTUNE_SUCCESS_COUNT`. One step reads
+/// noise as response: the same `quad_x` yaw rate gains read 0.6–7.1% overshoot on one 0.5 rad/s
+/// step across 20 seeds, mean 3.5% (#672).
+const NOISY_STEPS: usize = 4;
+
+/// One step of `target` from a settled hover on `plant`; `None` if the probe didn't measure it.
+fn probe_step(
     plant: &Plant,
     target: TunedLoop,
     step: StepConfig,
@@ -168,6 +197,28 @@ pub fn respond_within(
     match super::probe(plant, target, ProbeConfig::Step(step), timeout_s) {
         Some(ProbeStatus::Done(Measurement::Step(metrics))) => Some(metrics),
         _ => None,
+    }
+}
+
+/// `steps` (at least one, all of one step) as one: each metric's mean, but not risen or not
+/// settled if any step wasn't.
+fn mean(steps: &[StepMetrics]) -> StepMetrics {
+    let n = steps.len() as f32;
+    let mean_of = |metric: fn(&StepMetrics) -> f32| steps.iter().map(metric).sum::<f32>() / n;
+    let mean_if_all = |metric: fn(&StepMetrics) -> Option<f32>| {
+        let values: Option<Vec<f32>> = steps.iter().map(metric).collect();
+        values.map(|values| values.iter().sum::<f32>() / n)
+    };
+    StepMetrics {
+        amplitude: steps[0].amplitude,
+        peak: mean_of(|m| m.peak),
+        peak_time_s: mean_of(|m| m.peak_time_s),
+        overshoot: mean_of(|m| m.overshoot),
+        rise_time_s: mean_if_all(|m| m.rise_time_s),
+        settling_time_s: mean_if_all(|m| m.settling_time_s),
+        bounce_back: mean_of(|m| m.bounce_back),
+        final_value: mean_of(|m| m.final_value),
+        saturated_s: mean_of(|m| m.saturated_s),
     }
 }
 
