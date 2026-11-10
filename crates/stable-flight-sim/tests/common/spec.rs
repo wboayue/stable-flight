@@ -126,6 +126,11 @@ pub fn missed_targets(target: TunedLoop, m: &StepMetrics) -> Vec<&'static str> {
     missed_bands(target, m, plan(target).max_saturated_s, max_rise_s)
 }
 
+/// Clip time within this of the allowance meets it, in s: clip time sums 4 ms ticks in `f32`,
+/// which lands nanoseconds off the decimal allowance, so 4 steps clipping 10, 11, 11, and 10
+/// ticks, a mean of 10.5 ticks or exactly the copter's 0.042 s, read 0.042000003 (#673).
+const CLIP_ROUNDING_S: f32 = 1e-6;
+
 /// As [`missed_targets`], with the clip allowance `max_saturated_s` and the rise target
 /// `max_rise_s` (`None`: none) of another plan's steps.
 pub fn missed_bands(
@@ -138,7 +143,10 @@ pub fn missed_bands(
     let checks = [
         ("overshoot", m.overshoot <= MAX_OVERSHOOT),
         ("unsettled", m.settling_time_s.is_some()),
-        ("clipped", m.saturated_s <= max_saturated_s),
+        (
+            "clipped",
+            m.saturated_s <= max_saturated_s + CLIP_ROUNDING_S,
+        ),
         (
             "rise",
             max_rise_s.is_none_or(|max_s| m.rise_time_s.is_some_and(|rise_s| rise_s <= max_s)),
