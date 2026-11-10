@@ -817,16 +817,18 @@ pub struct Acceptance {
     pub overshoot_margin: f32,
     /// Settling time allowed, as a multiple of the baseline's. At least 1. Higher: keeps a
     /// result whose steps settle slower than the start's; lower: keeps the start over a result
-    /// that overshoots no more but settles a little slower, as under gyro noise.
+    /// that overshoots within `overshoot_margin` of it but settles a little slower, as under
+    /// gyro noise.
     pub settling_ratio: f32,
 }
 
 impl Default for Acceptance {
     /// 0.05 more overshoot, 20% slower settling.
     ///
-    /// Under gyro noise, a verify that overshoots no more than its baseline still settles up
-    /// to 1.14 times slower on `quad_x` (10 ms delay and noise); 1.1 keeps the start as worse,
-    /// and every ratio from 1.2 up tunes the same rows (#672).
+    /// Under gyro noise, a verify that overshoots within `overshoot_margin` of its baseline
+    /// still settles up to 1.14 times slower on `quad_x` (10 ms delay and noise, and
+    /// everything combined); 1.1 keeps the start as worse, and every ratio from 1.2 up tunes
+    /// the same rows (#672).
     fn default() -> Self {
         Self {
             overshoot_margin: 0.05,
