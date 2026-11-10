@@ -7,6 +7,8 @@ use crate::stabilizers::plane::PlaneAxisGains;
 use crate::tuning::{Measurement, ProbeAbort, ProbeConfig, StepMetrics, StepSummary};
 
 use design::Design;
+#[cfg(test)]
+pub(super) use design::SATURATED_FACTOR;
 use plane_design::PlaneDesign;
 use search::Search;
 
@@ -23,7 +25,7 @@ const MAX_MEASURE_STOPS: usize = 3;
 /// Most times a stage lowers its start: a search's that won't settle, a rate design's whose fit
 /// saturates under noise. A search cuts by its bracket's factor, 1.3 on the copter, so eight
 /// take its start to an eighth (÷ 8.2) in 80 s at the copter envelope's 10 s settle timeout; a
-/// design cuts by 1.6, eight to ÷ 43 in 24 s of 3 s fits. The retry on a smaller start is
+/// design cuts by [`design::SATURATED_FACTOR`], eight to ÷ 43 in 24 s of 3 s fits. The retry on a smaller start is
 /// ArduPilot's on a smaller twitch: `AC_AutoTune` shrinks its twitch (`step_scaler`) ×0.9 per
 /// retry, down to a fifth. Under gyro noise and 10 ms of delay, three times a quad's rate
 /// gains ring at the rate loop's limit until lowered 4 times (`quad_x`, `heavy_quad`) or 5
@@ -118,13 +120,13 @@ impl Input {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action<G = Gains> {
     /// Commit `commit` first when given (it stays if the stage fails), settle on the
-    /// committed gains (unless `settle` is false: the probe starts on the next update), then
+    /// committed gains (unless `wait_for_settle` is false: the probe starts on the next update), then
     /// run `probe` on the stage's loop, flying `gains` for that probe only when given.
     Probe {
         probe: ProbeConfig,
         gains: Option<G>,
         commit: Option<G>,
-        settle: bool,
+        wait_for_settle: bool,
     },
     /// Commit these gains for the stage's loop and end the stage; a step test reports its
     /// valid steps, a search its verify and baseline.
@@ -151,7 +153,7 @@ impl<G> Action<G> {
             probe,
             gains: None,
             commit: None,
-            settle: true,
+            wait_for_settle: true,
         }
     }
 }

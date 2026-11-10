@@ -58,10 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Breaking (behavior):** a rate design stage whose fit saturates under noise cuts its start
-  ÷ 1.6 rather than ÷ 1.3, and fits again on it at once rather than after a settle. The ×3
-  starts under noise and delay design in 4–5 cuts instead of 6–8, without a 10 s wait before
-  each, and autotune in 303–334 s instead of up to 510 s on the sim (#673).
 - **Breaking:** `IdentifyConfig` has a `noisy: Option<IdentifyExtension>` field, how a
   window that reads noisy goes on exciting (amplitude and whole length); struct literals add
   it (`None` keeps the old behavior). `COPTER_IDENTIFY` extends a noisy window to 8 s at
@@ -119,8 +115,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   call), so a design models the notch too; `CopterStabilizerConfig` gains `gyro_notch` (#597).
 - **Breaking:** `IdentifyAbort::Saturated`: a window whose moments mostly sit at the rate
   loop's limit while the least squares leaves it noisy is no longer fitted. A design stage
-  answers it on a rate loop by lowering its start, every gain ÷ 1.3, and fitting again, up to
-  eight times (#551, #598). `IdentifyAbort` is now `#[non_exhaustive]`.
+  answers it on a rate loop by lowering its start, every gain ÷ 1.6, and fitting again at
+  once, without waiting for the settle, up to eight times (#551, #598, #673). `IdentifyAbort` is now `#[non_exhaustive]`.
 - **Breaking (behavior):** `IdentifyProbe` fits a noisy window in two stages: the moment
   projected on the probe's excitation, then a lag and half-tick delay grid on it, so gyro
   noise in the moment no longer reads as the airframe (the sim's noise rows read every lag as

@@ -103,7 +103,7 @@ impl Search {
                     probe,
                     gains,
                     commit: Some(lowered),
-                    settle: true,
+                    wait_for_settle: true,
                 },
                 end => end,
             };
@@ -128,7 +128,7 @@ impl Search {
             probe: self.pairs.probe(),
             gains: None,
             commit: Some(lowered),
-            settle: true,
+            wait_for_settle: true,
         }
     }
 
@@ -154,7 +154,7 @@ impl Search {
             probe: self.pairs.probe(),
             gains,
             commit: None,
-            settle: true,
+            wait_for_settle: true,
         }
     }
 
