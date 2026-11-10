@@ -13,9 +13,9 @@ const MAX_UNUSABLE_FITS: usize = 3;
 /// What a rate design stage divides its start's gains by when its fit saturates under noise.
 /// Higher: fewer 3 s refits from a start that rings, but a coarser landing. Three times a
 /// quad's rate gains under gyro noise stop saturating after 4 cuts (`quad_x`, `heavy_quad`) or
-/// 5 (`racer`), against 6–8 at 1.3. Of the 15 ×3 starts under noise over seeds 1–5, 1.3 and
-/// 2.0 left 4 and 3 missing the step spec, 1.6 none (#673).
-const SATURATED_FACTOR: f32 = 1.6;
+/// 5 (`racer`), against 6–8 at 1.3. Refitting at once on each cut, of the 15 ×3 starts under
+/// noise over seeds 1–5, 1.3 and 2.0 left 4 and 3 missing the step spec, 1.6 none (#673).
+pub(in crate::tuning::autotune) const SATURATED_FACTOR: f32 = 1.6;
 
 /// A [`DesignPlan`] as a pure state machine: a fit, the gains designed from it, then a hold
 /// on them. A fit the design can't use, or whose design doesn't hold, runs again, up to
@@ -108,8 +108,9 @@ impl Design {
     /// again on it at once; fails after [`MAX_START_LOWERINGS`]. Under gyro noise a start at
     /// three times a quad's rate gains rings at the rate loop's limit, and its fit designed rate
     /// P 8.1 against 1.9 (#551). The refit doesn't wait for the settle: an axis that rang at
-    /// the last gains seldom settles on gains a cut below them, so the wait ran to the 10 s
-    /// timeout before each 3 s fit on the trimmed rows, and the fit starts there anyway (#673).
+    /// the last gains seldom settles on gains a cut below them. On the rows that ran over the
+    /// sim's time budget (the trims, and `heavy_quad`), every wait ran to the 10 s timeout,
+    /// where an identification starts anyway, so each 3 s fit cost 13 s (#673).
     /// An angle stage fails instead: the moment that clips is the rate loop's under it, which
     /// lowering the angle gains wouldn't unclip.
     fn lower_saturated(&mut self, gains: Gains) -> Action {
@@ -127,7 +128,7 @@ impl Design {
             probe: ProbeConfig::Identify(self.plan.identify),
             gains: None,
             commit: Some(lowered),
-            settle: false,
+            wait_for_settle: false,
         }
     }
 

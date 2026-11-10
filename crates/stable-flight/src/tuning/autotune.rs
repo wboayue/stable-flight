@@ -1435,7 +1435,7 @@ impl<K: Side> Phase<K> {
 struct Request<K: Side> {
     probe: ProbeConfig,
     gains: Option<K::Gains>,
-    settle: bool,
+    wait_for_settle: bool,
 }
 
 impl<K: Side> Request<K> {
@@ -2001,7 +2001,7 @@ impl<K: Side> Supervisor<K> {
                 probe,
                 gains,
                 commit,
-                settle,
+                wait_for_settle,
             } => {
                 let lowered = commit.map(|gains| self.lower(flight_loop, stage, gains));
                 if let Some(failed @ AutotuneEvent::StageFailed { .. }) = lowered {
@@ -2012,7 +2012,7 @@ impl<K: Side> Supervisor<K> {
                     request: Request {
                         probe,
                         gains,
-                        settle,
+                        wait_for_settle,
                     },
                     level_s: 0.0,
                     waited_s: 0.0,
@@ -2073,7 +2073,10 @@ impl<K: Side> Supervisor<K> {
         let holds = K::settles(&self.envelope, &settle, motion, self.target(stage));
         let level_s = if holds { level_s } else { 0.0 };
         let timed_out = waited_s >= K::waits(&self.envelope).settle_timeout_s;
-        if !request.settle || level_s >= settle.hold_s || (request.starts_anyway() && timed_out) {
+        if !request.wait_for_settle
+            || level_s >= settle.hold_s
+            || (request.starts_anyway() && timed_out)
+        {
             if let Some(gains) = request.gains
                 && self.set_gains(flight_loop, stage, gains).is_none()
             {

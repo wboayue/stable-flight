@@ -148,7 +148,7 @@ impl PlaneDesign {
                 probe: self.verify_step(first.is_some()),
                 gains: Some(candidate),
                 commit: None,
-                settle: true,
+                wait_for_settle: true,
             },
             (
                 Step::Verifying {

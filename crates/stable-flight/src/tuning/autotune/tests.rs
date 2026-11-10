@@ -10,7 +10,7 @@ use super::*;
 use crate::Configurable;
 use crate::guidance::copter::{CopterGuidance, CopterGuidanceConfig};
 use crate::stabilizers::copter::{CopterStabilizer, CopterStabilizerConfig};
-use crate::tuning::plant::{Axes, MomentMixer, PlantParams};
+use crate::tuning::plant::{Axes, MomentMixer, PlantParams, gyro_noise};
 use crate::tuning::{StepAbort, StepMetrics};
 use crate::view::{View, tailsitter_rotation};
 use crate::{
@@ -507,15 +507,10 @@ fn a_saturated_design_fits_again_without_settling() {
     let start = TunedLoop::RollRate.gains(flight_loop.stabilizer().config());
     let mut autotune = started(&flight_loop, &[design_stage(TunedLoop::RollRate)]);
 
-    // Gyro noise on the measured roll rate, uniform within ±1 rad/s, from a fixed LCG.
-    let mut seed: u32 = 1;
     let mut lowered_at_s = Vec::new();
     let mut lowered_p = Vec::new();
     for tick in 1..=(30.0 / DT) as usize {
-        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-        controls
-            .rate_spike_radps
-            .set(seed as f32 / u32::MAX as f32 * 2.0 - 1.0);
+        controls.rate_spike_radps.set(gyro_noise(tick, 1.0));
         flight_loop.step(Duration::from_secs_f32(DT));
         if let Some(AutotuneEvent::Lowered { gains, .. }) = autotune.update(&mut flight_loop, DT) {
             lowered_at_s.push(tick as f32 * DT);
@@ -532,7 +527,8 @@ fn a_saturated_design_fits_again_without_settling() {
         check!(gap_s < 3.5, "{gap_s} s between cuts, at {lowered_at_s:?}");
     }
     for (cuts, p) in (1..).zip(&lowered_p) {
-        assert_relative_eq!(*p, start.p / 1.6_f32.powi(cuts), max_relative = 1e-5);
+        let expected = start.p / procedure::SATURATED_FACTOR.powi(cuts);
+        assert_relative_eq!(*p, expected, max_relative = 1e-5);
     }
 }
 

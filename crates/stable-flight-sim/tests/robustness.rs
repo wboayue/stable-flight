@@ -15,8 +15,10 @@ use stable_flight_sim::{Perturbations, Wind};
 use common::robustness::{Set, Start, notch_for, perturbations, starting};
 use common::{AUTOTUNE_TIMEOUT_S, Plant, spec};
 
-/// Simulated seconds a row's autotune may take: the slowest passing row (`heavy_quad`'s CG
-/// offset from the high start, 280 s with the yaw search, #296) plus 25%.
+/// Simulated seconds a row's autotune may take: `heavy_quad`'s CG offset from the high start,
+/// then the slowest passing row (280 s with the yaw search, #296), plus 25%. The ×3 starts
+/// under noise now come closest: 303–334 s over seeds 1–5, `quad_x`'s seed 5 the slowest
+/// (#673).
 const BUDGET_S: f32 = 350.0;
 
 /// Autotunes `airframe` under `set` from `start` and checks the row's criteria.

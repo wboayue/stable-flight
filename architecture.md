@@ -1012,8 +1012,9 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     rate P 8.1 against 1.9), so the probe aborts (`IdentifyAbort::Saturated`) and the design
     stage lowers its start, every gain ÷ 1.6, and fits again at once, up to eight times (the
     search's cap, below). The refit doesn't wait for the settle: gains a cut below ones that
-    rang seldom settle, so on the trimmed rows each wait ran to the 10 s timeout, after which
-    the fit starts anyway, before a 3 s fit. At ÷ 1.6 the ×3 starts under noise stop
+    rang seldom settle. On the rows over the time budget (the trims, and `heavy_quad`), every
+    wait ran to the 10 s timeout, where an identification starts anyway, so each 3 s fit cost
+    13 s. At ÷ 1.6 the ×3 starts under noise stop
     saturating after 4 cuts (`quad_x`, `heavy_quad`) or 5 (`racer`), against 6–8 at ÷ 1.3,
     and their robustness rows take 303–334 s against the 350 s budget, where waiting at ÷ 1.3
     took up to 510 s (#673). Rejected: refitting at once at ÷ 1.3 or ÷ 2, which missed the
