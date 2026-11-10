@@ -1111,12 +1111,14 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     rate allowance, #518 measured `quad_x`'s angle P held at 9 with 10 ms of delay and its
     steps clipping; on the gyro-filtered rate loop with rate I, those rows pass.
   * Under gyro noise, a search's verify settles up to 1.14 times slower than its baseline
-    while overshooting no more, so `Acceptance` allows 1.2: at 1.1, `quad_x`'s yaw and pitch
-    rate searches kept their start as worse on 12 of its 30 noisy runs over 5 seeds, and
-    every ratio from 1.2 up tunes the same rows with none lost (#672). The sim spec judges
-    each step under noise on the mean of 4, as ArduPilot freezes a gain only after
-    `AUTOTUNE_SUCCESS_COUNT` passing twitches (`AC_AutoTune`): one 0.5 rad/s yaw step reads
-    0.6–7.1% overshoot for gains whose mean is 3.5%. Tightening the search instead (a 0.04
+    while overshooting within its margin, so `Acceptance` allows 1.2: at 1.1, `quad_x`'s yaw
+    and pitch rate searches kept their start as worse on 12 of its 30 noisy runs over 5
+    seeds, and every ratio from 1.2 up tunes the same rows with none lost (#672). The sim
+    spec judges each step under noise on the mean of 4, ArduPilot's
+    `AUTOTUNE_SUCCESS_COUNT`: ArduPilot keeps a gain only once its passing twitches
+    outnumber its failing ones by 4 (`AC_AutoTune`), so it never judges on one, though the
+    spec's mean is looser (one step can overshoot if the others make up for it). One
+    0.5 rad/s yaw step reads 0.6–7.1% overshoot for gains whose mean is 3.5%. Tightening the search instead (a 0.04
     or 0.045 overshoot limit, a 0.85 or 0.8 back-off, 3 verify pairs) moved the misses
     between seeds and cost other rows a clip or rise target or the time budget; judging each
     direction on its own lowered P on the CG-offset rows until their rate steps missed the

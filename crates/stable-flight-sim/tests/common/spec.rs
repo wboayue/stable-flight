@@ -14,8 +14,9 @@
 //! - Settling: inside the probe's 10% band before the window ends. Clipping: within the step
 //!   plan's allowance, beyond which a step measures the limit, not the loop.
 //! - Under gyro white noise, each step is judged on the mean of [`NOISY_STEPS`] steps, each on
-//!   its own noise, as ArduPilot freezes a gain only after `AUTOTUNE_SUCCESS_COUNT` (4)
-//!   passing twitches (`AC_AutoTune`) rather than on one.
+//!   its own noise. ArduPilot doesn't judge a gain on one twitch either: it keeps one only once
+//!   its passes outnumber its failures by `AUTOTUNE_SUCCESS_COUNT` (4) (`AC_AutoTune`). The
+//!   mean is looser: one step may overshoot if the others make up for it.
 //!
 //! Each loop steps as the autotune judges it (`SearchPlan::copter`'s steps; heading, which
 //! isn't searched, `StepTestPlan::copter`).
@@ -182,7 +183,7 @@ pub fn respond_within(
     Some(mean(&metrics))
 }
 
-/// Steps judged together under gyro noise: ArduPilot's `AUTOTUNE_SUCCESS_COUNT`. One step reads
+/// Steps averaged under gyro noise: ArduPilot's `AUTOTUNE_SUCCESS_COUNT`. One step reads
 /// noise as response: the same `quad_x` yaw rate gains read 0.6–7.1% overshoot on one 0.5 rad/s
 /// step across 20 seeds, mean 3.5% (#672).
 const NOISY_STEPS: usize = 4;
