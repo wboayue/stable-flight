@@ -72,6 +72,7 @@ fn fits_designs_and_verifies_a_pair() {
         probe: ProbeConfig::Step(step),
         gains: Some(candidate),
         commit: None,
+        settle: true,
     };
     check!(design.next(Decide::Held { settled: true }) == probe(step));
     check!(design.next(stepped(good_step(tau_s))) == Action::Hold { gains: candidate });

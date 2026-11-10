@@ -21,14 +21,14 @@ mod tests;
 const MAX_MEASURE_STOPS: usize = 3;
 
 /// Most times a stage lowers its start: a search's that won't settle, a rate design's whose fit
-/// saturates under noise. Each cut is 1.3 on the copter, so eight take the start to an eighth
-/// (÷ 8.2): 80 s for a search at the copter envelope's 10 s settle timeout, about 104 s for a
-/// design (a settle and a 3 s fit each). The retry on a smaller start is ArduPilot's on a
-/// smaller twitch: `AC_AutoTune` shrinks its twitch (`step_scaler`) ×0.9 per retry, down to a
-/// fifth. Under gyro noise and 10 ms of delay, three times a quad's rate gains ring at the rate
-/// loop's limit until lowered 6 times (`quad_x`) or 7 (`heavy_quad`). `racer`'s default yaw at
-/// 25 ms of delay settles after one, and capped anywhere from 1 to 10 the robustness rows that
-/// pass passed the same (#552, #598).
+/// saturates under noise. A search cuts by its bracket's factor, 1.3 on the copter, so eight
+/// take its start to an eighth (÷ 8.2) in 80 s at the copter envelope's 10 s settle timeout; a
+/// design cuts by 1.6, eight to ÷ 43 in 24 s of 3 s fits. The retry on a smaller start is
+/// ArduPilot's on a smaller twitch: `AC_AutoTune` shrinks its twitch (`step_scaler`) ×0.9 per
+/// retry, down to a fifth. Under gyro noise and 10 ms of delay, three times a quad's rate
+/// gains ring at the rate loop's limit until lowered 4 times (`quad_x`, `heavy_quad`) or 5
+/// (`racer`); `racer`'s default yaw at 25 ms of delay settles after one search cut (#552,
+/// #598, #673).
 const MAX_START_LOWERINGS: usize = 8;
 
 /// What a procedure is told.
@@ -118,12 +118,13 @@ impl Input {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Action<G = Gains> {
     /// Commit `commit` first when given (it stays if the stage fails), settle on the
-    /// committed gains, then run `probe` on the stage's loop, flying `gains` for that probe
-    /// only when given.
+    /// committed gains (unless `settle` is false: the probe starts on the next update), then
+    /// run `probe` on the stage's loop, flying `gains` for that probe only when given.
     Probe {
         probe: ProbeConfig,
         gains: Option<G>,
         commit: Option<G>,
+        settle: bool,
     },
     /// Commit these gains for the stage's loop and end the stage; a step test reports its
     /// valid steps, a search its verify and baseline.
@@ -150,6 +151,7 @@ impl<G> Action<G> {
             probe,
             gains: None,
             commit: None,
+            settle: true,
         }
     }
 }

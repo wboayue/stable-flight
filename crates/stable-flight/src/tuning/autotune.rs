@@ -1429,11 +1429,13 @@ impl<K: Side> Phase<K> {
     }
 }
 
-/// A probe a procedure asked for, and the gains to fly it on (`None`: the committed ones).
+/// A probe a procedure asked for, the gains to fly it on (`None`: the committed ones), and
+/// whether it waits for the settle first.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Request<K: Side> {
     probe: ProbeConfig,
     gains: Option<K::Gains>,
+    settle: bool,
 }
 
 impl<K: Side> Request<K> {
@@ -1999,6 +2001,7 @@ impl<K: Side> Supervisor<K> {
                 probe,
                 gains,
                 commit,
+                settle,
             } => {
                 let lowered = commit.map(|gains| self.lower(flight_loop, stage, gains));
                 if let Some(failed @ AutotuneEvent::StageFailed { .. }) = lowered {
@@ -2006,7 +2009,11 @@ impl<K: Side> Supervisor<K> {
                 }
                 self.phase = Phase::Settling {
                     stage,
-                    request: Request { probe, gains },
+                    request: Request {
+                        probe,
+                        gains,
+                        settle,
+                    },
                     level_s: 0.0,
                     waited_s: 0.0,
                 };
@@ -2052,7 +2059,8 @@ impl<K: Side> Supervisor<K> {
     /// when it moves), then sets the request's gains, if any, and starts its probe for
     /// `stage`; after `settle_timeout_s` the procedure decides ([`Input::Unsettled`]: a search
     /// lowers its start, anything else fails), except for an identification, which starts then
-    /// instead: a fit only gains excitation from the ringing.
+    /// instead: a fit only gains excitation from the ringing. A request that doesn't settle
+    /// starts at once.
     fn settle<C, V, G, S: SideTunable<K>, M, T>(
         &mut self,
         flight_loop: &mut FlightLoop<C, V, G, S, M, T>,
@@ -2065,7 +2073,7 @@ impl<K: Side> Supervisor<K> {
         let holds = K::settles(&self.envelope, &settle, motion, self.target(stage));
         let level_s = if holds { level_s } else { 0.0 };
         let timed_out = waited_s >= K::waits(&self.envelope).settle_timeout_s;
-        if level_s >= settle.hold_s || (request.starts_anyway() && timed_out) {
+        if !request.settle || level_s >= settle.hold_s || (request.starts_anyway() && timed_out) {
             if let Some(gains) = request.gains
                 && self.set_gains(flight_loop, stage, gains).is_none()
             {

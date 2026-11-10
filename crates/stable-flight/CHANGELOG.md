@@ -58,6 +58,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking (behavior):** a rate design stage whose fit saturates under noise cuts its start
+  ÷ 1.6 rather than ÷ 1.3, and fits again on it at once rather than after a settle. The ×3
+  starts under noise and delay design in 4–5 cuts instead of 6–8, without a 10 s wait before
+  each, and autotune in 303–334 s instead of up to 510 s on the sim (#673).
 - **Breaking:** `IdentifyConfig` has a `noisy: Option<IdentifyExtension>` field, how a
   window that reads noisy goes on exciting (amplitude and whole length); struct literals add
   it (`None` keeps the old behavior). `COPTER_IDENTIFY` extends a noisy window to 8 s at
