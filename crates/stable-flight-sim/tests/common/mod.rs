@@ -238,8 +238,13 @@ impl Commander for ThenFly {
 
 /// `plant` taken off and settled for [`HOVER_SETTLE_S`] on [`hover_follower`]'s point.
 pub fn hover(plant: &Plant) -> SimLoop<Hover> {
+    hover_for(plant, HOVER_SETTLE_S)
+}
+
+/// `plant` taken off and settled for `seconds` on [`hover_follower`]'s point.
+pub fn hover_for(plant: &Plant, seconds: f32) -> SimLoop<Hover> {
     let mut flight_loop = sim_loop_with(plant, hover_follower());
-    fly(&mut flight_loop, HOVER_SETTLE_S, |_, _| {});
+    fly(&mut flight_loop, seconds, |_, _| {});
     flight_loop
 }
 
