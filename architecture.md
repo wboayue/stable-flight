@@ -1112,7 +1112,7 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     steps clipping; on the gyro-filtered rate loop with rate I, those rows pass.
   * Under gyro noise, a search's verify settles up to 1.14 times slower than its baseline
     while overshooting no more, so `Acceptance` allows 1.2: at 1.1, `quad_x`'s yaw and pitch
-    rate searches kept their start as worse on 13 of its 30 noisy rows over 5 seeds, and
+    rate searches kept their start as worse on 12 of its 30 noisy runs over 5 seeds, and
     every ratio from 1.2 up tunes the same rows with none lost (#672). The sim spec judges
     each step under noise on the mean of 4, as ArduPilot freezes a gain only after
     `AUTOTUNE_SUCCESS_COUNT` passing twitches (`AC_AutoTune`): one 0.5 rad/s yaw step reads
