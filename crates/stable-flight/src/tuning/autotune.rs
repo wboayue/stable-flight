@@ -815,19 +815,28 @@ impl Criterion {
 pub struct Acceptance {
     /// Overshoot allowed above the baseline's. Non-negative.
     pub overshoot_margin: f32,
-    /// Settling time allowed, as a multiple of the baseline's. At least 1.
+    /// Settling time allowed, as a multiple of the baseline's. At least 1. Higher: keeps a
+    /// result whose steps settle slower than the start's; lower: reads gyro noise on two pairs
+    /// as a slower result and keeps the start.
     pub settling_ratio: f32,
 }
 
 impl Default for Acceptance {
-    /// 0.05 more overshoot, 10% slower settling.
+    /// 0.05 more overshoot, 20% slower settling.
+    ///
+    /// Under gyro noise, a verify that overshoots no more than its baseline still settles up
+    /// to 1.14 times slower on `quad_x` (10 ms delay and noise); 1.1 keeps the start as worse,
+    /// and every ratio from 1.2 up tunes the same rows (#672).
     fn default() -> Self {
         Self {
             overshoot_margin: 0.05,
-            settling_ratio: 1.1,
+            settling_ratio: DEFAULT_SETTLING_RATIO,
         }
     }
 }
+
+/// [`Acceptance::settling_ratio`]'s default.
+const DEFAULT_SETTLING_RATIO: f32 = 1.2;
 
 impl Acceptance {
     /// Whether `verify` flies no worse than `baseline` (see [`Acceptance`]); a mean the

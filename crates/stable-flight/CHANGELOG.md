@@ -147,6 +147,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Envelope::settle_timeout_s` lowers it by its `factor` and commits it
   (`AutotuneEvent::Lowered`) instead of failing `NotSettled`, again at each timeout, up to
   eight times and down to its `min` (#552, #598).
+- **Breaking (behavior):** `Acceptance::default` keeps a search's result whose steps settle up
+  to 1.2 times the baseline's, not 1.1: under gyro noise a verify that overshoots no more than
+  its start still settles up to 1.14 times slower, and the search kept its start as worse
+  (#672).
 
 ### Fixed
 
