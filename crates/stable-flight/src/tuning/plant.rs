@@ -13,6 +13,16 @@ use crate::controllers::{PlaneRateControllerConfig, RateGains};
 use crate::stabilizers::plane::PlaneStabilizerConfig;
 use crate::{ActuatorCommand, ControlOutput, Mixer, Vec2, Vec3, VehicleState};
 
+/// Repeatable gyro noise for the tests: white, uniform in ±`amplitude` rad/s, from a fixed
+/// linear congruential sequence keyed by the tick.
+pub(crate) fn gyro_noise(tick: usize, amplitude: f32) -> f32 {
+    let state = (tick as u64)
+        .wrapping_mul(6_364_136_223_846_793_005)
+        .wrapping_add(1_442_695_040_888_963_407);
+    let unit = (state >> 40) as f32 / (1u64 << 24) as f32;
+    amplitude * (2.0 * unit - 1.0)
+}
+
 /// Integration sub-steps per control tick.
 const SUBSTEPS: usize = 40;
 

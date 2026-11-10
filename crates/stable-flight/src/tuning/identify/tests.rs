@@ -1,7 +1,7 @@
 use assert2::{assert, check};
 
 use super::*;
-use crate::tuning::plant::{Plant, PlantParams};
+use crate::tuning::plant::{Plant, PlantParams, gyro_noise};
 use crate::tuning::{LoopSignals, Measurement, Probe, ProbeConfig, ProbeStatus};
 
 /// The flight loop's tick: 250 Hz.
@@ -114,16 +114,6 @@ fn recovers_lag_delay_and_gain() {
         check!((accel - gain).abs() <= 0.1 * gain, "{row}: accel {accel}");
         check!((fitted.dt_s - DT).abs() < 1e-6);
     }
-}
-
-/// Repeatable gyro noise for the tests: white, uniform in ±`amplitude` rad/s, from a fixed
-/// linear congruential sequence keyed by the tick.
-fn gyro_noise(tick: usize, amplitude: f32) -> f32 {
-    let state = (tick as u64)
-        .wrapping_mul(6_364_136_223_846_793_005)
-        .wrapping_add(1_442_695_040_888_963_407);
-    let unit = (state >> 40) as f32 / (1u64 << 24) as f32;
-    amplitude * (2.0 * unit - 1.0)
 }
 
 /// The delay a fit reads in ticks, its half tick included.
