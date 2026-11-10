@@ -1123,12 +1123,20 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     between seeds and cost other rows a clip or rise target or the time budget; judging each
     direction on its own lowered P on the CG-offset rows until their rate steps missed the
     rise target.
+  * Under a trim, a rate step overshoots more one way than the other until the rate I holds
+    the whole trim: the angle loop holds the rest through its rate setpoint, which the step
+    replaces. The I term takes over with a 5 s time constant (`I = P/5`), so after the
+    sim's 15 s hover the tuned `quad_x` pitch rate steps under every perturbation overshoot
+    5.4% one way and 1.2% the other, and 3.3% and 3.7% after 30 s, as after 60 s. The search
+    judges a pair on its two steps' means, which cancels the bias, and the sim spec steps a
+    trimmed plant after a 30 s hover (#675). Moving the angle loop's share into the rate I
+    at the step's start instead was rejected: an autotune step starts while the angle loop
+    still levels from the last one (up to 0.22 rad/s against a 0.05 rad/s trim share), so
+    37 robustness rows failed, and low-passed over 1 s it lowered `quad_x`'s pitch rate P
+    18% and turned the asymmetry the other way.
   * Open: `racer`'s ×3 start, with 10 ms of delay under the noise, still saturates its pitch
     rate fit, and its low start, passing on the seed its row flies, keeps its yaw rate start
-    as worse on seed 2 ([#604](https://github.com/wboayue/stable-flight/issues/604)). Under
-    a CG offset, a search's pair mean passes steps one way that overshoot the spec while the
-    other way barely overshoots: `racer`'s combined low start misses by 0.1%
-    ([#675](https://github.com/wboayue/stable-flight/issues/675)). The ×3 starts with delay
+    as worse on seed 2 ([#604](https://github.com/wboayue/stable-flight/issues/604)). The ×3 starts with delay
     and noise, or everything combined, tune every loop but take 378–510 s against the 350 s
     budget ([#673](https://github.com/wboayue/stable-flight/issues/673)). The trim rows
     pass, with the rate I term limited in moment (*Retuning `i` is bumpless*, #374).
