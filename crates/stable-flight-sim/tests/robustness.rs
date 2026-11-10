@@ -89,7 +89,6 @@ rows! {
     quad_x_delay_noise_low: quad_x, DelayNoise, Low;
     quad_x_delay_noise_high: quad_x, DelayNoise, High;
     quad_x_combined_low: quad_x, Combined, Low;
-    #[ignore = "every loop designs and tunes and meets the spec, in 378 s against the 350 s budget (#673)"]
     quad_x_combined_high: quad_x, Combined, High;
 
     heavy_quad_clean_low: heavy_quad, Clean, Low;
@@ -105,10 +104,8 @@ rows! {
     heavy_quad_weak_motor_low: heavy_quad, WeakMotor, Low;
     heavy_quad_weak_motor_high: heavy_quad, WeakMotor, High;
     heavy_quad_delay_noise_low: heavy_quad, DelayNoise, Low;
-    #[ignore = "every loop designs and tunes and meets the spec, in 468 s against the 350 s budget (#673)"]
     heavy_quad_delay_noise_high: heavy_quad, DelayNoise, High;
     heavy_quad_combined_low: heavy_quad, Combined, Low;
-    #[ignore = "every loop designs and tunes and meets the spec, in 467 s against the 350 s budget (#673)"]
     heavy_quad_combined_high: heavy_quad, Combined, High;
 
     racer_clean_low: racer, Clean, Low;
@@ -125,10 +122,8 @@ rows! {
     racer_weak_motor_low: racer, WeakMotor, Low;
     racer_weak_motor_high: racer, WeakMotor, High;
     racer_delay_noise_low: racer, DelayNoise, Low;
-    #[ignore = "lowered 8 times, the ×3 start's pitch rate fit still saturates (#604)"]
     racer_delay_noise_high: racer, DelayNoise, High;
     racer_combined_low: racer, Combined, Low;
-    #[ignore = "every loop designs and tunes and meets the spec, in 510 s against the 350 s budget (#673)"]
     racer_combined_high: racer, Combined, High;
 }
 

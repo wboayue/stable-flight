@@ -381,9 +381,9 @@ fn design_fits_again_after_an_unusable_fit_or_design() {
     );
 }
 
-/// A rate design whose fit saturates under noise lowers the start, every gain `÷ 1.3`, commits
-/// it, and fits again on it, `MAX_START_LOWERINGS` times; the next fails the stage, as does the
-/// first in an angle stage (#551).
+/// A rate design whose fit saturates under noise lowers the start, every gain `÷ 1.6`, commits
+/// it, and fits again on it without waiting for the settle, `MAX_START_LOWERINGS` times; the
+/// next fails the stage, as does the first in an angle stage (#551, #673).
 #[test]
 fn design_lowers_a_start_whose_fit_saturates() {
     let plan = DesignPlan::copter();
@@ -393,9 +393,9 @@ fn design_lowers_a_start_whose_fit_saturates() {
     let mut gains = CURRENT;
     for lowering in 1..=MAX_START_LOWERINGS {
         let lowered = Gains {
-            p: gains.p / 1.3,
-            i: gains.i / 1.3,
-            d: gains.d / 1.3,
+            p: gains.p / 1.6,
+            i: gains.i / 1.6,
+            d: gains.d / 1.6,
         };
         let action = procedure.next(Input::Aborted {
             abort: saturated,
@@ -405,6 +405,7 @@ fn design_lowers_a_start_whose_fit_saturates() {
             probe: ProbeConfig::Identify(plan.identify),
             gains: None,
             commit: Some(lowered),
+            settle: false,
         };
         check!(action == expected, "lowering {lowering}");
         gains = lowered;

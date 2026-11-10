@@ -1010,8 +1010,15 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     ticks, and a clipped moment isn't the one the airframe felt. Quiet, it takes the least
     squares, exact there. Noisy as well, no fit reads it (the least squares designed `quad_x`'s
     rate P 8.1 against 1.9), so the probe aborts (`IdentifyAbort::Saturated`) and the design
-    stage lowers its start, every gain ÷ 1.3 as a search lowers an unsettled one, and fits
-    again, up to eight times (the search's cap, below).
+    stage lowers its start, every gain ÷ 1.6, and fits again at once, up to eight times (the
+    search's cap, below). The refit doesn't wait for the settle: gains a cut below ones that
+    rang seldom settle, so on the trimmed rows each wait ran to the 10 s timeout, after which
+    the fit starts anyway, before a 3 s fit. At ÷ 1.6 the ×3 starts under noise stop
+    saturating after 4 cuts (`quad_x`, `heavy_quad`) or 5 (`racer`), against 6–8 at ÷ 1.3,
+    and their robustness rows take 303–334 s against the 350 s budget, where waiting at ÷ 1.3
+    took up to 510 s (#673). Rejected: refitting at once at ÷ 1.3 or ÷ 2, which missed the
+    step spec on 4 and 3 of the 15 ×3 noise rows over seeds 1–5 (÷ 1.6: none); ÷ 1.6 still
+    waiting (366–419 s); and a budget raised to the slowest ×3 row, which would hide the wait.
 
     Rejected (#551, #603): the moment projected on the excitation (10 past offsets, six slow
     lags of it, and a constant), which drops the noise-driven moment, most of the window's
@@ -1135,12 +1142,9 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     0.22 rad/s against a 0.05 rad/s trim share, so the transfer failed 37 of 49 robustness
     tests. Low-passed over 1 s, it lowered `quad_x`'s pitch rate P 18% and left `racer`'s
     steps overshooting the other way (3.5–4.1%).
-  * Open: `racer`'s ×3 start, with 10 ms of delay under the noise, still saturates its pitch
-    rate fit, and its low start, passing on the seed its row flies, keeps its yaw rate start
-    as worse on seed 2 ([#604](https://github.com/wboayue/stable-flight/issues/604)). The ×3 starts with delay
-    and noise, or everything combined, tune every loop but take 378–510 s against the 350 s
-    budget ([#673](https://github.com/wboayue/stable-flight/issues/673)). The trim rows
-    pass, with the rate I term limited in moment (*Retuning `i` is bumpless*, #374).
+  * Open: `racer`'s low start under noise, passing on the seed its row flies, keeps its yaw
+    rate start as worse on seed 2 ([#604](https://github.com/wboayue/stable-flight/issues/604)).
+    The trim rows pass, with the rate I term limited in moment (*Retuning `i` is bumpless*, #374).
     `racer`'s ×3 start breaches the rate envelope in its first fit with 25 ms of delay: the
     abort is the safe outcome, and the row stays ignored.
   * `racer` flies its gyro low-pass at 75 Hz, Mission Planner's initial `INS_GYRO_FILTER`
@@ -1153,11 +1157,9 @@ feedback and a search from the start gains were rejected (**Design search**, bel
     core's default yaw gains ring, the design's rate gains overshoot by 0–23% from one step
     to the next (0% from a still hover), and the rate searches passed nothing. A search's
     start that doesn't settle within the settle timeout is lowered by the bracket's factor
-    until it does, at most eight times, as a rate design lowers a start whose fit saturates
-    (80 s on ringing gains; `racer` needs one, and capped anywhere from 1 to 10 the robustness
-    rows that pass pass the same; the delay-noise rows' ×3 starts design their rate loops
-    after 6 (`quad_x`) and 7 (`heavy_quad`), and `racer`'s roll rate after 8); a tighter settle (0.05 or 0.03 rad/s) didn't help and cost the clean rows
-    their time budget (#552, #598).
+    until it does, at most eight times, the cap a rate design's saturated fits share (80 s on
+    ringing gains; `racer` needs one); a tighter settle (0.05 or 0.03 rad/s) didn't help and
+    cost the clean rows their time budget (#552, #598).
 * **Plane side** (`PlaneAutotune`): probes on the plane's roll and pitch rate and angle loops,
   within a `PlaneEnvelope` (bank, pitch, rate, sink, and an airspeed band from 0.9 × the
   stabilizer's minimum to its maximum). A breach puts the committed gains back; the host then

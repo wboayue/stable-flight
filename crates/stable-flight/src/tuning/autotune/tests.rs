@@ -498,6 +498,44 @@ fn a_search_lowers_a_start_that_never_settles() {
     assert_relative_eq!(kept.p, expected[1], max_relative = 1e-5);
 }
 
+/// A rate design whose fit saturates under gyro noise fits again on its lowered start as soon
+/// as it commits it, without waiting out the settle the noise never lets it hold: one cut per
+/// 3 s fit, where waiting would take 13 s each (#673).
+#[test]
+fn a_saturated_design_fits_again_without_settling() {
+    let (mut flight_loop, controls) = hovering(20.0);
+    let start = TunedLoop::RollRate.gains(flight_loop.stabilizer().config());
+    let mut autotune = started(&flight_loop, &[design_stage(TunedLoop::RollRate)]);
+
+    // Gyro noise on the measured roll rate, uniform within ±1 rad/s, from a fixed LCG.
+    let mut seed: u32 = 1;
+    let mut lowered_at_s = Vec::new();
+    let mut lowered_p = Vec::new();
+    for tick in 1..=(30.0 / DT) as usize {
+        seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        controls
+            .rate_spike_radps
+            .set(seed as f32 / u32::MAX as f32 * 2.0 - 1.0);
+        flight_loop.step(Duration::from_secs_f32(DT));
+        if let Some(AutotuneEvent::Lowered { gains, .. }) = autotune.update(&mut flight_loop, DT) {
+            lowered_at_s.push(tick as f32 * DT);
+            lowered_p.push(gains.p);
+        }
+        if !autotune.is_running() {
+            break;
+        }
+    }
+
+    check!(lowered_at_s.len() >= 4, "lowered at {lowered_at_s:?}");
+    for pair in lowered_at_s.windows(2) {
+        let gap_s = pair[1] - pair[0];
+        check!(gap_s < 3.5, "{gap_s} s between cuts, at {lowered_at_s:?}");
+    }
+    for (cuts, p) in (1..).zip(&lowered_p) {
+        assert_relative_eq!(*p, start.p / 1.6_f32.powi(cuts), max_relative = 1e-5);
+    }
+}
+
 /// A hover leaning to hold its position settles where it leans: held 0.12 rad off level in
 /// roll or pitch (past the step settle's 0.044 rad, inside the envelope), a step test runs to
 /// completion, bare and in a tailsitter's view (#539).
