@@ -816,8 +816,8 @@ pub struct Acceptance {
     /// Overshoot allowed above the baseline's. Non-negative.
     pub overshoot_margin: f32,
     /// Settling time allowed, as a multiple of the baseline's. At least 1. Higher: keeps a
-    /// result whose steps settle slower than the start's; lower: reads gyro noise on two pairs
-    /// as a slower result and keeps the start.
+    /// result whose steps settle slower than the start's; lower: keeps the start over a result
+    /// that overshoots no more but settles a little slower, as under gyro noise.
     pub settling_ratio: f32,
 }
 
