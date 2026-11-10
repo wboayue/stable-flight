@@ -1830,9 +1830,9 @@ fn criterion_and_acceptance_judge_the_means() {
     let base = [(0.1, 0.0, Some(0.2))];
     // (baseline, verify, accepted)
     let rows: [(&[Step], &[Step], bool); 8] = [
-        (&base, &[(0.15, 0.0, Some(0.22))], true), // at both limits
+        (&base, &[(0.15, 0.0, Some(0.24))], true), // at both limits
         (&base, &[(0.16, 0.0, Some(0.2))], false), // more overshoot
-        (&base, &[(0.1, 0.0, Some(0.23))], false), // slower
+        (&base, &[(0.1, 0.0, Some(0.25))], false), // slower
         (&base, &[(0.1, 0.0, None)], false),       // unsettled
         (&base, &[(0.1, 0.11, Some(0.2))], false), // bounces past both
         (&[(0.1, 0.2, Some(0.2))], &[(0.1, 0.15, Some(0.2))], true), // less than baseline's
