@@ -199,17 +199,16 @@ fn probe_step(
     step: StepConfig,
     timeout_s: f32,
 ) -> Option<StepMetrics> {
-    let mut flight_loop = super::sim_loop_with(plant, super::hover_follower());
-    super::fly(&mut flight_loop, hover_s(plant), |_, _| {});
-    let config = ProbeConfig::Step(step);
-    match super::probe_on(&mut flight_loop, target, config, timeout_s) {
+    let mut flight_loop = super::hover_for(plant, hover_s(plant));
+    match super::probe_on(&mut flight_loop, target, ProbeConfig::Step(step), timeout_s) {
         Some(ProbeStatus::Done(Measurement::Step(metrics))) => Some(metrics),
         _ => None,
     }
 }
 
-/// How long `plant` hovers before a step, in s: [`TRIM_HOVER_S`] with a trim to hold (a
-/// disturbance moment or a weak motor), else [`HOVER_SETTLE_S`](super::HOVER_SETTLE_S).
+/// How long `plant` hovers before a step, in s: [`TRIM_HOVER_S`] if one of the trims
+/// `Perturbations` models (a disturbance moment, a weak motor) is set, else
+/// [`HOVER_SETTLE_S`](super::HOVER_SETTLE_S). Wind isn't counted: no spec flies in it.
 fn hover_s(plant: &Plant) -> f32 {
     let perturbations = &plant.perturbations;
     let trimmed = perturbations.disturbance_moment_nm != Vec3::zeros()
@@ -224,12 +223,17 @@ fn hover_s(plant: &Plant) -> f32 {
     }
 }
 
-/// Hover before a step on a plant with a trim, in s. The rate I term takes the trim over
-/// from the angle loop slowly (`I = P/5`: a 5 s time constant); a rate step replaces the
-/// angle loop's rate setpoint, so the share it still holds pushes one direction's step and
-/// holds back the other's. After 15 s, the tuned `quad_x` pitch rate steps under every
-/// perturbation overshoot 5.4% nose up and 1.2% nose down over 20 noise seeds; after 30 s,
-/// 3.3% and 3.7%, as after 60 s (#675). Rows without a trim keep the shorter hover.
+/// Hover before a step on a plant with a trim, in s.
+///
+/// A rate step replaces the angle loop's rate setpoint, so whatever share of the trim the
+/// angle loop still holds drops out for the step: it pushes one direction's step and holds
+/// back the other's. The rate I term takes that share over with a time constant of P/I,
+/// 5 s for the searched rate gains (I at `RATE_I_PER_P`, 0.2, of P). After 15 s, the tuned `quad_x` pitch rate
+/// steps under the combined perturbations overshoot 5.4% nose up and 1.2% nose down over
+/// 20 noise seeds; after 30 s, 3.3% and 3.7%, about the same as after 60 s (#675).
+///
+/// Rows without a trim keep the shorter hover: a longer one changes the noise every step
+/// sees, which re-draws rows that sit on their limits.
 const TRIM_HOVER_S: f32 = 30.0;
 
 /// `steps` (at least one, all of one step) as one: each metric's mean, but not risen or not
