@@ -127,7 +127,6 @@ rows! {
     racer_delay_noise_low: racer, DelayNoise, Low;
     #[ignore = "lowered 8 times, the ×3 start's pitch rate fit still saturates (#604)"]
     racer_delay_noise_high: racer, DelayNoise, High;
-    #[ignore = "pitch rate steps nose up overshoot 5.1%, nose down 0.1%: the search's pair mean passes them (#675)"]
     racer_combined_low: racer, Combined, Low;
     #[ignore = "every loop designs and tunes and meets the spec, in 510 s against the 350 s budget (#673)"]
     racer_combined_high: racer, Combined, High;

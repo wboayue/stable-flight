@@ -13,6 +13,9 @@
 //!   constant; it is compared here to the 10–90% rise, which is longer for the same response.
 //! - Settling: inside the probe's 10% band before the window ends. Clipping: within the step
 //!   plan's allowance, beyond which a step measures the limit, not the loop.
+//! - On a plant with a trim (a CG offset or a weak motor), each step starts after a
+//!   [`TRIM_HOVER_S`] hover, so the rate loop's I term holds the trim before the step takes
+//!   the angle loop's say away.
 //! - Under gyro white noise, each step is judged on the mean of [`NOISY_STEPS`] steps, each on
 //!   its own noise. ArduPilot doesn't judge a gain on one twitch either: it keeps one only once
 //!   its passes outnumber its failures by `AUTOTUNE_SUCCESS_COUNT` (4) (`AC_AutoTune`). The
@@ -188,18 +191,46 @@ pub fn respond_within(
 /// step across 20 seeds, mean 3.5% (#672).
 const NOISY_STEPS: usize = 4;
 
-/// One step of `target` from a settled hover on `plant`; `None` if the probe didn't measure it.
+/// One step of `target` from a settled hover on `plant` ([`hover_s`]); `None` if the probe
+/// didn't measure it.
 fn probe_step(
     plant: &Plant,
     target: TunedLoop,
     step: StepConfig,
     timeout_s: f32,
 ) -> Option<StepMetrics> {
-    match super::probe(plant, target, ProbeConfig::Step(step), timeout_s) {
+    let mut flight_loop = super::sim_loop_with(plant, super::hover_follower());
+    super::fly(&mut flight_loop, hover_s(plant), |_, _| {});
+    let config = ProbeConfig::Step(step);
+    match super::probe_on(&mut flight_loop, target, config, timeout_s) {
         Some(ProbeStatus::Done(Measurement::Step(metrics))) => Some(metrics),
         _ => None,
     }
 }
+
+/// How long `plant` hovers before a step, in s: [`TRIM_HOVER_S`] with a trim to hold (a
+/// disturbance moment or a weak motor), else [`HOVER_SETTLE_S`](super::HOVER_SETTLE_S).
+fn hover_s(plant: &Plant) -> f32 {
+    let perturbations = &plant.perturbations;
+    let trimmed = perturbations.disturbance_moment_nm != Vec3::zeros()
+        || perturbations
+            .motor_thrust_scale
+            .iter()
+            .any(|&scale| scale != 1.0);
+    if trimmed {
+        TRIM_HOVER_S
+    } else {
+        super::HOVER_SETTLE_S
+    }
+}
+
+/// Hover before a step on a plant with a trim, in s. The rate I term takes the trim over
+/// from the angle loop slowly (`I = P/5`: a 5 s time constant); a rate step replaces the
+/// angle loop's rate setpoint, so the share it still holds pushes one direction's step and
+/// holds back the other's. After 15 s, the tuned `quad_x` pitch rate steps under every
+/// perturbation overshoot 5.4% nose up and 1.2% nose down over 20 noise seeds; after 30 s,
+/// 3.3% and 3.7%, as after 60 s (#675). Rows without a trim keep the shorter hover.
+const TRIM_HOVER_S: f32 = 30.0;
 
 /// `steps` (at least one, all of one step) as one: each metric's mean, but not risen or not
 /// settled if any step wasn't.
