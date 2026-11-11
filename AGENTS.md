@@ -1,7 +1,8 @@
 # AGENTS.md
 
 Rules and commands for everyone (humans + AI assistants) working in this repo. Design rationale
-lives in `architecture.md`; each crate's README owns its usage.
+lives in `architecture.md` (overview) and `docs/architecture/` (per subsystem); each crate's
+README owns its usage.
 
 ## Layout
 
@@ -16,7 +17,8 @@ lives in `architecture.md`; each crate's README owns its usage.
   `flights/*.csv` paths are root-relative.
 - `docs/tuning/` holds the tuning guides, one per airframe type. A tuning change to an
   airframe updates its guide in the same PR. `docs/glossary.md` defines the control terms
-  code and docs use.
+  code and docs use. `docs/architecture/` holds each subsystem's design and rationale,
+  summarized in `architecture.md`.
 - Untracked: `target/`, `tarpaulin-report.html`, `firmware/*/*.bin`, `sandbox/` and `tasks/` (local notes).
 - `Cargo.lock` is committed and CI builds `--locked`: commit lockfile changes with the manifest
   change that causes them. A dependency that needs a newer compiler raises `rust-version` and the
@@ -186,8 +188,8 @@ Traits and their contracts are in core `src/lib.rs` rustdoc: read it before impl
     names last. No narrative ("raised from", "previously", "after #n", "interim").
   - Open work is `TODO(#n)` in code comments (`just todo-check` flags ones whose issue
     closed); markdown links the issue.
-  - `architecture.md` gives rationale, including briefly why rejected alternatives were
-    rejected. A regression test may name the issue it guards; its name states the behavior.
+  - `docs/architecture/` gives rationale, including briefly why rejected alternatives were
+    rejected; `architecture.md` summarizes it. A regression test may name the issue it guards; its name states the behavior.
   - History lives in commits, PR bodies, and CHANGELOGs.
 - Logging via `log`: `info!` for lifecycle events, `debug!` inside the loop.
 - Hot path (anything `FlightLoop::step` calls, and firmware): no allocation per tick, no blocking
@@ -325,7 +327,11 @@ Related code sits together, so a reviewer reads one behavior in one place.
   - `CONTRIBUTING.md`: entry point for outside contributors, linking here;
   - `SECURITY.md`: supported versions and reporting;
   - `.github/` templates: what an issue or PR must include;
-  - `architecture.md`: crate boundaries, dependency rules, and the rationale for the contracts;
+  - `architecture.md`: design principles, crate boundaries, dependency rules, the input
+    policy, and a few lines per subsystem linking its doc;
+  - `docs/architecture/`: one doc per subsystem (flight loop, config, flight regimes, link,
+    simulators, autotune): its design, the rationale for its contracts, and rejected
+    alternatives;
   - `docs/glossary.md`: control and airframe terms, one definition each;
   - `docs/tuning/`: how to tune an airframe type (order, knobs and params, symptoms, a worked
     example); the airframe code holds the values and the flights behind them;
